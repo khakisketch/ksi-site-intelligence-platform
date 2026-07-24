@@ -1,0 +1,186 @@
+"""MissionContract Pydantic v2 모델 (contracts/schemas/mission-contract.v1.1/v1.2.json SSOT).
+
+camelCase 표현(``alias_generator=to_camel``, ``populate_by_name=True``)이며
+``model_config`` ``extra="forbid"``로 스키마 밖 필드를 거부한다. 스키마의 ``const``
+필드는 ``Literal``로 좁혀 타입 단계에서 위반을 막는다.
+
+v1.1(``signature={algorithm, digest}``)·v1.2(``signature={algorithm, keyId, digest,
+signature}`` — ADR-KSI-002 §4 Ed25519 서명)를 모두 표현하기 위해 signature 모델을
+분리하고, 두 스키마 버전을 별도 concrete 모델(``MissionContractV1_1``/
+``MissionContractV1_2``)로 둔다.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Literal
+
+from ksi_domain.enums import MissionType
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
+
+
+class _CamelModel(BaseModel):
+    """camelCase alias·extra forbid 공통 베이스 (계약 모델 전용)."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+
+class Validity(_CamelModel):
+    """계약 TTL 창 — verify_contract가 이 창 밖의 계약을 EXPIRED_CONTRACT로 거부한다."""
+
+    not_before: str
+    not_after: str
+
+    @field_validator("not_before", "not_after")
+    @classmethod
+    def _must_be_tz_aware_rfc3339(cls, value: str) -> str:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("validity 타임스탬프는 tz-aware RFC3339여야 한다")
+        return value
+
+
+class SiteFrame(_CamelModel):
+    """INV-020 — 모든 세계좌표는 CRS·수직기준·unit·transformVersion을 갖는다."""
+
+    crs: str
+    vertical_datum: str
+    unit: Literal["meter"]
+    transform_version: str
+
+
+class FlightEnvelope(_CamelModel):
+    allowed_volumes: list[str]
+    excluded_volumes: list[str]
+    min_altitude_m: float
+    max_altitude_m: float
+    minimum_structure_standoff_m: float | None = None
+    minimum_person_standoff_m: float | None = None
+
+
+class CoveragePolicy(_CamelModel):
+    """INV-010 — 필수 위험구역/자산 100%, 접근가능 일반영역 ≥95%."""
+
+    mandatory_hazard_coverage: float
+    mandatory_asset_coverage: float
+    accessible_general_coverage: float = Field(ge=0.95, le=1.0)
+
+    @field_validator("mandatory_hazard_coverage", "mandatory_asset_coverage")
+    @classmethod
+    def _must_be_exactly_one(cls, value: float) -> float:
+        """스키마 ``const: 1.0``. mypy가 float Literal을 지원하지 않아 런타임 검증으로 강제."""
+        if value != 1.0:
+            raise ValueError("mandatoryHazardCoverage/mandatoryAssetCoverage는 1.0이어야 한다")
+        return value
+
+
+class CommunicationLossPolicy(_CamelModel):
+    """INV-012 — 서버통신 단절 중에도 유효 계약+안전조건 유지 시에만 임무 계속."""
+
+    server_link: Literal["CONTINUE_WHILE_CONTRACT_AND_SAFETY_VALID"]
+    rc_command_link: Literal["DELEGATE_TO_DJI_FLIGHT_CONTROLLER"]
+
+
+class BatteryPolicy(_CamelModel):
+    """INV-013 — 배터리 귀환은 예상귀환 에너지 + 현장 Reserve(기본 30%)."""
+
+    mode: Literal["RETURN_ENERGY_PLUS_RESERVE"]
+    default_reserve_percent: float = Field(ge=0, le=100)
+    site_override_allowed: Literal[True] | None = None
+
+
+class UnknownObstaclePolicy(_CamelModel):
+    initial_action: Literal["SLOW", "HOLD", "STOP"]
+    unresolved_action: Literal["RETREAT", "DEFER_AREA", "PARTIAL_RESCAN", "RTH"]
+
+
+class EvidencePolicy(_CamelModel):
+    """INV-030 — Evidence Clip은 Candidate/High/Critical 전후 3/5/10초."""
+
+    candidate_pre_post_seconds: Literal[3]
+    high_pre_post_seconds: Literal[5]
+    critical_pre_post_seconds: Literal[10]
+
+
+class Policies(_CamelModel):
+    viewpoint_policy_id: str
+    risk_policy_pack_id: str
+    fallback_policy_id: str
+    capture_policy_id: str
+    coverage_policy: CoveragePolicy
+    communication_loss_policy: CommunicationLossPolicy
+    battery_policy: BatteryPolicy
+    unknown_obstacle_policy: UnknownObstaclePolicy
+    evidence_policy: EvidencePolicy
+
+
+class Artifacts(_CamelModel):
+    world_model_manifest_id: str | None = None
+    model_pack_id: str | None = None
+    calibration_profile_id: str | None = None
+
+
+class SignatureV1(_CamelModel):
+    """v1.1 signature 블록 — 필드 존재만 표현(암호학적 검증 불가, ADR-KSI-002 맥락)."""
+
+    algorithm: str
+    digest: str
+
+
+class Ed25519Signature(_CamelModel):
+    """v1.2 signature 블록 — ADR-KSI-002 §4 Ed25519 실서명(``ksi_mission_contracts.signing``)."""
+
+    algorithm: Literal["Ed25519"]
+    key_id: str
+    digest: str
+    signature: str
+
+
+class _MissionContractBase(_CamelModel):
+    """schemaVersion·signature를 제외한 v1.1/v1.2 공통 필드."""
+
+    mission_id: str
+    site_id: str
+    mission_type: MissionType
+    validity: Validity
+    site_frame: SiteFrame
+    flight_envelope: FlightEnvelope
+    objectives: list[str]
+    policies: Policies
+    artifacts: Artifacts
+
+
+class MissionContractV1_1(_MissionContractBase):  # noqa: N801 (스키마 버전 표기 유지)
+    """mission-contract.v1.1.json — 서명 필드 존재만 표현(암호학적 검증 불가, 동결본)."""
+
+    schema_version: Literal["1.1"]
+    signature: SignatureV1
+
+
+class MissionContractV1_2(_MissionContractBase):  # noqa: N801 (스키마 버전 표기 유지)
+    """mission-contract.v1.2.json — Ed25519 실서명 (ADR-KSI-002, INV-011 강제 지점)."""
+
+    schema_version: Literal["1.2"]
+    signature: Ed25519Signature
+
+
+MissionContract = MissionContractV1_1 | MissionContractV1_2
+
+
+def parse_mission_contract(data: dict[str, Any]) -> MissionContract:
+    """``schemaVersion``에 따라 v1.1/v1.2 모델로 분기 파싱한다.
+
+    Raises:
+        ValueError: ``schemaVersion``이 "1.1"/"1.2"가 아니거나 필드가 없을 때.
+    """
+    version = data.get("schemaVersion")
+    if version == "1.1":
+        return MissionContractV1_1.model_validate(data)
+    if version == "1.2":
+        return MissionContractV1_2.model_validate(data)
+    raise ValueError(f"지원하지 않는 schemaVersion: {version!r}")

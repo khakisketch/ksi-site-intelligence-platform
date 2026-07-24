@@ -31,8 +31,17 @@
 5. **Key Registry**: `keyId → {public_key, status(ACTIVE|REVOKED), not_after}`.
    검증기는 registry 주입을 받으며, unknown keyId·REVOKED·만료 키는 **검증 실패**다.
 6. **검증 실패는 typed 결과**로 반환한다 (`SignatureVerdict`: VALID / INVALID_SIGNATURE /
-   UNKNOWN_KEY / REVOKED_KEY / DIGEST_MISMATCH / SCHEMA_VERSION_MISMATCH / EXPIRED_CONTRACT).
-   실패 시 계약은 실행 불가 (fail-closed, INV-011).
+   UNKNOWN_KEY / REVOKED_KEY / **KEY_EXPIRED** / DIGEST_MISMATCH / SCHEMA_VERSION_MISMATCH /
+   **EXPIRED_CONTRACT**(계약 validity 창 위반 — INV-011 TTL) / **MALFORMED_CONTRACT**
+   (validity 결손·naive 타임스탬프·검증 중 예상 밖 예외의 fail-closed 강등)).
+   실패 시 계약은 실행 불가 (fail-closed, INV-011). 검증기는 어떤 입력에도 예외를
+   던지지 않는다 — 예외는 MALFORMED_CONTRACT로 강등된다.
+   (2026-07-25 반증 리뷰 반영: 키 만료(KEY_EXPIRED)와 계약 만료(EXPIRED_CONTRACT)를 분리,
+   계약 validity 창 검사를 verify_contract에 명시 배선, algorithm 필드 검증 추가.)
+
+7. **호출 규약**: `verify_contract`는 서명·TTL만 본다. 구조·범위 적합성(INV-010 등)은
+   JSON Schema 검증과 Pydantic 모델(`parse_mission_contract`) 검증을 **반드시 함께**
+   실행해야 한다 — 서명 유효는 스키마 적합을 증명하지 않는다.
 
 ## 필수 네거티브 테스트 (P0-1 수용기준)
 
@@ -41,6 +50,12 @@
 - schemaVersion 불일치 → SCHEMA_VERSION_MISMATCH
 - REVOKED 키의 유효 서명 → REVOKED_KEY
 - signature 블록만 다른 계약 간 digest 동일성 (정규화 안정성)
+- 계약 validity 창 밖(만료·미개시) → EXPIRED_CONTRACT (INV-011 TTL)
+- **digest는 정확하지만 서명 위조/타 키 서명 이식 → INVALID_SIGNATURE**
+  (digest 검사에 가려지지 않게 서명 검증 경로를 직접 실증 — tautology 금지)
+- algorithm 위조 → INVALID_SIGNATURE
+- naive not_after 키 등록 → 등록 시점 거부(ValueError)
+- validity 결손·naive → MALFORMED_CONTRACT / 비직렬화 값 → MALFORMED_CONTRACT
 
 ## 비범위
 

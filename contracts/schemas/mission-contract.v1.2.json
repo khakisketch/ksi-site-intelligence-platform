@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/mission-contract.v1.2.json",
+  "title": "MissionContract v1.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "missionId",
+    "siteId",
+    "missionType",
+    "validity",
+    "siteFrame",
+    "flightEnvelope",
+    "objectives",
+    "policies",
+    "artifacts",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.2"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "missionType": {
+      "enum": [
+        "UNIFIED_SITE_SURVEY",
+        "BASELINE_MAPPING",
+        "SPATIAL_REFRESH",
+        "AUTONOMOUS_PATROL",
+        "ASSET_INSPECTION",
+        "PROGRESS_CAPTURE",
+        "INCIDENT_SURVEY",
+        "SURVEY_GRADE_MAPPING"
+      ]
+    },
+    "validity": {
+      "type": "object",
+      "required": [
+        "notBefore",
+        "notAfter"
+      ],
+      "properties": {
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "siteFrame": {
+      "type": "object",
+      "required": [
+        "crs",
+        "verticalDatum",
+        "unit",
+        "transformVersion"
+      ],
+      "properties": {
+        "crs": {
+          "type": "string"
+        },
+        "verticalDatum": {
+          "type": "string"
+        },
+        "unit": {
+          "const": "meter"
+        },
+        "transformVersion": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "flightEnvelope": {
+      "type": "object",
+      "required": [
+        "allowedVolumes",
+        "excludedVolumes",
+        "minAltitudeM",
+        "maxAltitudeM"
+      ],
+      "properties": {
+        "allowedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minAltitudeM": {
+          "type": "number"
+        },
+        "maxAltitudeM": {
+          "type": "number"
+        },
+        "minimumStructureStandoffM": {
+          "type": "number"
+        },
+        "minimumPersonStandoffM": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policies": {
+      "type": "object",
+      "required": [
+        "viewpointPolicyId",
+        "riskPolicyPackId",
+        "fallbackPolicyId",
+        "capturePolicyId",
+        "coveragePolicy",
+        "communicationLossPolicy",
+        "batteryPolicy",
+        "unknownObstaclePolicy",
+        "evidencePolicy"
+      ],
+      "properties": {
+        "viewpointPolicyId": {
+          "type": "string"
+        },
+        "riskPolicyPackId": {
+          "type": "string"
+        },
+        "fallbackPolicyId": {
+          "type": "string"
+        },
+        "capturePolicyId": {
+          "type": "string"
+        },
+        "coveragePolicy": {
+          "type": "object",
+          "required": [
+            "mandatoryHazardCoverage",
+            "mandatoryAssetCoverage",
+            "accessibleGeneralCoverage"
+          ],
+          "properties": {
+            "mandatoryHazardCoverage": {
+              "const": 1.0
+            },
+            "mandatoryAssetCoverage": {
+              "const": 1.0
+            },
+            "accessibleGeneralCoverage": {
+              "type": "number",
+              "minimum": 0.95,
+              "maximum": 1.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "communicationLossPolicy": {
+          "type": "object",
+          "required": [
+            "serverLink",
+            "rcCommandLink"
+          ],
+          "properties": {
+            "serverLink": {
+              "const": "CONTINUE_WHILE_CONTRACT_AND_SAFETY_VALID"
+            },
+            "rcCommandLink": {
+              "const": "DELEGATE_TO_DJI_FLIGHT_CONTROLLER"
+            }
+          },
+          "additionalProperties": false
+        },
+        "batteryPolicy": {
+          "type": "object",
+          "required": [
+            "mode",
+            "defaultReservePercent"
+          ],
+          "properties": {
+            "mode": {
+              "const": "RETURN_ENERGY_PLUS_RESERVE"
+            },
+            "defaultReservePercent": {
+              "type": "number",
+              "default": 30,
+              "minimum": 0,
+              "maximum": 100
+            },
+            "siteOverrideAllowed": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "unknownObstaclePolicy": {
+          "type": "object",
+          "required": [
+            "initialAction",
+            "unresolvedAction"
+          ],
+          "properties": {
+            "initialAction": {
+              "enum": [
+                "SLOW",
+                "HOLD",
+                "STOP"
+              ]
+            },
+            "unresolvedAction": {
+              "enum": [
+                "RETREAT",
+                "DEFER_AREA",
+                "PARTIAL_RESCAN",
+                "RTH"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "evidencePolicy": {
+          "type": "object",
+          "required": [
+            "candidatePrePostSeconds",
+            "highPrePostSeconds",
+            "criticalPrePostSeconds"
+          ],
+          "properties": {
+            "candidatePrePostSeconds": {
+              "const": 3
+            },
+            "highPrePostSeconds": {
+              "const": 5
+            },
+            "criticalPrePostSeconds": {
+              "const": 10
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "worldModelManifestId": {
+          "type": "string"
+        },
+        "modelPackId": {
+          "type": "string"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "keyId",
+        "digest",
+        "signature"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
