@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 반영사항 3: 최소 권한 — 읽기 전용
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      # 서브모듈은 클론하지 않는다 — 테스트·가드에 불필요하고 private 인증도 불필요.
+      # 핀 검증은 gitlink SHA(ls-tree)로 수행한다 (scripts/verify_reference_pins.sh 폴백).
+      # 서브모듈 실콘텐츠가 필요한 job이 생기면 fine-grained PAT(REFERENCE_REPOS_TOKEN)를
+      # 사용한다 — docs/security/REFERENCE_SUBMODULE_AUTH.md 참조.
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: lock 무결성
+        run: uv lock --check
+
+      - name: 의존성 동기화 (locked)
+        run: uv sync --locked --all-packages
+
+      - name: ruff
+        run: uv run --locked ruff check .
+
+      - name: mypy
+        run: uv run --locked mypy packages services tests
+
+      - name: pytest
+        run: uv run --locked pytest -q
+
+      - name: reference 의존 가드 (import/manifest/symlink/dirty)
+        run: bash scripts/check_no_reference_imports.sh
+
+      - name: reference 핀 검증 (gitlink)
+        run: bash scripts/verify_reference_pins.sh
