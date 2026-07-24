@@ -13,6 +13,9 @@ Read in this order:
 7. Reference adoption matrix
 8. Reference code
 
+Domain invariants (INV-xxx) are canonical in `docs/product/DOMAIN_INVARIANTS.md`.
+Every implementation task must state which invariants it touches and how they are enforced.
+
 ## Reference repositories
 
 - `references/repos/ksi-platform`

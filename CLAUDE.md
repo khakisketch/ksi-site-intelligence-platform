@@ -13,6 +13,11 @@ Read in this order:
 7. Reference adoption matrix
 8. Reference code
 
+## 도메인 불변식
+
+정본은 `docs/product/DOMAIN_INVARIANTS.md` (INV-xxx)다. 여기 복제하지 않는다.
+구현·리뷰·감사는 해당 문서의 불변식 ID로 대조한다.
+
 ## Reference repositories
 
 - `references/repos/ksi-platform`
