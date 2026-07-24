@@ -1,0 +1,8 @@
+{"ts": "2026-07-25T00:52:13+09:00", "event": "init", "project": "KSI-Site-Intelligence-Platform"}
+{"ts": "2026-07-25T00:52:13+09:00", "event": "registered", "goal": "phase-0", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:13+09:00", "event": "registered", "goal": "phase-1", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:13+09:00", "event": "registered", "goal": "phase-2", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:14+09:00", "event": "registered", "goal": "phase-3", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:14+09:00", "event": "registered", "goal": "phase-4", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:14+09:00", "event": "registered", "goal": "phase-5", "status": "proposed", "parent": null}
+{"ts": "2026-07-25T00:52:32+09:00", "event": "started", "goal": "phase-0"}

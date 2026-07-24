@@ -1,0 +1,58 @@
+# Phase Registry — 멀티세션 단계 원장 (정본)
+# 근거: MASTER_PRD v3.0 §25(구현 단계)·§26(완료 기준). GitHub Milestone과 동기 유지.
+# 상태: PLANNED | IN_PROGRESS | GATED(수용기준 검증 대기) | DONE | BLOCKED
+# 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
+
+version: 1
+updated: "2026-07-25"
+
+phases:
+  - id: phase-0
+    title: "Capability & Calibration Foundation"
+    status: IN_PROGRESS
+    scope_now: "소프트웨어 기반만 (P0-1~P0-6). 하드웨어 Spike(PSDK/카메라/짐벌)는 장비 세션에서."
+    acceptance:
+      - "계약 모델이 contracts/schemas SSOT와 왕복 검증 통과 + Ed25519 실서명 네거티브 4종 (P0-1, INV-011)"
+      - "typed InterpolationResult 시간동기 모델 — 각도 wraparound·gap 강등 골든 통과 (P0-2, INV-023)"
+      - "golden vectors legacy_compat/ksi_correctness 분리 + source/script/runtime/tolerance 메타 (P0-3)"
+      - "geo-core가 golden 회귀 전부 허용오차 내 통과 + 불확실성 단조성 (P0-4, INV-021/023)"
+      - "Capability 2-enum 분리 + SPIKE/BLOCKED 미노출 + 무증거 전이 거부 (P0-5, INV-041)"
+      - "Replay 2회 재생 fingerprint/observationHash/좌표/상태전이 동일 (P0-6, INV-022)"
+      - "CI green (uv locked 게이트 + reference 가드 4중)"
+    hardware_deferred:
+      - "M4D 카메라 프레임·렌즈 전환·짐벌 API Spike (PRD 20.3 — Capability Registry에 SPIKE_REQUIRED로 등록)"
+      - "시간동기 실측 p95≤50ms 검증 (PRD 21.1)"
+
+  - id: phase-1
+    title: "Geo-Referenced World Model"
+    status: PLANNED
+    acceptance:
+      - "WorldEntity/Observation 계약 + covariance·CRS 필수 필드 불변식 (INV-020)"
+      - "다중 시점 세계좌표 융합 기준 구현 + replay 재현"
+      - "Event Bundle/Offline Sync 계약 검증"
+
+  - id: phase-2
+    title: "Baseline Mapping & Unified Mission"
+    status: PLANNED
+    acceptance:
+      - "현장 Onboarding→Baseline Processing→Verified Flight Volume 상태 전이 실통과 (INV-010)"
+      - "Spatial Refresh Backbone + Coverage Recovery"
+
+  - id: phase-3
+    title: "Dynamic Equipment Intelligence"
+    status: PLANNED
+    acceptance:
+      - "우선 장비 1종(타워크레인+인양물 또는 굴착기) 기구학·Risk Field·CPA/TTC"
+      - "Active Reobservation 실동작"
+
+  - id: phase-4
+    title: "Asset Inspection & Temporal Intelligence"
+    status: PLANNED
+    acceptance:
+      - "표면 점검·결함 후보·시계열 변화·BIM 연계"
+
+  - id: phase-5
+    title: "Fleet/Dock & Cross-Industry Packs"
+    status: PLANNED
+    acceptance:
+      - "Dock Capability VERIFIED 후 원격 반복운영·다현장 Fleet·산업 Pack"
