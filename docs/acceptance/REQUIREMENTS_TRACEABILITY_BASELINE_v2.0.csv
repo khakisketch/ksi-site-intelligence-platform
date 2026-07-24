@@ -1,0 +1,13 @@
+﻿Requirement ID,Requirement,Owner,Verification
+ARCH-001,Dashboard/Core/Edge/Processing 분리,Architecture,System deployment test
+ARCH-002,실시간 판단은 Edge,Edge,Link loss flight replay
+MISSION-001,통합 현장조사 UX,Web/Core,UX acceptance
+MISSION-002,Baseline mapping gate,Core/Processing,Site onboarding E2E
+SPATIAL-001,세계좌표와 불확실성,Edge,Control point field test
+SPATIAL-003,다중시점 융합,Edge,Replay triangulation test
+RISK-001,장비 자동 탐지/추적,Edge/ML,Equipment benchmark
+RISK-003,동적 위험장,Edge,Controlled scenario
+RISK-005,불확실 시 재관찰,Edge,Active perception test
+EDGE-001,오프라인 임무,Edge,Network isolation test
+DATA-001,Event lineage,Core/Data,Schema/integration test
+UX-002,라이브뷰 기본 OFF,Web,UI test

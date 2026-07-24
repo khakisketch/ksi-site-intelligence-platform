@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/mission-contract.v1.json",
+  "title": "MissionContract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "missionId",
+    "siteId",
+    "missionType",
+    "validity",
+    "siteFrame",
+    "flightEnvelope",
+    "objectives",
+    "policies",
+    "artifacts",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "missionType": {
+      "enum": [
+        "UNIFIED_SITE_SURVEY",
+        "BASELINE_MAPPING",
+        "SPATIAL_REFRESH",
+        "AUTONOMOUS_PATROL",
+        "ASSET_INSPECTION",
+        "PROGRESS_CAPTURE",
+        "INCIDENT_SURVEY",
+        "SURVEY_GRADE_MAPPING"
+      ]
+    },
+    "validity": {
+      "type": "object",
+      "required": [
+        "notBefore",
+        "notAfter"
+      ],
+      "properties": {
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "siteFrame": {
+      "type": "object",
+      "required": [
+        "crs",
+        "verticalDatum",
+        "unit",
+        "transformVersion"
+      ],
+      "properties": {
+        "crs": {
+          "type": "string"
+        },
+        "verticalDatum": {
+          "type": "string"
+        },
+        "unit": {
+          "const": "meter"
+        },
+        "transformVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "flightEnvelope": {
+      "type": "object",
+      "required": [
+        "allowedVolumes",
+        "excludedVolumes",
+        "minAltitudeM",
+        "maxAltitudeM"
+      ],
+      "properties": {
+        "allowedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minAltitudeM": {
+          "type": "number"
+        },
+        "maxAltitudeM": {
+          "type": "number"
+        },
+        "minimumStructureStandoffM": {
+          "type": "number"
+        },
+        "minimumPersonStandoffM": {
+          "type": "number"
+        }
+      }
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policies": {
+      "type": "object",
+      "required": [
+        "viewpointPolicyId",
+        "riskPolicyPackId",
+        "fallbackPolicyId",
+        "capturePolicyId"
+      ],
+      "properties": {
+        "viewpointPolicyId": {
+          "type": "string"
+        },
+        "riskPolicyPackId": {
+          "type": "string"
+        },
+        "fallbackPolicyId": {
+          "type": "string"
+        },
+        "capturePolicyId": {
+          "type": "string"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "worldModelManifestId": {
+          "type": "string"
+        },
+        "modelPackId": {
+          "type": "string"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/retention-policy.v1.json",
+  "title": "RetentionPolicy",
+  "type": "object",
+  "required": [
+    "candidateDays",
+    "patrolRawDays",
+    "confirmedEventDays",
+    "telemetryMissionDays",
+    "auditActionDays",
+    "spatialArtifactAfterContractDays"
+  ],
+  "properties": {
+    "candidateDays": {
+      "type": "integer",
+      "default": 30
+    },
+    "patrolRawDays": {
+      "type": "integer",
+      "default": 90
+    },
+    "confirmedEventDays": {
+      "type": "integer",
+      "default": 1095
+    },
+    "telemetryMissionDays": {
+      "type": "integer",
+      "default": 365
+    },
+    "auditActionDays": {
+      "type": "integer",
+      "default": 1095
+    },
+    "spatialArtifactAfterContractDays": {
+      "type": "integer",
+      "default": 90
+    },
+    "customerOverrideAllowed": {
+      "const": true
+    }
+  }
+}

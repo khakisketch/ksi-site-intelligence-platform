@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/world-entity.v1.json",
+  "title": "WorldEntity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entityId",
+    "class",
+    "timestamp",
+    "siteFrame",
+    "pose",
+    "uncertainty",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "entityId": {
+      "type": "string"
+    },
+    "class": {
+      "type": "string"
+    },
+    "subclass": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "siteFrame": {
+      "type": "string"
+    },
+    "pose": {
+      "type": "object",
+      "required": [
+        "position"
+      ],
+      "properties": {
+        "position": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "orientationQuaternion": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number"
+          }
+        },
+        "velocity": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "required": [
+        "positionCovariance"
+      ],
+      "properties": {
+        "positionCovariance": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {
+            "type": "number"
+          }
+        },
+        "classificationConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "localizationState": {
+          "enum": [
+            "CONFIRMED",
+            "LIKELY",
+            "BOUNDARY_UNCERTAIN",
+            "INSUFFICIENT_OBSERVATION",
+            "STALE",
+            "LOST"
+          ]
+        }
+      }
+    },
+    "kinematicState": {
+      "type": "object"
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": [
+        "trackId",
+        "modelVersions",
+        "calibrationProfileId"
+      ],
+      "properties": {
+        "trackId": {
+          "type": "string"
+        },
+        "modelVersions": {
+          "type": "object"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        },
+        "observationIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

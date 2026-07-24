@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+q="${*:?usage: qimpl <query>}"
+paths=()
+for p in apps services edge workers packages tests; do
+  [ -e "$p" ] && paths+=("$p")
+done
+if [ "${#paths[@]}" -eq 0 ]; then
+  echo "implementation directories are not created yet" >&2
+  exit 1
+fi
+rg -n --hidden --glob '!.git/**' "$q" "${paths[@]}"

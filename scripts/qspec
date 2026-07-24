@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+q="${*:?usage: qspec <query>}"
+rg -n --hidden --glob '!.git/**' "$q" docs contracts AGENTS.md CLAUDE.md

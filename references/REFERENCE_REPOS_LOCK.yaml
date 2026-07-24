@@ -1,0 +1,25 @@
+version: 1
+generated_at: "2026-07-24"
+repositories:
+  - name: ksi-platform
+    url: "https://github.com/khakisketch/ksi-platform"
+    path: "references/repos/ksi-platform"
+    pin: "030ebd5a7ff0762e729b29fe7710f8f3a30e8604"
+    access: "read-only-reference"
+    notes:
+      - "Draft mapping PR #2 head: f448c510d38a5a42e67401a89ddab25f7b0ef99b"
+  - name: ksi-terra
+    url: "https://github.com/khakisketch/KSI-Terra"
+    path: "references/repos/ksi-terra"
+    pin: "8d62cd38cb627af5c7f1c108537fc5dda89ca103"
+    access: "read-only-reference"
+  - name: ksi-scout
+    url: "https://github.com/khakisketch/KSI-Scout"
+    path: "references/repos/ksi-scout"
+    pin: "42ccc0db9a274db94746284bdfbf73db847f5afd"
+    access: "read-only-reference"
+rules:
+  direct_imports_from_references: false
+  modify_submodules_by_default: false
+  build_references: false
+  require_adoption_decision: true

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+q="${*:?usage: qrefcode <query>}"
+rg -n --hidden --glob '!.git/**' "$q" references/repos

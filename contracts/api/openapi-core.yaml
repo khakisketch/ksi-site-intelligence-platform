@@ -1,0 +1,53 @@
+openapi: 3.1.0
+info:
+  title: KSI Site Intelligence Core API
+  version: 1.0.0
+paths:
+  /sites/{siteId}/missions:
+    post:
+      summary: Create a mission request
+      parameters:
+        - in: path
+          name: siteId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target, outcomes, intensity]
+              properties:
+                target: { type: object }
+                outcomes:
+                  type: array
+                  items: { type: string }
+                intensity:
+                  enum: [FAST, STANDARD, PRECISE]
+      responses:
+        '202': { description: Mission planning accepted }
+  /missions/{missionId}/contract:
+    get:
+      summary: Get the signed mission contract
+      parameters:
+        - in: path
+          name: missionId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Mission contract }
+  /edge/{edgeId}/events:
+    post:
+      summary: Upload an idempotent event bundle
+      parameters:
+        - in: path
+          name: edgeId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      responses:
+        '202': { description: Persisted or queued }

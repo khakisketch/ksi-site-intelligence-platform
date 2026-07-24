@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+q="${*:?usage: qrefdocs <query>}"
+rg -n --hidden --glob '!.git/**' "$q" docs/reference references/*.md references/*.yaml

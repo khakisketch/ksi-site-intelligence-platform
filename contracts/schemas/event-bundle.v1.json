@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/event-bundle.v1.json",
+  "title": "EventBundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "missionId",
+    "siteId",
+    "eventType",
+    "occurredAt",
+    "status",
+    "entities",
+    "spatialContext",
+    "reasoning",
+    "evidence",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "eventId": {
+      "type": "string"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "OBSERVATION",
+        "CANDIDATE",
+        "EVIDENCE_COLLECTION",
+        "FINDING",
+        "CONFIRMED_EVENT",
+        "DISMISSED",
+        "UNRESOLVED"
+      ]
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "spatialContext": {
+      "type": "object"
+    },
+    "reasoning": {
+      "type": "object"
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "contextImages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detailImages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trajectoryArtifact": {
+          "type": "string"
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": [
+        "edgeVersion",
+        "modelVersions",
+        "policyVersion",
+        "calibrationProfileId"
+      ],
+      "properties": {
+        "edgeVersion": {
+          "type": "string"
+        },
+        "modelVersions": {
+          "type": "object"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        }
+      }
+    },
+    "review": {
+      "type": "object"
+    }
+  }
+}

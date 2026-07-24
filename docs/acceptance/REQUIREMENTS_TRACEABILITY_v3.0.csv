@@ -1,0 +1,16 @@
+﻿Requirement ID,Area,Topic,Locked requirement,Acceptance evidence
+REQ-PROD-001,Product,Platform name,KSI Site Intelligence Platform,UI/docs/repository use approved name
+REQ-MSN-101,Mission,Approval,Mission Contract one-time approval,Invalid/unsigned contract rejected
+REQ-MSN-102,Mission,Automation,Scheduled missions after site policy approval,Scheduled run uses approved policy version
+REQ-MSN-103,Mission,Coverage,"100% hazard, 100% mandatory assets, 95% accessible general",CoverageReport completion gate
+REQ-EDGE-101,Edge,Server loss,Continue while contract and safety valid,HIL server link loss sortie
+REQ-EDGE-102,Edge,RC link loss,DJI FC lost-link policy,HIL verifies KSI does not override
+REQ-SAFE-101,Safety,Battery,"Site override, default 30% return reserve",Return starts before reserve violation
+REQ-SAFE-102,Safety,Unknown obstacle,Stop/reobserve/retreat/verified reroute,HIL thin/unknown obstacle cases
+REQ-EVT-101,Event,SLO,"Critical 1s candidate, 2s local, 5s server",Timestamped replay/HIL evidence
+REQ-EVT-102,Event,Evidence,Candidate/High/Critical pre-post 3/5/10 seconds,Event bundle contains required clips
+REQ-GEO-101,Geo,Uncertainty,Confirm only if risk persists under uncertainty,Boundary cases remain suspected/unverifiable
+REQ-MAP-101,Map,Refresh,"Every-flight delta, partial on change, weekly full default",Freshness policy creates correct jobs
+REQ-DATA-101,Data,Retention,Customer override plus approved defaults,Retention purge/export tests
+REQ-MODEL-101,Model,Support claims,Staged equipment support status,Only Production Supported shown as supported
+REQ-PLAT-101,Platform,Industry expansion,Common core plus solution packs,No construction-only dependency in core contracts

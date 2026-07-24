@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/risk-field.v1.json",
+  "title": "RiskField",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "riskFieldId",
+    "type",
+    "sourceEntityIds",
+    "validity",
+    "geometry",
+    "riskModel",
+    "uncertainty"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "riskFieldId": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "STATIC",
+        "DERIVED",
+        "DYNAMIC",
+        "PREDICTED"
+      ]
+    },
+    "hazardType": {
+      "type": "string"
+    },
+    "sourceEntityIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validity": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "required": [
+        "format",
+        "payload"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "GEOJSON_2D",
+            "EXTRUDED_POLYGON",
+            "MESH",
+            "VOXEL_GRID",
+            "PARAMETRIC_VOLUME"
+          ]
+        },
+        "payload": {}
+      }
+    },
+    "riskModel": {
+      "type": "object",
+      "required": [
+        "policyId",
+        "severity",
+        "predictionHorizonSeconds"
+      ],
+      "properties": {
+        "policyId": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "predictionHorizonSeconds": {
+          "type": "number"
+        },
+        "closestApproachM": {
+          "type": "number"
+        },
+        "timeToCollisionS": {
+          "type": "number"
+        }
+      }
+    },
+    "uncertainty": {
+      "type": "object"
+    }
+  }
+}

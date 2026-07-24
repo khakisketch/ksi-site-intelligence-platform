@@ -1,0 +1,24 @@
+asyncapi: 3.0.0
+info:
+  title: KSI Edge Realtime Events
+  version: 1.0.0
+channels:
+  edgeStatus:
+    address: ksi/v1/edge/{edgeId}/status
+    messages:
+      status:
+        payload:
+          type: object
+          required: [edgeId, timestamp, missionState, health]
+  missionContract:
+    address: ksi/v1/edge/{edgeId}/mission-contract
+    messages:
+      contract:
+        payload:
+          $ref: ../schemas/mission-contract.v1.json
+  eventBundle:
+    address: ksi/v1/edge/{edgeId}/event
+    messages:
+      event:
+        payload:
+          $ref: ../schemas/event-bundle.v1.json

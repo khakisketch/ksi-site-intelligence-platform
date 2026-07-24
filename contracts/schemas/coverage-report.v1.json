@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/coverage-report.v1.json",
+  "title": "CoverageReport",
+  "type": "object",
+  "required": [
+    "missionId",
+    "siteId",
+    "timestamp",
+    "cells",
+    "summary"
+  ],
+  "properties": {
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cellId",
+          "state"
+        ],
+        "properties": {
+          "cellId": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "OBSERVED_HIGH_CONFIDENCE",
+              "OBSERVED_PARTIAL",
+              "RECONSTRUCTION_READY",
+              "EVENT_INSPECTED",
+              "OCCLUDED",
+              "UNREACHABLE",
+              "NOT_OBSERVED"
+            ]
+          },
+          "quality": {
+            "type": "number"
+          },
+          "geometryRef": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object"
+    }
+  }
+}

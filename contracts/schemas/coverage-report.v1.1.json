@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/coverage-report.v1.1.json",
+  "title": "CoverageReport v1.1",
+  "type": "object",
+  "required": [
+    "missionId",
+    "siteId",
+    "timestamp",
+    "cells",
+    "summary"
+  ],
+  "properties": {
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cellId",
+          "state"
+        ],
+        "properties": {
+          "cellId": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "OBSERVED_HIGH_CONFIDENCE",
+              "OBSERVED_PARTIAL",
+              "RECONSTRUCTION_READY",
+              "EVENT_INSPECTED",
+              "OCCLUDED",
+              "UNREACHABLE",
+              "NOT_OBSERVED",
+              "UNSAFE",
+              "SENSOR_LIMITED",
+              "TIME_LIMITED",
+              "BATTERY_LIMITED"
+            ]
+          },
+          "quality": {
+            "type": "number"
+          },
+          "geometryRef": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "mandatoryHazardRatio",
+        "mandatoryAssetRatio",
+        "accessibleGeneralRatio",
+        "completionState"
+      ],
+      "properties": {
+        "mandatoryHazardRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "mandatoryAssetRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "accessibleGeneralRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "completionState": {
+          "enum": [
+            "COMPLETED",
+            "COMPLETED_WITH_GAPS",
+            "ABORTED_SAFE",
+            "FAILED"
+          ]
+        }
+      }
+    }
+  }
+}
