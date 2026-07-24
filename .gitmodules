@@ -1,0 +1,9 @@
+[submodule "references/repos/ksi-platform"]
+	path = references/repos/ksi-platform
+	url = https://github.com/khakisketch/ksi-platform
+[submodule "references/repos/ksi-terra"]
+	path = references/repos/ksi-terra
+	url = https://github.com/khakisketch/KSI-Terra
+[submodule "references/repos/ksi-scout"]
+	path = references/repos/ksi-scout
+	url = https://github.com/khakisketch/KSI-Scout
