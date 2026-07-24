@@ -1,0 +1,901 @@
+{
+  "source": {
+    "repo": "ksi-scout",
+    "commit": "42ccc0db",
+    "file": "ksi_scout/geo/projection.py"
+  },
+  "extraction": {
+    "script": "tools/vector-extraction/capture_scout_projection.py",
+    "runtime": {
+      "language": "python",
+      "version": "3.12.13",
+      "runner": "scratchpad venv (uv venv --python 3.12) — deps: numpy 2.5.1, pydantic 2.13.4, shapely 2.1.2. packages/test-vectors/pyproject.toml·uv.lock 미변경(별도 임시 venv)."
+    }
+  },
+  "tolerance": {
+    "abs": 1e-06,
+    "rel": 1e-09,
+    "rationale": "이 벡터는 회전행렬 3개 합성(Rz_cw·Rx·R0·Rroll) 핀홀 투영이다. 필드별 근거: east_m/north_m/error_radius_m(거리, m) → abs 1e-4 m (references/repos/ksi-scout의 round-trip 테스트가 <0.01~1e-3m 편차를 통과 기준으로 삼는 것과 동일 스케일); lat/lon(도, WGS84) → abs 1e-9 deg (경위도 변환은 상수 나눗셈 1건뿐이라 부동소수 오차만 남고, 1e-9도≈0.0001m 수준이라 위치 정밀도를 해치지 않음); geo_confidence(무단위 [0,1] 스칼라, 여러 factor의 product) → abs 1e-9 (동일 정밀도의 double 연산 반복이라 rel 대신 절대오차가 적절). 최상위 abs/rel 은 기본값(가장 보수적인 confidence 기준)이고, 필드별 override 는 tolerance.by_field 를 본다.",
+    "by_field": {
+      "east_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "north_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "error_radius_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "position_error_radius_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "lat": {
+        "abs": 1e-09,
+        "rel": 0
+      },
+      "lon": {
+        "abs": 1e-09,
+        "rel": 0
+      },
+      "geo_confidence": {
+        "abs": 1e-09,
+        "rel": 0
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "nadir_center_directly_below",
+      "api": "project_foot_point",
+      "description": "짐벌 정수직(-90도) 중앙 픽셀 → 기체 직하방(east≈0, north≈0), 거리=고도.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 6.123233995736766e-15,
+        "geo_confidence": 0.8,
+        "error_radius_m": 1.004987562112089
+      }
+    },
+    {
+      "id": "oblique45_north_heading0",
+      "api": "project_foot_point",
+      "description": "pitch=-45도, heading=0(정북) → 지면교차점이 북쪽 alt만큼 전방.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 50.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -45.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.50044915764206,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 50.00000000000001,
+        "geo_confidence": 0.538748023761179,
+        "error_radius_m": 1.9296302719174565
+      }
+    },
+    {
+      "id": "heading90_rotates_north_to_east",
+      "api": "project_foot_point",
+      "description": "heading=90도 → 동일 pitch/alt에서 north 성분이 east 로 회전.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 50.0,
+          "heading_deg": 90.0,
+          "gimbal_pitch_deg": -45.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.00056615081736,
+        "east_m": 50.00000000000001,
+        "north_m": 3.0616169978683834e-15,
+        "geo_confidence": 0.538748023761179,
+        "error_radius_m": 1.9296302719174565
+      }
+    },
+    {
+      "id": "right_edge_half_hfov",
+      "api": "project_foot_point",
+      "description": "우측 끝 픽셀(u=W) → east_m ≈ altitude·tan(hfov/2) (기하 검산).",
+      "input": {
+        "u_px": 1920.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.00101952897127,
+        "east_m": 90.040404429784,
+        "north_m": 6.123233995736766e-15,
+        "geo_confidence": 0.5713551936236954,
+        "error_radius_m": 2.7161306548537163
+      }
+    },
+    {
+      "id": "missing_fov_degrades_confidence",
+      "api": "project_foot_point",
+      "description": "camera_fov_deg/zoom 결측 + PARTIAL quality + non-RTK → confidence 강등(정직성 P7).",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 50.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -45.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": null,
+          "zoom_factor": null,
+          "rtk_fixed": false,
+          "gnss_accuracy_m": 5.0,
+          "source_quality": "partial"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.50044915764206,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 50.00000000000001,
+        "geo_confidence": 0.09428090415820631,
+        "error_radius_m": 6.059164380201303
+      }
+    },
+    {
+      "id": "near_horizontal_gimbal_low_confidence",
+      "api": "project_foot_point",
+      "description": "pitch=-2도(거의 수평) → 거리 폭발 + confidence/오차반경 저하(외삽 방지 경계).",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -2.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.52572438400396,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 2863.6253282915604,
+        "geo_confidence": 0.0020000000000000005,
+        "error_radius_m": 80.25880822467293
+      }
+    },
+    {
+      "id": "above_horizon_rejected",
+      "api": "project_foot_point",
+      "description": "pitch=+5도(위를 봄) → 지면 비교차, available=False reason=horizon (외삽 금지, INV-023).",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": 5.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": false,
+        "reason": "horizon",
+        "lat": null,
+        "lon": null,
+        "east_m": null,
+        "north_m": null,
+        "geo_confidence": 0.0,
+        "error_radius_m": null
+      }
+    },
+    {
+      "id": "no_telemetry_geo_capable_false",
+      "api": "project_foot_point",
+      "description": "geo_capable 필수 필드 결측(위경도/고도/heading/pitch 전부 None) → 즉시 거부.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": null,
+          "drone_lon": null,
+          "altitude_msl_m": null,
+          "altitude_rel_m": null,
+          "heading_deg": null,
+          "gimbal_pitch_deg": null,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": null,
+          "zoom_factor": null,
+          "rtk_fixed": false,
+          "gnss_accuracy_m": null,
+          "source_quality": "unavailable"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": false,
+        "reason": "geo_unavailable_telemetry",
+        "lat": null,
+        "lon": null,
+        "east_m": null,
+        "north_m": null,
+        "geo_confidence": 0.0,
+        "error_radius_m": null
+      }
+    },
+    {
+      "id": "altitude_zero_rejected",
+      "api": "project_foot_point",
+      "description": "altitude_rel_m=0(비정상) → G2 게이트에서 reason=altitude 로 거부(추측 금지).",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 0.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": false,
+        "reason": "altitude",
+        "lat": null,
+        "lon": null,
+        "east_m": null,
+        "north_m": null,
+        "geo_confidence": 0.0,
+        "error_radius_m": null
+      }
+    },
+    {
+      "id": "altitude_negative_rejected",
+      "api": "project_foot_point",
+      "description": "altitude_rel_m<0(비정상 값) → reason=altitude 로 거부.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": -5.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": false,
+        "reason": "altitude",
+        "lat": null,
+        "lon": null,
+        "east_m": null,
+        "north_m": null,
+        "geo_confidence": 0.0,
+        "error_radius_m": null
+      }
+    },
+    {
+      "id": "gimbal_yaw_overrides_heading",
+      "api": "project_foot_point",
+      "description": "gimbal_yaw_deg 가 있으면 heading 과 달라도 gimbal_yaw 기준으로 계산(이중적용 방지).",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 50.0,
+          "heading_deg": 200.0,
+          "gimbal_pitch_deg": -45.0,
+          "gimbal_yaw_deg": 90.0,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.00056615081736,
+        "east_m": 50.00000000000001,
+        "north_m": 3.0616169978683834e-15,
+        "geo_confidence": 0.6734350297014737,
+        "error_radius_m": 1.9296302719174565
+      }
+    },
+    {
+      "id": "roll_nonzero_rotates_ray",
+      "api": "project_foot_point",
+      "description": "gimbal_roll_deg=10도 → boresight 둘레 회전이 지면교차점을 옆으로 튼다.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 80.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -60.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": 10.0,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.50041491405688,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 46.18802153517007,
+        "geo_confidence": 0.6814626128139846,
+        "error_radius_m": 1.6749617751786265
+      }
+    },
+    {
+      "id": "zoom_2x_narrows_fov_reduces_offset",
+      "api": "project_foot_point",
+      "description": "zoom_factor=2.0 → 실효 FOV 축소로 동일 픽셀 오프셋의 지면 변위가 줄어듦.",
+      "input": {
+        "u_px": 1440.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 2.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.00025488224281,
+        "east_m": 22.510101107445994,
+        "north_m": 6.123233995736766e-15,
+        "geo_confidence": 0.7784985736042905,
+        "error_radius_m": 1.1865750538376216
+      }
+    },
+    {
+      "id": "non_rtk_gnss_accuracy_degrades_confidence_and_error",
+      "api": "project_foot_point",
+      "description": "rtk_fixed=False + gnss_accuracy_m=8.0 → c_gnss 저하로 confidence 낮아지고 error_radius 커짐.",
+      "input": {
+        "u_px": 960.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": false,
+          "gnss_accuracy_m": 8.0,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": false
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.0,
+        "east_m": 0.0,
+        "north_m": 6.123233995736766e-15,
+        "geo_confidence": 0.24,
+        "error_radius_m": 8.06225774829855
+      }
+    },
+    {
+      "id": "diagonal_fov_focal_differs_from_horizontal",
+      "api": "project_foot_point",
+      "description": "fov_is_diagonal=True → focal 산출 경로가 달라 동일 입력에도 east_m/confidence 가 달라짐.",
+      "input": {
+        "u_px": 1920.0,
+        "v_px": 540.0,
+        "width": 1920,
+        "height": 1080,
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "default_fov_deg": 84.0,
+        "fov_is_diagonal": true
+      },
+      "output": {
+        "available": true,
+        "reason": "ok",
+        "lat": 37.5,
+        "lon": 127.00088859651075,
+        "east_m": 78.47701385380063,
+        "north_m": 6.123233995736766e-15,
+        "geo_confidence": 0.6105426578081217,
+        "error_radius_m": 2.418042730552697
+      }
+    },
+    {
+      "id": "zone_inside_large_hazard_zone",
+      "api": "LiveGeoProjector.project",
+      "description": "투영점이 넓은 위험구역(경계까지 멀다) 내부 → INSIDE (경계까지 거리 >= 오차반경).",
+      "input": {
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "zones": [
+          {
+            "zone_id": "hz_in",
+            "zone_type": "restricted_zone",
+            "polygon": [
+              [
+                37.4,
+                126.9
+              ],
+              [
+                37.4,
+                127.1
+              ],
+              [
+                37.6,
+                127.1
+              ],
+              [
+                37.6,
+                126.9
+              ]
+            ]
+          }
+        ],
+        "detection_bbox_xyxy": [
+          955.0,
+          535.0,
+          965.0,
+          545.0
+        ],
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": {
+        "lat": 37.499995787256694,
+        "lon": 127.0,
+        "geo_confidence": 0.7999903235043997,
+        "position_error_radius_m": 1.0050734927606018,
+        "zone_decision": "inside",
+        "zone_id": "hz_in"
+      }
+    },
+    {
+      "id": "zone_outside_far_hazard_zone",
+      "api": "LiveGeoProjector.project",
+      "description": "투영점이 어느 구역과도 무관(수백m 이상 이격) → OUTSIDE.",
+      "input": {
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "zones": [
+          {
+            "zone_id": "hz_out",
+            "zone_type": "restricted_zone",
+            "polygon": [
+              [
+                38.0,
+                128.0
+              ],
+              [
+                38.0,
+                128.01
+              ],
+              [
+                38.01,
+                128.01
+              ],
+              [
+                38.01,
+                128.0
+              ]
+            ]
+          }
+        ],
+        "detection_bbox_xyxy": [
+          955.0,
+          535.0,
+          965.0,
+          545.0
+        ],
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": {
+        "lat": 37.499995787256694,
+        "lon": 127.0,
+        "geo_confidence": 0.7999903235043997,
+        "position_error_radius_m": 1.0050734927606018,
+        "zone_decision": "outside",
+        "zone_id": null
+      }
+    },
+    {
+      "id": "zone_near_boundary_within_error_radius",
+      "api": "LiveGeoProjector.project",
+      "description": "위험구역 경계가 오차반경(~1m) 이내로 가까운 내부점 → INSIDE 대신 NEAR_BOUNDARY(의심 유지).",
+      "input": {
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": true,
+          "gnss_accuracy_m": null,
+          "source_quality": "full"
+        },
+        "zones": [
+          {
+            "zone_id": "hz_nb",
+            "zone_type": "restricted_zone",
+            "polygon": [
+              [
+                37.49999550844412,
+                126.99
+              ],
+              [
+                37.49999550844412,
+                127.01
+              ],
+              [
+                37.51,
+                127.01
+              ],
+              [
+                37.51,
+                126.99
+              ]
+            ]
+          }
+        ],
+        "detection_bbox_xyxy": [
+          955.0,
+          535.0,
+          965.0,
+          545.0
+        ],
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": {
+        "lat": 37.499995787256694,
+        "lon": 127.0,
+        "geo_confidence": 0.7999903235043997,
+        "position_error_radius_m": 1.0050734927606018,
+        "zone_decision": "near_boundary",
+        "zone_id": "hz_nb"
+      }
+    },
+    {
+      "id": "zone_geo_unavailable_no_telemetry",
+      "api": "LiveGeoProjector.project",
+      "description": "telemetry=None → project() 최상단에서 즉시 GEO_UNAVAILABLE.",
+      "input": {
+        "telemetry": null,
+        "zones": [],
+        "detection_bbox_xyxy": [
+          955.0,
+          535.0,
+          965.0,
+          545.0
+        ],
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": {
+        "lat": null,
+        "lon": null,
+        "geo_confidence": 0.0,
+        "position_error_radius_m": null,
+        "zone_decision": "geo_unavailable",
+        "zone_id": null
+      }
+    },
+    {
+      "id": "zone_geo_low_confidence_degraded_quality",
+      "api": "LiveGeoProjector.project",
+      "description": "source_quality=DEGRADED + non-RTK → confidence<tau_mid(0.35) → GEO_LOW_CONFIDENCE(구역판정 보류).",
+      "input": {
+        "telemetry": {
+          "timestamp_utc": 0.0,
+          "drone_lat": 37.5,
+          "drone_lon": 127.0,
+          "altitude_msl_m": null,
+          "altitude_rel_m": 100.0,
+          "heading_deg": 0.0,
+          "gimbal_pitch_deg": -90.0,
+          "gimbal_yaw_deg": null,
+          "gimbal_roll_deg": null,
+          "camera_fov_deg": 84.0,
+          "zoom_factor": 1.0,
+          "rtk_fixed": false,
+          "gnss_accuracy_m": 5.0,
+          "source_quality": "degraded"
+        },
+        "zones": [],
+        "detection_bbox_xyxy": [
+          955.0,
+          535.0,
+          965.0,
+          545.0
+        ],
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": {
+        "lat": 37.499995787256694,
+        "lon": 127.0,
+        "geo_confidence": 0.15999806470087996,
+        "position_error_radius_m": 5.099053702890884,
+        "zone_decision": "geo_low_confidence",
+        "zone_id": null
+      }
+    }
+  ]
+}

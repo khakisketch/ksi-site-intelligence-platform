@@ -1,0 +1,1215 @@
+{
+  "source": {
+    "repo": "ksi-platform",
+    "commit": "030ebd5a",
+    "file": "ksi-safety/src/lib/zone-intrusion.ts"
+  },
+  "extraction": {
+    "script": "tools/vector-extraction/capture_platform_zone.mts",
+    "runtime": {
+      "language": "node",
+      "version": "v22.22.3",
+      "runner": "npx -y tsx --tsconfig <ksi-safety>/tsconfig.json (tsx v4.23.1\nnode v22.22.3) — 네트워크 fetch 1회, node_modules 불필요. zone-intrusion.ts 체인은 순수 TS/JS(외부 npm 런타임 의존 없음). package.json/node_modules 미변경(스크래치패드 실행)."
+    }
+  },
+  "tolerance": {
+    "abs": 0.000001,
+    "rel": 1e-9,
+    "rationale": "이 벡터는 두 연산군을 섞는다. (1) WGS84 좌표 변환(enuToLatLng/projectFootToGps 의 위경도 출력, 상수 나눗셈 1건뿐) → abs 1e-9 deg. (2) 등장방형 평면 근사 거리(m 단위: distanceToGpsPolygonM/gpsDistanceM/distanceToGpsZoneM, cos(lat) 보정 1건 포함하는 핀홀류 연산) → abs 1e-4 m. (3) inside/inBuffer/basis 등 판정 결과(불리언/문자열) → 정확히 일치(수치 tolerance 비적용). materializeCircleGpsPolygon 처럼 다각형 좌표를 n개 도출하는 결과는 (1)과 동일 abs 1e-9 deg 를 적용한다. 최상위 abs/rel 은 거리(m) 계열 기본값이고 세부는 tolerance.by_field 를 본다.",
+    "by_field": {
+      "latitude": {
+        "abs": 1e-9,
+        "rel": 0
+      },
+      "longitude": {
+        "abs": 1e-9,
+        "rel": 0
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "enu_to_latlng_basic",
+      "api": "enuToLatLng",
+      "description": "원점(37.5,127.0)에서 동10m·북20m 오프셋 → 절대 위경도로 변환.",
+      "input": {
+        "originLat": 37.5,
+        "originLng": 127,
+        "eastM": 10,
+        "northM": 20
+      },
+      "output": {
+        "latitude": 37.50017966305683,
+        "longitude": 127.00011323016348
+      }
+    },
+    {
+      "id": "point_in_gps_polygon_inside",
+      "api": "pointInGpsPolygon",
+      "description": "정사각 폴리곤(37.499~37.501, 126.999~127.001) 중심점 → 내부(true).",
+      "input": {
+        "point": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "polygon": [
+          {
+            "latitude": 37.499,
+            "longitude": 126.999
+          },
+          {
+            "latitude": 37.499,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 126.999
+          }
+        ]
+      },
+      "output": true
+    },
+    {
+      "id": "point_in_gps_polygon_outside",
+      "api": "pointInGpsPolygon",
+      "description": "같은 폴리곤 밖의 점(37.6,127.0) → 외부(false).",
+      "input": {
+        "point": {
+          "latitude": 37.6,
+          "longitude": 127
+        },
+        "polygon": [
+          {
+            "latitude": 37.499,
+            "longitude": 126.999
+          },
+          {
+            "latitude": 37.499,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 126.999
+          }
+        ]
+      },
+      "output": false
+    },
+    {
+      "id": "distance_to_gps_polygon_inside_is_zero",
+      "api": "distanceToGpsPolygonM",
+      "description": "폴리곤 내부점 → 경계거리 0(내부는 항상 0).",
+      "input": {
+        "point": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "polygon": [
+          {
+            "latitude": 37.499,
+            "longitude": 126.999
+          },
+          {
+            "latitude": 37.499,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 126.999
+          }
+        ]
+      },
+      "output": 0
+    },
+    {
+      "id": "distance_to_gps_polygon_outside_nonzero",
+      "api": "distanceToGpsPolygonM",
+      "description": "북쪽 경계(37.501)에서 0.009도 더 북쪽(37.51) → 약 1002m.",
+      "input": {
+        "point": {
+          "latitude": 37.51,
+          "longitude": 127
+        },
+        "polygon": [
+          {
+            "latitude": 37.499,
+            "longitude": 126.999
+          },
+          {
+            "latitude": 37.499,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 127.001
+          },
+          {
+            "latitude": 37.501,
+            "longitude": 126.999
+          }
+        ]
+      },
+      "output": 1001.8754171395001
+    },
+    {
+      "id": "gps_distance_m_basic",
+      "api": "gpsDistanceM",
+      "description": "위도 0.001도 차이(같은 경도) → 약 111.3m(등장방형 근사).",
+      "input": {
+        "a": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "b": {
+          "latitude": 37.501,
+          "longitude": 127
+        }
+      },
+      "output": 111.31949079301413
+    },
+    {
+      "id": "materialize_circle_gps_polygon_octagon",
+      "api": "materializeCircleGpsPolygon",
+      "description": "중심(37.5,127.0) 반경20m를 8각형으로 materialize(원형 구역의 폴리곤 근사 렌더용).",
+      "input": {
+        "center": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "radiusM": 20,
+        "segments": 8
+      },
+      "output": [
+        {
+          "latitude": 37.5,
+          "longitude": 127.00022646032694
+        },
+        {
+          "latitude": 37.50012704096581,
+          "longitude": 127.00016013163285
+        },
+        {
+          "latitude": 37.50017966305683,
+          "longitude": 127
+        },
+        {
+          "latitude": 37.50012704096581,
+          "longitude": 126.99983986836715
+        },
+        {
+          "latitude": 37.5,
+          "longitude": 126.99977353967306
+        },
+        {
+          "latitude": 37.49987295903419,
+          "longitude": 126.99983986836715
+        },
+        {
+          "latitude": 37.49982033694317,
+          "longitude": 127
+        },
+        {
+          "latitude": 37.49987295903419,
+          "longitude": 127.00016013163285
+        }
+      ]
+    },
+    {
+      "id": "zone_circle_valid_shape",
+      "api": "zoneCircle",
+      "description": "projectionMeta.shape='circle' + center/radiusM 유효 → {center,radiusM} 반환.",
+      "input": {
+        "zone": {
+          "id": "circ_valid",
+          "gpsPolygon": [],
+          "projectionMeta": {
+            "shape": "circle",
+            "center": {
+              "latitude": 37.5,
+              "longitude": 127
+            },
+            "radiusM": 20
+          }
+        }
+      },
+      "output": {
+        "center": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "radiusM": 20
+      }
+    },
+    {
+      "id": "zone_circle_invalid_missing_center_falls_back_to_polygon",
+      "api": "zoneCircle",
+      "description": "shape='circle' 이지만 center 결손(런타임 JSONB 왕복 방어) → null(폴리곤 판정 폴백).",
+      "input": {
+        "zone": {
+          "id": "circ_invalid",
+          "gpsPolygon": [
+            {
+              "latitude": 37.499,
+              "longitude": 126.999
+            },
+            {
+              "latitude": 37.499,
+              "longitude": 127.001
+            },
+            {
+              "latitude": 37.501,
+              "longitude": 127.001
+            },
+            {
+              "latitude": 37.501,
+              "longitude": 126.999
+            }
+          ],
+          "projectionMeta": {
+            "shape": "circle",
+            "radiusM": 20
+          }
+        }
+      },
+      "output": null
+    },
+    {
+      "id": "distance_to_gps_zone_m_circle_inside_is_zero",
+      "api": "distanceToGpsZoneM",
+      "description": "원형 구역 중심점 → 정확한 원 거리 경로로 0(내부).",
+      "input": {
+        "point": {
+          "latitude": 37.5,
+          "longitude": 127
+        },
+        "zone": {
+          "id": "circ1",
+          "gpsPolygon": [],
+          "projectionMeta": {
+            "shape": "circle",
+            "center": {
+              "latitude": 37.5,
+              "longitude": 127
+            },
+            "radiusM": 20
+          }
+        }
+      },
+      "output": 0
+    },
+    {
+      "id": "point_in_pixel_polygon_true",
+      "api": "pointInPixelPolygon",
+      "description": "픽셀 폴리곤(0,0)-(200,0)-(200,200)-(0,200) 안의 점(100,100) → true.",
+      "input": {
+        "point": {
+          "x": 100,
+          "y": 100
+        },
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 200,
+            "y": 0
+          },
+          {
+            "x": 200,
+            "y": 200
+          },
+          {
+            "x": 0,
+            "y": 200
+          }
+        ]
+      },
+      "output": true
+    },
+    {
+      "id": "scale_pixel_polygon_to_frame_upscale_2x",
+      "api": "scalePixelPolygonToFrame",
+      "description": "베이스라인 960x540 폴리곤 → 현재 프레임 1920x1080(2배) 로 좌표 스케일 보정.",
+      "input": {
+        "polygon": [
+          {
+            "x": 100,
+            "y": 100
+          },
+          {
+            "x": 200,
+            "y": 200
+          }
+        ],
+        "projectionMeta": {
+          "refWidth": 960,
+          "refHeight": 540
+        },
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": [
+        {
+          "x": 200,
+          "y": 200
+        },
+        {
+          "x": 400,
+          "y": 400
+        }
+      ]
+    },
+    {
+      "id": "project_foot_to_gps_nadir",
+      "api": "projectFootToGps",
+      "description": "정수직 nadir 자세 + 화면 중앙 발점 → 드론 GPS 위치 그대로(직하방).",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "footXPx": 960,
+        "footYPx": 540,
+        "groundElevationM": 0
+      },
+      "output": {
+        "latitude": 37.5,
+        "longitude": 127
+      }
+    },
+    {
+      "id": "intrusion_inside_polygon_zone",
+      "api": "evaluateZoneIntrusion",
+      "description": "INSIDE(1/2, 폴리곤): 발점이 폴리곤 내부 → 이벤트 반환(inBuffer 없음).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "poly1",
+            "name": "작업구역",
+            "gpsPolygon": [
+              {
+                "latitude": 37.499,
+                "longitude": 126.999
+              },
+              {
+                "latitude": 37.499,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 126.999
+              }
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "zoneId": "poly1",
+          "zoneName": "작업구역",
+          "foot": {
+            "latitude": 37.499996068705414,
+            "longitude": 127
+          },
+          "basis": "ground_projection"
+        }
+      ]
+    },
+    {
+      "id": "intrusion_inside_circle_zone",
+      "api": "evaluateZoneIntrusion",
+      "description": "INSIDE(2/2, 원형): 발점이 원 반경 내부 → 정확한 원 거리 경로로 이벤트 반환.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "circ1",
+            "gpsPolygon": [],
+            "projectionMeta": {
+              "shape": "circle",
+              "center": {
+                "latitude": 37.5,
+                "longitude": 127
+              },
+              "radiusM": 20
+            }
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "zoneId": "circ1",
+          "foot": {
+            "latitude": 37.499996068705414,
+            "longitude": 127
+          },
+          "basis": "ground_projection"
+        }
+      ]
+    },
+    {
+      "id": "intrusion_outside_far_polygon_zone",
+      "api": "evaluateZoneIntrusion",
+      "description": "OUTSIDE(1/2, 폴리곤): 투영은 신뢰 가능하나 구역이 수십km 밖 → 빈 배열.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "polyfar",
+            "gpsPolygon": [
+              {
+                "latitude": 37.9,
+                "longitude": 128
+              },
+              {
+                "latitude": 37.9,
+                "longitude": 128.001
+              },
+              {
+                "latitude": 37.901,
+                "longitude": 128.001
+              },
+              {
+                "latitude": 37.901,
+                "longitude": 128
+              }
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": []
+    },
+    {
+      "id": "intrusion_outside_far_circle_zone",
+      "api": "evaluateZoneIntrusion",
+      "description": "OUTSIDE(2/2, 원형): 투영 신뢰 가능하나 원형 구역이 멀리 있음 → 빈 배열.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "circfar",
+            "gpsPolygon": [],
+            "projectionMeta": {
+              "shape": "circle",
+              "center": {
+                "latitude": 37.9,
+                "longitude": 128
+              },
+              "radiusM": 20
+            }
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": []
+    },
+    {
+      "id": "intrusion_near_boundary_polygon_buffer",
+      "api": "evaluateZoneIntrusion",
+      "description": "NEAR_BOUNDARY(1/2, 폴리곤): 발점이 폴리곤 밖이지만 경계 +bufferM(10m) 이내 → 이벤트 반환 + inBuffer=true.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "nb_poly",
+            "gpsPolygon": [
+              {
+                "latitude": 37.500044915558746,
+                "longitude": 126.999
+              },
+              {
+                "latitude": 37.500044915558746,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.52,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.52,
+                "longitude": 126.999
+              }
+            ],
+            "projectionMeta": {
+              "bufferM": 10
+            }
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "zoneId": "nb_poly",
+          "foot": {
+            "latitude": 37.499996068705414,
+            "longitude": 127
+          },
+          "basis": "ground_projection",
+          "inBuffer": true
+        }
+      ]
+    },
+    {
+      "id": "intrusion_near_boundary_circle_buffer",
+      "api": "evaluateZoneIntrusion",
+      "description": "NEAR_BOUNDARY(2/2, 원형): 발점-중심 거리(~8m) > radiusM(3, 밖) 이지만 거리-radiusM(~5m) <= bufferM(6) → inBuffer=true.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "nb_circ",
+            "gpsPolygon": [],
+            "projectionMeta": {
+              "shape": "circle",
+              "center": {
+                "latitude": 37.500071864894,
+                "longitude": 127
+              },
+              "radiusM": 3,
+              "bufferM": 6
+            }
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "zoneId": "nb_circ",
+          "foot": {
+            "latitude": 37.499996068705414,
+            "longitude": 127
+          },
+          "basis": "ground_projection",
+          "inBuffer": true
+        }
+      ]
+    },
+    {
+      "id": "intrusion_unknown_telemetry_too_old",
+      "api": "evaluateZoneIntrusion",
+      "description": "UNKNOWN(1/2): telemetrySkewMs=5000(reject 등급) → GPS 투영 자체를 못 믿어 구역(gps-only geometry) 평가 불가 → 빈 배열(OUTSIDE 아니라 '알 수 없음', 안전 정직성 정책상 2D 대체 없이 침묵).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "poly1",
+            "name": "작업구역",
+            "gpsPolygon": [
+              {
+                "latitude": 37.499,
+                "longitude": 126.999
+              },
+              {
+                "latitude": 37.499,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 126.999
+              }
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 5000
+      },
+      "output": []
+    },
+    {
+      "id": "intrusion_unknown_gimbal_too_horizontal",
+      "api": "evaluateZoneIntrusion",
+      "description": "UNKNOWN(2/2): pitchDeg=-10(minPitchDeg=-45 보다 수평) → projectionIsReliable=false, gps-only 구역은 평가 불가 → 빈 배열(구역 밖이 아니라 판단 불가).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "poly1",
+            "name": "작업구역",
+            "gpsPolygon": [
+              {
+                "latitude": 37.499,
+                "longitude": 126.999
+              },
+              {
+                "latitude": 37.499,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 127.001
+              },
+              {
+                "latitude": 37.501,
+                "longitude": 126.999
+              }
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -10,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": []
+    },
+    {
+      "id": "intrusion_pixel_polygon_fallback_when_gps_unreliable",
+      "api": "evaluateZoneIntrusion",
+      "description": "GPS 투영 불신(pitch 수평)이어도 구역에 pixelPolygon(하위호환 image-space)이 있으면 2D 발점 픽셀로 침입 판정(basis=pixel_polygon) — GPS 구역과 달리 침묵하지 않는다.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "zones": [
+          {
+            "id": "pix1",
+            "gpsPolygon": [],
+            "pixelPolygon": [
+              {
+                "x": 900,
+                "y": 480
+              },
+              {
+                "x": 1100,
+                "y": 480
+              },
+              {
+                "x": 1100,
+                "y": 600
+              },
+              {
+                "x": 900,
+                "y": 600
+              }
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -10,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0,
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        }
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "zoneId": "pix1",
+          "foot": {
+            "x": 960,
+            "y": 560
+          },
+          "basis": "pixel_polygon"
+        }
+      ]
+    }
+  ]
+}

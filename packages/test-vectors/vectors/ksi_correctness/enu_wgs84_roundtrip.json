@@ -1,0 +1,78 @@
+{
+  "derivation": "analytic",
+  "derivation_basis": "등장방형(equirectangular) 평면근사 ENU↔WGS84 변환은 순수 나눗셈/곱셈으로 서로의 역함수다: forward는 lat=lat0+degrees(north/R), lon=lon0+degrees(east/(R·cos(lat0))); inverse는 east=R·radians(lon-lon0)·cos(lat0), north=R·radians(lat-lat0). forward의 north/R 를 inverse에 대입하면 radians(degrees(x))=x 항등식(단위 왕복)에 의해 정확히 원래 east/north 가 복원된다 — 이는 특정 구현을 실행해서 관찰하는 사실이 아니라 두 함수가 대수적으로 서로의 역(inverse)이라는 데서 나오는 analytic 필연이다. 남는 오차는 IEEE754 double 의 degrees/radians 왕복에서 생기는 부동소수 반올림뿐(수백 m 스케일에서 1e-9m 미만).",
+  "extraction": {
+    "script": "scratchpad 1회성 계산(비영속, repo에 커밋되지 않음) — Python 표준 math 모듈(radians/degrees/cos)만으로 forward+inverse 를 둘 다 평가해 왕복오차를 직접 측정했다(특정 참고 구현을 호출하지 않음 — Scout projection.py/platform zone-intrusion.ts 의 동일 공식과는 독립적으로 도출).",
+    "runtime": {
+      "language": "python",
+      "version": "3.12.13",
+      "runner": "scratchpad venv(.venv-scout) 의 python3.12, 표준 math 모듈만 사용(외부 의존 없음)."
+    }
+  },
+  "tolerance": {
+    "abs": 1e-9,
+    "rel": 1e-9,
+    "rationale": "forward→inverse 왕복은 나눗셈→degrees→radians→곱셈으로 이어지는 짧은 연쇄라 오차원이 IEEE754 double epsilon(~2.2e-16) 수준으로 매 스텝 하나씩만 누적된다. 실측 왕복오차가 1e-9~1e-10m 수준으로 나와(아래 각 케이스의 round_trip_error_m 참고) abs 1e-6 m 를 왕복오차 필드의 tolerance로 쓰면 충분히 여유(3~4 자릿수)가 있다. lat/lon(도) 출력 자체는 WGS84 좌표 규약상 abs 1e-9 deg 를 적용한다(다른 legacy_compat geo 벡터와 동일 근거: 1e-9도≈0.0001m)."
+    ,
+    "by_field": {
+      "lat": { "abs": 1e-9, "rel": 0 },
+      "lon": { "abs": 1e-9, "rel": 0 },
+      "round_trip_error_east_m": { "abs": 1e-6, "rel": 0 },
+      "round_trip_error_north_m": { "abs": 1e-6, "rel": 0 }
+    }
+  },
+  "cases": [
+    {
+      "id": "roundtrip_pure_north_offset_seoul_latitude",
+      "description": "서울 인근 위도(37.5)에서 순수 북쪽 100m 오프셋 → lon 불변(east=0), lat 만 이동. forward 후 inverse 로 되돌리면 원래 east=0/north=100 이 복원되어야 한다.",
+      "input": { "origin_lat": 37.5, "origin_lon": 127.0, "east_m": 0.0, "north_m": 100.0 },
+      "output": {
+        "lat": 37.50089831528412,
+        "lon": 127.0,
+        "round_trip_east_m": 0.0,
+        "round_trip_north_m": 99.99999999985421,
+        "round_trip_error_east_m": 0.0,
+        "round_trip_error_north_m": 1.4578915852325736e-10
+      }
+    },
+    {
+      "id": "roundtrip_pure_east_offset_seoul_latitude",
+      "description": "같은 원점에서 순수 동쪽 100m 오프셋 → lat 불변(north=0), lon 만 이동(cos(37.5°) 보정 확인용).",
+      "input": { "origin_lat": 37.5, "origin_lon": 127.0, "east_m": 100.0, "north_m": 0.0 },
+      "output": {
+        "lat": 37.5,
+        "lon": 127.00113230163471,
+        "round_trip_east_m": 99.99999999960767,
+        "round_trip_north_m": 0.0,
+        "round_trip_error_east_m": 3.923332769772969e-10,
+        "round_trip_error_north_m": 0.0
+      }
+    },
+    {
+      "id": "roundtrip_high_latitude_diagonal_offset",
+      "description": "고위도(60도, 오슬로/헬싱키 위도대) 원점에서 대각 오프셋(east=50,north=-30) → cos(60°)=0.5 로 경도축 스케일이 위도축의 절반이라 lon 보정이 더 크게 걸리는지 확인.",
+      "input": { "origin_lat": 60.0, "origin_lon": 10.0, "east_m": 50.0, "north_m": -30.0 },
+      "output": {
+        "lat": 59.99973050541477,
+        "lon": 10.00089831528412,
+        "round_trip_east_m": 50.00000000002599,
+        "round_trip_north_m": -29.999999999639876,
+        "round_trip_error_east_m": 2.5991653274104465e-11,
+        "round_trip_error_north_m": 3.601243747652916e-10
+      }
+    },
+    {
+      "id": "roundtrip_southern_hemisphere_negative_east_offset",
+      "description": "남반구(-33.9도, 시드니 위도대) 원점 + 음수 east(서쪽) 오프셋 → 음수 부호·남반구 위도(cos 는 여전히 양수)가 왕복 오차에 영향 없음을 확인.",
+      "input": { "origin_lat": -33.9, "origin_lon": 151.2, "east_m": -200.0, "north_m": 75.0 },
+      "output": {
+        "lat": -33.899326263536906,
+        "lon": 151.19783541689623,
+        "round_trip_east_m": -199.99999999935395,
+        "round_trip_north_m": 75.00000000028615,
+        "round_trip_error_east_m": 6.460538770625135e-10,
+        "round_trip_error_north_m": 2.8614977054530755e-10
+      }
+    }
+  ]
+}

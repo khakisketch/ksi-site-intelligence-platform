@@ -1,0 +1,99 @@
+{
+  "derivation": "analytic",
+  "derivation_basis": "축정렬 사각형(위경도 min/max box)에서 점의 내부/외부는 두 개의 구간 포함 검사만으로 결정된다 — point-in-polygon 알고리즘(ray-casting 등) 없이도 'min_lat < lat < max_lat AND min_lon < lon < max_lon' 부등식만으로 자명하게 참/거짓이 정해진다. 경계까지 거리도 내부/경계점이면 4개 변까지의 거리 중 최소값(단순 뺄셈 4회+min), 외부점이면 각 축 초과분의 유클리드 합(피타고라스)일 뿐이라 손으로 계산 가능하다. 삼각형 케이스는 두 변이 좌표축과 나란한 직각삼각형(꼭짓점 (0,0)/(0,4)/(4,0))을 써서 '빗변 아래(x+y<4)면 내부'라는 자명한 선형부등식으로 판정한다(구현체의 point-in-polygon 알고리즘에 대한 독립적 오라클). 경계점(정점·변 위)은 내부/외부 이분법이 구현별 관례(포함 vs 배제)에 따라 갈릴 수 있어 이분법을 단정하지 않고, 모든 구현이 동의해야 하는 유일하게 모호하지 않은 사실인 '경계까지 거리=0'만 단정한다.",
+  "extraction": {
+    "script": "scratchpad 1회성 계산(비영속, repo에 커밋되지 않음) — Python 표준 math.hypot/min/부등식만 사용, 특정 point-in-polygon 라이브러리(shapely 등)를 호출하지 않았다.",
+    "runtime": {
+      "language": "python",
+      "version": "3.12.13",
+      "runner": "scratchpad venv(.venv-scout) 의 python3.12, 표준 라이브러리만 사용(외부 의존 없음)."
+    }
+  },
+  "tolerance": {
+    "abs": 1e-9,
+    "rel": 0,
+    "rationale": "여기 수치는 뺄셈/부등식/hypot 1회뿐인 초등 산술이라 오차가 축적될 계산 단계가 없다. 위경도 좌표 자체는 상수로 주어지므로 abs 1e-9(도 단위)로 충분히 보수적이다. inside(불리언)/on_boundary_convention_note(문자열)는 수치가 아니라 정확히 일치해야 한다."
+  },
+  "cases": [
+    {
+      "id": "rect_inside_clearly_center",
+      "description": "사각형(위경도 37.499~37.501, 126.999~127.001) 중심점 → 명백히 내부, 경계까지 최소거리=0.001도(4변 모두 등거리인 중심).",
+      "input": {
+        "point": { "lat": 37.5, "lon": 127.0 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": { "inside": true, "distance_to_boundary_deg": 0.0009999999999976694 }
+    },
+    {
+      "id": "rect_outside_clearly_far",
+      "description": "사각형 밖 대각선 방향으로 명백히 먼 점(위경도 각 1도 이상 초과) → 명백히 외부, 최근접 꼭짓점(37.501,127.001)까지 유클리드 거리(피타고라스).",
+      "input": {
+        "point": { "lat": 38.0, "lon": 128.0 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": { "inside": false, "distance_to_boundary_deg": 1.1166924375135674 }
+    },
+    {
+      "id": "rect_boundary_edge_midpoint_distance_is_zero",
+      "description": "남쪽 변(lat=37.499) 중앙점 → 정확히 경계 위. 내부/외부 이분법은 구현별 관례(엄격부등식 채택 시 false)에 따라 갈릴 수 있으나, '경계까지 거리=0'은 모든 관례에서 동일하게 참인 유일한 analytic 사실.",
+      "input": {
+        "point": { "lat": 37.499, "lon": 127.0 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": {
+        "distance_to_boundary_deg": 0.0,
+        "inside_strict_inequality_convention": false,
+        "on_boundary_convention_note": "엄격부등식(min<lat<max) 관례에서는 false. 포함 관례(min<=lat<=max)를 쓰는 구현은 true를 반환할 수 있다 — distance=0 만이 관례 무관 불변 사실이다."
+      }
+    },
+    {
+      "id": "rect_boundary_vertex_distance_is_zero",
+      "description": "남서쪽 꼭짓점(37.499,126.999) → 두 변이 만나는 정점이라 경계까지 거리=0이 자명(변 위의 특수점).",
+      "input": {
+        "point": { "lat": 37.499, "lon": 126.999 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": {
+        "distance_to_boundary_deg": 0.0,
+        "inside_strict_inequality_convention": false,
+        "on_boundary_convention_note": "정점은 두 변의 교점이라 ray-casting 알고리즘이 축 부동소수 비교 방식에 따라 내부/외부 판정이 갈릴 수 있는 대표적 degenerate case. distance=0 만 단정한다."
+      }
+    },
+    {
+      "id": "rect_near_boundary_inside_by_tiny_margin",
+      "description": "남쪽 변에서 1e-5도(~1.1m) 안쪽인 점 → 부등식이 여전히 성립(37.499 < 37.49901)하므로 관례와 무관하게 명백히 내부. 경계까지 거리=1e-5도.",
+      "input": {
+        "point": { "lat": 37.499010000000006, "lon": 127.0 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": { "inside": true, "distance_to_boundary_deg": 1.0000000003174137e-05 }
+    },
+    {
+      "id": "rect_near_boundary_outside_by_tiny_margin",
+      "description": "남쪽 변에서 1e-5도(~1.1m) 바깥인 점 → 부등식이 성립하지 않으므로(37.49899 < 37.499) 관례와 무관하게 명백히 외부. 경계까지 거리=1e-5도.",
+      "input": {
+        "point": { "lat": 37.49899, "lon": 127.0 },
+        "polygon_bbox": { "min_lat": 37.499, "max_lat": 37.501, "min_lon": 126.999, "max_lon": 127.001 }
+      },
+      "output": { "inside": false, "distance_to_boundary_deg": 1.0000000003174137e-05 }
+    },
+    {
+      "id": "triangle_inside_below_hypotenuse",
+      "description": "직각삼각형(꼭짓점 (lat,lon)=(0,0),(0,4),(4,0), 직각은 원점) 내부의 점(lat=1,lon=1) → x+y=2<4(빗변 아래) → 명백히 내부. 좌표축 정렬 직각삼각형의 자명한 선형부등식.",
+      "input": {
+        "point": { "lat": 1.0, "lon": 1.0 },
+        "triangle_vertices": [{ "lat": 0.0, "lon": 0.0 }, { "lat": 0.0, "lon": 4.0 }, { "lat": 4.0, "lon": 0.0 }]
+      },
+      "output": { "inside": true, "x_plus_y": 2.0, "hypotenuse_threshold": 4.0 }
+    },
+    {
+      "id": "triangle_outside_beyond_hypotenuse",
+      "description": "같은 삼각형 밖의 점(lat=3,lon=3) → x+y=6>4(빗변 밖) → 명백히 외부.",
+      "input": {
+        "point": { "lat": 3.0, "lon": 3.0 },
+        "triangle_vertices": [{ "lat": 0.0, "lon": 0.0 }, { "lat": 0.0, "lon": 4.0 }, { "lat": 4.0, "lon": 0.0 }]
+      },
+      "output": { "inside": false, "x_plus_y": 6.0, "hypotenuse_threshold": 4.0 }
+    }
+  ]
+}

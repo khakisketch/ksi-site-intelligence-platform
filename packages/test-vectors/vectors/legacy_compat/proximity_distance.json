@@ -1,0 +1,1057 @@
+{
+  "source": {
+    "repo": "ksi-platform",
+    "commit": "030ebd5a",
+    "file": "ksi-safety/src/lib/proximity-distance.ts"
+  },
+  "extraction": {
+    "script": "tools/vector-extraction/capture_platform_proximity.mts",
+    "runtime": {
+      "language": "node",
+      "version": "v22.22.3",
+      "runner": "npx -y tsx (tsx v4.23.1\nnode v22.22.3) — 네트워크 fetch 1회, node_modules 불필요. proximity-distance.ts→proximity.ts→safety-zone.ts 체인은 순수 TS/JS(외부 npm 런타임 의존 없음). package.json/node_modules 미변경(스크래치패드 실행)."
+    }
+  },
+  "tolerance": {
+    "abs": 0.000001,
+    "rel": 1e-9,
+    "rationale": "이 벡터는 삼각함수 기반 카메라 기저(cameraBasis: sin/cos/atan/normalize)로 만든 핀홀 광선-평면 교차다. ENU 결과([east_m, north_m], m) → abs 1e-4 m (부동소수 반복 연산이지만 단일 스케일 나눗셈이라 스케일 원리 반경 오차는 이 이하); distanceM/distanceToZoneM/rAlertM/rWarnM(m) → abs 1e-2 m (원 구현이 Math.round(x*100)/100 으로 이미 소수 둘째자리까지 반올림해 반환하므로, 그 반올림 정밀도가 비교 기준); tier/reason/severity/basis 등 열거형 문자열 → 정확히 일치(수치 tolerance 비적용, 문자열 동등비교). 최상위 abs/rel 은 ENU 미터 계열 기본값.",
+    "by_field": {
+      "east_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "north_m": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "distanceM": {
+        "abs": 0.01,
+        "rel": 0
+      },
+      "distanceToZoneM": {
+        "abs": 0.01,
+        "rel": 0
+      },
+      "rAlertM": {
+        "abs": 0.0001,
+        "rel": 0
+      },
+      "rWarnM": {
+        "abs": 0.0001,
+        "rel": 0
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "ground_enu_nadir_center",
+      "api": "projectPixelToGroundEnu",
+      "description": "짐벌 정수직(-90도) 중앙 픽셀 → 접지점 ENU ≈ (0,0) (기체 직하방).",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "px": 960,
+        "py": 540,
+        "groundElevationM": 0
+      },
+      "output": [
+        0,
+        1.83697019872103e-15
+      ]
+    },
+    {
+      "id": "ground_enu_horizontal_pitch_returns_null",
+      "api": "projectPixelToGroundEnu",
+      "description": "pitch=0(완전 수평) → 광선이 지면과 평행/위 → null(수평선 위, 외삽 없음).",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": 0,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "px": 960,
+        "py": 540,
+        "groundElevationM": 0
+      },
+      "output": null
+    },
+    {
+      "id": "ground_enu_oblique_with_roll",
+      "api": "projectPixelToGroundEnu",
+      "description": "pitch=-60, roll=15 → roll 보정된 카메라 기저로 접지점이 옆으로 치우침.",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -60,
+          "yawDeg": 30,
+          "rollDeg": 15,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "px": 1200,
+        "py": 700,
+        "groundElevationM": 0
+      },
+      "output": [
+        9.582002596325271,
+        7.778954753605004
+      ]
+    },
+    {
+      "id": "ground_enu_ground_elevation_offset_reduces_effective_altitude",
+      "api": "projectPixelToGroundEnu",
+      "description": "groundElevationM=10(대상 지면이 이륙기준보다 높음) → 유효고도 감소로 접지점이 더 가까워짐.",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "px": 1200,
+        "py": 540,
+        "groundElevationM": 10
+      },
+      "output": [
+        3.501037691048549,
+        1.2246467991473533e-15
+      ]
+    },
+    {
+      "id": "telemetry_tier_fresh",
+      "api": "resolveTelemetryTier",
+      "description": "skew=100ms <= telemetryFreshMs(300) → fresh(추가조건 없이 즉시 신뢰).",
+      "input": {
+        "telemetrySkewMs": 100,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": null
+      },
+      "output": {
+        "tier": "fresh"
+      }
+    },
+    {
+      "id": "telemetry_tier_stale_but_calm_motion_allowed",
+      "api": "resolveTelemetryTier",
+      "description": "skew=1000ms(창 안) + 기체 안정(속도/yaw/짐벌율 모두 calm 이하) → stale(허용, 중신뢰로 강등).",
+      "input": {
+        "telemetrySkewMs": 1000,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": {
+          "speedMps": 0.2,
+          "yawRateDps": 1,
+          "gimbalRateDps": 1
+        }
+      },
+      "output": {
+        "tier": "stale"
+      }
+    },
+    {
+      "id": "telemetry_tier_stale_unknown_motion_rejected",
+      "api": "resolveTelemetryTier",
+      "description": "skew=1000ms(창 안) + motion 정보 없음(모름) → 보수적으로 reject (\"모르면 못 믿는다\", TELEMETRY_TOO_OLD).",
+      "input": {
+        "telemetrySkewMs": 1000,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": null
+      },
+      "output": {
+        "tier": "reject",
+        "reason": "TELEMETRY_TOO_OLD"
+      }
+    },
+    {
+      "id": "telemetry_tier_reject_aircraft_moving_too_fast",
+      "api": "resolveTelemetryTier",
+      "description": "skew=1000ms + speedMps=5 > telemetryCalmSpeedMps(1) → AIRCRAFT_MOVING_TOO_FAST.",
+      "input": {
+        "telemetrySkewMs": 1000,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": {
+          "speedMps": 5
+        }
+      },
+      "output": {
+        "tier": "reject",
+        "reason": "AIRCRAFT_MOVING_TOO_FAST"
+      }
+    },
+    {
+      "id": "telemetry_tier_reject_gimbal_changing",
+      "api": "resolveTelemetryTier",
+      "description": "skew=1000ms + 속도/yaw 는 calm, gimbalRateDps=50 > telemetryCalmGimbalDps(10) → GIMBAL_CHANGING.",
+      "input": {
+        "telemetrySkewMs": 1000,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": {
+          "speedMps": 0.1,
+          "yawRateDps": 1,
+          "gimbalRateDps": 50
+        }
+      },
+      "output": {
+        "tier": "reject",
+        "reason": "GIMBAL_CHANGING"
+      }
+    },
+    {
+      "id": "telemetry_tier_reject_too_old",
+      "api": "resolveTelemetryTier",
+      "description": "skew=5000ms > telemetryMaxSkewMs(2000) → 항상 reject(TELEMETRY_TOO_OLD).",
+      "input": {
+        "telemetrySkewMs": 5000,
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "motion": null
+      },
+      "output": {
+        "tier": "reject",
+        "reason": "TELEMETRY_TOO_OLD"
+      }
+    },
+    {
+      "id": "proximity_real_critical_within_alert_radius",
+      "api": "evaluateProximityReal",
+      "description": "사람 발점이 장비 위험구역 빨강 반경(rAlertM) 안 → severity=critical.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "tier": "fresh"
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "equipmentIndex": 0,
+          "equipmentClass": "excavator",
+          "equipmentTrackId": null,
+          "distanceM": 1.24,
+          "distanceToZoneM": -5.3,
+          "severity": "critical",
+          "distanceConfidence": "high",
+          "basis": "ground_projection"
+        }
+      ]
+    },
+    {
+      "id": "proximity_real_medium_within_warn_band",
+      "api": "evaluateProximityReal",
+      "description": "사람 발점이 빨강~노랑 사이(rAlertM < dist <= rWarnM) → severity=medium.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              650,
+              500,
+              670,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "tier": "fresh"
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "equipmentIndex": 0,
+          "equipmentClass": "excavator",
+          "equipmentTrackId": null,
+          "distanceM": 7.49,
+          "distanceToZoneM": 0.95,
+          "severity": "medium",
+          "distanceConfidence": "high",
+          "basis": "ground_projection"
+        }
+      ]
+    },
+    {
+      "id": "proximity_real_none_outside_warn_band",
+      "api": "evaluateProximityReal",
+      "description": "사람 발점이 노랑 반경 밖(rWarnM 초과) → 이벤트 없음(빈 배열).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              50,
+              500,
+              70,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "tier": "fresh"
+      },
+      "output": []
+    },
+    {
+      "id": "proximity_real_stale_tier_degrades_confidence_to_medium",
+      "api": "evaluateProximityReal",
+      "description": "tier='stale'(허용됐지만 오래된 텔레메트리) → severity 동일, confidence만 medium.",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "tier": "stale"
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "equipmentIndex": 0,
+          "equipmentClass": "excavator",
+          "equipmentTrackId": null,
+          "distanceM": 1.24,
+          "distanceToZoneM": -5.3,
+          "severity": "critical",
+          "distanceConfidence": "medium",
+          "basis": "ground_projection"
+        }
+      ]
+    },
+    {
+      "id": "proximity_pitch_too_horizontal_falls_back_to_2d",
+      "api": "evaluateProximity",
+      "description": "pitch=-10 > minPitchDeg(-45, 즉 너무 수평) → 지면투영 불신, 화면좌표 2D 폴백(basis=image_2d, distanceM=null).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -10,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 0
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "equipmentIndex": 0,
+          "equipmentClass": "excavator",
+          "equipmentTrackId": null,
+          "distanceM": null,
+          "distanceToZoneM": null,
+          "severity": "critical",
+          "distanceConfidence": "low",
+          "basis": "image_2d"
+        }
+      ]
+    },
+    {
+      "id": "proximity_reject_tier_falls_back_to_2d",
+      "api": "evaluateProximity",
+      "description": "pitch 는 충분히 아래를 보지만 telemetrySkewMs=5000(reject 등급) → 2D 폴백(GPS/지면투영 대신 화면좌표).",
+      "input": {
+        "persons": [
+          {
+            "class": "person",
+            "bbox_xyxy": [
+              950,
+              500,
+              970,
+              560
+            ]
+          }
+        ],
+        "equipment": [
+          {
+            "class": "excavator",
+            "bbox_xyxy": [
+              900,
+              480,
+              1100,
+              600
+            ]
+          }
+        ],
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080,
+          "lat": 37.5,
+          "lng": 127
+        },
+        "frame": {
+          "width": 1920,
+          "height": 1080
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        },
+        "telemetrySkewMs": 5000
+      },
+      "output": [
+        {
+          "personIndex": 0,
+          "equipmentIndex": 0,
+          "equipmentClass": "excavator",
+          "equipmentTrackId": null,
+          "distanceM": null,
+          "distanceToZoneM": null,
+          "severity": "critical",
+          "distanceConfidence": "low",
+          "basis": "image_2d"
+        }
+      ]
+    },
+    {
+      "id": "equipment_zone_credible_footprint_no_min_clamp",
+      "api": "equipmentGroundZoneM",
+      "description": "장비 bbox 가 넓어(투영 footprint >= credibleFootprintM 2.0m) 실측 신뢰 → minAlertRadiusM/minWarnRadiusM 하한 미적용(실측 그대로).",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "equipment": {
+          "class": "excavator",
+          "bbox_xyxy": [
+            900,
+            480,
+            1100,
+            600
+          ]
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        }
+      },
+      "output": {
+        "pivot": [
+          0.8752594227621371,
+          -1.3128891341432036
+        ],
+        "rAlertM": 6.542564185146976,
+        "rWarnM": 11.072031697941036
+      }
+    },
+    {
+      "id": "equipment_zone_small_footprint_clamped_to_minimum_radius",
+      "api": "equipmentGroundZoneM",
+      "description": "장비 bbox 가 작아(투영 footprint < credibleFootprintM) 실측 불신 → minAlertRadiusM(3m)/minWarnRadiusM(5m) 안전망 하한이 발동.",
+      "input": {
+        "pose": {
+          "altitudeM": 30,
+          "pitchDeg": -90,
+          "yawDeg": 0,
+          "rollDeg": 0,
+          "hfovDeg": 70,
+          "imgW": 1920,
+          "imgH": 1080
+        },
+        "equipment": {
+          "class": "excavator",
+          "bbox_xyxy": [
+            955,
+            530,
+            965,
+            545
+          ]
+        },
+        "cfg": {
+          "dangerBandM": 0,
+          "warnBandM": 3,
+          "marginRatio": 0.15,
+          "minPitchDeg": -45,
+          "telemetryFreshMs": 300,
+          "telemetryMaxSkewMs": 2000,
+          "telemetryCalmSpeedMps": 1,
+          "telemetryCalmYawDps": 10,
+          "telemetryCalmGimbalDps": 10,
+          "radiusDefaultM": 4,
+          "radiusByClass": {},
+          "swingClasses": [
+            "crane",
+            "excavator"
+          ],
+          "motionClasses": [
+            "construction_vehicle",
+            "dump_truck",
+            "forklift",
+            "loader",
+            "roller",
+            "truck",
+            "wheel_loader"
+          ],
+          "hfovDeg": 70,
+          "motionLeadSeconds": 1.5,
+          "motionMinSpeedMps": 0.5,
+          "minAlertRadiusM": 3,
+          "minWarnRadiusM": 5,
+          "credibleFootprintM": 2
+        }
+      },
+      "output": {
+        "pivot": [
+          0,
+          -0.1094074278452653
+        ],
+        "rAlertM": 3,
+        "rWarnM": 5
+      }
+    }
+  ]
+}

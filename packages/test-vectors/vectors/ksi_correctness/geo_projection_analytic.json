@@ -1,0 +1,55 @@
+{
+  "derivation": "analytic",
+  "derivation_basis": "핀홀 카메라가 평지(z=0)와 만나는 지점은 직각삼각형/삼각비로 손 계산 가능하다. 드론 고도 H, 카메라 광선의 수평(horizontal-from-nadir) 하강각을 θ(도, 수평=0, 정수직=90)로 두면: 지면교차 수평거리 = H / tan(θ), 슬랜트(경사) 거리 = H / sin(θ). θ=90(정수직)이면 수평거리=0·슬랜트거리=H. θ→0(수평)이면 tan/sin→0이라 나눗셈이 발산 → 교차점 없음(반드시 거부, INV-023 외삽 금지). 방위(heading) 회전은 ENU 평면상 순수 회전이므로 수평거리 벡터의 방향만 바꾸고 크기는 불변(회전 불변성) — 이것도 계산 없이 성립이 보장되는 항등식이다. FOV 반각 φ/2 만큼 광학축에서 벗어난 광선(정수직 카메라)의 지면 오프셋도 동일한 직각삼각형으로 H·tan(φ/2) 이다.",
+  "extraction": {
+    "script": "scratchpad 1회성 계산(비영속, repo에 커밋되지 않음) — Python 표준 math 모듈(sin/cos/tan/radians)만 사용해 위 공식을 그대로 평가했다. 사람이 손으로 sin(45°)=cos(45°)=1/√2, tan(30°)=1/√3, sin(30°)=0.5 등을 대입해도 동일한 값이 나온다(자릿수만 다름) — 산출 근거는 derivation_basis 의 삼각비 항등식이지, 특정 참고 구현이 아니다.",
+    "runtime": {
+      "language": "python",
+      "version": "3.12.13",
+      "runner": "scratchpad venv(.venv-scout) 의 python3.12, 표준 math 모듈만 사용(외부 의존 없음)."
+    }
+  },
+  "tolerance": {
+    "abs": 1e-9,
+    "rel": 1e-12,
+    "rationale": "여기 값은 sin/cos/tan 단일 호출 + 나눗셈 1~2회로 끝나는 닫힌형 삼각함수 계산이라(회전행렬 합성이 아님) IEEE754 double 의 반복오차가 거의 쌓이지 않는다. abs 1e-9(각도 없이 순수 거리·오프셋 m 단위 값들이라 상대오차보다 절대오차가 더 보수적)로 충분하고, rel 1e-12 는 큰 값(수백m)에서도 오차가 sub-마이크로미터로 유지되도록 하는 보조 기준이다. 'horizon_ray_no_intersection' 케이스는 수치가 아니라 '거부되어야 한다'는 불연속 사실이라 tolerance 비교 대상이 아니다(available=false 확인만)."
+  },
+  "cases": [
+    {
+      "id": "nadir_center_distance_equals_altitude",
+      "description": "짐벌 정수직(θ=90도, 하강각=수직) 중앙 픽셀 → 지면교차점은 기체 직하방(수평오프셋=0), 슬랜트거리=고도 그 자체. 직각삼각형이 수직선으로 퇴화하는 자명한 경계 케이스.",
+      "input": { "altitude_m": 100.0, "down_angle_from_horizontal_deg": 90.0, "heading_deg": 0.0 },
+      "output": { "horizontal_offset_m": 0.0, "slant_distance_m": 100.0 }
+    },
+    {
+      "id": "pitch45_distance_equals_altitude",
+      "description": "하강각 θ=45도 → tan(45°)=1 이므로 수평거리=고도(H/tan45=H). 슬랜트거리=H/sin45=H·√2. 45-45-90 직각이등변삼각형의 자명한 항등식.",
+      "input": { "altitude_m": 50.0, "down_angle_from_horizontal_deg": 45.0, "heading_deg": 0.0 },
+      "output": { "horizontal_offset_m": 50.00000000000001, "slant_distance_m": 70.71067811865476 }
+    },
+    {
+      "id": "heading_rotation_preserves_magnitude_rotates_direction",
+      "description": "동일 θ=45·H=50 에서 heading 만 0→90도로 바꾸면(ENU 평면 순수 회전) 수평오프셋의 '방향'만 90도 회전하고 '크기'는 불변 — 회전은 벡터 노름을 보존한다는 선형대수 항등식(계산 없이 성립).",
+      "input": { "altitude_m": 50.0, "down_angle_from_horizontal_deg": 45.0, "heading_deg": 90.0 },
+      "output": { "horizontal_offset_m": 50.00000000000001, "slant_distance_m": 70.71067811865476 }
+    },
+    {
+      "id": "distance_formula_30_60_90_triangle",
+      "description": "하강각 θ=30도, H=100 → 30-60-90 직각삼각형의 표준 비율(마주변:빗변:인접변 = 1:2:√3) 로 수평거리=H/tan30=H·√3=173.205m, 슬랜트거리=H/sin30=2H=200m(정확히 2배, 나눗셈 없이도 확인 가능).",
+      "input": { "altitude_m": 100.0, "down_angle_from_horizontal_deg": 30.0, "heading_deg": 0.0 },
+      "output": { "horizontal_offset_m": 173.20508075688775, "slant_distance_m": 200.00000000000003 }
+    },
+    {
+      "id": "half_fov_edge_ray_geometric_offset",
+      "description": "정수직 카메라(θ=90) + 수평FOV 90도(반각45도)인 렌즈의 화면 우측 끝 픽셀 광선은 광학축에서 45도 벌어진다 → 지면 오프셋 = H·tan(45°) = H(반각45도의 자명한 결과, tan45=1).",
+      "input": { "altitude_m": 100.0, "down_angle_from_horizontal_deg": 90.0, "half_hfov_deg": 45.0 },
+      "output": { "edge_ray_ground_offset_m": 99.99999999999999 }
+    },
+    {
+      "id": "horizon_ray_no_intersection_must_be_rejected",
+      "description": "하강각 θ=0(완전 수평, 지평선을 봄) → tan(0)=sin(0)=0 이라 H/0 은 정의되지 않는다(교차점이 무한대로 발산). 평지와 아예 만나지 않는 광선을 '먼 거리'로 근사·외삽하면 안 되고 반드시 typed 실패로 거부해야 한다(INV-023) — 이는 계산값이 아니라 나눗셈 정의 자체에서 나오는 analytic 사실이다.",
+      "input": { "altitude_m": 100.0, "down_angle_from_horizontal_deg": 0.0, "heading_deg": 0.0 },
+      "output": { "available": false, "reason": "horizon_or_above_no_ground_intersection" }
+    }
+  ]
+}
