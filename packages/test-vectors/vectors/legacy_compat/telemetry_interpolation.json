@@ -1,0 +1,505 @@
+{
+  "source": {
+    "repo": "KSI-Scout",
+    "commit": "42ccc0db9a274db94746284bdfbf73db847f5afd",
+    "file": "ksi_scout/dal/sync.py"
+  },
+  "extraction": {
+    "script": "tools/vector-extraction/capture_scout_sync.py",
+    "runtime": {
+      "language": "python",
+      "python": "3.12.13",
+      "runner": "scratchpad venv (uv venv --python 3.12) — deps: pydantic 2.13.4 (numpy/opencv-python-headless also installed to satisfy ksi_scout.dal/contracts package __init__ import chains, unused by TelemetryInterpolator itself). packages/test-vectors/pyproject.toml·uv.lock 미변경(별도 임시 venv)."
+    }
+  },
+  "tolerance": {
+    "abs": 1e-09,
+    "rel": 1e-09,
+    "rationale": "TelemetryInterpolator 는 순수 python float 사칙연산(lerp)과 mod 360 각도 wraparound뿐이다(numpy·행렬연산 없음) — 동일 IEEE-754 double 연산이면 플랫폼·인터프리터 사이에도 결정적으로 동일해야 한다. 1e-9 는 재현 시 발생할 수 있는 부동소수 표현/연산 순서 차이만 흡수하는 타이트한 허용오차다."
+  },
+  "cases": [
+    {
+      "id": "linear_midpoint",
+      "api": "TelemetryInterpolator.at",
+      "description": "선형 보간 중간값(lat/alt) — t=0.5 정확성 기준.",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 2.0,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": 40.0,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 1.0,
+              "drone_lat": 36.001,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": 50.0,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.5
+      },
+      "output": {
+        "timestamp_utc": 0.5,
+        "drone_lat": 36.0005,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": 45.0,
+        "heading_deg": null,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "linear_nonmidpoint_out_of_order_insert",
+      "api": "TelemetryInterpolator.at",
+      "description": "t=0.3 비대칭 보간 + rtk_fixed AND 결합 + gnss_accuracy_m 보간. add() 를 역순(hi 먼저)으로 호출해 bisect 정렬 삽입도 함께 검증.",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 1.0,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 1.0,
+              "drone_lat": 36.001,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": 0.8,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": true,
+              "gnss_accuracy_m": 1.2,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.3
+      },
+      "output": {
+        "timestamp_utc": 0.3,
+        "drone_lat": 36.000299999999996,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": null,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": 1.08,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "heading_wrap_forward_350_to_10",
+      "api": "TelemetryInterpolator.at",
+      "description": "heading 350°→10° 최단호는 0°를 지난다(340° 쪽이 아님).",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 1.0,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": 350.0,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 1.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": 10.0,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.5
+      },
+      "output": {
+        "timestamp_utc": 0.5,
+        "drone_lat": 36.0,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": 0.0,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "heading_wrap_backward_10_to_350",
+      "api": "TelemetryInterpolator.at",
+      "description": "heading 10°→350° (역방향) — 정방향 케이스와 대칭인지 확인.",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 1.0,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": 10.0,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 1.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": 350.0,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.5
+      },
+      "output": {
+        "timestamp_utc": 0.5,
+        "drone_lat": 36.0,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": 0.0,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "gimbal_yaw_wrap_179_to_negative_179",
+      "api": "TelemetryInterpolator.at",
+      "description": "gimbal_yaw 179°→-179°(=181°) 최단호는 2°만 지나 t=0.5에서 ±180° 경계.",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 1.0,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": 179.0,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 1.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": -179.0,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.5
+      },
+      "output": {
+        "timestamp_utc": 0.5,
+        "drone_lat": 36.0,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": null,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": 180.0,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "gap_within_threshold",
+      "api": "TelemetryInterpolator.at",
+      "description": "샘플 간 gap(0.4s) <= max_gap_s(0.5s) — 정상 보간, 품질 유지.",
+      "tag": "ok_within_gap",
+      "input": {
+        "config": {
+          "max_gap_s": 0.5,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 0.4,
+              "drone_lat": 36.001,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 0.2
+      },
+      "output": {
+        "timestamp_utc": 0.2,
+        "drone_lat": 36.0005,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": null,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "full"
+      }
+    },
+    {
+      "id": "gap_exceeds_threshold",
+      "api": "TelemetryInterpolator.at",
+      "description": "샘플 간 gap(5.0s) > max_gap_s(0.5s) — Scout 는 DEGRADED 품질로 값을 그대로 반환하지만 KSI는 INV-023에 따라 GAP_EXCEEDED로 거부한다(의도된 차이, sync.py 모듈 docstring 참고).",
+      "tag": "gap_exceeds",
+      "input": {
+        "config": {
+          "max_gap_s": 0.5,
+          "buffer_size": 600
+        },
+        "add_sequence": [
+          {
+            "order": 0,
+            "telemetry": {
+              "timestamp_utc": 0.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          },
+          {
+            "order": 1,
+            "telemetry": {
+              "timestamp_utc": 5.0,
+              "drone_lat": 36.0,
+              "drone_lon": 127.0,
+              "altitude_msl_m": null,
+              "altitude_rel_m": null,
+              "heading_deg": null,
+              "gimbal_pitch_deg": -90.0,
+              "gimbal_yaw_deg": null,
+              "gimbal_roll_deg": null,
+              "camera_fov_deg": null,
+              "zoom_factor": null,
+              "rtk_fixed": false,
+              "gnss_accuracy_m": null,
+              "source_quality": "full"
+            }
+          }
+        ],
+        "query_ts": 2.5
+      },
+      "output": {
+        "timestamp_utc": 2.5,
+        "drone_lat": 36.0,
+        "drone_lon": 127.0,
+        "altitude_msl_m": null,
+        "altitude_rel_m": null,
+        "heading_deg": null,
+        "gimbal_pitch_deg": -90.0,
+        "gimbal_yaw_deg": null,
+        "gimbal_roll_deg": null,
+        "camera_fov_deg": null,
+        "zoom_factor": null,
+        "rtk_fixed": false,
+        "gnss_accuracy_m": null,
+        "source_quality": "degraded"
+      }
+    }
+  ]
+}
