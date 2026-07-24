@@ -3,7 +3,7 @@ name = "ksi-geo-core"
 version = "0.0.1"
 description = "KSI Geo Core — 좌표 투영·시간동기·불확실성 기준 구현 (Edge C++ 런타임의 golden 원천)"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["numpy>=1.26", "ksi-domain"]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +11,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ksi_geo_core"]
+
+[tool.uv.sources]
+ksi-domain = { workspace = true }

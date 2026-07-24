@@ -3,7 +3,7 @@ name = "ksi-domain"
 version = "0.0.1"
 description = "KSI 공통 도메인 enum·값객체 (산업중립 계약의 기초 타입)"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["pydantic>=2.7"]
 
 [build-system]
 requires = ["hatchling"]
