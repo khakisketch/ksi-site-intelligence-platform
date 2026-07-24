@@ -1,0 +1,13 @@
+[project]
+name = "ksi-event-contracts"
+version = "0.0.1"
+description = "Event/Observation/EventBundle 계약 모델 (contracts/schemas SSOT 준수)"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_event_contracts"]

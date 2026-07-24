@@ -1,0 +1,40 @@
+[project]
+name = "ksi-site-intelligence-platform"
+version = "0.0.1"
+description = "KSI Site Intelligence Platform — workspace root (server-side Python)"
+requires-python = ">=3.12,<3.13"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+# references/: 읽기 전용 참고 서브모듈 — dependency resolution 물리 차단 (REFERENCE_REPOS_LOCK rules)
+# edge/: Manifold Python 환경은 서버 workspace와 분리 운용 (별도 pyproject, 대표자 반영사항 1)
+exclude = ["references/*", "edge/*", "workers/*", "apps/*"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pytest>=8.0",
+    "jsonschema>=4.21",
+]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["references", "edge", "apps"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+exclude = ["references/", "edge/", "apps/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "packages", "services"]
+norecursedirs = ["references", "edge", "apps", "node_modules", ".venv"]

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+*.tsbuildinfo
+
+# C++ / CMake (edge)
+edge/**/build/
+CMakeCache.txt
+CMakeFiles/
+
+# 환경·비밀
+.env
+.env.*
+!.env.example
+
+# 편집기·OS
+.idea/
+.vscode/
+.DS_Store
+
+# 대용량 재생 fixture는 git-lfs 또는 외부 스토리지 (Phase 0는 합성 fixture만)
+tests/replay/fixtures/*.mp4
+tests/replay/fixtures/*.bag
