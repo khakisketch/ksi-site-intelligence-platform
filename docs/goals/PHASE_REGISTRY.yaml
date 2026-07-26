@@ -9,23 +9,28 @@ updated: "2026-07-26"
 phases:
   - id: phase-0
     title: "Capability & Calibration Foundation"
-    status: GATED
+    # 하드웨어 Spike(M4D·Manifold 실기)가 남아 있으므로 phase-0 전체는 DONE이 아니다.
+    status: IN_PROGRESS
+
     software_implementation: COMPLETE
+    software_acceptance: PASS
     technical_gate: PASS
-    independent_review: CHANGES_REQUESTED
+
+    independent_review: PASS
+    independent_review_commit: "bcdad4c2064b6f683544434ba1c36cb5dd04d1a5"
+    independent_review_date: "2026-07-26"
     independent_review_note: >-
-      2026-07-26 독립 정적 검토(REQUEST_CHANGES) — P0 차단 결함 5건 확인:
-      (1) CapabilityRegistry.register()가 evidence 없이 state=VERIFIED를 직접
-      부여해 list_operational() 노출 게이트 우회 가능, (2) TimestampSet이 UTC
-      epoch와 process-local monotonic 시간축을 혼동(필드명·보간결과 provenance
-      조작), (3) project_foot_point가 NaN/Inf·비정상 치수·FOV·위경도 범위를
-      검증하지 않아 OK+NaN 반환 가능, (4) Replay confirm_after_observations=4
-      허용이 실제 elif 체인 동작(5번째 관측에서만 확정)과 불일치, (5) 장비지원
-      전이 evidence 누락 시 잘못된 예외 타입. 5건 전부 수정 + 요구된 네거티브
-      테스트 추가 완료(워크스페이스 전체 202 passed·5 skipped, mypy 39파일 clean,
-      CI green) — 재검토 대기. PASS 확인 전까지 stage_c_allowed=false 유지.
+      2026-07-26 독립 검토 2라운드 완료. 1차(REQUEST_CHANGES) P0 5건 — Capability
+      register()의 evidence 없는 VERIFIED 우회 / TimestampSet의 UTC·monotonic 혼합 /
+      project_foot_point의 NaN·치수·FOV·위경도 미검증 / Replay confirm_after=4의
+      계약 불일치 / 장비지원 예외 타입 — 을 052ec8b에서 수정. 2차(REQUEST_CHANGES)
+      P0 3건 — max_gap_s·buffer_size·보정값의 NaN/Inf/bool 통과 / 화면 밖 유한 픽셀이
+      유효 광선으로 처리 / zoom_factor 조용한 clamp와 gnss_accuracy_m 음수 미검증 —
+      을 bcdad4c에서 수정. 최종 게이트 234 passed·5 skipped, mypy 39파일 clean,
+      ruff·lock·reference guard 통과. Phase 0 Software Acceptance PASS 판정.
+
     hardware_spikes: DEFERRED
-    stage_c_allowed: false
+    stage_c_allowed: true
     scope_now: "소프트웨어 기반만 (P0-1~P0-6). 하드웨어 Spike(PSDK/카메라/짐벌)는 장비 세션에서."
     acceptance:
       - "계약 모델이 contracts/schemas SSOT와 왕복 검증 통과 + Ed25519 실서명 네거티브 4종 (P0-1, INV-011)"

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-26T15:42:10+09:00",
+  "updated_at": "2026-07-26T15:59:20+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -15,16 +15,22 @@
         "P0-6 fingerprint 결정성",
         "CI green"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "2026-07-26 2차 독립 검토(REQUEST_CHANGES) 3개 P0-2/P0-4 blocker 수정 완료, commit bcdad4c. (1)max_gap_s/buffer_size finite+type 검증, CalibrationOffset/SensorLatencyProfile finite 검증, sync_ts_utc finite postcondition (2)픽셀 범위 검증 0<=u<=width/0<=v<=height(우측 경계 골든벡터 보존 위해 포함 상한) (3)zoom_factor<1.0 조용한 clamp 제거→INVALID_INTRINSICS 거부, gnss_accuracy_m 음수→신규 INVALID_UNCERTAINTY 거부. 게이트: 워크스페이스 234 passed·5 skipped, mypy 39파일 clean, ruff clean, 가드 통과, uv lock --check 통과. position_tolerance_m=NaN·비정수 confirm_after_observations은 2차 검토가 범위 제외 확인(현재 경로상 낙관적 승격 없음). PHASE_REGISTRY 그대로 유지(GATED/CHANGES_REQUESTED/stage_c_allowed=false) — PASS는 독립 재검토로만.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "Phase 0 Software Acceptance PASS. 하드웨어 Spike는 DEFERRED라 phase-0 전체는 IN_PROGRESS 유지, stage_c_allowed=true.",
+        "at": "2026-07-26T15:59:10+09:00",
+        "reviewer": "independent-review (외부 검토자, 2026-07-26 2라운드)",
+        "evidence_ref": "commit bcdad4c2064b6f683544434ba1c36cb5dd04d1a5 / 234 passed·5 skipped / mypy 39 files clean / CI green"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 3,
+      "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-26T15:42:10+09:00"
+      "updated_at": "2026-07-26T15:59:10+09:00"
     },
     {
       "id": "phase-1",
@@ -110,6 +116,29 @@
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
       "updated_at": "2026-07-25T00:52:14+09:00"
+    },
+    {
+      "id": "stage-c",
+      "title": "Stage C: Phase 1 계약 골격 + C++17 native-control-plane",
+      "completion_criteria": [
+        "WorldEntity/Observation 계약 + CRS·timestamp·covariance 불변식(INV-020)",
+        "KSI Core FastAPI 앱팩토리+health+capability API 골격",
+        "C++17 native-control-plane 골격 + CMake 빌드",
+        "Command TTL·Authorization·Heartbeat·fail-closed 상태전이 계약",
+        "Manifold 3 toolchain manifest",
+        "Python Intelligence Plane<->C++ Control Plane 언어중립 계약",
+        "전체 locked CI 게이트 통과"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-26T15:59:20+09:00",
+      "updated_at": "2026-07-26T15:59:20+09:00"
     }
   ],
   "risks": []
