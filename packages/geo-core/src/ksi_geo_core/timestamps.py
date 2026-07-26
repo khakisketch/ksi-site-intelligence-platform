@@ -97,9 +97,13 @@ class TimestampSet:
         ``add()``/``at()`` 양쪽에서 항상 이 메서드가 반환하는 값을 정렬·보간 키로 쓴다.
         """
         base = self.resolved_capture_ts_utc(latency_profile)
-        if calibration is not None:
-            return calibration.apply(base)
-        return base
+        result = calibration.apply(base) if calibration is not None else base
+        if not math.isfinite(result):
+            # 입력·CalibrationOffset·SensorLatencyProfile 모두 생성 시점에 finite를
+            # 강제하므로 이 경로는 도달 불가능해야 한다 — 그래도 동기화 키가 정렬
+            # 버퍼에 들어가기 전 마지막 방어선으로 postcondition을 남긴다(2차 반증 리뷰).
+            raise ValueError(f"sync_ts_utc 결과가 finite하지 않다: {result!r}")
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +138,7 @@ class DerivedTimestamp:
         # 이미 동기화된 시각이다 — calibration/latency는 원본 수신 샘플에만 적용하는
         # 보정이라, 파생 샘플에 재적용하면 이중 보정이 된다.
         del latency_profile, calibration
-        return self.synchronized_ts_utc
+        return self.synchronized_ts_utc  # __post_init__이 이미 finite를 보장
 
 
 SyncedTimestamp = TimestampSet | DerivedTimestamp

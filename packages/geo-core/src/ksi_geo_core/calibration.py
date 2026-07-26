@@ -19,6 +19,7 @@ PPS(Pulse-Per-Second) 하드웨어 동기가 이미 센서 간 클록을 정렬�
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -41,8 +42,11 @@ class CalibrationOffset:
     note: str = ""
 
     def __post_init__(self) -> None:
-        if self.uncertainty_s < 0:
-            raise ValueError(f"uncertainty_s must be >= 0, got {self.uncertainty_s}")
+        # NaN < 0 은 False라 부등식만으로는 NaN/Inf가 통과한다(2차 반증 리뷰) — finite를 먼저 요구.
+        if not math.isfinite(self.time_offset_s):
+            raise ValueError(f"time_offset_s must be finite, got {self.time_offset_s!r}")
+        if not math.isfinite(self.uncertainty_s) or self.uncertainty_s < 0:
+            raise ValueError(f"uncertainty_s must be finite and >= 0, got {self.uncertainty_s!r}")
 
     def apply(self, ts: float) -> float:
         """적용 지점: 센서 클록 타임스탬프를 기준(로컬) 클록으로 이동."""
@@ -75,10 +79,10 @@ class SensorLatencyProfile:
     sample_count: int = 0
 
     def __post_init__(self) -> None:
-        if self.latency_s < 0:
-            raise ValueError(f"latency_s must be >= 0, got {self.latency_s}")
-        if self.uncertainty_s < 0:
-            raise ValueError(f"uncertainty_s must be >= 0, got {self.uncertainty_s}")
+        if not math.isfinite(self.latency_s) or self.latency_s < 0:
+            raise ValueError(f"latency_s must be finite and >= 0, got {self.latency_s!r}")
+        if not math.isfinite(self.uncertainty_s) or self.uncertainty_s < 0:
+            raise ValueError(f"uncertainty_s must be finite and >= 0, got {self.uncertainty_s!r}")
 
     def estimate_capture_ts(self, receive_ts_utc: float) -> float:
         """적용 지점: 수신 UTC 시각에서 고정 지연만큼 거슬러 캡처 시각을 추정."""

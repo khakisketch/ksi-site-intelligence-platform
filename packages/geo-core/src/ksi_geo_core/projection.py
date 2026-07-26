@@ -73,6 +73,7 @@ class ProjectionStatus(StrEnum):
     INVALID_INTRINSICS = "invalid_intrinsics"
     NONFINITE_INPUT = "nonfinite_input"
     INVALID_GEO_RANGE = "invalid_geo_range"
+    INVALID_UNCERTAINTY = "invalid_uncertainty"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,16 +119,26 @@ def project_foot_point(
     PORT: Scout ``project_foot_point`` — 입력이 :class:`~ksi_geo_core.sync.TelemetrySample`
     (Scout ``NormalizedTelemetry`` 대응)로 바뀐 것 외 수식·게이트 순서는 동일하다.
 
-    입력 검증(반증 리뷰 2026-07-26 P0 — 이전 구현은 NaN/Inf·비정상 치수·intrinsics·
-    위경도 범위를 검사하지 않아 ``OK`` + NaN 좌표를 반환할 수 있었다)은 telemetry와
-    무관한 순서로 가장 먼저 실행한다: 이미지 치수 → 픽셀 유한성 → 기본 FOV 범위
-    → (geo_capable) → 고도 → 나머지 자세각·intrinsics 유한성 → 위경도 범위 →
-    실효 FOV 범위. 마지막으로 산출된 좌표·confidence·오차반경도 유한성을 재확인한다
-    (알고리즘 경로 자체의 예상 밖 발산까지 잡는 최종 안전망).
+    입력 검증(반증 리뷰 2026-07-26 P0 1·2차 — 이전 구현은 NaN/Inf·비정상 치수·
+    화면 밖 픽셀·intrinsics·위경도 범위를 검사하지 않아 ``OK`` + NaN 좌표를,
+    또는 존재하지 않는 센서 픽셀을 실제 광선으로 반환할 수 있었다)은 telemetry와
+    무관한 순서로 가장 먼저 실행한다: 이미지 치수 → 픽셀 유한성·화면 범위 → 기본
+    FOV 범위 → (geo_capable) → 고도 → 나머지 자세각·intrinsics 유한성 → 위경도
+    범위 → zoom 유효범위 → gnss 불확실성 유효범위 → 실효 FOV 범위. 마지막으로
+    산출된 좌표·confidence·오차반경도 유한성을 재확인한다(알고리즘 경로 자체의
+    예상 밖 발산까지 잡는 최종 안전망).
+
+    픽셀 범위는 ``0 <= u_px <= width``·``0 <= v_px <= height``(양끝 포함)다 — 이미지
+    좌표계에서 우측/하단 경계값(``u_px == width`` 등)은 legacy_compat 골든벡터의
+    실제 케이스(``right_edge_half_hfov``)라 배타적 상한(``< width``)을 쓰면 유효한
+    경계 케이스를 거짓 거부한다. 그 밖의 화면 밖 좌표(음수, ``width`` 초과 등)는
+    거부한다.
     """
     if width <= 0 or height <= 0:
         return ProjectionResult(status=ProjectionStatus.INVALID_IMAGE_DIMENSIONS)
     if not (math.isfinite(u_px) and math.isfinite(v_px)):
+        return ProjectionResult(status=ProjectionStatus.INVALID_PIXEL)
+    if not (0.0 <= u_px <= width and 0.0 <= v_px <= height):
         return ProjectionResult(status=ProjectionStatus.INVALID_PIXEL)
     if not math.isfinite(default_fov_deg) or not (0.0 < default_fov_deg < 180.0):
         return ProjectionResult(status=ProjectionStatus.INVALID_INTRINSICS)
@@ -157,11 +168,24 @@ def project_foot_point(
         return ProjectionResult(status=ProjectionStatus.NONFINITE_INPUT)
     if not (-90.0 <= lat0 <= 90.0) or not (-180.0 <= lon0 <= 180.0):
         return ProjectionResult(status=ProjectionStatus.INVALID_GEO_RANGE)
+    if zoom_raw < 1.0:
+        # zoom_factor의 계약상 의미는 "배율"(>=1.0) — 0/음수/1 미만을 1.0으로 조용히
+        # clamp하면 잘못된 카메라 메타데이터가 정상 intrinsics처럼 쓰인다(2차 반증
+        # 리뷰). 여기서 명시 거부하므로 아래 zoom은 항상 zoom_raw 그대로다(clamp 불필요).
+        return ProjectionResult(status=ProjectionStatus.INVALID_INTRINSICS)
     if not (0.0 < camera_fov_deg < 180.0):
         return ProjectionResult(status=ProjectionStatus.INVALID_INTRINSICS)
 
+    gnss_accuracy_m = sample.gnss_accuracy_m
+    if gnss_accuracy_m is not None and (
+        not math.isfinite(gnss_accuracy_m) or gnss_accuracy_m < 0
+    ):
+        # 음수 정확도는 아래 gnss_confidence_factor의 clip(1 - x/10, 0.3, 1.0)에서
+        # 오히려 최고 신뢰도로 뒤집힐 수 있다(2차 반증 리뷰) — typed 실패로 거부.
+        return ProjectionResult(status=ProjectionStatus.INVALID_UNCERTAINTY)
+
     fov_deg = camera_fov_deg
-    zoom = max(zoom_raw, 1.0)
+    zoom = zoom_raw
     fov_effective = 2 * math.atan(math.tan(math.radians(fov_deg) / 2) / zoom)
     if fov_is_diagonal:
         focal = (math.hypot(width, height) / 2) / math.tan(fov_effective / 2)

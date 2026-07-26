@@ -98,6 +98,62 @@ def test_altitude_nonfinite_rejected() -> None:
     assert result.status is ProjectionStatus.INVALID_ALTITUDE
 
 
+# ── 2차 반증 리뷰 (2026-07-26) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("u_px", "v_px"),
+    [(-100.0, 540.0), (1921.0, 540.0), (960.0, -1.0), (960.0, 1081.0), (-0.01, 0.0)],
+)
+def test_out_of_bounds_finite_pixel_rejected(u_px: float, v_px: float) -> None:
+    """[2차 반증 P0] 유한하지만 화면 밖인 픽셀은 유효한 광선으로 처리되면 안 된다."""
+    result = project_foot_point(u_px, v_px, 1920, 1080, _sample())
+    assert result.status is ProjectionStatus.INVALID_PIXEL
+    assert result.lat is None
+
+
+@pytest.mark.parametrize(
+    ("u_px", "v_px"), [(0.0, 0.0), (1920.0, 0.0), (0.0, 1080.0), (1920.0, 1080.0)]
+)
+def test_boundary_inclusive_pixel_accepted(u_px: float, v_px: float) -> None:
+    """이미지 네 모서리(양끝 포함 경계)는 거부되면 안 된다 — right_edge_half_hfov와 동형."""
+    result = project_foot_point(u_px, v_px, 1920, 1080, _sample())
+    assert result.ok, result.status
+
+
+@pytest.mark.parametrize("zoom_factor", [0.0, -1.0, 0.5, math.nan, math.inf, -math.inf])
+def test_invalid_zoom_factor_rejected_not_silently_clamped(zoom_factor: float) -> None:
+    """[2차 반증 P0] 0/음수/1 미만 zoom을 1.0으로 조용히 clamp하지 않고 거부한다."""
+    result = project_foot_point(960.0, 540.0, 1920, 1080, _sample(zoom_factor=zoom_factor))
+    assert result.status in (ProjectionStatus.INVALID_INTRINSICS, ProjectionStatus.NONFINITE_INPUT)
+    assert result.lat is None
+
+
+@pytest.mark.parametrize("gnss_accuracy_m", [-1.0, -0.01, math.nan, math.inf])
+def test_invalid_gnss_accuracy_rejected(gnss_accuracy_m: float) -> None:
+    """[2차 반증 P0] 음수 정확도는 confidence 계산에서 최고 신뢰도로 뒤집힐 수 있어 거부."""
+    result = project_foot_point(
+        960.0, 540.0, 1920, 1080, _sample(gnss_accuracy_m=gnss_accuracy_m, rtk_fixed=False)
+    )
+    assert result.status is ProjectionStatus.INVALID_UNCERTAINTY
+    assert result.lat is None
+
+
+def test_valid_gnss_accuracy_still_accepted() -> None:
+    result = project_foot_point(
+        960.0, 540.0, 1920, 1080, _sample(gnss_accuracy_m=5.0, rtk_fixed=False)
+    )
+    assert result.ok
+
+
+def test_zoom_not_silently_normalized_changes_result_vs_valid_zoom() -> None:
+    """clamp였다면 zoom=0.5도 zoom=1.0과 동일 결과를 냈을 것 — 이제는 거부되어 다르다."""
+    invalid = project_foot_point(960.0, 540.0, 1920, 1080, _sample(zoom_factor=0.5))
+    valid = project_foot_point(960.0, 540.0, 1920, 1080, _sample(zoom_factor=1.0))
+    assert invalid.status is ProjectionStatus.INVALID_INTRINSICS
+    assert valid.ok
+
+
 def test_ok_result_always_has_finite_coordinates_confidence_and_error_radius() -> None:
     """OK 결과는 좌표·confidence·오차반경 전부가 finite여야 한다 — 여러 각도에서 재확인."""
     for pitch_deg in (-90.0, -60.0, -45.0, -30.0, -10.0):

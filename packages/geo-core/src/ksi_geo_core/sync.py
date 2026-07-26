@@ -37,6 +37,7 @@ PPS 미지원 소스(예: 순수 RTMP 컨슈머 드론)에는 이 모듈의 정�
 
 from __future__ import annotations
 
+import math
 import threading
 from bisect import bisect_left
 from dataclasses import dataclass
@@ -169,10 +170,10 @@ class TelemetryInterpolator:
         latency_profile: SensorLatencyProfile | None = None,
         calibration: CalibrationOffset | None = None,
     ) -> None:
-        if max_gap_s <= 0:
-            raise ValueError(f"max_gap_s는 양수여야 한다 (got {max_gap_s!r})")
-        if buffer_size <= 0:
-            raise ValueError(f"buffer_size는 양의 정수여야 한다 (got {buffer_size!r})")
+        if not (math.isfinite(max_gap_s) and max_gap_s > 0):
+            raise ValueError(f"max_gap_s는 finite한 양수여야 한다 (got {max_gap_s!r})")
+        if isinstance(buffer_size, bool) or not isinstance(buffer_size, int) or buffer_size <= 0:
+            raise ValueError(f"buffer_size는 양의 정수(bool 제외)여야 한다 (got {buffer_size!r})")
         self._max_gap = max_gap_s
         self._buffer_size = buffer_size
         self._latency_profile = latency_profile
