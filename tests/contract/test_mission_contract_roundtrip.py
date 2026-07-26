@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 from ksi_mission_contracts.models import MissionContractV1_1, MissionContractV1_2
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
 
@@ -104,7 +104,7 @@ def _valid_contract_dict(schema_version: str) -> dict[str, Any]:
     ],
 )
 def test_valid_instance_matches_schema(
-    schema_version: str, schema_file: str, model_cls: type
+    schema_version: str, schema_file: str, model_cls: type[BaseModel]
 ) -> None:
     schema = _load_schema(schema_file)
     data = _valid_contract_dict(schema_version)
@@ -122,7 +122,7 @@ def test_valid_instance_matches_schema(
         ("1.2", MissionContractV1_2),
     ],
 )
-def test_extra_field_rejected(schema_version: str, model_cls: type) -> None:
+def test_extra_field_rejected(schema_version: str, model_cls: type[BaseModel]) -> None:
     data = _valid_contract_dict(schema_version)
     data["unexpectedField"] = "should be rejected"
 

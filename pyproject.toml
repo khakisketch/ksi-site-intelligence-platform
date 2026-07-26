@@ -19,6 +19,7 @@ dev = [
     "mypy>=1.11",
     "pytest>=8.0",
     "jsonschema>=4.21",
+    "types-jsonschema>=4.21",
 ]
 
 [tool.ruff]
