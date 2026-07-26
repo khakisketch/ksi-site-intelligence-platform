@@ -240,7 +240,7 @@ def test_out_of_order_insertion_same_result_as_sorted() -> None:
         b = shuffled_itp.at(query)
         assert a.status is b.status is InterpolationStatus.OK
         assert a.sample is not None and b.sample is not None
-        assert a.sample.drone_lat == pytest.approx(b.sample.drone_lat)  # type: ignore[arg-type]
+        assert a.sample.drone_lat == pytest.approx(b.sample.drone_lat)
 
 
 # ── CalibrationOffset 적용 ────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ def test_concurrent_add_and_at_no_corruption() -> None:
 
 def _load_vectors() -> dict[str, Any]:
     with VECTOR_PATH.open(encoding="utf-8") as f:
-        return json.load(f)  # type: ignore[no-any-return]
+        return json.load(f)
 
 
 def _sample_from_vector(entry: dict[str, Any]) -> TelemetrySample:
