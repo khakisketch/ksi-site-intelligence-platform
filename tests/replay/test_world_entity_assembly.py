@@ -13,7 +13,8 @@ Phase 1의 핵심 주장을 검증한다: **여러 프레임에서 관찰된 동
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
+from typing import cast
 
 import pytest
 from ksi_event_contracts.assembly import (
@@ -25,10 +26,14 @@ from ksi_event_contracts.assembly import (
 from ksi_event_contracts.observation import Observation
 from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.fusion import FusionStatus, covariance_trace
+from pydantic import ValidationError
 
 _FRAME = "EPSG:5186+KNGeoid2018@1.0.0"
 _ISOTROPIC = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 _MODEL_VERSIONS = {"person-detector": "v3.1.0"}
+
+# "인자를 안 넘김"과 "명시적으로 None(관측점 모름)"을 구분하는 sentinel.
+_UNSET = object()
 
 
 def _observation(
@@ -40,6 +45,7 @@ def _observation(
     covariance: list[float] | None = None,
     site_frame: str = _FRAME,
     detection_confidence: float | None = 0.9,
+    viewpoint_id: str | None | object = _UNSET,
 ) -> Observation:
     return Observation(
         observation_id=observation_id,
@@ -49,6 +55,13 @@ def _observation(
         position=position,
         position_covariance=covariance if covariance is not None else list(_ISOTROPIC),
         detection_confidence=detection_confidence,
+        # 미지정이면 관측 id에서 파생 — 별개 관측은 기본적으로 서로 다른 관측점으로 본다.
+        # 같은 관측점이나 "모름(None)"을 표현하려면 호출자가 명시적으로 넘긴다.
+        viewpoint_id=(
+            f"vp-{observation_id}"
+            if viewpoint_id is _UNSET
+            else cast("str | None", viewpoint_id)
+        ),
     )
 
 
@@ -160,15 +173,45 @@ def test_single_observation_is_insufficient_regardless_of_covariance() -> None:
     assert entity.uncertainty.localization_state == "INSUFFICIENT_OBSERVATION"
 
 
-def test_tight_multi_observation_is_confirmed() -> None:
+def test_tight_multi_observation_from_distinct_viewpoints_is_confirmed() -> None:
+    """공분산이 작고 **서로 다른 관측점** 2개면 CONFIRMED."""
     tight = [0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1]
     entity = _assemble_ok(
         [
-            _observation("obs-a", [10.0, 20.0, 1.7], covariance=tight),
-            _observation("obs-b", [10.0, 20.0, 1.7], covariance=tight),
+            _observation("obs-a", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="vp-1"),
+            _observation("obs-b", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="vp-2"),
         ]
     )
     assert entity.uncertainty.localization_state == "CONFIRMED"
+
+
+def test_same_viewpoint_multiple_frames_not_confirmed() -> None:
+    """[2차 반증 P0] 같은 관측점의 여러 프레임은 시차가 없어 깊이를 독립 검증 못 한다.
+
+    공분산이 아무리 작아도 CONFIRMED로 올리지 않고 LIKELY로 제한한다 — 관측 수만
+    늘어난 것을 다중 시점 검증으로 오인하면 안 된다.
+    """
+    tight = [0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1]
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="vp-same"),
+            _observation("obs-b", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="vp-same"),
+            _observation("obs-c", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="vp-same"),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY"
+
+
+def test_unknown_viewpoint_does_not_claim_diversity() -> None:
+    """viewpoint_id 를 모르는 소스는 시점 다양성을 주장하지 않는다(모르면 확신 안 함)."""
+    tight = [0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1]
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id=None),
+            _observation("obs-b", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id=None),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY"
 
 
 def test_loose_multi_observation_is_boundary_uncertain() -> None:
@@ -271,7 +314,7 @@ def test_different_observations_produce_different_fingerprint() -> None:
         [_observation("obs-a", [10.0, 20.0, 1.7]), _observation("obs-b", [10.1, 20.0, 1.7])]
     )
     moved = _assemble_ok(
-        [_observation("obs-a", [99.0, 20.0, 1.7]), _observation("obs-b", [10.1, 20.0, 1.7])]
+        [_observation("obs-a", [10.6, 20.0, 1.7]), _observation("obs-b", [10.1, 20.0, 1.7])]
     )
     assert world_entity_fingerprint(base) != world_entity_fingerprint(moved)
 
@@ -330,7 +373,7 @@ def test_singular_covariance_propagates_as_fusion_failure() -> None:
         ]
     )
     assert result.status is AssemblyStatus.FUSION_FAILED
-    assert result.fusion_status is FusionStatus.SINGULAR_COVARIANCE
+    assert result.fusion_status is FusionStatus.NON_POSITIVE_DEFINITE
 
 
 def test_assembled_entity_satisfies_world_entity_schema_invariants() -> None:
@@ -350,3 +393,126 @@ def test_assembled_entity_satisfies_world_entity_schema_invariants() -> None:
     # 스키마 왕복도 통과해야 한다.
     dumped = entity.model_dump(by_alias=True, mode="json", exclude_none=True)
     assert dumped["class"] == "Person"
+
+
+# ── 2차 반증 리뷰 (2026-07-27) — 문턱 검증 + tz-aware 강제 ────────────────────
+
+
+@pytest.mark.parametrize(
+    ("confirmed", "likely"),
+    [
+        (float("nan"), 12.0),
+        (float("inf"), 12.0),
+        (-1.0, 12.0),
+        (0.75, float("nan")),
+        (0.75, float("inf")),
+        (12.0, 0.75),  # 순서 역전 — 더 느슨한 기준이 먼저 적용되면 잘못된 CONFIRMED
+    ],
+)
+def test_invalid_thresholds_rejected(confirmed: float, likely: float) -> None:
+    """[2차 반증] 주입 가능하게 열어 둔 문턱은 검증도 필요하다."""
+    result = assemble_world_entity(
+        [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        confirmed_trace_max=confirmed,
+        likely_trace_max=likely,
+    )
+    assert result.status is AssemblyStatus.INVALID_THRESHOLDS
+    assert result.entity is None
+
+
+def test_equal_thresholds_allowed() -> None:
+    """confirmed == likely 는 유효하다(경계가 겹치는 것은 순서 역전이 아니다)."""
+    result = assemble_world_entity(
+        [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        confirmed_trace_max=1.0,
+        likely_trace_max=1.0,
+    )
+    assert result.status is AssemblyStatus.OK
+
+
+def test_naive_observed_at_rejected_by_contract() -> None:
+    """[2차 반증] naive 시각이 섞이면 max() 비교가 런타임 예외가 된다 — 계약에서 차단."""
+    with pytest.raises(ValidationError):
+        Observation(
+            observation_id="obs-a",
+            track_id="trk-1",
+            observed_at=datetime(2026, 7, 26, 4, 0, 0),  # noqa: DTZ001 — 의도적 naive
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+        )
+
+
+def test_non_utc_offset_observed_at_rejected() -> None:
+    """tz-aware 이지만 UTC가 아닌 오프셋도 거부 — 시각 축을 UTC로 고정한다."""
+    kst = timezone(timedelta(hours=9))
+    with pytest.raises(ValidationError):
+        Observation(
+            observation_id="obs-a",
+            track_id="trk-1",
+            observed_at=datetime(2026, 7, 26, 13, 0, 0, tzinfo=kst),
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+        )
+
+
+def test_utc_observed_at_accepted() -> None:
+    observation = Observation(
+        observation_id="obs-a",
+        track_id="trk-1",
+        observed_at=datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC),
+        site_frame=_FRAME,
+        position=[0.0, 0.0, 0.0],
+        position_covariance=list(_ISOTROPIC),
+    )
+    assert observation.observed_at.utcoffset() == timedelta(0)
+
+
+def test_duplicate_observation_id_blocked_at_assembly() -> None:
+    """중복 관측이 조립 단계에서도 차단되는지 — 융합 실패가 전파돼야 한다."""
+    result = _assemble(
+        [
+            _observation("obs-dup", [10.0, 20.0, 1.7]),
+            _observation("obs-dup", [10.0, 20.0, 1.7]),
+        ]
+    )
+    assert result.status is AssemblyStatus.FUSION_FAILED
+    assert result.fusion_status is FusionStatus.DUPLICATE_OBSERVATION_ID
+    assert result.entity is None
+
+
+def test_contradictory_observations_never_reach_confirmed() -> None:
+    """[2차 반증 P0] 모순 관측이 CONFIRMED로 승격되는 경로가 없어야 한다."""
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    result = _assemble(
+        [
+            _observation("obs-a", [0.0, 0.0, 0.0], covariance=tight, viewpoint_id="vp-1"),
+            _observation("obs-b", [100.0, 0.0, 0.0], covariance=tight, viewpoint_id="vp-2"),
+        ]
+    )
+    assert result.status is AssemblyStatus.FUSION_FAILED
+    assert result.fusion_status is FusionStatus.INCONSISTENT_OBSERVATIONS
+    assert result.entity is None
+
+
+def test_negative_covariance_never_reaches_confirmed() -> None:
+    """[2차 반증 P0] 음수 공분산이 trace 음수 → CONFIRMED 되는 경로가 없어야 한다."""
+    negative = [-1.0, 0, 0, 0, -1.0, 0, 0, 0, -1.0]
+    result = _assemble(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7], covariance=negative),
+            _observation("obs-b", [10.0, 20.0, 1.7], covariance=negative),
+        ]
+    )
+    assert result.status is AssemblyStatus.FUSION_FAILED
+    assert result.fusion_status is FusionStatus.NON_POSITIVE_DEFINITE
+    assert result.entity is None

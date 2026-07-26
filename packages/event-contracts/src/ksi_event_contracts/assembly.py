@@ -24,6 +24,7 @@ INV-021("불확실성을 포함해도 위험이 유지될 때만 Confirmed")의 
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -53,6 +54,7 @@ class AssemblyStatus(StrEnum):
     TRACK_ID_MISMATCH = "track_id_mismatch"  # 서로 다른 track을 한 Entity로 합칠 수 없다
     MISSING_TRACK_ID = "missing_track_id"  # track 없는 관측은 Entity로 승격 불가
     FUSION_FAILED = "fusion_failed"  # geo-core 융합 단계 실패(사유는 detail)
+    INVALID_THRESHOLDS = "invalid_thresholds"  # 문턱값이 비유한·음수·순서 역전
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,17 +77,28 @@ def _localization_state(
     confirmed_trace_max: float,
     likely_trace_max: float,
     observation_count: int,
+    distinct_viewpoints: int | None,
 ) -> str:
-    """융합 불확실성 + 관측 수로 localization state를 정한다.
+    """융합 불확실성 + 관측 수 + 시점 다양성으로 localization state를 정한다.
 
-    관측이 1건뿐이면 아무리 공분산이 작아도 ``INSUFFICIENT_OBSERVATION`` 이다 —
-    단일 시점 깊이 추정을 신뢰하지 않는다는 PRD §10.9 원칙을 상태로 표현한다
-    (작은 공분산이 곧 다중 시점 검증을 뜻하지는 않는다).
+    두 단계로 확신을 제한한다:
+
+    1. 관측이 1건뿐이면 아무리 공분산이 작아도 ``INSUFFICIENT_OBSERVATION`` 이다 —
+       단일 시점 깊이 추정을 신뢰하지 않는다는 PRD §10.9 원칙(작은 공분산이 곧 다중
+       시점 검증을 뜻하지는 않는다).
+    2. 관측이 여러 건이어도 **서로 다른 관측점 2개 이상의 증거가 없으면**
+       ``CONFIRMED`` 로 올리지 않고 최대 ``LIKELY`` 로 제한한다. 같은 관측점에서 찍은
+       여러 프레임은 시차(parallax)가 없어 깊이를 독립적으로 검증하지 못하므로,
+       관측 수만 늘어난 것을 다중 시점 검증으로 오인하면 안 된다(2차 반증 리뷰).
+       ``viewpoint_id`` 를 제공하지 못하는 소스는 ``distinct_viewpoints=None`` 이며,
+       그 경우에도 시점 다양성을 **주장하지 않는다**(모르면 확신하지 않는다).
     """
     if observation_count < 2:
         return "INSUFFICIENT_OBSERVATION"
+
+    has_view_diversity = distinct_viewpoints is not None and distinct_viewpoints >= 2
     if trace <= confirmed_trace_max:
-        return "CONFIRMED"
+        return "CONFIRMED" if has_view_diversity else "LIKELY"
     if trace <= likely_trace_max:
         return "LIKELY"
     return "BOUNDARY_UNCERTAIN"
@@ -112,6 +125,22 @@ def assemble_world_entity(
     """
     if not observations:
         return AssemblyResult(status=AssemblyStatus.NO_OBSERVATIONS)
+
+    # 문턱값 검증 — 순서가 역전되면(confirmed > likely) 더 느슨한 기준이 먼저 적용돼
+    # 잘못된 CONFIRMED 를 만든다. 주입 가능하게 열어 둔 만큼 검증도 필요하다.
+    if not (math.isfinite(confirmed_trace_max) and confirmed_trace_max >= 0):
+        return AssemblyResult(
+            status=AssemblyStatus.INVALID_THRESHOLDS,
+            detail=f"confirmed_trace_max 는 finite한 0 이상이어야 한다 ({confirmed_trace_max!r})",
+        )
+    if not (math.isfinite(likely_trace_max) and likely_trace_max >= confirmed_trace_max):
+        return AssemblyResult(
+            status=AssemblyStatus.INVALID_THRESHOLDS,
+            detail=(
+                "likely_trace_max 는 finite하고 confirmed_trace_max 이상이어야 한다 "
+                f"({likely_trace_max!r} < {confirmed_trace_max!r})"
+            ),
+        )
 
     track_ids = {o.track_id for o in observations}
     if None in track_ids:
@@ -158,12 +187,22 @@ def assemble_world_entity(
     assert fusion.position_covariance is not None
     assert fusion.site_frame is not None
 
+    # 시점 다양성: 하나라도 viewpoint_id 가 없으면 다양성을 "모른다"로 둔다(None) —
+    # 일부만 있는 상태에서 개수를 세면 없는 관측을 서로 다른 시점으로 착각한다.
+    viewpoint_ids = [o.viewpoint_id for o in observations]
+    distinct_viewpoints = (
+        len({v for v in viewpoint_ids if v is not None})
+        if all(v is not None for v in viewpoint_ids)
+        else None
+    )
+
     trace = covariance_trace(fusion.position_covariance)
     state = _localization_state(
         trace,
         confirmed_trace_max=confirmed_trace_max,
         likely_trace_max=likely_trace_max,
         observation_count=len(observations),
+        distinct_viewpoints=distinct_viewpoints,
     )
 
     # 분류 신뢰도는 관측들의 최솟값을 취한다(낙관적 병합 금지 — P0-2의 품질 병합과

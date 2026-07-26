@@ -63,13 +63,37 @@ class JournalEntry(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class PayloadCanonicalizationError(ValueError):
+    """본문을 정규 JSON으로 표현할 수 없음 — NaN/Infinity 또는 비JSON 타입."""
+
+
 def payload_digest(payload: dict[str, Any]) -> str:
     """본문의 정규화 digest — ADR-KSI-002와 같은 정규화 규약을 재사용한다.
 
     key 정렬·최소 구분자·``ensure_ascii=False`` UTF-8. 계약 서명과 같은 규약을 쓰는
     이유는 두 곳에서 서로 다른 정규화를 쓰면 "같은 내용"의 정의가 갈리기 때문이다.
+
+    ``allow_nan=False`` 를 쓰는 이유(2차 반증 리뷰): 기본값은 NaN/Infinity를 ``NaN``·
+    ``Infinity`` 같은 **비표준 JSON 토큰**으로 직렬화한다. 그러면 표준 파서로 다시 읽을
+    수 없는 digest가 만들어지고, 서버·Edge가 서로 다른 파서를 쓸 때 "같은 내용"의 정의가
+    갈린다. 비JSON 타입(set·bytes 등)도 여기서 typed 예외로 바꿔 호출자가
+    :class:`IngestVerdict.MALFORMED_PAYLOAD` 로 변환할 수 있게 한다.
+
+    Raises:
+        PayloadCanonicalizationError: NaN/Infinity 또는 JSON 직렬화 불가 타입 포함.
     """
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    try:
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        # ValueError: allow_nan=False 하에서 NaN/Infinity
+        # TypeError: set·bytes·임의 객체 등 JSON 도메인 밖 타입
+        raise PayloadCanonicalizationError(f"본문을 정규 JSON으로 표현할 수 없다: {exc}") from exc
     return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
@@ -77,9 +101,10 @@ class IngestVerdict(StrEnum):
     """수신 판정. ``ACCEPTED``와 ``DUPLICATE_IGNORED``만 정상 경로다."""
 
     ACCEPTED = "ACCEPTED"
-    DUPLICATE_IGNORED = "DUPLICATE_IGNORED"  # 같은 키·같은 내용 재전송 — 멱등 무시
-    DIGEST_CONFLICT = "DIGEST_CONFLICT"  # 같은 키인데 내용이 다르다 — 위조/버그
+    DUPLICATE_IGNORED = "DUPLICATE_IGNORED"  # 동일 identity 재전송 — 멱등 무시
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"  # 같은 키, 다른 identity(장비·순번·내용)
     DIGEST_MISMATCH = "DIGEST_MISMATCH"  # 선언한 digest와 실제 본문이 불일치
+    MALFORMED_PAYLOAD = "MALFORMED_PAYLOAD"  # NaN/Infinity·비JSON 타입 — 정규화 불가
     SEQUENCE_REGRESSION = "SEQUENCE_REGRESSION"  # 이미 지난 순번의 새 항목
     SEQUENCE_DUPLICATE = "SEQUENCE_DUPLICATE"  # 같은 순번에 다른 키
 
@@ -95,6 +120,20 @@ class IngestResult:
         return self.verdict is IngestVerdict.ACCEPTED
 
 
+@dataclass(frozen=True, slots=True)
+class EntryIdentity:
+    """멱등 판정의 완전한 신원 — 키 하나가 아니라 네 값의 조합이다.
+
+    키만으로 판정하면(2차 반증 리뷰) 다른 장비가 우연히 같은 키·같은 내용을 보낸
+    **별개의 journal 항목**이 조용히 사라진다. 재전송은 네 값이 전부 같을 때뿐이며,
+    하나라도 다르면 그것은 재전송이 아니라 충돌이다.
+    """
+
+    edge_device_id: str
+    device_sequence: int
+    payload_digest: str
+
+
 @dataclass
 class SyncLedger:
     """서버 측 수신 원장 — 멱등성·순서 보존을 판정하는 참조 구현.
@@ -104,8 +143,8 @@ class SyncLedger:
     검증하므로, DB 구현이 이 규칙에서 벗어나면 계약 위반이다.
     """
 
-    # idempotency_key → payload_digest
-    _seen: dict[str, str] = field(default_factory=dict)
+    # idempotency_key → EntryIdentity (키 + 장비 + 순번 + digest 4중 결합)
+    _seen: dict[str, EntryIdentity] = field(default_factory=dict)
     # edge_device_id → 마지막으로 수락한 device_sequence
     _last_sequence: dict[str, int] = field(default_factory=dict)
     # 수락된 항목을 수신 순서대로 보관(순서 보존 검증용)
@@ -116,25 +155,37 @@ class SyncLedger:
     def ingest(self, entry: JournalEntry) -> IngestResult:
         """항목 1건을 수신 판정한다. 예외를 던지지 않는다(fail-closed).
 
-        판정 순서: 본문 digest 정합 → 멱등 키 중복(내용 동일/충돌) → 순번 중복 →
-        순번 역행. 순서가 중요한 이유는 "이미 본 항목의 재전송"을 순번 규칙보다
+        판정 순서: 본문 정규화 → digest 정합 → 멱등 신원 일치(재전송/충돌) → 순번
+        중복 → 순번 역행. 순서가 중요한 이유는 "이미 본 항목의 재전송"을 순번 규칙보다
         먼저 처리해야 하기 때문이다 — 재전송은 당연히 순번이 역행한다.
         """
-        actual_digest = payload_digest(entry.payload)
+        try:
+            actual_digest = payload_digest(entry.payload)
+        except PayloadCanonicalizationError as exc:
+            # 정규화 실패를 예외로 흘리면 "예외를 던지지 않는다"는 계약이 깨진다.
+            return IngestResult(IngestVerdict.MALFORMED_PAYLOAD, detail=str(exc))
         if actual_digest != entry.payload_digest:
             return IngestResult(
                 IngestVerdict.DIGEST_MISMATCH,
                 detail=f"선언 {entry.payload_digest} != 실제 {actual_digest}",
             )
 
-        previous_digest = self._seen.get(entry.idempotency_key)
-        if previous_digest is not None:
-            if previous_digest == entry.payload_digest:
+        identity = EntryIdentity(
+            edge_device_id=entry.edge_device_id,
+            device_sequence=entry.device_sequence,
+            payload_digest=entry.payload_digest,
+        )
+        previous = self._seen.get(entry.idempotency_key)
+        if previous is not None:
+            if previous == identity:
                 # 정상 재전송(ACK 유실 등) — 중복 생성 없이 무시한다.
                 return IngestResult(IngestVerdict.DUPLICATE_IGNORED)
             return IngestResult(
-                IngestVerdict.DIGEST_CONFLICT,
-                detail=f"같은 idempotency_key({entry.idempotency_key})에 다른 내용",
+                IngestVerdict.IDEMPOTENCY_CONFLICT,
+                detail=(
+                    f"같은 idempotency_key({entry.idempotency_key})에 다른 신원 — "
+                    f"기존 {previous} != 신규 {identity}"
+                ),
             )
 
         device_sequences = self._sequence_keys.setdefault(entry.edge_device_id, {})
@@ -157,7 +208,7 @@ class SyncLedger:
                 detail=f"{entry.edge_device_id} 순번 {entry.device_sequence} < 최종 {last}",
             )
 
-        self._seen[entry.idempotency_key] = entry.payload_digest
+        self._seen[entry.idempotency_key] = identity
         device_sequences[entry.device_sequence] = entry.idempotency_key
         self._last_sequence[entry.edge_device_id] = entry.device_sequence
         self._accepted.append(entry)

@@ -7,12 +7,14 @@ green≠작동 초점: "동기화가 실행된다"가 아니라 **재전송이 �
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pytest
 from ksi_event_contracts.offline_sync import (
     IngestVerdict,
     JournalEntry,
+    PayloadCanonicalizationError,
     SyncLedger,
     payload_digest,
 )
@@ -109,7 +111,7 @@ def test_same_key_different_payload_is_conflict_not_silent_overwrite() -> None:
     tampered = _entry("evt-1", 0, {"eventId": "evt-1", "severity": "LOW"})
     result = ledger.ingest(tampered)
 
-    assert result.verdict is IngestVerdict.DIGEST_CONFLICT
+    assert result.verdict is IngestVerdict.IDEMPOTENCY_CONFLICT
     assert not result.accepted
     assert ledger.accepted_count() == 1, "충돌 항목이 반영되면 안 된다"
 
@@ -229,19 +231,46 @@ def test_sequences_are_per_device_independent() -> None:
     assert ledger.accepted_sequences("manifold-B") == [0]
 
 
-def test_idempotency_key_is_global_not_per_device() -> None:
-    """키는 전역 유일해야 한다 — 다른 장비가 같은 키를 쓰면 충돌로 잡힌다."""
+def test_same_key_from_different_device_is_conflict_not_silently_dropped() -> None:
+    """[2차 반증 P0] 키만으로 판정하면 다른 장비의 **별개 항목**이 조용히 사라진다.
+
+    manifold-B가 우연히 같은 키·같은 내용을 보냈다면 그것은 A의 재전송이 아니라
+    다른 장비가 만든 다른 journal 항목이다. 멱등 신원은 키 하나가 아니라
+    (키 + 장비 + 순번 + digest) 4중 결합이어야 한다.
+    """
     ledger = SyncLedger()
     body = {"eventId": "shared", "severity": "HIGH"}
-    ledger.ingest(_entry("dup-key", 0, body, device="manifold-A"))
+    assert ledger.ingest(_entry("dup-key", 10, body, device="manifold-A")).accepted
 
-    same_content = ledger.ingest(_entry("dup-key", 0, body, device="manifold-B"))
-    assert same_content.verdict is IngestVerdict.DUPLICATE_IGNORED
+    other_device = ledger.ingest(_entry("dup-key", 55, body, device="manifold-B"))
 
-    different = ledger.ingest(
-        _entry("dup-key", 1, {"eventId": "other", "severity": "LOW"}, device="manifold-B")
+    assert other_device.verdict is IngestVerdict.IDEMPOTENCY_CONFLICT, (
+        "다른 장비의 별개 항목이 DUPLICATE로 조용히 사라지면 데이터가 유실된다"
     )
-    assert different.verdict is IngestVerdict.DIGEST_CONFLICT
+    assert ledger.accepted_count() == 1
+
+
+def test_same_key_same_device_different_sequence_is_conflict() -> None:
+    """순번이 다르면 재전송이 아니다 — 신원의 일부이므로 충돌로 잡힌다."""
+    ledger = SyncLedger()
+    body = {"eventId": "x", "severity": "HIGH"}
+    ledger.ingest(_entry("k", 0, body))
+
+    result = ledger.ingest(_entry("k", 1, body))
+
+    assert result.verdict is IngestVerdict.IDEMPOTENCY_CONFLICT
+
+
+def test_full_identity_match_is_the_only_duplicate() -> None:
+    """키·장비·순번·digest가 **전부** 같을 때만 정상 재전송이다."""
+    ledger = SyncLedger()
+    body = {"eventId": "x", "severity": "HIGH"}
+    ledger.ingest(_entry("k", 7, body, device="manifold-A"))
+
+    exact = ledger.ingest(_entry("k", 7, body, device="manifold-A"))
+
+    assert exact.verdict is IngestVerdict.DUPLICATE_IGNORED
+    assert ledger.accepted_count() == 1
 
 
 # ── 계약 모델 검증 ────────────────────────────────────────────────────────────
@@ -305,3 +334,84 @@ def test_payload_digest_handles_non_ascii() -> None:
     """한글 등 비ASCII 본문도 안정적으로 digest된다(ensure_ascii=False 규약)."""
     body = {"description": "굴착기 선회 반경 침입"}
     assert payload_digest(body) == payload_digest(dict(body))
+
+
+# ── 2차 반증 리뷰 (2026-07-27) — payload canonicalization ─────────────────────
+
+
+@pytest.mark.parametrize(
+    ("label", "bad_payload"),
+    [
+        ("NaN", {"value": math.nan}),
+        ("Infinity", {"value": math.inf}),
+        ("-Infinity", {"value": -math.inf}),
+        ("nested NaN", {"outer": {"inner": math.nan}}),
+        ("list NaN", {"values": [1.0, math.nan]}),
+    ],
+)
+def test_nonfinite_payload_rejected_by_digest(label: str, bad_payload: dict[str, Any]) -> None:
+    """[2차 반증 P0] NaN/Infinity는 비표준 JSON 토큰으로 직렬화된다 — 거부.
+
+    표준 파서로 다시 읽을 수 없는 digest가 만들어지면 서버·Edge가 서로 다른 파서를
+    쓸 때 "같은 내용"의 정의가 갈린다.
+    """
+    with pytest.raises(PayloadCanonicalizationError):
+        payload_digest(bad_payload)
+
+
+@pytest.mark.parametrize(
+    ("label", "bad_payload"),
+    [
+        ("set", {"value": {1, 2}}),
+        ("bytes", {"value": b"binary"}),
+        ("nested set", {"outer": {"inner": {1, 2}}}),
+    ],
+)
+def test_non_json_payload_rejected_by_digest(label: str, bad_payload: dict[str, Any]) -> None:
+    with pytest.raises(PayloadCanonicalizationError):
+        payload_digest(bad_payload)
+
+
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        {"value": math.nan},
+        {"value": math.inf},
+        {"value": {1, 2}},
+        {"value": b"binary"},
+        {"outer": {"inner": math.nan}},
+    ],
+)
+def test_ingest_converts_canonicalization_failure_to_typed_verdict(
+    bad_payload: dict[str, Any],
+) -> None:
+    """[2차 반증 P0] ingest()는 예외를 던지지 않는다고 선언했으므로 verdict로 변환한다."""
+    ledger = SyncLedger()
+    entry = JournalEntry(
+        idempotency_key="k",
+        device_sequence=0,
+        edge_device_id=_DEVICE,
+        payload_digest="sha256:" + "0" * 64,
+        payload=bad_payload,
+    )
+
+    result = ledger.ingest(entry)  # 예외가 아니라 verdict가 나와야 한다
+
+    assert result.verdict is IngestVerdict.MALFORMED_PAYLOAD
+    assert not result.accepted
+    assert ledger.accepted_count() == 0
+
+
+def test_finite_float_payload_still_accepted() -> None:
+    """정상 부동소수는 거부되지 않아야 한다 — 과잉 차단 방지."""
+    body = {"latitude": 37.5, "altitude": -1.25, "count": 0}
+    digest = payload_digest(body)
+    ledger = SyncLedger()
+    entry = JournalEntry(
+        idempotency_key="k",
+        device_sequence=0,
+        edge_device_id=_DEVICE,
+        payload_digest=digest,
+        payload=body,
+    )
+    assert ledger.ingest(entry).accepted
