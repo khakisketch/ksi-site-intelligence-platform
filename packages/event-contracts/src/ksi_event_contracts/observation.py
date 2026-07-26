@@ -21,6 +21,7 @@ INV-020 강제: ``site_frame``·``observed_at``·``position_covariance``가 requ
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -43,10 +44,22 @@ class Observation(BaseModel):
         detection_confidence: 원 Detection의 분류 신뢰도(0~1).
         geo_confidence: 좌표화 신뢰도 — ``ksi_geo_core.projection`` 산출값(0~1).
         sensor_id: 관측을 만든 센서/카메라 식별자.
-        viewpoint_id: 관측이 이루어진 **관측점** 식별자(프레임/카메라 Pose 참조).
-            서로 다른 ``observation_id`` 라도 같은 관측점에서 나온 관측이면 독립적인
-            다중 시점 증거가 아니다 — 조립 계층이 이 값으로 시점 다양성을 판정한다.
-            아직 관측점을 추적하지 못하는 소스는 None이며, 그 경우 조립은 시점 다양성을
+        viewpoint_id: 관측이 이루어진 **관측점** 식별자.
+
+            **의미 규약(HIL 이전 확정, 독립 검토 2026-07-27 지정):** 이 값은 임의 프레임
+            ID가 **아니다.** 프레임마다 다른 값을 넣으면 정지 호버링 중 연속 프레임이
+            서로 다른 관측점으로 계상되어, 시차 없는 관측이 다중 시점 증거로 오인된다
+            (시점 다양성 게이트가 무력화된다).
+
+            허용되는 값은 둘 중 하나다:
+
+            1. **Calibrated camera pose 참조** — 보정된 카메라 Pose 레코드의 ID.
+               같은 Pose에서 찍은 프레임은 같은 ``viewpoint_id`` 를 갖는다.
+            2. **Viewpoint bin** — 위 Pose를 사용할 수 없을 때, 관측점 공간을 이산화한
+               bin의 ID(:func:`viewpoint_bin_id` 로 생성). 기하적으로 의미 있는 시차가
+               생기는 최소 간격 이상 떨어진 관측점만 서로 다른 bin에 들어간다.
+
+            관측점을 추적하지 못하는 소스는 ``None`` 이며, 그 경우 조립은 시점 다양성을
             **주장하지 않는다**(CONFIRMED로 올리지 않는다).
         lineage: 모델·보정 버전 계보(INV-042). 자유 dict이며 상위 EventBundle의
             ``lineage``와 동일 의미를 갖는다.
@@ -58,7 +71,7 @@ class Observation(BaseModel):
         extra="forbid",
     )
 
-    observation_id: str
+    observation_id: str = Field(min_length=1)
     track_id: str | None = None
     observed_at: AwareDatetime
     site_frame: str
@@ -69,6 +82,18 @@ class Observation(BaseModel):
     sensor_id: str | None = None
     viewpoint_id: str | None = None
     lineage: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("observation_id", "track_id", "viewpoint_id", "sensor_id")
+    @classmethod
+    def _reject_blank_identifier(cls, value: str | None) -> str | None:
+        """공백·whitespace-only 식별자 거부 (독립 검토 2026-07-27 지정).
+
+        ``" "`` 같은 값은 ``min_length=1`` 을 통과하지만 식별자로 쓸 수 없다 — 정렬·
+        중복 판정·fingerprint에서 조용히 서로 다른 것을 같게(또는 그 반대로) 만든다.
+        """
+        if value is not None and not value.strip():
+            raise ValueError("식별자는 공백만으로 구성될 수 없다")
+        return value
 
     @field_validator("observed_at")
     @classmethod
@@ -82,3 +107,52 @@ class Observation(BaseModel):
         if value.utcoffset() != timedelta(0):
             raise ValueError(f"observed_at 은 UTC여야 한다 (offset={value.utcoffset()})")
         return value
+
+
+# 관측점 bin 기본 간격 — 이보다 가까운 두 관측점은 같은 bin(=같은 시점)으로 본다.
+# 근거: 시차(parallax) 기반 깊이 검증이 의미를 가지려면 기선(baseline)이 대상 거리에
+# 비해 무시할 수 없어야 한다. 2m는 수십 m 거리 대상에 대한 보수적 최소 기선이며,
+# **실측 미검증 임시값**이다(PRD_AMBIGUITY_REGISTER의 렌즈별 위치오차 계열이 확정할
+# 파라미터). Geo Safety Profile로 승격되기 전까지 이 값을 검증된 것으로 취급하지 않는다.
+DEFAULT_VIEWPOINT_BIN_METERS = 2.0
+
+
+def viewpoint_bin_id(
+    position: tuple[float, float, float],
+    *,
+    bin_meters: float = DEFAULT_VIEWPOINT_BIN_METERS,
+) -> str:
+    """관측점 좌표를 이산 bin ID로 변환한다 — ``viewpoint_id`` 의 **차선** 형식.
+
+    Calibrated camera pose 레코드를 아직 쓸 수 없을 때의 폴백이다. 관측점 위치를
+    격자로 이산화해 대부분의 호버링 프레임이 같은 bin에 묶이게 한다.
+
+    ## 알려진 한계 — 격자 경계 민감성 (숨기지 않고 기록)
+
+    격자 방식은 **경계를 걸친 두 관측점을 서로 다른 bin으로 본다.** 예컨대 bin 2m에서
+    ``x=9.9`` 와 ``x=10.0`` 은 0.1m 차이지만 각각 bin 4·5에 들어간다. 이는 시점
+    다양성을 **과다 계상**하는 방향의 오차다(실제로는 시차가 없는데 서로 다른 시점으로
+    보임) — 안전하지 않은 방향이므로 반드시 인지해야 한다.
+
+    따라서:
+
+    - **권위 있는 형식은 calibrated camera pose 참조다.** 실기 보정이 붙는 시점에
+      그쪽으로 옮기고 이 폴백은 개발·재생 전용으로 격하한다.
+    - 이 함수만으로 ``CONFIRMED`` 승격을 정당화하지 않는다. 시점 다양성은 필요조건이며,
+      기선(baseline) 기반 검증은 pose 데이터가 Observation에 실린 뒤 추가한다.
+    - 경계 민감성은 ``tests/replay`` 에 명시적 회귀 테스트로 고정돼 있다(숨은 성질이
+      아니라 알려진 성질로 다룬다).
+
+    Args:
+        position: 관측점(카메라) 위치. ``site_frame`` 기준 3D 좌표.
+        bin_meters: bin 한 변의 길이(m). 양의 유한값이어야 한다.
+
+    Raises:
+        ValueError: ``bin_meters`` 가 비유한·비양수이거나 position에 비유한 값이 있을 때.
+    """
+    if not (math.isfinite(bin_meters) and bin_meters > 0):
+        raise ValueError(f"bin_meters 는 finite한 양수여야 한다 (got {bin_meters!r})")
+    if not all(math.isfinite(v) for v in position):
+        raise ValueError(f"position 에 비유한 값이 있다 (got {position!r})")
+    indices = tuple(math.floor(v / bin_meters) for v in position)
+    return f"vpbin:{bin_meters:g}:{indices[0]}:{indices[1]}:{indices[2]}"

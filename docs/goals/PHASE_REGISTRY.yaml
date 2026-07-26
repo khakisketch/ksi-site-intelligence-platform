@@ -46,11 +46,38 @@ phases:
 
   - id: phase-1
     title: "Geo-Referenced World Model"
-    status: PLANNED
+    # 하드웨어가 필요한 단계가 아니므로 소프트웨어 수용으로 닫는다.
+    status: DONE
+
+    implementation: COMPLETE
+    technical_gate: PASS
+    software_acceptance: PASS
+
+    independent_review: PASS
+    independent_review_commit: "33a669abb092fd911ba90fac31d90562b5960e85"
+    independent_review_date: "2026-07-27"
+    independent_review_note: >-
+      2026-07-27 독립 검토 2라운드 완료. 1차 지적 6건(공분산 SPD 미검증으로 -I가
+      CONFIRMED / 모순 관측이 더 정밀한 결과로 승격 / 중복 observation_id 계상 /
+      멱등 신원이 키에만 결합돼 다른 장비 항목 소멸 / payload canonicalization 예외 누출 /
+      문턱·시각 검증 부재)을 33a669a에서 전부 수정. 정상 경로(상관 SPD 공분산, 정합
+      산포, 정상 부동소수 payload, 서로 다른 viewpoint의 CONFIRMED)도 유지 확인 —
+      게이트를 조여 기능을 막은 것이 아님. 401 passed·5 skipped, mypy 53파일 clean,
+      C++ ctest 2/2, CI green.
+
+    next_work_allowed: true
     acceptance:
       - "WorldEntity/Observation 계약 + covariance·CRS 필수 필드 불변식 (INV-020)"
       - "다중 시점 세계좌표 융합 기준 구현 + replay 재현"
       - "Event Bundle/Offline Sync 계약 검증"
+
+    # HIL 이전에 처리할 비차단 보완사항 (독립 검토 2026-07-27 지정)
+    pre_hil_followups:
+      - "max_normalized_residual 을 assemble_world_entity()까지 전달 + Versioned Geo Safety Profile 관리"
+      - "viewpoint_id 를 임의 프레임 ID가 아니라 Calibration된 Camera Pose 또는 Viewpoint bin 참조로 정의"
+      - "C++ Edge와 Python Core가 Offline Sync digest를 직접 계산하기 전 cross-language canonicalization vector 추가"
+      - "observation_id·track_id·viewpoint_id 의 공백·whitespace-only 값 거부"
+      - "동적 객체 융합 전 최대 관측 시간창 명시적 제한"
 
   - id: phase-2
     title: "Baseline Mapping & Unified Mission"

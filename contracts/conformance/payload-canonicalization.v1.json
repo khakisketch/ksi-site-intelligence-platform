@@ -1,0 +1,115 @@
+{
+  "description": "Offline Sync payload digest 정규화 공유 conformance 벡터 (HIL 이전 보완 3). C++ Edge와 Python Core가 **각자** 같은 본문에서 같은 digest를 계산해야 한다 — 어긋나면 정상 재전송이 IDEMPOTENCY_CONFLICT 로 오판되거나(journal 무한 증가) 서로 다른 내용이 같은 digest로 뭉개진다. 두 평면이 digest를 직접 계산하기 시작하기 전에 이 벡터로 정규화 규약을 고정한다.",
+  "canonicalization": {
+    "algorithm": "JSON, key 정렬(코드포인트 순), 구분자 (\",\", \":\") 공백 없음, ensure_ascii=false(UTF-8 그대로), allow_nan=false",
+    "digest": "sha256:<hex> — 정규화 바이트열의 SHA-256",
+    "reference": "ADR-KSI-002 와 같은 규약(두 곳이 다른 정규화를 쓰면 '같은 내용'의 정의가 갈린다)"
+  },
+  "cases": [
+    {
+      "id": "empty_object",
+      "rationale": "빈 본문도 안정적인 digest를 가져야 한다.",
+      "payload": {},
+      "canonical": "{}",
+      "expectedDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "id": "single_string_field",
+      "rationale": "기본 문자열 필드.",
+      "payload": {
+        "eventId": "evt-1"
+      },
+      "canonical": "{\"eventId\":\"evt-1\"}",
+      "expectedDigest": "sha256:2a43dd09714b7d9275af5504df229974706426c67fe79d06906b4130182647fc"
+    },
+    {
+      "id": "key_order_independence",
+      "rationale": "삽입 순서가 달라도 key 정렬 후 같은 canonical — 멱등성의 기초.",
+      "payload": {
+        "severity": "HIGH",
+        "eventId": "evt-1"
+      },
+      "canonical": "{\"eventId\":\"evt-1\",\"severity\":\"HIGH\"}",
+      "expectedDigest": "sha256:df2ada31b798a2ceccdd42cc27b3837ff4708c19e5d7d2e94a8a0bbb50188bec"
+    },
+    {
+      "id": "nested_object_sorted_recursively",
+      "rationale": "중첩 객체의 key도 정렬돼야 한다(얕은 정렬이면 여기서 갈린다).",
+      "payload": {
+        "outer": {
+          "b": 2,
+          "a": 1
+        }
+      },
+      "canonical": "{\"outer\":{\"a\":1,\"b\":2}}",
+      "expectedDigest": "sha256:8a14b37c210b85f40e7290a8e55658a59f90ad6fae1f315627109854d34d71e8"
+    },
+    {
+      "id": "array_order_preserved",
+      "rationale": "배열은 순서가 의미이므로 정렬하지 않는다(객체 key와 다르다).",
+      "payload": {
+        "values": [
+          3,
+          1,
+          2
+        ]
+      },
+      "canonical": "{\"values\":[3,1,2]}",
+      "expectedDigest": "sha256:c2d02feadd9a74ac8989f91e0f89044215f3f18e368c414771d457b8246ce293"
+    },
+    {
+      "id": "non_ascii_preserved_as_utf8",
+      "rationale": "ensure_ascii=false — 한글을 \\uXXXX 로 이스케이프하지 않는다. 이 규약이 갈리면 같은 내용이 다른 digest가 된다.",
+      "payload": {
+        "description": "굴착기 선회 반경 침입"
+      },
+      "canonical": "{\"description\":\"굴착기 선회 반경 침입\"}",
+      "expectedDigest": "sha256:70771422bb754295b88d79f1ff8b9abaf7a4aab2da367abaedf4f65274e822b1"
+    },
+    {
+      "id": "integer_vs_float_are_different",
+      "rationale": "1 과 1.0 은 canonical 표현이 다르므로 digest도 다르다 — 재직렬화 중간층이 타입을 바꾸면 정상 재전송이 충돌로 오판된다는 경고.",
+      "payload": {
+        "count": 1
+      },
+      "canonical": "{\"count\":1}",
+      "expectedDigest": "sha256:6aea6dfe6561984cdc5c54ead84d47d2cf29e48253ae282aef237404adad4661"
+    },
+    {
+      "id": "float_representation",
+      "rationale": "부동소수 표현 규약 고정.",
+      "payload": {
+        "latitude": 37.5
+      },
+      "canonical": "{\"latitude\":37.5}",
+      "expectedDigest": "sha256:9b048c05f8ab96f7171a6bef251e88db7003d2755584989317c718aa43dc4f03"
+    },
+    {
+      "id": "null_and_bool",
+      "rationale": "null/true/false 소문자 JSON 리터럴.",
+      "payload": {
+        "flag": true,
+        "missing": null
+      },
+      "canonical": "{\"flag\":true,\"missing\":null}",
+      "expectedDigest": "sha256:2f7bfc29ed90ba6cbe816359bd44610868754084937c345ab1ac0481b82fdfc5"
+    }
+  ],
+  "rejectedCases": [
+    {
+      "id": "nan_rejected",
+      "rationale": "NaN 은 비표준 JSON 토큰으로 직렬화되어 표준 파서로 다시 읽을 수 없다 — 양쪽 언어에서 거부되어야 한다.",
+      "payloadDescription": "{\"value\": NaN}"
+    },
+    {
+      "id": "infinity_rejected",
+      "rationale": "Infinity 동일 사유.",
+      "payloadDescription": "{\"value\": Infinity}"
+    },
+    {
+      "id": "non_json_type_rejected",
+      "rationale": "set/bytes 등 JSON 도메인 밖 타입은 정규화 불가 — typed 실패로 거부.",
+      "payloadDescription": "{\"value\": set([1,2])}"
+    }
+  ]
+}

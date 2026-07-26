@@ -23,7 +23,7 @@ from ksi_event_contracts.assembly import (
     assemble_world_entity,
     world_entity_fingerprint,
 )
-from ksi_event_contracts.observation import Observation
+from ksi_event_contracts.observation import Observation, viewpoint_bin_id
 from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.fusion import FusionStatus, covariance_trace
 from pydantic import ValidationError
@@ -34,6 +34,7 @@ _MODEL_VERSIONS = {"person-detector": "v3.1.0"}
 
 # "인자를 안 넘김"과 "명시적으로 None(관측점 모름)"을 구분하는 sentinel.
 _UNSET = object()
+_BASE_TIME = datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC)
 
 
 def _observation(
@@ -41,7 +42,7 @@ def _observation(
     position: list[float],
     *,
     track_id: str | None = "trk-1",
-    seconds: int = 0,
+    millis: int = 0,
     covariance: list[float] | None = None,
     site_frame: str = _FRAME,
     detection_confidence: float | None = 0.9,
@@ -50,7 +51,7 @@ def _observation(
     return Observation(
         observation_id=observation_id,
         track_id=track_id,
-        observed_at=datetime(2026, 7, 26, 4, 0, seconds, tzinfo=UTC),
+        observed_at=_BASE_TIME + timedelta(milliseconds=millis),
         site_frame=site_frame,
         position=position,
         position_covariance=covariance if covariance is not None else list(_ISOTROPIC),
@@ -93,9 +94,9 @@ def _assemble_ok(observations: list[Observation]) -> WorldEntity:
 def test_three_frames_become_one_world_entity() -> None:
     """세 프레임의 같은 사람이 WorldEntity 1개로 합쳐진다 — Phase 1 핵심 주장."""
     observations = [
-        _observation("obs-a", [10.0, 20.0, 1.7], seconds=0),
-        _observation("obs-b", [10.2, 19.9, 1.7], seconds=1),
-        _observation("obs-c", [9.9, 20.1, 1.8], seconds=2),
+        _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+        _observation("obs-b", [10.2, 19.9, 1.7], millis=100),
+        _observation("obs-c", [9.9, 20.1, 1.8], millis=200),
     ]
 
     entity = _assemble_ok(observations)
@@ -129,12 +130,12 @@ def test_timestamp_is_latest_observation() -> None:
     """Entity 시각은 가장 늦은 관측 시각 — 가장 최근 정보가 반영된 시점."""
     entity = _assemble_ok(
         [
-            _observation("obs-a", [10.0, 20.0, 1.7], seconds=0),
-            _observation("obs-c", [10.0, 20.0, 1.7], seconds=5),
-            _observation("obs-b", [10.0, 20.0, 1.7], seconds=2),
+            _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+            _observation("obs-c", [10.0, 20.0, 1.7], millis=500),
+            _observation("obs-b", [10.0, 20.0, 1.7], millis=200),
         ]
     )
-    assert entity.timestamp.second == 5
+    assert entity.timestamp == _BASE_TIME + timedelta(milliseconds=500)
 
 
 def test_classification_confidence_uses_minimum_not_optimistic() -> None:
@@ -253,8 +254,8 @@ def test_same_observations_produce_identical_fingerprint() -> None:
     """동일 관측 집합 → 동일 fingerprint (2회 독립 조립)."""
     def build() -> list[Observation]:
         return [
-            _observation("obs-a", [10.0, 20.0, 1.7], seconds=0),
-            _observation("obs-b", [10.2, 19.9, 1.7], seconds=1),
+            _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+            _observation("obs-b", [10.2, 19.9, 1.7], millis=100),
         ]
 
     first = _assemble_ok(build())
@@ -266,9 +267,9 @@ def test_same_observations_produce_identical_fingerprint() -> None:
 def test_observation_order_does_not_change_fingerprint() -> None:
     """관측 도착 순서가 뒤섞여도 같은 WorldEntity — replay 재현의 핵심."""
     observations = [
-        _observation("obs-a", [10.0, 20.0, 1.7], seconds=0),
-        _observation("obs-b", [10.2, 19.9, 1.7], seconds=1),
-        _observation("obs-c", [9.9, 20.1, 1.8], seconds=2),
+        _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+        _observation("obs-b", [10.2, 19.9, 1.7], millis=100),
+        _observation("obs-c", [9.9, 20.1, 1.8], millis=200),
     ]
 
     forward = _assemble_ok(list(observations))
@@ -516,3 +517,188 @@ def test_negative_covariance_never_reaches_confirmed() -> None:
     assert result.status is AssemblyStatus.FUSION_FAILED
     assert result.fusion_status is FusionStatus.NON_POSITIVE_DEFINITE
     assert result.entity is None
+
+
+# ── HIL 이전 보완 (독립 검토 2026-07-27 지정) ─────────────────────────────────
+
+
+def test_observation_window_exceeded_rejected() -> None:
+    """[보완 5] 넓은 시간창 관측은 정적 융합으로 합치지 않는다(이동거리가 편향이 된다)."""
+    result = _assemble(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+            _observation("obs-b", [10.0, 20.0, 1.7], millis=1500),  # 1.5s > 기본 1.0s
+        ]
+    )
+    assert result.status is AssemblyStatus.OBSERVATION_WINDOW_EXCEEDED
+    assert result.entity is None
+    assert result.detail is not None and "시간창" in result.detail
+
+
+def test_observation_window_is_injectable() -> None:
+    """창을 넓히면 통과 — 문턱이 실제로 쓰이는지 확인."""
+    observations = [
+        _observation("obs-a", [10.0, 20.0, 1.7], millis=0),
+        _observation("obs-b", [10.0, 20.0, 1.7], millis=1500),
+    ]
+    result = assemble_world_entity(
+        observations,
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        max_observation_window_s=2.0,
+    )
+    assert result.status is AssemblyStatus.OK
+
+
+@pytest.mark.parametrize("bad_window", [0.0, -1.0, float("nan"), float("inf")])
+def test_invalid_observation_window_rejected(bad_window: float) -> None:
+    result = assemble_world_entity(
+        [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        max_observation_window_s=bad_window,
+    )
+    assert result.status is AssemblyStatus.INVALID_THRESHOLDS
+
+
+def test_max_normalized_residual_is_threaded_to_fusion() -> None:
+    """[보완 1] assemble 이 residual 문턱을 융합까지 전달하는지 — 좁히면 거부돼야 한다."""
+    sigma_one = [1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0]
+    observations = [
+        _observation("obs-a", [0.0, 0.0, 0.0], covariance=sigma_one, viewpoint_id="vp-1"),
+        _observation("obs-b", [5.0, 0.0, 0.0], covariance=sigma_one, viewpoint_id="vp-2"),
+    ]
+
+    lenient = assemble_world_entity(
+        observations,
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        max_normalized_residual=10.0,
+    )
+    strict = assemble_world_entity(
+        observations,
+        entity_id="e",
+        entity_class="Person",
+        model_versions=_MODEL_VERSIONS,
+        calibration_profile_id="cal-1",
+        max_normalized_residual=1.0,
+    )
+
+    assert lenient.status is AssemblyStatus.OK
+    assert strict.status is AssemblyStatus.FUSION_FAILED
+    assert strict.fusion_status is FusionStatus.INCONSISTENT_OBSERVATIONS
+
+
+@pytest.mark.parametrize("field_name", ["observation_id", "track_id", "viewpoint_id", "sensor_id"])
+def test_whitespace_only_identifier_rejected(field_name: str) -> None:
+    """[보완 4] 공백만인 식별자는 min_length=1 을 통과하지만 식별자로 쓸 수 없다."""
+    kwargs: dict[str, object] = {
+        "observation_id": "obs-a",
+        "track_id": "trk-1",
+        "observed_at": datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC),
+        "site_frame": _FRAME,
+        "position": [0.0, 0.0, 0.0],
+        "position_covariance": list(_ISOTROPIC),
+        "viewpoint_id": "vp-1",
+        "sensor_id": "cam-1",
+    }
+    kwargs[field_name] = "   "
+    with pytest.raises(ValidationError):
+        Observation(**kwargs)  # type: ignore[arg-type]
+
+
+def test_empty_observation_id_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Observation(
+            observation_id="",
+            observed_at=datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC),
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+        )
+
+
+# ── viewpoint bin (보완 2) ────────────────────────────────────────────────────
+
+
+def test_nearby_viewpoints_share_bin() -> None:
+    """[보완 2] 정지 호버링 중 미세하게 다른 위치는 같은 bin — 시차가 없으므로."""
+    a = viewpoint_bin_id((10.0, 20.0, 30.0))
+    b = viewpoint_bin_id((10.3, 20.2, 30.1))  # 0.3m 차이 < 기본 2m bin
+    assert a == b
+
+
+def test_distant_viewpoints_get_different_bins() -> None:
+    """의미 있는 기선(baseline)만큼 떨어지면 서로 다른 bin."""
+    a = viewpoint_bin_id((0.0, 0.0, 0.0))
+    b = viewpoint_bin_id((5.0, 0.0, 0.0))
+    assert a != b
+
+
+def test_viewpoint_bin_is_deterministic() -> None:
+    assert viewpoint_bin_id((1.5, 2.5, 3.5)) == viewpoint_bin_id((1.5, 2.5, 3.5))
+
+
+def test_viewpoint_bin_size_affects_grouping() -> None:
+    """bin 크기를 키우면 더 멀리 떨어진 관측점도 같은 bin으로 묶인다."""
+    coarse_a = viewpoint_bin_id((0.0, 0.0, 0.0), bin_meters=100.0)
+    coarse_b = viewpoint_bin_id((50.0, 0.0, 0.0), bin_meters=100.0)
+    assert coarse_a == coarse_b
+
+
+@pytest.mark.parametrize("bad_bin", [0.0, -1.0, float("nan"), float("inf")])
+def test_invalid_bin_meters_rejected(bad_bin: float) -> None:
+    with pytest.raises(ValueError, match="bin_meters"):
+        viewpoint_bin_id((0.0, 0.0, 0.0), bin_meters=bad_bin)
+
+
+def test_nonfinite_viewpoint_position_rejected() -> None:
+    with pytest.raises(ValueError, match="position"):
+        viewpoint_bin_id((float("nan"), 0.0, 0.0))
+
+
+def test_hovering_frames_binned_to_same_viewpoint_not_confirmed() -> None:
+    """[보완 2 통합] 호버링 프레임들이 bin으로 묶여 CONFIRMED 로 승격되지 않는다.
+
+    이것이 viewpoint_id 를 임의 프레임 ID로 두면 안 되는 이유다 — bin을 쓰면 시차
+    없는 관측이 다중 시점 증거로 오인되지 않는다.
+    """
+    tight = [0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1]
+    # 같은 bin 내부에 확실히 들어가는 pose들(경계 미접촉) — 전형적 호버링 상황.
+    hovering = [(10.0, 20.0, 30.0), (10.2, 20.1, 30.05), (10.4, 20.3, 30.2)]
+    entity = _assemble_ok(
+        [
+            _observation(
+                f"obs-{i}",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=i * 100,
+                viewpoint_id=viewpoint_bin_id(pose),
+            )
+            for i, pose in enumerate(hovering)
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY", (
+        "호버링 프레임이 CONFIRMED 로 승격되면 시점 다양성 게이트가 무력화된 것이다"
+    )
+
+
+def test_viewpoint_bin_boundary_sensitivity_is_known_limitation() -> None:
+    """[보완 2 한계 기록] 격자 경계를 걸친 근접 pose는 다른 bin이 된다.
+
+    이는 시점 다양성을 **과다 계상**하는 방향의 오차다(시차가 없는데 서로 다른 시점으로
+    보임). 숨은 성질로 두면 위험하므로 여기 명시적으로 고정한다 — 권위 있는 형식은
+    calibrated camera pose 참조이며, 이 폴백의 한계는 모듈 docstring에 기록돼 있다.
+    """
+    # bin 2m 에서 9.9 → floor(4.95)=4, 10.0 → floor(5.0)=5 : 0.1m 차이인데 다른 bin
+    just_below = viewpoint_bin_id((9.9, 20.0, 30.0))
+    just_above = viewpoint_bin_id((10.0, 20.0, 30.0))
+    assert just_below != just_above, (
+        "격자 경계 민감성이 사라졌다면 구현이 바뀐 것 — 문서와 한계 기록을 갱신하라"
+    )

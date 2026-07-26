@@ -30,6 +30,7 @@ from enum import StrEnum
 from typing import Any
 
 from ksi_geo_core.fusion import (
+    DEFAULT_MAX_NORMALIZED_RESIDUAL,
     FusionObservation,
     FusionStatus,
     covariance_trace,
@@ -45,6 +46,15 @@ from ksi_event_contracts.world_entity import WorldEntity
 DEFAULT_CONFIRMED_TRACE_MAX = 0.75
 DEFAULT_LIKELY_TRACE_MAX = 12.0
 
+# 최대 관측 시간창(초) — 이보다 넓게 벌어진 관측들을 하나의 정적 융합으로 합치지 않는다.
+#
+# 근거(독립 검토 2026-07-27 지정): 융합은 시간 진화(motion model)를 다루지 않으므로,
+# 움직이는 대상의 관측을 넓은 시간창에서 합치면 이동 거리가 그대로 편향이 된다.
+# 사람 보행 속도 ~1.4m/s 기준 2초면 ~2.8m 이동 — CONFIRMED 문턱(축당 ~0.5m)을 훌쩍
+# 넘는다. 1.0초는 그 절반 수준의 보수적 창이며 **실측 미검증 임시값**이다.
+# Versioned Geo Safety Profile로 승격되기 전까지 검증된 값으로 취급하지 않는다.
+DEFAULT_MAX_OBSERVATION_WINDOW_S = 1.0
+
 
 class AssemblyStatus(StrEnum):
     """조립 결과 상태. 실패는 typed로 반환한다(INV-023 동형)."""
@@ -55,6 +65,7 @@ class AssemblyStatus(StrEnum):
     MISSING_TRACK_ID = "missing_track_id"  # track 없는 관측은 Entity로 승격 불가
     FUSION_FAILED = "fusion_failed"  # geo-core 융합 단계 실패(사유는 detail)
     INVALID_THRESHOLDS = "invalid_thresholds"  # 문턱값이 비유한·음수·순서 역전
+    OBSERVATION_WINDOW_EXCEEDED = "observation_window_exceeded"  # 시간창 초과(정적 융합 부적합)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +125,8 @@ def assemble_world_entity(
     subclass: str | None = None,
     confirmed_trace_max: float = DEFAULT_CONFIRMED_TRACE_MAX,
     likely_trace_max: float = DEFAULT_LIKELY_TRACE_MAX,
+    max_normalized_residual: float = DEFAULT_MAX_NORMALIZED_RESIDUAL,
+    max_observation_window_s: float = DEFAULT_MAX_OBSERVATION_WINDOW_S,
 ) -> AssemblyResult:
     """같은 track의 관측들을 융합해 :class:`WorldEntity` 를 만든다.
 
@@ -139,6 +152,28 @@ def assemble_world_entity(
             detail=(
                 "likely_trace_max 는 finite하고 confirmed_trace_max 이상이어야 한다 "
                 f"({likely_trace_max!r} < {confirmed_trace_max!r})"
+            ),
+        )
+
+    if not (math.isfinite(max_observation_window_s) and max_observation_window_s > 0):
+        return AssemblyResult(
+            status=AssemblyStatus.INVALID_THRESHOLDS,
+            detail=(
+                "max_observation_window_s 는 finite한 양수여야 한다 "
+                f"({max_observation_window_s!r})"
+            ),
+        )
+
+    # 시간창 제한 — 융합은 시간 진화를 다루지 않으므로(모듈 docstring 참고) 넓게 벌어진
+    # 관측을 하나의 정적 융합으로 합치면 대상 이동거리가 그대로 편향이 된다.
+    timestamps = [o.observed_at for o in observations]
+    span_s = (max(timestamps) - min(timestamps)).total_seconds()
+    if span_s > max_observation_window_s:
+        return AssemblyResult(
+            status=AssemblyStatus.OBSERVATION_WINDOW_EXCEEDED,
+            detail=(
+                f"관측 시간창 {span_s:.3f}s 가 상한 {max_observation_window_s:.3f}s 초과 — "
+                "정적 융합으로 합칠 수 없다(시간 진화 모델 필요)"
             ),
         )
 
@@ -175,7 +210,7 @@ def assemble_world_entity(
         )
         for o in observations
     ]
-    fusion = fuse_observations(fusion_input)
+    fusion = fuse_observations(fusion_input, max_normalized_residual=max_normalized_residual)
     if not fusion.ok:
         return AssemblyResult(
             status=AssemblyStatus.FUSION_FAILED,

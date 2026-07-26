@@ -7,7 +7,9 @@ green≠작동 초점: "동기화가 실행된다"가 아니라 **재전송이 �
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -415,3 +417,78 @@ def test_finite_float_payload_still_accepted() -> None:
         payload=body,
     )
     assert ledger.ingest(entry).accepted
+
+
+# ── cross-language canonicalization 벡터 (HIL 이전 보완 3) ────────────────────
+
+_CANON_VECTOR_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "conformance"
+    / "payload-canonicalization.v1.json"
+)
+_CANON_VECTORS: dict[str, Any] = json.loads(_CANON_VECTOR_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", _CANON_VECTORS["cases"], ids=lambda c: c["id"])
+def test_python_canonicalization_matches_shared_vector(case: dict[str, Any]) -> None:
+    """Python 측 digest가 공유 벡터와 일치하는지.
+
+    C++ Edge가 digest를 직접 계산하기 시작하면 **같은 벡터**를 C++에서도 실행해야
+    한다(action-intent conformance와 같은 구조). 지금은 Python이 유일한 계산 주체이므로
+    이 테스트가 규약을 고정하는 역할을 한다 — 규약이 바뀌면 여기서 먼저 드러난다.
+    """
+    assert payload_digest(case["payload"]) == case["expectedDigest"], case["rationale"]
+
+
+@pytest.mark.parametrize("case", _CANON_VECTORS["cases"], ids=lambda c: c["id"])
+def test_canonical_string_matches_shared_vector(case: dict[str, Any]) -> None:
+    """정규화 문자열 자체도 고정한다 — digest만 맞으면 우연일 수 있다."""
+    canonical = json.dumps(
+        case["payload"], sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    assert canonical == case["canonical"], case["rationale"]
+
+
+def test_key_order_independence_vectors_share_digest() -> None:
+    """삽입 순서가 다른 두 벡터가 같은 digest를 갖는지 — 멱등성의 기초."""
+    cases = {c["id"]: c for c in _CANON_VECTORS["cases"]}
+    assert (
+        cases["single_string_field"]["expectedDigest"]
+        != cases["key_order_independence"]["expectedDigest"]
+    ), "두 케이스는 필드 수가 달라 digest도 달라야 한다(벡터 구성 확인)"
+    reordered = json.dumps(
+        {"severity": "HIGH", "eventId": "evt-1"},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    original = json.dumps(
+        {"eventId": "evt-1", "severity": "HIGH"},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    assert reordered == original
+
+
+def test_non_ascii_vector_is_not_escaped() -> None:
+    """ensure_ascii=False 규약 — 한글이 \\uXXXX 로 이스케이프되면 digest가 갈린다."""
+    case = next(c for c in _CANON_VECTORS["cases"] if c["id"] == "non_ascii_preserved_as_utf8")
+    assert "굴착기" in case["canonical"], "벡터 자체가 UTF-8 원문을 담아야 한다"
+    assert "\\u" not in case["canonical"]
+
+
+def test_integer_and_float_digests_differ() -> None:
+    """1 vs 1.0 — 재직렬화 중간층이 타입을 바꾸면 정상 재전송이 충돌로 오판된다."""
+    assert payload_digest({"count": 1}) != payload_digest({"count": 1.0})
+
+
+def test_rejected_cases_are_documented_and_actually_rejected() -> None:
+    """벡터의 rejectedCases 가 실제로 거부되는지 — 문서와 구현의 일치."""
+    rejected_ids = {c["id"] for c in _CANON_VECTORS["rejectedCases"]}
+    assert rejected_ids == {"nan_rejected", "infinity_rejected", "non_json_type_rejected"}
+
+    for bad in ({"value": math.nan}, {"value": math.inf}, {"value": {1, 2}}):
+        with pytest.raises(PayloadCanonicalizationError):
+            payload_digest(bad)
