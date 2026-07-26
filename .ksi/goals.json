@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-26T13:53:16+09:00",
+  "updated_at": "2026-07-26T15:42:10+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -17,14 +17,14 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "2026-07-26 독립 정적 검토(REQUEST_CHANGES) 5개 P0 blocker 전부 수정 완료, commit 052ec8b. (1)register() VERIFIED evidence-bypass 차단 (2)TimestampSet UTC/monotonic 분리+DerivedTimestamp (3)project_foot_point 5종 typed 검증(치수/픽셀/intrinsics/finite/geo range) (4)confirm_after_observations 최소값 5로 계약 일치 (5)IllegalSupportLevelTransitionError 예외타입 수정. 요구된 네거티브 테스트 전부 추가. 게이트: 워크스페이스 202 passed·5 skipped, mypy 39파일 clean, ruff clean, 가드 통과. docs/goals/PHASE_REGISTRY.yaml을 status=GATED/independent_review=CHANGES_REQUESTED(수정완료·재검토대기)/stage_c_allowed=false로 갱신. PASS는 자기선언하지 않음 — 독립 재검토 대기.",
+      "evidence": "2026-07-26 2차 독립 검토(REQUEST_CHANGES) 3개 P0-2/P0-4 blocker 수정 완료, commit bcdad4c. (1)max_gap_s/buffer_size finite+type 검증, CalibrationOffset/SensorLatencyProfile finite 검증, sync_ts_utc finite postcondition (2)픽셀 범위 검증 0<=u<=width/0<=v<=height(우측 경계 골든벡터 보존 위해 포함 상한) (3)zoom_factor<1.0 조용한 clamp 제거→INVALID_INTRINSICS 거부, gnss_accuracy_m 음수→신규 INVALID_UNCERTAINTY 거부. 게이트: 워크스페이스 234 passed·5 skipped, mypy 39파일 clean, ruff clean, 가드 통과, uv lock --check 통과. position_tolerance_m=NaN·비정수 confirm_after_observations은 2차 검토가 범위 제외 확인(현재 경로상 낙관적 승격 없음). PHASE_REGISTRY 그대로 유지(GATED/CHANGES_REQUESTED/stage_c_allowed=false) — PASS는 독립 재검토로만.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 2,
+      "ungated_attempts": 3,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-26T13:53:16+09:00"
+      "updated_at": "2026-07-26T15:42:10+09:00"
     },
     {
       "id": "phase-1",
