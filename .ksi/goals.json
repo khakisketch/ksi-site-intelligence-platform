@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-27T01:35:36+09:00",
+  "updated_at": "2026-07-27T01:52:10+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -151,6 +151,46 @@
       "ungated_attempts": 0,
       "created_at": "2026-07-26T15:59:20+09:00",
       "updated_at": "2026-07-26T22:41:55+09:00"
+    },
+    {
+      "id": "track-a",
+      "title": "Track A: DJI Hardware Capability Spike",
+      "completion_criteria": [
+        "PRD 20.3 9항목 읽기 중심 Spike 실기 실행",
+        "11개 필드 SpikeEvidence로 각 항목 승격",
+        "Frame-Telemetry 시간차 p95<=50ms 실측(PRD 21.1)",
+        "쓰기 명령(FlyTo/Route/Yaw)은 읽기 검증 후 별도 게이트"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-27T01:51:57+09:00",
+      "updated_at": "2026-07-27T01:51:57+09:00"
+    },
+    {
+      "id": "track-b",
+      "title": "Track B: Perception Vertical Slice (실기 입력 전환)",
+      "completion_criteria": [
+        "합성/녹화 입력 배선 완성(완료 8be6a63)",
+        "Detector를 permissive license 실모델로 교체",
+        "Frame source를 PSDK Live View로 교체",
+        "실기 프레임에서 전 구간 재현"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "commit 8be6a63 — 합성/녹화 입력 기준 전 구간 배선 완성(Frame→Detection→Tracking→보간→투영→Observation→WorldEntity→Event Candidate→Evidence Bundle). Detector는 인터페이스+결정적 stub(Ultralytics BLOCKED_LICENSE + 배선과 모델정확도 분리 목적). 검증: 전구간 연결, 불확실성 전달, 2인 2엔티티, gap/지평선 탈락 사유 기록, 단일관측·고정관측점 CONFIRMED 차단, 2회실행·순서shuffle 재현성. 게이트 479 passed·5 skipped, mypy 57파일, C++ 2/2. **미완(장비 필요)**: permissive 실모델 교체·PSDK Live View 전환·실기 프레임 재현.",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "created_at": "2026-07-27T01:51:58+09:00",
+      "updated_at": "2026-07-27T01:52:10+09:00"
     }
   ],
   "risks": []
