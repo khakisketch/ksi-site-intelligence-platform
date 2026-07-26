@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-26T22:41:55+09:00",
+  "updated_at": "2026-07-26T22:53:44+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -40,14 +40,14 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "commit 329283e — P1-1 다중시점 융합(information-form, 조건수 선판정으로 np.linalg.inv fail-open 차단, id정렬로 비트결정성, 해석적 진리 검증), P1-2 Track→WorldEntity 조립(단일관측=INSUFFICIENT_OBSERVATION, 문턱 주입가능, fingerprint에서 entity_id 제외, 순서무관 재현), P1-3 Offline Sync(멱등 재전송·DIGEST_CONFLICT·판정순서 함정 고정·순서보존·장비별 독립). 게이트: 354 passed·5 skipped, mypy 53파일 clean, ruff clean, C++ ctest 2/2 무회귀. 미착수 명시: 연관(association)·시간진화 motion model·이상치 제거·지연도착 재정렬창은 범위 밖으로 docstring에 기록.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-26T16:23:49+09:00"
+      "updated_at": "2026-07-26T22:53:44+09:00"
     },
     {
       "id": "phase-2",
