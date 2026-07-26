@@ -56,11 +56,11 @@ class CalibrationOffset:
 
 @dataclass(frozen=True)
 class SensorLatencyProfile:
-    """센서별 파이프라인 지연(capture → receive) 추정 ± 불확실성.
+    """센서별 파이프라인 지연(capture → receive) 추정 ± 불확실성. 시각은 모두 UTC epoch.
 
-    ``capture_ts`` 를 제공하지 않는 소스(예: 캡처 시각을 찍지 않는 저사양 텔레메트리 링크)에서,
-    ``receive_ts`` 로부터 실제 캡처 시각을 역추정하는 유일한 근거가 된다. 하드웨어 세션에서
-    반복 측정한 평균/중앙값 지연과 그 산포를 담는다.
+    ``capture_ts_utc`` 를 제공하지 않는 소스(예: 캡처 시각을 찍지 않는 저사양 텔레메트리
+    링크)에서, ``receive_ts_utc`` 로부터 실제 캡처 시각을 역추정하는 유일한 근거가
+    된다. 하드웨어 세션에서 반복 측정한 평균/중앙값 지연과 그 산포를 담는다.
 
     Attributes:
         sensor_id: 지연 프로파일이 적용되는 센서/장비 식별자.
@@ -80,9 +80,9 @@ class SensorLatencyProfile:
         if self.uncertainty_s < 0:
             raise ValueError(f"uncertainty_s must be >= 0, got {self.uncertainty_s}")
 
-    def estimate_capture_ts(self, receive_ts: float) -> float:
-        """적용 지점: 수신 시각에서 고정 지연만큼 거슬러 캡처 시각을 추정."""
-        return receive_ts - self.latency_s
+    def estimate_capture_ts(self, receive_ts_utc: float) -> float:
+        """적용 지점: 수신 UTC 시각에서 고정 지연만큼 거슬러 캡처 시각을 추정."""
+        return receive_ts_utc - self.latency_s
 
     @property
     def bounds(self) -> tuple[float, float]:

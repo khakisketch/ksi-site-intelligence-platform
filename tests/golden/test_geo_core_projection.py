@@ -34,7 +34,7 @@ _ZONE_CASE_IDS = {
 def _telemetry_sample(raw: dict) -> TelemetrySample:
     ts = raw["timestamp_utc"]
     return TelemetrySample(
-        ts=TimestampSet(capture_ts=ts, source_ts=ts, receive_ts=ts, monotonic_ts=ts),
+        ts=TimestampSet(source_ts_utc=ts, receive_ts_utc=ts, capture_ts_utc=ts),
         drone_lat=raw["drone_lat"],
         drone_lon=raw["drone_lon"],
         altitude_msl_m=raw["altitude_msl_m"],
@@ -147,7 +147,7 @@ def test_analytic_ground_intersection_geometry(case: VectorCase) -> None:
 def test_analytic_horizon_ray_rejected_by_project_foot_point() -> None:
     """analytic 벡터의 '수평 광선은 발산' 사실을 실제 project_foot_point로도 확인."""
     sample = TelemetrySample(
-        ts=TimestampSet(capture_ts=0.0, source_ts=0.0, receive_ts=0.0, monotonic_ts=0.0),
+        ts=TimestampSet(source_ts_utc=0.0, receive_ts_utc=0.0, capture_ts_utc=0.0),
         drone_lat=37.5,
         drone_lon=127.0,
         altitude_rel_m=100.0,

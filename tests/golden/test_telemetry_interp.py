@@ -49,9 +49,13 @@ def _sample(
     rtk_fixed: bool = False,
     quality: SourceQuality = SourceQuality.PARTIAL,
 ) -> TelemetrySample:
-    """테스트 편의 헬퍼: source_ts=capture_ts=ts로 두어 PPS 동기 전제를 그대로 쓴다."""
+    """테스트 편의 헬퍼: source_ts_utc=receive_ts_utc=capture_ts_utc=ts (PPS 동기 전제).
+
+    receive_monotonic_s는 UTC 도메인이 아니므로 여기서 ts를 대입하지 않는다(None 유지) —
+    합성 테스트에 실제 monotonic 판독값이 없다.
+    """
     return TelemetrySample(
-        ts=TimestampSet(source_ts=ts, receive_ts=ts, monotonic_ts=ts, capture_ts=ts),
+        ts=TimestampSet(source_ts_utc=ts, receive_ts_utc=ts, capture_ts_utc=ts),
         drone_lat=lat,
         drone_lon=lon,
         altitude_rel_m=alt_rel,
@@ -280,16 +284,16 @@ def test_calibration_offset_negative_direction() -> None:
 
 
 def test_sensor_latency_profile_estimates_capture_ts_when_missing() -> None:
-    """capture_ts가 없으면 SensorLatencyProfile로 receive_ts에서 역추정한다."""
+    """capture_ts_utc가 없으면 SensorLatencyProfile로 receive_ts_utc에서 역추정한다."""
     profile = SensorLatencyProfile(sensor_id="osd-link", latency_s=0.2, uncertainty_s=0.05)
     itp = TelemetryInterpolator(max_gap_s=2.0, latency_profile=profile)
-    # capture_ts=None → receive_ts(=1.0)에서 latency_s(0.2)만큼 거슬러 0.8로 정렬돼야 한다.
+    # capture_ts_utc=None → receive_ts_utc(=1.0)에서 latency_s(0.2)만큼 거슬러 0.8로 정렬돼야 한다.
     lo = TelemetrySample(
-        ts=TimestampSet(source_ts=1.0, receive_ts=1.0, monotonic_ts=1.0, capture_ts=None),
+        ts=TimestampSet(source_ts_utc=1.0, receive_ts_utc=1.0, capture_ts_utc=None),
         drone_lat=36.0,
     )
     hi = TelemetrySample(
-        ts=TimestampSet(source_ts=2.0, receive_ts=2.0, monotonic_ts=2.0, capture_ts=None),
+        ts=TimestampSet(source_ts_utc=2.0, receive_ts_utc=2.0, capture_ts_utc=None),
         drone_lat=36.001,
     )
     itp.add(lo)
@@ -355,7 +359,7 @@ def _load_vectors() -> dict[str, Any]:
 def _sample_from_vector(entry: dict[str, Any]) -> TelemetrySample:
     ts = entry["timestamp_utc"]
     return TelemetrySample(
-        ts=TimestampSet(source_ts=ts, receive_ts=ts, monotonic_ts=ts, capture_ts=ts),
+        ts=TimestampSet(source_ts_utc=ts, receive_ts_utc=ts, capture_ts_utc=ts),
         drone_lat=entry.get("drone_lat"),
         drone_lon=entry.get("drone_lon"),
         altitude_rel_m=entry.get("altitude_rel_m"),

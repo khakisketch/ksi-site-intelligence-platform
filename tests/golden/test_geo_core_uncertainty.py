@@ -17,7 +17,7 @@ from ksi_geo_core.timestamps import TimestampSet
 
 def _sample(*, pitch_deg: float, altitude_rel_m: float = 100.0) -> TelemetrySample:
     return TelemetrySample(
-        ts=TimestampSet(capture_ts=0.0, source_ts=0.0, receive_ts=0.0, monotonic_ts=0.0),
+        ts=TimestampSet(source_ts_utc=0.0, receive_ts_utc=0.0, capture_ts_utc=0.0),
         drone_lat=37.5,
         drone_lon=127.0,
         altitude_rel_m=altitude_rel_m,

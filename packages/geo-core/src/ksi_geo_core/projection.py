@@ -68,6 +68,11 @@ class ProjectionStatus(StrEnum):
     GEO_UNAVAILABLE_TELEMETRY = "geo_unavailable_telemetry"
     INVALID_ALTITUDE = "altitude"
     ABOVE_HORIZON = "horizon"
+    INVALID_IMAGE_DIMENSIONS = "invalid_image_dimensions"
+    INVALID_PIXEL = "invalid_pixel"
+    INVALID_INTRINSICS = "invalid_intrinsics"
+    NONFINITE_INPUT = "nonfinite_input"
+    INVALID_GEO_RANGE = "invalid_geo_range"
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,12 +117,26 @@ def project_foot_point(
 
     PORT: Scout ``project_foot_point`` — 입력이 :class:`~ksi_geo_core.sync.TelemetrySample`
     (Scout ``NormalizedTelemetry`` 대응)로 바뀐 것 외 수식·게이트 순서는 동일하다.
+
+    입력 검증(반증 리뷰 2026-07-26 P0 — 이전 구현은 NaN/Inf·비정상 치수·intrinsics·
+    위경도 범위를 검사하지 않아 ``OK`` + NaN 좌표를 반환할 수 있었다)은 telemetry와
+    무관한 순서로 가장 먼저 실행한다: 이미지 치수 → 픽셀 유한성 → 기본 FOV 범위
+    → (geo_capable) → 고도 → 나머지 자세각·intrinsics 유한성 → 위경도 범위 →
+    실효 FOV 범위. 마지막으로 산출된 좌표·confidence·오차반경도 유한성을 재확인한다
+    (알고리즘 경로 자체의 예상 밖 발산까지 잡는 최종 안전망).
     """
+    if width <= 0 or height <= 0:
+        return ProjectionResult(status=ProjectionStatus.INVALID_IMAGE_DIMENSIONS)
+    if not (math.isfinite(u_px) and math.isfinite(v_px)):
+        return ProjectionResult(status=ProjectionStatus.INVALID_PIXEL)
+    if not math.isfinite(default_fov_deg) or not (0.0 < default_fov_deg < 180.0):
+        return ProjectionResult(status=ProjectionStatus.INVALID_INTRINSICS)
+
     if not _geo_capable(sample):
         return ProjectionResult(status=ProjectionStatus.GEO_UNAVAILABLE_TELEMETRY)
 
     altitude_m = sample.altitude_rel_m
-    if altitude_m is None or altitude_m <= 0:
+    if altitude_m is None or not math.isfinite(altitude_m) or altitude_m <= 0:
         return ProjectionResult(status=ProjectionStatus.INVALID_ALTITUDE)
 
     lat0, lon0 = sample.drone_lat, sample.drone_lon
@@ -125,8 +144,24 @@ def project_foot_point(
     assert lat0 is not None and lon0 is not None  # _geo_capable 이 보장 (타입 좁히기)
     assert heading_deg is not None and pitch_deg is not None
 
-    fov_deg = sample.camera_fov_deg if sample.camera_fov_deg is not None else default_fov_deg
-    zoom = max(sample.zoom_factor or 1.0, 1.0)
+    roll_deg = sample.gimbal_roll_deg or 0.0
+    yaw_deg = sample.gimbal_yaw_deg if sample.gimbal_yaw_deg is not None else heading_deg
+    zoom_raw = sample.zoom_factor if sample.zoom_factor is not None else 1.0
+    camera_fov_deg = (
+        sample.camera_fov_deg if sample.camera_fov_deg is not None else default_fov_deg
+    )
+    if not all(
+        math.isfinite(v)
+        for v in (lat0, lon0, heading_deg, pitch_deg, roll_deg, yaw_deg, zoom_raw, camera_fov_deg)
+    ):
+        return ProjectionResult(status=ProjectionStatus.NONFINITE_INPUT)
+    if not (-90.0 <= lat0 <= 90.0) or not (-180.0 <= lon0 <= 180.0):
+        return ProjectionResult(status=ProjectionStatus.INVALID_GEO_RANGE)
+    if not (0.0 < camera_fov_deg < 180.0):
+        return ProjectionResult(status=ProjectionStatus.INVALID_INTRINSICS)
+
+    fov_deg = camera_fov_deg
+    zoom = max(zoom_raw, 1.0)
     fov_effective = 2 * math.atan(math.tan(math.radians(fov_deg) / 2) / zoom)
     if fov_is_diagonal:
         focal = (math.hypot(width, height) / 2) / math.tan(fov_effective / 2)
@@ -136,11 +171,9 @@ def project_foot_point(
 
     d_cam = np.array([(u_px - width / 2) / fx, (v_px - height / 2) / fy, 1.0])
 
-    psi = math.radians(
-        sample.gimbal_yaw_deg if sample.gimbal_yaw_deg is not None else heading_deg
-    )
+    psi = math.radians(yaw_deg)
     pitch = math.radians(pitch_deg)
-    roll = math.radians(sample.gimbal_roll_deg or 0.0)
+    roll = math.radians(roll_deg)
 
     rotation = _rz_clockwise(psi) @ _rx(pitch) @ _R0 @ _rroll(roll)
     d_world = rotation @ d_cam  # (East, North, Up)
@@ -169,6 +202,11 @@ def project_foot_point(
         rtk_fixed=sample.rtk_fixed,
         gnss_accuracy_m=sample.gnss_accuracy_m,
     )
+
+    # 최종 안전망 — 위 입력 검증을 전부 통과했어도 알고리즘 경로 자체가 예상 밖으로
+    # 발산해 비유한 결과를 낼 가능성을 차단한다. OK는 절대 NaN/Inf를 반환하지 않는다.
+    if not all(math.isfinite(v) for v in (east_m, north_m, lat, lon, confidence, error_radius_m)):
+        return ProjectionResult(status=ProjectionStatus.NONFINITE_INPUT)
 
     return ProjectionResult(
         status=ProjectionStatus.OK,

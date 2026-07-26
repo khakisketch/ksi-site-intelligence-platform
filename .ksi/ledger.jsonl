@@ -6,3 +6,4 @@
 {"ts": "2026-07-25T00:52:14+09:00", "event": "registered", "goal": "phase-4", "status": "proposed", "parent": null}
 {"ts": "2026-07-25T00:52:14+09:00", "event": "registered", "goal": "phase-5", "status": "proposed", "parent": null}
 {"ts": "2026-07-25T00:52:32+09:00", "event": "started", "goal": "phase-0"}
+{"ts": "2026-07-26T13:23:20+09:00", "event": "completion_attempt", "goal": "phase-0", "evidence": "P0-1~P0-6 전부 구현+커밋(commits b6d68b8..d332154). 게이트: workspace 전체 pytest 142 passed·5 skipped, mypy(packages services tests) clean, ruff clean, reference 가드 2종 통과 — 전부 CI(https://github.com/khakisketch/ksi-site-intelligence-platform/actions/runs/30187671754)에서 success 재확인. P0-1(Ed25519 서명, 보안표면)만 독립 reviewer(Opus) 반증 거쳐 P0/P1 findings 수정 반영. P0-2~P0-6은 solo 구현+self-verify(재현 게이트 실행)이며 독립 reviewer 미검증 — phase-0을 'green' evidence-gate로 닫으려면 별도 reviewer pass 필요. 하드웨어 Spike(PSDK 등)는 PHASE_REGISTRY.yaml hardware_deferred로 명시 제외."}

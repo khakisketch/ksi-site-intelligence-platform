@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from ksi_domain.capability import (
     CapabilityVerificationState,
+    IllegalCapabilityTransitionError,
     assert_capability_transition,
 )
 
@@ -69,8 +70,29 @@ class CapabilityRegistry:
         sdk: str | None = None,
         aircraft: str | None = None,
     ) -> None:
-        """신규 capability를 등록한다(전이가 아니라 초기 생성 — 전이표를 거치지 않는다)."""
-        is_verified = state is CapabilityVerificationState.VERIFIED
+        """신규 capability를 등록한다.
+
+        초기 등록은 ``SPIKE_REQUIRED``(기본) 또는 ``BLOCKED``(사유 필수)만 허용한다 —
+        ``VERIFIED``는 반드시 evidence를 강제하는 :meth:`transition` 을 거쳐야 하며
+        초기 등록으로 직접 부여할 수 없다(반증 리뷰 2026-07-26 P0 — evidence 없이
+        VERIFIED를 만들어 ``list_operational()`` 노출 게이트를 완전히 우회하는 결함이었다).
+        중복 ``capability_id`` 등록은 거부한다(덮어쓰기 금지).
+
+        Raises:
+            ValueError: capability_id가 이미 등록돼 있을 때.
+            IllegalCapabilityTransitionError: state=VERIFIED로 초기 등록을 시도하거나,
+                state=BLOCKED인데 evidence가 비어있을 때.
+        """
+        if capability_id in self._records:
+            raise ValueError(f"capability_id 중복 등록: {capability_id!r}")
+        if state is CapabilityVerificationState.VERIFIED:
+            raise IllegalCapabilityTransitionError(
+                "VERIFIED는 초기 등록으로 부여할 수 없다 — SPIKE_REQUIRED로 등록 후 "
+                "transition()으로 evidence와 함께 승격해야 한다(INV-041)"
+            )
+        if state is CapabilityVerificationState.BLOCKED and not (evidence and evidence.strip()):
+            raise IllegalCapabilityTransitionError("BLOCKED 초기 등록에는 evidence(사유)가 필수다")
+
         self._records[capability_id] = CapabilityRecord(
             capability_id=capability_id,
             title=title,
@@ -79,7 +101,7 @@ class CapabilityRegistry:
             firmware=firmware,
             sdk=sdk,
             aircraft=aircraft,
-            verified_at=datetime.now(UTC) if is_verified else None,
+            verified_at=None,  # 초기 등록은 VERIFIED를 금지하므로 항상 None
         )
 
     def get(self, capability_id: str) -> CapabilityRecord | None:

@@ -125,7 +125,7 @@ def assert_support_level_transition(
             f"(다음 단계는 {_SUPPORT_LEVEL_ORDER[cur_idx + 1].value} 이어야 한다)"
         )
     if not evidence or not evidence.strip():
-        raise IllegalCapabilityTransitionError(
+        raise IllegalSupportLevelTransitionError(
             f"{cur.value} → {nxt.value} 승급에는 검증 증거(evidence)가 필수다"
         )
 

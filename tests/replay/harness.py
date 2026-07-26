@@ -82,10 +82,17 @@ class EventCandidateBuilder:
         confirm_after_observations: int = 5,
         position_tolerance_m: float = 5.0,
     ) -> None:
-        if confirm_after_observations < 4:
+        if confirm_after_observations < 5:
             raise ValueError(
-                "confirm_after_observations는 4 이상이어야 한다 "
-                "(OBSERVATION→CANDIDATE→EVIDENCE_COLLECTION→FINDING 3단계를 거친 뒤에만 확정)"
+                "confirm_after_observations는 5 이상이어야 한다 "
+                "(반증 리뷰 2026-07-26: 한 관측당 한 단계만 전이하는 elif 체인이라 "
+                "OBSERVATION→CANDIDATE→EVIDENCE_COLLECTION→FINDING 4단계를 거친 뒤 "
+                "5번째 관측에서만 CONFIRMED_EVENT에 도달한다 — 4를 허용하면 값이 "
+                "실제 동작과 달리 4/5 모두 5번째 관측에서 확정되는 계약 불일치가 있었다)"
+            )
+        if position_tolerance_m < 0:
+            raise ValueError(
+                f"position_tolerance_m은 0 이상이어야 한다 (got {position_tolerance_m!r})"
             )
         self.event_type = event_type
         self.severity = severity

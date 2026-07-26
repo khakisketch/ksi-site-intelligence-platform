@@ -4,12 +4,28 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-07-25"
+updated: "2026-07-26"
 
 phases:
   - id: phase-0
     title: "Capability & Calibration Foundation"
-    status: IN_PROGRESS
+    status: GATED
+    software_implementation: COMPLETE
+    technical_gate: PASS
+    independent_review: CHANGES_REQUESTED
+    independent_review_note: >-
+      2026-07-26 독립 정적 검토(REQUEST_CHANGES) — P0 차단 결함 5건 확인:
+      (1) CapabilityRegistry.register()가 evidence 없이 state=VERIFIED를 직접
+      부여해 list_operational() 노출 게이트 우회 가능, (2) TimestampSet이 UTC
+      epoch와 process-local monotonic 시간축을 혼동(필드명·보간결과 provenance
+      조작), (3) project_foot_point가 NaN/Inf·비정상 치수·FOV·위경도 범위를
+      검증하지 않아 OK+NaN 반환 가능, (4) Replay confirm_after_observations=4
+      허용이 실제 elif 체인 동작(5번째 관측에서만 확정)과 불일치, (5) 장비지원
+      전이 evidence 누락 시 잘못된 예외 타입. 5건 전부 수정 + 요구된 네거티브
+      테스트 추가 완료(워크스페이스 전체 202 passed·5 skipped, mypy 39파일 clean,
+      CI green) — 재검토 대기. PASS 확인 전까지 stage_c_allowed=false 유지.
+    hardware_spikes: DEFERRED
+    stage_c_allowed: false
     scope_now: "소프트웨어 기반만 (P0-1~P0-6). 하드웨어 Spike(PSDK/카메라/짐벌)는 장비 세션에서."
     acceptance:
       - "계약 모델이 contracts/schemas SSOT와 왕복 검증 통과 + Ed25519 실서명 네거티브 4종 (P0-1, INV-011)"

@@ -13,7 +13,7 @@ PORT: upstream Scout ``ksi_scout/dal/sync.py`` @42ccc0db (``TelemetryInterpolato
 Clock Synchronizer 를 여기서 소프트웨어로 재구현하지 않는다. 이 모듈이 실제로 다루는 건:
 
 1. PPS 동기 후에도 남는 잔차 상수 오프셋 보정 (:class:`ksi_geo_core.calibration.CalibrationOffset`)
-2. ``capture_ts`` 를 못 주는 소스를 위한 파이프라인 지연 추정
+2. ``capture_ts_utc`` 를 못 주는 소스를 위한 파이프라인 지연 추정
    (:class:`ksi_geo_core.calibration.SensorLatencyProfile`)
 3. 프레임 시각에 맞춘 텔레메트리 선형/각도 보간 (Scout PORT, 아래)
 
@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from ksi_geo_core.calibration import CalibrationOffset, SensorLatencyProfile
-from ksi_geo_core.timestamps import TimestampSet
+from ksi_geo_core.timestamps import DerivedTimestamp, SyncedTimestamp
 
 
 class SourceQuality(StrEnum):
@@ -76,10 +76,11 @@ class TelemetrySample:
     """시간동기된 텔레메트리 한 점.
 
     PORT: Scout ``NormalizedTelemetry`` 대응 — 단일 ``timestamp_utc: float`` 대신
-    :class:`~ksi_geo_core.timestamps.TimestampSet` 을 쓴다는 점이 유일한 구조적 차이다.
+    :class:`~ksi_geo_core.timestamps.SyncedTimestamp` (``TimestampSet`` 실제 수신 샘플
+    또는 ``DerivedTimestamp`` 보간 파생 샘플)을 쓴다는 점이 유일한 구조적 차이다.
     """
 
-    ts: TimestampSet
+    ts: SyncedTimestamp
     drone_lat: float | None = None  # WGS84 (EPSG:4326)
     drone_lon: float | None = None
     altitude_msl_m: float | None = None
@@ -168,6 +169,10 @@ class TelemetryInterpolator:
         latency_profile: SensorLatencyProfile | None = None,
         calibration: CalibrationOffset | None = None,
     ) -> None:
+        if max_gap_s <= 0:
+            raise ValueError(f"max_gap_s는 양수여야 한다 (got {max_gap_s!r})")
+        if buffer_size <= 0:
+            raise ValueError(f"buffer_size는 양의 정수여야 한다 (got {buffer_size!r})")
         self._max_gap = max_gap_s
         self._buffer_size = buffer_size
         self._latency_profile = latency_profile
@@ -179,10 +184,12 @@ class TelemetryInterpolator:
     def add(self, sample: TelemetrySample) -> None:
         """샘플을 정렬 버퍼에 삽입한다. 역순/뒤섞여 도착해도 시각 순서를 유지한다.
 
-        정렬·삽입 키는 ``sample.ts.sync_ts(...)`` — capture_ts 우선 해석 +
-        CalibrationOffset 적용까지 끝난 최종 시각이다(``TimestampSet.sync_ts`` 참고).
+        정렬·삽입 키는 ``sample.ts.sync_ts_utc(...)`` — capture_ts_utc 우선 해석 +
+        CalibrationOffset 적용까지 끝난 최종 UTC 시각이다(``TimestampSet.sync_ts_utc`` 참고).
         """
-        ts = sample.ts.sync_ts(latency_profile=self._latency_profile, calibration=self._calibration)
+        ts = sample.ts.sync_ts_utc(
+            latency_profile=self._latency_profile, calibration=self._calibration
+        )
         with self._lock:
             # bisect 로 시각 순서 유지 → 늦게/역순으로 도착한 샘플도 올바른 위치에 삽입.
             pos = bisect_left(self._ts, ts)
@@ -243,9 +250,9 @@ class TelemetryInterpolator:
         t = (query_ts - lo_ts) / span
         quality = _worse_quality(lo.source_quality, hi.source_quality)
         interpolated = TelemetrySample(
-            ts=TimestampSet(
-                source_ts=query_ts, receive_ts=query_ts, monotonic_ts=query_ts, capture_ts=query_ts
-            ),
+            # 파생 샘플 — 실제 수신 이벤트가 없으므로 source/receive/monotonic
+            # provenance를 지어내지 않는다(DerivedTimestamp, 반증 리뷰 2026-07-26 P0).
+            ts=DerivedTimestamp(synchronized_ts_utc=query_ts),
             drone_lat=_lerp_opt(lo.drone_lat, hi.drone_lat, t),
             drone_lon=_lerp_opt(lo.drone_lon, hi.drone_lon, t),
             altitude_msl_m=_lerp_opt(lo.altitude_msl_m, hi.altitude_msl_m, t),

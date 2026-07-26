@@ -17,7 +17,7 @@ _NADIR_CENTER = (960.0, 540.0)
 
 def _sample(ts: float, *, lat: float = 37.5, lon: float = 127.0) -> TelemetrySample:
     return TelemetrySample(
-        ts=TimestampSet(capture_ts=ts, source_ts=ts, receive_ts=ts, monotonic_ts=ts),
+        ts=TimestampSet(source_ts_utc=ts, receive_ts_utc=ts, capture_ts_utc=ts),
         drone_lat=lat,
         drone_lon=lon,
         altitude_rel_m=100.0,

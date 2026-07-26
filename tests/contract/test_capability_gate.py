@@ -29,6 +29,48 @@ _SCHEMA_PATH = (
 )
 
 
+def test_register_verified_directly_rejected() -> None:
+    """[반증 리뷰 P0] evidence 없이 state=VERIFIED로 초기 등록 → 노출 게이트 우회 차단."""
+    registry = CapabilityRegistry()
+
+    with pytest.raises(IllegalCapabilityTransitionError, match="초기 등록"):
+        registry.register(
+            "CAP-X", "Unverified capability",
+            state=CapabilityVerificationState.VERIFIED,
+            evidence=None,
+        )
+
+    assert registry.list_all() == []
+    assert registry.list_operational() == []
+
+
+def test_register_blocked_without_evidence_rejected() -> None:
+    registry = CapabilityRegistry()
+    with pytest.raises(IllegalCapabilityTransitionError, match="evidence"):
+        registry.register(
+            "CAP-Y", "Blocked without reason", state=CapabilityVerificationState.BLOCKED
+        )
+
+
+def test_register_blocked_with_evidence_allowed() -> None:
+    registry = CapabilityRegistry()
+    registry.register(
+        "CAP-Y", "Known unsupported combo",
+        state=CapabilityVerificationState.BLOCKED,
+        evidence="DJI 공식 문서상 미지원 확인",
+    )
+    assert registry.get("CAP-Y") is not None
+    assert registry.list_operational() == []
+
+
+def test_register_duplicate_capability_id_rejected() -> None:
+    registry = CapabilityRegistry()
+    registry.register("CAP-Z", "First registration")
+
+    with pytest.raises(ValueError, match="중복"):
+        registry.register("CAP-Z", "Silent overwrite attempt")
+
+
 def test_prd_spike_seed_all_hidden_from_operational() -> None:
     """PRD §20.3 9개 항목 시드 직후 — list_all()==9, list_operational()==0 (전부 미노출)."""
     registry = CapabilityRegistry()
@@ -169,7 +211,8 @@ def test_support_level_sequential_promotion_with_evidence_allowed() -> None:
 
 
 def test_support_level_promotion_without_evidence_rejected() -> None:
-    with pytest.raises(IllegalCapabilityTransitionError, match="evidence"):
+    """[반증 리뷰 #5] 예외 타입은 IllegalSupportLevelTransitionError여야 한다(복붙 오류 수정)."""
+    with pytest.raises(IllegalSupportLevelTransitionError, match="evidence"):
         assert_support_level_transition(
             EquipmentSupportLevel.DATASET_AVAILABLE,
             EquipmentSupportLevel.BASELINE_DETECTION,
