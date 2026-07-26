@@ -1,0 +1,175 @@
+{
+  "description": "ActionIntent 판정 공유 conformance 벡터 (Stage C-4). Python Intelligence Plane과 C++ Control Plane이 **각자** 이 벡터를 실행해 동일한 verdict를 내야 한다 — 한쪽만 통과하면 두 평면이 같은 계약을 다르게 해석하고 있다는 뜻이다.",
+  "contract": "contracts/schemas/action-intent.v1.json",
+  "activeDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "cases": [
+    {
+      "id": "valid_within_ttl",
+      "rationale": "정상 경로 — TTL 안, 인가 일치, 과거 발행.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "GOTO_VIEWPOINT",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "ACCEPTED"
+    },
+    {
+      "id": "ttl_boundary_is_expired",
+      "rationale": "TTL 경계는 배타적 — issued+ttl 시점에 이미 만료(경계에서 보수적).",
+      "nowUtcMs": 1005000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "EXPIRED"
+    },
+    {
+      "id": "just_before_ttl_still_valid",
+      "rationale": "경계 직전 1ms는 여전히 유효 — 경계 판정이 off-by-one이 아님을 고정.",
+      "nowUtcMs": 1004999,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "ACCEPTED"
+    },
+    {
+      "id": "expired_well_past_ttl",
+      "rationale": "TTL 한참 초과.",
+      "nowUtcMs": 9999999,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "CAPTURE_IMAGE",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "EXPIRED"
+    },
+    {
+      "id": "future_issued_rejected",
+      "rationale": "미래 발행 — 시계 이상 또는 위조. 낙관적 수락 금지.",
+      "nowUtcMs": 999999,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "NOT_YET_VALID"
+    },
+    {
+      "id": "missing_authorization",
+      "rationale": "digest 부재 — 어떤 계약에도 귀속되지 않은 명령.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MISSING_AUTHORIZATION"
+    },
+    {
+      "id": "authorization_mismatch",
+      "rationale": "다른 계약에 귀속된 명령 — 계약 간 명령 이식 차단.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "AUTHORIZATION_MISMATCH"
+    },
+    {
+      "id": "malformed_empty_command_id",
+      "rationale": "command_id 부재 — 증거·감사 추적이 불가능한 명령.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "malformed_zero_ttl",
+      "rationale": "TTL 0 — 만료 개념이 성립하지 않는 명령.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 0
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "malformed_negative_ttl",
+      "rationale": "음수 TTL.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": -1
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "malformed_precedes_missing_authorization",
+      "rationale": "형식 위반과 인가 부재가 동시에 있으면 형식이 먼저다 — 양쪽 언어의 판정 순서를 고정한다.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "",
+        "kind": "HOLD",
+        "authorizationDigest": "",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "authorization_checked_before_expiry",
+      "rationale": "미인가 + 만료가 동시에 있으면 인가가 먼저다 — 판정 순서 고정.",
+      "nowUtcMs": 9999999,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "AUTHORIZATION_MISMATCH"
+    }
+  ]
+}

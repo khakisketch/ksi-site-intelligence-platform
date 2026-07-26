@@ -32,8 +32,12 @@ jobs:
       - name: ruff
         run: uv run --locked ruff check .
 
+      # tools/: 생성기(generate_action_intent_vectors.py)의 산출물이 C++ 테스트에
+      # 소비되는 load-bearing 코드라 타입체크 대상에 포함한다.
+      # tools/vector-extraction/ 는 참고 레포를 스크래치패드 venv에서 import하는
+      # 설계라 pyproject의 mypy exclude로 제외돼 있다.
       - name: mypy
-        run: uv run --locked mypy packages services tests
+        run: uv run --locked mypy packages services tests tools
 
       - name: pytest
         run: uv run --locked pytest -q
@@ -43,3 +47,22 @@ jobs:
 
       - name: reference 핀 검증 (gitlink)
         run: bash scripts/verify_reference_pins.sh
+
+  # Edge native control plane — 순수 C++17이라 PSDK/CUDA 없이 호스트에서 빌드된다.
+  # 별도 job으로 둬서 Python 게이트와 독립적으로 실패 원인이 드러나게 한다.
+  edge-control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: configure (C++17, -Werror)
+        run: cmake -S edge/manifold-runtime -B edge/manifold-runtime/build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: build
+        run: cmake --build edge/manifold-runtime/build -j
+
+      # control_plane_contract: TTL·인가·heartbeat·fail-closed 계약
+      # action_intent_conformance: Python Intelligence Plane과 공유하는 벡터
+      - name: ctest
+        run: ctest --test-dir edge/manifold-runtime/build --output-on-failure

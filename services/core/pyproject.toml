@@ -3,7 +3,7 @@ name = "ksi-core"
 version = "0.0.1"
 description = "KSI Core Server — 인증·현장·임무·정책·이벤트·PostGIS control plane (ADR-KSI-001)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ksi-domain"]
+dependencies = ["ksi-domain", "fastapi>=0.115"]
 
 [build-system]
 requires = ["hatchling"]

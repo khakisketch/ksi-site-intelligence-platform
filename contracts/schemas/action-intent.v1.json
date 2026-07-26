@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/action-intent.v1.json",
+  "title": "ActionIntent v1.0",
+  "description": "Python Intelligence Plane이 C++ Control Plane에 전달하는 고수준 행동 의도. 저수준 조종 명령(자세·모터·속도)은 이 계약에 존재하지 않는다 — 그 권한은 DJI Flight Controller가 갖는다(INV-001). 모든 시각은 UTC epoch 밀리초이며 process-local monotonic 시계와 섞지 않는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "kind",
+    "authorizationDigest",
+    "issuedAtUtcMs",
+    "ttlMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "description": "고수준 의도만 허용한다. 저수준 조종 동사(setVelocity/setAttitude 등)는 의도적으로 없다.",
+      "enum": [
+        "HOLD",
+        "RETURN_TO_HOME",
+        "GOTO_VIEWPOINT",
+        "CAPTURE_IMAGE"
+      ]
+    },
+    "authorizationDigest": {
+      "description": "이 명령이 귀속된 Mission Contract의 digest (ADR-KSI-002, \"sha256:<hex>\"). Edge는 활성 계약 digest와 일치할 때만 명령을 수락한다.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "issuedAtUtcMs": {
+      "description": "발행 시각(UTC epoch 밀리초). 미래 시각은 시계 이상·위조로 간주해 거부된다.",
+      "type": "integer"
+    },
+    "ttlMs": {
+      "description": "유효 기간(밀리초, 양수). issuedAtUtcMs + ttlMs 시점에 이미 만료다(배타적 경계).",
+      "type": "integer",
+      "exclusiveMinimum": 0
+    },
+    "targetViewpointId": {
+      "description": "kind=GOTO_VIEWPOINT일 때 승인된 Flight Envelope 안의 관측점 참조.",
+      "type": "string"
+    }
+  }
+}
