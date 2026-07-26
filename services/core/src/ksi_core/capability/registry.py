@@ -21,6 +21,7 @@ from ksi_domain.capability import (
     IllegalCapabilityTransitionError,
     assert_capability_transition,
 )
+from ksi_domain.spike_evidence import SpikeEvidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,9 @@ class CapabilityRecord:
         sdk: 검증 시점 PSDK/Cloud API 버전(선택).
         aircraft: 검증 대상 기체(선택, 예: ``Matrice 4D``).
         verified_at: ``VERIFIED`` 로 전이한 시각(그 외 상태면 ``None``).
+        spike_evidence: ``VERIFIED`` 승격 시 제시된 구조화 Spike 증거(11개 필드).
+            ``VERIFIED`` 상태에서는 **반드시** 존재한다 — 문자열 evidence만으로는
+            "테스트했음" 같은 값이 통과하므로(Track A) 실기 승격에는 구조를 요구한다.
     """
 
     capability_id: str
@@ -47,6 +51,7 @@ class CapabilityRecord:
     sdk: str | None = None
     aircraft: str | None = None
     verified_at: datetime | None = None
+    spike_evidence: SpikeEvidence | None = None
 
 
 class CapabilityRegistry:
@@ -117,15 +122,28 @@ class CapabilityRegistry:
         sdk: str | None = None,
         aircraft: str | None = None,
         now: datetime | None = None,
+        spike_evidence: SpikeEvidence | None = None,
     ) -> CapabilityRecord:
         """등록된 capability의 상태를 전이한다 — evidence 없으면 거부(INV-041).
 
+        ``VERIFIED`` 승격에는 문자열 evidence만으로 부족하고 **구조화된
+        :class:`~ksi_domain.spike_evidence.SpikeEvidence`** 가 필수다(Track A) —
+        "테스트했음" 같은 문자열이 실기 검증으로 통과하는 것을 막는다. BLOCKED 등
+        다른 전이는 문자열 사유로 충분하다(차단은 보수적 방향이므로).
+
         Raises:
             KeyError: 미등록 capability_id.
-            IllegalCapabilityTransitionError: 전이표 밖의 전이이거나 evidence 누락.
+            IllegalCapabilityTransitionError: 전이표 밖의 전이, evidence 누락, 또는
+                VERIFIED 승격에 spike_evidence 누락.
         """
         current = self._records[capability_id]
         assert_capability_transition(current.state, nxt, evidence=evidence)
+        if nxt is CapabilityVerificationState.VERIFIED and spike_evidence is None:
+            raise IllegalCapabilityTransitionError(
+                f"{capability_id}: VERIFIED 승격에는 구조화된 SpikeEvidence 가 필수다 "
+                "(11개 필드 — 기체·RC 펌웨어, Manifold 이미지, PSDK 버전, build commit, "
+                "시험절차, raw log, 지연 결과, 실패 결과, operator, 시각)"
+            )
         updated = replace(
             current,
             state=nxt,
@@ -136,6 +154,11 @@ class CapabilityRegistry:
             verified_at=(now or datetime.now(UTC))
             if nxt is CapabilityVerificationState.VERIFIED
             else None,
+            # VERIFIED 를 벗어나면 증거도 함께 지운다 — 낡은 증거가 남아 다음 승격을
+            # 정당화하는 것처럼 보이면 안 된다(회귀 후 재승격은 새 증거를 요구한다).
+            spike_evidence=(
+                spike_evidence if nxt is CapabilityVerificationState.VERIFIED else None
+            ),
         )
         self._records[capability_id] = updated
         return updated

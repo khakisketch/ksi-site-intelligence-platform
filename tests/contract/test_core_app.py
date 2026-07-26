@@ -7,11 +7,34 @@ API 계층이 list_all()을 잘못 부르면 미검증 기능이 새어나간다
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 from ksi_domain.capability import CapabilityVerificationState
+from ksi_domain.spike_evidence import SpikeEvidence
+
+
+def _spike_evidence(operator: str = "hil-operator") -> SpikeEvidence:
+    """VERIFIED 승격용 유효 증거 레코드 — 11개 필드 전부 채운다.
+
+    실제 실기 세션에서는 이 값들이 측정·기록된 실물로 대체된다.
+    """
+    return SpikeEvidence(
+        aircraft_firmware="M4D v08.02.0100",
+        rc_firmware="RC Plus 2 v03.01.0200",
+        manifold_image="Manifold3 JetPack 6.0 image 2026-07",
+        psdk_version="PSDK 3.9.0",
+        build_commit="6da9d16",
+        test_procedure="카메라 스트림 개방 → 30초 프레임 수신 → 프레임 수·간격 기록",
+        raw_log_ref="s3://ksi-hil-logs/2026-07-27/spike-dji-01.log",
+        latency_result="frame interval p95 = 42ms (n=900)",
+        failure_result="관측된 실패 없음 — 30초 구간에서 드롭 프레임 0, 재연결 0회",
+        operator=operator,
+        observed_at=datetime(2026, 7, 27, 5, 0, 0, tzinfo=UTC),
+    )
 
 
 @pytest.fixture
@@ -58,6 +81,7 @@ def test_verified_capability_appears_in_api(seeded_registry: CapabilityRegistry)
         firmware="v08.02.0100",
         sdk="PSDK 3.9",
         aircraft="Matrice 4D",
+        spike_evidence=_spike_evidence(),
     )
     client = TestClient(create_app(registry=seeded_registry))
 
@@ -91,7 +115,10 @@ def test_regressed_capability_disappears_from_api(seeded_registry: CapabilityReg
     """VERIFIED→BLOCKED 회귀가 API 노출에서도 즉시 사라져야 한다."""
     capability_id = seeded_registry.list_all()[0].capability_id
     seeded_registry.transition(
-        capability_id, CapabilityVerificationState.VERIFIED, evidence="최초 HIL 통과"
+        capability_id,
+        CapabilityVerificationState.VERIFIED,
+        evidence="최초 HIL 통과",
+        spike_evidence=_spike_evidence(),
     )
     client = TestClient(create_app(registry=seeded_registry))
     assert client.get("/capabilities").json()["count"] == 1
