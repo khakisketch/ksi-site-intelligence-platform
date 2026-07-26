@@ -1,0 +1,163 @@
+"""Capability Registry (P0-5, INV-041) — 장비 기능 검증 상태의 Core 소유 레지스트리.
+
+MASTER_PRD §20.1(DJI 공식 확인사항) vs §20.3(SPIKE_REQUIRED)의 구분을 코드로 강제한다:
+"공식 문서에 기능이 언급됐다"는 VERIFIED가 아니다. VERIFIED는 실기 검증 증거가 있을
+때만 도달하며, 그 전까지는 :meth:`CapabilityRegistry.list_operational` 이 노출을
+차단한다(운영 UI·Mission Contract 정책 선택지에 나타나지 않는다).
+
+주의: 여기서 다루는 ``CapabilityVerificationState`` 는 **장비 기능(API·연동) 검증**
+축이다. 장비 클래스(탐지 대상)의 지원 단계(``EquipmentSupportLevel``)는 별개
+개념이며, 두 축을 이 레지스트리 안에서 섞지 않는다(``ksi_domain.capability`` 모듈
+docstring 참고).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+
+from ksi_domain.capability import (
+    CapabilityVerificationState,
+    assert_capability_transition,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityRecord:
+    """capability 레코드 1건.
+
+    Attributes:
+        capability_id: 안정적 식별자(예: ``SPIKE-DJI-01``).
+        title: 사람이 읽는 설명.
+        state: 현재 검증 상태.
+        evidence: 현재 상태로 전이할 때 제시된 증거 참조(문서·HIL 로그 등). 초기
+            등록(SPIKE_REQUIRED) 시점엔 아직 증거가 없을 수 있어 ``None`` 허용.
+        firmware: 검증 시점 DJI 펌웨어 버전(선택).
+        sdk: 검증 시점 PSDK/Cloud API 버전(선택).
+        aircraft: 검증 대상 기체(선택, 예: ``Matrice 4D``).
+        verified_at: ``VERIFIED`` 로 전이한 시각(그 외 상태면 ``None``).
+    """
+
+    capability_id: str
+    title: str
+    state: CapabilityVerificationState
+    evidence: str | None = None
+    firmware: str | None = None
+    sdk: str | None = None
+    aircraft: str | None = None
+    verified_at: datetime | None = None
+
+
+class CapabilityRegistry:
+    """``capability_id → CapabilityRecord``. Core가 소유하는 단일 SSOT.
+
+    :meth:`list_operational` 이 이 레지스트리의 핵심 불변식이다 — VERIFIED가 아닌
+    항목은 그 조회에 절대 나타나지 않는다.
+    """
+
+    def __init__(self) -> None:
+        self._records: dict[str, CapabilityRecord] = {}
+
+    def register(
+        self,
+        capability_id: str,
+        title: str,
+        *,
+        state: CapabilityVerificationState = CapabilityVerificationState.SPIKE_REQUIRED,
+        evidence: str | None = None,
+        firmware: str | None = None,
+        sdk: str | None = None,
+        aircraft: str | None = None,
+    ) -> None:
+        """신규 capability를 등록한다(전이가 아니라 초기 생성 — 전이표를 거치지 않는다)."""
+        is_verified = state is CapabilityVerificationState.VERIFIED
+        self._records[capability_id] = CapabilityRecord(
+            capability_id=capability_id,
+            title=title,
+            state=state,
+            evidence=evidence,
+            firmware=firmware,
+            sdk=sdk,
+            aircraft=aircraft,
+            verified_at=datetime.now(UTC) if is_verified else None,
+        )
+
+    def get(self, capability_id: str) -> CapabilityRecord | None:
+        return self._records.get(capability_id)
+
+    def transition(
+        self,
+        capability_id: str,
+        nxt: CapabilityVerificationState,
+        *,
+        evidence: str,
+        firmware: str | None = None,
+        sdk: str | None = None,
+        aircraft: str | None = None,
+        now: datetime | None = None,
+    ) -> CapabilityRecord:
+        """등록된 capability의 상태를 전이한다 — evidence 없으면 거부(INV-041).
+
+        Raises:
+            KeyError: 미등록 capability_id.
+            IllegalCapabilityTransitionError: 전이표 밖의 전이이거나 evidence 누락.
+        """
+        current = self._records[capability_id]
+        assert_capability_transition(current.state, nxt, evidence=evidence)
+        updated = replace(
+            current,
+            state=nxt,
+            evidence=evidence,
+            firmware=firmware if firmware is not None else current.firmware,
+            sdk=sdk if sdk is not None else current.sdk,
+            aircraft=aircraft if aircraft is not None else current.aircraft,
+            verified_at=(now or datetime.now(UTC))
+            if nxt is CapabilityVerificationState.VERIFIED
+            else None,
+        )
+        self._records[capability_id] = updated
+        return updated
+
+    def list_all(self) -> list[CapabilityRecord]:
+        """전체 레코드(검증 상태 무관) — 감사·내부 대시보드용, 운영 노출 아님."""
+        return list(self._records.values())
+
+    def list_operational(self) -> list[CapabilityRecord]:
+        """**VERIFIED만** 반환한다 (INV-041 강제 지점).
+
+        SPIKE_REQUIRED/BLOCKED 항목은 이 메서드가 절대 반환하지 않는다 — 운영
+        UI·Mission Contract 정책 선택지는 이 메서드만 호출해야 한다.
+        """
+        return [
+            r for r in self._records.values() if r.state is CapabilityVerificationState.VERIFIED
+        ]
+
+
+@dataclass(frozen=True, slots=True)
+class _PrdSpikeSeed:
+    capability_id: str
+    title: str
+
+
+_PRD_20_3_SPIKES: list[_PrdSpikeSeed] = [
+    _PrdSpikeSeed("SPIKE-DJI-01", "M4D 카메라별 실시간 프레임 접근"),
+    _PrdSpikeSeed("SPIKE-DJI-02", "광각/중망원/망원 전환과 촬영·초점 제어"),
+    _PrdSpikeSeed("SPIKE-DJI-03", "기체 Yaw/짐벌 Pitch API와 지연"),
+    _PrdSpikeSeed("SPIKE-DJI-04", "FlyTo/Hold/Rejoin/Route Update"),
+    _PrdSpikeSeed("SPIKE-DJI-05", "DJI 장애물 회피와 KSI 명령 동시동작"),
+    _PrdSpikeSeed("SPIKE-DJI-06", "Pilot 2/Cloud API/PSDK 동시 제어권"),
+    _PrdSpikeSeed("SPIKE-DJI-07", "Manifold 이벤트 네트워크 경로"),
+    _PrdSpikeSeed("SPIKE-DJI-08", "Dock 3 물리 수납·전원·충전·운용"),
+    _PrdSpikeSeed("SPIKE-DJI-09", "비행시간/발열/전력 영향"),
+]
+"""MASTER_PRD §20.3 SPIKE_REQUIRED 항목 9종 (원문 그대로, 순서 보존)."""
+
+
+def seed_prd_spikes(registry: CapabilityRegistry) -> None:
+    """PRD §20.3의 9개 SPIKE_REQUIRED 항목을 레지스트리에 시드한다.
+
+    전부 ``SPIKE_REQUIRED`` 로 시작하며 등록 직후 ``list_operational()`` 에는
+    하나도 나타나지 않아야 한다 — 이것이 "공식 문서 언급 ≠ VERIFIED"의 코드 증명이다.
+    """
+    for spike in _PRD_20_3_SPIKES:
+        registry.register(spike.capability_id, spike.title)
