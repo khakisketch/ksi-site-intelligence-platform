@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-26T15:59:20+09:00",
+  "updated_at": "2026-07-26T22:41:55+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -38,7 +38,7 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-1 acceptance 참조"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
@@ -47,7 +47,7 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-25T00:52:13+09:00"
+      "updated_at": "2026-07-26T16:23:49+09:00"
     },
     {
       "id": "phase-2",
@@ -129,16 +129,22 @@
         "Python Intelligence Plane<->C++ Control Plane 언어중립 계약",
         "전체 locked CI 게이트 통과"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "commit a8f98c7 — C-1 WorldEntity/Observation 계약(INV-020/042 불변식), C-2 FastAPI 골격(/health·/capabilities, INV-041 HTTP 경계 차단), C-3 C++17 control plane(TTL·인가·heartbeat·fail-closed, 33단언+변이테스트로 하네스 유효성 실증), C-4 언어중립 계약(공유 conformance 벡터 12종 Python·C++ 양쪽 실행, 생성기 drift 감지 실증). 게이트: Python 289 passed·5 skipped, mypy 47파일 clean, ruff clean, C++ clean out-of-tree ctest 2/2, CI gates+edge-control-plane 양쪽 success. 범위 준수: PSDK 비행명령·기체 이동 코드 미포함, Capability VERIFIED 승격 없음.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "소프트웨어 골격 완성(현장 제품 완성 아님).",
+        "at": "2026-07-26T22:41:55+09:00",
+        "reviewer": "대표자 확인 (2026-07-26 Stage C 완료 판정)",
+        "evidence_ref": "commit a8f98c7 / CI gates+edge-control-plane success"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-26T15:59:20+09:00",
-      "updated_at": "2026-07-26T15:59:20+09:00"
+      "updated_at": "2026-07-26T22:41:55+09:00"
     }
   ],
   "risks": []
