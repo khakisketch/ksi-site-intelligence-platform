@@ -7,6 +7,14 @@
       "at_sha": "5cc7c9b",
       "at_module_sha": null,
       "at": "2026-07-27T11:31:14+09:00"
+    },
+    "packages/domain (detection adapter)": {
+      "status": "green",
+      "note": "B1 1~4 완료: raw output→Detection 정규화(7종 typed drop, fail-closed) + Detector conformance suite. reviewer 반증 4건(산술 NaN escape·무제한 클리핑·stale 기록·bool 라벨 우회) 전건 재현 후 수정. 미완: 실모델 선정(5~6)·recorded 통합(7).",
+      "audit_ref": "commit 3bf5c29",
+      "at_sha": "3bf5c29",
+      "at_module_sha": null,
+      "at": "2026-07-27T13:28:45+09:00"
     }
   }
 }
