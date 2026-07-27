@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-27T13:56:24+09:00",
+  "updated_at": "2026-07-27T15:04:38+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -207,6 +207,20 @@
       "previous_status": null,
       "created_at": "2026-07-27T13:56:24+09:00",
       "updated_at": "2026-07-27T13:56:24+09:00"
+    },
+    {
+      "id": "slice-entity-class-hardcoded",
+      "title": "vertical_slice 가 entity_class='Person' 을 하드코딩 — 실모델(차량류 포함) 배선 시 트럭 탐지가 Person 이벤트로 승격될 위험 (reviewer F13)",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "B1-7 recorded input 을 슬라이스에 실배선하기 전에 detection_class → entity_class 전파를 구현해야 함. 현재는 RecordedFrameDetector 미배선이라 미발현.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-27T15:04:38+09:00",
+      "updated_at": "2026-07-27T15:04:38+09:00"
     }
   ]
 }

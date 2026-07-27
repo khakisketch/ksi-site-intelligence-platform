@@ -15,6 +15,14 @@
       "at_sha": "3bf5c29",
       "at_module_sha": null,
       "at": "2026-07-27T13:28:45+09:00"
+    },
+    "packages/perception (D-FINE adapter)": {
+      "status": "green",
+      "note": "B1-6 완료: D-FINE-S COCO-only 실모델 통합 + Registry digest 게이트 + ONNX export 계약. 수용기준 12항목 전건 통과, reviewer 반증 P1 2건 포함 15건 수정. 미완: B1-7 슬라이스 실배선(risk slice-entity-class-hardcoded 선결), B2 Manifold HIL.",
+      "audit_ref": "commit 21e9ada",
+      "at_sha": "21e9ada",
+      "at_module_sha": null,
+      "at": "2026-07-27T15:04:39+09:00"
     }
   }
 }

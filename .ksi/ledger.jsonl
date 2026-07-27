@@ -23,3 +23,4 @@
 {"ts": "2026-07-27T01:52:10+09:00", "event": "started", "goal": "track-b"}
 {"ts": "2026-07-27T01:52:10+09:00", "event": "completion_attempt", "goal": "track-b", "evidence": "commit 8be6a63 — 합성/녹화 입력 기준 전 구간 배선 완성(Frame→Detection→Tracking→보간→투영→Observation→WorldEntity→Event Candidate→Evidence Bundle). Detector는 인터페이스+결정적 stub(Ultralytics BLOCKED_LICENSE + 배선과 모델정확도 분리 목적). 검증: 전구간 연결, 불확실성 전달, 2인 2엔티티, gap/지평선 탈락 사유 기록, 단일관측·고정관측점 CONFIRMED 차단, 2회실행·순서shuffle 재현성. 게이트 479 passed·5 skipped, mypy 57파일, C++ 2/2. **미완(장비 필요)**: permissive 실모델 교체·PSDK Live View 전환·실기 프레임 재현."}
 {"ts": "2026-07-27T13:56:24+09:00", "event": "risk_add", "goal": "model-lineage-coco-residual", "lens": "other", "severity": "medium"}
+{"ts": "2026-07-27T15:04:38+09:00", "event": "risk_add", "goal": "slice-entity-class-hardcoded", "lens": "other", "severity": "high"}
