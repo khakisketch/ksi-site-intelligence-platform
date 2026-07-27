@@ -23,6 +23,14 @@
       "at_sha": "21e9ada",
       "at_module_sha": null,
       "at": "2026-07-27T15:04:39+09:00"
+    },
+    "perception pipeline (classification lineage)": {
+      "status": "green",
+      "note": "F13 P0 해소: Detection 분류가 Ontology(v1)→Observation→Entity→Event 정책까지 계보로 흐름. 상수 대체·fallback 경로 제거. B1-7(recorded input 실배선) 진입 가능.",
+      "audit_ref": "commit f9fc4b4",
+      "at_sha": "f9fc4b4",
+      "at_module_sha": null,
+      "at": "2026-07-27T19:55:20+09:00"
     }
   }
 }
