@@ -90,4 +90,7 @@
   _강제: event-bundle lineage 필수 필드 (P0-1) + Edge 로더 (미구현)._
 - **INV-043** NC·권리불명 데이터는 상용 학습에서 제외한다. Dataset/Model은 라이선스·출처
   계보를 Registry에 고정한다.
-  _강제: Dataset License Ledger (미구현, Scout 정책 계승)._
+  _강제: `docs/models/MODEL_REGISTRY.yaml`(revision·sha256 계보 SSOT) +
+  `ksi_perception.registry`(digest 대조·BLOCKED 계보 거부·잉여파일 거부) +
+  `tests/contract/test_model_registry.py`. Dataset 쪽 Ledger 는 자체 학습 데이터
+  확보 시 확장(MODEL-B1-001 production_gate)._

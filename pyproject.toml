@@ -13,6 +13,19 @@ members = ["packages/*", "services/*"]
 # edge/: Manifold Python 환경은 서버 workspace와 분리 운용 (별도 pyproject, 대표자 반영사항 1)
 exclude = ["references/*", "edge/*", "workers/*", "apps/*"]
 
+# torch 는 CPU 인덱스 고정 — 서버 workspace 의 B1 기능 검증은 CPU 로 충분하며(MODEL-B1-001),
+# CUDA 빌드(~2GB)는 워크스페이스 lock 을 불필요하게 무겁게 한다. Manifold TensorRT 는
+# 별도 edge 환경(B2)이라 이 인덱스와 무관하다.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+ksi-perception = { workspace = true }
+
 [dependency-groups]
 dev = [
     "ruff>=0.6",
@@ -20,7 +33,11 @@ dev = [
     "pytest>=8.0",
     "jsonschema>=4.21",
     "types-jsonschema>=4.21",
+    "types-pyyaml>=6.0",
     "httpx>=0.27",
+    # leaf workspace 멤버 — 아무 패키지도 의존하지 않아 기본 sync 에서 빠지므로 dev 로
+    # 명시한다(base 의존만 — torch 계열 [dfine] extra 는 모델 보유 환경에서만 설치).
+    "ksi-perception",
 ]
 
 [tool.ruff]
@@ -38,6 +55,23 @@ no_implicit_optional = true
 # tools/vector-extraction/: 참고 레포(Scout)를 스크래치패드 venv에서 import하는
 # 일회성 추출 스크립트라 메인 워크스페이스에서는 원래 해석 불가하다(설계상 의도).
 exclude = ["references/", "edge/", "apps/", "tools/vector-extraction/"]
+
+# [dfine] extra(torch·transformers·onnx 계열)는 CI 에 설치되지 않는다 — mypy 는
+# 지연 import 도 모듈 해석을 시도해 미설치 시 import-not-found **에러**를 내므로
+# (반증 리뷰 F1: 로컬은 extra 가 있어 green, CI 만 깨지는 env divergence),
+# 이 계열은 missing import 를 무시한다. onnxruntime 은 설치돼도 스텁 미제공.
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "torch",
+    "transformers.*",
+    "transformers",
+    "onnx.*",
+    "onnx",
+    "onnxruntime.*",
+    "onnxruntime",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "services"]

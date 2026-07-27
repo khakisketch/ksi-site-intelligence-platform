@@ -1,0 +1,33 @@
+[project]
+name = "ksi-perception"
+version = "0.0.1"
+description = "실모델 Detector adapter (D-FINE) + Model Registry 계보 검증 (Track B-1, MODEL-B1-001)"
+requires-python = ">=3.12,<3.13"
+# base 는 계보 검증·계약만 — torch/transformers 는 [dfine] extra 로 격리한다.
+# CI 는 extra 없이 계약 테스트만 돌고, 모델 추론 테스트는 extra+모델파일 존재 시에만 실행된다.
+dependencies = [
+    "ksi-domain",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dfine = [
+    "torch>=2.4",
+    "torchvision>=0.19",  # transformers 5.x 이미지 프로세서가 요구
+    "transformers>=4.52",
+    "onnx>=1.16",
+    "onnxscript>=0.1",  # torch dynamo exporter 요구
+    "onnxruntime>=1.18",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_perception"]
+
+[tool.uv.sources]
+ksi-domain = { workspace = true }
