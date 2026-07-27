@@ -25,3 +25,4 @@
 {"ts": "2026-07-27T13:56:24+09:00", "event": "risk_add", "goal": "model-lineage-coco-residual", "lens": "other", "severity": "medium"}
 {"ts": "2026-07-27T15:04:38+09:00", "event": "risk_add", "goal": "slice-entity-class-hardcoded", "lens": "other", "severity": "high"}
 {"ts": "2026-07-27T19:55:20+09:00", "event": "risk_resolved", "goal": "slice-entity-class-hardcoded", "from_status": "open", "reason": null, "evidence_ref": "commit f9fc4b4 — Versioned Ontology + observed_class 계보 + class-aware tracker + CLASSIFICATION_CONFLICT + event/class compatibility gate. 반증: truck→Person Entity/PERSON_PRESENT 금지(stub+실모델), 게이트 598 passed. INV-031 강화 정본 반영"}
+{"ts": "2026-07-27T19:55:40+09:00", "event": "risk_add", "goal": "onnx-export-recipe-unrecorded", "lens": "other", "severity": "low"}
