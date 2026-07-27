@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-27T01:52:10+09:00",
+  "updated_at": "2026-07-27T13:56:24+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -193,5 +193,20 @@
       "updated_at": "2026-07-27T01:52:10+09:00"
     }
   ],
-  "risks": []
+  "risks": [
+    {
+      "id": "model-lineage-coco-residual",
+      "title": "D-FINE-S COCO-only 잔여 라이선스 위험 — COCO 이미지 권리 이질성(Flickr 개별 라이선스). production 배포는 법무 검토 전 BLOCKED (MODEL-B1-001)",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "Objects365/obj2coco/VisDrone 유래는 별도 권리 승인 전 상용 경로 BLOCKED. Registry: docs/models/MODEL_REGISTRY.yaml",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-27T13:56:24+09:00",
+      "updated_at": "2026-07-27T13:56:24+09:00"
+    }
+  ]
 }

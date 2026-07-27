@@ -1,0 +1,1 @@
+/usr/bin/c++ -O2 -g -DNDEBUG CMakeFiles/control_plane_tests.dir/tests/control_plane_tests.cpp.o -o control_plane_tests  libksi_control_plane.a 
