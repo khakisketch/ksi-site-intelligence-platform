@@ -84,6 +84,14 @@ class Observation(BaseModel):
 
     Attributes:
         observation_id: 관측 고유 식별자(EventBundle/WorldEntity lineage가 참조).
+        observed_class: 이 관측의 **Canonical Entity Class** ("Person" 등 —
+            ``ksi_domain.ontology``). Detection 의 분류가 Observation 단계에서
+            사라지면 하류가 상수값으로 대체하게 된다(INV-031 위반, F13) — 그래서
+            **required** 다. 분류를 모르는 관측은 세계 모델에 편입될 수 없다.
+        source_class_id: 모델 원시 클래스 index (분류 계보, 모를 수 있음).
+        source_class_name: 모델 원시 클래스명 (분류 계보, 모를 수 있음).
+        ontology_version: 원시→canonical 번역 규칙의 버전 (required — 버전 없는
+            번역은 재현할 수 없다).
         track_id: 이 관측이 속한 track(다중 프레임 연결). 아직 track이 없으면 None.
         observed_at: 관측 시각. **timezone-aware UTC 강제** — naive 시각이 섞이면
             비교·정렬에서 런타임 예외가 되거나(TypeError) 서로 다른 기준의 시각을
@@ -127,6 +135,10 @@ class Observation(BaseModel):
     )
 
     observation_id: str = Field(min_length=1)
+    observed_class: str = Field(min_length=1)
+    source_class_id: int | None = None
+    source_class_name: str | None = None
+    ontology_version: str = Field(min_length=1)
     track_id: str | None = None
     observed_at: AwareDatetime
     site_frame: str
@@ -169,7 +181,15 @@ class Observation(BaseModel):
             )
         return self
 
-    @field_validator("observation_id", "track_id", "viewpoint_id", "sensor_id")
+    @field_validator(
+        "observation_id",
+        "observed_class",
+        "ontology_version",
+        "source_class_name",
+        "track_id",
+        "viewpoint_id",
+        "sensor_id",
+    )
     @classmethod
     def _reject_blank_identifier(cls, value: str | None) -> str | None:
         """공백·whitespace-only 식별자 거부 (독립 검토 2026-07-27 지정).

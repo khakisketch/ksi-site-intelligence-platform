@@ -15,13 +15,16 @@ from ksi_event_contracts.observation import ViewpointEvidenceKind
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 from vertical_slice import (
+    EventBuildStatus,
     MinimalTracker,
     ScriptedDetector,
     SliceFrame,
     SliceStage,
+    _event_bundle_from_entity,
     person_detection,
     run_vertical_slice,
     synthetic_telemetry,
+    truck_detection,
 )
 
 _WIDTH, _HEIGHT = 1920, 1080
@@ -321,3 +324,191 @@ def test_scripted_detector_rejects_invalid_frame_size() -> None:
     detector = ScriptedDetector({})
     with pytest.raises(ValueError, match="프레임 크기"):
         detector.detect(0, 0, 1080)
+
+
+# ── 분류 계보 (INV-031, F13 — 3차 반증 리뷰 P0) ──────────────────────────────
+#
+# 초판 슬라이스는 entity_class="Person" 상수와 event_type="PERSON_PRESENT" 기본
+# 인자로 조립·발행했다 — Detector 가 트럭을 탐지해도 Person Entity + PERSON_PRESENT
+# Event 가 됐다. 아래가 그 경로들을 전부 닫았음을 고정한다(대표자 수용기준 전건).
+
+
+def _truck_script(frame_count: int, *, step_px: float = 4.0) -> dict[int, list]:
+    return {
+        i: [
+            truck_detection(
+                x_min=900.0 + i * step_px,
+                y_min=500.0,
+                x_max=1100.0 + i * step_px,
+                y_max=700.0,
+            )
+        ]
+        for i in range(frame_count)
+    }
+
+
+def test_truck_never_becomes_person_entity_or_person_event() -> None:
+    """[핵심 반증] 트럭 탐지는 Person Entity 도 PERSON_PRESENT Event 도 되지 않는다."""
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=ScriptedDetector(_truck_script(3)),
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    assert len(result.entities) == 1, "트럭도 WorldEntity 로는 편입된다(세계 모델 유지)"
+    assert result.entities[0].entity_class == "Vehicle_Truck", (
+        "트럭이 Person Entity 가 됐다 — F13 회귀"
+    )
+    assert result.bundles == [], "PERSON_PRESENT 등 어떤 Event 도 발행되면 안 된다"
+    [(entity_id, entity_class, reason)] = result.unpublished_events
+    assert entity_class == "Vehicle_Truck"
+    assert "unsupported_event_policy" in reason, "미발행 사유가 typed 로 남아야 한다"
+
+
+def test_observed_class_flows_from_detection_to_entity() -> None:
+    """[정상 경로] person Detection 의 분류 계보가 Observation→Entity 까지 흐른다."""
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=ScriptedDetector(_walking_script(3)),
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    assert all(o.observed_class == "Person" for o in result.observations)
+    assert all(o.source_class_name == "person" for o in result.observations)
+    assert all(o.ontology_version == "ksi-ontology-v1" for o in result.observations)
+    assert result.entities[0].entity_class == "Person"
+    assert len(result.bundles) == 1
+    assert result.bundles[0].event_type == "PERSON_PRESENT"
+    assert result.unpublished_events == []
+
+
+def test_class_change_at_same_location_splits_track() -> None:
+    """[Tracker 1차 방어] 같은 자리에서 class 가 바뀌면 IoU 와 무관하게 다른 track."""
+    tracker = MinimalTracker()
+    first = tracker.assign(
+        [person_detection(x_min=900.0, y_min=500.0, x_max=980.0, y_max=700.0)]
+    )
+    second = tracker.assign(
+        [truck_detection(x_min=900.0, y_min=500.0, x_max=980.0, y_max=700.0)]
+    )
+    assert first[0][0] != second[0][0], (
+        "동일 위치의 person→truck 이 같은 track 으로 이어졌다 — class 게이트 무력화"
+    )
+
+
+def test_mixed_class_track_rejected_at_assembly() -> None:
+    """[Assembly 2차 방어] tracker 를 우회한 class 혼합은 CLASSIFICATION_CONFLICT."""
+    from datetime import UTC, datetime, timedelta
+
+    from ksi_event_contracts.assembly import AssemblyStatus, assemble_world_entity
+    from ksi_event_contracts.observation import Observation
+
+    def _obs(oid: str, observed_class: str, millis: int) -> Observation:
+        return Observation(
+            observation_id=oid,
+            observed_class=observed_class,
+            ontology_version="ksi-ontology-v1",
+            track_id="trk-forced",
+            observed_at=datetime(2026, 7, 27, 6, 0, 0, tzinfo=UTC) + timedelta(milliseconds=millis),
+            site_frame="EPSG:4326+WGS84@slice-1.0.0",
+            position=[37.5, 127.0, 0.0],
+            position_covariance=[1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0],
+            detection_confidence=0.9,
+        )
+
+    result = assemble_world_entity(
+        [_obs("obs-a", "Person", 0), _obs("obs-b", "Vehicle_Truck", 100)],
+        entity_id="ent-forced",
+        model_versions={"detector": "stub"},
+        calibration_profile_id="cal-1",
+    )
+    assert result.status is AssemblyStatus.CLASSIFICATION_CONFLICT
+    assert result.entity is None, "class 충돌 track 이 Entity 로 확정됐다 — fail-closed 위반"
+
+
+def test_truck_entity_with_person_event_type_rejected() -> None:
+    """[Event/Class compatibility] Truck Entity + PERSON_PRESENT → EVENT_CLASS_MISMATCH."""
+    from ksi_domain.enums import Severity
+
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_truck_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+    )
+    [truck_entity] = result.entities
+    built = _event_bundle_from_entity(
+        truck_entity,
+        severity=Severity.CANDIDATE,
+        event_type="PERSON_PRESENT",
+        model_version="stub",
+    )
+    assert built.status is EventBuildStatus.EVENT_CLASS_MISMATCH
+    assert built.bundle is None
+
+
+def test_misconfigured_policy_blocked_by_compatibility_gate() -> None:
+    """정책이 불호환 event type 을 가리켜도 발행 직전 gate 가 끊는다(2중 방어)."""
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_truck_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+        event_policy={"Vehicle_Truck": "PERSON_PRESENT"},  # 잘못된 정책 주입
+    )
+    assert result.bundles == [], "불호환 정책이 Event 를 발행시켰다 — gate 무력화"
+    [(_, _, reason)] = result.unpublished_events
+    assert "event_class_mismatch" in reason
+
+
+def test_unknown_event_type_rejected() -> None:
+    """호환표에 없는 event type 은 정책 없는 발행으로 거부된다."""
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_walking_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+        event_policy={"Person": "UNREGISTERED_EVENT"},
+    )
+    assert result.bundles == []
+    [(_, _, reason)] = result.unpublished_events
+    assert "unknown_event_type" in reason
+
+
+def test_two_class_scene_is_deterministic_under_shuffle() -> None:
+    """[재현성] person+truck 혼합 장면 — 입력 순서 shuffle 에도 동일 결과."""
+
+    def build(reverse: bool) -> dict:
+        script = {
+            i: sorted(
+                [
+                    person_detection(
+                        x_min=300.0 + i * 4.0, y_min=500.0, x_max=380.0 + i * 4.0, y_max=700.0
+                    ),
+                    truck_detection(
+                        x_min=1200.0 + i * 4.0, y_min=450.0, x_max=1500.0 + i * 4.0, y_max=700.0
+                    ),
+                ],
+                key=lambda d: d.bbox.x_min,
+                reverse=reverse,
+            )
+            for i in range(3)
+        }
+        result = run_vertical_slice(
+            frames=_frames([0.0, 0.2, 0.4]),
+            detector=ScriptedDetector(script),
+            telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+            drone_position=_DRONE_POSE,
+        )
+        return {
+            "fingerprints": result.entity_fingerprints(),
+            "classes": sorted(e.entity_class for e in result.entities),
+            "event_types": sorted(b.event_type for b in result.bundles),
+            "unpublished": sorted(c for _, c, _ in result.unpublished_events),
+        }
+
+    forward, backward = build(False), build(True)
+    assert forward == backward
+    assert forward["classes"] == ["Person", "Vehicle_Truck"]
+    assert forward["event_types"] == ["PERSON_PRESENT"]
+    assert forward["unpublished"] == ["Vehicle_Truck"]

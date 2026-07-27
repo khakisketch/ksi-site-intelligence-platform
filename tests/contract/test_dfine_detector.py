@@ -263,3 +263,42 @@ def test_onnx_export_matches_pytorch(detector: DFineDetector, tmp_path: Path) ->
     np.testing.assert_allclose(
         torch_out.pred_boxes.numpy(), onnx_boxes, rtol=1e-3, atol=1e-4
     )
+
+
+# ── 분류 계보 (INV-031, F13) — 실모델 회귀 ────────────────────────────────────
+
+
+def test_person_class_comes_only_from_person_label(detector: DFineDetector) -> None:
+    """[F13 실모델 반증] 'Person' 은 원시 라벨 'person' 에서만 나온다.
+
+    canonical class 와 원시 라벨의 계보가 실모델 경로에서 실제로 보존되며,
+    비 person 라벨(차량 등)이 Person 으로 번역되는 경로가 없음을 실증한다.
+    """
+    result = detector.detect_image(_person_image())
+    persons = [d for d in result.detections if d.detection_class == "Person"]
+    assert persons, "person 이미지에서 Person 0건 — 반증이 공허해진다"
+    for d in result.detections:
+        assert d.ontology_version == "ksi-ontology-v1"
+        if d.detection_class == "Person":
+            assert d.source_class_name == "person", (
+                f"Person 이 원시 라벨 {d.source_class_name!r} 에서 나왔다 — 계보 오염"
+            )
+        else:
+            assert d.source_class_name != "person", (
+                "person 라벨이 Person 아닌 class 로 번역됐다"
+            )
+
+
+def test_unsupported_labels_dropped_with_reason_not_person(detector: DFineDetector) -> None:
+    """[F13] 미지원 COCO 라벨은 Person fallback 없이 typed drop 으로 남는다."""
+    result = detector.detect_image(_person_image())
+    from ksi_domain.detection_adapter import DropReason
+
+    unknown_drops = [d for d in result.dropped if d.reason is DropReason.UNKNOWN_LABEL]
+    for dropped in unknown_drops:
+        assert dropped.raw.label not in ("person", "car", "truck"), (
+            "지원 라벨이 UNKNOWN_LABEL 로 잘못 drop 됐다"
+        )
+    # 살아남은 Detection 중 미지원 라벨 유래는 0건이어야 한다(fallback 부재의 실증).
+    supported = {"person", "car", "truck"}
+    assert all(d.source_class_name in supported for d in result.detections)

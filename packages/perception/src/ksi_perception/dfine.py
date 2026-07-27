@@ -46,6 +46,7 @@ from ksi_domain.detection_adapter import (
     DetectionAdapter,
     RawDetection,
 )
+from ksi_domain.ontology import COCO_TO_CANONICAL
 
 from ksi_perception.registry import (
     DEFAULT_REGISTRY_PATH,
@@ -55,14 +56,10 @@ from ksi_perception.registry import (
 if TYPE_CHECKING:
     import numpy as np
 
-# COCO 라벨명 → KSI 도메인 클래스. 건설현장 B1 범위는 사람 중심이며 차량류를 함께
-# 소비한다(중장비는 COCO 에 없어 자체 fine-tune 대상 — MODEL-B1-001 production_gate).
-# 여기 없는 라벨은 DetectionAdapter 가 UNKNOWN_LABEL 로 drop 하며 기록을 남긴다.
-DEFAULT_CLASS_MAP: dict[str | int, str] = {
-    "person": "Person",
-    "car": "Vehicle_Car",
-    "truck": "Vehicle_Truck",
-}
+# COCO 라벨명 → Canonical Entity Class — SSOT 는 ksi_domain.ontology(INV-031,
+# Versioned Ontology). 여기 없는 라벨은 DetectionAdapter 가 UNKNOWN_LABEL 로 drop
+# 하며 기록을 남긴다(중장비는 COCO 에 없어 자체 fine-tune 대상 — MODEL-B1-001).
+DEFAULT_CLASS_MAP: dict[str | int, str] = {k: v for k, v in COCO_TO_CANONICAL.items()}
 
 # 모델 후보 1차 선별 문턱 — D-FINE 은 NMS-free 고정 300 query 를 내므로 대부분이
 # 무의미한 저신뢰 후보다. 0.05 는 실질 탐지를 거의 버리지 않으면서 프레임당 수백 건의

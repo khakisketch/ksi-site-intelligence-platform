@@ -99,11 +99,17 @@ def _iou(a: BoundingBox, b: BoundingBox) -> float:
 
 
 class MinimalTracker:
-    """IoU 기반 최소 tracker — 프레임 간 같은 대상에 같은 track_id 를 준다.
+    """IoU + class 기반 최소 tracker — 프레임 간 같은 대상에 같은 track_id 를 준다.
 
     **범위 명시:** Scout 감사가 중심점 greedy 연관을 REPLACE로 판정했듯, 이 구현도
     최종본이 아니다(가림·밀집·미검출 구간에 약하다). vertical slice의 목적은 "track_id
     가 파이프라인을 타고 흐르는지" 확인이며, 확률적 다특징 연관은 이후 단계다.
+
+    **class-aware (INV-031 1차 방어, F13):** IoU 가 충분해도 canonical class 가
+    다르면 연관하지 않는다 — 같은 자리에서 person 이 truck 으로 바뀌면 그것은 같은
+    대상이 아니라 다른 대상(또는 오분류)이며, 한 track 으로 묶으면 class 충돌이
+    hidden 연관 오류로 세계 모델에 들어간다. tracker 를 우회한 혼합은 assembly 의
+    CLASSIFICATION_CONFLICT(2차 방어)가 잡는다.
 
     결정적이다 — 같은 입력 순서에 같은 track_id 를 배정한다(재현성).
     """
@@ -113,7 +119,7 @@ class MinimalTracker:
             raise ValueError(f"iou_threshold 는 (0,1] 범위여야 한다 ({iou_threshold!r})")
         self._iou_threshold = iou_threshold
         self._next_id = 1
-        self._active: dict[str, BoundingBox] = {}
+        self._active: dict[str, tuple[BoundingBox, str]] = {}  # track → (bbox, class)
 
     def assign(self, detections: list[Detection]) -> list[tuple[str, Detection]]:
         """탐지 목록에 track_id 를 배정한다. 입력 순서대로 그리디 매칭."""
@@ -122,17 +128,19 @@ class MinimalTracker:
         for detection in detections:
             best_id: str | None = None
             best_iou = 0.0
-            for track_id, previous in self._active.items():
+            for track_id, (previous_bbox, previous_class) in self._active.items():
                 if track_id in claimed:
                     continue
-                score = _iou(previous, detection.bbox)
+                if previous_class != detection.detection_class:
+                    continue  # class 불일치 — IoU 와 무관하게 다른 track
+                score = _iou(previous_bbox, detection.bbox)
                 if score >= self._iou_threshold and score > best_iou:
                     best_id, best_iou = track_id, score
             if best_id is None:
                 best_id = f"trk-{self._next_id:03d}"
                 self._next_id += 1
             claimed.add(best_id)
-            self._active[best_id] = detection.bbox
+            self._active[best_id] = (detection.bbox, detection.detection_class)
             assigned.append((best_id, detection))
         return assigned
 
@@ -161,6 +169,9 @@ class SliceResult:
     entities: list[WorldEntity] = field(default_factory=list)
     bundles: list[EventBundle] = field(default_factory=list)
     assembly_failures: list[tuple[str, AssemblyStatus, str | None]] = field(default_factory=list)
+    # Entity 는 생성됐지만 Event 가 발행되지 않은 건 — (entity_id, entity_class, 사유).
+    # Solution Pack 이 지원하지 않는 class 는 Event 미발행이 정상 경로다(조용한 소멸 금지).
+    unpublished_events: list[tuple[str, str, str]] = field(default_factory=list)
 
     def entity_fingerprints(self) -> list[str]:
         """재현성 비교용 — entity_id 를 제외한 내용 기반 지문(P0-6 규약)."""
@@ -194,6 +205,12 @@ def _observation_from_projection(
     variance = error_radius_m**2
     return Observation(
         observation_id=f"obs-{frame.frame_id:04d}-{track_id}",
+        # 분류 계보(INV-031, F13) — Detection 의 canonical class 와 원시 라벨·ontology
+        # 버전이 Observation 을 타고 흐른다. 상수로 덮어쓰지 않는다.
+        observed_class=detection.detection_class,
+        source_class_id=detection.source_class_id,
+        source_class_name=detection.source_class_name,
+        ontology_version=detection.ontology_version,
         track_id=track_id,
         observed_at=_EPOCH + timedelta(seconds=frame.capture_ts_utc),
         site_frame="EPSG:4326+WGS84@slice-1.0.0",
@@ -208,23 +225,70 @@ def _observation_from_projection(
     )
 
 
+# Event Type 별 호환 Entity Class (INV-031 — Event 는 Entity class 와 호환될 때만).
+# 슬라이스 수준의 최소 정책이다 — 실제 Solution Pack 정책은 Core 소유(Phase 2+).
+EVENT_TYPE_COMPATIBLE_CLASSES: dict[str, frozenset[str]] = {
+    "PERSON_PRESENT": frozenset({"Person"}),
+}
+
+# Entity Class → 발행할 Event Type. 여기 없는 class 는 Entity 는 유지하되 Event 를
+# 발행하지 않는다(unpublished_events 에 typed 사유 기록 — 조용한 소멸 금지).
+DEFAULT_EVENT_POLICY: dict[str, str] = {"Person": "PERSON_PRESENT"}
+
+
+class EventBuildStatus(StrEnum):
+    OK = "ok"
+    EVENT_CLASS_MISMATCH = "event_class_mismatch"  # event_type 이 entity class 와 불호환
+    UNKNOWN_EVENT_TYPE = "unknown_event_type"  # 호환표에 없는 event_type
+
+
+@dataclass(frozen=True, slots=True)
+class EventBuildResult:
+    status: EventBuildStatus
+    bundle: EventBundle | None = None
+    detail: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status is EventBuildStatus.OK
+
+
 def _event_bundle_from_entity(
     entity: WorldEntity,
     *,
     severity: Severity,
     event_type: str,
     model_version: str,
-) -> EventBundle:
+) -> EventBuildResult:
     """WorldEntity → EventBundle. 상태전이는 반드시 전이표를 경유한다(INV-031).
+
+    **Event/Class compatibility gate (F13):** event_type 이 entity 의 class 와
+    호환되지 않으면 EventBundle 을 만들지 않고 typed 로 거부한다 — Truck Entity 에
+    PERSON_PRESENT 를 요청하는 호출은 코드 어디서 오든 여기서 끊긴다.
 
     Detection 에서 곧바로 CONFIRMED 로 가지 않고 OBSERVATION → CANDIDATE 를 밟는다 —
     단일 슬라이스 실행이 사건을 확정하지 않는다(INV-022).
     """
+    compatible = EVENT_TYPE_COMPATIBLE_CLASSES.get(event_type)
+    if compatible is None:
+        return EventBuildResult(
+            status=EventBuildStatus.UNKNOWN_EVENT_TYPE,
+            detail=f"event_type {event_type!r} 는 호환표에 없다 — 정책 없는 이벤트 발행 금지",
+        )
+    if entity.entity_class not in compatible:
+        return EventBuildResult(
+            status=EventBuildStatus.EVENT_CLASS_MISMATCH,
+            detail=(
+                f"event_type {event_type!r} 는 entity class {entity.entity_class!r} 와 "
+                f"불호환(허용: {sorted(compatible)}) — Event 를 생성하지 않는다(INV-031)"
+            ),
+        )
+
     assert_event_transition(None, EventStatus.OBSERVATION)
     assert_event_transition(EventStatus.OBSERVATION, EventStatus.CANDIDATE)
 
     clip_seconds = 3.0 if severity is Severity.CANDIDATE else 5.0
-    return EventBundle(
+    bundle = EventBundle(
         event_id=f"evt-{entity.entity_id}",
         mission_id="mission-slice-1",
         site_id="site-slice-1",
@@ -254,6 +318,7 @@ def _event_bundle_from_entity(
             calibration_profile_id="slice-cal-0",
         ),
     )
+    return EventBuildResult(status=EventBuildStatus.OK, bundle=bundle)
 
 
 def run_vertical_slice(
@@ -263,15 +328,23 @@ def run_vertical_slice(
     telemetry: list[TelemetrySample],
     drone_position: tuple[float, float, float],
     model_version: str = "scripted-stub-0",
-    event_type: str = "PERSON_PRESENT",
     severity: Severity = Severity.CANDIDATE,
     max_gap_s: float = 0.5,
+    event_policy: dict[str, str] | None = None,
 ) -> SliceResult:
     """전 구간을 실행한다. 예외를 던지지 않고 단계별 탈락을 결과에 기록한다.
+
+    Event Type 은 호출자가 상수로 넘기지 않는다(F13 — ``event_type="PERSON_PRESENT"``
+    기본 인자는 트럭 Entity 도 Person 이벤트로 만들었다). Entity 의 class 와
+    ``event_policy`` (class → event type) 의 조합으로 결정되며, 정책에 없는 class 는
+    Entity 를 유지한 채 Event 만 발행하지 않고 사유를 ``unpublished_events`` 에
+    남긴다. 발행 직전 :func:`_event_bundle_from_entity` 의 compatibility gate 가
+    한 번 더 검증한다(정책 오기입 방어).
 
     프레임은 ``capture_ts_utc`` 기준으로 정렬해 실행하므로 입력 순서에 의존하지 않는다
     (P0-6 재현성 규약).
     """
+    policy = event_policy if event_policy is not None else dict(DEFAULT_EVENT_POLICY)
     interpolator = TelemetryInterpolator(max_gap_s=max_gap_s)
     for sample in telemetry:
         interpolator.add(sample)
@@ -281,7 +354,13 @@ def run_vertical_slice(
     per_track: dict[str, list[Observation]] = {}
 
     for frame in sorted(frames, key=lambda f: (f.capture_ts_utc, f.frame_id)):
-        detections = detector.detect(frame.frame_id, frame.width, frame.height)
+        # 프레임 내 detection 도 결정적 순서로 정규화한다 — tracker 의 그리디 배정이
+        # 입력 순서 종속이라, 정렬 없이는 같은 장면의 detection 순서 차이가 track
+        # 라벨을 뒤바꿔 재현성(P0-6)이 깨진다(프레임 정렬과 같은 정신).
+        detections = sorted(
+            detector.detect(frame.frame_id, frame.width, frame.height),
+            key=lambda d: (d.bbox.x_min, d.bbox.y_min, d.bbox.x_max, d.detection_class),
+        )
         for track_id, detection in tracker.assign(detections):
             interpolated = interpolator.at(frame.capture_ts_utc)
             if not interpolated.ok or interpolated.sample is None:
@@ -321,10 +400,11 @@ def run_vertical_slice(
             per_track.setdefault(track_id, []).append(observation)
 
     for track_id, observations in sorted(per_track.items()):
+        # entity class 는 인자로 주지 않는다 — 관측들의 observed_class 에서 유도되며
+        # 충돌은 CLASSIFICATION_CONFLICT 로 거부된다(INV-031, F13).
         assembly = assemble_world_entity(
             observations,
             entity_id=f"ent-{track_id}",
-            entity_class="Person",
             model_versions={"detector": model_version},
             calibration_profile_id="slice-cal-0",
         )
@@ -332,14 +412,34 @@ def run_vertical_slice(
             result.assembly_failures.append((track_id, assembly.status, assembly.detail))
             continue
         result.entities.append(assembly.entity)
-        result.bundles.append(
-            _event_bundle_from_entity(
-                assembly.entity,
-                severity=severity,
-                event_type=event_type,
-                model_version=model_version,
+
+        entity_class = assembly.entity.entity_class
+        event_type = policy.get(entity_class)
+        if event_type is None:
+            # Solution Pack 미지원 class — Entity 는 세계 모델에 남기고 Event 만
+            # 발행하지 않는다(typed 사유, 조용한 소멸 금지).
+            result.unpublished_events.append(
+                (
+                    assembly.entity.entity_id,
+                    entity_class,
+                    f"unsupported_event_policy: {entity_class!r} 에 대한 이벤트 정책 없음",
+                )
             )
+            continue
+        built = _event_bundle_from_entity(
+            assembly.entity,
+            severity=severity,
+            event_type=event_type,
+            model_version=model_version,
         )
+        if not built.ok or built.bundle is None:
+            # 정책이 불호환 event type 을 가리키는 구성 오류 — compatibility gate 가
+            # 발행을 끊고 사유를 남긴다.
+            result.unpublished_events.append(
+                (assembly.entity.entity_id, entity_class, f"{built.status}: {built.detail}")
+            )
+            continue
+        result.bundles.append(built.bundle)
 
     return result
 
@@ -380,9 +480,28 @@ def synthetic_telemetry(
 def person_detection(
     *, x_min: float, y_min: float, x_max: float, y_max: float, confidence: float = 0.9
 ) -> Detection:
-    """테스트 편의 — 사람 탐지 1건."""
+    """테스트 편의 — 사람 탐지 1건 (canonical class + 분류 계보 포함).
+
+    초판은 ``detection_class="person"`` (원시 라벨)이었다 — canonical("Person")과
+    원시 라벨을 같은 문자열로 취급하던 F13 의 실례라 수정됐다.
+    """
     return Detection(
-        detection_class="person",
+        detection_class="Person",
         confidence=confidence,
         bbox=BoundingBox(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max),
+        source_class_id=0,
+        source_class_name="person",
+    )
+
+
+def truck_detection(
+    *, x_min: float, y_min: float, x_max: float, y_max: float, confidence: float = 0.9
+) -> Detection:
+    """테스트 편의 — 트럭 탐지 1건. F13 반증(비Person 이 Person 이 되지 않는다)용."""
+    return Detection(
+        detection_class="Vehicle_Truck",
+        confidence=confidence,
+        bbox=BoundingBox(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max),
+        source_class_id=7,
+        source_class_name="truck",
     )

@@ -52,6 +52,8 @@ def _observation(
     detection_confidence: float | None = 0.9,
     viewpoint_id: str | None | object = _UNSET,
     viewpoint_kind: ViewpointEvidenceKind | None = None,
+    observed_class: str = "Person",
+    ontology_version: str = "ksi-ontology-v1",
 ) -> Observation:
     # 미지정이면 관측 id에서 파생 — 별개 관측은 기본적으로 서로 다른 관측점으로 본다.
     # 같은 관측점이나 "모름(None)"을 표현하려면 호출자가 명시적으로 넘긴다.
@@ -68,6 +70,8 @@ def _observation(
     )
     return Observation(
         observation_id=observation_id,
+        observed_class=observed_class,
+        ontology_version=ontology_version,
         track_id=track_id,
         observed_at=_BASE_TIME + timedelta(milliseconds=millis),
         site_frame=site_frame,
@@ -83,7 +87,6 @@ def _assemble(observations: list[Observation]) -> AssemblyResult:
     return assemble_world_entity(
         observations,
         entity_id="ent-001",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
     )
@@ -250,7 +253,6 @@ def test_state_thresholds_are_injectable_not_hardcoded_truth() -> None:
     strict = assemble_world_entity(
         observations,
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         confirmed_trace_max=0.01,  # 매우 엄격 → CONFIRMED 불가
@@ -307,14 +309,12 @@ def test_entity_id_does_not_affect_fingerprint() -> None:
     a = assemble_world_entity(
         observations,
         entity_id="ent-AAA",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
     )
     b = assemble_world_entity(
         observations,
         entity_id="ent-ZZZ",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
     )
@@ -428,7 +428,6 @@ def test_invalid_thresholds_rejected(confirmed: float, likely: float) -> None:
     result = assemble_world_entity(
         [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         confirmed_trace_max=confirmed,
@@ -443,7 +442,6 @@ def test_equal_thresholds_allowed() -> None:
     result = assemble_world_entity(
         [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         confirmed_trace_max=1.0,
@@ -457,6 +455,8 @@ def test_naive_observed_at_rejected_by_contract() -> None:
     with pytest.raises(ValidationError):
         Observation(
             observation_id="obs-a",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             track_id="trk-1",
             observed_at=datetime(2026, 7, 26, 4, 0, 0),  # noqa: DTZ001 — 의도적 naive
             site_frame=_FRAME,
@@ -471,6 +471,8 @@ def test_non_utc_offset_observed_at_rejected() -> None:
     with pytest.raises(ValidationError):
         Observation(
             observation_id="obs-a",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             track_id="trk-1",
             observed_at=datetime(2026, 7, 26, 13, 0, 0, tzinfo=kst),
             site_frame=_FRAME,
@@ -482,6 +484,8 @@ def test_non_utc_offset_observed_at_rejected() -> None:
 def test_utc_observed_at_accepted() -> None:
     observation = Observation(
         observation_id="obs-a",
+        observed_class="Person",
+        ontology_version="ksi-ontology-v1",
         track_id="trk-1",
         observed_at=datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC),
         site_frame=_FRAME,
@@ -557,7 +561,6 @@ def test_observation_window_is_injectable() -> None:
     result = assemble_world_entity(
         observations,
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         max_observation_window_s=2.0,
@@ -570,7 +573,6 @@ def test_invalid_observation_window_rejected(bad_window: float) -> None:
     result = assemble_world_entity(
         [_observation("obs-a", [0.0, 0.0, 0.0]), _observation("obs-b", [0.1, 0.0, 0.0])],
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         max_observation_window_s=bad_window,
@@ -589,7 +591,6 @@ def test_max_normalized_residual_is_threaded_to_fusion() -> None:
     lenient = assemble_world_entity(
         observations,
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         max_normalized_residual=10.0,
@@ -597,7 +598,6 @@ def test_max_normalized_residual_is_threaded_to_fusion() -> None:
     strict = assemble_world_entity(
         observations,
         entity_id="e",
-        entity_class="Person",
         model_versions=_MODEL_VERSIONS,
         calibration_profile_id="cal-1",
         max_normalized_residual=1.0,
@@ -630,6 +630,8 @@ def test_empty_observation_id_rejected() -> None:
     with pytest.raises(ValidationError):
         Observation(
             observation_id="",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             observed_at=datetime(2026, 7, 26, 4, 0, 0, tzinfo=UTC),
             site_frame=_FRAME,
             position=[0.0, 0.0, 0.0],
@@ -877,6 +879,8 @@ def test_bin_id_cannot_be_declared_as_calibrated_pose() -> None:
     with pytest.raises(ValidationError, match="CALIBRATED_POSE"):
         Observation(
             observation_id="obs-a",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             observed_at=_BASE_TIME,
             site_frame=_FRAME,
             position=[0.0, 0.0, 0.0],
@@ -891,6 +895,8 @@ def test_viewpoint_kind_requires_an_id() -> None:
     with pytest.raises(ValidationError, match="viewpoint_id"):
         Observation(
             observation_id="obs-a",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             observed_at=_BASE_TIME,
             site_frame=_FRAME,
             position=[0.0, 0.0, 0.0],
@@ -904,6 +910,8 @@ def test_viewpoint_kind_defaults_to_unknown() -> None:
     """필드를 채우지 않으면 UNKNOWN — 권한은 선언해야 얻는다."""
     observation = Observation(
         observation_id="obs-a",
+        observed_class="Person",
+        ontology_version="ksi-ontology-v1",
         observed_at=_BASE_TIME,
         site_frame=_FRAME,
         position=[0.0, 0.0, 0.0],
@@ -923,6 +931,8 @@ def test_construct_bypass_still_downgrades_bin_evidence() -> None:
     forged = [
         Observation.model_construct(
             observation_id=f"obs-{i}",
+            observed_class="Person",
+            ontology_version="ksi-ontology-v1",
             track_id="trk-1",
             observed_at=_BASE_TIME + timedelta(milliseconds=i * 100),
             site_frame=_FRAME,

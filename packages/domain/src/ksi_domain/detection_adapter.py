@@ -68,6 +68,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from ksi_domain.detection import BoundingBox, Detection, Detector
+from ksi_domain.ontology import ONTOLOGY_VERSION
 
 # 클리핑 후 잔존 면적비 하한 — 이보다 많이 잘리면 접지점(foot point)이 원래 대상과
 # 무관한 편향 위치가 되므로 drop 한다(EXCESSIVE_CLIP). 0.5 = "절반 이상 잘리면 기하를
@@ -163,10 +164,14 @@ class DetectionAdapter:
     Args:
         box_format: raw bbox 좌표 포맷.
         normalized: True 면 좌표를 [0,1] 정규화 값으로 해석해 프레임 크기로 환산한다.
-        class_map: 모델 라벨 → 도메인 클래스명. **여기 없는 라벨은 drop 된다** —
-            모델의 전체 클래스 중 이 시스템이 소비하는 부분집합을 명시하는 자리다.
+        class_map: 모델 라벨 → **Canonical Entity Class**(:mod:`ksi_domain.ontology`).
+            **여기 없는 라벨은 drop 된다** — 모델의 전체 클래스 중 이 시스템이
+            소비하는 부분집합을 명시하는 자리이며, 미지원 클래스가 다른 클래스로
+            fallback 하는 경로는 없다(INV-031).
         min_confidence: 이 값 미만 score 는 drop. 기본 0.0(전부 통과) — 근거는 모듈
             docstring(threshold 는 미탐을 늘리는 방향이라 명시적 선택이어야 한다).
+        ontology_version: 이 class_map 이 구현하는 ontology 버전. 산출 Detection 의
+            분류 계보 필드에 박힌다(INV-031 — 번역 규칙의 버전을 계보로 보존).
     """
 
     def __init__(
@@ -176,7 +181,10 @@ class DetectionAdapter:
         normalized: bool,
         class_map: Mapping[str | int, str],
         min_confidence: float = 0.0,
+        ontology_version: str = ONTOLOGY_VERSION,
     ) -> None:
+        if not ontology_version.strip():
+            raise ValueError("ontology_version 은 공백일 수 없다")
         if not (
             isinstance(min_confidence, float)
             and math.isfinite(min_confidence)
@@ -202,6 +210,7 @@ class DetectionAdapter:
         self._normalized = normalized
         self._class_map = dict(class_map)
         self._min_confidence = min_confidence
+        self._ontology_version = ontology_version
 
     def convert(
         self, raws: list[RawDetection], *, width: int, height: int
@@ -348,6 +357,10 @@ class DetectionAdapter:
                     x_max=clipped_x_max,
                     y_max=clipped_y_max,
                 ),
+                # 분류 계보(INV-031) — 원시 라벨과 번역 규칙 버전을 보존한다.
+                source_class_id=raw.label if isinstance(raw.label, int) else None,
+                source_class_name=raw.label if isinstance(raw.label, str) else None,
+                ontology_version=self._ontology_version,
             )
             detections.append(detection)
             if area_kept < 1.0:

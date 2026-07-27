@@ -72,8 +72,19 @@
   `EVIDENCE_DEGRADED`로 기록한다.
   _강제: mission-contract·event-bundle 스키마 const + Evidence Builder 테스트._
 - **INV-031** Detector 결과를 Event로 직접 저장하지 않는다
-  (Detection → Observation → Candidate → … 상태머신 경유).
-  _강제: event-contracts 상태전이 검증 (P0-1/P0-6)._
+  (Detection → Observation → WorldEntity/Candidate → … 상태머신 경유).
+
+  Detection의 분류 Class를 상수값으로 대체하거나 중간 단계에서 버리지 않는다.
+  원시 모델 Class는 Versioned Ontology를 통해 Canonical Entity Class로 변환되고,
+  Observation·WorldEntity 계보를 따라 보존되어야 한다.
+
+  동일 Track에서 서로 충돌하는 Canonical Class는 fail-closed로 거부하며,
+  Event Type은 WorldEntity Class와 호환될 때만 생성한다. Class 불일치가
+  Person 등 더 강한 의미로 fallback되어서는 안 된다.
+
+  _강제: event-contracts 상태전이 검증 (P0-1/P0-6) + Detector Adapter ontology
+  mapping, class-aware Tracker, Observation class lineage, WorldEntity assembly
+  conflict gate, Event/Class compatibility test (F13, 2026-07-27)._
 
 ## 데이터·모델·정직성
 

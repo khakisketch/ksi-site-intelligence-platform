@@ -124,6 +124,10 @@ def test_world_entity_lineage_requires_model_and_calibration_versions() -> None:
 def _valid_observation() -> dict[str, Any]:
     return {
         "observationId": "obs-001",
+        "observedClass": "Person",
+        "sourceClassId": 0,
+        "sourceClassName": "person",
+        "ontologyVersion": "ksi-ontology-v1",
         "trackId": "trk-77",
         "observedAt": "2026-07-26T04:00:00Z",
         "siteFrame": "EPSG:5186+KNGeoid2018@1.0.0",

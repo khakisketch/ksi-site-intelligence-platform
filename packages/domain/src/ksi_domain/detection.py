@@ -26,6 +26,8 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ksi_domain.ontology import ONTOLOGY_VERSION
+
 
 @dataclass(frozen=True, slots=True)
 class BoundingBox:
@@ -58,11 +60,28 @@ class BoundingBox:
 
 @dataclass(frozen=True, slots=True)
 class Detection:
-    """단일 프레임의 탐지 후보 1건 — 아직 세계좌표도 이벤트도 아니다."""
+    """단일 프레임의 탐지 후보 1건 — 아직 세계좌표도 이벤트도 아니다.
+
+    ``detection_class`` 는 **Canonical Entity Class** 다(:mod:`ksi_domain.ontology`).
+    모델 원시 라벨은 별도 계보 필드에 보존한다 — 원시 라벨과 도메인 클래스를 같은
+    문자열로 취급하면 모델 교체 시 의미가 흔들린다(INV-031 분류 계보).
+
+    Attributes:
+        detection_class: Canonical Entity Class ("Person" 등).
+        confidence: 분류 신뢰도 [0,1].
+        bbox: 픽셀 bbox.
+        source_class_id: 모델 원시 클래스 index (모를 수 있음).
+        source_class_name: 모델 원시 클래스명 ("person" 등, 모를 수 있음).
+        ontology_version: 원시→canonical 번역에 쓰인 ontology 버전. 결정적 stub
+            등 모델을 거치지 않은 생성자는 기본값(현행 버전)을 쓴다.
+    """
 
     detection_class: str
     confidence: float
     bbox: BoundingBox
+    source_class_id: int | None = None
+    source_class_name: str | None = None
+    ontology_version: str = ONTOLOGY_VERSION
 
     def __post_init__(self) -> None:
         if not self.detection_class.strip():
@@ -71,6 +90,8 @@ class Detection:
             raise ValueError(
                 f"confidence 는 [0,1] 범위의 finite 값이어야 한다 ({self.confidence!r})"
             )
+        if not self.ontology_version.strip():
+            raise ValueError("ontology_version 은 공백일 수 없다")
 
 
 class Detector(ABC):

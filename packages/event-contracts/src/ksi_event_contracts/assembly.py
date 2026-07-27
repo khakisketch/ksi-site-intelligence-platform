@@ -74,6 +74,8 @@ class AssemblyStatus(StrEnum):
     NO_OBSERVATIONS = "no_observations"
     TRACK_ID_MISMATCH = "track_id_mismatch"  # 서로 다른 track을 한 Entity로 합칠 수 없다
     MISSING_TRACK_ID = "missing_track_id"  # track 없는 관측은 Entity로 승격 불가
+    CLASSIFICATION_CONFLICT = "classification_conflict"  # 같은 track이 다른 class 주장(INV-031)
+    ONTOLOGY_VERSION_MISMATCH = "ontology_version_mismatch"  # 다른 번역 규칙의 class 혼합 금지
     FUSION_FAILED = "fusion_failed"  # geo-core 융합 단계 실패(사유는 detail)
     INVALID_THRESHOLDS = "invalid_thresholds"  # 문턱값이 비유한·음수·순서 역전
     OBSERVATION_WINDOW_EXCEEDED = "observation_window_exceeded"  # 시간창 초과(정적 융합 부적합)
@@ -146,7 +148,6 @@ def assemble_world_entity(
     observations: list[Observation],
     *,
     entity_id: str,
-    entity_class: str,
     model_versions: dict[str, Any],
     calibration_profile_id: str,
     subclass: str | None = None,
@@ -156,6 +157,12 @@ def assemble_world_entity(
     max_observation_window_s: float = DEFAULT_MAX_OBSERVATION_WINDOW_S,
 ) -> AssemblyResult:
     """같은 track의 관측들을 융합해 :class:`WorldEntity` 를 만든다.
+
+    Entity 의 class 는 **호출자가 주지 않는다** — 관측들의 ``observed_class`` 에서
+    유도한다(INV-031, F13: 호출자 상수가 Detection 의 분류를 덮어쓰면 트럭이 Person
+    Entity 가 된다). 관측 집합이 서로 다른 class 를 주장하면 다수결·최대 신뢰도·
+    마지막 값 같은 병합 없이 ``CLASSIFICATION_CONFLICT`` 로 거부한다 — 잘못된
+    연관(tracker 오류)을 조용히 확정하는 것보다 Entity 미생성이 안전하다.
 
     결정성: 관측 순서와 무관하게 같은 결과를 낸다 — 융합은 geo-core가 id 정렬로
     정규화하고, timestamp는 관측 중 **가장 늦은 관측 시각**(가장 최근 정보 반영
@@ -217,6 +224,32 @@ def assemble_world_entity(
         )
     track_id = next(iter(track_ids))
     assert track_id is not None  # None 검사를 위에서 통과했다
+
+    # Entity class 유도 (INV-031, F13) — 관측 전원이 같은 canonical class 를 주장할
+    # 때만 그 class 로 조립한다. 충돌은 fail-closed: 다수결·최대 신뢰도·마지막 값
+    # 병합은 잘못된 연관을 조용히 확정하므로 쓰지 않는다(대표자 지정 2026-07-27).
+    observed_classes = {o.observed_class for o in observations}
+    if len(observed_classes) > 1:
+        return AssemblyResult(
+            status=AssemblyStatus.CLASSIFICATION_CONFLICT,
+            detail=(
+                f"track {track_id} 의 관측들이 서로 다른 class 를 주장한다: "
+                f"{sorted(observed_classes)} — Entity 를 생성하지 않는다(INV-031)"
+            ),
+        )
+    entity_class = next(iter(observed_classes))
+
+    # 서로 다른 ontology 버전의 class 문자열은 같은 철자여도 같은 의미가 보장되지
+    # 않는다 — 혼합을 거부한다(번역 규칙의 버전이 계보의 일부).
+    ontology_versions = {o.ontology_version for o in observations}
+    if len(ontology_versions) > 1:
+        return AssemblyResult(
+            status=AssemblyStatus.ONTOLOGY_VERSION_MISMATCH,
+            detail=(
+                f"track {track_id} 의 관측들이 서로 다른 ontology 버전을 쓴다: "
+                f"{sorted(ontology_versions)} — class 의미 동일성이 보장되지 않는다"
+            ),
+        )
 
     fusion_input = [
         FusionObservation(
