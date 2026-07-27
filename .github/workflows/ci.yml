@@ -42,6 +42,10 @@ jobs:
       - name: pytest
         run: uv run --locked pytest -q
 
+      # 2026-07-27 CI 오염 실사례(gitignore 가 계보 SSOT 를 삼킴·빌드캐시 커밋) 재발 방지
+      - name: repo 위생 가드 (빌드캐시/pyc/가중치 미추적 · 계보 SSOT 추적)
+        run: bash scripts/check_repo_hygiene.sh
+
       - name: reference 의존 가드 (import/manifest/symlink/dirty)
         run: bash scripts/check_no_reference_imports.sh
 
