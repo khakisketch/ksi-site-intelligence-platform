@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from ksi_domain.enums import EventStatus
+from ksi_event_contracts.observation import ViewpointEvidenceKind
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 from vertical_slice import (
@@ -207,8 +208,16 @@ def test_single_observation_track_does_not_reach_confirmed() -> None:
 def test_same_viewpoint_frames_do_not_reach_confirmed() -> None:
     """같은 관측점(고정 드론)의 여러 프레임은 CONFIRMED 로 승격되지 않는다.
 
-    슬라이스 전체가 같은 ``drone_position`` 을 쓰므로 모든 관측이 같은 viewpoint bin에
-    들어간다 — 시차가 없으므로 다중 시점 증거가 아니다.
+    이유가 **두 겹**이며, 둘 다 성립해야 한다:
+
+    1. 슬라이스 전체가 같은 ``drone_position`` 을 쓰므로 모든 관측이 같은 viewpoint
+       bin에 들어간다 — 시차가 없으므로 다중 시점 증거가 아니다.
+    2. 그보다 강하게, 이 슬라이스의 관측점 증거는 ``SPATIAL_BIN`` 이므로 드론이
+       움직였더라도 CONFIRMED 에 도달할 수 없다(3차 반증 리뷰 2026-07-27). 격자 경계
+       과다계상이 최고 확신 등급을 얻는 경로를 구조적으로 막은 결과다.
+
+    2번을 함께 단정하는 이유: 1번만 확인하면 등급 게이트가 제거돼도 이 테스트는 계속
+    통과한다(같은 bin이라 어차피 distinct=1). 게이트가 살아 있음을 직접 고정한다.
     """
     result = run_vertical_slice(
         frames=_frames([0.0, 0.2, 0.4]),
@@ -219,6 +228,13 @@ def test_same_viewpoint_frames_do_not_reach_confirmed() -> None:
     assert len(result.entities) == 1
     assert result.entities[0].uncertainty.localization_state != "CONFIRMED", (
         "고정 관측점의 프레임 누적이 CONFIRMED 를 만들면 시점 다양성 게이트가 무력화된 것이다"
+    )
+    assert result.observations, "관측이 없으면 아래 등급 단정이 공허해진다"
+    assert all(
+        o.viewpoint_kind is ViewpointEvidenceKind.SPATIAL_BIN for o in result.observations
+    ), (
+        "슬라이스가 합성 bin 관측점을 CALIBRATED_POSE 로 승격했다 — "
+        "실기 pose 경로 없이 최고 확신 등급을 얻는 문이 열린 것이다"
     )
 
 

@@ -23,10 +23,60 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
+
+
+class ViewpointEvidenceKind(StrEnum):
+    """``viewpoint_id`` 가 **어떤 종류의 증거**인지 — 시점 다양성의 신뢰 등급.
+
+    관측점 ID 문자열은 그 자체로 증거 강도를 말해주지 않는다. 보정된 카메라 Pose를
+    가리키는 ID와, 관측점 좌표를 격자로 이산화한 bin ID는 문자열로는 구분되지 않지만
+    **기하적 보장 수준이 다르다.** 이 등급이 그 차이를 계약에 명시한다.
+
+    ``CALIBRATED_POSE``
+        보정된 카메라 Pose 레코드 참조. 서로 다른 Pose는 실제로 서로 다른 관측점이며,
+        시차(parallax) 기반 깊이 검증의 근거가 될 수 있다. **CONFIRMED 승격의 유일한
+        허용 증거**다.
+
+    ``SPATIAL_BIN``
+        :func:`viewpoint_bin_id` 로 만든 이산 bin ID(폴백). 격자 경계를 걸친 근접
+        관측점이 서로 다른 bin이 되므로 시점 다양성을 **과다 계상**할 수 있다 —
+        안전하지 않은 방향의 오차이므로 **최대 LIKELY** 로 제한된다.
+
+    ``UNKNOWN``
+        출처를 보증할 수 없는 관측점 ID(또는 ID 자체가 없음). 기본값이며 **최대
+        LIKELY** — 모르면 확신하지 않는다.
+
+    기본값이 ``UNKNOWN`` 인 것은 의도적이다. 시점 다양성 주장은 생산자가 **명시적으로
+    선언**해야 얻어지는 권한이며, 필드를 채우지 않은 소스가 우연히 CONFIRMED 를 얻는
+    경로를 만들지 않는다(fail-safe).
+    """
+
+    CALIBRATED_POSE = "CALIBRATED_POSE"
+    SPATIAL_BIN = "SPATIAL_BIN"
+    UNKNOWN = "UNKNOWN"
+
+
+# 시점 증거 강도 순서 — 관측 집합의 등급은 **가장 약한 관측**을 따른다(낙관적 병합 금지).
+_VIEWPOINT_STRENGTH: dict[ViewpointEvidenceKind, int] = {
+    ViewpointEvidenceKind.UNKNOWN: 0,
+    ViewpointEvidenceKind.SPATIAL_BIN: 1,
+    ViewpointEvidenceKind.CALIBRATED_POSE: 2,
+}
+
+# :func:`viewpoint_bin_id` 산출물의 고정 prefix — 계약 계층이 bin 을 식별하는 기준.
+SPATIAL_BIN_ID_PREFIX = "vpbin:"
 
 
 class Observation(BaseModel):
@@ -61,6 +111,11 @@ class Observation(BaseModel):
 
             관측점을 추적하지 못하는 소스는 ``None`` 이며, 그 경우 조립은 시점 다양성을
             **주장하지 않는다**(CONFIRMED로 올리지 않는다).
+        viewpoint_kind: ``viewpoint_id`` 의 증거 등급(:class:`ViewpointEvidenceKind`).
+
+            ID 문자열만으로는 두 형식(Pose 참조 / bin)을 구분할 수 없으므로 종류를
+            **명시적으로 선언**한다. 기본값은 ``UNKNOWN`` 이며, 선언하지 않은 소스는
+            시점 다양성을 주장하지 못한다(최대 LIKELY) — fail-safe.
         lineage: 모델·보정 버전 계보(INV-042). 자유 dict이며 상위 EventBundle의
             ``lineage``와 동일 의미를 갖는다.
     """
@@ -81,7 +136,38 @@ class Observation(BaseModel):
     geo_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     sensor_id: str | None = None
     viewpoint_id: str | None = None
+    viewpoint_kind: ViewpointEvidenceKind = ViewpointEvidenceKind.UNKNOWN
     lineage: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _viewpoint_kind_matches_id(self) -> Observation:
+        """선언한 증거 등급과 ID의 실제 형식이 어긋나면 거부한다.
+
+        두 가지 모순을 막는다:
+
+        1. **ID 없이 등급만 선언** — 관측점을 모르는데 증거 등급을 주장할 수 없다.
+        2. **bin ID를 Pose로 위장** — :func:`viewpoint_bin_id` 산출물(``vpbin:`` prefix)은
+           우리가 만드는 값이므로, 그것이 ``CALIBRATED_POSE`` 로 선언되는 것은 언제나
+           오류다. 이 경로를 막지 않으면 격자 경계 과다계상(모듈 하단 참고)이 그대로
+           CONFIRMED 승격 권한을 얻는다.
+
+        반대로 "ID는 있는데 등급은 ``UNKNOWN``"은 **허용**한다 — 출처를 보증할 수 없다는
+        정직한 선언이며, 그 결과는 시점 다양성 미주장(최대 LIKELY)이다.
+        """
+        if self.viewpoint_id is None and self.viewpoint_kind is not ViewpointEvidenceKind.UNKNOWN:
+            raise ValueError(
+                f"viewpoint_id 없이 viewpoint_kind={self.viewpoint_kind} 를 주장할 수 없다"
+            )
+        if (
+            self.viewpoint_id is not None
+            and self.viewpoint_id.startswith(SPATIAL_BIN_ID_PREFIX)
+            and self.viewpoint_kind is ViewpointEvidenceKind.CALIBRATED_POSE
+        ):
+            raise ValueError(
+                f"{SPATIAL_BIN_ID_PREFIX!r} 로 시작하는 관측점 ID는 이산 bin이므로 "
+                "CALIBRATED_POSE 로 선언할 수 없다(시차 보장 없음)"
+            )
+        return self
 
     @field_validator("observation_id", "track_id", "viewpoint_id", "sensor_id")
     @classmethod
@@ -138,8 +224,11 @@ def viewpoint_bin_id(
 
     - **권위 있는 형식은 calibrated camera pose 참조다.** 실기 보정이 붙는 시점에
       그쪽으로 옮기고 이 폴백은 개발·재생 전용으로 격하한다.
-    - 이 함수만으로 ``CONFIRMED`` 승격을 정당화하지 않는다. 시점 다양성은 필요조건이며,
-      기선(baseline) 기반 검증은 pose 데이터가 Observation에 실린 뒤 추가한다.
+    - **이 함수의 산출물은 ``CONFIRMED`` 승격 권한을 갖지 않는다.** 문서상의 주의가
+      아니라 코드로 강제된다: 반환값은 ``vpbin:`` prefix를 갖고, 계약 계층이 이를
+      :attr:`ViewpointEvidenceKind.SPATIAL_BIN` 으로 고정해(:func:`effective_viewpoint_kind`)
+      조립 단계에서 최대 ``LIKELY`` 로 제한한다. 기선(baseline)·시차 조건 검증은 실제
+      pose 데이터가 Observation에 실린 뒤 ``CALIBRATED_POSE`` 경로에 추가한다.
     - 경계 민감성은 ``tests/replay`` 에 명시적 회귀 테스트로 고정돼 있다(숨은 성질이
       아니라 알려진 성질로 다룬다).
 
@@ -155,4 +244,37 @@ def viewpoint_bin_id(
     if not all(math.isfinite(v) for v in position):
         raise ValueError(f"position 에 비유한 값이 있다 (got {position!r})")
     indices = tuple(math.floor(v / bin_meters) for v in position)
-    return f"vpbin:{bin_meters:g}:{indices[0]}:{indices[1]}:{indices[2]}"
+    return f"{SPATIAL_BIN_ID_PREFIX}{bin_meters:g}:{indices[0]}:{indices[1]}:{indices[2]}"
+
+
+def effective_viewpoint_kind(
+    viewpoint_id: str | None,
+    declared: ViewpointEvidenceKind,
+) -> ViewpointEvidenceKind:
+    """선언된 등급과 ID 형식 중 **약한 쪽**을 실제 등급으로 삼는다.
+
+    :class:`Observation` 검증기가 이미 모순 조합을 거부하므로 정상 경로에서는 선언값이
+    그대로 나온다. 이 함수는 그 검증을 우회해 만들어진 객체(``model_construct``·수동
+    구성·역직렬화 우회)까지 덮는 **2차 방어선**이다 — 시점 다양성은 CONFIRMED 승격의
+    직접 근거이므로 단일 검증 지점에 의존하지 않는다.
+    """
+    if viewpoint_id is None:
+        return ViewpointEvidenceKind.UNKNOWN
+    if (
+        viewpoint_id.startswith(SPATIAL_BIN_ID_PREFIX)
+        and declared is ViewpointEvidenceKind.CALIBRATED_POSE
+    ):
+        return ViewpointEvidenceKind.SPATIAL_BIN
+    return declared
+
+
+def weakest_viewpoint_kind(kinds: list[ViewpointEvidenceKind]) -> ViewpointEvidenceKind:
+    """관측 집합의 시점 증거 등급 — 가장 약한 관측이 전체를 결정한다.
+
+    낙관적 병합 금지 원칙(분류 신뢰도의 ``min`` 병합과 동형)이다. 강한 증거 일부만
+    골라 세면, 출처 불명 관측이 섞인 융합 결과가 CONFIRMED 를 얻는 경로가 열린다.
+    빈 목록은 ``UNKNOWN`` 이다(주장할 근거 없음).
+    """
+    if not kinds:
+        return ViewpointEvidenceKind.UNKNOWN
+    return min(kinds, key=lambda k: _VIEWPOINT_STRENGTH[k])

@@ -23,7 +23,11 @@ from ksi_event_contracts.assembly import (
     assemble_world_entity,
     world_entity_fingerprint,
 )
-from ksi_event_contracts.observation import Observation, viewpoint_bin_id
+from ksi_event_contracts.observation import (
+    Observation,
+    ViewpointEvidenceKind,
+    viewpoint_bin_id,
+)
 from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.fusion import FusionStatus, covariance_trace
 from pydantic import ValidationError
@@ -47,7 +51,21 @@ def _observation(
     site_frame: str = _FRAME,
     detection_confidence: float | None = 0.9,
     viewpoint_id: str | None | object = _UNSET,
+    viewpoint_kind: ViewpointEvidenceKind | None = None,
 ) -> Observation:
+    # 미지정이면 관측 id에서 파생 — 별개 관측은 기본적으로 서로 다른 관측점으로 본다.
+    # 같은 관측점이나 "모름(None)"을 표현하려면 호출자가 명시적으로 넘긴다.
+    resolved_id = (
+        f"vp-{observation_id}" if viewpoint_id is _UNSET else cast("str | None", viewpoint_id)
+    )
+    # 등급 기본값: ID가 있으면 보정 Pose 참조로 본다. 이 헬퍼를 쓰는 대부분의 테스트는
+    # 공분산·융합·시간창 같은 **다른 축**을 검증하므로, 시점 증거를 매번 명시하게 하면
+    # 그 축들의 의도가 흐려진다. 시점 증거 자체를 다루는 테스트는 명시적으로 넘긴다.
+    resolved_kind = viewpoint_kind or (
+        ViewpointEvidenceKind.UNKNOWN
+        if resolved_id is None
+        else ViewpointEvidenceKind.CALIBRATED_POSE
+    )
     return Observation(
         observation_id=observation_id,
         track_id=track_id,
@@ -56,13 +74,8 @@ def _observation(
         position=position,
         position_covariance=covariance if covariance is not None else list(_ISOTROPIC),
         detection_confidence=detection_confidence,
-        # 미지정이면 관측 id에서 파생 — 별개 관측은 기본적으로 서로 다른 관측점으로 본다.
-        # 같은 관측점이나 "모름(None)"을 표현하려면 호출자가 명시적으로 넘긴다.
-        viewpoint_id=(
-            f"vp-{observation_id}"
-            if viewpoint_id is _UNSET
-            else cast("str | None", viewpoint_id)
-        ),
+        viewpoint_id=resolved_id,
+        viewpoint_kind=resolved_kind,
     )
 
 
@@ -680,6 +693,7 @@ def test_hovering_frames_binned_to_same_viewpoint_not_confirmed() -> None:
                 covariance=tight,
                 millis=i * 100,
                 viewpoint_id=viewpoint_bin_id(pose),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
             )
             for i, pose in enumerate(hovering)
         ]
@@ -701,4 +715,229 @@ def test_viewpoint_bin_boundary_sensitivity_is_known_limitation() -> None:
     just_above = viewpoint_bin_id((10.0, 20.0, 30.0))
     assert just_below != just_above, (
         "격자 경계 민감성이 사라졌다면 구현이 바뀐 것 — 문서와 한계 기록을 갱신하라"
+    )
+
+
+# ── 시점 증거 등급 게이트 (3차 반증 리뷰 2026-07-27) ──────────────────────────
+#
+# 위 경계 민감성은 "알려진 한계"로 기록만 돼 있었고, 조립 코드는 ID 문자열이 다른지만
+# 셌다 — 즉 0.1m 떨어진 두 관측점이 CONFIRMED 를 만들 수 있었다. 아래 테스트들이
+# 그 경로를 닫는다: bin 증거는 등급으로 차단되며, CONFIRMED 는 보정 Pose 전용이다.
+
+
+def test_bin_boundary_pair_cannot_reach_confirmed() -> None:
+    """[핵심 회귀] 격자 경계를 걸친 0.1m 차이 관측점 2개는 CONFIRMED 가 될 수 없다.
+
+    ``viewpoint_bin_id`` 는 이 둘을 서로 다른 bin으로 계상하지만(위 한계 테스트),
+    실제 기선은 0.1m 로 시차 검증이 불가능하다. 공분산이 아무리 작아도 이 조합이
+    CONFIRMED 를 만들면 안 된다 — 이것이 시점 다양성 게이트의 우회 경로였다.
+    """
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    entity = _assemble_ok(
+        [
+            _observation(
+                "obs-a",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                viewpoint_id=viewpoint_bin_id((9.9, 20.0, 30.0)),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
+            ),
+            _observation(
+                "obs-b",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=100,
+                viewpoint_id=viewpoint_bin_id((10.0, 20.0, 30.0)),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
+            ),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY", (
+        "0.1m 기선의 격자 경계 쌍이 CONFIRMED 로 승격됐다 — "
+        "bin 증거의 과다 계상이 최고 확신 등급을 얻는 경로가 다시 열렸다"
+    )
+
+
+def test_spatial_bin_evidence_is_capped_at_likely() -> None:
+    """멀리 떨어진 진짜 서로 다른 bin이어도 등급이 SPATIAL_BIN 이면 최대 LIKELY.
+
+    bin 방식은 개별 사례가 아니라 **형식 자체**가 기선을 보장하지 못한다. 우연히
+    충분히 떨어진 경우까지 일일이 구제하지 않는다 — 보장 없는 증거는 등급으로 막고,
+    권한은 보정 Pose 경로에만 준다.
+    """
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    entity = _assemble_ok(
+        [
+            _observation(
+                "obs-a",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                viewpoint_id=viewpoint_bin_id((0.0, 0.0, 30.0)),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
+            ),
+            _observation(
+                "obs-b",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=100,
+                viewpoint_id=viewpoint_bin_id((40.0, 0.0, 30.0)),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
+            ),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY"
+
+
+def test_unknown_kind_with_distinct_ids_is_capped_at_likely() -> None:
+    """등급 미선언(UNKNOWN)은 ID가 서로 달라도 시점 다양성을 주장하지 못한다.
+
+    기본값이 UNKNOWN 이므로, 새 소스가 필드를 채우지 않은 채 붙어도 **우연히**
+    CONFIRMED 를 얻는 일이 없다(fail-safe).
+    """
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    entity = _assemble_ok(
+        [
+            _observation(
+                "obs-a",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                viewpoint_id="pose-a",
+                viewpoint_kind=ViewpointEvidenceKind.UNKNOWN,
+            ),
+            _observation(
+                "obs-b",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=100,
+                viewpoint_id="pose-b",
+                viewpoint_kind=ViewpointEvidenceKind.UNKNOWN,
+            ),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY"
+
+
+def test_mixed_evidence_takes_weakest_grade() -> None:
+    """보정 Pose 2곳이 있어도 약한 증거가 하나 섞이면 전체가 최대 LIKELY.
+
+    낙관적 병합 금지 — 강한 증거만 골라 세면 출처 불명 관측이 섞인 융합 결과가
+    CONFIRMED 를 얻는다. 등급은 가장 약한 관측을 따른다(분류 신뢰도 min 병합과 동형).
+    """
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7], covariance=tight, viewpoint_id="pose-a"),
+            _observation(
+                "obs-b", [10.0, 20.0, 1.7], covariance=tight, millis=100, viewpoint_id="pose-b"
+            ),
+            _observation(
+                "obs-c",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=200,
+                viewpoint_id=viewpoint_bin_id((0.0, 0.0, 30.0)),
+                viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
+            ),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "LIKELY"
+
+
+def test_calibrated_pose_pair_still_reaches_confirmed() -> None:
+    """게이트를 조인 뒤에도 정당한 경로는 살아 있다 — 보정 Pose 2곳 + 작은 공분산."""
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    entity = _assemble_ok(
+        [
+            _observation(
+                "obs-a",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                viewpoint_id="pose-a",
+                viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+            ),
+            _observation(
+                "obs-b",
+                [10.0, 20.0, 1.7],
+                covariance=tight,
+                millis=100,
+                viewpoint_id="pose-b",
+                viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+            ),
+        ]
+    )
+    assert entity.uncertainty.localization_state == "CONFIRMED"
+
+
+def test_bin_id_cannot_be_declared_as_calibrated_pose() -> None:
+    """[계약 강제] bin ID를 CALIBRATED_POSE 로 위장 선언하면 계약 계층이 거부한다.
+
+    등급이 자기신고이므로, 우리가 생성 형식을 아는 값(``vpbin:``)에 대해서는 위장을
+    기계적으로 막는다 — 이 구멍을 열어두면 게이트가 이름만 남는다.
+    """
+    with pytest.raises(ValidationError, match="CALIBRATED_POSE"):
+        Observation(
+            observation_id="obs-a",
+            observed_at=_BASE_TIME,
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+            viewpoint_id=viewpoint_bin_id((0.0, 0.0, 0.0)),
+            viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        )
+
+
+def test_viewpoint_kind_requires_an_id() -> None:
+    """관측점 ID 없이 증거 등급만 주장할 수 없다."""
+    with pytest.raises(ValidationError, match="viewpoint_id"):
+        Observation(
+            observation_id="obs-a",
+            observed_at=_BASE_TIME,
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+            viewpoint_id=None,
+            viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        )
+
+
+def test_viewpoint_kind_defaults_to_unknown() -> None:
+    """필드를 채우지 않으면 UNKNOWN — 권한은 선언해야 얻는다."""
+    observation = Observation(
+        observation_id="obs-a",
+        observed_at=_BASE_TIME,
+        site_frame=_FRAME,
+        position=[0.0, 0.0, 0.0],
+        position_covariance=list(_ISOTROPIC),
+        viewpoint_id="pose-a",
+    )
+    assert observation.viewpoint_kind is ViewpointEvidenceKind.UNKNOWN
+
+
+def test_construct_bypass_still_downgrades_bin_evidence() -> None:
+    """[2차 방어선] pydantic 검증을 우회해 위장해도 조립이 등급을 되돌린다.
+
+    ``model_construct`` 는 validator를 건너뛴다. 시점 다양성은 CONFIRMED 의 직접
+    근거이므로 단일 검증 지점에 의존하지 않는다.
+    """
+    tight = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
+    forged = [
+        Observation.model_construct(
+            observation_id=f"obs-{i}",
+            track_id="trk-1",
+            observed_at=_BASE_TIME + timedelta(milliseconds=i * 100),
+            site_frame=_FRAME,
+            position=[10.0, 20.0, 1.7],
+            position_covariance=tight,
+            detection_confidence=0.9,
+            geo_confidence=None,
+            sensor_id=None,
+            viewpoint_id=viewpoint_bin_id(pose),
+            viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,  # 위장
+            lineage={},
+        )
+        for i, pose in enumerate([(9.9, 20.0, 30.0), (10.0, 20.0, 30.0)])
+    ]
+    entity = _assemble_ok(forged)
+    assert entity.uncertainty.localization_state == "LIKELY", (
+        "검증 우회 객체가 CONFIRMED 를 얻었다 — 조립 단계 2차 방어선이 동작하지 않는다"
     )

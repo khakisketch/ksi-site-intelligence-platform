@@ -41,7 +41,11 @@ from ksi_event_contracts.assembly import (
     world_entity_fingerprint,
 )
 from ksi_event_contracts.event_bundle import EventBundle, Evidence, Lineage
-from ksi_event_contracts.observation import Observation, viewpoint_bin_id
+from ksi_event_contracts.observation import (
+    Observation,
+    ViewpointEvidenceKind,
+    viewpoint_bin_id,
+)
 from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.projection import project_foot_point
 from ksi_geo_core.sync import SourceQuality, TelemetryInterpolator, TelemetrySample
@@ -181,6 +185,11 @@ def _observation_from_projection(
     공분산은 오차반경을 등방 표준편차로 해석해 구성한다 — 실제 covariance 전파는
     Phase 2+ 대상이며, 여기서는 "불확실성이 계약을 타고 흐른다"만 보인다(그 사실을
     숨기지 않기 위해 이 주석을 남긴다).
+
+    관측점은 아직 보정된 카메라 Pose가 아니라 이산 bin 폴백이므로 증거 등급을
+    ``SPATIAL_BIN`` 으로 **명시 선언**한다. 그 결과 이 슬라이스가 만드는 Entity는
+    구조적으로 ``CONFIRMED`` 에 도달할 수 없다 — 실기 Pose 경로가 붙기 전까지
+    합성 입력이 최고 확신 등급을 만들어내면 안 된다.
     """
     variance = error_radius_m**2
     return Observation(
@@ -194,6 +203,7 @@ def _observation_from_projection(
         geo_confidence=geo_confidence,
         sensor_id="slice-wide-camera",
         viewpoint_id=viewpoint_bin_id(drone_position),
+        viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
         lineage={"detector": model_version},
     )
 

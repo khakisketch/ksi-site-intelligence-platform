@@ -12,9 +12,15 @@
 
 ## localization_state 판정
 
-융합된 불확실성 크기로 :class:`WorldEntity` 의 ``localization_state`` 를 정한다.
-INV-021("불확실성을 포함해도 위험이 유지될 때만 Confirmed")의 **입력**이 되는 값이며,
-이 판정 자체가 이벤트 확정을 뜻하지는 않는다 — 이벤트 승격은 상위 상태머신의 일이다.
+융합된 불확실성 크기 + 관측 수 + **시점 증거 등급**으로 :class:`WorldEntity` 의
+``localization_state`` 를 정한다. INV-021("불확실성을 포함해도 위험이 유지될 때만
+Confirmed")의 **입력**이 되는 값이며, 이 판정 자체가 이벤트 확정을 뜻하지는 않는다 —
+이벤트 승격은 상위 상태머신의 일이다.
+
+``CONFIRMED`` 는 보정된 카메라 Pose(:class:`~ksi_event_contracts.observation.
+ViewpointEvidenceKind` 의 ``CALIBRATED_POSE``) 증거에서만 나온다. 이산 bin 폴백은
+격자 경계에서 시점 다양성을 과다 계상하므로 최대 ``LIKELY`` 다 — 상세는
+:func:`_localization_state` 참고.
 
 문턱값은 현장 실측 전 **보수적 임시값**이다(PRD_AMBIGUITY_REGISTER의 "위치불확실성
 중단상한"이 Geo Calibration Test로 확정될 파라미터). 여기 하드코딩된 값을 실측
@@ -37,7 +43,12 @@ from ksi_geo_core.fusion import (
     fuse_observations,
 )
 
-from ksi_event_contracts.observation import Observation
+from ksi_event_contracts.observation import (
+    Observation,
+    ViewpointEvidenceKind,
+    effective_viewpoint_kind,
+    weakest_viewpoint_kind,
+)
 from ksi_event_contracts.world_entity import WorldEntity
 
 # 보수적 임시 문턱 — 실측 미검증(위 docstring 참고). 단위: m² (공분산 trace).
@@ -88,11 +99,12 @@ def _localization_state(
     confirmed_trace_max: float,
     likely_trace_max: float,
     observation_count: int,
-    distinct_viewpoints: int | None,
+    viewpoint_kind: ViewpointEvidenceKind,
+    distinct_viewpoints: int,
 ) -> str:
-    """융합 불확실성 + 관측 수 + 시점 다양성으로 localization state를 정한다.
+    """융합 불확실성 + 관측 수 + 시점 증거로 localization state를 정한다.
 
-    두 단계로 확신을 제한한다:
+    세 단계로 확신을 제한한다:
 
     1. 관측이 1건뿐이면 아무리 공분산이 작아도 ``INSUFFICIENT_OBSERVATION`` 이다 —
        단일 시점 깊이 추정을 신뢰하지 않는다는 PRD §10.9 원칙(작은 공분산이 곧 다중
@@ -101,13 +113,27 @@ def _localization_state(
        ``CONFIRMED`` 로 올리지 않고 최대 ``LIKELY`` 로 제한한다. 같은 관측점에서 찍은
        여러 프레임은 시차(parallax)가 없어 깊이를 독립적으로 검증하지 못하므로,
        관측 수만 늘어난 것을 다중 시점 검증으로 오인하면 안 된다(2차 반증 리뷰).
-       ``viewpoint_id`` 를 제공하지 못하는 소스는 ``distinct_viewpoints=None`` 이며,
-       그 경우에도 시점 다양성을 **주장하지 않는다**(모르면 확신하지 않는다).
+    3. **서로 다른 ID를 셌다는 사실만으로는 부족하다.** ID가 실제로 서로 다른 관측점을
+       가리킨다는 보장이 있어야 하며, 그 보장은 :class:`ViewpointEvidenceKind` 로
+       구분된다. ``SPATIAL_BIN`` 은 격자 경계에서 0.1m 떨어진 두 관측점을 서로 다른
+       bin으로 계상할 수 있어(:func:`~ksi_event_contracts.observation.viewpoint_bin_id`
+       docstring 참고) 시점 다양성을 **과다 계상**한다 — 안전하지 않은 방향이므로
+       ``CALIBRATED_POSE`` 만 CONFIRMED 승격 권한을 갖는다(3차 반증 리뷰 2026-07-27).
+
+    ## 아직 하지 않는 것 — 기선(baseline)·시차 조건
+
+    ``CALIBRATED_POSE`` 경로도 현재는 **Pose ID가 서로 다른지**만 본다. "충분한 기선을
+    확보했는가"(예: 대상 거리 대비 최소 기선각)는 실제 Pose 좌표가 Observation에 실린
+    뒤에 추가할 조건이며, **아직 구현돼 있지 않다.** 따라서 현 시점의 ``CONFIRMED`` 는
+    "보정된 서로 다른 관측점 2곳 이상에서 봤다"까지만 주장하며, 그 이상을 주장하는
+    것으로 읽으면 안 된다.
     """
     if observation_count < 2:
         return "INSUFFICIENT_OBSERVATION"
 
-    has_view_diversity = distinct_viewpoints is not None and distinct_viewpoints >= 2
+    has_view_diversity = (
+        viewpoint_kind is ViewpointEvidenceKind.CALIBRATED_POSE and distinct_viewpoints >= 2
+    )
     if trace <= confirmed_trace_max:
         return "CONFIRMED" if has_view_diversity else "LIKELY"
     if trace <= likely_trace_max:
@@ -222,14 +248,14 @@ def assemble_world_entity(
     assert fusion.position_covariance is not None
     assert fusion.site_frame is not None
 
-    # 시점 다양성: 하나라도 viewpoint_id 가 없으면 다양성을 "모른다"로 둔다(None) —
-    # 일부만 있는 상태에서 개수를 세면 없는 관측을 서로 다른 시점으로 착각한다.
-    viewpoint_ids = [o.viewpoint_id for o in observations]
-    distinct_viewpoints = (
-        len({v for v in viewpoint_ids if v is not None})
-        if all(v is not None for v in viewpoint_ids)
-        else None
+    # 시점 증거: 등급은 **가장 약한 관측**을 따르고(낙관적 병합 금지), 개수는 그 등급이
+    # 유지될 때만 의미를 갖는다. 하나라도 viewpoint_id 가 없으면 등급이 UNKNOWN 으로
+    # 떨어져 다양성 주장이 자동으로 무효가 된다 — 일부만 있는 상태에서 개수를 세면
+    # 없는 관측을 서로 다른 시점으로 착각한다.
+    viewpoint_kind = weakest_viewpoint_kind(
+        [effective_viewpoint_kind(o.viewpoint_id, o.viewpoint_kind) for o in observations]
     )
+    distinct_viewpoints = len({o.viewpoint_id for o in observations if o.viewpoint_id is not None})
 
     trace = covariance_trace(fusion.position_covariance)
     state = _localization_state(
@@ -237,6 +263,7 @@ def assemble_world_entity(
         confirmed_trace_max=confirmed_trace_max,
         likely_trace_max=likely_trace_max,
         observation_count=len(observations),
+        viewpoint_kind=viewpoint_kind,
         distinct_viewpoints=distinct_viewpoints,
     )
 
