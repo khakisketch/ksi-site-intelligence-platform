@@ -1,6 +1,0 @@
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/ksi_control_plane.dir
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/control_plane_tests.dir
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/conformance_tests.dir
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/test.dir
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/edit_cache.dir
-/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/edge/manifold-runtime/build/CMakeFiles/rebuild_cache.dir

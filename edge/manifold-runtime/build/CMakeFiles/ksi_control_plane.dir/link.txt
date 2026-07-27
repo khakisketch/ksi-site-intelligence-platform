@@ -1,2 +1,0 @@
-/usr/bin/ar qc libksi_control_plane.a CMakeFiles/ksi_control_plane.dir/src/command.cpp.o CMakeFiles/ksi_control_plane.dir/src/supervisor.cpp.o
-/usr/bin/ranlib libksi_control_plane.a

@@ -1,1 +1,0 @@
-/usr/bin/c++ -O2 -g -DNDEBUG CMakeFiles/conformance_tests.dir/tests/conformance_tests.cpp.o -o conformance_tests  libksi_control_plane.a 

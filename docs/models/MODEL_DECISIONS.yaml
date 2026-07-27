@@ -1,0 +1,54 @@
+# Model Decision Ledger — 모델 선정 대표자 결정 원장 (INV-043 강제 지점의 일부)
+# FINAL_DECISION_LEDGER_v1.0 은 FROZEN 이므로 모델 결정은 이 파일에 누적한다.
+# 각 결정은 대표자 승인 없이 변경하지 않는다.
+
+decisions:
+  - id: MODEL-B1-001
+    title: "Track B primary detector baseline"
+    date: "2026-07-27"
+    verdict: APPROVED
+    approved_by: "대표자 (2026-07-27 서면 결정)"
+    primary: "D-FINE-S COCO-only"
+    resource_fallback: "D-FINE-N COCO-only"
+    resource_fallback_trigger: >-
+      Manifold HIL에서 S가 처리율·메모리·발열 기준을 충족하지 못할 때
+    architecture_fallback: "RT-DETRv2-R18 COCO-only"
+    architecture_fallback_trigger: >-
+      D-FINE ONNX/TensorRT 변환 또는 런타임 호환성 실패 시
+    not_selected:
+      - RF-DETR   # 전 변형 Objects365 사전학습 — Objects365-free 가중치 부재
+      - RTMDet    # mmdetection 2.5년 정체 + Jetson 알려진 이슈
+
+    excluded_without_legal_clearance:
+      - Objects365-derived weights
+      - obj2coco weights
+      - VisDrone training or fine-tuning data
+
+    limitation: >-
+      COCO-only lineage is selected as the lowest-known-risk public baseline,
+      but COCO image rights are heterogeneous. This decision approves engineering
+      and HIL work, not commercial production release.
+
+    # 승인 범위 (대표자 지정 — 단계별)
+    approval_scope:
+      adapter_development: APPROVED
+      recorded_input_integration: APPROVED
+      onnx_export: APPROVED
+      manifold_hil_tensorrt: APPROVED
+      internal_field_trial: CONDITIONAL
+      customer_production: BLOCKED_LEGAL_REVIEW
+      ksi_finetune: RIGHTS_CLEARED_DATA_ONLY
+
+    production_gate:
+      - rights-cleared KSI training dataset
+      - immutable model and dataset lineage
+      - legal review
+      - Manifold HIL performance pass
+      - field accuracy and safety evaluation
+
+    # HIL 판정 순서 (대표자 지정)
+    hil_selection_order: |
+      D-FINE-S가 Mission 처리율과 열 예산 충족 → S 유지
+      S 실패, D-FINE-N 충족 → N으로 축소
+      N도 실패하거나 TensorRT 변환 불안정 → RT-DETRv2-R18 평가
+      전부 실패 → Detector capability BLOCKED

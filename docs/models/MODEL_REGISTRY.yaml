@@ -1,0 +1,51 @@
+# Model Registry — 모델·가중치 계보 SSOT (INV-043: Dataset/Model 라이선스·출처 계보 고정)
+#
+# 규칙:
+# - 모델 이름에 "coco"가 들어 있다는 것만으로 계보를 신뢰하지 않는다 — revision·sha256 이
+#   신원이다. adapter 는 이 파일의 digest 와 대조 검증한 파일만 로드한다.
+# - 런타임 자동 다운로드 금지. 파일은 tools/fetch_model.py 로만 받는다.
+# - deployment_status.production 은 MODEL-B1-001 production_gate 전부 통과 전에는
+#   BLOCKED_LEGAL_REVIEW 를 유지한다. ENGINEERING 승인 ≠ PRODUCTION 승인.
+
+models:
+  - model_id: ksi-person-detector-dfine-s-coco
+    architecture: D-FINE-S
+    decision_ref: MODEL-B1-001
+
+    source:
+      repository: Peterande/D-FINE
+      repository_commit: "7fe2f8889f0b7b817f20c315b40fc15a4fb64ae6"  # master 2026-07-09
+      code_license: Apache-2.0
+
+    weights:
+      source: ustc-community/dfine-small-coco
+      revision: "f79e65b5fbb33ceb9d3ebba042955d7410c608f8"  # immutable HF revision
+      files:
+        - name: model.safetensors
+          sha256: "a144baff3a27bfd538fe37b11fa8d4fca5744b8c054b5301e7c699a1379cd18f"
+        - name: config.json
+          sha256: "9f206c4c935c67c957af2f15c3333b4ff224e72b1881bc7bbde9f873edf4448e"
+        - name: preprocessor_config.json
+          sha256: "7e9e2245806aa3ef068a5321f5eebee3116fa4cec560173231954ffaca930eca"
+      declared_license: Apache-2.0
+
+    model_facts:
+      num_labels: 80            # COCO 80-class (config.json id2label 확인)
+      person_label_id: 0        # id2label["0"] == "person"
+      input_size: [640, 640]    # RTDetrImageProcessor resize
+      params_m: 10.2
+      coco_ap_50_95: 48.5       # 공식 README (T4 기준 — Manifold 실측 아님)
+
+    pretraining:
+      declared_dataset: COCO
+      objects365_used: false
+      visdrone_used: false
+      # "깨끗"이 아니라 잔여 위험 포함 검토 완료 — COCO 이미지는 Flickr 개별 라이선스로
+      # 권리가 이질적이다(대표자 판정 2026-07-27). Objects365 대비 명확히 낮은 위험의
+      # 엔지니어링 기준선이지, 상용 법무 승인을 의미하지 않는다.
+      lineage_status: REVIEWED_WITH_RESIDUAL_RISK
+
+    deployment_status:
+      b1_adapter: APPROVED
+      manifold_hil: PENDING
+      production: BLOCKED_LEGAL_REVIEW

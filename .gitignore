@@ -1,3 +1,9 @@
-# 모델 아티팩트 — git 에 넣지 않는다. 계보(revision·sha256)는 docs/models/MODEL_REGISTRY.yaml 이
-# SSOT 이며, 파일 자체는 tools/fetch_model.py 로 명시적으로 받는다(런타임 자동 다운로드 금지).
-models/
+# 모델 아티팩트(루트 models/ 한정 — docs/models/ 는 계보 SSOT 라 추적한다).
+# 파일 자체는 tools/fetch_model.py 로 명시적으로 받는다(런타임 자동 다운로드 금지).
+/models/
+
+# 빌드 산출물·캐시 — 로컬 절대경로가 박혀 CI 를 오염시킨다(2026-07-27 CI 실패 재발 방지)
+edge/manifold-runtime/build/
+__pycache__/
+*.pyc
+.venv/
