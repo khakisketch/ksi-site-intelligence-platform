@@ -38,7 +38,7 @@ from pydantic.alias_generators import to_camel
 
 
 class ViewpointEvidenceKind(StrEnum):
-    """``viewpoint_id`` 가 **어떤 종류의 증거**인지 — 시점 다양성의 신뢰 등급.
+    """``viewpoint_id`` 가 **어떤 종류의 증거**인지 — 시점 다양성의 신뢰 등급 (INV-025).
 
     관측점 ID 문자열은 그 자체로 증거 강도를 말해주지 않는다. 보정된 카메라 Pose를
     가리키는 ID와, 관측점 좌표를 격자로 이산화한 bin ID는 문자열로는 구분되지 않지만

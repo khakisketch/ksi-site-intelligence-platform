@@ -118,7 +118,8 @@ def _localization_state(
        구분된다. ``SPATIAL_BIN`` 은 격자 경계에서 0.1m 떨어진 두 관측점을 서로 다른
        bin으로 계상할 수 있어(:func:`~ksi_event_contracts.observation.viewpoint_bin_id`
        docstring 참고) 시점 다양성을 **과다 계상**한다 — 안전하지 않은 방향이므로
-       ``CALIBRATED_POSE`` 만 CONFIRMED 승격 권한을 갖는다(3차 반증 리뷰 2026-07-27).
+       ``CALIBRATED_POSE`` 만 CONFIRMED 승격 권한을 갖는다(INV-025, 3차 반증 리뷰
+       2026-07-27에서 지정·정본화).
 
     ## 아직 하지 않는 것 — 기선(baseline)·시차 조건
 

@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-07-26"
+updated: "2026-07-27"
 
 phases:
   - id: phase-0
@@ -74,10 +74,29 @@ phases:
     # HIL 이전에 처리할 비차단 보완사항 (독립 검토 2026-07-27 지정)
     pre_hil_followups:
       - "max_normalized_residual 을 assemble_world_entity()까지 전달 + Versioned Geo Safety Profile 관리"
-      - "viewpoint_id 를 임의 프레임 ID가 아니라 Calibration된 Camera Pose 또는 Viewpoint bin 참조로 정의"
+      - "viewpoint_id 를 임의 프레임 ID가 아니라 Calibration된 Camera Pose 또는 Viewpoint bin 참조로 정의 (완료 5cc7c9b — ViewpointEvidenceKind 등급 도입, INV-025로 정본화)"
       - "C++ Edge와 Python Core가 Offline Sync digest를 직접 계산하기 전 cross-language canonicalization vector 추가"
       - "observation_id·track_id·viewpoint_id 의 공백·whitespace-only 값 거부"
       - "동적 객체 융합 전 최대 관측 시간창 명시적 제한"
+
+    # 수용(33a669a) 이후의 안전 경계 강화 — Phase 1 재수용이 아니라 후속 hardening 기록.
+    # independent_review_commit 은 그대로 둔다(교체하면 전체를 새 SHA에서 재수용했다는 다른 의미가 된다).
+    post_acceptance_hardening:
+      - commit: "5cc7c9b"
+        date: "2026-07-27"
+        reason: >-
+          SPATIAL_BIN 경계에서 근접 관측점이 서로 다른 viewpoint로 과다 계상되어
+          localization CONFIRMED에 도달할 수 있던 경로를 차단.
+        result: >-
+          CONFIRMED는 전체 관측이 CALIBRATED_POSE이고 서로 다른 pose reference가
+          2개 이상일 때만 가능. SPATIAL_BIN·UNKNOWN은 최대 LIKELY.
+        gate: "488 passed·5 skipped / mypy 57 / C++ ctest 2/2"
+
+    residual_risks:
+      - >-
+        CALIBRATED_POSE 등급은 현재 생산자 선언이다. 실기 통합 시 pose reference를
+        Calibration Registry에서 해석하고 site/frame/camera/lens/timestamp 및
+        실제 기선을 검증해야 한다.
 
   - id: phase-2
     title: "Baseline Mapping & Unified Mission"

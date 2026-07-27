@@ -49,6 +49,22 @@
 - **INV-024** RTK Fix는 정확도 신호이지 절대정확도 검증이 아니다. 독립 checkpoint 없이
   절대 RMSE를 표시하지 않는다.
   _강제: Spatial Quality Report 로직 (Terra 정직성 계승, 미구현)._
+- **INV-025** `WorldEntity.uncertainty.localization_state = CONFIRMED`는
+  관측 집합 전체가 `CALIBRATED_POSE` 시점 증거를 가지며, 서로 다른 보정
+  Camera Pose 참조가 2개 이상일 때만 허용한다.
+
+  `SPATIAL_BIN`, `UNKNOWN`, 미선언 시점 증거는 공분산·관측 수와 무관하게
+  CONFIRMED 승격 근거가 될 수 없으며 결과를 최대 `LIKELY`로 제한한다.
+  증거 등급과 식별자 형식이 충돌하면 fail-closed로 거부한다.
+
+  서로 다른 Pose ID는 필요조건일 뿐 실제 기하적 기선을 증명하지 않는다.
+  Production 승격 전에는 Calibration Registry 해석과 최소 baseline 검증을
+  추가로 통과해야 한다.
+
+  _강제: `ViewpointEvidenceKind`, Observation 시점 증거 검증,
+  `assemble_world_entity()` localization gate,
+  `tests/replay/test_world_entity_assembly.py`.
+  HIL 추가 강제: Camera Pose Registry 해석 + 실제 baseline 검증._
 
 ## 이벤트·증거
 
