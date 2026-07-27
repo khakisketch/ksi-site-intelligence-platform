@@ -1,0 +1,12 @@
+{
+  "modules": {
+    "packages/event-contracts (localization gate)": {
+      "status": "green",
+      "note": "CONFIRMED 승격은 CALIBRATED_POSE 시점 증거 전용 — SPATIAL_BIN/UNKNOWN 은 최대 LIKELY. 격자 경계 0.1m 쌍의 CONFIRMED 경로 차단(수정 전 재현 확인). 기선·시차 조건은 실기 pose 확보 후 미구현 상태.",
+      "audit_ref": "commit 5cc7c9b",
+      "at_sha": "5cc7c9b",
+      "at_module_sha": null,
+      "at": "2026-07-27T11:31:14+09:00"
+    }
+  }
+}
