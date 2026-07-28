@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class OnnxExportResult:
-    """export 산출물 + 정규화 증거.
+    """export 산출물 + 정규화 증거 + manifest.
 
     ``double_fixes`` 는 DOUBLE→FLOAT 로 바뀐 지점의 서술("op/위치")이다 — "이 모델의
     double 사용은 위치 임베딩 상수 경로뿐"이라는 docstring 전제를 단언이 아니라
@@ -41,6 +41,7 @@ class OnnxExportResult:
 
     path: Path
     double_fixes: tuple[str, ...]
+    manifest_path: Path | None = None
 
 # ONNX TensorProto.DataType 값 (onnx.TensorProto.DOUBLE/FLOAT 과 동일 — 상수로 두어
 # 모듈 import 시점에 onnx 의존을 만들지 않는다).
@@ -94,6 +95,7 @@ def export_dfine_onnx(
     output_path: Path,
     *,
     opset_version: int = 17,
+    operator: str = "unspecified",
 ) -> OnnxExportResult:
     """detector 의 모델을 ONNX 로 export 하고 double 흔적을 정규화한다.
 
@@ -102,11 +104,24 @@ def export_dfine_onnx(
     출력은 ``logits``·``pred_boxes`` (post-process 이전의 모델 원 출력) — 후처리는
     배포 런타임 쪽 구현과 계약 테스트가 별도로 다룬다.
 
+    산출물 옆에 **Versioned Export Manifest**(``<output>.manifest.json``)를 기록한다
+    (onnx-export-recipe risk 폐쇄, 대표자 지정 2026-07-28) — B2 TensorRT 소비자가
+    "이 ONNX 가 어느 가중치·어느 도구 버전·어느 변환으로 만들어졌는가"를 원장 없이
+    재현·대조할 수 있어야 한다. 모델 파일과 manifest 는 git 에 넣지 않는다(계보
+    요약만 MODEL_REGISTRY 의 export 섹션에 기록).
+
     실패 시 미완성/미정규화 산출물을 디스크에 남기지 않는다 — 정규화 전 파일이
     남으면 double 그래프가 최종 산출물로 오인된다(fail-closed).
     """
+    import hashlib
+    import json
+    import platform
+    from datetime import UTC, datetime
+
     import onnx
+    import onnxruntime
     import torch
+    import transformers
 
     inputs = detector._processor(images=sample_image, return_tensors="pt")  # noqa: SLF001
     try:
@@ -132,4 +147,58 @@ def export_dfine_onnx(
     except Exception:
         output_path.unlink(missing_ok=True)
         raise
-    return OnnxExportResult(path=output_path, double_fixes=tuple(fixes))
+
+    pixel = inputs["pixel_values"]
+    manifest = {
+        "schema": "ksi-onnx-export-manifest/1",
+        "model_id": detector.model_id,
+        "source_artifact_digests": dict(detector.source_digests),
+        "versions": {
+            "python": platform.python_version(),
+            "torch": torch.__version__,
+            "transformers": transformers.__version__,
+            "onnx": onnx.__version__,
+            "onnxruntime": onnxruntime.__version__,
+        },
+        "exporter": "torch.onnx.export(dynamo=False)  # legacy TorchScript exporter",
+        "opset": opset_version,
+        "inputs": [
+            {
+                "name": "pixel_values",
+                "shape": list(pixel.shape),
+                "dtype": str(pixel.dtype),
+                # legacy exporter + dynamic_axes 미지정 = 전 축 static. 배포 입력은
+                # 전처리가 640×640 으로 고정하므로 batch=1 static 이 의도된 계약이다.
+                "axes": "static (batch=1, 640x640 — 전처리가 고정)",
+            }
+        ],
+        "outputs": [
+            {"name": "logits", "meaning": "per-query class logits (post-process 이전)"},
+            {"name": "pred_boxes", "meaning": "per-query cxcywh normalized boxes"},
+        ],
+        "preprocessing": (
+            "RTDetrImageProcessor(digest 고정 preprocessor_config.json): resize 640x640, "
+            "rescale 1/255, normalize 없음, RGB(HWC uint8) 입력 계약"
+        ),
+        "postprocessing": (
+            "post_process_object_detection(threshold=score_floor, target_sizes=원본 HW) "
+            "→ RawDetection → DetectionAdapter(OntologyMapping)"
+        ),
+        "graph_transforms": list(fixes) and [
+            "position embedding constants float64 → float32 (전체 지점은 double_fixes)"
+        ],
+        "graph_transform_fix_count": len(fixes),
+        "export_command": (
+            f"ksi_perception.onnx_export.export_dfine_onnx(opset_version={opset_version})"
+        ),
+        "onnx_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
+        "operator": operator,
+        "exported_at_utc": datetime.now(UTC).isoformat(),
+    }
+    manifest_path = output_path.with_suffix(output_path.suffix + ".manifest.json")
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return OnnxExportResult(
+        path=output_path, double_fixes=tuple(fixes), manifest_path=manifest_path
+    )

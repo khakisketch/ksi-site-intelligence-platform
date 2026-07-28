@@ -45,6 +45,38 @@ models:
       # 엔지니어링 기준선이지, 상용 법무 승인을 의미하지 않는다.
       lineage_status: REVIEWED_WITH_RESIDUAL_RISK
 
+    # ONNX Export Recipe (B2 선결 — onnx-export-recipe risk 폐쇄, 2026-07-28 실측).
+    # 산출물 자체는 git 에 넣지 않는다 — export 시 <output>.manifest.json 이 전체
+    # 계보를 담고, 여기는 재현 계약의 요약이다. digest 는 **아래 toolchain 고정
+    # 환경에서의 실측**이며, toolchain 이 바뀌면 digest 도 바뀐다(재실측 필요).
+    export:
+      exporter: "torch.onnx.export(dynamo=False)  # legacy — dynamo 는 aten._is_all_true 미지원(실측)"
+      opset: 17
+      toolchain:
+        python: "3.12.13"
+        torch: "2.13.0+cpu"
+        transformers: "5.14.1"
+        onnx: "1.22.0"
+        onnxruntime: "1.28.0"
+      inputs:
+        - name: pixel_values
+          shape: [1, 3, 640, 640]
+          dtype: float32
+          axes: "static (전처리가 640x640 고정, batch=1)"
+      outputs: [logits, pred_boxes]
+      graph_transforms:
+        - "position embedding constants float64 → float32 (7 지점 — ORT CPU·TensorRT 는 double Cos/Sin 미지원)"
+      determinism: "BYTE-IDENTICAL — 동일 입력 2회 export sha256 일치 (2026-07-28 실측)"
+      onnx_sha256: "e0f252bc1bc7a7ff5d774d85d30b1ea6bb2cc74fe0bd7b51ce6edbb33124865a"
+      conformance:
+        corpus: "tools/build_onnx_corpus.py 10종 (단일/다수/무탐지/소형/경계/겹침/차량/미지원/노이즈/클리핑)"
+        criteria: "detection 수·canonical class·원시 id/이름/버전 정확 일치 · confidence atol 1e-3 · bbox atol 0.5px · drop 사유 정확 일치 · 경로별 결정성"
+        cross_path_fingerprint: >-
+          미보장 — ONNX 와 PyTorch 는 연산 순서가 달라 bit-exact 를 보장하지 않으므로
+          cross-경로는 허용오차 기반 의미 비교, fingerprint 결정성은 경로 내 2회
+          실행으로 고정(tests/contract/test_onnx_conformance.py)
+      tensorrt_note: "TensorRT 변환·성능·발열 판정은 B2 Manifold HIL 의 몫 — 이 섹션은 export 계약까지만"
+
     deployment_status:
       b1_adapter: APPROVED
       manifold_hil: PENDING
