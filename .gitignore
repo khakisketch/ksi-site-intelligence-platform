@@ -7,3 +7,7 @@ edge/manifold-runtime/build/
 __pycache__/
 *.pyc
 .venv/
+
+# HIL 세션 raw 로그 로컬 스테이징 — 커밋하지 않는다(docs/hil/RAW_LOG_CONVENTIONS.md §1·§5).
+# 세션 종료 후 durable 저장소로 옮기고 SpikeEvidence.raw_log_ref 는 그 URI 를 가리킨다.
+/hil_raw_logs/
