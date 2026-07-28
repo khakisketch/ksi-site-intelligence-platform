@@ -90,11 +90,16 @@ def payload_digest(payload: dict[str, Any]) -> str:
             ensure_ascii=False,
             allow_nan=False,
         )
+        # encode 도 try 안이다(반증 리뷰 2026-07-29 P2-5 실측) — stdlib json.loads 는
+        # 짝 없는 surrogate("\ud800")를 거부하지 않고 str 에 담는데, 그 str 은
+        # UTF-8 로 encode 할 수 없어 UnicodeEncodeError(ValueError 서브클래스)가
+        # "예외를 던지지 않는다" 계약을 뚫고 나가던 경로였다.
+        digest_input = canonical.encode("utf-8")
     except (TypeError, ValueError) as exc:
-        # ValueError: allow_nan=False 하에서 NaN/Infinity
+        # ValueError: allow_nan=False 하에서 NaN/Infinity · lone surrogate encode 실패
         # TypeError: set·bytes·임의 객체 등 JSON 도메인 밖 타입
         raise PayloadCanonicalizationError(f"본문을 정규 JSON으로 표현할 수 없다: {exc}") from exc
-    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+    return f"sha256:{hashlib.sha256(digest_input).hexdigest()}"
 
 
 class IngestVerdict(StrEnum):

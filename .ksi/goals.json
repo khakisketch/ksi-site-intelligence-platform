@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-28T19:00:38+09:00",
+  "updated_at": "2026-07-29T02:09:37+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -191,6 +191,29 @@
       "ungated_attempts": 4,
       "created_at": "2026-07-27T01:51:58+09:00",
       "updated_at": "2026-07-28T19:00:38+09:00"
+    },
+    {
+      "id": "core-ingest",
+      "title": "Core Edge-Sync Ingest: EventBundle 멱등 수신·영속 (서버 제품 트랙 1)",
+      "completion_criteria": [
+        "정상 수신 ACCEPTED+durable 기록",
+        "서버 재시작 후 멱등·순서 판정 유지(재전송 DUPLICATE_IGNORED)",
+        "ACK 유실 재전송 2회=1회 효과",
+        "IDEMPOTENCY_CONFLICT·DIGEST_MISMATCH·SEQUENCE 위반 typed 거부",
+        "EventBundle v1.2 분류계보 위반 거부+원장 미반영",
+        "durable append 실패 시 ACCEPTED 미반환(fail-closed)",
+        "독립 재검토 PASS"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T01:48:26+09:00",
+      "updated_at": "2026-07-29T01:48:26+09:00"
     }
   ],
   "risks": [
@@ -249,6 +272,20 @@
       "previous_status": null,
       "created_at": "2026-07-28T14:21:45+09:00",
       "updated_at": "2026-07-28T14:21:45+09:00"
+    },
+    {
+      "id": "edge-sync-preauth-sequence-lockout",
+      "title": "edge-sync 인증 전 순번 봉쇄 — 위조 큰 순번 1건이 장비 수신을 영구 차단",
+      "lens": "time-axis",
+      "severity": "medium",
+      "status": "open",
+      "note": "위조/오작동의 큰 device_sequence 1건이 durable 원장에 수락되면 그 장비의 후속 정상 수신이 전부 SEQUENCE_REGRESSION 으로 영구 차단(Edge 로컬 포화→유실 전화)되고 Edge 가 서버 last_sequence 를 알 조회 API 도 없다(반증 리뷰 2026-07-29 P1-4). 현재 미배포(조립 시 store 명시 필요). 해소=도메인 단계의 장비 인증·신원 검증이 이 경계 앞에 서는 것.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-29T02:09:37+09:00",
+      "updated_at": "2026-07-29T02:09:37+09:00"
     }
   ]
 }

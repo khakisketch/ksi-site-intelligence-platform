@@ -16,20 +16,30 @@ Stage C 범위는 앱 팩토리 + health + capability 조회 골격까지다. �
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
 from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 
+if TYPE_CHECKING:
+    from ksi_core.edge_sync import EdgeSyncStore
 
-def create_app(*, registry: CapabilityRegistry | None = None) -> FastAPI:
+
+def create_app(
+    *,
+    registry: CapabilityRegistry | None = None,
+    edge_sync_store: EdgeSyncStore | None = None,
+) -> FastAPI:
     """Core 앱을 만든다.
 
     Args:
         registry: 주입할 Capability Registry. ``None``이면 PRD §20.3 SPIKE 9종을
             시드한 새 레지스트리를 만든다 — 시드 직후 노출 가능한 capability는
             0건이다(실기 검증 증거가 없으므로, INV-041).
+        edge_sync_store: Edge→Core EventBundle 멱등 수신 저장소. ``None``이면
+            edge-sync 엔드포인트가 **존재하지 않는다** — durable 저장 없이 수신
+            API 만 열리는 구성(ACK 후 유실 경로)을 타입이 아니라 조립에서 막는다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -73,5 +83,10 @@ def create_app(*, registry: CapabilityRegistry | None = None) -> FastAPI:
             ],
             "count": len(operational),
         }
+
+    if edge_sync_store is not None:
+        from ksi_core.edge_sync import mount_edge_sync
+
+        mount_edge_sync(app, edge_sync_store)
 
     return app

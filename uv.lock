@@ -354,12 +354,14 @@ source = { editable = "services/core" }
 dependencies = [
     { name = "fastapi" },
     { name = "ksi-domain" },
+    { name = "ksi-event-contracts" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "ksi-domain", editable = "packages/domain" },
+    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
 ]
 
 [[package]]

@@ -3,7 +3,8 @@ name = "ksi-core"
 version = "0.0.1"
 description = "KSI Core Server — 인증·현장·임무·정책·이벤트·PostGIS control plane (ADR-KSI-001)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ksi-domain", "fastapi>=0.115"]
+# edge_sync(EventBundle 멱등 수신)가 offline_sync·EventBundle 계약을 소비한다.
+dependencies = ["ksi-domain", "ksi-event-contracts", "fastapi>=0.115"]
 
 [build-system]
 requires = ["hatchling"]
@@ -14,3 +15,4 @@ packages = ["src/ksi_core"]
 
 [tool.uv.sources]
 ksi-domain = { workspace = true }
+ksi-event-contracts = { workspace = true }
