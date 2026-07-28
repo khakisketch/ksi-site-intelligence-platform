@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-28T14:21:45+09:00",
+  "updated_at": "2026-07-28T15:24:18+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -183,14 +183,14 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "commit 8be6a63 — 합성/녹화 입력 기준 전 구간 배선 완성(Frame→Detection→Tracking→보간→투영→Observation→WorldEntity→Event Candidate→Evidence Bundle). Detector는 인터페이스+결정적 stub(Ultralytics BLOCKED_LICENSE + 배선과 모델정확도 분리 목적). 검증: 전구간 연결, 불확실성 전달, 2인 2엔티티, gap/지평선 탈락 사유 기록, 단일관측·고정관측점 CONFIRMED 차단, 2회실행·순서shuffle 재현성. 게이트 479 passed·5 skipped, mypy 57파일, C++ 2/2. **미완(장비 필요)**: permissive 실모델 교체·PSDK Live View 전환·실기 프레임 재현.",
+      "evidence": "B1(실모델 recorded 구간) 독립 재검토 PASS — commit 04b7555, review 2026-07-28, Actions run 30333691228(gates+edge success), 647 passed·5 skipped, mypy 75 files, ctest 2/2. 완료 범위: permissive 실모델(D-FINE-S COCO-only) 교체·recorded image/sequence 전 구간 재현·분류 계보(INV-031)·Export Recipe 골격. 단 이는 Recorded Input 기준 소프트웨어 수용 — goal 잔여(PSDK Live View 교체·실기 프레임 재현)는 B3 영역이라 goal 은 in_progress 유지. ONNX Recipe·HIL Pack 은 CHANGES_REQUESTED(별도 수정).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 2,
       "created_at": "2026-07-27T01:51:58+09:00",
-      "updated_at": "2026-07-27T01:52:10+09:00"
+      "updated_at": "2026-07-28T15:24:18+09:00"
     }
   ],
   "risks": [

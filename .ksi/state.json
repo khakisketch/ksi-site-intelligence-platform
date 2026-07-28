@@ -34,11 +34,11 @@
     },
     "perception pipeline (recorded input slice)": {
       "status": "green",
-      "note": "B1-7 완료: recorded 로더(RGB·크기 강제) + detector drop 슬라이스 배선(F3 완결) + 실 D-FINE E2E 4건(계보 흐름·INV-025·결정성·drop 기록). E2E 실측이 drop 사유 오분류 1건 발견·수정. 남은 것: 실 드론 영상 corpus(확보 시 소스 교체), B2 TensorRT(ONNX recipe 선결).",
-      "audit_ref": "commit 8a72b3b",
-      "at_sha": "8a72b3b",
+      "note": "B1-7 독립 재검토 PASS(2026-07-28, 04b7555, run 30333691228). Recorded Input 기준 소프트웨어 수용 — 실 드론 영상·Manifold 성능·PSDK 는 미승인.",
+      "audit_ref": "commit 04b7555 + independent review PASS",
+      "at_sha": "04b7555",
       "at_module_sha": null,
-      "at": "2026-07-28T13:48:32+09:00"
+      "at": "2026-07-28T15:24:18+09:00"
     }
   }
 }
