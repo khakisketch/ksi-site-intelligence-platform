@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 # CI 는 extra 없이 계약 테스트만 돌고, 모델 추론 테스트는 extra+모델파일 존재 시에만 실행된다.
 dependencies = [
     "ksi-domain",
+    "pydantic>=2.7",
     "pyyaml>=6.0",
     "numpy>=1.26",
     "pillow>=12.3",  # PYSEC-2026-2253~2257 해소선(참고 레포 SCA 게이트와 정렬)

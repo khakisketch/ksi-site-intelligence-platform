@@ -29,8 +29,14 @@ from ksi_domain.detection_adapter import (
     RawDetection,
 )
 from ksi_domain.ontology import COCO_ONTOLOGY, OntologyMapping
+from pydantic import ValidationError
 
 from ksi_perception.dfine import DEFAULT_SCORE_FLOOR
+from ksi_perception.onnx_manifest import (
+    CANONICAL_TO_ORT,
+    OnnxExportManifestV1,
+    reject_nonstandard_json_constant,
+)
 from ksi_perception.registry import DEFAULT_REGISTRY_PATH, verify_local_model
 
 if TYPE_CHECKING:
@@ -146,67 +152,37 @@ def load_onnx_dfine_detector(
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.LOAD_FAILED, detail=f"{onnx_path} 없음"
         )
+    # typed 신뢰 경계(재검토 P1) — 어떤 malformed manifest 도 raw traceback 이 아니라
+    # typed 결과다. 파싱(비표준 JSON 상수 거부)과 구조·타입·형식 검증 전부를
+    # OnnxExportManifestV1(extra="forbid")이 담당하고, 실패는 여기서 흡수된다.
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        # 필수 필드 전부 존재해야 한다(재검토 P0 — 부분 manifest 는 계보가 아니다).
-        required = (
-            "schema",
-            "model_id",
-            "source_artifact_digests",
-            "versions",
-            "exporter",
-            "opset",
-            "inputs",
-            "outputs",
-            "preprocessing",
-            "postprocessing",
-            "graph_transforms",
-            "graph_transform_fix_count",
-            "export_command",
-            "onnx_sha256",
-            "operator",
-            "exported_at_utc",
+        raw_manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            parse_constant=reject_nonstandard_json_constant,
         )
-        missing = [k for k in required if k not in manifest]
-        if missing:
+        if not isinstance(raw_manifest, dict):
             return OnnxDetectorLoadResult(
                 status=OnnxLoadStatus.MANIFEST_MISSING,
-                detail=f"manifest 필수 필드 누락: {missing}",
+                detail=f"manifest 최상위가 JSON object 가 아니다 ({type(raw_manifest).__name__})",
             )
-        expected = manifest["onnx_sha256"]
-        manifest_model_id = manifest["model_id"]
-    except (json.JSONDecodeError, KeyError, OSError) as exc:
+        manifest = OnnxExportManifestV1.model_validate(raw_manifest)
+    # ValidationError 는 ValueError 의 서브클래스 — 먼저 잡아야 상세 사유가 남는다.
+    except ValidationError as exc:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.MANIFEST_MISSING,
+            detail=f"manifest 검증 실패: {exc.errors()[:3]}",
+        )
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.MANIFEST_MISSING,
             detail=f"manifest 손상: {exc!r}",
         )
-    if manifest_model_id != model_id:
+    if manifest.model_id != model_id:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
-            detail=f"manifest model_id {manifest_model_id!r} ≠ 요청 {model_id!r}",
+            detail=f"manifest model_id {manifest.model_id!r} ≠ 요청 {model_id!r}",
         )
-    if manifest["schema"] != "ksi-onnx-export-manifest/1":
-        return OnnxDetectorLoadResult(
-            status=OnnxLoadStatus.MANIFEST_MISSING,
-            detail=f"미지원 manifest schema {manifest['schema']!r}",
-        )
-    operator = str(manifest["operator"]).strip()
-    if not operator or operator == "unspecified":
-        return OnnxDetectorLoadResult(
-            status=OnnxLoadStatus.MANIFEST_MISSING,
-            detail="operator 가 공백/unspecified — 책임자 없는 export 는 증거가 아니다",
-        )
-    try:
-        from datetime import datetime, timedelta
-
-        exported_at = datetime.fromisoformat(str(manifest["exported_at_utc"]))
-        if exported_at.utcoffset() != timedelta(0):
-            raise ValueError(f"UTC 아님 (offset={exported_at.utcoffset()})")
-    except ValueError as exc:
-        return OnnxDetectorLoadResult(
-            status=OnnxLoadStatus.MANIFEST_MISSING,
-            detail=f"exported_at_utc 가 UTC ISO 가 아니다: {exc}",
-        )
+    expected = manifest.onnx_sha256
     actual = hashlib.sha256(onnx_path.read_bytes()).hexdigest()
     if actual != expected:
         return OnnxDetectorLoadResult(
@@ -246,7 +222,7 @@ def load_onnx_dfine_detector(
             status=OnnxLoadStatus.REGISTRY_REJECTED,
             detail=f"{model_id} 의 Registry 에 export 섹션이 없다 — 권위 앵커 없는 ONNX 거부",
         )
-    if manifest["source_artifact_digests"] != check.entry.file_digests:
+    if manifest.source_artifact_digests != check.entry.file_digests:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
             detail=(
@@ -262,13 +238,13 @@ def load_onnx_dfine_detector(
                 f"{export.onnx_sha256[:12]}… — 등록되지 않은 export 산출물"
             ),
         )
-    if int(manifest["opset"]) != export.opset:
+    if manifest.opset != export.opset:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
-            detail=f"manifest opset {manifest['opset']} ≠ Registry opset {export.opset}",
+            detail=f"manifest opset {manifest.opset} ≠ Registry opset {export.opset}",
         )
-    manifest_inputs = tuple(i["name"] for i in manifest["inputs"])
-    manifest_outputs = tuple(o["name"] for o in manifest["outputs"])
+    manifest_inputs = tuple(t.name for t in manifest.inputs)
+    manifest_outputs = tuple(t.name for t in manifest.outputs)
     if manifest_inputs != export.input_names or manifest_outputs != export.output_names:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
@@ -304,36 +280,40 @@ def load_onnx_dfine_detector(
             detail=f"{type(exc).__name__}: {exc}",
         )
 
-    # ── 실제 세션 계약 대조 (재검토 P0 #8) — manifest 가 주장하는 입출력이 로드된
-    # 그래프의 실제 계약과 일치하는가(이름·shape·dtype).
+    # ── 실제 세션 계약 대조 (재검토 P0 #8 + P1 완전화) — manifest 가 주장하는
+    # 입출력이 로드된 그래프의 실제 계약과 **이름·순서·shape·dtype exact** 로
+    # 일치하는가. dtype 은 substring 이 아니라 canonical 대응표로만 비교한다
+    # (substring 은 float64 주장과 float32 실물을 같게 본다 — 재검토 지적).
     session_inputs = {i.name: i for i in session.get_inputs()}
-    session_outputs = tuple(o.name for o in session.get_outputs())
-    if tuple(session_inputs) != manifest_inputs or session_outputs != manifest_outputs:
+    session_outputs = {o.name: o for o in session.get_outputs()}
+    if tuple(session_inputs) != manifest_inputs or tuple(session_outputs) != manifest_outputs:
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
             detail=(
-                f"세션 실계약 ({tuple(session_inputs)}→{session_outputs}) ≠ manifest "
+                f"세션 실계약 ({tuple(session_inputs)}→{tuple(session_outputs)}) ≠ manifest "
                 f"({manifest_inputs}→{manifest_outputs})"
             ),
         )
-    for declared in manifest["inputs"]:
-        actual_input = session_inputs[declared["name"]]
-        declared_shape = list(declared["shape"])
-        if list(actual_input.shape) != declared_shape:
+    for declared_tensor in list(manifest.inputs) + list(manifest.outputs):
+        actual_tensor = (
+            session_inputs.get(declared_tensor.name)
+            or session_outputs[declared_tensor.name]
+        )
+        if [int(d) for d in actual_tensor.shape] != declared_tensor.shape:
             return OnnxDetectorLoadResult(
                 status=OnnxLoadStatus.DIGEST_MISMATCH,
                 detail=(
-                    f"입력 {declared['name']!r} shape {actual_input.shape} ≠ manifest "
-                    f"{declared_shape}"
+                    f"텐서 {declared_tensor.name!r} shape {actual_tensor.shape} ≠ manifest "
+                    f"{declared_tensor.shape}"
                 ),
             )
-        # onnxruntime 표기(tensor(float)) ↔ torch 표기(torch.float32) 대응 확인.
-        if "float" not in str(declared["dtype"]) or "float" not in str(actual_input.type):
+        expected_ort_dtype = CANONICAL_TO_ORT[declared_tensor.dtype]
+        if str(actual_tensor.type) != expected_ort_dtype:
             return OnnxDetectorLoadResult(
                 status=OnnxLoadStatus.DIGEST_MISMATCH,
                 detail=(
-                    f"입력 {declared['name']!r} dtype {actual_input.type} ≠ manifest "
-                    f"{declared['dtype']}"
+                    f"텐서 {declared_tensor.name!r} dtype {actual_tensor.type} ≠ manifest "
+                    f"{declared_tensor.dtype}({expected_ort_dtype})"
                 ),
             )
     return OnnxDetectorLoadResult(

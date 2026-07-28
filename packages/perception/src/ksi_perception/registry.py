@@ -86,6 +86,48 @@ class RegistryCheck:
         return self.status is RegistryStatus.OK
 
 
+def _parse_export_entry(export_raw: dict) -> OnnxExportEntry:
+    """Registry export 섹션의 엄격 파싱 (재검토 A12) — 구조 오류는 ValueError 로
+    올려 호출자의 MALFORMED_REGISTRY 경로에 태운다.
+
+    Registry 는 이름·opset·digest 수준 앵커만 둔다 — 출력 shape/dtype 의 완전
+    대조는 manifest↔실세션에서 한다(digest 가 이미 그래프 전체를 고정하므로
+    Registry 에 shape 를 중복 기록하면 두 SSOT 가 어긋날 표면만 늘어난다).
+    exporter·toolchain·graph_transforms 는 **증거 필드**다: 재현 절차의 기록이지
+    로드 게이트가 아니며, 게이트는 그 절차의 산출물 digest 가 담당한다.
+    """
+    onnx_sha256 = export_raw["onnx_sha256"]
+    if (
+        not isinstance(onnx_sha256, str)
+        or len(onnx_sha256) != 64
+        or any(c not in "0123456789abcdef" for c in onnx_sha256)
+    ):
+        raise ValueError(f"export.onnx_sha256 이 hex64 가 아니다 ({onnx_sha256!r})")
+    exporter = export_raw["exporter"]
+    if not isinstance(exporter, str) or not exporter.strip():
+        raise ValueError(f"export.exporter 가 공백/비문자열이다 ({exporter!r})")
+    opset = export_raw["opset"]
+    if isinstance(opset, bool) or not isinstance(opset, int) or opset <= 0:
+        raise ValueError(f"export.opset 은 bool 아닌 양의 int 여야 한다 ({opset!r})")
+    input_names = tuple(str(i["name"]) for i in export_raw["inputs"])
+    output_names = tuple(str(o) for o in export_raw["outputs"])
+    for name in (*input_names, *output_names):
+        if not name.strip():
+            raise ValueError("export 입출력 이름에 공백 불허")
+    if len(set(input_names)) != len(input_names) or len(set(output_names)) != len(
+        output_names
+    ):
+        raise ValueError(f"export 입출력 이름 중복: {input_names} / {output_names}")
+    return OnnxExportEntry(
+        schema="ksi-onnx-export-manifest/1",
+        onnx_sha256=onnx_sha256,
+        exporter=exporter,
+        opset=opset,
+        input_names=input_names,
+        output_names=output_names,
+    )
+
+
 def load_model_entry(
     model_id: str, *, registry_path: Path = DEFAULT_REGISTRY_PATH
 ) -> RegistryCheck:
@@ -109,16 +151,7 @@ def load_model_entry(
         visdrone_used = pretraining["visdrone_used"]
         export_raw = found.get("export")
         export_entry = (
-            OnnxExportEntry(
-                schema="ksi-onnx-export-manifest/1",
-                onnx_sha256=str(export_raw["onnx_sha256"]),
-                exporter=str(export_raw["exporter"]),
-                opset=int(export_raw["opset"]),
-                input_names=tuple(i["name"] for i in export_raw["inputs"]),
-                output_names=tuple(export_raw["outputs"]),
-            )
-            if export_raw is not None
-            else None
+            _parse_export_entry(export_raw) if export_raw is not None else None
         )
         entry = ModelEntry(
             model_id=found["model_id"],

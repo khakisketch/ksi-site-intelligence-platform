@@ -160,57 +160,86 @@ def export_dfine_onnx(
         output_path.unlink(missing_ok=True)
         raise
 
-    pixel = inputs["pixel_values"]
-    manifest = {
-        "schema": "ksi-onnx-export-manifest/1",
-        "model_id": detector.model_id,
-        "source_artifact_digests": dict(detector.source_digests),
-        "versions": {
-            "python": platform.python_version(),
-            "torch": torch.__version__,
-            "transformers": transformers.__version__,
-            "onnx": onnx.__version__,
-            "onnxruntime": onnxruntime.__version__,
-        },
-        "exporter": "torch.onnx.export(dynamo=False)  # legacy TorchScript exporter",
-        "opset": opset_version,
-        "inputs": [
-            {
-                "name": "pixel_values",
-                "shape": list(pixel.shape),
-                "dtype": str(pixel.dtype),
-                # legacy exporter + dynamic_axes 미지정 = 전 축 static. 배포 입력은
-                # 전처리가 640×640 으로 고정하므로 batch=1 static 이 의도된 계약이다.
-                "axes": "static (batch=1, 640x640 — 전처리가 고정)",
-            }
-        ],
-        "outputs": [
-            {"name": "logits", "meaning": "per-query class logits (post-process 이전)"},
-            {"name": "pred_boxes", "meaning": "per-query cxcywh normalized boxes"},
-        ],
-        "preprocessing": (
-            "RTDetrImageProcessor(digest 고정 preprocessor_config.json): resize 640x640, "
-            "rescale 1/255, normalize 없음, RGB(HWC uint8) 입력 계약"
-        ),
-        "postprocessing": (
-            "post_process_object_detection(threshold=score_floor, target_sizes=원본 HW) "
-            "→ RawDetection → DetectionAdapter(OntologyMapping)"
-        ),
-        "graph_transforms": [
-            "position embedding constants float64 → float32 (전체 지점은 double_fixes)",
-            "surplus trace outputs 제거 — 그래프 출력을 선언 계약(logits·pred_boxes)으로 고정",
-        ],
-        "graph_transform_fix_count": len(fixes),
-        "export_command": (
-            f"ksi_perception.onnx_export.export_dfine_onnx(opset_version={opset_version})"
-        ),
-        "onnx_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
-        "operator": operator,
-        "exported_at_utc": datetime.now(UTC).isoformat(),
+    from ksi_perception.onnx_manifest import (
+        MANIFEST_SCHEMA_V1,
+        ORT_TO_CANONICAL,
+        TORCH_DTYPE_TO_CANONICAL,
+        OnnxExportManifestV1,
+        OnnxOutputContract,
+        OnnxTensorContract,
+    )
+
+    # 출력 shape·dtype 은 추정하지 않는다(재검토 P1 요구 6) — 산출물 세션을 실제로
+    # 열어 그래프가 보고하는 값을 그대로 기록한다.
+    probe = onnxruntime.InferenceSession(
+        str(output_path), providers=["CPUExecutionProvider"]
+    )
+    output_meanings = {
+        "logits": "per-query class logits (post-process 이전)",
+        "pred_boxes": "per-query cxcywh normalized boxes",
     }
+    probed_outputs = [
+        OnnxOutputContract(
+            name=o.name,
+            shape=[int(d) for d in o.shape],
+            dtype=ORT_TO_CANONICAL[str(o.type)],
+            meaning=output_meanings.get(o.name, "(미기술)"),
+        )
+        for o in probe.get_outputs()
+    ]
+
+    pixel = inputs["pixel_values"]
+    manifest_model = OnnxExportManifestV1.model_validate(
+        {
+            "schema": MANIFEST_SCHEMA_V1,
+            "model_id": detector.model_id,
+            "source_artifact_digests": dict(detector.source_digests),
+            "versions": {
+                "python": platform.python_version(),
+                "torch": torch.__version__,
+                "transformers": transformers.__version__,
+                "onnx": onnx.__version__,
+                "onnxruntime": onnxruntime.__version__,
+            },
+            "exporter": "torch.onnx.export(dynamo=False)  # legacy TorchScript exporter",
+            "opset": opset_version,
+            "inputs": [
+                OnnxTensorContract(
+                    name="pixel_values",
+                    shape=[int(d) for d in pixel.shape],
+                    dtype=TORCH_DTYPE_TO_CANONICAL[str(pixel.dtype)],
+                    # legacy exporter + dynamic_axes 미지정 = 전 축 static. 배포
+                    # 입력은 전처리가 640×640 으로 고정하므로 static 이 의도된 계약.
+                    axes="static (batch=1, 640x640 — 전처리가 고정)",
+                )
+            ],
+            "outputs": probed_outputs,
+            "preprocessing": (
+                "RTDetrImageProcessor(digest 고정 preprocessor_config.json): resize "
+                "640x640, rescale 1/255, normalize 없음, RGB(HWC uint8) 입력 계약"
+            ),
+            "postprocessing": (
+                "post_process_object_detection(threshold=score_floor, target_sizes=원본 HW) "
+                "→ RawDetection → DetectionAdapter(OntologyMapping)"
+            ),
+            "graph_transforms": [
+                "position embedding constants float64 → float32 (전체 지점은 double_fixes)",
+                "surplus trace outputs 제거 — 그래프 출력을 선언 계약(logits·pred_boxes)으로 고정",
+            ],
+            "graph_transform_fix_count": len(fixes),
+            "export_command": (
+                f"ksi_perception.onnx_export.export_dfine_onnx(opset_version={opset_version})"
+            ),
+            "onnx_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            "operator": operator,
+            "exported_at_utc": datetime.now(UTC).isoformat(),
+        }
+    )
     manifest_path = output_path.with_suffix(output_path.suffix + ".manifest.json")
     manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(manifest_model.model_dump(by_alias=True), ensure_ascii=False, indent=2)
+        + "\n",
+        encoding="utf-8",
     )
     return OnnxExportResult(
         path=output_path, double_fixes=tuple(fixes), manifest_path=manifest_path

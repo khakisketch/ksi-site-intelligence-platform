@@ -425,3 +425,169 @@ def test_non_utc_exported_at_rejected(
         _rewrite_manifest(export.manifest_path, _set_bad)
         result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
         assert result.status is OnnxLoadStatus.MANIFEST_MISSING, bad
+
+
+# ── typed 신뢰 경계 반증 A1~A13 (재검토 P1, 2026-07-28) ──────────────────────
+#
+# malformed manifest 는 어떤 형태든 raw traceback 이 아니라 typed 결과여야 한다.
+# (A14 정상 로드 = detectors fixture 자체 / A15 자체일관 교체 거부 = 기존
+#  test_self_consistent_swap_rejected_by_registry_anchor 가 담당)
+
+_MALFORMED_MUTATIONS: dict[str, object] = {
+    "A1_opset_str": ("opset", "bad"),
+    "A2_opset_bool": ("opset", True),
+    "A3a_inputs_dict": ("inputs", {}),
+    "A3b_inputs_empty_obj": ("inputs", [{}]),
+    "A3c_inputs_null": ("inputs", None),
+    "A4_dup_output_name": (
+        "outputs",
+        [
+            {"name": "logits", "shape": [1, 300, 80], "dtype": "float32", "meaning": "x"},
+            {"name": "logits", "shape": [1, 300, 4], "dtype": "float32", "meaning": "y"},
+        ],
+    ),
+    "A5a_sha_short": ("onnx_sha256", "abc123"),
+    "A5b_sha_nonhex": ("onnx_sha256", "z" * 64),
+    "A6_source_digest_nonhex": ("source_artifact_digests", {"model.safetensors": "nothex"}),
+    "A7a_operator_int": ("operator", 7),
+    "A7b_operator_list": ("operator", ["a"]),
+    "A7c_operator_dict": ("operator", {"x": 1}),
+    "A8a_exported_at_list": ("exported_at_utc", ["2026"]),
+    "A8b_exported_at_dict": ("exported_at_utc", {}),
+    "extra_unknown_field": ("__unknown_field__", "schema v1 은 extra forbid"),
+    "shape_bool_dim": (
+        "inputs",
+        [{"name": "pixel_values", "shape": [True, 3, 640, 640], "dtype": "float32",
+          "axes": "static"}],
+    ),
+    "dtype_unknown": (
+        "inputs",
+        [{"name": "pixel_values", "shape": [1, 3, 640, 640], "dtype": "float64",
+          "axes": "static"}],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_MALFORMED_MUTATIONS))
+def test_malformed_manifest_typed_rejection_no_traceback(
+    case: str, tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A1~A8 + fuzz] 필드 타입·구조·형식 오류 전건이 typed 거부, 예외 전파 0."""
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+    mutation = _MALFORMED_MUTATIONS[case]
+    assert isinstance(mutation, tuple)
+    field_name, new_value = str(mutation[0]), mutation[1]
+
+    def mutate(d: dict) -> None:
+        if field_name == "__unknown_field__":
+            d["totally_unknown"] = new_value
+        else:
+            d[field_name] = new_value
+
+    assert export.manifest_path is not None
+    _rewrite_manifest(export.manifest_path, mutate)
+    # 예외가 새면 이 호출 자체가 테스트 실패(전파 0 검증)다.
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.MANIFEST_MISSING, case
+    assert result.detector is None
+
+
+def test_manifest_nan_constant_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A8·비표준 JSON] NaN/Infinity 상수는 파싱 단계에서 거부된다."""
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+    assert export.manifest_path is not None
+    text = export.manifest_path.read_text(encoding="utf-8")
+    text = text.replace('"opset": 17', '"opset": NaN')
+    export.manifest_path.write_text(text, encoding="utf-8")
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.MANIFEST_MISSING
+
+
+def test_manifest_toplevel_not_object_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+    assert export.manifest_path is not None
+    export.manifest_path.write_text('["not", "an", "object"]', encoding="utf-8")
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.MANIFEST_MISSING
+
+
+def test_input_dtype_claim_vs_session_mismatch_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A9] manifest 가 float16 을 주장하는데 실제 세션이 float32 → 거부.
+
+    substring 비교였다면 "float" 공통으로 통과했을 조합 — canonical 대응표 비교의
+    실증이다.
+    """
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+
+    def mutate(d: dict) -> None:
+        d["inputs"][0]["dtype"] = "float16"
+
+    assert export.manifest_path is not None
+    _rewrite_manifest(export.manifest_path, mutate)
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.DIGEST_MISMATCH
+    assert result.detail is not None and "dtype" in result.detail
+
+
+def test_output_dtype_mismatch_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A10] 출력 dtype 불일치 거부."""
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+
+    def mutate(d: dict) -> None:
+        d["outputs"][0]["dtype"] = "int64"
+
+    assert export.manifest_path is not None
+    _rewrite_manifest(export.manifest_path, mutate)
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.DIGEST_MISMATCH
+    assert result.detail is not None and "dtype" in result.detail
+
+
+def test_output_shape_mismatch_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A11] 출력 shape 불일치 거부 — 세션 실계약이 출력까지 검증됨의 실증."""
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+
+    def mutate(d: dict) -> None:
+        d["outputs"][0]["shape"] = [1, 300, 91]
+
+    assert export.manifest_path is not None
+    _rewrite_manifest(export.manifest_path, mutate)
+    result = load_onnx_dfine_detector(onnx_path=export.path, model_dir=_model_dir())
+    assert result.status is OnnxLoadStatus.DIGEST_MISMATCH
+    assert result.detail is not None and "shape" in result.detail
+
+
+def test_malformed_registry_export_rejected(
+    tmp_path: Path, detectors: tuple[DFineDetector, OnnxDFineDetector]
+) -> None:
+    """[A12] Registry export 섹션 구조 오류 → MALFORMED_REGISTRY (typed)."""
+    import shutil
+
+    import yaml
+
+    export = _export_valid(detectors, tmp_path / "m.onnx", opset_version=17)
+    # 실제 Registry 를 복사해 export.opset 만 오염
+    registry = yaml.safe_load(
+        Path("docs/models/MODEL_REGISTRY.yaml").read_text(encoding="utf-8")
+    )
+    registry["models"][0]["export"]["opset"] = "seventeen"
+    bad_registry = tmp_path / "registry.yaml"
+    bad_registry.write_text(yaml.safe_dump(registry, allow_unicode=True), encoding="utf-8")
+    # 모델 파일은 실제 검증 디렉토리를 그대로 참조
+    model_dir = tmp_path / "model"
+    shutil.copytree(_model_dir(), model_dir)
+    result = load_onnx_dfine_detector(
+        onnx_path=export.path, model_dir=model_dir, registry_path=bad_registry
+    )
+    assert result.status is OnnxLoadStatus.REGISTRY_REJECTED
+    assert result.detail is not None and "malformed_registry" in result.detail
