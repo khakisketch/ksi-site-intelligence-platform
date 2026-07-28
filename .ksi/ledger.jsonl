@@ -38,3 +38,10 @@
 {"ts": "2026-07-29T01:48:26+09:00", "event": "registered", "goal": "core-ingest", "status": "proposed", "parent": null}
 {"ts": "2026-07-29T01:48:26+09:00", "event": "started", "goal": "core-ingest"}
 {"ts": "2026-07-29T02:09:37+09:00", "event": "risk_add", "goal": "edge-sync-preauth-sequence-lockout", "lens": "time-axis", "severity": "medium"}
+{"ts": "2026-07-29T02:10:00+09:00", "event": "completion_attempt", "goal": "core-ingest", "evidence": "구현 완료 — review_pending(자기판정 아님). EdgeSyncStore(durable-후-ACK·봉인·torn-tail 격리·flock 단일 writer·dir fsync)+POST /v1/edge-sync/event-bundles(v1.2 계보 사전검증)+create_app 조립, commit d0f5d25. reviewer(Opus) adversarial 반증이 P0-1·P1-1·P1-2·P1-3·P2-1·P2-3·P2-5 실결함을 적발→전건 수정·실측 테스트 폐쇄, P1-4 는 risk(edge-sync-preauth-sequence-lockout) 기록. mutation 2건 실측(봉인 제거→3f·검증 제거→3f·복원 green). 게이트: ruff·mypy 83·pytest 770+5s cache-clean·ctest 2/2·hygiene·lock."}
+{"ts": "2026-07-29T03:58:19+09:00", "event": "registered", "goal": "audit-actionintent-hardening", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-pipeline-production-lineage", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-contract-schema-gates", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-gate-integrity", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-signing-key-lifecycle", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-edge-sync-ops-hardening", "status": "proposed", "parent": null}

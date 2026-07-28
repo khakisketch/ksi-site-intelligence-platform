@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T02:09:37+09:00",
+  "updated_at": "2026-07-29T03:58:20+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -206,14 +206,143 @@
       ],
       "status": "in_progress",
       "attempt": 1,
+      "evidence": "구현 완료 — review_pending(자기판정 아님). EdgeSyncStore(durable-후-ACK·봉인·torn-tail 격리·flock 단일 writer·dir fsync)+POST /v1/edge-sync/event-bundles(v1.2 계보 사전검증)+create_app 조립, commit d0f5d25. reviewer(Opus) adversarial 반증이 P0-1·P1-1·P1-2·P1-3·P2-1·P2-3·P2-5 실결함을 적발→전건 수정·실측 테스트 폐쇄, P1-4 는 risk(edge-sync-preauth-sequence-lockout) 기록. mutation 2건 실측(봉인 제거→3f·검증 제거→3f·복원 green). 게이트: ruff·mypy 83·pytest 770+5s cache-clean·ctest 2/2·hygiene·lock.",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "created_at": "2026-07-29T01:48:26+09:00",
+      "updated_at": "2026-07-29T02:10:00+09:00"
+    },
+    {
+      "id": "audit-actionintent-hardening",
+      "title": "ActionIntent 계약 강화 — Track A 실기 배선 전 폐쇄 권장",
+      "completion_criteria": [
+        "kind·schemaVersion 검증(Py+C++ #7·#16)",
+        "ttlMs 상한(값=대표자 결정 #17)",
+        "GOTO_VIEWPOINT target 필수(#18)",
+        "C++ TTL int64 오버플로 범위 선검사(#14)",
+        "supervisor 미래 heartbeat 거부+리셋 경로(#15)",
+        "extreme 케이스 conformance 벡터 추가",
+        "독립 재검토 PASS"
+      ],
+      "status": "proposed",
+      "attempt": 1,
       "evidence": null,
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
-      "created_at": "2026-07-29T01:48:26+09:00",
-      "updated_at": "2026-07-29T01:48:26+09:00"
+      "created_at": "2026-07-29T03:58:19+09:00",
+      "updated_at": "2026-07-29T03:58:19+09:00"
+    },
+    {
+      "id": "audit-pipeline-production-lineage",
+      "title": "파이프라인 placeholder 계보 제거 — RunContext 필수화(INV-040/042)",
+      "completion_criteria": [
+        "mission/site/policy/calibration/epoch 를 RunContext 필수 인자로(#23)",
+        "Evidence Clip 3단계 3/5/10 + MEDIUM typed 거부(#26·#37·#68)",
+        "상태전이 게이트 실변수화 또는 서술 정정(#77)",
+        "recorded 시간축 절대화+미겹침 CONFIG_ERROR+무산출 exit≠0(#24)",
+        "Edge→Core E2E 통합 테스트(#27)",
+        "독립 재검토 PASS"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T03:58:20+09:00"
+    },
+    {
+      "id": "audit-contract-schema-gates",
+      "title": "계약↔스키마↔구현 대조 게이트 — drift 차단",
+      "completion_criteria": [
+        "event-bundle.v1.2 왕복+draft 검증 테스트(#28·#33)",
+        "openapi/asyncapi 실구현 대조 갱신(#25·#34·#35)",
+        "null 방출 직렬화 규약 확정(#28)",
+        "EventStatus 참조 갱신(#71)",
+        "MissionContract v1.1 nested 강화 명시(#70)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T03:58:20+09:00"
+    },
+    {
+      "id": "audit-gate-integrity",
+      "title": "게이트 무결성 — 조용한 no-op·전량 skip 차단",
+      "completion_criteria": [
+        "실모델 82건 무음 skip 감지 anchor(#19)+transformers 조건(#20)",
+        "rg/git 부재를 실패로(#29·#74)",
+        "reference 핀 0건 파싱 실패(#64)+벡터 provenance 40hex 강제(#67)",
+        "C++ sanitizer CI 스텝(#56·#72)",
+        "HANDOFF_SHA256SUMS 지위 확정(#66)",
+        "workspace smoke에 perception(#60)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T03:58:20+09:00"
+    },
+    {
+      "id": "audit-signing-key-lifecycle",
+      "title": "서명·키 수명주기 강화(INV-011)",
+      "completion_criteria": [
+        "KeyRegistry 중복 keyId 거부+REVOKED 부활 차단(#9)",
+        "canonical allow_nan=False 통일(#10)",
+        "load_verified_contract 합성 진입점+sign 자기검증(#12)",
+        "FlightEnvelope 교차 검증(#50)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T03:58:20+09:00"
+    },
+    {
+      "id": "audit-edge-sync-ops-hardening",
+      "title": "edge-sync 운영 강화 — 인증 도입과 결합",
+      "completion_criteria": [
+        "응답 detail 열거 오라클 축약(#8)",
+        "journal 회전·스냅샷+_accepted 요약화(#13)",
+        "close 후 수신 거부+shutdown 배선(#51)",
+        "capability VERIFIED 왕복 시 검증 맥락 초기화(#11)",
+        "/capabilities 공개 필드 축소(#49)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T03:58:20+09:00"
     }
   ],
   "risks": [

@@ -47,6 +47,70 @@
       "at_sha": "6c1bb36",
       "at_module_sha": null,
       "at": "2026-07-28T16:53:46+09:00"
+    },
+    "packages/perception": {
+      "status": "green",
+      "note": "감사 8건(med 3·low 5) — 결함급 없음, 계보·결정성 견고. placeholder 계보는 goal 등록",
+      "audit_ref": "audit-pipeline-production-lineage",
+      "at_sha": "db381c8",
+      "at_module_sha": "fdec71f",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "packages/domain": {
+      "status": "green",
+      "note": "감사 3건 — RawDetection.box 비시퀀스 TypeError 누출(med#4)·Observation.lineage 죽은 필드(med#5)",
+      "audit_ref": "audit-contract-schema-gates",
+      "at_sha": "db381c8",
+      "at_module_sha": "fdec71f",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "packages/geo-core": {
+      "status": "green",
+      "note": "감사 3건(gnss 0.0 or 폴백 med#6 외 low) — fail-closed 매우 견고",
+      "audit_ref": "audit-gate-integrity",
+      "at_sha": "db381c8",
+      "at_module_sha": "1a6c013",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "packages/mission-contracts": {
+      "status": "risk",
+      "note": "서명 견고하나 KeyRegistry 덮어쓰기(#9)·ActionIntent kind 미검증(#7)·서비스 미배선(#61)",
+      "audit_ref": "audit-signing-key-lifecycle",
+      "at_sha": "db381c8",
+      "at_module_sha": "1a6c013",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "packages/event-contracts": {
+      "status": "green",
+      "note": "v1.2 계보 견고 — 스키마 왕복 게이트 부재(#33)·digest 이중 규약 문서화(#46)",
+      "audit_ref": "audit-contract-schema-gates",
+      "at_sha": "db381c8",
+      "at_module_sha": "d0f5d25",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "services/core": {
+      "status": "green",
+      "note": "edge-sync HIGH#1(short write) 수정 완료 db381c8 — 운영 강화는 goal로",
+      "audit_ref": "audit-edge-sync-ops-hardening",
+      "at_sha": "db381c8",
+      "at_module_sha": "db381c8",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "edge/manifold-runtime": {
+      "status": "risk",
+      "note": "TTL int64 오버플로 fail-open(#14)·schemaVersion 부재(#16)·mutation 저항성 결핍(#52) — Track A 전 폐쇄",
+      "audit_ref": "audit-actionintent-hardening",
+      "at_sha": "db381c8",
+      "at_module_sha": "1a6c013",
+      "at": "2026-07-29T03:58:20+09:00"
+    },
+    "tests": {
+      "status": "green",
+      "note": "실모델 무음 skip anchor 부재(#19)·replay 하네스 전이 누출(#76)·final_position 오명명(#78)",
+      "audit_ref": "audit-gate-integrity",
+      "at_sha": "db381c8",
+      "at_module_sha": "db381c8",
+      "at": "2026-07-29T03:58:20+09:00"
     }
   }
 }
