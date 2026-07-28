@@ -173,6 +173,10 @@ class SliceResult:
     # Entity 는 생성됐지만 Event 가 발행되지 않은 건 — (entity_id, entity_class, 사유).
     # Solution Pack 이 지원하지 않는 class 는 Event 미발행이 정상 경로다(조용한 소멸 금지).
     unpublished_events: list[tuple[str, str, str]] = field(default_factory=list)
+    # 살아남았지만 경계 클리핑된 detection — (frame_id, 잔존 면적비, 상세).
+    # 클리핑은 접지점을 잘린 방향으로 이동시키므로(위치 편향) 사실을 산출물에
+    # 보존한다(반증 리뷰 F-E — drop 채널만 절반 배선하지 않는다).
+    clipped_detections: list[tuple[int, float, str]] = field(default_factory=list)
 
     def entity_fingerprints(self) -> list[str]:
         """재현성 비교용 — entity_id 를 제외한 내용 기반 지문(P0-6 규약)."""
@@ -391,6 +395,14 @@ def run_vertical_slice(
                     "(pre-track)",
                     SliceStage.DETECTION,
                     f"{detector_drop.reason}: {detector_drop.detail}",
+                )
+            )
+        for clipped in getattr(detector, "last_clipped", []):
+            result.clipped_detections.append(
+                (
+                    frame.frame_id,
+                    clipped.area_kept,
+                    f"{clipped.detection.detection_class} bbox 경계 클리핑 — 접지점 편향 가능",
                 )
             )
         for track_id, detection in tracker.assign(detections):

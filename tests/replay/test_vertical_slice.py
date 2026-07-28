@@ -563,3 +563,96 @@ def test_detection_contract_rejects_unregistered_ontology_version() -> None:
             bbox=BoundingBox(x_min=0.0, y_min=0.0, x_max=10.0, y_max=10.0),
             ontology_version="attacker-v99",
         )
+
+
+# ── B1-7 배선 상시 검증 (반증 리뷰 F-B — CI 에서도 도는 stub 경로) ───────────
+
+
+def test_detection_stage_drops_absorbed_into_slice() -> None:
+    """[F-B 폐쇄] detector 의 typed drop 이 SliceStage.DETECTION 으로 흡수된다.
+
+    실모델 E2E 는 CI 에서 skip 이라, 이 배선(vertical_slice 의 last_dropped 소비)을
+    지우면 전 테스트가 green 인 채로 회귀했다(F-B 실험으로 확인). stub 경로에서
+    비공허하게 고정한다: 미지원 라벨을 내는 AdapterBackedDetector 를 물리면
+    DETECTION 단계 탈락이 프레임별로 정확히 기록돼야 한다.
+    """
+    from ksi_domain.detection_adapter import (
+        AdapterBackedDetector,
+        BoxFormat,
+        DetectionAdapter,
+        RawDetection,
+    )
+    from ksi_domain.ontology import COCO_ONTOLOGY
+
+    def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
+        return [
+            # 지원 person 1건(승격) + 미지원 라벨 1건(UNKNOWN_LABEL drop)
+            RawDetection(
+                label="person",
+                score=0.9,
+                box=(900.0 + frame_id * 4.0, 500.0, 980.0 + frame_id * 4.0, 700.0),
+                source_class_id=0,
+            ),
+            RawDetection(label="giraffe", score=0.9, box=(100.0, 100.0, 200.0, 200.0)),
+        ]
+
+    detector = AdapterBackedDetector(
+        raw_source=raw_source,
+        adapter=DetectionAdapter(
+            box_format=BoxFormat.XYXY, normalized=False, ontology=COCO_ONTOLOGY
+        ),
+    )
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=detector,
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+    )
+    detection_drops = [d for d in result.dropped if d.stage is SliceStage.DETECTION]
+    assert len(detection_drops) == 2, (
+        f"프레임 2장 × 미지원 1건 = DETECTION 탈락 2건이어야 한다 (실제 {len(detection_drops)}) "
+        "— 배선이 제거되면 여기가 깨진다"
+    )
+    assert {d.frame_id for d in detection_drops} == {0, 1}, "프레임별 기록이 아니다"
+    assert all("unknown_label" in d.reason for d in detection_drops)
+    assert all(d.track_id == "(pre-track)" for d in detection_drops)
+    # 승격된 person 은 정상 흐름 유지
+    assert len(result.entities) == 1
+    assert result.entities[0].entity_class == "Person"
+
+
+def test_clipped_detections_absorbed_into_slice() -> None:
+    """[F-E 폐쇄] 살아남은 경계 클리핑 기록도 슬라이스에 보존된다(접지점 편향 가시성)."""
+    from ksi_domain.detection_adapter import (
+        AdapterBackedDetector,
+        BoxFormat,
+        DetectionAdapter,
+        RawDetection,
+    )
+    from ksi_domain.ontology import COCO_ONTOLOGY
+
+    def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
+        # 왼쪽 경계를 살짝 벗어나 클리핑되지만 잔존 면적비 > 0.5 로 살아남는 person
+        return [
+            RawDetection(
+                label="person", score=0.9, box=(-20.0, 500.0, 60.0, 700.0), source_class_id=0
+            )
+        ]
+
+    detector = AdapterBackedDetector(
+        raw_source=raw_source,
+        adapter=DetectionAdapter(
+            box_format=BoxFormat.XYXY, normalized=False, ontology=COCO_ONTOLOGY
+        ),
+    )
+    result = run_vertical_slice(
+        frames=_frames([0.0]),
+        detector=detector,
+        telemetry=synthetic_telemetry([0.0]),
+        drone_position=_DRONE_POSE,
+    )
+    assert len(result.clipped_detections) == 1, "클리핑 기록이 슬라이스에서 소실됐다"
+    frame_id, area_kept, detail = result.clipped_detections[0]
+    assert frame_id == 0
+    assert 0.5 <= area_kept < 1.0
+    assert "Person" in detail

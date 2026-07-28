@@ -279,40 +279,30 @@ class DetectionAdapter:
                 )
                 continue
 
-            # int 라벨 + 다른 값의 source_class_id 는 자기모순 레코드 — 어느 쪽이
-            # 진짜 원시 클래스인지 판정할 근거가 없으므로 fail-closed 로 죽인다.
-            if (
-                isinstance(raw.label, int)
-                and raw.source_class_id is not None
-                and raw.source_class_id != raw.label
-            ):
-                dropped.append(
-                    DroppedRawDetection(
-                        raw,
-                        DropReason.MALFORMED_CLASS_LINEAGE,
-                        (
-                            f"label(int)={raw.label} 과 source_class_id="
-                            f"{raw.source_class_id} 가 서로 다른 원시 클래스를 주장한다"
-                        ),
-                    )
-                )
-                continue
-
             # 라벨 해석은 전부 ontology 경유 — int 라벨은 taxonomy 의 id↔name 대응으로
             # 이름을 얻고, 이름이 매핑(권위 해석의 검증된 부분집합)에 있어야 승격된다.
             source_id: int | None
             if isinstance(raw.label, int):
                 source_id = raw.label
-                source_name = self._ontology.id_to_name.get(raw.label)
-                if source_name is None:
+                resolved_name = self._ontology.id_to_name.get(raw.label)
+                # int 라벨과 다른 값의 명시 source_class_id 는 해석 이전의 구조
+                # 자기모순 — 어느 쪽이 진짜 원시 id 인지 판정할 근거가 없다.
+                # 단 이 검사는 "둘 다 제공된" 경우에만 의미가 있고, 미등록 id 는
+                # 아래 매핑 미스에서 미지원(UNKNOWN_LABEL)으로 떨어진다(F-C — str
+                # 경로와 같은 원칙: 미지원은 미지원이 사유다).
+                if raw.source_class_id is not None and raw.source_class_id != raw.label:
                     dropped.append(
                         DroppedRawDetection(
                             raw,
-                            DropReason.UNKNOWN_LABEL,
-                            f"미등록 원시 id {raw.label} — taxonomy id 대응에 없음",
+                            DropReason.MALFORMED_CLASS_LINEAGE,
+                            (
+                                f"label(int)={raw.label} 과 source_class_id="
+                                f"{raw.source_class_id} 가 서로 다른 원시 클래스를 주장한다"
+                            ),
                         )
                     )
                     continue
+                source_name = resolved_name if resolved_name is not None else str(raw.label)
             else:
                 source_name = raw.label
                 source_id = raw.source_class_id

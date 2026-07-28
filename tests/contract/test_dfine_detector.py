@@ -60,8 +60,11 @@ _HAS_RUNTIME = (
 )
 
 pytestmark = pytest.mark.skipif(
-    not (_HAS_RUNTIME and _MODEL_DIR.is_dir()),
-    reason="[dfine] extra 또는 모델 파일 없음 — tools/fetch_model.py 후 실행",
+    not (_HAS_RUNTIME and _MODEL_DIR.is_dir() and _PERSON_IMAGE.is_file()),
+    reason=(
+        "[dfine] extra·모델·평가 이미지 없음 — tools/fetch_model.py + "
+        "tools/fetch_test_assets.py 후 실행"
+    ),
 )
 
 

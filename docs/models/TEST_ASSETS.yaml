@@ -1,0 +1,37 @@
+# 평가 입력 자산 원장 (반증 리뷰 F-A, 2026-07-28) — 실모델 E2E·conformance 의
+# 입력 이미지 신원 SSOT.
+#
+# 배경: 모델 artifact 에는 sha256 게이트가 있는데 평가 **입력**에는 앵커가 없어,
+# 파일 교체 시 "threshold 0.5 → 4건"·결정성 실측의 재현 근거가 무경고로 사라졌다.
+# 이미지 실물은 git 밖(models/test-assets/, gitignore) — 이 원장의 digest 가 신원이고
+# tools/fetch_test_assets.py 가 취득·검증 경로다.
+#
+# ⚠ digest 는 "원본 다운로드 → Pillow 리사이즈·재인코딩" 산출물 기준이라 Pillow
+# 버전에 종속될 수 있다 — 불일치 시 fetch 스크립트가 fail-closed 로 알리며, 그때는
+# 버전 차이를 확인하고 이 원장을 대표자 보고와 함께 갱신한다(조용한 교체 금지).
+
+assets:
+  - name: person.jpg
+    sha256: "8c6b6679f1b54683e049e719f63de27c5326696cb7c6e7563a774db12fd53dd6"
+    role: "실모델 E2E 비공허성 앵커(Person 탐지 실증) + corpus 파생 원본"
+    source_url: "https://upload.wikimedia.org/wikipedia/commons/5/54/Lange-MigrantMother02.jpg"
+    provenance: >-
+      Dorothea Lange, "Migrant Mother" (1936). 미국 FSA 정부 작품 — 퍼블릭 도메인
+      (PD-USGov). 원본 6205x8066 을 Pillow 로 800px 로 축소·JPEG(q92) 재인코딩.
+    license: "Public Domain (US Government work)"
+    usage_scope: "로컬 테스트 전용 — 재배포·제품 번들 금지(원본 출처 표기 유지)"
+
+  - name: car.jpg
+    sha256: "bf422206c4bc29661992111c97597a2754fd19c7f222659def6d78ae7e7d1b10"
+    role: "비Person 지원 클래스(차량) conformance 장면 원본"
+    source_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Een_nieuw_model_Ford_auto%2C_1925%2C_SFA022809969.jpg/960px-Een_nieuw_model_Ford_auto%2C_1925%2C_SFA022809969.jpg"
+    provenance: >-
+      "Een nieuw model Ford auto" (1925), 네덜란드 국립문서보관소(Nationaal Archief)
+      Fotocollectie — 퍼블릭 도메인. 960px thumb 을 Pillow 로 800px 축소·JPEG(q92)
+      재인코딩.
+    license: "Public Domain"
+    usage_scope: "로컬 테스트 전용 — 재배포·제품 번들 금지"
+
+# 파생물: models/test-assets/onnx-corpus/ 는 위 두 원본에서
+# tools/build_onnx_corpus.py 가 결정적으로 생성한다(2회 재생성 BYTE-IDENTICAL 실측
+# 2026-07-28) — corpus 자체는 원장에 개별 등재하지 않는다(생성기가 계보).

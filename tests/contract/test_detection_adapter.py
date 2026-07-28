@@ -684,3 +684,52 @@ def test_supported_label_with_wrong_id_still_malformed() -> None:
     assert result.detections == []
     [dropped] = result.dropped
     assert dropped.reason is DropReason.MALFORMED_CLASS_LINEAGE
+
+
+# ── B1-7 반증 리뷰 후속 (F-C · 항목3 ADJUST · F-L, 2026-07-28) ───────────────
+
+
+def test_int_label_with_unregistered_id_pair_is_unknown_not_malformed() -> None:
+    """[F-C] int 라벨(미등록 67) + 무관 id 없음 — str 경로와 같은 원칙 적용.
+
+    미등록 id 라벨은 자기모순이 아니라 미지원이다(사유 일관성).
+    """
+    result = _adapter().convert(
+        [RawDetection(label=67, score=0.9, box=(10.0, 20.0, 110.0, 220.0))],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.UNKNOWN_LABEL
+
+
+def test_registered_pair_contradiction_is_malformed() -> None:
+    """[항목3 ADJUST 무테스트 폐쇄] 등록끼리의 모순(person 라벨 + car id=2)은
+    MALFORMED_CLASS_LINEAGE 로 남는다 — `if id_name is None:` 축약 리팩터가 이
+    구분을 지우면 여기가 깨진다."""
+    result = _adapter().convert(
+        [
+            RawDetection(
+                label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0), source_class_id=2
+            )
+        ],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.MALFORMED_CLASS_LINEAGE
+    assert "car" in dropped.detail
+
+
+def test_subset_ontology_without_id_mapping_rejected_at_construction() -> None:
+    """[F-L] 소비 이름의 id 대응이 빠진 부분집합은 생성 거부 — 실모델 경로에서
+    전건이 계보 모순으로 죽는 오도된 구성을 미리 끊는다."""
+    with pytest.raises(ValueError, match="id_to_name"):
+        OntologyMapping(
+            version="ksi-ontology-v1",
+            source_taxonomy="COCO-2017",
+            mappings={"person": "Person"},
+            id_to_name={},  # person 의 id(0) 대응 누락
+        )

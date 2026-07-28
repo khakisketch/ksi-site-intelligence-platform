@@ -9,7 +9,7 @@ dependencies = [
     "ksi-domain",
     "pyyaml>=6.0",
     "numpy>=1.26",
-    "pillow>=10.0",
+    "pillow>=12.3",  # PYSEC-2026-2253~2257 해소선(참고 레포 SCA 게이트와 정렬)
 ]
 
 [project.optional-dependencies]

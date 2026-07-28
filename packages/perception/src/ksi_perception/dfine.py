@@ -98,6 +98,7 @@ class DFineDetector:
         adapter: DetectionAdapter,
         score_floor: float,
         model_id: str,
+        source_digests: dict[str, str],
     ) -> None:
         self._model = model
         self._processor = processor
@@ -106,6 +107,8 @@ class DFineDetector:
         self._score_floor = score_floor
         # Registry 상의 신원 — 파생 산출물(ONNX 등)에 계보 앵커로 박힌다.
         self.model_id = model_id
+        # 원본 artifact digest(파일명→sha256) — Export Manifest 가 소비한다.
+        self.source_digests = dict(source_digests)
 
     def detect_image(self, image: np.ndarray) -> AdapterResult:
         """이미지 1장(HWC uint8 RGB) → 정규화된 Detection 목록.
@@ -177,6 +180,19 @@ def load_dfine_detector(
                 "자유 dict 주입 금지(독립 재검토 Blocker 1)"
             ),
         )
+    import math
+
+    if not (
+        isinstance(score_floor, float)
+        and math.isfinite(score_floor)
+        and 0.0 <= score_floor <= 1.0
+    ):
+        # score_floor 는 post_process threshold 로 직행해 adapter 기록 없이 후보를
+        # 소멸시킨다(반증 리뷰 F-D) — 검증 없이는 NaN/0.9 오설정이 무경고로 필터를
+        # 무력화하거나 대부분을 죽인다. min_confidence 와 동일 규약으로 강제한다.
+        _detail = f"score_floor 는 [0,1] 범위의 finite float 이어야 한다 ({score_floor!r})"
+        return DFineLoadResult(status=DFineLoadStatus.LOAD_FAILED, detail=_detail)
+
     check = verify_local_model(model_id, local_dir, registry_path=registry_path)
     if not check.ok:
         return DFineLoadResult(
@@ -237,6 +253,7 @@ def load_dfine_detector(
             adapter=adapter,
             score_floor=score_floor,
             model_id=model_id,
+            source_digests=check.entry.file_digests,
         ),
     )
 

@@ -150,6 +150,19 @@ class OntologyMapping:
                     f"({source_id} → {COCO_ID_TO_NAME.get(source_id)!r})과 다르다"
                 )
 
+        # 소비하는 각 이름은 id 대응을 가져야 한다(반증 리뷰 F-L) — 실모델은 항상
+        # source_class_id 를 채우므로, id_to_name 이 비면 승격 대상 전건이 계보
+        # 자기모순(MALFORMED_CLASS_LINEAGE)으로 죽는 오도된 구성이 된다. 구성
+        # 불완전은 생성 시점의 사유로 거부한다.
+        name_to_id = {v: k for k, v in COCO_ID_TO_NAME.items()}
+        for name in mappings:
+            required_id = name_to_id.get(name)
+            if required_id is not None and required_id not in id_to_name:
+                raise ValueError(
+                    f"매핑이 {name!r} 를 소비하는데 id_to_name 에 대응 id({required_id})가 "
+                    "없다 — 실모델 경로에서 전건이 계보 모순으로 죽는 불완전 구성"
+                )
+
         # 검증을 통과한 스냅샷만 읽기 전용으로 보관 — 직접 변경은 TypeError,
         # 호출자의 원본 dict 변경은 이 객체에 반영되지 않는다.
         object.__setattr__(self, "mappings", MappingProxyType(mappings))
