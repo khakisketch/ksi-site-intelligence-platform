@@ -106,6 +106,14 @@ class OntologyMapping:
     id_to_name: Mapping[int, str]
 
     def __post_init__(self) -> None:
+        # 검증 대상은 호출자 참조가 아니라 **스냅샷**이다(최종 재검토 P0, 2026-07-28) —
+        # frozen 은 필드 재할당만 막고 내부 dict 변경은 막지 못하므로, 호출자가 원본
+        # dict 를 쥐고 있으면 "검증 후 승인 범위 확장"(Person-only 로 검증받고 나중에
+        # truck 추가)이 가능했다. 스냅샷을 검증하고 읽기 전용 뷰로 보관해 검증 시점과
+        # 사용 시점의 내용이 항상 같게 만든다.
+        mappings = dict(self.mappings)
+        id_to_name = dict(self.id_to_name)
+
         if self.version not in REGISTERED_ONTOLOGY_VERSIONS:
             raise ValueError(
                 f"미등록 ontology 버전 {self.version!r} — 등록부: "
@@ -115,9 +123,9 @@ class OntologyMapping:
             raise ValueError(
                 f"미등록 taxonomy {self.source_taxonomy!r} — 현재 등록: {COCO_TAXONOMY!r}"
             )
-        if not self.mappings:
+        if not mappings:
             raise ValueError("mappings 가 비어 있다 — 소비할 클래스가 없으면 매핑이 무의미하다")
-        for name, canonical in self.mappings.items():
+        for name, canonical in mappings.items():
             if not isinstance(name, str) or not name.strip():
                 raise ValueError(f"원시 라벨명은 공백 아닌 str 이어야 한다 ({name!r})")
             if canonical not in CANONICAL_CLASSES:
@@ -131,12 +139,21 @@ class OntologyMapping:
                     f"매핑 {name!r} → {canonical!r} 가 권위 해석({name!r} → "
                     f"{authoritative!r})과 다르다 — 의미 변경은 새 버전 등록으로만 가능"
                 )
-        for source_id, name in self.id_to_name.items():
+        for source_id, name in id_to_name.items():
+            # bool 은 int 의 subclass 라 False==0/True==1 로 권위 대응 조회를 조용히
+            # 통과한다 — 키 타입을 순수 int 로 강제한다(최종 재검토 P0 동반 검사).
+            if isinstance(source_id, bool) or not isinstance(source_id, int):
+                raise ValueError(f"원시 id 키는 bool 아닌 int 여야 한다 ({source_id!r})")
             if COCO_ID_TO_NAME.get(source_id) != name:
                 raise ValueError(
                     f"id 대응 {source_id} → {name!r} 가 권위 대응"
                     f"({source_id} → {COCO_ID_TO_NAME.get(source_id)!r})과 다르다"
                 )
+
+        # 검증을 통과한 스냅샷만 읽기 전용으로 보관 — 직접 변경은 TypeError,
+        # 호출자의 원본 dict 변경은 이 객체에 반영되지 않는다.
+        object.__setattr__(self, "mappings", MappingProxyType(mappings))
+        object.__setattr__(self, "id_to_name", MappingProxyType(id_to_name))
 
 
 # 표준 인스턴스 — D-FINE COCO-only 경로의 기본 매핑(권위 전체 집합).

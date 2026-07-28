@@ -588,3 +588,64 @@ def test_matching_int_label_and_source_id_accepted() -> None:
     )
     [d] = result.detections
     assert d.source_class_id == 0
+
+
+# ── 최종 재검토 P0 반증 (2026-07-28): 검증 후 mutation 차단 ──────────────────
+
+
+def test_mapping_snapshot_isolated_from_caller_dict() -> None:
+    """[반증 1·4] 생성 후 원본 dict 를 바꿔도 OntologyMapping 은 변하지 않는다."""
+    mappings = {"person": "Person"}
+    ids = {0: "person"}
+    ontology = OntologyMapping(
+        version="ksi-ontology-v1",
+        source_taxonomy="COCO-2017",
+        mappings=mappings,
+        id_to_name=ids,
+    )
+    mappings["truck"] = "Vehicle_Truck"  # 검증 후 승인 범위 확장 시도
+    ids[7] = "truck"
+    assert "truck" not in ontology.mappings
+    assert 7 not in ontology.id_to_name
+
+
+def test_mapping_direct_mutation_is_typeerror() -> None:
+    """[반증 2] ontology.mappings 직접 변경은 TypeError (읽기 전용 뷰)."""
+    with pytest.raises(TypeError):
+        COCO_ONTOLOGY.mappings["truck"] = "Person"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        COCO_ONTOLOGY.id_to_name[7] = "truck"  # type: ignore[index]
+
+
+def test_adapter_unaffected_by_post_validation_dict_expansion() -> None:
+    """[반증 3] Person-only 로 검증받은 뒤 원본에 truck 을 추가해도 adapter 는
+    UNKNOWN_LABEL — "검증 시점 내용 = 사용 시점 내용" 이 성립한다."""
+    mappings = {"person": "Person"}
+    ontology = OntologyMapping(
+        version="ksi-ontology-v1",
+        source_taxonomy="COCO-2017",
+        mappings=mappings,
+        id_to_name={0: "person"},
+    )
+    adapter = _adapter(ontology=ontology)
+    mappings["truck"] = "Vehicle_Truck"  # 사후 확장 시도
+    result = adapter.convert(
+        [RawDetection(label="truck", score=0.9, box=(10.0, 20.0, 110.0, 220.0))],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.UNKNOWN_LABEL
+
+
+def test_bool_id_key_rejected_in_mapping() -> None:
+    """[반증 5] bool id 키(False==0)는 OntologyMapping 생성에서 거부된다."""
+    with pytest.raises(ValueError, match="bool"):
+        OntologyMapping(
+            version="ksi-ontology-v1",
+            source_taxonomy="COCO-2017",
+            mappings={"person": "Person"},
+            # bool 은 int 서브클래스라 mypy 를 통과한다 — 런타임 거부가 유일한 방어.
+            id_to_name={False: "person"},
+        )
