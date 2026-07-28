@@ -261,12 +261,18 @@ class FrameTelemetryLoadResult:
         warnings: 거부까지는 아니지만 기록해 둘 사항(예: sample_index 불연속).
         sha256: 입력 파일 원본 바이트의 SHA-256 hexdigest — 어떤 파일을 근거로
             판정했는지 증거로 고정한다.
+        validation_profile_id: 이 결과를 만든 검증 조건의 profile ID —
+            증거가 **어떤 기준으로 검증됐는지**를 결과 자체에 보존한다(독립 재검토
+            P0: relaxed tolerance 로 로드한 결과를 공식 판정에 주입하는 우회 차단).
+        validation_delta_tolerance_ms: 검증에 실제 사용된 delta 재계산 tolerance.
     """
 
     samples: tuple[FrameTelemetrySample, ...]
     rejected: tuple[RejectedLine, ...]
     warnings: tuple[str, ...]
     sha256: str
+    validation_profile_id: str
+    validation_delta_tolerance_ms: float
 
 
 class MeasurementStatus(StrEnum):
@@ -597,22 +603,38 @@ def evaluate_evidence(
 
 def judge_official(
     load_result: FrameTelemetryLoadResult,
-    *,
-    profile: AcceptanceProfile = OFFICIAL_PROFILE,
 ) -> OfficialJudgement:
     """``--mode official``의 최종 판정 (P0-2) — evidence 게이트 + 2축 통계 판정을 합성한다.
+
+    **profile 주입 불가** (독립 재검토 P0, 2026-07-28): 이전 시그니처는
+    ``profile=`` 인자를 받고 profile_id 만 비교해서, 공식 ID 를 단 완화 profile
+    (target=100000·min=1)로 기준을 우회할 수 있었다. 공식 판정은 이 함수 내부의
+    ``OFFICIAL_PROFILE`` 상수만 쓴다 — 테스트용 가변 기준은 exploratory 경로
+    (``judge_acceptance``/``summarize_deltas`` 직접 호출)에서만 가능하며 그 결과는
+    공식 판정이 아니다.
+
+    evidence provenance binding: ``load_result`` 가 공식 tolerance 로 검증된
+    결과인지 exact 비교한다 — relaxed loader 산출물 주입은 EVIDENCE_INVALID.
 
     evidence가 ``INVALID``이면 통계상 PASS가 나오더라도 ``acceptance_status``를
     ``FAIL``로 강제한다(``reason_code=EVIDENCE_INVALID``로 사유를 구분해 남긴다).
     """
-    if profile.profile_id != OFFICIAL_PROFILE.profile_id:
-        # 방어적 분기 — 공식 판정 함수에 비공식 profile이 전달되는 것은 호출자
-        # 버그다(정상 CLI 경로에서는 도달하지 않는다). 조용히 통과시키지 않는다.
-        evidence_status = EvidenceStatus.INVALID
-        evidence_reasons: tuple[str, ...] = (
-            f"judge_official에 공식 profile_id={OFFICIAL_PROFILE.profile_id!r}가 아닌 "
-            f"{profile.profile_id!r}가 전달됐다 — 호출자 오류",
+    profile = OFFICIAL_PROFILE
+    binding_reasons: list[str] = []
+    if load_result.validation_profile_id != profile.profile_id:
+        binding_reasons.append(
+            f"증거가 공식 profile 로 검증되지 않았다 — validation_profile_id="
+            f"{load_result.validation_profile_id!r} ≠ {profile.profile_id!r} "
+            "(load_official_evidence 로 다시 로드하라)"
         )
+    if load_result.validation_delta_tolerance_ms != profile.delta_tolerance_ms:
+        binding_reasons.append(
+            f"증거 검증 tolerance {load_result.validation_delta_tolerance_ms!r}ms ≠ "
+            f"공식 {profile.delta_tolerance_ms!r}ms — relaxed 검증 결과는 공식 판정 불가"
+        )
+    if binding_reasons:
+        evidence_status = EvidenceStatus.INVALID
+        evidence_reasons: tuple[str, ...] = tuple(binding_reasons)
     else:
         evidence_status, evidence_reasons = evaluate_evidence(load_result)
 
@@ -815,12 +837,36 @@ def _validate_sample_indices(
     return valid, rejected, warnings
 
 
+def load_official_evidence(path: Path) -> FrameTelemetryLoadResult:
+    """공식 판정용 로드 — 검증 조건은 ``OFFICIAL_PROFILE`` 고정, 호출자가 완화할
+    인자 자체가 없다. :func:`judge_official` 은 이 함수의 산출물만 통과시킨다."""
+    return load_frame_telemetry_jsonl(
+        path,
+        delta_tolerance_ms=OFFICIAL_PROFILE.delta_tolerance_ms,
+        _validation_profile_id=OFFICIAL_PROFILE.profile_id,
+    )
+
+
+def load_exploratory_evidence(
+    path: Path, *, delta_tolerance_ms: float = DEFAULT_DELTA_TOLERANCE_MS
+) -> FrameTelemetryLoadResult:
+    """실험용 로드 — 임의 tolerance 허용. 산출물의 provenance 가
+    ``EXPLORATORY_PROFILE_ID`` 로 찍히므로 공식 판정(:func:`judge_official`)에
+    넣으면 EVIDENCE_INVALID 다."""
+    return load_frame_telemetry_jsonl(path, delta_tolerance_ms=delta_tolerance_ms)
+
+
 def load_frame_telemetry_jsonl(
     path: Path,
     *,
     delta_tolerance_ms: float = DEFAULT_DELTA_TOLERANCE_MS,
+    _validation_profile_id: str = EXPLORATORY_PROFILE_ID,
 ) -> FrameTelemetryLoadResult:
     """JSONL 파일을 검증하며 읽어 :class:`FrameTelemetryLoadResult`를 만든다.
+
+    직접 호출은 **exploratory provenance** 로 기록된다 — 공식 판정에 쓸 증거는
+    :func:`load_official_evidence` 로만 만든다(``_validation_profile_id`` 는 그
+    전용 내부 통로다).
 
     한 줄이라도 검증에 실패하면(JSON 파싱·필수 필드·UTC·delta 재계산 불일치·
     음수/중복 index 등) 그 줄은 유효 표본에서 제외되고 사유와 함께 ``rejected``에
@@ -846,6 +892,8 @@ def load_frame_telemetry_jsonl(
             rejected=(RejectedLine(line_no=0, reason=f"파일 UTF-8 decode 실패 — {exc}"),),
             warnings=(),
             sha256=sha256,
+            validation_profile_id=_validation_profile_id,
+            validation_delta_tolerance_ms=delta_tolerance_ms,
         )
 
     parsed: list[tuple[int, FrameTelemetrySample]] = []
@@ -870,6 +918,8 @@ def load_frame_telemetry_jsonl(
         rejected=tuple(rejected),
         warnings=tuple(warnings),
         sha256=sha256,
+        validation_profile_id=_validation_profile_id,
+        validation_delta_tolerance_ms=delta_tolerance_ms,
     )
 
 
@@ -1062,7 +1112,11 @@ def _cmd_summarize(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             return 2
 
     in_path = Path(args.inp)
-    load_result = load_frame_telemetry_jsonl(in_path, delta_tolerance_ms=profile.delta_tolerance_ms)
+    load_result = (
+        load_official_evidence(in_path)
+        if mode == "official"
+        else load_exploratory_evidence(in_path, delta_tolerance_ms=profile.delta_tolerance_ms)
+    )
 
     sample_indices = [s.sample_index for s in load_result.samples]
     session_ids = sorted({s.session_id for s in load_result.samples})
@@ -1090,7 +1144,7 @@ def _cmd_summarize(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
     }
 
     if mode == "official":
-        judgement = judge_official(load_result, profile=profile)
+        judgement = judge_official(load_result)
         result: dict[str, Any] = {
             **base_fields,
             "summary": asdict(judgement.summary) if judgement.summary is not None else None,

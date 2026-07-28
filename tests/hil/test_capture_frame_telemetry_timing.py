@@ -40,7 +40,9 @@ from capture_frame_telemetry_timing import (  # noqa: E402
     judge_acceptance,
     judge_exploratory,
     judge_official,
+    load_exploratory_evidence,
     load_frame_telemetry_jsonl,
+    load_official_evidence,
     main,
     parse_utc_timestamp,
     percentile,
@@ -968,21 +970,69 @@ def test_B16_summary_metadata_matches_actual_input(
     assert result["rejected_line_count"] == 0
 
 
-# ── judge_official — 방어적 profile 불일치 분기 ─────────────────────────────
+# ── judge_official — 공식 profile binding (최종 재검토 P0, 2026-07-28) ──────
 
 
-def test_judge_official_treats_non_official_profile_as_evidence_invalid() -> None:
-    load_result = _valid_single_session_result(n=100)
-    rogue_profile = AcceptanceProfile(
-        profile_id="not-the-official-one",
-        target_p95_ms=50.0,
-        min_sample_count=100,
-        delta_tolerance_ms=0.5,
+def _official_load(n: int = 100) -> FrameTelemetryLoadResult:
+    lines = _lines_for_session(n=n, session_id="SESS-1", aircraft_sn="SN-1")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "in.jsonl"
+        _write_jsonl(path, lines)
+        return load_official_evidence(path)
+
+
+def test_judge_official_rejects_profile_injection_entirely() -> None:
+    """[반증 1·2] 공식 ID 를 단 완화 profile 을 전달할 **인자 자체가 없다** —
+    같은 ID 든 다른 ID 든, 어떤 profile 주입도 시그니처 차원에서 불가."""
+    forged = AcceptanceProfile(
+        profile_id=OFFICIAL_PROFILE.profile_id,  # 공식 ID 위장
+        target_p95_ms=100000.0,
+        min_sample_count=1,
+        delta_tolerance_ms=100000.0,
     )
-    judgement = judge_official(load_result, profile=rogue_profile)
+    with pytest.raises(TypeError):
+        judge_official(_official_load(), profile=forged)  # type: ignore[call-arg]
+
+
+def test_relaxed_tolerance_load_rejected_by_official_judge() -> None:
+    """[반증 3] relaxed tolerance 로 로드한 결과는 provenance binding 으로 INVALID."""
+    lines = _lines_for_session(n=100, session_id="SESS-1", aircraft_sn="SN-1")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "in.jsonl"
+        _write_jsonl(path, lines)
+        relaxed = load_exploratory_evidence(path, delta_tolerance_ms=100000.0)
+    judgement = judge_official(relaxed)
     assert judgement.evidence_status is EvidenceStatus.INVALID
     assert judgement.acceptance_status is AcceptanceStatus.FAIL
     assert judgement.reason_code is AcceptanceReasonCode.EVIDENCE_INVALID
+
+
+def test_exploratory_load_rejected_by_official_judge_even_with_official_tolerance() -> None:
+    """[반증 4] tolerance 값이 우연히 공식과 같아도 exploratory provenance 는 INVALID
+    — 공식 증거는 load_official_evidence 경로로만 만들어진다."""
+    lines = _lines_for_session(n=100, session_id="SESS-1", aircraft_sn="SN-1")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "in.jsonl"
+        _write_jsonl(path, lines)
+        exploratory = load_exploratory_evidence(
+            path, delta_tolerance_ms=OFFICIAL_PROFILE.delta_tolerance_ms
+        )
+    judgement = judge_official(exploratory)
+    assert judgement.evidence_status is EvidenceStatus.INVALID
+
+
+def test_official_evidence_passes_normally() -> None:
+    """[반증 5] 정상 공식 로드 증거는 기존 PASS 경로 유지."""
+    judgement = judge_official(_official_load(n=100))
+    assert judgement.evidence_status is EvidenceStatus.VALID
+    assert judgement.acceptance_status is AcceptanceStatus.PASS
+
+
+def test_official_evidence_fail_and_insufficient_paths_preserved() -> None:
+    """[반증 5 계속] FAIL·INSUFFICIENT 경로도 공식 로드에서 그대로 동작."""
+    insufficient = judge_official(_official_load(n=50))
+    assert insufficient.evidence_status is EvidenceStatus.VALID
+    assert insufficient.acceptance_status is AcceptanceStatus.INSUFFICIENT_SAMPLES
 
 
 # ── build_parser 기본값 스모크 (CLI 구조 확인) ──────────────────────────────

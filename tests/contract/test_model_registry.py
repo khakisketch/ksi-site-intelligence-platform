@@ -185,3 +185,17 @@ def test_registry_decision_cross_reference() -> None:
         ref = model.get("decision_ref")
         assert ref in decision_ids, f"{model['model_id']} 의 decision_ref {ref!r} 가 원장에 없다"
         assert ref in approved, f"{model['model_id']} 가 미승인 결정 {ref!r} 을 참조한다"
+
+
+def test_export_nonstr_names_are_malformed_registry(tmp_path: Path) -> None:
+    """[재검토 P2 → 폐쇄] export 입출력 이름의 true/7/dict/list 는 문자열로
+    coercion 되지 않고 즉시 MALFORMED_REGISTRY 다."""
+    base = yaml.safe_load(DEFAULT_REGISTRY_PATH.read_text(encoding="utf-8"))
+    for bad_name in (True, 7, {"x": 1}, ["a"]):
+        registry = yaml.safe_load(DEFAULT_REGISTRY_PATH.read_text(encoding="utf-8"))
+        registry["models"][0]["export"]["outputs"] = ["logits", bad_name]
+        p = tmp_path / "reg.yaml"
+        p.write_text(yaml.safe_dump(registry, allow_unicode=True), encoding="utf-8")
+        check = load_model_entry(_MODEL_ID, registry_path=p)
+        assert check.status is RegistryStatus.MALFORMED_REGISTRY, repr(bad_name)
+    assert base["models"][0]["export"]["outputs"] == ["logits", "pred_boxes"]

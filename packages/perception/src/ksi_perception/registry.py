@@ -109,11 +109,15 @@ def _parse_export_entry(export_raw: dict) -> OnnxExportEntry:
     opset = export_raw["opset"]
     if isinstance(opset, bool) or not isinstance(opset, int) or opset <= 0:
         raise ValueError(f"export.opset 은 bool 아닌 양의 int 여야 한다 ({opset!r})")
-    input_names = tuple(str(i["name"]) for i in export_raw["inputs"])
-    output_names = tuple(str(o) for o in export_raw["outputs"])
-    for name in (*input_names, *output_names):
-        if not name.strip():
-            raise ValueError("export 입출력 이름에 공백 불허")
+    # str(...) coercion 금지(재검토 P2) — true/7/객체가 문자열로 위장되면 오류가
+    # MALFORMED_REGISTRY 가 아니라 하류 이름 비교 실패로 미뤄져 사유가 흐려진다.
+    raw_input_names = [i["name"] for i in export_raw["inputs"]]
+    raw_output_names = list(export_raw["outputs"])
+    for name in (*raw_input_names, *raw_output_names):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"export 입출력 이름은 공백 아닌 str 이어야 한다 ({name!r})")
+    input_names = tuple(raw_input_names)
+    output_names = tuple(raw_output_names)
     if len(set(input_names)) != len(input_names) or len(set(output_names)) != len(
         output_names
     ):
