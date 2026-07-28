@@ -316,26 +316,13 @@ class DetectionAdapter:
             else:
                 source_name = raw.label
                 source_id = raw.source_class_id
-                # 계보 체인 검증(Blocker 3): raw id → taxonomy id↔name → 이름.
-                # 이름과 id 가 서로 다른 원시 클래스를 가리키면 자기모순이다.
-                if source_id is not None:
-                    id_name = self._ontology.id_to_name.get(source_id)
-                    if id_name != source_name:
-                        dropped.append(
-                            DroppedRawDetection(
-                                raw,
-                                DropReason.MALFORMED_CLASS_LINEAGE,
-                                (
-                                    f"source_class_id={source_id}({id_name!r}) 와 "
-                                    f"라벨명 {source_name!r} 이 서로 다른 원시 클래스를 "
-                                    "주장한다"
-                                ),
-                            )
-                        )
-                        continue
 
             mapped_class = self._ontology.mappings.get(source_name)
             if mapped_class is None:
+                # 미지원 클래스는 **미지원이 사유**다 — 여기서 id 모순 검사를 먼저
+                # 하면 미등록 id 를 단 미지원 라벨(예: "cell phone"/67)이 자기모순
+                # (MALFORMED_CLASS_LINEAGE)으로 오분류된다(B1-7 recorded 실측에서
+                # 발견). 모순 판정은 승격 대상에만 의미가 있다.
                 dropped.append(
                     DroppedRawDetection(
                         raw,
@@ -344,6 +331,25 @@ class DetectionAdapter:
                     )
                 )
                 continue
+
+            # 계보 체인 검증(Blocker 3) — **승격 대상**의 raw id → taxonomy id↔name
+            # → 이름 정합. 소비 클래스로 승격되는데 id 가 그 이름과 다른 원시
+            # 클래스를 가리키면(미등록 id 포함) 자기모순 레코드다.
+            if isinstance(raw.label, str) and source_id is not None:
+                id_name = self._ontology.id_to_name.get(source_id)
+                if id_name != source_name:
+                    dropped.append(
+                        DroppedRawDetection(
+                            raw,
+                            DropReason.MALFORMED_CLASS_LINEAGE,
+                            (
+                                f"source_class_id={source_id}({id_name!r}) 와 "
+                                f"라벨명 {source_name!r} 이 서로 다른 원시 클래스를 "
+                                "주장한다"
+                            ),
+                        )
+                    )
+                    continue
 
             x_min, y_min, x_max, y_max = self._to_xyxy(raw.box, width=width, height=height)
 

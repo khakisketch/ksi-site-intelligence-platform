@@ -148,6 +148,7 @@ class MinimalTracker:
 class SliceStage(StrEnum):
     """어느 단계에서 프레임이 탈락했는지 — 조용히 사라지지 않게 기록한다."""
 
+    DETECTION = "detection"  # adapter 의 typed drop(라벨·계보·클리핑·score)
     INTERPOLATION = "interpolation"
     PROJECTION = "projection"
 
@@ -379,6 +380,19 @@ def run_vertical_slice(
                 d.ontology_version,
             ),
         )
+        # Detector 단계의 typed drop(adapter 의 UNKNOWN_LABEL·MALFORMED_CLASS_LINEAGE·
+        # EXCESSIVE_CLIP 등)도 슬라이스 탈락 기록으로 흡수한다 — 진단 채널
+        # (last_dropped)이 "기록 후 폐기"로 남지 않게(B1-7 배선, 반증 리뷰 F3 완결).
+        # track 배정 전 탈락이라 track_id 는 자리표시자다.
+        for detector_drop in getattr(detector, "last_dropped", []):
+            result.dropped.append(
+                DroppedDetection(
+                    frame.frame_id,
+                    "(pre-track)",
+                    SliceStage.DETECTION,
+                    f"{detector_drop.reason}: {detector_drop.detail}",
+                )
+            )
         for track_id, detection in tracker.assign(detections):
             interpolated = interpolator.at(frame.capture_ts_utc)
             if not interpolated.ok or interpolated.sample is None:

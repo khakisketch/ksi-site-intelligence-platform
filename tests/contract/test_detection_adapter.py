@@ -649,3 +649,38 @@ def test_bool_id_key_rejected_in_mapping() -> None:
             # bool 은 int 서브클래스라 mypy 를 통과한다 — 런타임 거부가 유일한 방어.
             id_to_name={False: "person"},
         )
+
+
+def test_unsupported_label_with_unregistered_id_is_unknown_not_malformed() -> None:
+    """[B1-7 실측 회귀] 미지원 라벨 + 미등록 id(예: "cell phone"/67)는 자기모순이
+    아니라 미지원(UNKNOWN_LABEL)이다 — 모순 판정은 승격 대상에만 의미가 있다."""
+    result = _adapter().convert(
+        [
+            RawDetection(
+                label="cell phone", score=0.9, box=(10.0, 20.0, 110.0, 220.0),
+                source_class_id=67,
+            )
+        ],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.UNKNOWN_LABEL
+
+
+def test_supported_label_with_wrong_id_still_malformed() -> None:
+    """승격 대상(person)이 다른 원시 클래스 id 를 달고 있으면 여전히 자기모순 drop."""
+    result = _adapter().convert(
+        [
+            RawDetection(
+                label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0),
+                source_class_id=999,
+            )
+        ],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.MALFORMED_CLASS_LINEAGE
