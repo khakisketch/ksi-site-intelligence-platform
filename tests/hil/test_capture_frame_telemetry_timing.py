@@ -1,7 +1,10 @@
-"""Frame–Telemetry 시간동기 실측 도구 검증 (P0-1 2축 판정 + P1 증거 판정 강화).
+"""Frame–Telemetry 시간동기 실측 도구 검증.
+
+P0-1(측정≠수용 2축 판정) + P0-2(공식 Acceptance Profile 고정·증거 무결성 게이트) 검증.
 
 green≠작동 방지 핵심: "요약 함수가 숫자를 뱉는다"가 아니라 "위조/오기된 입력을
-실제로 거부하는가"·"목표 미달을 VERIFIED 승격 근거로 위장할 수 없는가"를 검증한다.
+실제로 거부하는가"·"목표 미달·증거 무효를 VERIFIED 승격 근거로 위장할 수 없는가"·
+"공식 판정 기준을 CLI로 완화할 수 없는가"를 검증한다.
 """
 
 from __future__ import annotations
@@ -9,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+import tempfile
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,18 +21,34 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "hil"))
 
 from capture_frame_telemetry_timing import (  # noqa: E402
+    DEFAULT_DELTA_TOLERANCE_MS,
+    EXPLORATORY_PROFILE_ID,
+    OFFICIAL_PROFILE,
+    AcceptanceProfile,
+    AcceptanceReasonCode,
     AcceptanceStatus,
+    EvidenceStatus,
+    FrameTelemetryLoadResult,
     FrameTelemetrySample,
     MeasurementStatus,
     _parse_sample_line,
     _validate_sample_indices,
     append_sample_jsonl,
+    build_parser,
     compute_delta_ms,
+    evaluate_evidence,
     judge_acceptance,
+    judge_exploratory,
+    judge_official,
     load_frame_telemetry_jsonl,
+    main,
     parse_utc_timestamp,
     percentile,
     summarize_deltas,
+    validate_finite_nonnegative,
+    validate_finite_positive,
+    validate_nonblank_str,
+    validate_positive_int,
 )
 
 FROZEN_UTC = datetime(2026, 7, 27, 5, 0, 0, tzinfo=UTC)
@@ -53,6 +73,36 @@ def _sample(
         "telemetry_timestamp_utc": telemetry_ts.isoformat().replace("+00:00", "Z"),
         "delta_ms": delta_ms if delta_ms is not None else computed_delta,
     }
+
+
+def _write_jsonl(path: Path, lines: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _lines_for_session(
+    *,
+    n: int,
+    session_id: str,
+    aircraft_sn: str,
+    start_index: int = 0,
+    delta_ms: float = 10.0,
+) -> list[str]:
+    """``n``개의 정상(유효) 표본 JSONL 줄을 만든다 — 서로 다른 세션/기체 조합을
+    섞은 시나리오(B5/B6)에서 재사용하기 위한 헬퍼."""
+    lines = []
+    for i in range(n):
+        frame_ts = FROZEN_UTC + timedelta(seconds=i)
+        telemetry_ts = frame_ts - timedelta(milliseconds=delta_ms)
+        payload = _sample(
+            sample_index=start_index + i,
+            session_id=session_id,
+            aircraft_sn=aircraft_sn,
+            frame_ts=frame_ts,
+            telemetry_ts=telemetry_ts,
+        )
+        lines.append(json.dumps(payload))
+    return lines
 
 
 # ── percentile / summarize_deltas ────────────────────────────────────────────
@@ -252,11 +302,6 @@ def test_validate_sample_indices_no_warning_when_contiguous() -> None:
 # ── load_frame_telemetry_jsonl — 파일 단위 통합 ─────────────────────────────
 
 
-def _write_jsonl(path: Path, lines: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def test_load_frame_telemetry_jsonl_reports_sha256(tmp_path: Path) -> None:
     path = tmp_path / "in.jsonl"
     payload = _sample()
@@ -306,6 +351,26 @@ def test_load_frame_telemetry_jsonl_skips_blank_lines(tmp_path: Path) -> None:
     assert result.rejected == ()
 
 
+def test_load_frame_telemetry_jsonl_rejects_undecodable_bytes_without_crashing(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "bad_encoding.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe\x00\x01not-utf8")
+
+    result = load_frame_telemetry_jsonl(path)
+
+    assert result.samples == ()
+    assert len(result.rejected) == 1
+    assert result.rejected[0].line_no == 0
+    assert "decode" in result.rejected[0].reason
+
+
+def test_load_frame_telemetry_jsonl_rejects_non_finite_tolerance() -> None:
+    with pytest.raises(ValueError, match="delta_tolerance_ms"):
+        load_frame_telemetry_jsonl(Path("unused"), delta_tolerance_ms=float("nan"))
+
+
 def test_append_sample_jsonl_roundtrips_through_load(tmp_path: Path) -> None:
     path = tmp_path / "roundtrip.jsonl"
     frame_ts = FROZEN_UTC
@@ -327,7 +392,63 @@ def test_append_sample_jsonl_roundtrips_through_load(tmp_path: Path) -> None:
     assert result.samples[0].delta_ms == pytest.approx(12.0)
 
 
-# ── judge_acceptance — P0-1 2축 판정 ────────────────────────────────────────
+def test_append_sample_jsonl_rejects_mixed_session_in_same_file(tmp_path: Path) -> None:
+    path = tmp_path / "mixed.jsonl"
+    frame_ts = FROZEN_UTC
+    telemetry_ts = frame_ts - timedelta(milliseconds=10)
+    first = FrameTelemetrySample(
+        sample_index=0,
+        session_id="SESS-A",
+        aircraft_sn="SN-A",
+        frame_timestamp_utc=frame_ts.isoformat(),
+        telemetry_timestamp_utc=telemetry_ts.isoformat(),
+        delta_ms=compute_delta_ms(frame_ts, telemetry_ts),
+    )
+    append_sample_jsonl(path, first)
+
+    second = FrameTelemetrySample(
+        sample_index=1,
+        session_id="SESS-B",  # 다른 세션
+        aircraft_sn="SN-A",
+        frame_timestamp_utc=frame_ts.isoformat(),
+        telemetry_timestamp_utc=telemetry_ts.isoformat(),
+        delta_ms=compute_delta_ms(frame_ts, telemetry_ts),
+    )
+    with pytest.raises(ValueError, match="정책 위반"):
+        append_sample_jsonl(path, second)
+
+    # 거부됐으므로 파일에는 여전히 첫 표본 1건만 있어야 한다.
+    result = load_frame_telemetry_jsonl(path)
+    assert len(result.samples) == 1
+
+
+def test_append_sample_jsonl_rejects_mixed_aircraft_in_same_file(tmp_path: Path) -> None:
+    path = tmp_path / "mixed_aircraft.jsonl"
+    frame_ts = FROZEN_UTC
+    telemetry_ts = frame_ts - timedelta(milliseconds=10)
+    first = FrameTelemetrySample(
+        sample_index=0,
+        session_id="SESS-A",
+        aircraft_sn="SN-A",
+        frame_timestamp_utc=frame_ts.isoformat(),
+        telemetry_timestamp_utc=telemetry_ts.isoformat(),
+        delta_ms=compute_delta_ms(frame_ts, telemetry_ts),
+    )
+    append_sample_jsonl(path, first)
+
+    second = FrameTelemetrySample(
+        sample_index=1,
+        session_id="SESS-A",
+        aircraft_sn="SN-B",  # 다른 기체
+        frame_timestamp_utc=frame_ts.isoformat(),
+        telemetry_timestamp_utc=telemetry_ts.isoformat(),
+        delta_ms=compute_delta_ms(frame_ts, telemetry_ts),
+    )
+    with pytest.raises(ValueError, match="정책 위반"):
+        append_sample_jsonl(path, second)
+
+
+# ── judge_acceptance — P0-1 2축 판정(순수 통계, 증거 무결성 미반영) ─────────
 
 
 def test_judge_acceptance_not_measured_when_no_summary() -> None:
@@ -363,3 +484,520 @@ def test_judge_acceptance_zero_sample_count_summary_is_not_measured() -> None:
     # summary=None 경로로만 도달 가능함을 별도로 확인한다(방어적 분기 커버).
     acceptance = judge_acceptance(None, min_sample_count=100)
     assert acceptance.measurement_status is MeasurementStatus.NOT_MEASURED
+
+
+def test_judge_acceptance_rejects_bad_min_sample_count() -> None:
+    with pytest.raises(ValueError, match="min_sample_count"):
+        judge_acceptance(None, min_sample_count=0)
+    with pytest.raises(ValueError, match="min_sample_count"):
+        judge_acceptance(None, min_sample_count=True)
+
+
+# ── 인자 검증 헬퍼 (요구 7 / B10) ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize("bad", [True, False, 0, -1, -100])
+def test_validate_positive_int_rejects_bool_and_nonpositive(bad: object) -> None:
+    with pytest.raises(ValueError):
+        validate_positive_int(bad, name="x")
+
+
+def test_validate_positive_int_accepts_positive() -> None:
+    assert validate_positive_int(5, name="x") == 5
+
+
+@pytest.mark.parametrize("bad", [True, False, 0.0, -1.0, float("nan"), float("inf"), float("-inf")])
+def test_validate_finite_positive_rejects_bad_values(bad: object) -> None:
+    with pytest.raises(ValueError):
+        validate_finite_positive(bad, name="x")
+
+
+@pytest.mark.parametrize("bad", [True, False, -1.0, float("nan"), float("inf"), float("-inf")])
+def test_validate_finite_nonnegative_rejects_bad_values(bad: object) -> None:
+    with pytest.raises(ValueError):
+        validate_finite_nonnegative(bad, name="x")
+
+
+def test_validate_finite_nonnegative_accepts_zero() -> None:
+    assert validate_finite_nonnegative(0.0, name="x") == 0.0
+
+
+def test_validate_nonblank_str_rejects_blank_and_non_str() -> None:
+    with pytest.raises(ValueError):
+        validate_nonblank_str("   ", name="x")
+    with pytest.raises(ValueError):
+        validate_nonblank_str(None, name="x")
+
+
+# ── AcceptanceProfile / OFFICIAL_PROFILE ────────────────────────────────────
+
+
+def test_official_profile_is_frozen_with_expected_values() -> None:
+    assert OFFICIAL_PROFILE.profile_id == "ksi-frame-telemetry-alignment-v1"
+    assert OFFICIAL_PROFILE.target_p95_ms == 50.0
+    assert OFFICIAL_PROFILE.min_sample_count == 100
+    assert OFFICIAL_PROFILE.delta_tolerance_ms == 0.5
+    with pytest.raises(Exception):  # noqa: B017 — frozen dataclass는 FrozenInstanceError
+        OFFICIAL_PROFILE.target_p95_ms = 999.0  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("target_p95_ms", True),
+        ("target_p95_ms", 0.0),
+        ("target_p95_ms", -1.0),
+        ("target_p95_ms", float("nan")),
+        ("min_sample_count", True),
+        ("min_sample_count", 0),
+        ("min_sample_count", -5),
+        ("delta_tolerance_ms", True),
+        ("delta_tolerance_ms", -0.1),
+        ("delta_tolerance_ms", float("nan")),
+        ("delta_tolerance_ms", float("inf")),
+        ("profile_id", ""),
+        ("profile_id", "   "),
+    ],
+)
+def test_acceptance_profile_rejects_invalid_fields(field: str, value: object) -> None:
+    kwargs = {
+        "profile_id": "exploratory-adhoc",
+        "target_p95_ms": 50.0,
+        "min_sample_count": 100,
+        "delta_tolerance_ms": 0.5,
+    }
+    kwargs[field] = value
+    with pytest.raises(ValueError):
+        AcceptanceProfile(**kwargs)  # type: ignore[arg-type]
+
+
+def test_exploratory_profile_id_differs_from_official() -> None:
+    assert OFFICIAL_PROFILE.profile_id != EXPLORATORY_PROFILE_ID
+
+
+# ── evaluate_evidence — 증거 무결성 게이트 (P0-2) ───────────────────────────
+
+
+def _valid_single_session_result(n: int = 100) -> FrameTelemetryLoadResult:
+    lines = _lines_for_session(n=n, session_id="SESS-1", aircraft_sn="SN-1")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "in.jsonl"
+        _write_jsonl(path, lines)
+        return load_frame_telemetry_jsonl(path)
+
+
+def test_evaluate_evidence_valid_for_clean_single_session() -> None:
+    status, reasons = evaluate_evidence(_valid_single_session_result())
+    assert status is EvidenceStatus.VALID
+    assert reasons == ()
+
+
+def test_evaluate_evidence_invalid_when_zero_samples() -> None:
+    status, reasons = evaluate_evidence(_valid_single_session_result(n=0))
+    assert status is EvidenceStatus.INVALID
+    assert any("표본이 0건" in r for r in reasons)
+
+
+# ── B1~B3: 공식 profile CLI 완화 불가 ────────────────────────────────────────
+
+
+def _official_pass_file(tmp_path: Path) -> Path:
+    path = tmp_path / "official_pass.jsonl"
+    lines = _lines_for_session(n=100, session_id="SESS-OK", aircraft_sn="SN-OK", delta_ms=10.0)
+    _write_jsonl(path, lines)
+    return path
+
+
+def test_B1_official_target_override_is_rejected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    rc = main(["summarize", "--in", str(path), "--target-p95-ms", "100000"])
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert "완화할 수 없다" in captured.err
+    assert '"acceptance_status": "PASS"' not in captured.out
+
+
+def test_B2_official_min_sample_count_override_is_rejected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    for bad_value in ("1", "0"):
+        rc = main(["summarize", "--in", str(path), "--min-sample-count", bad_value])
+        captured = capsys.readouterr()
+        assert rc != 0
+        assert "완화할 수 없다" in captured.err
+
+
+def test_B3_official_delta_tolerance_override_is_rejected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    for bad_value in ("inf", "nan"):
+        rc = main(["summarize", "--in", str(path), "--delta-tolerance-ms", bad_value])
+        captured = capsys.readouterr()
+        assert rc != 0
+        assert "완화할 수 없다" in captured.err
+
+
+# ── B4: rejected 줄 존재 시 잔여 유효표본만으로 PASS 불가 ───────────────────
+
+
+def test_B4_rejected_line_blocks_official_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "forged.jsonl"
+    lines = _lines_for_session(n=100, session_id="SESS-F", aircraft_sn="SN-F", delta_ms=10.0)
+    forged = json.dumps(
+        _sample(
+            sample_index=100,
+            session_id="SESS-F",
+            aircraft_sn="SN-F",
+            frame_ts=FROZEN_UTC,
+            telemetry_ts=FROZEN_UTC - timedelta(milliseconds=500),
+            delta_ms=0.0,  # 위조
+        )
+    )
+    _write_jsonl(path, [*lines, forged])
+
+    rc = main(["summarize", "--in", str(path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["rejected_line_count"] == 1
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+    assert result["reason_code"] == "EVIDENCE_INVALID"
+
+
+# ── B5/B6: 세션/기체 혼합 → EVIDENCE INVALID ────────────────────────────────
+
+
+def test_B5_mixed_session_id_marks_evidence_invalid(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "mixed_session.jsonl"
+    lines_a = _lines_for_session(
+        n=100, session_id="SESS-A", aircraft_sn="SN-SAME", start_index=0
+    )
+    lines_b = _lines_for_session(
+        n=100, session_id="SESS-B", aircraft_sn="SN-SAME", start_index=100
+    )
+    _write_jsonl(path, [*lines_a, *lines_b])
+
+    rc = main(["summarize", "--in", str(path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["rejected_line_count"] == 0  # 줄 자체는 모두 유효 파싱됨
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+    assert sorted(result["session_ids_observed"]) == ["SESS-A", "SESS-B"]
+
+
+def test_B6_mixed_aircraft_sn_marks_evidence_invalid(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "mixed_aircraft.jsonl"
+    lines_a = _lines_for_session(
+        n=100, session_id="SESS-SAME", aircraft_sn="SN-A", start_index=0
+    )
+    lines_b = _lines_for_session(
+        n=100, session_id="SESS-SAME", aircraft_sn="SN-B", start_index=100
+    )
+    _write_jsonl(path, [*lines_a, *lines_b])
+
+    rc = main(["summarize", "--in", str(path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+    assert sorted(result["aircraft_sns_observed"]) == ["SN-A", "SN-B"]
+
+
+# ── B7/B8/B9: sample_index 규칙 위반 → 공식 PASS 불가 ───────────────────────
+
+
+def test_B7_index_gap_blocks_official_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "gap.jsonl"
+    lines = []
+    for idx in (0, 1, 3):
+        frame_ts = FROZEN_UTC + timedelta(seconds=idx)
+        telemetry_ts = frame_ts - timedelta(milliseconds=10)
+        lines.append(
+            json.dumps(
+                _sample(
+                    sample_index=idx,
+                    session_id="SESS-GAP",
+                    aircraft_sn="SN-GAP",
+                    frame_ts=frame_ts,
+                    telemetry_ts=telemetry_ts,
+                )
+            )
+        )
+    _write_jsonl(path, lines)
+
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+    assert any("gap" in r for r in result["evidence_reasons"])
+
+
+def test_B8_index_not_starting_at_zero_blocks_official_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "start1.jsonl"
+    lines = _lines_for_session(
+        n=100, session_id="SESS-START1", aircraft_sn="SN-START1", start_index=1
+    )
+    _write_jsonl(path, lines)
+
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+    assert any("0부터 시작하지 않는다" in r for r in result["evidence_reasons"])
+
+
+def test_B9_duplicate_index_blocks_official_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "dup.jsonl"
+    lines = _lines_for_session(n=100, session_id="SESS-DUP", aircraft_sn="SN-DUP")
+    dup = json.dumps(
+        _sample(
+            sample_index=0,  # 중복
+            session_id="SESS-DUP",
+            aircraft_sn="SN-DUP",
+            frame_ts=FROZEN_UTC + timedelta(seconds=999),
+        )
+    )
+    _write_jsonl(path, [*lines, dup])
+
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["rejected_line_count"] == 1
+    assert result["evidence_status"] == "INVALID"
+    assert result["acceptance_status"] != "PASS"
+
+
+# ── B10: target/min/tolerance 인자 검증 (bool·음수·0·NaN·Inf 거부) ──────────
+
+
+def test_B10_exploratory_cli_rejects_invalid_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    for bad in ("0", "-5", "nan"):
+        rc = main(
+            ["summarize", "--in", str(path), "--mode", "exploratory", "--target-p95-ms", bad]
+        )
+        assert rc != 0
+        assert "오류" in capsys.readouterr().err
+
+
+def test_B10_exploratory_cli_rejects_invalid_min_sample_count(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    for bad in ("0", "-1"):
+        rc = main(
+            ["summarize", "--in", str(path), "--mode", "exploratory", "--min-sample-count", bad]
+        )
+        assert rc != 0
+        assert "오류" in capsys.readouterr().err
+
+
+def test_B10_exploratory_cli_rejects_invalid_delta_tolerance(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)
+    for bad in ("-1", "nan", "inf"):
+        rc = main(
+            ["summarize", "--in", str(path), "--mode", "exploratory", "--delta-tolerance-ms", bad]
+        )
+        assert rc != 0
+        assert "오류" in capsys.readouterr().err
+
+
+def test_B10_validate_helpers_reject_bool_directly() -> None:
+    with pytest.raises(ValueError):
+        validate_positive_int(True, name="min_sample_count")
+    with pytest.raises(ValueError):
+        validate_finite_positive(True, name="target_p95_ms")
+    with pytest.raises(ValueError):
+        validate_finite_nonnegative(True, name="delta_tolerance_ms")
+
+
+# ── B11: exploratory 모드는 어떤 값에도 PASS/VERIFIED 근거 미출력 ───────────
+
+
+def test_B11_exploratory_never_emits_pass_even_when_target_met(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _official_pass_file(tmp_path)  # p95=10ms <= 50ms, 통계상으론 "통과"할 데이터
+
+    rc = main(["summarize", "--in", str(path), "--mode", "exploratory"])
+    result = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert result["acceptance_status"] is None
+    assert result["exploratory_meets_target"] is True  # 통계는 통과했지만
+    assert "PASS" not in json.dumps(result["acceptance_status"])
+    assert result["acceptance_profile_id"] == EXPLORATORY_PROFILE_ID
+    assert result["acceptance_profile_id"] != OFFICIAL_PROFILE.profile_id
+    assert "VERIFIED" in result["notice"]
+    assert "근거" in result["notice"]
+
+
+def test_B11_judge_exploratory_has_no_acceptance_status_concept() -> None:
+    result = _valid_single_session_result(n=100)
+    profile = AcceptanceProfile(
+        profile_id=EXPLORATORY_PROFILE_ID,
+        target_p95_ms=50.0,
+        min_sample_count=100,
+        delta_tolerance_ms=0.5,
+    )
+    judgement = judge_exploratory(result, profile=profile)
+    assert not hasattr(judgement, "acceptance_status")
+    assert judgement.meets_target is True
+
+
+# ── B12~B15: 정상 official 판정 (evidence VALID 경로) ───────────────────────
+
+
+def test_B12_official_pass_with_100_valid_samples_under_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "pass.jsonl"
+    _write_jsonl(
+        path,
+        _lines_for_session(n=100, session_id="SESS-PASS", aircraft_sn="SN-PASS", delta_ms=10.0),
+    )
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["evidence_status"] == "VALID"
+    assert result["measurement_status"] == "MEASURED"
+    assert result["acceptance_status"] == "PASS"
+    assert result["reason_code"] == "OK"
+
+
+def test_B13_official_fail_with_100_valid_samples_over_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "fail.jsonl"
+    _write_jsonl(
+        path,
+        _lines_for_session(n=100, session_id="SESS-FAIL", aircraft_sn="SN-FAIL", delta_ms=80.0),
+    )
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["evidence_status"] == "VALID"
+    assert result["measurement_status"] == "MEASURED"
+    assert result["acceptance_status"] == "FAIL"
+    assert result["reason_code"] == "REQUIREMENT_NOT_MET"
+
+
+def test_B14_official_insufficient_samples_between_1_and_99(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "insufficient.jsonl"
+    _write_jsonl(
+        path,
+        _lines_for_session(n=50, session_id="SESS-FEW", aircraft_sn="SN-FEW", delta_ms=10.0),
+    )
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["evidence_status"] == "VALID"
+    assert result["measurement_status"] == "MEASURED"
+    assert result["acceptance_status"] == "INSUFFICIENT_SAMPLES"
+    assert result["reason_code"] == "INSUFFICIENT_SAMPLES"
+
+
+def test_B15_official_not_measured_with_zero_samples(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "empty.jsonl"
+    path.write_text("", encoding="utf-8")
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["measurement_status"] == "NOT_MEASURED"
+    assert result["acceptance_status"] is None
+    assert result["reason_code"] == "NOT_MEASURED"
+
+
+# ── B16: Summary digest·profile·session 메타가 실제 입력과 일치 ────────────
+
+
+def test_B16_summary_metadata_matches_actual_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "meta.jsonl"
+    _write_jsonl(
+        path,
+        _lines_for_session(n=100, session_id="SESS-META", aircraft_sn="SN-META", delta_ms=10.0),
+    )
+    expected_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert result["input_sha256"] == expected_sha256
+    assert result["acceptance_profile_id"] == OFFICIAL_PROFILE.profile_id
+    assert result["profile_target_p95_ms"] == OFFICIAL_PROFILE.target_p95_ms
+    assert result["profile_min_sample_count"] == OFFICIAL_PROFILE.min_sample_count
+    assert result["profile_delta_tolerance_ms"] == OFFICIAL_PROFILE.delta_tolerance_ms
+    assert result["session_id"] == "SESS-META"
+    assert result["aircraft_sn"] == "SN-META"
+    assert result["sample_index_first"] == 0
+    assert result["sample_index_last"] == 99
+    assert result["valid_sample_count"] == 100
+    assert result["rejected_line_count"] == 0
+
+
+# ── judge_official — 방어적 profile 불일치 분기 ─────────────────────────────
+
+
+def test_judge_official_treats_non_official_profile_as_evidence_invalid() -> None:
+    load_result = _valid_single_session_result(n=100)
+    rogue_profile = AcceptanceProfile(
+        profile_id="not-the-official-one",
+        target_p95_ms=50.0,
+        min_sample_count=100,
+        delta_tolerance_ms=0.5,
+    )
+    judgement = judge_official(load_result, profile=rogue_profile)
+    assert judgement.evidence_status is EvidenceStatus.INVALID
+    assert judgement.acceptance_status is AcceptanceStatus.FAIL
+    assert judgement.reason_code is AcceptanceReasonCode.EVIDENCE_INVALID
+
+
+# ── build_parser 기본값 스모크 (CLI 구조 확인) ──────────────────────────────
+
+
+def test_build_parser_summarize_mode_default_is_official() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["summarize", "--in", "x.jsonl"])
+    assert args.mode == "official"
+    assert args.target_p95_ms is None
+    assert args.min_sample_count is None
+    assert args.delta_tolerance_ms is None
+
+
+def test_default_delta_tolerance_constant_matches_official_profile() -> None:
+    # 우연의 일치가 아니라 의도된 것임을 문서화하는 스모크 — 값이 갈라지면
+    # 모듈 docstring의 "숫자는 같아도 의미가 다르다" 설명을 갱신해야 한다.
+    assert OFFICIAL_PROFILE.delta_tolerance_ms == DEFAULT_DELTA_TOLERANCE_MS

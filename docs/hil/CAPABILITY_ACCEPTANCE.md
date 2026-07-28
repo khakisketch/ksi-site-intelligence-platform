@@ -27,6 +27,29 @@
   않는다(레지스트리 SSOT는 `registry.py`) — 대신 해당 capability가 어느 다른 capability의
   전제조건인지를 명시한다.
 
+## 0.5 공식 Acceptance Profile — 판정 기준은 CLI 로 완화할 수 없다
+
+시간동기 판정에 쓰는 수치 기준은 **Versioned 공식 profile 상수**다
+(`tools/hil/capture_frame_telemetry_timing.py` 의 `OFFICIAL_PROFILE`):
+
+```text
+profile_id          = ksi-frame-telemetry-alignment-v1
+target_p95_ms       = 50.0     # Track A 완료기준 p95 ≤ 50ms (PRD §21.1)
+min_sample_count    = 100
+delta_tolerance_ms  = 0.5
+```
+
+- `--mode official`(기본값)에서는 위 세 값을 CLI 플래그로 넘기는 것 자체가
+  오류다 — `--target-p95-ms 100000` 류의 완화로 조작 증거를 PASS 시키는 경로를
+  구조적으로 막는다(독립 재검토 P0, 2026-07-28).
+- 공식 PASS 는 **증거 무결성 게이트**도 통과해야 한다: 거부된 라인 0건, 정확히
+  1개의 `session_id` 와 1개의 `aircraft_sn`, `sample_index` 0 시작·중복 없음·gap
+  없음. 하나라도 어긋나면 `evidence_status=INVALID` — 통계가 좋아도 PASS 불가.
+- `--mode exploratory` 는 임의 값 실험 전용이다: `acceptance_status` 를 출력하지
+  않으며, 그 결과는 **어떤 Capability VERIFIED 의 근거도 될 수 없다**(Summary 에
+  공식 profile ID 아님이 명기된다).
+- 기준 수치의 변경은 profile 버전 증가(v2 등록)로만 한다 — 대표자 결정 레인.
+
 ## 1. Frame 접근 (카메라 프레임)
 
 - **대응 Capability ID**: `SPIKE-DJI-01`("M4D 카메라별 실시간 프레임 접근")

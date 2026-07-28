@@ -14,6 +14,24 @@ MASTER_PRD §21.1 "Sensor Timestamp alignment: p95 50ms 이하 목표"의 실측
 ``docs/hil/CAPABILITY_ACCEPTANCE.md`` "시간동기" 행이 이 2축의 SSOT다. 어느 쪽이든
 사람이 임의로 PASS/VERIFIED를 선언할 근거로 이 스크립트의 출력을 오독해서는 안 된다.
 
+## P0-2: 공식 Acceptance Profile은 CLI로 완화할 수 없다 + 증거 무결성 게이트
+
+독립 재검토에서 지적된 두 우회 경로를 막는다:
+
+1. **기준값 CLI 완화**: ``--target-p95-ms``/``--min-sample-count``/``--delta-tolerance-ms``를
+   느슨한 값으로 주면 조작된 증거도 "PASS"로 보일 수 있었다. 이제 공식 판정 기준은
+   :data:`OFFICIAL_PROFILE`(``profile_id="ksi-frame-telemetry-alignment-v1"``)에 고정되고,
+   ``--mode official``(기본값)에서는 이 세 플래그를 CLI로 넘기는 것 자체가 오류다(값이
+   무엇이든). 다른 값을 실험하고 싶다면 ``--mode exploratory``로만 가능하고, 그 결과는
+   ``acceptance_status``가 항상 ``null``이며 VERIFIED 승격 근거로 쓸 수 없다.
+2. **손상 줄 제외 후 PASS**: 검증에 실패한 줄(``rejected``)이 있어도 "남은 유효 표본"만으로
+   PASS를 낼 수 있었고, 서로 다른 ``session_id``/``aircraft_sn``이 섞여도 목록만 출력하고
+   거부하지 않았다. 이제 :func:`evaluate_evidence`가 독립된 ``evidence_status`` 축
+   (``VALID``/``INVALID``)을 계산하고, :func:`judge_official`은 evidence가 ``INVALID``이면
+   숫자상 PASS가 나오더라도 공식 ``acceptance_status``를 강제로 ``FAIL``로 내린다
+   (``reason_code=EVIDENCE_INVALID``로 이유를 구분해서 남긴다 — "목표 미달"과 "증거
+   자체가 무효"는 다른 사유다).
+
 ## 입력 JSONL은 신뢰하지 않는다 (증거 판정 도구 수준)
 
 이 도구가 다루는 JSONL은 실기에서 수집된 원본 증거다 — 저장된 ``delta_ms``를 그대로
@@ -21,6 +39,9 @@ MASTER_PRD §21.1 "Sensor Timestamp alignment: p95 50ms 이하 목표"의 실측
 ``load_frame_telemetry_jsonl``은 각 줄을 다음 기준으로 재검증하고, 위반 줄은 사유와
 함께 거부한다(전체 로드를 막지 않되 조용히 사라지지도 않는다):
 
+- 파일 전체의 UTF-8 decode 자체가 실패하면 전체를 표본 0건 + 거부 사유 1건으로 다룬다
+  (예외로 프로그램을 죽이지 않는다 — 증거 판정 도구가 크래시하면 "판정 불가"라는
+  사실 자체가 사라진다).
 - JSON 파싱 자체가 NaN/Infinity/-Infinity 같은 비표준 상수를 거부한다.
 - ``frame_timestamp_utc``/``telemetry_timestamp_utc``는 UTC(offset ``+00:00``,
   ``Z`` 서픽스 허용)가 아니면 거부한다.
@@ -29,10 +50,20 @@ MASTER_PRD §21.1 "Sensor Timestamp alignment: p95 50ms 이하 목표"의 실측
 - ``session_id``/``aircraft_sn``은 공백일 수 없다.
 - ``sample_index``는 음수 불가·중복 거부. 불연속은 거부하지 않되 경고로 남긴다.
 
+그리고 파일이 통째로 "유효한 증거"인지는 줄 단위 검증과 별개로 :func:`evaluate_evidence`가
+판정한다(중복 없어도 여러 세션/기체가 섞였거나 index가 0부터 시작하지 않으면 무효).
+
+## 여러 세션·기체 합산 금지
+
+``append_sample_jsonl``은 대상 파일에 이미 다른 ``session_id``/``aircraft_sn``의 표본이
+있으면 append 자체를 거부한다(:func:`_existing_session_aircraft`) — 세션·기체 조합당
+별도 파일·별도 Summary만 허용한다는 정책을 쓰기 시점에도 강제한다.
+
 ## 이 파일에서 완전히 구현된 것 / 아닌 것
 
 - **완전 구현 + 순수 함수(단위테스트 가능)**: :func:`percentile`, :func:`summarize_deltas`,
   :func:`compute_delta_ms`, :func:`parse_utc_timestamp`, :func:`judge_acceptance`,
+  :func:`evaluate_evidence`, :func:`judge_official`, :func:`judge_exploratory`,
   JSONL 직렬화/역직렬화·검증, ``summarize`` CLI 서브커맨드. 이미 수집된 JSONL 파일이
   있다면 실기 없이도 오늘 바로 돌릴 수 있다.
 - **미구현(실기 세션에서 채움)**: :func:`read_next_frame_telemetry_timestamps` —
@@ -49,11 +80,14 @@ uv run python tools/hil/capture_frame_telemetry_timing.py collect \\
     --out hil_raw_logs/SESS-.../07_frame_telemetry_timing/<UTC_ts>__frame_telemetry.jsonl \\
     --num-samples 200
 
-# 이미 수집된 JSONL로부터 p50/p95/max + measurement_status/acceptance_status 요약
-# (오늘 바로 실행 가능)
+# 이미 수집된 JSONL로부터 공식 판정(고정 Acceptance Profile, CLI로 완화 불가)
 uv run python tools/hil/capture_frame_telemetry_timing.py summarize \\
     --in hil_raw_logs/SESS-.../07_frame_telemetry_timing/<UTC_ts>__frame_telemetry.jsonl \\
     --out hil_raw_logs/SESS-.../07_frame_telemetry_timing/<UTC_ts>__frame_telemetry_summary.json
+
+# 실험적으로 다른 기준값을 보고 싶을 때만(VERIFIED 근거로 쓸 수 없음)
+uv run python tools/hil/capture_frame_telemetry_timing.py summarize \\
+    --in ... --mode exploratory --target-p95-ms 80 --min-sample-count 20
 ```
 """
 
@@ -71,16 +105,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-# PRD §21.1 목표값. 판정 기준이 아니라 "무엇과 비교하는가"의 참고값 — 실측이 이
-# 값을 넘겨도 스크립트는 실패(예외)하지 않는다. 대신 acceptance_status=FAIL로
-# 정직하게 기록한다(P0-1) — VERIFIED 승격 여부는
-# docs/hil/CAPABILITY_ACCEPTANCE.md 절차에 따라 사람이 근거와 함께 기록한다.
+# --------------------------------------------------------------------------- #
+# exploratory 모드 전용 기본값 — 공식 판정 기준이 아니다(P0-2).
+# 공식 판정 기준은 아래 OFFICIAL_PROFILE(고정 상수)만 쓴다. 숫자가 우연히 같더라도
+# 의미는 다르다: 이 DEFAULT_* 는 --mode exploratory에서 사용자가 아무 값도 안 줬을 때
+# 쓰는 "기본 실험값"이고, OFFICIAL_PROFILE은 --mode official(기본 모드)에서 CLI로
+# 절대 바꿀 수 없는 값이다.
+# --------------------------------------------------------------------------- #
 DEFAULT_TARGET_P95_MS = 50.0
-
-# docs/hil/CAPABILITY_ACCEPTANCE.md "시간동기" 행의 권장 최소 표본 수.
 DEFAULT_MIN_SAMPLE_COUNT = 100
-
-# 저장된 delta_ms와 두 timestamp로부터 재계산한 delta_ms 사이 허용 오차(ms).
 DEFAULT_DELTA_TOLERANCE_MS = 0.5
 
 _REQUIRED_FIELDS = (
@@ -91,6 +124,92 @@ _REQUIRED_FIELDS = (
     "telemetry_timestamp_utc",
     "delta_ms",
 )
+
+
+# --------------------------------------------------------------------------- #
+# 인자 검증 헬퍼 — CLI 경로뿐 아니라 함수를 직접 호출하는 경로(테스트 등)도 지킨다.
+# --------------------------------------------------------------------------- #
+
+
+def validate_positive_int(value: Any, *, name: str) -> int:
+    """``value``가 bool이 아닌 1 이상의 정수인지 강제한다.
+
+    ``bool``은 ``int``의 서브클래스라 ``isinstance(True, int)``가 ``True``이므로
+    별도로 걸러낸다 — ``num_samples=True`` 같은 실수를 "1"로 조용히 받아들이지 않는다.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name}는 bool이 아닌 정수여야 한다 (받음: {value!r})")
+    if value <= 0:
+        raise ValueError(f"{name}는 1 이상의 정수여야 한다 (받음: {value})")
+    return value
+
+
+def validate_finite_positive(value: Any, *, name: str) -> float:
+    """``value``가 유한한 양수(0 불가, NaN/Infinity/bool 불가)인지 강제한다."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{name}는 숫자여야 한다 (받음: {value!r})")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric <= 0:
+        raise ValueError(f"{name}는 유한한 양수여야 한다 (받음: {value!r})")
+    return numeric
+
+
+def validate_finite_nonnegative(value: Any, *, name: str) -> float:
+    """``value``가 유한하고 음수가 아닌지(0은 허용, NaN/Infinity/bool 불가) 강제한다."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{name}는 숫자여야 한다 (받음: {value!r})")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0:
+        raise ValueError(f"{name}는 유한하고 음수가 아니어야 한다 (받음: {value!r})")
+    return numeric
+
+
+def validate_nonblank_str(value: Any, *, name: str) -> str:
+    """``value``가 공백이 아닌 문자열인지 강제한다."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name}는 공백이 아닌 문자열이어야 한다 (받음: {value!r})")
+    return value
+
+
+# --------------------------------------------------------------------------- #
+# 공식 Acceptance Profile (P0-2) — frozen 상수, CLI로 override 불가.
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptanceProfile:
+    """Versioned Acceptance Profile.
+
+    ``OFFICIAL_PROFILE``은 대표자 지정 기준(2026-07-28)에 따라 고정된 상수다.
+    ``--mode official``(CLI 기본값)은 항상 이 값을 그대로 쓰고, 어떤 CLI 플래그로도
+    override를 허용하지 않는다 — 기준을 완화할 수 있다면 "공식 PASS"라는 말 자체가
+    증거가치를 잃는다. 다른 값을 실험하려면 ``--mode exploratory``로 별도 Profile을
+    만든다(이 클래스를 그대로 재사용하되 ``profile_id``가 공식 ID와 다르다).
+    """
+
+    profile_id: str
+    target_p95_ms: float
+    min_sample_count: int
+    delta_tolerance_ms: float
+
+    def __post_init__(self) -> None:
+        validate_nonblank_str(self.profile_id, name="profile_id")
+        validate_finite_positive(self.target_p95_ms, name="target_p95_ms")
+        validate_positive_int(self.min_sample_count, name="min_sample_count")
+        validate_finite_nonnegative(self.delta_tolerance_ms, name="delta_tolerance_ms")
+
+
+OFFICIAL_PROFILE = AcceptanceProfile(
+    profile_id="ksi-frame-telemetry-alignment-v1",
+    target_p95_ms=50.0,
+    min_sample_count=100,
+    delta_tolerance_ms=0.5,
+)
+
+# exploratory Profile의 profile_id는 항상 이 값이다 — OFFICIAL_PROFILE.profile_id와
+# 절대 같을 수 없으므로("official profile ID 아님"을 값 자체로 명시), Summary만 봐도
+# 이게 공식 판정이 아님을 알 수 있다.
+EXPLORATORY_PROFILE_ID = "exploratory-adhoc"
 
 
 # --------------------------------------------------------------------------- #
@@ -137,7 +256,8 @@ class FrameTelemetryLoadResult:
 
     Attributes:
         samples: 검증을 통과한 표본(파일 등장 순서).
-        rejected: 검증에 실패해 제외된 줄(line_no 오름차순).
+        rejected: 검증에 실패해 제외된 줄(line_no 오름차순). ``line_no=0``은 파일
+            전체 decode 실패처럼 특정 줄에 귀속되지 않는 거부를 뜻한다.
         warnings: 거부까지는 아니지만 기록해 둘 사항(예: sample_index 불연속).
         sha256: 입력 파일 원본 바이트의 SHA-256 hexdigest — 어떤 파일을 근거로
             판정했는지 증거로 고정한다.
@@ -168,9 +288,40 @@ class AcceptanceStatus(StrEnum):
     INSUFFICIENT_SAMPLES = "INSUFFICIENT_SAMPLES"
 
 
+class EvidenceStatus(StrEnum):
+    """입력 파일 전체가 "공식 PASS 판정을 낼 자격이 있는 증거"인가 (P0-2, 측정 축과 별개).
+
+    ``AcceptanceStatus``/``MeasurementStatus``가 "수치가 무엇인가"를 다루는 반면,
+    이 축은 "그 수치를 낸 증거 파일 자체를 신뢰할 수 있는가"를 다룬다 — 거부된 줄이
+    있거나, 서로 다른 세션/기체가 섞였거나, sample_index가 0부터 연속하지 않으면
+    통계상 PASS가 나와도 ``INVALID``다(:func:`evaluate_evidence`).
+    """
+
+    VALID = "VALID"
+    INVALID = "INVALID"
+
+
+class AcceptanceReasonCode(StrEnum):
+    """공식 판정(``judge_official``)이 그 ``acceptance_status``에 도달한 구체적 사유.
+
+    "목표 미달(FAIL)"과 "증거 자체가 무효라서 FAIL로 강제됨"은 같은 ``FAIL``이어도
+    운영상 의미가 다르므로(전자는 재측정, 후자는 재수집이 필요) 별도 코드로 남긴다.
+    """
+
+    OK = "OK"
+    REQUIREMENT_NOT_MET = "REQUIREMENT_NOT_MET"
+    INSUFFICIENT_SAMPLES = "INSUFFICIENT_SAMPLES"
+    NOT_MEASURED = "NOT_MEASURED"
+    EVIDENCE_INVALID = "EVIDENCE_INVALID"
+
+
 @dataclass(frozen=True, slots=True)
 class Acceptance:
-    """P0-1 2축 판정 결과 (``docs/hil/CAPABILITY_ACCEPTANCE.md`` "시간동기" 행 SSOT)."""
+    """P0-1 2축 판정 결과 (``docs/hil/CAPABILITY_ACCEPTANCE.md`` "시간동기" 행 SSOT).
+
+    증거 무결성(``EvidenceStatus``)을 반영하지 않은 순수 통계 판정이다 — 공식 CLI
+    출력은 이 값을 그대로 노출하지 않고 :func:`judge_official`을 거친다.
+    """
 
     measurement_status: MeasurementStatus
     acceptance_status: AcceptanceStatus | None
@@ -190,7 +341,7 @@ class TimingSummary:
         mean_ms: 산술평균, 절대값 기준.
         target_p95_ms: 비교 대상 목표값(PRD §21.1, 기본 50.0).
         meets_target: ``p95_ms <= target_p95_ms``. **VERIFIED 승격 근거가 아니다** —
-            판정은 :func:`judge_acceptance`의 ``acceptance_status``를 따른다(P0-1).
+            판정은 :func:`judge_official`의 ``acceptance_status``를 따른다(P0-1/P0-2).
     """
 
     sample_count: int
@@ -200,6 +351,43 @@ class TimingSummary:
     mean_ms: float
     target_p95_ms: float
     meets_target: bool
+
+
+@dataclass(frozen=True, slots=True)
+class OfficialJudgement:
+    """``--mode official``의 최종 판정 (P0-2) — evidence 축과 acceptance 축을 합성한다.
+
+    Attributes:
+        evidence_status: :func:`evaluate_evidence`의 결과.
+        evidence_reasons: ``evidence_status=INVALID``일 때의 구체적 사유들(빈 튜플이면
+            VALID).
+        measurement_status: 순수 통계 판정의 측정 축(``Acceptance.measurement_status``).
+        acceptance_status: 공식 판정. **evidence_status가 INVALID이면 숫자상 PASS/FAIL이
+            무엇이었든 PASS를 절대 내지 않는다**(``FAIL``로 강제).
+        reason_code: 판정 사유 code — "목표 미달"과 "증거 무효"를 구분한다.
+        summary: 계산된 통계(표본이 있었다면). ``measurement_status=NOT_MEASURED``면
+            ``None``.
+    """
+
+    evidence_status: EvidenceStatus
+    evidence_reasons: tuple[str, ...]
+    measurement_status: MeasurementStatus
+    acceptance_status: AcceptanceStatus | None
+    reason_code: AcceptanceReasonCode
+    summary: TimingSummary | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExploratoryJudgement:
+    """``--mode exploratory``의 판정 — ``acceptance_status`` 개념이 아예 없다(P0-2 요구 3).
+
+    이 결과는 어떤 값이든 capability VERIFIED 승격 근거가 될 수 없다. 공식 판정은
+    :func:`judge_official`만 낸다.
+    """
+
+    measurement_status: MeasurementStatus
+    meets_target: bool | None
+    summary: TimingSummary | None
 
 
 # --------------------------------------------------------------------------- #
@@ -306,10 +494,7 @@ def summarize_deltas(
             "summarize_deltas: 표본이 0건이다 — 시간동기 VERIFIED에는 실측 표본이 "
             "필수다('미측정 + 이유'는 이 함수가 아니라 사람이 별도로 기록하는 문장이다)"
         )
-    if not math.isfinite(target_p95_ms) or target_p95_ms <= 0:
-        raise ValueError(
-            f"summarize_deltas: target_p95_ms는 유한한 양수여야 한다 (받음: {target_p95_ms})"
-        )
+    validate_finite_positive(target_p95_ms, name="target_p95_ms")
     abs_values = [abs(v) for v in deltas_ms]
     p50 = percentile(abs_values, 50.0)
     p95 = percentile(abs_values, 95.0)
@@ -332,7 +517,7 @@ def judge_acceptance(
     min_sample_count: int = DEFAULT_MIN_SAMPLE_COUNT,
 ) -> Acceptance:
     """``docs/hil/CAPABILITY_ACCEPTANCE.md`` "시간동기" 행의 2축 판정 규칙을 코드로
-    강제한다 (P0-1).
+    강제한다 (P0-1). 순수 통계 판정 — 증거 무결성(P0-2)은 반영하지 않는다.
 
     - ``summary is None``(표본 0건) → ``NOT_MEASURED`` / 판정 없음.
     - 표본 수 < ``min_sample_count`` → ``MEASURED`` / ``INSUFFICIENT_SAMPLES``.
@@ -341,8 +526,10 @@ def judge_acceptance(
 
     사람이 이 판정을 임의로 뒤집어 VERIFIED를 선언하는 경로는 이 함수 밖에 있다 —
     이 함수는 그 뒤집기가 "실측 절차를 따랐다"는 근거가 되지 않는다는 점만 코드로
-    확정한다.
+    확정한다. 공식 CLI 출력은 이 함수를 직접 노출하지 않고 :func:`judge_official`을
+    거친다(증거 무결성 게이트 포함).
     """
+    validate_positive_int(min_sample_count, name="min_sample_count")
     if summary is None or summary.sample_count == 0:
         return Acceptance(measurement_status=MeasurementStatus.NOT_MEASURED, acceptance_status=None)
     if summary.sample_count < min_sample_count:
@@ -354,6 +541,143 @@ def judge_acceptance(
         AcceptanceStatus.PASS if summary.p95_ms <= summary.target_p95_ms else AcceptanceStatus.FAIL
     )
     return Acceptance(measurement_status=MeasurementStatus.MEASURED, acceptance_status=status)
+
+
+def evaluate_evidence(
+    load_result: FrameTelemetryLoadResult,
+) -> tuple[EvidenceStatus, tuple[str, ...]]:
+    """입력 파일 전체가 공식 PASS 판정을 낼 자격이 있는 증거인지 판정한다 (P0-2).
+
+    다음 중 하나라도 있으면 ``INVALID``다:
+
+    - 검증에 실패해 제외된 줄이 1개 이상 있음(``rejected_line_count>0`` — 중복
+      ``sample_index``도 :func:`_validate_sample_indices`에서 거부로 처리되므로
+      여기 포함된다).
+    - 유효 표본의 ``session_id``가 정확히 1개가 아님(0개 또는 2개 이상).
+    - 유효 표본의 ``aircraft_sn``이 정확히 1개가 아님.
+    - 유효 표본의 ``sample_index``가 0부터 시작하지 않음.
+    - 유효 표본의 ``sample_index``에 gap이 있음(최솟값~최댓값 구간이 표본 수와 다름).
+    - 유효 표본이 0건(판정할 증거 자체가 없음).
+    """
+    reasons: list[str] = []
+
+    if load_result.rejected:
+        reasons.append(
+            f"rejected_line_count={len(load_result.rejected)} (0이어야 공식 PASS 가능)"
+        )
+
+    session_ids = sorted({s.session_id for s in load_result.samples})
+    if len(session_ids) != 1:
+        observed = session_ids if session_ids else "없음(표본 0건)"
+        reasons.append(f"session_id가 정확히 1개가 아니다 (관측: {observed})")
+
+    aircraft_sns = sorted({s.aircraft_sn for s in load_result.samples})
+    if len(aircraft_sns) != 1:
+        reasons.append(
+            "aircraft_sn이 정확히 1개가 아니다 "
+            f"(관측: {aircraft_sns if aircraft_sns else '없음(표본 0건)'})"
+        )
+
+    indices = sorted(s.sample_index for s in load_result.samples)
+    if indices:
+        if indices[0] != 0:
+            reasons.append(f"sample_index가 0부터 시작하지 않는다 (최솟값: {indices[0]})")
+        span = indices[-1] - indices[0] + 1
+        if span != len(indices):
+            reasons.append(
+                f"sample_index에 gap이 있다 (최솟값 {indices[0]}~최댓값 {indices[-1]}, "
+                f"유효 표본 {len(indices)}건, 기대 연속 개수 {span}건)"
+            )
+    else:
+        reasons.append("유효 표본이 0건이다")
+
+    status = EvidenceStatus.VALID if not reasons else EvidenceStatus.INVALID
+    return status, tuple(reasons)
+
+
+def judge_official(
+    load_result: FrameTelemetryLoadResult,
+    *,
+    profile: AcceptanceProfile = OFFICIAL_PROFILE,
+) -> OfficialJudgement:
+    """``--mode official``의 최종 판정 (P0-2) — evidence 게이트 + 2축 통계 판정을 합성한다.
+
+    evidence가 ``INVALID``이면 통계상 PASS가 나오더라도 ``acceptance_status``를
+    ``FAIL``로 강제한다(``reason_code=EVIDENCE_INVALID``로 사유를 구분해 남긴다).
+    """
+    if profile.profile_id != OFFICIAL_PROFILE.profile_id:
+        # 방어적 분기 — 공식 판정 함수에 비공식 profile이 전달되는 것은 호출자
+        # 버그다(정상 CLI 경로에서는 도달하지 않는다). 조용히 통과시키지 않는다.
+        evidence_status = EvidenceStatus.INVALID
+        evidence_reasons: tuple[str, ...] = (
+            f"judge_official에 공식 profile_id={OFFICIAL_PROFILE.profile_id!r}가 아닌 "
+            f"{profile.profile_id!r}가 전달됐다 — 호출자 오류",
+        )
+    else:
+        evidence_status, evidence_reasons = evaluate_evidence(load_result)
+
+    deltas = [s.delta_ms for s in load_result.samples]
+    summary = summarize_deltas(deltas, target_p95_ms=profile.target_p95_ms) if deltas else None
+    acceptance = judge_acceptance(summary, min_sample_count=profile.min_sample_count)
+
+    if acceptance.measurement_status is MeasurementStatus.NOT_MEASURED:
+        return OfficialJudgement(
+            evidence_status=evidence_status,
+            evidence_reasons=evidence_reasons,
+            measurement_status=MeasurementStatus.NOT_MEASURED,
+            acceptance_status=None,
+            reason_code=AcceptanceReasonCode.NOT_MEASURED,
+            summary=None,
+        )
+
+    if evidence_status is EvidenceStatus.INVALID:
+        return OfficialJudgement(
+            evidence_status=evidence_status,
+            evidence_reasons=evidence_reasons,
+            measurement_status=acceptance.measurement_status,
+            acceptance_status=AcceptanceStatus.FAIL,
+            reason_code=AcceptanceReasonCode.EVIDENCE_INVALID,
+            summary=summary,
+        )
+
+    if acceptance.acceptance_status is AcceptanceStatus.INSUFFICIENT_SAMPLES:
+        reason_code = AcceptanceReasonCode.INSUFFICIENT_SAMPLES
+    elif acceptance.acceptance_status is AcceptanceStatus.PASS:
+        reason_code = AcceptanceReasonCode.OK
+    else:
+        reason_code = AcceptanceReasonCode.REQUIREMENT_NOT_MET
+
+    return OfficialJudgement(
+        evidence_status=evidence_status,
+        evidence_reasons=evidence_reasons,
+        measurement_status=acceptance.measurement_status,
+        acceptance_status=acceptance.acceptance_status,
+        reason_code=reason_code,
+        summary=summary,
+    )
+
+
+def judge_exploratory(
+    load_result: FrameTelemetryLoadResult,
+    *,
+    profile: AcceptanceProfile,
+) -> ExploratoryJudgement:
+    """``--mode exploratory``의 판정 — ``acceptance_status`` 개념 자체가 없다.
+
+    어떤 ``meets_target`` 값이 나오든 이 결과는 capability VERIFIED 승격 근거가
+    될 수 없다(공식 판정은 :func:`judge_official`만 낸다, P0-2 요구 3).
+    """
+    deltas = [s.delta_ms for s in load_result.samples]
+    if not deltas:
+        return ExploratoryJudgement(
+            measurement_status=MeasurementStatus.NOT_MEASURED, meets_target=None, summary=None
+        )
+    summary = summarize_deltas(deltas, target_p95_ms=profile.target_p95_ms)
+    return ExploratoryJudgement(
+        measurement_status=MeasurementStatus.MEASURED,
+        meets_target=summary.meets_target,
+        summary=summary,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -502,10 +826,27 @@ def load_frame_telemetry_jsonl(
     음수/중복 index 등) 그 줄은 유효 표본에서 제외되고 사유와 함께 ``rejected``에
     남는다 — 한 줄의 결함이 전체 파일 로드를 막지 않되, 조용히 사라지지도 않는다.
     빈 줄은 건너뛴다(거부로 집계하지 않는다).
+
+    파일 전체의 UTF-8 decode가 실패하면(예: 손상된 바이너리) 예외를 내지 않고
+    표본 0건 + ``line_no=0`` 거부 사유 1건으로 다룬다 — 증거 판정 도구가 크래시하면
+    "판정 불가"라는 사실 자체가 사라지기 때문이다.
+
+    Raises:
+        ValueError: ``delta_tolerance_ms``가 유한하고 음수가 아닌 값이 아닐 때.
     """
+    validate_finite_nonnegative(delta_tolerance_ms, name="delta_tolerance_ms")
+
     raw_bytes = path.read_bytes()
     sha256 = hashlib.sha256(raw_bytes).hexdigest()
-    text = raw_bytes.decode("utf-8")
+    try:
+        text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return FrameTelemetryLoadResult(
+            samples=(),
+            rejected=(RejectedLine(line_no=0, reason=f"파일 UTF-8 decode 실패 — {exc}"),),
+            warnings=(),
+            sha256=sha256,
+        )
 
     parsed: list[tuple[int, FrameTelemetrySample]] = []
     rejected: list[RejectedLine] = []
@@ -537,8 +878,49 @@ def sample_to_json_line(sample: FrameTelemetrySample) -> str:
     return json.dumps(asdict(sample), ensure_ascii=False, sort_keys=True)
 
 
+def _existing_session_aircraft(path: Path) -> tuple[str, str] | None:
+    """``path``에 이미 기록된 표본이 있다면 그 ``(session_id, aircraft_sn)``을 돌려준다.
+
+    :func:`append_sample_jsonl`의 "여러 세션/기체 합산 금지" 정책 검사용이다 —
+    :func:`load_frame_telemetry_jsonl`처럼 엄격 재검증까지는 하지 않는다(그 목적은
+    이 시점에 필요 없다). 파일이 없거나 파싱 가능한 줄이 하나도 없으면 ``None``.
+    """
+    if not path.exists():
+        return None
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(payload, dict) and "session_id" in payload and "aircraft_sn" in payload:
+            return str(payload["session_id"]), str(payload["aircraft_sn"])
+    return None
+
+
 def append_sample_jsonl(path: Path, sample: FrameTelemetrySample) -> None:
-    """``sample``을 ``path``에 한 줄 추가한다(append). 부모 디렉터리는 미리 만든다."""
+    """``sample``을 ``path``에 한 줄 추가한다(append). 부모 디렉터리는 미리 만든다.
+
+    **정책(여러 세션·기체 합산 금지)**: ``path``에 이미 다른 ``session_id`` 또는
+    ``aircraft_sn``의 표본이 있으면 append 자체를 즉시 거부한다 — 세션·기체 조합당
+    별도 파일·별도 Summary만 허용한다. 이 검사를 우회하려면 별도 파일 경로를 써야 한다
+    (의도된 마찰 — 실수로 두 세션을 한 파일에 섞는 것을 쓰기 시점에 막는다).
+
+    Raises:
+        ValueError: 기존 파일의 session_id/aircraft_sn이 ``sample``과 다를 때.
+    """
+    existing = _existing_session_aircraft(path)
+    if existing is not None:
+        existing_session, existing_aircraft = existing
+        if existing_session != sample.session_id or existing_aircraft != sample.aircraft_sn:
+            raise ValueError(
+                "정책 위반(여러 세션/기체 합산 금지): 기존 out 파일에 이미 "
+                f"session_id={existing_session!r}/aircraft_sn={existing_aircraft!r} 표본이 "
+                f"있는데 session_id={sample.session_id!r}/aircraft_sn={sample.aircraft_sn!r}를 "
+                f"같은 파일({path})에 append하려 했다 — 세션·기체 조합당 별도 파일을 쓸 것."
+            )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(sample_to_json_line(sample))
@@ -583,7 +965,15 @@ def collect_session(
 
     :func:`read_next_frame_telemetry_timestamps`가 미구현인 동안은 첫 호출에서
     바로 ``NotImplementedError``가 전파된다 — 의도된 fail-closed 동작이다.
+
+    Raises:
+        ValueError: ``session_id``/``aircraft_sn``이 공백이거나 ``num_samples``가
+            bool이거나 1 미만일 때(CLI 경유가 아닌 직접 호출도 지킨다).
     """
+    validate_nonblank_str(session_id, name="session_id")
+    validate_nonblank_str(aircraft_sn, name="aircraft_sn")
+    validate_positive_int(num_samples, name="num_samples")
+
     for i in range(num_samples):
         frame_ts, telemetry_ts = read_next_frame_telemetry_timestamps()
         sample = FrameTelemetrySample(
@@ -603,49 +993,136 @@ def collect_session(
 
 
 def _cmd_collect(args: argparse.Namespace) -> int:
+    try:
+        session_id = validate_nonblank_str(args.session_id, name="--session-id")
+        aircraft_sn = validate_nonblank_str(args.aircraft_sn, name="--aircraft-sn")
+        num_samples = validate_positive_int(args.num_samples, name="--num-samples")
+    except ValueError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 2
+
     collect_session(
-        session_id=args.session_id,
-        aircraft_sn=args.aircraft_sn,
+        session_id=session_id,
+        aircraft_sn=aircraft_sn,
         out_path=Path(args.out),
-        num_samples=args.num_samples,
+        num_samples=num_samples,
     )
     print(f"수집 완료: {args.out}")
     return 0
 
 
-def _cmd_summarize(args: argparse.Namespace) -> int:
-    in_path = Path(args.inp)
-    load_result = load_frame_telemetry_jsonl(
-        in_path, delta_tolerance_ms=args.delta_tolerance_ms
-    )
+def _cmd_summarize(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
+    mode: str = args.mode
+    override_flags = {
+        "--target-p95-ms": args.target_p95_ms,
+        "--min-sample-count": args.min_sample_count,
+        "--delta-tolerance-ms": args.delta_tolerance_ms,
+    }
+    supplied_overrides = [name for name, value in override_flags.items() if value is not None]
 
-    deltas = [s.delta_ms for s in load_result.samples]
-    summary: TimingSummary | None = None
-    if deltas:
-        summary = summarize_deltas(deltas, target_p95_ms=args.target_p95_ms)
-    acceptance = judge_acceptance(summary, min_sample_count=args.min_sample_count)
+    if mode == "official":
+        if supplied_overrides:
+            joined = ", ".join(supplied_overrides)
+            print(
+                "오류: --mode official(기본값)에서는 공식 Acceptance Profile"
+                f"({OFFICIAL_PROFILE.profile_id!r})의 값을 CLI로 완화할 수 없다 — "
+                f"제공된 override 플래그: {joined}. 실험적으로 다른 값을 쓰려면 "
+                "--mode exploratory를 명시할 것(단, exploratory 결과는 acceptance_status가 "
+                "항상 null이며 PASS/VERIFIED 근거로 쓸 수 없다).",
+                file=sys.stderr,
+            )
+            return 2
+        profile = OFFICIAL_PROFILE
+    else:
+        try:
+            target_p95_ms = validate_finite_positive(
+                args.target_p95_ms if args.target_p95_ms is not None else DEFAULT_TARGET_P95_MS,
+                name="--target-p95-ms",
+            )
+            min_sample_count = validate_positive_int(
+                args.min_sample_count
+                if args.min_sample_count is not None
+                else DEFAULT_MIN_SAMPLE_COUNT,
+                name="--min-sample-count",
+            )
+            delta_tolerance_ms = validate_finite_nonnegative(
+                args.delta_tolerance_ms
+                if args.delta_tolerance_ms is not None
+                else DEFAULT_DELTA_TOLERANCE_MS,
+                name="--delta-tolerance-ms",
+            )
+            profile = AcceptanceProfile(
+                profile_id=EXPLORATORY_PROFILE_ID,
+                target_p95_ms=target_p95_ms,
+                min_sample_count=min_sample_count,
+                delta_tolerance_ms=delta_tolerance_ms,
+            )
+        except ValueError as exc:
+            print(f"오류: {exc}", file=sys.stderr)
+            return 2
+
+    in_path = Path(args.inp)
+    load_result = load_frame_telemetry_jsonl(in_path, delta_tolerance_ms=profile.delta_tolerance_ms)
 
     sample_indices = [s.sample_index for s in load_result.samples]
-    result = {
+    session_ids = sorted({s.session_id for s in load_result.samples})
+    aircraft_sns = sorted({s.aircraft_sn for s in load_result.samples})
+
+    base_fields: dict[str, Any] = {
+        "mode": mode,
         "input": str(in_path),
         "input_sha256": load_result.sha256,
         "summarized_at_utc": datetime.now(UTC).isoformat(),
-        "session_ids": sorted({s.session_id for s in load_result.samples}),
-        "aircraft_sns": sorted({s.aircraft_sn for s in load_result.samples}),
-        "sample_index_range": (
-            {"min": min(sample_indices), "max": max(sample_indices)}
-            if sample_indices
-            else None
-        ),
+        "acceptance_profile_id": profile.profile_id,
+        "profile_target_p95_ms": profile.target_p95_ms,
+        "profile_min_sample_count": profile.min_sample_count,
+        "profile_delta_tolerance_ms": profile.delta_tolerance_ms,
+        "session_id": session_ids[0] if len(session_ids) == 1 else None,
+        "session_ids_observed": session_ids,
+        "aircraft_sn": aircraft_sns[0] if len(aircraft_sns) == 1 else None,
+        "aircraft_sns_observed": aircraft_sns,
+        "sample_index_first": min(sample_indices) if sample_indices else None,
+        "sample_index_last": max(sample_indices) if sample_indices else None,
+        "valid_sample_count": len(load_result.samples),
         "rejected_line_count": len(load_result.rejected),
         "rejected_lines": [asdict(r) for r in load_result.rejected],
         "warnings": list(load_result.warnings),
-        "summary": asdict(summary) if summary is not None else None,
-        "measurement_status": acceptance.measurement_status.value,
-        "acceptance_status": (
-            acceptance.acceptance_status.value if acceptance.acceptance_status else None
-        ),
     }
+
+    if mode == "official":
+        judgement = judge_official(load_result, profile=profile)
+        result: dict[str, Any] = {
+            **base_fields,
+            "summary": asdict(judgement.summary) if judgement.summary is not None else None,
+            "evidence_status": judgement.evidence_status.value,
+            "evidence_reasons": list(judgement.evidence_reasons),
+            "measurement_status": judgement.measurement_status.value,
+            "acceptance_status": (
+                judgement.acceptance_status.value if judgement.acceptance_status else None
+            ),
+            "reason_code": judgement.reason_code.value,
+        }
+    else:
+        exploratory = judge_exploratory(load_result, profile=profile)
+        result = {
+            **base_fields,
+            "summary": asdict(exploratory.summary) if exploratory.summary is not None else None,
+            "measurement_status": exploratory.measurement_status.value,
+            "acceptance_status": None,
+            "exploratory_meets_target": exploratory.meets_target,
+            "reason_code": (
+                AcceptanceReasonCode.NOT_MEASURED.value
+                if exploratory.measurement_status is MeasurementStatus.NOT_MEASURED
+                else "EXPLORATORY_NOT_OFFICIAL"
+            ),
+            "notice": (
+                f"EXPLORATORY 모드 결과다(profile_id={profile.profile_id!r}, 공식 profile="
+                f"{OFFICIAL_PROFILE.profile_id!r} 아님) — acceptance_status/"
+                "exploratory_meets_target은 capability VERIFIED 승격 근거로 쓸 수 없다. "
+                "공식 판정은 --mode official(기본값)로만 낸다."
+            ),
+        }
+
     text = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     print(text)
 
@@ -661,25 +1138,43 @@ def _cmd_summarize(args: argparse.Namespace) -> int:
             "rejected_lines 참고",
             file=sys.stderr,
         )
-    if acceptance.acceptance_status is AcceptanceStatus.FAIL:
-        assert summary is not None
+
+    if mode == "official":
+        if judgement.evidence_status is EvidenceStatus.INVALID:
+            print(
+                "주의: evidence_status=INVALID — 공식 PASS 불가. 사유: "
+                + "; ".join(judgement.evidence_reasons),
+                file=sys.stderr,
+            )
+        if (
+            judgement.acceptance_status is AcceptanceStatus.FAIL
+            and judgement.reason_code is AcceptanceReasonCode.REQUIREMENT_NOT_MET
+        ):
+            assert judgement.summary is not None
+            print(
+                f"주의: acceptance_status=FAIL — p95={judgement.summary.p95_ms:.2f}ms > 목표 "
+                f"{judgement.summary.target_p95_ms:.2f}ms. 이 결과로 VERIFIED 승격 금지 "
+                "(docs/hil/CAPABILITY_ACCEPTANCE.md 절차를 따를 것 — 이 스크립트는 승격 "
+                "판정을 내리지 않는다)",
+                file=sys.stderr,
+            )
+        elif judgement.measurement_status is MeasurementStatus.NOT_MEASURED:
+            print(
+                "주의: measurement_status=NOT_MEASURED(표본 0건) — VERIFIED 승격 근거 없음",
+                file=sys.stderr,
+            )
+        elif judgement.acceptance_status is AcceptanceStatus.INSUFFICIENT_SAMPLES:
+            assert judgement.summary is not None
+            print(
+                f"주의: acceptance_status=INSUFFICIENT_SAMPLES — 표본 "
+                f"{judgement.summary.sample_count}건 < 권장 최소 {profile.min_sample_count}건. "
+                "PASS/FAIL 어느 쪽도 아직 주장하지 않는다",
+                file=sys.stderr,
+            )
+    else:
         print(
-            f"주의: acceptance_status=FAIL — p95={summary.p95_ms:.2f}ms > 목표 "
-            f"{summary.target_p95_ms:.2f}ms. 이 결과로 VERIFIED 승격 금지 "
-            "(docs/hil/CAPABILITY_ACCEPTANCE.md 절차를 따를 것 — 이 스크립트는 "
-            "승격 판정을 내리지 않는다)",
-            file=sys.stderr,
-        )
-    elif acceptance.measurement_status is MeasurementStatus.NOT_MEASURED:
-        print(
-            "주의: measurement_status=NOT_MEASURED(표본 0건) — VERIFIED 승격 근거 없음",
-            file=sys.stderr,
-        )
-    elif acceptance.acceptance_status is AcceptanceStatus.INSUFFICIENT_SAMPLES:
-        assert summary is not None
-        print(
-            f"주의: acceptance_status=INSUFFICIENT_SAMPLES — 표본 {summary.sample_count}건 "
-            f"< 권장 최소 {args.min_sample_count}건. PASS/FAIL 어느 쪽도 아직 주장하지 않는다",
+            "주의: --mode exploratory 결과다 — acceptance_status는 항상 null이며 "
+            "capability VERIFIED 승격 근거로 사용할 수 없다.",
             file=sys.stderr,
         )
     return 0
@@ -705,34 +1200,47 @@ def build_parser() -> argparse.ArgumentParser:
     p_summarize = sub.add_parser(
         "summarize",
         help=(
-            "이미 수집된 JSONL을 검증하며 읽어 p50/p95/max + 2축 판정을 낸다 "
-            "(실기 없이 실행 가능)."
+            "이미 수집된 JSONL을 검증하며 읽어 공식/실험 판정을 낸다 (실기 없이 실행 가능)."
         ),
     )
     p_summarize.add_argument("--in", dest="inp", required=True, help="입력 JSONL 경로")
     p_summarize.add_argument("--out", default=None, help="요약 JSON 출력 경로(선택)")
     p_summarize.add_argument(
+        "--mode",
+        choices=["official", "exploratory"],
+        default="official",
+        help=(
+            "official(기본값): 공식 Acceptance Profile "
+            f"({OFFICIAL_PROFILE.profile_id!r})만 쓴다 — CLI override 불가. "
+            "exploratory: 아래 세 플래그로 다른 값을 실험할 수 있으나 acceptance_status는 "
+            "항상 null이며 VERIFIED 근거로 쓸 수 없다."
+        ),
+    )
+    p_summarize.add_argument(
         "--target-p95-ms",
         type=float,
-        default=DEFAULT_TARGET_P95_MS,
-        help=f"비교 대상 p95 목표값 ms (기본 {DEFAULT_TARGET_P95_MS}, PRD §21.1)",
+        default=None,
+        help=(
+            f"[--mode exploratory 전용] 비교 대상 p95 목표값 ms (기본 {DEFAULT_TARGET_P95_MS}). "
+            "official 모드에서 지정하면 오류."
+        ),
     )
     p_summarize.add_argument(
         "--min-sample-count",
         type=int,
-        default=DEFAULT_MIN_SAMPLE_COUNT,
+        default=None,
         help=(
-            "acceptance_status=PASS/FAIL 판정에 필요한 최소 표본 수 "
-            f"(기본 {DEFAULT_MIN_SAMPLE_COUNT})"
+            "[--mode exploratory 전용] 최소 표본 수 "
+            f"(기본 {DEFAULT_MIN_SAMPLE_COUNT}). official 모드에서 지정하면 오류."
         ),
     )
     p_summarize.add_argument(
         "--delta-tolerance-ms",
         type=float,
-        default=DEFAULT_DELTA_TOLERANCE_MS,
+        default=None,
         help=(
-            "저장된 delta_ms와 timestamp 재계산값 사이 허용 오차 ms "
-            f"(기본 {DEFAULT_DELTA_TOLERANCE_MS})"
+            "[--mode exploratory 전용] 저장된 delta_ms와 timestamp 재계산값 사이 허용 오차 ms "
+            f"(기본 {DEFAULT_DELTA_TOLERANCE_MS}). official 모드에서 지정하면 오류."
         ),
     )
     p_summarize.set_defaults(func=_cmd_summarize)
