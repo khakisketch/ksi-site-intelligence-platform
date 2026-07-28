@@ -26,11 +26,11 @@
     },
     "perception pipeline (classification lineage)": {
       "status": "green",
-      "note": "F13 P0 해소: Detection 분류가 Ontology(v1)→Observation→Entity→Event 정책까지 계보로 흐름. 상수 대체·fallback 경로 제거. B1-7(recorded input 실배선) 진입 가능.",
-      "audit_ref": "commit f9fc4b4",
-      "at_sha": "f9fc4b4",
+      "note": "Blocker 6건 전건 폐쇄(1b88fd6): OntologyMapping 강제(의미변조 생성불가)·typed 세분화 5종·id↔name↔canonical 체인검증·미등록버전 2중거부·Entity 분류계보+fingerprint·완전 정렬키. 반증 테스트 전건. 재폐쇄 판정은 독립 재검토 PASS 후.",
+      "audit_ref": "commit 1b88fd6",
+      "at_sha": "1b88fd6",
       "at_module_sha": null,
-      "at": "2026-07-27T19:55:20+09:00"
+      "at": "2026-07-28T01:25:01+09:00"
     }
   }
 }

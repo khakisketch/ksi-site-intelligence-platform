@@ -26,3 +26,4 @@
 {"ts": "2026-07-27T15:04:38+09:00", "event": "risk_add", "goal": "slice-entity-class-hardcoded", "lens": "other", "severity": "high"}
 {"ts": "2026-07-27T19:55:20+09:00", "event": "risk_resolved", "goal": "slice-entity-class-hardcoded", "from_status": "open", "reason": null, "evidence_ref": "commit f9fc4b4 — Versioned Ontology + observed_class 계보 + class-aware tracker + CLASSIFICATION_CONFLICT + event/class compatibility gate. 반증: truck→Person Entity/PERSON_PRESENT 금지(stub+실모델), 게이트 598 passed. INV-031 강화 정본 반영"}
 {"ts": "2026-07-27T19:55:40+09:00", "event": "risk_add", "goal": "onnx-export-recipe-unrecorded", "lens": "other", "severity": "low"}
+{"ts": "2026-07-28T01:01:14+09:00", "event": "risk_regressed", "goal": "slice-entity-class-hardcoded", "from_status": "resolved", "reason": "독립 재검토(e25a9ff 대상) CHANGES_REQUESTED: 임의 class_map·미등록 ontology 버전이 여전히 Person Entity/Event 를 만들 수 있고 model_construct 우회가 typed 실패를 벗어남. Blocker 6건(P0 1·P1 5)", "evidence_ref": null}
