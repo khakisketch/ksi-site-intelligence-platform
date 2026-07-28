@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-28T01:01:14+09:00",
+  "updated_at": "2026-07-28T13:40:15+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -213,14 +213,14 @@
       "title": "vertical_slice 가 entity_class='Person' 을 하드코딩 — 실모델(차량류 포함) 배선 시 트럭 탐지가 Person 이벤트로 승격될 위험 (reviewer F13)",
       "lens": "other",
       "severity": "high",
-      "status": "regressed",
+      "status": "resolved",
       "note": "B1-7 recorded input 을 슬라이스에 실배선하기 전에 detection_class → entity_class 전파를 구현해야 함. 현재는 RecordedFrameDetector 미배선이라 미발현.",
       "accept_reason": null,
-      "resolve_evidence": "commit f9fc4b4 — Versioned Ontology + observed_class 계보 + class-aware tracker + CLASSIFICATION_CONFLICT + event/class compatibility gate. 반증: truck→Person Entity/PERSON_PRESENT 금지(stub+실모델), 게이트 598 passed. INV-031 강화 정본 반영",
+      "resolve_evidence": "commit ad2e568 · independent-review PASS(2026-07-28, review_target ad2e5682130a93d8bb571d58e6e4d8cb868f9616) · 623 passed·5 skipped · mypy 68 files · C++ ctest 2/2 · Actions run 30326490992(gates+edge-control-plane success)",
       "reopen_reason": "독립 재검토(e25a9ff 대상) CHANGES_REQUESTED: 임의 class_map·미등록 ontology 버전이 여전히 Person Entity/Event 를 만들 수 있고 model_construct 우회가 typed 실패를 벗어남. Blocker 6건(P0 1·P1 5)",
-      "previous_status": "resolved",
+      "previous_status": "regressed",
       "created_at": "2026-07-27T15:04:38+09:00",
-      "updated_at": "2026-07-28T01:01:14+09:00"
+      "updated_at": "2026-07-28T13:40:15+09:00"
     },
     {
       "id": "onnx-export-recipe-unrecorded",

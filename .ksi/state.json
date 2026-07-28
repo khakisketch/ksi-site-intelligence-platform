@@ -25,12 +25,12 @@
       "at": "2026-07-27T15:04:39+09:00"
     },
     "perception pipeline (classification lineage)": {
-      "status": "risk",
-      "note": "REVIEW_PENDING(비승인 — green 은 재검토 PASS 후에만): Blocker 6건 + 최종 재검토 P0(OntologyMapping 사후 mutation — 스냅샷·MappingProxyType 불변화·bool id 거부)·P1(원장 SHA 정정) 폐쇄 커밋 재제출. risk 는 reopened 유지, B1-7 보류.",
-      "audit_ref": "commit a725513 + P0/P1 후속(본 커밋)",
-      "at_sha": "e7d8489",
+      "status": "green",
+      "note": "Classification lineage trust boundary independently reviewed PASS. B1-7 allowed. (Actions run 30326490992)",
+      "audit_ref": "commit ad2e568",
+      "at_sha": "ad2e568",
       "at_module_sha": null,
-      "at": "2026-07-28T12:37:33+09:00"
+      "at": "2026-07-28T13:40:15+09:00"
     }
   }
 }
