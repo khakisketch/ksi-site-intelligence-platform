@@ -39,6 +39,14 @@
       "at_sha": "04b7555",
       "at_module_sha": null,
       "at": "2026-07-28T15:24:18+09:00"
+    },
+    "perception pipeline (onnx+hil trust boundary)": {
+      "status": "risk",
+      "note": "REVIEW_PENDING(비승인): ONNX typed manifest 경계 + HIL 공식 profile·증거 게이트 재제출. mutation 실험 3+2종 하네스 유효성 확인. 다음: ONNX 재검토 PASS→risk 재폐쇄→B2 / HIL PASS→Track A read-only 실행 / slice-inference-exception-channel 은 B3 전 폐쇄.",
+      "audit_ref": "commits pending push",
+      "at_sha": "6c1bb36",
+      "at_module_sha": null,
+      "at": "2026-07-28T16:53:46+09:00"
     }
   }
 }
