@@ -14,13 +14,16 @@ from ksi_domain.enums import EventStatus
 from ksi_event_contracts.observation import ViewpointEvidenceKind
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
+
+# private 게이트(_event_bundle_from_entity)는 production 모듈에서 직접 — 픽스처와
+# re-export 는 vertical_slice 경유(승격 후 동일 객체임은 identity 테스트가 고정).
+from ksi_perception.pipeline import _event_bundle_from_entity
 from vertical_slice import (
     EventBuildStatus,
     MinimalTracker,
     ScriptedDetector,
     SliceFrame,
     SliceStage,
-    _event_bundle_from_entity,
     person_detection,
     run_vertical_slice,
     synthetic_telemetry,
@@ -656,3 +659,24 @@ def test_clipped_detections_absorbed_into_slice() -> None:
     assert frame_id == 0
     assert 0.5 <= area_kept < 1.0
     assert "Person" in detail
+
+
+# ── PRODUCTION EDGE RUNTIME PROMOTION — 복사본 부재 앵커 ─────────────────────
+
+
+def test_orchestration_is_production_module_not_a_copy() -> None:
+    """[승격 앵커] replay 하네스는 production pipeline 의 **동일 객체**를 쓴다.
+
+    tests/replay 에 orchestration 복사본이 다시 생기면(승격 취지 붕괴 — production
+    과 test 가 서로 다른 배선을 검증) identity 비교가 즉시 깨진다.
+    """
+    import vertical_slice
+    from ksi_perception import pipeline
+
+    assert vertical_slice.run_vertical_slice is pipeline.run_vertical_slice
+    assert vertical_slice.MinimalTracker is pipeline.MinimalTracker
+    assert vertical_slice.SliceFrame is pipeline.SliceFrame
+    assert vertical_slice.SliceResult is pipeline.SliceResult
+    assert vertical_slice.SliceStage is pipeline.SliceStage
+    assert vertical_slice.DroppedDetection is pipeline.DroppedDetection
+    assert vertical_slice.EventBuildStatus is pipeline.EventBuildStatus

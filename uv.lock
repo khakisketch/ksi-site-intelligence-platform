@@ -431,6 +431,8 @@ version = "0.0.1"
 source = { editable = "packages/perception" }
 dependencies = [
     { name = "ksi-domain" },
+    { name = "ksi-event-contracts" },
+    { name = "ksi-geo-core" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "pydantic" },
@@ -452,6 +454,8 @@ dfine = [
 [package.metadata]
 requires-dist = [
     { name = "ksi-domain", editable = "packages/domain" },
+    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
+    { name = "ksi-geo-core", editable = "packages/geo-core" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnx", marker = "extra == 'dfine'", specifier = ">=1.16" },
     { name = "onnxruntime", marker = "extra == 'dfine'", specifier = ">=1.18" },

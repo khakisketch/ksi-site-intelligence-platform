@@ -7,6 +7,10 @@ requires-python = ">=3.12,<3.13"
 # CI 는 extra 없이 계약 테스트만 돌고, 모델 추론 테스트는 extra+모델파일 존재 시에만 실행된다.
 dependencies = [
     "ksi-domain",
+    # pipeline(제품 orchestration 승격 — tests/replay 에서 이관)이 보간·투영·
+    # Observation/Entity/Event 조립을 엮는다.
+    "ksi-geo-core",
+    "ksi-event-contracts",
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "numpy>=1.26",
@@ -32,3 +36,5 @@ packages = ["src/ksi_perception"]
 
 [tool.uv.sources]
 ksi-domain = { workspace = true }
+ksi-geo-core = { workspace = true }
+ksi-event-contracts = { workspace = true }
