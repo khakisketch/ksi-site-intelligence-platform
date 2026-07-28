@@ -25,8 +25,14 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ksi_domain.ontology import ONTOLOGY_VERSION, classification_lineage_error
+
+if TYPE_CHECKING:
+    # FrameDetectionResult 는 탈락·클리핑 타입과 함께 detection_adapter 소유다 —
+    # 런타임 순환 import 없이 타입 계약만 참조한다.
+    from ksi_domain.detection_adapter import FrameDetectionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +112,25 @@ class Detection:
 
 
 class Detector(ABC):
-    """프레임 → 탐지 후보 목록. 구현 교체 지점(모델 license 게이트는 구현체의 책임)."""
+    """프레임 → typed 프레임 결과. 구현 교체 지점(모델 license 게이트는 구현체의 책임).
+
+    계약은 :class:`~ksi_domain.detection_adapter.FrameDetectionResult` 하나다 —
+    탐지 목록만 반환하고 탈락·클리핑을 mutable 속성으로 흘리던 이전 계약
+    (``detect() -> list[Detection]`` + ``last_dropped``/``last_clipped``)은
+    stale/교차 오염 경로라 제거됐다(slice-inference-exception-channel 폐쇄).
+
+    상태 구분 의무:
+
+    - 없는 frame_id 는 빈 탐지가 아니라 ``FRAME_NOT_FOUND`` 다.
+    - 프레임 1장의 예상 가능한 추론 실패는 ``INFERENCE_FAILED`` 로 반환하고
+      예외를 던지지 않는다(호출자는 다음 프레임을 계속 처리한다).
+    - 호출 인자 계약 위반(비양수 크기)·프로그래머 오류는 typed 로 삼키지 않고
+      예외로 남긴다.
+    """
 
     @abstractmethod
-    def detect(self, frame_id: int, width: int, height: int) -> list[Detection]:
-        """프레임 1장에서 탐지 후보를 만든다.
+    def detect_frame(self, frame_id: int, width: int, height: int) -> FrameDetectionResult:
+        """프레임 1장을 처리해 per-call immutable typed 결과를 반환한다.
 
         Args:
             frame_id: 프레임 식별자(재현성을 위해 결정적 구현은 이 값을 시드로 쓴다).

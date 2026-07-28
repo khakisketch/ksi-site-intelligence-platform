@@ -39,11 +39,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ksi_domain.detection import Detection, Detector
+from ksi_domain.detection import Detector
 from ksi_domain.detection_adapter import (
     AdapterResult,
     BoxFormat,
     DetectionAdapter,
+    FrameDetectionResult,
+    FrameDetectionStatus,
     RawDetection,
 )
 from ksi_domain.ontology import COCO_ONTOLOGY, OntologyMapping
@@ -261,9 +263,10 @@ def load_dfine_detector(
 class RecordedFrameDetector(Detector):
     """frame_id → 녹화 이미지 매핑 + :class:`DFineDetector` 를 :class:`Detector` 로 조립.
 
-    vertical slice 의 Detector 자리에 그대로 꽂히는 recorded-input 구현(B1-7 골격).
-    :class:`~ksi_domain.detection_adapter.AdapterBackedDetector` 와 같은 진단 채널
-    (``last_dropped``·``last_clipped``)을 노출한다.
+    파이프라인의 Detector 자리에 그대로 꽂히는 recorded-input 구현(B1-7 골격).
+    진단(탈락·클리핑)은 :class:`FrameDetectionResult` 반환값에 실린다 — mutable
+    ``last_dropped``/``last_clipped`` side-channel 은 제거됐다
+    (slice-inference-exception-channel 폐쇄).
     """
 
     def __init__(
@@ -274,28 +277,47 @@ class RecordedFrameDetector(Detector):
     ) -> None:
         self._frames = frames
         self._dfine = dfine
-        self.last_dropped: list = []
-        self.last_clipped: list = []
 
-    def detect(self, frame_id: int, width: int, height: int) -> list[Detection]:
-        self.last_dropped = []
-        self.last_clipped = []
+    def detect_frame(self, frame_id: int, width: int, height: int) -> FrameDetectionResult:
         if not (isinstance(width, int) and isinstance(height, int)) or width <= 0 or height <= 0:
+            # 호출 인자 계약 위반(프로그래머 오류) — typed 로 삼키지 않는다.
             raise ValueError(f"프레임 크기는 양의 int 여야 한다 ({width!r}x{height!r})")
         image = self._frames.get(frame_id)
         if image is None:
-            return []
+            # 없는 프레임은 빈 장면이 아니다 — 소스 결손이 "무사고 프레임"으로
+            # 위장하는 경로를 typed 로 끊는다.
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.FRAME_NOT_FOUND,
+                detail=f"frame {frame_id}: 녹화 시퀀스에 없는 frame_id",
+            )
         if (int(image.shape[1]), int(image.shape[0])) != (width, height):
             # 호출자가 선언한 프레임 크기와 실제 녹화 이미지가 다르면 bbox 좌표계가
-            # 통째로 어긋난다 — 조용히 진행하지 않는다.
-            raise ValueError(
-                f"frame {frame_id}: 선언 크기 {width}x{height} ≠ 이미지 "
-                f"{int(image.shape[1])}x{int(image.shape[0])}"
+            # 통째로 어긋난다 — 프레임 데이터 문제로 typed 기록하고 이 프레임만
+            # 실패시킨다(조용한 진행 금지).
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.INVALID_FRAME,
+                detail=(
+                    f"frame {frame_id}: 선언 크기 {width}x{height} ≠ 이미지 "
+                    f"{int(image.shape[1])}x{int(image.shape[0])}"
+                ),
             )
-        result = self._dfine.detect_image(image)
-        self.last_dropped = result.dropped
-        self.last_clipped = result.clipped
-        # 명시적 복사 — adapter 가 호출당 새 리스트를 만드는 현재 관행에 암묵 의존하지
-        # 않는다(반증 리뷰 F14: 프레임별 결과 캐시를 붙이는 리팩터 한 번에 mutation
-        # 격리 계약이 조용히 깨질 수 있다).
-        return list(result.detections)
+        try:
+            result = self._dfine.detect_image(image)
+        except (RuntimeError, OSError, ValueError) as exc:
+            # 프레임 1장의 예상 가능한 추론 실패 — 배치 전체를 죽이지 않는다.
+            # (모델/Registry 로드 실패는 여기 오지 않는다 — load_dfine_detector 가
+            # 실행 시작 전 typed 로 중단한다.)
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.INFERENCE_FAILED,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        return FrameDetectionResult(
+            frame_id=frame_id,
+            status=FrameDetectionStatus.OK,
+            detections=tuple(result.detections),
+            dropped=tuple(result.dropped),
+            clipped=tuple(result.clipped),
+        )

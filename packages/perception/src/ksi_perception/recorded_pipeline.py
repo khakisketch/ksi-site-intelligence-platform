@@ -13,8 +13,9 @@ Runtime entry point 이며 테스트 하네스가 아니다 — replay 테스트
 - **자동 다운로드 금지**: 모델은 Registry digest 검증을 통과한 로컬 디렉토리만
   (:func:`ksi_perception.dfine.load_dfine_detector` 의 ``local_files_only`` 강제).
 - exit code: ``0`` 성공 · ``1`` 구성 실패 · ``2`` 사용법 오류(argparse) ·
-  ``3`` 부분 실패(프레임 단위 typed failure 존재 — frame outcome 경계 도입과
-  함께 활성화되는 예약 코드).
+  ``3`` 부분 실패 — 파이프라인은 완주했으나 프레임 단위 typed failure
+  (FRAME_NOT_FOUND/INVALID_FRAME/INFERENCE_FAILED)가 1건 이상 기록된 실행.
+  산출물은 나오지만 성공으로 위장하지 않는다.
 
 ## 텔레메트리 JSONL 계약
 
@@ -153,6 +154,16 @@ def serialize_result(
             world_entity_fingerprint(e) for e in sorted(result.entities, key=lambda e: e.entity_id)
         ],
         "diagnostics": {
+            "frame_failures": [
+                {
+                    "frame_id": f.frame_id,
+                    "capture_ts_utc": f.capture_ts_utc,
+                    "status": f.status.value,
+                    "detail": f.detail,
+                    "model_version": f.model_version,
+                }
+                for f in result.frame_failures
+            ],
             "dropped": [
                 {
                     "frame_id": d.frame_id,
@@ -321,6 +332,14 @@ def main(argv: list[str] | None = None) -> int:
         print(rendered)
     else:
         args.out.write_text(rendered + "\n", encoding="utf-8")
+    if result.frame_failures:
+        # 부분 실패 — 산출물은 냈지만 성공으로 위장하지 않는다(exit 3).
+        print(
+            f"PARTIAL: 프레임 단위 실패 {len(result.frame_failures)}건 — "
+            "diagnostics.frame_failures 참조",
+            file=sys.stderr,
+        )
+        return 3
     return 0
 
 

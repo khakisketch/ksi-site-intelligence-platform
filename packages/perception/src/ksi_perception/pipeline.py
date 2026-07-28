@@ -37,13 +37,19 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from ksi_domain.detection import BoundingBox, Detection, Detector
+from ksi_domain.detection_adapter import FrameDetectionStatus
 from ksi_domain.enums import EventStatus, Severity, assert_event_transition
 from ksi_event_contracts.assembly import (
     AssemblyStatus,
     assemble_world_entity,
     world_entity_fingerprint,
 )
-from ksi_event_contracts.event_bundle import EventBundle, Evidence, Lineage
+from ksi_event_contracts.event_bundle import (
+    ClassificationLineage,
+    EventBundle,
+    Evidence,
+    Lineage,
+)
 from ksi_event_contracts.observation import (
     Observation,
     ViewpointEvidenceKind,
@@ -146,12 +152,32 @@ class DroppedDetection:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class FrameFailure:
+    """프레임 1장 전체의 typed 실패 기록 — detection 단위 탈락과 구분한다.
+
+    frame_id·capture 시각·모델 계보를 실패에도 보존한다 — "언제의 어떤 프레임이
+    어떤 모델 아래에서 왜 실패했는가"를 실패 기록만으로 역추적할 수 있어야
+    Evidence 로 쓸 수 있다.
+    """
+
+    frame_id: int
+    capture_ts_utc: float
+    status: FrameDetectionStatus
+    detail: str | None
+    model_version: str
+
+
 @dataclass
 class SliceResult:
     """파이프라인 실행 결과 — 각 단계 산출물과 탈락 이유를 모두 보존한다."""
 
     observations: list[Observation] = field(default_factory=list)
     dropped: list[DroppedDetection] = field(default_factory=list)
+    # 프레임 단위 typed 실패(FRAME_NOT_FOUND/INVALID_FRAME/INFERENCE_FAILED) —
+    # 한 프레임의 실패가 배치 전체를 죽이지 않고 여기 기록된 채 다음 프레임이
+    # 계속 처리된다(slice-inference-exception-channel 폐쇄).
+    frame_failures: list[FrameFailure] = field(default_factory=list)
     entities: list[WorldEntity] = field(default_factory=list)
     bundles: list[EventBundle] = field(default_factory=list)
     assembly_failures: list[tuple[str, AssemblyStatus, str | None]] = field(default_factory=list)
@@ -230,6 +256,9 @@ class EventBuildStatus(StrEnum):
     OK = "ok"
     EVENT_CLASS_MISMATCH = "event_class_mismatch"  # event_type 이 entity class 와 불호환
     UNKNOWN_EVENT_TYPE = "unknown_event_type"  # 호환표에 없는 event_type
+    # entity 에 분류 계보(ontology version·원시 출처)가 없다 — 계보 없는 이벤트
+    # 발행 금지(INV-031, EventBundle v1.2 standalone lineage 의 assembly gate).
+    MISSING_CLASSIFICATION_LINEAGE = "missing_classification_lineage"
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +303,20 @@ def _event_bundle_from_entity(
             ),
         )
 
+    # Standalone classification lineage (EventBundle v1.2, INV-031) — bundle 이
+    # WorldEntity 와 분리 전송돼도 분류 계보가 검증 가능해야 한다. entity 의
+    # 계보가 비어 있으면 이벤트를 만들지 않는다(계보 없는 발행 금지).
+    ontology_version = entity.lineage.classification_ontology_version
+    classification_source = entity.lineage.classification_source
+    if ontology_version is None or classification_source is None:
+        return EventBuildResult(
+            status=EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE,
+            detail=(
+                f"entity {entity.entity_id}: classification_ontology_version/"
+                "classification_source 부재 — 계보 없는 이벤트 발행 금지(INV-031)"
+            ),
+        )
+
     assert_event_transition(None, EventStatus.OBSERVATION)
     assert_event_transition(EventStatus.OBSERVATION, EventStatus.CANDIDATE)
 
@@ -306,6 +349,16 @@ def _event_bundle_from_entity(
             model_versions={"detector": model_version},
             policy_version="slice-policy-0",
             calibration_profile_id="slice-cal-0",
+            classification={
+                entity.entity_id: ClassificationLineage(
+                    entity_class=entity.entity_class,
+                    ontology_version=ontology_version,
+                    source=classification_source,
+                    # 생성 규칙: world_entity_fingerprint(entity) 뿐 — 수신자는
+                    # WorldEntity 확보 시 같은 함수로 재계산해 대조한다.
+                    entity_fingerprint=world_entity_fingerprint(entity),
+                )
+            },
         ),
     )
     return EventBuildResult(status=EventBuildStatus.OK, bundle=bundle)
@@ -344,6 +397,21 @@ def run_vertical_slice(
     per_track: dict[str, list[Observation]] = {}
 
     for frame in sorted(frames, key=lambda f: (f.capture_ts_utc, f.frame_id)):
+        outcome = detector.detect_frame(frame.frame_id, frame.width, frame.height)
+        if not outcome.ok:
+            # 프레임 단위 typed 실패 — 이 프레임만 기록하고 다음 프레임을 계속
+            # 처리한다(한 장의 실패가 배치 전체를 죽이지 않는다). FRAME_NOT_FOUND
+            # 는 빈 장면과 구분되는 실패다(소스 결손의 무사고 위장 금지).
+            result.frame_failures.append(
+                FrameFailure(
+                    frame_id=frame.frame_id,
+                    capture_ts_utc=frame.capture_ts_utc,
+                    status=outcome.status,
+                    detail=outcome.detail,
+                    model_version=model_version,
+                )
+            )
+            continue
         # 프레임 내 detection 도 결정적 순서로 정규화한다 — tracker 의 그리디 배정이
         # 입력 순서 종속이라, 정렬 없이는 같은 장면의 detection 순서 차이가 track
         # 라벨을 뒤바꿔 재현성(P0-6)이 깨진다(프레임 정렬과 같은 정신).
@@ -354,7 +422,7 @@ def run_vertical_slice(
         # 중복 detection 은 어느 순서로 처리해도 산출물이 같으므로 stable 정렬로
         # 충분하다 — 그 중복을 합칠지는 tracker 가 아니라 상류(NMS)의 몫이다.
         detections = sorted(
-            detector.detect(frame.frame_id, frame.width, frame.height),
+            outcome.detections,
             key=lambda d: (
                 d.detection_class,
                 d.bbox.x_min,
@@ -370,10 +438,11 @@ def run_vertical_slice(
             ),
         )
         # Detector 단계의 typed drop(adapter 의 UNKNOWN_LABEL·MALFORMED_CLASS_LINEAGE·
-        # EXCESSIVE_CLIP 등)도 탈락 기록으로 흡수한다 — 진단 채널이 "기록 후
-        # 폐기"로 남지 않게(B1-7 배선, 반증 리뷰 F3 완결). track 배정 전 탈락이라
-        # track_id 는 자리표시자다.
-        for detector_drop in getattr(detector, "last_dropped", []):
+        # EXCESSIVE_CLIP 등)도 탈락 기록으로 흡수한다 — 진단이 "기록 후 폐기"로
+        # 남지 않게(B1-7 배선, 반증 리뷰 F3 완결). per-call 반환값 소비라 이전
+        # 프레임 진단이 섞일 경로가 없다. track 배정 전 탈락이라 track_id 는
+        # 자리표시자다.
+        for detector_drop in outcome.dropped:
             result.dropped.append(
                 DroppedDetection(
                     frame.frame_id,
@@ -382,7 +451,7 @@ def run_vertical_slice(
                     f"{detector_drop.reason}: {detector_drop.detail}",
                 )
             )
-        for clipped in getattr(detector, "last_clipped", []):
+        for clipped in outcome.clipped:
             result.clipped_detections.append(
                 (
                     frame.frame_id,

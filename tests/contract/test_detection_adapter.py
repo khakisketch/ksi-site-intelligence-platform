@@ -297,20 +297,21 @@ def test_subset_mapping_allowed() -> None:
 # ── AdapterBackedDetector 조립 ────────────────────────────────────────────────
 
 
-def test_adapter_backed_detector_exposes_last_dropped() -> None:
-    """탈락 기록이 조용히 사라지지 않고 last_dropped 로 노출된다."""
+def test_adapter_backed_detector_returns_dropped_in_result() -> None:
+    """탈락 기록이 조용히 사라지지 않고 FrameDetectionResult.dropped 에 실린다."""
 
     def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
         return [RawDetection(label="giraffe", score=0.9, box=(10.0, 20.0, 110.0, 220.0))]
 
     detector = AdapterBackedDetector(raw_source=raw_source, adapter=_adapter())
-    assert detector.detect(1, _W, _H) == []
-    [dropped] = detector.last_dropped
+    result = detector.detect_frame(1, _W, _H)
+    assert result.ok and result.detections == ()
+    [dropped] = result.dropped
     assert dropped.reason is DropReason.UNKNOWN_LABEL
 
 
-def test_adapter_backed_detector_resets_dropped_per_frame() -> None:
-    """last_dropped 는 마지막 호출분만 — 프레임 간 누적되지 않는다."""
+def test_adapter_backed_detector_diagnostics_are_per_call() -> None:
+    """진단은 호출별 반환값이다 — 프레임 간 누적·잔존이 구조적으로 없다."""
 
     def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
         if frame_id == 1:
@@ -318,10 +319,12 @@ def test_adapter_backed_detector_resets_dropped_per_frame() -> None:
         return [RawDetection(label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0))]
 
     detector = AdapterBackedDetector(raw_source=raw_source, adapter=_adapter())
-    detector.detect(1, _W, _H)
-    assert len(detector.last_dropped) == 1
-    assert len(detector.detect(2, _W, _H)) == 1
-    assert detector.last_dropped == []
+    first = detector.detect_frame(1, _W, _H)
+    assert len(first.dropped) == 1
+    second = detector.detect_frame(2, _W, _H)
+    assert len(second.detections) == 1
+    assert second.dropped == (), "frame 1 의 탈락이 frame 2 결과에 편승했다"
+    assert len(first.dropped) == 1, "이후 호출이 이전 호출의 결과를 변조했다"
 
 
 # ── 반증 리뷰 회귀 (2026-07-27) ───────────────────────────────────────────────
@@ -405,18 +408,25 @@ def test_unclipped_batch_has_empty_clipped_records() -> None:
     assert result.clipped == []
 
 
-def test_stale_dropped_cleared_on_failed_call() -> None:
-    """[F3] 실패한 호출 뒤 last_dropped 는 이전 프레임 기록을 유지하지 않는다."""
+def test_failed_call_leaves_no_stale_diagnostics() -> None:
+    """[F3 → 구조적 폐쇄] 실패 호출은 진단을 남길 채널 자체가 없다.
+
+    구 계약에선 mutable last_dropped 가 "호출 시작 시 비우기" 규율로 stale 을
+    막았다 — 지금은 진단이 per-call 반환값에만 실리므로 실패(예외) 호출은
+    아무 기록도 만들지 않고, 이전/이후 호출의 결과와 섞일 수 없다.
+    """
 
     def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
         return [RawDetection(label="giraffe", score=0.9, box=(10.0, 20.0, 110.0, 220.0))]
 
     detector = AdapterBackedDetector(raw_source=raw_source, adapter=_adapter())
-    detector.detect(1, _W, _H)
-    assert len(detector.last_dropped) == 1
+    first = detector.detect_frame(1, _W, _H)
+    assert len(first.dropped) == 1
     with pytest.raises(ValueError):
-        detector.detect(2, 0, _H)
-    assert detector.last_dropped == [], "실패한 호출의 stale 기록이 남았다 — 오독 경로"
+        detector.detect_frame(2, 0, _H)
+    assert not hasattr(detector, "last_dropped"), "mutable side-channel 이 부활했다"
+    again = detector.detect_frame(3, _W, _H)
+    assert len(again.dropped) == 1 and again.frame_id == 3
 
 
 def test_bool_label_does_not_match_int_class_key() -> None:
@@ -468,7 +478,7 @@ def test_nan_frame_size_rejected_not_nan_blind() -> None:
         _adapter().convert([], width=float("nan"), height=_H)  # type: ignore[arg-type]
     detector = AdapterBackedDetector(raw_source=lambda *_: [], adapter=_adapter())
     with pytest.raises(ValueError, match="프레임 크기"):
-        detector.detect(1, float("nan"), _H)  # type: ignore[arg-type]
+        detector.detect_frame(1, float("nan"), _H)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -500,7 +510,7 @@ def test_raw_source_not_called_on_invalid_frame_size() -> None:
 
     detector = AdapterBackedDetector(raw_source=raw_source, adapter=_adapter())
     with pytest.raises(ValueError):
-        detector.detect(1, 0, _H)
+        detector.detect_frame(1, 0, _H)
     assert calls == [], "invalid 크기에서 raw_source 가 호출됐다"
 
 

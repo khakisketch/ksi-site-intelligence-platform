@@ -22,6 +22,7 @@ MinimalTracker·SliceFrame/Result/Stage·event 정책 게이트)은
 from __future__ import annotations
 
 from ksi_domain.detection import BoundingBox, Detection, Detector
+from ksi_domain.detection_adapter import FrameDetectionResult, FrameDetectionStatus
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 
@@ -32,6 +33,7 @@ from ksi_perception.pipeline import (  # noqa: F401
     DroppedDetection,
     EventBuildResult,
     EventBuildStatus,
+    FrameFailure,
     MinimalTracker,
     SliceFrame,
     SliceResult,
@@ -46,15 +48,47 @@ class ScriptedDetector(Detector):
     모델을 도입하지 않는 이유는 ``ksi_domain.detection`` 모듈 docstring 참고
     (배선과 모델 정확도를 분리해 디버깅). 실제 Detector로 교체할 때 이 클래스만
     바뀌고 파이프라인은 그대로다.
+
+    frame 단위 typed 결과 계약을 그대로 따른다:
+
+    - ``known_frames`` 를 주면 그 밖의 frame_id 는 ``FRAME_NOT_FOUND`` 다(파이프
+      라인의 결손 프레임 경로 검증용). 주지 않으면 스크립트에 없는 프레임은
+      기존 의미대로 "빈 장면"이다.
+    - ``fail_frames`` 의 frame_id 는 ``INFERENCE_FAILED`` 를 반환한다(프레임 1장
+      실패가 배치를 죽이지 않는 경로 검증용).
     """
 
-    def __init__(self, script: dict[int, list[Detection]]) -> None:
+    def __init__(
+        self,
+        script: dict[int, list[Detection]],
+        *,
+        known_frames: set[int] | None = None,
+        fail_frames: dict[int, str] | None = None,
+    ) -> None:
         self._script = script
+        self._known_frames = known_frames
+        self._fail_frames = fail_frames or {}
 
-    def detect(self, frame_id: int, width: int, height: int) -> list[Detection]:
+    def detect_frame(self, frame_id: int, width: int, height: int) -> FrameDetectionResult:
         if width <= 0 or height <= 0:
             raise ValueError(f"프레임 크기는 양수여야 한다 ({width}x{height})")
-        return list(self._script.get(frame_id, []))
+        if frame_id in self._fail_frames:
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.INFERENCE_FAILED,
+                detail=self._fail_frames[frame_id],
+            )
+        if self._known_frames is not None and frame_id not in self._known_frames:
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.FRAME_NOT_FOUND,
+                detail=f"frame {frame_id}: 스크립트 소스에 없는 frame_id",
+            )
+        return FrameDetectionResult(
+            frame_id=frame_id,
+            status=FrameDetectionStatus.OK,
+            detections=tuple(self._script.get(frame_id, [])),
+        )
 
 
 def synthetic_telemetry(

@@ -253,6 +253,59 @@ def test_cli_runs_production_pipeline_end_to_end(
     assert payload["entity_fingerprints"], "지문 없는 산출물은 재현성 비교 불가"
 
 
+def test_cli_partial_failure_exits_3_with_typed_frame_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """프레임 단위 실패가 있으면 산출물은 내되 exit 3 — 성공으로 위장하지 않는다."""
+
+    def _failing_loader(**_kwargs: object) -> tuple[ScriptedDetector, str, int, int, int]:
+        detector = ScriptedDetector(
+            {
+                i: [
+                    person_detection(
+                        x_min=900.0 + i * 4, y_min=500.0, x_max=980.0 + i * 4, y_max=700.0
+                    )
+                ]
+                for i in range(3)
+            },
+            fail_frames={1: "synthetic inference failure"},
+        )
+        return detector, "scripted-stub-0", 3, 1920, 1080
+
+    monkeypatch.setattr(recorded_pipeline, "_load_recorded_detector", _failing_loader)
+    telemetry = tmp_path / "telemetry.jsonl"
+    telemetry.write_text(
+        "\n".join(_telemetry_line(ts) for ts in (0.0, 0.2, 0.4)) + "\n", encoding="utf-8"
+    )
+    out = tmp_path / "result.json"
+    code = main(
+        [
+            str(tmp_path / "f0.jpg"),
+            str(tmp_path / "f1.jpg"),
+            str(tmp_path / "f2.jpg"),
+            "--telemetry",
+            str(telemetry),
+            "--model-dir",
+            str(tmp_path),
+            "--min-confidence",
+            "0.5",
+            "--frame-interval-s",
+            "0.2",
+            "--out",
+            str(out),
+        ]
+    )
+    assert code == 3, "부분 실패가 exit 0 으로 위장했다"
+    assert "PARTIAL" in capsys.readouterr().err
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    [failure] = payload["diagnostics"]["frame_failures"]
+    assert failure["frame_id"] == 1
+    assert failure["status"] == "inference_failed"
+    assert failure["model_version"] == "scripted-stub-0"
+    # 살아남은 프레임의 산출물은 그대로 나온다(부분 실패 ≠ 전체 실패).
+    assert len(payload["observations"]) == 2
+
+
 def test_serialized_result_is_deterministic() -> None:
     """같은 입력 2회 → 문자 단위 동일 JSON (P0-6 이 entry 출력까지 이어진다)."""
 

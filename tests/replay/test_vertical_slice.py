@@ -10,6 +10,7 @@ green≠작동 초점: "슬라이스가 실행됨"이 아니라 **각 단계가 
 from __future__ import annotations
 
 import pytest
+from ksi_domain.detection_adapter import FrameDetectionStatus
 from ksi_domain.enums import EventStatus
 from ksi_event_contracts.observation import ViewpointEvidenceKind
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
@@ -326,7 +327,7 @@ def test_out_of_range_confidence_rejected() -> None:
 def test_scripted_detector_rejects_invalid_frame_size() -> None:
     detector = ScriptedDetector({})
     with pytest.raises(ValueError, match="프레임 크기"):
-        detector.detect(0, 0, 1080)
+        detector.detect_frame(0, 0, 1080)
 
 
 # ── 분류 계보 (INV-031, F13 — 3차 반증 리뷰 P0) ──────────────────────────────
@@ -659,6 +660,194 @@ def test_clipped_detections_absorbed_into_slice() -> None:
     assert frame_id == 0
     assert 0.5 <= area_kept < 1.0
     assert "Person" in detail
+
+
+# ── Frame typed outcome 경계 (slice-inference-exception-channel 폐쇄) ────────
+
+
+def test_mid_frame_inference_failure_does_not_kill_batch() -> None:
+    """[핵심] 프레임 1장의 추론 실패가 배치 전체를 죽이지 않는다.
+
+    frame 0 성공 → frame 1 INFERENCE_FAILED(typed 기록) → frame 2 성공. 실패
+    기록에는 frame_id·capture 시각·모델 계보가 보존된다.
+    """
+    detector = ScriptedDetector(
+        _walking_script(3), fail_frames={1: "synthetic: CUDA error (주입 실패)"}
+    )
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=detector,
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    assert len(result.observations) == 2, "frame 0·2 는 계속 처리돼야 한다"
+    [failure] = result.frame_failures
+    assert failure.frame_id == 1
+    assert failure.capture_ts_utc == 0.2
+    assert failure.status is FrameDetectionStatus.INFERENCE_FAILED
+    assert failure.detail is not None and "주입 실패" in failure.detail
+    assert failure.model_version == "scripted-stub-0", "실패 기록에도 모델 계보가 남아야 한다"
+    # 살아남은 두 프레임은 같은 track 으로 이어지고 이벤트도 발행된다.
+    assert len(result.entities) == 1
+    assert len(result.entities[0].lineage.observation_ids or []) == 2
+    assert len(result.bundles) == 1
+
+
+def test_missing_frame_is_frame_not_found_not_empty_scene() -> None:
+    """[핵심] 없는 frame_id 는 빈 장면이 아니다 — 소스 결손의 무사고 위장 금지."""
+    detector = ScriptedDetector(_walking_script(1), known_frames={0, 2})
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=detector,
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    [failure] = result.frame_failures
+    assert failure.frame_id == 1
+    assert failure.status is FrameDetectionStatus.FRAME_NOT_FOUND
+
+    # 대조군: 소스에 있는 프레임의 탐지 0건은 실패가 아니라 정상 빈 장면이다.
+    clean = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=ScriptedDetector(_walking_script(1), known_frames={0, 1, 2}),
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    assert clean.frame_failures == [], "빈 장면이 FRAME_NOT_FOUND 로 위장 실패했다"
+
+
+def test_first_frame_drops_do_not_bleed_into_later_frames() -> None:
+    """[진단 격리] frame 0 에서만 나온 탈락이 뒤 프레임 기록으로 새지 않는다."""
+    from ksi_domain.detection_adapter import (
+        AdapterBackedDetector,
+        BoxFormat,
+        DetectionAdapter,
+        RawDetection,
+    )
+    from ksi_domain.ontology import COCO_ONTOLOGY
+
+    def raw_source(frame_id: int, width: int, height: int) -> list[RawDetection]:
+        if frame_id == 0:
+            return [
+                RawDetection(label="giraffe", score=0.9, box=(100.0, 100.0, 200.0, 200.0)),
+                # 살아남는 클리핑 1건 — clipped 채널의 격리도 함께 본다.
+                RawDetection(
+                    label="person", score=0.9, box=(-20.0, 500.0, 60.0, 700.0), source_class_id=0
+                ),
+            ]
+        return [
+            RawDetection(
+                label="person",
+                score=0.9,
+                box=(900.0 + frame_id * 4.0, 500.0, 980.0 + frame_id * 4.0, 700.0),
+                source_class_id=0,
+            )
+        ]
+
+    detector = AdapterBackedDetector(
+        raw_source=raw_source,
+        adapter=DetectionAdapter(
+            box_format=BoxFormat.XYXY, normalized=False, ontology=COCO_ONTOLOGY
+        ),
+    )
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2, 0.4]),
+        detector=detector,
+        telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+        drone_position=_DRONE_POSE,
+    )
+    detection_drops = [d for d in result.dropped if d.stage is SliceStage.DETECTION]
+    assert [d.frame_id for d in detection_drops] == [0], (
+        f"frame 0 의 탈락이 다른 프레임 기록으로 샜다: {detection_drops}"
+    )
+    assert [f for f, _, _ in result.clipped_detections] == [0], "clipped 채널 격리 실패"
+
+
+def test_out_of_order_frames_keep_per_frame_diagnostics() -> None:
+    """[진단 격리] 입력 순서를 뒤섞어도 frame별 진단·실패 귀속이 교차하지 않는다."""
+    def build(frames_order: list[float]) -> object:
+        return run_vertical_slice(
+            frames=[
+                SliceFrame(
+                    frame_id=int(ts / 0.2), capture_ts_utc=ts, width=_WIDTH, height=_HEIGHT
+                )
+                for ts in frames_order
+            ],
+            detector=ScriptedDetector(
+                _walking_script(3), fail_frames={2: "동일 주입 실패"}
+            ),
+            telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
+            drone_position=_DRONE_POSE,
+        )
+
+    forward = build([0.0, 0.2, 0.4])
+    shuffled = build([0.4, 0.0, 0.2])
+    assert [f.frame_id for f in forward.frame_failures] == [2]  # type: ignore[attr-defined]
+    assert [
+        (f.frame_id, f.status, f.capture_ts_utc) for f in forward.frame_failures  # type: ignore[attr-defined]
+    ] == [
+        (f.frame_id, f.status, f.capture_ts_utc) for f in shuffled.frame_failures  # type: ignore[attr-defined]
+    ]
+    assert forward.entity_fingerprints() == shuffled.entity_fingerprints()  # type: ignore[attr-defined]
+
+
+# ── EventBundle standalone classification lineage (v1.2, INV-031) ────────────
+
+
+def test_bundle_carries_standalone_classification_lineage() -> None:
+    """정상 경로: bundle 이 entity 없이도 검증 가능한 분류 계보를 들고 다닌다."""
+    from ksi_event_contracts.assembly import world_entity_fingerprint
+
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_walking_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+    )
+    [bundle] = result.bundles
+    [entity] = result.entities
+    lineage = bundle.lineage.classification[entity.entity_id]
+    assert lineage.entity_class == "Person"
+    assert lineage.ontology_version == "ksi-ontology-v1"
+    assert "person" in lineage.source.source_class_names
+    assert lineage.entity_fingerprint == world_entity_fingerprint(entity), (
+        "fingerprint 는 world_entity_fingerprint 재계산과 일치해야 한다(검증 규칙)"
+    )
+
+
+def test_entity_without_classification_lineage_cannot_publish_event() -> None:
+    """[assembly gate] 분류 계보가 빈 entity 는 이벤트가 되지 못한다(typed 거부)."""
+    from datetime import UTC, datetime
+
+    from ksi_domain.enums import Severity
+    from ksi_event_contracts.world_entity import (
+        EntityLineage,
+        Pose,
+        Uncertainty,
+        WorldEntity,
+    )
+    from ksi_perception.pipeline import _event_bundle_from_entity
+
+    bare = WorldEntity(
+        entity_id="ent-bare",
+        entity_class="Person",  # type: ignore[call-arg]
+        timestamp=datetime(2026, 7, 27, 6, 0, 0, tzinfo=UTC),
+        site_frame="EPSG:4326+WGS84@slice-1.0.0",
+        pose=Pose(position=[37.5, 127.0, 0.0]),
+        uncertainty=Uncertainty(position_covariance=[1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0]),
+        lineage=EntityLineage(
+            track_id="trk-001",
+            model_versions={"detector": "stub"},
+            calibration_profile_id="cal-0",
+            # classification_ontology_version / classification_source 부재 —
+            # v1.1 산출물(후방 호환 Optional)이 이벤트로 흐르려는 상황.
+        ),
+    )
+    built = _event_bundle_from_entity(
+        bare, severity=Severity.CANDIDATE, event_type="PERSON_PRESENT", model_version="stub"
+    )
+    assert not built.ok and built.bundle is None
+    assert built.status is EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE
 
 
 # ── PRODUCTION EDGE RUNTIME PROMOTION — 복사본 부재 앵커 ─────────────────────

@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/event-bundle.v1.2.json",
+  "title": "EventBundle v1.2",
+  "description": "v1.1 + lineage.classification (standalone classification lineage, INV-031) — EventBundle 이 WorldEntity 와 분리 전송돼도 분류 계보가 검증 가능하다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "missionId",
+    "siteId",
+    "eventType",
+    "occurredAt",
+    "status",
+    "entities",
+    "spatialContext",
+    "reasoning",
+    "evidence",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.2"
+    },
+    "eventId": {
+      "type": "string"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "OBSERVATION",
+        "CANDIDATE",
+        "EVIDENCE_COLLECTION",
+        "FINDING",
+        "CONFIRMED_EVENT",
+        "DISMISSED",
+        "UNRESOLVED"
+      ]
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "spatialContext": {
+      "type": "object"
+    },
+    "reasoning": {
+      "type": "object"
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "contextImages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detailImages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trajectoryArtifact": {
+          "type": "string"
+        },
+        "clipPolicy": {
+          "type": "object",
+          "required": [
+            "preSeconds",
+            "postSeconds"
+          ],
+          "properties": {
+            "preSeconds": {
+              "type": "number"
+            },
+            "postSeconds": {
+              "type": "number"
+            }
+          }
+        },
+        "riskFieldArtifact": {
+          "type": "string"
+        },
+        "viewpointHistoryArtifact": {
+          "type": "string"
+        },
+        "bundleDigest": {
+          "type": "string"
+        },
+        "edgeSignature": {
+          "type": "string"
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": [
+        "edgeVersion",
+        "modelVersions",
+        "policyVersion",
+        "calibrationProfileId",
+        "classification"
+      ],
+      "properties": {
+        "edgeVersion": {
+          "type": "string"
+        },
+        "modelVersions": {
+          "type": "object"
+        },
+        "policyVersion": {
+          "type": "string"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "object",
+          "description": "entity_id → 분류 계보. entities 목록과 키 집합이 정확히 일치해야 한다(누락도 잉여도 거부).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entityClass",
+              "ontologyVersion",
+              "source",
+              "entityFingerprint"
+            ],
+            "properties": {
+              "entityClass": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ontologyVersion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "taxonomy",
+                  "sourceClassIds",
+                  "sourceClassNames"
+                ],
+                "properties": {
+                  "taxonomy": {
+                    "type": "string"
+                  },
+                  "sourceClassIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "sourceClassNames": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "entityFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "world_entity_fingerprint(entity) — entity_id 제외 내용 기반 sha256. 수신자는 WorldEntity 확보 시 재계산 대조."
+              }
+            }
+          }
+        }
+      }
+    },
+    "review": {
+      "type": "object"
+    },
+    "timing": {
+      "type": "object",
+      "properties": {
+        "candidateLatencyMs": {
+          "type": "number"
+        },
+        "localAlertLatencyMs": {
+          "type": "number"
+        },
+        "serverNotificationLatencyMs": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

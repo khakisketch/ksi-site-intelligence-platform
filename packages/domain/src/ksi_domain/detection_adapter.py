@@ -162,6 +162,48 @@ class AdapterResult:
     clipped: list[ClippedDetection]
 
 
+class FrameDetectionStatus(StrEnum):
+    """프레임 1장 탐지 호출의 typed 결과 상태 (slice-inference-exception-channel 폐쇄).
+
+    - ``FRAME_NOT_FOUND`` 는 빈 장면이 아니다 — "그 frame_id 의 데이터가 없다"와
+      "프레임은 있는데 탐지가 0건이다"를 구분하지 못하면 소스 결손이 조용한 무사고
+      장면으로 위장한다.
+    - ``INVALID_FRAME`` 은 프레임 **데이터**의 문제(선언 크기≠실물·구조 위반)다.
+      호출 **인자**의 계약 위반(비양수 크기 등)은 프로그래머 오류라 typed 로
+      삼키지 않고 예외로 남긴다(무차별 catch 금지).
+    - ``INFERENCE_FAILED`` 는 그 프레임의 예상 가능한 추론 실패다 — 파이프라인은
+      이 프레임을 typed 로 기록하고 다음 프레임을 계속 처리한다(배치 전체 종료
+      금지). 모델/Registry/구성 로드 실패는 여기 속하지 않는다 — 그것은 실행
+      시작 전 fail-closed 중단 대상이다.
+    """
+
+    OK = "ok"
+    FRAME_NOT_FOUND = "frame_not_found"
+    INVALID_FRAME = "invalid_frame"
+    INFERENCE_FAILED = "inference_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class FrameDetectionResult:
+    """프레임 1장 탐지 호출의 per-call **immutable** 결과.
+
+    탈락·클리핑 진단이 mutable 속성(last_dropped/last_clipped)이 아니라 호출
+    반환값에 실린다 — 이전 프레임의 진단이 다음 프레임으로 누출되는 stale/교차
+    오염 경로가 구조적으로 없다(Streaming·동시성 전제).
+    """
+
+    frame_id: int
+    status: FrameDetectionStatus
+    detections: tuple[Detection, ...] = ()
+    dropped: tuple[DroppedRawDetection, ...] = ()
+    clipped: tuple[ClippedDetection, ...] = ()
+    detail: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status is FrameDetectionStatus.OK
+
+
 class DetectionAdapter:
     """모델 raw output 배치 → Detection 목록 정규화.
 
@@ -440,14 +482,10 @@ class AdapterBackedDetector(Detector):
     정규화·계약 준수는 adapter 한 곳에서 보장되므로 conformance 를 다시 증명할
     필요가 없다.
 
-    탈락·클리핑 기록은 ``last_dropped``·``last_clipped`` 로 노출한다
-    (:meth:`Detector.detect` 시그니처는 Detection 목록만 반환하므로). 프레임 간
-    누적하지 않으며, **호출 시작 시점에 비운다** — 실패한 호출 뒤에 이전 프레임
-    기록이 남아 현재 프레임 것으로 오독되는 stale 경로를 막는다.
-
-    이 기록의 파이프라인 소비(slice 탈락 사유로의 배선)는 B1-7(recorded input
-    통합)에서 AdapterBackedDetector 가 슬라이스에 물릴 때 붙는다 — 그 전까지는
-    테스트·진단 채널이다.
+    탈락·클리핑 기록은 :class:`FrameDetectionResult` 반환값에 실린다 — 과거의
+    mutable ``last_dropped``/``last_clipped`` side-channel 은 제거됐다(호출자
+    읽기 규율에 의존하는 stale/교차 오염 경로라 Streaming·동시성 전제에서 결함,
+    slice-inference-exception-channel 폐쇄).
     """
 
     def __init__(
@@ -458,19 +496,27 @@ class AdapterBackedDetector(Detector):
     ) -> None:
         self._raw_source = raw_source
         self._adapter = adapter
-        self.last_dropped: list[DroppedRawDetection] = []
-        self.last_clipped: list[ClippedDetection] = []
 
-    def detect(self, frame_id: int, width: int, height: int) -> list[Detection]:
-        # 기록을 먼저 비운다 — 아래에서 예외가 나가면(크기 위반·raw_source 실패)
-        # 이전 프레임 기록이 stale 로 남지 않게(위 docstring).
-        self.last_dropped = []
-        self.last_clipped = []
+    def detect_frame(self, frame_id: int, width: int, height: int) -> FrameDetectionResult:
         if not (isinstance(width, int) and isinstance(height, int)) or width <= 0 or height <= 0:
+            # 호출 인자 계약 위반 — 프레임 데이터가 아니라 호출자 코드의 문제라
+            # typed 로 삼키지 않는다(전 프레임에 걸친 구성 오류를 조기 노출).
             raise ValueError(f"프레임 크기는 양의 int 여야 한다 ({width!r}x{height!r})")
-        result = self._adapter.convert(
-            self._raw_source(frame_id, width, height), width=width, height=height
+        try:
+            raws = self._raw_source(frame_id, width, height)
+        except (RuntimeError, OSError, ValueError) as exc:
+            # 예상 가능한 inference/입력 실패만 그 프레임의 failure 로 변환한다 —
+            # TypeError/AttributeError 등 프로그래머 오류는 그대로 전파된다.
+            return FrameDetectionResult(
+                frame_id=frame_id,
+                status=FrameDetectionStatus.INFERENCE_FAILED,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        result = self._adapter.convert(raws, width=width, height=height)
+        return FrameDetectionResult(
+            frame_id=frame_id,
+            status=FrameDetectionStatus.OK,
+            detections=tuple(result.detections),
+            dropped=tuple(result.dropped),
+            clipped=tuple(result.clipped),
         )
-        self.last_dropped = result.dropped
-        self.last_clipped = result.clipped
-        return result.detections
