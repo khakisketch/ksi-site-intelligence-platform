@@ -43,6 +43,23 @@ class RegistryStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class OnnxExportEntry:
+    """Registry `export` 섹션 — ONNX 산출물의 **외부 권위 앵커** (재검토 P0).
+
+    manifest 는 산출물 옆에 놓이는 자기 서술이라, ONNX+manifest 를 함께 교체하면
+    자체 일관성 검사를 통과한다. Registry(코드리뷰 대상 원장)의 이 레코드가
+    manifest 를 대조하는 기준이 되어야 `PyTorch 원본 → ONNX` 계보가 강제된다.
+    """
+
+    schema: str
+    onnx_sha256: str
+    exporter: str
+    opset: int
+    input_names: tuple[str, ...]
+    output_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ModelEntry:
     """원장 1건의 로드 결과 — 검증에 필요한 필드만 추린다."""
 
@@ -52,6 +69,7 @@ class ModelEntry:
     file_digests: dict[str, str]  # 파일명 → sha256(hex64)
     person_label_id: int
     production_status: str
+    export: OnnxExportEntry | None = None  # export 섹션 미기록 모델은 None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +107,19 @@ def load_model_entry(
         pretraining = found["pretraining"]
         objects365_used = pretraining["objects365_used"]
         visdrone_used = pretraining["visdrone_used"]
+        export_raw = found.get("export")
+        export_entry = (
+            OnnxExportEntry(
+                schema="ksi-onnx-export-manifest/1",
+                onnx_sha256=str(export_raw["onnx_sha256"]),
+                exporter=str(export_raw["exporter"]),
+                opset=int(export_raw["opset"]),
+                input_names=tuple(i["name"] for i in export_raw["inputs"]),
+                output_names=tuple(export_raw["outputs"]),
+            )
+            if export_raw is not None
+            else None
+        )
         entry = ModelEntry(
             model_id=found["model_id"],
             weights_source=weights["source"],
@@ -96,6 +127,7 @@ def load_model_entry(
             file_digests={f["name"]: f["sha256"] for f in weights["files"]},
             person_label_id=int(found["model_facts"]["person_label_id"]),
             production_status=str(found["deployment_status"]["production"]),
+            export=export_entry,
         )
     # yaml.YAMLError·OSError 는 ValueError 서브클래스가 아니다 — 문법이 깨진 원장
     # (가장 흔한 오염 형태)·읽기 실패도 raw traceback 이 아니라 typed 결과여야

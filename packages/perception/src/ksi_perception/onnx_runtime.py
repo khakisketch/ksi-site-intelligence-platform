@@ -148,6 +148,31 @@ def load_onnx_dfine_detector(
         )
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # 필수 필드 전부 존재해야 한다(재검토 P0 — 부분 manifest 는 계보가 아니다).
+        required = (
+            "schema",
+            "model_id",
+            "source_artifact_digests",
+            "versions",
+            "exporter",
+            "opset",
+            "inputs",
+            "outputs",
+            "preprocessing",
+            "postprocessing",
+            "graph_transforms",
+            "graph_transform_fix_count",
+            "export_command",
+            "onnx_sha256",
+            "operator",
+            "exported_at_utc",
+        )
+        missing = [k for k in required if k not in manifest]
+        if missing:
+            return OnnxDetectorLoadResult(
+                status=OnnxLoadStatus.MANIFEST_MISSING,
+                detail=f"manifest 필수 필드 누락: {missing}",
+            )
         expected = manifest["onnx_sha256"]
         manifest_model_id = manifest["model_id"]
     except (json.JSONDecodeError, KeyError, OSError) as exc:
@@ -159,6 +184,28 @@ def load_onnx_dfine_detector(
         return OnnxDetectorLoadResult(
             status=OnnxLoadStatus.DIGEST_MISMATCH,
             detail=f"manifest model_id {manifest_model_id!r} ≠ 요청 {model_id!r}",
+        )
+    if manifest["schema"] != "ksi-onnx-export-manifest/1":
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.MANIFEST_MISSING,
+            detail=f"미지원 manifest schema {manifest['schema']!r}",
+        )
+    operator = str(manifest["operator"]).strip()
+    if not operator or operator == "unspecified":
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.MANIFEST_MISSING,
+            detail="operator 가 공백/unspecified — 책임자 없는 export 는 증거가 아니다",
+        )
+    try:
+        from datetime import datetime, timedelta
+
+        exported_at = datetime.fromisoformat(str(manifest["exported_at_utc"]))
+        if exported_at.utcoffset() != timedelta(0):
+            raise ValueError(f"UTC 아님 (offset={exported_at.utcoffset()})")
+    except ValueError as exc:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.MANIFEST_MISSING,
+            detail=f"exported_at_utc 가 UTC ISO 가 아니다: {exc}",
         )
     actual = hashlib.sha256(onnx_path.read_bytes()).hexdigest()
     if actual != expected:
@@ -190,6 +237,47 @@ def load_onnx_dfine_detector(
         )
     assert check.entry is not None
 
+    # ── 외부 권위 앵커 대조 (재검토 P0) ──────────────────────────────────────
+    # manifest 는 산출물 옆의 자기 서술이라 ONNX+manifest 동시 교체(자체 일관)를
+    # 막지 못한다 — Registry(코드리뷰 원장) export 레코드와 대조해야 사슬이 닫힌다.
+    export = check.entry.export
+    if export is None:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.REGISTRY_REJECTED,
+            detail=f"{model_id} 의 Registry 에 export 섹션이 없다 — 권위 앵커 없는 ONNX 거부",
+        )
+    if manifest["source_artifact_digests"] != check.entry.file_digests:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.DIGEST_MISMATCH,
+            detail=(
+                "manifest.source_artifact_digests 가 Registry 검증 가중치 digest 와 다르다 "
+                "— 다른 원본에서 export 된 산출물"
+            ),
+        )
+    if expected != export.onnx_sha256:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.DIGEST_MISMATCH,
+            detail=(
+                f"manifest onnx_sha256 {expected[:12]}… ≠ Registry export 앵커 "
+                f"{export.onnx_sha256[:12]}… — 등록되지 않은 export 산출물"
+            ),
+        )
+    if int(manifest["opset"]) != export.opset:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.DIGEST_MISMATCH,
+            detail=f"manifest opset {manifest['opset']} ≠ Registry opset {export.opset}",
+        )
+    manifest_inputs = tuple(i["name"] for i in manifest["inputs"])
+    manifest_outputs = tuple(o["name"] for o in manifest["outputs"])
+    if manifest_inputs != export.input_names or manifest_outputs != export.output_names:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.DIGEST_MISMATCH,
+            detail=(
+                f"manifest 입출력 계약 ({manifest_inputs}→{manifest_outputs}) ≠ Registry "
+                f"({export.input_names}→{export.output_names})"
+            ),
+        )
+
     try:
         import onnxruntime as ort
         from transformers import AutoConfig, AutoImageProcessor
@@ -215,6 +303,39 @@ def load_onnx_dfine_detector(
             status=OnnxLoadStatus.LOAD_FAILED,
             detail=f"{type(exc).__name__}: {exc}",
         )
+
+    # ── 실제 세션 계약 대조 (재검토 P0 #8) — manifest 가 주장하는 입출력이 로드된
+    # 그래프의 실제 계약과 일치하는가(이름·shape·dtype).
+    session_inputs = {i.name: i for i in session.get_inputs()}
+    session_outputs = tuple(o.name for o in session.get_outputs())
+    if tuple(session_inputs) != manifest_inputs or session_outputs != manifest_outputs:
+        return OnnxDetectorLoadResult(
+            status=OnnxLoadStatus.DIGEST_MISMATCH,
+            detail=(
+                f"세션 실계약 ({tuple(session_inputs)}→{session_outputs}) ≠ manifest "
+                f"({manifest_inputs}→{manifest_outputs})"
+            ),
+        )
+    for declared in manifest["inputs"]:
+        actual_input = session_inputs[declared["name"]]
+        declared_shape = list(declared["shape"])
+        if list(actual_input.shape) != declared_shape:
+            return OnnxDetectorLoadResult(
+                status=OnnxLoadStatus.DIGEST_MISMATCH,
+                detail=(
+                    f"입력 {declared['name']!r} shape {actual_input.shape} ≠ manifest "
+                    f"{declared_shape}"
+                ),
+            )
+        # onnxruntime 표기(tensor(float)) ↔ torch 표기(torch.float32) 대응 확인.
+        if "float" not in str(declared["dtype"]) or "float" not in str(actual_input.type):
+            return OnnxDetectorLoadResult(
+                status=OnnxLoadStatus.DIGEST_MISMATCH,
+                detail=(
+                    f"입력 {declared['name']!r} dtype {actual_input.type} ≠ manifest "
+                    f"{declared['dtype']}"
+                ),
+            )
     return OnnxDetectorLoadResult(
         status=OnnxLoadStatus.OK,
         detector=OnnxDFineDetector(

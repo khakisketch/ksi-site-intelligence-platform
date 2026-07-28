@@ -17,9 +17,13 @@
     border_person       인물이 프레임 오른쪽 경계에 절반 걸침(클리핑 유발)
     overlap_people      원본(인물 겹침 실재 — 아이들이 어머니에 기댐)
     non_person_car      car.jpg(차량 — 지원 클래스, Person 아님)
-    unsupported_scene   원본(저 threshold 에서 미지원 클래스 후보 동반)
-    low_conf_noise      시드 고정 노이즈(저신뢰 후보 유발)
-    clipping_scene      border_person 과 동일 계열의 큰 걸침(과도 클리핑 후보)
+    unsupported_scene   원본(저 threshold 에서 미지원 클래스 후보 동반 — multiple 과
+                        같은 원본이지만 검증 현상이 다름: 미지원 drop 경로)
+    low_conf_noise      시드 고정 노이즈(저신뢰·미지원 후보 유발 — 실측 300건 drop)
+    partial_person      인물 대부분이 프레임 밖(하단 1/4 만 가시) — 부분 가시에서도
+                        탐지가 유지되는지. 초판 이름 clipping_scene 은 실측 반증됨:
+                        모델은 가시 픽셀에만 박스를 치므로 adapter 클리핑을 유발하지
+                        않는다(경계 클리핑 실증은 border_person 이 담당)
 """
 
 from __future__ import annotations
@@ -75,10 +79,11 @@ def build() -> int:
     scenes["low_conf_noise"] = Image.fromarray(
         rng.integers(0, 255, (480, 640, 3), dtype=np.uint8), mode="RGB"
     )
-    # 10) 과도 클리핑 후보 — 인물 대부분이 프레임 밖(하단 1/4 만 안)
-    clipping = Image.new("RGB", (pw, ph), (70, 80, 90))
-    clipping.paste(person, (0, int(ph * 0.75)))
-    scenes["clipping_scene"] = clipping
+    # 10) 부분 가시 — 인물 대부분이 프레임 밖(하단 1/4 만 안). 과도 클리핑이
+    # 아니라 부분 가시 강건성 장면이다(실측: 모델은 가시 영역에만 박스를 침).
+    partial = Image.new("RGB", (pw, ph), (70, 80, 90))
+    partial.paste(person, (0, int(ph * 0.75)))
+    scenes["partial_person"] = partial
 
     for name, image in sorted(scenes.items()):
         out = CORPUS / f"{name}.png"  # PNG — JPEG 재인코딩 비결정성 제거

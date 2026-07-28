@@ -241,7 +241,7 @@ def test_onnx_export_matches_pytorch(detector: DFineDetector, tmp_path: Path) ->
     from ksi_perception.onnx_export import export_dfine_onnx
 
     image = _person_image()
-    export = export_dfine_onnx(detector, image, tmp_path / "dfine-s.onnx")
+    export = export_dfine_onnx(detector, image, tmp_path / "dfine-s.onnx", operator="parity-test")
 
     # 정규화 증거(반증 리뷰 F9): 바뀐 지점이 위치 임베딩 상수 경로(Cast/Constant/
     # value_info)에 한정되는지 데이터로 확인 — 가중치 initializer 가 깎였다면

@@ -95,7 +95,7 @@ def export_dfine_onnx(
     output_path: Path,
     *,
     opset_version: int = 17,
-    operator: str = "unspecified",
+    operator: str,
 ) -> OnnxExportResult:
     """detector 의 모델을 ONNX 로 export 하고 double 흔적을 정규화한다.
 
@@ -118,6 +118,11 @@ def export_dfine_onnx(
     import platform
     from datetime import UTC, datetime
 
+    # 책임자 없는 export 는 증거가 아니다(재검토 P0 반증 7) — 로더도 같은 규칙으로
+    # 거부하지만, 생성 시점에 끊는 것이 1차다.
+    if not operator.strip() or operator.strip() == "unspecified":
+        raise ValueError("operator 는 공백/'unspecified' 일 수 없다 — 실행 책임자를 기록하라")
+
     import onnx
     import onnxruntime
     import torch
@@ -136,8 +141,15 @@ def export_dfine_onnx(
         )
 
         model = onnx.load(str(output_path))
+        # legacy exporter 는 트레이스 부수 텐서를 그래프 출력에 남긴다(실측: logits·
+        # pred_boxes 외 내부 노드 다수) — 선언 계약과 실제 그래프가 달라지면 세션
+        # 실계약 대조(재검토 P0 #8)가 성립하지 않으므로, 명명된 출력 2개만 남긴다.
+        declared_outputs = {"logits", "pred_boxes"}
+        surplus = [o for o in model.graph.output if o.name not in declared_outputs]
+        for o in surplus:
+            model.graph.output.remove(o)
         fixes = _double_to_float_graph(model.graph)
-        if fixes:
+        if fixes or surplus:
             onnx.checker.check_model(model)
             # 파생 산출물에도 계보를 박는다 — B2 TensorRT 소비자가 원장과 대조할 앵커.
             entry = model.metadata_props.add()
@@ -184,8 +196,9 @@ def export_dfine_onnx(
             "post_process_object_detection(threshold=score_floor, target_sizes=원본 HW) "
             "→ RawDetection → DetectionAdapter(OntologyMapping)"
         ),
-        "graph_transforms": list(fixes) and [
-            "position embedding constants float64 → float32 (전체 지점은 double_fixes)"
+        "graph_transforms": [
+            "position embedding constants float64 → float32 (전체 지점은 double_fixes)",
+            "surplus trace outputs 제거 — 그래프 출력을 선언 계약(logits·pred_boxes)으로 고정",
         ],
         "graph_transform_fix_count": len(fixes),
         "export_command": (

@@ -66,10 +66,11 @@ models:
       outputs: [logits, pred_boxes]
       graph_transforms:
         - "position embedding constants float64 → float32 (7 지점 — ORT CPU·TensorRT 는 double Cos/Sin 미지원)"
-      determinism: "BYTE-IDENTICAL — 동일 입력 2회 export sha256 일치 (2026-07-28 실측)"
-      onnx_sha256: "e0f252bc1bc7a7ff5d774d85d30b1ea6bb2cc74fe0bd7b51ce6edbb33124865a"
+        - "surplus trace outputs 제거 — legacy exporter 가 남긴 내부 텐서 출력을 걷어내 그래프 출력을 선언 계약(logits·pred_boxes)으로 고정(재검토 P0 #8 세션 실계약 대조의 전제)"
+      determinism: "BYTE-IDENTICAL — 동일 입력 2회 export sha256 일치 (2026-07-28 재실측, surplus 제거 반영)"
+      onnx_sha256: "1becd2d3ae559cd075157f542bf754d2bdbf1982e71433d2ed367364df03298a"
       conformance:
-        corpus: "tools/build_onnx_corpus.py 10종 (단일/다수/무탐지/소형/경계/겹침/차량/미지원/노이즈/클리핑)"
+        corpus: "tools/build_onnx_corpus.py 10종 (단일/다수/무탐지/소형/경계/겹침/차량/미지원/노이즈/부분가시) — 장면별 의도 현상은 실측 앵커로 고정(test_onnx_conformance)"
         criteria: "detection 수·canonical class·원시 id/이름/버전 정확 일치 · confidence atol 1e-3 · bbox atol 0.5px · drop 사유 정확 일치 · 경로별 결정성"
         cross_path_fingerprint: >-
           미보장 — ONNX 와 PyTorch 는 연산 순서가 달라 bit-exact 를 보장하지 않으므로
