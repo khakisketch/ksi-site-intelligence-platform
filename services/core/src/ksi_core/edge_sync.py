@@ -74,6 +74,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# os.write 참조를 모듈 상수로 분리 — short-write fault injection 테스트가 전역
+# os 모듈을 건드리지 않고 이 경로만 대체할 수 있게(감사 finding #1 회귀 고정).
+_WRITE = os.write
+
 
 class StoreRecoveryError(RuntimeError):
     """journal 재적재/잠금 실패 — 오염·경합 상태로 기동하지 않는다(fail-closed)."""
@@ -250,9 +254,23 @@ class EdgeSyncStore:
         creating = not self._path.exists()
         if creating:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+        data = (line + "\n").encode("ascii")
         fd = os.open(self._path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            os.write(fd, (line + "\n").encode("ascii"))
+            # POSIX write 는 예외 없이 짧게 쓸 수 있다(ENOSPC/EDQUOT 페이지 경계 —
+            # 감사 반증 실측: 그대로 두면 fsync 가 성공해 부분 줄이 ACK 된다).
+            # 전량 기록까지 반복하고, 진전이 없으면 OSError 로 올려 기존 봉인
+            # 경로를 태운다 — 이미 쓰인 부분 줄은 개행이 없어 재시작 복원이
+            # torn tail 로 격리하므로 ACK 없는 실패로 정확히 수렴한다.
+            view = memoryview(data)
+            written = 0
+            while written < len(data):
+                count = _WRITE(fd, view[written:])
+                if count <= 0:
+                    raise OSError(
+                        f"short write: {written}/{len(data)} bytes — 전량 기록 실패"
+                    )
+                written += count
             os.fsync(fd)
         finally:
             os.close(fd)

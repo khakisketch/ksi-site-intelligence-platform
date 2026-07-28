@@ -483,3 +483,44 @@ def test_store_unavailable_detail_does_not_leak_path(
     assert response.status_code == 503
     assert str(tmp_path) not in (response.json()["detail"] or "")
     assert response.headers.get("Retry-After") == "30"
+
+
+def test_short_write_is_not_acked_and_seals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[감사 #1 폐쇄, HIGH] POSIX short write(무예외 부분 기록)가 ACK 로 둔갑하지 않는다.
+
+    수정 전: os.write 반환값을 버려 부분 줄이 기록된 채 fsync 성공 → 201 ACCEPTED
+    → 재시작 시 torn tail 로 잘려 그 이벤트가 영구 유실(모듈의 P0 불변식 자체가
+    자기 구현으로 깨짐 — reviewer adversarial 검증이 적발).
+    """
+    from ksi_core import edge_sync as edge_sync_module
+
+    path = tmp_path / "journal.jsonl"
+    store = EdgeSyncStore(path)
+    entry = _entry(sequence=0)
+
+    real_write = edge_sync_module._WRITE
+    calls: list[int] = []
+
+    def short_write(fd: int, data: bytes | memoryview) -> int:
+        calls.append(len(bytes(data)))
+        if len(calls) == 1:
+            return real_write(fd, bytes(data)[: len(bytes(data)) // 2])  # 절반만
+        return 0  # 이후 진전 없음(ENOSPC 재현)
+
+    monkeypatch.setattr(edge_sync_module, "_WRITE", short_write)
+    result = store.ingest_event_bundle(entry)
+    assert result.verdict is ServerVerdict.STORE_UNAVAILABLE, (
+        "short write 가 ACCEPTED(ACK)로 둔갑했다 — ACK 후 영구 유실 경로"
+    )
+    assert store.sealed
+    assert len(calls) >= 2, "전량 기록 루프가 재시도하지 않았다"
+
+    monkeypatch.undo()
+    store.close()
+    # 재시작: 부분 줄은 torn tail 로 격리되고, ACK 못 받은 항목의 재전송이 수락된다.
+    reborn = EdgeSyncStore(path)
+    assert reborn.accepted_count() == 0
+    assert reborn.ingest_event_bundle(entry).verdict is IngestVerdict.ACCEPTED
+    reborn.close()
