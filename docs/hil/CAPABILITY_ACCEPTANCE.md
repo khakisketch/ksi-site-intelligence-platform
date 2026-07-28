@@ -54,22 +54,46 @@
 - **세션 단계**: `HARDWARE_SESSION_PLAYBOOK.md` 7단계
 - **도구**: `tools/hil/capture_frame_telemetry_timing.py`
 
-| 항목 | VERIFIED 기준 | BLOCKED 기준 |
+이 capability는 단일 VERIFIED/BLOCKED 판정으로 뭉뚱그리지 않고, **측정을 성공적으로
+수행했는가**와 **요구사항(p95 ≤ 50ms)을 만족했는가**를 분리한 2축으로 기록한다 —
+"측정했다"와 "목표를 달성했다"는 서로 다른 질문이고, Track A 완료기준은 후자에
+의존하기 때문이다(CONFIRMED 위치 정합성이 이 값에 걸려 있다 — INV-025).
+
+```
+measurement_status: MEASURED | NOT_MEASURED
+acceptance_status: PASS | FAIL | INSUFFICIENT_SAMPLES
+```
+
+| measurement_status | acceptance_status | 판정 규칙 |
 |---|---|---|
-| 표본 수 | 실측 표본 수를 명시(권장 ≥100 — 미만이면 이유와 함께 잠정 표기) | 0건(수집 자체 실패) |
-| p50 | `summarize` 서브커맨드의 실측값(ms) | 계산 불가(표본 0건이면 함수 자체가 예외를 냄) |
-| p95 | 실측값(ms) — **50ms 목표를 넘어도 VERIFIED일 수 있다.** "측정했다"가 조건이지 목표 달성이 조건이 아니다 | 좌동 |
-| max | 실측값(ms) | 좌동 |
+| `MEASURED` | `PASS` | p95 ≤ 50ms **그리고** 최소 표본(권장 ≥100) 충족 |
+| `MEASURED` | `FAIL` | p95 > 50ms — 사유는 `requirement_not_met`. **VERIFIED 승격 금지**(표본 수가 충족돼도 마찬가지) |
+| `MEASURED` | `INSUFFICIENT_SAMPLES` | 표본 1건 이상 수집했으나 최소 표본(≥100) 미달 — PASS도 FAIL도 주장하지 않는다 |
+| `NOT_MEASURED` | (해당 없음) | 표본 0건. 수집 자체가 실패했거나 시도하지 않음 |
 
-**"미측정 + 이유" 불가 원칙**: 이 capability는 `SpikeEvidence.latency_result`에
-"미측정"을 적는 것 자체가 VERIFIED 승격 사유가 될 수 없다 — 대표자 지정 기준이
-명시한 대로, 시간동기는 다른 capability(짐벌 등)와 달리 **"측정 안 함 + 정당한 이유"로
-VERIFIED 처리하는 경로가 없다.** 표본을 못 모았다면 이 capability는 `BLOCKED`(사유:
-"PSDK 콜백 미연동" 등 구체적 원인)로 남기고, `latency_result`에는 "미측정 — 사유:
-<구체적 원인>"을 적되 이는 BLOCKED 상태의 근거이지 VERIFIED 근거가 아니다.
+| 항목 | 기록 기준 |
+|---|---|
+| 표본 수 | 실측 표본 수를 그대로 기록. 0건이면 `measurement_status=NOT_MEASURED` |
+| p50 / p95 / max | `summarize` 서브커맨드의 실측값(ms). `NOT_MEASURED`면 존재하지 않는다(표본 0건이면 계산 함수 자체가 예외를 낸다) |
+| acceptance_status | 위 판정 규칙을 기계적으로 적용한다 — 사람이 임의로 PASS로 올릴 수 없다 |
 
-목표(50ms) 미달 자체는 BLOCKED 사유가 **아니다** — 실측했다면 그 수치 그대로
-VERIFIED하고, 목표 미달은 별도 리스크(`.ksi/goals.json` risk 항목 등)로 추적한다.
+**"측정 기능이 작동했다" ≠ "요구사항을 만족했다"**: `capture_frame_telemetry_timing.py`가
+정상적으로 표본을 수집·요약했다는 사실("도구 자체는 동작한다")은 별도 항목으로 기록할
+수 있으나, 그 자체가 시간동기 **요구사항**을 VERIFIED로 올리는 근거가 될 수 없다 —
+VERIFIED 승격의 유일한 근거는 `acceptance_status=PASS`뿐이다.
+
+**"미측정 + 이유" 불가 원칙**: `measurement_status=NOT_MEASURED`인 상태에서
+`SpikeEvidence.latency_result`에 "미측정 + 이유"를 적는 것 자체는 유효한 기록이지만,
+그 기록으로 이 요구사항을 VERIFIED로 승격하는 경로는 없다 — 대표자 지정 기준이 명시한
+대로, 시간동기는 다른 capability(짐벌 등)와 달리 **"측정 안 함 + 정당한 이유"로 VERIFIED
+처리하는 경로가 없다.** 표본을 못 모았다면 이 capability는 `BLOCKED`(사유: "PSDK 콜백
+미연동" 등 구체적 원인)로 남기고, `latency_result`에는 "미측정 — 사유: <구체적 원인>"을
+적되 이는 BLOCKED 상태의 근거이지 VERIFIED 근거가 아니다.
+
+**목표(50ms) 미달(`acceptance_status=FAIL`)도 VERIFIED 승격 근거가 아니다** — 실측을
+정직하게 해냈다는 사실과 "요구사항을 만족했다"는 별개다. FAIL은 `BLOCKED`(사유:
+"p95 목표 미달 — requirement_not_met")로 남기고, 별도 리스크(`.ksi/goals.json` risk
+항목 등)로도 추적한다. "측정했으면 그 수치 그대로 VERIFIED"라는 경로는 없다.
 
 ## 3. 짐벌 (Gimbal)
 
@@ -87,8 +111,18 @@ VERIFIED하고, 목표 미달은 별도 리스크(`.ksi/goals.json` risk 항목 
 | 제한조건 | 관측된 기계적 리밋·안전모드 진입 조건을 기록(있다면) | — (선택 항목, 없어도 VERIFIED 가능) |
 
 **최소 표본**: 5회 이상의 명령-관측 쌍(`HARDWARE_SESSION_PLAYBOOK.md` 6단계 판정
-기준과 동일). 5회 미만이면 표본 수와 이유를 명시한 잠정 VERIFIED로 남기고, 다음
-세션에서 표본을 보강한다.
+기준과 동일).
+
+- **5회 미만**: `SPIKE_REQUIRED`를 유지한다. "잠정 VERIFIED" 같은 중간 상태는 없다 —
+  `CapabilityVerificationState`에는 `SPIKE_REQUIRED`/`VERIFIED`/`BLOCKED` 세 값만
+  존재하며(`packages/domain/src/ksi_domain/capability.py`), 표본 부족을 사유로 적어도
+  VERIFIED로 승격하지 않는다. 다음 세션에서 표본을 보강한다.
+- **명령을 보낼 API 자체가 없거나 관측(read-back) 방법이 없음**: `BLOCKED`(구체 사유).
+- **5회 이상 + 명령값·관측값·오차·지연 4가지 전부 수치로 기록**: 짐벌 부분 증거
+  충족(§0 공통 규칙에 따라 `SpikeEvidence` 11필드가 갖춰지면 승격 근거가 된다).
+- **`SPIKE-DJI-03` 전체 VERIFIED는 별도 조건**: 이 표는 짐벌 부분 증거만 다룬다 —
+  기체 Yaw 부분 증거가 별도로 채워지기 전까지 `SPIKE-DJI-03` **전체**를 VERIFIED로
+  승격하지 않는다(위 "대응 Capability ID" 각주 참고).
 
 **VERIFIED 불가 사례**: "짐벌이 움직이는 것을 육안으로 봤다"만으로는 불가 — 명령값·
 관측값·오차·지연 4가지 중 하나라도 수치로 기록되지 않으면 VERIFIED 승격 근거가

@@ -212,17 +212,22 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
     --out hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__frame_telemetry_summary.json
 ```
 
-**수집 증거**: raw JSONL(표본별 timestamp 쌍) + 요약 JSON(p50/p95/max/표본 수)
+**수집 증거**: raw JSONL(표본별 timestamp 쌍) + 요약 JSON(p50/p95/max/표본 수 +
+`measurement_status`/`acceptance_status`)
 
-**판정 기준** (`docs/hil/CAPABILITY_ACCEPTANCE.md` "시간동기" 행과 동일 기준):
-- **PASS**: 표본 수 ≥ 100(권장, 통계적 신뢰를 위한 최소치 — 100 미만이면 표본 수와
-  그 이유를 명시하고 잠정 PASS로 표기), p50/p95/max가 모두 실측값으로 채워짐.
-  p95가 50ms 목표를 넘어도 **PASS일 수 있다** — "측정했다"가 조건이지 "목표를
-  만족했다"가 조건이 아니다. 목표 미달은 별도로 리스크 기록(`.ksi/goals.json` risk
-  항목 등)으로 남긴다.
-- **BLOCKED**: 표본을 아예 수집하지 못했거나("미측정"), collect 스크립트가
-  `NotImplementedError`인 채로 세션이 끝났다면 이 단계는 `BLOCKED`(사유: "PSDK 콜백
-  미연동")로 정직하게 남긴다 — "미측정 + 이유 없음"은 허용되지 않는다
+**판정 기준** (`docs/hil/CAPABILITY_ACCEPTANCE.md` "시간동기" 행과 동일 기준 — 2축):
+- **`measurement_status=MEASURED` + `acceptance_status=PASS`**: 표본 수 ≥ 100(권장,
+  통계적 신뢰를 위한 최소치) **그리고** p95 ≤ 50ms. VERIFIED 승격 근거는 이 조합뿐이다.
+- **`measurement_status=MEASURED` + `acceptance_status=FAIL`**: p95 > 50ms. 표본 수가
+  충분해도 **VERIFIED 승격 금지** — 목표 미달은 별도로 리스크 기록(`.ksi/goals.json`
+  risk 항목 등)으로 남기고, 이 단계는 `BLOCKED`(사유: "p95 목표 미달 —
+  requirement_not_met")로 정직하게 남긴다.
+- **`measurement_status=MEASURED` + `acceptance_status=INSUFFICIENT_SAMPLES`**: 표본을
+  모았으나 100건 미만 — PASS도 FAIL도 주장하지 않는다. 표본 수와 이유를 명시하고
+  다음 세션에서 보강한다("잠정 PASS" 같은 중간 상태로 표기하지 않는다).
+- **`measurement_status=NOT_MEASURED`**: 표본을 아예 수집하지 못했거나, collect
+  스크립트가 `NotImplementedError`인 채로 세션이 끝났다면 이 단계는 `BLOCKED`(사유:
+  "PSDK 콜백 미연동")로 정직하게 남긴다 — "미측정 + 이유 없음"은 허용되지 않는다
   (`docs/hil/CAPABILITY_ACCEPTANCE.md` 참고).
 
 ---

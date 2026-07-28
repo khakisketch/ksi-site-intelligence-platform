@@ -83,9 +83,12 @@ tz-aware UTC가 아니면 마찬가지로 거부된다.
   - Frame 접근: 지연 개념이 명확치 않다면 "N/A — 이 capability는 지연을 측정 대상으로
     하지 않음"으로 명시.
   - 시간동기: `tools/hil/capture_frame_telemetry_timing.py summarize` 출력의
-    p50/p95/max/표본수를 그대로 옮긴다. **`docs/hil/CAPABILITY_ACCEPTANCE.md` "시간동기"
-    행 규칙에 따라, 이 capability는 "미측정 + 이유"로 VERIFIED 승격이 불가하다** —
-    측정 못 했다면 이 필드에 사유를 적되 승격 자체를 BLOCKED로 처리한다.
+    p50/p95/max/표본수와 `measurement_status`/`acceptance_status`를 그대로 옮긴다.
+    **`docs/hil/CAPABILITY_ACCEPTANCE.md` "시간동기" 행 규칙에 따라, 이 capability는
+    `measurement_status=NOT_MEASURED`("미측정 + 이유")로도, `acceptance_status=FAIL`
+    (p95 > 50ms — 측정은 했으나 목표 미달)로도 VERIFIED 승격이 불가하다** — 어느
+    쪽이든 이 필드에 사유를 적되 승격 자체는 BLOCKED로 처리한다. VERIFIED 승격의
+    유일한 근거는 `acceptance_status=PASS`뿐이다.
   - 짐벌: 명령~도달(또는 ack) 지연(ms)의 표본별 값 또는 요약(평균·최대).
 - **빈 값 처리**: 불가.
 
