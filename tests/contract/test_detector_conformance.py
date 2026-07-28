@@ -32,6 +32,7 @@ from ksi_domain.detection_adapter import (
     DetectionAdapter,
     RawDetection,
 )
+from ksi_domain.ontology import COCO_ONTOLOGY
 
 _WIDTH = 1920
 _HEIGHT = 1080
@@ -165,6 +166,6 @@ class TestAdapterBackedDetectorConformance(DetectorConformanceSuite):
             adapter=DetectionAdapter(
                 box_format=BoxFormat.XYWH,
                 normalized=False,
-                class_map={0: "Person"},
+                ontology=COCO_ONTOLOGY,
             ),
         )

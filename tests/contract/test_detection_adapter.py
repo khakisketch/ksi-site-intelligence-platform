@@ -17,6 +17,7 @@ from ksi_domain.detection_adapter import (
     DropReason,
     RawDetection,
 )
+from ksi_domain.ontology import COCO_ONTOLOGY, OntologyMapping
 from ksi_geo_core.projection import project_foot_point
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
@@ -28,7 +29,9 @@ def _adapter(**overrides: object) -> DetectionAdapter:
     kwargs: dict = {
         "box_format": BoxFormat.XYXY,
         "normalized": False,
-        "class_map": {"person": "Person", 0: "Person", "helmet": "PPE_Helmet"},
+        # 자유 dict 가 아니라 검증된 OntologyMapping — 독립 재검토 Blocker 1 이후
+        # adapter 는 이것만 받는다(의미 변조 매핑은 생성 시점에 거부).
+        "ontology": COCO_ONTOLOGY,
     }
     kwargs.update(overrides)
     return DetectionAdapter(**kwargs)
@@ -200,11 +203,11 @@ def test_batch_preserves_order_and_isolates_failures() -> None:
     raws = [
         RawDetection(label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0)),
         RawDetection(label="giraffe", score=0.9, box=(10.0, 20.0, 110.0, 220.0)),  # drop
-        RawDetection(label="helmet", score=0.8, box=(300.0, 40.0, 340.0, 80.0)),
+        RawDetection(label="truck", score=0.8, box=(300.0, 40.0, 340.0, 80.0)),
         RawDetection(label="person", score=float("nan"), box=(1.0, 1.0, 2.0, 2.0)),  # drop
     ]
     result = _adapter().convert(raws, width=_W, height=_H)
-    assert [d.detection_class for d in result.detections] == ["Person", "PPE_Helmet"]
+    assert [d.detection_class for d in result.detections] == ["Person", "Vehicle_Truck"]
     assert [d.reason for d in result.dropped] == [
         DropReason.UNKNOWN_LABEL,
         DropReason.NON_FINITE,
@@ -231,18 +234,64 @@ def test_invalid_min_confidence_rejected(bad: float) -> None:
         _adapter(min_confidence=bad)
 
 
-def test_empty_class_map_rejected() -> None:
-    with pytest.raises(ValueError, match="class_map"):
-        _adapter(class_map={})
+def test_free_dict_rejected_by_adapter() -> None:
+    """[Blocker 1] adapter 는 자유 dict 를 받지 않는다 — 검증된 OntologyMapping 전용."""
+    with pytest.raises(ValueError, match="OntologyMapping"):
+        _adapter(ontology={"truck": "Person"})
 
 
-@pytest.mark.parametrize(
-    "class_map",
-    [{" ": "Person"}, {"person": " "}],
-)
-def test_blank_class_map_entries_rejected(class_map: dict) -> None:
-    with pytest.raises(ValueError, match="class_map|공백"):
-        _adapter(class_map=class_map)
+def test_meaning_altering_mapping_cannot_be_constructed() -> None:
+    """[Blocker 1 핵심 반증] {"truck": "Person"} 의미 변조 매핑은 생성 자체가 거부된다."""
+    with pytest.raises(ValueError, match="권위 해석"):
+        OntologyMapping(
+            version="ksi-ontology-v1",
+            source_taxonomy="COCO-2017",
+            mappings={"truck": "Person"},
+            id_to_name={},
+        )
+
+
+def test_unregistered_canonical_rejected_in_mapping() -> None:
+    """등록 Canonical 집합 밖의 값("Worker" 등)은 매핑에 넣을 수 없다."""
+    with pytest.raises(ValueError, match="Canonical"):
+        OntologyMapping(
+            version="ksi-ontology-v1",
+            source_taxonomy="COCO-2017",
+            mappings={"person": "Worker"},
+            id_to_name={},
+        )
+
+
+def test_unregistered_ontology_version_rejected_in_mapping() -> None:
+    """[Blocker 4] 미등록 버전으로는 매핑을 만들 수 없다."""
+    with pytest.raises(ValueError, match="미등록 ontology"):
+        OntologyMapping(
+            version="attacker-v99",
+            source_taxonomy="COCO-2017",
+            mappings={"person": "Person"},
+            id_to_name={},
+        )
+
+
+def test_subset_mapping_allowed() -> None:
+    """권위 매핑의 부분집합(person 만 소비)은 허용 — 범위 축소는 의미 변조가 아니다."""
+    subset = OntologyMapping(
+        version="ksi-ontology-v1",
+        source_taxonomy="COCO-2017",
+        mappings={"person": "Person"},
+        id_to_name={0: "person"},
+    )
+    result = _adapter(ontology=subset).convert(
+        [
+            RawDetection(label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0)),
+            RawDetection(label="truck", score=0.9, box=(10.0, 20.0, 110.0, 220.0)),
+        ],
+        width=_W,
+        height=_H,
+    )
+    assert [d.detection_class for d in result.detections] == ["Person"]
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.UNKNOWN_LABEL  # truck 은 이 부분집합 밖
 
 
 # ── AdapterBackedDetector 조립 ────────────────────────────────────────────────
@@ -290,7 +339,7 @@ def test_conversion_arithmetic_overflow_dropped_not_raised() -> None:
     전체를 죽이는, "예외를 던지지 않는다" 계약의 위반이었다.
     """
     adapter = DetectionAdapter(
-        box_format=BoxFormat.CXCYWH, normalized=True, class_map={0: "Person"}
+        box_format=BoxFormat.CXCYWH, normalized=True, ontology=COCO_ONTOLOGY
     )
     good = RawDetection(label=0, score=0.9, box=(0.5, 0.5, 0.25, 0.5))
     overflowing = RawDetection(label=0, score=0.9, box=(1e308, 0.5, 1e308, 0.5))
@@ -384,10 +433,15 @@ def test_bool_label_does_not_match_int_class_key() -> None:
     assert [d.reason for d in result.dropped] == [DropReason.UNKNOWN_LABEL] * 2
 
 
-def test_bool_class_map_key_rejected() -> None:
-    """[F4] class_map 의 bool 키는 int 키와 dict 단계에서 조용히 붕괴한다 — 거부."""
-    with pytest.raises(ValueError, match="라벨 키"):
-        _adapter(class_map={True: "Person"})
+def test_non_str_mapping_key_rejected() -> None:
+    """[F4 계승] OntologyMapping 키는 공백 아닌 str 만 — bool/int 키는 생성 거부."""
+    with pytest.raises(ValueError, match="라벨명"):
+        OntologyMapping(
+            version="ksi-ontology-v1",
+            source_taxonomy="COCO-2017",
+            mappings={True: "Person"},  # type: ignore[dict-item]
+            id_to_name={},
+        )
 
 
 @pytest.mark.parametrize(
@@ -491,3 +545,46 @@ def test_clipped_boundary_foot_point_accepted_by_projection() -> None:
         f"경계 클리핑 foot point ({u_px}, {v_px}) 가 projection 에서 거부됐다 "
         f"({projection.status}) — adapter 클리핑 상한과 projection 픽셀 검증의 정합이 깨졌다"
     )
+
+
+# ── 분류 계보 (INV-031, F13 후속 — 재검토 #2) ────────────────────────────────
+
+
+def test_source_id_and_name_both_preserved_for_named_label() -> None:
+    """라벨명 소스가 원시 index 도 알면 둘 다 Detection 계보로 흐른다."""
+    result = _adapter().convert(
+        [
+            RawDetection(
+                label="person", score=0.9, box=(10.0, 20.0, 110.0, 220.0), source_class_id=0
+            )
+        ],
+        width=_W,
+        height=_H,
+    )
+    [d] = result.detections
+    assert (d.source_class_name, d.source_class_id) == ("person", 0)
+    assert d.ontology_version == "ksi-ontology-v1"
+
+
+def test_conflicting_int_label_and_source_id_dropped() -> None:
+    """[재검토 #2] label(int)≠source_class_id 자기모순 레코드는 MALFORMED drop."""
+    result = _adapter().convert(
+        [RawDetection(label=0, score=0.9, box=(10.0, 20.0, 110.0, 220.0), source_class_id=7)],
+        width=_W,
+        height=_H,
+    )
+    assert result.detections == []
+    [dropped] = result.dropped
+    assert dropped.reason is DropReason.MALFORMED_CLASS_LINEAGE
+    assert "서로 다른 원시 클래스" in dropped.detail
+
+
+def test_matching_int_label_and_source_id_accepted() -> None:
+    """일치하는 중복 선언은 정상 — 모순만 죽인다."""
+    result = _adapter().convert(
+        [RawDetection(label=0, score=0.9, box=(10.0, 20.0, 110.0, 220.0), source_class_id=0)],
+        width=_W,
+        height=_H,
+    )
+    [d] = result.detections
+    assert d.source_class_id == 0

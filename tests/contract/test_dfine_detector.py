@@ -302,3 +302,13 @@ def test_unsupported_labels_dropped_with_reason_not_person(detector: DFineDetect
     # 살아남은 Detection 중 미지원 라벨 유래는 0건이어야 한다(fallback 부재의 실증).
     supported = {"person", "car", "truck"}
     assert all(d.source_class_name in supported for d in result.detections)
+
+
+def test_free_dict_ontology_rejected_by_loader() -> None:
+    """[Blocker 1] 로더에 자유 dict 를 넘기면 typed 거부 — OntologyMapping 전용."""
+    result = load_dfine_detector(
+        local_dir=_MODEL_DIR,
+        ontology={"truck": "Person"},  # type: ignore[arg-type]
+    )
+    assert result.status is DFineLoadStatus.LOAD_FAILED
+    assert result.detail is not None and "OntologyMapping" in result.detail

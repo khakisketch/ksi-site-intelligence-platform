@@ -35,6 +35,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from ksi_domain.ontology import (
+    CANONICAL_CLASSES,
+    COCO_TAXONOMY,
+    REGISTERED_ONTOLOGY_VERSIONS,
+    classification_lineage_error,
+)
 from ksi_geo_core.fusion import (
     DEFAULT_MAX_NORMALIZED_RESIDUAL,
     FusionObservation,
@@ -75,6 +81,11 @@ class AssemblyStatus(StrEnum):
     TRACK_ID_MISMATCH = "track_id_mismatch"  # 서로 다른 track을 한 Entity로 합칠 수 없다
     MISSING_TRACK_ID = "missing_track_id"  # track 없는 관측은 Entity로 승격 불가
     CLASSIFICATION_CONFLICT = "classification_conflict"  # 같은 track이 다른 class 주장(INV-031)
+    MISSING_CLASSIFICATION = "missing_classification"  # observed_class 없음(검증 우회 포함)
+    MISSING_ONTOLOGY_VERSION = "missing_ontology_version"  # ontology_version 없음(우회 포함)
+    INVALID_CANONICAL_CLASS = "invalid_canonical_class"  # 등록 Canonical 집합 밖의 class
+    UNSUPPORTED_ONTOLOGY_VERSION = "unsupported_ontology_version"  # 미등록 버전(전원 동일해도)
+    CLASSIFICATION_LINEAGE_CONFLICT = "classification_lineage_conflict"  # source↔canonical 모순
     ONTOLOGY_VERSION_MISMATCH = "ontology_version_mismatch"  # 다른 번역 규칙의 class 혼합 금지
     FUSION_FAILED = "fusion_failed"  # geo-core 융합 단계 실패(사유는 detail)
     INVALID_THRESHOLDS = "invalid_thresholds"  # 문턱값이 비유한·음수·순서 역전
@@ -225,6 +236,53 @@ def assemble_world_entity(
     track_id = next(iter(track_ids))
     assert track_id is not None  # None 검사를 위에서 통과했다
 
+    # 2차 방어(시점 증거의 effective_viewpoint_kind 와 동형): pydantic 검증을 우회해
+    # 만들어진 객체(model_construct 등)까지 typed 로 끊는다 — 예외 전파("예외를 던지지
+    # 않는다" 계약 위반)가 아니라 사유별 상태로 거부한다(독립 재검토 Blocker 2·4).
+    for o in observations:
+        oid = getattr(o, "observation_id", "?")
+        observed = getattr(o, "observed_class", None)
+        version = getattr(o, "ontology_version", None)
+        if not (isinstance(observed, str) and observed.strip()):
+            return AssemblyResult(
+                status=AssemblyStatus.MISSING_CLASSIFICATION,
+                detail=f"관측 {oid} 에 observed_class 가 없다 — 분류 없는 관측 승격 불가(INV-031)",
+            )
+        if not (isinstance(version, str) and version.strip()):
+            return AssemblyResult(
+                status=AssemblyStatus.MISSING_ONTOLOGY_VERSION,
+                detail=f"관측 {oid} 에 ontology_version 이 없다 — 버전 없는 번역은 재현 불가",
+            )
+        if version not in REGISTERED_ONTOLOGY_VERSIONS:
+            # "전원이 같은 미등록 버전"도 통과 금지 — 등록부에 없는 버전의 class
+            # 문자열은 해석할 수 없다(Blocker 4).
+            return AssemblyResult(
+                status=AssemblyStatus.UNSUPPORTED_ONTOLOGY_VERSION,
+                detail=(
+                    f"관측 {oid} 의 ontology 버전 {version!r} 는 미등록 — "
+                    f"등록: {sorted(REGISTERED_ONTOLOGY_VERSIONS)}"
+                ),
+            )
+        if observed not in CANONICAL_CLASSES:
+            return AssemblyResult(
+                status=AssemblyStatus.INVALID_CANONICAL_CLASS,
+                detail=(
+                    f"관측 {oid} 의 class {observed!r} 는 등록 Canonical 집합 밖 — "
+                    f"등록: {sorted(CANONICAL_CLASSES)}"
+                ),
+            )
+        lineage_error = classification_lineage_error(
+            canonical=observed,
+            ontology_version=version,
+            source_class_name=getattr(o, "source_class_name", None),
+            source_class_id=getattr(o, "source_class_id", None),
+        )
+        if lineage_error is not None:
+            return AssemblyResult(
+                status=AssemblyStatus.CLASSIFICATION_LINEAGE_CONFLICT,
+                detail=f"관측 {oid}: {lineage_error}",
+            )
+
     # Entity class 유도 (INV-031, F13) — 관측 전원이 같은 canonical class 를 주장할
     # 때만 그 class 로 조립한다. 충돌은 fail-closed: 다수결·최대 신뢰도·마지막 값
     # 병합은 잘못된 연관을 조용히 확정하므로 쓰지 않는다(대표자 지정 2026-07-27).
@@ -250,6 +308,7 @@ def assemble_world_entity(
                 f"{sorted(ontology_versions)} — class 의미 동일성이 보장되지 않는다"
             ),
         )
+    ontology_version = next(iter(ontology_versions))
 
     fusion_input = [
         FusionObservation(
@@ -332,6 +391,26 @@ def assemble_world_entity(
                 "modelVersions": model_versions,
                 "calibrationProfileId": calibration_profile_id,
                 "observationIds": list(fusion.observation_ids),
+                # 분류 계보(INV-031, Blocker 5) — 이 Entity 의 class 가 어느 번역
+                # 규칙의 의미인지 Entity 자체에 남긴다(Observation 역조회 불요).
+                "classificationOntologyVersion": ontology_version,
+                "classificationSource": {
+                    "taxonomy": COCO_TAXONOMY,
+                    "sourceClassIds": sorted(
+                        {
+                            sid
+                            for o in observations
+                            if (sid := getattr(o, "source_class_id", None)) is not None
+                        }
+                    ),
+                    "sourceClassNames": sorted(
+                        {
+                            name
+                            for o in observations
+                            if (name := getattr(o, "source_class_name", None)) is not None
+                        }
+                    ),
+                },
             },
         }
     )
@@ -348,9 +427,25 @@ def world_entity_fingerprint(entity: WorldEntity) -> str:
     position = ",".join(f"{v:.9f}" for v in entity.pose.position)
     covariance = ",".join(f"{v:.12f}" for v in entity.uncertainty.position_covariance)
     observation_ids = ",".join(entity.lineage.observation_ids or [])
+    # 분류 계보 전체가 동일성의 일부다(Blocker 5) — 버전뿐 아니라 taxonomy·원시
+    # id·이름이 다르면 같은 "Person" 문자열이라도 같은 Entity 가 아니다.
+    source = entity.lineage.classification_source
+    classification_source = (
+        "|".join(
+            [
+                source.taxonomy,
+                ",".join(str(i) for i in source.source_class_ids),
+                ",".join(source.source_class_names),
+            ]
+        )
+        if source is not None
+        else ""
+    )
     canonical = "|".join(
         [
             entity.entity_class,
+            entity.lineage.classification_ontology_version or "",
+            classification_source,
             entity.site_frame,
             entity.lineage.track_id,
             position,

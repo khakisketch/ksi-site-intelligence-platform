@@ -404,9 +404,18 @@ def test_assembled_entity_satisfies_world_entity_schema_invariants() -> None:
     assert entity.lineage.model_versions == _MODEL_VERSIONS
     assert entity.lineage.calibration_profile_id == "cal-1"
     assert entity.lineage.observation_ids == ["obs-a", "obs-b"]
-    # 스키마 왕복도 통과해야 한다.
+    # 스키마 왕복 — 실제 JSON Schema SSOT 로 검증한다(주석만으로는 왕복 주장이
+    # 공허하다). Blocker 5 의 lineage 확장 필드가 스키마와 정합함도 여기서 고정.
+    import json
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator
+
     dumped = entity.model_dump(by_alias=True, mode="json", exclude_none=True)
     assert dumped["class"] == "Person"
+    assert dumped["lineage"]["classificationOntologyVersion"] == "ksi-ontology-v1"
+    schema = json.loads(Path("contracts/schemas/world-entity.v1.json").read_text("utf-8"))
+    Draft202012Validator(schema).validate(dumped)
 
 
 # ── 2차 반증 리뷰 (2026-07-27) — 문턱 검증 + tz-aware 강제 ────────────────────
@@ -951,3 +960,257 @@ def test_construct_bypass_still_downgrades_bin_evidence() -> None:
     assert entity.uncertainty.localization_state == "LIKELY", (
         "검증 우회 객체가 CONFIRMED 를 얻었다 — 조립 단계 2차 방어선이 동작하지 않는다"
     )
+
+
+def test_construct_bypass_without_class_rejected_typed() -> None:
+    """[2차 방어 — 재검토 #11] 검증 우회 객체에 observed_class 가 없어도 예외가 아니라
+    typed 거부(MISSING_CLASSIFICATION)다 — "예외를 던지지 않는다" 계약 유지."""
+    forged = Observation.model_construct(
+        observation_id="obs-forged",
+        # observed_class·ontology_version 의도적 누락(model_construct 는 검증 생략)
+        track_id="trk-1",
+        observed_at=_BASE_TIME,
+        site_frame=_FRAME,
+        position=[10.0, 20.0, 1.7],
+        position_covariance=list(_ISOTROPIC),
+        detection_confidence=0.9,
+        geo_confidence=None,
+        sensor_id=None,
+        viewpoint_id="vp-1",
+        viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        lineage={},
+    )
+    normal = _observation("obs-b", [10.0, 20.0, 1.7], millis=100)
+    result = _assemble([forged, normal])
+    assert result.status is AssemblyStatus.MISSING_CLASSIFICATION
+    assert result.entity is None
+
+
+def test_unregistered_ontology_version_rejected_even_if_uniform() -> None:
+    """[Blocker 4] 미등록 버전은 **전원이 동일해도** 거부 — 혼합 검사만으로는
+    "모두가 같은 attacker-v99" 를 통과시킨다. 등록부 검사가 혼합 검사보다 먼저다.
+
+    계약 계층(Observation validator)도 미등록 버전을 거부하므로 여기서는 검증 우회
+    객체(model_construct)로 2차 방어(assembly)를 직접 겨눈다.
+    """
+    forged = [
+        Observation.model_construct(
+            observation_id=f"obs-{i}",
+            observed_class="Person",
+            ontology_version="attacker-v99",  # 전원 동일한 미등록 버전
+            source_class_id=None,
+            source_class_name=None,
+            track_id="trk-1",
+            observed_at=_BASE_TIME + timedelta(milliseconds=i * 100),
+            site_frame=_FRAME,
+            position=[10.0, 20.0, 1.7],
+            position_covariance=list(_ISOTROPIC),
+            detection_confidence=0.9,
+            geo_confidence=None,
+            sensor_id=None,
+            viewpoint_id=f"vp-{i}",
+            viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+            lineage={},
+        )
+        for i in range(2)
+    ]
+    result = _assemble(forged)
+    assert result.status is AssemblyStatus.UNSUPPORTED_ONTOLOGY_VERSION
+    assert result.entity is None
+
+
+# ── 독립 재검토 Blocker 반증 (2026-07-28) ────────────────────────────────────
+
+
+def test_lineage_conflict_person_from_truck_rejected_at_contract() -> None:
+    """[Blocker 1] observed_class="Person" + source="truck" 자기모순은 계약에서 거부."""
+    with pytest.raises(ValidationError, match="계보"):
+        Observation(
+            observation_id="obs-a",
+            observed_class="Person",
+            source_class_name="truck",
+            ontology_version="ksi-ontology-v1",
+            observed_at=_BASE_TIME,
+            site_frame=_FRAME,
+            position=[0.0, 0.0, 0.0],
+            position_covariance=list(_ISOTROPIC),
+        )
+
+
+def test_lineage_conflict_bypassed_object_rejected_at_assembly() -> None:
+    """[Blocker 1 — 2차 방어] 계약을 우회한 자기모순 객체도 assembly 가 typed 거부."""
+    forged = Observation.model_construct(
+        observation_id="obs-forged",
+        observed_class="Person",
+        source_class_name="truck",  # 자기모순 — 검증 우회로 주입
+        source_class_id=None,
+        ontology_version="ksi-ontology-v1",
+        track_id="trk-1",
+        observed_at=_BASE_TIME,
+        site_frame=_FRAME,
+        position=[10.0, 20.0, 1.7],
+        position_covariance=list(_ISOTROPIC),
+        detection_confidence=0.9,
+        geo_confidence=None,
+        sensor_id=None,
+        viewpoint_id="vp-1",
+        viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        lineage={},
+    )
+    normal = _observation("obs-b", [10.0, 20.0, 1.7], millis=100)
+    result = _assemble([forged, normal])
+    assert result.status is AssemblyStatus.CLASSIFICATION_LINEAGE_CONFLICT
+    assert result.entity is None
+
+
+def test_unregistered_version_rejected_at_contract() -> None:
+    """[Blocker 4] 미등록 ontology 버전은 계약 시점에 거부된다."""
+    with pytest.raises(ValidationError, match="미등록"):
+        _observation("obs-a", [0.0, 0.0, 0.0], ontology_version="attacker-v99")
+
+
+def test_invalid_canonical_bypassed_object_rejected_at_assembly() -> None:
+    """[Blocker 2] 등록 Canonical 밖 class 의 우회 객체 → INVALID_CANONICAL_CLASS."""
+    forged = Observation.model_construct(
+        observation_id="obs-forged",
+        observed_class="Worker",  # 등록 집합 밖
+        source_class_name=None,
+        source_class_id=None,
+        ontology_version="ksi-ontology-v1",
+        track_id="trk-1",
+        observed_at=_BASE_TIME,
+        site_frame=_FRAME,
+        position=[10.0, 20.0, 1.7],
+        position_covariance=list(_ISOTROPIC),
+        detection_confidence=0.9,
+        geo_confidence=None,
+        sensor_id=None,
+        viewpoint_id="vp-1",
+        viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        lineage={},
+    )
+    result = _assemble([forged])
+    assert result.status is AssemblyStatus.INVALID_CANONICAL_CLASS
+
+
+def test_missing_ontology_version_distinct_from_missing_class() -> None:
+    """[Blocker 2] 사유 세분화 — class 는 있는데 버전이 없으면 MISSING_ONTOLOGY_VERSION."""
+    forged = Observation.model_construct(
+        observation_id="obs-forged",
+        observed_class="Person",
+        # ontology_version 의도적 누락
+        source_class_name=None,
+        source_class_id=None,
+        track_id="trk-1",
+        observed_at=_BASE_TIME,
+        site_frame=_FRAME,
+        position=[10.0, 20.0, 1.7],
+        position_covariance=list(_ISOTROPIC),
+        detection_confidence=0.9,
+        geo_confidence=None,
+        sensor_id=None,
+        viewpoint_id="vp-1",
+        viewpoint_kind=ViewpointEvidenceKind.CALIBRATED_POSE,
+        lineage={},
+    )
+    result = _assemble([forged])
+    assert result.status is AssemblyStatus.MISSING_ONTOLOGY_VERSION
+
+
+def test_entity_lineage_carries_classification_ontology(  # [Blocker 5]
+) -> None:
+    """Entity 자체에서 "이 Person 은 어느 번역 규칙의 의미인가"를 알 수 있다."""
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7]),
+            _observation("obs-b", [10.0, 20.0, 1.7], millis=100),
+        ]
+    )
+    assert entity.lineage.classification_ontology_version == "ksi-ontology-v1"
+    assert entity.lineage.classification_source is not None
+    assert entity.lineage.classification_source.taxonomy == "COCO-2017"
+
+
+def test_fingerprint_sensitive_to_ontology_version() -> None:
+    """[Blocker 5] fingerprint 는 ontology 버전에 민감하다 — 같은 class 문자열이라도
+    번역 규칙이 다르면 다른 Entity 로 판별돼야 한다."""
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7]),
+            _observation("obs-b", [10.0, 20.0, 1.7], millis=100),
+        ]
+    )
+    original = world_entity_fingerprint(entity)
+    mutated = entity.model_copy(deep=True)
+    mutated.lineage.classification_ontology_version = "ksi-ontology-v2-hypothetical"
+    assert world_entity_fingerprint(mutated) != original
+
+
+def test_classification_source_aggregates_observation_lineage() -> None:
+    """[Blocker 5 권장] 원시 id·이름이 Entity 계보로 집계된다."""
+    obs = [
+        Observation(
+            observation_id=f"obs-{i}",
+            observed_class="Person",
+            source_class_id=0,
+            source_class_name="person",
+            ontology_version="ksi-ontology-v1",
+            track_id="trk-1",
+            observed_at=_BASE_TIME + timedelta(milliseconds=i * 100),
+            site_frame=_FRAME,
+            position=[10.0, 20.0, 1.7],
+            position_covariance=list(_ISOTROPIC),
+            detection_confidence=0.9,
+            viewpoint_id=f"vp-{i}",
+        )
+        for i in range(2)
+    ]
+    entity = _assemble_ok(obs)
+    source = entity.lineage.classification_source
+    assert source is not None
+    assert source.source_class_ids == [0]
+    assert source.source_class_names == ["person"]
+
+
+def test_ontology_registry_expansion_requires_mismatch_refutation() -> None:
+    """[대표자 조건 2026-07-28] 등록부 확장 시 혼합 반증 테스트 동반을 깨지는 형태로 고정.
+
+    ONTOLOGY_VERSION_MISMATCH 경로는 등록 버전이 1개인 동안 도달 불가능한 잠재
+    방어다. 두 번째 버전이 등록되는 순간 이 테스트가 실패하며, 그때 해야 할 일:
+    ① v1/v2 혼합 track 이 ONTOLOGY_VERSION_MISMATCH 로 거부되는 반증 테스트 추가
+    ② 이 테스트의 기대 집합 갱신.
+    """
+    from ksi_domain.ontology import REGISTERED_ONTOLOGY_VERSIONS
+
+    assert {"ksi-ontology-v1"} == REGISTERED_ONTOLOGY_VERSIONS, (
+        "등록부가 확장됐다 — v1/v2 혼합 track 의 ONTOLOGY_VERSION_MISMATCH 반증 "
+        "테스트를 추가한 뒤 이 기대 집합을 갱신하라(대표자 조건 2026-07-28)"
+    )
+
+
+def test_fingerprint_sensitive_to_classification_source() -> None:
+    """[재검토 확인항목 #2] fingerprint 는 버전뿐 아니라 classificationSource 의
+    taxonomy·원시 id·이름 변경에도 민감하다."""
+    entity = _assemble_ok(
+        [
+            _observation("obs-a", [10.0, 20.0, 1.7]),
+            _observation("obs-b", [10.0, 20.0, 1.7], millis=100),
+        ]
+    )
+    original = world_entity_fingerprint(entity)
+    assert entity.lineage.classification_source is not None
+
+    taxonomy_mutated = entity.model_copy(deep=True)
+    assert taxonomy_mutated.lineage.classification_source is not None
+    taxonomy_mutated.lineage.classification_source.taxonomy = "OTHER-TAXONOMY"
+    assert world_entity_fingerprint(taxonomy_mutated) != original
+
+    ids_mutated = entity.model_copy(deep=True)
+    assert ids_mutated.lineage.classification_source is not None
+    ids_mutated.lineage.classification_source.source_class_ids = [7]
+    assert world_entity_fingerprint(ids_mutated) != original
+
+    names_mutated = entity.model_copy(deep=True)
+    assert names_mutated.lineage.classification_source is not None
+    names_mutated.lineage.classification_source.source_class_names = ["truck"]
+    assert world_entity_fingerprint(names_mutated) != original

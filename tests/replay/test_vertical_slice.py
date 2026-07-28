@@ -512,3 +512,54 @@ def test_two_class_scene_is_deterministic_under_shuffle() -> None:
     assert forward["classes"] == ["Person", "Vehicle_Truck"]
     assert forward["event_types"] == ["PERSON_PRESENT"]
     assert forward["unpublished"] == ["Vehicle_Truck"]
+
+
+def test_partial_key_collision_deterministic_under_reverse() -> None:
+    """[Blocker 6] x_min/y_min/x_max/class 가 같고 y_max 만 다른 두 detection —
+    입력 순서를 뒤집어도 같은 Track/Entity fingerprint.
+
+    초판 정렬 키는 y_max·confidence 를 빼먹어 이 쌍이 같은 키가 됐고, stable 정렬이
+    입력 순서를 보존해 track 라벨이 순서 종속이었다.
+    """
+
+    def build(reverse: bool) -> list[str]:
+        pair = [
+            person_detection(x_min=900.0, y_min=500.0, x_max=980.0, y_max=700.0),
+            person_detection(x_min=900.0, y_min=500.0, x_max=980.0, y_max=690.0),
+        ]
+        script = {0: list(reversed(pair)) if reverse else list(pair)}
+        result = run_vertical_slice(
+            frames=_frames([0.0]),
+            detector=ScriptedDetector(script),
+            telemetry=synthetic_telemetry([0.0]),
+            drone_position=_DRONE_POSE,
+        )
+        return result.entity_fingerprints()
+
+    assert build(False) == build(True)
+
+
+def test_detection_contract_rejects_person_from_truck_source() -> None:
+    """[Blocker 1] Detection(Person, source=truck) 자기모순은 생성 자체가 거부된다."""
+    from ksi_domain.detection import BoundingBox, Detection
+
+    with pytest.raises(ValueError, match="계보"):
+        Detection(
+            detection_class="Person",
+            confidence=0.9,
+            bbox=BoundingBox(x_min=0.0, y_min=0.0, x_max=10.0, y_max=10.0),
+            source_class_name="truck",
+        )
+
+
+def test_detection_contract_rejects_unregistered_ontology_version() -> None:
+    """[Blocker 4] 미등록 버전의 Detection 은 생성 자체가 거부된다."""
+    from ksi_domain.detection import BoundingBox, Detection
+
+    with pytest.raises(ValueError, match="미등록"):
+        Detection(
+            detection_class="Person",
+            confidence=0.9,
+            bbox=BoundingBox(x_min=0.0, y_min=0.0, x_max=10.0, y_max=10.0),
+            ontology_version="attacker-v99",
+        )

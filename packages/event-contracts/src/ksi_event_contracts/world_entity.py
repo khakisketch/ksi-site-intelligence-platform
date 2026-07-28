@@ -59,13 +59,30 @@ class Uncertainty(_CamelModel):
     ) = None
 
 
+class ClassificationSource(_CamelModel):
+    """분류의 원시 출처 계보(INV-031) — 어떤 taxonomy 의 어떤 원시 클래스에서
+    이 Entity 의 canonical class 가 번역됐는지."""
+
+    taxonomy: str
+    source_class_ids: list[int]
+    source_class_names: list[str]
+
+
 class EntityLineage(_CamelModel):
-    """INV-042 — Track·Model·Calibration 계보. 관측 ID 목록으로 원본까지 역추적 가능."""
+    """INV-042 — Track·Model·Calibration 계보. 관측 ID 목록으로 원본까지 역추적 가능.
+
+    ``classification_ontology_version`` (INV-031, 독립 재검토 Blocker 5): 이 Entity 의
+    class 문자열("Person")이 **어느 번역 규칙의 의미**인지 Entity 자체에서 알 수 있어야
+    한다 — Observation 목록을 역조회해야만 알 수 있으면 계보가 아니다. Optional 인
+    이유는 스키마 후방 호환(기존 산출물)이며, assembly 는 항상 채운다.
+    """
 
     track_id: str
     model_versions: dict[str, Any]
     calibration_profile_id: str
     observation_ids: list[str] | None = None
+    classification_ontology_version: str | None = None
+    classification_source: ClassificationSource | None = None
 
 
 class WorldEntity(_CamelModel):

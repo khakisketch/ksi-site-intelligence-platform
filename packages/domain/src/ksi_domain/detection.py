@@ -26,7 +26,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from ksi_domain.ontology import ONTOLOGY_VERSION
+from ksi_domain.ontology import ONTOLOGY_VERSION, classification_lineage_error
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +92,17 @@ class Detection:
             )
         if not self.ontology_version.strip():
             raise ValueError("ontology_version 은 공백일 수 없다")
+        # 계보 정합(독립 재검토 Blocker 1·3·4) — 미등록 버전·미등록 canonical·
+        # 원시 라벨과 canonical 의 자기모순(Person 인데 source 가 truck)을 생성
+        # 시점에 거부한다. 판정 규칙은 ontology 모듈과 공용(계층 간 동일 규칙).
+        lineage_error = classification_lineage_error(
+            canonical=self.detection_class,
+            ontology_version=self.ontology_version,
+            source_class_name=self.source_class_name,
+            source_class_id=self.source_class_id,
+        )
+        if lineage_error is not None:
+            raise ValueError(f"분류 계보 위반: {lineage_error}")
 
 
 class Detector(ABC):

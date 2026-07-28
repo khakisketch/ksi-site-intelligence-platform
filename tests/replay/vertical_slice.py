@@ -357,9 +357,27 @@ def run_vertical_slice(
         # 프레임 내 detection 도 결정적 순서로 정규화한다 — tracker 의 그리디 배정이
         # 입력 순서 종속이라, 정렬 없이는 같은 장면의 detection 순서 차이가 track
         # 라벨을 뒤바꿔 재현성(P0-6)이 깨진다(프레임 정렬과 같은 정신).
+        #
+        # 키는 Detection 의 **전체 관측 필드**를 덮는 완전 순서다(독립 재검토
+        # Blocker 6 — y_max·confidence 가 빠지면 그 축만 다른 두 detection 이 같은
+        # 키가 되어 입력 순서가 다시 결과를 좌우한다). 모든 필드가 완전히 동일한
+        # 중복 detection 은 어느 순서로 처리해도 산출물이 같으므로 stable 정렬로
+        # 충분하다 — 그 중복을 합칠지는 tracker 가 아니라 상류(NMS)의 몫이다.
         detections = sorted(
             detector.detect(frame.frame_id, frame.width, frame.height),
-            key=lambda d: (d.bbox.x_min, d.bbox.y_min, d.bbox.x_max, d.detection_class),
+            key=lambda d: (
+                d.detection_class,
+                d.bbox.x_min,
+                d.bbox.y_min,
+                d.bbox.x_max,
+                d.bbox.y_max,
+                d.confidence,
+                # None 은 sentinel 값이 아니라 튜플 태그로 구분한다 — -1 같은
+                # 마법값은 이론상 실제 id 와 충돌할 수 있다(재검토 확인항목 #3).
+                (1, d.source_class_id) if d.source_class_id is not None else (0, 0),
+                d.source_class_name or "",
+                d.ontology_version,
+            ),
         )
         for track_id, detection in tracker.assign(detections):
             interpolated = interpolator.at(frame.capture_ts_utc)

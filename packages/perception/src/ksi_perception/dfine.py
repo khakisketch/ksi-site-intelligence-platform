@@ -46,7 +46,7 @@ from ksi_domain.detection_adapter import (
     DetectionAdapter,
     RawDetection,
 )
-from ksi_domain.ontology import COCO_TO_CANONICAL
+from ksi_domain.ontology import COCO_ONTOLOGY, OntologyMapping
 
 from ksi_perception.registry import (
     DEFAULT_REGISTRY_PATH,
@@ -56,10 +56,6 @@ from ksi_perception.registry import (
 if TYPE_CHECKING:
     import numpy as np
 
-# COCO 라벨명 → Canonical Entity Class — SSOT 는 ksi_domain.ontology(INV-031,
-# Versioned Ontology). 여기 없는 라벨은 DetectionAdapter 가 UNKNOWN_LABEL 로 drop
-# 하며 기록을 남긴다(중장비는 COCO 에 없어 자체 fine-tune 대상 — MODEL-B1-001).
-DEFAULT_CLASS_MAP: dict[str | int, str] = {k: v for k, v in COCO_TO_CANONICAL.items()}
 
 # 모델 후보 1차 선별 문턱 — D-FINE 은 NMS-free 고정 300 query 를 내므로 대부분이
 # 무의미한 저신뢰 후보다. 0.05 는 실질 탐지를 거의 버리지 않으면서 프레임당 수백 건의
@@ -141,6 +137,9 @@ class DFineDetector:
                 label=self._id2label.get(int(label), int(label)),
                 score=float(score),
                 box=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+                # 원시 index 계보 — 라벨명과 함께 보존한다(digest 고정 config 의
+                # id2label 이 대응표이므로 둘의 자기모순은 구조적으로 불가능).
+                source_class_id=int(label),
             )
             for score, label, b in zip(
                 processed["scores"].tolist(),
@@ -157,14 +156,27 @@ def load_dfine_detector(
     local_dir: Path,
     model_id: str = "ksi-person-detector-dfine-s-coco",
     registry_path: Path = DEFAULT_REGISTRY_PATH,
-    class_map: dict[str | int, str] | None = None,
+    ontology: OntologyMapping = COCO_ONTOLOGY,
     min_confidence: float = 0.0,
     score_floor: float = DEFAULT_SCORE_FLOOR,
 ) -> DFineLoadResult:
     """Registry digest 검증 → 로컬 전용 로드 → Detector 구성.
 
+    class 매핑은 자유 dict 가 아니라 **검증된** :class:`OntologyMapping` 만 받는다
+    (독립 재검토 Blocker 1) — ``{"truck": "Person"}`` 같은 의미 변조는 OntologyMapping
+    생성 시점에 거부되므로 이 로더로는 주입할 수 없다. 소비 범위를 좁히려면 권위
+    매핑의 부분집합으로 OntologyMapping 을 구성해 넘긴다.
+
     예외를 던지지 않는다 — 실패는 :class:`DFineLoadResult` 로 반환된다(사유 포함).
     """
+    if not isinstance(ontology, OntologyMapping):
+        return DFineLoadResult(
+            status=DFineLoadStatus.LOAD_FAILED,
+            detail=(
+                f"ontology 는 OntologyMapping 이어야 한다 ({type(ontology).__name__}) — "
+                "자유 dict 주입 금지(독립 재검토 Blocker 1)"
+            ),
+        )
     check = verify_local_model(model_id, local_dir, registry_path=registry_path)
     if not check.ok:
         return DFineLoadResult(
@@ -205,7 +217,7 @@ def load_dfine_detector(
         adapter = DetectionAdapter(
             box_format=BoxFormat.XYXY,  # post_process_object_detection 출력 규약
             normalized=False,  # target_sizes 로 이미 원본 픽셀 좌표 복원됨
-            class_map=class_map if class_map is not None else dict(DEFAULT_CLASS_MAP),
+            ontology=ontology,
             min_confidence=min_confidence,
         )
     # "예외를 던지지 않는다" 계약의 잔여 경로(반증 리뷰 F11): from_pretrained 의

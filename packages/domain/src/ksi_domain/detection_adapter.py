@@ -63,12 +63,12 @@ foot point 가 그대로 유효하다. 이 정합은 우연에 맡기지 않고
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
 from ksi_domain.detection import BoundingBox, Detection, Detector
-from ksi_domain.ontology import ONTOLOGY_VERSION
+from ksi_domain.ontology import OntologyMapping
 
 # 클리핑 후 잔존 면적비 하한 — 이보다 많이 잘리면 접지점(foot point)이 원래 대상과
 # 무관한 편향 위치가 되므로 drop 한다(EXCESSIVE_CLIP). 0.5 = "절반 이상 잘리면 기하를
@@ -101,24 +101,31 @@ class RawDetection:
 
     Attributes:
         label: 모델의 클래스 라벨. 이름(str) 또는 index(int) — 모델마다 다르다.
+            class_map 조회 키로 쓰인다.
         score: 모델 신뢰도. 범위 미보장(정규화가 검증한다).
         box: ``box_format`` 해석의 좌표 4개. absolute 픽셀 또는 normalized [0,1]
             (``DetectionAdapter(normalized=...)`` 가 해석을 결정한다).
+        source_class_id: 원시 클래스 index 의 **계보 기록**(선택). ``label`` 이 이름
+            (str)인 소스가 index 도 알 때 채운다 — 조회에는 쓰이지 않고 Detection
+            의 분류 계보로만 흐른다. label 이 int 면 그 값이 곧 id 라 불필요하다
+            (둘 다 주면 자기모순 방지를 위해 label(int)==source_class_id 를 요구).
     """
 
     label: str | int
     score: float
     box: tuple[float, float, float, float]
+    source_class_id: int | None = None
 
 
 class DropReason(StrEnum):
     """raw detection 이 Detection 으로 승격되지 못한 사유."""
 
     MALFORMED = "malformed"  # 구조 위반(box 원소 수·숫자 아닌 좌표/score)
+    MALFORMED_CLASS_LINEAGE = "malformed_class_lineage"  # id↔name↔canonical 자기모순
     NON_FINITE = "non_finite"  # 좌표·score 의 NaN/Inf(변환 산술이 만든 것 포함)
     SCORE_OUT_OF_RANGE = "score_out_of_range"  # score 가 [0,1] 밖
     BELOW_CONFIDENCE = "below_confidence"  # threshold 미달(명시적 필터)
-    UNKNOWN_LABEL = "unknown_label"  # class_map 에 없는 라벨(비허용 타입 포함)
+    UNKNOWN_LABEL = "unknown_label"  # 매핑에 없는 라벨(비허용 타입 포함)
     EXCESSIVE_CLIP = "excessive_clip"  # 클리핑으로 면적 절반 이상 손실
     DEGENERATE_BOX = "degenerate_box"  # 클리핑 후 면적 0 또는 완전히 프레임 밖
 
@@ -164,14 +171,13 @@ class DetectionAdapter:
     Args:
         box_format: raw bbox 좌표 포맷.
         normalized: True 면 좌표를 [0,1] 정규화 값으로 해석해 프레임 크기로 환산한다.
-        class_map: 모델 라벨 → **Canonical Entity Class**(:mod:`ksi_domain.ontology`).
-            **여기 없는 라벨은 drop 된다** — 모델의 전체 클래스 중 이 시스템이
-            소비하는 부분집합을 명시하는 자리이며, 미지원 클래스가 다른 클래스로
+        ontology: **검증된** 번역 규칙(:class:`~ksi_domain.ontology.OntologyMapping`).
+            자유 dict 는 받지 않는다(독립 재검토 Blocker 1) — ``{"truck": "Person"}``
+            같은 의미 변조 매핑은 OntologyMapping 생성 시점에 거부되므로 여기 도달할
+            수 없다. 매핑에 없는 라벨은 drop 되며, 미지원 클래스가 다른 클래스로
             fallback 하는 경로는 없다(INV-031).
         min_confidence: 이 값 미만 score 는 drop. 기본 0.0(전부 통과) — 근거는 모듈
             docstring(threshold 는 미탐을 늘리는 방향이라 명시적 선택이어야 한다).
-        ontology_version: 이 class_map 이 구현하는 ontology 버전. 산출 Detection 의
-            분류 계보 필드에 박힌다(INV-031 — 번역 규칙의 버전을 계보로 보존).
     """
 
     def __init__(
@@ -179,12 +185,14 @@ class DetectionAdapter:
         *,
         box_format: BoxFormat,
         normalized: bool,
-        class_map: Mapping[str | int, str],
+        ontology: OntologyMapping,
         min_confidence: float = 0.0,
-        ontology_version: str = ONTOLOGY_VERSION,
     ) -> None:
-        if not ontology_version.strip():
-            raise ValueError("ontology_version 은 공백일 수 없다")
+        if not isinstance(ontology, OntologyMapping):
+            raise ValueError(
+                f"ontology 는 OntologyMapping 이어야 한다 ({type(ontology).__name__}) — "
+                "자유 dict 주입 금지(독립 재검토 Blocker 1)"
+            )
         if not (
             isinstance(min_confidence, float)
             and math.isfinite(min_confidence)
@@ -193,24 +201,10 @@ class DetectionAdapter:
             raise ValueError(
                 f"min_confidence 는 [0,1] 범위의 finite float 이어야 한다 ({min_confidence!r})"
             )
-        if not class_map:
-            raise ValueError(
-                "class_map 이 비어 있다 — 소비할 클래스가 없으면 adapter 가 무의미하다"
-            )
-        for label, mapped in class_map.items():
-            # bool 은 int 의 subclass 라 dict 에서 0/1 키와 충돌·붕괴한다({1: "A", True: "B"}
-            # 는 리터럴 단계에서 조용히 1개가 된다) — 키로 금지한다.
-            if isinstance(label, bool) or not isinstance(label, str | int):
-                raise ValueError(f"class_map 라벨 키는 str 또는 int 여야 한다 ({label!r})")
-            if isinstance(label, str) and not label.strip():
-                raise ValueError("class_map 의 라벨 키는 공백일 수 없다")
-            if not mapped.strip():
-                raise ValueError(f"class_map[{label!r}] 의 도메인 클래스명이 공백이다")
         self._box_format = box_format
         self._normalized = normalized
-        self._class_map = dict(class_map)
+        self._ontology = ontology
         self._min_confidence = min_confidence
-        self._ontology_version = ontology_version
 
     def convert(
         self, raws: list[RawDetection], *, width: int, height: int
@@ -285,13 +279,68 @@ class DetectionAdapter:
                 )
                 continue
 
-            mapped_class = self._class_map.get(raw.label)
+            # int 라벨 + 다른 값의 source_class_id 는 자기모순 레코드 — 어느 쪽이
+            # 진짜 원시 클래스인지 판정할 근거가 없으므로 fail-closed 로 죽인다.
+            if (
+                isinstance(raw.label, int)
+                and raw.source_class_id is not None
+                and raw.source_class_id != raw.label
+            ):
+                dropped.append(
+                    DroppedRawDetection(
+                        raw,
+                        DropReason.MALFORMED_CLASS_LINEAGE,
+                        (
+                            f"label(int)={raw.label} 과 source_class_id="
+                            f"{raw.source_class_id} 가 서로 다른 원시 클래스를 주장한다"
+                        ),
+                    )
+                )
+                continue
+
+            # 라벨 해석은 전부 ontology 경유 — int 라벨은 taxonomy 의 id↔name 대응으로
+            # 이름을 얻고, 이름이 매핑(권위 해석의 검증된 부분집합)에 있어야 승격된다.
+            source_id: int | None
+            if isinstance(raw.label, int):
+                source_id = raw.label
+                source_name = self._ontology.id_to_name.get(raw.label)
+                if source_name is None:
+                    dropped.append(
+                        DroppedRawDetection(
+                            raw,
+                            DropReason.UNKNOWN_LABEL,
+                            f"미등록 원시 id {raw.label} — taxonomy id 대응에 없음",
+                        )
+                    )
+                    continue
+            else:
+                source_name = raw.label
+                source_id = raw.source_class_id
+                # 계보 체인 검증(Blocker 3): raw id → taxonomy id↔name → 이름.
+                # 이름과 id 가 서로 다른 원시 클래스를 가리키면 자기모순이다.
+                if source_id is not None:
+                    id_name = self._ontology.id_to_name.get(source_id)
+                    if id_name != source_name:
+                        dropped.append(
+                            DroppedRawDetection(
+                                raw,
+                                DropReason.MALFORMED_CLASS_LINEAGE,
+                                (
+                                    f"source_class_id={source_id}({id_name!r}) 와 "
+                                    f"라벨명 {source_name!r} 이 서로 다른 원시 클래스를 "
+                                    "주장한다"
+                                ),
+                            )
+                        )
+                        continue
+
+            mapped_class = self._ontology.mappings.get(source_name)
             if mapped_class is None:
                 dropped.append(
                     DroppedRawDetection(
                         raw,
                         DropReason.UNKNOWN_LABEL,
-                        f"미등록 라벨 {raw.label!r} — 소비 클래스 집합에 없음",
+                        f"미등록 라벨 {source_name!r} — 소비 클래스 집합에 없음",
                     )
                 )
                 continue
@@ -357,10 +406,11 @@ class DetectionAdapter:
                     x_max=clipped_x_max,
                     y_max=clipped_y_max,
                 ),
-                # 분류 계보(INV-031) — 원시 라벨과 번역 규칙 버전을 보존한다.
-                source_class_id=raw.label if isinstance(raw.label, int) else None,
-                source_class_name=raw.label if isinstance(raw.label, str) else None,
-                ontology_version=self._ontology_version,
+                # 분류 계보(INV-031) — 원시 id·이름과 번역 규칙 버전을 모두 보존한다
+                # (위에서 taxonomy 대응과의 자기모순을 이미 걸렀다 — Blocker 3).
+                source_class_id=source_id,
+                source_class_name=source_name,
+                ontology_version=self._ontology.version,
             )
             detections.append(detection)
             if area_kept < 1.0:

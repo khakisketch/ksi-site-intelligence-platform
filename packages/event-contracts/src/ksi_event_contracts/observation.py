@@ -152,6 +152,27 @@ class Observation(BaseModel):
     lineage: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
+    def _classification_lineage_consistent(self) -> Observation:
+        """분류 계보 정합(INV-031, 독립 재검토 Blocker 1·4).
+
+        미등록 ontology 버전·미등록 canonical·원시 라벨과 canonical 의 자기모순
+        (observed_class="Person" 인데 source_class_name="truck")을 계약 시점에
+        거부한다 — 판정 규칙은 :func:`ksi_domain.ontology.classification_lineage_error`
+        와 공용이며, Detection 계약·assembly 2차 방어와 동일 규칙이다.
+        """
+        from ksi_domain.ontology import classification_lineage_error
+
+        lineage_error = classification_lineage_error(
+            canonical=self.observed_class,
+            ontology_version=self.ontology_version,
+            source_class_name=self.source_class_name,
+            source_class_id=self.source_class_id,
+        )
+        if lineage_error is not None:
+            raise ValueError(f"분류 계보 위반: {lineage_error}")
+        return self
+
+    @model_validator(mode="after")
     def _viewpoint_kind_matches_id(self) -> Observation:
         """선언한 증거 등급과 ID의 실제 형식이 어긋나면 거부한다.
 
