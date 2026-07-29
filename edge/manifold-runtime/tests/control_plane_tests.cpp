@@ -254,6 +254,24 @@ void TestFutureHeartbeatDoesNotLatch() {
           "역행 heartbeat 는 typed 로 무시 사유가 남는다");
 }
 
+void TestInWindowFutureHeartbeatDoesNotSoftLatch() {
+    // [자율 재검토 C-1] 허용창 안(<=1000ms) 미래 heartbeat 를 그대로 기록하면
+    // StateAt 의 elapsed<0 경로와 결합해 '주기 < skew' 에서 영구 FAIL_CLOSED —
+    // 클램프 후에는 NOMINAL 이 유지되어야 한다.
+    using ksi::control_plane::HeartbeatVerdict;
+    FlightSupervisor supervisor(2'000, 5'000);
+    Check(supervisor.RecordHeartbeat(10'700, 10'000) == HeartbeatVerdict::kRecordedClamped,
+          "허용창 안 미래 heartbeat 는 클램프 기록으로 typed 구분된다");
+    Check(supervisor.last_heartbeat_utc_ms() == 10'000,
+          "클램프 — 미래 성분은 기록되지 않는다");
+    Check(supervisor.StateAt(10'000) == SupervisorState::kNominal,
+          "기록 직후 같은 now 에서 nominal (수정 전: elapsed<0 → fail-closed)");
+    Check(supervisor.RecordHeartbeat(11'200, 10'500) == HeartbeatVerdict::kRecordedClamped,
+          "지속 skew 하의 후속 heartbeat 도 클램프 수용");
+    Check(supervisor.StateAt(10'999) == SupervisorState::kNominal,
+          "주기<skew 시나리오에서 영구 래치 없음 (수정 전: 영구 fail-closed)");
+}
+
 void TestHeartbeatResetReturnsToFailClosed() {
     FlightSupervisor supervisor(2'000, 5'000);
     supervisor.RecordHeartbeat(10'000, 10'000);
@@ -303,6 +321,7 @@ int main() {
     TestGotoRequiresTarget();
     TestTimeDomainGuardsPreventOverflow();
     TestFutureHeartbeatDoesNotLatch();
+    TestInWindowFutureHeartbeatDoesNotSoftLatch();
     TestHeartbeatResetReturnsToFailClosed();
     TestStateAtOutOfDomainIsFailClosed();
     TestVerdictStringsAreDistinct();

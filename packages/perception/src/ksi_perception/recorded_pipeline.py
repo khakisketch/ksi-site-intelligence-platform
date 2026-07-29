@@ -145,10 +145,17 @@ def serialize_result(
         "schema": RESULT_SCHEMA_V1,
         "model": {"model_id": model_id, "model_version": model_version},
         "frames": {"count": frame_count, "width": width, "height": height},
+        # observations/entities 도 wire 규약(exclude_none)이다 — bundles 만 적용하면
+        # entities 의 null 방출이 world-entity.v1.json 을 위반한다(자율 재검토 P1-C1,
+        # 감사 #28 과 동일 클래스가 형제 계약에서 재발한 것).
         "observations": [
-            o.model_dump(mode="json", by_alias=True) for o in result.observations
+            o.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for o in result.observations
         ],
-        "entities": [e.model_dump(mode="json", by_alias=True) for e in result.entities],
+        "entities": [
+            e.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for e in result.entities
+        ],
         # wire 규약 SSOT(event_bundle_wire_dict) — null 방출은 스키마 위반이다(감사 #28).
         "event_bundles": [event_bundle_wire_dict(b) for b in result.bundles],
         # 재현성 지문의 정본은 SliceResult.entity_fingerprints() 하나다(감사 #2 —
@@ -405,6 +412,19 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"PARTIAL: 프레임 단위 실패 {len(result.frame_failures)}건 — "
             "diagnostics.frame_failures 참조",
+            file=sys.stderr,
+        )
+        return 3
+    if result.observations and not result.bundles and (
+        result.assembly_failures or result.unpublished_events
+    ):
+        # 관측은 있는데 Event 가 0건 — 조립(융합 창 초과 등)·발행 단계 전량 탈락이다.
+        # "감지했지만 아무 사건도 안 됐다"가 성공(exit 0)으로 위장되면 안 된다
+        # (자율 재검토 P1-B1 — track 관측창 1.0s 초과가 대표 재현).
+        print(
+            "PARTIAL: 관측은 있으나 Event 0건 — "
+            f"assembly_failures {len(result.assembly_failures)}건, "
+            f"unpublished {len(result.unpublished_events)}건 (diagnostics 참조)",
             file=sys.stderr,
         )
         return 3

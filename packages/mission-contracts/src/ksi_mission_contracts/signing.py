@@ -120,6 +120,24 @@ class KeyRegistry:
                 f"keyId {key_id!r} 는 이미 등록돼 있다 — 덮어쓰기 금지(REVOKED 부활 차단). "
                 "폐기는 revoke(), 회전은 새 keyId 로"
             )
+        # 같은 공개키의 다른 keyId 등록도 거부한다(자율 재검토 B-1): keyId 는 서명
+        # 대상이 아니라서(canonical 은 signature 블록 전체 제외) 쌍둥이 keyId 가
+        # 있으면 계약의 signature.keyId 만 바꿔 재서명 없이 revoke·만료를 우회할 수
+        # 있다 — 폐기의 진짜 단위는 키 재료다.
+        from cryptography.hazmat.primitives import serialization
+
+        new_bytes = public_key.public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        for existing_id, record in self._records.items():
+            existing_bytes = record.public_key.public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw
+            )
+            if existing_bytes == new_bytes:
+                raise ValueError(
+                    f"동일 공개키가 keyId {existing_id!r} 로 이미 등록돼 있다 — "
+                    "쌍둥이 keyId 는 revoke/만료 우회 경로다(회전은 새 키 재료로)"
+                )
         if not_after is not None and not_after.tzinfo is None:
             raise ValueError(
                 "not_after는 tz-aware(UTC)여야 한다 — naive datetime은 검증 시점 비교에서 "

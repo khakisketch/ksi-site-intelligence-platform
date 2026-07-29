@@ -16,6 +16,16 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "빌드 타입" FORCE)
 endif()
 
+# 정수 오버플로·UB·메모리 오류는 -Werror 로 잡히지 않는다(감사 #56·#72). 이 블록은
+# 반드시 add_library **앞**이어야 한다 — 디렉토리 옵션은 타깃 생성 시점에 스냅샷
+# 되므로 뒤에 두면 테스트 드라이버만 계측되고 정작 검증 대상 라이브러리(TTL 산술이
+# 있는 TU)는 비계측이 된다(자율 재검토 P1-D1 — 실산출물 flags.make 로 확증).
+option(KSI_ENABLE_SANITIZERS "ASan+UBSan 계측 빌드" OFF)
+if(KSI_ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 add_library(ksi_control_plane
   src/command.cpp
   src/supervisor.cpp
@@ -26,15 +36,6 @@ target_include_directories(ksi_control_plane PUBLIC
 target_compile_options(ksi_control_plane PRIVATE
   -Wall -Wextra -Wpedantic -Werror
 )
-
-# 정수 오버플로·UB·메모리 오류는 -Werror 로 잡히지 않는다(감사 #56·#72 — 이
-# 모듈의 주 결함 클래스가 시간·TTL 산술 오버플로였다). CI 가 sanitizer 구성으로
-# ctest 를 한 번 더 돌린다.
-option(KSI_ENABLE_SANITIZERS "ASan+UBSan 계측 빌드" OFF)
-if(KSI_ENABLE_SANITIZERS)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
-endif()
 
 option(KSI_BUILD_TESTS "control plane 계약 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)

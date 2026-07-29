@@ -47,6 +47,23 @@ def pytest_cmdline_main(config):  # type: ignore[no-untyped-def]
     """세션 종료코드 강제 — sessionfinish 의 session.exitstatus 대입은 최종
     종료코드에 반영되지 않음을 실측(2026-07-29)으로 확인해 wrapper 로 감싼다."""
     result = yield
+    if os.environ.get("KSI_REQUIRE_REAL_MODEL") == "1":
+        # anchor 는 skip 을 재지 부재를 재지 못한다(재검토 P2-D2) — 게이트 파일이
+        # rename/삭제되면 수집조차 안 돼 "완전 게이트 통과"를 참칭하므로 존재를
+        # 함께 단정한다.
+        here = Path(__file__).resolve().parent
+        expected = (
+            here / "contract" / "test_dfine_detector.py",
+            here / "contract" / "test_onnx_conformance.py",
+            here / "replay" / "test_recorded_slice.py",
+        )
+        missing = [str(path) for path in expected if not path.is_file()]
+        if missing:
+            sys.stderr.write(
+                f"\nKSI_REQUIRE_REAL_MODEL=1: 실모델 게이트 파일 부재 {missing} — "
+                "완전 게이트가 아니다\n"
+            )
+            return 1
     if os.environ.get("KSI_REQUIRE_REAL_MODEL") == "1" and _gate_skips:
         sys.stderr.write(
             f"\nKSI_REQUIRE_REAL_MODEL=1: 실모델 게이트 {len(_gate_skips)}건이 skip 됐다 — "

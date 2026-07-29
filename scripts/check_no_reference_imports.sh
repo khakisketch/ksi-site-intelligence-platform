@@ -61,16 +61,22 @@ done < <(find "${EXISTING_DIRS[@]}" -type l 2>/dev/null)
 
 # 4) 서브모듈 핀 이탈(+)·충돌(U)·dirty worktree 검사 (초기화 안 된 '-'는 허용: CI는 클론 없이 검사)
 if [[ -f .gitmodules ]]; then
+  # process substitution 의 실패는 while 종료 상태로 전파되지 않는다(재검토 P2-D3
+  # — `|| { }` 는 죽은 가드였다) — 종료코드를 스트림 마지막 줄에 실어 명시 검사한다.
   while IFS= read -r line; do
+    if [[ "$line" == EXIT:* ]]; then
+      if [[ "$line" != "EXIT:0" ]]; then
+        echo "FAIL(4): git submodule status 실패(${line#EXIT:}) — 검사 미수행 ≠ 통과" >&2
+        fail=1
+      fi
+      continue
+    fi
     prefix="${line:0:1}"
     if [[ "$prefix" == "+" || "$prefix" == "U" ]]; then
       echo "FAIL(4): 서브모듈이 기록된 커밋에서 이탈: $line" >&2
       fail=1
     fi
-  done < <(git submodule status) || {
-    echo "FAIL(4): git submodule status 실행 실패 — 검사 미수행을 통과로 위장하지 않는다" >&2
-    fail=1
-  }
+  done < <(git submodule status; echo "EXIT:$?")
   if ! porcelain=$(git status --porcelain -- references/repos); then
     echo "FAIL(4): git status 실행 실패 — 검사 미수행을 통과로 위장하지 않는다" >&2
     fail=1

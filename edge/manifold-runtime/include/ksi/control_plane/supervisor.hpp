@@ -35,6 +35,7 @@ const char* ToString(SupervisorState state);
 /// (감사 #15: 조용한 무시/오염은 원인이 상태값에 드러나지 않아 오진단된다).
 enum class HeartbeatVerdict {
     kRecorded,          ///< 정상 기록
+    kRecordedClamped,   ///< 허용창 안 미래 시각 — now 로 클램프해 기록(재검토 C-1)
     kStaleIgnored,      ///< 역행·중복 — 최신 시각을 되돌리지 못한다
     kImplausibleFuture, ///< now 대비 허용창 초과 미래 시각 — 기록 거부(래치 방지)
     kOutOfDomain,       ///< 시각 도메인([0, kMaxUtcMs]) 밖 — 판정 불가 거부

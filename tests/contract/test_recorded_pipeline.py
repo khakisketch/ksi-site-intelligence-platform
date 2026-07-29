@@ -481,3 +481,84 @@ def test_cli_absolute_epoch_telemetry_succeeds_without_start_ts(
     assert code == 0, capsys.readouterr().err
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert len(payload["observations"]) == 3, "실 epoch 축에서 전량 탈락했다(시간축 회귀)"
+
+
+def test_cli_assembly_stage_wipeout_exits_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[자율 재검토 P1-B1] 관측은 있는데 Event 0건(융합 창 1.0s 초과 등)이 exit 0
+    으로 위장되지 않는다 — 7프레임×0.2s(1.2s span) track 재현."""
+
+    def _long_loader(**_kwargs: object) -> tuple[ScriptedDetector, str, int, int, int]:
+        detector = ScriptedDetector(
+            {
+                i: [
+                    person_detection(
+                        x_min=900.0 + i * 4, y_min=500.0, x_max=980.0 + i * 4, y_max=700.0
+                    )
+                ]
+                for i in range(7)
+            }
+        )
+        return detector, "scripted-stub-0", 7, 1920, 1080
+
+    monkeypatch.setattr(recorded_pipeline, "_load_recorded_detector", _long_loader)
+    telemetry = tmp_path / "telemetry.jsonl"
+    telemetry.write_text(
+        "\n".join(_telemetry_line(i * 0.2) for i in range(7)) + "\n", encoding="utf-8"
+    )
+    out = tmp_path / "result.json"
+    code = _main(
+        [
+            *[str(tmp_path / f"f{i}.jpg") for i in range(7)],
+            "--telemetry", str(telemetry),
+            "--model-dir", str(tmp_path),
+            "--min-confidence", "0.5",
+            "--frame-interval-s", "0.2",
+            "--out", str(out),
+        ]
+    )
+    assert code == 3, "조립 단계 전량 탈락이 성공으로 위장됐다"
+    assert "Event 0건" in capsys.readouterr().err
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["event_bundles"] == []
+    assert payload["diagnostics"]["assembly_failures"], "재현 전제(창 초과) 불성립"
+
+
+def test_serialized_entities_and_bundles_satisfy_their_schemas() -> None:
+    """[자율 재검토 P1-C1·P2-C2] 실산출 JSON 이 계약 스키마를 실제로 통과한다."""
+    from jsonschema import Draft202012Validator
+
+    result = run_vertical_slice(
+        frames=[
+            recorded_pipeline.SliceFrame(
+                frame_id=i, capture_ts_utc=i * 0.2, width=1920, height=1080
+            )
+            for i in range(2)
+        ],
+        detector=ScriptedDetector(
+            {
+                i: [
+                    person_detection(
+                        x_min=900.0 + i * 4, y_min=500.0, x_max=980.0 + i * 4, y_max=700.0
+                    )
+                ]
+                for i in range(2)
+            }
+        ),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=(100.0, 200.0, 60.0),
+        context=make_run_context(),
+    )
+    payload = serialize_result(
+        result, model_id="stub", model_version="scripted-stub-0",
+        frame_count=2, width=1920, height=1080,
+    )
+    root = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
+    entity_schema = json.loads((root / "world-entity.v1.json").read_text(encoding="utf-8"))
+    bundle_schema = json.loads((root / "event-bundle.v1.2.json").read_text(encoding="utf-8"))
+    assert payload["entities"] and payload["event_bundles"], "검증 대상이 비어 공허하다"
+    for entity in payload["entities"]:
+        Draft202012Validator(entity_schema).validate(entity)
+    for bundle in payload["event_bundles"]:
+        Draft202012Validator(bundle_schema).validate(bundle)

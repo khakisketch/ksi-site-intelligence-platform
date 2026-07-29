@@ -31,13 +31,20 @@ HeartbeatVerdict FlightSupervisor::RecordHeartbeat(UtcMillis observed_at_utc_ms,
         // 감사 #15). 거부하고 사유를 남긴다.
         return HeartbeatVerdict::kImplausibleFuture;
     }
-    if (has_heartbeat_ && observed_at_utc_ms <= last_heartbeat_utc_ms_) {
+    // 허용창 **안**의 미래 성분은 now 로 클램프한다(자율 재검토 C-1): 미래 시각을
+    // 그대로 기록하면 StateAt(now) 의 elapsed<0 fail-closed 경로와 결합해
+    // '주기 < 시계 skew <= 허용창' 조건에서 영구 FAIL_CLOSED 소프트 래치가 된다 —
+    // heartbeat 의 증거 가치는 "이 시점(now)에 루프가 살아있다"이므로 미래 성분은
+    // 시계 skew 노이즈로 보고 버린다. 클램프 사실은 typed 로 구분해 진단 가능하다.
+    const bool clamped = observed_at_utc_ms > now_utc_ms;
+    const UtcMillis effective = clamped ? now_utc_ms : observed_at_utc_ms;
+    if (has_heartbeat_ && effective <= last_heartbeat_utc_ms_) {
         // 역행·중복 heartbeat — 과거 heartbeat로 상태를 되살릴 수 없다.
         return HeartbeatVerdict::kStaleIgnored;
     }
     has_heartbeat_ = true;
-    last_heartbeat_utc_ms_ = observed_at_utc_ms;
-    return HeartbeatVerdict::kRecorded;
+    last_heartbeat_utc_ms_ = effective;
+    return clamped ? HeartbeatVerdict::kRecordedClamped : HeartbeatVerdict::kRecorded;
 }
 
 void FlightSupervisor::ResetHeartbeatState() {
@@ -105,6 +112,8 @@ const char* ToString(HeartbeatVerdict verdict) {
     switch (verdict) {
     case HeartbeatVerdict::kRecorded:
         return "RECORDED";
+    case HeartbeatVerdict::kRecordedClamped:
+        return "RECORDED_CLAMPED";
     case HeartbeatVerdict::kStaleIgnored:
         return "STALE_IGNORED";
     case HeartbeatVerdict::kImplausibleFuture:
