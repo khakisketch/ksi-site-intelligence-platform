@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T14:08:27+09:00",
+  "updated_at": "2026-07-29T21:31:37+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -204,16 +204,22 @@
         "durable append 실패 시 ACCEPTED 미반환(fail-closed)",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending(자기판정 아님). EdgeSyncStore(durable-후-ACK·봉인·torn-tail 격리·flock 단일 writer·dir fsync)+POST /v1/edge-sync/event-bundles(v1.2 계보 사전검증)+create_app 조립, commit d0f5d25. reviewer(Opus) adversarial 반증이 P0-1·P1-1·P1-2·P1-3·P2-1·P2-3·P2-5 실결함을 적발→전건 수정·실측 테스트 폐쇄, P1-4 는 risk(edge-sync-preauth-sequence-lockout) 기록. mutation 2건 실측(봉인 제거→3f·검증 제거→3f·복원 green). 게이트: ruff·mypy 83·pytest 770+5s cache-clean·ctest 2/2·hygiene·lock.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "PASS — durable-후-ACK·short write·봉인·torn tail·flock·v1.2 사전검증 전건 반증 통과.",
+        "at": "2026-07-29T14:31:33+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ac1302b79c623940a.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T01:48:26+09:00",
-      "updated_at": "2026-07-29T02:10:00+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00"
     },
     {
       "id": "audit-actionintent-hardening",
@@ -227,16 +233,22 @@
         "extreme 케이스 conformance 벡터 추가",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending, commit 56d0f05. 형식 게이트 확장(Py+C++ 동일 순서): schemaVersion 정확 일치(#16)·kind+미지 키 거부(#7)·TTL 상한 300000ms(#17 — 대표자 결정 대기 권고값)·시각 도메인 선검사로 int64 오버플로 차단(#14)·GOTO target 필수(#18). supervisor: HeartbeatVerdict typed+미래 heartbeat 래치 차단+Reset(#15)·StateAt 도메인 가드(#53). 벡터 12→19. mutation 실측 2건. 게이트: ruff·mypy 83·pytest 782+5s·ctest 2/2.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "P1 1건(heartbeat 소프트 래치) 적발→클램프 수정+회귀 고정(13a44e3) 후 잔여 P0/P1 없음. P2 4건 이월.",
+        "at": "2026-07-29T14:31:32+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ac1302b79c623940a.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:19+09:00",
-      "updated_at": "2026-07-29T10:44:10+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00"
     },
     {
       "id": "audit-pipeline-production-lineage",
@@ -249,16 +261,22 @@
         "Edge→Core E2E 통합 테스트(#27)",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending. RunContext 값객체(#23 — mission/site/site_frame/epoch/model/policy/calibration/edge/sensor 전부 필수·공백 typed 거부, placeholder 기본값 전면 제거, 허구 epoch 상수 제거) · Evidence Clip 3단계 3/5/10초+MEDIUM typed 거부(#26·#37) · ClipPolicy 직접 생성으로 type:ignore 제거(#68) · 상태전이 실변수화(#77 — 장식 게이트 제거) · recorded CLI 시간축 절대화+미겹침 CONFIG_ERROR+전량탈락 exit 3(#24) · Edge→Core E2E 이음매 테스트+ingest 픽스처 lineage 분리(#27) · fingerprints 정본 재사용(#2) · 정책표 상호 일관성 단정(#41) · 보간 프레임당 1회(#42). mutation 실측: CRITICAL 10→5 변조 시 3단계 테스트 정확 실패·복원 green. 게이트: ruff·mypy 83·pytest 871+5s(실모델 recorded E2E 포함)·ctest 2/2·hygiene·lock.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "PASS — RunContext·클립 3단계·실변수 전이·호이스트 무해성 전건 비공허 확인. P2 4건 이월.",
+        "at": "2026-07-29T14:31:32+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ada5bde39d68c0fc0.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T11:50:08+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00"
     },
     {
       "id": "audit-contract-schema-gates",
@@ -270,16 +288,22 @@
         "EventStatus 참조 갱신(#71)",
         "MissionContract v1.1 nested 강화 명시(#70)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "정정: 게이트 pytest 수치는 897 이 아니라 795 passed·5 skipped(비실모델)이다 — 직전 attempt 의 수치 오기 정정, 나머지 내용 동일. commit 798783c(amend 후 SHA 변경됨).",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "P1-C1(entities wire 우회) 적발→exclude_none 통일+실산출 스키마 검증(13a44e3) 후 폐쇄. P2 2건 이월.",
+        "at": "2026-07-29T14:31:33+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ada5bde39d68c0fc0.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 2,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T11:58:01+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00"
     },
     {
       "id": "audit-gate-integrity",
@@ -292,16 +316,22 @@
         "HANDOFF_SHA256SUMS 지위 확정(#66)",
         "workspace smoke에 perception(#60)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending. ①실모델 무음 skip anchor(#19): tests/conftest.py — KSI_REQUIRE_REAL_MODEL=1 시 게이트 3파일 skip 이 exit 1(실측 3케이스: 강제 skip→1·env 미설정→0·정상→0. sessionfinish exitstatus 대입 무효를 실측으로 확인해 cmdline_main wrapper 채택) ②게이트 판정 공유 헬퍼(#20·#57): transformers 포함 단일 판정 tests/_real_model_gate.py ③rg 부재/오류·git 실패를 실패로(#29·#74) ④핀 파싱 0건·건수 불일치 실패(#64) ⑤벡터 provenance 기계 강제(#67): 40hex+LOCK 등록명+핀 대조 — 신규 게이트가 실위반 4건 적발·정규화 ⑥ASan+UBSan: CMake 옵션+CI 스텝, 로컬 실측 ctest 2/2 통과(#56·#72) ⑦HANDOFF 스냅샷 지위 선언(#66) ⑧smoke 에 ksi_perception(#60). 게이트: ruff·mypy 86·pytest 797+5s·ctest 2/2(+asan 2/2)·hygiene·lock.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "P1-D1(ASan 라이브러리 비계측 실증) 적발→옵션 블록 이동+계측 실측(13a44e3) 후 폐쇄. P2 2건 즉시 수정.",
+        "at": "2026-07-29T14:31:33+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ada5bde39d68c0fc0.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T12:05:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00"
     },
     {
       "id": "audit-signing-key-lifecycle",
@@ -312,16 +342,22 @@
         "load_verified_contract 합성 진입점+sign 자기검증(#12)",
         "FlightEnvelope 교차 검증(#50)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending. ①KeyRegistry 단조성(#9): 중복 keyId 등록 거부+revoke() 전용 API(멱등·되돌림 없음) — REVOKED 부활(유출 키 재유효화, INV-011 우회) 차단, 반증: revoke 후 재등록 시도 거부·폐기 키 서명 REVOKED_KEY 유지 ②canonical allow_nan=False(#10): NaN 계약이 Python 내에서만 유효하고 표준 파서로 재파싱 불가하던 정규화 분열 폐쇄 — sign 시 typed ValueError·verify 시 MALFORMED_CONTRACT(외곽 가드) 실증 ③load_verified_contract 합성 진입점(#12): 구조(Pydantic v1.2)+서명·TTL 을 한 번에 — 반증: '유효 서명+부적합 구조(coverage 0.1)' 가 verify 단독으론 VALID 인 전제를 확인한 뒤 진입점에서 MALFORMED 거부 ④FlightEnvelope 교차 검증(#50): min>max·비유한·음수 standoff 거부. 게이트: ruff·mypy 86·pytest 802+5s·ctest 2/2·hygiene·lock.",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "PASS — 단조성·allow_nan·합성 진입점·FlightEnvelope 확인. B-1 예방 게이트 추가(13a44e3). P2 3건 이월.",
+        "at": "2026-07-29T14:31:33+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ac1302b79c623940a.output"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T13:59:56+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00"
     },
     {
       "id": "audit-edge-sync-ops-hardening",
@@ -333,16 +369,110 @@
         "capability VERIFIED 왕복 시 검증 맥락 초기화(#11)",
         "/capabilities 공개 필드 축소(#49)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "구현 완료 — review_pending. ①거부 응답의 원장 신원 비노출(#8: 열거 오라클 — verdict+자기 요청 좌표만, 전체는 서버 로그. 반증: 순번 중복 409 에 기존 키 미노출) ②capability VERIFIED 이탈 시 firmware/sdk/aircraft/verified_at/spike_evidence 전부 초기화(#11 — 낡은 검증 맥락 공표 차단, 왕복 반증) ③/capabilities 공개 필드 축소(#49: id·title·state 만 — 기존 테스트를 '민감 필드 부재' 반증으로 반전) ④close 봉인+멱등(#51: close 후 수신 STORE_UNAVAILABLE) ⑤SyncLedger._accepted 를 (device,seq) 요약으로(#13 부분 — payload 전문 무기한 보관 제거. journal 회전·스냅샷·스트리밍 재적재는 잔여 — 인증·DB 도입 설계와 결합). 게이트: ruff·mypy 86·contract+replay 600 passed(실모델 포함)·ctest 2/2·hygiene·lock.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "PASS — ACK 후 유실 경로 부재·신원 비노출·capability 맥락 리셋 확인. P2 6건 이월.",
+        "at": "2026-07-29T14:31:33+09:00",
+        "reviewer": "opus-reviewer-subagent(자율 재검토, 대표자 위임 2026-07-29)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/ac1302b79c623940a.output"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T03:58:20+09:00",
+      "updated_at": "2026-07-29T14:31:33+09:00"
+    },
+    {
+      "id": "mission-geometry-route",
+      "title": "S1: AOI 지오메트리 + 커버리지 경로 생성 + WPML/KMZ (ADR-KSI-007 잔여 절반)",
+      "completion_criteria": [
+        "AOI 폴리곤 모델(WGS84·자기교차 거부·유한성) 검증 포함",
+        "lawnmower(매핑)·perimeter(순찰) 경로 생성이 AOI 내부·간격 속성 테스트 통과",
+        "WPML template.kml+waylines.wpml+KMZ(zip) 생성이 스펙 필수요소 재파싱 검증 통과",
+        "FlightEnvelope 고도 제약이 경로 고도를 게이트",
+        "M4D droneEnumValue 하드코딩 금지(실기 H4 검증 전 파라미터)",
+        "Mission Contract와 동일 site_frame·policy_version 짝 발급 배선",
+        "독립 재검토 PASS"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
-      "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:08:27+09:00"
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T20:55:06+09:00",
+      "updated_at": "2026-07-29T20:55:13+09:00"
+    },
+    {
+      "id": "core-domain-query",
+      "title": "S2: Core 도메인·조회 계층 — Site 상태머신·Mission 영속·Event 트리아지 API·인증",
+      "completion_criteria": [
+        "Site 등록·상태머신(UNMAPPED→PATROL_READY) 영속",
+        "Mission 영속+목록/이력 조회 API",
+        "Event 목록/상세/필터 조회 + 확정/오탐/배정 전이 API(원장 audit 기록)",
+        "인증·권한 도입(edge-sync P1-4 risk 해소 경로)",
+        "openapi-core.yaml planned 경로들 실구현 동기화",
+        "독립 재검토 PASS"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T20:55:06+09:00",
+      "updated_at": "2026-07-29T20:55:06+09:00"
+    },
+    {
+      "id": "dashboard-mvp",
+      "title": "S3: 대시보드 MVP — 홈·이벤트 트리아지·임무·현장 + Wizard",
+      "completion_criteria": [
+        "UX 목표 문서 선행(페르소나·단계예산·상태 인벤토리·마이크로카피·접근성 44px)",
+        "Next.js 스캐폴딩+반응형 셸(모바일 하단/데스크톱 사이드)",
+        "홈·이벤트 목록/상세·임무 목록·현장 목록/상세",
+        "현장등록 Wizard(외곽 그리기→S1 호출)·새 조사 Wizard",
+        "390/768/1440 시각 검증+빈 DB 콜드스타트 동선 통과",
+        "독립 재검토 PASS"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T20:55:06+09:00",
+      "updated_at": "2026-07-29T20:55:06+09:00"
+    },
+    {
+      "id": "ops-serving-hardening",
+      "title": "S4: 운영 표면 — Evidence 미디어 스토리지·retention 집행·서명키 수명주기·journal 회전",
+      "completion_criteria": [
+        "Evidence presigned 업로드/열람 경로",
+        "retention-policy.v1 집행(tombstone·감사기록)",
+        "Mission Contract 서명키 공급 ADR+구현",
+        "edge-sync journal 회전·스냅샷(인증·DB 결정과 결합)",
+        "독립 재검토 PASS"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-29T20:55:06+09:00",
+      "updated_at": "2026-07-29T20:55:06+09:00"
     }
   ],
   "risks": [
@@ -415,6 +545,34 @@
       "previous_status": null,
       "created_at": "2026-07-29T02:09:37+09:00",
       "updated_at": "2026-07-29T02:09:37+09:00"
+    },
+    {
+      "id": "route-altitude-vertical-reference",
+      "title": "경로·봉투 고도의 수직기준 미명문화 — 이륙점상대 잠정 규약(자율 재검토 F1, INV-020)",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "route/envelope 고도를 relativeToStartPoint 로 해석하는 잠정 규약을 coverage.py docstring 에 선언. 계약 스키마에 altitudeReference 명문화(v1.3) 여부는 대표자 결정 대기. 권고: '이륙점 상대'로 확정 — 현장 운용 직관·규제(AGL 150m)와 일치, siteFrame.verticalDatum 은 세계모델 좌표 전용으로 분리.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-29T21:31:37+09:00",
+      "updated_at": "2026-07-29T21:31:37+09:00"
+    },
+    {
+      "id": "mapping-route-no-capture-actions",
+      "title": "매핑 임무 KMZ 에 촬영 액션 없음 — 격자만 날고 사진 0장(자율 재검토 F9)",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "WPML actionGroup(gimbal nadir + takePhoto 또는 timed interval) 추가는 카메라 스펙·겹침률 의미와 결합 — 촬영 전략은 공동 결정 레인. H4 실기 임포트 검증 전 결정 필요.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-29T21:31:37+09:00",
+      "updated_at": "2026-07-29T21:31:37+09:00"
     }
   ]
 }

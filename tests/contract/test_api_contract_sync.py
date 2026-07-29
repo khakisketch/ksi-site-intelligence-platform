@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.edge_sync import EdgeSyncStore
 
@@ -20,7 +21,13 @@ _ASYNCAPI = _REPO_ROOT / "contracts" / "api" / "asyncapi-edge.yaml"
 
 
 def _implemented_paths(tmp_path: Path) -> set[str]:
-    app = create_app(edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"))
+    """최대 조립(모든 조건부 라우터 장착)의 경로 집합 — 문서는 구현 가능한 전체
+    표면을 기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
+    app = create_app(
+        edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
+        mission_signing_key=Ed25519PrivateKey.generate(),
+        mission_signing_key_id="contract-sync-test-key",
+    )
     return set(app.openapi()["paths"])
 
 

@@ -48,6 +48,31 @@ paths:
         '409': { description: IDEMPOTENCY_CONFLICT / SEQUENCE_DUPLICATE / SEQUENCE_REGRESSION }
         '422': { description: DIGEST_MISMATCH / MALFORMED_PAYLOAD / INVALID_EVENT_BUNDLE }
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After 후 재전송 }
+  /v1/missions/contracts:
+    post:
+      summary: Issue a signed Mission Contract (v1.2)
+      description: >-
+        구역별 실값(siteFrame·flightEnvelope·objectives·정책팩 ID)만 받고, 안전
+        정책 상수(coverage 1.0/1.0·battery reserve 30%·evidence 3/5/10s·통신단절
+        정책)는 서버가 FINAL_DECISION_LEDGER 값으로 고정한다 — 요청 바디에 그
+        필드 자리가 없다(extra=forbid). 서명키 미주입 조립에서는 이 경로 자체가
+        존재하지 않는다.
+      responses:
+        '201': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
+        '422': { description: 구조 위반(필드 누락·범위 밖·validForHours>168) }
+  /v1/missions/plans:
+    post:
+      summary: Issue the dual mission artifacts — WPML/KMZ + signed contract (ADR-KSI-007)
+      description: >-
+        AOI 폴리곤+임무타입 한 요청이 두 산출물을 짝으로 낳는다 — 기체용
+        WPML/KMZ(base64)와 Manifold 용 서명 계약. 경로 고도는 같은 요청의
+        flightEnvelope 로 게이트되어 어긋난 쌍이 성립할 수 없다. 임무타입→패턴:
+        매핑 계열=lawnmower(spacingM 필수)·순찰 계열=perimeter·그 외
+        (ASSET_INSPECTION 등)=422 거부(조용한 퇴화 금지). droneEnumValue 는
+        호출자가 명시한다(M4D 값은 실기 H4 검증 전 서버가 추측하지 않는다).
+      responses:
+        '201': { description: '{contract, kmzBase64, routePattern, waypointCount}' }
+        '422': { description: 경로 생성 불가(봉투 밖 고도·spacing 누락·미지원 타입) }
   /sites/{siteId}/missions:
     x-status: planned
     post:

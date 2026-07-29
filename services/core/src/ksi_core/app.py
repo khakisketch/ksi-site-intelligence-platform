@@ -23,6 +23,8 @@ from fastapi import FastAPI
 from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 
 if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
     from ksi_core.edge_sync import EdgeSyncStore
 
 
@@ -30,6 +32,8 @@ def create_app(
     *,
     registry: CapabilityRegistry | None = None,
     edge_sync_store: EdgeSyncStore | None = None,
+    mission_signing_key: Ed25519PrivateKey | None = None,
+    mission_signing_key_id: str | None = None,
 ) -> FastAPI:
     """Core 앱을 만든다.
 
@@ -40,6 +44,11 @@ def create_app(
         edge_sync_store: Edge→Core EventBundle 멱등 수신 저장소. ``None``이면
             edge-sync 엔드포인트가 **존재하지 않는다** — durable 저장 없이 수신
             API 만 열리는 구성(ACK 후 유실 경로)을 타입이 아니라 조립에서 막는다.
+        mission_signing_key: Mission Contract 발급 서명키. ``mission_signing_key_id``와
+            둘 다 주어져야 발급 엔드포인트가 장착된다(ADR-KSI-007) — 서명키 없이는
+            엔드포인트가 존재하지 않는다(edge_sync_store와 동일한 fail-closed 조립).
+        mission_signing_key_id: 서명 블록에 실릴 keyId — 검증 측 KeyRegistry에
+            등록된 것과 일치해야 한다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -84,5 +93,17 @@ def create_app(
         from ksi_core.edge_sync import mount_edge_sync
 
         mount_edge_sync(app, edge_sync_store)
+
+    if mission_signing_key is not None or mission_signing_key_id is not None:
+        if mission_signing_key is None or mission_signing_key_id is None:
+            raise ValueError(
+                "mission_signing_key와 mission_signing_key_id는 함께 주어져야 한다"
+                " — 절반만 있는 서명 설정으로 조립하지 않는다"
+            )
+        from ksi_core.mission_issuance import mount_mission_issuance
+        from ksi_core.mission_plans import mount_mission_plans
+
+        mount_mission_issuance(app, private_key=mission_signing_key, key_id=mission_signing_key_id)
+        mount_mission_plans(app, private_key=mission_signing_key, key_id=mission_signing_key_id)
 
     return app
