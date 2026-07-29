@@ -42,7 +42,7 @@ class Severity(StrEnum):
 
 
 class EventStatus(StrEnum):
-    """이벤트 상태 (event-bundle.v1.1 ``status`` enum SSOT 정합, MASTER_PRD §12.8/§17.2).
+    """이벤트 상태 (event-bundle.v1.2 ``status`` enum SSOT 정합, MASTER_PRD §12.8/§17.2).
 
     Detector 결과(DETECTION)는 이 Enum의 멤버가 아니다 — INV-031: Detector 결과를
     Event로 직접 저장하지 않는다(Detection → Observation → Candidate → … 경유).

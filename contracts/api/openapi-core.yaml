@@ -1,11 +1,57 @@
 openapi: 3.1.0
 info:
   title: KSI Site Intelligence Core API
-  version: 1.0.0
+  version: 1.1.0
+  description: >-
+    구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
+    경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
+    tests/contract/test_api_contract_sync.py 가 대조한다.
 paths:
-  /sites/{siteId}/missions:
+  /health:
+    get:
+      summary: Liveness probe
+      responses:
+        '200': { description: Process alive }
+  /capabilities:
+    get:
+      summary: List operational (VERIFIED-only) capabilities
+      description: SPIKE_REQUIRED/BLOCKED 항목은 절대 포함되지 않는다(INV-041).
+      responses:
+        '200': { description: Operational capabilities }
+  /v1/edge-sync/event-bundles:
     post:
-      summary: Create a mission request
+      summary: Ingest one idempotent EventBundle journal entry
+      description: >-
+        본문은 offline_sync JournalEntry(camelCase — idempotencyKey,
+        deviceSequence, edgeDeviceId, payloadDigest "sha256:<hex64>", payload).
+        payload 는 event-bundle.v1.2.json 을 만족해야 하며(분류 계보 필수,
+        INV-031), wire 직렬화는 exclude_none 규약이다. 201/200 만 ACK 다 —
+        Edge 는 그 둘을 받은 항목만 로컬에서 삭제한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotencyKey, deviceSequence, edgeDeviceId, payloadDigest, payload]
+              properties:
+                idempotencyKey: { type: string, minLength: 1 }
+                deviceSequence: { type: integer, minimum: 0 }
+                edgeDeviceId: { type: string, minLength: 1 }
+                payloadDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+                payload:
+                  $ref: ../schemas/event-bundle.v1.2.json
+      responses:
+        '201': { description: ACCEPTED — durable persistence 후 ACK }
+        '200': { description: DUPLICATE_IGNORED — 멱등 재전송(ACK) }
+        '409': { description: IDEMPOTENCY_CONFLICT / SEQUENCE_DUPLICATE / SEQUENCE_REGRESSION }
+        '422': { description: DIGEST_MISMATCH / MALFORMED_PAYLOAD / INVALID_EVENT_BUNDLE }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After 후 재전송 }
+  /sites/{siteId}/missions:
+    x-status: planned
+    post:
+      summary: Create a mission request (Phase 2 — 미구현 설계)
       parameters:
         - in: path
           name: siteId
@@ -28,26 +74,13 @@ paths:
       responses:
         '202': { description: Mission planning accepted }
   /missions/{missionId}/contract:
+    x-status: planned
     get:
-      summary: Get the signed mission contract
+      summary: Get the signed mission contract (Phase 2 — 미구현 설계)
       parameters:
         - in: path
           name: missionId
           required: true
           schema: { type: string }
       responses:
-        '200': { description: Mission contract }
-  /edge/{edgeId}/events:
-    post:
-      summary: Upload an idempotent event bundle
-      parameters:
-        - in: path
-          name: edgeId
-          required: true
-          schema: { type: string }
-        - in: header
-          name: Idempotency-Key
-          required: true
-          schema: { type: string }
-      responses:
-        '202': { description: Persisted or queued }
+        '200': { description: Mission contract (mission-contract.v1.2.json) }

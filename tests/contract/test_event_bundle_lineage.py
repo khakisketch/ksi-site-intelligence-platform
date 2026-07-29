@@ -189,3 +189,45 @@ def test_v11_schema_version_rejected() -> None:
     payload["schemaVersion"] = "1.1"
     with pytest.raises(ValidationError):
         EventBundle.model_validate(payload)
+
+
+# ── v1.2 스키마 왕복 게이트 (감사 #28·#33 — 유일하게 없던 대조) ──────────────
+
+
+def _v12_schema() -> dict[str, Any]:
+    import json as json_module
+    from pathlib import Path as PathCls
+
+    root = PathCls(__file__).resolve().parents[2]
+    return json_module.loads(
+        (root / "contracts" / "schemas" / "event-bundle.v1.2.json").read_text(encoding="utf-8")
+    )
+
+
+def test_v12_schema_file_is_valid_draft202012() -> None:
+    from jsonschema import Draft202012Validator
+
+    Draft202012Validator.check_schema(_v12_schema())
+
+
+def test_wire_dict_roundtrips_against_v12_schema() -> None:
+    """모델 → wire 직렬화 → contracts/schemas SSOT 검증 → 모델 재수화."""
+    from jsonschema import Draft202012Validator
+    from ksi_event_contracts.event_bundle import event_bundle_wire_dict
+
+    bundle = _build()
+    wire = event_bundle_wire_dict(bundle)
+    Draft202012Validator(_v12_schema()).validate(wire)
+    assert EventBundle.model_validate(wire) == bundle
+
+
+def test_plain_dump_with_nulls_violates_schema_hence_wire_rule() -> None:
+    """[규약 근거 고정] exclude_none 없는 dump 는 스키마 위반 — wire 헬퍼가 필수인 이유."""
+    from jsonschema import Draft202012Validator
+
+    plain = _build().model_dump(by_alias=True, mode="json")
+    errors = list(Draft202012Validator(_v12_schema()).iter_errors(plain))
+    assert errors, (
+        "null 방출 dump 가 스키마를 통과한다 — 스키마가 null 을 허용하도록 바뀌었다면 "
+        "wire 규약(exclude_none)과 이 테스트를 함께 재검토하라"
+    )

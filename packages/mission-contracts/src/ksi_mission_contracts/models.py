@@ -8,6 +8,11 @@ v1.1(``signature={algorithm, digest}``)·v1.2(``signature={algorithm, keyId, dig
 signature}`` — ADR-KSI-002 §4 Ed25519 서명)를 모두 표현하기 위해 signature 모델을
 분리하고, 두 스키마 버전을 별도 concrete 모델(``MissionContractV1_1``/
 ``MissionContractV1_2``)로 둔다.
+
+참고(감사 #70): 중첩 모델(_CamelModel 공통 ``extra="forbid"``)은 v1.1/v1.2 가
+공유하므로 **v1.1 모델은 v1.1 JSON 스키마보다 엄격하다**(v1.1 스키마는 중첩
+객체에 additionalProperties 를 명시하지 않는다). 이는 의도된 앞당김 강화다 —
+더 관대해지는 방향의 불일치가 아니므로 나쁜 데이터를 통과시키지 않는다.
 """
 
 from __future__ import annotations

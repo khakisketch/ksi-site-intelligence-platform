@@ -162,3 +162,15 @@ class EventBundle(_CamelModel):
                 f"classification lineage 불일치 — 누락 {missing}, 잉여 {surplus}"
             )
         return self
+
+
+def event_bundle_wire_dict(bundle: EventBundle) -> dict[str, Any]:
+    """EventBundle 의 wire 직렬화 규약 SSOT — ``by_alias + mode="json" + exclude_none``.
+
+    실측(2026-07-29, 감사 #28): ``exclude_none`` 없이 dump 하면 optional 필드가
+    ``null`` 로 방출되어 event-bundle.v1.2.json 을 10건 위반한다 — 스키마 기준
+    소비자(외부 연동·후속 Core 구현)가 Edge 산출물을 전량 거부하게 되는 drift.
+    JSON 계약에서 optional 은 "부재"가 표준이므로 wire 는 이 함수만 쓴다.
+    (수신측 Pydantic 은 부재/명시 어느 쪽도 수용하므로 하위 호환에 영향 없음.)
+    """
+    return bundle.model_dump(by_alias=True, mode="json", exclude_none=True)

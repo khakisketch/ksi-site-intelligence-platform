@@ -400,7 +400,9 @@ def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> No
     )
     [bundle] = result.bundles
 
-    payload = bundle.model_dump(mode="json", by_alias=True)
+    from ksi_event_contracts.event_bundle import event_bundle_wire_dict
+
+    payload = event_bundle_wire_dict(bundle)
     entry = JournalEntry(
         idempotency_key=f"e2e:{bundle.event_id}",
         device_sequence=0,

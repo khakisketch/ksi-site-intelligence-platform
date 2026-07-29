@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T11:50:08+09:00",
+  "updated_at": "2026-07-29T11:58:01+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -270,16 +270,16 @@
         "EventStatus 참조 갱신(#71)",
         "MissionContract v1.1 nested 강화 명시(#70)"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "정정: 게이트 pytest 수치는 897 이 아니라 795 passed·5 skipped(비실모델)이다 — 직전 attempt 의 수치 오기 정정, 나머지 내용 동일. commit 798783c(amend 후 SHA 변경됨).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 2,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T03:58:20+09:00"
+      "updated_at": "2026-07-29T11:58:01+09:00"
     },
     {
       "id": "audit-gate-integrity",

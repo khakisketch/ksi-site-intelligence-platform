@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ksi_event_contracts.event_bundle import event_bundle_wire_dict
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -148,7 +149,8 @@ def serialize_result(
             o.model_dump(mode="json", by_alias=True) for o in result.observations
         ],
         "entities": [e.model_dump(mode="json", by_alias=True) for e in result.entities],
-        "event_bundles": [b.model_dump(mode="json", by_alias=True) for b in result.bundles],
+        # wire 규약 SSOT(event_bundle_wire_dict) — null 방출은 스키마 위반이다(감사 #28).
+        "event_bundles": [event_bundle_wire_dict(b) for b in result.bundles],
         # 재현성 지문의 정본은 SliceResult.entity_fingerprints() 하나다(감사 #2 —
         # 정렬 기준이 다른 재구현은 내부 테스트와 산출물 순서를 갈라놓는다).
         "entity_fingerprints": result.entity_fingerprints(),
