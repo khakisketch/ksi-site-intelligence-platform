@@ -384,6 +384,8 @@ def test_template_kml_carries_spec_required_elements() -> None:
         "globalWaypointHeadingParam 누락 — useGlobalHeadingParam=1 의 참조 대상"
     )
     assert heading.findtext("wpml:waypointHeadingMode", namespaces=NS) is not None
+    # 공식 표(raw) 기준 무조건 필수 — 재검토 blocker #1 의 회귀 고정
+    assert heading.findtext("wpml:waypointHeadingPathMode", namespaces=NS) is not None
 
 
 def test_template_useglobal_flags_have_global_definitions() -> None:
@@ -432,6 +434,7 @@ def test_waylines_wpml_indices_continuous_and_coordinates_lon_lat_order() -> Non
         assert placemark.findtext("wpml:waypointSpeed", namespaces=NS) is not None
         heading = placemark.find("wpml:waypointHeadingParam", NS)
         assert heading is not None
+        assert heading.findtext("wpml:waypointHeadingPathMode", namespaces=NS) is not None
         turn = placemark.find("wpml:waypointTurnParam", NS)
         assert turn is not None
         assert turn.findtext("wpml:waypointTurnDampingDist", namespaces=NS) is not None
@@ -495,3 +498,79 @@ def test_drone_profile_rejects_invalid_values() -> None:
             payload_enum_value=1,
             payload_position_index=7,
         )
+
+
+def test_capture_actions_present_when_enabled_and_absent_otherwise() -> None:
+    """매핑 촬영 기본(2026-07-29 대표자 승인) — capture 켜면 모든 웨이포인트에
+    takePhoto actionGroup, 첫 웨이포인트에만 gimbalRotate(nadir). 끄면 전무."""
+    route = _route()
+    with_capture = build_kmz(route, drone=_DRONE, config=_CONFIG, capture_at_waypoints=True)
+    root = _parse_kmz_member(with_capture, "wpmz/waylines.wpml")
+    placemarks = root.findall("kml:Document/kml:Folder/kml:Placemark", NS)
+    assert placemarks
+    for i, placemark in enumerate(placemarks):
+        group = placemark.find("wpml:actionGroup", NS)
+        assert group is not None, f"웨이포인트 {i} 에 actionGroup 없음"
+        # 스펙 필수 4형제(actionGroupId/Start/End/Mode) + trigger
+        for tag in ("actionGroupId", "actionGroupStartIndex", "actionGroupEndIndex",
+                    "actionGroupMode"):
+            assert group.findtext(f"wpml:{tag}", namespaces=NS) is not None
+        assert (
+            group.findtext("wpml:actionTrigger/wpml:actionTriggerType", namespaces=NS)
+            == "reachPoint"
+        )
+        funcs = [
+            a.findtext("wpml:actionActuatorFunc", namespaces=NS)
+            for a in group.findall("wpml:action", NS)
+        ]
+        assert "takePhoto" in funcs, f"웨이포인트 {i} 에 takePhoto 없음"
+        assert ("gimbalRotate" in funcs) == (i == 0), f"gimbalRotate 배치 오류 (웨이포인트 {i})"
+        # takePhoto 필수 파라미터(공식 40.common-element 표)
+        photo = next(
+            a for a in group.findall("wpml:action", NS)
+            if a.findtext("wpml:actionActuatorFunc", namespaces=NS) == "takePhoto"
+        )
+        for tag in ("payloadPositionIndex", "fileSuffix", "payloadLensIndex",
+                    "useGlobalPayloadLensIndex"):
+            assert photo.findtext(
+                f"wpml:actionActuatorFuncParam/wpml:{tag}", namespaces=NS
+            ) is not None, f"takePhoto 파라미터 {tag} 누락"
+
+    without = build_kmz(route, drone=_DRONE, config=_CONFIG)
+    root = _parse_kmz_member(without, "wpmz/waylines.wpml")
+    assert not root.findall("kml:Document/kml:Folder/kml:Placemark/wpml:actionGroup", NS)
+
+
+def test_segments_intersect_touch_branch_actually_fires() -> None:
+    """재검토 #3 — 기존 T-접촉 링 테스트는 proper 분기로도 잡힌다. 여기서는 orient
+    부호가 같은쪽(d3=0, d4<0)이라 **epsilon/_on_segment 분기로만** 잡히는 접촉을
+    직접 검증한다: p=(0,0)-(20,0) 위에 q 의 시작점 (10,0)이 얹히고 q 는 아래로."""
+    from ksi_mission_planning.geometry import _segments_intersect
+
+    assert _segments_intersect((0.0, 0.0), (20.0, 0.0), (10.0, 0.0), (5.0, -5.0))
+    # 대조군: 같은 형상에서 q 를 선분 밖으로 옮기면 교차 아님
+    assert not _segments_intersect((0.0, 0.0), (20.0, 0.0), (25.0, 0.0), (30.0, -5.0))
+
+
+def test_gimbal_rotate_uses_spec_enum_values() -> None:
+    """재검토 blocker #2 회귀 고정 — gimbalHeadingYawBase 열거값은 north 뿐이다."""
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG, capture_at_waypoints=True)
+    root = _parse_kmz_member(kmz, "wpmz/waylines.wpml")
+    gimbal_params = [
+        a.find("wpml:actionActuatorFuncParam", NS)
+        for a in root.findall(".//wpml:action", NS)
+        if a.findtext("wpml:actionActuatorFunc", namespaces=NS) == "gimbalRotate"
+    ]
+    assert gimbal_params, "gimbalRotate 액션이 없다"
+    for param in gimbal_params:
+        assert param is not None
+        assert param.findtext("wpml:gimbalHeadingYawBase", namespaces=NS) == "north"
+        assert param.findtext("wpml:gimbalRotateMode", namespaces=NS) == "absoluteAngle"
+
+
+def test_near_equal_height_and_spacing_collapses_to_single_line() -> None:
+    """재검토 경계 케이스 — 폭이 spacing+ε 이면 1e-12m 간격의 스캔선 2개가 아니라
+    중앙선 1개로 접힌다(동일 좌표 웨이포인트 쌍 방지)."""
+    aoi = _rect_aoi(200.0, 20.0 + 1e-6)
+    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE)
+    assert len(route) == 2

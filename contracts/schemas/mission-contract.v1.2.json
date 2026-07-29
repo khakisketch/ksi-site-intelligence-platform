@@ -113,6 +113,9 @@
         },
         "minimumPersonStandoffM": {
           "type": "number"
+        },
+        "altitudeReference": {
+          "const": "relativeToStartPoint"
         }
       },
       "additionalProperties": false

@@ -47,6 +47,7 @@ def _valid_contract_dict(schema_version: str) -> dict[str, Any]:
             "maxAltitudeM": 120.0,
             "minimumStructureStandoffM": 3.0,
             "minimumPersonStandoffM": 5.0,
+            "altitudeReference": "relativeToStartPoint",
         },
         "objectives": ["현장 외곽 전체 커버리지 확보"],
         "policies": {

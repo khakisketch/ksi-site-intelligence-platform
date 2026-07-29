@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T21:31:37+09:00",
+  "updated_at": "2026-07-29T21:52:55+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -551,28 +551,28 @@
       "title": "경로·봉투 고도의 수직기준 미명문화 — 이륙점상대 잠정 규약(자율 재검토 F1, INV-020)",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "route/envelope 고도를 relativeToStartPoint 로 해석하는 잠정 규약을 coverage.py docstring 에 선언. 계약 스키마에 altitudeReference 명문화(v1.3) 여부는 대표자 결정 대기. 권고: '이륙점 상대'로 확정 — 현장 운용 직관·규제(AGL 150m)와 일치, siteFrame.verticalDatum 은 세계모델 좌표 전용으로 분리.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-07-29 대표자 확정(이륙점 상대). 명문화: contracts/schemas/mission-contract.v1.2.json flightEnvelope.altitudeReference(const relativeToStartPoint, optional=기존 서명 계약 하위호환) + models.py FlightEnvelope.altitude_reference + mission_issuance 서버 고정 주입(요청값 무관). 검증: test_issued_envelope_carries_altitude_reference + roundtrip 스키마 대조 green. coverage.py docstring 확정 규약으로 갱신.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-29T21:31:37+09:00",
-      "updated_at": "2026-07-29T21:31:37+09:00"
+      "updated_at": "2026-07-29T21:52:55+09:00"
     },
     {
       "id": "mapping-route-no-capture-actions",
       "title": "매핑 임무 KMZ 에 촬영 액션 없음 — 격자만 날고 사진 0장(자율 재검토 F9)",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "WPML actionGroup(gimbal nadir + takePhoto 또는 timed interval) 추가는 카메라 스펙·겹침률 의미와 결합 — 촬영 전략은 공동 결정 레인. H4 실기 임포트 검증 전 결정 필요.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-07-29 대표자 승인(웨이포인트별 nadir takePhoto 기본). 구현: wpml.py _append_capture_action_group — 공식 40.common-element.md 원문 태그명(actionGroup 4형제·reachPoint trigger·takePhoto 4필수·gimbalRotate 11필수), 첫 웨이포인트만 gimbalRotate(-90) 후 전 웨이포인트 takePhoto. mission_plans 가 lawnmower 패턴에 자동 적용. enum 문자열(aircraft/absoluteAngle/wide)은 공식 표 미기재라 샘플 관례 — H4 실기 임포트에서 확정(코드 주석 명시). 검증: test_capture_actions_present_when_enabled_and_absent_otherwise + plans 통합 테스트 green.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-29T21:31:37+09:00",
-      "updated_at": "2026-07-29T21:31:37+09:00"
+      "updated_at": "2026-07-29T21:52:55+09:00"
     }
   ]
 }

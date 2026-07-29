@@ -102,9 +102,12 @@ def issue_mission_contract(
         "missionType": request.mission_type.value,
         "validity": {"notBefore": now.isoformat(), "notAfter": not_after.isoformat()},
         "siteFrame": request.site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
-        "flightEnvelope": request.flight_envelope.model_dump(
-            by_alias=True, mode="json", exclude_none=True
-        ),
+        # altitudeReference 는 요청값과 무관하게 서버가 고정한다(2026-07-29 대표자
+        # 확정 — 봉투 고도의 수직기준은 이륙점 상대. 안전 상수 고정과 같은 원칙).
+        "flightEnvelope": {
+            **request.flight_envelope.model_dump(by_alias=True, mode="json", exclude_none=True),
+            "altitudeReference": "relativeToStartPoint",
+        },
         "objectives": list(request.objectives),
         "policies": {
             "viewpointPolicyId": request.viewpoint_policy_id,

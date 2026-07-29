@@ -17,14 +17,12 @@
 집행 영역이다(계약의 minimum*StandoffM 은 Edge 소비 필드). 경로 생성기는 구조물
 위치를 모른다. 이 경계는 docstring 선언이지 코드 게이트가 아님을 명시해 둔다.
 
-## 고도의 수직기준 (자율 재검토 F1 — 대표자 확정 대기)
+## 고도의 수직기준 (자율 재검토 F1 — 2026-07-29 대표자 확정)
 
 모든 고도(route altitude·envelope min/max)는 **이륙점 상대(relativeToStartPoint)**
-로 해석한다 — 지형 데이터 없이 안전한 유일한 모드이며 WPML 산출(wpml.py)도 같은
-모드다. envelope 고도를 정표고(siteFrame verticalDatum)로 해석하는 계약과는
-비교가 성립하지 않으므로(INV-020), 이 해석은 원장 risk
-``route-altitude-vertical-reference`` 로 기록되어 대표자 확정(스키마 명문화) 전까지
-잠정 규약이다. 이 줄을 지우려면 그 risk 를 먼저 해소하라.
+다 — 계약 스키마 v1.2 의 ``flightEnvelope.altitudeReference``(const) 로 명문화됐고
+발급기(mission_issuance)가 항상 채운다. WPML 산출(wpml.py)도 같은 모드다.
+siteFrame.verticalDatum(정표고)은 세계모델 좌표 전용으로 분리된다(INV-020).
 
 비볼록 폴리곤 한계(문서화된 알려진 제약): 스캔선이 폴리곤을 여러 구간으로
 끊는 오목 구역에서는 **스캔선마다 1회씩** 구간 사이 이동이 구역 밖을 지난다 —
@@ -166,7 +164,9 @@ def lawnmower_route(
     # 위에 정확히 놓이는 퇴화도 함께 제거된다. 폭이 spacing 이하면 중앙선 1개.
     height = max_y - min_y
     usable = height - spacing_m
-    if usable <= 0:
+    # usable 이 양수라도 간격 하한 미만이면 사실상 같은 자리의 스캔선 2개(동일
+    # 좌표 웨이포인트 쌍)가 되므로 중앙선 1개로 접는다(재검토 경계 케이스).
+    if usable <= _MIN_SPACING_M:
         scan_ys = [(min_y + max_y) / 2.0]
     else:
         count = math.ceil(usable / spacing_m) + 1
@@ -200,7 +200,7 @@ def lawnmower_route(
             # 수 없다 — 조용히 버리면 커버리지 구멍이 무음으로 생기므로 실패한다.
             raise RouteGenerationError(
                 f"스캔선 y={y:.3f} 교차점이 홀수({len(xs)}) — 경계 퇴화, "
-                "sweep_heading_deg 를 조정해 재시도하라"
+                "sweep_direction_deg 를 조정해 재시도하라"
             )
 
         # 길이 0 퇴화 구간(스캔선이 국소최소 꼭짓점에 정확히 접함 — xs 에 같은 x 2개)
@@ -213,6 +213,14 @@ def lawnmower_route(
 
         for x_start, x_end in segments:
             for x in (x_start, x_end):
+                # 상한 검사를 루프 안에서 — 비볼록 다중 세그먼트(선당 2점 초과)
+                # 에서도 대량 할당 전에 끊는다(재검토: 선 수 상한만으로는 볼록
+                # 가정이라 톱니형 폴리곤이 우회했다).
+                if len(waypoints) >= _MAX_WAYPOINTS:
+                    raise RouteGenerationError(
+                        f"웨이포인트가 WPML index 상한({_MAX_WAYPOINTS})을 넘는다 — "
+                        "spacing 을 키우거나 구역을 나눠라"
+                    )
                 east, north = _rotate(x, y, angle)
                 lat, lon = enu_to_wgs84(anchor.lat_deg, anchor.lon_deg, east, north)
                 waypoints.append(
@@ -221,9 +229,4 @@ def lawnmower_route(
 
     if not waypoints:
         raise RouteGenerationError("스캔선이 폴리곤과 교차하지 않았다 — 구역·간격을 확인하라")
-    if len(waypoints) > _MAX_WAYPOINTS:
-        raise RouteGenerationError(
-            f"웨이포인트 {len(waypoints)}개는 WPML index 상한({_MAX_WAYPOINTS})을 넘는다 — "
-            "spacing 을 키우거나 구역을 나눠라"
-        )
     return waypoints

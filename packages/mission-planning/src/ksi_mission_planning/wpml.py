@@ -227,10 +227,14 @@ def build_template_kml(
     _sub(folder, _wpml("autoFlightSpeed"), _format_float(config.auto_flight_speed_ms))
     _sub(folder, _wpml("globalHeight"), _format_float(altitude_m))
     _sub(folder, _wpml("globalWaypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
-    _sub(folder, _wpml("globalUseStraightLine"), "1")
+    # 스펙 조건부 필수는 Continuity 계열뿐이나, 공식 template 샘플(raw 확인)이
+    # Discontinuity 모드에서도 0 을 동봉한다 — 샘플 정합 유지(H4 확정 항목).
+    _sub(folder, _wpml("globalUseStraightLine"), "0")
     _sub(folder, _wpml("gimbalPitchMode"), "manual")
     heading = _sub(folder, _wpml("globalWaypointHeadingParam"))
     _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
+    # waypointHeadingPathMode 는 무조건 필수(공식 표 raw 확인 — 재검토 blocker #1).
+    _sub(heading, _wpml("waypointHeadingPathMode"), "followBadArc")
 
     for index, wp in enumerate(route):
         placemark = _sub(folder, _kml("Placemark"))
@@ -245,8 +249,60 @@ def build_template_kml(
     return _serialize(root)
 
 
+def _append_capture_action_group(
+    placemark: ET.Element, *, index: int, drone: DroneProfile
+) -> None:
+    """웨이포인트 도달 시 nadir 촬영 actionGroup (2026-07-29 대표자 승인 — 매핑 기본).
+
+    파라미터 태그명·enum 값은 공식 40.common-element.md **raw 표에서 직접 확인**했다:
+    gimbalHeadingYawBase 는 열거값이 north 하나뿐이고, gimbalRotateMode=absoluteAngle·
+    payloadLensIndex(wide 등)도 표에 명시돼 있다(재검토 blocker #2 정정 — 이전
+    "표가 값 목록을 싣지 않는다"는 근거는 요약 경유의 오류였다).
+    """
+    group = _sub(placemark, _wpml("actionGroup"))
+    _sub(group, _wpml("actionGroupId"), str(index))
+    _sub(group, _wpml("actionGroupStartIndex"), str(index))
+    _sub(group, _wpml("actionGroupEndIndex"), str(index))
+    _sub(group, _wpml("actionGroupMode"), "sequence")
+    trigger = _sub(group, _wpml("actionTrigger"))
+    _sub(trigger, _wpml("actionTriggerType"), "reachPoint")
+
+    action_id = 0
+    if index == 0:
+        # 첫 웨이포인트에서 짐벌을 nadir(-90°)로 — 이후 웨이포인트는 유지된 자세로 촬영.
+        gimbal = _sub(group, _wpml("action"))
+        _sub(gimbal, _wpml("actionId"), str(action_id))
+        _sub(gimbal, _wpml("actionActuatorFunc"), "gimbalRotate")
+        param = _sub(gimbal, _wpml("actionActuatorFuncParam"))
+        _sub(param, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
+        _sub(param, _wpml("gimbalHeadingYawBase"), "north")
+        _sub(param, _wpml("gimbalRotateMode"), "absoluteAngle")
+        _sub(param, _wpml("gimbalPitchRotateEnable"), "1")
+        _sub(param, _wpml("gimbalPitchRotateAngle"), "-90")
+        _sub(param, _wpml("gimbalRollRotateEnable"), "0")
+        _sub(param, _wpml("gimbalRollRotateAngle"), "0")
+        _sub(param, _wpml("gimbalYawRotateEnable"), "0")
+        _sub(param, _wpml("gimbalYawRotateAngle"), "0")
+        _sub(param, _wpml("gimbalRotateTimeEnable"), "0")
+        _sub(param, _wpml("gimbalRotateTime"), "0")
+        action_id += 1
+
+    photo = _sub(group, _wpml("action"))
+    _sub(photo, _wpml("actionId"), str(action_id))
+    _sub(photo, _wpml("actionActuatorFunc"), "takePhoto")
+    param = _sub(photo, _wpml("actionActuatorFuncParam"))
+    _sub(param, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
+    _sub(param, _wpml("fileSuffix"), "ksi")
+    _sub(param, _wpml("payloadLensIndex"), "wide")
+    _sub(param, _wpml("useGlobalPayloadLensIndex"), "1")
+
+
 def build_waylines_wpml(
-    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+    route: list[RouteWaypoint],
+    *,
+    drone: DroneProfile,
+    config: WaylineMissionConfig,
+    capture_at_waypoints: bool = False,
 ) -> bytes:
     """waylines.wpml — 실행 확정 웨이라인 (executeHeightMode=relativeToStartPoint).
 
@@ -255,6 +311,10 @@ def build_waylines_wpml(
     mode 에서도 넣으므로 0 으로 동봉한다(H4 실기에서 수용 확인). ``useStraightLine``
     은 넣지 않는다 — 스펙 조건부 필수 대상이 Continuity 계열 turn mode 뿐이고 공식
     샘플에도 없다(자율 재검토 정정).
+
+    Args:
+        capture_at_waypoints: True 면 각 웨이포인트 도달 시 nadir 촬영 actionGroup
+            을 동봉한다(매핑 계열 기본 — 격자만 날고 사진 0장인 산출물 방지).
     """
     _validate_route(route)
     root, document = _document_root()
@@ -275,19 +335,29 @@ def build_waylines_wpml(
         _sub(placemark, _wpml("waypointSpeed"), _format_float(config.auto_flight_speed_ms))
         heading = _sub(placemark, _wpml("waypointHeadingParam"))
         _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
+        _sub(heading, _wpml("waypointHeadingPathMode"), "followBadArc")
         turn = _sub(placemark, _wpml("waypointTurnParam"))
         _sub(turn, _wpml("waypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
+        # 공식 waylines 샘플(raw 확인)이 Discontinuity 모드에서도 0 을 동봉한다.
         _sub(turn, _wpml("waypointTurnDampingDist"), "0")
+        if capture_at_waypoints:
+            _append_capture_action_group(placemark, index=index, drone=drone)
 
     return _serialize(root)
 
 
 def build_kmz(
-    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+    route: list[RouteWaypoint],
+    *,
+    drone: DroneProfile,
+    config: WaylineMissionConfig,
+    capture_at_waypoints: bool = False,
 ) -> bytes:
     """template.kml + waylines.wpml 을 ``wpmz/`` 아래 담은 KMZ(zip) 바이트."""
     template = build_template_kml(route, drone=drone, config=config)
-    waylines = build_waylines_wpml(route, drone=drone, config=config)
+    waylines = build_waylines_wpml(
+        route, drone=drone, config=config, capture_at_waypoints=capture_at_waypoints
+    )
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:

@@ -65,8 +65,8 @@ class _CamelModel(BaseModel):
 class RouteParams(_CamelModel):
     """경로 생성 파라미터 — 고도는 계약 FlightEnvelope 로 생성기가 재게이트한다.
 
-    고도의 수직기준은 이륙점 상대(relativeToStartPoint) 잠정 규약이다 — 원장 risk
-    ``route-altitude-vertical-reference`` (대표자 확정 대기) 참조.
+    고도의 수직기준은 이륙점 상대(relativeToStartPoint) — 2026-07-29 대표자 확정,
+    계약 스키마 flightEnvelope.altitudeReference 로 명문화.
     ``sweep_direction_deg`` 는 수학 규약(동=0·반시계) — 나침반 방위가 아니다.
     """
 
@@ -142,6 +142,9 @@ def build_mission_plan(
             takeoff_security_height_m=request.wayline.takeoff_security_height_m,
             global_transitional_speed_ms=request.wayline.global_transitional_speed_ms,
         ),
+        # 매핑 계열은 웨이포인트별 nadir 촬영이 기본(2026-07-29 대표자 승인) —
+        # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다.
+        capture_at_waypoints=(pattern == "lawnmower"),
     )
     contract = issue_mission_contract(request.contract, private_key=private_key, key_id=key_id)
 

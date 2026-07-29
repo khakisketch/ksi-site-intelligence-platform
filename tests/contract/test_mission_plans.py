@@ -147,3 +147,58 @@ def test_plans_endpoint_absent_without_signing_key() -> None:
     app = create_app()
     client = TestClient(app)
     assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 404
+
+
+def test_issued_envelope_carries_altitude_reference() -> None:
+    """2026-07-29 대표자 확정 — 발급 계약의 봉투 고도 수직기준은 서버가 고정한다."""
+    client, _registry = _client()
+    response = client.post("/v1/missions/plans", json=_plan_request())
+    envelope = response.json()["contract"]["flightEnvelope"]
+    assert envelope["altitudeReference"] == "relativeToStartPoint"
+
+
+def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not() -> None:
+    import xml.etree.ElementTree as ET
+
+    ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
+    client, _registry = _client()
+
+    def action_funcs(mission_type: str, **route: object) -> list[str | None]:
+        response = client.post(
+            "/v1/missions/plans", json=_plan_request(mission_type=mission_type, **route)
+        )
+        assert response.status_code == 201
+        kmz = base64.b64decode(response.json()["kmzBase64"])
+        with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+            root = ET.fromstring(archive.read("wpmz/waylines.wpml"))
+        return [
+            a.findtext("wpml:actionActuatorFunc", namespaces=ns)
+            for a in root.findall(".//wpml:action", ns)
+        ]
+
+    assert "takePhoto" in action_funcs("BASELINE_MAPPING", spacingM=20.0)
+    assert action_funcs("AUTONOMOUS_PATROL") == []
+
+
+def test_pair_height_semantics_match_between_kmz_and_contract() -> None:
+    """재검토 #5 — 한 응답 안에서 KMZ 높이 모드와 계약 altitudeReference 가 같은
+    값이어야 한다(F1 의 실제 위험: 두 산출물의 수직기준 무음 이탈)."""
+    import xml.etree.ElementTree as ET
+
+    ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
+    client, _registry = _client()
+    response = client.post("/v1/missions/plans", json=_plan_request())
+    body = response.json()
+
+    reference = body["contract"]["flightEnvelope"]["altitudeReference"]
+    kmz = base64.b64decode(body["kmzBase64"])
+    with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+        template = ET.fromstring(archive.read("wpmz/template.kml"))
+        waylines = ET.fromstring(archive.read("wpmz/waylines.wpml"))
+    height_mode = template.findtext(
+        "kml:Document/kml:Folder/wpml:waylineCoordinateSysParam/wpml:heightMode", namespaces=ns
+    )
+    execute_mode = waylines.findtext(
+        "kml:Document/kml:Folder/wpml:executeHeightMode", namespaces=ns
+    )
+    assert height_mode == execute_mode == reference == "relativeToStartPoint"

@@ -61,7 +61,13 @@ class SiteFrame(_CamelModel):
 
 class FlightEnvelope(_CamelModel):
     """비행 봉투 — 교차 필드 검증(감사 #50): min>max·비유한·음수 봉투가 서명된
-    계약으로 성립하면 Edge 가 그 값을 경계로 읽는 순간 해석이 정의되지 않는다."""
+    계약으로 성립하면 Edge 가 그 값을 경계로 읽는 순간 해석이 정의되지 않는다.
+
+    ``altitude_reference``: 고도(min/max)의 수직기준 — 2026-07-29 대표자 확정으로
+    **이륙점 상대(relativeToStartPoint)** 단일값이다(자율 재검토 F1, INV-020 —
+    수직기준이 다른 산출물끼리의 비교를 계약 레벨에서 봉인). optional 인 이유는
+    기존 서명 계약의 하위호환뿐이며, 발급기는 항상 채운다.
+    """
 
     allowed_volumes: list[str]
     excluded_volumes: list[str]
@@ -69,6 +75,7 @@ class FlightEnvelope(_CamelModel):
     max_altitude_m: float
     minimum_structure_standoff_m: float | None = None
     minimum_person_standoff_m: float | None = None
+    altitude_reference: Literal["relativeToStartPoint"] | None = None
 
     @model_validator(mode="after")
     def _envelope_is_coherent(self) -> FlightEnvelope:
