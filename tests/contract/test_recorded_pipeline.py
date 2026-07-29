@@ -33,10 +33,26 @@ from ksi_perception.recorded_pipeline import (
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "replay"))
 from vertical_slice import (  # noqa: E402
     ScriptedDetector,
+    make_run_context,
     person_detection,
     run_vertical_slice,
     synthetic_telemetry,
 )
+
+# CLI 계보 필수 인자(감사 #23 — 기본값 없는 RunContext 의 CLI 대응부).
+_LINEAGE_ARGS = [
+    "--mission-id", "test-mission-001",
+    "--site-id", "test-site-001",
+    "--site-frame", "EPSG:4326+WGS84@slice-1.0.0",
+    "--sensor-id", "test-wide-camera",
+    "--policy-version", "test-policy-0",
+    "--calibration-profile-id", "test-cal-0",
+]
+
+
+def _main(argv: list[str]) -> int:
+    """모든 CLI 테스트가 같은 계보 인자를 지참한다 — 개별 테스트는 차이만 기술."""
+    return main(argv + _LINEAGE_ARGS)
 
 
 def _telemetry_line(ts: float = 0.0, overrides: dict[str, object] | None = None) -> str:
@@ -131,7 +147,7 @@ def test_telemetry_record_roundtrip_to_sample() -> None:
 def test_cli_missing_telemetry_is_config_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = main(
+    code = _main(
         [
             str(tmp_path / "frame.jpg"),
             "--telemetry",
@@ -154,7 +170,7 @@ def test_cli_model_load_failure_is_config_error_not_frame_failure(
     """모델 Registry/artifact 실패는 파이프라인 시작 전 전체 중단(exit 1)이다."""
     telemetry = tmp_path / "telemetry.jsonl"
     telemetry.write_text(_telemetry_line() + "\n", encoding="utf-8")
-    code = main(
+    code = _main(
         [
             str(tmp_path / "frame.jpg"),
             "--telemetry",
@@ -175,7 +191,7 @@ def test_cli_model_load_failure_is_config_error_not_frame_failure(
 def test_cli_nonpositive_interval_is_config_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = main(
+    code = _main(
         [
             str(tmp_path / "frame.jpg"),
             "--telemetry",
@@ -226,7 +242,7 @@ def test_cli_runs_production_pipeline_end_to_end(
         "\n".join(_telemetry_line(ts) for ts in (0.0, 0.2, 0.4)) + "\n", encoding="utf-8"
     )
     out = tmp_path / "result.json"
-    code = main(
+    code = _main(
         [
             str(tmp_path / "f0.jpg"),
             str(tmp_path / "f1.jpg"),
@@ -278,7 +294,7 @@ def test_cli_partial_failure_exits_3_with_typed_frame_failures(
         "\n".join(_telemetry_line(ts) for ts in (0.0, 0.2, 0.4)) + "\n", encoding="utf-8"
     )
     out = tmp_path / "result.json"
-    code = main(
+    code = _main(
         [
             str(tmp_path / "f0.jpg"),
             str(tmp_path / "f1.jpg"),
@@ -330,6 +346,7 @@ def test_serialized_result_is_deterministic() -> None:
             ),
             telemetry=synthetic_telemetry([0.0, 0.2]),
             drone_position=(100.0, 200.0, 60.0),
+            context=make_run_context(),
         )
         return json.dumps(
             serialize_result(
@@ -344,3 +361,121 @@ def test_serialized_result_is_deterministic() -> None:
         )
 
     assert run() == run()
+
+
+# ── Edge→Core 이음매 E2E (감사 #27) — 양쪽 픽스처가 아니라 실산출물이 흐른다 ──
+
+
+def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> None:
+    """run_vertical_slice 가 만든 EventBundle 이 Core edge-sync 에 실제로 수락된다.
+
+    파이프라인이 필드를 바꾸거나 v1.3 으로 올라가면 여기서 깨진다 — 각자 손으로
+    만든 픽스처만 쓰면 양쪽이 각자 green 인 채 통합 시점에야 어긋난다.
+    """
+    from fastapi.testclient import TestClient
+    from ksi_core.app import create_app
+    from ksi_core.edge_sync import EdgeSyncStore
+    from ksi_event_contracts.offline_sync import JournalEntry, payload_digest
+
+    result = run_vertical_slice(
+        frames=[
+            recorded_pipeline.SliceFrame(
+                frame_id=i, capture_ts_utc=i * 0.2, width=1920, height=1080
+            )
+            for i in range(2)
+        ],
+        detector=ScriptedDetector(
+            {
+                i: [
+                    person_detection(
+                        x_min=900.0 + i * 4, y_min=500.0, x_max=980.0 + i * 4, y_max=700.0
+                    )
+                ]
+                for i in range(2)
+            }
+        ),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=(100.0, 200.0, 60.0),
+        context=make_run_context(),
+    )
+    [bundle] = result.bundles
+
+    payload = bundle.model_dump(mode="json", by_alias=True)
+    entry = JournalEntry(
+        idempotency_key=f"e2e:{bundle.event_id}",
+        device_sequence=0,
+        edge_device_id="e2e-edge-001",
+        payload_digest=payload_digest(payload),
+        payload=payload,
+    )
+    store = EdgeSyncStore(tmp_path / "journal.jsonl")
+    client = TestClient(create_app(edge_sync_store=store))
+    created = client.post(
+        "/v1/edge-sync/event-bundles",
+        content=entry.model_dump_json(by_alias=True),
+        headers={"Content-Type": "application/json"},
+    )
+    assert created.status_code == 201, created.text
+    retransmit = client.post(
+        "/v1/edge-sync/event-bundles",
+        content=entry.model_dump_json(by_alias=True),
+        headers={"Content-Type": "application/json"},
+    )
+    assert retransmit.status_code == 200
+    assert retransmit.json()["verdict"] == "DUPLICATE_IGNORED"
+    assert store.accepted_count() == 1
+
+
+def test_cli_disjoint_time_axis_is_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[감사 #24] 프레임/텔레메트리 시간축 미겹침은 무산출 성공이 아니라 exit 1 이다."""
+    monkeypatch.setattr(
+        recorded_pipeline, "_load_recorded_detector", lambda **kw: _stub_loader(**kw)
+    )
+    telemetry = tmp_path / "telemetry.jsonl"
+    telemetry.write_text(
+        "\n".join(_telemetry_line(1_700_000_000.0 + ts) for ts in (0.0, 0.2, 0.4)) + "\n",
+        encoding="utf-8",
+    )
+    code = _main(
+        [
+            str(tmp_path / "f0.jpg"), str(tmp_path / "f1.jpg"), str(tmp_path / "f2.jpg"),
+            "--telemetry", str(telemetry),
+            "--model-dir", str(tmp_path),
+            "--min-confidence", "0.5",
+            "--frame-interval-s", "0.2",
+            "--start-ts", "0.0",  # 실제 epoch 텔레메트리와 겹치지 않는 강제 시작점
+        ]
+    )
+    assert code == 1
+    assert "겹치지 않는다" in capsys.readouterr().err
+
+
+def test_cli_absolute_epoch_telemetry_succeeds_without_start_ts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[감사 #24 핵심] 실제 UTC epoch 텔레메트리를 주면 프레임 시각이 그 축으로
+    절대화돼 산출이 나온다 — 초판은 전량 gap 탈락인데 exit 0 이었다."""
+    monkeypatch.setattr(
+        recorded_pipeline, "_load_recorded_detector", lambda **kw: _stub_loader(**kw)
+    )
+    telemetry = tmp_path / "telemetry.jsonl"
+    telemetry.write_text(
+        "\n".join(_telemetry_line(1_700_000_000.0 + ts) for ts in (0.0, 0.2, 0.4)) + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "result.json"
+    code = _main(
+        [
+            str(tmp_path / "f0.jpg"), str(tmp_path / "f1.jpg"), str(tmp_path / "f2.jpg"),
+            "--telemetry", str(telemetry),
+            "--model-dir", str(tmp_path),
+            "--min-confidence", "0.5",
+            "--frame-interval-s", "0.2",
+            "--out", str(out),
+        ]
+    )
+    assert code == 0, capsys.readouterr().err
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert len(payload["observations"]) == 3, "실 epoch 축에서 전량 탈락했다(시간축 회귀)"

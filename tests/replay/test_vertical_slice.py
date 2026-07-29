@@ -25,6 +25,7 @@ from vertical_slice import (
     ScriptedDetector,
     SliceFrame,
     SliceStage,
+    make_run_context,
     person_detection,
     run_vertical_slice,
     synthetic_telemetry,
@@ -68,6 +69,7 @@ def test_full_slice_produces_observations_entity_and_bundle() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
 
     assert result.dropped == [], f"탈락 없이 통과해야 한다: {result.dropped}"
@@ -96,6 +98,7 @@ def test_uncertainty_flows_through_to_bundle() -> None:
         detector=ScriptedDetector(_walking_script(2)),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
 
     assert len(result.observations) == 2
@@ -122,6 +125,7 @@ def test_two_people_become_two_entities() -> None:
         detector=ScriptedDetector(script),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
 
     assert len(result.entities) == 2
@@ -142,6 +146,7 @@ def test_interpolation_gap_drops_detection_with_reason() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.0, 10.0]),  # 5.0 지점은 gap
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
         max_gap_s=0.5,
     )
 
@@ -178,6 +183,7 @@ def test_projection_failure_drops_detection_with_reason() -> None:
         detector=ScriptedDetector(_walking_script(2)),
         telemetry=horizon_telemetry,
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
 
     assert result.observations == [], "지평선 위 광선에서 좌표를 만들면 안 된다"
@@ -193,6 +199,7 @@ def test_no_detections_yields_empty_result_without_error() -> None:
         detector=ScriptedDetector({}),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert result.observations == []
     assert result.entities == []
@@ -207,6 +214,7 @@ def test_single_observation_track_does_not_reach_confirmed() -> None:
         detector=ScriptedDetector(_walking_script(1)),
         telemetry=synthetic_telemetry([0.0]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert len(result.entities) == 1
     assert result.entities[0].uncertainty.localization_state == "INSUFFICIENT_OBSERVATION"
@@ -231,6 +239,7 @@ def test_same_viewpoint_frames_do_not_reach_confirmed() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert len(result.entities) == 1
     assert result.entities[0].uncertainty.localization_state != "CONFIRMED", (
@@ -256,6 +265,7 @@ def test_slice_is_deterministic_across_runs() -> None:
             "detector": ScriptedDetector(_walking_script(3)),
             "telemetry": synthetic_telemetry([0.0, 0.2, 0.4]),
             "drone_position": _DRONE_POSE,
+            "context": make_run_context(),
         }
 
     first = run_vertical_slice(**build_args())
@@ -272,6 +282,7 @@ def test_frame_arrival_order_does_not_change_result() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     shuffled_frames = list(reversed(_frames([0.0, 0.2, 0.4])))
     shuffled = run_vertical_slice(
@@ -279,6 +290,7 @@ def test_frame_arrival_order_does_not_change_result() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.4, 0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
 
     assert forward.entity_fingerprints() == shuffled.entity_fingerprints()
@@ -358,6 +370,7 @@ def test_truck_never_becomes_person_entity_or_person_event() -> None:
         detector=ScriptedDetector(_truck_script(3)),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert len(result.entities) == 1, "트럭도 WorldEntity 로는 편입된다(세계 모델 유지)"
     assert result.entities[0].entity_class == "Vehicle_Truck", (
@@ -376,6 +389,7 @@ def test_observed_class_flows_from_detection_to_entity() -> None:
         detector=ScriptedDetector(_walking_script(3)),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert all(o.observed_class == "Person" for o in result.observations)
     assert all(o.source_class_name == "person" for o in result.observations)
@@ -439,13 +453,14 @@ def test_truck_entity_with_person_event_type_rejected() -> None:
         detector=ScriptedDetector(_truck_script(2)),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     [truck_entity] = result.entities
     built = _event_bundle_from_entity(
         truck_entity,
         severity=Severity.CANDIDATE,
         event_type="PERSON_PRESENT",
-        model_version="stub",
+        context=make_run_context(),
     )
     assert built.status is EventBuildStatus.EVENT_CLASS_MISMATCH
     assert built.bundle is None
@@ -458,6 +473,7 @@ def test_misconfigured_policy_blocked_by_compatibility_gate() -> None:
         detector=ScriptedDetector(_truck_script(2)),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
         event_policy={"Vehicle_Truck": "PERSON_PRESENT"},  # 잘못된 정책 주입
     )
     assert result.bundles == [], "불호환 정책이 Event 를 발행시켰다 — gate 무력화"
@@ -472,6 +488,7 @@ def test_unknown_event_type_rejected() -> None:
         detector=ScriptedDetector(_walking_script(2)),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
         event_policy={"Person": "UNREGISTERED_EVENT"},
     )
     assert result.bundles == []
@@ -503,6 +520,7 @@ def test_two_class_scene_is_deterministic_under_shuffle() -> None:
             detector=ScriptedDetector(script),
             telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
             drone_position=_DRONE_POSE,
+        context=make_run_context(),
         )
         return {
             "fingerprints": result.entity_fingerprints(),
@@ -537,6 +555,7 @@ def test_partial_key_collision_deterministic_under_reverse() -> None:
             detector=ScriptedDetector(script),
             telemetry=synthetic_telemetry([0.0]),
             drone_position=_DRONE_POSE,
+        context=make_run_context(),
         )
         return result.entity_fingerprints()
 
@@ -611,6 +630,7 @@ def test_detection_stage_drops_absorbed_into_slice() -> None:
         detector=detector,
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     detection_drops = [d for d in result.dropped if d.stage is SliceStage.DETECTION]
     assert len(detection_drops) == 2, (
@@ -654,6 +674,7 @@ def test_clipped_detections_absorbed_into_slice() -> None:
         detector=detector,
         telemetry=synthetic_telemetry([0.0]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert len(result.clipped_detections) == 1, "클리핑 기록이 슬라이스에서 소실됐다"
     frame_id, area_kept, detail = result.clipped_detections[0]
@@ -679,6 +700,7 @@ def test_mid_frame_inference_failure_does_not_kill_batch() -> None:
         detector=detector,
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert len(result.observations) == 2, "frame 0·2 는 계속 처리돼야 한다"
     [failure] = result.frame_failures
@@ -701,6 +723,7 @@ def test_missing_frame_is_frame_not_found_not_empty_scene() -> None:
         detector=detector,
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     [failure] = result.frame_failures
     assert failure.frame_id == 1
@@ -712,6 +735,7 @@ def test_missing_frame_is_frame_not_found_not_empty_scene() -> None:
         detector=ScriptedDetector(_walking_script(1), known_frames={0, 1, 2}),
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     assert clean.frame_failures == [], "빈 장면이 FRAME_NOT_FOUND 로 위장 실패했다"
 
@@ -755,6 +779,7 @@ def test_first_frame_drops_do_not_bleed_into_later_frames() -> None:
         detector=detector,
         telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     detection_drops = [d for d in result.dropped if d.stage is SliceStage.DETECTION]
     assert [d.frame_id for d in detection_drops] == [0], (
@@ -778,6 +803,7 @@ def test_out_of_order_frames_keep_per_frame_diagnostics() -> None:
             ),
             telemetry=synthetic_telemetry([0.0, 0.2, 0.4]),
             drone_position=_DRONE_POSE,
+        context=make_run_context(),
         )
 
     forward = build([0.0, 0.2, 0.4])
@@ -803,6 +829,7 @@ def test_bundle_carries_standalone_classification_lineage() -> None:
         detector=ScriptedDetector(_walking_script(2)),
         telemetry=synthetic_telemetry([0.0, 0.2]),
         drone_position=_DRONE_POSE,
+        context=make_run_context(),
     )
     [bundle] = result.bundles
     [entity] = result.entities
@@ -844,7 +871,8 @@ def test_entity_without_classification_lineage_cannot_publish_event() -> None:
         ),
     )
     built = _event_bundle_from_entity(
-        bare, severity=Severity.CANDIDATE, event_type="PERSON_PRESENT", model_version="stub"
+        bare, severity=Severity.CANDIDATE, event_type="PERSON_PRESENT",
+        context=make_run_context(model_version="stub"),
     )
     assert not built.ok and built.bundle is None
     assert built.status is EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE
@@ -869,3 +897,92 @@ def test_orchestration_is_production_module_not_a_copy() -> None:
     assert vertical_slice.SliceStage is pipeline.SliceStage
     assert vertical_slice.DroppedDetection is pipeline.DroppedDetection
     assert vertical_slice.EventBuildStatus is pipeline.EventBuildStatus
+
+
+# ── RunContext·Evidence Clip 정책 (감사 #23·#26·#37 폐쇄) ────────────────────
+
+
+def test_run_context_rejects_blank_lineage() -> None:
+    """계보 필드 공백은 생성 시점 typed 거부 — placeholder 실행 자체가 불가하다."""
+    from datetime import UTC, datetime
+    from typing import Any
+
+    from vertical_slice import RunContext
+
+    good: dict[str, Any] = dict(
+        mission_id="m", site_id="s", site_frame="EPSG:4326+WGS84@t",
+        epoch_utc=datetime(2026, 1, 1, tzinfo=UTC), model_version="v",
+        policy_version="p", calibration_profile_id="c", edge_version="e",
+        sensor_id="cam",
+    )
+    RunContext(**good)  # 정상 경로
+    for field_name in good:
+        if field_name == "epoch_utc":
+            continue
+        broken = dict(good)
+        broken[field_name] = "   "
+        with pytest.raises(ValueError, match=field_name):
+            RunContext(**broken)
+    naive = dict(good)
+    naive["epoch_utc"] = datetime(2026, 1, 1)  # tz 없음
+    with pytest.raises(ValueError, match="UTC"):
+        RunContext(**naive)
+
+
+def test_evidence_clip_policy_is_three_tier() -> None:
+    """[INV-030] CANDIDATE/HIGH/CRITICAL = 3/5/10초 — 초판은 2단계라 CRITICAL 이
+    절반(5초) 클립을 받았다(감사 #26·#37)."""
+    from ksi_domain.enums import Severity
+
+    expectations = {Severity.CANDIDATE: 3.0, Severity.HIGH: 5.0, Severity.CRITICAL: 10.0}
+    for severity, seconds in expectations.items():
+        result = run_vertical_slice(
+            frames=_frames([0.0, 0.2]),
+            detector=ScriptedDetector(_walking_script(2)),
+            telemetry=synthetic_telemetry([0.0, 0.2]),
+            drone_position=_DRONE_POSE,
+            context=make_run_context(),
+            severity=severity,
+        )
+        [bundle] = result.bundles
+        assert bundle.evidence.clip_policy is not None
+        assert bundle.evidence.clip_policy.pre_seconds == seconds, severity
+        assert bundle.evidence.clip_policy.post_seconds == seconds, severity
+
+
+def test_medium_severity_has_no_clip_policy_and_is_rejected() -> None:
+    """MEDIUM 은 클립 정책 미정의 — 임의 길이를 지어내지 않고 typed 거부한다."""
+    from ksi_domain.enums import Severity
+
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_walking_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+        context=make_run_context(),
+        severity=Severity.MEDIUM,
+    )
+    assert result.bundles == [], "정책 없는 severity 로 Evidence 가 발행됐다"
+    [(entity_id, _cls, reason)] = result.unpublished_events
+    assert "unsupported_severity_policy" in reason
+
+
+def test_bundle_lineage_carries_run_context_not_placeholders() -> None:
+    """산출물 계보가 호출자의 RunContext 값이다 — 하드코딩 placeholder 아님."""
+    context = make_run_context()
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(_walking_script(2)),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+        context=context,
+    )
+    [bundle] = result.bundles
+    assert bundle.mission_id == context.mission_id
+    assert bundle.site_id == context.site_id
+    assert bundle.lineage.policy_version == context.policy_version
+    assert bundle.lineage.calibration_profile_id == context.calibration_profile_id
+    assert bundle.lineage.edge_version == context.edge_version
+    [observation] = [o for o in result.observations if o.observation_id.endswith("trk-001")][:1]
+    assert observation.site_frame == context.site_frame
+    assert observation.sensor_id == context.sensor_id

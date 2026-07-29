@@ -42,12 +42,11 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ksi_event_contracts.assembly import world_entity_fingerprint
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ksi_perception.pipeline import SliceFrame, SliceResult, run_vertical_slice
+from ksi_perception.pipeline import RunContext, SliceFrame, SliceResult, run_vertical_slice
 
 if TYPE_CHECKING:
     from ksi_domain.detection import Detector
@@ -150,9 +149,9 @@ def serialize_result(
         ],
         "entities": [e.model_dump(mode="json", by_alias=True) for e in result.entities],
         "event_bundles": [b.model_dump(mode="json", by_alias=True) for b in result.bundles],
-        "entity_fingerprints": [
-            world_entity_fingerprint(e) for e in sorted(result.entities, key=lambda e: e.entity_id)
-        ],
+        # 재현성 지문의 정본은 SliceResult.entity_fingerprints() 하나다(감사 #2 —
+        # 정렬 기준이 다른 재구현은 내부 테스트와 산출물 순서를 갈라놓는다).
+        "entity_fingerprints": result.entity_fingerprints(),
         "diagnostics": {
             "frame_failures": [
                 {
@@ -187,6 +186,16 @@ def serialize_result(
             ],
         },
     }
+
+
+def _edge_version() -> str:
+    """실행 중인 perception 패키지의 실버전 — 하드코딩 placeholder 가 아니다."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return f"ksi-perception/{version('ksi-perception')}"
+    except PackageNotFoundError:  # 소스 트리 직접 실행 등
+        return "ksi-perception/unpackaged"
 
 
 def _config_error(message: str) -> int:
@@ -273,6 +282,28 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out", type=Path, default=None, help="결과 JSON 경로(생략 시 stdout)"
     )
+    # 계보 신원 — 기본값이 없다(INV-040/042, 감사 #23). placeholder 로 채워진
+    # Evidence 가 Core durable 원장에 영구 기록되는 것을 CLI 경계에서 막는다.
+    parser.add_argument("--mission-id", required=True, help="이 재생이 귀속되는 임무 id")
+    parser.add_argument("--site-id", required=True, help="현장 id")
+    parser.add_argument(
+        "--site-frame", required=True,
+        help='현장 좌표계 참조(예: "EPSG:4326+WGS84@site-1.0.0")',
+    )
+    parser.add_argument("--sensor-id", required=True, help="녹화 카메라/센서 식별자")
+    parser.add_argument("--policy-version", required=True, help="적용 정책 버전")
+    parser.add_argument(
+        "--calibration-profile-id", required=True, help="캘리브레이션 프로파일 id"
+    )
+    parser.add_argument(
+        "--start-ts",
+        type=float,
+        default=None,
+        help=(
+            "프레임 0 의 절대 시각(UTC epoch 초) — 생략 시 텔레메트리 첫 샘플 시각. "
+            "프레임 시각 구간이 텔레메트리 구간과 겹치지 않으면 구성 실패다(감사 #24)"
+        ),
+    )
     return parser
 
 
@@ -303,11 +334,46 @@ def main(argv: list[str] | None = None) -> int:
         float(first.drone_lon or 0.0),
         float(first.altitude_rel_m or 0.0),
     )
+
+    # 프레임 시각을 텔레메트리와 **같은 절대 시간축**으로 만든다(감사 #24) —
+    # 초판은 프레임을 0초부터 상대 시각으로 만들었고, 실제 UTC 로그를 주면 전
+    # detection 이 보간 gap 으로 전량 탈락하는데 exit 0(성공)으로 끝났다.
+    telemetry_ts = [
+        sample.ts.capture_ts_utc
+        for sample in telemetry
+        if isinstance(sample.ts, TimestampSet) and sample.ts.capture_ts_utc is not None
+    ]
+    if not telemetry_ts:
+        return _config_error("텔레메트리에 capture 시각이 없다 — 시간축 기준을 세울 수 없다")
+    frame_base_ts = args.start_ts if args.start_ts is not None else min(telemetry_ts)
+    frame_last_ts = frame_base_ts + (frame_count - 1) * args.frame_interval_s
+    if frame_last_ts < min(telemetry_ts) or frame_base_ts > max(telemetry_ts):
+        return _config_error(
+            f"프레임 시각 구간 [{frame_base_ts}, {frame_last_ts}] 이 텔레메트리 구간 "
+            f"[{min(telemetry_ts)}, {max(telemetry_ts)}] 과 겹치지 않는다 — 시간축 "
+            "불일치 상태의 재생은 전량 무산출이 된다(--start-ts 확인)"
+        )
+
+    from datetime import UTC, datetime
+
+    context = RunContext(
+        mission_id=args.mission_id,
+        site_id=args.site_id,
+        site_frame=args.site_frame,
+        # 프레임 시각이 이미 절대 UTC epoch 초이므로 기준은 unix epoch 이다 —
+        # 허구의 하드코딩 epoch 가 Evidence occurred_at 이 되지 않는다(감사 #23).
+        epoch_utc=datetime(1970, 1, 1, tzinfo=UTC),
+        model_version=model_version,
+        policy_version=args.policy_version,
+        calibration_profile_id=args.calibration_profile_id,
+        edge_version=_edge_version(),
+        sensor_id=args.sensor_id,
+    )
     result = run_vertical_slice(
         frames=[
             SliceFrame(
                 frame_id=i,
-                capture_ts_utc=i * args.frame_interval_s,
+                capture_ts_utc=frame_base_ts + i * args.frame_interval_s,
                 width=width,
                 height=height,
             )
@@ -316,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
         detector=detector,
         telemetry=telemetry,
         drone_position=drone_position,
-        model_version=model_version,
+        context=context,
     )
 
     payload = serialize_result(
@@ -337,6 +403,16 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"PARTIAL: 프레임 단위 실패 {len(result.frame_failures)}건 — "
             "diagnostics.frame_failures 참조",
+            file=sys.stderr,
+        )
+        return 3
+    if not result.observations and (result.dropped or result.clipped_detections):
+        # detection 은 있었는데 관측 산출이 0 — 시간축/투영 계열의 전량 탈락이다.
+        # "드론이 아무것도 못 봤다"와 구분되어야 하므로 성공으로 위장하지 않는다
+        # (감사 #24).
+        print(
+            f"PARTIAL: detection 은 발생했으나 관측 산출 0건(탈락 {len(result.dropped)}건) — "
+            "diagnostics.dropped 참조(시간축·투영 점검)",
             file=sys.stderr,
         )
         return 3

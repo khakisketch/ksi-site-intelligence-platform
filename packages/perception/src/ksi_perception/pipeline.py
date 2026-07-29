@@ -33,7 +33,7 @@ PSDK Live View 를 붙일 자리가 "테스트 모듈"이 되기 때문이다. t
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from ksi_domain.detection import BoundingBox, Detection, Detector
@@ -46,6 +46,7 @@ from ksi_event_contracts.assembly import (
 )
 from ksi_event_contracts.event_bundle import (
     ClassificationLineage,
+    ClipPolicy,
     EventBundle,
     Evidence,
     Lineage,
@@ -59,7 +60,48 @@ from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.projection import project_foot_point
 from ksi_geo_core.sync import TelemetryInterpolator, TelemetrySample
 
-_EPOCH = datetime(2026, 7, 27, 6, 0, 0, tzinfo=UTC)
+
+@dataclass(frozen=True, slots=True)
+class RunContext:
+    """실행 1회의 계보 신원 — 기본값이 없다(INV-040/042, 감사 #23 폐쇄).
+
+    초판 파이프라인은 mission/site/policy/calibration/epoch 를 모듈 상수와 기본
+    인자("mission-slice-1" 등)로 채웠다 — 필드가 채워져 있다는 이유로 계보
+    게이트를 전부 통과하는 placeholder 였고, 그 산출물이 Core durable 원장에
+    영구 기록되면 "어느 임무·어느 현장의 사건인가"를 복원할 수 없다. 이제 모든
+    계보 값은 호출자가 명시해야 하며, 공백은 생성 시점 typed 거부다(fail-closed).
+
+    ``epoch_utc`` 는 :class:`SliceFrame.capture_ts_utc` (상대 초)를 절대 시각으로
+    만드는 기준이다 — 허구의 하드코딩 epoch 가 Evidence 의 occurred_at 이 되는
+    것을 막는다(recorded 재생은 텔레메트리 시간축, 합성 테스트는 픽스처가 명시).
+    """
+
+    mission_id: str
+    site_id: str
+    site_frame: str
+    epoch_utc: datetime
+    model_version: str
+    policy_version: str
+    calibration_profile_id: str
+    edge_version: str
+    sensor_id: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "mission_id",
+            "site_id",
+            "site_frame",
+            "model_version",
+            "policy_version",
+            "calibration_profile_id",
+            "edge_version",
+            "sensor_id",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"RunContext.{name} 는 공백일 수 없다 — 계보 없는 실행 금지")
+        if self.epoch_utc.tzinfo is None or self.epoch_utc.utcoffset() != timedelta(0):
+            raise ValueError(f"epoch_utc 는 UTC aware 여야 한다 ({self.epoch_utc!r})")
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +247,7 @@ def _observation_from_projection(
     geo_confidence: float,
     error_radius_m: float,
     drone_position: tuple[float, float, float],
-    model_version: str,
+    context: RunContext,
 ) -> Observation:
     """투영 결과 → Observation 계약.
 
@@ -228,16 +270,16 @@ def _observation_from_projection(
         source_class_name=detection.source_class_name,
         ontology_version=detection.ontology_version,
         track_id=track_id,
-        observed_at=_EPOCH + timedelta(seconds=frame.capture_ts_utc),
-        site_frame="EPSG:4326+WGS84@slice-1.0.0",
+        observed_at=context.epoch_utc + timedelta(seconds=frame.capture_ts_utc),
+        site_frame=context.site_frame,
         position=[lat, lon, altitude_m],
         position_covariance=[variance, 0.0, 0.0, 0.0, variance, 0.0, 0.0, 0.0, variance],
         detection_confidence=detection.confidence,
         geo_confidence=geo_confidence,
-        sensor_id="slice-wide-camera",
+        sensor_id=context.sensor_id,
         viewpoint_id=viewpoint_bin_id(drone_position),
         viewpoint_kind=ViewpointEvidenceKind.SPATIAL_BIN,
-        lineage={"detector": model_version},
+        lineage={"detector": context.model_version},
     )
 
 
@@ -251,6 +293,14 @@ EVENT_TYPE_COMPATIBLE_CLASSES: dict[str, frozenset[str]] = {
 # 발행하지 않는다(unpublished_events 에 typed 사유 기록 — 조용한 소멸 금지).
 DEFAULT_EVENT_POLICY: dict[str, str] = {"Person": "PERSON_PRESENT"}
 
+# 두 정책표의 상호 일관성 — 기본 정책이 가리키는 event_type 은 반드시 호환표에
+# 있어야 한다(감사 #41: 한쪽만 갱신하면 그 class 의 이벤트가 전부 조용히
+# UNKNOWN_EVENT_TYPE 으로 미발행되는 회귀가 리뷰에서 안 보인다).
+assert set(DEFAULT_EVENT_POLICY.values()) <= set(EVENT_TYPE_COMPATIBLE_CLASSES), (
+    "DEFAULT_EVENT_POLICY 가 호환표에 없는 event_type 을 가리킨다: "
+    f"{set(DEFAULT_EVENT_POLICY.values()) - set(EVENT_TYPE_COMPATIBLE_CLASSES)}"
+)
+
 
 class EventBuildStatus(StrEnum):
     OK = "ok"
@@ -259,6 +309,19 @@ class EventBuildStatus(StrEnum):
     # entity 에 분류 계보(ontology version·원시 출처)가 없다 — 계보 없는 이벤트
     # 발행 금지(INV-031, EventBundle v1.2 standalone lineage 의 assembly gate).
     MISSING_CLASSIFICATION_LINEAGE = "missing_classification_lineage"
+    # 클립 정책표에 없는 severity — 임의 기본 길이를 지어내지 않는다(INV-030,
+    # 감사 #26: MEDIUM 은 §17.2 상 재검증 경로라 클립 정책이 정의돼 있지 않다).
+    UNSUPPORTED_SEVERITY_POLICY = "unsupported_severity_policy"
+
+
+# INV-030 — Evidence Clip 전후 길이(초). mission-contract evidencePolicy 의
+# candidate/high/critical 3단계와 정합해야 한다(감사 #26·#37: 초판은 2단계라
+# CRITICAL 이 5초 클립을 받았다). 여기 없는 severity 는 typed 거부.
+EVIDENCE_CLIP_SECONDS: dict[Severity, float] = {
+    Severity.CANDIDATE: 3.0,
+    Severity.HIGH: 5.0,
+    Severity.CRITICAL: 10.0,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,7 +340,7 @@ def _event_bundle_from_entity(
     *,
     severity: Severity,
     event_type: str,
-    model_version: str,
+    context: RunContext,
 ) -> EventBuildResult:
     """WorldEntity → EventBundle. 상태전이는 반드시 전이표를 경유한다(INV-031).
 
@@ -317,18 +380,34 @@ def _event_bundle_from_entity(
             ),
         )
 
-    assert_event_transition(None, EventStatus.OBSERVATION)
-    assert_event_transition(EventStatus.OBSERVATION, EventStatus.CANDIDATE)
+    clip_seconds = EVIDENCE_CLIP_SECONDS.get(severity)
+    if clip_seconds is None:
+        return EventBuildResult(
+            status=EventBuildStatus.UNSUPPORTED_SEVERITY_POLICY,
+            detail=(
+                f"severity {severity.value} 의 Evidence Clip 정책이 정의돼 있지 않다 — "
+                "임의 길이를 지어내지 않는다(INV-030, 정책표: "
+                f"{sorted(s.value for s in EVIDENCE_CLIP_SECONDS)})"
+            ),
+        )
 
-    clip_seconds = 3.0 if severity is Severity.CANDIDATE else 5.0
+    # 상태는 전이표를 실제로 통과한 변수다 — 리터럴 상수 인자는 입력과 무관하게
+    # 항상 통과하는 장식 게이트였다(감사 #77). 이 체인이 전이표에 없는 경로로
+    # 바뀌면 여기서 IllegalEventTransitionError 로 즉시 터진다.
+    status: EventStatus | None = None
+    for next_status in (EventStatus.OBSERVATION, EventStatus.CANDIDATE):
+        assert_event_transition(status, next_status)
+        status = next_status
+    assert status is EventStatus.CANDIDATE
+
     bundle = EventBundle(
         event_id=f"evt-{entity.entity_id}",
-        mission_id="mission-slice-1",
-        site_id="site-slice-1",
+        mission_id=context.mission_id,
+        site_id=context.site_id,
         event_type=event_type,
         severity=severity,
         occurred_at=entity.timestamp,
-        status=EventStatus.CANDIDATE,
+        status=status,
         entities=[entity.entity_id],
         spatial_context={
             "siteFrame": entity.site_frame,
@@ -342,13 +421,15 @@ def _event_bundle_from_entity(
             "note": "배선 검증용 — 실제 위험 판정 규칙이 아니다",
         },
         evidence=Evidence(
-            clip_policy={"preSeconds": clip_seconds, "postSeconds": clip_seconds},  # type: ignore[arg-type]
+            # ClipPolicy 를 직접 생성 — dict + type: ignore 는 INV-030 강제 지점의
+            # 유일한 정적 안전망을 끄는 것이었다(감사 #68).
+            clip_policy=ClipPolicy(pre_seconds=clip_seconds, post_seconds=clip_seconds),
         ),
         lineage=Lineage(
-            edge_version="slice-0.0.1",
-            model_versions={"detector": model_version},
-            policy_version="slice-policy-0",
-            calibration_profile_id="slice-cal-0",
+            edge_version=context.edge_version,
+            model_versions={"detector": context.model_version},
+            policy_version=context.policy_version,
+            calibration_profile_id=context.calibration_profile_id,
             classification={
                 entity.entity_id: ClassificationLineage(
                     entity_class=entity.entity_class,
@@ -370,7 +451,7 @@ def run_vertical_slice(
     detector: Detector,
     telemetry: list[TelemetrySample],
     drone_position: tuple[float, float, float],
-    model_version: str = "scripted-stub-0",
+    context: RunContext,
     severity: Severity = Severity.CANDIDATE,
     max_gap_s: float = 0.5,
     event_policy: dict[str, str] | None = None,
@@ -408,7 +489,7 @@ def run_vertical_slice(
                     capture_ts_utc=frame.capture_ts_utc,
                     status=outcome.status,
                     detail=outcome.detail,
-                    model_version=model_version,
+                    model_version=context.model_version,
                 )
             )
             continue
@@ -459,8 +540,11 @@ def run_vertical_slice(
                     f"{clipped.detection.detection_class} bbox 경계 클리핑 — 접지점 편향 가능",
                 )
             )
+        # 보간은 프레임당 1회다 — detection 마다 같은 capture_ts 로 같은 결과를
+        # 반복 계산할 이유가 없다(감사 #42). 실패 시 그 프레임의 전 detection 이
+        # 같은 사유로 탈락한다(조용한 소멸 금지 유지).
+        interpolated = interpolator.at(frame.capture_ts_utc)
         for track_id, detection in tracker.assign(detections):
-            interpolated = interpolator.at(frame.capture_ts_utc)
             if not interpolated.ok or interpolated.sample is None:
                 result.dropped.append(
                     DroppedDetection(
@@ -492,7 +576,7 @@ def run_vertical_slice(
                 geo_confidence=projected.confidence,
                 error_radius_m=projected.error_radius_m or 1.0,
                 drone_position=drone_position,
-                model_version=model_version,
+                context=context,
             )
             result.observations.append(observation)
             per_track.setdefault(track_id, []).append(observation)
@@ -503,8 +587,8 @@ def run_vertical_slice(
         assembly = assemble_world_entity(
             observations,
             entity_id=f"ent-{track_id}",
-            model_versions={"detector": model_version},
-            calibration_profile_id="slice-cal-0",
+            model_versions={"detector": context.model_version},
+            calibration_profile_id=context.calibration_profile_id,
         )
         if not assembly.ok or assembly.entity is None:
             result.assembly_failures.append((track_id, assembly.status, assembly.detail))
@@ -528,7 +612,7 @@ def run_vertical_slice(
             assembly.entity,
             severity=severity,
             event_type=event_type,
-            model_version=model_version,
+            context=context,
         )
         if not built.ok or built.bundle is None:
             # 정책이 불호환 event type 을 가리키는 구성 오류 — compatibility gate 가

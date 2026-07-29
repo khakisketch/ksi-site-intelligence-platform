@@ -30,16 +30,41 @@ from ksi_geo_core.timestamps import TimestampSet
 from ksi_perception.pipeline import (  # noqa: F401
     DEFAULT_EVENT_POLICY,
     EVENT_TYPE_COMPATIBLE_CLASSES,
+    EVIDENCE_CLIP_SECONDS,
     DroppedDetection,
     EventBuildResult,
     EventBuildStatus,
     FrameFailure,
     MinimalTracker,
+    RunContext,
     SliceFrame,
     SliceResult,
     SliceStage,
     run_vertical_slice,
 )
+
+
+def make_run_context(*, model_version: str = "scripted-stub-0") -> RunContext:
+    """테스트 실행용 계보 — production 기본값이 아니라 **명시적 테스트 식별자**다.
+
+    파이프라인은 이제 계보 기본값을 갖지 않는다(감사 #23, INV-040/042) — 합성
+    테스트의 계보는 이 헬퍼가 명시한다. 값에 test- 접두사를 붙여 production
+    placeholder 로 복제·고착되는 것(감사 #27)을 이름 수준에서 막는다.
+    site_frame·epoch 는 기존 산출물 지문과의 연속성을 위해 종전 값을 유지한다.
+    """
+    from datetime import UTC, datetime
+
+    return RunContext(
+        mission_id="test-mission-001",
+        site_id="test-site-001",
+        site_frame="EPSG:4326+WGS84@slice-1.0.0",
+        epoch_utc=datetime(2026, 7, 27, 6, 0, 0, tzinfo=UTC),
+        model_version=model_version,
+        policy_version="test-policy-0",
+        calibration_profile_id="test-cal-0",
+        edge_version="test-edge-0.0",
+        sensor_id="test-wide-camera",
+    )
 
 
 class ScriptedDetector(Detector):

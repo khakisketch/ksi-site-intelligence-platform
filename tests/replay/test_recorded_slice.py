@@ -32,6 +32,7 @@ from vertical_slice import (
     SliceFrame,
     SliceResult,
     SliceStage,
+    make_run_context,
     run_vertical_slice,
     synthetic_telemetry,
 )
@@ -85,7 +86,7 @@ def _run_recorded_slice() -> SliceResult:
         detector=detector,
         telemetry=synthetic_telemetry(timestamps),
         drone_position=(100.0, 200.0, 60.0),
-        model_version="dfine-s-coco@f79e65b5",
+        context=make_run_context(model_version="dfine-s-coco@f79e65b5"),
     )
 
 

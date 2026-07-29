@@ -41,10 +41,10 @@ def _bundle_payload(event_id: str = "evt-ent-trk-001") -> dict[str, Any]:
         "reasoning": {},
         "evidence": {},
         "lineage": {
-            "edgeVersion": "slice-0.0.1",
+            "edgeVersion": "ingest-test-edge-1.0",
             "modelVersions": {"detector": "stub"},
-            "policyVersion": "slice-policy-0",
-            "calibrationProfileId": "slice-cal-0",
+            "policyVersion": "ingest-test-policy-1",
+            "calibrationProfileId": "ingest-test-cal-1",
             "classification": {
                 "ent-trk-001": {
                     "entityClass": "Person",
