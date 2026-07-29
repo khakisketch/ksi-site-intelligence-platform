@@ -14,6 +14,7 @@ members = [
     "ksi-event-contracts",
     "ksi-geo-core",
     "ksi-mission-contracts",
+    "ksi-mission-planning",
     "ksi-perception",
     "ksi-processing-controller",
     "ksi-site-intelligence-platform",
@@ -352,16 +353,22 @@ name = "ksi-core"
 version = "0.0.1"
 source = { editable = "services/core" }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "ksi-domain" },
     { name = "ksi-event-contracts" },
+    { name = "ksi-mission-contracts" },
+    { name = "ksi-mission-planning" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "ksi-domain", editable = "packages/domain" },
     { name = "ksi-event-contracts", editable = "packages/event-contracts" },
+    { name = "ksi-mission-contracts", editable = "packages/mission-contracts" },
+    { name = "ksi-mission-planning", editable = "packages/mission-planning" },
 ]
 
 [[package]]
@@ -424,6 +431,23 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=42" },
     { name = "ksi-domain", editable = "packages/domain" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
+
+[[package]]
+name = "ksi-mission-planning"
+version = "0.0.1"
+source = { editable = "packages/mission-planning" }
+dependencies = [
+    { name = "ksi-geo-core" },
+    { name = "ksi-mission-contracts" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ksi-geo-core", editable = "packages/geo-core" },
+    { name = "ksi-mission-contracts", editable = "packages/mission-contracts" },
     { name = "pydantic", specifier = ">=2.7" },
 ]
 

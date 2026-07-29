@@ -1,0 +1,303 @@
+"""DJI WPML 웨이라인 KMZ 생성 — 기체측 임무 산출물 (ADR-KSI-007).
+
+스펙 근거: DJI Cloud-API-Doc `60.api-reference/00.dji-wpml/` (overview·template-kml·
+waylines-wpml, 2026-07-29 정독). 요지:
+
+- ``.kmz`` 는 ZIP 아카이브다. 내부에 ``template.kml``(편집 가능한 템플릿)과
+  ``waylines.wpml``(실행 확정 경로)을 담는다. 최상위 폴더명 ``wpmz/`` 는 공식
+  문서 텍스트로 확정하지 못한 **관례**다(문서 구조도가 이미지라 미추출) —
+  H4(실기 Pilot 2 임포트 검증)에서 확정하며, 불일치 시 이 모듈만 고치면 된다.
+- 두 XML 모두 루트 ``<kml xmlns=KML2.2 xmlns:wpml=http://www.dji.com/wpmz/1.0.2>``.
+- 좌표계는 WGS84 고정(coordinateMode), ``coordinates`` 는 **"경도,위도" 순서**다
+  (KML 표준 — 위경도 아님에 주의).
+- 높이 모드 enum 이 두 파일에서 다르다: template=heightMode(EGM96/relativeToStartPoint/
+  aboveGroundLevel/realTimeFollowSurface), waylines=executeHeightMode(WGS84/
+  relativeToStartPoint/realTimeFollowSurface). 본 생성기는 양쪽 공통이며 지형
+  데이터 없이 안전한 ``relativeToStartPoint`` 만 쓴다.
+- waypoint ``index`` 는 0부터 연속 증가.
+
+**기체 enum 을 하드코딩하지 않는다** — 문서 스냅샷의 droneEnumValue 표(60=M300,
+89=M350, 77=M3E/T/M, 91=M3D/TD)에 **M4D 시리즈 값이 없다.** 추측으로 박으면
+Pilot 2 가 조용히 거부/오해석할 수 있으므로 :class:`DroneProfile` 로 호출자가
+명시하고, 실값은 H4 실기 검증(실제 Pilot 2 export 샘플 unzip)으로 확정한다.
+
+KMZ 에는 서명이 없다 — 안전 게이트(고도 봉투 등)는 상류 coverage.py 가 수행하고,
+Manifold 측 정책 집행은 서명된 Mission Contract 가 소유한다(이원 산출물 원칙).
+"""
+
+from __future__ import annotations
+
+import io
+import math
+import zipfile
+from dataclasses import dataclass
+from xml.etree import ElementTree as ET
+
+from ksi_mission_planning.coverage import RouteWaypoint
+
+KML_NS = "http://www.opengis.net/kml/2.2"
+WPML_NS = "http://www.dji.com/wpmz/1.0.2"
+
+# 문서 스냅샷에서 확인된 droneEnumValue 참고표 — **M4D 시리즈 값은 미확인**(H4).
+KNOWN_DRONE_ENUM_VALUES = {
+    60: "Matrice 300 RTK",
+    89: "Matrice 350 RTK",
+    67: "Matrice 30/30T",
+    77: "Mavic 3E/3T/3M",
+    91: "Matrice 3D/3TD",
+}
+
+# zip 멤버 타임스탬프 고정 — 같은 입력이면 바이트 동일(재현성·digest 안정).
+_FIXED_ZIP_DATETIME = (2026, 1, 1, 0, 0, 0)
+
+
+class KmzBuildError(ValueError):
+    """KMZ 생성 불가 — 입력 위반의 typed 실패."""
+
+
+@dataclass(frozen=True, slots=True)
+class DroneProfile:
+    """기체·페이로드 식별 — 값의 출처는 호출자가 소유한다(H4 실기 확정 전 추측 금지)."""
+
+    drone_enum_value: int
+    drone_sub_enum_value: int
+    payload_enum_value: int
+    payload_position_index: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("drone_enum_value", "drone_sub_enum_value", "payload_enum_value"):
+            value = getattr(self, name)
+            if value < 0:
+                raise KmzBuildError(f"{name} 는 음수일 수 없다 ({value!r})")
+        if self.payload_position_index not in (0, 1, 2):
+            raise KmzBuildError(
+                f"payload_position_index 는 0/1/2 여야 한다 ({self.payload_position_index!r})"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class WaylineMissionConfig:
+    """missionConfig 전역 파라미터 — 스펙 필수 필드만, 안전한 기본값."""
+
+    auto_flight_speed_ms: float
+    takeoff_security_height_m: float
+    global_transitional_speed_ms: float
+    fly_to_wayline_mode: str = "safely"
+    finish_action: str = "goHome"
+    exit_on_rc_lost: str = "executeLostAction"
+    execute_rc_lost_action: str = "goBack"
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.auto_flight_speed_ms) and self.auto_flight_speed_ms > 0):
+            raise KmzBuildError(
+                f"auto_flight_speed_ms 는 양의 finite 여야 한다 ({self.auto_flight_speed_ms!r})"
+            )
+        # 스펙: takeOffSecurityHeight ∈ [1.2, 1500] (RC 운용 기준)
+        if not (
+            math.isfinite(self.takeoff_security_height_m)
+            and 1.2 <= self.takeoff_security_height_m <= 1500.0
+        ):
+            raise KmzBuildError(
+                f"takeoff_security_height_m 는 [1.2, 1500] 이어야 한다 "
+                f"({self.takeoff_security_height_m!r})"
+            )
+        # 스펙: globalTransitionalSpeed ∈ (0, 15]
+        if not (
+            math.isfinite(self.global_transitional_speed_ms)
+            and 0 < self.global_transitional_speed_ms <= 15.0
+        ):
+            raise KmzBuildError(
+                f"global_transitional_speed_ms 는 (0, 15] 이어야 한다 "
+                f"({self.global_transitional_speed_ms!r})"
+            )
+        if self.fly_to_wayline_mode not in ("safely", "pointToPoint"):
+            raise KmzBuildError(f"fly_to_wayline_mode 미지원 값: {self.fly_to_wayline_mode!r}")
+        if self.finish_action not in ("goHome", "noAction", "autoLand", "gotoFirstWaypoint"):
+            raise KmzBuildError(f"finish_action 미지원 값: {self.finish_action!r}")
+        if self.exit_on_rc_lost not in ("goContinue", "executeLostAction"):
+            raise KmzBuildError(f"exit_on_rc_lost 미지원 값: {self.exit_on_rc_lost!r}")
+        if self.execute_rc_lost_action not in ("goBack", "landing", "hover"):
+            raise KmzBuildError(
+                f"execute_rc_lost_action 미지원 값: {self.execute_rc_lost_action!r}"
+            )
+
+
+def _wpml(tag: str) -> str:
+    return f"{{{WPML_NS}}}{tag}"
+
+
+def _kml(tag: str) -> str:
+    return f"{{{KML_NS}}}{tag}"
+
+
+def _sub(parent: ET.Element, tag: str, text: str | None = None) -> ET.Element:
+    element = ET.SubElement(parent, tag)
+    if text is not None:
+        element.text = text
+    return element
+
+
+def _format_float(value: float) -> str:
+    """소수 표현 고정 — repr 그대로(가역), 지수 표기 없이 스펙 파서와 호환."""
+    return f"{value:.10f}".rstrip("0").rstrip(".")
+
+
+def _mission_config(parent: ET.Element, config: WaylineMissionConfig, drone: DroneProfile) -> None:
+    mc = _sub(parent, _wpml("missionConfig"))
+    _sub(mc, _wpml("flyToWaylineMode"), config.fly_to_wayline_mode)
+    _sub(mc, _wpml("finishAction"), config.finish_action)
+    _sub(mc, _wpml("exitOnRCLost"), config.exit_on_rc_lost)
+    if config.exit_on_rc_lost == "executeLostAction":
+        _sub(mc, _wpml("executeRCLostAction"), config.execute_rc_lost_action)
+    _sub(mc, _wpml("takeOffSecurityHeight"), _format_float(config.takeoff_security_height_m))
+    _sub(mc, _wpml("globalTransitionalSpeed"), _format_float(config.global_transitional_speed_ms))
+    drone_info = _sub(mc, _wpml("droneInfo"))
+    _sub(drone_info, _wpml("droneEnumValue"), str(drone.drone_enum_value))
+    _sub(drone_info, _wpml("droneSubEnumValue"), str(drone.drone_sub_enum_value))
+    payload_info = _sub(mc, _wpml("payloadInfo"))
+    _sub(payload_info, _wpml("payloadEnumValue"), str(drone.payload_enum_value))
+    _sub(payload_info, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
+
+
+def _document_root() -> tuple[ET.Element, ET.Element]:
+    root = ET.Element(_kml("kml"))
+    document = _sub(root, _kml("Document"))
+    return root, document
+
+
+def _serialize(root: ET.Element) -> bytes:
+    ET.register_namespace("", KML_NS)
+    ET.register_namespace("wpml", WPML_NS)
+    buffer = io.BytesIO()
+    ET.ElementTree(root).write(buffer, encoding="UTF-8", xml_declaration=True)
+    return buffer.getvalue()
+
+
+def _validate_route(route: list[RouteWaypoint]) -> float:
+    """경로 검증 후 **균일 고도**를 반환한다.
+
+    이 생성기의 높이 전략은 useGlobalHeight=1 + globalHeight 다(자율 재검토 F2):
+    per-point 높이(useGlobalHeight=0)는 스펙상 ellipsoidHeight(WGS84 타원체고)가
+    조건부 필수인데, 지오이드·지형 데이터 없이 이 층이 계산할 수 없는 값이다 —
+    placeholder 를 넣는 대신 전역 높이 하나로 표현 가능한 경로(균일 고도)만 받고,
+    비균일 고도는 typed 거부한다(현 생성기들은 모두 균일 고도를 낸다).
+    """
+    if len(route) < 2:
+        raise KmzBuildError(f"웨이라인은 웨이포인트 2개 이상이어야 한다 (got {len(route)})")
+    if len(route) > 65_536:
+        raise KmzBuildError(
+            f"웨이포인트 {len(route)}개 — WPML index 범위 [0, 65535] 를 넘는다"
+        )
+    for i, wp in enumerate(route):
+        values = (wp.lat_deg, wp.lon_deg, wp.altitude_m)
+        if not all(math.isfinite(v) for v in values):
+            raise KmzBuildError(f"웨이포인트 {i} 에 비유한 값 ({values!r})")
+        if not (-90.0 <= wp.lat_deg <= 90.0 and -180.0 <= wp.lon_deg <= 180.0):
+            raise KmzBuildError(f"웨이포인트 {i} 위경도 범위 밖 ({wp.lat_deg}, {wp.lon_deg})")
+    altitudes = {wp.altitude_m for wp in route}
+    if len(altitudes) != 1:
+        raise KmzBuildError(
+            f"비균일 고도 {sorted(altitudes)!r} — 전역 높이 전략(useGlobalHeight=1)으로 "
+            "표현할 수 없다(docstring 참조)"
+        )
+    return route[0].altitude_m
+
+
+def build_template_kml(
+    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+) -> bytes:
+    """template.kml — 편집 가능한 waypoint 템플릿 (heightMode=relativeToStartPoint).
+
+    스펙 필수 전역값(globalHeight·gimbalPitchMode·globalWaypointTurnMode·
+    globalWaypointHeadingParam)을 모두 넣고, 웨이포인트는 전역값을 참조만 한다
+    (useGlobal*=1) — 참조 대상 없는 useGlobal 플래그(자율 재검토 F2)를 만들지
+    않는다. 요소 순서는 공식 샘플(waylineCoordinateSysParam → autoFlightSpeed)을
+    따른다 — XSD sequence 검증 가능성에 대한 보험.
+    """
+    altitude_m = _validate_route(route)
+    root, document = _document_root()
+    _mission_config(document, config, drone)
+
+    folder = _sub(document, _kml("Folder"))
+    _sub(folder, _wpml("templateType"), "waypoint")
+    _sub(folder, _wpml("templateId"), "0")
+    coord_param = _sub(folder, _wpml("waylineCoordinateSysParam"))
+    _sub(coord_param, _wpml("coordinateMode"), "WGS84")
+    _sub(coord_param, _wpml("heightMode"), "relativeToStartPoint")
+    _sub(folder, _wpml("autoFlightSpeed"), _format_float(config.auto_flight_speed_ms))
+    _sub(folder, _wpml("globalHeight"), _format_float(altitude_m))
+    _sub(folder, _wpml("globalWaypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
+    _sub(folder, _wpml("globalUseStraightLine"), "1")
+    _sub(folder, _wpml("gimbalPitchMode"), "manual")
+    heading = _sub(folder, _wpml("globalWaypointHeadingParam"))
+    _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
+
+    for index, wp in enumerate(route):
+        placemark = _sub(folder, _kml("Placemark"))
+        point = _sub(placemark, _kml("Point"))
+        _sub(point, _kml("coordinates"), f"{_format_float(wp.lon_deg)},{_format_float(wp.lat_deg)}")
+        _sub(placemark, _wpml("index"), str(index))
+        _sub(placemark, _wpml("useGlobalHeight"), "1")
+        _sub(placemark, _wpml("useGlobalSpeed"), "1")
+        _sub(placemark, _wpml("useGlobalHeadingParam"), "1")
+        _sub(placemark, _wpml("useGlobalTurnParam"), "1")
+
+    return _serialize(root)
+
+
+def build_waylines_wpml(
+    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+) -> bytes:
+    """waylines.wpml — 실행 확정 웨이라인 (executeHeightMode=relativeToStartPoint).
+
+    요소 순서는 공식 샘플(templateId → executeHeightMode → waylineId →
+    autoFlightSpeed)을 따르고, ``waypointTurnDampingDist`` 는 공식 샘플이 이 turn
+    mode 에서도 넣으므로 0 으로 동봉한다(H4 실기에서 수용 확인). ``useStraightLine``
+    은 넣지 않는다 — 스펙 조건부 필수 대상이 Continuity 계열 turn mode 뿐이고 공식
+    샘플에도 없다(자율 재검토 정정).
+    """
+    _validate_route(route)
+    root, document = _document_root()
+    _mission_config(document, config, drone)
+
+    folder = _sub(document, _kml("Folder"))
+    _sub(folder, _wpml("templateId"), "0")
+    _sub(folder, _wpml("executeHeightMode"), "relativeToStartPoint")
+    _sub(folder, _wpml("waylineId"), "0")
+    _sub(folder, _wpml("autoFlightSpeed"), _format_float(config.auto_flight_speed_ms))
+
+    for index, wp in enumerate(route):
+        placemark = _sub(folder, _kml("Placemark"))
+        point = _sub(placemark, _kml("Point"))
+        _sub(point, _kml("coordinates"), f"{_format_float(wp.lon_deg)},{_format_float(wp.lat_deg)}")
+        _sub(placemark, _wpml("index"), str(index))
+        _sub(placemark, _wpml("executeHeight"), _format_float(wp.altitude_m))
+        _sub(placemark, _wpml("waypointSpeed"), _format_float(config.auto_flight_speed_ms))
+        heading = _sub(placemark, _wpml("waypointHeadingParam"))
+        _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
+        turn = _sub(placemark, _wpml("waypointTurnParam"))
+        _sub(turn, _wpml("waypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
+        _sub(turn, _wpml("waypointTurnDampingDist"), "0")
+
+    return _serialize(root)
+
+
+def build_kmz(
+    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+) -> bytes:
+    """template.kml + waylines.wpml 을 ``wpmz/`` 아래 담은 KMZ(zip) 바이트."""
+    template = build_template_kml(route, drone=drone, config=config)
+    waylines = build_waylines_wpml(route, drone=drone, config=config)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, payload in (("wpmz/template.kml", template), ("wpmz/waylines.wpml", waylines)):
+            info = zipfile.ZipInfo(name, date_time=_FIXED_ZIP_DATETIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, payload)
+        # res/ 는 공식 overview 가 "route file format standard 의 일부"로 명시하는
+        # 폴더다 — 참조 이미지를 안 쓰더라도 빈 디렉터리 엔트리를 동봉한다(부재가
+        # 임포트 거부 사유가 될 가능성에 대한 보험, H4 에서 확정).
+        res_dir = zipfile.ZipInfo("wpmz/res/", date_time=_FIXED_ZIP_DATETIME)
+        archive.writestr(res_dir, b"")
+    return buffer.getvalue()
