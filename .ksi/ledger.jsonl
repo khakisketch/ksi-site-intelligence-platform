@@ -45,3 +45,5 @@
 {"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-gate-integrity", "status": "proposed", "parent": null}
 {"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-signing-key-lifecycle", "status": "proposed", "parent": null}
 {"ts": "2026-07-29T03:58:20+09:00", "event": "registered", "goal": "audit-edge-sync-ops-hardening", "status": "proposed", "parent": null}
+{"ts": "2026-07-29T10:44:10+09:00", "event": "started", "goal": "audit-actionintent-hardening"}
+{"ts": "2026-07-29T10:44:10+09:00", "event": "completion_attempt", "goal": "audit-actionintent-hardening", "evidence": "구현 완료 — review_pending, commit 56d0f05. 형식 게이트 확장(Py+C++ 동일 순서): schemaVersion 정확 일치(#16)·kind+미지 키 거부(#7)·TTL 상한 300000ms(#17 — 대표자 결정 대기 권고값)·시각 도메인 선검사로 int64 오버플로 차단(#14)·GOTO target 필수(#18). supervisor: HeartbeatVerdict typed+미래 heartbeat 래치 차단+Reset(#15)·StateAt 도메인 가드(#53). 벡터 12→19. mutation 실측 2건. 게이트: ruff·mypy 83·pytest 782+5s·ctest 2/2."}

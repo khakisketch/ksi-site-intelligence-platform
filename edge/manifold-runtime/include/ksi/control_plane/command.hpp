@@ -21,6 +21,16 @@ namespace ksi::control_plane {
 
 using UtcMillis = std::int64_t;
 
+/// TTL 상한(ms) — 무기한 유효한 명령(replay 가능한 인가 토큰) 금지. 값 5분은
+/// 대표자 결정 대기 권고 기본값이며 Python MAX_TTL_MS·JSON 스키마 maximum 과
+/// 항상 같아야 한다(갈리면 conformance 벡터가 잡는다).
+inline constexpr std::int64_t kMaxTtlMs = 300'000;
+
+/// 시각 도메인 상한 — 2100-01-01T00:00:00Z (UTC epoch ms). issued_at/now 가 이
+/// 도메인을 벗어나면 판정 불가로 거부한다. 이 선검사가 아래 TTL 뺄셈의 int64
+/// signed overflow(UB — 감사 #14 에서 fail-open 으로 실증)를 구조적으로 막는다.
+inline constexpr UtcMillis kMaxUtcMs = 4'102'444'800'000;
+
 /// 고수준 행동 의도의 종류. 저수준 조종 명령(자세·모터·속도)은 의도적으로 없다 —
 /// 그런 명령은 DJI Flight Controller의 소유이며 KSI가 재구현하지 않는다(INV-001).
 enum class ActionIntentKind {
@@ -48,11 +58,15 @@ enum class CommandVerdict {
 /// 받아들인다. Edge가 서명을 직접 재검증하지는 않는다(계약 로드 시점에 이미 검증된
 /// 것을 전제로 하고, 여기서는 "어느 계약에 귀속된 명령인가"의 바인딩만 확인한다).
 struct ActionIntent {
+    /// 계약 스키마 버전. 기본값이 빈 문자열인 것은 의도다 — 명시적으로 "1.0"을
+    /// 채우지 않은 명령은 kMalformed 로 거부된다(fail-closed 기본값, 감사 #16).
+    std::string schema_version;
     std::string command_id;
     ActionIntentKind kind = ActionIntentKind::kHold;
     std::string authorization_digest; ///< "sha256:<hex>" — 빈 문자열이면 미인가
     UtcMillis issued_at_utc_ms = 0;
-    std::int64_t ttl_ms = 0; ///< 양수여야 한다. 0 이하는 kMalformed.
+    std::int64_t ttl_ms = 0; ///< 0 < ttl <= kMaxTtlMs. 밖은 kMalformed.
+    std::string target_viewpoint_id; ///< kGotoViewpoint 필수(빈 문자열=부재, 감사 #18)
 };
 
 /// 명령 유효성 판정 — TTL·인가·시계 이상을 순서대로 검사한다.

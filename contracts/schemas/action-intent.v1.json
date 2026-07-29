@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ksi.example/schemas/action-intent.v1.json",
   "title": "ActionIntent v1.0",
-  "description": "Python Intelligence Plane이 C++ Control Plane에 전달하는 고수준 행동 의도. 저수준 조종 명령(자세·모터·속도)은 이 계약에 존재하지 않는다 — 그 권한은 DJI Flight Controller가 갖는다(INV-001). 모든 시각은 UTC epoch 밀리초이며 process-local monotonic 시계와 섞지 않는다.",
+  "description": "Python Intelligence Plane이 C++ Control Plane에 전달하는 고수준 행동 의도. 저수준 조종 명령(자세·모터·속도)은 이 계약에 존재하지 않는다 — 그 권한은 DJI Flight Controller가 갖는다(INV-001). 모든 시각은 UTC epoch 밀리초이며 process-local monotonic 시계와 섞지 않는다. TTL 상한·시각 도메인·GOTO 목적지 필수는 2026-07-29 감사(#14~#18) 폐쇄분 — 이 계약은 아직 어떤 서비스에도 배선되지 않아(v1 미배포) v1 을 직접 강화한다.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -36,17 +36,37 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "issuedAtUtcMs": {
-      "description": "발행 시각(UTC epoch 밀리초). 미래 시각은 시계 이상·위조로 간주해 거부된다.",
-      "type": "integer"
+      "description": "발행 시각(UTC epoch 밀리초). 미래 시각은 시계 이상·위조로 간주해 거부된다. 도메인: 0 ~ 4102444800000(2100-01-01Z) — 밖이면 판정 불가로 거부.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800000
     },
     "ttlMs": {
-      "description": "유효 기간(밀리초, 양수). issuedAtUtcMs + ttlMs 시점에 이미 만료다(배타적 경계).",
+      "description": "유효 기간(밀리초, 양수). issuedAtUtcMs + ttlMs 시점에 이미 만료다(배타적 경계). 상한 300000ms(5분, 대표자 결정 대기 권고 기본값) — 무기한 유효 명령 금지.",
       "type": "integer",
-      "exclusiveMinimum": 0
+      "exclusiveMinimum": 0,
+      "maximum": 300000
     },
     "targetViewpointId": {
       "description": "kind=GOTO_VIEWPOINT일 때 승인된 Flight Envelope 안의 관측점 참조.",
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "GOTO_VIEWPOINT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "targetViewpointId"
+        ]
+      }
+    }
+  ]
 }

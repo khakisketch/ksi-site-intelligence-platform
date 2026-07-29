@@ -108,6 +108,10 @@ def test_malformed_vector_intents_are_rejected_by_schema() -> None:
     ]
     assert malformed, "형식 위반 케이스가 없다 — 네거티브 커버리지 부족"
     for case in malformed:
+        if case.get("schemaValidIntent"):
+            # intent 형식은 계약 적합 — 거부 원인이 판정 인자(now 등)라 스키마
+            # 이중방어의 대상이 아님을 벡터가 명시한 케이스.
+            continue
         assert not validator.is_valid(case["intent"]), (
             f"{case['id']}: 런타임은 거부하는데 스키마는 통과시킨다 — 스키마가 느슨하다"
         )
@@ -151,3 +155,46 @@ def test_generated_cpp_header_is_up_to_date() -> None:
         "생성된 C++ 벡터 헤더가 JSON 원본과 다르다 — "
         "`uv run python tools/generate_action_intent_vectors.py` 로 재생성하라"
     )
+
+
+# ── Python 전용 형식 반증 — C++ 는 struct 라 벡터로 표현 불가한 계층(감사 #7) ──
+
+
+def test_unknown_kind_rejected_python_side() -> None:
+    """계약에 없는 동사(저수준 조종 포함)는 MALFORMED — INV-001/002 의 코드 게이트."""
+    valid = next(c for c in _CASES if c["expectedVerdict"] == "ACCEPTED")
+    for bad_kind in ("SET_VELOCITY", "SET_ATTITUDE", "hold", "", 7, None):
+        intent = dict(valid["intent"])
+        intent["kind"] = bad_kind
+        assert (
+            verify_action_intent(intent, _VECTORS["activeDigest"], valid["nowUtcMs"])
+            is CommandVerdict.MALFORMED
+        ), f"미지 kind {bad_kind!r} 가 통과했다"
+
+
+def test_unknown_key_rejected_python_side() -> None:
+    """계약 밖 키(예: 좌표 밀반입 필드)는 MALFORMED — 조용한 확장 금지."""
+    valid = next(c for c in _CASES if c["expectedVerdict"] == "ACCEPTED")
+    intent = dict(valid["intent"])
+    intent["velocityMps"] = 12.0
+    assert (
+        verify_action_intent(intent, _VECTORS["activeDigest"], valid["nowUtcMs"])
+        is CommandVerdict.MALFORMED
+    )
+
+
+def test_pydantic_goto_requires_target() -> None:
+    valid = next(c for c in _CASES if c["expectedVerdict"] == "ACCEPTED")
+    intent = dict(valid["intent"])
+    intent["kind"] = "GOTO_VIEWPOINT"
+    intent.pop("targetViewpointId", None)
+    with pytest.raises(ValidationError, match="targetViewpointId"):
+        ActionIntent.model_validate(intent)
+
+
+def test_pydantic_ttl_upper_bound() -> None:
+    valid = next(c for c in _CASES if c["expectedVerdict"] == "ACCEPTED")
+    intent = dict(valid["intent"])
+    intent["ttlMs"] = 300_001
+    with pytest.raises(ValidationError):
+        ActionIntent.model_validate(intent)

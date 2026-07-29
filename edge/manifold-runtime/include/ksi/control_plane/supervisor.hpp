@@ -31,6 +31,22 @@ enum class SupervisorState {
 
 const char* ToString(SupervisorState state);
 
+/// heartbeat 기록 판정 — 거부 사유가 typed 로 남아야 현장에서 진단 가능하다
+/// (감사 #15: 조용한 무시/오염은 원인이 상태값에 드러나지 않아 오진단된다).
+enum class HeartbeatVerdict {
+    kRecorded,          ///< 정상 기록
+    kStaleIgnored,      ///< 역행·중복 — 최신 시각을 되돌리지 못한다
+    kImplausibleFuture, ///< now 대비 허용창 초과 미래 시각 — 기록 거부(래치 방지)
+    kOutOfDomain,       ///< 시각 도메인([0, kMaxUtcMs]) 밖 — 판정 불가 거부
+};
+
+const char* ToString(HeartbeatVerdict verdict);
+
+/// 미래 heartbeat 허용창(ms) — 센서 타임스탬프의 미세한 선행은 흡수하되, NTP 점프
+/// 급 미래 시각이 last_heartbeat 를 오염시켜 이후 모든 정상 heartbeat 가
+/// kStaleIgnored 로 무시되는 영구 FAIL_CLOSED 래치(감사 #15)를 차단한다.
+inline constexpr std::int64_t kHeartbeatFutureToleranceMs = 1'000;
+
 /// heartbeat 관측과 시간 경과만으로 안전 상태를 결정하는 결정적 상태기.
 ///
 /// 결정적(deterministic)이라는 점이 중요하다 — 내부에서 시계를 읽지 않고 호출자가
@@ -42,8 +58,20 @@ public:
     /// @param fail_closed_after_ms  이 시간이 지나면 kFailClosed (> degrade_after_ms)
     FlightSupervisor(std::int64_t degrade_after_ms, std::int64_t fail_closed_after_ms);
 
-    /// heartbeat 1건을 기록한다. 과거로 역행하는 heartbeat는 무시한다(시계 이상 방어).
-    void RecordHeartbeat(UtcMillis observed_at_utc_ms);
+    /// heartbeat 1건을 기록 시도한다. 결과는 typed 로 반환된다(조용한 무시 금지).
+    ///
+    /// now 를 함께 받는 이유(감사 #15): 미래 시각 heartbeat 를 판별할 기준이
+    /// 필요하다 — 기준 없이 기록하면 오염된 last_heartbeat 가 이후 모든 정상
+    /// heartbeat 를 역행으로 무시하게 만들어 임무 내내 FAIL_CLOSED 에 갇힌다.
+    /// 내부에서 시계를 읽지 않는 결정성 규약은 유지된다(호출자가 now 를 소유).
+    HeartbeatVerdict RecordHeartbeat(UtcMillis observed_at_utc_ms, UtcMillis now_utc_ms);
+
+    /// heartbeat 상태를 부팅 직후로 되돌린다(→ kFailClosed).
+    ///
+    /// '한 번 오염되면 영구 잠김'의 명시적 탈출구다 — Mission Contract 재로드
+    /// 시점에 호출한다. 상태를 낮추는 방향만 있으므로(fail-closed 로 복귀)
+    /// 이 리셋 자체가 안전 우회가 되지는 않는다.
+    void ResetHeartbeatState();
 
     /// 현재 시각 기준 상태를 계산한다. heartbeat가 한 번도 없으면 항상 kFailClosed.
     SupervisorState StateAt(UtcMillis now_utc_ms) const;

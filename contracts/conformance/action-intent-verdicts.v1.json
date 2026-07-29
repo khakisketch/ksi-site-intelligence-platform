@@ -5,7 +5,7 @@
   "cases": [
     {
       "id": "valid_within_ttl",
-      "rationale": "정상 경로 — TTL 안, 인가 일치, 과거 발행.",
+      "rationale": "정상 경로 — TTL 안, 인가 일치, 과거 발행. GOTO 는 목적지 포함(감사 #18).",
       "nowUtcMs": 1001000,
       "intent": {
         "schemaVersion": "1.0",
@@ -13,7 +13,8 @@
         "kind": "GOTO_VIEWPOINT",
         "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
         "issuedAtUtcMs": 1000000,
-        "ttlMs": 5000
+        "ttlMs": 5000,
+        "targetViewpointId": "vp-001"
       },
       "expectedVerdict": "ACCEPTED"
     },
@@ -170,6 +171,105 @@
         "ttlMs": 5000
       },
       "expectedVerdict": "AUTHORIZATION_MISMATCH"
+    },
+    {
+      "id": "unsupported_schema_version_rejected",
+      "rationale": "미지 스키마 버전 — v2 의미론이 v1 규칙으로 해석되는 것을 금지(감사 #16).",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "2.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "ttl_above_max_rejected",
+      "rationale": "TTL 상한 초과 — 무기한 유효 명령(replay 가능한 인가 토큰) 금지(감사 #17).",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 300001
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "ttl_at_max_still_valid",
+      "rationale": "상한 경계 포함 — 정확히 MAX_TTL 은 유효(off-by-one 고정).",
+      "nowUtcMs": 1299999,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 300000
+      },
+      "expectedVerdict": "ACCEPTED"
+    },
+    {
+      "id": "issued_at_negative_rejected",
+      "rationale": "음수 발행 시각 — 시각 도메인 밖은 판정 불가로 거부.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": -1,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "issued_at_extreme_no_overflow",
+      "rationale": "int64 극단값 — 도메인 선검사 없던 구현에서는 뺄셈 signed overflow(UB)로 fail-open 이던 입력(감사 #14). MALFORMED 로 거부되어야 한다.",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": -9000000000000000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "now_out_of_domain_rejected",
+      "rationale": "판정 기준 시각이 도메인 밖 — 시간 판정을 신뢰할 수 없으므로 거부. (intent 자체는 스키마 유효 — 거부 원인은 판정 인자 now 라 스키마 이중방어 대상 아님)",
+      "nowUtcMs": -5,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "HOLD",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED",
+      "schemaValidIntent": true
+    },
+    {
+      "id": "goto_without_target_rejected",
+      "rationale": "목적지 없는 GOTO_VIEWPOINT — 하류가 기본값을 지어내게 만드는 fail-open 유혹을 계약이 차단(감사 #18).",
+      "nowUtcMs": 1001000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-1",
+        "kind": "GOTO_VIEWPOINT",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000
+      },
+      "expectedVerdict": "MALFORMED"
     }
   ]
 }

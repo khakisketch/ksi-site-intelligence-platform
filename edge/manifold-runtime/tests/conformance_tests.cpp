@@ -27,11 +27,13 @@ int main() {
         const auto& vector = ksi::conformance::kActionIntentVectors[i];
 
         ActionIntent intent;
+        intent.schema_version = vector.schema_version;
         intent.command_id = vector.command_id;
         intent.kind = vector.kind;
         intent.authorization_digest = vector.authorization_digest;
         intent.issued_at_utc_ms = vector.issued_at_utc_ms;
         intent.ttl_ms = vector.ttl_ms;
+        intent.target_viewpoint_id = vector.target_viewpoint_id;
 
         const CommandVerdict actual =
             VerifyActionIntent(intent, active_digest, vector.now_utc_ms);

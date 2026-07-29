@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T03:58:20+09:00",
+  "updated_at": "2026-07-29T10:44:10+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -227,16 +227,16 @@
         "extreme 케이스 conformance 벡터 추가",
         "독립 재검토 PASS"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "구현 완료 — review_pending, commit 56d0f05. 형식 게이트 확장(Py+C++ 동일 순서): schemaVersion 정확 일치(#16)·kind+미지 키 거부(#7)·TTL 상한 300000ms(#17 — 대표자 결정 대기 권고값)·시각 도메인 선검사로 int64 오버플로 차단(#14)·GOTO target 필수(#18). supervisor: HeartbeatVerdict typed+미래 heartbeat 래치 차단+Reset(#15)·StateAt 도메인 가드(#53). 벡터 12→19. mutation 실측 2건. 게이트: ruff·mypy 83·pytest 782+5s·ctest 2/2.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-29T03:58:19+09:00",
-      "updated_at": "2026-07-29T03:58:19+09:00"
+      "updated_at": "2026-07-29T10:44:10+09:00"
     },
     {
       "id": "audit-pipeline-production-lineage",

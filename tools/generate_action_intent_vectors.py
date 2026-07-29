@@ -75,11 +75,13 @@ def render_header(vectors: dict[str, Any]) -> str:
         "",
         "struct ActionIntentVector {",
         "    const char* id;",
+        "    const char* schema_version;",
         "    const char* command_id;",
         "    control_plane::ActionIntentKind kind;",
         "    const char* authorization_digest;",
         "    std::int64_t issued_at_utc_ms;",
         "    std::int64_t ttl_ms;",
+        "    const char* target_viewpoint_id; // 빈 문자열 = 부재",
         "    std::int64_t now_utc_ms;",
         "    control_plane::CommandVerdict expected;",
         "};",
@@ -95,11 +97,13 @@ def render_header(vectors: dict[str, Any]) -> str:
         verdict = _VERDICT_TO_CPP[case["expectedVerdict"]]
         lines.append("    {")
         lines.append(f"        {_cpp_string(case['id'])},")
+        lines.append(f"        {_cpp_string(intent['schemaVersion'])},")
         lines.append(f"        {_cpp_string(intent['commandId'])},")
         lines.append(f"        control_plane::{kind},")
         lines.append(f"        {_cpp_string(intent['authorizationDigest'])},")
         lines.append(f"        {intent['issuedAtUtcMs']},")
         lines.append(f"        {intent['ttlMs']},")
+        lines.append(f"        {_cpp_string(intent.get('targetViewpointId', ''))},")
         lines.append(f"        {case['nowUtcMs']},")
         lines.append(f"        control_plane::{verdict},")
         lines.append("    },")
