@@ -46,6 +46,11 @@ jobs:
       - name: repo 위생 가드 (빌드캐시/pyc/가중치 미추적 · 계보 SSOT 추적)
         run: bash scripts/check_repo_hygiene.sh
 
+      # 감사 #29 폐쇄 후 첫 CI 가 즉시 실증: 러너에 rg 가 없어 이 가드는 지금까지
+      # 조용한 no-op 이었다(검사 미수행이 초록으로 위장). 도구를 명시 설치한다.
+      - name: ripgrep 설치 (reference 가드 전제 도구)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+
       - name: reference 의존 가드 (import/manifest/symlink/dirty)
         run: bash scripts/check_no_reference_imports.sh
 
