@@ -28,11 +28,24 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 
 def canonical_payload_bytes(contract: Mapping[str, Any]) -> bytes:
-    """계약 dict의 서명대상 정규화 바이트열 (``signature`` 블록 제외, ADR-KSI-002 §2)."""
+    """계약 dict의 서명대상 정규화 바이트열 (``signature`` 블록 제외, ADR-KSI-002 §2).
+
+    ``allow_nan=False`` (감사 #10): 기본값은 NaN/Infinity 를 비표준 JSON 토큰으로
+    직렬화해, Python 안에서는 서명·검증되지만 표준 파서(C++ Control Plane·감사
+    도구)로는 재파싱 불가한 계약이 만들어진다 — 같은 계약이 평면마다 다르게
+    해석되는 정규화 분열이다(offline_sync.payload_digest 와 동일 규약으로 통일).
+
+    Raises:
+        ValueError: NaN/Infinity 또는 JSON 도메인 밖 타입 포함 — 발행(sign) 시점의
+            typed 실패다. verify 경로에서는 외곽 가드가 MALFORMED_CONTRACT 로 강등.
+    """
     payload = {key: value for key, value in contract.items() if key != "signature"}
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-        "utf-8"
-    )
+    try:
+        return json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"계약을 정규 JSON 으로 표현할 수 없다: {exc}") from exc
 
 
 def sha256_digest(payload: bytes) -> str:
@@ -95,12 +108,33 @@ class KeyRegistry:
         status: KeyStatus = KeyStatus.ACTIVE,
         not_after: datetime | None = None,
     ) -> None:
+        """신규 keyId 만 등록한다 — 중복 등록은 거부(감사 #9).
+
+        설정·DB 재적재 패턴에서 같은 keyId 를 조용히 덮어쓰면 REVOKED 가 ACTIVE 로
+        부활한다(유출 키 재유효화, INV-011 우회). 상태 변경은 :meth:`revoke` 의
+        단조 방향뿐이며, ACTIVE 로의 복귀 API 는 의도적으로 없다 — 회전은 새
+        keyId 발급으로 한다(ADR-KSI-002 회전 ADR 전까지의 fail-closed 기본값).
+        """
+        if key_id in self._records:
+            raise ValueError(
+                f"keyId {key_id!r} 는 이미 등록돼 있다 — 덮어쓰기 금지(REVOKED 부활 차단). "
+                "폐기는 revoke(), 회전은 새 keyId 로"
+            )
         if not_after is not None and not_after.tzinfo is None:
             raise ValueError(
                 "not_after는 tz-aware(UTC)여야 한다 — naive datetime은 검증 시점 비교에서 "
                 "TypeError를 유발해 fail-closed 보장을 깨뜨린다"
             )
         self._records[key_id] = KeyRecord(public_key=public_key, status=status, not_after=not_after)
+
+    def revoke(self, key_id: str) -> None:
+        """keyId 를 REVOKED 로 전이한다 — 단조 방향(되돌림 없음, 멱등)."""
+        record = self._records.get(key_id)
+        if record is None:
+            raise ValueError(f"unknown keyId: {key_id!r} — 미등록 키는 폐기할 수 없다")
+        self._records[key_id] = KeyRecord(
+            public_key=record.public_key, status=KeyStatus.REVOKED, not_after=record.not_after
+        )
 
     def get(self, key_id: str) -> KeyRecord | None:
         return self._records.get(key_id)
@@ -260,3 +294,45 @@ def _verify_contract_inner(
         return VerificationResult(SignatureVerdict.INVALID_SIGNATURE, detail=str(exc))
 
     return VerificationResult(SignatureVerdict.VALID)
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedContract:
+    """:func:`load_verified_contract` 의 typed 결과 — VALID 일 때만 model 이 있다."""
+
+    verdict: SignatureVerdict
+    model: Any | None = None
+    detail: str | None = None
+
+    @property
+    def is_valid(self) -> bool:
+        return self.verdict is SignatureVerdict.VALID and self.model is not None
+
+
+def load_verified_contract(
+    data: Mapping[str, Any],
+    registry: KeyRegistry,
+    *,
+    now: datetime | None = None,
+) -> LoadedContract:
+    """구조(Pydantic v1.2) + 서명·TTL(verify_contract)을 **한 번에** 검증하는 유일한
+    공개 진입점 (감사 #12, ADR-KSI-002 §7).
+
+    verify_contract 는 서명·TTL 만 본다 — 소비 측이 그것만 호출하면(자연스러운
+    오용) '유효하게 서명된 부적합 계약'이 정책 하한(INV-010/013)을 서명의 권위를
+    입은 채 통과한다. 이 함수는 구조 검증(모델 계층 — Pydantic↔JSON Schema 정합은
+    mission-contract 왕복 테스트가 상시 고정)과 서명 검증을 묶어, fail-closed 가
+    호출자의 기억이 아니라 진입점 자체에 있게 한다. 예외를 던지지 않는다.
+    """
+    from ksi_mission_contracts.models import MissionContractV1_2
+
+    try:
+        model = MissionContractV1_2.model_validate(dict(data))
+    except Exception as exc:  # noqa: BLE001 — 구조 위반은 typed 로 강등(fail-closed)
+        return LoadedContract(
+            SignatureVerdict.MALFORMED_CONTRACT, detail=f"구조 검증 실패: {exc}"
+        )
+    verification = verify_contract(data, registry, "1.2", now=now)
+    if not verification.is_valid:
+        return LoadedContract(verification.verdict, detail=verification.detail)
+    return LoadedContract(SignatureVerdict.VALID, model=model)

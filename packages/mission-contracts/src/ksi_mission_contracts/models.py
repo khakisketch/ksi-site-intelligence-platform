@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from ksi_domain.enums import MissionType
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -60,12 +60,33 @@ class SiteFrame(_CamelModel):
 
 
 class FlightEnvelope(_CamelModel):
+    """비행 봉투 — 교차 필드 검증(감사 #50): min>max·비유한·음수 봉투가 서명된
+    계약으로 성립하면 Edge 가 그 값을 경계로 읽는 순간 해석이 정의되지 않는다."""
+
     allowed_volumes: list[str]
     excluded_volumes: list[str]
     min_altitude_m: float
     max_altitude_m: float
     minimum_structure_standoff_m: float | None = None
     minimum_person_standoff_m: float | None = None
+
+    @model_validator(mode="after")
+    def _envelope_is_coherent(self) -> FlightEnvelope:
+        import math
+
+        for name in ("min_altitude_m", "max_altitude_m"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} 는 finite 여야 한다")
+        if self.min_altitude_m > self.max_altitude_m:
+            raise ValueError(
+                f"minAltitudeM({self.min_altitude_m}) > maxAltitudeM({self.max_altitude_m}) — "
+                "역전된 고도 창은 봉투가 아니다"
+            )
+        for name in ("minimum_structure_standoff_m", "minimum_person_standoff_m"):
+            value = getattr(self, name)
+            if value is not None and (not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} 는 비음수 finite 여야 한다 ({value!r})")
+        return self
 
 
 class CoveragePolicy(_CamelModel):

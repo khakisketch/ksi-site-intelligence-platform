@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -322,3 +323,123 @@ def test_o_pydantic_enforces_coverage_lower_bound() -> None:
     contract["policies"]["coveragePolicy"]["accessibleGeneralCoverage"] = 0.97
     parsed = parse_mission_contract(contract)
     assert parsed.policies.coverage_policy.accessible_general_coverage == 0.97
+
+
+# ── 키 수명주기·정규화·합성 진입점 (감사 #9·#10·#12·#50 폐쇄) ────────────────
+
+
+def test_duplicate_key_registration_rejected_no_revoked_resurrection() -> None:
+    """[#9] 같은 keyId 재등록은 거부 — REVOKED 가 ACTIVE 로 부활하는 경로 차단."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key = Ed25519PrivateKey.generate()
+    registry = KeyRegistry()
+    registry.register("key-001", key.public_key())
+    registry.revoke("key-001")
+    with pytest.raises(ValueError, match="이미 등록"):
+        registry.register("key-001", key.public_key())  # 부활 시도
+    record = registry.get("key-001")
+    assert record is not None and record.status.value == "REVOKED", "폐기 상태가 되돌려졌다"
+
+    signed = sign_contract(_unsigned_contract(), key, "key-001")
+    result = verify_contract(signed, registry, "1.2")
+    assert result.verdict.value == "REVOKED_KEY", "폐기 키 서명이 여전히 유효 판정된다"
+
+
+def test_revoke_unknown_key_rejected_and_revoke_is_idempotent() -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    registry = KeyRegistry()
+    with pytest.raises(ValueError, match="unknown keyId"):
+        registry.revoke("no-such-key")
+    registry.register("key-001", Ed25519PrivateKey.generate().public_key())
+    registry.revoke("key-001")
+    registry.revoke("key-001")  # 멱등 — 단조 방향 재적용은 무해
+    record = registry.get("key-001")
+    assert record is not None and record.status.value == "REVOKED"
+
+
+def test_nan_in_contract_is_typed_failure_on_sign_and_malformed_on_verify() -> None:
+    """[#10] NaN 계약은 발행 시 typed ValueError, 검증 시 MALFORMED_CONTRACT.
+
+    allow_nan 기본값이면 Python 안에서는 서명·검증이 전부 통과하지만 그 바이트열은
+    표준 JSON 파서(C++ 평면)로 재파싱 불가 — 정규화 규약 분열이었다.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    contract = _unsigned_contract()
+    contract["objectives"] = [float("nan")]
+    key = Ed25519PrivateKey.generate()
+    with pytest.raises(ValueError, match="정규 JSON"):
+        sign_contract(contract, key, "key-001")
+
+    registry = KeyRegistry()
+    registry.register("key-001", key.public_key())
+    contract["signature"] = {
+        "algorithm": "Ed25519", "keyId": "key-001",
+        "digest": "sha256:" + "0" * 64, "signature": "AA==",
+    }
+    from datetime import datetime
+
+    # validity 창 안의 now 로 고정 — 창 검사(EXPIRED)가 아니라 canonical 정규화
+    # 단계까지 도달해야 이 반증이 성립한다(검증 순서: validity → digest).
+    in_window = datetime.fromisoformat(
+        contract["validity"]["notBefore"].replace("Z", "+00:00")
+    )
+    result = verify_contract(contract, registry, "1.2", now=in_window)
+    assert result.verdict.value == "MALFORMED_CONTRACT", "NaN 계약이 예외/통과로 샜다"
+
+
+def test_load_verified_contract_is_single_entrypoint() -> None:
+    """[#12] 유효 서명 + 부적합 구조 = 거부 — verify_contract 단독 오용의 사각지대."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from ksi_mission_contracts.signing import load_verified_contract
+
+    key = Ed25519PrivateKey.generate()
+    registry = KeyRegistry()
+    registry.register("key-001", key.public_key())
+
+    # 정상: 구조+서명 모두 유효
+    signed = sign_contract(_unsigned_contract(), key, "key-001")
+    loaded = load_verified_contract(signed, registry, now=IN_WINDOW)
+    assert loaded.is_valid and loaded.model is not None
+    assert loaded.model.mission_id == signed["missionId"]
+
+    # 구조 위반(coverage 하한 붕괴)이지만 서명은 유효한 계약 — verify_contract 만
+    # 호출하면 VALID 가 되던 바로 그 입력이 진입점에서는 거부된다.
+    broken = _unsigned_contract()
+    broken["policies"]["coveragePolicy"]["accessibleGeneralCoverage"] = 0.1  # < 0.95
+    broken_signed = sign_contract(broken, key, "key-001")
+    assert verify_contract(broken_signed, registry, "1.2", now=IN_WINDOW).is_valid, (
+        "전제 확인: 서명 자체는 유효해야 이 반증이 성립한다"
+    )
+    loaded_broken = load_verified_contract(broken_signed, registry, now=IN_WINDOW)
+    assert not loaded_broken.is_valid
+    assert loaded_broken.verdict.value == "MALFORMED_CONTRACT"
+
+    # 서명 위조는 여전히 서명 계층에서 거부
+    tampered = dict(signed)
+    tampered["missionId"] = "tampered"
+    loaded_tampered = load_verified_contract(tampered, registry, now=IN_WINDOW)
+    assert not loaded_tampered.is_valid
+    assert loaded_tampered.verdict.value == "DIGEST_MISMATCH"
+
+
+def test_flight_envelope_cross_field_validation() -> None:
+    """[#50] min>max·음수 standoff 봉투는 계약 모델이 거부한다."""
+    from ksi_mission_contracts.models import MissionContractV1_2
+
+    base = _unsigned_contract()
+    base["signature"] = {
+        "algorithm": "Ed25519", "keyId": "k", "digest": "d", "signature": "s",
+    }
+    inverted = json.loads(json.dumps(base))
+    inverted["flightEnvelope"]["minAltitudeM"] = 120.0
+    inverted["flightEnvelope"]["maxAltitudeM"] = 30.0
+    with pytest.raises(Exception, match="역전된 고도"):
+        MissionContractV1_2.model_validate(inverted)
+
+    negative = json.loads(json.dumps(base))
+    negative["flightEnvelope"]["minimumPersonStandoffM"] = -5.0
+    with pytest.raises(Exception, match="비음수"):
+        MissionContractV1_2.model_validate(negative)
