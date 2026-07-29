@@ -17,15 +17,33 @@
 
 기체 enum(DroneProfile)은 요청이 명시한다 — M4D 의 droneEnumValue 는 실기(H4)
 검증 전 서버가 추측하지 않는다(wpml.py 모듈 docstring 참조).
+
+## 짝 manifest 포맷 (``wpmz/res/ksi-mission-pair.json``, format=ksi-mission-pair/v1)
+
+KMZ 에 동봉되는 짝 식별자다. 해시 정규화는 이 repo 의 유일한 문서화 정규화인
+ADR-KSI-002 §2/§3 을 그대로 재사용한다(:func:`canonical_payload_bytes` —
+``signature`` 블록 제외·sort_keys·compact·ensure_ascii=False·allow_nan=False,
+표기는 ``sha256:<hex>``). 별도 정규화를 만들지 않는 이유(재검증 P2): Manifold 등
+비-Python 검증기가 ADR 문서만 보고 재현했을 때 한글 필드에서 불일치가 나는
+정규화 분열을 차단한다.
+
+- ``contractPayloadSha256``: 계약 **payload**(signature 제외)의 digest — 같은
+  내용으로 재서명해도 짝 판정이 유지된다(짝의 단위는 서명이 아니라 내용).
+- ``siteFrameSha256``: 요청 site_frame 의 동일 규약 digest.
+- 나머지 키(missionId·siteId·정책 ID 4종)는 평문 식별자.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import math
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException
 from ksi_domain.enums import MissionType
+from ksi_mission_contracts.models import FlightEnvelope
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from ksi_mission_planning import (
     AreaOfInterest,
     DroneProfile,
@@ -45,6 +63,10 @@ if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from fastapi import FastAPI
     from ksi_mission_planning import RouteWaypoint
+
+# WPML takeOffSecurityHeight 유효범위 하한 — 공식 스펙 [1.2, 1500]m (wpml.py 가
+# raw 표에서 확인한 값과 동일 근거).
+_MIN_TAKEOFF_SECURITY_HEIGHT_M = 1.2
 
 _LAWNMOWER_TYPES = frozenset(
     {
@@ -98,27 +120,84 @@ class MissionPlanRequest(_CamelModel):
     wayline: WaylineParams
 
 
+def _require_wayline_takeoff_height_compatible(
+    takeoff_security_height_m: float, envelope: FlightEnvelope
+) -> None:
+    """이륙 안전고도가 같은 요청의 비행 봉투와 어긋나지 않는지 게이트한다(P1).
+
+    KMZ 는 서명이 없다 — 이 계층에서 막지 않으면 takeoffSecurityHeightM 이
+    envelope.maxAltitudeM 을 넘는(또는 WPML 하한 밖인) 어긋난 계약+KMZ 쌍이
+    조용히 발급된다.
+    """
+    if not math.isfinite(takeoff_security_height_m):
+        # NaN 은 아래 두 부등식이 모두 False 라 게이트를 그냥 지나간다 — 하류
+        # (WaylineMissionConfig)의 isfinite 에 기대지 않고 게이트 자신이 막는다
+        # (재검증 P3: 방어가 게이트 밖에 있으면 호출 순서 변경에 조용히 뚫린다).
+        raise RouteGenerationError(
+            f"TAKEOFF_HEIGHT_BELOW_MINIMUM: takeoffSecurityHeightM 은 finite 여야 "
+            f"한다 (got {takeoff_security_height_m!r})"
+        )
+    if takeoff_security_height_m < _MIN_TAKEOFF_SECURITY_HEIGHT_M:
+        raise RouteGenerationError(
+            "TAKEOFF_HEIGHT_BELOW_MINIMUM: takeoffSecurityHeightM"
+            f"({takeoff_security_height_m}) < {_MIN_TAKEOFF_SECURITY_HEIGHT_M}m"
+        )
+    if takeoff_security_height_m > envelope.max_altitude_m:
+        raise RouteGenerationError(
+            "TAKEOFF_HEIGHT_EXCEEDS_ENVELOPE: takeoffSecurityHeightM"
+            f"({takeoff_security_height_m}) > maxAltitudeM({envelope.max_altitude_m})"
+        )
+
+
+def _pair_digest(payload: dict[str, Any]) -> str:
+    """짝 식별자 digest — ADR-KSI-002 정규화(canonical_payload_bytes)를 그대로 재사용.
+
+    독자 정규화(ensure_ascii 기본값·signature 포함) 금지 — 비-Python 검증기가 ADR
+    문서 규약으로 재현할 때 한글 계약에서 항상 불일치가 나던 분열(재검증 P2) 방지.
+    """
+    return sha256_digest(canonical_payload_bytes(payload))
+
+
 def build_mission_plan(
     request: MissionPlanRequest, *, private_key: Ed25519PrivateKey, key_id: str
 ) -> dict[str, Any]:
-    """경로 생성 → KMZ + 서명 계약 짝 발급. 실패는 typed 예외로 전파된다."""
+    """경로 생성 → 서명 계약 → 짝 식별자 동봉 KMZ 발급. 실패는 typed 예외로 전파된다."""
     mission_type = request.contract.mission_type
     envelope = request.contract.flight_envelope
 
+    _require_wayline_takeoff_height_compatible(
+        request.wayline.takeoff_security_height_m, envelope
+    )
+
     route: list[RouteWaypoint]
+    coverage_ratio: float | None = None
     if mission_type in _LAWNMOWER_TYPES:
         if request.route.spacing_m is None:
             raise RouteGenerationError(
                 f"{mission_type.value} 는 lawnmower 패턴 — route.spacingM 이 필요하다"
             )
-        route = lawnmower_route(
+        lawnmower_result = lawnmower_route(
             request.aoi,
             spacing_m=request.route.spacing_m,
             altitude_m=request.route.altitude_m,
             envelope=envelope,
             sweep_direction_deg=request.route.sweep_direction_deg,
         )
+        route = lawnmower_result.waypoints
+        coverage_ratio = lawnmower_result.coverage_ratio
         pattern = "lawnmower"
+        # 같은 요청이 계약에 서명해 넣는 커버 약속(accessibleGeneralCoverage,
+        # 최대 1.0)과 실측 커버를 대조한다 — 생성기 고정 하한(0.95)만 보면
+        # "일반영역 100% 를 약속한 서명 계약 + 실측 0.9x KMZ" 어긋난 쌍이 조용히
+        # 발급된다(재검증 P2, 이륙고도 게이트와 동일 클래스). 1e-9 는 정확 계산의
+        # 부동소수 잔차 허용치다.
+        if coverage_ratio + 1e-9 < request.contract.accessible_general_coverage:
+            raise RouteGenerationError(
+                "COVERAGE_BELOW_CONTRACT_PROMISE — 실측 커버 비율 "
+                f"{coverage_ratio:.4f} 가 계약이 약속하는 accessibleGeneralCoverage "
+                f"{request.contract.accessible_general_coverage} 미만이다. spacing·"
+                "sweep 을 조정하거나 약속 값을 실측 이하로 낮춰 발급하라"
+            )
     elif mission_type in _PERIMETER_TYPES:
         route = perimeter_route(
             request.aoi, altitude_m=request.route.altitude_m, envelope=envelope
@@ -128,6 +207,26 @@ def build_mission_plan(
         raise RouteGenerationError(
             f"{mission_type.value} 경로 패턴은 아직 미지원이다 — 조용한 퇴화 대신 거부한다"
         )
+
+    # 발급 순서: 계약 먼저(ADR-KSI-007 '동일 site_frame·policy_version 짝'의 실체화).
+    # KMZ 는 그 계약의 canonical sha256 을 포함한 pair_manifest 를 동봉해, 두
+    # 산출물이 사후에도(전송·저장 경로가 갈리더라도) 짝임을 검증 가능하게 한다.
+    contract = issue_mission_contract(request.contract, private_key=private_key, key_id=key_id)
+    contract_payload = contract.model_dump(by_alias=True, mode="json", exclude_none=True)
+    site_frame_payload = request.contract.site_frame.model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    pair_manifest: dict[str, str] = {
+        "format": "ksi-mission-pair/v1",
+        "missionId": request.contract.mission_id,
+        "siteId": request.contract.site_id,
+        "contractPayloadSha256": _pair_digest(contract_payload),
+        "viewpointPolicyId": request.contract.viewpoint_policy_id,
+        "riskPolicyPackId": request.contract.risk_policy_pack_id,
+        "fallbackPolicyId": request.contract.fallback_policy_id,
+        "capturePolicyId": request.contract.capture_policy_id,
+        "siteFrameSha256": _pair_digest(site_frame_payload),
+    }
 
     kmz = build_kmz(
         route,
@@ -145,14 +244,16 @@ def build_mission_plan(
         # 매핑 계열은 웨이포인트별 nadir 촬영이 기본(2026-07-29 대표자 승인) —
         # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다.
         capture_at_waypoints=(pattern == "lawnmower"),
+        pair_manifest=pair_manifest,
     )
-    contract = issue_mission_contract(request.contract, private_key=private_key, key_id=key_id)
 
     return {
-        "contract": contract.model_dump(by_alias=True, mode="json", exclude_none=True),
+        "contract": contract_payload,
         "kmzBase64": base64.b64encode(kmz).decode("ascii"),
+        "kmzSha256": hashlib.sha256(kmz).hexdigest(),
         "routePattern": pattern,
         "waypointCount": len(route),
+        "coverageRatio": coverage_ratio,
     }
 
 

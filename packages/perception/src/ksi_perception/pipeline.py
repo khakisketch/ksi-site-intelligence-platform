@@ -59,6 +59,7 @@ from ksi_event_contracts.observation import (
 from ksi_event_contracts.world_entity import WorldEntity
 from ksi_geo_core.projection import project_foot_point
 from ksi_geo_core.sync import TelemetryInterpolator, TelemetrySample
+from pydantic import ValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,6 +381,29 @@ def _event_bundle_from_entity(
             ),
         )
 
+    # '계보 없음'은 키 부재만이 아니다 — 상류 WorldEntity(ClassificationSource)는
+    # 빈 원시 id/이름·공백 class 를 구조적으로 합법 취급하는데, v1.2
+    # ClassificationLineage 는 그걸 model_validator 로 거부한다(스키마 검증은
+    # 완화하지 않는다). 여기서 typed 로 거르지 않으면 그 ValidationError 가 이 함수
+    # 밖으로 새어나가 run_vertical_slice 의 배치 루프를 통째로 죽인다("예외를 던지지
+    # 않는다" 계약 위반, P1 — 실질 공허 계보의 게이트 우회).
+    try:
+        classification_lineage = ClassificationLineage(
+            entity_class=entity.entity_class,
+            ontology_version=ontology_version,
+            source=classification_source,
+            entity_fingerprint=world_entity_fingerprint(entity),
+        )
+    except ValidationError as exc:
+        return EventBuildResult(
+            status=EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE,
+            detail=(
+                f"entity {entity.entity_id}: 분류 계보가 형식상 존재하나 실질적으로 "
+                f"공허하다(빈 원시 id/이름·공백 class 등) — {exc} — 계보 없는 이벤트 "
+                "발행 금지(INV-031)"
+            ),
+        )
+
     clip_seconds = EVIDENCE_CLIP_SECONDS.get(severity)
     if clip_seconds is None:
         return EventBuildResult(
@@ -430,16 +454,11 @@ def _event_bundle_from_entity(
             model_versions={"detector": context.model_version},
             policy_version=context.policy_version,
             calibration_profile_id=context.calibration_profile_id,
-            classification={
-                entity.entity_id: ClassificationLineage(
-                    entity_class=entity.entity_class,
-                    ontology_version=ontology_version,
-                    source=classification_source,
-                    # 생성 규칙: world_entity_fingerprint(entity) 뿐 — 수신자는
-                    # WorldEntity 확보 시 같은 함수로 재계산해 대조한다.
-                    entity_fingerprint=world_entity_fingerprint(entity),
-                )
-            },
+            # 생성 규칙(entity_fingerprint): world_entity_fingerprint(entity) 뿐 —
+            # 수신자는 WorldEntity 확보 시 같은 함수로 재계산해 대조한다. 객체는
+            # 위에서 이미 typed 게이트를 통과해 구성된 것을 그대로 쓴다(재구성 시
+            # 여기서 또 ValidationError 가 날 경로를 만들지 않는다).
+            classification={entity.entity_id: classification_lineage},
         ),
     )
     return EventBuildResult(status=EventBuildStatus.OK, bundle=bundle)

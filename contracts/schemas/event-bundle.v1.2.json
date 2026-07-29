@@ -142,7 +142,7 @@
         },
         "classification": {
           "type": "object",
-          "description": "entity_id → 분류 계보. entities 목록과 키 집합이 정확히 일치해야 한다(누락도 잉여도 거부).",
+          "description": "entity_id → 분류 계보. entities 목록과 키 집합이 정확히 일치해야 한다(누락도 잉여도 거부) — entities 와의 키 정확 일치는 JSON Schema 표현 한계로 이 스키마 자체는 강제하지 않으며, Pydantic 게이트(ksi_event_contracts, EventBundle._classification_covers_entities)가 강제한다.",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,

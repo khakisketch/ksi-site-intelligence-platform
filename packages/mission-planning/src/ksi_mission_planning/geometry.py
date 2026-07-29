@@ -21,22 +21,33 @@ import math
 
 from ksi_geo_core.frames import wgs84_to_enu
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 # "사실상 같은 점" 판정 거리(m) — 부동소수 잡음만 흡수하고 실제 기하는 바꾸지 않는 규모.
 _EPSILON_M = 1e-6
 # orient(외적, m²) 0 판정 허용오차 — 애매하면 교차로 본다(fail-closed 방향).
 _EPSILON_M2 = 1e-6
 # anchor 기준 최대 반경(m) — frames.py 등장방형 근사의 유효범위("수 km 이내") 강제.
-# 날짜변경선 걸친 AOI(경도차 ~360°→east 수천 km)와 극지 퇴화도 이 상한이 함께 잡는다.
+# 날짜변경선 걸친 AOI(경도차 ~360°→east 수천 km)는 이 상한이 잡는다. **극지 퇴화는
+# 이 상한이 잡지 않는다**(자율 재검토 C 정정 — 과거 주석은 거짓이었다: east 계산이
+# anchor 위도의 cos(lat) 로 나뉘어 있어 극지 근방에서는 경도차가 커도 east 값이
+# 오히려 작아지므로 이 반경 게이트를 통과해버린다). 극지는 아래
+# ``_MAX_ABS_LATITUDE_DEG`` 게이트가 별도로 막는다.
 _MAX_EXTENT_M = 10_000.0
 # 꼭짓점 수 상한 — 자기교차 검사가 O(n²)라 미인증 입력의 CPU 소진 벡터가 되지 않게.
 _MAX_VERTICES = 256
+# 등장방형(equirectangular) 근사 유효권 상한(|위도|, 도) — cos(lat)→0 인 극지 근방은
+# 동서 축척이 무너져(wgs84_to_enu 의 east 항이 cos(origin_lat) 로 나뉜다) 이 근사가
+# 성립하지 않는다(자율 재검토 C). 80° 는 근사가 뚜렷이 붕괴하기 전의 보수적 여유.
+_MAX_ABS_LATITUDE_DEG = 80.0
 
 
 class GeoPoint(BaseModel):
     """WGS84 좌표 한 점. 순서 혼동(lat/lon ↔ lon/lat)을 필드명으로 차단한다."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, frozen=True, extra="forbid"
+    )
 
     lat_deg: float = Field(ge=-90.0, le=90.0)
     lon_deg: float = Field(ge=-180.0, le=180.0)
@@ -93,16 +104,32 @@ def _segments_intersect(
 class AreaOfInterest(BaseModel):
     """닫힌 단순 폴리곤 구역 — 마지막 꼭짓점→첫 꼭짓점 변이 암묵적으로 닫는다."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, frozen=True, extra="forbid"
+    )
 
     vertices: list[GeoPoint] = Field(min_length=3, max_length=_MAX_VERTICES)
 
     @model_validator(mode="after")
     def _must_be_simple_polygon(self) -> AreaOfInterest:
         n = len(self.vertices)
+
+        # 극지 게이트(자율 재검토 C) — ENU 계산 전에 먼저 걸러 다른 게이트의
+        # 오판정(예: 극지 근방에서 실제로는 유효범위 밖인데 east 축소로 통과)을
+        # 원천 차단한다.
+        for v in self.vertices:
+            if abs(v.lat_deg) > _MAX_ABS_LATITUDE_DEG:
+                raise ValueError(
+                    f"위도 {v.lat_deg}° 는 극지 게이트(|위도|<= {_MAX_ABS_LATITUDE_DEG}°) 밖이다 "
+                    "— 등장방형 근사(equirectangular, cos(lat)→0 인 극지에서 동서 축척이 "
+                    "무너진다) 유효권 밖은 구역이 될 수 없다"
+                )
+
         enu = self._to_enu_ring()
 
-        # 등장방형 근사 유효범위(frames.py "수 km 이내") + 날짜변경선·극지 퇴화 차단.
+        # 등장방형 근사 유효범위(frames.py "수 km 이내") + 날짜변경선 퇴화 차단
+        # (극지 퇴화는 위에서 별도 게이트로 이미 처리됐다 — 이 게이트가 함께 잡지
+        # 않는다, 자율 재검토 C).
         for east, north in enu:
             if math.hypot(east, north) > _MAX_EXTENT_M:
                 raise ValueError(

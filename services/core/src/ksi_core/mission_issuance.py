@@ -19,6 +19,16 @@ unknownObstaclePolicy·evidencePolicy는 FINAL_DECISION_LEDGER_v1.0(§안전·�
 어디서·어떻게 나오는지(개발: 임시 생성 / 운영: 비밀 관리소 등)는 결정하지
 않는다 — 프로덕션 키 수명주기는 별도 ADR 대상이다(edge_sync.py의 "잔여 한계"
 절과 같은 패턴 — 여기서 추측하지 않는다).
+
+## 알려진 잔여 한계 — 무인증 서명 오라클
+
+``/v1/missions/contracts``·``/v1/missions/plans`` 는 서명키가 주입된 조립에서
+**호출자 인증 없이** 유효한 Mission Contract 서명을 발급한다 — 이 모듈은 요청
+바디의 정당성(그 사이트·그 임무를 요청할 권한이 그 호출자에게 있는가)을 검증
+하지 않는다. 이 경계를 이 모듈이 스스로 해소하지 않는다 — 해소는 S2 인증
+도입이 이 경계 앞에 서는 것이다(원장 risk mission-issuance-unauthenticated-
+signing-oracle). 그 전까지는 이 엔드포인트를 신뢰 경계 밖에 직접 노출하지
+않는 운영이 전제다.
 """
 
 from __future__ import annotations

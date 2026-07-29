@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T21:52:55+09:00",
+  "updated_at": "2026-07-30T01:33:05+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -183,14 +183,14 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "PRODUCTION EDGE RUNTIME PROMOTION 구현 완료 — review_pending(자기판정 아님, 독립 재검토 대상). ① production 승격: tests/replay 의 vertical slice orchestration 을 ksi_perception.pipeline 으로 이동(복사 아님 — identity 앵커), python -m ksi_perception.recorded_pipeline entry point(Registry 검증 모델·fail-closed exit 0/1/2/3), commit 1e10712. ② frame typed outcome: Detector.detect_frame→FrameDetectionResult(per-call immutable), mutable last_dropped/last_clipped side-channel 제거, FRAME_NOT_FOUND≠빈 장면, 프레임 1장 INFERENCE_FAILED 는 기록 후 배치 계속, EventBundle v1.2 standalone classification lineage(계보 키 정확 일치·미등록 버전 거부·fingerprint hex64·assembly gate), commit fdec71f. slice-inference-exception-channel 폐쇄 구현이나 risk 는 독립 재검토 전 open 유지. mutation 실측: entry 우회→2 failed·failure 기록 제거→6 failed·복원 green. 게이트: ruff·mypy 81 files·pytest 829 passed·5 skipped(실모델 포함)·ctest 2/2·hygiene·lock.",
+      "evidence": "PRODUCTION EDGE RUNTIME PROMOTION 독립 재검토 완료(2026-07-30) — 2026-07-28 review_pending 이었던 승격분(1e10712·fdec71f)의 재검토(R5/R6)가 P1 2건을 적발: ①상대 시각 텔레메트리+1970 epoch 하드코딩 → occurred_at 1970 Evidence 가 exit 0 발행(감사 #23 클래스의 CLI 경계 재발, fail-open) ②분류가 실질 공허한 entity 가 MISSING_CLASSIFICATION_LINEAGE typed 거부를 우회해 ValidationError 로 배치 전체 사망. 수정: ts 절대 UTC epoch 강제([1e9,4102444800) 밖 CONFIG_ERROR exit 1·1970 상수 제거)·lineage 게이트를 실질 공허까지 확장(typed 거부·배치 계속·스키마 강도 유지)·DecompressionBombError 튜플 포함·--registry 플래그(env 폴백)·중복 JSON 키/1e400 오버플로 거부·CLI float 인자 isfinite·exit 규약 정직화(전량 프레임 실패 exit 3·프레임 0장 exit 1·계보 결함 미발행 시 번들 잔존해도 exit 3)·viewpoint ENU 미터 bin(도 단위 스케일 결함 폐쇄)·RecordedFrameDetector typed 4분기 CI 테스트(INVALID_FRAME 최초)·conftest 이중 anchor(skip+부재). 재검증 V3 PASS(P2 4건도 후속 수정 완료). 잔여 구조 한계(배치 단일 viewpoint — 프레임별 보간 샘플 미사용)는 보수 방향(다양성 미충족→CONFIRMED 불가)이라 안전하며 B3(Live View 프레임별 실 Pose)에서 해소 — 코드 docstring 명시. 게이트: 998 passed·5 skipped cache-clean 실모델·mypy 96·ruff·ctest 2/2. goal 잔여(PSDK Live View 교체·실기 재현)는 하드웨어 종속으로 in_progress 유지.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 4,
+      "ungated_attempts": 5,
       "created_at": "2026-07-27T01:51:58+09:00",
-      "updated_at": "2026-07-28T19:00:38+09:00"
+      "updated_at": "2026-07-30T01:33:05+09:00"
     },
     {
       "id": "core-ingest",
@@ -398,16 +398,22 @@
         "Mission Contract와 동일 site_frame·policy_version 짝 발급 배선",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "S1 완결 — 자율 독립 재검토 3라운드 통과. ①재검토(reviewer Opus 6유닛 wf_91465b3f 중 S1 4유닛): R1/R2/R3 REQUEST_CHANGES — P1 3건(비볼록 T자 43% 무음 미커버 201 발급·takePhoto useGlobalPayloadLensIndex=1 dangling(F2 동일클래스)·takeoffSecurityHeightM 계약봉투 무대조로 120m 계약+1500m KMZ 어긋난 쌍), R4 완성도 critic 은 직전 7건 폐쇄 전건 실코드 확인. ②수정: 볼록성 typed 거부(NON_CONVEX_AOI)+커버 실측 게이트·payloadLens=0+template.kml actionGroup 미러·takeoff 게이트(1.2 스펙 하한+isfinite)+커버 약속 게이트(COVERAGE_BELOW_CONTRACT_PROMISE)·pair manifest 를 ADR-KSI-002 정규화 재사용으로(contractPayloadSha256/siteFrameSha256/format v1)·EMPTY_ALLOWED_VOLUMES·극지 게이트·잠정 sanity cap 500m·openapi 정합(1.2/artifacts/coverageRatio). ③재검증(wf_6fdb4688 3유닛): V2/V3 PASS, V1 이 격자 샘플러 자체의 잔존 P1 적발(step 이 spacing 종속 — 접기×전단에서 실커버 0.667 이 1.0 거짓 증명서·완전커버 0.0 거짓거부 절벽) → 격자 샘플링을 해석적 정확 계산(스와스 직사각형×볼록클리핑+포함-배제)으로 교체, 동적 재현 확인. ④최종 반증(reviewer): PASS — 정확값 5종(0.6667/1.0/0.9497/0.9995/0.9975)을 손 적분 독립 재유도로 전부 일치 확인, 포함-배제 전제(effective>spacing/2) 수학 증명, 스냅×약속 이중허용 부재 확인. 비차단 F-1(스냅 절대상한 0.01m²)·F-4(knife-edge 수치고정) 반영, F-3(테이퍼 보수 모델) docstring 명시, F-2 최악비용 실측 6.44s/58MB(유계 — 무인증 CPU 증폭은 signing-oracle risk 와 동일 해소경로). criteria 'AOI 내부'는 bbox→폴리곤 내부 속성 테스트로 승격(R4 지적). 게이트: pytest 998 passed·5 skipped(KSI_REQUIRE_REAL_MODEL=1·cache-clean)·mypy 96·ruff·ctest 2/2·hygiene·lock. 대표자 후속 결정 risk 3건 신규 기록(mapping-forward-overlap-zero·flight-envelope-absolute-ceiling·mission-issuance-unauthenticated-signing-oracle).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "P1 5건(재검토 3+재검증 1+track-b 2 중 S1 몫) 전건 수정·재검증 통과. P2/P3 는 수정 또는 risk 기록으로 처리. 대표자 대기 3건은 open risk 로 상신.",
+        "at": "2026-07-30T01:32:35+09:00",
+        "reviewer": "reviewer(Opus xhigh) adversarial 3라운드 — 재검토 wf_91465b3f 4유닛 + 재검증 wf_6fdb4688 V1~V3 + 최종 반증 agent(손 적분 독립 재유도)",
+        "evidence_ref": "wf_91465b3f-669 · wf_6fdb4688-fc5 · session eb40e46c 최종반증 transcript · 게이트 998p/5s cache-clean"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-29T20:55:13+09:00"
+      "updated_at": "2026-07-30T01:32:35+09:00"
     },
     {
       "id": "core-domain-query",
@@ -523,14 +529,14 @@
       "title": "추론 시점 실패의 typed 채널 부재(F-J) — 모델 런타임 오류가 프레임 1장 문제로 슬라이스 배치 전체를 죽임 + 미존재 frame_id 가 빈 장면으로 위장(F-K) + EventBundle 에 분류 계보 미탑재(Edge→Core 전송 시 Entity 미동반이면 계보 단절)",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer 반증 2026-07-28 P2 3건 — B3(Live View 배선) 전 폐쇄 권장. 로드/변환 실패는 이미 typed.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-07-30 재검토 R6→수정→재검증 V3 PASS. F-J: Detector.detect_frame→FrameDetectionResult typed 4상태(OK/FRAME_NOT_FOUND/INVALID_FRAME/INFERENCE_FAILED), 프레임 1장 예상 실패(RuntimeError/OSError/ValueError)는 기록 후 배치 계속·TypeError 전파(무차별 catch 부재 확인). F-K: 미존재 frame_id=FRAME_NOT_FOUND(빈 장면과 구분, 재검증 확인). 계보: EventBundle v1.2 lineage.classification 정확 일치+실질 공허도 MISSING_CLASSIFICATION_LINEAGE typed 거부(ValidationError 배치사망 경로 제거)+미발행 계보결함 시 CLI exit 3. CI: RecordedFrameDetector typed 4분기 실모델 무관 테스트+conftest 이중 anchor. 게이트 998p/5s cache-clean.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-28T14:21:45+09:00",
-      "updated_at": "2026-07-28T14:21:45+09:00"
+      "updated_at": "2026-07-30T01:33:05+09:00"
     },
     {
       "id": "edge-sync-preauth-sequence-lockout",
@@ -573,6 +579,48 @@
       "previous_status": "open",
       "created_at": "2026-07-29T21:31:37+09:00",
       "updated_at": "2026-07-29T21:52:55+09:00"
+    },
+    {
+      "id": "mapping-forward-overlap-zero",
+      "title": "매핑 KMZ 촬영이 웨이포인트별 1장뿐이라 전방 중첩 0 — 매핑(정사영상/재구성) 산출물 불성립 우려",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-07-30 독립 재검토(R4). 웨이포인트별 takePhoto 기본은 2026-07-29 대표자 승인이나, 스캔선당 2장으로는 전방 중첩이 0이라 사진측량 산출물이 성립하지 않는다는 신규 발견 — 대표자 재상신 대상. 권고: WPML multipleDistance trigger 로 거리 간격 촬영(간격=카메라 footprint×(1−전방중첩)) — 카메라 파라미터가 H4 실기 확정 종속이라 그때 결합 구현. 순찰 계열은 무관.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-30T00:10:44+09:00",
+      "updated_at": "2026-07-30T00:10:44+09:00"
+    },
+    {
+      "id": "flight-envelope-absolute-ceiling",
+      "title": "FlightEnvelope 절대 고도 상한(규제값) 미확정 — 서버 고정 안전상수 원칙의 공백",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-07-30 독립 재검토(R4). maxAltitudeM 에 절대 상한이 없어 규제 위반 봉투가 발급 가능했다. 잠정 조치: 서버 sanity cap 500m(모델 검증, 스키마 불변). 대표자 결정 대기: 규제 상한 값 확정(권고 150m — 항공안전법 일반 비행제한 고도, 예외 승인 운용 시 별도).",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-30T00:10:44+09:00",
+      "updated_at": "2026-07-30T00:10:44+09:00"
+    },
+    {
+      "id": "mission-issuance-unauthenticated-signing-oracle",
+      "title": "임무 계약 발급/짝 발급 엔드포인트가 무인증 서명 오라클 — 네트워크 도달자는 누구나 유효 서명 계약 취득 가능",
+      "lens": "role",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-07-30 독립 재검토(R3). edge-sync-preauth-sequence-lockout 과 동일 해소 경로 — S2(core-domain-query) 인증·권한 도입이 이 경계 앞에 서야 한다. 현재 미배포·로컬 조립 한정이라 즉시 위험 아님. 코드 docstring 알려진 잔여 한계에 명시.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-30T00:10:44+09:00",
+      "updated_at": "2026-07-30T00:10:44+09:00"
     }
   ]
 }

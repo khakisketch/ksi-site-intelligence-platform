@@ -10,12 +10,22 @@ Runtime entry point 이며 테스트 하네스가 아니다 — replay 테스트
 - **구성 실패는 exit 1 이다**: 모델 Registry/digest 거부·[dfine] 런타임 부재·
   이미지/텔레메트리 파일 불량은 프레임 단위 실패로 축소하지 않고 파이프라인
   시작 전에 전체를 중단한다. stderr 에 typed 사유(``CONFIG_ERROR: ...``)를 남긴다.
+  CLI float 인자(``--min-confidence``·``--frame-interval-s``·``--start-ts``)는
+  파싱 직후 isfinite 검증을 거친다 — ``nan``/``inf`` 는 아래의 부등식 기반 게이트
+  (시간축 겹침·양수 검사)를 조용히 우회하므로 별도로 거부한다(재검증 V3 P2).
 - **자동 다운로드 금지**: 모델은 Registry digest 검증을 통과한 로컬 디렉토리만
   (:func:`ksi_perception.dfine.load_dfine_detector` 의 ``local_files_only`` 강제).
 - exit code: ``0`` 성공 · ``1`` 구성 실패 · ``2`` 사용법 오류(argparse) ·
-  ``3`` 부분 실패 — 파이프라인은 완주했으나 프레임 단위 typed failure
-  (FRAME_NOT_FOUND/INVALID_FRAME/INFERENCE_FAILED)가 1건 이상 기록된 실행.
-  산출물은 나오지만 성공으로 위장하지 않는다.
+  ``3`` 부분/전량 실패 — 파이프라인은 완주했으나 프레임 단위 typed failure
+  (FRAME_NOT_FOUND/INVALID_FRAME/INFERENCE_FAILED)가 1건 이상 기록되거나, 분류
+  계보가 형식상 존재하나 실질적으로 공허해(``EventBuildStatus.
+  MISSING_CLASSIFICATION_LINEAGE``) Event 미발행이 1건 이상 기록된 실행(모든
+  프레임이 실패해도 exit 3 다 — "PARTIAL"로 축소 서술하지 않고 전량이면
+  stderr 에 그대로 표기한다). 산출물은 나오지만 성공으로 위장하지 않는다. 계보
+  결함은 같은 배치에 유효 track 이 있어 bundles 가 비지 않아도 exit 3 다(재검증
+  V3 P3) — 정책에 없는 class 등 다른 정당한 미발행 사유는 이 게이트 대상이 아니다.
+  입력 자체가 공허한 경우(프레임 0장)는 프레임 단위 실패가 아니라 구성 실패
+  (exit 1)다 — 처리할 게 없는 실행이 조용히 exit 0 으로 끝나지 않는다.
 
 ## 텔레메트리 JSONL 계약
 
@@ -23,8 +33,20 @@ Runtime entry point 이며 테스트 하네스가 아니다 — replay 테스트
 ``heading_deg``·``gimbal_pitch_deg``·``camera_fov_deg``·``zoom_factor``·
 ``rtk_fixed``·``source_quality`` ("full"/"partial"/"degraded"). 선택:
 ``altitude_msl_m``·``gimbal_yaw_deg``·``gimbal_roll_deg``·``gnss_accuracy_m``.
-미지 필드·비표준 상수(NaN/Infinity)·필드 누락은 구성 실패다(lax 수용 금지 —
-HIL 증거 로더와 같은 정신).
+미지 필드·비표준 상수(NaN/Infinity, 및 오버플로 리터럴이 파싱 후 만드는
+inf/-inf)·중복 키·필드 누락은 구성 실패다(lax 수용 금지 — HIL 증거 로더와
+같은 정신). ``ts_utc`` 는 **절대 UTC epoch 초만** 허용한다(``[1_000_000_000,
+4_102_444_800)`` — 2001-09-09~2100-01-01) — 상대 초(0.0/0.2 등)를 주면 아래
+"프레임 시각" 절의 unix epoch 기준과 결합해 occurred_at 이 1970년 근방인 허구
+Evidence 가 만들어지므로 파싱 단계에서 typed 거부한다.
+
+## Registry 경로 해석
+
+``--registry`` 우선 → 없으면 env ``KSI_MODEL_REGISTRY`` → 그마저 없으면
+:data:`ksi_perception.registry.DEFAULT_REGISTRY_PATH`(저장소 루트 기준 상대
+경로 — 프로세스 CWD 종속, 하위호환 기본값). CWD 가 저장소 루트가 아닌 셸에서
+호출되면 기본값이 조용히 다른(또는 없는) 파일을 가리킬 수 있으므로, CI/자동화
+호출은 ``--registry`` 절대경로 지정을 권장한다.
 
 ## 프레임 순서는 호출자 계약이다 (P0-6)
 
@@ -32,27 +54,86 @@ HIL 증거 로더와 같은 정신).
 ``frame_10 < frame_2`` 오정렬을 조용히 만든다 — 숫자 패딩된 파일명을 쓰거나
 순서를 명시적으로 나열하라(:func:`ksi_perception.recorded.load_frame_sequence`
 docstring 과 동일 경고).
+
+## viewpoint 좌표계 — 알려진 구조적 한계 (자율 재검토 E, 부분 수정)
+
+이 모듈은 ``drone_position`` 을 WGS84 도(度) 그대로가 아니라 ENU **미터**로
+변환해 ``run_vertical_slice`` 에 넘긴다(원점=텔레메트리 첫 샘플, 대표점=프레임
+시퀀스 시간 중앙점에 최근접한 샘플) — 도 단위 좌표를 그대로 미터 단위 bin
+(:func:`ksi_event_contracts.observation.viewpoint_bin_id`, 기본 2m)에 넣으면
+실제 수십~수백 m 이동이 전부 같은 bin 으로 뭉개진다.
+
+**다 고치지 못한 부분**: ``run_vertical_slice`` 의 ``drone_position`` 인자는
+호출 1회(=이 배치 전체)당 단일 튜플이며, ``ksi_perception.pipeline`` 내부에서
+매 프레임 동일하게 재사용된다 — 그 모듈은 프레임마다 이미
+``interpolator.at(frame.capture_ts_utc)`` 로 시간-최근접 샘플을 계산해 두지만,
+viewpoint 계산은 그 결과 대신 이 상수 인자를 쓴다. "관측(프레임)별 시간-최근접
+샘플로 viewpoint 를 bin"하려면 ``ksi_perception.pipeline`` 내부(이 파일 소유
+범위 밖)를 바꿔야 한다 — 대표점 선택은 :func:`_select_representative_telemetry_sample`
+docstring 참조.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from ksi_event_contracts.event_bundle import event_bundle_wire_dict
+from ksi_geo_core.frames import wgs84_to_enu
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from ksi_perception.pipeline import RunContext, SliceFrame, SliceResult, run_vertical_slice
+from ksi_perception.pipeline import (
+    EventBuildStatus,
+    RunContext,
+    SliceFrame,
+    SliceResult,
+    run_vertical_slice,
+)
 
 if TYPE_CHECKING:
     from ksi_domain.detection import Detector
 
 RESULT_SCHEMA_V1 = "ksi-recorded-pipeline-result/1"
+
+# 절대 UTC epoch 초 허용 구간 — 상대 초(0.0/0.2/0.4 등, 자체 테스트 픽스처 관행)를
+# 거부한다. 하한 2001-09-09(9자리 epoch 진입), 상한 2100-01-01(오설정 상한). 상대
+# 초가 통과하면 아래 ``_UNIX_EPOCH_UTC`` 기준과 결합해 occurred_at 이 1970년
+# 근방인 허구 Evidence 가 exit 0 으로 발행된다(감사 #23 이 닫은 클래스의 CLI
+# 경계 재발 — 자율 재검토 A).
+MIN_ABSOLUTE_TS_UTC: Final[float] = 1_000_000_000.0
+MAX_ABSOLUTE_TS_UTC: Final[float] = 4_102_444_800.0
+
+# 오버플로 리터럴(1e400 등)이 json.loads 파싱 후 inf 로 유입되는 경로를 막는
+# isfinite 검증 대상 필드(자율 재검토 D-1) — 텔레메트리 계약의 모든 float.
+_FINITE_FLOAT_FIELDS: Final[tuple[str, ...]] = (
+    "ts_utc",
+    "drone_lat",
+    "drone_lon",
+    "altitude_rel_m",
+    "heading_deg",
+    "gimbal_pitch_deg",
+    "camera_fov_deg",
+    "zoom_factor",
+    "altitude_msl_m",
+    "gimbal_yaw_deg",
+    "gimbal_roll_deg",
+    "gnss_accuracy_m",
+)
+
+# unix epoch 자체 — capture_ts_utc(프레임 시각)가 이미 절대 UTC epoch 초이므로
+# (텔레메트리 ts_utc 는 TelemetryRecord 가 절대 epoch 만 허용하도록 강제한다,
+# 자율 재검토 A) 이 기준에 더하면 정확한 절대 시각이 나온다. "1970" 은 임의의
+# placeholder 가 아니라 unix epoch 그 자체이며, 상대 초 입력이 파싱 단계에서
+# 이미 거부되므로 허구 occurred_at 로 이어지는 결합 경로가 없다.
+_UNIX_EPOCH_UTC: Final[datetime] = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class TelemetryRecord(BaseModel):
@@ -77,6 +158,33 @@ class TelemetryRecord(BaseModel):
     gimbal_yaw_deg: float | None = None
     gimbal_roll_deg: float | None = None
     gnss_accuracy_m: float | None = None
+
+    @field_validator(*_FINITE_FLOAT_FIELDS)
+    @classmethod
+    def _reject_nonfinite(cls, value: float | None) -> float | None:
+        """오버플로 리터럴(``1e400`` 등)은 json.loads 파싱을 통과해 inf 로
+        유입된다 — ``NaN``/``Infinity`` JSON 상수 거부(``_reject_nonstandard_
+        json_constant``)와는 별개 채널이라 파싱 후 여기서 따로 막는다(자율
+        재검토 D-1)."""
+        if value is not None and not math.isfinite(value):
+            raise ValueError(f"비유한(non-finite) float 값 불허 — {value!r}")
+        return value
+
+    @field_validator("ts_utc")
+    @classmethod
+    def _reject_relative_ts(cls, value: float) -> float:
+        """상대 초(0.0/0.2 등) 거부 — 절대 UTC epoch 초만 허용한다.
+
+        상대 초가 ``_UNIX_EPOCH_UTC`` 기준과 결합하면 occurred_at 1970년 근방의
+        허구 Evidence 가 exit 0 으로 발행된다(감사 #23 이 닫은 클래스의 CLI
+        경계 재발 — 자율 재검토 A, P1)."""
+        if not (MIN_ABSOLUTE_TS_UTC <= value < MAX_ABSOLUTE_TS_UTC):
+            raise ValueError(
+                f"ts_utc={value!r} 는 절대 UTC epoch 초가 아니다 — 상대 시각"
+                "(0.0/0.2 등) 금지, 절대 epoch 초 필요"
+                f"(허용 구간 [{MIN_ABSOLUTE_TS_UTC}, {MAX_ABSOLUTE_TS_UTC}))"
+            )
+        return value
 
     def to_sample(self) -> TelemetrySample:
         return TelemetrySample(
@@ -105,6 +213,22 @@ def _reject_nonstandard_json_constant(value: str) -> None:
     raise ValueError(f"비표준 JSON 상수 {value!r} 불허 (NaN/Infinity)")
 
 
+def _reject_duplicate_json_key(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """object_pairs_hook — JSON 객체 중복 키의 '마지막 값 채택'을 typed 거부로
+    막는다(자율 재검토 D-2).
+
+    표준 ``json`` 모듈은 ``{"a": 1, "a": 2}`` 를 조용히 ``{"a": 2}`` 로 만든다 —
+    손으로 합치거나 편집한 텔레메트리 JSONL 에서 흔한 오염 형태이며, 어느 값이
+    채택됐는지 호출자가 알 길이 없다.
+    """
+    seen: dict[str, object] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f"중복 키 {key!r} — JSON 객체는 키가 유일해야 한다")
+        seen[key] = value
+    return seen
+
+
 def load_telemetry_jsonl(path: Path) -> list[TelemetrySample]:
     """텔레메트리 JSONL → TelemetrySample 목록. 불량 라인은 구성 실패(ValueError)다.
 
@@ -118,7 +242,11 @@ def load_telemetry_jsonl(path: Path) -> list[TelemetrySample]:
         if not line.strip():
             continue
         try:
-            payload = json.loads(line, parse_constant=_reject_nonstandard_json_constant)
+            payload = json.loads(
+                line,
+                parse_constant=_reject_nonstandard_json_constant,
+                object_pairs_hook=_reject_duplicate_json_key,
+            )
         except ValueError as exc:
             raise ValueError(f"{path}:{line_no}: JSON 파싱 실패 — {exc}") from exc
         try:
@@ -218,21 +346,31 @@ def _load_recorded_detector(
     model_id: str,
     min_confidence: float,
     frame_paths: list[Path],
+    registry_path: Path,
 ) -> tuple[Detector, str, int, int, int] | str:
     """모델·프레임 로드 — 성공 시 (detector, model_version, count, w, h), 실패 시 사유.
 
     구성 로드 실패는 프레임 failure 로 축소하지 않는다 — 호출자(main)가 exit 1 로
     전체를 중단한다(fail-closed).
     """
+    from PIL import Image as PILImage
+
     from ksi_perception.dfine import RecordedFrameDetector, load_dfine_detector
     from ksi_perception.recorded import load_frame_sequence, sequence_dimensions
     from ksi_perception.registry import load_model_entry
 
-    entry_check = load_model_entry(model_id)
+    entry_check = load_model_entry(model_id, registry_path=registry_path)
     if not entry_check.ok or entry_check.entry is None:
         return f"Registry 조회 실패 — {entry_check.status}: {entry_check.detail}"
     loaded = load_dfine_detector(
-        local_dir=model_dir, model_id=model_id, min_confidence=min_confidence
+        local_dir=model_dir,
+        model_id=model_id,
+        min_confidence=min_confidence,
+        # load_dfine_detector 는 verify_local_model 을 위해 **자체** registry_path
+        # 를 또 읽는다(기본값은 여기와 별개로 CWD 상대) — 위에서 넘긴 registry_path
+        # 를 여기도 전달하지 않으면 두 번째 검증이 --registry/env 를 무시하고
+        # 조용히 기본 경로로 새는 결함이 된다(자율 재검토 C 완결).
+        registry_path=registry_path,
     )
     if not loaded.ok or loaded.detector is None:
         return f"모델 로드 실패 — {loaded.status}: {loaded.detail}"
@@ -240,8 +378,11 @@ def _load_recorded_detector(
     try:
         frames = load_frame_sequence(frame_paths)
         width, height = sequence_dimensions(frames)
-    except (ValueError, OSError) as exc:
-        # PIL UnidentifiedImageError/DecompressionBombError 는 OSError/ValueError 계열.
+    except (ValueError, OSError, PILImage.DecompressionBombError) as exc:
+        # PIL UnidentifiedImageError 는 OSError 계열이지만 DecompressionBombError
+        # 는 Exception 직속(OSError/ValueError 서브클래스가 아니다) — 튜플 밖에
+        # 두면 미포착 traceback 으로 CLI 가 죽어 typed CONFIG_ERROR 계약이 샌다
+        # (자율 재검토 B, P2).
         return f"프레임 로드 실패 — {type(exc).__name__}: {exc}"
 
     detector = RecordedFrameDetector(frames=frames, dfine=loaded.detector)
@@ -291,6 +432,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out", type=Path, default=None, help="결과 JSON 경로(생략 시 stdout)"
     )
+    parser.add_argument(
+        "--registry",
+        type=Path,
+        default=None,
+        help=(
+            "Model Registry YAML 경로. 해석 순서: --registry 우선 → 없으면 env "
+            "KSI_MODEL_REGISTRY → 그마저 없으면 "
+            "ksi_perception.registry.DEFAULT_REGISTRY_PATH(저장소 루트 기준 "
+            "상대경로, 프로세스 CWD 종속 — 하위호환 기본값)"
+        ),
+    )
     # 계보 신원 — 기본값이 없다(INV-040/042, 감사 #23). placeholder 로 채워진
     # Evidence 가 Core durable 원장에 영구 기록되는 것을 CLI 경계에서 막는다.
     parser.add_argument("--mission-id", required=True, help="이 재생이 귀속되는 임무 id")
@@ -316,11 +468,72 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _select_representative_telemetry_sample(
+    telemetry: list[TelemetrySample], midpoint_ts: float
+) -> TelemetrySample:
+    """시간 중앙점에 가장 가까운 텔레메트리 샘플 하나를 고른다.
+
+    ## 알려진 구조적 한계 (자율 재검토 E — 이 파일 소유 범위의 최선)
+
+    ``run_vertical_slice`` 의 ``drone_position`` 인자는 호출 1회(=배치 전체)당
+    단일 튜플이며, ``ksi_perception.pipeline`` 내부(이 파일 소유 밖)가 매 프레임
+    동일한 값을 재사용한다 — 그 모듈은 프레임마다 이미
+    ``interpolator.at(frame.capture_ts_utc)`` 로 시간-최근접 샘플을 계산해 두지만
+    viewpoint 계산은 그 결과 대신 이 함수가 고른 단일 대표값을 쓴다. "관측
+    (프레임)별 시간-최근접 샘플로 viewpoint 를 bin"하는 완전한 수정은
+    ``ksi_perception.pipeline`` 을 바꿔야 하므로 이 함수만으로는 닫히지 않는다.
+    여기서는 배치 전체가 공유하는 단일 대표점을 "항상 첫 샘플"보다 낫게(시간
+    중앙점 최근접) 고르는 것까지만 한다.
+    """
+    dated = [
+        (sample, sample.ts.capture_ts_utc)
+        for sample in telemetry
+        if isinstance(sample.ts, TimestampSet) and sample.ts.capture_ts_utc is not None
+    ]
+    if not dated:
+        return telemetry[0]  # 방어적 폴백 — 호출 시점엔 이미 telemetry_ts 비공허 확인됨
+    return min(dated, key=lambda pair: abs(pair[1] - midpoint_ts))[0]
+
+
+def _nonfinite_cli_error(flag: str, value: float) -> str | None:
+    """CLI float 인자 공통 isfinite 게이트(재검증 V3 P2) — 텔레메트리 필드에는
+    이미 있는 ``isfinite`` 방어(``_reject_nonfinite``)가 CLI argparse 인자에는
+    없어, ``--start-ts nan`` 은 시간축 겹침 부등식을 전부 False 로 만들어 exit 3
+    오진(실제로는 거부돼야 할 구성이 프레임 실패로 오분류)을 낳고, ``--frame-
+    interval-s inf`` 는 ``> 0`` 양수 검사를 조용히 통과한다. 두 값 모두 파싱
+    직후 여기서 거부한다."""
+    if not math.isfinite(value):
+        return f"--{flag} 는 유한(finite) 값이어야 한다(nan/inf 불허) — {value!r}"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
+    for flag, value in (
+        ("min-confidence", args.min_confidence),
+        ("frame-interval-s", args.frame_interval_s),
+    ):
+        nonfinite_error = _nonfinite_cli_error(flag, value)
+        if nonfinite_error:
+            return _config_error(nonfinite_error)
+    if args.start_ts is not None:
+        nonfinite_error = _nonfinite_cli_error("start-ts", args.start_ts)
+        if nonfinite_error:
+            return _config_error(nonfinite_error)
+
     if not (args.frame_interval_s > 0.0):
         return _config_error(f"--frame-interval-s 는 양수여야 한다 ({args.frame_interval_s!r})")
+
+    registry_path = args.registry
+    if registry_path is None:
+        env_registry = os.environ.get("KSI_MODEL_REGISTRY")
+        if env_registry:
+            registry_path = Path(env_registry)
+        else:
+            from ksi_perception.registry import DEFAULT_REGISTRY_PATH
+
+            registry_path = DEFAULT_REGISTRY_PATH
 
     try:
         telemetry = load_telemetry_jsonl(args.telemetry)
@@ -332,17 +545,18 @@ def main(argv: list[str] | None = None) -> int:
         model_id=args.model_id,
         min_confidence=args.min_confidence,
         frame_paths=list(args.frames),
+        registry_path=registry_path,
     )
     if isinstance(loaded, str):
         return _config_error(loaded)
     detector, model_version, frame_count, width, height = loaded
 
-    first = telemetry[0]
-    drone_position = (
-        float(first.drone_lat or 0.0),
-        float(first.drone_lon or 0.0),
-        float(first.altitude_rel_m or 0.0),
-    )
+    if frame_count == 0:
+        # 입력 자체가 공허하다 — 프레임 단위 typed failure 로 축소되면 exit 3
+        # 이지만, 처리할 게 아예 없는 실행은 그와 다른 구성 실패다(exit 1).
+        # argparse 의 nargs="+" 가 CLI 경로에서 이를 이미 막지만, 로더 계층이
+        # 0장을 반환하는 경로까지 fail-closed 로 방어한다(자율 재검토 F).
+        return _config_error("프레임 0장 — 처리할 입력이 없다(빈 시퀀스는 프레임 소스가 아니다)")
 
     # 프레임 시각을 텔레메트리와 **같은 절대 시간축**으로 만든다(감사 #24) —
     # 초판은 프레임을 0초부터 상대 시각으로 만들었고, 실제 UTC 로그를 주면 전
@@ -363,15 +577,31 @@ def main(argv: list[str] | None = None) -> int:
             "불일치 상태의 재생은 전량 무산출이 된다(--start-ts 확인)"
         )
 
-    from datetime import UTC, datetime
+    # viewpoint 참조점 — 원점(=텔레메트리 첫 샘플)기준 ENU **미터**로 변환한다
+    # (자율 재검토 E, 부분 수정 — 전체 수정은 ksi_perception.pipeline 소유,
+    # 위 모듈 docstring "viewpoint 좌표계" 절 참조). 도(度) 그대로 미터 bin 에
+    # 넣으면 실제 이동이 전부 같은 bin 으로 뭉개진다.
+    first = telemetry[0]
+    origin_lat = float(first.drone_lat or 0.0)
+    origin_lon = float(first.drone_lon or 0.0)
+    origin_alt = float(first.altitude_rel_m or 0.0)
+    representative = _select_representative_telemetry_sample(
+        telemetry, (frame_base_ts + frame_last_ts) / 2.0
+    )
+    east_m, north_m = wgs84_to_enu(
+        origin_lat,
+        origin_lon,
+        float(representative.drone_lat or 0.0),
+        float(representative.drone_lon or 0.0),
+    )
+    up_m = float(representative.altitude_rel_m or 0.0) - origin_alt
+    drone_position = (east_m, north_m, up_m)
 
     context = RunContext(
         mission_id=args.mission_id,
         site_id=args.site_id,
         site_frame=args.site_frame,
-        # 프레임 시각이 이미 절대 UTC epoch 초이므로 기준은 unix epoch 이다 —
-        # 허구의 하드코딩 epoch 가 Evidence occurred_at 이 되지 않는다(감사 #23).
-        epoch_utc=datetime(1970, 1, 1, tzinfo=UTC),
+        epoch_utc=_UNIX_EPOCH_UTC,
         model_version=model_version,
         policy_version=args.policy_version,
         calibration_profile_id=args.calibration_profile_id,
@@ -408,10 +638,33 @@ def main(argv: list[str] | None = None) -> int:
     else:
         args.out.write_text(rendered + "\n", encoding="utf-8")
     if result.frame_failures:
-        # 부분 실패 — 산출물은 냈지만 성공으로 위장하지 않는다(exit 3).
+        # 부분/전량 실패 — 산출물은 냈지만 성공으로 위장하지 않는다(exit 3).
+        # 처리된 프레임 전량이 실패해도 같은 exit 3 다(자율 재검토 F) — 다만
+        # "PARTIAL" 이라는 label 자체가 전량 실패를 축소 서술하지 않도록
+        # 실제 비율을 함께 남긴다.
+        label = "TOTAL" if len(result.frame_failures) >= frame_count else "PARTIAL"
         print(
-            f"PARTIAL: 프레임 단위 실패 {len(result.frame_failures)}건 — "
+            f"{label}: 프레임 단위 실패 {len(result.frame_failures)}/{frame_count}건 — "
             "diagnostics.frame_failures 참조",
+            file=sys.stderr,
+        )
+        return 3
+    lineage_defects = [
+        (entity_id, entity_class, reason)
+        for entity_id, entity_class, reason in result.unpublished_events
+        if reason.startswith(f"{EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE}:")
+    ]
+    if lineage_defects:
+        # 실질 공허 계보(빈 원시 id/이름·공백 class 등)는 typed MISSING_CLASSIFICATION_
+        # LINEAGE 미발행으로 흡수되도록 고쳐졌지만(pipeline.py), 같은 배치에 유효
+        # track 이 하나라도 있어 bundles 가 비지 않으면 아래 "관측은 있는데 Event
+        # 0건" 게이트(bundles 전량 빌 때만 발동)를 피해가 exit 0 으로 위장된다
+        # (재검증 V3 P3). 계보 결함은 다른 정당한 미발행 사유(정책에 없는 class 등)
+        # 와 달리 그 자체로 Evidence 누락이므로 bundles 잔존 여부와 무관하게 exit
+        # 3 이다 — 다른 사유(unsupported_event_policy 등)까지 넓히지는 않는다.
+        print(
+            f"PARTIAL: 분류 계보 결함으로 Event 미발행 {len(lineage_defects)}건 — "
+            f"diagnostics.unpublished_events 참조 (예: {lineage_defects[0][2]})",
             file=sys.stderr,
         )
         return 3

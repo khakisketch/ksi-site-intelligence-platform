@@ -59,6 +59,12 @@ class SiteFrame(_CamelModel):
     transform_version: str
 
 
+#  잠정 sanity cap(m) — 규제값(권고 150m)은 대표자 확정 대기(원장 risk
+# flight-envelope-absolute-ceiling). 이 상수는 서버 발급 게이트일 뿐 JSON
+# 스키마(v1.2)는 건드리지 않는다 — 기존 서명 계약의 하위호환을 유지한다.
+_ABSOLUTE_MAX_ALTITUDE_M = 500.0
+
+
 class FlightEnvelope(_CamelModel):
     """비행 봉투 — 교차 필드 검증(감사 #50): min>max·비유한·음수 봉투가 서명된
     계약으로 성립하면 Edge 가 그 값을 경계로 읽는 순간 해석이 정의되지 않는다.
@@ -88,6 +94,11 @@ class FlightEnvelope(_CamelModel):
             raise ValueError(
                 f"minAltitudeM({self.min_altitude_m}) > maxAltitudeM({self.max_altitude_m}) — "
                 "역전된 고도 창은 봉투가 아니다"
+            )
+        if self.max_altitude_m > _ABSOLUTE_MAX_ALTITUDE_M:
+            raise ValueError(
+                f"maxAltitudeM({self.max_altitude_m}) > 잠정 sanity cap"
+                f"({_ABSOLUTE_MAX_ALTITUDE_M}) — 규제값 확정 전 절대 상한(원장 참조)"
             )
         for name in ("minimum_structure_standoff_m", "minimum_person_standoff_m"):
             value = getattr(self, name)

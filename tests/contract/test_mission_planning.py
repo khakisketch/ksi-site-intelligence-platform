@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import json
 import math
 import zipfile
 from xml.etree import ElementTree as ET
@@ -164,6 +165,29 @@ def test_aoi_area_of_rect_matches_expectation() -> None:
     assert aoi.area_m2() == pytest.approx(200.0 * 100.0, rel=0.01)
 
 
+def test_aoi_rejects_polar_vertex() -> None:
+    """자율 재검토 C — |위도|>80° 는 등장방형 근사 유효권 밖(극지 퇴화)."""
+    with pytest.raises(ValidationError, match="극지"):
+        AreaOfInterest(
+            vertices=[
+                GeoPoint(lat_deg=89.98, lon_deg=0.0),
+                GeoPoint(lat_deg=89.98, lon_deg=0.01),
+                GeoPoint(lat_deg=89.98, lon_deg=0.02),
+            ]
+        )
+
+
+def test_aoi_accepts_camelcase_wire_format() -> None:
+    """F — AreaOfInterest/GeoPoint 는 camelCase 와이어도 받는다(populate_by_name 유지)."""
+    aoi = AreaOfInterest.model_validate(
+        {"vertices": [{"latDeg": 0.0, "lonDeg": 0.0}, {"latDeg": 0.0, "lonDeg": 0.001},
+                      {"latDeg": 0.001, "lonDeg": 0.0}]}
+    )
+    assert aoi.vertices[0].lat_deg == 0.0
+    # 기존 snake_case 생성 경로도 무회귀로 계속 동작한다.
+    assert AreaOfInterest(vertices=[_pt(0, 0), _pt(100, 0), _pt(0, 100)]).vertices[0].lat_deg
+
+
 # ── ② 경로 기하 속성 ─────────────────────────────────────────────────────────
 
 
@@ -189,33 +213,38 @@ def _scan_line_norths(route: list[RouteWaypoint]) -> list[float]:
 
 def test_lawnmower_exactly_divisible_keeps_spacing() -> None:
     """높이 100/간격 20 — 정확히 나눠떨어지는 케이스: 선 5개, 간격 정확히 20."""
-    route = lawnmower_route(
+    result = lawnmower_route(
         _rect_aoi(200.0, 100.0), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
     )
+    route = result.waypoints
 
     norths = _scan_line_norths(route)
     assert len(norths) == 5
     gaps = [b - a for a, b in itertools.pairwise(norths)]
     assert all(g == pytest.approx(20.0, rel=0.02) for g in gaps)
+    # 축정렬 직사각형 — 재검토 A-2 실측 게이트가 정확히 완전 커버로 판정해야 한다.
+    assert result.coverage_ratio == 1.0
 
 
 def test_lawnmower_full_coverage_when_not_divisible() -> None:
     """자율 재검토 F6 — 높이 110/간격 20: 스와스(±spacing/2)가 구역 전체 [0,110] 을
     덮어야 하고, 실제 간격은 20 **이하**여야 한다(성긴 방향 이탈 금지)."""
-    route = lawnmower_route(
+    result = lawnmower_route(
         _rect_aoi(200.0, 110.0), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
     )
+    route = result.waypoints
 
     norths = _scan_line_norths(route)
     gaps = [b - a for a, b in itertools.pairwise(norths)]
     assert all(g <= 20.0 + 1e-6 for g in gaps), f"간격 초과: {gaps}"
     assert norths[0] - 10.0 <= 1e-6, f"하단 미커버: 첫 선 {norths[0]}"
     assert norths[-1] + 10.0 >= 110.0 - 1e-6, f"상단 미커버: 끝 선 {norths[-1]}"
+    assert result.coverage_ratio == 1.0
 
 
 def test_lawnmower_waypoints_stay_within_aoi_bounds() -> None:
     aoi = _rect_aoi(200.0, 100.0)
-    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE)
+    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE).waypoints
 
     lat_lo = min(v.lat_deg for v in aoi.vertices) - 1e-9
     lat_hi = max(v.lat_deg for v in aoi.vertices) + 1e-9
@@ -230,7 +259,7 @@ def test_lawnmower_boustrophedon_alternates_direction() -> None:
     """왕복: 인접 스캔선의 진행 방향이 반대다 — 총 이동거리를 줄이는 핵심 속성."""
     route = lawnmower_route(
         _rect_aoi(200.0, 100.0), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
-    )
+    ).waypoints
 
     line_count = len(route) // 2
     directions = []
@@ -259,7 +288,7 @@ def test_lawnmower_sweep_direction_is_math_convention() -> None:
         altitude_m=40.0,
         envelope=_ENVELOPE,
         sweep_direction_deg=90.0,
-    )
+    ).waypoints
 
     easts = sorted(
         {round(wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)[0], 6) for wp in route}
@@ -271,8 +300,72 @@ def test_lawnmower_sweep_direction_is_math_convention() -> None:
 
 def test_lawnmower_narrow_polygon_gets_single_center_line() -> None:
     aoi = _rect_aoi(200.0, 10.0)  # 폭 10m < spacing 20m
-    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE)
+    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE).waypoints
     assert len(route) == 2  # 중앙선 1개
+
+
+def test_lawnmower_rejects_nonconvex_t_shaped_aoi() -> None:
+    """자율 재검토 A-1 — T자 AOI(비볼록): 스캔선 사이/바깥 밴드 무음 미커버 위험을
+    typed 로 거부한다. 줄기 x∈[10,20]·가로대 x∈[0,30] 인 T 모양(볼록 아님)."""
+    aoi = AreaOfInterest(
+        vertices=[
+            _pt(10, 0), _pt(20, 0), _pt(20, 30), _pt(30, 30),
+            _pt(30, 40), _pt(0, 40), _pt(0, 30), _pt(10, 30),
+        ]
+    )
+    with pytest.raises(RouteGenerationError, match="NON_CONVEX_AOI"):
+        lawnmower_route(aoi, spacing_m=5.0, altitude_m=40.0, envelope=_ENVELOPE)
+
+
+def test_lawnmower_rejects_coverage_below_minimum_for_sheared_parallelogram() -> None:
+    """자율 재검토 A-2 — 볼록(전단 평행사변형)이어도 sweep 방향이 도형과 어긋나면
+    (여기서는 sweep 을 0 으로 강제, 즉 전단축과 나란하지 않은 스캔선) 대면적
+    미커버가 나고 실측 게이트가 이를 잡는다. 볼록성만으로는 보증이 부족함을
+    보이는 회귀 고정."""
+    aoi = AreaOfInterest(
+        vertices=[_pt(0, 0), _pt(200, 0), _pt(400, 40), _pt(200, 40)]
+    )
+    with pytest.raises(RouteGenerationError, match="COVERAGE_BELOW_MINIMUM"):
+        lawnmower_route(
+            aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE, sweep_direction_deg=0.0
+        )
+
+
+def test_lawnmower_slightly_misaligned_sweep_passes_gate_below_full_coverage() -> None:
+    """자율 재검토 A-2 — 명시 sweep 을 축정렬에서 2° 어긋내면 커버 비율이 1.0
+    미만으로 떨어지되(모서리 미세 결손) 하한(0.95) 이상은 유지돼 통과한다 —
+    게이트가 완전무결이 아니라 일반영역 하한만 강제함을 보인다. (해석적 정확
+    계산 기준 5° 는 0.9497 로 하한 밖이다 — 격자 샘플링은 이를 통과시켰었다.
+    재검증 후 각도를 2°(정확값 0.9995)로 조정.)"""
+    from ksi_mission_planning.coverage import _MIN_COVERAGE_RATIO
+
+    result = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        sweep_direction_deg=2.0,
+    )
+    assert _MIN_COVERAGE_RATIO <= result.coverage_ratio < 1.0, result.coverage_ratio
+
+
+def test_lawnmower_misaligned_sweep_just_below_floor_rejected() -> None:
+    """정확 계산 경계 고정 — 같은 도형에서 sweep 5° 는 정확값 0.9497 로 하한(0.95)
+    바로 아래다. 샘플링 시절엔 과대평가로 통과하던 각도가 이제 거부된다.
+
+    하한과의 여유가 6m²/20000m² 수준의 knife-edge 라(최종 반증 F-4), 통과/거부
+    여부만 보면 무관한 변경에 조용히 반전될 수 있다 — **수치 자체**를 메시지에서
+    회수해 고정한다."""
+    with pytest.raises(
+        RouteGenerationError, match=r"COVERAGE_BELOW_MINIMUM.*0\.9497"
+    ):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=20.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            sweep_direction_deg=5.0,
+        )
 
 
 # ── ③ FlightEnvelope·자원 게이트 ─────────────────────────────────────────────
@@ -317,11 +410,27 @@ def test_lawnmower_rejects_waypoint_count_explosion() -> None:
         )
 
 
+def test_lawnmower_fold_boundary_worst_case_keeps_full_coverage() -> None:
+    """재검토 B — 과거 문턱(usable<=0.1)이 접던 최악값 height=spacing+0.1: 지금은
+    접지 않고 선 2개를 유지해 커버가 수학적으로 완전해야 한다(ratio==1.0, 양끝
+    미커버 없음). 축정렬 직사각형이라 실측도 정확히 1.0 이 나온다."""
+    result = lawnmower_route(
+        _rect_aoi(200.0, 20.1), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
+    )
+    norths = _scan_line_norths(result.waypoints)
+    assert len(norths) == 2, f"선 2개가 유지돼야 한다: {norths}"
+    assert norths[0] - 10.0 <= 1e-6, f"하단 미커버: {norths[0]}"
+    assert norths[-1] + 10.0 >= 20.1 - 1e-6, f"상단 미커버: {norths[-1]}"
+    assert result.coverage_ratio == 1.0
+
+
 # ── ④ WPML/KMZ 산출물 — 스펙 대조 ────────────────────────────────────────────
 
 
 def _route() -> list[RouteWaypoint]:
-    return lawnmower_route(_rect_aoi(), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE)
+    return lawnmower_route(
+        _rect_aoi(), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
+    ).waypoints
 
 
 def test_kmz_contains_standard_members() -> None:
@@ -332,6 +441,29 @@ def test_kmz_contains_standard_members() -> None:
             "wpmz/waylines.wpml",
             "wpmz/res/",
         }
+
+
+def test_build_kmz_pair_manifest_round_trips() -> None:
+    """W2 인터페이스 계약 E — pair_manifest 는 wpmz/res/ksi-mission-pair.json 로
+    왕복(zip 재파싱 후 내용 일치)한다. sort_keys·컴팩트 separators·
+    ensure_ascii=False 를 원본 바이트 대조로 확인한다(한글 값 포함)."""
+    manifest = {"missionContractId": "mc-001", "kmzSha256": "deadbeef", "label": "한글값"}
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG, pair_manifest=manifest)
+    with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+        assert "wpmz/res/ksi-mission-pair.json" in archive.namelist()
+        raw = archive.read("wpmz/res/ksi-mission-pair.json")
+
+    assert json.loads(raw) == manifest
+    expected = json.dumps(
+        manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    assert raw == expected
+
+
+def test_build_kmz_without_pair_manifest_omits_pair_file() -> None:
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG)
+    with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+        assert "wpmz/res/ksi-mission-pair.json" not in archive.namelist()
 
 
 def _parse_kmz_member(kmz: bytes, name: str) -> ET.Element:
@@ -389,8 +521,12 @@ def test_template_kml_carries_spec_required_elements() -> None:
 
 
 def test_template_useglobal_flags_have_global_definitions() -> None:
-    """useGlobal*=1 플래그가 참조하는 전역값이 실제로 존재한다(F2 의 재발 방지)."""
-    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG)
+    """useGlobal*=1 플래그가 참조하는 전역값이 실제로 존재한다(F2 의 재발 방지) —
+    capture_at_waypoints=True 로 template.kml 에도 실리는 actionGroup(재검토 D-3)
+    까지 포함한다. useGlobalPayloadLensIndex 는 참조할 전역 payloadParam 이 이
+    생성기 어디에도 없으므로(D-1), 앞으로 실수로 "1"이 나오면 이 테스트가 즉시
+    잡는다(D-2 회귀 가드)."""
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG, capture_at_waypoints=True)
     root = _parse_kmz_member(kmz, "wpmz/template.kml")
     folder = root.find("kml:Document/kml:Folder", NS)
     assert folder is not None
@@ -400,15 +536,68 @@ def test_template_useglobal_flags_have_global_definitions() -> None:
         "useGlobalTurnParam": "wpml:globalWaypointTurnMode",
         "useGlobalHeadingParam": "wpml:globalWaypointHeadingParam",
         "useGlobalSpeed": "wpml:autoFlightSpeed",
+        # 지역 payloadLensIndex 가 권위이고(D-1) 이 생성기는 어떤 전역
+        # payloadParam 도 emit 하지 않는다 — "1" 이 나오면 아래 태그(존재하지
+        # 않음)가 없어 즉시 실패해야 한다.
+        "useGlobalPayloadLensIndex": "wpml:globalPayloadLensIndex",
     }
     placemarks = folder.findall("kml:Placemark", NS)
     assert placemarks
     for placemark in placemarks:
         for flag, global_tag in flag_to_global.items():
-            if placemark.findtext(f"wpml:{flag}", namespaces=NS) == "1":
-                assert folder.find(global_tag, NS) is not None, (
-                    f"{flag}=1 인데 {global_tag} 전역 정의가 없다"
-                )
+            # .// — useGlobalPayloadLensIndex 는 Placemark 직계가 아니라
+            # actionGroup/action/actionActuatorFuncParam 아래 중첩돼 있다.
+            for match in placemark.findall(f".//wpml:{flag}", NS):
+                if match.text == "1":
+                    assert folder.find(global_tag, NS) is not None, (
+                        f"{flag}=1 인데 {global_tag} 전역 정의가 없다"
+                    )
+
+
+def test_template_and_waylines_capture_actions_are_equivalent() -> None:
+    """자율 재검토 D-3 — capture_at_waypoints=True 면 template.kml 과
+    waylines.wpml 이 웨이포인트별로 **동일한** actionGroup 을 담는다. 한 KMZ 의
+    두 파일이 서로 다른 임무를 기술하면(예: waylines 만 촬영) 편집기에서 보는
+    template 과 실제 실행 내용이 어긋난다."""
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG, capture_at_waypoints=True)
+    template_root = _parse_kmz_member(kmz, "wpmz/template.kml")
+    waylines_root = _parse_kmz_member(kmz, "wpmz/waylines.wpml")
+
+    def _action_groups(root: ET.Element) -> list[ET.Element | None]:
+        placemarks = root.findall("kml:Document/kml:Folder/kml:Placemark", NS)
+        return [pm.find("wpml:actionGroup", NS) for pm in placemarks]
+
+    template_groups = _action_groups(template_root)
+    waylines_groups = _action_groups(waylines_root)
+    assert template_groups, "캡처 켠 상태인데 template.kml 에 actionGroup 이 없다"
+    assert len(template_groups) == len(waylines_groups)
+
+    for i, (t_group, w_group) in enumerate(zip(template_groups, waylines_groups, strict=True)):
+        assert t_group is not None, f"template 웨이포인트 {i} 에 actionGroup 없음"
+        assert w_group is not None, f"waylines 웨이포인트 {i} 에 actionGroup 없음"
+        t_xml = ET.tostring(t_group, encoding="unicode")
+        w_xml = ET.tostring(w_group, encoding="unicode")
+        assert t_xml == w_xml, f"웨이포인트 {i} 의 actionGroup 이 template/waylines 사이에 다르다"
+
+
+# DJI WPML 스펙(Cloud-API-Doc 21.waylines-wpml.md)이 waylines Folder 에 요구하는
+# 필수 요소 — template 쪽과 같은 F7 방법론(구현과 무관한 독립 목록).
+_SPEC_WAYLINES_FOLDER = (
+    "templateId",
+    "executeHeightMode",
+    "waylineId",
+    "autoFlightSpeed",
+)
+
+
+def test_waylines_wpml_carries_spec_required_folder_elements() -> None:
+    """자율 재검토 D-5 — F7 방법론을 waylines Folder 에도 적용(독립 목록 대조)."""
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG)
+    root = _parse_kmz_member(kmz, "wpmz/waylines.wpml")
+    folder = root.find("kml:Document/kml:Folder", NS)
+    assert folder is not None
+    for tag in _SPEC_WAYLINES_FOLDER:
+        assert folder.find(f"wpml:{tag}", NS) is not None, f"Folder.{tag} 누락(스펙 필수)"
 
 
 def test_waylines_wpml_indices_continuous_and_coordinates_lon_lat_order() -> None:
@@ -451,6 +640,44 @@ def test_drone_enum_flows_from_profile_not_hardcoded() -> None:
         drone_info = root.find("kml:Document/wpml:missionConfig/wpml:droneInfo", NS)
         assert drone_info is not None
         assert drone_info.findtext("wpml:droneEnumValue", namespaces=NS) == "99"
+
+
+def test_drone_profile_all_four_fields_flow_without_hardcoding() -> None:
+    """자율 재검토 D-6 — DroneProfile 4필드(drone_enum_value·drone_sub_enum_value·
+    payload_enum_value·payload_position_index) 전부가, missionConfig 뿐 아니라
+    촬영 action(payloadPositionIndex, capture_at_waypoints=True)까지 그대로
+    흘러야 한다. _DRONE(기본 픽스처)이 0 값 위주라 우연히 통과할 여지를 없애기
+    위해 넷 다 서로 다른 비영값을 쓴다."""
+    distinctive_drone = DroneProfile(
+        drone_enum_value=91,
+        drone_sub_enum_value=3,
+        payload_enum_value=77,
+        payload_position_index=2,
+    )
+    kmz = build_kmz(
+        _route(), drone=distinctive_drone, config=_CONFIG, capture_at_waypoints=True
+    )
+    for member in ("wpmz/template.kml", "wpmz/waylines.wpml"):
+        root = _parse_kmz_member(kmz, member)
+        drone_info = root.find("kml:Document/wpml:missionConfig/wpml:droneInfo", NS)
+        assert drone_info is not None
+        assert drone_info.findtext("wpml:droneEnumValue", namespaces=NS) == "91"
+        assert drone_info.findtext("wpml:droneSubEnumValue", namespaces=NS) == "3"
+        payload_info = root.find("kml:Document/wpml:missionConfig/wpml:payloadInfo", NS)
+        assert payload_info is not None
+        assert payload_info.findtext("wpml:payloadEnumValue", namespaces=NS) == "77"
+        assert payload_info.findtext("wpml:payloadPositionIndex", namespaces=NS) == "2"
+
+        placemark = root.find("kml:Document/kml:Folder/kml:Placemark", NS)
+        assert placemark is not None
+        for action_param in placemark.findall(".//wpml:actionActuatorFuncParam", NS):
+            payload_position = action_param.findtext(
+                "wpml:payloadPositionIndex", namespaces=NS
+            )
+            assert payload_position == "2", (
+                f"{member} action payloadPositionIndex 가 프로파일과 다르다: "
+                f"{payload_position}"
+            )
 
 
 def test_kmz_is_deterministic() -> None:
@@ -535,6 +762,14 @@ def test_capture_actions_present_when_enabled_and_absent_otherwise() -> None:
             assert photo.findtext(
                 f"wpml:actionActuatorFuncParam/wpml:{tag}", namespaces=NS
             ) is not None, f"takePhoto 파라미터 {tag} 누락"
+        # 자율 재검토 D-1 — 지역 payloadLensIndex 가 권위다. 참조 대상 전역이
+        # 없으므로 "1"(전역 사용)이면 dangling 참조가 된다(F2 와 동일 클래스).
+        assert (
+            photo.findtext(
+                "wpml:actionActuatorFuncParam/wpml:useGlobalPayloadLensIndex", namespaces=NS
+            )
+            == "0"
+        ), f"웨이포인트 {i} useGlobalPayloadLensIndex 가 dangling 참조(1)를 가리킨다"
 
     without = build_kmz(route, drone=_DRONE, config=_CONFIG)
     root = _parse_kmz_member(without, "wpmz/waylines.wpml")
@@ -568,9 +803,109 @@ def test_gimbal_rotate_uses_spec_enum_values() -> None:
         assert param.findtext("wpml:gimbalRotateMode", namespaces=NS) == "absoluteAngle"
 
 
+# 공식 40.common-element.md raw 표 기준 gimbalRotate actionActuatorFuncParam 필수
+# 11필드 — 구현과 무관한 독립 목록(F7 방법론, 재검토 D-6: 기존 테스트는 enum 값
+# 2개(YawBase·RotateMode)만 봤다).
+_SPEC_GIMBAL_ROTATE_PARAM_FIELDS = (
+    "payloadPositionIndex",
+    "gimbalHeadingYawBase",
+    "gimbalRotateMode",
+    "gimbalPitchRotateEnable",
+    "gimbalPitchRotateAngle",
+    "gimbalRollRotateEnable",
+    "gimbalRollRotateAngle",
+    "gimbalYawRotateEnable",
+    "gimbalYawRotateAngle",
+    "gimbalRotateTimeEnable",
+    "gimbalRotateTime",
+)
+
+
+def test_gimbal_rotate_param_has_all_eleven_required_fields() -> None:
+    """자율 재검토 D-6 — gimbalRotate 필수 11필드 완전성(독립 목록 대조)."""
+    kmz = build_kmz(_route(), drone=_DRONE, config=_CONFIG, capture_at_waypoints=True)
+    root = _parse_kmz_member(kmz, "wpmz/waylines.wpml")
+    gimbal_params = [
+        a.find("wpml:actionActuatorFuncParam", NS)
+        for a in root.findall(".//wpml:action", NS)
+        if a.findtext("wpml:actionActuatorFunc", namespaces=NS) == "gimbalRotate"
+    ]
+    assert gimbal_params, "gimbalRotate 액션이 없다"
+    assert len(_SPEC_GIMBAL_ROTATE_PARAM_FIELDS) == 11
+    for param in gimbal_params:
+        assert param is not None
+        for field in _SPEC_GIMBAL_ROTATE_PARAM_FIELDS:
+            assert param.findtext(f"wpml:{field}", namespaces=NS) is not None, (
+                f"gimbalRotate 파라미터 {field} 누락(스펙 필수 11필드)"
+            )
+
+
 def test_near_equal_height_and_spacing_collapses_to_single_line() -> None:
-    """재검토 경계 케이스 — 폭이 spacing+ε 이면 1e-12m 간격의 스캔선 2개가 아니라
-    중앙선 1개로 접힌다(동일 좌표 웨이포인트 쌍 방지)."""
-    aoi = _rect_aoi(200.0, 20.0 + 1e-6)
-    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE)
+    """재검토 경계 케이스 — 폭이 spacing+ε(부동소수 잡음 수준, ``_FOLD_EPSILON_M``
+    미만)이면 스캔선 2개가 아니라 중앙선 1개로 접힌다(동일 좌표 웨이포인트 쌍
+    방지). ``_FOLD_EPSILON_M`` 이상은 재검토 B 로 더 이상 접지 않으므로(선 2개
+    유지가 커버를 수학적으로 보존한다), 문턱보다 확실히 작은 ε 을 쓴다."""
+    aoi = _rect_aoi(200.0, 20.0 + 1e-9)
+    route = lawnmower_route(aoi, spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE).waypoints
     assert len(route) == 2
+
+
+def test_fold_branch_shear_shape_rejected_by_exact_coverage() -> None:
+    """재검증 P1 회귀 — 접기 분기(spacing≥높이) × 전단 도형. 격자 샘플링은 이
+    조합에서 행이 1줄로 붕괴해 실커버 0.667 을 1.0 으로 보고했다(거짓 증명서로
+    201 발급). 해석적 정확 계산은 0.6667 로 재고 거부해야 한다."""
+    aoi = AreaOfInterest(vertices=[_pt(0, 0), _pt(30, 0), _pt(70, 20), _pt(40, 20)])
+    with pytest.raises(RouteGenerationError, match=r"COVERAGE_BELOW_MINIMUM.*0\.6667"):
+        lawnmower_route(
+            aoi, spacing_m=60.0, altitude_m=40.0, envelope=_ENVELOPE, sweep_direction_deg=0.0
+        )
+
+
+def test_fold_branch_full_coverage_not_falsely_rejected_no_spacing_cliff() -> None:
+    """재검증 P2 회귀 — spacing 이 AOI 높이보다 훨씬 크면 격자 샘플링은 행 0줄로
+    붕괴해 완전 커버 임무를 0.0 으로 거부했고, 79.9→통과/80.0→거부 절벽이 있었다.
+    정확 계산에서는 둘 다 1.0 으로 통과한다(중앙선 1개의 ±spacing/2 스와스가
+    높이 10m 를 전부 덮는다)."""
+    for spacing in (79.9, 80.0):
+        result = lawnmower_route(
+            _rect_aoi(200.0, 10.0), spacing_m=spacing, altitude_m=40.0, envelope=_ENVELOPE
+        )
+        assert result.coverage_ratio == 1.0, f"spacing={spacing}"
+        assert len(result.waypoints) == 2
+
+
+def test_generated_routes_stay_inside_convex_aoi_polygon() -> None:
+    """criteria 'AOI 내부'를 bbox 가 아니라 **폴리곤 내부**로 검증한다(재검토 R4 —
+    기존엔 bbox 검사뿐이라 전단 도형에서 폴리곤 밖 이탈을 원리상 못 잡았다).
+
+    볼록 AOI 에서 웨이포인트가 전부 내부/경계면, 볼록성에 의해 연결 세그먼트도
+    내부다 — 웨이포인트와 인접 웨이포인트 중점 모두를 부호 외적으로 판정한다."""
+    corners = [(0.0, 0.0), (200.0, 0.0), (230.0, 90.0), (30.0, 90.0)]  # CCW 전단
+    aoi = AreaOfInterest(vertices=[_pt(e, n) for e, n in corners])
+
+    def to_enu(lat_deg: float, lon_deg: float) -> tuple[float, float]:
+        return (
+            (lon_deg - _LON0) * _M_PER_DEG_LAT * math.cos(math.radians(_LAT0)),
+            (lat_deg - _LAT0) * _M_PER_DEG_LAT,
+        )
+
+    def inside(px: float, py: float, tol_m: float = 1e-3) -> bool:
+        n = len(corners)
+        for i in range(n):
+            ax, ay = corners[i]
+            bx, by = corners[(i + 1) % n]
+            cross = (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+            if cross < -tol_m * math.hypot(bx - ax, by - ay):
+                return False
+        return True
+
+    lawn = lawnmower_route(aoi, spacing_m=15.0, altitude_m=40.0, envelope=_ENVELOPE).waypoints
+    peri = perimeter_route(aoi, altitude_m=40.0, envelope=_ENVELOPE)
+    for label, route in (("lawnmower", lawn), ("perimeter", peri)):
+        points = [to_enu(w.lat_deg, w.lon_deg) for w in route]
+        for i, (px, py) in enumerate(points):
+            assert inside(px, py), f"{label} 웨이포인트 {i} 가 AOI 폴리곤 밖: ({px:.3f},{py:.3f})"
+        for i in range(len(points) - 1):
+            mx = (points[i][0] + points[i + 1][0]) / 2.0
+            my = (points[i][1] + points[i + 1][1]) / 2.0
+            assert inside(mx, my), f"{label} 세그먼트 {i} 중점이 AOI 폴리곤 밖"

@@ -28,6 +28,9 @@ REAL_MODEL_GATE_FILES = (
     "test_dfine_detector.py",
     "test_onnx_conformance.py",
     "test_recorded_slice.py",
+    # entry point(python -m ksi_perception.recorded_pipeline)의 Registry→모델→프레임
+    # 실경로 e2e — 재검토 G: 이 경로가 어떤 자동 게이트에서도 안 돌던 구멍의 anchor.
+    "test_recorded_pipeline.py",
 )
 
 _gate_skips: list[str] = []
@@ -56,6 +59,10 @@ def pytest_cmdline_main(config):  # type: ignore[no-untyped-def]
             here / "contract" / "test_dfine_detector.py",
             here / "contract" / "test_onnx_conformance.py",
             here / "replay" / "test_recorded_slice.py",
+            # entry point e2e 게이트(REAL_MODEL_GATE_FILES 에도 등록돼 있다) —
+            # 이 파일이 rename/삭제되면 skip 조차 감지되지 않으므로 부재 자체를
+            # 여기서 함께 단정한다(재검증 V3 P2 — 앵커 반쪽 구멍 폐쇄).
+            here / "contract" / "test_recorded_pipeline.py",
         )
         missing = [str(path) for path in expected if not path.is_file()]
         if missing:

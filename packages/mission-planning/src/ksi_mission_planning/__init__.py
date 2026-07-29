@@ -1,6 +1,7 @@
 """ksi-mission-planning — AOI 지오메트리·커버리지 경로·WPML/KMZ (ADR-KSI-007)."""
 
 from ksi_mission_planning.coverage import (
+    LawnmowerResult,
     RouteGenerationError,
     RouteWaypoint,
     lawnmower_route,
@@ -23,6 +24,7 @@ __all__ = [
     "DroneProfile",
     "GeoPoint",
     "KmzBuildError",
+    "LawnmowerResult",
     "RouteGenerationError",
     "RouteWaypoint",
     "WaylineMissionConfig",

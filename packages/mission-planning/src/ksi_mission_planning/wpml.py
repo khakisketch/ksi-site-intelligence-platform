@@ -28,8 +28,10 @@ Manifold 측 정책 집행은 서명된 Mission Contract 가 소유한다(이원
 from __future__ import annotations
 
 import io
+import json
 import math
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
@@ -204,15 +206,30 @@ def _validate_route(route: list[RouteWaypoint]) -> float:
 
 
 def build_template_kml(
-    route: list[RouteWaypoint], *, drone: DroneProfile, config: WaylineMissionConfig
+    route: list[RouteWaypoint],
+    *,
+    drone: DroneProfile,
+    config: WaylineMissionConfig,
+    capture_at_waypoints: bool = False,
 ) -> bytes:
     """template.kml — 편집 가능한 waypoint 템플릿 (heightMode=relativeToStartPoint).
 
     스펙 필수 전역값(globalHeight·gimbalPitchMode·globalWaypointTurnMode·
     globalWaypointHeadingParam)을 모두 넣고, 웨이포인트는 전역값을 참조만 한다
     (useGlobal*=1) — 참조 대상 없는 useGlobal 플래그(자율 재검토 F2)를 만들지
-    않는다. 요소 순서는 공식 샘플(waylineCoordinateSysParam → autoFlightSpeed)을
-    따른다 — XSD sequence 검증 가능성에 대한 보험.
+    않는다. 요소 순서: 공식 샘플과 대조해 **실제로 확인한 것은
+    waylineCoordinateSysParam → autoFlightSpeed 두 원소의 상대 순서뿐**이다(코드가
+    그 순서를 지킨다). Folder 하위 나머지 요소들의 전체 순서가 공식 샘플과
+    완전히 일치하는지는 미확인이다 — "전체 순서가 샘플과 같다"는 과잉 주장은
+    하지 않는다(자율 재검토 D-4 정정. XSD 가 순서 무관 스키마일 가능성도 있어
+    필수 여부 자체가 미확정 — H4 실기(Pilot 2 export 샘플 unzip)에서 확정).
+
+    Args:
+        capture_at_waypoints: True 면 :func:`build_waylines_wpml` 과 **동일한**
+            촬영 actionGroup 을 각 Placemark 에 동봉한다(자율 재검토 D-3) — 한
+            KMZ 의 template.kml·waylines.wpml 두 파일이 같은 임무를 기술하지
+            않으면(예: waylines 만 촬영하고 template 은 안 하면) 편집기에서 연
+            template.kml 이 실제 실행 내용과 어긋나 보인다.
     """
     altitude_m = _validate_route(route)
     root, document = _document_root()
@@ -245,6 +262,8 @@ def build_template_kml(
         _sub(placemark, _wpml("useGlobalSpeed"), "1")
         _sub(placemark, _wpml("useGlobalHeadingParam"), "1")
         _sub(placemark, _wpml("useGlobalTurnParam"), "1")
+        if capture_at_waypoints:
+            _append_capture_action_group(placemark, index=index, drone=drone)
 
     return _serialize(root)
 
@@ -294,7 +313,11 @@ def _append_capture_action_group(
     _sub(param, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
     _sub(param, _wpml("fileSuffix"), "ksi")
     _sub(param, _wpml("payloadLensIndex"), "wide")
-    _sub(param, _wpml("useGlobalPayloadLensIndex"), "1")
+    # "1"(전역값 사용)이면 참조 대상 전역 payloadParam 이 필요한데, 이 생성기는
+    # 어느 파일에도 그런 전역을 내지 않는다 — F2 와 동일 클래스의 dangling 참조가
+    # 된다. 지역 payloadLensIndex(위)가 실제 권위이므로 "0"으로 명시한다
+    # (자율 재검토 D-1).
+    _sub(param, _wpml("useGlobalPayloadLensIndex"), "0")
 
 
 def build_waylines_wpml(
@@ -352,9 +375,26 @@ def build_kmz(
     drone: DroneProfile,
     config: WaylineMissionConfig,
     capture_at_waypoints: bool = False,
+    pair_manifest: Mapping[str, str] | None = None,
 ) -> bytes:
-    """template.kml + waylines.wpml 을 ``wpmz/`` 아래 담은 KMZ(zip) 바이트."""
-    template = build_template_kml(route, drone=drone, config=config)
+    """template.kml + waylines.wpml 을 ``wpmz/`` 아래 담은 KMZ(zip) 바이트.
+
+    Args:
+        capture_at_waypoints: True 면 template.kml·waylines.wpml 양쪽 모두에
+            동일한 촬영 actionGroup 을 동봉한다(자율 재검토 D-3 — 두 파일이 같은
+            임무를 기술하게 한다).
+        pair_manifest: 주어지면 ``wpmz/res/ksi-mission-pair.json`` 로 기록한다
+            (``sort_keys``·``ensure_ascii=False``·컴팩트 separators) — 이 KMZ 와
+            짝을 이루는 서명된 Mission Contract 식별 정보(이원 산출물 원칙,
+            ADR-KSI-007) 등 호출자가 원하는 문자열 키/값을 그대로 담는다. **DJI
+            Pilot 2 가 ``res/`` 의 잉여 파일(기존 빈 디렉터리 엔트리 외의 실제
+            파일)을 수용하는지는 H4 실기 미확인**이다(기존 빈 res/ 동봉과 같은
+            리스크 계열 — 불확실하면 이 인자를 생략하고 짝 식별은 KMZ 밖(계약
+            응답 등)에서 전달하라).
+    """
+    template = build_template_kml(
+        route, drone=drone, config=config, capture_at_waypoints=capture_at_waypoints
+    )
     waylines = build_waylines_wpml(
         route, drone=drone, config=config, capture_at_waypoints=capture_at_waypoints
     )
@@ -370,4 +410,16 @@ def build_kmz(
         # 임포트 거부 사유가 될 가능성에 대한 보험, H4 에서 확정).
         res_dir = zipfile.ZipInfo("wpmz/res/", date_time=_FIXED_ZIP_DATETIME)
         archive.writestr(res_dir, b"")
+        if pair_manifest is not None:
+            manifest_payload = json.dumps(
+                dict(pair_manifest),
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            manifest_info = zipfile.ZipInfo(
+                "wpmz/res/ksi-mission-pair.json", date_time=_FIXED_ZIP_DATETIME
+            )
+            manifest_info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(manifest_info, manifest_payload)
     return buffer.getvalue()

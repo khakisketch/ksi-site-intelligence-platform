@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
+from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_contracts.signing import KeyRegistry, SignatureVerdict, load_verified_contract
+from pydantic import ValidationError
 
 _SITE_FRAME = {
     "crs": "EPSG:5186",
@@ -120,6 +123,52 @@ def test_valid_for_hours_beyond_cap_rejected() -> None:
 
     response = client.post(
         "/v1/missions/contracts", json=_valid_request(validForHours=169.0)
+    )
+
+    assert response.status_code == 422
+
+
+# ── C. FlightEnvelope 절대 sanity cap (P2 — 잠정, 원장 risk
+#      flight-envelope-absolute-ceiling) ─────────────────────────────────────
+
+
+def test_flight_envelope_rejects_altitude_above_absolute_cap() -> None:
+    """501m 는 잠정 sanity cap(500m)을 넘는다 — 규제값(권고 150m) 확정 전에도
+    이 상한은 서버 발급 게이트로 fail-closed 해야 한다."""
+    with pytest.raises(ValidationError):
+        FlightEnvelope(
+            allowed_volumes=["vol-1"],
+            excluded_volumes=[],
+            min_altitude_m=5.0,
+            max_altitude_m=501.0,
+        )
+
+
+def test_flight_envelope_accepts_altitude_at_absolute_cap() -> None:
+    """경계값 500m 는 허용된다 — 상한은 초과(>)만 거부한다."""
+    envelope = FlightEnvelope(
+        allowed_volumes=["vol-1"],
+        excluded_volumes=[],
+        min_altitude_m=5.0,
+        max_altitude_m=500.0,
+    )
+    assert envelope.max_altitude_m == 500.0
+
+
+def test_issuance_endpoint_rejects_envelope_above_absolute_cap() -> None:
+    """API 레벨 반증 — 요청 바디의 maxAltitudeM 이 잠정 cap 을 넘으면 422."""
+    client, _registry, _key_id = _client_with_signing()
+
+    response = client.post(
+        "/v1/missions/contracts",
+        json=_valid_request(
+            flightEnvelope={
+                "allowedVolumes": ["vol-1"],
+                "excludedVolumes": [],
+                "minAltitudeM": 5.0,
+                "maxAltitudeM": 501.0,
+            }
+        ),
     )
 
     assert response.status_code == 422

@@ -878,6 +878,104 @@ def test_entity_without_classification_lineage_cannot_publish_event() -> None:
     assert built.status is EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE
 
 
+def test_entity_with_empty_raw_classification_lineage_rejected_typed_not_raised() -> None:
+    """[W4 Part A, P1] '계보 없음'은 키 부재만이 아니다 — 원시 id/이름이 형식상
+
+    존재하되 실질적으로 빈 경우도 같은 typed MISSING_CLASSIFICATION_LINEAGE 로
+    거부돼야 한다. 이전에는 ontology_version/classification_source 가 채워져
+    있으면(키 존재) 이 사전 게이트를 통과해버려, v1.2 ``ClassificationLineage`` 의
+    ``_source_nonempty`` model_validator 가 던지는 ``ValidationError`` 가 함수 밖으로
+    그대로 새어나갔다("예외를 던지지 않는다" 계약 위반).
+    """
+    from datetime import UTC, datetime
+
+    from ksi_domain.enums import Severity
+    from ksi_event_contracts.world_entity import (
+        ClassificationSource,
+        EntityLineage,
+        Pose,
+        Uncertainty,
+        WorldEntity,
+    )
+    from ksi_perception.pipeline import _event_bundle_from_entity
+
+    empty_source_entity = WorldEntity(
+        entity_id="ent-empty-source",
+        entity_class="Person",  # type: ignore[call-arg]
+        timestamp=datetime(2026, 7, 27, 6, 0, 0, tzinfo=UTC),
+        site_frame="EPSG:4326+WGS84@slice-1.0.0",
+        pose=Pose(position=[37.5, 127.0, 0.0]),
+        uncertainty=Uncertainty(position_covariance=[1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0]),
+        lineage=EntityLineage(
+            track_id="trk-002",
+            model_versions={"detector": "stub"},
+            calibration_profile_id="cal-0",
+            classification_ontology_version="ksi-ontology-v1",
+            # 키는 존재(None 아님)하지만 원시 id/이름이 비어 있다 — WorldEntity
+            # 계층(ClassificationSource)은 이를 구조적으로 합법 취급한다(P1 구멍).
+            classification_source=ClassificationSource(
+                taxonomy="COCO-2017", source_class_ids=[], source_class_names=[]
+            ),
+        ),
+    )
+    built = _event_bundle_from_entity(
+        empty_source_entity,
+        severity=Severity.CANDIDATE,
+        event_type="PERSON_PRESENT",
+        context=make_run_context(model_version="stub"),
+    )
+    assert not built.ok and built.bundle is None
+    assert built.status is EventBuildStatus.MISSING_CLASSIFICATION_LINEAGE
+
+
+def test_empty_raw_classification_lineage_does_not_kill_batch() -> None:
+    """[W4 Part A, P1] 원시 계보가 빈 entity 가 배치에 섞여도 run_vertical_slice 는
+
+    예외 없이 완주하고, 그 track 만 typed 사유로 미발행되며, 나머지 유효 track 은
+    계속 처리돼 Event 를 발행한다(수정 전에는 ValidationError 전파로 이 호출
+    자체가 배치 전체를 죽였다).
+    """
+    from ksi_domain.detection import BoundingBox, Detection
+
+    def _bare_person(
+        *, x_min: float, y_min: float, x_max: float, y_max: float
+    ) -> Detection:
+        # source_class_id/source_class_name 을 주지 않는다 — Detection/Observation/
+        # assembly 모두 이 조합을 합법으로 허용한다(원시 계보 부재는 canonical
+        # 분류 부재와 다르다).
+        return Detection(
+            detection_class="Person",
+            confidence=0.9,
+            bbox=BoundingBox(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max),
+        )
+
+    script = {
+        i: [
+            _bare_person(
+                x_min=100.0 + i * 4.0, y_min=100.0, x_max=180.0 + i * 4.0, y_max=300.0
+            ),
+            person_detection(
+                x_min=900.0 + i * 4.0, y_min=500.0, x_max=980.0 + i * 4.0, y_max=700.0
+            ),
+        ]
+        for i in range(2)
+    }
+    result = run_vertical_slice(
+        frames=_frames([0.0, 0.2]),
+        detector=ScriptedDetector(script),
+        telemetry=synthetic_telemetry([0.0, 0.2]),
+        drone_position=_DRONE_POSE,
+        context=make_run_context(),
+    )
+    assert len(result.entities) == 2, (
+        "두 track 모두 Entity 로 조립돼야 한다 — assembly 는 canonical class/ontology"
+        " 만 요구하고 원시 id/이름 부재는 거부하지 않는다"
+    )
+    assert len(result.bundles) == 1, "원시 계보가 있는 track 만 Event 를 발행해야 한다"
+    reasons = [reason for (_, _, reason) in result.unpublished_events]
+    assert any("missing_classification_lineage" in r for r in reasons), reasons
+
+
 # ── PRODUCTION EDGE RUNTIME PROMOTION — 복사본 부재 앵커 ─────────────────────
 
 

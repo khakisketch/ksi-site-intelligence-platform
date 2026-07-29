@@ -65,14 +65,153 @@ paths:
       summary: Issue the dual mission artifacts — WPML/KMZ + signed contract (ADR-KSI-007)
       description: >-
         AOI 폴리곤+임무타입 한 요청이 두 산출물을 짝으로 낳는다 — 기체용
-        WPML/KMZ(base64)와 Manifold 용 서명 계약. 경로 고도는 같은 요청의
-        flightEnvelope 로 게이트되어 어긋난 쌍이 성립할 수 없다. 임무타입→패턴:
-        매핑 계열=lawnmower(spacingM 필수)·순찰 계열=perimeter·그 외
-        (ASSET_INSPECTION 등)=422 거부(조용한 퇴화 금지). droneEnumValue 는
-        호출자가 명시한다(M4D 값은 실기 H4 검증 전 서버가 추측하지 않는다).
+        WPML/KMZ(base64)와 Manifold 용 서명 계약. 경로 고도·이륙 안전고도는
+        같은 요청의 flightEnvelope 로 게이트되어 어긋난 쌍이 성립할 수 없다.
+        임무타입→패턴: 매핑 계열=lawnmower(spacingM 필수)·순찰 계열=perimeter·
+        그 외(ASSET_INSPECTION 등)=422 거부(조용한 퇴화 금지). droneEnumValue 는
+        호출자가 명시한다(M4D 값은 실기 H4 검증 전 서버가 추측하지 않는다). KMZ
+        에는 계약과의 짝 식별자(contractSha256 등, wpmz/res/ksi-mission-pair.json)
+        가 동봉된다(ADR-KSI-007 '동일 site_frame·policy_version 짝'의 실체화).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contract, aoi, route, drone, wayline]
+              properties:
+                contract:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - missionId
+                    - siteId
+                    - missionType
+                    - siteFrame
+                    - flightEnvelope
+                    - objectives
+                    - viewpointPolicyId
+                    - riskPolicyPackId
+                    - fallbackPolicyId
+                    - capturePolicyId
+                  properties:
+                    missionId: { type: string, minLength: 1 }
+                    siteId: { type: string, minLength: 1 }
+                    missionType: { type: string }
+                    siteFrame:
+                      type: object
+                      additionalProperties: false
+                      required: [crs, verticalDatum, unit, transformVersion]
+                      properties:
+                        crs: { type: string }
+                        verticalDatum: { type: string }
+                        unit: { const: meter }
+                        transformVersion: { type: string }
+                    flightEnvelope:
+                      type: object
+                      additionalProperties: false
+                      required: [allowedVolumes, excludedVolumes, minAltitudeM, maxAltitudeM]
+                      properties:
+                        allowedVolumes: { type: array, items: { type: string } }
+                        excludedVolumes: { type: array, items: { type: string } }
+                        minAltitudeM: { type: number }
+                        maxAltitudeM: { type: number, maximum: 500 }
+                        minimumStructureStandoffM: { type: number }
+                        minimumPersonStandoffM: { type: number }
+                    objectives: { type: array, items: { type: string }, minItems: 1 }
+                    viewpointPolicyId: { type: string, minLength: 1 }
+                    riskPolicyPackId: { type: string, minLength: 1 }
+                    fallbackPolicyId: { type: string, minLength: 1 }
+                    capturePolicyId: { type: string, minLength: 1 }
+                    accessibleGeneralCoverage: { type: number, minimum: 0.95, maximum: 1.0 }
+                    validForHours: { type: number, exclusiveMinimum: 0, maximum: 168 }
+                    artifacts:
+                      # 구현(MissionIssuanceRequest.artifacts)이 수용하는 선택 필드 —
+                      # additionalProperties:false 에서 누락되면 스펙 준수 클라이언트가
+                      # 정당한 요청을 못 만든다(재검증 V2 P3).
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        worldModelManifestId: { type: [string, 'null'] }
+                        modelPackId: { type: [string, 'null'] }
+                        calibrationProfileId: { type: [string, 'null'] }
+                aoi:
+                  type: object
+                  additionalProperties: false
+                  required: [vertices]
+                  description: >-
+                    닫힌 단순 폴리곤(마지막→첫 꼭짓점 변이 암묵적으로 닫는다,
+                    3~256 꼭짓점).
+                  properties:
+                    vertices:
+                      type: array
+                      minItems: 3
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [latDeg, lonDeg]
+                        properties:
+                          latDeg: { type: number, minimum: -90, maximum: 90 }
+                          lonDeg: { type: number, minimum: -180, maximum: 180 }
+                route:
+                  type: object
+                  additionalProperties: false
+                  required: [altitudeM]
+                  properties:
+                    altitudeM: { type: number }
+                    spacingM:
+                      type: number
+                      description: lawnmower(매핑) 계열 필수 — 스캔선 간격 상한(m)
+                    sweepDirectionDeg:
+                      type: number
+                      description: 수학 규약(동=0·반시계, 도) — 나침반 방위 아님
+                drone:
+                  type: object
+                  additionalProperties: false
+                  required: [droneEnumValue, droneSubEnumValue, payloadEnumValue]
+                  properties:
+                    droneEnumValue: { type: integer }
+                    droneSubEnumValue: { type: integer }
+                    payloadEnumValue: { type: integer }
+                    payloadPositionIndex: { type: integer, enum: [0, 1, 2] }
+                wayline:
+                  type: object
+                  additionalProperties: false
+                  required: [autoFlightSpeedMs, takeoffSecurityHeightM, globalTransitionalSpeedMs]
+                  properties:
+                    autoFlightSpeedMs: { type: number, exclusiveMinimum: 0 }
+                    # 하한 1.2 = WPML 공식 스펙 유효범위 [1.2, 1500] — 구현 상수
+                    # _MIN_TAKEOFF_SECURITY_HEIGHT_M 과 동일 근거(재검증 V2 P2:
+                    # 문서 1.5 vs 구현 1.2 이중 SSOT 해소).
+                    takeoffSecurityHeightM: { type: number, minimum: 1.2, maximum: 1500 }
+                    globalTransitionalSpeedMs: { type: number, exclusiveMinimum: 0, maximum: 15 }
       responses:
-        '201': { description: '{contract, kmzBase64, routePattern, waypointCount}' }
-        '422': { description: 경로 생성 불가(봉투 밖 고도·spacing 누락·미지원 타입) }
+        '201':
+          description: 이원 산출물 짝
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract:
+                    description: 서명된 MissionContract(mission-contract.v1.2.json)
+                    $ref: ../schemas/mission-contract.v1.2.json
+                  kmzBase64: { type: string, description: KMZ(zip) base64 }
+                  kmzSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                  routePattern: { type: string, enum: [lawnmower, perimeter] }
+                  waypointCount: { type: integer, minimum: 2 }
+                  coverageRatio:
+                    type: [number, 'null']
+                    description: >-
+                      lawnmower 만 값을 가진다(perimeter 는 null). 스와스∩AOI 의
+                      해석적 정확값이며 INV-010 의 '접근가능 일반영역 ≥95%' 조항에만
+                      대응한다 — '필수 위험구역/자산 100%' 조항의 증명이 아니다
+                      (그건 비행 후 CoverageReport 완료 게이트 소관, 미구현).
+                      계약의 accessibleGeneralCoverage 약속 미만이면 발급 자체가
+                      거부되므로(COVERAGE_BELOW_CONTRACT_PROMISE) 이 값은 항상
+                      약속 이상이다.
+        '422': { description: 경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing 누락·미지원 타입) }
   /sites/{siteId}/missions:
     x-status: planned
     post:
