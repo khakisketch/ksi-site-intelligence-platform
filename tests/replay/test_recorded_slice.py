@@ -20,14 +20,12 @@ test_dfine_detector 와 동일 규약). stub 슬라이스 테스트(test_vertica
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 from ksi_domain.enums import EventStatus
 from ksi_perception.dfine import RecordedFrameDetector, load_dfine_detector
 from ksi_perception.recorded import load_frame_sequence, sequence_dimensions
-from ksi_perception.registry import load_model_entry
 from vertical_slice import (
     SliceFrame,
     SliceResult,
@@ -41,17 +39,14 @@ _MODEL_ID = "ksi-person-detector-dfine-s-coco"
 _PERSON_IMAGE = Path("models/test-assets/person.jpg")
 
 
+from _real_model_gate import real_model_runtime_available, registry_model_dir  # noqa: E402
+
+
 def _model_dir() -> Path:
-    check = load_model_entry(_MODEL_ID)
-    if not check.ok or check.entry is None:
-        return Path("models/__registry_unreadable__")
-    return Path("models") / check.entry.weights_source.rsplit("/", 1)[-1] / check.entry.revision
+    return registry_model_dir(_MODEL_ID)
 
 
-_HAS_RUNTIME = (
-    importlib.util.find_spec("torch") is not None
-    and importlib.util.find_spec("transformers") is not None
-)
+_HAS_RUNTIME = real_model_runtime_available()
 
 pytestmark = pytest.mark.skipif(
     not (_HAS_RUNTIME and _model_dir().is_dir() and _PERSON_IMAGE.is_file()),

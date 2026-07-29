@@ -23,7 +23,6 @@ fingerprint 결정성은 **경로 내 2회 실행**으로 고정한다(비결정
 
 from __future__ import annotations
 
-import importlib.util
 from collections.abc import Callable
 from pathlib import Path
 
@@ -37,7 +36,6 @@ from ksi_perception.onnx_runtime import (
     OnnxLoadStatus,
     load_onnx_dfine_detector,
 )
-from ksi_perception.registry import load_model_entry
 
 _MODEL_ID = "ksi-person-detector-dfine-s-coco"
 _CORPUS = Path("models/test-assets/onnx-corpus")
@@ -77,17 +75,16 @@ _SCENE_EXPECTATIONS: dict[str, dict[str, float]] = {
 }
 
 
+from _real_model_gate import real_model_runtime_available, registry_model_dir  # noqa: E402
+
+
 def _model_dir() -> Path:
-    check = load_model_entry(_MODEL_ID)
-    if not check.ok or check.entry is None:
-        return Path("models/__registry_unreadable__")
-    return Path("models") / check.entry.weights_source.rsplit("/", 1)[-1] / check.entry.revision
+    return registry_model_dir(_MODEL_ID)
 
 
-_HAS_RUNTIME = (
-    importlib.util.find_spec("torch") is not None
-    and importlib.util.find_spec("onnxruntime") is not None
-)
+# transformers 누락 환경에서 skip 대신 ImportError 로 터지던 비정직 조건을 공유
+# 헬퍼로 통일(감사 #20 — 형제 두 파일과 동일 판정).
+_HAS_RUNTIME = real_model_runtime_available()
 
 pytestmark = pytest.mark.skipif(
     not (_HAS_RUNTIME and _model_dir().is_dir() and _CORPUS.is_dir()),

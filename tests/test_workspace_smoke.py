@@ -9,6 +9,7 @@ WORKSPACE_MODULES = [
     "ksi_geo_core",
     "ksi_event_contracts",
     "ksi_mission_contracts",
+    "ksi_perception",
     "ksi_test_vectors",
     "ksi_core",
     "ksi_dji_gateway",

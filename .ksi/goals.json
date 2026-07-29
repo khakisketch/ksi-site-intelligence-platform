@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T11:58:01+09:00",
+  "updated_at": "2026-07-29T12:05:33+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -292,16 +292,16 @@
         "HANDOFF_SHA256SUMS 지위 확정(#66)",
         "workspace smoke에 perception(#60)"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "구현 완료 — review_pending. ①실모델 무음 skip anchor(#19): tests/conftest.py — KSI_REQUIRE_REAL_MODEL=1 시 게이트 3파일 skip 이 exit 1(실측 3케이스: 강제 skip→1·env 미설정→0·정상→0. sessionfinish exitstatus 대입 무효를 실측으로 확인해 cmdline_main wrapper 채택) ②게이트 판정 공유 헬퍼(#20·#57): transformers 포함 단일 판정 tests/_real_model_gate.py ③rg 부재/오류·git 실패를 실패로(#29·#74) ④핀 파싱 0건·건수 불일치 실패(#64) ⑤벡터 provenance 기계 강제(#67): 40hex+LOCK 등록명+핀 대조 — 신규 게이트가 실위반 4건 적발·정규화 ⑥ASan+UBSan: CMake 옵션+CI 스텝, 로컬 실측 ctest 2/2 통과(#56·#72) ⑦HANDOFF 스냅샷 지위 선언(#66) ⑧smoke 에 ksi_perception(#60). 게이트: ruff·mypy 86·pytest 797+5s·ctest 2/2(+asan 2/2)·hygiene·lock.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T03:58:20+09:00"
+      "updated_at": "2026-07-29T12:05:33+09:00"
     },
     {
       "id": "audit-signing-key-lifecycle",

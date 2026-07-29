@@ -22,7 +22,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import numpy as np
@@ -33,31 +32,18 @@ from ksi_perception.dfine import (
     RecordedFrameDetector,
     load_dfine_detector,
 )
-from ksi_perception.registry import load_model_entry
 
 _MODEL_ID = "ksi-person-detector-dfine-s-coco"
 
 
-def _model_dir_from_registry() -> Path:
-    """모델 경로를 하드코딩하지 않고 원장에서 파생한다(반증 리뷰 F8).
+# 게이트 판정은 공유 헬퍼 한 곳이다(감사 #20·#57) — 파일별 복붙은 한 곳만
+# 갱신될 때 그 파일만 조용히 전량 skip 되는 회귀를 만든다(반증 리뷰 F8 계열).
+from _real_model_gate import real_model_runtime_available, registry_model_dir  # noqa: E402
 
-    경로를 하드코딩하면 원장 revision 갱신 시 이 파일 전체가 **조용히 skip** 되어
-    수용기준 12개가 초록 상태로 사라진다 — 원장이 SSOT 이므로 경로도 원장에서 온다
-    (tools/fetch_model.py 의 저장 규칙과 동일 파생).
-    """
-    check = load_model_entry(_MODEL_ID)
-    if not check.ok or check.entry is None:
-        return Path("models/__registry_unreadable__")
-    return Path("models") / check.entry.weights_source.rsplit("/", 1)[-1] / check.entry.revision
-
-
-_MODEL_DIR = _model_dir_from_registry()
+_MODEL_DIR = registry_model_dir(_MODEL_ID)
 _PERSON_IMAGE = Path("models/test-assets/person.jpg")
 
-_HAS_RUNTIME = (
-    importlib.util.find_spec("torch") is not None
-    and importlib.util.find_spec("transformers") is not None
-)
+_HAS_RUNTIME = real_model_runtime_available()
 
 pytestmark = pytest.mark.skipif(
     not (_HAS_RUNTIME and _MODEL_DIR.is_dir() and _PERSON_IMAGE.is_file()),

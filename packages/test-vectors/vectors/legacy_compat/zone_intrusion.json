@@ -1,7 +1,7 @@
 {
   "source": {
     "repo": "ksi-platform",
-    "commit": "030ebd5a",
+    "commit": "030ebd5a7ff0762e729b29fe7710f8f3a30e8604",
     "file": "ksi-safety/src/lib/zone-intrusion.ts"
   },
   "extraction": {
@@ -13,16 +13,16 @@
     }
   },
   "tolerance": {
-    "abs": 0.000001,
-    "rel": 1e-9,
+    "abs": 1e-06,
+    "rel": 1e-09,
     "rationale": "이 벡터는 두 연산군을 섞는다. (1) WGS84 좌표 변환(enuToLatLng/projectFootToGps 의 위경도 출력, 상수 나눗셈 1건뿐) → abs 1e-9 deg. (2) 등장방형 평면 근사 거리(m 단위: distanceToGpsPolygonM/gpsDistanceM/distanceToGpsZoneM, cos(lat) 보정 1건 포함하는 핀홀류 연산) → abs 1e-4 m. (3) inside/inBuffer/basis 등 판정 결과(불리언/문자열) → 정확히 일치(수치 tolerance 비적용). materializeCircleGpsPolygon 처럼 다각형 좌표를 n개 도출하는 결과는 (1)과 동일 abs 1e-9 deg 를 적용한다. 최상위 abs/rel 은 거리(m) 계열 기본값이고 세부는 tolerance.by_field 를 본다.",
     "by_field": {
       "latitude": {
-        "abs": 1e-9,
+        "abs": 1e-09,
         "rel": 0
       },
       "longitude": {
-        "abs": 1e-9,
+        "abs": 1e-09,
         "rel": 0
       }
     }

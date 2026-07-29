@@ -1,3 +1,6 @@
+# 2026-07-25 인수인계 시점 스냅샷 — 이후 변경의 SSOT 는 git 이력이며 이 목록은
+# 재검증 대상이 아니다(감사 #66 지위 확정). sha256sum -c 로 검사하지 말 것 —
+# 현재 트리와 의도적으로 불일치한다(스냅샷 이후의 정상 개발 변경).
 f38c3af452e3a3dc6a470adf073e3065c10c930c8d5680465185a865afbebc26  .gitmodules.example
 803221c395e479e377143d21e1f070268b920415ebe39f3e831cc6ecf867f3ae  AGENTS.md
 1ee7db96365358165030ec6a27c8c6fac47e154b1d3cd22b801048dba9913e30  CLAUDE.md

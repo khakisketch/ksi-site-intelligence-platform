@@ -1,7 +1,7 @@
 {
   "source": {
     "repo": "ksi-platform",
-    "commit": "030ebd5a",
+    "commit": "030ebd5a7ff0762e729b29fe7710f8f3a30e8604",
     "file": "ksi-safety/src/lib/proximity-distance.ts"
   },
   "extraction": {
@@ -13,8 +13,8 @@
     }
   },
   "tolerance": {
-    "abs": 0.000001,
-    "rel": 1e-9,
+    "abs": 1e-06,
+    "rel": 1e-09,
     "rationale": "이 벡터는 삼각함수 기반 카메라 기저(cameraBasis: sin/cos/atan/normalize)로 만든 핀홀 광선-평면 교차다. ENU 결과([east_m, north_m], m) → abs 1e-4 m (부동소수 반복 연산이지만 단일 스케일 나눗셈이라 스케일 원리 반경 오차는 이 이하); distanceM/distanceToZoneM/rAlertM/rWarnM(m) → abs 1e-2 m (원 구현이 Math.round(x*100)/100 으로 이미 소수 둘째자리까지 반올림해 반환하므로, 그 반올림 정밀도가 비교 기준); tier/reason/severity/basis 등 열거형 문자열 → 정확히 일치(수치 tolerance 비적용, 문자열 동등비교). 최상위 abs/rel 은 ENU 미터 계열 기본값.",
     "by_field": {
       "east_m": {

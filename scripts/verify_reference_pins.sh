@@ -10,6 +10,16 @@ import subprocess, sys, re
 lock = Path("references/REFERENCE_REPOS_LOCK.yaml").read_text()
 entries = re.findall(r'- name: ([^\n]+).*?path: "([^"]+)".*?pin: "([^"]+)"', lock, re.S)
 bad = False
+# 파싱 결과를 .gitmodules 의 서브모듈 수와 대조한다(감사 #64) — YAML 표기가
+# 바뀌어 정규식이 0건을 돌려주면 "검증할 것 없음"이 "전부 통과"로 위장된다.
+gitmodules = Path(".gitmodules").read_text() if Path(".gitmodules").exists() else ""
+submodule_count = len(re.findall(r"^\[submodule ", gitmodules, re.M))
+if len(entries) == 0 or len(entries) != submodule_count:
+    print(
+        f"FAIL: LOCK 파싱 {len(entries)}건 != .gitmodules 서브모듈 {submodule_count}건 — "
+        "0건 통과·미등록 서브모듈 금지"
+    )
+    sys.exit(1)
 for name, path, pin in entries:
     p = Path(path)
     if (p / ".git").exists():

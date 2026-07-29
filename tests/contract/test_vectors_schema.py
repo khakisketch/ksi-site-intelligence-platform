@@ -173,3 +173,43 @@ def test_loader_unknown_case_id_raises_keyerror() -> None:
     vector_file = load_vector_file(category, path.stem)
     with pytest.raises(KeyError):
         vector_file.case("__definitely_not_a_real_case_id__")
+
+
+def test_legacy_source_commits_are_full_sha_and_match_reference_lock() -> None:
+    """[감사 #67] 골든 벡터 provenance 를 기계 강제 — 자유 문자열 금지.
+
+    (a) commit 은 40자 hex 전체 SHA (축약은 시간이 지나면 모호해진다)
+    (b) repo 는 REFERENCE_REPOS_LOCK.yaml 에 등록된 이름
+    (c) commit 은 그 repo 의 pin 과 일치하거나, 불일치 시 pin_mismatch_reason 필드로
+        사유를 명시(핀 갱신 이전 캡처 등) — 조용한 드리프트 금지.
+    """
+    import re as re_module
+
+    repo_root = VECTORS_ROOT.parents[2]
+    lock_text = (repo_root / "references" / "REFERENCE_REPOS_LOCK.yaml").read_text(
+        encoding="utf-8"
+    )
+    lock_entries = dict(
+        re_module.findall(r'- name: ([^\n]+).*?pin: "([^"]+)"', lock_text, re_module.S)
+    )
+    assert lock_entries, "REFERENCE_REPOS_LOCK 파싱 0건 — 강제 불가"
+
+    checked = 0
+    for path in sorted((VECTORS_ROOT / "legacy_compat").glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        source = payload["source"]
+        commit = source["commit"]
+        assert re_module.fullmatch(r"[0-9a-f]{40}", commit), (
+            f"{path.name}: commit 은 40자 hex 전체 SHA 여야 한다 ({commit!r})"
+        )
+        repo = source["repo"]
+        assert repo in lock_entries, (
+            f"{path.name}: repo {repo!r} 가 REFERENCE_REPOS_LOCK 에 없다"
+        )
+        if commit != lock_entries[repo] and "pin_mismatch_reason" not in source:
+            raise AssertionError(
+                f"{path.name}: commit {commit[:12]} 이 {repo} 핀 "
+                f"{lock_entries[repo][:12]} 과 다른데 pin_mismatch_reason 이 없다"
+            )
+        checked += 1
+    assert checked, "legacy_compat 벡터가 0건 — 검사 공허"

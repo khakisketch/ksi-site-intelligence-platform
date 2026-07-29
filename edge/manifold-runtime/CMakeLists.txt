@@ -27,6 +27,15 @@ target_compile_options(ksi_control_plane PRIVATE
   -Wall -Wextra -Wpedantic -Werror
 )
 
+# 정수 오버플로·UB·메모리 오류는 -Werror 로 잡히지 않는다(감사 #56·#72 — 이
+# 모듈의 주 결함 클래스가 시간·TTL 산술 오버플로였다). CI 가 sanitizer 구성으로
+# ctest 를 한 번 더 돌린다.
+option(KSI_ENABLE_SANITIZERS "ASan+UBSan 계측 빌드" OFF)
+if(KSI_ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 option(KSI_BUILD_TESTS "control plane 계약 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)
   enable_testing()

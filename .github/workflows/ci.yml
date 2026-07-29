@@ -70,3 +70,15 @@ jobs:
       # action_intent_conformance: Python Intelligence Plane과 공유하는 벡터
       - name: ctest
         run: ctest --test-dir edge/manifold-runtime/build --output-on-failure
+
+      # sanitizer 구성 — 오버플로/UB/메모리 오류는 -Werror·assert 로 안 잡힌다
+      # (감사 #56·#72: 이 모듈의 실적발 결함 클래스가 TTL int64 오버플로였다).
+      - name: configure (ASan+UBSan)
+        run: cmake -S edge/manifold-runtime -B edge/manifold-runtime/build-asan
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKSI_ENABLE_SANITIZERS=ON
+
+      - name: build (ASan+UBSan)
+        run: cmake --build edge/manifold-runtime/build-asan -j
+
+      - name: ctest (ASan+UBSan)
+        run: ctest --test-dir edge/manifold-runtime/build-asan --output-on-failure
