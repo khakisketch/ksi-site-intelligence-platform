@@ -148,9 +148,24 @@ class CapabilityRegistry:
             current,
             state=nxt,
             evidence=evidence,
-            firmware=firmware if firmware is not None else current.firmware,
-            sdk=sdk if sdk is not None else current.sdk,
-            aircraft=aircraft if aircraft is not None else current.aircraft,
+            # 검증 맥락(firmware/sdk/aircraft)은 VERIFIED 상태의 서술이다 — 회귀로
+            # 이탈했다가 재승격하기 전까지 낡은 맥락이 이월되면 /capabilities 가
+            # "어느 펌웨어에서 검증됐는가"를 거짓으로 공표한다(감사 #11).
+            firmware=(
+                (firmware if firmware is not None else current.firmware)
+                if nxt is CapabilityVerificationState.VERIFIED
+                else None
+            ),
+            sdk=(
+                (sdk if sdk is not None else current.sdk)
+                if nxt is CapabilityVerificationState.VERIFIED
+                else None
+            ),
+            aircraft=(
+                (aircraft if aircraft is not None else current.aircraft)
+                if nxt is CapabilityVerificationState.VERIFIED
+                else None
+            ),
             verified_at=(now or datetime.now(UTC))
             if nxt is CapabilityVerificationState.VERIFIED
             else None,

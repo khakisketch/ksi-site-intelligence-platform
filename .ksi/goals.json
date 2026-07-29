@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-29T13:59:56+09:00",
+  "updated_at": "2026-07-29T14:08:27+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -333,16 +333,16 @@
         "capability VERIFIED 왕복 시 검증 맥락 초기화(#11)",
         "/capabilities 공개 필드 축소(#49)"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "구현 완료 — review_pending. ①거부 응답의 원장 신원 비노출(#8: 열거 오라클 — verdict+자기 요청 좌표만, 전체는 서버 로그. 반증: 순번 중복 409 에 기존 키 미노출) ②capability VERIFIED 이탈 시 firmware/sdk/aircraft/verified_at/spike_evidence 전부 초기화(#11 — 낡은 검증 맥락 공표 차단, 왕복 반증) ③/capabilities 공개 필드 축소(#49: id·title·state 만 — 기존 테스트를 '민감 필드 부재' 반증으로 반전) ④close 봉인+멱등(#51: close 후 수신 STORE_UNAVAILABLE) ⑤SyncLedger._accepted 를 (device,seq) 요약으로(#13 부분 — payload 전문 무기한 보관 제거. journal 회전·스냅샷·스트리밍 재적재는 잔여 — 인증·DB 도입 설계와 결합). 게이트: ruff·mypy 86·contract+replay 600 passed(실모델 포함)·ctest 2/2·hygiene·lock.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T03:58:20+09:00"
+      "updated_at": "2026-07-29T14:08:27+09:00"
     }
   ],
   "risks": [

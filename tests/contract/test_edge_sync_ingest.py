@@ -524,3 +524,30 @@ def test_short_write_is_not_acked_and_seals(
     assert reborn.accepted_count() == 0
     assert reborn.ingest_event_bundle(entry).verdict is IngestVerdict.ACCEPTED
     reborn.close()
+
+
+def test_rejection_detail_does_not_leak_ledger_identities(tmp_path: Path) -> None:
+    """[감사 #8] 409 응답이 원장 측 기존 신원(다른 항목의 키)을 노출하지 않는다."""
+    client, _store = _client(tmp_path)
+    first = _entry(sequence=0, key="secret-key-alpha")
+    assert _post(client, first).status_code == 201
+    conflict = _post(client, _entry(sequence=7, key="secret-key-alpha"))
+    assert conflict.status_code == 409
+    # (충돌 자체의 detail 은 자기 요청 키를 담을 수 있다 — 클라이언트가 이미 아는 값)
+    # 다른 항목의 신원이 새는 대표 케이스: 순번 중복 응답에 기존 키가 실리면 안 된다
+    dup = _post(client, _entry(sequence=0, key="probe-key"))
+    assert dup.status_code == 409
+    dup_detail = dup.json()["detail"] or ""
+    assert "secret-key-alpha" not in dup_detail, "원장 측 기존 키가 응답으로 열거된다"
+
+
+def test_closed_store_refuses_ingest(tmp_path: Path) -> None:
+    """[감사 #51] close 후 수신은 STORE_UNAVAILABLE — 잠금 없는 기록 창 제거."""
+    store = EdgeSyncStore(tmp_path / "journal.jsonl")
+    assert store.ingest_event_bundle(_entry(sequence=0)).verdict is IngestVerdict.ACCEPTED
+    store.close()
+    store.close()  # 멱등
+    assert (
+        store.ingest_event_bundle(_entry(sequence=1)).verdict
+        is ServerVerdict.STORE_UNAVAILABLE
+    )

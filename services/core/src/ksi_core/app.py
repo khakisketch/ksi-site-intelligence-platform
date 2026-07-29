@@ -66,18 +66,14 @@ def create_app(
         전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
         """
         operational = capability_registry.list_operational()
+        # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK 버전은 배치 기체의
+        # 취약점 표적화에 쓰이는 정보라 인증된 내부·감사 경로에서만 제공한다.
         return {
             "capabilities": [
                 {
                     "capabilityId": record.capability_id,
                     "title": record.title,
                     "state": record.state.value,
-                    "firmware": record.firmware,
-                    "sdk": record.sdk,
-                    "aircraft": record.aircraft,
-                    "verifiedAt": record.verified_at.isoformat()
-                    if record.verified_at is not None
-                    else None,
                 }
                 for record in operational
             ],

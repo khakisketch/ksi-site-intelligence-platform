@@ -144,11 +144,19 @@ class EdgeSyncStore:
             ) from exc
 
     def close(self) -> None:
-        """잠금 해제 — 프로세스 종료/재시작 재현(테스트) 시 명시 호출."""
+        """수신 봉인 + 잠금 해제 — 멱등(감사 #51).
+
+        close 후 도착한 요청이 잠금 없이 기록되는 창을 없앤다 — 봉인 사유를
+        남겨 이후 수신은 전부 STORE_UNAVAILABLE 이다.
+        """
         import fcntl
 
-        fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
-        os.close(self._lock_fd)
+        with self._lock:
+            if self._sealed_reason == "closed":
+                return
+            self._sealed_reason = "closed"
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            os.close(self._lock_fd)
 
     def _recover(self) -> None:
         """journal 재적재 — 완결 줄은 전부 ACCEPTED 여야 하고, torn tail 은 격리한다."""
@@ -218,7 +226,20 @@ class EdgeSyncStore:
 
             result: IngestResult = self._ledger.ingest(entry)
             if result.verdict is not IngestVerdict.ACCEPTED:
-                return ServerIngestResult(result.verdict, detail=result.detail)
+                # 원장 측 기존 신원(다른 항목의 키·순번·digest)은 응답에 싣지
+                # 않는다(감사 #8 — 비인증 표면의 열거 오라클). 전체 사유는 서버
+                # 로그로, 클라이언트에는 verdict 와 자기 요청 좌표만.
+                logger.info(
+                    "ingest 거부 %s (device=%s seq=%s): %s",
+                    result.verdict, entry.edge_device_id, entry.device_sequence, result.detail,
+                )
+                return ServerIngestResult(
+                    result.verdict,
+                    detail=(
+                        f"요청(device={entry.edge_device_id}, seq={entry.device_sequence})이 "
+                        f"{result.verdict.value} 로 거부됨 — 상세는 서버 로그"
+                    ),
+                )
 
             try:
                 self._append_durable(entry)

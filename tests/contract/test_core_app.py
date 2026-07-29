@@ -91,8 +91,10 @@ def test_verified_capability_appears_in_api(seeded_registry: CapabilityRegistry)
     entry = body["capabilities"][0]
     assert entry["capabilityId"] == capability_id
     assert entry["state"] == "VERIFIED"
-    assert entry["aircraft"] == "Matrice 4D"
-    assert entry["verifiedAt"] is not None
+    # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK/기체 버전은 배치 기체
+    # 취약점 표적화 정보라 비인증 표면에 실리지 않는다.
+    for sensitive in ("aircraft", "firmware", "sdk", "verifiedAt"):
+        assert sensitive not in entry, f"민감 필드 {sensitive} 가 공개 응답에 노출됐다"
 
 
 def test_blocked_capability_never_appears_in_api(seeded_registry: CapabilityRegistry) -> None:

@@ -430,3 +430,35 @@ def test_spike_evidence_requires_utc_timestamp() -> None:
             operator="op",
             observed_at=datetime(2026, 7, 27, 14, 0, 0, tzinfo=timezone(timedelta(hours=9))),
         )
+
+
+def test_demotion_clears_stale_verification_context() -> None:
+    """[감사 #11] VERIFIED 이탈 시 firmware/sdk/aircraft 가 이월되지 않는다.
+
+    이월되면 재승격 전 기간에 /capabilities·감사 경로가 "어느 펌웨어에서 검증
+    됐는가"를 회귀로 차단됐던 낡은 값으로 공표한다 — INV-041 의 취지(검증 맥락의
+    정직성) 잠식.
+    """
+    registry = CapabilityRegistry()
+    registry.register("SPIKE-X", "테스트 capability")
+    registry.transition(
+        "SPIKE-X",
+        CapabilityVerificationState.VERIFIED,
+        evidence="hil-run-1",
+        firmware="fw-1.0",
+        sdk="psdk-3.9",
+        aircraft="Matrice 4D",
+        spike_evidence=_spike_evidence(),
+    )
+    record = registry.get("SPIKE-X")
+    assert record is not None and record.firmware == "fw-1.0"
+
+    registry.transition(
+        "SPIKE-X", CapabilityVerificationState.BLOCKED, evidence="regression-found"
+    )
+    demoted = registry.get("SPIKE-X")
+    assert demoted is not None
+    assert demoted.firmware is None and demoted.sdk is None and demoted.aircraft is None, (
+        "이탈 후에도 낡은 검증 맥락이 남았다"
+    )
+    assert demoted.verified_at is None and demoted.spike_evidence is None

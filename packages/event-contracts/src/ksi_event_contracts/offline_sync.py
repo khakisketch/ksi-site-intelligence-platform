@@ -152,8 +152,10 @@ class SyncLedger:
     _seen: dict[str, EntryIdentity] = field(default_factory=dict)
     # edge_device_id → 마지막으로 수락한 device_sequence
     _last_sequence: dict[str, int] = field(default_factory=dict)
-    # 수락된 항목을 수신 순서대로 보관(순서 보존 검증용)
-    _accepted: list[JournalEntry] = field(default_factory=list)
+    # 수락 순서 요약(장비, 순번)만 보관 — payload 전문을 무기한 들고 있으면
+    # 장기 가동에서 메모리가 선형 성장한다(감사 #13). 순서·공백 판정에는 이
+    # 요약으로 충분하고, 전문의 SSOT 는 durable journal 이다.
+    _accepted: list[tuple[str, int]] = field(default_factory=list)
     # edge_device_id → 그 장비에서 사용된 (sequence → key)
     _sequence_keys: dict[str, dict[int, str]] = field(default_factory=dict)
 
@@ -216,7 +218,7 @@ class SyncLedger:
         self._seen[entry.idempotency_key] = identity
         device_sequences[entry.device_sequence] = entry.idempotency_key
         self._last_sequence[entry.edge_device_id] = entry.device_sequence
-        self._accepted.append(entry)
+        self._accepted.append((entry.edge_device_id, entry.device_sequence))
         return IngestResult(IngestVerdict.ACCEPTED)
 
     def accepted_count(self) -> int:
@@ -224,7 +226,7 @@ class SyncLedger:
 
     def accepted_sequences(self, edge_device_id: str) -> list[int]:
         """수락된 순번을 **수신 순서대로** 반환 — 순서 보존 검증용."""
-        return [e.device_sequence for e in self._accepted if e.edge_device_id == edge_device_id]
+        return [seq for device, seq in self._accepted if device == edge_device_id]
 
     def missing_sequences(self, edge_device_id: str) -> list[int]:
         """수락된 순번 사이의 빈 구간 — 아직 도착하지 않은(또는 유실된) 항목.
@@ -233,7 +235,7 @@ class SyncLedger:
         서버가 "무엇을 더 기다려야 하는지" 아는 데 쓴다.
         """
         sequences = sorted(
-            e.device_sequence for e in self._accepted if e.edge_device_id == edge_device_id
+            seq for device, seq in self._accepted if device == edge_device_id
         )
         if not sequences:
             return []
