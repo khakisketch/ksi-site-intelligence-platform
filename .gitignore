@@ -12,3 +12,11 @@ __pycache__/
 # 세션 종료 후 durable 저장소로 옮기고 SpikeEvidence.raw_log_ref 는 그 URI 를 가리킨다.
 /hil_raw_logs/
 edge/manifold-runtime/build-asan/
+
+# scripts/run_core_dev.py 로컬 개발 서버 durable 저장소 + 서명키 — dev 전용, 커밋하지 않는다.
+/.dev-data/
+
+# apps/dashboard (Next.js) 빌드 산출물·의존성
+apps/dashboard/node_modules/
+apps/dashboard/.next/
+apps/dashboard/.env.local

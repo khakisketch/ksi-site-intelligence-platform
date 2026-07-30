@@ -1,0 +1,100 @@
+import "server-only";
+
+import { coreApiBaseUrl, coreApiToken } from "./env";
+
+function extractDetailText(raw: unknown): string | undefined {
+  if (typeof raw === "string") return raw;
+  // FastAPI 요청검증 422 는 detail 이 {loc,msg,type} 배열이다 — 합쳐서 사람이 읽을 문장으로.
+  if (Array.isArray(raw)) {
+    const messages = raw
+      .map((item) =>
+        item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : undefined,
+      )
+      .filter((m): m is string => Boolean(m));
+    return messages.length ? messages.join(" / ") : undefined;
+  }
+  return undefined;
+}
+
+// Site/Event API 는 {verdict, detail} 을 함께 반환하지만, Mission Records/Plans API
+// (services/core/src/ksi_core/mission_records.py raise_for_mission_record_verdict,
+// mission_plans.py RouteGenerationError)는 verdict 필드 없이 detail 하나에만 코드를
+// 싣는다 — 셋 중 하나 형태다: "CODE"(단독) / "CODE — 설명" / "CODE: 설명". 독립
+// 재검토 P1-D(2차) — 이 세 패턴만 좁게 매칭해 문장 중간에 등장하는 대문자 값
+// (예: "AUTONOMOUS_PATROL 는 lawnmower 패턴 — ...")을 코드로 오인하지 않는다.
+function extractCodeFromDetail(text: string): { code: string; message: string | undefined } | undefined {
+  const bare = /^([A-Z][A-Z0-9_]{2,})$/.exec(text);
+  if (bare) return { code: bare[1], message: undefined };
+  const dashed = /^([A-Z][A-Z0-9_]{2,}) — ([\s\S]*)$/.exec(text);
+  if (dashed) return { code: dashed[1], message: dashed[2].trim() || undefined };
+  const coloned = /^([A-Z][A-Z0-9_]{2,}): ([\s\S]*)$/.exec(text);
+  if (coloned) return { code: coloned[1], message: coloned[2].trim() || undefined };
+  return undefined;
+}
+
+export class CoreApiError extends Error {
+  readonly status: number;
+  /** 서버 verdict 코드(예: EMPTY_ALLOWED_VOLUMES) — API_ERROR_MESSAGE 조회 키. */
+  readonly code: string | undefined;
+  /** 서버가 준 구체 설명 문장 — code 로 못 찾을 때의 최후 대체 표시용(§3.4). */
+  readonly serverMessage: string | undefined;
+
+  constructor(status: number, body: unknown) {
+    const parsed = (body ?? {}) as Record<string, unknown>;
+    const bodyVerdict = typeof parsed.verdict === "string" ? parsed.verdict : undefined;
+    const detailText = extractDetailText(parsed.detail);
+
+    let code = bodyVerdict;
+    let serverMessage = detailText;
+    if (!code && detailText) {
+      const extracted = extractCodeFromDetail(detailText);
+      if (extracted) {
+        code = extracted.code;
+        serverMessage = extracted.message;
+      }
+    }
+
+    super(`Core API ${status}: ${code ?? serverMessage ?? "unknown error"}`);
+    this.status = status;
+    this.code = code;
+    this.serverMessage = serverMessage;
+  }
+}
+
+export interface CoreFetchOptions {
+  method?: "GET" | "POST";
+  query?: Record<string, string | number | undefined>;
+  body?: unknown;
+}
+
+function buildUrl(path: string, query?: CoreFetchOptions["query"]): string {
+  const url = new URL(path, coreApiBaseUrl() + "/");
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
+}
+
+export async function coreFetch<T>(path: string, options: CoreFetchOptions = {}): Promise<T> {
+  const response = await fetch(buildUrl(path, options.query), {
+    method: options.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${coreApiToken()}`,
+      ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    // 이 대시보드는 Next 데이터 캐시에 기대지 않는다 — 매 요청 Core API 최신 상태를 그대로
+    // 반영한다(운영자가 현장/이벤트/임무 최신 상태를 봐야 하므로 staleness 허용치가 낮다).
+    cache: "no-store",
+  });
+
+  const isJson = response.headers.get("content-type")?.includes("application/json");
+  const body = isJson ? await response.json() : undefined;
+
+  if (!response.ok) {
+    throw new CoreApiError(response.status, body);
+  }
+  return body as T;
+}

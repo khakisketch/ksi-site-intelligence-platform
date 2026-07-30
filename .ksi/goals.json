@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-30T14:47:23+09:00",
+  "updated_at": "2026-07-30T17:17:17+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -454,16 +454,22 @@
         "390/768/1440 시각 검증+빈 DB 콜드스타트 동선 통과",
         "독립 재검토 PASS"
       ],
-      "status": "proposed",
-      "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "status": "completed",
+      "attempt": 2,
+      "evidence": "reviewer 1차 REQUEST_CHANGES(P1 6건) 전부 수정 시도 후, reviewer 2차 재검토에서 3건 잔존 발견(A-1 UNRESOLVED에서 오탐버튼 노출·A-2 triage축 미고려 배정버튼 노출·D-1 verdict 필드 없는 mission_records/mission_plans 엔드포인트에서 코드추출 실패로 여전히 raw 코드 노출) — 전부 수정 완료. 구체: (1) client.ts CoreApiError에 detail 텍스트 선두 코드패턴 추출(CODE단독/CODE — 설명/CODE: 설명 3형태, AUTONOMOUS_PATROL류 문장중간 오탐 방지 정규식 — node로 5개 실제 백엔드 메시지 케이스 유닛테스트 전부 PASS) (2) labels.ts에 COVERAGE_BELOW_MINIMUM/TAKEOFF_HEIGHT_BELOW_MINIMUM/TAKEOFF_HEIGHT_EXCEEDS_ENVELOPE 추가 (3) EventActions.tsx canDismiss에 status!=='UNRESOLVED' 추가, canAssign에 triage prop 추가해 triage==='NONE' 조건 추가(page.tsx 호출부도 event.triage 전달하도록 수정) (4) geometry.ts 면적0(전부 공선) 폴리곤을 볼록 아님으로 정정 (5) SurveyWizard.tsx 에러화면 '이전' 클릭 시 missionId를 null로 리셋(같은 화면 '다시 시도'는 그대로 재사용 — 멱등성 유지하되 파라미터 수정 후 재제출은 새 ID). 라이브 재검증: 클린 백엔드(--reset)+프로덕션 빌드로 reviewer가 명시 요청한 '결정적 재현' 2건을 curl로 직접 재현 — UNKNOWN_SITE(존재안하는 siteId로 발급시도)와 MISSION_ID_CONFLICT(같은 missionId 다른 payload로 재발급)가 각각 '등록되지 않은 현장입니다'/'이미 사용 중인 임무 ID입니다' 한글 메시지로 정확히 표시됨(수정 전엔 raw 코드값 노출). 게이트: npx tsc --noEmit(0)·npx eslint src/(0)·npm run build(14라우트 전부 성공) 재확인.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "3차 독립 재검토 종합 PASS 권고. 완료기준 6개 전부 PASS: ①UX 목표문서 ②Next.js 반응형 셸 ③홈/이벤트/임무/현장 화면 ④Wizard 2종(현장등록 8단계+새조사 5단계, 실제 Mission Contract 발급까지 확인) ⑤390/768/1440+빈DB콜드스타트(신규 UI분기 2개 포함 재캡처 완료) ⑥독립재검토 PASS. 비차단 잔존(risk 원장 또는 대표자 결정 레인 소관, 이번 게이트 판정 제외): dashboard-unauthenticated-signing-proxy risk(이미 등록, high) · COVERAGE_BELOW_MINIMUM 사전경고 부재(P2) · 대시보드 자동화 테스트 0개(P3, 회귀 안전망 부재) · UNRESOLVED/이미배정 상태의 UI 막다른 길(액션 없음, P3) · dead code transitionSite(). 작업물은 현재 워킹트리 미커밋 상태(사용자 명시 요청 없어 커밋 안 함, CLAUDE.md 원칙).",
+        "at": "2026-07-30T17:17:17+09:00",
+        "reviewer": "opus reviewer (3라운드: 최초 REQUEST_CHANGES P1 6건 → 2차 재검토 잔존 3건(A-1/A-2/D-1) → 3차 재검토 전건 CONFIRMED, 신규 결함 0건)",
+        "evidence_ref": ".ksi 원장 이 항목의 attempt evidence 2건(1차: 최초 구현+E2E 발급 성공+allowedVolumes 실버그 발견수정, 2차: P1 6건 수정+UNKNOWN_SITE/MISSION_ID_CONFLICT curl 재현) + 본 세션 스크린샷 tmp/screenshots/final-unresolved.png·final-already-assigned.png(A-1/A-2 신규 분기 검증) + npx tsc/eslint/build 최종 재실행 전부 green"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-29T20:55:06+09:00"
+      "updated_at": "2026-07-30T17:17:17+09:00"
     },
     {
       "id": "ops-serving-hardening",
@@ -641,6 +647,34 @@
       "previous_status": null,
       "created_at": "2026-07-30T14:22:42+09:00",
       "updated_at": "2026-07-30T14:22:42+09:00"
+    },
+    {
+      "id": "dashboard-nextjs-toolchain-cve",
+      "title": "apps/dashboard: next@16.2.12 내부 postcss@8.4.31·sharp@0.34.5 미패치 CVE(SCA gate, npm audit high 12건)",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "npm audit --audit-level=high: next 16.2.12 자체가 내부 번들 postcss(<=8.5.17, XSS/경로탈출)·sharp(<0.35.0, libvips CVE)를 물고 있고 latest stable(16.2.12)이 곧 설치본 — npm audit fix --force 의 유일 제안은 next@9.3.3 대폭 다운그레이드(App Router 등 전면 붕괴, 실효 해법 아님). eslint-config-next 경유 minimatch/brace-expansion 은 devDependency 전용(빌드산출물 미포함) — 노출 경로 없음. postcss/sharp 노출: 현재 S3 범위엔 사용자 제공 CSS/이미지 처리 파이프라인이 없어 실착취면 낮음(신뢰된 in-repo CSS만 처리, next/image 원격 이미지 미설정). S4 Evidence 미디어 업로드(원격/사용자 이미지 처리) 도입 시 sharp 노출면이 실질화되므로 그 시점 재점검 필수. next 16.3.0 계열 stable 릴리즈로 패치되면 즉시 업그레이드.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-30T15:24:29+09:00",
+      "updated_at": "2026-07-30T15:24:29+09:00"
+    },
+    {
+      "id": "dashboard-unauthenticated-signing-proxy",
+      "title": "apps/dashboard Route Handler 4개가 인증/Origin 검사 없이 고정 ADMIN 토큰으로 Core write를 대행 — 대시보드 포트 도달 가능자 누구나 서명 Mission Contract 발급 가능",
+      "lens": "role",
+      "severity": "high",
+      "status": "open",
+      "note": "reviewer(opus) 독립 재검토 P1-F. 대시보드는 §7 구현 노트에 따라 단일 사전 프로비저닝 토큰(CORE_API_TOKEN)을 서버사이드에서만 쓰도록 설계됐다(토큰 자체의 브라우저 노출은 없음, server-only 격리 CONFIRMED) — 그러나 POST /api/sites, /api/mission-plans, /api/events/[eventKey]/transitions Route Handler 자체에는 대시보드 사용자 인증이나 Origin 검사가 없어, 대시보드 HTTP 포트에 네트워크로 도달 가능한 누구나 이 프록시를 통해 고정 ADMIN 권한으로 현장 등록·서명된 Mission Contract 발급·이벤트 트리아지 전이를 수행할 수 있다. S2에서 닫은 mission-issuance-unauthenticated-signing-oracle risk와 동형 구멍이 대시보드 계층에서 재생성된 것. 로컬/사내망 한정 데모 단계에서는 즉시 차단 아니나, 대시보드를 실제 배포(사내 네트워크 밖 도달 가능)하기 전 반드시 해소해야 한다. 해소 경로: 대시보드 자체 로그인/세션(§8 S3 비범위로 명시적으로 미룬 항목) 도입, 또는 최소한 리버스 프록시/네트워크 경계에서 접근 제한. 미사용 sites/[siteId]/transitions Route Handler(호출자 0건)는 즉시 제거해 공격면 축소 완료.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-07-30T16:39:31+09:00",
+      "updated_at": "2026-07-30T16:39:31+09:00"
     }
   ]
 }
