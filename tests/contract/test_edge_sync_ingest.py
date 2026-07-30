@@ -10,13 +10,23 @@ offline_sync 의 SyncLedger 규칙이 서버 배선(EdgeSyncStore + FastAPI 라�
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+)
+from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore, ServerVerdict, StoreRecoveryError
+from ksi_core.events import EventStore, make_event_key
 from ksi_event_contracts.offline_sync import (
     IngestVerdict,
     JournalEntry,
@@ -245,10 +255,54 @@ def test_arbitrary_dict_payload_rejected(store: EdgeSyncStore) -> None:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────────
 
 
-def _client(tmp_path: Path) -> tuple[TestClient, EdgeSyncStore]:
+_EDGE_TOKEN = "edge-device-token"  # noqa: S105 — 테스트 고정 토큰
+_VIEWER_TOKEN = "viewer-token"  # noqa: S105 — EVENTS_READ 보유(사용자 조회 테스트)
+_EDGE_DEVICE_ID = "edge-001"  # _entry() 기본 edge_device_id 와 일치해야 한다
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _auth_registry() -> AuthRegistry:
+    return AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest(_EDGE_TOKEN),
+                principal=Principal(
+                    principal_id="edge-principal-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id=_EDGE_DEVICE_ID,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="vw-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                ),
+            ),
+        ]
+    )
+
+
+def _client_with_event_store(tmp_path: Path) -> tuple[TestClient, EdgeSyncStore, EventStore]:
     store = EdgeSyncStore(tmp_path / "journal.jsonl")
-    app = create_app(edge_sync_store=store)
-    return TestClient(app), store
+    event_store = EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl"))
+    app = create_app(
+        edge_sync_store=store, event_store=event_store, auth_registry=_auth_registry()
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_EDGE_TOKEN}"})
+    return client, store, event_store
+
+
+def _client(tmp_path: Path) -> tuple[TestClient, EdgeSyncStore]:
+    client, store, _event_store = _client_with_event_store(tmp_path)
+    return client, store
 
 
 def _post(client: TestClient, entry: JournalEntry) -> Any:
@@ -299,6 +353,17 @@ def test_endpoint_absent_without_store() -> None:
     client = TestClient(create_app())
     response = client.post("/v1/edge-sync/event-bundles", json={})
     assert response.status_code == 404
+
+
+def test_edge_sync_store_requires_event_store(tmp_path: Path) -> None:
+    """[ADR-KSI-008 §3] edge_sync_store 만 있고 event_store 가 없으면 조립 거부.
+
+    수신은 ACK 했는데 트리아지에 안 보이는 조용한 유실 표면을 절반짜리 조립으로
+    만들지 않는다(mission_signing_key/key_id 짝 강제와 동형).
+    """
+    store = EdgeSyncStore(tmp_path / "journal.jsonl")
+    with pytest.raises(ValueError, match="event_store"):
+        create_app(edge_sync_store=store)
 
 
 def test_malformed_journal_entry_body_is_422(tmp_path: Path) -> None:
@@ -551,3 +616,173 @@ def test_closed_store_refuses_ingest(tmp_path: Path) -> None:
         store.ingest_event_bundle(_entry(sequence=1)).verdict
         is ServerVerdict.STORE_UNAVAILABLE
     )
+
+
+# ── 인증 장비 신원 바인딩 (ADR-KSI-008 §2) — 사전인증 순번 봉쇄 해소 ─────────────
+
+
+def test_ingest_requires_authentication_401(tmp_path: Path) -> None:
+    client, _store = _client(tmp_path)
+    client.headers.pop("Authorization")
+
+    response = _post(client, _entry(sequence=0))
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_ingest_rejects_operator_token_403(tmp_path: Path) -> None:
+    """OPERATOR 는 EDGE_SYNC_INGEST 권한이 없다(사람은 edge ingest 불가, auth.py 관습)."""
+    client, _store = _client(tmp_path)
+    client.headers.update({"Authorization": f"Bearer {_VIEWER_TOKEN}"})
+
+    response = _post(client, _entry(sequence=0))
+
+    assert response.status_code == 403
+
+
+def test_device_mismatch_rejected_before_ledger_effect(tmp_path: Path) -> None:
+    """[P1-4 해소] 인증 장비와 다른 edgeDeviceId 를 자칭한 수신은 원장에 반영되지 않는다."""
+    client, store = _client(tmp_path)
+
+    response = _post(client, _entry(sequence=0, device="impostor-device"))
+
+    assert response.status_code == 403
+    assert response.json()["verdict"] == "DEVICE_MISMATCH"
+    assert store.accepted_count() == 0, "신원 불일치 수신이 원장에 반영됐다"
+
+
+def test_device_sequence_self_query(tmp_path: Path) -> None:
+    client, _store = _client(tmp_path)
+    assert _post(client, _entry(sequence=0)).status_code == 201
+    assert _post(client, _entry(sequence=1)).status_code == 201
+
+    response = client.get(f"/v1/edge-sync/devices/{_EDGE_DEVICE_ID}/sequence")
+
+    assert response.status_code == 200
+    assert response.json() == {"deviceId": _EDGE_DEVICE_ID, "lastSequence": 1}
+
+
+def test_device_sequence_unknown_device_returns_null(tmp_path: Path) -> None:
+    """수락 이력이 없으면 null — 미지 장비와 구분하지 않는다(존재 여부 힌트 금지)."""
+    client, _store = _client(tmp_path)
+
+    response = client.get(f"/v1/edge-sync/devices/{_EDGE_DEVICE_ID}/sequence")
+
+    assert response.status_code == 200
+    assert response.json() == {"deviceId": _EDGE_DEVICE_ID, "lastSequence": None}
+
+
+def test_device_sequence_cross_device_query_forbidden(tmp_path: Path) -> None:
+    """EDGE_DEVICE 는 자기 자신의 순번만 조회할 수 있다."""
+    client, _store = _client(tmp_path)
+
+    response = client.get("/v1/edge-sync/devices/other-device/sequence")
+
+    assert response.status_code == 403
+
+
+def test_device_sequence_operator_can_query_any_device(tmp_path: Path) -> None:
+    """OPERATOR 는 EVENTS_READ 로 임의 장비의 순번을 조회할 수 있다."""
+    client, _store = _client(tmp_path)
+    assert _post(client, _entry(sequence=0)).status_code == 201
+    client.headers.update({"Authorization": f"Bearer {_VIEWER_TOKEN}"})
+
+    response = client.get(f"/v1/edge-sync/devices/{_EDGE_DEVICE_ID}/sequence")
+
+    assert response.status_code == 200
+    assert response.json()["lastSequence"] == 0
+
+
+# ── ADR-KSI-008 §3 핵심 주장 — event projection 실패가 ACK 를 뒤집는다 ──────────
+#
+# 지금까지 어떤 테스트도 이 경로(edge-sync ACCEPTED → event projection 실패 →
+# 503 으로 역전)를 실행한 적이 없었다 — mount_edge_sync 배선의 핵심 주장이
+# 코드로 실행된 적이 없는 채였다.
+
+
+def test_event_projection_failure_reverses_acceptance_and_withholds_ack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[ADR-KSI-008 §3 실행 검증] edge-sync 자체는 ACCEPTED 였어도 event projection
+    이 실패하면 ACK 를 내주지 않고 503 STORE_UNAVAILABLE 로 뒤집는다.
+
+    edge-sync journal 은 이미 durable(``store.accepted_count() == 1``)이지만
+    event_store 에는 projection 이 반영되지 않는다(``_apply`` 전에 journal append
+    가 실패했으므로) — "수신은 durable 인데 트리아지에 안 보이는 조용한 유실"을
+    막는 게이트가 실제로 작동함을 고정한다.
+    """
+    client, store, event_store = _client_with_event_store(tmp_path)
+
+    def broken_journal_append(_record: dict[str, Any]) -> None:
+        raise OSError("event journal append 실패(주입)")
+
+    monkeypatch.setattr(event_store._journal, "append", broken_journal_append)  # noqa: SLF001
+
+    entry = _entry(sequence=0)
+    response = _post(client, entry)
+
+    assert response.status_code == 503
+    assert response.json()["verdict"] == "STORE_UNAVAILABLE"
+    assert store.accepted_count() == 1, "edge-sync 자체의 durable 수락은 뒤집히지 않는다"
+    assert event_store.get(make_event_key(_EDGE_DEVICE_ID, "evt-0")) is None, (
+        "projection 실패인데 event_store 에 반영됐다 — 조용한 오반영"
+    )
+
+
+# ── 수신 전 게이트가 원장·순번축을 오염시키지 않는다 ────────────────────────────
+
+
+def test_status_not_edge_assertable_rejection_does_not_block_device_queue(
+    tmp_path: Path,
+) -> None:
+    """STATUS_NOT_EDGE_ASSERTABLE 거부는 SyncLedger 원장·순번을 선점하지 않는다 —
+    거부 후 같은 순번의 정상 항목이 정상 수락되고(store-and-forward 큐 봉쇄 없음),
+    거부된 항목은 edge-sync journal replay 에 남지 않는다."""
+    client, store = _client(tmp_path)
+
+    blocked_payload = _bundle_payload("evt-status-blocked")
+    blocked_payload["status"] = "CONFIRMED_EVENT"
+    blocked = _post(client, _entry(sequence=0, payload=blocked_payload))
+    assert blocked.status_code == 422
+    assert blocked.json()["verdict"] == "STATUS_NOT_EDGE_ASSERTABLE"
+    assert store.accepted_count() == 0, "정책 거부가 SyncLedger 원장을 선점했다"
+
+    # 같은 순번(0)의 정상 항목이 정상 수락된다 — 영구 422 로 큐가 막히지 않는다.
+    good = _post(client, _entry(sequence=0))
+    assert good.status_code == 201
+    assert good.json()["verdict"] == "ACCEPTED"
+    assert store.accepted_count() == 1
+
+    # 재시작 재생에서도 거부된 항목의 흔적이 없다 — 원문이 journal 에 없었다는
+    # 증거(있었다면 재생이 그 항목을 반영하거나 오염으로 기동을 거부했을 것).
+    store.close()
+    reborn = EdgeSyncStore(tmp_path / "journal.jsonl")
+    assert reborn.accepted_count() == 1
+    assert reborn.accepted_sequences(_EDGE_DEVICE_ID) == [0]
+    reborn.close()
+
+
+def test_invalid_event_identity_rejection_does_not_block_device_queue(
+    tmp_path: Path,
+) -> None:
+    """INVALID_EVENT_IDENTITY 거부도 마찬가지로 SyncLedger 원장·순번을 선점하지
+    않는다(위 STATUS_NOT_EDGE_ASSERTABLE 테스트와 대칭)."""
+    client, store = _client(tmp_path)
+
+    spoofed_payload = _bundle_payload("evt::spoofed")
+    blocked = _post(client, _entry(sequence=0, payload=spoofed_payload))
+    assert blocked.status_code == 422
+    assert blocked.json()["verdict"] == "INVALID_EVENT_IDENTITY"
+    assert store.accepted_count() == 0, "정책 거부가 SyncLedger 원장을 선점했다"
+
+    good = _post(client, _entry(sequence=0))
+    assert good.status_code == 201
+    assert good.json()["verdict"] == "ACCEPTED"
+    assert store.accepted_count() == 1
+
+    store.close()
+    reborn = EdgeSyncStore(tmp_path / "journal.jsonl")
+    assert reborn.accepted_count() == 1
+    assert reborn.accepted_sequences(_EDGE_DEVICE_ID) == [0]
+    reborn.close()

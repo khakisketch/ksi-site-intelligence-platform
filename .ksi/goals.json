@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-30T01:33:05+09:00",
+  "updated_at": "2026-07-30T14:47:23+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -426,16 +426,22 @@
         "openapi-core.yaml planned 경로들 실구현 동기화",
         "독립 재검토 PASS"
       ],
-      "status": "proposed",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "S2 구현 완료 — Foundation(domain enum SiteStatus/TriageStatus·DurableJournal 재사용 journal·bearer 인증+역할권한)→Domain(SiteStore·MissionStore(ADR-KSI-007 짝무결성)·EventStore(트리아지+감사))→Integration(create_app fail-closed 결합·openapi 동기화·E2E) 순으로 구현, commit 전 워킹트리 상태. 3라운드 독립 재검토(reviewer Opus, 총 12유닛+최종1유닛)로 자체 adversarial 검증: 1차(6유닛)P1 5건(Edge가 INV-021 확정게이트 우회해 CONFIRMED_EVENT/DISMISSED 직접주입 가능·event_id 전역충돌로 타장비 사건 덮어쓰기/영구봉쇄)+P2 8건+P3 다수 적발→전건 수정(event_key={edgeDeviceId}::{eventId} 스코핑+classify_edge_bundle 사전게이트+SITE_FRAME_MISMATCH 짝무결성+INV-020 비공백+MODEL_STALE 전이수정+재생fail-closed+lone-surrogate방어+KMZ멱등재발급 등). 2차(5유닛) 그 수정 자체를 반증해 신규 P1 1건(event_key가 URL경로세그먼트인데 eventId/edgeDeviceId 문자검증 없어 '/' 하나로 사건 영구트랩)+밀접P2 3건(siteId 동일취약·저장소 재생실패시 flock잔존·occurredAt naive시각 서버로컬tz오염)적발→identifiers.py 공유SSOT(PATH_SAFE_IDENTIFIER_PATTERN)로 폐쇄+3개 저장소(Site/Mission/Event)__init__ 재생실패시 journal.close(). 최종(1유닛,좁은스코프) PASS 판정, 잔여 P3 3건 중 2건(fullmatch앵커강화·auth.py device_id provisioning경계검증) 즉시폐쇄, 1건(events.py replay 신규게이트 미재검증-배포이력없어 도달성낮음)은 이미 risk원장 s2-residual-hardening에 포함. risk 2건(mission-issuance-unauthenticated-signing-oracle·edge-sync-preauth-sequence-lockout) 해소: 무인증 발급분기 구조적 제거+장비 device_id 바인딩. 게이트(4차 캐시클린 최종): pytest 1269 passed·5 skipped(KSI_REQUIRE_REAL_MODEL=1 -p no:cacheprovider)·mypy 111파일 clean·ruff clean·uv lock --check·repo hygiene·reference guard·ctest 2/2(C++ 무변경 영역, 3차 확인 유효). 잔여 저위험 P2/P3 8건은 risk s2-residual-hardening(low)로 원장 기록, S4/후속세션 소관.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "3라운드 adversarial 재검토(Opus reviewer) 후 PASS. P1 전건(확정게이트우회·event_key경로안전) 폐쇄, 밀접P2(flock잔존·siteFrame짝무결성·occurredAt tz) 폐쇄, 잔여 저위험 P2/P3 8건은 risk s2-residual-hardening(low)로 원장 기록. 게이트 4차 캐시클린: pytest 1269 passed·5 skipped·mypy 111·ruff·lock·hygiene·ref-guard·ctest 2/2.",
+        "at": "2026-07-30T14:47:10+09:00",
+        "reviewer": "reviewer(Opus xhigh, workflow s2-verify-final wf_2cc03bc2-56d, agent verify:final-scoped)",
+        "evidence_ref": "wf_2cc03bc2-56d journal.jsonl (좁은스코프 최종검토 PASS, findings P3x3) — 선행 wf_5f48c547-246(1차 6유닛)·wf_8068da64-d4e(2차 5유닛) 누적 반증 이력 포함"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-29T20:55:06+09:00"
+      "updated_at": "2026-07-30T14:47:10+09:00"
     },
     {
       "id": "dashboard-mvp",
@@ -543,14 +549,14 @@
       "title": "edge-sync 인증 전 순번 봉쇄 — 위조 큰 순번 1건이 장비 수신을 영구 차단",
       "lens": "time-axis",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "위조/오작동의 큰 device_sequence 1건이 durable 원장에 수락되면 그 장비의 후속 정상 수신이 전부 SEQUENCE_REGRESSION 으로 영구 차단(Edge 로컬 포화→유실 전화)되고 Edge 가 서버 last_sequence 를 알 조회 API 도 없다(반증 리뷰 2026-07-29 P1-4). 현재 미배포(조립 시 store 명시 필요). 해소=도메인 단계의 장비 인증·신원 검증이 이 경계 앞에 서는 것.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "S2(core-domain-query) ADR-KSI-008 §2 — edge-sync 수신에 EDGE_SYNC_INGEST 권한+인증 Principal.device_id==요청 edgeDeviceId 바인딩(불일치 시 원장 반영 전 403 DEVICE_MISMATCH), GET /v1/edge-sync/devices/{device_id}/sequence 복구 조회 API 신설. 위조 순번 주입이 장비 신원 뒤로 차단됨. 3라운드 독립 재검토 PASS. commit 예정",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-29T02:09:37+09:00",
-      "updated_at": "2026-07-29T02:09:37+09:00"
+      "updated_at": "2026-07-30T14:47:23+09:00"
     },
     {
       "id": "route-altitude-vertical-reference",
@@ -613,14 +619,28 @@
       "title": "임무 계약 발급/짝 발급 엔드포인트가 무인증 서명 오라클 — 네트워크 도달자는 누구나 유효 서명 계약 취득 가능",
       "lens": "role",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-07-30 독립 재검토(R3). edge-sync-preauth-sequence-lockout 과 동일 해소 경로 — S2(core-domain-query) 인증·권한 도입이 이 경계 앞에 서야 한다. 현재 미배포·로컬 조립 한정이라 즉시 위험 아님. 코드 docstring 알려진 잔여 한계에 명시.",
+      "accept_reason": null,
+      "resolve_evidence": "S2(core-domain-query) ADR-KSI-008 §2/§3 — create_app 이 서명키⇒mission_store+site_store+auth_registry 를 fail-closed 강제, mission_issuance.py/mission_plans.py 의 무인증 fallback 분기를 구조적으로 제거(단일 인증경로만 존재), MISSIONS_ISSUE 권한 게이트. 3라운드 독립 재검토 PASS. commit 예정",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-07-30T00:10:44+09:00",
+      "updated_at": "2026-07-30T14:47:23+09:00"
+    },
+    {
+      "id": "s2-residual-hardening",
+      "title": "S2 2차 독립 재검토 P2/P3 잔여 강화 항목",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "재생(replay) 경로가 INV-021 확정게이트·assert_event_transition 을 재검증하지 않음(live 경로에만 강제 — journal 직접조작·타 write경로 버그 시에만 노출, sites.py 는 이미 재생 fail-closed 이나 events.py 는 미대칭) / sites.py journal ts 가 UTC 로 정규화되지 않음(SiteRecord 필드는 정규화되나 journal 원본 ts 문자열은 오프셋 그대로) / mission_plans.py KMZ 멱등재발급이 plan_request_digest 를 재생 경로에서 재검증하지 않음(live 경로만 대조) / test_api_contract_sync.py 가 경로·메서드·security존재만 대조하고 요청/응답 스키마 깊은 대조는 미수행 / openapi 공개 allowlist 서술에 /docs/oauth2-redirect 누락 / EVENT_UPDATED 가 siteId/missionId/occurredAt 을 bundle 과 동기화하지 않아 레코드 메타와 bundle 내용이 갈라질 수 있음(완화: siteId 는 애초 서버검증 없는 자유값) / 확정 전이에 낙관적동시성 토큰(기대 bundleDigest) 부재로 좁은 경합창에서 evidence 스냅샷이 운영자가 본 값과 다를 수 있음. 전부 안전 실害 경로 없음(완화 존재) — S2 PASS 게이트와 별개로 S4(운영 표면 강화) 또는 후속 세션에서 재검토.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
-      "created_at": "2026-07-30T00:10:44+09:00",
-      "updated_at": "2026-07-30T00:10:44+09:00"
+      "created_at": "2026-07-30T14:22:42+09:00",
+      "updated_at": "2026-07-30T14:22:42+09:00"
     }
   ]
 }

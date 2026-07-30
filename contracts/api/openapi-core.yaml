@@ -1,7 +1,16 @@
 openapi: 3.1.0
 info:
   title: KSI Site Intelligence Core API
-  version: 1.1.0
+  # 1.2.0 — S2: 인증(bearerAuth) 도입 + Site/Event/Mission 조회·전이 표면 신설.
+  # 미배포·로컬 조립 한정 단계의 범프라 major 아님(인증 필수화가 기배포 클라이언트를
+  # 깨는 시점이었다면 major 대상 — 배포 전 확정이므로 minor).
+  # 1.3.0 — fix:contract-sync: event_key 도입(경로·응답 필드·필터)을 문서에
+  # 반영, severity enum 을 실값(CANDIDATE 포함)으로 정정, expose_docs 스위치
+  # 서술 추가. 이미 구현된 동작을 문서에 맞추는 정정이라 minor.
+  # 1.4.0 — 2차 독립 재검토 P1/P2 폐쇄: eventId/edgeDeviceId/siteId 경로-안전
+  # 문자 검증(INVALID_EVENT_IDENTITY 확장·INVALID_SITE 사유 추가) + occurredAt
+  # tz-aware 강제(INVALID_EVENT_TIMESTAMP 신설) 를 계약에 반영.
+  version: 1.4.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -18,6 +27,122 @@ paths:
       description: SPIKE_REQUIRED/BLOCKED 항목은 절대 포함되지 않는다(INV-041).
       responses:
         '200': { description: Operational capabilities }
+  /v1/auth/whoami:
+    get:
+      summary: Resolve the authenticated Principal and its effective permissions
+      description: >-
+        인증만 요구한다(인가 없음, ADR-KSI-008 §2). OPERATOR 는
+        role·permissions 를, EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST 고정
+        권한을 반환한다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'Principal { principalId, kind, role, deviceId, permissions }' }
+        '401': { description: '인증 실패(부재/형식오류/미지 토큰) — WWW-Authenticate: Bearer' }
+  /v1/sites:
+    post:
+      summary: Register a new Site (initial status always UNMAPPED)
+      description: >-
+        SITES_WRITE 권한 필요. siteId 중복은 409, 구조 위반은 422 — 최종상태
+        직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [siteId, name, siteFrame]
+              properties:
+                siteId: { type: string, minLength: 1 }
+                name: { type: string, minLength: 1 }
+                siteFrame:
+                  type: object
+                  additionalProperties: false
+                  required: [crs, verticalDatum, unit, transformVersion]
+                  properties:
+                    crs: { type: string }
+                    verticalDatum: { type: string }
+                    unit: { const: meter }
+                    transformVersion: { type: string }
+      responses:
+        '201': { description: 'REGISTERED — { verdict, site }' }
+        '409': { description: DUPLICATE_SITE_ID }
+        '422':
+          description: >-
+            INVALID_SITE(siteId/name/siteFrame 필드 공백 — INV-020 / siteId 가
+            경로-안전 문자 밖 — '/'·공백 등, /v1/sites/{site_id} 경로 세그먼트
+            제약)
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+    get:
+      summary: List sites (siteId 오름차순 결정적 정렬)
+      description: SITES_READ 권한 필요.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: 'SiteView 목록' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}:
+    get:
+      summary: Get one Site by id
+      description: SITES_READ 권한 필요. 미지 siteId 는 존재 여부 힌트 없는 일반 404.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: SiteView }
+        '404': { description: 현장을 찾을 수 없다(일반 문구) }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/transitions:
+    post:
+      summary: Transition a Site's status (10-state machine, MASTER_PRD §6.3)
+      description: >-
+        SITES_WRITE 권한 필요. evidence·reason 비공백 필수. SUSPENDED 이탈은
+        저장소가 기억한 진입 직전 상태로만 복귀 허용(§6.1). PATROL_READY 도달은
+        MODEL_VALIDATION→PROVISIONAL_AUTONOMY 경유가 강제된다(품질검증 생략 금지).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus, evidence, reason]
+              properties:
+                targetStatus:
+                  enum:
+                    - UNMAPPED
+                    - BASELINE_MAPPING
+                    - MODEL_PROCESSING
+                    - MODEL_VALIDATION
+                    - PROVISIONAL_AUTONOMY
+                    - PATROL_READY
+                    - PATROL_ACTIVE
+                    - MODEL_STALE
+                    - REMAP_REQUIRED
+                    - SUSPENDED
+                evidence: { type: string, minLength: 1 }
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200': { description: 'TRANSITIONED — { verdict, site }' }
+        '404': { description: UNKNOWN_SITE }
+        '409': { description: ILLEGAL_TRANSITION }
+        '422': { description: INVALID_SITE(evidence/reason 공백) }
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
   /v1/edge-sync/event-bundles:
     post:
       summary: Ingest one idempotent EventBundle journal entry
@@ -26,7 +151,28 @@ paths:
         deviceSequence, edgeDeviceId, payloadDigest "sha256:<hex64>", payload).
         payload 는 event-bundle.v1.2.json 을 만족해야 하며(분류 계보 필수,
         INV-031), wire 직렬화는 exclude_none 규약이다. 201/200 만 ACK 다 —
-        Edge 는 그 둘을 받은 항목만 로컬에서 삭제한다.
+        Edge 는 그 둘을 받은 항목만 로컬에서 삭제한다. EDGE_SYNC_INGEST 권한
+        필요(EDGE_DEVICE Principal 전용) — 인증 장비의 deviceId 가 본문
+        edgeDeviceId 와 다르면 원장 반영 전에 403 DEVICE_MISMATCH 로 거부한다
+        (ADR-KSI-008 §2 — 위조 순번 주입이 장비 신원 뒤로 차단된다).
+
+        수신 전 세 정책 게이트(멱등 원장·순번축 선점 전에 판정 — events.py
+        ``classify_edge_bundle``)를 통과해야 event projection 이 이뤄진다.
+        ① payload.eventId·인증 edgeDeviceId 중 하나라도 경로-안전 문자
+        (``ksi_core.identifiers``, 영숫자 시작 + 영숫자/``_``/``.``/``-``)
+        밖의 문자('/'·공백·예약 구분자 ``::`` 등)를 포함하면 서버 정본 신원
+        ``event_key = "{edgeDeviceId}::{eventId}"`` 가 라우트 경로 세그먼트로
+        쓰일 수 없어 422 INVALID_EVENT_IDENTITY 로 거부(ACK 없음 — 검증 없이
+        수락하면 상세·전이 라우트에 영구히 도달 못 하는 사건이 만들어진다).
+        ② payload.occurredAt 이 tz-aware(offset 포함)가 아니면 422
+        INVALID_EVENT_TIMESTAMP 로 거부(ACK 없음) — naive 값은 서버 로컬
+        타임존으로 조용히 재해석돼 감사 시간축이 어긋난다. ③ payload.status 가
+        CONFIRMED_EVENT/DISMISSED(종단 상태)면 422 STATUS_NOT_EDGE_ASSERTABLE
+        로 거부(ACK 없음) — 확정/기각은 서버 트리아지(``POST
+        /v1/events/{event_key}/transitions``)의 업무 판정 전용이며 Edge 가
+        주장할 수 없다(MASTER_PRD §8.1/§7.6, INV-021 우회 차단). 실제 인지
+        파이프라인은 OBSERVATION→CANDIDATE 까지만 발행한다.
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -45,9 +191,195 @@ paths:
       responses:
         '201': { description: ACCEPTED — durable persistence 후 ACK }
         '200': { description: DUPLICATE_IGNORED — 멱등 재전송(ACK) }
+        '403': { description: DEVICE_MISMATCH(인증 장비 ≠ 요청 edgeDeviceId) / EDGE_SYNC_INGEST 권한 없음 }
         '409': { description: IDEMPOTENCY_CONFLICT / SEQUENCE_DUPLICATE / SEQUENCE_REGRESSION }
-        '422': { description: DIGEST_MISMATCH / MALFORMED_PAYLOAD / INVALID_EVENT_BUNDLE }
+        '422':
+          description: >-
+            DIGEST_MISMATCH / MALFORMED_PAYLOAD / INVALID_EVENT_BUNDLE /
+            INVALID_EVENT_IDENTITY(eventId·edgeDeviceId 가 경로-안전 문자
+            밖 — '/'·공백·`::` 등) / INVALID_EVENT_TIMESTAMP(occurredAt 이
+            tz-aware 아님) / STATUS_NOT_EDGE_ASSERTABLE(status 가
+            CONFIRMED_EVENT/DISMISSED — 확정/기각은 서버 트리아지 전용)
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After 후 재전송 }
+        '401': { description: 인증 실패 }
+  /v1/edge-sync/devices/{device_id}/sequence:
+    get:
+      summary: Query a device's last accepted sequence (recovery path)
+      description: >-
+        edge-sync-preauth-sequence-lockout 해소 경로 — 장비가 재전송 시작점을
+        판단하는 복구 API. EDGE_DEVICE 는 자기 자신만(타 장비는 일반 문구 403),
+        OPERATOR 는 EVENTS_READ 로 임의 장비 조회 가능. 수락 이력이 없으면
+        lastSequence 는 null(미지 장비와 구분하지 않는다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: device_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: '{ deviceId, lastSequence }' }
+        '401': { description: 인증 실패 }
+        '403': { description: 자기 자신이 아닌 장비 조회 / EVENTS_READ 권한 없음(일반 문구) }
+  /v1/events:
+    get:
+      summary: List projected events (필터·페이지네이션)
+      description: >-
+        EVENTS_READ 권한 필요. siteId/missionId/edgeDeviceId/status/severity/
+        triage 필터, occurredAt desc 정렬(동률은 event_key 오름차순 tie-break —
+        events.py). status 는 event-bundle.v1.2 EventStatus 7종과 1:1(확장 금지
+        — ADR-KSI-008 §4), triage 는 서버측 TriageStatus(배정 이후 워크플로,
+        EventStatus 와 분리된 2-enum). 응답 각 항목의 ``eventKey`` (=
+        ``{edgeDeviceId}::{eventId}``) 가 조회·전이 경로의 사건 신원이다(모듈
+        docstring "사건 신원은 장비별로 스코프된다" 절).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: siteId
+          schema: { type: string }
+        - in: query
+          name: missionId
+          schema: { type: string }
+        - in: query
+          name: edgeDeviceId
+          schema: { type: string }
+        - in: query
+          name: status
+          schema:
+            enum:
+              [OBSERVATION, CANDIDATE, EVIDENCE_COLLECTION, FINDING, CONFIRMED_EVENT, DISMISSED, UNRESOLVED]
+        - in: query
+          name: severity
+          description: >-
+            ksi_domain.enums.Severity 실값 — CANDIDATE(미확정 관찰)·MEDIUM·
+            HIGH·CRITICAL(§17.2 확정 심각도 등급). LOW 는 실존하지 않는 값이라
+            422 로 거부된다(재검토 P2 — 이전 문서의 LOW 는 오기였다).
+          schema: { enum: [CANDIDATE, MEDIUM, HIGH, CRITICAL] }
+        - in: query
+          name: triage
+          schema:
+            enum: [NONE, ASSIGNED, ACTION_IN_PROGRESS, REINSPECTION_REQUESTED, RESOLVED, CLOSED]
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200': { description: '{ events: EventSummaryResponse[], count }' }
+        '401': { description: 인증 실패 }
+        '403': { description: EVENTS_READ 권한 없음 }
+  /v1/events/{event_key}:
+    get:
+      summary: Get one event's full detail (bundle + transitions 감사이력)
+      description: >-
+        EVENTS_READ 권한 필요. ``event_key`` = ``{edgeDeviceId}::{eventId}``
+        (목록 응답의 ``eventKey``) — ``eventId`` 는 장비 로컬 식별자라 장비 간
+        충돌이 자연 발생하므로, 서버 정본 신원은 장비로 스코프된 이 합성키다
+        (events.py "사건 신원은 장비별로 스코프된다" 절). transitions 는 이
+        이벤트에 관련된 journal 레코드 전체.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: event_key
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: EventDetailResponse }
+        '404': { description: 이벤트를 찾을 수 없다(일반 문구) }
+        '401': { description: 인증 실패 }
+        '403': { description: EVENTS_READ 권한 없음 }
+  /v1/events/{event_key}/transitions:
+    post:
+      summary: Transition an event's status or triage workflow (INV-021 확정 게이트)
+      description: >-
+        EVENTS_TRIAGE 권한 필요. ``event_key`` = ``{edgeDeviceId}::{eventId}``
+        (목록 응답의 ``eventKey``). targetStatus·triageTarget 중 정확히 하나만
+        지정. CONFIRMED_EVENT/DISMISSED 전이는 reason 필수. CONFIRMED_EVENT
+        확정은 심각도별 Evidence 정책(§17.1 — HIGH+ 는 evidence.clips 필수,
+        CRITICAL 은 riskField/trajectory/viewpointHistory artifact 도 필수)을
+        통과해야 한다(INV-021). triage 전이(ASSIGNED 이후)는 대응 사건이
+        CONFIRMED_EVENT 일 때만 허용된다. **확정/기각(CONFIRMED_EVENT/
+        DISMISSED)은 이 서버 트리아지 경로로만 이뤄진다** — Edge 가 보내는
+        EventBundle 의 ``status`` 로는 이 두 종단 상태를 주장할 수 없다(아래
+        ``/v1/edge-sync/event-bundles`` 의 STATUS_NOT_EDGE_ASSERTABLE 게이트가
+        그 시도를 ACK 없이 거부한다 — MASTER_PRD §8.1/§7.6 "사용자가 업무적으로
+        확정한다").
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: event_key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                targetStatus:
+                  enum:
+                    [OBSERVATION, CANDIDATE, EVIDENCE_COLLECTION, FINDING, CONFIRMED_EVENT, DISMISSED, UNRESOLVED]
+                triageTarget:
+                  enum: [NONE, ASSIGNED, ACTION_IN_PROGRESS, REINSPECTION_REQUESTED, RESOLVED, CLOSED]
+                reason: { type: string }
+                assignee: { type: string }
+      responses:
+        '200': { description: 'TRANSITIONED — { verdict, event }' }
+        '404': { description: UNKNOWN_EVENT }
+        '409': { description: ILLEGAL_TRANSITION }
+        '422': { description: EVIDENCE_INCOMPLETE / INVALID_REQUEST }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EVENTS_TRIAGE 권한 없음 }
+  /v1/missions:
+    get:
+      summary: List mission issuance records (durable 기록 이력)
+      description: >-
+        MISSIONS_READ 권한 필요. siteId 필터, (issuedAt, missionId) 결정적
+        정렬. contract 전문은 이 응답에 없다(별도 /contract 엔드포인트).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: siteId
+          schema: { type: string }
+      responses:
+        '200': { description: MissionRecordResponse 목록 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}:
+    get:
+      summary: Get one mission issuance record's metadata
+      description: MISSIONS_READ 권한 필요. artifactKind(pair/contract)·kmzSha256 등 메타데이터.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: MissionRecordResponse }
+        '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/contract:
+    get:
+      summary: Get the stored signed Mission Contract verbatim (INV-011)
+      description: >-
+        MISSIONS_READ 권한 필요. 발급 시점 서명 계약 전문을 재계산·재서명 없이
+        그대로 반환한다 — 발급 응답과 정확 일치해야 한다(INV-011).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
+        '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/contracts:
     post:
       summary: Issue a signed Mission Contract (v1.2)
@@ -56,10 +388,101 @@ paths:
         정책 상수(coverage 1.0/1.0·battery reserve 30%·evidence 3/5/10s·통신단절
         정책)는 서버가 FINAL_DECISION_LEDGER 값으로 고정한다 — 요청 바디에 그
         필드 자리가 없다(extra=forbid). 서명키 미주입 조립에서는 이 경로 자체가
-        존재하지 않는다.
+        존재하지 않는다. MISSIONS_ISSUE 권한 필요(DEC-010 운영자 승인 — 발급은
+        DRONE_OPERATOR/ADMIN). site 미존재·siteFrame 등록본 불일치·missionId
+        충돌은 서명 **전** 거부되고(UNKNOWN_SITE/SITE_FRAME_MISMATCH/
+        MISSION_ID_CONFLICT — 등록 좌표계와 어긋난 계약 발급 차단, ADR-KSI-007),
+        durable 기록 성공 후에만 201 이다(ADR-KSI-008 §3 — 고아 발급 금지).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              description: >-
+                MissionIssuanceRequest(mission_issuance.py) 필드와 정확 대응 —
+                안전 정책 상수(coveragePolicy 1.0/1.0·batteryPolicy·
+                communicationLossPolicy·unknownObstaclePolicy·evidencePolicy)
+                는 요청 바디에 자리가 없다(서버 고정, extra=forbid).
+              required:
+                - missionId
+                - siteId
+                - missionType
+                - siteFrame
+                - flightEnvelope
+                - objectives
+                - viewpointPolicyId
+                - riskPolicyPackId
+                - fallbackPolicyId
+                - capturePolicyId
+              properties:
+                missionId: { type: string, minLength: 1 }
+                siteId: { type: string, minLength: 1 }
+                missionType:
+                  enum:
+                    - UNIFIED_SITE_SURVEY
+                    - BASELINE_MAPPING
+                    - SPATIAL_REFRESH
+                    - AUTONOMOUS_PATROL
+                    - ASSET_INSPECTION
+                    - PROGRESS_CAPTURE
+                    - INCIDENT_SURVEY
+                    - SURVEY_GRADE_MAPPING
+                siteFrame:
+                  type: object
+                  additionalProperties: false
+                  required: [crs, verticalDatum, unit, transformVersion]
+                  properties:
+                    crs: { type: string }
+                    verticalDatum: { type: string }
+                    unit: { const: meter }
+                    transformVersion: { type: string }
+                  description: 등록된 site 의 것과 정확 일치해야 한다(SITE_FRAME_MISMATCH).
+                flightEnvelope:
+                  type: object
+                  additionalProperties: false
+                  required: [allowedVolumes, excludedVolumes, minAltitudeM, maxAltitudeM]
+                  properties:
+                    allowedVolumes: { type: array, items: { type: string } }
+                    excludedVolumes: { type: array, items: { type: string } }
+                    minAltitudeM: { type: number }
+                    maxAltitudeM: { type: number, maximum: 500 }
+                    minimumStructureStandoffM: { type: number }
+                    minimumPersonStandoffM: { type: number }
+                  description: >-
+                    altitudeReference 는 요청과 무관하게 서버가
+                    relativeToStartPoint 로 고정한다(2026-07-29 대표자 확정) —
+                    요청 필드로 받지 않는다.
+                objectives: { type: array, items: { type: string }, minItems: 1 }
+                viewpointPolicyId: { type: string, minLength: 1 }
+                riskPolicyPackId: { type: string, minLength: 1 }
+                fallbackPolicyId: { type: string, minLength: 1 }
+                capturePolicyId: { type: string, minLength: 1 }
+                accessibleGeneralCoverage: { type: number, minimum: 0.95, maximum: 1.0 }
+                artifacts:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    worldModelManifestId: { type: [string, 'null'] }
+                    modelPackId: { type: [string, 'null'] }
+                    calibrationProfileId: { type: [string, 'null'] }
+                validForHours:
+                  type: number
+                  exclusiveMinimum: 0
+                  maximum: 168
+                  description: 기본 24 — 7일(168시간) 상한(무기한 계약 발급 방지).
       responses:
         '201': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
-        '422': { description: 구조 위반(필드 누락·범위 밖·validForHours>168) }
+        '422':
+          description: >-
+            구조 위반(필드 누락·범위 밖·validForHours>168) / UNKNOWN_SITE /
+            SITE_FRAME_MISMATCH
+        '409': { description: MISSION_ID_CONFLICT }
+        '503': { description: STORE_UNAVAILABLE — durable 기록 실패, 산출물 미반환 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
   /v1/missions/plans:
     post:
       summary: Issue the dual mission artifacts — WPML/KMZ + signed contract (ADR-KSI-007)
@@ -72,6 +495,9 @@ paths:
         호출자가 명시한다(M4D 값은 실기 H4 검증 전 서버가 추측하지 않는다). KMZ
         에는 계약과의 짝 식별자(contractSha256 등, wpmz/res/ksi-mission-pair.json)
         가 동봉된다(ADR-KSI-007 '동일 site_frame·policy_version 짝'의 실체화).
+        MISSIONS_ISSUE 권한 필요 — site 미존재·missionId 충돌은 경로 생성·서명
+        **전** 거부되고, durable 기록 성공 후에만 201 이다(ADR-KSI-008 §3).
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -211,11 +637,22 @@ paths:
                       계약의 accessibleGeneralCoverage 약속 미만이면 발급 자체가
                       거부되므로(COVERAGE_BELOW_CONTRACT_PROMISE) 이 값은 항상
                       약속 이상이다.
-        '422': { description: 경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing 누락·미지원 타입) }
+        '422':
+          description: >-
+            경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing 누락·미지원 타입) /
+            UNKNOWN_SITE / SITE_FRAME_MISMATCH / COVERAGE_BELOW_CONTRACT_PROMISE
+        '409': { description: MISSION_ID_CONFLICT }
+        '503': { description: STORE_UNAVAILABLE — durable 기록 실패, 산출물 미반환 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
   /sites/{siteId}/missions:
     x-status: planned
     post:
-      summary: Create a mission request (Phase 2 — 미구현 설계)
+      summary: Create a mission request (S3+ Wizard 추상화 — 미구현 설계)
+      description: >-
+        S3+ 대시보드 Wizard 가 아이템(target/outcomes/intensity)에서 Mission
+        Contract 생성을 대행하는 추상화 스케치다 — 현재 실경로는
+        POST /v1/missions/plans 를 대시보드가 직접 호출한다(ADR-KSI-008 비범위).
       parameters:
         - in: path
           name: siteId
@@ -237,14 +674,17 @@ paths:
                   enum: [FAST, STANDARD, PRECISE]
       responses:
         '202': { description: Mission planning accepted }
-  /missions/{missionId}/contract:
-    x-status: planned
-    get:
-      summary: Get the signed mission contract (Phase 2 — 미구현 설계)
-      parameters:
-        - in: path
-          name: missionId
-          required: true
-          schema: { type: string }
-      responses:
-        '200': { description: Mission contract (mission-contract.v1.2.json) }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Bearer 토큰 인증(ADR-KSI-008 §2) — 서버는 sha256(token) digest →
+        Principal 매핑만 보유하고 토큰 원문을 저장하지 않는다. 인증 실패는
+        사유(부재/형식오류/미지 토큰)를 가리지 않는 동일 401(WWW-Authenticate:
+        Bearer) — detail 로 존재 여부 힌트를 주지 않는다. 공개 allowlist는
+        /health·/capabilities 와 FastAPI 기본 문서 라우트(/openapi.json·
+        /docs·/redoc, `create_app(expose_docs=...)` 로 끌 수 있다 — 기본
+        True) 뿐이며, 나머지 전 경로는 인증 필수(재검토 P2 — 이전 서술은 문서
+        라우트가 실제로 무인증 공개인 사실을 반영하지 않았다).

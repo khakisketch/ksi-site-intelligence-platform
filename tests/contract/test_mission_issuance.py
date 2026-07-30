@@ -8,13 +8,25 @@ evidence/unknownObstacle)가 요청 값과 무관하게 FINAL_DECISION_LEDGER �
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
-from ksi_mission_contracts.models import FlightEnvelope
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+)
+from ksi_core.durable_journal import DurableJournal
+from ksi_core.mission_records import MissionStore
+from ksi_core.sites import SiteStore
+from ksi_mission_contracts.models import FlightEnvelope, SiteFrame
 from ksi_mission_contracts.signing import KeyRegistry, SignatureVerdict, load_verified_contract
 from pydantic import ValidationError
 
@@ -49,13 +61,61 @@ def _valid_request(**overrides: object) -> dict[str, object]:
     return base
 
 
-def _client_with_signing() -> tuple[TestClient, KeyRegistry, str]:
+_ISSUER_TOKEN = "mission-issuer-token"  # noqa: S105 — 테스트 고정 토큰
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _auth_registry() -> AuthRegistry:
+    return AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest(_ISSUER_TOKEN),
+                principal=Principal(
+                    principal_id="do-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.DRONE_OPERATOR,
+                    device_id=None,
+                ),
+            )
+        ]
+    )
+
+
+def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
+    """서명키 + mission_store + site_store + auth_registry 최소 조립(ADR-KSI-008 §3).
+
+    요청 site_id("site-001")는 발급 전 site_store 에 직접 등록한다 — precheck_issuance
+    의 site_exists 게이트가 이제 이 저장소로 배선되기 때문(HTTP 왕복 없이 register()로
+    직접 시드, API 자체는 test_sites_api.py 소관).
+    """
     key_id = "core-issuer-key-1"
     private_key = Ed25519PrivateKey.generate()
     registry = KeyRegistry()
     registry.register(key_id, private_key.public_key())
-    app = create_app(mission_signing_key=private_key, mission_signing_key_id=key_id)
-    return TestClient(app), registry, key_id
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(_SITE_FRAME),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+
+    app = create_app(
+        mission_signing_key=private_key,
+        mission_signing_key_id=key_id,
+        mission_store=mission_store,
+        site_store=site_store,
+        auth_registry=_auth_registry(),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
+    return client, registry, key_id
 
 
 def test_missing_signing_key_means_no_endpoint() -> None:
@@ -77,8 +137,15 @@ def test_half_signing_config_rejected() -> None:
         raise AssertionError("절반만 있는 서명 설정이 조용히 통과했다")
 
 
-def test_issued_contract_is_signature_valid() -> None:
-    client, registry, _key_id = _client_with_signing()
+def test_signing_key_without_mission_and_site_store_rejected() -> None:
+    """[ADR-KSI-008 §3] 서명키만 있고 mission_store/site_store 가 없으면 조립 거부."""
+    private_key = Ed25519PrivateKey.generate()
+    with pytest.raises(ValueError, match="mission_store"):
+        create_app(mission_signing_key=private_key, mission_signing_key_id="k1")
+
+
+def test_issued_contract_is_signature_valid(tmp_path: Path) -> None:
+    client, registry, _key_id = _client_with_signing(tmp_path)
 
     response = client.post("/v1/missions/contracts", json=_valid_request())
 
@@ -88,9 +155,9 @@ def test_issued_contract_is_signature_valid() -> None:
     assert result.verdict is SignatureVerdict.VALID, result.detail
 
 
-def test_safety_policies_are_server_fixed_not_client_supplied() -> None:
+def test_safety_policies_are_server_fixed_not_client_supplied(tmp_path: Path) -> None:
     """요청 바디에 안전 상수를 넣을 자리가 아예 없다 — extra=forbid로 거부된다."""
-    client, _registry, _key_id = _client_with_signing()
+    client, _registry, _key_id = _client_with_signing(tmp_path)
     request = _valid_request()
     request["batteryPolicy"] = {
         "mode": "RETURN_ENERGY_PLUS_RESERVE",
@@ -102,8 +169,8 @@ def test_safety_policies_are_server_fixed_not_client_supplied() -> None:
     assert response.status_code == 422
 
 
-def test_issued_contract_carries_ledger_default_policies() -> None:
-    client, _registry, _key_id = _client_with_signing()
+def test_issued_contract_carries_ledger_default_policies(tmp_path: Path) -> None:
+    client, _registry, _key_id = _client_with_signing(tmp_path)
 
     response = client.post("/v1/missions/contracts", json=_valid_request())
 
@@ -118,8 +185,8 @@ def test_issued_contract_carries_ledger_default_policies() -> None:
     assert policies["coveragePolicy"]["mandatoryAssetCoverage"] == 1.0
 
 
-def test_valid_for_hours_beyond_cap_rejected() -> None:
-    client, _registry, _key_id = _client_with_signing()
+def test_valid_for_hours_beyond_cap_rejected(tmp_path: Path) -> None:
+    client, _registry, _key_id = _client_with_signing(tmp_path)
 
     response = client.post(
         "/v1/missions/contracts", json=_valid_request(validForHours=169.0)
@@ -155,9 +222,9 @@ def test_flight_envelope_accepts_altitude_at_absolute_cap() -> None:
     assert envelope.max_altitude_m == 500.0
 
 
-def test_issuance_endpoint_rejects_envelope_above_absolute_cap() -> None:
+def test_issuance_endpoint_rejects_envelope_above_absolute_cap(tmp_path: Path) -> None:
     """API 레벨 반증 — 요청 바디의 maxAltitudeM 이 잠정 cap 을 넘으면 422."""
-    client, _registry, _key_id = _client_with_signing()
+    client, _registry, _key_id = _client_with_signing(tmp_path)
 
     response = client.post(
         "/v1/missions/contracts",

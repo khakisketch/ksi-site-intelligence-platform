@@ -20,23 +20,24 @@ unknownObstaclePolicy·evidencePolicy는 FINAL_DECISION_LEDGER_v1.0(§안전·�
 않는다 — 프로덕션 키 수명주기는 별도 ADR 대상이다(edge_sync.py의 "잔여 한계"
 절과 같은 패턴 — 여기서 추측하지 않는다).
 
-## 알려진 잔여 한계 — 무인증 서명 오라클
+## 무인증 서명 오라클 — 구조적으로 제거 (ADR-KSI-008 §2/§3)
 
-``/v1/missions/contracts``·``/v1/missions/plans`` 는 서명키가 주입된 조립에서
-**호출자 인증 없이** 유효한 Mission Contract 서명을 발급한다 — 이 모듈은 요청
-바디의 정당성(그 사이트·그 임무를 요청할 권한이 그 호출자에게 있는가)을 검증
-하지 않는다. 이 경계를 이 모듈이 스스로 해소하지 않는다 — 해소는 S2 인증
-도입이 이 경계 앞에 서는 것이다(원장 risk mission-issuance-unauthenticated-
-signing-oracle). 그 전까지는 이 엔드포인트를 신뢰 경계 밖에 직접 노출하지
-않는 운영이 전제다.
+이 라우터는 인증(``MISSIONS_ISSUE``)·site 등록 대조(존재+siteFrame 일치)·
+mission_id 충돌 검사·durable 기록 성공 후에만 201 을 내는 경로 **하나만**
+갖는다 — ``mission_store``/``site_frame_lookup`` 은 필수 인자라 인증·미기록
+발급이 가능한 조립 자체가 성립하지 않는다(원장 risk
+mission-issuance-unauthenticated-signing-oracle 해소, "인증 없는 보호 표면은
+존재할 수 없다"). ``ksi_core.app.create_app`` 은 서명키가 주어지면
+``mission_store``·``site_store``·``auth_registry`` 를 함께 강제한다.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from ksi_domain.enums import MissionType
 from ksi_mission_contracts.models import (
     Artifacts,
@@ -51,6 +52,15 @@ from ksi_mission_contracts.models import (
 from ksi_mission_contracts.signing import sign_contract
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.mission_records import (
+    MissionRecord,
+    MissionStore,
+    precheck_issuance,
+    raise_for_mission_record_verdict,
+    reject_lone_surrogates,
+)
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -148,21 +158,83 @@ def issue_mission_contract(
     return MissionContractV1_2.model_validate(signed)
 
 
-def build_mission_issuance_router(*, private_key: Ed25519PrivateKey, key_id: str) -> APIRouter:
+def build_mission_issuance_router(
+    *,
+    private_key: Ed25519PrivateKey,
+    key_id: str,
+    mission_store: MissionStore,
+    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
 
     @router.post("/contracts", status_code=201)
-    def issue_contract(request: MissionIssuanceRequest) -> dict[str, Any]:
-        """구역+임무타입으로부터 서명된 MissionContract(v1.2)를 발급한다.
+    def issue_contract_recorded(
+        request: MissionIssuanceRequest,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+    ) -> dict[str, Any]:
+        """구역+임무타입으로부터 서명된 MissionContract(v1.2)를 발급·durable 기록한다.
 
-        안전 관련 정책 상수는 요청으로 지정할 수 없다 — 모듈 docstring 참조.
+        발급 레코드가 durable 기록되기 전에는 201 을 반환하지 않는다(ADR-KSI-008
+        §3 — 고아 발급 금지). 요청 siteFrame 은 등록된 site 의 것과 정확히
+        일치해야 한다(SITE_FRAME_MISMATCH — ADR-KSI-007 짝 무결성). 안전 관련
+        정책 상수는 요청으로 지정할 수 없다(모듈 docstring 참조). lone surrogate
+        문자열은 서명 정규화를 500 으로 깨뜨리므로 서명 전에 422 로 거부한다
+        (재검토 P2 item④).
         """
+        reject_lone_surrogates(request.model_dump(by_alias=True, mode="json", exclude_none=True))
+
+        verdict = precheck_issuance(
+            mission_store=mission_store,
+            site_frame_lookup=site_frame_lookup,
+            site_id=request.site_id,
+            mission_id=request.mission_id,
+            requested_site_frame=request.site_frame.model_dump(
+                by_alias=True, mode="json", exclude_none=True
+            ),
+        )
+        if verdict is not None:
+            raise_for_mission_record_verdict(verdict)
+
         contract = issue_mission_contract(request, private_key=private_key, key_id=key_id)
-        return contract.model_dump(by_alias=True, mode="json", exclude_none=True)
+        contract_payload = contract.model_dump(by_alias=True, mode="json", exclude_none=True)
+
+        record = MissionRecord(
+            mission_id=request.mission_id,
+            site_id=request.site_id,
+            mission_type=request.mission_type.value,
+            artifact_kind="contract",
+            contract=contract_payload,
+            kmz_sha256=None,
+            route_pattern=None,
+            waypoint_count=None,
+            coverage_ratio=None,
+            issued_at=datetime.now(UTC),
+            issued_by=principal.principal_id,
+        )
+        raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        return contract_payload
 
     return router
 
 
-def mount_mission_issuance(app: FastAPI, *, private_key: Ed25519PrivateKey, key_id: str) -> None:
-    """앱에 Mission Contract 발급 라우터를 장착한다."""
-    app.include_router(build_mission_issuance_router(private_key=private_key, key_id=key_id))
+def mount_mission_issuance(
+    app: FastAPI,
+    *,
+    private_key: Ed25519PrivateKey,
+    key_id: str,
+    mission_store: MissionStore,
+    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+) -> None:
+    """앱에 Mission Contract 발급 라우터를 장착한다.
+
+    인증·site 등록 대조·durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3
+    — 무인증·미기록 발급이 가능한 조립은 성립하지 않는다).
+    """
+    app.include_router(
+        build_mission_issuance_router(
+            private_key=private_key,
+            key_id=key_id,
+            mission_store=mission_store,
+            site_frame_lookup=site_frame_lookup,
+        )
+    )

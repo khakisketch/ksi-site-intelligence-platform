@@ -15,15 +15,26 @@ import json
 import math
 import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+)
+from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_plans import _require_wayline_takeoff_height_compatible
+from ksi_core.mission_records import MissionStore
+from ksi_core.sites import SiteStore
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
-from ksi_mission_contracts.models import FlightEnvelope
+from ksi_mission_contracts.models import FlightEnvelope, SiteFrame
 from ksi_mission_contracts.signing import (
     KeyRegistry,
     SignatureVerdict,
@@ -102,17 +113,71 @@ def _plan_request(
     }
 
 
-def _client() -> tuple[TestClient, KeyRegistry]:
+_ISSUER_TOKEN = "mission-issuer-token"  # noqa: S105 — 테스트 고정 토큰
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _auth_registry() -> AuthRegistry:
+    return AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest(_ISSUER_TOKEN),
+                principal=Principal(
+                    principal_id="do-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.DRONE_OPERATOR,
+                    device_id=None,
+                ),
+            )
+        ]
+    )
+
+
+def _client(tmp_path: Path) -> tuple[TestClient, KeyRegistry]:
+    """서명키 + mission_store + site_store + auth_registry 최소 조립(ADR-KSI-008 §3).
+
+    요청 site_id("site-001")는 발급 전 site_store 에 직접 등록한다 — precheck_issuance
+    의 site_exists 게이트가 이제 이 저장소로 배선되기 때문.
+    """
     key_id = "core-issuer-key-1"
     private_key = Ed25519PrivateKey.generate()
     registry = KeyRegistry()
     registry.register(key_id, private_key.public_key())
-    app = create_app(mission_signing_key=private_key, mission_signing_key_id=key_id)
-    return TestClient(app), registry
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+
+    app = create_app(
+        mission_signing_key=private_key,
+        mission_signing_key_id=key_id,
+        mission_store=mission_store,
+        site_store=site_store,
+        auth_registry=_auth_registry(),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
+    return client, registry
 
 
-def test_plan_issues_contract_and_kmz_pair() -> None:
-    client, registry = _client()
+def test_plan_issues_contract_and_kmz_pair(tmp_path: Path) -> None:
+    client, registry = _client(tmp_path)
 
     response = client.post("/v1/missions/plans", json=_plan_request())
 
@@ -134,10 +199,10 @@ def test_plan_issues_contract_and_kmz_pair() -> None:
         }
 
 
-def test_plan_route_altitude_gated_by_contract_envelope() -> None:
+def test_plan_route_altitude_gated_by_contract_envelope(tmp_path: Path) -> None:
     """경로 고도가 계약 봉투 밖이면 짝 발급 전체가 거부된다 — 계약만 발급되고 KMZ 는
     봉투 밖인 어긋난 쌍이 존재할 수 없다."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
 
     response = client.post("/v1/missions/plans", json=_plan_request(altitudeM=150.0))
 
@@ -145,8 +210,8 @@ def test_plan_route_altitude_gated_by_contract_envelope() -> None:
     assert "FlightEnvelope" in response.json()["detail"]
 
 
-def test_mapping_type_uses_lawnmower_and_requires_spacing() -> None:
-    client, _registry = _client()
+def test_mapping_type_uses_lawnmower_and_requires_spacing(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
 
     missing_spacing = client.post(
         "/v1/missions/plans", json=_plan_request(mission_type="BASELINE_MAPPING")
@@ -162,8 +227,8 @@ def test_mapping_type_uses_lawnmower_and_requires_spacing() -> None:
     assert with_spacing.json()["routePattern"] == "lawnmower"
 
 
-def test_unsupported_mission_type_rejected_not_degraded() -> None:
-    client, _registry = _client()
+def test_unsupported_mission_type_rejected_not_degraded(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
 
     response = client.post(
         "/v1/missions/plans", json=_plan_request(mission_type="ASSET_INSPECTION")
@@ -179,24 +244,26 @@ def test_plans_endpoint_absent_without_signing_key() -> None:
     assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 404
 
 
-def test_issued_envelope_carries_altitude_reference() -> None:
+def test_issued_envelope_carries_altitude_reference(tmp_path: Path) -> None:
     """2026-07-29 대표자 확정 — 발급 계약의 봉투 고도 수직기준은 서버가 고정한다."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     response = client.post("/v1/missions/plans", json=_plan_request())
     envelope = response.json()["contract"]["flightEnvelope"]
     assert envelope["altitudeReference"] == "relativeToStartPoint"
 
 
-def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not() -> None:
+def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Path) -> None:
     import xml.etree.ElementTree as ET
 
     ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
 
     def action_funcs(mission_type: str, **route: object) -> list[str | None]:
-        response = client.post(
-            "/v1/missions/plans", json=_plan_request(mission_type=mission_type, **route)
-        )
+        # 서로 다른 missionId — mission_store 가 이제 발급을 영속하므로 같은
+        # missionId 재사용은 두 번째 호출을 409 MISSION_ID_CONFLICT 로 거부한다.
+        request = _plan_request(mission_type=mission_type, **route)
+        request["contract"]["missionId"] = f"mission-{mission_type.lower()}"
+        response = client.post("/v1/missions/plans", json=request)
         assert response.status_code == 201
         kmz = base64.b64decode(response.json()["kmzBase64"])
         with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
@@ -210,13 +277,13 @@ def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not() -> None:
     assert action_funcs("AUTONOMOUS_PATROL") == []
 
 
-def test_pair_height_semantics_match_between_kmz_and_contract() -> None:
+def test_pair_height_semantics_match_between_kmz_and_contract(tmp_path: Path) -> None:
     """재검토 #5 — 한 응답 안에서 KMZ 높이 모드와 계약 altitudeReference 가 같은
     값이어야 한다(F1 의 실제 위험: 두 산출물의 수직기준 무음 이탈)."""
     import xml.etree.ElementTree as ET
 
     ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     response = client.post("/v1/missions/plans", json=_plan_request())
     body = response.json()
 
@@ -237,10 +304,10 @@ def test_pair_height_semantics_match_between_kmz_and_contract() -> None:
 # ── A. 어긋난 쌍 차단 — takeoffSecurityHeightM × flightEnvelope (P1) ─────────
 
 
-def test_takeoff_security_height_exceeding_envelope_rejected() -> None:
+def test_takeoff_security_height_exceeding_envelope_rejected(tmp_path: Path) -> None:
     """P1 반증 — maxAltitudeM=120 계약 + takeoffSecurityHeightM=1500 요청은 이전엔
     조용히 201 로 발급되던 어긋난 쌍이다(이륙 안전고도가 계약 봉투 밖)."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     request = _plan_request()
     request["wayline"]["takeoffSecurityHeightM"] = 1500.0
 
@@ -250,8 +317,8 @@ def test_takeoff_security_height_exceeding_envelope_rejected() -> None:
     assert "TAKEOFF_HEIGHT_EXCEEDS_ENVELOPE" in response.json()["detail"]
 
 
-def test_takeoff_security_height_below_minimum_rejected() -> None:
-    client, _registry = _client()
+def test_takeoff_security_height_below_minimum_rejected(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
     request = _plan_request()
     request["wayline"]["takeoffSecurityHeightM"] = 1.0
 
@@ -264,13 +331,13 @@ def test_takeoff_security_height_below_minimum_rejected() -> None:
 # ── B. 짝 식별자 (P2 — ADR-KSI-007 '동일 site_frame·policy_version 짝'의 실체화) ──
 
 
-def test_pair_manifest_identifiers_are_deterministic_and_cross_consistent() -> None:
+def test_pair_manifest_identifiers_are_deterministic_and_cross_consistent(tmp_path: Path) -> None:
     """P2 반증 — kmzSha256 이 응답 KMZ 재해시와 일치하고, KMZ 안 pair manifest 의
     contractPayloadSha256 이 **ADR-KSI-002 문서화 정규화**(canonical_payload_bytes:
     signature 제외·ensure_ascii=False·sha256:<hex>)로 재현되며 — 독자 정규화가
     아니어야 비-Python 검증기가 ADR 만 보고 짝 검증을 재현할 수 있다(재검증 P2) —
     perimeter 는 coverageRatio 가 null 이다."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
 
     response = client.post("/v1/missions/plans", json=_plan_request())  # perimeter
 
@@ -312,11 +379,11 @@ def _shear_aoi_vertices() -> list[dict[str, float]]:
     ]
 
 
-def test_coverage_promise_above_measured_ratio_rejected() -> None:
+def test_coverage_promise_above_measured_ratio_rejected(tmp_path: Path) -> None:
     """재검증 P2 반증 — 계약이 accessibleGeneralCoverage=1.0 을 약속(서명 대상)하는데
     같은 요청의 실측 커버가 1.0 미만이면, 그 어긋난 쌍은 발급되지 않는다(이륙고도
     게이트와 동일 클래스 — 이전엔 조용히 201 이었다)."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
     request["contract"]["accessibleGeneralCoverage"] = 1.0
@@ -327,9 +394,9 @@ def test_coverage_promise_above_measured_ratio_rejected() -> None:
     assert "COVERAGE_BELOW_CONTRACT_PROMISE" in response.json()["detail"]
 
 
-def test_coverage_promise_at_default_accepts_imperfect_ratio() -> None:
+def test_coverage_promise_at_default_accepts_imperfect_ratio(tmp_path: Path) -> None:
     """대조 — 같은 도형이라도 약속(기본 0.95)이 실측 이하면 정상 발급된다."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
 
@@ -352,8 +419,8 @@ def test_takeoff_height_gate_rejects_non_finite() -> None:
         _require_wayline_takeoff_height_compatible(float("nan"), envelope)
 
 
-def test_lawnmower_plan_reports_coverage_ratio() -> None:
-    client, _registry = _client()
+def test_lawnmower_plan_reports_coverage_ratio(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
 
     response = client.post(
         "/v1/missions/plans",
@@ -369,8 +436,8 @@ def test_lawnmower_plan_reports_coverage_ratio() -> None:
 # ── D. allowedVolumes=[] 거부 (W1 생성기 게이트) ─────────────────────────────
 
 
-def test_lawnmower_rejects_empty_allowed_volumes() -> None:
-    client, _registry = _client()
+def test_lawnmower_rejects_empty_allowed_volumes(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["contract"]["flightEnvelope"]["allowedVolumes"] = []
 
@@ -380,8 +447,8 @@ def test_lawnmower_rejects_empty_allowed_volumes() -> None:
     assert "EMPTY_ALLOWED_VOLUMES" in response.json()["detail"]
 
 
-def test_perimeter_rejects_empty_allowed_volumes() -> None:
-    client, _registry = _client()
+def test_perimeter_rejects_empty_allowed_volumes(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
     request = _plan_request()
     request["contract"]["flightEnvelope"]["allowedVolumes"] = []
 
@@ -394,10 +461,10 @@ def test_perimeter_rejects_empty_allowed_volumes() -> None:
 # ── F.3 전 와이어 camelCase 통합 테스트 ──────────────────────────────────────
 
 
-def test_pure_camelcase_wire_body_is_accepted() -> None:
+def test_pure_camelcase_wire_body_is_accepted(tmp_path: Path) -> None:
     """와이어 전체가 camelCase 여도 통과한다(W1 의 AreaOfInterest camelCase 별칭
     전제 — aoi.vertices[].latDeg/lonDeg)."""
-    client, _registry = _client()
+    client, _registry = _client(tmp_path)
     request = _plan_request()
     request["aoi"] = {"vertices": _rect_aoi_vertices_camel()}
 

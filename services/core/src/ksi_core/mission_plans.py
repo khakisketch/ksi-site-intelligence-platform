@@ -31,16 +31,35 @@ ADR-KSI-002 §2/§3 을 그대로 재사용한다(:func:`canonical_payload_bytes
   내용으로 재서명해도 짝 판정이 유지된다(짝의 단위는 서명이 아니라 내용).
 - ``siteFrameSha256``: 요청 site_frame 의 동일 규약 digest.
 - 나머지 키(missionId·siteId·정책 ID 4종)는 평문 식별자.
+
+## 멱등 재발급 (재검토 P2 item③)
+
+201 응답이 네트워크에서 유실되면(전송 중 유실·클라이언트 타임아웃) 클라이언트는
+missionId 소각(재시도 시 409)과 KMZ 영구 소실을 동시에 겪는다 — KMZ 바이트
+자체는 journal 에 넣지 않기 때문이다(용량). 그래서 짝 레코드는 KMZ 를
+**재생성 가능한 입력**(``MissionPlanRequest`` 전문 + 원 ``issued_at``)을 함께
+영속하고, 같은 missionId 로 **동일 요청 digest**(``_request_digest`` —
+ADR-KSI-002 정규화 재사용)가 재도착하면 :func:`_regenerate_pair_artifact` 가
+저장된 입력으로 KMZ 를 다시 만들어 그대로 재반환한다(200, 새 journal 레코드는
+만들지 않는다). ``build_kmz``/경로 생성기 계열에 시각·난수·UUID 의존이 없어
+(패키지 전수 확인) 같은 입력+같은 issued_at 이면 바이트 동일성이 보장된다 —
+이 결정성은 ``tests/contract/test_mission_records.py`` 의
+``test_identical_retry_of_pair_issuance_is_idempotent`` 가 실 바이트 비교로
+증명한다. **다른** digest 로 같은 missionId 를 재사용하면 여전히 409
+``MISSION_ID_CONFLICT`` 다 — 멱등 재반환은 '같은 요청의 재시도'로만 한정된다.
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import math
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.enums import MissionType
 from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
@@ -57,12 +76,23 @@ from ksi_mission_planning import (
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
+from ksi_core.mission_records import (
+    MissionRecord,
+    MissionRecordVerdict,
+    MissionStore,
+    precheck_issuance,
+    raise_for_mission_record_verdict,
+    reject_lone_surrogates,
+)
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from fastapi import FastAPI
     from ksi_mission_planning import RouteWaypoint
+
+logger = logging.getLogger(__name__)
 
 # WPML takeOffSecurityHeight 유효범위 하한 — 공식 스펙 [1.2, 1500]m (wpml.py 가
 # raw 표에서 확인한 값과 동일 근거).
@@ -158,10 +188,28 @@ def _pair_digest(payload: dict[str, Any]) -> str:
     return sha256_digest(canonical_payload_bytes(payload))
 
 
+def _request_digest(plan_request_payload: dict[str, Any]) -> str:
+    """멱등 재발급 대조용 요청 digest — ``_pair_digest`` 와 동일 정규화 재사용.
+
+    ``canonical_payload_bytes`` 는 ``signature`` 키만 제외하는데, 요청 payload 엔
+    그 키가 없으므로 전체가 그대로 정규화된다(무해한 재사용, 재검토 P2 item③).
+    """
+    return _pair_digest(plan_request_payload)
+
+
 def build_mission_plan(
-    request: MissionPlanRequest, *, private_key: Ed25519PrivateKey, key_id: str
+    request: MissionPlanRequest,
+    *,
+    private_key: Ed25519PrivateKey,
+    key_id: str,
+    issued_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """경로 생성 → 서명 계약 → 짝 식별자 동봉 KMZ 발급. 실패는 typed 예외로 전파된다."""
+    """경로 생성 → 서명 계약 → 짝 식별자 동봉 KMZ 발급. 실패는 typed 예외로 전파된다.
+
+    ``issued_at``: 멱등 재발급(:func:`_regenerate_pair_artifact`)이 원 레코드의
+    ``issued_at`` 을 그대로 넘겨, 재서명된 계약의 ``validity`` 창이 원본과
+    달라지지 않게 한다(생략 시 :func:`issue_mission_contract` 가 현재 시각을 쓴다).
+    """
     mission_type = request.contract.mission_type
     envelope = request.contract.flight_envelope
 
@@ -211,7 +259,9 @@ def build_mission_plan(
     # 발급 순서: 계약 먼저(ADR-KSI-007 '동일 site_frame·policy_version 짝'의 실체화).
     # KMZ 는 그 계약의 canonical sha256 을 포함한 pair_manifest 를 동봉해, 두
     # 산출물이 사후에도(전송·저장 경로가 갈리더라도) 짝임을 검증 가능하게 한다.
-    contract = issue_mission_contract(request.contract, private_key=private_key, key_id=key_id)
+    contract = issue_mission_contract(
+        request.contract, private_key=private_key, key_id=key_id, issued_at=issued_at
+    )
     contract_payload = contract.model_dump(by_alias=True, mode="json", exclude_none=True)
     site_frame_payload = request.contract.site_frame.model_dump(
         by_alias=True, mode="json", exclude_none=True
@@ -257,21 +307,136 @@ def build_mission_plan(
     }
 
 
-def build_mission_plans_router(*, private_key: Ed25519PrivateKey, key_id: str) -> APIRouter:
+def _regenerate_pair_artifact(
+    record: MissionRecord, *, private_key: Ed25519PrivateKey, key_id: str
+) -> dict[str, Any]:
+    """저장된 ``plan_request`` 로 짝 산출물을 재생성한다(멱등 재발급, 모듈 docstring 참조).
+
+    KMZ 바이트 자체는 journal 에 없으므로 재반환은 항상 재생성이다. 원 레코드의
+    ``issued_at`` 을 그대로 넘겨 계약 재서명이 원본과 같은 ``validity`` 창을
+    갖게 한다. 재생성 ``kmzSha256`` 이 저장된 값과 다르면(하류 로직 변경 등으로
+    결정성이 깨진 경우) 예외로 막지 않고 재생성 산출물을 그대로 반환한다(최소
+    폐쇄안, 모듈 docstring "멱등 재발급" 참조) — 대신 감사 로그를 남긴다.
+    """
+    assert record.plan_request is not None  # noqa: S101 -- artifact_kind=="pair" 불변식이 보장
+    stored_request = MissionPlanRequest.model_validate(record.plan_request)
+    result = build_mission_plan(
+        stored_request, private_key=private_key, key_id=key_id, issued_at=record.issued_at
+    )
+    if result["kmzSha256"] != record.kmz_sha256:
+        logger.warning(
+            "mission_id=%s 짝 재생성 바이트가 원본과 다르다(결정성 가정 위반 의심) — "
+            "재생성 산출물을 그대로 반환한다",
+            record.mission_id,
+        )
+    return result
+
+
+def build_mission_plans_router(
+    *,
+    private_key: Ed25519PrivateKey,
+    key_id: str,
+    mission_store: MissionStore,
+    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
 
     @router.post("/plans", status_code=201)
-    def issue_mission_plan(request: MissionPlanRequest) -> dict[str, Any]:
-        """구역+임무타입 → KMZ(기체) + 서명 계약(Manifold) 짝 발급 (ADR-KSI-007)."""
+    def issue_mission_plan_recorded(
+        request: MissionPlanRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+    ) -> dict[str, Any]:
+        """구역+임무타입 → KMZ+서명 계약 짝 발급·durable 기록 (ADR-KSI-007/ADR-KSI-008 §3).
+
+        발급 레코드가 durable 기록되기 전에는 201 을 반환하지 않는다(고아 발급 금지)
+        — site 미존재·siteFrame 불일치·mission_id 충돌은 서명·KMZ 생성 **전에**
+        거부한다(SITE_FRAME_MISMATCH — 등록 좌표계와 어긋난 짝 발급 차단).
+
+        같은 missionId 로 **동일 요청**(정규화 digest 일치)이 재도착하면 멱등
+        200 으로 저장된 산출물을 재생성해 그대로 반환한다(모듈 docstring "멱등
+        재발급" 참조) — 다른 요청이면 여전히 409 ``MISSION_ID_CONFLICT``.
+        """
+        contract_request_payload = request.contract.model_dump(
+            by_alias=True, mode="json", exclude_none=True
+        )
+        reject_lone_surrogates(contract_request_payload)
+
+        plan_request_payload = request.model_dump(by_alias=True, mode="json", exclude_none=True)
+        request_digest = _request_digest(plan_request_payload)
+
+        verdict = precheck_issuance(
+            mission_store=mission_store,
+            site_frame_lookup=site_frame_lookup,
+            site_id=request.contract.site_id,
+            mission_id=request.contract.mission_id,
+            requested_site_frame=contract_request_payload["siteFrame"],
+        )
+        if verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
+            existing = mission_store.get(request.contract.mission_id)
+            if (
+                existing is not None
+                and existing.artifact_kind == "pair"
+                and existing.plan_request_digest == request_digest
+            ):
+                response.status_code = 200
+                return _regenerate_pair_artifact(
+                    existing, private_key=private_key, key_id=key_id
+                )
+        if verdict is not None:
+            raise_for_mission_record_verdict(verdict)
+
+        # issued_at 을 한 번만 뽑아 계약 서명(validity.notBefore)과 레코드에 동일하게
+        # 쓴다 — 둘이 별개 datetime.now() 호출이면 멱등 재발급(_regenerate_pair_artifact
+        # 가 record.issued_at 을 재서명 시각으로 재사용)이 원본과 다른 바이트를 낸다.
+        issued_at = datetime.now(UTC)
         try:
-            return build_mission_plan(request, private_key=private_key, key_id=key_id)
+            result = build_mission_plan(
+                request, private_key=private_key, key_id=key_id, issued_at=issued_at
+            )
         except (RouteGenerationError, KmzBuildError) as exc:
-            # 경로·산출물 생성 실패는 입력 문제의 typed 실패다 — 422 로 응답한다.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        record = MissionRecord(
+            mission_id=request.contract.mission_id,
+            site_id=request.contract.site_id,
+            mission_type=request.contract.mission_type.value,
+            artifact_kind="pair",
+            contract=result["contract"],
+            kmz_sha256=result["kmzSha256"],
+            route_pattern=result["routePattern"],
+            waypoint_count=result["waypointCount"],
+            coverage_ratio=result["coverageRatio"],
+            issued_at=issued_at,
+            issued_by=principal.principal_id,
+            plan_request=plan_request_payload,
+            plan_request_digest=request_digest,
+        )
+        raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        return result
 
     return router
 
 
-def mount_mission_plans(app: FastAPI, *, private_key: Ed25519PrivateKey, key_id: str) -> None:
-    """앱에 임무 계획(짝 발급) 라우터를 장착한다."""
-    app.include_router(build_mission_plans_router(private_key=private_key, key_id=key_id))
+def mount_mission_plans(
+    app: FastAPI,
+    *,
+    private_key: Ed25519PrivateKey,
+    key_id: str,
+    mission_store: MissionStore,
+    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+) -> None:
+    """앱에 임무 계획(짝 발급) 라우터를 장착한다.
+
+    인증·site 등록 대조(존재+siteFrame 일치)·durable 기록이 강제되는 경로
+    하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록 발급이 가능한 조립은 성립하지
+    않는다. mission_issuance.py 모듈 docstring과 동형).
+    """
+    app.include_router(
+        build_mission_plans_router(
+            private_key=private_key,
+            key_id=key_id,
+            mission_store=mission_store,
+            site_frame_lookup=site_frame_lookup,
+        )
+    )

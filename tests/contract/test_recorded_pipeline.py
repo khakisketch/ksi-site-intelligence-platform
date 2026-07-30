@@ -742,10 +742,31 @@ def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> No
     파이프라인이 필드를 바꾸거나 v1.3 으로 올라가면 여기서 깨진다 — 각자 손으로
     만든 픽스처만 쓰면 양쪽이 각자 green 인 채 통합 시점에야 어긋난다.
     """
+    import hashlib
+
     from fastapi.testclient import TestClient
     from ksi_core.app import create_app
+    from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord
+    from ksi_core.durable_journal import DurableJournal
     from ksi_core.edge_sync import EdgeSyncStore
+    from ksi_core.events import EventStore
     from ksi_event_contracts.offline_sync import JournalEntry, payload_digest
+
+    edge_device_id = "e2e-edge-001"
+    edge_token = "e2e-recorded-pipeline-edge-token"  # noqa: S105 — 테스트 고정 토큰
+    auth_registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(edge_token.encode("utf-8")).hexdigest(),
+                principal=Principal(
+                    principal_id="edge-principal-e2e-recorded-pipeline",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id=edge_device_id,
+                ),
+            )
+        ]
+    )
 
     result = run_vertical_slice(
         frames=[
@@ -776,22 +797,29 @@ def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> No
     entry = JournalEntry(
         idempotency_key=f"e2e:{bundle.event_id}",
         device_sequence=0,
-        edge_device_id="e2e-edge-001",
+        edge_device_id=edge_device_id,
         payload_digest=payload_digest(payload),
         payload=payload,
     )
     store = EdgeSyncStore(tmp_path / "journal.jsonl")
-    client = TestClient(create_app(edge_sync_store=store))
+    event_store = EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl"))
+    client = TestClient(
+        create_app(edge_sync_store=store, event_store=event_store, auth_registry=auth_registry)
+    )
+    request_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {edge_token}",
+    }
     created = client.post(
         "/v1/edge-sync/event-bundles",
         content=entry.model_dump_json(by_alias=True),
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
     )
     assert created.status_code == 201, created.text
     retransmit = client.post(
         "/v1/edge-sync/event-bundles",
         content=entry.model_dump_json(by_alias=True),
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
     )
     assert retransmit.status_code == 200
     assert retransmit.json()["verdict"] == "DUPLICATE_IGNORED"
