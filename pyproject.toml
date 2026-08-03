@@ -45,7 +45,13 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-extend-exclude = ["references", "edge", "apps"]
+# `dir/**` 형태로 **저장소 루트 기준 경로**를 명시한다. 슬래시 없는 "edge"는 ruff가
+# basename 글롭으로 취급해 어느 depth의 edge 디렉터리든 매칭 — `tools/edge/`까지 삼켰다.
+# 2026-08-03 신설한 tools/edge/{check_target_abi,fetch_psdk}.py 가 `ruff check .`
+# 대상에서 통째로 빠져 있던 것을 2026-08-04 감사에서 실측 확인(명시 경로 지정 시에만
+# 검사돼 "All checks passed"가 검사 미수행을 가렸다 — 이 저장소가 경계하는 조용한 no-op).
+# 선행 슬래시("/edge")는 절대경로로 해석돼 제외가 아예 풀리므로 쓰지 않는다(실측).
+extend-exclude = ["references/**", "edge/**", "apps/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -57,7 +63,17 @@ warn_unused_ignores = true
 no_implicit_optional = true
 # tools/vector-extraction/: 참고 레포(Scout)를 스크래치패드 venv에서 import하는
 # 일회성 추출 스크립트라 메인 워크스페이스에서는 원래 해석 불가하다(설계상 의도).
-exclude = ["references/", "edge/", "apps/", "tools/vector-extraction/"]
+#
+# mypy exclude는 **정규식**이다(ruff의 gitignore 문법과 다르다) — `^`로 앵커링하지
+# 않으면 substring 매칭이라 "edge/"가 `tools/edge/`까지 제외시킨다. 2026-08-04 감사에서
+# tools/edge/*.py 가 이 오탐으로 타입체크 밖이었음을 확인하고 앵커링했다.
+exclude = ["^references/", "^edge/", "^apps/", "^tools/vector-extraction/"]
+# tests/hil, tests/contract 등이 `sys.path.insert(...) + from <module> import ...`
+# (flat import) 로 tools/*/*.py 를 참조한다. mypy_path 로 두 디렉터리를 모듈 검색
+# 경로에 명시해 이 flat import 가 스캔 순서와 무관하게 해석되게 한다
+# (위 exclude 앵커링과 별개 사안 — 앵커링은 "파일이 체크되는가", mypy_path는
+#  "그 파일이 import하는 모듈이 해석되는가").
+mypy_path = ["tools/hil", "tools/edge"]
 
 # [dfine] extra(torch·transformers·onnx 계열)는 CI 에 설치되지 않는다 — mypy 는
 # 지연 import 도 모듈 해석을 시도해 미설치 시 import-not-found **에러**를 내므로

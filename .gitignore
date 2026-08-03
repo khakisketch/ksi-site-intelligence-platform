@@ -3,7 +3,8 @@
 /models/
 
 # 빌드 산출물·캐시 — 로컬 절대경로가 박혀 CI 를 오염시킨다(2026-07-27 CI 실패 재발 방지)
-edge/manifold-runtime/build/
+# build/·build-asan/·build-manifold3/ 등을 전부 포괄(2026-08-03 Manifold3 HIL 세션 정리).
+edge/manifold-runtime/build*/
 __pycache__/
 *.pyc
 .venv/
@@ -11,7 +12,6 @@ __pycache__/
 # HIL 세션 raw 로그 로컬 스테이징 — 커밋하지 않는다(docs/hil/RAW_LOG_CONVENTIONS.md §1·§5).
 # 세션 종료 후 durable 저장소로 옮기고 SpikeEvidence.raw_log_ref 는 그 URI 를 가리킨다.
 /hil_raw_logs/
-edge/manifold-runtime/build-asan/
 
 # scripts/run_core_dev.py 로컬 개발 서버 durable 저장소 + 서명키 — dev 전용, 커밋하지 않는다.
 /.dev-data/
@@ -20,3 +20,15 @@ edge/manifold-runtime/build-asan/
 apps/dashboard/node_modules/
 apps/dashboard/.next/
 apps/dashboard/.env.local
+
+# Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
+# 계보는 edge/third_party/PSDK_LOCK.yaml(커밋)이 SSOT, 실물은 tools/edge/fetch_psdk.py로 fetch.
+/.secrets/
+/dist/
+edge/third_party/psdk/
+**/dji_sdk_app_info.h
+
+# manifoldctl 머신별 설정 — IP는 DHCP로 바뀔 수 있어 저장소에 커밋하지 않는다
+# (manifold.env.example 참조. 비밀은 없지만 머신별 값이라 무시 대상이 맞다 — 2026-08-04
+# 병렬 감사에서 여기 없어 mf_git_is_dirty가 항상 true가 되던 결함 발견·정정, 감사 #3).
+scripts/manifold/manifold.env
