@@ -1,6 +1,6 @@
 # Manifold 3 Toolchain Manifest
 
-- 상태: Stage C-3 (골격 단계) — **호스트·타깃(온보드 네이티브) 빌드 검증됨, 컨테이너 빌드는 로컬 1회 확인(CI 미실행)**
+- 상태: Stage C-3 (골격 단계) — **호스트·타깃(온보드 네이티브)·컨테이너(CI) 빌드 전부 검증됨**
 - 대상: DJI Manifold 3 온보드 컴퓨터 (MASTER_PRD §9.1)
 - 2026-08-03 HIL 세션(`SESS-20260803T125616Z-PENDING-SN`, device_id `A25WN8B0011082`)에서
   실기 SSH 접속 확보 후 §1·§2·§4를 실측값으로 갱신. 크로스빌드 대신 **온보드 네이티브
@@ -15,8 +15,8 @@
 | 호스트(x86-64/aarch64 Linux) C++17 빌드 | **검증됨** | `cmake 3.28 + g++ 13.3`, `-Wall -Wextra -Wpedantic -Werror` 통과, ctest green |
 | control plane 계약 테스트 | **검증됨** | 33개 단언 통과 + 변이 테스트로 하네스 유효성 확인 |
 | **Manifold 3 타깃 온보드 네이티브 빌드** | **검증됨** | 실기(gcc 9.4.0/cmake 3.16.3) `100% tests passed, 0 tests failed out of 2` — `hil_raw_logs/SESS-20260803T125616Z-PENDING-SN/02_sample_build/` |
-| **arm64 컨테이너 빌드(CI 정본)** | **작성 완료 — 로컬 1회 실행 확인 / CI 미실행(PENDING_CI_RUN)** | `edge/docker/manifold3-build.Dockerfile`(Ubuntu 20.04) 자체는 존재하고, 2026-08-03 세션에서 `docker run --platform linux/arm64 ksi-manifold3-build:latest`로 로컬 1회 실행해 gcc 9.4.0/cmake 3.16.3/glibc 2.31 재현과 `100% tests passed, 0 tests failed out of 2`를 확인했다. 다만 CI job(`edge-manifold-target`)은 아직 한 번도 실행된 적 없다 — "CI 정본"은 설계 의도이지 실행 증거가 아니다 |
-| **DPK 정적 링크 ABI 게이트** | **작성 완료 — 로컬 1회 실행 확인 / CI 미실행** | `cmake/toolchain-manifold3.cmake`(`KSI_TARGET_MANIFOLD3=ON`) 적용 시 `tools/edge/check_target_abi.py` 통과를 위 로컬 컨테이너 실행 1회에서 실증했다. CI에서 이 게이트가 매 커밋 도는지는 미확인 |
+| **arm64 컨테이너 빌드(CI 정본)** | **검증됨** | CI `edge-manifold-target` job [run 30832820643](https://github.com/khakisketch/ksi-site-intelligence-platform/actions/runs/30832820643) (PR #1, 2026-08-04, 4m13s) — QEMU arm64 위에서 이미지 빌드 후 `100% tests passed, 0 tests failed out of 2`. 같은 job의 툴체인 드리프트 검사가 `container: gcc=9 cmake=3.16 glibc=2.31`을 출력해 실기 실측값 재현을 기계적으로 확인했다 |
+| **DPK 정적 링크 ABI 게이트** | **검증됨** | 위 CI run의 `ABI 게이트` 스텝이 `KSI_TARGET_MANIFOLD3=ON` 산출물 2개에 대해 `✓ control_plane_tests` / `✓ conformance_tests` 출력. 게이트가 fail-open이 아님은 `tests/contract/test_target_abi_gate.py`(19건)가 변이 테스트로 고정한다 |
 | Manifold 3 타깃 크로스빌드(x86→arm64) | **비채택(정책)** | 개발 PC·CI 컨테이너가 이미 aarch64라 불필요 — §6 D2 참조 |
 | PSDK 링크·카메라/짐벌 API | **미검증(SPIKE_REQUIRED)** | Capability Registry `SPIKE-DJI-01`~`09` 참조. PSDK 저장소 clone·공식 샘플 빌드는 진행 중(2단계) |
 | CUDA/TensorRT 추론 파이프라인 | **미착수** | Phase 1 이후 범위 |

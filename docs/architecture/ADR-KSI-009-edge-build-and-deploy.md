@@ -144,11 +144,16 @@ EULA §3.2(c)의 재배포 금지가 적용되지 않는다. 이 근거로 vendo
   `edge/docker/manifold3-build.Dockerfile`·`scripts/manifold/manifoldctl`·
   `edge/third_party/PSDK_LOCK.yaml`·`tools/edge/fetch_psdk.py`가 신설됨.
 - CI 설정에 `edge-manifold-target` job이 추가되어, 실기 없이도 gcc9.4/cmake3.16.3/
-  glibc2.31 환경 드리프트를 매 커밋 기계적으로 잡도록 **작성**했다 — 다만 이 job은
-  아직 한 번도 실행된 적이 없다(첫 CI 실행 미확인). 로컬에서는 동등한 컨테이너
-  빌드를 1회 실행해 통과를 확인했다(§D2). 이 job은 "타깃 빌드·링크·ABI가
-  유효하다"만 주장하며, 텔레메트리·카메라·짐벌·DPK 설치 실동작 검증은 여전히
+  glibc2.31 환경 드리프트를 매 커밋 기계적으로 잡는다. **첫 실행 확인 완료**:
+  [run 30832820643](https://github.com/khakisketch/ksi-site-intelligence-platform/actions/runs/30832820643)
+  (PR #1, 2026-08-04, 4m13s) — QEMU arm64 이미지 빌드 → `100% tests passed, 0 tests
+  failed out of 2` → 툴체인 드리프트 검사 `container: gcc=9 cmake=3.16 glibc=2.31`
+  → ABI 게이트 `✓` 2건. 이 job은 "타깃 빌드·링크·ABI가 유효하다"만 주장하며,
+  텔레메트리·카메라·짐벌·DPK 설치 실동작 검증은 여전히
   `docs/hil/HARDWARE_SESSION_PLAYBOOK.md`의 HIL 세션 증거로만 주장한다.
+  (같은 run에서 `device Python 3.8 호환 검사`는 `GATE_INACTIVE` notice를 남겼다 —
+  `tools/hil/device/`가 아직 없어 **검사 대상 0건**이라는 사실을 초록으로 위장하지
+  않고 드러낸 것으로, 의도된 동작이다.)
 - `edge/psdk-tap`(C, 시간동기 tap)과 `edge/psdk-app`(향후, DPK 배포 대상)의
   경계가 명확해짐 — `edge/manifold-runtime`은 "의존성 없는 순수 C++17 계약
   골격" 계약을 계속 유지한다.
