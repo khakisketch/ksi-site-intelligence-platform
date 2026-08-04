@@ -28,6 +28,30 @@ if(COMMAND ksi_check_manifold3_toolchain_drift)
   ksi_check_manifold3_toolchain_drift()
 endif()
 
+# --- 검증 범위 스위치 -----------------------------------------------------------------
+#
+# 기본(OFF)은 fail-closed 다 — 자격증명과 PSDK 실물이 없으면 configure 단계에서
+# 명확히 실패한다. 조용히 스텁으로 빌드하지 않는다.
+#
+# 문제는 그 게이트가 **PSDK 와 무관한** 순수 로직(pairing.c 등)의 테스트까지 함께
+# 막는다는 것이었다 — 그래서 이 트리 2179줄이 CI 밖에 있었다(risk
+# psdk-tap-outside-ci-gate). 이 옵션을 명시적으로 켠 빌드는 psdk_tap 실행파일을
+# 아예 구성하지 않고 PSDK 비의존 테스트만 만든다. 기본 경로의 엄격성은 그대로다.
+#
+# **이 모드가 통과했다는 것은 "수집기가 동작한다"가 아니라 "PSDK 를 건드리지 않는
+# 로직이 회귀하지 않았다"만 뜻한다.** 아래 message 가 그 사실을 빌드 로그에 남긴다.
+option(KSI_PSDK_TAP_LOGIC_TESTS_ONLY
+       "PSDK·자격증명 없이 순수 로직 테스트만 구성한다(CI 전용, 기본 OFF)" OFF)
+
+if(KSI_PSDK_TAP_LOGIC_TESTS_ONLY)
+  message(STATUS
+    "psdk-tap: LOGIC_TESTS_ONLY — psdk_tap 실행파일을 구성하지 않는다. "
+    "검증 범위는 PSDK 비의존 순수 로직뿐이며, 실기 수집 동작은 이 빌드가 "
+    "주장하지 않는다(HIL 세션 증거로만).")
+endif()
+
+if(NOT KSI_PSDK_TAP_LOGIC_TESTS_ONLY)
+
 # --- 자격증명 게이트 ---------------------------------------------------------------
 # "자격증명(dji_sdk_app_info.h)은 빌드 입력이지 소스가 아니다" — 없으면 조용히
 # 스텁/더미로 넘어가지 않고 여기서 명확하게 실패한다.
@@ -132,6 +156,8 @@ if(KSI_PSDK_TAP_HAVE_LIBUSB)
   target_link_directories(psdk_tap PRIVATE ${LIBUSB_LIBRARY_DIRS})
   target_link_libraries(psdk_tap PRIVATE ${LIBUSB_LIBRARIES})
 endif()
+
+endif()  # NOT KSI_PSDK_TAP_LOGIC_TESTS_ONLY
 
 # --- 테스트: pairing.c 순수 로직만, PSDK 의존 없음 -------------------------------------
 option(KSI_BUILD_TESTS "psdk-tap 순수 로직 테스트를 빌드한다" ON)

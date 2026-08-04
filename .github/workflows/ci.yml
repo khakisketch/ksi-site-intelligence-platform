@@ -142,6 +142,46 @@ jobs:
       - name: ctest (ASan+UBSan)
         run: ctest --test-dir edge/manifold-runtime/build-asan --output-on-failure
 
+  # edge/psdk-tap 은 PSDK 실물과 App Key 가 있어야 configure 되므로(둘 다 기체와
+  # 함께 오는 물건이라 CI 에 없다) 2179줄이 통째로 게이트 밖에 있었다 —
+  # PSDK 를 전혀 건드리지 않는 pairing 로직조차 회귀 검증이 없었다.
+  #
+  # 이 job 이 주장하는 것은 **"PSDK 비의존 순수 로직이 회귀하지 않았다"뿐이다.**
+  # 수집기(psdk_tap) 자체는 여기서 빌드조차 되지 않는다 — 실기 수집 동작·NDJSON
+  # 스키마·프레임 페어링의 실측 유효성은 HIL 세션 증거로만 주장한다
+  # (docs/hil/HARDWARE_SESSION_PLAYBOOK.md 7단계, blocker AIRCRAFT_LINK_DOWN).
+  edge-psdk-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # LOGIC_TESTS_ONLY 는 명시적으로 켜야만 동작한다 — 기본값(OFF)의 fail-closed
+      # 는 그대로다(PSDK·자격증명 없이 configure 하면 FATAL_ERROR).
+      - name: configure (순수 로직 전용, -Werror)
+        run: cmake -S edge/psdk-tap -B edge/psdk-tap/build-ci
+          -DKSI_PSDK_TAP_LOGIC_TESTS_ONLY=ON
+
+      - name: build
+        run: cmake --build edge/psdk-tap/build-ci -j
+
+      - name: ctest
+        run: ctest --test-dir edge/psdk-tap/build-ci --output-on-failure
+
+      # 게이트가 헐거워지는 방향을 막는다 — 누군가 스텁 폴백을 넣어 기본 모드가
+      # PSDK 없이도 통과하게 되면 이 스텝이 실패한다.
+      #
+      # PSDK 경로를 없는 곳으로 **명시**한다. 그래야 개발 PC(PSDK·자격증명이 실제로
+      # 있는 환경)에서도 CI 와 똑같은 것을 검사한다 — 환경에 따라 무엇을 재는지
+      # 달라지는 게이트는 초록불의 의미도 달라진다.
+      - name: 기본 모드는 여전히 fail-closed 인가
+        run: |
+          if cmake -S edge/psdk-tap -B "${RUNNER_TEMP}/psdk-default" \
+               -DKSI_PSDK_ROOT="${RUNNER_TEMP}/no-such-psdk" >/dev/null 2>&1; then
+            echo "::error::PSDK 없이 기본 configure 가 통과했다 — 조용한 스텁 폴백이 생겼는지 확인하라"
+            exit 1
+          fi
+          echo "기본 모드 fail-closed 확인 — PSDK 부재 시 configure 실패"
+
   # Manifold 3 실기 userland(gcc 9.4.0/cmake 3.16.3/glibc 2.31, Ubuntu 20.04.6)를
   # arm64 컨테이너로 재현해 실기 없이도 환경 드리프트를 잡는다(ADR-KSI-009).
   # 이 job은 "타깃 빌드·링크·ABI가 유효하다"만 주장한다 — "배포가 검증됨"은 절대
