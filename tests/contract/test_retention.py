@@ -311,3 +311,30 @@ def test_record_tombstoned_between_plan_and_execute_is_skipped(store: EventStore
     assert report.tombstoned == ()
     assert len(report.skipped) == 1
     assert storage.deleted == [], "이미 폐기된 대상의 객체를 다시 지우려 했다"
+
+
+# ── 규모 회귀 (독립 재검토 2026-08-04 F1) ──────────────────────────────────
+
+
+def test_expiry_survives_beyond_one_page(store: EventStore) -> None:
+    """이벤트가 목록 한 페이지(500건)를 넘어도 만료 대상을 찾는다.
+
+    `store.list(limit=500)` 한 번으로 끝내면 그 창은 occurred_at **내림차순**의
+    최신 500건이고, 만료 대상은 정의상 **가장 오래된** 것들이다 — 500건을 넘는
+    순간 후보가 구조적으로 창 밖으로 밀려나 **영영 돌아오지 않고**, 도구는
+    "만료된 증거 없음"이라는 거짓 clean 리포트를 낸다. 실제로 그 상태였다
+    (501건 시드로 재현: 만료 판정 0건).
+    """
+    event_key = _seed(store, event_id="evt-ancient", days_ago=100)
+    for i in range(500):
+        occurred = (_NOW - timedelta(minutes=i)).isoformat()
+        store.project_bundle(
+            _bundle(f"evt-new-{i:04d}", occurred_at=occurred),
+            edge_device_id="dev-1",
+            received_at=_NOW,
+        )
+
+    actions = plan_expiry(store, _POLICY, now=_NOW)
+    assert [a.event_key for a in actions] == [event_key], (
+        "한 페이지를 넘어가면 오래된 증거가 만료 판정에서 사라진다"
+    )

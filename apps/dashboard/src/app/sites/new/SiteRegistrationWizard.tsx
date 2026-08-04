@@ -221,6 +221,8 @@ export function SiteRegistrationWizard() {
   const [result, setResult] = useState<SubmitResult | null>(null);
 
   const siteRegisteredRef = useRef(false);
+  // siteRegisteredRef 와 다르다 — 이쪽은 "성공했다"가 아니라 "보냈다"를 기억한다.
+  const sitePostAttemptedRef = useRef(false);
   const missionIdRef = useRef<string | null>(null);
   const draftClearedRef = useRef(false);
 
@@ -242,6 +244,9 @@ export function SiteRegistrationWizard() {
 
     try {
       if (!siteRegisteredRef.current) {
+        // POST 를 보내기 전에 표시한다(응답을 못 받아도 서버는 등록했을 수 있다).
+        const wasAttemptedBefore = sitePostAttemptedRef.current;
+        sitePostAttemptedRef.current = true;
         const siteRes = await fetch("/api/sites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -249,7 +254,11 @@ export function SiteRegistrationWizard() {
         });
         if (!siteRes.ok) {
           const body = await parseJsonSafe(siteRes);
-          const alreadyRegistered = siteRes.status === 409 && body.code === "DUPLICATE_SITE_ID";
+          // 409 는 **재시도일 때만** 성공이다 — 첫 시도의 409 는 남이 이미 쓴 siteId 다
+          // (SiteRegistrationOnlyWizard 의 같은 주석 참조, 독립 재검토 2026-08-04).
+          // **이전 값**을 본다(위에서 true 로 세웠으므로 현재 값은 항상 참이다).
+          const alreadyRegistered =
+            wasAttemptedBefore && siteRes.status === 409 && body.code === "DUPLICATE_SITE_ID";
           if (!alreadyRegistered) {
             setSubmitError(body.message ?? "요청을 처리하지 못했습니다.");
             setSubmitPhase("error");

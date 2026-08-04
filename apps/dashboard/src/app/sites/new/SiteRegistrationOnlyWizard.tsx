@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { WizardShell } from "@/components/wizard/WizardShell";
@@ -97,6 +96,8 @@ export function SiteRegistrationOnlyWizard() {
     INITIAL_FORM,
   );
   const [currentStep, setCurrentStep] = useState(0);
+  // "이 실행에서 이미 POST 를 보냈다" — 409 를 재시도로 해석해도 되는지의 유일한 근거.
+  const postAttemptedRef = useRef(false);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -117,6 +118,10 @@ export function SiteRegistrationOnlyWizard() {
     };
 
     try {
+      // POST 를 **보내기 전에** 표시한다 — 네트워크 예외로 응답을 못 받아도 서버는
+      // 등록했을 수 있고, 그 경우 다음 시도의 409 는 내가 만든 것이다.
+      const wasAttemptedBefore = postAttemptedRef.current;
+      postAttemptedRef.current = true;
       const res = await fetch("/api/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -124,10 +129,17 @@ export function SiteRegistrationOnlyWizard() {
       });
       if (!res.ok) {
         const body = await parseJsonSafe(res);
-        // 재시도(네트워크 순간 단절 등)로 이미 등록된 뒤 다시 온 경우도 성공으로 본다 —
-        // SiteRegistrationWizard.tsx 와 동일 관례.
-        const alreadyRegistered = res.status === 409 && body.code === "DUPLICATE_SITE_ID";
-        if (!alreadyRegistered) {
+        // 409(DUPLICATE_SITE_ID)를 성공으로 보는 것은 **재시도일 때뿐이다.**
+        //
+        // 무조건 성공으로 처리하면, 남이 이미 쓴 siteId 를 처음 입력한 사람에게도
+        // "현장이 등록되었습니다"라고 말하고 **그 남의 현장**(좌표계가 전혀 다를 수
+        // 있다) 상세로 안내한다 — 저장이 일어나지 않았는데 초록불이 뜨는 경로다
+        // (독립 재검토 2026-08-04 적발). 첫 시도의 409 는 진짜 중복이므로 실패다.
+        // **이전 값**을 본다 — 방금 위에서 true 로 세웠으므로 현재 값을 읽으면 항상
+        // 참이 되어 검사가 통째로 죽는다.
+        const isRetryOfOurOwnPost =
+          wasAttemptedBefore && res.status === 409 && body.code === "DUPLICATE_SITE_ID";
+        if (!isRetryOfOurOwnPost) {
           setSubmitError(body.message ?? "요청을 처리하지 못했습니다.");
           setSubmitPhase("error");
           return;
@@ -296,16 +308,13 @@ export function SiteRegistrationOnlyWizard() {
               <p className="font-medium break-keep text-safe-ink">
                 현장이 등록되었습니다.
               </p>
+              {/* 링크를 걸지 않는다 — 이 화면을 보는 사람은 정의상 MISSIONS_ISSUE 가
+                  없고(그래서 이 축약 Wizard 로 왔다), 그 경로는 "권한이 없습니다"로
+                  막힌다. 누를 수 있는 막다른 길을 주는 건 안내가 아니다
+                  (독립 재검토 2026-08-04 적발). */}
               <p className="break-keep text-safe-ink/90">
                 베이스라인 임무는 아직 발급되지 않았습니다 — 임무 발급 권한을 가진 담당자가 현장
-                상세 화면의{" "}
-                <Link
-                  href={`/sites/${encodeURIComponent(trimmedSiteId)}/surveys/new`}
-                  className="underline"
-                >
-                  새 조사
-                </Link>
-                에서 &quot;초기 매핑(베이스라인)&quot;을 선택해 발급할 수 있습니다.
+                상세 화면에서 &quot;베이스라인 임무 발급&quot;으로 진행합니다.
               </p>
             </div>
           )}

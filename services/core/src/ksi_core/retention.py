@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,7 +35,7 @@ from ksi_domain.enums import EventStatus
 from .evidence import EvidenceStorageError, EvidenceVerdict
 
 if TYPE_CHECKING:
-    from .events import EventStore
+    from .events import EventRecord, EventStore
     from .evidence import EvidenceStorage
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,35 @@ def load_policy(path: Path) -> RetentionPolicy:
     return RetentionPolicy(**values)
 
 
+# EventStore.list 의 limit 상한. 이보다 큰 값은 422 로 거부된다(events.py).
+_PAGE_SIZE = 500
+
+
+def _all_events(store: EventStore) -> Iterator[EventRecord]:
+    """이벤트 원장 **전체**를 페이지로 순회한다.
+
+    한 번의 ``store.list(limit=500)`` 으로 끝내면 안 된다 — 그 목록은 occurred_at
+    **내림차순**이라 최신 500건이고, 만료 대상은 정의상 **가장 오래된** 것들이다.
+    즉 이벤트가 500건을 넘는 순간 만료 후보가 구조적으로 창 밖으로 밀려나고,
+    재실행해도 창은 항상 최신 500건이라 **영영 복귀하지 않는다** — 게다가 도구는
+    "만료된 증거 없음"이라는 거짓 clean 리포트를 낸다(독립 재검토 2026-08-04 F1,
+    501건 시드로 재현 확인).
+
+    순회 중 새 이벤트가 들어오면 페이지가 밀릴 수 있다. 정렬이 최신 우선이라
+    밀림은 **앞쪽**(최근)에서 일어나고 만료 대상은 뒤쪽이므로, 최악의 결과는
+    이번 회차에서 몇 건을 덜 보는 것(under-report)이다 — 삭제 과다 방향이 아니다.
+    """
+    offset = 0
+    while True:
+        page = store.list(limit=_PAGE_SIZE, offset=offset)
+        if not page:
+            return
+        yield from page
+        if len(page) < _PAGE_SIZE:
+            return
+        offset += len(page)
+
+
 @dataclass(frozen=True, slots=True)
 class ExpiryAction:
     """폐기 대상 1건 — 판정 결과이지 실행 결과가 아니다."""
@@ -142,7 +172,7 @@ def plan_expiry(
     if now.tzinfo is None:
         raise ValueError("now 는 tz-aware 여야 한다")
     actions: list[ExpiryAction] = []
-    for record in store.list(limit=500):
+    for record in _all_events(store):
         retention = policy.retention_for(record.status)
         expires_at = record.occurred_at + retention
         if now < expires_at:

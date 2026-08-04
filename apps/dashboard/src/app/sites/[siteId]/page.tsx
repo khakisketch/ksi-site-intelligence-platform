@@ -162,8 +162,11 @@ export default async function SiteDetailPage({
                 <span className="btn cursor-not-allowed text-ink-muted" aria-disabled="true">
                   {surveyActionLabel}
                 </span>
+                {/* 라벨을 문장에 넣지 않는다 — "베이스라인 임무 발급"(종성 있음)과
+                    "새 조사"(종성 없음)가 서로 다른 조사를 요구해 "발급를" 같은
+                    비문이 나온다(독립 재검토 2026-08-04 적발). */}
                 <span className="text-[12px] break-keep text-ink-muted">
-                  {surveyActionLabel}를 시작하려면 임무 발급 권한이 필요합니다
+                  임무 발급 권한이 있어야 시작할 수 있습니다
                 </span>
               </div>
             )}
