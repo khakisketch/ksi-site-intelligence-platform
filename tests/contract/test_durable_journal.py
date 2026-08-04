@@ -453,7 +453,9 @@ def test_torn_tail_in_sealed_segment_refuses_startup(journal_path: Path) -> None
         _rotating(journal_path)
 
 
-def test_rotation_failure_does_not_seal(journal_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rotation_failure_does_not_seal(
+    journal_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """rename 이 실패해도 수신은 멈추지 않는다 — 기록된 데이터는 이미 durable 하다."""
     journal = _rotating(journal_path, limit=10)
     monkeypatch.setattr(
