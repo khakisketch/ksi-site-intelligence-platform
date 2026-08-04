@@ -60,7 +60,12 @@ class JournalEntry(BaseModel):
     device_sequence: int = Field(ge=0)
     edge_device_id: str = Field(min_length=1)
     payload_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    payload: dict[str, Any] = Field(default_factory=dict)
+    # 필수다 — 본문 없는 journal 항목은 뜻이 없고, 기본값 ``{}`` 는 "본문을 빼먹은
+    # 요청"을 형식상 유효한 항목으로 만들어 digest 검사까지 통과시킨다(그 뒤
+    # EventBundle 검증에서야 422 로 걸린다). 계약 문서(openapi-core.yaml)는 처음부터
+    # required 로 적고 있었고, 구현만 느슨했다(s2-residual-hardening #4 의 요청
+    # 본문 대조 게이트가 이 비대칭을 적발).
+    payload: dict[str, Any]
 
 
 class PayloadCanonicalizationError(ValueError):
@@ -100,6 +105,22 @@ def payload_digest(payload: dict[str, Any]) -> str:
         # TypeError: set·bytes·임의 객체 등 JSON 도메인 밖 타입
         raise PayloadCanonicalizationError(f"본문을 정규 JSON으로 표현할 수 없다: {exc}") from exc
     return f"sha256:{hashlib.sha256(digest_input).hexdigest()}"
+
+
+# 원장 스냅샷 표현의 버전. 표현이 바뀌면 올리고, 옛 버전은 복원을 거부한다
+# (조용히 다르게 해석하느니 전량 재생으로 돌아가는 편이 안전하다).
+_LEDGER_STATE_VERSION = 1
+
+
+class LedgerStateError(ValueError):
+    """원장 스냅샷 복원 실패 — 규칙을 위반하는 상태는 조용히 받지 않는다."""
+
+
+def _require_text(value: Any, index: int, field_name: str) -> str:
+    """스냅샷 필드가 비공백 문자열임을 강제한다 — 아니면 복원 자체를 거부한다."""
+    if not isinstance(value, str) or not value:
+        raise LedgerStateError(f"accepted[{index}].{field_name} 가 비공백 문자열이 아니다")
+    return value
 
 
 class IngestVerdict(StrEnum):
@@ -240,3 +261,89 @@ class SyncLedger:
         if not sequences:
             return []
         return [n for n in range(sequences[0], sequences[-1]) if n not in set(sequences)]
+
+    # ── 스냅샷 (S4 — ops-serving-hardening) ────────────────────────────────
+
+    def export_state(self) -> dict[str, Any]:
+        """수락 이력의 최소 정본 표현 — 내부 인덱스 4개가 전부 여기서 재구성된다.
+
+        **payload 를 담지 않는다.** 본문의 SSOT 는 durable journal 이고, 판정에
+        필요한 것은 digest 뿐이다. 그래서 이 스냅샷으로 복원하면 재기동이 과거
+        항목의 본문 정규화·sha256(재적재에서 가장 비싼 단계)을 건너뛴다 — 그게
+        스냅샷을 두는 이유 전부다.
+
+        수락 **순서**를 그대로 보존한다. ``missing_sequences``·
+        ``accepted_sequences`` 가 순서에 의존하므로, 순서가 흔들리면 복원된 원장이
+        같은 질문에 다른 답을 한다.
+        """
+        accepted: list[dict[str, Any]] = []
+        for device, sequence in self._accepted:
+            key = self._sequence_keys[device][sequence]
+            identity = self._seen[key]
+            accepted.append(
+                {
+                    "idempotencyKey": key,
+                    "edgeDeviceId": identity.edge_device_id,
+                    "deviceSequence": identity.device_sequence,
+                    "payloadDigest": identity.payload_digest,
+                }
+            )
+        return {"version": _LEDGER_STATE_VERSION, "accepted": accepted}
+
+    @classmethod
+    def from_state(cls, state: Any) -> SyncLedger:
+        """스냅샷에서 원장을 재구성한다 — ``ingest`` 와 같은 불변식을 재검증한다.
+
+        digest 재계산만 건너뛰고(본문이 없다), 키 중복·순번 중복·순번 역행은
+        복원 경로에서도 그대로 강제한다. 스냅샷 파일은 journal 과 달리 사람이
+        고칠 수 있는 자리이므로, 여기서 검증을 빼면 "스냅샷을 손보면 원장 규칙을
+        우회할 수 있다"가 된다.
+
+        Raises:
+            LedgerStateError: 형식 위반이거나 규칙을 어기는 상태일 때.
+        """
+        if not isinstance(state, dict):
+            raise LedgerStateError(f"원장 상태가 object 가 아니다: {type(state).__name__}")
+        version = state.get("version")
+        if version != _LEDGER_STATE_VERSION:
+            raise LedgerStateError(
+                f"알 수 없는 원장 상태 version: {version!r} "
+                f"(이 구현은 {_LEDGER_STATE_VERSION})"
+            )
+        accepted = state.get("accepted")
+        if not isinstance(accepted, list):
+            raise LedgerStateError("원장 상태의 accepted 가 배열이 아니다")
+
+        ledger = cls()
+        for index, raw in enumerate(accepted):
+            if not isinstance(raw, dict):
+                raise LedgerStateError(f"accepted[{index}] 가 object 가 아니다")
+            key = _require_text(raw.get("idempotencyKey"), index, "idempotencyKey")
+            device = _require_text(raw.get("edgeDeviceId"), index, "edgeDeviceId")
+            digest = _require_text(raw.get("payloadDigest"), index, "payloadDigest")
+            sequence = raw.get("deviceSequence")
+            # bool 은 int 의 서브클래스다 — True 가 순번 1 로 통과하는 경로를 막는다.
+            if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+                raise LedgerStateError(
+                    f"accepted[{index}].deviceSequence 가 음이 아닌 정수가 아니다"
+                )
+
+            if key in ledger._seen:
+                raise LedgerStateError(f"accepted[{index}]: idempotencyKey 중복 — {key}")
+            device_sequences = ledger._sequence_keys.setdefault(device, {})
+            if sequence in device_sequences:
+                raise LedgerStateError(
+                    f"accepted[{index}]: {device} 순번 {sequence} 중복"
+                )
+            last = ledger._last_sequence.get(device)
+            if last is not None and sequence < last:
+                raise LedgerStateError(
+                    f"accepted[{index}]: {device} 순번 역행 {sequence} < {last}"
+                )
+            ledger._seen[key] = EntryIdentity(
+                edge_device_id=device, device_sequence=sequence, payload_digest=digest
+            )
+            device_sequences[sequence] = key
+            ledger._last_sequence[device] = sequence
+            ledger._accepted.append((device, sequence))
+        return ledger

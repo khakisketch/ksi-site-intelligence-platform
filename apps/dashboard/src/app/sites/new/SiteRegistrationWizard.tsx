@@ -31,6 +31,7 @@ interface WizardFormState {
   altitudeM: number;
   excludedVolumes: string[];
   spacingM: number;
+  captureIntervalM: number;
   autoFlightSpeedMs: number;
   takeoffSecurityHeightM: number;
   globalTransitionalSpeedMs: number;
@@ -44,6 +45,13 @@ interface WizardFormState {
   objectives: string[];
 }
 
+// 서버가 고정한 규제 고도 상한(항공안전법 일반 비행제한 고도). 계약의
+// maxAltitudeM 이 이 값을 넘으면 서버가 422 로 거부하므로, 여기서 먼저 막아
+// 사용자가 8단계를 다 채우고 나서야 실패를 보는 일을 없앤다.
+const MAX_ALTITUDE_M = 150;
+// 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
+const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
+
 const INITIAL_FORM: WizardFormState = {
   siteId: "",
   name: "",
@@ -54,6 +62,7 @@ const INITIAL_FORM: WizardFormState = {
   altitudeM: 40,
   excludedVolumes: [],
   spacingM: 20,
+  captureIntervalM: 15,
   autoFlightSpeedMs: 5,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
@@ -295,7 +304,11 @@ export function SiteRegistrationWizard() {
           capturePolicyId: form.capturePolicyId.trim(),
         },
         aoi: { vertices: form.aoi },
-        route: { altitudeM: form.altitudeM, spacingM: form.spacingM },
+        route: {
+          altitudeM: form.altitudeM,
+          spacingM: form.spacingM,
+          captureIntervalM: form.captureIntervalM,
+        },
         drone: {
           droneEnumValue: form.droneEnumValue,
           droneSubEnumValue: form.droneSubEnumValue,
@@ -361,7 +374,8 @@ export function SiteRegistrationWizard() {
       form.crs.trim().length > 0 &&
       form.verticalDatum.trim().length > 0 &&
       form.transformVersion.trim().length > 0 &&
-      form.altitudeM > 0,
+      form.altitudeM > 0 &&
+      form.altitudeM <= MAX_FLIGHT_ALTITUDE_M,
     3: true,
     // 경로 생성 엔진이 회피 비행을 보증하지 못해 excludedVolumes 가 하나라도 있으면
     // 서버가 발급 자체를 거부한다(packages/mission-planning coverage.py) — 이미 등록된
@@ -369,6 +383,7 @@ export function SiteRegistrationWizard() {
     4: form.excludedVolumes.length === 0,
     5:
       form.spacingM > 0 &&
+      form.captureIntervalM > 0 &&
       form.autoFlightSpeedMs > 0 &&
       form.takeoffSecurityHeightM >= 1.2 &&
       form.takeoffSecurityHeightM <= 1500 &&
@@ -423,9 +438,15 @@ export function SiteRegistrationWizard() {
     trimmedSiteId.length > 0 && !SITE_ID_PATTERN.test(trimmedSiteId)
       ? "영숫자로 시작하고 이후 영숫자·-·_·. 만 쓸 수 있습니다(공백·/ 금지)."
       : undefined;
-  const altitudeError =
-    !(form.altitudeM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const altitudeError = !(form.altitudeM > 0)
+    ? "0보다 큰 값을 입력하세요."
+    : form.altitudeM > MAX_FLIGHT_ALTITUDE_M
+      ? `${MAX_FLIGHT_ALTITUDE_M}m 이하여야 합니다(법정 비행제한 고도 ${MAX_ALTITUDE_M}m).`
+      : undefined;
   const spacingError = !(form.spacingM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const captureIntervalError = !(form.captureIntervalM > 0)
+    ? "0보다 큰 값을 입력하세요."
+    : undefined;
   const autoFlightSpeedError =
     !(form.autoFlightSpeedMs > 0) ? "0보다 큰 값을 입력하세요." : undefined;
   const takeoffHeightError =
@@ -581,6 +602,19 @@ export function SiteRegistrationWizard() {
               value={form.spacingM}
               onChange={(event) => update({ spacingM: event.target.valueAsNumber })}
               aria-invalid={Boolean(spacingError)}
+              className={numericInputClassName}
+            />
+          </Field>
+          <Field
+            label="촬영 간격 captureIntervalM (m)"
+            helpText="스캔선을 따라 이 간격마다 촬영합니다. 값이 클수록 사진이 적고 겹침이 줄어듭니다"
+            error={captureIntervalError}
+          >
+            <input
+              type="number"
+              value={form.captureIntervalM}
+              onChange={(event) => update({ captureIntervalM: event.target.valueAsNumber })}
+              aria-invalid={Boolean(captureIntervalError)}
               className={numericInputClassName}
             />
           </Field>

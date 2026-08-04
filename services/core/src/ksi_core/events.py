@@ -120,6 +120,7 @@ class EventVerdict(StrEnum):
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
     EVIDENCE_INCOMPLETE = "EVIDENCE_INCOMPLETE"
     UNKNOWN_EVENT = "UNKNOWN_EVENT"
+    STALE_EVENT_VIEW = "STALE_EVENT_VIEW"  # 낙관적 동시성 토큰 불일치
     INVALID_REQUEST = "INVALID_REQUEST"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -141,6 +142,7 @@ _STATUS: dict[EventVerdict, int] = {
     EventVerdict.ILLEGAL_TRANSITION: 409,
     EventVerdict.EVIDENCE_INCOMPLETE: 422,
     EventVerdict.UNKNOWN_EVENT: 404,
+    EventVerdict.STALE_EVENT_VIEW: 409,
     EventVerdict.INVALID_REQUEST: 422,
     EventVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -242,6 +244,31 @@ def _require_tz_aware(value: datetime, *, param: str) -> None:
 
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
+
+
+def _bundle_str(bundle: dict[str, Any], key: str, fallback: str) -> str:
+    """갱신된 bundle 의 메타 문자열 — 없거나 형식이 어긋나면 기존 값을 유지한다.
+
+    ``EventBundle`` 검증을 이미 통과한 payload 만 여기 오므로 정상 경로에서는 항상
+    있다. 그럼에도 fallback 을 두는 이유는 이 함수가 **재생 경로에서도** 돌기
+    때문이다 — 과거 스키마로 기록된 레코드 하나가 기동 전체를 죽이는 것보다,
+    그 한 건이 이전 메타를 유지하는 편이 운영에서 낫다(``event_type`` property 와
+    같은 판단).
+    """
+    value = bundle.get(key)
+    return value if isinstance(value, str) and value else fallback
+
+
+def _bundle_ts(bundle: dict[str, Any], fallback: datetime) -> datetime:
+    """갱신된 bundle 의 ``occurredAt`` — 파싱 불가·naive 면 기존 값을 유지한다."""
+    raw = bundle.get("occurredAt")
+    if not isinstance(raw, str):
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return fallback
+    return fallback if parsed.tzinfo is None else parsed
 
 
 def make_event_key(edge_device_id: str, event_id: str) -> str:
@@ -361,9 +388,17 @@ class EventStore:
         existing = self._events[event_key]
         if kind == "event-updated":
             after = record["after"]
+            updated_bundle = after["bundle"]
+            # 레코드 메타를 새 bundle 에 맞춘다(s2-residual-hardening #6). 예전에는
+            # bundle 만 갈아끼워서, Edge 가 siteId·missionId·occurredAt 을 고쳐 보낸
+            # 뒤 목록(레코드 메타 기준)과 상세(bundle 기준)가 서로 다른 현장·시각을
+            # 보이는 상태가 남았다. bundle 이 Edge 주장의 정본이므로 메타가 따라간다.
             self._events[event_key] = replace(
                 existing,
-                bundle=after["bundle"],
+                bundle=updated_bundle,
+                site_id=_bundle_str(updated_bundle, "siteId", existing.site_id),
+                mission_id=_bundle_str(updated_bundle, "missionId", existing.mission_id),
+                occurred_at=_bundle_ts(updated_bundle, existing.occurred_at),
                 status=EventStatus(after["status"]),
                 transitions=(*existing.transitions, record),
             )
@@ -375,10 +410,31 @@ class EventStore:
             )
         elif kind == "event-transitioned":
             after = record["after"]
+            target_status = EventStatus(after["status"])
+            target_triage = TriageStatus(after["triage"])
+            # 재생 경로에서도 전이 적법성과 INV-021 확정 게이트를 다시 태운다
+            # (s2-residual-hardening #1 — sites.py 는 이미 이렇게 하는데 여기만
+            # 비대칭이었다). journal 직접 조작이나 과거 버그로 불법 전이가 기록돼
+            # 있으면 조용히 되살아나는 대신 기동이 거부돼야 한다 — 특히 evidence
+            # 없는 CONFIRMED_EVENT 는 재생만으로 확정 사건이 되어 INV-021 을
+            # 우회한다.
+            if target_status is not existing.status:
+                assert_event_transition(existing.status, target_status)
+                if target_status is EventStatus.CONFIRMED_EVENT:
+                    violation = _evidence_gate_violation(existing.bundle)
+                    if violation is not None:
+                        raise ValueError(f"재생: INV-021 확정 게이트 위반 — {violation}")
+            if target_triage is not existing.triage:
+                if existing.status is not EventStatus.CONFIRMED_EVENT:
+                    raise ValueError(
+                        "재생: 트리아지 전이는 CONFIRMED_EVENT 사건에만 허용된다 "
+                        f"(status={existing.status.value})"
+                    )
+                assert_triage_transition(existing.triage, target_triage)
             self._events[event_key] = replace(
                 existing,
-                status=EventStatus(after["status"]),
-                triage=TriageStatus(after["triage"]),
+                status=target_status,
+                triage=target_triage,
                 assignee=after["assignee"],
                 transitions=(*existing.transitions, record),
             )
@@ -566,6 +622,7 @@ class EventStore:
         assignee: str | None,
         actor: Principal,
         now: datetime,
+        expected_bundle_digest: str | None = None,
     ) -> TriageTransitionResult:
         """``event_key``(=``{edgeDeviceId}::{eventId}``) 사건의 서버측 전이."""
         _require_tz_aware(now, param="now")
@@ -575,6 +632,7 @@ class EventStore:
                     event_key,
                     target=target,
                     triage_target=triage_target,
+                    expected_bundle_digest=expected_bundle_digest,
                     reason=reason,
                     assignee=assignee,
                     actor=actor,
@@ -605,6 +663,7 @@ class EventStore:
         assignee: str | None,
         actor: Principal,
         now: datetime,
+        expected_bundle_digest: str | None = None,
     ) -> TriageTransitionResult:
         if (target is None) == (triage_target is None):
             return TriageTransitionResult(
@@ -615,6 +674,20 @@ class EventStore:
         existing = self._events.get(event_key)
         if existing is None:
             return TriageTransitionResult(EventVerdict.UNKNOWN_EVENT, detail=_NOT_FOUND_DETAIL)
+
+        # 낙관적 동시성 — 운영자가 본 bundle 이 그 사이 바뀌었으면 전이하지 않는다
+        # (s2-residual-hardening #7). 판정은 잠금 안에서 하므로, 통과 후 굳는
+        # evidenceSnapshot 은 검사한 그 bundle 의 것이다.
+        if expected_bundle_digest is not None:
+            actual_digest = payload_digest(existing.bundle)
+            if actual_digest != expected_bundle_digest:
+                return TriageTransitionResult(
+                    EventVerdict.STALE_EVENT_VIEW,
+                    detail=(
+                        "화면에 표시된 이후 사건 내용이 갱신됐다 — 새로고침 후 다시 "
+                        "시도하라(전이는 적용되지 않았다)"
+                    ),
+                )
 
         ts_iso = _iso(now)
         actor_id = actor.principal_id
@@ -942,10 +1015,23 @@ class EventListResponse(_CamelModel):
 
 
 class EventTransitionRequest(_CamelModel):
+    """트리아지 전이 요청.
+
+    ``expected_bundle_digest``: 낙관적 동시성 토큰(s2-residual-hardening #7).
+    운영자가 화면에서 본 bundle 의 digest 를 그대로 실어 보내면, 그 사이 Edge 의
+    후행 update 가 bundle 을 바꿨을 때 전이가 409 로 거부된다. 없으면 검사하지
+    않는다 — 기존 클라이언트를 깨지 않기 위해 optional 이다.
+
+    이 토큰이 필요한 이유는 확정(CONFIRMED_EVENT) 전이가 **그 시점의 bundle** 로
+    INV-021 증거 게이트를 통과시키고 ``evidenceSnapshot`` 을 굳히기 때문이다 —
+    좁은 경합창에서 운영자가 본 증거와 실제로 굳는 증거가 다를 수 있다.
+    """
+
     target_status: EventStatus | None = None
     triage_target: TriageStatus | None = None
     reason: str | None = None
     assignee: str | None = None
+    expected_bundle_digest: str | None = None
 
 
 class TransitionResponse(_CamelModel):
@@ -1106,6 +1192,7 @@ def build_events_router(
             assignee=request.assignee,
             actor=principal,
             now=datetime.now(UTC),
+            expected_bundle_digest=request.expected_bundle_digest,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is EventVerdict.STORE_UNAVAILABLE:

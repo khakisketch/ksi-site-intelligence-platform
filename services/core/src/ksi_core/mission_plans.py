@@ -124,6 +124,14 @@ class RouteParams(_CamelModel):
 
     altitude_m: float
     spacing_m: float | None = Field(default=None, description="lawnmower 전용 스캔선 간격(m)")
+    capture_interval_m: float | None = Field(
+        default=None,
+        description=(
+            "lawnmower 전용 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격. "
+            "없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어 "
+            "정사영상·3D 재구성이 성립하지 않는다"
+        ),
+    )
     sweep_direction_deg: float | None = None
 
 
@@ -224,12 +232,23 @@ def build_mission_plan(
             raise RouteGenerationError(
                 f"{mission_type.value} 는 lawnmower 패턴 — route.spacingM 이 필요하다"
             )
+        if request.route.capture_interval_m is None:
+            # lawnmower 계열은 전부 촬영이 목적이다(아래에서 capture_at_waypoints=True).
+            # 진행방향 간격이 없으면 스캔선당 사진 2장 → 전방 중첩 0 → 사진측량
+            # 산출물이 성립하지 않는다(원장 risk mapping-forward-overlap-zero).
+            # 카메라 종속 기본값을 서버가 추측하지 않고 fail-closed 로 막는다 —
+            # "격자는 날았는데 지도가 안 나온다"가 비행 후에야 드러나는 것보다 낫다.
+            raise RouteGenerationError(
+                f"{mission_type.value} 는 lawnmower 패턴 — route.captureIntervalM 이 "
+                "필요하다(없으면 전방 중첩이 0 이라 정사영상·3D 재구성이 성립하지 않는다)"
+            )
         lawnmower_result = lawnmower_route(
             request.aoi,
             spacing_m=request.route.spacing_m,
             altitude_m=request.route.altitude_m,
             envelope=envelope,
             sweep_direction_deg=request.route.sweep_direction_deg,
+            capture_interval_m=request.route.capture_interval_m,
         )
         route = lawnmower_result.waypoints
         coverage_ratio = lawnmower_result.coverage_ratio

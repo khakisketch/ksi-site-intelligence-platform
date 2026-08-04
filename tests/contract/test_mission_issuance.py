@@ -26,7 +26,11 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionStore
 from ksi_core.sites import SiteStore
-from ksi_mission_contracts.models import FlightEnvelope, SiteFrame
+from ksi_mission_contracts.models import (
+    _ABSOLUTE_MAX_ALTITUDE_M,
+    FlightEnvelope,
+    SiteFrame,
+)
 from ksi_mission_contracts.signing import KeyRegistry, SignatureVerdict, load_verified_contract
 from pydantic import ValidationError
 
@@ -199,31 +203,40 @@ def test_valid_for_hours_beyond_cap_rejected(tmp_path: Path) -> None:
 #      flight-envelope-absolute-ceiling) ─────────────────────────────────────
 
 
+def test_absolute_altitude_cap_is_the_decided_regulatory_limit() -> None:
+    """[결정 고정] 고도 상한은 150m 다 — 항공안전법 일반 비행제한 고도(2026-08-05 확정).
+
+    이 값은 서버 고정 안전상수라 요청·설정으로 바꿀 수 없다. 값 자체를 바꾸는 건
+    규제 판단이므로 대표자 결정 사안이고, 코드에서 조용히 흘러가지 않도록 여기서
+    못박는다 — 이 테스트가 깨지면 "누가 안전 상한을 바꿨나"를 먼저 물어야 한다.
+    """
+    assert _ABSOLUTE_MAX_ALTITUDE_M == 150.0
+
+
 def test_flight_envelope_rejects_altitude_above_absolute_cap() -> None:
-    """501m 는 잠정 sanity cap(500m)을 넘는다 — 규제값(권고 150m) 확정 전에도
-    이 상한은 서버 발급 게이트로 fail-closed 해야 한다."""
+    """상한을 넘는 고도는 서명 계약으로 성립하지 않는다(fail-closed)."""
     with pytest.raises(ValidationError):
         FlightEnvelope(
             allowed_volumes=["vol-1"],
             excluded_volumes=[],
             min_altitude_m=5.0,
-            max_altitude_m=501.0,
+            max_altitude_m=_ABSOLUTE_MAX_ALTITUDE_M + 1.0,
         )
 
 
 def test_flight_envelope_accepts_altitude_at_absolute_cap() -> None:
-    """경계값 500m 는 허용된다 — 상한은 초과(>)만 거부한다."""
+    """경계값 자체는 허용된다 — 상한은 초과(>)만 거부한다."""
     envelope = FlightEnvelope(
         allowed_volumes=["vol-1"],
         excluded_volumes=[],
         min_altitude_m=5.0,
-        max_altitude_m=500.0,
+        max_altitude_m=_ABSOLUTE_MAX_ALTITUDE_M,
     )
-    assert envelope.max_altitude_m == 500.0
+    assert envelope.max_altitude_m == _ABSOLUTE_MAX_ALTITUDE_M
 
 
 def test_issuance_endpoint_rejects_envelope_above_absolute_cap(tmp_path: Path) -> None:
-    """API 레벨 반증 — 요청 바디의 maxAltitudeM 이 잠정 cap 을 넘으면 422."""
+    """API 레벨 반증 — 요청 바디의 maxAltitudeM 이 규제 상한을 넘으면 422."""
     client, _registry, _key_id = _client_with_signing(tmp_path)
 
     response = client.post(
@@ -233,7 +246,7 @@ def test_issuance_endpoint_rejects_envelope_above_absolute_cap(tmp_path: Path) -
                 "allowedVolumes": ["vol-1"],
                 "excludedVolumes": [],
                 "minAltitudeM": 5.0,
-                "maxAltitudeM": 501.0,
+                "maxAltitudeM": _ABSOLUTE_MAX_ALTITUDE_M + 1.0,
             }
         ),
     )

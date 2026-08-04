@@ -909,3 +909,124 @@ def test_generated_routes_stay_inside_convex_aoi_polygon() -> None:
             mx = (points[i][0] + points[i + 1][0]) / 2.0
             my = (points[i][1] + points[i + 1][1]) / 2.0
             assert inside(mx, my), f"{label} 세그먼트 {i} 중점이 AOI 폴리곤 밖"
+
+
+# ── 진행방향(along-track) 촬영 간격 — 전방 중첩 0 결함 (risk mapping-forward-overlap-zero) ──
+
+
+def _along_track_gaps(route: list[RouteWaypoint]) -> list[float]:
+    """같은 스캔선(동일 north) 위 이웃 웨이포인트 사이의 진행방향 거리(m)."""
+    by_line: dict[float, list[float]] = {}
+    for wp in route:
+        east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
+        by_line.setdefault(round(north, 6), []).append(east)
+    gaps: list[float] = []
+    for easts in by_line.values():
+        ordered = sorted(easts)
+        gaps.extend(b - a for a, b in itertools.pairwise(ordered))
+    return gaps
+
+
+def test_without_capture_interval_scan_line_has_only_endpoints() -> None:
+    """[기준선] 간격을 주지 않으면 스캔선당 2점 — 이게 전방 중첩 0 의 실체다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
+    ).waypoints
+
+    per_line: dict[float, int] = {}
+    for wp in route:
+        _east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
+        per_line[round(north, 6)] = per_line.get(round(north, 6), 0) + 1
+    assert set(per_line.values()) == {2}
+
+
+def test_capture_interval_fills_scan_line_within_requested_gap() -> None:
+    """[핵심] 촬영 간격을 주면 스캔선 위 이웃 간격이 요청값을 **넘지 않는다**.
+
+    넘는 방향의 이탈은 곧 중첩 부족이고, 중첩 부족은 비행이 끝난 뒤 재구성이
+    실패할 때에야 드러난다 — spacing 과 같은 '조밀해지는 방향만 허용' 규약이다.
+    """
+    interval = 15.0
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=interval,
+    ).waypoints
+
+    gaps = _along_track_gaps(route)
+    assert gaps, "스캔선 위 이웃 쌍이 없다 — 채워지지 않았다"
+    assert all(g <= interval + 1e-6 for g in gaps), f"간격 초과: {max(gaps)}"
+    # 200m 스캔선을 15m 간격으로 채우면 선당 구간 14개(=ceil(200/15)) — 끝점 2개
+    # 뿐이던 과거(구간 1개)와 확실히 구별된다.
+    assert len(gaps) >= 14
+
+
+def test_capture_interval_covers_scan_line_ends() -> None:
+    """끝점이 빠지면 AOI 경계 밴드가 재구성에서 잘린다 — 끝점은 항상 포함한다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=15.0,
+    ).waypoints
+
+    easts = [wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)[0] for wp in route]
+    assert min(easts) == pytest.approx(0.0, abs=1e-3)
+    assert max(easts) == pytest.approx(200.0, abs=1e-3)
+
+
+def test_capture_interval_preserves_boustrophedon_direction() -> None:
+    """채워 넣은 점이 왕복 순서를 깨면 기체가 스캔선을 지그재그로 되돌아간다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=50.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=50.0,
+    ).waypoints
+
+    lines: list[list[float]] = []
+    current_north: float | None = None
+    for wp in route:
+        east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
+        key = round(north, 6)
+        if key != current_north:
+            lines.append([])
+            current_north = key
+        lines[-1].append(east)
+    directions = [line[-1] - line[0] > 0 for line in lines if len(line) > 1]
+    assert len(directions) >= 2
+    for previous, nxt in itertools.pairwise(directions):
+        assert previous != nxt, f"왕복이 아니다: {directions}"
+
+
+def test_capture_interval_longer_than_line_keeps_endpoints() -> None:
+    """구간보다 긴 간격은 끝점 2장으로 이미 조건을 만족한다 — 억지로 쪼개지 않는다."""
+    # sweep 을 동서로 고정 — 자동 선택은 긴 변(북남)을 고르므로 스캔선이 세로가 된다.
+    route = lawnmower_route(
+        _rect_aoi(50.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        sweep_direction_deg=0.0,
+        capture_interval_m=500.0,
+    ).waypoints
+
+    gaps = _along_track_gaps(route)
+    assert gaps
+    assert all(g == pytest.approx(50.0, abs=1e-3) for g in gaps)
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), 0.05])
+def test_invalid_capture_interval_rejected(value: float) -> None:
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=20.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=value,
+        )

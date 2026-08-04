@@ -31,6 +31,27 @@ journal 의 완결 줄(개행으로 끝난 줄)은 전부 과거 ACCEPTED 항목
 서버가 영원히 못 떠서, Edge 가 아직 들고 있는 항목의 재전송 경로 자체가
 사라진다(P1-3). 그래서 torn tail 은 잘라내고(경고 로그) 정상 기동한다.
 
+## 원장 스냅샷 (S4 — ops-serving-hardening)
+
+이 원장의 재기동 비용은 **파일 크기가 아니라 항목당 본문 정규화 + sha256** 이다
+(``SyncLedger.ingest`` 가 재적재에서도 ``payload_digest`` 를 다시 계산한다). 그래서
+세그먼트 회전(``DurableJournal`` 이 Site/Mission/Event 에 쓰는 방식)으로는 이 비용이
+줄지 않는다 — 줄 수를 나눠도 총 계산량은 같다.
+
+``snapshot_every`` 를 주면 그만큼 수락할 때마다 원장 상태(본문 없이 신원·순번만)를
+``<journal>.snapshot.json`` 으로 굳힌다. 다음 기동은 그 상태를 복원하고 journal 은
+스냅샷 경계 **이후 바이트만** 읽는다. 기본값(``None``)은 스냅샷 없음 — 기존 조립은
+그대로 동작한다.
+
+신뢰 방향이 이 설계의 핵심이다. **스냅샷은 journal 이 부정하는 것을 주장할 수 없다** —
+스냅샷이 깨졌거나 규칙을 어기면 버리고 전량 재생한다(느려질 뿐 상태는 정확하다).
+반대로 journal 쪽이 스냅샷 경계와 어긋나면(짧아졌다·경계 줄이 바뀌었다) 기동을
+거부한다. append-only 파일이 줄어드는 것은 설명되지 않는 상태이고, 그대로 재생하면
+두 정본이 조용히 갈라진 원장으로 서비스가 뜬다.
+
+알려진 한계: 스냅샷은 재기동 비용만 잡고 **파일 크기 상한은 주지 않는다** —
+edge-sync journal 은 여전히 단조 증가한다. 세그먼트 회전은 이 원장에 아직 없다.
+
 ## 단일 writer 강제
 
 journal 은 단일 프로세스 전제다 — 두 프로세스가 같은 파일에 append 하면 원장
@@ -59,9 +80,11 @@ API(``GET /v1/edge-sync/devices/{device_id}/sequence``)로 복구 경로를 갖�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -74,6 +97,7 @@ from ksi_event_contracts.offline_sync import (
     IngestResult,
     IngestVerdict,
     JournalEntry,
+    LedgerStateError,
     SyncLedger,
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -118,6 +142,25 @@ class ServerIngestResult:
     detail: str | None = None
 
 
+# 스냅샷 파일 표현의 버전 — 표현이 바뀌면 올린다. 옛 버전 스냅샷은 복원하지 않고
+# 버린다(전량 재생으로 같은 상태에 도달한다).
+_SNAPSHOT_VERSION = 1
+
+
+def _snapshot_digest(payload: Mapping[str, object]) -> str:
+    """``digest`` 를 제외한 스냅샷 본문의 정규 digest.
+
+    스냅샷은 journal 과 달리 사람이 손댈 수 있는 자리다 — 손대면 알아채야 한다.
+    ``sort_keys`` 로 키 순서를, ``separators`` 로 공백을 고정해 같은 내용이 항상
+    같은 값을 낸다.
+    """
+    body = {key: value for key, value in payload.items() if key != "digest"}
+    canonical = json.dumps(
+        body, sort_keys=True, ensure_ascii=True, allow_nan=False, separators=(",", ":")
+    )
+    return f"sha256:{hashlib.sha256(canonical.encode('ascii')).hexdigest()}"
+
+
 def _fsync_dir(directory: Path) -> None:
     """디렉터리 엔트리를 durable 하게 만든다 — 파일 fsync 만으로는 부족하다(P0-1)."""
     fd = os.open(directory, os.O_RDONLY)
@@ -135,10 +178,19 @@ class EdgeSyncStore:
     깨지지 않는다. 프로세스 간에는 flock 이 단일 writer 를 강제한다.
     """
 
-    def __init__(self, journal_path: Path) -> None:
+    def __init__(self, journal_path: Path, *, snapshot_every: int | None = None) -> None:
         import threading
 
+        if snapshot_every is not None and snapshot_every <= 0:
+            # 0·음수를 받으면 append 마다 스냅샷을 다시 써서 수신 경로를 스스로
+            # 느리게 만든다 — "스냅샷 없음"을 뜻하려면 None 이어야 한다.
+            raise ValueError(
+                f"snapshot_every 는 양수여야 한다(스냅샷 없음은 None): {snapshot_every!r}"
+            )
         self._path = journal_path
+        self._snapshot_path = journal_path.with_suffix(journal_path.suffix + ".snapshot.json")
+        self._snapshot_every = snapshot_every
+        self._accepted_since_snapshot = 0
         self._ledger = SyncLedger()
         self._sealed_reason: str | None = None
         self._lock = threading.Lock()
@@ -181,11 +233,18 @@ class EdgeSyncStore:
             os.close(self._lock_fd)
 
     def _recover(self) -> None:
-        """journal 재적재 — 완결 줄은 전부 ACCEPTED 여야 하고, torn tail 은 격리한다."""
+        """journal 재적재 — 완결 줄은 전부 ACCEPTED 여야 하고, torn tail 은 격리한다.
+
+        스냅샷이 유효하면 그 지점(바이트 오프셋)부터만 읽는다 — 그 앞의 항목은
+        이미 원장에 복원돼 있고, 본문 재정규화·digest 재계산을 건너뛴다.
+        """
+        resume_at = self._load_snapshot()
         if not self._path.exists():
             return
         try:
-            raw = self._path.read_bytes()
+            with self._path.open("rb") as handle:
+                handle.seek(resume_at)
+                raw = handle.read()
         except OSError as exc:
             raise StoreRecoveryError(
                 f"{self._path}: journal 읽기 실패 — {type(exc).__name__}: {exc}"
@@ -219,9 +278,160 @@ class EdgeSyncStore:
                 len(tail),
             )
             with self._path.open("r+b") as handle:
-                handle.truncate(len(raw) - len(tail))
+                # 오프셋 재생이면 잘라낼 지점은 파일 전체 기준이어야 한다 —
+                # len(raw) 는 재생 시작점 이후 길이뿐이다.
+                handle.truncate(resume_at + len(raw) - len(tail))
                 handle.flush()
                 os.fsync(handle.fileno())
+
+    # ── 스냅샷 (S4 — ops-serving-hardening) ────────────────────────────────
+    #
+    # 재기동 비용의 실체는 파일 크기가 아니라 **항목당 본문 정규화 + sha256**
+    # 이다(``SyncLedger.ingest`` 가 매 항목 ``payload_digest`` 를 다시 계산한다).
+    # 스냅샷은 그 계산 결과(원장 상태)를 들고 있다가 재기동 시 복원하고, journal
+    # 은 스냅샷 이후 구간만 읽는다.
+    #
+    # 신뢰 규칙 — **스냅샷은 journal 이 부정하는 것을 주장할 수 없다.**
+    #   - 스냅샷이 깨졌거나(digest 불일치·형식 위반·규칙 위반) 읽을 수 없으면
+    #     버리고 전량 재생한다. journal 이 정본이므로 결과 상태는 동일하고,
+    #     느려질 뿐이다. 조용히 넘어가지 않고 ERROR 로 남긴다.
+    #   - 반대로 **journal 쪽이 스냅샷과 어긋나면**(파일이 줄었다·덮어써진
+    #     흔적이 있다) 기동을 거부한다. append-only 파일이 짧아지는 것은
+    #     설명되지 않는 상태이고, 그대로 재생하면 조용히 틀린 원장이 된다.
+
+    def _load_snapshot(self) -> int:
+        """스냅샷을 복원하고 재생을 시작할 바이트 오프셋을 돌려준다(없으면 0)."""
+        if not self._snapshot_path.exists():
+            return 0
+        try:
+            payload = json.loads(self._snapshot_path.read_bytes())
+        except (OSError, ValueError) as exc:
+            logger.error(
+                "%s: 스냅샷을 읽을 수 없어 버리고 전량 재생한다 — %s: %s",
+                self._snapshot_path, type(exc).__name__, exc,
+            )
+            return 0
+        if not isinstance(payload, dict) or payload.get("version") != _SNAPSHOT_VERSION:
+            logger.error(
+                "%s: 알 수 없는 스냅샷 형식/버전 — 버리고 전량 재생한다", self._snapshot_path
+            )
+            return 0
+        declared = payload.get("digest")
+        if declared != _snapshot_digest(payload):
+            logger.error(
+                "%s: 스냅샷 digest 불일치 — 버리고 전량 재생한다", self._snapshot_path
+            )
+            return 0
+
+        through = payload.get("throughBytes")
+        last_line_bytes = payload.get("lastLineBytes")
+        last_line_sha = payload.get("lastLineSha256")
+        if (
+            not isinstance(through, int)
+            or isinstance(through, bool)
+            or through <= 0
+            or not isinstance(last_line_bytes, int)
+            or isinstance(last_line_bytes, bool)
+            or last_line_bytes <= 0
+            or through < last_line_bytes + 1
+            or not isinstance(last_line_sha, str)
+        ):
+            logger.error(
+                "%s: 스냅샷 경계 값이 유효하지 않다 — 버리고 전량 재생한다",
+                self._snapshot_path,
+            )
+            return 0
+
+        # 여기부터는 journal 쪽 정합 — 어긋나면 전량 재생이 아니라 기동 거부다.
+        if not self._path.exists():
+            raise StoreRecoveryError(
+                f"{self._snapshot_path}: 스냅샷은 있는데 journal({self._path})이 없다 — "
+                "원장이 사라진 상태로 기동하지 않는다"
+            )
+        try:
+            size = self._path.stat().st_size
+            with self._path.open("rb") as handle:
+                handle.seek(through - 1 - last_line_bytes)
+                probe = handle.read(last_line_bytes + 1)
+        except OSError as exc:
+            raise StoreRecoveryError(
+                f"{self._path}: 스냅샷 경계 확인 실패 — {type(exc).__name__}: {exc}"
+            ) from exc
+        if size < through:
+            raise StoreRecoveryError(
+                f"{self._path}: append-only journal 이 스냅샷 경계보다 짧다 "
+                f"({size} < {through}) — 잘렸거나 교체된 원장으로 기동하지 않는다"
+            )
+        if len(probe) != last_line_bytes + 1 or not probe.endswith(b"\n"):
+            raise StoreRecoveryError(
+                f"{self._path}: 스냅샷 경계가 줄 끝이 아니다 — 원장이 교체된 흔적"
+            )
+        if hashlib.sha256(probe[:-1]).hexdigest() != last_line_sha:
+            raise StoreRecoveryError(
+                f"{self._path}: 스냅샷 경계 줄의 내용이 다르다 — 원장이 교체된 흔적"
+            )
+
+        try:
+            self._ledger = SyncLedger.from_state(payload.get("ledger"))
+        except LedgerStateError as exc:
+            # 규칙을 어기는 스냅샷이다. journal 이 정본이므로 버리고 전량 재생하면
+            # 상태는 정확해진다 — 다만 조용히 넘어가지 않는다.
+            logger.error(
+                "%s: 스냅샷 원장이 규칙을 위반해 버린다(전량 재생) — %s",
+                self._snapshot_path, exc,
+            )
+            self._ledger = SyncLedger()
+            return 0
+        logger.info(
+            "%s: 스냅샷에서 %d건 복원 — journal 은 오프셋 %d 부터 재생한다",
+            self._snapshot_path, self._ledger.accepted_count(), through,
+        )
+        return through
+
+    def _write_snapshot(self, last_line: bytes) -> None:
+        """현재 원장 상태를 스냅샷으로 굳힌다(호출자가 잠금 보유).
+
+        ``last_line`` 은 방금 durable 하게 기록된 줄(개행 제외)이다 — 그 줄의
+        끝이 곧 스냅샷 경계이고, 다음 기동이 "이 경계가 아직 그대로인가"를
+        확인하는 근거가 된다.
+
+        실패는 봉인하지 않는다 — 스냅샷은 최적화일 뿐이고, 없으면 전량 재생으로
+        정확히 같은 상태에 도달한다. 수신(ACK)을 스냅샷 실패로 멈추는 것은
+        durability 와 무관한 사유로 제품을 세우는 일이다.
+        """
+        try:
+            through = self._path.stat().st_size
+            payload: dict[str, object] = {
+                "version": _SNAPSHOT_VERSION,
+                "throughBytes": through,
+                "lastLineBytes": len(last_line),
+                "lastLineSha256": hashlib.sha256(last_line).hexdigest(),
+                "ledger": self._ledger.export_state(),
+            }
+            payload["digest"] = _snapshot_digest(payload)
+            tmp = self._snapshot_path.with_suffix(self._snapshot_path.suffix + ".tmp")
+            data = json.dumps(payload, ensure_ascii=True, allow_nan=False).encode("ascii")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                view = memoryview(data)
+                written = 0
+                while written < len(data):
+                    count = _WRITE(fd, view[written:])
+                    if count <= 0:
+                        raise OSError(f"short write: {written}/{len(data)} bytes")
+                    written += count
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            # rename 은 같은 디렉터리 안에서 원자적이다 — 반쯤 쓰인 스냅샷이
+            # 다음 기동에 보이는 창이 없다.
+            os.replace(tmp, self._snapshot_path)
+            _fsync_dir(self._snapshot_path.parent)
+        except BaseException as exc:
+            logger.warning(
+                "%s: 스냅샷 기록 실패(%s) — 수신은 계속하고 다음 주기에 재시도한다",
+                self._snapshot_path, type(exc).__name__,
+            )
 
     @property
     def sealed(self) -> bool:
@@ -264,7 +474,7 @@ class EdgeSyncStore:
                 )
 
             try:
-                self._append_durable(entry)
+                written_line = self._append_durable(entry)
             except OSError as exc:
                 # SyncLedger 메모리에는 반영됐는데 디스크에 없다 — 봉인하지 않으면
                 # 재전송이 DUPLICATE_IGNORED(ACK)로 둔갑해 유실이 확정된다.
@@ -282,9 +492,20 @@ class EdgeSyncStore:
                 self._sealed_reason = type(exc).__name__
                 logger.error("durable append 중 예외로 봉인: %s", type(exc).__name__)
                 raise
+            # 스냅샷은 ACK 이후의 관심사다 — durable append 가 끝난 뒤에만 찍고,
+            # 실패해도 이 ACCEPTED 를 취소하지 않는다.
+            self._accepted_since_snapshot += 1
+            if (
+                self._snapshot_every is not None
+                and self._accepted_since_snapshot >= self._snapshot_every
+            ):
+                # 성공·실패와 무관하게 주기를 리셋한다 — 실패가 계속될 때
+                # append 마다 재시도해 수신 경로를 느리게 만들지 않는다.
+                self._accepted_since_snapshot = 0
+                self._write_snapshot(written_line)
             return ServerIngestResult(IngestVerdict.ACCEPTED)
 
-    def _append_durable(self, entry: JournalEntry) -> None:
+    def _append_durable(self, entry: JournalEntry) -> bytes:
         # ensure_ascii=True: 유니코드 개행 후보(U+2028 등)가 raw 로 나가 재적재의
         # 줄 분리를 깨는 경로를 원천 차단한다(P1-2 실측). digest 는 payload dict
         # 기준이라 표기 차이의 영향이 없다.
@@ -321,6 +542,8 @@ class EdgeSyncStore:
             # 새 파일은 디렉터리 엔트리도 durable 해야 ACK 후 머신 크래시에서
             # 파일째 사라지지 않는다(P0-1).
             _fsync_dir(self._path.parent)
+        # 기록된 줄(개행 제외) — 스냅샷이 "경계가 아직 그대로인가"를 확인하는 근거.
+        return data[:-1]
 
     # ── 검증·진단 위임 (공개 API 아님 — 인증 도입 전 노출 최소화) ──────────
     def accepted_count(self) -> int:

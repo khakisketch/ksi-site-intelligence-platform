@@ -62,7 +62,14 @@ class SiteFrame(_CamelModel):
 #  잠정 sanity cap(m) — 규제값(권고 150m)은 대표자 확정 대기(원장 risk
 # flight-envelope-absolute-ceiling). 이 상수는 서버 발급 게이트일 뿐 JSON
 # 스키마(v1.2)는 건드리지 않는다 — 기존 서명 계약의 하위호환을 유지한다.
-_ABSOLUTE_MAX_ALTITUDE_M = 500.0
+# 서버 고정 안전상수 — 요청으로 바꿀 수 없다(INV 계열 원칙). 값은 항공안전법의
+# 일반 비행제한 고도이며 2026-08-05 대표자 확정이다. 이 값을 넘는 봉투는 서명
+# 계약으로 성립하지 않는다 — "규제 위반 고도의 임무는 발급 자체가 안 된다".
+#
+# 예외 승인(고도 특례)을 받은 현장이 생기면 이 상수를 현장별 설정으로 바꾸는 게
+# 아니라, **그 결정을 다시 받아** 여기를 고친다. 안전 상한을 요청·설정이 뚫을 수
+# 있게 만드는 순간 "서버 고정"이라는 성질 자체가 사라진다.
+_ABSOLUTE_MAX_ALTITUDE_M = 150.0
 
 
 class FlightEnvelope(_CamelModel):
@@ -97,8 +104,9 @@ class FlightEnvelope(_CamelModel):
             )
         if self.max_altitude_m > _ABSOLUTE_MAX_ALTITUDE_M:
             raise ValueError(
-                f"maxAltitudeM({self.max_altitude_m}) > 잠정 sanity cap"
-                f"({_ABSOLUTE_MAX_ALTITUDE_M}) — 규제값 확정 전 절대 상한(원장 참조)"
+                f"maxAltitudeM({self.max_altitude_m}) > 규제 상한"
+                f"({_ABSOLUTE_MAX_ALTITUDE_M}m — 항공안전법 일반 비행제한 고도, "
+                "서버 고정 안전상수라 요청으로 바꿀 수 없다)"
             )
         for name in ("minimum_structure_standoff_m", "minimum_person_standoff_m"):
             value = getattr(self, name)

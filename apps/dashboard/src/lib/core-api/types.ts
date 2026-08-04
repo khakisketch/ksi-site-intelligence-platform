@@ -202,7 +202,13 @@ export interface AoiVertex {
 
 export interface MissionPlanRouteInput {
   altitudeM: number;
+  /** lawnmower 스캔선 간격(m) — 측면 중첩을 정한다. */
   spacingM?: number;
+  /**
+   * lawnmower 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격.
+   * 매핑 계열에서 빠지면 서버가 422 로 거부한다(전방 중첩 0 → 재구성 불성립).
+   */
+  captureIntervalM?: number;
   sweepDirectionDeg?: number;
 }
 

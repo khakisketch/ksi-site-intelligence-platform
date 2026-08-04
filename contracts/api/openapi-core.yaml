@@ -371,6 +371,14 @@ paths:
                   enum: [NONE, ASSIGNED, ACTION_IN_PROGRESS, REINSPECTION_REQUESTED, RESOLVED, CLOSED]
                 reason: { type: string }
                 assignee: { type: string }
+                expectedBundleDigest:
+                  type: string
+                  description: >-
+                    선택적 낙관적 동시성 토큰 — 화면에 표시된 bundle 의
+                    payloadDigest("sha256:<hex64>")를 그대로 실어 보내면, 그
+                    사이 Edge 의 후행 update 로 내용이 바뀌었을 때 409
+                    STALE_EVENT_VIEW 로 거부한다(전이는 적용되지 않는다).
+                    생략하면 검사하지 않는다.
       responses:
         '200':
           description: TRANSITIONED — verdict + 전이 후 사건 상세
@@ -378,7 +386,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TransitionResponse' }
         '404': { description: UNKNOWN_EVENT }
-        '409': { description: ILLEGAL_TRANSITION }
+        '409': { description: ILLEGAL_TRANSITION / STALE_EVENT_VIEW(expectedBundleDigest 불일치) }
         '422': { description: EVIDENCE_INCOMPLETE / INVALID_REQUEST }
         '503': { description: STORE_UNAVAILABLE — Retry-After }
         '401': { description: 인증 실패 }
@@ -596,13 +604,17 @@ paths:
                     allowedVolumes: { type: array, items: { type: string } }
                     excludedVolumes: { type: array, items: { type: string } }
                     minAltitudeM: { type: number }
-                    maxAltitudeM: { type: number, maximum: 500 }
+                    maxAltitudeM: { type: number, maximum: 150 }
                     minimumStructureStandoffM: { type: number }
                     minimumPersonStandoffM: { type: number }
+                    altitudeReference:
+                      enum: [relativeToStartPoint]
+                      nullable: true
                   description: >-
                     altitudeReference 는 요청과 무관하게 서버가
-                    relativeToStartPoint 로 고정한다(2026-07-29 대표자 확정) —
-                    요청 필드로 받지 않는다.
+                    relativeToStartPoint 로 고정한다(2026-07-29 대표자 확정).
+                    보내도 거부하지는 않지만 **무시된다** — 서명 계약에 실리는
+                    값은 항상 서버가 정한 값이다.
                 objectives: { type: array, items: { type: string }, minItems: 1 }
                 viewpointPolicyId: { type: string, minLength: 1 }
                 riskPolicyPackId: { type: string, minLength: 1 }
@@ -638,7 +650,7 @@ paths:
         AOI 폴리곤+임무타입 한 요청이 두 산출물을 짝으로 낳는다 — 기체용
         WPML/KMZ(base64)와 Manifold 용 서명 계약. 경로 고도·이륙 안전고도는
         같은 요청의 flightEnvelope 로 게이트되어 어긋난 쌍이 성립할 수 없다.
-        임무타입→패턴: 매핑 계열=lawnmower(spacingM 필수)·순찰 계열=perimeter·
+        임무타입→패턴: 매핑 계열=lawnmower(spacingM·captureIntervalM 필수)·순찰 계열=perimeter·
         그 외(ASSET_INSPECTION 등)=422 거부(조용한 퇴화 금지). droneEnumValue 는
         호출자가 명시한다(M4D 값은 실기 H4 검증 전 서버가 추측하지 않는다). KMZ
         에는 계약과의 짝 식별자(contractSha256 등, wpmz/res/ksi-mission-pair.json)
@@ -690,9 +702,12 @@ paths:
                         allowedVolumes: { type: array, items: { type: string } }
                         excludedVolumes: { type: array, items: { type: string } }
                         minAltitudeM: { type: number }
-                        maxAltitudeM: { type: number, maximum: 500 }
+                        maxAltitudeM: { type: number, maximum: 150 }
                         minimumStructureStandoffM: { type: number }
                         minimumPersonStandoffM: { type: number }
+                        altitudeReference:
+                          enum: [relativeToStartPoint]
+                          nullable: true
                     objectives: { type: array, items: { type: string }, minItems: 1 }
                     viewpointPolicyId: { type: string, minLength: 1 }
                     riskPolicyPackId: { type: string, minLength: 1 }
@@ -736,7 +751,13 @@ paths:
                     altitudeM: { type: number }
                     spacingM:
                       type: number
-                      description: lawnmower(매핑) 계열 필수 — 스캔선 간격 상한(m)
+                      description: lawnmower(매핑) 계열 필수 — 스캔선 간격 상한(m, 측면 중첩)
+                    captureIntervalM:
+                      type: number
+                      description: >-
+                        lawnmower(매핑) 계열 필수 — 진행방향 촬영 간격 상한(m).
+                        없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어
+                        정사영상·3D 재구성이 성립하지 않는다(422 거부).
                     sweepDirectionDeg:
                       type: number
                       description: 수학 규약(동=0·반시계, 도) — 나침반 방위 아님

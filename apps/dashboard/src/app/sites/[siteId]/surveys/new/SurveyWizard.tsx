@@ -112,15 +112,26 @@ function buildPurposeOptions(siteIsUnmapped: boolean): PurposeOption[] {
   ];
 }
 
+// 서버가 고정한 규제 고도 상한(항공안전법 일반 비행제한 고도). 계약의
+// maxAltitudeM 이 이 값을 넘으면 서버가 422 로 거부하므로, 여기서 먼저 막아
+// 사용자가 8단계를 다 채우고 나서야 실패를 보는 일을 없앤다.
+const MAX_ALTITUDE_M = 150;
+// 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
+const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
+
 type SurveyLevel = "FAST" | "STANDARD" | "PRECISE";
 
+// captureIntervalM 은 스캔선을 따라 촬영하는 간격이다. 값이 빠지면 스캔선당
+// 사진이 양 끝 2장뿐이라 진행방향 겹침이 0 이 되고, 비행은 정상으로 끝나는데
+// 지도·3D 산출물만 나오지 않는다 — 그래서 서버가 아예 발급을 거부한다.
+// 세 수준 모두 스캔선 간격보다 촘촘하게 둔다(진행방향 겹침을 더 크게).
 const LEVEL_PRESETS: Record<
   SurveyLevel,
-  { label: string; spacingM: number; autoFlightSpeedMs: number }
+  { label: string; spacingM: number; captureIntervalM: number; autoFlightSpeedMs: number }
 > = {
-  FAST: { label: "빠른", spacingM: 30, autoFlightSpeedMs: 8 },
-  STANDARD: { label: "표준", spacingM: 20, autoFlightSpeedMs: 5 },
-  PRECISE: { label: "정밀", spacingM: 10, autoFlightSpeedMs: 3 },
+  FAST: { label: "빠른", spacingM: 30, captureIntervalM: 22, autoFlightSpeedMs: 8 },
+  STANDARD: { label: "표준", spacingM: 20, captureIntervalM: 15, autoFlightSpeedMs: 5 },
+  PRECISE: { label: "정밀", spacingM: 10, captureIntervalM: 7, autoFlightSpeedMs: 3 },
 };
 
 type NumericDraftKey =
@@ -244,7 +255,10 @@ export function SurveyWizard({ site }: { site: SiteView }) {
         route: {
           altitudeM: draft.altitudeM,
           ...(routePattern === "lawnmower" && draft.level
-            ? { spacingM: LEVEL_PRESETS[draft.level].spacingM }
+            ? {
+                spacingM: LEVEL_PRESETS[draft.level].spacingM,
+                captureIntervalM: LEVEL_PRESETS[draft.level].captureIntervalM,
+              }
             : {}),
         },
         drone: {
@@ -327,7 +341,10 @@ export function SurveyWizard({ site }: { site: SiteView }) {
       onNext = () => goTo(2);
       break;
     case 2:
-      nextDisabled = !draft.level;
+      // 고도 상한 초과는 서버가 422 로 거부한다(규제 상한, 요청으로 못 바꾼다) —
+      // 여기서 막지 않으면 오류 문구는 떠 있는데 계속 진행되고, 마지막 발급 단계에
+      // 가서야 실패한다(문구만 있고 일은 안 막는 상태).
+      nextDisabled = !draft.level || draft.altitudeM > MAX_FLIGHT_ALTITUDE_M;
       onNext = () => goTo(3);
       break;
     case REVIEW_STEP:
@@ -463,10 +480,16 @@ export function SurveyWizard({ site }: { site: SiteView }) {
         {draft.level && (
           <dl className="flex flex-col gap-1 text-sm text-ink-2">
             {routePattern === "lawnmower" && (
-              <div className="flex justify-between">
-                <dt>격자 간격</dt>
-                <dd className="num">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <dt>격자 간격</dt>
+                  <dd className="num">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt>촬영 간격</dt>
+                  <dd className="num">{LEVEL_PRESETS[draft.level].captureIntervalM}m</dd>
+                </div>
+              </>
             )}
             <div className="flex justify-between">
               <dt>비행 속도</dt>
@@ -484,10 +507,18 @@ export function SurveyWizard({ site }: { site: SiteView }) {
               <span className="break-keep text-[12.5px] font-semibold text-ink-1">비행 고도(m)</span>
               <input
                 type="number"
+                max={MAX_FLIGHT_ALTITUDE_M}
                 value={draft.altitudeM}
                 onChange={(e) => updateNumber("altitudeM", e.target.value)}
+                aria-invalid={draft.altitudeM > MAX_FLIGHT_ALTITUDE_M}
                 className="input num"
               />
+              {draft.altitudeM > MAX_FLIGHT_ALTITUDE_M && (
+                <span className="text-[12.5px] font-semibold break-keep text-crit-ink">
+                  {MAX_FLIGHT_ALTITUDE_M}m 이하여야 합니다(법정 비행제한 고도{" "}
+                  {MAX_ALTITUDE_M}m).
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="break-keep text-[12.5px] font-semibold text-ink-1">
@@ -616,10 +647,18 @@ export function SurveyWizard({ site }: { site: SiteView }) {
           <dd className="num text-right">{draft.altitudeM}m</dd>
         </div>
         {routePattern === "lawnmower" && draft.level && (
-          <div className="flex justify-between gap-4">
-            <dt className="text-ink-2">격자 간격</dt>
-            <dd className="num text-right">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
-          </div>
+          <>
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-2">격자 간격</dt>
+              <dd className="num text-right">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-2">촬영 간격</dt>
+              <dd className="num text-right">
+                {LEVEL_PRESETS[draft.level].captureIntervalM}m
+              </dd>
+            </div>
+          </>
         )}
         <div className="flex justify-between gap-4">
           <dt className="text-ink-2">비행 속도</dt>

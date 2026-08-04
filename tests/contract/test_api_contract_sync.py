@@ -445,3 +445,134 @@ def test_dashboard_types_match_contract_schemas() -> None:
         "대시보드가 소비하는 타입이 계약과 갈라졌다 — 서버 필드가 바뀌면 프런트 "
         f"tsc 는 green 인 채 런타임에서만 깨진다: {mismatches}"
     )
+
+
+# ── ⑥ 요청 본문 깊은 대조 (s2-residual-hardening #4) ────────────────────────
+#
+# ④/⑤가 닫은 것은 **응답** 쪽이다. 요청 본문은 문서에 인라인 object 로 적혀 있어
+# 어떤 게이트도 실구현 요청 모델과 대조하지 않았다 — 서버가 새 필수 입력을
+# 요구하기 시작해도(예: lawnmower 의 captureIntervalM) 계약은 조용히 낡는다.
+# 클라이언트는 문서를 보고 만들므로, 이 방향의 drift 는 곧 통합 실패다.
+
+
+def _resolve_ref(spec: dict[str, Any], node: Any) -> Any:
+    """``$ref`` 를 실제 스키마로 펼친다(구현 spec 은 named 모델을 참조한다)."""
+    seen = 0
+    while isinstance(node, dict) and "$ref" in node:
+        seen += 1
+        if seen > 32:  # 순환 참조 방어 — 무한 루프 대신 그대로 돌려준다
+            return node
+        pointer = node["$ref"]
+        if not pointer.startswith("#/"):
+            return node
+        target: Any = spec
+        for part in pointer[2:].split("/"):
+            if not isinstance(target, dict) or part not in target:
+                return node
+            target = target[part]
+        node = target
+    return node
+
+
+def _json_request_schema(spec: dict[str, Any], operation: dict[str, Any]) -> Any:
+    body = operation.get("requestBody") or {}
+    schema = ((body.get("content") or {}).get("application/json") or {}).get("schema")
+    return _resolve_ref(spec, schema) if schema is not None else None
+
+
+def _compare_object_fields(
+    *,
+    doc_spec: dict[str, Any],
+    impl_spec: dict[str, Any],
+    doc_node: Any,
+    impl_node: Any,
+    trail: str,
+    mismatches: list[str],
+) -> None:
+    """두 스키마 트리의 object 계층을 필드 이름·필수 여부로 재귀 대조한다.
+
+    타입까지는 보지 않는다 — ④와 같은 규약이다. 잡으려는 실패는 "한쪽에만
+    필드가 생기거나 사라지는 것"과 "한쪽만 필수로 요구하는 것"이다.
+    """
+    doc_node = _resolve_ref(doc_spec, doc_node)
+    impl_node = _resolve_ref(impl_spec, impl_node)
+    if not isinstance(doc_node, dict) or not isinstance(impl_node, dict):
+        return
+    # anyOf/allOf(Optional 필드가 만드는 형태)는 object 분기 하나만 골라 내려간다.
+    for combinator in ("anyOf", "allOf", "oneOf"):
+        if combinator in impl_node and "properties" not in impl_node:
+            for branch in impl_node[combinator]:
+                resolved = _resolve_ref(impl_spec, branch)
+                if isinstance(resolved, dict) and "properties" in resolved:
+                    impl_node = resolved
+                    break
+    doc_props = doc_node.get("properties")
+    impl_props = impl_node.get("properties")
+    if not isinstance(doc_props, dict) or not isinstance(impl_props, dict):
+        return
+
+    doc_fields, impl_fields = set(doc_props), set(impl_props)
+    if doc_fields != impl_fields:
+        mismatches.append(
+            f"{trail}: 문서에만 {sorted(doc_fields - impl_fields)} / "
+            f"구현에만 {sorted(impl_fields - doc_fields)}"
+        )
+    doc_required = set(doc_node.get("required") or [])
+    impl_required = set(impl_node.get("required") or [])
+    if doc_required != impl_required:
+        mismatches.append(
+            f"{trail}.required: 문서에만 {sorted(doc_required - impl_required)} / "
+            f"구현에만 {sorted(impl_required - doc_required)}"
+        )
+    for field in sorted(doc_fields & impl_fields):
+        _compare_object_fields(
+            doc_spec=doc_spec,
+            impl_spec=impl_spec,
+            doc_node=doc_props[field],
+            impl_node=impl_props[field],
+            trail=f"{trail}.{field}",
+            mismatches=mismatches,
+        )
+
+
+def test_documented_request_bodies_match_implementation_fields(tmp_path: Path) -> None:
+    """[핵심] 문서의 요청 본문 필드 집합·필수 여부가 실구현 요청 모델과 같아야 한다."""
+    doc = _doc()
+    impl = _implemented_spec(tmp_path)
+    impl_paths = impl["paths"]
+
+    mismatches: list[str] = []
+    compared = 0
+    for path, item in (doc.get("paths") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        for method, operation in item.items():
+            if method not in _HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            doc_schema = _json_request_schema(doc, operation)
+            if doc_schema is None:
+                continue
+            impl_operation = (impl_paths.get(path) or {}).get(method)
+            if not isinstance(impl_operation, dict):
+                continue  # 경로·메서드 존재는 ①②가 이미 본다
+            impl_schema = _json_request_schema(impl, impl_operation)
+            if impl_schema is None:
+                mismatches.append(f"{method.upper()} {path}: 구현에 JSON 요청 본문이 없다")
+                continue
+            compared += 1
+            _compare_object_fields(
+                doc_spec=doc,
+                impl_spec=impl,
+                doc_node=doc_schema,
+                impl_node=impl_schema,
+                trail=f"{method.upper()} {path}",
+                mismatches=mismatches,
+            )
+
+    assert compared >= 3, (
+        f"요청 본문을 가진 문서화 operation 이 너무 적다({compared}) — 게이트가 공허하다"
+    )
+    assert not mismatches, (
+        "openapi-core.yaml 의 요청 본문이 실구현과 갈라졌다 — 구현이 새 입력을 "
+        f"요구하기 시작했으면 계약도 같이 바꿔라: {mismatches}"
+    )

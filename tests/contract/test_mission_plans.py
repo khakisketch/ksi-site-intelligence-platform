@@ -79,6 +79,11 @@ def _plan_request(
 ) -> dict[str, Any]:
     route: dict[str, Any] = {"altitudeM": 40.0}
     route.update(route_overrides)
+    # lawnmower 요청은 진행방향 촬영 간격이 필수다(전방 중첩 0 차단) — 그 규칙
+    # 자체를 반증하는 테스트는 captureIntervalM 을 명시적으로 넘겨 이 기본값을
+    # 우회한다(``in route_overrides`` 검사라 None 을 명시하면 그대로 None 이다).
+    if "spacingM" in route and "captureIntervalM" not in route_overrides:
+        route["captureIntervalM"] = 15.0
     return {
         "contract": {
             "missionId": "mission-001",

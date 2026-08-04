@@ -112,12 +112,26 @@ class SiteResult:
     detail: str | None = None
 
 
+def _iso_utc(value: datetime) -> str:
+    """journal 에 쓸 ``ts`` — 항상 UTC 로 정규화한다(s2-residual-hardening #2).
+
+    오프셋을 그대로 두면 같은 순간이 원장에서 여러 표기로 남아, 문자열 정렬·
+    외부 도구의 시각 비교가 오프셋마다 다른 답을 낸다. events.py 의 ``_iso`` 와
+    같은 규약이다.
+    """
+    return value.astimezone(UTC).isoformat()
+
+
 def _parse_ts(value: str) -> datetime:
-    """journal 레코드의 ``ts`` 를 tz-aware datetime 으로 파싱한다. naive 는 거부(fail-closed)."""
+    """journal 레코드의 ``ts`` 를 tz-aware datetime 으로 파싱한다. naive 는 거부(fail-closed).
+
+    UTC 로 정규화해 돌려준다 — 정규화 도입 이전에 기록된 오프셋 표기 레코드도
+    재생 후에는 같은 표현이 되어, projection 이 기록 시점에 따라 달라지지 않는다.
+    """
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError(f"ts 가 naive datetime: {value!r}")
-    return parsed
+    return parsed.astimezone(UTC)
 
 
 def _has_lone_surrogate(value: str) -> bool:
@@ -309,7 +323,7 @@ class SiteStore:
 
             raw: dict[str, Any] = {
                 "kind": "site-registered",
-                "ts": now.isoformat(),
+                "ts": _iso_utc(now),
                 "actor": actor,
                 "before": None,
                 "after": SiteStatus.UNMAPPED.value,
@@ -363,7 +377,7 @@ class SiteStore:
 
             raw: dict[str, Any] = {
                 "kind": "site-transitioned",
-                "ts": now.isoformat(),
+                "ts": _iso_utc(now),
                 "actor": actor,
                 "before": current.status.value,
                 "after": target.value,

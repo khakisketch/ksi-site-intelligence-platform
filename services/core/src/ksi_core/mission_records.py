@@ -50,6 +50,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -221,6 +222,25 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
             f"{raw.get('missionId')!r}: planRequest 가 dict 가 아니다"
             f"({type(plan_request).__name__})"
         )
+    plan_request_digest = raw.get("planRequestDigest")
+    # 재생 경로에서도 요청 digest ↔ 저장된 요청의 정합을 재검증한다
+    # (s2-residual-hardening #3). 이 대조가 live 경로에만 있으면, 원장이 조작되어
+    # digest 와 planRequest 가 어긋난 레코드가 남았을 때 재시도가 "같은 요청"으로
+    # 판정되고 **다른** 입력으로 KMZ 를 재생성해 돌려준다 — 클라이언트는 자기가
+    # 보낸 적 없는 경로를 자기 요청의 멱등 응답으로 받는다.
+    if plan_request is not None and plan_request_digest is not None:
+        actual = sha256_digest(canonical_payload_bytes(plan_request))
+        if actual != plan_request_digest:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: planRequestDigest 가 planRequest 와 "
+                f"불일치(선언 {plan_request_digest} != 실제 {actual})"
+            )
+    if artifact_kind == "pair" and plan_request is None:
+        # 짝 레코드는 KMZ 재생성 입력을 반드시 들고 있어야 한다 — 없으면 멱등
+        # 재발급이 assert 로 죽는다(그 assert 가 기대는 불변식을 여기서 지킨다).
+        raise ValueError(
+            f"{raw.get('missionId')!r}: artifactKind=pair 인데 planRequest 가 없다"
+        )
     return MissionRecord(
         mission_id=raw["missionId"],
         site_id=raw["siteId"],
@@ -234,7 +254,7 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         issued_at=issued_at,
         issued_by=raw["issuedBy"],
         plan_request=plan_request,
-        plan_request_digest=raw.get("planRequestDigest"),
+        plan_request_digest=plan_request_digest,
     )
 
 

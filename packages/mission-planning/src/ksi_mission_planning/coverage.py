@@ -69,6 +69,8 @@ class RouteGenerationError(ValueError):
 
 # 스캔선 간격 하한(m) — 미인증 입력의 스캔선 수 폭발(OOM) 차단. 실 GSD 간격은 m 단위.
 _MIN_SPACING_M = 0.1
+# 진행방향(along-track) 촬영 간격 하한(m) — 같은 이유의 웨이포인트 폭발 차단.
+_MIN_CAPTURE_INTERVAL_M = 0.1
 # 웨이포인트 수 상한 — WPML index 스펙 범위 [0, 65535].
 _MAX_WAYPOINTS = 65_536
 # INV-010 일반영역 커버리지 하한 — 요청으로 바꿀 수 없는 모듈 상수(자율 재검토 A-2).
@@ -308,6 +310,29 @@ def _measure_lawnmower_coverage_ratio(
     return max(0.0, min(1.0, covered / aoi_area))
 
 
+def _capture_xs(
+    x_start: float, x_end: float, capture_interval_m: float | None
+) -> list[float]:
+    """스캔선 한 구간 위의 웨이포인트 x 목록 — 촬영 간격이 있으면 그 간격으로 채운다.
+
+    간격 규약은 ``spacing_m`` 과 같다: 실제 간격은 요청값 **이하**로만 조밀해진다
+    (``ceil`` 로 구간 수를 올린 뒤 균등 분할). 성기어지는 방향의 이탈은 곧 중첩
+    부족이고, 중첩 부족은 재구성이 조용히 실패하는 방식이기 때문이다.
+
+    끝점은 항상 포함한다 — 구간 끝이 곧 AOI 경계라 그 지점의 사진이 빠지면
+    경계 밴드가 재구성에서 잘린다. 방향(x_start>x_end, 홀수 스캔선의 역순)도
+    그대로 보존한다.
+    """
+    if capture_interval_m is None:
+        return [x_start, x_end]
+    span = abs(x_end - x_start)
+    # 간격보다 짧은 구간은 끝점 2장으로 이미 간격 조건을 만족한다.
+    if span <= capture_interval_m:
+        return [x_start, x_end]
+    steps = math.ceil(span / capture_interval_m)
+    return [x_start + (x_end - x_start) * k / steps for k in range(steps + 1)]
+
+
 def lawnmower_route(
     aoi: AreaOfInterest,
     *,
@@ -315,12 +340,31 @@ def lawnmower_route(
     altitude_m: float,
     envelope: FlightEnvelope,
     sweep_direction_deg: float | None = None,
+    capture_interval_m: float | None = None,
 ) -> LawnmowerResult:
     """평행 스캔선 왕복(boustrophedon) 매핑 경로.
 
     Args:
         spacing_m: 스캔선 간격 상한(m) — 실제 간격은 전체 커버를 위해 이하로만
             조밀해질 수 있고 초과하지 않는다. 겹침률→간격 환산은 호출자 몫.
+            이 값이 정하는 것은 **측면(side) 중첩**이다.
+        capture_interval_m: 진행방향(along-track) 촬영 간격 상한(m). 주면 스캔선
+            **위에도** 그 간격 이하로 웨이포인트를 채운다 — 촬영 액션이 웨이포인트
+            도달 시점에 걸리므로(``wpml.py`` 의 ``reachPoint`` 트리거), 이 값이
+            없으면 스캔선당 사진은 양 끝 2장뿐이고 **전방 중첩이 0** 이 되어
+            정사영상·3D 재구성이 성립하지 않는다(원장 risk
+            ``mapping-forward-overlap-zero``). ``None`` 이면 끝점만 — 촬영이
+            목적이 아닌 경로(이동·순찰)에서만 맞다.
+
+            간격→중첩 환산(카메라 footprint × (1−전방중첩))은 카메라 스펙 종속이라
+            이 층이 하지 않는다 — ``spacing_m`` 과 같은 규약이다.
+
+            *알려진 비효율*: 지금은 촬영 지점마다 웨이포인트를 두므로 turn mode
+            (``toPointAndStop...``)상 매 지점 정지·촬영이 된다. 웨이포인트 없이
+            거리 간격으로 촬영을 거는 WPML 트리거가 있다고 알려져 있으나, 그
+            enum·파라미터는 이 저장소 어디에서도 raw 스펙으로 확인되지 않았다 —
+            H4(실기 Pilot 2 export 대조)에서 확정한 뒤 최적화한다. 미검증 값을
+            매핑 기본 경로에 박지 않는다.
         sweep_direction_deg: 스캔선 방향 — **수학 규약(동=0, 반시계, 도)** 이다.
             나침반 방위(heading, 북=0 시계)가 아니다(자율 재검토 F8 — 이름을
             direction 으로 강제해 규약 혼동을 API 표면에서 차단). ``None`` 이면
@@ -341,6 +385,13 @@ def lawnmower_route(
         raise RouteGenerationError(
             f"spacing_m 는 {_MIN_SPACING_M}m 이상의 finite 여야 한다 (got {spacing_m!r}) — "
             "하한은 스캔선 수 폭발(자원 소진) 차단"
+        )
+    if capture_interval_m is not None and not (
+        math.isfinite(capture_interval_m) and capture_interval_m >= _MIN_CAPTURE_INTERVAL_M
+    ):
+        raise RouteGenerationError(
+            f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
+            f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
         )
 
     ring = aoi._to_enu_ring()
@@ -430,14 +481,14 @@ def lawnmower_route(
             segments = [(b, a) for a, b in reversed(segments)]
 
         for x_start, x_end in segments:
-            for x in (x_start, x_end):
+            for x in _capture_xs(x_start, x_end, capture_interval_m):
                 # 상한 검사를 루프 안에서 — 비볼록 다중 세그먼트(선당 2점 초과)
                 # 에서도 대량 할당 전에 끊는다(재검토: 선 수 상한만으로는 볼록
                 # 가정이라 톱니형 폴리곤이 우회했다).
                 if len(waypoints) >= _MAX_WAYPOINTS:
                     raise RouteGenerationError(
                         f"웨이포인트가 WPML index 상한({_MAX_WAYPOINTS})을 넘는다 — "
-                        "spacing 을 키우거나 구역을 나눠라"
+                        "spacing·captureIntervalM 을 키우거나 구역을 나눠라"
                     )
                 east, north = _rotate(x, y, angle)
                 lat, lon = enu_to_wgs84(anchor.lat_deg, anchor.lon_deg, east, north)

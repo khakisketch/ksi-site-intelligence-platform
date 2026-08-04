@@ -27,6 +27,7 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.events import EventStore, EventVerdict, make_event_key, mount_events
 from ksi_domain.enums import EventStatus, TriageStatus
+from ksi_event_contracts.offline_sync import payload_digest
 
 _FPR = "a" * 64
 _SITE_MANAGER_TOKEN = "site-manager-plaintext-token"  # noqa: S105 -- 테스트 고정값
@@ -902,3 +903,112 @@ def test_event_type_missing_from_bundle_degrades_to_null(store: EventStore) -> N
     # 빈 문자열도 '분류 없음'으로 본다(표시 계층이 빈 라벨을 그리지 않게).
     blanked = replace(record, bundle={**record.bundle, "eventType": ""})
     assert blanked.event_type is None
+
+
+# ── 낙관적 동시성 토큰 (s2-residual-hardening #7) ──────────────────────────
+
+
+def _principal() -> Principal:
+    return Principal(
+        principal_id="op-1", kind=PrincipalKind.OPERATOR, role=Role.SITE_MANAGER, device_id=None
+    )
+
+
+def test_transition_without_token_is_unaffected(store: EventStore) -> None:
+    """[비회귀] 토큰을 안 보내면 예전과 똑같이 동작한다."""
+    _project_to_finding(store, "evt-tok-0")
+    result = store.triage_transition(
+        _key("evt-tok-0"),
+        target=EventStatus.DISMISSED,
+        triage_target=None,
+        reason="오탐",
+        assignee=None,
+        actor=_principal(),
+        now=datetime.now(UTC),
+    )
+    assert result.verdict is EventVerdict.TRANSITIONED
+
+
+def test_matching_token_allows_transition(store: EventStore) -> None:
+    _project_to_finding(store, "evt-tok-1")
+    record = store.get(_key("evt-tok-1"))
+    assert record is not None
+
+    result = store.triage_transition(
+        _key("evt-tok-1"),
+        target=EventStatus.DISMISSED,
+        triage_target=None,
+        reason="오탐",
+        assignee=None,
+        actor=_principal(),
+        now=datetime.now(UTC),
+        expected_bundle_digest=payload_digest(record.bundle),
+    )
+    assert result.verdict is EventVerdict.TRANSITIONED
+
+
+def test_stale_token_blocks_transition_and_leaves_state_untouched(store: EventStore) -> None:
+    """[핵심] 운영자가 본 이후 bundle 이 바뀌었으면 전이하지 않는다.
+
+    확정 전이는 **그 시점의 bundle** 로 INV-021 게이트를 통과시키고
+    evidenceSnapshot 을 굳힌다 — 운영자가 본 증거와 실제로 굳는 증거가 다르면
+    감사 기록이 사람이 내린 판단을 대표하지 않는다.
+    """
+    # EVIDENCE_COLLECTION 시점의 bundle 을 운영자가 봤다고 하자.
+    assert _project(store, _bundle_payload("evt-tok-2")) is EventVerdict.PROJECTED
+    assert (
+        _project(store, _bundle_payload("evt-tok-2", status="EVIDENCE_COLLECTION"))
+        is EventVerdict.EVENT_UPDATED
+    )
+    before = store.get(_key("evt-tok-2"))
+    assert before is not None
+    stale_digest = payload_digest(before.bundle)
+
+    # 그 사이 Edge 의 후행 update 가 도착해 bundle 이 바뀐다(적법 전이).
+    assert (
+        _project(store, _bundle_payload("evt-tok-2", status="FINDING"))
+        is EventVerdict.EVENT_UPDATED
+    )
+
+    result = store.triage_transition(
+        _key("evt-tok-2"),
+        target=EventStatus.DISMISSED,
+        triage_target=None,
+        reason="오탐",
+        assignee=None,
+        actor=_principal(),
+        now=datetime.now(UTC),
+        expected_bundle_digest=stale_digest,
+    )
+    assert result.verdict is EventVerdict.STALE_EVENT_VIEW
+    after = store.get(_key("evt-tok-2"))
+    assert after is not None
+    assert after.status is EventStatus.FINDING, "거부됐는데 상태가 바뀌었다"
+
+
+def test_stale_token_maps_to_409(store: EventStore) -> None:
+    client = TestClient(_app(store))
+    assert _project(store, _bundle_payload("evt-tok-3")) is EventVerdict.PROJECTED
+    assert (
+        _project(store, _bundle_payload("evt-tok-3", status="EVIDENCE_COLLECTION"))
+        is EventVerdict.EVENT_UPDATED
+    )
+    before = store.get(_key("evt-tok-3"))
+    assert before is not None
+    stale_digest = payload_digest(before.bundle)
+    assert (
+        _project(store, _bundle_payload("evt-tok-3", status="FINDING"))
+        is EventVerdict.EVENT_UPDATED
+    )
+
+    response = client.post(
+        f"/v1/events/{_key('evt-tok-3')}/transitions",
+        json={
+            "targetStatus": "DISMISSED",
+            "reason": "오탐",
+            "expectedBundleDigest": stale_digest,
+        },
+        headers={"Authorization": f"Bearer {_SITE_MANAGER_TOKEN}"},
+    )
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "STALE_EVENT_VIEW"

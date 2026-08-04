@@ -122,6 +122,15 @@ def main() -> None:
         default=64 * 1024 * 1024,
         help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
     )
+    parser.add_argument(
+        "--edge-sync-snapshot-every",
+        type=int,
+        default=500,
+        help=(
+            "edge-sync 원장 스냅샷 주기(수락 건수, 기본 500). 0 이면 스냅샷을 쓰지 않는다 "
+            "— 재기동이 전 항목의 본문 정규화·digest 재계산을 다시 치른다."
+        ),
+    )
     # Evidence 스토리지(ADR-KSI-010 §1) — **주지 않으면 증거 경로가 장착되지 않는다**(404).
     # 조립되지 않은 기능이 2xx 로 보이는 것보다 없는 편이 정직하다.
     parser.add_argument(
@@ -152,7 +161,12 @@ def main() -> None:
     site_journal = DurableJournal(data_dir / "sites.jsonl", max_segment_bytes=segment_bytes)
     mission_journal = DurableJournal(data_dir / "missions.jsonl", max_segment_bytes=segment_bytes)
     event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
-    edge_sync_store = EdgeSyncStore(data_dir / "edge-sync.jsonl")
+    # edge-sync 는 회전이 아니라 스냅샷으로 재기동 비용을 잡는다 — 이 원장의
+    # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
+    edge_sync_store = EdgeSyncStore(
+        data_dir / "edge-sync.jsonl",
+        snapshot_every=args.edge_sync_snapshot_every or None,
+    )
 
     evidence_storage = None
     if args.s3_endpoint:
