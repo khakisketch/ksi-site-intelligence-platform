@@ -275,7 +275,12 @@ export default async function EventDetailPage({
           </dl>
 
           {canTriage && (
-            <EventActions eventKey={event.eventKey} status={event.status} triage={event.triage} />
+            <EventActions
+              eventKey={event.eventKey}
+              status={event.status}
+              triage={event.triage}
+              bundleDigest={event.bundleDigest}
+            />
           )}
         </div>
 

@@ -1085,10 +1085,15 @@ def test_replay_rejects_edge_asserted_finalized_projection(tmp_path: Path) -> No
         EventStore(DurableJournal(path))
 
 
-def test_replay_rejects_finalizing_update_record(tmp_path: Path) -> None:
-    """update 레코드로 CANDIDATE→CONFIRMED_EVENT 를 만들 수 없다(불법 전이)."""
+def test_replay_rejects_illegal_update_transition(tmp_path: Path) -> None:
+    """전이표에 없는 update 는 거부한다 — CANDIDATE→FINDING 직행(둘 다 Edge 주장 가능).
+
+    종단 상태 케이스는 그보다 앞선 게이트가 잡으므로
+    (:func:`test_replay_rejects_edge_asserted_finalized_update`), 여기서는 전이표
+    검사 자체가 살아 있는지를 본다.
+    """
     path = tmp_path / "events" / "journal.jsonl"
-    _seed(path, [_projected_record(), _updated_record(status="CONFIRMED_EVENT")])
+    _seed(path, [_projected_record(), _updated_record(status="FINDING")])
 
     with pytest.raises(EventStoreRecoveryError, match="불법 update 전이"):
         EventStore(DurableJournal(path))
@@ -1172,3 +1177,32 @@ def test_update_syncs_site_and_mission_meta(store: EventStore) -> None:
     assert record is not None
     assert record.site_id == "site-2"
     assert record.bundle["siteId"] == "site-2"
+
+
+def test_replay_rejects_edge_asserted_finalized_update(tmp_path: Path) -> None:
+    """[핵심] FINDING projection + CONFIRMED_EVENT update 두 줄로 확정할 수 없다.
+
+    전이표상 FINDING→CONFIRMED_EVENT 는 적법하므로 전이 검사만으로는 통과한다 —
+    live 가 가장 먼저 거는 "Edge 가 주장할 수 있는 상태인가" 게이트가 재생의
+    update 분기에만 빠져 있어, evidence 게이트도 reason 요구도 없이 확정 사건이
+    만들어졌다(2차 독립 재검토 P1-4, 실측 재현).
+    """
+    path = tmp_path / "events" / "journal.jsonl"
+    projected = _projected_record(status="FINDING")
+    projected["after"]["bundle"] = _bundle_payload("evt-r", status="FINDING", severity="CRITICAL")
+    _seed(path, [projected, _updated_record(status="CONFIRMED_EVENT")])
+
+    with pytest.raises(EventStoreRecoveryError, match="주장할 수 없는 상태로 update"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_projection_claiming_triage(tmp_path: Path) -> None:
+    """projection 한 줄로 트리아지 상태를 주장할 수 없다(전이는 확정 사건 전용)."""
+    path = tmp_path / "events" / "journal.jsonl"
+    record = _projected_record()
+    record["after"]["triage"] = "ASSIGNED"
+    record["after"]["assignee"] = "op-1"
+    _seed(path, [record])
+
+    with pytest.raises(EventStoreRecoveryError, match="트리아지 상태를 주장"):
+        EventStore(DurableJournal(path))

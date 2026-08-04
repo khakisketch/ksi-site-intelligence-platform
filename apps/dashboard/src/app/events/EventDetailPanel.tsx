@@ -268,7 +268,12 @@ export async function EventDetailPanel({
 
       {canTriage && (
         <div className="mx-4 my-3">
-          <EventActions eventKey={event.eventKey} status={event.status} triage={event.triage} />
+          <EventActions
+            eventKey={event.eventKey}
+            status={event.status}
+            triage={event.triage}
+            bundleDigest={event.bundleDigest}
+          />
         </div>
       )}
     </PanelShell>

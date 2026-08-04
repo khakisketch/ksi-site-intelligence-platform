@@ -1062,3 +1062,33 @@ def test_capture_interval_wider_than_spacing_rejected() -> None:
             envelope=_ENVELOPE,
             capture_interval_m=500.0,
         )
+
+
+def test_spacing_beyond_physical_ceiling_rejected() -> None:
+    """[핵심] 고도 대비 물리 상한을 넘는 격자 간격은 거부한다(2차 재검토 P1-2).
+
+    상한을 capture_interval 에만 걸었을 때는 spacing 을 같이 키우면 그대로
+    우회됐다 — 2ha 구역이 사진 2장·coverage 1.0 으로 발급되는 것을 실측으로
+    재현했다. 커버리지 실측이 ±spacing/2 스와스를 가정하므로, spacing 에 상한이
+    없으면 요청이 자기 커버리지 증명서를 스스로 써준다.
+    """
+    with pytest.raises(RouteGenerationError, match="물리 상한"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=300.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=300.0,
+        )
+
+
+def test_spacing_within_physical_ceiling_still_allowed() -> None:
+    """[비공허 대조] 상한 안쪽의 성긴 격자는 그대로 허용된다 — 과잉 거부가 아니다."""
+    result = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=100.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=100.0,
+    )
+    assert result.waypoints

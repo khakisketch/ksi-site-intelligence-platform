@@ -106,7 +106,9 @@
           "type": "number"
         },
         "maxAltitudeM": {
-          "type": "number"
+          "type": "number",
+          "maximum": 150,
+          "description": "규제 상한 150m(항공안전법 일반 비행제한 고도, ADR-KSI-011 D1). 이 스키마로만 검증하는 소비자(Edge 로더 등)가 구현보다 느슨해지지 않도록 언어중립 계약에도 같은 상한을 둔다."
         },
         "minimumStructureStandoffM": {
           "type": "number"

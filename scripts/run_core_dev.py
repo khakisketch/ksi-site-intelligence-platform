@@ -110,6 +110,22 @@ def _bootstrap_key_set(signing_dir: Path) -> SigningKeySet:
     return load_signing_keys(signing_dir)
 
 
+def cli_optional_positive(value: int, *, name: str) -> int | None:
+    """CLI 의 "0 = 없음" 규약을 생성자의 ``None`` 으로 옮긴다.
+
+    생성자들은 0·음수를 거부하고 "없음"은 ``None`` 으로만 표현한다(조용히
+    0 으로 뭉개지 않기 위해서다). CLI 쪽에서 0 을 그 뜻으로 받는 규약은 여기
+    한 곳에만 둔다 — 이 저장소의 **유일한 조립 지점**이라 여기 배선이 틀리면
+    라이브러리 테스트가 전부 green 인 채로 통과한다(독립 재검토 지적).
+
+    음수는 argparse 를 통과하므로 여기서 typed 로 막는다 — 생성자까지 흘려보내면
+    실패 메시지가 CLI 인자 이름을 잃는다.
+    """
+    if value < 0:
+        raise ValueError(f"{name} 는 0(없음) 이거나 양수여야 한다: {value}")
+    return value or None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
@@ -157,7 +173,9 @@ def main() -> None:
     # 여기 값은 dev 조립 기준이고, 운영 조립은 디스크·백업 주기에 맞춰 자기 값을 준다.
     # CLI 는 0 을 "회전 없음"으로 받는다(생성자는 None). 음수는 argparse 를 통과하지만
     # 생성자가 ValueError 로 거부한다 — 조용히 0 으로 뭉개지 않는다.
-    segment_bytes = args.journal_segment_bytes or None
+    segment_bytes = cli_optional_positive(
+        args.journal_segment_bytes, name="--journal-segment-bytes"
+    )
     site_journal = DurableJournal(data_dir / "sites.jsonl", max_segment_bytes=segment_bytes)
     mission_journal = DurableJournal(data_dir / "missions.jsonl", max_segment_bytes=segment_bytes)
     event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
@@ -165,7 +183,9 @@ def main() -> None:
     # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
     edge_sync_store = EdgeSyncStore(
         data_dir / "edge-sync.jsonl",
-        snapshot_every=args.edge_sync_snapshot_every or None,
+        snapshot_every=cli_optional_positive(
+            args.edge_sync_snapshot_every, name="--edge-sync-snapshot-every"
+        ),
     )
 
     evidence_storage = None

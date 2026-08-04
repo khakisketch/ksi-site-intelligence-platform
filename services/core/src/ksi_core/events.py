@@ -399,6 +399,15 @@ class EventStore:
                     f"재생: Edge 가 주장할 수 없는 상태로 projection 됨 "
                     f"({projected_status.value}) — eventKey={event_key}"
                 )
+            projected_triage = TriageStatus(after["triage"])
+            if projected_triage is not TriageStatus.NONE or after["assignee"] is not None:
+                # live projection 은 항상 NONE/None 이다 — 다른 값이 기록돼 있으면
+                # "트리아지 전이는 CONFIRMED_EVENT 사건에만" 규칙을 projection 한
+                # 줄로 우회한 것이다(2차 재검토 P1-4 부차).
+                raise EventStoreRecoveryError(
+                    f"재생: projection 이 트리아지 상태를 주장한다 "
+                    f"({projected_triage.value}/{after['assignee']!r}) — eventKey={event_key}"
+                )
             occurred_at = _require_aware_iso(record["occurredAt"], "occurredAt", event_key)
             self._events[event_key] = EventRecord(
                 event_key=event_key,
@@ -407,7 +416,7 @@ class EventStore:
                 mission_id=record["missionId"],
                 bundle=after["bundle"],
                 status=projected_status,
-                triage=TriageStatus(after["triage"]),
+                triage=projected_triage,
                 assignee=after["assignee"],
                 edge_device_id=record["edgeDeviceId"],
                 occurred_at=occurred_at,
@@ -431,6 +440,16 @@ class EventStore:
                     f"재생: 확정/기각된 사건({existing.status.value})에 update 레코드가 "
                     f"적용될 수 없다 — eventKey={event_key}"
                 )
+            if updated_status not in _EDGE_ASSERTABLE_STATUSES:
+                # live 가 가장 먼저 강제하는 게이트인데(STATUS_NOT_EDGE_ASSERTABLE)
+                # 재생의 update 분기에만 빠져 있었다(2차 독립 재검토 P1-4, 실측
+                # 재현됨). FINDING projection + CONFIRMED_EVENT update 두 줄이면
+                # 전이표는 통과하므로, 이 검사가 없으면 evidence 게이트도 reason
+                # 요구도 없이 확정 사건이 만들어진다 — INV-021 우회 그 자체다.
+                raise EventStoreRecoveryError(
+                    f"재생: Edge 가 주장할 수 없는 상태로 update 됨 "
+                    f"({updated_status.value}) — eventKey={event_key}"
+                )
             if updated_status is not existing.status and not can_event_transition(
                 existing.status, updated_status
             ):
@@ -445,11 +464,12 @@ class EventStore:
             # raw bundle dict 를 다시 읽으면 projection(파싱된 모델)과 update(raw)가
             # 서로 다른 진실을 보게 된다(독립 재검토 P2-2).
             #
-            # ``occurredAt`` 은 **동기화하지 않는다.** 그 값은 보관 정책의 만료
-            # 기준이라(``retention.py`` plan_expiry), Edge 입력으로 움직이면 후행
-            # update 한 번으로 증거 객체가 즉시 삭제되거나(과거값) 보관이 무한
-            # 연장된다(미래값) — 되돌릴 수 없는 방향의 실행이다(독립 재검토 P1-3).
-            # 서버가 처음 관측한 시각을 감사·보관의 앵커로 고정한다.
+            # ``occurredAt`` 은 **동기화하지 않는다.** 후행 update 한 번으로 그 값이
+            # 움직이면 감사 시간축이 Edge 재량이 된다(독립 재검토 P1-3).
+            #
+            # 주의 — 이 값 자체는 여전히 **Edge 가 준 시각**이다(최초 projection 의
+            # bundle.occurredAt). 그래서 보관 정책의 만료 기준은 이 값이 아니라
+            # 서버 수신 시각을 쓴다(``retention.py`` 참조, 2차 독립 재검토 P1-5).
             self._events[event_key] = replace(
                 existing,
                 bundle=after["bundle"],
@@ -461,7 +481,7 @@ class EventStore:
         elif kind == "event-diverged":
             self._events[event_key] = replace(
                 existing,
-                last_conflict_at=datetime.fromisoformat(record["ts"]),
+                last_conflict_at=_require_aware_iso(record["ts"], "ts", event_key),
                 transitions=(*existing.transitions, record),
             )
         elif kind == "event-transitioned":
@@ -501,7 +521,7 @@ class EventStore:
                 site_id=record["siteId"],
                 object_key=record["objectKey"],
                 content_type=record["contentType"],
-                registered_at=datetime.fromisoformat(record["ts"]),
+                registered_at=_require_aware_iso(record["ts"], "ts", event_key),
                 registered_by=record["registeredBy"],
             )
             self._events[event_key] = replace(
@@ -513,7 +533,7 @@ class EventStore:
             # 레코드를 지우지 않고 폐기 사실을 덧씌운다(ADR-KSI-010 §3) —
             # 원장에서 과거를 고쳐 쓰면 감사 추적이 감사 대상이 된다.
             artifact_id = record["artifactId"]
-            tombstoned_at = datetime.fromisoformat(record["ts"])
+            tombstoned_at = _require_aware_iso(record["ts"], "ts", event_key)
             self._events[event_key] = replace(
                 existing,
                 evidence=tuple(

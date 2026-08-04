@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-04T22:57:09+09:00",
+  "updated_at": "2026-08-05T03:18:29+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -12,8 +12,7 @@
         "P0-3 golden 분리+메타",
         "P0-4 골든 회귀+단조성",
         "P0-5 2-enum+미노출",
-        "P0-6 fingerprint 결정성",
-        "CI green"
+        "P0-6 fingerprint 결정성"
       ],
       "status": "completed",
       "attempt": 1,
@@ -30,7 +29,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-26T15:59:10+09:00"
+      "updated_at": "2026-07-26T15:59:10+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-1",
@@ -53,7 +53,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-27T01:35:36+09:00"
+      "updated_at": "2026-07-27T01:35:36+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-2",
@@ -70,7 +71,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-25T00:52:13+09:00"
+      "updated_at": "2026-07-25T00:52:13+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-3",
@@ -87,7 +89,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-4",
@@ -104,7 +107,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-5",
@@ -121,7 +125,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "stage-c",
@@ -150,7 +155,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-26T15:59:20+09:00",
-      "updated_at": "2026-07-26T22:41:55+09:00"
+      "updated_at": "2026-07-26T22:41:55+09:00",
+      "kind": "product"
     },
     {
       "id": "track-a",
@@ -170,7 +176,8 @@
       "blocked_by": "2026-08-04 커밋·push·CI 검증 완료. 브랜치 feat/manifold3-build-deploy-infra, PR #1(draft), 커밋 976df01(인프라 20파일)+8b9a314(문서). CI 2회 전부 green — run 30832820643(4m13s, 첫 실행)·30833326150(1m8s, gha 캐시 작동 확인). edge-manifold-target 실증: QEMU arm64 이미지 빌드 → ctest 2/2 → 툴체인 드리프트 검사 'container: gcc=9 cmake=3.16 glibc=2.31'(실기 실측 재현) → ABI 게이트 ✓2건. gates: PSDK 핀 '락 스키마 4건 정의' + '트리 SKIP'. device Python 게이트는 GATE_INACTIVE notice로 검사 대상 0건임을 명시(초록 위장 안 함). 이에 따라 MANIFOLD3_TOOLCHAIN.md §1의 'PENDING_CI_RUN' 2행을 run URL 근거로 '검증됨' 승격, ADR-KSI-009 결과절도 실측 갱신. 커밋 직전 우리 위생 가드가 내가 테스트 픽스처에 넣은 실제 App Key/License를 실제로 차단 — 런타임 조립으로 교체(게이트 유효성의 실사용 증명). blocker_code AIRCRAFT_LINK_DOWN 유지 — 3단계 이후는 기체 M4D 물리 연결 필요. 잔여 미검증: manifoldctl deploy/run 실기 실행, edge/psdk-tap 미착수(문서에 명시), 감사 low 48건 중 일부.",
       "ungated_attempts": 1,
       "created_at": "2026-07-27T01:51:57+09:00",
-      "updated_at": "2026-08-04T01:43:47+09:00"
+      "updated_at": "2026-08-04T01:43:47+09:00",
+      "kind": "product"
     },
     {
       "id": "track-b",
@@ -190,7 +197,8 @@
       "blocked_by": "잔여 수용기준(PSDK Live View 프레임소스 교체·실기 프레임 전구간 재현)은 DJI 실기/PSDK SDK 필요 — track-a와 동일한 하드웨어 의존성으로 소프트웨어만으론 진행 불가(2026-07-30 재확인: 합성/녹화 배선 완료 8be6a63, Detector 실모델(D-FINE-S COCO) 교체 완료 04b7555 이후 — 남은 2개 기준만 하드웨어 종속)",
       "ungated_attempts": 5,
       "created_at": "2026-07-27T01:51:58+09:00",
-      "updated_at": "2026-07-30T19:12:44+09:00"
+      "updated_at": "2026-07-30T19:12:44+09:00",
+      "kind": "product"
     },
     {
       "id": "core-ingest",
@@ -219,7 +227,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T01:48:26+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "product"
     },
     {
       "id": "audit-actionintent-hardening",
@@ -248,7 +257,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:19+09:00",
-      "updated_at": "2026-07-29T14:31:32+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-pipeline-production-lineage",
@@ -276,7 +286,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:32+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-contract-schema-gates",
@@ -303,7 +314,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-gate-integrity",
@@ -331,7 +343,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-signing-key-lifecycle",
@@ -357,7 +370,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-edge-sync-ops-hardening",
@@ -384,7 +398,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "mission-geometry-route",
@@ -413,7 +428,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T01:32:35+09:00"
+      "updated_at": "2026-07-30T01:32:35+09:00",
+      "kind": "product"
     },
     {
       "id": "core-domain-query",
@@ -441,7 +457,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T14:47:10+09:00"
+      "updated_at": "2026-07-30T14:47:10+09:00",
+      "kind": "product"
     },
     {
       "id": "dashboard-mvp",
@@ -469,7 +486,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T17:17:17+09:00"
+      "updated_at": "2026-07-30T17:17:17+09:00",
+      "kind": "product"
     },
     {
       "id": "ops-serving-hardening",
@@ -478,7 +496,7 @@
         "Evidence presigned 업로드/열람 경로",
         "retention-policy.v1 집행(tombstone·감사기록)",
         "Mission Contract 서명키 공급 ADR+구현",
-        "edge-sync journal 회전·스냅샷(인증·DB 결정과 결합)",
+        "원장 재기동 비용 상한 — 도메인 원장(Site/Mission/Event)은 세그먼트 회전, edge-sync 는 스냅샷(2026-08-05 대표자 확정 문구 개정). edge-sync 의 재기동 비용은 파일 크기가 아니라 항목당 본문 정규화+sha256 이라 회전으로는 줄지 않는다 — 근거·잔여 한계는 ADR-KSI-010 §4",
         "독립 재검토 PASS"
       ],
       "status": "in_progress",
@@ -490,7 +508,8 @@
       "blocked_by": null,
       "ungated_attempts": 1,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-08-04T21:42:25+09:00"
+      "updated_at": "2026-08-04T21:42:25+09:00",
+      "kind": "hardening"
     },
     {
       "id": "dashboard-operator-login",
@@ -521,7 +540,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-30T21:06:34+09:00",
-      "updated_at": "2026-07-30T22:25:56+09:00"
+      "updated_at": "2026-07-30T22:25:56+09:00",
+      "kind": "hardening"
     },
     {
       "id": "dashboard-wizard-split-baseline-mission",
@@ -545,7 +565,8 @@
       "blocked_by": null,
       "ungated_attempts": 1,
       "created_at": "2026-07-31T05:08:47+09:00",
-      "updated_at": "2026-08-04T20:27:59+09:00"
+      "updated_at": "2026-08-04T20:27:59+09:00",
+      "kind": "product"
     }
   ],
   "risks": [

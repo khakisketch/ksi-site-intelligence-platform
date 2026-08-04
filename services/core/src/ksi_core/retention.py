@@ -164,17 +164,29 @@ def plan_expiry(
 ) -> list[ExpiryAction]:
     """만료된 증거 목록 — **순수 판정, 아무것도 바꾸지 않는다.**
 
-    기준 시각은 증거 등록 시각이 아니라 **사건 발생 시각**(``occurredAt``)이다.
-    보관 의무는 "언제 일어난 일인가"에 걸리지, 증거를 언제 업로드했는지에
-    걸리지 않는다 — 뒤늦게 올라온 증거가 그 사건의 다른 증거보다 오래 남으면
-    같은 사건의 증거가 서로 다른 시점에 사라진다.
+    기준 시각은 증거 등록 시각이 아니라 **서버가 그 사건을 처음 수신한 시각**
+    (``receivedAt``)이다. 사건마다 하나의 시각을 쓰는 이유는 같다 — 뒤늦게
+    올라온 증거가 그 사건의 다른 증거보다 오래 남으면 같은 사건의 증거가 서로
+    다른 시점에 사라진다.
+
+    **왜 ``occurredAt`` 이 아닌가**(2차 독립 재검토 P1-5): 그 값은 Edge 가 준
+    것이고 서버는 tz-aware 여부만 본다. 장비가 최초 bundle 에 아주 과거의 시각을
+    실으면 그 사건의 증거는 등록 즉시 만료 대상이 되고, 아주 미래면 사실상 영구
+    보관된다 — **삭제는 되돌릴 수 없는 방향**이라 이 축을 장비 입력에 맡길 수
+    없다. ``receivedAt`` 은 서버 시계라 위조되지 않는다.
+
+    대가는 명시해둔다: 오프라인 store-and-forward 로 몇 주 늦게 도착한 사건은
+    "발생 시점" 기준보다 그만큼 오래 보관된다. 보관 **의무**(최소 기간) 관점에서는
+    안전한 방향이고, 최소보관 원칙(개인정보) 관점에서는 보수적인 방향이다 —
+    어느 쪽이 맞는지는 원장 risk ``retention-defaults-legal-review`` 의 법무
+    검토 대상이며, 그 결론이 나오면 이 앵커 선택도 함께 확정한다.
     """
     if now.tzinfo is None:
         raise ValueError("now 는 tz-aware 여야 한다")
     actions: list[ExpiryAction] = []
     for record in _all_events(store):
         retention = policy.retention_for(record.status)
-        expires_at = record.occurred_at + retention
+        expires_at = record.received_at + retention
         if now < expires_at:
             continue
         field = (
@@ -184,7 +196,7 @@ def plan_expiry(
         # 왜 지워졌나"에 답할 수 있어야 tombstone 이 기록으로서 값어치를 갖는다.
         reason = (
             f"retention-policy.v1 {field} {retention.days}일 경과"
-            f" (occurredAt {record.occurred_at.isoformat()})"
+            f" (receivedAt {record.received_at.isoformat()})"
         )
         for artifact in record.evidence:
             if artifact.is_tombstoned:

@@ -91,6 +91,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 export const API_ERROR_MESSAGE: Record<string, string> = {
   DUPLICATE_SITE_ID: "이미 등록된 현장 ID입니다. 다른 ID를 사용하세요.",
   ILLEGAL_TRANSITION: "현재 상태에서는 이 전이를 할 수 없습니다.",
+  STALE_EVENT_VIEW: "화면에 표시된 뒤 사건 내용이 갱신되었습니다. 새로고침 후 다시 시도하세요.",
   MISSION_ID_CONFLICT: "이미 사용 중인 임무 ID입니다.",
   UNKNOWN_SITE: "등록되지 않은 현장입니다.",
   SITE_FRAME_MISMATCH: "요청한 좌표계가 등록된 현장과 다릅니다.",

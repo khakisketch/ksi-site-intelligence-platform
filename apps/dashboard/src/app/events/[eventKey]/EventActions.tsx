@@ -11,10 +11,19 @@ export function EventActions({
   eventKey,
   status,
   triage,
+  bundleDigest,
 }: {
   eventKey: string;
   status: EventStatus;
   triage: TriageStatus;
+  /**
+   * 이 화면이 렌더될 때의 사건 내용 지문. 모든 전이 요청에 함께 보낸다 —
+   * 그 사이 장비가 내용을 갱신했으면 서버가 409(STALE_EVENT_VIEW)로 막는다.
+   * 확정은 **그 시점 내용**으로 증거 게이트를 통과시키고 스냅샷을 굳히므로,
+   * 운영자가 본 것과 실제로 굳는 것이 달라지면 감사 기록이 사람의 판단을
+   * 대표하지 않게 된다.
+   */
+  bundleDigest: string;
 }) {
   const router = useRouter();
   const [reason, setReason] = useState("");
@@ -46,7 +55,9 @@ export function EventActions({
       const response = await fetch(`/api/events/${encodeURIComponent(eventKey)}/transitions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        // 낙관적 동시성 토큰을 모든 전이에 싣는다 — 개별 호출부가 빠뜨릴 수
+        // 없도록 여기 한 곳에서 붙인다.
+        body: JSON.stringify({ ...body, expectedBundleDigest: bundleDigest }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {

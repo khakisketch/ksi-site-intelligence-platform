@@ -108,7 +108,14 @@ _TRIAGE_ACTOR = Principal(
 )
 
 
-def _seed(store: EventStore, *, event_id: str, days_ago: int, confirmed: bool = False) -> str:
+def _seed(
+    store: EventStore,
+    *,
+    event_id: str,
+    days_ago: int,
+    confirmed: bool = False,
+    received_days_ago: int | None = None,
+) -> str:
     """이벤트 1건 + 증거 1건.
 
     ``confirmed`` 는 **전이로** 만든다 — Edge 는 CONFIRMED_EVENT 를 직접 주장할
@@ -118,10 +125,13 @@ def _seed(store: EventStore, *, event_id: str, days_ago: int, confirmed: bool = 
     구분 로직을 죽여도 초록불이었다).
     """
     occurred = (_NOW - timedelta(days=days_ago)).isoformat()
+    # 만료 기준은 **서버 수신 시각**이다(2차 독립 재검토 P1-5) — 기본은 발생과
+    # 같게 두되, 둘을 갈라 앵커가 어느 쪽인지 반증할 수 있게 인자로 분리한다.
+    received_ago = days_ago if received_days_ago is None else received_days_ago
     store.project_bundle(
         _bundle(event_id, occurred_at=occurred),
         edge_device_id="dev-1",
-        received_at=_NOW,
+        received_at=_NOW - timedelta(days=received_ago),
     )
     event_key = f"dev-1::{event_id}"
     if confirmed:
@@ -228,14 +238,35 @@ def test_confirmed_events_use_longer_retention(store: EventStore) -> None:
     assert [a.event_key for a in actions] == ["dev-1::evt-candidate"]
 
 
-def test_expiry_is_measured_from_occurrence_not_upload(store: EventStore) -> None:
-    """보관 의무는 '언제 일어난 일인가'에 걸린다 — 업로드 시각이 아니다.
+def test_expiry_anchor_is_server_receipt_not_edge_supplied_time(store: EventStore) -> None:
+    """[핵심] 장비가 준 발생시각으로는 보관 시계를 움직일 수 없다.
 
-    등록 시각을 기준으로 삼으면 뒤늦게 올라온 증거가 같은 사건의 다른 증거보다
-    오래 남아, 한 사건의 증거가 서로 다른 시점에 사라진다.
+    ``occurredAt`` 은 Edge 원문이고 서버는 tz-aware 여부만 본다 — 그 값을 만료
+    기준으로 삼으면 아주 과거의 시각 하나로 증거가 등록 즉시 삭제 대상이 된다.
+    삭제는 되돌릴 수 없는 방향이라 이 축을 장비 입력에 맡기지 않는다.
     """
-    _seed(store, event_id="evt-old", days_ago=100)  # 등록은 _NOW(방금)
-    assert len(plan_expiry(store, _POLICY, now=_NOW)) == 1
+    # 발생은 100일 전이라 주장하지만 서버는 방금 받았다 → 아직 만료 아님.
+    _seed(store, event_id="evt-claimed-old", days_ago=100, received_days_ago=0)
+    assert plan_expiry(store, _POLICY, now=_NOW) == []
+
+    # 서버가 실제로 오래 전에 받은 사건은 만료된다.
+    _seed(store, event_id="evt-really-old", days_ago=100, received_days_ago=100)
+    actions = plan_expiry(store, _POLICY, now=_NOW)
+    assert [a.event_key for a in actions] == ["dev-1::evt-really-old"]
+
+
+def test_same_event_evidence_shares_one_expiry_moment(store: EventStore) -> None:
+    """한 사건의 증거는 업로드 시점이 달라도 같은 순간에 만료된다."""
+    event_key = _seed(store, event_id="evt-multi", days_ago=100, received_days_ago=100)
+    store.register_evidence(
+        event_key=event_key,
+        artifact_id="clip-late",
+        content_type="video/mp4",
+        registered_by="op-1",
+        now=_NOW,  # 방금 올라온 증거
+    )
+    actions = plan_expiry(store, _POLICY, now=_NOW)
+    assert {a.artifact_id for a in actions} == {"clip-01", "clip-late"}
 
 
 def test_already_tombstoned_is_not_replanned(store: EventStore) -> None:
@@ -257,7 +288,7 @@ def test_reason_records_which_policy_field_and_how_long(store: EventStore) -> No
     action = plan_expiry(store, _POLICY, now=_NOW)[0]
     assert "candidateDays" in action.reason
     assert "30일 경과" in action.reason
-    assert "occurredAt" in action.reason
+    assert "receivedAt" in action.reason
 
 
 # ── 집행(부수효과) ──────────────────────────────────────────────────────────

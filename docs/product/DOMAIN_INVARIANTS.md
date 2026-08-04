@@ -35,6 +35,17 @@
 
 ## 인지·공간
 
+- **INV-014** 비행 봉투의 `maxAltitudeM` 은 규제 상한(150m — 항공안전법 일반
+  비행제한 고도)을 넘을 수 없다. 서버 고정 안전상수이며 요청·현장설정으로 완화되지
+  않는다. 예외 승인 운용이 필요하면 상수 자체를 대표자 결정으로 고친다.
+  _강제: `FlightEnvelope` 모델 검증 (ADR-KSI-011 D1, `_ABSOLUTE_MAX_ALTITUDE_M`)._
+- **INV-015** 매핑 계열 임무(lawnmower)는 진행방향 촬영 간격 없이 발급되지 않는다.
+  스캔선 끝점만 촬영하면 전방 겹침이 0 이라 정사영상·3D 재구성이 성립하지 않는다.
+  간격은 측면 간격 이하여야 하고, 측면 간격은 고도 대비 물리 상한(고도×3.46)을
+  넘을 수 없다 — 넘으면 커버리지 주장이 어떤 카메라로도 성립하지 않는다.
+  _강제: `mission_plans.build_mission_plan` 422 + `coverage.lawnmower_route`
+  (ADR-KSI-011 D2)._
+
 - **INV-020** 모든 세계좌표·Geometry는 CRS, 수직기준, unit, timestamp, uncertainty를 가진다.
   CRS·수직기준이 다른 산출물을 직접 비교·병합하지 않는다.
   _강제: 계약 모델 필수 필드 + contract test (P0-1, Stage C WorldEntity)._

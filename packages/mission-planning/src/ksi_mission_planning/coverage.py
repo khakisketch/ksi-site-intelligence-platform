@@ -71,6 +71,20 @@ class RouteGenerationError(ValueError):
 _MIN_SPACING_M = 0.1
 # 진행방향(along-track) 촬영 간격 하한(m) — 같은 이유의 웨이포인트 폭발 차단.
 _MIN_CAPTURE_INTERVAL_M = 0.1
+# 스캔선 간격의 고도 대비 상한 배수(2차 독립 재검토 P1-2).
+#
+# 커버리지 실측은 각 스캔선이 ±spacing/2 를 덮는다고 **가정**하는데, spacing 이
+# 요청 입력이라 요청이 자기 커버리지 증명서를 스스로 써주는 구조였다 — 실제로
+# spacing=300·capture=300 을 주면 2ha 구역이 사진 2장에 coverage_ratio 1.0 으로
+# 발급됐다(실측 재현).
+#
+# 카메라 스펙 없이도 쓸 수 있는 물리 상한이 하나 있다: 지상 촬영폭은
+# 2·고도·tan(HFOV/2) 이고, 매핑에 쓰는 어떤 기체 카메라도 수평화각 120°(계수
+# 3.46)를 넘지 않는다. 즉 spacing 이 고도의 3.46배를 넘으면 그 커버 주장은
+# **어떤 카메라로도 성립할 수 없다**. 이건 "적정 겹침"의 기준이 아니라 물리적
+# 불가능만 거르는 하한선이다 — 실제 겹침률 산정은 여전히 호출자 몫이고, 카메라
+# 실측 확정(H4) 후에 고도·렌즈 기반으로 좁힌다.
+_MAX_SPACING_PER_ALTITUDE = 3.46
 # 웨이포인트 수 상한 — WPML index 스펙 범위 [0, 65535].
 _MAX_WAYPOINTS = 65_536
 # INV-010 일반영역 커버리지 하한 — 요청으로 바꿀 수 없는 모듈 상수(자율 재검토 A-2).
@@ -356,6 +370,10 @@ def lawnmower_route(
         spacing_m: 스캔선 간격 상한(m) — 실제 간격은 전체 커버를 위해 이하로만
             조밀해질 수 있고 초과하지 않는다. 겹침률→간격 환산은 호출자 몫.
             이 값이 정하는 것은 **측면(side) 중첩**이다.
+
+            고도 대비 물리 상한(``_MAX_SPACING_PER_ALTITUDE``)을 넘으면 거부한다 —
+            커버리지 실측이 ±spacing/2 스와스를 가정하므로, 상한이 없으면 요청이
+            자기 커버리지 증명서를 스스로 써주게 된다.
         capture_interval_m: 진행방향(along-track) 촬영 간격 상한(m). 주면 스캔선
             **위에도** 그 간격 이하로 웨이포인트를 채운다 — 촬영 액션이 웨이포인트
             도달 시점에 걸리므로(``wpml.py`` 의 ``reachPoint`` 트리거), 이 값이
@@ -393,6 +411,13 @@ def lawnmower_route(
         raise RouteGenerationError(
             f"spacing_m 는 {_MIN_SPACING_M}m 이상의 finite 여야 한다 (got {spacing_m!r}) — "
             "하한은 스캔선 수 폭발(자원 소진) 차단"
+        )
+    spacing_ceiling = _MAX_SPACING_PER_ALTITUDE * altitude_m
+    if spacing_m > spacing_ceiling:
+        raise RouteGenerationError(
+            f"spacing_m({spacing_m}) 가 고도 {altitude_m}m 에서의 물리 상한"
+            f"({spacing_ceiling:.1f}m = 고도×{_MAX_SPACING_PER_ALTITUDE})을 넘는다 — "
+            "이 간격으로 전체를 덮었다는 커버리지는 어떤 카메라로도 성립하지 않는다"
         )
     if capture_interval_m is not None:
         if not (
