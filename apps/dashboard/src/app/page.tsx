@@ -23,17 +23,33 @@ import { SiteCard, type SiteFact } from "@/components/site/SiteCard";
 
 // 홈은 여러 독립 카드로 구성된다 — 하나의 Core API 호출이 실패해도 나머지 카드는 정상 표시되어야
 // 하므로(각 fetch를 개별 격리), 개별 실패를 던지지 않고 결과로 감싸는 얕은 헬퍼를 쓴다.
-type Settled<T> = { ok: true; value: T } | { ok: false; message: string };
+//
+// 실패 중 **권한 부재(403)는 장애와 분리한다** — 둘을 같은 빨간 배너 + "다시 시도" 로
+// 내면, 애초에 그 데이터를 볼 자격이 없는 역할(예: 이벤트 읽기 권한이 없는 조종사)에게
+// 시스템이 고장난 것처럼 보이고 눌러도 소용없는 버튼을 준다(2026-08-04 렌더 확인에서
+// DRONE_OPERATOR 로 실제 재현). sites/[siteId]/page.tsx 의 sectionOutcome 과 같은 규칙.
+type Settled<T> =
+  | { ok: true; value: T }
+  | { ok: false; forbidden: boolean; message: string };
 
 async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   try {
     return { ok: true, value: await promise };
   } catch (error) {
     if (error instanceof CoreApiError) {
-      return { ok: false, message: humanizeApiError(error.code, error.status, error.serverMessage) };
+      return {
+        ok: false,
+        forbidden: error.status === 403,
+        message: humanizeApiError(error.code, error.status, error.serverMessage),
+      };
     }
-    return { ok: false, message: "요청을 처리하지 못했습니다." };
+    return { ok: false, forbidden: false, message: "요청을 처리하지 못했습니다." };
   }
+}
+
+/** 지표 타일의 보조문구 — 값을 못 구한 이유를 구분해서 말한다. */
+function unavailableNote(result: { ok: false; forbidden: boolean }): string {
+  return result.forbidden ? "볼 권한이 없습니다" : "불러오지 못했습니다";
 }
 
 // 이 두 상태는 '기준 지도가 없어 순찰을 시작할 수 없다'는 같은 뜻이다 — 현장 카드를
@@ -213,7 +229,15 @@ export default async function HomePage() {
 
   // ── 콜아웃 — "오늘 뭘 해야 하나"에 답하는 단일 헤드라인 ─────────────────
   let calloutNode: React.ReactNode = null;
-  if (!eventsResult.ok) {
+  if (!eventsResult.ok && eventsResult.forbidden) {
+    // 권한이 없어 이벤트를 못 보는 역할에게 헤드라인은 "장애"가 아니라 "여긴 네 일이
+    // 아니다"여야 한다 — 재시도 버튼도 주지 않는다(눌러도 결과가 같다).
+    calloutNode = (
+      <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
+        이 계정은 이벤트를 볼 권한이 없어 미조치 이벤트 현황을 표시하지 않습니다.
+      </p>
+    );
+  } else if (!eventsResult.ok) {
     calloutNode = <ErrorState message={eventsResult.message} retryable />;
   } else if (topUnattended) {
     const siteName = siteById.get(topUnattended.siteId)?.name ?? topUnattended.siteId;
@@ -376,28 +400,34 @@ export default async function HomePage() {
           label="미조치 이벤트"
           value={eventsResult.ok ? unattendedEvents.length : "—"}
           tone={eventsResult.ok && unattendedEvents.length > 0 ? "crit" : undefined}
-          note={eventsResult.ok ? `전체 열린 이벤트 ${openEventsCount}건 중` : "불러오지 못했습니다"}
+          note={eventsResult.ok ? `전체 열린 이벤트 ${openEventsCount}건 중` : unavailableNote(eventsResult)}
         />
         <StatTile
           label="확인 SLA 초과"
           value={eventsResult.ok ? slaBreachedCount : "—"}
           tone={eventsResult.ok && slaBreachedCount > 0 ? "crit" : undefined}
-          note={eventsResult.ok ? "즉시 확인이 필요합니다" : "불러오지 못했습니다"}
+          note={eventsResult.ok ? "즉시 확인이 필요합니다" : unavailableNote(eventsResult)}
         />
         <StatTile
           label="순찰 가능 현장"
           value={sitesResult.ok ? `${patrolReadyCount}/${sites.length}` : "—"}
-          note={sitesResult.ok ? "등록 현장 중" : "불러오지 못했습니다"}
+          note={sitesResult.ok ? "등록 현장 중" : unavailableNote(sitesResult)}
         />
         <StatTile
           label="발급된 임무"
           value={missionsResult.ok ? missions.length : "—"}
-          note={missionsResult.ok ? "누적 발급 건수" : "불러오지 못했습니다"}
+          note={missionsResult.ok ? "누적 발급 건수" : unavailableNote(missionsResult)}
         />
       </div>
 
       {!sitesResult.ok ? (
-        <ErrorState message={sitesResult.message} retryable />
+        sitesResult.forbidden ? (
+          <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
+            이 계정은 현장 목록을 볼 권한이 없습니다.
+          </p>
+        ) : (
+          <ErrorState message={sitesResult.message} retryable />
+        )
       ) : (
         sites.length > 0 && (
           <div className="flex flex-col gap-3">
