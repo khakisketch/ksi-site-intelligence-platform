@@ -3,8 +3,11 @@
 /models/
 
 # 빌드 산출물·캐시 — 로컬 절대경로가 박혀 CI 를 오염시킨다(2026-07-27 CI 실패 재발 방지)
-# build/·build-asan/·build-manifold3/ 등을 전부 포괄(2026-08-03 Manifold3 HIL 세션 정리).
-edge/manifold-runtime/build*/
+# build/·build-asan/·build-manifold3/·build-host/ 등을 전부 포괄(2026-08-03 Manifold3 HIL
+# 세션 정리). edge 하위 네이티브 트리는 manifold-runtime 하나가 아니다(psdk-tap, 향후
+# psdk-app) — 트리를 하나씩 열거하면 새 트리가 조용히 빠진다(2026-08-04, psdk-tap의
+# build-host/ 가 실제로 추적 대상에 올라와 있던 것을 커밋 직전 발견).
+edge/*/build*/
 __pycache__/
 *.pyc
 .venv/

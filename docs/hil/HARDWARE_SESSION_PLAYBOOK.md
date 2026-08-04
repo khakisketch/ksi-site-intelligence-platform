@@ -175,8 +175,40 @@ ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier
   있다 — carrier는 "케이블이 꽂혀 있다"만 보장하지 "기체가 응답한다"를 보장하지 않는다.
 - **실측 결과(2026-08-03)**: 세션 초반 `rndis0 carrier=1`이었으나 `192.168.42.1`
   무응답으로 BLOCKED. 이후 세션 중 실기 자체가 서브넷(`172.30.1.0/24`)에서 완전히
-  사라져(USB 이더넷 `eth0` 포함) 원인 규명 전 세션이 중단됐다. **다음 세션 최우선
-  항목**: 이 단계를 재현해 원인(전원/도킹/재부팅 중 하나로 좁힐 것)을 확정한다.
+  사라져(USB 이더넷 `eth0` 포함) 원인 규명 전 세션이 중단됐다.
+
+- **실측 결과(2026-08-04, 호스트 측 관측만)**: **같은 이탈이 재현됐다.** 다만 이번에는
+  이탈 전후를 호스트에서 연속 관측해 원인 후보를 좁혔다.
+
+  | 시각(KST) | 관측 |
+  |---|---|
+  | 16:3x | `172.30.1.33` 도달. `22`(SSH, 계정 `dji` 존재) · `6080`(noVNC, HTTP 200 · `<title>noVNC`) 동시 응답. MAC `c0:ea:c3:6a:22:b0` |
+  | 18:1x | 무응답. ARP `FAILED`. `/24` 전수 스윕에서 **해당 MAC 부재** |
+
+  **이번에 새로 배제된 것들** — 지난 세션이 열어 둔 후보 중:
+  - **DHCP 임대 갱신으로 IP만 바뀐 것이 아니다.** `/24` 전수 스윕 결과 MAC
+    `c0:ea:c3:6a:22:b0`이 **어떤 IP에도 없다**. 장치가 링크 레벨에서 사라졌다.
+  - **공유기·AP·우리 쪽 네트워크 문제가 아니다.** 같은 시각 게이트웨이(`172.30.1.254`)와
+    다른 호스트 7대는 전부 정상 응답했다.
+  - **우리가 보낸 명령이 유발한 것이 아니다.** 이탈 구간 내내 실기로 나간 트래픽은
+    최초 포트 스캔뿐이고(SSH 인증은 `publickey` 거부로 끝났다), 그 뒤 약 1시간 40분 동안
+    **완전히 유휴 상태**에서 사라졌다. 2026-08-03 세션에서 의심했던 "도킹 분리·조작 충격"
+    가설은 이 관측과 맞지 않는다.
+
+  **남은 후보(호스트에서는 더 좁힐 수 없다 — 물리 관측 필요)**: 전원 공급 중단(도킹 PD
+  불안정·배터리 소진) · 절전/서스펜드 진입 · 과열 보호 정지 · 자발적 재부팅 후 네트워크
+  미복구.
+
+  **다음 세션 최우선 항목(갱신)**: 이탈 순간을 물리로 확인한다.
+  1. **LED 상태를 먼저 본다** — 꺼짐=전원 없음 · 초록느림=정상(네트워크만 문제) ·
+     초록상시=부팅 중(재부팅했다는 뜻) · 노랑느림=과열 감속 · 빨강느림=업데이트 실패.
+     LED 하나로 위 후보 대부분이 갈린다([[manifold3-physical-constraints]] 매뉴얼 §1.1).
+  2. 도달 가능한 동안 **`ssh-copy-id`를 최우선으로 끝낸다**. 2026-08-03·08-04 두 세션
+     모두 키 설치 전에 장치가 사라져 온보드 관측을 한 번도 못 했다 — 셸이 없으면
+     `uptime`(재부팅 여부)·`dmesg`(전원/과열)·`journalctl` 어느 것도 볼 수 없어
+     원인 규명이 구조적으로 불가능하다. **이것이 이 항목의 실제 병목이다.**
+  3. 셸 확보 후 즉시 `uptime -s`(부팅 시각)·`last -x reboot`·`dmesg -T | grep -iE
+     'thermal|power|usb|eth'`를 떠서 이탈이 재부팅인지 링크 다운인지 확정한다.
 
 ---
 
@@ -279,19 +311,18 @@ ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier
 `docs/product/DOMAIN_INVARIANTS.md` INV-025(CONFIRMED 승격의 시점 증거 전제조건)가
 기대는 시간 정합성이 실제로 확보되는지 확인한다.
 
-**이 단계의 명령은 현재 미구현이다(PENDING).** 아래 블록은 ADR-KSI-009 D3(수집은
-C, 판정은 Python)이 확정한 **설계**를 그대로 적은 것이지, 지금 실행 가능한 명령이
-아니다 — `edge/psdk-tap`은 코드가 아직 없고(디렉터리 자체가 저장소에 없다),
-`tools/hil/capture_frame_telemetry_timing.py`의 `collect` 서브커맨드도 현재는
-`--session-id/--aircraft-sn/--out/--num-samples` 4개 인자만 받아 아래의
-`--source`/`--tap-log`/`--timestamp-basis`는 아직 존재하지 않는다. **이 명령은
-`edge/psdk-tap` 구현과 `collect` 인자 확장을 완료한 뒤에야 유효하다** — 다음 세션
-선행 작업.
+**구현 상태(2026-08-04): 코드는 있고, 실기 실행은 아직 없다.** `edge/psdk-tap`(C
+수집기)과 `collect --source tap-log` 경로가 모두 구현됐다 — 아래 블록은 이제 설계가
+아니라 실제 인자를 가진 명령이다. 다만 **이 경로 전체가 실기에서 한 번도 돌지
+않았다**: `psdk_tap` 타깃은 PSDK 실물(`tools/edge/fetch_psdk.py`)과 App Key
+(`edge/psdk-tap/config/dji_sdk_app_info.h`)가 있어야 빌드되고, 그 둘은 기체 연결과
+함께 오는 물건이다. CI가 검증하는 건 PSDK 비의존 순수 로직(pairing)뿐이다 —
+`--out` 경로·`--num-samples` 동작·NDJSON 스키마는 실기에서 처음 확인된다.
 
-**실행 항목(설계, 구현 후 유효)** — ADR-KSI-009 D3(수집은 C, 판정은 Python) 적용:
+**실행 항목** — ADR-KSI-009 D3(수집은 C, 판정은 Python) 적용:
 ```bash
 # 1) 실기에서 C tap이 PSDK liveview + FC subscription 콜백으로 NDJSON을 쓴다
-ssh <manifold-host> 'edge/psdk-tap/build/frame_telemetry_tap --num-samples 400 \
+ssh <manifold-host> 'edge/psdk-tap/build/psdk_tap --num-samples 400 \
     --out /open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson'
 rsync -az <manifold-host>:/open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/ \
     hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/

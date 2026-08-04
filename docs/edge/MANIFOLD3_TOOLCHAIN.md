@@ -144,11 +144,16 @@ docker run --rm --platform linux/arm64 \
 Acceptance Profile·증거 무결성 게이트가 전부 여기 있음)를 실기 Python 3.8로
 백포트하면 엄격성이 내려간다(`StrEnum`·`datetime.UTC`·`dataclass(slots=True)`가
 전부 3.10/3.11+ 전용). 대신 PSDK 콜백은 **C tap**(`edge/psdk-tap`)이 받아 NDJSON을
-쓰고, 판정은 개발 PC 3.12에서 한다는 설계까지만 이 세션에서 확정했다 —
-`edge/psdk-tap` 자체는 **아직 코드가 없다**(설계만 확정, 다음 세션 선행 작업).
-`tools/hil/capture_frame_telemetry_timing.py`의 `collect` 서브커맨드도 현재는
-`--session-id/--aircraft-sn/--out/--num-samples` 4개 인자만 받고 tap 로그를
-읽는 경로(`--source`/`--tap-log`/`--timestamp-basis`)는 아직 구현돼 있지 않다.
+쓰고, 판정은 개발 PC 3.12에서 한다.
+
+**구현 상태(2026-08-04)**: `edge/psdk-tap`은 코드가 있다 — PSDK glue(osal/socket/
+usb_bulk/logger) · liveview/telemetry tap · frame↔telemetry pairing · NDJSON writer,
+`tests/pairing_tests.c`(호스트 ctest 1건 통과). `collect` 서브커맨드도
+`--source tap-log --tap-log <경로> --timestamp-basis {sensor,recv}`로 확장돼 tap raw
+NDJSON을 공식 JSONL로 변환한다(`--source psdk`는 여전히 `NotImplementedError` —
+PSDK 직접 연동은 C tap이 대신한다). **미검증으로 남은 것**: 실기(M4D+Manifold 3)에서의
+psdk_tap 실행·실측 — PSDK 실물과 App Key가 있어야 `psdk_tap` 타깃이 빌드되므로
+CI가 검증하는 범위는 PSDK 비의존 순수 로직(pairing)뿐이다.
 
 **D4 — 정적 링크는 DPK 배포 대상에만 강제.** `KSI_TARGET_MANIFOLD3=ON`(정적 링크
 정책)을 켜지 않은 빌드는 `libstdc++.so.6`이 동적으로 남는다 — 이건 결함이 아니라
