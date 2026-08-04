@@ -71,20 +71,24 @@ class RouteGenerationError(ValueError):
 _MIN_SPACING_M = 0.1
 # 진행방향(along-track) 촬영 간격 하한(m) — 같은 이유의 웨이포인트 폭발 차단.
 _MIN_CAPTURE_INTERVAL_M = 0.1
-# 스캔선 간격의 고도 대비 상한 배수(2차 독립 재검토 P1-2).
+# 스캔선 간격의 고도 대비 상한 배수 — **보수적 운용 범위이지 물리 한계가 아니다.**
 #
-# 커버리지 실측은 각 스캔선이 ±spacing/2 를 덮는다고 **가정**하는데, spacing 이
-# 요청 입력이라 요청이 자기 커버리지 증명서를 스스로 써주는 구조였다 — 실제로
-# spacing=300·capture=300 을 주면 2ha 구역이 사진 2장에 coverage_ratio 1.0 으로
-# 발급됐다(실측 재현).
+# 커버리지 실측은 각 스캔선이 ±spacing/2 를 덮는다고 **가정**하는데 spacing 이 요청
+# 입력이라, 요청이 자기 커버리지 증명서를 스스로 써주는 구조다. 이 루프는 카메라
+# 촬영폭을 알기 전에는 원리적으로 끊을 수 없다.
 #
-# 카메라 스펙 없이도 쓸 수 있는 물리 상한이 하나 있다: 지상 촬영폭은
-# 2·고도·tan(HFOV/2) 이고, 매핑에 쓰는 어떤 기체 카메라도 수평화각 120°(계수
-# 3.46)를 넘지 않는다. 즉 spacing 이 고도의 3.46배를 넘으면 그 커버 주장은
-# **어떤 카메라로도 성립할 수 없다**. 이건 "적정 겹침"의 기준이 아니라 물리적
-# 불가능만 거르는 하한선이다 — 실제 겹침률 산정은 여전히 호출자 몫이고, 카메라
-# 실측 확정(H4) 후에 고도·렌즈 기반으로 좁힌다.
-_MAX_SPACING_PER_ALTITUDE = 3.46
+# 처음에는 물리 한계(수평화각 120° = 고도×3.46)를 상한으로 썼는데, **그걸로는
+# 닫히지 않았다** — 고도를 올리면 상한이 같이 올라가 고도 87m·spacing 300 이면
+# 2ha 구역이 사진 2장·coverage_ratio 1.0 으로 그대로 발급됐다(3차 독립 재검토와
+# 자체 탐침이 각각 재현). ratio 3.45 는 물리적으로는 "가능"한 값이라, 물리 상한은
+# 이 클래스를 거를 수 없다.
+#
+# 그래서 상한을 **운용 기준**으로 바꾼다: 1.5 는 수평화각 약 73°(일반적인 매핑
+# 렌즈)에서 측면 겹침이 0 이 되는 지점이다. 이보다 성긴 격자는 어떤 매핑 구성도
+# 아니다. 물리적 불가능을 증명하는 값이 아니라 **"이 범위 밖은 매핑으로 인정하지
+# 않는다"는 정책값**이고, 카메라 실측 확정(H4) 후 고도·렌즈 기반 실계산으로
+# 대체한다(ADR-KSI-011 D2).
+_MAX_SPACING_PER_ALTITUDE = 1.5
 # 웨이포인트 수 상한 — WPML index 스펙 범위 [0, 65535].
 _MAX_WAYPOINTS = 65_536
 # INV-010 일반영역 커버리지 하한 — 요청으로 바꿀 수 없는 모듈 상수(자율 재검토 A-2).
@@ -415,9 +419,9 @@ def lawnmower_route(
     spacing_ceiling = _MAX_SPACING_PER_ALTITUDE * altitude_m
     if spacing_m > spacing_ceiling:
         raise RouteGenerationError(
-            f"spacing_m({spacing_m}) 가 고도 {altitude_m}m 에서의 물리 상한"
+            f"spacing_m({spacing_m}) 가 고도 {altitude_m}m 의 매핑 운용 상한"
             f"({spacing_ceiling:.1f}m = 고도×{_MAX_SPACING_PER_ALTITUDE})을 넘는다 — "
-            "이 간격으로 전체를 덮었다는 커버리지는 어떤 카메라로도 성립하지 않는다"
+            "이보다 성긴 격자는 측면 겹침이 없어 매핑 구성으로 인정하지 않는다"
         )
     if capture_interval_m is not None:
         if not (
@@ -482,7 +486,10 @@ def lawnmower_route(
     # 수학적으로 유지된다 — usable<=0.1 을 통째로 접던 과거 문턱은 spacing<height
     # <=spacing+0.1 밴드 양끝에서 최대 5cm 미커버를 냈다(P3).
     if usable <= _FOLD_EPSILON_M:
+        # 폭이 spacing 보다 좁은 띠 구역 — 중앙선 1개가 정당하다. 이 분기가 위험한
+        # 것은 spacing 이 클 때인데, 그건 위 운용 상한이 이미 막는다.
         scan_ys = [(min_y + max_y) / 2.0]
+        count = 1
     else:
         count = math.ceil(usable / spacing_m) + 1
         if count > _MAX_WAYPOINTS // 2:

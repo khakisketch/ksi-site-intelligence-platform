@@ -865,10 +865,14 @@ def test_fold_branch_full_coverage_not_falsely_rejected_no_spacing_cliff() -> No
     """재검증 P2 회귀 — spacing 이 AOI 높이보다 훨씬 크면 격자 샘플링은 행 0줄로
     붕괴해 완전 커버 임무를 0.0 으로 거부했고, 79.9→통과/80.0→거부 절벽이 있었다.
     정확 계산에서는 둘 다 1.0 으로 통과한다(중앙선 1개의 ±spacing/2 스와스가
-    높이 10m 를 전부 덮는다)."""
+    높이 10m 를 전부 덮는다).
+
+    고도가 60m 인 이유: 격자 간격에 운용 상한(고도×1.5)이 생겨 40m 고도에서는
+    두 값이 상한 밖이다. 이 테스트가 반증하려는 것은 **커버 계산의 절벽**이지
+    상한이 아니므로, 두 값이 상한 안에 오도록 고도를 올려 원 의도를 보존한다."""
     for spacing in (79.9, 80.0):
         result = lawnmower_route(
-            _rect_aoi(200.0, 10.0), spacing_m=spacing, altitude_m=40.0, envelope=_ENVELOPE
+            _rect_aoi(200.0, 10.0), spacing_m=spacing, altitude_m=60.0, envelope=_ENVELOPE
         )
         assert result.coverage_ratio == 1.0, f"spacing={spacing}"
         assert len(result.waypoints) == 2
@@ -1064,7 +1068,7 @@ def test_capture_interval_wider_than_spacing_rejected() -> None:
         )
 
 
-def test_spacing_beyond_physical_ceiling_rejected() -> None:
+def test_spacing_beyond_ceiling_rejected_at_nominal_altitude() -> None:
     """[핵심] 고도 대비 물리 상한을 넘는 격자 간격은 거부한다(2차 재검토 P1-2).
 
     상한을 capture_interval 에만 걸었을 때는 spacing 을 같이 키우면 그대로
@@ -1072,7 +1076,7 @@ def test_spacing_beyond_physical_ceiling_rejected() -> None:
     재현했다. 커버리지 실측이 ±spacing/2 스와스를 가정하므로, spacing 에 상한이
     없으면 요청이 자기 커버리지 증명서를 스스로 써준다.
     """
-    with pytest.raises(RouteGenerationError, match="물리 상한"):
+    with pytest.raises(RouteGenerationError, match="매핑 운용 상한"):
         lawnmower_route(
             _rect_aoi(200.0, 100.0),
             spacing_m=300.0,
@@ -1082,13 +1086,59 @@ def test_spacing_beyond_physical_ceiling_rejected() -> None:
         )
 
 
-def test_spacing_within_physical_ceiling_still_allowed() -> None:
+def test_spacing_within_bounds_still_allowed() -> None:
     """[비공허 대조] 상한 안쪽의 성긴 격자는 그대로 허용된다 — 과잉 거부가 아니다."""
     result = lawnmower_route(
         _rect_aoi(200.0, 100.0),
-        spacing_m=100.0,
+        spacing_m=50.0,
         altitude_m=40.0,
         envelope=_ENVELOPE,
-        capture_interval_m=100.0,
+        capture_interval_m=40.0,
     )
     assert result.waypoints
+
+
+@pytest.mark.parametrize(
+    ("spacing", "altitude"),
+    [
+        (300.0, 87.0),   # 물리 상한(고도×3.46)을 고도로 피해가던 우회 — 실측 재현됨
+        (400.0, 150.0),  # 봉투 최대 고도까지 올린 우회
+        (61.0, 40.0),    # 운용 상한(고도×1.5=60) 바로 밖
+    ],
+)
+def test_spacing_beyond_operational_ceiling_rejected(spacing: float, altitude: float) -> None:
+    """[핵심] 매핑 운용 범위를 넘는 격자 간격은 거부한다(3차 독립 재검토).
+
+    물리 상한(고도×3.46)은 고도를 같이 올리면 그대로 우회됐다 — 고도 87m·
+    spacing 300 이면 2ha 구역이 사진 2장·coverageRatio 1.0 으로 발급되는 것을
+    실측 재현했다. ratio 3.45 는 물리적으로 '가능'한 값이라 물리 상한으로는 이
+    클래스를 거를 수 없다. 그래서 상한을 운용 기준(고도×1.5)으로 바꿨다.
+    """
+    envelope = FlightEnvelope(
+        allowed_volumes=["vol-1"], excluded_volumes=[], min_altitude_m=0.0, max_altitude_m=150.0
+    )
+    with pytest.raises(RouteGenerationError, match="매핑 운용 상한"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=spacing,
+            altitude_m=altitude,
+            envelope=envelope,
+            capture_interval_m=min(spacing, 20.0),
+        )
+
+
+def test_narrow_strip_single_line_still_allowed() -> None:
+    """[비공허 대조] 폭이 좁은 띠 구역의 중앙선 1개는 여전히 정당하다.
+
+    스캔선 1개 자체를 막으면 좁은 띠 매핑이 통째로 불가능해진다 — 위험한 것은
+    선 개수가 아니라 **성긴 격자**이고, 그건 운용 상한이 막는다.
+    """
+    result = lawnmower_route(
+        _rect_aoi(200.0, 10.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=15.0,
+    )
+    assert result.waypoints
+    assert result.coverage_ratio == 1.0

@@ -500,13 +500,39 @@ class EventStore:
                     violation = _evidence_gate_violation(existing.bundle)
                     if violation is not None:
                         raise ValueError(f"재생: INV-021 확정 게이트 위반 — {violation}")
+            if (
+                target_status is not existing.status
+                and target_status in _REASON_REQUIRED_STATUSES
+                and not (
+                    isinstance(record.get("reason"), str) and str(record["reason"]).strip()
+                )
+            ):
+                # live 가 확정/기각에 요구하는 세 가지는 전이표·비공백 reason·
+                # evidence 다(모듈 docstring). 재생이 셋 중 둘만 태우면 사유 없는
+                # 확정 사건이 원장 한 줄로 되살아난다(3차 독립 재검토).
+                raise EventStoreRecoveryError(
+                    f"재생: {target_status.value} 전이에 비공백 reason 이 없다 "
+                    f"— eventKey={event_key}"
+                )
             if target_triage is not existing.triage:
                 if existing.status is not EventStatus.CONFIRMED_EVENT:
-                    raise ValueError(
+                    raise EventStoreRecoveryError(
                         "재생: 트리아지 전이는 CONFIRMED_EVENT 사건에만 허용된다 "
-                        f"(status={existing.status.value})"
+                        f"(status={existing.status.value}) — eventKey={event_key}"
                     )
                 assert_triage_transition(existing.triage, target_triage)
+                if target_triage is TriageStatus.ASSIGNED and not (
+                    isinstance(after["assignee"], str) and str(after["assignee"]).strip()
+                ):
+                    raise EventStoreRecoveryError(
+                        f"재생: ASSIGNED 전이에 assignee 가 없다 — eventKey={event_key}"
+                    )
+            elif after["assignee"] != existing.assignee:
+                # live 는 ASSIGNED 전이에서만 assignee 를 바꾼다 — 그 밖의 레코드가
+                # 담당자를 갈아끼우는 것은 live 가 만들 수 없는 형상이다.
+                raise EventStoreRecoveryError(
+                    f"재생: 트리아지 전이 없이 assignee 가 바뀐다 — eventKey={event_key}"
+                )
             self._events[event_key] = replace(
                 existing,
                 status=target_status,
@@ -515,6 +541,24 @@ class EventStore:
                 transitions=(*existing.transitions, record),
             )
         elif kind == "evidence-registered":
+            # live(register_evidence)가 강제하는 셋을 재생도 태운다(3차 독립 재검토)
+            # — 특히 content_type 은 열람 URL 의 MIME 이 되므로 allowlist 밖 값이
+            # 되살아나면 브라우저가 증거를 스크립트로 해석할 수 있다.
+            if not is_valid_artifact_id(record["artifactId"]):
+                raise EventStoreRecoveryError(
+                    f"재생: artifactId 가 유효하지 않다({record['artifactId']!r}) "
+                    f"— eventKey={event_key}"
+                )
+            if record["contentType"] not in ALLOWED_CONTENT_TYPES:
+                raise EventStoreRecoveryError(
+                    f"재생: 허용되지 않은 contentType({record['contentType']!r}) "
+                    f"— eventKey={event_key}"
+                )
+            if any(a.artifact_id == record["artifactId"] for a in existing.evidence):
+                raise EventStoreRecoveryError(
+                    f"재생: artifactId 중복 등록({record['artifactId']!r}) "
+                    f"— eventKey={event_key}"
+                )
             artifact = EvidenceArtifact(
                 artifact_id=record["artifactId"],
                 event_key=event_key,

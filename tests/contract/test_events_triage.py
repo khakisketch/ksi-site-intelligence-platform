@@ -1206,3 +1206,90 @@ def test_replay_rejects_projection_claiming_triage(tmp_path: Path) -> None:
 
     with pytest.raises(EventStoreRecoveryError, match="트리아지 상태를 주장"):
         EventStore(DurableJournal(path))
+
+
+def _transitioned_record(**overrides: Any) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "kind": "event-transitioned",
+        "ts": "2026-07-27T06:00:05+00:00",
+        "actor": "op-1",
+        "eventKey": _key("evt-r"),
+        "eventId": "evt-r",
+        "before": {"status": "FINDING", "triage": "NONE", "assignee": None},
+        "after": {"status": "CONFIRMED_EVENT", "triage": "NONE", "assignee": None},
+        "reason": "현장 확인",
+        "evidenceSnapshot": None,
+    }
+    record.update(overrides)
+    return record
+
+
+def _finding_journal() -> list[dict[str, Any]]:
+    """FINDING 까지 적법하게 올라간 원장(증거 포함) — 확정 직전 상태."""
+    evidence = {"clips": ["clip-1"]}
+    projected = _projected_record()
+    projected["after"]["bundle"] = _bundle_payload("evt-r", severity="HIGH", evidence=evidence)
+    updates = []
+    for status in ("EVIDENCE_COLLECTION", "FINDING"):
+        record = _updated_record(status=status)
+        record["after"]["bundle"] = _bundle_payload(
+            "evt-r", status=status, severity="HIGH", evidence=evidence
+        )
+        updates.append(record)
+    return [projected, *updates]
+
+
+def test_replay_rejects_confirmation_without_reason(tmp_path: Path) -> None:
+    """[핵심] 사유 없는 확정은 재생에서도 거부된다.
+
+    live 는 전이표·비공백 reason·evidence 셋을 요구하는데 재생이 둘만 태우면,
+    사유 없는 확정 사건이 원장 한 줄로 되살아난다(3차 독립 재검토).
+    """
+    path = tmp_path / "events" / "journal.jsonl"
+    _seed(path, [*_finding_journal(), _transitioned_record(reason=None)])
+
+    with pytest.raises(EventStoreRecoveryError, match="비공백 reason"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_accepts_confirmation_with_reason(tmp_path: Path) -> None:
+    """[비공허 대조] 사유가 있으면 그대로 재생된다 — 과잉 거부가 아니다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    _seed(path, [*_finding_journal(), _transitioned_record()])
+
+    journal = DurableJournal(path)
+    store = EventStore(journal)
+    try:
+        record = store.get(_key("evt-r"))
+        assert record is not None
+        assert record.status is EventStatus.CONFIRMED_EVENT
+    finally:
+        journal.close()
+
+
+def test_replay_rejects_assignment_without_assignee(tmp_path: Path) -> None:
+    """ASSIGNED 인데 담당자가 없는 레코드는 live 가 만들 수 없는 형상이다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    assigned = _transitioned_record(
+        before={"status": "CONFIRMED_EVENT", "triage": "NONE", "assignee": None},
+        after={"status": "CONFIRMED_EVENT", "triage": "ASSIGNED", "assignee": None},
+        reason=None,
+    )
+    _seed(path, [*_finding_journal(), _transitioned_record(), assigned])
+
+    with pytest.raises(EventStoreRecoveryError, match="assignee 가 없다"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_assignee_rewrite_without_transition(tmp_path: Path) -> None:
+    """트리아지 전이 없이 담당자만 갈아끼우는 레코드도 거부한다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    rewrite = _transitioned_record(
+        before={"status": "CONFIRMED_EVENT", "triage": "NONE", "assignee": None},
+        after={"status": "CONFIRMED_EVENT", "triage": "NONE", "assignee": "op-9"},
+        reason=None,
+    )
+    _seed(path, [*_finding_journal(), _transitioned_record(), rewrite])
+
+    with pytest.raises(EventStoreRecoveryError, match="assignee 가 바뀐다"):
+        EventStore(DurableJournal(path))

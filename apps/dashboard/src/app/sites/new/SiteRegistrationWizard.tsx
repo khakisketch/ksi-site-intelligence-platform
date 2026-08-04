@@ -53,6 +53,11 @@ interface WizardFormState {
 // 등록되고 임무 발급만 422 로 실패해 "반쪽 상태"가 남는다(독립 재검토 P2-4 —
 // excludedVolumes 에서 이미 겪은 함정과 같은 클래스).
 const MIN_CAPTURE_INTERVAL_M = 0.1;
+// 격자 간격의 서버 상한 — 고도 대비 배수(packages/mission-planning coverage.py
+// _MAX_SPACING_PER_ALTITUDE). 미러링하지 않으면 고도를 낮게 잡은 사용자가 마지막
+// 단계에서야 422 를 만난다(ADR-KSI-011 이 고도 상한에 세운 원칙과 같은 이유).
+const MAX_SPACING_PER_ALTITUDE = 1.5;
+
 const MAX_ALTITUDE_M = 150;
 // 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
 const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
@@ -388,6 +393,7 @@ export function SiteRegistrationWizard() {
     4: form.excludedVolumes.length === 0,
     5:
       form.spacingM > 0 &&
+      form.spacingM <= form.altitudeM * MAX_SPACING_PER_ALTITUDE &&
       form.captureIntervalM >= MIN_CAPTURE_INTERVAL_M &&
       form.captureIntervalM <= form.spacingM &&
       form.autoFlightSpeedMs > 0 &&
@@ -449,7 +455,12 @@ export function SiteRegistrationWizard() {
     : form.altitudeM > MAX_FLIGHT_ALTITUDE_M
       ? `${MAX_FLIGHT_ALTITUDE_M}m 이하여야 합니다(법정 비행제한 고도 ${MAX_ALTITUDE_M}m).`
       : undefined;
-  const spacingError = !(form.spacingM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const spacingMax = form.altitudeM * MAX_SPACING_PER_ALTITUDE;
+  const spacingError = !(form.spacingM > 0)
+    ? "0보다 큰 값을 입력하세요."
+    : form.spacingM > spacingMax
+      ? `비행 고도 ${form.altitudeM}m 에서는 ${spacingMax.toFixed(1)}m 이하여야 합니다(더 성긴 격자는 겹침이 없어 지도가 만들어지지 않습니다).`
+      : undefined;
   const captureIntervalError = !(form.captureIntervalM >= MIN_CAPTURE_INTERVAL_M)
     ? `${MIN_CAPTURE_INTERVAL_M}m 이상을 입력하세요.`
     : form.captureIntervalM > form.spacingM

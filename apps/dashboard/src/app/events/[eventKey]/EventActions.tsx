@@ -65,6 +65,11 @@ export function EventActions({
           (payload && typeof payload.message === "string" && payload.message) ||
             "요청을 처리하지 못했습니다.",
         );
+        // 토큰이 낡아서 막힌 경우엔 화면을 갱신해 새 지문을 받아온다 — 안 그러면
+        // 사용자가 같은 낡은 토큰으로 계속 재시도해 막다른 길이 된다.
+        if (response.status === 409) {
+          router.refresh();
+        }
         return;
       }
       setReason("");

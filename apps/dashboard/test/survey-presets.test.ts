@@ -17,6 +17,10 @@ const LEVEL_PRESETS = {
 } as const;
 
 const MIN_CAPTURE_INTERVAL_M = 0.1;
+// SurveyWizard 의 기본 비행 고도(SurveyDraft.altitudeM).
+const DEFAULT_ALTITUDE_M = 40;
+// 서버의 격자 간격 운용 상한 배수(coverage.py _MAX_SPACING_PER_ALTITUDE).
+const MAX_SPACING_PER_ALTITUDE = 1.5;
 
 describe("조사 수준 프리셋", () => {
   it.each(Object.entries(LEVEL_PRESETS))(
@@ -30,6 +34,17 @@ describe("조사 수준 프리셋", () => {
     "%s — 촬영 간격이 서버 하한 이상이다",
     (_level, preset) => {
       expect(preset.captureIntervalM).toBeGreaterThanOrEqual(MIN_CAPTURE_INTERVAL_M);
+    },
+  );
+
+  it.each(Object.entries(LEVEL_PRESETS))(
+    "%s — 기본 고도에서 격자 간격이 서버 운용 상한 안이다",
+    (_level, preset) => {
+      // 상한을 넘으면 서버가 422 로 거부한다 — 프리셋이 그걸 어기면 그 수준은
+      // 기본 설정만으로 절대 발급되지 않는다.
+      expect(preset.spacingM).toBeLessThanOrEqual(
+        DEFAULT_ALTITUDE_M * MAX_SPACING_PER_ALTITUDE,
+      );
     },
   );
 
