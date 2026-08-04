@@ -17,7 +17,7 @@ export function AoiPolygonMap(props: {
   center?: [number, number];
 }) {
   return (
-    <div className="h-80 w-full overflow-hidden rounded-lg border border-black/10 sm:h-96 dark:border-white/10">
+    <div className="h-80 w-full overflow-hidden rounded-lg border border-line sm:h-96">
       <AoiPolygonMapInner {...props} />
     </div>
   );

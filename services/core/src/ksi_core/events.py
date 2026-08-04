@@ -174,6 +174,21 @@ class EventRecord:
         raw = self.bundle.get("severity")
         return Severity(raw) if raw is not None else None
 
+    @property
+    def event_type(self) -> str | None:
+        """무슨 일이 일어났는가 — ``EventBundle.event_type`` 원문.
+
+        계약상 필수 필드(:class:`ksi_event_contracts.event_bundle.EventBundle`)라
+        정상 projection 된 레코드에는 항상 있다. 그럼에도 ``None`` 을 허용하는 것은
+        이 property 가 조회 경로에서만 쓰이기 때문이다 — 저장된 bundle 이 어떤 이유로든
+        이 키를 잃었을 때 목록 **전체**가 500 으로 죽는 것보다, 그 한 건이 '분류 없음'
+        으로 보이는 편이 운영에서 낫다(트리아지 대기열은 안전 경로다).
+
+        값은 자유 문자열이다. 사람이 읽을 라벨로의 번역은 표시 계층이 맡는다.
+        """
+        raw = self.bundle.get("eventType")
+        return raw if isinstance(raw, str) and raw else None
+
 
 @dataclass(frozen=True, slots=True)
 class TriageTransitionResult:
@@ -709,6 +724,10 @@ class EventSummaryResponse(_CamelModel):
     event_id: str
     site_id: str
     mission_id: str
+    # 대기열 목록의 1순위 정보 — 이게 없으면 운영자가 목록에서 '무슨 일인지'를 알 수 없고
+    # 매 건마다 상세를 열어야 한다. bundle 전체를 목록에 실을 수는 없으므로 이 한 필드만
+    # 승격한다(2026-08-04 대표자 결정).
+    event_type: str | None
     status: str
     severity: str | None
     triage: str
@@ -723,6 +742,9 @@ class EventDetailResponse(_CamelModel):
     event_id: str
     site_id: str
     mission_id: str
+    # bundle 안에도 있지만 최상위로 승격한다 — 목록과 상세가 같은 필드명으로 읽히게 해서
+    # 표시 계층이 두 응답을 분기 없이 다루게 한다.
+    event_type: str | None
     status: str
     severity: str | None
     triage: str
@@ -760,6 +782,7 @@ def _to_summary(record: EventRecord) -> EventSummaryResponse:
         event_id=record.event_id,
         site_id=record.site_id,
         mission_id=record.mission_id,
+        event_type=record.event_type,
         status=record.status.value,
         severity=severity.value if severity is not None else None,
         triage=record.triage.value,
@@ -777,6 +800,7 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
         event_id=record.event_id,
         site_id=record.site_id,
         mission_id=record.mission_id,
+        event_type=record.event_type,
         status=record.status.value,
         severity=severity.value if severity is not None else None,
         triage=record.triage.value,

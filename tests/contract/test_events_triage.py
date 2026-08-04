@@ -8,6 +8,7 @@ EVIDENCE_COLLECTION→FINDING)를 밟아 만든다. HTTP 배선은 수동 조립
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ def _bundle_payload(
     mission_id: str = "mission-1",
     occurred_at: str = "2026-07-27T06:00:00Z",
     spatial_context: dict[str, Any] | None = None,
+    event_type: str = "PERSON_PRESENT",
 ) -> dict[str, Any]:
     """유효한 EventBundle v1.2 payload(lineage.classification 포함)."""
     body: dict[str, Any] = {
@@ -52,7 +54,7 @@ def _bundle_payload(
         "eventId": event_id,
         "missionId": mission_id,
         "siteId": site_id,
-        "eventType": "PERSON_PRESENT",
+        "eventType": event_type,
         "occurredAt": occurred_at,
         "status": status,
         "entities": ["ent-trk-001"],
@@ -861,3 +863,42 @@ def test_trailing_newline_in_event_id_is_rejected(store: EventStore) -> None:
 
     assert verdict is EventVerdict.INVALID_EVENT_IDENTITY
     assert store.list() == []
+
+
+def test_event_type_is_exposed_in_list_and_detail(store: EventStore) -> None:
+    """목록 응답이 ``eventType`` 을 싣는다 — 대기열에서 '무슨 일인지'를 읽는 근거.
+
+    이게 없으면 운영자는 목록에서 사건 종류를 알 수 없어 매 건마다 상세를 열어야 한다.
+    필드를 추가만 해두고 직렬화에서 빠뜨리면 조용히 ``null`` 이 나가므로(추가형 변경의
+    전형적 사각지대) 값이 bundle 원문과 같은지까지 대조한다.
+    """
+    _project(store, _bundle_payload("evt-fall", event_type="FALL_RISK"))
+    client = TestClient(_app(store))
+
+    listed = client.get("/v1/events", headers=_auth(_VIEWER_TOKEN)).json()["events"]
+    assert [e["eventType"] for e in listed] == ["FALL_RISK"]
+
+    key = make_event_key("edge-001", "evt-fall")
+    detail = client.get(f"/v1/events/{key}", headers=_auth(_VIEWER_TOKEN)).json()
+    assert detail["eventType"] == "FALL_RISK"
+    # 상세는 bundle 도 통째로 주므로 두 자리의 값이 갈리지 않아야 한다.
+    assert detail["bundle"]["eventType"] == "FALL_RISK"
+
+
+def test_event_type_missing_from_bundle_degrades_to_null(store: EventStore) -> None:
+    """bundle 이 ``eventType`` 을 잃어도 목록 **전체**가 죽지 않는다.
+
+    트리아지 대기열은 안전 경로다 — 레코드 한 건의 결손이 목록 조회를 500 으로 만들면
+    나머지 미조치 사건까지 함께 보이지 않게 된다. 결손 건만 ``null`` 로 떨어뜨린다.
+    """
+    _project(store, _bundle_payload("evt-ok"))
+    record = store.get(make_event_key("edge-001", "evt-ok"))
+    assert record is not None
+    assert record.event_type == "PERSON_PRESENT"
+
+    stripped = replace(record, bundle={k: v for k, v in record.bundle.items() if k != "eventType"})
+    assert stripped.event_type is None
+
+    # 빈 문자열도 '분류 없음'으로 본다(표시 계층이 빈 라벨을 그리지 않게).
+    blanked = replace(record, bundle={**record.bundle, "eventType": ""})
+    assert blanked.event_type is None

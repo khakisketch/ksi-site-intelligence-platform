@@ -13,7 +13,3 @@ function requireEnv(name: string): string {
 export function coreApiBaseUrl(): string {
   return requireEnv("CORE_API_BASE_URL").replace(/\/+$/, "");
 }
-
-export function coreApiToken(): string {
-  return requireEnv("CORE_API_TOKEN");
-}

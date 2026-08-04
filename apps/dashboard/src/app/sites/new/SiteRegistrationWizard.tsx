@@ -69,8 +69,8 @@ const INITIAL_FORM: WizardFormState = {
 
 const SITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-const inputClassName =
-  "border-foreground/30 min-h-11 w-full rounded-md border bg-transparent px-3 text-base";
+const inputClassName = "input";
+const numericInputClassName = "input num";
 
 type SubmitPhase = "idle" | "pending" | "error" | "success";
 
@@ -96,17 +96,36 @@ function formatCoverage(ratio: number | null): string {
 function Field({
   label,
   helpText,
+  error,
+  required,
+  wide,
   children,
 }: {
   label: string;
   helpText?: string;
+  /** 값이 있는데 조건을 어겼을 때만 넘긴다 — 빈 필수 필드는 `required` 로 충분하다. */
+  error?: string;
+  required?: boolean;
+  /** 2열 그리드에서 전체 폭을 써야 하는 필드(예: 이름·좁은 폭에서 읽기 나쁜 필드). */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium break-keep">{label}</label>
+    <div className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+      <label className="text-[12.5px] font-semibold break-keep text-ink-1">
+        {label}
+        {required && (
+          <span aria-hidden className="ml-0.5 text-crit">
+            *
+          </span>
+        )}
+      </label>
       {children}
-      {helpText && <p className="text-foreground/60 text-xs break-keep">{helpText}</p>}
+      {error ? (
+        <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
+      ) : (
+        helpText && <p className="text-[11.5px] break-keep text-ink-muted">{helpText}</p>
+      )}
     </div>
   );
 }
@@ -137,9 +156,9 @@ function TagInput({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium break-keep">{label}</label>
-      {helpText && <p className="text-foreground/60 text-xs break-keep">{helpText}</p>}
+    <div className="flex flex-col gap-2 sm:col-span-2">
+      <label className="text-[12.5px] font-semibold break-keep text-ink-1">{label}</label>
+      {helpText && <p className="text-[11.5px] break-keep text-ink-muted">{helpText}</p>}
       <div className="flex gap-2">
         <input
           type="text"
@@ -154,11 +173,7 @@ function TagInput({
           placeholder={placeholder}
           className={inputClassName}
         />
-        <button
-          type="button"
-          onClick={commit}
-          className="border-foreground/30 min-h-11 min-w-11 shrink-0 rounded-md border px-4 text-sm"
-        >
+        <button type="button" onClick={commit} className="btn shrink-0">
           추가
         </button>
       </div>
@@ -167,14 +182,17 @@ function TagInput({
           {values.map((value, index) => (
             <li
               key={`${value}-${index}`}
-              className="bg-foreground/10 flex min-h-9 items-center gap-2 rounded-full pr-2 pl-3 text-sm break-keep"
+              className="flex min-h-9 items-center gap-1 rounded-full bg-sunk py-1 pr-1 pl-3 text-[13px] break-keep text-ink-1"
             >
               {value}
+              {/* 삭제 버튼은 실제로 누르는 것이므로 .tap-target 을 탄다 —
+                  고정 24px 로 두면 이 제품의 1급 기기(터치 태블릿)에서만 못 누른다.
+                  같은 컴포넌트의 '추가' 버튼은 이미 .btn 을 쓴다(비대칭이었다). */}
               <button
                 type="button"
                 aria-label={`${value} 삭제`}
                 onClick={() => onChange(values.filter((_, i) => i !== index))}
-                className="text-foreground/60 flex h-6 w-6 items-center justify-center"
+                className="tap-target flex min-w-9 items-center justify-center rounded-full px-2 text-ink-2 hover:bg-line hover:text-ink-1"
               >
                 ×
               </button>
@@ -382,6 +400,26 @@ export function SiteRegistrationWizard() {
     nextLabel = "현장 상세로 이동";
   }
 
+  // 값이 있는데 조건을 어긴 경우에만 에러를 보여준다(빈 필수 필드는 다음 버튼
+  // disable + label 의 붉은 * 로 충분하다 — 타이핑 중마다 에러가 뜨면 소음이 된다).
+  const siteIdError =
+    trimmedSiteId.length > 0 && !SITE_ID_PATTERN.test(trimmedSiteId)
+      ? "영숫자로 시작하고 이후 영숫자·-·_·. 만 쓸 수 있습니다(공백·/ 금지)."
+      : undefined;
+  const altitudeError =
+    !(form.altitudeM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const spacingError = !(form.spacingM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const autoFlightSpeedError =
+    !(form.autoFlightSpeedMs > 0) ? "0보다 큰 값을 입력하세요." : undefined;
+  const takeoffHeightError =
+    form.takeoffSecurityHeightM >= 1.2 && form.takeoffSecurityHeightM <= 1500
+      ? undefined
+      : "1.2~1500 사이 값이어야 합니다.";
+  const transitionalSpeedError =
+    form.globalTransitionalSpeedMs > 0 && form.globalTransitionalSpeedMs <= 15
+      ? undefined
+      : "0보다 크고 15 이하여야 합니다.";
+
   return (
     <WizardShell
       title="현장 등록"
@@ -395,19 +433,26 @@ export function SiteRegistrationWizard() {
       error={
         currentStep === 6 && submitError ? <ErrorState message={submitError} /> : undefined
       }
+      exitHref="/sites"
     >
       {currentStep === 0 && (
         <>
-          <Field label="현장 ID" helpText="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지">
+          <Field
+            label="현장 ID"
+            helpText="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지"
+            error={siteIdError}
+            required
+          >
             <input
               type="text"
               value={form.siteId}
               onChange={(event) => update({ siteId: event.target.value })}
               placeholder="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지"
+              aria-invalid={Boolean(siteIdError)}
               className={inputClassName}
             />
           </Field>
-          <Field label="현장 이름">
+          <Field label="현장 이름" required>
             <input
               type="text"
               value={form.name}
@@ -420,24 +465,24 @@ export function SiteRegistrationWizard() {
       )}
 
       {currentStep === 1 && (
-        <>
-          <p className="text-foreground/70 text-sm break-keep">
+        <div className="flex flex-col gap-3 sm:col-span-2">
+          <p className="text-sm break-keep text-ink-2">
             지도에서 폴리곤을 그려 현장 외곽을 표시하세요. 최소 3개 꼭짓점이 필요하며, 이
             Wizard는 매핑(격자) 경로만 발급하므로 오목한(L자 등) 외곽은 지원하지 않습니다.
           </p>
           <AoiPolygonMap value={form.aoi} onChange={(aoi) => update({ aoi })} />
           {form.aoi.length >= 3 && !isConvexPolygon(form.aoi) && (
-            <p className="text-sm break-keep text-amber-700 dark:text-amber-400">
+            <p className="text-sm break-keep text-high-ink">
               그려진 외곽이 볼록하지 않습니다. 매핑 경로는 볼록 다각형에서만 발급됩니다 — 다시
               그리세요.
             </p>
           )}
-        </>
+        </div>
       )}
 
       {currentStep === 2 && (
         <>
-          <Field label="좌표계(CRS)" helpText="예: EPSG:5186">
+          <Field label="좌표계(CRS)" helpText="예: EPSG:5186" required>
             <input
               type="text"
               value={form.crs}
@@ -446,7 +491,7 @@ export function SiteRegistrationWizard() {
               className={inputClassName}
             />
           </Field>
-          <Field label="수직 기준(Vertical Datum)" helpText="예: KNGeoid2018">
+          <Field label="수직 기준(Vertical Datum)" helpText="예: KNGeoid2018" required>
             <input
               type="text"
               value={form.verticalDatum}
@@ -456,7 +501,7 @@ export function SiteRegistrationWizard() {
             />
           </Field>
           <Field label="단위" helpText="이 버전은 미터 고정입니다">
-            <input type="text" value="meter" disabled className={`${inputClassName} opacity-60`} />
+            <input type="text" value="meter" disabled className={inputClassName} />
           </Field>
           <Field label="좌표 변환 버전(transformVersion)">
             <input
@@ -466,19 +511,24 @@ export function SiteRegistrationWizard() {
               className={inputClassName}
             />
           </Field>
-          <Field label="매핑 비행 고도 (m)" helpText="이후 단계(경로 계획)에서도 사용됩니다">
+          <Field
+            label="매핑 비행 고도 (m)"
+            helpText="이후 단계(경로 계획)에서도 사용됩니다"
+            error={altitudeError}
+          >
             <input
               type="number"
               value={form.altitudeM}
               onChange={(event) => update({ altitudeM: event.target.valueAsNumber })}
-              className={inputClassName}
+              aria-invalid={Boolean(altitudeError)}
+              className={numericInputClassName}
             />
           </Field>
         </>
       )}
 
       {currentStep === 3 && (
-        <p className="text-foreground/70 text-sm break-keep">
+        <p className="text-sm break-keep text-ink-2 sm:col-span-2">
           BIM/도면·기존 모델 가져오기는 이 버전에서는 지원하지 않습니다. &quot;다음&quot;을 눌러
           계속 진행하세요.
         </p>
@@ -494,7 +544,7 @@ export function SiteRegistrationWizard() {
             placeholder="구역 이름을 입력 후 Enter (쉼표로 여러 개 추가 가능)"
           />
           {form.excludedVolumes.length > 0 && (
-            <p className="text-sm break-keep text-amber-700 dark:text-amber-400">
+            <p className="text-sm break-keep text-high-ink sm:col-span-2">
               현재 경로 생성 엔진이 구역 회피를 보증할 수 없어, 값이 있으면 7단계에서 발급이
               거부됩니다. 비워두고 계속하세요.
             </p>
@@ -504,44 +554,52 @@ export function SiteRegistrationWizard() {
 
       {currentStep === 5 && (
         <>
-          <Field label="웨이포인트 간격 spacingM (m)" helpText="lawnmower 패턴의 필수값입니다">
+          <Field
+            label="웨이포인트 간격 spacingM (m)"
+            helpText="lawnmower 패턴의 필수값입니다"
+            error={spacingError}
+          >
             <input
               type="number"
               value={form.spacingM}
               onChange={(event) => update({ spacingM: event.target.valueAsNumber })}
-              className={inputClassName}
+              aria-invalid={Boolean(spacingError)}
+              className={numericInputClassName}
             />
           </Field>
-          <Field label="자동 비행 속도 (m/s)">
+          <Field label="자동 비행 속도 (m/s)" error={autoFlightSpeedError}>
             <input
               type="number"
               value={form.autoFlightSpeedMs}
               onChange={(event) => update({ autoFlightSpeedMs: event.target.valueAsNumber })}
-              className={inputClassName}
+              aria-invalid={Boolean(autoFlightSpeedError)}
+              className={numericInputClassName}
             />
           </Field>
-          <Field label="이륙 안전고도 (m)" helpText="최소 1.2, 최대 1500">
+          <Field label="이륙 안전고도 (m)" helpText="최소 1.2, 최대 1500" error={takeoffHeightError}>
             <input
               type="number"
               value={form.takeoffSecurityHeightM}
               onChange={(event) => update({ takeoffSecurityHeightM: event.target.valueAsNumber })}
-              className={inputClassName}
+              aria-invalid={Boolean(takeoffHeightError)}
+              className={numericInputClassName}
             />
           </Field>
-          <Field label="전환 비행 속도 (m/s)" helpText="최대 15">
+          <Field label="전환 비행 속도 (m/s)" helpText="최대 15" error={transitionalSpeedError}>
             <input
               type="number"
               value={form.globalTransitionalSpeedMs}
               onChange={(event) => update({ globalTransitionalSpeedMs: event.target.valueAsNumber })}
-              className={inputClassName}
+              aria-invalid={Boolean(transitionalSpeedError)}
+              className={numericInputClassName}
             />
           </Field>
 
-          <details className="border-foreground/20 rounded-lg border px-4 py-3">
-            <summary className="min-h-11 cursor-pointer text-sm font-medium break-keep">
+          <details className="rounded-lg border border-line px-4 py-3 sm:col-span-2">
+            <summary className="tap-target cursor-pointer text-sm font-semibold break-keep text-ink-1">
               고급 설정
             </summary>
-            <div className="mt-4 flex flex-col gap-4">
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field
                 label="droneEnumValue"
                 helpText="DJI WPML 사양 원시값 — 실기 검증 전이라 자동 결정하지 않습니다"
@@ -550,7 +608,7 @@ export function SiteRegistrationWizard() {
                   type="number"
                   value={form.droneEnumValue}
                   onChange={(event) => update({ droneEnumValue: event.target.valueAsNumber })}
-                  className={inputClassName}
+                  className={numericInputClassName}
                 />
               </Field>
               <Field
@@ -561,7 +619,7 @@ export function SiteRegistrationWizard() {
                   type="number"
                   value={form.droneSubEnumValue}
                   onChange={(event) => update({ droneSubEnumValue: event.target.valueAsNumber })}
-                  className={inputClassName}
+                  className={numericInputClassName}
                 />
               </Field>
               <Field
@@ -572,7 +630,7 @@ export function SiteRegistrationWizard() {
                   type="number"
                   value={form.payloadEnumValue}
                   onChange={(event) => update({ payloadEnumValue: event.target.valueAsNumber })}
-                  className={inputClassName}
+                  className={numericInputClassName}
                 />
               </Field>
               <Field
@@ -631,7 +689,7 @@ export function SiteRegistrationWizard() {
       )}
 
       {currentStep === 6 && (
-        <p className="text-foreground/70 text-sm break-keep">
+        <p className="text-sm break-keep text-ink-2 sm:col-span-2">
           {submitPhase === "pending" && "현장을 등록하고 임무 계획을 생성하는 중입니다…"}
           {submitPhase === "error" && "처리 중 문제가 발생했습니다. 아래에서 원인을 확인하고 다시 시도하세요."}
           {submitPhase === "idle" && "처리를 시작합니다…"}
@@ -639,24 +697,24 @@ export function SiteRegistrationWizard() {
       )}
 
       {currentStep === 7 && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:col-span-2">
           {result ? (
-            <dl className="border-foreground/15 flex flex-col gap-3 rounded-lg border px-4 py-3 text-sm">
+            <dl className="flex flex-col gap-3 rounded-lg border border-line bg-page px-4 py-3 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-foreground/60 break-keep">웨이포인트 수</dt>
-                <dd className="font-medium">{result.waypointCount.toLocaleString("ko-KR")}</dd>
+                <dt className="break-keep text-ink-2">웨이포인트 수</dt>
+                <dd className="num font-medium">{result.waypointCount.toLocaleString("ko-KR")}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-foreground/60 break-keep">커버리지</dt>
-                <dd className="font-medium">{formatCoverage(result.coverageRatio)}</dd>
+                <dt className="break-keep text-ink-2">커버리지</dt>
+                <dd className="num font-medium">{formatCoverage(result.coverageRatio)}</dd>
               </div>
               <div className="flex flex-col gap-1">
-                <dt className="text-foreground/60 break-keep">KMZ SHA-256</dt>
-                <dd className="font-mono text-xs break-all">{result.kmzSha256}</dd>
+                <dt className="break-keep text-ink-2">KMZ SHA-256</dt>
+                <dd className="num text-xs break-token">{result.kmzSha256}</dd>
               </div>
             </dl>
           ) : (
-            <p className="text-foreground/70 text-sm break-keep">발급 결과를 불러오지 못했습니다.</p>
+            <p className="text-sm break-keep text-ink-2">발급 결과를 불러오지 못했습니다.</p>
           )}
         </div>
       )}

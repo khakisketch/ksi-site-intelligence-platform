@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ui/ErrorState";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
   EVENT_STATUS_LABEL,
@@ -12,13 +12,53 @@ import {
 } from "@/lib/core-api/labels";
 import { listEvents } from "@/lib/core-api/events";
 import { listMissions } from "@/lib/core-api/missions";
+import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import type { SiteView } from "@/lib/core-api/types";
+
+import { SiteTransitionActions } from "./SiteTransitionActions";
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" });
 
 const MISSION_LIMIT = 5;
 const EVENT_LIMIT = 5;
+
+/** 시안 `.facts`/`.fact` — 고정폭 라벨열 + 행마다 하단 보더. 식별자 값은 break-token. */
+function Fact({ label, value, isToken = false }: { label: string; value: string; isToken?: boolean }) {
+  return (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] items-baseline gap-2.5 border-b border-line py-2 last:border-b-0">
+      <dt className="text-[12px] break-keep text-ink-muted">{label}</dt>
+      <dd className={`min-w-0 text-[13px] ${isToken ? "num break-token" : "break-keep"}`}>{value}</dd>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: { label: string; href: string };
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-bold tracking-tight break-keep">{title}</h2>
+        {action && (
+          <Link
+            href={action.href}
+            className="tap-target flex items-center text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+          >
+            {action.label}
+          </Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export default async function SiteDetailPage({
   params,
@@ -45,125 +85,148 @@ export default async function SiteDetailPage({
 
   if (errorMessage !== null || site === null) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6 sm:p-10">
+      <div className="flex flex-col gap-4 p-4 sm:p-5">
         <ErrorState message={errorMessage ?? "요청을 처리하지 못했습니다."} />
       </div>
     );
   }
 
-  // 임무·이벤트 조회는 현장 조회와 독립 — 한쪽이 실패해도 다른 섹션은 계속 보여준다.
-  const [missionsResult, eventsResult] = await Promise.allSettled([
+  // 임무·이벤트·권한 조회는 현장 조회와 독립 — 하나가 실패해도 다른 섹션은 계속 보여준다.
+  const [missionsResult, eventsResult, canIssueMission, canTransitionSite] = await Promise.allSettled([
     listMissions(site.siteId),
     listEvents({ siteId: site.siteId }),
+    hasAllPermissions("MISSIONS_ISSUE"),
+    hasAllPermissions("SITES_WRITE"),
   ]);
   const missions = missionsResult.status === "fulfilled" ? missionsResult.value : null;
   const events = eventsResult.status === "fulfilled" ? eventsResult.value.events : null;
+  const canStartSurvey = canIssueMission.status === "fulfilled" && canIssueMission.value;
+  const canTransition = canTransitionSite.status === "fulfilled" && canTransitionSite.value;
+  // UNMAPPED 현장은 아직 baseline 임무가 없다 — 같은 "새 조사" 화면(SurveyWizard)으로
+  // 보내되(risk dashboard-wizard-rbac-mismatch 해소 경로), 라벨은 실제 목적에 맞춘다.
+  const surveyActionLabel = site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 조사";
 
   const statusLabel = SITE_STATUS_LABEL[site.status];
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-6 sm:p-10">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h1 className="break-keep text-lg font-semibold">{site.name}</h1>
-            <span className="text-foreground/60 text-sm">{site.siteId}</span>
+    // 지도는 그리지 않는다 — AOI가 현장에 영속되지 않아(임무 발급 요청 시 1회성) 그릴 근거가
+    // 없다. 우측 패널은 대신 좌표계 사실 + 상태 전이 액션을 둔다.
+    <div className="flex flex-col gap-5 p-4 sm:p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="num break-token text-[10.5px] font-bold tracking-wide text-ink-muted uppercase">
+                {site.siteId}
+              </p>
+              {/* topbar 가 '현장 상세' 를 이미 찍는다 — 여기 h1 은 대상 이름이라 중복이 아니다. */}
+              <h1 className="break-keep text-[19px] font-bold tracking-tight">{site.name}</h1>
+            </div>
+            {canStartSurvey ? (
+              <Link href={`/sites/${encodeURIComponent(site.siteId)}/surveys/new`} className="btn btn-primary">
+                {surveyActionLabel}
+              </Link>
+            ) : (
+              <div className="flex flex-col items-end gap-1">
+                <span className="btn cursor-not-allowed text-ink-muted" aria-disabled="true">
+                  {surveyActionLabel}
+                </span>
+                <span className="text-[12px] break-keep text-ink-muted">
+                  {surveyActionLabel}를 시작하려면 임무 발급 권한이 필요합니다
+                </span>
+              </div>
+            )}
           </div>
-          <Link
-            href={`/sites/${encodeURIComponent(site.siteId)}/surveys/new`}
-            className="bg-foreground text-background inline-flex min-h-11 items-center rounded-md px-4 text-sm font-medium"
-          >
-            새 조사
-          </Link>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
+            {site.resumeTarget && (
+              <span className="text-[12.5px] break-keep text-ink-2">
+                복귀 예정 상태: {SITE_STATUS_LABEL[site.resumeTarget].label}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div>
-          <StatusBadge label={statusLabel.label} tone={statusLabel.tone} />
-        </div>
-
-        {site.resumeTarget && (
-          <p className="text-foreground/70 text-sm break-keep">
-            복귀 예정 상태: {SITE_STATUS_LABEL[site.resumeTarget].label}
-          </p>
-        )}
-
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/10 sm:grid-cols-4">
-          <div>
-            <dt className="text-foreground/60 text-xs">좌표계(CRS)</dt>
-            <dd className="break-keep">{site.siteFrame.crs}</dd>
-          </div>
-          <div>
-            <dt className="text-foreground/60 text-xs">수직 기준면</dt>
-            <dd className="break-keep">{site.siteFrame.verticalDatum}</dd>
-          </div>
-          <div>
-            <dt className="text-foreground/60 text-xs">단위</dt>
-            <dd className="break-keep">{site.siteFrame.unit}</dd>
-          </div>
-          <div>
-            <dt className="text-foreground/60 text-xs">변환 버전</dt>
-            <dd className="break-keep">{site.siteFrame.transformVersion}</dd>
-          </div>
-        </dl>
-
-        <div className="text-foreground/60 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span>등록 {dateFormatter.format(new Date(site.registeredAt))}</span>
-          <span>최근 갱신 {dateFormatter.format(new Date(site.updatedAt))}</span>
-        </div>
-      </div>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold break-keep">최근 임무</h2>
-        {missions === null ? (
-          <p className="text-foreground/60 text-sm break-keep">임무 정보를 불러오지 못했습니다.</p>
-        ) : missions.length === 0 ? (
-          <p className="text-foreground/60 text-sm break-keep">아직 없습니다.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {missions.slice(0, MISSION_LIMIT).map((mission) => (
-              <li key={mission.missionId}>
-                <Link
-                  href={`/missions/${encodeURIComponent(mission.missionId)}`}
-                  className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
-                >
-                  <span className="break-keep">{MISSION_TYPE_LABEL[mission.missionType]}</span>
-                  <span className="text-foreground/60 text-xs whitespace-nowrap">
-                    {dateFormatter.format(new Date(mission.issuedAt))}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold break-keep">최근 이벤트</h2>
-        {events === null ? (
-          <p className="text-foreground/60 text-sm break-keep">이벤트 정보를 불러오지 못했습니다.</p>
-        ) : events.length === 0 ? (
-          <p className="text-foreground/60 text-sm break-keep">아직 없습니다.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {events.slice(0, EVENT_LIMIT).map((event) => {
-              const eventStatusLabel = EVENT_STATUS_LABEL[event.status];
-              return (
-                <li key={event.eventKey}>
+        <SectionCard
+          title="이 현장의 임무"
+          action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}
+        >
+          {missions === null ? (
+            <p className="text-[13px] break-keep text-ink-muted">임무 정보를 불러오지 못했습니다.</p>
+          ) : missions.length === 0 ? (
+            <p className="text-[13px] break-keep text-ink-muted">아직 없습니다.</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-line">
+              {missions.slice(0, MISSION_LIMIT).map((mission) => (
+                <li key={mission.missionId}>
                   <Link
-                    href={`/events/${encodeURIComponent(event.eventKey)}`}
-                    className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+                    href={`/missions/${encodeURIComponent(mission.missionId)}`}
+                    className="tap-target -mx-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-[13.5px] hover:bg-sunk"
                   >
-                    <StatusBadge label={eventStatusLabel.label} tone={eventStatusLabel.tone} />
-                    <span className="text-foreground/60 text-xs whitespace-nowrap">
-                      {dateFormatter.format(new Date(event.occurredAt))}
+                    <span className="break-keep font-medium">{MISSION_TYPE_LABEL[mission.missionType]}</span>
+                    <span className="num text-[12px] whitespace-nowrap text-ink-muted">
+                      {dateFormatter.format(new Date(mission.issuedAt))}
                     </span>
                   </Link>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="이 현장의 이벤트"
+          action={{ label: "전체보기", href: `/events?siteId=${encodeURIComponent(site.siteId)}` }}
+        >
+          {events === null ? (
+            <p className="text-[13px] break-keep text-ink-muted">이벤트 정보를 불러오지 못했습니다.</p>
+          ) : events.length === 0 ? (
+            <p className="text-[13px] break-keep text-ink-muted">아직 없습니다.</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-line">
+              {events.slice(0, EVENT_LIMIT).map((event) => {
+                const eventStatusLabel = EVENT_STATUS_LABEL[event.status];
+                return (
+                  <li key={event.eventKey}>
+                    <Link
+                      href={`/events/${encodeURIComponent(event.eventKey)}`}
+                      className="tap-target -mx-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-[13.5px] hover:bg-sunk"
+                    >
+                      <StatusBadge label={eventStatusLabel.label} tone={eventStatusLabel.tone} />
+                      <span className="num text-[12px] whitespace-nowrap text-ink-muted">
+                        {dateFormatter.format(new Date(event.occurredAt))}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-4">
+          <h2 className="mb-1 text-[13.5px] font-bold break-keep">현장 좌표계</h2>
+          <dl className="border-t border-line">
+            <Fact label="좌표계(CRS)" value={site.siteFrame.crs} isToken />
+            <Fact label="수직 기준면" value={site.siteFrame.verticalDatum} isToken />
+            <Fact label="단위" value={site.siteFrame.unit} />
+            <Fact label="변환 버전" value={site.siteFrame.transformVersion} isToken />
+            <Fact label="등록" value={dateFormatter.format(new Date(site.registeredAt))} isToken />
+            <Fact label="최근 갱신" value={dateFormatter.format(new Date(site.updatedAt))} isToken />
+          </dl>
+        </div>
+
+        {canTransition ? (
+          <SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} />
+        ) : (
+          <p className="text-[12px] break-keep text-ink-muted">
+            현장 상태를 전이하려면 현장 등록 권한이 필요합니다.
+          </p>
         )}
-      </section>
+      </div>
     </div>
   );
 }

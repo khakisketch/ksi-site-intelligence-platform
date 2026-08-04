@@ -12,15 +12,20 @@ wizard.
    ```bash
    uv run python scripts/run_core_dev.py
    ```
-   Copy one of the printed bearer tokens.
-2. `cp apps/dashboard/.env.local.example apps/dashboard/.env.local` and set
-   `CORE_API_TOKEN` to that token (`CORE_API_BASE_URL` defaults to
-   `http://127.0.0.1:8000`).
+   Note one of the printed bearer tokens (one per role — pick the role you
+   want to test as).
+2. `cp apps/dashboard/.env.local.example apps/dashboard/.env.local`
+   (`CORE_API_BASE_URL` defaults to `http://127.0.0.1:8000`).
 3. ```bash
    cd apps/dashboard
    npm run dev
    ```
-   Open [http://localhost:3000](http://localhost:3000).
+   Open [http://localhost:3000](http://localhost:3000) — you'll be redirected
+   to `/login`. Paste the bearer token from step 1 there; the dashboard no
+   longer proxies every request through a single fixed server-side token
+   (risk `dashboard-unauthenticated-signing-proxy`, closed in
+   `dashboard-operator-login`). Each operator's own role now governs what
+   they can do, enforced by Core.
 
 Built with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app)
 (Next.js App Router, TypeScript, Tailwind v4).

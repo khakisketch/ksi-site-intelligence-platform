@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
+import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import type { SiteView } from "@/lib/core-api/types";
 
@@ -35,8 +37,22 @@ export default async function NewSurveyPage({
 
   if (errorMessage !== null || site === null) {
     return (
-      <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6 sm:p-10">
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-5">
         <ErrorState message={errorMessage ?? "요청을 처리하지 못했습니다."} />
+      </div>
+    );
+  }
+
+  // risk dashboard-wizard-rbac-mismatch — 임무 발급 권한 없이 진입하면 마지막 제출
+  // 단계에서만 실패가 드러난다(입력을 다 채운 뒤 403). 진입 시점에 미리 막는다.
+  const canIssueMission = await hasAllPermissions("MISSIONS_ISSUE");
+  if (!canIssueMission) {
+    return (
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-5">
+        <EmptyState
+          title="조사 임무 발급 권한이 없습니다"
+          description="새 현장조사는 임무 발급 권한을 가진 계정만 시작할 수 있습니다. 관리자에게 문의하세요."
+        />
       </div>
     );
   }

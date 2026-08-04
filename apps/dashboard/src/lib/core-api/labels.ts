@@ -1,7 +1,7 @@
 // 마이크로카피 SSOT — docs/architecture/03_DASHBOARD_UX_GOALS.md §4 그대로 상수화.
 // 다른 곳에서 이 표를 우회해 새 라벨을 만들지 않는다.
 
-import type { EventSeverity, EventStatus, MissionType, SiteStatus, TriageStatus } from "./types";
+import type { EventSeverity, EventStatus, MissionType, Role, SiteStatus, TriageStatus } from "./types";
 
 export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 
@@ -35,6 +35,26 @@ export const EVENT_SEVERITY_LABEL: Record<EventSeverity, { label: string; tone: 
   CRITICAL: { label: "위험", tone: "warning" },
 };
 
+// 심각도가 아직 매겨지지 않은 이벤트(OBSERVATION 단계)를 목록에서 어떻게 부를 것인가.
+// 배지를 비워두지 않는 이유: '아직 분류되지 않았다'는 것 자체가 운영자에게 필요한 정보다
+// (누락인지 판정 전인지 구분되지 않으면 대기열을 신뢰할 수 없다).
+export const SEVERITY_UNSET_LABEL = { label: "심각도 미판정", tone: "neutral" as Tone };
+
+// 무슨 일이 일어났는가 — EventBundle.event_type → 한국어.
+//
+// 서버 계약상 자유 문자열이고, 지금 인지 파이프라인이 실제로 발행하는 값은
+// PERSON_PRESENT 하나뿐이다(packages/perception DEFAULT_EVENT_POLICY — 실제 Solution
+// Pack 정책은 Core 소유로 Phase 2+ 예정). 여기 없는 값은 숨기지 않고 원문을 보여준다
+// — 새 이벤트 종류가 라벨 누락 때문에 목록에서 조용히 사라지는 편이 훨씬 나쁘다.
+export const EVENT_TYPE_LABEL: Record<string, string> = {
+  PERSON_PRESENT: "사람 감지",
+};
+
+export function humanizeEventType(eventType: string | null): string {
+  if (!eventType) return "종류 미분류";
+  return EVENT_TYPE_LABEL[eventType] ?? eventType;
+}
+
 // 정본: services/core/src/ksi_core/mission_plans.py 미션타입→경로패턴 제약
 // (docs/architecture/03_DASHBOARD_UX_GOALS.md §7). 화면마다 별도 라벨을 만들지 않는다 —
 // 홈·현장 상세·임무 목록 전부 이 표 하나를 참조한다.
@@ -56,6 +76,15 @@ export const TRIAGE_STATUS_LABEL: Record<TriageStatus, { label: string; tone: To
   REINSPECTION_REQUESTED: { label: "재점검 요청", tone: "caution" },
   RESOLVED: { label: "해결됨", tone: "positive" },
   CLOSED: { label: "종료", tone: "neutral" },
+};
+
+// ADR-KSI-008 §2 Role → TopBar/로그인 표시용 한글 라벨.
+export const ROLE_LABEL: Record<Role, string> = {
+  ADMIN: "관리자",
+  SITE_MANAGER: "현장소장",
+  SAFETY_MANAGER: "안전관리자",
+  DRONE_OPERATOR: "조종사",
+  VIEWER: "열람자",
 };
 
 // §3.4 에러 마이크로카피 — API verdict 코드를 사람 말로.

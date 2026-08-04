@@ -2,37 +2,366 @@
 @import "leaflet/dist/leaflet.css";
 @import "leaflet-draw/dist/leaflet.draw.css";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   KSI 현장 지능 — 디자인 토큰
+
+   브랜드 액센트: 잉크 모노크롬 #1F2124 (2026-08-04 대표자 확정)
+
+   이 선택의 요지는 **브랜드에 색을 쓰지 않는다**는 것이다. 안전 크리티컬 화면에서
+   액센트가 경고색과 가까우면 운영자가 "이건 경고인가 누를 것인가"를 매번 판별해야
+   하고, 하루 종일 보는 화면에서 그 비용은 누적된다. 액센트를 무채색으로 두면
+   화면에서 색이 있는 곳은 오직 안전 상태(위험·높음·보통·안전)뿐이 된다.
+
+   따라서 지켜야 할 규칙 하나: **의미가 없는 곳에 색을 쓰지 않는다.**
+   장식·강조·브랜드 표현에 crit/high/mid/safe 를 끌어다 쓰면 이 시스템의 유일한
+   장점이 사라진다.
+
+   시안 원본: design/ksi-site-intelligence/ (screens/*-d-ink-mono.html)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* — 액센트(무채색) — 누를 것·활성 상태·현재 위치 — */
+  --accent: #1f2124;
+  --accent-hover: #0e0f11;
+  --accent-tint: #edeef0;
+  --accent-ink: #1f2124;
+  --accent-on: #ffffff;
+  /* 흰 배경 위 **텍스트**로 쓰는 액센트. 지금은 액센트가 무채색이라 --accent 와 같지만,
+     밝은 액센트(카키 등)로 방향이 바뀌면 배경으로는 읽혀도 텍스트로는 대비가 안 난다.
+     그때 이 토큰만 어둡게 재정의하면 되도록 미리 갈라 둔다(시안 home:211 주석). */
+  --accent-text: #1f2124;
+  /* 로고 표식 전용. 액센트를 무채색으로 두고도 브랜드 색을 남길 수 있게 분리한 자리다 —
+     "의미 없는 곳에 색을 쓰지 않는다"는 규칙의 유일한 예외. 미정의 시 액센트로 떨어진다. */
+  --brand: var(--accent);
+  --brand-on: var(--accent-on);
+
+  /* — 서피스 — */
+  --page: #f6f7f8;
+  --surface: #ffffff;
+  --sunk: #edeef0;
+  --line: #e0e2e5;
+  --line-strong: #bfc3c8;
+
+  /* — 사이드바 — 시안의 앱 셸을 이루는 축이다.
+     페이지가 밝은 회색이고 카드가 흰색인 구조에서, 좌측 레일만 어둡게 두면
+     "문서를 보는 중"이 아니라 "도구 안에 들어와 있다"로 읽힌다. 이 대비가 없으면
+     같은 토큰을 써도 화면은 계속 웹페이지처럼 보인다. */
+  --sidebar: #16181a;
+  --sidebar-text: #dde0e3;
+  --sidebar-muted: #8b9197;
+  /* 액센트가 무채색이라 활성 표시가 사이드바 배경과 붙는다 — 전용 토큰으로 분리해
+     라이트/다크 양쪽에서 같은 세기로 읽히게 한다(시안엔 다크가 없어 여기서 정한다). */
+  --sidebar-active: #2c3035;
+  --sidebar-active-ink: #ffffff;
+  --sidebar-hover: rgba(255, 255, 255, 0.07);
+
+  /* — 텍스트 — */
+  --ink-1: #121417;
+  --ink-2: #4e5359;
+  --ink-muted: #878d94;
+
+  /* — 안전 상태색 — 이 시스템에서 색을 쓰는 유일한 자리 —
+     brand-* 와 달리 이 값들은 브랜드가 바뀌어도 따라 바뀌지 않는다.
+     운영자가 학습한 신호이기 때문이다. */
+  --crit: #c42b22;
+  --crit-bg: #fdecea;
+  --crit-ink: #8a1c16;
+  --high: #b26a06;
+  --high-bg: #fcf1dc;
+  --high-ink: #7a4804;
+  --mid: #1f6fb8;
+  --mid-bg: #e7f0fa;
+  --mid-ink: #134676;
+  --safe: #157f4b;
+  --safe-bg: #e3f3ea;
+  --safe-ink: #0c5231;
+  --idle: #78848a;
+  --idle-bg: #eff2f3;
+  --idle-ink: #3f484d;
+
+  /* 하위 호환 — 기존 코드가 참조하는 이름 */
+  --background: var(--page);
+  --foreground: var(--ink-1);
+}
+
+/* ── 다크 모드 — 현재 비활성 (2026-08-04 대표자 결정) ───────────────────────
+   이 팔레트는 `@media (prefers-color-scheme: dark)` 로 걸려 있었다. 즉 OS 설정만으로
+   켜졌다. 그런데 이 시스템에서 **색이 의미를 갖는 자리는 안전 상태(위험·높음·보통·안전)
+   뿐**이고, 그 자리의 다크 대비는 한 번도 실측된 적이 없다 — 검증 안 된 색으로 안전
+   판단이 이뤄지는 상태였다.
+
+   그래서 자동 활성만 끊고 값은 남긴다. 트리거를 `:root[data-theme="dark"]` 로 바꿨으므로
+   현재는 아무것도 이 속성을 설정하지 않아 실질 비활성이다. 관제실용 다크를 다시 켤 때는
+   ① crit/high/mid/safe 의 bg↔ink 대비를 AA 로 실측하고 ② 토글 UI 를 붙이면서
+   이 선택자에 `@media (prefers-color-scheme: dark)` 를 다시 얹으면 된다. */
+:root[data-theme="dark"] {
+  --accent: #e8eaec;
+    --accent-hover: #ffffff;
+    --accent-tint: #23262a;
+    --accent-ink: #e8eaec;
+    --accent-on: #16181a;
+
+    --page: #0f1113;
+    --surface: #17191c;
+    --sunk: #1f2226;
+    --line: #2a2e33;
+    --line-strong: #3d434a;
+
+    /* 다크에서는 페이지가 이미 어두워 사이드바를 더 어둡게 눌러 레일을 구분한다. */
+    --sidebar: #0a0c0d;
+    --sidebar-text: #d3d7da;
+    --sidebar-muted: #767d84;
+    --sidebar-active: #2f353b;
+    --sidebar-active-ink: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.06);
+
+    --ink-1: #e9ebed;
+    --ink-2: #a8aeb5;
+    --ink-muted: #798088;
+
+    --crit: #f08a80;
+    --crit-bg: #3a1815;
+    --crit-ink: #f8c4bd;
+    --high: #e0a340;
+    --high-bg: #35260c;
+    --high-ink: #f2d59a;
+    --mid: #6aa9e0;
+    --mid-bg: #12283c;
+    --mid-ink: #b6d5f0;
+    --safe: #5cb98a;
+    --safe-bg: #123021;
+    --safe-ink: #a9dcc2;
+    --idle: #8d979d;
+    --idle-bg: #212528;
+    --idle-ink: #c3cace;
 }
 
 @theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-ink: var(--sidebar-active-ink);
+  --color-sidebar-hover: var(--sidebar-hover);
+
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-muted: var(--ink-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-on: var(--accent-on);
+  --color-accent-text: var(--accent-text);
+  --color-brand: var(--brand);
+  --color-brand-on: var(--brand-on);
+
+  --color-crit: var(--crit);
+  --color-crit-bg: var(--crit-bg);
+  --color-crit-ink: var(--crit-ink);
+  --color-high: var(--high);
+  --color-high-bg: var(--high-bg);
+  --color-high-ink: var(--high-ink);
+  --color-mid: var(--mid);
+  --color-mid-bg: var(--mid-bg);
+  --color-mid-ink: var(--mid-ink);
+  --color-safe: var(--safe);
+  --color-safe-bg: var(--safe-bg);
+  --color-safe-ink: var(--safe-ink);
+  --color-idle: var(--idle);
+  --color-idle-bg: var(--idle-bg);
+  --color-idle-ink: var(--idle-ink);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* 한글이 1급 시민이다. Pretendard 가 있으면 한·영을 한 얼굴로 쓰고, 없으면
+     라틴은 Geist·한글은 OS 기본으로 떨어진다(둘 다 x-height 가 비슷해 큰 어긋남 없음). */
+  --font-sans:
+    "Pretendard Variable", Pretendard, var(--font-geist-sans), -apple-system,
+    BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic",
+    system-ui, sans-serif;
+  /* 시각·좌표·수치는 계측 제품의 주인공이라 본문과 다른 얼굴을 준다. */
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 16px;
+  background: var(--page);
+  color: var(--ink-1);
+  font-family: var(--font-sans);
+  /* 시안 본문 14px. 계측 도구는 한 화면에 들어가는 사실의 개수가 곧 쓸모라서
+     읽기용 문서(16px)보다 한 단계 조인다. Tailwind 유틸리티는 rem 기준이라
+     이 값에 영향받지 않는다 — 클래스가 없는 텍스트만 text-sm 과 같아진다. */
+  font-size: 14px;
+  line-height: 1.5;
   /* UX 목표 §5 — 한글 어절 단위 줄바꿈을 기본값으로(단어 중간 끊김 방지). */
   word-break: keep-all;
   overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Tailwind v4 유틸리티 세트에 word-break 계열이 없을 수 있어 명시적으로 등록한다. */
 @utility break-keep {
   word-break: keep-all;
   overflow-wrap: break-word;
+}
+
+/* ID·좌표·해시처럼 끊을 자리가 없는 문자열 전용. 문장에는 쓰지 않는다
+   (keep-all 과 정반대로 동작해 한글이 아무 데서나 끊긴다). */
+@utility break-token {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* 숫자가 세로로 줄 맞아야 하는 곳 — 표·목록·계측값. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* 계측값의 얼굴 — 시각·좌표·고도·건수·신뢰도·ID.
+   시안의 `.num` 은 mono 와 tabular 를 **한 덩어리로** 묶은 것이고, 그게 요점이다.
+   둘을 따로 쓰면 어떤 자리는 mono 인데 자릿수가 안 맞고 어떤 자리는 자릿수만 맞고
+   본문 얼굴이라, 화면 전체에서 "이건 계측값이다"라는 신호가 흐려진다. */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* 누를 것의 최소 높이.
+   44px 규칙은 손가락 때문에 있는 것이지 픽셀 때문이 아니다. 마우스 환경까지 44px 로
+   묶으면 사이드바·툴바가 문서처럼 헐거워져 앱 밀도가 무너진다 — 그래서 입력장치로
+   나눈다. 태블릿 가로(이 제품의 1급 뷰포트)는 pointer: coarse 라 44px 를 그대로 받는다. */
+.tap-target {
+  min-height: 36px;
+}
+@media (pointer: coarse) {
+  .tap-target {
+    min-height: 44px;
+  }
+}
+
+/* 키보드 포커스는 항상 보이게. 액센트가 무채색이라 배경과 붙지 않도록 두께를 준다. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   공용 원시요소 — 버튼과 입력
+
+   이걸 만드는 이유는 중복 제거가 아니라 **일관성이 안전 신호이기 때문**이다.
+   같은 뜻의 버튼이 화면마다 padding·투명도가 다르면 운영자는 매번 "이게 아까 그
+   버튼인가"를 다시 판별한다. 특히 되돌릴 수 없는 판정(오탐 종결)이 중립 버튼과
+   같아 보이는 건 그냥 결함이다.
+
+   components 레이어에 두는 게 중요하다 — Tailwind 유틸리티가 항상 이깁니다.
+   호출부에서 `className="btn btn-primary px-6"` 로 개별 조정이 가능해야 한다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 0 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink-1);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+  /* 손가락은 마우스보다 넓다 — .tap-target 과 같은 근거로 입력장치로 나눈다. */
+  @media (pointer: coarse) {
+    .btn {
+      min-height: 44px;
+    }
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--sunk);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-on);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  /* 되돌릴 수 없는 판정 전용. 확정과 오탐이 같은 회색이면 손이 먼저 움직인다. */
+  .btn-danger {
+    color: var(--crit-ink);
+    border-color: color-mix(in srgb, var(--crit) 40%, var(--line-strong));
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--crit-bg);
+  }
+
+  /* 입력은 반드시 surface 를 깐다. --page(회색) 위 투명 입력칸은 테두리만 남아
+     "여기에 쓸 수 있다"가 보이지 않는다 — 카드가 회색 위 회색이던 것과 같은 결함이다. */
+  .input {
+    width: 100%;
+    min-height: 38px;
+    padding: 0 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink-1);
+    font: inherit;
+    font-size: 13.5px;
+  }
+  @media (pointer: coarse) {
+    .input {
+      min-height: 44px;
+    }
+  }
+  textarea.input {
+    padding: 8px 11px;
+    min-height: 76px;
+    line-height: 1.5;
+  }
+  .input::placeholder {
+    color: var(--ink-muted);
+  }
+  .input:disabled {
+    background: var(--sunk);
+    color: var(--ink-muted);
+    cursor: not-allowed;
+  }
+  /* 검증 실패는 색만으로 알리지 않는다 — 호출부가 문구를 함께 붙이는 걸 전제한다. */
+  .input[aria-invalid="true"] {
+    border-color: var(--crit);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

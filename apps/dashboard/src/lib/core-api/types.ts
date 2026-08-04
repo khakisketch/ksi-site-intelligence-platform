@@ -61,6 +61,10 @@ export interface EventSummaryResponse {
   eventId: string;
   siteId: string;
   missionId: string;
+  // 무슨 일이 일어났는가. 목록 행의 1순위 정보다.
+  // 자유 문자열이며 사람이 읽을 라벨 변환은 labels.ts 가 맡는다. 저장된 bundle 에
+  // 이 키가 없는 레코드는 null 로 온다(서버가 목록 전체를 죽이지 않고 낮춰 응답).
+  eventType: string | null;
   status: EventStatus;
   severity: EventSeverity | null;
   triage: TriageStatus;
