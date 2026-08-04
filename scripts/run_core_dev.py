@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -26,9 +27,8 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 from ksi_core.sites import SiteStore
-
-_KEY_ID = "core-dev-key-1"
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -72,20 +72,42 @@ def _auth_registry() -> AuthRegistry:
     return AuthRegistry(records)
 
 
-def _load_or_create_signing_key(path: Path) -> Ed25519PrivateKey:
-    if path.exists():
-        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
-        if not isinstance(key, Ed25519PrivateKey):
-            raise TypeError(f"{path} does not contain an Ed25519 private key")
-        return key
-    key = Ed25519PrivateKey.generate()
-    pem = key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-    path.write_bytes(pem)
-    return key
+def _bootstrap_key_set(signing_dir: Path) -> SigningKeySet:
+    """dev 키 세트를 준비한다 — 없으면 만들고, 있으면 **검증해서** 읽는다.
+
+    부트스트랩만 dev 편의이고 로드는 운영과 같은 경로(:func:`load_signing_keys`)를
+    탄다 — 개인키 권한·공개키 불일치·활성 키 REVOKED 를 여기서도 똑같이 거부한다.
+    dev 조립이 느슨한 경로를 따로 가지면 그 검사들이 운영에서 처음 실행된다.
+
+    회전은 이 함수가 하지 않는다(docs/security/SIGNING_KEY_LIFECYCLE.md 절차) —
+    keys.json 이 이미 있으면 손대지 않는다.
+    """
+    manifest = signing_dir / "keys.json"
+    if not manifest.exists():
+        signing_dir.mkdir(parents=True, exist_ok=True)
+        key_id = "core-dev-key-1"
+        key = Ed25519PrivateKey.generate()
+        private_path = signing_dir / f"{key_id}.private.pem"
+        private_path.write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        # 0600 — load_signing_keys 가 이 권한을 강제한다(운영과 같은 규칙).
+        private_path.chmod(0o600)
+        (signing_dir / f"{key_id}.public.pem").write_bytes(
+            key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
+        manifest.write_text(
+            json.dumps({"active": key_id, "keys": [{"keyId": key_id, "status": "ACTIVE"}]}),
+            encoding="utf-8",
+        )
+    return load_signing_keys(signing_dir)
 
 
 def main() -> None:
@@ -107,7 +129,7 @@ def main() -> None:
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    private_key = _load_or_create_signing_key(data_dir / "signing_key.pem")
+    key_set = _bootstrap_key_set(data_dir / "signing")
 
     # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
     # 회전 임계는 **조립 지점의 결정**이다(DurableJournal 기본값은 회전 없음) —
@@ -127,8 +149,8 @@ def main() -> None:
         mission_store=MissionStore(mission_journal),
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
-        mission_signing_key=private_key,
-        mission_signing_key_id=_KEY_ID,
+        mission_signing_key=key_set.active_private_key,
+        mission_signing_key_id=key_set.active_key_id,
     )
 
     print("=" * 72)
