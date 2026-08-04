@@ -10,7 +10,13 @@ info:
   # 1.4.0 — 2차 독립 재검토 P1/P2 폐쇄: eventId/edgeDeviceId/siteId 경로-안전
   # 문자 검증(INVALID_EVENT_IDENTITY 확장·INVALID_SITE 사유 추가) + occurredAt
   # tz-aware 강제(INVALID_EVENT_TIMESTAMP 신설) 를 계약에 반영.
-  version: 1.4.0
+  # 1.5.0 — risk api-contract-response-schema-void 폐쇄: 응답 본문을 자유
+  # 문자열 description 대신 components/schemas 로 명세하고 필드 집합을
+  # test_api_contract_sync.py 가 구현과 대조한다. 이전에는 대조할 정본 자체가
+  # 없어 Core 가 EventSummaryResponse 에 eventType 을 추가해도 게이트가
+  # 침묵했다(2026-08-04 실제 drift). 필드를 늘리는 변경이 아니라 이미 있는
+  # 동작을 문서화하는 정정이므로 minor.
+  version: 1.5.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -36,7 +42,11 @@ paths:
         권한을 반환한다.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'Principal { principalId, kind, role, deviceId, permissions }' }
+        '200':
+          description: 인증된 principal 자신
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WhoAmIResponse' }
         '401': { description: '인증 실패(부재/형식오류/미지 토큰) — WWW-Authenticate: Bearer' }
   /v1/sites:
     post:
@@ -66,7 +76,11 @@ paths:
                     unit: { const: meter }
                     transformVersion: { type: string }
       responses:
-        '201': { description: 'REGISTERED — { verdict, site }' }
+        '201':
+          description: REGISTERED — verdict + 등록된 SiteView
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteMutationResponse' }
         '409': { description: DUPLICATE_SITE_ID }
         '422':
           description: >-
@@ -81,7 +95,11 @@ paths:
       description: SITES_READ 권한 필요.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: 'SiteView 목록' }
+        '200':
+          description: 등록된 현장 전체
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteListResponse' }
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
   /v1/sites/{site_id}:
@@ -95,7 +113,11 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: SiteView }
+        '200':
+          description: 현장 하나
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteView' }
         '404': { description: 현장을 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
@@ -136,7 +158,11 @@ paths:
                 evidence: { type: string, minLength: 1 }
                 reason: { type: string, minLength: 1 }
       responses:
-        '200': { description: 'TRANSITIONED — { verdict, site }' }
+        '200':
+          description: TRANSITIONED — verdict + 전이된 SiteView
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteMutationResponse' }
         '404': { description: UNKNOWN_SITE }
         '409': { description: ILLEGAL_TRANSITION }
         '422': { description: INVALID_SITE(evidence/reason 공백) }
@@ -189,8 +215,16 @@ paths:
                 payload:
                   $ref: ../schemas/event-bundle.v1.2.json
       responses:
-        '201': { description: ACCEPTED — durable persistence 후 ACK }
-        '200': { description: DUPLICATE_IGNORED — 멱등 재전송(ACK) }
+        '201':
+          description: ACCEPTED — durable persistence 후 ACK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResponse' }
+        '200':
+          description: DUPLICATE_IGNORED — 멱등 재전송(ACK)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResponse' }
         '403': { description: DEVICE_MISMATCH(인증 장비 ≠ 요청 edgeDeviceId) / EDGE_SYNC_INGEST 권한 없음 }
         '409': { description: IDEMPOTENCY_CONFLICT / SEQUENCE_DUPLICATE / SEQUENCE_REGRESSION }
         '422':
@@ -217,7 +251,11 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: '{ deviceId, lastSequence }' }
+        '200':
+          description: 이 장비의 마지막 수신 순번(미수신 장비는 null)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSequenceResponse' }
         '401': { description: 인증 실패 }
         '403': { description: 자기 자신이 아닌 장비 조회 / EVENTS_READ 권한 없음(일반 문구) }
   /v1/events:
@@ -265,7 +303,11 @@ paths:
           name: offset
           schema: { type: integer, minimum: 0, default: 0 }
       responses:
-        '200': { description: '{ events: EventSummaryResponse[], count }' }
+        '200':
+          description: 필터 적용된 이벤트 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventListResponse' }
         '401': { description: 인증 실패 }
         '403': { description: EVENTS_READ 권한 없음 }
   /v1/events/{event_key}:
@@ -284,7 +326,11 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: EventDetailResponse }
+        '200':
+          description: 사건 하나의 전체 상세(bundle + 전이 이력)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventDetailResponse' }
         '404': { description: 이벤트를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: EVENTS_READ 권한 없음 }
@@ -326,7 +372,11 @@ paths:
                 reason: { type: string }
                 assignee: { type: string }
       responses:
-        '200': { description: 'TRANSITIONED — { verdict, event }' }
+        '200':
+          description: TRANSITIONED — verdict + 전이 후 사건 상세
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransitionResponse' }
         '404': { description: UNKNOWN_EVENT }
         '409': { description: ILLEGAL_TRANSITION }
         '422': { description: EVIDENCE_INCOMPLETE / INVALID_REQUEST }
@@ -345,7 +395,13 @@ paths:
           name: siteId
           schema: { type: string }
       responses:
-        '200': { description: MissionRecordResponse 목록 }
+        '200':
+          description: 발급된 임무 목록(siteId 필터 가능)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MissionRecordResponse' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}:
@@ -359,7 +415,11 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: MissionRecordResponse }
+        '200':
+          description: 임무 하나
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MissionRecordResponse' }
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
@@ -675,6 +735,153 @@ paths:
       responses:
         '202': { description: Mission planning accepted }
 components:
+  # ── 응답 본문 스키마 ───────────────────────────────────────────────────────
+  #
+  # 여기 적힌 **필드 집합**은 test_api_contract_sync.py 가 실구현(FastAPI 가
+  # Pydantic 모델에서 생성하는 openapi)과 이름 단위로 대조한다. 필드를 더하거나
+  # 빼면 구현이든 문서든 한쪽만 바뀐 순간 게이트가 실패한다.
+  #
+  # 왜 구현에서 자동 생성하지 않는가: 계약을 구현의 사본으로 만들면 drift 는
+  # 정의상 0 이 되지만 게이트도 같이 무의미해진다. 이 파일은 "사람이 승인한
+  # 의도"고, 대조의 의미는 그 의도와 구현이 갈라졌는지를 묻는 데 있다.
+  #
+  # 타입은 구현의 정밀도까지 복제하지 않는다(대조 대상은 필드 이름과 필수 여부다)
+  # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
+  # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
+  schemas:
+    SiteView:
+      type: object
+      required: [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt]
+      properties:
+        siteId: { type: string }
+        name: { type: string }
+        # 구조 정본은 SiteRegistrationRequest.siteFrame — 응답에서는 저장된 값 그대로.
+        siteFrame: { type: object, additionalProperties: true }
+        status:
+          description: SiteStatus 10종(ADR-KSI-008 §4) — UNMAPPED 가 등록 직후 정상 중간 상태다.
+          type: string
+        # 일시중단(SUSPENDED)에서 복귀할 상태. 그 외에는 null.
+        resumeTarget: { type: [string, 'null'] }
+        registeredAt: { type: string }
+        updatedAt: { type: string }
+    SiteListResponse:
+      type: object
+      required: [sites]
+      properties:
+        sites: { type: array, items: { $ref: '#/components/schemas/SiteView' } }
+    SiteMutationResponse:
+      description: 등록·전이 공통 응답. verdict 가 결과 코드고, site 는 성공 시에만 실린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        site: { oneOf: [{ $ref: '#/components/schemas/SiteView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
+    WhoAmIResponse:
+      type: object
+      required: [principalId, kind, role, deviceId, permissions]
+      properties:
+        principalId: { type: string }
+        kind: { type: string }
+        # 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
+        role: { type: [string, 'null'] }
+        deviceId: { type: [string, 'null'] }
+        permissions: { type: array, items: { type: string } }
+    IngestResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict:
+          description: ACCEPTED · DUPLICATE_IGNORED 등 수신 판정 코드.
+          type: string
+        detail: { type: [string, 'null'] }
+    DeviceSequenceResponse:
+      description: 장비가 재부팅 후 자기 순번을 복구하는 경로(ADR-KSI-008 §2).
+      type: object
+      required: [deviceId, lastSequence]
+      properties:
+        deviceId: { type: string }
+        # 아직 한 건도 받지 않은 장비는 null — 0 이 아니다(0 은 유효한 첫 순번).
+        lastSequence: { type: [integer, 'null'] }
+    EventSummaryResponse:
+      description: >-
+        트리아지 대기열의 한 줄. eventType 은 목록에서 "무슨 일인지"를 답하는
+        1순위 정보라 bundle 에서 최상위로 승격한다(2026-08-04 대표자 결정).
+      type: object
+      required:
+        [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
+         assignee, edgeDeviceId, occurredAt, receivedAt]
+      properties:
+        # 서버 정본 신원 = {edgeDeviceId}::{eventId}. eventId 는 장비 로컬이라 단독으론 충돌한다.
+        eventKey: { type: string }
+        eventId: { type: string }
+        siteId: { type: string }
+        missionId: { type: string }
+        eventType: { type: [string, 'null'] }
+        status: { type: string }
+        severity: { type: [string, 'null'] }
+        triage: { type: string }
+        assignee: { type: [string, 'null'] }
+        edgeDeviceId: { type: string }
+        occurredAt: { type: string, format: date-time }
+        receivedAt: { type: string, format: date-time }
+    EventListResponse:
+      type: object
+      required: [events, count]
+      properties:
+        events: { type: array, items: { $ref: '#/components/schemas/EventSummaryResponse' } }
+        count: { type: integer }
+    EventDetailResponse:
+      description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
+      type: object
+      required:
+        [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
+         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle, transitions]
+      properties:
+        eventKey: { type: string }
+        eventId: { type: string }
+        siteId: { type: string }
+        missionId: { type: string }
+        eventType: { type: [string, 'null'] }
+        status: { type: string }
+        severity: { type: [string, 'null'] }
+        triage: { type: string }
+        assignee: { type: [string, 'null'] }
+        edgeDeviceId: { type: string }
+        occurredAt: { type: string, format: date-time }
+        receivedAt: { type: string, format: date-time }
+        lastConflictAt: { type: [string, 'null'], format: date-time }
+        # 구조 정본은 contracts/schemas/event-bundle.v1.2.json.
+        bundle: { type: object, additionalProperties: true }
+        transitions: { type: array, items: { type: object, additionalProperties: true } }
+    TransitionResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        event: { oneOf: [{ $ref: '#/components/schemas/EventDetailResponse' }, { type: 'null' }] }
+    MissionRecordResponse:
+      description: >-
+        발급된 임무의 조회 표현. ADR-KSI-007 이원 산출물 중 이 레코드가 가리키는
+        것은 artifactKind 가 말한다(KMZ 짝과 Mission Contract 짝의 무결성은
+        서버가 발급 시점에 강제한다).
+      type: object
+      required:
+        [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
+         waypointCount, coverageRatio, issuedAt, issuedBy]
+      properties:
+        missionId: { type: string }
+        siteId: { type: string }
+        missionType: { type: string }
+        artifactKind: { type: string }
+        # 경로 산출물이 없는 발급(계약만)은 이 넷이 전부 null 이다.
+        kmzSha256: { type: [string, 'null'] }
+        routePattern: { type: [string, 'null'] }
+        waypointCount: { type: [integer, 'null'] }
+        coverageRatio: { type: [number, 'null'] }
+        issuedAt: { type: string, format: date-time }
+        issuedBy: { type: string }
   securitySchemes:
     bearerAuth:
       type: http

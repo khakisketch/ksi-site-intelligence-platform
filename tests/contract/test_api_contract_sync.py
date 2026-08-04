@@ -14,6 +14,7 @@ allowlist(``/health``·``/capabilities``) 밖의 문서화된 경로가 전부
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -208,3 +209,217 @@ def test_asyncapi_refs_point_to_existing_latest_schemas() -> None:
     # 페이로드를 와이어 계약으로 안내하던 drift(감사 #34).
     assert "mission-contract.v1.json" not in text
     assert "event-bundle.v1.json" not in text and "event-bundle.v1.1.json" not in text
+
+
+# ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────
+#
+# 위 검사들은 경로·메서드·security 존재만 본다. 그래서 Core 가
+# EventSummaryResponse 에 ``eventType`` 을 추가했을 때(2026-08-04) 게이트가
+# 침묵했다 — 문서가 응답을 자유 문자열 description 으로만 적어 **대조할 정본
+# 자체가 없었기** 때문이다. 소비자(apps/dashboard 의 types.ts)는 이 계약의 수동
+# 복제본이라, 서버가 필드를 바꿔도 프런트 타입체크는 green 이고 런타임에서만
+# 깨진다. 아래 둘이 그 구멍을 닫는다.
+
+
+def _doc() -> dict[str, Any]:
+    return yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
+
+
+def _implemented_spec(tmp_path: Path) -> dict[str, Any]:
+    return _max_assembly(tmp_path).openapi()
+
+
+def _ref_name(node: Any) -> str | None:
+    """스키마 노드가 named 모델(또는 그 배열)을 가리키면 모델 이름을 준다.
+
+    자유 형태 dict 응답(``/health``·서명된 MissionContract 등)은 None — 대조
+    대상이 아니다. 그 응답들의 구조 정본은 ``contracts/schemas/*.json`` 이다.
+    """
+    if not isinstance(node, dict):
+        return None
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        return ref.rsplit("/", 1)[-1]
+    if node.get("type") == "array":
+        return _ref_name(node.get("items"))
+    return None
+
+
+def _json_schema(response: Any) -> Any:
+    if not isinstance(response, dict):
+        return None
+    return ((response.get("content") or {}).get("application/json") or {}).get("schema")
+
+
+def test_documented_response_schemas_match_implementation_fields(tmp_path: Path) -> None:
+    """④ 필드 집합 대조 — 문서 ``components/schemas`` 의 각 모델은 실구현과
+    **필드 이름·필수 여부가 정확히 일치**해야 한다.
+
+    타입까지는 보지 않는다(문서는 구현의 정밀도를 복제하지 않는다) — 잡으려는
+    실패는 "한쪽에만 필드가 생기거나 사라지는 것"이다.
+    """
+    doc_schemas = (_doc().get("components") or {}).get("schemas") or {}
+    assert doc_schemas, (
+        "openapi-core.yaml 에 components/schemas 가 없다 — 응답 본문을 자유 문자열 "
+        "description 으로만 적으면 대조할 정본이 사라진다(risk "
+        "api-contract-response-schema-void 가 정확히 그 상태였다)"
+    )
+    impl_schemas = (_implemented_spec(tmp_path).get("components") or {}).get("schemas") or {}
+
+    mismatches: list[str] = []
+    for name, spec in doc_schemas.items():
+        impl = impl_schemas.get(name)
+        if impl is None:
+            mismatches.append(f"{name}: 문서에만 있는 모델(구현에 없음)")
+            continue
+        doc_fields = set(spec.get("properties") or {})
+        impl_fields = set(impl.get("properties") or {})
+        if doc_fields != impl_fields:
+            mismatches.append(
+                f"{name}: 문서에만 {sorted(doc_fields - impl_fields)} / "
+                f"구현에만 {sorted(impl_fields - doc_fields)}"
+            )
+        doc_required = set(spec.get("required") or [])
+        impl_required = set(impl.get("required") or [])
+        if doc_required != impl_required:
+            mismatches.append(
+                f"{name}.required: 문서에만 {sorted(doc_required - impl_required)} / "
+                f"구현에만 {sorted(impl_required - doc_required)}"
+            )
+
+    assert not mismatches, (
+        "openapi-core.yaml 의 응답 스키마가 실구현과 갈라졌다 — 구현을 바꿨으면 "
+        f"계약도 같이 바꿔라: {mismatches}"
+    )
+
+
+def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:
+    """⑤ 바인딩 검사 — 실구현이 named 모델을 반환하는 operation 은 문서의 2xx
+    응답 중 하나가 **같은 이름을 ``$ref``** 해야 한다.
+
+    이게 없으면 ④는 이미 적힌 스키마만 지킬 뿐, 새 엔드포인트가 자유 문자열
+    description 만 달고 들어오는 경로(원래의 실패 모드)를 막지 못한다.
+
+    상태코드 단위가 아니라 operation 의 2xx 집합 단위로 본다 — FastAPI 는
+    ``Response(status_code=...)`` 로 런타임에만 코드를 바꾸면 OpenAPI 출력에
+    200 으로 남기므로(예: POST /v1/sites 는 문서 201·구현 선언 200), 코드까지
+    묶으면 실패가 스키마 누락이 아니라 코드 표기 차이를 가리키게 된다.
+    """
+    doc = _doc()
+    impl_paths = _implemented_spec(tmp_path)["paths"]
+
+    violations: list[str] = []
+    for path, spec in doc["paths"].items():
+        if spec.get("x-status") == "planned":
+            continue
+        for method, operation in spec.items():
+            if method not in _HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            impl_op = (impl_paths.get(path) or {}).get(method) or {}
+            impl_models = {
+                model
+                for code, response in (impl_op.get("responses") or {}).items()
+                if code.startswith("2")
+                for model in [_ref_name(_json_schema(response))]
+                if model is not None
+            }
+            if not impl_models:
+                continue
+            doc_models = {
+                model
+                for code, response in (operation.get("responses") or {}).items()
+                if str(code).startswith("2")
+                for model in [_ref_name(_json_schema(response))]
+                if model is not None
+            }
+            unbound = impl_models - doc_models
+            if unbound:
+                violations.append(f"{method.upper()} {path}: {sorted(unbound)}")
+
+    assert not violations, (
+        "실구현이 반환하는 응답 모델을 문서가 $ref 로 묶지 않았다 — 자유 문자열 "
+        f"description 은 대조되지 않는다: {violations}"
+    )
+
+
+# ── ⑥ 소비자(대시보드) 대조 ────────────────────────────────────────────────
+#
+# ④·⑤ 는 Core ↔ 계약만 닫는다. 실제로 깨지는 자리는 하나 더 있다:
+# ``apps/dashboard/src/lib/core-api/types.ts`` 는 이 계약의 **수동 복제본**이라,
+# 서버가 필드를 바꿔도 프런트의 tsc 는 계속 green 이고 런타임에서만 undefined 가
+# 흐른다. 계약과 이름이 같은 interface 는 필드 집합도 같아야 한다.
+
+_DASHBOARD_TYPES = _REPO_ROOT / "apps" / "dashboard" / "src" / "lib" / "core-api" / "types.ts"
+
+# 계약에 있지만 대시보드가 소비하지 않는 모델은 대조 대상이 아니다 —
+# types.ts 에 같은 이름의 interface 가 있을 때만 본다(없는 것은 "아직 안 쓴다"는
+# 정상 상태이지 drift 가 아니다).
+
+
+def _parse_ts_interfaces(source: str) -> dict[str, tuple[set[str], str | None]]:
+    """``export interface X extends Y { ... }`` → {X: (필드집합, 부모 or None)}.
+
+    한 단계 중첩까지만 본다 — 이 파일의 모델은 전부 평면이고, 중첩이 생기면
+    그 자체가 계약 형태를 벗어난 신호라 여기서 실패하는 편이 낫다.
+    """
+    result: dict[str, tuple[set[str], str | None]] = {}
+    header = re.compile(r"^export interface (\w+)(?: extends (\w+))?\s*\{")
+    field = re.compile(r"^\s{2}(\w+)\??:")
+    lines = source.splitlines()
+    index = 0
+    while index < len(lines):
+        match = header.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        name, parent = match.group(1), match.group(2)
+        fields: set[str] = set()
+        depth = 1
+        index += 1
+        while index < len(lines) and depth > 0:
+            line = lines[index]
+            depth += line.count("{") - line.count("}")
+            if depth > 0:
+                found = field.match(line)
+                if found is not None:
+                    fields.add(found.group(1))
+            index += 1
+        result[name] = (fields, parent)
+    return result
+
+
+def test_dashboard_types_match_contract_schemas() -> None:
+    """⑥ 소비자 대조 — types.ts 의 interface 가 계약 모델과 같은 이름이면 필드
+    집합도 같아야 한다(상속은 펼쳐서 비교)."""
+    doc_schemas = (_doc().get("components") or {}).get("schemas") or {}
+    interfaces = _parse_ts_interfaces(_DASHBOARD_TYPES.read_text(encoding="utf-8"))
+    assert interfaces, "types.ts 에서 interface 를 하나도 못 읽었다 — 파서가 깨졌다"
+
+    def resolved(name: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        fields, parent = interfaces[name]
+        if parent is None or parent in seen or parent not in interfaces:
+            return set(fields)
+        return set(fields) | resolved(parent, seen | {name})
+
+    compared: list[str] = []
+    mismatches: list[str] = []
+    for name, spec in doc_schemas.items():
+        if name not in interfaces:
+            continue
+        compared.append(name)
+        contract_fields = set(spec.get("properties") or {})
+        ts_fields = resolved(name)
+        if contract_fields != ts_fields:
+            mismatches.append(
+                f"{name}: 계약에만 {sorted(contract_fields - ts_fields)} / "
+                f"types.ts 에만 {sorted(ts_fields - contract_fields)}"
+            )
+
+    assert compared, (
+        "계약 모델과 이름이 같은 interface 가 types.ts 에 하나도 없다 — 이름 규약이 "
+        "바뀌었다면 이 게이트는 아무것도 지키지 못한다"
+    )
+    assert not mismatches, (
+        "대시보드가 소비하는 타입이 계약과 갈라졌다 — 서버 필드가 바뀌면 프런트 "
+        f"tsc 는 green 인 채 런타임에서만 깨진다: {mismatches}"
+    )
