@@ -94,6 +94,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--data-dir", default=".dev-data/core")
     parser.add_argument("--reset", action="store_true", help="기존 데이터 삭제 후 새로 시작")
+    parser.add_argument(
+        "--journal-segment-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
+    )
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -103,9 +109,16 @@ def main() -> None:
 
     private_key = _load_or_create_signing_key(data_dir / "signing_key.pem")
 
-    site_journal = DurableJournal(data_dir / "sites.jsonl")
-    mission_journal = DurableJournal(data_dir / "missions.jsonl")
-    event_journal = DurableJournal(data_dir / "events.jsonl")
+    # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
+    # 회전 임계는 **조립 지점의 결정**이다(DurableJournal 기본값은 회전 없음) —
+    # 한 파일이 무한히 커지면 재기동 재생이 선형으로 느려지고 백업 단위도 사라진다.
+    # 여기 값은 dev 조립 기준이고, 운영 조립은 디스크·백업 주기에 맞춰 자기 값을 준다.
+    # CLI 는 0 을 "회전 없음"으로 받는다(생성자는 None). 음수는 argparse 를 통과하지만
+    # 생성자가 ValueError 로 거부한다 — 조용히 0 으로 뭉개지 않는다.
+    segment_bytes = args.journal_segment_bytes or None
+    site_journal = DurableJournal(data_dir / "sites.jsonl", max_segment_bytes=segment_bytes)
+    mission_journal = DurableJournal(data_dir / "missions.jsonl", max_segment_bytes=segment_bytes)
+    event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
     edge_sync_store = EdgeSyncStore(data_dir / "edge-sync.jsonl")
 
     app = create_app(

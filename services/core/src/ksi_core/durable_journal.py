@@ -29,6 +29,22 @@ Site/Mission/Event 저장소(S2)는 ``edge_sync.py`` 를 흉내내지 않고 이
 부분 줄(torn tail)은 완결 write+fsync 전이라 "기록된 적이 없다"로 취급해
 잘라내고(경고 로그) 정상 기동한다. :meth:`replay` 는 기동 시 재생분과 이후
 같은 인스턴스로 성공한 append 를 모두 포함한 순서 보존 스냅샷을 반환한다.
+
+## 세그먼트 회전 (S4 — ops-serving-hardening)
+
+``max_segment_bytes`` 를 주면 활성 파일이 그 크기를 넘어설 때 봉인된 세그먼트
+(``<이름>.0001.jsonl``)로 rename 하고 새 활성 파일을 시작한다. 재생은 세그먼트
+번호 오름차순 + 활성 파일 순으로 이어 붙이므로 **레코드 순서는 회전 전후로
+보존된다**. 기본값(``None``)은 회전 없음 — 기존 조립은 그대로 동작한다.
+
+회전은 **무엇도 지우지 않는다.** 오래된 세그먼트의 폐기는 보관 정책
+(``contracts/schemas/retention-policy.v1.json``)의 소관이고, 이 클래스는
+"한 파일이 무한히 커져 재기동이 선형으로 느려지는 것"만 막는다. 감사 원장을
+스스로 지우는 코드를 여기 두지 않는 게 이 분리의 요점이다.
+
+회전 실패는 봉인하지 않는다 — append 는 이미 fsync 로 durable 하고, rename 이
+실패해도 기록된 데이터는 온전하다. 봉인하면 durability 와 무관한 사유로 수신을
+멈추게 된다. 대신 경고를 남기고 다음 append 에서 다시 시도한다.
 """
 
 from __future__ import annotations
@@ -38,6 +54,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import threading
 from collections.abc import Mapping
 from pathlib import Path
@@ -84,8 +101,15 @@ class DurableJournal:
     스레드풀에서 돈다) ``append``/``close`` 는 인스턴스 잠금으로 직렬화한다.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, max_segment_bytes: int | None = None) -> None:
+        if max_segment_bytes is not None and max_segment_bytes <= 0:
+            # 0 이나 음수를 받으면 append 마다 회전해 세그먼트를 무한히 만든다 —
+            # "회전 없음"을 뜻하려면 None 이어야 한다(조용히 해석하지 않는다).
+            raise ValueError(
+                f"max_segment_bytes 는 양수여야 한다(회전 없음은 None): {max_segment_bytes!r}"
+            )
         self._path = path
+        self._max_segment_bytes = max_segment_bytes
         self._sealed_reason: str | None = None
         self._records: list[dict[str, Any]] = []
         self._lock = threading.Lock()
@@ -121,15 +145,49 @@ class DurableJournal:
                 f"{self._path}: 다른 프로세스가 journal 을 소유 중 — 단일 writer 위반"
             ) from exc
 
+    def _segment_path(self, sequence: int) -> Path:
+        """봉인된 세그먼트 경로 — ``journal.jsonl`` → ``journal.0001.jsonl``."""
+        return self._path.with_name(f"{self._path.stem}.{sequence:04d}{self._path.suffix}")
+
+    def _existing_segments(self) -> list[tuple[int, Path]]:
+        """번호 오름차순 세그먼트 목록.
+
+        ``.lock`` 파일(``journal.jsonl.lock``)은 suffix 가 달라 여기 걸리지 않는다.
+        번호 자리가 숫자가 아닌 동명 파일(사람이 만든 ``journal.backup.jsonl`` 등)은
+        세그먼트가 아니므로 건너뛴다 — 재생 대상에 남의 파일을 끌어들이지 않는다.
+        """
+        stem, suffix = re.escape(self._path.stem), re.escape(self._path.suffix)
+        pattern = re.compile(rf"^{stem}\.(\d+){suffix}$")
+        found: list[tuple[int, Path]] = []
+        for candidate in self._path.parent.glob(f"{self._path.stem}.*{self._path.suffix}"):
+            match = pattern.match(candidate.name)
+            if match is not None:
+                found.append((int(match.group(1)), candidate))
+        return sorted(found)
+
     def _recover(self) -> None:
-        """journal 재적재 — 완결 줄은 전부 파싱 가능한 dict 여야 하고, torn tail 은 격리한다."""
-        if not self._path.exists():
-            return
+        """journal 재적재 — 봉인 세그먼트를 번호순으로 먼저, 활성 파일을 마지막에.
+
+        순서가 곧 원장의 의미다(멱등 판정·상태 전이가 순서에 의존한다) — 세그먼트를
+        번호순으로 이어 붙여야 회전 전후로 같은 재생 결과가 나온다.
+        """
+        records: list[dict[str, Any]] = []
+        for _sequence, segment in self._existing_segments():
+            # 봉인된 세그먼트에는 torn tail 이 있을 수 없다 — 회전은 append 가
+            # fsync 로 완결된 뒤에만 일어나고 rename 은 원자적이다. 그런데도 부분
+            # 줄이 있다면 설명되지 않는 상태이므로 조용히 잘라내지 않고 거부한다.
+            records.extend(self._read_records(segment, tolerate_torn_tail=False))
+        if self._path.exists():
+            records.extend(self._read_records(self._path, tolerate_torn_tail=True))
+        self._records = records
+
+    def _read_records(self, path: Path, *, tolerate_torn_tail: bool) -> list[dict[str, Any]]:
+        """한 파일의 완결 레코드 — 오염은 거부하고, 활성 파일의 torn tail 만 격리한다."""
         try:
-            raw = self._path.read_bytes()
+            raw = path.read_bytes()
         except OSError as exc:
             raise JournalRecoveryError(
-                f"{self._path}: journal 읽기 실패 — {type(exc).__name__}: {exc}"
+                f"{path}: journal 읽기 실패 — {type(exc).__name__}: {exc}"
             ) from exc
 
         complete, _sep, tail = raw.rpartition(b"\n")
@@ -141,26 +199,32 @@ class DurableJournal:
                 parsed: Any = json.loads(line)
             except ValueError as exc:
                 raise JournalRecoveryError(
-                    f"{self._path}:{line_no}: journal 줄이 JSON 이 아니다 — {exc}"
+                    f"{path}:{line_no}: journal 줄이 JSON 이 아니다 — {exc}"
                 ) from exc
             if not isinstance(parsed, dict):
                 raise JournalRecoveryError(
-                    f"{self._path}:{line_no}: journal 레코드가 object 가 아니다 "
+                    f"{path}:{line_no}: journal 레코드가 object 가 아니다 "
                     f"({type(parsed).__name__}) — 오염된 원장은 조용히 건너뛰지 않는다"
                 )
             records.append(parsed)
 
         if tail.strip():
+            if not tolerate_torn_tail:
+                raise JournalRecoveryError(
+                    f"{path}: 봉인된 세그먼트에 완결되지 않은 줄이 있다 "
+                    f"({len(tail)}바이트) — 회전은 fsync 완결 후에만 일어나므로 "
+                    "설명되지 않는 상태다"
+                )
             # 개행 없이 끝난 마지막 부분 줄 — 완결 write+fsync 후에만 성공으로
             # 치므로 이 줄은 "기록된 적이 없다"와 동치다. 남겨두면 다음 append 가
             # 뒤에 이어붙어 진짜 오염이 되므로 잘라낸다.
             logger.warning(
                 "%s: torn tail %d바이트 격리(부분 쓰기 후 중단 흔적) — 완결되지 않은 레코드",
-                self._path,
+                path,
                 len(tail),
             )
             try:
-                with self._path.open("r+b") as handle:
+                with path.open("r+b") as handle:
                     handle.truncate(len(raw) - len(tail))
                     handle.flush()
                     os.fsync(handle.fileno())
@@ -168,11 +232,11 @@ class DurableJournal:
                 # raw OSError 를 그대로 누출하지 않는다 — 이 실패도 재생 실패의
                 # 한 형태이므로 다른 재생 오류와 동일하게 fail-closed 로 묶는다.
                 raise JournalRecoveryError(
-                    f"{self._path}: torn tail 격리(truncate) 실패 — "
+                    f"{path}: torn tail 격리(truncate) 실패 — "
                     f"{type(exc).__name__}: {exc}"
                 ) from exc
 
-        self._records = records
+        return records
 
     def replay(self) -> list[dict[str, Any]]:
         """순서 보존된 완결 레코드 스냅샷(기동 시 재생분 + 이후 성공한 append).
@@ -208,6 +272,9 @@ class DurableJournal:
             # dict/list(예: siteFrame)가 있으면 호출자가 원본을 나중에 변형할 때
             # 이미 durable 하게 기록된 감사 레코드까지 조용히 바뀌는 경로가 생긴다.
             self._records.append(copy.deepcopy(dict(record)))
+            # 회전은 append 가 durable 해진 **뒤에** 한다 — 실패해도 방금 기록한
+            # 레코드는 안전하다. 그래서 봉인하지 않는다(모듈 docstring 참조).
+            self._rotate_if_needed()
 
     def _append_durable(self, record: Mapping[str, Any]) -> None:
         # ensure_ascii=True: 유니코드 개행 후보(U+2028 등)가 raw 로 나가 재적재의
@@ -247,6 +314,43 @@ class DurableJournal:
             # 새 파일은 디렉터리 엔트리도 durable 해야 성공 응답 후 머신
             # 크래시에서 파일째 사라지지 않는다(POSIX fsync 명세).
             _fsync_dir(self._path.parent)
+
+    def _rotate_if_needed(self) -> None:
+        """활성 파일이 임계를 넘었으면 봉인 세그먼트로 넘긴다(호출자가 잠금 보유).
+
+        임계는 **넘어선 뒤** 검사한다 — 레코드를 쪼개 걸치게 하지 않으려면
+        경계에서 자를 수 없고, 한 레코드가 임계보다 커도 반드시 한 파일에
+        온전히 들어가야 하기 때문이다. 그래서 세그먼트는 임계보다 조금 크다.
+        """
+        if self._max_segment_bytes is None:
+            return
+        try:
+            size = self._path.stat().st_size
+        except OSError as exc:
+            logger.warning("%s: 회전 판단용 stat 실패 — %s", self._path, type(exc).__name__)
+            return
+        if size < self._max_segment_bytes:
+            return
+
+        segments = self._existing_segments()
+        target = self._segment_path(segments[-1][0] + 1 if segments else 1)
+        try:
+            # rename 은 같은 디렉터리 안에서 원자적이다 — 재생이 활성 파일과
+            # 세그먼트 양쪽에서 같은 레코드를 두 번 읽는 창이 생기지 않는다.
+            os.rename(self._path, target)
+            # rename 자체를 durable 하게 — 디렉터리 엔트리가 fsync 되지 않으면
+            # 크래시 후 활성 파일과 세그먼트가 **둘 다** 보이거나 둘 다 사라질 수 있다.
+            _fsync_dir(self._path.parent)
+        except OSError as exc:
+            # 데이터는 온전하다(회전 전 파일 그대로) — 수신을 멈추지 않고
+            # 다음 append 에서 다시 시도한다. 다만 조용히 넘어가지는 않는다.
+            logger.warning(
+                "%s: 세그먼트 회전 실패(%s) — 다음 append 에서 재시도, 기록된 데이터는 온전하다",
+                self._path,
+                type(exc).__name__,
+            )
+            return
+        logger.info("%s: %d바이트에서 %s 로 회전", self._path, size, target.name)
 
     @property
     def sealed_reason(self) -> str | None:
