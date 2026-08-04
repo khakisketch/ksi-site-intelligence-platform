@@ -271,8 +271,14 @@ def test_journal_shorter_than_snapshot_refuses_boot(tmp_path: Path) -> None:
         EdgeSyncStore(path, snapshot_every=2)
 
 
-def test_journal_replaced_at_boundary_refuses_boot(tmp_path: Path) -> None:
-    """길이는 같지만 내용이 바뀐 원장 — 경계 줄 digest 로 잡는다."""
+@pytest.mark.parametrize("where", ["boundary_line", "earlier_line"])
+def test_journal_replaced_before_boundary_refuses_boot(tmp_path: Path, where: str) -> None:
+    """[핵심] 길이는 같지만 내용이 바뀐 원장 — 경계 **이전** 구간까지 잡는다.
+
+    경계 줄 하나만 검사하면, 그 앞 줄의 크기보존 손상이 조용히 통과한다
+    (독립 재검토 P1-B). 스냅샷 없는 경로는 모든 줄을 ingest 에 태워 어떤 손상도
+    기동 거부이므로, 그 성질이 스냅샷 경로에서만 사라지면 fail-closed 회귀다.
+    """
     path = tmp_path / "journal.jsonl"
     writer = EdgeSyncStore(path, snapshot_every=4)
     _fill(writer, 4)
@@ -280,11 +286,31 @@ def test_journal_replaced_at_boundary_refuses_boot(tmp_path: Path) -> None:
 
     raw = bytearray(path.read_bytes())
     boundary = json.loads(_snapshot_path(path).read_text(encoding="ascii"))["throughBytes"]
-    # 경계 줄 안의 한 바이트만 바꾼다(길이 불변) — 크기 검사는 통과한다.
-    raw[boundary - 5] = raw[boundary - 5] ^ 0x01
+    # 경계 줄 안 / 첫 줄 안의 한 바이트만 뒤집는다(길이 불변 → 크기 검사 통과).
+    target = boundary - 5 if where == "boundary_line" else raw.index(b"\n") - 5
+    raw[target] = raw[target] ^ 0x01
     path.write_bytes(bytes(raw))
 
-    with pytest.raises(StoreRecoveryError, match="교체된 흔적"):
+    with pytest.raises(StoreRecoveryError, match="교체·손상된 흔적"):
+        EdgeSyncStore(path, snapshot_every=4)
+
+
+def test_snapshot_claiming_fewer_entries_refuses_boot(tmp_path: Path) -> None:
+    """[핵심] 스냅샷이 경계 구간의 항목을 **덜 주장**하면 기동을 거부한다.
+
+    덜 주장하면 그 구간은 ``resume_at`` 때문에 영영 재생되지 않는다. 그러면
+    ``_last_sequence`` 가 내려가 이미 ACK 된 항목의 재전송이 ACCEPTED 로
+    되살아나고, journal 에 중복 줄이 생겨 **스냅샷 없이 재기동할 때 영구 기동
+    불가**가 된다(독립 재검토 P1-A).
+    """
+    path = tmp_path / "journal.jsonl"
+    writer = EdgeSyncStore(path, snapshot_every=4)
+    _fill(writer, 4)
+    writer.close()
+
+    _rewrite_snapshot(_snapshot_path(path), lambda s: s["ledger"]["accepted"].pop())
+
+    with pytest.raises(StoreRecoveryError, match="실제 줄 수"):
         EdgeSyncStore(path, snapshot_every=4)
 
 
@@ -378,6 +404,7 @@ def test_ledger_state_never_carries_payload() -> None:
             "음이 아닌 정수",
         ),
         (lambda s: s["accepted"][0].update(idempotencyKey=""), "비공백"),
+        (lambda s: s["accepted"][0].update(payloadDigest="not-a-digest"), "형식이 아니다"),
     ],
 )
 def test_ledger_state_rejects_malformed(mutate: Any, match: str) -> None:
@@ -388,3 +415,69 @@ def test_ledger_state_rejects_malformed(mutate: Any, match: str) -> None:
     mutate(state)
     with pytest.raises(LedgerStateError, match=match):
         SyncLedger.from_state(state)
+
+
+# ── 스냅샷 복원 구간의 판정 동등성 (독립 재검토 P2-I) ──────────────────────
+
+
+def _conflicting_entry(entry: JournalEntry) -> JournalEntry:
+    """같은 키·같은 순번인데 **본문이 다른** 항목 — digest 는 정합하게 맞춘다.
+
+    digest 를 깨면 DIGEST_MISMATCH 가 먼저 걸려 멱등 판정에 닿지 못한다.
+    """
+    other = _bundle_payload("evt-conflict")
+    return entry.model_copy(
+        update={"payload": other, "payload_digest": payload_digest(other)}
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (lambda e: e, IngestVerdict.DUPLICATE_IGNORED),
+        (_conflicting_entry, IngestVerdict.IDEMPOTENCY_CONFLICT),
+        (
+            lambda e: e.model_copy(update={"idempotency_key": "edge-001:other"}),
+            IngestVerdict.SEQUENCE_DUPLICATE,
+        ),
+    ],
+)
+def test_snapshot_covered_entries_keep_their_verdicts(
+    tmp_path: Path, mutate: Any, expected: IngestVerdict
+) -> None:
+    """스냅샷 경계 **안쪽** 항목도 전량 재생과 같은 판정을 낸다.
+
+    기존 테스트가 단언하던 항목은 경계 밖(꼬리 재생분)이라, 정작 스냅샷이
+    복원한 구간의 멱등·순번 판정은 검증되지 않고 있었다.
+    """
+    path = tmp_path / "journal.jsonl"
+    writer = EdgeSyncStore(path, snapshot_every=4)
+    _fill(writer, 4)  # 4건 전부 경계 안쪽
+    writer.close()
+
+    reborn = EdgeSyncStore(path, snapshot_every=4)
+    try:
+        assert reborn.ingest_event_bundle(mutate(_entry(1))).verdict is expected
+    finally:
+        reborn.close()
+
+
+def test_snapshot_covered_sequence_regression_is_rejected(tmp_path: Path) -> None:
+    """복원 구간의 순번 축도 살아 있다 — 과거 순번의 새 항목은 거부된다."""
+    path = tmp_path / "journal.jsonl"
+    writer = EdgeSyncStore(path, snapshot_every=4)
+    _fill(writer, 4)
+    writer.close()
+
+    reborn = EdgeSyncStore(path, snapshot_every=4)
+    try:
+        stale = _entry(1).model_copy(update={"idempotency_key": "edge-001:late"})
+        assert reborn.ingest_event_bundle(stale).verdict is IngestVerdict.SEQUENCE_DUPLICATE
+        fresh_regression = _entry(0).model_copy(
+            update={"idempotency_key": "edge-001:regress", "device_sequence": 0}
+        )
+        assert reborn.ingest_event_bundle(fresh_regression).verdict is (
+            IngestVerdict.SEQUENCE_DUPLICATE
+        )
+    finally:
+        reborn.close()

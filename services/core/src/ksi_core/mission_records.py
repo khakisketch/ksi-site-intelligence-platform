@@ -236,8 +236,16 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
                 f"불일치(선언 {plan_request_digest} != 실제 {actual})"
             )
     if artifact_kind == "pair" and plan_request is None:
-        # 짝 레코드는 KMZ 재생성 입력을 반드시 들고 있어야 한다 — 없으면 멱등
-        # 재발급이 assert 로 죽는다(그 assert 가 기대는 불변식을 여기서 지킨다).
+        # 짝 레코드는 KMZ 재생성 입력을 반드시 들고 있어야 한다.
+        #
+        # 근거 정정(독립 재검토 P1-2): 처음 적었던 "없으면 멱등 재발급이 assert 로
+        # 죽는다"는 **틀렸다** — planRequestDigest 가 None 이면 재발급 분기 조건
+        # (digest 일치)에 애초 도달하지 않아 그냥 409 다. 진짜 근거는 하위호환이
+        # 아니라 **불변식의 나이**다: planRequest 영속과 artifactKind="pair" 는
+        # 같은 커밋(bd9d7f9)에서 함께 도입됐으므로 이 조합의 레코드는 정상적으로
+        # 존재할 수 없다. 있다면 원장이 조작됐거나 쓰기 경로가 깨진 것이고,
+        # 그 상태로 조용히 기동하면 재발급이 영구 409 인 짝을 사람이 원인 없이
+        # 만나게 된다.
         raise ValueError(
             f"{raw.get('missionId')!r}: artifactKind=pair 인데 planRequest 가 없다"
         )

@@ -25,7 +25,13 @@ from ksi_core.auth import (
     mount_auth,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.events import EventStore, EventVerdict, make_event_key, mount_events
+from ksi_core.events import (
+    EventStore,
+    EventStoreRecoveryError,
+    EventVerdict,
+    make_event_key,
+    mount_events,
+)
 from ksi_domain.enums import EventStatus, TriageStatus
 from ksi_event_contracts.offline_sync import payload_digest
 
@@ -845,12 +851,12 @@ def test_replay_failure_releases_journal_lock(tmp_path: Path) -> None:
     seed.append({"kind": "not-a-real-kind", "eventKey": "x"})
     seed.close()
 
-    with pytest.raises(KeyError):
+    with pytest.raises(EventStoreRecoveryError):
         EventStore(DurableJournal(path))
 
     # 잠금이 해제됐다면 재조립이 flock 경합 없이 다시 같은 예외로 실패한다
-    # (JournalRecoveryError/flock 거부가 아니라 KeyError 여야 해제 증명).
-    with pytest.raises(KeyError):
+    # (JournalRecoveryError/flock 거부가 아니라 재생 실패여야 해제 증명).
+    with pytest.raises(EventStoreRecoveryError):
         EventStore(DurableJournal(path))
 
 
@@ -1012,3 +1018,157 @@ def test_stale_token_maps_to_409(store: EventStore) -> None:
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "STALE_EVENT_VIEW"
+
+
+# ── 재생 게이트 (독립 재검토 P1-1·P2-5 — transitioned 외 kind 가 무검사였다) ──
+
+
+def _seed(path: Path, records: list[dict[str, Any]]) -> None:
+    journal = DurableJournal(path)
+    for record in records:
+        journal.append(record)
+    journal.close()
+
+
+def _projected_record(*, status: str = "CANDIDATE", event_id: str = "evt-r") -> dict[str, Any]:
+    payload = _bundle_payload(event_id, status=status)
+    return {
+        "kind": "event-projected",
+        "ts": "2026-07-27T06:00:00+00:00",
+        "actor": "edge-001",
+        "eventKey": _key(event_id),
+        "eventId": event_id,
+        "siteId": "site-1",
+        "missionId": "mission-1",
+        "edgeDeviceId": "edge-001",
+        "occurredAt": "2026-07-27T06:00:00+00:00",
+        "receivedAt": "2026-07-27T06:00:01+00:00",
+        "before": None,
+        "after": {
+            "status": status,
+            "triage": "NONE",
+            "assignee": None,
+            "bundle": payload,
+        },
+        "reason": None,
+        "evidenceSnapshot": None,
+    }
+
+
+def _updated_record(*, status: str, event_id: str = "evt-r") -> dict[str, Any]:
+    payload = _bundle_payload(event_id, status="CANDIDATE")
+    return {
+        "kind": "event-updated",
+        "ts": "2026-07-27T06:00:02+00:00",
+        "actor": "edge-001",
+        "eventKey": _key(event_id),
+        "eventId": event_id,
+        "siteId": "site-1",
+        "missionId": "mission-1",
+        "before": {"status": "CANDIDATE", "bundleDigest": "sha256:" + "0" * 64},
+        "after": {"status": status, "bundle": payload, "bundleDigest": "sha256:" + "1" * 64},
+        "reason": "edge bundle update",
+        "evidenceSnapshot": None,
+    }
+
+
+def test_replay_rejects_edge_asserted_finalized_projection(tmp_path: Path) -> None:
+    """[핵심] projection 레코드 한 줄로 확정 사건을 만들 수 없다.
+
+    live 는 STATUS_NOT_EDGE_ASSERTABLE 로 막는데 재생만 무검사면, evidence 없는
+    CONFIRMED_EVENT 가 journal 한 줄로 되살아나 INV-021 을 우회한다.
+    """
+    path = tmp_path / "events" / "journal.jsonl"
+    _seed(path, [_projected_record(status="CONFIRMED_EVENT")])
+
+    with pytest.raises(EventStoreRecoveryError, match="주장할 수 없는 상태"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_finalizing_update_record(tmp_path: Path) -> None:
+    """update 레코드로 CANDIDATE→CONFIRMED_EVENT 를 만들 수 없다(불법 전이)."""
+    path = tmp_path / "events" / "journal.jsonl"
+    _seed(path, [_projected_record(), _updated_record(status="CONFIRMED_EVENT")])
+
+    with pytest.raises(EventStoreRecoveryError, match="불법 update 전이"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_update_after_finalized(tmp_path: Path) -> None:
+    """확정된 사건에 update 레코드가 적용되는 원장은 기동 거부다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    records = [_projected_record()]
+    transitioned = {
+        "kind": "event-transitioned",
+        "ts": "2026-07-27T06:00:03+00:00",
+        "actor": "op-1",
+        "eventKey": _key("evt-r"),
+        "eventId": "evt-r",
+        "before": {"status": "CANDIDATE", "triage": "NONE", "assignee": None},
+        "after": {"status": "DISMISSED", "triage": "NONE", "assignee": None},
+        "reason": "오탐",
+        "evidenceSnapshot": None,
+    }
+    records.extend([transitioned, _updated_record(status="EVIDENCE_COLLECTION")])
+    _seed(path, records)
+
+    with pytest.raises(EventStoreRecoveryError, match="확정/기각된 사건"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_naive_occurred_at(tmp_path: Path) -> None:
+    """naive 시각 하나가 재생되면 이후 목록 조회가 통째로 500 이 된다 — 기동에서 막는다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    record = _projected_record()
+    record["occurredAt"] = "2026-07-27T06:00:00"
+    _seed(path, [record])
+
+    with pytest.raises(EventStoreRecoveryError, match="naive"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_accepts_intact_projection_and_update(tmp_path: Path) -> None:
+    """[비공허 대조] 정상 원장은 그대로 재생된다 — 위 게이트들이 과잉이 아니다."""
+    path = tmp_path / "events" / "journal.jsonl"
+    _seed(path, [_projected_record(), _updated_record(status="EVIDENCE_COLLECTION")])
+
+    journal = DurableJournal(path)
+    store = EventStore(journal)
+    try:
+        record = store.get(_key("evt-r"))
+        assert record is not None
+        assert record.status is EventStatus.EVIDENCE_COLLECTION
+    finally:
+        journal.close()
+
+
+def test_update_does_not_move_occurred_at(store: EventStore) -> None:
+    """[핵심] Edge 의 후행 update 가 보관 정책 시계를 옮기지 못한다.
+
+    occurredAt 은 retention 만료 기준이라(plan_expiry), Edge 입력으로 움직이면
+    후행 update 한 번으로 증거가 즉시 삭제되거나 보관이 무한 연장된다.
+    """
+    assert _project(store, _bundle_payload("evt-clock")) is EventVerdict.PROJECTED
+    first = store.get(_key("evt-clock"))
+    assert first is not None
+
+    moved = _bundle_payload(
+        "evt-clock", status="EVIDENCE_COLLECTION", occurred_at="2020-01-01T00:00:00Z"
+    )
+    assert _project(store, moved) is EventVerdict.EVENT_UPDATED
+
+    after = store.get(_key("evt-clock"))
+    assert after is not None
+    assert after.occurred_at == first.occurred_at, "Edge update 가 보관 시계를 옮겼다"
+
+
+def test_update_syncs_site_and_mission_meta(store: EventStore) -> None:
+    """목록(레코드 메타)과 상세(bundle)가 다른 현장을 가리키지 않는다."""
+    assert _project(store, _bundle_payload("evt-meta")) is EventVerdict.PROJECTED
+    moved = _bundle_payload("evt-meta", status="EVIDENCE_COLLECTION", site_id="site-2")
+    assert _project(store, moved) is EventVerdict.EVENT_UPDATED
+
+    record = store.get(_key("evt-meta"))
+    assert record is not None
+    assert record.site_id == "site-2"
+    assert record.bundle["siteId"] == "site-2"

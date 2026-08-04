@@ -914,16 +914,29 @@ def test_generated_routes_stay_inside_convex_aoi_polygon() -> None:
 # ── 진행방향(along-track) 촬영 간격 — 전방 중첩 0 결함 (risk mapping-forward-overlap-zero) ──
 
 
-def _along_track_gaps(route: list[RouteWaypoint]) -> list[float]:
-    """같은 스캔선(동일 north) 위 이웃 웨이포인트 사이의 진행방향 거리(m)."""
-    by_line: dict[float, list[float]] = {}
+def _scan_line_runs(route: list[RouteWaypoint]) -> list[list[float]]:
+    """스캔선별 east 좌표를 **순회 순서 그대로** 끊어 담는다.
+
+    정렬해서 담으면(초기 버전) 점들이 뒤섞여도 간격 검사가 통과한다 —
+    독립 재검토 P2-1 이 지적한 공허함이라 순서를 보존한다.
+    """
+    runs: list[list[float]] = []
+    current: float | None = None
     for wp in route:
         east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
-        by_line.setdefault(round(north, 6), []).append(east)
+        key = round(north, 6)
+        if key != current:
+            runs.append([])
+            current = key
+        runs[-1].append(east)
+    return runs
+
+
+def _along_track_gaps(route: list[RouteWaypoint]) -> list[float]:
+    """스캔선 위 이웃 웨이포인트 사이의 진행방향 거리(m) — 순회 순서 기준 절댓값."""
     gaps: list[float] = []
-    for easts in by_line.values():
-        ordered = sorted(easts)
-        gaps.extend(b - a for a, b in itertools.pairwise(ordered))
+    for run in _scan_line_runs(route):
+        gaps.extend(abs(b - a) for a, b in itertools.pairwise(run))
     return gaps
 
 
@@ -973,9 +986,13 @@ def test_capture_interval_covers_scan_line_ends() -> None:
         capture_interval_m=15.0,
     ).waypoints
 
-    easts = [wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)[0] for wp in route]
-    assert min(easts) == pytest.approx(0.0, abs=1e-3)
-    assert max(easts) == pytest.approx(200.0, abs=1e-3)
+    # 전체 min/max 가 아니라 **선마다** 본다 — 한 선에서 끝점이 빠져도 다른 선이
+    # 0/200 을 찍으면 전역 검사는 통과한다(독립 재검토 P2-1).
+    runs = _scan_line_runs(route)
+    assert runs
+    for index, run in enumerate(runs):
+        assert min(run) == pytest.approx(0.0, abs=1e-3), f"스캔선 {index} 좌단 누락"
+        assert max(run) == pytest.approx(200.0, abs=1e-3), f"스캔선 {index} 우단 누락"
 
 
 def test_capture_interval_preserves_boustrophedon_direction() -> None:
@@ -988,36 +1005,34 @@ def test_capture_interval_preserves_boustrophedon_direction() -> None:
         capture_interval_m=50.0,
     ).waypoints
 
-    lines: list[list[float]] = []
-    current_north: float | None = None
-    for wp in route:
-        east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
-        key = round(north, 6)
-        if key != current_north:
-            lines.append([])
-            current_north = key
-        lines[-1].append(east)
-    directions = [line[-1] - line[0] > 0 for line in lines if len(line) > 1]
+    lines = [run for run in _scan_line_runs(route) if len(run) > 1]
+    directions = [line[-1] - line[0] > 0 for line in lines]
     assert len(directions) >= 2
     for previous, nxt in itertools.pairwise(directions):
         assert previous != nxt, f"왕복이 아니다: {directions}"
+    # 선 **내부**도 단조여야 한다 — 부호만 보면 중간이 지그재그여도 통과한다
+    # (독립 재검토 P2-1). 채워 넣은 점이 순서를 깨면 기체가 되돌아 난다.
+    for index, (line, ascending) in enumerate(zip(lines, directions, strict=True)):
+        for a, b in itertools.pairwise(line):
+            assert (b > a) is ascending, f"스캔선 {index} 내부가 단조가 아니다: {line}"
 
 
 def test_capture_interval_longer_than_line_keeps_endpoints() -> None:
     """구간보다 긴 간격은 끝점 2장으로 이미 조건을 만족한다 — 억지로 쪼개지 않는다."""
     # sweep 을 동서로 고정 — 자동 선택은 긴 변(북남)을 고르므로 스캔선이 세로가 된다.
+    # 간격은 spacing 상한(결합 게이트) 안에서 스캔선 길이보다 크게 잡는다.
     route = lawnmower_route(
-        _rect_aoi(50.0, 100.0),
+        _rect_aoi(15.0, 100.0),
         spacing_m=20.0,
         altitude_m=40.0,
         envelope=_ENVELOPE,
         sweep_direction_deg=0.0,
-        capture_interval_m=500.0,
+        capture_interval_m=20.0,
     ).waypoints
 
     gaps = _along_track_gaps(route)
     assert gaps
-    assert all(g == pytest.approx(50.0, abs=1e-3) for g in gaps)
+    assert all(g == pytest.approx(15.0, abs=1e-3) for g in gaps)
 
 
 @pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), 0.05])
@@ -1029,4 +1044,21 @@ def test_invalid_capture_interval_rejected(value: float) -> None:
             altitude_m=40.0,
             envelope=_ENVELOPE,
             capture_interval_m=value,
+        )
+
+
+def test_capture_interval_wider_than_spacing_rejected() -> None:
+    """[핵심] 진행방향 간격이 측면 간격보다 성기면 거부한다(독립 재검토 P1-2).
+
+    상한이 없으면 아주 큰 값으로 "간격보다 짧은 구간" 분기에 떨어뜨려 전방 중첩
+    0 을 그대로 재현할 수 있고, 그때도 coverage_ratio 는 1.0 을 보고한다 —
+    게이트가 존재 여부만 보던 공백이다.
+    """
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=20.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=500.0,
         )

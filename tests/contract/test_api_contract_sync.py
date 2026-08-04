@@ -488,6 +488,7 @@ def _compare_object_fields(
     impl_node: Any,
     trail: str,
     mismatches: list[str],
+    compared_objects: list[str],
 ) -> None:
     """두 스키마 트리의 object 계층을 필드 이름·필수 여부로 재귀 대조한다.
 
@@ -510,6 +511,10 @@ def _compare_object_fields(
     impl_props = impl_node.get("properties")
     if not isinstance(doc_props, dict) or not isinstance(impl_props, dict):
         return
+    # 실제로 필드 집합을 맞대본 횟수 — 호출자의 공허 방지 검사가 이걸 센다
+    # (독립 재검토 P2-4: operation 수만 세면 문서 body 를 description 만 남기고
+    # 비워도 카운터가 유지돼 "대조했다"가 거짓이 된다).
+    compared_objects.append(trail)
 
     doc_fields, impl_fields = set(doc_props), set(impl_props)
     if doc_fields != impl_fields:
@@ -532,6 +537,7 @@ def _compare_object_fields(
             impl_node=impl_props[field],
             trail=f"{trail}.{field}",
             mismatches=mismatches,
+            compared_objects=compared_objects,
         )
 
 
@@ -542,7 +548,7 @@ def test_documented_request_bodies_match_implementation_fields(tmp_path: Path) -
     impl_paths = impl["paths"]
 
     mismatches: list[str] = []
-    compared = 0
+    compared_objects: list[str] = []
     for path, item in (doc.get("paths") or {}).items():
         if not isinstance(item, dict):
             continue
@@ -559,7 +565,6 @@ def test_documented_request_bodies_match_implementation_fields(tmp_path: Path) -
             if impl_schema is None:
                 mismatches.append(f"{method.upper()} {path}: 구현에 JSON 요청 본문이 없다")
                 continue
-            compared += 1
             _compare_object_fields(
                 doc_spec=doc,
                 impl_spec=impl,
@@ -567,12 +572,86 @@ def test_documented_request_bodies_match_implementation_fields(tmp_path: Path) -
                 impl_node=impl_schema,
                 trail=f"{method.upper()} {path}",
                 mismatches=mismatches,
+                compared_objects=compared_objects,
             )
 
-    assert compared >= 3, (
-        f"요청 본문을 가진 문서화 operation 이 너무 적다({compared}) — 게이트가 공허하다"
+    # 중첩까지 실제로 맞대본 object 수를 센다 — POST /v1/missions/plans 하나만도
+    # contract·siteFrame·flightEnvelope·aoi·route·drone·wayline 로 여러 층이다.
+    assert len(compared_objects) >= 10, (
+        f"실제로 대조된 object 가 너무 적다({compared_objects}) — 게이트가 공허하다"
     )
     assert not mismatches, (
         "openapi-core.yaml 의 요청 본문이 실구현과 갈라졌다 — 구현이 새 입력을 "
         f"요구하기 시작했으면 계약도 같이 바꿔라: {mismatches}"
     )
+
+
+# ── ⑦ 무인증 표면을 **코드로** 열거 (독립 재검토 P2-9) ─────────────────────
+#
+# ③은 문서의 자기일관성만 본다. 실구현은 FastAPI 보안 유틸 대신 수동 헤더 파싱을
+# 쓰므로 앱 OpenAPI 에 security 가 실리지 않고, 그래서 "새 라우트가 인증 없이
+# 추가됐다"를 잡는 게이트가 없었다 — 공개 allowlist 를 산문으로만 관리하던 상태다.
+# 여기서는 라우트의 의존성 그래프를 훑어 ksi_core.auth 의 게이트를 실제로 타는지
+# 본다(무엇이 열려 있나를 코드가 답하게 한다).
+
+# 인증 없이 열려도 되는 표면 — 문서 allowlist(_PUBLIC_PATHS)와 FastAPI 기본 문서
+# 라우트. 이 집합을 늘리는 변경은 곧 "새 무인증 표면"이므로 눈에 띄어야 한다.
+_UNAUTHENTICATED_ALLOWLIST = _PUBLIC_PATHS | {
+    "/openapi.json",
+    "/docs",
+    "/docs/oauth2-redirect",
+    "/redoc",
+}
+
+
+def _walk_routes(container: Any) -> list[Any]:
+    """앱의 모든 실제 라우트 — 포함된 라우터를 재귀로 펼친다.
+
+    이 FastAPI 버전은 ``include_router`` 결과를 ``_IncludedRouter`` 로 감싸 두고 실제
+    라우트는 ``original_router`` 안에 있다 — ``app.routes`` 만 훑으면 조건부 라우터가
+    통째로 보이지 않는다(이 게이트를 처음 붙였을 때 보호 라우트가 0건으로 잡혔다).
+    """
+    found: list[Any] = []
+    for route in getattr(container, "routes", None) or []:
+        if getattr(route, "methods", None) and getattr(route, "path", None):
+            found.append(route)
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            found.extend(_walk_routes(inner))
+    return found
+
+
+def _has_auth_dependency(route: Any) -> bool:
+    """라우트가 ``ksi_core.auth`` 의 게이트를 의존성으로 타는가."""
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+    pending = list(dependant.dependencies)
+    while pending:
+        dependency = pending.pop()
+        call = getattr(dependency, "call", None)
+        module = getattr(call, "__module__", "")
+        if module == "ksi_core.auth" or getattr(call, "__qualname__", "").startswith(
+            ("require_permission", "require_principal", "_require_device_sequence_access")
+        ):
+            return True
+        pending.extend(dependency.dependencies)
+    return False
+
+
+def test_no_unauthenticated_route_outside_allowlist(tmp_path: Path) -> None:
+    """[핵심] 최대 조립에서 인증 게이트 없는 라우트는 allowlist 뿐이다."""
+    app = _max_assembly(tmp_path)
+
+    routes = _walk_routes(app)
+    assert len(routes) >= 15, f"라우트를 제대로 못 폈다({len(routes)}) — 게이트가 공허하다"
+    unauthenticated = {r.path for r in routes if not _has_auth_dependency(r)}
+    unexpected = unauthenticated - _UNAUTHENTICATED_ALLOWLIST
+
+    assert not unexpected, (
+        "인증 없이 열린 라우트가 allowlist 밖에 있다 — 새 표면을 열었다면 "
+        f"create_app docstring 과 이 목록을 함께 갱신하라: {sorted(unexpected)}"
+    )
+    # 공허 방지 — 보호 라우트가 실제로 여럿 감지돼야 위 차집합에 의미가 있다.
+    protected = {r.path for r in routes if _has_auth_dependency(r)}
+    assert len(protected) >= 8, f"인증 게이트를 감지한 라우트가 너무 적다: {sorted(protected)}"

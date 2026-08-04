@@ -754,6 +754,7 @@ paths:
                       description: lawnmower(매핑) 계열 필수 — 스캔선 간격 상한(m, 측면 중첩)
                     captureIntervalM:
                       type: number
+                      minimum: 0.1
                       description: >-
                         lawnmower(매핑) 계열 필수 — 진행방향 촬영 간격 상한(m).
                         없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어
@@ -945,8 +946,8 @@ components:
       type: object
       required:
         [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
-         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle, transitions,
-         evidence]
+         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle,
+         bundleDigest, transitions, evidence]
       properties:
         eventKey: { type: string }
         eventId: { type: string }
@@ -963,6 +964,10 @@ components:
         lastConflictAt: { type: [string, 'null'], format: date-time }
         # 구조 정본은 contracts/schemas/event-bundle.v1.2.json.
         bundle: { type: object, additionalProperties: true }
+        # 전이 요청의 expectedBundleDigest 에 그대로 실을 값 — 클라이언트가 정규화
+        # 규약을 재구현하면 JSON 표기 차이 하나로 영구 409 가 되므로 서버가 계산해
+        # 돌려준다.
+        bundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         transitions: { type: array, items: { type: object, additionalProperties: true } }
         # 폐기된 것도 포함한다(ADR-KSI-010 §3) — 목록에서 사라지면 "증거가 없다"와
         # "정책대로 폐기했다"를 구분할 수 없다. 열람 URL 은 여기 없다: URL 이 곧

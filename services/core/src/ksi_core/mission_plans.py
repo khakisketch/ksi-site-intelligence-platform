@@ -73,7 +73,7 @@ from ksi_mission_planning import (
     lawnmower_route,
     perimeter_route,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
@@ -398,10 +398,30 @@ def build_mission_plans_router(
                 and existing.artifact_kind == "pair"
                 and existing.plan_request_digest == request_digest
             ):
+                try:
+                    regenerated = _regenerate_pair_artifact(
+                        existing, private_key=private_key, key_id=key_id
+                    )
+                except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
+                    # 저장된 요청이 **현재** 규칙을 더는 만족하지 않는 경우다
+                    # (독립 재검토 P2-7). 예: 규제 고도 상한이 낮아진 뒤의 옛
+                    # 봉투, 또는 촬영 간격 필수화 이전에 발급된 매핑 요청. 그대로
+                    # 두면 재시도가 500 이 되어 "서버 버그"처럼 보인다 — 실제로는
+                    # 정책이 바뀐 것이므로 그 사실을 typed 로 알린다.
+                    logger.warning(
+                        "mission_id=%s 짝 재생성이 현재 정책에서 실패 — %s",
+                        existing.mission_id, type(exc).__name__,
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "이미 기록된 임무지만 현재 정책으로는 산출물을 다시 만들 수 "
+                            f"없다(발급 당시 규칙과 달라졌다): {exc}. 새 missionId 로 "
+                            "발급하라"
+                        ),
+                    ) from exc
                 response.status_code = 200
-                return _regenerate_pair_artifact(
-                    existing, private_key=private_key, key_id=key_id
-                )
+                return regenerated
         if verdict is not None:
             raise_for_mission_record_verdict(verdict)
 

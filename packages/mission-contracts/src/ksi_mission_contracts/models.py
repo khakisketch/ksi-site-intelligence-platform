@@ -59,9 +59,6 @@ class SiteFrame(_CamelModel):
     transform_version: str
 
 
-#  잠정 sanity cap(m) — 규제값(권고 150m)은 대표자 확정 대기(원장 risk
-# flight-envelope-absolute-ceiling). 이 상수는 서버 발급 게이트일 뿐 JSON
-# 스키마(v1.2)는 건드리지 않는다 — 기존 서명 계약의 하위호환을 유지한다.
 # 서버 고정 안전상수 — 요청으로 바꿀 수 없다(INV 계열 원칙). 값은 항공안전법의
 # 일반 비행제한 고도이며 2026-08-05 대표자 확정이다. 이 값을 넘는 봉투는 서명
 # 계약으로 성립하지 않는다 — "규제 위반 고도의 임무는 발급 자체가 안 된다".

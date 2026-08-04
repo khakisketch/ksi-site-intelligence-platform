@@ -88,6 +88,12 @@ export interface EvidenceSummary {
 export interface EventDetailResponse extends EventSummaryResponse {
   lastConflictAt: string | null;
   bundle: Record<string, unknown>;
+  /**
+   * 현재 bundle 의 정규화 digest. 트리아지 전이 요청의 expectedBundleDigest 에
+   * 그대로 실으면, 화면을 연 뒤 Edge 가 내용을 바꿨을 때 서버가 409 로 막는다
+   * (직접 계산하면 JSON 표기 차이로 영구 409 가 되므로 이 값을 그대로 쓴다).
+   */
+  bundleDigest: string;
   transitions: Array<Record<string, unknown>>;
   evidence: EvidenceSummary[];
 }

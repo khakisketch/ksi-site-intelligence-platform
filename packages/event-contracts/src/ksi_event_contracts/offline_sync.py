@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -110,6 +111,8 @@ def payload_digest(payload: dict[str, Any]) -> str:
 # 원장 스냅샷 표현의 버전. 표현이 바뀌면 올리고, 옛 버전은 복원을 거부한다
 # (조용히 다르게 해석하느니 전량 재생으로 돌아가는 편이 안전하다).
 _LEDGER_STATE_VERSION = 1
+# JournalEntry.payload_digest 와 같은 형식 — 복원 경로도 이걸 강제한다.
+_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 class LedgerStateError(ValueError):
@@ -321,6 +324,14 @@ class SyncLedger:
             key = _require_text(raw.get("idempotencyKey"), index, "idempotencyKey")
             device = _require_text(raw.get("edgeDeviceId"), index, "edgeDeviceId")
             digest = _require_text(raw.get("payloadDigest"), index, "payloadDigest")
+            # 형식까지 강제한다(독립 재검토 P2-D) — JournalEntry.payload_digest 의
+            # 계약이 `sha256:<hex64>` 인데 복원만 느슨하면, 형식이 깨진 신원이
+            # 복원돼 그 키의 정상 재전송이 DUPLICATE_IGNORED 가 아니라
+            # IDEMPOTENCY_CONFLICT 로 영구히 막힌다(순번도 이미 소진돼 복구 불가).
+            if not _DIGEST_PATTERN.fullmatch(digest):
+                raise LedgerStateError(
+                    f"accepted[{index}].payloadDigest 가 sha256:<hex64> 형식이 아니다"
+                )
             sequence = raw.get("deviceSequence")
             # bool 은 int 의 서브클래스다 — True 가 순번 1 로 통과하는 경로를 막는다.
             if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:

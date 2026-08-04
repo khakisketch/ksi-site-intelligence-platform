@@ -48,6 +48,11 @@ interface WizardFormState {
 // 서버가 고정한 규제 고도 상한(항공안전법 일반 비행제한 고도). 계약의
 // maxAltitudeM 이 이 값을 넘으면 서버가 422 로 거부하므로, 여기서 먼저 막아
 // 사용자가 8단계를 다 채우고 나서야 실패를 보는 일을 없앤다.
+// 진행방향 촬영 간격의 서버 규칙(packages/mission-planning coverage.py):
+// 하한 0.1m, 그리고 **스캔선 간격 이하**여야 한다. 여기서 막지 않으면 현장은
+// 등록되고 임무 발급만 422 로 실패해 "반쪽 상태"가 남는다(독립 재검토 P2-4 —
+// excludedVolumes 에서 이미 겪은 함정과 같은 클래스).
+const MIN_CAPTURE_INTERVAL_M = 0.1;
 const MAX_ALTITUDE_M = 150;
 // 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
 const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
@@ -383,7 +388,8 @@ export function SiteRegistrationWizard() {
     4: form.excludedVolumes.length === 0,
     5:
       form.spacingM > 0 &&
-      form.captureIntervalM > 0 &&
+      form.captureIntervalM >= MIN_CAPTURE_INTERVAL_M &&
+      form.captureIntervalM <= form.spacingM &&
       form.autoFlightSpeedMs > 0 &&
       form.takeoffSecurityHeightM >= 1.2 &&
       form.takeoffSecurityHeightM <= 1500 &&
@@ -444,9 +450,11 @@ export function SiteRegistrationWizard() {
       ? `${MAX_FLIGHT_ALTITUDE_M}m 이하여야 합니다(법정 비행제한 고도 ${MAX_ALTITUDE_M}m).`
       : undefined;
   const spacingError = !(form.spacingM > 0) ? "0보다 큰 값을 입력하세요." : undefined;
-  const captureIntervalError = !(form.captureIntervalM > 0)
-    ? "0보다 큰 값을 입력하세요."
-    : undefined;
+  const captureIntervalError = !(form.captureIntervalM >= MIN_CAPTURE_INTERVAL_M)
+    ? `${MIN_CAPTURE_INTERVAL_M}m 이상을 입력하세요.`
+    : form.captureIntervalM > form.spacingM
+      ? "웨이포인트 간격보다 작거나 같아야 합니다(진행방향 겹침이 측면보다 나빠집니다)."
+      : undefined;
   const autoFlightSpeedError =
     !(form.autoFlightSpeedMs > 0) ? "0보다 큰 값을 입력하세요." : undefined;
   const takeoffHeightError =
@@ -612,6 +620,8 @@ export function SiteRegistrationWizard() {
           >
             <input
               type="number"
+              min={MIN_CAPTURE_INTERVAL_M}
+              step="0.1"
               value={form.captureIntervalM}
               onChange={(event) => update({ captureIntervalM: event.target.valueAsNumber })}
               aria-invalid={Boolean(captureIntervalError)}

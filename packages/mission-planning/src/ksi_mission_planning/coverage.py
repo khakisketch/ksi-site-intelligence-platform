@@ -330,6 +330,14 @@ def _capture_xs(
     if span <= capture_interval_m:
         return [x_start, x_end]
     steps = math.ceil(span / capture_interval_m)
+    if steps + 1 > _MAX_WAYPOINTS:
+        # 세그먼트 **하나**가 상한을 넘는 경우를 리스트 생성 **전에** 끊는다
+        # (독립 재검토 P2-2) — 호출자의 루프 안 검사는 세그먼트 간에만 유효해서,
+        # 여기서 먼저 materialize 하면 그 검사가 도는 시점엔 이미 할당이 끝나 있다.
+        raise RouteGenerationError(
+            f"한 스캔선에 웨이포인트 {steps + 1}개 — WPML index 상한"
+            f"({_MAX_WAYPOINTS})을 넘는다. captureIntervalM 을 키워라"
+        )
     return [x_start + (x_end - x_start) * k / steps for k in range(steps + 1)]
 
 
@@ -386,13 +394,30 @@ def lawnmower_route(
             f"spacing_m 는 {_MIN_SPACING_M}m 이상의 finite 여야 한다 (got {spacing_m!r}) — "
             "하한은 스캔선 수 폭발(자원 소진) 차단"
         )
-    if capture_interval_m is not None and not (
-        math.isfinite(capture_interval_m) and capture_interval_m >= _MIN_CAPTURE_INTERVAL_M
-    ):
-        raise RouteGenerationError(
-            f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
-            f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
-        )
+    if capture_interval_m is not None:
+        if not (
+            math.isfinite(capture_interval_m) and capture_interval_m >= _MIN_CAPTURE_INTERVAL_M
+        ):
+            raise RouteGenerationError(
+                f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
+                f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
+            )
+        if capture_interval_m > spacing_m:
+            # **상한이 없으면 이 인자는 fail-closed 시늉만 한다**(독립 재검토 P1-2):
+            # 아주 큰 값을 주면 구간이 통째로 "간격보다 짧다"로 떨어져 끝점 2개만
+            # 남고, 전방 중첩 0 이 그대로 재현되는데 coverage_ratio 는 여전히 1.0 을
+            # 보고한다(실측이 스캔선 스와스만 보고 진행방향 샘플링은 보지 않는다).
+            #
+            # 카메라 스펙 없이 쓸 수 있는 상한이 하나 있다 — **측면 간격**이다.
+            # 사진측량에서 전방 중첩은 통상 측면보다 크게 잡으므로 진행방향 간격이
+            # 측면 간격을 넘는 구성은 어떤 카메라에서도 의도된 매핑이 아니다.
+            # 이 결합으로 진행방향 샘플링이 최소한 측면만큼 조밀해져, 스와스 모델
+            # 기반 coverage_ratio 의 "보수적 과소보고" 전제도 유지된다.
+            raise RouteGenerationError(
+                f"capture_interval_m({capture_interval_m}) > spacing_m({spacing_m}) — "
+                "진행방향 간격이 측면 간격보다 성기면 전방 중첩이 측면보다 나빠져 "
+                "사진측량 산출물이 성립하지 않는다(카메라 실측 확정 전 사용 가능한 상한)"
+            )
 
     ring = aoi._to_enu_ring()
     anchor = aoi.anchor()

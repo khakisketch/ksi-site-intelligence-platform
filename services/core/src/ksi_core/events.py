@@ -246,29 +246,37 @@ def _iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
 
 
-def _bundle_str(bundle: dict[str, Any], key: str, fallback: str) -> str:
-    """갱신된 bundle 의 메타 문자열 — 없거나 형식이 어긋나면 기존 값을 유지한다.
+class EventStoreRecoveryError(RuntimeError):
+    """event journal 재생 실패 — 오염·불법 전이가 기록된 원장으로 기동하지 않는다.
 
-    ``EventBundle`` 검증을 이미 통과한 payload 만 여기 오므로 정상 경로에서는 항상
-    있다. 그럼에도 fallback 을 두는 이유는 이 함수가 **재생 경로에서도** 돌기
-    때문이다 — 과거 스키마로 기록된 레코드 하나가 기동 전체를 죽이는 것보다,
-    그 한 건이 이전 메타를 유지하는 편이 운영에서 낫다(``event_type`` property 와
-    같은 판단).
+    ``SiteStoreRecoveryError``/``MissionStoreRecoveryError`` 대응물(독립 재검토
+    P2-6). 이게 없으면 재생 게이트가 던지는 ``ValueError``·전이 예외가 raw 로
+    새어나가 호출자가 "기동 거부"와 "우연한 버그"를 구분할 수 없다.
     """
-    value = bundle.get(key)
-    return value if isinstance(value, str) and value else fallback
 
 
-def _bundle_ts(bundle: dict[str, Any], fallback: datetime) -> datetime:
-    """갱신된 bundle 의 ``occurredAt`` — 파싱 불가·naive 면 기존 값을 유지한다."""
-    raw = bundle.get("occurredAt")
+def _require_aware_iso(raw: Any, field_name: str, event_key: str) -> datetime:
+    """journal 의 ISO 시각을 tz-aware datetime 으로 — naive·비문자열은 기동 거부.
+
+    naive 값 하나가 재생되면 그 뒤 목록 조회의 ``sort(key=occurred_at)`` 이
+    aware/naive 비교 ``TypeError`` 로 죽어 **조회 표면 전체가 500** 이 된다
+    (독립 재검토 P2-6). 죽는 자리를 기동 시점으로 당긴다.
+    """
     if not isinstance(raw, str):
-        return fallback
+        raise EventStoreRecoveryError(
+            f"재생: {field_name} 가 문자열이 아니다({type(raw).__name__}) — eventKey={event_key}"
+        )
     try:
         parsed = datetime.fromisoformat(raw)
-    except ValueError:
-        return fallback
-    return fallback if parsed.tzinfo is None else parsed
+    except ValueError as exc:
+        raise EventStoreRecoveryError(
+            f"재생: {field_name} 가 ISO 시각이 아니다({raw!r}) — eventKey={event_key}"
+        ) from exc
+    if parsed.tzinfo is None:
+        raise EventStoreRecoveryError(
+            f"재생: {field_name} 가 naive datetime — eventKey={event_key}"
+        )
+    return parsed
 
 
 def make_event_key(edge_device_id: str, event_id: str) -> str:
@@ -355,6 +363,19 @@ class EventStore:
         try:
             for record in journal.replay():
                 self._apply(record)
+        except EventStoreRecoveryError:
+            journal.close()
+            raise
+        except (KeyError, ValueError, TypeError, IllegalEventTransitionError,
+                IllegalTriageTransitionError) as exc:
+            # 재생 실패는 전부 typed 로 묶는다(독립 재검토 P2-6) — sites.py 의
+            # SiteStoreRecoveryError·mission_records.py 의 MissionStoreRecoveryError
+            # 와 대칭. raw 예외가 새면 호출자가 "기동 거부"와 "우연한 버그"를
+            # 구분할 수 없다.
+            journal.close()
+            raise EventStoreRecoveryError(
+                f"event journal 재생 실패 — 오염되거나 불법 전이가 기록됨: {exc}"
+            ) from exc
         except BaseException:
             # __init__ 실패 시 journal 이 flock 을 쥔 채 버려지면 프로세스
             # 수명 내내 잔존한다(2차 독립 재검토 P2, sites.py 대칭 조치).
@@ -368,18 +389,29 @@ class EventStore:
         event_key = record["eventKey"]
         if kind == "event-projected":
             after = record["after"]
+            projected_status = EventStatus(after["status"])
+            # 재생 경로도 live 의 ② 권한 게이트를 태운다(독립 재검토 P1-1) —
+            # 확정/기각은 Edge 가 주장할 수 없고(INV-021 우회 차단), 그 규칙이
+            # projection 레코드에만 빠져 있으면 "journal 한 줄로 확정 사건 만들기"가
+            # 그대로 성립한다. transitioned 만 막았던 것이 비대칭이었다.
+            if projected_status not in _EDGE_ASSERTABLE_STATUSES:
+                raise EventStoreRecoveryError(
+                    f"재생: Edge 가 주장할 수 없는 상태로 projection 됨 "
+                    f"({projected_status.value}) — eventKey={event_key}"
+                )
+            occurred_at = _require_aware_iso(record["occurredAt"], "occurredAt", event_key)
             self._events[event_key] = EventRecord(
                 event_key=event_key,
                 event_id=record["eventId"],
                 site_id=record["siteId"],
                 mission_id=record["missionId"],
                 bundle=after["bundle"],
-                status=EventStatus(after["status"]),
+                status=projected_status,
                 triage=TriageStatus(after["triage"]),
                 assignee=after["assignee"],
                 edge_device_id=record["edgeDeviceId"],
-                occurred_at=datetime.fromisoformat(record["occurredAt"]),
-                received_at=datetime.fromisoformat(record["receivedAt"]),
+                occurred_at=occurred_at,
+                received_at=_require_aware_iso(record["receivedAt"], "receivedAt", event_key),
                 last_conflict_at=None,
                 transitions=(record,),
             )
@@ -388,18 +420,42 @@ class EventStore:
         existing = self._events[event_key]
         if kind == "event-updated":
             after = record["after"]
-            updated_bundle = after["bundle"]
+            updated_status = EventStatus(after["status"])
+            # 재생에서도 live 와 같은 전이 규칙을 태운다(독립 재검토 P1-1). live
+            # (_project_bundle_locked)는 종단 상태의 후행 update 를 diverge 로
+            # 격리하고 불법 전이를 거부하는데, 재생만 무검사면 그 두 규칙이
+            # journal 한 줄로 우회된다 — evidence 없는 CONFIRMED_EVENT 가
+            # update 레코드로 되살아나는 경로가 정확히 이것이다.
+            if existing.status in _FINALIZED_STATUSES:
+                raise EventStoreRecoveryError(
+                    f"재생: 확정/기각된 사건({existing.status.value})에 update 레코드가 "
+                    f"적용될 수 없다 — eventKey={event_key}"
+                )
+            if updated_status is not existing.status and not can_event_transition(
+                existing.status, updated_status
+            ):
+                raise EventStoreRecoveryError(
+                    f"재생: 불법 update 전이 {existing.status.value} -> "
+                    f"{updated_status.value} — eventKey={event_key}"
+                )
             # 레코드 메타를 새 bundle 에 맞춘다(s2-residual-hardening #6). 예전에는
-            # bundle 만 갈아끼워서, Edge 가 siteId·missionId·occurredAt 을 고쳐 보낸
-            # 뒤 목록(레코드 메타 기준)과 상세(bundle 기준)가 서로 다른 현장·시각을
-            # 보이는 상태가 남았다. bundle 이 Edge 주장의 정본이므로 메타가 따라간다.
+            # bundle 만 갈아끼워서, Edge 가 siteId·missionId 를 고쳐 보낸 뒤 목록
+            # (레코드 메타 기준)과 상세(bundle 기준)가 서로 다른 현장을 보이는 상태가
+            # 남았다. 값은 **기록 시점에 파싱된 모델**에서 나온 레코드 필드를 쓴다 —
+            # raw bundle dict 를 다시 읽으면 projection(파싱된 모델)과 update(raw)가
+            # 서로 다른 진실을 보게 된다(독립 재검토 P2-2).
+            #
+            # ``occurredAt`` 은 **동기화하지 않는다.** 그 값은 보관 정책의 만료
+            # 기준이라(``retention.py`` plan_expiry), Edge 입력으로 움직이면 후행
+            # update 한 번으로 증거 객체가 즉시 삭제되거나(과거값) 보관이 무한
+            # 연장된다(미래값) — 되돌릴 수 없는 방향의 실행이다(독립 재검토 P1-3).
+            # 서버가 처음 관측한 시각을 감사·보관의 앵커로 고정한다.
             self._events[event_key] = replace(
                 existing,
-                bundle=updated_bundle,
-                site_id=_bundle_str(updated_bundle, "siteId", existing.site_id),
-                mission_id=_bundle_str(updated_bundle, "missionId", existing.mission_id),
-                occurred_at=_bundle_ts(updated_bundle, existing.occurred_at),
-                status=EventStatus(after["status"]),
+                bundle=after["bundle"],
+                site_id=record.get("siteId", existing.site_id),
+                mission_id=record.get("missionId", existing.mission_id),
+                status=updated_status,
                 transitions=(*existing.transitions, record),
             )
         elif kind == "event-diverged":
@@ -575,6 +631,13 @@ class EventStore:
                 "actor": edge_device_id,
                 "eventKey": event_key,
                 "eventId": bundle.event_id,
+                # projection 과 **같은 출처**(파싱된 모델)에서 메타를 싣는다 —
+                # 재생이 raw bundle dict 를 다시 읽으면 두 경로가 서로 다른 진실을
+                # 본다(populate_by_name 때문에 snake_case payload 도 통과한다,
+                # 독립 재검토 P2-2). occurredAt 은 싣지 않는다(P1-3 — 보관 정책
+                # 만료 기준이라 Edge 입력으로 움직이면 안 된다).
+                "siteId": bundle.site_id,
+                "missionId": bundle.mission_id,
                 "before": {"status": existing.status.value, "bundleDigest": existing_digest},
                 "after": {
                     "status": bundle.status.value,
@@ -1002,6 +1065,11 @@ class EventDetailResponse(_CamelModel):
     received_at: datetime
     last_conflict_at: datetime | None
     bundle: dict[str, Any]
+    # 낙관적 동시성 토큰의 **현재 값**(독립 재검토 P2-3) — 이게 없으면 클라이언트가
+    # 전이 요청의 expectedBundleDigest 를 얻을 방법이 없어 그 기능을 쓸 수 없다.
+    # 정규화 규약(payload_digest)을 클라이언트가 재구현하게 두면 JSON 표기 차이
+    # 하나로 영구 409 가 되므로, 서버가 계산해 그대로 돌려준다.
+    bundle_digest: str
     transitions: list[dict[str, Any]]
     # 폐기된 것도 포함한다 — "증거가 없다"와 "정책대로 폐기했다"는 다른 사실이라
     # 목록에서 사라지면 안 된다(ADR-KSI-010 §3). 열람 URL 은 여기 없다:
@@ -1114,6 +1182,7 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
         received_at=record.received_at,
         last_conflict_at=record.last_conflict_at,
         bundle=record.bundle,
+        bundle_digest=payload_digest(record.bundle),
         transitions=list(record.transitions),
         evidence=[
             EvidenceSummary(
