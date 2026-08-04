@@ -82,6 +82,18 @@ from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import JournalSealedError
+from ksi_core.evidence import (
+    ALLOWED_CONTENT_TYPES,
+    DEFAULT_UPLOAD_TTL,
+    DEFAULT_VIEW_TTL,
+    EvidenceArtifact,
+    EvidenceStorage,
+    EvidenceStorageError,
+    EvidenceVerdict,
+    build_object_key,
+    expires_at,
+    is_valid_artifact_id,
+)
 from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
@@ -145,6 +157,17 @@ _CRITICAL_ARTIFACT_FIELDS = ("riskFieldArtifact", "trajectoryArtifact", "viewpoi
 
 _NOT_FOUND_DETAIL = "이벤트를 찾을 수 없다"
 
+# Evidence 판정 → HTTP (ADR-KSI-010 §1). REGISTERED 는 성공 경로라 여기 없다.
+_EVIDENCE_STATUS: dict[EvidenceVerdict, int] = {
+    EvidenceVerdict.UNKNOWN_EVENT: 404,
+    EvidenceVerdict.UNKNOWN_ARTIFACT: 404,
+    EvidenceVerdict.INVALID_ARTIFACT_ID: 422,
+    EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
+    EvidenceVerdict.DUPLICATE_ARTIFACT: 409,
+    EvidenceVerdict.ALREADY_TOMBSTONED: 410,
+    EvidenceVerdict.REGISTERED: 201,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class EventRecord:
@@ -168,6 +191,9 @@ class EventRecord:
     received_at: datetime
     last_conflict_at: datetime | None
     transitions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    # 등록 순서 보존(ADR-KSI-010 §1) — 폐기된 것도 남는다. "증거가 없다"와
+    # "정책대로 폐기했다"는 사고 조사에서 다른 사실이다.
+    evidence: tuple[EvidenceArtifact, ...] = field(default_factory=tuple)
 
     @property
     def severity(self) -> Severity | None:
@@ -195,6 +221,18 @@ class TriageTransitionResult:
     verdict: EventVerdict
     detail: str | None = None
     record: EventRecord | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceRegistration:
+    """Evidence 등록·폐기 판정 (ADR-KSI-010 §1).
+
+    거부 사유는 :class:`EvidenceVerdict` 로 typed 하게 돌려준다 — 라우터가
+    문자열 메시지를 파싱해 상태코드를 정하는 경로를 만들지 않는다.
+    """
+
+    verdict: EvidenceVerdict
+    artifact: EvidenceArtifact | None = None
 
 
 def _require_tz_aware(value: datetime, *, param: str) -> None:
@@ -342,6 +380,40 @@ class EventStore:
                 status=EventStatus(after["status"]),
                 triage=TriageStatus(after["triage"]),
                 assignee=after["assignee"],
+                transitions=(*existing.transitions, record),
+            )
+        elif kind == "evidence-registered":
+            artifact = EvidenceArtifact(
+                artifact_id=record["artifactId"],
+                event_key=event_key,
+                site_id=record["siteId"],
+                object_key=record["objectKey"],
+                content_type=record["contentType"],
+                registered_at=datetime.fromisoformat(record["ts"]),
+                registered_by=record["registeredBy"],
+            )
+            self._events[event_key] = replace(
+                existing,
+                evidence=(*existing.evidence, artifact),
+                transitions=(*existing.transitions, record),
+            )
+        elif kind == "evidence-tombstoned":
+            # 레코드를 지우지 않고 폐기 사실을 덧씌운다(ADR-KSI-010 §3) —
+            # 원장에서 과거를 고쳐 쓰면 감사 추적이 감사 대상이 된다.
+            artifact_id = record["artifactId"]
+            tombstoned_at = datetime.fromisoformat(record["ts"])
+            self._events[event_key] = replace(
+                existing,
+                evidence=tuple(
+                    replace(
+                        artifact,
+                        tombstoned_at=tombstoned_at,
+                        tombstone_reason=record["reason"],
+                    )
+                    if artifact.artifact_id == artifact_id
+                    else artifact
+                    for artifact in existing.evidence
+                ),
                 transitions=(*existing.transitions, record),
             )
         else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
@@ -663,6 +735,109 @@ class EventStore:
         updated = self._events[existing.event_key]
         return TriageTransitionResult(EventVerdict.TRANSITIONED, record=updated)
 
+    # ── Evidence (ADR-KSI-010 §1) ───────────────────────────────────────
+
+    def register_evidence(
+        self,
+        *,
+        event_key: str,
+        artifact_id: str,
+        content_type: str,
+        registered_by: str,
+        now: datetime,
+    ) -> EvidenceRegistration:
+        """증거물 1건을 원장에 등록하고 그 객체 키를 돌려준다.
+
+        **URL 발급은 하지 않는다** — 이 저장소는 스토리지를 모른다. 라우터가
+        객체 키를 받아 :class:`EvidenceStorage` 에 presigned 발급을 요청한다.
+        원장 기록과 URL 발급을 한 함수에 묶으면, 스토리지 장애가 원장 기록까지
+        롤백해야 하는지가 모호해진다(여기서는 명확하다 — 원장이 먼저다).
+        """
+        _require_tz_aware(now, param="now")
+        if not is_valid_artifact_id(artifact_id):
+            return EvidenceRegistration(EvidenceVerdict.INVALID_ARTIFACT_ID)
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            # 임의 MIME 을 통과시키면 열람 URL 에서 브라우저가 스크립트로 해석할
+            # 수 있는 타입(text/html·image/svg+xml)까지 들어온다.
+            return EvidenceRegistration(EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE)
+
+        with self._lock:
+            existing = self._events.get(event_key)
+            if existing is None:
+                return EvidenceRegistration(EvidenceVerdict.UNKNOWN_EVENT)
+            if any(a.artifact_id == artifact_id for a in existing.evidence):
+                # 같은 id 로 다시 등록하면 앞선 증거의 객체 키를 가리키게 되어
+                # 조용한 덮어쓰기가 된다 — 폐기된 것이어도 재사용을 막는다.
+                return EvidenceRegistration(EvidenceVerdict.DUPLICATE_ARTIFACT)
+            try:
+                object_key = build_object_key(
+                    site_id=existing.site_id,
+                    event_key=event_key,
+                    artifact_id=artifact_id,
+                )
+            except ValueError:
+                return EvidenceRegistration(EvidenceVerdict.INVALID_ARTIFACT_ID)
+
+            record = {
+                "kind": "evidence-registered",
+                "ts": _iso(now),
+                "eventKey": event_key,
+                "siteId": existing.site_id,
+                "artifactId": artifact_id,
+                "objectKey": object_key,
+                "contentType": content_type,
+                "registeredBy": registered_by,
+            }
+            self._append_and_apply(record)
+            artifact = self._events[event_key].evidence[-1]
+        return EvidenceRegistration(EvidenceVerdict.REGISTERED, artifact=artifact)
+
+    def tombstone_evidence(
+        self, *, event_key: str, artifact_id: str, reason: str, now: datetime
+    ) -> EvidenceRegistration:
+        """보관 기간이 지난 증거를 폐기 표시한다(ADR-KSI-010 §3).
+
+        **객체 삭제는 호출자의 몫이다.** 원장 기록이 먼저고, 실제 스토리지
+        삭제가 실패해도 "폐기하기로 했다"는 사실은 남아야 한다 — 반대로 하면
+        객체는 사라졌는데 원장은 아무 말도 못 하는 상태가 생긴다.
+        """
+        _require_tz_aware(now, param="now")
+        if not reason.strip():
+            # 이유 없는 폐기는 기록의 값어치를 없앤다(전이 reason 관습 대칭).
+            return EvidenceRegistration(EvidenceVerdict.UNKNOWN_ARTIFACT)
+        with self._lock:
+            existing = self._events.get(event_key)
+            if existing is None:
+                return EvidenceRegistration(EvidenceVerdict.UNKNOWN_EVENT)
+            target = next(
+                (a for a in existing.evidence if a.artifact_id == artifact_id), None
+            )
+            if target is None:
+                return EvidenceRegistration(EvidenceVerdict.UNKNOWN_ARTIFACT)
+            if target.is_tombstoned:
+                return EvidenceRegistration(EvidenceVerdict.ALREADY_TOMBSTONED, artifact=target)
+
+            record = {
+                "kind": "evidence-tombstoned",
+                "ts": _iso(now),
+                "eventKey": event_key,
+                "artifactId": artifact_id,
+                "objectKey": target.object_key,
+                "reason": reason,
+            }
+            self._append_and_apply(record)
+            updated = next(
+                a for a in self._events[event_key].evidence if a.artifact_id == artifact_id
+            )
+        return EvidenceRegistration(EvidenceVerdict.REGISTERED, artifact=updated)
+
+    def get_evidence(self, event_key: str, artifact_id: str) -> EvidenceArtifact | None:
+        with self._lock:
+            record = self._events.get(event_key)
+            if record is None:
+                return None
+            return next((a for a in record.evidence if a.artifact_id == artifact_id), None)
+
     # ── 조회 ────────────────────────────────────────────────────────────
 
     def get(self, event_key: str) -> EventRecord | None:
@@ -775,6 +950,34 @@ class TransitionResponse(_CamelModel):
     event: EventDetailResponse | None = None
 
 
+class EvidenceUploadRequest(_CamelModel):
+    """증거 업로드 등록 요청 (ADR-KSI-010 §1).
+
+    ``artifactId`` 는 호출자가 정한다 — 같은 증거를 재전송할 때 중복 등록을
+    피하려면 멱등 키가 필요하고, 그 키를 아는 것은 올리는 쪽뿐이다. 대신
+    **객체 키는 서버가 만든다**(이 값이 경로에 그대로 들어가지 않는다).
+    """
+
+    artifact_id: str
+    content_type: str
+
+
+class EvidenceUploadResponse(_CamelModel):
+    artifact_id: str
+    object_key: str
+    upload_url: str
+    expires_at: datetime
+
+
+class EvidenceViewResponse(_CamelModel):
+    artifact_id: str
+    content_type: str
+    view_url: str
+    expires_at: datetime
+    registered_at: datetime
+    registered_by: str
+
+
 def _to_summary(record: EventRecord) -> EventSummaryResponse:
     severity = record.severity
     return EventSummaryResponse(
@@ -814,7 +1017,15 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
     )
 
 
-def build_events_router(store: EventStore) -> APIRouter:
+def build_events_router(
+    store: EventStore, *, evidence_storage: EvidenceStorage | None = None
+) -> APIRouter:
+    """Event 조회·트리아지 라우터. ``evidence_storage`` 가 없으면 증거 경로를 **장착하지 않는다**.
+
+    미장착이면 404 다 — 스토리지 없이 라우트만 살려두면 "업로드했는데 어디에도
+    없다"가 성공(2xx)으로 보이는 경로가 생긴다. 조립되지 않은 기능은 존재하지
+    않는 편이 정직하다(create_app 의 fail-closed 조립 관습, ADR-KSI-008 §5).
+    """
     router = APIRouter(prefix="/v1/events", tags=["events"])
 
     @router.get("", response_model=EventListResponse)
@@ -879,13 +1090,96 @@ def build_events_router(store: EventStore) -> APIRouter:
             event=_to_detail(result.record) if result.record is not None else None,
         )
 
+    if evidence_storage is not None:
+        _mount_evidence_routes(router, store, evidence_storage)
+
     return router
 
 
-def mount_events(app: FastAPI, store: EventStore) -> None:
-    """앱에 Event 조회·트리아지 라우터를 장착한다."""
+def _mount_evidence_routes(
+    router: APIRouter, store: EventStore, storage: EvidenceStorage
+) -> None:
+    """증거 업로드·열람 경로 (ADR-KSI-010 §1).
+
+    Core 는 바이트를 중계하지 않는다 — 원장에 등록한 뒤 presigned URL 만 준다.
+    **원장 기록이 먼저다**: 스토리지가 URL 을 못 내주면 5xx 로 실패하되, 이미
+    기록된 등록 사실은 남는다(업로드되지 않은 artifact 로 조회된다). 반대로
+    했다면 URL 은 나갔는데 원장은 모르는 객체가 생긴다.
+    """
+
+    @router.post("/{event_key}/evidence", response_model=EvidenceUploadResponse)
+    def register_evidence(
+        event_key: str,
+        request: EvidenceUploadRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.EVENTS_TRIAGE)),  # noqa: B008
+    ) -> EvidenceUploadResponse:
+        now = datetime.now(UTC)
+        result = store.register_evidence(
+            event_key=event_key,
+            artifact_id=request.artifact_id,
+            content_type=request.content_type,
+            registered_by=principal.principal_id,
+            now=now,
+        )
+        if result.verdict is not EvidenceVerdict.REGISTERED or result.artifact is None:
+            raise HTTPException(
+                status_code=_EVIDENCE_STATUS[result.verdict], detail=result.verdict.value
+            )
+        try:
+            url = storage.presigned_put(
+                result.artifact.object_key,
+                content_type=request.content_type,
+                ttl=DEFAULT_UPLOAD_TTL,
+            )
+        except EvidenceStorageError as exc:
+            # 스토리지 장애를 '증거 없음'으로 뭉개지 않는다 — 등록은 원장에
+            # 남았고 업로드만 못 한 상태이므로, 재시도는 URL 재발급으로 한다.
+            raise HTTPException(status_code=503, detail="EVIDENCE_STORAGE_UNAVAILABLE") from exc
+        response.status_code = 201
+        return EvidenceUploadResponse(
+            artifact_id=result.artifact.artifact_id,
+            object_key=result.artifact.object_key,
+            upload_url=url,
+            expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
+        )
+
+    @router.get("/{event_key}/evidence/{artifact_id}", response_model=EvidenceViewResponse)
+    def view_evidence(
+        event_key: str,
+        artifact_id: str,
+        principal: Principal = Depends(require_permission(Permission.EVENTS_READ)),  # noqa: B008
+    ) -> EvidenceViewResponse:
+        del principal
+        artifact = store.get_evidence(event_key, artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+        if artifact.is_tombstoned:
+            # "없음"이 아니라 "폐기됨"이다 — 410 Gone 이 정확히 그 뜻이고,
+            # 사고 조사에서 이 둘을 구분하지 못하면 원장의 값어치가 없다.
+            raise HTTPException(status_code=410, detail=EvidenceVerdict.ALREADY_TOMBSTONED.value)
+        now = datetime.now(UTC)
+        try:
+            url = storage.presigned_get(artifact.object_key, ttl=DEFAULT_VIEW_TTL)
+        except EvidenceStorageError as exc:
+            raise HTTPException(status_code=503, detail="EVIDENCE_STORAGE_UNAVAILABLE") from exc
+        return EvidenceViewResponse(
+            artifact_id=artifact.artifact_id,
+            content_type=artifact.content_type,
+            view_url=url,
+            expires_at=expires_at(now, DEFAULT_VIEW_TTL),
+            registered_at=artifact.registered_at,
+            registered_by=artifact.registered_by,
+        )
+
+
+def mount_events(
+    app: FastAPI, store: EventStore, *, evidence_storage: EvidenceStorage | None = None
+) -> None:
+    """앱에 Event 조회·트리아지(+ 스토리지가 있으면 증거) 라우터를 장착한다."""
     app.state.event_store = store
-    app.include_router(build_events_router(store))
+    app.state.evidence_storage = evidence_storage
+    app.include_router(build_events_router(store, evidence_storage=evidence_storage))
 
 
 __all__ = [

@@ -383,6 +383,94 @@ paths:
         '503': { description: STORE_UNAVAILABLE — Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: EVENTS_TRIAGE 권한 없음 }
+  /v1/events/{event_key}/evidence:
+    post:
+      summary: Register an evidence artifact and get a presigned upload URL
+      description: >-
+        EVENTS_TRIAGE 권한 필요. Core 는 미디어 바이트를 중계하지 않는다
+        (ADR-KSI-010 §1) — 원장에 등록한 뒤 짧은 수명(15분)의 presigned PUT URL
+        만 발급하고, 업로드는 클라이언트가 스토리지와 직접 한다. **객체 키는
+        서버가 만든다**(``sites/{siteId}/events/{edgeDeviceId}/{eventId}/{artifactId}``)
+        — 클라이언트 문자열을 키에 그대로 쓰면 경로 탈출·타 현장 덮어쓰기가 열린다.
+
+        ``artifactId`` 는 호출자가 정하는 멱등 키다(같은 증거 재전송 시 중복
+        등록 방지). 경로-안전 문자만 허용하고, 이미 쓰인 id 는 폐기된 것이어도
+        재사용할 수 없다(앞선 증거의 객체 키를 조용히 덮어쓰게 된다).
+
+        ``contentType`` 은 allowlist 다 — 열람 URL 에서 브라우저가 스크립트로
+        해석할 수 있는 타입(text/html·image/svg+xml)은 415 로 거부한다.
+
+        **조립 의존**: Core 가 evidence_storage 없이 조립되면 이 경로는 아예
+        장착되지 않는다(404). 스토리지 없이 라우트만 살려두면 "업로드했는데
+        어디에도 없다"가 2xx 로 보인다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: event_key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifactId, contentType]
+              properties:
+                artifactId: { type: string, minLength: 1 }
+                contentType:
+                  enum:
+                    - image/jpeg
+                    - image/png
+                    - image/webp
+                    - video/mp4
+                    - video/webm
+                    - application/octet-stream
+      responses:
+        '201':
+          description: REGISTERED — 원장 기록 완료 + presigned PUT URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceUploadResponse' }
+        '404': { description: UNKNOWN_EVENT (또는 evidence_storage 미조립) }
+        '409': { description: DUPLICATE_ARTIFACT — 폐기된 id 도 재사용 불가 }
+        '415': { description: UNSUPPORTED_CONTENT_TYPE }
+        '422': { description: INVALID_ARTIFACT_ID — 경로-안전 문자 밖 }
+        '503': { description: EVIDENCE_STORAGE_UNAVAILABLE — 등록은 남고 URL 만 실패 }
+        '401': { description: 인증 실패 }
+        '403': { description: EVENTS_TRIAGE 권한 없음 }
+  /v1/events/{event_key}/evidence/{artifact_id}:
+    get:
+      summary: Get a presigned view URL for one evidence artifact
+      description: >-
+        EVENTS_READ 권한 필요. 짧은 수명(5분)의 presigned GET URL 을 발급한다 —
+        URL 자체가 인가이므로 수명을 짧게 두고 발급 경로를 유일한 관문으로 삼는다.
+
+        폐기된 증거는 **410 Gone** 이다(404 아님, ADR-KSI-010 §3) — "증거가
+        없다"와 "정책대로 폐기했다"는 사고 조사에서 다른 사실이고, 그 둘을
+        구분하지 못하면 원장의 값어치가 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: event_key
+          required: true
+          schema: { type: string }
+        - in: path
+          name: artifact_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: presigned GET URL + 등록 계보
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceViewResponse' }
+        '404': { description: 이벤트·증거를 찾을 수 없다(일반 문구) }
+        '410': { description: ALREADY_TOMBSTONED — 보관 정책으로 폐기됨 }
+        '503': { description: EVIDENCE_STORAGE_UNAVAILABLE }
+        '401': { description: 인증 실패 }
+        '403': { description: EVENTS_READ 권한 없음 }
   /v1/missions:
     get:
       summary: List mission issuance records (durable 기록 이력)
@@ -861,6 +949,29 @@ components:
         verdict: { type: string }
         detail: { type: [string, 'null'] }
         event: { oneOf: [{ $ref: '#/components/schemas/EventDetailResponse' }, { type: 'null' }] }
+    EvidenceUploadResponse:
+      description: >-
+        presigned PUT URL. ``objectKey`` 는 서버가 만든 값이라 클라이언트가
+        고를 수 없다 — 응답에 싣는 건 운영자가 스토리지에서 같은 객체를 찾을 수
+        있게 하려는 것뿐이다.
+      type: object
+      required: [artifactId, objectKey, uploadUrl, expiresAt]
+      properties:
+        artifactId: { type: string }
+        objectKey: { type: string }
+        uploadUrl: { type: string }
+        # 남은 시간이 아니라 절대 시각 — 클라이언트가 자기 시계로 계산하게 한다.
+        expiresAt: { type: string, format: date-time }
+    EvidenceViewResponse:
+      type: object
+      required: [artifactId, contentType, viewUrl, expiresAt, registeredAt, registeredBy]
+      properties:
+        artifactId: { type: string }
+        contentType: { type: string }
+        viewUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+        registeredAt: { type: string, format: date-time }
+        registeredBy: { type: string }
     MissionRecordResponse:
       description: >-
         발급된 임무의 조회 표현. ADR-KSI-007 이원 산출물 중 이 레코드가 가리키는

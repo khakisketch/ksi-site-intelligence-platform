@@ -58,10 +58,29 @@ _HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "opt
 _PUBLIC_PATHS = frozenset({"/health", "/capabilities"})
 
 
+class _NullEvidenceStorage:
+    """포트 계약만 만족하는 조립용 스텁 — 이 게이트는 경로 존재만 본다.
+
+    ``evidence_storage`` 를 주지 않으면 증거 라우터가 장착되지 않아(ADR-KSI-010 §1)
+    "최대 조립"이라는 이름이 거짓이 된다 — 실제로 2026-08-04 에 증거 경로 2개가
+    문서 대조 없이 통과했다.
+    """
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def delete(self, object_key: str) -> None:
+        raise NotImplementedError
+
+
 def _max_assembly(tmp_path: Path) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
     return create_app(
+        evidence_storage=_NullEvidenceStorage(),
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),

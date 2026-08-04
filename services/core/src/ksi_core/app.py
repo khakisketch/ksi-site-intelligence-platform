@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from ksi_core.auth import AuthRegistry
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.events import EventStore
+    from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
     from ksi_core.sites import SiteStore
 
@@ -53,6 +54,7 @@ def create_app(
     mission_store: MissionStore | None = None,
     mission_signing_key: Ed25519PrivateKey | None = None,
     mission_signing_key_id: str | None = None,
+    evidence_storage: EvidenceStorage | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -151,6 +153,12 @@ def create_app(
                 " 반환하지 않는다(고아 발급 금지)"
             )
 
+    if evidence_storage is not None and event_store is None:
+        raise ValueError(
+            "evidence_storage 는 event_store 와 함께 주어져야 한다(ADR-KSI-010 §1)"
+            " — 증거는 사건에 매달리는 것이라 사건 원장 없이는 등록할 곳이 없다"
+        )
+
     if edge_sync_store is not None and event_store is None:
         raise ValueError(
             "edge_sync_store 는 event_store 와 함께 주어져야 한다(ADR-KSI-008 §3)"
@@ -165,6 +173,7 @@ def create_app(
             site_store,
             mission_store,
             mission_signing_key,
+            evidence_storage,
         )
     )
     if protected_surface and auth_registry is None:
@@ -199,7 +208,10 @@ def create_app(
         # edge_sync_store 유무와 무관하게 /v1/events 조회·트리아지 표면은 event_store
         # 가 있으면 항상 장착된다 — edge 수신이 있는 배포에서도 트리아지 화면이
         # 필요하다(mount_edge_sync 는 ingest 라우터만 소유한다).
-        mount_events(app, event_store)
+        # evidence_storage 가 없으면 증거 경로는 장착되지 않는다(404) — 스토리지
+        # 없이 라우트만 살려두면 "업로드했는데 어디에도 없다"가 2xx 로 보인다
+        # (ADR-KSI-010 §1).
+        mount_events(app, event_store, evidence_storage=evidence_storage)
 
     if mission_signing_key is not None:
         # 위 결합 검증이 mission_signing_key_id·mission_store·site_store 를
