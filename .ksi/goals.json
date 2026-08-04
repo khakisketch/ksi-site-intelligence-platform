@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-04T20:49:54+09:00",
+  "updated_at": "2026-08-04T21:42:25+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -483,14 +483,14 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "S4 4개 축 중 3개 완결 + 1개 절반. ADR-KSI-010(대표자 승인 3결정: MinIO/S3호환·파일키+회전ADR·tombstone) 선행 작성 후 구현. ①Evidence presigned(commit 5231219) — EvidenceStorage 포트 + 원장 등록 + presigned 발급 API 2종, 객체 키를 서버가 생성(경로 탈출 차단, S2 재검토 P1과 같은 클래스), 폐기는 410 Gone(404 아님), 원장 먼저·URL 나중, MIME allowlist, 미조립 시 라우트 부재(404). 테스트 33건. **미완: 실제 S3 어댑터 없음** — 포트 구현체가 가짜뿐이라 아직 '동작하는 제품'이 아니다(boto3 도입 + MinIO 실연동 필요). ②retention 집행(5c3e3ed) — 판정(순수)/실행 분리, occurredAt 기준, 원장 먼저·삭제 나중, fail-closed 정책 로드, enforced_fields로 미집행 필드 명시. 테스트 19건. ③서명키(d2b0402) — 키 세트 공급(활성 1 + 검증용 과거 키), 권한 0600 강제·개인키/공개키 불일치 거부, docs/security/SIGNING_KEY_LIFECYCLE.md 회전·폐기 절차. 테스트 20건. ④journal 회전(11ef369) — 세그먼트 회전 + 순서 보존 재생, 테스트 9건. **미완: 스냅샷**(회전은 파일 크기만 해결, 재생 시간·메모리는 도메인 저장소 스냅샷이 필요). 변이 테스트로 게이트 유효성 실증(총 8종, 전부 적발) — 그 과정에서 내 테스트 픽스처가 공허했던 것도 1건 적발(Edge가 CONFIRMED_EVENT를 주장할 수 없어 확정 이벤트가 0건인 상태로 통과 중이었음). 신규 리스크 1건 등록(retention-defaults-legal-review). 게이트: ruff·mypy 121파일·pytest 1402 passed·5 skipped, CI 5 job 전부 green(run 확인). 미완: 독립 재검토.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-08-04T20:49:54+09:00"
+      "updated_at": "2026-08-04T21:42:25+09:00"
     },
     {
       "id": "dashboard-operator-login",
@@ -786,6 +786,20 @@
       "previous_status": "open",
       "created_at": "2026-08-04T20:28:32+09:00",
       "updated_at": "2026-08-04T20:49:12+09:00"
+    },
+    {
+      "id": "retention-defaults-legal-review",
+      "title": "보관 기간 기본값(候補30·확정1095일 등)의 법적 적정성 미검토 — 집행 엔진은 이미 동작",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-04 ADR-KSI-010 §3에서 명시적으로 범위 밖으로 남긴 항목. retention-policy.v1의 기본값(candidateDays 30·patrolRawDays 90·confirmedEventDays 1095·telemetryMissionDays 365·auditActionDays 1095)이 고객의 법적 의무와 맞는지 확인되지 않았다. 두 방향 모두 위험: (a)산업안전보건법·중대재해처벌법상 안전 관련 기록 보존 의무가 걸리면 1095일이 부족할 수 있다 (b)개인정보보호법 최소보관 원칙에서는 사람이 찍힌 영상을 30일 보관하는 것도 길 수 있다. 지금 집행 엔진(commit 5c3e3ed)은 주어진 값을 그대로 집행하므로, 잘못된 값이 배포되면 그대로 지운다 — 되돌릴 수 없는 방향의 실행이다. 완화: 자동 스케줄러를 두지 않아 사람이 실행 시점에 한 번 본다 + 스키마의 customerOverrideAllowed로 배포 시 값을 정할 수 있다. 해소 경로: 법무·고객 계약 검토 후 배포별 정책 파일 확정(코드 변경 불필요). 대표자 결정 레인.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-04T21:42:07+09:00",
+      "updated_at": "2026-08-04T21:42:07+09:00"
     }
   ]
 }
