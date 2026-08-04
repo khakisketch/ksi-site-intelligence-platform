@@ -75,6 +75,44 @@ jobs:
 
   # Edge native control plane — 순수 C++17이라 PSDK/CUDA 없이 호스트에서 빌드된다.
   # 별도 job으로 둬서 Python 게이트와 독립적으로 실패 원인이 드러나게 한다.
+  # apps/dashboard 는 2026-08-04 까지 CI 밖에 있었다 — 타입체크·lint·빌드 어느
+  # 것도 자동으로 돌지 않아, 프런트 5.7천 줄의 회귀를 사람이 로컬에서 기억해
+  # 돌리는 데 의존했다. 이 job 이 주장하는 것은 "타입·lint·순수 로직·프로덕션
+  # 빌드가 유효하다"뿐이다 — **화면이 멀쩡하다는 주장이 아니다**. 렌더링·동선은
+  # CLAUDE.md UI 절의 렌더 확인(390/768/1440 실캡처)과 /ui-audit 소관이다.
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+
+      # npm ci — lock 을 그대로 설치한다(npm install 은 lock 을 갱신해 버려서
+      # "CI 가 검증한 트리"와 "커밋된 트리"가 갈라진다).
+      - name: 의존성 설치 (locked)
+        run: npm ci
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      - name: eslint
+        run: npx eslint .
+
+      # 순수 로직만 본다(vitest.config.mts 주석 참조) — 서버 컴포넌트를 jsdom 으로
+      # 흉내내면 그 흉내가 진짜 화면과 어긋나는 순간 초록불이 거짓말이 된다.
+      - name: vitest
+        run: npm test
+
+      - name: next build
+        run: npx next build
+
   edge-control-plane:
     runs-on: ubuntu-latest
     steps:
