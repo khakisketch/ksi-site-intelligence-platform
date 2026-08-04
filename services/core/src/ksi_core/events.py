@@ -930,6 +930,10 @@ class EventDetailResponse(_CamelModel):
     last_conflict_at: datetime | None
     bundle: dict[str, Any]
     transitions: list[dict[str, Any]]
+    # 폐기된 것도 포함한다 — "증거가 없다"와 "정책대로 폐기했다"는 다른 사실이라
+    # 목록에서 사라지면 안 된다(ADR-KSI-010 §3). 열람 URL 은 여기 없다:
+    # 발급은 권한 검사를 통과한 별도 요청에서만 한다(URL 이 곧 인가다).
+    evidence: list[EvidenceSummary]
 
 
 class EventListResponse(_CamelModel):
@@ -948,6 +952,17 @@ class TransitionResponse(_CamelModel):
     verdict: str
     detail: str | None = None
     event: EventDetailResponse | None = None
+
+
+class EvidenceSummary(_CamelModel):
+    """상세 응답에 실리는 증거 1건. 열람 URL 은 담지 않는다(별도 발급 경로)."""
+
+    artifact_id: str
+    content_type: str
+    registered_at: datetime
+    registered_by: str
+    tombstoned_at: datetime | None
+    tombstone_reason: str | None
 
 
 class EvidenceUploadRequest(_CamelModel):
@@ -1014,6 +1029,17 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
         last_conflict_at=record.last_conflict_at,
         bundle=record.bundle,
         transitions=list(record.transitions),
+        evidence=[
+            EvidenceSummary(
+                artifact_id=a.artifact_id,
+                content_type=a.content_type,
+                registered_at=a.registered_at,
+                registered_by=a.registered_by,
+                tombstoned_at=a.tombstoned_at,
+                tombstone_reason=a.tombstone_reason,
+            )
+            for a in record.evidence
+        ],
     )
 
 

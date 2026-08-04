@@ -74,10 +74,40 @@ export interface EventSummaryResponse {
   receivedAt: string;
 }
 
+/** 증거 1건. 열람 URL 은 없다 — URL 이 곧 인가라 별도 요청으로 발급받는다. */
+export interface EvidenceSummary {
+  artifactId: string;
+  contentType: string;
+  registeredAt: string;
+  registeredBy: string;
+  /** 값이 있으면 보관 정책으로 폐기된 것 — "없음"과 구분해서 보여준다. */
+  tombstonedAt: string | null;
+  tombstoneReason: string | null;
+}
+
 export interface EventDetailResponse extends EventSummaryResponse {
   lastConflictAt: string | null;
   bundle: Record<string, unknown>;
   transitions: Array<Record<string, unknown>>;
+  evidence: EvidenceSummary[];
+}
+
+/** POST /api/events/{eventKey}/evidence 응답 — presigned PUT URL. */
+export interface EvidenceUploadResponse {
+  artifactId: string;
+  objectKey: string;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
+/** GET /api/events/{eventKey}/evidence/{artifactId} 응답 — presigned GET URL. */
+export interface EvidenceViewResponse {
+  artifactId: string;
+  contentType: string;
+  viewUrl: string;
+  expiresAt: string;
+  registeredAt: string;
+  registeredBy: string;
 }
 
 export interface EventTransitionInput {

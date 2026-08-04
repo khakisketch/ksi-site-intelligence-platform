@@ -18,6 +18,7 @@ import {
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EventActions } from "./EventActions";
+import { EvidencePanel } from "./EvidencePanel";
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
   dateStyle: "medium",
@@ -81,8 +82,29 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// journal 레코드의 kind → 사람이 읽을 행위 이름.
+//
+// 이 이력은 **전이만 담지 않는다** — 증거 등록·폐기도 같은 원장에 append 되기
+// 때문이다(ADR-KSI-010 §1). 그걸 모르는 채 actor 만 읽으면 증거 등록이 행위자
+// "알 수 없음"으로 표시된다(2026-08-04 렌더 확인에서 실제로 그렇게 보였다).
+const JOURNAL_KIND_LABEL: Record<string, string> = {
+  "event-projected": "엣지 수신",
+  "event-updated": "엣지 갱신",
+  "event-diverged": "엣지 갱신 격리",
+  "event-transitioned": "트리아지 전이",
+  "evidence-registered": "증거 등록",
+  "evidence-tombstoned": "증거 폐기",
+};
+
 function TransitionItem({ transition }: { transition: Record<string, unknown> }) {
-  const actor = fieldString(transition, "actor");
+  const kind = fieldString(transition, "kind");
+  const kindLabel = kind ? (JOURNAL_KIND_LABEL[kind] ?? kind) : null;
+  const artifactId = fieldString(transition, "artifactId");
+  // 증거 레코드는 actor 필드가 없다 — 등록자는 registeredBy 에 있다.
+  const actor =
+    fieldString(transition, "actor") ??
+    fieldString(transition, "registeredBy") ??
+    fieldString(transition, "edgeDeviceId");
   const ts = fieldString(transition, "ts");
   const reason = fieldString(transition, "reason");
   const before = fieldRecord(transition, "before");
@@ -95,9 +117,15 @@ function TransitionItem({ transition }: { transition: Record<string, unknown> })
   return (
     <li className="rounded-lg border border-line bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium break-keep">{actor ?? "알 수 없음"}</span>
+        <span className="font-medium break-keep">
+          {kindLabel ? `${kindLabel} · ` : ""}
+          {actor ?? "행위자 미기록"}
+        </span>
         <span className="text-ink-muted text-xs">{formatDate(ts)}</span>
       </div>
+      {artifactId && (
+        <p className="num break-token text-ink-2 mt-1 text-[12.5px]">{artifactId}</p>
+      )}
       {(beforeStatus || afterStatus) && (
         <p className="text-ink-2 mt-1 break-keep">
           상태: {labelOrRaw(beforeStatus, EVENT_STATUS_LABEL) ?? "—"} →{" "}
@@ -208,7 +236,7 @@ export default async function EventDetailPage({
           <div className="border-line-strong bg-sunk flex items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
             <p className="text-ink-muted text-[12.5px] break-keep">
               {hasBundle
-                ? "증거 번들이 수신돼 있습니다 · 캡처 영상 열람 경로 준비 중"
+                ? "엣지가 보낸 증거 번들이 수신돼 있습니다 · 캡처 프레임·바운딩박스 표시는 준비 중"
                 : "이 사건에 수신된 증거 번들이 없습니다"}
             </p>
           </div>
@@ -251,7 +279,14 @@ export default async function EventDetailPage({
           )}
         </div>
 
-        <section className="flex flex-col gap-2 lg:col-start-1 lg:row-start-1">
+        <div className="flex flex-col gap-4 lg:col-start-1 lg:row-start-1">
+        <EvidencePanel
+          eventKey={event.eventKey}
+          evidence={event.evidence}
+          canUpload={canTriage}
+        />
+
+        <section className="flex flex-col gap-2">
           <h2 className="text-sm font-medium break-keep">전이 이력</h2>
           {event.transitions.length === 0 ? (
             <p className="text-ink-2 text-sm break-keep">이력이 없습니다.</p>
@@ -263,6 +298,7 @@ export default async function EventDetailPage({
             </ul>
           )}
         </section>
+        </div>
       </div>
 
       {process.env.NODE_ENV !== "production" && (

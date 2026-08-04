@@ -122,7 +122,18 @@ def main() -> None:
         default=64 * 1024 * 1024,
         help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
     )
+    # Evidence 스토리지(ADR-KSI-010 §1) — **주지 않으면 증거 경로가 장착되지 않는다**(404).
+    # 조립되지 않은 기능이 2xx 로 보이는 것보다 없는 편이 정직하다.
+    parser.add_argument(
+        "--s3-endpoint",
+        default=None,
+        help="S3 호환 엔드포인트(예: http://127.0.0.1:9000). --s3-bucket 과 함께 준다.",
+    )
+    parser.add_argument("--s3-bucket", default=None, help="증거 버킷 이름")
     args = parser.parse_args()
+
+    if bool(args.s3_endpoint) != bool(args.s3_bucket):
+        parser.error("--s3-endpoint 와 --s3-bucket 은 함께 주어야 한다")
 
     data_dir = Path(args.data_dir)
     if args.reset and data_dir.exists():
@@ -143,12 +154,21 @@ def main() -> None:
     event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
     edge_sync_store = EdgeSyncStore(data_dir / "edge-sync.jsonl")
 
+    evidence_storage = None
+    if args.s3_endpoint:
+        from ksi_core.evidence_s3 import S3EvidenceStorage
+
+        evidence_storage = S3EvidenceStorage(
+            bucket=args.s3_bucket, endpoint_url=args.s3_endpoint
+        )
+
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=SiteStore(site_journal),
         mission_store=MissionStore(mission_journal),
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
+        evidence_storage=evidence_storage,
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
     )

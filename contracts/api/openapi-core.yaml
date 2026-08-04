@@ -924,7 +924,8 @@ components:
       type: object
       required:
         [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
-         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle, transitions]
+         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle, transitions,
+         evidence]
       properties:
         eventKey: { type: string }
         eventId: { type: string }
@@ -942,6 +943,10 @@ components:
         # 구조 정본은 contracts/schemas/event-bundle.v1.2.json.
         bundle: { type: object, additionalProperties: true }
         transitions: { type: array, items: { type: object, additionalProperties: true } }
+        # 폐기된 것도 포함한다(ADR-KSI-010 §3) — 목록에서 사라지면 "증거가 없다"와
+        # "정책대로 폐기했다"를 구분할 수 없다. 열람 URL 은 여기 없다: URL 이 곧
+        # 인가라서 권한 검사를 통과한 별도 요청에서만 발급한다.
+        evidence: { type: array, items: { $ref: '#/components/schemas/EvidenceSummary' } }
     TransitionResponse:
       type: object
       required: [verdict]
@@ -949,6 +954,17 @@ components:
         verdict: { type: string }
         detail: { type: [string, 'null'] }
         event: { oneOf: [{ $ref: '#/components/schemas/EventDetailResponse' }, { type: 'null' }] }
+    EvidenceSummary:
+      description: 상세 응답에 실리는 증거 1건. tombstonedAt 이 있으면 폐기된 것이다.
+      type: object
+      required: [artifactId, contentType, registeredAt, registeredBy, tombstonedAt, tombstoneReason]
+      properties:
+        artifactId: { type: string }
+        contentType: { type: string }
+        registeredAt: { type: string, format: date-time }
+        registeredBy: { type: string }
+        tombstonedAt: { type: [string, 'null'], format: date-time }
+        tombstoneReason: { type: [string, 'null'] }
     EvidenceUploadResponse:
       description: >-
         presigned PUT URL. ``objectKey`` 는 서버가 만든 값이라 클라이언트가

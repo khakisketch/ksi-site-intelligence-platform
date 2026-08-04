@@ -97,6 +97,13 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   COVERAGE_BELOW_CONTRACT_PROMISE: "계획된 커버리지가 약속한 값보다 낮습니다. 경로를 다시 검토하세요.",
   EVIDENCE_INCOMPLETE: "이 확정 등급에 필요한 증거가 아직 부족합니다.",
   STORE_UNAVAILABLE: "서버 저장소 점검 중입니다. 잠시 후 다시 시도하세요.",
+  // 증거 경로(ADR-KSI-010 §1). ALREADY_TOMBSTONED 는 '없음'이 아니라 '폐기됨'이라고
+  // 말한다 — 사고 조사에서 그 둘은 다른 사실이다.
+  DUPLICATE_ARTIFACT: "같은 이름의 증거가 이미 등록돼 있습니다. 파일명을 바꿔 다시 올리세요.",
+  UNSUPPORTED_CONTENT_TYPE: "지원하지 않는 파일 형식입니다. 사진(JPEG·PNG·WebP)이나 영상(MP4·WebM)만 올릴 수 있습니다.",
+  INVALID_ARTIFACT_ID: "파일 이름에 쓸 수 없는 문자가 있습니다.",
+  ALREADY_TOMBSTONED: "보관 기간이 지나 폐기된 증거입니다.",
+  EVIDENCE_STORAGE_UNAVAILABLE: "증거 저장소에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
   INVALID_SITE: "입력한 현장 정보가 올바르지 않습니다.",
   INVALID_REQUEST: "요청 내용이 올바르지 않습니다. 입력값을 확인하세요.",
   INVALID_EVENT_IDENTITY: "이벤트 식별자 형식이 올바르지 않습니다.",
