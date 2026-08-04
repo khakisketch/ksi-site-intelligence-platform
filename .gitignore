@@ -31,6 +31,18 @@ apps/dashboard/.env.local
 edge/third_party/psdk/
 **/dji_sdk_app_info.h
 
+# 디자인 시안 생성물 — design/**/_build.py 가 SSOT 다(HTML 은 전부 그 출력).
+# 채택 결과의 정본은 apps/dashboard/src/app/globals.css 의 토큰이다.
+design/**/screens/
+design/**/studies/
+design/**/index.html
+
+# UI 검증 스크린샷·브라우저 자동화 산출물 — 저장소 루트에 쌓이는 일회성 파일이다.
+# 남길 가치가 있는 컷은 docs/ 아래 명시 경로로 옮긴다(루트 한정 규칙이라 하위
+# 디렉터리의 의도적 이미지 자산은 그대로 추적된다).
+/*.png
+/.playwright-mcp/
+
 # manifoldctl 머신별 설정 — IP는 DHCP로 바뀔 수 있어 저장소에 커밋하지 않는다
 # (manifold.env.example 참조. 비밀은 없지만 머신별 값이라 무시 대상이 맞다 — 2026-08-04
 # 병렬 감사에서 여기 없어 mf_git_is_dirty가 항상 true가 되던 결함 발견·정정, 감사 #3).

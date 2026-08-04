@@ -56,6 +56,12 @@ extend-exclude = ["references/**", "edge/**", "apps/**"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# 디자인 시안 생성기는 CSS/HTML을 문자열 리터럴로 들고 있다. 100자 제한을 맞추려고
+# CSS 선언을 쪼개면 오히려 읽기 어려워진다 — E501만 끄고 F/B/SIM(실제 버그)은 살린다.
+# 디렉터리 통째 exclude 를 쓰지 않는 이유는 위 extend-exclude 주석의 사고와 같다.
+"design/**/*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 disallow_untyped_defs = true
