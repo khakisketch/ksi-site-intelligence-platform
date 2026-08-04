@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-04T20:28:32+09:00",
+  "updated_at": "2026-08-04T20:49:54+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -481,7 +481,7 @@
         "edge-sync journal 회전·스냅샷(인증·DB 결정과 결합)",
         "독립 재검토 PASS"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
@@ -490,7 +490,7 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-29T20:55:06+09:00"
+      "updated_at": "2026-08-04T20:49:54+09:00"
     },
     {
       "id": "dashboard-operator-login",
@@ -764,28 +764,28 @@
       "title": "openapi-core.yaml이 응답 본문 스키마를 명세하지 않아 producer↔consumer 계약이 코드에만 존재",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-04 발견 — s2-residual-hardening에 '깊은 대조 미수행'으로 적혀 있던 항목이 실제 drift로 실현됐다. Core가 EventSummaryResponse/EventDetailResponse에 eventType 필드를 추가(대시보드 이벤트 목록 요구)했는데 contracts/api/openapi-core.yaml은 응답을 '200: { description: \"{ events: EventSummaryResponse[], count }\" }' 처럼 **자유 문자열 description**으로만 적고 schema가 없다 — 즉 필드가 늘거나 줄어도 대조할 정본 자체가 없다. tests/contract/test_api_contract_sync.py는 경로·메서드·security 존재만 보므로 게이트가 침묵했고, pytest 1318 green 상태에서 계약 문서가 낡은 채로 통과했다. 소비자(apps/dashboard/src/lib/core-api/types.ts)는 이 계약의 **수동 복제본**이라 서버가 필드를 바꾸면 타입은 여전히 green이고 런타임에서만 깨진다. 해소 경로: (a)주요 응답 모델을 openapi components/schemas로 실제 명세 + 게이트를 필드 수준 대조로 확장 (b)FastAPI가 생성하는 openapi.json을 정본으로 삼고 contracts/의 수기 yaml과 대조 (c)대시보드 types.ts를 계약에서 생성. 지금 실害는 없다(양쪽이 우연히 일치) — 다음 스키마 변경 때 터진다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "commit 8a18a18 — openapi-core.yaml v1.5.0 components/schemas 11개 신설 + 13개 2xx 응답 $ref 바인딩, tests/contract/test_api_contract_sync.py 게이트 3종 추가(④필드·required 집합 대조 ⑤named 모델 바인딩 강제 ⑥대시보드 types.ts 소비자 대조, 6개 모델). 변이 3종 전부 적발 실증: 문서에서 eventType 제거→④실패 / /v1/events 응답을 자유문자열로 되돌림→⑤실패 / types.ts에서 eventType 제거→⑥실패. ruff·mypy clean, pytest 1321 passed·5 skipped. 잔여(별개 관심사, 이번 범위 밖): 문서 201 vs 구현 openapi 선언 200 표기 차이(POST /v1/sites·edge-sync — FastAPI가 Response(status_code=) 런타임 지정을 openapi에 반영하지 않음, 실제 런타임 코드 확인 필요), 요청 본문 스키마는 기존 인라인 정의 유지(응답만 components화).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-04T20:28:20+09:00",
-      "updated_at": "2026-08-04T20:28:20+09:00"
+      "updated_at": "2026-08-04T20:40:49+09:00"
     },
     {
       "id": "psdk-tap-outside-ci-gate",
       "title": "edge/psdk-tap 2179줄이 CI 게이트 밖 — PSDK·자격증명 없으면 순수 로직 테스트조차 configure 불가",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-04 발견. edge/psdk-tap/CMakeLists.txt는 configure 최상단에서 config/dji_sdk_app_info.h(App Key)와 edge/third_party/psdk 실물을 FATAL_ERROR로 요구한다 — '조용히 스텁으로 빌드하지 않는다'는 옳은 설계지만, 그 게이트가 PSDK와 **무관한** 순수 로직(pairing.c 65줄·ndjson_writer.c 151줄·clock_util.c 45줄)의 테스트까지 함께 막는다. 결과: CI에 job이 없고(.github/workflows/ci.yml grep 0건), 실기 수집기 전체가 회귀 검증 없이 커밋된다(호스트 ctest 1/1은 로컬 수동 실행). 해소 경로: 명시 옵션(예: KSI_PSDK_TAP_LOGIC_TESTS_ONLY, 기본 OFF)을 켰을 때만 psdk_tap 타깃을 제외하고 순수 로직 테스트만 configure — 기본 경로의 fail-closed는 그대로 두고, CI는 그 옵션을 명시적으로 켜되 '검증 범위는 PSDK 비의존 로직뿐'을 로그로 남긴다(edge-manifold-target의 GATE_INACTIVE notice와 같은 관례). 추가로 ndjson_writer·shared_state는 아직 테스트 자체가 없다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "commit 463eb14 — KSI_PSDK_TAP_LOGIC_TESTS_ONLY(기본 OFF) 옵션 신설로 PSDK 비의존 순수 로직만 configure 가능, CI job edge-psdk-tap 신설(configure→build→ctest 1/1→기본 모드 fail-closed 역검사). 기본 경로 엄격성 불변 — PSDK 부재 시 여전히 FATAL_ERROR(로컬 실증: 'Configuring incomplete, errors occurred!'). 역검사는 -DKSI_PSDK_ROOT=<없는 경로>를 명시해 개발 PC와 CI가 같은 것을 재도록 함. 잔여: ndjson_writer.c(151줄)·shared_state.c(145줄)는 테스트 자체가 없어 이 job 이 커버하지 않는다 — 실기 수집 동작·NDJSON 스키마는 HIL 세션 증거로만 주장(blocker AIRCRAFT_LINK_DOWN).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-04T20:28:32+09:00",
-      "updated_at": "2026-08-04T20:28:32+09:00"
+      "updated_at": "2026-08-04T20:49:12+09:00"
     }
   ]
 }
