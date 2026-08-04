@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-05T03:18:29+09:00",
+  "updated_at": "2026-08-05T03:46:23+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -687,14 +687,14 @@
       "title": "FlightEnvelope 절대 고도 상한(규제값) 미확정 — 서버 고정 안전상수 원칙의 공백",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-07-30 독립 재검토(R4). maxAltitudeM 에 절대 상한이 없어 규제 위반 봉투가 발급 가능했다. 잠정 조치: 서버 sanity cap 500m(모델 검증, 스키마 불변). 대표자 결정 대기: 규제 상한 값 확정(권고 150m — 항공안전법 일반 비행제한 고도, 예외 승인 운용 시 별도).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 5e51ecb+2d1a20c: 규제 상한 150m 확정(2026-08-05 대표자). 잠정 sanity cap 500m 대체. 정본은 ADR-KSI-011 D1 + DOMAIN_INVARIANTS INV-014 — 결정이 코드 주석에만 있던 것을 독립 재검토가 적발해 문서화. 강제 3겹(계약 모델 검증·경로 생성기 봉투 대조·이륙 안전고도) + contracts/schemas/mission-contract.v1.2.json maximum:150(스키마로만 검증하는 소비자가 400m 봉투를 받던 drift 폐쇄) + 대시보드 Wizard 2종 140m 입력 제한. 값 자체를 테스트가 못박음.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T00:10:44+09:00",
-      "updated_at": "2026-07-30T00:10:44+09:00"
+      "updated_at": "2026-08-05T03:45:53+09:00"
     },
     {
       "id": "mission-issuance-unauthenticated-signing-oracle",
@@ -715,14 +715,14 @@
       "title": "S2 2차 독립 재검토 P2/P3 잔여 강화 항목",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "재생(replay) 경로가 INV-021 확정게이트·assert_event_transition 을 재검증하지 않음(live 경로에만 강제 — journal 직접조작·타 write경로 버그 시에만 노출, sites.py 는 이미 재생 fail-closed 이나 events.py 는 미대칭) / sites.py journal ts 가 UTC 로 정규화되지 않음(SiteRecord 필드는 정규화되나 journal 원본 ts 문자열은 오프셋 그대로) / mission_plans.py KMZ 멱등재발급이 plan_request_digest 를 재생 경로에서 재검증하지 않음(live 경로만 대조) / test_api_contract_sync.py 가 경로·메서드·security존재만 대조하고 요청/응답 스키마 깊은 대조는 미수행 / openapi 공개 allowlist 서술에 /docs/oauth2-redirect 누락 / EVENT_UPDATED 가 siteId/missionId/occurredAt 을 bundle 과 동기화하지 않아 레코드 메타와 bundle 내용이 갈라질 수 있음(완화: siteId 는 애초 서버검증 없는 자유값) / 확정 전이에 낙관적동시성 토큰(기대 bundleDigest) 부재로 좁은 경합창에서 evidence 스냅샷이 운영자가 본 값과 다를 수 있음. 전부 안전 실害 경로 없음(완화 존재) — S2 PASS 게이트와 별개로 S4(운영 표면 강화) 또는 후속 세션에서 재검토.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 5e51ecb+c3c14bf+2d1a20c: 7항목 전건 폐쇄(재생 INV-021 게이트·sites ts UTC 정규화·짝 레코드 digest 재생 재검증·요청 본문 계약 깊은 대조 게이트 신설·allowlist 서술+무인증 표면 코드 열거 게이트·event-updated 메타 동기화·낙관적 동시성 토큰 서버+UI). 독립 재검토 3라운드에서 P1 5건·P2 13건 추가 적발·폐쇄. 게이트: pytest 1500 passed·5 skipped, mypy 125파일, 대시보드 75. 신규 게이트 전건 변이 실증.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T14:22:42+09:00",
-      "updated_at": "2026-07-30T14:22:42+09:00"
+      "updated_at": "2026-08-05T03:45:53+09:00"
     },
     {
       "id": "dashboard-nextjs-toolchain-cve",
@@ -821,6 +821,20 @@
       "previous_status": null,
       "created_at": "2026-08-04T21:42:07+09:00",
       "updated_at": "2026-08-04T21:42:07+09:00"
+    },
+    {
+      "id": "coverage-ratio-not-photogrammetric",
+      "title": "coverageRatio 는 선언된 스와스 가정 하의 기하 커버이지 사진측량 완결성의 증명이 아니다 — 카메라 촬영폭 확정(H4) 전까지",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "커버리지 실측(_measure_lawnmower_coverage_ratio)은 각 스캔선이 ±spacing/2 를 덮는다고 가정하는데 spacing 이 요청 입력이라, 원리적으로 '요청이 자기 커버리지 증명서를 스스로 써주는' 구조다. 상한 두 개(captureIntervalM<=spacingM, spacingM<=고도*1.5)가 그 가정이 터무니없어지는 구간만 자를 뿐이고, 1.5 는 물리적 불가능의 증명이 아니라 정책값이다(ADR-KSI-011 D2 에 성격 명시). 실제 폐쇄는 카메라 footprint(FOV+고도) 기반 실계산이며 H4(실기 Pilot 2/카메라 스펙 확정) 종속. 완화: 무작위 4000 조합 속성 테스트(tests/contract/test_coverage_claim_property.py)가 '사진은 적은데 커버는 높다'를 상시 감시하고, 판정 기준을 구현 상수와 독립으로 둬 상한을 느슨하게 하면 실패한다. 이 결함 클래스는 3연속 재발했으므로 H4 때 반드시 재점검.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T03:46:23+09:00",
+      "updated_at": "2026-08-05T03:46:23+09:00"
     }
   ]
 }
