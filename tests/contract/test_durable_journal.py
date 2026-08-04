@@ -476,3 +476,80 @@ def test_non_positive_segment_limit_is_rejected(journal_path: Path, bad: int) ->
     """0/음수는 '회전 없음'이 아니다 — 조용히 해석하면 세그먼트를 무한히 만든다."""
     with pytest.raises(ValueError, match="양수"):
         DurableJournal(journal_path, max_segment_bytes=bad)
+
+
+# ── 읽기 전용 재생 (보관 정책 dry-run 경로) ─────────────────────────────────
+#
+# "지우기 전에 무엇을 지울지 보여준다"가 **서버 정지를 요구하면** 아무도 보지
+# 않게 된다 — dry-run 이 있으나 마나가 된다. 그래서 잠금 없이 읽는 경로를 둔다.
+# 대신 그 인스턴스는 절대 쓰지 못해야 한다(단일 writer 불변식).
+
+
+def test_read_only_coexists_with_writer(journal_path: Path) -> None:
+    writer = DurableJournal(journal_path)
+    try:
+        writer.append({"seq": 0})
+        writer.append({"seq": 1})
+        # 쓰기 소유자가 살아 있는 상태에서 열린다 — 여기서 실패하면 dry-run 이
+        # Core 를 멈춰야만 가능해진다.
+        reader = DurableJournal.open_read_only(journal_path)
+        assert [r["seq"] for r in reader.replay()] == [0, 1]
+        reader.close()
+    finally:
+        writer.close()
+
+
+def test_read_only_refuses_append(journal_path: Path) -> None:
+    """잠금을 안 잡으므로 쓰기가 허용되면 단일 writer 가 조용히 깨진다."""
+    DurableJournal(journal_path).close()
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        with pytest.raises(JournalSealedError):
+            reader.append({"seq": 99})
+    finally:
+        reader.close()
+
+
+def test_read_only_does_not_truncate_torn_tail(journal_path: Path) -> None:
+    """truncate 는 쓰기다 — 읽기 전용은 완결 줄까지만 보고 파일을 건드리지 않는다."""
+    writer = DurableJournal(journal_path)
+    writer.append({"seq": 0})
+    writer.close()
+    with journal_path.open("ab") as handle:
+        handle.write(b'{"seq": 1, "partial"')
+    size_before = journal_path.stat().st_size
+
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        assert [r["seq"] for r in reader.replay()] == [0]
+    finally:
+        reader.close()
+    assert journal_path.stat().st_size == size_before, "읽기 전용이 파일을 잘라냈다"
+
+
+def test_read_only_sees_rotated_segments(journal_path: Path) -> None:
+    writer = _rotating(journal_path)
+    for i in range(20):
+        writer.append({"seq": i, "payload": "x" * 50})
+    writer.close()
+
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        assert [r["seq"] for r in reader.replay()] == list(range(20))
+    finally:
+        reader.close()
+
+
+def test_read_only_close_is_idempotent(journal_path: Path) -> None:
+    """잡은 잠금이 없으므로 close 가 남의 잠금을 풀어서는 안 된다."""
+    writer = DurableJournal(journal_path)
+    try:
+        writer.append({"seq": 0})
+        reader = DurableJournal.open_read_only(journal_path)
+        reader.close()
+        reader.close()
+        # 쓰기 소유자는 여전히 살아 있어야 한다.
+        writer.append({"seq": 1})
+        assert [r["seq"] for r in writer.replay()] == [0, 1]
+    finally:
+        writer.close()

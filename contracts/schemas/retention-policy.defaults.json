@@ -1,0 +1,9 @@
+{
+  "candidateDays": 30,
+  "patrolRawDays": 90,
+  "confirmedEventDays": 1095,
+  "telemetryMissionDays": 365,
+  "auditActionDays": 1095,
+  "spatialArtifactAfterContractDays": 90,
+  "customerOverrideAllowed": true
+}

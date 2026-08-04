@@ -101,6 +101,32 @@ class DurableJournal:
     스레드풀에서 돈다) ``append``/``close`` 는 인스턴스 잠금으로 직렬화한다.
     """
 
+    @classmethod
+    def open_read_only(cls, path: Path) -> DurableJournal:
+        """**잠금 없이** 재생만 하는 인스턴스 — 서버가 도는 중에도 읽을 수 있다.
+
+        보관 정책 dry-run(``tools/enforce_retention.py``)처럼 "무엇이 지워질지"를
+        먼저 보여줘야 하는 경로가 실제로 필요로 한다. 그 확인이 서버 정지를
+        요구하면 아무도 보지 않게 되고, 그러면 dry-run 이 있으나 마나다.
+
+        읽기 전용이라는 사실은 **봉인으로 표현한다** — 이 인스턴스의 ``append`` 는
+        항상 :class:`JournalSealedError` 다. flock 을 잡지 않으므로 쓰기가 허용되면
+        단일 writer 불변식이 조용히 깨진다.
+
+        torn tail 도 **격리하지 않는다**(truncate 는 쓰기다) — 완결 줄까지만 읽고
+        멈춘다. 그 결과는 "쓰기 소유자가 다음 기동에서 격리할 부분을 아직 못 본
+        상태"이고, 읽기 전용 소비자에게는 그게 정확한 뷰다.
+        """
+        instance = cls.__new__(cls)
+        instance._path = path
+        instance._max_segment_bytes = None
+        instance._sealed_reason = "read-only"
+        instance._records = []
+        instance._lock = threading.Lock()
+        instance._lock_fd = -1  # 잠금 없음 — close() 가 이 값을 보고 해제를 건너뛴다
+        instance._recover(tolerate_torn_tail=False, read_only=True)
+        return instance
+
     def __init__(self, path: Path, *, max_segment_bytes: int | None = None) -> None:
         if max_segment_bytes is not None and max_segment_bytes <= 0:
             # 0 이나 음수를 받으면 append 마다 회전해 세그먼트를 무한히 만든다 —
@@ -165,7 +191,7 @@ class DurableJournal:
                 found.append((int(match.group(1)), candidate))
         return sorted(found)
 
-    def _recover(self) -> None:
+    def _recover(self, *, tolerate_torn_tail: bool = True, read_only: bool = False) -> None:
         """journal 재적재 — 봉인 세그먼트를 번호순으로 먼저, 활성 파일을 마지막에.
 
         순서가 곧 원장의 의미다(멱등 판정·상태 전이가 순서에 의존한다) — 세그먼트를
@@ -178,10 +204,18 @@ class DurableJournal:
             # 줄이 있다면 설명되지 않는 상태이므로 조용히 잘라내지 않고 거부한다.
             records.extend(self._read_records(segment, tolerate_torn_tail=False))
         if self._path.exists():
-            records.extend(self._read_records(self._path, tolerate_torn_tail=True))
+            records.extend(
+                self._read_records(
+                    self._path,
+                    tolerate_torn_tail=tolerate_torn_tail and not read_only,
+                    truncate_torn_tail=not read_only,
+                )
+            )
         self._records = records
 
-    def _read_records(self, path: Path, *, tolerate_torn_tail: bool) -> list[dict[str, Any]]:
+    def _read_records(
+        self, path: Path, *, tolerate_torn_tail: bool, truncate_torn_tail: bool = True
+    ) -> list[dict[str, Any]]:
         """한 파일의 완결 레코드 — 오염은 거부하고, 활성 파일의 torn tail 만 격리한다."""
         try:
             raw = path.read_bytes()
@@ -209,6 +243,12 @@ class DurableJournal:
             records.append(parsed)
 
         if tail.strip():
+            if not truncate_torn_tail:
+                # 읽기 전용 — 완결 줄까지만 읽고 멈춘다(truncate 는 쓰기다).
+                logger.info(
+                    "%s: 읽기 전용 재생 — torn tail %d바이트는 건너뛴다", path, len(tail)
+                )
+                return records
             if not tolerate_torn_tail:
                 raise JournalRecoveryError(
                     f"{path}: 봉인된 세그먼트에 완결되지 않은 줄이 있다 "
@@ -358,7 +398,8 @@ class DurableJournal:
         return self._sealed_reason
 
     def _release_writer_lock(self) -> None:
-        """flock 해제 + 잠금 fd 닫기 — ``__init__`` 복구 실패 경로와 :meth:`close` 공용.
+        """(read-only 인스턴스는 잡은 잠금이 없어 이 함수를 타지 않는다 — close 참조.)
+        flock 해제 + 잠금 fd 닫기 — ``__init__`` 복구 실패 경로와 :meth:`close` 공용.
 
         재생(``_recover``) 실패로 인스턴스가 살아남지 못하는 경우에도 호출돼,
         flock·fd 가 실패한 인스턴스와 함께 프로세스 수명 내내 남는 것을 막는다.
@@ -377,5 +418,7 @@ class DurableJournal:
         with self._lock:
             if self._sealed_reason == "closed":
                 return
+            was_read_only = self._lock_fd < 0
             self._sealed_reason = "closed"
-            self._release_writer_lock()
+            if not was_read_only:
+                self._release_writer_lock()
