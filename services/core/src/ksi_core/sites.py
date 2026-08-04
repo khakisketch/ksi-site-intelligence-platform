@@ -449,7 +449,10 @@ def _to_view(record: SiteRecord) -> SiteView:
 def build_sites_router(store: SiteStore) -> APIRouter:
     router = APIRouter(prefix="/v1/sites", tags=["sites"])
 
-    @router.post("", response_model=SiteMutationResponse)
+    # status_code 는 **실제 주 성공 경로**를 선언한다(런타임 실측 201).
+    # response.status_code 로 동적 지정만 하면 FastAPI 가 OpenAPI 에 200 을 남겨,
+    # 생성된 계약이 실제와 다른 코드를 말하게 된다(2026-08-04 확인).
+    @router.post("", response_model=SiteMutationResponse, status_code=201)
     def register_site(
         request: SiteRegistrationRequest,
         response: Response,

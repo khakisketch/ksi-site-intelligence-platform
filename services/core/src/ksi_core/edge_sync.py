@@ -397,7 +397,19 @@ def _require_device_sequence_access(
 def build_edge_sync_router(store: EdgeSyncStore, *, event_store: EventStore) -> APIRouter:
     router = APIRouter(prefix="/v1/edge-sync", tags=["edge-sync"])
 
-    @router.post("/event-bundles", response_model=IngestResponse)
+    # 201(신규 수신)·200(멱등 재전송) 둘 다 ACK 다 — 주 경로인 201 을 선언하고
+    # 200 은 아래 responses 로 남긴다(sites.py 의 같은 주석 참조).
+    @router.post(
+        "/event-bundles",
+        response_model=IngestResponse,
+        status_code=201,
+        responses={
+            200: {
+                "model": IngestResponse,
+                "description": "DUPLICATE_IGNORED — 멱등 재전송 ACK",
+            }
+        },
+    )
     def ingest_event_bundle(
         entry: JournalEntry,
         response: Response,

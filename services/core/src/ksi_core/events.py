@@ -1133,11 +1133,14 @@ def _mount_evidence_routes(
     했다면 URL 은 나갔는데 원장은 모르는 객체가 생긴다.
     """
 
-    @router.post("/{event_key}/evidence", response_model=EvidenceUploadResponse)
+    # status_code 로 선언한다 — response.status_code 동적 지정만 하면 OpenAPI 에
+    # 200 으로 남아 계약이 실제와 다른 코드를 말한다(sites.py 의 같은 주석 참조).
+    @router.post(
+        "/{event_key}/evidence", response_model=EvidenceUploadResponse, status_code=201
+    )
     def register_evidence(
         event_key: str,
         request: EvidenceUploadRequest,
-        response: Response,
         principal: Principal = Depends(require_permission(Permission.EVENTS_TRIAGE)),  # noqa: B008
     ) -> EvidenceUploadResponse:
         now = datetime.now(UTC)
@@ -1162,7 +1165,6 @@ def _mount_evidence_routes(
             # 스토리지 장애를 '증거 없음'으로 뭉개지 않는다 — 등록은 원장에
             # 남았고 업로드만 못 한 상태이므로, 재시도는 URL 재발급으로 한다.
             raise HTTPException(status_code=503, detail="EVIDENCE_STORAGE_UNAVAILABLE") from exc
-        response.status_code = 201
         return EvidenceUploadResponse(
             artifact_id=result.artifact.artifact_id,
             object_key=result.artifact.object_key,

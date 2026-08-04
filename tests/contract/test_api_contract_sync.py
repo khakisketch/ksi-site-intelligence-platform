@@ -319,10 +319,11 @@ def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:
     이게 없으면 ④는 이미 적힌 스키마만 지킬 뿐, 새 엔드포인트가 자유 문자열
     description 만 달고 들어오는 경로(원래의 실패 모드)를 막지 못한다.
 
-    상태코드 단위가 아니라 operation 의 2xx 집합 단위로 본다 — FastAPI 는
-    ``Response(status_code=...)`` 로 런타임에만 코드를 바꾸면 OpenAPI 출력에
-    200 으로 남기므로(예: POST /v1/sites 는 문서 201·구현 선언 200), 코드까지
-    묶으면 실패가 스키마 누락이 아니라 코드 표기 차이를 가리키게 된다.
+    **상태코드까지 묶어서 본다.** 원래는 operation 의 2xx 집합만 비교했는데, 그건
+    FastAPI 가 ``Response(status_code=...)`` 동적 지정을 OpenAPI 에 200 으로 남겨
+    구현 선언이 실제 런타임과 달랐기 때문이다(POST /v1/sites 는 런타임 201·선언
+    200). 그 원인을 라우터 쪽에서 고쳤으므로(``status_code=201`` 명시) 이제 코드
+    단위 대조가 성립한다 — 문서와 구현이 서로 다른 코드를 말하면 실패한다.
     """
     doc = _doc()
     impl_paths = _implemented_spec(tmp_path)["paths"]
@@ -335,25 +336,27 @@ def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:
             if method not in _HTTP_METHODS or not isinstance(operation, dict):
                 continue
             impl_op = (impl_paths.get(path) or {}).get(method) or {}
-            impl_models = {
-                model
+            impl_bindings = {
+                (code, model)
                 for code, response in (impl_op.get("responses") or {}).items()
                 if code.startswith("2")
                 for model in [_ref_name(_json_schema(response))]
                 if model is not None
             }
-            if not impl_models:
+            if not impl_bindings:
                 continue
-            doc_models = {
-                model
+            doc_bindings = {
+                (str(code), model)
                 for code, response in (operation.get("responses") or {}).items()
                 if str(code).startswith("2")
                 for model in [_ref_name(_json_schema(response))]
                 if model is not None
             }
-            unbound = impl_models - doc_models
+            unbound = impl_bindings - doc_bindings
             if unbound:
-                violations.append(f"{method.upper()} {path}: {sorted(unbound)}")
+                violations.append(
+                    f"{method.upper()} {path}: {sorted(f'{c} {m}' for c, m in unbound)}"
+                )
 
     assert not violations, (
         "실구현이 반환하는 응답 모델을 문서가 $ref 로 묶지 않았다 — 자유 문자열 "
