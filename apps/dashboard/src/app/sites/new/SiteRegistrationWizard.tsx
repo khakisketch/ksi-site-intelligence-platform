@@ -111,16 +111,21 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
+    // label 이 입력을 감싼다 — 형제로 두면 접근가능 이름이 placeholder 로 잡히고,
+    // placeholder 는 입력을 시작하면 사라진다(SiteRegistrationOnlyWizard.tsx 의 같은
+    // 주석 참조 — 2026-08-04 렌더 확인에서 실제 재현).
     <div className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
-      <label className="text-[12.5px] font-semibold break-keep text-ink-1">
-        {label}
-        {required && (
-          <span aria-hidden className="ml-0.5 text-crit">
-            *
-          </span>
-        )}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[12.5px] font-semibold break-keep text-ink-1">
+          {label}
+          {required && (
+            <span aria-hidden className="ml-0.5 text-crit">
+              *
+            </span>
+          )}
+        </span>
+        {children}
       </label>
-      {children}
       {error ? (
         <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
       ) : (
@@ -313,6 +318,9 @@ export function SiteRegistrationWizard() {
       });
       setSubmitPhase("success");
       setCurrentStep(7);
+      // 셸(사이드바 현장·임무 배지)은 layout 에 있어 클라이언트 네비게이션으로는 다시
+      // 그려지지 않는다 — 방금 만든 현장·임무가 반영되도록 서버 렌더를 한 번 요청한다.
+      router.refresh();
     } catch {
       setSubmitError("요청을 처리하지 못했습니다.");
       setSubmitPhase("error");
@@ -447,7 +455,7 @@ export function SiteRegistrationWizard() {
               type="text"
               value={form.siteId}
               onChange={(event) => update({ siteId: event.target.value })}
-              placeholder="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지"
+              placeholder="SITE-2026-001"
               aria-invalid={Boolean(siteIdError)}
               className={inputClassName}
             />

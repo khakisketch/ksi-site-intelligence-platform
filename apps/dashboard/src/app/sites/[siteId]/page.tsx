@@ -23,6 +23,33 @@ const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" });
 const MISSION_LIMIT = 5;
 const EVENT_LIMIT = 5;
 
+/**
+ * 섹션 조회 결과 — **권한 부재와 장애를 구분한다.**
+ *
+ * 둘을 "불러오지 못했습니다" 하나로 뭉개면, 권한이 없어서 안 보이는 것뿐인 운영자가
+ * 시스템 장애로 오해해 신고하거나 새로고침을 반복한다(2026-08-04 렌더 확인에서
+ * DRONE_OPERATOR 계정으로 실제 재현 — 이벤트 읽기 권한이 없는 역할이다).
+ */
+type SectionOutcome<T> = { kind: "ok"; value: T } | { kind: "forbidden" } | { kind: "error" };
+
+function sectionOutcome<T>(result: PromiseSettledResult<T>): SectionOutcome<T> {
+  if (result.status === "fulfilled") return { kind: "ok", value: result.value };
+  if (result.reason instanceof CoreApiError && result.reason.status === 403) {
+    return { kind: "forbidden" };
+  }
+  return { kind: "error" };
+}
+
+function SectionFallback({ what, outcome }: { what: string; outcome: "forbidden" | "error" }) {
+  return (
+    <p className="text-[13px] break-keep text-ink-muted">
+      {outcome === "forbidden"
+        ? `이 계정은 ${what}를 볼 권한이 없습니다.`
+        : `${what} 정보를 불러오지 못했습니다.`}
+    </p>
+  );
+}
+
 /** 시안 `.facts`/`.fact` — 고정폭 라벨열 + 행마다 하단 보더. 식별자 값은 break-token. */
 function Fact({ label, value, isToken = false }: { label: string; value: string; isToken?: boolean }) {
   return (
@@ -98,8 +125,12 @@ export default async function SiteDetailPage({
     hasAllPermissions("MISSIONS_ISSUE"),
     hasAllPermissions("SITES_WRITE"),
   ]);
-  const missions = missionsResult.status === "fulfilled" ? missionsResult.value : null;
-  const events = eventsResult.status === "fulfilled" ? eventsResult.value.events : null;
+  const missions = sectionOutcome(missionsResult);
+  const events = sectionOutcome(
+    eventsResult.status === "fulfilled"
+      ? { status: "fulfilled", value: eventsResult.value.events }
+      : eventsResult,
+  );
   const canStartSurvey = canIssueMission.status === "fulfilled" && canIssueMission.value;
   const canTransition = canTransitionSite.status === "fulfilled" && canTransitionSite.value;
   // UNMAPPED 현장은 아직 baseline 임무가 없다 — 같은 "새 조사" 화면(SurveyWizard)으로
@@ -152,13 +183,13 @@ export default async function SiteDetailPage({
           title="이 현장의 임무"
           action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}
         >
-          {missions === null ? (
-            <p className="text-[13px] break-keep text-ink-muted">임무 정보를 불러오지 못했습니다.</p>
-          ) : missions.length === 0 ? (
+          {missions.kind !== "ok" ? (
+            <SectionFallback what="임무" outcome={missions.kind} />
+          ) : missions.value.length === 0 ? (
             <p className="text-[13px] break-keep text-ink-muted">아직 없습니다.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-line">
-              {missions.slice(0, MISSION_LIMIT).map((mission) => (
+              {missions.value.slice(0, MISSION_LIMIT).map((mission) => (
                 <li key={mission.missionId}>
                   <Link
                     href={`/missions/${encodeURIComponent(mission.missionId)}`}
@@ -179,13 +210,13 @@ export default async function SiteDetailPage({
           title="이 현장의 이벤트"
           action={{ label: "전체보기", href: `/events?siteId=${encodeURIComponent(site.siteId)}` }}
         >
-          {events === null ? (
-            <p className="text-[13px] break-keep text-ink-muted">이벤트 정보를 불러오지 못했습니다.</p>
-          ) : events.length === 0 ? (
+          {events.kind !== "ok" ? (
+            <SectionFallback what="이벤트" outcome={events.kind} />
+          ) : events.value.length === 0 ? (
             <p className="text-[13px] break-keep text-ink-muted">아직 없습니다.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-line">
-              {events.slice(0, EVENT_LIMIT).map((event) => {
+              {events.value.slice(0, EVENT_LIMIT).map((event) => {
                 const eventStatusLabel = EVENT_STATUS_LABEL[event.status];
                 return (
                   <li key={event.eventKey}>

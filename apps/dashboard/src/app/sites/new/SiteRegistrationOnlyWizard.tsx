@@ -54,16 +54,23 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
+    // label 이 입력을 **감싼다** — htmlFor/id 짝 대신 암묵적 연결을 쓴다. 형제로 두면
+    // 접근가능 이름이 placeholder 로 잡히는데(2026-08-04 렌더 확인에서 실제 재현:
+    // "현장 ID" 가 아니라 "영숫자로 시작, -/_/. 만 허용…"), placeholder 는 입력을 시작하면
+    // 사라져서 스크린리더 사용자가 필드 이름을 잃는다. help/error 는 label 밖에 둔다 —
+    // 안에 넣으면 이름에 합쳐져 이름이 문단만큼 길어진다.
     <div className="flex flex-col gap-1.5">
-      <label className="text-[12.5px] font-semibold break-keep text-ink-1">
-        {label}
-        {required && (
-          <span aria-hidden className="ml-0.5 text-crit">
-            *
-          </span>
-        )}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[12.5px] font-semibold break-keep text-ink-1">
+          {label}
+          {required && (
+            <span aria-hidden className="ml-0.5 text-crit">
+              *
+            </span>
+          )}
+        </span>
+        {children}
       </label>
-      {children}
       {error ? (
         <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
       ) : (
@@ -128,6 +135,10 @@ export function SiteRegistrationOnlyWizard() {
       }
       setSubmitPhase("success");
       setCurrentStep(2);
+      // 셸(사이드바 현장 배지)은 layout 에 있어 클라이언트 네비게이션으로는 다시 그려지지
+      // 않는다 — 방금 등록한 현장이 반영되도록 서버 렌더를 한 번 요청한다. 이걸 빼면
+      // "등록했는데 좌측 건수는 그대로"가 되어 등록이 실패한 것처럼 보인다.
+      router.refresh();
     } catch {
       setSubmitError("요청을 처리하지 못했습니다.");
       setSubmitPhase("error");
@@ -224,7 +235,7 @@ export function SiteRegistrationOnlyWizard() {
               type="text"
               value={form.siteId}
               onChange={(event) => update({ siteId: event.target.value })}
-              placeholder="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지"
+              placeholder="SITE-2026-001"
               aria-invalid={Boolean(siteIdError)}
               className={inputClassName}
             />

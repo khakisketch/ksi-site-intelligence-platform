@@ -6,6 +6,7 @@ import { whoAmI } from "@/lib/core-api/auth";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
+import { PageTitle } from "./PageTitle";
 import { resolvePageTitle } from "./page-title";
 
 // 현장은 한국이고 서버는 어디서든 돌 수 있다 — 날짜를 서버 로컬 시간대로 찍으면
@@ -24,7 +25,7 @@ function TopBarFrame({ title, children }: { title: string; children: React.React
   const { date, weekday } = todayLabel();
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
-      <h1 className="text-[17px] font-bold tracking-tight break-keep">{title}</h1>
+      <PageTitle fallback={title} />
       <span className="hidden items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1 text-[13px] text-ink-2 sm:inline-flex">
         <strong className="font-semibold text-ink-1">{date}</strong>
         {weekday}

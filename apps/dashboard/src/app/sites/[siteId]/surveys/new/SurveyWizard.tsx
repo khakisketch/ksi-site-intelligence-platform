@@ -277,6 +277,9 @@ export function SurveyWizard({ site }: { site: SiteView }) {
       setStatus("success");
       // 성공 후 draft 를 지운다 — 새로고침해도 이미 발급된 조사를 다시 제출하지 않는다.
       clearDraft();
+      // 셸(사이드바 임무 배지)은 layout 에 있어 클라이언트 네비게이션으로는 다시 그려지지
+      // 않는다 — 방금 발급한 임무가 반영되도록 서버 렌더를 한 번 요청한다.
+      router.refresh();
     } catch {
       setStatus("error");
       setErrorMessage("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
