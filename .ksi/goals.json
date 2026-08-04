@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-04T21:42:25+09:00",
+  "updated_at": "2026-08-04T22:57:09+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -708,14 +708,14 @@
       "title": "apps/dashboard: next@16.2.12 내부 postcss@8.4.31·sharp@0.34.5 미패치 CVE(SCA gate, npm audit high 12건)",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "npm audit --audit-level=high: next 16.2.12 자체가 내부 번들 postcss(<=8.5.17, XSS/경로탈출)·sharp(<0.35.0, libvips CVE)를 물고 있고 latest stable(16.2.12)이 곧 설치본 — npm audit fix --force 의 유일 제안은 next@9.3.3 대폭 다운그레이드(App Router 등 전면 붕괴, 실효 해법 아님). eslint-config-next 경유 minimatch/brace-expansion 은 devDependency 전용(빌드산출물 미포함) — 노출 경로 없음. postcss/sharp 노출: 현재 S3 범위엔 사용자 제공 CSS/이미지 처리 파이프라인이 없어 실착취면 낮음(신뢰된 in-repo CSS만 처리, next/image 원격 이미지 미설정). S4 Evidence 미디어 업로드(원격/사용자 이미지 처리) 도입 시 sharp 노출면이 실질화되므로 그 시점 재점검 필수. next 16.3.0 계열 stable 릴리즈로 패치되면 즉시 업그레이드.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "next 16.2.12→16.3.0 + eslint-config-next 동반 업그레이드 + npm audit fix(brace-expansion). npm audit --audit-level=moderate 결과 'found 0 vulnerabilities'(이전 high 4건 — sharp libvips CVE-2026-33327/33328/35590/35591). 회귀 확인: tsc·eslint·vitest 54 passed·next build clean, 실제 렌더 4화면(홈·이벤트목록·현장목록·이벤트상세) 정상. 리스크 노트가 지목한 조건('S4 Evidence 미디어 업로드 도입 시 sharp 노출면이 실질화되므로 그 시점 재점검 필수')이 실제로 도래한 시점에 처리 — 업로드 경로 도입 커밋(9f3e8a6) 직후.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T15:24:29+09:00",
-      "updated_at": "2026-07-30T15:24:29+09:00"
+      "updated_at": "2026-08-04T22:46:32+09:00"
     },
     {
       "id": "dashboard-unauthenticated-signing-proxy",
@@ -750,14 +750,14 @@
       "title": "로그인 표면 잔여 강화 — secure쿠키 배포전제·로그인 시도 제한 없음",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer(opus) 2026-07-30 P2 잔여 2건, 안전 실해 경로 없음(완화 존재)이나 배포 전 재확인 권장. (1) session.ts의 secure 쿠키 플래그가 NODE_ENV==='production' 단독 조건 — 이 제품의 현장 서버가 평문 HTTP 사내망으로 배포되면 브라우저가 Secure 쿠키를 저장/전송하지 않아 로그인 무한루프로 조용히 깨진다(실제 배포 토폴로지가 HTTPS 종단인지 확인 필요, 공동 결정 레인). (2) /login에 시도 제한·지연이 없어 네트워크로 포트에 닿는 누구나 토큰을 무제한 추측할 수 있다 — 원래 risk(dashboard-unauthenticated-signing-proxy)가 노리던 것과 동일한 노출면이 이제 전적으로 토큰 엔트로피에 의존한다. dev 토큰은 추측 가능한 리터럴(dev-admin-token 등)이라 prod 토큰 프로비저닝 규칙(엔트로피·회전)이 문서화되어야 한다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "commit 직후 — (1)secure 쿠키: 이미 DASHBOARD_COOKIE_INSECURE_HTTP 스위치로 해소돼 있었다(session.ts, 기본값은 안전한 쪽이고 HTTP 사내망 배포 시 명시적으로 끄는 구조 — 리스크 노트가 낡았음을 확인). (2)로그인 시도 제한: login-throttle.ts 신설(5분 창 8회 실패 후 차단, 성공 시 리셋, 빈 입력 미카운트, 식별불가 클라이언트도 공용키로 제한, 첫 실패 기준 고정 창). 테스트 7건 + 실브라우저 확인(8회 실패 후 9회차부터 '로그인 시도가 너무 많습니다. 5분 후 다시 시도하세요.', 차단 중 올바른 토큰도 거부). 감수 사항 명시: IP 키라 같은 출구 IP 정상 운영자가 남의 실패로 잠길 수 있다(인증 단위가 계정이 아니라 토큰 하나) — 창 5분·사내망 배포 전제가 절충. 다중 인스턴스 배포로 가면 프로세스 메모리 카운터는 무의미해진다(docstring 명시). 잔여: prod 토큰 프로비저닝 규칙(엔트로피·회전) 문서화는 SIGNING_KEY_LIFECYCLE.md 와 별개로 미작성.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T21:32:44+09:00",
-      "updated_at": "2026-07-30T21:32:44+09:00"
+      "updated_at": "2026-08-04T22:57:09+09:00"
     },
     {
       "id": "api-contract-response-schema-void",
