@@ -54,7 +54,14 @@ info:
   # CANCELLED 는 사람(MISSIONS_ISSUE). **기존 사람 토큰으로 되던 실행 상태
   # 보고가 403 이 된다**(의도된 축소 — 사람이 성공을 손으로 찍는 경로를 닫는다).
   # 표면 축소가 아니라 권한 재배치라 minor 로 둔다.
-  version: 1.12.0
+  # 1.13.0 — 워커 경로 종단 연결: POST /v1/missions/{id}/source-media/verify(실측
+  # 대조) + GET /v1/processing-jobs/{id}/input(워커 입력 수신). 업로더 신고값
+  # (sha256·해상도)을 워커가 실측 보고하고 **Core 가** 대조한다 — 워커는 판정을
+  # 보낼 수 없고, 입력 응답에 신고값이 실리지 않아 읽지 않고 되읊을 수도 없다.
+  # RUNNING→SUCCEEDED 게이트에 "입력 실측 대조 완료"가 추가된다(기존 산출물
+  # 조건과 AND). 실측 없이 성공을 주장하면 과금 근거(totalMegapixels)가 끝까지
+  # 업로더 신고값으로 남기 때문이다. SourceMediaBundleView 에 lastMismatchAt 추가.
+  version: 1.13.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -844,6 +851,86 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
+  /v1/missions/{mission_id}/source-media/verify:
+    post:
+      summary: Report measured bytes; Core compares them against the uploader's claims
+      description: >-
+        **PROCESSING_WORK 권한 필요**(PROCESSING_WORKER 전용). 이 권한이 여기 붙는
+        것이 이 표면의 핵심이다 — 사진을 올린 주체(MISSIONS_ISSUE)가 자기 신고값을
+        스스로 검증할 수 없다.
+
+
+        워커가 보내는 것은 **측정값뿐이고 판정이 아니다**: 요청 스키마에
+        "검증됨" 같은 필드가 없다. 일치 여부는 Core 가 매기고, journal 에 남는
+        사실도 측정값이다 — 재생 시 Core 가 그 측정값으로 **다시 대조**하므로
+        원장의 verdict 만 VERIFIED 로 고쳐도 기동에서 걸린다.
+
+
+        **워커는 정답을 모른다.** GET /v1/processing-jobs/{jobId}/input 응답에
+        업로더 신고값이 실리지 않고 워커에게 MISSIONS_READ 도 없어서, VERIFIED 를
+        받으려면 실제로 바이트를 읽어 sha256 을 계산하는 수밖에 없다. (업로더와
+        워커가 밖에서 공모하면 여전히 통과한다 — Core 는 바이트를 중계하지
+        않는다, ADR-KSI-010 §1.)
+
+
+        측정 집합은 등록 집합과 **정확히** 같아야 한다 — 빠진 것도 남는 것도
+        중복도 COVERAGE_INCOMPLETE 다. 일부만 읽고 "검증했다"가 되면 verifiedAt
+        이 뜻하는 바가 사라진다. 봉인 전에는 대조 대상 집합이 확정되지 않아
+        409 BUNDLE_NOT_SEALED 다.
+
+
+        불일치(MISMATCH)는 원장에 영구 기록되지만 번들을 잠그지는 않는다 —
+        워커 버그로 생긴 오탐에 복구 경로가 없으면 정상 번들이 영구히 죽는다.
+        재검증은 열려 있고 시도는 전부 남는다(lastMismatchAt).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [measurements]
+              properties:
+                measurements:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [mediaId, sha256, bytes, width, height]
+                    properties:
+                      mediaId: { type: string, minLength: 1 }
+                      sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                      bytes: { type: integer, minimum: 1 }
+                      width: { type: integer, minimum: 1 }
+                      height: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: VERIFIED — 전부 일치, verifiedAt 이 채워진다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '200':
+          description: ALREADY_VERIFIED — 재호출은 무기록 멱등
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '409': { description: BUNDLE_NOT_SEALED — 봉인 전에는 대조 집합이 미확정 }
+        '422':
+          description: >-
+            MISMATCH(신고값과 실측이 어긋남) · COVERAGE_INCOMPLETE(측정 집합 불일치).
+            422 인 이유: 요청 형식은 옳고 **내용이 사실과 다르다** — 같은 값으로
+            재시도해도 결과가 같다.
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 역할은 이 권한을 갖지 않는다) }
   /v1/missions/{mission_id}/processing-jobs:
     post:
       summary: Issue a 3D reconstruction processing job on the sealed source bundle
@@ -1009,6 +1096,47 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: 대상 상태가 요구하는 권한 없음(위 설명의 권한표) }
+  /v1/processing-jobs/{job_id}/input:
+    get:
+      summary: Fetch a job's spec and presigned source downloads (worker's only read path)
+      description: >-
+        PROCESSING_WORK 권한 필요. **워커의 유일한 읽기 경로다** — PROCESSING_WORK
+        는 MISSIONS_READ 를 포함하지 않으므로 워커는 임무·현장·다른 작업 목록을
+        볼 수 없고, 여기서 주는 것도 그 작업이 가리키는 번들 하나뿐이다.
+
+
+        **업로더의 신고값(sha256·해상도)이 응답에 없다.** 이것이 실측 대조를
+        형식이 아니게 만드는 지점이다 — 워커가 정답을 모르므로, VERIFIED 를
+        받으려면 바이트를 실제로 읽는 수밖에 없다(POST .../source-media/verify).
+
+
+        활성(QUEUED·RUNNING) 작업만 내준다 — 끝난 작업의 원본 URL 을 계속
+        발급하면 작업 종료가 접근 종료를 뜻하지 않게 된다(409 JOB_NOT_ACTIVE).
+        presign 이 하나라도 실패하면 부분 응답 대신 503 이다: 부분집합만 받은
+        워커는 반드시 COVERAGE_INCOMPLETE 로 돌아온다.
+
+
+        **아직 큐가 아니다** — "다음 작업을 달라"는 표면이 없어 워커는 jobId 를
+        밖에서 받아야 한다. jobId 는 `{missionId}-pj{n}` 이라 추측 가능하므로,
+        워커 토큰을 쥔 쪽은 다른 작업의 입력도 열람할 수 있다. lease 설계 시
+        함께 좁힌다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: INPUT_READY — 사양 + 원본 다운로드 URL(짧은 수명)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobInputResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: JOB_NOT_ACTIVE — 끝난 작업의 원본은 다시 내주지 않는다 }
+        '503': { description: STORAGE_UNAVAILABLE · STORE_UNAVAILABLE, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/processing-jobs/{job_id}/artifacts:
     post:
       summary: Register a reconstruction artifact on a running job (INV-051)
@@ -1772,7 +1900,9 @@ components:
     SourceMediaBundleView:
       description: 원본 미디어 번들 상태 — 미검증 상태를 그대로 노출한다.
       type: object
-      required: [missionId, status, mediaCount, sourceBundleDigest, sealedAt, verifiedAt]
+      required:
+        [missionId, status, mediaCount, sourceBundleDigest, sealedAt, verifiedAt,
+         lastMismatchAt]
       properties:
         missionId: { type: string }
         status: { type: string, enum: [OPEN, SEALED] }
@@ -1783,8 +1913,17 @@ components:
           type: [string, 'null']
           format: date-time
           description: >-
-            현재는 항상 null(B1 범위) — Core 는 신고값(sha256·해상도)을 검증하지
-            않는다. 전 바이트를 읽는 B3 워커가 실제로 대조하면 이 필드가 채워진다.
+            KSI 워커가 전 바이트를 읽어 재고 그 값이 업로더 신고값과 전부 일치함이
+            확인된 시각(POST .../source-media/verify). 정확한 뜻은 "서버가 바이트를
+            봤다"가 아니라 "워커가 실측을 보고했고 Core 대조가 통과했다"이다 —
+            Core 는 객체 바이트를 중계하지 않는다(ADR-KSI-010 §1).
+        lastMismatchAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            마지막 불일치 보고 시각. verifiedAt 이 null 인데 이 값이 있으면 "아직
+            아무도 안 읽었다"가 아니라 **"재봤는데 어긋났다"**다 — 화면이 둘을
+            같은 회색으로 그리면 안 된다.
     SourceMediaSealResponse:
       type: object
       required: [verdict]
@@ -1793,6 +1932,63 @@ components:
         detail: { type: [string, 'null'] }
         bundle:
           oneOf: [{ $ref: '#/components/schemas/SourceMediaBundleView' }, { type: 'null' }]
+    SourceMediaVerifyResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        bundle:
+          oneOf: [{ $ref: '#/components/schemas/SourceMediaBundleView' }, { type: 'null' }]
+        mismatched:
+          description: 신고값과 실측이 어긋난 mediaId.
+          type: array
+          items: { type: string }
+        missing:
+          description: 등록됐는데 측정값이 오지 않은 mediaId.
+          type: array
+          items: { type: string }
+        unexpected:
+          description: 등록되지 않았거나 중복 측정된 mediaId.
+          type: array
+          items: { type: string }
+    JobInputView:
+      description: >-
+        워커가 실행에 필요한 것 — 무엇으로 돌릴지 + 어떤 파일을 읽을지.
+        **업로더의 신고값(sha256·해상도)이 없는 것이 이 스키마의 요점이다.**
+      type: object
+      required:
+        [jobId, missionId, siteId, status, provider, engineVersion, engineDigest,
+         executionLocus, processingParams, sourceBundleDigest, imageCount, media]
+      properties:
+        jobId: { type: string }
+        missionId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING] }
+        provider: { type: string }
+        engineVersion: { type: string }
+        engineDigest: { type: string }
+        executionLocus: { type: string }
+        processingParams: { type: object, additionalProperties: true }
+        sourceBundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        imageCount: { type: integer }
+        media:
+          type: array
+          items:
+            type: object
+            required: [mediaId, objectKey, downloadUrl, expiresAt]
+            properties:
+              mediaId: { type: string }
+              objectKey: { type: string }
+              downloadUrl: { type: string }
+              expiresAt: { type: string, format: date-time }
+    JobInputResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        input: { oneOf: [{ $ref: '#/components/schemas/JobInputView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
     ProcessingJobView:
       description: >-
         처리 작업 1건 — 계약 payload(contract) + 운영 메타. 계약 필드의 구조 정본은

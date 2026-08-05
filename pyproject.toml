@@ -25,6 +25,7 @@ explicit = true
 torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
 ksi-perception = { workspace = true }
+ksi-processing-controller = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -41,6 +42,10 @@ dev = [
     # leaf workspace 멤버 — 아무 패키지도 의존하지 않아 기본 sync 에서 빠지므로 dev 로
     # 명시한다(base 의존만 — torch 계열 [dfine] extra 는 모델 보유 환경에서만 설치).
     "ksi-perception",
+    # 같은 이유의 leaf 멤버 — 이 워커 코드를 Core 가 의존하지 않아(서버 조립 그래프
+    # 밖이다) 기본 sync 에서 빠진다. CI 는 --all-packages 라 무관하지만, 맨
+    # `uv sync` 로 붙은 개발자가 ODM 어댑터 테스트에서 ImportError 를 보게 된다.
+    "ksi-processing-controller",
     # ksi-core[s3] 어댑터(ADR-KSI-010 §1)의 타입체크·테스트용. 런타임 필수 의존이
     # 아니다 — Core 는 evidence_storage 없이도 조립되고, 그 경우 boto3 를 import
     # 하지도 않는다(어댑터 모듈 안에서 지연 import).

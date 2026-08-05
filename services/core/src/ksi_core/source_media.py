@@ -17,14 +17,54 @@
 ``mediaId`` 기준으로 먼저 정렬해 고정한다 — 그래야 같은 파일 집합을 다른 순서로
 올려도 같은 digest 가 나온다.
 
-## 업로더의 신고값은 주장이다 — 이 단계는 검증하지 않는다
+## 업로더의 신고값은 주장이다 — 등록 시점에는 검증하지 않는다
 
-파일마다 ``sha256``·``bytes``·``width``·``height`` 를 신고받지만, 이 값들을
-서버가 재계산해 대조하지 않는다 — 전 바이트를 읽는 워커가 B3 에서 한다. 그래서
-번들 조회 응답은 ``verifiedAt: null`` 을 그대로 노출한다(검증된 척하는 필드명을
-쓰지 않는다). ``mediaId`` 는 호출자가 정한다(``evidence.py`` 의 ``artifactId``
-관습과 동일) — 같은 mediaId·같은 claim 재전송은 멱등 재발급(새 presigned
-URL)이고, 같은 mediaId·다른 claim 은 ``CLAIM_CONFLICT`` 로 거부한다.
+파일마다 ``sha256``·``bytes``·``width``·``height`` 를 신고받지만, 등록 시점에는
+서버가 재계산해 대조하지 않는다. ``mediaId`` 는 호출자가 정한다(``evidence.py``
+의 ``artifactId`` 관습과 동일) — 같은 mediaId·같은 claim 재전송은 멱등 재발급
+(새 presigned URL)이고, 같은 mediaId·다른 claim 은 ``CLAIM_CONFLICT`` 로
+거부한다.
+
+## 대조는 Core 가 한다 — 워커는 **잰 값**만 보고한다
+
+:meth:`SourceMediaStore.verify` 가 봉인된 번들의 신고값과 워커의 측정값을
+대조한다. 워커가 보내는 것은 :class:`SourceMediaMeasurement` — "내가 읽어서
+재보니 sha256 이 X, 4000×3000 이더라"뿐이고, **"검증됐다"는 판정을 보낼 수
+없다**. 일치 여부는 Core 가 :func:`compare_measurements` 로 판정하고, 그
+함수를 재생 경로가 그대로 다시 탄다.
+
+**측정 집합이 등록 집합과 정확히 같아야 한다.** 빠진 것도 남는 것도 거부한다
+(``COVERAGE_INCOMPLETE``) — 일부만 읽고 "검증했다"가 되면 그 필드가 뜻하는
+바가 사라진다.
+
+### 워커에게 신고값을 주지 않는다 — 되읊기가 불가능하도록
+
+이 대조가 형식적이지 않은 이유는 **워커가 정답을 모른다**는 데 있다.
+``GET /v1/processing-jobs/{jobId}/input``(``processing_jobs.py``)이 워커에게
+주는 것은 ``mediaId`` 와 다운로드 URL 뿐이고, 업로더가 신고한 sha256·해상도는
+**응답에 실리지 않는다**. 워커에게는 ``MISSIONS_READ`` 도 없어 번들 조회로
+우회할 수도 없다(``auth.py``).
+
+그래서 ``VERIFIED`` 를 받으려면 워커는 실제로 바이트를 읽어 sha256 을 계산해야
+한다 — 게으른 워커는 통과하지 못하고, 악의적인 워커도 통과하려면 결국 읽어야
+한다. "읽지 않고 신고값을 되읊는" 경로가 구조적으로 없다.
+
+**막는 것:** 업로더가 자기 신고값을 스스로 검증하는 것. 올리는 쪽은
+``MISSIONS_ISSUE``, 재는 쪽은 ``PROCESSING_WORK`` 이고 **어느 사람 역할도
+후자를 갖지 않는다**. 해상도를 부풀려 과금 근거를 만들려면 워커까지 손에
+넣어야 하고, 손에 넣어도 파일을 읽어야 한다.
+
+**남는 것:** Core 는 객체 바이트를 중계하지 않으므로(ADR-KSI-010 §1) 서버가
+직접 재확인하지는 않는다. 업로더와 워커가 **공모하면**(정답을 밖에서 주고받으면)
+여전히 통과한다. 그래서 이 필드의 정확한 뜻은 "KSI 워커가 실측을 보고했고 그
+값이 신고값과 일치했다"이지 "서버가 바이트를 봤다"가 아니다.
+
+## 불일치는 기록하되 번들을 영구 오염시키지 않는다
+
+하나라도 어긋나면 ``MISMATCH`` 로 원장에 영구 기록하고 ``verified_at`` 은
+채우지 않는다. 번들을 되돌릴 수 없게 막지는 않는다 — 워커 버그로 생긴 오탐에
+복구 경로가 없으면 정상 번들이 영구히 죽는다. 재검증은 열려 있고, 시도는
+전부 원장에 남는다(``last_mismatch_at`` 으로 화면에도 보인다).
 
 ## 객체 키는 서버가 만든다
 
@@ -44,7 +84,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -112,6 +152,21 @@ class SourceBundleSealVerdict(StrEnum):
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
 
+class SourceBundleVerifyVerdict(StrEnum):
+    """실측 대조 판정 — 워커는 이 값을 **보낼 수 없고** Core 가 매긴다."""
+
+    VERIFIED = "VERIFIED"
+    # 하나 이상 어긋났다. 원장에 영구 기록되고 번들은 미검증으로 남는다.
+    MISMATCH = "MISMATCH"
+    # 측정 집합이 등록 집합과 다르다 — 일부만 읽고 검증했다고 할 수 없다.
+    COVERAGE_INCOMPLETE = "COVERAGE_INCOMPLETE"
+    ALREADY_VERIFIED = "ALREADY_VERIFIED"
+    UNKNOWN_MISSION = "UNKNOWN_MISSION"
+    # 봉인 전에는 대조 대상 집합 자체가 아직 확정되지 않았다.
+    BUNDLE_NOT_SEALED = "BUNDLE_NOT_SEALED"
+    STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+
+
 _BATCH_STATUS: dict[SourceMediaBatchVerdict, int] = {
     SourceMediaBatchVerdict.PROCESSED: 201,
     SourceMediaBatchVerdict.UNKNOWN_MISSION: 404,
@@ -125,6 +180,18 @@ _SEAL_STATUS: dict[SourceBundleSealVerdict, int] = {
     SourceBundleSealVerdict.UNKNOWN_MISSION: 404,
     SourceBundleSealVerdict.EMPTY_BUNDLE: 422,
     SourceBundleSealVerdict.STORE_UNAVAILABLE: 503,
+}
+
+_VERIFY_STATUS: dict[SourceBundleVerifyVerdict, int] = {
+    SourceBundleVerifyVerdict.VERIFIED: 201,
+    SourceBundleVerifyVerdict.ALREADY_VERIFIED: 200,
+    # 422 다 — 요청 형식은 옳고 **내용이 사실과 다르다**. 재시도로 해결되지
+    # 않는다는 뜻을 담는다(409 는 "지금 상태가 아니다"라 재시도 여지를 남긴다).
+    SourceBundleVerifyVerdict.MISMATCH: 422,
+    SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE: 422,
+    SourceBundleVerifyVerdict.UNKNOWN_MISSION: 404,
+    SourceBundleVerifyVerdict.BUNDLE_NOT_SEALED: 409,
+    SourceBundleVerifyVerdict.STORE_UNAVAILABLE: 503,
 }
 
 
@@ -190,8 +257,78 @@ class SourceMediaRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMediaMeasurement:
+    """워커가 **실제로 읽어서 잰** 값 — 판정이 아니라 측정치다.
+
+    ``content_type`` 이 없는 것이 의도다. 그건 업로드 시점의 선언이지 바이트를
+    읽어 재는 값이 아니고, 여기 있으면 워커가 "이 파일은 사실 이 타입이다"를
+    주장하는 통로가 된다 — 이 모듈이 워커에게 허용하는 것은 측정뿐이다.
+    """
+
+    media_id: str
+    sha256: str
+    size_bytes: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class MeasurementComparison:
+    """신고값 대 측정값 대조 결과 — live 와 재생이 같은 판정을 공유한다."""
+
+    missing: tuple[str, ...] = ()
+    unexpected: tuple[str, ...] = ()
+    mismatched: tuple[str, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        """측정 집합이 등록 집합과 정확히 같은가."""
+        return not self.missing and not self.unexpected
+
+    @property
+    def is_match(self) -> bool:
+        return self.is_complete and not self.mismatched
+
+
+def compare_measurements(
+    media: Iterable[SourceMediaRecord], measurements: Iterable[SourceMediaMeasurement]
+) -> MeasurementComparison:
+    """등록된 신고값과 워커 측정값을 대조한다 — **판정의 SSOT**.
+
+    live 경로(:meth:`SourceMediaStore.verify`)와 재생 경로가 같은 함수를 쓴다.
+    각자 조건문을 갖고 있으면 한쪽만 고쳐지는 순간 journal 이 거짓 검증을
+    되살리는 경로가 열린다(``compute_source_bundle_digest`` 재계산과 같은 원칙).
+
+    ``mediaId`` 중복 측정은 ``unexpected`` 로 잡힌다 — 같은 파일을 두 번 재서
+    한 번만 맞히는 식으로 대조를 흐릴 수 없다.
+    """
+    claimed = {record.media_id: record for record in media}
+    seen: set[str] = set()
+    unexpected: list[str] = []
+    mismatched: list[str] = []
+    for measured in measurements:
+        record = claimed.get(measured.media_id)
+        if record is None or measured.media_id in seen:
+            unexpected.append(measured.media_id)
+            continue
+        seen.add(measured.media_id)
+        if (
+            record.sha256 != measured.sha256
+            or record.size_bytes != measured.size_bytes
+            or record.width != measured.width
+            or record.height != measured.height
+        ):
+            mismatched.append(measured.media_id)
+    return MeasurementComparison(
+        missing=tuple(sorted(set(claimed) - seen)),
+        unexpected=tuple(sorted(unexpected)),
+        mismatched=tuple(sorted(mismatched)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class SourceMediaBundle:
-    """한 임무의 원본 미디어 번들 상태 — 등록된 미디어 + 봉인 여부."""
+    """한 임무의 원본 미디어 번들 상태 — 등록된 미디어 + 봉인 + 실측 대조 여부."""
 
     mission_id: str
     site_id: str
@@ -199,10 +336,20 @@ class SourceMediaBundle:
     sealed_at: datetime | None = None
     sealed_by: str | None = None
     source_bundle_digest: str | None = None
+    # 워커가 전 바이트를 읽어 신고값과 일치함을 보고한 시각. 정확히는
+    # "KSI 워커가 실측했다고 보고한 시각"이다(모듈 docstring).
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+    # 마지막 불일치 보고 — 검증을 막지는 않지만 화면에 드러난다.
+    last_mismatch_at: datetime | None = None
 
     @property
     def is_sealed(self) -> bool:
         return self.sealed_at is not None
+
+    @property
+    def is_verified(self) -> bool:
+        return self.verified_at is not None
 
 
 def compute_source_bundle_digest(mission_id: str, media: Iterable[SourceMediaRecord]) -> str:
@@ -264,6 +411,15 @@ class SealResult:
     bundle: SourceMediaBundle | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class VerificationResult:
+    verdict: SourceBundleVerifyVerdict
+    detail: str | None = None
+    bundle: SourceMediaBundle | None = None
+    # 어떤 파일이 어긋났는지 — 워커가 무엇을 다시 봐야 하는지 알 수 있게.
+    comparison: MeasurementComparison | None = None
+
+
 def _require_tz_aware(value: datetime, *, param: str) -> None:
     if value.tzinfo is None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
@@ -323,6 +479,8 @@ class SourceMediaStore:
                 self._replay_registration(mission_id, raw)
             elif kind == "source-media-sealed":
                 self._replay_seal(mission_id, raw)
+            elif kind == "source-media-verified":
+                self._replay_verification(mission_id, raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
                 raise SourceMediaRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
 
@@ -362,14 +520,7 @@ class SourceMediaStore:
         )
         if bundle is None:
             bundle = SourceMediaBundle(mission_id=mission_id, site_id=raw["siteId"])
-        self._bundles[mission_id] = SourceMediaBundle(
-            mission_id=bundle.mission_id,
-            site_id=bundle.site_id,
-            media=(*bundle.media, record),
-            sealed_at=bundle.sealed_at,
-            sealed_by=bundle.sealed_by,
-            source_bundle_digest=bundle.source_bundle_digest,
-        )
+        self._bundles[mission_id] = replace(bundle, media=(*bundle.media, record))
 
     def _replay_seal(self, mission_id: str, raw: dict[str, Any]) -> None:
         bundle = self._bundles.get(mission_id)
@@ -390,14 +541,75 @@ class SourceMediaStore:
                 f"missionId={mission_id} (기록={raw['sourceBundleDigest']!r}, "
                 f"재계산={recomputed!r})"
             )
-        self._bundles[mission_id] = SourceMediaBundle(
-            mission_id=bundle.mission_id,
-            site_id=bundle.site_id,
-            media=bundle.media,
+        self._bundles[mission_id] = replace(
+            bundle,
             sealed_at=_require_aware_iso(raw["ts"], "ts", mission_id),
             sealed_by=raw["sealedBy"],
             source_bundle_digest=recomputed,
         )
+
+    def _replay_verification(self, mission_id: str, raw: dict[str, Any]) -> None:
+        """검증 레코드 재생 — **기록된 판정을 믿지 않고 다시 대조한다.**
+
+        journal 에 남는 것은 워커의 측정값이고, 일치 여부는 재생 시점에
+        :func:`compare_measurements` 가 다시 매긴다. 그래서 ``verdict`` 필드를
+        VERIFIED 로 손으로 고쳐 넣어도 측정값이 신고값과 어긋나면 기동이
+        거부된다(``_replay_seal`` 의 digest 재계산과 같은 원칙).
+        """
+        bundle = self._bundles.get(mission_id)
+        if bundle is None or not bundle.is_sealed:
+            raise SourceMediaRecoveryError(
+                f"재생: 봉인되지 않은 번들에 검증 레코드가 있다 — missionId={mission_id}"
+            )
+        try:
+            measurements = [
+                SourceMediaMeasurement(
+                    media_id=item["mediaId"],
+                    sha256=item["sha256"],
+                    size_bytes=item["bytes"],
+                    width=item["width"],
+                    height=item["height"],
+                )
+                for item in raw["measurements"]
+            ]
+        except (KeyError, TypeError) as exc:
+            raise SourceMediaRecoveryError(
+                "재생: 검증 레코드의 측정값이 형식을 만족하지 않는다 — "
+                f"missionId={mission_id}: {exc}"
+            ) from exc
+
+        comparison = compare_measurements(bundle.media, measurements)
+        recorded = raw["verdict"]
+        recomputed = (
+            SourceBundleVerifyVerdict.VERIFIED
+            if comparison.is_match
+            else SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE
+            if not comparison.is_complete
+            else SourceBundleVerifyVerdict.MISMATCH
+        )
+        if recorded != recomputed.value:
+            raise SourceMediaRecoveryError(
+                f"재생: 검증 레코드의 판정이 재대조와 불일치 — missionId={mission_id} "
+                f"(기록={recorded!r}, 재대조={recomputed.value!r})"
+            )
+        if bundle.is_verified:
+            # live 는 이미 검증된 번들에 **어떤** 검증 레코드도 더 쓰지 않는다 —
+            # verify() 가 대조 전에 ALREADY_VERIFIED 로 빠지고 journal 에 적지
+            # 않는다(무기록 멱등). 그러니 여기 레코드가 있다는 것은 원장 조작이거나
+            # 쓰기 경로가 깨진 것이다. VERIFIED 중복만 막고 MISMATCH 를 통과시키면
+            # "검증됐는데 마지막 대조는 실패"라는, live 가 도달할 수 없는 상태를
+            # 재생이 만들어낸다.
+            raise SourceMediaRecoveryError(
+                f"재생: 이미 검증된 번들에 추가 검증 레코드가 있다"
+                f"({recomputed.value}) — missionId={mission_id}"
+            )
+        ts = _require_aware_iso(raw["ts"], "ts", mission_id)
+        if recomputed is SourceBundleVerifyVerdict.VERIFIED:
+            self._bundles[mission_id] = replace(
+                bundle, verified_at=ts, verified_by=raw["verifiedBy"]
+            )
+        else:
+            self._bundles[mission_id] = replace(bundle, last_mismatch_at=ts)
 
     @property
     def sealed_reason(self) -> str | None:
@@ -535,14 +747,7 @@ class SourceMediaStore:
             registered_at=now,
             registered_by=registered_by,
         )
-        updated_bundle = SourceMediaBundle(
-            mission_id=bundle.mission_id,
-            site_id=bundle.site_id,
-            media=(*bundle.media, record),
-            sealed_at=bundle.sealed_at,
-            sealed_by=bundle.sealed_by,
-            source_bundle_digest=bundle.source_bundle_digest,
-        )
+        updated_bundle = replace(bundle, media=(*bundle.media, record))
         return updated_bundle, SourceMediaItemResult(
             claim.media_id,
             SourceMediaItemVerdict.REGISTERED,
@@ -591,16 +796,110 @@ class SourceMediaStore:
                 return SealResult(
                     SourceBundleSealVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
                 )
-            sealed_bundle = SourceMediaBundle(
-                mission_id=bundle.mission_id,
-                site_id=bundle.site_id,
-                media=bundle.media,
-                sealed_at=now,
-                sealed_by=sealed_by,
-                source_bundle_digest=digest,
+            sealed_bundle = replace(
+                bundle, sealed_at=now, sealed_by=sealed_by, source_bundle_digest=digest
             )
             self._bundles[mission_id] = sealed_bundle
             return SealResult(SourceBundleSealVerdict.SEALED, bundle=sealed_bundle)
+
+    def verify(
+        self,
+        mission_id: str,
+        measurements: Sequence[SourceMediaMeasurement],
+        *,
+        verified_by: str,
+        now: datetime,
+    ) -> VerificationResult:
+        """워커의 측정값을 등록된 신고값과 대조한다 — **판정은 Core 가 한다.**
+
+        호출자는 "검증됐다"를 보낼 수 없다(:class:`SourceMediaMeasurement` 에
+        판정 필드가 없다). 일치 여부는 :func:`compare_measurements` 가 매기고,
+        그 결과가 그대로 journal 에 남아 재생이 다시 대조한다.
+
+        이미 검증된 번들의 재호출은 에러가 아니라 ``ALREADY_VERIFIED`` 이고
+        journal 에 다시 쓰지 않는다 — 새로 기록할 사실이 없다(``seal`` 관습).
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.STORE_UNAVAILABLE,
+                    detail="journal 봉인됨 — 재시작 필요",
+                )
+            bundle = self._bundles.get(mission_id)
+            if bundle is None:
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
+                )
+            if not bundle.is_sealed:
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.BUNDLE_NOT_SEALED,
+                    detail=(
+                        "번들이 아직 봉인되지 않았다 — 봉인 전에는 대조 대상 집합이 "
+                        "확정되지 않아 '전부 일치'가 성립하지 않는다"
+                    ),
+                )
+            if bundle.is_verified:
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.ALREADY_VERIFIED, bundle=bundle
+                )
+
+            comparison = compare_measurements(bundle.media, measurements)
+            if comparison.is_match:
+                verdict = SourceBundleVerifyVerdict.VERIFIED
+                detail = None
+            elif not comparison.is_complete:
+                verdict = SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE
+                detail = (
+                    f"측정 집합이 등록 집합과 다르다 — 누락 {len(comparison.missing)}건"
+                    f"{list(comparison.missing[:5])}, 미등록·중복 "
+                    f"{len(comparison.unexpected)}건{list(comparison.unexpected[:5])}"
+                )
+            else:
+                verdict = SourceBundleVerifyVerdict.MISMATCH
+                detail = (
+                    f"신고값과 실측이 어긋난다 — {len(comparison.mismatched)}건"
+                    f"{list(comparison.mismatched[:5])}"
+                )
+
+            journal_record = {
+                "kind": "source-media-verified",
+                "ts": _iso(now),
+                "missionId": mission_id,
+                "verdict": verdict.value,
+                # 판정이 아니라 **측정값**이 원장의 사실이다 — 재생이 이걸로
+                # 다시 대조하므로, verdict 만 고쳐 넣은 원장은 기동에서 걸린다.
+                "measurements": [
+                    {
+                        "mediaId": m.media_id,
+                        "sha256": m.sha256,
+                        "bytes": m.size_bytes,
+                        "width": m.width,
+                        "height": m.height,
+                    }
+                    for m in measurements
+                ],
+                "mismatched": list(comparison.mismatched),
+                "missing": list(comparison.missing),
+                "unexpected": list(comparison.unexpected),
+                "verifiedBy": verified_by,
+            }
+            try:
+                self._journal.append(journal_record)
+            except JournalSealedError:
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.STORE_UNAVAILABLE,
+                    detail="journal 봉인됨 — 재시작 필요",
+                )
+
+            if verdict is SourceBundleVerifyVerdict.VERIFIED:
+                updated = replace(bundle, verified_at=now, verified_by=verified_by)
+            else:
+                updated = replace(bundle, last_mismatch_at=now)
+            self._bundles[mission_id] = updated
+            return VerificationResult(
+                verdict, detail=detail, bundle=updated, comparison=comparison
+            )
 
     def get(self, mission_id: str) -> SourceMediaBundle | None:
         with self._lock:
@@ -656,16 +955,50 @@ class SourceMediaBundleView(_CamelModel):
     media_count: int
     source_bundle_digest: str | None
     sealed_at: datetime | None
-    # 항상 null(B1 범위) — Core 는 신고값(sha256·해상도)을 검증하지 않는다.
-    # 전 바이트를 읽는 B3 워커가 실제로 대조하면 이 필드가 채워진다. "검증된
-    # 척"하는 필드명을 쓰지 않는다.
+    # **"KSI 워커가 전 바이트를 읽어 신고값과 일치함을 보고한 시각"**이다
+    # (모듈 docstring "막는 것과 못 막는 것"). null 이면 아직 아무도 안 읽었다.
     verified_at: datetime | None
+    # 마지막 불일치 보고 시각. verified_at 이 null 인데 이 값이 있으면 "아직
+    # 안 쟀다"가 아니라 **"재봤는데 어긋났다"**다 — 화면이 둘을 구분해야 한다.
+    last_mismatch_at: datetime | None
 
 
 class SourceMediaSealResponse(_CamelModel):
     verdict: str
     detail: str | None = None
     bundle: SourceMediaBundleView | None = None
+
+
+class SourceMediaMeasurementItem(_CamelModel):
+    """워커가 실측한 파일 1건. **판정 필드가 없는 것이 이 모델의 요점이다.**"""
+
+    media_id: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bytes: int = Field(ge=1)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
+class SourceMediaVerifyRequest(_CamelModel):
+    """실측 보고 — 등록된 전 파일을 한 번에 준다(부분 검증은 검증이 아니다).
+
+    등록(:class:`SourceMediaBatchRequest`)과 달리 ``max_length`` 가 **없다.**
+    등록은 나눠 보낼 수 있어서 상한이 배치 크기를 제한할 뿐이지만, 검증은
+    정의상 전량이라 상한을 두면 큰 번들이 영영 검증되지 못한다. 대신 항목이
+    작다 — 3,000장이라도 요청 본문은 수백 KB 수준이고 journal append 는 한 번이다.
+    """
+
+    measurements: list[SourceMediaMeasurementItem] = Field(min_length=1)
+
+
+class SourceMediaVerifyResponse(_CamelModel):
+    verdict: str
+    detail: str | None = None
+    bundle: SourceMediaBundleView | None = None
+    # 어긋난·빠진·남는 mediaId — 워커가 무엇을 다시 봐야 하는지.
+    mismatched: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    unexpected: list[str] = Field(default_factory=list)
 
 
 def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
@@ -675,7 +1008,8 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
         media_count=len(bundle.media),
         source_bundle_digest=bundle.source_bundle_digest,
         sealed_at=bundle.sealed_at,
-        verified_at=None,
+        verified_at=bundle.verified_at,
+        last_mismatch_at=bundle.last_mismatch_at,
     )
 
 
@@ -768,6 +1102,50 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
             bundle=_to_bundle_view(result.bundle) if result.bundle is not None else None,
         )
 
+    @router.post(
+        "/{mission_id}/source-media/verify",
+        response_model=SourceMediaVerifyResponse,
+        status_code=201,
+    )
+    def verify_source_media(
+        mission_id: str,
+        request: SourceMediaVerifyRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> SourceMediaVerifyResponse:
+        """워커가 실측값을 보고하고 **Core 가** 신고값과 대조한다.
+
+        권한이 ``PROCESSING_WORK`` 인 것이 이 표면의 핵심이다 — 사진을 올린
+        주체(``MISSIONS_ISSUE``)가 자기 신고값을 스스로 검증할 수 없다.
+        """
+        result = store.verify(
+            mission_id,
+            [
+                SourceMediaMeasurement(
+                    media_id=m.media_id,
+                    sha256=m.sha256,
+                    size_bytes=m.bytes,
+                    width=m.width,
+                    height=m.height,
+                )
+                for m in request.measurements
+            ],
+            verified_by=principal.principal_id,
+            now=datetime.now(UTC),
+        )
+        response.status_code = _VERIFY_STATUS[result.verdict]
+        if result.verdict is SourceBundleVerifyVerdict.STORE_UNAVAILABLE:
+            response.headers["Retry-After"] = "30"
+        comparison = result.comparison
+        return SourceMediaVerifyResponse(
+            verdict=result.verdict.value,
+            detail=result.detail,
+            bundle=_to_bundle_view(result.bundle) if result.bundle is not None else None,
+            mismatched=list(comparison.mismatched) if comparison else [],
+            missing=list(comparison.missing) if comparison else [],
+            unexpected=list(comparison.unexpected) if comparison else [],
+        )
+
     @router.get("/{mission_id}/source-media", response_model=SourceMediaBundleView)
     def get_source_media(
         mission_id: str,
@@ -791,8 +1169,10 @@ def mount_source_media(app: FastAPI, store: SourceMediaStore, storage: EvidenceS
 __all__ = [
     "MAX_BATCH_SIZE",
     "BatchRegistrationResult",
+    "MeasurementComparison",
     "SealResult",
     "SourceBundleSealVerdict",
+    "SourceBundleVerifyVerdict",
     "SourceMediaBatchRequest",
     "SourceMediaBatchResponse",
     "SourceMediaBatchVerdict",
@@ -801,12 +1181,17 @@ __all__ = [
     "SourceMediaClaim",
     "SourceMediaItemResult",
     "SourceMediaItemVerdict",
+    "SourceMediaMeasurement",
     "SourceMediaRecord",
     "SourceMediaRecoveryError",
     "SourceMediaSealResponse",
     "SourceMediaStore",
+    "SourceMediaVerifyRequest",
+    "SourceMediaVerifyResponse",
+    "VerificationResult",
     "build_source_media_object_key",
     "build_source_media_router",
+    "compare_measurements",
     "compute_source_bundle_digest",
     "mount_source_media",
 ]

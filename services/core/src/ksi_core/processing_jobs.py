@@ -52,11 +52,18 @@
 전이표를 다시 태운다(``sites._apply_transitioned`` 와 동일 원칙): journal 을
 손으로 고쳐 FAILED 를 SUCCEEDED 로 바꿀 수 없다.
 
-## ``SUCCEEDED`` 는 산출물이 있어야 주장된다 (INV-051)
+## ``SUCCEEDED`` 는 근거 둘이 있어야 주장된다 (INV-051)
 
-``RUNNING → SUCCEEDED`` 는 그 작업에 ``lineage.authority=source`` 인 산출물이
-최소 1건 등록돼 있어야 통과한다(:func:`assert_succeeded_is_backed`). 전이표를
-통과하는 것과 별개의 두 번째 게이트다.
+``RUNNING → SUCCEEDED`` 는 전이표와 **별개의** 게이트를 하나 더 통과해야 한다
+(:func:`assert_succeeded_is_backed`) — ①이 작업에 ``lineage.authority=source``
+산출물이 최소 1건 있고 ②이 작업의 원본 번들이 실측 대조를 통과했어야 한다.
+
+**왜 입력 검증까지 여기서 보는가.** 재구성을 실제로 돌린 워커는 정의상 전
+바이트를 읽었다. 그러니 무엇을 읽었는지 보고하는 데 추가 비용이 없고, 그
+보고 없이 성공을 인정하면 과금 근거(``totalMegapixels``)가 끝까지 업로더
+신고값으로 남는다 — 성공 시점이 그 값을 마지막으로 바로잡을 수 있는 지점이다.
+``FAILED``·``CANCELLED`` 에는 걸지 않는다: 신고값이 거짓이라 처리가 깨졌다면
+그 작업은 실패로 끝나야지 검증 못 해서 못 끝내는 상태에 갇히면 안 된다.
 
 **왜 아무 산출물이 아니라 원본(source)인가.** ADR-KSI-003 은 Point Cloud/카메라
 포즈가 원본 SSOT이고 Mesh·정사영상·3D Tiles 는 거기서 재생성 가능한 파생 서빙
@@ -85,18 +92,25 @@ digest — 를 직접 채운다. 워커가 이 값을 실어 보낼 수 있으�
 ``_TRANSITION_PERMISSION`` 하나가 SSOT이고, 표에 없는 대상 상태는 403 이다 —
 "정의되지 않은 전이를 할 권한"은 누구에게도 없다.
 
+## 워커가 볼 수 있는 것은 자기 작업의 입력 하나뿐
+
+``GET /v1/processing-jobs/{jobId}/input`` 이 워커의 **유일한** 읽기 경로다.
+``PROCESSING_WORK`` 는 ``MISSIONS_READ`` 를 포함하지 않으므로 워커는 임무·현장·
+다른 작업 목록을 볼 수 없다. 활성(``QUEUED``·``RUNNING``) 작업만 내준다 —
+끝난 작업의 원본 URL 을 계속 발급하면 종료가 접근 종료를 뜻하지 않게 된다.
+
+응답에 **업로더의 신고값이 없다**(``JobInputMediaView``). 이게 실측 대조를
+형식이 아니게 만드는 지점이다 — 자세한 근거는 ``source_media.py`` 의
+"워커에게 신고값을 주지 않는다".
+
 ## 이 모듈이 다루지 않는 것
 
 - **워커 lease·heartbeat.** ``RUNNING`` 전이가 한 번만 성공한다는 것이 지금의
   유일한 상호배제다. 죽은 워커의 작업을 회수하는 만료·갱신은 아직 없다.
-- **워커의 작업 수신.** ``PROCESSING_WORK`` 는 보고 권한만이고 ``MISSIONS_READ``
-  를 포함하지 않는다 — 워커는 지금 자기 작업을 **조회할 수 없다**. 큐에서
-  꺼내오는 경로(pull)를 만들 때 함께 설계한다. 그때까지 워커는 jobId 를 밖에서
-  받아 보고만 한다.
-- **원본 바이트 재검증.** 업로더가 신고한 ``sha256``·해상도를 전 바이트를 읽어
-  대조하는 경로는 아직 없다 — ``totalMegapixels`` 는 여전히 신고값의 합이고
-  ``input_verified`` 는 항상 false 다. 산출물이 존재한다는 것과 입력이 신고대로
-  였다는 것은 다른 사실이라, 이 게이트가 저 게이트를 대신하지 않는다.
+- **큐에서 꺼내오기(pull).** 워커는 jobId 를 **밖에서** 받아야 한다 — "다음
+  작업을 달라"는 표면이 없다. jobId 는 ``{missionId}-pj{n}`` 이라 추측 가능하고,
+  워커 토큰을 쥔 쪽은 다른 작업의 입력도 열람할 수 있다. lease 를 설계할 때
+  같이 좁힌다.
 - **산출물 바이트 자체.** ``digest``·``format`` 은 워커의 보고값이고 Core 가
   객체를 읽어 대조하지 않는다. 이 모듈이 강제하는 것은 **계보의 무결성**이지
   산출물 내용의 진위가 아니다.
@@ -144,7 +158,14 @@ from ksi_core.auth import (
     require_principal,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.evidence import (
+    DEFAULT_VIEW_TTL,
+    EvidenceStorage,
+    EvidenceStorageError,
+    expires_at,
+)
 from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.source_media import SourceMediaRecord
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -208,15 +229,28 @@ class UnbackedSuccessError(ValueError):
 
 
 def assert_succeeded_is_backed(
-    target: ProcessingJobStatus, artifacts: Sequence[ProcessingArtifact]
+    target: ProcessingJobStatus,
+    artifacts: Sequence[ProcessingArtifact],
+    *,
+    input_verified: bool,
 ) -> None:
-    """``SUCCEEDED`` 는 원본(authority=source) 산출물 없이 성립하지 않는다.
+    """``SUCCEEDED`` 는 **읽은 입력**과 **원본 산출물** 둘 다 있어야 성립한다.
 
     전이표(:func:`assert_job_transition`)와 **별개의** 게이트다 — 전이표는 상태
     기계의 모양을 정하고 이 함수는 그 상태를 주장할 근거가 원장에 있는지를
     본다. live 경로와 재생 경로가 같은 함수를 쓴다(전이표와 같은 이유).
 
-    파생물만으로는 통과하지 않는 근거는 모듈 docstring 참고(ADR-KSI-003).
+    **산출물(authority=source).** 파생물만 있는 성공은 원본 없이 파생을 주장하는
+    상태다(ADR-KSI-003, 모듈 docstring).
+
+    **입력 검증.** 재구성을 실제로 돌린 워커는 정의상 전 바이트를 읽었으므로
+    무엇을 읽었는지 보고할 수 있다. 그 보고 없이 성공을 인정하면 과금 근거
+    (``totalMegapixels``)가 끝까지 업로더의 신고값으로 남는다 — 성공 시점이
+    그 값이 마지막으로 고쳐질 수 있는 지점이다.
+
+    ``FAILED``·``CANCELLED`` 에는 걸리지 않는다 — 신고값이 거짓이어서 처리가
+    깨진 경우 그 작업은 실패로 끝나야지, 검증 못 해서 영구히 못 끝내는 상태에
+    갇히면 안 된다.
     """
     if target is not ProcessingJobStatus.SUCCEEDED:
         return
@@ -225,6 +259,13 @@ def assert_succeeded_is_backed(
             "INV-051 — 이 작업에는 authority=source 산출물이 없다. 재구성이 "
             "성공했다면 원본(포인트클라우드·카메라 포즈 계열) 산출물이 최소 "
             "1건 등록돼 있어야 한다 — 파생물만으로는 완료를 주장할 수 없다"
+        )
+    if not input_verified:
+        raise UnbackedSuccessError(
+            "이 작업의 원본 번들이 아직 실측 대조되지 않았다 — 전 바이트를 읽어 "
+            "sha256·해상도를 신고값과 대조한 보고(POST /v1/missions/{id}/"
+            "source-media/verify)가 있어야 성공으로 인정한다. 대조 없이 성공하면 "
+            "과금 근거가 끝까지 업로더 신고값으로 남는다"
         )
 
 
@@ -263,6 +304,10 @@ class ProcessingJobVerdict(StrEnum):
     EGRESS_NOT_ALLOWED = "EGRESS_NOT_ALLOWED"
     ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
+    # 워커 입력 수신 — 끝난 작업의 원본을 다시 내주지 않는다.
+    INPUT_READY = "INPUT_READY"
+    JOB_NOT_ACTIVE = "JOB_NOT_ACTIVE"
+    STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     # INV-051 — 원본 산출물 없이 SUCCEEDED 를 주장했다.
     UNBACKED_SUCCESS = "UNBACKED_SUCCESS"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -300,6 +345,9 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.DUPLICATE_ARTIFACT: 409,
     ProcessingJobVerdict.UNKNOWN_PARENT_ARTIFACT: 422,
     ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION: 422,
+    ProcessingJobVerdict.INPUT_READY: 200,
+    ProcessingJobVerdict.JOB_NOT_ACTIVE: 409,
+    ProcessingJobVerdict.STORAGE_UNAVAILABLE: 503,
 }
 
 
@@ -426,6 +474,21 @@ class ArtifactSpec:
 class ArtifactResult:
     verdict: ProcessingJobVerdict
     artifact: ProcessingArtifact | None = None
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class JobInputResult:
+    """워커가 받아갈 작업 입력 — 무엇을 돌리고 어떤 파일을 읽을지.
+
+    ``media`` 는 원장 레코드 그대로지만, **응답으로 나갈 때 신고값은 빠진다**
+    (:func:`_to_input_view`) — 워커가 정답을 모른 채 실측해야 대조가 의미를
+    갖는다(``source_media.py`` "워커에게 신고값을 주지 않는다").
+    """
+
+    verdict: ProcessingJobVerdict
+    record: ProcessingJobRecord | None = None
+    media: tuple[SourceMediaRecord, ...] = ()
     detail: str | None = None
 
 
@@ -592,7 +655,9 @@ class ProcessingJobStore:
         try:
             # 재생이 live 와 같은 게이트를 다시 태운다 — 산출물 레코드를 지우고
             # SUCCEEDED 전이만 남겨 근거 없는 성공을 되살릴 수 없다.
-            assert_succeeded_is_backed(after, current.artifacts)
+            assert_succeeded_is_backed(
+                after, current.artifacts, input_verified=self.is_input_verified(current)
+            )
         except UnbackedSuccessError as exc:
             raise ProcessingJobRecoveryError(
                 f"재생: 근거 없는 SUCCEEDED 레코드 — jobId={job_id}: {exc}"
@@ -643,6 +708,27 @@ class ProcessingJobStore:
                 f"({verdict.value}) — jobId={job_id}: {detail}"
             )
         self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact))
+
+    def is_input_verified(self, record: ProcessingJobRecord) -> bool:
+        """이 작업의 입력 번들이 실측 대조를 통과했는가.
+
+        **digest 를 함께 본다.** 번들이 검증됐다는 것만으로는 부족하고, 그
+        검증이 이 작업이 발급될 때 고정한 바로 그 내용(``input.
+        sourceBundleDigest``)에 대한 것이어야 한다.
+
+        재생에서도 같은 함수를 쓰지만, 재생은 **순서를 재구성하지 않는다** —
+        source-media 와 processing-jobs 는 별도 journal 이고 서로의 시간축을
+        복원할 방법이 없다. 그래서 재생이 확인하는 것은 "성공 시점에 이미
+        검증돼 있었나"가 아니라 "이 digest 의 검증된 번들이 존재하나"다.
+        검증은 단조(한 번 서면 취소되지 않는다)라 재생이 live 보다 관대할 뿐
+        엄격해지지 않는다 — 정상 기록을 재생이 거부하는 일은 없다.
+        """
+        bundle = self._source_media.get(record.mission_id)
+        return (
+            bundle is not None
+            and bundle.is_verified
+            and bundle.source_bundle_digest == record.input.source_bundle_digest
+        )
 
     @staticmethod
     def _check_artifact_identity_locked(
@@ -810,7 +896,9 @@ class ProcessingJobStore:
                     ProcessingJobVerdict.ILLEGAL_TRANSITION, detail=str(exc)
                 )
             try:
-                assert_succeeded_is_backed(target, current.artifacts)
+                assert_succeeded_is_backed(
+                    target, current.artifacts, input_verified=self.is_input_verified(current)
+                )
             except UnbackedSuccessError as exc:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNBACKED_SUCCESS, detail=str(exc)
@@ -904,6 +992,40 @@ class ProcessingJobStore:
                 )
             self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact), updated_at=now)
             return ArtifactResult(ProcessingJobVerdict.ARTIFACT_REGISTERED, artifact=artifact)
+
+    def input_for(self, job_id: str) -> JobInputResult:
+        """워커가 실행에 필요한 것 — 사양 + 읽어야 할 파일 목록.
+
+        **활성(QUEUED·RUNNING) 작업만** 내준다. 끝난 작업의 원본 다운로드 URL 을
+        계속 발급하면 종료가 접근 종료를 뜻하지 않게 된다.
+
+        번들은 봉인돼 있으므로 여기서 다시 digest 를 대조하지 않는다 — 봉인 후
+        미디어 집합은 바뀌지 않고(``source_media._replay_registration`` 이
+        봉인 후 등록 자체를 거부한다), 발급 시점 digest 가 그대로 유효하다.
+        """
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                return JobInputResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if record.status not in _ACTIVE_STATUSES:
+                return JobInputResult(
+                    ProcessingJobVerdict.JOB_NOT_ACTIVE,
+                    detail=(
+                        f"작업이 {record.status.value} 상태다 — 끝난 작업의 원본은 "
+                        "다시 내주지 않는다"
+                    ),
+                )
+            bundle = self._source_media.get(record.mission_id)
+        if bundle is None:  # pragma: no cover - 발급이 번들 존재를 이미 강제한다
+            return JobInputResult(
+                ProcessingJobVerdict.UNKNOWN_MISSION,
+                detail="이 작업의 원본 번들을 찾을 수 없다",
+            )
+        return JobInputResult(
+            ProcessingJobVerdict.INPUT_READY, record=record, media=bundle.media
+        )
 
     def _active_job_locked(self, mission_id: str) -> ProcessingJobRecord | None:
         for record in self._jobs.values():
@@ -1005,6 +1127,43 @@ class ProcessingArtifactMutationResponse(_CamelModel):
     detail: str | None = None
 
 
+class JobInputMediaView(_CamelModel):
+    """워커가 읽어야 할 파일 1건 — **신고값(sha256·해상도)이 없다.**
+
+    없는 것이 이 모델의 요점이다. 워커가 정답을 알면 읽지 않고 되읊을 수 있고,
+    그러면 실측 대조가 형식이 된다(``source_media.py`` "워커에게 신고값을 주지
+    않는다"). 워커는 URL 로 바이트를 받아 스스로 재고, Core 가 대조한다.
+    """
+
+    media_id: str
+    object_key: str
+    download_url: str
+    expires_at: datetime
+
+
+class JobInputView(_CamelModel):
+    """작업 입력 전체 — 무엇으로 돌릴지 + 어떤 파일을 읽을지."""
+
+    job_id: str
+    mission_id: str
+    site_id: str
+    status: str
+    provider: str
+    engine_version: str
+    engine_digest: str
+    execution_locus: str
+    processing_params: dict[str, Any]
+    source_bundle_digest: str
+    image_count: int
+    media: list[JobInputMediaView]
+
+
+class JobInputResponse(_CamelModel):
+    verdict: str
+    input: JobInputView | None = None
+    detail: str | None = None
+
+
 class ProcessingJobView(_CamelModel):
     """작업 1건의 조회 표현 — 계약 payload + 운영 메타.
 
@@ -1023,6 +1182,9 @@ class ProcessingJobView(_CamelModel):
     detail: str | None
     # 발급 시점 화소 합은 업로더 **신고값**의 합이다(B1 은 검증하지 않는다).
     # 이 사실을 필드로 노출해 화면이 "검증된 과금 근거"로 읽지 않게 한다.
+    # 이 작업의 원본 번들이 실측 대조를 통과했는가 —  **그 작업이 고정한
+    # digest 에 대한** 검증이어야 참이다(ProcessingJobStore.is_input_verified).
+    # false 면 input.totalMegapixels 는 업로더 신고값의 합이고 과금 근거가 아니다.
     input_verified: bool
     contract: dict[str, Any]
     # 등록된 산출물의 계약 payload 그대로(등록 순). SUCCEEDED 를 받쳐주는 근거가
@@ -1040,7 +1202,7 @@ class ProcessingJobMutationResponse(_CamelModel):
     detail: str | None = None
 
 
-def _to_view(record: ProcessingJobRecord) -> ProcessingJobView:
+def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> ProcessingJobView:
     return ProcessingJobView(
         job_id=record.job_id,
         mission_id=record.mission_id,
@@ -1050,15 +1212,15 @@ def _to_view(record: ProcessingJobRecord) -> ProcessingJobView:
         issued_by=record.issued_by,
         updated_at=record.updated_at,
         detail=record.terminal_detail,
-        # 항상 false(B2 범위) — 전 바이트를 읽어 sha256·해상도를 대조하는 워커가
-        # B3 에서 붙으면 그때 참이 될 수 있다. "검증된 척"하는 기본값을 쓰지 않는다.
-        input_verified=False,
+        input_verified=input_verified,
         contract=processing_job_wire_dict(record.to_contract()),
         artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
     )
 
 
-def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
+def build_processing_jobs_router(
+    store: ProcessingJobStore, storage: EvidenceStorage
+) -> APIRouter:
     router = APIRouter(tags=["processing-jobs"])
 
     @router.post(
@@ -1092,7 +1254,9 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
             response.headers["Retry-After"] = "30"
         return ProcessingJobMutationResponse(
             verdict=result.verdict.value,
-            job=_to_view(result.record) if result.record is not None else None,
+            job=_to_view(result.record, input_verified=store.is_input_verified(result.record))
+            if result.record is not None
+            else None,
             detail=result.detail,
         )
 
@@ -1106,7 +1270,10 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
     ) -> ProcessingJobListResponse:
         del principal
         return ProcessingJobListResponse(
-            jobs=[_to_view(r) for r in store.list_for_mission(mission_id)]
+            jobs=[
+                _to_view(r, input_verified=store.is_input_verified(r))
+                for r in store.list_for_mission(mission_id)
+            ]
         )
 
     @router.get("/v1/processing-jobs/{job_id}", response_model=ProcessingJobView)
@@ -1118,7 +1285,7 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
         record = store.get(job_id)
         if record is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
-        return _to_view(record)
+        return _to_view(record, input_verified=store.is_input_verified(record))
 
     @router.post(
         "/v1/processing-jobs/{job_id}/transitions",
@@ -1150,8 +1317,75 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
             response.headers["Retry-After"] = "30"
         return ProcessingJobMutationResponse(
             verdict=result.verdict.value,
-            job=_to_view(result.record) if result.record is not None else None,
+            job=_to_view(result.record, input_verified=store.is_input_verified(result.record))
+            if result.record is not None
+            else None,
             detail=result.detail,
+        )
+
+    @router.get("/v1/processing-jobs/{job_id}/input", response_model=JobInputResponse)
+    def get_processing_job_input(
+        job_id: str,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> JobInputResponse:
+        """워커가 자기 작업의 사양과 원본 다운로드 URL 을 받아간다.
+
+        이 표면이 워커의 **유일한** 읽기 경로다 — ``PROCESSING_WORK`` 는
+        ``MISSIONS_READ`` 를 포함하지 않으므로 워커는 임무·현장·다른 작업을
+        볼 수 없다. 여기서 주는 것도 그 작업이 가리키는 번들 하나뿐이다.
+
+        presign 실패는 ``STORAGE_UNAVAILABLE`` 로 격하한다 — 일부 URL 만 담긴
+        응답을 주면 워커가 그 부분집합만 읽고 검증을 시도해 ``COVERAGE_
+        INCOMPLETE`` 로 도는 낭비가 생긴다(``source_media`` 의 항목별 격하와
+        다른 선택인 이유: 저긴 등록이 이미 durable 하지만 여긴 전부 아니면
+        의미가 없다).
+        """
+        del principal
+        result = store.input_for(job_id)
+        if result.verdict is not ProcessingJobVerdict.INPUT_READY or result.record is None:
+            response.status_code = _STATUS[result.verdict]
+            return JobInputResponse(verdict=result.verdict.value, detail=result.detail)
+
+        record = result.record
+        now = datetime.now(UTC)
+        try:
+            media = [
+                JobInputMediaView(
+                    media_id=item.media_id,
+                    object_key=item.object_key,
+                    download_url=storage.presigned_get(
+                        item.object_key, ttl=DEFAULT_VIEW_TTL
+                    ),
+                    expires_at=expires_at(now, DEFAULT_VIEW_TTL),
+                )
+                for item in result.media
+            ]
+        except EvidenceStorageError:
+            logger.warning("처리 작업 입력 URL 발급 실패: jobId=%s", job_id)
+            response.status_code = _STATUS[ProcessingJobVerdict.STORAGE_UNAVAILABLE]
+            response.headers["Retry-After"] = "30"
+            return JobInputResponse(
+                verdict=ProcessingJobVerdict.STORAGE_UNAVAILABLE.value,
+                detail="원본 다운로드 URL 발급에 실패했다 — 잠시 후 재시도한다",
+            )
+
+        return JobInputResponse(
+            verdict=result.verdict.value,
+            input=JobInputView(
+                job_id=record.job_id,
+                mission_id=record.mission_id,
+                site_id=record.site_id,
+                status=record.status.value,
+                provider=record.spec.provider.value,
+                engine_version=record.spec.engine_version,
+                engine_digest=record.spec.engine_digest,
+                execution_locus=record.spec.execution_locus.value,
+                processing_params=record.spec.processing_params,
+                source_bundle_digest=record.input.source_bundle_digest,
+                image_count=record.input.image_count,
+                media=media,
+            ),
         )
 
     @router.post(
@@ -1203,10 +1437,17 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
     return router
 
 
-def mount_processing_jobs(app: FastAPI, store: ProcessingJobStore) -> None:
-    """앱에 처리 작업 라우터를 장착한다."""
+def mount_processing_jobs(
+    app: FastAPI, store: ProcessingJobStore, storage: EvidenceStorage
+) -> None:
+    """앱에 처리 작업 라우터를 장착한다.
+
+    ``storage`` 가 필요해진 것은 워커 입력 수신(``GET .../input``)이 원본
+    다운로드 URL 을 발급하기 때문이다 — B2 시점에는 이 표면이 presigned URL 을
+    전혀 내주지 않아 스토리지를 몰라도 됐다.
+    """
     app.state.processing_job_store = store
-    app.include_router(build_processing_jobs_router(store))
+    app.include_router(build_processing_jobs_router(store, storage))
 
 
 __all__ = [

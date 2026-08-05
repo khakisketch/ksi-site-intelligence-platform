@@ -37,6 +37,7 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     _TRANSITION_PERMISSION,
@@ -53,7 +54,12 @@ from ksi_core.processing_jobs import (
     build_job_id,
 )
 from ksi_core.sites import SiteStore
-from ksi_core.source_media import SourceMediaClaim, SourceMediaStore
+from ksi_core.source_media import (
+    SourceBundleVerifyVerdict,
+    SourceMediaClaim,
+    SourceMediaMeasurement,
+    SourceMediaStore,
+)
 from ksi_event_contracts.processing_artifact import (
     ArtifactAccuracy,
     LineageAuthority,
@@ -174,12 +180,19 @@ def _job_store(
     egress: bool | None = None,
     media_count: int = 3,
     seal: bool = True,
+    verified: bool = True,
     path: str = "processing-jobs.jsonl",
 ) -> ProcessingJobStore:
-    """``journal`` 을 직접 주면 재생 테스트가 그 핸들을 닫을 수 있다(단일 writer 잠금)."""
+    """``journal`` 을 직접 주면 재생 테스트가 그 핸들을 닫을 수 있다(단일 writer 잠금).
+
+    ``verified`` 기본값이 True 인 이유: SUCCEEDED 게이트는 조건이 둘(원본 산출물
+    + 입력 실측 대조)이라, 한쪽을 검사하는 테스트에서 다른 쪽이 같이 걸리면
+    무엇이 막았는지 알 수 없다. 각 조건은 전용 테스트가 따로 고정한다.
+    """
+    make_bundles = _verified_bundles if (verified and seal) else _sealed_bundle_store
     return ProcessingJobStore(
         journal if journal is not None else DurableJournal(tmp_path / path),
-        source_media_store=_sealed_bundle_store(tmp_path, media_count=media_count, seal=seal),
+        source_media_store=make_bundles(tmp_path, media_count=media_count, seal=seal),
         site_store=_site_store(tmp_path, egress=egress),
     )
 
@@ -219,6 +232,41 @@ def _running_job(store: ProcessingJobStore, tmp_path: Path) -> str:
         is ProcessingJobVerdict.TRANSITIONED
     )
     return record.job_id
+
+
+def _measurements_matching(bundles: SourceMediaStore) -> list[SourceMediaMeasurement]:
+    """번들의 신고값과 **정확히 같은** 측정값 — 정직한 워커 시뮬레이션.
+
+    실제 워커는 이 값을 바이트에서 계산하고 서버는 그걸 주지 않는다
+    (``JobInputMediaView`` 에 신고값이 없다). 테스트는 그 계산 결과를 흉내낸다.
+    """
+    bundle = bundles.get(_MISSION_ID)
+    assert bundle is not None
+    return [
+        SourceMediaMeasurement(
+            media_id=m.media_id,
+            sha256=m.sha256,
+            size_bytes=m.size_bytes,
+            width=m.width,
+            height=m.height,
+        )
+        for m in bundle.media
+    ]
+
+
+def _verified_bundles(tmp_path: Path, **kwargs: Any) -> SourceMediaStore:
+    """봉인 + 실측 대조까지 통과한 번들 저장소 — SUCCEEDED 게이트의 전제."""
+    bundles = _sealed_bundle_store(tmp_path, **kwargs)
+    assert (
+        bundles.verify(
+            _MISSION_ID,
+            _measurements_matching(bundles),
+            verified_by="worker-1",
+            now=_NOW,
+        ).verdict
+        is SourceBundleVerifyVerdict.VERIFIED
+    )
+    return bundles
 
 
 # ── 전이표 (순수 함수) ──────────────────────────────────────────────────────
@@ -491,7 +539,7 @@ def _rebuild(tmp_path: Path, *, egress: bool | None = None) -> ProcessingJobStor
     """journal 파일은 그대로 두고 저장소만 다시 세운다(재기동 시뮬레이션)."""
     return ProcessingJobStore(
         DurableJournal(tmp_path / "processing-jobs.jsonl"),
-        source_media_store=_sealed_bundle_store(tmp_path, path="replay-source-media.jsonl"),
+        source_media_store=_verified_bundles(tmp_path, path="replay-source-media.jsonl"),
         site_store=_site_store(tmp_path, egress=egress, path="replay-sites.jsonl"),
     )
 
@@ -671,11 +719,50 @@ def test_failed_and_cancelled_need_no_artifact(tmp_path: Path) -> None:
 
 
 def test_gate_function_is_pure_and_shared() -> None:
-    """live·재생이 함께 쓰는 게이트 함수 자체의 계약."""
-    assert_succeeded_is_backed(ProcessingJobStatus.FAILED, [])
-    assert_succeeded_is_backed(ProcessingJobStatus.RUNNING, [])
-    with pytest.raises(UnbackedSuccessError):
-        assert_succeeded_is_backed(ProcessingJobStatus.SUCCEEDED, [])
+    """live·재생이 함께 쓰는 게이트 함수 자체의 계약 — 종료 상태별 적용 범위."""
+    # SUCCEEDED 가 아닌 대상에는 어느 조건도 걸리지 않는다: 신고값이 거짓이라
+    # 처리가 깨진 작업이 "검증 못 해서 끝낼 수 없는" 상태에 갇히면 안 된다.
+    assert_succeeded_is_backed(ProcessingJobStatus.FAILED, [], input_verified=False)
+    assert_succeeded_is_backed(ProcessingJobStatus.CANCELLED, [], input_verified=False)
+    assert_succeeded_is_backed(ProcessingJobStatus.RUNNING, [], input_verified=False)
+    with pytest.raises(UnbackedSuccessError, match="authority=source"):
+        assert_succeeded_is_backed(
+            ProcessingJobStatus.SUCCEEDED, [], input_verified=True
+        )
+
+
+def test_input_verification_gate_is_independent_of_artifacts(tmp_path: Path) -> None:
+    """[핵심] 산출물이 있어도 입력을 안 읽었으면 성공이 아니다.
+
+    두 조건이 AND 라는 것을 이 테스트가 고정한다 — 산출물 조건만 있고 입력
+    조건이 빠지면 과금 근거(totalMegapixels)가 끝까지 업로더 신고값으로 남는다.
+    """
+    store = _job_store(tmp_path, verified=False)
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.register_artifact(
+            job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    result = store.transition(
+        job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.UNBACKED_SUCCESS
+    assert result.detail is not None
+    assert "실측 대조" in result.detail
+
+
+def test_failure_is_allowed_on_unverified_input(tmp_path: Path) -> None:
+    """[수용기준] 신고값이 거짓이라 처리가 깨진 작업은 실패로 끝날 수 있어야 한다."""
+    store = _job_store(tmp_path, verified=False)
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.transition(
+            job_id, ProcessingJobStatus.FAILED, detail="입력 손상", actor="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
 
 
 # ── 산출물의 계보 앵커를 요청이 정하지 못한다 ────────────────────────────────
@@ -938,7 +1025,35 @@ def _auth_registry() -> AuthRegistry:
     )
 
 
-def _client(tmp_path: Path, *, egress: bool | None = None) -> TestClient:
+class _FakeStorage:
+    """포트 계약만 만족하는 가짜 스토리지(``test_source_media.FakeStorage`` 대칭)."""
+
+    def __init__(self) -> None:
+        self.fail_get_with: Exception | None = None
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+        del content_type, ttl
+        return f"https://storage.invalid/{object_key}?upload=1"
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        del ttl
+        if self.fail_get_with is not None:
+            raise self.fail_get_with
+        return f"https://storage.invalid/{object_key}?download=1"
+
+    def delete(self, object_key: str) -> None:
+        raise NotImplementedError
+
+
+def _client(
+    tmp_path: Path,
+    *,
+    egress: bool | None = None,
+    verify_bundle: bool = False,
+    storage: _FakeStorage | None = None,
+) -> TestClient:
+    """``verify_bundle=False`` 가 기본이다 — 실측 대조는 HTTP 경로로 하는 것이
+    이 표면의 시험 대상이라, 픽스처가 미리 통과시켜 두면 그 게이트가 공허해진다."""
     mission_store = _mission_store(tmp_path, path="http-missions.jsonl")
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "http-source-media.jsonl"), mission_store=mission_store
@@ -952,11 +1067,22 @@ def _client(tmp_path: Path, *, egress: bool | None = None) -> TestClient:
     assert (
         source_media_store.seal(_MISSION_ID, sealed_by="op-1", now=_NOW).verdict.value == "SEALED"
     )
+    if verify_bundle:
+        assert (
+            source_media_store.verify(
+                _MISSION_ID,
+                _measurements_matching(source_media_store),
+                verified_by="worker-1",
+                now=_NOW,
+            ).verdict
+            is SourceBundleVerifyVerdict.VERIFIED
+        )
     site_store = _site_store(tmp_path, egress=egress, path="http-sites.jsonl")
     app = create_app(
         auth_registry=_auth_registry(),
         mission_store=mission_store,
         site_store=site_store,
+        evidence_storage=storage if storage is not None else _FakeStorage(),
         source_media_store=source_media_store,
         processing_job_store=ProcessingJobStore(
             DurableJournal(tmp_path / "http-processing-jobs.jsonl"),
@@ -1246,18 +1372,56 @@ def test_http_admin_can_cancel(tmp_path: Path) -> None:
 
 
 def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
-    """[수용기준] 워커 경로 종단 — 산출물 등록 후에야 SUCCEEDED 가 통과한다."""
-    client = _client(tmp_path)
+    """[수용기준] 워커 경로 **종단** — 입력 수신 → 실측 보고 → 산출물 → 성공.
+
+    HTTP 만으로 한 번은 통과시킨다(픽스처가 종단 상태를 주입하지 않는다).
+    """
+    client = _client(tmp_path, verify_bundle=False)
     job_id = _issued_and_running(client)
 
-    too_early = client.post(
+    # ① 워커가 입력을 받아간다 — 응답에 신고값이 없다.
+    fetched = client.get(f"/v1/processing-jobs/{job_id}/input")
+    assert fetched.status_code == 200, fetched.text
+    job_input = fetched.json()["input"]
+    assert job_input["imageCount"] == 3
+    assert len(job_input["media"]) == 3
+    for item in job_input["media"]:
+        assert set(item) == {"mediaId", "objectKey", "downloadUrl", "expiresAt"}
+
+    # ② 아직 실측 보고 전 — 산출물이 있어도 성공하지 못한다.
+    early_artifact = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+    )
+    assert early_artifact.status_code == 201, early_artifact.text
+    unverified = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "SUCCEEDED"}
     )
-    assert too_early.status_code == 409
-    assert too_early.json()["verdict"] == "UNBACKED_SUCCESS"
+    assert unverified.status_code == 409
+    assert unverified.json()["verdict"] == "UNBACKED_SUCCESS"
+    assert "실측 대조" in unverified.json()["detail"]
+
+    # ③ 워커가 바이트에서 잰 값을 보고하고 Core 가 대조한다.
+    verified = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={
+            "measurements": [
+                {
+                    "mediaId": f"img-{i:03d}.jpg",
+                    "sha256": _sha(f"img-{i:03d}.jpg"),
+                    "bytes": 1_000_000,
+                    "width": 4000,
+                    "height": 3000,
+                }
+                for i in range(3)
+            ]
+        },
+    )
+    assert verified.status_code == 201, verified.text
+    assert verified.json()["verdict"] == "VERIFIED"
+    assert verified.json()["bundle"]["verifiedAt"] is not None
 
     registered = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload(artifactId="mesh-1")
     )
     assert registered.status_code == 201, registered.text
     artifact = registered.json()["artifact"]
@@ -1274,8 +1438,9 @@ def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
 
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     view = client.get(f"/v1/processing-jobs/{job_id}").json()
-    assert [a["artifactId"] for a in view["artifacts"]] == ["pointcloud"]
-    assert view["inputVerified"] is False
+    assert [a["artifactId"] for a in view["artifacts"]] == ["pointcloud", "mesh-1"]
+    # 실측 대조를 통과했으므로 이제 참이다 — 하드코딩된 false 가 아니다.
+    assert view["inputVerified"] is True
 
 
 @pytest.mark.parametrize(
@@ -1325,3 +1490,101 @@ def test_http_worker_cannot_read_jobs(tmp_path: Path) -> None:
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
     assert client.get(f"/v1/processing-jobs/{job_id}").status_code == 403
+
+
+# ── 워커 입력 수신 — 신고값을 주지 않는다 ────────────────────────────────────
+
+
+def test_http_input_response_never_carries_the_uploader_claims(tmp_path: Path) -> None:
+    """[핵심] 워커가 정답을 모르므로 읽지 않고는 VERIFIED 를 받을 수 없다.
+
+    응답 어디에도 sha256·해상도·바이트 수가 없다. 이 단언이 깨지면 실측
+    대조는 '되읊기'로 통과 가능해지고 verifiedAt 이 뜻을 잃는다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    body = client.get(f"/v1/processing-jobs/{job_id}/input").json()
+    serialized = json.dumps(body, ensure_ascii=False)
+
+    # ① 신고된 sha256 원문이 응답 어디에도 없다. (sourceBundleDigest 는 매니페스트
+    #    전체의 해시라 개별 파일 해시를 역산할 수 없다 — 그래서 실려도 무해하다.)
+    for i in range(3):
+        assert _sha(f"img-{i:03d}.jpg") not in serialized, "개별 파일 신고 sha256 이 샌다"
+    # ② 신고 해상도·바이트 수도 없다 — 워커가 되읊을 수 있는 값이면 안 된다.
+    for leaked in ("4000", "3000", "1000000"):
+        assert leaked not in serialized, f"신고값 {leaked} 이 샌다"
+    # ③ 항목의 키 집합 자체를 고정한다(위 값 검사가 우연히 통과하는 것을 막는다).
+    for item in body["input"]["media"]:
+        assert set(item) == {"mediaId", "objectKey", "downloadUrl", "expiresAt"}
+
+
+def test_http_input_is_worker_only(tmp_path: Path) -> None:
+    """[음성] 사람 권한으로는 원본 다운로드 URL 을 받을 수 없다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    for token in (_ADMIN_TOKEN, _VIEWER_TOKEN):
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        assert client.get(f"/v1/processing-jobs/{job_id}/input").status_code == 403
+
+
+def test_http_input_is_refused_once_the_job_is_over(tmp_path: Path) -> None:
+    """작업 종료가 접근 종료를 뜻해야 한다 — 끝난 작업의 원본은 다시 내주지 않는다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/transitions",
+            json={"targetStatus": "FAILED", "detail": "엔진 실패"},
+        ).status_code
+        == 200
+    )
+    refused = client.get(f"/v1/processing-jobs/{job_id}/input")
+    assert refused.status_code == 409
+    assert refused.json()["verdict"] == "JOB_NOT_ACTIVE"
+
+
+def test_http_input_is_available_before_running(tmp_path: Path) -> None:
+    """QUEUED 에서도 받을 수 있어야 한다 — 입력을 봐야 RUNNING 으로 갈지 정한다."""
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    _as_worker(client)
+    fetched = client.get(f"/v1/processing-jobs/{job_id}/input")
+    assert fetched.status_code == 200
+    assert fetched.json()["input"]["status"] == "QUEUED"
+
+
+def test_http_input_degrades_wholesale_when_presign_fails(tmp_path: Path) -> None:
+    """부분 응답 대신 503 — 부분집합만 받은 워커는 반드시 COVERAGE_INCOMPLETE 로 돈다."""
+    storage = _FakeStorage()
+    client = _client(tmp_path, storage=storage)
+    job_id = _issued_and_running(client)
+    storage.fail_get_with = EvidenceStorageError("스토리지 접근 실패")
+    response = client.get(f"/v1/processing-jobs/{job_id}/input")
+    assert response.status_code == 503
+    assert response.json()["verdict"] == "STORAGE_UNAVAILABLE"
+    assert response.json()["input"] is None
+    assert response.headers["Retry-After"] == "30"
+
+
+def test_processing_jobs_assembly_requires_evidence_storage(tmp_path: Path) -> None:
+    """조립 가드 — 스토리지 없이 조립하면 워커가 바이트를 못 읽어 SUCCEEDED 가 영구히 닫힌다."""
+    mission_store = _mission_store(tmp_path, path="guard-missions.jsonl")
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "guard-source-media.jsonl"), mission_store=mission_store
+    )
+    site_store = _site_store(tmp_path, path="guard-sites.jsonl")
+    with pytest.raises(ValueError, match="evidence_storage"):
+        create_app(
+            auth_registry=_auth_registry(),
+            mission_store=mission_store,
+            site_store=site_store,
+            source_media_store=source_media_store,
+            processing_job_store=ProcessingJobStore(
+                DurableJournal(tmp_path / "guard-processing-jobs.jsonl"),
+                source_media_store=source_media_store,
+                site_store=site_store,
+            ),
+            mission_signing_key=None,
+        )

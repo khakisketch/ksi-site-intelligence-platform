@@ -209,13 +209,16 @@ def create_app(
         )
 
     if processing_job_store is not None and (
-        source_media_store is None or site_store is None
+        source_media_store is None or site_store is None or evidence_storage is None
     ):
         raise ValueError(
-            "processing_job_store 는 source_media_store·site_store 와 함께 주어져야"
-            " 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·digest)은 봉인된"
-            " 번들이 정하고 반출 허용 여부는 현장이 정한다. 둘 중 하나라도 없으면"
-            " 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다"
+            "processing_job_store 는 source_media_store·site_store·evidence_storage 와"
+            " 함께 주어져야 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·"
+            "digest)은 봉인된 번들이 정하고 반출 허용 여부는 현장이 정한다. 하나라도"
+            " 없으면 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다."
+            " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
+            " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
+            " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다"
         )
 
     protected_surface = any(
@@ -339,11 +342,11 @@ def create_app(
         mount_source_media(app, source_media_store, evidence_storage)
 
     if processing_job_store is not None:
-        # source_media 와 달리 evidence_storage 를 요구하지 않는다 — 이 표면은
-        # presigned URL 을 내지 않고 작업 원장만 다룬다. 입력을 읽어올 번들 저장소는
-        # 위 결합 검증이 이미 보장한다.
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
+        # 다운로드 URL 발급에 필요 — GET .../input).
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.processing_jobs import mount_processing_jobs
 
-        mount_processing_jobs(app, processing_job_store)
+        mount_processing_jobs(app, processing_job_store, evidence_storage)
 
     return app

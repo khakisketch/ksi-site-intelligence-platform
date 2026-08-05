@@ -588,6 +588,12 @@ provides-extras = ["dfine"]
 name = "ksi-processing-controller"
 version = "0.0.1"
 source = { editable = "services/processing-controller" }
+dependencies = [
+    { name = "ksi-event-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ksi-event-contracts", editable = "packages/event-contracts" }]
 
 [[package]]
 name = "ksi-site-intelligence-platform"
@@ -601,6 +607,7 @@ dev = [
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "ksi-perception" },
+    { name = "ksi-processing-controller" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -618,6 +625,7 @@ dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonschema", specifier = ">=4.21" },
     { name = "ksi-perception", editable = "packages/perception" },
+    { name = "ksi-processing-controller", editable = "services/processing-controller" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.6" },

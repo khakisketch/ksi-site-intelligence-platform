@@ -7,11 +7,15 @@
 2. **봉인 후에는 거부한다** — typed verdict, 재생도 같은 게이트를 다시 태운다
    (journal 을 손으로 고쳐 봉인 상태·digest 를 위조할 수 없다).
 3. **경로 탈출 mediaId 는 거부된다** — 객체 키는 서버가 만든다.
+4. **실측 대조의 판정은 Core 가 한다** — 워커는 잰 값만 보내고 "검증됨"을 보낼
+   수 없다. 원장의 사실은 측정값이고 재생이 그걸로 **다시 대조**한다.
+5. **부분 검증은 검증이 아니다** — 측정 집합이 등록 집합과 정확히 같아야 한다.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,13 +28,16 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.source_media import (
     SourceBundleSealVerdict,
+    SourceBundleVerifyVerdict,
     SourceMediaBatchVerdict,
     SourceMediaClaim,
     SourceMediaItemVerdict,
+    SourceMediaMeasurement,
     SourceMediaRecord,
     SourceMediaRecoveryError,
     SourceMediaStore,
     build_source_media_object_key,
+    compare_measurements,
     compute_source_bundle_digest,
 )
 
@@ -40,6 +47,7 @@ _NOW = datetime(2026, 8, 5, 3, 0, tzinfo=UTC)
 
 _ADMIN_TOKEN = "source-media-admin"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "source-media-viewer"  # noqa: S105
+_WORKER_TOKEN = "source-media-worker"  # noqa: S105
 
 
 def _sha(seed: str) -> str:
@@ -398,6 +406,241 @@ def test_status_maps_cover_every_verdict() -> None:
     assert set(_SEAL_STATUS) == set(SourceBundleSealVerdict)
 
 
+# ── 실측 대조: 판정은 Core 가 한다 ──────────────────────────────────────────
+
+
+def _measure(
+    media_id: str, *, seed: str | None = None, width: int = 4000, height: int = 3000,
+    size_bytes: int = 1_000_000,
+) -> SourceMediaMeasurement:
+    return SourceMediaMeasurement(
+        media_id=media_id,
+        sha256=_sha(seed or media_id),
+        size_bytes=size_bytes,
+        width=width,
+        height=height,
+    )
+
+
+def _sealed(store: SourceMediaStore, *count_ids: str) -> None:
+    ids = count_ids or ("img-1.jpg", "img-2.jpg")
+    assert (
+        store.register_batch(
+            _MISSION_ID, [_claim(i) for i in ids], registered_by="op-1", now=_NOW
+        ).verdict
+        is SourceMediaBatchVerdict.PROCESSED
+    )
+    assert (
+        store.seal(_MISSION_ID, sealed_by="op-1", now=_NOW).verdict
+        is SourceBundleSealVerdict.SEALED
+    )
+
+
+def test_matching_measurements_verify_the_bundle(store: SourceMediaStore) -> None:
+    _sealed(store)
+    result = store.verify(
+        _MISSION_ID,
+        [_measure("img-1.jpg"), _measure("img-2.jpg")],
+        verified_by="worker-1",
+        now=_NOW,
+    )
+    assert result.verdict is SourceBundleVerifyVerdict.VERIFIED
+    bundle = store.get(_MISSION_ID)
+    assert bundle is not None
+    assert bundle.is_verified
+    assert bundle.verified_by == "worker-1"
+    assert bundle.last_mismatch_at is None
+
+
+@pytest.mark.parametrize(
+    ("bad", "field"),
+    [
+        (_measure("img-2.jpg", seed="다른-파일"), "sha256"),
+        (_measure("img-2.jpg", width=8000), "width"),
+        (_measure("img-2.jpg", height=1), "height"),
+        (_measure("img-2.jpg", size_bytes=42), "bytes"),
+    ],
+)
+def test_any_field_mismatch_refuses_verification(
+    store: SourceMediaStore, bad: SourceMediaMeasurement, field: str
+) -> None:
+    """[핵심] 네 필드 중 **하나라도** 어긋나면 검증이 아니다.
+
+    해상도만 봐도 과금 근거(totalMegapixels)가 흔들리고, sha256 만 봐도
+    파일 자체가 바뀐다 — 어느 하나를 느슨하게 둘 근거가 없다.
+    """
+    _sealed(store)
+    result = store.verify(
+        _MISSION_ID, [_measure("img-1.jpg"), bad], verified_by="worker-1", now=_NOW
+    )
+    assert result.verdict is SourceBundleVerifyVerdict.MISMATCH, field
+    assert result.comparison is not None
+    assert result.comparison.mismatched == ("img-2.jpg",)
+    bundle = store.get(_MISSION_ID)
+    assert bundle is not None
+    # 불일치는 기록되지만 번들을 잠그지 않는다 — 오탐 복구 경로가 없으면 안 된다.
+    assert not bundle.is_verified
+    assert bundle.last_mismatch_at == _NOW
+
+
+def test_partial_measurement_is_not_verification(store: SourceMediaStore) -> None:
+    """[핵심] 일부만 읽고 '검증했다'가 되면 verifiedAt 이 뜻하는 바가 사라진다."""
+    _sealed(store)
+    result = store.verify(
+        _MISSION_ID, [_measure("img-1.jpg")], verified_by="worker-1", now=_NOW
+    )
+    assert result.verdict is SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE
+    assert result.comparison is not None
+    assert result.comparison.missing == ("img-2.jpg",)
+
+
+def test_extra_and_duplicate_measurements_are_refused(store: SourceMediaStore) -> None:
+    """등록되지 않은 파일·같은 파일 두 번은 둘 다 unexpected 다.
+
+    중복을 막지 않으면 같은 파일을 여러 번 재서 대조를 흐릴 수 있다.
+    """
+    _sealed(store)
+    duplicated = store.verify(
+        _MISSION_ID,
+        [_measure("img-1.jpg"), _measure("img-1.jpg"), _measure("img-2.jpg")],
+        verified_by="worker-1",
+        now=_NOW,
+    )
+    assert duplicated.verdict is SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE
+    assert duplicated.comparison is not None
+    assert duplicated.comparison.unexpected == ("img-1.jpg",)
+
+    unknown = store.verify(
+        _MISSION_ID,
+        [_measure("img-1.jpg"), _measure("img-2.jpg"), _measure("img-9.jpg")],
+        verified_by="worker-1",
+        now=_NOW,
+    )
+    assert unknown.verdict is SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE
+    assert unknown.comparison is not None
+    assert unknown.comparison.unexpected == ("img-9.jpg",)
+
+
+def test_unsealed_bundle_cannot_be_verified(store: SourceMediaStore) -> None:
+    store.register_batch(_MISSION_ID, [_claim("img-1.jpg")], registered_by="op-1", now=_NOW)
+    result = store.verify(
+        _MISSION_ID, [_measure("img-1.jpg")], verified_by="worker-1", now=_NOW
+    )
+    assert result.verdict is SourceBundleVerifyVerdict.BUNDLE_NOT_SEALED
+
+
+def test_reverification_is_idempotent(store: SourceMediaStore) -> None:
+    _sealed(store)
+    measurements = [_measure("img-1.jpg"), _measure("img-2.jpg")]
+    store.verify(_MISSION_ID, measurements, verified_by="worker-1", now=_NOW)
+    again = store.verify(_MISSION_ID, measurements, verified_by="worker-2", now=_NOW)
+    assert again.verdict is SourceBundleVerifyVerdict.ALREADY_VERIFIED
+    bundle = store.get(_MISSION_ID)
+    assert bundle is not None
+    assert bundle.verified_by == "worker-1", "첫 검증자가 유지된다"
+
+
+def test_comparison_is_a_pure_shared_function() -> None:
+    """live·재생이 함께 쓰는 판정 함수 자체의 계약."""
+    media = [_record("a.jpg"), _record("b.jpg")]
+    assert compare_measurements(media, [_measure("a.jpg"), _measure("b.jpg")]).is_match
+    assert not compare_measurements(media, [_measure("a.jpg")]).is_match
+    assert compare_measurements(media, [_measure("a.jpg")]).missing == ("b.jpg",)
+
+
+# ── 재생이 검증 판정을 다시 매긴다 ──────────────────────────────────────────
+
+
+def _verified_journal(tmp_path: Path, *, honest: bool = True) -> None:
+    """봉인 + 검증까지 기록한 journal 을 만들고 핸들을 닫는다."""
+    journal = DurableJournal(tmp_path / "source-media.jsonl")
+    store = SourceMediaStore(journal, mission_store=_mission_store(tmp_path))
+    _sealed(store)
+    second = _measure("img-2.jpg") if honest else _measure("img-2.jpg", width=9999)
+    store.verify(
+        _MISSION_ID, [_measure("img-1.jpg"), second], verified_by="worker-1", now=_NOW
+    )
+    journal.close()
+
+
+def _reborn(tmp_path: Path) -> tuple[SourceMediaStore, DurableJournal]:
+    """재기동 시뮬레이션. journal 핸들을 함께 돌려준다(단일 writer 잠금 해제용)."""
+    journal = DurableJournal(tmp_path / "source-media.jsonl")
+    return (
+        SourceMediaStore(
+            journal, mission_store=_mission_store(tmp_path, path="replay-missions.jsonl")
+        ),
+        journal,
+    )
+
+
+def _rewrite(tmp_path: Path, mutate: Any) -> None:
+    path = tmp_path / "source-media.jsonl"
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    mutate(records)
+    path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+
+
+def test_replay_restores_verification(tmp_path: Path) -> None:
+    """대조군 — 손대지 않은 원장은 그대로 복원된다(아래 거부들이 공허하지 않다)."""
+    _verified_journal(tmp_path)
+    reborn, journal = _reborn(tmp_path)
+    try:
+        bundle = reborn.get(_MISSION_ID)
+        assert bundle is not None
+        assert bundle.is_verified
+        assert bundle.verified_by == "worker-1"
+    finally:
+        journal.close()
+
+
+def test_replay_refuses_verdict_forged_to_verified(tmp_path: Path) -> None:
+    """[핵심] 불일치 레코드의 verdict 만 VERIFIED 로 고쳐도 기동이 거부된다.
+
+    원장의 사실은 판정이 아니라 **측정값**이고, 재생이 그걸로 다시 대조한다.
+    """
+    _verified_journal(tmp_path, honest=False)
+
+    def forge(records: list[dict[str, Any]]) -> None:
+        for record in records:
+            if record["kind"] == "source-media-verified":
+                record["verdict"] = "VERIFIED"
+
+    _rewrite(tmp_path, forge)
+    with pytest.raises(SourceMediaRecoveryError, match="재대조와 불일치"):
+        _reborn(tmp_path)
+
+
+def test_replay_refuses_measurements_edited_to_match(tmp_path: Path) -> None:
+    """측정값을 신고값에 맞게 고치면 판정이 뒤집혀 기록된 MISMATCH 와 어긋난다."""
+    _verified_journal(tmp_path, honest=False)
+
+    def forge(records: list[dict[str, Any]]) -> None:
+        for record in records:
+            if record["kind"] == "source-media-verified":
+                for item in record["measurements"]:
+                    item["width"] = 4000
+
+    _rewrite(tmp_path, forge)
+    with pytest.raises(SourceMediaRecoveryError, match="재대조와 불일치"):
+        _reborn(tmp_path)
+
+
+def test_replay_refuses_verification_before_seal(tmp_path: Path) -> None:
+    _verified_journal(tmp_path)
+
+    def reorder(records: list[dict[str, Any]]) -> None:
+        verified = next(r for r in records if r["kind"] == "source-media-verified")
+        records.remove(verified)
+        records.insert(0, verified)
+
+    _rewrite(tmp_path, reorder)
+    with pytest.raises(SourceMediaRecoveryError, match="봉인되지 않은"):
+        _reborn(tmp_path)
+
+
 # ── HTTP 표면 ──────────────────────────────────────────────────────────────
 
 
@@ -406,6 +649,7 @@ class FakeStorage:
 
     def __init__(self) -> None:
         self.put_calls: list[tuple[str, str]] = []
+        self.get_calls: list[str] = []
         self.fail_with: Exception | None = None
 
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
@@ -416,7 +660,11 @@ class FakeStorage:
         return f"https://storage.invalid/{object_key}?upload=1"
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
-        raise NotImplementedError
+        del ttl
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.get_calls.append(object_key)
+        return f"https://storage.invalid/{object_key}?download=1"
 
     def delete(self, object_key: str) -> None:
         raise NotImplementedError
@@ -444,6 +692,15 @@ def _auth_registry() -> AuthRegistry:
                     principal_id="op-viewer",
                     kind=PrincipalKind.OPERATOR,
                     role=Role.VIEWER,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="worker-odm-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
                     device_id=None,
                 ),
             ),
@@ -608,3 +865,146 @@ def test_batch_over_max_size_is_rejected_by_schema(tmp_path: Path) -> None:
     files = [_file_payload(f"img-{i}.jpg") for i in range(201)]
     response = client.post(f"/v1/missions/{_MISSION_ID}/source-media", json={"files": files})
     assert response.status_code == 422
+
+
+# ── HTTP: 올린 사람은 자기 신고값을 검증할 수 없다 ──────────────────────────
+
+
+def _measurement_payload(media_id: str, **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "mediaId": media_id,
+        "sha256": _sha(media_id),
+        "bytes": 1_000_000,
+        "width": 4000,
+        "height": 3000,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _sealed_over_http(client: TestClient, *media_ids: str) -> None:
+    ids = media_ids or ("img-1.jpg", "img-2.jpg")
+    assert (
+        client.post(
+            f"/v1/missions/{_MISSION_ID}/source-media",
+            json={"files": [_file_payload(i) for i in ids]},
+        ).status_code
+        == 201
+    )
+    assert client.post(f"/v1/missions/{_MISSION_ID}/source-media/seal").status_code == 201
+
+
+@pytest.mark.parametrize("token", [_ADMIN_TOKEN, _VIEWER_TOKEN])
+def test_http_humans_cannot_verify_their_own_claims(tmp_path: Path, token: str) -> None:
+    """[핵심 음성] 사진을 올린 주체가 자기 신고값을 스스로 검증할 수 없다.
+
+    ADMIN 은 이 제품에서 가장 넓은 사람 권한이고 업로드 권한(MISSIONS_ISSUE)도
+    갖는다. 그 ADMIN 이 막힌다는 것이 "재는 쪽과 올리는 쪽을 갈랐다"의 실측이다.
+    """
+    client = _client(tmp_path, storage=FakeStorage())
+    _sealed_over_http(client)
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={"measurements": [_measurement_payload("img-1.jpg")]},
+    )
+    assert response.status_code == 403
+
+
+def test_http_worker_verifies_and_bundle_reports_it(tmp_path: Path) -> None:
+    client = _client(tmp_path, storage=FakeStorage())
+    _sealed_over_http(client)
+
+    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={
+            "measurements": [
+                _measurement_payload("img-1.jpg"),
+                _measurement_payload("img-2.jpg"),
+            ]
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["verdict"] == "VERIFIED"
+
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
+    assert bundle["verifiedAt"] is not None
+    assert bundle["lastMismatchAt"] is None
+
+
+def test_http_mismatch_is_422_and_shows_which_files(tmp_path: Path) -> None:
+    """불일치는 422 이고 **어떤 파일이** 어긋났는지 돌려준다 — 워커가 다시 볼 수 있게."""
+    client = _client(tmp_path, storage=FakeStorage())
+    _sealed_over_http(client)
+
+    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={
+            "measurements": [
+                _measurement_payload("img-1.jpg"),
+                _measurement_payload("img-2.jpg", width=9999),
+            ]
+        },
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert body["verdict"] == "MISMATCH"
+    assert body["mismatched"] == ["img-2.jpg"]
+
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
+    # "아직 아무도 안 읽었다"와 "재봤는데 어긋났다"를 화면이 구분할 수 있어야 한다.
+    assert bundle["verifiedAt"] is None
+    assert bundle["lastMismatchAt"] is not None
+
+
+def test_http_verify_request_has_no_verdict_field(tmp_path: Path) -> None:
+    """[핵심] 요청에 판정을 실을 자리가 없다 — 워커는 '검증됨'을 보낼 수 없다."""
+    client = _client(tmp_path, storage=FakeStorage())
+    _sealed_over_http(client)
+    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={
+            "measurements": [_measurement_payload("img-1.jpg")],
+            "verdict": "VERIFIED",
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_replay_refuses_any_record_after_verification(tmp_path: Path) -> None:
+    """[핵심] 검증된 번들 뒤의 어떤 검증 레코드도 live 가 만들 수 없다.
+
+    VERIFIED 중복만 막고 MISMATCH 를 통과시키면 "검증됐는데 마지막 대조는 실패"
+    라는, live 가 도달할 수 없는 상태를 재생이 만들어낸다.
+    """
+    _verified_journal(tmp_path)
+
+    def append_mismatch(records: list[dict[str, Any]]) -> None:
+        verified = next(r for r in records if r["kind"] == "source-media-verified")
+        forged = json.loads(json.dumps(verified))
+        forged["verdict"] = "MISMATCH"
+        forged["measurements"][1]["width"] = 9999
+        forged["mismatched"] = ["img-2.jpg"]
+        records.append(forged)
+
+    _rewrite(tmp_path, append_mismatch)
+    with pytest.raises(SourceMediaRecoveryError, match="이미 검증된 번들"):
+        _reborn(tmp_path)
+
+
+def test_replay_refuses_duplicate_successful_verification(tmp_path: Path) -> None:
+    """대조군 — 같은 게이트가 VERIFIED 중복도 막는다."""
+    _verified_journal(tmp_path)
+
+    def duplicate(records: list[dict[str, Any]]) -> None:
+        verified = next(r for r in records if r["kind"] == "source-media-verified")
+        records.append(json.loads(json.dumps(verified)))
+
+    _rewrite(tmp_path, duplicate)
+    with pytest.raises(SourceMediaRecoveryError, match="이미 검증된 번들"):
+        _reborn(tmp_path)

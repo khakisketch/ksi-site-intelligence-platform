@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-06T02:13:38+09:00",
+  "updated_at": "2026-08-06T02:59:28+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -580,16 +580,16 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "B3 산출물 원장 + SUCCEEDED 게이트 완료(B1·B2·B3 3/5 충족).\n\n[한 것]\n- ProcessingArtifact 원장을 processing-jobs journal에 통합(별도 store로 쪼개면 두 journal의 재생 순서가 갈려 재생 게이트가 성립하지 않는다).\n- RUNNING→SUCCEEDED 에 2차 게이트: assert_succeeded_is_backed() — authority=source 산출물 최소 1건. live·재생이 같은 함수를 탄다.\n- lineage.sourceDigest·jobId 를 요청 스키마에서 제거하고 Core가 job.input.source_bundle_digest 로 채움. 요청 모델은 lineage 를 중첩이 아니라 authority/derivedFrom 로 펼쳐 앵커를 실을 자리 자체를 없앰.\n- derivedFrom 부모 실재 검증(계약은 '비어있지 않다'만 강제).\n- PrincipalKind.PROCESSING_WORKER + Permission.PROCESSING_WORK 신설. 어느 Role 에도 매핑 안 함 → ADMIN 도 RUNNING/SUCCEEDED/FAILED 를 찍을 수 없다. CANCELLED 만 MISSIONS_ISSUE.\n- openapi-core.yaml 1.12.0.\n\n[측정 결과]\n- uv run pytest tests/ -q: 1778 passed, 5 skipped, 3 xfailed (175s). skip 5건은 전부 tests/golden/test_geo_core_projection.py:111 LiveGeoProjector ZoneLayer — P0-4 범위 밖(Phase 3), 이 변경 이전부터 skip.\n- ruff check . 통과 / mypy 68 files 통과 / test_api_contract_sync.py 14 passed.\n- test_processing_jobs.py 80 passed(B2 시점 47 → +33), test_auth.py 44 passed.\n\n[설계 판단 2건]\n- 권한표(_TRANSITION_PERMISSION)를 전 상태 total 로 두고 QUEUED 도 PROCESSING_WORK 에 매핑. 처음엔 표에서 빼고 403 을 냈는데, 그러면 인가 오류가 상태기계 오류(409 ILLEGAL_TRANSITION)를 가려 호출자가 '권한만 받으면 되겠구나'로 읽는다. 권한표는 '누가'만, 전이표는 '적법한가'만 답하게 분리. total 여부는 test_transition_permission_table_covers_every_status 가 고정(빠지면 라우터 KeyError=500).\n- UNBACKED_SUCCESS 를 422 가 아니라 409 로. 요청 자체는 올바르고 원장 상태가 못 받쳐주는 것 — 산출물을 등록하면 같은 요청이 통과한다.\n\n[미완 — 이 목표의 남은 수용기준 2건]\n- ODM 어댑터 실연동(NodeODM REST/PyODM, AGPL 경계).\n- 독립 재검토.\n\n[이 변경이 만든 새 공백 2건]\n- 워커가 자기 작업을 조회할 수 없다(PROCESSING_WORK 에 MISSIONS_READ 없음). 큐 pull 경로를 만들 때 함께 설계. 모듈 docstring·test_http_worker_cannot_read_jobs 에 명시.\n- 원본 바이트 재검증(sha256/해상도 대조, verifiedAt) 여전히 없음 — input_verified 는 항상 false. 산출물 존재와 입력 진위는 다른 사실이라 이 게이트가 저것을 대신하지 않는다.\n- 산출물 digest·format 은 워커 보고값이고 Core 가 바이트를 읽어 대조하지 않는다. 강제하는 것은 계보 무결성이지 내용 진위가 아니다.",
+      "evidence": "워커 경로 종단 연결 + ODM 어댑터 — 등록 기준 5개 중 4개 충족(독립 재검토 미충족).\n\n[한 것]\n1. 원본 바이트 재검증(B3 남은 칸): POST /v1/missions/{id}/source-media/verify. 워커는 **측정값만** 보내고 판정은 Core 가 한다(compare_measurements). 원장의 사실은 측정값이고 재생이 그걸로 다시 대조 — verdict 만 고친 원장은 기동에서 걸린다.\n2. 워커 입력 수신: GET /v1/processing-jobs/{id}/input. **응답에 업로더 신고값이 없다** — 워커가 정답을 모르므로 VERIFIED 를 받으려면 실제로 바이트를 읽어야 한다. 이게 실측 대조를 형식이 아니게 만드는 지점.\n3. SUCCEEDED 게이트에 입력 검증 추가(기존 산출물 조건과 AND). 실측 없이 성공하면 과금 근거(totalMegapixels)가 끝까지 업로더 신고값으로 남는다. FAILED/CANCELLED 에는 안 건다.\n4. ODM 어댑터(ksi_processing_controller.odm/odm_assets): NodeODM REST 포트 5개, engineVersion 제출 전 실측 대조, 산출물 계보 매핑.\n5. AGPL 경계(ADR-KSI-012 D2)를 기계로 강제 — AST 로 패키지 전 소스의 import 를 훑어 opendm/odm/webodm/opensfm 결합을 금지(test_package_never_imports_agpl_engine_code).\n\n[측정 결과]\n- uv run pytest tests/ -q: 1838 passed, 5 skipped, 3 xfailed (173s). skip 5건은 전부 tests/golden/test_geo_core_projection.py:111 LiveGeoProjector ZoneLayer — Phase 3 범위, 이 변경 이전부터.\n- ruff check . 통과 / mypy 70 files 통과 / 대시보드 tsc 통과, vitest 81 passed.\n- 신규: test_odm_adapter.py 31 passed · test_source_media.py 59 passed(B1 시점 대비 +30) · test_processing_jobs.py 88 passed.\n\n[자기 반증에서 찾아 고친 것 1건]\n재생이 '검증된 번들 뒤의 MISMATCH 레코드'를 통과시켰다 — VERIFIED 중복만 막고 있었다. live 는 ALREADY_VERIFIED 로 빠져 무기록이라 그 레코드를 만들 수 없으므로, '검증됐는데 마지막 대조는 실패'라는 도달 불가 상태를 재생이 만들어냈다. 검증 후 **어떤** 레코드도 거부하도록 고치고 테스트 2건 추가.\n\n[환경 사고 1건 — 코드 무관]\n맨 'uv sync' 를 돌려 워크스페이스 환경이 잘렸다(CI 는 --all-packages). 그 상태의 중간 측정은 1753 passed/88 skipped 로 나왔는데 88 중 83 이 [dfine] extra 누락 탓이었다. --all-packages --extra dfine 로 복구 후 재측정한 값이 위 1838 이다.\n\n[미충족 — 이 목표의 남은 수용기준 1건]\n독립 재검토. 이 세션은 서브에이전트 사용이 금지돼 있어 메인이 직접 반증 패스만 돌렸다 — producer 와 verifier 가 같으므로 이건 독립 재검토가 아니다.\n\n[남긴 공백]\n- 실제 NodeODM 컨테이너 대상 실기동 검증 없음. 포트를 가짜로 갈아끼운 계약 시험뿐이고, HttpNodeOdmClient(실제 httpx 구현)는 아직 작성하지 않았다.\n- 산출물 바이트를 KSI 스토리지로 올리는 경로 없음 — 어댑터는 digest 만 등록한다.\n- 워커 lease/heartbeat·큐 pull 없음. jobId 가 {missionId}-pj{n} 이라 추측 가능하고, 워커 토큰을 쥔 쪽은 다른 작업 입력도 열람 가능.\n- ODM --fast-orthophoto 모드의 계보 분기 미모델링 — 그 모드에선 정사영상이 등록되지 않고 건너뛰어진다(틀린 부모보다 누락을 택함).\n- 업로더·워커가 밖에서 공모하면 실측 대조는 여전히 통과한다(Core 가 바이트를 중계하지 않으므로).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 2,
+      "ungated_attempts": 3,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-05T22:58:53+09:00",
-      "updated_at": "2026-08-06T02:13:38+09:00"
+      "updated_at": "2026-08-06T02:59:06+09:00"
     }
   ],
   "risks": [
@@ -928,6 +928,34 @@
       "previous_status": "open",
       "created_at": "2026-08-05T22:58:41+09:00",
       "updated_at": "2026-08-06T02:13:13+09:00"
+    },
+    {
+      "id": "odm-adapter-never-run-against-real-engine",
+      "title": "ODM 어댑터가 실제 NodeODM 대상으로 한 번도 돌지 않았다",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "포트를 가짜로 갈아끼운 계약 시험 31건만 있다. HttpNodeOdmClient(실제 httpx 구현)가 없고, NodeODM /info·/task/new 응답 형태·asset 경로가 실물과 맞는지 미확인. green≠작동 클래스 — 실기동 게이트(HIL) 전까지 완료로 읽지 않는다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T02:59:28+09:00",
+      "updated_at": "2026-08-06T02:59:28+09:00"
+    },
+    {
+      "id": "worker-token-reads-any-job-input",
+      "title": "워커 토큰 하나로 다른 작업의 원본 다운로드 URL 을 받을 수 있다",
+      "lens": "role",
+      "severity": "medium",
+      "status": "open",
+      "note": "GET /v1/processing-jobs/{id}/input 은 jobId 소유 관계를 보지 않는다. jobId 가 {missionId}-pj{n} 이라 추측 가능해, 워커 토큰이 새면 활성 작업 전체의 원본 사진에 접근된다. lease(작업↔워커 바인딩)를 설계할 때 함께 좁힌다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T02:59:28+09:00",
+      "updated_at": "2026-08-06T02:59:28+09:00"
     }
   ]
 }
