@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-05T03:50:54+09:00",
+  "updated_at": "2026-08-05T19:30:00+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -556,16 +556,16 @@
         "npx tsc --noEmit·eslint·next build green",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": "구현+렌더 확인 완료(커밋 f89247c·677256d·9c1b744). 수용기준 판정 — ①SITE_MANAGER 등록 완주: PASS(단 기준 문구의 '8단계'가 아니라 3단계 축약 흐름 SiteRegistrationOnlyWizard. AOI·매핑파라미터는 임무 발급 소관이라 등록 시점엔 저장할 곳이 없어 아예 묻지 않는다 — 기준 문구를 실제 설계에 맞게 읽었음) ②baseline 발급 진입점 분리+권한 없으면 비활성+사유: PASS(현장 상세 우상단, UNMAPPED이면 라벨이 '베이스라인 임무 발급') ③DRONE_OPERATOR 발급 성공: PASS(실동선 — AOI 4점 그리기→목적 BASELINE_MAPPING→표준 수준→계약 발급, 웨이포인트 24·커버리지 100.0%·KMZ sha256 cdd90678…) ④ADMIN 통합 8단계 회귀 없음: PASS ⑤UNMAPPED에서 타 화면 무손상: PASS(홈·현장목록·현장상세 3화면 확인) ⑥390/768/1440: PASS ⑦tsc·eslint·next build: PASS. 렌더 확인에서 결함 5건 적발·수정(타입/빌드는 전부 통과하던 클래스): (a)topbar 제목이 proxy.ts x-pathname 서버헤더 기반이라 클라이언트 네비게이션에서 이전 화면에 정지 → PageTitle.tsx(usePathname) 분리 (b)등록·발급 후 사이드바 건수 정지(같은 layout 보존 원인) → 3개 Wizard 성공분기에 router.refresh() (c)Field label이 입력과 형제라 접근가능 이름이 placeholder로 잡힘(입력 시작하면 사라짐) → label이 입력을 감싸도록 (d)placeholder와 helpText 문구 중복 → placeholder를 예시값으로 (e)권한 부재(403)를 장애로 표시 — 현장상세 섹션 2곳 + 홈 콜아웃/현장목록/지표타일 4개가 '불러오지 못했습니다'+재시도 버튼을 냈고 DRONE_OPERATOR 홈이 통째로 장애처럼 보였다 → forbidden 분리. 미완: ⑧독립 재검토(reviewer) 미실시.",
+      "evidence": "구현+렌더 확인 완료(커밋 f89247c·677256d·9c1b744). 수용기준 판정 — ①SITE_MANAGER 등록 완주: PASS(단 기준 문구의 '8단계'가 아니라 3단계 축약 흐름 SiteRegistrationOnlyWizard. AOI·매핑파라미터는 임무 발급 소관이라 등록 시점엔 저장할 곳이 없어 아예 묻지 않는다 — 기준 문구를 실제 설계에 맞게 읽었음) ②baseline 발급 진입점 분리+권한 없으면 비활성+사유: PASS(현장 상세 우상단, UNMAPPED이면 라벨이 '베이스라인 임무 발급') ③DRONE_OPERATOR 발급 성공: PASS(실동선 — AOI 4점 그리기→목적 BASELINE_MAPPING→표준 수준→계약 발급, 웨이포인트 24·커버리지 100.0%·KMZ sha256 cdd90678…) ④ADMIN 통합 8단계 회귀 없음: PASS ⑤UNMAPPED에서 타 화면 무손상: PASS(홈·현장목록·현장상세 3화면 확인) ⑥390/768/1440: PASS ⑦tsc·eslint·next build: PASS. 렌더 확인에서 결함 5건 적발·수정(타입/빌드는 전부 통과하던 클래스): (a)topbar 제목이 proxy.ts x-pathname 서버헤더 기반이라 클라이언트 네비게이션에서 이전 화면에 정지 → PageTitle.tsx(usePathname) 분리 (b)등록·발급 후 사이드바 건수 정지(같은 layout 보존 원인) → 3개 Wizard 성공분기에 router.refresh() (c)Field label이 입력과 형제라 접근가능 이름이 placeholder로 잡힘(입력 시작하면 사라짐) → label이 입력을 감싸도록 (d)placeholder와 helpText 문구 중복 → placeholder를 예시값으로 (e)권한 부재(403)를 장애로 표시 — 현장상세 섹션 2곳 + 홈 콜아웃/현장목록/지표타일 4개가 '불러오지 못했습니다'+재시도 버튼을 냈고 DRONE_OPERATOR 홈이 통째로 장애처럼 보였다 → forbidden 분리. 미완: ⑧독립 재검토(reviewer) 미실시.\n\n[2026-08-05 재판정] 이 목표는 '위저드를 둘로 쪼개 RBAC 불일치를 우회한다'는 접근이었다. ADR-KSI-015 가 역할표를 근본에서 고쳐 그 불일치를 없앴으므로 권한 기반 분기는 제거됐고, 축약 위저드는 RBAC 이 아니라 도메인 사유(UNMAPPED 이 정상 중간 상태)로 사용자 선택 진입만 남겼다. 미완으로 남아 있던 ⑧독립 재검토도 이 접근이 폐기되어 대상이 없다. risk dashboard-wizard-rbac-mismatch 는 resolved.",
       "verdict": null,
-      "invalidation_reason": null,
+      "invalidation_reason": "원래 수용기준은 'SITE_MANAGER(SITES_WRITE만 보유)' 전제라 ADR-KSI-015 이후 문면 그대로는 성립하지 않는다(그 역할이 사라졌다). 기준을 충족해서 닫는 것이 아니라, 그 기준이 겨냥한 문제 자체가 다른 방법으로 해소되어 우회책이 대체(superseded)된 것이다 — 원장 스키마에 superseded 상태가 없어 completed 로 두되 그 사실을 여기 남긴다.",
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 1,
       "created_at": "2026-07-31T05:08:47+09:00",
-      "updated_at": "2026-08-04T20:27:59+09:00",
+      "updated_at": "2026-08-05T19:30:00+09:00",
       "kind": "product"
     }
   ],
@@ -757,14 +757,14 @@
       "title": "현장등록/조사 Wizard가 SITES_WRITE+MISSIONS_ISSUE 동시요구 — ADMIN 외 전 role 403 회귀",
       "lens": "role",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "현장 등록/조사 Wizard가 SITES_WRITE+MISSIONS_ISSUE 동시 권한을 요구하는데 이 조합을 가진 Core role이 ADMIN뿐 — dashboard-operator-login이 role을 처음으로 실제 활성화한 결과 드러난 회귀(이전엔 전원 고정 ADMIN 토큰이라 가려져 있었음). SiteRegistrationWizard.tsx(POST /api/sites → POST /api/mission-plans)와 SurveyWizard.tsx가 한 흐름 안에서 두 권한을 다 요구한다. Core _ROLE_PERMISSIONS(services/core/src/ksi_core/auth.py:166-200): SITE_MANAGER={SITES_WRITE,...}이나 MISSIONS_ISSUE 없음, DRONE_OPERATOR={MISSIONS_ISSUE,...}이나 SITES_WRITE 없음 — ADMIN 외 전 role이 1단계 또는 2단계에서 403. SITE_MANAGER로 로그인해 현장을 등록하면 site는 생성되고 baseline mission 발급만 실패하는 반쪽 상태로 남는다. ADR-KSI-008 '대표자 후속 확인 1(역할·권한 매트릭스, 공동 결정 레인)'이 애초에 미확정으로 남겼던 지점 — Claude 자율 레인에서 임의로 권한표를 바꾸지 않는다. 해소 경로 후보(대표자 결정 필요): (a) SITE_MANAGER에 MISSIONS_ISSUE 추가 (b) Wizard를 현장등록/임무발급 두 단계로 분리해 각각 권한 게이팅 (c) 이 통합 Wizard는 ADMIN 전용으로 명시. 임시 완화(적용 예정): 대시보드 UI에서 두 권한이 모두 없는 role에는 '현장 등록' 진입점을 비활성화하고 사유를 안내(반쪽 상태 방지). reviewer(opus) 2026-07-30 독립 재검토 P1-C 적발.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "ADR-KSI-015(역할 3개 축소와 자율운영 승인 권한 분리)로 근본 해소. 위저드를 쪼개 덮는 대신 역할표 자체를 고쳤다 — FIELD_OPERATOR 가 SITES_WRITE·MISSIONS_ISSUE·EVENTS_TRIAGE 를 모두 갖게 되어 'SITES_WRITE+MISSIONS_ISSUE 조합이 ADMIN 뿐'이라는 전제가 소멸했다. 강제 지점: services/core/src/ksi_core/auth.py 의 _ROLE_PERMISSIONS, 그리고 관리자 전용 권한이 라벨로 전락하지 않도록 신설한 Permission.SITES_AUTONOMY_APPROVE 를 packages/domain/src/ksi_domain/enums.py 의 requires_autonomy_approval(간선 쌍 기준)과 services/core/src/ksi_core/sites.py 전이 라우트 2차 게이트가 강제한다. 대시보드의 권한 기반 위저드 분기는 도달 불가가 되어 제거했고, 축약 위저드는 사용자 선택 진입으로 남겼다. 변이 검증 3종 실증(FIELD_OPERATOR 에 자율승인 추가 / VIEWER 에 SITES_WRITE 추가 / 전이 2차 게이트 제거 — 셋 다 해당 테스트 실패 확인 후 원상복구). pytest 1652 passed.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T21:32:32+09:00",
-      "updated_at": "2026-07-30T21:32:32+09:00"
+      "updated_at": "2026-08-05T19:30:00+09:00"
     },
     {
       "id": "dashboard-login-residual-hardening",
@@ -849,6 +849,48 @@
       "previous_status": null,
       "created_at": "2026-08-05T03:50:54+09:00",
       "updated_at": "2026-08-05T03:50:54+09:00"
+    },
+    {
+      "id": "kmz-regeneration-determinism-timebomb",
+      "title": "KMZ 다운로드는 매 조회 재생성이라 서버 상수 한 줄이 바뀌면 그 이전 발급분 전량이 영구 409 — 바이트를 저장하지 않아 복구 수단이 재발급뿐",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "GET /v1/missions/{id}/kmz 는 저장된 plan_request 로 재생성하고 sha256 이 기록과 다르면 409 로 거부한다(services/core/src/ksi_core/mission_plans.py:577-591). 계약 payload 는 mission_issuance.py 의 서버 고정 안전상수(_UNKNOWN_OBSTACLE_POLICY 등)와 스키마를 포함하고 그 digest 가 KMZ 안 manifest 에 들어가므로, 안전 정책 상수나 경로 생성기 출력이 한 비트라도 바뀌면 그 이전 발급 임무의 다운로드가 전부 영구 409 가 된다. 이 엔드포인트가 닫으려던 '손에 파일이 없는 막다른 길'이 그대로 재발한다. 서명키 로테이션은 안전함을 확인했다(canonical_payload_bytes 가 signature 블록을 제외 — signing.py:42). 결정 필요: ① 409 분기 계측·알람 추가 ② 발급 시 KMZ 바이트 영속. 독립 반증(reviewer) D1.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T15:58:00+09:00",
+      "updated_at": "2026-08-05T15:58:00+09:00"
+    },
+    {
+      "id": "kmz-download-regeneration-cost",
+      "title": "KMZ 조회 1회마다 경로생성+Ed25519 서명+zip 빌드 — 읽기 권한만으로 서명 연산을 무제한 유발",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "GET /v1/missions/{id}/kmz 는 캐시·rate limit·상한 없이 매 요청마다 전량 재생성한다. 라우트가 sync(def) 라 FastAPI 기본 threadpool(40)을 점유하고 Core 의 다른 라우트도 전부 sync 라 같은 풀을 공유한다. MISSIONS_READ 는 VIEWER 포함 5개 role 전부가 갖는다. 교차출처 탈취는 불가(저장소 전체에 Access-Control-* 0건)이나 인증 내부 남용은 열려 있고, 부수적으로 읽기 전용 principal 이 서명 개인키 연산을 무한히 유발한다(키 자체 노출은 없음). 결정 필요: 캐시 또는 rate limit. 독립 반증(reviewer) D2.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T15:58:00+09:00",
+      "updated_at": "2026-08-05T15:58:00+09:00"
+    },
+    {
+      "id": "coverage-report-rejection-not-auditable",
+      "title": "근거 없는 완료 주장을 서버가 거부해도 그 사실이 어디에도 남지 않는다 — 거부 판정이 제출 장비의 응답으로만 가고 소멸",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "CoverageReportStore.record() 가 RECORDED 가 아닌 판정(NO_COVERAGE_EVIDENCE·SELF_CONTRADICTORY_SUMMARY 등)에서 journal append 도 in-memory 기록도 없이 조기 반환한다(services/core/src/ksi_core/coverage_reports.py). 결과적으로 거부는 POST 를 보낸 장비의 응답 본문으로만 전달되고 어떤 GET 으로도 조회할 수 없다. 서버가 근거 없는 완료를 막았다는 사실 자체가 운영자·감사자에게 도달하지 않는다 — INV-010(완료 판정의 권위는 CoverageReport) 의 강제는 성립하지만 그 강제가 작동했다는 증거가 남지 않는다. 장비가 반복적으로 허위 완료를 주장해도 사람은 알 수 없다. 폐쇄하려면 거부 감사 저장소가 필요하고 이는 시스템 경계 변경이라 대표자 결정 대상. 3단계(임무 실행 결과 화면) 구현 중 워커가 자진 신고, 메인이 코드로 확인.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T18:00:00+09:00",
+      "updated_at": "2026-08-05T18:00:00+09:00"
     }
   ]
 }
