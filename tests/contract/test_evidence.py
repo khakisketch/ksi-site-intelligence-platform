@@ -385,8 +385,15 @@ def test_routes_absent_without_storage(store: EventStore, tmp_path: Path) -> Non
     assert response.status_code == 404
 
 
-def test_evidence_storage_without_event_store_refuses_assembly() -> None:
-    with pytest.raises(ValueError, match="event_store"):
+def test_evidence_storage_without_any_consumer_store_refuses_assembly() -> None:
+    """소비자 저장소가 **하나도** 없으면 오브젝트 스토리지를 매단 채 기동하지 않는다.
+
+    원래 이 가드는 ``event_store`` 만 요구했으나 3D 파이프라인 입구
+    (``source_media_store``)가 같은 스토리지 포트의 두 번째 소비자가 되면서
+    소비자 집합이 넓어졌다 — 이 테스트가 확인하는 것은 "둘 다 없을 때 거부"이지
+    "event_store 가 없을 때 거부"가 아니다(후자는 더 이상 참이 아니다).
+    """
+    with pytest.raises(ValueError, match="event_store 또는 source_media_store"):
         create_app(
             auth_registry=_auth_registry(),
             evidence_storage=FakeStorage(),

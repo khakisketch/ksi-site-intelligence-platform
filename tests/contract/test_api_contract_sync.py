@@ -29,6 +29,7 @@ from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.sites import SiteStore
+from ksi_core.source_media import SourceMediaStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -90,6 +91,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         mission_store=mission_store,
         coverage_report_store=CoverageReportStore(
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+        ),
+        source_media_store=SourceMediaStore(
+            DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",

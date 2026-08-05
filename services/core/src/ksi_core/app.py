@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
     from ksi_core.sites import SiteStore
+    from ksi_core.source_media import SourceMediaStore
 
 
 def create_app(
@@ -57,6 +58,7 @@ def create_app(
     mission_signing_key_id: str | None = None,
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
+    source_media_store: SourceMediaStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -101,6 +103,12 @@ def create_app(
             — 발급 레코드가 durable 기록되기 전에는 201 을 반환하지 않는다).
         mission_signing_key_id: 서명 블록에 실릴 keyId — 검증 측 KeyRegistry에
             등록된 것과 일치해야 한다.
+        source_media_store: 원본 사진 번들(3D 파이프라인 입구) 등록·봉인 저장소.
+            주어지면 ``mission_store`` 가 필수다(발급된 적 없는 임무의 번들은
+            받지 않는다, coverage_report_store 와 동일 원칙). 라우트 장착은 그와
+            별개로 ``evidence_storage`` 유무를 따른다 — presigned URL 을 발급할
+            스토리지가 없으면 이 표면 자체가 장착되지 않는다(evidence 라우트와
+            같은 관습).
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -159,10 +167,17 @@ def create_app(
                 " 반환하지 않는다(고아 발급 금지)"
             )
 
-    if evidence_storage is not None and event_store is None:
+    if evidence_storage is not None and event_store is None and source_media_store is None:
         raise ValueError(
-            "evidence_storage 는 event_store 와 함께 주어져야 한다(ADR-KSI-010 §1)"
-            " — 증거는 사건에 매달리는 것이라 사건 원장 없이는 등록할 곳이 없다"
+            "evidence_storage 는 소비자 저장소(event_store 또는 source_media_store)와"
+            " 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는 오브젝트 스토리지를"
+            " 매단 채 기동하지 않는다."
+            "\n"
+            " 원래 이 가드는 event_store 만 요구했다(증거는 사건에 매달리는 것이라 사건"
+            " 원장 없이는 등록할 곳이 없다). 3D 파이프라인 입구(source_media)가 같은"
+            " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌다 — 가드를 푼"
+            " 것이 아니라 소비자 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면"
+            " 여전히 거부한다."
         )
 
     if edge_sync_store is not None and event_store is None:
@@ -178,6 +193,14 @@ def create_app(
             " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다"
         )
 
+    if source_media_store is not None and mission_store is None:
+        raise ValueError(
+            "source_media_store 는 mission_store 와 함께 주어져야 한다"
+            " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
+            " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
+            " 동일 원칙"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -188,6 +211,7 @@ def create_app(
             mission_signing_key,
             evidence_storage,
             coverage_report_store,
+            source_media_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -285,5 +309,15 @@ def create_app(
         from ksi_core.coverage_reports import mount_coverage_reports
 
         mount_coverage_reports(app, coverage_report_store)
+
+    if source_media_store is not None and evidence_storage is not None:
+        # evidence_storage 없이는 라우트를 장착하지 않는다(evidence 라우트와 같은
+        # 관습) — presigned URL 을 낼 스토리지가 없으면 "업로드했는데 어디에도
+        # 없다"가 2xx 로 보이는 경로를 만들지 않는다. store 자체(journal)는
+        # evidence_storage 없이도 구성될 수 있지만(위 결합 검증은 mission_store만
+        # 요구), 그 경우 이 표면은 존재하지 않는다.
+        from ksi_core.source_media import mount_source_media
+
+        mount_source_media(app, source_media_store, evidence_storage)
 
     return app

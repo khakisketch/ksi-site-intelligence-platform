@@ -30,6 +30,7 @@ from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 from ksi_core.sites import SiteStore
+from ksi_core.source_media import SourceMediaStore
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -201,6 +202,12 @@ def main() -> None:
     coverage_journal = DurableJournal(
         data_dir / "coverage-reports.jsonl", max_segment_bytes=segment_bytes
     )
+    # 원본 사진 번들(3D 파이프라인 입구) — --s3-endpoint 없이는 store 는 구성돼도
+    # 라우트가 장착되지 않는다(evidence 라우트와 같은 관습, create_app 참조).
+    source_media_journal = DurableJournal(
+        data_dir / "source-media.jsonl", max_segment_bytes=segment_bytes
+    )
+    source_media_store = SourceMediaStore(source_media_journal, mission_store=mission_store)
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=SiteStore(site_journal),
@@ -211,6 +218,7 @@ def main() -> None:
         coverage_report_store=CoverageReportStore(
             coverage_journal, mission_store=mission_store
         ),
+        source_media_store=source_media_store,
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
     )
@@ -230,6 +238,7 @@ def main() -> None:
         mission_journal.close()
         event_journal.close()
         coverage_journal.close()
+        source_media_journal.close()
         edge_sync_store.close()
 
 
