@@ -10,17 +10,31 @@
 3. 에러가 HTTP 200 + ``{"error": ...}`` 로 온다 — 상태 코드로 못 가른다.
 4. 중첩 asset 경로는 라우트 자체가 없어 404 HTML 이다.
 
-## 이 파일이 확인하지 **못하는** 것
+그리고 완주까지 돌려보니 다섯 번째가 나왔다:
 
-완주한 재구성의 ``all.zip`` 내용. 실제 드론 사진 수백 장이 있어야 ODM 이 완주
-하고, 합성 이미지로는 데이터셋 단계에서 실패한다(그 실패 경로는 확인한다).
-따라서 :func:`~ksi_processing_controller.odm.plan_artifacts` 가 실제 ODM 산출물
-아카이브를 제대로 읽는지는 **아직 미검증**이고, 원장에 리스크로 남아 있다.
+5. ``cameras.json`` 은 카메라 **내부 파라미터**(focal·왜곡계수, 카메라 모델당
+   1개)이지 사진별 포즈가 아니다. 실제 포즈는 ``odm_report/shots.geojson``
+   (사진 1장당 feature 1개, translation·rotation)이다. 파일 이름만 보고 정한
+   매핑이 틀렸고, 아카이브를 열어야만 보였다.
+
+## 두 겹으로 나뉜다
+
+- **엔진 계약**(URL 만 있으면 됨): ``/info``·에러 봉투·실패 전파·정리.
+- **완주 계약**(사진 데이터셋 필요): 실제 ``all.zip`` 을 받아
+  :func:`~ksi_processing_controller.odm.plan_artifacts` 로 읽는다. 완주에는
+  중첩된 실제 드론 사진이 필요해 합성 이미지로는 대체되지 않는다.
 
 ## 돌리는 법
 
     docker run -d --name ksi-nodeodm -p 127.0.0.1:3971:3000 opendronemap/nodeodm
     KSI_NODEODM_URL=http://127.0.0.1:3971 uv run pytest tests/contract/test_odm_live.py
+
+완주까지 확인하려면 사진 디렉터리를 함께 준다(20코어에서 12장 3분):
+
+    curl -sSL -o s.tgz https://github.com/OpenDroneMap/odm_data_pacifica/archive/refs/heads/master.tar.gz
+    tar xzf s.tgz
+    KSI_NODEODM_URL=... KSI_ODM_IMAGES=./odm_data_pacifica-master/images \
+      uv run pytest tests/contract/test_odm_live.py
 
 환경변수가 없거나 엔진에 닿지 못하면 **skip** 한다 — CI 기본 경로를 컨테이너에
 묶지 않는다. 대신 skip 사유에 그 사실을 적어, 초록불이 "확인했다"로 읽히지
@@ -40,9 +54,12 @@ from ksi_processing_controller.odm import (
     OdmTaskStatus,
     SourceImage,
     assert_engine_matches,
+    plan_artifacts,
 )
+from ksi_processing_controller.odm_assets import ODM_ASSETS
 
 _URL = os.environ.get("KSI_NODEODM_URL", "").rstrip("/")
+_IMAGES_DIR = os.environ.get("KSI_ODM_IMAGES", "")
 
 pytestmark = pytest.mark.skipif(
     not _URL,
@@ -185,6 +202,92 @@ def test_task_lifecycle_and_failure_propagation(
         client.remove_task(uuid)
         with pytest.raises(OdmError, match="not found"):
             client.task_info(uuid)
+    finally:
+        server.shutdown()
+        client.close()
+
+
+# ── 완주 계약 — 실제 사진이 있어야 확인된다 ──────────────────────────────────
+
+
+@pytest.mark.skipif(
+    not _IMAGES_DIR,
+    reason=(
+        "KSI_ODM_IMAGES 미설정 — 완주한 all.zip 파싱은 확인되지 않았다"
+        " (중첩된 실제 드론 사진 디렉터리가 필요하다; 합성 이미지로는 ODM 이"
+        " 데이터셋 단계에서 실패한다)"
+    ),
+)
+def test_completed_reconstruction_yields_the_mapped_lineage(
+    client: HttpNodeOdmClient, tmp_path: Path
+) -> None:
+    """[핵심] 실제로 완주한 산출물을 우리 매핑으로 읽는다.
+
+    이 테스트가 없어서 ``cameras.json`` 오매핑이 초록불 뒤에 숨어 있었다.
+    """
+    import functools
+    import http.server
+    import threading
+    import time
+
+    images_dir = Path(_IMAGES_DIR)
+    paths = sorted(
+        p for p in images_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg"}
+    )
+    assert len(paths) >= 5, f"완주하려면 사진이 더 필요하다({len(paths)}장)"
+
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(images_dir)
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+
+    try:
+        uuid = client.new_task(
+            [SourceImage(media_id=p.name, download_url=f"{base}/{p.name}") for p in paths],
+            {"dsm": True, "dtm": True, "pc-quality": "medium"},
+        )
+        deadline = time.monotonic() + 3600
+        state = None
+        while time.monotonic() < deadline:
+            state = client.task_info(uuid)
+            if state.status in {
+                OdmTaskStatus.COMPLETED,
+                OdmTaskStatus.FAILED,
+                OdmTaskStatus.CANCELED,
+            }:
+                break
+            time.sleep(15)
+        assert state is not None and state.status is OdmTaskStatus.COMPLETED, (
+            f"재구성이 완주하지 못했다: {state}"
+        )
+
+        archive = client.download_archive(uuid, tmp_path / "all.zip")
+        reports = plan_artifacts(
+            archive,
+            crs="EPSG:32610",
+            gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+        )
+
+        # 매핑한 경로가 실물 아카이브에 전부 있다.
+        import zipfile
+
+        with zipfile.ZipFile(archive) as z:
+            entries = set(z.namelist())
+        missing = [a.archive_entry for a in ODM_ASSETS if a.archive_entry not in entries]
+        assert not missing, f"매핑된 경로가 실물에 없다: {missing}"
+
+        by_id = {r.artifact_id: r for r in reports}
+        assert {"camera-poses", "point-cloud"} <= set(by_id), "원본 산출물이 빠졌다"
+        assert all(r.digest.startswith("sha256:") for r in reports)
+        # 계보가 단방향이다 — 부모가 자식보다 먼저 나온다.
+        order = {r.artifact_id: i for i, r in enumerate(reports)}
+        for report in reports:
+            for parent in report.derived_from:
+                assert order[parent] < order[report.artifact_id]
+
+        client.remove_task(uuid)
     finally:
         server.shutdown()
         client.close()

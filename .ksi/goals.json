@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-06T05:09:36+09:00",
+  "updated_at": "2026-08-06T05:36:42+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -962,14 +962,28 @@
       "title": "완주한 ODM 산출물 아카이브를 실제로 파싱해본 적이 없다",
       "lens": "gaming",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "실기동으로 /info·/task/new·/task/info·/task/remove·에러 봉투는 확인했으나, ODM 이 완주해야 나오는 all.zip 은 합성 이미지로 만들 수 없어 plan_artifacts 가 실제 아카이브를 제대로 읽는지 미검증. ODM_ASSETS 의 archive_entry 경로는 NodeODM libs/Task.js allPaths 목록에서 읽은 값이지 실물 아카이브에서 확인한 값이 아니다. 실제 드론 사진 수백 장으로 1회 완주가 필요하다(HIL 게이트).",
+      "accept_reason": null,
+      "resolve_evidence": "실제 드론 사진 12장(OpenDroneMap odm_data_pacifica, CC BY-SA 4.0)으로 무수정 NodeODM 완주 — 20코어 3.0분, all.zip 84.4MB/엔트리 68개. HttpNodeOdmClient 로 받아 plan_artifacts 가 계보 7건을 냈다(원본 2: camera-poses·point-cloud / 파생 5: mesh·orthophoto·dsm·dtm·report). 실물 대조가 매핑 버그 1건을 잡았다: cameras.json 은 카메라 내부 파라미터(focal·왜곡계수, 모델당 1개)지 포즈가 아니고, 실제 포즈는 odm_report/shots.geojson(사진당 feature 1개, translation·rotation)이다. 고정: tests/fixtures/odm/pacifica_all_zip_entries.txt(실물 엔트리 목록) + test_odm_adapter.py::test_every_mapped_entry_exists_in_a_real_archive / ::test_camera_poses_map_to_shots_not_to_camera_intrinsics / ::test_real_archive_yields_the_expected_lineage, test_odm_live.py::test_completed_reconstruction_yields_the_mapped_lineage(6 passed). 잔여: 메시 digest 가 .obj 만 덮어 텍스처 변경을 못 잡는다 · EPT/3d_tiles 디렉터리 산출물 미모델링 — 둘 다 odm_assets 문서화.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-06T05:09:01+09:00",
+      "updated_at": "2026-08-06T05:36:10+09:00"
+    },
+    {
+      "id": "mesh-digest-ignores-textures",
+      "title": "메시 산출물의 digest 가 .obj 만 덮어 텍스처 변경을 잡지 못한다",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "실물 아카이브에 odm_texturing/*_map_Kd.png 3개와 .mtl 이 함께 있는데 mesh artifact 의 digest 는 .obj 하나만 해싱한다. 텍스처가 바뀌어도 digest 가 그대로라, 메시를 시각 산출물로 납품하면 '내용이 같음'을 증명하지 못한다. 지금 모델이 '한 산출물 = 한 파일 = 한 digest' 라서 생긴 구멍 — 디렉터리 산출물 봉인 방식을 정해야 닫힌다(EPT/3d_tiles 도 같은 이유로 미모델링).",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
-      "created_at": "2026-08-06T05:09:01+09:00",
-      "updated_at": "2026-08-06T05:09:01+09:00"
+      "created_at": "2026-08-06T05:36:42+09:00",
+      "updated_at": "2026-08-06T05:36:42+09:00"
     }
   ]
 }

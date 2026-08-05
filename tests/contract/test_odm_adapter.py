@@ -333,7 +333,7 @@ def test_missing_optional_assets_are_skipped_not_failed(tmp_path: Path) -> None:
     """ODM 은 옵션에 따라 DTM·정사영상을 안 만든다 — 정상 설정이 실패가 되면 안 된다."""
     engine = FakeNodeOdm(
         entries={
-            "cameras.json",
+            "odm_report/shots.geojson",
             "odm_georeferencing/odm_georeferenced_model.laz",
         }
     )
@@ -353,7 +353,7 @@ def test_derived_without_its_parent_is_not_registered(tmp_path: Path) -> None:
     """부모 없이 파생만 내놓는 엔진 응답은 계보 없는 파생이라 등록하지 않는다."""
     engine = FakeNodeOdm(
         entries={
-            "cameras.json",
+            "odm_report/shots.geojson",
             "odm_texturing/odm_textured_model_geo.obj",  # mesh, 부모(point cloud) 없음
         }
     )
@@ -437,3 +437,68 @@ def test_asset_kinds_are_all_valid_contract_values() -> None:
     for asset in ODM_ASSETS:
         assert isinstance(asset.kind, ProcessingArtifactKind)
         assert isinstance(asset.authority, LineageAuthority)
+
+
+# ── 실물 아카이브 대조 (완주한 ODM 산출물) ──────────────────────────────────
+
+_REAL_ENTRIES = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "odm" / "pacifica_all_zip_entries.txt"
+)
+
+
+def _real_archive_entries() -> set[str]:
+    """무수정 NodeODM 이 실제로 만든 all.zip 의 엔트리 목록(fixtures/odm/README.md)."""
+    return {
+        line.strip()
+        for line in _REAL_ENTRIES.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+
+
+def test_every_mapped_entry_exists_in_a_real_archive() -> None:
+    """[핵심] 경로 매핑을 파일 이름 추측이 아니라 **실물 목록**과 대조한다.
+
+    이 대조가 없어서 ``cameras.json``(카메라 내부 파라미터 — focal·왜곡계수,
+    카메라 모델당 1개)을 카메라 포즈로 매핑한 채 초록불이었다. 실제 포즈는
+    ``odm_report/shots.geojson`` 이고, 그 차이는 실물 아카이브를 열어야 보인다.
+    """
+    entries = _real_archive_entries()
+    assert entries, "픽스처가 비어 있다 — 이 테스트가 공허하다"
+    missing = [a.archive_entry for a in ODM_ASSETS if a.archive_entry not in entries]
+    assert not missing, (
+        f"매핑된 경로가 실물 아카이브에 없다: {missing} — "
+        "ODM 이 그 이름으로 내놓지 않으면 그 산출물은 영영 등록되지 않는다"
+    )
+
+
+def test_camera_poses_map_to_shots_not_to_camera_intrinsics() -> None:
+    """[회귀] cameras.json 은 카메라 *모델*의 내부 파라미터지 사진별 포즈가 아니다."""
+    poses = next(a for a in ODM_ASSETS if a.kind is ProcessingArtifactKind.CAMERA_POSES)
+    assert poses.archive_entry == "odm_report/shots.geojson"
+    assert "cameras.json" not in {a.archive_entry for a in ODM_ASSETS}
+
+
+def test_real_archive_yields_the_expected_lineage(tmp_path: Path) -> None:
+    """실물 엔트리 목록으로 만든 아카이브가 계보 7건을 그대로 낸다.
+
+    바이트는 없지만 **경로 집합은 실물 그대로**라, 이 테스트는 "엔진이 내놓는
+    것들 중 우리가 무엇을 어떤 계보로 등록하는가"를 고정한다.
+    """
+    archive_path = tmp_path / "real-shape.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for entry in sorted(_real_archive_entries()):
+            archive.writestr(entry, b"x")
+
+    reports = plan_artifacts(
+        archive_path,
+        crs=_CRS,
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+    )
+    assert [r.artifact_id for r in reports] == [
+        "camera-poses", "point-cloud", "mesh", "orthophoto", "dsm", "dtm", "report",
+    ]
+    by_id = {r.artifact_id: r for r in reports}
+    assert by_id["camera-poses"].crs is None
+    assert by_id["report"].crs is None and by_id["report"].gsd is None
+    assert by_id["point-cloud"].authority == "source"
+    assert sum(r.authority == "source" for r in reports) == 2

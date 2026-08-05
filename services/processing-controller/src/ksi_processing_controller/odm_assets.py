@@ -29,6 +29,30 @@ ADR-KSI-003 은 "Point Cloud 가 원본 SSOT, Mesh/정사영상/3D Tiles 는 파
 무의미해지지만, 빠진 산출물은 로그에 남고 사람이 알아챈다. 그 모드를 실제로 쓸
 때 표를 옵션별로 가른다.
 
+## 실물이 고쳐준 것 — ``cameras.json`` 은 포즈가 아니다
+
+처음엔 ``cameras.json`` 을 ``CAMERA_POSES`` 로 매핑했는데, 실제 아카이브를 열어
+보니 그 파일은 카메라 **내부 파라미터**였다(``focal_x``·``c_x``·``k1``… ,
+카메라 *모델*당 1개). 사진마다의 위치·자세는 ``odm_report/shots.geojson`` 에
+있다 — 사진 1장당 feature 1개, ``translation``·``rotation`` 과 Point geometry.
+파일 이름만 보고 정한 매핑이 틀렸고, 실물 완주 전까지 드러나지 않았다
+(2026-08-06, ODM 3.5.6 / pacifica 12장).
+
+## 매핑하지 않은 실제 산출물
+
+실물 아카이브에는 있지만 여기 표에 넣지 않은 것들이다 — 없어서 안 넣은 게
+아니라 **지금 모델로는 한 산출물 = 한 파일 = 한 digest 가 성립하지 않아서**다:
+
+- ``entwine_pointcloud/``(EPT) · ``3d_tiles``: 포인트 클라우드 스트리밍 서빙
+  계층으로 ``tiles_3d`` 에 해당하지만, 파일 수십 개짜리 디렉터리라 단일 digest 가
+  대표하지 못한다. 서빙 계층을 실제로 쓸 때 "디렉터리 산출물"을 어떻게 봉인할지
+  함께 정한다.
+- ``odm_texturing/`` 의 텍스처(``*_map_Kd.png``)·``.mtl``: 메시 artifact 의
+  digest 는 ``.obj`` **하나만** 덮는다. 텍스처가 바뀌어도 digest 가 그대로라는
+  뜻이다 — 메시를 시각 산출물로 납품하기 전에 닫아야 할 구멍이다.
+- ``odm_report/stats.json``·``images.json``·``log.json``: 진단용이고 계약의
+  ``kind`` 에 대응이 없다.
+
 ## 정확도는 ``None`` 이다 — 비어 있는 게 아니라 없는 것
 
 ODM 에는 구조화된 GCP/RMSE 리포트가 없다(ADR-KSI-012 D3). 이 값이 null 인 비율이
@@ -89,11 +113,15 @@ class OdmAsset:
 ODM_ASSETS: tuple[OdmAsset, ...] = (
     OdmAsset(
         artifact_id=CAMERA_POSES_ID,
-        archive_entry="cameras.json",
+        # **``cameras.json`` 이 아니다.** 그 파일은 카메라 **내부 파라미터**
+        # (focal·주점·왜곡계수)이고 카메라 *모델*당 1개다 — 사진마다의 위치·자세가
+        # 아니다. 실제 포즈는 여기 있다: 사진 1장당 feature 1개, translation·
+        # rotation 과 Point geometry(실측 확인, 2026-08-06).
+        archive_entry="odm_report/shots.geojson",
         kind=ProcessingArtifactKind.CAMERA_POSES,
         authority=LineageAuthority.SOURCE,
         derived_from=(),
-        fmt="json",
+        fmt="geojson",
         # 카메라 포즈는 그 자체로 공간 좌표계를 갖는 산출물이 아니다.
         needs_crs=False,
     ),
@@ -140,6 +168,17 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
         derived_from=(POINT_CLOUD_ID,),
         fmt="cog",
         needs_gsd=True,
+    ),
+    OdmAsset(
+        artifact_id="report",
+        archive_entry="odm_report/report.pdf",
+        kind=ProcessingArtifactKind.REPORT,
+        authority=LineageAuthority.DERIVED,
+        derived_from=(POINT_CLOUD_ID,),
+        fmt="pdf",
+        # 리포트는 좌표계도 픽셀 표본거리도 갖지 않는다 — 계약이 둘 다 null 을
+        # 허용하는 유일한 kind 조합이고, 그래서 지어낼 필요가 없다.
+        needs_crs=False,
     ),
 )
 
