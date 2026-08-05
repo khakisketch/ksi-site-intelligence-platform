@@ -1,6 +1,8 @@
 # Hardware Session Playbook (Track A — DJI Matrice 4D + RC Plus 2 + Manifold 3)
 
-- 상태: 절차 확정, **실행 대기** (실기 세션 없이 준비 가능한 것까지만 완료)
+- 상태: **1~2단계 실기 검증 완료**(2026-08-03, `SESS-20260803T125616Z-PENDING-SN`),
+  3단계 이후는 기체 데이터 링크 재확립 대기 — 세션 중 실기가 네트워크에서 이탈해
+  중단됨(원인 미확인, 다음 세션에서 §3.0으로 우선 확인)
 - 근거: `docs/product/MASTER_PRD_v3.0.md` §20.3(SPIKE_REQUIRED 9항목), §21.1(Edge 실시간
   목표), `docs/dji/SPIKE_PROCEDURE.md`(8단계 실행 순서, 이 문서가 그 절차의 운영 세부판),
   `.ksi/goals.json` `track-a` 목표
@@ -32,6 +34,12 @@
       점검 절차, 이 문서 범위 밖)
 - [ ] `hil_raw_logs/` 로컬 스테이징 디렉터리 쓰기 가능 확인 (`docs/hil/RAW_LOG_CONVENTIONS.md`)
 - [ ] `SESSION_ID` 확정 — 세션 시작 UTC 시각 + 기체 SN(모르면 `PENDING-SN`)
+- [ ] `session_manifest.json`을 `docs/hil/RAW_LOG_CONVENTIONS.md` §3.1의 최소 필드
+      **9개 전부**(`session_id`/`operator`/`aircraft_sn`/`build_commit`/
+      `started_at_utc`/`ended_at_utc`/`purpose`/`steps_completed`/`notes`)를 채워
+      생성한다 — `ended_at_utc`(초기값 `null`)와 `purpose`·`steps_completed`(초기값
+      `[]`)도 처음부터 키 자체는 넣어둔다(2026-08-03 세션은 이 세 필드를 누락한 채
+      진행돼 종료 시 되짚어 채우지 못했다 — 재발 방지)
 - [ ] `docs/hil/SPIKE_EVIDENCE_TEMPLATE.md` 사본을 세션 노트로 준비(항목별로 채워나감)
 - [ ] `git rev-parse HEAD` 기록 — 이 세션에서 시험할 KSI 빌드 commit
 
@@ -51,43 +59,156 @@
 **실행 항목**:
 ```bash
 export SESSION_ID=SESS-<UTC 세션 시작>-<기체SN 또는 PENDING-SN>
-bash tools/hil/collect_env_inventory.sh
+# HIL_RAW_LOG_ROOT를 레포 밖에 둔다 — rsync --delete 왕복에 로그가 지워지는 사고를
+# 구조적으로 차단한다(2026-08-03 세션에서 실증한 방식).
+ssh <manifold-host> "cd /open_app/ksi && SESSION_ID=$SESSION_ID \
+  HIL_RAW_LOG_ROOT=/open_app/ksi_hil_raw_logs bash tools/hil/collect_env_inventory.sh"
+rsync -az <manifold-host>:/open_app/ksi_hil_raw_logs/$SESSION_ID/ hil_raw_logs/$SESSION_ID/
 ```
 스크립트가 실패하는 개별 항목(예: PSDK 버전 조회)은 `MISSING: <이유>`로 남고 스크립트
 전체는 계속 진행한다 — 이는 정상 동작이다.
 
+**실기에 KSI 레포를 두는 방법 — `git rev-parse HEAD`가 성립하려면 `.git`이 필요하다.**
+`git worktree`의 `.git`은 메인 저장소를 가리키는 포인터 파일이라 그대로 rsync하면
+깨진다(2026-08-03 세션에서 실제로 겪음). 자기완결적 clone을 만들어 보낸다:
+```bash
+git clone --quiet <main-repo> <scratch>/ksi-spike-clone
+git -C <scratch>/ksi-spike-clone checkout --quiet <시험할 commit>
+rsync -az <scratch>/ksi-spike-clone/ <manifold-host>:/open_app/ksi/   # .git 포함, 11M 내외
+```
+이렇게 하면 실기에서 `git rev-parse HEAD`가 그대로 성공하고, `GIT_COMMIT`이
+MISSING으로 남는 편차 없이 완전한 PASS를 얻는다.
+
 **수집 증거**: `hil_raw_logs/<session_id>/01_env_inventory/<UTC_ts>__env_inventory.json`
 (JetPack/L4T, CUDA/cuDNN/TensorRT, RAM/디스크, 네트워크 인터페이스, git commit, PSDK
-버전 조회 결과 포함)
+버전 조회 결과 포함) + `<UTC_ts>__psdk_discovery.log`(툴체인·`dji_app_ctl --help`·
+네트워크 인터페이스·USB·인터넷 가용성 — 스크립트가 안 잡는 항목 보강)
 
 **판정 기준**:
 - **PASS**: JSON이 생성됐고, 최소한 `hostname`/`uname`/`git_commit`/`disk_root`가
   `MISSING`이 아니다(장비 자체 식별과 빌드 식별은 협상 불가 최소치).
 - **BLOCKED**: 스크립트 자체가 실행되지 않음(python3·bash 부재 등 환경 문제) → 이후
   단계 전부 중단, 원인을 이 문서에 기록 후 재시도.
+- **실측 결과(2026-08-03)**: PASS. `L4T_RELEASE=R35.5.0`(JetPack 5.1.3),
+  `OS_RELEASE=20.04.6`, CUDA 11.4.19, cuDNN 8.6.0.166, TensorRT 8.5.2.2 확인.
+  상세는 `docs/edge/MANIFOLD3_TOOLCHAIN.md` §2·§4 참조.
 
 ---
 
-### 2단계 — DJI 공식 샘플 빌드·실행
+### 2단계 — 툴체인 검증(KSI 온보드 빌드) + DJI 공식 샘플 빌드·실행
 
 **목적**: 툴체인이 실제로 동작하는지 확인한다. 여기서 실패하면 이후 KSI 코드가 실패해도
 그게 KSI 문제인지 툴체인 문제인지 구분할 수 없다.
 
-**실행 항목**:
-- DJI 공식 Payload SDK(PSDK) 샘플 저장소를 받아 공식 안내대로 빌드한다. **구체적인
-  빌드 명령·디렉터리 구조는 여기서 단정하지 않는다** — 이 세션 시점에 공식 문서/샘플
-  저장소에서 확인한 절차를 그대로 따르고, 실제로 사용한 명령을 로그에 남긴다.
-- 빌드 성공 후 최소 1개 공식 예제(예: 로그 출력 전용 샘플)를 Manifold 3에서 실행해
-  프로세스가 정상 기동·종료하는지 확인한다.
+**2a. KSI `edge/manifold-runtime` 온보드 네이티브 빌드 — 오늘의 최소 성공선**
 
-**수집 증거**: `hil_raw_logs/<session_id>/02_sample_build/<UTC_ts>__sample_build.log`
-(빌드 전체 출력 + 실행 시 표준출력/표준에러 + 사용한 정확한 명령어 기록)
+```bash
+ssh <manifold-host> 'cd /open_app/ksi && cmake -S edge/manifold-runtime -B /open_app/ksi-build \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build /open_app/ksi-build -j4'
+ssh <manifold-host> 'cd /open_app/ksi-build && ctest --output-on-failure'   # ctest --test-dir 는 cmake 3.20+ 전용, 실기 3.16.3엔 없음
+```
+
+**cmake 하한 충돌**: 실기 cmake 3.16.3인데 `CMakeLists.txt`가 3.22를 요구해 첫 시도는
+`CMake Error: CMake 3.22 or higher is required.`로 실패한다(원문을 로그에 남길 것 —
+충돌의 1차 증거). 이건 **정정됐다**(D1, 2026-08-03) — `3.16...3.28` 범위 표기로
+저장소에 반영 완료이므로 최신 코드를 받았다면 이 에러는 재현되지 않아야 한다.
+재현되면 회귀이니 `edge/manifold-runtime/CMakeLists.txt:8`을 확인할 것.
+
+**gcc 9.4 경고 주의**: CI는 gcc 13, 실기는 gcc 9.4 — `-Wall -Wextra -Wpedantic -Werror`에서
+신규 경고가 날 수 있다. **`-Werror`를 끄지 않고 소스를 고친다.**
+
+**2b. DJI 공식 PSDK 샘플 빌드·실행**
+- DJI 공식 Payload SDK(PSDK) 샘플 저장소를 받아 공식 안내대로 빌드한다. 2026-08-03
+  실측: `git clone https://github.com/dji-sdk/Payload-SDK.git`(V3.16.0)의 최상위
+  `CMakeLists.txt`는 **이미 manifold3를 기본 빌드 대상으로 설정**돼 있다
+  (manifold2→manifold3 교체 작업 불필요, README의 "기본 빌드 대상이 Manifold 2에서
+  Manifold 3으로 변경" 변경 로그와 일치). `aarch64-linux-gnu-gcc`도 실기에 이미
+  gcc 9.4.0으로 존재해 별도 크로스 툴체인 설치가 불필요했다.
+- `samples/sample_c/platform/linux/manifold3/application/dji_sdk_app_info.h`에
+  APP_ID/KEY/LICENSE/ACCOUNT 기입 필요 — **이 파일은 절대 커밋하지 않는다**
+  (`.gitignore`의 `**/dji_sdk_app_info.h`, `scripts/check_repo_hygiene.sh` 규칙 4·5로 이중 차단).
+- **PSDK 라이선스**: `LICENSE.txt`/`EULA.txt` 실측 확인 결과 MIT(STM32 RTOS 서브트리
+  제외) — `edge/third_party/PSDK_LOCK.yaml` §license 참조. vendoring 가능 판단 근거 포함.
+- 빌드 성공 후 최소 1개 공식 예제(예: 로그 출력 전용 샘플)를 Manifold 3에서 실행해
+  프로세스가 정상 기동·종료하는지 확인한다. **컴파일 성공과 실행 성공(인증)은
+  구분한다** — 기체 미연결·자격증명 미검증 상태에서는 컴파일까지만 PASS로 인정하고,
+  실행 판정은 3단계(기체 연결) 확보 후로 미룬다.
+
+**수집 증거**: `hil_raw_logs/<session_id>/02_sample_build/<UTC_ts>__ksi_onboard_native_build.log`
+(2a: cmake 실패 원문 + 정정 근거 + 빌드/ctest 전체 출력) 및
+`<UTC_ts>__sample_build.log`(2b: 빌드 전체 출력 + 실행 시 표준출력/표준에러 + 사용한
+정확한 명령어 기록)
 
 **판정 기준**:
-- **PASS**: 빌드가 에러 없이 끝났고, 최소 1개 샘플 실행이 크래시 없이 완료(또는 의도된
+- **PASS(2a)**: 실기에서 `ctest`가 `100% tests passed, 0 tests failed out of N`을 출력.
+- **PASS(2b)**: 빌드가 에러 없이 끝났고, 최소 1개 샘플 실행이 크래시 없이 완료(또는 의도된
   종료 신호로 정상 종료)했다.
 - **BLOCKED**: 빌드 실패 또는 실행 시 크래시 → 3~8단계 전부 중단. 원인(툴체인 버전
   불일치, 헤더 누락 등)을 `02_sample_build` 로그에서 확인 가능한 만큼 기록.
+- **실측 결과(2026-08-03)**: **2a PASS**(gcc 9.4.0, cmake 3.16.3, `2/2 passed`,
+  경고 0건 — `docs/edge/MANIFOLD3_TOOLCHAIN.md` §1). 2b는 PSDK clone·컴파일까지
+  진행 중이며 완료 여부는 다음 세션에서 확정.
+
+---
+
+### 3.0단계(신설) — 기체 데이터 링크 확인 (`03_aircraft_telemetry/` 선행 항목)
+
+**목적**: 3단계(Telemetry) 이후 전부가 기체와의 데이터 링크에 의존한다. 이 확인을
+3단계 본체와 분리한 이유는, 2026-08-03 세션에서 **링크 확립 여부 자체가 예측 불가한
+축**임이 드러났기 때문이다 — 실기 USB 이더넷(`eth0`, DHCP)은 정상 작동해도
+기체 경유 가상 네트워크(`rndis0`)의 상대(`192.168.42.1`)는 응답이 없을 수 있고,
+심지어 실기 자체가 세션 도중 서브넷에서 완전히 사라질 수 있다(원인 미확인 — 도킹
+분리·전원 문제·재부팅 등 가능성 다수, 다음 세션에서 최우선 재현·원인 규명할 것).
+
+**실행 항목**: 기체 E-Port 장착·전원 인가 **전/후**로 diff를 뜬다.
+```bash
+ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier; \
+  ping -c3 -W2 192.168.42.1; ls /dev/ttyACM* /dev/ttyUSB* 2>&1; lsusb'
+```
+
+**수집 증거**: `03_aircraft_telemetry/<UTC_ts>__link_probe.log`
+
+**판정 기준**:
+- **PASS**: `192.168.42.1`(또는 PSDK가 실제로 쓰는 링크)에 도달 — 3단계로 진행.
+- **BLOCKED(`AIRCRAFT_LINK_DOWN`)**: 미도달 → 3~8단계 전부 중단.
+- 주의: `rndis0` carrier=1(USB 링크 레벨 연결)이어도 상대(기체)가 응답 안 할 수
+  있다 — carrier는 "케이블이 꽂혀 있다"만 보장하지 "기체가 응답한다"를 보장하지 않는다.
+- **실측 결과(2026-08-03)**: 세션 초반 `rndis0 carrier=1`이었으나 `192.168.42.1`
+  무응답으로 BLOCKED. 이후 세션 중 실기 자체가 서브넷(`172.30.1.0/24`)에서 완전히
+  사라져(USB 이더넷 `eth0` 포함) 원인 규명 전 세션이 중단됐다.
+
+- **실측 결과(2026-08-04, 호스트 측 관측만)**: **같은 이탈이 재현됐다.** 다만 이번에는
+  이탈 전후를 호스트에서 연속 관측해 원인 후보를 좁혔다.
+
+  | 시각(KST) | 관측 |
+  |---|---|
+  | 16:3x | `172.30.1.33` 도달. `22`(SSH, 계정 `dji` 존재) · `6080`(noVNC, HTTP 200 · `<title>noVNC`) 동시 응답. MAC `c0:ea:c3:6a:22:b0` |
+  | 18:1x | 무응답. ARP `FAILED`. `/24` 전수 스윕에서 **해당 MAC 부재** |
+
+  **이번에 새로 배제된 것들** — 지난 세션이 열어 둔 후보 중:
+  - **DHCP 임대 갱신으로 IP만 바뀐 것이 아니다.** `/24` 전수 스윕 결과 MAC
+    `c0:ea:c3:6a:22:b0`이 **어떤 IP에도 없다**. 장치가 링크 레벨에서 사라졌다.
+  - **공유기·AP·우리 쪽 네트워크 문제가 아니다.** 같은 시각 게이트웨이(`172.30.1.254`)와
+    다른 호스트 7대는 전부 정상 응답했다.
+  - **우리가 보낸 명령이 유발한 것이 아니다.** 이탈 구간 내내 실기로 나간 트래픽은
+    최초 포트 스캔뿐이고(SSH 인증은 `publickey` 거부로 끝났다), 그 뒤 약 1시간 40분 동안
+    **완전히 유휴 상태**에서 사라졌다. 2026-08-03 세션에서 의심했던 "도킹 분리·조작 충격"
+    가설은 이 관측과 맞지 않는다.
+
+  **남은 후보(호스트에서는 더 좁힐 수 없다 — 물리 관측 필요)**: 전원 공급 중단(도킹 PD
+  불안정·배터리 소진) · 절전/서스펜드 진입 · 과열 보호 정지 · 자발적 재부팅 후 네트워크
+  미복구.
+
+  **다음 세션 최우선 항목(갱신)**: 이탈 순간을 물리로 확인한다.
+  1. **LED 상태를 먼저 본다** — 꺼짐=전원 없음 · 초록느림=정상(네트워크만 문제) ·
+     초록상시=부팅 중(재부팅했다는 뜻) · 노랑느림=과열 감속 · 빨강느림=업데이트 실패.
+     LED 하나로 위 후보 대부분이 갈린다([[manifold3-physical-constraints]] 매뉴얼 §1.1).
+  2. 도달 가능한 동안 **`ssh-copy-id`를 최우선으로 끝낸다**. 2026-08-03·08-04 두 세션
+     모두 키 설치 전에 장치가 사라져 온보드 관측을 한 번도 못 했다 — 셸이 없으면
+     `uptime`(재부팅 여부)·`dmesg`(전원/과열)·`journalctl` 어느 것도 볼 수 없어
+     원인 규명이 구조적으로 불가능하다. **이것이 이 항목의 실제 병목이다.**
+  3. 셸 확보 후 즉시 `uptime -s`(부팅 시각)·`last -x reboot`·`dmesg -T | grep -iE
+     'thermal|power|usb|eth'`를 떠서 이탈이 재부팅인지 링크 다운인지 확정한다.
 
 ---
 
@@ -190,20 +311,47 @@ bash tools/hil/collect_env_inventory.sh
 `docs/product/DOMAIN_INVARIANTS.md` INV-025(CONFIRMED 승격의 시점 증거 전제조건)가
 기대는 시간 정합성이 실제로 확보되는지 확인한다.
 
-**실행 항목**:
+**구현 상태(2026-08-04): 코드는 있고, 실기 실행은 아직 없다.** `edge/psdk-tap`(C
+수집기)과 `collect --source tap-log` 경로가 모두 구현됐다 — 아래 블록은 이제 설계가
+아니라 실제 인자를 가진 명령이다. 다만 **이 경로 전체가 실기에서 한 번도 돌지
+않았다**: `psdk_tap` 타깃은 PSDK 실물(`tools/edge/fetch_psdk.py`)과 App Key
+(`edge/psdk-tap/config/dji_sdk_app_info.h`)가 있어야 빌드되고, 그 둘은 기체 연결과
+함께 오는 물건이다. CI가 검증하는 건 PSDK 비의존 순수 로직(pairing)뿐이다 —
+`--out` 경로·`--num-samples` 동작·NDJSON 스키마는 실기에서 처음 확인된다.
+
+**실행 항목** — ADR-KSI-009 D3(수집은 C, 판정은 Python) 적용:
 ```bash
+# 1) 실기에서 C tap이 PSDK liveview + FC subscription 콜백으로 NDJSON을 쓴다
+ssh <manifold-host> 'edge/psdk-tap/build/psdk_tap --num-samples 400 \
+    --out /open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson'
+rsync -az <manifold-host>:/open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/ \
+    hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/
+
+# 2) 개발 PC(Python 3.12)에서 tap의 raw NDJSON을 공식 판정 도구가 읽는 JSONL로 변환
 uv run python tools/hil/capture_frame_telemetry_timing.py collect \
-    --session-id "$SESSION_ID" \
-    --aircraft-sn <실측 기체SN> \
-    --out hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__frame_telemetry.jsonl \
-    --num-samples 200
+    --source tap-log --tap-log hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson \
+    --session-id "$SESSION_ID" --aircraft-sn <실측 기체SN> \
+    --timestamp-basis sensor \
+    --out hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__frame_telemetry.jsonl
 ```
-**주의**: 이 스크립트의 `collect` 서브커맨드는 현재 PSDK 콜백이 미연동 상태라
-`NotImplementedError`로 즉시 중단된다(의도된 동작 — `tools/hil/capture_frame_telemetry_timing.py`
-docstring 참고). 실기 세션에서 `read_next_frame_telemetry_timestamps()` 함수를 실제
-PSDK 카메라·Telemetry 콜백으로 채운 뒤에야 수집이 가능하다. 이 구현은 **이번 세션의
-사전 준비 범위를 벗어난다** — 실기 세션 당일, 2단계에서 확인한 실제 PSDK API로
-채워 넣는 작업이 필요하다(대표자/구현 담당에 그대로 인계).
+
+**왜 두 언어로 나뉘는가**: 실기 Python은 3.8.10인데
+`tools/hil/capture_frame_telemetry_timing.py`는 `StrEnum`·`datetime.UTC`(3.11+)를
+쓴다 — 2026-08-03 실기 세션에서 이 모듈이 **실기에서 import조차 안 됨**을 실측
+확인했다. 백포트해서 3.8 호환으로 낮추면 공식 Acceptance Profile·증거 무결성
+게이트의 엄격성이 내려간다. 그래서 PSDK 콜백 수신은 `edge/psdk-tap`(C, 실기에서
+네이티브 컴파일)이 맡고, 공식 판정(`summarize --mode official`)은 개발 PC Python
+3.12에서 그대로 수행한다.
+
+**`--timestamp-basis`는 필수 인자다**(기본값 없음 — 무의식적 선택을 차단). PRD
+§21.1 "Sensor Timestamp alignment"의 정본은 `sensor`(카메라/Telemetry 자체
+타임스탬프)이지만, PSDK가 그 값을 노출하지 않으면 `recv`(파이프라인 도착 시각)로
+대체하되 그 사실을 `test_procedure`·`latency_result`에 명시한다 — 대체 정의로 낸
+PASS를 "센서 시각 정합 PASS"라고 부르면 안 된다(정의 변경은 profile v2 문제이므로
+대표자 결정 레인).
+
+**표본 수는 넉넉히 요청한다** — 공식 최소 100인데 드롭률이 미지수이므로 400~600
+요청을 권장(30fps면 20~30초). 200 요청 후 드롭으로 99개가 되면 세션이 헛돈다.
 
 수집 후 요약:
 ```bash

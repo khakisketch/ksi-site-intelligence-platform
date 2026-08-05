@@ -232,6 +232,14 @@ class FrameTelemetrySample:
             있다 — 양수면 Frame이 Telemetry보다 늦게 도착했다는 뜻이다. JSONL에서
             읽어들인 값은 두 timestamp로부터 재계산한 값이다(저장값을 그대로
             신뢰하지 않는다 — 모듈 docstring 참고).
+        timestamp_basis: 이 표본의 timestamp가 어떤 정의로 찍혔는지 —
+            ``"sensor"``(카메라/FC 장치 자체 타임스탬프) 또는 ``"recv"``(호스트가
+            수신한 monotonic clock 기준 시각) 또는 ``None``(``--source psdk`` 경로 등
+            basis 정보가 없는 기존 표본). **선택 필드다 — 6개 필수 필드에 포함되지
+            않으며 ``_REQUIRED_FIELDS``/기존 검증 로직에 영향을 주지 않는다.**
+            ``--timestamp-basis recv``로 낸 PASS를 "센서 시각 정합"으로 오독하지
+            않도록 값을 보존해 summarize 출력까지 전파한다(``--source tap-log``
+            변환 규칙 참고).
     """
 
     sample_index: int
@@ -240,6 +248,7 @@ class FrameTelemetrySample:
     frame_timestamp_utc: str
     telemetry_timestamp_utc: str
     delta_ms: float
+    timestamp_basis: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -787,6 +796,12 @@ def _parse_sample_line(
             "— 임의 조작/오기 의심(가짜 delta_ms=0 주입 등)"
         )
 
+    timestamp_basis = payload.get("timestamp_basis")
+    if timestamp_basis is not None and timestamp_basis not in ("sensor", "recv"):
+        raise ValueError(
+            f"timestamp_basis는 'sensor'/'recv'/누락 중 하나여야 한다 (받음: {timestamp_basis!r})"
+        )
+
     return FrameTelemetrySample(
         sample_index=sample_index,
         session_id=session_id,
@@ -794,6 +809,7 @@ def _parse_sample_line(
         frame_timestamp_utc=frame_ts_raw,
         telemetry_timestamp_utc=telemetry_ts_raw,
         delta_ms=recomputed_delta,
+        timestamp_basis=timestamp_basis,
     )
 
 
@@ -978,6 +994,263 @@ def append_sample_jsonl(path: Path, sample: FrameTelemetrySample) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# tap-log 변환 — edge/psdk-tap이 쓴 raw NDJSON → 공식 6필드 JSONL (ADR-KSI-009 D3)
+#
+# 실기 Python(3.8.10)은 StrEnum/datetime.UTC/dataclass(slots=True)를 못 쓴다
+# (이 파일 전체가 Python 3.12 전용인 이유이기도 하다). 그래서 실기 수집은 C로
+# 컴파일되는 edge/psdk-tap이 담당하고, 이 파일은 그 결과물(raw NDJSON)만 신뢰하지
+# 않고 재검증하며 기존 6필드 스키마로 변환한다 — NDJSON이 두 언어의 계약이다.
+# --------------------------------------------------------------------------- #
+
+
+def _mono_ns_to_utc(mono_ns: int, *, anchor_mono_ns: int, anchor_wall_utc: datetime) -> datetime:
+    """단조시계 값(나노초)을 ``meta.clock`` 앵커 기준으로 UTC ``datetime``으로 환산한다.
+
+    ``anchor_wall_utc``는 ``anchor_mono_ns`` 시점에 C tap이 함께 찍은 UTC 벽시계
+    시각이다(둘은 같은 순간의 값으로 간주한다). monotonic clock은 정의상 NTP
+    보정 등으로 뒤로 흐르지 않으므로, 앵커 이후 경과한 나노초 델타를 그대로
+    벽시계에 더하면 그 순간의 UTC가 나온다.
+    """
+    delta_ns = mono_ns - anchor_mono_ns
+    return anchor_wall_utc + timedelta(microseconds=delta_ns / 1000.0)
+
+
+def _mono_us_to_utc(mono_us: float, *, anchor_mono_ns: int, anchor_wall_utc: datetime) -> datetime:
+    """단조시계 값(마이크로초)을 :func:`_mono_ns_to_utc`와 동일한 앵커로 환산한다.
+
+    ``sensor_us``(``--timestamp-basis sensor``)가 이 함수를 쓴다. **가정**: C tap이
+    쓰는 ``sensor_us``는 이미 호스트의 ``CLOCK_MONOTONIC``(=``meta.clock.mono_ns``와
+    같은 도메인)으로 정규화된 값이라고 전제한다 — PSDK 조사 결과(Q2)에 따르면
+    liveview 콜백은 카메라 자체 타임스탬프를 노출하지 않고, FC subscription의
+    ``T_DjiDataTimestamp``는 기종별로 다른 로컬 클록(FC 전원인가 후 경과 등) 기준이라
+    호스트 monotonic과 원천적으로 다른 도메인이다. 두 도메인을 하나의 ``meta.clock``
+    앵커만으로 환산하는 것은 C tap이 자체적으로 두 클록 간 오프셋을 추정해
+    ``sensor_us``를 호스트 monotonic 도메인으로 이미 정규화해 뒀을 때만 물리적으로
+    맞다. 이 전제가 C tap 구현과 실제로 일치하는지는 이 파일만으로 확인할 수
+    없다 — 계약 문서(위 모듈 docstring 인용)가 "단조시계 값은 meta.clock 앵커로
+    UTC로 환산한다"고 명시한 것을 문자 그대로 따른 것이며, 어긋난다면 tap-log
+    계약 자체를 수정해야 한다(이 파일 단독으로 고칠 수 없다).
+    """
+    return _mono_ns_to_utc(
+        round(mono_us * 1000.0), anchor_mono_ns=anchor_mono_ns, anchor_wall_utc=anchor_wall_utc
+    )
+
+
+def _convert_tap_sample(
+    record: dict[str, Any],
+    *,
+    line_no: int,
+    session_id: str,
+    aircraft_sn: str,
+    timestamp_basis: str,
+    anchor_mono_ns: int,
+    anchor_wall_utc: datetime,
+) -> FrameTelemetrySample:
+    """tap-log의 ``{"type":"sample",...}`` 레코드 1건을 :class:`FrameTelemetrySample`로
+    변환한다.
+
+    Raises:
+        ValueError: 필수 필드 누락, ``i``가 정수가 아님, 또는
+            ``timestamp_basis="sensor"``인데 이 표본의 ``sensor_us``가
+            ``null``(fail-closed — ``recv``로 조용히 대체하지 않는다).
+    """
+    try:
+        sample_i = record["i"]
+        frame = record["frame"]
+        telemetry = record["telemetry"]
+    except KeyError as exc:
+        raise ValueError(f"tap-log line {line_no}: sample 필드 누락 — {exc}") from exc
+
+    if not isinstance(sample_i, int) or isinstance(sample_i, bool):
+        raise ValueError(f"tap-log line {line_no}: sample.i는 정수여야 한다 (받음: {sample_i!r})")
+    if not isinstance(frame, dict) or not isinstance(telemetry, dict):
+        raise ValueError(f"tap-log line {line_no}: sample.frame/telemetry는 객체여야 한다")
+
+    if timestamp_basis == "sensor":
+        frame_sensor_us = frame.get("sensor_us")
+        telemetry_sensor_us = telemetry.get("sensor_us")
+        if frame_sensor_us is None or telemetry_sensor_us is None:
+            raise ValueError(
+                f"tap-log line {line_no}: --timestamp-basis sensor 요청인데 이 표본의 "
+                f"sensor_us가 null이다 (frame.sensor_us={frame_sensor_us!r}, "
+                f"telemetry.sensor_us={telemetry_sensor_us!r}) — fail-closed: recv로 "
+                "조용히 대체하지 않는다"
+            )
+        frame_ts = _mono_us_to_utc(
+            float(frame_sensor_us), anchor_mono_ns=anchor_mono_ns, anchor_wall_utc=anchor_wall_utc
+        )
+        telemetry_ts = _mono_us_to_utc(
+            float(telemetry_sensor_us),
+            anchor_mono_ns=anchor_mono_ns,
+            anchor_wall_utc=anchor_wall_utc,
+        )
+    else:  # "recv"
+        try:
+            frame_recv_mono_ns = frame["recv_mono_ns"]
+            telemetry_recv_mono_ns = telemetry["recv_mono_ns"]
+        except KeyError as exc:
+            raise ValueError(f"tap-log line {line_no}: recv_mono_ns 필드 누락 — {exc}") from exc
+        frame_ts = _mono_ns_to_utc(
+            int(frame_recv_mono_ns), anchor_mono_ns=anchor_mono_ns, anchor_wall_utc=anchor_wall_utc
+        )
+        telemetry_ts = _mono_ns_to_utc(
+            int(telemetry_recv_mono_ns),
+            anchor_mono_ns=anchor_mono_ns,
+            anchor_wall_utc=anchor_wall_utc,
+        )
+
+    return FrameTelemetrySample(
+        sample_index=sample_i,
+        session_id=session_id,
+        aircraft_sn=aircraft_sn,
+        frame_timestamp_utc=frame_ts.isoformat(),
+        telemetry_timestamp_utc=telemetry_ts.isoformat(),
+        delta_ms=compute_delta_ms(frame_ts, telemetry_ts),
+        timestamp_basis=timestamp_basis,
+    )
+
+
+def convert_tap_log_to_samples(
+    tap_log_path: Path,
+    *,
+    session_id: str,
+    aircraft_sn: str,
+    timestamp_basis: str,
+) -> list[FrameTelemetrySample]:
+    """``edge/psdk-tap``이 쓴 raw NDJSON을 읽어 공식 6필드 표본 목록으로 변환한다.
+
+    입력 계약(다른 워커가 같은 계약으로 구현):
+
+    - ``{"type":"meta",...,"clock":{"mono_ns":...,"wall_utc":"..."},
+      "capabilities":{"frame_sensor_ts":bool,"telemetry_sensor_ts":bool}}`` — 정확히
+      1개, 반드시 이후 sample 레코드보다 먼저.
+    - ``{"type":"sample","i":N,"frame":{"recv_mono_ns":...,"sensor_us":...|null},
+      "telemetry":{...}}`` — 0개 이상.
+    - ``{"type":"stat",...}`` — 변환 대상이 아니므로 무시한다.
+
+    ``timestamp_basis="sensor"``인데 ``meta.capabilities.frame_sensor_ts`` 또는
+    ``telemetry_sensor_ts``가 ``false``이면 **파일 전체를 fail-closed로 중단**한다
+    (``recv``로 조용히 대체하지 않는다 — 이게 이 인자가 존재하는 이유다). 개별
+    표본의 ``sensor_us``가 ``null``이면 그 표본에서 중단한다(둘 다 "중단"이지
+    "건너뛰기"가 아니다).
+
+    Raises:
+        ValueError: JSON 파싱 실패, meta 레코드 누락/중복/순서 위반, capability
+            불충족, 알 수 없는 ``type``, 그 외 스키마 위반.
+    """
+    if timestamp_basis not in ("sensor", "recv"):
+        raise ValueError(
+            f"timestamp_basis는 'sensor' 또는 'recv'여야 한다 (받음: {timestamp_basis!r})"
+        )
+
+    raw_text = tap_log_path.read_text(encoding="utf-8")
+
+    meta_seen = False
+    anchor_mono_ns: int | None = None
+    anchor_wall_utc: datetime | None = None
+    samples: list[FrameTelemetrySample] = []
+
+    for line_no, raw_line in enumerate(raw_text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line, parse_constant=_reject_json_constant)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"tap-log line {line_no}: JSON 파싱 실패 — {exc}") from exc
+        except ValueError as exc:
+            raise ValueError(f"tap-log line {line_no}: {exc}") from exc
+        if not isinstance(record, dict):
+            raise ValueError(f"tap-log line {line_no}: JSON 객체가 아니다")
+
+        record_type = record.get("type")
+
+        if record_type == "meta":
+            if meta_seen:
+                raise ValueError(f"tap-log line {line_no}: meta 레코드가 두 번 이상 등장한다")
+            meta_seen = True
+            try:
+                clock = record["clock"]
+                anchor_mono_ns = int(clock["mono_ns"])
+                anchor_wall_utc_raw = clock["wall_utc"]
+            except KeyError as exc:
+                raise ValueError(f"tap-log line {line_no}: meta.clock 필드 누락 — {exc}") from exc
+            if not isinstance(anchor_wall_utc_raw, str):
+                raise ValueError(f"tap-log line {line_no}: meta.clock.wall_utc는 문자열이어야 한다")
+            anchor_wall_utc = parse_utc_timestamp(
+                anchor_wall_utc_raw, field_name="meta.clock.wall_utc"
+            )
+
+            if timestamp_basis == "sensor":
+                capabilities = record.get("capabilities", {})
+                if not isinstance(capabilities, dict):
+                    raise ValueError(f"tap-log line {line_no}: meta.capabilities는 객체여야 한다")
+                frame_ok = bool(capabilities.get("frame_sensor_ts", False))
+                telemetry_ok = bool(capabilities.get("telemetry_sensor_ts", False))
+                if not frame_ok or not telemetry_ok:
+                    raise ValueError(
+                        f"tap-log line {line_no}: --timestamp-basis sensor 요청인데 "
+                        f"meta.capabilities.frame_sensor_ts={frame_ok}/"
+                        f"telemetry_sensor_ts={telemetry_ok} — 둘 다 true여야 한다 "
+                        "(fail-closed: recv로 조용히 대체하지 않는다)"
+                    )
+            continue
+
+        if record_type == "stat":
+            continue  # 통계 레코드 — 변환 대상이 아니다.
+
+        if record_type != "sample":
+            raise ValueError(f"tap-log line {line_no}: 알 수 없는 type={record_type!r}")
+
+        if not meta_seen or anchor_mono_ns is None or anchor_wall_utc is None:
+            raise ValueError(f"tap-log line {line_no}: sample 레코드가 meta보다 먼저 등장했다")
+
+        samples.append(
+            _convert_tap_sample(
+                record,
+                line_no=line_no,
+                session_id=session_id,
+                aircraft_sn=aircraft_sn,
+                timestamp_basis=timestamp_basis,
+                anchor_mono_ns=anchor_mono_ns,
+                anchor_wall_utc=anchor_wall_utc,
+            )
+        )
+
+    if not meta_seen:
+        raise ValueError("tap-log: meta 레코드가 없다 — clock 앵커/capabilities 없이는 변환 불가")
+
+    return samples
+
+
+def _timestamp_basis_notice(timestamp_bases: Sequence[str]) -> str | None:
+    """summarize 출력에 basis를 명시적으로 노출한다 — 대체 정의(``recv``)로 낸 PASS를
+    "센서 시각 정합"으로 오독하지 않도록 경고 문구를 만든다.
+
+    ``timestamp_bases``가 정확히 1개의 값으로 수렴할 때만 문구를 낸다 — 여러 basis가
+    섞였거나(비정상) 관측되지 않았으면(구버전 파일·``--source psdk`` 경로 등
+    basis 정보 자체가 없는 표본) ``None``이다.
+    """
+    if len(timestamp_bases) != 1:
+        return None
+    basis = timestamp_bases[0]
+    if basis == "recv":
+        return (
+            "이 표본은 --timestamp-basis recv로 수집됐다 — frame/telemetry 모두 호스트가 "
+            "'수신한' monotonic clock 기준 시각이며, 카메라/FC의 실제 센서 타임스탬프가 "
+            "아니다. 이 결과의 PASS는 '수신 정합'이지 '센서 시각 정합'이 아니다 — PRD "
+            "§21.1의 Sensor Timestamp alignment 주장 근거로 쓰려면 --timestamp-basis "
+            "sensor 로 재수집해야 한다."
+        )
+    if basis == "sensor":
+        return (
+            "이 표본은 --timestamp-basis sensor로 수집됐다 — meta.capabilities가 두 "
+            "타임스탬프 모두 장치 자체 센서 타임스탬프임을 보증한 표본만 포함한다."
+        )
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # PSDK 연동 자리 — 실기 세션에서 채움
 # --------------------------------------------------------------------------- #
 
@@ -1042,10 +1315,50 @@ def collect_session(
 # --------------------------------------------------------------------------- #
 
 
-def _cmd_collect(args: argparse.Namespace) -> int:
+def _cmd_collect(args: argparse.Namespace) -> int:  # noqa: PLR0911
     try:
         session_id = validate_nonblank_str(args.session_id, name="--session-id")
         aircraft_sn = validate_nonblank_str(args.aircraft_sn, name="--aircraft-sn")
+    except ValueError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 2
+
+    # --timestamp-basis는 argparse required=True로 이미 강제되지만(무의식적 선택
+    # 차단), --source와 무관하게 여기서도 방어적으로 재확인한다.
+    timestamp_basis: str = args.timestamp_basis
+    if timestamp_basis not in ("sensor", "recv"):
+        print(
+            f"오류: --timestamp-basis는 'sensor' 또는 'recv'여야 한다 (받음: {timestamp_basis!r})",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.source == "tap-log":
+        if not args.tap_log:
+            print("오류: --source tap-log 에는 --tap-log PATH가 필수다", file=sys.stderr)
+            return 2
+        try:
+            samples = convert_tap_log_to_samples(
+                Path(args.tap_log),
+                session_id=session_id,
+                aircraft_sn=aircraft_sn,
+                timestamp_basis=timestamp_basis,
+            )
+        except ValueError as exc:
+            print(f"오류: tap-log 변환 실패 — {exc}", file=sys.stderr)
+            return 2
+
+        out_path = Path(args.out)
+        for sample in samples:
+            append_sample_jsonl(out_path, sample)
+        print(
+            f"수집 완료(tap-log 변환): {args.out} ({len(samples)}건, "
+            f"timestamp_basis={timestamp_basis})"
+        )
+        return 0
+
+    # --source psdk(기본값) — 기존 미구현 경로, fail-closed 유지(D3).
+    try:
         num_samples = validate_positive_int(args.num_samples, name="--num-samples")
     except ValueError as exc:
         print(f"오류: {exc}", file=sys.stderr)
@@ -1121,6 +1434,9 @@ def _cmd_summarize(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
     sample_indices = [s.sample_index for s in load_result.samples]
     session_ids = sorted({s.session_id for s in load_result.samples})
     aircraft_sns = sorted({s.aircraft_sn for s in load_result.samples})
+    timestamp_bases = sorted(
+        {s.timestamp_basis for s in load_result.samples if s.timestamp_basis is not None}
+    )
 
     base_fields: dict[str, Any] = {
         "mode": mode,
@@ -1135,6 +1451,9 @@ def _cmd_summarize(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
         "session_ids_observed": session_ids,
         "aircraft_sn": aircraft_sns[0] if len(aircraft_sns) == 1 else None,
         "aircraft_sns_observed": aircraft_sns,
+        "timestamp_basis": timestamp_bases[0] if len(timestamp_bases) == 1 else None,
+        "timestamp_basis_observed": timestamp_bases,
+        "timestamp_basis_notice": _timestamp_basis_notice(timestamp_bases),
         "sample_index_first": min(sample_indices) if sample_indices else None,
         "sample_index_last": max(sample_indices) if sample_indices else None,
         "valid_sample_count": len(load_result.samples),
@@ -1248,7 +1567,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_collect.add_argument("--aircraft-sn", required=True, help="기체 시리얼넘버")
     p_collect.add_argument("--out", required=True, help="출력 JSONL 경로")
-    p_collect.add_argument("--num-samples", type=int, default=200, help="수집할 표본 수 (기본 200)")
+    p_collect.add_argument(
+        "--num-samples", type=int, default=200, help="수집할 표본 수 (기본 200, --source psdk 전용)"
+    )
+    p_collect.add_argument(
+        "--source",
+        choices=["tap-log", "psdk"],
+        default="psdk",
+        help=(
+            "psdk(기본값): PSDK 직접 연동(현재 미구현 — NotImplementedError). "
+            "tap-log: edge/psdk-tap이 쓴 raw NDJSON(--tap-log)을 공식 JSONL로 변환한다."
+        ),
+    )
+    p_collect.add_argument(
+        "--tap-log", default=None, help="--source tap-log일 때 필수 — C tap이 쓴 raw NDJSON 경로"
+    )
+    p_collect.add_argument(
+        "--timestamp-basis",
+        choices=["sensor", "recv"],
+        required=True,
+        help=(
+            "필수(기본값 없음 — 무의식적 선택을 차단, HARDWARE_SESSION_PLAYBOOK.md 7단계). "
+            "sensor: 카메라/FC 장치 자체 타임스탬프(capability 미충족 시 fail-closed 중단). "
+            "recv: 호스트가 수신한 monotonic clock 기준 시각 — 센서 시각 정합이 아니다."
+        ),
+    )
     p_collect.set_defaults(func=_cmd_collect)
 
     p_summarize = sub.add_parser(

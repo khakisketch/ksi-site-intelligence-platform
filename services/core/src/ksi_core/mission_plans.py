@@ -73,7 +73,7 @@ from ksi_mission_planning import (
     lawnmower_route,
     perimeter_route,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
@@ -124,6 +124,14 @@ class RouteParams(_CamelModel):
 
     altitude_m: float
     spacing_m: float | None = Field(default=None, description="lawnmower 전용 스캔선 간격(m)")
+    capture_interval_m: float | None = Field(
+        default=None,
+        description=(
+            "lawnmower 전용 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격. "
+            "없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어 "
+            "정사영상·3D 재구성이 성립하지 않는다"
+        ),
+    )
     sweep_direction_deg: float | None = None
 
 
@@ -224,12 +232,23 @@ def build_mission_plan(
             raise RouteGenerationError(
                 f"{mission_type.value} 는 lawnmower 패턴 — route.spacingM 이 필요하다"
             )
+        if request.route.capture_interval_m is None:
+            # lawnmower 계열은 전부 촬영이 목적이다(아래에서 capture_at_waypoints=True).
+            # 진행방향 간격이 없으면 스캔선당 사진 2장 → 전방 중첩 0 → 사진측량
+            # 산출물이 성립하지 않는다(원장 risk mapping-forward-overlap-zero).
+            # 카메라 종속 기본값을 서버가 추측하지 않고 fail-closed 로 막는다 —
+            # "격자는 날았는데 지도가 안 나온다"가 비행 후에야 드러나는 것보다 낫다.
+            raise RouteGenerationError(
+                f"{mission_type.value} 는 lawnmower 패턴 — route.captureIntervalM 이 "
+                "필요하다(없으면 전방 중첩이 0 이라 정사영상·3D 재구성이 성립하지 않는다)"
+            )
         lawnmower_result = lawnmower_route(
             request.aoi,
             spacing_m=request.route.spacing_m,
             altitude_m=request.route.altitude_m,
             envelope=envelope,
             sweep_direction_deg=request.route.sweep_direction_deg,
+            capture_interval_m=request.route.capture_interval_m,
         )
         route = lawnmower_result.waypoints
         coverage_ratio = lawnmower_result.coverage_ratio
@@ -379,10 +398,30 @@ def build_mission_plans_router(
                 and existing.artifact_kind == "pair"
                 and existing.plan_request_digest == request_digest
             ):
+                try:
+                    regenerated = _regenerate_pair_artifact(
+                        existing, private_key=private_key, key_id=key_id
+                    )
+                except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
+                    # 저장된 요청이 **현재** 규칙을 더는 만족하지 않는 경우다
+                    # (독립 재검토 P2-7). 예: 규제 고도 상한이 낮아진 뒤의 옛
+                    # 봉투, 또는 촬영 간격 필수화 이전에 발급된 매핑 요청. 그대로
+                    # 두면 재시도가 500 이 되어 "서버 버그"처럼 보인다 — 실제로는
+                    # 정책이 바뀐 것이므로 그 사실을 typed 로 알린다.
+                    logger.warning(
+                        "mission_id=%s 짝 재생성이 현재 정책에서 실패 — %s",
+                        existing.mission_id, type(exc).__name__,
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "이미 기록된 임무지만 현재 정책으로는 산출물을 다시 만들 수 "
+                            f"없다(발급 당시 규칙과 달라졌다): {exc}. 새 missionId 로 "
+                            "발급하라"
+                        ),
+                    ) from exc
                 response.status_code = 200
-                return _regenerate_pair_artifact(
-                    existing, private_key=private_key, key_id=key_id
-                )
+                return regenerated
         if verdict is not None:
             raise_for_mission_record_verdict(verdict)
 

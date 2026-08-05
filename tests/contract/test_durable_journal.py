@@ -334,3 +334,222 @@ def test_append_input_mutation_after_call_does_not_corrupt_journal(journal_path:
         "append 얕은 복사가 호출자의 원본과 내부 상태를 공유했다"
     )
     journal.close()
+
+
+# ── 세그먼트 회전 (S4 ops-serving-hardening) ────────────────────────────────
+#
+# 회전의 계약은 하나다: **재생 결과가 회전 전후로 동일해야 한다.** 순서가 곧
+# 원장의 의미이므로(멱등 판정·상태 전이가 순서에 의존한다), 세그먼트를 잘못된
+# 순서로 잇거나 하나라도 빠뜨리면 조용히 다른 세계가 재생된다.
+
+
+def _rotating(path: Path, limit: int = 200) -> DurableJournal:
+    return DurableJournal(path, max_segment_bytes=limit)
+
+
+def test_rotation_preserves_replay_order_across_restart(journal_path: Path) -> None:
+    journal = _rotating(journal_path)
+    written = [{"seq": i, "payload": "x" * 50} for i in range(20)]
+    for record in written:
+        journal.append(record)
+    assert journal.replay() == written
+    journal.close()
+
+    # 회전이 실제로 일어났는가 — 안 일어났으면 이 테스트는 아무것도 증명하지 않는다.
+    segments = sorted(journal_path.parent.glob("journal.[0-9]*.jsonl"))
+    assert segments, "임계를 훨씬 넘겼는데 세그먼트가 하나도 생기지 않았다"
+
+    reopened = _rotating(journal_path)
+    try:
+        assert reopened.replay() == written
+    finally:
+        reopened.close()
+
+
+def test_rotation_is_off_by_default(journal_path: Path) -> None:
+    journal = DurableJournal(journal_path)
+    try:
+        for i in range(50):
+            journal.append({"seq": i, "payload": "y" * 100})
+    finally:
+        journal.close()
+    assert not list(journal_path.parent.glob("journal.[0-9]*.jsonl"))
+
+
+def test_segment_numbering_continues_after_restart(journal_path: Path) -> None:
+    """재기동해도 세그먼트 번호를 1 부터 다시 세지 않는다 — 덮어쓰면 원장이 사라진다."""
+    first = _rotating(journal_path)
+    for i in range(10):
+        first.append({"seq": i, "payload": "z" * 50})
+    first.close()
+    before = {p.name for p in journal_path.parent.glob("journal.[0-9]*.jsonl")}
+
+    second = _rotating(journal_path)
+    try:
+        for i in range(10, 20):
+            second.append({"seq": i, "payload": "z" * 50})
+    finally:
+        second.close()
+    after = {p.name for p in journal_path.parent.glob("journal.[0-9]*.jsonl")}
+
+    assert before < after, "재기동 후 새 세그먼트가 기존 번호를 덮어썼다"
+    reopened = _rotating(journal_path)
+    try:
+        assert [r["seq"] for r in reopened.replay()] == list(range(20))
+    finally:
+        reopened.close()
+
+
+def test_record_larger_than_limit_stays_in_one_segment(journal_path: Path) -> None:
+    """한 레코드가 임계보다 커도 쪼개지지 않는다 — 임계는 레코드 경계 뒤에서만 본다."""
+    journal = _rotating(journal_path, limit=10)
+    big = {"payload": "q" * 500}
+    journal.append(big)
+    journal.append({"payload": "small"})
+    journal.close()
+
+    reopened = _rotating(journal_path, limit=10)
+    try:
+        assert reopened.replay() == [big, {"payload": "small"}]
+    finally:
+        reopened.close()
+
+
+def test_unrelated_sibling_file_is_not_replayed(journal_path: Path) -> None:
+    """세그먼트 이름 규칙(숫자)에 맞지 않는 동명 파일은 원장이 아니다."""
+    journal = _rotating(journal_path)
+    journal.append({"seq": 0})
+    journal.close()
+    # 사람이 만든 백업 — 숫자 자리가 아니므로 재생 대상이 아니어야 한다.
+    (journal_path.parent / "journal.backup.jsonl").write_text(
+        json.dumps({"seq": 999}) + "\n", encoding="ascii"
+    )
+
+    reopened = _rotating(journal_path)
+    try:
+        assert [r["seq"] for r in reopened.replay()] == [0]
+    finally:
+        reopened.close()
+
+
+def test_torn_tail_in_sealed_segment_refuses_startup(journal_path: Path) -> None:
+    """봉인 세그먼트의 부분 줄은 격리가 아니라 거부다 — 발생할 수 없는 상태다.
+
+    활성 파일의 torn tail 은 "기록된 적 없다"로 설명되지만(fsync 전 중단),
+    세그먼트는 fsync 완결 후 rename 된 것이라 같은 설명이 성립하지 않는다.
+    조용히 잘라내면 설명 못 하는 손실을 정상 기동으로 덮게 된다.
+    """
+    journal = _rotating(journal_path)
+    for i in range(20):
+        journal.append({"seq": i, "payload": "w" * 50})
+    journal.close()
+
+    segments = sorted(journal_path.parent.glob("journal.[0-9]*.jsonl"))
+    assert segments
+    with segments[0].open("ab") as handle:
+        handle.write(b'{"seq": 99, "partial"')
+
+    with pytest.raises(JournalRecoveryError, match="완결되지 않은 줄"):
+        _rotating(journal_path)
+
+
+def test_rotation_failure_does_not_seal(
+    journal_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """rename 이 실패해도 수신은 멈추지 않는다 — 기록된 데이터는 이미 durable 하다."""
+    journal = _rotating(journal_path, limit=10)
+    monkeypatch.setattr(
+        "ksi_core.durable_journal.os.rename",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("rename 불가")),
+    )
+    try:
+        journal.append({"seq": 0, "payload": "a" * 50})
+        journal.append({"seq": 1, "payload": "b" * 50})
+        assert journal.sealed_reason is None
+        assert [r["seq"] for r in journal.replay()] == [0, 1]
+    finally:
+        journal.close()
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_non_positive_segment_limit_is_rejected(journal_path: Path, bad: int) -> None:
+    """0/음수는 '회전 없음'이 아니다 — 조용히 해석하면 세그먼트를 무한히 만든다."""
+    with pytest.raises(ValueError, match="양수"):
+        DurableJournal(journal_path, max_segment_bytes=bad)
+
+
+# ── 읽기 전용 재생 (보관 정책 dry-run 경로) ─────────────────────────────────
+#
+# "지우기 전에 무엇을 지울지 보여준다"가 **서버 정지를 요구하면** 아무도 보지
+# 않게 된다 — dry-run 이 있으나 마나가 된다. 그래서 잠금 없이 읽는 경로를 둔다.
+# 대신 그 인스턴스는 절대 쓰지 못해야 한다(단일 writer 불변식).
+
+
+def test_read_only_coexists_with_writer(journal_path: Path) -> None:
+    writer = DurableJournal(journal_path)
+    try:
+        writer.append({"seq": 0})
+        writer.append({"seq": 1})
+        # 쓰기 소유자가 살아 있는 상태에서 열린다 — 여기서 실패하면 dry-run 이
+        # Core 를 멈춰야만 가능해진다.
+        reader = DurableJournal.open_read_only(journal_path)
+        assert [r["seq"] for r in reader.replay()] == [0, 1]
+        reader.close()
+    finally:
+        writer.close()
+
+
+def test_read_only_refuses_append(journal_path: Path) -> None:
+    """잠금을 안 잡으므로 쓰기가 허용되면 단일 writer 가 조용히 깨진다."""
+    DurableJournal(journal_path).close()
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        with pytest.raises(JournalSealedError):
+            reader.append({"seq": 99})
+    finally:
+        reader.close()
+
+
+def test_read_only_does_not_truncate_torn_tail(journal_path: Path) -> None:
+    """truncate 는 쓰기다 — 읽기 전용은 완결 줄까지만 보고 파일을 건드리지 않는다."""
+    writer = DurableJournal(journal_path)
+    writer.append({"seq": 0})
+    writer.close()
+    with journal_path.open("ab") as handle:
+        handle.write(b'{"seq": 1, "partial"')
+    size_before = journal_path.stat().st_size
+
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        assert [r["seq"] for r in reader.replay()] == [0]
+    finally:
+        reader.close()
+    assert journal_path.stat().st_size == size_before, "읽기 전용이 파일을 잘라냈다"
+
+
+def test_read_only_sees_rotated_segments(journal_path: Path) -> None:
+    writer = _rotating(journal_path)
+    for i in range(20):
+        writer.append({"seq": i, "payload": "x" * 50})
+    writer.close()
+
+    reader = DurableJournal.open_read_only(journal_path)
+    try:
+        assert [r["seq"] for r in reader.replay()] == list(range(20))
+    finally:
+        reader.close()
+
+
+def test_read_only_close_is_idempotent(journal_path: Path) -> None:
+    """잡은 잠금이 없으므로 close 가 남의 잠금을 풀어서는 안 된다."""
+    writer = DurableJournal(journal_path)
+    try:
+        writer.append({"seq": 0})
+        reader = DurableJournal.open_read_only(journal_path)
+        reader.close()
+        reader.close()
+        # 쓰기 소유자는 여전히 살아 있어야 한다.
+        writer.append({"seq": 1})
+        assert [r["seq"] for r in writer.replay()] == [0, 1]
+    finally:
+        writer.close()

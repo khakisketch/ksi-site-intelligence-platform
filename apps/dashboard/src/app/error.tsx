@@ -17,13 +17,9 @@ export default function RootError({
   }, [error]);
 
   return (
-    <div className="flex flex-col items-start gap-3 p-6">
+    <div className="flex flex-col items-start gap-3 p-4 sm:p-5">
       <ErrorState message="예상치 못한 오류가 발생했습니다." detail={error.digest ? undefined : error.message} />
-      <button
-        type="button"
-        onClick={() => unstable_retry()}
-        className="border-foreground/30 min-h-11 rounded-md border px-4 text-sm"
-      >
+      <button type="button" onClick={() => unstable_retry()} className="btn btn-primary">
         다시 시도
       </button>
     </div>

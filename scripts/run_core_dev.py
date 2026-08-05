@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -26,9 +27,8 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 from ksi_core.sites import SiteStore
-
-_KEY_ID = "core-dev-key-1"
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -72,20 +72,58 @@ def _auth_registry() -> AuthRegistry:
     return AuthRegistry(records)
 
 
-def _load_or_create_signing_key(path: Path) -> Ed25519PrivateKey:
-    if path.exists():
-        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
-        if not isinstance(key, Ed25519PrivateKey):
-            raise TypeError(f"{path} does not contain an Ed25519 private key")
-        return key
-    key = Ed25519PrivateKey.generate()
-    pem = key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-    path.write_bytes(pem)
-    return key
+def _bootstrap_key_set(signing_dir: Path) -> SigningKeySet:
+    """dev 키 세트를 준비한다 — 없으면 만들고, 있으면 **검증해서** 읽는다.
+
+    부트스트랩만 dev 편의이고 로드는 운영과 같은 경로(:func:`load_signing_keys`)를
+    탄다 — 개인키 권한·공개키 불일치·활성 키 REVOKED 를 여기서도 똑같이 거부한다.
+    dev 조립이 느슨한 경로를 따로 가지면 그 검사들이 운영에서 처음 실행된다.
+
+    회전은 이 함수가 하지 않는다(docs/security/SIGNING_KEY_LIFECYCLE.md 절차) —
+    keys.json 이 이미 있으면 손대지 않는다.
+    """
+    manifest = signing_dir / "keys.json"
+    if not manifest.exists():
+        signing_dir.mkdir(parents=True, exist_ok=True)
+        key_id = "core-dev-key-1"
+        key = Ed25519PrivateKey.generate()
+        private_path = signing_dir / f"{key_id}.private.pem"
+        private_path.write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        # 0600 — load_signing_keys 가 이 권한을 강제한다(운영과 같은 규칙).
+        private_path.chmod(0o600)
+        (signing_dir / f"{key_id}.public.pem").write_bytes(
+            key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
+        manifest.write_text(
+            json.dumps({"active": key_id, "keys": [{"keyId": key_id, "status": "ACTIVE"}]}),
+            encoding="utf-8",
+        )
+    return load_signing_keys(signing_dir)
+
+
+def cli_optional_positive(value: int, *, name: str) -> int | None:
+    """CLI 의 "0 = 없음" 규약을 생성자의 ``None`` 으로 옮긴다.
+
+    생성자들은 0·음수를 거부하고 "없음"은 ``None`` 으로만 표현한다(조용히
+    0 으로 뭉개지 않기 위해서다). CLI 쪽에서 0 을 그 뜻으로 받는 규약은 여기
+    한 곳에만 둔다 — 이 저장소의 **유일한 조립 지점**이라 여기 배선이 틀리면
+    라이브러리 테스트가 전부 green 인 채로 통과한다(독립 재검토 지적).
+
+    음수는 argparse 를 통과하므로 여기서 typed 로 막는다 — 생성자까지 흘려보내면
+    실패 메시지가 CLI 인자 이름을 잃는다.
+    """
+    if value < 0:
+        raise ValueError(f"{name} 는 0(없음) 이거나 양수여야 한다: {value}")
+    return value or None
 
 
 def main() -> None:
@@ -94,19 +132,69 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--data-dir", default=".dev-data/core")
     parser.add_argument("--reset", action="store_true", help="기존 데이터 삭제 후 새로 시작")
+    parser.add_argument(
+        "--journal-segment-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
+    )
+    parser.add_argument(
+        "--edge-sync-snapshot-every",
+        type=int,
+        default=500,
+        help=(
+            "edge-sync 원장 스냅샷 주기(수락 건수, 기본 500). 0 이면 스냅샷을 쓰지 않는다 "
+            "— 재기동이 전 항목의 본문 정규화·digest 재계산을 다시 치른다."
+        ),
+    )
+    # Evidence 스토리지(ADR-KSI-010 §1) — **주지 않으면 증거 경로가 장착되지 않는다**(404).
+    # 조립되지 않은 기능이 2xx 로 보이는 것보다 없는 편이 정직하다.
+    parser.add_argument(
+        "--s3-endpoint",
+        default=None,
+        help="S3 호환 엔드포인트(예: http://127.0.0.1:9000). --s3-bucket 과 함께 준다.",
+    )
+    parser.add_argument("--s3-bucket", default=None, help="증거 버킷 이름")
     args = parser.parse_args()
+
+    if bool(args.s3_endpoint) != bool(args.s3_bucket):
+        parser.error("--s3-endpoint 와 --s3-bucket 은 함께 주어야 한다")
 
     data_dir = Path(args.data_dir)
     if args.reset and data_dir.exists():
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    private_key = _load_or_create_signing_key(data_dir / "signing_key.pem")
+    key_set = _bootstrap_key_set(data_dir / "signing")
 
-    site_journal = DurableJournal(data_dir / "sites.jsonl")
-    mission_journal = DurableJournal(data_dir / "missions.jsonl")
-    event_journal = DurableJournal(data_dir / "events.jsonl")
-    edge_sync_store = EdgeSyncStore(data_dir / "edge-sync.jsonl")
+    # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
+    # 회전 임계는 **조립 지점의 결정**이다(DurableJournal 기본값은 회전 없음) —
+    # 한 파일이 무한히 커지면 재기동 재생이 선형으로 느려지고 백업 단위도 사라진다.
+    # 여기 값은 dev 조립 기준이고, 운영 조립은 디스크·백업 주기에 맞춰 자기 값을 준다.
+    # CLI 는 0 을 "회전 없음"으로 받는다(생성자는 None). 음수는 argparse 를 통과하지만
+    # 생성자가 ValueError 로 거부한다 — 조용히 0 으로 뭉개지 않는다.
+    segment_bytes = cli_optional_positive(
+        args.journal_segment_bytes, name="--journal-segment-bytes"
+    )
+    site_journal = DurableJournal(data_dir / "sites.jsonl", max_segment_bytes=segment_bytes)
+    mission_journal = DurableJournal(data_dir / "missions.jsonl", max_segment_bytes=segment_bytes)
+    event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
+    # edge-sync 는 회전이 아니라 스냅샷으로 재기동 비용을 잡는다 — 이 원장의
+    # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
+    edge_sync_store = EdgeSyncStore(
+        data_dir / "edge-sync.jsonl",
+        snapshot_every=cli_optional_positive(
+            args.edge_sync_snapshot_every, name="--edge-sync-snapshot-every"
+        ),
+    )
+
+    evidence_storage = None
+    if args.s3_endpoint:
+        from ksi_core.evidence_s3 import S3EvidenceStorage
+
+        evidence_storage = S3EvidenceStorage(
+            bucket=args.s3_bucket, endpoint_url=args.s3_endpoint
+        )
 
     app = create_app(
         auth_registry=_auth_registry(),
@@ -114,8 +202,9 @@ def main() -> None:
         mission_store=MissionStore(mission_journal),
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
-        mission_signing_key=private_key,
-        mission_signing_key_id=_KEY_ID,
+        evidence_storage=evidence_storage,
+        mission_signing_key=key_set.active_private_key,
+        mission_signing_key_id=key_set.active_key_id,
     )
 
     print("=" * 72)

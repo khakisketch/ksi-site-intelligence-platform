@@ -4,9 +4,23 @@
 # DJI PSDK·CUDA·TensorRT 의존은 아직 없다 — 실기/HIL 증거 전까지 비행명령 경로를
 # 활성화하지 않는다는 Stage C 범위 제약(승인된 금지 항목)에 따른 것이다.
 # 실제 Manifold 3 타깃 툴체인은 docs/edge/MANIFOLD3_TOOLCHAIN.md 참조.
-
-cmake_minimum_required(VERSION 3.22)
+#
+# cmake 하한: 이 파일이 실제로 쓰는 최신 기능은 add_link_options(3.13)이고 3.17+
+# 기능은 없다 — 이전의 3.22 요구는 근거 없는 상향이었다(2026-08-03 실기 세션에서
+# Manifold 3 온보드 cmake 3.16.3과 충돌해 발견·정정). 범위 표기(3.12+ 지원)를 써서
+# 호스트/CI(3.28)의 정책 기본값은 그대로 유지한다.
+cmake_minimum_required(VERSION 3.16...3.28)
 project(ksi_manifold_runtime LANGUAGES CXX VERSION 0.0.1)
+
+# 타깃 정책(KSI_TARGET_MANIFOLD3=ON)으로 빌드할 때만 컴파일러 신원을 단언한다.
+# 이 호출이 없으면 cmake/toolchain-manifold3.cmake 의 드리프트 게이트가 정의만 되고
+# 아무 데서도 실행되지 않는 죽은 코드가 된다 — 즉 "실기와 다른 gcc로 타깃 산출물을
+# 만드는 것"을 막겠다는 그 파일의 존재 이유가 성립하지 않는다(2026-08-04 감사 지적).
+# 함수는 툴체인 파일이 정의하므로, 툴체인 파일 없이 빌드하는 호스트 경로에서는
+# 존재 여부를 먼저 확인해 무해하게 건너뛴다.
+if(COMMAND ksi_check_manifold3_toolchain_drift)
+  ksi_check_manifold3_toolchain_drift()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# 느린 job(특히 QEMU 에뮬레이션)이 쌓이는 것을 막는다 — 같은 PR/브랜치의 이전
+# 실행을 취소하고 최신 커밋만 검증한다.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # PR에서만 취소한다. main 푸시까지 취소하면 커밋별 게이트 통과 증거가 사라져
+  # "이 커밋이 초록이었나"를 사후에 확인할 수 없다(2026-08-04 감사 지적).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gates:
     runs-on: ubuntu-latest
@@ -57,8 +65,54 @@ jobs:
       - name: reference 핀 검증 (gitlink)
         run: bash scripts/verify_reference_pins.sh
 
+      # PSDK는 서브모듈이 아니라 tools/edge/fetch_psdk.py로 명시적으로 받는 선택적
+      # 대상(gitignored) — CI에는 아직 fetch하지 않으므로 트리 검증은 SKIP된다.
+      # 락 파일 자체의 존재·스키마·파싱 가능성은 fetch 여부와 무관하게 상시 검증한다.
+      # `uv run`으로 감싸는 이유: 스크립트가 PyYAML을 쓰는데 bare python3는 uv가
+      # 만든 venv를 타지 않아 러너 시스템 python 의존이 된다(2026-08-04 감사 지적).
+      - name: PSDK 핀 검증 (edge/third_party/PSDK_LOCK.yaml)
+        run: uv run --locked bash scripts/check_third_party_pins.sh
+
   # Edge native control plane — 순수 C++17이라 PSDK/CUDA 없이 호스트에서 빌드된다.
   # 별도 job으로 둬서 Python 게이트와 독립적으로 실패 원인이 드러나게 한다.
+  # apps/dashboard 는 2026-08-04 까지 CI 밖에 있었다 — 타입체크·lint·빌드 어느
+  # 것도 자동으로 돌지 않아, 프런트 5.7천 줄의 회귀를 사람이 로컬에서 기억해
+  # 돌리는 데 의존했다. 이 job 이 주장하는 것은 "타입·lint·순수 로직·프로덕션
+  # 빌드가 유효하다"뿐이다 — **화면이 멀쩡하다는 주장이 아니다**. 렌더링·동선은
+  # CLAUDE.md UI 절의 렌더 확인(390/768/1440 실캡처)과 /ui-audit 소관이다.
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/dashboard/package-lock.json
+
+      # npm ci — lock 을 그대로 설치한다(npm install 은 lock 을 갱신해 버려서
+      # "CI 가 검증한 트리"와 "커밋된 트리"가 갈라진다).
+      - name: 의존성 설치 (locked)
+        run: npm ci
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      - name: eslint
+        run: npx eslint .
+
+      # 순수 로직만 본다(vitest.config.mts 주석 참조) — 서버 컴포넌트를 jsdom 으로
+      # 흉내내면 그 흉내가 진짜 화면과 어긋나는 순간 초록불이 거짓말이 된다.
+      - name: vitest
+        run: npm test
+
+      - name: next build
+        run: npx next build
+
   edge-control-plane:
     runs-on: ubuntu-latest
     steps:
@@ -87,3 +141,173 @@ jobs:
 
       - name: ctest (ASan+UBSan)
         run: ctest --test-dir edge/manifold-runtime/build-asan --output-on-failure
+
+  # edge/psdk-tap 은 PSDK 실물과 App Key 가 있어야 configure 되므로(둘 다 기체와
+  # 함께 오는 물건이라 CI 에 없다) 2179줄이 통째로 게이트 밖에 있었다 —
+  # PSDK 를 전혀 건드리지 않는 pairing 로직조차 회귀 검증이 없었다.
+  #
+  # 이 job 이 주장하는 것은 **"PSDK 비의존 순수 로직이 회귀하지 않았다"뿐이다.**
+  # 수집기(psdk_tap) 자체는 여기서 빌드조차 되지 않는다 — 실기 수집 동작·NDJSON
+  # 스키마·프레임 페어링의 실측 유효성은 HIL 세션 증거로만 주장한다
+  # (docs/hil/HARDWARE_SESSION_PLAYBOOK.md 7단계, blocker AIRCRAFT_LINK_DOWN).
+  edge-psdk-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # LOGIC_TESTS_ONLY 는 명시적으로 켜야만 동작한다 — 기본값(OFF)의 fail-closed
+      # 는 그대로다(PSDK·자격증명 없이 configure 하면 FATAL_ERROR).
+      - name: configure (순수 로직 전용, -Werror)
+        run: cmake -S edge/psdk-tap -B edge/psdk-tap/build-ci
+          -DKSI_PSDK_TAP_LOGIC_TESTS_ONLY=ON
+
+      - name: build
+        run: cmake --build edge/psdk-tap/build-ci -j
+
+      - name: ctest
+        run: ctest --test-dir edge/psdk-tap/build-ci --output-on-failure
+
+      # 게이트가 헐거워지는 방향을 막는다 — 누군가 스텁 폴백을 넣어 기본 모드가
+      # PSDK 없이도 통과하게 되면 이 스텝이 실패한다.
+      #
+      # PSDK 경로를 없는 곳으로 **명시**한다. 그래야 개발 PC(PSDK·자격증명이 실제로
+      # 있는 환경)에서도 CI 와 똑같은 것을 검사한다 — 환경에 따라 무엇을 재는지
+      # 달라지는 게이트는 초록불의 의미도 달라진다.
+      - name: 기본 모드는 여전히 fail-closed 인가
+        run: |
+          if cmake -S edge/psdk-tap -B "${RUNNER_TEMP}/psdk-default" \
+               -DKSI_PSDK_ROOT="${RUNNER_TEMP}/no-such-psdk" >/dev/null 2>&1; then
+            echo "::error::PSDK 없이 기본 configure 가 통과했다 — 조용한 스텁 폴백이 생겼는지 확인하라"
+            exit 1
+          fi
+          echo "기본 모드 fail-closed 확인 — PSDK 부재 시 configure 실패"
+
+  # Manifold 3 실기 userland(gcc 9.4.0/cmake 3.16.3/glibc 2.31, Ubuntu 20.04.6)를
+  # arm64 컨테이너로 재현해 실기 없이도 환경 드리프트를 잡는다(ADR-KSI-009).
+  # 이 job은 "타깃 빌드·링크·ABI가 유효하다"만 주장한다 — "배포가 검증됨"은 절대
+  # 주장하지 않는다(텔레메트리·카메라·짐벌·DPK 설치 실동작은 docs/hil/ HIL 세션 증거로만).
+  edge-manifold-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 러너가 x86-64라 arm64 컨테이너를 실행하려면 QEMU 에뮬레이션 등록이 먼저
+      # 필요하다. job 레벨 `container:` 키는 쓰지 않는다 — 그 경우 컨테이너가
+      # step 실행 이전(job 시작 시점)에 기동되어 QEMU 등록이 선행될 수 없다.
+      - name: QEMU 등록 (arm64 에뮬레이션)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # buildx builder를 docker-container 드라이버로 명시 생성한다. 러너 기본
+      # builder는 `docker` 드라이버인데, 그 드라이버는 cache export를 지원하지
+      # 않아 아래 cache-to: type=gha 가 "Cache export is not supported for the
+      # docker driver" 로 즉시 실패한다(2026-08-04 감사에서 확인 — 로컬은
+      # ACTIONS_CACHE_URL이 없어 캐시를 조용히 건너뛰므로 이 실패가 드러나지 않는다).
+      - name: buildx builder 준비 (cache export 전제)
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: 빌드 이미지 준비
+        uses: docker/build-push-action@v6
+        with:
+          context: edge/docker
+          file: edge/docker/manifold3-build.Dockerfile
+          platforms: linux/arm64
+          tags: ksi-manifold3-build:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 실기와 동일한 gcc9.4/cmake3.16.3으로 configure/build/ctest 전체를 그대로
+      # 실행한다 — 컨테이너가 네이티브 aarch64이므로 (CMAKE_SYSTEM_NAME 미설정)
+      # ctest 실행이 크로스컴파일 제약 없이 그대로 동작한다. KSI_TARGET_MANIFOLD3=ON
+      # 으로 cmake/toolchain-manifold3.cmake의 정적 링크 정책을 켠다 — 꺼진 채로
+      # 빌드하면 libstdc++.so.6이 동적으로 남아 바로 다음 스텝의 ABI 게이트가
+      # 항상 실패한다(2026-08-03 로컬 컨테이너 시뮬레이션에서 실측).
+      - name: 타깃 빌드 + ctest (arm64, gcc 9.4.0, cmake 3.16.3)
+        run: |
+          # 마운트 대상을 러너 사용자 소유로 미리 만든다 — 없으면 docker가 root
+          # 소유로 생성해 이후 스텝(ABI 게이트)이 산출물을 다루기 껄끄러워진다.
+          mkdir -p edge/manifold-runtime/build-manifold3-ci
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}/edge/manifold-runtime:/workspace/src:ro" \
+            -v "${{ github.workspace }}/cmake:/workspace/cmake:ro" \
+            -v "${{ github.workspace }}/edge/manifold-runtime/build-manifold3-ci:/workspace/build" \
+            -w /workspace \
+            ksi-manifold3-build:ci bash -c '
+              set -e
+              cmake -S src -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/toolchain-manifold3.cmake \
+                -DKSI_TARGET_MANIFOLD3=ON
+              cmake --build build -j
+              cd build && ctest --output-on-failure
+            '
+
+      # 컨테이너가 실기 userland를 실제로 재현했는지 산출물이 아니라 툴체인 자체로
+      # 확인한다 — Dockerfile은 20.04 apt를 앵커로 쓸 뿐 버전을 핀하지 않으므로,
+      # 베이스 이미지가 갱신돼 gcc/cmake/glibc가 드리프트하면 여기서 잡힌다.
+      - name: 컨테이너 툴체인 드리프트 검사 (실기 실측값 대조)
+        run: |
+          docker run --rm --platform linux/arm64 ksi-manifold3-build:ci bash -c '
+            set -e
+            gcc_major=$(gcc -dumpversion | cut -d. -f1)
+            cmake_mm=$(cmake --version | head -1 | awk "{print \$3}" | cut -d. -f1,2)
+            glibc=$(ldd --version | head -1 | awk "{print \$NF}")
+            echo "container: gcc=$gcc_major cmake=$cmake_mm glibc=$glibc"
+            # 실기 실측(2026-08-03 HIL): gcc 9.4.0 / cmake 3.16.3 / glibc 2.31
+            [ "$gcc_major" = "9" ]      || { echo "gcc major 드리프트: $gcc_major != 9"; exit 1; }
+            [ "$cmake_mm" = "3.16" ]    || { echo "cmake 드리프트: $cmake_mm != 3.16"; exit 1; }
+            [ "$glibc" = "2.31" ]       || { echo "glibc 드리프트: $glibc != 2.31"; exit 1; }
+          '
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 동기화 (locked, ABI 게이트용)
+        run: uv sync --locked --all-packages
+
+      # readelf는 대상 아키텍처와 무관하게 ELF 바이트 포맷을 정적으로 파싱하므로
+      # x86-64 러너에서 arm64 바이너리를 그대로 검사할 수 있다(실행 불필요).
+      - name: ABI 게이트 (정적 링크·glibc 상한·RPATH)
+        run: |
+          uv run python tools/edge/check_target_abi.py \
+            edge/manifold-runtime/build-manifold3-ci/control_plane_tests \
+            edge/manifold-runtime/build-manifold3-ci/conformance_tests
+
+      # tools/hil/device/ 티어는 실기 Python 3.8.10 전용 — 3.10/3.11+ 문법·심볼이
+      # 섞이면 실기에서 import조차 안 된다(2026-08-03 HIL 세션에서
+      # capture_frame_telemetry_timing.py의 StrEnum/datetime.UTC로 실제 확인된
+      # 실패 클래스). 컨테이너의 진짜 python3.8로 검사한다(린트 근사치가 아니라 실제 인터프리터).
+      #
+      # py_compile이 아니라 **import**를 쓴다 — `from enum import StrEnum`은 문법상
+      # 정상이라 py_compile은 통과하고 ImportError는 런타임에만 난다. 즉 이 게이트가
+      # 인용하는 바로 그 실패 클래스를 py_compile로는 원리상 하나도 못 잡는다
+      # (2026-08-04 감사 지적). 대상 0건이면 초록을 사칭하지 않고 GATE_INACTIVE를 명시한다.
+      - name: device Python 3.8 호환 검사 (import 스모크)
+        run: |
+          if [ ! -d tools/hil/device ]; then
+            echo "::notice title=GATE_INACTIVE::tools/hil/device/ 미존재 — device Python 티어가 아직 없어 이 게이트는 아무것도 검사하지 않았다(통과가 아니라 비활성)."
+            exit 0
+          fi
+          count=$(find tools/hil/device -name '*.py' -type f | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::notice title=GATE_INACTIVE::tools/hil/device/ 는 있으나 .py 파일 0건 — 검사 대상 없음(통과가 아니라 비활성)."
+            exit 0
+          fi
+          echo "검사 대상 ${count}건"
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}/tools/hil/device:/workspace/device:ro" \
+            -w /workspace ksi-manifold3-build:ci bash -c '
+              set -e
+              python3 --version
+              # 재귀 탐색 + 실제 import — 문법(py_compile)만이 아니라 3.8에 없는
+              # 심볼(StrEnum, datetime.UTC 등)까지 잡는다.
+              find device -name "*.py" -type f -print0 | while IFS= read -r -d "" f; do
+                mod="${f%.py}"; mod="${mod//\//.}"
+                echo "  import $mod"
+                python3 -c "import importlib,sys; sys.path.insert(0,\".\"); importlib.import_module(\"$mod\")"
+              done
+            '

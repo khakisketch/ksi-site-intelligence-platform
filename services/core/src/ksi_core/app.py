@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from ksi_core.auth import AuthRegistry
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.events import EventStore
+    from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
     from ksi_core.sites import SiteStore
 
@@ -53,6 +54,7 @@ def create_app(
     mission_store: MissionStore | None = None,
     mission_signing_key: Ed25519PrivateKey | None = None,
     mission_signing_key_id: str | None = None,
+    evidence_storage: EvidenceStorage | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -62,11 +64,15 @@ def create_app(
             시드한 새 레지스트리를 만든다 — 시드 직후 노출 가능한 capability는
             0건이다(실기 검증 증거가 없으므로, INV-041).
         expose_docs: ``True``(기본)면 FastAPI 기본 문서 라우트(``/openapi.json``·
-            ``/docs``·``/redoc``)가 무인증으로 열린다 — 이 셋은 ``/health``·
-            ``/capabilities`` 와 함께 공개 allowlist 다(계약 서술 자체가 민감
-            정보는 아니다). 운영 배포에서 계약 표면을 외부에 노출하고 싶지 않으면
-            ``False`` 로 꺼서 세 라우트를 전부 존재하지 않게 만든다(감사 #25·#35
-            재검토 — "문서 라우트만 공개" 주장이 스위치 부재로 반증됐던 사각지대).
+            ``/docs``·``/docs/oauth2-redirect``·``/redoc``)가 무인증으로 열린다 —
+            이 **넷**은 ``/health``·``/capabilities`` 와 함께 공개 allowlist 다
+            (계약 서술 자체가 민감 정보는 아니다). ``/docs/oauth2-redirect`` 는
+            ``/docs`` 를 켜면 FastAPI 가 함께 다는 라우트라 서술에서 빠져 있었다
+            (s2-residual-hardening #5 — 서술이 실제 표면보다 좁으면 "무엇이
+            공개인가"를 문서로 감사할 수 없다). 운영 배포에서 계약 표면을 외부에
+            노출하고 싶지 않으면 ``False`` 로 꺼서 네 라우트를 전부 존재하지 않게
+            만든다(감사 #25·#35 재검토 — "문서 라우트만 공개" 주장이 스위치 부재로
+            반증됐던 사각지대).
         auth_registry: bearer 토큰 → Principal 매핑(ADR-KSI-008 §2). 보호 표면
             (아래 5개 인자 중 하나라도)을 주입하려면 이것도 함께 줘야 한다 —
             인증 없는 보호 표면은 조립 자체가 거부된다. 단독으로 주면
@@ -151,6 +157,12 @@ def create_app(
                 " 반환하지 않는다(고아 발급 금지)"
             )
 
+    if evidence_storage is not None and event_store is None:
+        raise ValueError(
+            "evidence_storage 는 event_store 와 함께 주어져야 한다(ADR-KSI-010 §1)"
+            " — 증거는 사건에 매달리는 것이라 사건 원장 없이는 등록할 곳이 없다"
+        )
+
     if edge_sync_store is not None and event_store is None:
         raise ValueError(
             "edge_sync_store 는 event_store 와 함께 주어져야 한다(ADR-KSI-008 §3)"
@@ -165,6 +177,7 @@ def create_app(
             site_store,
             mission_store,
             mission_signing_key,
+            evidence_storage,
         )
     )
     if protected_surface and auth_registry is None:
@@ -199,7 +212,10 @@ def create_app(
         # edge_sync_store 유무와 무관하게 /v1/events 조회·트리아지 표면은 event_store
         # 가 있으면 항상 장착된다 — edge 수신이 있는 배포에서도 트리아지 화면이
         # 필요하다(mount_edge_sync 는 ingest 라우터만 소유한다).
-        mount_events(app, event_store)
+        # evidence_storage 가 없으면 증거 경로는 장착되지 않는다(404) — 스토리지
+        # 없이 라우트만 살려두면 "업로드했는데 어디에도 없다"가 2xx 로 보인다
+        # (ADR-KSI-010 §1).
+        mount_events(app, event_store, evidence_storage=evidence_storage)
 
     if mission_signing_key is not None:
         # 위 결합 검증이 mission_signing_key_id·mission_store·site_store 를

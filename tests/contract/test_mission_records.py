@@ -42,6 +42,7 @@ from ksi_core.mission_records import (
     mount_mission_records,
 )
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
 _LAT0, _LON0 = 37.5000, 127.0000
 _M_PER_DEG_LAT = math.radians(1.0) * WGS84_EQUATORIAL_RADIUS_M
@@ -302,6 +303,9 @@ def test_contract_only_issuance_round_trips(tmp_path: Path) -> None:
     journal.close()
 
 
+_PLAN_REQUEST_STUB: dict[str, Any] = {"route": {"altitudeM": 40.0}, "marker": "replay-fixture"}
+
+
 # ── ② 재기동 복구 ────────────────────────────────────────────────────────
 
 
@@ -334,6 +338,10 @@ def test_mission_store_replay_recovers_after_restart(tmp_path: Path) -> None:
         coverage_ratio=0.97,
         issued_at=datetime.now(UTC),
         issued_by="do-1",
+        # 짝 레코드는 KMZ 재생성 입력을 반드시 들고 있다(멱등 재발급이 기대는
+        # 불변식) — 재생 경로가 이제 그것과 digest 정합을 함께 강제한다.
+        plan_request=_PLAN_REQUEST_STUB,
+        plan_request_digest=sha256_digest(canonical_payload_bytes(_PLAN_REQUEST_STUB)),
     )
     assert store.record_issuance(record_a).value == "RECORDED"
     assert store.record_issuance(record_b).value == "RECORDED"
@@ -902,3 +910,81 @@ def test_replay_failure_releases_journal_lock(tmp_path: Path) -> None:
     # 잠금이 해제됐다면 재조립이 flock 경합 없이 같은 예외로 재실패한다.
     with pytest.raises(MissionStoreRecoveryError):
         MissionStore(DurableJournal(path))
+
+
+# ── ②-보강 s2-residual-hardening #3 — 짝 레코드 무결성을 재생에서도 강제한다 ──
+
+
+def _write_raw_record(path: Path, record: dict[str, Any]) -> None:
+    """journal 에 레코드 1줄을 직접 쓴다 — 원장 조작·과거 버그 상황 재현용."""
+    journal = DurableJournal(path)
+    journal.append(record)
+    journal.close()
+
+
+def _pair_record_dict(**overrides: Any) -> dict[str, Any]:
+    plan_request: dict[str, Any] = {"route": {"altitudeM": 40.0}, "marker": "tamper-fixture"}
+    base: dict[str, Any] = {
+        "missionId": "mission-p",
+        "siteId": "site-001",
+        "missionType": "BASELINE_MAPPING",
+        "artifactKind": "pair",
+        "contract": {"schemaVersion": "1.2", "missionId": "mission-p"},
+        "kmzSha256": "deadbeef",
+        "routePattern": "lawnmower",
+        "waypointCount": 42,
+        "coverageRatio": 0.97,
+        "issuedAt": datetime.now(UTC).isoformat(),
+        "issuedBy": "do-1",
+        "planRequest": plan_request,
+        "planRequestDigest": sha256_digest(canonical_payload_bytes(plan_request)),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_replay_rejects_plan_request_digest_mismatch(tmp_path: Path) -> None:
+    """[핵심] digest 와 planRequest 가 어긋난 레코드로는 기동하지 않는다.
+
+    그대로 재생하면 이후 재시도가 '같은 요청'으로 판정되고 **다른** 입력으로
+    KMZ 를 재생성해 돌려준다 — 클라이언트가 보낸 적 없는 경로를 자기 요청의
+    멱등 응답으로 받는 경로다.
+    """
+    path = tmp_path / "missions.jsonl"
+    tampered = _pair_record_dict()
+    tampered["planRequest"] = {"route": {"altitudeM": 999.0}, "marker": "swapped"}
+    _write_raw_record(path, tampered)
+
+    with pytest.raises(MissionStoreRecoveryError, match="planRequestDigest"):
+        MissionStore(DurableJournal(path))
+
+
+def test_replay_rejects_pair_record_without_plan_request(tmp_path: Path) -> None:
+    """짝 레코드는 KMZ 재생성 입력을 반드시 들고 있어야 한다 — 없으면 기동 거부.
+
+    없는 채로 재생되면 그 사건은 멱등 재발급 시점에야 assert 로 터진다(500).
+    기동 시점에 거부하는 편이 진단 가능하다.
+    """
+    path = tmp_path / "missions.jsonl"
+    record = _pair_record_dict()
+    record.pop("planRequest")
+    record.pop("planRequestDigest")
+    _write_raw_record(path, record)
+
+    with pytest.raises(MissionStoreRecoveryError, match="planRequest 가 없다"):
+        MissionStore(DurableJournal(path))
+
+
+def test_replay_accepts_intact_pair_record(tmp_path: Path) -> None:
+    """[비공허 대조] 온전한 짝 레코드는 그대로 재생된다 — 위 두 게이트가 과잉이 아니다."""
+    path = tmp_path / "missions.jsonl"
+    _write_raw_record(path, _pair_record_dict())
+
+    journal = DurableJournal(path)
+    store = MissionStore(journal)
+    try:
+        loaded = store.get("mission-p")
+        assert loaded is not None
+        assert loaded.plan_request is not None
+    finally:
+        journal.close()

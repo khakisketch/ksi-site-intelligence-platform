@@ -165,15 +165,31 @@ def test_full_assembly_succeeds(tmp_path: Path) -> None:
 # ── expose_docs 스위치 (재검토 P2 — "문서 라우트만 공개" 반증에 대한 조치) ──
 
 
+_DOC_ROUTES = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+
+
 def test_expose_docs_default_true_exposes_doc_routes() -> None:
     app = create_app(expose_docs=True)
     route_paths = {getattr(route, "path", None) for route in app.routes}
-    assert {"/openapi.json", "/docs", "/redoc"} <= route_paths
+    assert route_paths >= _DOC_ROUTES
 
 
 def test_expose_docs_false_removes_doc_routes() -> None:
     app = create_app(expose_docs=False)
     route_paths = {getattr(route, "path", None) for route in app.routes}
-    assert "/openapi.json" not in route_paths
-    assert "/docs" not in route_paths
-    assert "/redoc" not in route_paths
+    assert not (_DOC_ROUTES & route_paths)
+
+
+def test_documented_public_allowlist_matches_actual_unauthenticated_surface() -> None:
+    """[서술↔실제] create_app docstring 이 세는 공개 라우트가 실제와 같아야 한다.
+
+    서술이 실제보다 좁으면 "무엇이 인증 없이 열려 있나"를 문서로 감사할 수 없다 —
+    /docs/oauth2-redirect 가 정확히 그렇게 빠져 있었다(s2-residual-hardening #5).
+    """
+    docstring = create_app.__doc__ or ""
+    for path in _DOC_ROUTES:
+        assert f"``{path}``" in docstring, f"{path} 가 공개 allowlist 서술에 없다"
+
+    on = {getattr(route, "path", None) for route in create_app(expose_docs=True).routes}
+    off = {getattr(route, "path", None) for route in create_app(expose_docs=False).routes}
+    assert on - off == _DOC_ROUTES, "스위치가 켜고 끄는 라우트 집합이 서술과 다르다"

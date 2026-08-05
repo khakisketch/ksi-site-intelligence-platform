@@ -1,6 +1,7 @@
 # DJI Hardware Capability Spike 절차 (Track A)
 
-- 상태: 절차 확정, **실행 대기**(실기 M4D + RC Plus 2 + Manifold 3 필요)
+- 상태: 절차 확정, **1~2항목 실기 검증 완료**(2026-08-03), 3항목 이후는 기체 데이터
+  링크 재확립 대기 — 상세 실행 로그·판정은 `docs/hil/HARDWARE_SESSION_PLAYBOOK.md` 참조
 - 근거: MASTER_PRD §20.3 SPIKE_REQUIRED 9항목, 독립 검토 2026-07-27 우선순위
 
 ## 0. 원칙 — 읽기 먼저, 쓰기는 별도 게이트
@@ -22,7 +23,7 @@ INV-001/002는 이 단계에서도 유효하다 — 현재 `ksi_control_plane`�
 |---|---|---|---|
 | 1 | 환경 인벤토리 | Manifold 3 이미지·JetPack·컴파일러·PSDK 버전 실측 | 이후 전부 중단(기준선 없음) |
 | 2 | DJI 공식 샘플 빌드·실행 | 툴체인이 실제로 동작하는가 | KSI 코드 문제와 툴체인 문제를 분리 못 함 |
-| 3 | 기체 정보·Telemetry 읽기 | 연결·기체 식별·상태 수신 | 3~7 전부 중단 |
+| 3 | 기체 정보·Telemetry 읽기(**선행: 기체 데이터 링크 확인**) | 연결·기체 식별·상태 수신 | 3~7 전부 중단 |
 | 4 | 카메라 Live View 접근 | 프레임 수신 가능 여부 | 5~7 중단 |
 | 5 | 렌즈 식별·전환 가능성 | 광각/중망원/망원 식별과 전환 | 렌즈 관련 capability만 BLOCKED |
 | 6 | 짐벌 상태 읽기 + 제한적 제어 | pitch/yaw 읽기, 소각도 이동 | 짐벌 capability만 BLOCKED |

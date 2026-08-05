@@ -36,6 +36,7 @@ from capture_frame_telemetry_timing import (  # noqa: E402
     append_sample_jsonl,
     build_parser,
     compute_delta_ms,
+    convert_tap_log_to_samples,
     evaluate_evidence,
     judge_acceptance,
     judge_exploratory,
@@ -1051,3 +1052,367 @@ def test_default_delta_tolerance_constant_matches_official_profile() -> None:
     # 우연의 일치가 아니라 의도된 것임을 문서화하는 스모크 — 값이 갈라지면
     # 모듈 docstring의 "숫자는 같아도 의미가 다르다" 설명을 갱신해야 한다.
     assert OFFICIAL_PROFILE.delta_tolerance_ms == DEFAULT_DELTA_TOLERANCE_MS
+
+
+# ── collect --source tap-log 변환 (ADR-KSI-009 D3, edge/psdk-tap NDJSON 계약) ──
+
+
+def _tap_meta_line(
+    *,
+    anchor_mono_ns: int = 0,
+    anchor_wall_utc: str = "2026-08-04T00:00:00Z",
+    frame_sensor_ts: bool = True,
+    telemetry_sensor_ts: bool = True,
+) -> str:
+    return json.dumps(
+        {
+            "type": "meta",
+            "tap_version": 1,
+            "psdk_version": "1.0.0",
+            "started_at_utc": anchor_wall_utc,
+            "aircraft_sn": "SN-TAP",
+            "clock": {"mono_ns": anchor_mono_ns, "wall_utc": anchor_wall_utc},
+            "capabilities": {
+                "frame_sensor_ts": frame_sensor_ts,
+                "telemetry_sensor_ts": telemetry_sensor_ts,
+            },
+        }
+    )
+
+
+def _tap_sample_line(
+    *,
+    i: int,
+    frame_recv_mono_ns: int,
+    telemetry_recv_mono_ns: int,
+    frame_sensor_us: float | None = None,
+    telemetry_sensor_us: float | None = None,
+) -> str:
+    return json.dumps(
+        {
+            "type": "sample",
+            "i": i,
+            "frame": {"recv_mono_ns": frame_recv_mono_ns, "sensor_us": frame_sensor_us},
+            "telemetry": {
+                "recv_mono_ns": telemetry_recv_mono_ns,
+                "sensor_us": telemetry_sensor_us,
+            },
+            "pairing": {"strategy": "nearest", "gap_ns": 0},
+        }
+    )
+
+
+def test_convert_tap_log_recv_basis_monotonic_to_utc_is_correct(tmp_path: Path) -> None:
+    """단조시계(ns)→UTC 환산이 meta.clock 앵커를 기준으로 정확한가."""
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(anchor_mono_ns=0, anchor_wall_utc="2026-08-04T00:00:00Z"),
+        _tap_sample_line(
+            i=0, frame_recv_mono_ns=0, telemetry_recv_mono_ns=5_000_000
+        ),  # telemetry가 frame보다 5ms 늦게 "수신"
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    samples = convert_tap_log_to_samples(
+        path, session_id="SESS-TAP", aircraft_sn="SN-TAP", timestamp_basis="recv"
+    )
+    assert len(samples) == 1
+    s = samples[0]
+    assert s.frame_timestamp_utc == "2026-08-04T00:00:00+00:00"
+    assert s.telemetry_timestamp_utc == "2026-08-04T00:00:00.005000+00:00"
+    assert s.delta_ms == pytest.approx(-5.0)
+    assert s.timestamp_basis == "recv"
+
+
+def test_convert_tap_log_sensor_basis_monotonic_to_utc_is_correct(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(anchor_mono_ns=0, anchor_wall_utc="2026-08-04T00:00:00Z"),
+        _tap_sample_line(
+            i=0,
+            frame_recv_mono_ns=0,
+            telemetry_recv_mono_ns=0,
+            frame_sensor_us=2_000.0,
+            telemetry_sensor_us=7_000.0,
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    samples = convert_tap_log_to_samples(
+        path, session_id="SESS-TAP", aircraft_sn="SN-TAP", timestamp_basis="sensor"
+    )
+    assert len(samples) == 1
+    s = samples[0]
+    assert s.frame_timestamp_utc == "2026-08-04T00:00:00.002000+00:00"
+    assert s.telemetry_timestamp_utc == "2026-08-04T00:00:00.007000+00:00"
+    assert s.delta_ms == pytest.approx(-5.0)
+    assert s.timestamp_basis == "sensor"
+
+
+def test_convert_tap_log_sensor_basis_fails_closed_on_capability_false(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(frame_sensor_ts=False, telemetry_sensor_ts=True),
+        _tap_sample_line(
+            i=0,
+            frame_recv_mono_ns=0,
+            telemetry_recv_mono_ns=0,
+            frame_sensor_us=1.0,
+            telemetry_sensor_us=1.0,
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fail-closed"):
+        convert_tap_log_to_samples(
+            path, session_id="S", aircraft_sn="A", timestamp_basis="sensor"
+        )
+
+
+def test_convert_tap_log_sensor_basis_fails_closed_on_null_sensor_us(tmp_path: Path) -> None:
+    """capability는 true인데 개별 표본의 sensor_us가 null이면 recv로 조용히
+    대체하지 않고 중단한다."""
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(frame_sensor_ts=True, telemetry_sensor_ts=True),
+        _tap_sample_line(
+            i=0,
+            frame_recv_mono_ns=0,
+            telemetry_recv_mono_ns=0,
+            frame_sensor_us=None,
+            telemetry_sensor_us=1.0,
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fail-closed"):
+        convert_tap_log_to_samples(
+            path, session_id="S", aircraft_sn="A", timestamp_basis="sensor"
+        )
+
+
+def test_convert_tap_log_recv_basis_does_not_require_sensor_capability(tmp_path: Path) -> None:
+    """--timestamp-basis recv는 capabilities가 전부 false여도(=sensor_us 전부 null) 동작한다."""
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(frame_sensor_ts=False, telemetry_sensor_ts=False),
+        _tap_sample_line(i=0, frame_recv_mono_ns=0, telemetry_recv_mono_ns=1_000_000),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    samples = convert_tap_log_to_samples(
+        path, session_id="S", aircraft_sn="A", timestamp_basis="recv"
+    )
+    assert len(samples) == 1
+
+
+def test_convert_tap_log_rejects_missing_meta(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [_tap_sample_line(i=0, frame_recv_mono_ns=0, telemetry_recv_mono_ns=0)]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="meta"):
+        convert_tap_log_to_samples(path, session_id="S", aircraft_sn="A", timestamp_basis="recv")
+
+
+def test_convert_tap_log_rejects_sample_before_meta(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_sample_line(i=0, frame_recv_mono_ns=0, telemetry_recv_mono_ns=0),
+        _tap_meta_line(),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="meta보다 먼저"):
+        convert_tap_log_to_samples(path, session_id="S", aircraft_sn="A", timestamp_basis="recv")
+
+
+def test_convert_tap_log_ignores_stat_records(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(),
+        _tap_sample_line(i=0, frame_recv_mono_ns=0, telemetry_recv_mono_ns=0),
+        json.dumps({"type": "stat", "dropped": 0}),
+        _tap_sample_line(
+            i=1, frame_recv_mono_ns=1_000_000_000, telemetry_recv_mono_ns=1_000_000_000
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    samples = convert_tap_log_to_samples(
+        path, session_id="S", aircraft_sn="A", timestamp_basis="recv"
+    )
+    assert [s.sample_index for s in samples] == [0, 1]
+
+
+def test_convert_tap_log_rejects_unknown_record_type(tmp_path: Path) -> None:
+    path = tmp_path / "tap.ndjson"
+    lines = [_tap_meta_line(), json.dumps({"type": "bogus"})]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="알 수 없는"):
+        convert_tap_log_to_samples(path, session_id="S", aircraft_sn="A", timestamp_basis="recv")
+
+
+def _tap_log_for_official_pass(path: Path, *, n: int = 100) -> None:
+    """official PASS 기준(표본 100개 이상, p95 ≤ 50ms)을 만족하는 tap-log를 만든다."""
+    lines = [_tap_meta_line()]
+    for i in range(n):
+        base = i * 1_000_000_000  # 1초 간격
+        lines.append(
+            _tap_sample_line(
+                i=i, frame_recv_mono_ns=base, telemetry_recv_mono_ns=base + 5_000_000
+            )
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_converted_recv_samples_pass_load_frame_telemetry_jsonl_validation(tmp_path: Path) -> None:
+    """변환된 JSONL이 기존 load_frame_telemetry_jsonl 검증(timestamp 형식·delta
+    tolerance 포함)을 그대로 통과해야 한다 — 통과 못 하면 변환 버그다."""
+    tap_path = tmp_path / "tap.ndjson"
+    _tap_log_for_official_pass(tap_path, n=100)
+
+    out_path = tmp_path / "out.jsonl"
+    for sample in convert_tap_log_to_samples(
+        tap_path, session_id="SESS-CONV", aircraft_sn="SN-CONV", timestamp_basis="recv"
+    ):
+        append_sample_jsonl(out_path, sample)
+
+    load_result = load_frame_telemetry_jsonl(
+        out_path, delta_tolerance_ms=DEFAULT_DELTA_TOLERANCE_MS
+    )
+    assert load_result.rejected == ()
+    assert len(load_result.samples) == 100
+    assert all(s.timestamp_basis == "recv" for s in load_result.samples)
+
+
+def test_collect_cli_source_tap_log_end_to_end_official_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI 전체 경로: collect --source tap-log → summarize --mode official PASS,
+    summary에 timestamp_basis/notice가 전파되는지 확인."""
+    tap_path = tmp_path / "tap.ndjson"
+    _tap_log_for_official_pass(tap_path, n=100)
+    out_path = tmp_path / "out.jsonl"
+
+    rc = main(
+        [
+            "collect",
+            "--source",
+            "tap-log",
+            "--tap-log",
+            str(tap_path),
+            "--session-id",
+            "SESS-E2E",
+            "--aircraft-sn",
+            "SN-E2E",
+            "--out",
+            str(out_path),
+            "--timestamp-basis",
+            "recv",
+        ]
+    )
+    capsys.readouterr()
+    assert rc == 0
+    assert out_path.exists()
+
+    rc2 = main(["summarize", "--in", str(out_path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc2 == 0
+    assert result["evidence_status"] == "VALID"
+    assert result["acceptance_status"] == "PASS"
+    assert result["timestamp_basis"] == "recv"
+    assert result["timestamp_basis_observed"] == ["recv"]
+    assert "센서 시각 정합" in result["timestamp_basis_notice"]
+
+
+def test_collect_cli_source_tap_log_requires_tap_log_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(
+        [
+            "collect",
+            "--source",
+            "tap-log",
+            "--session-id",
+            "S",
+            "--aircraft-sn",
+            "A",
+            "--out",
+            str(tmp_path / "out.jsonl"),
+            "--timestamp-basis",
+            "recv",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert "--tap-log" in captured.err
+
+
+def test_collect_cli_requires_timestamp_basis(tmp_path: Path) -> None:
+    """--timestamp-basis는 required=True, 기본값 없음 — 무의식적 선택을 argparse
+    레벨에서 차단한다."""
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "collect",
+                "--session-id",
+                "S",
+                "--aircraft-sn",
+                "A",
+                "--out",
+                str(tmp_path / "out.jsonl"),
+            ]
+        )
+
+
+def test_collect_cli_rejects_invalid_timestamp_basis_choice(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "collect",
+                "--session-id",
+                "S",
+                "--aircraft-sn",
+                "A",
+                "--out",
+                str(tmp_path / "out.jsonl"),
+                "--timestamp-basis",
+                "bogus",
+            ]
+        )
+
+
+def test_collect_cli_default_source_is_psdk_and_still_not_implemented(tmp_path: Path) -> None:
+    """--source 기본값(psdk)은 기존 NotImplementedError fail-closed 동작을 유지한다."""
+    with pytest.raises(NotImplementedError):
+        main(
+            [
+                "collect",
+                "--session-id",
+                "S",
+                "--aircraft-sn",
+                "A",
+                "--out",
+                str(tmp_path / "out.jsonl"),
+                "--num-samples",
+                "1",
+                "--timestamp-basis",
+                "recv",
+            ]
+        )
+
+
+def test_summarize_timestamp_basis_fields_are_null_when_absent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """timestamp_basis 정보가 없는(구버전/psdk 경로) 기존 JSONL은 기존 계약대로
+    null/빈 리스트를 낸다 — 새 필드가 기존 파일 로드를 깨지 않는다."""
+    path = _official_pass_file(tmp_path)
+    rc = main(["summarize", "--in", str(path)])
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert result["timestamp_basis"] is None
+    assert result["timestamp_basis_observed"] == []
+    assert result["timestamp_basis_notice"] is None

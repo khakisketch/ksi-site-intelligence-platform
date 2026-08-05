@@ -61,6 +61,10 @@ export interface EventSummaryResponse {
   eventId: string;
   siteId: string;
   missionId: string;
+  // 무슨 일이 일어났는가. 목록 행의 1순위 정보다.
+  // 자유 문자열이며 사람이 읽을 라벨 변환은 labels.ts 가 맡는다. 저장된 bundle 에
+  // 이 키가 없는 레코드는 null 로 온다(서버가 목록 전체를 죽이지 않고 낮춰 응답).
+  eventType: string | null;
   status: EventStatus;
   severity: EventSeverity | null;
   triage: TriageStatus;
@@ -70,10 +74,46 @@ export interface EventSummaryResponse {
   receivedAt: string;
 }
 
+/** 증거 1건. 열람 URL 은 없다 — URL 이 곧 인가라 별도 요청으로 발급받는다. */
+export interface EvidenceSummary {
+  artifactId: string;
+  contentType: string;
+  registeredAt: string;
+  registeredBy: string;
+  /** 값이 있으면 보관 정책으로 폐기된 것 — "없음"과 구분해서 보여준다. */
+  tombstonedAt: string | null;
+  tombstoneReason: string | null;
+}
+
 export interface EventDetailResponse extends EventSummaryResponse {
   lastConflictAt: string | null;
   bundle: Record<string, unknown>;
+  /**
+   * 현재 bundle 의 정규화 digest. 트리아지 전이 요청의 expectedBundleDigest 에
+   * 그대로 실으면, 화면을 연 뒤 Edge 가 내용을 바꿨을 때 서버가 409 로 막는다
+   * (직접 계산하면 JSON 표기 차이로 영구 409 가 되므로 이 값을 그대로 쓴다).
+   */
+  bundleDigest: string;
   transitions: Array<Record<string, unknown>>;
+  evidence: EvidenceSummary[];
+}
+
+/** POST /api/events/{eventKey}/evidence 응답 — presigned PUT URL. */
+export interface EvidenceUploadResponse {
+  artifactId: string;
+  objectKey: string;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
+/** GET /api/events/{eventKey}/evidence/{artifactId} 응답 — presigned GET URL. */
+export interface EvidenceViewResponse {
+  artifactId: string;
+  contentType: string;
+  viewUrl: string;
+  expiresAt: string;
+  registeredAt: string;
+  registeredBy: string;
 }
 
 export interface EventTransitionInput {
@@ -168,7 +208,13 @@ export interface AoiVertex {
 
 export interface MissionPlanRouteInput {
   altitudeM: number;
+  /** lawnmower 스캔선 간격(m) — 측면 중첩을 정한다. */
   spacingM?: number;
+  /**
+   * lawnmower 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격.
+   * 매핑 계열에서 빠지면 서버가 422 로 거부한다(전방 중첩 0 → 재구성 불성립).
+   */
+  captureIntervalM?: number;
   sweepDirectionDeg?: number;
 }
 

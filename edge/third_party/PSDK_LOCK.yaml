@@ -1,0 +1,51 @@
+# DJI Payload SDK (PSDK) — 핀 계보 (커밋됨, 실물은 커밋하지 않음)
+#
+# 이 파일은 계보 SSOT다 — 실제 PSDK 소스/바이너리는 tools/edge/fetch_psdk.py로
+# 명시적으로 받는다(edge/third_party/psdk/, gitignored). 패턴은 models/ +
+# tools/fetch_model.py와 동형: "계보는 git에, 실물은 명시적 fetch로".
+#
+# references/ 서브모듈 정책(REFERENCE_REPOS_LOCK.yaml: build_references: false)과는
+# 무관하다 — references/는 "읽고 베끼되 링크하지 않는" 참고 자료이고, PSDK는
+# "실제로 링크하는 빌드 입력"이라 성격이 다르다. references/ 아래 두지 않는다
+# (scripts/check_no_reference_imports.sh FAIL(2)와 충돌하기 때문이기도 하다).
+
+source:
+  repo: https://github.com/dji-sdk/Payload-SDK.git
+  pinned_commit: 9af08536df3671ed77aee02f1f2e4173b0e0f558
+  pinned_commit_date_utc: "2026-04-01T07:27:33Z"  # 원 커밋 타임존(+0800)을 UTC로 환산
+  observed_version: "3.16.0"  # psdk_lib/include/dji_version.h DJI_VERSION_{MAJOR,MINOR,MODIFY} 실측
+  observed_at_utc: "2026-08-03T13:01:00Z"  # HIL 세션 SESS-20260803T125616Z-PENDING-SN, 실기에서 git clone 시점
+
+license:
+  # LICENSE.txt(934줄)가 파일 트리 형태로 "다음 항목들은 MIT"를 명시한다 — CMakeLists.txt,
+  # doc/, psdk_lib/**(헤더+libpayloadsdk.a 등 사전 컴파일 바이너리 포함), README.md,
+  # samples/** 전부 포함. 예외는 STM32_USB_Host_Library(STMicroelectronics 별도
+  # 라이선스, RTOS/STM32 플랫폼 전용 — 우리가 쓰는 Linux/manifold3 경로와 무관).
+  #
+  # EULA.txt §3.5(Open-Source Components)가 "이 SDK의 오픈소스 구성요소와 EULA가
+  # 충돌하면 오픈소스 라이선스가 우선한다"고 명시하므로, LICENSE.txt가 MIT로 나열한
+  # 부분(libpayloadsdk.a 포함)에는 EULA §3.2(c)의 재배포 금지가 적용되지 않는다.
+  # 근거: 2026-08-03 HIL 세션 중 실기에서 LICENSE.txt/EULA.txt 원문 직접 확인.
+  spdx: "MIT (일부 STM32_USB_Host_Library 서브트리 제외 — RTOS 전용, 미사용)"
+  verified_files:
+    LICENSE.txt: 68a2bc3ed454371993c77df6fef6e0a87a6449cd504c0f43486378a1b331cb39
+    EULA.txt: 9549ab4e206f782ee04c40148fc0dd43686a3e4bb07e25adecfc897cc5ff0298
+  redistribution_allowed: true
+  notes: >
+    libpayloadsdk.a(사전 컴파일 정적 라이브러리)를 vendoring하는 것도 위 근거로
+    허용된다고 판단한다. 재검토가 필요해지면(DJI가 LICENSE.txt를 변경하는 등)
+    pinned_commit을 갱신하고 이 판단을 다시 실측할 것 — 자동 승계하지 않는다.
+
+# fetch_psdk.py가 검증하는 대표 파일 sha256 — 핀이 이탈했는지(예: 브랜치가 아니라
+# 태그인데 리라이트됐다든지) 판별하는 최소 세트. 전체 아카이브 해시는 두지 않는다
+# (해시가 실기 클론 시점과 공식 tarball 배포본이 완전히 동일한 바이트인지 자체가
+# 미확인이라, 과신을 피한다 — 파일 단위 실측만 기록).
+verified_files:
+  psdk_lib/include/dji_version.h: c3a4d67ffc0709beadfac36890bf6366e11dd56fbd6338c583e6dc392f13972e
+
+# 타깃 산출물 — tools/edge/fetch_psdk.py가 checkout 후 확인한다.
+target:
+  arch: aarch64
+  library_path: psdk_lib/lib/aarch64-linux-gnu-gcc/libpayloadsdk.a
+  # 실기(Manifold 3, Ubuntu 20.04.6, gcc 9.4.0)에서 실측 — 2026-08-03 HIL 세션.
+  library_sha256_on_device: c940d6d88f449ef6f48e535e0b765f4bf8486db44702d4d64e37da156d204426

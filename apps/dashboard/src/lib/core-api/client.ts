@@ -1,6 +1,7 @@
 import "server-only";
 
-import { coreApiBaseUrl, coreApiToken } from "./env";
+import { coreApiBaseUrl } from "./env";
+import { getSessionToken } from "./session";
 
 function extractDetailText(raw: unknown): string | undefined {
   if (typeof raw === "string") return raw;
@@ -77,11 +78,15 @@ function buildUrl(path: string, query?: CoreFetchOptions["query"]): string {
   return url.toString();
 }
 
-export async function coreFetch<T>(path: string, options: CoreFetchOptions = {}): Promise<T> {
+async function rawCoreFetch<T>(
+  path: string,
+  token: string,
+  options: CoreFetchOptions = {},
+): Promise<T> {
   const response = await fetch(buildUrl(path, options.query), {
     method: options.method ?? "GET",
     headers: {
-      Authorization: `Bearer ${coreApiToken()}`,
+      Authorization: `Bearer ${token}`,
       ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -97,4 +102,19 @@ export async function coreFetch<T>(path: string, options: CoreFetchOptions = {})
     throw new CoreApiError(response.status, body);
   }
   return body as T;
+}
+
+/** 로그인 화면에서 사용자가 입력한 토큰을 검증할 때만 쓴다 — 세션 쿠키에 의존하지 않는다. */
+export async function coreFetchWithToken<T>(
+  path: string,
+  token: string,
+  options: CoreFetchOptions = {},
+): Promise<T> {
+  return rawCoreFetch<T>(path, token, options);
+}
+
+/** 앱 전역 기본 진입점 — 로그인한 운영자의 세션 토큰을 자동으로 싣는다(§session.ts). */
+export async function coreFetch<T>(path: string, options: CoreFetchOptions = {}): Promise<T> {
+  const token = await getSessionToken();
+  return rawCoreFetch<T>(path, token, options);
 }

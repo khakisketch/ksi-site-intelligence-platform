@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-07-30T17:17:17+09:00",
+  "updated_at": "2026-08-05T03:50:54+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -12,8 +12,7 @@
         "P0-3 golden 분리+메타",
         "P0-4 골든 회귀+단조성",
         "P0-5 2-enum+미노출",
-        "P0-6 fingerprint 결정성",
-        "CI green"
+        "P0-6 fingerprint 결정성"
       ],
       "status": "completed",
       "attempt": 1,
@@ -30,7 +29,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-26T15:59:10+09:00"
+      "updated_at": "2026-07-26T15:59:10+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-1",
@@ -53,7 +53,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-27T01:35:36+09:00"
+      "updated_at": "2026-07-27T01:35:36+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-2",
@@ -70,7 +71,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-25T00:52:13+09:00"
+      "updated_at": "2026-07-25T00:52:13+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-3",
@@ -87,7 +89,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-4",
@@ -104,7 +107,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "phase-5",
@@ -121,7 +125,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00"
+      "updated_at": "2026-07-25T00:52:14+09:00",
+      "kind": "product"
     },
     {
       "id": "stage-c",
@@ -150,7 +155,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-26T15:59:20+09:00",
-      "updated_at": "2026-07-26T22:41:55+09:00"
+      "updated_at": "2026-07-26T22:41:55+09:00",
+      "kind": "product"
     },
     {
       "id": "track-a",
@@ -163,14 +169,15 @@
       ],
       "status": "blocked",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "2026-08-03 실기 HIL 세션(SESS-20260803T125616Z-PENDING-SN): 1단계(환경 인벤토리) PASS — hil_raw_logs/SESS-20260803T125616Z-PENDING-SN/01_env_inventory/. 2a단계(KSI edge/manifold-runtime 온보드 네이티브 빌드) PASS — gcc9.4.0/cmake3.16.3, ctest 2/2, 경고 0건. 2b단계(PSDK 공식 샘플)는 저장소 clone(V3.16.0, MIT 라이선스 확인)까지 진행, App Key 자격증명 입력 대기 중 세션 중단. 파생 산출물: cmake 하한 정정(D1), edge/docker/manifold3-build.Dockerfile, cmake/toolchain-manifold3.cmake, tools/edge/check_target_abi.py+테스트 19건, edge/third_party/PSDK_LOCK.yaml, tools/edge/fetch_psdk.py, scripts/manifold/manifoldctl, CI edge-manifold-target job. 상세: docs/architecture/ADR-KSI-009.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": "spike_required — blocker_code DJI_PSDK_UNAVAILABLE·AIRCRAFT_RC_NOT_CONNECTED(2026-07-28 실측: PSDK 소스/설치 미발견, lsusb에 DJI 장치 없음, telemetry/live-view read 경로 실행 불가) · capability_verified false. 해소 선결조건: Manifold 3 + M4D + RC Plus 2 Enterprise + PSDK 접근권 + bench setup.",
-      "ungated_attempts": 0,
+      "blocked_by": "2026-08-04 커밋·push·CI 검증 완료. 브랜치 feat/manifold3-build-deploy-infra, PR #1(draft), 커밋 976df01(인프라 20파일)+8b9a314(문서). CI 2회 전부 green — run 30832820643(4m13s, 첫 실행)·30833326150(1m8s, gha 캐시 작동 확인). edge-manifold-target 실증: QEMU arm64 이미지 빌드 → ctest 2/2 → 툴체인 드리프트 검사 'container: gcc=9 cmake=3.16 glibc=2.31'(실기 실측 재현) → ABI 게이트 ✓2건. gates: PSDK 핀 '락 스키마 4건 정의' + '트리 SKIP'. device Python 게이트는 GATE_INACTIVE notice로 검사 대상 0건임을 명시(초록 위장 안 함). 이에 따라 MANIFOLD3_TOOLCHAIN.md §1의 'PENDING_CI_RUN' 2행을 run URL 근거로 '검증됨' 승격, ADR-KSI-009 결과절도 실측 갱신. 커밋 직전 우리 위생 가드가 내가 테스트 픽스처에 넣은 실제 App Key/License를 실제로 차단 — 런타임 조립으로 교체(게이트 유효성의 실사용 증명). blocker_code AIRCRAFT_LINK_DOWN 유지 — 3단계 이후는 기체 M4D 물리 연결 필요. 잔여 미검증: manifoldctl deploy/run 실기 실행, edge/psdk-tap 미착수(문서에 명시), 감사 low 48건 중 일부.",
+      "ungated_attempts": 1,
       "created_at": "2026-07-27T01:51:57+09:00",
-      "updated_at": "2026-07-28T18:15:55+09:00"
+      "updated_at": "2026-08-04T01:43:47+09:00",
+      "kind": "product"
     },
     {
       "id": "track-b",
@@ -181,16 +188,17 @@
         "Frame source를 PSDK Live View로 교체",
         "실기 프레임에서 전 구간 재현"
       ],
-      "status": "in_progress",
+      "status": "blocked",
       "attempt": 1,
       "evidence": "PRODUCTION EDGE RUNTIME PROMOTION 독립 재검토 완료(2026-07-30) — 2026-07-28 review_pending 이었던 승격분(1e10712·fdec71f)의 재검토(R5/R6)가 P1 2건을 적발: ①상대 시각 텔레메트리+1970 epoch 하드코딩 → occurred_at 1970 Evidence 가 exit 0 발행(감사 #23 클래스의 CLI 경계 재발, fail-open) ②분류가 실질 공허한 entity 가 MISSING_CLASSIFICATION_LINEAGE typed 거부를 우회해 ValidationError 로 배치 전체 사망. 수정: ts 절대 UTC epoch 강제([1e9,4102444800) 밖 CONFIG_ERROR exit 1·1970 상수 제거)·lineage 게이트를 실질 공허까지 확장(typed 거부·배치 계속·스키마 강도 유지)·DecompressionBombError 튜플 포함·--registry 플래그(env 폴백)·중복 JSON 키/1e400 오버플로 거부·CLI float 인자 isfinite·exit 규약 정직화(전량 프레임 실패 exit 3·프레임 0장 exit 1·계보 결함 미발행 시 번들 잔존해도 exit 3)·viewpoint ENU 미터 bin(도 단위 스케일 결함 폐쇄)·RecordedFrameDetector typed 4분기 CI 테스트(INVALID_FRAME 최초)·conftest 이중 anchor(skip+부재). 재검증 V3 PASS(P2 4건도 후속 수정 완료). 잔여 구조 한계(배치 단일 viewpoint — 프레임별 보간 샘플 미사용)는 보수 방향(다양성 미충족→CONFIRMED 불가)이라 안전하며 B3(Live View 프레임별 실 Pose)에서 해소 — 코드 docstring 명시. 게이트: 998 passed·5 skipped cache-clean 실모델·mypy 96·ruff·ctest 2/2. goal 잔여(PSDK Live View 교체·실기 재현)는 하드웨어 종속으로 in_progress 유지.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": null,
+      "blocked_by": "잔여 수용기준(PSDK Live View 프레임소스 교체·실기 프레임 전구간 재현)은 DJI 실기/PSDK SDK 필요 — track-a와 동일한 하드웨어 의존성으로 소프트웨어만으론 진행 불가(2026-07-30 재확인: 합성/녹화 배선 완료 8be6a63, Detector 실모델(D-FINE-S COCO) 교체 완료 04b7555 이후 — 남은 2개 기준만 하드웨어 종속)",
       "ungated_attempts": 5,
       "created_at": "2026-07-27T01:51:58+09:00",
-      "updated_at": "2026-07-30T01:33:05+09:00"
+      "updated_at": "2026-07-30T19:12:44+09:00",
+      "kind": "product"
     },
     {
       "id": "core-ingest",
@@ -219,7 +227,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T01:48:26+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "product"
     },
     {
       "id": "audit-actionintent-hardening",
@@ -248,7 +257,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:19+09:00",
-      "updated_at": "2026-07-29T14:31:32+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-pipeline-production-lineage",
@@ -276,7 +286,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:32+09:00"
+      "updated_at": "2026-07-29T14:31:32+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-contract-schema-gates",
@@ -303,7 +314,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-gate-integrity",
@@ -331,7 +343,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-signing-key-lifecycle",
@@ -357,7 +370,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "audit-edge-sync-ops-hardening",
@@ -384,7 +398,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T03:58:20+09:00",
-      "updated_at": "2026-07-29T14:31:33+09:00"
+      "updated_at": "2026-07-29T14:31:33+09:00",
+      "kind": "hardening"
     },
     {
       "id": "mission-geometry-route",
@@ -413,7 +428,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T01:32:35+09:00"
+      "updated_at": "2026-07-30T01:32:35+09:00",
+      "kind": "product"
     },
     {
       "id": "core-domain-query",
@@ -441,7 +457,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T14:47:10+09:00"
+      "updated_at": "2026-07-30T14:47:10+09:00",
+      "kind": "product"
     },
     {
       "id": "dashboard-mvp",
@@ -469,7 +486,8 @@
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-30T17:17:17+09:00"
+      "updated_at": "2026-07-30T17:17:17+09:00",
+      "kind": "product"
     },
     {
       "id": "ops-serving-hardening",
@@ -478,19 +496,77 @@
         "Evidence presigned 업로드/열람 경로",
         "retention-policy.v1 집행(tombstone·감사기록)",
         "Mission Contract 서명키 공급 ADR+구현",
-        "edge-sync journal 회전·스냅샷(인증·DB 결정과 결합)",
+        "원장 재기동 비용 상한 — 도메인 원장(Site/Mission/Event)은 세그먼트 회전, edge-sync 는 스냅샷(2026-08-05 대표자 확정 문구 개정). edge-sync 의 재기동 비용은 파일 크기가 아니라 항목당 본문 정규화+sha256 이라 회전으로는 줄지 않는다 — 근거·잔여 한계는 ADR-KSI-010 §4",
         "독립 재검토 PASS"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "S4 4개 축 중 3개 완결 + 1개 절반. ADR-KSI-010(대표자 승인 3결정: MinIO/S3호환·파일키+회전ADR·tombstone) 선행 작성 후 구현. ①Evidence presigned(commit 5231219) — EvidenceStorage 포트 + 원장 등록 + presigned 발급 API 2종, 객체 키를 서버가 생성(경로 탈출 차단, S2 재검토 P1과 같은 클래스), 폐기는 410 Gone(404 아님), 원장 먼저·URL 나중, MIME allowlist, 미조립 시 라우트 부재(404). 테스트 33건. **미완: 실제 S3 어댑터 없음** — 포트 구현체가 가짜뿐이라 아직 '동작하는 제품'이 아니다(boto3 도입 + MinIO 실연동 필요). ②retention 집행(5c3e3ed) — 판정(순수)/실행 분리, occurredAt 기준, 원장 먼저·삭제 나중, fail-closed 정책 로드, enforced_fields로 미집행 필드 명시. 테스트 19건. ③서명키(d2b0402) — 키 세트 공급(활성 1 + 검증용 과거 키), 권한 0600 강제·개인키/공개키 불일치 거부, docs/security/SIGNING_KEY_LIFECYCLE.md 회전·폐기 절차. 테스트 20건. ④journal 회전(11ef369) — 세그먼트 회전 + 순서 보존 재생, 테스트 9건. **미완: 스냅샷**(회전은 파일 크기만 해결, 재생 시간·메모리는 도메인 저장소 스냅샷이 필요). 변이 테스트로 게이트 유효성 실증(총 8종, 전부 적발) — 그 과정에서 내 테스트 픽스처가 공허했던 것도 1건 적발(Edge가 CONFIRMED_EVENT를 주장할 수 없어 확정 이벤트가 0건인 상태로 통과 중이었음). 신규 리스크 1건 등록(retention-defaults-legal-review). 게이트: ruff·mypy 121파일·pytest 1402 passed·5 skipped, CI 5 job 전부 green(run 확인). 미완: 독립 재검토.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-07-29T20:55:06+09:00"
+      "updated_at": "2026-08-04T21:42:25+09:00",
+      "kind": "hardening"
+    },
+    {
+      "id": "dashboard-operator-login",
+      "title": "대시보드 운영자 로그인 — 고정 ADMIN 토큰 프록시 취약점(dashboard-unauthenticated-signing-proxy) 폐쇄",
+      "completion_criteria": [
+        "로그인 없는 브라우저 접근은 세션쿠키 부재 시 /login으로 리다이렉트(proxy.ts 낙관적 체크)",
+        "3개 Route Handler(sites/mission-plans/events transitions)가 세션 부재 시 Core 호출 없이 401 응답(defense-in-depth, coreApiErrorResponse)",
+        "로그인 성공 시 httpOnly+secure(prod)+sameSite=lax 쿠키에 Core bearer 토큰 저장, 브라우저 JS 접근 불가",
+        "로그아웃으로 쿠키 삭제",
+        "기존 고정 CORE_API_TOKEN 전역 배선 제거 — 각 요청은 로그인한 운영자 본인의 role 권한으로만 Core에 도달(ADMIN 프록시 우회 제거)",
+        "whoAmI 기반 기존 UI 게이팅(내 담당 조치·이벤트 트리아지 버튼 canTriage)이 실제 로그인 사용자 role로 정확히 동작",
+        "잘못된 토큰 입력 시 한글 에러, 토큰 원문 미노출",
+        "npx tsc --noEmit·eslint·next build green",
+        "독립 재검토 PASS"
+      ],
+      "status": "completed",
+      "attempt": 3,
+      "evidence": "3차 reviewer(opus, 3차 독립 세션)가 2차 수정(P1-B shape검사·P2-F Host헤더전환)을 재반증 — WHATWG URL 스펙 기반 13개 변종 전부 추적 확인, Next 자체 Server Action CSRF 검사(action-handler.js)와 동일 기준임을 소스 대조로 확인, 'origin-guard가 스스로 우회 가능한가' 의심을 CORS preflight 미설정+커스텀헤더 불가 논리로 반증 실패 확인. 완료기준 9개 중 8개 PASS(직접 파일 대조), 1개(tsc/eslint/build green)만 '동적 검증 위임'으로 남김. 메인이 위임받은 명령 전부 재실행: npx tsc --noEmit clean·eslint src/ clean·next build 15+1라우트 성공. 추가로 reviewer 제시 curl 매트릭스 5종 전부 기대대로 동작 확인 — (a)127.0.0.1 same-origin+유효세션→422(Core도달, 차단안됨) (b)localhost same-origin+유효세션→422(Core도달) (c)evil.example cross-origin→403(차단) (d)X-Forwarded-Host 리버스프록시 시나리오+유효세션→422(Core도달) (e)무세션+깨진JSON→401(세션검증 우선). node 단위재현으로 P1-B 13개 변종(dot-segment 4종·백슬래시/탭 3종·스킴트릭 2종·인코딩트릭 2종·무해 케이스 2종) 전부 기대값 일치. 최종 판정 PASS — 신규발견 5건 전부 P3(접근성 aria-label 효과 미보장 N-4/N-5, XFH 신뢰 배포문서화 N-2/N-3, host==null fail-open 편차 N-1)+이월 1건(로그인 rate-limit, 기존 risk dashboard-login-residual-hardening에 포함) — P1/P2급 보안결함 잔여 없음. 대표자 상신 권고 1건 신규 발견: __Host- 쿠키 접두사(N-6, HTTPS+공유도메인 배포 확정 시 P2 승급 — DASHBOARD_COOKIE_INSECURE_HTTP 배포토폴로지 결정과 동일 공동결정 레인).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "risk dashboard-unauthenticated-signing-proxy(high) 폐쇄 완료. 3라운드 adversarial 재검토로 실결함 5건 적발·폐쇄(1차 P1 3건+P2 6건, 2차가 1차 수정 자체의 잔존 우회 1건과 1차가 만든 신규 기능회귀 1건 추가 적발) — 특히 2차가 잡은 origin-guard 회귀는 내가 실측에 실제로 썼던 127.0.0.1 접속 방식 자체를 깨뜨리는 것이었고 green(음성케이스 curl 403)만 보고 양성케이스(정상 요청 통과)를 안 본 전형적 green≠작동 공백에서 나왔다. 잔여 사항: risk dashboard-wizard-rbac-mismatch(high, 대표자 결정 대기 — SITE_MANAGER 등 비-ADMIN의 현장등록 권한 재설계)·risk dashboard-login-residual-hardening(medium — rate-limit·secure쿠키 배포전제·이번 3차가 추가한 __Host- 쿠키 검토)는 이번 goal 범위 밖으로 별도 원장에 유지.",
+        "at": "2026-07-30T22:25:56+09:00",
+        "reviewer": "opus reviewer (3라운드: 1차/2차/3차 독립 세션, 3차 최종 PASS)",
+        "evidence_ref": "3차 reviewer 최종 판정(agent a8a15591b8f1296ff, /tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/eb40e46c-9d33-4f4b-8898-a75fd0dc43c2/tasks/a8a15591b8f1296ff.output) + 메인 curl/node 재현(본 attempt evidence)"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "created_at": "2026-07-30T21:06:34+09:00",
+      "updated_at": "2026-07-30T22:25:56+09:00",
+      "kind": "hardening"
+    },
+    {
+      "id": "dashboard-wizard-split-baseline-mission",
+      "title": "현장등록 Wizard를 현장등록/baseline임무발급 2단계로 분리 — RBAC 정합(risk dashboard-wizard-rbac-mismatch 해소)",
+      "completion_criteria": [
+        "SITE_MANAGER(SITES_WRITE만 보유) 로그인으로 현장 등록을 8단계 전부 완주 가능(임무발급 단계 없이 UNMAPPED 상태로 저장 성공)",
+        "등록된 현장에 'baseline 임무 발급' 진입점이 별도로 존재하고 MISSIONS_ISSUE 권한(DRONE_OPERATOR/ADMIN) 없으면 비활성+사유 안내",
+        "DRONE_OPERATOR/ADMIN 로그인으로 그 진입점에서 AOI·매핑파라미터 등 필요 입력을 다시 받아 POST /api/mission-plans 발급 성공",
+        "기존 ADMIN 단일흐름(등록+발급 한번에)도 여전히 가능(권한 있으면 끊기지 않음, 회귀 없음)",
+        "SiteStatus UNMAPPED 상태에서 baseline 임무 미발급으로 남아있어도 다른 화면(홈·현장목록·현장상세)이 깨지지 않음",
+        "390/768/1440 렌더 확인",
+        "npx tsc --noEmit·eslint·next build green",
+        "독립 재검토 PASS"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "구현+렌더 확인 완료(커밋 f89247c·677256d·9c1b744). 수용기준 판정 — ①SITE_MANAGER 등록 완주: PASS(단 기준 문구의 '8단계'가 아니라 3단계 축약 흐름 SiteRegistrationOnlyWizard. AOI·매핑파라미터는 임무 발급 소관이라 등록 시점엔 저장할 곳이 없어 아예 묻지 않는다 — 기준 문구를 실제 설계에 맞게 읽었음) ②baseline 발급 진입점 분리+권한 없으면 비활성+사유: PASS(현장 상세 우상단, UNMAPPED이면 라벨이 '베이스라인 임무 발급') ③DRONE_OPERATOR 발급 성공: PASS(실동선 — AOI 4점 그리기→목적 BASELINE_MAPPING→표준 수준→계약 발급, 웨이포인트 24·커버리지 100.0%·KMZ sha256 cdd90678…) ④ADMIN 통합 8단계 회귀 없음: PASS ⑤UNMAPPED에서 타 화면 무손상: PASS(홈·현장목록·현장상세 3화면 확인) ⑥390/768/1440: PASS ⑦tsc·eslint·next build: PASS. 렌더 확인에서 결함 5건 적발·수정(타입/빌드는 전부 통과하던 클래스): (a)topbar 제목이 proxy.ts x-pathname 서버헤더 기반이라 클라이언트 네비게이션에서 이전 화면에 정지 → PageTitle.tsx(usePathname) 분리 (b)등록·발급 후 사이드바 건수 정지(같은 layout 보존 원인) → 3개 Wizard 성공분기에 router.refresh() (c)Field label이 입력과 형제라 접근가능 이름이 placeholder로 잡힘(입력 시작하면 사라짐) → label이 입력을 감싸도록 (d)placeholder와 helpText 문구 중복 → placeholder를 예시값으로 (e)권한 부재(403)를 장애로 표시 — 현장상세 섹션 2곳 + 홈 콜아웃/현장목록/지표타일 4개가 '불러오지 못했습니다'+재시도 버튼을 냈고 DRONE_OPERATOR 홈이 통째로 장애처럼 보였다 → forbidden 분리. 미완: ⑧독립 재검토(reviewer) 미실시.",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "created_at": "2026-07-31T05:08:47+09:00",
+      "updated_at": "2026-08-04T20:27:59+09:00",
+      "kind": "product"
     }
   ],
   "risks": [
@@ -611,14 +687,14 @@
       "title": "FlightEnvelope 절대 고도 상한(규제값) 미확정 — 서버 고정 안전상수 원칙의 공백",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-07-30 독립 재검토(R4). maxAltitudeM 에 절대 상한이 없어 규제 위반 봉투가 발급 가능했다. 잠정 조치: 서버 sanity cap 500m(모델 검증, 스키마 불변). 대표자 결정 대기: 규제 상한 값 확정(권고 150m — 항공안전법 일반 비행제한 고도, 예외 승인 운용 시 별도).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 5e51ecb+2d1a20c: 규제 상한 150m 확정(2026-08-05 대표자). 잠정 sanity cap 500m 대체. 정본은 ADR-KSI-011 D1 + DOMAIN_INVARIANTS INV-014 — 결정이 코드 주석에만 있던 것을 독립 재검토가 적발해 문서화. 강제 3겹(계약 모델 검증·경로 생성기 봉투 대조·이륙 안전고도) + contracts/schemas/mission-contract.v1.2.json maximum:150(스키마로만 검증하는 소비자가 400m 봉투를 받던 drift 폐쇄) + 대시보드 Wizard 2종 140m 입력 제한. 값 자체를 테스트가 못박음.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T00:10:44+09:00",
-      "updated_at": "2026-07-30T00:10:44+09:00"
+      "updated_at": "2026-08-05T03:45:53+09:00"
     },
     {
       "id": "mission-issuance-unauthenticated-signing-oracle",
@@ -639,42 +715,140 @@
       "title": "S2 2차 독립 재검토 P2/P3 잔여 강화 항목",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "재생(replay) 경로가 INV-021 확정게이트·assert_event_transition 을 재검증하지 않음(live 경로에만 강제 — journal 직접조작·타 write경로 버그 시에만 노출, sites.py 는 이미 재생 fail-closed 이나 events.py 는 미대칭) / sites.py journal ts 가 UTC 로 정규화되지 않음(SiteRecord 필드는 정규화되나 journal 원본 ts 문자열은 오프셋 그대로) / mission_plans.py KMZ 멱등재발급이 plan_request_digest 를 재생 경로에서 재검증하지 않음(live 경로만 대조) / test_api_contract_sync.py 가 경로·메서드·security존재만 대조하고 요청/응답 스키마 깊은 대조는 미수행 / openapi 공개 allowlist 서술에 /docs/oauth2-redirect 누락 / EVENT_UPDATED 가 siteId/missionId/occurredAt 을 bundle 과 동기화하지 않아 레코드 메타와 bundle 내용이 갈라질 수 있음(완화: siteId 는 애초 서버검증 없는 자유값) / 확정 전이에 낙관적동시성 토큰(기대 bundleDigest) 부재로 좁은 경합창에서 evidence 스냅샷이 운영자가 본 값과 다를 수 있음. 전부 안전 실害 경로 없음(완화 존재) — S2 PASS 게이트와 별개로 S4(운영 표면 강화) 또는 후속 세션에서 재검토.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 5e51ecb+c3c14bf+2d1a20c: 7항목 전건 폐쇄(재생 INV-021 게이트·sites ts UTC 정규화·짝 레코드 digest 재생 재검증·요청 본문 계약 깊은 대조 게이트 신설·allowlist 서술+무인증 표면 코드 열거 게이트·event-updated 메타 동기화·낙관적 동시성 토큰 서버+UI). 독립 재검토 3라운드에서 P1 5건·P2 13건 추가 적발·폐쇄. 게이트: pytest 1500 passed·5 skipped, mypy 125파일, 대시보드 75. 신규 게이트 전건 변이 실증.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T14:22:42+09:00",
-      "updated_at": "2026-07-30T14:22:42+09:00"
+      "updated_at": "2026-08-05T03:45:53+09:00"
     },
     {
       "id": "dashboard-nextjs-toolchain-cve",
       "title": "apps/dashboard: next@16.2.12 내부 postcss@8.4.31·sharp@0.34.5 미패치 CVE(SCA gate, npm audit high 12건)",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "npm audit --audit-level=high: next 16.2.12 자체가 내부 번들 postcss(<=8.5.17, XSS/경로탈출)·sharp(<0.35.0, libvips CVE)를 물고 있고 latest stable(16.2.12)이 곧 설치본 — npm audit fix --force 의 유일 제안은 next@9.3.3 대폭 다운그레이드(App Router 등 전면 붕괴, 실효 해법 아님). eslint-config-next 경유 minimatch/brace-expansion 은 devDependency 전용(빌드산출물 미포함) — 노출 경로 없음. postcss/sharp 노출: 현재 S3 범위엔 사용자 제공 CSS/이미지 처리 파이프라인이 없어 실착취면 낮음(신뢰된 in-repo CSS만 처리, next/image 원격 이미지 미설정). S4 Evidence 미디어 업로드(원격/사용자 이미지 처리) 도입 시 sharp 노출면이 실질화되므로 그 시점 재점검 필수. next 16.3.0 계열 stable 릴리즈로 패치되면 즉시 업그레이드.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "next 16.2.12→16.3.0 + eslint-config-next 동반 업그레이드 + npm audit fix(brace-expansion). npm audit --audit-level=moderate 결과 'found 0 vulnerabilities'(이전 high 4건 — sharp libvips CVE-2026-33327/33328/35590/35591). 회귀 확인: tsc·eslint·vitest 54 passed·next build clean, 실제 렌더 4화면(홈·이벤트목록·현장목록·이벤트상세) 정상. 리스크 노트가 지목한 조건('S4 Evidence 미디어 업로드 도입 시 sharp 노출면이 실질화되므로 그 시점 재점검 필수')이 실제로 도래한 시점에 처리 — 업로드 경로 도입 커밋(9f3e8a6) 직후.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-30T15:24:29+09:00",
-      "updated_at": "2026-07-30T15:24:29+09:00"
+      "updated_at": "2026-08-04T22:46:32+09:00"
     },
     {
       "id": "dashboard-unauthenticated-signing-proxy",
       "title": "apps/dashboard Route Handler 4개가 인증/Origin 검사 없이 고정 ADMIN 토큰으로 Core write를 대행 — 대시보드 포트 도달 가능자 누구나 서명 Mission Contract 발급 가능",
       "lens": "role",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer(opus) 독립 재검토 P1-F. 대시보드는 §7 구현 노트에 따라 단일 사전 프로비저닝 토큰(CORE_API_TOKEN)을 서버사이드에서만 쓰도록 설계됐다(토큰 자체의 브라우저 노출은 없음, server-only 격리 CONFIRMED) — 그러나 POST /api/sites, /api/mission-plans, /api/events/[eventKey]/transitions Route Handler 자체에는 대시보드 사용자 인증이나 Origin 검사가 없어, 대시보드 HTTP 포트에 네트워크로 도달 가능한 누구나 이 프록시를 통해 고정 ADMIN 권한으로 현장 등록·서명된 Mission Contract 발급·이벤트 트리아지 전이를 수행할 수 있다. S2에서 닫은 mission-issuance-unauthenticated-signing-oracle risk와 동형 구멍이 대시보드 계층에서 재생성된 것. 로컬/사내망 한정 데모 단계에서는 즉시 차단 아니나, 대시보드를 실제 배포(사내 네트워크 밖 도달 가능)하기 전 반드시 해소해야 한다. 해소 경로: 대시보드 자체 로그인/세션(§8 S3 비범위로 명시적으로 미룬 항목) 도입, 또는 최소한 리버스 프록시/네트워크 경계에서 접근 제한. 미사용 sites/[siteId]/transitions Route Handler(호출자 0건)는 즉시 제거해 공격면 축소 완료.",
+      "accept_reason": null,
+      "resolve_evidence": "goal dashboard-operator-login completed(2026-07-30, gate pass, 3라운드 opus 독립 재검토) — 대시보드가 고정 CORE_API_TOKEN(ADMIN) 전역 배선 대신 운영자별 로그인 세션(httpOnly 쿠키)으로 Core에 도달, 각자 본인 role 권한으로만 동작. Route Handler 3개 세션가드+Origin/CSRF 검사 추가. 상세: .ksi/ledger.jsonl dashboard-operator-login 최종 gate 항목.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-07-30T16:39:31+09:00",
+      "updated_at": "2026-07-30T22:26:18+09:00"
+    },
+    {
+      "id": "dashboard-wizard-rbac-mismatch",
+      "title": "현장등록/조사 Wizard가 SITES_WRITE+MISSIONS_ISSUE 동시요구 — ADMIN 외 전 role 403 회귀",
+      "lens": "role",
+      "severity": "high",
+      "status": "open",
+      "note": "현장 등록/조사 Wizard가 SITES_WRITE+MISSIONS_ISSUE 동시 권한을 요구하는데 이 조합을 가진 Core role이 ADMIN뿐 — dashboard-operator-login이 role을 처음으로 실제 활성화한 결과 드러난 회귀(이전엔 전원 고정 ADMIN 토큰이라 가려져 있었음). SiteRegistrationWizard.tsx(POST /api/sites → POST /api/mission-plans)와 SurveyWizard.tsx가 한 흐름 안에서 두 권한을 다 요구한다. Core _ROLE_PERMISSIONS(services/core/src/ksi_core/auth.py:166-200): SITE_MANAGER={SITES_WRITE,...}이나 MISSIONS_ISSUE 없음, DRONE_OPERATOR={MISSIONS_ISSUE,...}이나 SITES_WRITE 없음 — ADMIN 외 전 role이 1단계 또는 2단계에서 403. SITE_MANAGER로 로그인해 현장을 등록하면 site는 생성되고 baseline mission 발급만 실패하는 반쪽 상태로 남는다. ADR-KSI-008 '대표자 후속 확인 1(역할·권한 매트릭스, 공동 결정 레인)'이 애초에 미확정으로 남겼던 지점 — Claude 자율 레인에서 임의로 권한표를 바꾸지 않는다. 해소 경로 후보(대표자 결정 필요): (a) SITE_MANAGER에 MISSIONS_ISSUE 추가 (b) Wizard를 현장등록/임무발급 두 단계로 분리해 각각 권한 게이팅 (c) 이 통합 Wizard는 ADMIN 전용으로 명시. 임시 완화(적용 예정): 대시보드 UI에서 두 권한이 모두 없는 role에는 '현장 등록' 진입점을 비활성화하고 사유를 안내(반쪽 상태 방지). reviewer(opus) 2026-07-30 독립 재검토 P1-C 적발.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
-      "created_at": "2026-07-30T16:39:31+09:00",
-      "updated_at": "2026-07-30T16:39:31+09:00"
+      "created_at": "2026-07-30T21:32:32+09:00",
+      "updated_at": "2026-07-30T21:32:32+09:00"
+    },
+    {
+      "id": "dashboard-login-residual-hardening",
+      "title": "로그인 표면 잔여 강화 — secure쿠키 배포전제·로그인 시도 제한 없음",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "reviewer(opus) 2026-07-30 P2 잔여 2건, 안전 실해 경로 없음(완화 존재)이나 배포 전 재확인 권장. (1) session.ts의 secure 쿠키 플래그가 NODE_ENV==='production' 단독 조건 — 이 제품의 현장 서버가 평문 HTTP 사내망으로 배포되면 브라우저가 Secure 쿠키를 저장/전송하지 않아 로그인 무한루프로 조용히 깨진다(실제 배포 토폴로지가 HTTPS 종단인지 확인 필요, 공동 결정 레인). (2) /login에 시도 제한·지연이 없어 네트워크로 포트에 닿는 누구나 토큰을 무제한 추측할 수 있다 — 원래 risk(dashboard-unauthenticated-signing-proxy)가 노리던 것과 동일한 노출면이 이제 전적으로 토큰 엔트로피에 의존한다. dev 토큰은 추측 가능한 리터럴(dev-admin-token 등)이라 prod 토큰 프로비저닝 규칙(엔트로피·회전)이 문서화되어야 한다.",
+      "accept_reason": null,
+      "resolve_evidence": "commit 직후 — (1)secure 쿠키: 이미 DASHBOARD_COOKIE_INSECURE_HTTP 스위치로 해소돼 있었다(session.ts, 기본값은 안전한 쪽이고 HTTP 사내망 배포 시 명시적으로 끄는 구조 — 리스크 노트가 낡았음을 확인). (2)로그인 시도 제한: login-throttle.ts 신설(5분 창 8회 실패 후 차단, 성공 시 리셋, 빈 입력 미카운트, 식별불가 클라이언트도 공용키로 제한, 첫 실패 기준 고정 창). 테스트 7건 + 실브라우저 확인(8회 실패 후 9회차부터 '로그인 시도가 너무 많습니다. 5분 후 다시 시도하세요.', 차단 중 올바른 토큰도 거부). 감수 사항 명시: IP 키라 같은 출구 IP 정상 운영자가 남의 실패로 잠길 수 있다(인증 단위가 계정이 아니라 토큰 하나) — 창 5분·사내망 배포 전제가 절충. 다중 인스턴스 배포로 가면 프로세스 메모리 카운터는 무의미해진다(docstring 명시). 잔여: prod 토큰 프로비저닝 규칙(엔트로피·회전) 문서화는 SIGNING_KEY_LIFECYCLE.md 와 별개로 미작성.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-07-30T21:32:44+09:00",
+      "updated_at": "2026-08-04T22:57:09+09:00"
+    },
+    {
+      "id": "api-contract-response-schema-void",
+      "title": "openapi-core.yaml이 응답 본문 스키마를 명세하지 않아 producer↔consumer 계약이 코드에만 존재",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "2026-08-04 발견 — s2-residual-hardening에 '깊은 대조 미수행'으로 적혀 있던 항목이 실제 drift로 실현됐다. Core가 EventSummaryResponse/EventDetailResponse에 eventType 필드를 추가(대시보드 이벤트 목록 요구)했는데 contracts/api/openapi-core.yaml은 응답을 '200: { description: \"{ events: EventSummaryResponse[], count }\" }' 처럼 **자유 문자열 description**으로만 적고 schema가 없다 — 즉 필드가 늘거나 줄어도 대조할 정본 자체가 없다. tests/contract/test_api_contract_sync.py는 경로·메서드·security 존재만 보므로 게이트가 침묵했고, pytest 1318 green 상태에서 계약 문서가 낡은 채로 통과했다. 소비자(apps/dashboard/src/lib/core-api/types.ts)는 이 계약의 **수동 복제본**이라 서버가 필드를 바꾸면 타입은 여전히 green이고 런타임에서만 깨진다. 해소 경로: (a)주요 응답 모델을 openapi components/schemas로 실제 명세 + 게이트를 필드 수준 대조로 확장 (b)FastAPI가 생성하는 openapi.json을 정본으로 삼고 contracts/의 수기 yaml과 대조 (c)대시보드 types.ts를 계약에서 생성. 지금 실害는 없다(양쪽이 우연히 일치) — 다음 스키마 변경 때 터진다.",
+      "accept_reason": null,
+      "resolve_evidence": "commit 8a18a18 — openapi-core.yaml v1.5.0 components/schemas 11개 신설 + 13개 2xx 응답 $ref 바인딩, tests/contract/test_api_contract_sync.py 게이트 3종 추가(④필드·required 집합 대조 ⑤named 모델 바인딩 강제 ⑥대시보드 types.ts 소비자 대조, 6개 모델). 변이 3종 전부 적발 실증: 문서에서 eventType 제거→④실패 / /v1/events 응답을 자유문자열로 되돌림→⑤실패 / types.ts에서 eventType 제거→⑥실패. ruff·mypy clean, pytest 1321 passed·5 skipped. 잔여(별개 관심사, 이번 범위 밖): 문서 201 vs 구현 openapi 선언 200 표기 차이(POST /v1/sites·edge-sync — FastAPI가 Response(status_code=) 런타임 지정을 openapi에 반영하지 않음, 실제 런타임 코드 확인 필요), 요청 본문 스키마는 기존 인라인 정의 유지(응답만 components화).",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-04T20:28:20+09:00",
+      "updated_at": "2026-08-04T20:40:49+09:00"
+    },
+    {
+      "id": "psdk-tap-outside-ci-gate",
+      "title": "edge/psdk-tap 2179줄이 CI 게이트 밖 — PSDK·자격증명 없으면 순수 로직 테스트조차 configure 불가",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "2026-08-04 발견. edge/psdk-tap/CMakeLists.txt는 configure 최상단에서 config/dji_sdk_app_info.h(App Key)와 edge/third_party/psdk 실물을 FATAL_ERROR로 요구한다 — '조용히 스텁으로 빌드하지 않는다'는 옳은 설계지만, 그 게이트가 PSDK와 **무관한** 순수 로직(pairing.c 65줄·ndjson_writer.c 151줄·clock_util.c 45줄)의 테스트까지 함께 막는다. 결과: CI에 job이 없고(.github/workflows/ci.yml grep 0건), 실기 수집기 전체가 회귀 검증 없이 커밋된다(호스트 ctest 1/1은 로컬 수동 실행). 해소 경로: 명시 옵션(예: KSI_PSDK_TAP_LOGIC_TESTS_ONLY, 기본 OFF)을 켰을 때만 psdk_tap 타깃을 제외하고 순수 로직 테스트만 configure — 기본 경로의 fail-closed는 그대로 두고, CI는 그 옵션을 명시적으로 켜되 '검증 범위는 PSDK 비의존 로직뿐'을 로그로 남긴다(edge-manifold-target의 GATE_INACTIVE notice와 같은 관례). 추가로 ndjson_writer·shared_state는 아직 테스트 자체가 없다.",
+      "accept_reason": null,
+      "resolve_evidence": "commit 463eb14 — KSI_PSDK_TAP_LOGIC_TESTS_ONLY(기본 OFF) 옵션 신설로 PSDK 비의존 순수 로직만 configure 가능, CI job edge-psdk-tap 신설(configure→build→ctest 1/1→기본 모드 fail-closed 역검사). 기본 경로 엄격성 불변 — PSDK 부재 시 여전히 FATAL_ERROR(로컬 실증: 'Configuring incomplete, errors occurred!'). 역검사는 -DKSI_PSDK_ROOT=<없는 경로>를 명시해 개발 PC와 CI가 같은 것을 재도록 함. 잔여: ndjson_writer.c(151줄)·shared_state.c(145줄)는 테스트 자체가 없어 이 job 이 커버하지 않는다 — 실기 수집 동작·NDJSON 스키마는 HIL 세션 증거로만 주장(blocker AIRCRAFT_LINK_DOWN).",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-04T20:28:32+09:00",
+      "updated_at": "2026-08-04T20:49:12+09:00"
+    },
+    {
+      "id": "retention-defaults-legal-review",
+      "title": "보관 기간 기본값(候補30·확정1095일 등)의 법적 적정성 미검토 — 집행 엔진은 이미 동작",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-04 ADR-KSI-010 §3에서 명시적으로 범위 밖으로 남긴 항목. retention-policy.v1의 기본값(candidateDays 30·patrolRawDays 90·confirmedEventDays 1095·telemetryMissionDays 365·auditActionDays 1095)이 고객의 법적 의무와 맞는지 확인되지 않았다. 두 방향 모두 위험: (a)산업안전보건법·중대재해처벌법상 안전 관련 기록 보존 의무가 걸리면 1095일이 부족할 수 있다 (b)개인정보보호법 최소보관 원칙에서는 사람이 찍힌 영상을 30일 보관하는 것도 길 수 있다. 지금 집행 엔진(commit 5c3e3ed)은 주어진 값을 그대로 집행하므로, 잘못된 값이 배포되면 그대로 지운다 — 되돌릴 수 없는 방향의 실행이다. 완화: 자동 스케줄러를 두지 않아 사람이 실행 시점에 한 번 본다 + 스키마의 customerOverrideAllowed로 배포 시 값을 정할 수 있다. 해소 경로: 법무·고객 계약 검토 후 배포별 정책 파일 확정(코드 변경 불필요). 대표자 결정 레인.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-04T21:42:07+09:00",
+      "updated_at": "2026-08-04T21:42:07+09:00"
+    },
+    {
+      "id": "coverage-ratio-not-photogrammetric",
+      "title": "coverageRatio 는 선언된 스와스 가정 하의 기하 커버이지 사진측량 완결성의 증명이 아니다 — 카메라 촬영폭 확정(H4) 전까지",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "커버리지 실측(_measure_lawnmower_coverage_ratio)은 각 스캔선이 ±spacing/2 를 덮는다고 가정하는데 spacing 이 요청 입력이라, 원리적으로 '요청이 자기 커버리지 증명서를 스스로 써주는' 구조다. 상한 두 개(captureIntervalM<=spacingM, spacingM<=고도*1.5)가 그 가정이 터무니없어지는 구간만 자를 뿐이고, 1.5 는 물리적 불가능의 증명이 아니라 정책값이다(ADR-KSI-011 D2 에 성격 명시). 실제 폐쇄는 카메라 footprint(FOV+고도) 기반 실계산이며 H4(실기 Pilot 2/카메라 스펙 확정) 종속. 완화: 무작위 4000 조합 속성 테스트(tests/contract/test_coverage_claim_property.py)가 '사진은 적은데 커버는 높다'를 상시 감시하고, 판정 기준을 구현 상수와 독립으로 둬 상한을 느슨하게 하면 실패한다. 이 결함 클래스는 3연속 재발했으므로 H4 때 반드시 재점검.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T03:46:23+09:00",
+      "updated_at": "2026-08-05T03:46:23+09:00"
+    },
+    {
+      "id": "mapping-coverage-claim-unbounded",
+      "title": "매핑 커버리지 주장이 여전히 뚫린다 — 40ha 가 사진 10장에 coverageRatio 1.0 으로 발급됨(4차 독립 재검토 실측)",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "고도 150·spacing 225·captureInterval 225 로 2000x200m(40ha) AOI 를 요청하면 fold 분기로 스캔선 1개·웨이포인트 10개(장당 4ha)에 coverageRatio 1.0 이 나오고, 계약 약속 accessibleGeneralCoverage=1.0 대조도 통과한다(실측 재현). 225x224.9m 면 웨이포인트 2개(5.06ha). 상한을 네 번 고쳤으나(captureInterval 만 -> spacing 물리상한 -> spacing 운용상한) 모두 다른 축으로 우회됐다 — 근본 원인은 커버 실측이 각 스캔선의 촬영폭을 spacing 으로 **가정**하는데 spacing 이 요청 입력이라는 것이다. 카메라 촬영폭을 모르는 한 상한 조정으로는 닫히지 않는다. 실제 폐쇄 경로: CameraSpec(센서폭/초점거리/해상도)+전방·측면 중복도를 요청 파라미터로 받아 서버가 spacing·captureInterval 을 계산한다 — 산식은 참고 구현 references/repos/ksi-terra/ksi_terra/flightplan/{gsd.py,grid.py} 에 이미 있고(표준 매핑 장당 약 0.09*고도^2, 이 결함은 0.27*고도^2 를 넘는다) ADOPT/PORT 대상이다. **public API 형태 변경이라 대표자 결정 필요.** 현재 상태: tests/contract/test_coverage_claim_property.py 가 이 결함을 잡는 속성 테스트로 존재하되 xfail(strict) — 고쳐지면 마커 제거를 강제한다. 앞선 risk coverage-ratio-not-photogrammetric 은 '성질의 한계'를 적은 것이고 이 항목은 '지금 실제로 뚫린다'를 적는다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T03:50:54+09:00",
+      "updated_at": "2026-08-05T03:50:54+09:00"
     }
   ]
 }

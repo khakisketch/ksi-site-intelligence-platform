@@ -69,6 +69,26 @@ class RouteGenerationError(ValueError):
 
 # 스캔선 간격 하한(m) — 미인증 입력의 스캔선 수 폭발(OOM) 차단. 실 GSD 간격은 m 단위.
 _MIN_SPACING_M = 0.1
+# 진행방향(along-track) 촬영 간격 하한(m) — 같은 이유의 웨이포인트 폭발 차단.
+_MIN_CAPTURE_INTERVAL_M = 0.1
+# 스캔선 간격의 고도 대비 상한 배수 — **보수적 운용 범위이지 물리 한계가 아니다.**
+#
+# 커버리지 실측은 각 스캔선이 ±spacing/2 를 덮는다고 **가정**하는데 spacing 이 요청
+# 입력이라, 요청이 자기 커버리지 증명서를 스스로 써주는 구조다. 이 루프는 카메라
+# 촬영폭을 알기 전에는 원리적으로 끊을 수 없다.
+#
+# 처음에는 물리 한계(수평화각 120° = 고도×3.46)를 상한으로 썼는데, **그걸로는
+# 닫히지 않았다** — 고도를 올리면 상한이 같이 올라가 고도 87m·spacing 300 이면
+# 2ha 구역이 사진 2장·coverage_ratio 1.0 으로 그대로 발급됐다(3차 독립 재검토와
+# 자체 탐침이 각각 재현). ratio 3.45 는 물리적으로는 "가능"한 값이라, 물리 상한은
+# 이 클래스를 거를 수 없다.
+#
+# 그래서 상한을 **운용 기준**으로 바꾼다: 1.5 는 수평화각 약 73°(일반적인 매핑
+# 렌즈)에서 측면 겹침이 0 이 되는 지점이다. 이보다 성긴 격자는 어떤 매핑 구성도
+# 아니다. 물리적 불가능을 증명하는 값이 아니라 **"이 범위 밖은 매핑으로 인정하지
+# 않는다"는 정책값**이고, 카메라 실측 확정(H4) 후 고도·렌즈 기반 실계산으로
+# 대체한다(ADR-KSI-011 D2).
+_MAX_SPACING_PER_ALTITUDE = 1.5
 # 웨이포인트 수 상한 — WPML index 스펙 범위 [0, 65535].
 _MAX_WAYPOINTS = 65_536
 # INV-010 일반영역 커버리지 하한 — 요청으로 바꿀 수 없는 모듈 상수(자율 재검토 A-2).
@@ -308,6 +328,37 @@ def _measure_lawnmower_coverage_ratio(
     return max(0.0, min(1.0, covered / aoi_area))
 
 
+def _capture_xs(
+    x_start: float, x_end: float, capture_interval_m: float | None
+) -> list[float]:
+    """스캔선 한 구간 위의 웨이포인트 x 목록 — 촬영 간격이 있으면 그 간격으로 채운다.
+
+    간격 규약은 ``spacing_m`` 과 같다: 실제 간격은 요청값 **이하**로만 조밀해진다
+    (``ceil`` 로 구간 수를 올린 뒤 균등 분할). 성기어지는 방향의 이탈은 곧 중첩
+    부족이고, 중첩 부족은 재구성이 조용히 실패하는 방식이기 때문이다.
+
+    끝점은 항상 포함한다 — 구간 끝이 곧 AOI 경계라 그 지점의 사진이 빠지면
+    경계 밴드가 재구성에서 잘린다. 방향(x_start>x_end, 홀수 스캔선의 역순)도
+    그대로 보존한다.
+    """
+    if capture_interval_m is None:
+        return [x_start, x_end]
+    span = abs(x_end - x_start)
+    # 간격보다 짧은 구간은 끝점 2장으로 이미 간격 조건을 만족한다.
+    if span <= capture_interval_m:
+        return [x_start, x_end]
+    steps = math.ceil(span / capture_interval_m)
+    if steps + 1 > _MAX_WAYPOINTS:
+        # 세그먼트 **하나**가 상한을 넘는 경우를 리스트 생성 **전에** 끊는다
+        # (독립 재검토 P2-2) — 호출자의 루프 안 검사는 세그먼트 간에만 유효해서,
+        # 여기서 먼저 materialize 하면 그 검사가 도는 시점엔 이미 할당이 끝나 있다.
+        raise RouteGenerationError(
+            f"한 스캔선에 웨이포인트 {steps + 1}개 — WPML index 상한"
+            f"({_MAX_WAYPOINTS})을 넘는다. captureIntervalM 을 키워라"
+        )
+    return [x_start + (x_end - x_start) * k / steps for k in range(steps + 1)]
+
+
 def lawnmower_route(
     aoi: AreaOfInterest,
     *,
@@ -315,12 +366,35 @@ def lawnmower_route(
     altitude_m: float,
     envelope: FlightEnvelope,
     sweep_direction_deg: float | None = None,
+    capture_interval_m: float | None = None,
 ) -> LawnmowerResult:
     """평행 스캔선 왕복(boustrophedon) 매핑 경로.
 
     Args:
         spacing_m: 스캔선 간격 상한(m) — 실제 간격은 전체 커버를 위해 이하로만
             조밀해질 수 있고 초과하지 않는다. 겹침률→간격 환산은 호출자 몫.
+            이 값이 정하는 것은 **측면(side) 중첩**이다.
+
+            고도 대비 물리 상한(``_MAX_SPACING_PER_ALTITUDE``)을 넘으면 거부한다 —
+            커버리지 실측이 ±spacing/2 스와스를 가정하므로, 상한이 없으면 요청이
+            자기 커버리지 증명서를 스스로 써주게 된다.
+        capture_interval_m: 진행방향(along-track) 촬영 간격 상한(m). 주면 스캔선
+            **위에도** 그 간격 이하로 웨이포인트를 채운다 — 촬영 액션이 웨이포인트
+            도달 시점에 걸리므로(``wpml.py`` 의 ``reachPoint`` 트리거), 이 값이
+            없으면 스캔선당 사진은 양 끝 2장뿐이고 **전방 중첩이 0** 이 되어
+            정사영상·3D 재구성이 성립하지 않는다(원장 risk
+            ``mapping-forward-overlap-zero``). ``None`` 이면 끝점만 — 촬영이
+            목적이 아닌 경로(이동·순찰)에서만 맞다.
+
+            간격→중첩 환산(카메라 footprint × (1−전방중첩))은 카메라 스펙 종속이라
+            이 층이 하지 않는다 — ``spacing_m`` 과 같은 규약이다.
+
+            *알려진 비효율*: 지금은 촬영 지점마다 웨이포인트를 두므로 turn mode
+            (``toPointAndStop...``)상 매 지점 정지·촬영이 된다. 웨이포인트 없이
+            거리 간격으로 촬영을 거는 WPML 트리거가 있다고 알려져 있으나, 그
+            enum·파라미터는 이 저장소 어디에서도 raw 스펙으로 확인되지 않았다 —
+            H4(실기 Pilot 2 export 대조)에서 확정한 뒤 최적화한다. 미검증 값을
+            매핑 기본 경로에 박지 않는다.
         sweep_direction_deg: 스캔선 방향 — **수학 규약(동=0, 반시계, 도)** 이다.
             나침반 방위(heading, 북=0 시계)가 아니다(자율 재검토 F8 — 이름을
             direction 으로 강제해 규약 혼동을 API 표면에서 차단). ``None`` 이면
@@ -342,6 +416,37 @@ def lawnmower_route(
             f"spacing_m 는 {_MIN_SPACING_M}m 이상의 finite 여야 한다 (got {spacing_m!r}) — "
             "하한은 스캔선 수 폭발(자원 소진) 차단"
         )
+    spacing_ceiling = _MAX_SPACING_PER_ALTITUDE * altitude_m
+    if spacing_m > spacing_ceiling:
+        raise RouteGenerationError(
+            f"spacing_m({spacing_m}) 가 고도 {altitude_m}m 의 매핑 운용 상한"
+            f"({spacing_ceiling:.1f}m = 고도×{_MAX_SPACING_PER_ALTITUDE})을 넘는다 — "
+            "이보다 성긴 격자는 측면 겹침이 없어 매핑 구성으로 인정하지 않는다"
+        )
+    if capture_interval_m is not None:
+        if not (
+            math.isfinite(capture_interval_m) and capture_interval_m >= _MIN_CAPTURE_INTERVAL_M
+        ):
+            raise RouteGenerationError(
+                f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
+                f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
+            )
+        if capture_interval_m > spacing_m:
+            # **상한이 없으면 이 인자는 fail-closed 시늉만 한다**(독립 재검토 P1-2):
+            # 아주 큰 값을 주면 구간이 통째로 "간격보다 짧다"로 떨어져 끝점 2개만
+            # 남고, 전방 중첩 0 이 그대로 재현되는데 coverage_ratio 는 여전히 1.0 을
+            # 보고한다(실측이 스캔선 스와스만 보고 진행방향 샘플링은 보지 않는다).
+            #
+            # 카메라 스펙 없이 쓸 수 있는 상한이 하나 있다 — **측면 간격**이다.
+            # 사진측량에서 전방 중첩은 통상 측면보다 크게 잡으므로 진행방향 간격이
+            # 측면 간격을 넘는 구성은 어떤 카메라에서도 의도된 매핑이 아니다.
+            # 이 결합으로 진행방향 샘플링이 최소한 측면만큼 조밀해져, 스와스 모델
+            # 기반 coverage_ratio 의 "보수적 과소보고" 전제도 유지된다.
+            raise RouteGenerationError(
+                f"capture_interval_m({capture_interval_m}) > spacing_m({spacing_m}) — "
+                "진행방향 간격이 측면 간격보다 성기면 전방 중첩이 측면보다 나빠져 "
+                "사진측량 산출물이 성립하지 않는다(카메라 실측 확정 전 사용 가능한 상한)"
+            )
 
     ring = aoi._to_enu_ring()
     anchor = aoi.anchor()
@@ -381,7 +486,10 @@ def lawnmower_route(
     # 수학적으로 유지된다 — usable<=0.1 을 통째로 접던 과거 문턱은 spacing<height
     # <=spacing+0.1 밴드 양끝에서 최대 5cm 미커버를 냈다(P3).
     if usable <= _FOLD_EPSILON_M:
+        # 폭이 spacing 보다 좁은 띠 구역 — 중앙선 1개가 정당하다. 이 분기가 위험한
+        # 것은 spacing 이 클 때인데, 그건 위 운용 상한이 이미 막는다.
         scan_ys = [(min_y + max_y) / 2.0]
+        count = 1
     else:
         count = math.ceil(usable / spacing_m) + 1
         if count > _MAX_WAYPOINTS // 2:
@@ -430,14 +538,14 @@ def lawnmower_route(
             segments = [(b, a) for a, b in reversed(segments)]
 
         for x_start, x_end in segments:
-            for x in (x_start, x_end):
+            for x in _capture_xs(x_start, x_end, capture_interval_m):
                 # 상한 검사를 루프 안에서 — 비볼록 다중 세그먼트(선당 2점 초과)
                 # 에서도 대량 할당 전에 끊는다(재검토: 선 수 상한만으로는 볼록
                 # 가정이라 톱니형 폴리곤이 우회했다).
                 if len(waypoints) >= _MAX_WAYPOINTS:
                     raise RouteGenerationError(
                         f"웨이포인트가 WPML index 상한({_MAX_WAYPOINTS})을 넘는다 — "
-                        "spacing 을 키우거나 구역을 나눠라"
+                        "spacing·captureIntervalM 을 키우거나 구역을 나눠라"
                     )
                 east, north = _rotate(x, y, angle)
                 lat, lon = enu_to_wgs84(anchor.lat_deg, anchor.lon_deg, east, north)

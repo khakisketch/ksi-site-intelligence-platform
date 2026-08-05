@@ -1,7 +1,7 @@
 // 마이크로카피 SSOT — docs/architecture/03_DASHBOARD_UX_GOALS.md §4 그대로 상수화.
 // 다른 곳에서 이 표를 우회해 새 라벨을 만들지 않는다.
 
-import type { EventSeverity, EventStatus, MissionType, SiteStatus, TriageStatus } from "./types";
+import type { EventSeverity, EventStatus, MissionType, Role, SiteStatus, TriageStatus } from "./types";
 
 export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 
@@ -35,6 +35,26 @@ export const EVENT_SEVERITY_LABEL: Record<EventSeverity, { label: string; tone: 
   CRITICAL: { label: "위험", tone: "warning" },
 };
 
+// 심각도가 아직 매겨지지 않은 이벤트(OBSERVATION 단계)를 목록에서 어떻게 부를 것인가.
+// 배지를 비워두지 않는 이유: '아직 분류되지 않았다'는 것 자체가 운영자에게 필요한 정보다
+// (누락인지 판정 전인지 구분되지 않으면 대기열을 신뢰할 수 없다).
+export const SEVERITY_UNSET_LABEL = { label: "심각도 미판정", tone: "neutral" as Tone };
+
+// 무슨 일이 일어났는가 — EventBundle.event_type → 한국어.
+//
+// 서버 계약상 자유 문자열이고, 지금 인지 파이프라인이 실제로 발행하는 값은
+// PERSON_PRESENT 하나뿐이다(packages/perception DEFAULT_EVENT_POLICY — 실제 Solution
+// Pack 정책은 Core 소유로 Phase 2+ 예정). 여기 없는 값은 숨기지 않고 원문을 보여준다
+// — 새 이벤트 종류가 라벨 누락 때문에 목록에서 조용히 사라지는 편이 훨씬 나쁘다.
+export const EVENT_TYPE_LABEL: Record<string, string> = {
+  PERSON_PRESENT: "사람 감지",
+};
+
+export function humanizeEventType(eventType: string | null): string {
+  if (!eventType) return "종류 미분류";
+  return EVENT_TYPE_LABEL[eventType] ?? eventType;
+}
+
 // 정본: services/core/src/ksi_core/mission_plans.py 미션타입→경로패턴 제약
 // (docs/architecture/03_DASHBOARD_UX_GOALS.md §7). 화면마다 별도 라벨을 만들지 않는다 —
 // 홈·현장 상세·임무 목록 전부 이 표 하나를 참조한다.
@@ -58,16 +78,33 @@ export const TRIAGE_STATUS_LABEL: Record<TriageStatus, { label: string; tone: To
   CLOSED: { label: "종료", tone: "neutral" },
 };
 
+// ADR-KSI-008 §2 Role → TopBar/로그인 표시용 한글 라벨.
+export const ROLE_LABEL: Record<Role, string> = {
+  ADMIN: "관리자",
+  SITE_MANAGER: "현장소장",
+  SAFETY_MANAGER: "안전관리자",
+  DRONE_OPERATOR: "조종사",
+  VIEWER: "열람자",
+};
+
 // §3.4 에러 마이크로카피 — API verdict 코드를 사람 말로.
 export const API_ERROR_MESSAGE: Record<string, string> = {
   DUPLICATE_SITE_ID: "이미 등록된 현장 ID입니다. 다른 ID를 사용하세요.",
   ILLEGAL_TRANSITION: "현재 상태에서는 이 전이를 할 수 없습니다.",
+  STALE_EVENT_VIEW: "화면에 표시된 뒤 사건 내용이 갱신되었습니다. 새로고침 후 다시 시도하세요.",
   MISSION_ID_CONFLICT: "이미 사용 중인 임무 ID입니다.",
   UNKNOWN_SITE: "등록되지 않은 현장입니다.",
   SITE_FRAME_MISMATCH: "요청한 좌표계가 등록된 현장과 다릅니다.",
   COVERAGE_BELOW_CONTRACT_PROMISE: "계획된 커버리지가 약속한 값보다 낮습니다. 경로를 다시 검토하세요.",
   EVIDENCE_INCOMPLETE: "이 확정 등급에 필요한 증거가 아직 부족합니다.",
   STORE_UNAVAILABLE: "서버 저장소 점검 중입니다. 잠시 후 다시 시도하세요.",
+  // 증거 경로(ADR-KSI-010 §1). ALREADY_TOMBSTONED 는 '없음'이 아니라 '폐기됨'이라고
+  // 말한다 — 사고 조사에서 그 둘은 다른 사실이다.
+  DUPLICATE_ARTIFACT: "같은 이름의 증거가 이미 등록돼 있습니다. 파일명을 바꿔 다시 올리세요.",
+  UNSUPPORTED_CONTENT_TYPE: "지원하지 않는 파일 형식입니다. 사진(JPEG·PNG·WebP)이나 영상(MP4·WebM)만 올릴 수 있습니다.",
+  INVALID_ARTIFACT_ID: "파일 이름에 쓸 수 없는 문자가 있습니다.",
+  ALREADY_TOMBSTONED: "보관 기간이 지나 폐기된 증거입니다.",
+  EVIDENCE_STORAGE_UNAVAILABLE: "증거 저장소에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
   INVALID_SITE: "입력한 현장 정보가 올바르지 않습니다.",
   INVALID_REQUEST: "요청 내용이 올바르지 않습니다. 입력값을 확인하세요.",
   INVALID_EVENT_IDENTITY: "이벤트 식별자 형식이 올바르지 않습니다.",

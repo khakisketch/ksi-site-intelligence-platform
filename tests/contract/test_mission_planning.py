@@ -865,10 +865,14 @@ def test_fold_branch_full_coverage_not_falsely_rejected_no_spacing_cliff() -> No
     """재검증 P2 회귀 — spacing 이 AOI 높이보다 훨씬 크면 격자 샘플링은 행 0줄로
     붕괴해 완전 커버 임무를 0.0 으로 거부했고, 79.9→통과/80.0→거부 절벽이 있었다.
     정확 계산에서는 둘 다 1.0 으로 통과한다(중앙선 1개의 ±spacing/2 스와스가
-    높이 10m 를 전부 덮는다)."""
+    높이 10m 를 전부 덮는다).
+
+    고도가 60m 인 이유: 격자 간격에 운용 상한(고도×1.5)이 생겨 40m 고도에서는
+    두 값이 상한 밖이다. 이 테스트가 반증하려는 것은 **커버 계산의 절벽**이지
+    상한이 아니므로, 두 값이 상한 안에 오도록 고도를 올려 원 의도를 보존한다."""
     for spacing in (79.9, 80.0):
         result = lawnmower_route(
-            _rect_aoi(200.0, 10.0), spacing_m=spacing, altitude_m=40.0, envelope=_ENVELOPE
+            _rect_aoi(200.0, 10.0), spacing_m=spacing, altitude_m=60.0, envelope=_ENVELOPE
         )
         assert result.coverage_ratio == 1.0, f"spacing={spacing}"
         assert len(result.waypoints) == 2
@@ -909,3 +913,232 @@ def test_generated_routes_stay_inside_convex_aoi_polygon() -> None:
             mx = (points[i][0] + points[i + 1][0]) / 2.0
             my = (points[i][1] + points[i + 1][1]) / 2.0
             assert inside(mx, my), f"{label} 세그먼트 {i} 중점이 AOI 폴리곤 밖"
+
+
+# ── 진행방향(along-track) 촬영 간격 — 전방 중첩 0 결함 (risk mapping-forward-overlap-zero) ──
+
+
+def _scan_line_runs(route: list[RouteWaypoint]) -> list[list[float]]:
+    """스캔선별 east 좌표를 **순회 순서 그대로** 끊어 담는다.
+
+    정렬해서 담으면(초기 버전) 점들이 뒤섞여도 간격 검사가 통과한다 —
+    독립 재검토 P2-1 이 지적한 공허함이라 순서를 보존한다.
+    """
+    runs: list[list[float]] = []
+    current: float | None = None
+    for wp in route:
+        east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
+        key = round(north, 6)
+        if key != current:
+            runs.append([])
+            current = key
+        runs[-1].append(east)
+    return runs
+
+
+def _along_track_gaps(route: list[RouteWaypoint]) -> list[float]:
+    """스캔선 위 이웃 웨이포인트 사이의 진행방향 거리(m) — 순회 순서 기준 절댓값."""
+    gaps: list[float] = []
+    for run in _scan_line_runs(route):
+        gaps.extend(abs(b - a) for a, b in itertools.pairwise(run))
+    return gaps
+
+
+def test_without_capture_interval_scan_line_has_only_endpoints() -> None:
+    """[기준선] 간격을 주지 않으면 스캔선당 2점 — 이게 전방 중첩 0 의 실체다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0), spacing_m=20.0, altitude_m=40.0, envelope=_ENVELOPE
+    ).waypoints
+
+    per_line: dict[float, int] = {}
+    for wp in route:
+        _east, north = wgs84_to_enu(_LAT0, _LON0, wp.lat_deg, wp.lon_deg)
+        per_line[round(north, 6)] = per_line.get(round(north, 6), 0) + 1
+    assert set(per_line.values()) == {2}
+
+
+def test_capture_interval_fills_scan_line_within_requested_gap() -> None:
+    """[핵심] 촬영 간격을 주면 스캔선 위 이웃 간격이 요청값을 **넘지 않는다**.
+
+    넘는 방향의 이탈은 곧 중첩 부족이고, 중첩 부족은 비행이 끝난 뒤 재구성이
+    실패할 때에야 드러난다 — spacing 과 같은 '조밀해지는 방향만 허용' 규약이다.
+    """
+    interval = 15.0
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=interval,
+    ).waypoints
+
+    gaps = _along_track_gaps(route)
+    assert gaps, "스캔선 위 이웃 쌍이 없다 — 채워지지 않았다"
+    assert all(g <= interval + 1e-6 for g in gaps), f"간격 초과: {max(gaps)}"
+    # 200m 스캔선을 15m 간격으로 채우면 선당 구간 14개(=ceil(200/15)) — 끝점 2개
+    # 뿐이던 과거(구간 1개)와 확실히 구별된다.
+    assert len(gaps) >= 14
+
+
+def test_capture_interval_covers_scan_line_ends() -> None:
+    """끝점이 빠지면 AOI 경계 밴드가 재구성에서 잘린다 — 끝점은 항상 포함한다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=15.0,
+    ).waypoints
+
+    # 전체 min/max 가 아니라 **선마다** 본다 — 한 선에서 끝점이 빠져도 다른 선이
+    # 0/200 을 찍으면 전역 검사는 통과한다(독립 재검토 P2-1).
+    runs = _scan_line_runs(route)
+    assert runs
+    for index, run in enumerate(runs):
+        assert min(run) == pytest.approx(0.0, abs=1e-3), f"스캔선 {index} 좌단 누락"
+        assert max(run) == pytest.approx(200.0, abs=1e-3), f"스캔선 {index} 우단 누락"
+
+
+def test_capture_interval_preserves_boustrophedon_direction() -> None:
+    """채워 넣은 점이 왕복 순서를 깨면 기체가 스캔선을 지그재그로 되돌아간다."""
+    route = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=50.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=50.0,
+    ).waypoints
+
+    lines = [run for run in _scan_line_runs(route) if len(run) > 1]
+    directions = [line[-1] - line[0] > 0 for line in lines]
+    assert len(directions) >= 2
+    for previous, nxt in itertools.pairwise(directions):
+        assert previous != nxt, f"왕복이 아니다: {directions}"
+    # 선 **내부**도 단조여야 한다 — 부호만 보면 중간이 지그재그여도 통과한다
+    # (독립 재검토 P2-1). 채워 넣은 점이 순서를 깨면 기체가 되돌아 난다.
+    for index, (line, ascending) in enumerate(zip(lines, directions, strict=True)):
+        for a, b in itertools.pairwise(line):
+            assert (b > a) is ascending, f"스캔선 {index} 내부가 단조가 아니다: {line}"
+
+
+def test_capture_interval_longer_than_line_keeps_endpoints() -> None:
+    """구간보다 긴 간격은 끝점 2장으로 이미 조건을 만족한다 — 억지로 쪼개지 않는다."""
+    # sweep 을 동서로 고정 — 자동 선택은 긴 변(북남)을 고르므로 스캔선이 세로가 된다.
+    # 간격은 spacing 상한(결합 게이트) 안에서 스캔선 길이보다 크게 잡는다.
+    route = lawnmower_route(
+        _rect_aoi(15.0, 100.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        sweep_direction_deg=0.0,
+        capture_interval_m=20.0,
+    ).waypoints
+
+    gaps = _along_track_gaps(route)
+    assert gaps
+    assert all(g == pytest.approx(15.0, abs=1e-3) for g in gaps)
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), 0.05])
+def test_invalid_capture_interval_rejected(value: float) -> None:
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=20.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=value,
+        )
+
+
+def test_capture_interval_wider_than_spacing_rejected() -> None:
+    """[핵심] 진행방향 간격이 측면 간격보다 성기면 거부한다(독립 재검토 P1-2).
+
+    상한이 없으면 아주 큰 값으로 "간격보다 짧은 구간" 분기에 떨어뜨려 전방 중첩
+    0 을 그대로 재현할 수 있고, 그때도 coverage_ratio 는 1.0 을 보고한다 —
+    게이트가 존재 여부만 보던 공백이다.
+    """
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=20.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=500.0,
+        )
+
+
+def test_spacing_beyond_ceiling_rejected_at_nominal_altitude() -> None:
+    """[핵심] 고도 대비 물리 상한을 넘는 격자 간격은 거부한다(2차 재검토 P1-2).
+
+    상한을 capture_interval 에만 걸었을 때는 spacing 을 같이 키우면 그대로
+    우회됐다 — 2ha 구역이 사진 2장·coverage 1.0 으로 발급되는 것을 실측으로
+    재현했다. 커버리지 실측이 ±spacing/2 스와스를 가정하므로, spacing 에 상한이
+    없으면 요청이 자기 커버리지 증명서를 스스로 써준다.
+    """
+    with pytest.raises(RouteGenerationError, match="매핑 운용 상한"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=300.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=300.0,
+        )
+
+
+def test_spacing_within_bounds_still_allowed() -> None:
+    """[비공허 대조] 상한 안쪽의 성긴 격자는 그대로 허용된다 — 과잉 거부가 아니다."""
+    result = lawnmower_route(
+        _rect_aoi(200.0, 100.0),
+        spacing_m=50.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=40.0,
+    )
+    assert result.waypoints
+
+
+@pytest.mark.parametrize(
+    ("spacing", "altitude"),
+    [
+        (300.0, 87.0),   # 물리 상한(고도×3.46)을 고도로 피해가던 우회 — 실측 재현됨
+        (400.0, 150.0),  # 봉투 최대 고도까지 올린 우회
+        (61.0, 40.0),    # 운용 상한(고도×1.5=60) 바로 밖
+    ],
+)
+def test_spacing_beyond_operational_ceiling_rejected(spacing: float, altitude: float) -> None:
+    """[핵심] 매핑 운용 범위를 넘는 격자 간격은 거부한다(3차 독립 재검토).
+
+    물리 상한(고도×3.46)은 고도를 같이 올리면 그대로 우회됐다 — 고도 87m·
+    spacing 300 이면 2ha 구역이 사진 2장·coverageRatio 1.0 으로 발급되는 것을
+    실측 재현했다. ratio 3.45 는 물리적으로 '가능'한 값이라 물리 상한으로는 이
+    클래스를 거를 수 없다. 그래서 상한을 운용 기준(고도×1.5)으로 바꿨다.
+    """
+    envelope = FlightEnvelope(
+        allowed_volumes=["vol-1"], excluded_volumes=[], min_altitude_m=0.0, max_altitude_m=150.0
+    )
+    with pytest.raises(RouteGenerationError, match="매핑 운용 상한"):
+        lawnmower_route(
+            _rect_aoi(200.0, 100.0),
+            spacing_m=spacing,
+            altitude_m=altitude,
+            envelope=envelope,
+            capture_interval_m=min(spacing, 20.0),
+        )
+
+
+def test_narrow_strip_single_line_still_allowed() -> None:
+    """[비공허 대조] 폭이 좁은 띠 구역의 중앙선 1개는 여전히 정당하다.
+
+    스캔선 1개 자체를 막으면 좁은 띠 매핑이 통째로 불가능해진다 — 위험한 것은
+    선 개수가 아니라 **성긴 격자**이고, 그건 운용 상한이 막는다.
+    """
+    result = lawnmower_route(
+        _rect_aoi(200.0, 10.0),
+        spacing_m=20.0,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=15.0,
+    )
+    assert result.waypoints
+    assert result.coverage_ratio == 1.0

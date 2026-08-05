@@ -1,0 +1,344 @@
+/* edge/psdk-tap — PSDK liveview + FC subscription 콜백을 raw NDJSON 으로 적는 CLI.
+ *
+ * 이 파일은 오케스트레이션만 한다 — 판정 로직은 없다(설계 요점: "수집기는 판정하지
+ * 않는다"). 짝짓기 순수 로직은 pairing.c, 스레드 공유 상태는 shared_state.c, PSDK
+ * OS 추상화 계층은 src/platform/ 아래 각 소스 파일에 있다.
+ */
+#include <dji_core.h>
+#include <dji_typedef.h>
+#include <dji_version.h>
+
+/* 빌드 입력 — 소스가 아니다. config/dji_sdk_app_info.h.example 을 복사해서 만든다.
+ * 없으면 CMake configure 단계에서 이미 실패했을 것이다(레포에 없으면 이 #include 는
+ * 개발자 로컬 빌드에서만 성립한다 — README 참조). */
+#include "dji_sdk_app_info.h"
+
+#include <getopt.h>
+#include <inttypes.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "psdk_tap/clock_util.h"
+#include "psdk_tap/liveview_tap.h"
+#include "psdk_tap/ndjson_writer.h"
+#include "psdk_tap/shared_state.h"
+#include "psdk_tap/telemetry_tap.h"
+#include "platform/logger_console_glue.h"
+#include "platform/osal_glue.h"
+#include "platform/socket_glue.h"
+#include "platform/usb_bulk_glue.h"
+
+#define KSI_TAP_VERSION 1
+#define KSI_TELEMETRY_RING_CAPACITY 512  /* 400Hz 로 약 1.28초치 버퍼 */
+#define KSI_POLL_INTERVAL_NS 200000000LL /* 시그널을 200ms 내 반응성으로 관측한다 */
+
+typedef struct {
+    int64_t num_samples;
+    const char *out_path;
+    int camera_index;      /* 1..3 */
+    bool camera_source_4k; /* false=vis(기본) */
+    int64_t duration_sec;
+    const char *aircraft_sn; /* NULL 허용 — PSDK 는 기체 SN 을 payload 에 노출하지 않는다 */
+} ksi_cli_args_t;
+
+static volatile sig_atomic_t g_signal_requested = 0;
+
+static void OnTerminationSignal(int signum)
+{
+    (void) signum;
+    g_signal_requested = 1;
+}
+
+static void PrintUsage(const char *argv0)
+{
+    fprintf(stderr,
+            "사용법: %s --num-samples N --out PATH [--camera-index 1|2|3]\n"
+            "         [--camera-source vis|4k] [--duration-sec N] [--aircraft-sn SN]\n",
+            argv0);
+}
+
+static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
+{
+    args->num_samples = -1;
+    args->out_path = NULL;
+    args->camera_index = 1;
+    args->camera_source_4k = false;
+    args->duration_sec = 60;
+    args->aircraft_sn = NULL;
+
+    enum {
+        OPT_NUM_SAMPLES = 1000,
+        OPT_OUT,
+        OPT_CAMERA_INDEX,
+        OPT_CAMERA_SOURCE,
+        OPT_DURATION_SEC,
+        OPT_AIRCRAFT_SN,
+        OPT_HELP,
+    };
+    static const struct option kLongOptions[] = {
+        {"num-samples", required_argument, NULL, OPT_NUM_SAMPLES},
+        {"out", required_argument, NULL, OPT_OUT},
+        {"camera-index", required_argument, NULL, OPT_CAMERA_INDEX},
+        {"camera-source", required_argument, NULL, OPT_CAMERA_SOURCE},
+        {"duration-sec", required_argument, NULL, OPT_DURATION_SEC},
+        {"aircraft-sn", required_argument, NULL, OPT_AIRCRAFT_SN},
+        {"help", no_argument, NULL, OPT_HELP},
+        {NULL, 0, NULL, 0},
+    };
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "", kLongOptions, NULL)) != -1) {
+        switch (opt) {
+            case OPT_NUM_SAMPLES:
+                args->num_samples = strtoll(optarg, NULL, 10);
+                break;
+            case OPT_OUT:
+                args->out_path = optarg;
+                break;
+            case OPT_CAMERA_INDEX:
+                args->camera_index = (int) strtol(optarg, NULL, 10);
+                break;
+            case OPT_CAMERA_SOURCE:
+                if (strcmp(optarg, "vis") == 0) {
+                    args->camera_source_4k = false;
+                } else if (strcmp(optarg, "4k") == 0) {
+                    args->camera_source_4k = true;
+                } else {
+                    fprintf(stderr, "--camera-source 는 vis 또는 4k 여야 한다: %s\n", optarg);
+                    return false;
+                }
+                break;
+            case OPT_DURATION_SEC:
+                args->duration_sec = strtoll(optarg, NULL, 10);
+                break;
+            case OPT_AIRCRAFT_SN:
+                args->aircraft_sn = optarg;
+                break;
+            case OPT_HELP:
+                PrintUsage(argv[0]);
+                exit(0);
+            default:
+                PrintUsage(argv[0]);
+                return false;
+        }
+    }
+
+    if (args->num_samples <= 0) {
+        fprintf(stderr, "--num-samples 는 필수이고 0보다 커야 한다\n");
+        return false;
+    }
+    if (args->out_path == NULL || args->out_path[0] == '\0') {
+        fprintf(stderr, "--out 은 필수다\n");
+        return false;
+    }
+    if (args->camera_index < 1 || args->camera_index > 3) {
+        fprintf(stderr, "--camera-index 는 1, 2, 3 중 하나여야 한다\n");
+        return false;
+    }
+    if (args->duration_sec <= 0) {
+        fprintf(stderr, "--duration-sec 는 0보다 커야 한다\n");
+        return false;
+    }
+    return true;
+}
+
+static bool IsPlaceholderCredential(void)
+{
+    return strcmp(USER_APP_NAME, "your_app_name") == 0 || strcmp(USER_APP_ID, "your_app_id") == 0 ||
+           strcmp(USER_APP_KEY, "your_app_key") == 0 || strcmp(USER_APP_LICENSE, "your_app_license") == 0 ||
+           strcmp(USER_DEVELOPER_ACCOUNT, "your_developer_account") == 0;
+}
+
+static bool FillUserInfo(T_DjiUserInfo *user_info)
+{
+    memset(user_info, 0, sizeof(*user_info));
+
+    if (strlen(USER_APP_NAME) >= sizeof(user_info->appName) ||
+        strlen(USER_APP_ID) > sizeof(user_info->appId) ||
+        strlen(USER_APP_KEY) > sizeof(user_info->appKey) ||
+        strlen(USER_APP_LICENSE) > sizeof(user_info->appLicense) ||
+        strlen(USER_DEVELOPER_ACCOUNT) >= sizeof(user_info->developerAccount) ||
+        strlen(USER_BAUD_RATE) > sizeof(user_info->baudRate)) {
+        fprintf(stderr, "dji_sdk_app_info.h 의 필드 길이가 한도를 넘는다\n");
+        return false;
+    }
+
+    strncpy(user_info->appName, USER_APP_NAME, sizeof(user_info->appName) - 1);
+    memcpy(user_info->appId, USER_APP_ID, strlen(USER_APP_ID));
+    memcpy(user_info->appKey, USER_APP_KEY, strlen(USER_APP_KEY));
+    memcpy(user_info->appLicense, USER_APP_LICENSE, strlen(USER_APP_LICENSE));
+    memcpy(user_info->baudRate, USER_BAUD_RATE, strlen(USER_BAUD_RATE));
+    strncpy(user_info->developerAccount, USER_DEVELOPER_ACCOUNT, sizeof(user_info->developerAccount) - 1);
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    ksi_cli_args_t args;
+    if (!ParseArgs(argc, argv, &args)) {
+        return 2;
+    }
+
+    if (IsPlaceholderCredential()) {
+        fprintf(stderr,
+                "config/dji_sdk_app_info.h 가 플레이스홀더 값 그대로다 — developer.dji.com "
+                "앱 정보로 채운 실제 파일을 만들어라(edge/psdk-tap/README.md 참조).\n");
+        return 2;
+    }
+
+    ksi_ndjson_writer_t writer;
+    if (!ksi_ndjson_open(&writer, args.out_path)) {
+        fprintf(stderr, "출력 파일을 열 수 없다: %s\n", args.out_path);
+        return 2;
+    }
+
+    ksi_shared_state_t state;
+    if (!ksi_shared_state_init(&state, KSI_TELEMETRY_RING_CAPACITY, args.num_samples, &writer)) {
+        fprintf(stderr, "shared_state 초기화 실패(메모리 부족?)\n");
+        ksi_ndjson_close(&writer);
+        return 2;
+    }
+
+    /* --- meta 줄: 아직 아무 콜백도 등록하기 전에, 앵커부터 최대한 이르게 찍는다. --- */
+    char started_at_utc[KSI_WALL_UTC_BUF_SIZE];
+    ksi_format_wall_utc_now(started_at_utc, sizeof(started_at_utc));
+    int64_t anchor_mono_ns = 0;
+    char anchor_wall_utc[KSI_WALL_UTC_BUF_SIZE];
+    ksi_capture_clock_anchor(&anchor_mono_ns, anchor_wall_utc, sizeof(anchor_wall_utc));
+
+    char psdk_version[32];
+    snprintf(psdk_version, sizeof(psdk_version), "%d.%d.%d", DJI_VERSION_MAJOR, DJI_VERSION_MINOR,
+             DJI_VERSION_MODIFY);
+
+    /* capabilities: liveview 콜백엔 센서 타임스탬프가 없다(조사 확정, frame_sensor_ts
+     * 항상 false). FC subscription 콜백은 T_DjiDataTimestamp 를 싣는다(telemetry_sensor_ts
+     * true) — 단 그 기준시각이 정확히 무엇인지는 기종별로 다르다고 PSDK 문서가 명시하고
+     * Manifold3/M4D 조합에 대해서는 미확인이다(telemetry_tap.h 상단 주석 참조). */
+    ksi_ndjson_write_meta(&writer, KSI_TAP_VERSION, psdk_version, started_at_utc, args.aircraft_sn,
+                           anchor_mono_ns, anchor_wall_utc, /*frame_sensor_ts=*/false,
+                           /*telemetry_sensor_ts=*/true);
+
+    /* --- 시스템 환경 준비: Osal 은 모든 PSDK 앱에 필수, Socket 은 liveview 에 필수,
+     * UsbBulk 는 Manifold3 의 CONFIG_HARDWARE_CONNECTION=USB_BULK 에 필수. --- */
+    T_DjiReturnCode rc;
+    rc = KsiOsalGlue_Register();
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "Osal 핸들러 등록 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        goto fail_before_core;
+    }
+    (void) KsiLoggerConsoleGlue_Register(); /* 실패해도 치명적이지 않다 — 진단용 */
+    rc = KsiSocketGlue_Register();
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "Socket 핸들러 등록 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        goto fail_before_core;
+    }
+    rc = KsiUsbBulkGlue_Register();
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "UsbBulk 핸들러 등록 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        goto fail_before_core;
+    }
+
+    T_DjiUserInfo user_info;
+    if (!FillUserInfo(&user_info)) {
+        goto fail_before_core;
+    }
+
+    /* 이 호출은 실기 연결을 기다린다(문서상 통상 2~4초, PSDK 가 올바른 기체 타입을 얻을
+     * 때까지 반환하지 않는다) — 실기가 물려 있지 않으면 여기서 블로킹되거나 타임아웃
+     * 오류를 반환한다. 이 워크스테이션에는 실기가 없으므로 여기까지가 이 작업의 검증
+     * 범위다(README 참조). */
+    rc = DjiCore_Init(&user_info);
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "DjiCore_Init 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        goto fail_before_core;
+    }
+
+    struct sigaction signal_action;
+    memset(&signal_action, 0, sizeof(signal_action));
+    signal_action.sa_handler = OnTerminationSignal;
+    sigaction(SIGINT, &signal_action, NULL);
+    sigaction(SIGTERM, &signal_action, NULL);
+
+    /* telemetry 를 먼저 켜서 첫 프레임이 도착하기 전에 링에 telemetry 표본이 쌓이게
+     * 한다 — frames_dropped_no_telemetry 를 줄이려는 순서일 뿐, 정확성 요구사항은
+     * 아니다. */
+    rc = KsiTelemetryTap_Start(&state);
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "telemetry 구독 시작 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        ksi_ndjson_write_stat(&writer, 0, 0, 0, 0, args.num_samples, "error", true);
+        ksi_shared_state_destroy(&state);
+        ksi_ndjson_close(&writer);
+        return 1;
+    }
+
+    ksi_liveview_config_t liveview_config = {
+        .camera_position_index = args.camera_index,
+        .camera_source_4k = args.camera_source_4k,
+    };
+    rc = KsiLiveviewTap_Start(&liveview_config, &state);
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "liveview 시작 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        KsiTelemetryTap_Stop();
+        ksi_ndjson_write_stat(&writer, 0, 0, 0, 0, args.num_samples, "error", true);
+        ksi_shared_state_destroy(&state);
+        ksi_ndjson_close(&writer);
+        return 1;
+    }
+
+    /* --- 메인 대기 루프: 목표 표본 수 도달, --duration-sec 초과, 시그널 중 먼저 오는
+     * 것으로 끝난다. 200ms 간격으로 깨어나 시그널 플래그를 확인한다 — 시그널 핸들러
+     * 안에서 뮤텍스/조건변수를 직접 건드리지 않는다(async-signal-safety). --- */
+    int64_t overall_deadline_ns = ksi_mono_now_ns() + args.duration_sec * 1000000000LL;
+    while (true) {
+        int64_t now_ns = ksi_mono_now_ns();
+        if (now_ns >= overall_deadline_ns) {
+            ksi_shared_state_request_stop(&state, "duration_exceeded");
+            break;
+        }
+        int64_t poll_deadline_ns = now_ns + KSI_POLL_INTERVAL_NS;
+        if (poll_deadline_ns > overall_deadline_ns) {
+            poll_deadline_ns = overall_deadline_ns;
+        }
+        if (ksi_shared_state_wait_done(&state, poll_deadline_ns)) {
+            break; /* 목표 표본 수 도달 — state.stop_reason 은 이미 "num_samples_reached" */
+        }
+        if (g_signal_requested) {
+            ksi_shared_state_request_stop(&state, "signal");
+            break;
+        }
+    }
+
+    KsiLiveviewTap_Stop(&liveview_config);
+    KsiTelemetryTap_Stop();
+    /* DjiCore_DeInit 은 최선 노력으로만 부른다 — 실기 미연결 상태에서의 동작은
+     * 이 작업 범위 밖(실기 미검증)이라 반환값을 치명적 오류로 취급하지 않는다. */
+    (void) DjiCore_DeInit();
+
+    pthread_mutex_lock(&state.mutex);
+    uint64_t frames_received = state.frames_received;
+    uint64_t telemetry_received = state.telemetry_received;
+    int64_t samples_written = state.samples_written;
+    uint64_t frames_dropped = state.frames_dropped_no_telemetry;
+    const char *stop_reason = state.stop_reason != NULL ? state.stop_reason : "unknown";
+    pthread_mutex_unlock(&state.mutex);
+
+    bool insufficient = samples_written < args.num_samples;
+    ksi_ndjson_write_stat(&writer, frames_received, telemetry_received, (uint64_t) samples_written,
+                           frames_dropped, args.num_samples, stop_reason, insufficient);
+
+    ksi_shared_state_destroy(&state);
+    ksi_ndjson_close(&writer);
+
+    /* 명세: "표본을 다 못 채우고 끝나면 ... 0이 아닌 종료코드로 끝나라 — 부족한
+     * 표본으로 조용히 성공하면 안 된다." */
+    return insufficient ? 1 : 0;
+
+fail_before_core:
+    ksi_ndjson_write_stat(&writer, 0, 0, 0, 0, args.num_samples, "error", true);
+    ksi_shared_state_destroy(&state);
+    ksi_ndjson_close(&writer);
+    return 1;
+}

@@ -11,10 +11,19 @@ export function EventActions({
   eventKey,
   status,
   triage,
+  bundleDigest,
 }: {
   eventKey: string;
   status: EventStatus;
   triage: TriageStatus;
+  /**
+   * 이 화면이 렌더될 때의 사건 내용 지문. 모든 전이 요청에 함께 보낸다 —
+   * 그 사이 장비가 내용을 갱신했으면 서버가 409(STALE_EVENT_VIEW)로 막는다.
+   * 확정은 **그 시점 내용**으로 증거 게이트를 통과시키고 스냅샷을 굳히므로,
+   * 운영자가 본 것과 실제로 굳는 것이 달라지면 감사 기록이 사람의 판단을
+   * 대표하지 않게 된다.
+   */
+  bundleDigest: string;
 }) {
   const router = useRouter();
   const [reason, setReason] = useState("");
@@ -46,7 +55,9 @@ export function EventActions({
       const response = await fetch(`/api/events/${encodeURIComponent(eventKey)}/transitions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        // 낙관적 동시성 토큰을 모든 전이에 싣는다 — 개별 호출부가 빠뜨릴 수
+        // 없도록 여기 한 곳에서 붙인다.
+        body: JSON.stringify({ ...body, expectedBundleDigest: bundleDigest }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
@@ -54,6 +65,11 @@ export function EventActions({
           (payload && typeof payload.message === "string" && payload.message) ||
             "요청을 처리하지 못했습니다.",
         );
+        // 토큰이 낡아서 막힌 경우엔 화면을 갱신해 새 지문을 받아온다 — 안 그러면
+        // 사용자가 같은 낡은 토큰으로 계속 재시도해 막다른 길이 된다.
+        if (response.status === 409) {
+          router.refresh();
+        }
         return;
       }
       setReason("");
@@ -66,7 +82,7 @@ export function EventActions({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-black/10 p-4 dark:border-white/10">
+    <div className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-4">
       <h2 className="text-sm font-medium break-keep">트리아지 조치</h2>
 
       {(canConfirm || canDismiss) && (
@@ -76,14 +92,14 @@ export function EventActions({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={2}
-            className="border-foreground/20 rounded-md border px-3 py-2 text-sm break-keep"
+            className="input break-keep"
             placeholder="확정/오탐 판단 근거 — 비워두면 제출할 수 없습니다."
           />
         </label>
       )}
 
       {isFinal ? (
-        <p className="text-foreground/60 text-sm break-keep">
+        <p className="text-ink-2 text-sm break-keep">
           이미 최종 판정된 이벤트입니다(확정/오탐 변경 불가).
         </p>
       ) : (
@@ -93,31 +109,33 @@ export function EventActions({
               type="button"
               disabled={pending !== null || reasonMissing}
               onClick={() => submit("confirm", { targetStatus: "CONFIRMED_EVENT", reason })}
-              className="bg-foreground text-background min-h-11 rounded-md px-4 text-sm font-medium disabled:opacity-40"
+              className="btn btn-primary"
             >
               {pending === "confirm" ? "처리 중…" : "확정"}
             </button>
           ) : (
-            <p className="text-foreground/60 text-sm break-keep">
+            <p className="text-ink-2 text-sm break-keep">
               소견(FINDING) 단계에서만 확정할 수 있습니다 — 현재 상태에서는 확정을 진행할 수
               없습니다.
             </p>
           )}
           {canDismiss && (
+            // 되돌릴 수 없는 최종 판정(오탐 종결) — 확정(btn-primary)과 색으로 구분돼야
+            // 손이 먼저 가지 않는다. 예전엔 중립 버튼과 같아 확정/오탐을 색으로 구분 못 했다.
             <button
               type="button"
               disabled={pending !== null || reasonMissing}
               onClick={() => submit("dismiss", { targetStatus: "DISMISSED", reason })}
-              className="border-foreground/30 min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-40"
+              className="btn btn-danger"
             >
-              {pending === "dismiss" ? "처리 중…" : "오탐"}
+              {pending === "dismiss" ? "처리 중…" : "오탐으로 종결"}
             </button>
           )}
         </div>
       )}
 
       {canAssign && (
-        <div className="flex flex-col gap-2 border-t border-black/10 pt-4 dark:border-white/10">
+        <div className="flex flex-col gap-2 border-t border-line pt-4">
           <label className="flex flex-col gap-1 text-sm">
             <span className="break-keep">담당자 배정</span>
             <div className="flex flex-wrap gap-2">
@@ -125,7 +143,7 @@ export function EventActions({
                 value={assignee}
                 onChange={(e) => setAssignee(e.target.value)}
                 placeholder="담당자 ID"
-                className="border-foreground/20 min-h-11 flex-1 rounded-md border px-3 text-sm"
+                className="input flex-1"
               />
               <button
                 type="button"
@@ -137,7 +155,7 @@ export function EventActions({
                     reason: reason || undefined,
                   })
                 }
-                className="border-foreground/30 min-h-11 rounded-md border px-4 text-sm font-medium disabled:opacity-40"
+                className="btn"
               >
                 {pending === "assign" ? "처리 중…" : "배정"}
               </button>
@@ -147,7 +165,7 @@ export function EventActions({
       )}
 
       {errorMessage && (
-        <p role="alert" className="break-keep text-sm text-red-700 dark:text-red-300">
+        <p role="alert" className="break-keep text-sm text-crit-ink">
           {errorMessage}
         </p>
       )}

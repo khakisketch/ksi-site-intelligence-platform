@@ -14,6 +14,12 @@ dependencies = [
     "cryptography>=42",
 ]
 
+# Evidence 미디어 스토리지(ADR-KSI-010 §1)는 **선택 의존**이다 — Core 는
+# EvidenceStorage 포트에만 의존하고, evidence_storage 없이도 조립된다(그 경우
+# 증거 라우트가 장착되지 않는다). S3 호환 어댑터를 쓸 배포만 이 extra 를 켠다.
+[project.optional-dependencies]
+s3 = ["boto3>=1.34"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

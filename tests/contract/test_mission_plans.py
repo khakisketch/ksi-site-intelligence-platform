@@ -30,8 +30,11 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.mission_plans import _require_wayline_takeoff_height_compatible
-from ksi_core.mission_records import MissionStore
+from ksi_core.mission_plans import (
+    MissionPlanRequest,
+    _require_wayline_takeoff_height_compatible,
+)
+from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.sites import SiteStore
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
 from ksi_mission_contracts.models import FlightEnvelope, SiteFrame
@@ -79,6 +82,11 @@ def _plan_request(
 ) -> dict[str, Any]:
     route: dict[str, Any] = {"altitudeM": 40.0}
     route.update(route_overrides)
+    # lawnmower 요청은 진행방향 촬영 간격이 필수다(전방 중첩 0 차단) — 그 규칙
+    # 자체를 반증하는 테스트는 captureIntervalM 을 명시적으로 넘겨 이 기본값을
+    # 우회한다(``in route_overrides`` 검사라 None 을 명시하면 그대로 None 이다).
+    if "spacingM" in route and "captureIntervalM" not in route_overrides:
+        route["captureIntervalM"] = 15.0
     return {
         "contract": {
             "missionId": "mission-001",
@@ -471,3 +479,136 @@ def test_pure_camelcase_wire_body_is_accepted(tmp_path: Path) -> None:
     response = client.post("/v1/missions/plans", json=request)
 
     assert response.status_code == 201
+
+
+# ── E. 진행방향 촬영 간격 (독립 재검토 P1-1 — 게이트·배선이 무테스트였다) ────
+
+
+def test_lawnmower_without_capture_interval_is_rejected(tmp_path: Path) -> None:
+    """[핵심] 매핑 임무는 촬영 간격 없이는 발급되지 않는다.
+
+    이 테스트가 없으면 fail-closed 블록을 통째로 지워도 스위트가 초록이다
+    (실제로 변이 실험에서 그랬다) — 전방 중첩 0 결함이 조용히 되돌아온다.
+    """
+    client, _registry = _client(tmp_path)
+
+    response = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(
+            mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=None
+        ),
+    )
+
+    assert response.status_code == 422
+    assert "captureIntervalM" in response.json()["detail"]
+
+
+def test_capture_interval_changes_issued_waypoint_count(tmp_path: Path) -> None:
+    """[핵심] 촬영 간격이 실제 발급 산출물에 도달한다 — 배선 회귀 고정.
+
+    간격을 좁히면 웨이포인트가 늘어야 한다. 이 단언이 없으면 생성기 호출에서
+    capture_interval_m 인자를 빼도(스캔선당 2점으로 되돌아가도) 아무도 모른다.
+    """
+    client, _registry = _client(tmp_path)
+
+    def issue(mission_id: str, interval: float) -> int:
+        request = _plan_request(
+            mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=interval
+        )
+        request["contract"]["missionId"] = mission_id
+        response = client.post("/v1/missions/plans", json=request)
+        assert response.status_code == 201, response.text
+        return int(response.json()["waypointCount"])
+
+    coarse = issue("mission-coarse", 20.0)
+    fine = issue("mission-fine", 5.0)
+
+    assert fine > coarse, f"간격을 좁혔는데 웨이포인트가 늘지 않았다({coarse} → {fine})"
+    # 스캔선당 2점(끝점만)이면 선 수의 2배가 상한이다 — 실제로 채워졌음을 고정한다.
+    assert coarse > 2 * 6, f"채움이 일어나지 않았다(웨이포인트 {coarse})"
+
+
+def test_capture_interval_wider_than_spacing_is_rejected(tmp_path: Path) -> None:
+    """상한이 없으면 큰 값으로 전방 중첩 0 을 그대로 재현할 수 있다(재검토 P1-2)."""
+    client, _registry = _client(tmp_path)
+
+    response = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(
+            mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=500.0
+        ),
+    )
+
+    assert response.status_code == 422
+    assert "capture_interval_m" in response.json()["detail"]
+
+
+def test_retry_of_record_that_current_policy_cannot_reissue_is_409_not_500(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 정책이 바뀌어 저장된 요청을 재생성할 수 없으면 500 이 아니라 409 다.
+
+    오늘 이전에 발급된 매핑 짝 레코드에는 captureIntervalM 이 없다 — 그 상태로
+    같은 요청이 재도착하면 멱등 재발급이 생성기 예외로 죽어 "서버 버그"처럼
+    보인다(독립 재검토 P2-7). 실제로는 정책이 달라진 것이므로 그 사실을 알린다.
+    """
+    # 옛 규칙으로 발급됐던 요청 — 진행방향 촬영 간격이 없다. 저장 형태는 서버가
+    # 실제로 굳히는 것과 같아야 digest 가 맞는다(model_dump exclude_none).
+    stale_request = MissionPlanRequest.model_validate(
+        _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=None)
+    ).model_dump(by_alias=True, mode="json", exclude_none=True)
+
+    private_key = Ed25519PrivateKey.generate()
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    assert (
+        mission_store.record_issuance(
+            MissionRecord(
+                mission_id="mission-001",
+                site_id="site-001",
+                mission_type="BASELINE_MAPPING",
+                artifact_kind="pair",
+                contract={"schemaVersion": "1.2", "missionId": "mission-001"},
+                kmz_sha256="deadbeef",
+                route_pattern="lawnmower",
+                waypoint_count=10,
+                coverage_ratio=1.0,
+                issued_at=datetime.now(UTC),
+                issued_by="do-1",
+                plan_request=stale_request,
+                plan_request_digest=sha256_digest(canonical_payload_bytes(stale_request)),
+            )
+        ).value
+        == "RECORDED"
+    )
+
+    app = create_app(
+        mission_signing_key=private_key,
+        mission_signing_key_id="core-issuer-key-1",
+        mission_store=mission_store,
+        site_store=site_store,
+        auth_registry=_auth_registry(),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
+
+    # 저장된(옛) 요청과 **같은** 요청이 재도착한 상황 — digest 가 일치해 멱등
+    # 재발급 분기로 들어가지만, 현재 규칙으로는 그 요청을 다시 만들 수 없다.
+    retry = client.post("/v1/missions/plans", json=stale_request)
+
+    assert retry.status_code == 409, retry.text
+    assert "현재 정책" in retry.json()["detail"]

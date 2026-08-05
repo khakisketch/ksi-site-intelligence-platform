@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# manifoldctl — Manifold 3 개발 루프 단일 진입점 (ADR-KSI-009).
+#
+# 2속 배포: raw(빠른 반복, 이 스크립트가 직접 rsync+프로세스 관리) / dpk(릴리스
+# 게이트, dji_app_ctl 위임 — PSDK 앱 통합 완료 후 구현, 현재는 스텁).
+#
+# 서브커맨드:
+#   env                     해석된 설정 출력
+#   doctor                  로컬·원격 전제조건 점검
+#   build [--sanitize]      edge/manifold-runtime을 컨테이너(정본)에서 빌드
+#   deploy [--allow-dirty]  빌드 산출물을 실기 releases/<sha>/ 로 배포, current 갱신
+#   run                     배포된 테스트 바이너리를 실기에서 직접 실행(ctest 아님 — #2)
+#   status                  실기의 현재 배포 상태 확인
+#   cycle [--sanitize] [--allow-dirty]   build → deploy → run 을 한 번에
+#   fetch --collect         실기 current/(배포된 빌드 트리 전체)를 로컬로 회수
+#                           (세션 로그 전용 회수 아님 — 저장소에 세션 로그를 쓰는
+#                           코드가 아직 없다, 감사 #8)
+#   shell                   실기에 대화형 셸로 접속
+#
+# package/install/start/stop(DPK 모드)은 PSDK 앱 통합(edge/psdk-app) 완료 후 구현 —
+# 지금 호출하면 미구현임을 명시하고 종료한다(완료를 사칭하지 않는다).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/manifold/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+cmd="${1:-}"; shift || true
+
+cmd_env() {
+  echo "MANIFOLD_SSH_HOST=$MANIFOLD_SSH_HOST"
+  echo "MANIFOLD_REMOTE_ROOT=$MANIFOLD_REMOTE_ROOT"
+  echo "MANIFOLD_BUILD_IMAGE=$MANIFOLD_BUILD_IMAGE"
+  echo "git_sha=$(mf_git_sha)"
+  echo "git_dirty=$(mf_git_is_dirty && echo true || echo false)"
+}
+
+cmd_doctor() {
+  local bad=0
+  mf_log "로컬: docker 확인"
+  command -v docker >/dev/null || { mf_log "docker 없음"; bad=1; }
+  mf_log "로컬: 빌드 이미지 확인 ($MANIFOLD_BUILD_IMAGE)"
+  # 다른 3개 검사와 동일하게 실패 시 bad=1을 세운다 — 이전엔 이 검사만 빠져 있어
+  # 이미지가 없어도 doctor가 "전제조건 충족"을 오출력했다(fail-open, 감사 #4).
+  docker image inspect "$MANIFOLD_BUILD_IMAGE" >/dev/null 2>&1 \
+    || { mf_log "이미지 없음 — edge/docker/manifold3-build.Dockerfile로 먼저 빌드할 것"; bad=1; }
+  mf_log "원격: SSH 키 인증 확인"
+  mf_ssh 'echo OK' >/dev/null 2>&1 && mf_log "  OK" || {
+    # bootstrap_device.sh는 저장소에 존재하지 않는다 — 실제 복구 절차로 정정(감사 #7).
+    mf_log "  실패 — 복구 절차:"
+    mf_log "    1) 로컬: ssh-keygen -t ed25519 -f ~/.ssh/ksi_manifold_ed25519"
+    mf_log "    2) 로컬: ssh-copy-id -i ~/.ssh/ksi_manifold_ed25519.pub dji@<실기 IP>"
+    mf_log "    3) ~/.ssh/config에 Host 별칭 등록(manifold.env.example 상단 주석 예시 참조)"
+    mf_log "    4) 실기는 재부팅마다 홈 디렉터리 권한이 775로 리셋돼 OpenSSH StrictModes가"
+    mf_log "       pubkey를 거부한다 — 실기 콘솔/기존 접속으로 다음을 1회 실행:"
+    mf_log "       chmod g-w,o-w ~ ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+    bad=1
+  }
+  mf_log "원격: ${MANIFOLD_REMOTE_ROOT} 상위 쓰기 권한 확인"
+  # MANIFOLD_REMOTE_ROOT에 후행 슬래시가 있으면 %/* 만으로는 부모 디렉터리가 아니라
+  # 자기 자신이 남아 엉뚱한 경로를 검사하게 된다 — 먼저 후행 슬래시를 벗겨낸다(감사 #10).
+  local _remote_root_norm="${MANIFOLD_REMOTE_ROOT%/}"
+  mf_ssh "touch ${_remote_root_norm%/*}/.mf_write_test 2>/dev/null && rm -f ${_remote_root_norm%/*}/.mf_write_test" \
+    && mf_log "  OK" || { mf_log "  실패"; bad=1; }
+  [ "$bad" -eq 0 ] && mf_log "doctor: 전제조건 충족" || mf_die "doctor: 전제조건 미충족(위 로그 확인)"
+}
+
+cmd_build() {
+  local sanitize_flag="" want_sanitize=0
+  if [ "${1:-}" = "--sanitize" ]; then
+    sanitize_flag="-DKSI_ENABLE_SANITIZERS=ON"
+    want_sanitize=1
+  fi
+  local build_dir="$MANIFOLD_REPO_ROOT/edge/manifold-runtime/build-manifoldctl"
+
+  # build_dir은 sanitize 유무와 무관하게 공유된다(deploy가 항상 이 경로 하나만 본다).
+  # 캐시에 이전 요청과 다른 KSI_ENABLE_SANITIZERS 값이 남아 있으면 cmake가 그걸
+  # 그대로 재사용해 "일반 build인데 조용히 ASan 빌드가 되는" 사고가 난다(감사 #6) —
+  # 캐시 값이 이번 요청과 다르면 재구성한다.
+  if [ -f "$build_dir/CMakeCache.txt" ]; then
+    local cached_val want_val
+    cached_val="$(grep -o '^KSI_ENABLE_SANITIZERS:BOOL=[A-Z]*' "$build_dir/CMakeCache.txt" 2>/dev/null | cut -d= -f2 || true)"
+    want_val="OFF"; [ "$want_sanitize" -eq 1 ] && want_val="ON"
+    if [ -n "$cached_val" ] && [ "$cached_val" != "$want_val" ]; then
+      mf_log "sanitize 설정 변경 감지(캐시=$cached_val, 요청=$want_val) — build_dir 캐시 재구성"
+      rm -rf "$build_dir"
+    fi
+  fi
+
+  mf_log "컨테이너($MANIFOLD_BUILD_IMAGE)에서 빌드 — 정본 경로(실기 userland와 동일한 gcc9.4/cmake3.16.3/glibc2.31)"
+  docker run --rm --platform linux/arm64 \
+    -v "$MANIFOLD_REPO_ROOT/edge/manifold-runtime:/workspace/src:ro" \
+    -v "$build_dir:/workspace/build" \
+    -w /workspace \
+    "$MANIFOLD_BUILD_IMAGE" bash -c "
+      set -e
+      cmake -S src -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo $sanitize_flag
+      cmake --build build -j
+      cd build && ctest --output-on-failure
+    "
+  # 빌드 산출물에 현재 HEAD의 git sha를 스탬프한다 — deploy가 이 값과 mf_git_sha()를
+  # 대조해 "이전 빌드 바이너리가 새 커밋 sha로 라벨링돼 배포"되는 것을 막는다
+  # (감사 #1, ADR-KSI-009 D6: build_commit이 실제 시험 코드와 다른 SHA를 가리키지
+  # 않는다는 불변식을 dirty 가드만으로는 지키지 못했다 — build 없이 deploy만 부르면
+  # 뚫렸다).
+  mf_git_sha > "$build_dir/.ksi_build_sha"
+  mf_log "빌드 완료: $build_dir"
+}
+
+cmd_deploy() {
+  local allow_dirty=0
+  [ "${1:-}" = "--allow-dirty" ] && allow_dirty=1
+  if mf_git_is_dirty && [ "$allow_dirty" -ne 1 ]; then
+    mf_die "워킹트리가 dirty — --allow-dirty 없이는 배포하지 않는다(build_commit이 거짓이 되는 것을 방지)"
+  fi
+  local sha build_dir remote_release
+  sha="$(mf_git_sha)"
+  build_dir="$MANIFOLD_REPO_ROOT/edge/manifold-runtime/build-manifoldctl"
+
+  # -d 존재만으로는 부족하다 — 디렉터리가 있어도 기대 산출물이 없거나(구버전 잔재 등)
+  # 다른 커밋에서 만든 것일 수 있다. 실제 산출물 존재 + git sha 스탬프 대조까지
+  # 확인해야 dirty 가드가 지키려던 불변식(배포되는 바이너리 == 라벨링된 sha)이
+  # 선다(감사 #1). build 없이 deploy만 호출하는 경로에서 이전엔 이 확인이 전혀
+  # 없어서 이전 빌드가 새 sha로 그대로 올라갈 수 있었다.
+  [ -x "$build_dir/control_plane_tests" ] || mf_die "빌드 산출물 없음(control_plane_tests) — 먼저 'manifoldctl build' 실행할 것"
+  [ -x "$build_dir/conformance_tests" ] || mf_die "빌드 산출물 없음(conformance_tests) — 먼저 'manifoldctl build' 실행할 것"
+  local stamp_file="$build_dir/.ksi_build_sha" stamped_sha
+  [ -f "$stamp_file" ] || mf_die "빌드 sha 스탬프 없음(.ksi_build_sha) — 구버전 빌드 산출물로 보인다. 'manifoldctl build'를 다시 실행할 것"
+  stamped_sha="$(cat "$stamp_file")"
+  [ "$stamped_sha" = "$sha" ] || mf_die "빌드 산출물의 sha($stamped_sha)가 현재 HEAD($sha)와 다르다 — 커밋 이후 재빌드 없이 배포가 시도됐다. 'manifoldctl build'를 다시 실행할 것"
+
+  remote_release="releases/${sha}"
+
+  # 동시 배포 락은 두지 않는다 — 이 CLI는 단일 개발자가 로컬에서 돌리는 raw 배포
+  # 루프 전용이고(ADR-KSI-009 §7), 동시 실행 시나리오가 실측된 적이 없다. 지금 락
+  # 파일 기반 상호배제를 넣으면 stale lock 정리 같은 새 실패 모드만 늘어난다(과설계
+  # 우려, 감사 #12) — CI/다중 사용자 배포가 실제로 필요해지면 그때 추가한다.
+  mf_log "배포: $sha -> ${MANIFOLD_REMOTE_ROOT}/${remote_release}"
+  mf_ssh "mkdir -p ${MANIFOLD_REMOTE_ROOT}/${remote_release}"
+  if ! mf_rsync_to_device "$build_dir/" "${remote_release}/"; then
+    # rsync 실패 시 반쯤 복사된 releases/<sha>/ 를 원격에 남기지 않는다(감사 #12) —
+    # 정리 자체가 실패해도 무시하지 말고 수동 확인이 필요함을 명시한다.
+    mf_log "rsync 실패 — 부분 상태 정리 시도: ${MANIFOLD_REMOTE_ROOT}/${remote_release}"
+    mf_ssh "rm -rf ${MANIFOLD_REMOTE_ROOT}/${remote_release}" \
+      || mf_log "⚠ 부분 상태 정리도 실패 — 실기에서 수동 확인 필요: ${MANIFOLD_REMOTE_ROOT}/${remote_release}"
+    mf_die "배포 실패(rsync) — current는 갱신되지 않았다(원자적 교체 이전 단계에서 중단)"
+  fi
+  # 원자적 교체 — 반쯤 복사된 상태가 current로 잡히는 사고를 막는다.
+  mf_ssh "ln -sfn ${MANIFOLD_REMOTE_ROOT}/${remote_release} ${MANIFOLD_REMOTE_ROOT}/current"
+
+  local manifest
+  manifest=$(cat <<EOF
+{
+  "git_sha": "$sha",
+  "git_dirty": $(mf_git_is_dirty && echo true || echo false),
+  "deployed_at_utc": "$(mf_utc_now)",
+  "mode": "raw",
+  "remote_release": "${MANIFOLD_REMOTE_ROOT}/${remote_release}"
+}
+EOF
+)
+  echo "$manifest" | mf_ssh "cat > ${MANIFOLD_REMOTE_ROOT}/${remote_release}/deploy_manifest.json"
+  mf_log "배포 완료 — deploy_manifest.json 기록됨"
+}
+
+cmd_run() {
+  # 배포되는 CTestTestfile.cmake에는 컨테이너 빌드 시점의 절대경로
+  # (/workspace/build/...)가 그대로 박혀 있어 실기에서 ctest가 그 경로를 찾다가
+  # 실패한다(감사 #2 — 실측: 로컬 build/CTestTestfile.cmake에 호스트 절대경로가
+  # 박혀 있는 것을 확인. 컨테이너 빌드도 컨테이너 내부 절대경로 /workspace/build가
+  # 그대로 박히는 동일 구조). ctest 대신 배포 디렉터리의 바이너리를 직접 실행한다.
+  local remote_script
+  remote_script='cd "'"${MANIFOLD_REMOTE_ROOT}"'/current" || exit 1
+fail=0
+for f in control_plane_tests conformance_tests; do
+  if [ ! -x "$f" ]; then
+    echo "[manifoldctl] ✗ 실행 파일 없음/실행권한 없음: $f" >&2
+    exit 1
+  fi
+done
+echo "[manifoldctl] control_plane_tests 실행 중"
+./control_plane_tests || { echo "[manifoldctl] ✗ control_plane_tests 실패" >&2; fail=1; }
+echo "[manifoldctl] conformance_tests 실행 중"
+./conformance_tests || { echo "[manifoldctl] ✗ conformance_tests 실패" >&2; fail=1; }
+exit "$fail"'
+  mf_log "실기 current에서 테스트 바이너리 직접 실행(ctest 아님)"
+  mf_ssh "$remote_script"
+}
+
+cmd_status() {
+  mf_ssh "readlink -f ${MANIFOLD_REMOTE_ROOT}/current 2>/dev/null && cat ${MANIFOLD_REMOTE_ROOT}/current/deploy_manifest.json 2>/dev/null" \
+    || mf_log "배포된 것 없음"
+}
+
+cmd_cycle() {
+  # 이전엔 "${1:-}" 하나만 cmd_deploy로 그대로 넘겨서, --sanitize를 주면 build에는
+  # 전달되지 않고 deploy의 위치 인자로 새어 들어가 조용히 버려졌다(deploy는
+  # --allow-dirty만 인식하므로 --sanitize는 무시됨, 감사 #5). 각 플래그를 옳은
+  # 서브커맨드로 라우팅하도록 인자 종류별로 분류한다.
+  local sanitize_arg="" allow_dirty_arg=""
+  for arg in "$@"; do
+    case "$arg" in
+      --sanitize)    sanitize_arg="--sanitize" ;;
+      --allow-dirty) allow_dirty_arg="--allow-dirty" ;;
+      *) mf_die "cycle: 알 수 없는 인자 '$arg' (지원: --sanitize, --allow-dirty)" ;;
+    esac
+  done
+  cmd_build "$sanitize_arg"
+  cmd_deploy "$allow_dirty_arg"
+  cmd_run
+}
+
+cmd_fetch() {
+  # 이름을 logs에서 fetch로 바꿨다(감사 #8) — 이 명령은 실기 세션 로그가 아니라
+  # 배포된 빌드 트리(current/) 전체를 그대로 재다운로드한다. 저장소에는 아직
+  # 세션 로그를 쓰는 코드가 없어서(supervisor.cpp 등에 로그 파일 출력 없음)
+  # "세션 로그 회수"라는 이름은 있지도 않은 기능을 있는 것처럼 사칭하는 셈이었다.
+  # data/logs 같은 경로로 좁히는 대안도 검토했으나, 그 경로를 실제로 쓰는 코드가
+  # 아직 없어 지금 좁히면 "존재하지 않는 걸 있는 척" 추측이 하나 더 느는 쪽이라
+  # 채택하지 않았다 — 실제 로그 파일이 생기면 그때 경로를 좁힌다.
+  [ "${1:-}" = "--collect" ] || mf_die "사용법: manifoldctl fetch --collect"
+  local dest="$MANIFOLD_REPO_ROOT/.dev-data/manifold/$(mf_utc_now)"
+  mkdir -p "$dest"
+  mf_rsync_from_device "current/" "$dest/"
+  mf_log "배포 트리 회수 완료: $dest"
+}
+
+cmd_shell() { exec ssh "$MANIFOLD_SSH_HOST"; }
+
+case "$cmd" in
+  env)     cmd_env ;;
+  doctor)  cmd_doctor ;;
+  build)   cmd_build "$@" ;;
+  deploy)  cmd_deploy "$@" ;;
+  run)     cmd_run ;;
+  status)  cmd_status ;;
+  cycle)   cmd_cycle "$@" ;;
+  fetch)   cmd_fetch "$@" ;;
+  shell)   cmd_shell ;;
+  package|install|start|stop|restart|list)
+    mf_die "'$cmd'는 DPK 모드 전용이다 — edge/psdk-app PSDK 통합 완료 후 구현 예정(현재 미구현)" ;;
+  *)
+    echo "사용법: manifoldctl {env|doctor|build|deploy|run|status|cycle|fetch|shell}" >&2
+    exit 1 ;;
+esac
