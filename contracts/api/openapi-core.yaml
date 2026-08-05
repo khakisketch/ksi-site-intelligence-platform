@@ -816,9 +816,41 @@ paths:
                   required: [altitudeM]
                   properties:
                     altitudeM: { type: number }
+                    camera:
+                      type: object
+                      additionalProperties: false
+                      required: [sensorWidthMm, focalLengthMm, imageWidthPx, imageHeightPx]
+                      description: >-
+                        **권장 경로** — 주면 서버가 카메라·고도·중복도로 spacingM·
+                        captureIntervalM 을 계산하고, 계산 근거를 응답 gridBasis 로
+                        돌려준다. 간격을 직접 적으면 서버는 그 값이 적정한지 판단할
+                        근거가 없다(ADR-KSI-011 D2). camera 와 spacingM/
+                        captureIntervalM 을 함께 주면 422 — 어느 쪽이 진짜인지
+                        서버가 고르지 않는다.
+                        imageWidthPx 는 across-track(라인 간격), imageHeightPx 는
+                        along-track(사진 간격)이다(nadir·landscape 표준 배치).
+                      properties:
+                        sensorWidthMm: { type: number, exclusiveMinimum: 0 }
+                        focalLengthMm: { type: number, exclusiveMinimum: 0 }
+                        imageWidthPx: { type: integer, minimum: 1 }
+                        imageHeightPx: { type: integer, minimum: 1 }
+                        frontOverlap:
+                          type: number
+                          minimum: 0.6
+                          exclusiveMaximum: 1.0
+                          default: 0.8
+                          description: 진행방향 중복도. 0.6 미만은 재구성 불성립이라 422.
+                        sideOverlap:
+                          type: number
+                          minimum: 0.5
+                          exclusiveMaximum: 1.0
+                          default: 0.7
+                          description: 라인 간 중복도. 0.5 미만은 422.
                     spacingM:
                       type: number
-                      description: lawnmower(매핑) 계열 필수 — 스캔선 간격 상한(m, 측면 중첩)
+                      description: >-
+                        lawnmower(매핑) 계열 — camera 를 주지 않을 때만 필수(측면
+                        간격, m). 고도×1.5 를 넘으면 422.
                     captureIntervalM:
                       type: number
                       minimum: 0.1
@@ -867,16 +899,32 @@ paths:
                   plannedCoverageRatio:
                     type: [number, 'null']
                     description: >-
-                      lawnmower 만 값을 가진다(perimeter 는 null). 스와스∩AOI 의
-                      해석적 정확값이며 INV-010 의 '접근가능 일반영역 ≥95%' 조항에만
-                      대응한다 — '필수 위험구역/자산 100%' 조항의 증명이 아니다
-                      (그건 비행 후 CoverageReport 완료 게이트 소관, 미구현).
-                      계약의 accessibleGeneralCoverage 약속 미만이면 발급 자체가
-                      거부되므로(COVERAGE_BELOW_CONTRACT_PROMISE) 이 값은 항상
-                      약속 이상이다.
+                      **비행 전 계획 추정치**(lawnmower 만, perimeter 는 null).
+                      각 스캔선이 ±spacing/2 를 덮는다는 **가정** 하의 스와스∩AOI
+                      정확값이다 — 실제로 무엇을 관찰했는지는 날아본 기체만 안다.
+                      **완료 판정의 권위가 아니다**: 그건 비행 후 CoverageReport
+                      (POST /v1/missions/{mission_id}/coverage-report)가 소유하며
+                      INV-010 의 세 조항 전부를 그쪽이 판정한다(MASTER_PRD §15.5).
+                      이 값은 "계획이 애초에 요구를 겨냥하는가"의 사전 점검 결과이고,
+                      계약 요구 미만이면 발급이 거부된다
+                      (COVERAGE_BELOW_CONTRACT_PROMISE).
+                  gridBasis:
+                    type: [object, 'null']
+                    additionalProperties: false
+                    description: >-
+                      **왜 이 간격이 나왔는가** — route.camera 로 계산했을 때만
+                      실린다(간격을 직접 지정하면 null). 숫자만 남기면 다음 사람이
+                      그 값을 다시 검증할 수 없다.
+                    properties:
+                      spacingM: { type: number }
+                      captureIntervalM: { type: number }
+                      gsdM: { type: number, description: 지상표본거리(m/px) }
+                      footprintAcrossM: { type: number }
+                      footprintAlongM: { type: number }
         '422':
           description: >-
-            경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing 누락·미지원 타입) /
+            경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing/camera 누락·
+            camera 와 spacingM 동시 지정·중복도 하한 미달·미지원 타입) /
             UNKNOWN_SITE / SITE_FRAME_MISMATCH / COVERAGE_BELOW_CONTRACT_PROMISE
         '409': { description: MISSION_ID_CONFLICT }
         '503': { description: STORE_UNAVAILABLE — durable 기록 실패, 산출물 미반환 }

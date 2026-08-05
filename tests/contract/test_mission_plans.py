@@ -612,3 +612,78 @@ def test_retry_of_record_that_current_policy_cannot_reissue_is_409_not_500(
 
     assert retry.status_code == 409, retry.text
     assert "현재 정책" in retry.json()["detail"]
+
+
+# ── F. 카메라로 서버가 격자를 계산한다 (ADR-KSI-011 D2, 3순위) ───────────────
+
+
+def _camera_params(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "sensorWidthMm": 13.2,
+        "focalLengthMm": 8.8,
+        "imageWidthPx": 5472,
+        "imageHeightPx": 3648,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_camera_lets_server_compute_spacing(tmp_path: Path) -> None:
+    """[핵심] 카메라를 주면 간격을 안 줘도 발급되고, 계산 근거가 응답에 실린다.
+
+    간격을 요청자가 적으면 서버는 그 값이 적정한지 판단할 근거가 없다 — 실제로
+    40ha 가 사진 10장으로 발급됐다. 카메라를 받으면 그 판단이 가능해진다.
+    """
+    client, _registry = _client(tmp_path)
+    request = _plan_request(mission_type="BASELINE_MAPPING")
+    request["route"] = {"altitudeM": 40.0, "camera": _camera_params()}
+
+    response = client.post("/v1/missions/plans", json=request)
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    basis = body["gridBasis"]
+    assert basis is not None, "계산 근거가 응답에 없다 — 왜 이 간격인지 검증 불가"
+    # 고도 40m·표준 중복도(0.8/0.7) → 촬영폭 60×40m → 라인 18m·사진 8m 규모
+    assert basis["spacingM"] == pytest.approx(18.0, rel=0.02)
+    assert basis["captureIntervalM"] == pytest.approx(8.0, rel=0.02)
+    assert basis["footprintAcrossM"] == pytest.approx(60.0, rel=0.02)
+    assert body["waypointCount"] > 0
+
+
+def test_camera_and_explicit_spacing_together_is_rejected(tmp_path: Path) -> None:
+    """두 출처가 있으면 서버가 조용히 하나를 고르게 된다 — 그 선택을 하지 않는다."""
+    client, _registry = _client(tmp_path)
+    request = _plan_request(mission_type="BASELINE_MAPPING")
+    request["route"] = {"altitudeM": 40.0, "camera": _camera_params(), "spacingM": 20.0}
+
+    response = client.post("/v1/missions/plans", json=request)
+
+    assert response.status_code == 422
+    assert "함께 줄 수 없다" in response.json()["detail"]
+
+
+def test_insufficient_overlap_is_rejected_at_api(tmp_path: Path) -> None:
+    """재구성이 성립하지 않는 중복도는 발급 단계에서 막는다."""
+    client, _registry = _client(tmp_path)
+    request = _plan_request(mission_type="BASELINE_MAPPING")
+    request["route"] = {
+        "altitudeM": 40.0,
+        "camera": _camera_params(frontOverlap=0.2, sideOverlap=0.7),
+    }
+
+    response = client.post("/v1/missions/plans", json=request)
+
+    assert response.status_code == 422
+    assert "front_overlap" in response.json()["detail"]
+
+
+def test_explicit_spacing_still_works_without_camera(tmp_path: Path) -> None:
+    """[비회귀] 카메라 없이 간격을 직접 주는 기존 경로는 그대로 동작한다."""
+    client, _registry = _client(tmp_path)
+    response = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["gridBasis"] is None, "직접 지정인데 계산 근거가 실렸다"

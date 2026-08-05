@@ -206,16 +206,47 @@ export interface AoiVertex {
   lonDeg: number;
 }
 
+/**
+ * 매핑 카메라 스펙 + 원하는 겹침 — 주면 서버가 격자 간격을 계산한다(권장 경로).
+ *
+ * 간격을 직접 적으면 서버는 그 값이 적정한지 판단할 근거가 없다. 겹침은 카메라
+ * 촬영폭 없이 계산할 수 없기 때문이다(ADR-KSI-011 D3).
+ */
+export interface MissionPlanCameraInput {
+  sensorWidthMm: number;
+  focalLengthMm: number;
+  /** across-track(라인 간격을 결정) */
+  imageWidthPx: number;
+  /** along-track(사진 간격을 결정) */
+  imageHeightPx: number;
+  /** 진행방향 겹침. 서버 하한 0.6 — 그 아래는 재구성이 실패한다. */
+  frontOverlap?: number;
+  /** 라인 간 겹침. 서버 하한 0.5. */
+  sideOverlap?: number;
+}
+
 export interface MissionPlanRouteInput {
   altitudeM: number;
-  /** lawnmower 스캔선 간격(m) — 측면 중첩을 정한다. */
-  spacingM?: number;
   /**
-   * lawnmower 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격.
-   * 매핑 계열에서 빠지면 서버가 422 로 거부한다(전방 중첩 0 → 재구성 불성립).
+   * 주면 서버가 spacingM·captureIntervalM 을 계산하고 근거를 gridBasis 로 돌려준다.
+   * spacingM/captureIntervalM 과 **함께 줄 수 없다**(422).
    */
+  camera?: MissionPlanCameraInput;
+  /** lawnmower 스캔선 간격(m) — camera 를 주지 않을 때만 쓴다. */
+  spacingM?: number;
+  /** lawnmower 진행방향 촬영 간격(m) — camera 를 주지 않을 때만 쓴다. */
   captureIntervalM?: number;
   sweepDirectionDeg?: number;
+}
+
+/** 서버가 간격을 계산한 근거 — camera 를 줬을 때만 실린다. */
+export interface MissionPlanGridBasis {
+  spacingM: number;
+  captureIntervalM: number;
+  /** 지상표본거리(m/px) */
+  gsdM: number;
+  footprintAcrossM: number;
+  footprintAlongM: number;
 }
 
 export interface MissionPlanDroneInput {
@@ -245,5 +276,7 @@ export interface MissionPlanResponse {
   kmzSha256: string;
   routePattern: "lawnmower" | "perimeter";
   waypointCount: number;
+  /** camera 로 계산했을 때만 실린다 — 직접 지정이면 null. */
+  gridBasis: MissionPlanGridBasis | null;
   plannedCoverageRatio: number | null;
 }

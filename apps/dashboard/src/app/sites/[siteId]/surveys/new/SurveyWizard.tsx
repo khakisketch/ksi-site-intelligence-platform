@@ -121,18 +121,28 @@ const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
 
 type SurveyLevel = "FAST" | "STANDARD" | "PRECISE";
 
-// captureIntervalM 은 스캔선을 따라 촬영하는 간격이다. 값이 빠지면 스캔선당
-// 사진이 양 끝 2장뿐이라 진행방향 겹침이 0 이 되고, 비행은 정상으로 끝나는데
-// 지도·3D 산출물만 나오지 않는다 — 그래서 서버가 아예 발급을 거부한다.
-// 세 수준 모두 스캔선 간격보다 촘촘하게 둔다(진행방향 겹침을 더 크게).
+// 조사 수준은 이제 **겹침**으로 정한다 — 간격(m)은 카메라와 고도가 있어야 계산되고,
+// 그 계산은 서버가 한다(ADR-KSI-011 D3). 사용자에게도 "간격 몇 m"보다 "겹침 얼마"가
+// 답할 수 있는 질문이다. 서버 하한은 전방 0.6·측면 0.5 이며 그 아래는 재구성이
+// 실패해 422 다.
 const LEVEL_PRESETS: Record<
   SurveyLevel,
-  { label: string; spacingM: number; captureIntervalM: number; autoFlightSpeedMs: number }
+  { label: string; frontOverlap: number; sideOverlap: number; autoFlightSpeedMs: number }
 > = {
-  FAST: { label: "빠른", spacingM: 30, captureIntervalM: 22, autoFlightSpeedMs: 8 },
-  STANDARD: { label: "표준", spacingM: 20, captureIntervalM: 15, autoFlightSpeedMs: 5 },
-  PRECISE: { label: "정밀", spacingM: 10, captureIntervalM: 7, autoFlightSpeedMs: 3 },
+  FAST: { label: "빠른", frontOverlap: 0.65, sideOverlap: 0.55, autoFlightSpeedMs: 8 },
+  STANDARD: { label: "표준", frontOverlap: 0.8, sideOverlap: 0.7, autoFlightSpeedMs: 5 },
+  PRECISE: { label: "정밀", frontOverlap: 0.9, sideOverlap: 0.8, autoFlightSpeedMs: 3 },
 };
+
+// 기체 카메라 스펙 — 기체마다 고정이라 현장/기체 등록 시 저장할 값이다.
+// **M4D 실측 스펙은 아직 미확정(H4)** 이라 지금은 매핑용 기체 카메라 급 값을
+// 쓴다. 확정되면 이 상수 하나만 바꾸면 된다(간격은 서버가 다시 계산한다).
+const DEFAULT_CAMERA = {
+  sensorWidthMm: 13.2,
+  focalLengthMm: 8.8,
+  imageWidthPx: 5472,
+  imageHeightPx: 3648,
+} as const;
 
 type NumericDraftKey =
   | "altitudeM"
@@ -256,8 +266,11 @@ export function SurveyWizard({ site }: { site: SiteView }) {
           altitudeM: draft.altitudeM,
           ...(routePattern === "lawnmower" && draft.level
             ? {
-                spacingM: LEVEL_PRESETS[draft.level].spacingM,
-                captureIntervalM: LEVEL_PRESETS[draft.level].captureIntervalM,
+                camera: {
+                  ...DEFAULT_CAMERA,
+                  frontOverlap: LEVEL_PRESETS[draft.level].frontOverlap,
+                  sideOverlap: LEVEL_PRESETS[draft.level].sideOverlap,
+                },
               }
             : {}),
         },
@@ -482,12 +495,16 @@ export function SurveyWizard({ site }: { site: SiteView }) {
             {routePattern === "lawnmower" && (
               <>
                 <div className="flex justify-between">
-                  <dt>격자 간격</dt>
-                  <dd className="num">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
+                  <dt>진행방향 겹침</dt>
+                  <dd className="num">
+                    {Math.round(LEVEL_PRESETS[draft.level].frontOverlap * 100)}%
+                  </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt>촬영 간격</dt>
-                  <dd className="num">{LEVEL_PRESETS[draft.level].captureIntervalM}m</dd>
+                  <dt>라인 간 겹침</dt>
+                  <dd className="num">
+                    {Math.round(LEVEL_PRESETS[draft.level].sideOverlap * 100)}%
+                  </dd>
                 </div>
               </>
             )}
@@ -649,13 +666,15 @@ export function SurveyWizard({ site }: { site: SiteView }) {
         {routePattern === "lawnmower" && draft.level && (
           <>
             <div className="flex justify-between gap-4">
-              <dt className="text-ink-2">격자 간격</dt>
-              <dd className="num text-right">{LEVEL_PRESETS[draft.level].spacingM}m</dd>
+              <dt className="text-ink-2">진행방향 겹침</dt>
+              <dd className="num text-right">
+                {Math.round(LEVEL_PRESETS[draft.level].frontOverlap * 100)}%
+              </dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-ink-2">촬영 간격</dt>
+              <dt className="text-ink-2">라인 간 겹침</dt>
               <dd className="num text-right">
-                {LEVEL_PRESETS[draft.level].captureIntervalM}m
+                {Math.round(LEVEL_PRESETS[draft.level].sideOverlap * 100)}%
               </dd>
             </div>
           </>
@@ -711,6 +730,26 @@ export function SurveyWizard({ site }: { site: SiteView }) {
                 <dt>계획 커버리지</dt>
                 <dd className="num">{formatCoverageRatio(result.plannedCoverageRatio)}</dd>
               </div>
+              {/* 서버가 카메라로 계산한 간격 — "왜 이 값인가"를 사용자가 볼 수
+                  있어야 나중에 그 값을 다시 검증할 수 있다. */}
+              {result.gridBasis && (
+                <>
+                  <div className="flex justify-between">
+                    <dt>격자 간격 (계산됨)</dt>
+                    <dd className="num">{result.gridBasis.spacingM.toFixed(1)}m</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>촬영 간격 (계산됨)</dt>
+                    <dd className="num">{result.gridBasis.captureIntervalM.toFixed(1)}m</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>지상 해상도</dt>
+                    <dd className="num">
+                      {(result.gridBasis.gsdM * 100).toFixed(1)}cm/px
+                    </dd>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between gap-4">
                 <dt>KMZ SHA-256</dt>
                 <dd className="num text-right text-xs break-token">{result.kmzSha256}</dd>

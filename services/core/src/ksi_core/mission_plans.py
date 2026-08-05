@@ -65,14 +65,19 @@ from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from ksi_mission_planning import (
     AreaOfInterest,
+    CameraSpec,
+    CameraSpecError,
     DroneProfile,
+    GridSpacing,
     KmzBuildError,
     RouteGenerationError,
     WaylineMissionConfig,
     build_kmz,
+    compute_grid_spacing,
     lawnmower_route,
     perimeter_route,
 )
+from ksi_mission_planning.camera import DEFAULT_FRONT_OVERLAP, DEFAULT_SIDE_OVERLAP
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
@@ -123,6 +128,14 @@ class RouteParams(_CamelModel):
     """
 
     altitude_m: float
+    camera: CameraParams | None = Field(
+        default=None,
+        description=(
+            "주면 서버가 카메라·고도·중복도로 spacingM·captureIntervalM 을 계산한다"
+            "(권장). 이때 두 값을 함께 주면 422 — 어느 쪽이 진짜인지 서버가 고르지 "
+            "않는다"
+        ),
+    )
     spacing_m: float | None = Field(default=None, description="lawnmower 전용 스캔선 간격(m)")
     capture_interval_m: float | None = Field(
         default=None,
@@ -133,6 +146,24 @@ class RouteParams(_CamelModel):
         ),
     )
     sweep_direction_deg: float | None = None
+
+
+class CameraParams(_CamelModel):
+    """매핑 카메라 스펙 + 원하는 중복도 — 주면 서버가 격자 간격을 **계산**한다.
+
+    이걸 주는 쪽이 권장 경로다(ADR-KSI-011 D2). 간격을 직접 적으면 서버는 그 값이
+    적정한지 판단할 근거가 없어, 커버리지 계산이 요청자가 준 가정 위에 서게 된다.
+
+    ``imageWidthPx`` 는 across-track(라인 간격 결정), ``imageHeightPx`` 는
+    along-track(사진 간격 결정)이다 — nadir·landscape 표준 배치 가정.
+    """
+
+    sensor_width_mm: float
+    focal_length_mm: float
+    image_width_px: int
+    image_height_px: int
+    front_overlap: float = DEFAULT_FRONT_OVERLAP
+    side_overlap: float = DEFAULT_SIDE_OVERLAP
 
 
 class DroneProfileParams(_CamelModel):
@@ -227,12 +258,41 @@ def build_mission_plan(
 
     route: list[RouteWaypoint]
     planned_coverage_ratio: float | None = None
+    grid: GridSpacing | None = None
     if mission_type in _LAWNMOWER_TYPES:
-        if request.route.spacing_m is None:
+        spacing_m = request.route.spacing_m
+        capture_interval_m = request.route.capture_interval_m
+        if request.route.camera is not None:
+            if spacing_m is not None or capture_interval_m is not None:
+                # 두 출처가 있으면 어느 쪽이 진짜인지 서버가 고르게 된다 —
+                # 그 선택을 조용히 하면 요청자가 본 값과 실제 경로가 갈라진다.
+                raise RouteGenerationError(
+                    "route.camera 와 spacingM/captureIntervalM 을 함께 줄 수 없다 — "
+                    "카메라를 주면 서버가 계산한다"
+                )
+            camera = request.route.camera
+            try:
+                grid = compute_grid_spacing(
+                    CameraSpec(
+                        sensor_width_mm=camera.sensor_width_mm,
+                        focal_length_mm=camera.focal_length_mm,
+                        image_width_px=camera.image_width_px,
+                        image_height_px=camera.image_height_px,
+                    ),
+                    altitude_m=request.route.altitude_m,
+                    front_overlap=camera.front_overlap,
+                    side_overlap=camera.side_overlap,
+                )
+            except CameraSpecError as exc:
+                raise RouteGenerationError(str(exc)) from exc
+            spacing_m, capture_interval_m = grid.spacing_m, grid.capture_interval_m
+
+        if spacing_m is None:
             raise RouteGenerationError(
-                f"{mission_type.value} 는 lawnmower 패턴 — route.spacingM 이 필요하다"
+                f"{mission_type.value} 는 lawnmower 패턴 — route.camera 를 주거나"
+                " route.spacingM 을 직접 지정해야 한다"
             )
-        if request.route.capture_interval_m is None:
+        if capture_interval_m is None:
             # lawnmower 계열은 전부 촬영이 목적이다(아래에서 capture_at_waypoints=True).
             # 진행방향 간격이 없으면 스캔선당 사진 2장 → 전방 중첩 0 → 사진측량
             # 산출물이 성립하지 않는다(원장 risk mapping-forward-overlap-zero).
@@ -244,11 +304,11 @@ def build_mission_plan(
             )
         lawnmower_result = lawnmower_route(
             request.aoi,
-            spacing_m=request.route.spacing_m,
+            spacing_m=spacing_m,
             altitude_m=request.route.altitude_m,
             envelope=envelope,
             sweep_direction_deg=request.route.sweep_direction_deg,
-            capture_interval_m=request.route.capture_interval_m,
+            capture_interval_m=capture_interval_m,
         )
         route = lawnmower_result.waypoints
         planned_coverage_ratio = lawnmower_result.coverage_ratio
@@ -323,6 +383,20 @@ def build_mission_plan(
         "routePattern": pattern,
         "waypointCount": len(route),
         "plannedCoverageRatio": planned_coverage_ratio,
+        # **왜 이 간격이 나왔는가** — 카메라로 계산했을 때만 실린다. 숫자만 남기면
+        # 다음 사람이 그 값을 다시 검증할 수 없다(계획 커버리지가 어디에 기대고
+        # 있는지도 이걸로만 드러난다).
+        "gridBasis": (
+            None
+            if grid is None
+            else {
+                "spacingM": grid.spacing_m,
+                "captureIntervalM": grid.capture_interval_m,
+                "gsdM": grid.gsd_m,
+                "footprintAcrossM": grid.footprint_across_m,
+                "footprintAlongM": grid.footprint_along_m,
+            }
+        ),
     }
 
 
