@@ -207,7 +207,7 @@ def build_mission_issuance_router(
             kmz_sha256=None,
             route_pattern=None,
             waypoint_count=None,
-            coverage_ratio=None,
+            planned_coverage_ratio=None,
             issued_at=datetime.now(UTC),
             issued_by=principal.principal_id,
         )

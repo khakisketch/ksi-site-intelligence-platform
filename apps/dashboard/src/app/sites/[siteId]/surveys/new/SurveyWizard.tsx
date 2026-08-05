@@ -708,8 +708,8 @@ export function SurveyWizard({ site }: { site: SiteView }) {
                 <dd className="num">{result.waypointCount}</dd>
               </div>
               <div className="flex justify-between">
-                <dt>커버리지</dt>
-                <dd className="num">{formatCoverageRatio(result.coverageRatio)}</dd>
+                <dt>계획 커버리지</dt>
+                <dd className="num">{formatCoverageRatio(result.plannedCoverageRatio)}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt>KMZ SHA-256</dt>

@@ -171,7 +171,7 @@ class MissionRecord:
     kmz_sha256: str | None
     route_pattern: str | None
     waypoint_count: int | None
-    coverage_ratio: float | None
+    planned_coverage_ratio: float | None
     issued_at: datetime
     issued_by: str
     # 짝(pair) 발급 재현용 — KMZ 바이트 자체는 저장하지 않고(용량), 같은
@@ -194,7 +194,7 @@ def _record_to_dict(record: MissionRecord) -> dict[str, Any]:
         "kmzSha256": record.kmz_sha256,
         "routePattern": record.route_pattern,
         "waypointCount": record.waypoint_count,
-        "coverageRatio": record.coverage_ratio,
+        "plannedCoverageRatio": record.planned_coverage_ratio,
         "issuedAt": record.issued_at.isoformat(),
         "issuedBy": record.issued_by,
         "planRequest": record.plan_request,
@@ -258,7 +258,7 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         kmz_sha256=raw.get("kmzSha256"),
         route_pattern=raw.get("routePattern"),
         waypoint_count=raw.get("waypointCount"),
-        coverage_ratio=raw.get("coverageRatio"),
+        planned_coverage_ratio=raw.get("plannedCoverageRatio"),
         issued_at=issued_at,
         issued_by=raw["issuedBy"],
         plan_request=plan_request,
@@ -393,7 +393,7 @@ class MissionRecordResponse(BaseModel):
     kmz_sha256: str | None
     route_pattern: str | None
     waypoint_count: int | None
-    coverage_ratio: float | None
+    planned_coverage_ratio: float | None
     issued_at: datetime
     issued_by: str
 
@@ -407,7 +407,7 @@ def _to_response(record: MissionRecord) -> MissionRecordResponse:
         kmz_sha256=record.kmz_sha256,
         route_pattern=record.route_pattern,
         waypoint_count=record.waypoint_count,
-        coverage_ratio=record.coverage_ratio,
+        planned_coverage_ratio=record.planned_coverage_ratio,
         issued_at=record.issued_at,
         issued_by=record.issued_by,
     )

@@ -248,7 +248,7 @@ def test_pair_issuance_round_trips_through_query_endpoints(tmp_path: Path) -> No
     assert entries[0]["kmzSha256"] == issued["kmzSha256"]
     assert entries[0]["routePattern"] == issued["routePattern"]
     assert entries[0]["waypointCount"] == issued["waypointCount"]
-    assert entries[0]["coverageRatio"] == issued["coverageRatio"]
+    assert entries[0]["plannedCoverageRatio"] == issued["plannedCoverageRatio"]
 
     # 존재하지 않는 site 로 필터링하면 빈 목록.
     empty = client.get(
@@ -292,7 +292,7 @@ def test_contract_only_issuance_round_trips(tmp_path: Path) -> None:
     assert body["kmzSha256"] is None
     assert body["routePattern"] is None
     assert body["waypointCount"] is None
-    assert body["coverageRatio"] is None
+    assert body["plannedCoverageRatio"] is None
 
     contract = client.get(
         "/v1/missions/mission-c1/contract", headers=_auth_header(_VIEWER_TOKEN)
@@ -322,7 +322,7 @@ def test_mission_store_replay_recovers_after_restart(tmp_path: Path) -> None:
         kmz_sha256=None,
         route_pattern=None,
         waypoint_count=None,
-        coverage_ratio=None,
+        planned_coverage_ratio=None,
         issued_at=datetime.now(UTC),
         issued_by="do-1",
     )
@@ -335,7 +335,7 @@ def test_mission_store_replay_recovers_after_restart(tmp_path: Path) -> None:
         kmz_sha256="deadbeef",
         route_pattern="lawnmower",
         waypoint_count=42,
-        coverage_ratio=0.97,
+        planned_coverage_ratio=0.97,
         issued_at=datetime.now(UTC),
         issued_by="do-1",
         # 짝 레코드는 KMZ 재생성 입력을 반드시 들고 있다(멱등 재발급이 기대는
@@ -375,7 +375,7 @@ def test_mission_store_rejects_duplicate_mission_id_found_in_journal_on_replay(
         "kmzSha256": None,
         "routePattern": None,
         "waypointCount": None,
-        "coverageRatio": None,
+        "plannedCoverageRatio": None,
         "issuedAt": datetime.now(UTC).isoformat(),
         "issuedBy": "do-1",
     }
@@ -402,7 +402,7 @@ def test_mission_store_rejects_invalid_artifact_kind_on_replay(tmp_path: Path) -
             "kmzSha256": None,
             "routePattern": None,
             "waypointCount": None,
-            "coverageRatio": None,
+            "plannedCoverageRatio": None,
             "issuedAt": datetime.now(UTC).isoformat(),
             "issuedBy": "do-1",
         }
@@ -428,7 +428,7 @@ def test_mission_store_rejects_non_dict_contract_on_replay(tmp_path: Path) -> No
             "kmzSha256": None,
             "routePattern": None,
             "waypointCount": None,
-            "coverageRatio": None,
+            "plannedCoverageRatio": None,
             "issuedAt": datetime.now(UTC).isoformat(),
             "issuedBy": "do-1",
         }
@@ -459,7 +459,7 @@ def test_mission_store_duplicate_mission_id_does_not_overwrite_and_survives_rest
         kmz_sha256=None,
         route_pattern=None,
         waypoint_count=None,
-        coverage_ratio=None,
+        planned_coverage_ratio=None,
         issued_at=datetime.now(UTC),
         issued_by="do-1",
     )
@@ -472,7 +472,7 @@ def test_mission_store_duplicate_mission_id_does_not_overwrite_and_survives_rest
         kmz_sha256="not-original",
         route_pattern="perimeter",
         waypoint_count=5,
-        coverage_ratio=None,
+        planned_coverage_ratio=None,
         issued_at=datetime.now(UTC),
         issued_by="do-2",
     )
@@ -564,7 +564,7 @@ def test_identical_retry_of_pair_issuance_is_idempotent(tmp_path: Path) -> None:
     )
     assert retry_body["routePattern"] == first_body["routePattern"]
     assert retry_body["waypointCount"] == first_body["waypointCount"]
-    assert retry_body["coverageRatio"] == first_body["coverageRatio"]
+    assert retry_body["plannedCoverageRatio"] == first_body["plannedCoverageRatio"]
 
     # journal 에는 한 건만 남는다 — 재시도가 새 레코드를 append 하지 않는다.
     assert len(store.list()) == 1
@@ -933,7 +933,7 @@ def _pair_record_dict(**overrides: Any) -> dict[str, Any]:
         "kmzSha256": "deadbeef",
         "routePattern": "lawnmower",
         "waypointCount": 42,
-        "coverageRatio": 0.97,
+        "plannedCoverageRatio": 0.97,
         "issuedAt": datetime.now(UTC).isoformat(),
         "issuedBy": "do-1",
         "planRequest": plan_request,

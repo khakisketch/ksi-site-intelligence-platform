@@ -90,7 +90,7 @@ export default async function MissionDetailPage({
           <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">사실</h3>
           <dl className="divide-y divide-line border-t border-line">
             <FieldRow label="웨이포인트 수" value={<span className="num">{formatNullable(mission.waypointCount)}</span>} />
-            <FieldRow label="커버리지" value={<span className="num">{formatCoverageRatio(mission.coverageRatio)}</span>} />
+            <FieldRow label="계획 커버리지" value={<span className="num">{formatCoverageRatio(mission.plannedCoverageRatio)}</span>} />
             <FieldRow label="발급 일시" value={<span className="num">{formatDateTime(mission.issuedAt)}</span>} />
             <FieldRow label="발급자" value={mission.issuedBy} />
           </dl>

@@ -344,14 +344,14 @@ def test_pair_manifest_identifiers_are_deterministic_and_cross_consistent(tmp_pa
     contractPayloadSha256 이 **ADR-KSI-002 문서화 정규화**(canonical_payload_bytes:
     signature 제외·ensure_ascii=False·sha256:<hex>)로 재현되며 — 독자 정규화가
     아니어야 비-Python 검증기가 ADR 만 보고 짝 검증을 재현할 수 있다(재검증 P2) —
-    perimeter 는 coverageRatio 가 null 이다."""
+    perimeter 는 plannedCoverageRatio 가 null 이다."""
     client, _registry = _client(tmp_path)
 
     response = client.post("/v1/missions/plans", json=_plan_request())  # perimeter
 
     assert response.status_code == 201
     body = response.json()
-    assert body["coverageRatio"] is None
+    assert body["plannedCoverageRatio"] is None
 
     kmz = base64.b64decode(body["kmzBase64"])
     assert body["kmzSha256"] == hashlib.sha256(kmz).hexdigest()
@@ -411,7 +411,7 @@ def test_coverage_promise_at_default_accepts_imperfect_ratio(tmp_path: Path) -> 
     response = client.post("/v1/missions/plans", json=request)
 
     assert response.status_code == 201
-    assert 0.95 <= response.json()["coverageRatio"] < 1.0
+    assert 0.95 <= response.json()["plannedCoverageRatio"] < 1.0
 
 
 def test_takeoff_height_gate_rejects_non_finite() -> None:
@@ -427,7 +427,7 @@ def test_takeoff_height_gate_rejects_non_finite() -> None:
         _require_wayline_takeoff_height_compatible(float("nan"), envelope)
 
 
-def test_lawnmower_plan_reports_coverage_ratio(tmp_path: Path) -> None:
+def test_lawnmower_plan_reports_planned_coverage_ratio(tmp_path: Path) -> None:
     client, _registry = _client(tmp_path)
 
     response = client.post(
@@ -436,9 +436,9 @@ def test_lawnmower_plan_reports_coverage_ratio(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 201
-    coverage_ratio = response.json()["coverageRatio"]
-    assert coverage_ratio is not None
-    assert 0.0 <= coverage_ratio <= 1.0
+    planned_coverage_ratio = response.json()["plannedCoverageRatio"]
+    assert planned_coverage_ratio is not None
+    assert 0.0 <= planned_coverage_ratio <= 1.0
 
 
 # ── D. allowedVolumes=[] 거부 (W1 생성기 게이트) ─────────────────────────────
@@ -586,7 +586,7 @@ def test_retry_of_record_that_current_policy_cannot_reissue_is_409_not_500(
                 kmz_sha256="deadbeef",
                 route_pattern="lawnmower",
                 waypoint_count=10,
-                coverage_ratio=1.0,
+                planned_coverage_ratio=1.0,
                 issued_at=datetime.now(UTC),
                 issued_by="do-1",
                 plan_request=stale_request,

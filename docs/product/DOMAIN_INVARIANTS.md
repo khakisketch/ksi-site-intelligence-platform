@@ -22,7 +22,15 @@
 
 - **INV-010** 임무 완료 기준: 필수 위험구역 100% · 필수 자산/표면 100% · 접근가능 일반영역
   ≥95%. 경로 완료 ≠ 임무 완료. 모든 미관찰 Cell은 원인코드와 후속처리를 가진다.
-  _강제: CoverageReport 완료 게이트 (coverage-report 스키마·미구현)._
+  **완료 판정의 권위는 비행 후 CoverageReport 하나다** — 발급 시점의
+  `plannedCoverageRatio` 는 스와스 가정 하의 계획 추정치이고 완료 근거가 아니다
+  (MASTER_PRD §15.5). 서버가 계획값으로 완료를 주장하면 실제 관찰(가림·접근불가·
+  배터리 한계·이벤트 분기 공백)이 기록에서 사라진다.
+  _강제: `ksi_core.coverage_reports` — 비행 후 보고 수신 시 ① COMPLETED 주장이
+  요약 비율로 뒷받침되는지 ② 사유 없는 미관찰 Cell 이 없는지 ③ 발급된 임무인지를
+  검사한다(재생 경로도 같은 강도). 발급 전 사전 점검은 `mission_plans` 소관.
+  **미완**: Cell 분류(위험구역/자산/일반)를 서버가 갖고 있지 않아 요약 비율 자체를
+  재계산하지는 못한다 — 기체 보고를 검증하되 재현하지는 않는다._
 - **INV-011** Mission Contract는 Versioned·Signed 실행계약이다. 미서명·digest 불일치·
   schemaVersion 불일치·TTL 만료 계약은 거부된다.
   _강제: `ksi_mission_contracts` 서명 검증 (ADR-KSI-002, P0-1 테스트)._

@@ -226,7 +226,7 @@ def build_mission_plan(
     )
 
     route: list[RouteWaypoint]
-    coverage_ratio: float | None = None
+    planned_coverage_ratio: float | None = None
     if mission_type in _LAWNMOWER_TYPES:
         if request.route.spacing_m is None:
             raise RouteGenerationError(
@@ -251,17 +251,17 @@ def build_mission_plan(
             capture_interval_m=request.route.capture_interval_m,
         )
         route = lawnmower_result.waypoints
-        coverage_ratio = lawnmower_result.coverage_ratio
+        planned_coverage_ratio = lawnmower_result.coverage_ratio
         pattern = "lawnmower"
-        # 같은 요청이 계약에 서명해 넣는 커버 약속(accessibleGeneralCoverage,
-        # 최대 1.0)과 실측 커버를 대조한다 — 생성기 고정 하한(0.95)만 보면
-        # "일반영역 100% 를 약속한 서명 계약 + 실측 0.9x KMZ" 어긋난 쌍이 조용히
-        # 발급된다(재검증 P2, 이륙고도 게이트와 동일 클래스). 1e-9 는 정확 계산의
-        # 부동소수 잔차 허용치다.
-        if coverage_ratio + 1e-9 < request.contract.accessible_general_coverage:
+        # 계약이 요구하는 커버(accessibleGeneralCoverage)를 **계획이 애초에
+        # 겨냥하고 있는가**를 발급 전에 본다. 이건 사전 점검이지 커버 보증이
+        # 아니다 — 실제 달성 여부는 비행 후 CoverageReport 가 판정한다
+        # (MASTER_PRD §15.5, INV-010). 계획조차 목표 미만이면 그 임무는 성공할
+        # 수 없으므로 여기서 끊는다. 1e-9 는 정확 계산의 부동소수 잔차 허용치다.
+        if planned_coverage_ratio + 1e-9 < request.contract.accessible_general_coverage:
             raise RouteGenerationError(
-                "COVERAGE_BELOW_CONTRACT_PROMISE — 실측 커버 비율 "
-                f"{coverage_ratio:.4f} 가 계약이 약속하는 accessibleGeneralCoverage "
+                "COVERAGE_BELOW_CONTRACT_PROMISE — 계획 커버 추정치 "
+                f"{planned_coverage_ratio:.4f} 가 계약이 요구하는 accessibleGeneralCoverage "
                 f"{request.contract.accessible_general_coverage} 미만이다. spacing·"
                 "sweep 을 조정하거나 약속 값을 실측 이하로 낮춰 발급하라"
             )
@@ -322,7 +322,7 @@ def build_mission_plan(
         "kmzSha256": hashlib.sha256(kmz).hexdigest(),
         "routePattern": pattern,
         "waypointCount": len(route),
-        "coverageRatio": coverage_ratio,
+        "plannedCoverageRatio": planned_coverage_ratio,
     }
 
 
@@ -445,7 +445,7 @@ def build_mission_plans_router(
             kmz_sha256=result["kmzSha256"],
             route_pattern=result["routePattern"],
             waypoint_count=result["waypointCount"],
-            coverage_ratio=result["coverageRatio"],
+            planned_coverage_ratio=result["plannedCoverageRatio"],
             issued_at=issued_at,
             issued_by=principal.principal_id,
             plan_request=plan_request_payload,

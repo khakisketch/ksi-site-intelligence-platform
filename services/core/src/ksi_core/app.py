@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from ksi_core.auth import AuthRegistry
+    from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
@@ -55,6 +56,7 @@ def create_app(
     mission_signing_key: Ed25519PrivateKey | None = None,
     mission_signing_key_id: str | None = None,
     evidence_storage: EvidenceStorage | None = None,
+    coverage_report_store: CoverageReportStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -169,6 +171,13 @@ def create_app(
             " — 수신은 ACK 했는데 트리아지에 보이지 않는 유실 표면으로 조립하지 않는다"
         )
 
+    if coverage_report_store is not None and mission_store is None:
+        raise ValueError(
+            "coverage_report_store 는 mission_store 와 함께 주어져야 한다(INV-010)"
+            " — 발급된 적 없는 임무의 커버리지 보고는 '무슨 근거로 날았나'에 답할 수"
+            " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -178,12 +187,14 @@ def create_app(
             mission_store,
             mission_signing_key,
             evidence_storage,
+            coverage_report_store,
         )
     )
     if protected_surface and auth_registry is None:
         raise ValueError(
-            "보호 표면(edge_sync_store·event_store·site_store·mission_store·서명키)을"
-            " 하나라도 주입하려면 auth_registry 가 필수다(ADR-KSI-008 §3) — 인증 없는"
+            "보호 표면(edge_sync_store·event_store·site_store·mission_store·서명키·"
+            "커버리지 보고)을 하나라도 주입하려면 auth_registry 가 필수다(ADR-KSI-008 §3)"
+            " — 인증 없는"
             " 보호 표면은 존재할 수 없다"
         )
 
@@ -258,5 +269,10 @@ def create_app(
         from ksi_core.mission_records import mount_mission_records
 
         mount_mission_records(app, mission_store=mission_store)
+
+    if coverage_report_store is not None:
+        from ksi_core.coverage_reports import mount_coverage_reports
+
+        mount_coverage_reports(app, coverage_report_store)
 
     return app

@@ -149,7 +149,7 @@ export interface MissionRecordResponse {
   kmzSha256: string | null;
   routePattern: "lawnmower" | "perimeter" | null;
   waypointCount: number | null;
-  coverageRatio: number | null;
+  plannedCoverageRatio: number | null;
   issuedAt: string;
   issuedBy: string;
 }
@@ -245,5 +245,5 @@ export interface MissionPlanResponse {
   kmzSha256: string;
   routePattern: "lawnmower" | "perimeter";
   waypointCount: number;
-  coverageRatio: number | null;
+  plannedCoverageRatio: number | null;
 }

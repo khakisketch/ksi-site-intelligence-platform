@@ -121,7 +121,7 @@ function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; si
 
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-2.5">
           <Fact label="웨이포인트" value={formatNullable(mission.waypointCount)} numeric />
-          <Fact label="커버리지" value={formatCoverageRatio(mission.coverageRatio)} numeric />
+          <Fact label="계획 커버리지" value={formatCoverageRatio(mission.plannedCoverageRatio)} numeric />
           <Fact label="발급 일시" value={formatDateTime(mission.issuedAt)} numeric />
           <Fact label="발급자" value={mission.issuedBy} />
         </div>

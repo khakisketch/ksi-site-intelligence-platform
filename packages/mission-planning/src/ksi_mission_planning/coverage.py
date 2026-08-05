@@ -120,9 +120,20 @@ class RouteWaypoint:
 class LawnmowerResult(BaseModel):
     """lawnmower_route 반환값 — 웨이포인트 + 실측 커버 비율(자율 재검토 A-2).
 
-    ``coverage_ratio`` 는 ``_MIN_COVERAGE_RATIO`` 이상임이 이미 게이트로 보증된
-    값이다(그 미만은 :class:`RouteGenerationError` 로 거부되어 이 모델이 생성되지
-    않는다) — 호출자는 이 값을 감사·로그용으로만 쓰면 되고, 재검증할 필요는 없다.
+    ``coverage_ratio`` 는 **비행 전 계획 추정치**다 — 각 스캔선이 ±spacing/2 를
+    덮는다는 가정 하의 기하 계산이고, 그 spacing 은 요청자가 준 값이다. 실제로
+    무엇을 관찰했는지는 날아본 기체만 안다(가림·접근불가·배터리 한계·이벤트
+    분기로 인한 공백).
+
+    **완료 판정의 권위가 아니다.** MASTER_PRD §15.5 — "임무 완료는 경로 완료가
+    아니라 Coverage, Evidence, Safety와 데이터 품질 기준으로 판단한다". 그 판정은
+    기체가 올리는 ``CoverageReport``(Cell 상태·미관찰 원인코드)가 소유하며,
+    INV-010 의 강제 지점도 그쪽이다. 이 값은 "계획이 애초에 요구를 겨냥하고
+    있는가"를 발급 전에 보는 사전 점검용이다.
+
+    ``_MIN_COVERAGE_RATIO`` 미만이면 :class:`RouteGenerationError` 로 거부되므로
+    이 모델이 생성되었다는 것은 그 하한을 넘겼다는 뜻이다 — 다만 그것도 계획
+    기준일 뿐이다.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

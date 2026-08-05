@@ -95,7 +95,8 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   MISSION_ID_CONFLICT: "이미 사용 중인 임무 ID입니다.",
   UNKNOWN_SITE: "등록되지 않은 현장입니다.",
   SITE_FRAME_MISMATCH: "요청한 좌표계가 등록된 현장과 다릅니다.",
-  COVERAGE_BELOW_CONTRACT_PROMISE: "계획된 커버리지가 약속한 값보다 낮습니다. 경로를 다시 검토하세요.",
+  COVERAGE_BELOW_CONTRACT_PROMISE:
+    "계획 단계의 커버리지가 임무가 요구하는 값에 못 미칩니다. 격자·촬영 간격을 좁히세요.",
   EVIDENCE_INCOMPLETE: "이 확정 등급에 필요한 증거가 아직 부족합니다.",
   STORE_UNAVAILABLE: "서버 저장소 점검 중입니다. 잠시 후 다시 시도하세요.",
   // 증거 경로(ADR-KSI-010 §1). ALREADY_TOMBSTONED 는 '없음'이 아니라 '폐기됨'이라고

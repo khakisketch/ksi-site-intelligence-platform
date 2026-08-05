@@ -23,6 +23,7 @@ import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
@@ -79,13 +80,17 @@ class _NullEvidenceStorage:
 def _max_assembly(tmp_path: Path) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
     return create_app(
         evidence_storage=_NullEvidenceStorage(),
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
         site_store=SiteStore(DurableJournal(tmp_path / "sites.jsonl")),
-        mission_store=MissionStore(DurableJournal(tmp_path / "missions.jsonl")),
+        mission_store=mission_store,
+        coverage_report_store=CoverageReportStore(
+            DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+        ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",
     )

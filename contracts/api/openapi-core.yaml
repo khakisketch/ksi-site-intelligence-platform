@@ -519,6 +519,73 @@ paths:
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/coverage-report:
+    post:
+      summary: Submit the post-flight CoverageReport (INV-010 완료 게이트)
+      description: >-
+        **완료 판정의 권위는 이 보고서다** — 발급 시점의 plannedCoverageRatio 는
+        요청자가 준 간격을 믿은 계획 추정치이고, 실제로 무엇을 관찰했는지는 날아본
+        기체만 안다(MASTER_PRD §15.5 "임무 완료는 경로 완료가 아니라 Coverage,
+        Evidence, Safety와 데이터 품질 기준으로 판단한다").
+
+        **서버는 기체의 완료 주장을 그대로 믿지 않는다.** Cell 분류(위험구역/자산/
+        일반)를 갖고 있지 않아 비율을 재계산할 수는 없지만, 그 비율이 주장을
+        뒷받침하는지는 검사한다 — ① completionState=COMPLETED 인데 요약 비율이
+        INV-010 임계(위험 100%·자산 100%·일반 ≥95%) 미만이면 422
+        UNSUPPORTED_COMPLETION ② COMPLETED 인데 사유 없는 미관찰 Cell
+        (NOT_OBSERVED)이 남으면 422 UNEXPLAINED_GAP(모든 미관찰 Cell 은 원인코드를
+        가져야 한다). COMPLETED_WITH_GAPS/ABORTED_SAFE/FAILED 는 그 자체가 "완료가
+        아니다"를 말하므로 임계 검사를 걸지 않는다 — 공백을 정직하게 신고한
+        보고서를 거부하면 신고를 안 하게 만든다.
+
+        보고는 **장비만** 올린다(EDGE_SYNC_INGEST, EDGE_DEVICE Principal 전용) —
+        운영자가 커버리지를 손으로 주장할 수 없다. 같은 임무에 여러 번 올 수 있고
+        덮어쓰지 않는다(감사 입력).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/coverage-report.v1.1.json
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageReportResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '422':
+          description: >-
+            SITE_MISMATCH(발급 기록의 siteId 와 불일치) /
+            UNSUPPORTED_COMPLETION / UNEXPLAINED_GAP /
+            INVALID_TIMESTAMP(tz-aware 아님) / 경로·본문 missionId 불일치
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
+    get:
+      summary: Read the latest CoverageReport for a mission
+      description: MISSIONS_READ 권한 필요. 최신 보고 + 접수 건수(덮어쓰지 않으므로).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 최신 보고
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageReportView' }
+        '404': { description: 이 임무의 보고가 아직 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/contract:
     get:
       summary: Get the stored signed Mission Contract verbatim (INV-011)
@@ -797,7 +864,7 @@ paths:
                   kmzSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
                   routePattern: { type: string, enum: [lawnmower, perimeter] }
                   waypointCount: { type: integer, minimum: 2 }
-                  coverageRatio:
+                  plannedCoverageRatio:
                     type: [number, 'null']
                     description: >-
                       lawnmower 만 값을 가진다(perimeter 는 null). 스와스∩AOI 의
@@ -941,6 +1008,23 @@ components:
       properties:
         events: { type: array, items: { $ref: '#/components/schemas/EventSummaryResponse' } }
         count: { type: integer }
+    CoverageReportResponse:
+      description: 보고 수신 판정 + 기록된 보고 본문(거부 시 report 는 null).
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        report: { type: [object, 'null'], additionalProperties: true }
+    CoverageReportView:
+      description: 그 임무의 최신 보고 + 접수 건수.
+      type: object
+      required: [missionId, reportCount, latest]
+      properties:
+        missionId: { type: string }
+        reportCount: { type: integer }
+        # 구조 정본은 contracts/schemas/coverage-report.v1.1.json.
+        latest: { type: object, additionalProperties: true }
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object
@@ -1022,7 +1106,7 @@ components:
       type: object
       required:
         [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
-         waypointCount, coverageRatio, issuedAt, issuedBy]
+         waypointCount, plannedCoverageRatio, issuedAt, issuedBy]
       properties:
         missionId: { type: string }
         siteId: { type: string }
@@ -1032,7 +1116,15 @@ components:
         kmzSha256: { type: [string, 'null'] }
         routePattern: { type: [string, 'null'] }
         waypointCount: { type: [integer, 'null'] }
-        coverageRatio: { type: [number, 'null'] }
+        plannedCoverageRatio:
+          type: [number, 'null']
+          description: >-
+            **비행 전 계획 추정치**(lawnmower 계열만, 순찰은 null). 각 스캔선이
+            ±spacing/2 를 덮는다는 가정 하의 기하 계산이며 그 spacing 은 요청자가
+            준 값이다 — **완료 판정의 권위가 아니다.** 실제 커버는 비행 후 기체가
+            올리는 CoverageReport(Cell 상태·미관찰 원인코드)가 판정한다
+            (MASTER_PRD §15.5, INV-010). 이 값은 "계획이 애초에 요구를 겨냥하는가"의
+            사전 점검 결과다.
         issuedAt: { type: string, format: date-time }
         issuedBy: { type: string }
   securitySchemes:

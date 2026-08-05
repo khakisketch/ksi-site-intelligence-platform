@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
@@ -196,13 +197,22 @@ def main() -> None:
             bucket=args.s3_bucket, endpoint_url=args.s3_endpoint
         )
 
+    mission_store = MissionStore(mission_journal)
+    # 커버리지 보고는 임무 발급 기록과 대조해서만 받는다(INV-010) — 발급된 적
+    # 없는 임무의 관찰 결과는 "무슨 근거로 날았나"에 답할 수 없다.
+    coverage_journal = DurableJournal(
+        data_dir / "coverage-reports.jsonl", max_segment_bytes=segment_bytes
+    )
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=SiteStore(site_journal),
-        mission_store=MissionStore(mission_journal),
+        mission_store=mission_store,
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
         evidence_storage=evidence_storage,
+        coverage_report_store=CoverageReportStore(
+            coverage_journal, mission_store=mission_store
+        ),
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
     )
@@ -221,6 +231,7 @@ def main() -> None:
         site_journal.close()
         mission_journal.close()
         event_journal.close()
+        coverage_journal.close()
         edge_sync_store.close()
 
 

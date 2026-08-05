@@ -95,7 +95,7 @@ type SubmitPhase = "idle" | "pending" | "error" | "success";
 
 interface SubmitResult {
   waypointCount: number;
-  coverageRatio: number | null;
+  plannedCoverageRatio: number | null;
   kmzSha256: string;
 }
 
@@ -345,7 +345,7 @@ export function SiteRegistrationWizard() {
       const plan = (await planRes.json()) as MissionPlanResponse;
       setResult({
         waypointCount: plan.waypointCount,
-        coverageRatio: plan.coverageRatio,
+        plannedCoverageRatio: plan.plannedCoverageRatio,
         kmzSha256: plan.kmzSha256,
       });
       setSubmitPhase("success");
@@ -777,8 +777,8 @@ export function SiteRegistrationWizard() {
                 <dd className="num font-medium">{result.waypointCount.toLocaleString("ko-KR")}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="break-keep text-ink-2">커버리지</dt>
-                <dd className="num font-medium">{formatCoverage(result.coverageRatio)}</dd>
+                <dt className="break-keep text-ink-2">계획 커버리지</dt>
+                <dd className="num font-medium">{formatCoverage(result.plannedCoverageRatio)}</dd>
               </div>
               <div className="flex flex-col gap-1">
                 <dt className="break-keep text-ink-2">KMZ SHA-256</dt>
