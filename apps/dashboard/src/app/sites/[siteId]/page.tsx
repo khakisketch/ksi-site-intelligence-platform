@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -16,6 +18,7 @@ import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import type { SiteView } from "@/lib/core-api/types";
 
+import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" });
@@ -27,8 +30,10 @@ const EVENT_LIMIT = 5;
  * 섹션 조회 결과 — **권한 부재와 장애를 구분한다.**
  *
  * 둘을 "불러오지 못했습니다" 하나로 뭉개면, 권한이 없어서 안 보이는 것뿐인 운영자가
- * 시스템 장애로 오해해 신고하거나 새로고침을 반복한다(2026-08-04 렌더 확인에서
- * DRONE_OPERATOR 계정으로 실제 재현 — 이벤트 읽기 권한이 없는 역할이다).
+ * 시스템 장애로 오해해 신고하거나 새로고침을 반복한다(2026-08-04 렌더 확인에서 당시
+ * 이벤트 읽기 권한이 없던 역할 계정으로 실제 재현 — ADR-KSI-015 로 역할이 3개로
+ * 합쳐지며 이제 전 역할이 EVENTS_READ 를 갖는다. 패턴 자체는 다른 권한 조합에도
+ * 여전히 유효하다).
  */
 type SectionOutcome<T> = { kind: "ok"; value: T } | { kind: "forbidden" } | { kind: "error" };
 
@@ -119,12 +124,14 @@ export default async function SiteDetailPage({
   }
 
   // 임무·이벤트·권한 조회는 현장 조회와 독립 — 하나가 실패해도 다른 섹션은 계속 보여준다.
-  const [missionsResult, eventsResult, canIssueMission, canTransitionSite] = await Promise.allSettled([
-    listMissions(site.siteId),
-    listEvents({ siteId: site.siteId }),
-    hasAllPermissions("MISSIONS_ISSUE"),
-    hasAllPermissions("SITES_WRITE"),
-  ]);
+  const [missionsResult, eventsResult, canIssueMission, canTransitionSite, canApproveAutonomySite] =
+    await Promise.allSettled([
+      listMissions(site.siteId),
+      listEvents({ siteId: site.siteId }),
+      hasAllPermissions("MISSIONS_ISSUE"),
+      hasAllPermissions("SITES_WRITE"),
+      hasAllPermissions("SITES_AUTONOMY_APPROVE"),
+    ]);
   const missions = sectionOutcome(missionsResult);
   const events = sectionOutcome(
     eventsResult.status === "fulfilled"
@@ -133,6 +140,8 @@ export default async function SiteDetailPage({
   );
   const canStartSurvey = canIssueMission.status === "fulfilled" && canIssueMission.value;
   const canTransition = canTransitionSite.status === "fulfilled" && canTransitionSite.value;
+  const canApproveAutonomy =
+    canApproveAutonomySite.status === "fulfilled" && canApproveAutonomySite.value;
   // UNMAPPED 현장은 아직 baseline 임무가 없다 — 같은 "새 조사" 화면(SurveyWizard)으로
   // 보내되(risk dashboard-wizard-rbac-mismatch 해소 경로), 라벨은 실제 목적에 맞춘다.
   const surveyActionLabel = site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 조사";
@@ -140,8 +149,6 @@ export default async function SiteDetailPage({
   const statusLabel = SITE_STATUS_LABEL[site.status];
 
   return (
-    // 지도는 그리지 않는다 — AOI가 현장에 영속되지 않아(임무 발급 요청 시 1회성) 그릴 근거가
-    // 없다. 우측 패널은 대신 좌표계 사실 + 상태 전이 액션을 둔다.
     <div className="flex flex-col gap-5 p-4 sm:p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -181,6 +188,26 @@ export default async function SiteDetailPage({
             )}
           </div>
         </div>
+
+        <SectionCard title="현장 외곽(AOI)">
+          {site.aoi ? (
+            <AoiPolygonMap value={site.aoi.vertices} readOnly />
+          ) : site.status === "UNMAPPED" && canTransition ? (
+            // AOI 는 UNMAPPED 상태에서만 설정할 수 있다(서버 게이트, SiteStore.set_aoi
+            // 와 동일 조건) — 편집 권한도 그 게이트를 요구하는 SITES_WRITE 로 같다
+            // (canTransition 이 이미 그 권한을 대변한다, 새 permission 조회 불필요).
+            <SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} />
+          ) : (
+            <EmptyState
+              title="아직 외곽이 등록되지 않았습니다"
+              description={
+                site.status === "UNMAPPED"
+                  ? "이 현장의 AOI를 설정하려면 현장 등록 권한이 필요합니다."
+                  : "이 현장의 AOI는 UNMAPPED 상태에서만 설정할 수 있습니다 — 매핑이 이미 시작돼 더는 이 화면에서 설정할 수 없습니다."
+              }
+            />
+          )}
+        </SectionCard>
 
         <SectionCard
           title="이 현장의 임무"
@@ -254,7 +281,12 @@ export default async function SiteDetailPage({
         </div>
 
         {canTransition ? (
-          <SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} />
+          <SiteTransitionActions
+            siteId={site.siteId}
+            status={site.status}
+            resumeTarget={site.resumeTarget}
+            canApproveAutonomy={canApproveAutonomy}
+          />
         ) : (
           <p className="text-[12px] break-keep text-ink-muted">
             현장 상태를 전이하려면 현장 등록 권한이 필요합니다.

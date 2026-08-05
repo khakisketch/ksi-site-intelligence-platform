@@ -28,7 +28,7 @@ from ksi_core.sites import SiteStore, SiteStoreRecoveryError, mount_sites
 from ksi_domain.enums import SiteStatus
 from ksi_mission_contracts.models import SiteFrame
 
-_SITE_MANAGER_TOKEN = "sm-plaintext-token"
+_FIELD_OPERATOR_TOKEN = "fo-plaintext-token"
 _VIEWER_TOKEN = "viewer-plaintext-token"
 _ADMIN_TOKEN = "admin-plaintext-token"
 
@@ -41,11 +41,11 @@ def _registry() -> AuthRegistry:
     return AuthRegistry(
         [
             PrincipalTokenRecord(
-                token_sha256=_digest(_SITE_MANAGER_TOKEN),
+                token_sha256=_digest(_FIELD_OPERATOR_TOKEN),
                 principal=Principal(
-                    principal_id="sm-1",
+                    principal_id="fo-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.SITE_MANAGER,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
             ),
@@ -88,6 +88,18 @@ def _site_frame_model() -> SiteFrame:
     return SiteFrame.model_validate(_site_frame_payload())
 
 
+def _aoi_payload(lat0: float = 37.5, lon0: float = 127.0, delta: float = 0.001) -> dict[str, Any]:
+    """작은 유효 사각 AOI(자기교차·중복 꼭짓점 없음, 10km 범위 내)."""
+    return {
+        "vertices": [
+            {"latDeg": lat0, "lonDeg": lon0},
+            {"latDeg": lat0, "lonDeg": lon0 + delta},
+            {"latDeg": lat0 + delta, "lonDeg": lon0 + delta},
+            {"latDeg": lat0 + delta, "lonDeg": lon0},
+        ]
+    }
+
+
 def _build_app(journal: DurableJournal, *, registry: AuthRegistry | None = None) -> FastAPI:
     app = FastAPI()
     mount_auth(app, registry if registry is not None else _registry())
@@ -96,11 +108,29 @@ def _build_app(journal: DurableJournal, *, registry: AuthRegistry | None = None)
 
 
 def _register(
-    client: TestClient, site_id: str = "site-001", *, token: str = _SITE_MANAGER_TOKEN
+    client: TestClient, site_id: str = "site-001", *, token: str = _FIELD_OPERATOR_TOKEN
 ) -> Any:
     return client.post(
         "/v1/sites",
         json={"siteId": site_id, "name": "테스트 현장", "siteFrame": _site_frame_payload()},
+        headers=_auth(token),
+    )
+
+
+def _put_aoi(
+    client: TestClient,
+    site_id: str,
+    *,
+    aoi: dict[str, Any] | None = None,
+    site_frame: dict[str, str] | None = None,
+    token: str = _FIELD_OPERATOR_TOKEN,
+) -> Any:
+    return client.put(
+        f"/v1/sites/{site_id}/aoi",
+        json={
+            "aoi": aoi if aoi is not None else _aoi_payload(),
+            "siteFrame": site_frame if site_frame is not None else _site_frame_payload(),
+        },
         headers=_auth(token),
     )
 
@@ -112,7 +142,7 @@ def _transition(
     *,
     evidence: str = "evidence-1",
     reason: str = "reason-1",
-    token: str = _SITE_MANAGER_TOKEN,
+    token: str = _FIELD_OPERATOR_TOKEN,
     extra: dict[str, Any] | None = None,
 ) -> Any:
     body: dict[str, Any] = {"targetStatus": target_status, "evidence": evidence, "reason": reason}
@@ -150,10 +180,220 @@ def test_duplicate_registration_rejected(tmp_path: Path) -> None:
     assert second.json()["verdict"] == "DUPLICATE_SITE_ID"
 
 
+# ── AOI(Area of Interest) 영속 (수용기준 1~4) ────────────────────────────
+
+
+def test_register_with_aoi_returns_it_on_get(tmp_path: Path) -> None:
+    """[AC1] AOI 와 함께 등록한 현장을 조회하면 AOI 가 그대로 돌아온다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    aoi = _aoi_payload()
+
+    response = client.post(
+        "/v1/sites",
+        json={
+            "siteId": "site-aoi-1",
+            "name": "AOI 현장",
+            "siteFrame": _site_frame_payload(),
+            "aoi": aoi,
+        },
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
+    )
+    assert response.status_code == 201
+    assert response.json()["site"]["aoi"] == aoi
+
+    fetched = client.get("/v1/sites/site-aoi-1", headers=_auth(_VIEWER_TOKEN))
+    assert fetched.status_code == 200
+    assert fetched.json()["aoi"] == aoi
+
+
+def test_register_without_aoi_still_works_and_aoi_is_null(tmp_path: Path) -> None:
+    """[AC2 전조] AOI 없이 등록한 현장도 정상 조회되고 aoi 는 null(기존 위저드 흐름 회귀 없음)."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+
+    response = _register(client, "site-no-aoi")
+    assert response.status_code == 201
+    assert response.json()["site"]["aoi"] is None
+
+    fetched = client.get("/v1/sites/site-no-aoi", headers=_auth(_VIEWER_TOKEN))
+    assert fetched.status_code == 200
+    assert fetched.json()["aoi"] is None
+
+
+def test_put_aoi_sets_aoi_on_unmapped_site(tmp_path: Path) -> None:
+    """[AC1] 등록 후 별도 PUT 으로도 AOI 를 설정할 수 있다(UNMAPPED, 전용 경로)."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    assert _register(client, "site-put-aoi").status_code == 201
+
+    response = _put_aoi(client, "site-put-aoi")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["verdict"] == "AOI_SET"
+    assert body["site"]["aoi"] == _aoi_payload()
+
+
+def test_put_aoi_replaces_existing_aoi_while_unmapped(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    original = _aoi_payload(delta=0.001)
+    replacement = _aoi_payload(delta=0.002)
+
+    assert client.post(
+        "/v1/sites",
+        json={
+            "siteId": "site-replace-aoi",
+            "name": "교체 현장",
+            "siteFrame": _site_frame_payload(),
+            "aoi": original,
+        },
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
+    ).status_code == 201
+
+    response = _put_aoi(client, "site-replace-aoi", aoi=replacement)
+
+    assert response.status_code == 200
+    assert response.json()["site"]["aoi"] == replacement
+
+
+def test_put_aoi_unknown_site_returns_404(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+
+    response = _put_aoi(client, "no-such-site")
+
+    assert response.status_code == 404
+    assert response.json()["verdict"] == "UNKNOWN_SITE"
+
+
+def test_put_aoi_mismatched_site_frame_rejected(tmp_path: Path) -> None:
+    """[AC3] 현장 siteFrame 과 어긋나는 AOI(다른 좌표계 주장)는 거부된다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    assert _register(client, "site-frame-mismatch").status_code == 201
+
+    other_frame = _site_frame_payload()
+    other_frame["crs"] = "EPSG:4326"
+    response = _put_aoi(client, "site-frame-mismatch", site_frame=other_frame)
+
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "SITE_FRAME_MISMATCH"
+
+
+def test_put_aoi_locked_after_site_leaves_unmapped(tmp_path: Path) -> None:
+    """[AC4] UNMAPPED 를 벗어난 현장의 AOI 변경은 거부된다(막는 쪽이 기본)."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    assert _register(client, "site-locked").status_code == 201
+    assert _transition(client, "site-locked", "BASELINE_MAPPING").status_code == 200
+
+    response = _put_aoi(client, "site-locked")
+
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "AOI_LOCKED"
+
+
+def test_put_aoi_malformed_polygon_rejected(tmp_path: Path) -> None:
+    """구조 위반(꼭짓점 부족)은 AreaOfInterest 파싱 단계에서 표준 422 로 거부된다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    assert _register(client, "site-malformed-aoi").status_code == 201
+
+    response = _put_aoi(
+        client, "site-malformed-aoi", aoi={"vertices": [{"latDeg": 0.0, "lonDeg": 0.0}]}
+    )
+
+    assert response.status_code == 422
+
+
+def test_put_aoi_requires_sites_write_permission(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    assert _register(client, "site-aoi-403").status_code == 201
+
+    response = _put_aoi(client, "site-aoi-403", token=_VIEWER_TOKEN)
+
+    assert response.status_code == 403
+
+
+# ── AOI journal 재생(구버전 레코드·재검증) ────────────────────────────────
+
+
+def test_replay_of_legacy_registered_record_without_aoi_key(tmp_path: Path) -> None:
+    """[AC2] AOI 필드 도입 이전에 기록된 site-registered 레코드(aoi 키 자체가
+    없음)도 재생이 깨지지 않고 aoi=None 으로 복원된다."""
+    journal_path = tmp_path / "sites.jsonl"
+    seed = DurableJournal(journal_path)
+    legacy_raw = _registered_raw_without_aoi_key("site-legacy")
+    seed.append(legacy_raw)
+    seed.close()
+
+    store = SiteStore(DurableJournal(journal_path))
+    record = store.get("site-legacy")
+
+    assert record is not None
+    assert record.aoi is None
+
+
+def _registered_raw_without_aoi_key(site_id: str) -> dict[str, Any]:
+    return {
+        "kind": "site-registered",
+        "ts": datetime.now(UTC).isoformat(),
+        "actor": "tester",
+        "before": None,
+        "after": "UNMAPPED",
+        "evidence": None,
+        "reason": None,
+        "siteId": site_id,
+        "name": "구버전 현장",
+        "siteFrame": _site_frame_payload(),
+        # 의도적으로 "aoi" 키 자체가 없다 — 이 필드 도입 이전 레코드를 흉내낸다.
+    }
+
+
+def test_replay_refuses_startup_on_aoi_set_for_non_unmapped_site(tmp_path: Path) -> None:
+    """site-aoi-set 레코드가 UNMAPPED 아닌 상태 뒤에 기록됐다면(버그·직접 조작)
+    재생이 조용히 채택하지 않는다 — API 경계(AOI_LOCKED)와 같은 강도의 재검증."""
+    journal_path = tmp_path / "sites.jsonl"
+    seed = DurableJournal(journal_path)
+    seed.append(_registered_raw("site-aoi-after-transition"))
+    seed.append(_transitioned_raw("site-aoi-after-transition", "UNMAPPED", "BASELINE_MAPPING"))
+    seed.append(
+        {
+            "kind": "site-aoi-set",
+            "ts": datetime.now(UTC).isoformat(),
+            "actor": "tester",
+            "siteId": "site-aoi-after-transition",
+            "aoi": _aoi_payload(),
+        }
+    )
+    seed.close()
+
+    with pytest.raises(SiteStoreRecoveryError):
+        SiteStore(DurableJournal(journal_path))
+
+
+def test_replay_refuses_startup_on_malformed_aoi_payload(tmp_path: Path) -> None:
+    journal_path = tmp_path / "sites.jsonl"
+    seed = DurableJournal(journal_path)
+    raw = _registered_raw("site-bad-aoi")
+    raw["aoi"] = {"vertices": [{"latDeg": 0.0, "lonDeg": 0.0}]}  # 꼭짓점 부족
+    seed.append(raw)
+    seed.close()
+
+    with pytest.raises(SiteStoreRecoveryError):
+        SiteStore(DurableJournal(journal_path))
+
+
 # ── 전 구간 실전이 (픽스처 손주입 아님) ─────────────────────────────────
 
 
 def test_full_lifecycle_unmapped_to_patrol_ready(tmp_path: Path) -> None:
+    """자율 시작 승인(→PROVISIONAL_AUTONOMY)·정식 순찰 승인(→PATROL_READY)만
+    ADMIN 토큰이 필요하다(ADR-KSI-015 D2) — 그 외 일상 전이는 FIELD_OPERATOR 기본
+    토큰(``_transition`` 기본값)으로 그대로 굴러간다."""
     app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
     client = TestClient(app)
     site_id = "site-lifecycle"
@@ -167,8 +407,10 @@ def test_full_lifecycle_unmapped_to_patrol_ready(tmp_path: Path) -> None:
         "PROVISIONAL_AUTONOMY",
         "PATROL_READY",
     ]
+    admin_gated = {"PROVISIONAL_AUTONOMY", "PATROL_READY"}
     for target in sequence:
-        response = _transition(client, site_id, target)
+        token = _ADMIN_TOKEN if target in admin_gated else _FIELD_OPERATOR_TOKEN
+        response = _transition(client, site_id, target, token=token)
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["verdict"] == "TRANSITIONED"
@@ -196,6 +438,10 @@ def test_unmapped_to_patrol_ready_direct_rejected(tmp_path: Path) -> None:
 
 
 def test_suspended_resume_roundtrip(tmp_path: Path) -> None:
+    """SUSPENDED 진입·이탈은 둘 다 관리자 전용이다(ADR-KSI-015 D2) — 이 테스트의
+    초점은 도메인 전이 자체(적법/불법 resume)이므로 게이트를 통과하는 ADMIN
+    토큰으로 전 구간을 돈다(게이트 자체의 403 반증은
+    ``test_field_operator_forbidden_*`` 가 별도로 맡는다)."""
     app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
     client = TestClient(app)
     site_id = "site-suspend"
@@ -203,16 +449,16 @@ def test_suspended_resume_roundtrip(tmp_path: Path) -> None:
     assert _register(client, site_id).status_code == 201
     assert _transition(client, site_id, "BASELINE_MAPPING").status_code == 200
 
-    suspend = _transition(client, site_id, "SUSPENDED")
+    suspend = _transition(client, site_id, "SUSPENDED", token=_ADMIN_TOKEN)
     assert suspend.status_code == 200
     assert suspend.json()["site"]["status"] == "SUSPENDED"
     assert suspend.json()["site"]["resumeTarget"] == "BASELINE_MAPPING"
 
-    wrong_resume = _transition(client, site_id, "MODEL_PROCESSING")
+    wrong_resume = _transition(client, site_id, "MODEL_PROCESSING", token=_ADMIN_TOKEN)
     assert wrong_resume.status_code == 409
     assert wrong_resume.json()["verdict"] == "ILLEGAL_TRANSITION"
 
-    correct_resume = _transition(client, site_id, "BASELINE_MAPPING")
+    correct_resume = _transition(client, site_id, "BASELINE_MAPPING", token=_ADMIN_TOKEN)
     assert correct_resume.status_code == 200
     body = correct_resume.json()["site"]
     assert body["status"] == "BASELINE_MAPPING"
@@ -235,7 +481,7 @@ def test_restart_recovery_preserves_status_and_resume_target(tmp_path: Path) -> 
 
     assert _register(client1, site_id).status_code == 201
     assert _transition(client1, site_id, "BASELINE_MAPPING").status_code == 200
-    assert _transition(client1, site_id, "SUSPENDED").status_code == 200
+    assert _transition(client1, site_id, "SUSPENDED", token=_ADMIN_TOKEN).status_code == 200
     journal1.close()
 
     journal2 = DurableJournal(journal_path)
@@ -257,9 +503,9 @@ def test_audit_fields_present_in_journal_records(tmp_path: Path) -> None:
     client = TestClient(app)
     site_id = "site-audit"
 
-    assert _register(client, site_id, token=_SITE_MANAGER_TOKEN).status_code == 201
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
     transition_response = _transition(
-        client, site_id, "BASELINE_MAPPING", token=_SITE_MANAGER_TOKEN
+        client, site_id, "BASELINE_MAPPING", token=_FIELD_OPERATOR_TOKEN
     )
     assert transition_response.status_code == 200
 
@@ -268,7 +514,7 @@ def test_audit_fields_present_in_journal_records(tmp_path: Path) -> None:
 
     registered = records[0]
     assert registered["kind"] == "site-registered"
-    assert registered["actor"] == "sm-1"
+    assert registered["actor"] == "fo-1"
     assert "ts" in registered
     datetime.fromisoformat(registered["ts"])  # tz-aware UTC 파싱 가능해야 한다
     assert registered["before"] is None
@@ -276,7 +522,7 @@ def test_audit_fields_present_in_journal_records(tmp_path: Path) -> None:
 
     transitioned = records[1]
     assert transitioned["kind"] == "site-transitioned"
-    assert transitioned["actor"] == "sm-1"
+    assert transitioned["actor"] == "fo-1"
     assert transitioned["before"] == "UNMAPPED"
     assert transitioned["after"] == "BASELINE_MAPPING"
     assert transitioned["evidence"] == "evidence-1"
@@ -396,6 +642,164 @@ def test_admin_can_write(tmp_path: Path) -> None:
     assert response.status_code == 201
 
 
+# ── 자율운영 승인 게이트(ADR-KSI-015 D2) — (from, to) 간선 쌍 기준 ────────────
+#
+# SITES_WRITE 만으로는 안 되고 SITES_AUTONOMY_APPROVE(ADMIN 전용)가 추가로
+# 필요한 간선(자율 시작 승인·정식 순찰 승인·SUSPENDED 진입/복귀)과, 그 옆의
+# "일상 진행은 그대로 막히지 않는다"를 양성/음성 쌍으로 고정한다. 특히
+# PATROL_ACTIVE→PATROL_READY(순찰 복귀)는 목적지가 PATROL_READY 로 같아도
+# 게이트되지 않는다 — 목적지 상태만 보고 판정하면 이 케이스가 잘못 막히는
+# 함정이 있다(ADR D2 "주의" 항목).
+
+
+def _advance_field_operator(client: TestClient, site_id: str, *targets: str) -> None:
+    """UNMAPPED 로 갓 등록된 site 를 게이트 없는 간선만으로 전진시킨다(FIELD_OPERATOR)."""
+    for target in targets:
+        response = _transition(client, site_id, target, token=_FIELD_OPERATOR_TOKEN)
+        assert response.status_code == 200, f"{target}: {response.text}"
+
+
+def test_field_operator_forbidden_model_validation_to_provisional_autonomy(
+    tmp_path: Path,
+) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-1"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    _advance_field_operator(
+        client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
+    )
+
+    response = _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 403
+
+
+def test_admin_allowed_model_validation_to_provisional_autonomy(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-2"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    _advance_field_operator(
+        client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
+    )
+
+    response = _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN)
+
+    assert response.status_code == 200
+
+
+def test_field_operator_forbidden_provisional_autonomy_to_patrol_ready(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-3"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    _advance_field_operator(
+        client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
+    )
+    assert (
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
+        == 200
+    )
+
+    response = _transition(client, site_id, "PATROL_READY", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 403
+
+
+def test_admin_allowed_provisional_autonomy_to_patrol_ready(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-4"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    _advance_field_operator(
+        client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
+    )
+    assert (
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
+        == 200
+    )
+
+    response = _transition(client, site_id, "PATROL_READY", token=_ADMIN_TOKEN)
+
+    assert response.status_code == 200
+
+
+def test_field_operator_forbidden_suspend(tmp_path: Path) -> None:
+    """모든 상태 → SUSPENDED — 출발 상태와 무관하게 항상 관리자 전용이다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-5"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+
+    response = _transition(client, site_id, "SUSPENDED", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 403
+
+
+def test_admin_allowed_suspend(tmp_path: Path) -> None:
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-6"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+
+    response = _transition(client, site_id, "SUSPENDED", token=_ADMIN_TOKEN)
+
+    assert response.status_code == 200
+
+
+def test_field_operator_forbidden_suspended_resume(tmp_path: Path) -> None:
+    """SUSPENDED → 직전 상태(동적 resume) — 출발 상태 기준으로 관리자 전용이다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-7"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    assert _transition(client, site_id, "SUSPENDED", token=_ADMIN_TOKEN).status_code == 200
+
+    response = _transition(client, site_id, "UNMAPPED", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 403
+
+
+def test_field_operator_allowed_unmapped_to_baseline_mapping(tmp_path: Path) -> None:
+    """일상 현장 진행은 관리자 대기 없이 굴러간다(ADR D2 근거) — 회귀 방지."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-8"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+
+    response = _transition(client, site_id, "BASELINE_MAPPING", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 200
+
+
+def test_field_operator_allowed_patrol_active_to_patrol_ready(tmp_path: Path) -> None:
+    """[함정 회귀 방지, ADR D2 "주의"] PATROL_READY 로 들어오는 간선이 둘이다 —
+    최초 정식 승인(PROVISIONAL_AUTONOMY→)은 관리자 전용이지만, 순찰 후 정상
+    복귀(PATROL_ACTIVE→)는 목적지가 같아도 FIELD_OPERATOR 가 그대로 한다.
+    목적지 상태 하나만 보는 게이트라면 이 케이스가 잘못 막힌다."""
+    app = _build_app(DurableJournal(tmp_path / "sites.jsonl"))
+    client = TestClient(app)
+    site_id = "site-gate-9"
+    assert _register(client, site_id, token=_FIELD_OPERATOR_TOKEN).status_code == 201
+    _advance_field_operator(
+        client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
+    )
+    assert (
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
+        == 200
+    )
+    assert _transition(client, site_id, "PATROL_READY", token=_ADMIN_TOKEN).status_code == 200
+    assert (
+        _transition(client, site_id, "PATROL_ACTIVE", token=_FIELD_OPERATOR_TOKEN).status_code
+        == 200
+    )
+
+    response = _transition(client, site_id, "PATROL_READY", token=_FIELD_OPERATOR_TOKEN)
+
+    assert response.status_code == 200
+
+
 def test_register_rejects_blank_site_frame_fields(tmp_path: Path) -> None:
     """[INV-020] crs·verticalDatum·transformVersion 공백은 422 INVALID_SITE.
 
@@ -411,7 +815,7 @@ def test_register_rejects_blank_site_frame_fields(tmp_path: Path) -> None:
         response = client.post(
             "/v1/sites",
             json={"siteId": f"site-blank-{field}", "name": "테스트 현장", "siteFrame": payload},
-            headers=_auth(_SITE_MANAGER_TOKEN),
+            headers=_auth(_FIELD_OPERATOR_TOKEN),
         )
         assert response.status_code == 422, field
         assert response.json()["verdict"] == "INVALID_SITE", field

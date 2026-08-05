@@ -16,9 +16,10 @@ import math
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from _site_lifecycle import advance_site_status
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
@@ -36,6 +37,7 @@ from ksi_core.mission_plans import (
 )
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.sites import SiteStore
+from ksi_domain.enums import SiteStatus
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
 from ksi_mission_contracts.models import FlightEnvelope, SiteFrame
 from ksi_mission_contracts.signing import (
@@ -122,6 +124,10 @@ def _plan_request(
 
 
 _ISSUER_TOKEN = "mission-issuer-token"  # noqa: S105 — 테스트 고정 토큰
+# 3개 OPERATOR role 전부 MISSIONS_READ 를 갖는다(auth.py _ROLE_PERMISSIONS) — KMZ
+# 다운로드의 403(권한 없음)을 재현하려면 role 표 밖의 EDGE_DEVICE 가 필요하다
+# (test_coverage_reports.py 와 동일 관습, 그 표도 role 로는 재현 못 하는 401/403 이다).
+_NO_MISSIONS_READ_TOKEN = "kmz-edge-device-token"  # noqa: S105 — 테스트 고정 토큰
 
 
 def _digest(token: str) -> str:
@@ -136,19 +142,34 @@ def _auth_registry() -> AuthRegistry:
                 principal=Principal(
                     principal_id="do-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.DRONE_OPERATOR,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
-            )
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_NO_MISSIONS_READ_TOKEN),
+                principal=Principal(
+                    principal_id="edge-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id="edge-001",
+                ),
+            ),
         ]
     )
 
 
-def _client(tmp_path: Path) -> tuple[TestClient, KeyRegistry]:
+def _client(
+    tmp_path: Path, *, site_status: SiteStatus = SiteStatus.PATROL_READY
+) -> tuple[TestClient, KeyRegistry]:
     """서명키 + mission_store + site_store + auth_registry 최소 조립(ADR-KSI-008 §3).
 
     요청 site_id("site-001")는 발급 전 site_store 에 직접 등록한다 — precheck_issuance
-    의 site_exists 게이트가 이제 이 저장소로 배선되기 때문.
+    의 site_exists 게이트가 이제 이 저장소로 배선되기 때문. 등록 후 ``site_status``
+    까지 전진시킨다(기본 ``PATROL_READY`` — 이 파일 다수 테스트가 기본
+    ``AUTONOMOUS_PATROL``(perimeter)을 쓴다). ``BASELINE_MAPPING`` 계열 테스트는
+    ``site_status=SiteStatus.UNMAPPED`` 를 명시한다(INV-052 임무타입×현장상태
+    게이트, ADR-KSI-014).
     """
     key_id = "core-issuer-key-1"
     private_key = Ed25519PrivateKey.generate()
@@ -170,6 +191,7 @@ def _client(tmp_path: Path) -> tuple[TestClient, KeyRegistry]:
         actor="test-harness",
         now=datetime.now(UTC),
     )
+    advance_site_status(site_store, "site-001", site_status)
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
 
     app = create_app(
@@ -219,7 +241,7 @@ def test_plan_route_altitude_gated_by_contract_envelope(tmp_path: Path) -> None:
 
 
 def test_mapping_type_uses_lawnmower_and_requires_spacing(tmp_path: Path) -> None:
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     missing_spacing = client.post(
         "/v1/missions/plans", json=_plan_request(mission_type="BASELINE_MAPPING")
@@ -261,10 +283,15 @@ def test_issued_envelope_carries_altitude_reference(tmp_path: Path) -> None:
 
 
 def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Path) -> None:
+    """BASELINE_MAPPING·AUTONOMOUS_PATROL 을 같은 site 로 순서대로 발급한다 —
+    INV-052 게이트 하에서는 두 임무타입의 허용 현장상태가 서로 겹치지 않으므로
+    (매핑 계열: UNMAPPED/REMAP_REQUIRED, 순찰: PROVISIONAL_AUTONOMY 이후),
+    BASELINE_MAPPING 발급 후 site 를 실제로 PATROL_READY 까지 전진시킨 뒤
+    AUTONOMOUS_PATROL 을 발급한다(매핑→순찰 생애주기를 그대로 재현)."""
     import xml.etree.ElementTree as ET
 
     ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     def action_funcs(mission_type: str, **route: object) -> list[str | None]:
         # 서로 다른 missionId — mission_store 가 이제 발급을 영속하므로 같은
@@ -272,7 +299,7 @@ def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Pat
         request = _plan_request(mission_type=mission_type, **route)
         request["contract"]["missionId"] = f"mission-{mission_type.lower()}"
         response = client.post("/v1/missions/plans", json=request)
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         kmz = base64.b64decode(response.json()["kmzBase64"])
         with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
             root = ET.fromstring(archive.read("wpmz/waylines.wpml"))
@@ -282,6 +309,11 @@ def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Pat
         ]
 
     assert "takePhoto" in action_funcs("BASELINE_MAPPING", spacingM=20.0)
+    # TestClient.app 은 ASGI 호출자로 타이핑돼 있어 .state 가 안 보인다 — 실제로는
+    # create_app 이 만든 FastAPI 인스턴스다.
+    advance_site_status(
+        cast("Any", client.app).state.site_store, "site-001", SiteStatus.PATROL_READY
+    )
     assert action_funcs("AUTONOMOUS_PATROL") == []
 
 
@@ -391,7 +423,7 @@ def test_coverage_promise_above_measured_ratio_rejected(tmp_path: Path) -> None:
     """재검증 P2 반증 — 계약이 accessibleGeneralCoverage=1.0 을 약속(서명 대상)하는데
     같은 요청의 실측 커버가 1.0 미만이면, 그 어긋난 쌍은 발급되지 않는다(이륙고도
     게이트와 동일 클래스 — 이전엔 조용히 201 이었다)."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
     request["contract"]["accessibleGeneralCoverage"] = 1.0
@@ -404,7 +436,7 @@ def test_coverage_promise_above_measured_ratio_rejected(tmp_path: Path) -> None:
 
 def test_coverage_promise_at_default_accepts_imperfect_ratio(tmp_path: Path) -> None:
     """대조 — 같은 도형이라도 약속(기본 0.95)이 실측 이하면 정상 발급된다."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
 
@@ -428,7 +460,7 @@ def test_takeoff_height_gate_rejects_non_finite() -> None:
 
 
 def test_lawnmower_plan_reports_planned_coverage_ratio(tmp_path: Path) -> None:
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     response = client.post(
         "/v1/missions/plans",
@@ -445,7 +477,7 @@ def test_lawnmower_plan_reports_planned_coverage_ratio(tmp_path: Path) -> None:
 
 
 def test_lawnmower_rejects_empty_allowed_volumes(tmp_path: Path) -> None:
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
     request["contract"]["flightEnvelope"]["allowedVolumes"] = []
 
@@ -490,7 +522,7 @@ def test_lawnmower_without_capture_interval_is_rejected(tmp_path: Path) -> None:
     이 테스트가 없으면 fail-closed 블록을 통째로 지워도 스위트가 초록이다
     (실제로 변이 실험에서 그랬다) — 전방 중첩 0 결함이 조용히 되돌아온다.
     """
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     response = client.post(
         "/v1/missions/plans",
@@ -509,7 +541,7 @@ def test_capture_interval_changes_issued_waypoint_count(tmp_path: Path) -> None:
     간격을 좁히면 웨이포인트가 늘어야 한다. 이 단언이 없으면 생성기 호출에서
     capture_interval_m 인자를 빼도(스캔선당 2점으로 되돌아가도) 아무도 모른다.
     """
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     def issue(mission_id: str, interval: float) -> int:
         request = _plan_request(
@@ -530,7 +562,7 @@ def test_capture_interval_changes_issued_waypoint_count(tmp_path: Path) -> None:
 
 def test_capture_interval_wider_than_spacing_is_rejected(tmp_path: Path) -> None:
     """상한이 없으면 큰 값으로 전방 중첩 0 을 그대로 재현할 수 있다(재검토 P1-2)."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
 
     response = client.post(
         "/v1/missions/plans",
@@ -634,7 +666,7 @@ def test_camera_lets_server_compute_spacing(tmp_path: Path) -> None:
     간격을 요청자가 적으면 서버는 그 값이 적정한지 판단할 근거가 없다 — 실제로
     40ha 가 사진 10장으로 발급됐다. 카메라를 받으면 그 판단이 가능해진다.
     """
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING")
     request["route"] = {"altitudeM": 40.0, "camera": _camera_params()}
 
@@ -653,7 +685,7 @@ def test_camera_lets_server_compute_spacing(tmp_path: Path) -> None:
 
 def test_camera_and_explicit_spacing_together_is_rejected(tmp_path: Path) -> None:
     """두 출처가 있으면 서버가 조용히 하나를 고르게 된다 — 그 선택을 하지 않는다."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING")
     request["route"] = {"altitudeM": 40.0, "camera": _camera_params(), "spacingM": 20.0}
 
@@ -665,7 +697,7 @@ def test_camera_and_explicit_spacing_together_is_rejected(tmp_path: Path) -> Non
 
 def test_insufficient_overlap_is_rejected_at_api(tmp_path: Path) -> None:
     """재구성이 성립하지 않는 중복도는 발급 단계에서 막는다."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     request = _plan_request(mission_type="BASELINE_MAPPING")
     request["route"] = {
         "altitudeM": 40.0,
@@ -680,10 +712,229 @@ def test_insufficient_overlap_is_rejected_at_api(tmp_path: Path) -> None:
 
 def test_explicit_spacing_still_works_without_camera(tmp_path: Path) -> None:
     """[비회귀] 카메라 없이 간격을 직접 주는 기존 경로는 그대로 동작한다."""
-    client, _registry = _client(tmp_path)
+    client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     response = client.post(
         "/v1/missions/plans",
         json=_plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0),
     )
     assert response.status_code == 201, response.text
     assert response.json()["gridBasis"] is None, "직접 지정인데 계산 근거가 실렸다"
+
+
+# ── G. KMZ 다운로드 (GET /v1/missions/{mission_id}/kmz) ─────────────────────
+#
+# 발급 응답의 kmzBase64 는 그 순간 한 번뿐이다(모듈 docstring "멱등 재발급" — 바이트
+# 자체는 journal 에 저장하지 않는다). 이 표면이 없으면 운영자는 위저드를 끝까지
+# 눌러도 손에 파일이 없다 — 발급 성공 화면이 막다른 길이 된다.
+
+
+def test_kmz_download_returns_bytes_matching_stored_sha256(tmp_path: Path) -> None:
+    """[핵심, 수용기준 1] 재생성 바이트의 sha256 이 레코드의 kmzSha256 과 일치하고,
+    발급 응답과 실 바이트까지 동일하다(결정성)."""
+    client, _registry = _client(tmp_path)
+    issued = client.post("/v1/missions/plans", json=_plan_request())
+    assert issued.status_code == 201
+    issued_body = issued.json()
+
+    response = client.get("/v1/missions/mission-001/kmz")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.google-earth.kmz"
+    assert 'filename="mission-001.kmz"' in response.headers["content-disposition"]
+    assert hashlib.sha256(response.content).hexdigest() == issued_body["kmzSha256"]
+    assert response.content == base64.b64decode(issued_body["kmzBase64"]), (
+        "재생성 바이트가 발급 응답 바이트와 실제로 동일해야 한다(결정성)"
+    )
+
+
+def test_kmz_download_for_contract_only_mission_is_404(tmp_path: Path) -> None:
+    """[수용기준 2 의 한 갈래] 계약 단독 발급은 KMZ 산출물 자체가 없다 — 200 이
+    아니라 그에 맞는(404) 상태코드로 거부한다."""
+    client, _registry = _client(tmp_path)
+    contract_request = _plan_request()["contract"]
+    contract_request["missionId"] = "mission-contract-only"
+    issued = client.post("/v1/missions/contracts", json=contract_request)
+    assert issued.status_code == 201
+
+    response = client.get("/v1/missions/mission-contract-only/kmz")
+
+    assert response.status_code == 404
+
+
+def test_kmz_download_for_unknown_mission_is_404(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
+    response = client.get("/v1/missions/no-such-mission/kmz")
+    assert response.status_code == 404
+
+
+def test_kmz_download_rejects_unsafe_identifier_before_header_assembly(
+    tmp_path: Path,
+) -> None:
+    """mission_id 는 응답의 Content-Disposition 헤더로 조립된다 — 발급 경로가 이미
+    같은 검사를 하므로 정상 경로에서는 도달하지 않지만, 헤더를 만들기 전에 한 번
+    더 끊는다(방어 심층). 저장소 조회 결과와 무관하게 거부되어야 한다."""
+    client, _registry = _client(tmp_path)
+
+    for unsafe in ('bad"id', "bad;id", "_leading-underscore-not-allowed"):
+        response = client.get(f"/v1/missions/{unsafe}/kmz")
+        assert response.status_code == 404, f"{unsafe!r} 가 거부되지 않았다"
+        assert "content-disposition" not in response.headers
+
+
+def test_kmz_download_requires_authentication_401(tmp_path: Path) -> None:
+    """[수용기준 3] 미인증은 401."""
+    client, _registry = _client(tmp_path)
+    issued = client.post("/v1/missions/plans", json=_plan_request())
+    assert issued.status_code == 201
+
+    anonymous = TestClient(client.app)
+    response = anonymous.get("/v1/missions/mission-001/kmz")
+
+    assert response.status_code == 401
+
+
+def test_kmz_download_forbidden_without_missions_read_403(tmp_path: Path) -> None:
+    """[수용기준 3] MISSIONS_READ 없는 principal 은 403."""
+    client, _registry = _client(tmp_path)
+    issued = client.post("/v1/missions/plans", json=_plan_request())
+    assert issued.status_code == 201
+
+    response = client.get(
+        "/v1/missions/mission-001/kmz",
+        headers={"Authorization": f"Bearer {_NO_MISSIONS_READ_TOKEN}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_kmz_download_rejects_when_regeneration_hash_no_longer_matches(tmp_path: Path) -> None:
+    """[핵심, 수용기준 2] 저장된 kmzSha256 과 재생성 결과가 다르면 200 을 주지 않는다
+    — POST /plans 멱등 재발급(같은 상황을 warning 로그만 남기고 그대로 200 반환,
+    mission_plans.py ``_regenerate_pair_artifact``)과 의도적으로 다른 취급이다:
+    그 경로는 '요청자가 방금 보낸 요청의 재시도'라 최신 산출물을 주는 편이
+    낫지만, 이 다운로드는 '발급 당시 그 파일'을 약속하므로 다른 바이트를 그
+    이름으로 내려주지 않는다. 하류 로직 변경으로 결정성이 깨진 상황은 레코드의
+    kmzSha256 을 직접 조작해 시뮬레이션한다(정상 재생성은 성공하지만 저장된
+    해시와 다르다)."""
+    key_id = "core-issuer-key-1"
+    private_key = Ed25519PrivateKey.generate()
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+
+    plan_request_payload = MissionPlanRequest.model_validate(_plan_request()).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+    assert (
+        mission_store.record_issuance(
+            MissionRecord(
+                mission_id="mission-001",
+                site_id="site-001",
+                mission_type="AUTONOMOUS_PATROL",
+                artifact_kind="pair",
+                contract={"schemaVersion": "1.2", "missionId": "mission-001"},
+                # 재생성이 실제로 만들 값과 다르게 고정 — "하류 로직 변경으로 원본을
+                # 더 이상 재현할 수 없다"를 결정론적으로 재현한다.
+                kmz_sha256="0" * 64,
+                route_pattern="perimeter",
+                waypoint_count=5,
+                planned_coverage_ratio=None,
+                issued_at=datetime.now(UTC),
+                issued_by="do-1",
+                plan_request=plan_request_payload,
+                plan_request_digest=sha256_digest(canonical_payload_bytes(plan_request_payload)),
+            )
+        ).value
+        == "RECORDED"
+    )
+
+    app = create_app(
+        mission_signing_key=private_key,
+        mission_signing_key_id=key_id,
+        mission_store=mission_store,
+        site_store=site_store,
+        auth_registry=_auth_registry(),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
+
+    response = client.get("/v1/missions/mission-001/kmz")
+
+    assert response.status_code == 409
+    assert "kmzSha256" in response.json()["detail"]
+
+
+def test_kmz_download_rejects_when_current_policy_cannot_regenerate(tmp_path: Path) -> None:
+    """[수용기준 2] 정책이 바뀌어 저장된 요청 자체가 더 이상 생성기를 통과하지
+    못하면(RouteGenerationError 등) 500 이 아니라 409 다 — POST /plans 멱등
+    재발급의 동일 typed 거부 관습을 다운로드 경로도 그대로 따른다."""
+    stale_request = MissionPlanRequest.model_validate(
+        _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=None)
+    ).model_dump(by_alias=True, mode="json", exclude_none=True)
+
+    private_key = Ed25519PrivateKey.generate()
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    assert (
+        mission_store.record_issuance(
+            MissionRecord(
+                mission_id="mission-001",
+                site_id="site-001",
+                mission_type="BASELINE_MAPPING",
+                artifact_kind="pair",
+                contract={"schemaVersion": "1.2", "missionId": "mission-001"},
+                kmz_sha256="deadbeef",
+                route_pattern="lawnmower",
+                waypoint_count=10,
+                planned_coverage_ratio=1.0,
+                issued_at=datetime.now(UTC),
+                issued_by="do-1",
+                plan_request=stale_request,
+                plan_request_digest=sha256_digest(canonical_payload_bytes(stale_request)),
+            )
+        ).value
+        == "RECORDED"
+    )
+
+    app = create_app(
+        mission_signing_key=private_key,
+        mission_signing_key_id="core-issuer-key-1",
+        mission_store=mission_store,
+        site_store=site_store,
+        auth_registry=_auth_registry(),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
+
+    response = client.get("/v1/missions/mission-001/kmz")
+
+    assert response.status_code == 409, response.text
+    assert "현재 정책" in response.json()["detail"]

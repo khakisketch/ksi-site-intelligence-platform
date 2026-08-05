@@ -24,6 +24,33 @@ append-only 감사 원장이다. 이 store 를 끄는 경로는 어떤 역할에
 불법 전이가 재생되면 :class:`SiteStoreRecoveryError` 로 기동을 거부한다 —
 ``DurableJournal`` 이 이미 잡는 "JSON 파싱 실패"보다 한 단계 위의 도메인
 불변식 위반을 이 계층이 잡는다.
+
+## AOI(Area of Interest) 는 site 에 영속되고 UNMAPPED 에서만 바뀐다
+
+AOI 표현은 :mod:`ksi_mission_planning.geometry` 의 :class:`AreaOfInterest` 를
+그대로 재사용한다(닫힌 단순 폴리곤 검증이 이미 그쪽 fail-closed 게이트에
+있다 — 여기서 재구현하지 않는다). 등록 시 선택적으로 함께 줄 수 있고
+(:meth:`register`), 이미 등록된 site 는 :meth:`set_aoi` 로 나중에 설정·교체한다.
+
+AOI 교체는 ``SiteStatus.UNMAPPED`` 에서만 허용한다(막는 쪽이 기본) — 매핑이
+한 번이라도 시작되면(``BASELINE_MAPPING`` 이후) 조용히 외곽을 바꾸지 못하게
+잠근다. ``REMAP_REQUIRED`` 도 예외를 두지 않는다 — 재매핑 전 외곽을 다시
+그리고 싶다면 이 버전의 범위 밖(새 site 로 재등록)이다.
+
+**주의(독립 재검토 D4, 문구 정정)**: 이 잠금은 "이미 발급된 임무·누적 중인
+커버리지와의 대조가 무너진다"를 막는 게 **아니다** — 그런 대조 자체가
+코드에 없다. :func:`~ksi_core.mission_records.precheck_issuance` 는
+``site.aoi`` 를 전혀 보지 않고, 짝 발급(``mission_plans.py``)은 매 요청이
+실어 보내는 ``request.aoi`` 를 그대로 쓴다 — **임무 AOI 와 현장 AOI 는
+현재 대조되지 않는다.** 이 잠금의 실질 효과는 UI 초기값(``SurveyWizard``가
+현장 AOI 를 새 임무의 기본 구역으로 채우는 지점)을 고정하는 것뿐이다. 임무
+AOI 를 현장 AOI 에 실제로 대조할지는 별도 제품 결정 대상이다(이 모듈이
+임의로 게이트를 추가하지 않는다).
+
+``set_aoi`` 는 호출자가 재확인하는 ``site_frame`` 이 등록본과 정확히
+일치해야 한다(``SITE_FRAME_MISMATCH``) — 다른 좌표계를 전제로 그려진 AOI 가
+섞여 들어오는 것을 막는다(:func:`~ksi_core.mission_records.precheck_issuance`
+의 동일 관용구 재사용, ADR-KSI-007).
 """
 
 from __future__ import annotations
@@ -35,12 +62,18 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from ksi_domain.enums import IllegalSiteTransitionError, SiteStatus, assert_site_transition
+from ksi_domain.enums import (
+    IllegalSiteTransitionError,
+    SiteStatus,
+    assert_site_transition,
+    requires_autonomy_approval,
+)
 from ksi_mission_contracts.models import SiteFrame
+from ksi_mission_planning import AreaOfInterest
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import Permission, Principal, principal_permissions, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
 
@@ -49,7 +82,7 @@ if TYPE_CHECKING:
 
 
 class SiteVerdict(StrEnum):
-    """Site 등록/전이 판정 — verdict→HTTP 매핑은 ``_STATUS`` 가 SSOT(edge_sync.py:321 관습)."""
+    """Site 등록/전이/AOI 판정 — verdict→HTTP 매핑은 ``_STATUS`` 가 SSOT(edge_sync.py:321 관습)."""
 
     REGISTERED = "REGISTERED"
     DUPLICATE_SITE_ID = "DUPLICATE_SITE_ID"
@@ -58,6 +91,9 @@ class SiteVerdict(StrEnum):
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
     UNKNOWN_SITE = "UNKNOWN_SITE"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+    AOI_SET = "AOI_SET"
+    SITE_FRAME_MISMATCH = "SITE_FRAME_MISMATCH"
+    AOI_LOCKED = "AOI_LOCKED"
 
 
 _STATUS: dict[SiteVerdict, int] = {
@@ -68,6 +104,9 @@ _STATUS: dict[SiteVerdict, int] = {
     SiteVerdict.ILLEGAL_TRANSITION: 409,
     SiteVerdict.UNKNOWN_SITE: 404,
     SiteVerdict.STORE_UNAVAILABLE: 503,
+    SiteVerdict.AOI_SET: 200,
+    SiteVerdict.SITE_FRAME_MISMATCH: 422,
+    SiteVerdict.AOI_LOCKED: 409,
 }
 
 _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
@@ -89,6 +128,10 @@ class SiteRecord:
     resume_target: SiteStatus | None
     registered_at: datetime
     updated_at: datetime
+    # AreaOfInterest.model_dump(by_alias=True, mode="json", exclude_none=True) —
+    # site_frame 과 동일 관습으로 파싱된 모델이 아니라 검증-후 dict 로 보관한다.
+    # 아직 AOI 를 설정하지 않은 site(또는 구버전 journal 레코드)는 None.
+    aoi: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.registered_at.tzinfo is None:
@@ -187,6 +230,8 @@ class SiteStore:
                     self._apply_registered(raw)
                 elif kind == "site-transitioned":
                     self._apply_transitioned(raw)
+                elif kind == "site-aoi-set":
+                    self._apply_aoi_set(raw)
                 else:
                     raise ValueError(f"알 수 없는 kind: {kind!r}")
             except (KeyError, ValueError, TypeError) as exc:
@@ -226,6 +271,13 @@ class SiteStore:
                 raise ValueError(
                     f"재생: siteFrame.{alias} 가 INV-020 비공백 요건을 위반: siteId={site_id}"
                 )
+        # aoi 는 선택 필드다 — 키 자체가 없는 구버전 레코드(이 필드 도입 이전에
+        # 기록됨)도 raw.get 이 None 을 주므로 그대로 통과한다(회귀 없음).
+        aoi_payload = raw.get("aoi")
+        if aoi_payload is not None:
+            if not isinstance(aoi_payload, dict):
+                raise ValueError(f"재생: aoi 가 object 가 아니다: siteId={site_id}")
+            AreaOfInterest.model_validate(aoi_payload)  # fail-closed 재검증(API 경계와 동일 강도)
         ts = _parse_ts(raw["ts"])
         self._sites[site_id] = SiteRecord(
             site_id=site_id,
@@ -235,6 +287,7 @@ class SiteStore:
             resume_target=None,
             registered_at=ts,
             updated_at=ts,
+            aoi=aoi_payload,
         )
 
     def _apply_transitioned(self, raw: dict[str, Any]) -> None:
@@ -269,6 +322,37 @@ class SiteStore:
             current, status=after, resume_target=resume_target, updated_at=ts
         )
 
+    def _apply_aoi_set(self, raw: dict[str, Any]) -> None:
+        """AOI 설정/교체 레코드를 projection 에 반영한다.
+
+        재생 경로에서도 UNMAPPED 게이트를 재검증한다(``_apply_transitioned`` 와
+        동일 원칙 — API 경계만 지키던 불변식을 재생이 조용히 우회하지 않는다).
+        ``site_frame`` 일치 여부는 여기서 다시 보지 않는다 — 그 값 자체는
+        journal 레코드에 싣지 않으며(불변이라 site 등록본과 항상 같다), 저장된
+        건 "이 site 의 AOI 가 이제 이 값이다"라는 사실뿐이다.
+
+        ``ts`` 는 형제 레코드(``site-registered``·``site-transitioned``)와 같은
+        강도로 검증한다(독립 재검토 D2) — naive datetime 을 fail-closed 거부하고,
+        그 값으로 ``updated_at`` 을 갱신한다. 이전에는 이 레코드가 ``ts`` 를 읽지도
+        않아 ``PUT /v1/sites/{id}/aoi`` 로 외곽을 바꿔도 "최근 갱신"이 등록 시각
+        그대로 멎어 있었다.
+        """
+        site_id = raw["siteId"]
+        current = self._sites.get(site_id)
+        if current is None:
+            raise ValueError(f"미지 siteId AOI 설정 레코드: {site_id}")
+        if current.status is not SiteStatus.UNMAPPED:
+            raise ValueError(
+                f"재생: UNMAPPED 가 아닌 상태({current.status.value})에서 AOI 설정 레코드가 "
+                f"발견됨 — 재검증 위반: siteId={site_id}"
+            )
+        aoi_payload = raw["aoi"]
+        if not isinstance(aoi_payload, dict):
+            raise ValueError(f"재생: aoi 가 object 가 아니다: siteId={site_id}")
+        AreaOfInterest.model_validate(aoi_payload)  # fail-closed 재검증
+        ts = _parse_ts(raw["ts"])
+        self._sites[site_id] = replace(current, aoi=aoi_payload, updated_at=ts)
+
     # ── 공개 API ────────────────────────────────────────────────────
     def register(
         self,
@@ -276,10 +360,18 @@ class SiteStore:
         name: str,
         site_frame: SiteFrame,
         *,
+        aoi: AreaOfInterest | None = None,
         actor: str,
         now: datetime,
     ) -> SiteResult:
-        """신규 Site 를 등록한다. 초기 상태는 항상 ``UNMAPPED``(최종상태 직접 등록 금지)."""
+        """신규 Site 를 등록한다. 초기 상태는 항상 ``UNMAPPED``(최종상태 직접 등록 금지).
+
+        ``aoi`` 는 선택이다 — 등록 시점에 함께 주지 않아도 되고, 나중에
+        :meth:`set_aoi` 로 설정할 수 있다(모듈 docstring "AOI 는 site 에
+        영속되고 UNMAPPED 에서만 바뀐다" 참조). 구조 검증(닫힌 단순 폴리곤 등)은
+        :class:`~ksi_mission_planning.geometry.AreaOfInterest` 파싱 시점(FastAPI
+        요청 본문 검증)에 이미 끝나 있다 — 여기서 재검증하지 않는다.
+        """
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
         with self._lock:
@@ -332,6 +424,11 @@ class SiteStore:
                 "siteId": site_id,
                 "name": name,
                 "siteFrame": site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
+                "aoi": (
+                    None
+                    if aoi is None
+                    else aoi.model_dump(by_alias=True, mode="json", exclude_none=True)
+                ),
             }
             try:
                 self._journal.append(raw)
@@ -392,6 +489,75 @@ class SiteStore:
             self._apply_transitioned(raw)
             return SiteResult(SiteVerdict.TRANSITIONED, record=self._sites[site_id])
 
+    def set_aoi(
+        self,
+        site_id: str,
+        aoi: AreaOfInterest,
+        *,
+        site_frame: SiteFrame,
+        actor: str,
+        now: datetime,
+    ) -> SiteResult:
+        """Site 의 AOI 를 설정하거나 교체한다.
+
+        검사 순서(독립 재검토 D7 — 상태 게이트가 형식 검사보다 먼저): ``UNMAPPED``
+        가 아닌 상태에서는 ``site_frame`` 이 맞고 틀리고와 무관하게 ``AOI_LOCKED``
+        다 — 이미 잠긴 현장에 좌표계까지 틀린 요청을 보내면, 좌표계를 고쳐 재시도한
+        뒤에야 "애초에 잠겼다"는 사실을 듣는 순서를 피한다. ``UNMAPPED`` 를 통과한
+        뒤에만 ``site_frame`` 을 등록본과 대조한다(``SITE_FRAME_MISMATCH`` — 다른
+        좌표계를 전제로 그려진 AOI 를 수락하지 않는다, ``mission_records.
+        precheck_issuance`` 와 동일 관용구).
+
+        **주의(독립 재검토 D4)**: ``AOI_LOCKED`` 는 "이미 발급된 임무·누적 중인
+        커버리지와의 대조가 무너진다"를 막는 게 아니다 — 그런 대조 자체가 코드에
+        없다(모듈 docstring "AOI 는 site 에 영속되고 UNMAPPED 에서만 바뀐다" 참조).
+        실질 효과는 UI 초기값을 고정하는 것뿐이다.
+        """
+        if now.tzinfo is None:
+            raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+
+            current = self._sites.get(site_id)
+            if current is None:
+                return SiteResult(SiteVerdict.UNKNOWN_SITE, detail=_SITE_NOT_FOUND_DETAIL)
+
+            if current.status is not SiteStatus.UNMAPPED:
+                return SiteResult(
+                    SiteVerdict.AOI_LOCKED,
+                    detail=(
+                        f"AOI 는 UNMAPPED 상태에서만 설정·교체할 수 있다(현재 "
+                        f"{current.status.value}) — 매핑이 시작된 뒤에는 잠근다(임무 AOI 와 "
+                        "현장 AOI 는 현재 대조되지 않는다 — 이 잠금은 UI 초기값을 고정하는 "
+                        "효과뿐이다)"
+                    ),
+                )
+
+            requested_frame = site_frame.model_dump(by_alias=True, mode="json", exclude_none=True)
+            if requested_frame != current.site_frame:
+                return SiteResult(
+                    SiteVerdict.SITE_FRAME_MISMATCH,
+                    detail=(
+                        "siteFrame 이 등록된 현장과 다르다 — 다른 좌표계를 전제로 그려진 "
+                        "AOI 는 수락하지 않는다"
+                    ),
+                )
+
+            raw: dict[str, Any] = {
+                "kind": "site-aoi-set",
+                "ts": _iso_utc(now),
+                "actor": actor,
+                "siteId": site_id,
+                "aoi": aoi.model_dump(by_alias=True, mode="json", exclude_none=True),
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+            self._apply_aoi_set(raw)
+            return SiteResult(SiteVerdict.AOI_SET, record=self._sites[site_id])
+
     def get(self, site_id: str) -> SiteRecord | None:
         with self._lock:
             return self._sites.get(site_id)
@@ -413,6 +579,9 @@ class SiteRegistrationRequest(_CamelModel):
     site_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     site_frame: SiteFrame
+    # 선택 필드 — 필수로 하면 이미 등록된 site·기존 위저드 흐름이 깨진다. 나중에
+    # 설정·교체하려면 PUT /v1/sites/{site_id}/aoi (AoiSetRequest 참조).
+    aoi: AreaOfInterest | None = None
 
 
 class SiteTransitionRequest(_CamelModel):
@@ -426,6 +595,17 @@ class SiteTransitionRequest(_CamelModel):
     reason: str = Field(min_length=1)
 
 
+class AoiSetRequest(_CamelModel):
+    """PUT /v1/sites/{site_id}/aoi 요청 — 등록/교체 공용.
+
+    ``site_frame`` 은 필수다 — 호출자가 등록본과 같은 좌표계를 전제로 그렸음을
+    재확인시킨다(SITE_FRAME_MISMATCH 게이트, ``SiteStore.set_aoi`` 참조).
+    """
+
+    aoi: AreaOfInterest
+    site_frame: SiteFrame
+
+
 class SiteView(_CamelModel):
     site_id: str
     name: str
@@ -434,6 +614,9 @@ class SiteView(_CamelModel):
     resume_target: str | None
     registered_at: str
     updated_at: str
+    # 설정된 적 없으면 null — "AOI 가 없다"와 "아직 조회 안 됐다"를 응답 자체가
+    # 구분한다(대시보드가 이 값 하나로 지도/빈 상태를 분기한다).
+    aoi: dict[str, Any] | None
 
 
 class SiteListResponse(_CamelModel):
@@ -457,6 +640,7 @@ def _to_view(record: SiteRecord) -> SiteView:
         resume_target=record.resume_target.value if record.resume_target is not None else None,
         registered_at=record.registered_at.isoformat(),
         updated_at=record.updated_at.isoformat(),
+        aoi=record.aoi,
     )
 
 
@@ -476,6 +660,7 @@ def build_sites_router(store: SiteStore) -> APIRouter:
             request.site_id,
             request.name,
             request.site_frame,
+            aoi=request.aoi,
             actor=principal.principal_id,
             now=datetime.now(UTC),
         )
@@ -509,11 +694,51 @@ def build_sites_router(store: SiteStore) -> APIRouter:
         response: Response,
         principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
     ) -> SiteMutationResponse:
+        # 2차 게이트(ADR-KSI-015 D2) — SITES_WRITE 는 기본 하한이고, blast radius
+        # 큰 간선(자율 시작 승인·정식 순찰 승인·SUSPENDED 진입/복귀)은 추가로
+        # SITES_AUTONOMY_APPROVE 를 요구한다. 간선 쌍(현재 상태 → 요청 상태)
+        # 기준 판정이다 — 대상 site 가 없으면(current is None) 판정할 "현재
+        # 상태"가 없으므로 건너뛰고 아래 store.transition() 이 UNKNOWN_SITE 로
+        # 응답한다.
+        current = store.get(site_id)
+        if (
+            current is not None
+            and requires_autonomy_approval(current.status, request.target_status)
+            and Permission.SITES_AUTONOMY_APPROVE not in principal_permissions(principal)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"{current.status.value} → {request.target_status.value} 전이는 "
+                    "자율운영 승인 권한이 필요하다"
+                ),
+            )
         result = store.transition(
             site_id,
             request.target_status,
             evidence=request.evidence,
             reason=request.reason,
+            actor=principal.principal_id,
+            now=datetime.now(UTC),
+        )
+        response.status_code = _STATUS[result.verdict]
+        return SiteMutationResponse(
+            verdict=result.verdict.value,
+            site=_to_view(result.record) if result.record is not None else None,
+            detail=result.detail,
+        )
+
+    @router.put("/{site_id}/aoi", response_model=SiteMutationResponse)
+    def set_site_aoi(
+        site_id: str,
+        request: AoiSetRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
+    ) -> SiteMutationResponse:
+        result = store.set_aoi(
+            site_id,
+            request.aoi,
+            site_frame=request.site_frame,
             actor=principal.principal_id,
             now=datetime.now(UTC),
         )

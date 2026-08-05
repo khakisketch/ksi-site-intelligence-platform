@@ -33,9 +33,7 @@ from ksi_core.sites import SiteStore
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
-    Role.SITE_MANAGER: "dev-site-manager-token",
-    Role.SAFETY_MANAGER: "dev-safety-manager-token",
-    Role.DRONE_OPERATOR: "dev-drone-operator-token",
+    Role.FIELD_OPERATOR: "dev-field-operator-token",
     Role.VIEWER: "dev-viewer-token",
 }
 _DEV_EDGE_TOKEN = "dev-edge-device-token"  # noqa: S105 — 로컬 dev 전용 고정값

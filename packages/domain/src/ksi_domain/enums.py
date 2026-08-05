@@ -224,6 +224,50 @@ def can_site_transition(
     return True
 
 
+# 자율운영 승인이 필요한 정적 간선(ADR-KSI-015 D2). blast radius 가 큰 대상
+# 전이만 가른다 — 일상 현장 진행(매핑·처리·검증·재매핑·순찰 on/off)은 이 표에
+# 없으므로 게이트되지 않는다. SUSPENDED 진입/이탈은 이 정적 표가 아니라
+# :func:`requires_autonomy_approval` 이 별도로(목적지/출발 상태 기준) 처리한다
+# — SUSPENDED 는 이 표에 넣지 않는다(정적 간선표 자체가 SUSPENDED 로부터의
+# 간선을 두지 않는 `_ALLOWED_SITE_TRANSITIONS` 관용구와 동형).
+_AUTONOMY_APPROVAL_GATED_TRANSITIONS: frozenset[tuple[SiteStatus, SiteStatus]] = frozenset(
+    {
+        (_ST.MODEL_VALIDATION, _ST.PROVISIONAL_AUTONOMY),  # 자율 시작 승인
+        (_ST.PROVISIONAL_AUTONOMY, _ST.PATROL_READY),  # 정식 순찰 승인
+    }
+)
+
+
+def requires_autonomy_approval(cur: SiteStatus, nxt: SiteStatus) -> bool:
+    """``cur → nxt`` 전이가 자율운영 승인(관리자 전용)을 요구하는지 (ADR-KSI-015 D2).
+
+    **간선(``(from, to)``) 쌍 기준 판정이다 — 목적지 상태만으로 가르지 않는다.**
+    ``PATROL_READY`` 로 들어오는 정적 간선이 둘이라(``PROVISIONAL_AUTONOMY →``
+    최초 정식 승인, ``PATROL_ACTIVE →`` 순찰 후 정상 복귀) 목적지 상태 하나만
+    보면 순찰 복귀까지 잘못 막는다.
+
+    세 갈래로 판정한다:
+
+    - ``nxt is SUSPENDED``: 모든 상태에서의 운영중단 진입은 출발 상태와 무관하게
+      게이트된다.
+    - ``cur is SUSPENDED``: 운영중단 복귀는 목적지와 무관하게 게이트된다. 실제
+      허용되는 유일한 복귀 대상은 저장소가 기억한 ``resume_target`` 뿐이지만
+      (:func:`assert_site_transition` 이 별도로 강제) 그 적법성 판정 이전에
+      권한부터 확인해도 안전하다 — 둘 다 결국 거부해야 하는 요청을 거부하는
+      순서 차이일 뿐이다.
+    - 그 외에는 :data:`_AUTONOMY_APPROVAL_GATED_TRANSITIONS` 정적 표를 따른다 —
+      예를 들어 ``PATROL_ACTIVE → PATROL_READY``(순찰 복귀)는 이 표에 없으므로
+      게이트되지 않는다.
+
+    이 함수는 전이의 **적법성**을 판정하지 않는다(:func:`assert_site_transition`
+    소관) — **권한 요구 여부만** 판정한다. 호출자는 두 판정을 모두 통과해야
+    실제 전이를 수행할 수 있다.
+    """
+    if nxt is _ST.SUSPENDED or cur is _ST.SUSPENDED:
+        return True
+    return (cur, nxt) in _AUTONOMY_APPROVAL_GATED_TRANSITIONS
+
+
 class TriageStatus(StrEnum):
     """서버측 트리아지 워크플로 상태 (MASTER_PRD §17.2, ADR-KSI-008 §4 2-enum 분리).
 

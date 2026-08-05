@@ -1,7 +1,7 @@
 import "server-only";
 
 import { coreFetch } from "./client";
-import type { SiteFrame, SiteStatus, SiteView } from "./types";
+import type { AoiVertex, SiteFrame, SiteStatus, SiteView } from "./types";
 
 export async function listSites(): Promise<SiteView[]> {
   const body = await coreFetch<{ sites: SiteView[] }>("/v1/sites");
@@ -16,6 +16,8 @@ export interface RegisterSiteInput {
   siteId: string;
   name: string;
   siteFrame: SiteFrame;
+  /** 선택 — 생략하면 등록 후 setSiteAoi 로 나중에 설정한다(UNMAPPED 상태에서만). */
+  aoi?: { vertices: AoiVertex[] };
 }
 
 export async function registerSite(input: RegisterSiteInput): Promise<SiteView> {
@@ -23,6 +25,21 @@ export async function registerSite(input: RegisterSiteInput): Promise<SiteView> 
     method: "POST",
     body: input,
   });
+  return body.site;
+}
+
+export interface SetSiteAoiInput {
+  aoi: { vertices: AoiVertex[] };
+  /** 등록된 현장의 것과 정확 일치해야 한다(SITE_FRAME_MISMATCH). */
+  siteFrame: SiteFrame;
+}
+
+/** UNMAPPED 상태의 현장에만 AOI 를 설정·교체한다(그 외 상태는 409 AOI_LOCKED). */
+export async function setSiteAoi(siteId: string, input: SetSiteAoiInput): Promise<SiteView> {
+  const body = await coreFetch<{ site: SiteView }>(
+    `/v1/sites/${encodeURIComponent(siteId)}/aoi`,
+    { method: "PUT", body: input },
+  );
   return body.site;
 }
 

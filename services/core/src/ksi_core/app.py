@@ -237,38 +237,49 @@ def create_app(
 
         from ksi_core.mission_issuance import mount_mission_issuance
         from ksi_core.mission_plans import mount_mission_plans
+        from ksi_core.mission_records import SiteLookupResult
 
         _mission_store = mission_store
         _site_store = site_store
 
-        def _site_frame_lookup(site_id: str) -> dict[str, Any] | None:
-            """등록된 site 의 canonical siteFrame(camelCase dict) — 미등록이면 None.
+        def _site_lookup(site_id: str) -> SiteLookupResult | None:
+            """등록된 site 의 canonical siteFrame + 현재 상태 — 미등록이면 None.
 
-            발급 요청의 siteFrame 과 정확 일치 대조(SITE_FRAME_MISMATCH)에 쓰인다
-            — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
+            siteFrame 은 발급 요청과의 정확 일치 대조(SITE_FRAME_MISMATCH)에
+            쓰인다 — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
+            status 는 임무타입×현장상태 게이트(INV-052, "먼저 매핑, 그 다음
+            사전지도 기반 자율")에 쓰인다 — 이 둘을 한 스냅샷으로 묶어 반환하는
+            이유는 SiteLookupResult docstring 참조.
             """
             record = _site_store.get(site_id)
-            return None if record is None else dict(record.site_frame)
+            if record is None:
+                return None
+            return SiteLookupResult(site_frame=dict(record.site_frame), status=record.status)
 
         mount_mission_issuance(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_frame_lookup=_site_frame_lookup,
+            site_lookup=_site_lookup,
         )
         mount_mission_plans(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_frame_lookup=_site_frame_lookup,
+            site_lookup=_site_lookup,
         )
 
     if mission_store is not None:
         from ksi_core.mission_records import mount_mission_records
 
-        mount_mission_records(app, mission_store=mission_store)
+        # coverage_report_store 는 mission_store 보다 늦게(279행) 조건부 장착되지만,
+        # 이 시점에 이미 함수 인자로 들어와 있다(결합 검증이 mission_store 동반을
+        # 보장) — 목록/상세 응답에 파생 커버리지 필드를 싣기 위해 여기서 넘긴다.
+        mount_mission_records(
+            app, mission_store=mission_store, coverage_report_store=coverage_report_store
+        )
 
     if coverage_report_store is not None:
         from ksi_core.coverage_reports import mount_coverage_reports

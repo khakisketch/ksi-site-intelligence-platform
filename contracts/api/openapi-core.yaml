@@ -16,7 +16,24 @@ info:
   # 없어 Core 가 EventSummaryResponse 에 eventType 을 추가해도 게이트가
   # 침묵했다(2026-08-04 실제 drift). 필드를 늘리는 변경이 아니라 이미 있는
   # 동작을 문서화하는 정정이므로 minor.
-  version: 1.5.0
+  # 1.6.0 — GET /v1/missions/{mission_id}/kmz 신설: 발급 응답에만 실리던 KMZ
+  # 를 저장된 plan_request 로 재생성해 내려받을 수 있게 한다(운영자가 위저드를
+  # 끝까지 눌러도 손에 파일이 없던 막다른 길 폐쇄). 새 표면 추가라 minor.
+  # 1.7.0 — 현장 AOI 영속(risk site-aoi-not-persisted 폐쇄): POST /v1/sites 가
+  # 선택 필드 aoi 를 받고, PUT /v1/sites/{site_id}/aoi 로 나중에 설정·교체할
+  # 수 있다(UNMAPPED 상태에서만, siteFrame 정확 일치 필수 — SITE_FRAME_MISMATCH/
+  # AOI_LOCKED). SiteView 에 aoi 필드 추가. 기존 표면을 깨지 않는 확장이라 minor.
+  # 1.8.0 — 대시보드에 비행 결과 노출(발급 메타만 있고 "날았는가"가 어디에도
+  # 없던 공백 폐쇄): MissionRecordResponse 에 파생 필드 coverageCompletionState
+  # 추가(그 임무의 최신 CoverageReport 판정 — 서버가 조회 시점에 계산, 저장하지
+  # 않는다). CoverageReportView 에 reportedBy 추가(누가 보고했는지, 독립 재검토
+  # B-3). 기존 표면을 깨지 않는 확장이라 minor.
+  # 1.9.0 — fix:contract-sync ADR-KSI-015(역할 3개 축소 + SITES_AUTONOMY_APPROVE
+  # 신설): POST /v1/sites/{site_id}/transitions 설명에 관리자 전용 간선 게이트를
+  # 반영하고(이미 구현된 동작 문서화), POST /v1/missions/contracts 설명의 구
+  # 역할 이름을 FIELD_OPERATOR 로 정정. 신규 표면 없이 이미 있는 동작을
+  # 문서화하는 정정이라 minor.
+  version: 1.9.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -53,7 +70,8 @@ paths:
       summary: Register a new Site (initial status always UNMAPPED)
       description: >-
         SITES_WRITE 권한 필요. siteId 중복은 409, 구조 위반은 422 — 최종상태
-        직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작).
+        직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작). aoi 는 선택 — 등록과
+        함께 줄 수도, 나중에 PUT /v1/sites/{site_id}/aoi 로 설정할 수도 있다.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -75,6 +93,25 @@ paths:
                     verticalDatum: { type: string }
                     unit: { const: meter }
                     transformVersion: { type: string }
+                aoi:
+                  type: object
+                  additionalProperties: false
+                  required: [vertices]
+                  description: >-
+                    선택 필드. 닫힌 단순 폴리곤(마지막→첫 꼭짓점 변이 암묵적으로
+                    닫는다, 3~256 꼭짓점). 생략하면 등록 후 PUT
+                    /v1/sites/{site_id}/aoi 로 설정한다.
+                  properties:
+                    vertices:
+                      type: array
+                      minItems: 3
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [latDeg, lonDeg]
+                        properties:
+                          latDeg: { type: number, minimum: -90, maximum: 90 }
+                          lonDeg: { type: number, minimum: -180, maximum: 180 }
       responses:
         '201':
           description: REGISTERED — verdict + 등록된 SiteView
@@ -86,7 +123,8 @@ paths:
           description: >-
             INVALID_SITE(siteId/name/siteFrame 필드 공백 — INV-020 / siteId 가
             경로-안전 문자 밖 — '/'·공백 등, /v1/sites/{site_id} 경로 세그먼트
-            제약)
+            제약) / aoi 구조 위반(자기교차·중복 꼭짓점·범위 밖 좌표 등 —
+            AreaOfInterest 파싱 실패, FastAPI 표준 422)
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
@@ -128,6 +166,12 @@ paths:
         SITES_WRITE 권한 필요. evidence·reason 비공백 필수. SUSPENDED 이탈은
         저장소가 기억한 진입 직전 상태로만 복귀 허용(§6.1). PATROL_READY 도달은
         MODEL_VALIDATION→PROVISIONAL_AUTONOMY 경유가 강제된다(품질검증 생략 금지).
+        blast radius 가 큰 간선(자율 시작 승인 MODEL_VALIDATION→
+        PROVISIONAL_AUTONOMY·정식 순찰 승인 PROVISIONAL_AUTONOMY→PATROL_READY·
+        모든 상태→SUSPENDED 진입·SUSPENDED→직전 상태 복귀)은 SITES_WRITE 만으로는
+        부족하고 추가로 SITES_AUTONOMY_APPROVE 권한(관리자 전용)을 요구한다
+        (ADR-KSI-015 D2). 간선(현재 상태 → 요청 상태) 쌍 기준 판정이다 —
+        PATROL_ACTIVE→PATROL_READY(순찰 복귀)는 같은 목적지라도 게이트되지 않는다.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -166,6 +210,77 @@ paths:
         '404': { description: UNKNOWN_SITE }
         '409': { description: ILLEGAL_TRANSITION }
         '422': { description: INVALID_SITE(evidence/reason 공백) }
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
+        '403':
+          description: >-
+            SITES_WRITE 권한 없음, 또는 관리자 전용 간선인데 SITES_AUTONOMY_APPROVE
+            권한이 없음(ADR-KSI-015 D2).
+  /v1/sites/{site_id}/aoi:
+    put:
+      summary: Set or replace a Site's AOI (Area of Interest polygon)
+      description: >-
+        SITES_WRITE 권한 필요. AOI 는 ``UNMAPPED`` 상태에서만 설정·교체할 수
+        있다(409 AOI_LOCKED — 매핑이 시작된 뒤 외곽을 바꾸면 이전 임무·누적
+        중인 커버리지와의 대조가 무너진다, 막는 쪽이 기본). siteFrame 은
+        등록된 site 의 것과 정확 일치해야 한다(422 SITE_FRAME_MISMATCH — 다른
+        좌표계를 전제로 그려진 AOI 를 수락하지 않는다, POST /v1/missions/plans
+        의 동일 게이트와 같은 관용구).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [aoi, siteFrame]
+              properties:
+                aoi:
+                  type: object
+                  additionalProperties: false
+                  required: [vertices]
+                  description: >-
+                    닫힌 단순 폴리곤(마지막→첫 꼭짓점 변이 암묵적으로 닫는다,
+                    3~256 꼭짓점).
+                  properties:
+                    vertices:
+                      type: array
+                      minItems: 3
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [latDeg, lonDeg]
+                        properties:
+                          latDeg: { type: number, minimum: -90, maximum: 90 }
+                          lonDeg: { type: number, minimum: -180, maximum: 180 }
+                siteFrame:
+                  type: object
+                  additionalProperties: false
+                  required: [crs, verticalDatum, unit, transformVersion]
+                  properties:
+                    crs: { type: string }
+                    verticalDatum: { type: string }
+                    unit: { const: meter }
+                    transformVersion: { type: string }
+                  description: 등록된 site 의 것과 정확 일치해야 한다(SITE_FRAME_MISMATCH).
+      responses:
+        '200':
+          description: AOI_SET — verdict + 갱신된 SiteView
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteMutationResponse' }
+        '404': { description: UNKNOWN_SITE }
+        '409': { description: AOI_LOCKED(UNMAPPED 이후 상태에서 시도) }
+        '422':
+          description: >-
+            SITE_FRAME_MISMATCH / aoi 구조 위반(자기교차·중복 꼭짓점·범위 밖
+            좌표 등 — AreaOfInterest 파싱 실패, FastAPI 표준 422)
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
@@ -570,7 +685,9 @@ paths:
         '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
     get:
       summary: Read the latest CoverageReport for a mission
-      description: MISSIONS_READ 권한 필요. 최신 보고 + 접수 건수(덮어쓰지 않으므로).
+      description: >-
+        MISSIONS_READ 권한 필요. 최신 보고 + 접수 건수(덮어쓰지 않으므로) + 제출한
+        Principal id(reportedBy, 보통 장비 id — 독립 재검토 B-3).
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -603,6 +720,32 @@ paths:
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/kmz:
+    get:
+      summary: Download the issued mission's KMZ file (결정론적 재생성)
+      description: >-
+        MISSIONS_READ 권한 필요. KMZ 바이트 자체는 저장하지 않으므로(용량) 저장된
+        plan_request 로 매 조회마다 재생성해 반환한다(build_kmz 계열은 시각·난수·
+        UUID 의존이 없어 재생성이 결정론적이다). 재생성이 현재 정책으로 실패하거나
+        재생성 sha256 이 레코드의 kmzSha256 과 다르면(하류 로직 변경으로 원본을
+        더 이상 재현할 수 없다) 200 을 주지 않는다 — 다른 파일을 발급된 파일로
+        속여 내려주지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: KMZ 바이트(Content-Disposition 로 결정론적 파일명 `{mission_id}.kmz`)
+          content:
+            application/vnd.google-earth.kmz:
+              schema: { type: string, format: binary }
+        '404': { description: 레코드 없음(일반 문구) 또는 KMZ 산출물이 없는 계약 단독 레코드 }
+        '409': { description: 저장된 요청으로 산출물을 더 이상 재현할 수 없다(정책 변경 또는 해시 불일치) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/contracts:
     post:
       summary: Issue a signed Mission Contract (v1.2)
@@ -612,7 +755,7 @@ paths:
         정책)는 서버가 FINAL_DECISION_LEDGER 값으로 고정한다 — 요청 바디에 그
         필드 자리가 없다(extra=forbid). 서명키 미주입 조립에서는 이 경로 자체가
         존재하지 않는다. MISSIONS_ISSUE 권한 필요(DEC-010 운영자 승인 — 발급은
-        DRONE_OPERATOR/ADMIN). site 미존재·siteFrame 등록본 불일치·missionId
+        FIELD_OPERATOR/ADMIN). site 미존재·siteFrame 등록본 불일치·missionId
         충돌은 서명 **전** 거부되고(UNKNOWN_SITE/SITE_FRAME_MISMATCH/
         MISSION_ID_CONFLICT — 등록 좌표계와 어긋난 계약 발급 차단, ADR-KSI-007),
         durable 기록 성공 후에만 201 이다(ADR-KSI-008 §3 — 고아 발급 금지).
@@ -976,7 +1119,7 @@ components:
   schemas:
     SiteView:
       type: object
-      required: [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt]
+      required: [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi]
       properties:
         siteId: { type: string }
         name: { type: string }
@@ -989,6 +1132,9 @@ components:
         resumeTarget: { type: [string, 'null'] }
         registeredAt: { type: string }
         updatedAt: { type: string }
+        # 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT /v1/sites/{site_id}/aoi
+        # 를 거치지 않음) — 구조 정본은 AreaOfInterest(POST /v1/sites.aoi 참조).
+        aoi: { type: [object, 'null'], additionalProperties: true }
     SiteListResponse:
       type: object
       required: [sites]
@@ -1065,14 +1211,17 @@ components:
         detail: { type: [string, 'null'] }
         report: { type: [object, 'null'], additionalProperties: true }
     CoverageReportView:
-      description: 그 임무의 최신 보고 + 접수 건수.
+      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지.
       type: object
-      required: [missionId, reportCount, latest]
+      required: [missionId, reportCount, latest, reportedBy]
       properties:
         missionId: { type: string }
         reportCount: { type: integer }
         # 구조 정본은 contracts/schemas/coverage-report.v1.1.json.
         latest: { type: object, additionalProperties: true }
+        reportedBy:
+          type: [string, 'null']
+          description: 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null.
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object
@@ -1154,7 +1303,7 @@ components:
       type: object
       required:
         [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
-         waypointCount, plannedCoverageRatio, issuedAt, issuedBy]
+         waypointCount, plannedCoverageRatio, issuedAt, issuedBy, coverageCompletionState]
       properties:
         missionId: { type: string }
         siteId: { type: string }
@@ -1175,6 +1324,17 @@ components:
             사전 점검 결과다.
         issuedAt: { type: string, format: date-time }
         issuedBy: { type: string }
+        coverageCompletionState:
+          type: [string, 'null']
+          enum: [COMPLETED, COMPLETED_WITH_GAPS, ABORTED_SAFE, FAILED, null]
+          description: >-
+            **파생 필드** — 이 임무에 대해 접수된 최신 CoverageReport 의
+            completionState 를 서버가 조회 시점에 계산해 그대로 싣는다(저장하지
+            않는다). 완료 판정의 권위는 CoverageReport 하나다(INV-010) — 이 필드는
+            그 판정을 다시 계산하지 않고 그대로 노출할 뿐이다. null 은 "아직 보고가
+            없다"는 뜻이고, 발급됐지만 비행 전인지 비행했는데 보고가 없는지는 이
+            값만으로 구분되지 않는다(GET .../coverage-report 404 와 함께 봐야 한다).
+
   securitySchemes:
     bearerAuth:
       type: http

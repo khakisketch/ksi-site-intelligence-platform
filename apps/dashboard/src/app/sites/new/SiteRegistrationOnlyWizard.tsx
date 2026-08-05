@@ -8,15 +8,19 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useDraftState } from "@/hooks/useDraftState";
 import type { SiteFrame } from "@/lib/core-api/types";
 
-// risk dashboard-wizard-rbac-mismatch 해소 — SiteRegistrationWizard(등록+baseline 임무
-// 발급을 한 흐름으로 처리)는 SITES_WRITE 와 MISSIONS_ISSUE 를 동시에 요구해 그 조합을
-// 가진 role이 ADMIN뿐이었다. 이 컴포넌트는 SITES_WRITE 만 가진 role(SITE_MANAGER 등)이
-// 현장 등록까지만 끝내는 축약 흐름이다 — AOI·매핑 파라미터는 순수 임무 발급 소관이라
-// 여기서는 아예 묻지 않는다(등록 시점엔 저장할 곳이 없어 어차피 버려진다). baseline
-// 임무는 MISSIONS_ISSUE 를 가진 role이 나중에 /sites/[siteId]/surveys/new 에서
-// "초기 매핑(베이스라인)" 목적으로 발급한다(SurveyWizard.tsx buildPurposeOptions 참조).
-// Site 상태머신은 UNMAPPED 를 정상 중간 상태로 이미 설계해 두었다(등록 즉시 baseline
-// 발급을 강제하지 않는다) — 대표자 확인 완료.
+// ADR-KSI-015 이후 "등록만 하고 임무는 나중"은 권한 부족이 아니라 사용자 선택이다 —
+// /sites/new 가 SITES_WRITE·MISSIONS_ISSUE 를 둘 다 가진 사용자에게 "등록 + 임무
+// 발급"과 "등록만 먼저" 중 고르게 하고, 이 컴포넌트는 후자를 고른 흐름을 맡는다.
+// (원래는 SITES_WRITE 만 가진 구 역할(ADR-KSI-015 이전 5역할 중 하나)을 위한 권한
+// 기반 임시 분기였으나, 역할이 3개로 합쳐지며 SITES_WRITE 를 가진 역할은 항상
+// MISSIONS_ISSUE 도 갖게 돼 그 분기는 도달 불가가 됐다 — 지금 이 컴포넌트가 남는
+// 이유는 도메인이다:
+// UNMAPPED 이 정상 중간 상태이고, AOI·매핑 파라미터는 순수 임무 발급 소관이라 등록
+// 시점엔 저장할 곳이 없어 여기서는 아예 묻지 않는다.) baseline 임무는 이 흐름을
+// 고른 사용자 본인이 나중에 /sites/[siteId]/surveys/new 에서 "초기 매핑(베이스라인)"
+// 목적으로 발급한다(SurveyWizard.tsx buildPurposeOptions 참조). Site 상태머신은
+// UNMAPPED 를 정상 중간 상태로 이미 설계해 두었다(등록 즉시 baseline 발급을 강제하지
+// 않는다) — 대표자 확인 완료.
 const STEP_LABELS = ["기본정보", "좌표계", "완료"];
 
 interface FormState {
@@ -234,8 +238,8 @@ export function SiteRegistrationOnlyWizard() {
       {currentStep === 0 && (
         <>
           <p className="text-sm break-keep text-ink-2 sm:col-span-2">
-            이 계정은 현장 등록 권한만 있어 등록까지만 진행합니다. 베이스라인 임무 발급은 발급
-            권한을 가진 담당자가 나중에 진행합니다.
+            등록만 먼저 진행합니다. 베이스라인 임무는 등록 후 현장 상세 화면에서 언제든
+            발급할 수 있습니다.
           </p>
           <Field
             label="현장 ID"
@@ -308,13 +312,13 @@ export function SiteRegistrationOnlyWizard() {
               <p className="font-medium break-keep text-safe-ink">
                 현장이 등록되었습니다.
               </p>
-              {/* 링크를 걸지 않는다 — 이 화면을 보는 사람은 정의상 MISSIONS_ISSUE 가
-                  없고(그래서 이 축약 Wizard 로 왔다), 그 경로는 "권한이 없습니다"로
-                  막힌다. 누를 수 있는 막다른 길을 주는 건 안내가 아니다
-                  (독립 재검토 2026-08-04 적발). */}
+              {/* 링크를 여기서 걸지 않는다 — 아래 "현장 상세로 이동" 버튼(다음 버튼)이
+                  이미 같은 목적지로 보낸다. ADR-KSI-015 이후 이 흐름을 고른 사용자도
+                  MISSIONS_ISSUE 를 갖고 있어(권한이 아니라 순서를 미룬 것뿐이다),
+                  상세 화면에서 "베이스라인 임무 발급" 버튼이 곧바로 보인다. */}
               <p className="break-keep text-safe-ink/90">
-                베이스라인 임무는 아직 발급되지 않았습니다 — 임무 발급 권한을 가진 담당자가 현장
-                상세 화면에서 &quot;베이스라인 임무 발급&quot;으로 진행합니다.
+                베이스라인 임무는 아직 발급되지 않았습니다 — 현장 상세 화면에서
+                &quot;베이스라인 임무 발급&quot;으로 이어서 진행할 수 있습니다.
               </p>
             </div>
           )}

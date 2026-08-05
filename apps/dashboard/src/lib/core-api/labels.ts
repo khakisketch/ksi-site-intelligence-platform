@@ -78,12 +78,10 @@ export const TRIAGE_STATUS_LABEL: Record<TriageStatus, { label: string; tone: To
   CLOSED: { label: "종료", tone: "neutral" },
 };
 
-// ADR-KSI-008 §2 Role → TopBar/로그인 표시용 한글 라벨.
+// ADR-KSI-015 D1 Role(3역할) → TopBar/로그인 표시용 한글 라벨.
 export const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "관리자",
-  SITE_MANAGER: "현장소장",
-  SAFETY_MANAGER: "안전관리자",
-  DRONE_OPERATOR: "조종사",
+  FIELD_OPERATOR: "현장운영자",
   VIEWER: "열람자",
 };
 
@@ -95,6 +93,10 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   MISSION_ID_CONFLICT: "이미 사용 중인 임무 ID입니다.",
   UNKNOWN_SITE: "등록되지 않은 현장입니다.",
   SITE_FRAME_MISMATCH: "요청한 좌표계가 등록된 현장과 다릅니다.",
+  // INV-052(ADR-KSI-014) — 현재 현장 상태에서 이 임무 목적은 발급할 수 없다.
+  // Wizard가 missionSiteGate.ts 로 발급 전에 미리 막으므로 정상 동선에서는
+  // 거의 노출되지 않는다(방어 심층 — 다른 클라이언트·표 drift 대비).
+  MISSION_TYPE_SITE_STATUS_MISMATCH: "현재 현장 상태에서는 이 임무 목적을 발급할 수 없습니다.",
   COVERAGE_BELOW_CONTRACT_PROMISE:
     "계획 단계의 커버리지가 임무가 요구하는 값에 못 미칩니다. 격자·촬영 간격을 좁히세요.",
   EVIDENCE_INCOMPLETE: "이 확정 등급에 필요한 증거가 아직 부족합니다.",

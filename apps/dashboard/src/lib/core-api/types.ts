@@ -30,6 +30,8 @@ export interface SiteView {
   resumeTarget: SiteStatus | null;
   registeredAt: string;
   updatedAt: string;
+  /** 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT .../aoi 를 거치지 않음). */
+  aoi: { vertices: AoiVertex[] } | null;
 }
 
 export const EVENT_STATUSES = [
@@ -141,6 +143,14 @@ export const MISSION_TYPES = [
 ] as const;
 export type MissionType = (typeof MISSION_TYPES)[number];
 
+export const COMPLETION_STATES = [
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "ABORTED_SAFE",
+  "FAILED",
+] as const;
+export type CompletionState = (typeof COMPLETION_STATES)[number];
+
 export interface MissionRecordResponse {
   missionId: string;
   siteId: string;
@@ -152,9 +162,65 @@ export interface MissionRecordResponse {
   plannedCoverageRatio: number | null;
   issuedAt: string;
   issuedBy: string;
+  /**
+   * 파생 필드 — 이 임무에 대해 접수된 최신 CoverageReport 의 completionState(서버가
+   * 조회 시점에 계산, 대시보드는 재계산하지 않는다). null 이면 "아직 보고가 없다"다 —
+   * 발급됐지만 비행 전인지, 비행했는데 보고가 없는지는 이 값만으로 구분되지 않는다
+   * (missions/[missionId] 상세의 GET .../coverage-report 404 와 함께 봐야 한다).
+   */
+  coverageCompletionState: CompletionState | null;
 }
 
-export type Role = "ADMIN" | "SITE_MANAGER" | "SAFETY_MANAGER" | "DRONE_OPERATOR" | "VIEWER";
+export const COVERAGE_CELL_STATES = [
+  "OBSERVED_HIGH_CONFIDENCE",
+  "OBSERVED_PARTIAL",
+  "RECONSTRUCTION_READY",
+  "EVENT_INSPECTED",
+  "OCCLUDED",
+  "UNREACHABLE",
+  "NOT_OBSERVED",
+  "UNSAFE",
+  "SENSOR_LIMITED",
+  "TIME_LIMITED",
+  "BATTERY_LIMITED",
+] as const;
+export type CoverageCellState = (typeof COVERAGE_CELL_STATES)[number];
+
+/** 구조 정본은 contracts/schemas/coverage-report.v1.1.json. */
+export interface CoverageCell {
+  cellId: string;
+  state: CoverageCellState;
+  quality?: number;
+  geometryRef?: string;
+}
+
+export interface CoverageSummary {
+  mandatoryHazardRatio: number;
+  mandatoryAssetRatio: number;
+  accessibleGeneralRatio: number;
+  completionState: CompletionState;
+}
+
+/** 비행 1회의 커버리지 보고 본문(GET .../coverage-report 의 latest). */
+export interface CoverageReport {
+  missionId: string;
+  siteId: string;
+  timestamp: string;
+  cells: CoverageCell[];
+  summary: CoverageSummary;
+}
+
+export interface CoverageReportView {
+  missionId: string;
+  reportCount: number;
+  latest: CoverageReport;
+  /** 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null. */
+  reportedBy: string | null;
+}
+
+// 3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개는
+// FIELD_OPERATOR 하나로 합쳐졌다(구 역할 이름은 ADR-KSI-015 참조).
+export type Role = "ADMIN" | "FIELD_OPERATOR" | "VIEWER";
 
 export type Permission =
   | "SITES_READ"
@@ -163,7 +229,10 @@ export type Permission =
   | "MISSIONS_ISSUE"
   | "EVENTS_READ"
   | "EVENTS_TRIAGE"
-  | "EDGE_SYNC_INGEST";
+  | "EDGE_SYNC_INGEST"
+  // blast radius 가 큰 site 전이(자율 시작 승인·정식 순찰 승인·SUSPENDED
+  // 진입/복귀)만 가르는 관리자 전용 권한(ADR-KSI-015 D2).
+  | "SITES_AUTONOMY_APPROVE";
 
 export interface WhoAmIResponse {
   principalId: string;

@@ -289,6 +289,43 @@ def test_reports_are_appended_not_overwritten(tmp_path: Path) -> None:
     assert latest.summary.completion_state.value == "COMPLETED"
 
 
+def test_latest_recorded_exposes_reported_by(store: CoverageReportStore) -> None:
+    """[핵심] 제출 주체가 조회 표면(latest_recorded)까지 살아 있다 — record() 의
+    reported_by 가 in-memory 조회에서 사라지지 않는다(독립 재검토 B-3)."""
+    result = store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, reported_by="edge-77"
+    )
+    assert result.verdict is CoverageReportVerdict.RECORDED
+
+    recorded = store.latest_recorded(_MISSION_ID)
+    assert recorded is not None
+    assert recorded.reported_by == "edge-77"
+    assert recorded.report.summary.completion_state.value == "COMPLETED"
+
+
+def test_reported_by_survives_replay(tmp_path: Path) -> None:
+    """재기동(journal 재생) 후에도 reported_by 가 유지된다 — journal 엔벨로프에는
+    적히지만 replay 가 버리면 감사 입력이 저장은 되고 조회는 안 되는 반쪽이 된다."""
+    mission_store = _mission_store(tmp_path)
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, reported_by="edge-77"
+    )
+    journal.close()
+
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(
+        reborn_journal, mission_store=MissionStore(DurableJournal(tmp_path / "missions2.jsonl"))
+    )
+    try:
+        recorded = reborn.latest_recorded(_MISSION_ID)
+        assert recorded is not None
+        assert recorded.reported_by == "edge-77"
+    finally:
+        reborn_journal.close()
+
+
 def test_replay_restores_history(tmp_path: Path) -> None:
     mission_store = _mission_store(tmp_path)
     journal = DurableJournal(tmp_path / "coverage.jsonl")
@@ -373,6 +410,7 @@ def test_submit_then_read_back_over_http(store: CoverageReportStore) -> None:
     body = read.json()
     assert body["reportCount"] == 1
     assert body["latest"]["summary"]["completionState"] == "COMPLETED"
+    assert body["reportedBy"] == "edge-1", "제출한 Principal id 가 조회 응답에 실려야 한다(B-3)"
 
 
 def test_unsupported_completion_maps_to_422_over_http(store: CoverageReportStore) -> None:

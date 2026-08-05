@@ -45,12 +45,16 @@ if TYPE_CHECKING:
 
 
 class Role(StrEnum):
-    """OPERATOR(사람) Principal 의 역할 — 권한은 ``_ROLE_PERMISSIONS`` 표 SSOT."""
+    """OPERATOR(사람) Principal 의 역할 — 권한은 ``_ROLE_PERMISSIONS`` 표 SSOT.
+
+    3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개를
+    ``FIELD_OPERATOR`` 하나로 합쳤다. 대시보드가 이미 역할이 아니라 권한으로
+    분기하므로 역할 수를 유지할 이득이 없었다(9개 분기 지점 전부 permission
+    기반, ADR 본문 참조).
+    """
 
     ADMIN = "ADMIN"
-    SITE_MANAGER = "SITE_MANAGER"
-    SAFETY_MANAGER = "SAFETY_MANAGER"
-    DRONE_OPERATOR = "DRONE_OPERATOR"
+    FIELD_OPERATOR = "FIELD_OPERATOR"
     VIEWER = "VIEWER"
 
 
@@ -71,6 +75,13 @@ class Permission(StrEnum):
     EVENTS_READ = "EVENTS_READ"
     EVENTS_TRIAGE = "EVENTS_TRIAGE"
     EDGE_SYNC_INGEST = "EDGE_SYNC_INGEST"
+    # blast radius 가 큰 site 전이만 가른다(ADR-KSI-015 D2) — 자율비행 개시
+    # (MODEL_VALIDATION→PROVISIONAL_AUTONOMY)·정식 순찰 승인(PROVISIONAL_
+    # AUTONOMY→PATROL_READY)·운영중단 진입/복귀(↔SUSPENDED). 대상 전이 집합
+    # 자체는 도메인 개념이라 ``ksi_domain.enums.requires_autonomy_approval``
+    # 이 SSOT — 이 권한은 그 판정에 매핑되는 권한 코드일 뿐이다(강제 지점은
+    # ``ksi_core.sites`` 라우트).
+    SITES_AUTONOMY_APPROVE = "SITES_AUTONOMY_APPROVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,8 +172,12 @@ class AuthRegistry:
         return self._by_digest.get(digest)
 
 
-# role → permission 표 하나가 SSOT(ADR-KSI-008 §2) — 엔드포인트별 권한 산재 금지.
-# ADMIN 은 EDGE_SYNC_INGEST 를 제외한 OPERATOR 권한 전부(사람은 edge ingest 불가).
+# role → permission 표 하나가 SSOT(ADR-KSI-008 §2, ADR-KSI-015 D1/D2) —
+# 엔드포인트별 권한 산재 금지. ADMIN 은 EDGE_SYNC_INGEST 를 제외한 OPERATOR
+# 권한 전부(사람은 edge ingest 불가) + SITES_AUTONOMY_APPROVE — 이 권한이
+# 없으면 ADMIN 의 권한집합이 FIELD_OPERATOR 와 글자 하나까지 같아져 관리자
+# 역할이 라벨로 전락한다(ADR-KSI-015 D2, tests/contract/test_auth.py 구조
+# 불변식이 이를 고정한다).
 _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.ADMIN: frozenset(
         {
@@ -172,27 +187,18 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
+            Permission.SITES_AUTONOMY_APPROVE,
         }
     ),
-    Role.SITE_MANAGER: frozenset(
+    Role.FIELD_OPERATOR: frozenset(
         {
             Permission.SITES_READ,
             Permission.SITES_WRITE,
             Permission.MISSIONS_READ,
+            Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
         }
-    ),
-    Role.SAFETY_MANAGER: frozenset(
-        {
-            Permission.SITES_READ,
-            Permission.MISSIONS_READ,
-            Permission.EVENTS_READ,
-            Permission.EVENTS_TRIAGE,
-        }
-    ),
-    Role.DRONE_OPERATOR: frozenset(
-        {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.MISSIONS_ISSUE}
     ),
     Role.VIEWER: frozenset(
         {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.EVENTS_READ}

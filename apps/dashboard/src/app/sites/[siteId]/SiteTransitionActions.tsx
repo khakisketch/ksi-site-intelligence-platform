@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
+import { requiresAutonomyApproval } from "@/lib/core-api/siteAutonomyGate";
 import type { SiteStatus } from "@/lib/core-api/types";
 
 // 서버 SSOT: packages/domain/src/ksi_domain/enums.py _ALLOWED_SITE_TRANSITIONS
@@ -26,10 +27,13 @@ export function SiteTransitionActions({
   siteId,
   status,
   resumeTarget,
+  canApproveAutonomy,
 }: {
   siteId: string;
   status: SiteStatus;
   resumeTarget: SiteStatus | null;
+  /** SITES_AUTONOMY_APPROVE 보유 여부 — 관리자 전용 간선을 선택지에 보일지 결정한다. */
+  canApproveAutonomy: boolean;
 }) {
   const router = useRouter();
   const [targetStatus, setTargetStatus] = useState<SiteStatus | "">("");
@@ -40,12 +44,21 @@ export function SiteTransitionActions({
 
   // SUSPENDED 는 저장소가 기억한 진입 직전 상태로만 복귀한다(동적 규칙 — 정적 표에
   // 없다). 그 외 상태는 정적 표를 그대로 쓴다.
-  const allowedTargets: SiteStatus[] =
+  const reachableTargets: SiteStatus[] =
     status === "SUSPENDED"
       ? resumeTarget
         ? [resumeTarget]
         : []
       : ALLOWED_SITE_TRANSITIONS[status];
+
+  // 자율승인 권한이 없으면 관리자 전용 간선(현재 상태 → 이 목적지)을 선택지에서
+  // 뺀다(ADR-KSI-015 D2) — 서버 403 을 마지막에 만나게 하지 않는다. **간선 쌍
+  // 기준**이라 같은 PATROL_READY 목적지라도 PATROL_ACTIVE 발 순찰 복귀는 가려지지
+  // 않는다(requiresAutonomyApproval 참조 — 목적지만 보면 이 회귀가 생긴다).
+  const allowedTargets = canApproveAutonomy
+    ? reachableTargets
+    : reachableTargets.filter((nxt) => !requiresAutonomyApproval(status, nxt));
+  const hiddenByAutonomyGate = reachableTargets.length - allowedTargets.length;
 
   async function submit() {
     if (!targetStatus) return;
@@ -77,11 +90,16 @@ export function SiteTransitionActions({
   }
 
   if (allowedTargets.length === 0) {
+    // 가능한 전이가 아예 없는 것과, 있지만 전부 관리자 전용이라 가려진 것은 다른
+    // 사유다 — 조용히 같은 문구로 뭉개지 않는다("가려진 선택지가 있으면 왜 안
+    // 되는지 한 줄로 보여준다").
     return (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
         <h2 className="text-[13.5px] font-bold break-keep">상태 전이</h2>
         <p className="text-[12.5px] break-keep text-ink-muted">
-          현재 상태({SITE_STATUS_LABEL[status].label})에서 전이할 수 있는 상태가 없습니다.
+          {hiddenByAutonomyGate > 0
+            ? "현재 상태에서 가능한 전이는 자율운영 승인 권한(관리자 전용)이 있어야 할 수 있습니다."
+            : `현재 상태(${SITE_STATUS_LABEL[status].label})에서 전이할 수 있는 상태가 없습니다.`}
         </p>
       </div>
     );
@@ -108,6 +126,12 @@ export function SiteTransitionActions({
           ))}
         </select>
       </label>
+      {hiddenByAutonomyGate > 0 && (
+        <p className="break-keep text-[11.5px] text-ink-muted">
+          자율운영 승인은 관리자만 할 수 있습니다 — 관리자 전용 전이 대상은 목록에서
+          뺐습니다.
+        </p>
+      )}
       <label className="flex flex-col gap-1 text-[12.5px]">
         <span className="break-keep text-ink-2">근거 (필수)</span>
         <textarea

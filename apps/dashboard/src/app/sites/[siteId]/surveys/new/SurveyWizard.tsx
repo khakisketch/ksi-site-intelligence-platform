@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { WizardShell } from "@/components/wizard/WizardShell";
+import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
 import type {
@@ -13,8 +14,10 @@ import type {
   MissionPlanRequest,
   MissionPlanResponse,
   MissionType,
+  SiteStatus,
   SiteView,
 } from "@/lib/core-api/types";
+import { isMissionTypeAllowedAtSiteStatus, missionTypeDisabledReason } from "@/lib/core-api/missionSiteGate";
 import { formatCoverageRatio } from "@/app/missions/format";
 
 // PRD §7.4 5스텝 라벨 그대로 — UX 목표 §2 "5클릭 = 예산 그 자체".
@@ -41,59 +44,73 @@ interface PurposeOption {
   missionType: MissionType | null;
   pattern: RoutePattern | null;
   enabled: boolean;
+  /** 비활성일 때만 채워진다 — 왜 지금 고를 수 없는지(서버 409 를 마지막 단계에서
+   * 만나지 않게, ADR-KSI-011 과 동일 원칙). */
+  disabledReason: string | null;
 }
+
+const NOT_YET_SUPPORTED_REASON = "아직 지원하지 않는 조사 방식입니다.";
 
 // 백엔드 미션타입→경로패턴 제약(services/core/src/ksi_core/mission_plans.py) 밖의 조합은
 // 애초에 선택하지 못하게 막는다 — 허용되지 않는 조합을 시도해보고서야 422 를 보여주지 않는다
 // (CLAUDE.md 지시 §7 그대로, 재해석 금지).
 //
-// BASELINE_MAPPING 은 이 목록의 나머지 옵션과 달리 항상 활성이 아니다 — buildPurposeOptions()
-// 가 site.status==="UNMAPPED" 일 때만 켠다(risk dashboard-wizard-rbac-mismatch 해소 — 현장
-// 등록 Wizard에서 분리된 baseline 임무 발급을 이 화면이 대신한다. SITES_WRITE 만 가진
-// role은 현장만 등록하고, MISSIONS_ISSUE 를 가진 role이 나중에 여기서 발급한다).
-function buildPurposeOptions(siteIsUnmapped: boolean): PurposeOption[] {
+// 각 목적의 활성 여부는 현재 현장상태 × 임무타입 게이트(INV-052,
+// missionSiteGate.ts — 정본은 packages/domain/src/ksi_domain/mission_gating.py)
+// 하나로 결정한다 — 예전에는 BASELINE_MAPPING 만 site.status==="UNMAPPED" 조건부고
+// 나머지는 항상 켜져 있었다(risk dashboard-wizard-rbac-mismatch 해소 목적의 최초
+// 조건부 — 현장 등록 Wizard에서 분리된 baseline 임무 발급을 이 화면이 대신한다).
+// ASSET_INSPECTION 은 게이트를 통과해도 서버 경로 생성기가 아직 미지원이라
+// (mission_plans.py "미지원 거부") 별도 사유로 항상 비활성이다. EQUIPMENT_MATERIAL
+// 은 대응하는 MissionType 자체가 없다(§7.4 "장비·자재 현황"은 아직 구현 전).
+function buildPurposeOptions(siteStatus: SiteStatus): PurposeOption[] {
+  function gate(missionType: MissionType): { enabled: boolean; disabledReason: string | null } {
+    const enabled = isMissionTypeAllowedAtSiteStatus(missionType, siteStatus);
+    return { enabled, disabledReason: enabled ? null : missionTypeDisabledReason(missionType, siteStatus) };
+  }
+
   return [
     {
       key: "BASELINE_MAPPING",
       label: "초기 매핑(베이스라인)",
       missionType: "BASELINE_MAPPING",
       pattern: "lawnmower",
-      enabled: siteIsUnmapped,
+      ...gate("BASELINE_MAPPING"),
     },
     {
       key: "SAFETY_RISK",
       label: "안전 위험",
       missionType: "AUTONOMOUS_PATROL",
       pattern: "perimeter",
-      enabled: true,
+      ...gate("AUTONOMOUS_PATROL"),
     },
     {
       key: "SPATIAL_REFRESH",
       label: "공간 모델 갱신",
       missionType: "SPATIAL_REFRESH",
       pattern: "lawnmower",
-      enabled: true,
+      ...gate("SPATIAL_REFRESH"),
     },
     {
       key: "PROGRESS_CAPTURE",
       label: "공정 변화",
       missionType: "PROGRESS_CAPTURE",
       pattern: "lawnmower",
-      enabled: true,
+      ...gate("PROGRESS_CAPTURE"),
     },
     {
       key: "INCIDENT_SURVEY",
       label: "사고조사",
       missionType: "INCIDENT_SURVEY",
       pattern: "perimeter",
-      enabled: true,
+      ...gate("INCIDENT_SURVEY"),
     },
     {
       key: "UNIFIED_SITE_SURVEY",
       label: "전체 조사",
       missionType: "UNIFIED_SITE_SURVEY",
       pattern: "lawnmower",
-      enabled: true,
+      ...gate("UNIFIED_SITE_SURVEY"),
     },
     {
       key: "ASSET_INSPECTION",
@@ -101,6 +118,7 @@ function buildPurposeOptions(siteIsUnmapped: boolean): PurposeOption[] {
       missionType: "ASSET_INSPECTION",
       pattern: "lawnmower",
       enabled: false,
+      disabledReason: NOT_YET_SUPPORTED_REASON,
     },
     {
       key: "EQUIPMENT_MATERIAL",
@@ -108,6 +126,7 @@ function buildPurposeOptions(siteIsUnmapped: boolean): PurposeOption[] {
       missionType: null,
       pattern: null,
       enabled: false,
+      disabledReason: NOT_YET_SUPPORTED_REASON,
     },
   ];
 }
@@ -201,15 +220,19 @@ const SUBMIT_STEP = 4;
 
 export function SurveyWizard({ site }: { site: SiteView }) {
   const router = useRouter();
+  // 현장에 AOI 가 영속돼 있으면 그것을 기본값으로 채운다(risk site-aoi-not-persisted
+  // 해소 — 매 조사마다 다시 그리지 않아도 된다). useDraftState 는 이 값을 최초
+  // 마운트(sessionStorage 에 진행 중인 초안이 없을 때)에만 쓴다 — 이미 진행 중인
+  // 초안이 있으면(새로고침·뒤로가기) 그 초안이 우선한다.
   const [draft, setDraft, clearDraft] = useDraftState<SurveyDraft>(
     `ksi-wizard-survey-${site.siteId}`,
-    INITIAL_DRAFT,
+    { ...INITIAL_DRAFT, aoi: site.aoi ? site.aoi.vertices : [] },
   );
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<MissionPlanResponse | null>(null);
 
-  const purposeOptions = buildPurposeOptions(site.status === "UNMAPPED");
+  const purposeOptions = buildPurposeOptions(site.status);
   const selectedPurpose = purposeOptions.find(
     (opt) => opt.enabled && opt.missionType === draft.missionType,
   );
@@ -420,8 +443,11 @@ export function SurveyWizard({ site }: { site: SiteView }) {
         {draft.target === "FULL_SITE" && (
           <div className="flex flex-col gap-2 sm:col-span-2">
             <p className="text-sm break-keep text-ink-2">
-              조사할 영역의 경계를 지도에 그려주세요(최소 3개 꼭짓점). 현장 경계는 서버에
-              저장돼 있지 않아 매번 새로 그려야 합니다.
+              {site.aoi
+                ? "이 현장에 등록된 외곽을 기본값으로 채웠습니다. 이번 조사에서만 다르게 하고 " +
+                  "싶으면 지도에서 다시 그리세요(현장에 저장된 값은 바뀌지 않습니다)."
+                : "조사할 영역의 경계를 지도에 그려주세요(최소 3개 꼭짓점). 이 현장에는 아직 " +
+                  "등록된 외곽이 없어 매번 새로 그려야 합니다."}
             </p>
             <AoiPolygonMap value={draft.aoi} onChange={(vertices) => update({ aoi: vertices })} />
             <p className="text-xs text-ink-muted">
@@ -462,7 +488,14 @@ export function SurveyWizard({ site }: { site: SiteView }) {
                 />
                 {opt.label}
               </span>
-              {!opt.enabled && <span className="text-xs text-ink-muted">준비 중</span>}
+              {/* 사유를 그대로 보여준다 — "아직 지원하지 않는다"와 "이 현장 상태에서는
+                  발급할 수 없다"는 사용자가 할 일이 전혀 다르다. 하나로 뭉개면 매핑을
+                  먼저 하라는 안내가 사라진다. */}
+              {!opt.enabled && opt.disabledReason && (
+                <span className="max-w-[55%] text-right text-xs break-keep text-ink-muted">
+                  {opt.disabledReason}
+                </span>
+              )}
             </label>
           );
         })}
@@ -755,6 +788,9 @@ export function SurveyWizard({ site }: { site: SiteView }) {
                 <dd className="num text-right text-xs break-token">{result.kmzSha256}</dd>
               </div>
             </dl>
+            {/* clearDraft()는 sessionStorage만 지우고 이 렌더의 draft state는
+                그대로다(useDraftState.ts) — missionId는 여기서 계속 유효하다. */}
+            {draft.missionId && <KmzDownloadButton missionId={draft.missionId} hasKmz />}
           </div>
         )}
         {status === "error" && (

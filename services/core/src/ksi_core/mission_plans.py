@@ -82,11 +82,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
 from ksi_core.mission_records import (
+    MISSION_NOT_FOUND_DETAIL,
     MissionRecord,
     MissionRecordVerdict,
     MissionStore,
+    SiteLookupResult,
     precheck_issuance,
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
@@ -431,7 +434,7 @@ def build_mission_plans_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
 
@@ -461,9 +464,10 @@ def build_mission_plans_router(
 
         verdict = precheck_issuance(
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
             site_id=request.contract.site_id,
             mission_id=request.contract.mission_id,
+            mission_type=request.contract.mission_type,
             requested_site_frame=contract_request_payload["siteFrame"],
         )
         if verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
@@ -529,6 +533,78 @@ def build_mission_plans_router(
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
         return result
 
+    @router.get("/{mission_id}/kmz")
+    def download_mission_kmz(
+        mission_id: str,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> Response:
+        """저장된 ``plan_request`` 로 KMZ 를 재생성해 바이트로 내려준다.
+
+        발급 응답의 ``kmzBase64`` 는 그 순간 한 번만 있고 어디에도 저장되지
+        않는다(모듈 docstring "멱등 재발급" — 바이트 자체는 journal 에 없다) —
+        운영자가 위저드를 끝까지 눌러도 손에 파일이 없는 막다른 길이 되는 지점이
+        이 엔드포인트다. 재생성은 결정론적이므로(``build_kmz`` 계열은 시각·난수·
+        UUID 의존이 없다) 매 조회마다 저장된 요청으로 다시 만든다.
+
+        재생성이 현재 정책으로 실패하거나(``_regenerate_pair_artifact`` 와 동일한
+        typed 거부 관습, POST ``/plans`` 멱등 재발급 참조) 재생성 sha256 이 저장된
+        ``kmzSha256`` 과 다르면(하류 로직 변경으로 결정성 가정이 깨진 경우) 200 을
+        주지 않는다 — "발급됐다고 기록된 파일"과 다른 바이트를 그 이름으로 내려주면
+        운영자가 기체에 옮긴 파일이 서버 기록과 어긋난 채로 비행하게 된다.
+        """
+        del principal  # 인가만 필요 — MissionRecordResponse 와 동일 관습.
+        if not is_path_safe_identifier(mission_id):
+            # 발급 경로가 이미 같은 검사를 통과한 값만 저장소 키로 쓰므로 정상
+            # 경로에서는 도달하지 않는다. 그래도 여기서 한 번 더 막는 이유는 이
+            # 값이 아래에서 Content-Disposition 헤더로 조립되기 때문이다 —
+            # 원장이 손대어진 경우까지 헤더 조립 전에 끊는다(방어 심층).
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        record = mission_store.get(mission_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        if record.artifact_kind != "pair" or record.plan_request is None:
+            raise HTTPException(
+                status_code=404,
+                detail="이 임무 레코드는 KMZ 산출물이 없다(계약 단독 발급)",
+            )
+        try:
+            regenerated = _regenerate_pair_artifact(
+                record, private_key=private_key, key_id=key_id
+            )
+        except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
+            logger.warning(
+                "mission_id=%s KMZ 재생성이 현재 정책에서 실패 — %s",
+                record.mission_id, type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "이미 기록된 임무지만 현재 정책으로는 KMZ 를 다시 만들 수 "
+                    f"없다(발급 당시 규칙과 달라졌다): {exc}"
+                ),
+            ) from exc
+        if regenerated["kmzSha256"] != record.kmz_sha256:
+            # _regenerate_pair_artifact 는 이 상황(모듈 docstring "결정성 가정
+            # 위반 의심")을 이미 warning 으로 로그하고 재생성 산출물을 그대로
+            # 돌려준다 — POST /plans 재발급 경로는 그걸로 충분하다(요청자가 방금
+            # 보낸 요청의 재시도이므로 최신 산출물이 낫다). 하지만 이 다운로드는
+            # "발급 당시 그 파일"을 약속하는 경로라 기준이 다르다 — 다른 바이트를
+            # 같은 파일이라고 내려주지 않는다.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "재생성한 KMZ 의 sha256 이 발급 당시 기록된 kmzSha256 과 다르다"
+                    "(하류 로직 변경으로 원본 파일을 더 이상 재현할 수 없다) — 다른"
+                    " 파일을 발급된 파일로 잘못 내려주지 않기 위해 거부한다"
+                ),
+            )
+        kmz_bytes = base64.b64decode(regenerated["kmzBase64"])
+        return Response(
+            content=kmz_bytes,
+            media_type="application/vnd.google-earth.kmz",
+            headers={"Content-Disposition": f'attachment; filename="{mission_id}.kmz"'},
+        )
+
     return router
 
 
@@ -538,19 +614,20 @@ def mount_mission_plans(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
 ) -> None:
     """앱에 임무 계획(짝 발급) 라우터를 장착한다.
 
-    인증·site 등록 대조(존재+siteFrame 일치)·durable 기록이 강제되는 경로
-    하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록 발급이 가능한 조립은 성립하지
-    않는다. mission_issuance.py 모듈 docstring과 동형).
+    인증·site 등록 대조(존재+siteFrame 일치+임무타입×현장상태 게이트, INV-052)·
+    durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록
+    발급이 가능한 조립은 성립하지 않는다. mission_issuance.py 모듈 docstring과
+    동형).
     """
     app.include_router(
         build_mission_plans_router(
             private_key=private_key,
             key_id=key_id,
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
         )
     )

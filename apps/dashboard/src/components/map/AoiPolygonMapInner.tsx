@@ -18,6 +18,23 @@ function toVertices(layer: L.Polygon): AoiVertex[] {
   return latlngs.map((p) => ({ latDeg: p.lat, lonDeg: p.lng }));
 }
 
+/** 편집 컨트롤 없이 폴리곤만 그린다 — 현장 상세 화면처럼 "보여주기만" 하는 자리용. */
+function ReadOnlyPolygon({ value }: { value: AoiVertex[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (value.length < 3) return;
+    const polygon = L.polygon(value.map((v) => [v.latDeg, v.lonDeg]));
+    polygon.addTo(map);
+    map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
+    return () => {
+      map.removeLayer(polygon);
+    };
+  }, [map, value]);
+
+  return null;
+}
+
 function DrawControl({
   value,
   onChange,
@@ -96,10 +113,14 @@ export function AoiPolygonMapInner({
   value,
   onChange,
   center = [37.5665, 126.978], // 서울 — 현장 등록 전 기본 시야일 뿐 데이터 아님.
+  readOnly = false,
 }: {
   value: AoiVertex[];
-  onChange: (vertices: AoiVertex[]) => void;
+  /** readOnly 가 아니면 필수 — 서버 컴포넌트(현장 상세)에서 readOnly 로 쓸 땐 함수를 넘기지 않는다. */
+  onChange?: (vertices: AoiVertex[]) => void;
   center?: [number, number];
+  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(현장 상세처럼 보여주기 전용 자리). */
+  readOnly?: boolean;
 }) {
   return (
     <MapContainer
@@ -112,7 +133,11 @@ export function AoiPolygonMapInner({
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <DrawControl value={value} onChange={onChange} />
+      {readOnly ? (
+        <ReadOnlyPolygon value={value} />
+      ) : (
+        <DrawControl value={value} onChange={onChange as (vertices: AoiVertex[]) => void} />
+      )}
     </MapContainer>
   );
 }

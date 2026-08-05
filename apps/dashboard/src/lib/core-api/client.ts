@@ -63,7 +63,7 @@ export class CoreApiError extends Error {
 }
 
 export interface CoreFetchOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT";
   query?: Record<string, string | number | undefined>;
   body?: unknown;
 }
@@ -78,11 +78,12 @@ function buildUrl(path: string, query?: CoreFetchOptions["query"]): string {
   return url.toString();
 }
 
-async function rawCoreFetch<T>(
+/** 응답까지만 받고 본문 해석은 호출부(JSON/바이너리)에 맡긴다 — !ok 는 여기서 공통 처리. */
+async function rawCoreRequest(
   path: string,
   token: string,
   options: CoreFetchOptions = {},
-): Promise<T> {
+): Promise<Response> {
   const response = await fetch(buildUrl(path, options.query), {
     method: options.method ?? "GET",
     headers: {
@@ -95,13 +96,22 @@ async function rawCoreFetch<T>(
     cache: "no-store",
   });
 
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const body = isJson ? await response.json() : undefined;
-
   if (!response.ok) {
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const body = isJson ? await response.json() : undefined;
     throw new CoreApiError(response.status, body);
   }
-  return body as T;
+  return response;
+}
+
+async function rawCoreFetch<T>(
+  path: string,
+  token: string,
+  options: CoreFetchOptions = {},
+): Promise<T> {
+  const response = await rawCoreRequest(path, token, options);
+  const isJson = response.headers.get("content-type")?.includes("application/json");
+  return (isJson ? await response.json() : undefined) as T;
 }
 
 /** 로그인 화면에서 사용자가 입력한 토큰을 검증할 때만 쓴다 — 세션 쿠키에 의존하지 않는다. */
@@ -117,4 +127,25 @@ export async function coreFetchWithToken<T>(
 export async function coreFetch<T>(path: string, options: CoreFetchOptions = {}): Promise<T> {
   const token = await getSessionToken();
   return rawCoreFetch<T>(path, token, options);
+}
+
+export interface CoreBinaryResponse {
+  body: ArrayBuffer;
+  contentType: string;
+  /** 원본 그대로 전달한다 — 파일명 파싱은 호출부가 이미 아는 값(예: missionId)으로 대신한다. */
+  contentDisposition: string | null;
+}
+
+/**
+ * KMZ 같은 바이너리 산출물 조회 전용 — JSON 파싱 없이 원본 바이트를 그대로 넘긴다.
+ * 세션 토큰을 자동으로 싣는다(``coreFetch`` 와 동일 관습, GET 전용이라 body 는 없다).
+ */
+export async function coreFetchBinary(path: string): Promise<CoreBinaryResponse> {
+  const token = await getSessionToken();
+  const response = await rawCoreRequest(path, token);
+  return {
+    body: await response.arrayBuffer(),
+    contentType: response.headers.get("content-type") ?? "application/octet-stream",
+    contentDisposition: response.headers.get("content-disposition"),
+  };
 }

@@ -150,6 +150,19 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
     return CoverageReportVerdict.RECORDED, None
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedCoverageReport:
+    """보고 1건 + "누가 그렇게 말했는가"(``reported_by``, 독립 재검토 B-3).
+
+    ``report`` 만으로는 제출 주체가 사라진다 — journal 엔벨로프(``reportedBy``)에는
+    남지만, 조회 API 가 :class:`CoverageReport` 만 돌려주면 감사 입력이 저장은 되고
+    노출은 안 되는 반쪽짜리가 된다. 이 dataclass 가 그 둘을 함께 들고 다닌다.
+    """
+
+    report: CoverageReport
+    reported_by: str | None
+
+
 class CoverageReportStore:
     """``DurableJournal`` 위의 보고 원장 — append-only, 덮어쓰지 않는다.
 
@@ -162,7 +175,7 @@ class CoverageReportStore:
         self._mission_store = mission_store
         self._lock = threading.Lock()
         # mission_id → 그 임무의 보고서들(수신 순서 보존)
-        self._by_mission: dict[str, list[CoverageReport]] = {}
+        self._by_mission: dict[str, list[RecordedCoverageReport]] = {}
         try:
             self._replay(journal)
         except CoverageReportRecoveryError:
@@ -185,7 +198,8 @@ class CoverageReportStore:
                     f"재생: 기록될 수 없는 보고서({verdict.value}: {detail}) — "
                     f"missionId={report.mission_id}"
                 )
-            self._by_mission.setdefault(report.mission_id, []).append(report)
+            recorded = RecordedCoverageReport(report=report, reported_by=raw.get("reportedBy"))
+            self._by_mission.setdefault(report.mission_id, []).append(recorded)
 
     @property
     def sealed_reason(self) -> str | None:
@@ -237,11 +251,18 @@ class CoverageReportStore:
                     CoverageReportVerdict.STORE_UNAVAILABLE,
                     detail="durable 기록 실패 — journal 봉인(재시작 필요)",
                 )
-            self._by_mission.setdefault(report.mission_id, []).append(report)
+            self._by_mission.setdefault(report.mission_id, []).append(
+                RecordedCoverageReport(report=report, reported_by=reported_by)
+            )
             return CoverageReportResult(CoverageReportVerdict.RECORDED, report=report)
 
     def latest(self, mission_id: str) -> CoverageReport | None:
         """그 임무의 최신 보고 — 없으면 ``None``."""
+        recorded = self.latest_recorded(mission_id)
+        return recorded.report if recorded is not None else None
+
+    def latest_recorded(self, mission_id: str) -> RecordedCoverageReport | None:
+        """그 임무의 최신 보고 + 제출 주체 — 없으면 ``None``."""
         with self._lock:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
@@ -249,7 +270,7 @@ class CoverageReportStore:
     def history(self, mission_id: str) -> list[CoverageReport]:
         """수신 순서를 보존한 전체 보고 이력(덮어쓰지 않는다)."""
         with self._lock:
-            return list(self._by_mission.get(mission_id, ()))
+            return [r.report for r in self._by_mission.get(mission_id, ())]
 
 
 class _CamelModel(BaseModel):
@@ -263,11 +284,13 @@ class CoverageReportResponse(_CamelModel):
 
 
 class CoverageReportView(_CamelModel):
-    """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지."""
+    """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지 + 누가 보고했는지."""
 
     mission_id: str
     report_count: int
     latest: dict[str, Any]
+    # 제출한 Principal id(대개 장비 id) — 없으면(구 journal 재생 등) null(독립 재검토 B-3).
+    reported_by: str | None
 
 
 def _require_reporting_device(
@@ -333,13 +356,14 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> CoverageReportView:
         """그 임무의 **최신** 보고. 이력 건수를 함께 낸다(덮어쓰지 않으므로)."""
-        latest = store.latest(mission_id)
-        if latest is None:
+        recorded = store.latest_recorded(mission_id)
+        if recorded is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return CoverageReportView(
             mission_id=mission_id,
             report_count=len(store.history(mission_id)),
-            latest=latest.model_dump(by_alias=True, mode="json", exclude_none=True),
+            latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
+            reported_by=recorded.reported_by,
         )
 
     return router

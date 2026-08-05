@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
 import type { AoiVertex, MissionPlanRequest, MissionPlanResponse, SiteFrame } from "@/lib/core-api/types";
@@ -98,6 +99,7 @@ const numericInputClassName = "input num";
 type SubmitPhase = "idle" | "pending" | "error" | "success";
 
 interface SubmitResult {
+  missionId: string;
   waypointCount: number;
   plannedCoverageRatio: number | null;
   kmzSha256: string;
@@ -273,7 +275,9 @@ export function SiteRegistrationWizard() {
         const siteRes = await fetch("/api/sites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame }),
+          // 1단계에서 그린 AOI 를 등록과 함께 영속한다(risk site-aoi-not-persisted 해소) —
+          // 그래야 이 현장의 다음 조사부터는 SurveyWizard 가 다시 그리지 않고 이 값을 기본값으로 쓴다.
+          body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame, aoi: { vertices: form.aoi } }),
         });
         if (!siteRes.ok) {
           const body = await parseJsonSafe(siteRes);
@@ -353,6 +357,8 @@ export function SiteRegistrationWizard() {
       }
       const plan = (await planRes.json()) as MissionPlanResponse;
       setResult({
+        // missionIdRef 는 이 지점에서 항상 채워져 있다(위에서 없으면 즉시 생성).
+        missionId: missionIdRef.current as string,
         waypointCount: plan.waypointCount,
         plannedCoverageRatio: plan.plannedCoverageRatio,
         kmzSha256: plan.kmzSha256,
@@ -798,6 +804,7 @@ export function SiteRegistrationWizard() {
           ) : (
             <p className="text-sm break-keep text-ink-2">발급 결과를 불러오지 못했습니다.</p>
           )}
+          {result && <KmzDownloadButton missionId={result.missionId} hasKmz />}
         </div>
       )}
     </WizardShell>

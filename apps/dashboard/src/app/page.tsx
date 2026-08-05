@@ -25,9 +25,11 @@ import { SiteCard, type SiteFact } from "@/components/site/SiteCard";
 // 하므로(각 fetch를 개별 격리), 개별 실패를 던지지 않고 결과로 감싸는 얕은 헬퍼를 쓴다.
 //
 // 실패 중 **권한 부재(403)는 장애와 분리한다** — 둘을 같은 빨간 배너 + "다시 시도" 로
-// 내면, 애초에 그 데이터를 볼 자격이 없는 역할(예: 이벤트 읽기 권한이 없는 조종사)에게
-// 시스템이 고장난 것처럼 보이고 눌러도 소용없는 버튼을 준다(2026-08-04 렌더 확인에서
-// DRONE_OPERATOR 로 실제 재현). sites/[siteId]/page.tsx 의 sectionOutcome 과 같은 규칙.
+// 내면, 애초에 그 데이터를 볼 자격이 없는 역할에게 시스템이 고장난 것처럼 보이고
+// 눌러도 소용없는 버튼을 준다(2026-08-04 렌더 확인에서 당시 이벤트 읽기 권한이 없던
+// 역할로 실제 재현 — ADR-KSI-015 로 역할이 3개로 합쳐지며 이제 전 역할이 EVENTS_READ
+// 를 갖는다. 패턴 자체는 다른 권한 조합에도 여전히 유효하다). sites/[siteId]/page.tsx
+// 의 sectionOutcome 과 같은 규칙.
 type Settled<T> =
   | { ok: true; value: T }
   | { ok: false; forbidden: boolean; message: string };
@@ -222,10 +224,15 @@ export default async function HomePage() {
   const topUnattended =
     eventsResult.ok && unattendedEvents.length > 0 ? sortForTriage(unattendedEvents)[0] : null;
 
-  // risk dashboard-wizard-rbac-mismatch — 현장 등록 자체는 SITES_WRITE만 있으면 된다
-  // (/sites/new 가 MISSIONS_ISSUE 보유 여부에 따라 통합 흐름과 등록전용 흐름을 알아서
-  // 나눈다 — SiteRegistrationWizard vs SiteRegistrationOnlyWizard).
-  const canRegisterSite = whoAmIResult.ok && whoAmIResult.value.permissions.includes("SITES_WRITE");
+  // /sites/new 는 SITES_WRITE·MISSIONS_ISSUE 를 둘 다 요구한다(ADR-KSI-015 이후
+  // 실제로는 두 권한이 항상 같이 붙어 있지만, 표가 갈려도 반쪽 상태를 안 만들려고
+  // fail-closed AND 를 유지한다) — 여기서 링크 노출 여부도 같은 기준으로 맞춘다.
+  // SITES_WRITE 만 보고 버튼을 보여주면, 두 권한이 갈린 미래 역할에게 눌러도
+  // "권한이 없습니다"만 보이는 막다른 링크를 주게 된다.
+  const canRegisterSite =
+    whoAmIResult.ok &&
+    whoAmIResult.value.permissions.includes("SITES_WRITE") &&
+    whoAmIResult.value.permissions.includes("MISSIONS_ISSUE");
 
   // ── 콜아웃 — "오늘 뭘 해야 하나"에 답하는 단일 헤드라인 ─────────────────
   let calloutNode: React.ReactNode = null;
