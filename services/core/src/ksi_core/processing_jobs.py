@@ -52,39 +52,75 @@
 전이표를 다시 태운다(``sites._apply_transitioned`` 와 동일 원칙): journal 을
 손으로 고쳐 FAILED 를 SUCCEEDED 로 바꿀 수 없다.
 
+## ``SUCCEEDED`` 는 산출물이 있어야 주장된다 (INV-051)
+
+``RUNNING → SUCCEEDED`` 는 그 작업에 ``lineage.authority=source`` 인 산출물이
+최소 1건 등록돼 있어야 통과한다(:func:`assert_succeeded_is_backed`). 전이표를
+통과하는 것과 별개의 두 번째 게이트다.
+
+**왜 아무 산출물이 아니라 원본(source)인가.** ADR-KSI-003 은 Point Cloud/카메라
+포즈가 원본 SSOT이고 Mesh·정사영상·3D Tiles 는 거기서 재생성 가능한 파생 서빙
+계층이라고 정했다. 파생물만 있는 성공은 "원본 없이 파생을 주장하는" 상태라
+그 원칙이 이미 깨진 것이고, 다시 만들 수 없는 산출물을 완료 근거로 쓰게 된다.
+
+이건 이 저장소가 커버리지 보고에서 닫았던 것과 같은 클래스다("완료 판정의
+권위를 CoverageReport 로", ADR-KSI-011 D3) — 자기 완료를 자기가 선언하지
+않는다. 재생도 같은 게이트를 다시 태운다.
+
+## 산출물의 계보 앵커는 요청이 정하지 않는다
+
+``lineage.sourceDigest`` 는 요청 필드가 아니다(:class:`ProcessingArtifactRequest`
+에 없다). Core 가 그 작업의 ``input.sourceBundleDigest`` — 즉 봉인된 번들의
+digest — 를 직접 채운다. 워커가 이 값을 실어 보낼 수 있으면 산출물이 자기
+출처를 스스로 적는 것이고, 그 순간 계보는 검증 대상이 아니라 자기 신고가 된다.
+``derivedFrom`` 도 **같은 작업에 이미 등록된** artifactId 만 가리킬 수 있다 —
+계약(``processing-artifact.v1.json``)은 "비어 있지 않다"만 강제하므로, 실재하지
+않는 부모를 적은 파생물은 계약만으로는 통과한다.
+
+## 전이 권한은 대상 상태가 가른다
+
+``RUNNING``·``SUCCEEDED``·``FAILED`` 는 **실제로 엔진을 돌린 주체만 아는
+사실**이라 ``PROCESSING_WORK``(워커 전용, 어느 Role 에도 없다)를 요구한다.
+``CANCELLED`` 는 사람의 결정이라 ``MISSIONS_ISSUE`` 다. 표는
+``_TRANSITION_PERMISSION`` 하나가 SSOT이고, 표에 없는 대상 상태는 403 이다 —
+"정의되지 않은 전이를 할 권한"은 누구에게도 없다.
+
 ## 이 모듈이 다루지 않는 것
 
 - **워커 lease·heartbeat.** ``RUNNING`` 전이가 한 번만 성공한다는 것이 지금의
-  유일한 상호배제다. 죽은 워커의 작업을 회수하는 만료·갱신은 워커 실행 경로와
-  함께 설계한다(B3).
-- **워커 인증.** 지금 상태 전이는 사람 권한(``MISSIONS_ISSUE``)으로 열려
-  있다. 처리 워커 전용 Principal 종류는 B3 범위다 — ``EDGE_DEVICE`` 를
-  재사용하지 않는다(비행 장비용이고 권한 집합이 다르다).
-- **산출물 등록.** ``ProcessingArtifact``(INV-051)는 B3 에서 붙는다.
-
-## 알려진 공백 — ``SUCCEEDED`` 는 아직 근거 없이 주장될 수 있다
-
-``RUNNING → SUCCEEDED`` 전이는 지금 산출물 존재를 요구하지 않는다.
-``ProcessingArtifact`` 원장이 아직 없어서 대조할 대상이 없기 때문이다 —
-이 저장소가 커버리지 보고에서 닫았던 것과 **같은 클래스의 결함**이 여기서는
-아직 열려 있다("완료 판정의 권위를 CoverageReport 로", ADR-KSI-011 D3).
-
-그래서 이 상태를 완료의 증거로 읽는 소비자를 지금 만들지 않는다. B3 에서
-산출물 원장이 생기면 ``SUCCEEDED`` 전이에 "이 작업의 산출물이 최소 1건
-등록돼 있다"는 게이트를 건다. 원장에 리스크로 등록돼 있다
-(``processing-success-claim-unbacked``).
+  유일한 상호배제다. 죽은 워커의 작업을 회수하는 만료·갱신은 아직 없다.
+- **워커의 작업 수신.** ``PROCESSING_WORK`` 는 보고 권한만이고 ``MISSIONS_READ``
+  를 포함하지 않는다 — 워커는 지금 자기 작업을 **조회할 수 없다**. 큐에서
+  꺼내오는 경로(pull)를 만들 때 함께 설계한다. 그때까지 워커는 jobId 를 밖에서
+  받아 보고만 한다.
+- **원본 바이트 재검증.** 업로더가 신고한 ``sha256``·해상도를 전 바이트를 읽어
+  대조하는 경로는 아직 없다 — ``totalMegapixels`` 는 여전히 신고값의 합이고
+  ``input_verified`` 는 항상 false 다. 산출물이 존재한다는 것과 입력이 신고대로
+  였다는 것은 다른 사실이라, 이 게이트가 저 게이트를 대신하지 않는다.
+- **산출물 바이트 자체.** ``digest``·``format`` 은 워커의 보고값이고 Core 가
+  객체를 읽어 대조하지 않는다. 이 모듈이 강제하는 것은 **계보의 무결성**이지
+  산출물 내용의 진위가 아니다.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_event_contracts.processing_artifact import (
+    ArtifactAccuracy,
+    ArtifactLineage,
+    LineageAuthority,
+    ProcessingArtifact,
+    ProcessingArtifactKind,
+    processing_artifact_wire_dict,
+)
 from ksi_event_contracts.processing_job import (
     Billing,
     DataResidency,
@@ -100,8 +136,15 @@ from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    principal_permissions,
+    require_permission,
+    require_principal,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -138,8 +181,51 @@ _ALLOWED_TRANSITIONS: dict[ProcessingJobStatus, frozenset[ProcessingJobStatus]] 
 }
 
 
+# 대상 상태별 요구 권한 — 이 표 하나가 SSOT다(엔드포인트 산재 금지, auth.py 관습).
+#
+# 이 표는 **누가**만 답한다. 그 전이가 적법한지는 ``_ALLOWED_TRANSITIONS`` 가
+# 따로 답한다 — 둘을 섞으면 인가 오류(403)가 상태기계 오류(409)를 가려서,
+# 호출자가 "권한을 받으면 되겠구나"로 잘못 읽는다. 그래서 대상이 될 수 없는
+# QUEUED 도 표에 있고(권한은 정상 통과), 거부는 전이표가 409 로 한다.
+# 전 상태 망라는 test_transition_permission_table_covers_every_status 가 고정한다.
+_TRANSITION_PERMISSION: dict[ProcessingJobStatus, Permission] = {
+    # 엔진을 실제로 돌린 주체만 아는 사실 — 사람은 이 권한을 가질 수 없다.
+    ProcessingJobStatus.QUEUED: Permission.PROCESSING_WORK,
+    ProcessingJobStatus.RUNNING: Permission.PROCESSING_WORK,
+    ProcessingJobStatus.SUCCEEDED: Permission.PROCESSING_WORK,
+    ProcessingJobStatus.FAILED: Permission.PROCESSING_WORK,
+    # 사람의 결정 — 워커는 남의 작업을 취소할 수 없다.
+    ProcessingJobStatus.CANCELLED: Permission.MISSIONS_ISSUE,
+}
+
+
 class IllegalJobTransitionError(ValueError):
     """전이표에 없는 처리 작업 상태 전이."""
+
+
+class UnbackedSuccessError(ValueError):
+    """산출물 없이 ``SUCCEEDED`` 를 주장했다(INV-051)."""
+
+
+def assert_succeeded_is_backed(
+    target: ProcessingJobStatus, artifacts: Sequence[ProcessingArtifact]
+) -> None:
+    """``SUCCEEDED`` 는 원본(authority=source) 산출물 없이 성립하지 않는다.
+
+    전이표(:func:`assert_job_transition`)와 **별개의** 게이트다 — 전이표는 상태
+    기계의 모양을 정하고 이 함수는 그 상태를 주장할 근거가 원장에 있는지를
+    본다. live 경로와 재생 경로가 같은 함수를 쓴다(전이표와 같은 이유).
+
+    파생물만으로는 통과하지 않는 근거는 모듈 docstring 참고(ADR-KSI-003).
+    """
+    if target is not ProcessingJobStatus.SUCCEEDED:
+        return
+    if not any(a.lineage.authority is LineageAuthority.SOURCE for a in artifacts):
+        raise UnbackedSuccessError(
+            "INV-051 — 이 작업에는 authority=source 산출물이 없다. 재구성이 "
+            "성공했다면 원본(포인트클라우드·카메라 포즈 계열) 산출물이 최소 "
+            "1건 등록돼 있어야 한다 — 파생물만으로는 완료를 주장할 수 없다"
+        )
 
 
 def assert_job_transition(
@@ -177,7 +263,21 @@ class ProcessingJobVerdict(StrEnum):
     EGRESS_NOT_ALLOWED = "EGRESS_NOT_ALLOWED"
     ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
+    # INV-051 — 원본 산출물 없이 SUCCEEDED 를 주장했다.
+    UNBACKED_SUCCESS = "UNBACKED_SUCCESS"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+
+    # ── 산출물 등록 ──────────────────────────────────────────────────────
+    ARTIFACT_REGISTERED = "ARTIFACT_REGISTERED"
+    # 산출물은 실행 중인 작업에만 붙는다 — 시작 전에는 만들어질 수 없고,
+    # 끝난 뒤에 붙이면 이미 내려진 결론에 근거를 소급하는 것이 된다.
+    JOB_NOT_RUNNING = "JOB_NOT_RUNNING"
+    INVALID_ARTIFACT_ID = "INVALID_ARTIFACT_ID"
+    DUPLICATE_ARTIFACT = "DUPLICATE_ARTIFACT"
+    # derivedFrom 이 이 작업에 없는 artifactId 를 가리킨다.
+    UNKNOWN_PARENT_ARTIFACT = "UNKNOWN_PARENT_ARTIFACT"
+    # kind 별 crs/gsd 필수 · derived 의 부모 필수 등 계약 위반.
+    ARTIFACT_CONTRACT_VIOLATION = "ARTIFACT_CONTRACT_VIOLATION"
 
 
 _STATUS: dict[ProcessingJobVerdict, int] = {
@@ -190,7 +290,16 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.EGRESS_NOT_ALLOWED: 422,
     ProcessingJobVerdict.ACTIVE_JOB_EXISTS: 409,
     ProcessingJobVerdict.ILLEGAL_TRANSITION: 409,
+    # 409 지 422 가 아니다 — 요청 자체는 올바르고, 지금 원장 상태가 그 주장을
+    # 받쳐주지 못하는 것이다. 산출물을 등록하면 같은 요청이 통과한다.
+    ProcessingJobVerdict.UNBACKED_SUCCESS: 409,
     ProcessingJobVerdict.STORE_UNAVAILABLE: 503,
+    ProcessingJobVerdict.ARTIFACT_REGISTERED: 201,
+    ProcessingJobVerdict.JOB_NOT_RUNNING: 409,
+    ProcessingJobVerdict.INVALID_ARTIFACT_ID: 422,
+    ProcessingJobVerdict.DUPLICATE_ARTIFACT: 409,
+    ProcessingJobVerdict.UNKNOWN_PARENT_ARTIFACT: 422,
+    ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION: 422,
 }
 
 
@@ -252,6 +361,8 @@ class ProcessingJobRecord:
     terminal_detail: str | None = None
     # 발급 시점에는 UNMETERED_AT_ISSUE 로 고정된다(모듈 docstring).
     billing: Billing | None = None
+    # 등록 순서대로. SUCCEEDED 게이트가 읽는 근거다(INV-051).
+    artifacts: tuple[ProcessingArtifact, ...] = ()
 
     def to_contract(self) -> ProcessingJob:
         """계약 모델로 투영한다 — 어댑터로 나가는 payload 의 SSOT.
@@ -288,6 +399,33 @@ class ProcessingJobRecord:
 class ProcessingJobResult:
     verdict: ProcessingJobVerdict
     record: ProcessingJobRecord | None = None
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactSpec:
+    """워커가 보고하는 산출물 1건 — **계보 앵커는 여기 없다**.
+
+    ``lineage.sourceDigest`` 와 ``jobId`` 는 Core 가 작업 원장에서 채운다
+    (모듈 docstring). ``derived_from`` 은 같은 작업 안의 artifactId 만 가리킬 수
+    있고, 그 실재 여부는 :meth:`ProcessingJobStore.register_artifact` 가 본다.
+    """
+
+    artifact_id: str
+    kind: ProcessingArtifactKind
+    authority: LineageAuthority
+    derived_from: tuple[str, ...]
+    digest: str
+    format: str
+    crs: str | None
+    gsd: float | None
+    accuracy: ArtifactAccuracy | None
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactResult:
+    verdict: ProcessingJobVerdict
+    artifact: ProcessingArtifact | None = None
     detail: str | None = None
 
 
@@ -382,6 +520,8 @@ class ProcessingJobStore:
                 self._replay_issued(raw)
             elif kind == "processing-job-transitioned":
                 self._replay_transition(raw)
+            elif kind == "processing-artifact-registered":
+                self._replay_artifact(raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
                 raise ProcessingJobRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
 
@@ -449,12 +589,89 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 f"재생: 불법 전이 레코드 — jobId={job_id}: {exc}"
             ) from exc
+        try:
+            # 재생이 live 와 같은 게이트를 다시 태운다 — 산출물 레코드를 지우고
+            # SUCCEEDED 전이만 남겨 근거 없는 성공을 되살릴 수 없다.
+            assert_succeeded_is_backed(after, current.artifacts)
+        except UnbackedSuccessError as exc:
+            raise ProcessingJobRecoveryError(
+                f"재생: 근거 없는 SUCCEEDED 레코드 — jobId={job_id}: {exc}"
+            ) from exc
         self._jobs[job_id] = replace(
             current,
             status=after,
             updated_at=_require_aware_iso(raw["ts"], "ts", job_id),
             terminal_detail=raw.get("detail"),
         )
+
+    def _replay_artifact(self, raw: dict[str, Any]) -> None:
+        """산출물 레코드 재생 — live 등록과 **같은 게이트 전부**를 다시 태운다.
+
+        특히 ``lineage.sourceDigest`` 가 그 작업의 봉인 digest 와 같은지 재확인
+        한다. 이게 없으면 journal 을 손으로 고쳐 다른 번들에서 나온 산출물을
+        이 작업의 계보에 이식할 수 있다(``source_media._replay_seal`` 대칭).
+        """
+        job_id = raw["jobId"]
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise ProcessingJobRecoveryError(f"재생: 미지 jobId 산출물 레코드 — jobId={job_id}")
+        try:
+            artifact = ProcessingArtifact.model_validate(raw["artifact"])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ProcessingJobRecoveryError(
+                f"재생: 산출물 레코드가 계약을 만족하지 않는다 — jobId={job_id}: {exc}"
+            ) from exc
+        if artifact.job_id != job_id:
+            raise ProcessingJobRecoveryError(
+                f"재생: 산출물의 jobId 가 레코드와 다르다 — {artifact.job_id!r} != {job_id!r}"
+            )
+        if artifact.lineage.source_digest != job.input.source_bundle_digest:
+            raise ProcessingJobRecoveryError(
+                f"재생: 산출물 계보 앵커가 작업의 봉인 digest 와 불일치 — jobId={job_id} "
+                f"(기록={artifact.lineage.source_digest!r}, "
+                f"작업={job.input.source_bundle_digest!r})"
+            )
+        if job.status is not ProcessingJobStatus.RUNNING:
+            raise ProcessingJobRecoveryError(
+                f"재생: 실행 중이 아닌 작업({job.status.value})에 산출물 레코드가 있다 "
+                f"— jobId={job_id} artifactId={artifact.artifact_id}"
+            )
+        verdict, detail = self._check_artifact_identity_locked(job, artifact)
+        if verdict is not None:
+            raise ProcessingJobRecoveryError(
+                f"재생: 산출물 레코드가 등록 게이트를 통과하지 못한다 "
+                f"({verdict.value}) — jobId={job_id}: {detail}"
+            )
+        self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact))
+
+    @staticmethod
+    def _check_artifact_identity_locked(
+        job: ProcessingJobRecord, artifact: ProcessingArtifact
+    ) -> tuple[ProcessingJobVerdict | None, str | None]:
+        """artifactId 유효성·중복·부모 실재 — live 와 재생이 공유하는 판정.
+
+        계약 자체(``ProcessingArtifact``)는 ``derivedFrom`` 이 비어 있지 않은지만
+        본다. 그 안의 id 가 **실재하는지**는 원장을 아는 이 저장소만 알 수 있다.
+        """
+        if not is_path_safe_identifier(artifact.artifact_id):
+            return (
+                ProcessingJobVerdict.INVALID_ARTIFACT_ID,
+                f"artifactId 가 경로-안전하지 않다: {artifact.artifact_id!r}",
+            )
+        known = {a.artifact_id for a in job.artifacts}
+        if artifact.artifact_id in known:
+            return (
+                ProcessingJobVerdict.DUPLICATE_ARTIFACT,
+                f"이 작업에 같은 artifactId 가 이미 등록돼 있다: {artifact.artifact_id}",
+            )
+        missing = [p for p in artifact.lineage.derived_from if p not in known]
+        if missing:
+            return (
+                ProcessingJobVerdict.UNKNOWN_PARENT_ARTIFACT,
+                f"derivedFrom 이 이 작업에 없는 산출물을 가리킨다: {sorted(missing)} — "
+                "부모는 같은 작업에 먼저 등록돼 있어야 한다",
+            )
+        return None, None
 
     @property
     def sealed_reason(self) -> str | None:
@@ -592,6 +809,12 @@ class ProcessingJobStore:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.ILLEGAL_TRANSITION, detail=str(exc)
                 )
+            try:
+                assert_succeeded_is_backed(target, current.artifacts)
+            except UnbackedSuccessError as exc:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNBACKED_SUCCESS, detail=str(exc)
+                )
             raw: dict[str, Any] = {
                 "kind": "processing-job-transitioned",
                 "ts": _iso(now),
@@ -610,6 +833,77 @@ class ProcessingJobStore:
             updated = replace(current, status=target, updated_at=now, terminal_detail=detail)
             self._jobs[job_id] = updated
             return ProcessingJobResult(ProcessingJobVerdict.TRANSITIONED, record=updated)
+
+    def register_artifact(
+        self, job_id: str, spec: ArtifactSpec, *, registered_by: str, now: datetime
+    ) -> ArtifactResult:
+        """실행 중인 작업에 산출물 1건을 등록한다.
+
+        ``jobId`` 와 ``lineage.sourceDigest`` 는 여기서 **작업 원장에서** 채운다
+        — 워커가 실어 보낸 값을 쓰지 않는다(모듈 docstring). 계약 위반은
+        ``ProcessingArtifact`` 생성 시점에 걸리고, 계약이 볼 수 없는 것(부모의
+        실재)은 :meth:`_check_artifact_identity_locked` 가 본다.
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return ArtifactResult(
+                    ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
+                )
+            job = self._jobs.get(job_id)
+            if job is None:
+                return ArtifactResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if job.status is not ProcessingJobStatus.RUNNING:
+                return ArtifactResult(
+                    ProcessingJobVerdict.JOB_NOT_RUNNING,
+                    detail=(
+                        f"작업이 {job.status.value} 상태다 — 산출물은 실행 중인 "
+                        "작업에만 등록된다(끝난 작업에 근거를 소급하지 않는다)"
+                    ),
+                )
+            try:
+                artifact = ProcessingArtifact(
+                    artifact_id=spec.artifact_id,
+                    job_id=job_id,
+                    kind=spec.kind,
+                    lineage=ArtifactLineage(
+                        authority=spec.authority,
+                        derived_from=list(spec.derived_from),
+                        # 계보 앵커는 요청이 아니라 봉인된 번들에서 온다.
+                        source_digest=job.input.source_bundle_digest,
+                    ),
+                    digest=spec.digest,
+                    format=spec.format,
+                    crs=spec.crs,
+                    gsd=spec.gsd,
+                    accuracy=spec.accuracy,
+                )
+            except ValueError as exc:
+                return ArtifactResult(
+                    ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION, detail=str(exc)
+                )
+            verdict, detail = self._check_artifact_identity_locked(job, artifact)
+            if verdict is not None:
+                return ArtifactResult(verdict, detail=detail)
+
+            raw: dict[str, Any] = {
+                "kind": "processing-artifact-registered",
+                "ts": _iso(now),
+                "jobId": job_id,
+                "artifactId": artifact.artifact_id,
+                "artifact": processing_artifact_wire_dict(artifact),
+                "registeredBy": registered_by,
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return ArtifactResult(
+                    ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
+                )
+            self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact), updated_at=now)
+            return ArtifactResult(ProcessingJobVerdict.ARTIFACT_REGISTERED, artifact=artifact)
 
     def _active_job_locked(self, mission_id: str) -> ProcessingJobRecord | None:
         for record in self._jobs.values():
@@ -677,6 +971,40 @@ class ProcessingJobTransitionRequest(_CamelModel):
     detail: str | None = None
 
 
+class ArtifactAccuracyRequest(_CamelModel):
+    gcp_count: int = Field(ge=0)
+    rmse: float = Field(ge=0)
+    report_uri: str = Field(min_length=1)
+
+
+class ProcessingArtifactRequest(_CamelModel):
+    """산출물 등록 요청 — **계보 앵커를 담을 자리가 없다**.
+
+    계약의 ``lineage`` 를 중첩 객체로 받지 않고 ``authority``·``derivedFrom``
+    두 필드로 펼친 이유가 이것이다. 중첩으로 받으면 ``sourceDigest`` 를 실을
+    자리가 생기고, 그러면 "무시한다"는 규칙을 코드가 기억해야 한다 — 자리를
+    없애면 기억할 것이 없다(``ProcessingJobRequest`` 와 같은 관용구).
+    ``jobId`` 도 경로에서만 온다.
+    """
+
+    artifact_id: str = Field(min_length=1)
+    kind: ProcessingArtifactKind
+    authority: LineageAuthority
+    derived_from: list[str] = Field(default_factory=list)
+    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    format: str = Field(min_length=1)
+    # nullable 필수 — 생략과 명시적 null 을 구분한다(processing_artifact.py).
+    crs: str | None = None
+    gsd: float | None = Field(default=None, gt=0)
+    accuracy: ArtifactAccuracyRequest | None = None
+
+
+class ProcessingArtifactMutationResponse(_CamelModel):
+    verdict: str
+    artifact: dict[str, Any] | None = None
+    detail: str | None = None
+
+
 class ProcessingJobView(_CamelModel):
     """작업 1건의 조회 표현 — 계약 payload + 운영 메타.
 
@@ -697,6 +1025,9 @@ class ProcessingJobView(_CamelModel):
     # 이 사실을 필드로 노출해 화면이 "검증된 과금 근거"로 읽지 않게 한다.
     input_verified: bool
     contract: dict[str, Any]
+    # 등록된 산출물의 계약 payload 그대로(등록 순). SUCCEEDED 를 받쳐주는 근거가
+    # 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수 있게 한다(INV-051).
+    artifacts: list[dict[str, Any]]
 
 
 class ProcessingJobListResponse(_CamelModel):
@@ -723,6 +1054,7 @@ def _to_view(record: ProcessingJobRecord) -> ProcessingJobView:
         # B3 에서 붙으면 그때 참이 될 수 있다. "검증된 척"하는 기본값을 쓰지 않는다.
         input_verified=False,
         contract=processing_job_wire_dict(record.to_contract()),
+        artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
     )
 
 
@@ -796,8 +1128,16 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
         job_id: str,
         request: ProcessingJobTransitionRequest,
         response: Response,
-        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+        principal: Principal = Depends(require_principal()),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
+        # 요구 권한이 **대상 상태마다 다르다**(모듈 docstring) — 문 앞의
+        # require_permission 하나로 표현할 수 없어 여기서 표를 조회한다.
+        required = _TRANSITION_PERMISSION[request.target_status]
+        if required not in principal_permissions(principal):
+            raise HTTPException(
+                status_code=403,
+                detail=f"{request.target_status.value} 로의 전이 권한이 없다",
+            )
         result = store.transition(
             job_id,
             request.target_status,
@@ -814,6 +1154,52 @@ def build_processing_jobs_router(store: ProcessingJobStore) -> APIRouter:
             detail=result.detail,
         )
 
+    @router.post(
+        "/v1/processing-jobs/{job_id}/artifacts",
+        response_model=ProcessingArtifactMutationResponse,
+        status_code=201,
+    )
+    def register_processing_artifact(
+        job_id: str,
+        request: ProcessingArtifactRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> ProcessingArtifactMutationResponse:
+        spec = ArtifactSpec(
+            artifact_id=request.artifact_id,
+            kind=request.kind,
+            authority=request.authority,
+            derived_from=tuple(request.derived_from),
+            digest=request.digest,
+            format=request.format,
+            crs=request.crs,
+            gsd=request.gsd,
+            accuracy=(
+                ArtifactAccuracy(
+                    gcp_count=request.accuracy.gcp_count,
+                    rmse=request.accuracy.rmse,
+                    report_uri=request.accuracy.report_uri,
+                )
+                if request.accuracy is not None
+                else None
+            ),
+        )
+        result = store.register_artifact(
+            job_id, spec, registered_by=principal.principal_id, now=datetime.now(UTC)
+        )
+        response.status_code = _STATUS[result.verdict]
+        if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
+            response.headers["Retry-After"] = "30"
+        return ProcessingArtifactMutationResponse(
+            verdict=result.verdict.value,
+            artifact=(
+                processing_artifact_wire_dict(result.artifact)
+                if result.artifact is not None
+                else None
+            ),
+            detail=result.detail,
+        )
+
     return router
 
 
@@ -825,8 +1211,12 @@ def mount_processing_jobs(app: FastAPI, store: ProcessingJobStore) -> None:
 
 __all__ = [
     "UNMETERED_AT_ISSUE",
+    "ArtifactResult",
+    "ArtifactSpec",
     "IllegalJobTransitionError",
     "JobSpec",
+    "ProcessingArtifactMutationResponse",
+    "ProcessingArtifactRequest",
     "ProcessingJobListResponse",
     "ProcessingJobMutationResponse",
     "ProcessingJobRecord",
@@ -837,7 +1227,9 @@ __all__ = [
     "ProcessingJobTransitionRequest",
     "ProcessingJobVerdict",
     "ProcessingJobView",
+    "UnbackedSuccessError",
     "assert_job_transition",
+    "assert_succeeded_is_backed",
     "build_job_id",
     "build_processing_jobs_router",
     "mount_processing_jobs",

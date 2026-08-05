@@ -330,6 +330,49 @@ def test_no_role_has_edge_sync_ingest() -> None:
     assert all(Permission.EDGE_SYNC_INGEST not in perms for perms in _ROLE_PERMISSIONS.values())
 
 
+def test_no_role_has_processing_work() -> None:
+    """[핵심] 워커 전용 권한이 어떤 사람 역할에도 새지 않는다.
+
+    이게 깨지면 사람이 처리 작업의 ``SUCCEEDED`` 를 손으로 찍을 수 있게 되고,
+    그 순간 그 상태는 실행 근거가 아니라 주장이 된다(processing_jobs.py
+    전이 권한표). ADMIN 을 포함한 **모든** 역할이 대상이다.
+    """
+    assert all(Permission.PROCESSING_WORK not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def _worker(**overrides: object) -> Principal:
+    fields: dict[str, object] = {
+        "principal_id": "worker-1",
+        "kind": PrincipalKind.PROCESSING_WORKER,
+        "role": None,
+        "device_id": None,
+    }
+    fields.update(overrides)
+    return Principal(**fields)  # type: ignore[arg-type]
+
+
+def test_processing_worker_permissions_are_fixed() -> None:
+    assert principal_permissions(_worker()) == frozenset({Permission.PROCESSING_WORK})
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"role": Role.ADMIN}, "role 을 가질 수 없다"),
+        # 재구성 워커는 기체가 아니다 — device_id 를 허용하면 존재하지 않는
+        # 기체 식별자가 eventKey 경로로 흘러든다.
+        ({"device_id": "drone-1"}, "device_id 를 가질 수 없다"),
+    ],
+)
+def test_processing_worker_rejects_foreign_identity_fields(
+    overrides: dict[str, object], match: str
+) -> None:
+    with pytest.raises(AuthRegistryError, match=match):
+        AuthRegistry(
+            [PrincipalTokenRecord(token_sha256="a" * 64, principal=_worker(**overrides))]
+        )
+
+
 # ── HTTP 경계: 401 3분기 + WWW-Authenticate ──────────────────────────────
 
 

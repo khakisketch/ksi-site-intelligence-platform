@@ -40,6 +40,10 @@ _DEV_TOKENS: dict[Role, str] = {
 }
 _DEV_EDGE_TOKEN = "dev-edge-device-token"  # noqa: S105 — 로컬 dev 전용 고정값
 _DEV_EDGE_DEVICE_ID = "edge-dev-001"
+# 처리 워커 토큰이 따로 있는 이유 — 사람 토큰으로는 처리 작업의 RUNNING·
+# SUCCEEDED·FAILED 를 보고할 수 없다(PROCESSING_WORK 는 어느 Role 에도 없다).
+# 이 토큰 없이는 재구성 경로를 dev 에서 끝까지 돌려볼 수 없다.
+_DEV_WORKER_TOKEN = "dev-processing-worker-token"  # noqa: S105
 
 
 def _digest(token: str) -> str:
@@ -67,6 +71,17 @@ def _auth_registry() -> AuthRegistry:
                 kind=PrincipalKind.EDGE_DEVICE,
                 role=None,
                 device_id=_DEV_EDGE_DEVICE_ID,
+            ),
+        )
+    )
+    records.append(
+        PrincipalTokenRecord(
+            token_sha256=_digest(_DEV_WORKER_TOKEN),
+            principal=Principal(
+                principal_id="dev-processing-worker",
+                kind=PrincipalKind.PROCESSING_WORKER,
+                role=None,
+                device_id=None,
             ),
         )
     )
@@ -240,6 +255,7 @@ def main() -> None:
     for role, token in _DEV_TOKENS.items():
         print(f"  {role.value:16s} {token}")
     print(f"  EDGE_DEVICE({_DEV_EDGE_DEVICE_ID}) {_DEV_EDGE_TOKEN}")
+    print(f"  {'PROCESSING_WORKER':16s} {_DEV_WORKER_TOKEN}")
     print("=" * 72)
 
     try:

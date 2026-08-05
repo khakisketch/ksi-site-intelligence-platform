@@ -1,6 +1,6 @@
-"""3D 재구성 처리 작업 발급·상태전이 계약 (B2 — ADR-KSI-012, INV-050).
+"""3D 재구성 처리 작업 발급·상태전이·산출물 계약 (B2/B3 — ADR-KSI-012, INV-050/051).
 
-초점 넷:
+초점 일곱:
 
 1. **입력은 봉인된 번들에서만 온다** — 요청에 자리가 없고, 봉인 전에는 발급되지
    않는다(장수·화소·digest 가 확정되지 않은 값 위에서 과금 근거를 만들지 않는다).
@@ -9,6 +9,12 @@
 3. **상태 전이표를 재생이 다시 태운다** — journal 을 손으로 고쳐 FAILED 를
    SUCCEEDED 로 되살릴 수 없다.
 4. **임무당 활성 작업 1건** — 같은 사양 재요청은 멱등, 다른 사양은 409.
+5. **SUCCEEDED 는 원본 산출물이 받쳐야 한다(INV-051)** — 파생물만으로도, 아무
+   산출물 없이도 성공을 주장할 수 없다. 재생도 같은 게이트를 다시 태운다.
+6. **산출물의 계보 앵커를 요청이 정하지 못한다** — ``sourceDigest`` 는 작업의
+   봉인 digest 에서 Core 가 채우고, ``derivedFrom`` 은 실재하는 부모만 가리킨다.
+7. **사람은 성공을 찍을 수 없다** — RUNNING/SUCCEEDED/FAILED 는 워커 권한이고
+   CANCELLED 는 사람 권한이다.
 """
 
 from __future__ import annotations
@@ -22,21 +28,37 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
-from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.auth import (
+    AuthRegistry,
+    Permission,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
+    _TRANSITION_PERMISSION,
     UNMETERED_AT_ISSUE,
+    ArtifactSpec,
     IllegalJobTransitionError,
     JobSpec,
     ProcessingJobRecoveryError,
     ProcessingJobStore,
     ProcessingJobVerdict,
+    UnbackedSuccessError,
     assert_job_transition,
+    assert_succeeded_is_backed,
     build_job_id,
 )
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaClaim, SourceMediaStore
+from ksi_event_contracts.processing_artifact import (
+    ArtifactAccuracy,
+    LineageAuthority,
+    ProcessingArtifactKind,
+)
 from ksi_event_contracts.processing_job import (
     DataResidency,
     ExecutionLocus,
@@ -52,6 +74,7 @@ _NOW = datetime(2026, 8, 5, 4, 0, tzinfo=UTC)
 
 _ADMIN_TOKEN = "processing-admin"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "processing-viewer"  # noqa: S105
+_WORKER_TOKEN = "processing-worker"  # noqa: S105
 
 _SITE_FRAME = SiteFrame(
     crs="EPSG:5186", vertical_datum="KNG2018", transform_version="v1", unit="meter"
@@ -161,6 +184,43 @@ def _job_store(
     )
 
 
+def _artifact_spec(
+    artifact_id: str = "pointcloud",
+    *,
+    kind: ProcessingArtifactKind = ProcessingArtifactKind.POINT_CLOUD,
+    authority: LineageAuthority = LineageAuthority.SOURCE,
+    derived_from: tuple[str, ...] = (),
+    crs: str | None = "EPSG:5186",
+    gsd: float | None = None,
+    accuracy: ArtifactAccuracy | None = None,
+) -> ArtifactSpec:
+    return ArtifactSpec(
+        artifact_id=artifact_id,
+        kind=kind,
+        authority=authority,
+        derived_from=derived_from,
+        digest="sha256:" + _sha(artifact_id),
+        format="laz",
+        crs=crs,
+        gsd=gsd,
+        accuracy=accuracy,
+    )
+
+
+def _running_job(store: ProcessingJobStore, tmp_path: Path) -> str:
+    """발급 → RUNNING 까지 진행한 작업의 jobId. 산출물 테스트의 공통 출발점."""
+    del tmp_path
+    record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert record is not None
+    assert (
+        store.transition(
+            record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    return record.job_id
+
+
 # ── 전이표 (순수 함수) ──────────────────────────────────────────────────────
 
 
@@ -200,6 +260,29 @@ def test_illegal_transitions(before: ProcessingJobStatus, after: ProcessingJobSt
 def test_job_id_is_deterministic_within_mission() -> None:
     assert build_job_id("mission-a", 1) == "mission-a-pj1"
     assert build_job_id("mission-a", 2) == "mission-a-pj2"
+
+
+def test_transition_permission_table_covers_every_status() -> None:
+    """권한표가 전 상태를 망라한다 — 빠진 값은 라우터에서 KeyError(500)가 된다.
+
+    표를 total 로 두기로 한 결정(권한표는 '누가'만, 전이표가 '적법한가')은
+    이 테스트가 없으면 새 상태가 늘어날 때 조용히 깨진다.
+    """
+    assert set(_TRANSITION_PERMISSION) == set(ProcessingJobStatus)
+
+
+def test_only_cancellation_is_a_human_decision() -> None:
+    """실행 사실 보고는 워커 권한, 취소만 사람 권한이다."""
+    worker_targets = {
+        s for s, p in _TRANSITION_PERMISSION.items() if p is Permission.PROCESSING_WORK
+    }
+    assert ProcessingJobStatus.CANCELLED not in worker_targets
+    assert {
+        ProcessingJobStatus.RUNNING,
+        ProcessingJobStatus.SUCCEEDED,
+        ProcessingJobStatus.FAILED,
+    } <= worker_targets
+    assert _TRANSITION_PERMISSION[ProcessingJobStatus.CANCELLED] is Permission.MISSIONS_ISSUE
 
 
 # ── 입력은 봉인된 번들에서만 온다 ────────────────────────────────────────────
@@ -364,6 +447,11 @@ def test_transition_records_terminal_detail(tmp_path: Path) -> None:
     store.transition(
         record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
     )
+    # SUCCEEDED 는 원본 산출물이 있어야 통과한다(INV-051) — 아래 전용 테스트가
+    # 없을 때의 거부를 확인한다. 여기서는 게이트를 만족시킨 뒤 detail 만 본다.
+    store.register_artifact(
+        record.job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+    )
     done = store.transition(
         record.job_id,
         ProcessingJobStatus.SUCCEEDED,
@@ -511,6 +599,311 @@ def _digest_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+# ── SUCCEEDED 는 원본 산출물이 받쳐야 한다 (INV-051) ────────────────────────
+
+
+def test_succeeded_is_refused_without_any_artifact(tmp_path: Path) -> None:
+    """[핵심] 산출물 0건으로는 성공을 주장할 수 없다 — 자기 완료 자기 선언 금지."""
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    result = store.transition(
+        job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.UNBACKED_SUCCESS
+    # 거부됐으면 상태는 그대로 RUNNING 이어야 한다(부분 적용 금지).
+    record = store.get(job_id)
+    assert record is not None
+    assert record.status is ProcessingJobStatus.RUNNING
+
+
+def test_succeeded_is_refused_when_only_derived_artifacts_exist(tmp_path: Path) -> None:
+    """[핵심] 파생물만으로는 성공이 아니다 — 원본에서 재생성 가능해야 한다(ADR-KSI-003).
+
+    파생물은 부모가 필요하므로, 부모(원본)를 넣었다가 지울 수 없다. 그래서
+    원본 없이 파생만 있는 상태를 만들려면 부모 자체가 파생이어야 하는데 그건
+    첫 파생물의 derivedFrom 이 비어 계약에서 걸린다 — 즉 이 경로는 계약과
+    저장소 게이트가 함께 막는다. 여기서는 저장소 쪽 거부를 고정한다.
+    """
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    # 부모 없는 파생 주장은 계약이 막는다(INV-051).
+    orphan = store.register_artifact(
+        job_id,
+        _artifact_spec("ortho", kind=ProcessingArtifactKind.ORTHO,
+                       authority=LineageAuthority.DERIVED, gsd=0.03),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert orphan.verdict is ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION
+    # 산출물이 하나도 등록되지 않았으므로 성공도 거부된다.
+    assert (
+        store.transition(
+            job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.UNBACKED_SUCCESS
+    )
+
+
+def test_succeeded_passes_with_a_source_artifact(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.register_artifact(
+            job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    result = store.transition(
+        job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.TRANSITIONED
+
+
+def test_failed_and_cancelled_need_no_artifact(tmp_path: Path) -> None:
+    """게이트는 SUCCEEDED 에만 걸린다 — 실패·취소는 산출물 없이 끝나는 게 정상이다."""
+    for target in (ProcessingJobStatus.FAILED, ProcessingJobStatus.CANCELLED):
+        store = _job_store(tmp_path / target.value)
+        job_id = _running_job(store, tmp_path)
+        assert (
+            store.transition(job_id, target, detail="엔진 실패", actor="w-1", now=_NOW).verdict
+            is ProcessingJobVerdict.TRANSITIONED
+        )
+
+
+def test_gate_function_is_pure_and_shared() -> None:
+    """live·재생이 함께 쓰는 게이트 함수 자체의 계약."""
+    assert_succeeded_is_backed(ProcessingJobStatus.FAILED, [])
+    assert_succeeded_is_backed(ProcessingJobStatus.RUNNING, [])
+    with pytest.raises(UnbackedSuccessError):
+        assert_succeeded_is_backed(ProcessingJobStatus.SUCCEEDED, [])
+
+
+# ── 산출물의 계보 앵커를 요청이 정하지 못한다 ────────────────────────────────
+
+
+def test_lineage_anchor_comes_from_the_sealed_bundle(tmp_path: Path) -> None:
+    """[핵심] sourceDigest 를 Core 가 작업의 봉인 digest 로 채운다."""
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    result = store.register_artifact(
+        job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+    )
+    assert result.artifact is not None
+    job = store.get(job_id)
+    assert job is not None
+    assert result.artifact.lineage.source_digest == job.input.source_bundle_digest
+    assert result.artifact.job_id == job_id
+
+
+def test_derived_from_must_reference_an_artifact_of_this_job(tmp_path: Path) -> None:
+    """[핵심] 계약은 '비어 있지 않다'만 본다 — 부모의 실재는 저장소가 본다."""
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    store.register_artifact(job_id, _artifact_spec(), registered_by="w-1", now=_NOW)
+    result = store.register_artifact(
+        job_id,
+        _artifact_spec(
+            "ortho",
+            kind=ProcessingArtifactKind.ORTHO,
+            authority=LineageAuthority.DERIVED,
+            derived_from=("존재하지-않는-부모",),
+            gsd=0.03,
+        ),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.UNKNOWN_PARENT_ARTIFACT
+
+
+def test_derived_artifact_registers_when_parent_exists(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    store.register_artifact(job_id, _artifact_spec("pointcloud"), registered_by="w-1", now=_NOW)
+    result = store.register_artifact(
+        job_id,
+        _artifact_spec(
+            "ortho",
+            kind=ProcessingArtifactKind.ORTHO,
+            authority=LineageAuthority.DERIVED,
+            derived_from=("pointcloud",),
+            gsd=0.03,
+        ),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    assert result.artifact is not None
+    assert result.artifact.lineage.derived_from == ["pointcloud"]
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (ProcessingJobStatus.QUEUED, ProcessingJobVerdict.JOB_NOT_RUNNING),
+        (ProcessingJobStatus.CANCELLED, ProcessingJobVerdict.JOB_NOT_RUNNING),
+    ],
+)
+def test_artifacts_only_attach_to_a_running_job(
+    tmp_path: Path, status: ProcessingJobStatus, expected: ProcessingJobVerdict
+) -> None:
+    """시작 전에는 만들어질 수 없고, 끝난 뒤에는 근거를 소급하는 것이 된다."""
+    store = _job_store(tmp_path / status.value)
+    record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert record is not None
+    if status is not ProcessingJobStatus.QUEUED:
+        store.transition(record.job_id, status, detail=None, actor="op-1", now=_NOW)
+    result = store.register_artifact(
+        record.job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+    )
+    assert result.verdict is expected
+
+
+def test_duplicate_artifact_id_is_refused(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    store.register_artifact(job_id, _artifact_spec(), registered_by="w-1", now=_NOW)
+    again = store.register_artifact(job_id, _artifact_spec(), registered_by="w-1", now=_NOW)
+    assert again.verdict is ProcessingJobVerdict.DUPLICATE_ARTIFACT
+
+
+def test_artifact_id_must_be_path_safe(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    result = store.register_artifact(
+        job_id, _artifact_spec("../escape"), registered_by="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.INVALID_ARTIFACT_ID
+
+
+def test_raster_artifact_without_gsd_is_a_contract_violation(tmp_path: Path) -> None:
+    """kind 별 필수(crs/gsd)는 계약이 판정하고 저장소는 그 실패를 typed 로 옮긴다."""
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    result = store.register_artifact(
+        job_id,
+        _artifact_spec("ortho", kind=ProcessingArtifactKind.ORTHO, gsd=None),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION
+
+
+def test_accuracy_null_is_preserved_not_dropped(tmp_path: Path) -> None:
+    """ODM 경로의 accuracy=null 은 '측정 안 함'이지 '필드 누락'이 아니다."""
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    result = store.register_artifact(job_id, _artifact_spec(), registered_by="w-1", now=_NOW)
+    assert result.artifact is not None
+    assert result.artifact.accuracy is None
+    with_accuracy = store.register_artifact(
+        job_id,
+        _artifact_spec(
+            "report",
+            kind=ProcessingArtifactKind.REPORT,
+            crs=None,
+            accuracy=ArtifactAccuracy(gcp_count=5, rmse=0.021, report_uri="s3://r/1.pdf"),
+        ),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert with_accuracy.artifact is not None
+    assert with_accuracy.artifact.accuracy is not None
+    assert with_accuracy.artifact.accuracy.gcp_count == 5
+
+
+# ── 재생이 산출물 게이트를 다시 태운다 ───────────────────────────────────────
+# (재기동 시뮬레이션은 위 ``_rebuild`` 를 그대로 쓴다)
+
+
+def _journal_lines(tmp_path: Path, path: str = "processing-jobs.jsonl") -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in (tmp_path / path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _write_journal(
+    tmp_path: Path, records: list[dict[str, Any]], path: str = "processing-jobs.jsonl"
+) -> None:
+    (tmp_path / path).write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+
+
+def _seeded_success_journal(tmp_path: Path) -> DurableJournal:
+    """발급 → RUNNING → 산출물 → SUCCEEDED 가 기록된 journal(핸들은 닫아서 반환)."""
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.register_artifact(job_id, _artifact_spec(), registered_by="w-1", now=_NOW).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    assert (
+        store.transition(
+            job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    journal.close()
+    return journal
+
+
+def test_replay_restores_artifacts_and_success(tmp_path: Path) -> None:
+    """대조군 — 손대지 않은 원장은 그대로 복원된다(아래 거부들이 공허하지 않다)."""
+    _seeded_success_journal(tmp_path)
+    restored = _rebuild(tmp_path)
+    record = restored.get(f"{_MISSION_ID}-pj1")
+    assert record is not None
+    assert record.status is ProcessingJobStatus.SUCCEEDED
+    assert [a.artifact_id for a in record.artifacts] == ["pointcloud"]
+
+
+def test_replay_refuses_success_whose_artifact_record_was_deleted(tmp_path: Path) -> None:
+    """[핵심] 산출물 레코드를 지우고 SUCCEEDED 만 남기면 기동을 거부한다."""
+    _seeded_success_journal(tmp_path)
+    records = _journal_lines(tmp_path)
+    _write_journal(tmp_path, [r for r in records if r["kind"] != "processing-artifact-registered"])
+    with pytest.raises(ProcessingJobRecoveryError, match="근거 없는 SUCCEEDED"):
+        _rebuild(tmp_path)
+
+
+def test_replay_refuses_artifact_with_forged_lineage_anchor(tmp_path: Path) -> None:
+    """[핵심] 다른 번들에서 나온 산출물을 이 작업의 계보에 이식할 수 없다."""
+    _seeded_success_journal(tmp_path)
+    records = _journal_lines(tmp_path)
+    for record in records:
+        if record["kind"] == "processing-artifact-registered":
+            record["artifact"]["lineage"]["sourceDigest"] = "sha256:" + "b" * 64
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="계보 앵커"):
+        _rebuild(tmp_path)
+
+
+def test_replay_refuses_artifact_on_a_non_running_job(tmp_path: Path) -> None:
+    """산출물 레코드를 RUNNING 전이 **앞**으로 옮기면 기동을 거부한다."""
+    _seeded_success_journal(tmp_path)
+    records = _journal_lines(tmp_path)
+    artifact = next(r for r in records if r["kind"] == "processing-artifact-registered")
+    reordered = [r for r in records if r is not artifact]
+    reordered.insert(1, artifact)  # 발급 직후(= QUEUED 상태)로 이동
+    _write_journal(tmp_path, reordered)
+    with pytest.raises(ProcessingJobRecoveryError, match="실행 중이 아닌"):
+        _rebuild(tmp_path)
+
+
+def test_replay_refuses_duplicate_artifact_id(tmp_path: Path) -> None:
+    _seeded_success_journal(tmp_path)
+    records = _journal_lines(tmp_path)
+    artifact = next(r for r in records if r["kind"] == "processing-artifact-registered")
+    index = records.index(artifact)
+    records.insert(index + 1, json.loads(json.dumps(artifact)))
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="DUPLICATE_ARTIFACT"):
+        _rebuild(tmp_path)
+
+
 def _auth_registry() -> AuthRegistry:
     return AuthRegistry(
         [
@@ -529,6 +922,15 @@ def _auth_registry() -> AuthRegistry:
                     principal_id="op-viewer",
                     kind=PrincipalKind.OPERATOR,
                     role=Role.VIEWER,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="worker-odm-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
                     device_id=None,
                 ),
             ),
@@ -634,24 +1036,33 @@ def test_http_vendor_cloud_refused_for_undeclared_site(tmp_path: Path) -> None:
     assert response.json()["verdict"] == "EGRESS_NOT_ALLOWED"
 
 
+def _as_worker(client: TestClient) -> TestClient:
+    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    return client
+
+
 def test_http_transition_and_get(tmp_path: Path) -> None:
     client = _client(tmp_path)
     job_id = client.post(
         f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
     ).json()["job"]["jobId"]
 
+    _as_worker(client)
     running = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"}
     )
     assert running.status_code == 200
     assert running.json()["job"]["status"] == "RUNNING"
 
+    # 권한은 통과하고 전이표가 막는다 — 403 이 409 를 가리지 않는다.
     illegal = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "QUEUED"}
     )
     assert illegal.status_code == 409
     assert illegal.json()["verdict"] == "ILLEGAL_TRANSITION"
 
+    # 조회는 사람 권한이다 — 워커는 MISSIONS_READ 를 갖지 않는다(아래 전용 테스트).
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     detail = client.get(f"/v1/processing-jobs/{job_id}")
     assert detail.status_code == 200
     assert detail.json()["status"] == "RUNNING"
@@ -757,4 +1168,160 @@ def test_processing_jobs_route_present_when_store_given(tmp_path: Path) -> None:
         "/v1/missions/{mission_id}/processing-jobs",
         "/v1/processing-jobs/{job_id}",
         "/v1/processing-jobs/{job_id}/transitions",
+        "/v1/processing-jobs/{job_id}/artifacts",
     } <= paths
+
+
+# ── HTTP: 사람은 성공을 찍을 수 없다 ─────────────────────────────────────────
+
+
+def _artifact_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "artifactId": "pointcloud",
+        "kind": "point_cloud",
+        "authority": "source",
+        "derivedFrom": [],
+        "digest": "sha256:" + _sha("pointcloud"),
+        "format": "laz",
+        "crs": "EPSG:5186",
+        "gsd": None,
+        "accuracy": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _issued_and_running(client: TestClient) -> str:
+    """관리자로 발급하고 워커로 RUNNING 까지 — 이후 클라이언트는 워커 신원이다."""
+    job_id: str = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    _as_worker(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"}
+        ).status_code
+        == 200
+    )
+    return job_id
+
+
+@pytest.mark.parametrize("target", ["RUNNING", "SUCCEEDED", "FAILED"])
+def test_http_admin_cannot_report_execution_facts(tmp_path: Path, target: str) -> None:
+    """[핵심 음성] 사람은 엔진 실행 사실을 보고할 수 없다 — 성공을 손으로 찍는 경로가 없다.
+
+    ADMIN 은 이 제품에서 가장 넓은 사람 권한이다. 그 ADMIN 도 막힌다는 것이
+    "어느 Role 에도 PROCESSING_WORK 를 매핑하지 않는다"의 실측이다.
+    """
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": target}
+    )
+    assert response.status_code == 403, response.text
+
+
+def test_http_worker_cannot_cancel(tmp_path: Path) -> None:
+    """[음성] 취소는 사람의 결정이다 — 워커가 남의 작업을 접을 수 없다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "CANCELLED"}
+    )
+    assert response.status_code == 403
+
+
+def test_http_admin_can_cancel(tmp_path: Path) -> None:
+    """대조군 — 위 두 403 이 '전이가 전부 막혔다'가 아님을 보인다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "CANCELLED"}
+    )
+    assert response.status_code == 200
+    assert response.json()["job"]["status"] == "CANCELLED"
+
+
+def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
+    """[수용기준] 워커 경로 종단 — 산출물 등록 후에야 SUCCEEDED 가 통과한다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    too_early = client.post(
+        f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "SUCCEEDED"}
+    )
+    assert too_early.status_code == 409
+    assert too_early.json()["verdict"] == "UNBACKED_SUCCESS"
+
+    registered = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+    )
+    assert registered.status_code == 201, registered.text
+    artifact = registered.json()["artifact"]
+    # nullable 필수 필드는 생략되지 않고 명시적 null 로 실린다.
+    assert artifact["accuracy"] is None
+    assert artifact["gsd"] is None
+    assert artifact["crs"] == "EPSG:5186"
+
+    done = client.post(
+        f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "SUCCEEDED"}
+    )
+    assert done.status_code == 200
+    assert done.json()["job"]["status"] == "SUCCEEDED"
+
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    view = client.get(f"/v1/processing-jobs/{job_id}").json()
+    assert [a["artifactId"] for a in view["artifacts"]] == ["pointcloud"]
+    assert view["inputVerified"] is False
+
+
+@pytest.mark.parametrize(
+    "forged",
+    [
+        {"sourceDigest": "sha256:" + "b" * 64},
+        {
+            "lineage": {
+                "authority": "source",
+                "derivedFrom": [],
+                "sourceDigest": "sha256:" + "c" * 64,
+            }
+        },
+        {"jobId": "다른-작업"},
+    ],
+)
+def test_http_artifact_request_cannot_forge_lineage_anchor(
+    tmp_path: Path, forged: dict[str, Any]
+) -> None:
+    """[핵심] 계보 앵커·소속 작업을 요청이 실어 보낼 자리가 없다(extra=forbid)."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload(**forged)
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("token", [_ADMIN_TOKEN, _VIEWER_TOKEN])
+def test_http_humans_cannot_register_artifacts(tmp_path: Path, token: str) -> None:
+    """[음성] 산출물 등록도 워커 전용이다 — 사람이 근거를 만들어 넣지 못한다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+    )
+    assert response.status_code == 403
+
+
+def test_http_worker_cannot_read_jobs(tmp_path: Path) -> None:
+    """워커 권한은 보고 전용이다 — 조회 권한(MISSIONS_READ)을 포함하지 않는다.
+
+    이건 의도된 좁힘이자 **미완의 표시**다: 워커가 큐에서 작업을 꺼내오는
+    경로를 만들 때 이 테스트가 함께 바뀐다(processing_jobs 모듈 docstring).
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert client.get(f"/v1/processing-jobs/{job_id}").status_code == 403

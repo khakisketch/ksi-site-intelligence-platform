@@ -45,7 +45,16 @@ info:
   # 반출 판정이 읽을 값이 저장소 어디에도 없어서, 그대로 두면 처리 작업 요청이
   # 자기 반출 허가서를 쓰게 된다. 미선언은 반출 불가로 읽히므로 기존 현장의
   # 동작이 느슨해지지 않는다. 새 표면 추가라 minor.
-  version: 1.11.0
+  # 1.12.0 — B3 산출물 원장 신설: POST /v1/processing-jobs/{job_id}/artifacts.
+  # RUNNING→SUCCEEDED 가 authority=source 산출물 최소 1건을 요구하게 되면서
+  # (INV-051) 그 근거를 만드는 표면이 필요해졌다. 계보 앵커(lineage.sourceDigest)
+  # 는 요청 스키마에 자리가 없고 Core 가 작업의 봉인 digest 로 채운다.
+  # 함께 POST .../transitions 의 요구 권한이 대상 상태별로 갈린다 —
+  # RUNNING/SUCCEEDED/FAILED 는 PROCESSING_WORKER 전용(PROCESSING_WORK),
+  # CANCELLED 는 사람(MISSIONS_ISSUE). **기존 사람 토큰으로 되던 실행 상태
+  # 보고가 403 이 된다**(의도된 축소 — 사람이 성공을 손으로 찍는 경로를 닫는다).
+  # 표면 축소가 아니라 권한 재배치라 minor 로 둔다.
+  version: 1.12.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -950,13 +959,19 @@ paths:
     post:
       summary: Transition a processing job's status (QUEUED→RUNNING→SUCCEEDED|FAILED)
       description: >-
-        MISSIONS_ISSUE 권한 필요. 전이표는 QUEUED→RUNNING→SUCCEEDED|FAILED 와
+        **요구 권한이 대상 상태마다 다르다.** RUNNING·SUCCEEDED·FAILED 는 실제로
+        엔진을 돌린 주체만 아는 사실이라 PROCESSING_WORK(PROCESSING_WORKER 전용,
+        어느 사람 Role 에도 매핑되지 않는다)를 요구한다 — 사람은 성공을 손으로
+        찍을 수 없다. CANCELLED 는 사람의 결정이라 MISSIONS_ISSUE 다.
+        전이표는 QUEUED→RUNNING→SUCCEEDED|FAILED 와
         QUEUED|RUNNING→CANCELLED 뿐이다 — 종료 상태(SUCCEEDED·FAILED·CANCELLED)
         에서 나가는 전이는 없다(끝난 작업의 결론을 고쳐 쓰지 않는다). QUEUED 에서
-        RUNNING 을 건너뛴 성공 주장도 거부된다. `actor` 는 body 가 아니라 인증
-        Principal 에서만 취득한다. **주의**: 이 표면은 지금 사람 권한으로 열려
-        있다 — 처리 워커 전용 Principal 종류와 lease·heartbeat 는 워커 실행
-        경로와 함께 설계한다(B3, 아직 없음).
+        RUNNING 을 건너뛴 성공 주장도 거부된다.
+        SUCCEEDED 에는 두 번째 게이트가 더 있다(INV-051): 그 작업에
+        `lineage.authority=source` 산출물이 최소 1건 등록돼 있어야 하고, 없으면
+        409 UNBACKED_SUCCESS 다. `actor` 는 body 가 아니라 인증 Principal 에서만
+        취득한다. lease·heartbeat 는 아직 없다 — RUNNING 전이가 한 번만
+        성공한다는 것이 유일한 상호배제다.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -985,10 +1000,111 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
         '404': { description: UNKNOWN_JOB }
-        '409': { description: ILLEGAL_TRANSITION — 전이표에 없는 전이 }
+        '409':
+          description: >-
+            ILLEGAL_TRANSITION(전이표에 없는 전이) 또는
+            UNBACKED_SUCCESS(원본 산출물 없이 SUCCEEDED 주장 — INV-051).
+            422 가 아니라 409 인 이유: 요청 자체는 올바르고 지금 원장 상태가 그
+            주장을 받쳐주지 못하는 것이다(산출물을 등록하면 같은 요청이 통과한다).
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
-        '403': { description: MISSIONS_ISSUE 권한 없음 }
+        '403': { description: 대상 상태가 요구하는 권한 없음(위 설명의 권한표) }
+  /v1/processing-jobs/{job_id}/artifacts:
+    post:
+      summary: Register a reconstruction artifact on a running job (INV-051)
+      description: >-
+        PROCESSING_WORK 권한 필요(PROCESSING_WORKER 전용) — 사람은 산출물을 만들어
+        넣을 수 없다. 실행 중(RUNNING)인 작업에만 붙는다: 시작 전에는 산출물이
+        만들어질 수 없고, 끝난 뒤에 붙이면 이미 내려진 결론에 근거를 소급하는
+        것이 된다(409 JOB_NOT_RUNNING).
+
+
+        **계보 앵커는 요청이 정하지 않는다.** `lineage.sourceDigest` 와 `jobId` 는
+        요청 스키마에 자리가 없고 Core 가 그 작업의 `input.sourceBundleDigest`
+        (봉인된 번들의 digest)와 경로 jobId 로 채운다 — 워커가 실어 보낼 수 있으면
+        산출물이 자기 출처를 스스로 적는 것이 된다. 그래서 계약의 중첩 객체
+        `lineage` 대신 `authority`·`derivedFrom` 두 필드로 펼쳐서 받는다.
+
+
+        `derivedFrom` 은 **같은 작업에 이미 등록된** artifactId 만 가리킬 수 있다
+        (422 UNKNOWN_PARENT_ARTIFACT) — 계약 스키마는 "비어 있지 않다"만 강제하므로
+        실재하지 않는 부모를 적은 파생물은 계약만으로는 통과한다. 작업 간 계보는
+        아직 모델링하지 않았다.
+
+
+        `crs`·`gsd`·`accuracy` 는 nullable **필수**다 — 생략과 명시적 null 을
+        구분한다("측정하지 않았다"와 "필드를 잊었다"는 다른 사실이고, accuracy 가
+        null 인 비율이 ADR-KSI-012 D3 전환 트리거의 계측점이다). kind 별 필수는
+        계약이 강제한다(공간 산출물은 crs, 래스터 계열은 gsd).
+
+
+        Core 는 산출물 **바이트를 읽지 않는다** — `digest`·`format` 은 워커의
+        보고값이다. 이 표면이 강제하는 것은 계보의 무결성이지 내용의 진위가 아니다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifactId, kind, authority, digest, format]
+              properties:
+                artifactId:
+                  description: 경로-안전 식별자. 같은 작업 안에서 유일해야 한다.
+                  type: string
+                  minLength: 1
+                kind:
+                  type: string
+                  enum: [point_cloud, camera_poses, ortho, dsm, dtm, mesh, tiles_3d, report]
+                authority:
+                  description: >-
+                    source = 원본 capture 를 직접 처리한 결과. derived = 원본에서
+                    재생성한 파생 서빙 계층(derivedFrom 최소 1건 필요).
+                  type: string
+                  enum: [source, derived]
+                derivedFrom:
+                  description: 같은 작업의 부모 artifactId 목록. authority=source 면 빈 배열.
+                  type: array
+                  items: { type: string }
+                  default: []
+                digest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                format:
+                  description: 'laz·obj·gltf·cog·3dtiles·pdf 등 — kind×provider 조합마다 달라 enum 을 두지 않는다.'
+                  type: string
+                  minLength: 1
+                crs: { type: [string, 'null'] }
+                gsd: { type: [number, 'null'], exclusiveMinimum: 0 }
+                accuracy:
+                  type: [object, 'null']
+                  additionalProperties: false
+                  required: [gcpCount, rmse, reportUri]
+                  properties:
+                    gcpCount: { type: integer, minimum: 0 }
+                    rmse: { type: number, minimum: 0 }
+                    reportUri: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: ARTIFACT_REGISTERED — verdict + 등록된 산출물의 계약 payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingArtifactMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: JOB_NOT_RUNNING · DUPLICATE_ARTIFACT }
+        '422':
+          description: >-
+            INVALID_ARTIFACT_ID · UNKNOWN_PARENT_ARTIFACT ·
+            ARTIFACT_CONTRACT_VIOLATION(kind 별 crs/gsd 필수, derived 의 부모 필수)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/missions/{mission_id}/contract:
     get:
       summary: Get the stored signed Mission Contract verbatim (INV-011)
@@ -1684,7 +1800,7 @@ components:
       type: object
       required:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
-         inputVerified, contract]
+         inputVerified, contract, artifacts]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -1698,10 +1814,20 @@ components:
         inputVerified:
           type: boolean
           description: >-
-            현재는 항상 false(B2 범위) — input.totalMegapixels 는 업로더 신고
-            해상도의 합이고 전 바이트를 읽어 대조한 값이 아니다. 워커가 재계산해
-            대조하면(B3) 참이 될 수 있다. "검증된 척"하는 기본값을 쓰지 않는다.
+            현재는 항상 false — input.totalMegapixels 는 업로더 신고 해상도의
+            합이고 전 바이트를 읽어 대조한 값이 아니다. 원본 바이트 재검증 경로는
+            아직 없다(산출물이 존재한다는 것과 입력이 신고대로였다는 것은 다른
+            사실이라, INV-051 게이트가 이 필드를 대신하지 않는다).
+            "검증된 척"하는 기본값을 쓰지 않는다.
         contract: { type: object, additionalProperties: true }
+        artifacts:
+          description: >-
+            이 작업에 등록된 산출물의 계약 payload(등록 순). 구조 정본은
+            contracts/schemas/processing-artifact.v1.json 이다. SUCCEEDED 를
+            받쳐주는 근거가 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수
+            있게 싣는다(INV-051).
+          type: array
+          items: { type: object, additionalProperties: true }
     ProcessingJobListResponse:
       type: object
       required: [jobs]
@@ -1714,6 +1840,18 @@ components:
       properties:
         verdict: { type: string }
         job: { oneOf: [{ $ref: '#/components/schemas/ProcessingJobView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
+    ProcessingArtifactMutationResponse:
+      description: >-
+        산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은
+        contracts/schemas/processing-artifact.v1.json 이다 — Core 가 채운
+        jobId·lineage.sourceDigest 를 포함한 완전한 계약 payload 다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        artifact:
+          oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
         detail: { type: [string, 'null'] }
 
   securitySchemes:
