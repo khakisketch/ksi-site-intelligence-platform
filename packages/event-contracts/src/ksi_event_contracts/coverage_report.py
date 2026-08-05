@@ -58,6 +58,15 @@ class CoverageCellState(StrEnum):
 
 # 사유 없는 미관찰 — 이 상태로 남은 Cell 이 있으면 COMPLETED 를 주장할 수 없다.
 UNEXPLAINED_GAP_STATES = frozenset({CoverageCellState.NOT_OBSERVED})
+# 실제로 관찰된 것으로 치는 상태 — 나머지는 전부 "못 봤다"(사유 유무만 다르다).
+OBSERVED_STATES = frozenset(
+    {
+        CoverageCellState.OBSERVED_HIGH_CONFIDENCE,
+        CoverageCellState.OBSERVED_PARTIAL,
+        CoverageCellState.RECONSTRUCTION_READY,
+        CoverageCellState.EVENT_INSPECTED,
+    }
+)
 
 
 class CompletionState(StrEnum):
@@ -124,3 +133,22 @@ class CoverageReport(_CamelModel):
             and self.summary.mandatory_asset_ratio >= MANDATORY_ASSET_MIN
             and self.summary.accessible_general_ratio >= ACCESSIBLE_GENERAL_MIN
         )
+
+    def unobserved_cells(self) -> list[str]:
+        """관찰되지 않은 Cell id — 사유가 있든 없든 전부(순서 보존)."""
+        return [c.cell_id for c in self.cells if c.state not in OBSERVED_STATES]
+
+    def contradicts_full_coverage(self) -> bool:
+        """요약이 전 구역 100% 를 말하는데 관찰 안 된 Cell 이 있는가.
+
+        서버는 Cell 분류(위험구역/자산/일반)를 몰라 비율을 재계산할 수 없지만,
+        **세 비율이 모두 1.0 인데 관찰상태가 아닌 Cell 이 존재하면 어떤 가중치
+        에서도 모순**이다 — 이건 분류를 몰라도 판정할 수 있다(독립 재검토 B-1).
+        """
+        summary = self.summary
+        all_full = (
+            summary.mandatory_hazard_ratio >= 1.0
+            and summary.mandatory_asset_ratio >= 1.0
+            and summary.accessible_general_ratio >= 1.0
+        )
+        return all_full and bool(self.unobserved_cells())

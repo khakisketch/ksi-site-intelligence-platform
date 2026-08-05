@@ -378,6 +378,7 @@ def lawnmower_route(
     envelope: FlightEnvelope,
     sweep_direction_deg: float | None = None,
     capture_interval_m: float | None = None,
+    spacing_is_camera_derived: bool = False,
 ) -> LawnmowerResult:
     """평행 스캔선 왕복(boustrophedon) 매핑 경로.
 
@@ -406,6 +407,20 @@ def lawnmower_route(
             enum·파라미터는 이 저장소 어디에서도 raw 스펙으로 확인되지 않았다 —
             H4(실기 Pilot 2 export 대조)에서 확정한 뒤 최적화한다. 미검증 값을
             매핑 기본 경로에 박지 않는다.
+        spacing_is_camera_derived: 간격이 **카메라 스펙에서 계산**됐는가
+            (:func:`ksi_mission_planning.camera.compute_grid_spacing`). ``True`` 면
+            아래 두 상한을 적용하지 않는다 — 그 상한들은 촬영폭을 모를 때 쓰는
+            **대리변수**이고, 카메라를 알면 서버가 실제 중복도를 이미 강제한다
+            (전방 0.6·측면 0.5 하한). 대리변수를 계속 걸면 정상 구성이 거부된다:
+            예를 들어 전방 0.8·측면 0.9 는 사진측량으로 완전히 정상인데
+            ``capture(8.0) > spacing(6.0)`` 이 되어 422 가 났다(독립 재검토 C-1,
+            대시보드 자유입력에서 실제 도달 — 현장은 등록되고 발급만 실패하는
+            반쪽 상태를 만든다).
+
+            ``capture ≤ spacing`` 이 카메라 경로에서 성립하지 않는 이유: 그 부등식은
+            "전방 겹침이 측면보다 크다"를 **정사각 촬영폭**에서 근사한 것이라,
+            가로가 세로보다 긴 실제 센서(5472×3648)에서는 성립하지 않는다.
+
         sweep_direction_deg: 스캔선 방향 — **수학 규약(동=0, 반시계, 도)** 이다.
             나침반 방위(heading, 북=0 시계)가 아니다(자율 재검토 F8 — 이름을
             direction 으로 강제해 규약 혼동을 API 표면에서 차단). ``None`` 이면
@@ -428,7 +443,7 @@ def lawnmower_route(
             "하한은 스캔선 수 폭발(자원 소진) 차단"
         )
     spacing_ceiling = _MAX_SPACING_PER_ALTITUDE * altitude_m
-    if spacing_m > spacing_ceiling:
+    if spacing_m > spacing_ceiling and not spacing_is_camera_derived:
         raise RouteGenerationError(
             f"spacing_m({spacing_m}) 가 고도 {altitude_m}m 의 매핑 운용 상한"
             f"({spacing_ceiling:.1f}m = 고도×{_MAX_SPACING_PER_ALTITUDE})을 넘는다 — "
@@ -442,7 +457,7 @@ def lawnmower_route(
                 f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
                 f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
             )
-        if capture_interval_m > spacing_m:
+        if capture_interval_m > spacing_m and not spacing_is_camera_derived:
             # **상한이 없으면 이 인자는 fail-closed 시늉만 한다**(독립 재검토 P1-2):
             # 아주 큰 값을 주면 구간이 통째로 "간격보다 짧다"로 떨어져 끝점 2개만
             # 남고, 전방 중첩 0 이 그대로 재현되는데 coverage_ratio 는 여전히 1.0 을

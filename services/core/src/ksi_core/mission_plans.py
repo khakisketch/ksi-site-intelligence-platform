@@ -309,6 +309,7 @@ def build_mission_plan(
             envelope=envelope,
             sweep_direction_deg=request.route.sweep_direction_deg,
             capture_interval_m=capture_interval_m,
+            spacing_is_camera_derived=grid is not None,
         )
         route = lawnmower_result.waypoints
         planned_coverage_ratio = lawnmower_result.coverage_ratio

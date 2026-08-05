@@ -68,6 +68,8 @@ class CoverageReportVerdict(StrEnum):
     SITE_MISMATCH = "SITE_MISMATCH"
     UNSUPPORTED_COMPLETION = "UNSUPPORTED_COMPLETION"
     UNEXPLAINED_GAP = "UNEXPLAINED_GAP"
+    NO_COVERAGE_EVIDENCE = "NO_COVERAGE_EVIDENCE"
+    SELF_CONTRADICTORY_SUMMARY = "SELF_CONTRADICTORY_SUMMARY"
     INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -78,6 +80,8 @@ _STATUS: dict[CoverageReportVerdict, int] = {
     CoverageReportVerdict.SITE_MISMATCH: 422,
     CoverageReportVerdict.UNSUPPORTED_COMPLETION: 422,
     CoverageReportVerdict.UNEXPLAINED_GAP: 422,
+    CoverageReportVerdict.NO_COVERAGE_EVIDENCE: 422,
+    CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY: 422,
     CoverageReportVerdict.INVALID_TIMESTAMP: 422,
     CoverageReportVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -109,6 +113,23 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
     if report.summary.completion_state is not CompletionState.COMPLETED:
         return CoverageReportVerdict.RECORDED, None
 
+    if not report.cells:
+        # 관찰 증거 0건으로 완료를 주장할 수 없다(독립 재검토 B-1). 스키마에
+        # minItems 가 없어 빈 배열이 통과했고, 그러면 "무엇을 봤길래 완료인가"에
+        # 원장이 답하지 못한다.
+        return (
+            CoverageReportVerdict.NO_COVERAGE_EVIDENCE,
+            "COMPLETED 주장인데 Cell 이 하나도 없다 — 관찰 증거 없이 완료할 수 없다",
+        )
+    if report.contradicts_full_coverage():
+        # 서버가 Cell 분류를 몰라도 판정 가능한 **자체 모순**이다 — 세 비율이 모두
+        # 100% 인데 관찰 안 된 Cell 이 있으면 어떤 가중치에서도 성립하지 않는다.
+        unobserved = report.unobserved_cells()
+        return (
+            CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY,
+            f"요약이 전 구역 100% 를 말하는데 관찰되지 않은 Cell 이 {len(unobserved)}개 "
+            f"있다 — 어떤 가중치에서도 모순이다. 예: {unobserved[:3]}",
+        )
     if not report.meets_completion_thresholds():
         summary = report.summary
         return (
@@ -170,8 +191,14 @@ class CoverageReportStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
-    def record(self, report: CoverageReport, *, now: datetime) -> CoverageReportResult:
-        """보고 1건을 판정·durable 기록한다. 실패는 typed verdict 로 돌려준다."""
+    def record(
+        self, report: CoverageReport, *, now: datetime, reported_by: str | None = None
+    ) -> CoverageReportResult:
+        """보고 1건을 판정·durable 기록한다. 실패는 typed verdict 로 돌려준다.
+
+        ``reported_by``: 제출한 Principal id. "언제 무엇을 봤다고 했는가"가 감사
+        입력이라면 "누가 그렇게 말했는가"도 같이 남아야 한다(독립 재검토 B-3).
+        """
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return CoverageReportResult(
@@ -200,6 +227,7 @@ class CoverageReportStore:
                 "missionId": report.mission_id,
                 "siteId": report.site_id,
                 "completionState": report.summary.completion_state.value,
+                "reportedBy": reported_by,
                 "report": report.model_dump(by_alias=True, mode="json", exclude_none=True),
             }
             try:
@@ -248,9 +276,15 @@ def _require_reporting_device(
 ) -> Principal:
     """보고는 **장비만** 올린다 — 운영자가 커버리지를 손으로 주장할 수 없다.
 
-    ``mission_id`` 를 인자로 받는 이유는 FastAPI 가 경로 파라미터를 주입해
-    이 의존성이 라우트와 같은 시그니처를 갖게 하기 위해서다(사용하지는 않는다 —
-    장비-임무 결합은 저장소가 임무 발급 기록으로 대조한다).
+    ``mission_id`` 를 인자로 받는 이유는 FastAPI 가 경로 파라미터를 주입해 이
+    의존성이 라우트와 같은 시그니처를 갖게 하기 위해서다(값은 쓰지 않는다).
+
+    **알려진 공백(독립 재검토 B-3)**: 어느 장비가 그 임무를 수행했는지는 검사하지
+    않는다 — ``MissionRecord`` 에 device 필드가 없어 대조할 대상 자체가 없다.
+    따라서 인증된 장비면 **다른 장비의 임무도 닫을 수 있다**(edge-sync 의
+    ``DEVICE_MISMATCH`` 대칭이 여기엔 없다). 임무에 장비를 배정하는 개념이 아직
+    제품에 없어서 생긴 공백이고, 그 개념을 만드는 것은 제품 결정이다. 지금은
+    **제출 주체를 원장에 남겨** 최소한 "누가 그렇게 말했는가"에는 답할 수 있게 한다.
     """
     if principal.kind is not PrincipalKind.EDGE_DEVICE:
         raise HTTPException(status_code=403, detail="권한이 부족하다")
@@ -265,7 +299,7 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
         mission_id: str,
         report: CoverageReport,
         response: Response,
-        _principal: Principal = Depends(_require_reporting_device),  # noqa: B008
+        principal: Principal = Depends(_require_reporting_device),  # noqa: B008
     ) -> CoverageReportResponse:
         """비행 후 커버리지 보고 접수 — 완료 판정의 입력(INV-010).
 
@@ -277,7 +311,9 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
                 status_code=422,
                 detail="경로의 missionId 와 본문의 missionId 가 다르다",
             )
-        result = store.record(report, now=datetime.now(UTC))
+        result = store.record(
+            report, now=datetime.now(UTC), reported_by=principal.principal_id
+        )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is CoverageReportVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"

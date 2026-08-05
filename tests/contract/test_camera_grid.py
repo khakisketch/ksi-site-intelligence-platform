@@ -13,10 +13,16 @@ from __future__ import annotations
 import math
 
 import pytest
+from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
+from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_planning import (
+    AreaOfInterest,
     CameraSpec,
     CameraSpecError,
+    GeoPoint,
+    RouteGenerationError,
     compute_grid_spacing,
+    lawnmower_route,
 )
 from ksi_mission_planning.camera import (
     DEFAULT_FRONT_OVERLAP,
@@ -30,6 +36,25 @@ from ksi_mission_planning.camera import (
 # 매핑용 기체 카메라 급 스펙(참고 구현의 테스트 오라클과 같은 규모).
 # 센서 13.2mm / 초점 8.8mm / 5472×3648px — 고도 120m 에서 GSD 0.0329m/px,
 # footprint 180×120m 가 나오도록 잡은 값이다.
+_LAT0, _LON0 = 37.5000, 127.0000
+_M_PER_DEG_LAT = math.radians(1.0) * WGS84_EQUATORIAL_RADIUS_M
+_ENVELOPE = FlightEnvelope(
+    allowed_volumes=["vol-1"], excluded_volumes=[], min_altitude_m=0.0, max_altitude_m=150.0
+)
+
+
+def _rect_aoi(width_m: float = 200.0, height_m: float = 100.0) -> AreaOfInterest:
+    def pt(east: float, north: float) -> GeoPoint:
+        return GeoPoint(
+            lat_deg=_LAT0 + north / _M_PER_DEG_LAT,
+            lon_deg=_LON0 + east / (_M_PER_DEG_LAT * math.cos(math.radians(_LAT0))),
+        )
+
+    return AreaOfInterest(
+        vertices=[pt(0, 0), pt(width_m, 0), pt(width_m, height_m), pt(0, height_m)]
+    )
+
+
 _CAMERA = CameraSpec(
     sensor_width_mm=13.2,
     focal_length_mm=8.8,
@@ -152,3 +177,47 @@ def test_computed_spacing_satisfies_route_generator_bounds() -> None:
         )
         assert grid.spacing_m <= 1.5 * altitude
         assert grid.capture_interval_m <= grid.spacing_m
+
+
+@pytest.mark.parametrize(
+    ("front", "side"),
+    [
+        (0.8, 0.9),   # 라인 간 겹침을 높인 정상 구성 — 대리변수 상한이 오판하던 조합
+        (0.6, 0.85),
+        (0.9, 0.95),
+    ],
+)
+def test_high_side_overlap_is_issuable_via_camera(front: float, side: float) -> None:
+    """[핵심] 측면 겹침이 큰 정상 구성이 대리변수 상한에 걸리지 않는다.
+
+    ``capture ≤ spacing`` 은 촬영폭을 **정사각으로 근사**한 대리변수라, 가로가 세로보다
+    긴 실제 센서(5472×3648)에서는 측면 겹침을 올리면 성립하지 않는다 — 전방 0.8·
+    측면 0.9 는 사진측량으로 완전히 정상인데 spacing 6.0 < capture 8.0 이 되어 422 가
+    났다(독립 재검토 C-1, 대시보드 자유입력에서 실제 도달). 카메라를 알면 서버가
+    실제 중복도를 이미 강제하므로 대리변수를 적용하지 않는다.
+    """
+    grid = compute_grid_spacing(
+        _CAMERA, altitude_m=40.0, front_overlap=front, side_overlap=side
+    )
+    route = lawnmower_route(
+        _rect_aoi(),
+        spacing_m=grid.spacing_m,
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=grid.capture_interval_m,
+        spacing_is_camera_derived=True,
+    )
+    assert route.waypoints
+    assert route.coverage_ratio >= 0.95
+
+
+def test_proxy_bounds_still_apply_without_camera() -> None:
+    """[비공허 대조] 카메라 없이 직접 지정하면 대리변수 상한은 그대로 산다."""
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        lawnmower_route(
+            _rect_aoi(),
+            spacing_m=6.0,
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=8.0,
+        )

@@ -42,8 +42,10 @@ from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
 from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_planning import (
     AreaOfInterest,
+    CameraSpec,
     GeoPoint,
     RouteGenerationError,
+    compute_grid_spacing,
     lawnmower_route,
 )
 from pydantic import ValidationError
@@ -110,10 +112,11 @@ _SWEEPS = (None, 0.0, 30.0, 45.0, 90.0, 137.0)
         "실측: 2000×200m(40ha) AOI 를 고도 150·spacing 225·interval 225 로 요청하면 "
         "웨이포인트 10개(장당 4ha)에 coverageRatio 1.0 으로 발급된다. 상한을 네 번 "
         "고쳐봤지만 카메라 촬영폭을 모르는 한 요청이 자기 커버리지 증명서를 쓰는 "
-        "구조는 닫히지 않는다 — 실제 폐쇄는 CameraSpec+중복도를 요청 파라미터로 "
-        "받아 서버가 spacing·captureInterval 을 **계산**하는 것이고(참고 구현 "
-        "references/repos/ksi-terra/ksi_terra/flightplan 에 산식 존재), 그건 public "
-        "API 형태를 바꾸는 결정이라 대표자 확인 대기 중이다. "
+        "구조는 닫히지 않는다. 실제 폐쇄(CameraSpec 도입)는 ADR-KSI-011 D3 로 "
+        "반영됐고 **카메라 경로에서는 닫혔다** — 그 증거가 아래 "
+        "test_camera_derived_route_never_underphotographs 다. 이 xfail 이 고정하는 "
+        "것은 **간격 직접 지정 경로가 여전히 열려 있다**는 사실이다(카메라 미확정 "
+        "환경용으로 남겨둔 경로). "
         "strict=True — 그 결정이 반영돼 이 테스트가 통과하기 시작하면 여기서 실패해 "
         "마커 제거를 강제한다."
     ),
@@ -162,4 +165,68 @@ def test_issued_mapping_route_never_claims_coverage_it_cannot_photograph(seed: i
     assert not violations, (
         "촬영할 수 없는 커버를 주장하는 조합이 발급된다 — 이 결함은 세 번 재발했다. "
         "상한을 바꿨다면 그 근거를 ADR-KSI-011 에 적어라:\n" + "\n".join(violations[:5])
+    )
+
+
+# ── 카메라 경로 (ADR-KSI-011 D3) — 이쪽은 xfail 이 아니다 ────────────────────
+#
+# 위 속성이 직접 지정 경로에서 여전히 깨진다는 것과, 카메라 경로에서는 **닫힌다**는
+# 것은 별개의 사실이다. 후자를 증거 없이 주장하지 않기 위해 같은 속성을 카메라
+# 입력으로 한 번 더 돈다(독립 재검토 지적).
+
+_CAMERA = CameraSpec(
+    sensor_width_mm=13.2, focal_length_mm=8.8, image_width_px=5472, image_height_px=3648
+)
+_OVERLAPS = ((0.6, 0.5), (0.65, 0.55), (0.8, 0.7), (0.9, 0.8), (0.85, 0.6))
+
+
+@pytest.mark.parametrize("seed", [20260805, 7, 99])
+def test_camera_derived_route_never_underphotographs(seed: int) -> None:
+    """[핵심 속성] 카메라로 계산한 경로는 사진이 부족한 채 커버를 주장하지 않는다.
+
+    판정 기준을 **실제 촬영면적**으로 둔다 — 사진 1장이 담당하는 면적이 그 사진이
+    실제로 덮는 면적을 넘으면 겹침이 음수라는 뜻이고, 그건 어떤 재구성도 성립하지
+    않는다. 이 기준은 카메라에서 나오므로 구현 상한과 독립이다.
+    """
+    rng = random.Random(seed)
+    issued = 0
+    violations: list[str] = []
+
+    for _ in range(2000):
+        kind = rng.choice(_SHAPES)
+        width, height = rng.choice(_WIDTHS), rng.choice(_HEIGHTS)
+        altitude = rng.choice(_ALTITUDES)
+        front, side = rng.choice(_OVERLAPS)
+        sweep = rng.choice(_SWEEPS)
+        grid = compute_grid_spacing(
+            _CAMERA, altitude_m=altitude, front_overlap=front, side_overlap=side
+        )
+        try:
+            aoi = AreaOfInterest(vertices=_vertices(kind, width, height))
+            result = lawnmower_route(
+                aoi,
+                spacing_m=grid.spacing_m,
+                altitude_m=altitude,
+                envelope=_ENVELOPE,
+                sweep_direction_deg=sweep,
+                capture_interval_m=grid.capture_interval_m,
+                spacing_is_camera_derived=True,
+            )
+        except (RouteGenerationError, ValidationError):
+            continue
+        issued += 1
+        if result.coverage_ratio < 0.95:
+            continue
+        per_photo = aoi.area_m2() / len(result.waypoints)
+        photo_area = grid.footprint_across_m * grid.footprint_along_m
+        if per_photo > photo_area:
+            violations.append(
+                f"{kind} {width}x{height}m alt={altitude} 겹침 {front}/{side} → "
+                f"웨이포인트 {len(result.waypoints)}개, 장당 {per_photo:.0f}m² > "
+                f"촬영면적 {photo_area:.0f}m²"
+            )
+
+    assert issued >= 300, f"발급된 조합이 너무 적다({issued}) — 속성 테스트가 공허하다"
+    assert not violations, "카메라 경로가 사진보다 넓은 면적을 담당한다:\n" + "\n".join(
+        violations[:5]
     )

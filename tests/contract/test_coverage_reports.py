@@ -215,11 +215,14 @@ def test_completed_with_unexplained_gap_is_rejected(store: CoverageReportStore) 
     PRD §15.5 "모든 미관찰 Cell에 원인코드와 후속처리 기록" — 원인 없는 공백이
     완료로 덮이면 그 구역을 다시 볼 이유가 원장에서 사라진다.
     """
+    # 비율을 100% 미만으로 둔다 — 그래야 자체 모순 검사가 아니라 **사유 없는 공백**
+    # 검사가 걸린다(전 비율 1.0 + 미관찰 Cell 은 그보다 앞선 모순 게이트 소관).
     payload = _report_payload(
+        general=0.96,
         cells=[
             {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
             {"cellId": "c-2", "state": "NOT_OBSERVED"},
-        ]
+        ],
     )
     result = store.record(CoverageReport.model_validate(payload), now=_NOW)
     assert result.verdict is CoverageReportVerdict.UNEXPLAINED_GAP
@@ -387,3 +390,89 @@ def test_status_map_covers_every_verdict() -> None:
     from ksi_core.coverage_reports import _STATUS
 
     assert set(_STATUS) == set(CoverageReportVerdict)
+
+
+# ── 근거 없는 완료 (독립 재검토 B-1) ────────────────────────────────────────
+
+
+def test_completed_without_any_cell_is_rejected(store: CoverageReportStore) -> None:
+    """[핵심] 관찰 증거 0건으로 완료를 주장할 수 없다.
+
+    스키마에 minItems 가 없어 빈 배열이 통과했다 — 그러면 "무엇을 봤길래 완료인가"에
+    원장이 답하지 못한다.
+    """
+    result = store.record(
+        CoverageReport.model_validate(_report_payload(cells=[])), now=_NOW
+    )
+    assert result.verdict is CoverageReportVerdict.NO_COVERAGE_EVIDENCE
+
+
+@pytest.mark.parametrize(
+    "gap_state", ["OCCLUDED", "UNREACHABLE", "UNSAFE", "BATTERY_LIMITED", "NOT_OBSERVED"]
+)
+def test_full_coverage_claim_contradicted_by_its_own_cells(
+    store: CoverageReportStore, gap_state: str
+) -> None:
+    """[핵심] 전 구역 100% 라면서 관찰 안 된 Cell 을 함께 신고할 수 없다.
+
+    서버가 Cell 분류를 몰라도 판정 가능한 **자체 모순**이다 — 세 비율이 모두 1.0 인데
+    관찰상태가 아닌 Cell 이 있으면 어떤 가중치에서도 성립하지 않는다. 사유가 있는
+    공백(OCCLUDED 등)도 마찬가지다 — 사유가 있다고 100% 가 되지는 않는다.
+    """
+    payload = _report_payload(
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": gap_state},
+        ]
+    )
+    result = store.record(CoverageReport.model_validate(payload), now=_NOW)
+    assert result.verdict is CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY
+    assert "c-2" in (result.detail or "")
+
+
+def test_partial_ratio_with_cause_coded_gap_is_accepted(store: CoverageReportStore) -> None:
+    """[비공허 대조] 비율을 정직하게 낮춘 보고서는 받는다 — 과잉 거부가 아니다."""
+    payload = _report_payload(
+        general=0.96,
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": "OCCLUDED"},
+        ],
+    )
+    assert (
+        store.record(CoverageReport.model_validate(payload), now=_NOW).verdict
+        is CoverageReportVerdict.RECORDED
+    )
+
+
+def test_submitter_is_recorded_in_the_journal(tmp_path: Path) -> None:
+    """"언제 무엇을 봤다고 했는가"가 감사 입력이면 "누가"도 남아야 한다(B-3)."""
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    store = CoverageReportStore(journal, mission_store=_mission_store(tmp_path))
+    store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, reported_by="edge-1"
+    )
+    journal.close()
+
+    lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert lines[-1]["reportedBy"] == "edge-1"
+
+
+def test_http_submission_records_the_authenticated_principal(
+    store: CoverageReportStore,
+) -> None:
+    """HTTP 경로에서도 제출 주체가 요청자가 아니라 **인증된** Principal 이다."""
+    client = _client(store)
+    assert (
+        client.post(
+            f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+        ).status_code
+        == 201
+    )
+    history = store.history(_MISSION_ID)
+    assert len(history) == 1
