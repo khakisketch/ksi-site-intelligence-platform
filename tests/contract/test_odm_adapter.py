@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import ast
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -40,13 +41,14 @@ from ksi_processing_controller.odm import (
     parse_task_status,
     plan_artifacts,
     run_to_completion,
+    unwrap_response,
 )
 from ksi_processing_controller.odm_assets import ODM_ASSETS, POINT_CLOUD_ID
 
 _PACKAGE_ROOT = (
     Path(odm_module.__file__).resolve().parent
 )
-_ENGINE_VERSION = "3.5.4"
+_ENGINE_VERSION = "3.5.6"
 _CRS = "EPSG:5186"
 
 
@@ -93,16 +95,22 @@ def test_engine_boundary_is_five_rest_calls() -> None:
         for name in vars(odm_module.NodeOdmClient)
         if not name.startswith("_")
     }
-    assert surface == {"info", "new_task", "task_info", "download", "remove_task"}
+    assert surface == {
+        "info", "new_task", "task_info", "download_archive", "remove_task"
+    }
 
 
 # ── 엔진 신원 대조 ───────────────────────────────────────────────────────────
 
 
-def test_matching_engine_version_passes() -> None:
-    assert_engine_matches(
-        OdmEngineInfo(version=_ENGINE_VERSION), expected_version=_ENGINE_VERSION
+def _info(engine_version: str = _ENGINE_VERSION, *, engine: str = "odm") -> OdmEngineInfo:
+    return OdmEngineInfo(
+        engine=engine, engine_version=engine_version, node_version="2.2.4"
     )
+
+
+def test_matching_engine_version_passes() -> None:
+    assert_engine_matches(_info(), expected_version=_ENGINE_VERSION)
 
 
 @pytest.mark.parametrize("actual", ["3.5.5", "3.5", "2.9.9", ""])
@@ -113,9 +121,73 @@ def test_any_version_difference_refuses_submission(actual: str) -> None:
     정책이 틀리면 조용히 다른 엔진이 돈다.
     """
     with pytest.raises(EngineIdentityMismatch, match="재현성 앵커"):
-        assert_engine_matches(
-            OdmEngineInfo(version=actual), expected_version=_ENGINE_VERSION
-        )
+        assert_engine_matches(_info(actual), expected_version=_ENGINE_VERSION)
+
+
+def test_node_version_is_not_mistaken_for_engine_version() -> None:
+    """[핵심·실물이 고쳐준 것] /info 는 버전을 둘 준다 — 대조 대상은 engineVersion 이다.
+
+    처음 구현은 NodeODM 자신의 version(2.2.4)을 계약의 engineVersion 과 비교해서
+    늘 어긋났고, 애초에 다른 것을 비교하고 있었다. 실기동 전까지 드러나지 않았다.
+    """
+    info = OdmEngineInfo(engine="odm", engine_version="3.5.6", node_version="2.2.4")
+    assert_engine_matches(info, expected_version="3.5.6")
+    with pytest.raises(EngineIdentityMismatch):
+        assert_engine_matches(info, expected_version="2.2.4")
+
+
+def test_a_different_engine_is_refused() -> None:
+    """provider 가 odm 이 아닌 엔진에 이 어댑터를 붙이지 않는다."""
+    with pytest.raises(EngineIdentityMismatch, match="어댑터"):
+        assert_engine_matches(_info(engine="pix4d"), expected_version=_ENGINE_VERSION)
+
+
+def test_info_payload_parsing_uses_the_real_field_names() -> None:
+    """실물 /info 응답을 그대로 넣어 필드 이름을 고정한다."""
+    payload = {
+        "version": "2.2.4",
+        "taskQueueCount": 0,
+        "totalMemory": 130660868096,
+        "availableMemory": 110265094144,
+        "cpuCores": 20,
+        "maxImages": None,
+        "maxParallelTasks": 1,
+        "engineVersion": "3.5.6",
+        "engine": "odm",
+    }
+    info = OdmEngineInfo.from_payload(payload)
+    assert info.engine == "odm"
+    assert info.engine_version == "3.5.6"
+    assert info.node_version == "2.2.4"
+
+
+def test_error_envelope_arrives_with_http_200() -> None:
+    """[핵심·실물이 고쳐준 것] 미지 uuid·미준비 asset 이 200 + {"error": ...} 다.
+
+    상태 코드만 보는 클라이언트는 이것을 성공으로 읽고 다음 줄에서 KeyError 를
+    낸다 — 원인이 두 겹 뒤에서 드러나는 실패다.
+    """
+    with pytest.raises(OdmError, match="not found"):
+        unwrap_response({"error": "abc not found"}, what="/task/info")
+    with pytest.raises(OdmError, match="Asset not ready"):
+        unwrap_response({"error": "Asset not ready"}, what="/download")
+    assert unwrap_response({"uuid": "u1"}, what="/task/new") == {"uuid": "u1"}
+
+
+def test_task_state_parses_the_real_failure_payload() -> None:
+    """실물이 준 실패 응답 — errorMessage 를 지어내지 않고 그대로 옮긴다."""
+    state = OdmTaskState.from_payload(
+        {
+            "uuid": "533c4fd7",
+            "processingTime": 4373,
+            "status": {"code": 30, "errorMessage": "Cannot process dataset"},
+            "imagesCount": 2,
+            "progress": 100,
+        }
+    )
+    assert state.status is OdmTaskStatus.FAILED
+    assert state.error_message == "Cannot process dataset"
+    assert state.progress == 100
 
 
 # ── 상태 코드 매핑 — 모르는 값은 실패다 ──────────────────────────────────────
@@ -150,23 +222,23 @@ class FakeNodeOdm:
     def __init__(
         self,
         *,
-        version: str = _ENGINE_VERSION,
+        engine_version: str = _ENGINE_VERSION,
         states: list[OdmTaskState] | None = None,
-        available_assets: set[str] | None = None,
+        entries: set[str] | None = None,
     ) -> None:
-        self.version = version
+        self.engine_version = engine_version
         self.states = states or [OdmTaskState(status=OdmTaskStatus.COMPLETED)]
-        self.available_assets = (
-            available_assets
-            if available_assets is not None
-            else {asset.asset_path for asset in ODM_ASSETS}
+        self.entries = (
+            entries if entries is not None else {a.archive_entry for a in ODM_ASSETS}
         )
         self.submitted: list[SourceImage] = []
         self.removed: list[str] = []
         self._state_index = 0
 
     def info(self) -> OdmEngineInfo:
-        return OdmEngineInfo(version=self.version)
+        return OdmEngineInfo(
+            engine="odm", engine_version=self.engine_version, node_version="2.2.4"
+        )
 
     def new_task(self, images: Any, options: dict[str, Any]) -> str:
         del options
@@ -179,14 +251,21 @@ class FakeNodeOdm:
         self._state_index += 1
         return state
 
-    def download(self, uuid: str, asset_path: str) -> str:
+    def download_archive(self, uuid: str, dest: Path) -> Path:
         del uuid
-        if asset_path not in self.available_assets:
-            raise OdmError(f"엔진이 {asset_path} 를 내놓지 않았다")
-        return "sha256:" + f"{abs(hash(asset_path)):064x}"[:64]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, "w") as archive:
+            for entry in sorted(self.entries):
+                archive.writestr(entry, f"내용:{entry}".encode())
+        return dest
 
     def remove_task(self, uuid: str) -> None:
         self.removed.append(uuid)
+
+
+def _archive(tmp_path: Path, engine: FakeNodeOdm | None = None) -> Path:
+    """가짜 엔진이 만든 all.zip — plan_artifacts 의 실제 입력."""
+    return (engine or FakeNodeOdm()).download_archive("u1", tmp_path / "all.zip")
 
 
 _IMAGES = (SourceImage(media_id="img-1.jpg", download_url="https://s.invalid/1"),)
@@ -196,9 +275,9 @@ _GSD = {"orthophoto": 0.031, "dsm": 0.05, "dtm": 0.05}
 # ── 산출물 계보 ─────────────────────────────────────────────────────────────
 
 
-def test_lineage_matches_the_odm_pipeline() -> None:
+def test_lineage_matches_the_odm_pipeline(tmp_path: Path) -> None:
     """[핵심] 원본은 SfM/MVS 직접 산출물, 나머지는 거기서 파생(ADR-KSI-003)."""
-    reports = plan_artifacts("u1", FakeNodeOdm(), crs=_CRS, gsd_by_artifact=_GSD)
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
     by_id = {r.artifact_id: r for r in reports}
 
     assert by_id["camera-poses"].authority == "source"
@@ -209,9 +288,9 @@ def test_lineage_matches_the_odm_pipeline() -> None:
     assert by_id["dsm"].derived_from == (POINT_CLOUD_ID,)
 
 
-def test_parents_are_registered_before_their_children() -> None:
+def test_parents_are_registered_before_their_children(tmp_path: Path) -> None:
     """등록 순서가 곧 계보다 — Core 는 실재하는 부모만 허용한다."""
-    reports = plan_artifacts("u1", FakeNodeOdm(), crs=_CRS, gsd_by_artifact=_GSD)
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
     position = {r.artifact_id: i for i, r in enumerate(reports)}
     for report in reports:
         for parent in report.derived_from:
@@ -220,9 +299,9 @@ def test_parents_are_registered_before_their_children() -> None:
             )
 
 
-def test_reports_satisfy_the_artifact_contract() -> None:
+def test_reports_satisfy_the_artifact_contract(tmp_path: Path) -> None:
     """[수용기준] 어댑터가 만든 값이 계약을 실제로 통과한다 — 필드 이름만 맞추지 않는다."""
-    reports = plan_artifacts("u1", FakeNodeOdm(), crs=_CRS, gsd_by_artifact=_GSD)
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
     for report in reports:
         artifact = ProcessingArtifact(
             artifact_id=report.artifact_id,
@@ -243,50 +322,50 @@ def test_reports_satisfy_the_artifact_contract() -> None:
         assert artifact.accuracy is None
 
 
-def test_camera_poses_carry_no_crs() -> None:
+def test_camera_poses_carry_no_crs(tmp_path: Path) -> None:
     """공간 좌표계가 원천적으로 없는 산출물에 값을 지어내지 않는다."""
-    reports = plan_artifacts("u1", FakeNodeOdm(), crs=_CRS, gsd_by_artifact=_GSD)
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
     poses = next(r for r in reports if r.artifact_id == "camera-poses")
     assert poses.crs is None
 
 
-def test_missing_optional_assets_are_skipped_not_failed() -> None:
+def test_missing_optional_assets_are_skipped_not_failed(tmp_path: Path) -> None:
     """ODM 은 옵션에 따라 DTM·정사영상을 안 만든다 — 정상 설정이 실패가 되면 안 된다."""
     engine = FakeNodeOdm(
-        available_assets={
+        entries={
             "cameras.json",
             "odm_georeferencing/odm_georeferenced_model.laz",
         }
     )
-    reports = plan_artifacts("u1", engine, crs=_CRS)
+    reports = plan_artifacts(_archive(tmp_path, engine), crs=_CRS)
     assert {r.artifact_id for r in reports} == {"camera-poses", POINT_CLOUD_ID}
 
 
-def test_raster_without_gsd_is_skipped_rather_than_invented() -> None:
+def test_raster_without_gsd_is_skipped_rather_than_invented(tmp_path: Path) -> None:
     """[핵심] 지어낸 GSD 를 싣느니 산출물을 뺀다 — 계약이 null 을 금지하는 kind 다."""
-    reports = plan_artifacts("u1", FakeNodeOdm(), crs=_CRS, gsd_by_artifact={})
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact={})
     assert not [r for r in reports if r.artifact_id in {"orthophoto", "dsm", "dtm"}]
     # 원본은 그대로 남는다 — GSD 는 래스터만의 고유 속성이다.
     assert POINT_CLOUD_ID in {r.artifact_id for r in reports}
 
 
-def test_derived_without_its_parent_is_not_registered() -> None:
+def test_derived_without_its_parent_is_not_registered(tmp_path: Path) -> None:
     """부모 없이 파생만 내놓는 엔진 응답은 계보 없는 파생이라 등록하지 않는다."""
     engine = FakeNodeOdm(
-        available_assets={
+        entries={
             "cameras.json",
             "odm_texturing/odm_textured_model_geo.obj",  # mesh, 부모(point cloud) 없음
         }
     )
-    reports = plan_artifacts("u1", engine, crs=_CRS)
+    reports = plan_artifacts(_archive(tmp_path, engine), crs=_CRS)
     assert {r.artifact_id for r in reports} == {"camera-poses"}
 
 
-def test_no_source_artifact_is_an_error() -> None:
+def test_no_source_artifact_is_an_error(tmp_path: Path) -> None:
     """[핵심] 파생물만으로는 성공한 재구성이 아니다(Core 의 SUCCEEDED 게이트와 같은 판단)."""
-    engine = FakeNodeOdm(available_assets={"odm_orthophoto/odm_orthophoto.tif"})
+    engine = FakeNodeOdm(entries={"odm_orthophoto/odm_orthophoto.tif"})
     with pytest.raises(OdmError, match="원본 산출물"):
-        plan_artifacts("u1", engine, crs=_CRS, gsd_by_artifact=_GSD)
+        plan_artifacts(_archive(tmp_path, engine), crs=_CRS, gsd_by_artifact=_GSD)
 
 
 # ── 실행 루프 ───────────────────────────────────────────────────────────────
@@ -316,7 +395,7 @@ def test_run_polls_until_completion() -> None:
 
 def test_run_refuses_before_submitting_when_engine_differs() -> None:
     """[핵심] 신원 대조가 제출 **앞**이다 — 틀린 엔진에 사진을 넘기지 않는다."""
-    engine = FakeNodeOdm(version="9.9.9")
+    engine = FakeNodeOdm(engine_version="9.9.9")
     with pytest.raises(EngineIdentityMismatch):
         run_to_completion(
             engine, _IMAGES, expected_version=_ENGINE_VERSION, options={},

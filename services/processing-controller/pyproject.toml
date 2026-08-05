@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 # ODM/NodeODM(AGPL-3.0)에 대한 의존이 **여기 없는 것**이 ADR-KSI-012 D2 의
 # 실질이다 — 엔진과는 REST 프로세스 경계로만 말하므로 빌드 의존이 생기지 않는다.
 # 계약 모델(kind·authority)만 공유한다.
-dependencies = ["ksi-event-contracts"]
+dependencies = ["ksi-event-contracts", "httpx>=0.27"]
 
 [tool.uv.sources]
 ksi-event-contracts = { workspace = true }

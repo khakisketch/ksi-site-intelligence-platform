@@ -61,7 +61,15 @@ info:
   # RUNNING→SUCCEEDED 게이트에 "입력 실측 대조 완료"가 추가된다(기존 산출물
   # 조건과 AND). 실측 없이 성공을 주장하면 과금 근거(totalMegapixels)가 끝까지
   # 업로더 신고값으로 남기 때문이다. SourceMediaBundleView 에 lastMismatchAt 추가.
-  version: 1.13.0
+  # 1.14.0 — 워커 lease 신설: POST /v1/processing-jobs/{id}/lease. 작업 하나를
+  # 워커 하나가 쥐고, /input·실행 상태 보고·산출물 등록이 전부 그 lease 를 요구한다
+  # (상호배제 + 접근 범위 축소 — 워커 토큰 하나로 활성 작업 전체의 원본을 열람하던
+  # 것을 닫는다). 만료는 저장 플래그가 아니라 expiresAt 대 now 비교라, 죽은 워커의
+  # 작업이 별도 조치 없이 회수된다. **기존 워커 호출이 lease 없이는 409 가 된다.**
+  # 취소(CANCELLED)만 lease 를 요구하지 않는다 — 워커가 죽어 lease 가 살아 있는
+  # 동안 취소가 막히면 정확히 취소가 필요한 상황에서 막힌다.
+  # ProcessingJobView 에 leaseWorkerId·leaseExpiresAt 추가.
+  version: 1.14.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1089,13 +1097,70 @@ paths:
         '404': { description: UNKNOWN_JOB }
         '409':
           description: >-
-            ILLEGAL_TRANSITION(전이표에 없는 전이) 또는
-            UNBACKED_SUCCESS(원본 산출물 없이 SUCCEEDED 주장 — INV-051).
+            ILLEGAL_TRANSITION(전이표에 없는 전이) ·
+            UNBACKED_SUCCESS(원본 산출물 없이 SUCCEEDED 주장 — INV-051) ·
+            LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER(실행 상태 보고는 lease 를
+            쥔 워커만 — CANCELLED 는 예외다).
             422 가 아니라 409 인 이유: 요청 자체는 올바르고 지금 원장 상태가 그
             주장을 받쳐주지 못하는 것이다(산출물을 등록하면 같은 요청이 통과한다).
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: 대상 상태가 요구하는 권한 없음(위 설명의 권한표) }
+  /v1/processing-jobs/{job_id}/lease:
+    post:
+      summary: Claim (or renew) exclusive hold on a processing job
+      description: >-
+        PROCESSING_WORK 권한 필요(워커 전용 — 사람은 작업을 잡아 워커를 굶길 수
+        없다). **워커 행위의 관문이다**: GET .../input · RUNNING/SUCCEEDED/FAILED
+        보고 · 산출물 등록이 전부 이 lease 를 요구하고, 없으면 409 LEASE_REQUIRED,
+        남이 쥐고 있으면 409 LEASE_HELD_BY_ANOTHER 다.
+
+
+        403 이 아니라 409 인 이유: 권한은 있고 **지금 이 작업을 쥔 사람이 아닐**
+        뿐이다. 403 으로 내면 워커가 자기 자격증명을 의심하게 된다.
+
+
+        **만료는 저장된 플래그가 아니라 expiresAt 대 현재시각 비교다.** `released`
+        같은 불리언을 두면 누군가 갱신해줘야 참이 되고, 빠뜨리면 죽은 워커가
+        영원히 살아 있는 것으로 보인다. 여기서는 만료된 lease 가 곧 없는 lease 라,
+        죽은 워커의 작업이 별도 반납 명령 없이 회수된다 — 죽은 워커는 정의상
+        반납하지 않으므로 명시적 반납에만 의존하면 그 작업이 영구히 묶인다.
+
+
+        같은 워커의 재호출은 갱신(heartbeat)이고 200 LEASE_RENEWED 다. 만료를
+        밀되 최초 취득 시각(grantedAt)은 유지한다 — 얼마나 오래 쥐고 있었는지가
+        남아야 "이 워커가 계속 못 끝내고 있다"를 볼 수 있다. 만료 **후** 같은
+        워커가 다시 잡으면 그건 갱신이 아니라 새 취득(201 LEASED)이다.
+
+
+        기본 수명은 15분이다. 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라
+        (ODM 재구성은 몇 시간이다) **"워커가 죽었다고 판정하기까지 기다리는
+        시간"**이다 — 살아 있는 워커는 갱신으로 계속 연장한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: LEASED — 새로 잡았다(비어 있었거나 이전 lease 가 만료됐다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '200':
+          description: LEASE_RENEWED — 같은 워커의 갱신(heartbeat)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409':
+          description: >-
+            LEASE_HELD_BY_ANOTHER(다른 워커가 유효한 lease 보유) ·
+            JOB_NOT_ACTIVE(끝난 작업은 잡을 수 없다)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/processing-jobs/{job_id}/input:
     get:
       summary: Fetch a job's spec and presigned source downloads (worker's only read path)
@@ -1133,7 +1198,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/JobInputResponse' }
         '404': { description: UNKNOWN_JOB }
-        '409': { description: JOB_NOT_ACTIVE — 끝난 작업의 원본은 다시 내주지 않는다 }
+        '409':
+          description: >-
+            JOB_NOT_ACTIVE(끝난 작업의 원본은 다시 내주지 않는다) ·
+            LEASE_REQUIRED(이 작업을 쥐고 있지 않다) ·
+            LEASE_HELD_BY_ANOTHER(다른 워커가 쥐고 있다)
         '503': { description: STORAGE_UNAVAILABLE · STORE_UNAVAILABLE, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음 }
@@ -1225,7 +1294,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProcessingArtifactMutationResponse' }
         '404': { description: UNKNOWN_JOB }
-        '409': { description: JOB_NOT_RUNNING · DUPLICATE_ARTIFACT }
+        '409':
+          description: >-
+            JOB_NOT_RUNNING · DUPLICATE_ARTIFACT ·
+            LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER
         '422':
           description: >-
             INVALID_ARTIFACT_ID · UNKNOWN_PARENT_ARTIFACT ·
@@ -1996,7 +2068,7 @@ components:
       type: object
       required:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
-         inputVerified, contract, artifacts]
+         inputVerified, contract, artifacts, leaseWorkerId, leaseExpiresAt]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -2024,6 +2096,16 @@ components:
             있게 싣는다(INV-051).
           type: array
           items: { type: object, additionalProperties: true }
+        leaseWorkerId:
+          description: 지금 이 작업을 쥔 워커의 principalId. null 이면 아무도 안 쥐고 있다.
+          type: [string, 'null']
+        leaseExpiresAt:
+          description: >-
+            lease 만료 시각. **만료 여부를 불리언으로 싣지 않는다** — 응답을 만든
+            순간과 화면이 읽는 순간 사이에 만료될 수 있어, 그 판정은 시각을 받은
+            쪽이 자기 시계로 해야 한다.
+          type: [string, 'null']
+          format: date-time
     ProcessingJobListResponse:
       type: object
       required: [jobs]

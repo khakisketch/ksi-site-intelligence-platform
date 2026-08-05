@@ -5,7 +5,8 @@
 ODM/NodeODM 은 AGPL-3.0 이고, ADR-KSI-012 D2 가 그은 금지선은 **"엔진 코드를 한
 줄도 고치지 말고, 우리 코드와 한 저작물로 묶지 마라"**다. 그래서 이 모듈은
 :class:`NodeOdmClient` 라는 **포트 하나**만 알고, 그 포트는 HTTP REST 호출
-다섯 개(``info``·``new_task``·``task_info``·``download``·``remove``)로만 이뤄진다.
+다섯 개(``info``·``new_task``·``task_info``·``download_archive``·``remove_task``)
+로만 이뤄진다.
 
 - ODM/WebODM 을 import 하지 않는다.
 - 컨테이너 이미지를 만들지도 고치지도 않는다 — 무수정 이미지를 **기동해서
@@ -14,18 +15,37 @@ ODM/NodeODM 은 AGPL-3.0 이고, ADR-KSI-012 D2 가 그은 금지선은 **"엔�
   ``tests/contract/test_odm_adapter.py`` 의 import 검사가 기계로 고정한다
   (사람이 기억해서 지키는 규칙으로 두지 않는다).
 
+## 실물이 고쳐준 것 — 이 모듈의 형태는 추측이 아니다
+
+아래 넷은 무수정 ``opendronemap/nodeodm:latest``(NodeODM 2.2.4 / ODM 3.5.6)를
+띄워 REST 를 직접 두드려 확인한 사실이고, 처음 설계는 넷 다 틀렸다(2026-08-06).
+
+1. **``/info`` 는 버전을 둘 준다** — ``version`` 은 NodeODM 자신(2.2.4),
+   ``engineVersion`` 이 ODM 엔진(3.5.6)이다. ``ProcessingJob.engineVersion`` 이
+   가리키는 것은 후자다. 처음엔 ``version`` 을 대조해서, 늘 어긋나면서 애초에
+   다른 것을 비교하고 있었다.
+2. **산출물은 ``all.zip`` 하나로만 나온다** — ``Task.getAssetsArchivePath`` 가
+   ``all.zip`` 외의 이름을 전부 거부한다. 개별 asset 다운로드는 NodeODM 에
+   존재하지 않는 기능이라, 산출물별 digest 는 아카이브 **안에서** 계산한다.
+3. **에러가 HTTP 200 으로 온다** — 미지 uuid 도, 준비 안 된 asset 도 200 에
+   ``{"error": ...}`` 본문이다. 상태 코드만 보는 클라이언트는 그것을 성공으로
+   읽고 다음 줄에서 KeyError 를 낸다(:func:`_unwrap`).
+4. **상태 코드 30 은 ``errorMessage`` 를 동반한다** — ``{"status": {"code": 30,
+   "errorMessage": "Cannot process dataset"}}``. 그 문자열을 우리가 지어내지
+   않고 그대로 옮긴다.
+
 ## ``engineVersion`` 은 지시였다 — 여기서 사실과 대조한다
 
 ``ProcessingJob.engineVersion`` 은 발급자가 "이걸로 돌려라"라고 적은 값이고,
-B2 시점에는 그게 실제로 돌았는지 확인할 방법이 없었다. 이 어댑터는 작업을
-제출하기 **전에** NodeODM ``/info`` 가 보고하는 실제 버전과 대조하고, 다르면
-제출하지 않는다(:class:`EngineIdentityMismatch`). 다른 엔진이 돌아놓고 계약에는
-지시된 버전이 적히는 상태를 막는다 — 재현성의 앵커가 거짓이 되는 자리다.
+그게 실제로 돌았는지 확인할 방법이 없었다. 이 어댑터는 작업을 제출하기 **전에**
+``/info`` 가 보고하는 실제 엔진 이름·버전과 대조하고, 다르면 제출하지 않는다
+(:class:`EngineIdentityMismatch`). 다른 엔진이 돌아놓고 계약에는 지시된 버전이
+적히는 상태를 막는다 — 재현성의 앵커가 거짓이 되는 자리다.
 
-**대조하지 못하는 것:** 컨테이너 이미지 digest. NodeODM ``/info`` 는 버전
-문자열만 주고 자기 이미지 digest 를 말하지 않는다. ``engineDigest`` 가 실제
-이미지와 같은지는 배포 계층(compose/k8s 의 이미지 핀)이 보장해야 하고, 이
-어댑터는 그것을 확인할 수단이 없다 — 그래서 확인한 척하지 않는다.
+**대조하지 못하는 것:** 컨테이너 이미지 digest. ``/info`` 는 버전 문자열만 주고
+자기 이미지 digest 를 말하지 않는다. ``engineDigest`` 가 실제 이미지와 같은지는
+배포 계층(compose/k8s 의 이미지 핀)이 보장해야 하고, 이 어댑터는 그것을 확인할
+수단이 없다 — 그래서 확인한 척하지 않는다.
 
 ## 실행 순서가 곧 계보다
 
@@ -37,32 +57,38 @@ INV-051 을 지키는 것이다.
 
 ## 이 모듈이 하지 않는 것
 
-- **HTTP 구현.** :class:`NodeOdmClient` 는 Protocol 이다. 실제 httpx 구현은
-  ``http_node_odm.py`` 에 있고 **실제 NodeODM 대상 검증은 아직 없다**.
-- **바이트 전송.** 산출물을 KSI 스토리지로 올리는 경로는 아직 없다 — 이
-  어댑터는 NodeODM 이 준 asset 경로와 digest 를 Core 에 등록할 뿐이다.
-- **lease·재시도·크래시 복구.** 작업 하나를 끝까지 도는 것만 한다.
+- **산출물 바이트 전송.** 아카이브에서 digest 만 계산하고 KSI 스토리지로 올리는
+  경로는 아직 없다.
+- **lease 갱신 루프.** Core 의 lease 는 15분이고 ODM 재구성은 몇 시간이라
+  워커는 폴링 중에 갱신해야 한다 — 그 배선은 워커 데몬의 몫이다.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
 
 from ksi_processing_controller.odm_assets import ODM_ASSETS, OdmAsset
 
 logger = logging.getLogger(__name__)
 
+# NodeODM 이 내주는 유일한 산출물 asset 이름(실기동 확인 — 그 외는 전부 거부된다).
+ARCHIVE_ASSET = "all.zip"
+# ``/info`` 의 ``engine`` 값. provider 가 odm 인 작업만 이 어댑터가 받는다.
+ODM_ENGINE_NAME = "odm"
+
 
 class OdmTaskStatus(StrEnum):
     """NodeODM 작업 상태 (REST ``/task/{uuid}/info`` 의 ``status.code`` 매핑).
 
-    NodeODM 은 숫자 코드를 쓴다(10=QUEUED, 20=RUNNING, 30=FAILED, 40=COMPLETED,
-    50=CANCELED). 숫자를 이 모듈 밖으로 내보내지 않는다 — 엔진의 내부 표현이
-    KSI 도메인으로 새면 엔진을 갈아끼울 때 그 숫자가 따라온다.
+    NodeODM 은 숫자 코드를 쓴다. 숫자를 이 모듈 밖으로 내보내지 않는다 — 엔진의
+    내부 표현이 KSI 도메인으로 새면 엔진을 갈아끼울 때 그 숫자가 따라온다.
     """
 
     QUEUED = "QUEUED"
@@ -107,12 +133,48 @@ class EngineIdentityMismatch(OdmError):
     """계약이 지시한 엔진과 실제로 응답한 엔진이 다르다."""
 
 
+def unwrap_response(payload: Any, *, what: str) -> dict[str, Any]:
+    """NodeODM 응답 봉투를 벗긴다 — **에러가 HTTP 200 으로 온다**(실기동 확인).
+
+    미지 uuid 도 준비 안 된 asset 도 상태 코드는 200 이고 본문만
+    ``{"error": "..."}`` 다. 상태 코드로 성공을 판정하면 그 응답을 성공으로
+    읽고 다음 줄에서 KeyError 가 난다 — 원인이 두 겹 뒤에서 드러나는 실패다.
+    """
+    if not isinstance(payload, dict):
+        raise OdmError(f"{what}: 응답이 JSON 객체가 아니다({type(payload).__name__})")
+    error = payload.get("error")
+    if error is not None:
+        raise OdmError(f"{what}: {error}")
+    return payload
+
+
 @dataclass(frozen=True, slots=True)
 class OdmEngineInfo:
-    """NodeODM ``/info`` 응답 중 우리가 쓰는 부분."""
+    """``/info`` 응답 중 우리가 쓰는 부분.
 
-    version: str
+    ``node_version`` 과 ``engine_version`` 이 **다른 값**이라는 것이 요점이다
+    (모듈 docstring 1번) — 계약의 ``engineVersion`` 이 가리키는 것은 후자다.
+    """
+
+    engine: str
+    engine_version: str
+    node_version: str = ""
     task_queue_count: int = 0
+    max_images: int | None = None
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> OdmEngineInfo:
+        data = unwrap_response(payload, what="/info")
+        try:
+            return cls(
+                engine=data["engine"],
+                engine_version=data["engineVersion"],
+                node_version=data.get("version", ""),
+                task_queue_count=data.get("taskQueueCount", 0),
+                max_images=data.get("maxImages"),
+            )
+        except KeyError as exc:
+            raise OdmError(f"/info 응답에 필수 필드가 없다: {exc}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +183,18 @@ class OdmTaskState:
     # 실패 사유. NodeODM 이 주면 그대로 옮긴다(우리가 지어내지 않는다).
     error_message: str | None = None
     progress: float | None = None
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> OdmTaskState:
+        data = unwrap_response(payload, what="/task/info")
+        status = data.get("status")
+        if not isinstance(status, dict) or "code" not in status:
+            raise OdmError(f"/task/info 응답에 status.code 가 없다: {data!r}")
+        return cls(
+            status=parse_task_status(int(status["code"])),
+            error_message=status.get("errorMessage"),
+            progress=data.get("progress"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,11 +228,10 @@ class NodeOdmClient(Protocol):
         """``GET /task/{uuid}/info``."""
         ...
 
-    def download(self, uuid: str, asset_path: str) -> str:
-        """``GET /task/{uuid}/download/{asset}`` — 산출물의 sha256 digest.
+    def download_archive(self, uuid: str, dest: Path) -> Path:
+        """``GET /task/{uuid}/download/all.zip`` — **유일한** 산출물 경로.
 
-        바이트가 아니라 digest 를 돌려주는 것이 의도다. 이 어댑터는 산출물의
-        **계보**를 Core 에 등록할 뿐 내용을 들고 있지 않다.
+        개별 asset 다운로드는 NodeODM 에 없다(모듈 docstring 2번).
         """
         ...
 
@@ -185,33 +258,56 @@ class ArtifactReport:
     gsd: float | None
 
 
-def assert_engine_matches(info: OdmEngineInfo, *, expected_version: str) -> None:
-    """계약이 지시한 엔진 버전과 실제 응답이 같은지.
+def assert_engine_matches(
+    info: OdmEngineInfo,
+    *,
+    expected_version: str,
+    expected_engine: str = ODM_ENGINE_NAME,
+) -> None:
+    """계약이 지시한 엔진 이름·버전과 실제 응답이 같은지.
+
+    ``info.engine_version`` 을 본다 — ``/info`` 의 ``version`` 은 NodeODM 자신의
+    버전이라 계약이 말하는 엔진 버전이 아니다(모듈 docstring 1번).
 
     같은지만 본다 — "호환되는가"를 판정하지 않는다. semver 호환 판정을 넣으면
     이 함수가 엔진별 버전 정책을 알아야 하고, 그 정책이 틀렸을 때 조용히
     다른 엔진이 도는 것을 허용하게 된다.
     """
-    if info.version != expected_version:
+    if info.engine != expected_engine:
+        raise EngineIdentityMismatch(
+            f"이 어댑터는 {expected_engine!r} 엔진용인데 응답은 {info.engine!r} 이다"
+        )
+    if info.engine_version != expected_version:
         raise EngineIdentityMismatch(
             f"계약이 지시한 엔진은 {expected_version!r} 인데 실제 응답은 "
-            f"{info.version!r} 이다 — 다른 엔진이 돌면 engineVersion 이 거짓이 되고 "
-            "재현성 앵커가 무너진다. 작업을 제출하지 않는다"
+            f"{info.engine_version!r} 이다 — 다른 엔진이 돌면 engineVersion 이 "
+            "거짓이 되고 재현성 앵커가 무너진다. 작업을 제출하지 않는다"
         )
 
 
+def digest_archive_entry(archive: zipfile.ZipFile, entry: str) -> str:
+    """아카이브 안 파일 하나의 sha256 — 스트리밍으로 읽는다.
+
+    포인트 클라우드는 수 GB 가 될 수 있어 통째로 메모리에 올리지 않는다.
+    """
+    digest = hashlib.sha256()
+    with archive.open(entry) as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
 def plan_artifacts(
-    uuid: str,
-    client: NodeOdmClient,
+    archive_path: Path,
     *,
     crs: str,
     gsd_by_artifact: dict[str, float] | None = None,
     assets: Sequence[OdmAsset] = ODM_ASSETS,
 ) -> list[ArtifactReport]:
-    """완료된 작업의 산출물을 **등록 순서대로** 만든다.
+    """``all.zip`` 을 열어 산출물을 **등록 순서대로** 만든다.
 
     순서가 곧 계보다 — 원본이 먼저 나와야 파생물의 ``derivedFrom`` 이 실재하는
-    부모를 가리킨다(모듈 docstring). 엔진이 내놓지 않은 산출물은 조용히 건너뛴다:
+    부모를 가리킨다(모듈 docstring). 아카이브에 없는 산출물은 조용히 건너뛴다:
     ODM 은 옵션에 따라 DTM·정사영상을 만들지 않을 수 있고, 없는 것을 실패로
     읽으면 정상 설정이 실패가 된다. 대신 **원본이 하나도 없으면** 그건 성공한
     재구성이 아니므로 :class:`OdmError` 다(Core 의 SUCCEEDED 게이트와 같은 판단).
@@ -222,47 +318,51 @@ def plan_artifacts(
     """
     gsd_map = gsd_by_artifact or {}
     reports: list[ArtifactReport] = []
-    for asset in assets:
-        try:
-            digest = client.download(uuid, asset.asset_path)
-        except OdmError:
-            logger.info("엔진이 %s 를 내놓지 않았다 — 건너뛴다", asset.asset_path)
-            continue
-        gsd = gsd_map.get(asset.artifact_id)
-        if asset.needs_gsd and gsd is None:
-            logger.warning(
-                "%s 는 GSD 가 필수인데 값이 없다 — 지어내지 않고 건너뛴다",
-                asset.artifact_id,
+    try:
+        archive = zipfile.ZipFile(archive_path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise OdmError(f"산출물 아카이브를 열 수 없다({archive_path}): {exc}") from exc
+    with archive:
+        present = set(archive.namelist())
+        for asset in assets:
+            if asset.archive_entry not in present:
+                logger.info("아카이브에 %s 가 없다 — 건너뛴다", asset.archive_entry)
+                continue
+            gsd = gsd_map.get(asset.artifact_id)
+            if asset.needs_gsd and gsd is None:
+                logger.warning(
+                    "%s 는 GSD 가 필수인데 값이 없다 — 지어내지 않고 건너뛴다",
+                    asset.artifact_id,
+                )
+                continue
+            # 파생물의 부모가 실제로 등록 목록에 있는지 여기서 본다. 엔진이 부모를
+            # 안 내놨는데 자식만 등록하면 Core 가 422 로 거부하고, 그 거부는 워커
+            # 로그에서 원인을 알기 어렵다 — 여기서 걸러 이유를 남긴다.
+            planned = {report.artifact_id for report in reports}
+            missing_parents = [p for p in asset.derived_from if p not in planned]
+            if missing_parents:
+                logger.warning(
+                    "%s 의 부모 %s 가 이번 산출물에 없다 — 계보 없는 파생은 등록하지 않는다",
+                    asset.artifact_id,
+                    missing_parents,
+                )
+                continue
+            reports.append(
+                ArtifactReport(
+                    artifact_id=asset.artifact_id,
+                    kind=asset.kind.value,
+                    authority=asset.authority.value,
+                    derived_from=asset.derived_from,
+                    digest=digest_archive_entry(archive, asset.archive_entry),
+                    fmt=asset.fmt,
+                    crs=crs if asset.needs_crs else None,
+                    gsd=gsd,
+                )
             )
-            continue
-        # 파생물의 부모가 실제로 등록 목록에 있는지 여기서 본다. 엔진이 부모를
-        # 안 내놨는데 자식만 등록하면 Core 가 422 로 거부하고, 그 거부는 워커
-        # 로그에서 원인을 알기 어렵다 — 여기서 걸러 이유를 남긴다.
-        planned = {report.artifact_id for report in reports}
-        missing_parents = [p for p in asset.derived_from if p not in planned]
-        if missing_parents:
-            logger.warning(
-                "%s 의 부모 %s 가 이번 산출물에 없다 — 계보 없는 파생은 등록하지 않는다",
-                asset.artifact_id,
-                missing_parents,
-            )
-            continue
-        reports.append(
-            ArtifactReport(
-                artifact_id=asset.artifact_id,
-                kind=asset.kind.value,
-                authority=asset.authority.value,
-                derived_from=asset.derived_from,
-                digest=digest,
-                fmt=asset.fmt,
-                crs=crs if asset.needs_crs else None,
-                gsd=gsd,
-            )
-        )
     if not any(report.authority == "source" for report in reports):
         raise OdmError(
-            "엔진이 원본 산출물(포인트 클라우드·카메라 포즈)을 하나도 내놓지 "
-            "않았다 — 파생물만으로는 성공한 재구성이 아니다(INV-051)"
+            "아카이브에 원본 산출물(포인트 클라우드·카메라 포즈)이 하나도 없다 — "
+            "파생물만으로는 성공한 재구성이 아니다(INV-051)"
         )
     return reports
 
@@ -279,11 +379,12 @@ def run_to_completion(
     """엔진 신원 확인 → 제출 → 종료까지 폴링. 완료된 작업의 uuid 를 돌려준다.
 
     ``poll`` 은 호출자가 주는 대기 함수다(``time.sleep`` 을 이 모듈이 직접 부르지
-    않는다 — 테스트가 실제로 기다리게 만들지 않기 위해서다).
+    않는다 — 테스트가 실제로 기다리게 만들지 않기 위해서다). 워커는 이 콜백
+    안에서 Core lease 를 갱신한다(모듈 docstring "하지 않는 것").
 
     ``max_polls`` 는 상한이다. NodeODM 이 상태를 영영 바꾸지 않는 경우(엔진
-    행) 워커가 무한 루프에 갇히는 대신 실패로 끝난다 — 갇힌 워커는 lease 가
-    없는 지금 구조에서 그 작업을 영구히 점유한다.
+    행) 워커가 무한 루프에 갇히는 대신 실패로 끝난다 — 갇힌 워커는 Core lease 를
+    계속 갱신하며 그 작업을 점유한다.
     """
     assert_engine_matches(client.info(), expected_version=expected_version)
     uuid = client.new_task(images, options)
@@ -304,6 +405,8 @@ def run_to_completion(
 
 
 __all__ = [
+    "ARCHIVE_ASSET",
+    "ODM_ENGINE_NAME",
     "ArtifactReport",
     "EngineIdentityMismatch",
     "NodeOdmClient",
@@ -313,7 +416,9 @@ __all__ = [
     "OdmTaskStatus",
     "SourceImage",
     "assert_engine_matches",
+    "digest_archive_entry",
     "parse_task_status",
     "plan_artifacts",
     "run_to_completion",
+    "unwrap_response",
 ]

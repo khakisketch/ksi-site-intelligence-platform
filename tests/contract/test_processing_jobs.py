@@ -41,6 +41,7 @@ from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     _TRANSITION_PERMISSION,
+    DEFAULT_LEASE_TTL,
     UNMETERED_AT_ISSUE,
     ArtifactSpec,
     IllegalJobTransitionError,
@@ -220,11 +221,26 @@ def _artifact_spec(
     )
 
 
+def _lease(
+    store: ProcessingJobStore,
+    job_id: str,
+    *,
+    worker: str = "w-1",
+    now: datetime = _NOW,
+) -> None:
+    """워커가 작업을 잡는다 — 모든 워커 행위의 전제(입력 수신·상태 보고·산출물 등록)."""
+    assert store.acquire_lease(job_id, worker_id=worker, now=now).verdict in {
+        ProcessingJobVerdict.LEASED,
+        ProcessingJobVerdict.LEASE_RENEWED,
+    }
+
+
 def _running_job(store: ProcessingJobStore, tmp_path: Path) -> str:
-    """발급 → RUNNING 까지 진행한 작업의 jobId. 산출물 테스트의 공통 출발점."""
+    """발급 → lease → RUNNING 까지 진행한 작업의 jobId. 산출물 테스트의 공통 출발점."""
     del tmp_path
     record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert record is not None
+    _lease(store, record.job_id)
     assert (
         store.transition(
             record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
@@ -457,6 +473,7 @@ def test_reprocessing_allowed_after_terminal(tmp_path: Path) -> None:
     store = _job_store(tmp_path)
     first = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert first is not None
+    _lease(store, first.job_id)
     store.transition(
         first.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
     )
@@ -492,14 +509,20 @@ def test_transition_records_terminal_detail(tmp_path: Path) -> None:
     store = _job_store(tmp_path)
     record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert record is not None
+    _lease(store, record.job_id)
     store.transition(
         record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
     )
     # SUCCEEDED 는 원본 산출물이 있어야 통과한다(INV-051) — 아래 전용 테스트가
     # 없을 때의 거부를 확인한다. 여기서는 게이트를 만족시킨 뒤 detail 만 본다.
+    # (lease 는 위에서 w-1 이 쥐었고 아래 등록·전이 actor 가 같다.)
     store.register_artifact(
         record.job_id, _artifact_spec(), registered_by="w-1", now=_NOW
     )
+    # 3시간 뒤 보고 — 그 사이 lease(15분)가 여러 번 만료되므로 워커는 계속
+    # 갱신하고 있었어야 한다. 여기서는 보고 직전 상태만 만들어 준다(갱신 주기의
+    # 의미는 test_lease_renewal_vs_reacquisition 이 따로 고정한다).
+    _lease(store, record.job_id, now=_NOW + timedelta(hours=2, minutes=55))
     done = store.transition(
         record.job_id,
         ProcessingJobStatus.SUCCEEDED,
@@ -518,6 +541,7 @@ def test_illegal_transition_is_typed_not_raised(tmp_path: Path) -> None:
     store = _job_store(tmp_path)
     record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert record is not None
+    _lease(store, record.job_id)
     result = store.transition(
         record.job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
     )
@@ -549,6 +573,7 @@ def test_replay_restores_status_and_sequence(tmp_path: Path) -> None:
     store = _job_store(tmp_path, journal=journal)
     first = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert first is not None
+    _lease(store, first.job_id)
     store.transition(
         first.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
     )
@@ -574,6 +599,7 @@ def test_replay_refuses_forged_terminal_transition(tmp_path: Path) -> None:
     store = _job_store(tmp_path, journal=journal)
     record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
     assert record is not None
+    _lease(store, record.job_id)
     store.transition(
         record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
     )
@@ -1174,6 +1200,7 @@ def test_http_transition_and_get(tmp_path: Path) -> None:
     ).json()["job"]["jobId"]
 
     _as_worker(client)
+    assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 201
     running = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"}
     )
@@ -1317,12 +1344,20 @@ def _artifact_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
-def _issued_and_running(client: TestClient) -> str:
-    """관리자로 발급하고 워커로 RUNNING 까지 — 이후 클라이언트는 워커 신원이다."""
+def _issued_and_leased(client: TestClient) -> str:
+    """관리자로 발급하고 워커가 잡는다 — 이후 클라이언트는 워커 신원이다."""
     job_id: str = client.post(
         f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
     ).json()["job"]["jobId"]
     _as_worker(client)
+    leased = client.post(f"/v1/processing-jobs/{job_id}/lease")
+    assert leased.status_code == 201, leased.text
+    return job_id
+
+
+def _issued_and_running(client: TestClient) -> str:
+    """발급 → lease → RUNNING. 워커 행위 HTTP 테스트의 공통 출발점."""
+    job_id = _issued_and_leased(client)
     assert (
         client.post(
             f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"}
@@ -1546,10 +1581,7 @@ def test_http_input_is_refused_once_the_job_is_over(tmp_path: Path) -> None:
 def test_http_input_is_available_before_running(tmp_path: Path) -> None:
     """QUEUED 에서도 받을 수 있어야 한다 — 입력을 봐야 RUNNING 으로 갈지 정한다."""
     client = _client(tmp_path)
-    job_id = client.post(
-        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
-    ).json()["job"]["jobId"]
-    _as_worker(client)
+    job_id = _issued_and_leased(client)
     fetched = client.get(f"/v1/processing-jobs/{job_id}/input")
     assert fetched.status_code == 200
     assert fetched.json()["input"]["status"] == "QUEUED"
@@ -1588,3 +1620,219 @@ def test_processing_jobs_assembly_requires_evidence_storage(tmp_path: Path) -> N
             ),
             mission_signing_key=None,
         )
+
+
+# ── 워커 lease — 작업 하나는 워커 하나가 쥔다 ────────────────────────────────
+
+
+def _issued_job(store: ProcessingJobStore) -> str:
+    record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert record is not None
+    return record.job_id
+
+
+def test_second_worker_cannot_take_a_held_job(tmp_path: Path) -> None:
+    """[핵심] 두 워커가 같은 작업을 동시에 돌리지 않는다."""
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    assert (
+        store.acquire_lease(job_id, worker_id="w-1", now=_NOW).verdict
+        is ProcessingJobVerdict.LEASED
+    )
+    stolen = store.acquire_lease(job_id, worker_id="w-2", now=_NOW + timedelta(minutes=1))
+    assert stolen.verdict is ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER
+    assert stolen.detail is not None
+    assert "w-1" in stolen.detail
+
+
+def test_expired_lease_is_reclaimable_without_any_release_command(tmp_path: Path) -> None:
+    """[핵심] 죽은 워커의 작업을 회수하는 경로가 만료 하나뿐이다.
+
+    ``release`` 같은 명시적 반납에만 의존하면, 죽은 워커는 정의상 반납하지
+    않으므로 그 작업이 영구히 묶인다.
+    """
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    later = _NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    taken = store.acquire_lease(job_id, worker_id="w-2", now=later)
+    assert taken.verdict is ProcessingJobVerdict.LEASED
+
+
+def test_lease_renewal_vs_reacquisition(tmp_path: Path) -> None:
+    """만료 전 재호출은 갱신(heartbeat), 만료 후 재호출은 새로 잡는 것이다."""
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+
+    renewed = store.acquire_lease(job_id, worker_id="w-1", now=_NOW + timedelta(minutes=5))
+    assert renewed.verdict is ProcessingJobVerdict.LEASE_RENEWED
+    assert renewed.record is not None
+    assert renewed.record.lease is not None
+    # 갱신은 만료를 밀되 최초 취득 시각은 유지한다 — 얼마나 오래 쥐고 있었는지가
+    # 남아야 "이 워커가 계속 못 끝내고 있다"를 볼 수 있다.
+    assert renewed.record.lease.granted_at == _NOW
+    assert renewed.record.lease.expires_at == _NOW + timedelta(minutes=5) + DEFAULT_LEASE_TTL
+
+    after_expiry = _NOW + timedelta(minutes=5) + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    fresh = store.acquire_lease(job_id, worker_id="w-1", now=after_expiry)
+    assert fresh.verdict is ProcessingJobVerdict.LEASED
+    assert fresh.record is not None
+    assert fresh.record.lease is not None
+    assert fresh.record.lease.granted_at == after_expiry
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["input", "transition", "artifact"],
+)
+def test_every_worker_action_requires_the_lease(tmp_path: Path, action: str) -> None:
+    """[핵심] 세 경로가 전부 같은 관문(_check_lease_locked)을 지난다."""
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+
+    if action == "input":
+        verdict = store.input_for(job_id, worker_id="w-2", now=_NOW).verdict
+    elif action == "transition":
+        verdict = store.transition(
+            job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-2", now=_NOW
+        ).verdict
+    else:
+        store.transition(
+            job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
+        )
+        verdict = store.register_artifact(
+            job_id, _artifact_spec(), registered_by="w-2", now=_NOW
+        ).verdict
+    assert verdict is ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER
+
+
+def test_worker_action_without_any_lease_is_refused(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    result = store.transition(
+        job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.LEASE_REQUIRED
+
+
+def test_expired_lease_holder_can_no_longer_report(tmp_path: Path) -> None:
+    """[핵심] 되살아난 좀비 워커가 뒤늦게 성공을 보고하지 못한다.
+
+    만료된 lease 를 쥔 워커는 다른 워커가 이미 그 작업을 잡았을 수 있다 — 그
+    상태에서 종료 보고를 받으면 두 워커의 결과가 섞인다.
+    """
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    store.transition(
+        job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW
+    )
+    late = _NOW + DEFAULT_LEASE_TTL + timedelta(minutes=1)
+    result = store.transition(
+        job_id, ProcessingJobStatus.FAILED, detail="뒤늦은 보고", actor="w-1", now=late
+    )
+    assert result.verdict is ProcessingJobVerdict.LEASE_REQUIRED
+
+
+def test_terminal_job_cannot_be_leased(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    store.transition(
+        job_id, ProcessingJobStatus.CANCELLED, detail=None, actor="op-1", now=_NOW,
+        requires_lease=False,
+    )
+    assert (
+        store.acquire_lease(job_id, worker_id="w-2", now=_NOW).verdict
+        is ProcessingJobVerdict.JOB_NOT_ACTIVE
+    )
+
+
+def test_human_can_cancel_a_job_held_by_a_live_worker(tmp_path: Path) -> None:
+    """[핵심] 취소만 lease 를 요구하지 않는다.
+
+    워커가 죽어 lease 가 아직 살아 있는 동안 사람이 작업을 접지 못하면, 정확히
+    취소가 필요한 상황에서 취소가 막힌다.
+    """
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    result = store.transition(
+        job_id, ProcessingJobStatus.CANCELLED, detail="현장 요청", actor="op-admin",
+        now=_NOW + timedelta(minutes=1), requires_lease=False,
+    )
+    assert result.verdict is ProcessingJobVerdict.TRANSITIONED
+
+
+def test_replay_restores_the_lease(tmp_path: Path) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    journal.close()
+
+    restored = _rebuild(tmp_path)
+    record = restored.get(job_id)
+    assert record is not None
+    assert record.lease is not None
+    assert record.lease.worker_id == "w-1"
+    # 재생 시점의 now 로 판정하므로 오래된 lease 는 자동으로 만료돼 있다 —
+    # 재생이 별도 만료 처리를 하지 않아도 되는 것이 JobLease 설계의 요점이다.
+    assert not record.lease.is_active(_NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1))
+    assert record.lease.is_active(_NOW + timedelta(minutes=1))
+
+
+def test_replay_refuses_a_lease_on_a_terminal_job(tmp_path: Path) -> None:
+    """live 는 종료된 작업에 lease 를 발급하지 않는다 — 있으면 원장 조작이다."""
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    store.acquire_lease(job_id, worker_id="w-1", now=_NOW)
+    store.transition(
+        job_id, ProcessingJobStatus.CANCELLED, detail=None, actor="op-1", now=_NOW,
+        requires_lease=False,
+    )
+    journal.close()
+
+    records = _journal_lines(tmp_path)
+    lease_record = next(r for r in records if r["kind"] == "processing-job-leased")
+    records.append(json.loads(json.dumps(lease_record)))
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="종료된 작업"):
+        _rebuild(tmp_path)
+
+
+def test_http_lease_then_renew(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    job_id = _issued_and_leased(client)
+    renewed = client.post(f"/v1/processing-jobs/{job_id}/lease")
+    assert renewed.status_code == 200
+    assert renewed.json()["verdict"] == "LEASE_RENEWED"
+    assert renewed.json()["job"]["leaseWorkerId"] == "worker-odm-1"
+    # 만료 여부를 불리언으로 싣지 않는다 — 읽는 쪽이 자기 시계로 판정한다.
+    assert renewed.json()["job"]["leaseExpiresAt"] is not None
+
+
+def test_http_worker_without_lease_gets_409_not_403(tmp_path: Path) -> None:
+    """권한은 있고 지금 쥔 사람이 아닐 뿐이다 — 403 은 자격증명을 의심하게 만든다."""
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    _as_worker(client)
+    response = client.get(f"/v1/processing-jobs/{job_id}/input")
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "LEASE_REQUIRED"
+
+
+def test_http_humans_cannot_lease(tmp_path: Path) -> None:
+    """[음성] lease 는 워커 전용이다 — 사람이 작업을 잡아 워커를 굶기지 못한다."""
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    for token in (_ADMIN_TOKEN, _VIEWER_TOKEN):
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 403

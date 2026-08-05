@@ -67,8 +67,11 @@ class OdmAsset:
     """
 
     artifact_id: str
-    # NodeODM ``/task/{uuid}/download/{asset}`` 의 asset 경로.
-    asset_path: str
+    # **``all.zip`` 안의 엔트리 경로**다(다운로드 엔드포인트의 asset 이름이 아니다).
+    # NodeODM 의 ``Task.getAssetsArchivePath`` 는 ``all.zip`` 외의 이름을 전부
+    # 거부하므로(실기동 확인, 2026-08-06) 산출물은 아카이브 하나로만 나온다.
+    # 이 경로들은 NodeODM ``libs/Task.js`` 의 ``allPaths`` 목록과 같은 값이다.
+    archive_entry: str
     kind: ProcessingArtifactKind
     authority: LineageAuthority
     derived_from: tuple[str, ...]
@@ -86,7 +89,7 @@ class OdmAsset:
 ODM_ASSETS: tuple[OdmAsset, ...] = (
     OdmAsset(
         artifact_id=CAMERA_POSES_ID,
-        asset_path="cameras.json",
+        archive_entry="cameras.json",
         kind=ProcessingArtifactKind.CAMERA_POSES,
         authority=LineageAuthority.SOURCE,
         derived_from=(),
@@ -96,7 +99,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
     ),
     OdmAsset(
         artifact_id=POINT_CLOUD_ID,
-        asset_path="odm_georeferencing/odm_georeferenced_model.laz",
+        archive_entry="odm_georeferencing/odm_georeferenced_model.laz",
         kind=ProcessingArtifactKind.POINT_CLOUD,
         authority=LineageAuthority.SOURCE,
         derived_from=(),
@@ -104,7 +107,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
     ),
     OdmAsset(
         artifact_id="mesh",
-        asset_path="odm_texturing/odm_textured_model_geo.obj",
+        archive_entry="odm_texturing/odm_textured_model_geo.obj",
         kind=ProcessingArtifactKind.MESH,
         authority=LineageAuthority.DERIVED,
         # 메시는 포인트 클라우드에서 재구성된다 — 파이프라인 사실이지 추측이 아니다.
@@ -113,7 +116,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
     ),
     OdmAsset(
         artifact_id="orthophoto",
-        asset_path="odm_orthophoto/odm_orthophoto.tif",
+        archive_entry="odm_orthophoto/odm_orthophoto.tif",
         kind=ProcessingArtifactKind.ORTHO,
         authority=LineageAuthority.DERIVED,
         derived_from=("mesh",),
@@ -122,7 +125,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
     ),
     OdmAsset(
         artifact_id="dsm",
-        asset_path="odm_dem/dsm.tif",
+        archive_entry="odm_dem/dsm.tif",
         kind=ProcessingArtifactKind.DSM,
         authority=LineageAuthority.DERIVED,
         derived_from=(POINT_CLOUD_ID,),
@@ -131,7 +134,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
     ),
     OdmAsset(
         artifact_id="dtm",
-        asset_path="odm_dem/dtm.tif",
+        archive_entry="odm_dem/dtm.tif",
         kind=ProcessingArtifactKind.DTM,
         authority=LineageAuthority.DERIVED,
         derived_from=(POINT_CLOUD_ID,),

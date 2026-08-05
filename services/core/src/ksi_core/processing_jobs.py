@@ -92,6 +92,23 @@ digest — 를 직접 채운다. 워커가 이 값을 실어 보낼 수 있으�
 ``_TRANSITION_PERMISSION`` 하나가 SSOT이고, 표에 없는 대상 상태는 403 이다 —
 "정의되지 않은 전이를 할 권한"은 누구에게도 없다.
 
+## 작업 하나는 워커 하나가 쥔다 (lease)
+
+``POST /v1/processing-jobs/{jobId}/lease`` 로 잡지 않으면 ``/input``·실행 상태
+보고·산출물 등록이 전부 거부된다(:meth:`ProcessingJobStore._check_lease_locked`
+하나가 그 관문이다). 이게 두 가지를 동시에 한다 — **상호배제**(두 워커가 같은
+작업을 돌리지 않는다)와 **접근 범위 축소**(워커 토큰 하나로 활성 작업 전체의
+원본 사진을 열람하지 못한다).
+
+**만료는 저장된 플래그가 아니라 시각 비교다**(:class:`JobLease`). ``released``
+같은 불리언을 두면 그것을 갱신해줄 사람이 필요하고, 빠뜨리면 죽은 워커가
+영원히 살아 있는 것으로 보인다. 여기서는 ``expires_at`` 만 남기고 매번 ``now``
+로 판정하므로, 죽은 워커의 작업은 별도 조치 없이 만료 후 회수된다. 살아 있는
+워커는 같은 엔드포인트를 다시 호출해 연장한다(heartbeat).
+
+**취소만 lease 를 요구하지 않는다.** 워커가 죽어 lease 가 아직 살아 있는 동안
+사람이 작업을 접지 못하면, 정확히 취소가 필요한 상황에서 취소가 막힌다.
+
 ## 워커가 볼 수 있는 것은 자기 작업의 입력 하나뿐
 
 ``GET /v1/processing-jobs/{jobId}/input`` 이 워커의 **유일한** 읽기 경로다.
@@ -105,12 +122,10 @@ digest — 를 직접 채운다. 워커가 이 값을 실어 보낼 수 있으�
 
 ## 이 모듈이 다루지 않는 것
 
-- **워커 lease·heartbeat.** ``RUNNING`` 전이가 한 번만 성공한다는 것이 지금의
-  유일한 상호배제다. 죽은 워커의 작업을 회수하는 만료·갱신은 아직 없다.
 - **큐에서 꺼내오기(pull).** 워커는 jobId 를 **밖에서** 받아야 한다 — "다음
-  작업을 달라"는 표면이 없다. jobId 는 ``{missionId}-pj{n}`` 이라 추측 가능하고,
-  워커 토큰을 쥔 쪽은 다른 작업의 입력도 열람할 수 있다. lease 를 설계할 때
-  같이 좁힌다.
+  작업을 달라"는 표면이 없다. jobId 는 ``{missionId}-pj{n}`` 이라 추측 가능하지만,
+  lease 를 잡지 못하면 입력을 볼 수 없으므로 열람은 한 작업당 한 워커로 좁혀진다
+  (추측 자체를 막지는 못한다 — 남의 작업을 잡아 실행을 방해할 수는 있다).
 - **산출물 바이트 자체.** ``digest``·``format`` 은 워커의 보고값이고 Core 가
   객체를 읽어 대조하지 않는다. 이 모듈이 강제하는 것은 **계보의 무결성**이지
   산출물 내용의 진위가 아니다.
@@ -122,7 +137,7 @@ import logging
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -183,6 +198,13 @@ _STORE_UNAVAILABLE_DETAIL = "journal 봉인됨 — 재시작 필요"
 UNMETERED_AT_ISSUE = "unmetered-at-issue"
 
 _ACTIVE_STATUSES = frozenset({ProcessingJobStatus.QUEUED, ProcessingJobStatus.RUNNING})
+
+# lease 수명. ODM 재구성은 몇 시간이 걸리므로(ADR-KSI-012 D1 실측 3시간 27분)
+# 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라 **"워커가 죽었다고 판정하기까지
+# 기다리는 시간"**이다 — 살아 있는 워커는 갱신(heartbeat)으로 계속 연장한다.
+# 짧을수록 죽은 워커의 작업을 빨리 회수하고, 길수록 잠깐 느려진 워커가 남에게
+# 뺏길 위험이 준다. 15분은 그 사이의 운용값이다.
+DEFAULT_LEASE_TTL = timedelta(minutes=15)
 
 # 상태 전이표 — 계약(processing_job.py)이 "범위 밖"으로 미뤄둔 규칙의 SSOT.
 _ALLOWED_TRANSITIONS: dict[ProcessingJobStatus, frozenset[ProcessingJobStatus]] = {
@@ -308,6 +330,14 @@ class ProcessingJobVerdict(StrEnum):
     INPUT_READY = "INPUT_READY"
     JOB_NOT_ACTIVE = "JOB_NOT_ACTIVE"
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
+
+    # ── 워커 lease ───────────────────────────────────────────────────────
+    LEASED = "LEASED"
+    LEASE_RENEWED = "LEASE_RENEWED"
+    # 다른 워커가 아직 유효한 lease 를 쥐고 있다.
+    LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
+    # lease 없이(또는 만료된 lease 로) 이 작업에 손대려 했다.
+    LEASE_REQUIRED = "LEASE_REQUIRED"
     # INV-051 — 원본 산출물 없이 SUCCEEDED 를 주장했다.
     UNBACKED_SUCCESS = "UNBACKED_SUCCESS"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -348,6 +378,13 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.INPUT_READY: 200,
     ProcessingJobVerdict.JOB_NOT_ACTIVE: 409,
     ProcessingJobVerdict.STORAGE_UNAVAILABLE: 503,
+    ProcessingJobVerdict.LEASED: 201,
+    ProcessingJobVerdict.LEASE_RENEWED: 200,
+    # 403 이 아니라 409 다 — 권한(PROCESSING_WORK)은 있고 **지금 이 작업을 쥔
+    # 사람이 아닐** 뿐이다. 403 으로 내면 "토큰이 잘못됐나"로 읽혀 워커가 자기
+    # 자격증명을 의심하게 된다. 409 는 "기다렸다가 다시 잡아라"를 뜻한다.
+    ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER: 409,
+    ProcessingJobVerdict.LEASE_REQUIRED: 409,
 }
 
 
@@ -392,6 +429,32 @@ class JobSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class JobLease:
+    """작업 하나를 쥔 워커 — **만료는 저장된 플래그가 아니라 시각 비교다.**
+
+    ``released``/``expired`` 같은 불리언을 두지 않는 것이 의도다. 그런 필드는
+    누군가 갱신해줘야 참이 되고, 그 갱신을 빠뜨리면 죽은 워커가 영원히 살아
+    있는 것으로 보인다 — 시간축 상태를 실체화한 불리언으로 들고 있으면 그
+    불리언과 시계가 어긋나는 순간이 반드시 온다. 여기서는 ``expires_at`` 만
+    남기고 :meth:`is_active` 가 매번 ``now`` 로 판정한다.
+
+    재생에도 같은 성질이 필요하다 — journal 을 며칠 뒤에 재생하면 그때의
+    ``now`` 로 판정되어 자동으로 만료된 상태가 된다(재생 시점에 별도 만료 처리를
+    할 필요가 없다).
+    """
+
+    worker_id: str
+    granted_at: datetime
+    expires_at: datetime
+
+    def is_active(self, now: datetime) -> bool:
+        return now < self.expires_at
+
+    def held_by(self, worker_id: str, now: datetime) -> bool:
+        return self.is_active(now) and self.worker_id == worker_id
+
+
+@dataclass(frozen=True, slots=True)
 class ProcessingJobRecord:
     """처리 작업 1건의 projection — 계약 필드 + 운영 메타(누가·언제)."""
 
@@ -411,6 +474,8 @@ class ProcessingJobRecord:
     billing: Billing | None = None
     # 등록 순서대로. SUCCEEDED 게이트가 읽는 근거다(INV-051).
     artifacts: tuple[ProcessingArtifact, ...] = ()
+    # 마지막으로 발급된 lease. 만료 여부는 이 값이 아니라 ``now`` 가 정한다.
+    lease: JobLease | None = None
 
     def to_contract(self) -> ProcessingJob:
         """계약 모델로 투영한다 — 어댑터로 나가는 payload 의 SSOT.
@@ -585,6 +650,8 @@ class ProcessingJobStore:
                 self._replay_transition(raw)
             elif kind == "processing-artifact-registered":
                 self._replay_artifact(raw)
+            elif kind == "processing-job-leased":
+                self._replay_lease(raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
                 raise ProcessingJobRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
 
@@ -708,6 +775,36 @@ class ProcessingJobStore:
                 f"({verdict.value}) — jobId={job_id}: {detail}"
             )
         self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact))
+
+    def _replay_lease(self, raw: dict[str, Any]) -> None:
+        """lease 레코드 재생 — **만료 재판정을 하지 않는다.**
+
+        만료는 저장된 상태가 아니라 ``expires_at`` 대 ``now`` 비교라서
+        (:class:`JobLease`), 재생은 마지막 lease 를 그대로 복원하기만 하면 된다.
+        며칠 뒤에 재생하면 그 lease 는 읽는 순간 자동으로 만료 상태다.
+
+        live 게이트(다른 워커가 유효 lease 를 쥐고 있으면 발급 거부)를 재생이
+        다시 태우지 **못한다** — 그 판정에는 발급 당시의 ``now`` 가 필요한데
+        재생 시점에는 그 시각이 지나 있어 어떤 lease 든 만료로 보인다. 시간축
+        판정은 재생으로 재현되지 않는 부류이고, 그 사실을 여기 적어 둔다.
+        """
+        job_id = raw["jobId"]
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise ProcessingJobRecoveryError(f"재생: 미지 jobId lease 레코드 — jobId={job_id}")
+        if job.status not in _ACTIVE_STATUSES:
+            # live 는 종료된 작업에 lease 를 발급하지 않는다 — 있으면 조작이다.
+            raise ProcessingJobRecoveryError(
+                f"재생: 종료된 작업({job.status.value})에 lease 레코드가 있다 — jobId={job_id}"
+            )
+        self._jobs[job_id] = replace(
+            job,
+            lease=JobLease(
+                worker_id=raw["workerId"],
+                granted_at=_require_aware_iso(raw["ts"], "ts", job_id),
+                expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", job_id),
+            ),
+        )
 
     def is_input_verified(self, record: ProcessingJobRecord) -> bool:
         """이 작업의 입력 번들이 실측 대조를 통과했는가.
@@ -876,8 +973,15 @@ class ProcessingJobStore:
         detail: str | None,
         actor: str,
         now: datetime,
+        requires_lease: bool = True,
     ) -> ProcessingJobResult:
-        """작업 상태를 전이한다 — 전이표는 :func:`assert_job_transition` SSOT."""
+        """작업 상태를 전이한다 — 전이표는 :func:`assert_job_transition` SSOT.
+
+        ``requires_lease=False`` 는 **사람의 취소**만을 위한 것이다(라우터가 대상
+        상태로 판정한다). 사람이 작업을 접는 데 lease 를 요구하면, 워커가 죽어
+        lease 가 살아 있는 동안 아무도 그 작업을 취소할 수 없게 된다 — 정확히
+        취소가 필요한 상황에서 취소가 막힌다.
+        """
         _require_tz_aware(now, param="now")
         with self._lock:
             if self._journal.sealed_reason is not None:
@@ -889,6 +993,10 @@ class ProcessingJobStore:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
+            if requires_lease:
+                denied = self._check_lease_locked(current, worker_id=actor, now=now)
+                if denied is not None:
+                    return ProcessingJobResult(denied[0], record=current, detail=denied[1])
             try:
                 assert_job_transition(current.status, target)
             except IllegalJobTransitionError as exc:
@@ -951,6 +1059,9 @@ class ProcessingJobStore:
                         "작업에만 등록된다(끝난 작업에 근거를 소급하지 않는다)"
                     ),
                 )
+            denied = self._check_lease_locked(job, worker_id=registered_by, now=now)
+            if denied is not None:
+                return ArtifactResult(denied[0], detail=denied[1])
             try:
                 artifact = ProcessingArtifact(
                     artifact_id=spec.artifact_id,
@@ -993,7 +1104,99 @@ class ProcessingJobStore:
             self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact), updated_at=now)
             return ArtifactResult(ProcessingJobVerdict.ARTIFACT_REGISTERED, artifact=artifact)
 
-    def input_for(self, job_id: str) -> JobInputResult:
+    def acquire_lease(
+        self, job_id: str, *, worker_id: str, now: datetime, ttl: timedelta = DEFAULT_LEASE_TTL
+    ) -> ProcessingJobResult:
+        """작업 하나를 쥔다. 같은 워커의 재호출은 갱신(heartbeat)이다.
+
+        게이트: 활성(QUEUED·RUNNING) 작업만, 그리고 **다른 워커의 유효한 lease 가
+        없을 때만**. 만료된 lease 는 없는 것과 같다 — 죽은 워커가 쥔 작업을 회수
+        하는 경로가 이것 하나뿐이라, 만료를 별도 명령으로 풀게 하면 아무도 안
+        푼 채 작업이 영구히 묶인다.
+
+        갱신도 journal 에 적는다. 다른 append 와 달리 "새로 기록할 사실이 없는
+        멱등 재호출"이 아니기 때문이다 — 만료 시각이 실제로 옮겨간다.
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
+                )
+            job = self._jobs.get(job_id)
+            if job is None:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if job.status not in _ACTIVE_STATUSES:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.JOB_NOT_ACTIVE,
+                    detail=f"작업이 {job.status.value} 상태다 — 끝난 작업은 잡을 수 없다",
+                )
+            current = job.lease
+            renewing = current is not None and current.held_by(worker_id, now)
+            if current is not None and current.is_active(now) and not renewing:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
+                    record=job,
+                    detail=(
+                        f"다른 워커({current.worker_id})가 {_iso(current.expires_at)} 까지 "
+                        "이 작업을 쥐고 있다 — 만료 후 다시 시도한다"
+                    ),
+                )
+            expires_at = now + ttl
+            raw: dict[str, Any] = {
+                "kind": "processing-job-leased",
+                "ts": _iso(now),
+                "jobId": job_id,
+                "workerId": worker_id,
+                "expiresAt": _iso(expires_at),
+                "renewal": renewing,
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
+                )
+            updated = replace(
+                job,
+                lease=JobLease(
+                    worker_id=worker_id,
+                    granted_at=current.granted_at if renewing and current else now,
+                    expires_at=expires_at,
+                ),
+            )
+            self._jobs[job_id] = updated
+            return ProcessingJobResult(
+                ProcessingJobVerdict.LEASE_RENEWED if renewing else ProcessingJobVerdict.LEASED,
+                record=updated,
+            )
+
+    @staticmethod
+    def _check_lease_locked(
+        job: ProcessingJobRecord, *, worker_id: str, now: datetime
+    ) -> tuple[ProcessingJobVerdict, str] | None:
+        """이 워커가 지금 이 작업을 쥐고 있는가 — 워커 행위의 공통 관문.
+
+        ``/input``·실행 상태 보고·산출물 등록이 전부 이 함수를 지난다. 각 경로가
+        자기 조건문을 갖고 있으면 새 경로가 생길 때 빠뜨리기 쉽다.
+        """
+        lease = job.lease
+        if lease is None or not lease.is_active(now):
+            return (
+                ProcessingJobVerdict.LEASE_REQUIRED,
+                "이 작업을 쥐고 있지 않다 — POST /v1/processing-jobs/{jobId}/lease 로 "
+                "먼저 잡는다(만료됐다면 다시 잡는다)",
+            )
+        if lease.worker_id != worker_id:
+            return (
+                ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
+                f"다른 워커({lease.worker_id})가 이 작업을 쥐고 있다",
+            )
+        return None
+
+    def input_for(self, job_id: str, *, worker_id: str, now: datetime) -> JobInputResult:
         """워커가 실행에 필요한 것 — 사양 + 읽어야 할 파일 목록.
 
         **활성(QUEUED·RUNNING) 작업만** 내준다. 끝난 작업의 원본 다운로드 URL 을
@@ -1002,7 +1205,11 @@ class ProcessingJobStore:
         번들은 봉인돼 있으므로 여기서 다시 digest 를 대조하지 않는다 — 봉인 후
         미디어 집합은 바뀌지 않고(``source_media._replay_registration`` 이
         봉인 후 등록 자체를 거부한다), 발급 시점 digest 가 그대로 유효하다.
+
+        **lease 를 쥔 워커만** 받을 수 있다 — 이게 없으면 워커 토큰 하나로 활성
+        작업 전체의 원본 사진을 열람할 수 있다(jobId 가 추측 가능하다).
         """
+        _require_tz_aware(now, param="now")
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None:
@@ -1017,6 +1224,9 @@ class ProcessingJobStore:
                         "다시 내주지 않는다"
                     ),
                 )
+            denied = self._check_lease_locked(record, worker_id=worker_id, now=now)
+            if denied is not None:
+                return JobInputResult(denied[0], detail=denied[1])
             bundle = self._source_media.get(record.mission_id)
         if bundle is None:  # pragma: no cover - 발급이 번들 존재를 이미 강제한다
             return JobInputResult(
@@ -1190,6 +1400,11 @@ class ProcessingJobView(_CamelModel):
     # 등록된 산출물의 계약 payload 그대로(등록 순). SUCCEEDED 를 받쳐주는 근거가
     # 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수 있게 한다(INV-051).
     artifacts: list[dict[str, Any]]
+    # 지금 이 작업을 쥔 워커와 만료 시각. **만료 여부를 불리언으로 싣지 않는다** —
+    # 응답을 만든 순간과 화면이 읽는 순간 사이에 만료될 수 있어서, 그 판정은
+    # 시각을 받은 쪽이 자기 시계로 해야 한다(JobLease 와 같은 이유).
+    lease_worker_id: str | None
+    lease_expires_at: datetime | None
 
 
 class ProcessingJobListResponse(_CamelModel):
@@ -1215,6 +1430,8 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
         input_verified=input_verified,
         contract=processing_job_wire_dict(record.to_contract()),
         artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
+        lease_worker_id=record.lease.worker_id if record.lease is not None else None,
+        lease_expires_at=record.lease.expires_at if record.lease is not None else None,
     )
 
 
@@ -1311,6 +1528,9 @@ def build_processing_jobs_router(
             detail=request.detail,
             actor=principal.principal_id,
             now=datetime.now(UTC),
+            # 사람의 취소만 lease 를 요구하지 않는다 — 워커가 죽어 lease 가 살아
+            # 있는 동안 취소가 막히면, 정확히 취소가 필요한 상황에서 막힌다.
+            requires_lease=request.target_status is not ProcessingJobStatus.CANCELLED,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
@@ -1320,6 +1540,37 @@ def build_processing_jobs_router(
             job=_to_view(result.record, input_verified=store.is_input_verified(result.record))
             if result.record is not None
             else None,
+            detail=result.detail,
+        )
+
+    @router.post(
+        "/v1/processing-jobs/{job_id}/lease",
+        response_model=ProcessingJobMutationResponse,
+        status_code=201,
+    )
+    def acquire_processing_job_lease(
+        job_id: str,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> ProcessingJobMutationResponse:
+        """작업 하나를 잡는다(같은 워커의 재호출은 갱신 = heartbeat).
+
+        이 표면이 워커 행위의 관문이다 — ``/input``·실행 상태 보고·산출물 등록은
+        전부 lease 를 쥔 워커만 할 수 있다.
+        """
+        result = store.acquire_lease(
+            job_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+        )
+        response.status_code = _STATUS[result.verdict]
+        if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
+            response.headers["Retry-After"] = "30"
+        return ProcessingJobMutationResponse(
+            verdict=result.verdict.value,
+            job=(
+                _to_view(result.record, input_verified=store.is_input_verified(result.record))
+                if result.record is not None
+                else None
+            ),
             detail=result.detail,
         )
 
@@ -1341,8 +1592,9 @@ def build_processing_jobs_router(
         다른 선택인 이유: 저긴 등록이 이미 durable 하지만 여긴 전부 아니면
         의미가 없다).
         """
-        del principal
-        result = store.input_for(job_id)
+        result = store.input_for(
+            job_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+        )
         if result.verdict is not ProcessingJobVerdict.INPUT_READY or result.record is None:
             response.status_code = _STATUS[result.verdict]
             return JobInputResponse(verdict=result.verdict.value, detail=result.detail)
@@ -1451,10 +1703,12 @@ def mount_processing_jobs(
 
 
 __all__ = [
+    "DEFAULT_LEASE_TTL",
     "UNMETERED_AT_ISSUE",
     "ArtifactResult",
     "ArtifactSpec",
     "IllegalJobTransitionError",
+    "JobLease",
     "JobSpec",
     "ProcessingArtifactMutationResponse",
     "ProcessingArtifactRequest",
