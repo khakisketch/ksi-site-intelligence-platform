@@ -220,8 +220,12 @@ API 에러 코드를 그대로 노출하지 않고 사람 말로 번역한다(§
   담아 이후 요청에 싣는다(ADR-KSI-008 §2가 애초에 의도한 "S3 대시보드 로그인도 이 토큰으로
   시작"). 토큰은 여전히 Route Handler/Server Component에서만 쓰고 브라우저 JS로 내려보내지
   않는다. 각 운영자는 자신의 role 권한으로만 Core에 도달한다(§도메인 불변식 role↔permission
-  표 SSOT는 `services/core/src/ksi_core/auth.py`). 잔여: SITE_MANAGER 등 비-ADMIN role의
-  Wizard 권한 정합은 risk `dashboard-wizard-rbac-mismatch`(공동 결정 레인, 미해소).
+  표 SSOT는 `services/core/src/ksi_core/auth.py`). risk `dashboard-wizard-rbac-mismatch`
+  (비-ADMIN role의 Wizard 권한 정합)는 ADR-KSI-015(역할 3개 축소: `ADMIN`·`FIELD_OPERATOR`·
+  `VIEWER`)로 해소됐다 — `SITES_WRITE`를 가진 역할은 이제 항상 `MISSIONS_ISSUE`도 가져
+  통합 Wizard가 반쪽 상태를 만들지 않는다. "등록만 먼저"는 이제 권한 분기가 아니라
+  `/sites/new`에서의 사용자 선택이다(도메인상 `UNMAPPED`가 정상 중간 상태이기 때문 — RBAC
+  결함의 흔적이 아니다).
 - **캐싱**: Next 데이터 캐시에 기대지 않는다 — 모든 Core API 호출은 `cache: "no-store"`.
   운영자가 현장/이벤트/임무 최신 상태를 즉시 봐야 하므로 staleness 허용치가 낮고, MVP
   트래픽 규모에서 캐시 계층의 이득보다 정합성이 우선한다.
