@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-05T03:46:23+09:00",
+  "updated_at": "2026-08-05T03:50:54+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -835,6 +835,20 @@
       "previous_status": null,
       "created_at": "2026-08-05T03:46:23+09:00",
       "updated_at": "2026-08-05T03:46:23+09:00"
+    },
+    {
+      "id": "mapping-coverage-claim-unbounded",
+      "title": "매핑 커버리지 주장이 여전히 뚫린다 — 40ha 가 사진 10장에 coverageRatio 1.0 으로 발급됨(4차 독립 재검토 실측)",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "고도 150·spacing 225·captureInterval 225 로 2000x200m(40ha) AOI 를 요청하면 fold 분기로 스캔선 1개·웨이포인트 10개(장당 4ha)에 coverageRatio 1.0 이 나오고, 계약 약속 accessibleGeneralCoverage=1.0 대조도 통과한다(실측 재현). 225x224.9m 면 웨이포인트 2개(5.06ha). 상한을 네 번 고쳤으나(captureInterval 만 -> spacing 물리상한 -> spacing 운용상한) 모두 다른 축으로 우회됐다 — 근본 원인은 커버 실측이 각 스캔선의 촬영폭을 spacing 으로 **가정**하는데 spacing 이 요청 입력이라는 것이다. 카메라 촬영폭을 모르는 한 상한 조정으로는 닫히지 않는다. 실제 폐쇄 경로: CameraSpec(센서폭/초점거리/해상도)+전방·측면 중복도를 요청 파라미터로 받아 서버가 spacing·captureInterval 을 계산한다 — 산식은 참고 구현 references/repos/ksi-terra/ksi_terra/flightplan/{gsd.py,grid.py} 에 이미 있고(표준 매핑 장당 약 0.09*고도^2, 이 결함은 0.27*고도^2 를 넘는다) ADOPT/PORT 대상이다. **public API 형태 변경이라 대표자 결정 필요.** 현재 상태: tests/contract/test_coverage_claim_property.py 가 이 결함을 잡는 속성 테스트로 존재하되 xfail(strict) — 고쳐지면 마커 제거를 강제한다. 앞선 risk coverage-ratio-not-photogrammetric 은 '성질의 한계'를 적은 것이고 이 항목은 '지금 실제로 뚫린다'를 적는다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T03:50:54+09:00",
+      "updated_at": "2026-08-05T03:50:54+09:00"
     }
   ]
 }
