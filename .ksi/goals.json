@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-05T19:30:00+09:00",
+  "updated_at": "2026-08-05T22:59:31+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -567,6 +567,29 @@
       "created_at": "2026-07-31T05:08:47+09:00",
       "updated_at": "2026-08-05T19:30:00+09:00",
       "kind": "product"
+    },
+    {
+      "id": "reconstruction-pipeline",
+      "title": "3D 재구성 파이프라인: 원본 사진 입구 → 처리 작업 → 산출물 계보 (B1~B3, ADR-KSI-012/013)",
+      "completion_criteria": [
+        "B1 원본 사진 번들 입구 — 배치 presigned 업로드·봉인·Core 계산 sourceBundleDigest",
+        "B2 처리 작업 발급·상태전이 — 입력은 봉인된 번들에서 집계(요청이 못 준다), INV-050 반출 게이트를 현장 값으로 판정, 전이표를 재생이 다시 태운다",
+        "B3 워커 실행 — 전 바이트 sha256·해상도 재계산 대조(verifiedAt 채움), ProcessingArtifact 등록(INV-051), SUCCEEDED 에 산출물 존재 게이트",
+        "ODM 어댑터 실연동(무수정 컨테이너·REST 경계, ADR-KSI-012 D2 AGPL 경계 준수)",
+        "독립 재검토 PASS"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "B1 완결(직전 세션 commit 6b4d695) + B2 완결(이번 세션). B2 구현: services/core/src/ksi_core/processing_jobs.py 신규(발급·전이·재생), sites.py 에 data_residency 추가(INV-050 판정값의 저장소 — 없으면 요청이 자기 반출 허가서를 쓴다), app.py 조립 가드(processing_job_store 는 source_media_store·site_store 동반 필수), openapi-core.yaml 1.11.0(3 경로 + SiteView.dataResidency), dashboard types.ts SiteView 동기화. 게이트 실측: pytest 1741 passed·5 skipped(전부 Phase 3 범위 밖 golden, 이 변경과 무관)·3 xfailed, 신규 test_processing_jobs.py 47건, ruff 전체 통과, mypy 69파일 통과, dashboard vitest 81 passed, tsc 무출력. 검증 중 발견·수정: 라우트 부재 단언이 공허했다(include_router 라우트는 app.routes 에 .path 를 노출하지 않아 장착 여부와 무관하게 통과) — openapi() 기준으로 바꾸고 대조군 테스트를 추가. 미완: B3(워커 실행·verifiedAt 대조·ProcessingArtifact 등록·ODM 실연동), 독립 재검토. 알려진 공백 1건 리스크 등록(processing-success-claim-unbacked — SUCCEEDED 가 산출물 없이 주장 가능).",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-05T22:58:53+09:00",
+      "updated_at": "2026-08-05T22:59:31+09:00"
     }
   ],
   "risks": [
@@ -891,6 +914,20 @@
       "previous_status": null,
       "created_at": "2026-08-05T18:00:00+09:00",
       "updated_at": "2026-08-05T18:00:00+09:00"
+    },
+    {
+      "id": "processing-success-claim-unbacked",
+      "title": "처리 작업의 SUCCEEDED 주장이 산출물 없이 성립한다 — ProcessingArtifact 원장이 없어 대조 대상이 없다(B3 전까지)",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "커버리지 보고에서 닫은 '근거 없는 완료 주장'과 같은 클래스. 지금은 이 상태를 완료 증거로 읽는 소비자가 없다(대시보드 미배선). B3 에서 산출물 원장이 생기면 RUNNING→SUCCEEDED 전이에 '산출물 최소 1건' 게이트를 건다. services/core/src/ksi_core/processing_jobs.py 모듈 docstring '알려진 공백' 참조.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-05T22:58:41+09:00",
+      "updated_at": "2026-08-05T22:58:41+09:00"
     }
   ]
 }

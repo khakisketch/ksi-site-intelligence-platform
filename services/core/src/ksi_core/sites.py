@@ -47,6 +47,16 @@ AOI 교체는 ``SiteStatus.UNMAPPED`` 에서만 허용한다(막는 쪽이 기�
 AOI 를 현장 AOI 에 실제로 대조할지는 별도 제품 결정 대상이다(이 모듈이
 임의로 게이트를 추가하지 않는다).
 
+## 데이터 반출 허용은 현장의 속성이다 (INV-050)
+
+``data_residency`` 는 등록 시점에만 선언되고 이후 바뀌지 않는다. 이 값을
+처리 작업 발급 요청이 실어 보내지 않는 것이 요점이다 — 요청이 자기 반출
+허가서를 쓰면 INV-050 은 게이트가 아니라 장식이 된다(``processing_jobs.py``
+가 이 필드를 읽는 유일한 소비자다). 선언하지 않은 현장은 ``None`` 이고,
+``None`` 은 "아직 모른다"가 아니라 **반출 불가**로 읽힌다 — 이 필드 도입
+이전에 기록된 journal 레코드가 전부 ``None`` 으로 재생되기 때문에, 기본을
+허용 쪽에 두면 기존 현장 전체가 조용히 반출 가능해진다.
+
 ``set_aoi`` 는 호출자가 재확인하는 ``site_frame`` 이 등록본과 정확히
 일치해야 한다(``SITE_FRAME_MISMATCH``) — 다른 좌표계를 전제로 그려진 AOI 가
 섞여 들어오는 것을 막는다(:func:`~ksi_core.mission_records.precheck_issuance`
@@ -68,6 +78,7 @@ from ksi_domain.enums import (
     assert_site_transition,
     requires_autonomy_approval,
 )
+from ksi_event_contracts.processing_job import DataResidency
 from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_planning import AreaOfInterest
 from pydantic import BaseModel, ConfigDict, Field
@@ -132,6 +143,10 @@ class SiteRecord:
     # site_frame 과 동일 관습으로 파싱된 모델이 아니라 검증-후 dict 로 보관한다.
     # 아직 AOI 를 설정하지 않은 site(또는 구버전 journal 레코드)는 None.
     aoi: dict[str, Any] | None = None
+    # INV-050 이 읽는 데이터 절반 — 이 현장의 반출 허용 여부·관할.
+    # None 은 "선언되지 않았다"이고 **반출 불가로 읽힌다**(fail-closed). 구버전
+    # journal 레코드가 이 값을 가질 수 없으므로 기본을 허용 쪽에 둘 수 없다.
+    data_residency: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.registered_at.tzinfo is None:
@@ -278,6 +293,13 @@ class SiteStore:
             if not isinstance(aoi_payload, dict):
                 raise ValueError(f"재생: aoi 가 object 가 아니다: siteId={site_id}")
             AreaOfInterest.model_validate(aoi_payload)  # fail-closed 재검증(API 경계와 동일 강도)
+        # aoi 와 같은 선택 필드 관습 — 키가 없는 구버전 레코드는 None 으로 재생되고,
+        # None 은 반출 미선언(= 불가)이라 게이트가 느슨해지지 않는다.
+        residency_payload = raw.get("dataResidency")
+        if residency_payload is not None:
+            if not isinstance(residency_payload, dict):
+                raise ValueError(f"재생: dataResidency 가 object 가 아니다: siteId={site_id}")
+            DataResidency.model_validate(residency_payload)  # fail-closed 재검증
         ts = _parse_ts(raw["ts"])
         self._sites[site_id] = SiteRecord(
             site_id=site_id,
@@ -288,6 +310,7 @@ class SiteStore:
             registered_at=ts,
             updated_at=ts,
             aoi=aoi_payload,
+            data_residency=residency_payload,
         )
 
     def _apply_transitioned(self, raw: dict[str, Any]) -> None:
@@ -361,6 +384,7 @@ class SiteStore:
         site_frame: SiteFrame,
         *,
         aoi: AreaOfInterest | None = None,
+        data_residency: DataResidency | None = None,
         actor: str,
         now: datetime,
     ) -> SiteResult:
@@ -428,6 +452,11 @@ class SiteStore:
                     None
                     if aoi is None
                     else aoi.model_dump(by_alias=True, mode="json", exclude_none=True)
+                ),
+                "dataResidency": (
+                    None
+                    if data_residency is None
+                    else data_residency.model_dump(by_alias=True, mode="json")
                 ),
             }
             try:
@@ -582,6 +611,11 @@ class SiteRegistrationRequest(_CamelModel):
     # 선택 필드 — 필수로 하면 이미 등록된 site·기존 위저드 흐름이 깨진다. 나중에
     # 설정·교체하려면 PUT /v1/sites/{site_id}/aoi (AoiSetRequest 참조).
     aoi: AreaOfInterest | None = None
+    # 선택 필드지만 미지정은 "반출 불가"로 확정된다 — 생략이 관대한 기본값을
+    # 뜻하지 않는다(INV-050). 등록 이후 변경 경로는 의도적으로 없다: 반출 허용
+    # 토글은 법적 판단이라 SITES_WRITE 로 조용히 바꿀 수 있는 값이 아니다.
+    # 변경이 필요해지면 그때 권한과 승인 절차를 별도로 정한다.
+    data_residency: DataResidency | None = None
 
 
 class SiteTransitionRequest(_CamelModel):
@@ -617,6 +651,9 @@ class SiteView(_CamelModel):
     # 설정된 적 없으면 null — "AOI 가 없다"와 "아직 조회 안 됐다"를 응답 자체가
     # 구분한다(대시보드가 이 값 하나로 지도/빈 상태를 분기한다).
     aoi: dict[str, Any] | None
+    # 미선언이면 null 을 그대로 노출한다 — 화면이 "반출 허용"을 기본값처럼
+    # 보여주지 않게. null 의 뜻은 "반출 불가"다(SiteRecord.data_residency).
+    data_residency: dict[str, Any] | None
 
 
 class SiteListResponse(_CamelModel):
@@ -641,6 +678,7 @@ def _to_view(record: SiteRecord) -> SiteView:
         registered_at=record.registered_at.isoformat(),
         updated_at=record.updated_at.isoformat(),
         aoi=record.aoi,
+        data_residency=record.data_residency,
     )
 
 
@@ -661,6 +699,7 @@ def build_sites_router(store: SiteStore) -> APIRouter:
             request.name,
             request.site_frame,
             aoi=request.aoi,
+            data_residency=request.data_residency,
             actor=principal.principal_id,
             now=datetime.now(UTC),
         )

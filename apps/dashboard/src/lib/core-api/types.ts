@@ -32,6 +32,17 @@ export interface SiteView {
   updatedAt: string;
   /** 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT .../aoi 를 거치지 않음). */
   aoi: { vertices: AoiVertex[] } | null;
+  /**
+   * 데이터 반출 선언(INV-050). null 은 "미선언"이고 그 뜻은 **반출 불가**다 —
+   * 화면이 null 을 "아직 모름"으로 읽어 허용처럼 보여주면 안 된다.
+   */
+  dataResidency: DataResidency | null;
+}
+
+/** 처리 작업의 벤더 클라우드 실행 가부를 정하는 현장 속성(INV-050). */
+export interface DataResidency {
+  egressAllowed: boolean;
+  jurisdiction: string;
 }
 
 export const EVENT_STATUSES = [

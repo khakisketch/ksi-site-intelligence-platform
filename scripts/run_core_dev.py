@@ -28,6 +28,7 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
@@ -208,9 +209,18 @@ def main() -> None:
         data_dir / "source-media.jsonl", max_segment_bytes=segment_bytes
     )
     source_media_store = SourceMediaStore(source_media_journal, mission_store=mission_store)
+    site_store = SiteStore(site_journal)
+    # 처리 작업(ADR-KSI-012) — 봉인된 번들에서 입력을, 현장에서 반출 허용 여부를
+    # 읽는다(INV-050). source_media 와 달리 오브젝트 스토리지를 요구하지 않는다.
+    processing_job_journal = DurableJournal(
+        data_dir / "processing-jobs.jsonl", max_segment_bytes=segment_bytes
+    )
+    processing_job_store = ProcessingJobStore(
+        processing_job_journal, source_media_store=source_media_store, site_store=site_store
+    )
     app = create_app(
         auth_registry=_auth_registry(),
-        site_store=SiteStore(site_journal),
+        site_store=site_store,
         mission_store=mission_store,
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
@@ -219,6 +229,7 @@ def main() -> None:
             coverage_journal, mission_store=mission_store
         ),
         source_media_store=source_media_store,
+        processing_job_store=processing_job_store,
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
     )
@@ -239,6 +250,7 @@ def main() -> None:
         event_journal.close()
         coverage_journal.close()
         source_media_journal.close()
+        processing_job_journal.close()
         edge_sync_store.close()
 
 

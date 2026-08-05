@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
+    from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
 
@@ -59,6 +60,7 @@ def create_app(
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
     source_media_store: SourceMediaStore | None = None,
+    processing_job_store: ProcessingJobStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -109,6 +111,11 @@ def create_app(
             별개로 ``evidence_storage`` 유무를 따른다 — presigned URL 을 발급할
             스토리지가 없으면 이 표면 자체가 장착되지 않는다(evidence 라우트와
             같은 관습).
+        processing_job_store: 3D 재구성 처리 작업(ADR-KSI-012) 발급·상태전이
+            저장소. ``source_media_store`` 와 ``site_store`` 가 모두 필수다 —
+            입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
+            둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
+            조립에서 거부한다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -201,6 +208,16 @@ def create_app(
             " 동일 원칙"
         )
 
+    if processing_job_store is not None and (
+        source_media_store is None or site_store is None
+    ):
+        raise ValueError(
+            "processing_job_store 는 source_media_store·site_store 와 함께 주어져야"
+            " 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·digest)은 봉인된"
+            " 번들이 정하고 반출 허용 여부는 현장이 정한다. 둘 중 하나라도 없으면"
+            " 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -212,6 +229,7 @@ def create_app(
             evidence_storage,
             coverage_report_store,
             source_media_store,
+            processing_job_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -319,5 +337,13 @@ def create_app(
         from ksi_core.source_media import mount_source_media
 
         mount_source_media(app, source_media_store, evidence_storage)
+
+    if processing_job_store is not None:
+        # source_media 와 달리 evidence_storage 를 요구하지 않는다 — 이 표면은
+        # presigned URL 을 내지 않고 작업 원장만 다룬다. 입력을 읽어올 번들 저장소는
+        # 위 결합 검증이 이미 보장한다.
+        from ksi_core.processing_jobs import mount_processing_jobs
+
+        mount_processing_jobs(app, processing_job_store)
 
     return app

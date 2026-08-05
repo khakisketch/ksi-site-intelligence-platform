@@ -38,7 +38,14 @@ info:
   # 입구(기존 evidence 는 Event 종속이라 매핑 원본에 맞지 않는다) — 배치
   # presigned PUT 발급, sourceBundleDigest 는 Core 가 정규 정렬된 매니페스트에서
   # 계산한다(요청이 자기 증명서를 쓰지 못하게). 새 표면 추가라 minor.
-  version: 1.10.0
+  # 1.11.0 — B2 처리 작업 발급·상태전이 신설: POST/GET /v1/missions/{mission_id}/
+  # processing-jobs · GET /v1/processing-jobs/{job_id} · POST .../transitions.
+  # 입력(장수·화소·digest)은 봉인된 번들에서 Core 가 집계하고 요청에는 자리가
+  # 없다. 함께 POST /v1/sites 가 선택 필드 dataResidency 를 받는다 — INV-050 의
+  # 반출 판정이 읽을 값이 저장소 어디에도 없어서, 그대로 두면 처리 작업 요청이
+  # 자기 반출 허가서를 쓰게 된다. 미선언은 반출 불가로 읽히므로 기존 현장의
+  # 동작이 느슨해지지 않는다. 새 표면 추가라 minor.
+  version: 1.11.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -117,6 +124,19 @@ paths:
                         properties:
                           latDeg: { type: number, minimum: -90, maximum: 90 }
                           lonDeg: { type: number, minimum: -180, maximum: 180 }
+                dataResidency:
+                  type: object
+                  additionalProperties: false
+                  required: [egressAllowed, jurisdiction]
+                  description: >-
+                    선택 필드지만 **생략은 반출 불가를 뜻한다**(INV-050) — 관대한
+                    기본값이 아니다. 처리 작업(POST /v1/missions/{mission_id}/
+                    processing-jobs)이 executionLocus=vendor_cloud 를 요청할 때
+                    이 값만 본다. 등록 이후 변경 경로는 의도적으로 없다 — 반출
+                    허용은 법적 판단이라 SITES_WRITE 로 조용히 바꿀 값이 아니다.
+                  properties:
+                    egressAllowed: { type: boolean }
+                    jurisdiction: { type: string, minLength: 1 }
       responses:
         '201':
           description: REGISTERED — verdict + 등록된 SiteView
@@ -815,6 +835,160 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
+  /v1/missions/{mission_id}/processing-jobs:
+    post:
+      summary: Issue a 3D reconstruction processing job on the sealed source bundle
+      description: >-
+        MISSIONS_ISSUE 권한 필요. 요청은 **무엇으로 어디서** 돌릴지만 정한다 —
+        `input`(장수·총 화소·sourceBundleDigest)·`dataResidency`·`billing`·
+        `status`·`jobId` 는 요청 스키마에 자리가 없고, 실어 보내면 422 다.
+        입력은 봉인된 번들에서 Core 가 집계하고(봉인 전이면 BUNDLE_NOT_SEALED),
+        반출 허용 여부는 그 임무의 **현장**이 정하며(POST /v1/sites 의
+        dataResidency), 과금은 종료 보고 시점의 몫이다. 발급 시점 billing 은
+        creditsCharged=0 · rateBasis=`unmetered-at-issue` — 0 이 "무료"가 아니라
+        "아직 재지 않았다"를 뜻한다. `input.totalMegapixels` 는 업로더 **신고**
+        해상도의 합이라 견적이고, 응답의 `inputVerified` 가 이 단계에서 항상
+        false 인 이유다. 임무당 활성(QUEUED·RUNNING) 작업은 1건 — 같은 사양
+        재요청은 기존 작업을 그대로 돌려주고(ALREADY_ISSUED, 200), 다른 사양이면
+        409 다. 종료된 뒤에는 재처리 작업을 새로 만들 수 있다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, engineVersion, engineDigest, executionLocus, licenseBasis]
+              properties:
+                provider:
+                  description: ADR-KSI-012 D1 — 기본값은 odm(자체 호스팅 오픈소스).
+                  type: string
+                  enum:
+                    [odm, pix4d_engine, dji_flighthub, metashape_spl, customer_workstation]
+                engineVersion: { type: string, minLength: 1 }
+                engineDigest: { type: string, minLength: 1 }
+                executionLocus:
+                  description: >-
+                    vendor_cloud 는 현장이 반출을 허용한 경우에만 발급된다(INV-050).
+                  type: string
+                  enum: [site_onprem, ksi_server_gpu, customer_workstation, vendor_cloud]
+                licenseBasis:
+                  type: object
+                  additionalProperties: false
+                  required: [licenseId, tier, attributionRequired]
+                  properties:
+                    licenseId: { type: string, minLength: 1 }
+                    tier: { type: string, minLength: 1 }
+                    attributionRequired: { type: boolean }
+                processingParams: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: ISSUED — verdict + 발급된 작업(status=QUEUED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '200':
+          description: ALREADY_ISSUED — 같은 사양의 활성 작업을 그대로 반환(멱등 재요청)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_MISSION — 이 임무의 원본 미디어 번들이 없다 }
+        '409': { description: ACTIVE_JOB_EXISTS — 다른 사양의 작업이 진행 중이다 }
+        '422':
+          description: >-
+            BUNDLE_NOT_SEALED(봉인 전 — 장수·digest 미확정) /
+            EGRESS_NOT_ALLOWED(INV-050 — 현장이 반출을 허용하지 않았다, 미선언 포함)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+    get:
+      summary: List processing jobs for a mission (issuedAt·jobId 결정적 정렬)
+      description: MISSIONS_READ 권한 필요. 재처리 이력을 포함한 전체 목록이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 처리 작업 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-jobs/{job_id}:
+    get:
+      summary: Read one processing job (계약 payload 포함)
+      description: >-
+        MISSIONS_READ 권한 필요. `contract` 는 어댑터로 나가는 payload 그대로다
+        (processing-job.v1.json) — 화면이 계약 필드를 다시 조립하지 않게 한 벌로
+        싣는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 처리 작업 1건
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobView' }
+        '404': { description: 해당 처리 작업을 찾을 수 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-jobs/{job_id}/transitions:
+    post:
+      summary: Transition a processing job's status (QUEUED→RUNNING→SUCCEEDED|FAILED)
+      description: >-
+        MISSIONS_ISSUE 권한 필요. 전이표는 QUEUED→RUNNING→SUCCEEDED|FAILED 와
+        QUEUED|RUNNING→CANCELLED 뿐이다 — 종료 상태(SUCCEEDED·FAILED·CANCELLED)
+        에서 나가는 전이는 없다(끝난 작업의 결론을 고쳐 쓰지 않는다). QUEUED 에서
+        RUNNING 을 건너뛴 성공 주장도 거부된다. `actor` 는 body 가 아니라 인증
+        Principal 에서만 취득한다. **주의**: 이 표면은 지금 사람 권한으로 열려
+        있다 — 처리 워커 전용 Principal 종류와 lease·heartbeat 는 워커 실행
+        경로와 함께 설계한다(B3, 아직 없음).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus]
+              properties:
+                targetStatus:
+                  type: string
+                  enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+                detail:
+                  description: 왜 그렇게 끝났는지. 종료 전이에 남긴다.
+                  type: [string, 'null']
+      responses:
+        '200':
+          description: TRANSITIONED — verdict + 전이된 작업
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: ILLEGAL_TRANSITION — 전이표에 없는 전이 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
   /v1/missions/{mission_id}/contract:
     get:
       summary: Get the stored signed Mission Contract verbatim (INV-011)
@@ -1231,7 +1405,9 @@ components:
   schemas:
     SiteView:
       type: object
-      required: [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi]
+      required:
+        [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi,
+         dataResidency]
       properties:
         siteId: { type: string }
         name: { type: string }
@@ -1247,6 +1423,9 @@ components:
         # 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT /v1/sites/{site_id}/aoi
         # 를 거치지 않음) — 구조 정본은 AreaOfInterest(POST /v1/sites.aoi 참조).
         aoi: { type: [object, 'null'], additionalProperties: true }
+        # null 은 "반출 미선언"이고 그 뜻은 **반출 불가**다(INV-050). 화면이
+        # 허용을 기본값처럼 보여주지 않게 null 을 그대로 싣는다.
+        dataResidency: { type: [object, 'null'], additionalProperties: true }
     SiteListResponse:
       type: object
       required: [sites]
@@ -1498,6 +1677,44 @@ components:
         detail: { type: [string, 'null'] }
         bundle:
           oneOf: [{ $ref: '#/components/schemas/SourceMediaBundleView' }, { type: 'null' }]
+    ProcessingJobView:
+      description: >-
+        처리 작업 1건 — 계약 payload(contract) + 운영 메타. 계약 필드의 구조 정본은
+        contracts/schemas/processing-job.v1.json 이다.
+      type: object
+      required:
+        [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
+         inputVerified, contract]
+      properties:
+        jobId: { type: string }
+        missionId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        issuedAt: { type: string, format: date-time }
+        issuedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        # 종료 전이에 남긴 사유. 그 전에는 null.
+        detail: { type: [string, 'null'] }
+        inputVerified:
+          type: boolean
+          description: >-
+            현재는 항상 false(B2 범위) — input.totalMegapixels 는 업로더 신고
+            해상도의 합이고 전 바이트를 읽어 대조한 값이 아니다. 워커가 재계산해
+            대조하면(B3) 참이 될 수 있다. "검증된 척"하는 기본값을 쓰지 않는다.
+        contract: { type: object, additionalProperties: true }
+    ProcessingJobListResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs: { type: array, items: { $ref: '#/components/schemas/ProcessingJobView' } }
+    ProcessingJobMutationResponse:
+      description: 발급·전이 공통 응답. verdict 가 결과 코드고, job 은 성공 시에만 실린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        job: { oneOf: [{ $ref: '#/components/schemas/ProcessingJobView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
 
   securitySchemes:
     bearerAuth:
