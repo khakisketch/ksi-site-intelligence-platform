@@ -226,9 +226,14 @@ def test_perimeter_capture_interval_fills_edges_within_requested_gap() -> None:
 
 
 def test_perimeter_capture_interval_longer_than_edge_keeps_vertices_only() -> None:
-    """구간보다 긴 간격은 꼭짓점 순회만으로 이미 조건을 만족한다 — 억지로 안 쪼갠다."""
-    aoi = _rect_aoi(200.0, 100.0)
-    route = perimeter_route(aoi, altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=500.0)
+    """구간보다 긴 간격은 꼭짓점 순회만으로 이미 조건을 만족한다 — 억지로 안 쪼갠다.
+
+    간격은 고도 운용 상한(1.5×altitude, risk
+    patrol-capture-interval-direct-no-quality-floor) 안에서 변 길이보다 크게
+    잡는다 — lawnmower 의 대응 테스트와 같은 조정(작은 AOI + 상한 이내 간격).
+    """
+    aoi = _rect_aoi(30.0, 20.0)
+    route = perimeter_route(aoi, altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=35.0)
 
     assert len(route) == len(aoi.vertices) + 1
 
@@ -239,6 +244,34 @@ def test_perimeter_invalid_capture_interval_rejected(value: float) -> None:
         perimeter_route(
             _rect_aoi(200.0, 100.0), altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=value
         )
+
+
+def test_perimeter_capture_interval_above_altitude_ceiling_rejected() -> None:
+    """[핵심] risk patrol-capture-interval-direct-no-quality-floor —
+    카메라 유도가 아닌 직접 지정 간격은 고도 운용 상한(1.5×altitude)을 넘을 수
+    없다. 상한이 없으면 200m 간격 같은 사실상 무의미한 Spatial Refresh Backbone
+    이 발급될 수 있었다."""
+    with pytest.raises(RouteGenerationError, match="운용 상한"):
+        perimeter_route(
+            _rect_aoi(300.0, 300.0),
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=200.0,
+        )
+
+
+def test_perimeter_capture_interval_camera_derived_bypasses_ceiling() -> None:
+    """카메라 스펙에서 계산된 간격은 상한을 적용하지 않는다 — 서버가 이미
+    MIN_FRONT_OVERLAP 을 물리적으로 강제했으므로 대리변수(고도 상한)가 필요 없다
+    (lawnmower spacing_is_camera_derived 와 동일 원칙)."""
+    route = perimeter_route(
+        _rect_aoi(300.0, 300.0),
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=200.0,
+        capture_interval_is_camera_derived=True,
+    )
+    assert len(route) > len(_rect_aoi(300.0, 300.0).vertices) + 1
 
 
 def test_perimeter_capture_interval_waypoint_explosion_rejected() -> None:

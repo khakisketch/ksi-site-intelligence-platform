@@ -12,8 +12,11 @@
 
 1. ``event_fingerprint``: (event_type, anchor 위치, 최초 관측 시각)의 결정적 해시.
 2. ``observation_hash``: 관측 시퀀스(시각순 정렬) 전체의 결정적 해시.
-3. ``final_position``: 최종 위경도 좌표(부동소수 정확히 동일 — 순수 함수 합성이라
-   재실행해도 같은 비트 패턴이 나와야 한다).
+3. ``anchor_position``: 최초 관측 위경도 좌표(``EventCandidateBuilder.anchor`` —
+   부동소수 정확히 동일, 순수 함수 합성이라 재실행해도 같은 비트 패턴이 나와야
+   한다). "최종"이 아니라 **최초** 관측 위치다 — 재현성이 목적이라 평균 대신
+   고정점을 쓴다(``anchor`` 프로퍼티 docstring). 이전 이름 ``final_position``
+   은 뜻을 반대로 암시해 stale 모듈 재감사(#78, 2026-08-06)에서 정정됐다.
 4. ``transitions``: 밟은 상태전이 순서(튜플) — INV-022(단일 프레임 즉시확정 금지)가
    실제로 지켜졌는지도 이 시퀀스 길이로 드러난다.
 
@@ -183,7 +186,7 @@ class ReplayResult:
     dropped: tuple[DroppedFrame, ...]
     event_fingerprint: str | None
     observation_hash: str | None
-    final_position: tuple[float, float] | None
+    anchor_position: tuple[float, float] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,5 +257,5 @@ def run_replay(fixture: ReplayFixture) -> ReplayResult:
         dropped=tuple(dropped),
         event_fingerprint=fingerprint,
         observation_hash=obs_hash,
-        final_position=builder.anchor,
+        anchor_position=builder.anchor,
     )

@@ -139,7 +139,9 @@ def _plan_request(mission_id: str, mission_type: str, **route_overrides: Any) ->
         route["captureIntervalM"] = 15.0
     elif mission_type == "AUTONOMOUS_PATROL" and "captureIntervalM" not in route_overrides:
         # Spatial Refresh Backbone(MASTER_PRD §15.2) — AUTONOMOUS_PATROL 은 필수.
-        route["captureIntervalM"] = 500.0
+        # 50.0 은 altitudeM=40.0 의 운용 상한(1.5×40=60m, risk
+        # patrol-capture-interval-direct-no-quality-floor) 안이다.
+        route["captureIntervalM"] = 50.0
     return {
         "contract": _contract_request(mission_id, mission_type),
         "aoi": {"vertices": _rect_aoi_vertices()},

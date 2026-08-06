@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import posixpath
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -297,6 +298,24 @@ def digest_archive_entry(archive: zipfile.ZipFile, entry: str) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def digest_archive_entries(archive: zipfile.ZipFile, entries: Sequence[str]) -> str:
+    """아카이브 안 여러 파일의 결합 sha256 — 경로 정렬 후 이름+내용을 함께 해싱한다.
+
+    메시처럼 산출물이 파일 하나가 아니라 여러 파일(.obj+.mtl+텍스처)로 이뤄지면
+    대표 파일 하나만 해싱해선 나머지가 바뀌어도 digest 가 그대로다
+    (risk mesh-digest-ignores-textures). 정렬은 아카이브 내 나열 순서에 기대지
+    않기 위함이고, 경로도 함께 해싱해 파일이 늘거나 줄어도 잡아낸다.
+    """
+    digest = hashlib.sha256()
+    for entry in sorted(entries):
+        digest.update(entry.encode("utf-8"))
+        digest.update(b"\0")
+        with archive.open(entry) as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
 def plan_artifacts(
     archive_path: Path,
     *,
@@ -347,13 +366,25 @@ def plan_artifacts(
                     missing_parents,
                 )
                 continue
+            if asset.auxiliary_suffixes:
+                directory = posixpath.dirname(asset.archive_entry)
+                aux_entries = [
+                    e
+                    for e in present
+                    if e != asset.archive_entry
+                    and posixpath.dirname(e) == directory
+                    and e.endswith(asset.auxiliary_suffixes)
+                ]
+                digest = digest_archive_entries(archive, (asset.archive_entry, *aux_entries))
+            else:
+                digest = digest_archive_entry(archive, asset.archive_entry)
             reports.append(
                 ArtifactReport(
                     artifact_id=asset.artifact_id,
                     kind=asset.kind.value,
                     authority=asset.authority.value,
                     derived_from=asset.derived_from,
-                    digest=digest_archive_entry(archive, asset.archive_entry),
+                    digest=digest,
                     fmt=asset.fmt,
                     crs=crs if asset.needs_crs else None,
                     gsd=gsd,
@@ -417,6 +448,7 @@ __all__ = [
     "SourceImage",
     "assert_engine_matches",
     "digest_archive_entry",
+    "digest_archive_entries",
     "parse_task_status",
     "plan_artifacts",
     "run_to_completion",

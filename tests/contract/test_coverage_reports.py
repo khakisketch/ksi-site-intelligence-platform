@@ -553,6 +553,68 @@ def test_partial_ratio_with_cause_coded_gap_is_accepted(store: CoverageReportSto
     )
 
 
+def test_rejected_report_is_journaled_not_silently_dropped(tmp_path: Path) -> None:
+    """[핵심] 거부 판정(RECORDED 아닌 모든 verdict)도 journal 에 남는다 —
+    risk coverage-report-rejection-not-auditable."""
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    store = CoverageReportStore(journal, mission_store=_mission_store(tmp_path))
+
+    result = store.record(CoverageReport.model_validate(_report_payload(cells=[])), now=_NOW)
+    assert result.verdict is CoverageReportVerdict.NO_COVERAGE_EVIDENCE
+    journal.close()
+
+    lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == 1
+    assert lines[0]["kind"] == "coverage-report-rejected"
+    assert lines[0]["verdict"] == "NO_COVERAGE_EVIDENCE"
+    assert lines[0]["missionId"] == _MISSION_ID
+
+
+def test_unknown_mission_rejection_is_journaled(tmp_path: Path) -> None:
+    """존재하지 않는 missionId 로의 제출 시도도 감사기록에 남는다(위조/오작동 탐지)."""
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    store = CoverageReportStore(journal, mission_store=_mission_store(tmp_path))
+
+    result = store.record(
+        CoverageReport.model_validate(_report_payload(mission_id="mission-ghost")), now=_NOW
+    )
+    assert result.verdict is CoverageReportVerdict.UNKNOWN_MISSION
+    journal.close()
+
+    lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert lines[0]["kind"] == "coverage-report-rejected"
+    assert lines[0]["verdict"] == "UNKNOWN_MISSION"
+
+
+def test_rejected_entries_do_not_resurrect_on_replay(tmp_path: Path) -> None:
+    """거부 기록은 재생 시 건너뛴다 — RECORDED 만 완료 판정 권위를 갖는다."""
+    mission_store = _mission_store(tmp_path)
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(CoverageReport.model_validate(_report_payload(cells=[])), now=_NOW)
+    journal.close()
+
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(
+        reborn_journal, mission_store=MissionStore(DurableJournal(tmp_path / "missions2.jsonl"))
+    )
+    try:
+        assert reborn.history(_MISSION_ID) == []
+        assert reborn.latest(_MISSION_ID) is None
+    finally:
+        reborn_journal.close()
+
+
 def test_submitter_is_recorded_in_the_journal(tmp_path: Path) -> None:
     """"언제 무엇을 봤다고 했는가"가 감사 입력이면 "누가"도 남아야 한다(B-3)."""
     journal_path = tmp_path / "coverage.jsonl"

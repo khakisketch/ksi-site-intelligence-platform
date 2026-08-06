@@ -63,7 +63,7 @@ foot point 가 그대로 유효하다. 이 정합은 우연에 맡기지 않고
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -269,7 +269,12 @@ class DetectionAdapter:
             # 구조 검증 — RawDetection 은 "검증되지 않은 그릇"이므로 타입힌트가
             # 런타임을 보장하지 않는다. 구조가 어긋난 입력이 아래 산술에서 TypeError/
             # unpack 오류로 새어 나가 배치 전체를 죽이지 않게 여기서 끊는다.
-            if len(raw.box) != 4 or not all(
+            #
+            # box 가 시퀀스가 아닌 경우(None·int·dict 등)를 먼저 걸러낸다 — 걸러내지
+            # 않으면 len(raw.box) 자체가 TypeError 를 던져 convert() 밖으로 새어나가고,
+            # "예외를 던지지 않는다"는 클래스·메서드 docstring 의 약속을 어긴다
+            # (stale 모듈 재감사 med#4, 2026-08-06).
+            if not isinstance(raw.box, Sequence) or len(raw.box) != 4 or not all(
                 isinstance(v, float | int) and not isinstance(v, bool)
                 for v in (*raw.box, raw.score)
             ):

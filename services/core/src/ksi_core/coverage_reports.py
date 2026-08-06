@@ -32,6 +32,12 @@ INV-010 은 임무 완료 기준(위험구역 100%·자산 100%·일반영역 �
 올 수 있고(부분→최종, 재비행), **덮어쓰지 않고 전부 남긴다** — "언제 무엇을 봤다고
 했는가"가 사고 조사의 입력이기 때문이다. 조회는 최신 보고서를 낸다.
 
+거부 판정(``UNKNOWN_MISSION``·``SITE_MISMATCH``·``NO_COVERAGE_EVIDENCE`` 등, ``RECORDED``
+아닌 전부)도 ``kind: coverage-report-rejected`` 로 durable 기록한다 — "근거 없는 완료
+주장을 서버가 거부했다"는 사실 자체가 감사 입력이라 조기 반환으로 소멸시키지 않는다
+(risk coverage-report-rejection-not-auditable). 재생 시에는 건너뛴다 — 완료 판정 권위는
+``RECORDED`` 만 갖는다.
+
 ## Coverage Recovery 신호 (MASTER_PRD §15.2)
 
 조회 응답의 ``recoveryRecommended`` 는 :meth:`CoverageReport.needs_coverage_recovery`
@@ -201,6 +207,13 @@ class CoverageReportStore:
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
+            kind = raw.get("kind")
+            if kind == "coverage-report-rejected":
+                # 거부 판정 감사기록(risk coverage-report-rejection-not-auditable) —
+                # 수용 상태(_by_mission)에 반영하지 않는다. RECORDED 만 완료 판정 권위를 가진다.
+                continue
+            if kind not in (None, "coverage-reported"):
+                raise CoverageReportRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
             report = CoverageReport.model_validate(raw["report"])
             # 재생도 live 와 같은 게이트를 태운다 — journal 조작으로 근거 없는
             # COMPLETED 가 되살아나는 경로를 막는다(events.py 재생 게이트와 대칭).
@@ -235,17 +248,24 @@ class CoverageReportStore:
             if mission is None:
                 # 발급된 적 없는 임무의 보고는 받지 않는다 — 계약 없이 관찰
                 # 결과만 원장에 남으면 "무슨 근거로 날았나"에 답할 수 없다.
-                return CoverageReportResult(
-                    CoverageReportVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
+                    CoverageReportVerdict.UNKNOWN_MISSION,
+                    _NOT_FOUND_DETAIL,
                 )
             if mission.site_id != report.site_id:
-                return CoverageReportResult(
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
                     CoverageReportVerdict.SITE_MISMATCH,
-                    detail="보고서의 siteId 가 임무 발급 기록과 다르다",
+                    "보고서의 siteId 가 임무 발급 기록과 다르다",
                 )
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
-                return CoverageReportResult(verdict, detail=detail)
+                return self._reject(report, now, reported_by, verdict, detail)
 
             record = {
                 "kind": "coverage-reported",
@@ -267,6 +287,38 @@ class CoverageReportStore:
                 RecordedCoverageReport(report=report, reported_by=reported_by)
             )
             return CoverageReportResult(CoverageReportVerdict.RECORDED, report=report)
+
+    def _reject(
+        self,
+        report: CoverageReport,
+        now: datetime,
+        reported_by: str | None,
+        verdict: CoverageReportVerdict,
+        detail: str | None,
+    ) -> CoverageReportResult:
+        """거부 판정도 감사기록에 남긴다(risk coverage-report-rejection-not-auditable).
+
+        ``self._lock`` 을 쥔 :meth:`record` 안에서만 호출된다. 수용 상태
+        (``_by_mission``)에는 반영하지 않는다 — RECORDED 만 완료 판정 권위를 가진다.
+        """
+        record = {
+            "kind": "coverage-report-rejected",
+            "ts": now.astimezone(UTC).isoformat(),
+            "missionId": report.mission_id,
+            "siteId": report.site_id,
+            "verdict": verdict.value,
+            "detail": detail,
+            "reportedBy": reported_by,
+            "report": report.model_dump(by_alias=True, mode="json", exclude_none=True),
+        }
+        try:
+            self._journal.append(record)
+        except JournalSealedError:
+            return CoverageReportResult(
+                CoverageReportVerdict.STORE_UNAVAILABLE,
+                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+            )
+        return CoverageReportResult(verdict, detail=detail)
 
     def latest(self, mission_id: str) -> CoverageReport | None:
         """그 임무의 최신 보고 — 없으면 ``None``."""

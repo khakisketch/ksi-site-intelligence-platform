@@ -193,9 +193,10 @@ def _plan_request(
         "contract": _contract_request(mission_id=mission_id, site_id=site_id, **contract_overrides),
         "aoi": {"vertices": _rect_aoi_vertices()},
         # AUTONOMOUS_PATROL(이 파일의 기본 missionType)은 Spatial Refresh Backbone
-        # 이 필수다(MASTER_PRD §15.2) — 500.0 은 이 파일의 고정 rect AOI 최장 변
-        # (200m)보다 커서 추가 웨이포인트를 만들지 않는다.
-        "route": {"altitudeM": 40.0, "captureIntervalM": 500.0},
+        # 이 필수다(MASTER_PRD §15.2). 50.0 은 altitudeM=40.0 의 운용 상한
+        # (1.5×40=60m, risk patrol-capture-interval-direct-no-quality-floor) 안 —
+        # 500.0(상한 도입 전 "웨이포인트 안 늘어남" 편의값)은 더 이상 허용되지 않는다.
+        "route": {"altitudeM": 40.0, "captureIntervalM": 50.0},
         "drone": {"droneEnumValue": 99, "droneSubEnumValue": 0, "payloadEnumValue": 65534},
         "wayline": {
             "autoFlightSpeedMs": 5.0,

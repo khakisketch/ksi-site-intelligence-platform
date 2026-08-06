@@ -368,6 +368,55 @@ def test_no_source_artifact_is_an_error(tmp_path: Path) -> None:
         plan_artifacts(_archive(tmp_path, engine), crs=_CRS, gsd_by_artifact=_GSD)
 
 
+# ── mesh digest 가 텍스처를 덮는가(risk mesh-digest-ignores-textures) ────────
+
+
+def _mesh_archive(tmp_path: Path, name: str, *, obj: bytes, mtl: bytes, texture: bytes,
+                   glb: bytes | None = None) -> Path:
+    path = tmp_path / f"{name}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("odm_report/shots.geojson", b"x")
+        archive.writestr("odm_georeferencing/odm_georeferenced_model.laz", b"x")
+        archive.writestr("odm_texturing/odm_textured_model_geo.obj", obj)
+        archive.writestr("odm_texturing/odm_textured_model_geo.mtl", mtl)
+        archive.writestr(
+            "odm_texturing/odm_textured_model_geo_material0000_map_Kd.png", texture
+        )
+        if glb is not None:
+            archive.writestr("odm_texturing/odm_textured_model_geo.glb", glb)
+    return path
+
+
+def _mesh_digest(tmp_path: Path, **kwargs: bytes) -> str:
+    name = "-".join(f"{k}={v!r}" for k, v in sorted(kwargs.items()))
+    reports = plan_artifacts(_mesh_archive(tmp_path, name, **kwargs), crs=_CRS)
+    return next(r for r in reports if r.artifact_id == "mesh").digest
+
+
+def test_mesh_digest_changes_when_texture_changes(tmp_path: Path) -> None:
+    """[핵심] .obj 는 그대로인데 텍스처만 바뀌어도 mesh digest 가 바뀐다."""
+    common = dict(obj=b"same-obj", mtl=b"same-mtl")
+    digest_v1 = _mesh_digest(tmp_path, texture=b"texture-v1", **common)
+    digest_v2 = _mesh_digest(tmp_path, texture=b"texture-v2", **common)
+    assert digest_v1 != digest_v2
+
+
+def test_mesh_digest_changes_when_mtl_changes(tmp_path: Path) -> None:
+    """[핵심] .mtl 만 바뀌어도 mesh digest 가 바뀐다."""
+    common = dict(obj=b"same-obj", texture=b"same-texture")
+    digest_v1 = _mesh_digest(tmp_path, mtl=b"mtl-v1", **common)
+    digest_v2 = _mesh_digest(tmp_path, mtl=b"mtl-v2", **common)
+    assert digest_v1 != digest_v2
+
+
+def test_mesh_digest_ignores_unrelated_files_in_same_directory(tmp_path: Path) -> None:
+    """[비공허 대조] .glb 는 obj/mtl 이 참조하는 텍스처가 아니라 mesh digest 밖이다."""
+    common = dict(obj=b"same-obj", mtl=b"same-mtl", texture=b"same-texture")
+    digest_v1 = _mesh_digest(tmp_path, glb=b"glb-v1", **common)
+    digest_v2 = _mesh_digest(tmp_path, glb=b"glb-v2", **common)
+    assert digest_v1 == digest_v2
+
+
 # ── 실행 루프 ───────────────────────────────────────────────────────────────
 
 

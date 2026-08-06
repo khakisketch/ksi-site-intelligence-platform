@@ -199,6 +199,7 @@ def perimeter_route(
     altitude_m: float,
     envelope: FlightEnvelope,
     capture_interval_m: float | None = None,
+    capture_interval_is_camera_derived: bool = False,
 ) -> list[RouteWaypoint]:
     """외곽 순찰 경로 — 꼭짓점 순회 후 첫 점으로 복귀(폐루프).
 
@@ -209,6 +210,15 @@ def perimeter_route(
             간격으로 수집한다")의 실제 지점이다. ``None`` 이면 꼭짓점만 순회하는
             순수 항법 경로다 — 이 인자를 요구할지는 임무타입별 정책
             (``mission_plans.py``) 소관이고, 이 생성기 자신은 강제하지 않는다.
+        capture_interval_is_camera_derived: 간격이 카메라 스펙에서 계산됐는가
+            (:func:`ksi_mission_planning.camera.compute_grid_spacing`). ``True``
+            면 아래 상한을 적용하지 않는다 — lawnmower 의 ``spacing_is_camera_derived``
+            와 동일 원칙(모듈 docstring). ``False`` 인데 상한이 없으면 API 직접
+            호출자가 200m 간격 같은 사실상 무의미한 "Spatial Refresh Backbone"을
+            발급할 수 있다(risk patrol-capture-interval-direct-no-quality-floor) —
+            lawnmower 의 ``_MAX_SPACING_PER_ALTITUDE`` 를 같은 운용 정책값으로
+            재사용한다(스캔선 간격 대신 여기선 촬영 간격에 건다 — perimeter 엔
+            "측면 간격" 개념이 없어 대응할 다른 상한이 없다).
     """
     _require_envelope_compatible(altitude_m, envelope)
     if capture_interval_m is None:
@@ -224,6 +234,14 @@ def perimeter_route(
         raise RouteGenerationError(
             f"capture_interval_m 는 {_MIN_CAPTURE_INTERVAL_M}m 이상의 finite 여야 한다 "
             f"(got {capture_interval_m!r}) — 하한은 웨이포인트 수 폭발(자원 소진) 차단"
+        )
+    interval_ceiling = _MAX_SPACING_PER_ALTITUDE * altitude_m
+    if capture_interval_m > interval_ceiling and not capture_interval_is_camera_derived:
+        raise RouteGenerationError(
+            f"capture_interval_m({capture_interval_m}) 가 고도 {altitude_m}m 의 운용 상한"
+            f"({interval_ceiling:.1f}m = 고도×{_MAX_SPACING_PER_ALTITUDE})을 넘는다 — "
+            "이보다 성긴 간격은 Spatial Refresh Backbone 의 3D 갱신 목적을 만족하는 "
+            "구성으로 인정하지 않는다"
         )
 
     ring = aoi._to_enu_ring()

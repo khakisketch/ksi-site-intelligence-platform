@@ -339,6 +339,7 @@ def build_mission_plan(
             )
     elif mission_type in _PERIMETER_TYPES:
         capture_interval_m = request.route.capture_interval_m
+        capture_interval_is_camera_derived = request.route.camera is not None
         if request.route.camera is not None:
             if capture_interval_m is not None:
                 raise RouteGenerationError(
@@ -384,6 +385,7 @@ def build_mission_plan(
             altitude_m=request.route.altitude_m,
             envelope=envelope,
             capture_interval_m=capture_interval_m,
+            capture_interval_is_camera_derived=capture_interval_is_camera_derived,
         )
         pattern = "perimeter"
     else:
@@ -557,8 +559,17 @@ def build_mission_plans_router(
                     # 봉투, 또는 촬영 간격 필수화 이전에 발급된 매핑 요청. 그대로
                     # 두면 재시도가 500 이 되어 "서버 버그"처럼 보인다 — 실제로는
                     # 정책이 바뀐 것이므로 그 사실을 typed 로 알린다.
-                    logger.warning(
-                        "mission_id=%s 짝 재생성이 현재 정책에서 실패 — %s",
+                    #
+                    # error 레벨(risk kmz-regeneration-determinism-timebomb): 아래
+                    # sha256 불일치 분기와 같은 근본원인 클래스다 — 서버 상수·경로
+                    # 생성기 정책이 바뀌면 그 이전 발급분 재발급(멱등 재시도)이
+                    # 전량 이 분기로 떨어진다. phase-2 Spatial Refresh Backbone(
+                    # captureIntervalM 필수화)이 이 경로를 실제로 발화시켰다
+                    # (PHASE_REGISTRY.yaml phase-2 residual_risks).
+                    logger.error(
+                        "mission_id=%s 짝 재생성이 현재 정책에서 실패(%s) — 발급 당시 "
+                        "이후 서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 "
+                        "변경 전에 발급된 다른 레코드도 동시에 영향받을 수 있다",
                         existing.mission_id, type(exc).__name__,
                     )
                     raise HTTPException(
@@ -657,8 +668,13 @@ def build_mission_plans_router(
                 record, private_key=private_key, key_id=key_id
             )
         except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
-            logger.warning(
-                "mission_id=%s KMZ 재생성이 현재 정책에서 실패 — %s",
+            # error 레벨(risk kmz-regeneration-determinism-timebomb) — 아래
+            # sha256 불일치 분기와 같은 근본원인 클래스: 정책이 바뀐 뒤 이전
+            # 발급분의 다운로드가 전량 이 분기로 떨어질 수 있다.
+            logger.error(
+                "mission_id=%s KMZ 재생성이 현재 정책에서 실패(%s) — 발급 당시 이후 "
+                "서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 변경 전에 "
+                "발급된 다른 레코드도 동시에 영향받을 수 있다",
                 record.mission_id, type(exc).__name__,
             )
             raise HTTPException(

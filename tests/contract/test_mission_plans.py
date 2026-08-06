@@ -12,6 +12,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import math
 import zipfile
 from datetime import UTC, datetime
@@ -92,9 +93,11 @@ def _plan_request(
     elif mission_type == "AUTONOMOUS_PATROL" and "captureIntervalM" not in route_overrides:
         # AUTONOMOUS_PATROL 도 이제 Spatial Refresh Backbone 이 필수다(MASTER_PRD
         # §15.2) — 그 규칙 자체를 반증하는 테스트는 captureIntervalM=None 을
-        # 명시적으로 넘긴다. 500.0 은 이 파일의 고정 rect AOI(100m×200m) 최장 변
-        # (200m)보다 커서 추가 웨이포인트를 만들지 않는다(waypointCount 불변).
-        route["captureIntervalM"] = 500.0
+        # 명시적으로 넘긴다. 50.0 은 이 파일의 고정 altitudeM(40.0)의 운용 상한
+        # (1.5×40=60m, risk patrol-capture-interval-direct-no-quality-floor) 안이라
+        # 예전 500.0(상한 도입 전 "웨이포인트 안 늘어남" 편의값)과 달리 실제로
+        # 변을 채운다 — waypointCount 는 이제 5(꼭짓점만)가 아니라 13이다.
+        route["captureIntervalM"] = 50.0
     return {
         "contract": {
             "missionId": "mission-001",
@@ -220,7 +223,9 @@ def test_plan_issues_contract_and_kmz_pair(tmp_path: Path) -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["routePattern"] == "perimeter"
-    assert body["waypointCount"] == 5  # 꼭짓점 4 + 폐루프 1
+    # 꼭짓점 4 + captureIntervalM=50.0 이 채우는 변 위 점들(200m 변×2 → 4점씩,
+    # 100m 변×2 → 2점씩 = 12) + 폐루프 종점 1 = 13.
+    assert body["waypointCount"] == 13
 
     loaded = load_verified_contract(body["contract"], registry, now=datetime.now(UTC))
     assert loaded.verdict is SignatureVerdict.VALID, loaded.detail
@@ -669,14 +674,18 @@ def test_capture_interval_wider_than_spacing_is_rejected(tmp_path: Path) -> None
 
 
 def test_retry_of_record_that_current_policy_cannot_reissue_is_409_not_500(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
     """[핵심] 정책이 바뀌어 저장된 요청을 재생성할 수 없으면 500 이 아니라 409 다.
 
     오늘 이전에 발급된 매핑 짝 레코드에는 captureIntervalM 이 없다 — 그 상태로
     같은 요청이 재도착하면 멱등 재발급이 생성기 예외로 죽어 "서버 버그"처럼
     보인다(독립 재검토 P2-7). 실제로는 정책이 달라진 것이므로 그 사실을 알린다.
+
+    ERROR 레벨로 계측되는지도 함께 본다(risk kmz-regeneration-determinism-
+    timebomb) — 이 분기가 대량 발생하면 운영자가 알아채야 한다.
     """
+    caplog.set_level(logging.ERROR, logger="ksi_core.mission_plans")
     # 옛 규칙으로 발급됐던 요청 — 진행방향 촬영 간격이 없다. 저장 형태는 서버가
     # 실제로 굳히는 것과 같아야 digest 가 맞는다(model_dump exclude_none).
     stale_request = MissionPlanRequest.model_validate(
@@ -737,6 +746,10 @@ def test_retry_of_record_that_current_policy_cannot_reissue_is_409_not_500(
 
     assert retry.status_code == 409, retry.text
     assert "현재 정책" in retry.json()["detail"]
+    assert any(
+        record.levelno == logging.ERROR and "mission-001" in record.message
+        for record in caplog.records
+    ), "정책 변경으로 인한 재발급 실패는 ERROR 로 계측돼야 한다(대량 발생 시 운영자가 알아채야)"
 
 
 # ── F. 카메라로 서버가 격자를 계산한다 (ADR-KSI-011 D2, 3순위) ───────────────
@@ -971,10 +984,16 @@ def test_kmz_download_rejects_when_regeneration_hash_no_longer_matches(tmp_path:
     assert "kmzSha256" in response.json()["detail"]
 
 
-def test_kmz_download_rejects_when_current_policy_cannot_regenerate(tmp_path: Path) -> None:
+def test_kmz_download_rejects_when_current_policy_cannot_regenerate(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
     """[수용기준 2] 정책이 바뀌어 저장된 요청 자체가 더 이상 생성기를 통과하지
     못하면(RouteGenerationError 등) 500 이 아니라 409 다 — POST /plans 멱등
-    재발급의 동일 typed 거부 관습을 다운로드 경로도 그대로 따른다."""
+    재발급의 동일 typed 거부 관습을 다운로드 경로도 그대로 따른다.
+
+    ERROR 레벨로 계측되는지도 함께 본다(risk kmz-regeneration-determinism-timebomb).
+    """
+    caplog.set_level(logging.ERROR, logger="ksi_core.mission_plans")
     stale_request = MissionPlanRequest.model_validate(
         _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0, captureIntervalM=None)
     ).model_dump(by_alias=True, mode="json", exclude_none=True)
@@ -1031,3 +1050,7 @@ def test_kmz_download_rejects_when_current_policy_cannot_regenerate(tmp_path: Pa
 
     assert response.status_code == 409, response.text
     assert "현재 정책" in response.json()["detail"]
+    assert any(
+        record.levelno == logging.ERROR and "mission-001" in record.message
+        for record in caplog.records
+    ), "정책 변경으로 인한 다운로드 실패는 ERROR 로 계측돼야 한다(대량 발생 시 알아채야)"

@@ -1,6 +1,6 @@
 """재생 결정성 (P0-6 수용기준, 대표자 반영사항 10).
 
-Event ID가 아니라 event_fingerprint·observation_hash·final_position·transitions로
+Event ID가 아니라 event_fingerprint·observation_hash·anchor_position·transitions로
 동일성을 검증한다. 각 테스트는 같은 fixture를 서로 다른 실행/입력순서로 재생해 네
 값이 전부 동일함을 확인한다.
 """
@@ -20,7 +20,7 @@ def test_two_fresh_runs_produce_identical_results() -> None:
 
     assert result_a.event_fingerprint == result_b.event_fingerprint
     assert result_a.observation_hash == result_b.observation_hash
-    assert result_a.final_position == result_b.final_position
+    assert result_a.anchor_position == result_b.anchor_position
     assert result_a.transitions == result_b.transitions
     assert result_a.status == result_b.status
 
@@ -44,18 +44,18 @@ def test_shuffled_input_order_produces_identical_results() -> None:
 
     assert result_baseline.event_fingerprint == result_shuffled.event_fingerprint
     assert result_baseline.observation_hash == result_shuffled.observation_hash
-    assert result_baseline.final_position == result_shuffled.final_position
+    assert result_baseline.anchor_position == result_shuffled.anchor_position
     assert result_baseline.transitions == result_shuffled.transitions
 
 
-def test_final_position_bit_identical_across_runs() -> None:
-    """final_position은 부동소수 비트까지 동일해야 한다(순수 함수 합성이므로)."""
+def test_anchor_position_bit_identical_across_runs() -> None:
+    """anchor_position은 부동소수 비트까지 동일해야 한다(순수 함수 합성이므로)."""
     result_a = run_replay(confirmed_intrusion_fixture())
     result_b = run_replay(confirmed_intrusion_fixture())
 
-    assert result_a.final_position is not None
-    assert result_a.final_position == result_b.final_position
-    lat_a, lon_a = result_a.final_position
-    lat_b, lon_b = result_b.final_position
+    assert result_a.anchor_position is not None
+    assert result_a.anchor_position == result_b.anchor_position
+    lat_a, lon_a = result_a.anchor_position
+    lat_b, lon_b = result_b.anchor_position
     assert lat_a == lat_b  # noqa: PLR0124 — 의도적으로 float == float(비트 동일성 확인)
     assert lon_a == lon_b  # noqa: PLR0124
