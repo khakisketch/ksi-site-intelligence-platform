@@ -554,6 +554,9 @@ class JobInputResult:
     verdict: ProcessingJobVerdict
     record: ProcessingJobRecord | None = None
     media: tuple[SourceMediaRecord, ...] = ()
+    # 현장 등록 시점에 확정된 CRS — 워커가 처리 산출물에 실을 좌표계.
+    # None 이면 현장이 없거나 site_frame 이 비어 있다(원장 이상 상태).
+    site_crs: str | None = None
     detail: str | None = None
 
 
@@ -1233,8 +1236,18 @@ class ProcessingJobStore:
                 ProcessingJobVerdict.UNKNOWN_MISSION,
                 detail="이 작업의 원본 번들을 찾을 수 없다",
             )
+        # 산출물의 crs 는 워커가 지어내거나 processing_params 로 자기 신고하지
+        # 않는다 — 현장 등록 시점에 이미 확정된 값을 Core 가 읽어 준다(발급
+        # 시점 반출 판정이 site_store 를 읽는 것과 같은 원칙, _residency_of).
+        site = self._sites.get(record.site_id)
+        site_crs = (
+            str(site.site_frame.get("crs")) if site is not None and site.site_frame else None
+        )
         return JobInputResult(
-            ProcessingJobVerdict.INPUT_READY, record=record, media=bundle.media
+            ProcessingJobVerdict.INPUT_READY,
+            record=record,
+            media=bundle.media,
+            site_crs=site_crs,
         )
 
     def _active_job_locked(self, mission_id: str) -> ProcessingJobRecord | None:
@@ -1366,6 +1379,10 @@ class JobInputView(_CamelModel):
     source_bundle_digest: str
     image_count: int
     media: list[JobInputMediaView]
+    # 현장 등록 시점의 CRS — 산출물 등록 시 그대로 싣는다. null 이면 현장
+    # 원장이 이상 상태다(발급이 이미 site 존재를 강제하므로 정상 경로에서는
+    # 나타나지 않는다).
+    site_crs: str | None
 
 
 class JobInputResponse(_CamelModel):
@@ -1637,6 +1654,7 @@ def build_processing_jobs_router(
                 source_bundle_digest=record.input.source_bundle_digest,
                 image_count=record.input.image_count,
                 media=media,
+                site_crs=result.site_crs,
             ),
         )
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-06T13:08:06+09:00",
+  "updated_at": "2026-08-06T13:57:45+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -984,6 +984,20 @@
       "previous_status": null,
       "created_at": "2026-08-06T05:36:42+09:00",
       "updated_at": "2026-08-06T05:36:42+09:00"
+    },
+    {
+      "id": "worker-daemon-never-run-end-to-end",
+      "title": "워커 데몬이 Core+NodeODM+MinIO 3자 결합으로 한 번도 돌지 않았다",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "run_job() 은 가짜 CoreClient+가짜 NodeOdmClient 로 12 케이스가 통과했지만(순서·heartbeat·crs 출처·실패 수렴), 실제 Core dev 서버(HttpCoreClient) + 실제 MinIO(presigned URL) + 실제 NodeODM 3자 결합으로는 검증되지 않았다. 각 변은 개별로는 실기동 검증됐다(NodeODM: test_odm_live.py, S3: test_evidence_s3_live.py) — 남은 것은 그 셋을 worker.run_job 이 실제로 잇는지 하나뿐이다. 이번 세션에서 Core dev 서버를 백그라운드로 띄우는 시도가 3회 거부돼(사용자 판단) 착수하지 못했다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T13:57:45+09:00",
+      "updated_at": "2026-08-06T13:57:45+09:00"
     }
   ]
 }

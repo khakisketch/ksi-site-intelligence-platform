@@ -1553,6 +1553,18 @@ def test_http_input_response_never_carries_the_uploader_claims(tmp_path: Path) -
         assert set(item) == {"mediaId", "objectKey", "downloadUrl", "expiresAt"}
 
 
+def test_http_input_carries_the_site_crs_not_worker_supplied(tmp_path: Path) -> None:
+    """[핵심] 산출물의 crs 는 현장 등록값에서 온다 — 워커·발급자가 자기 신고하지 않는다.
+
+    processing_params 로 crs 를 실을 자리를 만들면 "요청이 자기 증명서를 쓴다"
+    클래스가 재발한다 — 이 값은 Core 가 site_store 에서 읽어 준다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    body = client.get(f"/v1/processing-jobs/{job_id}/input").json()
+    assert body["input"]["siteCrs"] == "EPSG:5186"
+
+
 def test_http_input_is_worker_only(tmp_path: Path) -> None:
     """[음성] 사람 권한으로는 원본 다운로드 URL 을 받을 수 없다."""
     client = _client(tmp_path)
