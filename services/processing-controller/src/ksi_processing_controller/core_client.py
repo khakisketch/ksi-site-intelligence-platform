@@ -102,7 +102,7 @@ class CoreClient(Protocol):
     def verify_source_media(
         self, mission_id: str, measurements: list[MeasuredImage]
     ) -> None:
-        """``POST /source-media/verify``. VERIFIED 외엔 :class:`CoreClientError`."""
+        """``POST /source-media/verify``. VERIFIED·ALREADY_VERIFIED 외엔 예외."""
         ...
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
@@ -115,13 +115,31 @@ class HttpCoreClient:
 
     def __init__(self, base_url: str, *, token: str, client: httpx.Client | None = None) -> None:
         self._base_url = base_url.rstrip("/")
-        self._client = client or httpx.Client(
-            headers={"Authorization": f"Bearer {token}"}, timeout=30.0
-        )
+        self._client = client or httpx.Client(timeout=30.0)
+        # ``client`` 를 주입해도(테스트 등) ``token`` 이 조용히 무시되지 않는다 —
+        # 둘 다 준 호출자는 "이 토큰으로 이 클라이언트를 써라"를 뜻하지 "클라이언트가
+        # 있으니 토큰은 버려라"를 뜻하지 않는다. 실기동 전까지 이 자리가 정확히
+        # 거꾸로였다: 주입된 클라이언트는 인증 헤더 없이 나갔다.
+        self._client.headers["Authorization"] = f"Bearer {token}"
 
     def _post(
-        self, path: str, *, what: str, ok: str, json: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        what: str,
+        ok: str | frozenset[str],
+        json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """``ok`` 는 문자열 하나 또는 성공으로 볼 verdict 집합이다.
+
+        **집합을 받는 이유가 실기동에서 드러났다.** ``acquire_lease`` 가 처음엔
+        ``ok="LEASED"`` 만 넘기고, 갱신(``LEASE_RENEWED``)까지 성공으로 보는
+        검증은 이 함수가 이미 예외를 던진 **뒤**에 있는 죽은 코드였다 — 가짜
+        ``CoreClient`` 로 짠 단위 테스트는 이 HTTP 번역 계층 자체를 우회해서
+        통과했지만, 실제 Core+NodeODM 대상 완주 시도에서 heartbeat 갱신이
+        일어나는 순간 곧바로 죽었다(``lease: LEASE_RENEWED`` 예외). 그래서
+        판정 집합은 호출부가 아니라 이 함수가 한 번에 본다.
+        """
         response = self._client.post(f"{self._base_url}{path}", json=json)
         try:
             payload = response.json()
@@ -130,15 +148,17 @@ class HttpCoreClient:
                 what=what, verdict="NON_JSON_RESPONSE", detail=response.text[:200]
             ) from exc
         verdict = payload.get("verdict")
-        if verdict != ok:
+        accepted = {ok} if isinstance(ok, str) else ok
+        if verdict not in accepted:
             raise CoreClientError(what=what, verdict=str(verdict), detail=payload.get("detail"))
         return payload
 
     def acquire_lease(self, job_id: str) -> None:
-        payload = self._post(f"/v1/processing-jobs/{job_id}/lease", what="lease", ok="LEASED")
-        # 갱신도 성공이다 — ok 하나로 판정하면 재취득만 통과한다.
-        if payload.get("verdict") not in {"LEASED", "LEASE_RENEWED"}:  # pragma: no cover
-            raise CoreClientError(what="lease", verdict=str(payload.get("verdict")), detail=None)
+        self._post(
+            f"/v1/processing-jobs/{job_id}/lease",
+            what="lease",
+            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
+        )
 
     def get_input(self, job_id: str) -> JobInput:
         response = self._client.get(f"{self._base_url}/v1/processing-jobs/{job_id}/input")
@@ -181,10 +201,13 @@ class HttpCoreClient:
     def verify_source_media(
         self, mission_id: str, measurements: list[MeasuredImage]
     ) -> None:
+        # ALREADY_VERIFIED 도 성공이다 — 재시도 작업(이전 시도가 실패한 뒤
+        # 새로 발급된 작업)이 같은 미션의 이미 검증된 번들에 다시 보고하면
+        # 정확히 이 verdict 가 나온다(실기동에서 실제로 발생, 2026-08-06).
         self._post(
             f"/v1/missions/{mission_id}/source-media/verify",
             what="verify",
-            ok="VERIFIED",
+            ok=frozenset({"VERIFIED", "ALREADY_VERIFIED"}),
             json={
                 "measurements": [
                     {

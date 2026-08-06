@@ -41,6 +41,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -85,6 +86,7 @@ def run_job(
     work_dir: Path,
     http_client: httpx.Client | None = None,
     gsd_by_artifact: dict[str, float] | None = None,
+    poll_interval_seconds: float = 10.0,
     now_message: Callable[[str], None] = logger.info,
 ) -> None:
     """작업 하나를 lease 취득부터 ``SUCCEEDED``/``FAILED`` 까지 끝까지 돈다.
@@ -134,6 +136,13 @@ def run_job(
 
         def _heartbeat() -> None:
             # ODM 은 몇 시간이 걸리고 lease 는 15분이다 — 폴링마다 갱신한다.
+            # **sleep 이 빠지면 안 된다.** run_to_completion 의 poll 콜백은
+            # "대기 함수"라고 계약돼 있는데(odm.py docstring), 처음 구현은
+            # heartbeat 만 하고 실제로 기다리지 않았다 — 그러면 폴링이 밀리초
+            # 단위로 회전해 max_polls(기본 10,000)가 몇 초 만에 소진되고, 3분
+            # 걸리는 실제 완주보다 먼저 "행 처리"로 오판해 실패한다. 실물
+            # NodeODM 대상 완주 시도에서 실제로 이렇게 터졌다(2026-08-06).
+            time.sleep(poll_interval_seconds)
             core.acquire_lease(job_id)
 
         uuid = run_to_completion(

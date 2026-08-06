@@ -189,7 +189,7 @@ def test_happy_path_follows_the_gate_order(tmp_path: Path) -> None:
 
     run_job(
         "job-1", core=core, odm=odm, work_dir=tmp_path,
-        http_client=_worker_http_client(server),
+        poll_interval_seconds=0, http_client=_worker_http_client(server),
         gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
     )
 
@@ -217,7 +217,7 @@ def test_artifacts_are_registered_in_lineage_order(tmp_path: Path) -> None:
     core = FakeCoreClient()
     run_job(
         "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
     )
     order = [c[1] for c in core.calls if c[0] == "register_artifact"]
@@ -234,7 +234,7 @@ def test_already_running_job_is_not_re_transitioned(tmp_path: Path) -> None:
     core._job_status = "RUNNING"  # noqa: SLF001 -- 테스트 픽스처 내부 상태 조작
     run_job(
         "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
     assert ("transition", "RUNNING", None) not in core.calls
 
@@ -247,7 +247,7 @@ def test_measurement_comes_from_the_actual_downloaded_bytes(tmp_path: Path) -> N
     core = FakeCoreClient()
     run_job(
         "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
     downloaded = list(tmp_path.glob("img-*.png"))
     assert len(downloaded) == 2, "원본이 로컬에 실제로 저장돼야 실측이 가능하다"
@@ -271,7 +271,7 @@ def test_heartbeat_renews_lease_on_every_poll(tmp_path: Path) -> None:
     )
     run_job(
         "job-1", core=core, odm=odm, work_dir=tmp_path,
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
     # 최초 취득 1회 + 폴링 3회(QUEUED/RUNNING/RUNNING 다음마다 heartbeat) = 4회 이상.
     assert core.lease_calls >= 4
@@ -294,7 +294,7 @@ def test_crs_is_read_from_site_crs_field(tmp_path: Path) -> None:
     core = _CrsCapturingCore(site_crs="EPSG:32610")
     run_job(
         "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
     point_cloud = next(s for s in core.registered if s.artifact_id == "point-cloud")
     assert point_cloud.crs == "EPSG:32610"
@@ -302,7 +302,7 @@ def test_crs_is_read_from_site_crs_field(tmp_path: Path) -> None:
     core_2 = _CrsCapturingCore(site_crs="EPSG:5186")
     run_job(
         "job-2", core=core_2, odm=FakeNodeOdm(), work_dir=tmp_path / "job2",
-        http_client=_worker_http_client(_server_with_two_images()),
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
     point_cloud_2 = next(s for s in core_2.registered if s.artifact_id == "point-cloud")
     assert point_cloud_2.crs == "EPSG:5186"
@@ -315,7 +315,7 @@ def test_missing_site_crs_refuses_before_touching_the_engine(tmp_path: Path) -> 
     with pytest.raises(WorkerRunError, match="siteCrs"):
         run_job(
             "job-1", core=core, odm=odm, work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     assert odm.info_calls == 0, "crs 가 없는데 엔진에 이미 제출을 시도했다"
     assert not any(c[0] == "transition" and c[1] == "RUNNING" for c in core.calls)
@@ -329,7 +329,7 @@ def test_verify_mismatch_transitions_to_failed_and_reraises(tmp_path: Path) -> N
     with pytest.raises(WorkerRunError):
         run_job(
             "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     failed_calls = [c for c in core.calls if c[0] == "transition" and c[1] == "FAILED"]
     assert len(failed_calls) == 1
@@ -342,7 +342,7 @@ def test_engine_mismatch_transitions_to_failed(tmp_path: Path) -> None:
     with pytest.raises(WorkerRunError):
         run_job(
             "job-1", core=core, odm=odm, work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     assert odm.submitted == [], "엔진 신원이 다른데 제출이 실행됐다"
     assert ("transition", "FAILED", None) not in core.calls  # detail 이 있어야 한다
@@ -357,7 +357,7 @@ def test_engine_task_failure_propagates_and_reports_failed(tmp_path: Path) -> No
     with pytest.raises(WorkerRunError, match="메모리 부족"):
         run_job(
             "job-1", core=core, odm=odm, work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     failed = next(c for c in core.calls if c[0] == "transition" and c[1] == "FAILED")
     assert "메모리 부족" in (failed[2] or "")
@@ -369,7 +369,7 @@ def test_artifact_rejection_transitions_to_failed(tmp_path: Path) -> None:
     with pytest.raises(WorkerRunError):
         run_job(
             "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     assert any(c[0] == "transition" and c[1] == "FAILED" for c in core.calls)
     # camera-poses(첫 원본)는 point-cloud 보다 먼저라 등록에 성공했어야 한다.
@@ -400,7 +400,7 @@ def test_original_exception_is_not_swallowed_even_if_failed_report_also_fails(
     with pytest.raises(WorkerRunError) as excinfo:
         run_job(
             "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
-            http_client=_worker_http_client(_server_with_two_images()),
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
         )
     cause = excinfo.value.__cause__
     assert isinstance(cause, CoreClientError)
