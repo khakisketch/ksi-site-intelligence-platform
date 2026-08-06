@@ -836,14 +836,14 @@ def test_routes_absent_without_storage(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def test_source_media_store_without_mission_store_refuses_assembly() -> None:
+def test_source_media_store_without_mission_store_refuses_assembly(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="mission_store"):
         create_app(
             auth_registry=_auth_registry(),
             evidence_storage=FakeStorage(),
             source_media_store=SourceMediaStore(
-                DurableJournal(Path("/tmp/unused-source-media.jsonl")),  # noqa: S108 -- 조립만 시험, 실제 사용 안 함
-                mission_store=MissionStore(DurableJournal(Path("/tmp/unused-missions.jsonl"))),  # noqa: S108
+                DurableJournal(tmp_path / "unused-source-media.jsonl"),
+                mission_store=MissionStore(DurableJournal(tmp_path / "unused-missions.jsonl")),
             ),
             mission_signing_key=None,
         )

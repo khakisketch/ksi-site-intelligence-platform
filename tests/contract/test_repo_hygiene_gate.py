@@ -12,7 +12,9 @@ ADR-KSI-009 §D6의 "이 4규칙은 수동 변이 확인만 수행했다(자동 
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
@@ -28,8 +30,6 @@ class TrackedFileFactory(Protocol):
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HYGIENE_SCRIPT = REPO_ROOT / "scripts" / "check_repo_hygiene.sh"
-# 위반 주입 위치 — 어느 경로든 규칙이 걸려야 하므로 실제 소스 트리 안에 만든다.
-SCRATCH_DIR = REPO_ROOT / "tests" / "contract" / "_hygiene_mutation_scratch"
 
 
 def _define_line(macro: str, value: str) -> str:
@@ -60,18 +60,39 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.fixture
-def tracked_file() -> Iterator[TrackedFileFactory]:
-    """임시 파일을 git index에 강제로 넣었다가 반드시 되돌리는 픽스처.
+def tracked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TrackedFileFactory]:
+    """임시 파일을 격리된 git index 사본에 강제로 넣었다가 반드시 되돌리는 픽스처.
 
     `add -f`로 gitignore를 우회하는 이유: 규칙 4·6은 gitignore와 위생 가드가 이중
     방어인데, gitignore에 막혀 index에 못 들어가면 정작 **가드 자체**는 한 번도
     실행되지 않는다. 여기서 검증하려는 건 두 번째 방어선이므로 일부러 우회한다.
+
+    GIT_INDEX_FILE을 tmp_path 밑 임시 사본으로 돌리는 이유: 실제 .git/index를 직접
+    add -f/reset하면 동시 실행(같은 저장소에서 겹쳐 도는 검증 세션 등)이 같은
+    인덱스를 놓고 경합하고, 프로세스가 teardown 전에 죽으면 실 저장소에 스테이징이
+    영구히 남는다(2026-08-06 실측 재현 — 검증 워크플로가 전체 스위트를 동시에 두 번
+    돌려 이 파일이 AD 상태로 남았다). 격리된 사본이면 프로세스가 죽어도 tmp_path와
+    함께 사라져 실 저장소의 **인덱스**는 건드리지 않는다(`git add -f`가 기록하는
+    blob 자체는 여전히 `.git/objects` 에 loose object 로 남는다 — 미참조라
+    `git gc --prune` 대상이고 `ls-files`/`status` 에 드러나지 않아 무해하지만,
+    "실 저장소를 전혀 안 건드린다"는 과장이라 인덱스로 한정해 적는다). 물리 파일은
+    relative-path add가 되도록
+    여전히 REPO_ROOT 트리 안에 두되, uuid4 접미사로 디렉터리를 유일하게 만들어 동시
+    실행 간 파일명 충돌도 막는다 — tmp_path.name 은 이 목적에 못 쓴다: pytest 는
+    동시 실행 프로세스마다 독립된 basetemp 를 쓰고 그 안에서 번호를 매기므로
+    (_pytest/tmpdir.py), 같은 테스트를 두 프로세스가 동시에 돌리면 tmp_path.name 이
+    **똑같이** 나온다(독립 재검토 실측 반증).
     """
+    isolated_index = tmp_path / "index"
+    shutil.copy2(REPO_ROOT / ".git" / "index", isolated_index)
+    monkeypatch.setenv("GIT_INDEX_FILE", str(isolated_index))
+
+    scratch_dir = REPO_ROOT / "tests" / "contract" / f"_hygiene_mutation_scratch_{uuid.uuid4().hex}"
     created: list[Path] = []
 
     def _make(relative_name: str, content: str) -> Path:
-        SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-        path = SCRATCH_DIR / relative_name
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        path = scratch_dir / relative_name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         _git("add", "-f", str(path.relative_to(REPO_ROOT)))
@@ -83,13 +104,13 @@ def tracked_file() -> Iterator[TrackedFileFactory]:
     for path in created:
         _git("reset", "-q", str(path.relative_to(REPO_ROOT)))
         path.unlink(missing_ok=True)
-    if SCRATCH_DIR.exists():
-        for child in sorted(SCRATCH_DIR.rglob("*"), reverse=True):
+    if scratch_dir.exists():
+        for child in sorted(scratch_dir.rglob("*"), reverse=True):
             if child.is_dir():
                 child.rmdir()
             else:
                 child.unlink(missing_ok=True)
-        SCRATCH_DIR.rmdir()
+        scratch_dir.rmdir()
 
 
 class TestBaseline:
