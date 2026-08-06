@@ -296,6 +296,15 @@ export function SurveyWizard({ site }: { site: SiteView }) {
                 },
               }
             : {}),
+          // AUTONOMOUS_PATROL 은 Spatial Refresh Backbone 이 필수다 — 없으면 서버가
+          // 422 로 거부한다(mission_plans.py). 카메라를 주면 서버가 실제 고도·
+          // 중복도로 captureIntervalM 을 계산한다(고정 상수는 고도에 따라 전방
+          // 중복도가 MIN_FRONT_OVERLAP=0.6 아래로 내려가 "3D 갱신용"이라는 목적
+          // 자체가 성립하지 않는 밀도로 찍힐 수 있었다 — 리뷰 P1-b). 기본
+          // 중복도(front 0.8/side 0.7, spacingM 은 perimeter 에 무의미해 서버가
+          // 무시)는 서버가 채운다. INCIDENT_SURVEY 는 여전히 선택이라 순수 항법
+          // 경로로 남긴다.
+          ...(draft.missionType === "AUTONOMOUS_PATROL" ? { camera: DEFAULT_CAMERA } : {}),
         },
         drone: {
           droneEnumValue: draft.droneEnumValue,

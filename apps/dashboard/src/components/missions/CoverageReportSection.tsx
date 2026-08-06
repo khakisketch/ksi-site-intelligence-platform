@@ -51,7 +51,7 @@ export function CoverageReportSection({ result }: { result: CoverageReportResult
     );
   }
 
-  const { latest, reportCount, reportedBy } = result.report;
+  const { latest, reportCount, reportedBy, recoveryRecommended } = result.report;
   const completion = COMPLETION_STATE_LABEL[latest.summary.completionState];
   const cells = summarizeCoverageCells(latest.cells);
 
@@ -59,10 +59,19 @@ export function CoverageReportSection({ result }: { result: CoverageReportResult
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge label={completion.label} tone={completion.tone} />
+        {recoveryRecommended && <StatusBadge label="재커버 권고" tone="caution" />}
         <span className="text-[12.5px] break-keep text-ink-muted">
           {formatDateTime(latest.timestamp)} 보고 · 보고 장비 {reportedBy ?? "확인 불가"}
         </span>
       </div>
+
+      {recoveryRecommended && (
+        <p className="text-[11.5px] break-keep text-ink-muted">
+          이 임무는 미관찰 구역이 남았거나 공백이 있는 채로 종료됐습니다 — 원본 구역으로
+          공간 모델 갱신(SPATIAL_REFRESH) 임무를 재발급하는 것을 고려하세요. 자동으로
+          재발급되지 않습니다.
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         <Tile label="필수 위험구역" value={formatRatio(latest.summary.mandatoryHazardRatio)} />

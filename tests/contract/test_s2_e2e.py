@@ -162,7 +162,10 @@ def _plan_request() -> dict[str, Any]:
             "capturePolicyId": "cap-1",
         },
         "aoi": {"vertices": _rect_aoi_vertices()},
-        "route": {"altitudeM": 40.0},
+        # AUTONOMOUS_PATROL 은 Spatial Refresh Backbone 이 필수다(MASTER_PRD §15.2) —
+        # 500.0 은 이 파일의 고정 rect AOI 최장 변(200m)보다 커서 추가 웨이포인트를
+        # 만들지 않는다.
+        "route": {"altitudeM": 40.0, "captureIntervalM": 500.0},
         "drone": {"droneEnumValue": 99, "droneSubEnumValue": 0, "payloadEnumValue": 65534},
         "wayline": {
             "autoFlightSpeedMs": 5.0,

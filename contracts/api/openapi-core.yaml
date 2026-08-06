@@ -73,7 +73,20 @@ info:
   # crs 를 워커가 지어내거나 processing_params 로 자기 신고하지 않게, 현장
   # 등록 시점에 확정된 값을 Core 가 읽어 준다(발급 시점 INV-050 반출 판정이
   # site_store 를 읽는 것과 같은 원칙). 새 필드 추가라 minor.
-  version: 1.15.0
+  # 1.16.0 — phase-2 Spatial Refresh Backbone + Coverage Recovery(MASTER_PRD
+  # §15.2). AUTONOMOUS_PATROL(perimeter) 이 route.captureIntervalM **또는**
+  # route.camera 를 필수로 요구하게 된다(없으면 순찰 중 3D 갱신용 사진이 전혀
+  # 수집되지 않는다 — 요청 스키마 자체는 안 바뀐다, lawnmower captureIntervalM
+  # 필수화와 동일하게 서버 비즈니스 로직에서만 강제). camera 를 주면 lawnmower
+  # 와 동일한 compute_grid_spacing 물리식으로 간격을 계산해 MIN_FRONT_OVERLAP
+  # (0.6) 하한을 만족시킨다. CoverageReportView 에 recoveryRecommended 추가
+  # (completionState 가 COMPLETED 가 아니거나 — COMPLETED_WITH_GAPS/ABORTED_SAFE/
+  # FAILED 전부 — 또는 사유있는 미관찰 Cell 이 남으면 true — 자동 재발급을
+  # 트리거하지 않는 권고 신호). **주의**: 이전엔 201 이던 AUTONOMOUS_PATROL 요청
+  # (captureIntervalM/camera 미지정)이 이제 422 다 — 표면 확장이자 기존 호출자
+  # 파괴 가능성이 있는 변경이지만, 신규 필드 추가가 아니라 비즈니스 로직 변경뿐
+  # 이라 스키마 구조상 minor 로 둔다(계약 스키마 자체는 하위호환).
+  version: 1.16.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1822,9 +1835,9 @@ components:
         detail: { type: [string, 'null'] }
         report: { type: [object, 'null'], additionalProperties: true }
     CoverageReportView:
-      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지.
+      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지 + Coverage Recovery 권고.
       type: object
-      required: [missionId, reportCount, latest, reportedBy]
+      required: [missionId, reportCount, latest, reportedBy, recoveryRecommended]
       properties:
         missionId: { type: string }
         reportCount: { type: integer }
@@ -1833,6 +1846,14 @@ components:
         reportedBy:
           type: [string, 'null']
           description: 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null.
+        recoveryRecommended:
+          type: boolean
+          description: >-
+            Coverage Recovery 권고(MASTER_PRD §15.2) — completionState 가
+            COMPLETED 가 아니거나(COMPLETED_WITH_GAPS/ABORTED_SAFE/FAILED 전부)
+            사유있는 미관찰 Cell 이 남아 있으면 true. 자동 재발급을 트리거하지
+            않는다 — 운영자가 원본 site AOI 로 SPATIAL_REFRESH 임무를
+            POST /v1/missions/plans 에 재발급하라는 신호일 뿐이다.
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object

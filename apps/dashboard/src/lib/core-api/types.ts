@@ -227,6 +227,13 @@ export interface CoverageReportView {
   latest: CoverageReport;
   /** 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null. */
   reportedBy: string | null;
+  /**
+   * Coverage Recovery 권고(MASTER_PRD §15.2) — completionState 가 COMPLETED 가
+   * 아니거나(COMPLETED_WITH_GAPS/ABORTED_SAFE/FAILED 전부) 사유있는 미관찰 Cell 이
+   * 남아 있으면 true. 자동 재발급을 트리거하지 않는다 — 운영자가 원본 site AOI 로
+   * SPATIAL_REFRESH 임무를 재발급하라는 신호일 뿐이다.
+   */
+  recoveryRecommended: boolean;
 }
 
 // 3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개는

@@ -89,6 +89,12 @@ def _plan_request(
     # 우회한다(``in route_overrides`` 검사라 None 을 명시하면 그대로 None 이다).
     if "spacingM" in route and "captureIntervalM" not in route_overrides:
         route["captureIntervalM"] = 15.0
+    elif mission_type == "AUTONOMOUS_PATROL" and "captureIntervalM" not in route_overrides:
+        # AUTONOMOUS_PATROL 도 이제 Spatial Refresh Backbone 이 필수다(MASTER_PRD
+        # §15.2) — 그 규칙 자체를 반증하는 테스트는 captureIntervalM=None 을
+        # 명시적으로 넘긴다. 500.0 은 이 파일의 고정 rect AOI(100m×200m) 최장 변
+        # (200m)보다 커서 추가 웨이포인트를 만들지 않는다(waypointCount 불변).
+        route["captureIntervalM"] = 500.0
     return {
         "contract": {
             "missionId": "mission-001",
@@ -282,12 +288,18 @@ def test_issued_envelope_carries_altitude_reference(tmp_path: Path) -> None:
     assert envelope["altitudeReference"] == "relativeToStartPoint"
 
 
-def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Path) -> None:
+def test_mapping_and_patrol_plan_kmz_contain_capture_actions(tmp_path: Path) -> None:
     """BASELINE_MAPPING·AUTONOMOUS_PATROL 을 같은 site 로 순서대로 발급한다 —
     INV-052 게이트 하에서는 두 임무타입의 허용 현장상태가 서로 겹치지 않으므로
     (매핑 계열: UNMAPPED/REMAP_REQUIRED, 순찰: PROVISIONAL_AUTONOMY 이후),
     BASELINE_MAPPING 발급 후 site 를 실제로 PATROL_READY 까지 전진시킨 뒤
-    AUTONOMOUS_PATROL 을 발급한다(매핑→순찰 생애주기를 그대로 재현)."""
+    AUTONOMOUS_PATROL 을 발급한다(매핑→순찰 생애주기를 그대로 재현).
+
+    두 계열 모두 촬영 액션을 담는다 — AUTONOMOUS_PATROL 은 Spatial Refresh
+    Backbone(MASTER_PRD §15.2)이 기본 경로에 필수화됐으므로(``_plan_request``
+    가 captureIntervalM=500.0 을 자동 채운다), 더 이상 "순찰은 촬영 안 함"이
+    아니다. INCIDENT_SURVEY(같은 perimeter 패턴, captureIntervalM 선택)는 값을
+    주지 않으면 여전히 순수 항법 경로임을 대조군으로 함께 확인한다."""
     import xml.etree.ElementTree as ET
 
     ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
@@ -314,7 +326,88 @@ def test_mapping_plan_kmz_contains_capture_actions_patrol_does_not(tmp_path: Pat
     advance_site_status(
         cast("Any", client.app).state.site_store, "site-001", SiteStatus.PATROL_READY
     )
-    assert action_funcs("AUTONOMOUS_PATROL") == []
+    assert "takePhoto" in action_funcs("AUTONOMOUS_PATROL")
+    assert action_funcs("INCIDENT_SURVEY") == []
+
+
+def test_patrol_without_capture_interval_is_rejected(tmp_path: Path) -> None:
+    """AUTONOMOUS_PATROL 은 Spatial Refresh Backbone 이 기본 경로다(MASTER_PRD
+    §15.2) — captureIntervalM 없이는 3D 갱신용 사진이 전혀 수집되지 않으므로
+    fail-closed(lawnmower 의 동일 규칙과 대칭, INCIDENT_SURVEY 는 여전히 선택)."""
+    client, _registry = _client(tmp_path)
+
+    response = client.post(
+        "/v1/missions/plans", json=_plan_request(captureIntervalM=None)
+    )
+
+    assert response.status_code == 422
+    assert "captureIntervalM" in response.json()["detail"]
+
+
+def test_patrol_capture_interval_produces_expected_waypoint_and_photo_count(
+    tmp_path: Path,
+) -> None:
+    """[핵심, 리뷰 P1-c] captureIntervalM 이 실제로 perimeter_route 까지 배선되는가
+    — 기본 헬퍼의 500.0(테스트 AOI 최장변 200m보다 커서 보간이 0건)만으로는 이
+    배선을 검증할 수 없었다(간격을 통째로 떨어뜨려도 green 이었다). 200m×100m
+    직사각형을 30m 간격으로 채우면 각 변이 ceil(변길이/30)개 지점을 낸다:
+    200→7, 100→4, 200→7, 100→4 = 22 + 폐루프 종점 1 = 23. waypointCount 와
+    takePhoto 액션 **개수**가 둘 다 이 값과 일치해야 실제로 배선됐다고 말할 수
+    있다(존재만 보면 사진 1장으로도 통과해 배선 누락을 못 잡는다)."""
+    import xml.etree.ElementTree as ET
+
+    ns = {"kml": "http://www.opengis.net/kml/2.2", "wpml": "http://www.dji.com/wpmz/1.0.2"}
+    client, _registry = _client(tmp_path)
+
+    response = client.post("/v1/missions/plans", json=_plan_request(captureIntervalM=30.0))
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["waypointCount"] == 23
+
+    kmz = base64.b64decode(body["kmzBase64"])
+    with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+        root = ET.fromstring(archive.read("wpmz/waylines.wpml"))
+    actions = [
+        a.findtext("wpml:actionActuatorFunc", namespaces=ns)
+        for a in root.findall(".//wpml:action", ns)
+    ]
+    assert actions.count("takePhoto") == 23
+
+
+def test_patrol_camera_computes_capture_interval(tmp_path: Path) -> None:
+    """[핵심, 리뷰 P1-b] AUTONOMOUS_PATROL 도 route.camera 를 주면 lawnmower 와
+    동일하게 서버가 실제 고도·중복도에서 captureIntervalM 을 계산한다 — 고정
+    상수(예: 20m)는 고도에 따라 전방 중복도가 MIN_FRONT_OVERLAP=0.6 아래로
+    내려가 "3D 갱신용"이라는 목적 자체가 성립하지 않는 밀도로 찍힐 수 있었다."""
+    client, _registry = _client(tmp_path)
+
+    response = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(captureIntervalM=None, camera=_camera_params()),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["routePattern"] == "perimeter"
+    basis = body["gridBasis"]
+    assert basis is not None, "계산 근거가 응답에 없다"
+    # 고도 40m·표준 중복도(0.8) → 사진 간격 8m 규모(test_camera_lets_server_
+    # compute_spacing 과 동일 물리식·동일 카메라).
+    assert basis["captureIntervalM"] == pytest.approx(8.0, rel=0.02)
+    assert body["waypointCount"] > 5, "간격이 채워지지 않았다 — 배선 누락"
+
+
+def test_patrol_camera_and_capture_interval_together_rejected(tmp_path: Path) -> None:
+    client, _registry = _client(tmp_path)
+
+    response = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(captureIntervalM=30.0, camera=_camera_params()),
+    )
+
+    assert response.status_code == 422
+    assert "camera" in response.json()["detail"]
 
 
 def test_pair_height_semantics_match_between_kmz_and_contract(tmp_path: Path) -> None:

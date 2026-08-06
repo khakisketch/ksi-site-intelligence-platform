@@ -31,6 +31,18 @@ INV-010 은 임무 완료 기준(위험구역 100%·자산 100%·일반영역 �
 ``DurableJournal`` 위의 append-only 원장이다. 같은 임무에 대한 보고서가 여러 번
 올 수 있고(부분→최종, 재비행), **덮어쓰지 않고 전부 남긴다** — "언제 무엇을 봤다고
 했는가"가 사고 조사의 입력이기 때문이다. 조회는 최신 보고서를 낸다.
+
+## Coverage Recovery 신호 (MASTER_PRD §15.2)
+
+조회 응답의 ``recoveryRecommended`` 는 :meth:`CoverageReport.needs_coverage_recovery`
+를 그대로 노출한다 — 자동 재발급을 트리거하지 않는 **권고 신호**다. 실제 재커버는
+운영자/오퍼레이터가 원본 site AOI 로 ``POST /v1/missions/plans``(SPATIAL_REFRESH)
+를 그대로 재사용해 발급한다. 폴리곤 gap(AOI − 기존커버) 계산은 하지 않는다 —
+Cell 지오메트리 저장소가 이 코드베이스에 아직 없어(``CoverageCell.geometry_ref``
+미해석) 정밀 재커버 구역 계산은 별도 데이터모델 결정이 선행돼야 한다. 이벤트 분기로
+인한 실시간 촬영공백 보완(비행 중 Edge/Manifold 소관, ``03_EDGE_AUTONOMY.md`` 의
+``COVERAGE_RECOVERY`` 상태)은 이 모듈의 범위 밖이다 — 하드웨어 종속(Track A/B와
+동일 계열).
 """
 
 from __future__ import annotations
@@ -291,6 +303,10 @@ class CoverageReportView(_CamelModel):
     latest: dict[str, Any]
     # 제출한 Principal id(대개 장비 id) — 없으면(구 journal 재생 등) null(독립 재검토 B-3).
     reported_by: str | None
+    # Coverage Recovery 권고(MASTER_PRD §15.2) — CoverageReport.needs_coverage_recovery().
+    # 자동 재발급을 트리거하지 않는다: 운영자/오퍼레이터가 이 신호를 보고 원본 site
+    # AOI 로 SPATIAL_REFRESH 임무를 POST /v1/missions/plans 에 재발급한다.
+    recovery_recommended: bool
 
 
 def _require_reporting_device(
@@ -364,6 +380,7 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
             report_count=len(store.history(mission_id)),
             latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
             reported_by=recorded.reported_by,
+            recovery_recommended=recorded.report.needs_coverage_recovery(),
         )
 
     return router

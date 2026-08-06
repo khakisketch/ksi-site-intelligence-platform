@@ -137,6 +137,9 @@ def _plan_request(mission_id: str, mission_type: str, **route_overrides: Any) ->
     route.update(route_overrides)
     if "spacingM" in route and "captureIntervalM" not in route_overrides:
         route["captureIntervalM"] = 15.0
+    elif mission_type == "AUTONOMOUS_PATROL" and "captureIntervalM" not in route_overrides:
+        # Spatial Refresh Backbone(MASTER_PRD §15.2) — AUTONOMOUS_PATROL 은 필수.
+        route["captureIntervalM"] = 500.0
     return {
         "contract": _contract_request(mission_id, mission_type),
         "aoi": {"vertices": _rect_aoi_vertices()},

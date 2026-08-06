@@ -138,17 +138,22 @@ class RouteParams(_CamelModel):
         default=None,
         description=(
             "주면 서버가 카메라·고도·중복도로 spacingM·captureIntervalM 을 계산한다"
-            "(권장). 이때 두 값을 함께 주면 422 — 어느 쪽이 진짜인지 서버가 고르지 "
-            "않는다"
+            "(권장, lawnmower·AUTONOMOUS_PATROL/INCIDENT_SURVEY(perimeter) 모두). "
+            "이때 두 값을 함께 주면 422 — 어느 쪽이 진짜인지 서버가 고르지 않는다"
         ),
     )
     spacing_m: float | None = Field(default=None, description="lawnmower 전용 스캔선 간격(m)")
     capture_interval_m: float | None = Field(
         default=None,
         description=(
-            "lawnmower 전용 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격. "
-            "없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어 "
-            "정사영상·3D 재구성이 성립하지 않는다"
+            "진행방향 촬영 간격(m, camera 를 안 주면 직접 지정). lawnmower 계열은 "
+            "스캔선 위 촬영 지점 간격 — 없으면 스캔선당 사진이 양 끝 2장뿐이라 "
+            "전방 중첩이 0 이 되어 정사영상·3D 재구성이 성립하지 않는다. "
+            "AUTONOMOUS_PATROL(perimeter)은 이 값(또는 camera)이 Spatial Refresh "
+            "Backbone(MASTER_PRD §15.2) 자체이므로 필수다 — 없으면 순찰 중 3D "
+            "갱신용 사진이 전혀 수집되지 않는다. camera 를 권장한다: 고정값은 "
+            "고도에 따라 전방 중복도가 MIN_FRONT_OVERLAP(0.6) 아래로 내려갈 수 "
+            "있다. INCIDENT_SURVEY(perimeter)는 선택 — 없으면 순수 항법 경로다"
         ),
     )
     sweep_direction_deg: float | None = None
@@ -333,8 +338,52 @@ def build_mission_plan(
                 "sweep 을 조정하거나 약속 값을 실측 이하로 낮춰 발급하라"
             )
     elif mission_type in _PERIMETER_TYPES:
+        capture_interval_m = request.route.capture_interval_m
+        if request.route.camera is not None:
+            if capture_interval_m is not None:
+                raise RouteGenerationError(
+                    "route.camera 와 captureIntervalM 을 함께 줄 수 없다 — 카메라를 "
+                    "주면 서버가 계산한다"
+                )
+            camera = request.route.camera
+            try:
+                grid = compute_grid_spacing(
+                    CameraSpec(
+                        sensor_width_mm=camera.sensor_width_mm,
+                        focal_length_mm=camera.focal_length_mm,
+                        image_width_px=camera.image_width_px,
+                        image_height_px=camera.image_height_px,
+                    ),
+                    altitude_m=request.route.altitude_m,
+                    front_overlap=camera.front_overlap,
+                    side_overlap=camera.side_overlap,
+                )
+            except CameraSpecError as exc:
+                raise RouteGenerationError(str(exc)) from exc
+            # spacing_m(across-track 라인 간격)은 perimeter 에 스캔선 개념이 없어
+            # 무의미하다 — capture_interval_m(along-track 촬영 간격)만 쓴다. 계산
+            # 자체는 lawnmower 와 동일 물리식이라 MIN_FRONT_OVERLAP(0.6) 미만은
+            # compute_grid_spacing 이 이미 거부한다(리뷰 P1-b — 고정 상수는 고도에
+            # 따라 이 하한 아래로 내려갈 수 있어 "3D 갱신용" 이라는 목적 자체가
+            # 성립하지 않는 밀도로 찍힐 수 있었다).
+            capture_interval_m = grid.capture_interval_m
+        if mission_type is MissionType.AUTONOMOUS_PATROL and capture_interval_m is None:
+            # 순찰의 기본 경로는 Spatial Refresh Backbone 을 포함한다(MASTER_PRD
+            # §15.2) — 선택 사항이 아니다. lawnmower 계열이 captureIntervalM 을
+            # fail-closed 로 요구하는 것과 동일 철학: 카메라 종속 기본값을 서버가
+            # 추측하지 않고, "격자는 날았는데 3D 갱신용 사진이 없다"가 비행 후에야
+            # 드러나는 것보다 발급 전 거부가 낫다.
+            raise RouteGenerationError(
+                "AUTONOMOUS_PATROL 은 route.camera 또는 route.captureIntervalM 이 "
+                "필요하다 — 순찰의 기본 경로는 3D 갱신에 필요한 Spatial Refresh "
+                "Backbone(MASTER_PRD §15.2, 광각 재구성용 사진을 일정 간격으로 "
+                "수집)을 포함해야 한다"
+            )
         route = perimeter_route(
-            request.aoi, altitude_m=request.route.altitude_m, envelope=envelope
+            request.aoi,
+            altitude_m=request.route.altitude_m,
+            envelope=envelope,
+            capture_interval_m=capture_interval_m,
         )
         pattern = "perimeter"
     else:
@@ -378,8 +427,14 @@ def build_mission_plan(
             global_transitional_speed_ms=request.wayline.global_transitional_speed_ms,
         ),
         # 매핑 계열은 웨이포인트별 nadir 촬영이 기본(2026-07-29 대표자 승인) —
-        # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다.
-        capture_at_waypoints=(pattern == "lawnmower"),
+        # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다. perimeter
+        # 계열은 (직접 지정이든 camera 유도든) 실제로 해석된 capture_interval_m 이
+        # 있을 때만 촬영한다(AUTONOMOUS_PATROL 은 위에서 이미 필수화했으므로 사실상
+        # 항상 True, INCIDENT_SURVEY 는 선택) — request.route.capture_interval_m
+        # (원 요청 필드)이 아니라 위에서 camera 로부터 재해석된 지역변수를 봐야
+        # 한다: camera 로 계산된 경우 원 요청 필드는 여전히 None 이라 그걸 보면
+        # 촬영 웨이포인트는 생성되는데 KMZ 촬영 액션은 빠지는 어긋난 산출물이 된다.
+        capture_at_waypoints=(pattern == "lawnmower" or capture_interval_m is not None),
         pair_manifest=pair_manifest,
     )
 

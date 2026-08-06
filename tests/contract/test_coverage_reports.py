@@ -255,6 +255,51 @@ def test_aborted_report_is_not_threshold_gated(store: CoverageReportStore) -> No
     )
 
 
+# ── Coverage Recovery 권고 (MASTER_PRD §15.2) ──────────────────────────────
+
+
+def test_needs_coverage_recovery_false_for_clean_completed() -> None:
+    report = CoverageReport.model_validate(_report_payload())
+    assert report.needs_coverage_recovery() is False
+
+
+def test_needs_coverage_recovery_true_for_completed_with_gaps_even_without_cells() -> None:
+    """cells 가 비어도 신호가 뜬다 — judge_report 는 COMPLETED_WITH_GAPS 에 Cell
+    존재를 강제하지 않으므로(그 검사는 COMPLETED 주장에만 걸린다), completionState
+    자체가 "공백이 있었다"는 자기 신고다."""
+    payload = _report_payload(completion="COMPLETED_WITH_GAPS", cells=[])
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
+@pytest.mark.parametrize("completion", ["ABORTED_SAFE", "FAILED"])
+def test_needs_coverage_recovery_true_for_aborted_or_failed_even_with_clean_cells(
+    completion: str,
+) -> None:
+    """[핵심, 리뷰 P1-a] ABORTED_SAFE/FAILED 는 cells 가 전부 관찰됨으로 채워져
+    있어도(또는 비어 있어도) 재커버가 필요하다 — 비행 자체가 끝까지 못 갔다는
+    사실이 신호다. completion_state 만 보고 판단해야지 cells 내용에 기대면 안
+    된다(judge_report 가 이 상태들엔 cells 강제도 임계 검사도 걸지 않는다)."""
+    payload = _report_payload(completion=completion, hazard=0.1, asset=0.0, general=0.05)
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
+def test_needs_coverage_recovery_true_for_reasoned_gap_cell_under_completed() -> None:
+    """COMPLETED 로 정상 기록되더라도(임계 충족, 자체모순 아님) 사유있는 미관찰
+    Cell(OCCLUDED 등)이 남아 있으면 재커버를 권고한다 — "완료"가 "전부 봤다"를
+    뜻하지 않는다."""
+    payload = _report_payload(
+        general=0.96,
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": "OCCLUDED"},
+        ],
+    )
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
 # ── 임무 대조 ───────────────────────────────────────────────────────────────
 
 
@@ -411,6 +456,31 @@ def test_submit_then_read_back_over_http(store: CoverageReportStore) -> None:
     assert body["reportCount"] == 1
     assert body["latest"]["summary"]["completionState"] == "COMPLETED"
     assert body["reportedBy"] == "edge-1", "제출한 Principal id 가 조회 응답에 실려야 한다(B-3)"
+    assert body["recoveryRecommended"] is False, "공백 없는 COMPLETED 는 재커버가 필요 없다"
+
+
+def test_recovery_recommended_surfaces_over_http_when_gaps_present(
+    store: CoverageReportStore,
+) -> None:
+    """Coverage Recovery 권고(MASTER_PRD §15.2)가 조회 응답에 실린다 — 자동 재발급을
+    트리거하지 않고, 운영자가 원본 AOI 로 SPATIAL_REFRESH 를 재발급할 신호만 준다."""
+    client = _client(store)
+    payload = _report_payload(
+        completion="COMPLETED_WITH_GAPS",
+        general=0.80,
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": "OCCLUDED"},
+        ],
+    )
+    submitted = client.post(f"/v1/missions/{_MISSION_ID}/coverage-report", json=payload)
+    assert submitted.status_code == 201, submitted.text
+
+    read = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert read.json()["recoveryRecommended"] is True
 
 
 def test_unsupported_completion_maps_to_422_over_http(store: CoverageReportStore) -> None:
