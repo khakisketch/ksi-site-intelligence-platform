@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-06T16:56:31+09:00",
+  "updated_at": "2026-08-06T20:33:31+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -62,22 +62,22 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-2 acceptance 참조"
       ],
-      "status": "in_progress",
-      "attempt": 2,
+      "status": "completed",
+      "attempt": 3,
       "evidence": null,
       "verdict": {
-        "verdict": "refuted",
-        "note": "완료기준은 docs/goals/PHASE_REGISTRY.yaml:104-106 의 acceptance 2건인데 **#2 'Spatial Refresh Backbone + Coverage Recovery' 는 코드에 존재하지 않는다** — worker 자신이 'Coverage Recovery 로직은 코드에 없다'고 적었고, PHASE_REGISTRY 상 p",
-        "at": "2026-08-06T15:30:55+09:00",
-        "reviewer": "reviewer-opus-batch",
-        "evidence_ref": "tests/contract/test_phase2_unified_journey.py(신규, 341줄) — `uv run pytest tests/contract/test_phase2_unified_journey.py -q` 1 passed. 회귀 확인: `uv run pytest tests"
+        "verdict": "pass",
+        "note": "phase-2 acceptance #2('Spatial Refresh Backbone + Coverage Recovery', PHASE_REGISTRY.yaml:104-106) 구현. 대표자 승인 스코프(AskUserQuestion, 2026-08-06): Backbone(순찰 기본 경로에 일정간격 광각 재구성 촬영, Core 소관)은 실코드로 완결하고, Coverage Recovery의 Edge 실시간 gap-fill(03_EDGE_AUTONOMY.md COVERAGE_RECOVERY 상태)은 하드웨어 종속(Track A/B 계열)으로 명시 이관, 대신 원본 site AOI 재발급을 지원하는 Core 신호(recoveryRecommended)만 구현. 구현: packages/mission-planning/src/ksi_mission_planning/coverage.py perimeter_route()에 capture_interval_m 추가(ENU 보간, MAX_WAYPOINTS 가드 off-by-one 포함) · services/core/src/ksi_core/mission_plans.py AUTONOMOUS_PATROL이 route.captureIntervalM 또는 route.camera 필수(fail-closed, compute_grid_spacing 재사용으로 MIN_FRONT_OVERLAP=0.6 물리적 보장) · packages/event-contracts/src/ksi_event_contracts/coverage_report.py needs_coverage_recovery() (completion_state is not COMPLETED or unobserved_cells) · services/core/src/ksi_core/coverage_reports.py CoverageReportView.recoveryRecommended 노출 · apps/dashboard SurveyWizard.tsx(camera 유도)·CoverageReportSection.tsx(배지+안내 렌더) · contracts/api/openapi-core.yaml 1.16.0. reviewer adversarial 2라운드: 1차가 실결함 3건(P1-a needs_coverage_recovery가 ABORTED_SAFE/FAILED 누락 거짓음성, P1-b 고정 촬영간격이 MIN_FRONT_OVERLAP 미달 가능, P1-c 배선 자체를 검증하는 테스트 부재) 적발 → 전건 수정 후 재검증 PASS(파일:라인 재검산 포함, 산수 확인). 게이트: uv run pytest 1908 passed·20 skipped·3 xfailed, ruff clean, mypy clean(무관 기존 40건 제외 — git stash 대조 확인), dashboard tsc --noEmit clean, vitest 81 passed.",
+        "at": "2026-08-06T20:33:31+09:00",
+        "reviewer": "reviewer (adversarial, 2-round: 1st found P1 a/b/c refuted with file:line repro, 2nd re-verified fixes with recalculated arithmetic — PASS)",
+        "evidence_ref": "commit 0a5f80b5b7af8a34b28b7b46bb189d02da46b873 · packages/mission-planning/src/ksi_mission_planning/coverage.py:169-247 · services/core/src/ksi_core/mission_plans.py:338-386,431-437 · packages/event-contracts/src/ksi_event_contracts/coverage_report.py:141-162 · services/core/src/ksi_core/coverage_reports.py · tests/contract/test_mission_planning.py::test_perimeter_capture_interval_* · tests/contract/test_mission_plans.py::test_patrol_* · tests/contract/test_coverage_reports.py::test_needs_coverage_recovery_*"
       },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-08-06T15:57:39+09:00",
+      "updated_at": "2026-08-06T20:33:31+09:00",
       "kind": "product"
     },
     {
@@ -92,10 +92,10 @@
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": "구현 착수 전 사람 판단 필요: (1) 선행 단계 phase-2(Baseline Mapping & Unified Mission — Verified Flight Volume 상태전이, Coverage Recovery)가 PHASE_REGISTRY.yaml상 여전히 PLANNED이고 services/processing-controller가 현재 브랜치(feat/aoi-mission-gate-rbac)에서 진행 중이라 phase-3가 딛고 설 substrate가 미완성. (2) PRD MASTER_PRD_v3.0.md:1601 '권장 첫 기술 Pack은 타워크레인/인양물/작업자 또는 굴착기/작업자 중 하나를 선택'이 명시적으로 열린 제품 방향 결정이며 아직 어느 쪽도 선택되지 않음(참고: contracts/schemas/risk-field.v1.json·equipment-support-state.v1.json은 스키마만 존재, Kinematic State 계약과 owner 패키지 없음, packages/ 아래 equipment/crane/excavator 관련 구현 0건). (3) 'Active Reobservation 실동작'은 프로젝트 CLAUDE.md Control boundaries(Manifold가 local mission decisions 소유, LLM은 실행 비행좌표를 만들거나 안전정책을 우회 금지)에 정면으로 걸리는 안전 경계 결정이라 스코프·트리거 방식에 대한 사람의 사전 확정이 필요. 전역 CLAUDE.md '반드시 묻는다: 제품 방향·주요 데이터 모델' 기준에 해당해 임의 구현 대신 needs_human으로 반환.",
+      "blocked_by": "구현 착수 전 사람 판단 필요: (1) [2026-08-06 갱신] 선행 단계 phase-2의 소프트웨어 acceptance는 완료됐다(Spatial Refresh Backbone 실코드 구현, reviewer PASS, commit 0a5f80b) — substrate 미완성 사유는 해소. 다만 phase-2의 Coverage Recovery 중 Edge 실시간 gap-fill은 하드웨어 종속으로 여전히 미완(PHASE_REGISTRY.yaml phase-2 hardware_deferred 참조), phase-3 착수 자체를 막는 조건은 아니다. (2) PRD MASTER_PRD_v3.0.md:1601 '권장 첫 기술 Pack은 타워크레인/인양물/작업자 또는 굴착기/작업자 중 하나를 선택'이 명시적으로 열린 제품 방향 결정이며 아직 어느 쪽도 선택되지 않음(참고: contracts/schemas/risk-field.v1.json·equipment-support-state.v1.json은 스키마만 존재, Kinematic State 계약과 owner 패키지 없음, packages/ 아래 equipment/crane/excavator 관련 구현 0건). (3) 'Active Reobservation 실동작'은 프로젝트 CLAUDE.md Control boundaries(Manifold가 local mission decisions 소유, LLM은 실행 비행좌표를 만들거나 안전정책을 우회 금지)에 정면으로 걸리는 안전 경계 결정이라 스코프·트리거 방식에 대한 사람의 사전 확정이 필요. 전역 CLAUDE.md '반드시 묻는다: 제품 방향·주요 데이터 모델' 기준에 해당해 임의 구현 대신 needs_human으로 반환.",
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-08-06T15:17:37+09:00",
+      "updated_at": "2026-08-06T20:33:31+09:00",
       "kind": "product"
     },
     {
@@ -897,13 +897,13 @@
       "lens": "other",
       "severity": "medium",
       "status": "open",
-      "note": "GET /v1/missions/{id}/kmz 는 저장된 plan_request 로 재생성하고 sha256 이 기록과 다르면 409 로 거부한다(services/core/src/ksi_core/mission_plans.py:577-591). 계약 payload 는 mission_issuance.py 의 서버 고정 안전상수(_UNKNOWN_OBSTACLE_POLICY 등)와 스키마를 포함하고 그 digest 가 KMZ 안 manifest 에 들어가므로, 안전 정책 상수나 경로 생성기 출력이 한 비트라도 바뀌면 그 이전 발급 임무의 다운로드가 전부 영구 409 가 된다. 이 엔드포인트가 닫으려던 '손에 파일이 없는 막다른 길'이 그대로 재발한다. 서명키 로테이션은 안전함을 확인했다(canonical_payload_bytes 가 signature 블록을 제외 — signing.py:42). 결정 필요: ① 409 분기 계측·알람 추가 ② 발급 시 KMZ 바이트 영속. 독립 반증(reviewer) D1.",
+      "note": "GET /v1/missions/{id}/kmz 는 저장된 plan_request 로 재생성하고 sha256 이 기록과 다르면 409 로 거부한다(services/core/src/ksi_core/mission_plans.py:577-591). 계약 payload 는 mission_issuance.py 의 서버 고정 안전상수(_UNKNOWN_OBSTACLE_POLICY 등)와 스키마를 포함하고 그 digest 가 KMZ 안 manifest 에 들어가므로, 안전 정책 상수나 경로 생성기 출력이 한 비트라도 바뀌면 그 이전 발급 임무의 다운로드가 전부 영구 409 가 된다. 이 엔드포인트가 닫으려던 '손에 파일이 없는 막다른 길'이 그대로 재발한다. 서명키 로테이션은 안전함을 확인했다(canonical_payload_bytes 가 signature 블록을 제외 — signing.py:42). 결정 필요: ① 409 분기 계측·알람 추가 ② 발급 시 KMZ 바이트 영속. 독립 반증(reviewer) D1. [2026-08-06 추가 계기] phase-2 Spatial Refresh Backbone 구현이 이 클래스를 실제로 발화시켰다 — AUTONOMOUS_PATROL이 route.captureIntervalM/camera를 이제 fail-closed로 요구하면서(mission_plans.py), 그 이전에 이미 발급된 AUTONOMOUS_PATROL pair 레코드는 GET /v1/missions/{id}/kmz 재생성이 영구 409가 된다(POST /plans 멱등 재발급도 동일). 이번 세션은 이 트리거 자체를 계측·완화하지 않았다 — reviewer 지적(P2-1), ①409 분기 계측·알람 ②발급 시 KMZ 바이트 영속 결정이 여전히 필요.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
       "created_at": "2026-08-05T15:58:00+09:00",
-      "updated_at": "2026-08-05T15:58:00+09:00"
+      "updated_at": "2026-08-06T20:33:31+09:00"
     },
     {
       "id": "kmz-download-regeneration-cost",
@@ -1016,6 +1016,48 @@
       "previous_status": "open",
       "created_at": "2026-08-06T13:57:45+09:00",
       "updated_at": "2026-08-06T14:38:36+09:00"
+    },
+    {
+      "id": "phase2-backbone-prd-items-partial",
+      "title": "Spatial Refresh Backbone은 MASTER_PRD §15.2의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 — ②(이벤트 시 Adaptive Patrol 분기)·④(동적 객체 마스킹/저가중치)· ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "②는 03_EDGE_AUTONOMY.md 상태머신 소관이라 phase-2/3 소프트웨어 트랙 범위 밖(Edge/Manifold, 하드웨어 종속)이 합리적이나, ④(재구성 파이프라인, 이 레포 관심사)·⑤(계획 층 관심사)는 'Edge 소관'으로 밀 수 없어 phase-2가 §15.2를 완결했다고 읽으면 안 된다. reviewer adversarial 재검토(2026-08-06) 지적. PHASE_REGISTRY.yaml 갱신 시 이 잔여를 acceptance 문구에 반영할 것.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T20:33:31+09:00",
+      "updated_at": "2026-08-06T20:33:31+09:00"
+    },
+    {
+      "id": "patrol-capture-interval-direct-no-quality-floor",
+      "title": "AUTONOMOUS_PATROL이 route.captureIntervalM을 직접 지정하면(camera 대신) 품질 하한이 없다 — lawnmower의 'capture_interval_m ≤ spacing_m' 대응물이 perimeter에는 없어, API 직접 호출자가 200m 간격 같은 사실상 무의미한 'Spatial Refresh Backbone'을 발급할 수 있다",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "기본 경로(대시보드 SurveyWizard.tsx)는 camera를 보내 compute_grid_spacing이 MIN_FRONT_OVERLAP(0.6)을 물리적으로 강제하므로 안전하다 — 이 리스크는 captureIntervalM 직접 지정 경로(expert-mode escape hatch)에 한정된다. perimeter_route()의 하한은 _MIN_CAPTURE_INTERVAL_M=0.1m(자원소진 방지용일 뿐 품질 하한 아님). reviewer adversarial 재검토(2026-08-06) 지적. 코드로 닫으려면 고도 기반 상한 (예: interval ≤ 0.4×altitude_m) 또는 camera 필수화가 후보.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T20:33:31+09:00",
+      "updated_at": "2026-08-06T20:33:31+09:00"
+    },
+    {
+      "id": "patrol-backbone-capture-cadence-hardware-unvalidated",
+      "title": "Spatial Refresh Backbone 도입으로 순찰 촬영 간격이 조밀해진다(고도 40m 기준 약 8m — 이전 0회/경로 대비) — 웨이포인트마다 정지·촬영이라(lawnmower의 '알려진 비효율'과 동일 구조) 순찰 소요시간·배터리 영향이 실기(H4)로 검증되지 않았다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "예: 둘레 1km 순찰이면 약 125회 정지·촬영. Track A/H4(실기 KMZ 임포트 검증) 완료 전까지는 소프트웨어 계산치일 뿐 실비행 시간·배터리 소모 실측이 없다. reviewer adversarial 재검토 (2026-08-06) 지적 — 운용 재평가 대상으로 기록만 하고 phase-2 게이트는 막지 않는다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-06T20:33:31+09:00",
+      "updated_at": "2026-08-06T20:33:31+09:00"
     }
   ]
 }

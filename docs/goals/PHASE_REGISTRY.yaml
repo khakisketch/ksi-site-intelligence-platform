@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-07-27"
+updated: "2026-08-06"
 
 phases:
   - id: phase-0
@@ -100,10 +100,51 @@ phases:
 
   - id: phase-2
     title: "Baseline Mapping & Unified Mission"
-    status: PLANNED
+    # Coverage Recovery 의 Edge 실시간 gap-fill(03_EDGE_AUTONOMY.md COVERAGE_RECOVERY
+    # 상태)은 하드웨어 종속(Track A/B 계열)이므로 phase-2 전체는 DONE 이 아니다.
+    status: IN_PROGRESS
+
+    software_implementation: COMPLETE
+    software_acceptance: PASS
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_commit: "0a5f80b5b7af8a34b28b7b46bb189d02da46b873"
+    independent_review_date: "2026-08-06"
+    independent_review_note: >-
+      2026-08-06 adversarial 재검토 2라운드. 1차(refuted) P1 3건 —
+      needs_coverage_recovery() 가 ABORTED_SAFE/FAILED 를 누락해 거짓음성 /
+      고정 촬영간격이 MIN_FRONT_OVERLAP(0.6) 미달 가능 / captureIntervalM 배선
+      자체를 검증하는 테스트 부재 — 를 2라운드에서 파일:라인 재검산 포함해
+      수정 확인. uv run pytest 1908 passed·20 skipped·3 xfailed, ruff·mypy·
+      dashboard tsc·vitest 전부 clean. software acceptance PASS 판정.
+
+    hardware_deferred:
+      - >-
+        Coverage Recovery 의 Edge 실시간 촬영공백 보완(03_EDGE_AUTONOMY.md
+        EVENT→REJOIN→COVERAGE_RECOVERY→RETURN) — Manifold/Edge 소관, Track A/B 와
+        동일 계열 하드웨어 종속. 이번 세션은 Core 측 대체 신호(원본 site AOI 재발급
+        권고, CoverageReportView.recoveryRecommended)만 구현했다.
+
     acceptance:
       - "현장 Onboarding→Baseline Processing→Verified Flight Volume 상태 전이 실통과 (INV-010)"
       - "Spatial Refresh Backbone + Coverage Recovery"
+
+    residual_risks:
+      - >-
+        MASTER_PRD §15.2 의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 —
+        ②(이벤트 시 Adaptive Patrol 분기, Edge 소관)·④(동적 객체 마스킹/저가중치)·
+        ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언
+        (risk phase2-backbone-prd-items-partial).
+      - >-
+        AUTONOMOUS_PATROL 이 route.captureIntervalM 을 직접 지정하면(camera 대신)
+        품질 하한이 없다 — 기본 경로(대시보드)는 camera 유도라 안전하지만 API
+        직접 호출자용 expert-mode escape hatch 로 남는다
+        (risk patrol-capture-interval-direct-no-quality-floor).
+      - >-
+        이번 필수화로 기존에 발급된 AUTONOMOUS_PATROL pair 레코드는 KMZ 재생성이
+        영구 409 가 된다 — risk kmz-regeneration-determinism-timebomb 의 실제
+        발화 사례.
 
   - id: phase-3
     title: "Dynamic Equipment Intelligence"
