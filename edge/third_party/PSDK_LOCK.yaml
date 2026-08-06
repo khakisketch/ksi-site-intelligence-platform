@@ -42,6 +42,9 @@ license:
 # 미확인이라, 과신을 피한다 — 파일 단위 실측만 기록).
 verified_files:
   psdk_lib/include/dji_version.h: c3a4d67ffc0709beadfac36890bf6366e11dd56fbd6338c583e6dc392f13972e
+  # manifoldctl package 가 무수정으로 호출한다는 주장을 기계로 고정한다(2026-08-06,
+  # reviewer 지적) — 이 파일이 바뀌면 fetch_psdk.py 가 핀 이탈로 즉시 실패한다.
+  tools/build_dpk/build_dpk.sh: 9013080269b4fe53519cc8be74e823157f158b566de92fe1fd1f215a7c335ea0
 
 # 타깃 산출물 — tools/edge/fetch_psdk.py가 checkout 후 확인한다.
 target:

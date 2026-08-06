@@ -54,6 +54,13 @@ mf_rsync_from_device() {
   rsync -az -e "ssh -o BatchMode=yes" "${MANIFOLD_SSH_HOST}:${MANIFOLD_REMOTE_ROOT}/$1" "$2"
 }
 
+mf_scp_to_device() {
+  # 단일 파일 전송(디렉터리 트리 동기화가 아니다 — mf_rsync_to_device 의 --delete 는
+  # DPK 스테이징처럼 다른 파일과 공존하는 디렉터리에 부적합).
+  # $1: 로컬 파일 경로, $2: 원격 상대 경로(REMOTE_ROOT 기준, 파일명 포함).
+  scp -o BatchMode=yes -o ConnectTimeout=10 "$1" "${MANIFOLD_SSH_HOST}:${MANIFOLD_REMOTE_ROOT}/$2"
+}
+
 # --- git 상태 — dirty 배포 차단의 근거 ---
 mf_git_sha() { git -C "$MANIFOLD_REPO_ROOT" rev-parse HEAD; }
 mf_git_is_dirty() {
