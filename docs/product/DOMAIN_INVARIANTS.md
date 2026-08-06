@@ -137,15 +137,30 @@
   FlightHub 2, 상용 SaaS 엔진)에서 실행하는 작업인데 그 현장의 반출 허용이
   참이 아니면 작업 생성 자체를 거부한다 — 실행 후 사후 통제가 아니라 생성
   시점 게이트다.
-  _강제: (미구현) `services/processing-controller` job 생성 API의 실행 위치×반출
-  허용 사전검사 (ADR-KSI-012 D1·D3, ADR-KSI-013)._
+  _강제: `services/core/src/ksi_core/processing_jobs.py` `ProcessingJobStore.issue()`
+  — `dataResidency.egressAllowed` 가 거짓인 현장에 벤더 클라우드 실행을 발급
+  요청하면 생성 자체를 `EGRESS_NOT_ALLOWED` 로 거부(재생도 동일 판정 재현).
+  `tests/contract/test_processing_jobs.py::test_vendor_cloud_refused_when_site_has_not_declared_egress`
+  / `::test_vendor_cloud_refused_when_site_declared_egress_false` /
+  `::test_vendor_cloud_allowed_when_site_declared_egress_true` /
+  `::test_onprem_execution_is_unaffected_by_egress_declaration`
+  (ADR-KSI-012 D1·D3, ADR-KSI-013)._
 - **INV-051** 재구성 산출물은 원본(raw capture를 직접 처리한 결과)인지 파생
   (원본에서 재생성한 서빙 계층)인지 계보를 반드시 지니며, 파생 산출물을 원본의
   권위로 대체해 측정·완료 판정 근거로 쓰지 않는다. Point Cloud가 원본 SSOT이고
   Mesh/3D Tiles/정사영상이 파생 서빙 계층이라는 원칙(ADR-KSI-003)을 실제 처리
   엔진(ODM 등)의 산출물에도 동일하게 적용한다.
-  _강제: (미구현) `services/processing-controller` job 산출물 메타데이터의
-  lineage 필드 + ADR-KSI-003 원본/파생 분리 (ADR-KSI-012 D1)._
+  _강제: `services/core/src/ksi_core/processing_jobs.py` `ProcessingArtifact.lineage`
+  (`authority: source|derived` + `derivedFrom`, 요청이 아니라 Core가 봉인된 번들의
+  `sourceBundleDigest`로 채움) + `assert_succeeded_is_backed()` — RUNNING→SUCCEEDED
+  전이는 `authority=source` 산출물이 최소 1건 등록돼 있어야 통과(파생물만으로는
+  거부, live·재생 동일 판정). `services/processing-controller`의 ODM 어댑터
+  (`ksi_processing_controller.odm_assets`)가 Point Cloud=원본/Mesh·정사영상·
+  DSM·DTM=파생으로 매핑. `tests/contract/test_processing_jobs.py::test_succeeded_is_refused_without_any_artifact`
+  / `::test_replay_refuses_success_whose_artifact_record_was_deleted` /
+  `::test_lineage_anchor_comes_from_the_sealed_bundle` /
+  `::test_replay_refuses_artifact_with_forged_lineage_anchor`
+  (ADR-KSI-003, ADR-KSI-012 D1)._
 
 ## 임무 발급·현장 생애주기
 
