@@ -55,6 +55,9 @@ import base64
 import hashlib
 import logging
 import math
+import threading
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -429,6 +432,15 @@ def _regenerate_pair_artifact(
     return result
 
 
+# risk kmz-download-regeneration-cost: 읽기 권한(MISSIONS_READ, VIEWER 포함 5개
+# role 전부)만으로 재조회마다 경로생성+Ed25519 서명이 무제한 반복된다. build_kmz
+# 계열은 결정론적이므로(모듈 docstring) 같은 mission_id·같은 kmz_sha256 에 대한
+# 재계산은 항상 같은 바이트다 — 캐시가 정확성을 해치지 않는다. TTL 은 정확성이
+# 아니라 메모리 상한을 위한 것이다.
+_KMZ_CACHE_TTL_S = 300.0
+_KMZ_CACHE_MAX_ENTRIES = 256
+
+
 def build_mission_plans_router(
     *,
     private_key: Ed25519PrivateKey,
@@ -437,6 +449,9 @@ def build_mission_plans_router(
     site_lookup: Callable[[str], SiteLookupResult | None],
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
+    # (kmzSha256, kmz_bytes, expires_at_monotonic) — mission_id 키, LRU 크기상한.
+    kmz_cache: OrderedDict[str, tuple[str, bytes, float]] = OrderedDict()
+    kmz_cache_lock = threading.Lock()
 
     @router.post("/plans", status_code=201)
     def issue_mission_plan_recorded(
@@ -567,6 +582,21 @@ def build_mission_plans_router(
                 status_code=404,
                 detail="이 임무 레코드는 KMZ 산출물이 없다(계약 단독 발급)",
             )
+        now = time.monotonic()
+        with kmz_cache_lock:
+            cached = kmz_cache.get(mission_id)
+            if cached is not None:
+                cached_sha, cached_bytes, expires_at = cached
+                if expires_at > now and cached_sha == record.kmz_sha256:
+                    kmz_cache.move_to_end(mission_id)
+                    return Response(
+                        content=cached_bytes,
+                        media_type="application/vnd.google-earth.kmz",
+                        headers={
+                            "Content-Disposition": f'attachment; filename="{mission_id}.kmz"'
+                        },
+                    )
+                del kmz_cache[mission_id]
         try:
             regenerated = _regenerate_pair_artifact(
                 record, private_key=private_key, key_id=key_id
@@ -590,6 +620,20 @@ def build_mission_plans_router(
             # 보낸 요청의 재시도이므로 최신 산출물이 낫다). 하지만 이 다운로드는
             # "발급 당시 그 파일"을 약속하는 경로라 기준이 다르다 — 다른 바이트를
             # 같은 파일이라고 내려주지 않는다.
+            #
+            # error 레벨로 별도 기록하는 이유(risk kmz-regeneration-determinism-
+            # timebomb): 이 분기는 서버 상수 한 줄이 바뀌면 그 이전 발급분 전량이
+            # 영구 409 가 되는 지점이다. _regenerate_pair_artifact 의 warning 은
+            # "달라졌다"만 남기고 이 라우트가 실제로 다운로드를 막았다는 사실 자체는
+            # 기록하지 않았다 — 운영자가 이 로그 없이는 대량 409 발생을 알 방법이
+            # 없었다.
+            logger.error(
+                "mission_id=%s KMZ 다운로드가 결정성 위반으로 영구 거부됐다 "
+                "(재생성 sha256=%s, 기록된 kmzSha256=%s) — 이 발급 시점 이후 서버 "
+                "상수·경로생성기가 바뀌었을 가능성. 같은 정책 변경 전에 발급된 다른 "
+                "레코드도 동시에 영향받을 수 있다",
+                record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+            )
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -599,6 +643,15 @@ def build_mission_plans_router(
                 ),
             )
         kmz_bytes = base64.b64decode(regenerated["kmzBase64"])
+        with kmz_cache_lock:
+            kmz_cache[mission_id] = (
+                regenerated["kmzSha256"],
+                kmz_bytes,
+                time.monotonic() + _KMZ_CACHE_TTL_S,
+            )
+            kmz_cache.move_to_end(mission_id)
+            while len(kmz_cache) > _KMZ_CACHE_MAX_ENTRIES:
+                kmz_cache.popitem(last=False)
         return Response(
             content=kmz_bytes,
             media_type="application/vnd.google-earth.kmz",
