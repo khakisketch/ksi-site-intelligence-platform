@@ -1,0 +1,19 @@
+[project]
+name = "ksi-change-detection"
+version = "0.0.1"
+description = "Phase 4 시계열 변화탐지 — point cloud C2C 최근접거리 비교 (PRD RISK-003 인접, workers/change-detection 스텁의 실구현 위치)"
+requires-python = ">=3.12,<3.13"
+# Open3D(MIT)는 이 환경(Python 3.12, aarch64 linux)에 호환 wheel이 없어(2026-08-06
+# 실측: uv pip install --dry-run open3d — cp312/manylinux_aarch64 wheel 부재) 채택하지
+# 않았다. CloudCompare(M3C2 표준 구현)는 GPL이라 이 프로젝트의 AGPL/GPL 프로세스경계
+# 정책(ADR-KSI-012 D2)과 별개로 애초에 배제 대상이다. scipy.spatial.cKDTree(BSD-3)로
+# point-to-point 최근접 거리를 직접 구현한다 — M3C2 의 국소 법선 통계는 범위 밖(모듈
+# docstring 명시).
+dependencies = ["numpy>=1.26", "scipy>=1.13"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_change_detection"]
