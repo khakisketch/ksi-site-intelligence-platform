@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-06T14:38:36+09:00",
+  "updated_at": "2026-08-06T16:56:31+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -62,16 +62,22 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-2 acceptance 참조"
       ],
-      "status": "proposed",
-      "attempt": 1,
+      "status": "in_progress",
+      "attempt": 2,
       "evidence": null,
-      "verdict": null,
+      "verdict": {
+        "verdict": "refuted",
+        "note": "완료기준은 docs/goals/PHASE_REGISTRY.yaml:104-106 의 acceptance 2건인데 **#2 'Spatial Refresh Backbone + Coverage Recovery' 는 코드에 존재하지 않는다** — worker 자신이 'Coverage Recovery 로직은 코드에 없다'고 적었고, PHASE_REGISTRY 상 p",
+        "at": "2026-08-06T15:30:55+09:00",
+        "reviewer": "reviewer-opus-batch",
+        "evidence_ref": "tests/contract/test_phase2_unified_journey.py(신규, 341줄) — `uv run pytest tests/contract/test_phase2_unified_journey.py -q` 1 passed. 회귀 확인: `uv run pytest tests"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:13+09:00",
-      "updated_at": "2026-07-25T00:52:13+09:00",
+      "updated_at": "2026-08-06T15:57:39+09:00",
       "kind": "product"
     },
     {
@@ -80,16 +86,16 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-3 acceptance 참조"
       ],
-      "status": "proposed",
+      "status": "blocked",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": null,
+      "blocked_by": "구현 착수 전 사람 판단 필요: (1) 선행 단계 phase-2(Baseline Mapping & Unified Mission — Verified Flight Volume 상태전이, Coverage Recovery)가 PHASE_REGISTRY.yaml상 여전히 PLANNED이고 services/processing-controller가 현재 브랜치(feat/aoi-mission-gate-rbac)에서 진행 중이라 phase-3가 딛고 설 substrate가 미완성. (2) PRD MASTER_PRD_v3.0.md:1601 '권장 첫 기술 Pack은 타워크레인/인양물/작업자 또는 굴착기/작업자 중 하나를 선택'이 명시적으로 열린 제품 방향 결정이며 아직 어느 쪽도 선택되지 않음(참고: contracts/schemas/risk-field.v1.json·equipment-support-state.v1.json은 스키마만 존재, Kinematic State 계약과 owner 패키지 없음, packages/ 아래 equipment/crane/excavator 관련 구현 0건). (3) 'Active Reobservation 실동작'은 프로젝트 CLAUDE.md Control boundaries(Manifold가 local mission decisions 소유, LLM은 실행 비행좌표를 만들거나 안전정책을 우회 금지)에 정면으로 걸리는 안전 경계 결정이라 스코프·트리거 방식에 대한 사람의 사전 확정이 필요. 전역 CLAUDE.md '반드시 묻는다: 제품 방향·주요 데이터 모델' 기준에 해당해 임의 구현 대신 needs_human으로 반환.",
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00",
+      "updated_at": "2026-08-06T15:17:37+09:00",
       "kind": "product"
     },
     {
@@ -98,16 +104,16 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-4 acceptance 참조"
       ],
-      "status": "proposed",
+      "status": "blocked",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": null,
+      "blocked_by": "phase-4(표면 점검·결함 후보·시계열 변화·BIM 연계)는 선행 의존성 미충족: (1) reconstruction-pipeline(B1~B3, 실제 시계열 diff 대상이 될 point_cloud/orthomosaic ProcessingArtifact를 만드는 파이프라인)이 원장상 여전히 in_progress·독립 재검토 미실시 (2) phase-3(Dynamic Equipment Intelligence)가 원장상 blocked (3) docs/goals/REMAINING_WORK_PLAN.md가 workers/*(change-detection·map-compiler 포함)를 'Phase 2 이후' 미착수 백로그로 명시적으로 미룸(S1~S4 소프트웨어 트랙 순번에 미포함) (4) workers/change-detection·workers/map-compiler는 README 1줄 스텁뿐 실코드 0 — 결함후보 탐지 방법론·BIM 데이터 모델·시계열 비교 시맨틱이 전혀 정의되지 않아 이번 세션에서 실제 구현을 시도하면 프로젝트 CLAUDE.md 품질기준(mock/placeholder로 완료 주장 금지)을 위반하는 가짜 스캐폴딩이 된다. 또한 '표면 점검·결함 후보 탐지 방식·BIM 연계 데이터 모델'은 전역 CLAUDE.md의 '반드시 묻는다' 항목(제품 방향·주요 데이터 모델)에 해당해 대표자 결정 없이 임의로 설계하지 않았다.",
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00",
+      "updated_at": "2026-08-06T15:20:57+09:00",
       "kind": "product"
     },
     {
@@ -116,16 +122,16 @@
       "completion_criteria": [
         "docs/goals/PHASE_REGISTRY.yaml phase-5 acceptance 참조"
       ],
-      "status": "proposed",
+      "status": "blocked",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": null,
+      "blocked_by": "구현 착수 전 사람 판단 필요: phase-5(docs/goals/PHASE_REGISTRY.yaml:121-125, Fleet/Dock & Cross-Industry Packs)의 수용기준은 'Dock Capability VERIFIED 후 원격 반복운영·다현장 Fleet·산업 Pack'이며 MASTER_PRD_v3.0.md:1610-1613과 일치. 이는 (1) 실물 DJI Dock 하드웨어 검증(HIL/실기 게이트, 코드로 대체 불가)과 (2) 선행 단계 phase-2(현재 PLANNED, Baseline Mapping & Unified Mission — Onboarding/Baseline Processing/Verified Flight Volume 상태전이 미검증), phase-3(이미 blocked — 선행 phase-2 미충족), phase-4(이미 blocked — 선행 phase-2/3 미충족) 위에 쌓이는 Fleet/Dock/산업 Pack 확장이라 전제 자체가 미성립. 코드베이스 검색 결과 fleet/dock 관련 실질 구현 없음(services/core/src/ksi_core/capability/registry.py는 일반 Capability 등록기이며 Dock 전용 아님). phase-3/phase-4와 동일한 사유 계열로 phase-5도 선행 의존성 미충족 — 되돌리기 어려운 하드웨어 조달/현장 배치 판단이 필요해 자동 구현 루프에서 임의 스캐폴딩을 만드는 대신 사람 판단으로 넘긴다.",
       "ungated_attempts": 0,
       "created_at": "2026-07-25T00:52:14+09:00",
-      "updated_at": "2026-07-25T00:52:14+09:00",
+      "updated_at": "2026-08-06T15:23:58+09:00",
       "kind": "product"
     },
     {
@@ -499,16 +505,22 @@
         "원장 재기동 비용 상한 — 도메인 원장(Site/Mission/Event)은 세그먼트 회전, edge-sync 는 스냅샷(2026-08-05 대표자 확정 문구 개정). edge-sync 의 재기동 비용은 파일 크기가 아니라 항목당 본문 정규화+sha256 이라 회전으로는 줄지 않는다 — 근거·잔여 한계는 ADR-KSI-010 §4",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": "S4 운영 표면 — 수용기준 5개 중 4개 충족(독립 재검토 미충족).\n\n[이번에 한 것 — Evidence 스토리지를 실물 대상으로 검증]\nS3EvidenceStorage 는 FakeS3Client(파라미터만 기록)로만 시험돼 있었다. 그것으로는 presigned URL 이 실제로 동작하는지도, 서명이 무엇을 강제하는지도 알 수 없다. 특히 코드가 단 이 보안 주장이 가짜 클라이언트로는 증명 불가였다:\n  'ContentType 을 서명에 포함한다 — 포함하지 않으면 업로더가 임의 타입으로 올릴 수 있어 MIME allowlist 가 발급 시점 장식이 된다'\nMinIO(127.0.0.1:9190)를 띄워 tests/contract/test_evidence_s3_live.py 9건 실행 — **전부 통과, 주장은 참이었다**:\n- 정상 타입 PUT 200 / GET 바이트 왕복 일치\n- 위조 Content-Type 3종(text/html·image/svg+xml·application/x-www-form-urlencoded) 전부 403 — allowlist 가 서명으로 실제 강제된다(정상 200과 대비되므로 공허하지 않다)\n- Content-Type 헤더 생략도 403\n- TTL 1초 후 만료 URL 403 — 짧은 수명이 통제로 작동한다\n- delete 멱등(없는 객체도 성공), 삭제 후 GET 404\n- 없는 버킷은 조립·발급이 아니라 **사용** 시점에 404 — 기동 시 왕복 없음(ADR-KSI-005 오프라인 부팅)\n- 실제 SDK 예외(닫힌 포트)도 EvidenceStorageError 로 번역\n\n[나머지 수용기준 — 구현·테스트 확인]\n- retention-policy.v1 집행: retention.py plan_expiry/tombstone + 감사기록.\n- 서명키 수명주기: signing_keys.py load_signing_keys(검증 로드), ADR-KSI-009.\n- 원장 재기동 비용 상한: durable_journal.py max_segment_bytes 회전(도메인 원장) + edge_sync.py snapshot_every → <journal>.snapshot.json(edge-sync). 2026-08-05 대표자 확정 문구대로 둘로 나뉜 방식이 실재한다.\n- 관련 스위트 182 passed(test_evidence_s3·test_evidence·test_retention·test_signing_keys·test_durable_journal·test_edge_sync_snapshot·test_edge_sync_ingest).\n\n[측정 결과]\n- uv run pytest tests/ -q: 1861 passed / 20 skipped / 3 xfailed. S3+ODM 실물 변수 다 주면 1870 passed / 11 skipped.\n- skip 내역: golden ZoneLayer 5(Phase 3, 무관) · odm_live 6 · evidence_s3_live 9(둘 다 컨테이너·데이터셋 미제공 시).\n- ruff check . 통과 / mypy 71 files 통과.\n\n[미충족 — 남은 수용기준 1건]\n독립 재검토. 이 세션은 서브에이전트 사용이 금지돼 메인이 직접 확인했다 — producer 와 verifier 가 같다.\n\n[남긴 공백]\n- 검증은 MinIO 대상이다. AWS S3 본체·다른 S3 호환 구현(Ceph·GCS interop)에서 같은 서명 강제가 성립하는지는 확인하지 않았다 — MinIO 가 SigV4 를 충실히 구현한다는 전제에 기대고 있다.\n- retention 집행 스케줄러 없음(사람이 실행 시점에 한 번 본다 — 의도된 설계, risk retention-defaults-legal-review 참조).",
-      "verdict": null,
+      "evidence": "직전 attempt(이번 세션)가 refuted 판정을 받았다 — 독립 리뷰어가 '단독 1회 재실행'은 수정 전/후를 구별 못한다고 지적(동일 HEAD의 수정 이전 단독 실행도 이미 1891 passed였음, .ksi/ledger.jsonl:183)했고, 내 스크래치 디렉터리 유일화(tmp_path.name)가 실제로는 동시 실행 프로세스 간 유일하지 않다는 코드 결함도 지적했다(pytest 는 프로세스마다 독립 basetemp 를 쓰므로 같은 테스트의 tmp_path.name 이 동시 실행 간 동일하게 나옴).\n\n[이번에 한 것 — 지적 2건을 모두 고치고 진짜 판별력 있는 증거를 냄]\n1. tests/contract/test_repo_hygiene_gate.py 의 scratch_dir 접미사를 tmp_path.name → uuid.uuid4().hex 로 교체 — 프로세스 경계와 무관하게 항상 유일.\n2. 실제로 경합을 재현하는 시험: 같은 저장소에서 test_repo_hygiene_gate.py + test_source_media.py 를 두 셸에 동시에 3라운드 실행(pgrep 로 사전 확인 없이 의도적으로 동시에) — 결과: 6/6 실행 모두 71 passed/0 failed, 매 라운드 뒤 git status --porcelain 확인 결과 AD 잔존 없음(예상되는 .ksi 원장·이번 세션이 수정한 파일만 M으로 남고 스크래치 잔재는 0). 이게 이전 attempt 에 없었던 '수정이 실제로 유효함을 구별하는' 증거다.\n3. (부수) risk kmz-download-regeneration-cost·kmz-regeneration-determinism-timebomb 하드닝도 이번 세션에 처리 — services/core/src/ksi_core/mission_plans.py 에 (a) sha256 불일치 409 분기에 logger.error 계측 추가 (b) mission_id 키·kmz_sha256 재검증·TTL 300s·LRU 상한 256 의 인메모리 캐시 도입(재생성 자체가 결정론적이므로 캐시가 정확성을 해치지 않음, 신규 의존성 없음). 이 변경이 회귀를 안 냈는지 아래 전체 스위트로 확인.\n\n[재검증 — 동시 실행 없음 확인 후(pgrep -af pytest) 단독 1회 실행]\n- uv run pytest tests/ -q: 1891 passed, 20 skipped, 3 xfailed, 0 failed, 173.25s.\n- uv run ruff check .: All checks passed!\n- uv run mypy services/core/src: Success, no issues found in 20 source files.\n\n기준 1~4(Evidence·retention·서명키·journal)는 앞선 두 독립 리뷰어(A/B)가 이미 file:line 대조로 확인했고 이번 세션 코드 변경은 그 4축의 파일을 건드리지 않았다(mission_plans.py 는 S4 범위 밖 — 별도 risk 하드닝).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "독립 리뷰어(동일 에이전트, 2라운드)가 기준 1~4는 file:line 직접 대조로 재확인, 기준5는 1라운드에서 낸 반증 2건(단독실행 비판별성·scratch_dir 유일화 결함)이 모두 코드 수정으로 닫혔음을 확인. 판별력 있는 증거: test_repo_hygiene_gate.py+test_source_media.py 동시 2프로세스 3라운드=6/6 71 passed·git오염0(구조: GIT_INDEX_FILE 프로세스별 사본+uuid4 스크래치 배타+lock 파일 분리로 공유 가변상태 전무, 리뷰어가 메커니즘으로 완결 확인). 같은 버그클래스 tests/ 전역 재사냥(하드코딩 /tmp·DurableJournal 리터럴 경로)도 리뷰어가 직접 재수행해 잔존 0건. mission_plans.py(KMZ 캐시·로깅, 이번 세션 별건 risk 하드닝)는 이름이 아니라 코드로 4축 무관 확인(클로저 지역 캐시, sha256 이중검증 후에만 적재, S4 4개 모듈 미임포트). 잔여 비블로커 권고 2건(docstring 과장 정정, 크래시잔재용 .gitignore) 즉시 반영.",
+        "at": "2026-08-06T16:55:33+09:00",
+        "reviewer": "reviewer agent ab41572f549448c7a (2 rounds, adversarial re-verify)",
+        "evidence_ref": "concurrent repro: 2x parallel pytest tests/contract/test_repo_hygiene_gate.py tests/contract/test_source_media.py x3 rounds = 6/6 71 passed, 0 git pollution; full suite uv run pytest tests/ -q -> 1891 passed/20 skipped/3 xfailed/0 failed; ruff+mypy clean; reviewer transcript ab41572f549448c7a"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 2,
+      "ungated_attempts": 0,
       "created_at": "2026-07-29T20:55:06+09:00",
-      "updated_at": "2026-08-06T13:08:06+09:00",
+      "updated_at": "2026-08-06T16:55:33+09:00",
       "kind": "hardening"
     },
     {
@@ -578,18 +590,24 @@
         "ODM 어댑터 실연동(무수정 컨테이너·REST 경계, ADR-KSI-012 D2 AGPL 경계 준수)",
         "독립 재검토 PASS"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": "워커 lease + NodeODM 실기동 검증 — 등록 기준 5개 중 4개 충족(독립 재검토 미충족).\n\n[한 것 1 — 워커 lease]\nPOST /v1/processing-jobs/{id}/lease. /input·실행상태보고·산출물등록 세 경로가 모두 _check_lease_locked 관문을 지난다. 만료는 저장 플래그가 아니라 expires_at 대 now 비교(JobLease) — 죽은 워커의 작업이 별도 반납 명령 없이 회수된다. 취소만 lease 를 요구하지 않는다(워커가 죽어 lease 가 살아 있는 동안 취소가 막히면 정확히 취소가 필요한 상황에서 막힌다). 재생은 lease 를 복원만 하고 만료 재판정을 하지 않는다 — 시간축 판정은 재생으로 재현되지 않는 부류라 그 사실을 docstring 에 적었다.\n\n[한 것 2 — NodeODM 실기동]\n무수정 opendronemap/nodeodm:latest(NodeODM 2.2.4 / ODM 3.5.6)를 127.0.0.1:3971 에 띄워 REST 를 직접 검증. **어댑터 버그 4건이 드러나 전부 고쳤다:**\n① /info 가 version(NodeODM 2.2.4)과 engineVersion(ODM 3.5.6)을 따로 준다 — 전자를 계약의 engineVersion 과 대조하고 있었다. 늘 어긋나면서 애초에 다른 것을 비교.\n② 산출물은 all.zip 하나뿐 — Task.getAssetsArchivePath 가 다른 이름을 전부 거부한다. 개별 asset 다운로드를 가정한 포트 설계 전체가 틀렸다. download(uuid, asset) → download_archive(uuid, dest) 로 바꾸고 digest 는 zip 안에서 스트리밍 계산.\n③ 에러가 HTTP 200 + {\"error\": ...} 로 온다(미지 uuid·미준비 asset 둘 다). 상태코드만 보는 클라이언트는 성공으로 읽고 다음 줄에서 KeyError.\n④ 중첩 asset 경로(odm_dem/dsm.tif)는 라우트 자체가 없어 404 HTML.\nHttpNodeOdmClient(httpx) 신규 작성 — presigned URL 을 NodeODM 에 넘기지 않고 이 프로세스가 바이트를 통과시킨다(인가가 엔진 컨테이너로 복제되지 않게).\n\n[측정 결과]\n- uv run pytest tests/ -q: 1858 passed, 10 skipped, 3 xfailed (173s). skip 10 = golden ZoneLayer 5(Phase 3, 무관) + odm_live 5(KSI_NODEODM_URL 미설정).\n- KSI_NODEODM_URL 설정 시: 1863 passed, 5 skipped — 실기동 5건 전부 통과.\n- ruff check . 통과 / mypy 71 files 통과 / 계약 동기화 14 passed.\n- test_processing_jobs.py 103 passed(직전 88 → +15, lease 테스트) · test_odm_adapter.py 36 passed · test_odm_live.py 5 passed.\n\n[중간에 잡힌 것 1건]\nlease TTL 15분이라 3시간짜리 전이 테스트가 LEASE_REQUIRED 로 막혔다 — 설계가 의도대로 동작한 것(긴 작업은 heartbeat 로 갱신해야 한다). 테스트를 갱신 패턴으로 고치고, 갱신 vs 재취득 의미 차이를 전용 테스트로 고정.\n\n[포트 사고 1건]\n처음에 3010 포트를 썼는데 사용자의 다른 컨테이너가 점유 중이었다. 그 서비스의 응답({\"error\":\"Internal API key required\"})을 NodeODM 계약 발견으로 오독할 뻔했다 — ss 로 점유자를 확인하고 빈 포트(3971)로 옮겨 재확인. 검증 후 컨테이너 제거 완료(사용자 컨테이너는 건드리지 않음).\n\n[미충족 — 남은 수용기준 1건]\n독립 재검토. 서브에이전트 사용이 금지된 세션이라 메인이 직접 반증만 했다 — producer 와 verifier 가 같다.\n\n[남긴 공백]\n- odm-archive-parsing-unverified(신규 등록): 완주한 all.zip 을 실제로 파싱해본 적이 없다. ODM_ASSETS 의 archive_entry 는 NodeODM libs/Task.js allPaths 에서 읽은 값이지 실물 아카이브에서 확인한 값이 아니다. 실제 드론 사진 수백 장으로 1회 완주가 필요(HIL).\n- 산출물 바이트를 KSI 스토리지로 올리는 경로 없음.\n- 큐 pull 없음 — jobId 추측으로 남의 작업을 '잡아' 실행을 방해하는 것은 여전히 가능(입력 열람은 lease 로 막혔다).\n- ODM --fast-orthophoto 계보 분기 미모델링.",
-      "verdict": null,
+      "evidence": "workflow verify-degraded-gates(2인 독립 opus 리뷰, 이번 세션)가 B1~B3+ODM 4축을 file:line 근거로 재확인, 5번째 기준(독립 재검토 PASS)도 두 리뷰어 전원 pass 판정(근거있는 미충족 지적 없음, 실기동 odm_live 스코프 한정은 refute 아님으로 합의).\n\n기준별 리뷰어 인용 근거:\n- B1: source_media.py register_batch(경로안전 mediaId·MIME allowlist)+seal, compute_source_bundle_digest 로 Core 가 digest 계산(요청 불가), 재생이 위조봉인 거부.\n- B2: ProcessingJobRequest extra=forbid(input/dataResidency 필드 부재), 입력은 봉인번들에서 집계, INV-050 은 site 원장 값으로 판정(요청값 아님), _ALLOWED_TRANSITIONS 단일 SSOT를 live/재생 공용.\n- B3: 워커가 전바이트 sha256+해상도 실측, 판정은 Core(compare_measurements), 워커 모델에 판정 필드 없음(JobInputMediaView), assert_succeeded_is_backed(authority=source AND input_verified) 게이트.\n- ODM: AGPL 경계 AST 기계강제(test_odm_adapter.py, opendm/odm/webodm/opensfm import 금지+REST 5개 포트표면 고정), http_node_odm.py 실 httpx 구현.\n\n[재실행 원문]\nuv run pytest tests/ -q: 1891 passed, 20 skipped, 3 xfailed, 0 failed. ruff check . 통과. mypy services/core services/processing-controller packages/event-contracts 통과(37 files). 1890→1891 차이는 미추적 test_phase2_unified_journey.py 신규 테스트 1개로 양쪽 리뷰어 모두 동일하게 설명(회귀 아님).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "workflow verify-degraded-gates(2인 독립 opus 리뷰+실물 재실행 1891 passed/0 failed/ruff+mypy clean): B1~B3+ODM 4축 file:line 근거로 재확인, 실기동(odm_live)만 이번 run에서 skip(스코프 한정, 반증 아님). 5개 기준 전부 pass, 근거있는 미충족 지적 없음. synthesis: '기준 1~5 모두 두 검토자가 독립적으로 파일:라인 근거와 재실행 결과로 충족을 확인했으며, 어느 쪽도 구체적 미충족을 지적하지 않았다.'",
+        "at": "2026-08-06T16:56:31+09:00",
+        "reviewer": "workflow:verify-degraded-gates wf_4ff07aea-a49 (2x reviewer-opus independent, synth pass)",
+        "evidence_ref": "wf_4ff07aea-a49 journal.jsonl; uv run pytest tests/ -q -> 1891 passed/20 skipped/3 xfailed; ruff check . all passed; mypy 37 files no issues"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 4,
+      "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-05T22:58:53+09:00",
-      "updated_at": "2026-08-06T05:09:36+09:00"
+      "updated_at": "2026-08-06T16:56:31+09:00"
     }
   ],
   "risks": [
@@ -850,28 +868,28 @@
       "title": "coverageRatio 는 선언된 스와스 가정 하의 기하 커버이지 사진측량 완결성의 증명이 아니다 — 카메라 촬영폭 확정(H4) 전까지",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "accepted",
       "note": "커버리지 실측(_measure_lawnmower_coverage_ratio)은 각 스캔선이 ±spacing/2 를 덮는다고 가정하는데 spacing 이 요청 입력이라, 원리적으로 '요청이 자기 커버리지 증명서를 스스로 써주는' 구조다. 상한 두 개(captureIntervalM<=spacingM, spacingM<=고도*1.5)가 그 가정이 터무니없어지는 구간만 자를 뿐이고, 1.5 는 물리적 불가능의 증명이 아니라 정책값이다(ADR-KSI-011 D2 에 성격 명시). 실제 폐쇄는 카메라 footprint(FOV+고도) 기반 실계산이며 H4(실기 Pilot 2/카메라 스펙 확정) 종속. 완화: 무작위 4000 조합 속성 테스트(tests/contract/test_coverage_claim_property.py)가 '사진은 적은데 커버는 높다'를 상시 감시하고, 판정 기준을 구현 상수와 독립으로 둬 상한을 느슨하게 하면 실패한다. 이 결함 클래스는 3연속 재발했으므로 H4 때 반드시 재점검.",
-      "accept_reason": null,
+      "accept_reason": "위 mapping-coverage-claim-unbounded 와 동일 근거(ADR-KSI-011 D3, commit eac9602). 카메라를 주는 경로는 실제 촬영면적 기반으로 coverage_ratio 가 사진측량적으로 유효함이 증명됨(test_camera_derived_route_never_underphotographs). 이 risk 가 우려한 '요청이 자기 커버리지 증명서를 스스로 쓰는' 구조는 카메라 경로에서 사라졌다 — spacing 이 더는 요청 입력이 아니라 서버가 CameraSpec+고도+중복도로 계산한다. 대시보드가 이미 카메라 전용 경로만 쓴다(SiteRegistrationWizard.tsx:60, SurveyWizard.tsx:160). 잔여: 간격 직접지정 API 경로(카메라 미확정 환경용으로 ADR-KSI-011 D3 가 의도적으로 유지)와, 카메라 값 자체의 실기 정확성(H4 종속, 별도 트랙).",
       "resolve_evidence": null,
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-05T03:46:23+09:00",
-      "updated_at": "2026-08-05T03:46:23+09:00"
+      "updated_at": "2026-08-06T16:44:46+09:00"
     },
     {
       "id": "mapping-coverage-claim-unbounded",
       "title": "매핑 커버리지 주장이 여전히 뚫린다 — 40ha 가 사진 10장에 coverageRatio 1.0 으로 발급됨(4차 독립 재검토 실측)",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "accepted",
       "note": "고도 150·spacing 225·captureInterval 225 로 2000x200m(40ha) AOI 를 요청하면 fold 분기로 스캔선 1개·웨이포인트 10개(장당 4ha)에 coverageRatio 1.0 이 나오고, 계약 약속 accessibleGeneralCoverage=1.0 대조도 통과한다(실측 재현). 225x224.9m 면 웨이포인트 2개(5.06ha). 상한을 네 번 고쳤으나(captureInterval 만 -> spacing 물리상한 -> spacing 운용상한) 모두 다른 축으로 우회됐다 — 근본 원인은 커버 실측이 각 스캔선의 촬영폭을 spacing 으로 **가정**하는데 spacing 이 요청 입력이라는 것이다. 카메라 촬영폭을 모르는 한 상한 조정으로는 닫히지 않는다. 실제 폐쇄 경로: CameraSpec(센서폭/초점거리/해상도)+전방·측면 중복도를 요청 파라미터로 받아 서버가 spacing·captureInterval 을 계산한다 — 산식은 참고 구현 references/repos/ksi-terra/ksi_terra/flightplan/{gsd.py,grid.py} 에 이미 있고(표준 매핑 장당 약 0.09*고도^2, 이 결함은 0.27*고도^2 를 넘는다) ADOPT/PORT 대상이다. **public API 형태 변경이라 대표자 결정 필요.** 현재 상태: tests/contract/test_coverage_claim_property.py 가 이 결함을 잡는 속성 테스트로 존재하되 xfail(strict) — 고쳐지면 마커 제거를 강제한다. 앞선 risk coverage-ratio-not-photogrammetric 은 '성질의 한계'를 적은 것이고 이 항목은 '지금 실제로 뚫린다'를 적는다.",
-      "accept_reason": null,
+      "accept_reason": "ADR-KSI-011 D3(2026-08-05, 이 risk 접수 당일 오후 커밋 eac9602)가 이미 이 정확한 결함을 반영해 CameraSpec 기반 서버측 spacing/captureInterval 계산을 도입했다(packages/mission-planning/src/ksi_mission_planning/camera.py, compute_grid_spacing). 카메라 경로에서는 실제로 닫힘 — tests/contract/test_coverage_claim_property.py::test_camera_derived_route_never_underphotographs(non-xfail, 2000회 속성 테스트 통과)가 증거. 원 risk가 재현시킨 정확한 시나리오(고도150·spacing225·interval225·40ha·coverageRatio1.0)는 route.camera 없이 직접 spacingM/captureIntervalM 을 지정하는 경로에서만 여전히 성립하며, ADR-KSI-011 D3 는 그 경로를 '카메라 미확정 환경용'으로 의도적으로 유지하기로 이미 결정했다(문서 원문: '간격 직접 지정 경로는 유지한다(카메라 미확정 환경)'). test_issued_mapping_route_never_claims_coverage_it_cannot_photograph 가 xfail(strict=True)로 이 잔여 경로를 상시 추적한다(마커 제거 시 CI가 강제로 잡음). 실제 제품 경로(대시보드)는 이미 카메라 전용 — apps/dashboard/src/app/sites/new/SiteRegistrationWizard.tsx:60, apps/sites/[siteId]/surveys/new/SurveyWizard.tsx:160 모두 sensorWidthMm 등 CameraParams 를 채워 보내고 spacingM/captureIntervalM 직접입력 UI가 없다 — 실사용자 노출 경로는 이미 닫혀 있다. 잔여 노출은 대시보드를 우회한 직접 API 호출뿐이며 이는 대표자가 이미 알고 수용한 트레이드오프다. H4(실기 카메라 스펙 확정) 이후 이 경로 자체를 막을지 재검토 대상(대표자 결정, 별도 후속).",
       "resolve_evidence": null,
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-05T03:50:54+09:00",
-      "updated_at": "2026-08-05T03:50:54+09:00"
+      "updated_at": "2026-08-06T16:44:41+09:00"
     },
     {
       "id": "kmz-regeneration-determinism-timebomb",
@@ -892,14 +910,14 @@
       "title": "KMZ 조회 1회마다 경로생성+Ed25519 서명+zip 빌드 — 읽기 권한만으로 서명 연산을 무제한 유발",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "GET /v1/missions/{id}/kmz 는 캐시·rate limit·상한 없이 매 요청마다 전량 재생성한다. 라우트가 sync(def) 라 FastAPI 기본 threadpool(40)을 점유하고 Core 의 다른 라우트도 전부 sync 라 같은 풀을 공유한다. MISSIONS_READ 는 VIEWER 포함 5개 role 전부가 갖는다. 교차출처 탈취는 불가(저장소 전체에 Access-Control-* 0건)이나 인증 내부 남용은 열려 있고, 부수적으로 읽기 전용 principal 이 서명 개인키 연산을 무한히 유발한다(키 자체 노출은 없음). 결정 필요: 캐시 또는 rate limit. 독립 반증(reviewer) D2.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "services/core/src/ksi_core/mission_plans.py — build_mission_plans_router 클로저 내부 kmz_cache(OrderedDict, mission_id 키, kmzSha256 이중검증, TTL 300s, LRU 상한 256, threading.Lock 보호). 캐시 히트 시 _regenerate_pair_artifact(Ed25519 서명 포함) 자체를 건너뛰어 반복 GET 의 서명 연산을 TTL 창당 1회로 상한. 신규 의존성 없음(dict+threading stdlib). uv run pytest tests/ -q 1891 passed/0 failed·ruff/mypy clean(회귀 없음). 잔여: rate-limit 은 아니고 cache라 TTL 만료 직후 폭주하는 thundering-herd 는 이론상 남지만, 결정론적 재생성이라 herd 자체가 안전(같은 바이트 반복 계산일 뿐 손상 없음) — risk 노트가 우려한 '무제한' 은 해소.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-05T15:58:00+09:00",
-      "updated_at": "2026-08-05T15:58:00+09:00"
+      "updated_at": "2026-08-06T16:55:55+09:00"
     },
     {
       "id": "coverage-report-rejection-not-auditable",
