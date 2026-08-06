@@ -26,6 +26,9 @@ torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
 ksi-perception = { workspace = true }
 ksi-processing-controller = { workspace = true }
+ksi-change-detection = { workspace = true }
+ksi-bim-integration = { workspace = true }
+ksi-equipment-intelligence = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -35,6 +38,7 @@ dev = [
     "jsonschema>=4.21",
     "types-jsonschema>=4.21",
     "types-pyyaml>=6.0",
+    "scipy-stubs>=1.13",
     "httpx>=0.27",
     # apps/dashboard 로컬 개발 시 scripts/run_core_dev.py 가 실제 ASGI 서버를 띄우는 데만
     # 쓴다 — 프로덕션 조립·CI 게이트는 TestClient 만 사용.
@@ -46,6 +50,12 @@ dev = [
     # 밖이다) 기본 sync 에서 빠진다. CI 는 --all-packages 라 무관하지만, 맨
     # `uv sync` 로 붙은 개발자가 ODM 어댑터 테스트에서 ImportError 를 보게 된다.
     "ksi-processing-controller",
+    # 같은 이유의 leaf 멤버(Phase 4 change-detection, scipy 기반 point cloud C2C).
+    "ksi-change-detection",
+    # 같은 이유의 leaf 멤버(Phase 4 BIM 연계, ifcopenshell 기반 IFC 지오메트리 추출).
+    "ksi-bim-integration",
+    # 같은 이유의 leaf 멤버(Phase 3 Kinematic State/CPA-TTC/RiskField).
+    "ksi-equipment-intelligence",
     # ksi-core[s3] 어댑터(ADR-KSI-010 §1)의 타입체크·테스트용. 런타임 필수 의존이
     # 아니다 — Core 는 evidence_storage 없이도 조립되고, 그 경우 boto3 를 import
     # 하지도 않는다(어댑터 모듈 안에서 지연 import).

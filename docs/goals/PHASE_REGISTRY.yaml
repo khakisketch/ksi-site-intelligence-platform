@@ -148,16 +148,77 @@ phases:
 
   - id: phase-3
     title: "Dynamic Equipment Intelligence"
-    status: PLANNED
+    # Active Reobservation 의 실제 소비(재관찰 트리거 실행)는 Manifold 소관(Control
+    # boundary, CLAUDE.md) — 하드웨어 종속이라 phase-3 전체는 DONE 이 아니다.
+    status: IN_PROGRESS
+
+    software_implementation: COMPLETE
+    software_acceptance: PASS
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_date: "2026-08-07"
+    independent_review_note: >-
+      2026-08-06/07 기술 Pack 결정(굴착기+작업자, PRD MASTER_PRD_v3.0.md:1601
+      데이터 접근성 근거)에 따라 packages/equipment-intelligence 신설:
+      KinematicState(INV-020 확장)·closed-form CPA/TTC 골든벡터 계산기·
+      RiskField(contracts/schemas/risk-field.v1.json 왕복)·
+      needs_active_reobservation() 권고 신호(순수 bool, side effect 0건).
+      reviewer(opus) 2건 모두 PASS — phase-3-kinematic-risk-field-v2
+      (agentId a43cc168864d897c2, capability.py SSOT 재사용 확인),
+      phase-3-active-reobservation-signal(agentId adc32236142b16722,
+      Manifold/Edge import 0건·Viewpoint·비행좌표 흔적 전무 확인).
+
+    hardware_deferred:
+      - >-
+        Active Reobservation 실동작 — Core 는 needs_active_reobservation()
+        권고 신호만 계산한다. 이 신호를 실제 API 발행 표면에 배선하고 Manifold
+        가 소비해 재관찰을 실행하는 것은 미착수(신호 계산 가능 상태까지만).
+
     acceptance:
       - "우선 장비 1종(타워크레인+인양물 또는 굴착기) 기구학·Risk Field·CPA/TTC"
       - "Active Reobservation 실동작"
 
+    residual_risks:
+      - >-
+        cpa-ttc-observed-at-mismatch-unchecked, risk-field-round-trip-one-
+        direction-only(open, 상세는 .ksi/goals.json risk 레코드 참조).
+
   - id: phase-4
     title: "Asset Inspection & Temporal Intelligence"
-    status: PLANNED
+    # 결함탐지(표면 점검·균열·박락 후보)는 모델 선택이 대표자 결정 대기라
+    # phase-4 전체는 DONE 이 아니다.
+    status: IN_PROGRESS
+
+    software_implementation: PARTIAL
+    software_acceptance: PASS  # 구현된 두 항목(시계열 변화·BIM 연계) 한정
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_date: "2026-08-07"
+    independent_review_note: >-
+      services/change-detection(scipy cKDTree 기반 point cloud C2C, Open3D/
+      CloudCompare 대비 라이선스·플랫폼 사유 문서화) + services/bim-integration
+      (ifcopenshell 기반 IFC georeferencing 읽기, IfcCoordinateOperation 상위타입
+      판정으로 IfcMapConversion/IfcRigidOperation 형제 서브타입 모두 커버) 신설.
+      reviewer(opus) 2건 모두 PASS — phase-4-change-detection(agentId
+      a3bd7a5ead904aabf, 골든벡터 손계산 재검산 일치), phase-4-bim-linkage-v3
+      (agentId a2a3e309e2bcc162b, 1라운드 REFUTED 수정 후 ifcopenshell
+      라이브러리 소스 직접 대조 재검증).
+
+    hardware_deferred: []
+
     acceptance:
       - "표면 점검·결함 후보·시계열 변화·BIM 연계"
+
+    residual_risks:
+      - >-
+        표면 점검·결함 후보 탐지는 미구현 — 모델 후보 리서치
+        (docs/models/DEFECT_MODEL_CANDIDATES.md)만 완료, 대표자 모델 선택 대기
+        (goal phase-4-defect-model-decision).
+      - >-
+        bim-sample-points-ifc2x3-asymmetry, bim-unit-of-measurement-untested
+        (open, 상세는 .ksi/goals.json risk 레코드 참조).
 
   - id: phase-5
     title: "Fleet/Dock & Cross-Industry Packs"
