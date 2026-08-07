@@ -157,16 +157,12 @@ phases:
         MASTER_PRD §15.2 의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 —
         ②(이벤트 시 Adaptive Patrol 분기, Edge 소관)·④(동적 객체 마스킹/저가중치)·
         ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언
-        (risk phase2-backbone-prd-items-partial).
-      - >-
-        AUTONOMOUS_PATROL 이 route.captureIntervalM 을 직접 지정하면(camera 대신)
-        품질 하한이 없다 — 기본 경로(대시보드)는 camera 유도라 안전하지만 API
-        직접 호출자용 expert-mode escape hatch 로 남는다
-        (risk patrol-capture-interval-direct-no-quality-floor).
-      - >-
-        이번 필수화로 기존에 발급된 AUTONOMOUS_PATROL pair 레코드는 KMZ 재생성이
-        영구 409 가 된다 — risk kmz-regeneration-determinism-timebomb 의 실제
-        발화 사례.
+        (risk phase2-backbone-prd-items-partial, open).
+      # 2026-08-08 실사(technical-product-audit)로 확인: 아래 2건은 이미 해소됨
+      # (.ksi/goals.json risk status=resolved, 2026-08-07) — 이 절이 최신 편집
+      # (4a44828/4a2ab2f) 이후에도 반영이 안 돼 있었다. patrol-capture-interval-
+      # direct-no-quality-floor, kmz-regeneration-determinism-timebomb 둘 다
+      # resolved. 원장이 SSOT이며 이 절은 등재 시점 스냅샷일 뿐이다.
 
   - id: phase-3
     title: "Dynamic Equipment Intelligence"
@@ -203,18 +199,23 @@ phases:
 
     hardware_deferred:
       - >-
-        Active Reobservation 실동작 — Core 는 needs_active_reobservation()
-        권고 신호만 계산한다. 이 신호를 실제 API 발행 표면에 배선하고 Manifold
-        가 소비해 재관찰을 실행하는 것은 미착수(신호 계산 가능 상태까지만).
+        Active Reobservation 실동작 — **Core 측 절반은 이미 배선됐다**
+        (2026-08-08 실사로 확인: services/core/src/ksi_core/equipment_states.py
+        의 GET /v1/sites/{site_id}/risk-assessment 가 needs_active_reobservation()
+        을 RiskAssessmentView.reobservation_recommended 필드로 실제 노출한다 —
+        이 모듈 자체 docstring이 "Phase 3 acceptance 의 Core 측 절반이 여기서
+        닫힌다"고 명시). 미착수인 것은 Manifold 가 이 신호를 소비해 재관찰
+        비행을 실제로 트리거하는 나머지 절반뿐(하드웨어 종속).
 
     acceptance:
       - "우선 장비 1종(타워크레인+인양물 또는 굴착기) 기구학·Risk Field·CPA/TTC"
-      - "Active Reobservation 실동작"
+      - "Active Reobservation 실동작(Core 신호 배선 — 완료 / Manifold 소비 — 하드웨어 게이트)"
 
     residual_risks:
-      - >-
-        cpa-ttc-observed-at-mismatch-unchecked, risk-field-round-trip-one-
-        direction-only(open, 상세는 .ksi/goals.json risk 레코드 참조).
+      # 2026-08-08 실사로 확인: cpa-ttc-observed-at-mismatch-unchecked,
+      # risk-field-round-trip-one-direction-only 둘 다 resolved(2026-08-07).
+      # 이 절이 최신 편집 이후에도 반영이 안 돼 있었다 — 현재 phase-3 잔여
+      # 리스크는 없다(하드웨어 게이트 자체는 위 hardware_deferred 참조).
 
   - id: phase-4
     title: "Asset Inspection & Temporal Intelligence"
@@ -255,13 +256,14 @@ phases:
         별도 필요하며 후속 대표자 결정 사안
         (docs/models/DEFECT_MODEL_CANDIDATES.md "다중 결함 클래스" 절).
       - >-
-        bim-sample-points-ifc2x3-asymmetry, bim-unit-of-measurement-untested,
         defect-detection-vendor-syspath-pollution,
-        defect-detection-postprocess-no-spatial-check,
-        defect-detection-confidence-includes-holes,
-        defect-detection-uv-lock-mmcv-portability,
         defect-detection-opencv-namespace-conflict
         (open, 상세는 .ksi/goals.json risk 레코드 참조).
+      # 2026-08-08 실사로 확인: bim-sample-points-ifc2x3-asymmetry,
+      # bim-unit-of-measurement-untested, defect-detection-postprocess-
+      # no-spatial-check, defect-detection-confidence-includes-holes,
+      # defect-detection-uv-lock-mmcv-portability — 5건 모두 resolved
+      # (2026-08-07). 이 절이 최신 편집 이후에도 반영이 안 돼 있었다.
 
   - id: phase-5
     title: "Fleet/Dock & Cross-Industry Packs"
