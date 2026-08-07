@@ -29,6 +29,7 @@ import httpx
 import pytest
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
+    ArtifactUploadTarget,
     CoreClientError,
     JobInput,
     JobInputMedia,
@@ -59,9 +60,19 @@ class _FakeHttpServer:
 
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
+        #: presigned PUT 으로 실제로 올라온 바이트 — 키는 객체 키다.
+        self.uploaded: dict[str, bytes] = {}
+        self.fail_upload_of: str | None = None
 
     def transport(self) -> httpx.MockTransport:
         def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "PUT":
+                # presigned PUT — 경로에서 "/fake-storage/" 뒤가 객체 키다.
+                key = request.url.path.lstrip("/")
+                if self.fail_upload_of is not None and key.endswith(self.fail_upload_of):
+                    return httpx.Response(503)
+                self.uploaded[key] = request.content
+                return httpx.Response(200)
             name = request.url.path.rsplit("/", 1)[-1]
             if name not in self.files:
                 return httpx.Response(404)
@@ -115,6 +126,20 @@ class FakeCoreClient:
         self.calls.append(("verify", mission_id, tuple(sorted(m.media_id for m in measurements))))
         if self.fail_on == "verify":
             raise CoreClientError(what="verify", verdict="MISMATCH", detail="테스트 강제 실패")
+
+    def presign_artifact_upload(
+        self, job_id: str, *, artifact_id: str, content_type: str
+    ) -> ArtifactUploadTarget:
+        del content_type
+        self.calls.append(("presign", artifact_id))
+        if self.fail_on == f"presign:{artifact_id}":
+            raise CoreClientError(
+                what="upload-url", verdict="LEASE_REQUIRED", detail="테스트 강제 실패"
+            )
+        key = f"sites/site-1/processing-jobs/{job_id}/artifacts/{artifact_id}"
+        return ArtifactUploadTarget(
+            object_key=key, upload_url=f"http://fake-storage/{key}"
+        )
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
         self.calls.append(("register_artifact", submission.artifact_id))
@@ -407,3 +432,96 @@ def test_original_exception_is_not_swallowed_even_if_failed_report_also_fails(
     assert cause.verdict == "MISMATCH", (
         f"FAILED 보고 실패(STORE_UNAVAILABLE)가 원래 원인(MISMATCH)을 가렸다: {cause}"
     )
+
+
+# ── 산출물 바이트 (M1) ──────────────────────────────────────────────────────
+
+
+def _run(core: FakeCoreClient, odm: FakeNodeOdm, server: _FakeHttpServer, tmp_path: Path) -> None:
+    run_job(
+        "job-1", core=core, odm=odm, work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(server),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+    )
+
+
+def test_bytes_are_uploaded_before_the_artifact_is_registered(tmp_path: Path) -> None:
+    """[핵심 순서] 자리를 받고 → 쓰고 → 등록한다.
+
+    뒤집히면 "원장에는 있는데 바이트가 없는" 창이 열리고, 그 창에서 누가
+    다운로드를 요청하면 깨진 링크를 받는다.
+    """
+    core, odm, server = FakeCoreClient(), FakeNodeOdm(), _server_with_two_images()
+    _run(core, odm, server, tmp_path)
+
+    for artifact_id in ("camera-poses", "point-cloud", "orthophoto", "dsm"):
+        presign_at = core.calls.index(("presign", artifact_id))
+        register_at = core.calls.index(("register_artifact", artifact_id))
+        assert presign_at < register_at, f"{artifact_id}: 등록이 업로드보다 먼저다"
+
+
+def test_uploaded_bytes_are_the_archive_entry_verbatim(tmp_path: Path) -> None:
+    """[핵심] 저장되는 것은 ODM 이 낸 원본 바이트 그대로다.
+
+    저장 시점에 포맷을 변환하면(예: GeoTIFF→COG) 저장된 바이트가 등록된
+    digest 와 달라진다 — 서빙용 변환은 원본에서 재생성하는 파생 산출물의
+    몫이다(ADR-KSI-003·INV-051).
+    """
+    core, odm, server = FakeCoreClient(), FakeNodeOdm(), _server_with_two_images()
+    _run(core, odm, server, tmp_path)
+
+    key = "sites/site-1/processing-jobs/job-1/artifacts/dsm"
+    assert key in server.uploaded
+    # FakeNodeOdm 이 각 엔트리에 써넣는 내용과 정확히 같아야 한다.
+    assert server.uploaded[key] == "내용:odm_dem/dsm.tif".encode()
+
+
+def test_every_registered_artifact_has_bytes(tmp_path: Path) -> None:
+    """등록된 산출물 전부에 대응하는 바이트가 있다 — 다운로드 표면이 기대는 불변식."""
+    core, odm, server = FakeCoreClient(), FakeNodeOdm(), _server_with_two_images()
+    _run(core, odm, server, tmp_path)
+
+    registered = [c[1] for c in core.calls if c[0] == "register_artifact"]
+    assert registered, "등록된 산출물이 하나도 없다"
+    for artifact_id in registered:
+        assert (
+            f"sites/site-1/processing-jobs/job-1/artifacts/{artifact_id}"
+            in server.uploaded
+        )
+
+
+def test_multi_file_artifact_is_neither_uploaded_nor_registered(tmp_path: Path) -> None:
+    """[핵심 음성] 충실히 저장할 수 없는 산출물은 **등록도 하지 않는다**.
+
+    메시는 텍스처·재질이 digest 에 함께 들어가 객체 키 하나에 담기지 않는다.
+    대표 파일만 올리고 등록하면 "digest 는 결합 해시인데 저장된 건 .obj 하나"인
+    상태가 조용히 생긴다 — 계보 검증이 그 순간 거짓이 된다.
+    """
+    entries = {a.archive_entry for a in ODM_ASSETS} | {
+        "odm_texturing/odm_textured_model_geo.mtl",
+        "odm_texturing/odm_textured_model_geo_map_Kd.png",
+    }
+    core, server = FakeCoreClient(), _server_with_two_images()
+    _run(core, FakeNodeOdm(entries=entries), server, tmp_path)
+
+    assert ("register_artifact", "mesh") not in core.calls
+    assert ("presign", "mesh") not in core.calls
+    assert "sites/site-1/processing-jobs/job-1/artifacts/mesh" not in server.uploaded
+    # 나머지는 정상 등록된다 — 하나가 빠졌다고 작업이 실패로 끝나지 않는다.
+    assert ("register_artifact", "point-cloud") in core.calls
+    assert ("transition", "SUCCEEDED", "산출물 6건") in core.calls
+
+
+def test_upload_failure_fails_the_job_without_registering(tmp_path: Path) -> None:
+    """[음성] 업로드가 깨지면 등록하지 않고 FAILED 로 수렴한다.
+
+    여기서 등록을 강행하면 바이트 없는 산출물이 원장에 남는다.
+    """
+    core, odm, server = FakeCoreClient(), FakeNodeOdm(), _server_with_two_images()
+    server.fail_upload_of = "artifacts/point-cloud"
+
+    with pytest.raises(WorkerRunError):
+        _run(core, odm, server, tmp_path)
+
+    assert ("register_artifact", "point-cloud") not in core.calls
+    assert any(c[0] == "transition" and c[1] == "FAILED" for c in core.calls)

@@ -84,8 +84,21 @@ class ArtifactSubmission:
     gsd: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactUploadTarget:
+    """산출물 바이트를 올릴 자리 — Core 가 정해서 내려준다.
+
+    **워커가 객체 키를 고르지 않는다.** 고를 수 있으면 워커 토큰 하나로 버킷의
+    임의 경로에 쓸 수 있고, "서버가 정한 자리에만 쓴다"를 워커 코드가 매번
+    기억해야 한다.
+    """
+
+    object_key: str
+    upload_url: str
+
+
 class CoreClient(Protocol):
-    """워커가 필요로 하는 Core 표면 다섯 개. 이 이상을 워커가 알 필요는 없다."""
+    """워커가 필요로 하는 Core 표면. 이 이상을 워커가 알 필요는 없다."""
 
     def acquire_lease(self, job_id: str) -> None:
         """``POST /lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
@@ -103,6 +116,12 @@ class CoreClient(Protocol):
         self, mission_id: str, measurements: list[MeasuredImage]
     ) -> None:
         """``POST /source-media/verify``. VERIFIED·ALREADY_VERIFIED 외엔 예외."""
+        ...
+
+    def presign_artifact_upload(
+        self, job_id: str, *, artifact_id: str, content_type: str
+    ) -> ArtifactUploadTarget:
+        """``POST /artifacts/upload-url``. UPLOAD_READY 외엔 :class:`CoreClientError`."""
         ...
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
@@ -221,6 +240,27 @@ class HttpCoreClient:
                 ]
             },
         )
+
+    def presign_artifact_upload(
+        self, job_id: str, *, artifact_id: str, content_type: str
+    ) -> ArtifactUploadTarget:
+        payload = self._post(
+            f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+            what=f"upload-url:{artifact_id}",
+            ok="UPLOAD_READY",
+            json={"artifactId": artifact_id, "contentType": content_type},
+        )
+        object_key = payload.get("objectKey")
+        upload_url = payload.get("uploadUrl")
+        if not isinstance(object_key, str) or not isinstance(upload_url, str):
+            # verdict 는 UPLOAD_READY 인데 자리가 안 왔다 — 여기서 잡지 않으면
+            # 다음 줄의 PUT 이 None 을 URL 로 쓴다.
+            raise CoreClientError(
+                what=f"upload-url:{artifact_id}",
+                verdict="UPLOAD_READY",
+                detail="응답에 objectKey/uploadUrl 이 없다",
+            )
+        return ArtifactUploadTarget(object_key=object_key, upload_url=upload_url)
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
         self._post(

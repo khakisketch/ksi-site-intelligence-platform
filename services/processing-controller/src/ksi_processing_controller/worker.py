@@ -59,6 +59,7 @@ from ksi_processing_controller.odm import (
     OdmError,
     SourceImage,
     assert_engine_matches,
+    iter_archive_entry_bytes,
     plan_artifacts,
     run_to_completion,
 )
@@ -70,12 +71,36 @@ class WorkerRunError(RuntimeError):
     """작업 실행이 실패했다 — Core 에는 이미 FAILED 로 보고를 시도했다."""
 
 
+# 산출물 업로드의 Content-Type. 종류별로 나누지 않는다 — 이 값은 스토리지가
+# 바이트를 되돌려줄 때 붙이는 꼬리표일 뿐이고, 산출물의 실제 형식은 계약의
+# ``format`` 필드가 말한다. 여기서 kind→MIME 표를 만들면 두 곳이 서로 다른
+# 진실을 말할 수 있다.
+_ARTIFACT_CONTENT_TYPE = "application/octet-stream"
+
+
 def _download(client: httpx.Client, url: str, dest: Path) -> None:
     with client.stream("GET", url) as response:
         response.raise_for_status()
         with dest.open("wb") as handle:
             for chunk in response.iter_bytes(1024 * 1024):
                 handle.write(chunk)
+
+
+def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> None:
+    """아카이브 안 파일 하나를 presigned PUT 으로 흘려보낸다.
+
+    **바이트가 Core 를 통과하지 않는다** — 포인트 클라우드는 GB 단위라 Core 를
+    거치면 그 프로세스 메모리에 전량이 올라간다. 워커가 스토리지에 직접 쓴다.
+
+    :func:`iter_archive_entry_bytes` 는 :func:`digest_archive_entry` 와 같은
+    읽기 관용구라, 여기서 올라가는 바이트가 곧 등록될 digest 를 만든 바이트다.
+    """
+    response = client.put(
+        url,
+        content=iter_archive_entry_bytes(archive_path, entry),
+        headers={"Content-Type": _ARTIFACT_CONTENT_TYPE},
+    )
+    response.raise_for_status()
 
 
 def run_job(
@@ -159,7 +184,29 @@ def run_job(
         reports = plan_artifacts(
             archive_path, crs=job_input.site_crs, gsd_by_artifact=gsd_by_artifact
         )
+        registered = 0
         for report in reports:
+            if not report.is_single_file:
+                # 산출물 하나가 파일 여러 개인 경우(메시+텍스처·재질) 객체 키
+                # 하나에 충실히 담을 수 없다 — 대표 파일만 올리면 저장된
+                # 바이트와 등록된 digest 가 어긋난다. **그래서 등록도 하지
+                # 않는다**: 등록해 두면 "원장에 있는데 바이트가 없는" 산출물이
+                # 생기고, 다운로드 표면이 깨진 링크를 발급한다(risk
+                # mesh-auxiliary-files-not-persisted).
+                now_message(
+                    f"[{job_id}] {report.artifact_id} 는 파일 여러 개로 이뤄져 "
+                    "객체 키 하나에 담을 수 없다 — 이번 범위에서 건너뛴다"
+                )
+                continue
+
+            # ① 자리를 받고 ② 그 자리에 쓰고 ③ 그다음에 등록한다.
+            # 순서가 뒤집히면 "등록됐는데 바이트가 없는" 창이 열린다.
+            target = core.presign_artifact_upload(
+                job_id,
+                artifact_id=report.artifact_id,
+                content_type=_ARTIFACT_CONTENT_TYPE,
+            )
+            _upload(fetch, target.upload_url, archive_path, report.archive_entry)
             core.register_artifact(
                 job_id,
                 ArtifactSubmission(
@@ -173,10 +220,13 @@ def run_job(
                     gsd=report.gsd,
                 ),
             )
-        now_message(f"[{job_id}] 산출물 {len(reports)}건 등록")
+            registered += 1
+        now_message(f"[{job_id}] 산출물 {registered}건 등록(바이트 포함)")
 
         # ── 7. 성공 보고 ────────────────────────────────────────────────
-        core.transition(job_id, "SUCCEEDED", detail=f"산출물 {len(reports)}건")
+        # 계획한 수(``len(reports)``)가 아니라 **실제로 등록한 수**를 보고한다 —
+        # 건너뛴 산출물이 있는데 계획 수를 적으면 원장이 없는 것을 있다고 말한다.
+        core.transition(job_id, "SUCCEEDED", detail=f"산출물 {registered}건")
         now_message(f"[{job_id}] SUCCEEDED")
     except (OdmError, httpx.HTTPError, CoreClientError) as exc:
         # verify 거부·산출물 거부처럼 **Core 가 스스로 판정을 거부한 경우**도

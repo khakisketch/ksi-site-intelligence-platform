@@ -86,7 +86,11 @@ info:
   # (captureIntervalM/camera 미지정)이 이제 422 다 — 표면 확장이자 기존 호출자
   # 파괴 가능성이 있는 변경이지만, 신규 필드 추가가 아니라 비즈니스 로직 변경뿐
   # 이라 스키마 구조상 minor 로 둔다(계약 스키마 자체는 하위호환).
-  version: 1.16.0
+  # 1.17.0 — M1 산출물 바이트 영속: POST /v1/processing-jobs/{id}/artifacts/
+  # upload-url(워커가 올릴 자리 발급) + GET .../artifacts/{artifactId}/download
+  # (등록된 산출물 열람). 이전에는 재구성이 성공해도 digest 만 남고 바이트가
+  # 버려져 사람이 볼 수 있는 것이 없었다(ADR-KSI-016). 표면 추가라 minor.
+  version: 1.17.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1783,6 +1787,87 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/artifacts/upload-url:
+    post:
+      summary: Issue a presigned PUT target for a reconstruction artifact's bytes
+      description: >-
+        PROCESSING_WORK 권한 + 그 작업의 lease 필요. 활성(QUEUED·RUNNING) 작업에만
+        발급한다 — 끝난 작업에 바이트를 더 쓰면 종료가 쓰기 종료를 뜻하지 않게 된다.
+
+
+        **객체 키를 요청이 정하지 않는다.** 요청 스키마에 자리가 없고 Core 가
+        `sites/{siteId}/processing-jobs/{jobId}/artifacts/{artifactId}` 로 유도한다 —
+        워커가 고를 수 있으면 워커 토큰 하나로 버킷의 임의 경로에 쓸 수 있다.
+        키가 저장되지 않고 유도되므로 같은 (작업, 산출물)은 항상 같은 자리이고,
+        재시도가 두 번째 사본을 만들지 않는다.
+
+
+        **바이트는 Core 를 통과하지 않는다** — 포인트 클라우드는 GB 단위라 워커가
+        presigned PUT 으로 스토리지에 직접 쓴다. 등록(POST .../artifacts)과 분리한
+        이유는 등록이 계보를 원장에 박는 durable 행위이고 이건 아니기 때문이다:
+        합치면 "올리다 실패한" 상태가 원장에 남는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifactId, contentType]
+              properties:
+                artifactId: { type: string, minLength: 1 }
+                contentType: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: UPLOAD_READY — 서버가 정한 objectKey 와 presigned uploadUrl
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactUploadUrlResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: 'JOB_NOT_ACTIVE · LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER' }
+        '422': { description: 'INVALID_ARTIFACT_ID — 객체 키 세그먼트로 안전하지 않다' }
+        '503': { description: STORAGE_UNAVAILABLE — presign 실패, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/artifacts/{artifact_id}/download:
+    get:
+      summary: Get a presigned download URL for a registered artifact's bytes
+      description: >-
+        MISSIONS_READ 권한 필요 — 산출물은 임무의 결과물이다. 워커의
+        PROCESSING_WORK 는 이를 포함하지 않는다(워커는 올릴 자리만 받는다).
+
+
+        **원장에 등록된 산출물만 내준다.** 객체 키가 식별자에서 유도되므로 등록
+        여부와 무관하게 계산은 되는데, 대조 없이 발급하면 존재하지 않는 자리의
+        링크가 나가고 소비자는 스토리지에서 404 를 받는다 — 원인이 한 단계
+        멀어진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: artifact_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ARTIFACT_READY — objectKey 와 presigned downloadUrl
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactDownloadResponse' }
+        '404': { description: ARTIFACT_NOT_FOUND — 이 작업에 그 산출물이 등록돼 있지 않다 }
+        '422': { description: INVALID_ARTIFACT_ID }
+        '503': { description: STORAGE_UNAVAILABLE — presign 실패, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/contract:
     get:
       summary: Get the stored signed Mission Contract verbatim (INV-011)
@@ -2870,6 +2955,34 @@ components:
         verdict: { type: string }
         artifact:
           oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
+        detail: { type: [string, 'null'] }
+
+    ArtifactUploadUrlResponse:
+      description: >-
+        산출물 바이트를 올릴 자리. objectKey 는 Core 가 식별자에서 유도한 값이라
+        같은 (작업, 산출물)이면 항상 같다 — 재시도가 사본을 만들지 않는다.
+        uploadUrl 은 그 자리에 대한 presigned PUT 이고 expiresAt 이후 무효다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        objectKey: { type: [string, 'null'] }
+        uploadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        detail: { type: [string, 'null'] }
+
+    ArtifactDownloadResponse:
+      description: >-
+        등록된 산출물의 바이트를 받을 presigned GET. 원장에 없는 산출물에는
+        발급하지 않는다(404 ARTIFACT_NOT_FOUND) — 키가 유도 가능하다고 해서
+        존재하지 않는 자리의 링크를 내주면 원인이 스토리지까지 밀린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        objectKey: { type: [string, 'null'] }
+        downloadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
         detail: { type: [string, 'null'] }
 
   securitySchemes:

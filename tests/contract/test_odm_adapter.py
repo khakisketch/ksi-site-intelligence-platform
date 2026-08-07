@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from ksi_processing_controller.odm import (
     OdmTaskStatus,
     SourceImage,
     assert_engine_matches,
+    iter_archive_entry_bytes,
     parse_task_status,
     plan_artifacts,
     run_to_completion,
@@ -551,3 +553,78 @@ def test_real_archive_yields_the_expected_lineage(tmp_path: Path) -> None:
     assert by_id["report"].crs is None and by_id["report"].gsd is None
     assert by_id["point-cloud"].authority == "source"
     assert sum(r.authority == "source" for r in reports) == 2
+
+
+# ── 산출물 바이트 (M1) ──────────────────────────────────────────────────────
+#
+# 여기까지가 검증한 것은 "계보가 정직한가"였다. 아래는 그 계보가 가리키는
+# **바이트를 실제로 다시 꺼낼 수 있는가**를 본다.
+
+
+def test_plan_artifacts_records_which_entries_back_each_artifact(tmp_path: Path) -> None:
+    """등록할 산출물마다 그 바이트가 아카이브 어디에 있는지 남긴다.
+
+    이게 없으면 워커가 digest 계산 뒤 같은 파일을 다시 찾을 방법이 없다 —
+    지금까지 바이트를 버려 온 이유가 정확히 이 연결의 부재였다.
+    """
+    entries = {a.archive_entry for a in ODM_ASSETS}
+    # 메시의 텍스처·재질을 실제로 담는다 — 이게 있어야 digest 가 결합 해시가 된다.
+    entries |= {
+        "odm_texturing/odm_textured_model_geo.mtl",
+        "odm_texturing/odm_textured_model_geo_map_Kd.png",
+    }
+    reports = plan_artifacts(
+        _archive(tmp_path, FakeNodeOdm(entries=entries)), crs=_CRS, gsd_by_artifact=_GSD
+    )
+    by_id = {report.artifact_id: report for report in reports}
+
+    point_cloud = by_id[POINT_CLOUD_ID]
+    assert point_cloud.archive_entry == "odm_georeferencing/odm_georeferenced_model.laz"
+    assert point_cloud.is_single_file is True
+
+    mesh = by_id["mesh"]
+    assert mesh.archive_entry == "odm_texturing/odm_textured_model_geo.obj"
+    # 텍스처·재질이 digest 에 함께 들어가는 산출물이라 파일 하나가 아니다 —
+    # 객체 키 하나에 충실히 담을 수 없다는 뜻이고, 워커가 이 플래그로 판단한다.
+    assert mesh.is_single_file is False
+
+
+def test_single_file_artifact_bytes_hash_to_the_registered_digest(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 저장할 바이트와 등록할 digest 가 같은 것이다.
+
+    이 등식이 깨지면 계보 검증이 의미를 잃는다 — "digest 는 A 인데 저장된 건
+    B"인 상태가 조용히 만들어진다. 저장 시점에 포맷을 변환하지 않기로 한
+    결정(ADR-KSI-016 관련, COG 변환은 파생 산출물의 몫)이 기계로 고정되는
+    지점이기도 하다.
+    """
+    archive_path = _archive(tmp_path)
+    reports = plan_artifacts(archive_path, crs=_CRS, gsd_by_artifact=_GSD)
+
+    for report in reports:
+        if not report.is_single_file:
+            continue
+        digest = hashlib.sha256()
+        for chunk in iter_archive_entry_bytes(archive_path, report.archive_entry):
+            digest.update(chunk)
+        assert f"sha256:{digest.hexdigest()}" == report.digest, report.artifact_id
+
+
+def test_iter_archive_entry_bytes_streams_in_chunks(tmp_path: Path) -> None:
+    """청크로 읽는다 — point cloud 는 GB 단위라 통째로 메모리에 올리지 않는다."""
+    archive_path = tmp_path / "big.zip"
+    payload = b"x" * (3 * 1024 * 1024)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("big.bin", payload)
+
+    chunks = list(iter_archive_entry_bytes(archive_path, "big.bin", chunk_size=1024 * 1024))
+
+    assert len(chunks) > 1, "한 덩어리로 읽으면 스트리밍이 아니다"
+    assert b"".join(chunks) == payload
+
+
+def test_iter_archive_entry_bytes_refuses_a_missing_entry(tmp_path: Path) -> None:
+    """[음성] 없는 엔트리를 빈 바이트로 돌려주지 않는다."""
+    with pytest.raises(OdmError):
+        list(iter_archive_entry_bytes(_archive(tmp_path), "does/not/exist.tif"))

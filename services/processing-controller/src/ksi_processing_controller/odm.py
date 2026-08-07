@@ -55,10 +55,25 @@ Core 는 ``derivedFrom`` 이 **같은 작업에 이미 등록된** artifactId �
 먼저 등록되지 않으면 파생물 등록이 422 로 거부된다. 순서를 지키는 것이 곧
 INV-051 을 지키는 것이다.
 
+## 산출물 바이트 — digest 를 잰 그 파일을 다시 흘려보낸다
+
+:func:`plan_artifacts` 가 계산한 digest 와 :func:`iter_archive_entry_bytes` 가
+내주는 바이트는 **같은 아카이브 엔트리**다(``ArtifactReport.archive_entry`` 가
+그 연결이다). 이 등식이 깨지면 계보 검증이 의미를 잃으므로 계약 테스트가
+단일 파일 산출물 전부에서 이를 대조한다.
+
+**저장 시점에 포맷을 변환하지 않는다.** GeoTIFF→COG 변환은 원본에서 재생성하는
+파생 서빙 계층의 몫이고(ADR-KSI-003, INV-051), 저장 단계에서 바꾸면 저장된
+바이트가 등록된 digest 와 달라진다.
+
+**메시는 예외다.** 텍스처·재질이 digest 에 함께 들어가 산출물 하나가 파일
+하나가 아니라서(``is_single_file=False``) 객체 키 하나에 충실히 담을 수 없다 —
+업로드 여부는 워커가 이 플래그로 판단한다.
+
 ## 이 모듈이 하지 않는 것
 
-- **산출물 바이트 전송.** 아카이브에서 digest 만 계산하고 KSI 스토리지로 올리는
-  경로는 아직 없다.
+- **업로드 자체.** 여기는 바이트를 *흘려보내는* 데까지고, presigned PUT 으로
+  실제로 쓰는 것은 워커의 몫이다(Core 가 자리를 정하고 워커가 쓴다).
 - **lease 갱신 루프.** Core 의 lease 는 15분이고 ODM 재구성은 몇 시간이라
   워커는 폴링 중에 갱신해야 한다 — 그 배선은 워커 데몬의 몫이다.
 """
@@ -69,7 +84,7 @@ import hashlib
 import logging
 import posixpath
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -257,6 +272,14 @@ class ArtifactReport:
     fmt: str
     crs: str | None
     gsd: float | None
+    # 이 산출물의 바이트가 아카이브 어디에 있는가 — digest 를 계산한 그 파일이다.
+    # 이 연결이 없어서 지금까지 digest 만 남기고 바이트를 버려 왔다.
+    archive_entry: str = ""
+    # 산출물 하나가 파일 하나인가. 메시처럼 텍스처·재질이 digest 에 함께 들어가는
+    # 산출물은 False 이고, 그런 산출물은 **객체 키 하나에 충실히 담을 수 없다** —
+    # 대표 파일만 올리면 저장된 바이트와 등록된 digest 가 어긋난다
+    # (risk mesh-auxiliary-files-not-persisted).
+    is_single_file: bool = True
 
 
 def assert_engine_matches(
@@ -316,6 +339,31 @@ def digest_archive_entries(archive: zipfile.ZipFile, entries: Sequence[str]) -> 
     return f"sha256:{digest.hexdigest()}"
 
 
+def iter_archive_entry_bytes(
+    archive_path: Path, entry: str, *, chunk_size: int = 1024 * 1024
+) -> Iterator[bytes]:
+    """아카이브 안 파일 하나를 청크 단위로 흘려보낸다.
+
+    :func:`digest_archive_entry` 와 **같은 읽기 관용구**다 — 그래야 "digest 를
+    계산한 바이트"와 "업로드한 바이트"가 같은 것임을 말할 수 있다. 포인트
+    클라우드는 수 GB 가 될 수 있어 통째로 메모리에 올리지 않는다.
+
+    없는 엔트리는 :class:`OdmError` 다 — 빈 바이트를 돌려주면 호출부가 그것을
+    유효한 빈 파일로 취급해 0바이트 산출물이 스토리지에 올라간다.
+    """
+    try:
+        archive = zipfile.ZipFile(archive_path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise OdmError(f"산출물 아카이브를 열 수 없다({archive_path}): {exc}") from exc
+    with archive:
+        try:
+            handle = archive.open(entry)
+        except KeyError as exc:
+            raise OdmError(f"아카이브에 {entry} 가 없다") from exc
+        with handle:
+            yield from iter(lambda: handle.read(chunk_size), b"")
+
+
 def plan_artifacts(
     archive_path: Path,
     *,
@@ -366,6 +414,7 @@ def plan_artifacts(
                     missing_parents,
                 )
                 continue
+            aux_entries: list[str] = []
             if asset.auxiliary_suffixes:
                 directory = posixpath.dirname(asset.archive_entry)
                 aux_entries = [
@@ -375,6 +424,7 @@ def plan_artifacts(
                     and posixpath.dirname(e) == directory
                     and e.endswith(asset.auxiliary_suffixes)
                 ]
+            if aux_entries:
                 digest = digest_archive_entries(archive, (asset.archive_entry, *aux_entries))
             else:
                 digest = digest_archive_entry(archive, asset.archive_entry)
@@ -388,6 +438,11 @@ def plan_artifacts(
                     fmt=asset.fmt,
                     crs=crs if asset.needs_crs else None,
                     gsd=gsd,
+                    archive_entry=asset.archive_entry,
+                    # 부속 파일이 **실제로 있을 때만** 파일 하나가 아니다. 선언만
+                    # 돼 있고 아카이브에 없으면 digest 는 단일 엔트리 해시라
+                    # 저장·대조가 그대로 성립한다.
+                    is_single_file=not aux_entries,
                 )
             )
     if not any(report.authority == "source" for report in reports):

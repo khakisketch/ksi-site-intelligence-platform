@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T22:54:50+09:00",
+  "updated_at": "2026-08-07T23:18:29+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1903,6 +1903,20 @@
       "previous_status": null,
       "created_at": "2026-08-07T22:54:50+09:00",
       "updated_at": "2026-08-07T22:54:50+09:00"
+    },
+    {
+      "id": "openapi-dangling-ref-ungated",
+      "title": "openapi-core.yaml 의 미정의 $ref 를 계약 동기화 게이트가 잡지 않는다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "실측(2026-08-07): M1 에서 두 경로를 추가하며 ArtifactUploadUrlResponse·ArtifactDownloadResponse 를 $ref 로 걸었는데 components/schemas 에 정의하지 않은 상태로 test_api_contract_sync.py 14건이 전부 통과했다. 경로 존재·응답 필드 대조는 하지만 $ref 해소는 검사하지 않는다. 지금은 손으로 잡아 채웠으나(python yaml+regex 로 확인), 다음에 같은 실수를 하면 문서만 그럴듯하고 소비자가 스키마를 못 읽는 상태가 통과한다. 해소: test_api_contract_sync.py 에 $ref 해소 검사 추가.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T23:18:29+09:00",
+      "updated_at": "2026-08-07T23:18:29+09:00"
     }
   ]
 }
