@@ -36,6 +36,7 @@ from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
+from ksi_core.volume_reports import VolumeChangeStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -130,6 +131,11 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         change_detection_store=ChangeDetectionStore(
             DurableJournal(tmp_path / "change-detection.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+        ),
+        volume_change_store=VolumeChangeStore(
+            DurableJournal(tmp_path / "volume-changes.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
         ),

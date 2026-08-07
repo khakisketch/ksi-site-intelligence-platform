@@ -86,11 +86,14 @@ info:
   # (captureIntervalM/camera 미지정)이 이제 422 다 — 표면 확장이자 기존 호출자
   # 파괴 가능성이 있는 변경이지만, 신규 필드 추가가 아니라 비즈니스 로직 변경뿐
   # 이라 스키마 구조상 minor 로 둔다(계약 스키마 자체는 하위호환).
+  # 1.18.0 — M1 체적 변화 리포트: POST·GET /v1/missions/{id}/volume-changes.
+  # 두 시점 DSM 차분으로 잰 구역별 절토·성토. change-detection 과 형제이되 입력이
+  # dsm(저기는 point_cloud)이고 결과 형태가 다르다(m³ vs candidateRatio).
   # 1.17.0 — M1 산출물 바이트 영속: POST /v1/processing-jobs/{id}/artifacts/
   # upload-url(워커가 올릴 자리 발급) + GET .../artifacts/{artifactId}/download
   # (등록된 산출물 열람). 이전에는 재구성이 성공해도 digest 만 남고 바이트가
   # 버려져 사람이 볼 수 있는 것이 없었다(ADR-KSI-016). 표면 추가라 minor.
-  version: 1.17.0
+  version: 1.18.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1787,6 +1790,90 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/missions/{mission_id}/volume-changes:
+    post:
+      summary: Record a zone volume-change report computed from two DSM epochs
+      description: >-
+        PROCESSING_WORK 권한 필요(PROCESSING_WORKER 전용) — **사람은 체적을 주장할
+        수 없다.** 이 숫자는 정산·분쟁의 근거가 될 수 있고, 그럴수록 손으로 적히면
+        안 된다(change-detection·defect-candidates 와 같은 원칙).
+
+
+        `baseline`·`current` 는 **등록된 dsm 산출물**이어야 한다(422
+        ARTIFACT_KIND_MISMATCH) — change-detection 이 point_cloud 를 요구하는 것과
+        대칭이며, 체적은 표면 함수 z=f(x,y) 의 적분이라 입력이 2.5D 여야 한다.
+        참조가 실재하지 않으면 "이만큼 깎였다"가 아무도 재현할 수 없는 주장이 된다
+        (422 UNKNOWN_ARTIFACT).
+
+
+        `uncertaintyM3` 는 nullable **필수**이고, null 일 때 `uncertaintyNote` 가
+        왜 없는지를 밝힌다(INV-024). 기본 엔진 ODM 에는 구조화된 GCP/RMSE 리포트가
+        없어(ADR-KSI-012 D3) 이 값은 지금 항상 null 이며, 그 비율 자체가 상용 엔진
+        전환 트리거의 계측점이다.
+
+
+        같은 `volumeChangeId` 로 다른 내용을 올리면 409 다(원장은 append-only).
+        같은 내용의 재전송은 201 로 멱등 처리된다.
+
+
+        **이 표면은 재비행을 트리거하지 않는다** — 사실을 적을 뿐이다(ADR-KSI-016 D8).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'https://ksi.example/schemas/volume-change-report.v1.json'
+      responses:
+        '201':
+          description: RECORDED — durable 기록 성공(멱등 재전송 포함)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VolumeChangeResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '409': { description: DUPLICATE_REPORT_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: >-
+            UNKNOWN_ARTIFACT · ARTIFACT_KIND_MISMATCH(dsm 이 아님) ·
+            계약 위반(net≠fill-cut, 자기 비교, uncertaintyNote 누락)
+        '503': { description: STORE_UNAVAILABLE — journal 봉인, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+    get:
+      summary: List volume-change reports for a mission (newest first)
+      description: >-
+        MISSIONS_READ 권한 필요. **리포트가 없으면 404 다** — 빈 목록을 주면
+        "아직 계산 안 됨"과 "변화가 없음"을 소비자가 구분할 수 없다.
+
+
+        `latestTotalNetM3` 는 최신 리포트의 전 구역 순변화를 서버가 계산해 싣는다 —
+        화면이 구역 배열을 직접 합산하면 합산 규칙이 두 곳에 생기고, 한쪽만
+        고쳐지는 순간 화면 숫자와 원장이 갈라진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 최신부터 몇 건까지. 무제한 반환을 계약으로 굳히지 않는다.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 최신 우선 이력 + 최신 리포트의 총 순변화
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VolumeChangeListView' }
+        '404': { description: 해당 임무의 체적 변화 리포트가 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/processing-jobs/{job_id}/artifacts/upload-url:
     post:
       summary: Issue a presigned PUT target for a reconstruction artifact's bytes
@@ -2956,6 +3043,36 @@ components:
         artifact:
           oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
         detail: { type: [string, 'null'] }
+
+    VolumeChangeResponse:
+      description: 체적 리포트 수신 판정. RECORDED 만 durable 기록 성공이다.
+      type: object
+      required: [verdict, detail]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+
+    VolumeChangeListView:
+      description: >-
+        임무의 체적 리포트 이력(최신 우선). report 의 구조 정본은
+        contracts/schemas/volume-change-report.v1.json 이다.
+      type: object
+      required: [missionId, reportCount, latestTotalNetM3, reports]
+      properties:
+        missionId: { type: string }
+        reportCount: { type: integer, minimum: 0 }
+        latestTotalNetM3:
+          type: [number, 'null']
+          description: 최신 리포트의 전 구역 순변화(m³) — 서버가 계산해 싣는다.
+        reports:
+          type: array
+          items:
+            type: object
+            required: [report, reportedBy, recordedAt]
+            properties:
+              report: { type: object, additionalProperties: true }
+              reportedBy: { type: [string, 'null'] }
+              recordedAt: { type: string, format: date-time }
 
     ArtifactUploadUrlResponse:
       description: >-

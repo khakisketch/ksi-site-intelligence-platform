@@ -38,6 +38,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
+from ksi_core.volume_reports import VolumeChangeStore
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -267,12 +268,13 @@ def _build_dev_app_locked(
         if evidence_storage is not None
         else None
     )
-    # Phase 3/4 표면 — 이 넷을 여기서 조립하지 않으면 create_app 배선이 정확해도
+    # Phase 3/4 + M1 표면 — 이 다섯을 여기서 조립하지 않으면 create_app 배선이 정확해도
     # **띄울 수 있는 서버에서는 404 다**(2026-08-08 reviewer 지적 F1: 신설 API 4종이
     # 어떤 실행 가능한 조립에도 장착돼 있지 않았다). 라이브러리를 API 로 만든 작업이
     # 다시 "아무도 못 쓰는 것"이 되는 자리라, 배선과 조립을 같은 커밋에서 닫는다.
     defect_candidate_journal = journal("defect-candidates.jsonl")
     change_detection_journal = journal("change-detection.jsonl")
+    volume_change_journal = journal("volume-changes.jsonl")
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -297,6 +299,17 @@ def _build_dev_app_locked(
         change_detection_store=(
             ChangeDetectionStore(
                 change_detection_journal,
+                mission_store=mission_store,
+                processing_job_store=processing_job_store,
+            )
+            if processing_job_store is not None
+            else None
+        ),
+        # 체적 리포트도 같다 — 어느 두 DSM 을 비교했는지 대조할 작업 원장이
+        # 없으면 "이만큼 깎였다"가 재현 불가능한 주장이 된다.
+        volume_change_store=(
+            VolumeChangeStore(
+                volume_change_journal,
                 mission_store=mission_store,
                 processing_job_store=processing_job_store,
             )

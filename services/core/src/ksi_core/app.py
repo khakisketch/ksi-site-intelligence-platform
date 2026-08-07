@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
+    from ksi_core.volume_reports import VolumeChangeStore
 
 
 def create_app(
@@ -67,6 +68,7 @@ def create_app(
     processing_job_store: ProcessingJobStore | None = None,
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
+    volume_change_store: VolumeChangeStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
@@ -129,6 +131,7 @@ def create_app(
             "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 가지므로, 그
             참조를 대조할 저장소 없이는 검증 불가능한 도형을 그대로 받게 된다.
         change_detection_store: Phase 4 시계열 변화 탐지 결과 수신·조회 저장소.
+        volume_change_store: M1 구역 체적 변화 리포트 수신·조회 저장소.
             ``mission_store`` 와 ``processing_job_store`` 가 모두 필수다 — 결과는
             "어느 두 point cloud 산출물을 비교했나"로만 해석 가능하고, 그 참조를
             대조할 작업 원장이 없으면 "변화가 있었다"가 검증 불가능한 주장이 된다.
@@ -275,6 +278,17 @@ def create_app(
             " (change_detection.py '서버가 검증하는 것')"
         )
 
+    if volume_change_store is not None and (
+        mission_store is None or processing_job_store is None
+    ):
+        raise ValueError(
+            "volume_change_store 는 mission_store·processing_job_store 와 함께"
+            " 주어져야 한다 — 체적 리포트는 '어느 두 DSM 산출물을 비교했나'로만"
+            " 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면 '이만큼 깎였다'가"
+            " 아무도 재현할 수 없는 주장이 되고, 그 숫자는 정산·분쟁의 근거로"
+            " 쓰인다 (volume_reports.py '사람은 체적을 주장할 수 없다')"
+        )
+
     if equipment_state_store is not None and site_store is None:
         raise ValueError(
             "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
@@ -297,6 +311,7 @@ def create_app(
             processing_job_store,
             defect_candidate_store,
             change_detection_store,
+            volume_change_store,
             equipment_state_store,
             equipment_support_store,
         )
@@ -428,6 +443,11 @@ def create_app(
         from ksi_core.change_detection import mount_change_detection
 
         mount_change_detection(app, change_detection_store)
+
+    if volume_change_store is not None:
+        from ksi_core.volume_reports import mount_volume_reports
+
+        mount_volume_reports(app, volume_change_store)
 
     if equipment_state_store is not None:
         from ksi_core.equipment_states import mount_equipment_states
