@@ -9,6 +9,7 @@ import type {
   EquipmentSupportView,
   RiskAssessmentView,
   SourceMediaViewResponse,
+  VolumeChangeListView,
 } from "./types";
 
 /**
@@ -46,6 +47,22 @@ export async function getChangeDetection(
   return coreFetch<ChangeDetectionView>(
     `/v1/missions/${encodeURIComponent(missionId)}/change-detection`,
     { query: { revisitRatioThreshold: revisitRatioThreshold?.toString() } },
+  );
+}
+
+/**
+ * 그 임무의 체적 변화 리포트 이력(최신 우선).
+ *
+ * 404 는 오류가 아니라 "아직 계산되지 않음"이다 — 빈 목록과 구분하기 위해
+ * 서버가 그렇게 답한다(`getChangeDetection` 과 같은 규약).
+ */
+export async function getVolumeChanges(
+  missionId: string,
+  limit?: number,
+): Promise<VolumeChangeListView> {
+  return coreFetch<VolumeChangeListView>(
+    `/v1/missions/${encodeURIComponent(missionId)}/volume-changes`,
+    { query: { limit: limit?.toString() } },
   );
 }
 

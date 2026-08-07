@@ -425,6 +425,49 @@ export interface ChangeDetectionView {
   revisitRecommended: boolean;
 }
 
+/** 구역 하나의 절토·성토 — 부호는 `netM3` 하나로만 말한다(양수 cut/fill). */
+export interface ZoneVolumeDelta {
+  zoneId: string;
+  cutM3: number;
+  fillM3: number;
+  netM3: number;
+  areaM2: number;
+  thresholdM: number;
+  /**
+   * **양쪽 epoch 모두** 검증된 RMSE 가 있을 때만 값이다(INV-024). 기본 엔진
+   * (ODM)에는 구조화된 GCP/검사점 리포트가 없어 지금은 항상 null 이며, 그때
+   * `uncertaintyNote` 가 왜 없는지를 말한다 — 화면은 이 둘을 함께 보여야 한다.
+   */
+  uncertaintyM3: number | null;
+  uncertaintyNote: string;
+}
+
+export interface VolumeChangeReport {
+  schemaVersion: string;
+  volumeChangeId: string;
+  baseline: { jobId: string; artifactId: string };
+  current: { jobId: string; artifactId: string };
+  crs: string;
+  /** `ellipsoidal_native` = 지오이드 미적용 타원체고(정표고로 못 바꾼 상태). */
+  verticalDatum: string;
+  zones: ZoneVolumeDelta[];
+  computedAt: string;
+}
+
+export interface VolumeChangeEntry {
+  report: VolumeChangeReport;
+  reportedBy: string | null;
+  recordedAt: string;
+}
+
+export interface VolumeChangeListView {
+  missionId: string;
+  reportCount: number;
+  /** 최신 리포트의 전 구역 순변화 — 서버가 계산해 싣는다(화면이 합산하지 않는다). */
+  latestTotalNetM3: number | null;
+  reports: VolumeChangeEntry[];
+}
+
 export interface KinematicState {
   entityId: string;
   observedAt: string;

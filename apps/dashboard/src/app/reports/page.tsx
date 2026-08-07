@@ -3,11 +3,16 @@ import Link from "next/link";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
-import { getChangeDetection } from "@/lib/core-api/phase34";
+import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
-import type { ChangeDetectionView, MissionRecordResponse } from "@/lib/core-api/types";
+import type {
+  ChangeDetectionView,
+  MissionRecordResponse,
+  VolumeChangeListView,
+} from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
 
 type Result =
   | { view: ChangeDetectionView; error: null; notFound: false }
@@ -24,6 +29,19 @@ async function fetchChange(missionId: string): Promise<Result> {
       return { view: null, error, notFound: false };
     }
     throw error;
+  }
+}
+
+/**
+ * 체적 리포트는 변화 탐지와 **독립적으로** 없을 수 있다 — DSM 두 시점이 아직
+ * 없으면 여기만 비고, 그렇다고 화면 전체를 오류로 만들지 않는다. 404 는 빈
+ * 상태이고, 그 외 오류도 이 섹션만 비운다(주 내용인 변화 탐지를 가리지 않는다).
+ */
+async function fetchVolume(missionId: string): Promise<VolumeChangeListView | null> {
+  try {
+    return await getVolumeChanges(missionId);
+  } catch {
+    return null;
   }
 }
 
@@ -83,7 +101,10 @@ export default async function ReportsPage({
     );
   }
 
-  const { view, error, notFound } = await fetchChange(missionId);
+  const [{ view, error, notFound }, volume] = await Promise.all([
+    fetchChange(missionId),
+    fetchVolume(missionId),
+  ]);
 
   if (error) {
     return (
@@ -168,6 +189,15 @@ export default async function ReportsPage({
           current: {latest.current.jobId} / {latest.current.artifactId}
         </p>
       </section>
+
+      {/* 체적은 변화 탐지와 다른 입력(DSM)에서 나온다 — 한쪽만 있는 것이 정상이라
+          없을 때 화면 전체를 오류로 만들지 않고 이 섹션만 비운다. */}
+      {volume !== null && volume.reports.length > 0 && (
+        <VolumeChangeSummary
+          entry={volume.reports[0]}
+          totalNetM3={volume.latestTotalNetM3}
+        />
+      )}
     </div>
   );
 }

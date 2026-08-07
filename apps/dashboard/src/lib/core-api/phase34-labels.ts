@@ -60,3 +60,31 @@ export function formatUncertainty(meters: number): string {
 export function formatRatioPercent(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
+
+/** 체적을 사람이 읽는 문자열로 — 소수 1자리(그 이상은 재구성 정밀도가 못 받친다). */
+export function formatVolumeM3(value: number): string {
+  return `${value.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} m³`;
+}
+
+/** 순변화는 방향이 보여야 한다 — 증가에 명시적 `+` 를 붙인다. */
+export function formatNetVolumeM3(value: number): string {
+  return `${value > 0 ? "+" : ""}${formatVolumeM3(value)}`;
+}
+
+/**
+ * 오차한계 표시 — **없음도 하나의 답이다**(INV-024).
+ *
+ * `uncertaintyM3` 가 null 인 것은 정상이고(ODM 경로는 검사점 RMSE 를 내지
+ * 않는다), 그때 화면은 그 사실과 이유를 함께 보여야 한다. 이 함수를 라벨
+ * 모듈에 두는 이유는 그 규칙이 컴포넌트마다 다르게 구현되는 것을 막기 위해서다
+ * — 한 곳에서 "없으면 미산출이라고 말한다"를 정한다.
+ */
+export function describeVolumeUncertainty(
+  uncertaintyM3: number | null,
+  note: string,
+): { missing: boolean; text: string } {
+  if (uncertaintyM3 === null) {
+    return { missing: true, text: `오차한계 미산출 — ${note}` };
+  }
+  return { missing: false, text: `오차한계 ±${formatVolumeM3(uncertaintyM3)} — ${note}` };
+}
