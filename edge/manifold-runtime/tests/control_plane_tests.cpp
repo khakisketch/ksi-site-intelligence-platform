@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 
 #include "ksi/control_plane/command.hpp"
@@ -294,7 +295,7 @@ void TestStateAtOutOfDomainIsFailClosed() {
 }
 
 void TestStateAtDomainGuardIsLoadBearing() {
-    // [mutation 재점검, 2026-08-08] 위 테스트는 **가드가 없어도 통과한다.**
+    // [mutation 재점검, 2026-08-07] 위 테스트는 **가드가 없어도 통과한다.**
     // last_heartbeat=10'000 에서 now=-9e18 이면 elapsed<0 가드가, now=kMaxUtcMs+1
     // 이면 elapsed>=fail_closed 가 각각 같은 답을 내기 때문이다 — 즉 그 값들로는
     // 도메인 가드의 유무를 구분할 수 없다. 수작업 변이(도메인 가드 제거)가 ctest 를
@@ -321,7 +322,7 @@ void TestStateAtDomainGuardIsLoadBearing() {
 }
 
 void TestDuplicateHeartbeatIsIgnored() {
-    // [mutation 재점검, 2026-08-08] 역행 heartbeat 거부는 테스트가 있었지만
+    // [mutation 재점검, 2026-08-07] 역행 heartbeat 거부는 테스트가 있었지만
     // **같은 시각 재기록**은 없었다 — 경계가 `<=` 인지 `<` 인지를 아무도 고정하지
     // 않아, `<` 로 바꾸는 변이가 ctest 를 통과했다.
     //
@@ -338,6 +339,117 @@ void TestDuplicateHeartbeatIsIgnored() {
     Check(supervisor.RecordHeartbeat(10'001, 10'500) ==
               ksi::control_plane::HeartbeatVerdict::kRecorded,
           "1ms 라도 전진한 heartbeat 는 기록된다(경계가 과잉 거부는 아니다)");
+}
+
+// ── reviewer 재검증(2026-08-07)이 지적한 사각지대 S1~S7 ────────────────────
+//
+// 1차 변이 실험은 16건 중 15건을 잡았지만, 그건 **내가 고른 16건에 한해서만** 참이었다.
+// 독립 재검토가 어떤 단언으로도 판별되지 않는 절 7개를 더 찾아냈고, 실측으로 전부
+// 생존이 확인됐다. 그중 S1 이 특히 뼈아프다 — 방금 고친 M15(StateAt 도메인 가드)와
+// 같은 클래스·같은 감사번호(#53) 계열인데 RecordHeartbeat 쪽만 그대로 남아 있었다.
+
+void TestRecordHeartbeatNowUpperDomainGuard() {
+    // [S1] now 상한 가드가 없으면 now=INT64_MAX 에서
+    // `now_utc_ms + kHeartbeatFutureToleranceMs` 가 signed overflow(UB)다.
+    // 기존 테스트의 now 는 전부 10'000·10'500·kMaxUtcMs 라 이 경로를 못 건드렸다.
+    FlightSupervisor supervisor(2'000, 5'000);
+    Check(supervisor.RecordHeartbeat(10'000, INT64_MAX) ==
+              ksi::control_plane::HeartbeatVerdict::kOutOfDomain,
+          "도메인 상한 밖 now 는 기록 거부 (가드 없으면 덧셈이 오버플로한다)");
+    Check(supervisor.RecordHeartbeat(10'000, ksi::control_plane::kMaxUtcMs + 1) ==
+              ksi::control_plane::HeartbeatVerdict::kOutOfDomain,
+          "도메인 상한 바로 밖 now 도 거부");
+    Check(supervisor.StateAt(10'000) == SupervisorState::kFailClosed,
+          "거부된 heartbeat 는 상태를 바꾸지 않는다");
+}
+
+void TestObservedAtUpperDomainGuard() {
+    // [S6] observed_at 상한 가드가 없으면 도메인 밖 시각이 kOutOfDomain 이 아니라
+    // kImplausibleFuture 로 판정된다 — 두 사유는 운영자에게 다른 뜻이다(센서 시각
+    // 오류 vs 입력 자체가 계약 밖).
+    FlightSupervisor supervisor(2'000, 5'000);
+    Check(supervisor.RecordHeartbeat(ksi::control_plane::kMaxUtcMs + 1, 10'000) ==
+              ksi::control_plane::HeartbeatVerdict::kOutOfDomain,
+          "도메인 상한 밖 observed_at 은 OUT_OF_DOMAIN (IMPLAUSIBLE_FUTURE 가 아니다)");
+}
+
+void TestFirstHeartbeatAtEpochZeroIsRecorded() {
+    // [S7] `has_heartbeat_ &&` 가 없으면 last_heartbeat_ 초기값 0 과 비교돼
+    // **최초 heartbeat 가 observed_at==0 일 때 무시된다.** 그 상태의 supervisor 는
+    // 영원히 FAIL_CLOSED 다(증거를 받아들이지 못한다).
+    FlightSupervisor supervisor(2'000, 5'000);
+    Check(supervisor.RecordHeartbeat(0, 0) == ksi::control_plane::HeartbeatVerdict::kRecorded,
+          "epoch 0 의 최초 heartbeat 도 기록된다");
+    Check(supervisor.StateAt(0) == SupervisorState::kNominal,
+          "그 heartbeat 로 NOMINAL 이 된다");
+}
+
+void TestFutureToleranceBoundaryIsExact() {
+    // [S4] 허용창 상수를 넓히는 변이가 통과했다 — 테스트의 delta 가 700(창 안)과
+    // 490'000(창 밖)뿐이라 그 사이 어느 값으로 바꿔도 같은 답이 나왔다. 경계
+    // 양쪽을 정확히 고정하면 상수 변경이 곧바로 드러난다.
+    //
+    // 창을 넓히면 far-future 타임스탬프가 kRecordedClamped 로 기록돼 **정지한
+    // 루프가 NOMINAL 근거를 얻는다** — heartbeat 의 증거 가치가 무너지는 방향이다.
+    const auto kTol = ksi::control_plane::kHeartbeatFutureToleranceMs;
+    FlightSupervisor inside(2'000, 5'000);
+    Check(inside.RecordHeartbeat(10'000 + kTol, 10'000) ==
+              ksi::control_plane::HeartbeatVerdict::kRecordedClamped,
+          "허용창 경계 정확히 위는 클램프 기록(포함 경계)");
+    FlightSupervisor outside(2'000, 5'000);
+    Check(outside.RecordHeartbeat(10'000 + kTol + 1, 10'000) ==
+              ksi::control_plane::HeartbeatVerdict::kImplausibleFuture,
+          "허용창을 1ms 넘으면 거부 — 상수를 넓히면 이 단언이 깨진다");
+}
+
+void TestIssuedAtEqualsNowIsAccepted() {
+    // [S2] `issued_at > now` 의 경계. 같은 밀리초에 발행·평가되는 명령은 정상이고
+    // 거부되면 안 된다 — 연산자를 >= 로 바꾸는 변이가 통과했다는 것은 그 경계를
+    // 아무도 고정하지 않았다는 뜻이다. Python 참조 검증기와 갈려도 못 잡는다.
+    ActionIntent intent = ValidIntent();
+    Check(VerifyActionIntent(intent, kActiveDigest, kIssuedAt) == CommandVerdict::kAccepted,
+          "issued_at == now 인 명령은 수락된다");
+}
+
+void TestIssuedAtUpperDomainGuard() {
+    // [S5] issued_at 상한 가드 — 없으면 도메인 밖 발행 시각이 kMalformed 가 아니라
+    // kNotYetValid 로 판정된다. 계약 위반과 시계 이상은 다른 사실이다.
+    ActionIntent intent = ValidIntent();
+    intent.issued_at_utc_ms = ksi::control_plane::kMaxUtcMs + 1;
+    Check(VerifyActionIntent(intent, kActiveDigest, kIssuedAt) == CommandVerdict::kMalformed,
+          "도메인 상한 밖 issued_at 은 MALFORMED (NOT_YET_VALID 가 아니다)");
+}
+
+void TestSupervisorRejectsInvertedThresholds() {
+    // [S3] 생성자의 설정 가드 — degrade 없이 곧장 fail-closed 로 가는 조립은
+    // 오배선일 가능성이 높아 생성 시점에 거부한다. 이 가드를 검증하는 단언이
+    // 하나도 없어서 삭제 변이가 그대로 통과했다.
+    bool rejected_equal = false;
+    try {
+        FlightSupervisor bad(5'000, 5'000);
+        (void)bad;
+    } catch (const std::invalid_argument&) {
+        rejected_equal = true;
+    }
+    Check(rejected_equal, "fail_closed == degrade 는 생성 시점에 거부된다");
+
+    bool rejected_inverted = false;
+    try {
+        FlightSupervisor bad(5'000, 2'000);
+        (void)bad;
+    } catch (const std::invalid_argument&) {
+        rejected_inverted = true;
+    }
+    Check(rejected_inverted, "fail_closed < degrade 도 거부된다");
+
+    bool rejected_nonpositive = false;
+    try {
+        FlightSupervisor bad(0, 5'000);
+        (void)bad;
+    } catch (const std::invalid_argument&) {
+        rejected_nonpositive = true;
+    }
+    Check(rejected_nonpositive, "0 이하 임계값은 거부된다");
 }
 
 void TestVerdictStringsAreDistinct() {
@@ -374,6 +486,13 @@ int main() {
     TestStateAtOutOfDomainIsFailClosed();
     TestStateAtDomainGuardIsLoadBearing();
     TestDuplicateHeartbeatIsIgnored();
+    TestRecordHeartbeatNowUpperDomainGuard();
+    TestObservedAtUpperDomainGuard();
+    TestFirstHeartbeatAtEpochZeroIsRecorded();
+    TestFutureToleranceBoundaryIsExact();
+    TestIssuedAtEqualsNowIsAccepted();
+    TestIssuedAtUpperDomainGuard();
+    TestSupervisorRejectsInvertedThresholds();
     TestVerdictStringsAreDistinct();
 
     std::printf("control plane 계약 테스트: %d개 단언 중 %d개 실패\n", g_checks, g_failures);

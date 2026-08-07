@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T21:24:45+09:00",
+  "updated_at": "2026-08-07T21:25:29+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1099,16 +1099,16 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "edge/manifold-runtime/src/{command,supervisor}.cpp 의 안전 불변식에 수작업 변이 16건 주입 → 매번 cmake --build + ctest 재실행(스크립트 재현 가능). 1차: 3건 생존(M5·M12·M15). M12(중복 heartbeat 같은 시각 재기록)·M15(StateAt 도메인 가드) 는 진짜 갭으로 확인 — 특히 M15 는 TestStateAtOutOfDomainIsFailClosed 가 **이미 있었는데도** 통과했다: last=10'000 에서 now=-9e18 은 elapsed<0 가드가, now=kMaxUtcMs+1 은 elapsed>=fail_closed 가 같은 답을 내 도메인 가드 유무를 구분하지 못한다. 판별값(heartbeat=kMaxUtcMs, now=kMaxUtcMs+1 → 가드 없으면 elapsed=1 로 NOMINAL fail-open; now=INT64_MIN → 가드 없으면 뺄셈이 signed overflow UB)으로 테스트 2종 추가. M12 는 경계 양쪽(같은 시각 무시 / 1ms 전진 기록)을 함께 고정. M5 는 별도 C++ 탐침으로 전 입력 조합 판정 차이 0건 → 등가변이로 증명하고, '어떤 테스트도 이 항을 구분할 수 없다'는 사실을 command.cpp 주석에 명시(다음 사람이 미검증 코드로 오해해 지우지 않게). 재실행: 16건 중 15건 잡힘, 생존은 등가변이 M5 하나. ctest 2/2 통과(일반 + ASan/UBSan, CI 와 동일 구성). 커밋 b92f826",
       "verdict": null,
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "hardening",
       "verification_requested": "light",
       "created_at": "2026-08-07T13:10:41+09:00",
-      "updated_at": "2026-08-07T21:24:45+09:00"
+      "updated_at": "2026-08-07T21:25:29+09:00"
     },
     {
       "id": "equipment-support-level-runtime-gate",

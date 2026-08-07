@@ -259,6 +259,18 @@ inline constexpr ActionIntentVector kActionIntentVectors[] = {
         1001000,
         control_plane::CommandVerdict::kMalformed,
     },
+    {
+        "issued_at_equals_now",
+        "1.0",
+        "cmd-boundary-issued-eq-now",
+        control_plane::ActionIntentKind::kGotoViewpoint,
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        1000000,
+        5000,
+        "vp-001",
+        1000000,
+        control_plane::CommandVerdict::kAccepted,
+    },
 };
 
 inline constexpr std::size_t kActionIntentVectorCount =
