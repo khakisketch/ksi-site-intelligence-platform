@@ -367,3 +367,127 @@ export interface MissionPlanResponse {
   gridBasis: MissionPlanGridBasis | null;
   plannedCoverageRatio: number | null;
 }
+
+// ── Phase 3/4 표면 (2026-08-08 신설) ────────────────────────────────────────
+//
+// 서버 응답의 camelCase 를 그대로 옮긴다 — 화면이 판정을 다시 계산하지 않는다.
+// 특히 productionSupported·revisitRecommended·reobservationRecommended 는 전부
+// **서버가 계산한 파생값**이다: 화면이 state 문자열이나 비율을 보고 스스로
+// 판단하면 규칙이 두 곳에 생기고, 그 갈라짐은 화면에서 보이지 않는다.
+
+export interface DefectCandidate {
+  schemaVersion: "1.0";
+  defectCandidateId: string;
+  defectType: "CRACK";
+  sourceMediaId: string;
+  imageSize: { widthPx: number; heightPx: number };
+  geometry: { format: "IMAGE_POLYGON_2D"; payload: Array<[number, number]> | null };
+  model: { modelId: string; sourceDigests: Record<string, string> };
+  confidence: number;
+  measurements?: { areaPx2?: number; lengthPx?: number; meanWidthPx?: number };
+}
+
+export interface DefectCandidateItem {
+  candidate: DefectCandidate;
+  reportedBy: string | null;
+  recordedAt: string;
+}
+
+export interface DefectCandidateListView {
+  missionId: string;
+  candidateCount: number;
+  /** 후보가 하나라도 걸린 사진 id(정렬됨) — 화면이 전체를 훑어 집계하지 않게 서버가 낸다. */
+  sourceMediaIds: string[];
+  candidates: DefectCandidateItem[];
+}
+
+export interface ChangeDetectionResult {
+  schemaVersion: "1.0";
+  changeDetectionId: string;
+  baseline: { jobId: string; artifactId: string };
+  current: { jobId: string; artifactId: string };
+  distanceThresholdM: number;
+  pointCount: number;
+  candidateCount: number;
+  candidateRatio: number;
+  maxDistanceM: number | null;
+  computedAt: string;
+}
+
+export interface ChangeDetectionView {
+  missionId: string;
+  resultCount: number;
+  latest: ChangeDetectionResult;
+  reportedBy: string | null;
+  recordedAt: string;
+  /** 이 조회가 **실제로 쓴** 임계값 — 권고가 무슨 기준으로 켜졌는지 화면이 밝힐 수 있게. */
+  revisitRatioThreshold: number;
+  revisitRecommended: boolean;
+}
+
+export interface KinematicState {
+  entityId: string;
+  observedAt: string;
+  siteFrame: string;
+  position: [number, number, number];
+  positionCovariance: number[];
+  velocity: [number, number, number];
+  velocityCovariance: number[];
+  headingDeg: number | null;
+  sourceClass: string;
+}
+
+export interface EquipmentStateItem {
+  state: KinematicState;
+  reportedBy: string | null;
+  recordedAt: string;
+  /** 공분산 trace 의 제곱근(RMS 반경 근사) — 좌표축 회전에 불변. */
+  positionUncertaintyM: number;
+}
+
+export interface EquipmentStateListView {
+  siteId: string;
+  entityCount: number;
+  entities: EquipmentStateItem[];
+}
+
+export interface RiskAssessmentView {
+  siteId: string;
+  equipmentEntityId: string;
+  subjectEntityId: string;
+  observationGapS: number;
+  closestApproachM: number;
+  closestApproachTimeS: number;
+  /** null 은 "위험 없음"이 아니라 **"이 지평선 안에서는 확인되지 않음"**이다. */
+  timeToCollisionS: number | null;
+  horizonS: number;
+  combinedRadiusM: number;
+  positionUncertaintyThresholdM: number;
+  reobservationRecommended: boolean;
+}
+
+export type EquipmentSupportLevel =
+  | "DATASET_AVAILABLE"
+  | "BASELINE_DETECTION"
+  | "FIELD_VALIDATED"
+  | "GEO_VALIDATED"
+  | "RISK_VALIDATED"
+  | "PRODUCTION_SUPPORTED";
+
+export interface EquipmentSupportView {
+  classId: string;
+  state: EquipmentSupportLevel;
+  evidenceRefs: string[];
+  modelVersion: string | null;
+  riskPackVersion: string | null;
+  /** **이 값이 true 인 것만 상용 지원으로 표시한다**(REQ-MODEL-101). 서버 파생값. */
+  productionSupported: boolean;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface EquipmentSupportListView {
+  classCount: number;
+  productionSupportedCount: number;
+  classes: EquipmentSupportView[];
+}

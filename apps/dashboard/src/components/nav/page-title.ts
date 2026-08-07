@@ -11,6 +11,11 @@ const STATIC_TITLES: Record<string, string> = {
   "/sites/new": "현장 등록",
   "/events": "이벤트",
   "/missions": "임무",
+  // Phase 3/4 섹션(2026-08-08) — 사이드바 라벨과 같은 말을 쓴다(NAV_ITEMS 참고).
+  "/assets": "자산·시설물",
+  "/world": "2D·3D World",
+  "/reports": "보고서",
+  "/settings": "설정",
   "/more": "더보기",
 };
 
