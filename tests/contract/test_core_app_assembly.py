@@ -27,6 +27,7 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
+from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
@@ -290,4 +291,20 @@ def test_change_detection_store_without_mission_store_raises(tmp_path: Path) -> 
         create_app(
             auth_registry=_auth_registry(),
             change_detection_store=_change_detection_store(tmp_path / "cd", missions),
+        )
+
+
+# ── 규칙 7: 운동상태 저장소는 현장 등록 좌표계 없이 조립되지 않는다 ─────────
+
+
+def test_equipment_state_store_without_site_store_raises(tmp_path: Path) -> None:
+    """cpa_ttc 의 site_frame 검사는 두 상태끼리만 본다 — 둘 다 같은 잘못된 좌표계면
+    통과한다. 현장 등록 좌표계와 대조할 저장소가 없으면 그 구멍을 막을 수 없다."""
+    with pytest.raises(ValueError, match="equipment_state_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            equipment_state_store=EquipmentStateStore(
+                DurableJournal(tmp_path / "equipment-states.jsonl"),
+                site_store=_site_store(tmp_path),
+            ),
         )

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T19:52:55+09:00",
+  "updated_at": "2026-08-07T20:02:57+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1677,28 +1677,28 @@
       "title": "CPA/TTC 계산기가 두 KinematicState의 observed_at 시각차를 검사하지 않음",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "cpa_ttc.py가 site_frame 불일치는 typed 거부하지만(:31-35) 관측 시각이 다른 두 상태(예: 10분 전 장비 상태 vs 방금 작업자 상태)를 무검사로 '동시각'처럼 상대운동을 계산한다. build_dynamic_risk_field()(risk_field.py)도 validity.from과 상태 시각의 관계를 검사하지 않는다. INV-023(외삽 금지·fail-closed) 계열 정신과 어긋남 — 골든벡터 테스트는 전부 동일 _NOW를 써서 이 구멍을 건드리지 않는다. reviewer agentId a43cc168864d897c2 발견(phase-3-kinematic-risk-field-v2 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "cpa_ttc.py — closest_point_of_approach/time_to_collision 이 max_observation_gap_s 를 필수 키워드로 받고 _require_simultaneous 로 observed_at 시간차 초과를 KinematicComparisonError 로 거부(기본값 없음 — 조용한 기본값은 '시각 정합 미확인'을 '확인함'으로 위장). risk_field.build_dynamic_risk_field 는 추가로 _require_validity_covers_observations 로 validity 구간이 근거 관측 시각을 덮는지 검사. tests/contract/test_cpa_ttc.py 6건(10분 격차 거부·경계 포함·방향 무관·비유한 파라미터·observation_gap_s 절댓값) + test_risk_field.py 3건(구간 밖·이미 만료·경계 포함) + test_equipment_states_api.py::test_stale_partner_state_is_422_not_a_silent_number(200 빈값이 아니라 422 임을 API 수준에서 고정). pytest 2082 passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T00:09:26+09:00",
-      "updated_at": "2026-08-07T00:09:26+09:00"
+      "updated_at": "2026-08-07T20:02:57+09:00"
     },
     {
       "id": "risk-field-round-trip-one-direction-only",
       "title": "RiskField 스키마 왕복 검증이 model→wire 방향만 있고 wire→model 역방향이 없음",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "test_risk_field.py가 model→wire→schema 검증(성공 케이스)과 거부 케이스는 있지만, 스키마 유효 wire dict를 RiskField.model_validate()로 재파싱하는 성공 케이스가 없다. 실패를 예상하진 않으나 '왕복'이라는 표현이 현재 절반만 검증됨. reviewer agentId a43cc168864d897c2 발견(phase-3-kinematic-risk-field-v2 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "tests/contract/test_risk_field.py::test_wire_dict_parses_back_into_an_equal_model — risk_field_wire_dict 산출을 RiskField.model_validate 로 재파싱해 원본과 == 임을 확인(값 손실 없음). test_optional_risk_model_fields_survive_the_round_trip 은 closestApproachM/timeToCollisionS 가 None 이라 키째 빠진 wire 도 None 으로 복원됨을 고정 — '없음'이 '0'으로 둔갑하는 자리를 막는다. pytest 2082 passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T00:09:26+09:00",
-      "updated_at": "2026-08-07T00:09:26+09:00"
+      "updated_at": "2026-08-07T20:02:57+09:00"
     },
     {
       "id": "phase2-change-candidate-revisit",

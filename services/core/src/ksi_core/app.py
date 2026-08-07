@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
+    from ksi_core.equipment_states import EquipmentStateStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
@@ -65,6 +66,7 @@ def create_app(
     processing_job_store: ProcessingJobStore | None = None,
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
+    equipment_state_store: EquipmentStateStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -128,6 +130,11 @@ def create_app(
             ``mission_store`` 와 ``processing_job_store`` 가 모두 필수다 — 결과는
             "어느 두 point cloud 산출물을 비교했나"로만 해석 가능하고, 그 참조를
             대조할 작업 원장이 없으면 "변화가 있었다"가 검증 불가능한 주장이 된다.
+        equipment_state_store: Phase 3 장비 운동상태 수신·위험 평가 저장소.
+            ``site_store`` 가 필수다 — 위치·속도는 좌표계 없이는 숫자일 뿐이고,
+            현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
+            재는 CPA/TTC 가 성립해 버린다(``cpa_ttc`` 의 site_frame 검사는 두
+            상태끼리만 보므로 둘 다 같은 잘못된 좌표계면 통과한다).
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -255,6 +262,14 @@ def create_app(
             " (change_detection.py '서버가 검증하는 것')"
         )
 
+    if equipment_state_store is not None and site_store is None:
+        raise ValueError(
+            "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
+            " 좌표계 없이는 숫자일 뿐이고, 현장 등록 좌표계와 대조할 저장소가 없으면"
+            " 서로 다른 기준계의 점 사이 거리를 재는 CPA/TTC 가 성립해 버린다"
+            " (equipment_states.py EquipmentStateStore._judge)"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -269,6 +284,7 @@ def create_app(
             processing_job_store,
             defect_candidate_store,
             change_detection_store,
+            equipment_state_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -394,5 +410,10 @@ def create_app(
         from ksi_core.change_detection import mount_change_detection
 
         mount_change_detection(app, change_detection_store)
+
+    if equipment_state_store is not None:
+        from ksi_core.equipment_states import mount_equipment_states
+
+        mount_equipment_states(app, equipment_state_store)
 
     return app

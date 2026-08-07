@@ -28,6 +28,7 @@ from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
+from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
@@ -115,6 +116,9 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "change-detection.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
+        ),
+        equipment_state_store=EquipmentStateStore(
+            DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",

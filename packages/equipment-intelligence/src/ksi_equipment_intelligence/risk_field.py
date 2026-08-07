@@ -18,7 +18,11 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from ksi_equipment_intelligence.cpa_ttc import closest_point_of_approach, time_to_collision
+from ksi_equipment_intelligence.cpa_ttc import (
+    KinematicComparisonError,
+    closest_point_of_approach,
+    time_to_collision,
+)
 from ksi_equipment_intelligence.kinematic_state import KinematicState
 
 RiskFieldType = Literal["STATIC", "DERIVED", "DYNAMIC", "PREDICTED"]
@@ -90,6 +94,29 @@ def risk_field_wire_dict(field: RiskField) -> dict[str, Any]:
     return wire
 
 
+def _require_validity_covers_observations(
+    validity: RiskFieldValidity, *states: KinematicState
+) -> None:
+    """유효구간이 근거 관측 시각을 덮는가(:func:`build_dynamic_risk_field` docstring).
+
+    ``validity.from_ <= observed_at <= validity.to`` 를 요구한다. 경계 포함이다 —
+    딱 그 순간에 관측한 위험장을 거부할 이유가 없다.
+    """
+    if validity.to < validity.from_:
+        raise KinematicComparisonError(
+            f"validity.to({validity.to.isoformat()}) 가 "
+            f"validity.from({validity.from_.isoformat()}) 보다 앞선다"
+        )
+    for state in states:
+        if not (validity.from_ <= state.observed_at <= validity.to):
+            raise KinematicComparisonError(
+                f"{state.entity_id!r} 의 observed_at({state.observed_at.isoformat()}) 이 "
+                f"validity 구간[{validity.from_.isoformat()}, {validity.to.isoformat()}] "
+                "밖이다 — 자기가 근거로 삼은 관측이 유효하지 않다고 선언하는 위험장은"
+                " 만들지 않는다"
+            )
+
+
 def build_dynamic_risk_field(
     *,
     risk_field_id: str,
@@ -99,6 +126,7 @@ def build_dynamic_risk_field(
     severity: float,
     horizon_s: float,
     combined_radius_m: float,
+    max_observation_gap_s: float,
     validity: RiskFieldValidity,
     geometry: RiskFieldGeometry,
     hazard_type: str | None = None,
@@ -109,19 +137,34 @@ def build_dynamic_risk_field(
     :func:`~ksi_equipment_intelligence.cpa_ttc.closest_point_of_approach`/
     :func:`~ksi_equipment_intelligence.cpa_ttc.time_to_collision` 로 채운다 —
     이 값들은 지어낼 수 없는 계산값이므로 이 함수가 유일한 조립 지점이다.
-    ``geometry``/``validity``/``sourceEntityIds`` 는 호출자 책임(모듈 docstring).
+    ``geometry``/``sourceEntityIds`` 는 호출자 책임(모듈 docstring).
+
+    ``validity`` 는 호출자가 만들지만 **관측 시각과의 관계는 여기서 검사한다** —
+    두 상태를 관측한 시점이 유효구간 밖이면, 그 위험장은 자기가 근거로 삼은 관측이
+    유효하지 않다고 스스로 선언하는 셈이다. 그런 RiskField 는 소비자가 "지금 유효한
+    위험"으로 읽고 만료된 관측으로 행동하게 만든다. ``validity.to`` 가 관측 시각보다
+    앞서는(이미 만료된 채로 태어나는) 경우도 같은 사유로 거부한다.
 
     Raises:
         ksi_equipment_intelligence.cpa_ttc.KinematicComparisonError: 두 상태의
-            site_frame 이 다르거나 horizon_s·combined_radius_m 이 유효하지 않을 때.
+            site_frame 이 다르거나, observed_at 시간차가 ``max_observation_gap_s`` 를
+            넘거나, horizon_s·combined_radius_m 이 유효하지 않거나, 관측 시각이
+            ``validity`` 구간 밖일 때.
     """
-    cpa = closest_point_of_approach(equipment_state, subject_state, horizon_s=horizon_s)
+    cpa = closest_point_of_approach(
+        equipment_state,
+        subject_state,
+        horizon_s=horizon_s,
+        max_observation_gap_s=max_observation_gap_s,
+    )
     ttc = time_to_collision(
         equipment_state,
         subject_state,
         combined_radius_m=combined_radius_m,
         horizon_s=horizon_s,
+        max_observation_gap_s=max_observation_gap_s,
     )
+    _require_validity_covers_observations(validity, equipment_state, subject_state)
     return RiskField(
         risk_field_id=risk_field_id,
         type="DYNAMIC",

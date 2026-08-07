@@ -350,6 +350,129 @@ paths:
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/equipment-states:
+    post:
+      summary: Ingest equipment/worker kinematic states (Phase 3, PRD RISK-002)
+      description: >-
+        EDGE_SYNC_INGEST 권한 + EDGE_DEVICE 신원 필요 — **장비만** 올린다. 사람이
+        손으로 위치·속도를 주장할 수 없다(coverage-report 와 동일 원칙).
+
+        서버는 siteFrame 을 현장 등록 좌표계와 대조한다(SITE_FRAME_MISMATCH). 위치·
+        속도는 좌표계 없이는 숫자일 뿐이고, cpa_ttc 의 site_frame 검사는 **두 상태
+        끼리**만 보므로 둘 다 같은 잘못된 좌표계면 통과한다 — 그 구멍을 여기서 막는다.
+        배치는 전부-또는-전무다. 상태는 덮어쓰지 않고 전부 append 한다("언제 어디
+        있었다고 봤는가"가 사고 조사의 입력이다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [states]
+              properties:
+                states:
+                  type: array
+                  minItems: 1
+                  items: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentStateBatchResponse' }
+        '404': { description: UNKNOWN_SITE — 등록된 적 없는 현장 }
+        '422': { description: SITE_FRAME_MISMATCH — 현장 등록 좌표계와 다름 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
+    get:
+      summary: List the latest kinematic state per entity at a site
+      description: >-
+        SITES_READ 권한 필요. 개체별 **최신** 상태 스냅샷이다(이력이 아니다).
+        positionUncertaintyM 은 공분산 trace 의 제곱근(RMS 반경 근사) — 화면이
+        "이 추정을 얼마나 믿을 수 있나"를 표시할 수 있게 서버가 함께 낸다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 개체별 최신 상태
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentStateListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/risk-assessment:
+    get:
+      summary: Compute CPA/TTC and the reobservation recommendation for a named pair
+      description: >-
+        SITES_READ 권한 필요. **쌍과 정책 파라미터를 전부 호출자가 지목한다** —
+        "어느 쌍이 평가 대상인가"는 이 저장소 어디에도 정해져 있지 않은 정책
+        문제라 서버가 지어내지 않는다(전조합을 돌리면 N² 개의 근거 없는 위험장이
+        생기고 그중 무엇이 의미 있는지는 여전히 아무도 모른다). 서버가 하는 것은
+        지어낼 수 없는 계산(CPA 거리·TTC·재관찰 권고)뿐이다.
+
+        `timeToCollisionS: null` 은 **"위험 없음"이 아니라 "이 지평선 안에서는
+        확인되지 않음"**이다 — 화면이 둘을 같게 표시하면 안 된다.
+
+        두 상태의 observedAt 시간차가 maxObservationGapS 를 넘으면 422 다 — 10분
+        전 굴착기 상태와 방금 작업자 상태로 "TTC 2.1초"를 내지 않는다(INV-023
+        계열). 200 으로 빈 값을 돌려주면 화면이 안전하다고 읽는다.
+
+        `reobservationRecommended` 는 권고다 — 어떤 Viewpoint 로 재관측할지는
+        Edge/Manifold 의 Next Best View 소관이고(PRD §14.2) 이 응답은 비행 좌표를
+        만들지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+        - { in: query, name: equipmentEntityId, required: true, schema: { type: string } }
+        - { in: query, name: subjectEntityId, required: true, schema: { type: string } }
+        - in: query
+          name: horizonS
+          required: true
+          description: 외삽 지평선(초). 등속 가정의 오차를 억제하는 것은 호출자 몫이다.
+          schema: { type: number, exclusiveMinimum: 0 }
+        - in: query
+          name: combinedRadiusM
+          required: true
+          description: 두 개체의 합산 안전 반경(m) — 이 거리 이내를 충돌로 본다.
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: maxObservationGapS
+          required: true
+          description: 두 상태의 observedAt 이 이만큼까지 벌어져도 동시각으로 취급한다.
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: positionUncertaintyThresholdM
+          required: true
+          description: 위치 불확실성이 이를 **초과**하면 재관찰 권고(RISK-005).
+          schema: { type: number, minimum: 0 }
+      responses:
+        '200':
+          description: CPA/TTC + 재관찰 권고
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskAssessmentView' }
+        '404': { description: 두 개체 중 하나라도 이 현장에 상태가 보고된 적 없음 }
+        '422':
+          description: >-
+            observedAt 시간차가 maxObservationGapS 초과 / 두 상태의 siteFrame 불일치
+            — **계산 불가**이지 "위험 없음"이 아니다
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
   /v1/edge-sync/event-bundles:
     post:
       summary: Ingest one idempotent EventBundle journal entry
@@ -2049,6 +2172,66 @@ components:
                 type: [string, 'null']
                 description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
               recordedAt: { type: string }
+    EquipmentStateBatchResponse:
+      description: 운동상태 배치 접수 판정.
+      type: object
+      required: [verdict, detail, recordedCount]
+      properties:
+        verdict:
+          type: string
+          description: RECORDED / UNKNOWN_SITE / SITE_FRAME_MISMATCH / STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        recordedCount: { type: integer }
+    EquipmentStateListView:
+      description: 그 현장의 개체별 최신 운동상태(entityId 오름차순).
+      type: object
+      required: [siteId, entityCount, entities]
+      properties:
+        siteId: { type: string }
+        entityCount: { type: integer }
+        entities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [state, reportedBy, recordedAt, positionUncertaintyM]
+            properties:
+              # 구조 정본은 ksi_equipment_intelligence.kinematic_state.KinematicState.
+              state: { type: object, additionalProperties: true }
+              reportedBy: { type: [string, 'null'] }
+              recordedAt: { type: string }
+              positionUncertaintyM:
+                type: number
+                description: 공분산 trace 의 제곱근(RMS 반경 근사) — 좌표축 회전에 불변.
+    RiskAssessmentView:
+      description: 지목된 두 개체 쌍의 CPA/TTC + 재관찰 권고(PRD RISK-004/005).
+      type: object
+      required:
+        [siteId, equipmentEntityId, subjectEntityId, observationGapS,
+         closestApproachM, closestApproachTimeS, timeToCollisionS, horizonS,
+         combinedRadiusM, positionUncertaintyThresholdM, reobservationRecommended]
+      properties:
+        siteId: { type: string }
+        equipmentEntityId: { type: string }
+        subjectEntityId: { type: string }
+        observationGapS:
+          type: number
+          description: 두 상태의 observedAt 실제 시간차(초). 어떤 근거로 계산했는지가 남는다.
+        closestApproachM: { type: number }
+        closestApproachTimeS: { type: number }
+        timeToCollisionS:
+          type: [number, 'null']
+          description: >-
+            null 은 **"위험 없음"이 아니라 "이 지평선 안에서는 확인되지 않음"**이다
+            (horizonS 와 짝을 이루는 스코프 한정). 화면이 둘을 같게 표시하면 안 된다.
+        horizonS: { type: number }
+        combinedRadiusM: { type: number }
+        positionUncertaintyThresholdM: { type: number }
+        reobservationRecommended:
+          type: boolean
+          description: >-
+            두 상태 중 하나라도 위치 불확실성이 문턱을 초과하면 true(RISK-005).
+            권고일 뿐 재관찰을 트리거하지 않는다 — Viewpoint 선택은 Edge 소관이다.
     ChangeDetectionResponse:
       description: 변화 탐지 결과 수신 판정.
       type: object
