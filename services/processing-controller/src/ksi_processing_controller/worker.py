@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import logging
 import time
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -94,11 +95,23 @@ def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> N
 
     :func:`iter_archive_entry_bytes` 는 :func:`digest_archive_entry` 와 같은
     읽기 관용구라, 여기서 올라가는 바이트가 곧 등록될 digest 를 만든 바이트다.
+
+    **Content-Length 를 명시한다 — 청크 전송으로 두면 안 된다.** httpx 는
+    스트리밍 content 에 길이를 못 정하면 ``Transfer-Encoding: chunked`` 를 쓰는데,
+    S3 presigned PUT URL 은 SigV4 서명이 고정 길이 payload 를 전제라 청크 인코딩을
+    받아주지 않는다(``411 Length Required`` — 실측: MinIO 대상 실기동에서 확인,
+    가짜 스토리지 계약 테스트는 이 차이를 볼 수 없다). zip 엔트리의
+    ``file_size``(압축 해제 크기)가 실제로 흘려보낼 바이트 수와 정확히 같다.
     """
+    with zipfile.ZipFile(archive_path) as archive:
+        content_length = archive.getinfo(entry).file_size
     response = client.put(
         url,
         content=iter_archive_entry_bytes(archive_path, entry),
-        headers={"Content-Type": _ARTIFACT_CONTENT_TYPE},
+        headers={
+            "Content-Type": _ARTIFACT_CONTENT_TYPE,
+            "Content-Length": str(content_length),
+        },
     )
     response.raise_for_status()
 

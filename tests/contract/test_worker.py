@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -525,3 +526,38 @@ def test_upload_failure_fails_the_job_without_registering(tmp_path: Path) -> Non
 
     assert ("register_artifact", "point-cloud") not in core.calls
     assert any(c[0] == "transition" and c[1] == "FAILED" for c in core.calls)
+
+
+def test_upload_sends_an_explicit_content_length_not_chunked_encoding(tmp_path: Path) -> None:
+    """[핵심 회귀] presigned PUT 은 청크 전송이 아니라 고정 Content-Length 여야 한다.
+
+    S3 SigV4 presigned URL 은 고정 길이 payload 를 전제한다 — httpx 는 스트리밍
+    content 에 길이를 못 정하면 Transfer-Encoding: chunked 를 자동으로 붙이는데,
+    그러면 MinIO/S3 가 411 Length Required 로 거부한다(2026-08-08 MinIO 대상
+    실기동에서 실제로 재현됐다 — 가짜 스토리지 계약 테스트는 이 차이를 못 본다).
+    """
+    core, server = FakeCoreClient(), _server_with_two_images()
+    captured: dict[str, httpx.Request] = {}
+    # _FakeHttpServer.transport() 는 항상 동기 handler 를 만든다(비동기 아님) —
+    # httpx.MockTransport.handler 의 유니온 타입을 여기서 좁힌다.
+    inner_handler: Callable[[httpx.Request], httpx.Response] = server.transport().handler  # type: ignore[assignment]
+
+    def capturing_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            captured[request.url.path] = request
+        return inner_handler(request)
+
+    run_job(
+        "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        poll_interval_seconds=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(capturing_handler), timeout=30.0),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+    )
+
+    assert captured, "PUT 요청이 하나도 기록되지 않았다"
+    for path, request in captured.items():
+        assert "transfer-encoding" not in request.headers, (
+            f"{path}: Transfer-Encoding 헤더가 있다 — 청크 전송이면 S3 presigned PUT 이 411 을 낸다"
+        )
+        assert "content-length" in request.headers, f"{path}: Content-Length 가 없다"
+        assert int(request.headers["content-length"]) == len(request.content)
