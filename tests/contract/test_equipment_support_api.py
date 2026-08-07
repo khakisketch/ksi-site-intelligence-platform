@@ -643,3 +643,68 @@ def test_unauthenticated_read_is_401(store: EquipmentSupportStore) -> None:
     mount_auth(app, _registry())
     mount_equipment_support(app, store)
     assert TestClient(app).get("/v1/equipment-support").status_code == 401
+
+
+# ── reviewer 재검증 후속 (N2·N3) ────────────────────────────────────────────
+
+
+def test_invisible_ref_beside_a_real_one_is_not_stored(store: EquipmentSupportStore) -> None:
+    """[N2㉡ 회귀] 항목 필터가 strip() 이면 보이지 않는 항목이 실제 증거 옆에 붙어
+    그대로 원장에 저장된다 — 전체 판정은 두 번째 항목으로 통과하므로 아무도 못 본다."""
+    client = _client(store)
+    _register(client)
+    response = _patch(
+        client,
+        EquipmentSupportLevel.BASELINE_DETECTION,
+        evidence=["\u200b", "report://baseline", "   "],
+    )
+    assert response.status_code == 200, response.json()
+    assert client.get(f"/v1/equipment-support/{_CLASS_ID}").json()["evidenceRefs"] == [
+        "report://baseline"
+    ]
+
+
+def test_demotion_clears_model_version_too(store: EquipmentSupportStore) -> None:
+    """[N3㉡ 정책] 강등은 evidenceRefs 와 같은 이유로 버전 메타데이터도 물려받지 않는다.
+
+    "PRODUCTION_SUPPORTED 를 이 모델로 세웠다"는 사실은 그 단계에서 내려온 뒤에는
+    더 이상 이 레코드의 근거가 아니다 — 모델 회귀로 강등하는 경우가 특히 그렇다.
+    """
+    client = _client(store)
+    _register(client)
+    assert (
+        client.patch(
+            f"/v1/equipment-support/{_CLASS_ID}",
+            json={
+                "state": EquipmentSupportLevel.BASELINE_DETECTION.value,
+                "evidenceRefs": ["report://baseline"],
+                "modelVersion": "ksi-excavator-1.4.0",
+                "riskPackVersion": "risk-pack-2026Q3",
+            },
+        ).status_code
+        == 200
+    )
+    _patch(client, EquipmentSupportLevel.DATASET_AVAILABLE, evidence=[])
+    view = client.get(f"/v1/equipment-support/{_CLASS_ID}").json()
+    assert view["state"] == EquipmentSupportLevel.DATASET_AVAILABLE.value
+    assert view["modelVersion"] is None
+    assert view["riskPackVersion"] is None
+
+
+def test_restatement_carries_versions_forward(store: EquipmentSupportStore) -> None:
+    """강등이 아닌 방향(재선언)에서는 이어받는다 — 부분 갱신 의미론."""
+    client = _client(store)
+    _register(client)
+    client.patch(
+        f"/v1/equipment-support/{_CLASS_ID}",
+        json={
+            "state": EquipmentSupportLevel.BASELINE_DETECTION.value,
+            "evidenceRefs": ["report://baseline"],
+            "modelVersion": "ksi-excavator-1.4.0",
+        },
+    )
+    _patch(client, EquipmentSupportLevel.BASELINE_DETECTION, evidence=["report://revalidated"])
+    assert (
+        client.get(f"/v1/equipment-support/{_CLASS_ID}").json()["modelVersion"]
+        == "ksi-excavator-1.4.0"
+    )

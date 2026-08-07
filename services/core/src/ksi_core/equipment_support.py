@@ -31,6 +31,18 @@
    :func:`~ksi_domain.capability.is_production_supported` 가 계산한다 — 화면이
    ``state`` 문자열을 보고 스스로 판단하면 새 단계가 추가되는 날 조용히 틀린다.
 
+## 재생은 **현행** 게이트로 **과거** 레코드를 판정한다 — 알려진 결과
+
+``_replay`` 가 live 와 같은 함수를 부르는 것은 원장 조작 우회를 막는 핵심이지만,
+그 대가로 **게이트를 조일 때마다 기존 원장이 기동 불가가 될 수 있다.** 실제로
+"동일 단계 재선언에도 증거 필수"(reviewer 지적 F2)가 그 첫 사례다 — 그 조임 이전에
+증거 없이 재선언한 레코드가 있었다면 이 저장소는 이제 기동을 거부한다.
+
+이번 조임은 무해함을 확인했다(그 시점에 실원장이 존재하지 않았다). 실운영 원장이
+생긴 뒤에 게이트를 조일 때는 그냥 조이면 안 된다 — 레코드에 게이트 버전을 남기거나,
+재생 실패 메시지에 마이그레이션 절차를 넣어야 한다(reviewer 재검증 지적 N6).
+"느슨하게 재생"은 답이 아니다: 그 순간 원장 조작이 게이트 우회 경로가 된다.
+
 ## 등록은 항상 최하위 단계에서 시작한다
 
 ``POST`` 는 ``DATASET_AVAILABLE`` 로만 등록한다 — 임의 단계로 바로 등록할 수 있으면
@@ -52,6 +64,8 @@ from ksi_domain.capability import (
     EquipmentSupportLevel,
     IllegalSupportLevelTransitionError,
     assert_support_level_transition,
+    has_evidence,
+    is_demotion,
     is_production_supported,
 )
 from pydantic import BaseModel, ConfigDict, Field
@@ -126,16 +140,31 @@ class SupportTransition:
 
 
 def _normalize_refs(refs: tuple[str, ...]) -> tuple[str, ...]:
-    """각 항목을 strip 하고 빈 것을 버린다 — 저장과 판정이 같은 값을 본다.
+    """내용 없는 항목을 버리고 나머지를 strip 한다 — 저장과 판정이 같은 값을 본다.
 
-    ``["  ", " "]`` 같은 입력은 여기서 빈 튜플이 된다. 정규화 없이 그냥 이어붙이면
-    구분자(``"; "``)가 비공백이라 ``"  ;  "`` 이 되고, 그 문자열은
-    ``assert_support_level_transition`` 의 ``.strip()`` 검사를 **통과한다** — 공백만인
-    증거 두 개로 승급이 되는 구멍이었다(2026-08-08 계약 테스트가 실측으로 잡음).
-    저장도 정규화된 값으로 한다: 원장에 ``"   "`` 이 증거로 남으면 그건 증거가
-    아니라 소음이다.
+    두 번의 실측이 이 함수를 지금 모양으로 만들었다:
+
+    1. ``["  ", " "]`` 같은 입력을 그냥 이어붙이면 구분자(``"; "``)가 비공백이라
+       ``"  ;  "`` 이 되고, 그 문자열은 증거 검사를 **통과한다** — 공백만인 증거
+       두 개로 승급이 되는 구멍이었다(계약 테스트가 잡음).
+    2. 항목 필터가 ``str.strip()`` 이면 ``["\u200b", "report://x"]`` 의 보이지 않는
+       항목이 그대로 원장에 저장된다 — 전체 판정은 두 번째 항목으로 통과하므로
+       아무도 못 본다(reviewer 재검증 지적 N2). 판정과 같은 규칙
+       (:func:`~ksi_domain.capability.has_evidence`)으로 걸러야 "원장에 남는 증거는
+       전부 실제 내용이 있다"가 성립한다.
     """
-    return tuple(stripped for ref in refs if (stripped := ref.strip()))
+    return tuple(ref.strip() for ref in refs if has_evidence(ref))
+
+
+def _carry_forward(requested: str | None, previous: str | None, demoting: bool) -> str | None:
+    """부분 갱신 규칙 — 요청이 말하지 않은 메타데이터를 이어받을지 결정한다.
+
+    승급·재선언은 이어받고, 강등은 이어받지 않는다(:meth:`EquipmentSupportStore.transition`
+    의 인라인 주석에 근거).
+    """
+    if requested is not None:
+        return requested
+    return None if demoting else previous
 
 
 def _joined_evidence(refs: tuple[str, ...]) -> str:
@@ -287,6 +316,7 @@ class EquipmentSupportStore:
                     EquipmentSupportVerdict.UNKNOWN_CLASS,
                     detail=f"등록된 적 없는 장비 클래스다 (classId={class_id!r})",
                 )
+            demoting = is_demotion(current.state, target)
             try:
                 assert_support_level_transition(
                     current.state, target, evidence=_joined_evidence(evidence_refs)
@@ -305,19 +335,21 @@ class EquipmentSupportStore:
                 class_id=class_id,
                 state=target,
                 evidence_refs=evidence_refs,
-                # PATCH 는 부분 갱신이다 — 요청이 버전을 말하지 않았으면 이전 값을
-                # 이어받는다. 예전엔 무조건 덮어써서, 사다리를 정상적으로 올라간
-                # PRODUCTION_SUPPORTED 레코드가 modelVersion=null 로 끝났다(2026-08-08
-                # reviewer 지적 F4) — 상용지원 선언을 뒷받침할 모델 버전이 정상 경로로
-                # 비워지는 자리였다. evidence_refs 는 반대다: 그건 **이번 전이의**
-                # 근거라 이어받으면 안 된다(모듈 docstring 2항).
-                model_version=(
-                    model_version if model_version is not None else current.model_version
-                ),
-                risk_pack_version=(
-                    risk_pack_version
-                    if risk_pack_version is not None
-                    else current.risk_pack_version
+                # 승급·재선언은 부분 갱신이다 — 요청이 버전을 말하지 않았으면 이전
+                # 값을 이어받는다. 예전엔 무조건 덮어써서, 사다리를 정상적으로 올라간
+                # PRODUCTION_SUPPORTED 레코드가 modelVersion=null 로 끝났다(reviewer
+                # 지적 F4) — 상용지원 선언을 뒷받침할 모델 버전이 정상 경로로 비워지는
+                # 자리였다.
+                #
+                # **강등에서는 이어받지 않는다.** evidence_refs 를 물려주지 않는 것과
+                # 같은 이유다(모듈 docstring 2항): "PRODUCTION_SUPPORTED 를 이 모델로
+                # 세웠다"는 사실은 그 단계에서 내려온 뒤에는 더 이상 이 레코드의
+                # 근거가 아니다. 모델 회귀로 강등하는 경우가 특히 그렇다 — 방금
+                # 못 믿게 된 그 버전이 새 단계의 뒷받침으로 남는다(reviewer 재검증
+                # 지적 N3㉡, 정책 확정). 강등 후 값을 다시 붙이려면 요청에 명시한다.
+                model_version=_carry_forward(model_version, current.model_version, demoting),
+                risk_pack_version=_carry_forward(
+                    risk_pack_version, current.risk_pack_version, demoting
                 ),
                 now=now,
                 actor=actor,

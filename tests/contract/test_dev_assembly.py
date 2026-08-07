@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
@@ -92,8 +93,14 @@ class _NullEvidenceStorage:
         raise NotImplementedError
 
 
-def _max_assembly_paths(tmp_path: Path) -> set[str]:
-    """모든 조건부 라우터를 장착한 앱의 /v1 경로 집합."""
+def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
+    """모든 조건부 라우터를 장착하는 ``create_app`` 인자.
+
+    dict 로 돌려주는 이유는 :func:`test_max_assembly_passes_every_store_parameter` 가
+    **인자 이름 집합**을 ``create_app`` 시그니처와 대조하기 위해서다 — 그 대조가
+    없으면 이 함수 자체가 손으로 유지되는 복제본이라, 새 store 를 추가하면서 여기를
+    안 고치면 아래 경로 대조가 조용히 통과한다(F1 의 실패 양식이 그대로 재발).
+    """
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     source_media_store = SourceMediaStore(
@@ -104,9 +111,9 @@ def _max_assembly_paths(tmp_path: Path) -> set[str]:
         source_media_store=source_media_store,
         site_store=site_store,
     )
-    app = create_app(
-        evidence_storage=_NullEvidenceStorage(),
-        auth_registry=AuthRegistry(
+    return {
+        "evidence_storage": _NullEvidenceStorage(),
+        "auth_registry": AuthRegistry(
             [
                 PrincipalTokenRecord(
                     token_sha256=hashlib.sha256(b"x").hexdigest(),
@@ -119,35 +126,61 @@ def _max_assembly_paths(tmp_path: Path) -> set[str]:
                 )
             ]
         ),
-        edge_sync_store=EdgeSyncStore(tmp_path / "edge-sync.jsonl"),
-        event_store=EventStore(DurableJournal(tmp_path / "events.jsonl")),
-        site_store=site_store,
-        mission_store=mission_store,
-        coverage_report_store=CoverageReportStore(
+        "edge_sync_store": EdgeSyncStore(tmp_path / "edge-sync.jsonl"),
+        "event_store": EventStore(DurableJournal(tmp_path / "events.jsonl")),
+        "site_store": site_store,
+        "mission_store": mission_store,
+        "coverage_report_store": CoverageReportStore(
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
-        source_media_store=source_media_store,
-        processing_job_store=processing_job_store,
-        defect_candidate_store=DefectCandidateStore(
+        "source_media_store": source_media_store,
+        "processing_job_store": processing_job_store,
+        "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),
             mission_store=mission_store,
             source_media_store=source_media_store,
         ),
-        change_detection_store=ChangeDetectionStore(
+        "change_detection_store": ChangeDetectionStore(
             DurableJournal(tmp_path / "change-detection.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
         ),
-        equipment_state_store=EquipmentStateStore(
+        "equipment_state_store": EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),
-        equipment_support_store=EquipmentSupportStore(
+        "equipment_support_store": EquipmentSupportStore(
             DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
-        mission_signing_key=Ed25519PrivateKey.generate(),
-        mission_signing_key_id="dev-assembly-test-key",
-    )
+        "mission_signing_key": Ed25519PrivateKey.generate(),
+        "mission_signing_key_id": "dev-assembly-test-key",
+    }
+
+
+def _max_assembly_paths(tmp_path: Path) -> set[str]:
+    """모든 조건부 라우터를 장착한 앱의 /v1 경로 집합."""
+    app = create_app(**_max_assembly_kwargs(tmp_path))
     return {p for p in app.openapi()["paths"] if p.startswith("/v1/")}
+
+
+def test_max_assembly_passes_every_store_parameter(tmp_path: Path) -> None:
+    """[자체 갱신 앵커] ``create_app`` 의 ``*_store`` 파라미터를 최대 조립이 하나도
+    빠뜨리지 않는다.
+
+    아래 경로 대조(:func:`test_dev_assembly_mounts_every_v1_surface`)의 기준집합은
+    손으로 유지되는 복제본이다 — 새 store 를 추가하면서 그 복제본을 안 고치면
+    ``missing`` 이 공집합이 되어 조용히 통과한다. F1(신설 API 4종이 어떤 실행 가능한
+    조립에도 없었다)의 실패 양식이 **재발 방지 게이트 안에서 그대로 재발**하는
+    자리다(2026-08-08 reviewer 재검증 지적 N1). 시그니처에서 직접 뽑아 대조하면
+    그 자리가 닫힌다 — 새 store 파라미터를 추가하는 순간 이 테스트가 먼저 깨진다.
+    """
+    store_params = {
+        name for name in inspect.signature(create_app).parameters if name.endswith("_store")
+    }
+    missing = store_params - set(_max_assembly_kwargs(tmp_path))
+    assert not missing, (
+        f"create_app 의 store 파라미터를 최대 조립이 넘기지 않는다: {sorted(missing)} "
+        "— 이 함수를 갱신하지 않으면 dev 조립 대조가 그 표면을 아예 보지 못한다"
+    )
 
 
 def test_dev_assembly_mounts_every_v1_surface(tmp_path: Path) -> None:

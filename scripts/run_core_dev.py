@@ -176,7 +176,45 @@ def build_dev_app(
     s3_endpoint: str | None = None,
     s3_bucket: str | None = None,
 ) -> DevAssembly:
-    """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다."""
+    """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다.
+
+    조립 도중 실패하면 **이미 연 원장을 전부 닫고** 예외를 올린다. 안 닫으면 같은
+    프로세스에서 같은 data-dir 로 재시도할 때 flock 에 막혀, 진짜 실패 원인이
+    "다른 프로세스가 journal 을 소유 중"으로 덮인다(reviewer 재검증 지적 N5 —
+    ``DurableJournal.__init__`` 이 정확히 이 이유로 자기 fd 를 닫는 관습과 대칭).
+    """
+    opened: list[Any] = []
+
+    def _journal(name: str) -> DurableJournal:
+        journal = DurableJournal(data_dir / name, max_segment_bytes=segment_bytes)
+        opened.append(journal)
+        return journal
+
+    try:
+        return _build_dev_app_locked(
+            data_dir,
+            journal=_journal,
+            opened=opened,
+            edge_sync_snapshot_every=edge_sync_snapshot_every,
+            s3_endpoint=s3_endpoint,
+            s3_bucket=s3_bucket,
+        )
+    except BaseException:
+        for journal in opened:
+            journal.close()
+        raise
+
+
+def _build_dev_app_locked(
+    data_dir: Path,
+    *,
+    journal: Any,
+    opened: list[Any],
+    edge_sync_snapshot_every: int | None,
+    s3_endpoint: str | None,
+    s3_bucket: str | None,
+) -> DevAssembly:
+    """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다."""
     key_set = _bootstrap_key_set(data_dir / "signing")
 
     # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
@@ -185,15 +223,16 @@ def build_dev_app(
     # 여기 값은 dev 조립 기준이고, 운영 조립은 디스크·백업 주기에 맞춰 자기 값을 준다.
     # CLI 는 0 을 "회전 없음"으로 받는다(생성자는 None). 음수는 argparse 를 통과하지만
     # 생성자가 ValueError 로 거부한다 — 조용히 0 으로 뭉개지 않는다.
-    site_journal = DurableJournal(data_dir / "sites.jsonl", max_segment_bytes=segment_bytes)
-    mission_journal = DurableJournal(data_dir / "missions.jsonl", max_segment_bytes=segment_bytes)
-    event_journal = DurableJournal(data_dir / "events.jsonl", max_segment_bytes=segment_bytes)
+    site_journal = journal("sites.jsonl")
+    mission_journal = journal("missions.jsonl")
+    event_journal = journal("events.jsonl")
     # edge-sync 는 회전이 아니라 스냅샷으로 재기동 비용을 잡는다 — 이 원장의
     # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
     edge_sync_store = EdgeSyncStore(
         data_dir / "edge-sync.jsonl",
         snapshot_every=edge_sync_snapshot_every,
     )
+    opened.append(edge_sync_store)
 
     evidence_storage = None
     if s3_endpoint is not None and s3_bucket is not None:
@@ -206,21 +245,15 @@ def build_dev_app(
     mission_store = MissionStore(mission_journal)
     # 커버리지 보고는 임무 발급 기록과 대조해서만 받는다(INV-010) — 발급된 적
     # 없는 임무의 관찰 결과는 "무슨 근거로 날았나"에 답할 수 없다.
-    coverage_journal = DurableJournal(
-        data_dir / "coverage-reports.jsonl", max_segment_bytes=segment_bytes
-    )
+    coverage_journal = journal("coverage-reports.jsonl")
     # 원본 사진 번들(3D 파이프라인 입구) — --s3-endpoint 없이는 store 는 구성돼도
     # 라우트가 장착되지 않는다(evidence 라우트와 같은 관습, create_app 참조).
-    source_media_journal = DurableJournal(
-        data_dir / "source-media.jsonl", max_segment_bytes=segment_bytes
-    )
+    source_media_journal = journal("source-media.jsonl")
     source_media_store = SourceMediaStore(source_media_journal, mission_store=mission_store)
     site_store = SiteStore(site_journal)
     # 처리 작업(ADR-KSI-012) — 봉인된 번들에서 입력을, 현장에서 반출 허용 여부를
     # 읽는다(INV-050). source_media 와 달리 오브젝트 스토리지를 요구하지 않는다.
-    processing_job_journal = DurableJournal(
-        data_dir / "processing-jobs.jsonl", max_segment_bytes=segment_bytes
-    )
+    processing_job_journal = journal("processing-jobs.jsonl")
     # evidence_storage 없이 이 저장소를 넘기면 create_app 이 조립 자체를 거부한다
     # (ADR-KSI-012/INV-050 — 워커가 원본 바이트를 받아갈 URL 이 없으면 SUCCEEDED
     # 게이트가 영구히 닫힌 조립이 된다). 예전 코드는 무조건 넘겨서 **--s3-endpoint
@@ -238,18 +271,10 @@ def build_dev_app(
     # **띄울 수 있는 서버에서는 404 다**(2026-08-08 reviewer 지적 F1: 신설 API 4종이
     # 어떤 실행 가능한 조립에도 장착돼 있지 않았다). 라이브러리를 API 로 만든 작업이
     # 다시 "아무도 못 쓰는 것"이 되는 자리라, 배선과 조립을 같은 커밋에서 닫는다.
-    defect_candidate_journal = DurableJournal(
-        data_dir / "defect-candidates.jsonl", max_segment_bytes=segment_bytes
-    )
-    change_detection_journal = DurableJournal(
-        data_dir / "change-detection.jsonl", max_segment_bytes=segment_bytes
-    )
-    equipment_state_journal = DurableJournal(
-        data_dir / "equipment-states.jsonl", max_segment_bytes=segment_bytes
-    )
-    equipment_support_journal = DurableJournal(
-        data_dir / "equipment-support.jsonl", max_segment_bytes=segment_bytes
-    )
+    defect_candidate_journal = journal("defect-candidates.jsonl")
+    change_detection_journal = journal("change-detection.jsonl")
+    equipment_state_journal = journal("equipment-states.jsonl")
+    equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=site_store,
@@ -286,22 +311,9 @@ def build_dev_app(
         mission_signing_key_id=key_set.active_key_id,
     )
 
-    return DevAssembly(
-        app=app,
-        journals=(
-            site_journal,
-            mission_journal,
-            event_journal,
-            coverage_journal,
-            source_media_journal,
-            processing_job_journal,
-            defect_candidate_journal,
-            change_detection_journal,
-            equipment_state_journal,
-            equipment_support_journal,
-            edge_sync_store,
-        ),
-    )
+    # 열린 순서 그대로 닫는다 — 목록을 손으로 유지하면 새 원장을 추가하면서
+    # 빠뜨리기 쉽고, 그 누락은 "재기동이 flock 으로 막힌다"로만 드러난다.
+    return DevAssembly(app=app, journals=tuple(opened))
 
 
 def main() -> None:

@@ -124,6 +124,16 @@ def has_evidence(evidence: str | None) -> bool:
     return any(unicodedata.category(ch)[0] not in _EMPTY_CATEGORY_PREFIXES for ch in evidence)
 
 
+def is_demotion(cur: EquipmentSupportLevel, nxt: EquipmentSupportLevel) -> bool:
+    """``cur → nxt`` 가 하향(강등)인가 — 단계 순서의 SSOT 는 이 모듈이다.
+
+    소비자가 ``_SUPPORT_LEVEL_INDEX`` 를 직접 읽으면 순서 정의가 밖으로 새고,
+    단계가 추가되는 날 두 곳을 고쳐야 한다. 동일 단계는 강등이 아니다
+    (:func:`assert_support_level_transition` 이 그 둘을 다르게 취급한다).
+    """
+    return _SUPPORT_LEVEL_INDEX[nxt] < _SUPPORT_LEVEL_INDEX[cur]
+
+
 def assert_support_level_transition(
     cur: EquipmentSupportLevel,
     nxt: EquipmentSupportLevel,
