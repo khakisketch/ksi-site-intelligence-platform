@@ -181,6 +181,24 @@ class RecordedCoverageReport:
     reported_by: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class RejectedCoverageReport:
+    """서버가 거부한 보고 1건 — 무엇을, 왜, 누가, 언제.
+
+    보고 본문 자체는 담지 않는다. 거부된 주장을 조회 표면에 그대로 실으면 그
+    숫자들이 화면에서 사실처럼 읽힐 자리가 생긴다 — 감사에 필요한 것은 "이 임무에
+    대해 이런 사유로 거부가 있었다"이지 거부된 주장의 내용이 아니다(원문이 필요하면
+    journal 을 본다).
+    """
+
+    mission_id: str
+    site_id: str | None
+    verdict: CoverageReportVerdict
+    detail: str | None
+    reported_by: str | None
+    rejected_at: datetime
+
+
 class CoverageReportStore:
     """``DurableJournal`` 위의 보고 원장 — append-only, 덮어쓰지 않는다.
 
@@ -194,6 +212,9 @@ class CoverageReportStore:
         self._lock = threading.Lock()
         # mission_id → 그 임무의 보고서들(수신 순서 보존)
         self._by_mission: dict[str, list[RecordedCoverageReport]] = {}
+        # mission_id → 거부 판정 이력. 수용 상태와 **분리해서** 들고 있는다 —
+        # RECORDED 만 완료 판정 권위를 갖는다는 규칙은 그대로다(모듈 docstring).
+        self._rejections_by_mission: dict[str, list[RejectedCoverageReport]] = {}
         try:
             self._replay(journal)
         except CoverageReportRecoveryError:
@@ -210,7 +231,20 @@ class CoverageReportStore:
             kind = raw.get("kind")
             if kind == "coverage-report-rejected":
                 # 거부 판정 감사기록(risk coverage-report-rejection-not-auditable) —
-                # 수용 상태(_by_mission)에 반영하지 않는다. RECORDED 만 완료 판정 권위를 가진다.
+                # 수용 상태(_by_mission)에 반영하지 않는다. RECORDED 만 완료 판정 권위를
+                # 가진다. 다만 **조회 가능한 곳에는 실어야** 한다: 저장만 하고 어떤 GET
+                # 으로도 못 보면 "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자
+                # 에게 끝내 도달하지 않는다.
+                self._rejections_by_mission.setdefault(raw["missionId"], []).append(
+                    RejectedCoverageReport(
+                        mission_id=raw["missionId"],
+                        site_id=raw.get("siteId"),
+                        verdict=CoverageReportVerdict(raw["verdict"]),
+                        detail=raw.get("detail"),
+                        reported_by=raw.get("reportedBy"),
+                        rejected_at=datetime.fromisoformat(raw["ts"]),
+                    )
+                )
                 continue
             if kind not in (None, "coverage-reported"):
                 raise CoverageReportRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
@@ -318,6 +352,16 @@ class CoverageReportStore:
                 CoverageReportVerdict.STORE_UNAVAILABLE,
                 detail="durable 기록 실패 — journal 봉인(재시작 필요)",
             )
+        self._rejections_by_mission.setdefault(report.mission_id, []).append(
+            RejectedCoverageReport(
+                mission_id=report.mission_id,
+                site_id=report.site_id,
+                verdict=verdict,
+                detail=detail,
+                reported_by=reported_by,
+                rejected_at=now.astimezone(UTC),
+            )
+        )
         return CoverageReportResult(verdict, detail=detail)
 
     def latest(self, mission_id: str) -> CoverageReport | None:
@@ -330,6 +374,15 @@ class CoverageReportStore:
         with self._lock:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
+
+    def rejections(self, mission_id: str) -> list[RejectedCoverageReport]:
+        """그 임무에 대해 서버가 **거부한** 보고들(수신 순서 보존).
+
+        "서버가 근거 없는 완료 주장을 막았다"는 사실 자체가 감사 입력이다 —
+        장비가 반복적으로 허위 완료를 주장해도 이 목록이 없으면 사람은 알 수 없다.
+        """
+        with self._lock:
+            return list(self._rejections_by_mission.get(mission_id, ()))
 
     def history(self, mission_id: str) -> list[CoverageReport]:
         """수신 순서를 보존한 전체 보고 이력(덮어쓰지 않는다)."""
@@ -359,6 +412,27 @@ class CoverageReportView(_CamelModel):
     # 자동 재발급을 트리거하지 않는다: 운영자/오퍼레이터가 이 신호를 보고 원본 site
     # AOI 로 SPATIAL_REFRESH 임무를 POST /v1/missions/plans 에 재발급한다.
     recovery_recommended: bool
+
+
+class CoverageRejectionView(_CamelModel):
+    """거부된 보고 1건 — 무엇을, 왜, 누가, 언제(본문은 싣지 않는다)."""
+
+    verdict: str
+    detail: str | None
+    reported_by: str | None
+    rejected_at: datetime
+
+
+class CoverageRejectionListView(_CamelModel):
+    """그 임무에 대해 서버가 거부한 보고들.
+
+    거부가 0건인 것은 404 가 아니라 빈 목록이다 — "이 임무에는 거부가 없었다"는
+    그 자체로 답이고, 404 로 주면 "임무가 없다"와 구분되지 않는다.
+    """
+
+    mission_id: str
+    rejection_count: int
+    rejections: list[CoverageRejectionView]
 
 
 def _require_reporting_device(
@@ -433,6 +507,39 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
             latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
             reported_by=recorded.reported_by,
             recovery_recommended=recorded.report.needs_coverage_recovery(),
+        )
+
+    @router.get(
+        "/{mission_id}/coverage-report/rejections", response_model=CoverageRejectionListView
+    )
+    def list_coverage_rejections(
+        mission_id: str,
+        _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> CoverageRejectionListView:
+        """서버가 거부한 완료 주장 목록 (risk coverage-report-rejection-not-auditable).
+
+        거부 판정은 이미 durable 기록되고 있었지만 **어떤 GET 으로도 조회할 수
+        없었다** — 판정이 제출 장비의 응답 본문으로만 가고 소멸했다. 그러면
+        "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자에게 도달하지 않고,
+        장비가 반복적으로 허위 완료를 주장해도 사람은 알 수 없다. INV-010 의 강제는
+        성립하지만 그 강제가 작동했다는 증거가 남지 않는 상태였다.
+
+        거부된 보고의 **본문은 싣지 않는다** — 거부된 주장의 숫자를 조회 표면에
+        그대로 실으면 그게 화면에서 사실처럼 읽힐 자리가 생긴다.
+        """
+        rejections = store.rejections(mission_id)
+        return CoverageRejectionListView(
+            mission_id=mission_id,
+            rejection_count=len(rejections),
+            rejections=[
+                CoverageRejectionView(
+                    verdict=r.verdict.value,
+                    detail=r.detail,
+                    reported_by=r.reported_by,
+                    rejected_at=r.rejected_at,
+                )
+                for r in rejections
+            ],
         )
 
     return router

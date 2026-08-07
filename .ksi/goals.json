@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T21:05:26+09:00",
+  "updated_at": "2026-08-07T21:10:45+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1454,14 +1454,14 @@
       "title": "근거 없는 완료 주장을 서버가 거부해도 그 사실이 어디에도 남지 않는다 — 거부 판정이 제출 장비의 응답으로만 가고 소멸",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "CoverageReportStore.record() 가 RECORDED 가 아닌 판정(NO_COVERAGE_EVIDENCE·SELF_CONTRADICTORY_SUMMARY 등)에서 journal append 도 in-memory 기록도 없이 조기 반환한다(services/core/src/ksi_core/coverage_reports.py). 결과적으로 거부는 POST 를 보낸 장비의 응답 본문으로만 전달되고 어떤 GET 으로도 조회할 수 없다. 서버가 근거 없는 완료를 막았다는 사실 자체가 운영자·감사자에게 도달하지 않는다 — INV-010(완료 판정의 권위는 CoverageReport) 의 강제는 성립하지만 그 강제가 작동했다는 증거가 남지 않는다. 장비가 반복적으로 허위 완료를 주장해도 사람은 알 수 없다. 폐쇄하려면 거부 감사 저장소가 필요하고 이는 시스템 경계 변경이라 대표자 결정 대상. 3단계(임무 실행 결과 화면) 구현 중 워커가 자진 신고, 메인이 코드로 확인.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "GET /v1/missions/{id}/coverage-report/rejections 신설(MISSIONS_READ). journal append 는 이미 있었고(358d427) 없던 것은 **읽는 경로**였다 — 저장만 하고 어떤 GET 으로도 못 보면 '서버가 근거 없는 완료를 막았다'가 운영자·감사자에게 도달하지 않는다. CoverageReportStore 가 거부를 수용 상태와 분리된 projection 으로 들고(live·재생 양쪽) rejections() 로 낸다. 거부된 주장의 **본문은 싣지 않는다** — 그 숫자가 조회 표면에 있으면 화면에서 사실처럼 읽힌다. 거부 0건은 404 가 아니라 빈 목록(404 면 '임무가 없다'와 섞인다). tests/contract/test_coverage_reports.py 4건: API 노출·본문 미포함(필드 집합 고정)·0건은 빈 목록·재기동 후 잔존. pytest 2149 passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-05T18:00:00+09:00",
-      "updated_at": "2026-08-05T18:00:00+09:00"
+      "updated_at": "2026-08-07T21:10:45+09:00"
     },
     {
       "id": "processing-success-claim-unbacked",
@@ -1524,14 +1524,14 @@
       "title": "메시 산출물의 digest 가 .obj 만 덮어 텍스처 변경을 잡지 못한다",
       "lens": "gaming",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "실물 아카이브에 odm_texturing/*_map_Kd.png 3개와 .mtl 이 함께 있는데 mesh artifact 의 digest 는 .obj 하나만 해싱한다. 텍스처가 바뀌어도 digest 가 그대로라, 메시를 시각 산출물로 납품하면 '내용이 같음'을 증명하지 못한다. 지금 모델이 '한 산출물 = 한 파일 = 한 digest' 라서 생긴 구멍 — 디렉터리 산출물 봉인 방식을 정해야 닫힌다(EPT/3d_tiles 도 같은 이유로 미모델링).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "코드에 이미 닫혀 있었고 원장 기록만 낡았음(2026-08-08 확인). odm_assets.py 가 mesh artifact 에 auxiliary_suffixes=('.mtl','_map_Kd.png') 를 선언해 digest 가 .obj 단독이 아니라 텍스처·머티리얼까지 덮는다(정렬은 아카이브 나열 순서에 기대지 않음, odm.py:306). tests/contract/test_odm_adapter.py 'mesh digest 가 텍스처를 덮는가' 절이 고정. 폐쇄 커밋 358d427",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T05:36:42+09:00",
-      "updated_at": "2026-08-06T05:36:42+09:00"
+      "updated_at": "2026-08-07T21:10:45+09:00"
     },
     {
       "id": "worker-daemon-never-run-end-to-end",
@@ -1566,14 +1566,14 @@
       "title": "AUTONOMOUS_PATROL이 route.captureIntervalM을 직접 지정하면(camera 대신) 품질 하한이 없다 — lawnmower의 'capture_interval_m ≤ spacing_m' 대응물이 perimeter에는 없어, API 직접 호출자가 200m 간격 같은 사실상 무의미한 'Spatial Refresh Backbone'을 발급할 수 있다",
       "lens": "gaming",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "기본 경로(대시보드 SurveyWizard.tsx)는 camera를 보내 compute_grid_spacing이 MIN_FRONT_OVERLAP(0.6)을 물리적으로 강제하므로 안전하다 — 이 리스크는 captureIntervalM 직접 지정 경로(expert-mode escape hatch)에 한정된다. perimeter_route()의 하한은 _MIN_CAPTURE_INTERVAL_M=0.1m(자원소진 방지용일 뿐 품질 하한 아님). reviewer adversarial 재검토(2026-08-06) 지적. 코드로 닫으려면 고도 기반 상한 (예: interval ≤ 0.4×altitude_m) 또는 camera 필수화가 후보.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "코드에 이미 닫혀 있었고 원장 기록만 낡았음(2026-08-08 확인). coverage.perimeter_route() 가 interval_ceiling = _MAX_SPACING_PER_ALTITUDE(1.5) × altitude_m 를 강제하고 카메라 유도가 아닌 직접 지정이 이를 넘으면 RouteGenerationError. mission_plans.py:342 이 capture_interval_is_camera_derived = (route.camera is not None) 로 배선. tests/contract/test_mission_planning.py 가 '운용 상한' 거부와 카메라 유도 예외를 각각 고정(124 passed). 폐쇄 커밋 358d427",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T20:33:31+09:00",
-      "updated_at": "2026-08-06T20:33:31+09:00"
+      "updated_at": "2026-08-07T21:10:45+09:00"
     },
     {
       "id": "patrol-backbone-capture-cadence-hardware-unvalidated",

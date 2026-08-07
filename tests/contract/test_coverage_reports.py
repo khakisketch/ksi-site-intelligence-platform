@@ -646,3 +646,85 @@ def test_http_submission_records_the_authenticated_principal(
     )
     history = store.history(_MISSION_ID)
     assert len(history) == 1
+
+
+# ── 거부가 조회로 도달하는가 (risk coverage-report-rejection-not-auditable) ──
+#
+# 거부 판정의 journal append 는 이미 있었다. 없던 것은 **읽는 경로**다 — 저장만 하고
+# 어떤 GET 으로도 못 보면 "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자
+# 에게 끝내 도달하지 않는다. 장비가 반복적으로 허위 완료를 주장해도 사람은 모른다.
+
+
+def test_rejection_is_visible_through_the_api(store: CoverageReportStore) -> None:
+    client = _client(store)
+    unsupported = _report_payload(completion="COMPLETED", hazard=0.5)
+    posted = client.post(f"/v1/missions/{_MISSION_ID}/coverage-report", json=unsupported)
+    assert posted.status_code == 422
+
+    listed = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["rejectionCount"] == 1
+    entry = body["rejections"][0]
+    assert entry["verdict"] == CoverageReportVerdict.UNSUPPORTED_COMPLETION.value
+    assert entry["reportedBy"] == "edge-1"
+    assert entry["detail"] is not None
+
+
+def test_rejection_list_does_not_carry_the_claimed_numbers(store: CoverageReportStore) -> None:
+    """거부된 주장의 본문은 싣지 않는다 — 조회 표면에 실으면 화면에서 사실처럼 읽힌다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(completion="COMPLETED", hazard=0.5),
+    )
+    entry = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    ).json()["rejections"][0]
+    assert set(entry) == {"verdict", "detail", "reportedBy", "rejectedAt"}
+
+
+def test_no_rejection_is_empty_list_not_404(store: CoverageReportStore) -> None:
+    """'이 임무엔 거부가 없었다'는 그 자체로 답이다 — 404 면 '임무가 없다'와 섞인다."""
+    client = _client(store)
+    accepted = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+    assert accepted.status_code == 201
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["rejectionCount"] == 0
+
+
+def test_rejections_survive_restart(tmp_path: Path) -> None:
+    """재기동해도 남는다 — 감사 기록이 프로세스 수명에 묶이면 감사가 아니다."""
+    missions = _mission_store(tmp_path)
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    first = CoverageReportStore(journal, mission_store=missions)
+    assert (
+        first.record(
+            CoverageReport.model_validate(_report_payload(completion="COMPLETED", hazard=0.5)),
+            now=_NOW,
+            reported_by="edge-1",
+        ).verdict
+        is CoverageReportVerdict.UNSUPPORTED_COMPLETION
+    )
+    journal.close()
+
+    reborn = DurableJournal(journal_path)
+    try:
+        reopened = CoverageReportStore(reborn, mission_store=missions)
+        rejections = reopened.rejections(_MISSION_ID)
+    finally:
+        reborn.close()
+    assert len(rejections) == 1
+    assert rejections[0].verdict is CoverageReportVerdict.UNSUPPORTED_COMPLETION
+    assert rejections[0].reported_by == "edge-1"
