@@ -1861,3 +1861,213 @@ def test_http_humans_cannot_lease(tmp_path: Path) -> None:
     for token in (_ADMIN_TOKEN, _VIEWER_TOKEN):
         client.headers.update({"Authorization": f"Bearer {token}"})
         assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 403
+
+
+# ── 산출물 바이트 영속 (M1) ─────────────────────────────────────────────────
+#
+# 여기까지 이 파일이 검증한 것은 "산출물의 **계보**가 정직한가"였다. 아래는
+# 그 계보가 가리키는 **바이트가 실제로 남는가**를 본다 — 재구성이 성공해도
+# digest 만 남고 파일이 버려지면 사람이 볼 수 있는 것이 아무것도 없다.
+
+
+def test_http_upload_url_is_issued_to_the_leaseholder(tmp_path: Path) -> None:
+    """워커가 산출물을 올릴 자리를 받는다 — 키는 서버가 정한다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": "point-cloud", "contentType": "application/octet-stream"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["verdict"] == "UPLOAD_READY"
+    assert body["objectKey"] == (
+        f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/point-cloud"
+    )
+    assert body["uploadUrl"].startswith("https://storage.invalid/")
+
+
+def test_http_upload_url_is_deterministic_for_the_same_artifact(tmp_path: Path) -> None:
+    """같은 (작업, 산출물)이면 같은 키다.
+
+    키를 레코드에 저장하지 않고 식별자에서 유도하는 설계라(``build_mission_kmz_
+    object_key`` 관습), 이 결정성이 곧 "나중에 다시 찾을 수 있다"의 근거다.
+    재시도가 두 번째 사본을 만들면 원본이 무엇인지 알 수 없게 된다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    payload = {"artifactId": "dsm", "contentType": "image/tiff"}
+
+    first = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
+    second = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
+
+    assert first.json()["objectKey"] == second.json()["objectKey"]
+
+
+def test_http_upload_url_refuses_a_worker_without_the_lease(tmp_path: Path) -> None:
+    """[음성] lease 없이 올릴 자리를 받지 못한다 — 남의 작업 경로에 쓰지 못하게."""
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    _as_worker(client)
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": "dsm", "contentType": "image/tiff"},
+    )
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "LEASE_REQUIRED"
+
+
+def test_http_upload_url_refuses_humans(tmp_path: Path) -> None:
+    """[음성] 사람은 산출물 바이트를 올리지 못한다 — 실행 사실 보고와 같은 경계."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    for token in (_ADMIN_TOKEN, _VIEWER_TOKEN):
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        assert (
+            client.post(
+                f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+                json={"artifactId": "dsm", "contentType": "image/tiff"},
+            ).status_code
+            == 403
+        )
+
+
+@pytest.mark.parametrize(
+    "artifact_id", ["../escape", "a/b", "", "point cloud", "."]
+)
+def test_http_upload_url_refuses_path_escaping_artifact_ids(
+    tmp_path: Path, artifact_id: str
+) -> None:
+    """[핵심 음성] 산출물 식별자로 저장 경로를 벗어나지 못한다.
+
+    이 값은 워커가 보내는 것이고, 그대로 객체 키에 이어 붙는다 — 검증이
+    없으면 워커 토큰 하나로 버킷의 임의 경로에 쓸 수 있다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": artifact_id, "contentType": "application/octet-stream"},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_http_upload_url_refuses_a_finished_job(tmp_path: Path) -> None:
+    """[음성] 끝난 작업에는 더 올리지 못한다 — 종료가 쓰기 종료를 뜻해야 한다.
+
+    종료 경로로 ``FAILED`` 를 쓴다. ``SUCCEEDED`` 는 원본 실측 대조까지
+    선행돼야 통과하는데(``UNBACKED_SUCCESS``), 이 테스트가 보려는 것은 성공
+    조건이 아니라 **활성 여부**다 — 실패로 끝난 작업도 똑같이 막혀야 한다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/transitions",
+            json={"targetStatus": "FAILED"},
+        ).status_code
+        == 200
+    )
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": "late", "contentType": "image/tiff"},
+    )
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "JOB_NOT_ACTIVE"
+
+
+def test_http_artifact_download_returns_a_presigned_url(tmp_path: Path) -> None:
+    """등록된 산출물의 바이트를 다시 꺼낼 수 있다 — 이게 M1 의 핵심 주장이다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+        ).status_code
+        == 201
+    )
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+
+    response = client.get(
+        f"/v1/processing-jobs/{job_id}/artifacts/pointcloud/download"
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["verdict"] == "ARTIFACT_READY"
+    assert body["objectKey"] == (
+        f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/pointcloud"
+    )
+    assert body["downloadUrl"].startswith("https://storage.invalid/")
+
+
+def test_http_artifact_download_refuses_an_unregistered_artifact(tmp_path: Path) -> None:
+    """[음성] 등록되지 않은 산출물의 URL 을 만들어 주지 않는다.
+
+    키는 식별자에서 유도되므로 등록 여부와 무관하게 **계산은 된다** — 그래서
+    원장 대조 없이 발급하면 존재하지 않는 자리의 URL 이 나가고, 소비자는
+    404 를 스토리지에서 받는다(원인이 한 단계 멀어진다).
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+
+    response = client.get(f"/v1/processing-jobs/{job_id}/artifacts/nope/download")
+    assert response.status_code == 404
+    assert response.json()["verdict"] == "ARTIFACT_NOT_FOUND"
+
+
+def test_http_artifact_download_refuses_a_viewer_without_missions_read(
+    tmp_path: Path,
+) -> None:
+    """산출물 열람은 임무 열람 권한을 요구한다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+        ).status_code
+        == 201
+    )
+    # 워커 신원 그대로 — PROCESSING_WORK 는 MISSIONS_READ 를 포함하지 않는다.
+    response = client.get(
+        f"/v1/processing-jobs/{job_id}/artifacts/pointcloud/download"
+    )
+    assert response.status_code == 403
+
+
+def test_store_lists_jobs_for_a_site(tmp_path: Path) -> None:
+    """현장 단위 epoch 질의 — 시계열 비교가 이 목록 위에서 이뤄진다.
+
+    ``ProcessingJobRecord`` 가 곧 reconstruction epoch 이고(별도 aggregate 를
+    만들지 않는다), 빠져 있던 것은 저장 구조가 아니라 이 질의면 하나였다.
+    """
+    store = _job_store(tmp_path)
+    record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert record is not None
+
+    listed = store.list_for_site(_SITE_ID)
+    assert [job.job_id for job in listed] == [record.job_id]
+
+
+def test_store_list_for_site_respects_the_limit(tmp_path: Path) -> None:
+    """``limit`` 을 지금부터 시그니처에 둔다 — 무제한 전량 반환을 계약으로 굳히지 않는다.
+
+    구현이 아직 in-memory 전량 스캔이어도 상관없다. wire 계약에 페이지 개념이
+    없으면 나중에 저장소를 바꿀 때 그게 파괴적 변경이 된다.
+    """
+    store = _job_store(tmp_path)
+    assert store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record is not None
+    assert store.list_for_site(_SITE_ID, limit=0) == []
+
+
+def test_store_list_for_site_does_not_leak_other_sites(tmp_path: Path) -> None:
+    """[음성] 다른 현장의 작업이 섞이지 않는다."""
+    store = _job_store(tmp_path)
+    assert store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record is not None
+    assert store.list_for_site("site-does-not-exist") == []

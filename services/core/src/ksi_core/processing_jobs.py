@@ -174,10 +174,12 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
+    DEFAULT_UPLOAD_TTL,
     DEFAULT_VIEW_TTL,
     EvidenceStorage,
     EvidenceStorageError,
     expires_at,
+    is_valid_artifact_id,
 )
 from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.source_media import SourceMediaRecord
@@ -342,6 +344,13 @@ class ProcessingJobVerdict(StrEnum):
     UNBACKED_SUCCESS = "UNBACKED_SUCCESS"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
+    # ── 산출물 바이트 영속 ───────────────────────────────────────────────
+    # 올릴 자리(객체 키)를 정했다. 아직 바이트는 없다 — 워커가 그 자리에 쓴다.
+    UPLOAD_READY = "UPLOAD_READY"
+    # 다운로드 요청이 가리키는 산출물이 이 작업에 등록돼 있지 않다.
+    # ``INVALID_ARTIFACT_ID``(형식이 틀림, 422)와 다르다 — 형식은 맞는데 없다.
+    ARTIFACT_NOT_FOUND = "ARTIFACT_NOT_FOUND"
+
     # ── 산출물 등록 ──────────────────────────────────────────────────────
     ARTIFACT_REGISTERED = "ARTIFACT_REGISTERED"
     # 산출물은 실행 중인 작업에만 붙는다 — 시작 전에는 만들어질 수 없고,
@@ -385,6 +394,10 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     # 자격증명을 의심하게 된다. 409 는 "기다렸다가 다시 잡아라"를 뜻한다.
     ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER: 409,
     ProcessingJobVerdict.LEASE_REQUIRED: 409,
+    # 201 이다 — 아직 바이트는 없지만 "이 자리를 이 산출물이 쓴다"는 배정이
+    # 이 응답으로 생긴다(발급 계열과 같은 의미).
+    ProcessingJobVerdict.UPLOAD_READY: 201,
+    ProcessingJobVerdict.ARTIFACT_NOT_FOUND: 404,
 }
 
 
@@ -557,6 +570,50 @@ class JobInputResult:
     # 현장 등록 시점에 확정된 CRS — 워커가 처리 산출물에 실을 좌표계.
     # None 이면 현장이 없거나 site_frame 이 비어 있다(원장 이상 상태).
     site_crs: str | None = None
+    detail: str | None = None
+
+
+def build_processing_artifact_object_key(
+    *, site_id: str, job_id: str, artifact_id: str
+) -> str:
+    """산출물 바이트가 놓이는 자리 — **저장하지 않고 유도한다**.
+
+    ``build_mission_kmz_object_key`` 와 같은 관습이다. 키를 레코드에 넣으면
+    계약(``processing-artifact.v1.json``, ``additionalProperties: false``)의
+    버전을 올려야 하는데, 그 값은 이미 레코드에 있는 세 식별자의 함수라
+    중복이다. 유도하면 계약이 그대로고, "같은 산출물은 항상 같은 자리"가
+    저장 상태가 아니라 **정의**로 보장된다.
+
+    **산출물 1건 = 파일 1개**를 전제한다. Mesh 의 텍스처(.mtl·map_Kd.png)처럼
+    한 산출물이 여러 파일인 경우는 이 키 체계로 다루지 않는다 — digest 에는
+    이미 포함되지만(``odm_assets.OdmAsset.auxiliary_suffixes``) 저장은 M1
+    범위 밖이다(risk ``mesh-auxiliary-files-not-persisted``).
+
+    세 구성요소를 전부 재검증한다 — 호출부가 이미 검증했더라도, 이 함수가
+    경로 탈출을 막는 마지막 지점이기 때문이다(``build_source_media_object_key``
+    와 같은 이유).
+    """
+    if not is_path_safe_identifier(site_id):
+        raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
+    if not is_path_safe_identifier(job_id):
+        raise ValueError(f"경로-안전하지 않은 jobId: {job_id!r}")
+    if not is_valid_artifact_id(artifact_id):
+        raise ValueError(f"경로-안전하지 않은 artifactId: {artifact_id!r}")
+    return f"sites/{site_id}/processing-jobs/{job_id}/artifacts/{artifact_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactUploadTargetResult:
+    """산출물 바이트를 올릴 자리 — 객체 키 하나.
+
+    presigned URL 은 여기 없다. 이 결과는 **원장이 아는 것**(어느 작업의 어느
+    산출물이 어디에 놓이는가)만 담고, 실제 URL 발급은 스토리지 포트를 쥔
+    라우터의 몫이다(``input_for`` 가 media 레코드만 주고 라우터가 presign 하는
+    것과 같은 분리).
+    """
+
+    verdict: ProcessingJobVerdict
+    object_key: str | None = None
     detail: str | None = None
 
 
@@ -828,6 +885,50 @@ class ProcessingJobStore:
             bundle is not None
             and bundle.is_verified
             and bundle.source_bundle_digest == record.input.source_bundle_digest
+        )
+
+    def artifact_upload_target(
+        self, job_id: str, *, artifact_id: str, worker_id: str, now: datetime
+    ) -> ArtifactUploadTargetResult:
+        """산출물 바이트를 올릴 자리를 정한다 — ``input_for`` 와 같은 관문을 통과한다.
+
+        **활성 작업 + lease 보유**를 요구하는 이유는 읽기 쪽과 같다. 이게
+        없으면 워커 토큰 하나로 남의 작업 경로에 바이트를 쓸 수 있고,
+        jobId 는 추측 가능하다.
+
+        키는 저장하지 않고 유도한다 — ``build_processing_artifact_object_key``
+        의 docstring 참조.
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if record.status not in _ACTIVE_STATUSES:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.JOB_NOT_ACTIVE,
+                    detail=(
+                        f"작업이 {record.status.value} 상태다 — 끝난 작업에 산출물 "
+                        "바이트를 더 쓰지 않는다"
+                    ),
+                )
+            denied = self._check_lease_locked(record, worker_id=worker_id, now=now)
+            if denied is not None:
+                return ArtifactUploadTargetResult(denied[0], detail=denied[1])
+            site_id = record.site_id
+
+        try:
+            object_key = build_processing_artifact_object_key(
+                site_id=site_id, job_id=job_id, artifact_id=artifact_id
+            )
+        except ValueError as exc:
+            return ArtifactUploadTargetResult(
+                ProcessingJobVerdict.INVALID_ARTIFACT_ID, detail=str(exc)
+            )
+        return ArtifactUploadTargetResult(
+            ProcessingJobVerdict.UPLOAD_READY, object_key=object_key
         )
 
     @staticmethod
@@ -1266,6 +1367,49 @@ class ProcessingJobStore:
             records = [r for r in self._jobs.values() if r.mission_id == mission_id]
         return sorted(records, key=lambda r: (r.issued_at, r.job_id))
 
+    def list_for_site(
+        self, site_id: str, *, limit: int | None = None
+    ) -> list[ProcessingJobRecord]:
+        """이 현장의 재구성 epoch 목록 — **최신이 먼저**.
+
+        ``ProcessingJobRecord`` 가 곧 reconstruction epoch 이다(ADR-KSI-016 D3).
+        별도 ``SpatialEpoch`` 집계를 만들지 않은 이유는 그것이 job 과 1:1
+        그림자 관계인 두 번째 원장이 되고, 그 순간 "둘 중 뭐가 진실이냐"가
+        생기기 때문이다. 시계열 비교(변화·체적)는 이 목록 위에서 이뤄진다.
+
+        ``list_for_mission`` 과 정렬 방향이 반대인 것은 의도다 — 저기는 한
+        임무의 처리 이력을 순서대로 읽는 용도고, 여기는 "가장 최근 epoch 부터
+        N 개"가 기본 질문이다.
+
+        ``limit`` 은 구현이 아직 in-memory 전량 스캔이어도 **시그니처에 지금
+        둔다** — 무제한 반환을 계약으로 굳히면 저장소를 바꿀 때 그게 파괴적
+        변경이 된다.
+        """
+        if limit is not None and limit < 0:
+            raise ValueError(f"limit 은 음수일 수 없다: {limit}")
+        with self._lock:
+            records = [r for r in self._jobs.values() if r.site_id == site_id]
+        ordered = sorted(records, key=lambda r: (r.issued_at, r.job_id), reverse=True)
+        return ordered if limit is None else ordered[:limit]
+
+    def artifact_of(
+        self, job_id: str, artifact_id: str
+    ) -> tuple[ProcessingJobRecord, ProcessingArtifact] | None:
+        """등록된 산출물과 그 작업 — 없으면 ``None``.
+
+        객체 키는 식별자에서 유도되므로 **등록 여부와 무관하게 계산은 된다**.
+        그래서 원장 대조 없이 URL 을 발급하면 존재하지 않는 자리의 링크가
+        나가고, 소비자는 스토리지에서 404 를 받는다 — 원인이 한 단계 멀어진다.
+        """
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                return None
+            for artifact in record.artifacts:
+                if artifact.artifact_id == artifact_id:
+                    return (record, artifact)
+        return None
+
 
 def _residency_of(site: Any) -> DataResidency:
     """현장의 반출 선언 — 미선언은 **반출 불가**로 읽는다(fail-closed).
@@ -1320,6 +1464,35 @@ class ArtifactAccuracyRequest(_CamelModel):
     gcp_count: int = Field(ge=0)
     rmse: float = Field(ge=0)
     report_uri: str = Field(min_length=1)
+
+
+class ArtifactUploadUrlRequest(_CamelModel):
+    """산출물 바이트를 올릴 자리 요청 — **객체 키를 담을 자리가 없다**.
+
+    ``ProcessingArtifactRequest`` 가 계보 앵커를 못 싣게 한 것과 같은 관용구다.
+    키를 요청이 정하면 워커가 버킷의 임의 경로를 지정할 수 있고, 그러면
+    "서버가 정한 자리에만 쓴다"를 코드가 매번 기억해야 한다 — 자리를 없애면
+    기억할 것이 없다.
+    """
+
+    artifact_id: str = Field(min_length=1)
+    content_type: str = Field(min_length=1)
+
+
+class ArtifactUploadUrlResponse(_CamelModel):
+    verdict: str
+    object_key: str | None = None
+    upload_url: str | None = None
+    expires_at: datetime | None = None
+    detail: str | None = None
+
+
+class ArtifactDownloadResponse(_CamelModel):
+    verdict: str
+    object_key: str | None = None
+    download_url: str | None = None
+    expires_at: datetime | None = None
+    detail: str | None = None
 
 
 class ProcessingArtifactRequest(_CamelModel):
@@ -1656,6 +1829,132 @@ def build_processing_jobs_router(
                 media=media,
                 site_crs=result.site_crs,
             ),
+        )
+
+    @router.post(
+        "/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        response_model=ArtifactUploadUrlResponse,
+        status_code=201,
+    )
+    def issue_artifact_upload_url(
+        job_id: str,
+        request: ArtifactUploadUrlRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> ArtifactUploadUrlResponse:
+        """워커가 산출물 바이트를 올릴 자리를 받아간다.
+
+        **바이트가 Core 를 통과하지 않는다.** 워커가 presigned PUT 으로 스토리지에
+        직접 쓴다 — point cloud 는 GB 단위라 ``put_bytes``(서버가 전량을 메모리에
+        올리는 KMZ 용 경로)로는 감당이 안 된다. ``source_media`` 의 업로드가 같은
+        모양이다(Core 는 자리를 정하고 URL 만 발급).
+
+        **등록(``POST .../artifacts``)과 분리한 이유**: 등록은 계보를 원장에
+        박는 durable 행위이고 이건 그렇지 않다. 합치면 "바이트를 올리다 실패한"
+        상태가 원장에 남거나, 반대로 원장 기록을 롤백해야 한다. 나눠 두면
+        워커가 올리기를 마친 뒤에만 등록하고, 실패는 재시도로 끝난다(같은 키가
+        나오므로 재시도가 사본을 만들지 않는다).
+        """
+        result = store.artifact_upload_target(
+            job_id,
+            artifact_id=request.artifact_id,
+            worker_id=principal.principal_id,
+            now=datetime.now(UTC),
+        )
+        if result.verdict is not ProcessingJobVerdict.UPLOAD_READY or result.object_key is None:
+            response.status_code = _STATUS[result.verdict]
+            return ArtifactUploadUrlResponse(
+                verdict=result.verdict.value, detail=result.detail
+            )
+
+        now = datetime.now(UTC)
+        try:
+            upload_url = storage.presigned_put(
+                result.object_key,
+                content_type=request.content_type,
+                ttl=DEFAULT_UPLOAD_TTL,
+            )
+        except EvidenceStorageError:
+            logger.warning(
+                "산출물 업로드 URL 발급 실패: jobId=%s artifactId=%s",
+                job_id,
+                request.artifact_id,
+            )
+            response.status_code = _STATUS[ProcessingJobVerdict.STORAGE_UNAVAILABLE]
+            response.headers["Retry-After"] = "30"
+            return ArtifactUploadUrlResponse(
+                verdict=ProcessingJobVerdict.STORAGE_UNAVAILABLE.value,
+                detail="산출물 업로드 URL 발급에 실패했다 — 잠시 후 재시도한다",
+            )
+
+        return ArtifactUploadUrlResponse(
+            verdict=result.verdict.value,
+            object_key=result.object_key,
+            upload_url=upload_url,
+            expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
+        )
+
+    @router.get(
+        "/v1/processing-jobs/{job_id}/artifacts/{artifact_id}/download",
+        response_model=ArtifactDownloadResponse,
+    )
+    def download_processing_artifact(
+        job_id: str,
+        artifact_id: str,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> ArtifactDownloadResponse:
+        """등록된 산출물의 바이트를 꺼낼 URL — **원장에 있는 것만 내준다**.
+
+        M1 이전에는 재구성이 성공해도 digest 만 남고 바이트가 버려져서 이
+        엔드포인트가 성립하지 않았다. 이제 워커가 실제로 올리므로, 여기가
+        "사람이 정사영상을 본다"의 유일한 경로다.
+
+        권한이 ``MISSIONS_READ`` 인 것은 산출물이 임무의 결과물이기 때문이다.
+        워커의 ``PROCESSING_WORK`` 는 이를 포함하지 않는다 — 워커는 자기가
+        올릴 자리만 받고, 남의(또는 자기) 산출물을 다시 읽을 이유가 없다.
+        """
+        del principal
+        found = store.artifact_of(job_id, artifact_id)
+        if found is None:
+            response.status_code = _STATUS[ProcessingJobVerdict.ARTIFACT_NOT_FOUND]
+            return ArtifactDownloadResponse(
+                verdict=ProcessingJobVerdict.ARTIFACT_NOT_FOUND.value,
+                detail="이 작업에 그 산출물이 등록돼 있지 않다",
+            )
+
+        record, _artifact = found
+        try:
+            object_key = build_processing_artifact_object_key(
+                site_id=record.site_id, job_id=job_id, artifact_id=artifact_id
+            )
+        except ValueError as exc:
+            # 등록 시점에 이미 검증된 값이라 도달하지 않아야 한다 — 도달하면
+            # 원장이 이상한 것이므로 조용히 URL 을 만들지 않는다.
+            response.status_code = _STATUS[ProcessingJobVerdict.INVALID_ARTIFACT_ID]
+            return ArtifactDownloadResponse(
+                verdict=ProcessingJobVerdict.INVALID_ARTIFACT_ID.value, detail=str(exc)
+            )
+
+        now = datetime.now(UTC)
+        try:
+            download_url = storage.presigned_get(object_key, ttl=DEFAULT_VIEW_TTL)
+        except EvidenceStorageError:
+            logger.warning(
+                "산출물 다운로드 URL 발급 실패: jobId=%s artifactId=%s", job_id, artifact_id
+            )
+            response.status_code = _STATUS[ProcessingJobVerdict.STORAGE_UNAVAILABLE]
+            response.headers["Retry-After"] = "30"
+            return ArtifactDownloadResponse(
+                verdict=ProcessingJobVerdict.STORAGE_UNAVAILABLE.value,
+                detail="산출물 다운로드 URL 발급에 실패했다 — 잠시 후 재시도한다",
+            )
+
+        return ArtifactDownloadResponse(
+            verdict="ARTIFACT_READY",
+            object_key=object_key,
+            download_url=download_url,
+            expires_at=expires_at(now, DEFAULT_VIEW_TTL),
         )
 
     @router.post(
