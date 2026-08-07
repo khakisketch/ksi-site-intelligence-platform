@@ -151,12 +151,15 @@ phases:
     # Active Reobservation 의 실제 소비(재관찰 트리거 실행)는 Manifold 소관(Control
     # boundary, CLAUDE.md) — 하드웨어 종속이라 phase-3 전체는 DONE 이 아니다.
     #
-    # 2026-08-07 ADR-KSI-016 D5: Site Intelligence 로드맵에서 **우선순위 강등**.
-    # 구현물은 유지하되 추가 투자를 중단하고 KSI Safety 제품 축 자산으로
-    # 재분류한다. **status 는 바꾸지 않는다** — 완료 판정의 권위는 acceptance
-    # 게이트지 우선순위가 아니다(우선순위가 낮다고 미완이 완료가 되지 않는다).
+    # 2026-08-07 ADR-KSI-016 D5: **우선순위 강등**(2026-08-08 표현 정정).
+    # 구현물은 유지하되 추가 투자만 중단한다 — 자율 안전순찰이 핵심가치 5순위로
+    # 내려간 만큼 그 기반 기능도 뒤로 미룰 뿐이고, **범위에서 빠지거나 다른
+    # 제품으로 옮겨가지 않는다**(최초 기재 DEFERRED_TO_SAFETY_TRACK 은 오기).
+    # 순위가 올라오면 그대로 이어서 쓴다.
+    # **status 는 바꾸지 않는다** — 완료 판정의 권위는 acceptance 게이트지
+    # 우선순위가 아니다(우선순위가 낮다고 미완이 완료가 되지 않는다).
     status: IN_PROGRESS
-    roadmap_priority: DEFERRED_TO_SAFETY_TRACK  # ADR-KSI-016 D5
+    roadmap_priority: DEFERRED  # ADR-KSI-016 D5 — 범위 유지, 순서만 뒤로
 
     software_implementation: COMPLETE
     software_acceptance: PASS

@@ -37,7 +37,9 @@
 구현물은 유지하되 추가 투자를 중단한다. `PHASE_REGISTRY.yaml`의
 `roadmap_priority` 필드가 같은 결정을 기계가 읽는 형태로 담고 있다.
 
-- phase-3 장비 kinematics·CPA/TTC·위험장 → KSI Safety 축 자산으로 재분류
+- phase-3 장비 kinematics·CPA/TTC·위험장 → 추가 투자 중단(**범위 유지**).
+  자율 안전순찰이 핵심가치 5순위로 내려간 만큼 그 기반도 뒤로 미룰 뿐이고,
+  순위가 올라오면 그대로 이어서 쓴다
 - phase-5 Dock·Fleet·산업중립 팩 → 첫 유료 건설 현장 전까지 동결
 - Edge perception 신규 코드 → 하드웨어 스파이크(H1~H4) 전 착수 금지(ADR-KSI-006)
 - 자연어 질의·LLM 보고서 표면 → 데이터 계층 이후
