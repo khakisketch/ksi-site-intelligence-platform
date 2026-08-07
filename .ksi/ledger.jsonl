@@ -340,3 +340,5 @@
 {"ts": "2026-08-07T22:48:46+09:00", "event": "started", "goal": "m1-spatial-epoch-pipeline"}
 {"ts": "2026-08-07T22:48:46+09:00", "event": "started", "goal": "adr-016-product-scope"}
 {"ts": "2026-08-07T22:48:46+09:00", "event": "completion_attempt", "goal": "adr-016-product-scope", "evidence": "ADR-KSI-016 작성(commit 8fa493f). 헌법 §제품정체성·§핵심가치, FINAL_DECISION_LEDGER §고객·가치, MASTER_PRD DEC-005·§23.1 — 4곳 전부 개정(commit 9f92d2c). grep '자율 안전순찰' 잔재 확인 결과 남은 1건은 개정 이력 서술(의도됨). PHASE_REGISTRY phase-3/phase-5 에 roadmap_priority 추가, python yaml.safe_load 파싱 통과(phases 6개)."}
+{"ts": "2026-08-07T22:54:50+09:00", "event": "risk_add", "goal": "geoid-grid-provenance-unverified", "lens": "other", "severity": "medium"}
+{"ts": "2026-08-07T22:54:50+09:00", "event": "risk_add", "goal": "rasterio-numpy25-shape-deprecation", "lens": "other", "severity": "low"}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T22:48:46+09:00",
+  "updated_at": "2026-08-07T22:54:50+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1875,6 +1875,34 @@
       "previous_status": null,
       "created_at": "2026-08-07T04:28:49+09:00",
       "updated_at": "2026-08-07T04:28:49+09:00"
+    },
+    {
+      "id": "geoid-grid-provenance-unverified",
+      "title": "KNGeoid 격자 미확보 — 정표고 변환은 코드만 있고 데이터·정확도가 없다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "packages/geo-spatial/vertical.py 는 격자 부재 시 GeoidUnavailableError 로 fail-closed 한다(계약 테스트 9건). 그러나 격자 파일 자체가 저장소에 없고, 참고 저장소 취득 기록상 다운로드 경위가 회색지대이며 통합기준점 대조가 5점 중 3점만 통과해 정확도 미검증이다. 결과: 정표고 변환은 상용 경로에서 못 쓴다. M1 의 시점 간 비교는 두 epoch 가 같은 파이프라인의 타원체고를 공유한다는 전제로만 성립하며 verticalDatum='ellipsoidal_native' 로 명시한다. 해소 조건: 국토지리정보원 정식 경로 취득 + 통합기준점 실측 대조 통과.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T22:54:50+09:00",
+      "updated_at": "2026-08-07T22:54:50+09:00"
+    },
+    {
+      "id": "rasterio-numpy25-shape-deprecation",
+      "title": "rasterio 1.5.0 의 read() 가 numpy 2.5 에서 DeprecationWarning 을 낸다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "실측(2026-08-07): rasterio.DatasetReader.read(1) 내부에서 'Setting the shape on a NumPy array has been deprecated in NumPy 2.5' 발생 — 우리 코드가 아니라 rasterio 내부다(단독 재현 확인). 현재 CI 는 warning 을 error 로 올리지 않아 무해하지만, numpy 가 실제로 제거하면 rasterio 를 쓰는 모든 경로(geo-spatial.vertical, Phase D dsm_diff)가 깨진다. 해소: rasterio 상위 버전 확인 후 상향.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T22:54:50+09:00",
+      "updated_at": "2026-08-07T22:54:50+09:00"
     }
   ]
 }

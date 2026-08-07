@@ -161,6 +161,17 @@ module = [
 ]
 ignore_missing_imports = true
 
+# rasterio 는 설치되지만 py.typed 마커도 스텁 패키지도 제공하지 않는다(1.5.0 확인).
+# 위 두 override 와 성격이 다르다 — 저건 "CI 에 미설치"라서고, 이건 "설치돼도
+# 타입 정보가 없어서"다. types-rasterio 같은 공식 스텁이 나오면 이 항목을 지운다.
+# pyproj 는 py.typed 를 제공하므로 여기 없다.
+[[tool.mypy.overrides]]
+module = [
+    "rasterio.*",
+    "rasterio",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "services"]
 norecursedirs = ["references", "edge", "apps", "node_modules", ".venv"]
