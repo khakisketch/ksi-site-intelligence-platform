@@ -34,6 +34,14 @@ CommandVerdict VerifyActionIntent(const ActionIntent& intent,
         return CommandVerdict::kMissingAuthorization;
     }
     // 활성 계약이 없으면(빈 digest) 어떤 명령도 인가할 수 없다 — 부팅 직후 상태.
+    //
+    // ``active_digest.empty()`` 항은 **의도된 중복**이다. 위 ``authorization_digest
+    // .empty()`` 검사가 이미 통과했으므로 intent digest 는 비어 있지 않고, 따라서
+    // active 가 비면 ``!=`` 가 항상 참이라 결과가 같다 — 2026-08-08 mutation 재점검이
+    // 이 항을 제거한 변이를 등가변이로 증명했다(전 입력 조합에서 판정 차이 0건).
+    // 그래도 남겨둔다: 위 검사가 나중에 옮겨지거나 완화되면 이 항만이 "무계약 상태에서
+    // 인가 없음"을 지탱한다. 어떤 테스트도 이 항의 유무를 구분할 수 없다는 사실 자체를
+    // 여기 적어, 다음 사람이 "테스트 없는 코드"로 오해해 지우지 않게 한다.
     if (active_digest.empty() || intent.authorization_digest != active_digest) {
         return CommandVerdict::kAuthorizationMismatch;
     }

@@ -6,6 +6,7 @@
 //
 // 외부 프레임워크 없이 단언 + 종료코드로만 동작한다(CMakeLists.txt 주석 참고).
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
 
@@ -292,6 +293,53 @@ void TestStateAtOutOfDomainIsFailClosed() {
           "도메인 상한 초과 now 도 fail-closed");
 }
 
+void TestStateAtDomainGuardIsLoadBearing() {
+    // [mutation 재점검, 2026-08-08] 위 테스트는 **가드가 없어도 통과한다.**
+    // last_heartbeat=10'000 에서 now=-9e18 이면 elapsed<0 가드가, now=kMaxUtcMs+1
+    // 이면 elapsed>=fail_closed 가 각각 같은 답을 내기 때문이다 — 즉 그 값들로는
+    // 도메인 가드의 유무를 구분할 수 없다. 수작업 변이(도메인 가드 제거)가 ctest 를
+    // 통과해 이 사각지대가 드러났다.
+    //
+    // 가드를 실제로 지탱하는 값은 **경과가 작아지는 조합**이다: heartbeat 가 도메인
+    // 상한 근처에 있고 now 가 그 바로 뒤면, 가드 없이는 elapsed=1 이라 NOMINAL 로
+    // 뒤집힌다(fail-open) — 감사 #53 이 막으려던 바로 그 방향이다.
+    FlightSupervisor supervisor(2'000, 5'000);
+    const auto kDomainMax = ksi::control_plane::kMaxUtcMs;
+    Check(supervisor.RecordHeartbeat(kDomainMax, kDomainMax) ==
+              ksi::control_plane::HeartbeatVerdict::kRecorded,
+          "도메인 상한 시각의 heartbeat 는 기록된다");
+    Check(supervisor.StateAt(kDomainMax + 1) == SupervisorState::kFailClosed,
+          "도메인 밖 now 는 경과가 1ms 여도 fail-closed (가드 없으면 NOMINAL 로 뒤집힌다)");
+    Check(!supervisor.MayStartNewAction(kDomainMax + 1),
+          "그 상태에서 신규 행동을 개시하지 않는다");
+
+    // INT64_MIN 은 가드가 없으면 뺄셈 자체가 signed overflow(UB)다 — 가드가
+    // 뺄셈 **전에** 걸러야 한다. 위 테스트의 -9e18 은 last=10'000 과 빼도 넘치지
+    // 않아 이 경로를 건드리지 못했다.
+    Check(supervisor.StateAt(INT64_MIN) == SupervisorState::kFailClosed,
+          "INT64_MIN now 는 뺄셈 전에 걸러진다");
+}
+
+void TestDuplicateHeartbeatIsIgnored() {
+    // [mutation 재점검, 2026-08-08] 역행 heartbeat 거부는 테스트가 있었지만
+    // **같은 시각 재기록**은 없었다 — 경계가 `<=` 인지 `<` 인지를 아무도 고정하지
+    // 않아, `<` 로 바꾸는 변이가 ctest 를 통과했다.
+    //
+    // 같은 시각 재기록을 허용하면 heartbeat 의 증거 가치가 흐려진다: "이 시점에
+    // 루프가 살아있다"는 주장이 같은 타임스탬프로 몇 번이든 다시 제출될 수 있고,
+    // 그러면 정지한 루프가 마지막 타임스탬프를 반복 전송해 NOMINAL 을 유지할 수 있다.
+    FlightSupervisor supervisor(2'000, 5'000);
+    Check(supervisor.RecordHeartbeat(10'000, 10'000) ==
+              ksi::control_plane::HeartbeatVerdict::kRecorded,
+          "첫 heartbeat 는 기록된다");
+    Check(supervisor.RecordHeartbeat(10'000, 10'500) ==
+              ksi::control_plane::HeartbeatVerdict::kStaleIgnored,
+          "같은 시각 heartbeat 재제출은 무시된다(경계 <=)");
+    Check(supervisor.RecordHeartbeat(10'001, 10'500) ==
+              ksi::control_plane::HeartbeatVerdict::kRecorded,
+          "1ms 라도 전진한 heartbeat 는 기록된다(경계가 과잉 거부는 아니다)");
+}
+
 void TestVerdictStringsAreDistinct() {
     // 로그·증거 번들에서 사유를 구분할 수 있어야 한다.
     Check(std::string(ToString(CommandVerdict::kAccepted)) == "ACCEPTED", "verdict 문자열");
@@ -324,6 +372,8 @@ int main() {
     TestInWindowFutureHeartbeatDoesNotSoftLatch();
     TestHeartbeatResetReturnsToFailClosed();
     TestStateAtOutOfDomainIsFailClosed();
+    TestStateAtDomainGuardIsLoadBearing();
+    TestDuplicateHeartbeatIsIgnored();
     TestVerdictStringsAreDistinct();
 
     std::printf("control plane 계약 테스트: %d개 단언 중 %d개 실패\n", g_checks, g_failures);
