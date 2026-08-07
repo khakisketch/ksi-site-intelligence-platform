@@ -86,6 +86,27 @@ class S3EvidenceStorage:
             "get_object", {"Bucket": self._bucket, "Key": object_key}, ttl
         )
 
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """서버가 만든 산출물을 직접 보관한다(포트 docstring 참조)."""
+        try:
+            self._client.put_object(
+                Bucket=self._bucket, Key=object_key, Body=data, ContentType=content_type
+            )
+        except Exception as exc:  # noqa: BLE001 -- 위 _presign 과 같은 이유
+            raise EvidenceStorageError(
+                f"객체 저장 실패({object_key}): {type(exc).__name__}"
+            ) from exc
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """보관된 바이트를 읽는다 — 부재(NoSuchKey)도 오류다(포트 docstring)."""
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+            return response["Body"].read()
+        except Exception as exc:  # noqa: BLE001 -- 위 _presign 과 같은 이유
+            raise EvidenceStorageError(
+                f"객체 읽기 실패({object_key}): {type(exc).__name__}"
+            ) from exc
+
     def delete(self, object_key: str) -> None:
         """객체 삭제 — 이미 없으면 성공으로 본다(S3 delete_object 는 멱등이다)."""
         try:

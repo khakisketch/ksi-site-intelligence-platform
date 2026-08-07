@@ -32,9 +32,11 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_plans import (
     MissionPlanRequest,
     _require_wayline_takeoff_height_compatible,
+    build_mission_kmz_object_key,
 )
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.sites import SiteStore
@@ -168,8 +170,44 @@ def _auth_registry() -> AuthRegistry:
     )
 
 
+class InMemoryKmzStorage:
+    """포트 계약만 만족하는 인메모리 스토리지 — 보관·조회만 쓴다.
+
+    presigned_* 는 이 파일이 쓰지 않으므로 호출되면 즉시 실패한다: 조용히 문자열을
+    돌려주면 "이 테스트가 presigned 경로도 검증한다"는 오해를 만든다.
+    """
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.fail_put: bool = False
+        self.fail_get: bool = False
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        del content_type
+        if self.fail_put:
+            raise EvidenceStorageError("보관 실패(테스트)")
+        self.objects[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        if self.fail_get or object_key not in self.objects:
+            raise EvidenceStorageError(f"없거나 읽기 실패: {object_key}")
+        return self.objects[object_key]
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def delete(self, object_key: str) -> None:
+        self.objects.pop(object_key, None)
+
+
 def _client(
-    tmp_path: Path, *, site_status: SiteStatus = SiteStatus.PATROL_READY
+    tmp_path: Path,
+    *,
+    site_status: SiteStatus = SiteStatus.PATROL_READY,
+    kmz_storage: InMemoryKmzStorage | None = None,
 ) -> tuple[TestClient, KeyRegistry]:
     """서명키 + mission_store + site_store + auth_registry 최소 조립(ADR-KSI-008 §3).
 
@@ -209,6 +247,7 @@ def _client(
         mission_store=mission_store,
         site_store=site_store,
         auth_registry=_auth_registry(),
+        evidence_storage=kmz_storage,
     )
     client = TestClient(app)
     client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
@@ -1054,3 +1093,106 @@ def test_kmz_download_rejects_when_current_policy_cannot_regenerate(
         record.levelno == logging.ERROR and "mission-001" in record.message
         for record in caplog.records
     ), "정책 변경으로 인한 다운로드 실패는 ERROR 로 계측돼야 한다(대량 발생 시 알아채야)"
+
+
+# ── KMZ 결정성 타임밤 (risk kmz-regeneration-determinism-timebomb) ───────────
+#
+# GET /kmz 는 저장된 plan_request 로 매번 재생성한다. 그래서 **서버 안전상수 한 줄이
+# 바뀌면 그 이전 발급분 전량의 다운로드가 영구 409** 가 된다 — phase-2 의
+# captureIntervalM 필수화가 실제로 이 경로를 발화시켰다. 운영자 손에 파일이 없는
+# 막다른 길을 닫으려던 엔드포인트가 그대로 다시 막다른 길이 되는 구조였다.
+#
+# 발급 시 바이트를 보관하면 그 사슬이 끊긴다: 이 엔드포인트가 약속하는 것은
+# "발급 당시 그 파일"이고, 재생성은 그걸 얻는 수단이었지 목적이 아니다.
+
+
+def test_issued_kmz_is_persisted(tmp_path: Path) -> None:
+    storage = InMemoryKmzStorage()
+    client, _ = _client(tmp_path, kmz_storage=storage)
+    response = client.post("/v1/missions/plans", json=_plan_request())
+    assert response.status_code == 201, response.json()
+
+    key = build_mission_kmz_object_key(site_id="site-001", mission_id="mission-001")
+    assert key in storage.objects
+    assert (
+        hashlib.sha256(storage.objects[key]).hexdigest() == response.json()["kmzSha256"]
+    )
+
+
+def test_download_falls_back_to_stored_bytes_when_regeneration_diverges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] 재생성 바이트가 원본과 달라도 보관본으로 응답한다.
+
+    서버 정책이 바뀌어 재생성 결과가 달라지는 상황을 재현한다 — 예전에는 이 분기가
+    영구 409 였다.
+    """
+    storage = InMemoryKmzStorage()
+    client, _ = _client(tmp_path, kmz_storage=storage)
+    assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 201
+    key = build_mission_kmz_object_key(site_id="site-001", mission_id="mission-001")
+    original = storage.objects[key]
+
+    # 발급 후 서버가 다른 바이트를 만들게 만든다(정책 변경 시뮬레이션).
+    import ksi_core.mission_plans as mission_plans_module
+
+    real_build = mission_plans_module.build_mission_plan
+
+    def drifted(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = dict(real_build(*args, **kwargs))
+        mutated = result["kmzBase64"].encode()  # 바이트를 바꿔 sha256 을 어긋나게 한다
+        result["kmzBase64"] = base64.b64encode(base64.b64decode(mutated) + b"drift").decode()
+        result["kmzSha256"] = hashlib.sha256(
+            base64.b64decode(result["kmzBase64"])
+        ).hexdigest()
+        return result
+
+    monkeypatch.setattr(mission_plans_module, "build_mission_plan", drifted)
+
+    response = client.get("/v1/missions/mission-001/kmz")
+    assert response.status_code == 200, response.text
+    assert response.content == original
+
+
+def test_download_is_409_when_diverged_and_nothing_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """스토리지 없는 조립은 지금까지처럼 409 다 — 폴백이 없다는 사실이 응답에 남는다."""
+    client, _ = _client(tmp_path)  # kmz_storage 없음
+    assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 201
+
+    import ksi_core.mission_plans as mission_plans_module
+
+    real_build = mission_plans_module.build_mission_plan
+
+    def drifted(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = dict(real_build(*args, **kwargs))
+        result["kmzSha256"] = "0" * 64
+        return result
+
+    monkeypatch.setattr(mission_plans_module, "build_mission_plan", drifted)
+    response = client.get("/v1/missions/mission-001/kmz")
+    assert response.status_code == 409
+
+
+def test_persist_failure_does_not_block_issuance(tmp_path: Path) -> None:
+    """보관 실패로 201 을 거부하지 않는다 — 스토리지 장애가 임무 발급을 멈추면 안 된다.
+
+    durable 기록(mission_store)은 이미 끝났고 계약은 유효하다. 이 실패의 결과는
+    "그 임무의 다운로드가 앞으로 재생성에만 의존한다"이고, 그건 로그로 남긴다.
+    """
+    storage = InMemoryKmzStorage()
+    storage.fail_put = True
+    client, _ = _client(tmp_path, kmz_storage=storage)
+    assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 201
+    assert storage.objects == {}
+
+
+def test_unreadable_storage_falls_through_to_regeneration_verdict(tmp_path: Path) -> None:
+    """보관본을 못 읽으면 원래 판정으로 떨어진다 — 여기서 새 예외를 만들지 않는다."""
+    storage = InMemoryKmzStorage()
+    client, _ = _client(tmp_path, kmz_storage=storage)
+    assert client.post("/v1/missions/plans", json=_plan_request()).status_code == 201
+    storage.fail_get = True
+    # 재생성이 정상이면 보관본을 볼 일도 없다 — 200 이 그대로 나온다.
+    assert client.get("/v1/missions/mission-001/kmz").status_code == 200

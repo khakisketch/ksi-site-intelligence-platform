@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.source_media import (
     SourceBundleSealVerdict,
@@ -648,6 +649,7 @@ class FakeStorage:
     """가짜 오브젝트 스토리지 — 포트 계약만 만족한다(네트워크·컨테이너 없이)."""
 
     def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
         self.put_calls: list[tuple[str, str]] = []
         self.get_calls: list[str] = []
         self.fail_with: Exception | None = None
@@ -665,6 +667,18 @@ class FakeStorage:
             raise self.fail_with
         self.get_calls.append(object_key)
         return f"https://storage.invalid/{object_key}?download=1"
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
 
     def delete(self, object_key: str) -> None:
         raise NotImplementedError
@@ -813,8 +827,6 @@ def test_status_for_unknown_bundle_is_404(tmp_path: Path) -> None:
 
 def test_storage_failure_degrades_item_but_keeps_registration(tmp_path: Path) -> None:
     storage = FakeStorage()
-    from ksi_core.evidence import EvidenceStorageError
-
     storage.fail_with = EvidenceStorageError("연결 실패")
     client = _client(tmp_path, storage=storage)
     response = client.post(
@@ -1069,8 +1081,6 @@ def test_storage_failure_is_503_not_missing_photo(tmp_path: Path) -> None:
         f"/v1/missions/{_MISSION_ID}/source-media",
         json={"files": [_file_payload("img-1.jpg")]},
     )
-    from ksi_core.evidence import EvidenceStorageError
-
     storage.fail_with = EvidenceStorageError("boom")
     response = client.get(f"/v1/missions/{_MISSION_ID}/source-media/img-1.jpg/view")
     assert response.status_code == 503

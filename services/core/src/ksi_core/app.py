@@ -200,17 +200,23 @@ def create_app(
                 " 반환하지 않는다(고아 발급 금지)"
             )
 
-    if evidence_storage is not None and event_store is None and source_media_store is None:
+    if (
+        evidence_storage is not None
+        and event_store is None
+        and source_media_store is None
+        and mission_signing_key is None
+    ):
         raise ValueError(
-            "evidence_storage 는 소비자 저장소(event_store 또는 source_media_store)와"
-            " 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는 오브젝트 스토리지를"
-            " 매단 채 기동하지 않는다."
+            "evidence_storage 는 소비자 저장소(event_store·source_media_store 또는"
+            " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
+            " 오브젝트 스토리지를 매단 채 기동하지 않는다."
             "\n"
             " 원래 이 가드는 event_store 만 요구했다(증거는 사건에 매달리는 것이라 사건"
             " 원장 없이는 등록할 곳이 없다). 3D 파이프라인 입구(source_media)가 같은"
-            " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌다 — 가드를 푼"
-            " 것이 아니라 소비자 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면"
-            " 여전히 거부한다."
+            " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌고, 이제 임무"
+            " 발급이 KMZ 바이트 보관으로 세 번째 소비자가 됐다(risk"
+            " kmz-regeneration-determinism-timebomb) — 가드를 푼 것이 아니라 소비자"
+            " 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면 여전히 거부한다."
         )
 
     if edge_sync_store is not None and event_store is None:
@@ -374,6 +380,10 @@ def create_app(
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
             site_lookup=_site_lookup,
+            # 스토리지가 있으면 발급 KMZ 바이트를 보관한다 — 서버 안전상수 한 줄이
+            # 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
+            # kmz-regeneration-determinism-timebomb). 없으면 재생성에만 의존한다.
+            kmz_storage=evidence_storage,
         )
 
     if mission_store is not None:

@@ -31,6 +31,7 @@ from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
+from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
@@ -66,6 +67,8 @@ _PUBLIC_PATHS = frozenset({"/health", "/capabilities"})
 
 
 class _NullEvidenceStorage:
+    _blobs: dict[str, bytes] = {}  # noqa: RUF012 -- 테스트 스텁
+
     """포트 계약만 만족하는 조립용 스텁 — 이 게이트는 경로 존재만 본다.
 
     ``evidence_storage`` 를 주지 않으면 증거 라우터가 장착되지 않아(ADR-KSI-010 §1)
@@ -78,6 +81,18 @@ class _NullEvidenceStorage:
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         raise NotImplementedError
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
 
     def delete(self, object_key: str) -> None:
         raise NotImplementedError

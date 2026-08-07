@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T21:10:45+09:00",
+  "updated_at": "2026-08-07T21:21:04+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1426,14 +1426,14 @@
       "title": "KMZ 다운로드는 매 조회 재생성이라 서버 상수 한 줄이 바뀌면 그 이전 발급분 전량이 영구 409 — 바이트를 저장하지 않아 복구 수단이 재발급뿐",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "GET /v1/missions/{id}/kmz 는 저장된 plan_request 로 재생성하고 sha256 이 기록과 다르면 409 로 거부한다(services/core/src/ksi_core/mission_plans.py:577-591). 계약 payload 는 mission_issuance.py 의 서버 고정 안전상수(_UNKNOWN_OBSTACLE_POLICY 등)와 스키마를 포함하고 그 digest 가 KMZ 안 manifest 에 들어가므로, 안전 정책 상수나 경로 생성기 출력이 한 비트라도 바뀌면 그 이전 발급 임무의 다운로드가 전부 영구 409 가 된다. 이 엔드포인트가 닫으려던 '손에 파일이 없는 막다른 길'이 그대로 재발한다. 서명키 로테이션은 안전함을 확인했다(canonical_payload_bytes 가 signature 블록을 제외 — signing.py:42). 결정 필요: ① 409 분기 계측·알람 추가 ② 발급 시 KMZ 바이트 영속. 독립 반증(reviewer) D1. [2026-08-06 추가 계기] phase-2 Spatial Refresh Backbone 구현이 이 클래스를 실제로 발화시켰다 — AUTONOMOUS_PATROL이 route.captureIntervalM/camera를 이제 fail-closed로 요구하면서(mission_plans.py), 그 이전에 이미 발급된 AUTONOMOUS_PATROL pair 레코드는 GET /v1/missions/{id}/kmz 재생성이 영구 409가 된다(POST /plans 멱등 재발급도 동일). 이번 세션은 이 트리거 자체를 계측·완화하지 않았다 — reviewer 지적(P2-1), ①409 분기 계측·알람 ②발급 시 KMZ 바이트 영속 결정이 여전히 필요.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "발급 시 KMZ 바이트 영속(선택지 ②) 구현. EvidenceStorage 포트에 put_bytes/get_bytes 추가(presigned URL 은 '클라이언트가 올리고 내려받게 한다'이고 이건 '서버가 만든 산출물을 서버가 보관한다' — KMZ 는 클라이언트가 올려줄 수 있는 바이트가 아니라 presigned_put 으로는 못 채운다). S3EvidenceStorage 가 put_object/get_object 로 구현. mission_plans: 발급 후 _persist_kmz(발급을 막지 않는다 — 보관 실패는 error 로그, durable 기록은 이미 끝났고 계약은 유효하다), 다운로드는 재생성 실패·sha256 불일치 두 분기 모두 _stored_kmz 폴백. create_app 이 evidence_storage 를 kmz_storage 로 넘기고, 소비자 가드에 mission_signing_key 를 세 번째 소비자로 추가. tests/contract/test_mission_plans.py 5건: 발급 시 보관·재생성 drift 시 보관본 응답(monkeypatch 로 정책 변경 재현)·스토리지 없으면 409 유지·보관 실패해도 201·보관본 못 읽으면 원래 판정. pytest 2154 passed, ruff/mypy(197) clean",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-05T15:58:00+09:00",
-      "updated_at": "2026-08-06T20:33:31+09:00"
+      "updated_at": "2026-08-07T21:21:04+09:00"
     },
     {
       "id": "kmz-download-regeneration-cost",

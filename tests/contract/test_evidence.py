@@ -39,6 +39,7 @@ class FakeStorage:
     """가짜 오브젝트 스토리지 — 포트 계약만 만족한다(네트워크·컨테이너 없이)."""
 
     def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
         self.put_calls: list[tuple[str, str, timedelta]] = []
         self.get_calls: list[tuple[str, timedelta]] = []
         self.deleted: list[str] = []
@@ -55,6 +56,18 @@ class FakeStorage:
             raise self.fail_with
         self.get_calls.append((object_key, ttl))
         return f"https://storage.invalid/{object_key}?view=1"
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
 
     def delete(self, object_key: str) -> None:
         self.deleted.append(object_key)
@@ -389,11 +402,12 @@ def test_evidence_storage_without_any_consumer_store_refuses_assembly() -> None:
     """소비자 저장소가 **하나도** 없으면 오브젝트 스토리지를 매단 채 기동하지 않는다.
 
     원래 이 가드는 ``event_store`` 만 요구했으나 3D 파이프라인 입구
-    (``source_media_store``)가 같은 스토리지 포트의 두 번째 소비자가 되면서
-    소비자 집합이 넓어졌다 — 이 테스트가 확인하는 것은 "둘 다 없을 때 거부"이지
-    "event_store 가 없을 때 거부"가 아니다(후자는 더 이상 참이 아니다).
+    (``source_media_store``)가 같은 스토리지 포트의 두 번째 소비자가 되었고,
+    2026-08-08 부터 임무 발급이 KMZ 바이트 보관으로 **세 번째** 소비자가 됐다
+    (risk kmz-regeneration-determinism-timebomb) — 이 테스트가 확인하는 것은
+    "셋 다 없을 때 거부"이지 특정 하나가 없을 때의 거부가 아니다.
     """
-    with pytest.raises(ValueError, match="event_store 또는 source_media_store"):
+    with pytest.raises(ValueError, match="소비자 저장소"):
         create_app(
             auth_registry=_auth_registry(),
             evidence_storage=FakeStorage(),

@@ -1055,6 +1055,7 @@ class _FakeStorage:
     """포트 계약만 만족하는 가짜 스토리지(``test_source_media.FakeStorage`` 대칭)."""
 
     def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
         self.fail_get_with: Exception | None = None
 
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
@@ -1066,6 +1067,18 @@ class _FakeStorage:
         if self.fail_get_with is not None:
             raise self.fail_get_with
         return f"https://storage.invalid/{object_key}?download=1"
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
 
     def delete(self, object_key: str) -> None:
         raise NotImplementedError

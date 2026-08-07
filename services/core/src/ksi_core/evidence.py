@@ -83,6 +83,29 @@ class EvidenceStorage(Protocol):
         """열람용 URL. 실패는 :class:`EvidenceStorageError`."""
         ...
 
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """Core 가 **직접** 바이트를 쓴다. 실패는 :class:`EvidenceStorageError`.
+
+        다른 세 메서드와 성격이 다르다 — presigned URL 은 "클라이언트가 올리고
+        내려받게 한다"이고 이건 "서버가 만든 산출물을 서버가 보관한다"이다. 그
+        구분이 필요해진 이유는 KMZ 다: 발급 시점에만 존재하는 바이트를 서버가
+        보관하지 않으면, 서버 안전상수 한 줄이 바뀌는 순간 그 이전 발급분 전량이
+        재생성 불가가 되어 다운로드가 영구 409 가 된다(risk
+        kmz-regeneration-determinism-timebomb — phase-2 에서 실제로 발화했다).
+        클라이언트가 올려줄 수 있는 바이트가 아니므로 presigned_put 으로는 못 채운다.
+        """
+        ...
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """Core 가 **직접** 바이트를 읽는다. 실패·부재는 :class:`EvidenceStorageError`.
+
+        :meth:`put_bytes` 의 짝이다 — 서버가 보관한 산출물을 서버가 다시 판단에
+        쓰는 경로(KMZ 다운로드가 재생성 대신 보관본을 내려줄지 정하는 자리)라,
+        presigned URL 로는 성립하지 않는다. **부재도 오류다**: "없다"를 조용히
+        빈 바이트로 돌려주면 호출부가 그걸 유효한 파일로 취급한다.
+        """
+        ...
+
     def delete(self, object_key: str) -> None:
         """객체 삭제(보관 정책 집행 — ADR-KSI-010 §3). 이미 없으면 성공으로 본다."""
         ...

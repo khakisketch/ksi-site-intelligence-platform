@@ -85,6 +85,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
 from ksi_core.mission_records import (
@@ -464,6 +465,18 @@ def build_mission_plan(
     }
 
 
+def build_mission_kmz_object_key(*, site_id: str, mission_id: str) -> str:
+    """발급 KMZ 의 보관 키 — 서버가 만든다(``build_source_media_object_key`` 관습).
+
+    두 구성요소를 여기서 재검증한다: 이 함수가 경로 탈출을 막는 마지막 지점이다.
+    """
+    if not is_path_safe_identifier(site_id):
+        raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
+    if not is_path_safe_identifier(mission_id):
+        raise ValueError(f"경로-안전하지 않은 missionId: {mission_id!r}")
+    return f"sites/{site_id}/missions/{mission_id}/artifacts/{mission_id}.kmz"
+
+
 def _regenerate_pair_artifact(
     record: MissionRecord, *, private_key: Ed25519PrivateKey, key_id: str
 ) -> dict[str, Any]:
@@ -489,6 +502,71 @@ def _regenerate_pair_artifact(
     return result
 
 
+def _kmz_response(mission_id: str, kmz_bytes: bytes) -> Response:
+    """KMZ 바이트 응답 — 헤더 조립을 한 곳에만 둔다(경로 4개가 같은 응답을 낸다)."""
+    return Response(
+        content=kmz_bytes,
+        media_type="application/vnd.google-earth.kmz",
+        headers={"Content-Disposition": f'attachment; filename="{mission_id}.kmz"'},
+    )
+
+
+def _stored_kmz(storage: EvidenceStorage | None, record: MissionRecord) -> bytes | None:
+    """발급 시 보관해둔 KMZ 바이트 — 없거나 스토리지 장애면 ``None``.
+
+    이 함수는 **예외를 올리지 않는다.** 호출부는 이미 재생성에 실패했거나 재생성
+    바이트가 원본과 다른 상황이고, 여기서 또 예외가 나면 원인이 뒤바뀐 오류가
+    운영자에게 간다 — 보관본이 없으면 원래의 409 로 떨어지는 게 정확하다.
+    """
+    if storage is None:
+        return None
+    try:
+        key = build_mission_kmz_object_key(
+            site_id=record.site_id, mission_id=record.mission_id
+        )
+    except ValueError:
+        return None
+    try:
+        return storage.get_bytes(key)
+    except EvidenceStorageError:
+        logger.warning(
+            "mission_id=%s 보관된 KMZ 를 읽지 못했다 — 재생성 결과로 판정한다",
+            record.mission_id,
+        )
+        return None
+
+
+def _persist_kmz(
+    storage: EvidenceStorage | None, record: MissionRecord, result: dict[str, Any]
+) -> None:
+    """발급 KMZ 바이트를 보관한다 (risk kmz-regeneration-determinism-timebomb).
+
+    **발급을 막지 않는다.** durable 기록(mission_store)은 이미 끝났고 계약은 유효하다
+    — 보관 실패로 201 을 거부하면 스토리지 장애가 임무 발급 자체를 멈춘다. 대신
+    error 로 남긴다: 이 실패는 "나중에 그 임무의 KMZ 다운로드가 재생성에만 의존하게
+    됐다"는 뜻이고, 그 사실을 아무도 모르면 정책이 바뀐 뒤에야 409 로 드러난다.
+
+    ``storage`` 가 ``None`` 인 조립(오브젝트 스토리지 없는 배포)에서는 아무것도 하지
+    않는다 — 그 배포는 지금까지처럼 재생성에만 의존하고, 그 사실이 조립에서 명시된다.
+    """
+    if storage is None:
+        return
+    try:
+        storage.put_bytes(
+            build_mission_kmz_object_key(
+                site_id=record.site_id, mission_id=record.mission_id
+            ),
+            base64.b64decode(result["kmzBase64"]),
+            content_type="application/vnd.google-earth.kmz",
+        )
+    except (EvidenceStorageError, ValueError) as exc:
+        logger.error(
+            "mission_id=%s KMZ 바이트 보관 실패(%s) — 발급 자체는 유효하지만 이 임무의 "
+            "다운로드는 앞으로 재생성에만 의존한다(서버 정책이 바뀌면 409 가 된다)",
+            record.mission_id, type(exc).__name__,
+        )
+
+
 # risk kmz-download-regeneration-cost: 읽기 권한(MISSIONS_READ, VIEWER 포함 5개
 # role 전부)만으로 재조회마다 경로생성+Ed25519 서명이 무제한 반복된다. build_kmz
 # 계열은 결정론적이므로(모듈 docstring) 같은 mission_id·같은 kmz_sha256 에 대한
@@ -504,6 +582,7 @@ def build_mission_plans_router(
     key_id: str,
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
+    kmz_storage: EvidenceStorage | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
     # (kmzSha256, kmz_bytes, expires_at_monotonic) — mission_id 키, LRU 크기상한.
@@ -612,6 +691,7 @@ def build_mission_plans_router(
             plan_request_digest=request_digest,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        _persist_kmz(kmz_storage, record, result)
         return result
 
     @router.get("/{mission_id}/kmz")
@@ -655,13 +735,7 @@ def build_mission_plans_router(
                 cached_sha, cached_bytes, expires_at = cached
                 if expires_at > now and cached_sha == record.kmz_sha256:
                     kmz_cache.move_to_end(mission_id)
-                    return Response(
-                        content=cached_bytes,
-                        media_type="application/vnd.google-earth.kmz",
-                        headers={
-                            "Content-Disposition": f'attachment; filename="{mission_id}.kmz"'
-                        },
-                    )
+                    return _kmz_response(mission_id, cached_bytes)
                 del kmz_cache[mission_id]
         try:
             regenerated = _regenerate_pair_artifact(
@@ -677,11 +751,22 @@ def build_mission_plans_router(
                 "발급된 다른 레코드도 동시에 영향받을 수 있다",
                 record.mission_id, type(exc).__name__,
             )
+            stored = _stored_kmz(kmz_storage, record)
+            if stored is not None:
+                # 발급 시점의 **그 바이트**가 보관돼 있으면 정책 변경과 무관하게
+                # 그걸 내려준다 — 이 엔드포인트가 약속하는 것은 "발급 당시 그
+                # 파일"이고, 재생성은 그걸 얻는 수단이었지 목적이 아니다.
+                logger.info(
+                    "mission_id=%s 재생성 실패했지만 발급 시 보관된 KMZ 로 응답한다",
+                    record.mission_id,
+                )
+                return _kmz_response(mission_id, stored)
             raise HTTPException(
                 status_code=409,
                 detail=(
                     "이미 기록된 임무지만 현재 정책으로는 KMZ 를 다시 만들 수 "
-                    f"없다(발급 당시 규칙과 달라졌다): {exc}"
+                    f"없다(발급 당시 규칙과 달라졌다): {exc}. 발급 시 바이트도 "
+                    "보관돼 있지 않다"
                 ),
             ) from exc
         if regenerated["kmzSha256"] != record.kmz_sha256:
@@ -698,11 +783,20 @@ def build_mission_plans_router(
             # "달라졌다"만 남기고 이 라우트가 실제로 다운로드를 막았다는 사실 자체는
             # 기록하지 않았다 — 운영자가 이 로그 없이는 대량 409 발생을 알 방법이
             # 없었다.
+            stored = _stored_kmz(kmz_storage, record)
+            if stored is not None:
+                logger.info(
+                    "mission_id=%s 재생성 바이트가 원본과 다르지만(재생성 sha256=%s, "
+                    "기록 %s) 발급 시 보관된 KMZ 로 응답한다",
+                    record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+                )
+                return _kmz_response(mission_id, stored)
             logger.error(
                 "mission_id=%s KMZ 다운로드가 결정성 위반으로 영구 거부됐다 "
                 "(재생성 sha256=%s, 기록된 kmzSha256=%s) — 이 발급 시점 이후 서버 "
                 "상수·경로생성기가 바뀌었을 가능성. 같은 정책 변경 전에 발급된 다른 "
-                "레코드도 동시에 영향받을 수 있다",
+                "레코드도 동시에 영향받을 수 있다. 발급 시 바이트가 보관돼 있었다면 "
+                "이 거부는 일어나지 않았다(오브젝트 스토리지 없는 조립)",
                 record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
             )
             raise HTTPException(
@@ -723,11 +817,7 @@ def build_mission_plans_router(
             kmz_cache.move_to_end(mission_id)
             while len(kmz_cache) > _KMZ_CACHE_MAX_ENTRIES:
                 kmz_cache.popitem(last=False)
-        return Response(
-            content=kmz_bytes,
-            media_type="application/vnd.google-earth.kmz",
-            headers={"Content-Disposition": f'attachment; filename="{mission_id}.kmz"'},
-        )
+        return _kmz_response(mission_id, kmz_bytes)
 
     return router
 
@@ -739,8 +829,15 @@ def mount_mission_plans(
     key_id: str,
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
+    kmz_storage: EvidenceStorage | None = None,
 ) -> None:
     """앱에 임무 계획(짝 발급) 라우터를 장착한다.
+
+    ``kmz_storage`` 가 주어지면 발급 시 KMZ 바이트를 보관하고, 다운로드가 재생성에
+    실패하거나 재생성 바이트가 원본과 다를 때 그 보관본을 내려준다 — 서버 안전상수
+    한 줄이 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
+    kmz-regeneration-determinism-timebomb, phase-2 에서 실제로 발화). 없으면
+    지금까지처럼 재생성에만 의존한다 — 그 조립의 한계가 조립에서 드러난다.
 
     인증·site 등록 대조(존재+siteFrame 일치+임무타입×현장상태 게이트, INV-052)·
     durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록
@@ -753,5 +850,6 @@ def mount_mission_plans(
             key_id=key_id,
             mission_store=mission_store,
             site_lookup=site_lookup,
+            kmz_storage=kmz_storage,
         )
     )
