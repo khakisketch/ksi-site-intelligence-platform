@@ -23,22 +23,10 @@ from typing import Any
 import uvicorn
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from ksi_core.app import create_app
+from ksi_core.app_assembly import assemble_app, cli_optional_positive  # noqa: F401 -- re-export
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
-from ksi_core.change_detection import ChangeDetectionStore
-from ksi_core.coverage_reports import CoverageReportStore
-from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.edge_sync import EdgeSyncStore
-from ksi_core.equipment_states import EquipmentStateStore
-from ksi_core.equipment_support import EquipmentSupportStore
-from ksi_core.events import EventStore
-from ksi_core.mission_records import MissionStore
-from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
-from ksi_core.sites import SiteStore
-from ksi_core.source_media import SourceMediaStore
-from ksi_core.volume_reports import VolumeChangeStore
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -133,22 +121,6 @@ def _bootstrap_key_set(signing_dir: Path) -> SigningKeySet:
     return load_signing_keys(signing_dir)
 
 
-def cli_optional_positive(value: int, *, name: str) -> int | None:
-    """CLI 의 "0 = 없음" 규약을 생성자의 ``None`` 으로 옮긴다.
-
-    생성자들은 0·음수를 거부하고 "없음"은 ``None`` 으로만 표현한다(조용히
-    0 으로 뭉개지 않기 위해서다). CLI 쪽에서 0 을 그 뜻으로 받는 규약은 여기
-    한 곳에만 둔다 — 이 저장소의 **유일한 조립 지점**이라 여기 배선이 틀리면
-    라이브러리 테스트가 전부 green 인 채로 통과한다(독립 재검토 지적).
-
-    음수는 argparse 를 통과하므로 여기서 typed 로 막는다 — 생성자까지 흘려보내면
-    실패 메시지가 CLI 인자 이름을 잃는다.
-    """
-    if value < 0:
-        raise ValueError(f"{name} 는 0(없음) 이거나 양수여야 한다: {value}")
-    return value or None
-
-
 @dataclass(frozen=True, slots=True)
 class DevAssembly:
     """조립된 앱 + 종료 시 닫아야 할 원장들.
@@ -215,25 +187,13 @@ def _build_dev_app_locked(
     s3_endpoint: str | None,
     s3_bucket: str | None,
 ) -> DevAssembly:
-    """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다."""
-    key_set = _bootstrap_key_set(data_dir / "signing")
+    """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
-    # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
-    # 회전 임계는 **조립 지점의 결정**이다(DurableJournal 기본값은 회전 없음) —
-    # 한 파일이 무한히 커지면 재기동 재생이 선형으로 느려지고 백업 단위도 사라진다.
-    # 여기 값은 dev 조립 기준이고, 운영 조립은 디스크·백업 주기에 맞춰 자기 값을 준다.
-    # CLI 는 0 을 "회전 없음"으로 받는다(생성자는 None). 음수는 argparse 를 통과하지만
-    # 생성자가 ValueError 로 거부한다 — 조용히 0 으로 뭉개지 않는다.
-    site_journal = journal("sites.jsonl")
-    mission_journal = journal("missions.jsonl")
-    event_journal = journal("events.jsonl")
-    # edge-sync 는 회전이 아니라 스냅샷으로 재기동 비용을 잡는다 — 이 원장의
-    # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
-    edge_sync_store = EdgeSyncStore(
-        data_dir / "edge-sync.jsonl",
-        snapshot_every=edge_sync_snapshot_every,
-    )
-    opened.append(edge_sync_store)
+    store 조립 본문은 ``ksi_core.app_assembly.assemble_app`` 으로 옮겼다
+    (dev·production 두 조립 지점의 공용부, 모듈 docstring 참조). 여기 남는 것은
+    dev 만의 관심사(키 부트스트랩, CLI 의 --s3-* 조건부 evidence storage)뿐이다.
+    """
+    key_set = _bootstrap_key_set(data_dir / "signing")
 
     evidence_storage = None
     if s3_endpoint is not None and s3_bucket is not None:
@@ -243,83 +203,13 @@ def _build_dev_app_locked(
 
         evidence_storage = S3EvidenceStorage(bucket=s3_bucket, endpoint_url=s3_endpoint)
 
-    mission_store = MissionStore(mission_journal)
-    # 커버리지 보고는 임무 발급 기록과 대조해서만 받는다(INV-010) — 발급된 적
-    # 없는 임무의 관찰 결과는 "무슨 근거로 날았나"에 답할 수 없다.
-    coverage_journal = journal("coverage-reports.jsonl")
-    # 원본 사진 번들(3D 파이프라인 입구) — --s3-endpoint 없이는 store 는 구성돼도
-    # 라우트가 장착되지 않는다(evidence 라우트와 같은 관습, create_app 참조).
-    source_media_journal = journal("source-media.jsonl")
-    source_media_store = SourceMediaStore(source_media_journal, mission_store=mission_store)
-    site_store = SiteStore(site_journal)
-    # 처리 작업(ADR-KSI-012) — 봉인된 번들에서 입력을, 현장에서 반출 허용 여부를
-    # 읽는다(INV-050). source_media 와 달리 오브젝트 스토리지를 요구하지 않는다.
-    processing_job_journal = journal("processing-jobs.jsonl")
-    # evidence_storage 없이 이 저장소를 넘기면 create_app 이 조립 자체를 거부한다
-    # (ADR-KSI-012/INV-050 — 워커가 원본 바이트를 받아갈 URL 이 없으면 SUCCEEDED
-    # 게이트가 영구히 닫힌 조립이 된다). 예전 코드는 무조건 넘겨서 **--s3-endpoint
-    # 없이는 dev 서버가 아예 뜨지 않았다**(2026-08-08 test_dev_assembly 신설 게이트가
-    # 실측으로 잡음). 스토리지가 없으면 이 표면을 장착하지 않는 편이 정직하다 —
-    # source_media 라우트가 같은 이유로 이미 그렇게 동작한다.
-    processing_job_store = (
-        ProcessingJobStore(
-            processing_job_journal, source_media_store=source_media_store, site_store=site_store
-        )
-        if evidence_storage is not None
-        else None
-    )
-    # Phase 3/4 + M1 표면 — 이 다섯을 여기서 조립하지 않으면 create_app 배선이 정확해도
-    # **띄울 수 있는 서버에서는 404 다**(2026-08-08 reviewer 지적 F1: 신설 API 4종이
-    # 어떤 실행 가능한 조립에도 장착돼 있지 않았다). 라이브러리를 API 로 만든 작업이
-    # 다시 "아무도 못 쓰는 것"이 되는 자리라, 배선과 조립을 같은 커밋에서 닫는다.
-    defect_candidate_journal = journal("defect-candidates.jsonl")
-    change_detection_journal = journal("change-detection.jsonl")
-    volume_change_journal = journal("volume-changes.jsonl")
-    equipment_state_journal = journal("equipment-states.jsonl")
-    equipment_support_journal = journal("equipment-support.jsonl")
-    app = create_app(
+    app = assemble_app(
+        data_dir,
+        journal=journal,
+        opened=opened,
+        edge_sync_snapshot_every=edge_sync_snapshot_every,
         auth_registry=_auth_registry(),
-        site_store=site_store,
-        mission_store=mission_store,
-        event_store=EventStore(event_journal),
-        edge_sync_store=edge_sync_store,
         evidence_storage=evidence_storage,
-        coverage_report_store=CoverageReportStore(
-            coverage_journal, mission_store=mission_store
-        ),
-        source_media_store=source_media_store,
-        processing_job_store=processing_job_store,
-        defect_candidate_store=DefectCandidateStore(
-            defect_candidate_journal,
-            mission_store=mission_store,
-            source_media_store=source_media_store,
-        ),
-        # 변화 탐지 결과는 point_cloud 산출물을 지목해야 해석된다 — 작업 원장이
-        # 없는 조립에서는 그 대조가 불가능하므로 표면도 열지 않는다.
-        change_detection_store=(
-            ChangeDetectionStore(
-                change_detection_journal,
-                mission_store=mission_store,
-                processing_job_store=processing_job_store,
-            )
-            if processing_job_store is not None
-            else None
-        ),
-        # 체적 리포트도 같다 — 어느 두 DSM 을 비교했는지 대조할 작업 원장이
-        # 없으면 "이만큼 깎였다"가 재현 불가능한 주장이 된다.
-        volume_change_store=(
-            VolumeChangeStore(
-                volume_change_journal,
-                mission_store=mission_store,
-                processing_job_store=processing_job_store,
-            )
-            if processing_job_store is not None
-            else None
-        ),
-        equipment_state_store=EquipmentStateStore(
-            equipment_state_journal, site_store=site_store
-        ),
-        equipment_support_store=EquipmentSupportStore(equipment_support_journal),
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
     )

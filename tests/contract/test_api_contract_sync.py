@@ -22,6 +22,7 @@ import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
+from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.coverage_reports import CoverageReportStore
@@ -714,3 +715,57 @@ def test_no_unauthenticated_route_outside_allowlist(tmp_path: Path) -> None:
     # 공허 방지 — 보호 라우트가 실제로 여럿 감지돼야 위 차집합에 의미가 있다.
     protected = {r.path for r in routes if _has_auth_dependency(r)}
     assert len(protected) >= 8, f"인증 게이트를 감지한 라우트가 너무 적다: {sorted(protected)}"
+
+
+# ``_max_assembly`` 는 ``create_app`` 을 직접 불러 문서(openapi-core.yaml) 대조용
+# "최대 조립"을 만든다 — dev(scripts/run_core_dev.py)·production(ksi_core.production)
+# 두 실행 가능 조립이 실제로 타는 ``ksi_core.app_assembly.assemble_app`` 이 그 위에
+# 얹는 라우트(``/ready``)는 구조적으로 위 게이트의 시야 밖이었다(독립 재검토 지적 —
+# "무인증 표면은 allowlist 뿐"이라는 위 게이트가 조립 지점이 추가하는 라우트에
+# 대해서는 공허했다). 여기서 실행 가능한 두 조립이 공유하는 assemble_app 도 같은
+# 방식으로 훑어, "나중에 assemble_app 이 인증 없이 열어선 안 되는 라우트를 추가해도
+# 이 파일의 게이트가 못 본다"는 사각지대를 닫는다.
+_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST = frozenset({"/ready"})
+
+
+def test_no_unauthenticated_route_outside_allowlist_via_assemble_app(tmp_path: Path) -> None:
+    """[핵심] ``assemble_app``(dev·production 공용 조립)이 얹는 라우트도 같은 게이트를 탄다.
+
+    ``/ready`` 는 의도적으로 무인증이다(오케스트레이터 헬스체크는 인증 헤더를 안
+    보낸다) — 그래서 별도의 작은 allowlist 에 명시적으로 올려 둔다. 이 allowlist 밖의
+    무인증 라우트가 하나라도 나오면 실패한다.
+    """
+    opened: list[Any] = []
+
+    def _journal(name: str) -> DurableJournal:
+        journal = DurableJournal(tmp_path / name)
+        opened.append(journal)
+        return journal
+
+    try:
+        app = assemble_app(
+            tmp_path,
+            journal=_journal,
+            opened=opened,
+            edge_sync_snapshot_every=None,
+            auth_registry=_auth_registry(),
+            evidence_storage=_NullEvidenceStorage(),
+            mission_signing_key=Ed25519PrivateKey.generate(),
+            mission_signing_key_id="assemble-app-unauth-gate-test-key",
+        )
+        routes = _walk_routes(app)
+        assert len(routes) >= 15, f"라우트를 제대로 못 폈다({len(routes)}) — 게이트가 공허하다"
+        unauthenticated = {r.path for r in routes if not _has_auth_dependency(r)}
+        allowed = _UNAUTHENTICATED_ALLOWLIST | _ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST
+        unexpected = unauthenticated - allowed
+        assert not unexpected, (
+            "assemble_app 이 얹은 라우트 중 인증 없이 열린 것이 allowlist 밖에 있다: "
+            f"{sorted(unexpected)} — 의도한 것이면 "
+            "_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST 를 갱신하라"
+        )
+        # /ready 자체가 정말 assemble_app 이 얹은 무인증 라우트라는 것도 확인한다 —
+        # 그래야 위 대조가 "우연히 아무것도 안 걸렸다"가 아니라는 근거가 된다.
+        assert "/ready" in unauthenticated
+    finally:
+        for journal in opened:
+            journal.close()
