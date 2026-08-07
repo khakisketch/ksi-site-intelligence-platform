@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
     from ksi_core.auth import AuthRegistry
     from ksi_core.coverage_reports import CoverageReportStore
+    from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
@@ -61,6 +62,7 @@ def create_app(
     coverage_report_store: CoverageReportStore | None = None,
     source_media_store: SourceMediaStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
+    defect_candidate_store: DefectCandidateStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -116,6 +118,10 @@ def create_app(
             입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
             둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
             조립에서 거부한다.
+        defect_candidate_store: Phase 4 결함 후보(균열) 수신·조회 저장소.
+            ``mission_store`` 와 ``source_media_store`` 가 모두 필수다 — 후보는
+            "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 가지므로, 그
+            참조를 대조할 저장소 없이는 검증 불가능한 도형을 그대로 받게 된다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -221,6 +227,17 @@ def create_app(
             " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다"
         )
 
+    if defect_candidate_store is not None and (
+        mission_store is None or source_media_store is None
+    ):
+        raise ValueError(
+            "defect_candidate_store 는 mission_store·source_media_store 와 함께 주어져야"
+            " 한다 — 결함 후보는 '어느 임무의 어느 사진 위 좌표인가'로만 의미를 갖는다."
+            " 참조 대상을 대조할 저장소가 없으면 서버는 그릴 수 없는 도형을 원장에"
+            " 쌓게 되고, 그건 조회 시점에 정상으로 보인다(defect_candidates.py"
+            " '서버는 후보를 그대로 받아 적지 않는다')"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -233,6 +250,7 @@ def create_app(
             coverage_report_store,
             source_media_store,
             processing_job_store,
+            defect_candidate_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -348,5 +366,10 @@ def create_app(
         from ksi_core.processing_jobs import mount_processing_jobs
 
         mount_processing_jobs(app, processing_job_store, evidence_storage)
+
+    if defect_candidate_store is not None:
+        from ksi_core.defect_candidates import mount_defect_candidates
+
+        mount_defect_candidates(app, defect_candidate_store)
 
     return app

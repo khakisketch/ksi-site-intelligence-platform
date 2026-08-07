@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
-from ksi_defect_detection.defect_candidate import (
+from ksi_event_contracts.defect_candidate import (
     DefectCandidate,
     DefectGeometry,
     DefectMeasurements,

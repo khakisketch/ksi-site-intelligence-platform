@@ -10,7 +10,15 @@ requires-python = ">=3.12,<3.13"
 # 코드라 무거운 ML 스택과 같이 묶어 extra 뒤로 숨기면(2026-08-07 reviewer 지적,
 # ksi-goals F2) CI 에서 이 모듈이 한 줄도 실행되지 않는 채로 남는다. torch/mmcv
 # 대비 훨씬 가벼워 base 로 둬도 무리 없다.
-dependencies = ["pydantic>=2.7", "pyyaml>=6.0", "opencv-python-headless>=4.9"]
+# DefectCandidate wire 계약 자체는 ksi-event-contracts 에 산다 — Core 가 이 계약을
+# 소비할 때 opencv/torch 스택까지 딸려오지 않게 하기 위해서다(그쪽 모듈 docstring
+# "왜 탐지 서비스가 아니라 계약 패키지에 사는가").
+dependencies = [
+    "ksi-event-contracts",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "opencv-python-headless>=4.9",
+]
 
 [project.optional-dependencies]
 # spiderforest/MixerCSeg(MIT, MODEL-P4-001) 벤더링 코드가 실제로 요구하는 스택.
@@ -49,3 +57,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ksi_defect_detection"]
+
+[tool.uv.sources]
+ksi-event-contracts = { workspace = true }

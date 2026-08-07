@@ -769,6 +769,85 @@ paths:
         '404': { description: 이 임무의 보고가 아직 없다 }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/defect-candidates:
+    post:
+      summary: Submit surface defect candidates for a mission (Phase 4, MODEL-P4-001)
+      description: >-
+        PROCESSING_WORK 권한 필요 — **사람은 이 권한을 가질 수 없다**(어느 Role 에도
+        매핑되지 않는다). 결함 후보는 실제로 추론을 돌린 워커만 주장할 수 있고,
+        사람의 판단은 결함 후보가 아니라 이벤트 트리아지로 표현된다.
+
+        **서버는 후보를 그대로 받아 적지 않는다.** 결함 후보의 값은 전부 유효 범위
+        안에 있을 수 있어서(confidence 0~1, 좌표 양수) 스키마 검증만으로는 잘못된
+        참조가 통과한다 — 서버가 추가로 검사하는 것은 ① sourceMediaId 가 이 임무에
+        등록된 사진인가(UNKNOWN_SOURCE_MEDIA) ② imageSize 가 등록된 사진의 실제
+        화소수와 같은가(IMAGE_SIZE_MISMATCH — 축소본 좌표를 원본 기준으로 신고하면
+        폴리곤이 통째로 다른 자리를 가리킨다) ③ 폴리곤 정점이 이미지 안인가
+        (GEOMETRY_OUT_OF_BOUNDS)다.
+
+        **배치는 전부-또는-전무다.** 일부만 기록되면 "이 임무의 결함이 몇 건인가"에
+        원장이 답할 수 없고, 그 부분 누락은 조회 시점에 정상으로 보인다. 같은
+        defectCandidateId 로 **동일 내용** 재전송은 멱등 성공(recordedCount=0)이고,
+        **다른 내용**이면 409 다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [candidates]
+              properties:
+                candidates:
+                  type: array
+                  minItems: 1
+                  items: { $ref: ../schemas/defect-candidate.v1.json }
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료(멱등 재전송이면 recordedCount=0)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DefectCandidateBatchResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '409': { description: DUPLICATE_CANDIDATE_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: >-
+            EMPTY_BATCH / UNKNOWN_SOURCE_MEDIA / IMAGE_SIZE_MISMATCH /
+            GEOMETRY_OUT_OF_BOUNDS
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(운영자 Role 포함) }
+    get:
+      summary: List defect candidates recorded for a mission
+      description: >-
+        MISSIONS_READ 권한 필요. 후보가 0건인 것은 404 가 아니라 빈 목록이다 —
+        "아직 안 돌았다"와 "돌렸는데 결함이 없다"를 이 엔드포인트는 구분하지 못하고,
+        구분하는 척하면 안 된다(그 구분은 처리 작업 상태가 답한다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: sourceMediaId
+          required: false
+          description: 사진 1장으로 좁혀 본다(화면이 사진별 폴리곤 오버레이를 그릴 때).
+          schema: { type: string }
+      responses:
+        '200':
+          description: 그 임무의 결함 후보 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DefectCandidateListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/source-media:
     post:
       summary: Batch-issue presigned PUT URLs for raw mapping photos (3D 파이프라인 입구)
@@ -1854,6 +1933,50 @@ components:
             사유있는 미관찰 Cell 이 남아 있으면 true. 자동 재발급을 트리거하지
             않는다 — 운영자가 원본 site AOI 로 SPATIAL_REFRESH 임무를
             POST /v1/missions/plans 에 재발급하라는 신호일 뿐이다.
+    DefectCandidateBatchResponse:
+      description: 결함 후보 배치 접수 판정. recordedCount 는 **새로** 기록된 건수다.
+      type: object
+      required: [verdict, detail, recordedCount]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_MISSION / EMPTY_BATCH / UNKNOWN_SOURCE_MEDIA /
+            IMAGE_SIZE_MISMATCH / GEOMETRY_OUT_OF_BOUNDS / DUPLICATE_CANDIDATE_ID /
+            STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        recordedCount:
+          type: integer
+          description: >-
+            새로 기록된 후보 수. 멱등 재전송(전건이 이미 같은 내용)이면 verdict 는
+            RECORDED 이고 이 값은 0 이다 — 중복 기록하지 않는다.
+    DefectCandidateListView:
+      description: 그 임무의 결함 후보 목록 + 후보가 걸린 사진 목록.
+      type: object
+      required: [missionId, candidateCount, sourceMediaIds, candidates]
+      properties:
+        missionId: { type: string }
+        candidateCount: { type: integer }
+        sourceMediaIds:
+          type: array
+          items: { type: string }
+          description: >-
+            후보가 하나라도 걸린 사진 id 목록(정렬됨). 화면이 "어느 사진에 결함이
+            있나"를 먼저 보여주고 사진별로 폴리곤을 겹치는 흐름을 위해, 클라이언트가
+            전체 목록을 훑어 직접 집계하지 않아도 되게 서버가 함께 낸다.
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [candidate, reportedBy, recordedAt]
+            properties:
+              # 구조 정본은 contracts/schemas/defect-candidate.v1.json.
+              candidate: { type: object, additionalProperties: true }
+              reportedBy:
+                type: [string, 'null']
+                description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
+              recordedAt: { type: string }
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object

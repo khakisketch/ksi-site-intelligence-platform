@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.coverage_reports import CoverageReportStore
+from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
@@ -102,6 +103,11 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "processing-jobs.jsonl"),
             source_media_store=source_media_store,
             site_store=site_store,
+        ),
+        defect_candidate_store=DefectCandidateStore(
+            DurableJournal(tmp_path / "defect-candidates.jsonl"),
+            mission_store=mission_store,
+            source_media_store=source_media_store,
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",

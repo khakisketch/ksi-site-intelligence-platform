@@ -8,7 +8,7 @@
       → MixerCSeg.forward → raw logits [1,1,H,W]
       → sigmoid → 확률맵 [H,W] float32 (0~1)
 
-마스크→:class:`~ksi_defect_detection.defect_candidate.DefectCandidate` 변환(윤곽
+마스크→:class:`~ksi_event_contracts.defect_candidate.DefectCandidate` 변환(윤곽
 추출·면적/길이 계측)은 :mod:`ksi_defect_detection.postprocess` 의 몫이다 — 이
 모듈은 "이미지 한 장 → 확률맵"까지만 책임진다.
 

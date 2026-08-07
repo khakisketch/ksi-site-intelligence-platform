@@ -1,6 +1,21 @@
 """DefectCandidate 계약 — contracts/schemas/defect-candidate.v1.json 의 Python 대응
 (Phase 4 "표면 점검·결함 후보", MODEL-P4-001).
 
+## 왜 탐지 서비스가 아니라 계약 패키지에 사는가
+
+원래 ``services/defect-detection`` 안에 있었다. 그러면 이 계약을 소비하는
+``services/core``(결함 후보 수신·조회 API)가 **서비스에 의존**하게 되고, 그
+서비스의 base 의존인 ``opencv-python-headless`` 가 control plane 으로 딸려온다 —
+mmcv/mmengine 이 순정 ``opencv-python`` 을 강제해 같은 ``cv2`` 네임스페이스를
+깨뜨리는 알려진 취약점(risk ``defect-detection-opencv-namespace-conflict``)이
+그대로 Core 의 기동 조건이 된다. ``CoverageReport``·``ProcessingArtifact``·
+``WorldEntity`` 가 전부 이 패키지에 사는 것과 같은 이유다: **wire 계약은 그것을
+만드는 쪽이 아니라 주고받는 양쪽이 공유하는 곳에 둔다.**
+
+추론·후처리(``ksi_defect_detection.mixercseg_adapter`` /
+``ksi_defect_detection.postprocess``)는 그대로 서비스에 남는다 — 옮긴 것은
+계약뿐이다.
+
 ## 왜 bbox 가 아니라 polygon 인가
 
 균열 세그멘테이션 모델(MixerCSeg 등)의 원출력은 픽셀 단위 마스크다. 이를 기존

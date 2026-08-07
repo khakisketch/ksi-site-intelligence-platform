@@ -27,7 +27,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 from jsonschema import Draft202012Validator
-from ksi_defect_detection.defect_candidate import defect_candidate_wire_dict
 from ksi_defect_detection.mixercseg_adapter import (
     MixerCSegDetector,
     MixerCSegLoadStatus,
@@ -35,6 +34,7 @@ from ksi_defect_detection.mixercseg_adapter import (
 )
 from ksi_defect_detection.postprocess import defect_candidates_from_probability_map
 from ksi_defect_detection.registry import load_model_entry
+from ksi_event_contracts.defect_candidate import defect_candidate_wire_dict
 
 _MODEL_ID = "ksi-crack-segmenter-mixercseg-deepcrack"
 _REPO_ROOT = Path(__file__).resolve().parents[2]

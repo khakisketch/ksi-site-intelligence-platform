@@ -708,6 +708,7 @@ name = "ksi-defect-detection"
 version = "0.0.1"
 source = { editable = "services/defect-detection" }
 dependencies = [
+    { name = "ksi-event-contracts" },
     { name = "opencv-python-headless" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -730,6 +731,7 @@ mixercseg = [
 requires-dist = [
     { name = "einops", marker = "extra == 'mixercseg'", specifier = ">=0.7" },
     { name = "fvcore", marker = "extra == 'mixercseg'", specifier = ">=0.1.5" },
+    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
     { name = "mmcv", marker = "extra == 'mixercseg'", specifier = "<2.0" },
     { name = "mmengine", marker = "extra == 'mixercseg'", specifier = ">=0.10" },
     { name = "mmsegmentation", marker = "extra == 'mixercseg'", specifier = "<1.0" },

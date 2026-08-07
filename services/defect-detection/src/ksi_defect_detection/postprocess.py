@@ -1,4 +1,4 @@
-"""확률맵 → :class:`~ksi_defect_detection.defect_candidate.DefectCandidate` 목록.
+"""확률맵 → :class:`~ksi_event_contracts.defect_candidate.DefectCandidate` 목록.
 
 ``mixercseg_adapter.MixerCSegDetector.segment_image`` 가 낸 확률맵(H,W float32
 0~1)을 임계값으로 이진화하고, 연결된 성분별로 윤곽을 뽑아 계약 객체로 만든다.
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ksi_defect_detection.defect_candidate import (
+from ksi_event_contracts.defect_candidate import (
     DefectCandidate,
     DefectGeometry,
     DefectMeasurements,
