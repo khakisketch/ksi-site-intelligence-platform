@@ -82,3 +82,72 @@ models:
       b1_adapter: APPROVED
       manifold_hil: PENDING
       production: BLOCKED_LEGAL_REVIEW
+
+  - model_id: ksi-crack-segmenter-mixercseg-deepcrack
+    architecture: MixerCSeg
+    decision_ref: MODEL-P4-001
+
+    source:
+      repository: spiderforest/MixerCSeg
+      repository_commit: "7ad3fd6fd0e9bc60d1eb9c3b50292d876485dd1d"  # main 2026-03-09
+      code_license: MIT
+      vendored_at: "services/defect-detection/src/ksi_defect_detection/_vendor/mixercseg"
+      vendoring_note: >-
+        전체 clone이 아니라 순수 추론에 필요한 파일만 추적 import로 확인해
+        선별 벤더링(_vendor/mixercseg/NOTICE.md 참고). VMamba/models/kernels 의
+        커스텀 CUDA selective_scan 커널은 벤더링하지 않는다 — 미설치 시
+        자동으로 순정 PyTorch 폴백 경로로 넘어간다(느림, 수치적으로 동등하나
+        컴파일 커널과 bit-exact는 아님). CPU 경로는 이 워크스페이스(CPU-only
+        torch 고정, 루트 pyproject.toml)에서 2026-08-07 실측(결정적,
+        tests/contract/test_mixercseg_detector.py). GPU 경로는 같은 세션의
+        격리 venv에서 무작위 가중치로만 확인했고 csm_triton.py patch 적용
+        이후 GPU 재검증은 아직이다(_vendor/mixercseg/NOTICE.md "GPU status"
+        절 — 2026-08-07 리뷰 지적으로 문구 정정, 과잉주장 있었음).
+      local_patch: >-
+        (1) models/encoder/vss_block.py의 HoGEdgeGateConv nbins를 36→180으로
+        수정 — 업스트림 체크인 코드는 4개 배포 체크포인트 중 Crack500
+        (nbins=36)만 반영돼 있고 DeepCrack 체크포인트(이 항목이 쓰는 것)는
+        180으로 학습됐다(eval/evaluate.py 기본 결과경로 nbins_180_DeepCrack,
+        2026-08-07 strict load_state_dict로 재검증 — 180에서만
+        missing/unexpected 0건). (2) VMamba/models/csm_triton.py의
+        cross_scan_fn/cross_merge_fn — CPU-safe 폴백 경로(CrossScanF)를 이미
+        올바르게 선택해두고도 그 뒤 torch.cuda.device() 진입이 무조건이라
+        CPU 텐서에서 죽던 버그를 x.is_cuda 조건부로 수정(CUDA 분기는 무변경 —
+        상세는 _vendor/mixercseg/NOTICE.md).
+
+    weights:
+      # HuggingFace 계보(revision=불변 commit hash)와 달리 Google Drive는 자체
+      # 버전 개념이 없다 — "revision"은 이 파일 자신의 sha256이다(자기서술
+      # 식별자). 무결성의 실질 근거는 아래 sha256 대조이지 이 필드가 아니다.
+      source: "google_drive:13cfgbyYiBMcxdLLkQTB984RyDQOiJ1B4/19_AZlM9SddUx3JM8CDnTAcqWyYwAPlei"
+      source_type: google_drive
+      revision: "d49451c03f8577e7487cd36c8eaa203e4ca5b93dce1b15d87ce57f876869cf3d"
+      published: "2026-02-28"  # README "News" 절 — Drive 자체엔 실측 가능한 버전 이력이 없다
+      files:
+        - name: checkpoint_DeepCrack.pth
+          sha256: "d49451c03f8577e7487cd36c8eaa203e4ca5b93dce1b15d87ce57f876869cf3d"
+      declared_license: MIT
+      # weights_only=False 필요(체크포인트에 model/optimizer/lr_scheduler/epoch/args
+      # 가 함께 pickle됨) — safetensors 대비 약한 안전기반. digest 대조가 유일한
+      # 방어선이다(mixercseg_adapter.py 모듈 docstring "알려진 잔여 리스크" 참고).
+      pickle_format_residual_risk: >-
+        .pth(pickle) 형식 — D-FINE의 safetensors와 달리 역직렬화 자체가 임의
+        코드실행 표면이다. digest가 등재값과 다른 파일은 로더에 도달하지
+        못하지만(fail-closed), pickle 형식 자체의 위험을 제거하진 않는다.
+
+    model_facts:
+      input_width_px: 512
+      input_height_px: 512
+      params_m: 2.51  # nbins=180 구성 실측(2026-08-07) — 논문 표기 2.54M과 근사 일치
+      deepcrack_miou: 0.9151  # 논문 자기보고 + 자체 3-베이스라인 재현 테이블(준독립)
+      output: "sigmoid 확률맵(H,W), threshold 0.5가 기본 crack/not-crack 경계"
+
+    pretraining:
+      declared_dataset: DeepCrack
+      # D-FINE의 objects365_used/visdrone_used(사람 탐지 계보 리스크)에 대응하는
+      # 필드가 이 도메인엔 없다 — 균열 세그멘테이션은 그 계보 리스크 범주 밖.
+
+    deployment_status:
+      adapter_development: APPROVED  # MODEL-P4-001 approval_scope
+      weight_fetch_and_pin: APPROVED  # MODEL-P4-001 approval_scope — 이 항목으로 이행
+      production: BLOCKED_LEGAL_REVIEW

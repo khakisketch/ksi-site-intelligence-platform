@@ -1,0 +1,51 @@
+[project]
+name = "ksi-defect-detection"
+version = "0.0.1"
+description = "Phase 4 표면 결함(균열) 탐지 — DefectCandidate 계약 + 세그멘테이션 adapter (MODEL-P4-001)"
+requires-python = ">=3.12,<3.13"
+# base 는 계약(pydantic)·레지스트리 검증(pyyaml)·후처리(opencv)만 — torch/mmcv 등
+# 실모델 스택만 [mixercseg] extra 로 격리한다(D-FINE 의 [dfine] extra 와 동일
+# 원칙, packages/perception 참고). opencv 는 postprocess.py(마스크→윤곽·계측)가
+# 쓰는데, 이건 모델 없이도 합성 확률맵으로 상시 테스트 가능한 순수 이미지처리
+# 코드라 무거운 ML 스택과 같이 묶어 extra 뒤로 숨기면(2026-08-07 reviewer 지적,
+# ksi-goals F2) CI 에서 이 모듈이 한 줄도 실행되지 않는 채로 남는다. torch/mmcv
+# 대비 훨씬 가벼워 base 로 둬도 무리 없다.
+dependencies = ["pydantic>=2.7", "pyyaml>=6.0", "opencv-python-headless>=4.9"]
+
+[project.optional-dependencies]
+# spiderforest/MixerCSeg(MIT, MODEL-P4-001) 벤더링 코드가 실제로 요구하는 스택.
+# mmcv/mmsegmentation 은 legacy 1.x/0.x 계열만 쓴다(원본 코드가 mmcv.runner·
+# mmseg.utils 의 pre-2.0 API 를 직접 import) — mmcv-full 의 CUDA 컴파일 ops는
+# 쓰지 않아(build_conv_layer/build_norm_layer/BaseModule/to_2tuple 뿐) lite 계열
+# `mmcv<2.0` 로 충분하고 CUDA 컴파일이 필요 없다(2026-08-07 이 워크스페이스에서
+# 실측 확인). selective_scan CUDA 커널(VMamba/models/kernels)은 벤더링하지
+# 않는다 — 미설치 시 자동으로 순정 PyTorch 폴백 경로로 넘어간다(느리지만 정확,
+# csms6s.py 자체 로직).
+# 알려진 함정: mmcv/mmengine 이 (헤드리스가 아닌) 순정 opencv-python 을 강제
+# 의존한다 — base 의 opencv-python-headless 와 같은 cv2 네임스페이스를 놓고
+# 충돌해, extra 를 설치했다가 나중에 뺄 때(uv sync --all-packages, extra 없이)
+# cv2 가 깨질 수 있다(2026-08-07 실측: ModuleNotFoundError, uv pip list 엔
+# 버젓이 설치돼 있다고 나오는데도). 복구: `uv sync --all-packages --reinstall-
+# package opencv-python-headless`.
+mixercseg = [
+    "torch>=2.13",
+    "mmcv<2.0",
+    "mmsegmentation<1.0",
+    "mmengine>=0.10",
+    "timm>=0.9",
+    "einops>=0.7",
+    "fvcore>=0.1.5",
+    # VMamba/models/csm_triton.py 는 WITH_TRITON=False 폴백 경로가 있지만
+    # `@triton.jit` 데코레이터 자체는 그 가드 밖 모듈 최상단에 있다(업스트림
+    # 미비 — 2026-08-07 CPU-only 환경에서 NameError 로 실측). triton **패키지가
+    # import 되기만** 하면 되고 실제 GPU 커널 실행은 하지 않는다 — WITH_TRITON
+    # 코드 경로 자체가 순정 PyTorch 로 대체돼 안 불린다.
+    "triton>=3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_defect_detection"]

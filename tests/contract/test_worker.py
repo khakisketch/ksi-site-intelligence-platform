@@ -75,7 +75,7 @@ class FakeCoreClient:
     """포트 계약만 만족하는 가짜 Core — 호출 순서를 그대로 기록한다."""
 
     site_crs: str | None = "EPSG:5186"
-    calls: list[tuple[str, Any]] = field(default_factory=list)
+    calls: list[tuple[Any, ...]] = field(default_factory=list)
     lease_calls: int = 0
     fail_on: str | None = None  # "verify" | "artifact:<id>" | "transition:<target>"
     _job_status: str = "QUEUED"
