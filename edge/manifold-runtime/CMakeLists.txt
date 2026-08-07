@@ -36,8 +36,14 @@ endif()
 # 있는 TU)는 비계측이 된다(자율 재검토 P1-D1 — 실산출물 flags.make 로 확증).
 option(KSI_ENABLE_SANITIZERS "ASan+UBSan 계측 빌드" OFF)
 if(KSI_ENABLE_SANITIZERS)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
+  # -fno-sanitize-recover=all 이 없으면 **UBSan 이 UB 를 잡아도 종료코드가 0 이다.**
+  # UBSan 은 기본이 recoverable 이라 런타임 에러를 stderr 에 찍고 그냥 계속 실행한다 —
+  # ctest 는 green 을 보고, 그러면 이 job 이 주장하는 "UB 없음"이 사실은 아무것도
+  # 주장하지 않는다(2026-08-07 실측: signed overflow 프로그램이 exit 0, 이 플래그를
+  # 붙이면 exit 1). ASan 은 기본이 halt 라 원래 정상이었다.
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all
+                      -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
 endif()
 
 add_library(ksi_control_plane

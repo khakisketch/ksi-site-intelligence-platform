@@ -454,10 +454,59 @@ void TestSupervisorRejectsInvertedThresholds() {
 
 void TestVerdictStringsAreDistinct() {
     // 로그·증거 번들에서 사유를 구분할 수 있어야 한다.
-    Check(std::string(ToString(CommandVerdict::kAccepted)) == "ACCEPTED", "verdict 문자열");
+    //
+    // [R1, 2026-08-07 reviewer 2차] 예전엔 15개 enumerator 중 3개만 고정돼 있었다 —
+    // `case kDegraded: return "NOMINAL"` 같은 오매핑 변이가 통과했다. 판정 로직이
+    // 아무리 정확해도 **그 판정을 사람에게 옮기는 문자열이 거짓말하면** 운영자는
+    // 틀린 사실을 본다(supervisor.hpp "typed 사유가 남아야 진단 가능", 감사 #15).
+    // 특히 HeartbeatVerdict 5종은 전부 미고정이라 "거부"가 "기록"으로 보일 수 있었다.
+    //
+    // 전건을 리터럴로 고정한다 — 심볼 참조로 쓰면 enum 이름을 바꿔도 통과한다.
+    Check(std::string(ToString(CommandVerdict::kAccepted)) == "ACCEPTED", "ACCEPTED");
+    Check(std::string(ToString(CommandVerdict::kExpired)) == "EXPIRED", "EXPIRED");
+    Check(std::string(ToString(CommandVerdict::kNotYetValid)) == "NOT_YET_VALID", "NOT_YET_VALID");
+    Check(std::string(ToString(CommandVerdict::kMissingAuthorization)) == "MISSING_AUTHORIZATION",
+          "MISSING_AUTHORIZATION");
+    Check(std::string(ToString(CommandVerdict::kAuthorizationMismatch)) == "AUTHORIZATION_MISMATCH",
+          "AUTHORIZATION_MISMATCH");
+    Check(std::string(ToString(CommandVerdict::kMalformed)) == "MALFORMED", "MALFORMED");
     Check(std::string(ToString(CommandVerdict::kSupervisorNotReady)) == "SUPERVISOR_NOT_READY",
           "supervisor 사유가 인가 사유와 다른 문자열");
-    Check(std::string(ToString(SupervisorState::kFailClosed)) == "FAIL_CLOSED", "state 문자열");
+
+    Check(std::string(ToString(SupervisorState::kFailClosed)) == "FAIL_CLOSED", "FAIL_CLOSED");
+    Check(std::string(ToString(SupervisorState::kNominal)) == "NOMINAL", "NOMINAL");
+    Check(std::string(ToString(SupervisorState::kDegraded)) == "DEGRADED", "DEGRADED");
+
+    using ksi::control_plane::HeartbeatVerdict;
+    Check(std::string(ToString(HeartbeatVerdict::kRecorded)) == "RECORDED", "RECORDED");
+    Check(std::string(ToString(HeartbeatVerdict::kRecordedClamped)) == "RECORDED_CLAMPED",
+          "RECORDED_CLAMPED");
+    Check(std::string(ToString(HeartbeatVerdict::kStaleIgnored)) == "STALE_IGNORED",
+          "STALE_IGNORED");
+    Check(std::string(ToString(HeartbeatVerdict::kImplausibleFuture)) == "IMPLAUSIBLE_FUTURE",
+          "IMPLAUSIBLE_FUTURE");
+    Check(std::string(ToString(HeartbeatVerdict::kOutOfDomain)) == "OUT_OF_DOMAIN",
+          "OUT_OF_DOMAIN");
+}
+
+void TestSafetyConstantValuesAreFixed() {
+    // [R2, 2026-08-07 reviewer 2차] 경계 테스트들이 상수를 **심볼로 참조**하면
+    // 정의를 바꿔도 입력이 같이 움직여 통과한다 — TestFutureToleranceBoundaryIsExact
+    // 가 고정한 것은 "경계가 정확하고 포함적"이라는 *관계*지 *값*이 아니었다.
+    //
+    // 이 값들은 그냥 숫자가 아니다: kMaxUtcMs 는 command.hpp 가 주장하는 "이후 뺄셈이
+    // int64 안에서 절대 넘치지 않는다"의 **유일한 근거**고(도메인 폭이 int64 절반을
+    // 넘으면 그 주장이 무너진다), kHeartbeatFutureToleranceMs 를 넓히면 far-future
+    // 타임스탬프가 클램프 기록돼 정지한 루프가 NOMINAL 근거를 얻는다.
+    // 그래서 리터럴로 못박는다 — 값을 바꾸려면 이 단언을 함께 고쳐야 하고, 그때
+    // 위 근거를 다시 보게 된다.
+    Check(ksi::control_plane::kMaxUtcMs == 4'102'444'800'000,
+          "kMaxUtcMs = 2100-01-01 (int64 뺄셈 안전성의 근거)");
+    Check(ksi::control_plane::kMaxUtcMs < INT64_MAX / 2,
+          "도메인 폭이 int64 절반 미만 — 두 도메인 값의 뺄셈이 넘치지 않는다");
+    Check(ksi::control_plane::kMaxTtlMs == 300'000, "kMaxTtlMs = 5분");
+    Check(ksi::control_plane::kHeartbeatFutureToleranceMs == 1'000,
+          "허용창 = 1초 (넓히면 far-future 가 NOMINAL 근거가 된다)");
 }
 
 } // namespace
@@ -494,6 +543,7 @@ int main() {
     TestIssuedAtUpperDomainGuard();
     TestSupervisorRejectsInvertedThresholds();
     TestVerdictStringsAreDistinct();
+    TestSafetyConstantValuesAreFixed();
 
     std::printf("control plane 계약 테스트: %d개 단언 중 %d개 실패\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
