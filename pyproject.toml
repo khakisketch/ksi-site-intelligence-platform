@@ -37,6 +37,7 @@ ksi-change-detection = { workspace = true }
 ksi-bim-integration = { workspace = true }
 ksi-equipment-intelligence = { workspace = true }
 ksi-defect-detection = { workspace = true }
+ksi-geo-spatial = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -64,6 +65,8 @@ dev = [
     "ksi-bim-integration",
     # 같은 이유의 leaf 멤버(Phase 3 Kinematic State/CPA-TTC/RiskField).
     "ksi-equipment-intelligence",
+    # 같은 이유의 leaf 멤버(M1 측지 기반 — EPSG:5186 재투영·KNGeoid 수직기준).
+    "ksi-geo-spatial",
     # 같은 이유의 leaf 멤버(Phase 4 결함탐지 계약 + adapter, MODEL-P4-001). 실모델
     # 스택(torch/mmcv 등)은 [mixercseg] extra 로 격리 — 모델 보유 환경에서만 설치.
     "ksi-defect-detection",
