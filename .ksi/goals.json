@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T20:36:29+09:00",
+  "updated_at": "2026-08-07T21:05:26+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1678,28 +1678,28 @@
       "title": "sample_points_from_ifc()가 IFC2X3 스키마를 검사하지 않아 has_georeferencing()과 비대칭",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "has_georeferencing()/read_georeference()는 IFC2X3를 typed 거부하지만 sample_points_from_ifc()는 스키마를 전혀 안 본다. ePSet_MapConversion을 가진 IFC2X3 파일을 has_georeferencing() 없이 바로 sample_points_from_ifc()에 넣으면 변환된 좌표를 조용히 반환한다(ifcopenshell auto_local2global이 IFC2X3도 처리하므로 결과 자체는 맞지만, 판정함수와 변환함수의 스키마 커버리지가 어긋나는 것 자체가 같은 결함 클래스의 잔재). reviewer agentId a2a3e309e2bcc162b 발견(phase-4-bim-linkage-v3 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "sample_points_from_ifc 가 has_georeferencing 과 동일하게 ifc_file.schema == 'IFC2X3' 를 IfcReferenceModelError 로 거부. tests/contract/test_ifc_reference_model.py::test_sample_points_rejects_ifc2x3_like_has_georeferencing — 판정 함수는 거부하는데 변환 함수는 좌표를 내놓으면 판정을 건너뛴 호출 경로에서만 다르게 동작한다",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T00:08:38+09:00",
-      "updated_at": "2026-08-07T00:08:38+09:00"
+      "updated_at": "2026-08-07T21:05:26+09:00"
     },
     {
       "id": "bim-unit-of-measurement-untested",
       "title": "IFC 단위(mm 등)와 change-detection distance_threshold_m 단위 정합 미검증",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "auto_local2global의 should_return_in_map_units=True 기본 동작이 georeferenced 파일은 map 단위, 비-georeferenced 파일은 프로젝트 로컬 단위를 반환한다 — mm 단위로 작성된 IFC 파일에 대한 테스트가 없어 detect_change_candidates(distance_threshold_m=...)로 직결되는 이 경로의 단위 정합이 미검증이다. mm 단위 IFC 픽스처로 검증 필요. reviewer agentId a2a3e309e2bcc162b 발견(phase-4-bim-linkage-v3 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "ifc_reference_model.sample_points_from_ifc 가 ifcopenshell.util.unit.calculate_unit_scale 로 프로젝트 길이단위→미터 배율을 읽어 **auto_local2global 변환 전에** 로컬 정점에 곱한다(변환 후에 곱하면 이미 미터인 map 변환까지 줄어들어 mm 프로젝트에서 (1000,2000,50)이 (1,2,0.05)가 됨 — 2026-08-08 실측). 단위 미선언 파일은 IfcReferenceModelError 로 거부(선언 없음을 미터로 가정하면 mm 파일이 1000배 틀린 채 통과). tests/contract/test_ifc_reference_model.py 4건 신규: mm 프로젝트 1000mm→1.0m, 미터 파일 무변경, LENGTHUNIT 미선언 거부, detect_change_candidates 소비자 관점 문턱 비교. **부수 발견**: ifcopenshell.api.unit.assign_unit() 기본이 밀리미터라 기존 픽스처 전체가 mm 프로젝트를 미터로 오독하고 있었음 — 픽스처를 명시적 METRE 로 못박음. pytest 2145 passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T00:08:38+09:00",
-      "updated_at": "2026-08-07T00:08:38+09:00"
+      "updated_at": "2026-08-07T21:05:26+09:00"
     },
     {
       "id": "cpa-ttc-observed-at-mismatch-unchecked",
@@ -1776,14 +1776,14 @@
       "title": "test_synthetic_crack_pattern_is_detected가 검출 위치의 공간적 대응을 검증하지 않는다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer 지적(P3). 균열 선분 위치와 후보 폴리곤의 중심점 거리·IoU 비교가 없어 '아무 데서나 발화하는' 모델도 noise/crack 두 테스트를 모두 통과할 수 있다. noise 테스트와 짝을 이뤄 '항상 0' 죽은 경로는 배제하지만, 위치 정확도까지는 안 본다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "tests/contract/test_defect_postprocess.py::test_geometry_polygon_matches_source_location — 가로≠세로 비대칭 사각형(y 30..49, x 100..107)을 알려진 오프셋에 두고 폴리곤 bbox 로 위치 대응을 직접 검증한다. 폴리곤이 통째로 이동하거나 x/y 가 뒤바뀌어도(transpose) area 는 그대로라 기존 개수·면적·confidence 검증으로는 못 잡던 클래스",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T04:28:49+09:00",
-      "updated_at": "2026-08-07T04:28:49+09:00"
+      "updated_at": "2026-08-07T21:05:26+09:00"
     },
     {
       "id": "defect-detection-confidence-includes-holes",
@@ -1804,14 +1804,14 @@
       "title": "mmcv 1.7.2 legacy sdist 메타데이터 빌드(uv lock 단계)가 이 머신 밖 CI/플랫폼에서도 되는지 미검증",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer 지적(P6). [tool.uv.extra-build-dependencies] mmcv=[setuptools<81]로 이 워크스페이스에서는 uv lock/sync 정상 확인했지만, 다른 CI 러너·OS/아키텍처에서 재현되는지는 확인 못함. 실제 재현 검증 필요.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": ".github/workflows/ci.yml defect-detection-extra job 신설 — ubuntu-latest(x86_64, 개발 머신 aarch64 와 다른 아키텍처)의 깨끗한 러너에서 uv lock --check + uv sync --locked --all-packages --extra mixercseg 를 실행해 mmcv 1.7.2 legacy sdist 메타데이터 빌드가 재현되는지 본다. 설치만 되고 import 가 깨지는 경우까지 잡도록 cv2/torch/mmcv import + adapter import + 계약 테스트 2종을 --no-sync 로 이어 돌린다(extra 는 루트가 아니라 ksi-defect-detection 에 선언돼 있어 uv run --extra 로는 못 켠다 — 로컬 실측으로 확인하고 --no-sync 로 고정). 로컬에서 동일 명령 20 passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T04:28:49+09:00",
-      "updated_at": "2026-08-07T04:28:49+09:00"
+      "updated_at": "2026-08-07T21:05:26+09:00"
     },
     {
       "id": "defect-detection-opencv-namespace-conflict",

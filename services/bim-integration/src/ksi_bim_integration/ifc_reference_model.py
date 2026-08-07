@@ -48,12 +48,14 @@ IfcElement 마다 ``ifcopenshell.geom`` 으로 삼각형 메쉬를 만들고 그
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import ifcopenshell
 import ifcopenshell.geom
 import ifcopenshell.util.geolocation as ifc_geolocation
+import ifcopenshell.util.unit
 import numpy as np
 from numpy.typing import NDArray
 
@@ -150,20 +152,83 @@ def read_georeference(ifc_file: ifcopenshell.file) -> IfcGeoreference | None:
     )
 
 
-def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
-    """IFC 파일의 모든 IfcElement 지오메트리 정점을 site_frame(map) 좌표로 추출한다.
+def _length_unit_scale_to_meters(ifc_file: ifcopenshell.file, ifc_path: Path) -> float:
+    """프로젝트 길이 단위 → SI 미터 배율. mm 파일이면 0.001, m 파일이면 1.0.
 
-    georeferencing 이 없으면 로컬 좌표를 그대로 반환한다(모듈 docstring 명시) —
+    ``calculate_unit_scale`` 은 단위 선언이 없으면 1.0 을 돌려준다 — 그건 "미터"가
+    아니라 **"모른다"**이고, 그 둘을 같게 취급하면 mm 파일이 단위 선언만 빠뜨려도
+    조용히 1000배 틀린 좌표가 된다. 그래서 IfcUnitAssignment 의 LENGTHUNIT 존재를
+    직접 확인하고, 없으면 거부한다.
+    """
+    assignment = ifcopenshell.util.unit.get_unit_assignment(ifc_file)
+    has_length_unit = assignment is not None and any(
+        getattr(unit, "UnitType", None) == "LENGTHUNIT" for unit in (assignment.Units or ())
+    )
+    if not has_length_unit:
+        raise IfcReferenceModelError(
+            f"{ifc_path}: 길이 단위(LENGTHUNIT)가 선언돼 있지 않다 — 좌표를 미터로 "
+            "환산할 수 없다. '선언 없음'을 미터로 가정하면 mm 파일이 1000배 틀린 "
+            "좌표로 조용히 통과한다"
+        )
+    scale = float(ifcopenshell.util.unit.calculate_unit_scale(ifc_file))
+    if not math.isfinite(scale) or scale <= 0:
+        raise IfcReferenceModelError(
+            f"{ifc_path}: 길이 단위 배율이 유효하지 않다 (got {scale!r})"
+        )
+    return scale
+
+
+def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
+    """IFC 파일의 모든 IfcElement 지오메트리 정점을 site_frame(map) 좌표로 **미터**
+    단위로 추출한다.
+
+    ## 단위를 미터로 정규화한다 — 이 함수의 반환 계약이다
+
+    IFC 는 프로젝트 길이 단위를 파일 안에 선언하고, 건축 IFC 는 **밀리미터가 흔하다**.
+    그 좌표를 그대로 돌려주면 소비자인
+    :func:`~ksi_change_detection.point_cloud_diff.detect_change_candidates` 의
+    ``distance_threshold_m`` 가 1000배 어긋난 공간에서 비교하게 된다 — 0.05m 문턱이
+    사실상 50m 문턱이 되어 **어떤 변화도 후보로 잡히지 않는다.** 값은 전부 유한하고
+    형상도 멀쩡해서, 그 결과는 "변화 없음"이라는 정직한 답처럼 보인다
+    (risk ``bim-unit-of-measurement-untested``).
+
+    그래서 ``ifcopenshell.util.unit.calculate_unit_scale`` 로 프로젝트 단위 → SI 미터
+    배율을 읽어 곱한다. 이 변환은 근사가 아니라 파일이 선언한 값에 따른 정확한 환산이고,
+    미터 파일이면 배율이 1.0 이라 아무것도 바뀌지 않는다.
+
+    **곱하는 시점이 중요하다 — georeference 변환 *전*이다.** ``auto_local2global`` 의
+    출력은 두 부분이 섞여 있다: map 변환(IfcMapConversion 의 Eastings/Northings, map
+    CRS 단위 = 미터)과 로컬 지오메트리(프로젝트 단위). 변환 *후*에 한 번 곱하면 이미
+    미터인 map 변환까지 같이 줄어들어 좌표가 통째로 어긋난다 — mm 프로젝트에서
+    실측하면 (1000, 2000, 50) 이 (1, 2, 0.05) 가 된다. 변환 전에 로컬 정점만 미터로
+    바꾸면 두 분기 모두 일관되게 미터가 된다(2026-08-08 실측:
+    georeference 없음 → 0.001, 있음 → 1000.001).
+
+    georeferencing 이 없으면 로컬 좌표를 (미터로 환산해) 그대로 반환한다 —
     호출자가 :func:`has_georeferencing` 로 미리 확인해야 한다.
+
+    IFC2X3 는 :func:`has_georeferencing` 과 같은 이유로 거부한다 — 판정 함수는
+    거부하는데 변환 함수는 조용히 좌표를 내놓으면, 호출자가 판정을 건너뛴 경로에서만
+    다른 동작을 보게 된다(risk ``bim-sample-points-ifc2x3-asymmetry``).
 
     Raises:
         IfcReferenceModelError: 파일을 열 수 없거나(``ifcopenshell.open`` 실패),
-            지오메트리를 가진 요소가 하나도 없을 때.
+            IFC2X3 스키마이거나, 길이 단위를 읽을 수 없거나, 지오메트리를 가진 요소가
+            하나도 없을 때.
     """
     try:
         ifc_file = ifcopenshell.open(str(ifc_path))
     except Exception as exc:  # noqa: BLE001 — ifcopenshell 이 다양한 파서 예외를 던진다
         raise IfcReferenceModelError(f"IFC 파일을 열 수 없다: {ifc_path} ({exc})") from exc
+
+    if ifc_file.schema == "IFC2X3":
+        raise IfcReferenceModelError(
+            "IFC2X3 스키마는 이 함수가 지원하지 않는다 — has_georeferencing() 이 같은 "
+            "이유로 거부하는데 여기서만 좌표를 내놓으면, 판정을 건너뛴 호출 경로에서만 "
+            f"다르게 동작한다 ({ifc_path})"
+        )
+
+    unit_scale = _length_unit_scale_to_meters(ifc_file, ifc_path)
 
     settings = ifcopenshell.geom.settings()
     settings.set("use-world-coords", True)
@@ -185,7 +250,9 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
         verts = np.array(geometry.verts, dtype=np.float64).reshape(-1, 3)  # type: ignore[union-attr]
         for vertex in verts:
             local_matrix = np.eye(4)
-            local_matrix[:3, 3] = vertex
+            # 미터 환산은 여기서 — auto_local2global 이 map 변환을 얹기 **전**이다
+            # (docstring "곱하는 시점이 중요하다").
+            local_matrix[:3, 3] = vertex * unit_scale
             global_matrix = ifc_geolocation.auto_local2global(ifc_file, local_matrix)
             world_points.append(global_matrix[:3, 3].tolist())
 

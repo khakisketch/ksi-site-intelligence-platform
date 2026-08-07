@@ -29,11 +29,25 @@ def _build_ifc(
     name: str,
     georeference: dict[str, float] | None = None,
     add_element: bool = True,
+    length_prefix: str | None = None,
+    assign_units: bool = True,
 ) -> Path:
-    """최소 IFC4 파일을 조립한다 — Project+Site+Building(+선택적 요소 지오메트리)."""
+    """최소 IFC4 파일을 조립한다 — Project+Site+Building(+선택적 요소 지오메트리).
+
+    ``length_prefix="MILLI"`` 면 프로젝트 길이 단위가 mm 가 된다(건축 IFC 의 흔한
+    기본값). ``assign_units=False`` 면 단위 선언 자체를 넣지 않는다.
+    """
     f = ifcopenshell.api.project.create_file(version="IFC4")
     ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="Test Project")
-    ifcopenshell.api.unit.assign_unit(f)
+    if assign_units:
+        # **명시적 METRE 가 기본이다.** ifcopenshell 의 assign_unit() 기본은 밀리미터라
+        # (2026-08-08 실측: calculate_unit_scale=0.001), 예전 픽스처는 mm 프로젝트를
+        # 만들어놓고 그 좌표를 미터로 읽고 있었다 — 단위 정규화가 없으니 숫자가 맞아
+        # 보였을 뿐이다. 기본을 미터로 못박아 테스트가 어느 단위를 말하는지 분명히 한다.
+        length_unit = ifcopenshell.api.unit.add_si_unit(
+            f, unit_type="LENGTHUNIT", prefix=length_prefix
+        )
+        ifcopenshell.api.unit.assign_unit(f, units=[length_unit])
     model_context = ifcopenshell.api.context.add_context(f, context_type="Model")
     body_context = ifcopenshell.api.context.add_context(
         f,
@@ -263,7 +277,10 @@ def _build_ifc_with_rigid_operation(tmp_path: Path) -> Path:
     # 버전에서만 정의돼 있어 이 값이 필요하다.
     f = ifcopenshell.api.project.create_file(version="IFC4X3_ADD2")  # type: ignore[arg-type]
     ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="P")
-    ifcopenshell.api.unit.assign_unit(f)
+    # _build_ifc 와 같은 이유로 METRE 를 명시한다 — assign_unit() 기본은 mm 다.
+    ifcopenshell.api.unit.assign_unit(
+        f, units=[ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT")]
+    )
     ifcopenshell.api.context.add_context(f, context_type="Model")
     ifcopenshell.api.georeference.add_georeferencing(f, ifc_class="IfcRigidOperation")
     op = f.by_type("IfcRigidOperation")[0]
@@ -337,3 +354,78 @@ def test_has_georeferencing_rejects_ifc2x3() -> None:
     f = ifcopenshell.api.project.create_file(version="IFC2X3")
     with pytest.raises(IfcReferenceModelError, match="IFC2X3"):
         has_georeferencing(f)
+
+
+# ── 길이 단위 정규화 (risk bim-unit-of-measurement-untested) ──────────────────
+#
+# IFC 는 프로젝트 길이 단위를 파일 안에 선언하고 건축 IFC 는 mm 가 흔하다. 그 좌표를
+# 그대로 넘기면 detect_change_candidates(distance_threshold_m=...) 가 1000배 어긋난
+# 공간에서 비교한다 — 0.05m 문턱이 사실상 50m 문턱이 되어 어떤 변화도 안 잡힌다.
+# 값은 전부 유한하고 형상도 멀쩡해서 그 결과는 "변화 없음"이라는 정직한 답처럼 보인다.
+
+
+def test_millimetre_project_is_returned_in_metres(tmp_path: Path) -> None:
+    """[핵심] mm 로 작성된 IFC 의 1000mm 정점이 1.0m 로 나온다."""
+    metres = _build_ifc(tmp_path, name="unit_m")
+    millis = _build_ifc(tmp_path, name="unit_mm", length_prefix="MILLI")
+
+    m_points = sample_points_from_ifc(metres)
+    mm_points = sample_points_from_ifc(millis)
+
+    # 같은 정점 좌표(0,0,0)/(1,0,0)/(0,1,0)를 넣었지만 단위 해석이 다르다 —
+    # mm 파일의 "1" 은 1mm 이므로 미터로는 0.001 이어야 한다.
+    assert np.isclose(np.abs(m_points).max(), 1.0)
+    assert np.isclose(np.abs(mm_points).max(), 0.001)
+
+
+def test_metre_project_is_unchanged(tmp_path: Path) -> None:
+    """미터 파일이면 배율이 1.0 이라 값이 그대로다 — 정규화가 기존 동작을 바꾸지 않는다."""
+    path = _build_ifc(tmp_path, name="unit_identity")
+    points = sample_points_from_ifc(path)
+    assert np.isclose(np.abs(points).max(), 1.0)
+
+
+def test_missing_length_unit_is_rejected(tmp_path: Path) -> None:
+    """'단위 선언 없음'을 미터로 가정하지 않는다 — 그러면 mm 파일이 선언만 빠뜨려도
+    1000배 틀린 좌표로 조용히 통과한다."""
+    path = _build_ifc(tmp_path, name="unit_missing", assign_units=False)
+    with pytest.raises(IfcReferenceModelError, match="LENGTHUNIT"):
+        sample_points_from_ifc(path)
+
+
+def test_threshold_comparison_is_meaningful_after_normalisation(tmp_path: Path) -> None:
+    """[소비자 관점] 정규화 후에는 mm 파일과 m 파일이 같은 문턱에서 같게 판정된다.
+
+    이 테스트가 없으면 "미터로 돌려준다"가 이 함수 안에서만 참이고, 실제 소비자인
+    변화탐지가 그 값을 어떻게 쓰는지는 아무도 확인하지 않는다.
+    """
+    from ksi_change_detection.point_cloud_diff import detect_change_candidates
+
+    baseline = sample_points_from_ifc(_build_ifc(tmp_path, name="cmp_m"))
+    # 같은 형상을 mm 로 쓴 파일 — 정규화 후에는 baseline 의 1/1000 크기다.
+    scaled = sample_points_from_ifc(_build_ifc(tmp_path, name="cmp_mm", length_prefix="MILLI"))
+
+    # 0.5m 문턱: baseline(최대 1m)과 mm 모델(최대 1mm)은 그만큼 떨어져 있지 않다.
+    near = detect_change_candidates(
+        baseline=baseline, current=baseline, distance_threshold_m=0.5
+    )
+    assert near.candidate_count == 0
+
+    # 두 모델을 비교하면 최대 1m 차이 — 0.5m 문턱을 넘는 점이 있다.
+    far = detect_change_candidates(
+        baseline=scaled, current=baseline, distance_threshold_m=0.5
+    )
+    assert far.candidate_count > 0
+
+
+# ── IFC2X3 대칭 (risk bim-sample-points-ifc2x3-asymmetry) ─────────────────────
+
+
+def test_sample_points_rejects_ifc2x3_like_has_georeferencing(tmp_path: Path) -> None:
+    """판정 함수는 거부하는데 변환 함수는 좌표를 내놓으면, 판정을 건너뛴 호출
+    경로에서만 다르게 동작한다 — 같은 스키마 커버리지를 갖는다."""
+    f = ifcopenshell.api.project.create_file(version="IFC2X3")
+    path = tmp_path / "legacy.ifc"
+    f.write(str(path))
+    with pytest.raises(IfcReferenceModelError, match="IFC2X3"):
+        sample_points_from_ifc(path)
