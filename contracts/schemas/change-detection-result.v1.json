@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/change-detection-result.v1.json",
+  "title": "ChangeDetectionResult",
+  "description": "두 시점 point cloud C2C 비교의 요약 (PRD §15.4). 점별 거리 배열은 싣지 않는다 — wire 계약은 래스터/포인트 원본이 아니라 계산 가능한 요약을 나른다(DefectCandidate 가 마스크 대신 polygon 을 싣는 것과 같은 원칙). 원본 배열이 필요한 소비자는 baseline/current 산출물을 직접 읽는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "changeDetectionId",
+    "baseline",
+    "current",
+    "distanceThresholdM",
+    "pointCount",
+    "candidateCount",
+    "candidateRatio",
+    "computedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "changeDetectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline": {
+      "$ref": "#/$defs/artifactRef",
+      "description": "이전 시점(기준) point cloud."
+    },
+    "current": {
+      "$ref": "#/$defs/artifactRef",
+      "description": "비교 대상(최신) point cloud. pointCount 는 이쪽 점 수다."
+    },
+    "distanceThresholdM": {
+      "type": "number",
+      "minimum": 0,
+      "description": "이 거리를 **초과**하면 변화 후보(엄격 부등호 — 경계값 자체는 후보가 아니다). detect_change_candidates 와 같은 규약."
+    },
+    "pointCount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "current point cloud 의 점 수. 0 은 비교가 성립하지 않으므로 결과로 존재할 수 없다."
+    },
+    "candidateCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "거리가 문턱을 초과한 점 수. pointCount 이하여야 한다."
+    },
+    "candidateRatio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "candidateCount / pointCount. 서버가 재계산해 대조한다 — 이 값과 두 카운트가 어긋나면 자기모순이라 수용하지 않는다."
+    },
+    "maxDistanceM": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "최대 C2C 거리(m). 변화의 규모를 비율만으로는 알 수 없어 함께 싣는다 — 선택 필드다."
+    },
+    "computedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "비교를 계산한 시각(tz-aware). 수신 시각이 아니다."
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId", "artifactId"],
+      "description": "산출물 참조. artifactId 는 처리 작업 단위로만 고유하므로(processing_jobs.py) jobId 와 짝으로만 해석 가능하다 — 서버는 이 짝으로 실제 등록된 point_cloud 산출물인지 대조한다.",
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifactId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

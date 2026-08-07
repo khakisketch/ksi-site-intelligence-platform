@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T13:10:41+09:00",
+  "updated_at": "2026-08-07T19:52:55+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1705,14 +1705,14 @@
       "title": "needs_change_candidate_revisit()에 소비자(consumer) 없음 — 신호를 아무 endpoint/report도 읽지 않음",
       "lens": "gaming",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer(opus, read-only, PASS WITH RISK 판정) 재검토: revisit_signal.py의 코드 정확성(strict-exceed, count==0 short-circuit, [0,1] inclusive validation, no side-effects/geometry)은 전부 재검증 완료(pytest 21 passed, ruff/mypy clean). 그러나 goal completion_criteria #1 '추가 시점 수집을 계획/트리거'는 문자 그대로는 미충족 — needs_coverage_recovery()는 services/core/src/ksi_core/coverage_reports.py:435에서 recoveryRecommended API 필드로 실제 운영자에게 노출되는데, needs_change_candidate_revisit()는 repo 전체에서 호출부가 0개(grep 확인: point_cloud_diff.py/revisit_signal.py 자기 자신과 테스트 외 없음). change-detection 도메인엔 아직 결과를 노출하는 API/리포트 스키마 자체가 없음(workers/change-detection/README.md: 스캐폴딩만 존재). 순수 신호 함수 자체는 정확하지만 '아무도 읽을 수 없는 권고'는 계획/트리거 기준을 만족한다고 보기 어려움 — coverage_recovery 선례는 operator-visible 표면까지 포함하므로 완전한 선례가 아님. 이 goal을 pass로 게이트하지 않음; 이 risk를 후속 작업(change-detection 결과 API/리포트 스키마 설계 + 이 신호 연결)으로 해소해야 함. docstring의 오귀속(needs_coverage_recovery 정의 위치를 coverage_reports.py로 잘못 표기)은 revisit_signal.py:5-8에서 수정 완료(경미 이슈, 이것만으로는 gate 불가 사유 아니었음).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "services/core/src/ksi_core/change_detection.py — GET /v1/missions/{id}/change-detection 의 revisitRecommended 가 needs_revisit() 를 운영자에게 노출. 규칙 SSOT 를 packages/event-contracts/change_detection_result.py:exceeds_revisit_threshold 로 옮기고 revisit_signal 이 위임 — tests/contract/test_change_detection_api.py::test_api_signal_matches_the_computation_side_function 이 임계값 5개에서 API 판정과 계산함수 판정 일치를 고정. openapi-core.yaml 문서화 + test_api_contract_sync 최대조립 포함. pytest 2050 passed, ruff/mypy clean",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T00:42:48+09:00",
-      "updated_at": "2026-08-07T00:42:48+09:00"
+      "updated_at": "2026-08-07T19:52:55+09:00"
     },
     {
       "id": "model-p4-001-mamba-cuda-kernel-feasibility",

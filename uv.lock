@@ -663,12 +663,14 @@ name = "ksi-change-detection"
 version = "0.0.1"
 source = { editable = "services/change-detection" }
 dependencies = [
+    { name = "ksi-event-contracts" },
     { name = "numpy" },
     { name = "scipy" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "scipy", specifier = ">=1.13" },
 ]

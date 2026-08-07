@@ -848,6 +848,78 @@ paths:
               schema: { $ref: '#/components/schemas/DefectCandidateListView' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/change-detection:
+    post:
+      summary: Submit a point-cloud change detection result (PRD §15.4)
+      description: >-
+        PROCESSING_WORK 권한 필요 — 사람은 이 권한을 가질 수 없다(결함 후보와 동일
+        원칙). 점별 거리 배열은 싣지 않는다 — 이 계약은 요약(개수·비율·최댓값)만
+        나르고, 원본이 필요한 소비자는 baseline/current 산출물을 직접 읽는다.
+
+        서버가 검증하는 것: ① baseline/current 가 실제로 등록된 point_cloud
+        산출물인가(artifactId 는 작업 단위로만 고유하므로 jobId 와 짝으로 해석한다)
+        ② 둘이 같은 산출물이 아닌가(자기 자신과의 C2C 는 전 점 거리 0 이라 '변화
+        없음'으로 정직해 보이지만 아무것도 비교하지 않은 것이다). 카운트와 비율의
+        자기모순(후보 0건인데 비율 0.9 같은 것)은 계약 모델이 파싱 시점에 거부한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/change-detection-result.v1.json
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료(동일 내용 재전송도 RECORDED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeDetectionResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '409': { description: DUPLICATE_RESULT_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: UNKNOWN_ARTIFACT / ARTIFACT_KIND_MISMATCH / SELF_COMPARISON
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(운영자 Role 포함) }
+    get:
+      summary: Read the latest change detection result + revisit recommendation
+      description: >-
+        MISSIONS_READ 권한 필요. `revisitRecommended` 가 PRD §15.2 ⑤ "변화 후보
+        영역은 추가 시점 수집"의 권고 신호다 — **자동 재비행을 트리거하지 않는다.**
+        운영자가 이 신호를 보고 원본 site AOI 로 SPATIAL_REFRESH 임무를
+        POST /v1/missions/plans 에 발급한다(Coverage Recovery 의
+        recoveryRecommended 와 같은 관계).
+
+        임계값은 요청이 정한다(revisitRatioThreshold) — "변화 후보 비율이 얼마면
+        재방문이 필요한가"는 사이트·자산 종류에 따라 달라질 정책 값이라 서버가
+        지어내지 않는다. 응답은 **실제로 쓴 임계값을 그대로 되돌려준다**: 권고
+        불리언만 주면 화면이 "무슨 기준으로 켜졌나"를 표시할 수 없고, 그러면
+        운영자가 그 신호를 신뢰할 근거가 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: revisitRatioThreshold
+          required: false
+          description: 이 비율을 **초과**하면 재방문 권고(엄격 부등호). 생략 시 화면 초기값.
+          schema: { type: number, minimum: 0, maximum: 1 }
+      responses:
+        '200':
+          description: 최신 결과 + 재방문 권고
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeDetectionView' }
+        '404': { description: 이 임무의 변화 탐지 결과가 아직 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/source-media:
     post:
       summary: Batch-issue presigned PUT URLs for raw mapping photos (3D 파이프라인 입구)
@@ -1977,6 +2049,42 @@ components:
                 type: [string, 'null']
                 description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
               recordedAt: { type: string }
+    ChangeDetectionResponse:
+      description: 변화 탐지 결과 수신 판정.
+      type: object
+      required: [verdict, detail]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_MISSION / UNKNOWN_ARTIFACT / ARTIFACT_KIND_MISMATCH /
+            SELF_COMPARISON / DUPLICATE_RESULT_ID / STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+    ChangeDetectionView:
+      description: 그 임무의 최신 변화 탐지 결과 + 재방문 권고(PRD §15.2 ⑤).
+      type: object
+      required:
+        [missionId, resultCount, latest, reportedBy, recordedAt,
+         revisitRatioThreshold, revisitRecommended]
+      properties:
+        missionId: { type: string }
+        resultCount: { type: integer }
+        # 구조 정본은 contracts/schemas/change-detection-result.v1.json.
+        latest: { type: object, additionalProperties: true }
+        reportedBy: { type: [string, 'null'] }
+        recordedAt: { type: string }
+        revisitRatioThreshold:
+          type: number
+          description: >-
+            이 조회가 **실제로 쓴** 임계값. 요청이 준 값이거나(revisitRatioThreshold
+            쿼리) 생략 시 화면 초기값이다. 응답에 싣는 이유는 권고가 무슨 기준으로
+            켜졌는지를 화면이 표시할 수 있어야 하기 때문이다.
+        revisitRecommended:
+          type: boolean
+          description: >-
+            candidateRatio > revisitRatioThreshold 이면 true(엄격 부등호).
+            candidateCount 가 0 이면 임계값과 무관히 항상 false — "후보가 없는데
+            재방문 권고"라는 모순을 만들지 않는다. 자동 재비행을 트리거하지 않는다.
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object

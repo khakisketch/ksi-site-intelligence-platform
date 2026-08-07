@@ -9,7 +9,10 @@ requires-python = ">=3.12,<3.13"
 # 정책(ADR-KSI-012 D2)과 별개로 애초에 배제 대상이다. scipy.spatial.cKDTree(BSD-3)로
 # point-to-point 최근접 거리를 직접 구현한다 — M3C2 의 국소 법선 통계는 범위 밖(모듈
 # docstring 명시).
-dependencies = ["numpy>=1.26", "scipy>=1.13"]
+# 재방문 권고 규칙과 ChangeDetectionResult wire 계약은 ksi-event-contracts 가 소유한다
+# — Core 가 그 계약을 소비할 때 scipy 가 control plane 으로 딸려오지 않게 하기
+# 위해서다(그쪽 change_detection_result.py docstring "왜 계약 패키지에 사는가").
+dependencies = ["ksi-event-contracts", "numpy>=1.26", "scipy>=1.13"]
 
 [build-system]
 requires = ["hatchling"]
@@ -17,3 +20,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ksi_change_detection"]
+
+[tool.uv.sources]
+ksi-event-contracts = { workspace = true }

@@ -23,11 +23,13 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 
@@ -248,3 +250,44 @@ def test_defect_candidate_store_alone_without_auth_registry_raises(tmp_path: Pat
     missions = _mission_store(tmp_path)
     with pytest.raises(ValueError, match="defect_candidate_store|auth_registry"):
         create_app(defect_candidate_store=_defect_candidate_store(tmp_path / "dc", missions))
+
+
+# ── 규칙 6: 변화 탐지 저장소는 비교 대상을 대조할 작업 원장 없이 조립되지 않는다 ──
+
+
+def _change_detection_store(
+    tmp_path: Path, mission_store: MissionStore
+) -> ChangeDetectionStore:
+    media = SourceMediaStore(
+        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+    )
+    return ChangeDetectionStore(
+        DurableJournal(tmp_path / "change-detection.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=ProcessingJobStore(
+            DurableJournal(tmp_path / "processing-jobs.jsonl"),
+            source_media_store=media,
+            site_store=_site_store(tmp_path),
+        ),
+    )
+
+
+def test_change_detection_store_without_processing_job_store_raises(tmp_path: Path) -> None:
+    """'변화가 있었다'는 두 point cloud 산출물을 지목하지 못하면 아무도 재현할 수
+    없는 주장이다 — 그 참조를 대조할 작업 원장 없이 표면만 열지 않는다."""
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="change_detection_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            mission_store=missions,
+            change_detection_store=_change_detection_store(tmp_path / "cd", missions),
+        )
+
+
+def test_change_detection_store_without_mission_store_raises(tmp_path: Path) -> None:
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="mission_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            change_detection_store=_change_detection_store(tmp_path / "cd", missions),
+        )

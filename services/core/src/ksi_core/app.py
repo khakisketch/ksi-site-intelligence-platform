@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from ksi_core.auth import AuthRegistry
+    from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
@@ -63,6 +64,7 @@ def create_app(
     source_media_store: SourceMediaStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
     defect_candidate_store: DefectCandidateStore | None = None,
+    change_detection_store: ChangeDetectionStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -122,6 +124,10 @@ def create_app(
             ``mission_store`` 와 ``source_media_store`` 가 모두 필수다 — 후보는
             "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 가지므로, 그
             참조를 대조할 저장소 없이는 검증 불가능한 도형을 그대로 받게 된다.
+        change_detection_store: Phase 4 시계열 변화 탐지 결과 수신·조회 저장소.
+            ``mission_store`` 와 ``processing_job_store`` 가 모두 필수다 — 결과는
+            "어느 두 point cloud 산출물을 비교했나"로만 해석 가능하고, 그 참조를
+            대조할 작업 원장이 없으면 "변화가 있었다"가 검증 불가능한 주장이 된다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -238,6 +244,17 @@ def create_app(
             " '서버는 후보를 그대로 받아 적지 않는다')"
         )
 
+    if change_detection_store is not None and (
+        mission_store is None or processing_job_store is None
+    ):
+        raise ValueError(
+            "change_detection_store 는 mission_store·processing_job_store 와 함께"
+            " 주어져야 한다 — 변화 탐지 결과는 '어느 두 point cloud 산출물을"
+            " 비교했나'로만 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면"
+            " '변화가 있었다'가 아무도 재현할 수 없는 주장이 된다"
+            " (change_detection.py '서버가 검증하는 것')"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -251,6 +268,7 @@ def create_app(
             source_media_store,
             processing_job_store,
             defect_candidate_store,
+            change_detection_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -371,5 +389,10 @@ def create_app(
         from ksi_core.defect_candidates import mount_defect_candidates
 
         mount_defect_candidates(app, defect_candidate_store)
+
+    if change_detection_store is not None:
+        from ksi_core.change_detection import mount_change_detection
+
+        mount_change_detection(app, change_detection_store)
 
     return app

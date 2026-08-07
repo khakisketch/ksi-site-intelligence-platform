@@ -9,15 +9,15 @@ API 필드로 소비만 한다)와 동형 아키텍처다 — 순수 bool 반환
 수집은 기존 ``POST /v1/missions/plans``(SPATIAL_REFRESH, 원본 site AOI)를 그대로
 재사용해 운영자/오퍼레이터가 발급한다.
 
-## 현재 상태 — 소비자 없음 (알려진 스코프 경계)
+## 판정 규칙의 정본은 여기가 아니다
 
-이 함수는 현재 어떤 API 엔드포인트·리포트 스키마·워커에서도 호출되지 않는다
-(``services/change-detection/`` 에는 change-detection 결과를 노출하는 엔드포인트가
-아직 없다 — ``workers/change-detection/README.md`` 참고, 스캐폴딩만 존재).
-``needs_coverage_recovery`` 는 ``recoveryRecommended`` 로 운영자가 실제로 볼 수 있는
-반면, 이 함수는 아직 그런 노출 경로가 없다 — "권고만 하고 트리거하지 않는다"는
-설계와 별개로, "권고를 아무도 읽을 수 없다"는 것은 별도의 갭이다. Change-detection
-결과를 노출하는 API/리포트 스키마가 생기면 그 표면에 이 신호를 연결해야 한다.
+규칙 자체는 ``ksi_event_contracts.change_detection_result.exceeds_revisit_threshold``
+가 소유하고, 이 함수는 numpy 계산 결과(:class:`ChangeCandidateResult`)를 그 규칙에
+그대로 먹이는 편의 어댑터다. 운영자가 실제로 보는 값은
+``GET /v1/missions/{id}/change-detection`` 의 ``revisitRecommended`` 인데
+(``services/core/src/ksi_core/change_detection.py``), 그쪽도 같은 함수를 부른다 —
+규칙이 두 곳에 있으면 한쪽만 고쳐지는 순간 "계산한 값"과 "화면에 뜬 값"이
+갈라지고 그 갈라짐은 어느 화면에서도 보이지 않는다.
 
 Control boundary(CLAUDE.md) 때문에 이 함수는 변화 후보 지점(raw XYZ)을 방문
 좌표나 세부 재촬영 구역 폴리곤으로 변환하지 않는다 — Coverage Recovery 가 같은
@@ -35,7 +35,7 @@ Control boundary(CLAUDE.md) 때문에 이 함수는 변화 후보 지점(raw XYZ
 
 from __future__ import annotations
 
-import math
+from ksi_event_contracts.change_detection_result import exceeds_revisit_threshold
 
 from ksi_change_detection.point_cloud_diff import ChangeCandidateResult, ChangeDetectionError
 
@@ -58,14 +58,16 @@ def needs_change_candidate_revisit(
         ChangeDetectionError: ``candidate_ratio_threshold`` 가 ``[0, 1]`` 범위의
             finite 값이 아닐 때.
     """
-    if not (math.isfinite(candidate_ratio_threshold) and 0.0 <= candidate_ratio_threshold <= 1.0):
-        raise ChangeDetectionError(
-            "candidate_ratio_threshold 는 0.0~1.0 범위의 finite 값이어야 한다 "
-            f"(got {candidate_ratio_threshold!r})"
+    try:
+        return exceeds_revisit_threshold(
+            candidate_count=result.candidate_count,
+            candidate_ratio=result.candidate_ratio,
+            candidate_ratio_threshold=candidate_ratio_threshold,
         )
-    if result.candidate_count == 0:
-        return False
-    return result.candidate_ratio > candidate_ratio_threshold
+    except ValueError as exc:
+        # 규칙은 계약 패키지가 소유하지만 **이 모듈의 예외 타입 계약**은 유지한다 —
+        # 호출자는 이 도메인의 실패를 ChangeDetectionError 로 잡는다.
+        raise ChangeDetectionError(str(exc)) from exc
 
 
 __all__ = ["needs_change_candidate_revisit"]

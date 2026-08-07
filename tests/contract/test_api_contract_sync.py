@@ -23,6 +23,7 @@ import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
@@ -88,6 +89,11 @@ def _max_assembly(tmp_path: Path) -> Any:
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
     )
+    processing_job_store = ProcessingJobStore(
+        DurableJournal(tmp_path / "processing-jobs.jsonl"),
+        source_media_store=source_media_store,
+        site_store=site_store,
+    )
     return create_app(
         evidence_storage=_NullEvidenceStorage(),
         auth_registry=_auth_registry(),
@@ -99,15 +105,16 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
         source_media_store=source_media_store,
-        processing_job_store=ProcessingJobStore(
-            DurableJournal(tmp_path / "processing-jobs.jsonl"),
-            source_media_store=source_media_store,
-            site_store=site_store,
-        ),
+        processing_job_store=processing_job_store,
         defect_candidate_store=DefectCandidateStore(
             DurableJournal(tmp_path / "defect-candidates.jsonl"),
             mission_store=mission_store,
             source_media_store=source_media_store,
+        ),
+        change_detection_store=ChangeDetectionStore(
+            DurableJournal(tmp_path / "change-detection.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",
