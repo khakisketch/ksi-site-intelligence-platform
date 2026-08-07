@@ -39,6 +39,21 @@
 환경변수가 없거나 엔진에 닿지 못하면 **skip** 한다 — CI 기본 경로를 컨테이너에
 묶지 않는다. 대신 skip 사유에 그 사실을 적어, 초록불이 "확인했다"로 읽히지
 않게 한다.
+
+## 세 번째 겹 — 영속 계약(완주 + 실 스토리지 필요)
+
+완주한 산출물이 ``plan_artifacts`` 로 매핑되는 것과, 그 바이트가 실제로 워커→
+presigned PUT→MinIO→Core 등록→presigned GET 경로를 왕복해 저장·재현되는 것은
+**서로 다른 주장**이다. 후자는 ``tests/contract/test_evidence_s3_live.py`` 와
+같은 이름의 환경변수(``KSI_S3_ENDPOINT``/``KEY``/``SECRET``)로 실 MinIO를 함께
+켜야 확인된다:
+
+    docker run -d --name ksi-minio -p 127.0.0.1:9190:9000 \\
+      -e MINIO_ROOT_USER=ksitest -e MINIO_ROOT_PASSWORD=ksitest12345 \\
+      minio/minio server /data
+    KSI_NODEODM_URL=... KSI_ODM_IMAGES=... \\
+    KSI_S3_ENDPOINT=http://127.0.0.1:9190 KSI_S3_KEY=ksitest KSI_S3_SECRET=ksitest12345 \\
+      uv run pytest tests/contract/test_odm_live.py -k persist
 """
 
 from __future__ import annotations
@@ -291,3 +306,257 @@ def test_completed_reconstruction_yields_the_mapped_lineage(
     finally:
         server.shutdown()
         client.close()
+
+
+# ── 영속 계약 — 완주 + 실 스토리지가 있어야 확인된다 ─────────────────────────
+
+_S3_ENDPOINT = os.environ.get("KSI_S3_ENDPOINT", "").rstrip("/")
+_S3_KEY = os.environ.get("KSI_S3_KEY", "")
+_S3_SECRET = os.environ.get("KSI_S3_SECRET", "")
+_S3_READY = bool(_S3_ENDPOINT and _S3_KEY and _S3_SECRET)
+
+
+@pytest.mark.skipif(
+    not (_IMAGES_DIR and _S3_READY),
+    reason=(
+        "KSI_ODM_IMAGES 와 KSI_S3_ENDPOINT/KEY/SECRET 이 모두 있어야 한다 — "
+        "산출물 바이트가 실제로 워커→MinIO→Core 등록→재다운로드 경로를 왕복해"
+        " 저장되는지는 확인되지 않았다(모듈 docstring '세 번째 겹' 참조)"
+    ),
+)
+def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching_digest(
+    client: HttpNodeOdmClient, tmp_path: Path
+) -> None:
+    """[핵심] 완주 산출물의 바이트가 실제로 저장되고, 재다운로드한 바이트의
+    digest 가 등록값과 정확히 일치한다.
+
+    ``plan_artifacts`` 가 계산하는 digest 는 zip 엔트리 원본의 sha256이다(D3).
+    이 값이 실제로 저장된 바이트를 가리키는지는 가짜 스토리지 계약
+    테스트(``test_processing_jobs.py``)로는 증명할 수 없다 — presigned PUT 이
+    청크 인코딩으로 411을 받거나, 등록된 digest와 저장된 바이트가 어긋나도
+    거기서는 초록불이 켜진다. 워커 전체(``run_job``)를 실제 NodeODM·MinIO·
+    Core(in-process ASGI) 조합으로 한 번 돌려야 이 간극이 드러난다.
+    """
+    import functools
+    import hashlib
+    import http.server
+    import threading
+    import time
+    from datetime import UTC, datetime
+
+    import boto3
+    import httpx
+    from botocore.config import Config
+    from fastapi.testclient import TestClient
+    from ksi_core.app import create_app
+    from ksi_core.auth import (
+        AuthRegistry,
+        Principal,
+        PrincipalKind,
+        PrincipalTokenRecord,
+        Role,
+    )
+    from ksi_core.durable_journal import DurableJournal
+    from ksi_core.evidence import DEFAULT_UPLOAD_TTL
+    from ksi_core.evidence_s3 import S3EvidenceStorage
+    from ksi_core.mission_records import MissionRecord, MissionStore
+    from ksi_core.processing_jobs import JobSpec, ProcessingJobStore
+    from ksi_core.sites import SiteFrame, SiteStore
+    from ksi_core.source_media import (
+        SourceMediaClaim,
+        SourceMediaStore,
+        build_source_media_object_key,
+    )
+    from ksi_event_contracts.processing_job import (
+        ExecutionLocus,
+        LicenseBasis,
+        ProcessingProvider,
+    )
+    from ksi_processing_controller.core_client import HttpCoreClient
+    from ksi_processing_controller.worker import run_job
+
+    images_dir = Path(_IMAGES_DIR)
+    paths = sorted(
+        p for p in images_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg"}
+    )
+    assert len(paths) >= 5, f"완주하려면 사진이 더 필요하다({len(paths)}장)"
+
+    bucket = "ksi-odm-live-persist"
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=_S3_ENDPOINT,
+        aws_access_key_id=_S3_KEY,
+        aws_secret_access_key=_S3_SECRET,
+        region_name="us-east-1",
+        config=Config(signature_version="s3v4"),
+    )
+    import contextlib
+
+    with contextlib.suppress(Exception):  # 이미 있으면 그대로 쓴다
+        s3_client.create_bucket(Bucket=bucket)
+    storage = S3EvidenceStorage(bucket=bucket, client=s3_client, endpoint_url=_S3_ENDPOINT)
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_frame = SiteFrame(
+        crs="EPSG:5186",
+        vertical_datum="ellipsoidal_native",
+        transform_version="v1",
+        unit="meter",
+    )
+    site_id = "site-odm-live-persist"
+    mission_id = "mission-odm-live-persist"
+    reg = site_store.register(
+        site_id, "ODM live persist", site_frame, data_residency=None, actor="op-1", now=now
+    )
+    assert reg.verdict.value == "REGISTERED", reg
+
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    issued_mission = mission_store.record_issuance(
+        MissionRecord(
+            mission_id=mission_id,
+            site_id=site_id,
+            mission_type="BASELINE_MAPPING",
+            artifact_kind="contract",
+            contract={"schemaVersion": "1.2", "missionId": mission_id},
+            kmz_sha256=None,
+            route_pattern=None,
+            waypoint_count=None,
+            planned_coverage_ratio=None,
+            issued_at=now,
+            issued_by="op-1",
+        )
+    )
+    assert issued_mission.value == "RECORDED", issued_mission
+
+    # 원본 사진을 presigned PUT 으로 실제 MinIO에 올린다 — 워커가 이 URL 에서
+    # 받아 ODM 에 제출한다(로컬 파일 서버가 아니라 실 스토리지 경로).
+    claims = []
+    upload_client = httpx.Client(timeout=60.0)
+    for p in paths:
+        data = p.read_bytes()
+        from PIL import Image
+
+        with Image.open(p) as im:
+            width, height = im.size
+        claims.append(
+            SourceMediaClaim(
+                media_id=p.name,
+                sha256=hashlib.sha256(data).hexdigest(),
+                size_bytes=len(data),
+                width=width,
+                height=height,
+                content_type="image/jpeg",
+            )
+        )
+        key = build_source_media_object_key(
+            site_id=site_id, mission_id=mission_id, media_id=p.name
+        )
+        put_url = storage.presigned_put(key, content_type="image/jpeg", ttl=DEFAULT_UPLOAD_TTL)
+        put = upload_client.put(put_url, content=data, headers={"Content-Type": "image/jpeg"})
+        put.raise_for_status()
+
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+    )
+    batch = source_media_store.register_batch(mission_id, claims, registered_by="op-1", now=now)
+    assert batch.verdict.value == "PROCESSED", batch
+    sealed = source_media_store.seal(mission_id, sealed_by="op-1", now=now)
+    assert sealed.verdict.value == "SEALED", sealed
+
+    processing_job_store = ProcessingJobStore(
+        DurableJournal(tmp_path / "processing-jobs.jsonl"),
+        source_media_store=source_media_store,
+        site_store=site_store,
+    )
+    spec = JobSpec(
+        provider=ProcessingProvider.ODM,
+        engine_version="3.5.6",
+        engine_digest="sha256:" + "a" * 64,
+        execution_locus=ExecutionLocus.KSI_SERVER_GPU,
+        license_basis=LicenseBasis(
+            license_id="AGPL-3.0", tier="self-hosted", attribution_required=False
+        ),
+        processing_params={"dsm": True, "dtm": True, "pc-quality": "medium"},
+    )
+    issued_job = processing_job_store.issue(mission_id, spec, issued_by="op-1", now=now)
+    assert issued_job.record is not None, issued_job
+    job_id = issued_job.record.job_id
+
+    worker_token = "odm-live-persist-worker"  # noqa: S105
+    reader_token = "odm-live-persist-reader"  # noqa: S105
+    auth_registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(worker_token.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="worker-odm-live-persist",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(reader_token.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="reader-odm-live-persist",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
+                    device_id=None,
+                ),
+            ),
+        ]
+    )
+    app = create_app(
+        auth_registry=auth_registry,
+        evidence_storage=storage,
+        site_store=site_store,
+        mission_store=mission_store,
+        source_media_store=source_media_store,
+        processing_job_store=processing_job_store,
+    )
+    worker_transport = TestClient(app, base_url="http://core.local")
+    core = HttpCoreClient("http://core.local", token=worker_token, client=worker_transport)
+
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(images_dir)
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    try:
+        deadline = time.monotonic() + 3600
+        run_job(
+            job_id,
+            core=core,
+            odm=client,
+            work_dir=tmp_path / "worker",
+            poll_interval_seconds=15.0,
+        )
+        assert time.monotonic() < deadline, "제한 시간 안에 완주하지 못했다"
+
+        job_record = processing_job_store.get(job_id)
+        assert job_record is not None
+        assert job_record.status.value == "SUCCEEDED", job_record.status
+        assert job_record.artifacts, "완주했는데 등록된 산출물이 없다"
+
+        reader_transport = TestClient(app, base_url="http://core.local")
+        reader_transport.headers.update({"Authorization": f"Bearer {reader_token}"})
+        download_client = httpx.Client(timeout=60.0)
+        for artifact in job_record.artifacts:
+            resp = reader_transport.get(
+                f"/v1/processing-jobs/{job_id}/artifacts/{artifact.artifact_id}/download"
+            )
+            assert resp.status_code == 200, (artifact.artifact_id, resp.status_code, resp.text)
+            body = resp.json()
+            assert body["verdict"] == "ARTIFACT_READY", body
+
+            bytes_resp = download_client.get(body["downloadUrl"])
+            assert bytes_resp.status_code == 200, (artifact.artifact_id, bytes_resp.status_code)
+            got_digest = "sha256:" + hashlib.sha256(bytes_resp.content).hexdigest()
+            assert got_digest == artifact.digest, (
+                f"{artifact.artifact_id}: 등록 digest={artifact.digest} != "
+                f"재다운로드 바이트 digest={got_digest}"
+            )
+    finally:
+        server.shutdown()

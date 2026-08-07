@@ -185,9 +185,14 @@ class FakeNodeOdm:
     def download_archive(self, uuid: str, dest: Path) -> Path:
         del uuid
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(dest, "w") as archive:
+        # 압축(ZIP_DEFLATED)으로 쓴다 — 실물 ODM 산출물이 그렇다. ZIP_STORED(무압축)로
+        # 쓰면 file_size == compress_size 라, 업로드 코드가 Content-Length 를
+        # file_size 대신 compress_size 로 잘못 읽는 퇴행을 이 픽스처가 못 잡는다.
+        # 반복 데이터라야 압축이 실제로 줄어든다 — 짧은 무작위 문자열은 deflate 해도
+        # 오버헤드 때문에 compress_size 가 안 줄 수 있다.
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as archive:
             for entry in sorted(self.entries):
-                archive.writestr(entry, f"내용:{entry}".encode())
+                archive.writestr(entry, (f"내용:{entry}" * 200).encode())
         return dest
 
     def remove_task(self, uuid: str) -> None:
@@ -474,7 +479,7 @@ def test_uploaded_bytes_are_the_archive_entry_verbatim(tmp_path: Path) -> None:
     key = "sites/site-1/processing-jobs/job-1/artifacts/dsm"
     assert key in server.uploaded
     # FakeNodeOdm 이 각 엔트리에 써넣는 내용과 정확히 같아야 한다.
-    assert server.uploaded[key] == "내용:odm_dem/dsm.tif".encode()
+    assert server.uploaded[key] == ("내용:odm_dem/dsm.tif" * 200).encode()
 
 
 def test_every_registered_artifact_has_bytes(tmp_path: Path) -> None:

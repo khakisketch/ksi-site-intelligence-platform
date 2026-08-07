@@ -104,7 +104,10 @@ def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> N
     ``file_size``(압축 해제 크기)가 실제로 흘려보낼 바이트 수와 정확히 같다.
     """
     with zipfile.ZipFile(archive_path) as archive:
-        content_length = archive.getinfo(entry).file_size
+        try:
+            content_length = archive.getinfo(entry).file_size
+        except KeyError as exc:
+            raise OdmError(f"아카이브에 {entry} 가 없다") from exc
     response = client.put(
         url,
         content=iter_archive_entry_bytes(archive_path, entry),
