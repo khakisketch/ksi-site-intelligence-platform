@@ -99,6 +99,7 @@ from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     ALLOWED_CONTENT_TYPES,
     DEFAULT_UPLOAD_TTL,
+    DEFAULT_VIEW_TTL,
     EvidenceStorage,
     EvidenceStorageError,
     expires_at,
@@ -1013,6 +1014,24 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
     )
 
 
+class SourceMediaViewResponse(_CamelModel):
+    """사진 1장의 열람 URL + 원장이 아는 화소수·digest.
+
+    ``width``/``height`` 는 **업로더가 신고한 값**이다(전 바이트를 읽은 워커가
+    대조하기 전까지는 주장이다 — 모듈 docstring). 결함 후보의 ``imageSize`` 는
+    Core 가 이 값과 이미 대조했으므로(``defect_candidates.judge_candidate``),
+    화면은 이 둘이 같다는 전제로 폴리곤 배율을 계산해도 된다.
+    """
+
+    media_id: str
+    content_type: str
+    view_url: str
+    expires_at: datetime
+    width: int
+    height: int
+    sha256: str
+
+
 def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["source-media"])
 
@@ -1157,6 +1176,51 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return _to_bundle_view(bundle)
 
+    @router.get(
+        "/{mission_id}/source-media/{media_id}/view", response_model=SourceMediaViewResponse
+    )
+    def view_source_media(
+        mission_id: str,
+        media_id: str,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> SourceMediaViewResponse:
+        """사진 1장의 단기 열람 URL — 결함 후보 폴리곤을 원본 위에 겹치기 위한 경로.
+
+        업로드용 presigned PUT(``POST .../source-media``)과 달리 이건 **운영자가
+        보는** 경로다. 화소수를 함께 내는 이유: 결함 후보의 폴리곤은 원본 픽셀
+        좌표라, 화면이 축소해 그릴 때 배율을 계산하려면 원본 크기를 알아야 한다.
+        그 값을 클라이언트가 이미지 로드 후 읽어 쓰면 로드 전에는 레이아웃을
+        잡을 수 없고, 무엇보다 **등록된 화소수와 실제 이미지가 다를 때 그 불일치가
+        조용히 묻힌다** — 서버가 원장 값을 그대로 내려주면 화면이 대조할 수 있다.
+
+        객체가 아직 올라오지 않았어도 URL 은 발급된다(등록과 업로드는 별개 단계다)
+        — 그 경우 URL 을 열면 스토리지가 404 를 준다. Core 가 오브젝트 존재를
+        확인하려면 스토리지에 HEAD 를 걸어야 하는데, 그건 이 포트에 없는 동작이다.
+        """
+        del principal
+        bundle = store.get(mission_id)
+        if bundle is None:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+        record = next((m for m in bundle.media if m.media_id == media_id), None)
+        if record is None:
+            raise HTTPException(
+                status_code=404, detail="해당 임무에 등록된 적 없는 mediaId 다"
+            )
+        try:
+            url = storage.presigned_get(record.object_key, ttl=DEFAULT_VIEW_TTL)
+        except EvidenceStorageError as exc:
+            # 스토리지 장애를 "사진 없음"으로 뭉개지 않는다(evidence.py 와 동일 원칙).
+            raise HTTPException(status_code=503, detail="SOURCE_MEDIA_STORAGE_UNAVAILABLE") from exc
+        return SourceMediaViewResponse(
+            media_id=record.media_id,
+            content_type=record.content_type,
+            view_url=url,
+            expires_at=expires_at(datetime.now(UTC), DEFAULT_VIEW_TTL),
+            width=record.width,
+            height=record.height,
+            sha256=record.sha256,
+        )
+
     return router
 
 
@@ -1188,6 +1252,7 @@ __all__ = [
     "SourceMediaStore",
     "SourceMediaVerifyRequest",
     "SourceMediaVerifyResponse",
+    "SourceMediaViewResponse",
     "VerificationResult",
     "build_source_media_object_key",
     "build_source_media_router",

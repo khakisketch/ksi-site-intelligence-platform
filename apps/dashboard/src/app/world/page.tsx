@@ -9,6 +9,8 @@ import type { EquipmentStateListView, SiteView } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 
+import { SitePlanView } from "./SitePlanView";
+
 type Result =
   | { view: EquipmentStateListView; error: null }
   | { view: null; error: CoreApiError };
@@ -37,10 +39,11 @@ function speedOf(velocity: readonly number[]): number {
 /**
  * 2D·3D World — Phase 3 장비·작업자 운동상태 (PRD RISK-002, §26.3).
  *
- * 지금은 **개체별 최신 상태 목록**까지다. 지도 오버레이·3D 뷰는 site_frame 좌표를
- * 화면 좌표로 옮기는 투영이 필요한데, 그 변환은 현장 등록 좌표계(EPSG)와 지도
- * 타일의 관계를 정하는 별도 결정이라 여기서 지어내지 않는다 — 숫자를 정직하게
- * 먼저 보여주고, 투영은 그 결정 뒤에 얹는다.
+ * 평면도(SitePlanView)는 **site_frame 좌표를 그대로** 그린다 — 지리 배경을 깔려면
+ * site_frame → WGS84 변환이 필요한데 그건 서버만 정확히 할 수 있고(어느 CRS 인지
+ * 아는 쪽이 서버다) 아직 그 경로가 없다. 더 중요한 이유는 CPA/TTC 가 site_frame 에서
+ * 계산된다는 것이다: 같은 공간에 그리면 그림이 숫자와 어긋날 수가 없다(그쪽 컴포넌트
+ * docstring "왜 지리 지도가 아닌가").
  *
  * `positionUncertaintyM` 을 매 행에 싣는 이유: 위치만 보여주면 운영자가 그 값을
  * 확정된 사실로 읽는다. 이 값은 공분산 trace 의 제곱근이고 서버가 계산한다.
@@ -117,7 +120,9 @@ export default async function WorldPage({
           description="장비·작업자 운동상태는 비행 중 Edge 장비가 보고합니다. 사람이 직접 입력하는 값이 아닙니다."
         />
       ) : (
-        <div className="overflow-x-auto">
+        <>
+          <SitePlanView entities={view.entities} />
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[42rem] text-left text-sm">
             <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500 dark:border-neutral-800">
               <tr>
@@ -149,7 +154,8 @@ export default async function WorldPage({
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

@@ -3,11 +3,17 @@ import Link from "next/link";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
-import { listDefectCandidates } from "@/lib/core-api/phase34";
+import { getSourceMediaView, listDefectCandidates } from "@/lib/core-api/phase34";
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
-import type { DefectCandidateListView, MissionRecordResponse } from "@/lib/core-api/types";
+import type {
+  DefectCandidateListView,
+  MissionRecordResponse,
+  SourceMediaViewResponse,
+} from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+
+import { DefectOverlay } from "./DefectOverlay";
 
 type Result =
   | { view: DefectCandidateListView; error: null }
@@ -32,11 +38,30 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
 }
 
 /**
+ * 사진 열람 URL — 실패해도 표는 보여야 하므로 null 로 내려간다.
+ *
+ * URL 발급 실패(스토리지 장애 503)와 사진 미업로드는 다른 사실이지만, 이 화면에서
+ * 할 수 있는 일은 "오버레이 대신 표만 보여준다"로 같다. 그 구분은 오버레이 안에서
+ * 이미지 로드 실패로 드러난다(DefectOverlay).
+ */
+async function fetchPhoto(
+  missionId: string,
+  mediaId: string,
+): Promise<SourceMediaViewResponse | null> {
+  try {
+    return await getSourceMediaView(missionId, mediaId);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 자산·시설물 — Phase 4 표면 결함(균열) 후보 (PRD §25 Phase 4, MODEL-P4-001).
  *
  * 결함 후보는 **임무 단위**로 쌓인다(어느 비행에서 찍은 사진인가). 그래서 이 화면은
- * 임무를 고르는 것으로 시작한다 — 현장 단위 집계는 여러 임무를 가로지르는 별도
- * 데이터모델 결정이 필요해서 지금 만들지 않는다.
+ * 임무를 고르는 것으로 시작하고, 그 안에서 사진을 골라 폴리곤을 원본 위에 겹친다.
+ * 현장 단위 집계는 여러 임무를 가로지르는 별도 데이터모델 결정이 필요해서 지금
+ * 만들지 않는다.
  *
  * 후보 0건은 "아직 안 돌았다"와 "돌렸는데 결함이 없다"를 구분하지 않는다 — 서버
  * 계약이 그 둘을 구분하지 않으므로(그 구분은 처리 작업 상태가 답한다) 화면도
@@ -45,9 +70,9 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ missionId?: string }>;
+  searchParams: Promise<{ missionId?: string; mediaId?: string }>;
 }) {
-  const { missionId } = await searchParams;
+  const { missionId, mediaId } = await searchParams;
   const missions = await fetchMissions();
 
   if (!missionId) {
@@ -93,6 +118,14 @@ export default async function AssetsPage({
     );
   }
 
+  // 사진을 안 고르면 첫 장을 연다 — 후보가 걸린 사진만 목록에 있으므로 첫 장도
+  // 반드시 무언가를 보여준다(빈 화면으로 시작하지 않는다).
+  const selectedMediaId = mediaId ?? view.sourceMediaIds[0];
+  const selectedCandidates = view.candidates
+    .filter((item) => item.candidate.sourceMediaId === selectedMediaId)
+    .map((item) => item.candidate);
+  const photo = selectedMediaId ? await fetchPhoto(view.missionId, selectedMediaId) : null;
+
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
@@ -104,6 +137,33 @@ export default async function AssetsPage({
           다른 임무 선택
         </Link>
       </section>
+
+      {view.sourceMediaIds.length > 0 && (
+        <nav className="flex flex-wrap gap-2" aria-label="사진 선택">
+          {view.sourceMediaIds.map((id) => (
+            <Link
+              key={id}
+              href={`/assets?missionId=${encodeURIComponent(view.missionId)}&mediaId=${encodeURIComponent(id)}`}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                id === selectedMediaId
+                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+                  : "border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+              }`}
+            >
+              {id}
+            </Link>
+          ))}
+        </nav>
+      )}
+
+      {photo && selectedCandidates.length > 0 && (
+        <DefectOverlay
+          viewUrl={photo.viewUrl}
+          width={photo.width}
+          height={photo.height}
+          candidates={selectedCandidates}
+        />
+      )}
 
       {view.candidateCount === 0 ? (
         <EmptyState

@@ -1280,6 +1280,35 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
+  /v1/missions/{mission_id}/source-media/{media_id}/view:
+    get:
+      summary: Short-lived view URL for one uploaded photo
+      description: >-
+        MISSIONS_READ 권한 필요. 업로드용 presigned PUT 과 달리 **운영자가 보는**
+        경로다 — 결함 후보 폴리곤을 원본 사진 위에 겹치기 위해 쓴다.
+
+        화소수(width/height)를 함께 내는 이유: 결함 후보의 폴리곤은 원본 픽셀
+        좌표라, 화면이 축소해 그릴 때 배율을 계산하려면 원본 크기를 알아야 한다.
+        이미지 로드 후 읽어 쓰면 로드 전에 레이아웃을 잡을 수 없고, 무엇보다
+        등록된 화소수와 실제 이미지가 다를 때 그 불일치가 조용히 묻힌다.
+
+        객체가 아직 업로드되지 않았어도 URL 은 발급된다(등록과 업로드는 별개
+        단계다) — 그 URL 을 열면 스토리지가 404 를 준다. Core 는 오브젝트 존재를
+        확인하지 않는다(스토리지 포트에 HEAD 동작이 없다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: media_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 열람 URL + 원장이 아는 화소수·digest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaViewResponse' }
+        '404': { description: 그 임무의 번들이 없거나 등록된 적 없는 mediaId }
+        '503': { description: SOURCE_MEDIA_STORAGE_UNAVAILABLE — 스토리지 장애("사진 없음"이 아니다) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/source-media/verify:
     post:
       summary: Report measured bytes; Core compares them against the uploader's claims
@@ -2302,6 +2331,23 @@ components:
                 type: [string, 'null']
                 description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
               recordedAt: { type: string }
+    SourceMediaViewResponse:
+      description: 사진 1장의 열람 URL + 원장이 아는 화소수·digest.
+      type: object
+      required: [mediaId, contentType, viewUrl, expiresAt, width, height, sha256]
+      properties:
+        mediaId: { type: string }
+        contentType: { type: string }
+        viewUrl: { type: string }
+        expiresAt: { type: string }
+        width:
+          type: integer
+          description: >-
+            업로더가 **신고한** 화소수(전 바이트를 읽은 워커가 대조하기 전까지는
+            주장이다). 결함 후보의 imageSize 는 Core 가 이 값과 이미 대조했으므로,
+            화면은 둘이 같다는 전제로 폴리곤 배율을 계산해도 된다.
+        height: { type: integer }
+        sha256: { type: string }
     EquipmentSupportView:
       description: >-
         장비 클래스 1건의 지원단계. 계약(contracts/schemas/equipment-support-state.v1.json)

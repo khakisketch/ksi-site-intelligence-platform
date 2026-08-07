@@ -1008,3 +1008,84 @@ def test_replay_refuses_duplicate_successful_verification(tmp_path: Path) -> Non
     _rewrite(tmp_path, duplicate)
     with pytest.raises(SourceMediaRecoveryError, match="이미 검증된 번들"):
         _reborn(tmp_path)
+
+
+# ── 사진 열람 URL (결함 후보 폴리곤 오버레이의 전제) ────────────────────────
+
+
+def test_view_url_carries_the_registered_pixel_size(tmp_path: Path) -> None:
+    """[핵심] 화소수를 서버가 함께 낸다.
+
+    결함 후보의 폴리곤은 원본 픽셀 좌표라, 화면이 축소해 그릴 때 배율을 계산하려면
+    원본 크기가 필요하다. 클라이언트가 이미지 로드 후 읽어 쓰면 로드 전에 레이아웃을
+    못 잡고, 무엇보다 등록된 화소수와 실제 이미지가 다를 때 그 불일치가 조용히 묻힌다.
+    """
+    storage = FakeStorage()
+    client = _client(tmp_path, storage=storage)
+    assert (
+        client.post(
+            f"/v1/missions/{_MISSION_ID}/source-media",
+            json={"files": [_file_payload("img-1.jpg")]},
+        ).status_code
+        == 201
+    )
+    response = client.get(f"/v1/missions/{_MISSION_ID}/source-media/img-1.jpg/view")
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["width"] == 4000
+    assert body["height"] == 3000
+    assert body["sha256"] == _sha("img-1.jpg")
+    assert body["viewUrl"].endswith("?download=1")
+    assert storage.get_calls == [
+        f"sites/{_SITE_ID}/missions/{_MISSION_ID}/source/img-1.jpg"
+    ]
+
+
+def test_view_of_unregistered_media_is_404(tmp_path: Path) -> None:
+    client = _client(tmp_path, storage=FakeStorage())
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+    )
+    assert (
+        client.get(f"/v1/missions/{_MISSION_ID}/source-media/never-uploaded.jpg/view").status_code
+        == 404
+    )
+
+
+def test_view_of_unknown_mission_is_404(tmp_path: Path) -> None:
+    client = _client(tmp_path, storage=FakeStorage())
+    assert (
+        client.get("/v1/missions/mission-never-issued/source-media/img-1.jpg/view").status_code
+        == 404
+    )
+
+
+def test_storage_failure_is_503_not_missing_photo(tmp_path: Path) -> None:
+    """스토리지 장애를 "사진 없음"(404)으로 뭉개지 않는다 — 둘은 완전히 다른 사실이다."""
+    storage = FakeStorage()
+    client = _client(tmp_path, storage=storage)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+    )
+    from ksi_core.evidence import EvidenceStorageError
+
+    storage.fail_with = EvidenceStorageError("boom")
+    response = client.get(f"/v1/missions/{_MISSION_ID}/source-media/img-1.jpg/view")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "SOURCE_MEDIA_STORAGE_UNAVAILABLE"
+
+
+def test_viewer_role_can_view(tmp_path: Path) -> None:
+    """열람은 MISSIONS_READ 다 — 업로드 권한(MISSIONS_ISSUE)과 다르다."""
+    client = _client(tmp_path, storage=FakeStorage())
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/source-media/img-1.jpg/view",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert response.status_code == 200

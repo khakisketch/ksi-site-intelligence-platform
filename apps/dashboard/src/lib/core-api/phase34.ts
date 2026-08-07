@@ -8,6 +8,7 @@ import type {
   EquipmentSupportListView,
   EquipmentSupportView,
   RiskAssessmentView,
+  SourceMediaViewResponse,
 } from "./types";
 
 /**
@@ -96,5 +97,23 @@ export async function listEquipmentSupport(): Promise<EquipmentSupportListView> 
 export async function getEquipmentSupport(classId: string): Promise<EquipmentSupportView> {
   return coreFetch<EquipmentSupportView>(
     `/v1/equipment-support/${encodeURIComponent(classId)}`,
+  );
+}
+
+/**
+ * 사진 1장의 단기 열람 URL + 원장이 아는 화소수.
+ *
+ * 화소수를 서버가 함께 내는 이유는 결함 후보 폴리곤이 **원본 픽셀 좌표**이기
+ * 때문이다 — 화면이 축소해 그릴 때 배율을 계산하려면 원본 크기가 필요하고, 그 값을
+ * 이미지 로드 후에 읽으면 로드 전에 레이아웃을 잡을 수 없다.
+ *
+ * 객체가 아직 업로드되지 않았어도 URL 은 발급된다(등록과 업로드는 별개 단계다).
+ */
+export async function getSourceMediaView(
+  missionId: string,
+  mediaId: string,
+): Promise<SourceMediaViewResponse> {
+  return coreFetch<SourceMediaViewResponse>(
+    `/v1/missions/${encodeURIComponent(missionId)}/source-media/${encodeURIComponent(mediaId)}/view`,
   );
 }

@@ -491,3 +491,14 @@ export interface EquipmentSupportListView {
   productionSupportedCount: number;
   classes: EquipmentSupportView[];
 }
+
+export interface SourceMediaViewResponse {
+  mediaId: string;
+  contentType: string;
+  viewUrl: string;
+  expiresAt: string;
+  /** 업로더가 **신고한** 화소수 — 결함 후보 폴리곤의 좌표계 기준이다. */
+  width: number;
+  height: number;
+  sha256: string;
+}
