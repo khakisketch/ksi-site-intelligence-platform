@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T00:46:27+09:00",
+  "updated_at": "2026-08-07T13:10:41+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -765,18 +765,18 @@
       "completion_criteria": [
         "감사 findings #52(mutation 저항성 결핍)의 폐쇄 여부를 원장에서 독립적으로 추적 가능하게 한다 — Track A 이전 폐쇄 대상으로 뭉뚱그린 note에서 분리"
       ],
-      "status": "blocked",
+      "status": "abandoned",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
-      "invalidation_reason": null,
+      "invalidation_reason": "복원 불가 확정(2026-08-08). Explore 에이전트(aee271c4fff1d3279)가 이 프로젝트의 모든 로컬 세션 트랜스크립트(eb40e46c-9d33-4f4b-8898-a75fd0dc43c2 하위 전 subagent jsonl·wf_ff556013-f51 journal·421d672c 최근 재감사 세션 포함)를 grep+내용 대조로 훑었고, 나도 별도로 d43d573c/5aaf3ee6/421d672c의 남은 후보 5개 파일을 직접 grep 스팟체크했다 — #52·#76 모두 원 finding 전문은 어디에도 없고 이미 알려진 압축 한 줄(state.json note)만 반복해서 나온다. 2026-07-29 mega-audit(41 에이전트·78건)의 analyze fan-out 원문 자체가 로컬에 영속화된 적이 없다(있는 건 검토·게이트에 쓰인 6개 hardening goal의 최종 산출물뿐). 더 뒤질 근거가 없어 추적을 접는다 — 후속은 '잃어버린 걸 복원'이 아니라 '같은 우려(edge/manifold-runtime mutation 저항성)를 지금 독립적으로 재점검'하는 새 goal로 대체한다.",
       "parent": null,
       "blocked_by": "stale 모듈 재감사(codebase-audit wf_badb277c-ee7, 2026-08-06) 발견: .ksi/state.json의 edge-manifold-runtime note가 #14·#16·#52를 'Track A 전 폐쇄'로 묶었지만 실제 폐쇄 커밋(77d8013)은 #7·#14~18·#53만 나열하고 #52는 없다. 저장소 전체에 '#52' 문자열이 이 note 한 줄뿐이라 원 finding 내용조차 복원 불가 — 원 감사 세션 산출물이 이미 소실됐다. 재조사(원 audit이 어떤 코드에 mutation testing을 요구했는지 추정)가 선행돼야 착수 가능 — 이번 세션 범위 밖.",
       "ungated_attempts": 0,
       "kind": "hardening",
       "verification_requested": null,
       "created_at": "2026-08-06T22:40:43+09:00",
-      "updated_at": "2026-08-06T22:40:43+09:00"
+      "updated_at": "2026-08-07T13:10:28+09:00"
     },
     {
       "id": "track-a-manifoldctl-package-subcommand",
@@ -1060,6 +1060,55 @@
       "verification_requested": null,
       "created_at": "2026-08-07T00:46:27+09:00",
       "updated_at": "2026-08-07T00:46:27+09:00"
+    },
+    {
+      "id": "phase-4-defect-detection-adapter",
+      "title": "Phase 4 표면 결함(균열) 탐지 — DefectCandidate 계약 + MixerCSeg 세그멘테이션 adapter (MODEL-P4-001)",
+      "completion_criteria": [
+        "contracts/schemas/defect-candidate.v1.json + ksi_defect_detection.defect_candidate 모델 양방향 왕복 검증 통과",
+        "MixerCSeg(주) 또는 SCSegamba(대체) 실제 가중치 fetch + docs/models/MODEL_REGISTRY.yaml 등재(digest pin, D-FINE 패턴과 동형)",
+        "세그멘테이션 adapter(로드+추론)가 ksi_perception.dfine 패턴과 동형으로 registry 검증·local_files_only·fail-closed typed 결과를 갖춤",
+        "골든벡터 또는 실측 테스트로 결과 검증"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "reviewer(opus) 2라운드 검증 완료(agentId a4434bca91af91832 → 후속 ad25bc4a8382f6e21).\n1라운드: CONFIRMED 7건(F1~F7)·PLAUSIBLE 7건(P1~P7) 지적. 전부 코드로 수정하고 실측 재검증:\n- F1(예외 타입 협소): NameError/AttributeError 포함 후 재검토에서 '남의 벤더 모듈 최상단 실행'이라는 본질 지적에 따라 최종 except Exception으로 확장. triton 실제 삭제(uv pip uninstall triton) 후 typed RUNTIME_MISSING 반환 실측.\n- F3(좌표계 버그, 최고 심각도): mixercseg_adapter.segment_image이 512x512 모델 출력을 원본 이미지 크기로 cv2.resize(INTER_LINEAR)+clip 복원하도록 수정. 300x700 비정사각 이미지로 prob.shape==(300,700) 실측 테스트 추가.\n- F4(maxWidthPx→meanWidthPx 개명), F5(GPU 실측 과잉주장 문구 정정), F6(payload 스키마+pydantic 양쪽 minItems=3 강제, 2점 payload 거부 실측), F2/F7(opencv를 base 의존으로 이동 + test_defect_model_registry.py 10건, test_defect_postprocess.py 7건 신설로 CI 상시 증거 확보), P2(1px 균열이 노이즈로 드롭 — area를 contourArea에서 countNonZero로, CHAIN_APPROX_SIMPLE의 2점 압축 문제까지 발견해 NONE 폴백 추가), P5(.pth 파일명 명시 필터+fail-closed) 전부 반영.\n2라운드: 1라운드 수정 재검토 → F1 adjust(위에서 완전폐쇄로 후속 수정)·나머지 8건 confirmed closed. 신규 medium 2건 발견: (a) F3 복원과 MIN_CONTOUR_AREA_PX2(512x512 캘리브레이션) 불일치로 큰 원본에서 필터 무력화 — 4000x3000에서 49px² 파편이 9px² 문턱 통과 실측 확인 후 해상도 비례 스케일링(scale=(H*W)/(512*512))으로 수정, 4000x3000 재실측: 49px² 파편 필터링·40000px² 실결함은 통과 확인. (b) CHAIN_APPROX_NONE 상시 사용이 payload를 과도히 키움 — SIMPLE 기본 + 3점 미만일 때만 NONE 재시도로 수정. F6 잔여(pydantic에 길이 제약 없어 2정본 불일치)도 수정+실측.\n최종 검증: uv sync --all-packages(extra 없는 CI 기본 상태) — mypy 187 files clean, ruff clean, pytest 1550 passed·104 skipped·3 xfailed. uv sync --all-packages --extra mixercseg — mypy/ruff clean, pytest 1560 passed·94 skipped·3 xfailed(mixercseg 게이트 10건 포함 전부 통과). 상태 전환 반복 재현.\n남은 잔여 리스크(reviewer P1·P3·P4·P6 + opencv 네임스페이스 충돌)는 goals 리스크 5건으로 별도 기록(defect-detection-vendor-syspath-pollution·-postprocess-no-spatial-check·-confidence-includes-holes·-uv-lock-mmcv-portability·-opencv-namespace-conflict) — 구조적 재설계나 타 환경 재현이 필요해 이번 게이트 범위 밖으로 명시적으로 분리.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "1라운드 CONFIRMED 7건 전부 수정, 2라운드 재검증에서 발견된 신규 2건(F3×MIN_CONTOUR_AREA_PX2 해상도 불일치, F6 잔여)도 수정+실측 확인. 잔여 low/medium 리스크 5건은 goals 리스크로 별도 추적.",
+        "at": "2026-08-07T04:29:15+09:00",
+        "reviewer": "reviewer(opus, agentId a4434bca91af91832/ad25bc4a8382f6e21) 2라운드 adversarial 검증",
+        "evidence_ref": "tests/contract/test_mixercseg_detector.py(10)+test_defect_model_registry.py(10)+test_defect_postprocess.py(7)+test_defect_candidate.py(7) — uv sync --all-packages 및 --extra mixercseg 양쪽에서 mypy/ruff/pytest 재현 확인"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "standard",
+      "created_at": "2026-08-07T02:48:23+09:00",
+      "updated_at": "2026-08-07T04:29:15+09:00"
+    },
+    {
+      "id": "edge-manifold-runtime-mutation-resistance-review",
+      "title": "edge/manifold-runtime mutation 저항성 독립 재점검 (#52 대체)",
+      "completion_criteria": [
+        "edge/manifold-runtime/src/command.cpp(TTL·인가)·supervisor.cpp(heartbeat·fail-closed 상태전이)의 안전 불변식 각각에 수작업 mutation(경계 비교연산자 반전·널가드 제거 등)을 주입해 ctest가 실제로 실패로 잡는지 실측",
+        "생존 mutant(테스트가 안 잡는 결함)가 나오면 그 클래스를 잡는 테스트를 추가",
+        "Stage C가 이미 쓴 방식(수작업 변이+ctest 재현, 원 감사 evidence_ref: commit a8f98c7)과 동형"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": "light",
+      "created_at": "2026-08-07T13:10:41+09:00",
+      "updated_at": "2026-08-07T13:10:41+09:00"
     }
   ],
   "risks": [
@@ -1516,28 +1565,28 @@
       "title": "LiveFrameBuffer가 프레임별 capture timestamp를 기록하지 않음 — 하류 텔레메트리 보간과 정렬 불가",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "packages/perception/src/ksi_perception/live_view.py LiveFrameBuffer는 push 순서(frame_id)만 기록하고 실제 촬영/수신 시각이 없다. 하류 파이프라인(pipeline.py)은 프레임별 capture_ts_utc로 정렬·텔레메트리 보간을 한다. C tap(edge/psdk-tap)이 이미 recv_mono_ns를 정직한 시각원으로 확정해뒀으므로(liveview_tap.h), C↔Python 프레임 인계 메커니즘 설계 시 이 값을 push_frame에 함께 실어야 한다. reviewer 지적(agent a6c11522b8415a3d8, track-b-psdk-liveview-adapter 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "packages/perception/src/ksi_perception/live_view.py — push_frame(*, capture_ts_utc: float) 필수화(NaN/Inf 거부) + _StoredFrame(image, capture_ts_utc) + get_capture_ts_utc(frame_id). tests/contract/test_live_view_frame_detector_typed.py 신규 4건(pushed 값 반환·미존재 None·폐기 시 None·비유한 거부) + 기존 16개 호출부 전부 capture_ts_utc 명시로 갱신. 전체 워크스페이스 pytest 1990 passed·113 skipped·3 xfailed, mypy(packages services tests tools) clean, ruff clean. 잔여: 실제 C↔Python 핸드오프(recv_mono_ns→UTC 변환)는 여전히 미설계 — 이 커밋은 그 값이 도착했을 때 버퍼가 더 이상 유실하지 않게만 한다.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T22:32:29+09:00",
-      "updated_at": "2026-08-06T22:32:29+09:00"
+      "updated_at": "2026-08-07T04:55:13+09:00"
     },
     {
       "id": "test-worker-mypy-ci-scope-failures",
       "title": "tests/contract/test_worker.py — CI 스코프 mypy(uv run mypy packages services tests tools) 5건 실패, 이번 세션 무관 기존 결함",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "uv run mypy packages/domain/src 등 패키지 단위 검사는 통과하지만 CI가 실제로 돌리는 전체 스코프(ci.yml:48, packages services tests tools)에서 test_worker.py:107,115,201,255,363 5건 실패(list.append/index 튜플 타입 불일치, tuple index out of range). git status/log 확인 결과 이번 세션에서 이 파일을 건드리지 않았고 커밋 80c3c5c/4a83244(워커 데몬 3자 결합) 시점부터 존재하던 것으로 보임 — 즉 지금 CI를 돌리면 이 파일 때문에 mypy job이 이미 실패한다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "tests/contract/test_worker.py:78 calls 필드를 list[tuple[str, Any]]→list[tuple[Any, ...]]로 수정 — uv run mypy packages services tests tools: Success no issues found in 177 source files / uv run pytest tests/contract/test_worker.py: 12 passed / ruff check: All checks passed",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T22:40:17+09:00",
-      "updated_at": "2026-08-06T22:40:17+09:00"
+      "updated_at": "2026-08-07T02:08:34+09:00"
     },
     {
       "id": "manifoldctl-dji-app-ctl-path-unverified",
@@ -1664,6 +1713,90 @@
       "previous_status": null,
       "created_at": "2026-08-07T00:42:48+09:00",
       "updated_at": "2026-08-07T00:42:48+09:00"
+    },
+    {
+      "id": "model-p4-001-mamba-cuda-kernel-feasibility",
+      "title": "MODEL-P4-001 primary(MixerCSeg)·fallback(SCSegamba) 둘 다 mamba-ssm/selective_scan 커스텀 CUDA 커널 빌드 필요 — 서버 workspace CPU-only 정책과 충돌 가능성 미검토",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "2026-08-07 phase-4 결함탐지 착수 리서치 중 발견. GitHub README 확인: MixerCSeg는 mmcv-full(selective_scan 커널 setup.py 빌드) + torch 2.1.0+cu118, SCSegamba는 mamba-ssm==1.2.0 + torch 1.13.1+cu116 — 둘 다 Mamba/SSM 계열이라 커스텀 CUDA 커널 컴파일이 필요. 이 저장소 루트 pyproject.toml은 서버 workspace를 의도적으로 CPU-only로 고정(torch CPU 인덱스, 'B1 기능 검증은 CPU로 충분'). MODEL-P4-001 결정 시점엔 라이선스·정확도·재현성만 검토했고 이 설치 실행가능성은 검토되지 않았다. 이 dev 머신 자체엔 GPU(NVIDIA GB10)·CUDA 13.0 toolchain이 실측 확인됐으나, mamba-ssm/causal-conv1d 사전빌드 wheel은 보통 CUDA 11.x/12.x 대상이라 13.0과 호환되는지 미검증 — 소스 빌드 실패 가능성 있음. D-FINE의 [dfine] extra 격리 패턴(선례)을 재사용해 CI/기본 sync 밖으로 빼는 것은 가능하지만, 실제 설치·추론 성공 여부는 아직 실측 전이다.",
+      "accept_reason": null,
+      "resolve_evidence": "격리 venv(scratchpad/mamba-feasibility)에서 실측 — torch==2.13.0+cu130(로컬 nvcc 13.0과 정확히 일치)로 설치하니 GB10(sm_121) 커널 미스매치 경고가 사라짐. causal-conv1d(두 후보 모델 공통 의존)는 9개 GPU 아키텍처(sm_75~121) 대상 CUDA 커널 빌드가 실제로 성공(pip install causal-conv1d --no-build-isolation → Successfully installed). mamba-ssm==1.2.0(SCSegamba 고정 버전) 자체는 별도 이슈로 실패했으나 원인은 CUDA/아키텍처 불일치가 아니라 그 sdist 자체의 누락 파일(csrc/selective_scan/selective_scan.cpp 부재, cc1plus fatal error)이다 — 2024년 구버전 PyPI 패키징 결함으로 보이며 최신 1.x 포인트 릴리스나 git 소스 설치로 우회 가능한 별개의 좁은 이슈다. 결론: 이 머신에서 CUDA 커널 빌드는 실행가능하다(torch/nvcc 버전 정확히 페어링 필요) — 원래 리스크(CPU-only 정책과 충돌해 아예 불가능할 수 있음)는 해소. mamba-ssm 패키징 우회는 실제 adapter 구현 착수 시 별도 작업 항목.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-07T02:15:28+09:00",
+      "updated_at": "2026-08-07T02:47:58+09:00"
+    },
+    {
+      "id": "defect-detection-vendor-syspath-pollution",
+      "title": "mixercseg_adapter._import_vendored_build_fn의 sys.path/sys.modules 조작이 프로세스 수명 내내 전역 오염을 남긴다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "reviewer 지적(P1). sys.path는 import 직후 제거하지만 sys.modules['models']/['VMamba']는 남아 이후 다른 'models' 패키지 import가 벤더 코드를 잘못 받을 수 있다. 동시성(멀티스레드) 하에서도 잘못된 사유로 RUNTIME_MISSING이 보고될 수 있다. 근본 해결은 importlib.util.spec_from_file_location + 고유 패키지명 매핑. 현재는 단일 스레드 호출 패턴이라 실해는 낮음.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T04:28:49+09:00",
+      "updated_at": "2026-08-07T04:28:49+09:00"
+    },
+    {
+      "id": "defect-detection-postprocess-no-spatial-check",
+      "title": "test_synthetic_crack_pattern_is_detected가 검출 위치의 공간적 대응을 검증하지 않는다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "reviewer 지적(P3). 균열 선분 위치와 후보 폴리곤의 중심점 거리·IoU 비교가 없어 '아무 데서나 발화하는' 모델도 noise/crack 두 테스트를 모두 통과할 수 있다. noise 테스트와 짝을 이뤄 '항상 0' 죽은 경로는 배제하지만, 위치 정확도까지는 안 본다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T04:28:49+09:00",
+      "updated_at": "2026-08-07T04:28:49+09:00"
+    },
+    {
+      "id": "defect-detection-confidence-includes-holes",
+      "title": "postprocess.py의 confidence가 컨투어 내부 구멍·저확률 픽셀까지 포함한 평균이라 실제보다 낮게 나올 수 있다",
+      "lens": "other",
+      "severity": "low",
+      "status": "resolved",
+      "note": "reviewer 지적(P4). RETR_EXTERNAL+FILLED 마스크 평균이라 자연스러운 '연결 성분의 평균 확률' 해석과 다르다. 얇은 균열에서는 차이가 작아 실해는 낮음.",
+      "accept_reason": null,
+      "resolve_evidence": "services/defect-detection/src/ksi_defect_detection/postprocess.py:121(mask &= binary) + tests/contract/test_defect_postprocess.py:150-166(test_confidence_and_area_exclude_interior_holes) — TDD: 수정 전 area_px2=400.0(구멍 36px 포함, 버그 재현) → 수정 후 area_px2=364.0·confidence=1.0. 전체 워크스페이스 pytest 1984 passed·113 skipped·3 xfailed, mypy(packages services tests tools) clean, ruff clean.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-07T04:28:49+09:00",
+      "updated_at": "2026-08-07T04:50:18+09:00"
+    },
+    {
+      "id": "defect-detection-uv-lock-mmcv-portability",
+      "title": "mmcv 1.7.2 legacy sdist 메타데이터 빌드(uv lock 단계)가 이 머신 밖 CI/플랫폼에서도 되는지 미검증",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "reviewer 지적(P6). [tool.uv.extra-build-dependencies] mmcv=[setuptools<81]로 이 워크스페이스에서는 uv lock/sync 정상 확인했지만, 다른 CI 러너·OS/아키텍처에서 재현되는지는 확인 못함. 실제 재현 검증 필요.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T04:28:49+09:00",
+      "updated_at": "2026-08-07T04:28:49+09:00"
+    },
+    {
+      "id": "defect-detection-opencv-namespace-conflict",
+      "title": "mmcv/mmengine이 강제하는 순정 opencv-python이 base의 opencv-python-headless와 cv2 네임스페이스 충돌 — extra 탈부착 시 cv2가 깨질 수 있음",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "reviewer 지적(F2 잔여). uv sync --extra mixercseg 후 uv sync --all-packages(extra 없이)로 되돌리면 cv2가 ModuleNotFoundError로 깨지는 걸 2026-08-07 실측(uv pip list엔 설치됐다고 나오는데도 import 실패). 현재 완화책은 pyproject.toml 주석에 적힌 수동 명령(uv sync --all-packages --reinstall-package opencv-python-headless)뿐 — 구조적 해결은 mmcv/mmengine이 순정 opencv-python을 강제하는 상류 의존성이라 이 저장소에서 통제 불가.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-07T04:28:49+09:00",
+      "updated_at": "2026-08-07T04:28:49+09:00"
     }
   ]
 }

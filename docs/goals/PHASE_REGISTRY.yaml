@@ -186,12 +186,12 @@ phases:
 
   - id: phase-4
     title: "Asset Inspection & Temporal Intelligence"
-    # 결함탐지(표면 점검·균열·박락 후보)는 모델 선택이 대표자 결정 대기라
-    # phase-4 전체는 DONE 이 아니다.
+    # 결함탐지 4항목 중 균열(crack)만 구현됐다 — 박락·부식·백화 등 다중
+    # 결함 클래스는 CiF 파인튜닝 별도 결정 사안이라 phase-4 전체는 DONE 이 아니다.
     status: IN_PROGRESS
 
-    software_implementation: PARTIAL
-    software_acceptance: PASS  # 구현된 두 항목(시계열 변화·BIM 연계) 한정
+    software_implementation: PARTIAL  # 균열 탐지 포함 3/4 항목, 다중 결함 클래스 미구현
+    software_acceptance: PASS  # 구현된 세 항목(균열 탐지·시계열 변화·BIM 연계) 한정
     technical_gate: PASS
 
     independent_review: PASS
@@ -200,11 +200,16 @@ phases:
       services/change-detection(scipy cKDTree 기반 point cloud C2C, Open3D/
       CloudCompare 대비 라이선스·플랫폼 사유 문서화) + services/bim-integration
       (ifcopenshell 기반 IFC georeferencing 읽기, IfcCoordinateOperation 상위타입
-      판정으로 IfcMapConversion/IfcRigidOperation 형제 서브타입 모두 커버) 신설.
-      reviewer(opus) 2건 모두 PASS — phase-4-change-detection(agentId
+      판정으로 IfcMapConversion/IfcRigidOperation 형제 서브타입 모두 커버) +
+      services/defect-detection(MODEL-P4-001 MixerCSeg 실가중치 fetch·벤더링·
+      adapter·후처리, 균열 세그멘테이션) 신설.
+      reviewer(opus) 3건 모두 PASS — phase-4-change-detection(agentId
       a3bd7a5ead904aabf, 골든벡터 손계산 재검산 일치), phase-4-bim-linkage-v3
       (agentId a2a3e309e2bcc162b, 1라운드 REFUTED 수정 후 ifcopenshell
-      라이브러리 소스 직접 대조 재검증).
+      라이브러리 소스 직접 대조 재검증), phase-4-defect-detection-adapter
+      (agentId a4434bca91af91832 → ad25bc4a8382f6e21, 2라운드 — 1라운드
+      CONFIRMED 7건 전부 수정, 2라운드 재검증에서 나온 신규 2건도 수정+실측
+      확인 후 PASS).
 
     hardware_deferred: []
 
@@ -213,11 +218,17 @@ phases:
 
     residual_risks:
       - >-
-        표면 점검·결함 후보 탐지는 미구현 — 모델 후보 리서치
-        (docs/models/DEFECT_MODEL_CANDIDATES.md)만 완료, 대표자 모델 선택 대기
-        (goal phase-4-defect-model-decision).
+        결함 후보 탐지는 균열(crack)만 구현됐다(MODEL-P4-001 scope) — 박락·
+        부식·백화·철근노출 등 다중 결함 클래스는 CiF(CC BY 4.0) 파인튜닝이
+        별도 필요하며 후속 대표자 결정 사안
+        (docs/models/DEFECT_MODEL_CANDIDATES.md "다중 결함 클래스" 절).
       - >-
-        bim-sample-points-ifc2x3-asymmetry, bim-unit-of-measurement-untested
+        bim-sample-points-ifc2x3-asymmetry, bim-unit-of-measurement-untested,
+        defect-detection-vendor-syspath-pollution,
+        defect-detection-postprocess-no-spatial-check,
+        defect-detection-confidence-includes-holes,
+        defect-detection-uv-lock-mmcv-portability,
+        defect-detection-opencv-namespace-conflict
         (open, 상세는 .ksi/goals.json risk 레코드 참조).
 
   - id: phase-5
