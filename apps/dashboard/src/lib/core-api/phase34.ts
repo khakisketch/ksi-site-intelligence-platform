@@ -2,11 +2,13 @@ import "server-only";
 
 import { coreFetch } from "./client";
 import type {
+  ArtifactDownloadResponse,
   ChangeDetectionView,
   DefectCandidateListView,
   EquipmentStateListView,
   EquipmentSupportListView,
   EquipmentSupportView,
+  ProcessingJobArtifactsView,
   RiskAssessmentView,
   SourceMediaViewResponse,
   VolumeChangeListView,
@@ -63,6 +65,32 @@ export async function getVolumeChanges(
   return coreFetch<VolumeChangeListView>(
     `/v1/missions/${encodeURIComponent(missionId)}/volume-changes`,
     { query: { limit: limit?.toString() } },
+  );
+}
+
+/**
+ * 재구성 작업 1건의 산출물 목록 — 정사영상처럼 체적 리포트가 참조하지 않는
+ * 산출물(kind 로 구분)을 찾을 때 쓴다. `VolumeChangeReport.current.jobId` 가
+ * 이미 같은 작업을 가리키므로, 화면은 이 조회 하나로 "그 epoch 에 정사영상이
+ * 있는가"를 판단한다.
+ */
+export async function getProcessingJobArtifacts(jobId: string): Promise<ProcessingJobArtifactsView> {
+  return coreFetch<ProcessingJobArtifactsView>(
+    `/v1/processing-jobs/${encodeURIComponent(jobId)}`,
+  );
+}
+
+/**
+ * 등록된 산출물 1건의 단기 다운로드 URL. `verdict !== "ARTIFACT_READY"` 면
+ * `downloadUrl` 이 null 이다 — 호출부가 그 경우를 빈 상태로 다뤄야 한다
+ * (`getEvidenceViewUrl` 과 같은 규약).
+ */
+export async function getProcessingArtifactDownloadUrl(
+  jobId: string,
+  artifactId: string,
+): Promise<ArtifactDownloadResponse> {
+  return coreFetch<ArtifactDownloadResponse>(
+    `/v1/processing-jobs/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
   );
 }
 

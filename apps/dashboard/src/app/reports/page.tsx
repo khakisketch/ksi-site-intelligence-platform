@@ -3,7 +3,11 @@ import Link from "next/link";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
-import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
+import {
+  getChangeDetection,
+  getProcessingJobArtifacts,
+  getVolumeChanges,
+} from "@/lib/core-api/phase34";
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
 import type {
   ChangeDetectionView,
@@ -12,6 +16,7 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
 
 type Result =
@@ -50,6 +55,21 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
     return await listMissions();
   } catch {
     return [];
+  }
+}
+
+/**
+ * 체적 리포트가 참조한 재구성 작업(epoch)에 정사영상(kind: "ortho")이
+ * 등록돼 있으면 그 artifactId 를 돌려준다. 없으면(엔진이 만들지 않았거나
+ * GSD 미지정으로 건너뛰었거나) null — 화면은 이 경우 정사영상 섹션을
+ * 아예 그리지 않는다(`hasVolume` 과 같은 "없으면 안 그린다" 규약).
+ */
+async function fetchOrthophotoArtifactId(jobId: string): Promise<string | null> {
+  try {
+    const job = await getProcessingJobArtifacts(jobId);
+    return job.artifacts.find((a) => a.kind === "ortho")?.artifactId ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -123,6 +143,9 @@ export default async function ReportsPage({
   // 브라우저 렌더 확인에서 드러난 결함 — vitest/tsc 는 이 조합을 못 잡는다).
   // 이제 두 데이터의 유무를 독립적으로 판단해 있는 것만 그린다.
   const hasVolume = volume !== null && volume.reports.length > 0;
+  const orthophotoArtifactId = hasVolume
+    ? await fetchOrthophotoArtifactId(volume.reports[0].report.current.jobId)
+    : null;
 
   if (notFound && !hasVolume) {
     return (
@@ -212,6 +235,13 @@ export default async function ReportsPage({
         <VolumeChangeSummary
           entry={volume.reports[0]}
           totalNetM3={volume.latestTotalNetM3}
+        />
+      )}
+
+      {orthophotoArtifactId && (
+        <OrthophotoOverlay
+          jobId={volume!.reports[0].report.current.jobId}
+          artifactId={orthophotoArtifactId}
         />
       )}
     </div>

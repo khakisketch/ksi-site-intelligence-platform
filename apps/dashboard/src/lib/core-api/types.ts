@@ -468,6 +468,33 @@ export interface VolumeChangeListView {
   reports: VolumeChangeEntry[];
 }
 
+/**
+ * ODM 산출물 하나의 등록 계약 payload 그대로다(Core `processing_artifact` 스키마).
+ * 화면이 실제로 쓰는 필드만 좁혀 선언한다 — 나머지(digest·lineage 등)는 지금
+ * 화면에 필요 없다.
+ */
+export interface ProcessingArtifactSummary {
+  artifactId: string;
+  /** `"ortho"` | `"dsm"` | `"dtm"` | `"mesh"` | `"point_cloud"` | `"camera_poses"` | `"report"`. */
+  kind: string;
+}
+
+/** GET /v1/processing-jobs/{jobId} — 화면이 쓰는 필드만. */
+export interface ProcessingJobArtifactsView {
+  jobId: string;
+  status: string;
+  artifacts: ProcessingArtifactSummary[];
+}
+
+/** GET /v1/processing-jobs/{jobId}/artifacts/{artifactId}/download 응답. */
+export interface ArtifactDownloadResponse {
+  verdict: string;
+  objectKey: string | null;
+  downloadUrl: string | null;
+  expiresAt: string | null;
+  detail: string | null;
+}
+
 export interface KinematicState {
   entityId: string;
   observedAt: string;
