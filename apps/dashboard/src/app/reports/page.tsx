@@ -117,82 +117,98 @@ export default async function ReportsPage({
     );
   }
 
-  if (notFound) {
+  // 변화 탐지(point cloud C2C)와 체적(DSM diff)은 서로 다른 입력에서 나오는
+  // 독립된 리포트다 — 한쪽만 있는 것이 정상 상태다. 예전에는 notFound 분기가
+  // 함수 전체를 조기 반환해 체적 섹션 코드까지 아예 도달하지 못했다(실제
+  // 브라우저 렌더 확인에서 드러난 결함 — vitest/tsc 는 이 조합을 못 잡는다).
+  // 이제 두 데이터의 유무를 독립적으로 판단해 있는 것만 그린다.
+  const hasVolume = volume !== null && volume.reports.length > 0;
+
+  if (notFound && !hasVolume) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <EmptyState
-          title="이 임무의 변화 탐지 결과가 없습니다"
-          description="두 시점의 point cloud 를 비교한 결과가 아직 보고되지 않았습니다."
+          title="이 임무의 리포트가 아직 없습니다"
+          description="두 시점을 비교한 변화 탐지·체적 결과가 아직 보고되지 않았습니다."
           action={{ label: "다른 임무 선택", href: "/reports" }}
         />
       </div>
     );
   }
 
-  const { latest } = view;
+  const latest = notFound ? null : view.latest;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <h2 className="text-sm font-semibold">{view.missionId}</h2>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {latest.computedAt}
-        </p>
+        <h2 className="text-sm font-semibold">{missionId}</h2>
+        {!notFound && (
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+            변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {latest!.computedAt}
+          </p>
+        )}
         <Link href="/reports" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
           다른 임무 선택
         </Link>
       </section>
 
-      <section
-        className={`rounded-lg border p-4 ${
-          view.revisitRecommended
-            ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
-            : "border-neutral-200 dark:border-neutral-800"
-        }`}
-      >
-        <h3 className="text-sm font-semibold">
-          {view.revisitRecommended ? "추가 시점 수집 권고" : "추가 시점 수집 권고 없음"}
-        </h3>
-        <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-          변화 후보 비율 {formatRatioPercent(latest.candidateRatio)} (기준{" "}
-          {formatRatioPercent(view.revisitRatioThreshold)} 초과 시 권고)
-        </p>
-        {view.revisitRecommended && (
-          <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-            자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
-            임무를 직접 발급하세요.
-          </p>
-        )}
-      </section>
-
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          ["비교 점 수", latest.pointCount.toLocaleString()],
-          ["변화 후보", latest.candidateCount.toLocaleString()],
-          ["거리 문턱", `${latest.distanceThresholdM} m`],
-          ["최대 거리", latest.maxDistanceM === null ? "—" : `${latest.maxDistanceM.toFixed(2)} m`],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
+      {notFound ? (
+        <EmptyState
+          title="변화 탐지 결과가 없습니다"
+          description="두 시점의 point cloud 를 비교한 결과가 아직 보고되지 않았습니다."
+        />
+      ) : (
+        <>
+          <section
+            className={`rounded-lg border p-4 ${
+              view.revisitRecommended
+                ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
+                : "border-neutral-200 dark:border-neutral-800"
+            }`}
           >
-            <dt className="text-xs text-neutral-500">{label}</dt>
-            <dd className="mt-1 text-lg font-semibold">{value}</dd>
-          </div>
-        ))}
-      </dl>
+            <h3 className="text-sm font-semibold">
+              {view.revisitRecommended ? "추가 시점 수집 권고" : "추가 시점 수집 권고 없음"}
+            </h3>
+            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+              변화 후보 비율 {formatRatioPercent(latest!.candidateRatio)} (기준{" "}
+              {formatRatioPercent(view.revisitRatioThreshold)} 초과 시 권고)
+            </p>
+            {view.revisitRecommended && (
+              <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+                자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
+                임무를 직접 발급하세요.
+              </p>
+            )}
+          </section>
 
-      <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-        <h3 className="font-semibold">비교 대상</h3>
-        <p className="mt-1 font-mono text-xs text-neutral-600 dark:text-neutral-400">
-          baseline: {latest.baseline.jobId} / {latest.baseline.artifactId}
-          <br />
-          current: {latest.current.jobId} / {latest.current.artifactId}
-        </p>
-      </section>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              ["비교 점 수", latest!.pointCount.toLocaleString()],
+              ["변화 후보", latest!.candidateCount.toLocaleString()],
+              ["거리 문턱", `${latest!.distanceThresholdM} m`],
+              ["최대 거리", latest!.maxDistanceM === null ? "—" : `${latest!.maxDistanceM.toFixed(2)} m`],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
+              >
+                <dt className="text-xs text-neutral-500">{label}</dt>
+                <dd className="mt-1 text-lg font-semibold">{value}</dd>
+              </div>
+            ))}
+          </dl>
 
-      {/* 체적은 변화 탐지와 다른 입력(DSM)에서 나온다 — 한쪽만 있는 것이 정상이라
-          없을 때 화면 전체를 오류로 만들지 않고 이 섹션만 비운다. */}
-      {volume !== null && volume.reports.length > 0 && (
+          <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+            <h3 className="font-semibold">비교 대상</h3>
+            <p className="mt-1 font-mono text-xs text-neutral-600 dark:text-neutral-400">
+              baseline: {latest!.baseline.jobId} / {latest!.baseline.artifactId}
+              <br />
+              current: {latest!.current.jobId} / {latest!.current.artifactId}
+            </p>
+          </section>
+        </>
+      )}
+
+      {hasVolume && (
         <VolumeChangeSummary
           entry={volume.reports[0]}
           totalNetM3={volume.latestTotalNetM3}
