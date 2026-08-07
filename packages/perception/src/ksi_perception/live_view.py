@@ -32,8 +32,10 @@ View 는 정의상 스트림이라 그 계약을 그대로 쓰면 무한정 메�
 
 from __future__ import annotations
 
+import math
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ksi_domain.detection import Detector
@@ -51,6 +53,12 @@ _EXPECTED_DTYPE_NAME = "uint8"
 _EXPECTED_CHANNELS = 3  # HWC RGB
 
 
+@dataclass(frozen=True, slots=True)
+class _StoredFrame:
+    image: np.ndarray
+    capture_ts_utc: float
+
+
 class LiveFrameBuffer:
     """PSDK 콜백이 미는 프레임을 유계 링버퍼로 보관 — frame_id 는 push 순서로 할당.
 
@@ -64,11 +72,22 @@ class LiveFrameBuffer:
             raise ValueError(f"capacity 는 1 이상이어야 한다 (got {capacity!r})")
         self._capacity = capacity
         self._lock = threading.Lock()
-        self._frames: OrderedDict[int, np.ndarray] = OrderedDict()
+        self._frames: OrderedDict[int, _StoredFrame] = OrderedDict()
         self._next_frame_id = 0
 
-    def push_frame(self, image: np.ndarray) -> int:
+    def push_frame(self, image: np.ndarray, *, capture_ts_utc: float) -> int:
         """디코딩된 HWC uint8 RGB 프레임 1장을 넣고 할당된 frame_id 를 돌려준다.
+
+        ``capture_ts_utc``: 이 프레임의 촬영/수신 시각(절대 UTC epoch 초) —
+        ``pipeline.py`` 의 ``SliceFrame.capture_ts_utc`` 와 동일 계약(정렬·
+        텔레메트리 보간에 쓰인다, recorded_pipeline.py 참고). C tap
+        (``edge/psdk-tap/include/psdk_tap/liveview_tap.h``)은 ``recv_mono_ns``
+        (``CLOCK_MONOTONIC``, 절대 UTC 아님)만 정직한 시각원으로 확정해뒀다 —
+        C↔Python 프레임 인계 메커니즘(아직 미설계, 모듈 docstring 참고)이 그
+        monotonic 값을 실제 UTC 로 해석해(``pairing.c`` 류의 wall-clock
+        페어링) 여기 넘겨야 한다. 필수 키워드 인자인 이유: 조용한 기본값
+        (예: 0.0)은 "시각 없음"을 "1970 epoch"으로 위장시킨다(reviewer 지적,
+        production edge runtime 재검토 R5 의 1970 하드코딩 재발 클래스와 동일 사유).
 
         ``image`` 는 방어적으로 복사해 저장한다 — PSDK 콜백은 통상 버퍼를
         재사용하므로, 참조만 들고 있으면 검증을 통과한 프레임이 콜백 스레드가
@@ -80,7 +99,8 @@ class LiveFrameBuffer:
             ValueError: dtype·채널 **수**가 계약을 벗어남. 채널 **순서**(RGB
                 인지 BGR 인지)는 dtype·shape 만으로 구조적으로 판별 불가능하므로
                 여기서 검증하지 않는다 — RGB 보장은 이 버퍼 이전 단계(디코딩
-                경계, 아직 미결정)의 책임이다.
+                경계, 아직 미결정)의 책임이다. ``capture_ts_utc`` 가 유한하지
+                않아도(NaN/Inf) 거부한다.
         """
         if image.dtype.name != _EXPECTED_DTYPE_NAME:
             raise ValueError(
@@ -91,17 +111,28 @@ class LiveFrameBuffer:
             raise ValueError(
                 f"프레임은 HWC RGB({_EXPECTED_CHANNELS}채널)여야 한다 (got shape={image.shape!r})"
             )
+        if not math.isfinite(capture_ts_utc):
+            raise ValueError(f"capture_ts_utc 는 유한해야 한다 (got {capture_ts_utc!r})")
         with self._lock:
             frame_id = self._next_frame_id
             self._next_frame_id += 1
-            self._frames[frame_id] = image.copy()
+            self._frames[frame_id] = _StoredFrame(image=image.copy(), capture_ts_utc=capture_ts_utc)
             while len(self._frames) > self._capacity:
                 self._frames.popitem(last=False)  # 가장 오래된(FIFO) 프레임 폐기
             return frame_id
 
     def get(self, frame_id: int) -> np.ndarray | None:
         with self._lock:
-            return self._frames.get(frame_id)
+            stored = self._frames.get(frame_id)
+            return stored.image if stored is not None else None
+
+    def get_capture_ts_utc(self, frame_id: int) -> float | None:
+        """``frame_id`` 의 촬영 시각(절대 UTC epoch 초) — 없으면(미도착·폐기됨)
+        ``None``. Live View → ``pipeline.py`` ``SliceFrame`` 조립 시 이 값을
+        읽어야 한다(아직 미배선 — 모듈 docstring "C↔Python 프레임 인계" 참고)."""
+        with self._lock:
+            stored = self._frames.get(frame_id)
+            return stored.capture_ts_utc if stored is not None else None
 
     @property
     def latest_frame_id(self) -> int | None:
