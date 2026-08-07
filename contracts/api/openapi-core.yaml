@@ -473,6 +473,124 @@ paths:
             — **계산 불가**이지 "위험 없음"이 아니다
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
+  /v1/equipment-support:
+    get:
+      summary: List equipment class support levels (MASTER_PRD §23.3/§26.7)
+      description: >-
+        SITES_READ 권한 필요. **`productionSupported` 가 true 인 것만 상용 지원으로
+        표시해야 한다** — 나머지는 전부 "검증 중"이다(REQ-MODEL-101,
+        00_READ_FIRST 구현금지 "미검증 장비를 상용지원으로 표시").
+
+        이 플래그는 서버가 `is_production_supported()` 로 계산해서 낸다 — 화면이
+        `state` 문자열을 보고 스스로 판단하면 단계가 추가되는 날 조용히 틀린다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 등록된 장비 클래스 전체
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+    post:
+      summary: Register an equipment class at DATASET_AVAILABLE
+      description: >-
+        EQUIPMENT_SUPPORT_APPROVE 권한 필요(ADMIN 전용). 등록은 **최하위 단계로만**
+        가능하다 — 임의 단계로 바로 등록할 수 있으면 "승급은 한 단계씩"이 등록 한
+        번으로 우회된다(PRODUCTION_SUPPORTED 신규 등록).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [classId]
+              properties:
+                classId: { type: string, minLength: 1 }
+                evidenceRefs: { type: array, items: { type: string } }
+                modelVersion: { type: [string, 'null'] }
+                riskPackVersion: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: RECORDED — DATASET_AVAILABLE 로 등록됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportMutationResponse' }
+        '409': { description: ALREADY_REGISTERED — 단계 변경은 PATCH 다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨 }
+        '401': { description: 인증 실패 }
+        '403': { description: EQUIPMENT_SUPPORT_APPROVE 권한 없음 }
+  /v1/equipment-support/{class_id}:
+    get:
+      summary: Read one equipment class support level
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: class_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 그 클래스의 현재 지원단계
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportView' }
+        '404': { description: 등록된 적 없는 장비 클래스 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+    patch:
+      summary: Promote or demote an equipment class support level (INV-041 강제 지점)
+      description: >-
+        EQUIPMENT_SUPPORT_APPROVE 권한 필요(ADMIN 전용). 전이 판정은
+        `ksi_domain.capability.assert_support_level_transition` 하나가 소유한다 —
+        이 엔드포인트는 그 함수를 부를 뿐 자체 판정표를 갖지 않는다.
+
+        **승급은 한 단계씩, evidenceRefs 필수**(빈 배열·공백 문자열도 증거 없음이다).
+        단계를 건너뛴 승급은 422 다.
+
+        **강등은 증거 없이도 허용된다** — 현장 재검증 실패에 즉시 대응해야 하는
+        방향에 마찰을 넣지 않는다. 다만 그 전이도 원장에 남고, 강등된 상태는 승급
+        때의 evidenceRefs 를 물려받지 않는다(예전 증거를 달고 있으면 "이 단계는
+        검증됐다"는 잘못된 신호가 된다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: class_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state:
+                  description: contracts/schemas/equipment-support-state.v1.json 의 state enum.
+                  enum:
+                    [DATASET_AVAILABLE, BASELINE_DETECTION, FIELD_VALIDATED,
+                     GEO_VALIDATED, RISK_VALIDATED, PRODUCTION_SUPPORTED]
+                evidenceRefs: { type: array, items: { type: string } }
+                modelVersion: { type: [string, 'null'] }
+                riskPackVersion: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: RECORDED — 전이 완료
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportMutationResponse' }
+        '404': { description: UNKNOWN_CLASS — 등록된 적 없는 장비 클래스 }
+        '422':
+          description: >-
+            두 종류가 같은 코드로 온다 — 본문으로 구분한다.
+            ① 게이트 거부: `{verdict: "ILLEGAL_TRANSITION", detail, record: null}`
+            (단계 스킵 승급 / 증거 없는 승급 / **증거 없는 동일 단계 재선언**).
+            동일 단계도 증거를 요구하는 이유: 그건 강등이 아니라 "이 단계가 여전히
+            유효하다"는 주장이고, 증거 없이 통과시키면 단계 표시만 남고 근거가 지워진다.
+            ② 요청 본문 검증 실패: FastAPI 표준 `{detail: [...]}` (verdict 없음).
+            증거 판정은 공백뿐 아니라 U+200B·U+FEFF 같은 보이지 않는 format 문자도
+            "내용 없음"으로 본다.
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EQUIPMENT_SUPPORT_APPROVE 권한 없음 }
   /v1/edge-sync/event-bundles:
     post:
       summary: Ingest one idempotent EventBundle journal entry
@@ -2172,6 +2290,63 @@ components:
                 type: [string, 'null']
                 description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
               recordedAt: { type: string }
+    EquipmentSupportView:
+      description: >-
+        장비 클래스 1건의 지원단계. 계약(contracts/schemas/equipment-support-state.v1.json)
+        필드 + 서버가 계산한 표시 플래그.
+      type: object
+      required:
+        [classId, state, evidenceRefs, modelVersion, riskPackVersion,
+         productionSupported, updatedAt, updatedBy]
+      properties:
+        classId: { type: string }
+        state:
+          enum:
+            [DATASET_AVAILABLE, BASELINE_DETECTION, FIELD_VALIDATED,
+             GEO_VALIDATED, RISK_VALIDATED, PRODUCTION_SUPPORTED]
+        evidenceRefs:
+          type: array
+          items: { type: string }
+          description: >-
+            **이번 전이가 제시한** 증거만 담는다. 강등은 승급 때의 증거를 물려받지
+            않는다 — 예전 증거를 달고 있으면 "이 단계는 검증됐다"는 잘못된 신호가 된다.
+        modelVersion: { type: [string, 'null'] }
+        riskPackVersion: { type: [string, 'null'] }
+        productionSupported:
+          type: boolean
+          description: >-
+            **이 값이 true 인 것만 상용 지원으로 표시한다**(REQ-MODEL-101). 서버가
+            is_production_supported() 로 계산한 파생값이다 — 화면이 state 문자열을
+            보고 스스로 판단하면 단계가 추가되는 날 조용히 틀린다.
+        updatedAt: { type: string }
+        updatedBy: { type: string }
+    EquipmentSupportListView:
+      description: 등록된 장비 클래스 전체(classId 오름차순).
+      type: object
+      required: [classCount, productionSupportedCount, classes]
+      properties:
+        classCount: { type: integer }
+        productionSupportedCount:
+          type: integer
+          description: productionSupported 가 true 인 클래스 수 — 화면이 다시 세지 않아도 되게.
+        classes:
+          type: array
+          items: { $ref: '#/components/schemas/EquipmentSupportView' }
+    EquipmentSupportMutationResponse:
+      description: 등록·전이 판정 + 성공 시 갱신된 레코드.
+      type: object
+      required: [verdict, detail, record]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_CLASS / ALREADY_REGISTERED / ILLEGAL_TRANSITION /
+            STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        record:
+          oneOf:
+            - { $ref: '#/components/schemas/EquipmentSupportView' }
+            - { type: 'null' }
     EquipmentStateBatchResponse:
       description: 운동상태 배치 접수 판정.
       type: object

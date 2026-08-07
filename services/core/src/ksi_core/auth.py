@@ -100,6 +100,14 @@ class Permission(StrEnum):
     # 이 SSOT — 이 권한은 그 판정에 매핑되는 권한 코드일 뿐이다(강제 지점은
     # ``ksi_core.sites`` 라우트).
     SITES_AUTONOMY_APPROVE = "SITES_AUTONOMY_APPROVE"
+    # 장비 클래스 지원단계 승급(INV-041, MASTER_PRD §23.3/§26.7). SITES_AUTONOMY_
+    # APPROVE 와 같은 사유로 ADMIN 에게만 준다 — "이 장비를 상용으로 지원한다"는
+    # 선언은 고객 UI 와 계약에 그대로 실리는 안전 주장이고(REQ-MODEL-101,
+    # 00_READ_FIRST 구현금지 "미검증 장비를 상용지원으로 표시"), 그 선언을 되돌려도
+    # 이미 그 표시를 보고 내린 운용 결정은 되돌아오지 않는다. 강등은 이 권한이
+    # 필요하지만(같은 표면) 증거를 요구하지 않는다 — 재검증 실패에 즉시 대응해야
+    # 하는 방향에 마찰을 넣지 않는다(capability.assert_support_level_transition).
+    EQUIPMENT_SUPPORT_APPROVE = "EQUIPMENT_SUPPORT_APPROVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +225,7 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
+            Permission.EQUIPMENT_SUPPORT_APPROVE,
         }
     ),
     Role.FIELD_OPERATOR: frozenset(

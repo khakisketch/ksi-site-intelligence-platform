@@ -29,6 +29,7 @@ from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
+from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
@@ -119,6 +120,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
+        ),
+        equipment_support_store=EquipmentSupportStore(
+            DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",

@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.equipment_states import EquipmentStateStore
+    from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
@@ -67,6 +68,7 @@ def create_app(
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
+    equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -135,6 +137,11 @@ def create_app(
             현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
             재는 CPA/TTC 가 성립해 버린다(``cpa_ttc`` 의 site_frame 검사는 두
             상태끼리만 보므로 둘 다 같은 잘못된 좌표계면 통과한다).
+        equipment_support_store: 장비 클래스 지원단계(INV-041, MASTER_PRD §23.3)
+            등록·전이 저장소. 다른 저장소를 요구하지 않는다 — 이 원장은 현장·임무와
+            무관한 **제품 전역** 사실(어느 장비 클래스를 어디까지 검증했나)이라
+            대조할 상대가 없다. 주어지면 ``/v1/equipment-support`` 표면이 장착되고,
+            그때 비로소 ``assert_support_level_transition`` 이 런타임에서 강제된다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -285,6 +292,7 @@ def create_app(
             defect_candidate_store,
             change_detection_store,
             equipment_state_store,
+            equipment_support_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -415,5 +423,10 @@ def create_app(
         from ksi_core.equipment_states import mount_equipment_states
 
         mount_equipment_states(app, equipment_state_store)
+
+    if equipment_support_store is not None:
+        from ksi_core.equipment_support import mount_equipment_support
+
+        mount_equipment_support(app, equipment_support_store)
 
     return app

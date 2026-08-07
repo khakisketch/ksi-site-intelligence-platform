@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T20:02:57+09:00",
+  "updated_at": "2026-08-07T20:10:47+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1109,6 +1109,29 @@
       "verification_requested": "light",
       "created_at": "2026-08-07T13:10:41+09:00",
       "updated_at": "2026-08-07T13:10:41+09:00"
+    },
+    {
+      "id": "equipment-support-level-runtime-gate",
+      "title": "장비 클래스 지원단계 전이 API — INV-041 런타임 강제",
+      "completion_criteria": [
+        "assert_support_level_transition 이 프로덕션 경로(HTTP)에서 실제로 호출된다",
+        "단계 스킵 승급·증거 없는 승급이 거부되고 그 거부가 원장에 남는다",
+        "PRODUCTION_SUPPORTED 가 아닌 클래스가 조회 응답에서 상용지원으로 표기되지 않는다(00_READ_FIRST 구현금지)",
+        "강등은 증거 없이 허용되되 승급 증거를 물려받지 않는다",
+        "journal 조작으로 게이트를 우회할 수 없다(재생이 live 와 같은 판정)"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "services/core/src/ksi_core/equipment_support.py 신설(EquipmentSupportStore + POST /v1/equipment-support · GET /v1/equipment-support[/{class_id}] · PATCH /v1/equipment-support/{class_id}). transition() 이 ksi_domain.capability.assert_support_level_transition 을 직접 호출하고 자체 전이표를 만들지 않음(SSOT 이중화 금지). 새 권한 EQUIPMENT_SUPPORT_APPROVE 를 ADMIN 에게만 부여(auth.py _ROLE_PERMISSIONS). productionSupported 는 is_production_supported() 파생값. 등록은 DATASET_AVAILABLE 로만(요청에 state 필드 없음, extra=forbid). 강등은 evidence 불요이되 evidence_refs 를 물려받지 않음. 거부도 equipment-support-rejected 로 journal append. 재생이 live 와 같은 게이트(스킵 승급·최하위 아닌 등록 모두 EquipmentSupportRecoveryError). 검증: tests/contract/test_equipment_support_api.py 34 passed(음성 케이스 중심 — 스킵 승급 거부, 증거 없는 승급 5종 파라미터, 비-ADMIN 403 4종, RISK_VALIDATED 포함 4단계가 productionSupported=False, 강등 후 증거 소거, 재등록으로 초기화 불가, journal 조작 2종 거부). 전체 pytest 2116 passed·103 skipped·3 xfailed, ruff·mypy(196 files) clean. 구현 중 실측으로 결함 1건 발견·수정: evidenceRefs=['  ',' '] 이 '; '.join 의 구분자 때문에 '  ;  ' 가 되어 assert_support_level_transition 의 strip() 검사를 통과했음 — _normalize_refs 로 각 항목 strip 후 빈 것 제거하도록 수정",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-08-07T20:10:33+09:00",
+      "updated_at": "2026-08-07T20:10:47+09:00"
     }
   ],
   "risks": [

@@ -242,6 +242,7 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
+            Permission.EQUIPMENT_SUPPORT_APPROVE,
         }
     )
     assert Permission.EDGE_SYNC_INGEST not in perms
@@ -262,6 +263,7 @@ def test_field_operator_permissions() -> None:
         }
     )
     assert Permission.SITES_AUTONOMY_APPROVE not in perms
+    assert Permission.EQUIPMENT_SUPPORT_APPROVE not in perms
 
 
 def test_viewer_permissions() -> None:
