@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-07T21:25:29+09:00",
+  "updated_at": "2026-08-07T22:48:46+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1097,18 +1097,24 @@
         "생존 mutant(테스트가 안 잡는 결함)가 나오면 그 클래스를 잡는 테스트를 추가",
         "Stage C가 이미 쓴 방식(수작업 변이+ctest 재현, 원 감사 evidence_ref: commit a8f98c7)과 동형"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "edge/manifold-runtime/src/{command,supervisor}.cpp 의 안전 불변식에 수작업 변이 16건 주입 → 매번 cmake --build + ctest 재실행(스크립트 재현 가능). 1차: 3건 생존(M5·M12·M15). M12(중복 heartbeat 같은 시각 재기록)·M15(StateAt 도메인 가드) 는 진짜 갭으로 확인 — 특히 M15 는 TestStateAtOutOfDomainIsFailClosed 가 **이미 있었는데도** 통과했다: last=10'000 에서 now=-9e18 은 elapsed<0 가드가, now=kMaxUtcMs+1 은 elapsed>=fail_closed 가 같은 답을 내 도메인 가드 유무를 구분하지 못한다. 판별값(heartbeat=kMaxUtcMs, now=kMaxUtcMs+1 → 가드 없으면 elapsed=1 로 NOMINAL fail-open; now=INT64_MIN → 가드 없으면 뺄셈이 signed overflow UB)으로 테스트 2종 추가. M12 는 경계 양쪽(같은 시각 무시 / 1ms 전진 기록)을 함께 고정. M5 는 별도 C++ 탐침으로 전 입력 조합 판정 차이 0건 → 등가변이로 증명하고, '어떤 테스트도 이 항을 구분할 수 없다'는 사실을 command.cpp 주석에 명시(다음 사람이 미검증 코드로 오해해 지우지 않게). 재실행: 16건 중 15건 잡힘, 생존은 등가변이 M5 하나. ctest 2/2 통과(일반 + ASan/UBSan, CI 와 동일 구성). 커밋 b92f826",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-07T21:46:50+09:00",
+        "reviewer": "reviewer(opus, read-only) agentId a8c9c34c61fb0b95a — 2라운드(1라운드 REFUTED→수정, 2라운드 PASS 단 후속 3건 조건부→실측 완료)",
+        "evidence_ref": "edge/manifold-runtime/tools/mutation_check.py — command.cpp(TTL·인가)·supervisor.cpp(heartbeat·fail-closed 상태전이) 안전 불변식 28건에 수작업 변이 주입해 ctest 재현. 1라운드(16건): 3건 생존(M5 등가변이 증명·M12·M15 진짜갭→수정). reviewer 1라운드 REFUTED — 손계산으로 판별불가 절 7개(S1~S7) 예측, 전부 실측 생존 확인 후 수정(핵심: S1 RecordHeartbeat now상한가드가 방금 고친 M15/StateAt가드와 같은 클래스인데 미보강 상태였음; S4 허용창 상수 자체가 미고정). Stage C 동형성 확보 위해 변이목록을 스크립트로 영속. reviewer 2라운드 PASS(조건부 3건: UBSan recoverable이라 UB에 exit 0 확인→-fno-sanitize-recover=all 추가; ToString 15개 enumerator 중 12개 미고정→전건 리터럴 고정; 경계상수 kMaxUtcMs/kHeartbeatFutureToleranceMs 를 테스트가 심볼참조해 값 자체는 미고정→리터럴 값 직접 고정). 최종: 28건 중 생존 0(등가변이 M5 제외), 일반빌드·ASan/UBSan빌드(수정된 플래그) 양쪽 동일. ctest 2/2, pytest 2155 passed, ruff/mypy(197) clean. 커밋 965db6b, 7e67ddd"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "hardening",
       "verification_requested": "light",
       "created_at": "2026-08-07T13:10:41+09:00",
-      "updated_at": "2026-08-07T21:25:29+09:00"
+      "updated_at": "2026-08-07T21:46:50+09:00"
     },
     {
       "id": "equipment-support-level-runtime-gate",
@@ -1138,6 +1144,49 @@
       "verification_requested": "strict",
       "created_at": "2026-08-07T20:10:33+09:00",
       "updated_at": "2026-08-07T20:36:29+09:00"
+    },
+    {
+      "id": "m1-spatial-epoch-pipeline",
+      "title": "M1: epoch 파이프라인 종단 완주 — 바이트 영속→정좌표→체적 리포트→화면",
+      "completion_criteria": [
+        "ODM 완주 산출물의 바이트가 스토리지에 남고 다시 다운로드된다(tests/contract/test_odm_live.py 확장, KSI_ODM_IMAGES 실제 실행)",
+        "EPSG:5186 재투영 왕복·지오이드 부재 fail-closed 테스트 통과",
+        "합성 DSM 2장에서 손계산 체적이 재현된다(tests 단위)",
+        "/reports 에서 체적 요약과 정사영상이 실제로 보인다(390/768/1440 렌더 확인)"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-07T22:48:38+09:00",
+      "updated_at": "2026-08-07T22:48:46+09:00"
+    },
+    {
+      "id": "adr-016-product-scope",
+      "title": "ADR-KSI-016: 제품 범위·공간 아키텍처 확정 + 헌법 우선순위 개정",
+      "completion_criteria": [
+        "ADR 작성",
+        "헌법·결정원장·PRD 4곳 우선순위 정합",
+        "PHASE_REGISTRY roadmap_priority 반영"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "ADR-KSI-016 작성(commit 8fa493f). 헌법 §제품정체성·§핵심가치, FINAL_DECISION_LEDGER §고객·가치, MASTER_PRD DEC-005·§23.1 — 4곳 전부 개정(commit 9f92d2c). grep '자율 안전순찰' 잔재 확인 결과 남은 1건은 개정 이력 서술(의도됨). PHASE_REGISTRY phase-3/phase-5 에 roadmap_priority 추가, python yaml.safe_load 파싱 통과(phases 6개).",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "kind": "decision",
+      "verification_requested": null,
+      "created_at": "2026-08-07T22:48:38+09:00",
+      "updated_at": "2026-08-07T22:48:46+09:00"
     }
   ],
   "risks": [

@@ -150,7 +150,13 @@ phases:
     title: "Dynamic Equipment Intelligence"
     # Active Reobservation 의 실제 소비(재관찰 트리거 실행)는 Manifold 소관(Control
     # boundary, CLAUDE.md) — 하드웨어 종속이라 phase-3 전체는 DONE 이 아니다.
+    #
+    # 2026-08-07 ADR-KSI-016 D5: Site Intelligence 로드맵에서 **우선순위 강등**.
+    # 구현물은 유지하되 추가 투자를 중단하고 KSI Safety 제품 축 자산으로
+    # 재분류한다. **status 는 바꾸지 않는다** — 완료 판정의 권위는 acceptance
+    # 게이트지 우선순위가 아니다(우선순위가 낮다고 미완이 완료가 되지 않는다).
     status: IN_PROGRESS
+    roadmap_priority: DEFERRED_TO_SAFETY_TRACK  # ADR-KSI-016 D5
 
     software_implementation: COMPLETE
     software_acceptance: PASS
@@ -233,6 +239,11 @@ phases:
 
   - id: phase-5
     title: "Fleet/Dock & Cross-Industry Packs"
+    # 2026-08-07 ADR-KSI-016 D5: 동결 유지. "산업 중립"은 아키텍처 원칙으로만
+    # 남기고 시장 전략에서 제거한다 — 첫 유료 건설 현장 이전에 다른 산업은 없다.
+    # Dock 경로 자체의 관문은 여전히 ADR-KSI-004(Dock 3 + M4D 제3자 payload
+    # 제약 실검증)다.
     status: PLANNED
+    roadmap_priority: FROZEN_UNTIL_FIRST_PAID_SITE  # ADR-KSI-016 D5
     acceptance:
       - "Dock Capability VERIFIED 후 원격 반복운영·다현장 Fleet·산업 Pack"
