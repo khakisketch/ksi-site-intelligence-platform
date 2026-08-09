@@ -255,6 +255,51 @@ def test_aborted_report_is_not_threshold_gated(store: CoverageReportStore) -> No
     )
 
 
+# ── Coverage Recovery 권고 (MASTER_PRD §15.2) ──────────────────────────────
+
+
+def test_needs_coverage_recovery_false_for_clean_completed() -> None:
+    report = CoverageReport.model_validate(_report_payload())
+    assert report.needs_coverage_recovery() is False
+
+
+def test_needs_coverage_recovery_true_for_completed_with_gaps_even_without_cells() -> None:
+    """cells 가 비어도 신호가 뜬다 — judge_report 는 COMPLETED_WITH_GAPS 에 Cell
+    존재를 강제하지 않으므로(그 검사는 COMPLETED 주장에만 걸린다), completionState
+    자체가 "공백이 있었다"는 자기 신고다."""
+    payload = _report_payload(completion="COMPLETED_WITH_GAPS", cells=[])
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
+@pytest.mark.parametrize("completion", ["ABORTED_SAFE", "FAILED"])
+def test_needs_coverage_recovery_true_for_aborted_or_failed_even_with_clean_cells(
+    completion: str,
+) -> None:
+    """[핵심, 리뷰 P1-a] ABORTED_SAFE/FAILED 는 cells 가 전부 관찰됨으로 채워져
+    있어도(또는 비어 있어도) 재커버가 필요하다 — 비행 자체가 끝까지 못 갔다는
+    사실이 신호다. completion_state 만 보고 판단해야지 cells 내용에 기대면 안
+    된다(judge_report 가 이 상태들엔 cells 강제도 임계 검사도 걸지 않는다)."""
+    payload = _report_payload(completion=completion, hazard=0.1, asset=0.0, general=0.05)
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
+def test_needs_coverage_recovery_true_for_reasoned_gap_cell_under_completed() -> None:
+    """COMPLETED 로 정상 기록되더라도(임계 충족, 자체모순 아님) 사유있는 미관찰
+    Cell(OCCLUDED 등)이 남아 있으면 재커버를 권고한다 — "완료"가 "전부 봤다"를
+    뜻하지 않는다."""
+    payload = _report_payload(
+        general=0.96,
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": "OCCLUDED"},
+        ],
+    )
+    report = CoverageReport.model_validate(payload)
+    assert report.needs_coverage_recovery() is True
+
+
 # ── 임무 대조 ───────────────────────────────────────────────────────────────
 
 
@@ -287,6 +332,43 @@ def test_reports_are_appended_not_overwritten(tmp_path: Path) -> None:
     latest = store.latest(_MISSION_ID)
     assert latest is not None
     assert latest.summary.completion_state.value == "COMPLETED"
+
+
+def test_latest_recorded_exposes_reported_by(store: CoverageReportStore) -> None:
+    """[핵심] 제출 주체가 조회 표면(latest_recorded)까지 살아 있다 — record() 의
+    reported_by 가 in-memory 조회에서 사라지지 않는다(독립 재검토 B-3)."""
+    result = store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, reported_by="edge-77"
+    )
+    assert result.verdict is CoverageReportVerdict.RECORDED
+
+    recorded = store.latest_recorded(_MISSION_ID)
+    assert recorded is not None
+    assert recorded.reported_by == "edge-77"
+    assert recorded.report.summary.completion_state.value == "COMPLETED"
+
+
+def test_reported_by_survives_replay(tmp_path: Path) -> None:
+    """재기동(journal 재생) 후에도 reported_by 가 유지된다 — journal 엔벨로프에는
+    적히지만 replay 가 버리면 감사 입력이 저장은 되고 조회는 안 되는 반쪽이 된다."""
+    mission_store = _mission_store(tmp_path)
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, reported_by="edge-77"
+    )
+    journal.close()
+
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(
+        reborn_journal, mission_store=MissionStore(DurableJournal(tmp_path / "missions2.jsonl"))
+    )
+    try:
+        recorded = reborn.latest_recorded(_MISSION_ID)
+        assert recorded is not None
+        assert recorded.reported_by == "edge-77"
+    finally:
+        reborn_journal.close()
 
 
 def test_replay_restores_history(tmp_path: Path) -> None:
@@ -373,6 +455,32 @@ def test_submit_then_read_back_over_http(store: CoverageReportStore) -> None:
     body = read.json()
     assert body["reportCount"] == 1
     assert body["latest"]["summary"]["completionState"] == "COMPLETED"
+    assert body["reportedBy"] == "edge-1", "제출한 Principal id 가 조회 응답에 실려야 한다(B-3)"
+    assert body["recoveryRecommended"] is False, "공백 없는 COMPLETED 는 재커버가 필요 없다"
+
+
+def test_recovery_recommended_surfaces_over_http_when_gaps_present(
+    store: CoverageReportStore,
+) -> None:
+    """Coverage Recovery 권고(MASTER_PRD §15.2)가 조회 응답에 실린다 — 자동 재발급을
+    트리거하지 않고, 운영자가 원본 AOI 로 SPATIAL_REFRESH 를 재발급할 신호만 준다."""
+    client = _client(store)
+    payload = _report_payload(
+        completion="COMPLETED_WITH_GAPS",
+        general=0.80,
+        cells=[
+            {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+            {"cellId": "c-2", "state": "OCCLUDED"},
+        ],
+    )
+    submitted = client.post(f"/v1/missions/{_MISSION_ID}/coverage-report", json=payload)
+    assert submitted.status_code == 201, submitted.text
+
+    read = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert read.json()["recoveryRecommended"] is True
 
 
 def test_unsupported_completion_maps_to_422_over_http(store: CoverageReportStore) -> None:
@@ -445,6 +553,68 @@ def test_partial_ratio_with_cause_coded_gap_is_accepted(store: CoverageReportSto
     )
 
 
+def test_rejected_report_is_journaled_not_silently_dropped(tmp_path: Path) -> None:
+    """[핵심] 거부 판정(RECORDED 아닌 모든 verdict)도 journal 에 남는다 —
+    risk coverage-report-rejection-not-auditable."""
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    store = CoverageReportStore(journal, mission_store=_mission_store(tmp_path))
+
+    result = store.record(CoverageReport.model_validate(_report_payload(cells=[])), now=_NOW)
+    assert result.verdict is CoverageReportVerdict.NO_COVERAGE_EVIDENCE
+    journal.close()
+
+    lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == 1
+    assert lines[0]["kind"] == "coverage-report-rejected"
+    assert lines[0]["verdict"] == "NO_COVERAGE_EVIDENCE"
+    assert lines[0]["missionId"] == _MISSION_ID
+
+
+def test_unknown_mission_rejection_is_journaled(tmp_path: Path) -> None:
+    """존재하지 않는 missionId 로의 제출 시도도 감사기록에 남는다(위조/오작동 탐지)."""
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    store = CoverageReportStore(journal, mission_store=_mission_store(tmp_path))
+
+    result = store.record(
+        CoverageReport.model_validate(_report_payload(mission_id="mission-ghost")), now=_NOW
+    )
+    assert result.verdict is CoverageReportVerdict.UNKNOWN_MISSION
+    journal.close()
+
+    lines = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert lines[0]["kind"] == "coverage-report-rejected"
+    assert lines[0]["verdict"] == "UNKNOWN_MISSION"
+
+
+def test_rejected_entries_do_not_resurrect_on_replay(tmp_path: Path) -> None:
+    """거부 기록은 재생 시 건너뛴다 — RECORDED 만 완료 판정 권위를 갖는다."""
+    mission_store = _mission_store(tmp_path)
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(CoverageReport.model_validate(_report_payload(cells=[])), now=_NOW)
+    journal.close()
+
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(
+        reborn_journal, mission_store=MissionStore(DurableJournal(tmp_path / "missions2.jsonl"))
+    )
+    try:
+        assert reborn.history(_MISSION_ID) == []
+        assert reborn.latest(_MISSION_ID) is None
+    finally:
+        reborn_journal.close()
+
+
 def test_submitter_is_recorded_in_the_journal(tmp_path: Path) -> None:
     """"언제 무엇을 봤다고 했는가"가 감사 입력이면 "누가"도 남아야 한다(B-3)."""
     journal_path = tmp_path / "coverage.jsonl"
@@ -476,3 +646,85 @@ def test_http_submission_records_the_authenticated_principal(
     )
     history = store.history(_MISSION_ID)
     assert len(history) == 1
+
+
+# ── 거부가 조회로 도달하는가 (risk coverage-report-rejection-not-auditable) ──
+#
+# 거부 판정의 journal append 는 이미 있었다. 없던 것은 **읽는 경로**다 — 저장만 하고
+# 어떤 GET 으로도 못 보면 "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자
+# 에게 끝내 도달하지 않는다. 장비가 반복적으로 허위 완료를 주장해도 사람은 모른다.
+
+
+def test_rejection_is_visible_through_the_api(store: CoverageReportStore) -> None:
+    client = _client(store)
+    unsupported = _report_payload(completion="COMPLETED", hazard=0.5)
+    posted = client.post(f"/v1/missions/{_MISSION_ID}/coverage-report", json=unsupported)
+    assert posted.status_code == 422
+
+    listed = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["rejectionCount"] == 1
+    entry = body["rejections"][0]
+    assert entry["verdict"] == CoverageReportVerdict.UNSUPPORTED_COMPLETION.value
+    assert entry["reportedBy"] == "edge-1"
+    assert entry["detail"] is not None
+
+
+def test_rejection_list_does_not_carry_the_claimed_numbers(store: CoverageReportStore) -> None:
+    """거부된 주장의 본문은 싣지 않는다 — 조회 표면에 실으면 화면에서 사실처럼 읽힌다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(completion="COMPLETED", hazard=0.5),
+    )
+    entry = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    ).json()["rejections"][0]
+    assert set(entry) == {"verdict", "detail", "reportedBy", "rejectedAt"}
+
+
+def test_no_rejection_is_empty_list_not_404(store: CoverageReportStore) -> None:
+    """'이 임무엔 거부가 없었다'는 그 자체로 답이다 — 404 면 '임무가 없다'와 섞인다."""
+    client = _client(store)
+    accepted = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+    assert accepted.status_code == 201
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report/rejections",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["rejectionCount"] == 0
+
+
+def test_rejections_survive_restart(tmp_path: Path) -> None:
+    """재기동해도 남는다 — 감사 기록이 프로세스 수명에 묶이면 감사가 아니다."""
+    missions = _mission_store(tmp_path)
+    journal_path = tmp_path / "coverage.jsonl"
+    journal = DurableJournal(journal_path)
+    first = CoverageReportStore(journal, mission_store=missions)
+    assert (
+        first.record(
+            CoverageReport.model_validate(_report_payload(completion="COMPLETED", hazard=0.5)),
+            now=_NOW,
+            reported_by="edge-1",
+        ).verdict
+        is CoverageReportVerdict.UNSUPPORTED_COMPLETION
+    )
+    journal.close()
+
+    reborn = DurableJournal(journal_path)
+    try:
+        reopened = CoverageReportStore(reborn, mission_store=missions)
+        rejections = reopened.rejections(_MISSION_ID)
+    finally:
+        reborn.close()
+    assert len(rejections) == 1
+    assert rejections[0].verdict is CoverageReportVerdict.UNSUPPORTED_COMPLETION
+    assert rejections[0].reported_by == "edge-1"

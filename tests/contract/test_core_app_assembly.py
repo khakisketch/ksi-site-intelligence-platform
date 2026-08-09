@@ -23,11 +23,16 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
+from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.events import EventStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
+from ksi_core.source_media import SourceMediaStore
 
 
 def _digest(token: str) -> str:
@@ -66,6 +71,16 @@ def _mission_store(tmp_path: Path) -> MissionStore:
 
 def _edge_sync_store(tmp_path: Path) -> EdgeSyncStore:
     return EdgeSyncStore(tmp_path / "edge-journal.jsonl")
+
+
+def _defect_candidate_store(tmp_path: Path, mission_store: MissionStore) -> DefectCandidateStore:
+    return DefectCandidateStore(
+        DurableJournal(tmp_path / "defects.jsonl"),
+        mission_store=mission_store,
+        source_media_store=SourceMediaStore(
+            DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+        ),
+    )
 
 
 # ── 규칙 1: 보호 표면 각각 단독으로 auth_registry 없이 → ValueError ──────────
@@ -193,3 +208,103 @@ def test_documented_public_allowlist_matches_actual_unauthenticated_surface() ->
     on = {getattr(route, "path", None) for route in create_app(expose_docs=True).routes}
     off = {getattr(route, "path", None) for route in create_app(expose_docs=False).routes}
     assert on - off == _DOC_ROUTES, "스위치가 켜고 끄는 라우트 집합이 서술과 다르다"
+
+
+# ── 규칙 5: 결함 후보 저장소는 참조 대조 대상 없이 조립되지 않는다 ──────────
+#
+# 결함 후보는 "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 갖는다. 대조할
+# 저장소 없이 표면만 열면 서버가 검증할 수 없는 도형을 그대로 받아 적고, 그 오염은
+# 조회 시점에 정상으로 보인다(defect_candidates.py "서버는 후보를 그대로 받아 적지
+# 않는다").
+
+
+def test_defect_candidate_store_without_mission_store_raises(tmp_path: Path) -> None:
+    """mission_store 없이는 어떤 조합으로도 조립되지 않는다.
+
+    메시지가 ``defect_candidate_store`` 규칙이 아니라 ``source_media_store`` 규칙에서
+    나올 수 있다 — 그쪽도 mission_store 를 요구하고 검사 순서가 앞이다. 여기서
+    검증하는 것은 "어느 규칙이 말했는가"가 아니라 **mission_store 없이 이 표면이
+    열리는 조합이 존재하지 않는가**다.
+    """
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="mission_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            source_media_store=SourceMediaStore(
+                DurableJournal(tmp_path / "source-media.jsonl"), mission_store=missions
+            ),
+            defect_candidate_store=_defect_candidate_store(tmp_path / "dc", missions),
+        )
+
+
+def test_defect_candidate_store_without_source_media_store_raises(tmp_path: Path) -> None:
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="defect_candidate_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            mission_store=missions,
+            defect_candidate_store=_defect_candidate_store(tmp_path / "dc", missions),
+        )
+
+
+def test_defect_candidate_store_alone_without_auth_registry_raises(tmp_path: Path) -> None:
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="defect_candidate_store|auth_registry"):
+        create_app(defect_candidate_store=_defect_candidate_store(tmp_path / "dc", missions))
+
+
+# ── 규칙 6: 변화 탐지 저장소는 비교 대상을 대조할 작업 원장 없이 조립되지 않는다 ──
+
+
+def _change_detection_store(
+    tmp_path: Path, mission_store: MissionStore
+) -> ChangeDetectionStore:
+    media = SourceMediaStore(
+        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+    )
+    return ChangeDetectionStore(
+        DurableJournal(tmp_path / "change-detection.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=ProcessingJobStore(
+            DurableJournal(tmp_path / "processing-jobs.jsonl"),
+            source_media_store=media,
+            site_store=_site_store(tmp_path),
+        ),
+    )
+
+
+def test_change_detection_store_without_processing_job_store_raises(tmp_path: Path) -> None:
+    """'변화가 있었다'는 두 point cloud 산출물을 지목하지 못하면 아무도 재현할 수
+    없는 주장이다 — 그 참조를 대조할 작업 원장 없이 표면만 열지 않는다."""
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="change_detection_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            mission_store=missions,
+            change_detection_store=_change_detection_store(tmp_path / "cd", missions),
+        )
+
+
+def test_change_detection_store_without_mission_store_raises(tmp_path: Path) -> None:
+    missions = _mission_store(tmp_path)
+    with pytest.raises(ValueError, match="mission_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            change_detection_store=_change_detection_store(tmp_path / "cd", missions),
+        )
+
+
+# ── 규칙 7: 운동상태 저장소는 현장 등록 좌표계 없이 조립되지 않는다 ─────────
+
+
+def test_equipment_state_store_without_site_store_raises(tmp_path: Path) -> None:
+    """cpa_ttc 의 site_frame 검사는 두 상태끼리만 본다 — 둘 다 같은 잘못된 좌표계면
+    통과한다. 현장 등록 좌표계와 대조할 저장소가 없으면 그 구멍을 막을 수 없다."""
+    with pytest.raises(ValueError, match="equipment_state_store"):
+        create_app(
+            auth_registry=_auth_registry(),
+            equipment_state_store=EquipmentStateStore(
+                DurableJournal(tmp_path / "equipment-states.jsonl"),
+                site_store=_site_store(tmp_path),
+            ),
+        )

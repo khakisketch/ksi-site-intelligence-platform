@@ -52,3 +52,64 @@ decisions:
       S 실패, D-FINE-N 충족 → N으로 축소
       N도 실패하거나 TensorRT 변환 불안정 → RT-DETRv2-R18 평가
       전부 실패 → Detector capability BLOCKED
+
+  - id: MODEL-P4-001
+    title: "Phase 4 표면 결함(균열) 세그멘테이션 베이스라인"
+    date: "2026-08-07"
+    verdict: APPROVED
+    approved_by: >-
+      대표자 (2026-08-07 채팅 서면 결정 — "정확도가 제일 좋은 모델로, 파인튜닝은
+      나중, 초기 리서치 MVP라 가중치 라이선스로 과잉제약하지 말라"는 지시에 따른
+      docs/models/DEFECT_MODEL_CANDIDATES.md 2026-08-07 갱신 리서치 추천을 확정)
+    primary: "MixerCSeg (spiderforest/MixerCSeg, MIT)"
+    primary_rationale: >-
+      DeepCrack mIoU 0.9151 — 코드+가중치(2026-02-28 배포) 둘 다 확인, 독립
+      재현·준독립 교차검증(자체 논문 내 3개 베이스라인 재현 테이블)까지 갖춘
+      후보 중 최고치. CVPR 2026 peer-reviewed. 라이선스 MIT.
+    resource_fallback: "SCSegamba (Karl1109/SCSegamba, Apache-2.0)"
+    resource_fallback_trigger: >-
+      MixerCSeg 가중치 로딩·재현에 실패하거나 엔지니어링 착수 중 예상 못한 문제가
+      발견되면 즉시 대체 — DeepCrack mIoU 0.9022(MixerCSeg 논문의 독립 재현치
+      기준), 가중치 공개 확정(checkpoint_TUT), CVPR 2025로 한 세대 더
+      battle-tested.
+    watch_list:
+      - >-
+        zhxhzy/SCRWKV(Apache-2.0) — DeepCrack mIoU 0.9289 전체 자기보고 최고치.
+        발표 수 주밖에 안 돼 독립 재현 전무 + 사전학습 가중치 실제 공개 여부가
+        리포에서 미확인이라 지금 채택하면 "가중치 없이 처음부터 학습"해야 할
+        실행가능성 리스크가 있음 — 몇 달 뒤 재평가 대상 워치리스트.
+    not_selected:
+      - >-
+        Ultralytics YOLO11/12/26 — AGPL-3.0. ADR-KSI-012 D2의 boundary test(REST
+        경계로 AGPL 우회 가능한가)를 이번에 실제로 통과시켜 재확인: 정상 사용
+        패턴이 in-process import라 D2가 금지하는 결합저작물 경계에 해당하고,
+        REST로 감싸도 AGPL §13(네트워크 상호작용이 트리거, 배포가 아님)의
+        disclosure 의무는 없어지지 않음(법적으로 불확실한 리스크 완화일 뿐 확실한
+        탈출구가 아니며, Ultralytics 본인이 공식 문서에서 공격적 해석을 걸어둠).
+        재조사에도 배제 유지.
+      - >-
+        yakhyo/crack-segmentation(MIT) / CHDyshli/HrSegNet4CrackSegmentation
+        (Apache-2.0) — 2026-08-06 1차 후보. 라이선스 이력은 더 오래됐지만 이번
+        재조사 후보 대비 정확도가 낮음(대표자 지시: 가중치 라이선스 과잉제약보다
+        정확도 우선).
+
+    scope: >-
+      균열(crack)만 커버 — 박락·부식·백화·철근노출 등 다중 결함 클래스는
+      미커버. 확장하려면 CiF(CC BY 4.0) 데이터셋 파인튜닝이 별도로 필요하며
+      이번 결정 범위 밖(후속 결정 사안, docs/models/DEFECT_MODEL_CANDIDATES.md
+      "다중 결함 클래스 관점" 절 참고).
+
+    limitation: >-
+      이 결정은 엔지니어링 착수(어댑터 개발·가중치 fetch·pin)를 승인하는 것이지
+      상용 프로덕션 배포를 승인하는 것이 아니다 — MODEL-B1-001과 동일한 승인
+      범위 원칙. MODEL_REGISTRY.yaml 등재(repository_commit·weights revision·
+      sha256 고정)는 실제 fetch/pin 작업 이후 별도로 진행한다 — 이 결정 시점엔
+      코드/가중치 실존과 라이선스만 리서치로 확인했고 실물 다운로드·digest 계산은
+      아직 하지 않았다.
+
+    # 승인 범위 (대표자 지정 — MODEL-B1-001과 동일 구조)
+    approval_scope:
+      adapter_development: APPROVED
+      weight_fetch_and_pin: APPROVED
+      dfine_multiclass_finetune_spike: NOT_YET_DECIDED  # CiF 다중클래스 파인튜닝은 별도 대표자 결정
+      customer_production: BLOCKED_LEGAL_REVIEW

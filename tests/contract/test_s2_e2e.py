@@ -46,8 +46,9 @@ from ksi_mission_contracts.signing import KeyRegistry, SignatureVerdict, load_ve
 _LAT0, _LON0 = 37.5000, 127.0000
 _M_PER_DEG_LAT = math.radians(1.0) * WGS84_EQUATORIAL_RADIUS_M
 
-_SITE_MANAGER_TOKEN = "e2e-site-manager-token"  # noqa: S105 — 테스트 고정 토큰
-_DRONE_OPERATOR_TOKEN = "e2e-drone-operator-token"  # noqa: S105
+_FIELD_OPERATOR_TOKEN = "e2e-field-operator-token"  # noqa: S105 — 테스트 고정 토큰
+_MISSION_ISSUER_TOKEN = "e2e-mission-issuer-token"  # noqa: S105 — FIELD_OPERATOR, 다른 사람
+_ADMIN_TOKEN = "e2e-admin-token"  # noqa: S105 — 자율운영 승인 게이트(ADR-KSI-015 D2) 전용
 _EDGE_TOKEN = "e2e-edge-device-token"  # noqa: S105
 _OTHER_EDGE_TOKEN = "e2e-other-edge-device-token"  # noqa: S105
 
@@ -69,20 +70,29 @@ def _auth_registry() -> AuthRegistry:
     return AuthRegistry(
         [
             PrincipalTokenRecord(
-                token_sha256=_digest(_SITE_MANAGER_TOKEN),
+                token_sha256=_digest(_FIELD_OPERATOR_TOKEN),
                 principal=Principal(
                     principal_id="sm-e2e-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.SITE_MANAGER,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
             ),
             PrincipalTokenRecord(
-                token_sha256=_digest(_DRONE_OPERATOR_TOKEN),
+                token_sha256=_digest(_MISSION_ISSUER_TOKEN),
                 principal=Principal(
                     principal_id="do-e2e-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.DRONE_OPERATOR,
+                    role=Role.FIELD_OPERATOR,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_ADMIN_TOKEN),
+                principal=Principal(
+                    principal_id="admin-e2e-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
                     device_id=None,
                 ),
             ),
@@ -152,7 +162,10 @@ def _plan_request() -> dict[str, Any]:
             "capturePolicyId": "cap-1",
         },
         "aoi": {"vertices": _rect_aoi_vertices()},
-        "route": {"altitudeM": 40.0},
+        # AUTONOMOUS_PATROL 은 Spatial Refresh Backbone 이 필수다(MASTER_PRD §15.2).
+        # 50.0 은 altitudeM=40.0 의 운용 상한(1.5×40=60m, risk
+        # patrol-capture-interval-direct-no-quality-floor) 안이다.
+        "route": {"altitudeM": 40.0, "captureIntervalM": 50.0},
         "drone": {"droneEnumValue": 99, "droneSubEnumValue": 0, "payloadEnumValue": 65534},
         "wayline": {
             "autoFlightSpeedMs": 5.0,
@@ -256,10 +269,14 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     client = TestClient(app)
 
     # ── ① 운영자: site 등록 → 10상태 머신 승격 → PATROL_READY ────────────────
+    # 자율 시작 승인(→PROVISIONAL_AUTONOMY)·정식 순찰 승인(→PATROL_READY) 은
+    # ADR-KSI-015 D2 게이트로 관리자 전용이다 — 그 두 간선만 ADMIN 토큰을 쓴다.
+    _ADMIN_GATED_TARGETS = {"PROVISIONAL_AUTONOMY", "PATROL_READY"}
+
     register = client.post(
         "/v1/sites",
         json={"siteId": _SITE_ID, "name": "E2E 현장", "siteFrame": _site_frame()},
-        headers=_auth_header(_SITE_MANAGER_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert register.status_code == 201, register.text
 
@@ -270,17 +287,18 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
         "PROVISIONAL_AUTONOMY",
         "PATROL_READY",
     ):
+        token = _ADMIN_TOKEN if target in _ADMIN_GATED_TARGETS else _FIELD_OPERATOR_TOKEN
         transition = client.post(
             f"/v1/sites/{_SITE_ID}/transitions",
             json={"targetStatus": target, "evidence": f"{target} 증거", "reason": f"{target} 사유"},
-            headers=_auth_header(_SITE_MANAGER_TOKEN),
+            headers=_auth_header(token),
         )
         assert transition.status_code == 200, transition.text
         assert transition.json()["site"]["status"] == target
 
     # ── ② 운영자: 이원 산출물(pair) 발급 → 목록/계약 조회 ─────────────────────
     issue = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_MISSION_ISSUER_TOKEN)
     )
     assert issue.status_code == 201, issue.text
     issued = issue.json()
@@ -288,13 +306,13 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     assert loaded.verdict is SignatureVerdict.VALID, loaded.detail
 
     listing = client.get(
-        "/v1/missions", params={"siteId": _SITE_ID}, headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions", params={"siteId": _SITE_ID}, headers=_auth_header(_MISSION_ISSUER_TOKEN)
     )
     assert listing.status_code == 200
     assert [m["missionId"] for m in listing.json()] == [_MISSION_ID]
 
     contract = client.get(
-        f"/v1/missions/{_MISSION_ID}/contract", headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        f"/v1/missions/{_MISSION_ID}/contract", headers=_auth_header(_MISSION_ISSUER_TOKEN)
     )
     assert contract.status_code == 200
     assert contract.json() == issued["contract"]
@@ -313,11 +331,13 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     )
     assert ingest.status_code == 201, ingest.text
 
-    events_list = client.get("/v1/events", headers=_auth_header(_SITE_MANAGER_TOKEN))
+    events_list = client.get("/v1/events", headers=_auth_header(_FIELD_OPERATOR_TOKEN))
     assert events_list.status_code == 200
     assert events_list.json()["count"] == 1
 
-    event_detail = client.get(f"/v1/events/{_EVENT_KEY}", headers=_auth_header(_SITE_MANAGER_TOKEN))
+    event_detail = client.get(
+        f"/v1/events/{_EVENT_KEY}", headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
     assert event_detail.status_code == 200
     assert event_detail.json()["status"] == "OBSERVATION"
 
@@ -325,7 +345,7 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
         step = client.post(
             f"/v1/events/{_EVENT_KEY}/transitions",
             json={"targetStatus": target},
-            headers=_auth_header(_SITE_MANAGER_TOKEN),
+            headers=_auth_header(_FIELD_OPERATOR_TOKEN),
         )
         assert step.status_code == 200, step.text
         assert step.json()["event"]["status"] == target
@@ -333,7 +353,7 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     confirm = client.post(
         f"/v1/events/{_EVENT_KEY}/transitions",
         json={"targetStatus": "CONFIRMED_EVENT", "reason": "현장 확인 완료"},
-        headers=_auth_header(_SITE_MANAGER_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert confirm.status_code == 200, confirm.text
     assert confirm.json()["event"]["status"] == "CONFIRMED_EVENT"
@@ -341,7 +361,7 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     assign = client.post(
         f"/v1/events/{_EVENT_KEY}/transitions",
         json={"triageTarget": "ASSIGNED", "assignee": "field-ops-1", "reason": "배정"},
-        headers=_auth_header(_SITE_MANAGER_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert assign.status_code == 200, assign.text
     assert assign.json()["event"]["triage"] == "ASSIGNED"
@@ -380,7 +400,7 @@ def test_full_lifecycle_survives_process_restart(tmp_path: Path) -> None:  # noq
     reborn_app = _build_app(reborn, private_key=private_key)
     reborn_client = TestClient(reborn_app)
     reborn_site = reborn_client.get(
-        f"/v1/sites/{_SITE_ID}", headers=_auth_header(_SITE_MANAGER_TOKEN)
+        f"/v1/sites/{_SITE_ID}", headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert reborn_site.status_code == 200
     assert reborn_site.json()["status"] == "PATROL_READY"

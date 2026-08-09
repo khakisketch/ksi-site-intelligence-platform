@@ -14,6 +14,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import (
+    _ROLE_PERMISSIONS,
     AuthRegistry,
     AuthRegistryError,
     Permission,
@@ -36,7 +37,7 @@ def _digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _operator_principal(role: Role = Role.SITE_MANAGER, principal_id: str = "op-1") -> Principal:
+def _operator_principal(role: Role = Role.VIEWER, principal_id: str = "op-1") -> Principal:
     return Principal(
         principal_id=principal_id, kind=PrincipalKind.OPERATOR, role=role, device_id=None
     )
@@ -240,41 +241,29 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
+            Permission.SITES_AUTONOMY_APPROVE,
+            Permission.EQUIPMENT_SUPPORT_APPROVE,
         }
     )
     assert Permission.EDGE_SYNC_INGEST not in perms
 
 
-def test_site_manager_permissions() -> None:
-    perms = principal_permissions(_operator_principal(role=Role.SITE_MANAGER))
+def test_field_operator_permissions() -> None:
+    """FIELD_OPERATOR = 구 5역할 중 현장관리·안전관리·드론운영 3역할 통합
+    (ADR-KSI-015 D1) — SITES_AUTONOMY_APPROVE 만 없다."""
+    perms = principal_permissions(_operator_principal(role=Role.FIELD_OPERATOR))
     assert perms == frozenset(
         {
             Permission.SITES_READ,
             Permission.SITES_WRITE,
             Permission.MISSIONS_READ,
+            Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
         }
     )
-
-
-def test_safety_manager_permissions() -> None:
-    perms = principal_permissions(_operator_principal(role=Role.SAFETY_MANAGER))
-    assert perms == frozenset(
-        {
-            Permission.SITES_READ,
-            Permission.MISSIONS_READ,
-            Permission.EVENTS_READ,
-            Permission.EVENTS_TRIAGE,
-        }
-    )
-
-
-def test_drone_operator_permissions() -> None:
-    perms = principal_permissions(_operator_principal(role=Role.DRONE_OPERATOR))
-    assert perms == frozenset(
-        {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.MISSIONS_ISSUE}
-    )
+    assert Permission.SITES_AUTONOMY_APPROVE not in perms
+    assert Permission.EQUIPMENT_SUPPORT_APPROVE not in perms
 
 
 def test_viewer_permissions() -> None:
@@ -287,6 +276,103 @@ def test_viewer_permissions() -> None:
 def test_edge_device_permissions_fixed_regardless_of_role_table() -> None:
     perms = principal_permissions(_device_principal())
     assert perms == frozenset({Permission.EDGE_SYNC_INGEST})
+
+
+# ── 구조 불변식(ADR-KSI-015) — 역할 이름과 무관해 다음 재편에도 살아남는다 ──────
+#
+# 이번 사고(구 현장관리 역할에 MISSIONS_ISSUE 가 빠져 실사용자로 못박힌 현장소장이
+# 조사계획을 못 냈다, ADR-KSI-015 맥락)의 재발 방지 그 자체 — "표를 고쳤다"가
+# 아니라 "표가 갖춰야 할 성질"을 고정한다.
+
+
+def test_role_enum_matches_permission_table_keys() -> None:
+    """enum 멤버 추가 시 표 누락을 즉시 잡는다 — 새 역할이 조용히 무권한이 되지 않는다."""
+    assert set(Role) == set(_ROLE_PERMISSIONS)
+
+
+def test_admin_is_a_strict_superset_of_field_operator() -> None:
+    """ADMIN ⊋ FIELD_OPERATOR — 같아지는 순간 관리자가 라벨로 전락한다(ADR D2)."""
+    admin_perms = _ROLE_PERMISSIONS[Role.ADMIN]
+    field_operator_perms = _ROLE_PERMISSIONS[Role.FIELD_OPERATOR]
+    assert field_operator_perms < admin_perms
+
+
+def test_viewer_has_no_write_permissions() -> None:
+    viewer_perms = _ROLE_PERMISSIONS[Role.VIEWER]
+    write_permissions = {
+        Permission.SITES_WRITE,
+        Permission.MISSIONS_ISSUE,
+        Permission.EVENTS_TRIAGE,
+        Permission.SITES_AUTONOMY_APPROVE,
+    }
+    assert viewer_perms.isdisjoint(write_permissions)
+
+
+_WRITE_PERMISSIONS = (
+    Permission.SITES_WRITE,
+    Permission.MISSIONS_ISSUE,
+    Permission.EVENTS_TRIAGE,
+    Permission.SITES_AUTONOMY_APPROVE,
+)
+
+
+@pytest.mark.parametrize("perm", _WRITE_PERMISSIONS)
+def test_every_write_permission_has_a_role_without_it(perm: Permission) -> None:
+    """쓰기 계열 권한마다 그것을 갖지 않는 OPERATOR 역할이 최소 1개 있어야 한다.
+
+    이게 없으면 어떤 쓰기 권한을 요구하는 엔드포인트도 HTTP 403 음성 케이스를
+    쓸 앵커가 사라진다 — 그 상태에서 role→permission 표가 잘못 넓어져도
+    (이번 사고처럼) 아무 테스트도 실패하지 않는다.
+    """
+    assert any(perm not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def test_no_role_has_edge_sync_ingest() -> None:
+    """EDGE_DEVICE 전용 권한이 어떤 사람 역할에도 새지 않는다."""
+    assert all(Permission.EDGE_SYNC_INGEST not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def test_no_role_has_processing_work() -> None:
+    """[핵심] 워커 전용 권한이 어떤 사람 역할에도 새지 않는다.
+
+    이게 깨지면 사람이 처리 작업의 ``SUCCEEDED`` 를 손으로 찍을 수 있게 되고,
+    그 순간 그 상태는 실행 근거가 아니라 주장이 된다(processing_jobs.py
+    전이 권한표). ADMIN 을 포함한 **모든** 역할이 대상이다.
+    """
+    assert all(Permission.PROCESSING_WORK not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def _worker(**overrides: object) -> Principal:
+    fields: dict[str, object] = {
+        "principal_id": "worker-1",
+        "kind": PrincipalKind.PROCESSING_WORKER,
+        "role": None,
+        "device_id": None,
+    }
+    fields.update(overrides)
+    return Principal(**fields)  # type: ignore[arg-type]
+
+
+def test_processing_worker_permissions_are_fixed() -> None:
+    assert principal_permissions(_worker()) == frozenset({Permission.PROCESSING_WORK})
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"role": Role.ADMIN}, "role 을 가질 수 없다"),
+        # 재구성 워커는 기체가 아니다 — device_id 를 허용하면 존재하지 않는
+        # 기체 식별자가 eventKey 경로로 흘러든다.
+        ({"device_id": "drone-1"}, "device_id 를 가질 수 없다"),
+    ],
+)
+def test_processing_worker_rejects_foreign_identity_fields(
+    overrides: dict[str, object], match: str
+) -> None:
+    with pytest.raises(AuthRegistryError, match=match):
+        AuthRegistry(
+            [PrincipalTokenRecord(token_sha256="a" * 64, principal=_worker(**overrides))]
+        )
 
 
 # ── HTTP 경계: 401 3분기 + WWW-Authenticate ──────────────────────────────
@@ -344,7 +430,7 @@ def test_bearer_scheme_case_insensitive() -> None:
         [
             PrincipalTokenRecord(
                 token_sha256=_digest(_OPERATOR_TOKEN),
-                principal=_operator_principal(role=Role.SITE_MANAGER, principal_id="sm-1"),
+                principal=_operator_principal(role=Role.FIELD_OPERATOR, principal_id="fo-1"),
             )
         ]
     )
@@ -377,7 +463,7 @@ def test_200_when_principal_has_permission() -> None:
         [
             PrincipalTokenRecord(
                 token_sha256=_digest(_OPERATOR_TOKEN),
-                principal=_operator_principal(role=Role.SITE_MANAGER, principal_id="sm-1"),
+                principal=_operator_principal(role=Role.FIELD_OPERATOR, principal_id="fo-1"),
             )
         ]
     )
@@ -389,7 +475,7 @@ def test_200_when_principal_has_permission() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"principalId": "sm-1"}
+    assert response.json() == {"principalId": "fo-1"}
 
 
 # ── whoami ────────────────────────────────────────────────────────────
@@ -400,7 +486,7 @@ def test_whoami_operator() -> None:
         [
             PrincipalTokenRecord(
                 token_sha256=_digest(_OPERATOR_TOKEN),
-                principal=_operator_principal(role=Role.DRONE_OPERATOR, principal_id="do-1"),
+                principal=_operator_principal(role=Role.FIELD_OPERATOR, principal_id="fo-1"),
             )
         ]
     )
@@ -415,11 +501,20 @@ def test_whoami_operator() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body == {
-        "principalId": "do-1",
+        "principalId": "fo-1",
         "kind": "OPERATOR",
-        "role": "DRONE_OPERATOR",
+        "role": "FIELD_OPERATOR",
         "deviceId": None,
-        "permissions": sorted(["SITES_READ", "MISSIONS_READ", "MISSIONS_ISSUE"]),
+        "permissions": sorted(
+            [
+                "SITES_READ",
+                "SITES_WRITE",
+                "MISSIONS_READ",
+                "MISSIONS_ISSUE",
+                "EVENTS_READ",
+                "EVENTS_TRIAGE",
+            ]
+        ),
     }
 
 

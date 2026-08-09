@@ -10,6 +10,8 @@ dependencies = [
     "ksi-event-contracts",
     "ksi-mission-contracts",
     "ksi-mission-planning",
+    # Phase 3 장비 운동상태·CPA/TTC·재관찰 권고 — equipment_states.py 가 소비한다.
+    "ksi-equipment-intelligence",
     "fastapi>=0.115",
     "cryptography>=42",
 ]
@@ -32,3 +34,4 @@ ksi-domain = { workspace = true }
 ksi-event-contracts = { workspace = true }
 ksi-mission-contracts = { workspace = true }
 ksi-mission-planning = { workspace = true }
+ksi-equipment-intelligence = { workspace = true }

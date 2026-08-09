@@ -9,9 +9,10 @@
 - RiskField
 - EventBundle
 - CoverageReport
-- ProcessingJob
-- WorldModelManifest
-- ModelDeployment
+- ProcessingJob — `contracts/schemas/processing-job.v1.json`
+- ProcessingArtifact — `contracts/schemas/processing-artifact.v1.json`
+- WorldModelManifest (미구현 — 선언만)
+- ModelDeployment (미구현 — 선언만)
 
 ## Transport
 

@@ -200,6 +200,88 @@ def test_perimeter_route_closes_loop_at_mission_altitude() -> None:
     assert all(wp.altitude_m == 40.0 for wp in route)
 
 
+def _consecutive_gaps_m(route: list[RouteWaypoint]) -> list[float]:
+    """경로 인접 웨이포인트 간 거리(m) — Spatial Refresh Backbone 간격 검증용."""
+    gaps = []
+    for a, b in itertools.pairwise(route):
+        ax, ay = wgs84_to_enu(_LAT0, _LON0, a.lat_deg, a.lon_deg)
+        bx, by = wgs84_to_enu(_LAT0, _LON0, b.lat_deg, b.lon_deg)
+        gaps.append(math.hypot(bx - ax, by - ay))
+    return gaps
+
+
+def test_perimeter_capture_interval_fills_edges_within_requested_gap() -> None:
+    """[핵심] Spatial Refresh Backbone(MASTER_PRD §15.2) — captureIntervalM 을 주면
+    변 위 인접 웨이포인트 간격이 요청값을 넘지 않는다(lawnmower capture_interval_m
+    과 동일 규약: 조밀해지는 방향만 허용)."""
+    interval = 15.0
+    route = perimeter_route(
+        _rect_aoi(200.0, 100.0), altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=interval
+    )
+
+    gaps = _consecutive_gaps_m(route)
+    assert len(route) > len(_rect_aoi(200.0, 100.0).vertices) + 1, "채워지지 않았다"
+    assert all(g <= interval + 1e-6 for g in gaps), f"간격 초과: {max(gaps)}"
+    assert route[0] == route[-1], "여전히 폐루프"
+
+
+def test_perimeter_capture_interval_longer_than_edge_keeps_vertices_only() -> None:
+    """구간보다 긴 간격은 꼭짓점 순회만으로 이미 조건을 만족한다 — 억지로 안 쪼갠다.
+
+    간격은 고도 운용 상한(1.5×altitude, risk
+    patrol-capture-interval-direct-no-quality-floor) 안에서 변 길이보다 크게
+    잡는다 — lawnmower 의 대응 테스트와 같은 조정(작은 AOI + 상한 이내 간격).
+    """
+    aoi = _rect_aoi(30.0, 20.0)
+    route = perimeter_route(aoi, altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=35.0)
+
+    assert len(route) == len(aoi.vertices) + 1
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), 0.05])
+def test_perimeter_invalid_capture_interval_rejected(value: float) -> None:
+    with pytest.raises(RouteGenerationError, match="capture_interval_m"):
+        perimeter_route(
+            _rect_aoi(200.0, 100.0), altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=value
+        )
+
+
+def test_perimeter_capture_interval_above_altitude_ceiling_rejected() -> None:
+    """[핵심] risk patrol-capture-interval-direct-no-quality-floor —
+    카메라 유도가 아닌 직접 지정 간격은 고도 운용 상한(1.5×altitude)을 넘을 수
+    없다. 상한이 없으면 200m 간격 같은 사실상 무의미한 Spatial Refresh Backbone
+    이 발급될 수 있었다."""
+    with pytest.raises(RouteGenerationError, match="운용 상한"):
+        perimeter_route(
+            _rect_aoi(300.0, 300.0),
+            altitude_m=40.0,
+            envelope=_ENVELOPE,
+            capture_interval_m=200.0,
+        )
+
+
+def test_perimeter_capture_interval_camera_derived_bypasses_ceiling() -> None:
+    """카메라 스펙에서 계산된 간격은 상한을 적용하지 않는다 — 서버가 이미
+    MIN_FRONT_OVERLAP 을 물리적으로 강제했으므로 대리변수(고도 상한)가 필요 없다
+    (lawnmower spacing_is_camera_derived 와 동일 원칙)."""
+    route = perimeter_route(
+        _rect_aoi(300.0, 300.0),
+        altitude_m=40.0,
+        envelope=_ENVELOPE,
+        capture_interval_m=200.0,
+        capture_interval_is_camera_derived=True,
+    )
+    assert len(route) > len(_rect_aoi(300.0, 300.0).vertices) + 1
+
+
+def test_perimeter_capture_interval_waypoint_explosion_rejected() -> None:
+    """미인증 입력의 웨이포인트 수 폭발(자원 소진)을 변 하나 단위에서 먼저 끊는다."""
+    with pytest.raises(RouteGenerationError, match="상한"):
+        perimeter_route(
+            _rect_aoi(9000.0, 100.0), altitude_m=40.0, envelope=_ENVELOPE, capture_interval_m=0.1
+        )
+
+
 def _scan_line_norths(route: list[RouteWaypoint]) -> list[float]:
     """스캔선들의 north(m) 좌표 — 기준점 기준."""
     norths = sorted(

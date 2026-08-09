@@ -16,7 +16,84 @@ info:
   # 없어 Core 가 EventSummaryResponse 에 eventType 을 추가해도 게이트가
   # 침묵했다(2026-08-04 실제 drift). 필드를 늘리는 변경이 아니라 이미 있는
   # 동작을 문서화하는 정정이므로 minor.
-  version: 1.5.0
+  # 1.6.0 — GET /v1/missions/{mission_id}/kmz 신설: 발급 응답에만 실리던 KMZ
+  # 를 저장된 plan_request 로 재생성해 내려받을 수 있게 한다(운영자가 위저드를
+  # 끝까지 눌러도 손에 파일이 없던 막다른 길 폐쇄). 새 표면 추가라 minor.
+  # 1.7.0 — 현장 AOI 영속(risk site-aoi-not-persisted 폐쇄): POST /v1/sites 가
+  # 선택 필드 aoi 를 받고, PUT /v1/sites/{site_id}/aoi 로 나중에 설정·교체할
+  # 수 있다(UNMAPPED 상태에서만, siteFrame 정확 일치 필수 — SITE_FRAME_MISMATCH/
+  # AOI_LOCKED). SiteView 에 aoi 필드 추가. 기존 표면을 깨지 않는 확장이라 minor.
+  # 1.8.0 — 대시보드에 비행 결과 노출(발급 메타만 있고 "날았는가"가 어디에도
+  # 없던 공백 폐쇄): MissionRecordResponse 에 파생 필드 coverageCompletionState
+  # 추가(그 임무의 최신 CoverageReport 판정 — 서버가 조회 시점에 계산, 저장하지
+  # 않는다). CoverageReportView 에 reportedBy 추가(누가 보고했는지, 독립 재검토
+  # B-3). 기존 표면을 깨지 않는 확장이라 minor.
+  # 1.9.0 — fix:contract-sync ADR-KSI-015(역할 3개 축소 + SITES_AUTONOMY_APPROVE
+  # 신설): POST /v1/sites/{site_id}/transitions 설명에 관리자 전용 간선 게이트를
+  # 반영하고(이미 구현된 동작 문서화), POST /v1/missions/contracts 설명의 구
+  # 역할 이름을 FIELD_OPERATOR 로 정정. 신규 표면 없이 이미 있는 동작을
+  # 문서화하는 정정이라 minor.
+  # 1.10.0 — B1 원본 사진 번들 입구 신설: POST/GET /v1/missions/{mission_id}/
+  # source-media·POST .../source-media/seal. Mission 에 종속된 별도 업로드
+  # 입구(기존 evidence 는 Event 종속이라 매핑 원본에 맞지 않는다) — 배치
+  # presigned PUT 발급, sourceBundleDigest 는 Core 가 정규 정렬된 매니페스트에서
+  # 계산한다(요청이 자기 증명서를 쓰지 못하게). 새 표면 추가라 minor.
+  # 1.11.0 — B2 처리 작업 발급·상태전이 신설: POST/GET /v1/missions/{mission_id}/
+  # processing-jobs · GET /v1/processing-jobs/{job_id} · POST .../transitions.
+  # 입력(장수·화소·digest)은 봉인된 번들에서 Core 가 집계하고 요청에는 자리가
+  # 없다. 함께 POST /v1/sites 가 선택 필드 dataResidency 를 받는다 — INV-050 의
+  # 반출 판정이 읽을 값이 저장소 어디에도 없어서, 그대로 두면 처리 작업 요청이
+  # 자기 반출 허가서를 쓰게 된다. 미선언은 반출 불가로 읽히므로 기존 현장의
+  # 동작이 느슨해지지 않는다. 새 표면 추가라 minor.
+  # 1.12.0 — B3 산출물 원장 신설: POST /v1/processing-jobs/{job_id}/artifacts.
+  # RUNNING→SUCCEEDED 가 authority=source 산출물 최소 1건을 요구하게 되면서
+  # (INV-051) 그 근거를 만드는 표면이 필요해졌다. 계보 앵커(lineage.sourceDigest)
+  # 는 요청 스키마에 자리가 없고 Core 가 작업의 봉인 digest 로 채운다.
+  # 함께 POST .../transitions 의 요구 권한이 대상 상태별로 갈린다 —
+  # RUNNING/SUCCEEDED/FAILED 는 PROCESSING_WORKER 전용(PROCESSING_WORK),
+  # CANCELLED 는 사람(MISSIONS_ISSUE). **기존 사람 토큰으로 되던 실행 상태
+  # 보고가 403 이 된다**(의도된 축소 — 사람이 성공을 손으로 찍는 경로를 닫는다).
+  # 표면 축소가 아니라 권한 재배치라 minor 로 둔다.
+  # 1.13.0 — 워커 경로 종단 연결: POST /v1/missions/{id}/source-media/verify(실측
+  # 대조) + GET /v1/processing-jobs/{id}/input(워커 입력 수신). 업로더 신고값
+  # (sha256·해상도)을 워커가 실측 보고하고 **Core 가** 대조한다 — 워커는 판정을
+  # 보낼 수 없고, 입력 응답에 신고값이 실리지 않아 읽지 않고 되읊을 수도 없다.
+  # RUNNING→SUCCEEDED 게이트에 "입력 실측 대조 완료"가 추가된다(기존 산출물
+  # 조건과 AND). 실측 없이 성공을 주장하면 과금 근거(totalMegapixels)가 끝까지
+  # 업로더 신고값으로 남기 때문이다. SourceMediaBundleView 에 lastMismatchAt 추가.
+  # 1.14.0 — 워커 lease 신설: POST /v1/processing-jobs/{id}/lease. 작업 하나를
+  # 워커 하나가 쥐고, /input·실행 상태 보고·산출물 등록이 전부 그 lease 를 요구한다
+  # (상호배제 + 접근 범위 축소 — 워커 토큰 하나로 활성 작업 전체의 원본을 열람하던
+  # 것을 닫는다). 만료는 저장 플래그가 아니라 expiresAt 대 now 비교라, 죽은 워커의
+  # 작업이 별도 조치 없이 회수된다. **기존 워커 호출이 lease 없이는 409 가 된다.**
+  # 취소(CANCELLED)만 lease 를 요구하지 않는다 — 워커가 죽어 lease 가 살아 있는
+  # 동안 취소가 막히면 정확히 취소가 필요한 상황에서 막힌다.
+  # ProcessingJobView 에 leaseWorkerId·leaseExpiresAt 추가.
+  # 1.15.0 — GET /v1/processing-jobs/{id}/input 응답에 siteCrs 추가. 산출물의
+  # crs 를 워커가 지어내거나 processing_params 로 자기 신고하지 않게, 현장
+  # 등록 시점에 확정된 값을 Core 가 읽어 준다(발급 시점 INV-050 반출 판정이
+  # site_store 를 읽는 것과 같은 원칙). 새 필드 추가라 minor.
+  # 1.16.0 — phase-2 Spatial Refresh Backbone + Coverage Recovery(MASTER_PRD
+  # §15.2). AUTONOMOUS_PATROL(perimeter) 이 route.captureIntervalM **또는**
+  # route.camera 를 필수로 요구하게 된다(없으면 순찰 중 3D 갱신용 사진이 전혀
+  # 수집되지 않는다 — 요청 스키마 자체는 안 바뀐다, lawnmower captureIntervalM
+  # 필수화와 동일하게 서버 비즈니스 로직에서만 강제). camera 를 주면 lawnmower
+  # 와 동일한 compute_grid_spacing 물리식으로 간격을 계산해 MIN_FRONT_OVERLAP
+  # (0.6) 하한을 만족시킨다. CoverageReportView 에 recoveryRecommended 추가
+  # (completionState 가 COMPLETED 가 아니거나 — COMPLETED_WITH_GAPS/ABORTED_SAFE/
+  # FAILED 전부 — 또는 사유있는 미관찰 Cell 이 남으면 true — 자동 재발급을
+  # 트리거하지 않는 권고 신호). **주의**: 이전엔 201 이던 AUTONOMOUS_PATROL 요청
+  # (captureIntervalM/camera 미지정)이 이제 422 다 — 표면 확장이자 기존 호출자
+  # 파괴 가능성이 있는 변경이지만, 신규 필드 추가가 아니라 비즈니스 로직 변경뿐
+  # 이라 스키마 구조상 minor 로 둔다(계약 스키마 자체는 하위호환).
+  # 1.18.0 — M1 체적 변화 리포트: POST·GET /v1/missions/{id}/volume-changes.
+  # 두 시점 DSM 차분으로 잰 구역별 절토·성토. change-detection 과 형제이되 입력이
+  # dsm(저기는 point_cloud)이고 결과 형태가 다르다(m³ vs candidateRatio).
+  # 1.17.0 — M1 산출물 바이트 영속: POST /v1/processing-jobs/{id}/artifacts/
+  # upload-url(워커가 올릴 자리 발급) + GET .../artifacts/{artifactId}/download
+  # (등록된 산출물 열람). 이전에는 재구성이 성공해도 digest 만 남고 바이트가
+  # 버려져 사람이 볼 수 있는 것이 없었다(ADR-KSI-016). 표면 추가라 minor.
+  version: 1.18.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -53,7 +130,8 @@ paths:
       summary: Register a new Site (initial status always UNMAPPED)
       description: >-
         SITES_WRITE 권한 필요. siteId 중복은 409, 구조 위반은 422 — 최종상태
-        직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작).
+        직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작). aoi 는 선택 — 등록과
+        함께 줄 수도, 나중에 PUT /v1/sites/{site_id}/aoi 로 설정할 수도 있다.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -75,6 +153,38 @@ paths:
                     verticalDatum: { type: string }
                     unit: { const: meter }
                     transformVersion: { type: string }
+                aoi:
+                  type: object
+                  additionalProperties: false
+                  required: [vertices]
+                  description: >-
+                    선택 필드. 닫힌 단순 폴리곤(마지막→첫 꼭짓점 변이 암묵적으로
+                    닫는다, 3~256 꼭짓점). 생략하면 등록 후 PUT
+                    /v1/sites/{site_id}/aoi 로 설정한다.
+                  properties:
+                    vertices:
+                      type: array
+                      minItems: 3
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [latDeg, lonDeg]
+                        properties:
+                          latDeg: { type: number, minimum: -90, maximum: 90 }
+                          lonDeg: { type: number, minimum: -180, maximum: 180 }
+                dataResidency:
+                  type: object
+                  additionalProperties: false
+                  required: [egressAllowed, jurisdiction]
+                  description: >-
+                    선택 필드지만 **생략은 반출 불가를 뜻한다**(INV-050) — 관대한
+                    기본값이 아니다. 처리 작업(POST /v1/missions/{mission_id}/
+                    processing-jobs)이 executionLocus=vendor_cloud 를 요청할 때
+                    이 값만 본다. 등록 이후 변경 경로는 의도적으로 없다 — 반출
+                    허용은 법적 판단이라 SITES_WRITE 로 조용히 바꿀 값이 아니다.
+                  properties:
+                    egressAllowed: { type: boolean }
+                    jurisdiction: { type: string, minLength: 1 }
       responses:
         '201':
           description: REGISTERED — verdict + 등록된 SiteView
@@ -86,7 +196,8 @@ paths:
           description: >-
             INVALID_SITE(siteId/name/siteFrame 필드 공백 — INV-020 / siteId 가
             경로-안전 문자 밖 — '/'·공백 등, /v1/sites/{site_id} 경로 세그먼트
-            제약)
+            제약) / aoi 구조 위반(자기교차·중복 꼭짓점·범위 밖 좌표 등 —
+            AreaOfInterest 파싱 실패, FastAPI 표준 422)
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
@@ -128,6 +239,12 @@ paths:
         SITES_WRITE 권한 필요. evidence·reason 비공백 필수. SUSPENDED 이탈은
         저장소가 기억한 진입 직전 상태로만 복귀 허용(§6.1). PATROL_READY 도달은
         MODEL_VALIDATION→PROVISIONAL_AUTONOMY 경유가 강제된다(품질검증 생략 금지).
+        blast radius 가 큰 간선(자율 시작 승인 MODEL_VALIDATION→
+        PROVISIONAL_AUTONOMY·정식 순찰 승인 PROVISIONAL_AUTONOMY→PATROL_READY·
+        모든 상태→SUSPENDED 진입·SUSPENDED→직전 상태 복귀)은 SITES_WRITE 만으로는
+        부족하고 추가로 SITES_AUTONOMY_APPROVE 권한(관리자 전용)을 요구한다
+        (ADR-KSI-015 D2). 간선(현재 상태 → 요청 상태) 쌍 기준 판정이다 —
+        PATROL_ACTIVE→PATROL_READY(순찰 복귀)는 같은 목적지라도 게이트되지 않는다.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -168,7 +285,331 @@ paths:
         '422': { description: INVALID_SITE(evidence/reason 공백) }
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
+        '403':
+          description: >-
+            SITES_WRITE 권한 없음, 또는 관리자 전용 간선인데 SITES_AUTONOMY_APPROVE
+            권한이 없음(ADR-KSI-015 D2).
+  /v1/sites/{site_id}/aoi:
+    put:
+      summary: Set or replace a Site's AOI (Area of Interest polygon)
+      description: >-
+        SITES_WRITE 권한 필요. AOI 는 ``UNMAPPED`` 상태에서만 설정·교체할 수
+        있다(409 AOI_LOCKED — 매핑이 시작된 뒤 외곽을 바꾸면 이전 임무·누적
+        중인 커버리지와의 대조가 무너진다, 막는 쪽이 기본). siteFrame 은
+        등록된 site 의 것과 정확 일치해야 한다(422 SITE_FRAME_MISMATCH — 다른
+        좌표계를 전제로 그려진 AOI 를 수락하지 않는다, POST /v1/missions/plans
+        의 동일 게이트와 같은 관용구).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [aoi, siteFrame]
+              properties:
+                aoi:
+                  type: object
+                  additionalProperties: false
+                  required: [vertices]
+                  description: >-
+                    닫힌 단순 폴리곤(마지막→첫 꼭짓점 변이 암묵적으로 닫는다,
+                    3~256 꼭짓점).
+                  properties:
+                    vertices:
+                      type: array
+                      minItems: 3
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [latDeg, lonDeg]
+                        properties:
+                          latDeg: { type: number, minimum: -90, maximum: 90 }
+                          lonDeg: { type: number, minimum: -180, maximum: 180 }
+                siteFrame:
+                  type: object
+                  additionalProperties: false
+                  required: [crs, verticalDatum, unit, transformVersion]
+                  properties:
+                    crs: { type: string }
+                    verticalDatum: { type: string }
+                    unit: { const: meter }
+                    transformVersion: { type: string }
+                  description: 등록된 site 의 것과 정확 일치해야 한다(SITE_FRAME_MISMATCH).
+      responses:
+        '200':
+          description: AOI_SET — verdict + 갱신된 SiteView
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteMutationResponse' }
+        '404': { description: UNKNOWN_SITE }
+        '409': { description: AOI_LOCKED(UNMAPPED 이후 상태에서 시도) }
+        '422':
+          description: >-
+            SITE_FRAME_MISMATCH / aoi 구조 위반(자기교차·중복 꼭짓점·범위 밖
+            좌표 등 — AreaOfInterest 파싱 실패, FastAPI 표준 422)
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/equipment-states:
+    post:
+      summary: Ingest equipment/worker kinematic states (Phase 3, PRD RISK-002)
+      description: >-
+        EDGE_SYNC_INGEST 권한 + EDGE_DEVICE 신원 필요 — **장비만** 올린다. 사람이
+        손으로 위치·속도를 주장할 수 없다(coverage-report 와 동일 원칙).
+
+        서버는 siteFrame 을 현장 등록 좌표계와 대조한다(SITE_FRAME_MISMATCH). 위치·
+        속도는 좌표계 없이는 숫자일 뿐이고, cpa_ttc 의 site_frame 검사는 **두 상태
+        끼리**만 보므로 둘 다 같은 잘못된 좌표계면 통과한다 — 그 구멍을 여기서 막는다.
+        배치는 전부-또는-전무다. 상태는 덮어쓰지 않고 전부 append 한다("언제 어디
+        있었다고 봤는가"가 사고 조사의 입력이다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [states]
+              properties:
+                states:
+                  type: array
+                  minItems: 1
+                  items: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentStateBatchResponse' }
+        '404': { description: UNKNOWN_SITE — 등록된 적 없는 현장 }
+        '422': { description: SITE_FRAME_MISMATCH — 현장 등록 좌표계와 다름 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
+    get:
+      summary: List the latest kinematic state per entity at a site
+      description: >-
+        SITES_READ 권한 필요. 개체별 **최신** 상태 스냅샷이다(이력이 아니다).
+        positionUncertaintyM 은 공분산 trace 의 제곱근(RMS 반경 근사) — 화면이
+        "이 추정을 얼마나 믿을 수 있나"를 표시할 수 있게 서버가 함께 낸다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 개체별 최신 상태
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentStateListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/risk-assessment:
+    get:
+      summary: Compute CPA/TTC and the reobservation recommendation for a named pair
+      description: >-
+        SITES_READ 권한 필요. **쌍과 정책 파라미터를 전부 호출자가 지목한다** —
+        "어느 쌍이 평가 대상인가"는 이 저장소 어디에도 정해져 있지 않은 정책
+        문제라 서버가 지어내지 않는다(전조합을 돌리면 N² 개의 근거 없는 위험장이
+        생기고 그중 무엇이 의미 있는지는 여전히 아무도 모른다). 서버가 하는 것은
+        지어낼 수 없는 계산(CPA 거리·TTC·재관찰 권고)뿐이다.
+
+        `timeToCollisionS: null` 은 **"위험 없음"이 아니라 "이 지평선 안에서는
+        확인되지 않음"**이다 — 화면이 둘을 같게 표시하면 안 된다.
+
+        두 상태의 observedAt 시간차가 maxObservationGapS 를 넘으면 422 다 — 10분
+        전 굴착기 상태와 방금 작업자 상태로 "TTC 2.1초"를 내지 않는다(INV-023
+        계열). 200 으로 빈 값을 돌려주면 화면이 안전하다고 읽는다.
+
+        `reobservationRecommended` 는 권고다 — 어떤 Viewpoint 로 재관측할지는
+        Edge/Manifold 의 Next Best View 소관이고(PRD §14.2) 이 응답은 비행 좌표를
+        만들지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+        - { in: query, name: equipmentEntityId, required: true, schema: { type: string } }
+        - { in: query, name: subjectEntityId, required: true, schema: { type: string } }
+        - in: query
+          name: horizonS
+          required: true
+          description: 외삽 지평선(초). 등속 가정의 오차를 억제하는 것은 호출자 몫이다.
+          schema: { type: number, exclusiveMinimum: 0 }
+        - in: query
+          name: combinedRadiusM
+          required: true
+          description: 두 개체의 합산 안전 반경(m) — 이 거리 이내를 충돌로 본다.
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: maxObservationGapS
+          required: true
+          description: 두 상태의 observedAt 이 이만큼까지 벌어져도 동시각으로 취급한다.
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: positionUncertaintyThresholdM
+          required: true
+          description: 위치 불확실성이 이를 **초과**하면 재관찰 권고(RISK-005).
+          schema: { type: number, minimum: 0 }
+      responses:
+        '200':
+          description: CPA/TTC + 재관찰 권고
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskAssessmentView' }
+        '404': { description: 두 개체 중 하나라도 이 현장에 상태가 보고된 적 없음 }
+        '422':
+          description: >-
+            observedAt 시간차가 maxObservationGapS 초과 / 두 상태의 siteFrame 불일치
+            — **계산 불가**이지 "위험 없음"이 아니다
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/equipment-support:
+    get:
+      summary: List equipment class support levels (MASTER_PRD §23.3/§26.7)
+      description: >-
+        SITES_READ 권한 필요. **`productionSupported` 가 true 인 것만 상용 지원으로
+        표시해야 한다** — 나머지는 전부 "검증 중"이다(REQ-MODEL-101,
+        00_READ_FIRST 구현금지 "미검증 장비를 상용지원으로 표시").
+
+        이 플래그는 서버가 `is_production_supported()` 로 계산해서 낸다 — 화면이
+        `state` 문자열을 보고 스스로 판단하면 단계가 추가되는 날 조용히 틀린다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 등록된 장비 클래스 전체
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+    post:
+      summary: Register an equipment class at DATASET_AVAILABLE
+      description: >-
+        EQUIPMENT_SUPPORT_APPROVE 권한 필요(ADMIN 전용). 등록은 **최하위 단계로만**
+        가능하다 — 임의 단계로 바로 등록할 수 있으면 "승급은 한 단계씩"이 등록 한
+        번으로 우회된다(PRODUCTION_SUPPORTED 신규 등록).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [classId]
+              properties:
+                classId: { type: string, minLength: 1 }
+                evidenceRefs: { type: array, items: { type: string } }
+                modelVersion: { type: [string, 'null'] }
+                riskPackVersion: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: RECORDED — DATASET_AVAILABLE 로 등록됨
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportMutationResponse' }
+        '409': { description: ALREADY_REGISTERED — 단계 변경은 PATCH 다 }
+        '422':
+          description: >-
+            요청 본문 검증 실패(FastAPI 표준 `{detail: [...]}` — verdict 없음).
+            `state` 를 실어 보내는 것도 여기 걸린다: 등록은 최하위 단계 전용이라
+            요청에 단계를 지정할 자리가 없다(additionalProperties: false).
+        '503': { description: STORE_UNAVAILABLE — 봉인됨 }
+        '401': { description: 인증 실패 }
+        '403': { description: EQUIPMENT_SUPPORT_APPROVE 권한 없음 }
+  /v1/equipment-support/{class_id}:
+    get:
+      summary: Read one equipment class support level
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: class_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 그 클래스의 현재 지원단계
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportView' }
+        '404': { description: 등록된 적 없는 장비 클래스 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+    patch:
+      summary: Promote or demote an equipment class support level (INV-041 강제 지점)
+      description: >-
+        EQUIPMENT_SUPPORT_APPROVE 권한 필요(ADMIN 전용). 전이 판정은
+        `ksi_domain.capability.assert_support_level_transition` 하나가 소유한다 —
+        이 엔드포인트는 그 함수를 부를 뿐 자체 판정표를 갖지 않는다.
+
+        **승급은 한 단계씩, evidenceRefs 필수**(빈 배열·공백 문자열도 증거 없음이다).
+        단계를 건너뛴 승급은 422 다.
+
+        **강등은 증거 없이도 허용된다** — 현장 재검증 실패에 즉시 대응해야 하는
+        방향에 마찰을 넣지 않는다. 다만 그 전이도 원장에 남고, 강등된 상태는 승급
+        때의 evidenceRefs 를 물려받지 않는다(예전 증거를 달고 있으면 "이 단계는
+        검증됐다"는 잘못된 신호가 된다).
+
+        **부분 갱신 의미론**: `modelVersion`/`riskPackVersion` 을 요청에 싣지 않으면
+        승급·재선언에서는 이전 값을 **이어받고**, 강등에서는 **비운다**. 강등에서
+        비우는 이유는 evidenceRefs 와 같다 — "이 모델로 그 단계를 세웠다"는 사실은
+        내려온 뒤에는 더 이상 이 레코드의 근거가 아니고, 모델 회귀로 강등하는
+        경우가 특히 그렇다. 값을 명시적으로 null 로 지우는 경로는 없다(생략과
+        구분되지 않는다) — 지우려면 강등하거나 새 값을 준다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: class_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state:
+                  description: contracts/schemas/equipment-support-state.v1.json 의 state enum.
+                  enum:
+                    [DATASET_AVAILABLE, BASELINE_DETECTION, FIELD_VALIDATED,
+                     GEO_VALIDATED, RISK_VALIDATED, PRODUCTION_SUPPORTED]
+                evidenceRefs: { type: array, items: { type: string } }
+                modelVersion: { type: [string, 'null'] }
+                riskPackVersion: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: RECORDED — 전이 완료
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentSupportMutationResponse' }
+        '404': { description: UNKNOWN_CLASS — 등록된 적 없는 장비 클래스 }
+        '422':
+          description: >-
+            두 종류가 같은 코드로 온다 — 본문으로 구분한다.
+            ① 게이트 거부: `{verdict: "ILLEGAL_TRANSITION", detail, record: null}`
+            (단계 스킵 승급 / 증거 없는 승급 / **증거 없는 동일 단계 재선언**).
+            동일 단계도 증거를 요구하는 이유: 그건 강등이 아니라 "이 단계가 여전히
+            유효하다"는 주장이고, 증거 없이 통과시키면 단계 표시만 남고 근거가 지워진다.
+            ② 요청 본문 검증 실패: FastAPI 표준 `{detail: [...]}` (verdict 없음).
+            증거 판정은 공백뿐 아니라 U+200B·U+FEFF 같은 보이지 않는 format 문자도
+            "내용 없음"으로 본다.
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: EQUIPMENT_SUPPORT_APPROVE 권한 없음 }
   /v1/edge-sync/event-bundles:
     post:
       summary: Ingest one idempotent EventBundle journal entry
@@ -570,7 +1011,9 @@ paths:
         '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
     get:
       summary: Read the latest CoverageReport for a mission
-      description: MISSIONS_READ 권한 필요. 최신 보고 + 접수 건수(덮어쓰지 않으므로).
+      description: >-
+        MISSIONS_READ 권한 필요. 최신 보고 + 접수 건수(덮어쓰지 않으므로) + 제출한
+        Principal id(reportedBy, 보통 장비 id — 독립 재검토 B-3).
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
@@ -584,6 +1027,948 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CoverageReportView' }
         '404': { description: 이 임무의 보고가 아직 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/coverage-report/rejections:
+    get:
+      summary: List coverage reports the server refused (INV-010 강제의 증거)
+      description: >-
+        MISSIONS_READ 권한 필요. 거부 판정은 이전부터 durable 기록되고 있었지만
+        **어떤 GET 으로도 조회할 수 없었다** — 판정이 제출 장비의 응답 본문으로만
+        가고 소멸했다. 그러면 "서버가 근거 없는 완료 주장을 막았다"는 사실이
+        운영자·감사자에게 도달하지 않고, 장비가 반복적으로 허위 완료를 주장해도
+        사람은 알 수 없다. INV-010 의 강제는 성립하지만 그 강제가 작동했다는 증거가
+        남지 않는 상태였다(risk coverage-report-rejection-not-auditable).
+
+        거부된 보고의 **본문은 싣지 않는다** — 거부된 주장의 숫자를 조회 표면에
+        그대로 실으면 그게 화면에서 사실처럼 읽힐 자리가 생긴다. 원문이 필요하면
+        journal 을 본다.
+
+        거부 0건은 404 가 아니라 빈 목록이다 — "이 임무에는 거부가 없었다"는 그
+        자체로 답이고, 404 로 주면 "임무가 없다"와 구분되지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 거부된 보고 목록(수신 순서)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageRejectionListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/defect-candidates:
+    post:
+      summary: Submit surface defect candidates for a mission (Phase 4, MODEL-P4-001)
+      description: >-
+        PROCESSING_WORK 권한 필요 — **사람은 이 권한을 가질 수 없다**(어느 Role 에도
+        매핑되지 않는다). 결함 후보는 실제로 추론을 돌린 워커만 주장할 수 있고,
+        사람의 판단은 결함 후보가 아니라 이벤트 트리아지로 표현된다.
+
+        **서버는 후보를 그대로 받아 적지 않는다.** 결함 후보의 값은 전부 유효 범위
+        안에 있을 수 있어서(confidence 0~1, 좌표 양수) 스키마 검증만으로는 잘못된
+        참조가 통과한다 — 서버가 추가로 검사하는 것은 ① sourceMediaId 가 이 임무에
+        등록된 사진인가(UNKNOWN_SOURCE_MEDIA) ② imageSize 가 등록된 사진의 실제
+        화소수와 같은가(IMAGE_SIZE_MISMATCH — 축소본 좌표를 원본 기준으로 신고하면
+        폴리곤이 통째로 다른 자리를 가리킨다) ③ 폴리곤 정점이 이미지 안인가
+        (GEOMETRY_OUT_OF_BOUNDS)다.
+
+        **배치는 전부-또는-전무다.** 일부만 기록되면 "이 임무의 결함이 몇 건인가"에
+        원장이 답할 수 없고, 그 부분 누락은 조회 시점에 정상으로 보인다. 같은
+        defectCandidateId 로 **동일 내용** 재전송은 멱등 성공(recordedCount=0)이고,
+        **다른 내용**이면 409 다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [candidates]
+              properties:
+                candidates:
+                  type: array
+                  minItems: 1
+                  items: { $ref: ../schemas/defect-candidate.v1.json }
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료(멱등 재전송이면 recordedCount=0)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DefectCandidateBatchResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '409': { description: DUPLICATE_CANDIDATE_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: >-
+            EMPTY_BATCH / UNKNOWN_SOURCE_MEDIA / IMAGE_SIZE_MISMATCH /
+            GEOMETRY_OUT_OF_BOUNDS
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(운영자 Role 포함) }
+    get:
+      summary: List defect candidates recorded for a mission
+      description: >-
+        MISSIONS_READ 권한 필요. 후보가 0건인 것은 404 가 아니라 빈 목록이다 —
+        "아직 안 돌았다"와 "돌렸는데 결함이 없다"를 이 엔드포인트는 구분하지 못하고,
+        구분하는 척하면 안 된다(그 구분은 처리 작업 상태가 답한다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: sourceMediaId
+          required: false
+          description: 사진 1장으로 좁혀 본다(화면이 사진별 폴리곤 오버레이를 그릴 때).
+          schema: { type: string }
+      responses:
+        '200':
+          description: 그 임무의 결함 후보 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DefectCandidateListView' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/change-detection:
+    post:
+      summary: Submit a point-cloud change detection result (PRD §15.4)
+      description: >-
+        PROCESSING_WORK 권한 필요 — 사람은 이 권한을 가질 수 없다(결함 후보와 동일
+        원칙). 점별 거리 배열은 싣지 않는다 — 이 계약은 요약(개수·비율·최댓값)만
+        나르고, 원본이 필요한 소비자는 baseline/current 산출물을 직접 읽는다.
+
+        서버가 검증하는 것: ① baseline/current 가 실제로 등록된 point_cloud
+        산출물인가(artifactId 는 작업 단위로만 고유하므로 jobId 와 짝으로 해석한다)
+        ② 둘이 같은 산출물이 아닌가(자기 자신과의 C2C 는 전 점 거리 0 이라 '변화
+        없음'으로 정직해 보이지만 아무것도 비교하지 않은 것이다). 카운트와 비율의
+        자기모순(후보 0건인데 비율 0.9 같은 것)은 계약 모델이 파싱 시점에 거부한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/change-detection-result.v1.json
+      responses:
+        '201':
+          description: RECORDED — durable 기록 완료(동일 내용 재전송도 RECORDED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeDetectionResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '409': { description: DUPLICATE_RESULT_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: UNKNOWN_ARTIFACT / ARTIFACT_KIND_MISMATCH / SELF_COMPARISON
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(운영자 Role 포함) }
+    get:
+      summary: Read the latest change detection result + revisit recommendation
+      description: >-
+        MISSIONS_READ 권한 필요. `revisitRecommended` 가 PRD §15.2 ⑤ "변화 후보
+        영역은 추가 시점 수집"의 권고 신호다 — **자동 재비행을 트리거하지 않는다.**
+        운영자가 이 신호를 보고 원본 site AOI 로 SPATIAL_REFRESH 임무를
+        POST /v1/missions/plans 에 발급한다(Coverage Recovery 의
+        recoveryRecommended 와 같은 관계).
+
+        임계값은 요청이 정한다(revisitRatioThreshold) — "변화 후보 비율이 얼마면
+        재방문이 필요한가"는 사이트·자산 종류에 따라 달라질 정책 값이라 서버가
+        지어내지 않는다. 응답은 **실제로 쓴 임계값을 그대로 되돌려준다**: 권고
+        불리언만 주면 화면이 "무슨 기준으로 켜졌나"를 표시할 수 없고, 그러면
+        운영자가 그 신호를 신뢰할 근거가 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: revisitRatioThreshold
+          required: false
+          description: 이 비율을 **초과**하면 재방문 권고(엄격 부등호). 생략 시 화면 초기값.
+          schema: { type: number, minimum: 0, maximum: 1 }
+      responses:
+        '200':
+          description: 최신 결과 + 재방문 권고
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeDetectionView' }
+        '404': { description: 이 임무의 변화 탐지 결과가 아직 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/source-media:
+    post:
+      summary: Batch-issue presigned PUT URLs for raw mapping photos (3D 파이프라인 입구)
+      description: >-
+        MISSIONS_ISSUE 권한 필요. 기존 evidence 업로드(사건 종속)와 달리 **Mission**
+        에 종속된 별도 입구다 — 매핑 원본 수천 장에는 매달 사건이 없다. 파일마다
+        신고값(sha256·bytes·width·height·contentType)을 받지만 이 시점에는
+        검증하지 않는다(전 바이트를 읽는 B3 워커가 재계산해 대조) — 주장일 뿐이다.
+        객체 키는 서버가 만든다(`sites/{siteId}/missions/{missionId}/source/{mediaId}`).
+        `mediaId` 는 호출자가 정한다(evidence.py 의 artifactId 관습과 동일) — 같은
+        mediaId·같은 신고값 재전송은 멱등 재발급(새 URL), 다른 신고값이면
+        CLAIM_CONFLICT 로 거부한다. 요청 수준 판정(UNKNOWN_MISSION/BUNDLE_SEALED/
+        STORE_UNAVAILABLE)은 배치 전체에 적용되고, 통과하면 파일마다 독립 판정한다
+        — 한 파일의 문제가 나머지 파일의 등록을 막지 않는다. 한 요청 상한은 200장.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [mediaId, sha256, bytes, width, height, contentType]
+                    properties:
+                      mediaId: { type: string }
+                      sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                      bytes: { type: integer, minimum: 1 }
+                      width: { type: integer, minimum: 1 }
+                      height: { type: integer, minimum: 1 }
+                      contentType: { type: string }
+      responses:
+        '201':
+          description: PROCESSED — 항목별 결과는 본문 참조(개별 실패가 섞여도 요청 자체는 201)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaBatchResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '409': { description: BUNDLE_SEALED — 이미 봉인된 번들 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+    get:
+      summary: Read a mission's source-media bundle status (count · digest · seal state)
+      description: >-
+        MISSIONS_READ 권한 필요. `verifiedAt` 은 이 단계에서 항상 null 이다 — Core
+        는 신고값을 검증하지 않는다("검증된 척"하는 필드명을 쓰지 않는다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 번들 상태
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaBundleView' }
+        '404': { description: 이 임무에 등록된 미디어가 아직 없다(일반 문구) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/source-media/seal:
+    post:
+      summary: Seal the source-media bundle and fix sourceBundleDigest (INV-013 재현성 앵커)
+      description: >-
+        MISSIONS_ISSUE 권한 필요. digest 는 Core 가 정규 정렬된 매니페스트에서
+        직접 계산한다(요청이 자기 증명서를 쓰지 못한다) — 업로드 순서와 무관하게
+        같은 파일 집합이면 같은 digest 가 나온다. 봉인 후 추가 업로드는
+        BUNDLE_SEALED 로 거부된다. 이미 봉인된 번들의 재호출은 에러가 아니라
+        ALREADY_SEALED(기존 digest 재반환) — 재시도가 안전하다. 빈 번들(등록 0건)은
+        봉인할 수 없다(EMPTY_BUNDLE).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: SEALED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaSealResponse' }
+        '200':
+          description: ALREADY_SEALED — 기존 digest 재반환
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaSealResponse' }
+        '404': { description: UNKNOWN_MISSION — 발급된 적 없는 임무 }
+        '422': { description: EMPTY_BUNDLE — 등록된 미디어가 0건이다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+  /v1/missions/{mission_id}/source-media/{media_id}/view:
+    get:
+      summary: Short-lived view URL for one uploaded photo
+      description: >-
+        MISSIONS_READ 권한 필요. 업로드용 presigned PUT 과 달리 **운영자가 보는**
+        경로다 — 결함 후보 폴리곤을 원본 사진 위에 겹치기 위해 쓴다.
+
+        화소수(width/height)를 함께 내는 이유: 결함 후보의 폴리곤은 원본 픽셀
+        좌표라, 화면이 축소해 그릴 때 배율을 계산하려면 원본 크기를 알아야 한다.
+        이미지 로드 후 읽어 쓰면 로드 전에 레이아웃을 잡을 수 없고, 무엇보다
+        등록된 화소수와 실제 이미지가 다를 때 그 불일치가 조용히 묻힌다.
+
+        객체가 아직 업로드되지 않았어도 URL 은 발급된다(등록과 업로드는 별개
+        단계다) — 그 URL 을 열면 스토리지가 404 를 준다. Core 는 오브젝트 존재를
+        확인하지 않는다(스토리지 포트에 HEAD 동작이 없다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: media_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 열람 URL + 원장이 아는 화소수·digest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaViewResponse' }
+        '404': { description: 그 임무의 번들이 없거나 등록된 적 없는 mediaId }
+        '503': { description: SOURCE_MEDIA_STORAGE_UNAVAILABLE — 스토리지 장애("사진 없음"이 아니다) }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/source-media/verify:
+    post:
+      summary: Report measured bytes; Core compares them against the uploader's claims
+      description: >-
+        **PROCESSING_WORK 권한 필요**(PROCESSING_WORKER 전용). 이 권한이 여기 붙는
+        것이 이 표면의 핵심이다 — 사진을 올린 주체(MISSIONS_ISSUE)가 자기 신고값을
+        스스로 검증할 수 없다.
+
+
+        워커가 보내는 것은 **측정값뿐이고 판정이 아니다**: 요청 스키마에
+        "검증됨" 같은 필드가 없다. 일치 여부는 Core 가 매기고, journal 에 남는
+        사실도 측정값이다 — 재생 시 Core 가 그 측정값으로 **다시 대조**하므로
+        원장의 verdict 만 VERIFIED 로 고쳐도 기동에서 걸린다.
+
+
+        **워커는 정답을 모른다.** GET /v1/processing-jobs/{jobId}/input 응답에
+        업로더 신고값이 실리지 않고 워커에게 MISSIONS_READ 도 없어서, VERIFIED 를
+        받으려면 실제로 바이트를 읽어 sha256 을 계산하는 수밖에 없다. (업로더와
+        워커가 밖에서 공모하면 여전히 통과한다 — Core 는 바이트를 중계하지
+        않는다, ADR-KSI-010 §1.)
+
+
+        측정 집합은 등록 집합과 **정확히** 같아야 한다 — 빠진 것도 남는 것도
+        중복도 COVERAGE_INCOMPLETE 다. 일부만 읽고 "검증했다"가 되면 verifiedAt
+        이 뜻하는 바가 사라진다. 봉인 전에는 대조 대상 집합이 확정되지 않아
+        409 BUNDLE_NOT_SEALED 다.
+
+
+        불일치(MISMATCH)는 원장에 영구 기록되지만 번들을 잠그지는 않는다 —
+        워커 버그로 생긴 오탐에 복구 경로가 없으면 정상 번들이 영구히 죽는다.
+        재검증은 열려 있고 시도는 전부 남는다(lastMismatchAt).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [measurements]
+              properties:
+                measurements:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [mediaId, sha256, bytes, width, height]
+                    properties:
+                      mediaId: { type: string, minLength: 1 }
+                      sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                      bytes: { type: integer, minimum: 1 }
+                      width: { type: integer, minimum: 1 }
+                      height: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: VERIFIED — 전부 일치, verifiedAt 이 채워진다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '200':
+          description: ALREADY_VERIFIED — 재호출은 무기록 멱등
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '409': { description: BUNDLE_NOT_SEALED — 봉인 전에는 대조 집합이 미확정 }
+        '422':
+          description: >-
+            MISMATCH(신고값과 실측이 어긋남) · COVERAGE_INCOMPLETE(측정 집합 불일치).
+            422 인 이유: 요청 형식은 옳고 **내용이 사실과 다르다** — 같은 값으로
+            재시도해도 결과가 같다.
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 역할은 이 권한을 갖지 않는다) }
+  /v1/missions/{mission_id}/processing-jobs:
+    post:
+      summary: Issue a 3D reconstruction processing job on the sealed source bundle
+      description: >-
+        MISSIONS_ISSUE 권한 필요. 요청은 **무엇으로 어디서** 돌릴지만 정한다 —
+        `input`(장수·총 화소·sourceBundleDigest)·`dataResidency`·`billing`·
+        `status`·`jobId` 는 요청 스키마에 자리가 없고, 실어 보내면 422 다.
+        입력은 봉인된 번들에서 Core 가 집계하고(봉인 전이면 BUNDLE_NOT_SEALED),
+        반출 허용 여부는 그 임무의 **현장**이 정하며(POST /v1/sites 의
+        dataResidency), 과금은 종료 보고 시점의 몫이다. 발급 시점 billing 은
+        creditsCharged=0 · rateBasis=`unmetered-at-issue` — 0 이 "무료"가 아니라
+        "아직 재지 않았다"를 뜻한다. `input.totalMegapixels` 는 업로더 **신고**
+        해상도의 합이라 견적이고, 응답의 `inputVerified` 가 이 단계에서 항상
+        false 인 이유다. 임무당 활성(QUEUED·RUNNING) 작업은 1건 — 같은 사양
+        재요청은 기존 작업을 그대로 돌려주고(ALREADY_ISSUED, 200), 다른 사양이면
+        409 다. 종료된 뒤에는 재처리 작업을 새로 만들 수 있다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, engineVersion, engineDigest, executionLocus, licenseBasis]
+              properties:
+                provider:
+                  description: ADR-KSI-012 D1 — 기본값은 odm(자체 호스팅 오픈소스).
+                  type: string
+                  enum:
+                    [odm, pix4d_engine, dji_flighthub, metashape_spl, customer_workstation]
+                engineVersion: { type: string, minLength: 1 }
+                engineDigest: { type: string, minLength: 1 }
+                executionLocus:
+                  description: >-
+                    vendor_cloud 는 현장이 반출을 허용한 경우에만 발급된다(INV-050).
+                  type: string
+                  enum: [site_onprem, ksi_server_gpu, customer_workstation, vendor_cloud]
+                licenseBasis:
+                  type: object
+                  additionalProperties: false
+                  required: [licenseId, tier, attributionRequired]
+                  properties:
+                    licenseId: { type: string, minLength: 1 }
+                    tier: { type: string, minLength: 1 }
+                    attributionRequired: { type: boolean }
+                processingParams: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: ISSUED — verdict + 발급된 작업(status=QUEUED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '200':
+          description: ALREADY_ISSUED — 같은 사양의 활성 작업을 그대로 반환(멱등 재요청)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_MISSION — 이 임무의 원본 미디어 번들이 없다 }
+        '409': { description: ACTIVE_JOB_EXISTS — 다른 사양의 작업이 진행 중이다 }
+        '422':
+          description: >-
+            BUNDLE_NOT_SEALED(봉인 전 — 장수·digest 미확정) /
+            EGRESS_NOT_ALLOWED(INV-050 — 현장이 반출을 허용하지 않았다, 미선언 포함)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+    get:
+      summary: List processing jobs for a mission (issuedAt·jobId 결정적 정렬)
+      description: MISSIONS_READ 권한 필요. 재처리 이력을 포함한 전체 목록이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 처리 작업 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-jobs/{job_id}:
+    get:
+      summary: Read one processing job (계약 payload 포함)
+      description: >-
+        MISSIONS_READ 권한 필요. `contract` 는 어댑터로 나가는 payload 그대로다
+        (processing-job.v1.json) — 화면이 계약 필드를 다시 조립하지 않게 한 벌로
+        싣는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 처리 작업 1건
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobView' }
+        '404': { description: 해당 처리 작업을 찾을 수 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-jobs/{job_id}/transitions:
+    post:
+      summary: Transition a processing job's status (QUEUED→RUNNING→SUCCEEDED|FAILED)
+      description: >-
+        **요구 권한이 대상 상태마다 다르다.** RUNNING·SUCCEEDED·FAILED 는 실제로
+        엔진을 돌린 주체만 아는 사실이라 PROCESSING_WORK(PROCESSING_WORKER 전용,
+        어느 사람 Role 에도 매핑되지 않는다)를 요구한다 — 사람은 성공을 손으로
+        찍을 수 없다. CANCELLED 는 사람의 결정이라 MISSIONS_ISSUE 다.
+        전이표는 QUEUED→RUNNING→SUCCEEDED|FAILED 와
+        QUEUED|RUNNING→CANCELLED 뿐이다 — 종료 상태(SUCCEEDED·FAILED·CANCELLED)
+        에서 나가는 전이는 없다(끝난 작업의 결론을 고쳐 쓰지 않는다). QUEUED 에서
+        RUNNING 을 건너뛴 성공 주장도 거부된다.
+        SUCCEEDED 에는 두 번째 게이트가 더 있다(INV-051): 그 작업에
+        `lineage.authority=source` 산출물이 최소 1건 등록돼 있어야 하고, 없으면
+        409 UNBACKED_SUCCESS 다. `actor` 는 body 가 아니라 인증 Principal 에서만
+        취득한다. lease·heartbeat 는 아직 없다 — RUNNING 전이가 한 번만
+        성공한다는 것이 유일한 상호배제다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus]
+              properties:
+                targetStatus:
+                  type: string
+                  enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+                detail:
+                  description: 왜 그렇게 끝났는지. 종료 전이에 남긴다.
+                  type: [string, 'null']
+      responses:
+        '200':
+          description: TRANSITIONED — verdict + 전이된 작업
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409':
+          description: >-
+            ILLEGAL_TRANSITION(전이표에 없는 전이) ·
+            UNBACKED_SUCCESS(원본 산출물 없이 SUCCEEDED 주장 — INV-051) ·
+            LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER(실행 상태 보고는 lease 를
+            쥔 워커만 — CANCELLED 는 예외다).
+            422 가 아니라 409 인 이유: 요청 자체는 올바르고 지금 원장 상태가 그
+            주장을 받쳐주지 못하는 것이다(산출물을 등록하면 같은 요청이 통과한다).
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: 대상 상태가 요구하는 권한 없음(위 설명의 권한표) }
+  /v1/processing-jobs/{job_id}/lease:
+    post:
+      summary: Claim (or renew) exclusive hold on a processing job
+      description: >-
+        PROCESSING_WORK 권한 필요(워커 전용 — 사람은 작업을 잡아 워커를 굶길 수
+        없다). **워커 행위의 관문이다**: GET .../input · RUNNING/SUCCEEDED/FAILED
+        보고 · 산출물 등록이 전부 이 lease 를 요구하고, 없으면 409 LEASE_REQUIRED,
+        남이 쥐고 있으면 409 LEASE_HELD_BY_ANOTHER 다.
+
+
+        403 이 아니라 409 인 이유: 권한은 있고 **지금 이 작업을 쥔 사람이 아닐**
+        뿐이다. 403 으로 내면 워커가 자기 자격증명을 의심하게 된다.
+
+
+        **만료는 저장된 플래그가 아니라 expiresAt 대 현재시각 비교다.** `released`
+        같은 불리언을 두면 누군가 갱신해줘야 참이 되고, 빠뜨리면 죽은 워커가
+        영원히 살아 있는 것으로 보인다. 여기서는 만료된 lease 가 곧 없는 lease 라,
+        죽은 워커의 작업이 별도 반납 명령 없이 회수된다 — 죽은 워커는 정의상
+        반납하지 않으므로 명시적 반납에만 의존하면 그 작업이 영구히 묶인다.
+
+
+        같은 워커의 재호출은 갱신(heartbeat)이고 200 LEASE_RENEWED 다. 만료를
+        밀되 최초 취득 시각(grantedAt)은 유지한다 — 얼마나 오래 쥐고 있었는지가
+        남아야 "이 워커가 계속 못 끝내고 있다"를 볼 수 있다. 만료 **후** 같은
+        워커가 다시 잡으면 그건 갱신이 아니라 새 취득(201 LEASED)이다.
+
+
+        기본 수명은 15분이다. 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라
+        (ODM 재구성은 몇 시간이다) **"워커가 죽었다고 판정하기까지 기다리는
+        시간"**이다 — 살아 있는 워커는 갱신으로 계속 연장한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: LEASED — 새로 잡았다(비어 있었거나 이전 lease 가 만료됐다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '200':
+          description: LEASE_RENEWED — 같은 워커의 갱신(heartbeat)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409':
+          description: >-
+            LEASE_HELD_BY_ANOTHER(다른 워커가 유효한 lease 보유) ·
+            JOB_NOT_ACTIVE(끝난 작업은 잡을 수 없다)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/input:
+    get:
+      summary: Fetch a job's spec and presigned source downloads (worker's only read path)
+      description: >-
+        PROCESSING_WORK 권한 필요. **워커의 유일한 읽기 경로다** — PROCESSING_WORK
+        는 MISSIONS_READ 를 포함하지 않으므로 워커는 임무·현장·다른 작업 목록을
+        볼 수 없고, 여기서 주는 것도 그 작업이 가리키는 번들 하나뿐이다.
+
+
+        **업로더의 신고값(sha256·해상도)이 응답에 없다.** 이것이 실측 대조를
+        형식이 아니게 만드는 지점이다 — 워커가 정답을 모르므로, VERIFIED 를
+        받으려면 바이트를 실제로 읽는 수밖에 없다(POST .../source-media/verify).
+
+
+        활성(QUEUED·RUNNING) 작업만 내준다 — 끝난 작업의 원본 URL 을 계속
+        발급하면 작업 종료가 접근 종료를 뜻하지 않게 된다(409 JOB_NOT_ACTIVE).
+        presign 이 하나라도 실패하면 부분 응답 대신 503 이다: 부분집합만 받은
+        워커는 반드시 COVERAGE_INCOMPLETE 로 돌아온다.
+
+
+        **아직 큐가 아니다** — "다음 작업을 달라"는 표면이 없어 워커는 jobId 를
+        밖에서 받아야 한다. jobId 는 `{missionId}-pj{n}` 이라 추측 가능하므로,
+        워커 토큰을 쥔 쪽은 다른 작업의 입력도 열람할 수 있다. lease 설계 시
+        함께 좁힌다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: INPUT_READY — 사양 + 원본 다운로드 URL(짧은 수명)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobInputResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409':
+          description: >-
+            JOB_NOT_ACTIVE(끝난 작업의 원본은 다시 내주지 않는다) ·
+            LEASE_REQUIRED(이 작업을 쥐고 있지 않다) ·
+            LEASE_HELD_BY_ANOTHER(다른 워커가 쥐고 있다)
+        '503': { description: STORAGE_UNAVAILABLE · STORE_UNAVAILABLE, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/artifacts:
+    post:
+      summary: Register a reconstruction artifact on a running job (INV-051)
+      description: >-
+        PROCESSING_WORK 권한 필요(PROCESSING_WORKER 전용) — 사람은 산출물을 만들어
+        넣을 수 없다. 실행 중(RUNNING)인 작업에만 붙는다: 시작 전에는 산출물이
+        만들어질 수 없고, 끝난 뒤에 붙이면 이미 내려진 결론에 근거를 소급하는
+        것이 된다(409 JOB_NOT_RUNNING).
+
+
+        **계보 앵커는 요청이 정하지 않는다.** `lineage.sourceDigest` 와 `jobId` 는
+        요청 스키마에 자리가 없고 Core 가 그 작업의 `input.sourceBundleDigest`
+        (봉인된 번들의 digest)와 경로 jobId 로 채운다 — 워커가 실어 보낼 수 있으면
+        산출물이 자기 출처를 스스로 적는 것이 된다. 그래서 계약의 중첩 객체
+        `lineage` 대신 `authority`·`derivedFrom` 두 필드로 펼쳐서 받는다.
+
+
+        `derivedFrom` 은 **같은 작업에 이미 등록된** artifactId 만 가리킬 수 있다
+        (422 UNKNOWN_PARENT_ARTIFACT) — 계약 스키마는 "비어 있지 않다"만 강제하므로
+        실재하지 않는 부모를 적은 파생물은 계약만으로는 통과한다. 작업 간 계보는
+        아직 모델링하지 않았다.
+
+
+        `crs`·`gsd`·`accuracy` 는 nullable **필수**다 — 생략과 명시적 null 을
+        구분한다("측정하지 않았다"와 "필드를 잊었다"는 다른 사실이고, accuracy 가
+        null 인 비율이 ADR-KSI-012 D3 전환 트리거의 계측점이다). kind 별 필수는
+        계약이 강제한다(공간 산출물은 crs, 래스터 계열은 gsd).
+
+
+        Core 는 산출물 **바이트를 읽지 않는다** — `digest`·`format` 은 워커의
+        보고값이다. 이 표면이 강제하는 것은 계보의 무결성이지 내용의 진위가 아니다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifactId, kind, authority, digest, format]
+              properties:
+                artifactId:
+                  description: 경로-안전 식별자. 같은 작업 안에서 유일해야 한다.
+                  type: string
+                  minLength: 1
+                kind:
+                  type: string
+                  enum: [point_cloud, camera_poses, ortho, dsm, dtm, mesh, tiles_3d, report]
+                authority:
+                  description: >-
+                    source = 원본 capture 를 직접 처리한 결과. derived = 원본에서
+                    재생성한 파생 서빙 계층(derivedFrom 최소 1건 필요).
+                  type: string
+                  enum: [source, derived]
+                derivedFrom:
+                  description: 같은 작업의 부모 artifactId 목록. authority=source 면 빈 배열.
+                  type: array
+                  items: { type: string }
+                  default: []
+                digest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                format:
+                  description: 'laz·obj·gltf·cog·3dtiles·pdf 등 — kind×provider 조합마다 달라 enum 을 두지 않는다.'
+                  type: string
+                  minLength: 1
+                crs: { type: [string, 'null'] }
+                gsd: { type: [number, 'null'], exclusiveMinimum: 0 }
+                accuracy:
+                  type: [object, 'null']
+                  additionalProperties: false
+                  required: [gcpCount, rmse, reportUri]
+                  properties:
+                    gcpCount: { type: integer, minimum: 0 }
+                    rmse: { type: number, minimum: 0 }
+                    reportUri: { type: string, minLength: 1 }
+                auxiliaryFiles:
+                  description: >-
+                    산출물이 파일 여러 개(메시의 .mtl·텍스처 등)일 때, 주 파일
+                    (digest/objectKey 가 가리키는 파일) 외 나머지의 basename 목록.
+                    빈 배열(기본값)이면 파일 하나짜리 산출물이다
+                    (mesh-multi-file-artifact-persistence).
+                  type: array
+                  items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+                  default: []
+      responses:
+        '201':
+          description: ARTIFACT_REGISTERED — verdict + 등록된 산출물의 계약 payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingArtifactMutationResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409':
+          description: >-
+            JOB_NOT_RUNNING · DUPLICATE_ARTIFACT ·
+            LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER
+        '422':
+          description: >-
+            INVALID_ARTIFACT_ID · UNKNOWN_PARENT_ARTIFACT ·
+            ARTIFACT_CONTRACT_VIOLATION(kind 별 crs/gsd 필수, derived 의 부모 필수)
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/missions/{mission_id}/volume-changes:
+    post:
+      summary: Record a zone volume-change report computed from two DSM epochs
+      description: >-
+        PROCESSING_WORK 권한 필요(PROCESSING_WORKER 전용) — **사람은 체적을 주장할
+        수 없다.** 이 숫자는 정산·분쟁의 근거가 될 수 있고, 그럴수록 손으로 적히면
+        안 된다(change-detection·defect-candidates 와 같은 원칙).
+
+
+        `baseline`·`current` 는 **등록된 dsm 산출물**이어야 한다(422
+        ARTIFACT_KIND_MISMATCH) — change-detection 이 point_cloud 를 요구하는 것과
+        대칭이며, 체적은 표면 함수 z=f(x,y) 의 적분이라 입력이 2.5D 여야 한다.
+        참조가 실재하지 않으면 "이만큼 깎였다"가 아무도 재현할 수 없는 주장이 된다
+        (422 UNKNOWN_ARTIFACT).
+
+
+        `uncertaintyM3` 는 nullable **필수**이고, null 일 때 `uncertaintyNote` 가
+        왜 없는지를 밝힌다(INV-024). 기본 엔진 ODM 에는 구조화된 GCP/RMSE 리포트가
+        없어(ADR-KSI-012 D3) 이 값은 지금 항상 null 이며, 그 비율 자체가 상용 엔진
+        전환 트리거의 계측점이다.
+
+
+        같은 `volumeChangeId` 로 다른 내용을 올리면 409 다(원장은 append-only).
+        같은 내용의 재전송은 201 로 멱등 처리된다.
+
+
+        **이 표면은 재비행을 트리거하지 않는다** — 사실을 적을 뿐이다(ADR-KSI-016 D8).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'https://ksi.example/schemas/volume-change-report.v1.json'
+      responses:
+        '201':
+          description: RECORDED — durable 기록 성공(멱등 재전송 포함)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VolumeChangeResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '409': { description: DUPLICATE_REPORT_ID — 같은 id 로 다른 내용 }
+        '422':
+          description: >-
+            UNKNOWN_ARTIFACT · ARTIFACT_KIND_MISMATCH(dsm 이 아님) ·
+            계약 위반(net≠fill-cut, 자기 비교, uncertaintyNote 누락)
+        '503': { description: STORE_UNAVAILABLE — journal 봉인, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+    get:
+      summary: List volume-change reports for a mission (newest first)
+      description: >-
+        MISSIONS_READ 권한 필요. **리포트가 없으면 404 다** — 빈 목록을 주면
+        "아직 계산 안 됨"과 "변화가 없음"을 소비자가 구분할 수 없다.
+
+
+        `latestTotalNetM3` 는 최신 리포트의 전 구역 순변화를 서버가 계산해 싣는다 —
+        화면이 구역 배열을 직접 합산하면 합산 규칙이 두 곳에 생기고, 한쪽만
+        고쳐지는 순간 화면 숫자와 원장이 갈라진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 최신부터 몇 건까지. 무제한 반환을 계약으로 굳히지 않는다.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 최신 우선 이력 + 최신 리포트의 총 순변화
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VolumeChangeListView' }
+        '404': { description: 해당 임무의 체적 변화 리포트가 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-jobs/{job_id}/artifacts/upload-url:
+    post:
+      summary: Issue a presigned PUT target for a reconstruction artifact's bytes
+      description: >-
+        PROCESSING_WORK 권한 + 그 작업의 lease 필요. 활성(QUEUED·RUNNING) 작업에만
+        발급한다 — 끝난 작업에 바이트를 더 쓰면 종료가 쓰기 종료를 뜻하지 않게 된다.
+
+
+        **객체 키를 요청이 정하지 않는다.** 요청 스키마에 자리가 없고 Core 가
+        `sites/{siteId}/processing-jobs/{jobId}/artifacts/{artifactId}` 로 유도한다 —
+        워커가 고를 수 있으면 워커 토큰 하나로 버킷의 임의 경로에 쓸 수 있다.
+        키가 저장되지 않고 유도되므로 같은 (작업, 산출물)은 항상 같은 자리이고,
+        재시도가 두 번째 사본을 만들지 않는다.
+
+
+        **바이트는 Core 를 통과하지 않는다** — 포인트 클라우드는 GB 단위라 워커가
+        presigned PUT 으로 스토리지에 직접 쓴다. 등록(POST .../artifacts)과 분리한
+        이유는 등록이 계보를 원장에 박는 durable 행위이고 이건 아니기 때문이다:
+        합치면 "올리다 실패한" 상태가 원장에 남는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artifactId, contentType]
+              properties:
+                artifactId: { type: string, minLength: 1 }
+                contentType: { type: string, minLength: 1 }
+                filename:
+                  description: >-
+                    다중 파일 산출물(mesh 등)의 부속 파일 자리를 받을 때만
+                    채운다 — 생략·null 이면 주 파일 자리(기존 동작과 동일,
+                    mesh-multi-file-artifact-persistence). 주 파일 키 아래
+                    이 이름의 하위 키가 발급된다.
+                  type: [string, 'null']
+      responses:
+        '201':
+          description: UPLOAD_READY — 서버가 정한 objectKey 와 presigned uploadUrl
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactUploadUrlResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: 'JOB_NOT_ACTIVE · LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER' }
+        '422': { description: 'INVALID_ARTIFACT_ID — 객체 키 세그먼트로 안전하지 않다' }
+        '503': { description: STORAGE_UNAVAILABLE — presign 실패, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/artifacts/{artifact_id}/download:
+    get:
+      summary: Get a presigned download URL for a registered artifact's bytes
+      description: >-
+        MISSIONS_READ 권한 필요 — 산출물은 임무의 결과물이다. 워커의
+        PROCESSING_WORK 는 이를 포함하지 않는다(워커는 올릴 자리만 받는다).
+
+
+        **원장에 등록된 산출물만 내준다.** 객체 키가 식별자에서 유도되므로 등록
+        여부와 무관하게 계산은 되는데, 대조 없이 발급하면 존재하지 않는 자리의
+        링크가 나가고 소비자는 스토리지에서 404 를 받는다 — 원인이 한 단계
+        멀어진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: artifact_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ARTIFACT_READY — objectKey 와 presigned downloadUrl
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArtifactDownloadResponse' }
+        '404': { description: ARTIFACT_NOT_FOUND — 이 작업에 그 산출물이 등록돼 있지 않다 }
+        '422': { description: INVALID_ARTIFACT_ID }
+        '503': { description: STORAGE_UNAVAILABLE — presign 실패, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/contract:
@@ -603,6 +1988,43 @@ paths:
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/kmz:
+    get:
+      summary: Download the issued mission's KMZ file
+      description: >-
+        MISSIONS_READ 권한 필요. 저장된 plan_request 로 매 조회마다 재생성해 반환한다
+        (build_kmz 계열은 시각·난수·UUID 의존이 없어 재생성이 결정론적이다). 재생성
+        sha256 이 레코드의 kmzSha256 과 다르면 그 바이트를 발급된 파일로 내려주지
+        않는다 — 이 엔드포인트가 약속하는 것은 "발급 당시 그 파일"이다.
+
+        **오브젝트 스토리지가 조립된 배포에서는 발급 시 KMZ 바이트를 보관한다.**
+        재생성이 현재 정책으로 실패하거나 재생성 바이트가 원본과 다르면 그 보관본을
+        내려준다 — 재생성은 그 파일을 얻는 수단이었지 목적이 아니다. 이 폴백이 없으면
+        서버 안전상수 한 줄이 바뀌는 순간 그 이전 발급분 **전량**의 다운로드가 영구
+        409 가 된다(risk kmz-regeneration-determinism-timebomb — phase-2 의
+        captureIntervalM 필수화가 실제로 이 경로를 발화시켰다).
+
+        스토리지 없는 조립은 지금까지처럼 재생성에만 의존하고 그 경우 409 가 그대로
+        난다 — 응답 detail 이 "발급 시 바이트도 보관돼 있지 않다"를 밝힌다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: KMZ 바이트(Content-Disposition 로 결정론적 파일명 `{mission_id}.kmz`)
+          content:
+            application/vnd.google-earth.kmz:
+              schema: { type: string, format: binary }
+        '404': { description: 레코드 없음(일반 문구) 또는 KMZ 산출물이 없는 계약 단독 레코드 }
+        '409':
+          description: >-
+            저장된 요청으로 산출물을 더 이상 재현할 수 없고(정책 변경 또는 해시
+            불일치) **보관된 원본 바이트도 없다**(오브젝트 스토리지 없는 조립).
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/contracts:
     post:
       summary: Issue a signed Mission Contract (v1.2)
@@ -612,7 +2034,7 @@ paths:
         정책)는 서버가 FINAL_DECISION_LEDGER 값으로 고정한다 — 요청 바디에 그
         필드 자리가 없다(extra=forbid). 서명키 미주입 조립에서는 이 경로 자체가
         존재하지 않는다. MISSIONS_ISSUE 권한 필요(DEC-010 운영자 승인 — 발급은
-        DRONE_OPERATOR/ADMIN). site 미존재·siteFrame 등록본 불일치·missionId
+        FIELD_OPERATOR/ADMIN). site 미존재·siteFrame 등록본 불일치·missionId
         충돌은 서명 **전** 거부되고(UNKNOWN_SITE/SITE_FRAME_MISMATCH/
         MISSION_ID_CONFLICT — 등록 좌표계와 어긋난 계약 발급 차단, ADR-KSI-007),
         durable 기록 성공 후에만 201 이다(ADR-KSI-008 §3 — 고아 발급 금지).
@@ -976,7 +2398,9 @@ components:
   schemas:
     SiteView:
       type: object
-      required: [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt]
+      required:
+        [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi,
+         dataResidency]
       properties:
         siteId: { type: string }
         name: { type: string }
@@ -989,6 +2413,12 @@ components:
         resumeTarget: { type: [string, 'null'] }
         registeredAt: { type: string }
         updatedAt: { type: string }
+        # 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT /v1/sites/{site_id}/aoi
+        # 를 거치지 않음) — 구조 정본은 AreaOfInterest(POST /v1/sites.aoi 참조).
+        aoi: { type: [object, 'null'], additionalProperties: true }
+        # null 은 "반출 미선언"이고 그 뜻은 **반출 불가**다(INV-050). 화면이
+        # 허용을 기본값처럼 보여주지 않게 null 을 그대로 싣는다.
+        dataResidency: { type: [object, 'null'], additionalProperties: true }
     SiteListResponse:
       type: object
       required: [sites]
@@ -1056,6 +2486,29 @@ components:
       properties:
         events: { type: array, items: { $ref: '#/components/schemas/EventSummaryResponse' } }
         count: { type: integer }
+    CoverageRejectionListView:
+      description: 그 임무에 대해 서버가 거부한 완료 주장들.
+      type: object
+      required: [missionId, rejectionCount, rejections]
+      properties:
+        missionId: { type: string }
+        rejectionCount: { type: integer }
+        rejections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [verdict, detail, reportedBy, rejectedAt]
+            properties:
+              verdict:
+                type: string
+                description: >-
+                  UNKNOWN_MISSION / SITE_MISMATCH / UNSUPPORTED_COMPLETION /
+                  UNEXPLAINED_GAP / NO_COVERAGE_EVIDENCE /
+                  SELF_CONTRADICTORY_SUMMARY / INVALID_TIMESTAMP
+              detail: { type: [string, 'null'] }
+              reportedBy: { type: [string, 'null'] }
+              rejectedAt: { type: string }
     CoverageReportResponse:
       description: 보고 수신 판정 + 기록된 보고 본문(거부 시 report 는 null).
       type: object
@@ -1065,14 +2518,239 @@ components:
         detail: { type: [string, 'null'] }
         report: { type: [object, 'null'], additionalProperties: true }
     CoverageReportView:
-      description: 그 임무의 최신 보고 + 접수 건수.
+      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지 + Coverage Recovery 권고.
       type: object
-      required: [missionId, reportCount, latest]
+      required: [missionId, reportCount, latest, reportedBy, recoveryRecommended]
       properties:
         missionId: { type: string }
         reportCount: { type: integer }
         # 구조 정본은 contracts/schemas/coverage-report.v1.1.json.
         latest: { type: object, additionalProperties: true }
+        reportedBy:
+          type: [string, 'null']
+          description: 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null.
+        recoveryRecommended:
+          type: boolean
+          description: >-
+            Coverage Recovery 권고(MASTER_PRD §15.2) — completionState 가
+            COMPLETED 가 아니거나(COMPLETED_WITH_GAPS/ABORTED_SAFE/FAILED 전부)
+            사유있는 미관찰 Cell 이 남아 있으면 true. 자동 재발급을 트리거하지
+            않는다 — 운영자가 원본 site AOI 로 SPATIAL_REFRESH 임무를
+            POST /v1/missions/plans 에 재발급하라는 신호일 뿐이다.
+    DefectCandidateBatchResponse:
+      description: 결함 후보 배치 접수 판정. recordedCount 는 **새로** 기록된 건수다.
+      type: object
+      required: [verdict, detail, recordedCount]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_MISSION / EMPTY_BATCH / UNKNOWN_SOURCE_MEDIA /
+            IMAGE_SIZE_MISMATCH / GEOMETRY_OUT_OF_BOUNDS / DUPLICATE_CANDIDATE_ID /
+            STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        recordedCount:
+          type: integer
+          description: >-
+            새로 기록된 후보 수. 멱등 재전송(전건이 이미 같은 내용)이면 verdict 는
+            RECORDED 이고 이 값은 0 이다 — 중복 기록하지 않는다.
+    DefectCandidateListView:
+      description: 그 임무의 결함 후보 목록 + 후보가 걸린 사진 목록.
+      type: object
+      required: [missionId, candidateCount, sourceMediaIds, candidates]
+      properties:
+        missionId: { type: string }
+        candidateCount: { type: integer }
+        sourceMediaIds:
+          type: array
+          items: { type: string }
+          description: >-
+            후보가 하나라도 걸린 사진 id 목록(정렬됨). 화면이 "어느 사진에 결함이
+            있나"를 먼저 보여주고 사진별로 폴리곤을 겹치는 흐름을 위해, 클라이언트가
+            전체 목록을 훑어 직접 집계하지 않아도 되게 서버가 함께 낸다.
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [candidate, reportedBy, recordedAt]
+            properties:
+              # 구조 정본은 contracts/schemas/defect-candidate.v1.json.
+              candidate: { type: object, additionalProperties: true }
+              reportedBy:
+                type: [string, 'null']
+                description: 제출한 워커의 Principal id. 구 journal 재생 등으로 없으면 null.
+              recordedAt: { type: string }
+    SourceMediaViewResponse:
+      description: 사진 1장의 열람 URL + 원장이 아는 화소수·digest.
+      type: object
+      required: [mediaId, contentType, viewUrl, expiresAt, width, height, sha256]
+      properties:
+        mediaId: { type: string }
+        contentType: { type: string }
+        viewUrl: { type: string }
+        expiresAt: { type: string }
+        width:
+          type: integer
+          description: >-
+            업로더가 **신고한** 화소수(전 바이트를 읽은 워커가 대조하기 전까지는
+            주장이다). 결함 후보의 imageSize 는 Core 가 이 값과 이미 대조했으므로,
+            화면은 둘이 같다는 전제로 폴리곤 배율을 계산해도 된다.
+        height: { type: integer }
+        sha256: { type: string }
+    EquipmentSupportView:
+      description: >-
+        장비 클래스 1건의 지원단계. 계약(contracts/schemas/equipment-support-state.v1.json)
+        필드 + 서버가 계산한 표시 플래그.
+      type: object
+      required:
+        [classId, state, evidenceRefs, modelVersion, riskPackVersion,
+         productionSupported, updatedAt, updatedBy]
+      properties:
+        classId: { type: string }
+        state:
+          enum:
+            [DATASET_AVAILABLE, BASELINE_DETECTION, FIELD_VALIDATED,
+             GEO_VALIDATED, RISK_VALIDATED, PRODUCTION_SUPPORTED]
+        evidenceRefs:
+          type: array
+          items: { type: string }
+          description: >-
+            **이번 전이가 제시한** 증거만 담는다. 강등은 승급 때의 증거를 물려받지
+            않는다 — 예전 증거를 달고 있으면 "이 단계는 검증됐다"는 잘못된 신호가 된다.
+        modelVersion: { type: [string, 'null'] }
+        riskPackVersion: { type: [string, 'null'] }
+        productionSupported:
+          type: boolean
+          description: >-
+            **이 값이 true 인 것만 상용 지원으로 표시한다**(REQ-MODEL-101). 서버가
+            is_production_supported() 로 계산한 파생값이다 — 화면이 state 문자열을
+            보고 스스로 판단하면 단계가 추가되는 날 조용히 틀린다.
+        updatedAt: { type: string }
+        updatedBy: { type: string }
+    EquipmentSupportListView:
+      description: 등록된 장비 클래스 전체(classId 오름차순).
+      type: object
+      required: [classCount, productionSupportedCount, classes]
+      properties:
+        classCount: { type: integer }
+        productionSupportedCount:
+          type: integer
+          description: productionSupported 가 true 인 클래스 수 — 화면이 다시 세지 않아도 되게.
+        classes:
+          type: array
+          items: { $ref: '#/components/schemas/EquipmentSupportView' }
+    EquipmentSupportMutationResponse:
+      description: 등록·전이 판정 + 성공 시 갱신된 레코드.
+      type: object
+      required: [verdict, detail, record]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_CLASS / ALREADY_REGISTERED / ILLEGAL_TRANSITION /
+            STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        record:
+          oneOf:
+            - { $ref: '#/components/schemas/EquipmentSupportView' }
+            - { type: 'null' }
+    EquipmentStateBatchResponse:
+      description: 운동상태 배치 접수 판정.
+      type: object
+      required: [verdict, detail, recordedCount]
+      properties:
+        verdict:
+          type: string
+          description: RECORDED / UNKNOWN_SITE / SITE_FRAME_MISMATCH / STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+        recordedCount: { type: integer }
+    EquipmentStateListView:
+      description: 그 현장의 개체별 최신 운동상태(entityId 오름차순).
+      type: object
+      required: [siteId, entityCount, entities]
+      properties:
+        siteId: { type: string }
+        entityCount: { type: integer }
+        entities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [state, reportedBy, recordedAt, positionUncertaintyM]
+            properties:
+              # 구조 정본은 ksi_equipment_intelligence.kinematic_state.KinematicState.
+              state: { type: object, additionalProperties: true }
+              reportedBy: { type: [string, 'null'] }
+              recordedAt: { type: string }
+              positionUncertaintyM:
+                type: number
+                description: 공분산 trace 의 제곱근(RMS 반경 근사) — 좌표축 회전에 불변.
+    RiskAssessmentView:
+      description: 지목된 두 개체 쌍의 CPA/TTC + 재관찰 권고(PRD RISK-004/005).
+      type: object
+      required:
+        [siteId, equipmentEntityId, subjectEntityId, observationGapS,
+         closestApproachM, closestApproachTimeS, timeToCollisionS, horizonS,
+         combinedRadiusM, positionUncertaintyThresholdM, reobservationRecommended]
+      properties:
+        siteId: { type: string }
+        equipmentEntityId: { type: string }
+        subjectEntityId: { type: string }
+        observationGapS:
+          type: number
+          description: 두 상태의 observedAt 실제 시간차(초). 어떤 근거로 계산했는지가 남는다.
+        closestApproachM: { type: number }
+        closestApproachTimeS: { type: number }
+        timeToCollisionS:
+          type: [number, 'null']
+          description: >-
+            null 은 **"위험 없음"이 아니라 "이 지평선 안에서는 확인되지 않음"**이다
+            (horizonS 와 짝을 이루는 스코프 한정). 화면이 둘을 같게 표시하면 안 된다.
+        horizonS: { type: number }
+        combinedRadiusM: { type: number }
+        positionUncertaintyThresholdM: { type: number }
+        reobservationRecommended:
+          type: boolean
+          description: >-
+            두 상태 중 하나라도 위치 불확실성이 문턱을 초과하면 true(RISK-005).
+            권고일 뿐 재관찰을 트리거하지 않는다 — Viewpoint 선택은 Edge 소관이다.
+    ChangeDetectionResponse:
+      description: 변화 탐지 결과 수신 판정.
+      type: object
+      required: [verdict, detail]
+      properties:
+        verdict:
+          type: string
+          description: >-
+            RECORDED / UNKNOWN_MISSION / UNKNOWN_ARTIFACT / ARTIFACT_KIND_MISMATCH /
+            SELF_COMPARISON / DUPLICATE_RESULT_ID / STORE_UNAVAILABLE
+        detail: { type: [string, 'null'] }
+    ChangeDetectionView:
+      description: 그 임무의 최신 변화 탐지 결과 + 재방문 권고(PRD §15.2 ⑤).
+      type: object
+      required:
+        [missionId, resultCount, latest, reportedBy, recordedAt,
+         revisitRatioThreshold, revisitRecommended]
+      properties:
+        missionId: { type: string }
+        resultCount: { type: integer }
+        # 구조 정본은 contracts/schemas/change-detection-result.v1.json.
+        latest: { type: object, additionalProperties: true }
+        reportedBy: { type: [string, 'null'] }
+        recordedAt: { type: string }
+        revisitRatioThreshold:
+          type: number
+          description: >-
+            이 조회가 **실제로 쓴** 임계값. 요청이 준 값이거나(revisitRatioThreshold
+            쿼리) 생략 시 화면 초기값이다. 응답에 싣는 이유는 권고가 무슨 기준으로
+            켜졌는지를 화면이 표시할 수 있어야 하기 때문이다.
+        revisitRecommended:
+          type: boolean
+          description: >-
+            candidateRatio > revisitRatioThreshold 이면 true(엄격 부등호).
+            candidateCount 가 0 이면 임계값과 무관히 항상 false — "후보가 없는데
+            재방문 권고"라는 모순을 만들지 않는다. 자동 재비행을 트리거하지 않는다.
     EventDetailResponse:
       description: 목록 필드 + 원본 bundle + 이 사건에 대한 journal 전이 이력 전체.
       type: object
@@ -1154,7 +2832,7 @@ components:
       type: object
       required:
         [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
-         waypointCount, plannedCoverageRatio, issuedAt, issuedBy]
+         waypointCount, plannedCoverageRatio, issuedAt, issuedBy, coverageCompletionState]
       properties:
         missionId: { type: string }
         siteId: { type: string }
@@ -1175,6 +2853,285 @@ components:
             사전 점검 결과다.
         issuedAt: { type: string, format: date-time }
         issuedBy: { type: string }
+        coverageCompletionState:
+          type: [string, 'null']
+          enum: [COMPLETED, COMPLETED_WITH_GAPS, ABORTED_SAFE, FAILED, null]
+          description: >-
+            **파생 필드** — 이 임무에 대해 접수된 최신 CoverageReport 의
+            completionState 를 서버가 조회 시점에 계산해 그대로 싣는다(저장하지
+            않는다). 완료 판정의 권위는 CoverageReport 하나다(INV-010) — 이 필드는
+            그 판정을 다시 계산하지 않고 그대로 노출할 뿐이다. null 은 "아직 보고가
+            없다"는 뜻이고, 발급됐지만 비행 전인지 비행했는데 보고가 없는지는 이
+            값만으로 구분되지 않는다(GET .../coverage-report 404 와 함께 봐야 한다).
+    SourceMediaItemView:
+      description: 배치 안 파일 1건의 결과. REGISTERED 일 때만 objectKey/uploadUrl/expiresAt 이 있다.
+      type: object
+      required: [mediaId, verdict]
+      properties:
+        mediaId: { type: string }
+        verdict:
+          type: string
+          description: >-
+            REGISTERED · INVALID_MEDIA_ID · UNSUPPORTED_CONTENT_TYPE ·
+            CLAIM_CONFLICT(같은 mediaId 가 다른 내용으로 이미 등록됨) ·
+            JOURNAL_UNAVAILABLE · STORAGE_UNAVAILABLE(등록은 됐으나 URL 발급 실패
+            — 같은 내용으로 재요청하면 재발급된다).
+        objectKey: { type: [string, 'null'] }
+        uploadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        detail: { type: [string, 'null'] }
+    SourceMediaBatchResponse:
+      description: >-
+        배치 요청 전체 판정(PROCESSED/UNKNOWN_MISSION/BUNDLE_SEALED/
+        STORE_UNAVAILABLE) + 항목별 결과. PROCESSED 면 개별 실패가 섞여도 요청
+        자체는 201 이고 results 각 항목의 verdict 로 갈린다.
+      type: object
+      required: [verdict, results]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        results: { type: array, items: { $ref: '#/components/schemas/SourceMediaItemView' } }
+    SourceMediaBundleView:
+      description: 원본 미디어 번들 상태 — 미검증 상태를 그대로 노출한다.
+      type: object
+      required:
+        [missionId, status, mediaCount, sourceBundleDigest, sealedAt, verifiedAt,
+         lastMismatchAt]
+      properties:
+        missionId: { type: string }
+        status: { type: string, enum: [OPEN, SEALED] }
+        mediaCount: { type: integer }
+        sourceBundleDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+        sealedAt: { type: [string, 'null'], format: date-time }
+        verifiedAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            KSI 워커가 전 바이트를 읽어 재고 그 값이 업로더 신고값과 전부 일치함이
+            확인된 시각(POST .../source-media/verify). 정확한 뜻은 "서버가 바이트를
+            봤다"가 아니라 "워커가 실측을 보고했고 Core 대조가 통과했다"이다 —
+            Core 는 객체 바이트를 중계하지 않는다(ADR-KSI-010 §1).
+        lastMismatchAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            마지막 불일치 보고 시각. verifiedAt 이 null 인데 이 값이 있으면 "아직
+            아무도 안 읽었다"가 아니라 **"재봤는데 어긋났다"**다 — 화면이 둘을
+            같은 회색으로 그리면 안 된다.
+    SourceMediaSealResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        bundle:
+          oneOf: [{ $ref: '#/components/schemas/SourceMediaBundleView' }, { type: 'null' }]
+    SourceMediaVerifyResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        bundle:
+          oneOf: [{ $ref: '#/components/schemas/SourceMediaBundleView' }, { type: 'null' }]
+        mismatched:
+          description: 신고값과 실측이 어긋난 mediaId.
+          type: array
+          items: { type: string }
+        missing:
+          description: 등록됐는데 측정값이 오지 않은 mediaId.
+          type: array
+          items: { type: string }
+        unexpected:
+          description: 등록되지 않았거나 중복 측정된 mediaId.
+          type: array
+          items: { type: string }
+    JobInputView:
+      description: >-
+        워커가 실행에 필요한 것 — 무엇으로 돌릴지 + 어떤 파일을 읽을지.
+        **업로더의 신고값(sha256·해상도)이 없는 것이 이 스키마의 요점이다.**
+      type: object
+      required:
+        [jobId, missionId, siteId, status, provider, engineVersion, engineDigest,
+         executionLocus, processingParams, sourceBundleDigest, imageCount, media, siteCrs]
+      properties:
+        jobId: { type: string }
+        missionId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING] }
+        provider: { type: string }
+        engineVersion: { type: string }
+        engineDigest: { type: string }
+        executionLocus: { type: string }
+        processingParams: { type: object, additionalProperties: true }
+        sourceBundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        imageCount: { type: integer }
+        media:
+          type: array
+          items:
+            type: object
+            required: [mediaId, objectKey, downloadUrl, expiresAt]
+            properties:
+              mediaId: { type: string }
+              objectKey: { type: string }
+              downloadUrl: { type: string }
+              expiresAt: { type: string, format: date-time }
+        siteCrs:
+          description: >-
+            현장 등록 시점의 CRS(SiteFrame.crs). 워커가 산출물 등록 시 그대로
+            싣는다 — processing_params 로 스스로 신고하지 않는다. null 이면
+            현장 원장이 이상 상태다(정상 경로에서는 나타나지 않는다).
+          type: [string, 'null']
+    JobInputResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        input: { oneOf: [{ $ref: '#/components/schemas/JobInputView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
+    ProcessingJobView:
+      description: >-
+        처리 작업 1건 — 계약 payload(contract) + 운영 메타. 계약 필드의 구조 정본은
+        contracts/schemas/processing-job.v1.json 이다.
+      type: object
+      required:
+        [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
+         inputVerified, contract, artifacts, leaseWorkerId, leaseExpiresAt]
+      properties:
+        jobId: { type: string }
+        missionId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        issuedAt: { type: string, format: date-time }
+        issuedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        # 종료 전이에 남긴 사유. 그 전에는 null.
+        detail: { type: [string, 'null'] }
+        inputVerified:
+          type: boolean
+          description: >-
+            현재는 항상 false — input.totalMegapixels 는 업로더 신고 해상도의
+            합이고 전 바이트를 읽어 대조한 값이 아니다. 원본 바이트 재검증 경로는
+            아직 없다(산출물이 존재한다는 것과 입력이 신고대로였다는 것은 다른
+            사실이라, INV-051 게이트가 이 필드를 대신하지 않는다).
+            "검증된 척"하는 기본값을 쓰지 않는다.
+        contract: { type: object, additionalProperties: true }
+        artifacts:
+          description: >-
+            이 작업에 등록된 산출물의 계약 payload(등록 순). 구조 정본은
+            contracts/schemas/processing-artifact.v1.json 이다. SUCCEEDED 를
+            받쳐주는 근거가 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수
+            있게 싣는다(INV-051).
+          type: array
+          items: { type: object, additionalProperties: true }
+        leaseWorkerId:
+          description: 지금 이 작업을 쥔 워커의 principalId. null 이면 아무도 안 쥐고 있다.
+          type: [string, 'null']
+        leaseExpiresAt:
+          description: >-
+            lease 만료 시각. **만료 여부를 불리언으로 싣지 않는다** — 응답을 만든
+            순간과 화면이 읽는 순간 사이에 만료될 수 있어, 그 판정은 시각을 받은
+            쪽이 자기 시계로 해야 한다.
+          type: [string, 'null']
+          format: date-time
+    ProcessingJobListResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs: { type: array, items: { $ref: '#/components/schemas/ProcessingJobView' } }
+    ProcessingJobMutationResponse:
+      description: 발급·전이 공통 응답. verdict 가 결과 코드고, job 은 성공 시에만 실린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        job: { oneOf: [{ $ref: '#/components/schemas/ProcessingJobView' }, { type: 'null' }] }
+        detail: { type: [string, 'null'] }
+    ProcessingArtifactMutationResponse:
+      description: >-
+        산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은
+        contracts/schemas/processing-artifact.v1.json 이다 — Core 가 채운
+        jobId·lineage.sourceDigest 를 포함한 완전한 계약 payload 다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        artifact:
+          oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
+        detail: { type: [string, 'null'] }
+
+    VolumeChangeResponse:
+      description: 체적 리포트 수신 판정. RECORDED 만 durable 기록 성공이다.
+      type: object
+      required: [verdict, detail]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+
+    VolumeChangeListView:
+      description: >-
+        임무의 체적 리포트 이력(최신 우선). report 의 구조 정본은
+        contracts/schemas/volume-change-report.v1.json 이다.
+      type: object
+      required: [missionId, reportCount, latestTotalNetM3, reports]
+      properties:
+        missionId: { type: string }
+        reportCount: { type: integer, minimum: 0 }
+        latestTotalNetM3:
+          type: [number, 'null']
+          description: 최신 리포트의 전 구역 순변화(m³) — 서버가 계산해 싣는다.
+        reports:
+          type: array
+          items:
+            type: object
+            required: [report, reportedBy, recordedAt]
+            properties:
+              report: { type: object, additionalProperties: true }
+              reportedBy: { type: [string, 'null'] }
+              recordedAt: { type: string, format: date-time }
+
+    ArtifactUploadUrlResponse:
+      description: >-
+        산출물 바이트를 올릴 자리. objectKey 는 Core 가 식별자에서 유도한 값이라
+        같은 (작업, 산출물)이면 항상 같다 — 재시도가 사본을 만들지 않는다.
+        uploadUrl 은 그 자리에 대한 presigned PUT 이고 expiresAt 이후 무효다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        objectKey: { type: [string, 'null'] }
+        uploadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        detail: { type: [string, 'null'] }
+
+    ArtifactDownloadResponse:
+      description: >-
+        등록된 산출물의 바이트를 받을 presigned GET. 원장에 없는 산출물에는
+        발급하지 않는다(404 ARTIFACT_NOT_FOUND) — 키가 유도 가능하다고 해서
+        존재하지 않는 자리의 링크를 내주면 원인이 스토리지까지 밀린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        objectKey: { type: [string, 'null'] }
+        downloadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        files:
+          description: >-
+            산출물이 파일 여러 개(메시 등)일 때만 채워진다 — 주 파일을 포함해
+            **전부** 나열한다(objectKey/downloadUrl 과 겹쳐 특수 케이스하지
+            않도록). 파일 하나짜리 산출물은 null(생략) —
+            mesh-multi-file-artifact-persistence.
+          type: [array, 'null']
+          items:
+            type: object
+            required: [name, objectKey, downloadUrl]
+            properties:
+              name: { type: string }
+              objectKey: { type: string }
+              downloadUrl: { type: string }
+        detail: { type: [string, 'null'] }
+
   securitySchemes:
     bearerAuth:
       type: http

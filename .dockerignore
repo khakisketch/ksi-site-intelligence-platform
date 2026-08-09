@@ -1,0 +1,61 @@
+# KSI Core 프로덕션 이미지 빌드 컨텍스트 — uv workspace 전체(packages/services)는
+# 필요하지만, 그 밖의 대용량·비관련 트리는 COPY 대상에서 뺀다(빌드 컨텍스트
+# 전송·이미지 크기를 줄인다). services/core 는 apps/dashboard(Next.js)·
+# edge/(Manifold C++)·references/(읽기 전용 서브모듈)를 런타임에 전혀 참조하지
+# 않는다 — [tool.uv.workspace] exclude 목록과 대칭이다(루트 pyproject.toml 참조).
+
+.git/
+.github/
+
+# 읽기 전용 참고 서브모듈 — CLAUDE.md "references/ 아래 어떤 파일도 건드리지
+# 않는다"와 대칭으로, 애초에 이미지에 넣을 이유가 없다(45M).
+references/
+
+# Manifold / PSDK 네이티브 개발 트리 — 서버 workspace 와 분리 운용(edge 는
+# 별도 pyproject, 대표자 반영사항 1). third_party 실물만 493M.
+edge/
+
+# apps/dashboard(Next.js) — Core 서버 이미지가 프론트엔드를 담을 이유가 없다.
+# node_modules(739M)·.next(1.3G) 가 대부분이다.
+apps/
+**/node_modules/
+
+# 모델 아티팩트 — Core 서버는 추론 모델을 직접 로드하지 않는다(추론은 별도
+# 워커/서비스). tools/fetch_model.py 로 명시적으로 받는 대상이라 이미지에
+# 구울 필요가 없다.
+models/
+
+# workers/ — 별도 처리 워커 컨테이너의 소관(이 Dockerfile 은 ksi-core 전용).
+workers/
+
+# 빌드 산출물·캐시 — 로컬 절대경로가 박히면 이미지가 오염된다.
+build/
+build-*/
+edge/*/build*/
+**/__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# dev 전용 로컬 상태 — 프로덕션 이미지가 dev 데이터를 담으면 안 된다(그 자체가
+# 이번 작업이 막는 사고 클래스와 같은 종류).
+.dev-data/
+.secrets/
+.playwright-mcp/
+
+# HIL 세션 raw 로그 — durable 저장소로 옮기는 대상, 이미지에 넣지 않는다.
+hil_raw_logs/
+
+# UI 검증 스크린샷 등 루트에 쌓이는 일회성 이미지(.gitignore 의 /*.png 와 대칭).
+*.png
+
+# 디자인 시안 생성물 — design/**/_build.py 산출물, 서버 런타임과 무관.
+design/**/screens/
+design/**/studies/
+design/**/index.html
+
+# .claude/.ksi — 에이전트 작업 상태, 컨테이너에 담을 이유가 없다.
+.claude/
+.ksi/

@@ -45,15 +45,19 @@ torn-tail 격리, 예외 시 봉인, 기동 시 fail-closed 재생) 위의 저�
 - Principal 2종(2-enum 분리 관습):
   - `OPERATOR`(사람): role ∈ {ADMIN, SITE_MANAGER, SAFETY_MANAGER,
     DRONE_OPERATOR, VIEWER}. 권한은 모듈 상수 role→permission 표 하나로만
-    결정된다(엔드포인트 산재 금지).
+    결정된다(엔드포인트 산재 금지). **ADR-KSI-015로 3역할(ADMIN·
+    FIELD_OPERATOR·VIEWER)로 축소(2026-08-05)** — SITE_MANAGER·
+    SAFETY_MANAGER·DRONE_OPERATOR는 FIELD_OPERATOR로 합쳐졌다. 이 절의
+    5역할 서술은 최초 도입 당시 기록으로 남긴다.
   - `EDGE_DEVICE`(장비): role 없음. `device_id` 바인딩 필수 — edge-sync
     수신은 **인증 장비의 device_id == 요청 edgeDeviceId**일 때만 수락
     (불일치는 typed 403). 위조 순번 주입이 장비 신원 뒤로 차단되어
     `edge-sync-preauth-sequence-lockout`의 전제가 사라진다. 장비는 자기
     last_sequence 조회 API(복구 경로)를 갖는다.
-- 권한 배치(권고안 — §대표자 후속 확인 1): 발급(missions:issue)은
-  DRONE_OPERATOR·ADMIN(DEC-010 운영자 승인), Site 쓰기·트리아지는
-  SITE_MANAGER(+트리아지는 SAFETY_MANAGER), VIEWER는 read 전용.
+- 권한 배치(권고안 — §대표자 후속 확인 1, **해소: ADR-KSI-015**): 발급
+  (missions:issue)은 DRONE_OPERATOR·ADMIN(DEC-010 운영자 승인), Site
+  쓰기·트리아지는 SITE_MANAGER(+트리아지는 SAFETY_MANAGER), VIEWER는 read
+  전용.
 - 공개 allowlist는 `/health`·`/capabilities`(이미 최소 필드, 감사 #49)와
   FastAPI 기본 문서 라우트(`/openapi.json`·`/docs`·`/redoc` — `create_app(...,
   expose_docs=False)`로 끌 수 있다)뿐이며, 나머지 전 경로는 인증 필수. 401은
@@ -126,6 +130,11 @@ torn-tail 격리, 예외 시 봉인, 기동 시 fail-closed 재생) 위의 저�
 1. **역할·권한 매트릭스**(공동 결정 레인): PRD §4.1은 페르소나 카탈로그일 뿐
    RBAC 표가 없어 §2의 권고 매트릭스로 구현했다. 역할 명칭·발급 권한 소재
    (운영자 vs 현장소장)는 대시보드 S3 착수 전 확인을 권장한다.
+   **해소 — ADR-KSI-015(2026-08-05)**: 역할을 3개(ADMIN·FIELD_OPERATOR·
+   VIEWER)로 축소하고 발급 권한(MISSIONS_ISSUE)을 FIELD_OPERATOR(현장소장
+   포함)에 부여해 "실사용자=현장소장"과 "발급은 DRONE_OPERATOR만"의 어긋남을
+   닫았다. 자율운영 승인(`SITES_AUTONOMY_APPROVE`)은 신설해 ADMIN에만
+   남겼다.
 2. **PostgreSQL 채택 시점**(공동 결정 레인): 본 ADR은 파일 journal로 시작하고
    DB 전환을 S4 결합 ADR로 넘겼다. 파일럿 규모·단일 프로세스 전제가 깨지는
    시점(다중 인스턴스·대시보드 동시성)이 전환 트리거다.

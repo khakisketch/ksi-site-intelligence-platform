@@ -21,10 +21,23 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# mmcv 1.7.2(legacy, MODEL-P4-001 [mixercseg] extra)는 setup.py 최상단에서
+# pkg_resources 를 import 하는데 PEP517 build-system.requires 에 선언하지 않는다
+# — uv 의 격리 빌드 환경엔 기본으로 없어 metadata 해석 자체가 실패한다(2026-08-07
+# 실측, uv 가 직접 이 fix 를 제안). 설치 여부와 무관하게 lock 해석 단계에서 걸린다.
+[tool.uv.extra-build-dependencies]
+mmcv = ["setuptools<81"]
+
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
 ksi-perception = { workspace = true }
+ksi-processing-controller = { workspace = true }
+ksi-change-detection = { workspace = true }
+ksi-bim-integration = { workspace = true }
+ksi-equipment-intelligence = { workspace = true }
+ksi-defect-detection = { workspace = true }
+ksi-geo-spatial = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -34,6 +47,7 @@ dev = [
     "jsonschema>=4.21",
     "types-jsonschema>=4.21",
     "types-pyyaml>=6.0",
+    "scipy-stubs>=1.13",
     "httpx>=0.27",
     # apps/dashboard 로컬 개발 시 scripts/run_core_dev.py 가 실제 ASGI 서버를 띄우는 데만
     # 쓴다 — 프로덕션 조립·CI 게이트는 TestClient 만 사용.
@@ -41,6 +55,25 @@ dev = [
     # leaf workspace 멤버 — 아무 패키지도 의존하지 않아 기본 sync 에서 빠지므로 dev 로
     # 명시한다(base 의존만 — torch 계열 [dfine] extra 는 모델 보유 환경에서만 설치).
     "ksi-perception",
+    # 같은 이유의 leaf 멤버 — 이 워커 코드를 Core 가 의존하지 않아(서버 조립 그래프
+    # 밖이다) 기본 sync 에서 빠진다. CI 는 --all-packages 라 무관하지만, 맨
+    # `uv sync` 로 붙은 개발자가 ODM 어댑터 테스트에서 ImportError 를 보게 된다.
+    "ksi-processing-controller",
+    # 같은 이유의 leaf 멤버(Phase 4 change-detection, scipy 기반 point cloud C2C).
+    "ksi-change-detection",
+    # 같은 이유의 leaf 멤버(Phase 4 BIM 연계, ifcopenshell 기반 IFC 지오메트리 추출).
+    "ksi-bim-integration",
+    # 같은 이유의 leaf 멤버(Phase 3 Kinematic State/CPA-TTC/RiskField).
+    "ksi-equipment-intelligence",
+    # 같은 이유의 leaf 멤버(M1 측지 기반 — EPSG:5186 재투영·KNGeoid 수직기준).
+    "ksi-geo-spatial",
+    # 같은 이유의 leaf 멤버(Phase 4 결함탐지 계약 + adapter, MODEL-P4-001). 실모델
+    # 스택(torch/mmcv 등)은 [mixercseg] extra 로 격리 — 모델 보유 환경에서만 설치.
+    "ksi-defect-detection",
+    # tools/fetch_defect_model.py 전용 — MixerCSeg 체크포인트가 HuggingFace 가
+    # 아니라 Google Drive 배포라 confirm-token 우회가 필요하다(urllib 로 직접
+    # 구현하면 Drive 의 바이러스 스캔 인터스티셜 페이지를 다뤄야 해 깨지기 쉽다).
+    "gdown>=5.2",
     # ksi-core[s3] 어댑터(ADR-KSI-010 §1)의 타입체크·테스트용. 런타임 필수 의존이
     # 아니다 — Core 는 evidence_storage 없이도 조립되고, 그 경우 boto3 를 import
     # 하지도 않는다(어댑터 모듈 안에서 지연 import).
@@ -56,7 +89,7 @@ line-length = 100
 # 대상에서 통째로 빠져 있던 것을 2026-08-04 감사에서 실측 확인(명시 경로 지정 시에만
 # 검사돼 "All checks passed"가 검사 미수행을 가렸다 — 이 저장소가 경계하는 조용한 no-op).
 # 선행 슬래시("/edge")는 절대경로로 해석돼 제외가 아예 풀리므로 쓰지 않는다(실측).
-extend-exclude = ["references/**", "edge/**", "apps/**"]
+extend-exclude = ["references/**", "edge/**", "apps/**", "services/defect-detection/src/ksi_defect_detection/_vendor/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -78,7 +111,13 @@ no_implicit_optional = true
 # mypy exclude는 **정규식**이다(ruff의 gitignore 문법과 다르다) — `^`로 앵커링하지
 # 않으면 substring 매칭이라 "edge/"가 `tools/edge/`까지 제외시킨다. 2026-08-04 감사에서
 # tools/edge/*.py 가 이 오탐으로 타입체크 밖이었음을 확인하고 앵커링했다.
-exclude = ["^references/", "^edge/", "^apps/", "^tools/vector-extraction/"]
+exclude = [
+    "^references/",
+    "^edge/",
+    "^apps/",
+    "^tools/vector-extraction/",
+    "^services/defect-detection/src/ksi_defect_detection/_vendor/",
+]
 # tests/hil, tests/contract 등이 `sys.path.insert(...) + from <module> import ...`
 # (flat import) 로 tools/*/*.py 를 참조한다. mypy_path 로 두 디렉터리를 모듈 검색
 # 경로에 명시해 이 flat import 가 스캔 순서와 무관하게 해석되게 한다
@@ -100,6 +139,36 @@ module = [
     "onnx",
     "onnxruntime.*",
     "onnxruntime",
+]
+ignore_missing_imports = true
+
+# [mixercseg] extra(MODEL-P4-001) — 같은 사유. cv2/mmcv/mmseg/mmengine/timm/
+# fvcore/einops 는 CI 기본 sync 에 설치되지 않는다.
+[[tool.mypy.overrides]]
+module = [
+    "cv2.*",
+    "cv2",
+    "mmcv.*",
+    "mmcv",
+    "mmseg.*",
+    "mmseg",
+    "mmengine.*",
+    "mmengine",
+    "timm.*",
+    "timm",
+    "fvcore.*",
+    "einops.*",
+]
+ignore_missing_imports = true
+
+# rasterio 는 설치되지만 py.typed 마커도 스텁 패키지도 제공하지 않는다(1.5.0 확인).
+# 위 두 override 와 성격이 다르다 — 저건 "CI 에 미설치"라서고, 이건 "설치돼도
+# 타입 정보가 없어서"다. types-rasterio 같은 공식 스텁이 나오면 이 항목을 지운다.
+# pyproj 는 py.typed 를 제공하므로 여기 없다.
+[[tool.mypy.overrides]]
+module = [
+    "rasterio.*",
+    "rasterio",
 ]
 ignore_missing_imports = true
 

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/volume-change-report.v1.json",
+  "title": "VolumeChangeReport v1.0",
+  "description": "두 시점 DSM 차분으로 잰 구역별 절토·성토(ADR-KSI-016 D3). change-detection-result.v1.json 과 형제이되 형태가 다르다 — 저기는 '몇 퍼센트의 점이 움직였나'이고 여기는 '이 구역에서 몇 m³ 가 깎이고 쌓였나'다. 오차한계는 양쪽 epoch 모두 검증된 RMSE 를 가질 때만 값이며(INV-024), 그 외에는 null 이고 uncertaintyNote 가 왜 없는지를 밝힌다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "volumeChangeId",
+    "baseline",
+    "current",
+    "crs",
+    "verticalDatum",
+    "zones",
+    "computedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "volumeChangeId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 리포트의 고유 식별자. 같은 값의 재제출은 409 로 거부된다."
+    },
+    "baseline": { "$ref": "#/$defs/artifactRef" },
+    "current": { "$ref": "#/$defs/artifactRef" },
+    "crs": {
+      "type": "string",
+      "minLength": 1,
+      "description": "두 DSM 이 공유하는 좌표계(EPSG 코드). 서로 다르면 계산 자체가 거부된다(INV-020)."
+    },
+    "verticalDatum": {
+      "type": "string",
+      "minLength": 1,
+      "description": "표고의 기준. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환 없이 그대로 — 지오이드 격자가 없어 정표고로 못 바꾼 상태이며, 이 값이 남은 리포트가 곧 나중에 재계산할 대상 목록이다. orthometric_kngeoid2018 = KNGeoid 로 보정한 정표고."
+    },
+    "zones": {
+      "type": "array",
+      "minItems": 1,
+      "description": "구역별 결과. zoneId 는 중복될 수 없다 — 같은 구역이 두 번 집계되면 총합이 조용히 두 배가 된다.",
+      "items": { "$ref": "#/$defs/zoneVolumeDelta" }
+    },
+    "computedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "tz-aware 여야 한다 — 시간대 없는 시각은 나중에 어느 시점인지 복원할 수 없다."
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId", "artifactId"],
+      "description": "artifactId 는 처리 작업 단위로만 고유하므로 jobId 가 반드시 함께 있어야 한다. 두 시점의 DSM 은 artifactId 가 같고 jobId 가 다른 것이 정상 경로다.",
+      "properties": {
+        "jobId": { "type": "string", "minLength": 1 },
+        "artifactId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "zoneVolumeDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zoneId",
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "areaM2",
+        "thresholdM",
+        "uncertaintyM3",
+        "uncertaintyNote"
+      ],
+      "description": "부호 규약이 이 객체의 핵심이다 — cut(깎인 양)·fill(쌓인 양)은 둘 다 양수고, 방향은 net = fill - cut 하나로만 말한다. 부호가 두 곳에 있으면 한쪽만 뒤집혀도 화면에서는 그럴듯하다.",
+      "properties": {
+        "zoneId": { "type": "string", "minLength": 1 },
+        "cutM3": { "type": "number", "minimum": 0 },
+        "fillM3": { "type": "number", "minimum": 0 },
+        "netM3": {
+          "type": "number",
+          "description": "fill - cut. 세 값은 독립이 아니라 둘이 셋째를 정하며, 계약 모델이 그 일치를 검사한다."
+        },
+        "areaM2": { "type": "number", "exclusiveMinimum": 0 },
+        "thresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "이 값보다 작은 표고차는 변화로 세지 않는다(재구성 노이즈 하한)."
+        },
+        "uncertaintyM3": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "nullable 필수. 양쪽 epoch 모두 독립 검사점으로 검증된 RMSE 를 가질 때만 값이다(INV-024). ODM 경로에는 구조화된 GCP/RMSE 리포트가 없어 항상 null 이며, 그 null 비율 자체가 ADR-KSI-012 D3 전환 트리거의 계측점이다."
+        },
+        "uncertaintyNote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "uncertaintyM3 가 null 인 이유(또는 값이 있을 때 그 근거). 비워둘 수 없다 — 숫자만 보여주고 한계를 감추면 화면이 '이 값은 믿을 만하다'고 말하는 것과 같다."
+        }
+      }
+    }
+  }
+}

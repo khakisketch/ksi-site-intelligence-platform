@@ -16,7 +16,11 @@ PRODUCTION_SUPPORTED가 되는 것은 아니다 — 역방향도 마찬가지다
 
 from __future__ import annotations
 
+import unicodedata
 from enum import StrEnum
+
+# 유니코드 카테고리 첫 글자 — Z(구분자/공백)·C(제어·format·미할당)는 '내용 없음'.
+_EMPTY_CATEGORY_PREFIXES = frozenset({"Z", "C"})
 
 
 class CapabilityVerificationState(StrEnum):
@@ -77,7 +81,7 @@ def assert_capability_transition(
     Raises:
         IllegalCapabilityTransitionError: 전이표 밖의 전이이거나 evidence가 비어있을 때.
     """
-    if not evidence or not evidence.strip():
+    if not has_evidence(evidence):
         raise IllegalCapabilityTransitionError(
             f"{cur.value} → {nxt.value} 전이에는 검증 증거(evidence)가 필수다"
         )
@@ -102,29 +106,73 @@ _SUPPORT_LEVEL_INDEX: dict[EquipmentSupportLevel, int] = {
 }
 
 
+def has_evidence(evidence: str | None) -> bool:
+    """증거 문자열이 실제 내용을 담고 있는가.
+
+    ``str.strip()`` 만으로는 부족하다 — U+200B(ZWSP)·U+FEFF(BOM)·U+200C/D 같은
+    **format 카테고리(Cf)** 문자는 ``isspace()`` 가 False 라 strip 이 지우지 않는데,
+    화면에는 빈 문자열로 렌더된다. 즉 ``evidence="\u200b"`` 가 "증거 있음"으로
+    통과하면서 사람 눈에는 아무것도 없는 상태가 만들어진다(2026-08-08 reviewer
+    지적 F3, 실측 재현: ZWSP·BOM 둘 다 승급 통과).
+
+    그래서 공백(Z*)·제어(Cc)·format(Cf) 을 전부 "내용 없음"으로 보고, 그 밖의
+    문자가 하나라도 있어야 증거로 인정한다. U+00A0(NBSP)·U+3000 은 Zs 라
+    ``strip()`` 도 이미 걸렀지만 여기서도 같은 규칙으로 걸린다.
+    """
+    if not evidence:
+        return False
+    return any(unicodedata.category(ch)[0] not in _EMPTY_CATEGORY_PREFIXES for ch in evidence)
+
+
+def is_demotion(cur: EquipmentSupportLevel, nxt: EquipmentSupportLevel) -> bool:
+    """``cur → nxt`` 가 하향(강등)인가 — 단계 순서의 SSOT 는 이 모듈이다.
+
+    소비자가 ``_SUPPORT_LEVEL_INDEX`` 를 직접 읽으면 순서 정의가 밖으로 새고,
+    단계가 추가되는 날 두 곳을 고쳐야 한다. 동일 단계는 강등이 아니다
+    (:func:`assert_support_level_transition` 이 그 둘을 다르게 취급한다).
+    """
+    return _SUPPORT_LEVEL_INDEX[nxt] < _SUPPORT_LEVEL_INDEX[cur]
+
+
 def assert_support_level_transition(
     cur: EquipmentSupportLevel,
     nxt: EquipmentSupportLevel,
     *,
     evidence: str | None = None,
 ) -> None:
-    """``cur → nxt`` 승급/강등이 허용되는지 검증한다.
+    """``cur → nxt`` 승급/**동일 단계 재선언**/강등이 허용되는지 검증한다.
 
-    승급은 순차적이어야 한다(단계 스킵 금지) — 승급에는 evidence가 필수다. 강등(하위
-    단계로 되돌리기)은 언제나 허용된다(현장 재검증 실패 등으로 즉시 대응해야 하므로).
+    - **승급**은 순차적이어야 한다(단계 스킵 금지) + evidence 필수.
+    - **동일 단계 재선언**(``cur == nxt``)도 evidence 필수다. 이건 강등이 아니라
+      "이 단계가 여전히 유효하다"는 **주장**이고, 증거 없이 통과시키면 그 단계의
+      근거만 지워진 채 단계 표시가 남는다 — 실제로
+      ``PATCH {state: PRODUCTION_SUPPORTED, evidenceRefs: []}`` 가
+      ``productionSupported: true`` + ``evidenceRefs: []`` 를 만들었다(2026-08-08
+      reviewer 지적 F2, 실측 재현). 예전 구현은 ``nxt_idx <= cur_idx`` 로 동일
+      단계를 강등과 같이 취급해서 생긴 구멍이다.
+    - **강등**(하위 단계로 되돌리기)은 언제나 허용된다 — 현장 재검증 실패 등으로
+      즉시 대응해야 하는 방향에 마찰을 넣지 않는다.
 
     Raises:
-        IllegalSupportLevelTransitionError: 단계를 건너뛴 승급이거나 승급에 evidence가 없을 때.
+        IllegalSupportLevelTransitionError: 단계를 건너뛴 승급이거나, 승급·동일 단계
+            재선언에 evidence가 없을 때.
     """
     cur_idx, nxt_idx = _SUPPORT_LEVEL_INDEX[cur], _SUPPORT_LEVEL_INDEX[nxt]
-    if nxt_idx <= cur_idx:
-        return  # 강등 또는 동일 단계 — 항상 허용
+    if nxt_idx < cur_idx:
+        return  # 강등 — 항상 허용
+    if nxt_idx == cur_idx:
+        if not has_evidence(evidence):
+            raise IllegalSupportLevelTransitionError(
+                f"{cur.value} 단계 재선언에도 검증 증거(evidence)가 필수다 — 증거 없이"
+                " 통과시키면 단계 표시만 남고 그 근거가 지워진다"
+            )
+        return
     if nxt_idx != cur_idx + 1:
         raise IllegalSupportLevelTransitionError(
             f"단계 스킵 승급 금지: {cur.value} → {nxt.value} "
             f"(다음 단계는 {_SUPPORT_LEVEL_ORDER[cur_idx + 1].value} 이어야 한다)"
         )
-    if not evidence or not evidence.strip():
+    if not has_evidence(evidence):
         raise IllegalSupportLevelTransitionError(
             f"{cur.value} → {nxt.value} 승급에는 검증 증거(evidence)가 필수다"
         )

@@ -1,0 +1,13 @@
+[project]
+name = "ksi-equipment-intelligence"
+version = "0.0.1"
+description = "Phase 3 Dynamic Equipment Intelligence — Kinematic State·CPA/TTC·EquipmentSupportLevel (PRD §20)"
+requires-python = ">=3.12,<3.13"
+dependencies = ["pydantic>=2.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_equipment_intelligence"]

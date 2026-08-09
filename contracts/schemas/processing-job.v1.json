@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/processing-job.v1.json",
+  "title": "ProcessingJob v1.0",
+  "description": "3D 재구성 처리 작업 1건의 계약(ADR-KSI-012·ADR-KSI-013). Mission Contract 는 비행 권한이고 이 계약은 비행 뒤에 존재하는 후처리 작업이라 missionId 로만 참조하며, 서명 Mission Contract 스키마에는 처리 정보를 넣지 않는다(제어 경계 분리). 처리 워커의 상태 전이 규칙은 이 계약의 범위 밖이다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "jobId",
+    "missionId",
+    "provider",
+    "engineVersion",
+    "engineDigest",
+    "executionLocus",
+    "dataResidency",
+    "licenseBasis",
+    "input",
+    "processingParams",
+    "billing"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 처리 작업의 고유 식별자."
+    },
+    "missionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "원본 미디어를 만든 임무의 참조뿐이다 — 서명 Mission Contract 에는 처리 정보를 넣지 않는다. 계약은 비행 권한이고 후처리는 비행이 끝난 뒤에 존재하는 별개 사건이라, 여기서는 참조만 하고 임무 계약 자체를 확장하지 않는다."
+    },
+    "provider": {
+      "description": "3D 재구성 엔진 어댑터(ADR-KSI-012 D1·D3). services/processing-controller 는 provider 를 갈아끼울 수 있는 어댑터이고 기본값은 odm(D1) — 나머지는 D3 에서 검토·보류·기각된 대안이 실제로 쓰일 때를 위한 표면이다.",
+      "enum": [
+        "odm",
+        "pix4d_engine",
+        "dji_flighthub",
+        "metashape_spl",
+        "customer_workstation"
+      ]
+    },
+    "engineVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "엔진(컨테이너 이미지 또는 SDK/서비스)의 버전 문자열 — 재현성 앵커의 일부."
+    },
+    "engineDigest": {
+      "type": "string",
+      "minLength": 1,
+      "description": "엔진 빌드의 재현성 앵커. odm 처럼 KSI 가 직접 배포하는 컨테이너는 이미지 digest(예: sha256:<hex>)이고, dji_flighthub 같은 벤더 SaaS 는 벤더가 부여하는 API/엔진 버전 식별자다 — provider 마다 형식이 달라 특정 해시 형식을 강제하지 않는다."
+    },
+    "executionLocus": {
+      "description": "처리가 실제로 실행되는 위치(ADR-KSI-010 이 확정한 운영 표면의 판정 대상을 사람 기억이 아니라 계약이 강제한다). INV-050 이 이 필드와 dataResidency 의 일치를 요구한다.",
+      "enum": [
+        "site_onprem",
+        "ksi_server_gpu",
+        "customer_workstation",
+        "vendor_cloud"
+      ]
+    },
+    "dataResidency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["egressAllowed", "jurisdiction"],
+      "description": "INV-050 강제 지점. executionLocus=vendor_cloud(예: DJI FlightHub 2, 상용 SaaS 엔진)인데 이 현장의 반출이 허용되지 않으면 job 자체가 성립하지 않는다 — 실행 후 사후 통제가 아니라 생성 시점 게이트다(아래 allOf).",
+      "properties": {
+        "egressAllowed": {
+          "type": "boolean",
+          "description": "이 현장의 원본 미디어가 조직 경계 밖(벤더 클라우드)으로 나가도 되는지 — 고객 계약이 정한다."
+        },
+        "jurisdiction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "현장이 속한 관할(예: 국가 코드) — 반출 허용 여부의 근거를 남긴다."
+        }
+      }
+    },
+    "licenseBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["licenseId", "tier", "attributionRequired"],
+      "description": "산출물 렌더링 단계가 읽어야 하는 라이선스 표기 의무(ADR-KSI-012 D3 — Pix4D 'Powered by Pix4D' 공개 표기, Metashape Service Provider License 등). 사람이 기억해 화면에 붙이는 게 아니라 코드가 이 필드를 읽고 렌더링한다.",
+      "properties": {
+        "licenseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "라이선스/계약 식별자(예: Pix4D SPL 계약번호, ODM 은 OSS 식별자 등 provider 마다 의미가 다르다)."
+        },
+        "tier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "라이선스 등급 문자열(예: self_hosted_oss, service_provider_license, sdk_enterprise) — provider·계약별로 값 집합이 달라 enum 으로 고정하지 않는다."
+        },
+        "attributionRequired": {
+          "type": "boolean",
+          "description": "산출물에 provider 표기 의무가 있는가 — true 면 렌더링 단계가 표기를 생략할 수 없다."
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageCount", "totalMegapixels", "sourceBundleDigest"],
+      "description": "과금 크레딧의 SSOT이자 재현성 앵커. imageCount 만 세면 원가와 어긋난다 — ADR-KSI-012 D4 의 크레딧 산식은 해상도(MP) × 장수이므로 totalMegapixels 를 함께 고정한다.",
+      "properties": {
+        "imageCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "처리에 투입된 원본 이미지 장수."
+        },
+        "totalMegapixels": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "투입 이미지 전체의 메가픽셀 합 — 크레딧 산식(해상도×장수)의 직접 입력."
+        },
+        "sourceBundleDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "원본 미디어 번들(ADR-KSI-013 반출 경로로 도착한 원본 묶음)의 내용 해시 — 재현성 앵커."
+        }
+      }
+    },
+    "processingParams": {
+      "type": "object",
+      "description": "엔진별 자유 처리 파라미터. provider 마다 파라미터 형태가 달라 이 계약은 형태를 고정하지 않는다(자유 객체 — additionalProperties 제한 없음).",
+      "additionalProperties": true
+    },
+    "billing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["creditsCharged", "rateBasis", "meteredAt"],
+      "description": "ADR-KSI-012 D4 과금 뼈대의 실측 기록. 고객 장비(온프렘)에서 돌리면 소모 0, KSI 서버에서 돌리면 해상도×장수에 비례한다.",
+      "properties": {
+        "creditsCharged": {
+          "type": "number",
+          "minimum": 0,
+          "description": "이 작업이 소모한 크레딧 — executionLocus 가 고객 장비/온프렘이면 0 이 정상값이다."
+        },
+        "rateBasis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "크레딧 산정 근거를 설명하는 문자열(예: onprem_zero_credit, resolution_mp_x_image_count) — 요금제가 늘어날 수 있어 enum 으로 고정하지 않는다."
+        },
+        "meteredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "과금이 확정(계측)된 시각."
+        }
+      }
+    },
+    "status": {
+      "description": "작업 진행 상태. 상태 전이 규칙은 이 계약의 범위 밖이다(처리 워커 구현 시 별도로 정의) — 여기서는 값 집합만 고정한다.",
+      "enum": ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "executionLocus": { "const": "vendor_cloud" }
+        },
+        "required": ["executionLocus"]
+      },
+      "then": {
+        "properties": {
+          "dataResidency": {
+            "properties": {
+              "egressAllowed": { "const": true }
+            },
+            "required": ["egressAllowed"]
+          }
+        },
+        "required": ["dataResidency"]
+      }
+    }
+  ]
+}

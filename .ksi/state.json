@@ -2,67 +2,67 @@
   "modules": {
     "packages/event-contracts (localization gate)": {
       "status": "green",
-      "note": "CONFIRMED 승격은 CALIBRATED_POSE 시점 증거 전용 — SPATIAL_BIN/UNKNOWN 은 최대 LIKELY. 격자 경계 0.1m 쌍의 CONFIRMED 경로 차단(수정 전 재현 확인). 기선·시차 조건은 실기 pose 확보 후 미구현 상태.",
-      "audit_ref": "commit 5cc7c9b",
-      "at_sha": "5cc7c9b",
+      "note": "CONFIRMED/CALIBRATED_POSE 게이트 무변경·견고 유지. 기선·시차 조건 미구현은 알려진 스코프(실기 pose 종속)",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-27T11:31:14+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/domain (detection adapter)": {
       "status": "green",
-      "note": "B1 1~4 완료: raw output→Detection 정규화(7종 typed drop, fail-closed) + Detector conformance suite. reviewer 반증 4건(산술 NaN escape·무제한 클리핑·stale 기록·bool 라벨 우회) 전건 재현 후 수정. 미완: 실모델 선정(5~6)·recorded 통합(7).",
-      "audit_ref": "commit 3bf5c29",
-      "at_sha": "3bf5c29",
+      "note": "F1~F4 전건 fixed 유지, 실모델 선정·recorded 통합도 완료(no_longer_applicable)",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-27T13:28:45+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/perception (D-FINE adapter)": {
       "status": "green",
-      "note": "B1-6 완료: D-FINE-S COCO-only 실모델 통합 + Registry digest 게이트 + ONNX export 계약. 수용기준 12항목 전건 통과, reviewer 반증 P1 2건 포함 15건 수정. 미완: B1-7 슬라이스 실배선(risk slice-entity-class-hardcoded 선결), B2 Manifold HIL.",
-      "audit_ref": "commit 21e9ada",
-      "at_sha": "21e9ada",
+      "note": "B1-7 슬라이스 실배선 완료(OntologyMapping 강제). B2 Manifold HIL은 하드웨어 종속 대기(코드 결함 아님)",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-27T15:04:39+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "perception pipeline (classification lineage)": {
       "status": "green",
-      "note": "Classification lineage trust boundary independently reviewed PASS. B1-7 allowed. (Actions run 30326490992)",
-      "audit_ref": "commit ad2e568",
-      "at_sha": "ad2e568",
+      "note": "스냅샷 불변화·bool-key 거부 무변경, F-L 완전성 검증으로 오히려 강화",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-28T13:40:15+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "perception pipeline (recorded input slice)": {
       "status": "green",
-      "note": "B1-7 독립 재검토 PASS(2026-07-28, 04b7555, run 30333691228). Recorded Input 기준 소프트웨어 수용 — 실 드론 영상·Manifold 성능·PSDK 는 미승인.",
-      "audit_ref": "commit 04b7555 + independent review PASS",
-      "at_sha": "04b7555",
+      "note": "로더·typed 4분기 무변경·견고. 실드론/Manifold/PSDK 미승인은 알려진 스코프",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-28T15:24:18+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "perception pipeline (onnx+hil trust boundary)": {
-      "status": "risk",
-      "note": "REVIEW_PENDING(비승인): ONNX typed manifest 경계 + HIL 공식 profile·증거 게이트 재제출. mutation 실험 3+2종 하네스 유효성 확인. 다음: ONNX 재검토 PASS→risk 재폐쇄→B2 / HIL PASS→Track A read-only 실행 / slice-inference-exception-channel 은 B3 전 폐쇄.",
-      "audit_ref": "commits pending push",
-      "at_sha": "6c1bb36",
+      "status": "green",
+      "note": "ONNX typed manifest·공식 profile 재검증 축 전건 fixed(55b83bb). 남은 건 B2 Manifold HIL 실측(하드웨어 종속) — dfine-adapter와 동일 성격이라 green으로 재분류",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
       "at_module_sha": null,
-      "at": "2026-07-28T16:53:46+09:00"
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/perception": {
       "status": "green",
-      "note": "감사 8건(med 3·low 5) — 결함급 없음, 계보·결정성 견고. placeholder 계보는 goal 등록",
-      "audit_ref": "audit-pipeline-production-lineage",
-      "at_sha": "db381c8",
-      "at_module_sha": "fdec71f",
-      "at": "2026-07-29T03:58:20+09:00"
+      "note": "med3·low5 결함급 없음 유지. placeholder 계보 goal(audit-pipeline-production-lineage) completed",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "a89208b",
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/domain": {
       "status": "green",
-      "note": "감사 3건 — RawDetection.box 비시퀀스 TypeError 누출(med#4)·Observation.lineage 죽은 필드(med#5)",
-      "audit_ref": "audit-contract-schema-gates",
-      "at_sha": "db381c8",
-      "at_module_sha": "fdec71f",
-      "at": "2026-07-29T03:58:20+09:00"
+      "note": "med#4(RawDetection.box 비시퀀스 TypeError 누출) 이번 세션 수정(hardening-rawdetection-box-typeerror-leak). med#5는 event-contracts 오귀속으로 판명(범위 아님)",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "dcf8f34",
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/geo-core": {
       "status": "green",
@@ -73,44 +73,44 @@
       "at": "2026-07-29T03:58:20+09:00"
     },
     "packages/mission-contracts": {
-      "status": "risk",
-      "note": "서명 견고하나 KeyRegistry 덮어쓰기(#9)·ActionIntent kind 미검증(#7)·서비스 미배선(#61)",
-      "audit_ref": "audit-signing-key-lifecycle",
-      "at_sha": "db381c8",
-      "at_module_sha": "1a6c013",
-      "at": "2026-07-29T03:58:20+09:00"
+      "status": "green",
+      "note": "KeyRegistry 덮어쓰기(#9)·ActionIntent kind 미검증(#7) fixed. 서비스 미배선(#61)은 계약 자체가 v1 미배포로 명시한 의도된 상태",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "c3c14bf",
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "packages/event-contracts": {
       "status": "green",
-      "note": "v1.2 계보 견고 — 스키마 왕복 게이트 부재(#33)·digest 이중 규약 문서화(#46)",
-      "audit_ref": "audit-contract-schema-gates",
-      "at_sha": "db381c8",
-      "at_module_sha": "d0f5d25",
-      "at": "2026-07-29T03:58:20+09:00"
+      "note": "#33 스키마 왕복 게이트·#46 digest 이중규약 둘 다 감사 당일 폐쇄(325cb0c), 재발 없음",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "0a5f80b",
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "services/core": {
       "status": "green",
-      "note": "edge-sync HIGH#1(short write) 수정 완료 db381c8 — 운영 강화는 goal로",
-      "audit_ref": "audit-edge-sync-ops-hardening",
-      "at_sha": "db381c8",
-      "at_module_sha": "db381c8",
-      "at": "2026-07-29T03:58:20+09:00"
+      "note": "short-write 방어(edge_sync.py) 재확인 통과, durable_journal.py 신규 베이스도 동일 패턴 계승",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "0a5f80b",
+      "at": "2026-08-06T22:41:40+09:00"
     },
     "edge/manifold-runtime": {
       "status": "risk",
-      "note": "TTL int64 오버플로 fail-open(#14)·schemaVersion 부재(#16)·mutation 저항성 결핍(#52) — Track A 전 폐쇄",
-      "audit_ref": "audit-actionintent-hardening",
-      "at_sha": "db381c8",
-      "at_module_sha": "1a6c013",
-      "at": "2026-07-29T03:58:20+09:00"
+      "note": "TTL overflow(#14)·schemaVersion(#16) fixed(77d8013). #52 mutation 저항성은 폐쇄 커밋 목록에 없고 별도 추적도 끊겨 있었음 — hardening-mutation-resistance-tracking-lost 로 재등록",
+      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
+      "at_sha": "3a25ee1",
+      "at_module_sha": "976df01",
+      "at": "2026-08-06T22:41:39+09:00"
     },
     "tests": {
-      "status": "green",
-      "note": "실모델 무음 skip anchor 부재(#19)·replay 하네스 전이 누출(#76)·final_position 오명명(#78)",
-      "audit_ref": "audit-gate-integrity",
-      "at_sha": "db381c8",
-      "at_module_sha": "db381c8",
-      "at": "2026-07-29T03:58:20+09:00"
+      "status": "unknown",
+      "note": "#19·#78 fixed 유지. #76(replay 하네스 전이 누출)은 2026-08-08 재조사 — 원 finding 전문·재현 단서 모두 로컬에 남아있지 않음을 확인(exhaustive search), 이전 시도도 재현 실패였음 — 뭘 봐야 할지조차 알 수 없어 더 쫓을 근거가 없다. risk 아님도 확정 못 해 unknown으로 재분류(추측성 risk 라벨보다 정직).",
+      "audit_ref": "2026-08-08 investigation via Explore agent aee271c4fff1d3279 + manual grep spot-check (d43d573c/5aaf3ee6/421d672c) — see hardening-mutation-resistance-tracking-lost abandon reason for full method",
+      "at_sha": "d5231f2",
+      "at_module_sha": "4d23549",
+      "at": "2026-08-07T13:10:54+09:00"
     }
   }
 }

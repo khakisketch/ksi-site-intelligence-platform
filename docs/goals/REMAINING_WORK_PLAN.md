@@ -1,23 +1,29 @@
-# 완성형까지의 잔여 작업 계획 (2026-07-29 확정)
+# 완성형까지의 잔여 작업 계획 (2026-08-08 개정)
 
 > 상태의 SSOT는 goal-ledger(`ksi-goals.py status`)다 — 이 문서는 구조 개요만 담고
-> 진행 상태를 복제하지 않는다. 근거: 2026-07-29 전수 갭 스캔(PRD·코드·원장·WPML
-> 스펙 6축 병렬 대조, workflow wf_ff556013) + ADR-KSI-005/006/007.
+> 진행 상태를 복제하지 않는다. 근거: ADR-KSI-016(제품 범위·공간 아키텍처 확정,
+> 2026-08-07 대표자 확정) + 2026-08-07 전체 저장소 실태 조사.
+>
+> **2026-07-29판과의 차이**: 그때의 소프트웨어 트랙(S1~S4)은 전부 완료됐다
+> (`mission-geometry-route`·`core-domain-query`·`dashboard-mvp`·
+> `ops-serving-hardening`). 그 계획은 "임무 거버넌스와 조회 계층을 세운다"까지를
+> 다뤘고, 실제로 그것이 섰다. 이 개정판은 그 위에서 **공간 데이터의 실체**를
+> 만드는 트랙을 다룬다 — 실태 조사가 드러낸 공백이 정확히 거기다.
 
-## 소프트웨어 트랙 (하드웨어 불요 — 지금 진행)
+## 마일스톤 트랙 (하드웨어 불요 — 지금 진행)
+
+> **2026-08-08 실사(technical-product-audit)로 M2/M3 순서를 뒤집었다.** M3(배포
+> 가능성) 없이 M2(폐루프 자동화)를 만들어도 띄울 데가 없다 — 자세한 근거는
+> 실사 보고서(`/home/ksi/.claude/plans/ksi-site-intelligence-curious-hare.md`,
+> §H) 참조. 대표자 승인 완료.
 
 | 순서 | Goal ID | 내용 | 왜 이 순서인가 |
 |---|---|---|---|
-| S1 | `mission-geometry-route` | AOI 폴리곤 도메인 모델 + 구역→커버리지 경로 생성기(매핑=lawnmower·순찰=외곽) + WPML/KMZ 생성기 | ADR-KSI-007의 미구현 절반. S2·S3의 선행 결손(AOI 모델이 없으면 현장 등록도 임무 정의도 못 만든다) |
-| S2 | `core-domain-query` | Site 도메인(상태머신)·Mission 영속/조회·Event 조회+트리아지 전이 API·인증/권한 | 대시보드가 소비할 읽기 계층 전체가 missing. 인증은 edge-sync P1-4 risk(위조 sequence 락아웃)의 해소 경로이기도 함 |
-| S3 | `dashboard-mvp` | Next.js 대시보드: 홈·이벤트 트리아지·임무·현장 + 현장등록/조사 Wizard (UX 목표 선행 작성) | S2의 API 위에서만 실물이 됨. apps/dashboard는 현재 README뿐 |
-| S4 | `ops-serving-hardening` | Evidence 미디어 스토리지(presigned)·retention 집행·서명키 수명주기·journal 회전(인증과 결합) | 운영 표면 — S2의 인증·DB 결정과 결합해야 재작업이 없음 |
-
-부수 P2 백로그(원장 노트 소유): slice-inference-exception-channel(track-b에서 폐쇄
-구현·review_pending), coverage-report 완료 게이트(INV-010 강제 지점 미구현 — S1
-범위에 스키마 소비만, 실계산은 실기 커버리지 데이터 이후), model-lineage-coco-residual
-(법무 검토 대기), 처리 파이프라인 후단(workers/* — ODM·map-compiler·change-detection,
-Phase 2 이후).
+| M1 | `m1-spatial-epoch-pipeline` | 재구성 산출물 바이트 영속 → 정좌표(EPSG:5186·수직기준) → 두 시점 DSM 차분 체적·변화 리포트 → 대시보드 표시 | **완료기준 4개 중 3개(바이트 영속·CRS/지오이드·DSM 체적)는 실기동+저장소 영속 테스트로 완전히 충족됨**(`tests/contract/test_odm_live.py`, 7 passed — 실 NodeODM+MinIO+Core 왕복). 남은 1개(정사영상)는 대시보드 UI(`OrthophotoOverlay`, 커밋 `165ab84`)는 완성했으나 `mesh-multi-file-artifact-persistence`(아래) 미해소로 화면에 띄울 데이터 자체가 파이프라인에서 안 나온다. goal `m1-spatial-epoch-pipeline`은 이 사유로 `in_progress`(gate refuted, 2026-08-08) — 핵심 가치(반복비행→물량·변화 리포트)는 정사영상 없이도 이미 성립한다 |
+| M3 | (미등록) | 상용 기반 — 프로덕션 조립 경로(env 설정·Dockerfile·비밀 주입) + 사진 업로드/재구성 발행 UI + 커버리지 보고 장비-임무 대조 + 관측성(구조화 로깅·기본 메트릭) + 실사용자 인증(토큰 만료·회전) + retention 스케줄러 연결 | **M2보다 먼저다.** 지금 실행 경로가 dev 토큰 5개를 하드코딩한 `scripts/run_core_dev.py`(자칭 "프로덕션 조립 아님") 하나뿐이라 띄울 수 없고, 대시보드에 사진 업로드·재구성 발행 UI가 없어 사용자가 핵심 가치를 스스로 실행할 수 없다("만들었지만 쓸 수 없는 것"). 커버리지 보고에 장비-임무 대조가 없는 것(INV-010 무결성 공백)도 여기서 닫는다 |
+| M2 | (미등록) | 폐루프 실물 — 변화 신호 → 재촬영 AOI → 임무 초안 → 승인 발급 | M1의 변화·체적이 있어야 "무엇을 다시 찍을지"가 정해지고, M3의 사진 업로드·인증·관측성이 있어야 이 자동화를 실제 사용자에게 돌릴 수 있다. 제품 정의(ADR-KSI-016 D1)의 "재수집을 스스로 계획한다"가 여기서 실물이 된다 |
+| M4 | (미등록) | 설계층 v1(도면·계획고 대비) + 실기 트랙 합류 | BIM 정합은 이미 착수돼 있고(`services/bim-integration`), M1의 좌표계 위에서만 의미를 갖는다 |
+| (별도) | `mesh-multi-file-artifact-persistence` | mesh(다중파일) 산출물 저장 지원 — 정사영상이 mesh 를 부모로 등록되려면 mesh 자체가 먼저 등록돼야 한다 | `worker.py:205`의 "산출물 1건=파일 1개" 스코프컷(등록 digest와 업로드 바이트 일치 계약, Task C2) 때문에 mesh가 통째로 업로드 스킵된다. 비용 대비 가치가 낮아 M1~M3 이후로 미룬다(§하지 말아야 할 개발) |
 
 ## 하드웨어 트랙 (도착·승인 대기 — 준비 완료 상태 유지)
 
@@ -28,10 +34,40 @@ Phase 2 이후).
 | H3 | Track A PSDK 스파이크: 9항목 SpikeEvidence + 비행상태 topic(ADR-KSI-006) + Frame-Telemetry p95≤50ms | 기체 + PSDK 개발자 승인 |
 | H4 | KMZ 실기 임포트 검증 (Pilot 2 — WPML 스펙 caveats 해소: wpmz/ 폴더명·M4D droneEnumValue) | RC Plus 2 |
 
+하드웨어 트랙은 마일스톤 트랙과 **경합하지 않는다** — 구매·승인 대기가 게이트라
+개발 리소스를 나눠 쓰지 않는다. 실기 사진이 확보되면 M1이 만든 같은 파이프라인으로
+교체 검증한다(M1은 ODM 공개 샘플 데이터셋으로 먼저 뚫는다).
+
+## 두 축의 현재 (ADR-KSI-016 D2)
+
+제품은 **Site Intelligence Core(WHAT/WHY) ↔ Autonomous Acquisition(HOW)의
+폐루프**다. 위 두 트랙 표는 그 축들의 현재 진행 상태를 사람이 읽는 형태로
+적은 것이고, 기계가 읽는 형태는 `PHASE_REGISTRY.yaml`의 `axes` 절이다.
+
+| 축 | 지금 | 왜 |
+|---|---|---|
+| Site Intelligence Core | **진행** | 막힌 것 없음 — M1~M3이 이 축이다 |
+| Autonomous Acquisition | **차단** | 우선순위가 아니라 게이트다 — H1~H4가 장비·PSDK 승인 대기 |
+
+**차단과 강등을 구분한다.** Acquisition 축은 뒤로 미룬 것이 아니라 막혀 있고,
+게이트가 열리는 즉시 착수한다. 이 구분을 흐리면 하드웨어 도착 시 "그건 낮은
+순위였는데"가 다시 나온다.
+
+## 지금 추가 투자를 하지 않는 것 (ADR-KSI-016 D5)
+
+전부 범위 안에 있고 구현물도 유지한다. "몇 순위"가 아니라 "신규 투자 없음"이다.
+
+- phase-3 장비 kinematics·CPA/TTC·위험장 → Acquisition 축 기능, 축이 열릴 때까지 신규 투자 없음
+- phase-5 Dock·Fleet·산업중립 팩 → 첫 유료 건설 현장 전까지 동결
+- Edge perception 신규 코드 → 하드웨어 스파이크(H1~H4) 전 착수 금지(ADR-KSI-006)
+- 자연어 질의·LLM 보고서 표면 → 데이터 계층 이후
+
 ## 확정된 설계 전제 (이 계획이 기대는 ADR)
 
+- 제품 정의·우선순위·공간 데이터 계층·Build vs Buy — ADR-KSI-016
+- Point Cloud 원본 SSOT / Mesh·정사영상·DSM 파생 — ADR-KSI-003, INV-051
+- 재구성 엔진 기본값 ODM + AGPL 프로세스 경계 + 현장당 과금 — ADR-KSI-012
 - 오프라인이 정상 동작, 온라인은 가속(저장 후 전달 단일 경로) — ADR-KSI-005
-- 임무 정의 = 이원 산출물(KMZ→기체 / Mission Contract→Manifold, 동일 site_frame·policy_version 짝) — ADR-KSI-007
-- 상시 LTE 1순위 = DJI Cellular Dongle 2(공식 payload network access), 대안 = USB-C LTE 라우터 — ADR-KSI-005(정정)
+- 임무 정의 = 이원 산출물(KMZ→기체 / Mission Contract→Manifold) — ADR-KSI-007
 - 실시간 텔레메트리 스트림·라이브 지도 = 스코프 제외(RTMP는 RC 네이티브) — ADR-KSI-005
 - 앱 자동 기동·이착륙 트리거 = 목표 설계, Track A에서 실증 — ADR-KSI-006

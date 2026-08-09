@@ -22,13 +22,22 @@ import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
+from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.coverage_reports import CoverageReportStore
+from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
+from ksi_core.equipment_states import EquipmentStateStore
+from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
+from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionStore
+from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
+from ksi_core.source_media import SourceMediaStore
+from ksi_core.volume_reports import VolumeChangeStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -60,6 +69,8 @@ _PUBLIC_PATHS = frozenset({"/health", "/capabilities"})
 
 
 class _NullEvidenceStorage:
+    _blobs: dict[str, bytes] = {}  # noqa: RUF012 -- 테스트 스텁
+
     """포트 계약만 만족하는 조립용 스텁 — 이 게이트는 경로 존재만 본다.
 
     ``evidence_storage`` 를 주지 않으면 증거 라우터가 장착되지 않아(ADR-KSI-010 §1)
@@ -73,6 +84,18 @@ class _NullEvidenceStorage:
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         raise NotImplementedError
 
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
+
     def delete(self, object_key: str) -> None:
         raise NotImplementedError
 
@@ -81,15 +104,47 @@ def _max_assembly(tmp_path: Path) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+    )
+    processing_job_store = ProcessingJobStore(
+        DurableJournal(tmp_path / "processing-jobs.jsonl"),
+        source_media_store=source_media_store,
+        site_store=site_store,
+    )
     return create_app(
         evidence_storage=_NullEvidenceStorage(),
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
-        site_store=SiteStore(DurableJournal(tmp_path / "sites.jsonl")),
+        site_store=site_store,
         mission_store=mission_store,
         coverage_report_store=CoverageReportStore(
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+        ),
+        source_media_store=source_media_store,
+        processing_job_store=processing_job_store,
+        defect_candidate_store=DefectCandidateStore(
+            DurableJournal(tmp_path / "defect-candidates.jsonl"),
+            mission_store=mission_store,
+            source_media_store=source_media_store,
+        ),
+        change_detection_store=ChangeDetectionStore(
+            DurableJournal(tmp_path / "change-detection.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+        ),
+        volume_change_store=VolumeChangeStore(
+            DurableJournal(tmp_path / "volume-changes.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+        ),
+        equipment_state_store=EquipmentStateStore(
+            DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
+        ),
+        equipment_support_store=EquipmentSupportStore(
+            DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="contract-sync-test-key",
@@ -660,3 +715,57 @@ def test_no_unauthenticated_route_outside_allowlist(tmp_path: Path) -> None:
     # 공허 방지 — 보호 라우트가 실제로 여럿 감지돼야 위 차집합에 의미가 있다.
     protected = {r.path for r in routes if _has_auth_dependency(r)}
     assert len(protected) >= 8, f"인증 게이트를 감지한 라우트가 너무 적다: {sorted(protected)}"
+
+
+# ``_max_assembly`` 는 ``create_app`` 을 직접 불러 문서(openapi-core.yaml) 대조용
+# "최대 조립"을 만든다 — dev(scripts/run_core_dev.py)·production(ksi_core.production)
+# 두 실행 가능 조립이 실제로 타는 ``ksi_core.app_assembly.assemble_app`` 이 그 위에
+# 얹는 라우트(``/ready``)는 구조적으로 위 게이트의 시야 밖이었다(독립 재검토 지적 —
+# "무인증 표면은 allowlist 뿐"이라는 위 게이트가 조립 지점이 추가하는 라우트에
+# 대해서는 공허했다). 여기서 실행 가능한 두 조립이 공유하는 assemble_app 도 같은
+# 방식으로 훑어, "나중에 assemble_app 이 인증 없이 열어선 안 되는 라우트를 추가해도
+# 이 파일의 게이트가 못 본다"는 사각지대를 닫는다.
+_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST = frozenset({"/ready"})
+
+
+def test_no_unauthenticated_route_outside_allowlist_via_assemble_app(tmp_path: Path) -> None:
+    """[핵심] ``assemble_app``(dev·production 공용 조립)이 얹는 라우트도 같은 게이트를 탄다.
+
+    ``/ready`` 는 의도적으로 무인증이다(오케스트레이터 헬스체크는 인증 헤더를 안
+    보낸다) — 그래서 별도의 작은 allowlist 에 명시적으로 올려 둔다. 이 allowlist 밖의
+    무인증 라우트가 하나라도 나오면 실패한다.
+    """
+    opened: list[Any] = []
+
+    def _journal(name: str) -> DurableJournal:
+        journal = DurableJournal(tmp_path / name)
+        opened.append(journal)
+        return journal
+
+    try:
+        app = assemble_app(
+            tmp_path,
+            journal=_journal,
+            opened=opened,
+            edge_sync_snapshot_every=None,
+            auth_registry=_auth_registry(),
+            evidence_storage=_NullEvidenceStorage(),
+            mission_signing_key=Ed25519PrivateKey.generate(),
+            mission_signing_key_id="assemble-app-unauth-gate-test-key",
+        )
+        routes = _walk_routes(app)
+        assert len(routes) >= 15, f"라우트를 제대로 못 폈다({len(routes)}) — 게이트가 공허하다"
+        unauthenticated = {r.path for r in routes if not _has_auth_dependency(r)}
+        allowed = _UNAUTHENTICATED_ALLOWLIST | _ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST
+        unexpected = unauthenticated - allowed
+        assert not unexpected, (
+            "assemble_app 이 얹은 라우트 중 인증 없이 열린 것이 allowlist 밖에 있다: "
+            f"{sorted(unexpected)} — 의도한 것이면 "
+            "_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST 를 갱신하라"
+        )
+        # /ready 자체가 정말 assemble_app 이 얹은 무인증 라우트라는 것도 확인한다 —
+        # 그래야 위 대조가 "우연히 아무것도 안 걸렸다"가 아니라는 근거가 된다.
+        assert "/ready" in unauthenticated
+    finally:
+        for journal in opened:
+            journal.close()

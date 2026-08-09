@@ -47,3 +47,8 @@ design/**/index.html
 # (manifold.env.example 참조. 비밀은 없지만 머신별 값이라 무시 대상이 맞다 — 2026-08-04
 # 병렬 감사에서 여기 없어 mf_git_is_dirty가 항상 true가 되던 결함 발견·정정, 감사 #3).
 scripts/manifold/manifold.env
+
+# test_repo_hygiene_gate.py 의 tracked_file 픽스처가 만드는 임시 위반 파일 —
+# 정상 종료 시 teardown 이 지우지만, 프로세스가 죽으면 uuid4 접미사 디렉터리가
+# 추적되지 않은 채 남을 수 있다(2026-08-06 독립 재검토 권고).
+tests/contract/_hygiene_mutation_scratch_*/

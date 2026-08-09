@@ -34,6 +34,7 @@ _SCHEMA_DEFAULTS = _REPO_ROOT / "contracts" / "schemas" / "retention-policy.v1.j
 
 class FakeStorage:
     def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.fail_with: Exception | None = None
 
@@ -42,6 +43,18 @@ class FakeStorage:
 
     def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:
         return f"get://{object_key}"
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """포트가 요구하는 서버측 직접 쓰기 — 이 스텁은 메모리에만 담는다."""
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """부재도 오류다(포트 계약) — 조용히 빈 바이트를 돌려주지 않는다."""
+        blob = self._blobs.get(object_key)
+        if blob is None:
+            raise EvidenceStorageError(f"없다: {object_key}")
+        return blob
 
     def delete(self, object_key: str) -> None:
         if self.fail_with is not None:

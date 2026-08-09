@@ -4,13 +4,33 @@ import type { ReactNode } from "react";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
-import { getMission } from "@/lib/core-api/missions";
+import { getCoverageReport, getMission } from "@/lib/core-api/missions";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
+import {
+  CoverageReportSection,
+  type CoverageReportResult,
+} from "@/components/missions/CoverageReportSection";
 
 import { formatCoverageRatio, formatDateTime, formatNullable } from "../format";
 import { ARTIFACT_KIND_LABEL, MISSION_TYPE_LABEL, ROUTE_PATTERN_LABEL } from "../mission-labels";
+
+// 커버리지 보고 조회 실패를 상세 화면 전체가 아니라 이 섹션 하나로 국소화한다 —
+// 임무 발급 메타(좌 패널)는 커버리지 서브시스템이 죽어도 보여야 한다(getSite 와
+// 같은 원칙, "부가 정보 실패가 본문을 끌고 내려가지 않는다").
+async function fetchCoverageResult(missionId: string): Promise<CoverageReportResult> {
+  try {
+    return { kind: "reported", report: await getCoverageReport(missionId) };
+  } catch (error) {
+    if (error instanceof CoreApiError) {
+      if (error.status === 404) return { kind: "not-reported" };
+      return { kind: "error", error };
+    }
+    throw error;
+  }
+}
 
 export default async function MissionDetailPage({
   params,
@@ -37,7 +57,10 @@ export default async function MissionDetailPage({
 
   // 현장 이름은 부가 정보다 — 조회가 실패해도 임무 상세 자체는 보여야 하므로
   // 실패를 삼키고 raw siteId 로 내려간다.
-  const site = await getSite(mission.siteId).catch(() => null);
+  const [site, coverageResult] = await Promise.all([
+    getSite(mission.siteId).catch(() => null),
+    fetchCoverageResult(mission.missionId),
+  ]);
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
@@ -83,6 +106,12 @@ export default async function MissionDetailPage({
               }
             />
           </dl>
+          <div className="pt-1">
+            <KmzDownloadButton
+              missionId={mission.missionId}
+              hasKmz={mission.artifactKind === "pair"}
+            />
+          </div>
         </section>
 
         {/* 우: 사실 패널 */}
@@ -96,6 +125,14 @@ export default async function MissionDetailPage({
           </dl>
         </section>
       </div>
+
+      {/* 비행 결과 — CoverageReport 의 존재와 서버 판정을 그대로 보여준다(INV-010).
+          발급 메타(위)와 분리한다: 저건 "무엇을 지시했나", 이건 "실제로 무슨 일이
+          있었나" — 계획 커버리지(위 "계획 커버리지" 필드)와 절대 나란히 두지 않는다. */}
+      <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+        <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">비행 결과</h3>
+        <CoverageReportSection result={coverageResult} />
+      </section>
     </div>
   );
 }

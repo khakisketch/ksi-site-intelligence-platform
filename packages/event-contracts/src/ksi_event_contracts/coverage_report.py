@@ -138,6 +138,29 @@ class CoverageReport(_CamelModel):
         """관찰되지 않은 Cell id — 사유가 있든 없든 전부(순서 보존)."""
         return [c.cell_id for c in self.cells if c.state not in OBSERVED_STATES]
 
+    def needs_coverage_recovery(self) -> bool:
+        """Coverage Recovery 재발급이 권고되는가(MASTER_PRD §15.2 "분기로 인한
+        촬영공백을 Coverage Recovery가 보완").
+
+        이 판정은 **권고일 뿐 자동 재발급을 트리거하지 않는다** — 재발급은 기존
+        ``POST /v1/missions/plans``(SPATIAL_REFRESH, 원본 site AOI)를 그대로
+        쓴다. 사유 없는 미관찰(``NOT_OBSERVED``)만 보는 게 아니라 사유 있는
+        미관찰(``OCCLUDED``·``TIME_LIMITED`` 등)도 포함한다 — 사유가 있어도
+        "못 본 곳"인 사실은 변하지 않는다.
+
+        ``completion_state is not COMPLETED`` 를 독립적으로 본다 —
+        ``COMPLETED_WITH_GAPS``·``ABORTED_SAFE``·``FAILED`` 전부 포함한다.
+        judge_report 는 이 셋 모두에 Cell 존재나 임계 검사를 걸지 않으므로(그
+        검사는 ``COMPLETED`` 주장에만 걸린다), cells 가 비어 있거나 전부
+        관찰됨으로 채워져 있어도 completion_state 자체가 "온전히 끝나지 않았다"
+        는 신호다 — 특히 ``ABORTED_SAFE``/``FAILED`` 는 재커버가 가장 명백히
+        필요한 케이스라 여기서 빠지면 거짓음성이 된다(리뷰 지적 P1-a).
+        """
+        return (
+            self.summary.completion_state is not CompletionState.COMPLETED
+            or bool(self.unobserved_cells())
+        )
+
     def contradicts_full_coverage(self) -> bool:
         """요약이 전 구역 100% 를 말하는데 관찰 안 된 Cell 이 있는가.
 

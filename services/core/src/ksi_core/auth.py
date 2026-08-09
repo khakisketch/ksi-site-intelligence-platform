@@ -6,13 +6,27 @@
 보유한다(조립 시 digest 레코드 주입) — 서버 어디에도 토큰 원문이 남지 않는다.
 JWT/OAuth·사용자 관리 API 는 도입하지 않는다(외부 IdP 없는 파일럿 규모에 과잉).
 
-## Principal 2종 (2-enum 분리 관습)
+## Principal 3종 (2-enum 분리 관습)
 
 - ``OPERATOR``(사람): :class:`Role` 필수, ``device_id`` 는 가질 수 없다. 권한은
   모듈 상수 ``_ROLE_PERMISSIONS`` 표 하나로만 결정된다(엔드포인트 산재 금지).
 - ``EDGE_DEVICE``(장비): role 없음, ``device_id`` 필수. 권한은 항상
   ``{EDGE_SYNC_INGEST}`` 고정 — role 표와 무관하다(edge-sync 수신 인증 장비
   바인딩은 :mod:`ksi_core.edge_sync` 장착부에서 이 Principal 을 소비한다).
+- ``PROCESSING_WORKER``(3D 재구성 워커): role 없음, ``device_id`` 도 없음. 권한은
+  항상 ``{PROCESSING_WORK}`` 고정.
+
+## 왜 워커가 별도 종류인가 — ``EDGE_DEVICE`` 재사용 금지
+
+재구성 워커는 비행 장비가 아니다. ``EDGE_DEVICE`` 를 재사용하면 ①워커가
+``EDGE_SYNC_INGEST`` 를 얻어 관측 번들을 밀어넣을 수 있고 ②``device_id`` 가
+필수라 존재하지 않는 기체 식별자를 지어내야 하며 그 값이 ``eventKey`` 의 경로
+세그먼트로 흘러든다. 신원 모델이 다르면 종류를 나눈다.
+
+``PROCESSING_WORK`` 는 어느 :class:`Role` 에도 매핑되지 않는다 — **사람은 이
+권한을 가질 수 없다.** 처리 작업의 ``RUNNING``·``SUCCEEDED``·``FAILED`` 는
+실제로 엔진을 돌린 주체만 보고할 수 있는 사실이고, 사람이 손으로 찍을 수
+있으면 그 상태는 근거가 아니라 주장이 된다(``processing_jobs.py`` 전이 권한표).
 
 ## 실패는 fail-closed
 
@@ -45,20 +59,25 @@ if TYPE_CHECKING:
 
 
 class Role(StrEnum):
-    """OPERATOR(사람) Principal 의 역할 — 권한은 ``_ROLE_PERMISSIONS`` 표 SSOT."""
+    """OPERATOR(사람) Principal 의 역할 — 권한은 ``_ROLE_PERMISSIONS`` 표 SSOT.
+
+    3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개를
+    ``FIELD_OPERATOR`` 하나로 합쳤다. 대시보드가 이미 역할이 아니라 권한으로
+    분기하므로 역할 수를 유지할 이득이 없었다(9개 분기 지점 전부 permission
+    기반, ADR 본문 참조).
+    """
 
     ADMIN = "ADMIN"
-    SITE_MANAGER = "SITE_MANAGER"
-    SAFETY_MANAGER = "SAFETY_MANAGER"
-    DRONE_OPERATOR = "DRONE_OPERATOR"
+    FIELD_OPERATOR = "FIELD_OPERATOR"
     VIEWER = "VIEWER"
 
 
 class PrincipalKind(StrEnum):
-    """Principal 종류 — 사람(OPERATOR) 과 장비(EDGE_DEVICE) 는 신원 모델이 다르다."""
+    """Principal 종류 — 사람·비행 장비·처리 워커는 신원 모델이 서로 다르다."""
 
     OPERATOR = "OPERATOR"
     EDGE_DEVICE = "EDGE_DEVICE"
+    PROCESSING_WORKER = "PROCESSING_WORKER"
 
 
 class Permission(StrEnum):
@@ -71,6 +90,24 @@ class Permission(StrEnum):
     EVENTS_READ = "EVENTS_READ"
     EVENTS_TRIAGE = "EVENTS_TRIAGE"
     EDGE_SYNC_INGEST = "EDGE_SYNC_INGEST"
+    # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
+    # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
+    PROCESSING_WORK = "PROCESSING_WORK"
+    # blast radius 가 큰 site 전이만 가른다(ADR-KSI-015 D2) — 자율비행 개시
+    # (MODEL_VALIDATION→PROVISIONAL_AUTONOMY)·정식 순찰 승인(PROVISIONAL_
+    # AUTONOMY→PATROL_READY)·운영중단 진입/복귀(↔SUSPENDED). 대상 전이 집합
+    # 자체는 도메인 개념이라 ``ksi_domain.enums.requires_autonomy_approval``
+    # 이 SSOT — 이 권한은 그 판정에 매핑되는 권한 코드일 뿐이다(강제 지점은
+    # ``ksi_core.sites`` 라우트).
+    SITES_AUTONOMY_APPROVE = "SITES_AUTONOMY_APPROVE"
+    # 장비 클래스 지원단계 승급(INV-041, MASTER_PRD §23.3/§26.7). SITES_AUTONOMY_
+    # APPROVE 와 같은 사유로 ADMIN 에게만 준다 — "이 장비를 상용으로 지원한다"는
+    # 선언은 고객 UI 와 계약에 그대로 실리는 안전 주장이고(REQ-MODEL-101,
+    # 00_READ_FIRST 구현금지 "미검증 장비를 상용지원으로 표시"), 그 선언을 되돌려도
+    # 이미 그 표시를 보고 내린 운용 결정은 되돌아오지 않는다. 강등은 이 권한이
+    # 필요하지만(같은 표면) 증거를 요구하지 않는다 — 재검증 실패에 즉시 대응해야
+    # 하는 방향에 마찰을 넣지 않는다(capability.assert_support_level_transition).
+    EQUIPMENT_SUPPORT_APPROVE = "EQUIPMENT_SUPPORT_APPROVE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +174,17 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
                 f"{principal.principal_id}: device_id 는 경로-안전 문자만 허용한다"
                 " (eventKey 의 경로 세그먼트 절반이 된다)"
             )
+    elif principal.kind is PrincipalKind.PROCESSING_WORKER:
+        if principal.role is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: PROCESSING_WORKER 는 role 을 가질 수 없다"
+            )
+        if principal.device_id is not None:
+            # 재구성 워커는 기체가 아니다 — device_id 를 허용하면 존재하지 않는
+            # 기체 식별자가 원장에 흘러든다(모듈 docstring).
+            raise AuthRegistryError(
+                f"{principal.principal_id}: PROCESSING_WORKER 는 device_id 를 가질 수 없다"
+            )
 
 
 class AuthRegistry:
@@ -161,8 +209,12 @@ class AuthRegistry:
         return self._by_digest.get(digest)
 
 
-# role → permission 표 하나가 SSOT(ADR-KSI-008 §2) — 엔드포인트별 권한 산재 금지.
-# ADMIN 은 EDGE_SYNC_INGEST 를 제외한 OPERATOR 권한 전부(사람은 edge ingest 불가).
+# role → permission 표 하나가 SSOT(ADR-KSI-008 §2, ADR-KSI-015 D1/D2) —
+# 엔드포인트별 권한 산재 금지. ADMIN 은 EDGE_SYNC_INGEST 를 제외한 OPERATOR
+# 권한 전부(사람은 edge ingest 불가) + SITES_AUTONOMY_APPROVE — 이 권한이
+# 없으면 ADMIN 의 권한집합이 FIELD_OPERATOR 와 글자 하나까지 같아져 관리자
+# 역할이 라벨로 전락한다(ADR-KSI-015 D2, tests/contract/test_auth.py 구조
+# 불변식이 이를 고정한다).
 _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.ADMIN: frozenset(
         {
@@ -172,27 +224,19 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
+            Permission.SITES_AUTONOMY_APPROVE,
+            Permission.EQUIPMENT_SUPPORT_APPROVE,
         }
     ),
-    Role.SITE_MANAGER: frozenset(
+    Role.FIELD_OPERATOR: frozenset(
         {
             Permission.SITES_READ,
             Permission.SITES_WRITE,
             Permission.MISSIONS_READ,
+            Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
         }
-    ),
-    Role.SAFETY_MANAGER: frozenset(
-        {
-            Permission.SITES_READ,
-            Permission.MISSIONS_READ,
-            Permission.EVENTS_READ,
-            Permission.EVENTS_TRIAGE,
-        }
-    ),
-    Role.DRONE_OPERATOR: frozenset(
-        {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.MISSIONS_ISSUE}
     ),
     Role.VIEWER: frozenset(
         {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.EVENTS_READ}
@@ -202,11 +246,20 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 # EDGE_DEVICE 는 role 표와 무관하게 항상 이 고정 집합이다(ADR-KSI-008 §2).
 _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset({Permission.EDGE_SYNC_INGEST})
 
+# PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무
+# 발급·사건 분류에 손댈 이유가 없고, 손댈 수 있으면 처리 파이프라인 하나가
+# 뚫렸을 때 blast radius 가 제품 전체가 된다.
+_PROCESSING_WORKER_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.PROCESSING_WORK}
+)
+
 
 def principal_permissions(principal: Principal) -> frozenset[Permission]:
-    """Principal 의 유효 권한 집합. EDGE_DEVICE 는 고정, OPERATOR 는 role 표 조회."""
+    """Principal 의 유효 권한 집합. 장비·워커는 고정, OPERATOR 는 role 표 조회."""
     if principal.kind is PrincipalKind.EDGE_DEVICE:
         return _EDGE_DEVICE_PERMISSIONS
+    if principal.kind is PrincipalKind.PROCESSING_WORKER:
+        return _PROCESSING_WORKER_PERMISSIONS
     if principal.role is None:
         # AuthRegistry 를 거친 Principal 은 이 분기에 도달하지 않는다(생성 시
         # role 필수를 거부) — 레지스트리 밖에서 직접 구성된 불변식 위반 객체가

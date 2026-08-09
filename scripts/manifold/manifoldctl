@@ -2,7 +2,7 @@
 # manifoldctl — Manifold 3 개발 루프 단일 진입점 (ADR-KSI-009).
 #
 # 2속 배포: raw(빠른 반복, 이 스크립트가 직접 rsync+프로세스 관리) / dpk(릴리스
-# 게이트, dji_app_ctl 위임 — PSDK 앱 통합 완료 후 구현, 현재는 스텁).
+# 게이트, dji_app_ctl 위임).
 #
 # 서브커맨드:
 #   env                     해석된 설정 출력
@@ -10,15 +10,28 @@
 #   build [--sanitize]      edge/manifold-runtime을 컨테이너(정본)에서 빌드
 #   deploy [--allow-dirty]  빌드 산출물을 실기 releases/<sha>/ 로 배포, current 갱신
 #   run                     배포된 테스트 바이너리를 실기에서 직접 실행(ctest 아님 — #2)
-#   status                  실기의 현재 배포 상태 확인
+#   status [app_name]       인자 없으면 실기의 현재 raw 배포 상태, 있으면 dji_app_ctl
+#                           status <app_name> 위임(DPK 앱 상태)
 #   cycle [--sanitize] [--allow-dirty]   build → deploy → run 을 한 번에
 #   fetch --collect         실기 current/(배포된 빌드 트리 전체)를 로컬로 회수
 #                           (세션 로그 전용 회수 아님 — 저장소에 세션 로그를 쓰는
 #                           코드가 아직 없다, 감사 #8)
 #   shell                   실기에 대화형 셸로 접속
 #
-# package/install/start/stop(DPK 모드)은 PSDK 앱 통합(edge/psdk-app) 완료 후 구현 —
-# 지금 호출하면 미구현임을 명시하고 종료한다(완료를 사칭하지 않는다).
+# DPK 모드(release 게이트, dji_app_ctl 위임):
+#   package --app-json <path> [-o <dir>]   PSDK vendored build_dpk.sh 호출 — 정적 가능
+#   install <local.dpk>      로컬 .dpk 를 실기에 올리고 dji_app_ctl install -i 로 설치
+#   uninstall <app_name>     dji_app_ctl uninstall <app_name> 위임
+#   start|stop|restart <app_name>   dji_app_ctl {start,stop,restart} <app_name> 위임
+#   list [app_name]          dji_app_ctl list [app_name] 위임
+#
+# dji_app_ctl 의 정확한 서브커맨드·인자는 실기 HIL 세션(2026-08-03,
+# hil_raw_logs/SESS-20260803T125616Z-PENDING-SN/01_env_inventory/
+# 20260803T125944Z__psdk_discovery.log)에서 `dji_app_ctl --help` 로 실측 확인됐다 —
+# 여기 배선한 install/uninstall/start/stop/restart/list 는 그 실측 시그니처를
+# 그대로 옮긴 것이다. **다만 실제로 설치→재시작→정상기동까지 되는지**(HARDWARE_
+# SESSION_PLAYBOOK.md 8단계, `08_dpk_deploy/`)는 아직 별도 HIL 세션으로 검증된 적이
+# 없다 — 시그니처가 맞다는 것과 배포 경로가 동작한다는 것은 다른 주장이다.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -188,6 +201,12 @@ exit "$fail"'
 }
 
 cmd_status() {
+  if [ $# -gt 0 ]; then
+    # 인자가 있으면 raw 배포 상태가 아니라 DPK 앱 상태 질의다(dji_app_ctl status
+    # <app_name> 위임) — raw 의 무인자 status 와 이름은 같지만 인자 유무로 갈린다.
+    mf_ssh "dji_app_ctl status '$1'"
+    return
+  fi
   mf_ssh "readlink -f ${MANIFOLD_REMOTE_ROOT}/current 2>/dev/null && cat ${MANIFOLD_REMOTE_ROOT}/current/deploy_manifest.json 2>/dev/null" \
     || mf_log "배포된 것 없음"
 }
@@ -227,19 +246,100 @@ cmd_fetch() {
 
 cmd_shell() { exec ssh "$MANIFOLD_SSH_HOST"; }
 
+cmd_package() {
+  # DPK 패키징 — PSDK vendored 도구(build_dpk.sh, MIT 라이선스)를 무수정으로 호출한다.
+  # app.json 은 이 저장소가 만들지 않는다: user_app_id 는 DJI 개발자 사이트에서
+  # 발급받는 값이라(edge/third_party/psdk/tools/build_dpk/build_dpk.sh 자체 검증
+  # 문구) 여기서 지어낼 수 없다 — 호출자가 준비한 app.json 경로를 그대로 받는다.
+  local app_json="" output_path=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --app-json) app_json="${2:?--app-json 값 필요}"; shift 2 ;;
+      -o|--output) output_path="${2:?-o/--output 값 필요}"; shift 2 ;;
+      *) mf_die "package: 알 수 없는 인자 '$1' (지원: --app-json <path> [-o/--output <path>])" ;;
+    esac
+  done
+  [ -n "$app_json" ] || mf_die "package: --app-json <app.json 경로>가 필요하다"
+  [ -f "$app_json" ] || mf_die "package: app.json 파일이 없다: $app_json"
+  local build_dpk="$MANIFOLD_REPO_ROOT/edge/third_party/psdk/tools/build_dpk/build_dpk.sh"
+  [ -f "$build_dpk" ] \
+    || mf_die "package: PSDK vendored tree가 없다($build_dpk) — tools/edge/fetch_psdk.py 로 먼저 받을 것"
+  local dpk_args=(-i "$app_json")
+  [ -n "$output_path" ] && dpk_args+=(-o "$output_path")
+  mf_log "DPK 패키징: $app_json"
+  bash "$build_dpk" "${dpk_args[@]}"
+}
+
+# 아래 6개는 실기 HIL 세션(2026-08-03)에서 `dji_app_ctl --help` 로 실측한 시그니처를
+# 그대로 위임한다(psdk_discovery.log — 모듈 docstring 인용). 시그니처는 실측이지만
+# "설치→재시작→정상기동"까지 실제로 되는지는 별도 HIL 검증(§8, 08_dpk_deploy/)이
+# 아직 없다 — 여기서는 그 주장을 하지 않는다.
+
+cmd_install() {
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl install <local .dpk 파일>"
+  local local_dpk="$1"
+  [ -f "$local_dpk" ] || mf_die "install: 파일이 없다: $local_dpk"
+  case "$local_dpk" in
+    *.dpk) ;;
+    *) mf_die "install: .dpk 파일이 아니다: $local_dpk" ;;
+  esac
+  local remote_name remote_rel
+  remote_name="$(basename "$local_dpk")"
+  remote_rel="dpk-staging/${remote_name}"
+  mf_ssh "mkdir -p ${MANIFOLD_REMOTE_ROOT}/dpk-staging"
+  mf_log "실기로 전송: $local_dpk -> ${MANIFOLD_REMOTE_ROOT}/${remote_rel}"
+  mf_scp_to_device "$local_dpk" "$remote_rel"
+  mf_log "dji_app_ctl install 실행(실기)"
+  mf_ssh "dji_app_ctl install -i '${MANIFOLD_REMOTE_ROOT}/${remote_rel}'"
+}
+
+cmd_uninstall() {
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl uninstall <app_name>"
+  mf_ssh "dji_app_ctl uninstall '$1'"
+}
+
+cmd_start() {
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl start <app_name>"
+  mf_ssh "dji_app_ctl start '$1'"
+}
+
+cmd_stop() {
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl stop <app_name>"
+  mf_ssh "dji_app_ctl stop '$1'"
+}
+
+cmd_restart() {
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl restart <app_name>"
+  mf_ssh "dji_app_ctl restart '$1'"
+}
+
+cmd_list() {
+  if [ $# -gt 0 ]; then
+    mf_ssh "dji_app_ctl list '$1'"
+  else
+    mf_ssh "dji_app_ctl list"
+  fi
+}
+
 case "$cmd" in
-  env)     cmd_env ;;
-  doctor)  cmd_doctor ;;
-  build)   cmd_build "$@" ;;
-  deploy)  cmd_deploy "$@" ;;
-  run)     cmd_run ;;
-  status)  cmd_status ;;
-  cycle)   cmd_cycle "$@" ;;
-  fetch)   cmd_fetch "$@" ;;
-  shell)   cmd_shell ;;
-  package|install|start|stop|restart|list)
-    mf_die "'$cmd'는 DPK 모드 전용이다 — edge/psdk-app PSDK 통합 완료 후 구현 예정(현재 미구현)" ;;
+  env)       cmd_env ;;
+  doctor)    cmd_doctor ;;
+  build)     cmd_build "$@" ;;
+  deploy)    cmd_deploy "$@" ;;
+  run)       cmd_run ;;
+  status)    cmd_status "$@" ;;
+  cycle)     cmd_cycle "$@" ;;
+  fetch)     cmd_fetch "$@" ;;
+  shell)     cmd_shell ;;
+  package)   cmd_package "$@" ;;
+  install)   cmd_install "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
+  start)     cmd_start "$@" ;;
+  stop)      cmd_stop "$@" ;;
+  restart)   cmd_restart "$@" ;;
+  list)      cmd_list "$@" ;;
   *)
-    echo "사용법: manifoldctl {env|doctor|build|deploy|run|status|cycle|fetch|shell}" >&2
+    echo "사용법: manifoldctl {env|doctor|build|deploy|run|status|cycle|fetch|shell|" >&2
+    echo "                    package|install|uninstall|start|stop|restart|list}" >&2
     exit 1 ;;
 esac

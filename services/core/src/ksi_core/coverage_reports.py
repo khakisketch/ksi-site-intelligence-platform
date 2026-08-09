@@ -31,6 +31,24 @@ INV-010 은 임무 완료 기준(위험구역 100%·자산 100%·일반영역 �
 ``DurableJournal`` 위의 append-only 원장이다. 같은 임무에 대한 보고서가 여러 번
 올 수 있고(부분→최종, 재비행), **덮어쓰지 않고 전부 남긴다** — "언제 무엇을 봤다고
 했는가"가 사고 조사의 입력이기 때문이다. 조회는 최신 보고서를 낸다.
+
+거부 판정(``UNKNOWN_MISSION``·``SITE_MISMATCH``·``NO_COVERAGE_EVIDENCE`` 등, ``RECORDED``
+아닌 전부)도 ``kind: coverage-report-rejected`` 로 durable 기록한다 — "근거 없는 완료
+주장을 서버가 거부했다"는 사실 자체가 감사 입력이라 조기 반환으로 소멸시키지 않는다
+(risk coverage-report-rejection-not-auditable). 재생 시에는 건너뛴다 — 완료 판정 권위는
+``RECORDED`` 만 갖는다.
+
+## Coverage Recovery 신호 (MASTER_PRD §15.2)
+
+조회 응답의 ``recoveryRecommended`` 는 :meth:`CoverageReport.needs_coverage_recovery`
+를 그대로 노출한다 — 자동 재발급을 트리거하지 않는 **권고 신호**다. 실제 재커버는
+운영자/오퍼레이터가 원본 site AOI 로 ``POST /v1/missions/plans``(SPATIAL_REFRESH)
+를 그대로 재사용해 발급한다. 폴리곤 gap(AOI − 기존커버) 계산은 하지 않는다 —
+Cell 지오메트리 저장소가 이 코드베이스에 아직 없어(``CoverageCell.geometry_ref``
+미해석) 정밀 재커버 구역 계산은 별도 데이터모델 결정이 선행돼야 한다. 이벤트 분기로
+인한 실시간 촬영공백 보완(비행 중 Edge/Manifold 소관, ``03_EDGE_AUTONOMY.md`` 의
+``COVERAGE_RECOVERY`` 상태)은 이 모듈의 범위 밖이다 — 하드웨어 종속(Track A/B와
+동일 계열).
 """
 
 from __future__ import annotations
@@ -150,6 +168,37 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
     return CoverageReportVerdict.RECORDED, None
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedCoverageReport:
+    """보고 1건 + "누가 그렇게 말했는가"(``reported_by``, 독립 재검토 B-3).
+
+    ``report`` 만으로는 제출 주체가 사라진다 — journal 엔벨로프(``reportedBy``)에는
+    남지만, 조회 API 가 :class:`CoverageReport` 만 돌려주면 감사 입력이 저장은 되고
+    노출은 안 되는 반쪽짜리가 된다. 이 dataclass 가 그 둘을 함께 들고 다닌다.
+    """
+
+    report: CoverageReport
+    reported_by: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedCoverageReport:
+    """서버가 거부한 보고 1건 — 무엇을, 왜, 누가, 언제.
+
+    보고 본문 자체는 담지 않는다. 거부된 주장을 조회 표면에 그대로 실으면 그
+    숫자들이 화면에서 사실처럼 읽힐 자리가 생긴다 — 감사에 필요한 것은 "이 임무에
+    대해 이런 사유로 거부가 있었다"이지 거부된 주장의 내용이 아니다(원문이 필요하면
+    journal 을 본다).
+    """
+
+    mission_id: str
+    site_id: str | None
+    verdict: CoverageReportVerdict
+    detail: str | None
+    reported_by: str | None
+    rejected_at: datetime
+
+
 class CoverageReportStore:
     """``DurableJournal`` 위의 보고 원장 — append-only, 덮어쓰지 않는다.
 
@@ -162,7 +211,10 @@ class CoverageReportStore:
         self._mission_store = mission_store
         self._lock = threading.Lock()
         # mission_id → 그 임무의 보고서들(수신 순서 보존)
-        self._by_mission: dict[str, list[CoverageReport]] = {}
+        self._by_mission: dict[str, list[RecordedCoverageReport]] = {}
+        # mission_id → 거부 판정 이력. 수용 상태와 **분리해서** 들고 있는다 —
+        # RECORDED 만 완료 판정 권위를 갖는다는 규칙은 그대로다(모듈 docstring).
+        self._rejections_by_mission: dict[str, list[RejectedCoverageReport]] = {}
         try:
             self._replay(journal)
         except CoverageReportRecoveryError:
@@ -176,6 +228,26 @@ class CoverageReportStore:
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
+            kind = raw.get("kind")
+            if kind == "coverage-report-rejected":
+                # 거부 판정 감사기록(risk coverage-report-rejection-not-auditable) —
+                # 수용 상태(_by_mission)에 반영하지 않는다. RECORDED 만 완료 판정 권위를
+                # 가진다. 다만 **조회 가능한 곳에는 실어야** 한다: 저장만 하고 어떤 GET
+                # 으로도 못 보면 "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자
+                # 에게 끝내 도달하지 않는다.
+                self._rejections_by_mission.setdefault(raw["missionId"], []).append(
+                    RejectedCoverageReport(
+                        mission_id=raw["missionId"],
+                        site_id=raw.get("siteId"),
+                        verdict=CoverageReportVerdict(raw["verdict"]),
+                        detail=raw.get("detail"),
+                        reported_by=raw.get("reportedBy"),
+                        rejected_at=datetime.fromisoformat(raw["ts"]),
+                    )
+                )
+                continue
+            if kind not in (None, "coverage-reported"):
+                raise CoverageReportRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
             report = CoverageReport.model_validate(raw["report"])
             # 재생도 live 와 같은 게이트를 태운다 — journal 조작으로 근거 없는
             # COMPLETED 가 되살아나는 경로를 막는다(events.py 재생 게이트와 대칭).
@@ -185,7 +257,8 @@ class CoverageReportStore:
                     f"재생: 기록될 수 없는 보고서({verdict.value}: {detail}) — "
                     f"missionId={report.mission_id}"
                 )
-            self._by_mission.setdefault(report.mission_id, []).append(report)
+            recorded = RecordedCoverageReport(report=report, reported_by=raw.get("reportedBy"))
+            self._by_mission.setdefault(report.mission_id, []).append(recorded)
 
     @property
     def sealed_reason(self) -> str | None:
@@ -209,17 +282,24 @@ class CoverageReportStore:
             if mission is None:
                 # 발급된 적 없는 임무의 보고는 받지 않는다 — 계약 없이 관찰
                 # 결과만 원장에 남으면 "무슨 근거로 날았나"에 답할 수 없다.
-                return CoverageReportResult(
-                    CoverageReportVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
+                    CoverageReportVerdict.UNKNOWN_MISSION,
+                    _NOT_FOUND_DETAIL,
                 )
             if mission.site_id != report.site_id:
-                return CoverageReportResult(
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
                     CoverageReportVerdict.SITE_MISMATCH,
-                    detail="보고서의 siteId 가 임무 발급 기록과 다르다",
+                    "보고서의 siteId 가 임무 발급 기록과 다르다",
                 )
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
-                return CoverageReportResult(verdict, detail=detail)
+                return self._reject(report, now, reported_by, verdict, detail)
 
             record = {
                 "kind": "coverage-reported",
@@ -237,19 +317,77 @@ class CoverageReportStore:
                     CoverageReportVerdict.STORE_UNAVAILABLE,
                     detail="durable 기록 실패 — journal 봉인(재시작 필요)",
                 )
-            self._by_mission.setdefault(report.mission_id, []).append(report)
+            self._by_mission.setdefault(report.mission_id, []).append(
+                RecordedCoverageReport(report=report, reported_by=reported_by)
+            )
             return CoverageReportResult(CoverageReportVerdict.RECORDED, report=report)
+
+    def _reject(
+        self,
+        report: CoverageReport,
+        now: datetime,
+        reported_by: str | None,
+        verdict: CoverageReportVerdict,
+        detail: str | None,
+    ) -> CoverageReportResult:
+        """거부 판정도 감사기록에 남긴다(risk coverage-report-rejection-not-auditable).
+
+        ``self._lock`` 을 쥔 :meth:`record` 안에서만 호출된다. 수용 상태
+        (``_by_mission``)에는 반영하지 않는다 — RECORDED 만 완료 판정 권위를 가진다.
+        """
+        record = {
+            "kind": "coverage-report-rejected",
+            "ts": now.astimezone(UTC).isoformat(),
+            "missionId": report.mission_id,
+            "siteId": report.site_id,
+            "verdict": verdict.value,
+            "detail": detail,
+            "reportedBy": reported_by,
+            "report": report.model_dump(by_alias=True, mode="json", exclude_none=True),
+        }
+        try:
+            self._journal.append(record)
+        except JournalSealedError:
+            return CoverageReportResult(
+                CoverageReportVerdict.STORE_UNAVAILABLE,
+                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+            )
+        self._rejections_by_mission.setdefault(report.mission_id, []).append(
+            RejectedCoverageReport(
+                mission_id=report.mission_id,
+                site_id=report.site_id,
+                verdict=verdict,
+                detail=detail,
+                reported_by=reported_by,
+                rejected_at=now.astimezone(UTC),
+            )
+        )
+        return CoverageReportResult(verdict, detail=detail)
 
     def latest(self, mission_id: str) -> CoverageReport | None:
         """그 임무의 최신 보고 — 없으면 ``None``."""
+        recorded = self.latest_recorded(mission_id)
+        return recorded.report if recorded is not None else None
+
+    def latest_recorded(self, mission_id: str) -> RecordedCoverageReport | None:
+        """그 임무의 최신 보고 + 제출 주체 — 없으면 ``None``."""
         with self._lock:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
 
+    def rejections(self, mission_id: str) -> list[RejectedCoverageReport]:
+        """그 임무에 대해 서버가 **거부한** 보고들(수신 순서 보존).
+
+        "서버가 근거 없는 완료 주장을 막았다"는 사실 자체가 감사 입력이다 —
+        장비가 반복적으로 허위 완료를 주장해도 이 목록이 없으면 사람은 알 수 없다.
+        """
+        with self._lock:
+            return list(self._rejections_by_mission.get(mission_id, ()))
+
     def history(self, mission_id: str) -> list[CoverageReport]:
         """수신 순서를 보존한 전체 보고 이력(덮어쓰지 않는다)."""
         with self._lock:
-            return list(self._by_mission.get(mission_id, ()))
+            return [r.report for r in self._by_mission.get(mission_id, ())]
 
 
 class _CamelModel(BaseModel):
@@ -263,11 +401,38 @@ class CoverageReportResponse(_CamelModel):
 
 
 class CoverageReportView(_CamelModel):
-    """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지."""
+    """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지 + 누가 보고했는지."""
 
     mission_id: str
     report_count: int
     latest: dict[str, Any]
+    # 제출한 Principal id(대개 장비 id) — 없으면(구 journal 재생 등) null(독립 재검토 B-3).
+    reported_by: str | None
+    # Coverage Recovery 권고(MASTER_PRD §15.2) — CoverageReport.needs_coverage_recovery().
+    # 자동 재발급을 트리거하지 않는다: 운영자/오퍼레이터가 이 신호를 보고 원본 site
+    # AOI 로 SPATIAL_REFRESH 임무를 POST /v1/missions/plans 에 재발급한다.
+    recovery_recommended: bool
+
+
+class CoverageRejectionView(_CamelModel):
+    """거부된 보고 1건 — 무엇을, 왜, 누가, 언제(본문은 싣지 않는다)."""
+
+    verdict: str
+    detail: str | None
+    reported_by: str | None
+    rejected_at: datetime
+
+
+class CoverageRejectionListView(_CamelModel):
+    """그 임무에 대해 서버가 거부한 보고들.
+
+    거부가 0건인 것은 404 가 아니라 빈 목록이다 — "이 임무에는 거부가 없었다"는
+    그 자체로 답이고, 404 로 주면 "임무가 없다"와 구분되지 않는다.
+    """
+
+    mission_id: str
+    rejection_count: int
+    rejections: list[CoverageRejectionView]
 
 
 def _require_reporting_device(
@@ -333,13 +498,48 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> CoverageReportView:
         """그 임무의 **최신** 보고. 이력 건수를 함께 낸다(덮어쓰지 않으므로)."""
-        latest = store.latest(mission_id)
-        if latest is None:
+        recorded = store.latest_recorded(mission_id)
+        if recorded is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return CoverageReportView(
             mission_id=mission_id,
             report_count=len(store.history(mission_id)),
-            latest=latest.model_dump(by_alias=True, mode="json", exclude_none=True),
+            latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
+            reported_by=recorded.reported_by,
+            recovery_recommended=recorded.report.needs_coverage_recovery(),
+        )
+
+    @router.get(
+        "/{mission_id}/coverage-report/rejections", response_model=CoverageRejectionListView
+    )
+    def list_coverage_rejections(
+        mission_id: str,
+        _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> CoverageRejectionListView:
+        """서버가 거부한 완료 주장 목록 (risk coverage-report-rejection-not-auditable).
+
+        거부 판정은 이미 durable 기록되고 있었지만 **어떤 GET 으로도 조회할 수
+        없었다** — 판정이 제출 장비의 응답 본문으로만 가고 소멸했다. 그러면
+        "서버가 근거 없는 완료를 막았다"는 사실이 운영자·감사자에게 도달하지 않고,
+        장비가 반복적으로 허위 완료를 주장해도 사람은 알 수 없다. INV-010 의 강제는
+        성립하지만 그 강제가 작동했다는 증거가 남지 않는 상태였다.
+
+        거부된 보고의 **본문은 싣지 않는다** — 거부된 주장의 숫자를 조회 표면에
+        그대로 실으면 그게 화면에서 사실처럼 읽힐 자리가 생긴다.
+        """
+        rejections = store.rejections(mission_id)
+        return CoverageRejectionListView(
+            mission_id=mission_id,
+            rejection_count=len(rejections),
+            rejections=[
+                CoverageRejectionView(
+                    verdict=r.verdict.value,
+                    detail=r.detail,
+                    reported_by=r.reported_by,
+                    rejected_at=r.rejected_at,
+                )
+                for r in rejections
+            ],
         )
 
     return router

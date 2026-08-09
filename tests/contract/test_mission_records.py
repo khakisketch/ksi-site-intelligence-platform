@@ -1,7 +1,7 @@
 """Mission 발급 영속·목록/이력 조회 계약 (ADR-KSI-008 §1/§3, ADR-KSI-007 짝 무결성).
 
 수동 조립(``FastAPI()`` + ``mount_auth`` + ``mount_mission_issuance``/
-``mount_mission_plans``(``mission_store``/``site_frame_lookup`` 주입)+
+``mount_mission_plans``(``mission_store``/``site_lookup`` 주입)+
 ``mount_mission_records``)으로 발급→durable 기록→조회 왕복을 검증한다. 초점:
 ① 발급 응답과 조회 응답의 계약 dict 가 정확 일치(INV-011, 재계산·재서명 없음)
 ② 재기동 복구 ③ mission_id 중복이 기존 레코드를 덮지 않음(replay 로 증명)
@@ -32,6 +32,7 @@ from ksi_core.auth import (
     Role,
     mount_auth,
 )
+from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_issuance import mount_mission_issuance
 from ksi_core.mission_plans import mount_mission_plans
@@ -39,8 +40,11 @@ from ksi_core.mission_records import (
     MissionRecord,
     MissionStore,
     MissionStoreRecoveryError,
+    SiteLookupResult,
     mount_mission_records,
 )
+from ksi_domain.enums import SiteStatus
+from ksi_event_contracts.coverage_report import CoverageReport
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
@@ -48,20 +52,47 @@ _LAT0, _LON0 = 37.5000, 127.0000
 _M_PER_DEG_LAT = math.radians(1.0) * WGS84_EQUATORIAL_RADIUS_M
 _KEY_ID = "core-issuer-key-1"
 
-_DRONE_OPERATOR_TOKEN = "drone-operator-token"  # noqa: S105 — 테스트 고정 토큰
-_SITE_MANAGER_TOKEN = "site-manager-token"  # noqa: S105 — MISSIONS_ISSUE 없음
+_FIELD_OPERATOR_TOKEN = "field-operator-token"  # noqa: S105 — 테스트 고정 토큰
 _VIEWER_TOKEN = "viewer-token"  # noqa: S105
 
-# 등록된 site 의 canonical siteFrame — _contract_request 의 siteFrame 과 동일해야
-# 발급이 SITE_FRAME_MISMATCH 없이 통과한다(짝 무결성 대조).
-_REGISTERED_SITE_FRAMES: dict[str, dict[str, Any]] = {
-    "site-001": {
-        "crs": "EPSG:5186",
-        "verticalDatum": "KNGeoid2018",
-        "unit": "meter",
-        "transformVersion": "1.0.0",
-    }
+# 등록된 site 의 canonical siteFrame + 상태 — _contract_request 의 siteFrame 과
+# frame 이 동일해야 발급이 SITE_FRAME_MISMATCH 없이 통과한다(짝 무결성 대조).
+# status 는 PATROL_READY 로 고정한다 — 이 파일의 초점은 발급 영속·조회 왕복이지
+# 임무타입×현장상태 게이트(INV-052) 자체가 아니고, 이 파일 전체가 기본
+# missionType(AUTONOMOUS_PATROL)을 공유하므로 그 타입이 발급 가능한 상태를
+# 골랐다(게이트 반증은 `test_mission_site_status_gate.py` 가 별도로 맡는다).
+_REGISTERED_SITES: dict[str, SiteLookupResult] = {
+    "site-001": SiteLookupResult(
+        site_frame={
+            "crs": "EPSG:5186",
+            "verticalDatum": "KNGeoid2018",
+            "unit": "meter",
+            "transformVersion": "1.0.0",
+        },
+        status=SiteStatus.PATROL_READY,
+    )
 }
+
+
+class _MutableSiteLookup:
+    """``site_lookup`` 콜백이지만 status 를 나중에 바꿀 수 있다(독립 재검토 D1 재현용).
+
+    ``_REGISTERED_SITES`` 는 이 파일 전체가 공유하는 상태 고정 dict라, "발급 이후
+    site 상태가 전이된다"는 시나리오(멱등 재발급이 게이트보다 나중에 걸리던 버그)를
+    재현할 수 없었다 — 이 클래스가 그 재현을 가능하게 한다.
+    """
+
+    def __init__(self, site_frame: dict[str, str], status: SiteStatus) -> None:
+        self._site_frame = site_frame
+        self._status = status
+
+    def __call__(self, site_id: str) -> SiteLookupResult | None:
+        if site_id != "site-001":
+            return None
+        return SiteLookupResult(site_frame=self._site_frame, status=self._status)
+
+    def set_status(self, status: SiteStatus) -> None:
+        self._status = status
 
 
 def _digest(token: str) -> str:
@@ -72,20 +103,11 @@ def _auth_registry() -> AuthRegistry:
     return AuthRegistry(
         [
             PrincipalTokenRecord(
-                token_sha256=_digest(_DRONE_OPERATOR_TOKEN),
+                token_sha256=_digest(_FIELD_OPERATOR_TOKEN),
                 principal=Principal(
                     principal_id="do-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.DRONE_OPERATOR,
-                    device_id=None,
-                ),
-            ),
-            PrincipalTokenRecord(
-                token_sha256=_digest(_SITE_MANAGER_TOKEN),
-                principal=Principal(
-                    principal_id="sm-1",
-                    kind=PrincipalKind.OPERATOR,
-                    role=Role.SITE_MANAGER,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
             ),
@@ -170,7 +192,11 @@ def _plan_request(
     return {
         "contract": _contract_request(mission_id=mission_id, site_id=site_id, **contract_overrides),
         "aoi": {"vertices": _rect_aoi_vertices()},
-        "route": {"altitudeM": 40.0},
+        # AUTONOMOUS_PATROL(이 파일의 기본 missionType)은 Spatial Refresh Backbone
+        # 이 필수다(MASTER_PRD §15.2). 50.0 은 altitudeM=40.0 의 운용 상한
+        # (1.5×40=60m, risk patrol-capture-interval-direct-no-quality-floor) 안 —
+        # 500.0(상한 도입 전 "웨이포인트 안 늘어남" 편의값)은 더 이상 허용되지 않는다.
+        "route": {"altitudeM": 40.0, "captureIntervalM": 50.0},
         "drone": {"droneEnumValue": 99, "droneSubEnumValue": 0, "payloadEnumValue": 65534},
         "wayline": {
             "autoFlightSpeedMs": 5.0,
@@ -189,12 +215,11 @@ def _build_app(
     *,
     private_key: Ed25519PrivateKey,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None] | None = None,
+    site_lookup: Callable[[str], SiteLookupResult | None] | None = None,
+    coverage_report_store: CoverageReportStore | None = None,
 ) -> FastAPI:
     resolved_lookup = (
-        site_frame_lookup
-        if site_frame_lookup is not None
-        else (lambda site_id: _REGISTERED_SITE_FRAMES.get(site_id))
+        site_lookup if site_lookup is not None else (lambda site_id: _REGISTERED_SITES.get(site_id))
     )
     app = FastAPI()
     mount_auth(app, _auth_registry())
@@ -203,16 +228,18 @@ def _build_app(
         private_key=private_key,
         key_id=_KEY_ID,
         mission_store=mission_store,
-        site_frame_lookup=resolved_lookup,
+        site_lookup=resolved_lookup,
     )
     mount_mission_plans(
         app,
         private_key=private_key,
         key_id=_KEY_ID,
         mission_store=mission_store,
-        site_frame_lookup=resolved_lookup,
+        site_lookup=resolved_lookup,
     )
-    mount_mission_records(app, mission_store=mission_store)
+    mount_mission_records(
+        app, mission_store=mission_store, coverage_report_store=coverage_report_store
+    )
     return app
 
 
@@ -232,7 +259,7 @@ def test_pair_issuance_round_trips_through_query_endpoints(tmp_path: Path) -> No
     issue = client.post(
         "/v1/missions/plans",
         json=_plan_request(),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert issue.status_code == 201
     issued = issue.json()
@@ -280,7 +307,7 @@ def test_contract_only_issuance_round_trips(tmp_path: Path) -> None:
     issue = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission-c1"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert issue.status_code == 201
     issued_contract = issue.json()
@@ -499,14 +526,14 @@ def test_duplicate_mission_id_with_different_request_via_api_returns_409(
     client, _store, journal = _client(tmp_path)
 
     first = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert first.status_code == 201
 
     second_request = _plan_request()
     second_request["route"]["altitudeM"] = 41.0  # 원 요청과 다른 digest
     second = client.post(
-        "/v1/missions/plans", json=second_request, headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=second_request, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert second.status_code == 409
     assert second.json()["detail"] == "MISSION_ID_CONFLICT"
@@ -522,14 +549,14 @@ def test_duplicate_mission_id_via_contracts_endpoint_still_returns_409(tmp_path:
     first = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission-contract-dup"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert first.status_code == 201
 
     second = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission-contract-dup"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert second.status_code == 409
     assert second.json()["detail"] == "MISSION_ID_CONFLICT"
@@ -546,13 +573,13 @@ def test_identical_retry_of_pair_issuance_is_idempotent(tmp_path: Path) -> None:
     request_body = _plan_request()
 
     first = client.post(
-        "/v1/missions/plans", json=request_body, headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert first.status_code == 201
     first_body = first.json()
 
     retry = client.post(
-        "/v1/missions/plans", json=request_body, headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert retry.status_code == 200, "동일 요청 재시도는 새 레코드를 만들지 않고 멱등 200"
     retry_body = retry.json()
@@ -572,6 +599,132 @@ def test_identical_retry_of_pair_issuance_is_idempotent(tmp_path: Path) -> None:
     journal.close()
 
 
+# ── ⑫ 독립 재검토 D1 — 멱등 재발급이 게이트보다 먼저다 ─────────────────────
+
+_D1_SITE_FRAME: dict[str, str] = {
+    "crs": "EPSG:5186",
+    "verticalDatum": "KNGeoid2018",
+    "unit": "meter",
+    "transformVersion": "1.0.0",
+}
+
+
+def _d1_plan_request(mission_id: str, **route_overrides: Any) -> dict[str, Any]:
+    route: dict[str, Any] = {"altitudeM": 40.0, "spacingM": 20.0, "captureIntervalM": 15.0}
+    route.update(route_overrides)
+    return {
+        "contract": _contract_request(mission_id=mission_id, missionType="BASELINE_MAPPING"),
+        "aoi": {"vertices": _rect_aoi_vertices()},
+        "route": route,
+        "drone": {"droneEnumValue": 99, "droneSubEnumValue": 0, "payloadEnumValue": 65534},
+        "wayline": {
+            "autoFlightSpeedMs": 5.0,
+            "takeoffSecurityHeightM": 20.0,
+            "globalTransitionalSpeedMs": 10.0,
+        },
+    }
+
+
+def test_idempotent_retry_survives_site_status_transition_away_from_gate_pair(
+    tmp_path: Path,
+) -> None:
+    """[D1 회귀] UNMAPPED 현장에 BASELINE_MAPPING 짝 발급 201 → 응답 유실 가정 →
+    현장이 BASELINE_MAPPING 으로 정상 전이(그 상태에서는 BASELINE_MAPPING 이
+    더는 허용되지 않는다, ``mission_gating._MAPPING_FROM_SCRATCH ==
+    {UNMAPPED, REMAP_REQUIRED}``) → 클라이언트가 동일 요청(같은 digest)으로
+    재시도 → 여전히 멱등 200 이어야 한다. 인가는 발급 시점에 이미 내려져
+    원장에 기록됐다 — 게이트가 먼저 걸려 이미 기록된 임무에 사실과 다른
+    사유(409 MISSION_TYPE_SITE_STATUS_MISMATCH)를 주면 안 된다(수정 전에는
+    이 재시도가 409 였다 — precheck_issuance 가 게이트를 mission_id 충돌보다
+    먼저 봤기 때문)."""
+    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
+    client, store, journal = _client(tmp_path, site_lookup=lookup)
+    request_body = _d1_plan_request("mission-d1")
+
+    first = client.post(
+        "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert first.status_code == 201, first.text
+    first_body = first.json()
+
+    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+
+    retry = client.post(
+        "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert retry.status_code == 200, (
+        f"게이트가 멱등 재반환보다 먼저 걸리면 안 된다: {retry.status_code} {retry.text}"
+    )
+    retry_body = retry.json()
+    assert retry_body["contract"] == first_body["contract"]
+    assert retry_body["kmzSha256"] == first_body["kmzSha256"]
+
+    # journal 에는 한 건만 남는다 — 재시도가 새 레코드를 append 하지 않는다.
+    assert len(store.list()) == 1
+
+    journal.close()
+
+
+def test_different_digest_retry_after_site_status_transition_still_conflicts(
+    tmp_path: Path,
+) -> None:
+    """[D1 보강] 위와 같은 전이 상황에서도 **다른** 요청(다른 digest)이 같은
+    missionId 를 재사용하면 여전히 409 MISSION_ID_CONFLICT 다 — 멱등 재반환이
+    '아무 재시도나 통과'로 퇴화하지 않는다."""
+    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
+    client, _store, journal = _client(tmp_path, site_lookup=lookup)
+    request_body = _d1_plan_request("mission-d1b")
+
+    first = client.post(
+        "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert first.status_code == 201, first.text
+
+    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+
+    different_body = _d1_plan_request("mission-d1b", spacingM=21.0)
+    retry = client.post(
+        "/v1/missions/plans", json=different_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert retry.status_code == 409, retry.text
+    assert retry.json()["detail"] == "MISSION_ID_CONFLICT"
+
+    journal.close()
+
+
+def test_contract_only_retry_after_site_status_transition_reports_conflict_not_gate_mismatch(
+    tmp_path: Path,
+) -> None:
+    """[D1 보강 — 계약 단독 발급] contract-only 발급은 멱등 재반환 대상이 아니므로
+    (``mission_issuance.py`` 에 그 경로가 없다) 재시도는 여전히 409지만, 그 사유가
+    이제는 정확하다 — 게이트가 먼저 걸려 "현재 상태에서 허용 안 됨"이라 말하지
+    않고, mission_id 가 이미 쓰였다는 사실(MISSION_ID_CONFLICT)을 말한다."""
+    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
+    client, _store, journal = _client(tmp_path, site_lookup=lookup)
+
+    first = client.post(
+        "/v1/missions/contracts",
+        json=_contract_request(mission_id="mission-d1c", missionType="BASELINE_MAPPING"),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+    assert first.status_code == 201, first.text
+
+    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+
+    retry = client.post(
+        "/v1/missions/contracts",
+        json=_contract_request(mission_id="mission-d1c", missionType="BASELINE_MAPPING"),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+    assert retry.status_code == 409, retry.text
+    assert retry.json()["detail"] == "MISSION_ID_CONFLICT", (
+        "게이트가 먼저 걸리면 MISSION_TYPE_SITE_STATUS_MISMATCH 가 되어 이미 기록된 "
+        "임무에 사실과 다른 사유를 준다"
+    )
+
+    journal.close()
+
+
 # ── ④ UNKNOWN_SITE 422 ──────────────────────────────────────────────────
 
 
@@ -581,7 +734,7 @@ def test_unknown_site_rejected_422_for_plans_and_contracts(tmp_path: Path) -> No
     plan_response = client.post(
         "/v1/missions/plans",
         json=_plan_request(site_id="no-such-site"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert plan_response.status_code == 422
     assert plan_response.json()["detail"] == "UNKNOWN_SITE"
@@ -589,7 +742,7 @@ def test_unknown_site_rejected_422_for_plans_and_contracts(tmp_path: Path) -> No
     contract_response = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission-x", site_id="no-such-site"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert contract_response.status_code == 422
     assert contract_response.json()["detail"] == "UNKNOWN_SITE"
@@ -613,7 +766,7 @@ def test_journal_write_failure_seals_and_returns_503_without_artifact(
     monkeypatch.setattr(durable_journal_module, "_WRITE", broken_write)
 
     response = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
 
     assert response.status_code == 503
@@ -645,7 +798,7 @@ def test_issue_forbidden_for_role_without_missions_issue_403(tmp_path: Path) -> 
     client, _store, journal = _client(tmp_path)
 
     response = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_SITE_MANAGER_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_VIEWER_TOKEN)
     )
 
     assert response.status_code == 403
@@ -653,7 +806,7 @@ def test_issue_forbidden_for_role_without_missions_issue_403(tmp_path: Path) -> 
     contract_response = client.post(
         "/v1/missions/contracts",
         json=_contract_request(),
-        headers=_auth_header(_SITE_MANAGER_TOKEN),
+        headers=_auth_header(_VIEWER_TOKEN),
     )
     assert contract_response.status_code == 403
 
@@ -664,7 +817,7 @@ def test_viewer_can_read_but_not_issue(tmp_path: Path) -> None:
     client, _store, journal = _client(tmp_path)
 
     issued = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert issued.status_code == 201
 
@@ -723,7 +876,7 @@ def test_site_frame_mismatch_rejected_for_plans_and_contracts(tmp_path: Path) ->
     plan_response = client.post(
         "/v1/missions/plans",
         json=_plan_request(siteFrame=drifted),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert plan_response.status_code == 422
     assert plan_response.json()["detail"] == "SITE_FRAME_MISMATCH"
@@ -731,7 +884,7 @@ def test_site_frame_mismatch_rejected_for_plans_and_contracts(tmp_path: Path) ->
     contract_response = client.post(
         "/v1/missions/contracts",
         json=_contract_request(siteFrame=drifted),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert contract_response.status_code == 422
     assert contract_response.json()["detail"] == "SITE_FRAME_MISMATCH"
@@ -749,7 +902,7 @@ def test_matching_site_frame_still_issues(tmp_path: Path) -> None:
     response = client.post(
         "/v1/missions/contracts",
         json=_contract_request(),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 201
@@ -767,7 +920,7 @@ def test_mission_id_with_slash_rejected_422_not_trapped_404(tmp_path: Path) -> N
     response = client.post(
         "/v1/missions/plans",
         json=_plan_request(mission_id="mission/001"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "INVALID_MISSION_IDENTITY"
@@ -782,7 +935,7 @@ def test_mission_id_with_whitespace_rejected_for_both_endpoints(tmp_path: Path) 
     plan_response = client.post(
         "/v1/missions/plans",
         json=_plan_request(mission_id="mission 001"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert plan_response.status_code == 422
     assert plan_response.json()["detail"] == "INVALID_MISSION_IDENTITY"
@@ -790,7 +943,7 @@ def test_mission_id_with_whitespace_rejected_for_both_endpoints(tmp_path: Path) 
     contract_response = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission 002", site_id="site-001"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert contract_response.status_code == 422
     assert contract_response.json()["detail"] == "INVALID_MISSION_IDENTITY"
@@ -805,7 +958,7 @@ def test_site_id_with_invalid_characters_rejected_422(tmp_path: Path) -> None:
     response = client.post(
         "/v1/missions/plans",
         json=_plan_request(site_id="site/001"),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "INVALID_MISSION_IDENTITY"
@@ -825,7 +978,7 @@ def test_lone_surrogate_in_objectives_rejected_422_not_500(tmp_path: Path) -> No
         client,
         "/v1/missions/plans",
         _plan_request(objectives=["\ud800 손상된 서로게이트"]),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "INVALID_TEXT_ENCODING"
@@ -848,7 +1001,7 @@ def test_lone_surrogate_in_site_frame_rejected_for_contracts_endpoint(tmp_path: 
                 "transformVersion": "1.0.0",
             }
         ),
-        headers=_auth_header(_DRONE_OPERATOR_TOKEN),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "INVALID_TEXT_ENCODING"
@@ -870,7 +1023,7 @@ def test_issued_contract_survives_restart_and_matches_exactly(tmp_path: Path) ->
     client = TestClient(app)
 
     issue = client.post(
-        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_DRONE_OPERATOR_TOKEN)
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
     )
     assert issue.status_code == 201
     issued = issue.json()
@@ -988,3 +1141,115 @@ def test_replay_accepts_intact_pair_record(tmp_path: Path) -> None:
         assert loaded.plan_request is not None
     finally:
         journal.close()
+
+
+# ── ⑪ 파생 필드 coverageCompletionState — CoverageReportStore 조회(INV-010) ──
+#
+# MissionRecord 에 실행 상태 필드를 새로 만들지 않는다 — 완료 판정의 권위는
+# CoverageReport 하나다. 이 필드는 조회 시점에 CoverageReportStore.latest() 를
+# 계산해 실을 뿐, journal 에는 아무것도 추가로 적지 않는다.
+
+
+def _coverage_report_payload(
+    mission_id: str, site_id: str, *, completion: str = "COMPLETED"
+) -> dict[str, Any]:
+    return {
+        "missionId": mission_id,
+        "siteId": site_id,
+        "timestamp": "2026-08-05T02:00:00+00:00",
+        "cells": [{"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"}],
+        "summary": {
+            "mandatoryHazardRatio": 1.0,
+            "mandatoryAssetRatio": 1.0,
+            "accessibleGeneralRatio": 1.0,
+            "completionState": completion,
+        },
+    }
+
+
+def test_coverage_completion_state_is_null_without_any_report(tmp_path: Path) -> None:
+    """보고가 하나도 없으면 목록·상세 둘 다 null — "—" 로 조용히 넘어가지 않는다."""
+    private_key = Ed25519PrivateKey.generate()
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    coverage_store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    app = _build_app(
+        private_key=private_key,
+        mission_store=mission_store,
+        coverage_report_store=coverage_store,
+    )
+    client = TestClient(app)
+
+    issue = client.post(
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert issue.status_code == 201
+
+    listing = client.get("/v1/missions", headers=_auth_header(_VIEWER_TOKEN))
+    assert listing.json()[0]["coverageCompletionState"] is None
+
+    detail = client.get("/v1/missions/mission-001", headers=_auth_header(_VIEWER_TOKEN))
+    assert detail.json()["coverageCompletionState"] is None
+
+
+def test_coverage_completion_state_reflects_latest_recorded_report(tmp_path: Path) -> None:
+    """[핵심] 커버리지 보고가 오면 목록·상세가 서버 판정을 그대로 반영한다(재계산 없음).
+
+    두 번째 보고가 최신이 되는 것도 함께 증명한다(덮어쓰지 않고 append, latest()
+    가 가장 최근 것을 낸다) — 재비행 뒤 목록이 낡은 상태로 멎지 않는다.
+    """
+    private_key = Ed25519PrivateKey.generate()
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    coverage_store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    app = _build_app(
+        private_key=private_key,
+        mission_store=mission_store,
+        coverage_report_store=coverage_store,
+    )
+    client = TestClient(app)
+
+    issue = client.post(
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert issue.status_code == 201
+
+    first = coverage_store.record(
+        CoverageReport.model_validate(
+            _coverage_report_payload("mission-001", "site-001", completion="COMPLETED_WITH_GAPS")
+        ),
+        now=datetime.now(UTC),
+    )
+    assert first.verdict.value == "RECORDED"
+
+    listing = client.get("/v1/missions", headers=_auth_header(_VIEWER_TOKEN))
+    assert listing.json()[0]["coverageCompletionState"] == "COMPLETED_WITH_GAPS"
+
+    second = coverage_store.record(
+        CoverageReport.model_validate(
+            _coverage_report_payload("mission-001", "site-001", completion="COMPLETED")
+        ),
+        now=datetime.now(UTC),
+    )
+    assert second.verdict.value == "RECORDED"
+
+    detail = client.get("/v1/missions/mission-001", headers=_auth_header(_VIEWER_TOKEN))
+    assert detail.json()["coverageCompletionState"] == "COMPLETED"
+
+
+def test_coverage_completion_state_is_null_when_store_not_wired(tmp_path: Path) -> None:
+    """coverage_report_store 를 조립에 주지 않으면(선택 파라미터) 필드는 항상 null이다
+    — 배선 자체가 없는 구성에서도 응답 스키마가 깨지지 않는다."""
+    client, _store, journal = _client(tmp_path)
+
+    issue = client.post(
+        "/v1/missions/plans", json=_plan_request(), headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    assert issue.status_code == 201
+
+    listing = client.get("/v1/missions", headers=_auth_header(_VIEWER_TOKEN))
+    assert listing.json()[0]["coverageCompletionState"] is None
+
+    journal.close()

@@ -13,8 +13,11 @@ const AoiPolygonMapInner = dynamic(
 
 export function AoiPolygonMap(props: {
   value: AoiVertex[];
-  onChange: (vertices: AoiVertex[]) => void;
+  /** readOnly 가 아니면 필수. */
+  onChange?: (vertices: AoiVertex[]) => void;
   center?: [number, number];
+  /** true 면 편집 컨트롤 없이 폴리곤만 표시한다(현장 상세처럼 보여주기 전용 자리). */
+  readOnly?: boolean;
 }) {
   return (
     <div className="h-80 w-full overflow-hidden rounded-lg border border-line sm:h-96">

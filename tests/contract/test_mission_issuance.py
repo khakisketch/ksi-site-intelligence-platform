@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from _site_lifecycle import advance_site_status
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
@@ -26,6 +27,7 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionStore
 from ksi_core.sites import SiteStore
+from ksi_domain.enums import SiteStatus
 from ksi_mission_contracts.models import (
     _ABSOLUTE_MAX_ALTITUDE_M,
     FlightEnvelope,
@@ -80,7 +82,7 @@ def _auth_registry() -> AuthRegistry:
                 principal=Principal(
                     principal_id="do-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.DRONE_OPERATOR,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
             )
@@ -93,7 +95,11 @@ def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
 
     요청 site_id("site-001")는 발급 전 site_store 에 직접 등록한다 — precheck_issuance
     의 site_exists 게이트가 이제 이 저장소로 배선되기 때문(HTTP 왕복 없이 register()로
-    직접 시드, API 자체는 test_sites_api.py 소관).
+    직접 시드, API 자체는 test_sites_api.py 소관). 이 파일의 모든 테스트가
+    ``_valid_request()`` 기본값(``missionType: AUTONOMOUS_PATROL``)을 그대로
+    쓰므로, site 를 ``PATROL_READY`` 까지 전진시킨다(INV-052 임무타입×현장상태
+    게이트, ADR-KSI-014) — 이 파일의 초점은 서명·정책 고정이지 게이트 자체가
+    아니므로, 게이트 반증은 `test_mission_site_status_gate.py` 가 별도로 맡는다.
     """
     key_id = "core-issuer-key-1"
     private_key = Ed25519PrivateKey.generate()
@@ -108,6 +114,7 @@ def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
         actor="test-harness",
         now=datetime.now(UTC),
     )
+    advance_site_status(site_store, "site-001", SiteStatus.PATROL_READY)
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
 
     app = create_app(

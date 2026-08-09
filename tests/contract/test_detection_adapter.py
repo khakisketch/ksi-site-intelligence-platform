@@ -462,6 +462,11 @@ def test_non_str_mapping_key_rejected() -> None:
         RawDetection(label="person", score="0.9", box=(10.0, 20.0, 110.0, 220.0)),  # type: ignore[arg-type]
         # score=True 는 mypy 를 통과한다(bool 은 float 로 승인) — 런타임 거부가 유일한 방어.
         RawDetection(label="person", score=True, box=(10.0, 20.0, 110.0, 220.0)),
+        # box 가 시퀀스조차 아닌 경우(None·int·dict) — len(raw.box) 가 TypeError 를
+        # 던져 convert() 밖으로 새어나가던 경로(stale 모듈 재감사 med#4, 2026-08-06).
+        RawDetection(label="person", score=0.9, box=None),  # type: ignore[arg-type]
+        RawDetection(label="person", score=0.9, box=123),  # type: ignore[arg-type]
+        RawDetection(label="person", score=0.9, box={"x": 1}),  # type: ignore[arg-type]
     ],
 )
 def test_structurally_malformed_raw_dropped(raw: RawDetection) -> None:

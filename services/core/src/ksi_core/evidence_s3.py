@@ -50,8 +50,17 @@ class S3EvidenceStorage:
             self._client: S3Client = client
         else:
             import boto3  # noqa: PLC0415 -- 지연 import(모듈 docstring 참조)
+            from botocore.config import Config  # noqa: PLC0415 -- 위와 동일 사유
 
-            self._client = boto3.client("s3", endpoint_url=endpoint_url)
+            # signature_version 을 명시하지 않으면 MinIO 등 비-AWS 엔드포인트에서
+            # botocore 가 SigV2 스타일 presigned URL(?AWSAccessKeyId=...&Signature=...)
+            # 을 만들 수 있다 — 최신 MinIO 는 SigV4 만 받아 403 으로 거부한다
+            # (2026-08-08 실측: --s3-endpoint 로 실 MinIO 를 겨눈 최초 실기동에서
+            # 재현·확인. AWS 자체 엔드포인트는 URL 로 자동 판별해 이미 SigV4 를
+            # 쓰므로 이 명시가 그쪽 동작을 바꾸지 않는다).
+            self._client = boto3.client(
+                "s3", endpoint_url=endpoint_url, config=Config(signature_version="s3v4")
+            )
 
     def _presign(self, operation: str, params: dict[str, Any], ttl: timedelta) -> str:
         seconds = int(ttl.total_seconds())
@@ -85,6 +94,27 @@ class S3EvidenceStorage:
         return self._presign(
             "get_object", {"Bucket": self._bucket, "Key": object_key}, ttl
         )
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        """서버가 만든 산출물을 직접 보관한다(포트 docstring 참조)."""
+        try:
+            self._client.put_object(
+                Bucket=self._bucket, Key=object_key, Body=data, ContentType=content_type
+            )
+        except Exception as exc:  # noqa: BLE001 -- 위 _presign 과 같은 이유
+            raise EvidenceStorageError(
+                f"객체 저장 실패({object_key}): {type(exc).__name__}"
+            ) from exc
+
+    def get_bytes(self, object_key: str) -> bytes:
+        """보관된 바이트를 읽는다 — 부재(NoSuchKey)도 오류다(포트 docstring)."""
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=object_key)
+            return response["Body"].read()
+        except Exception as exc:  # noqa: BLE001 -- 위 _presign 과 같은 이유
+            raise EvidenceStorageError(
+                f"객체 읽기 실패({object_key}): {type(exc).__name__}"
+            ) from exc
 
     def delete(self, object_key: str) -> None:
         """객체 삭제 — 이미 없으면 성공으로 본다(S3 delete_object 는 멱등이다)."""

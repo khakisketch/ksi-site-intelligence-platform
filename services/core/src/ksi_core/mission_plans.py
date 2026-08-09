@@ -55,6 +55,9 @@ import base64
 import hashlib
 import logging
 import math
+import threading
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -82,11 +85,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
+from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
 from ksi_core.mission_records import (
+    MISSION_NOT_FOUND_DETAIL,
     MissionRecord,
     MissionRecordVerdict,
     MissionStore,
+    SiteLookupResult,
     precheck_issuance,
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
@@ -132,17 +139,22 @@ class RouteParams(_CamelModel):
         default=None,
         description=(
             "주면 서버가 카메라·고도·중복도로 spacingM·captureIntervalM 을 계산한다"
-            "(권장). 이때 두 값을 함께 주면 422 — 어느 쪽이 진짜인지 서버가 고르지 "
-            "않는다"
+            "(권장, lawnmower·AUTONOMOUS_PATROL/INCIDENT_SURVEY(perimeter) 모두). "
+            "이때 두 값을 함께 주면 422 — 어느 쪽이 진짜인지 서버가 고르지 않는다"
         ),
     )
     spacing_m: float | None = Field(default=None, description="lawnmower 전용 스캔선 간격(m)")
     capture_interval_m: float | None = Field(
         default=None,
         description=(
-            "lawnmower 전용 진행방향 촬영 간격(m) — 스캔선 위 촬영 지점 간격. "
-            "없으면 스캔선당 사진이 양 끝 2장뿐이라 전방 중첩이 0 이 되어 "
-            "정사영상·3D 재구성이 성립하지 않는다"
+            "진행방향 촬영 간격(m, camera 를 안 주면 직접 지정). lawnmower 계열은 "
+            "스캔선 위 촬영 지점 간격 — 없으면 스캔선당 사진이 양 끝 2장뿐이라 "
+            "전방 중첩이 0 이 되어 정사영상·3D 재구성이 성립하지 않는다. "
+            "AUTONOMOUS_PATROL(perimeter)은 이 값(또는 camera)이 Spatial Refresh "
+            "Backbone(MASTER_PRD §15.2) 자체이므로 필수다 — 없으면 순찰 중 3D "
+            "갱신용 사진이 전혀 수집되지 않는다. camera 를 권장한다: 고정값은 "
+            "고도에 따라 전방 중복도가 MIN_FRONT_OVERLAP(0.6) 아래로 내려갈 수 "
+            "있다. INCIDENT_SURVEY(perimeter)는 선택 — 없으면 순수 항법 경로다"
         ),
     )
     sweep_direction_deg: float | None = None
@@ -327,8 +339,54 @@ def build_mission_plan(
                 "sweep 을 조정하거나 약속 값을 실측 이하로 낮춰 발급하라"
             )
     elif mission_type in _PERIMETER_TYPES:
+        capture_interval_m = request.route.capture_interval_m
+        capture_interval_is_camera_derived = request.route.camera is not None
+        if request.route.camera is not None:
+            if capture_interval_m is not None:
+                raise RouteGenerationError(
+                    "route.camera 와 captureIntervalM 을 함께 줄 수 없다 — 카메라를 "
+                    "주면 서버가 계산한다"
+                )
+            camera = request.route.camera
+            try:
+                grid = compute_grid_spacing(
+                    CameraSpec(
+                        sensor_width_mm=camera.sensor_width_mm,
+                        focal_length_mm=camera.focal_length_mm,
+                        image_width_px=camera.image_width_px,
+                        image_height_px=camera.image_height_px,
+                    ),
+                    altitude_m=request.route.altitude_m,
+                    front_overlap=camera.front_overlap,
+                    side_overlap=camera.side_overlap,
+                )
+            except CameraSpecError as exc:
+                raise RouteGenerationError(str(exc)) from exc
+            # spacing_m(across-track 라인 간격)은 perimeter 에 스캔선 개념이 없어
+            # 무의미하다 — capture_interval_m(along-track 촬영 간격)만 쓴다. 계산
+            # 자체는 lawnmower 와 동일 물리식이라 MIN_FRONT_OVERLAP(0.6) 미만은
+            # compute_grid_spacing 이 이미 거부한다(리뷰 P1-b — 고정 상수는 고도에
+            # 따라 이 하한 아래로 내려갈 수 있어 "3D 갱신용" 이라는 목적 자체가
+            # 성립하지 않는 밀도로 찍힐 수 있었다).
+            capture_interval_m = grid.capture_interval_m
+        if mission_type is MissionType.AUTONOMOUS_PATROL and capture_interval_m is None:
+            # 순찰의 기본 경로는 Spatial Refresh Backbone 을 포함한다(MASTER_PRD
+            # §15.2) — 선택 사항이 아니다. lawnmower 계열이 captureIntervalM 을
+            # fail-closed 로 요구하는 것과 동일 철학: 카메라 종속 기본값을 서버가
+            # 추측하지 않고, "격자는 날았는데 3D 갱신용 사진이 없다"가 비행 후에야
+            # 드러나는 것보다 발급 전 거부가 낫다.
+            raise RouteGenerationError(
+                "AUTONOMOUS_PATROL 은 route.camera 또는 route.captureIntervalM 이 "
+                "필요하다 — 순찰의 기본 경로는 3D 갱신에 필요한 Spatial Refresh "
+                "Backbone(MASTER_PRD §15.2, 광각 재구성용 사진을 일정 간격으로 "
+                "수집)을 포함해야 한다"
+            )
         route = perimeter_route(
-            request.aoi, altitude_m=request.route.altitude_m, envelope=envelope
+            request.aoi,
+            altitude_m=request.route.altitude_m,
+            envelope=envelope,
+            capture_interval_m=capture_interval_m,
+            capture_interval_is_camera_derived=capture_interval_is_camera_derived,
         )
         pattern = "perimeter"
     else:
@@ -372,8 +430,14 @@ def build_mission_plan(
             global_transitional_speed_ms=request.wayline.global_transitional_speed_ms,
         ),
         # 매핑 계열은 웨이포인트별 nadir 촬영이 기본(2026-07-29 대표자 승인) —
-        # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다.
-        capture_at_waypoints=(pattern == "lawnmower"),
+        # 격자만 날고 사진 0장인 산출물(자율 재검토 F9)을 만들지 않는다. perimeter
+        # 계열은 (직접 지정이든 camera 유도든) 실제로 해석된 capture_interval_m 이
+        # 있을 때만 촬영한다(AUTONOMOUS_PATROL 은 위에서 이미 필수화했으므로 사실상
+        # 항상 True, INCIDENT_SURVEY 는 선택) — request.route.capture_interval_m
+        # (원 요청 필드)이 아니라 위에서 camera 로부터 재해석된 지역변수를 봐야
+        # 한다: camera 로 계산된 경우 원 요청 필드는 여전히 None 이라 그걸 보면
+        # 촬영 웨이포인트는 생성되는데 KMZ 촬영 액션은 빠지는 어긋난 산출물이 된다.
+        capture_at_waypoints=(pattern == "lawnmower" or capture_interval_m is not None),
         pair_manifest=pair_manifest,
     )
 
@@ -401,6 +465,18 @@ def build_mission_plan(
     }
 
 
+def build_mission_kmz_object_key(*, site_id: str, mission_id: str) -> str:
+    """발급 KMZ 의 보관 키 — 서버가 만든다(``build_source_media_object_key`` 관습).
+
+    두 구성요소를 여기서 재검증한다: 이 함수가 경로 탈출을 막는 마지막 지점이다.
+    """
+    if not is_path_safe_identifier(site_id):
+        raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
+    if not is_path_safe_identifier(mission_id):
+        raise ValueError(f"경로-안전하지 않은 missionId: {mission_id!r}")
+    return f"sites/{site_id}/missions/{mission_id}/artifacts/{mission_id}.kmz"
+
+
 def _regenerate_pair_artifact(
     record: MissionRecord, *, private_key: Ed25519PrivateKey, key_id: str
 ) -> dict[str, Any]:
@@ -426,14 +502,92 @@ def _regenerate_pair_artifact(
     return result
 
 
+def _kmz_response(mission_id: str, kmz_bytes: bytes) -> Response:
+    """KMZ 바이트 응답 — 헤더 조립을 한 곳에만 둔다(경로 4개가 같은 응답을 낸다)."""
+    return Response(
+        content=kmz_bytes,
+        media_type="application/vnd.google-earth.kmz",
+        headers={"Content-Disposition": f'attachment; filename="{mission_id}.kmz"'},
+    )
+
+
+def _stored_kmz(storage: EvidenceStorage | None, record: MissionRecord) -> bytes | None:
+    """발급 시 보관해둔 KMZ 바이트 — 없거나 스토리지 장애면 ``None``.
+
+    이 함수는 **예외를 올리지 않는다.** 호출부는 이미 재생성에 실패했거나 재생성
+    바이트가 원본과 다른 상황이고, 여기서 또 예외가 나면 원인이 뒤바뀐 오류가
+    운영자에게 간다 — 보관본이 없으면 원래의 409 로 떨어지는 게 정확하다.
+    """
+    if storage is None:
+        return None
+    try:
+        key = build_mission_kmz_object_key(
+            site_id=record.site_id, mission_id=record.mission_id
+        )
+    except ValueError:
+        return None
+    try:
+        return storage.get_bytes(key)
+    except EvidenceStorageError:
+        logger.warning(
+            "mission_id=%s 보관된 KMZ 를 읽지 못했다 — 재생성 결과로 판정한다",
+            record.mission_id,
+        )
+        return None
+
+
+def _persist_kmz(
+    storage: EvidenceStorage | None, record: MissionRecord, result: dict[str, Any]
+) -> None:
+    """발급 KMZ 바이트를 보관한다 (risk kmz-regeneration-determinism-timebomb).
+
+    **발급을 막지 않는다.** durable 기록(mission_store)은 이미 끝났고 계약은 유효하다
+    — 보관 실패로 201 을 거부하면 스토리지 장애가 임무 발급 자체를 멈춘다. 대신
+    error 로 남긴다: 이 실패는 "나중에 그 임무의 KMZ 다운로드가 재생성에만 의존하게
+    됐다"는 뜻이고, 그 사실을 아무도 모르면 정책이 바뀐 뒤에야 409 로 드러난다.
+
+    ``storage`` 가 ``None`` 인 조립(오브젝트 스토리지 없는 배포)에서는 아무것도 하지
+    않는다 — 그 배포는 지금까지처럼 재생성에만 의존하고, 그 사실이 조립에서 명시된다.
+    """
+    if storage is None:
+        return
+    try:
+        storage.put_bytes(
+            build_mission_kmz_object_key(
+                site_id=record.site_id, mission_id=record.mission_id
+            ),
+            base64.b64decode(result["kmzBase64"]),
+            content_type="application/vnd.google-earth.kmz",
+        )
+    except (EvidenceStorageError, ValueError) as exc:
+        logger.error(
+            "mission_id=%s KMZ 바이트 보관 실패(%s) — 발급 자체는 유효하지만 이 임무의 "
+            "다운로드는 앞으로 재생성에만 의존한다(서버 정책이 바뀌면 409 가 된다)",
+            record.mission_id, type(exc).__name__,
+        )
+
+
+# risk kmz-download-regeneration-cost: 읽기 권한(MISSIONS_READ, VIEWER 포함 5개
+# role 전부)만으로 재조회마다 경로생성+Ed25519 서명이 무제한 반복된다. build_kmz
+# 계열은 결정론적이므로(모듈 docstring) 같은 mission_id·같은 kmz_sha256 에 대한
+# 재계산은 항상 같은 바이트다 — 캐시가 정확성을 해치지 않는다. TTL 은 정확성이
+# 아니라 메모리 상한을 위한 것이다.
+_KMZ_CACHE_TTL_S = 300.0
+_KMZ_CACHE_MAX_ENTRIES = 256
+
+
 def build_mission_plans_router(
     *,
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
+    kmz_storage: EvidenceStorage | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
+    # (kmzSha256, kmz_bytes, expires_at_monotonic) — mission_id 키, LRU 크기상한.
+    kmz_cache: OrderedDict[str, tuple[str, bytes, float]] = OrderedDict()
+    kmz_cache_lock = threading.Lock()
 
     @router.post("/plans", status_code=201)
     def issue_mission_plan_recorded(
@@ -461,9 +615,10 @@ def build_mission_plans_router(
 
         verdict = precheck_issuance(
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
             site_id=request.contract.site_id,
             mission_id=request.contract.mission_id,
+            mission_type=request.contract.mission_type,
             requested_site_frame=contract_request_payload["siteFrame"],
         )
         if verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
@@ -483,8 +638,17 @@ def build_mission_plans_router(
                     # 봉투, 또는 촬영 간격 필수화 이전에 발급된 매핑 요청. 그대로
                     # 두면 재시도가 500 이 되어 "서버 버그"처럼 보인다 — 실제로는
                     # 정책이 바뀐 것이므로 그 사실을 typed 로 알린다.
-                    logger.warning(
-                        "mission_id=%s 짝 재생성이 현재 정책에서 실패 — %s",
+                    #
+                    # error 레벨(risk kmz-regeneration-determinism-timebomb): 아래
+                    # sha256 불일치 분기와 같은 근본원인 클래스다 — 서버 상수·경로
+                    # 생성기 정책이 바뀌면 그 이전 발급분 재발급(멱등 재시도)이
+                    # 전량 이 분기로 떨어진다. phase-2 Spatial Refresh Backbone(
+                    # captureIntervalM 필수화)이 이 경로를 실제로 발화시켰다
+                    # (PHASE_REGISTRY.yaml phase-2 residual_risks).
+                    logger.error(
+                        "mission_id=%s 짝 재생성이 현재 정책에서 실패(%s) — 발급 당시 "
+                        "이후 서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 "
+                        "변경 전에 발급된 다른 레코드도 동시에 영향받을 수 있다",
                         existing.mission_id, type(exc).__name__,
                     )
                     raise HTTPException(
@@ -527,7 +691,133 @@ def build_mission_plans_router(
             plan_request_digest=request_digest,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        _persist_kmz(kmz_storage, record, result)
         return result
+
+    @router.get("/{mission_id}/kmz")
+    def download_mission_kmz(
+        mission_id: str,
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> Response:
+        """저장된 ``plan_request`` 로 KMZ 를 재생성해 바이트로 내려준다.
+
+        발급 응답의 ``kmzBase64`` 는 그 순간 한 번만 있고 어디에도 저장되지
+        않는다(모듈 docstring "멱등 재발급" — 바이트 자체는 journal 에 없다) —
+        운영자가 위저드를 끝까지 눌러도 손에 파일이 없는 막다른 길이 되는 지점이
+        이 엔드포인트다. 재생성은 결정론적이므로(``build_kmz`` 계열은 시각·난수·
+        UUID 의존이 없다) 매 조회마다 저장된 요청으로 다시 만든다.
+
+        재생성이 현재 정책으로 실패하거나(``_regenerate_pair_artifact`` 와 동일한
+        typed 거부 관습, POST ``/plans`` 멱등 재발급 참조) 재생성 sha256 이 저장된
+        ``kmzSha256`` 과 다르면(하류 로직 변경으로 결정성 가정이 깨진 경우) 200 을
+        주지 않는다 — "발급됐다고 기록된 파일"과 다른 바이트를 그 이름으로 내려주면
+        운영자가 기체에 옮긴 파일이 서버 기록과 어긋난 채로 비행하게 된다.
+        """
+        del principal  # 인가만 필요 — MissionRecordResponse 와 동일 관습.
+        if not is_path_safe_identifier(mission_id):
+            # 발급 경로가 이미 같은 검사를 통과한 값만 저장소 키로 쓰므로 정상
+            # 경로에서는 도달하지 않는다. 그래도 여기서 한 번 더 막는 이유는 이
+            # 값이 아래에서 Content-Disposition 헤더로 조립되기 때문이다 —
+            # 원장이 손대어진 경우까지 헤더 조립 전에 끊는다(방어 심층).
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        record = mission_store.get(mission_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        if record.artifact_kind != "pair" or record.plan_request is None:
+            raise HTTPException(
+                status_code=404,
+                detail="이 임무 레코드는 KMZ 산출물이 없다(계약 단독 발급)",
+            )
+        now = time.monotonic()
+        with kmz_cache_lock:
+            cached = kmz_cache.get(mission_id)
+            if cached is not None:
+                cached_sha, cached_bytes, expires_at = cached
+                if expires_at > now and cached_sha == record.kmz_sha256:
+                    kmz_cache.move_to_end(mission_id)
+                    return _kmz_response(mission_id, cached_bytes)
+                del kmz_cache[mission_id]
+        try:
+            regenerated = _regenerate_pair_artifact(
+                record, private_key=private_key, key_id=key_id
+            )
+        except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
+            # error 레벨(risk kmz-regeneration-determinism-timebomb) — 아래
+            # sha256 불일치 분기와 같은 근본원인 클래스: 정책이 바뀐 뒤 이전
+            # 발급분의 다운로드가 전량 이 분기로 떨어질 수 있다.
+            logger.error(
+                "mission_id=%s KMZ 재생성이 현재 정책에서 실패(%s) — 발급 당시 이후 "
+                "서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 변경 전에 "
+                "발급된 다른 레코드도 동시에 영향받을 수 있다",
+                record.mission_id, type(exc).__name__,
+            )
+            stored = _stored_kmz(kmz_storage, record)
+            if stored is not None:
+                # 발급 시점의 **그 바이트**가 보관돼 있으면 정책 변경과 무관하게
+                # 그걸 내려준다 — 이 엔드포인트가 약속하는 것은 "발급 당시 그
+                # 파일"이고, 재생성은 그걸 얻는 수단이었지 목적이 아니다.
+                logger.info(
+                    "mission_id=%s 재생성 실패했지만 발급 시 보관된 KMZ 로 응답한다",
+                    record.mission_id,
+                )
+                return _kmz_response(mission_id, stored)
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "이미 기록된 임무지만 현재 정책으로는 KMZ 를 다시 만들 수 "
+                    f"없다(발급 당시 규칙과 달라졌다): {exc}. 발급 시 바이트도 "
+                    "보관돼 있지 않다"
+                ),
+            ) from exc
+        if regenerated["kmzSha256"] != record.kmz_sha256:
+            # _regenerate_pair_artifact 는 이 상황(모듈 docstring "결정성 가정
+            # 위반 의심")을 이미 warning 으로 로그하고 재생성 산출물을 그대로
+            # 돌려준다 — POST /plans 재발급 경로는 그걸로 충분하다(요청자가 방금
+            # 보낸 요청의 재시도이므로 최신 산출물이 낫다). 하지만 이 다운로드는
+            # "발급 당시 그 파일"을 약속하는 경로라 기준이 다르다 — 다른 바이트를
+            # 같은 파일이라고 내려주지 않는다.
+            #
+            # error 레벨로 별도 기록하는 이유(risk kmz-regeneration-determinism-
+            # timebomb): 이 분기는 서버 상수 한 줄이 바뀌면 그 이전 발급분 전량이
+            # 영구 409 가 되는 지점이다. _regenerate_pair_artifact 의 warning 은
+            # "달라졌다"만 남기고 이 라우트가 실제로 다운로드를 막았다는 사실 자체는
+            # 기록하지 않았다 — 운영자가 이 로그 없이는 대량 409 발생을 알 방법이
+            # 없었다.
+            stored = _stored_kmz(kmz_storage, record)
+            if stored is not None:
+                logger.info(
+                    "mission_id=%s 재생성 바이트가 원본과 다르지만(재생성 sha256=%s, "
+                    "기록 %s) 발급 시 보관된 KMZ 로 응답한다",
+                    record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+                )
+                return _kmz_response(mission_id, stored)
+            logger.error(
+                "mission_id=%s KMZ 다운로드가 결정성 위반으로 영구 거부됐다 "
+                "(재생성 sha256=%s, 기록된 kmzSha256=%s) — 이 발급 시점 이후 서버 "
+                "상수·경로생성기가 바뀌었을 가능성. 같은 정책 변경 전에 발급된 다른 "
+                "레코드도 동시에 영향받을 수 있다. 발급 시 바이트가 보관돼 있었다면 "
+                "이 거부는 일어나지 않았다(오브젝트 스토리지 없는 조립)",
+                record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "재생성한 KMZ 의 sha256 이 발급 당시 기록된 kmzSha256 과 다르다"
+                    "(하류 로직 변경으로 원본 파일을 더 이상 재현할 수 없다) — 다른"
+                    " 파일을 발급된 파일로 잘못 내려주지 않기 위해 거부한다"
+                ),
+            )
+        kmz_bytes = base64.b64decode(regenerated["kmzBase64"])
+        with kmz_cache_lock:
+            kmz_cache[mission_id] = (
+                regenerated["kmzSha256"],
+                kmz_bytes,
+                time.monotonic() + _KMZ_CACHE_TTL_S,
+            )
+            kmz_cache.move_to_end(mission_id)
+            while len(kmz_cache) > _KMZ_CACHE_MAX_ENTRIES:
+                kmz_cache.popitem(last=False)
+        return _kmz_response(mission_id, kmz_bytes)
 
     return router
 
@@ -538,19 +828,28 @@ def mount_mission_plans(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
+    kmz_storage: EvidenceStorage | None = None,
 ) -> None:
     """앱에 임무 계획(짝 발급) 라우터를 장착한다.
 
-    인증·site 등록 대조(존재+siteFrame 일치)·durable 기록이 강제되는 경로
-    하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록 발급이 가능한 조립은 성립하지
-    않는다. mission_issuance.py 모듈 docstring과 동형).
+    ``kmz_storage`` 가 주어지면 발급 시 KMZ 바이트를 보관하고, 다운로드가 재생성에
+    실패하거나 재생성 바이트가 원본과 다를 때 그 보관본을 내려준다 — 서버 안전상수
+    한 줄이 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
+    kmz-regeneration-determinism-timebomb, phase-2 에서 실제로 발화). 없으면
+    지금까지처럼 재생성에만 의존한다 — 그 조립의 한계가 조립에서 드러난다.
+
+    인증·site 등록 대조(존재+siteFrame 일치+임무타입×현장상태 게이트, INV-052)·
+    durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록
+    발급이 가능한 조립은 성립하지 않는다. mission_issuance.py 모듈 docstring과
+    동형).
     """
     app.include_router(
         build_mission_plans_router(
             private_key=private_key,
             key_id=key_id,
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
+            kmz_storage=kmz_storage,
         )
     )

@@ -4,7 +4,29 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-07-27"
+updated: "2026-08-08"
+
+# 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
+# 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이
+# 진행 가능하고 어느 축이 막혀 있나"** 다 — 그 상태는 몇 주 만에 뒤집히므로
+# 헌법·ADR 에 넣지 않는다.
+axes:
+  site_intelligence_core:
+    title: "Site Intelligence Core — 공간·시간 이해, 변화·공정·물량, 설계 대비, Mission Planning"
+    state: ACTIVE
+    note: >-
+      막힌 것 없음. M1(epoch 파이프라인 종단) 진행 중이며 M2(폐루프 실물)·
+      M3(상용 기반)가 뒤따른다. 하드웨어 도착과 무관하게 진행된다.
+  autonomous_acquisition:
+    title: "Autonomous Acquisition — Manifold Runtime, Perception, Local World Model, Viewpoint/Path, Mission Execution"
+    state: BLOCKED
+    note: >-
+      **우선순위가 낮아서가 아니라 차단돼 있다.** H1~H4(벤치 SSH·Cellular
+      Dongle 실측·PSDK 스파이크·KMZ 실기 임포트)가 전부 장비 조달·PSDK 개발자
+      승인 대기이고, HIL 세션의 기체 링크는 AIRCRAFT_LINK_DOWN 이었다. 현재
+      edge/ 에 있는 것은 명령 유효성 판정·안전 상태기·PSDK 탭이며 perception·
+      tracking·next-best-view 는 미착수 — 목표 아키텍처(03_EDGE_AUTONOMY.md)가
+      곧 현재 능력이 아니다. 게이트가 열리는 즉시 착수한다.
 
 phases:
   - id: phase-0
@@ -100,26 +122,156 @@ phases:
 
   - id: phase-2
     title: "Baseline Mapping & Unified Mission"
-    status: PLANNED
+    # Coverage Recovery 의 Edge 실시간 gap-fill(03_EDGE_AUTONOMY.md COVERAGE_RECOVERY
+    # 상태)은 하드웨어 종속(Track A/B 계열)이므로 phase-2 전체는 DONE 이 아니다.
+    status: IN_PROGRESS
+
+    software_implementation: COMPLETE
+    software_acceptance: PASS
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_commit: "0a5f80b5b7af8a34b28b7b46bb189d02da46b873"
+    independent_review_date: "2026-08-06"
+    independent_review_note: >-
+      2026-08-06 adversarial 재검토 2라운드. 1차(refuted) P1 3건 —
+      needs_coverage_recovery() 가 ABORTED_SAFE/FAILED 를 누락해 거짓음성 /
+      고정 촬영간격이 MIN_FRONT_OVERLAP(0.6) 미달 가능 / captureIntervalM 배선
+      자체를 검증하는 테스트 부재 — 를 2라운드에서 파일:라인 재검산 포함해
+      수정 확인. uv run pytest 1908 passed·20 skipped·3 xfailed, ruff·mypy·
+      dashboard tsc·vitest 전부 clean. software acceptance PASS 판정.
+
+    hardware_deferred:
+      - >-
+        Coverage Recovery 의 Edge 실시간 촬영공백 보완(03_EDGE_AUTONOMY.md
+        EVENT→REJOIN→COVERAGE_RECOVERY→RETURN) — Manifold/Edge 소관, Track A/B 와
+        동일 계열 하드웨어 종속. 이번 세션은 Core 측 대체 신호(원본 site AOI 재발급
+        권고, CoverageReportView.recoveryRecommended)만 구현했다.
+
     acceptance:
       - "현장 Onboarding→Baseline Processing→Verified Flight Volume 상태 전이 실통과 (INV-010)"
       - "Spatial Refresh Backbone + Coverage Recovery"
 
+    residual_risks:
+      - >-
+        MASTER_PRD §15.2 의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 —
+        ②(이벤트 시 Adaptive Patrol 분기, Edge 소관)·④(동적 객체 마스킹/저가중치)·
+        ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언
+        (risk phase2-backbone-prd-items-partial, open).
+      # 2026-08-08 실사(technical-product-audit)로 확인: 아래 2건은 이미 해소됨
+      # (.ksi/goals.json risk status=resolved, 2026-08-07) — 이 절이 최신 편집
+      # (4a44828/4a2ab2f) 이후에도 반영이 안 돼 있었다. patrol-capture-interval-
+      # direct-no-quality-floor, kmz-regeneration-determinism-timebomb 둘 다
+      # resolved. 원장이 SSOT이며 이 절은 등재 시점 스냅샷일 뿐이다.
+
   - id: phase-3
     title: "Dynamic Equipment Intelligence"
-    status: PLANNED
+    # Active Reobservation 의 실제 소비(재관찰 트리거 실행)는 Manifold 소관(Control
+    # boundary, CLAUDE.md) — 하드웨어 종속이라 phase-3 전체는 DONE 이 아니다.
+    #
+    # ADR-KSI-016 D5: Autonomous Acquisition 축의 기능이고 그 축이 하드웨어
+    # 게이트에 걸려 있는 동안 **추가 투자를 하지 않는다**. 범위에서 빠지거나
+    # 다른 제품으로 옮겨가지 않는다 — 축이 열리면 그대로 이어서 쓴다.
+    # (2026-08-08 정정 이력: 최초 기재 DEFERRED_TO_SAFETY_TRACK 은 "KSI Safety
+    #  제품으로 이동"이라는 오기에서 나온 값이었다.)
+    # **status 는 바꾸지 않는다** — 완료 판정의 권위는 acceptance 게이트지
+    # 투자 배분이 아니다(뒤로 미뤘다고 미완이 완료가 되지 않는다).
+    status: IN_PROGRESS
+    axis: autonomous_acquisition
+    investment: PAUSED  # ADR-KSI-016 D5 — 범위 유지, 축이 열릴 때까지 신규 투자 없음
+
+    software_implementation: COMPLETE
+    software_acceptance: PASS
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_date: "2026-08-07"
+    independent_review_note: >-
+      2026-08-06/07 기술 Pack 결정(굴착기+작업자, PRD MASTER_PRD_v3.0.md:1601
+      데이터 접근성 근거)에 따라 packages/equipment-intelligence 신설:
+      KinematicState(INV-020 확장)·closed-form CPA/TTC 골든벡터 계산기·
+      RiskField(contracts/schemas/risk-field.v1.json 왕복)·
+      needs_active_reobservation() 권고 신호(순수 bool, side effect 0건).
+      reviewer(opus) 2건 모두 PASS — phase-3-kinematic-risk-field-v2
+      (agentId a43cc168864d897c2, capability.py SSOT 재사용 확인),
+      phase-3-active-reobservation-signal(agentId adc32236142b16722,
+      Manifold/Edge import 0건·Viewpoint·비행좌표 흔적 전무 확인).
+
+    hardware_deferred:
+      - >-
+        Active Reobservation 실동작 — **Core 측 절반은 이미 배선됐다**
+        (2026-08-08 실사로 확인: services/core/src/ksi_core/equipment_states.py
+        의 GET /v1/sites/{site_id}/risk-assessment 가 needs_active_reobservation()
+        을 RiskAssessmentView.reobservation_recommended 필드로 실제 노출한다 —
+        이 모듈 자체 docstring이 "Phase 3 acceptance 의 Core 측 절반이 여기서
+        닫힌다"고 명시). 미착수인 것은 Manifold 가 이 신호를 소비해 재관찰
+        비행을 실제로 트리거하는 나머지 절반뿐(하드웨어 종속).
+
     acceptance:
       - "우선 장비 1종(타워크레인+인양물 또는 굴착기) 기구학·Risk Field·CPA/TTC"
-      - "Active Reobservation 실동작"
+      - "Active Reobservation 실동작(Core 신호 배선 — 완료 / Manifold 소비 — 하드웨어 게이트)"
+
+    residual_risks:
+      # 2026-08-08 실사로 확인: cpa-ttc-observed-at-mismatch-unchecked,
+      # risk-field-round-trip-one-direction-only 둘 다 resolved(2026-08-07).
+      # 이 절이 최신 편집 이후에도 반영이 안 돼 있었다 — 현재 phase-3 잔여
+      # 리스크는 없다(하드웨어 게이트 자체는 위 hardware_deferred 참조).
 
   - id: phase-4
     title: "Asset Inspection & Temporal Intelligence"
-    status: PLANNED
+    # 결함탐지 4항목 중 균열(crack)만 구현됐다 — 박락·부식·백화 등 다중
+    # 결함 클래스는 CiF 파인튜닝 별도 결정 사안이라 phase-4 전체는 DONE 이 아니다.
+    status: IN_PROGRESS
+
+    software_implementation: PARTIAL  # 균열 탐지 포함 3/4 항목, 다중 결함 클래스 미구현
+    software_acceptance: PASS  # 구현된 세 항목(균열 탐지·시계열 변화·BIM 연계) 한정
+    technical_gate: PASS
+
+    independent_review: PASS
+    independent_review_date: "2026-08-07"
+    independent_review_note: >-
+      services/change-detection(scipy cKDTree 기반 point cloud C2C, Open3D/
+      CloudCompare 대비 라이선스·플랫폼 사유 문서화) + services/bim-integration
+      (ifcopenshell 기반 IFC georeferencing 읽기, IfcCoordinateOperation 상위타입
+      판정으로 IfcMapConversion/IfcRigidOperation 형제 서브타입 모두 커버) +
+      services/defect-detection(MODEL-P4-001 MixerCSeg 실가중치 fetch·벤더링·
+      adapter·후처리, 균열 세그멘테이션) 신설.
+      reviewer(opus) 3건 모두 PASS — phase-4-change-detection(agentId
+      a3bd7a5ead904aabf, 골든벡터 손계산 재검산 일치), phase-4-bim-linkage-v3
+      (agentId a2a3e309e2bcc162b, 1라운드 REFUTED 수정 후 ifcopenshell
+      라이브러리 소스 직접 대조 재검증), phase-4-defect-detection-adapter
+      (agentId a4434bca91af91832 → ad25bc4a8382f6e21, 2라운드 — 1라운드
+      CONFIRMED 7건 전부 수정, 2라운드 재검증에서 나온 신규 2건도 수정+실측
+      확인 후 PASS).
+
+    hardware_deferred: []
+
     acceptance:
       - "표면 점검·결함 후보·시계열 변화·BIM 연계"
 
+    residual_risks:
+      - >-
+        결함 후보 탐지는 균열(crack)만 구현됐다(MODEL-P4-001 scope) — 박락·
+        부식·백화·철근노출 등 다중 결함 클래스는 CiF(CC BY 4.0) 파인튜닝이
+        별도 필요하며 후속 대표자 결정 사안
+        (docs/models/DEFECT_MODEL_CANDIDATES.md "다중 결함 클래스" 절).
+      - >-
+        defect-detection-vendor-syspath-pollution,
+        defect-detection-opencv-namespace-conflict
+        (open, 상세는 .ksi/goals.json risk 레코드 참조).
+      # 2026-08-08 실사로 확인: bim-sample-points-ifc2x3-asymmetry,
+      # bim-unit-of-measurement-untested, defect-detection-postprocess-
+      # no-spatial-check, defect-detection-confidence-includes-holes,
+      # defect-detection-uv-lock-mmcv-portability — 5건 모두 resolved
+      # (2026-08-07). 이 절이 최신 편집 이후에도 반영이 안 돼 있었다.
+
   - id: phase-5
     title: "Fleet/Dock & Cross-Industry Packs"
+    # 2026-08-07 ADR-KSI-016 D5: 동결 유지. "산업 중립"은 아키텍처 원칙으로만
+    # 남기고 시장 전략에서 제거한다 — 첫 유료 건설 현장 이전에 다른 산업은 없다.
+    # Dock 경로 자체의 관문은 여전히 ADR-KSI-004(Dock 3 + M4D 제3자 payload
+    # 제약 실검증)다.
     status: PLANNED
+    investment: FROZEN_UNTIL_FIRST_PAID_SITE  # ADR-KSI-016 D5
     acceptance:
       - "Dock Capability VERIFIED 후 원격 반복운영·다현장 Fleet·산업 Pack"

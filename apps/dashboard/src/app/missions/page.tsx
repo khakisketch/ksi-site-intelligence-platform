@@ -12,7 +12,12 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 
 import { formatCoverageRatio, formatDateTime, formatNullable } from "./format";
-import { MISSION_TYPE_LABEL, ROUTE_PATTERN_LABEL } from "./mission-labels";
+import {
+  COMPLETION_STATE_LABEL,
+  COVERAGE_NOT_REPORTED_LABEL,
+  MISSION_TYPE_LABEL,
+  ROUTE_PATTERN_LABEL,
+} from "./mission-labels";
 
 type MissionsResult =
   | { missions: MissionRecordResponse[]; error: null }
@@ -99,6 +104,13 @@ function Fact({ label, value, numeric }: { label: string; value: ReactNode; nume
 // 목록 행의 주인공은 missionId(장치스러운 ID)가 아니라 "무슨 임무가 어느 현장에
 // 발급됐는가"다 — missionId 는 부제로 내린다(시안 원칙, 이벤트 목록과 동일 기준).
 function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; siteName: string | undefined }) {
+  // 서버가 이미 판정한 값이다(coverageCompletionState, CoverageReportStore 조회) —
+  // 여기서 다시 계산하지 않는다. "계획 커버리지"(아래 Fact, 발급 시점 기하 추정치)와
+  // 절대 같은 배지로 섞지 않는다 — 하나는 계획, 하나는 실측 결과다.
+  const coverage = mission.coverageCompletionState
+    ? COMPLETION_STATE_LABEL[mission.coverageCompletionState]
+    : COVERAGE_NOT_REPORTED_LABEL;
+
   return (
     <li>
       <Link
@@ -114,9 +126,12 @@ function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; si
               {mission.missionId}
             </span>
           </span>
-          {mission.routePattern && (
-            <StatusBadge label={ROUTE_PATTERN_LABEL[mission.routePattern]} tone="neutral" />
-          )}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <StatusBadge label={coverage.label} tone={coverage.tone} />
+            {mission.routePattern && (
+              <StatusBadge label={ROUTE_PATTERN_LABEL[mission.routePattern]} tone="neutral" />
+            )}
+          </span>
         </div>
 
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-2.5">

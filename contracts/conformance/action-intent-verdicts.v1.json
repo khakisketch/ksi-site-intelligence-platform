@@ -270,6 +270,21 @@
         "ttlMs": 5000
       },
       "expectedVerdict": "MALFORMED"
+    },
+    {
+      "id": "issued_at_equals_now",
+      "rationale": "issued_at == now 경계 — 같은 밀리초에 발행·평가된 명령은 정상이고 거부되면 안 된다. 2026-08-07 mutation 재점검에서 `issued > now` 를 `>=` 로 바꾼 변이가 C++ ctest 를 통과했고, 이 코퍼스에도 그 경계 벡터가 없어 Python 참조 검증기와 C++ 가 갈려도 양쪽 다 못 잡는 상태였다.",
+      "nowUtcMs": 1000000,
+      "intent": {
+        "schemaVersion": "1.0",
+        "commandId": "cmd-boundary-issued-eq-now",
+        "kind": "GOTO_VIEWPOINT",
+        "authorizationDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "issuedAtUtcMs": 1000000,
+        "ttlMs": 5000,
+        "targetViewpointId": "vp-001"
+      },
+      "expectedVerdict": "ACCEPTED"
     }
   ]
 }

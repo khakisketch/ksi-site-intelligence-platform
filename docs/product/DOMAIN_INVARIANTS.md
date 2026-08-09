@@ -129,3 +129,61 @@
   `ksi_perception.registry`(digest 대조·BLOCKED 계보 거부·잉여파일 거부) +
   `tests/contract/test_model_registry.py`. Dataset 쪽 Ledger 는 자체 학습 데이터
   확보 시 확장(MODEL-B1-001 production_gate)._
+
+## 재구성·처리 파이프라인
+
+- **INV-050** 처리 작업(Processing Job — 3D 재구성 등)은 실행 위치와 그 현장의
+  데이터 반출 허용이 일치할 때만 생성된다(fail-closed). 벤더 클라우드(예: DJI
+  FlightHub 2, 상용 SaaS 엔진)에서 실행하는 작업인데 그 현장의 반출 허용이
+  참이 아니면 작업 생성 자체를 거부한다 — 실행 후 사후 통제가 아니라 생성
+  시점 게이트다.
+  _강제: `services/core/src/ksi_core/processing_jobs.py` `ProcessingJobStore.issue()`
+  — `dataResidency.egressAllowed` 가 거짓인 현장에 벤더 클라우드 실행을 발급
+  요청하면 생성 자체를 `EGRESS_NOT_ALLOWED` 로 거부(재생도 동일 판정 재현).
+  `tests/contract/test_processing_jobs.py::test_vendor_cloud_refused_when_site_has_not_declared_egress`
+  / `::test_vendor_cloud_refused_when_site_declared_egress_false` /
+  `::test_vendor_cloud_allowed_when_site_declared_egress_true` /
+  `::test_onprem_execution_is_unaffected_by_egress_declaration`
+  (ADR-KSI-012 D1·D3, ADR-KSI-013)._
+- **INV-051** 재구성 산출물은 원본(raw capture를 직접 처리한 결과)인지 파생
+  (원본에서 재생성한 서빙 계층)인지 계보를 반드시 지니며, 파생 산출물을 원본의
+  권위로 대체해 측정·완료 판정 근거로 쓰지 않는다. Point Cloud가 원본 SSOT이고
+  Mesh/3D Tiles/정사영상이 파생 서빙 계층이라는 원칙(ADR-KSI-003)을 실제 처리
+  엔진(ODM 등)의 산출물에도 동일하게 적용한다.
+  _강제: `services/core/src/ksi_core/processing_jobs.py` `ProcessingArtifact.lineage`
+  (`authority: source|derived` + `derivedFrom`, 요청이 아니라 Core가 봉인된 번들의
+  `sourceBundleDigest`로 채움) + `assert_succeeded_is_backed()` — RUNNING→SUCCEEDED
+  전이는 `authority=source` 산출물이 최소 1건 등록돼 있어야 통과(파생물만으로는
+  거부, live·재생 동일 판정). `services/processing-controller`의 ODM 어댑터
+  (`ksi_processing_controller.odm_assets`)가 Point Cloud=원본/Mesh·정사영상·
+  DSM·DTM=파생으로 매핑. `tests/contract/test_processing_jobs.py::test_succeeded_is_refused_without_any_artifact`
+  / `::test_replay_refuses_success_whose_artifact_record_was_deleted` /
+  `::test_lineage_anchor_comes_from_the_sealed_bundle` /
+  `::test_replay_refuses_artifact_with_forged_lineage_anchor`
+  (ADR-KSI-003, ADR-KSI-012 D1)._
+
+## 임무 발급·현장 생애주기
+
+- **INV-052** "먼저 매핑, 그 다음 사전지도 기반 자율"은 임무 발급 자체가
+  강제한다 — `AUTONOMOUS_PATROL`처럼 사전지도(World Model) 기반 자율을
+  전제하는 임무 타입은 현장이 검증된 최신 모델을 가진 상태(`PROVISIONAL_
+  AUTONOMY`·`PATROL_READY`·`PATROL_ACTIVE`)에서만 발급된다. `UNMAPPED`
+  현장에는 발급되지 않으며, `MODEL_STALE`(모델이 낡음)에서도 발급되지 않는다
+  — 상태머신이 `MODEL_STALE → PATROL_READY` 직행 간선을 두지 않아 품질
+  재검증을 우회할 수 없게 한 것(`ksi_domain.enums`)과 동일 원칙을 임무 발급
+  시점에도 적용한다. `SUSPENDED` 현장에는 임무 타입과 무관하게 어떤 임무도
+  발급되지 않는다. 등록되지 않은 현장 ID로는 발급되지 않는다(`UNKNOWN_SITE`).
+  8개 임무 타입 전체의 허용 현장상태 표와 각 결정의 근거(문서 인용 vs. 보수적
+  추론 구분 포함)는 `packages/domain/src/ksi_domain/mission_gating.py`
+  모듈 docstring이 SSOT다 — 여기 복제하지 않는다. 특히 `INCIDENT_SURVEY`
+  (사고조사)를 `SUSPENDED`를 제외한 전 상태에서 허용한 결정은 문서 문언이
+  아니라 FINAL_DECISION_LEDGER "미매핑 공간은 제한속도·거리·행동으로
+  탐색"(DEC-013)으로부터의 추론이다 — 대표자 재검토 대상으로 남는다.
+  _강제: `ksi_domain.mission_gating.assert_mission_type_allowed_at_site_status`
+  + `ksi_core.mission_records.precheck_issuance`(`MISSION_TYPE_SITE_STATUS_
+  MISMATCH` verdict, 409) — 짝 발급(`mission_plans.py`)과 계약 단독 발급
+  (`mission_issuance.py`) 두 경로 모두 이 한 함수를 거친다(ADR-KSI-014).
+  대시보드 새 현장조사 Wizard는 이 표를 미러링해 발급 불가 목적을 사유와
+  함께 비활성으로 미리 보여준다(서버 409를 마지막 단계에서 만나지 않게,
+  ADR-KSI-011과 동일 원칙) — `apps/dashboard/src/lib/core-api/
+  missionSiteGate.ts`._

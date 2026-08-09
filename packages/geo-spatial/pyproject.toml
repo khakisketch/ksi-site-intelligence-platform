@@ -1,0 +1,25 @@
+[project]
+name = "ksi-geo-spatial"
+version = "0.0.1"
+description = "KSI Geo Spatial — 측지 기반(EPSG:5186 투영좌표계·KNGeoid 수직기준). ADR-KSI-016 D3 의 Site reference frame 계층 구현"
+requires-python = ">=3.12,<3.13"
+# **geo-core 와 왜 분리하나.** packages/geo-core 는 numpy 만 의존하는 가벼운 리프이고
+# mission-planning 같은 소비자가 물고 있다 — 거기에 pyproj/rasterio(GDAL 바인딩)를
+#얹으면 그 소비자 전원이 무거워진다. geo-core 는 로컬 접평면 근사(ENU)를, 이 패키지는
+# 실제 측지 변환을 담당한다. 두 축이 만나는 지점(지면투영의 평면 가정을 DSM 지형으로
+# 교체)은 ADR-KSI-003 §결과가 이미 "Phase 2 이후 개선 항목"으로 미뤄둔 곳이다.
+#
+# **wheel 가용성 실측(2026-08-07).** 이 워크스페이스 환경은 Python 3.12 / aarch64
+# linux 이고, 같은 환경에서 Open3D 는 wheel 이 없어 채택하지 못한 선례가 있다
+# (services/change-detection/pyproject.toml). 그래서 채택 전에 확인했다:
+# `uv pip install --dry-run pyproj rasterio` → pyproj 3.7.2 · rasterio 1.5.0 ·
+# affine 2.4.0 · cligj 0.7.2 정상 해결. 라이선스는 pyproj MIT / rasterio BSD-3 /
+# PROJ·GDAL MIT 계열로 AGPL 경계(ADR-KSI-012 D2)와 무관하다.
+dependencies = ["pyproj>=3.7", "rasterio>=1.3", "numpy>=1.26"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksi_geo_spatial"]

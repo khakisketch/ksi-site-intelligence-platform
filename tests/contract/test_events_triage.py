@@ -36,7 +36,7 @@ from ksi_domain.enums import EventStatus, TriageStatus
 from ksi_event_contracts.offline_sync import payload_digest
 
 _FPR = "a" * 64
-_SITE_MANAGER_TOKEN = "site-manager-plaintext-token"  # noqa: S105 -- 테스트 고정값
+_FIELD_OPERATOR_TOKEN = "field-operator-plaintext-token"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "viewer-plaintext-token"  # noqa: S105
 
 
@@ -137,7 +137,7 @@ def _project_to_finding(
     assert _project(store, payload("FINDING")) is EventVerdict.EVENT_UPDATED
 
 
-def _actor(principal_id: str = "op-1", role: Role = Role.SITE_MANAGER) -> Principal:
+def _actor(principal_id: str = "op-1", role: Role = Role.FIELD_OPERATOR) -> Principal:
     return Principal(
         principal_id=principal_id, kind=PrincipalKind.OPERATOR, role=role, device_id=None
     )
@@ -492,11 +492,11 @@ def _registry() -> AuthRegistry:
     return AuthRegistry(
         [
             PrincipalTokenRecord(
-                token_sha256=digest(_SITE_MANAGER_TOKEN),
+                token_sha256=digest(_FIELD_OPERATOR_TOKEN),
                 principal=Principal(
-                    principal_id="site-mgr-1",
+                    principal_id="field-op-1",
                     kind=PrincipalKind.OPERATOR,
-                    role=Role.SITE_MANAGER,
+                    role=Role.FIELD_OPERATOR,
                     device_id=None,
                 ),
             ),
@@ -546,13 +546,13 @@ def test_viewer_can_read_but_not_triage(store: EventStore) -> None:
     assert forbidden.status_code == 403
 
 
-def test_site_manager_can_triage(store: EventStore) -> None:
+def test_field_operator_can_triage(store: EventStore) -> None:
     _project(store, _bundle_payload("evt-http-2"))
     client = TestClient(_app(store))
     response = client.post(
         f"/v1/events/{_key('evt-http-2')}/transitions",
         json={"reason": "오탐", "targetStatus": "DISMISSED"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 200
     body = response.json()
@@ -565,7 +565,7 @@ def test_site_manager_can_triage(store: EventStore) -> None:
 
 def test_get_unknown_event_is_404_generic(store: EventStore) -> None:
     client = TestClient(_app(store))
-    response = client.get("/v1/events/does-not-exist", headers=_auth(_SITE_MANAGER_TOKEN))
+    response = client.get("/v1/events/does-not-exist", headers=_auth(_FIELD_OPERATOR_TOKEN))
     assert response.status_code == 404
     assert response.json()["detail"] == "이벤트를 찾을 수 없다"
 
@@ -575,7 +575,7 @@ def test_transition_unknown_event_is_404(store: EventStore) -> None:
     response = client.post(
         "/v1/events/does-not-exist/transitions",
         json={"reason": "x", "targetStatus": "DISMISSED"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 404
     assert response.json()["verdict"] == "UNKNOWN_EVENT"
@@ -587,7 +587,7 @@ def test_transition_both_targets_is_422(store: EventStore) -> None:
     response = client.post(
         f"/v1/events/{_key('evt-http-3')}/transitions",
         json={"targetStatus": "DISMISSED", "triageTarget": "ASSIGNED", "reason": "x"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["verdict"] == "INVALID_REQUEST"
@@ -599,7 +599,7 @@ def test_transition_neither_target_is_422(store: EventStore) -> None:
     response = client.post(
         f"/v1/events/{_key('evt-http-4')}/transitions",
         json={"reason": "x"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 422
     assert response.json()["verdict"] == "INVALID_REQUEST"
@@ -611,7 +611,7 @@ def test_illegal_transition_over_http_is_409(store: EventStore) -> None:
     response = client.post(
         f"/v1/events/{_key('evt-http-5')}/transitions",
         json={"targetStatus": "CONFIRMED_EVENT", "reason": "x"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "ILLEGAL_TRANSITION"
@@ -649,7 +649,7 @@ def test_triage_transition_over_http_returns_503_when_sealed(
     response = client.post(
         f"/v1/events/{_key('evt-http-sealed')}/transitions",
         json={"targetStatus": "CONFIRMED_EVENT", "reason": "확인"},
-        headers=_auth(_SITE_MANAGER_TOKEN),
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
     )
     assert response.status_code == 503
     assert response.json()["verdict"] == "STORE_UNAVAILABLE"
@@ -916,7 +916,7 @@ def test_event_type_missing_from_bundle_degrades_to_null(store: EventStore) -> N
 
 def _principal() -> Principal:
     return Principal(
-        principal_id="op-1", kind=PrincipalKind.OPERATOR, role=Role.SITE_MANAGER, device_id=None
+        principal_id="op-1", kind=PrincipalKind.OPERATOR, role=Role.FIELD_OPERATOR, device_id=None
     )
 
 
@@ -1014,7 +1014,7 @@ def test_stale_token_maps_to_409(store: EventStore) -> None:
             "reason": "오탐",
             "expectedBundleDigest": stale_digest,
         },
-        headers={"Authorization": f"Bearer {_SITE_MANAGER_TOKEN}"},
+        headers={"Authorization": f"Bearer {_FIELD_OPERATOR_TOKEN}"},
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "STALE_EVENT_VIEW"

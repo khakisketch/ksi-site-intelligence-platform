@@ -30,6 +30,19 @@ export interface SiteView {
   resumeTarget: SiteStatus | null;
   registeredAt: string;
   updatedAt: string;
+  /** 설정된 적 없으면 null(등록 시 생략 또는 아직 PUT .../aoi 를 거치지 않음). */
+  aoi: { vertices: AoiVertex[] } | null;
+  /**
+   * 데이터 반출 선언(INV-050). null 은 "미선언"이고 그 뜻은 **반출 불가**다 —
+   * 화면이 null 을 "아직 모름"으로 읽어 허용처럼 보여주면 안 된다.
+   */
+  dataResidency: DataResidency | null;
+}
+
+/** 처리 작업의 벤더 클라우드 실행 가부를 정하는 현장 속성(INV-050). */
+export interface DataResidency {
+  egressAllowed: boolean;
+  jurisdiction: string;
 }
 
 export const EVENT_STATUSES = [
@@ -141,6 +154,14 @@ export const MISSION_TYPES = [
 ] as const;
 export type MissionType = (typeof MISSION_TYPES)[number];
 
+export const COMPLETION_STATES = [
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "ABORTED_SAFE",
+  "FAILED",
+] as const;
+export type CompletionState = (typeof COMPLETION_STATES)[number];
+
 export interface MissionRecordResponse {
   missionId: string;
   siteId: string;
@@ -152,9 +173,72 @@ export interface MissionRecordResponse {
   plannedCoverageRatio: number | null;
   issuedAt: string;
   issuedBy: string;
+  /**
+   * 파생 필드 — 이 임무에 대해 접수된 최신 CoverageReport 의 completionState(서버가
+   * 조회 시점에 계산, 대시보드는 재계산하지 않는다). null 이면 "아직 보고가 없다"다 —
+   * 발급됐지만 비행 전인지, 비행했는데 보고가 없는지는 이 값만으로 구분되지 않는다
+   * (missions/[missionId] 상세의 GET .../coverage-report 404 와 함께 봐야 한다).
+   */
+  coverageCompletionState: CompletionState | null;
 }
 
-export type Role = "ADMIN" | "SITE_MANAGER" | "SAFETY_MANAGER" | "DRONE_OPERATOR" | "VIEWER";
+export const COVERAGE_CELL_STATES = [
+  "OBSERVED_HIGH_CONFIDENCE",
+  "OBSERVED_PARTIAL",
+  "RECONSTRUCTION_READY",
+  "EVENT_INSPECTED",
+  "OCCLUDED",
+  "UNREACHABLE",
+  "NOT_OBSERVED",
+  "UNSAFE",
+  "SENSOR_LIMITED",
+  "TIME_LIMITED",
+  "BATTERY_LIMITED",
+] as const;
+export type CoverageCellState = (typeof COVERAGE_CELL_STATES)[number];
+
+/** 구조 정본은 contracts/schemas/coverage-report.v1.1.json. */
+export interface CoverageCell {
+  cellId: string;
+  state: CoverageCellState;
+  quality?: number;
+  geometryRef?: string;
+}
+
+export interface CoverageSummary {
+  mandatoryHazardRatio: number;
+  mandatoryAssetRatio: number;
+  accessibleGeneralRatio: number;
+  completionState: CompletionState;
+}
+
+/** 비행 1회의 커버리지 보고 본문(GET .../coverage-report 의 latest). */
+export interface CoverageReport {
+  missionId: string;
+  siteId: string;
+  timestamp: string;
+  cells: CoverageCell[];
+  summary: CoverageSummary;
+}
+
+export interface CoverageReportView {
+  missionId: string;
+  reportCount: number;
+  latest: CoverageReport;
+  /** 제출한 Principal id(보통 장비 id). 구 journal 재생 등으로 없으면 null. */
+  reportedBy: string | null;
+  /**
+   * Coverage Recovery 권고(MASTER_PRD §15.2) — completionState 가 COMPLETED 가
+   * 아니거나(COMPLETED_WITH_GAPS/ABORTED_SAFE/FAILED 전부) 사유있는 미관찰 Cell 이
+   * 남아 있으면 true. 자동 재발급을 트리거하지 않는다 — 운영자가 원본 site AOI 로
+   * SPATIAL_REFRESH 임무를 재발급하라는 신호일 뿐이다.
+   */
+  recoveryRecommended: boolean;
+}
+
+// 3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개는
+// FIELD_OPERATOR 하나로 합쳐졌다(구 역할 이름은 ADR-KSI-015 참조).
+export type Role = "ADMIN" | "FIELD_OPERATOR" | "VIEWER";
 
 export type Permission =
   | "SITES_READ"
@@ -163,7 +247,10 @@ export type Permission =
   | "MISSIONS_ISSUE"
   | "EVENTS_READ"
   | "EVENTS_TRIAGE"
-  | "EDGE_SYNC_INGEST";
+  | "EDGE_SYNC_INGEST"
+  // blast radius 가 큰 site 전이(자율 시작 승인·정식 순찰 승인·SUSPENDED
+  // 진입/복귀)만 가르는 관리자 전용 권한(ADR-KSI-015 D2).
+  | "SITES_AUTONOMY_APPROVE";
 
 export interface WhoAmIResponse {
   principalId: string;
@@ -279,4 +366,218 @@ export interface MissionPlanResponse {
   /** camera 로 계산했을 때만 실린다 — 직접 지정이면 null. */
   gridBasis: MissionPlanGridBasis | null;
   plannedCoverageRatio: number | null;
+}
+
+// ── Phase 3/4 표면 (2026-08-08 신설) ────────────────────────────────────────
+//
+// 서버 응답의 camelCase 를 그대로 옮긴다 — 화면이 판정을 다시 계산하지 않는다.
+// 특히 productionSupported·revisitRecommended·reobservationRecommended 는 전부
+// **서버가 계산한 파생값**이다: 화면이 state 문자열이나 비율을 보고 스스로
+// 판단하면 규칙이 두 곳에 생기고, 그 갈라짐은 화면에서 보이지 않는다.
+
+export interface DefectCandidate {
+  schemaVersion: "1.0";
+  defectCandidateId: string;
+  defectType: "CRACK";
+  sourceMediaId: string;
+  imageSize: { widthPx: number; heightPx: number };
+  geometry: { format: "IMAGE_POLYGON_2D"; payload: Array<[number, number]> | null };
+  model: { modelId: string; sourceDigests: Record<string, string> };
+  confidence: number;
+  measurements?: { areaPx2?: number; lengthPx?: number; meanWidthPx?: number };
+}
+
+export interface DefectCandidateItem {
+  candidate: DefectCandidate;
+  reportedBy: string | null;
+  recordedAt: string;
+}
+
+export interface DefectCandidateListView {
+  missionId: string;
+  candidateCount: number;
+  /** 후보가 하나라도 걸린 사진 id(정렬됨) — 화면이 전체를 훑어 집계하지 않게 서버가 낸다. */
+  sourceMediaIds: string[];
+  candidates: DefectCandidateItem[];
+}
+
+export interface ChangeDetectionResult {
+  schemaVersion: "1.0";
+  changeDetectionId: string;
+  baseline: { jobId: string; artifactId: string };
+  current: { jobId: string; artifactId: string };
+  distanceThresholdM: number;
+  pointCount: number;
+  candidateCount: number;
+  candidateRatio: number;
+  maxDistanceM: number | null;
+  computedAt: string;
+}
+
+export interface ChangeDetectionView {
+  missionId: string;
+  resultCount: number;
+  latest: ChangeDetectionResult;
+  reportedBy: string | null;
+  recordedAt: string;
+  /** 이 조회가 **실제로 쓴** 임계값 — 권고가 무슨 기준으로 켜졌는지 화면이 밝힐 수 있게. */
+  revisitRatioThreshold: number;
+  revisitRecommended: boolean;
+}
+
+/** 구역 하나의 절토·성토 — 부호는 `netM3` 하나로만 말한다(양수 cut/fill). */
+export interface ZoneVolumeDelta {
+  zoneId: string;
+  cutM3: number;
+  fillM3: number;
+  netM3: number;
+  areaM2: number;
+  thresholdM: number;
+  /**
+   * **양쪽 epoch 모두** 검증된 RMSE 가 있을 때만 값이다(INV-024). 기본 엔진
+   * (ODM)에는 구조화된 GCP/검사점 리포트가 없어 지금은 항상 null 이며, 그때
+   * `uncertaintyNote` 가 왜 없는지를 말한다 — 화면은 이 둘을 함께 보여야 한다.
+   */
+  uncertaintyM3: number | null;
+  uncertaintyNote: string;
+}
+
+export interface VolumeChangeReport {
+  schemaVersion: string;
+  volumeChangeId: string;
+  baseline: { jobId: string; artifactId: string };
+  current: { jobId: string; artifactId: string };
+  crs: string;
+  /** `ellipsoidal_native` = 지오이드 미적용 타원체고(정표고로 못 바꾼 상태). */
+  verticalDatum: string;
+  zones: ZoneVolumeDelta[];
+  computedAt: string;
+}
+
+export interface VolumeChangeEntry {
+  report: VolumeChangeReport;
+  reportedBy: string | null;
+  recordedAt: string;
+}
+
+export interface VolumeChangeListView {
+  missionId: string;
+  reportCount: number;
+  /** 최신 리포트의 전 구역 순변화 — 서버가 계산해 싣는다(화면이 합산하지 않는다). */
+  latestTotalNetM3: number | null;
+  reports: VolumeChangeEntry[];
+}
+
+/**
+ * ODM 산출물 하나의 등록 계약 payload 그대로다(Core `processing_artifact` 스키마).
+ * 화면이 실제로 쓰는 필드만 좁혀 선언한다 — 나머지(digest·lineage 등)는 지금
+ * 화면에 필요 없다.
+ */
+export interface ProcessingArtifactSummary {
+  artifactId: string;
+  /** `"ortho"` | `"dsm"` | `"dtm"` | `"mesh"` | `"point_cloud"` | `"camera_poses"` | `"report"`. */
+  kind: string;
+}
+
+/** GET /v1/processing-jobs/{jobId} — 화면이 쓰는 필드만. */
+export interface ProcessingJobArtifactsView {
+  jobId: string;
+  status: string;
+  artifacts: ProcessingArtifactSummary[];
+}
+
+/** GET /v1/processing-jobs/{jobId}/artifacts/{artifactId}/download 응답. */
+export interface ArtifactFileView {
+  name: string;
+  objectKey: string;
+  downloadUrl: string;
+}
+
+export interface ArtifactDownloadResponse {
+  verdict: string;
+  objectKey: string | null;
+  downloadUrl: string | null;
+  expiresAt: string | null;
+  // 산출물이 파일 여러 개(메시 등)일 때만 채워진다 — 주 파일을 포함해 전부
+  // 나열한다(mesh-multi-file-artifact-persistence).
+  files: ArtifactFileView[] | null;
+  detail: string | null;
+}
+
+export interface KinematicState {
+  entityId: string;
+  observedAt: string;
+  siteFrame: string;
+  position: [number, number, number];
+  positionCovariance: number[];
+  velocity: [number, number, number];
+  velocityCovariance: number[];
+  headingDeg: number | null;
+  sourceClass: string;
+}
+
+export interface EquipmentStateItem {
+  state: KinematicState;
+  reportedBy: string | null;
+  recordedAt: string;
+  /** 공분산 trace 의 제곱근(RMS 반경 근사) — 좌표축 회전에 불변. */
+  positionUncertaintyM: number;
+}
+
+export interface EquipmentStateListView {
+  siteId: string;
+  entityCount: number;
+  entities: EquipmentStateItem[];
+}
+
+export interface RiskAssessmentView {
+  siteId: string;
+  equipmentEntityId: string;
+  subjectEntityId: string;
+  observationGapS: number;
+  closestApproachM: number;
+  closestApproachTimeS: number;
+  /** null 은 "위험 없음"이 아니라 **"이 지평선 안에서는 확인되지 않음"**이다. */
+  timeToCollisionS: number | null;
+  horizonS: number;
+  combinedRadiusM: number;
+  positionUncertaintyThresholdM: number;
+  reobservationRecommended: boolean;
+}
+
+export type EquipmentSupportLevel =
+  | "DATASET_AVAILABLE"
+  | "BASELINE_DETECTION"
+  | "FIELD_VALIDATED"
+  | "GEO_VALIDATED"
+  | "RISK_VALIDATED"
+  | "PRODUCTION_SUPPORTED";
+
+export interface EquipmentSupportView {
+  classId: string;
+  state: EquipmentSupportLevel;
+  evidenceRefs: string[];
+  modelVersion: string | null;
+  riskPackVersion: string | null;
+  /** **이 값이 true 인 것만 상용 지원으로 표시한다**(REQ-MODEL-101). 서버 파생값. */
+  productionSupported: boolean;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface EquipmentSupportListView {
+  classCount: number;
+  productionSupportedCount: number;
+  classes: EquipmentSupportView[];
+}
+
+export interface SourceMediaViewResponse {
+  mediaId: string;
+  contentType: string;
+  viewUrl: string;
+  expiresAt: string;
+  /** 업로더가 **신고한** 화소수 — 결함 후보 폴리곤의 좌표계 기준이다. */
+  width: number;
+  height: number;
+  sha256: string;
 }

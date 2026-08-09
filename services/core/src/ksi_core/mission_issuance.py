@@ -22,10 +22,10 @@ unknownObstaclePolicy·evidencePolicy는 FINAL_DECISION_LEDGER_v1.0(§안전·�
 
 ## 무인증 서명 오라클 — 구조적으로 제거 (ADR-KSI-008 §2/§3)
 
-이 라우터는 인증(``MISSIONS_ISSUE``)·site 등록 대조(존재+siteFrame 일치)·
-mission_id 충돌 검사·durable 기록 성공 후에만 201 을 내는 경로 **하나만**
-갖는다 — ``mission_store``/``site_frame_lookup`` 은 필수 인자라 인증·미기록
-발급이 가능한 조립 자체가 성립하지 않는다(원장 risk
+이 라우터는 인증(``MISSIONS_ISSUE``)·site 등록 대조(존재+siteFrame 일치+
+임무타입×현장상태 게이트, INV-052)·mission_id 충돌 검사·durable 기록 성공
+후에만 201 을 내는 경로 **하나만** 갖는다 — ``mission_store``/``site_lookup``
+은 필수 인자라 인증·미기록 발급이 가능한 조립 자체가 성립하지 않는다(원장 risk
 mission-issuance-unauthenticated-signing-oracle 해소, "인증 없는 보호 표면은
 존재할 수 없다"). ``ksi_core.app.create_app`` 은 서명키가 주어지면
 ``mission_store``·``site_store``·``auth_registry`` 를 함께 강제한다.
@@ -57,6 +57,7 @@ from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.mission_records import (
     MissionRecord,
     MissionStore,
+    SiteLookupResult,
     precheck_issuance,
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
@@ -163,7 +164,7 @@ def build_mission_issuance_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
 
@@ -185,9 +186,10 @@ def build_mission_issuance_router(
 
         verdict = precheck_issuance(
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
             site_id=request.site_id,
             mission_id=request.mission_id,
+            mission_type=request.mission_type,
             requested_site_frame=request.site_frame.model_dump(
                 by_alias=True, mode="json", exclude_none=True
             ),
@@ -223,18 +225,19 @@ def mount_mission_issuance(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_frame_lookup: Callable[[str], dict[str, Any] | None],
+    site_lookup: Callable[[str], SiteLookupResult | None],
 ) -> None:
     """앱에 Mission Contract 발급 라우터를 장착한다.
 
-    인증·site 등록 대조·durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3
-    — 무인증·미기록 발급이 가능한 조립은 성립하지 않는다).
+    인증·site 등록 대조(존재+siteFrame 일치+임무타입×현장상태 게이트, INV-052)·
+    durable 기록이 강제되는 경로 하나뿐이다(ADR-KSI-008 §3 — 무인증·미기록
+    발급이 가능한 조립은 성립하지 않는다).
     """
     app.include_router(
         build_mission_issuance_router(
             private_key=private_key,
             key_id=key_id,
             mission_store=mission_store,
-            site_frame_lookup=site_frame_lookup,
+            site_lookup=site_lookup,
         )
     )

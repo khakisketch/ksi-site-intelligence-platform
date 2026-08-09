@@ -37,12 +37,19 @@ if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from ksi_core.auth import AuthRegistry
+    from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.coverage_reports import CoverageReportStore
+    from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
+    from ksi_core.equipment_states import EquipmentStateStore
+    from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
+    from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.sites import SiteStore
+    from ksi_core.source_media import SourceMediaStore
+    from ksi_core.volume_reports import VolumeChangeStore
 
 
 def create_app(
@@ -57,6 +64,13 @@ def create_app(
     mission_signing_key_id: str | None = None,
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
+    source_media_store: SourceMediaStore | None = None,
+    processing_job_store: ProcessingJobStore | None = None,
+    defect_candidate_store: DefectCandidateStore | None = None,
+    change_detection_store: ChangeDetectionStore | None = None,
+    volume_change_store: VolumeChangeStore | None = None,
+    equipment_state_store: EquipmentStateStore | None = None,
+    equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -101,6 +115,36 @@ def create_app(
             — 발급 레코드가 durable 기록되기 전에는 201 을 반환하지 않는다).
         mission_signing_key_id: 서명 블록에 실릴 keyId — 검증 측 KeyRegistry에
             등록된 것과 일치해야 한다.
+        source_media_store: 원본 사진 번들(3D 파이프라인 입구) 등록·봉인 저장소.
+            주어지면 ``mission_store`` 가 필수다(발급된 적 없는 임무의 번들은
+            받지 않는다, coverage_report_store 와 동일 원칙). 라우트 장착은 그와
+            별개로 ``evidence_storage`` 유무를 따른다 — presigned URL 을 발급할
+            스토리지가 없으면 이 표면 자체가 장착되지 않는다(evidence 라우트와
+            같은 관습).
+        processing_job_store: 3D 재구성 처리 작업(ADR-KSI-012) 발급·상태전이
+            저장소. ``source_media_store`` 와 ``site_store`` 가 모두 필수다 —
+            입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
+            둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
+            조립에서 거부한다.
+        defect_candidate_store: Phase 4 결함 후보(균열) 수신·조회 저장소.
+            ``mission_store`` 와 ``source_media_store`` 가 모두 필수다 — 후보는
+            "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 가지므로, 그
+            참조를 대조할 저장소 없이는 검증 불가능한 도형을 그대로 받게 된다.
+        change_detection_store: Phase 4 시계열 변화 탐지 결과 수신·조회 저장소.
+        volume_change_store: M1 구역 체적 변화 리포트 수신·조회 저장소.
+            ``mission_store`` 와 ``processing_job_store`` 가 모두 필수다 — 결과는
+            "어느 두 point cloud 산출물을 비교했나"로만 해석 가능하고, 그 참조를
+            대조할 작업 원장이 없으면 "변화가 있었다"가 검증 불가능한 주장이 된다.
+        equipment_state_store: Phase 3 장비 운동상태 수신·위험 평가 저장소.
+            ``site_store`` 가 필수다 — 위치·속도는 좌표계 없이는 숫자일 뿐이고,
+            현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
+            재는 CPA/TTC 가 성립해 버린다(``cpa_ttc`` 의 site_frame 검사는 두
+            상태끼리만 보므로 둘 다 같은 잘못된 좌표계면 통과한다).
+        equipment_support_store: 장비 클래스 지원단계(INV-041, MASTER_PRD §23.3)
+            등록·전이 저장소. 다른 저장소를 요구하지 않는다 — 이 원장은 현장·임무와
+            무관한 **제품 전역** 사실(어느 장비 클래스를 어디까지 검증했나)이라
+            대조할 상대가 없다. 주어지면 ``/v1/equipment-support`` 표면이 장착되고,
+            그때 비로소 ``assert_support_level_transition`` 이 런타임에서 강제된다.
     """
     capability_registry = registry if registry is not None else CapabilityRegistry()
     if registry is None:
@@ -159,10 +203,23 @@ def create_app(
                 " 반환하지 않는다(고아 발급 금지)"
             )
 
-    if evidence_storage is not None and event_store is None:
+    if (
+        evidence_storage is not None
+        and event_store is None
+        and source_media_store is None
+        and mission_signing_key is None
+    ):
         raise ValueError(
-            "evidence_storage 는 event_store 와 함께 주어져야 한다(ADR-KSI-010 §1)"
-            " — 증거는 사건에 매달리는 것이라 사건 원장 없이는 등록할 곳이 없다"
+            "evidence_storage 는 소비자 저장소(event_store·source_media_store 또는"
+            " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
+            " 오브젝트 스토리지를 매단 채 기동하지 않는다."
+            "\n"
+            " 원래 이 가드는 event_store 만 요구했다(증거는 사건에 매달리는 것이라 사건"
+            " 원장 없이는 등록할 곳이 없다). 3D 파이프라인 입구(source_media)가 같은"
+            " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌고, 이제 임무"
+            " 발급이 KMZ 바이트 보관으로 세 번째 소비자가 됐다(risk"
+            " kmz-regeneration-determinism-timebomb) — 가드를 푼 것이 아니라 소비자"
+            " 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면 여전히 거부한다."
         )
 
     if edge_sync_store is not None and event_store is None:
@@ -178,6 +235,68 @@ def create_app(
             " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다"
         )
 
+    if source_media_store is not None and mission_store is None:
+        raise ValueError(
+            "source_media_store 는 mission_store 와 함께 주어져야 한다"
+            " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
+            " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
+            " 동일 원칙"
+        )
+
+    if processing_job_store is not None and (
+        source_media_store is None or site_store is None or evidence_storage is None
+    ):
+        raise ValueError(
+            "processing_job_store 는 source_media_store·site_store·evidence_storage 와"
+            " 함께 주어져야 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·"
+            "digest)은 봉인된 번들이 정하고 반출 허용 여부는 현장이 정한다. 하나라도"
+            " 없으면 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다."
+            " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
+            " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
+            " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다"
+        )
+
+    if defect_candidate_store is not None and (
+        mission_store is None or source_media_store is None
+    ):
+        raise ValueError(
+            "defect_candidate_store 는 mission_store·source_media_store 와 함께 주어져야"
+            " 한다 — 결함 후보는 '어느 임무의 어느 사진 위 좌표인가'로만 의미를 갖는다."
+            " 참조 대상을 대조할 저장소가 없으면 서버는 그릴 수 없는 도형을 원장에"
+            " 쌓게 되고, 그건 조회 시점에 정상으로 보인다(defect_candidates.py"
+            " '서버는 후보를 그대로 받아 적지 않는다')"
+        )
+
+    if change_detection_store is not None and (
+        mission_store is None or processing_job_store is None
+    ):
+        raise ValueError(
+            "change_detection_store 는 mission_store·processing_job_store 와 함께"
+            " 주어져야 한다 — 변화 탐지 결과는 '어느 두 point cloud 산출물을"
+            " 비교했나'로만 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면"
+            " '변화가 있었다'가 아무도 재현할 수 없는 주장이 된다"
+            " (change_detection.py '서버가 검증하는 것')"
+        )
+
+    if volume_change_store is not None and (
+        mission_store is None or processing_job_store is None
+    ):
+        raise ValueError(
+            "volume_change_store 는 mission_store·processing_job_store 와 함께"
+            " 주어져야 한다 — 체적 리포트는 '어느 두 DSM 산출물을 비교했나'로만"
+            " 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면 '이만큼 깎였다'가"
+            " 아무도 재현할 수 없는 주장이 되고, 그 숫자는 정산·분쟁의 근거로"
+            " 쓰인다 (volume_reports.py '사람은 체적을 주장할 수 없다')"
+        )
+
+    if equipment_state_store is not None and site_store is None:
+        raise ValueError(
+            "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
+            " 좌표계 없이는 숫자일 뿐이고, 현장 등록 좌표계와 대조할 저장소가 없으면"
+            " 서로 다른 기준계의 점 사이 거리를 재는 CPA/TTC 가 성립해 버린다"
+            " (equipment_states.py EquipmentStateStore._judge)"
+        )
+
     protected_surface = any(
         surface is not None
         for surface in (
@@ -188,6 +307,13 @@ def create_app(
             mission_signing_key,
             evidence_storage,
             coverage_report_store,
+            source_media_store,
+            processing_job_store,
+            defect_candidate_store,
+            change_detection_store,
+            volume_change_store,
+            equipment_state_store,
+            equipment_support_store,
         )
     )
     if protected_surface and auth_registry is None:
@@ -237,42 +363,100 @@ def create_app(
 
         from ksi_core.mission_issuance import mount_mission_issuance
         from ksi_core.mission_plans import mount_mission_plans
+        from ksi_core.mission_records import SiteLookupResult
 
         _mission_store = mission_store
         _site_store = site_store
 
-        def _site_frame_lookup(site_id: str) -> dict[str, Any] | None:
-            """등록된 site 의 canonical siteFrame(camelCase dict) — 미등록이면 None.
+        def _site_lookup(site_id: str) -> SiteLookupResult | None:
+            """등록된 site 의 canonical siteFrame + 현재 상태 — 미등록이면 None.
 
-            발급 요청의 siteFrame 과 정확 일치 대조(SITE_FRAME_MISMATCH)에 쓰인다
-            — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
+            siteFrame 은 발급 요청과의 정확 일치 대조(SITE_FRAME_MISMATCH)에
+            쓰인다 — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
+            status 는 임무타입×현장상태 게이트(INV-052, "먼저 매핑, 그 다음
+            사전지도 기반 자율")에 쓰인다 — 이 둘을 한 스냅샷으로 묶어 반환하는
+            이유는 SiteLookupResult docstring 참조.
             """
             record = _site_store.get(site_id)
-            return None if record is None else dict(record.site_frame)
+            if record is None:
+                return None
+            return SiteLookupResult(site_frame=dict(record.site_frame), status=record.status)
 
         mount_mission_issuance(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_frame_lookup=_site_frame_lookup,
+            site_lookup=_site_lookup,
         )
         mount_mission_plans(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_frame_lookup=_site_frame_lookup,
+            site_lookup=_site_lookup,
+            # 스토리지가 있으면 발급 KMZ 바이트를 보관한다 — 서버 안전상수 한 줄이
+            # 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
+            # kmz-regeneration-determinism-timebomb). 없으면 재생성에만 의존한다.
+            kmz_storage=evidence_storage,
         )
 
     if mission_store is not None:
         from ksi_core.mission_records import mount_mission_records
 
-        mount_mission_records(app, mission_store=mission_store)
+        # coverage_report_store 는 mission_store 보다 늦게(279행) 조건부 장착되지만,
+        # 이 시점에 이미 함수 인자로 들어와 있다(결합 검증이 mission_store 동반을
+        # 보장) — 목록/상세 응답에 파생 커버리지 필드를 싣기 위해 여기서 넘긴다.
+        mount_mission_records(
+            app, mission_store=mission_store, coverage_report_store=coverage_report_store
+        )
 
     if coverage_report_store is not None:
         from ksi_core.coverage_reports import mount_coverage_reports
 
         mount_coverage_reports(app, coverage_report_store)
+
+    if source_media_store is not None and evidence_storage is not None:
+        # evidence_storage 없이는 라우트를 장착하지 않는다(evidence 라우트와 같은
+        # 관습) — presigned URL 을 낼 스토리지가 없으면 "업로드했는데 어디에도
+        # 없다"가 2xx 로 보이는 경로를 만들지 않는다. store 자체(journal)는
+        # evidence_storage 없이도 구성될 수 있지만(위 결합 검증은 mission_store만
+        # 요구), 그 경우 이 표면은 존재하지 않는다.
+        from ksi_core.source_media import mount_source_media
+
+        mount_source_media(app, source_media_store, evidence_storage)
+
+    if processing_job_store is not None:
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
+        # 다운로드 URL 발급에 필요 — GET .../input).
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        from ksi_core.processing_jobs import mount_processing_jobs
+
+        mount_processing_jobs(app, processing_job_store, evidence_storage)
+
+    if defect_candidate_store is not None:
+        from ksi_core.defect_candidates import mount_defect_candidates
+
+        mount_defect_candidates(app, defect_candidate_store)
+
+    if change_detection_store is not None:
+        from ksi_core.change_detection import mount_change_detection
+
+        mount_change_detection(app, change_detection_store)
+
+    if volume_change_store is not None:
+        from ksi_core.volume_reports import mount_volume_reports
+
+        mount_volume_reports(app, volume_change_store)
+
+    if equipment_state_store is not None:
+        from ksi_core.equipment_states import mount_equipment_states
+
+        mount_equipment_states(app, equipment_state_store)
+
+    if equipment_support_store is not None:
+        from ksi_core.equipment_support import mount_equipment_support
+
+        mount_equipment_support(app, equipment_support_store)
 
     return app
