@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-09T15:48:59+09:00",
+  "updated_at": "2026-08-09T18:14:20+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1154,15 +1154,15 @@
         "합성 DSM 2장에서 손계산 체적이 재현된다(tests 단위)",
         "/reports 에서 체적 요약과 정사영상이 실제로 보인다(390/768/1440 렌더 확인)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 2,
-      "evidence": null,
+      "evidence": "PR #2(main으로 병합, commit 1419c5f) 검증 완료 후 재판정. 완료기준 4개 전부 실기동 근거 확보: (1)바이트 영속·재다운로드 — tests/contract/test_odm_live.py::test_completed_reconstruction_artifacts_persist_and_redownload_with_matching_digest, 실 NodeODM+MinIO+Core 7 passed (2)EPSG:5186 재투영 왕복·지오이드 fail-closed — tests/contract/test_geo_spatial_vertical.py 전건 통과 (3)합성 DSM 2장 손계산 체적 재현 — services/change-detection/tests/test_dsm_diff.py 골든값 고정 (4)/reports 체적 요약+정사영상 390/768/1440 렌더 — 2026-08-08 refuted 시점엔 pacifica 12장으로 mesh 미등록에 막혀 미충족이었으나, mesh-multi-file-artifact-persistence goal(2026-08-09 gate pass, reviewer CONFIRMED)이 근본원인을 해소했고 odm_data_benchmark(50장, OpenDroneMap 공개 샘플)로 재구성 시 9181x7802px 실지형 orthophoto가 세 뷰포트 모두 렌더됨을 확인함(그 goal의 evidence_ref 스크린샷 재사용). 전체 pytest 2262 passed·114 skipped·3 xfailed, mypy/ruff clean — PR #2 CI(gates·dashboard·defect-detection-extra·edge-control-plane·edge-manifold-target·edge-psdk-tap 6 job) 전부 pass 후 main 병합으로 재확인.",
       "verdict": {
-        "verdict": "refuted",
-        "note": "완료기준 4개 중 3개(바이트 영속·CRS/지오이드·DSM 체적)는 실기동+저장소 영속 테스트로 완전히 충족됐다(test_odm_live.py 7 passed, 전체 pytest 2229 passed 회귀없음). 정사영상 1개는 UI 코드(OrthophotoOverlay, 커밋 165ab84)를 실제로 구현했으나, mesh 가 worker.py:205 의 명시적 다중파일 스코프컷(D1)에 걸려 이 파이프라인에서 원천적으로 등록되지 않는다는 근본원인을 실측으로 확인했다 — 대시보드 문제가 아니라 처리 파이프라인의 알려진 제약이다. 이 goal 은 그 이유로 REFUTED 로 정직하게 닫고, mesh 멀티파일 저장(mesh-multi-file-artifact-persistence)을 후속 goal 로 분리했다. 코어 가치(반복비행→체적/변화 리포트)는 정사영상 없이도 완전히 성립하므로 M2 로 진행한다.",
-        "at": "2026-08-08T04:24:40+09:00",
-        "reviewer": null,
-        "evidence_ref": null
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-09T18:14:20+09:00",
+        "reviewer": "mesh-multi-file-artifact-persistence goal의 reviewer subagent(2026-08-08, C1/C2/C3 CONFIRMED) 재사용 — 근본원인 해소가 검증 대상이었고 이 goal은 그 결과를 참조",
+        "evidence_ref": "PR #2 merge commit 1419c5f; tests/contract/test_odm_live.py; tests/contract/test_geo_spatial_vertical.py; services/change-detection/tests/test_dsm_diff.py; mesh-multi-file-artifact-persistence goal evidence_ref(odm_data_benchmark 390/768/1440 스크린샷)"
       },
       "invalidation_reason": null,
       "parent": null,
@@ -1171,7 +1171,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-07T22:48:38+09:00",
-      "updated_at": "2026-08-08T04:24:40+09:00"
+      "updated_at": "2026-08-09T18:14:20+09:00"
     },
     {
       "id": "adr-016-product-scope",
