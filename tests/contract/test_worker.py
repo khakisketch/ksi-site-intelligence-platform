@@ -129,21 +129,25 @@ class FakeCoreClient:
             raise CoreClientError(what="verify", verdict="MISMATCH", detail="테스트 강제 실패")
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str
+        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
     ) -> ArtifactUploadTarget:
         del content_type
-        self.calls.append(("presign", artifact_id))
+        self.calls.append(("presign", artifact_id, filename))
         if self.fail_on == f"presign:{artifact_id}":
             raise CoreClientError(
                 what="upload-url", verdict="LEASE_REQUIRED", detail="테스트 강제 실패"
             )
         key = f"sites/site-1/processing-jobs/{job_id}/artifacts/{artifact_id}"
+        if filename is not None:
+            key = f"{key}/{filename}"
         return ArtifactUploadTarget(
             object_key=key, upload_url=f"http://fake-storage/{key}"
         )
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
-        self.calls.append(("register_artifact", submission.artifact_id))
+        self.calls.append(
+            ("register_artifact", submission.artifact_id, submission.auxiliary_files)
+        )
         if self.fail_on == f"artifact:{submission.artifact_id}":
             raise CoreClientError(
                 what="artifact", verdict="ARTIFACT_CONTRACT_VIOLATION", detail="테스트 강제 실패"
@@ -404,10 +408,10 @@ def test_artifact_rejection_transitions_to_failed(tmp_path: Path) -> None:
         )
     assert any(c[0] == "transition" and c[1] == "FAILED" for c in core.calls)
     # camera-poses(첫 원본)는 point-cloud 보다 먼저라 등록에 성공했어야 한다.
-    assert ("register_artifact", "camera-poses") in core.calls
+    assert ("register_artifact", "camera-poses", ()) in core.calls
     # point-cloud 실패 이후 나머지(mesh 등)는 시도되지 않는다 — 계보 순서라
     # 부모 없는 자식을 등록해봐야 어차피 거부된다.
-    assert ("register_artifact", "mesh") not in core.calls
+    assert not any(c[0] == "register_artifact" and c[1] == "mesh" for c in core.calls)
 
 
 def test_original_exception_is_not_swallowed_even_if_failed_report_also_fails(
@@ -461,8 +465,8 @@ def test_bytes_are_uploaded_before_the_artifact_is_registered(tmp_path: Path) ->
     _run(core, odm, server, tmp_path)
 
     for artifact_id in ("camera-poses", "point-cloud", "orthophoto", "dsm"):
-        presign_at = core.calls.index(("presign", artifact_id))
-        register_at = core.calls.index(("register_artifact", artifact_id))
+        presign_at = core.calls.index(("presign", artifact_id, None))
+        register_at = core.calls.index(("register_artifact", artifact_id, ()))
         assert presign_at < register_at, f"{artifact_id}: 등록이 업로드보다 먼저다"
 
 
@@ -496,12 +500,16 @@ def test_every_registered_artifact_has_bytes(tmp_path: Path) -> None:
         )
 
 
-def test_multi_file_artifact_is_neither_uploaded_nor_registered(tmp_path: Path) -> None:
-    """[핵심 음성] 충실히 저장할 수 없는 산출물은 **등록도 하지 않는다**.
+def test_multi_file_artifact_uploads_all_files_then_registers_once(tmp_path: Path) -> None:
+    """[핵심 — mesh-multi-file-artifact-persistence] 파일 여러 개짜리 산출물은
+    전부(주 파일 + 부속 파일) 올린 **뒤에** 한 번만 등록한다.
 
-    메시는 텍스처·재질이 digest 에 함께 들어가 객체 키 하나에 담기지 않는다.
-    대표 파일만 올리고 등록하면 "digest 는 결합 해시인데 저장된 건 .obj 하나"인
-    상태가 조용히 생긴다 — 계보 검증이 그 순간 거짓이 된다.
+    메시는 텍스처·재질이 digest 에 함께 들어가 객체 키 하나에 담기지 않는다
+    — 예전엔 이 사실 때문에 등록 자체를 건너뛰었다(대표 파일만 올리면
+    "digest 는 결합 해시인데 저장된 건 .obj 하나"인 상태가 생기므로). 지금은
+    부속 파일마다 별도 객체 키(주 파일 키 아래 basename)를 받아 전부 올리고,
+    등록 요청에 그 basename 목록(auxiliaryFiles)을 실어 저장 상태와 등록
+    상태가 항상 같이 간다.
     """
     entries = {a.archive_entry for a in ODM_ASSETS} | {
         "odm_texturing/odm_textured_model_geo.mtl",
@@ -510,12 +518,29 @@ def test_multi_file_artifact_is_neither_uploaded_nor_registered(tmp_path: Path) 
     core, server = FakeCoreClient(), _server_with_two_images()
     _run(core, FakeNodeOdm(entries=entries), server, tmp_path)
 
-    assert ("register_artifact", "mesh") not in core.calls
-    assert ("presign", "mesh") not in core.calls
-    assert "sites/site-1/processing-jobs/job-1/artifacts/mesh" not in server.uploaded
-    # 나머지는 정상 등록된다 — 하나가 빠졌다고 작업이 실패로 끝나지 않는다.
-    assert ("register_artifact", "point-cloud") in core.calls
-    assert ("transition", "SUCCEEDED", "산출물 6건") in core.calls
+    aux_names = ("odm_textured_model_geo.mtl", "odm_textured_model_geo_map_Kd.png")
+    presign_calls = [c for c in core.calls if c[0] == "presign" and c[1] == "mesh"]
+    assert {c[2] for c in presign_calls} == {None, *aux_names}, (
+        "mesh 는 주 파일(filename=None) + 부속 파일 2개, 총 3번 presign 돼야 한다"
+    )
+    register_calls = [c for c in core.calls if c[0] == "register_artifact" and c[1] == "mesh"]
+    assert len(register_calls) == 1, "등록은 파일 개수와 무관하게 한 번이어야 한다"
+    # [C3] 등록 요청 자체에 auxiliaryFiles 가 실려야 한다 — 업로드만 하고
+    # worker.py 의 auxiliary_files=report.auxiliary_files 를 빠뜨리면(reviewer
+    # 지적, 2026-08-08) 파일은 다 올라가는데 등록 원장엔 부속 파일 목록이
+    # 빠진 채로 성공해버리고, 이 사실을 이전엔 어떤 테스트도 못 잡았다.
+    assert register_calls[0][2] == aux_names
+
+    base_key = "sites/site-1/processing-jobs/job-1/artifacts/mesh"
+    assert base_key in server.uploaded
+    for name in aux_names:
+        assert f"{base_key}/{name}" in server.uploaded
+
+    last_presign_at = max(core.calls.index(c) for c in presign_calls)
+    register_at = core.calls.index(register_calls[0])
+    assert last_presign_at < register_at, "부속 파일까지 전부 올린 뒤에 등록해야 한다"
+
+    assert ("transition", "SUCCEEDED", "산출물 7건") in core.calls
 
 
 def test_upload_failure_fails_the_job_without_registering(tmp_path: Path) -> None:
@@ -529,7 +554,7 @@ def test_upload_failure_fails_the_job_without_registering(tmp_path: Path) -> Non
     with pytest.raises(WorkerRunError):
         _run(core, odm, server, tmp_path)
 
-    assert ("register_artifact", "point-cloud") not in core.calls
+    assert not any(c[0] == "register_artifact" and c[1] == "point-cloud" for c in core.calls)
     assert any(c[0] == "transition" and c[1] == "FAILED" for c in core.calls)
 
 

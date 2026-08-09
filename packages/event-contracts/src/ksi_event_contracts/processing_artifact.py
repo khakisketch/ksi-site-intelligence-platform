@@ -37,19 +37,38 @@ tiles_3d(다중 LOD라 단일 해상도로 대표되지 않는다)는 gsd를 nul
 이 셋의 "GSD가 고유 속성인가"는 근거가 갈리는 판단이라, 근거가 갈리면 생산자
 쪽을 더 신뢰해 허용하는 쪽을 택했다.
 
-계약 정본은 ``contracts/schemas/processing-artifact.v1.json``이고 이 모듈은 그
-스키마의 Python 표현이다.
+계약 정본은 ``contracts/schemas/processing-artifact.v1.1.json``이고 이 모듈은 그
+스키마의 Python 표현이다(v1.0은 이 파일이 auxiliaryFiles 없이도 여전히 유효하다는
+것을 보이는 golden 비교용으로 보존한다 — coverage-report.v1/v1.1과 같은 관례).
+
+## ``auxiliary_files`` — mesh-multi-file-artifact-persistence
+
+산출물 하나가 파일 여러 개(메시의 .obj+.mtl+텍스처)로 이뤄질 때, ``digest``는
+이미 그 전부를 정렬된 (경로, 내용) 결합으로 해싱한 값이다
+(``ksi_processing_controller.odm.digest_archive_entries``와 동형 — 이 필드
+신설 이전부터 그랬다, risk mesh-digest-ignores-textures 참고). 이 필드는 digest
+계산식을 바꾸지 않고, 그 파일들 중 주 파일(``objectKey``가 가리키는 파일) 외
+나머지의 저장 위치를 알려주는 **basename 목록**일 뿐이다 — 빈 배열(기본값)이면
+파일 하나짜리 산출물(v1.0과 동일 동작)이다.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 _DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
+# contracts/schemas/processing-artifact.v1.1.json 의 auxiliaryFiles.items.pattern 과
+# 정확히 같은 문자열(services/core/src/ksi_core/identifiers.py의
+# PATH_SAFE_IDENTIFIER_PATTERN 과도 동형) — event-contracts 는 services/core 를
+# 참조할 수 없는 계층이라(반대 방향 의존) 값을 여기 다시 적는다. 이 필드가
+# 이 검증 없이 통과하면(reviewer 지적 C1, 2026-08-08) 등록은 성공하고
+# (build_processing_artifact_object_key 가 다운로드 시점에만 거부해) 그 산출물이
+# 영구히 다운로드 불가능한 상태로 durable 하게 남는다 — 등록 시점에 막아야 한다.
+_BASENAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 
 
 class ProcessingArtifactKind(StrEnum):
@@ -140,6 +159,9 @@ class ProcessingArtifact(_CamelModel):
     crs: str | None = Field(default=None, min_length=1)
     gsd: float | None = Field(default=None, gt=0)
     accuracy: ArtifactAccuracy | None = None
+    auxiliary_files: tuple[Annotated[str, Field(pattern=_BASENAME_PATTERN)], ...] = Field(
+        default_factory=tuple
+    )
 
     @model_validator(mode="after")
     def _crs_and_gsd_required_by_kind(self) -> ProcessingArtifact:
@@ -178,4 +200,8 @@ def processing_artifact_wire_dict(artifact: ProcessingArtifact) -> dict[str, Any
     )
     data["crs"] = artifact.crs
     data["gsd"] = artifact.gsd
+    if not artifact.auxiliary_files:
+        # 빈 배열은 "파일 하나짜리 산출물"의 기본값이다 — v1.0 소비자와의 wire
+        # 호환을 위해 키째 뺀다(RiskField의 hazardType 과 같은 관례).
+        data.pop("auxiliaryFiles", None)
     return data

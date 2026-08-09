@@ -139,7 +139,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_event_contracts.processing_artifact import (
@@ -181,7 +181,7 @@ from ksi_core.evidence import (
     expires_at,
     is_valid_artifact_id,
 )
-from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
 from ksi_core.source_media import SourceMediaRecord
 
 if TYPE_CHECKING:
@@ -546,6 +546,7 @@ class ArtifactSpec:
     crs: str | None
     gsd: float | None
     accuracy: ArtifactAccuracy | None
+    auxiliary_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -574,24 +575,27 @@ class JobInputResult:
 
 
 def build_processing_artifact_object_key(
-    *, site_id: str, job_id: str, artifact_id: str
+    *, site_id: str, job_id: str, artifact_id: str, filename: str | None = None
 ) -> str:
     """산출물 바이트가 놓이는 자리 — **저장하지 않고 유도한다**.
 
     ``build_mission_kmz_object_key`` 와 같은 관습이다. 키를 레코드에 넣으면
-    계약(``processing-artifact.v1.json``, ``additionalProperties: false``)의
-    버전을 올려야 하는데, 그 값은 이미 레코드에 있는 세 식별자의 함수라
-    중복이다. 유도하면 계약이 그대로고, "같은 산출물은 항상 같은 자리"가
-    저장 상태가 아니라 **정의**로 보장된다.
+    계약(``processing-artifact.v1.1.json``, ``additionalProperties: false``)의
+    버전을 올려야 하는데, 그 값은 이미 레코드에 있는 식별자들의 함수라
+    중복이다. 유도하면 계약이 그대로고, "같은 산출물(또는 그 부속 파일)은
+    항상 같은 자리"가 저장 상태가 아니라 **정의**로 보장된다.
 
-    **산출물 1건 = 파일 1개**를 전제한다. Mesh 의 텍스처(.mtl·map_Kd.png)처럼
-    한 산출물이 여러 파일인 경우는 이 키 체계로 다루지 않는다 — digest 에는
-    이미 포함되지만(``odm_assets.OdmAsset.auxiliary_suffixes``) 저장은 M1
-    범위 밖이다(risk ``mesh-auxiliary-files-not-persisted``).
+    **``filename`` 이 없으면 산출물 1건 = 파일 1개**(주 파일)의 기존 키다.
+    Mesh 의 텍스처(.mtl·map_Kd.png)처럼 한 산출물이 여러 파일이면, 주 파일은
+    이 함수를 그대로 쓰고 나머지는 ``filename`` 을 채워 부른다 — 결과 키가
+    주 파일 키 아래 그 이름으로 놓인다(mesh-multi-file-artifact-persistence,
+    ``ProcessingArtifact.auxiliaryFiles`` 가 이 이름들을 그대로 기록한다).
 
-    세 구성요소를 전부 재검증한다 — 호출부가 이미 검증했더라도, 이 함수가
+    구성요소를 전부 재검증한다 — 호출부가 이미 검증했더라도, 이 함수가
     경로 탈출을 막는 마지막 지점이기 때문이다(``build_source_media_object_key``
-    와 같은 이유).
+    와 같은 이유). ``filename`` 도 ``is_path_safe_identifier`` 로 본다 — 주
+    식별자들과 같은 규칙(첫 글자 영숫자, ``/`` 불허)이면 basename 이 아닌
+    값(``../escape``·``sub/dir.mtl``)을 걸러내기에 충분하다.
     """
     if not is_path_safe_identifier(site_id):
         raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
@@ -599,7 +603,12 @@ def build_processing_artifact_object_key(
         raise ValueError(f"경로-안전하지 않은 jobId: {job_id!r}")
     if not is_valid_artifact_id(artifact_id):
         raise ValueError(f"경로-안전하지 않은 artifactId: {artifact_id!r}")
-    return f"sites/{site_id}/processing-jobs/{job_id}/artifacts/{artifact_id}"
+    base = f"sites/{site_id}/processing-jobs/{job_id}/artifacts/{artifact_id}"
+    if filename is None:
+        return base
+    if not is_path_safe_identifier(filename):
+        raise ValueError(f"경로-안전하지 않은 filename: {filename!r}")
+    return f"{base}/{filename}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -888,7 +897,13 @@ class ProcessingJobStore:
         )
 
     def artifact_upload_target(
-        self, job_id: str, *, artifact_id: str, worker_id: str, now: datetime
+        self,
+        job_id: str,
+        *,
+        artifact_id: str,
+        worker_id: str,
+        now: datetime,
+        filename: str | None = None,
     ) -> ArtifactUploadTargetResult:
         """산출물 바이트를 올릴 자리를 정한다 — ``input_for`` 와 같은 관문을 통과한다.
 
@@ -897,7 +912,8 @@ class ProcessingJobStore:
         jobId 는 추측 가능하다.
 
         키는 저장하지 않고 유도한다 — ``build_processing_artifact_object_key``
-        의 docstring 참조.
+        의 docstring 참조. ``filename`` 은 다중 파일 산출물의 부속 파일 자리를
+        받을 때만 채운다.
         """
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -921,7 +937,7 @@ class ProcessingJobStore:
 
         try:
             object_key = build_processing_artifact_object_key(
-                site_id=site_id, job_id=job_id, artifact_id=artifact_id
+                site_id=site_id, job_id=job_id, artifact_id=artifact_id, filename=filename
             )
         except ValueError as exc:
             return ArtifactUploadTargetResult(
@@ -1182,6 +1198,7 @@ class ProcessingJobStore:
                     crs=spec.crs,
                     gsd=spec.gsd,
                     accuracy=spec.accuracy,
+                    auxiliary_files=spec.auxiliary_files,
                 )
             except ValueError as exc:
                 return ArtifactResult(
@@ -1477,6 +1494,9 @@ class ArtifactUploadUrlRequest(_CamelModel):
 
     artifact_id: str = Field(min_length=1)
     content_type: str = Field(min_length=1)
+    # 다중 파일 산출물(mesh 등)의 부속 파일 자리를 받을 때만 채운다 — None 이면
+    # 주 파일 자리(기존 동작과 동일, mesh-multi-file-artifact-persistence).
+    filename: str | None = None
 
 
 class ArtifactUploadUrlResponse(_CamelModel):
@@ -1487,11 +1507,24 @@ class ArtifactUploadUrlResponse(_CamelModel):
     detail: str | None = None
 
 
+class ArtifactFileView(_CamelModel):
+    """다운로드 가능한 파일 1건 — 주 파일이든 부속 파일이든 같은 모양."""
+
+    name: str
+    object_key: str
+    download_url: str
+
+
 class ArtifactDownloadResponse(_CamelModel):
     verdict: str
     object_key: str | None = None
     download_url: str | None = None
     expires_at: datetime | None = None
+    # 주 파일(object_key/download_url) 외 부속 파일들 — 산출물이 파일 하나면
+    # 항상 None(생략), 여러 개면 **주 파일을 포함해 전부** 나열한다(소비자가
+    # object_key/download_url 과 files 를 겹쳐 특수 케이스하지 않게 하려는
+    # 선택 — mesh-multi-file-artifact-persistence).
+    files: list[ArtifactFileView] | None = None
     detail: str | None = None
 
 
@@ -1515,6 +1548,14 @@ class ProcessingArtifactRequest(_CamelModel):
     crs: str | None = None
     gsd: float | None = Field(default=None, gt=0)
     accuracy: ArtifactAccuracyRequest | None = None
+    # PATH_SAFE_IDENTIFIER_PATTERN 재사용(SSOT) — 등록 시점에 여기서 거부되지
+    # 않으면 build_processing_artifact_object_key 가 다운로드 시점에만 거부해
+    # "등록은 됐는데 영구히 다운로드 불가한 산출물"이 durable 하게 남는다
+    # (reviewer 지적 C1, 2026-08-08 — 이전엔 검증이 없으면서 다운로드 핸들러
+    # 주석만 "등록 시점에 이미 검증됐다"고 잘못 단언했다).
+    auxiliary_files: list[Annotated[str, Field(pattern=PATH_SAFE_IDENTIFIER_PATTERN.pattern)]] = (
+        Field(default_factory=list)
+    )
 
 
 class ProcessingArtifactMutationResponse(_CamelModel):
@@ -1860,6 +1901,7 @@ def build_processing_jobs_router(
             artifact_id=request.artifact_id,
             worker_id=principal.principal_id,
             now=datetime.now(UTC),
+            filename=request.filename,
         )
         if result.verdict is not ProcessingJobVerdict.UPLOAD_READY or result.object_key is None:
             response.status_code = _STATUS[result.verdict]
@@ -1923,11 +1965,21 @@ def build_processing_jobs_router(
                 detail="이 작업에 그 산출물이 등록돼 있지 않다",
             )
 
-        record, _artifact = found
+        record, artifact = found
         try:
             object_key = build_processing_artifact_object_key(
                 site_id=record.site_id, job_id=job_id, artifact_id=artifact_id
             )
+            # 부속 파일 키도 여기서 전부 미리 유도한다 — 실패하면(원장에 있는
+            # filename 이 경로-안전하지 않다) 등록 시점 검증이 뚫렸다는 뜻이라
+            # URL 을 하나도 안 만들고 통째로 거부한다(주 파일만 내주고 부속을
+            # 조용히 빠뜨리면 mesh 뷰어가 텍스처 없는 반쪽 결과를 받는다).
+            auxiliary_keys = {
+                name: build_processing_artifact_object_key(
+                    site_id=record.site_id, job_id=job_id, artifact_id=artifact_id, filename=name
+                )
+                for name in artifact.auxiliary_files
+            }
         except ValueError as exc:
             # 등록 시점에 이미 검증된 값이라 도달하지 않아야 한다 — 도달하면
             # 원장이 이상한 것이므로 조용히 URL 을 만들지 않는다.
@@ -1939,6 +1991,10 @@ def build_processing_jobs_router(
         now = datetime.now(UTC)
         try:
             download_url = storage.presigned_get(object_key, ttl=DEFAULT_VIEW_TTL)
+            auxiliary_urls = {
+                name: storage.presigned_get(key, ttl=DEFAULT_VIEW_TTL)
+                for name, key in auxiliary_keys.items()
+            }
         except EvidenceStorageError:
             logger.warning(
                 "산출물 다운로드 URL 발급 실패: jobId=%s artifactId=%s", job_id, artifact_id
@@ -1950,10 +2006,34 @@ def build_processing_jobs_router(
                 detail="산출물 다운로드 URL 발급에 실패했다 — 잠시 후 재시도한다",
             )
 
+        files = None
+        if artifact.auxiliary_files:
+            # 주 파일을 포함해 전부 나열한다 — 소비자(mesh 뷰어 등)가
+            # object_key/download_url 과 files 를 겹쳐 특수 케이스하지 않게
+            # 한다(ArtifactDownloadResponse.files 문서 참고). 주 파일은
+            # 원장에 원본 파일명이 없다(objectKey 자체가 artifactId 로 끝나지
+            # 실제 파일명이 아니다) — kind.format 으로 사람이 읽을 이름을
+            # 짓는다(예: "mesh.obj").
+            primary_name = f"{artifact.kind.value}.{artifact.format}"
+            files = [
+                ArtifactFileView(
+                    name=primary_name, object_key=object_key, download_url=download_url
+                ),
+                *(
+                    ArtifactFileView(
+                        name=name,
+                        object_key=auxiliary_keys[name],
+                        download_url=auxiliary_urls[name],
+                    )
+                    for name in artifact.auxiliary_files
+                ),
+            ]
+
         return ArtifactDownloadResponse(
             verdict="ARTIFACT_READY",
             object_key=object_key,
             download_url=download_url,
+            files=files,
             expires_at=expires_at(now, DEFAULT_VIEW_TTL),
         )
 
@@ -1977,6 +2057,7 @@ def build_processing_jobs_router(
             format=request.format,
             crs=request.crs,
             gsd=request.gsd,
+            auxiliary_files=tuple(request.auxiliary_files),
             accuracy=(
                 ArtifactAccuracy(
                     gcp_count=request.accuracy.gcp_count,

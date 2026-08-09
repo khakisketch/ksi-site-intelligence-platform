@@ -1905,6 +1905,47 @@ def test_http_upload_url_is_deterministic_for_the_same_artifact(tmp_path: Path) 
     assert first.json()["objectKey"] == second.json()["objectKey"]
 
 
+def test_http_upload_url_with_filename_is_a_sub_key(tmp_path: Path) -> None:
+    """[mesh-multi-file-artifact-persistence] filename 을 주면 주 파일 키
+    아래 그 이름으로 된 별도 객체 키를 받는다 — 부속 파일(메시의 .mtl 등)
+    자리다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    primary = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": "mesh", "contentType": "application/octet-stream"},
+    )
+    aux = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={
+            "artifactId": "mesh",
+            "contentType": "application/octet-stream",
+            "filename": "odm_textured_model_geo.mtl",
+        },
+    )
+    assert primary.status_code == 201 and aux.status_code == 201
+    assert aux.json()["objectKey"] == f"{primary.json()['objectKey']}/odm_textured_model_geo.mtl"
+
+
+@pytest.mark.parametrize("bad_filename", ["../escape.mtl", "sub/dir.mtl", ""])
+def test_http_upload_url_refuses_path_escaping_filenames(
+    tmp_path: Path, bad_filename: str
+) -> None:
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={
+            "artifactId": "mesh",
+            "contentType": "application/octet-stream",
+            "filename": bad_filename,
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["verdict"] == "INVALID_ARTIFACT_ID"
+
+
 def test_http_upload_url_refuses_a_worker_without_the_lease(tmp_path: Path) -> None:
     """[음성] lease 없이 올릴 자리를 받지 못한다 — 남의 작업 경로에 쓰지 못하게."""
     client = _client(tmp_path)
@@ -2004,6 +2045,84 @@ def test_http_artifact_download_returns_a_presigned_url(tmp_path: Path) -> None:
         f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/pointcloud"
     )
     assert body["downloadUrl"].startswith("https://storage.invalid/")
+
+
+def test_http_artifact_download_with_auxiliary_files_lists_every_file(
+    tmp_path: Path,
+) -> None:
+    """[mesh-multi-file-artifact-persistence] auxiliaryFiles 로 등록된 산출물은
+    다운로드 응답의 ``files`` 에 주 파일까지 포함해 전부 나열된다 — 소비자가
+    object_key/download_url(주 파일)과 files 를 겹쳐 특수 케이스하지 않도록."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    aux_names = ["odm_textured_model_geo.mtl", "odm_textured_model_geo_map_Kd.png"]
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/artifacts",
+            json=_artifact_payload(
+                artifactId="mesh",
+                kind="mesh",
+                format="obj",
+                auxiliaryFiles=aux_names,
+            ),
+        ).status_code
+        == 201
+    )
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+
+    response = client.get(f"/v1/processing-jobs/{job_id}/artifacts/mesh/download")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    files = body["files"]
+    assert files is not None and len(files) == 3
+    names = {f["name"] for f in files}
+    assert names == {"mesh.obj", *aux_names}
+    for f in files:
+        assert f["downloadUrl"].startswith("https://storage.invalid/")
+    # 부속 파일 키는 주 파일 키 아래 basename 이다.
+    aux_keys = {f["name"]: f["objectKey"] for f in files if f["name"] in aux_names}
+    for name, key in aux_keys.items():
+        assert key == f"{body['objectKey']}/{name}"
+
+
+@pytest.mark.parametrize("bad_name", ["../escape", "a/b.mtl", "", "."])
+def test_http_register_refuses_path_unsafe_auxiliary_file_names(
+    tmp_path: Path, bad_name: str
+) -> None:
+    """[mesh-multi-file-artifact-persistence C1] auxiliaryFiles 는 등록 시점에
+    basename 패턴으로 거부된다 — 여기서 안 막으면(reviewer 지적, 2026-08-08)
+    등록은 성공하고 다운로드 시점(build_processing_artifact_object_key)에서만
+    거부돼, 영구히 다운로드 불가능한 산출물이 원장에 남는다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=_artifact_payload(
+            artifactId="mesh", kind="mesh", format="obj", auxiliaryFiles=[bad_name]
+        ),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_http_artifact_download_without_auxiliary_files_omits_files_list(
+    tmp_path: Path,
+) -> None:
+    """[하위호환] 파일 하나짜리 산출물은 files 가 None 이다 — 기존 소비자가
+    object_key/download_url 만 보는 경로를 그대로 쓸 수 있다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    assert (
+        client.post(
+            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
+        ).status_code
+        == 201
+    )
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+
+    response = client.get(f"/v1/processing-jobs/{job_id}/artifacts/pointcloud/download")
+    assert response.status_code == 200, response.text
+    assert response.json()["files"] is None
 
 
 def test_http_artifact_download_refuses_an_unregistered_artifact(tmp_path: Path) -> None:

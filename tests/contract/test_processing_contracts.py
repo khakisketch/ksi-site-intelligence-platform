@@ -23,7 +23,11 @@ from pydantic import ValidationError
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
 _JOB_SCHEMA_FILE = "processing-job.v1.json"
-_ARTIFACT_SCHEMA_FILE = "processing-artifact.v1.json"
+# v1.1 이 정본(auxiliaryFiles 추가, mesh-multi-file-artifact-persistence) — v1.0 은
+# "옛 소비자가 auxiliaryFiles 없는 wire 를 계속 읽는다"를 증명하는 backward-compat
+# 비교용으로만 남긴다(아래 test_artifact_without_auxiliary_files_also_satisfies_v1_0).
+_ARTIFACT_SCHEMA_FILE = "processing-artifact.v1.1.json"
+_ARTIFACT_SCHEMA_FILE_V1_0 = "processing-artifact.v1.json"
 
 
 def _load_schema(name: str) -> dict[str, Any]:
@@ -88,7 +92,9 @@ def _valid_artifact_dict(
 # ── 스키마 파일 자체의 유효성 ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("schema_file", [_JOB_SCHEMA_FILE, _ARTIFACT_SCHEMA_FILE])
+@pytest.mark.parametrize(
+    "schema_file", [_JOB_SCHEMA_FILE, _ARTIFACT_SCHEMA_FILE, _ARTIFACT_SCHEMA_FILE_V1_0]
+)
 def test_schema_file_is_valid_draft202012(schema_file: str) -> None:
     Draft202012Validator.check_schema(_load_schema(schema_file))
 
@@ -170,6 +176,49 @@ def test_processing_artifact_extra_field_rejected() -> None:
     data["unexpectedField"] = "should be rejected"
     with pytest.raises(ValidationError):
         ProcessingArtifact.model_validate(data)
+
+
+# ── auxiliaryFiles (mesh-multi-file-artifact-persistence) ──────────────────
+
+
+def test_artifact_without_auxiliary_files_also_satisfies_v1_0() -> None:
+    """[핵심 — 하위호환] auxiliaryFiles 를 안 준(기본값 빈 튜플) wire 는 v1.0
+    소비자도 그대로 읽는다 — v1.1 로의 이행이 기존 소비자를 깨지 않는다."""
+    artifact = ProcessingArtifact.model_validate(_valid_artifact_dict())
+    wire = processing_artifact_wire_dict(artifact)
+    assert "auxiliaryFiles" not in wire
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_0)).validate(wire)
+
+
+def test_artifact_with_auxiliary_files_roundtrips() -> None:
+    payload = _valid_artifact_dict(kind="mesh", derived_from=["point-cloud"], authority="derived")
+    payload["format"] = "obj"
+    aux_files = ["odm_textured_model_geo.mtl", "odm_textured_model_geo_map_Kd.png"]
+    artifact = ProcessingArtifact.model_validate({**payload, "auxiliaryFiles": aux_files})
+    assert artifact.auxiliary_files == (
+        "odm_textured_model_geo.mtl",
+        "odm_textured_model_geo_map_Kd.png",
+    )
+    wire = processing_artifact_wire_dict(artifact)
+    assert wire["auxiliaryFiles"] == [
+        "odm_textured_model_geo.mtl",
+        "odm_textured_model_geo_map_Kd.png",
+    ]
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE)).validate(wire)
+    # v1.0(auxiliaryFiles 를 모르는 스키마)은 additionalProperties:false 라
+    # 이 wire 를 거부해야 한다 — v1.1 로만 표현 가능한 사실을 v1.0 이 조용히
+    # 받아주면 "이행"이라는 말이 성립하지 않는다.
+    with pytest.raises(Exception):  # noqa: B017,PT011 — jsonschema ValidationError
+        Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_0)).validate(wire)
+
+
+def test_auxiliary_file_name_with_path_component_rejected_by_schema() -> None:
+    """basename 만 허용한다 — '/'·'..' 가 들어가면 저장 위치 유도가 경로 탈출이 된다."""
+    schema = _load_schema(_ARTIFACT_SCHEMA_FILE)
+    for bad_name in ("../escape.mtl", "sub/dir.mtl", "/etc/passwd"):
+        payload = {**_valid_artifact_dict(), "auxiliaryFiles": [bad_name]}
+        errors = list(Draft202012Validator(schema).iter_errors(payload))
+        assert errors, f"{bad_name!r} 이 스키마를 통과했다"
 
 
 # ── INV-051: authority=derived without derivedFrom 거부 ────────────────────

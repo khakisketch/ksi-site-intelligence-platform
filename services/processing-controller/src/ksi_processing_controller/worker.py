@@ -41,6 +41,7 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 import time
 import zipfile
 from collections.abc import Callable
@@ -202,27 +203,34 @@ def run_job(
         )
         registered = 0
         for report in reports:
-            if not report.is_single_file:
-                # 산출물 하나가 파일 여러 개인 경우(메시+텍스처·재질) 객체 키
-                # 하나에 충실히 담을 수 없다 — 대표 파일만 올리면 저장된
-                # 바이트와 등록된 digest 가 어긋난다. **그래서 등록도 하지
-                # 않는다**: 등록해 두면 "원장에 있는데 바이트가 없는" 산출물이
-                # 생기고, 다운로드 표면이 깨진 링크를 발급한다(risk
-                # mesh-auxiliary-files-not-persisted).
-                now_message(
-                    f"[{job_id}] {report.artifact_id} 는 파일 여러 개로 이뤄져 "
-                    "객체 키 하나에 담을 수 없다 — 이번 범위에서 건너뛴다"
-                )
-                continue
-
             # ① 자리를 받고 ② 그 자리에 쓰고 ③ 그다음에 등록한다.
-            # 순서가 뒤집히면 "등록됐는데 바이트가 없는" 창이 열린다.
+            # 순서가 뒤집히면 "등록됐는데 바이트가 없는" 창이 열린다. 산출물이
+            # 파일 여러 개(메시+텍스처·재질)면 등록은 한 번, 업로드는 파일
+            # 수만큼이다 — 주 파일을 올린 *뒤* 등록해야 "등록됐는데 주 파일이
+            # 없는" 창이 없는 것처럼, 부속 파일도 전부 올린 뒤에야 등록한다
+            # (mesh-multi-file-artifact-persistence — 이전엔 이 갈래 자체를
+            # 등록하지 않고 건너뛰었다).
             target = core.presign_artifact_upload(
                 job_id,
                 artifact_id=report.artifact_id,
                 content_type=_ARTIFACT_CONTENT_TYPE,
             )
             _upload(fetch, target.upload_url, archive_path, report.archive_entry)
+
+            for aux_basename in report.auxiliary_files:
+                # 부속 파일은 주 파일과 같은 아카이브 디렉터리에 있다
+                # (odm.plan_artifacts 가 그 조건으로 찾은 것들이다) — 그
+                # 디렉터리 + basename 으로 아카이브 내부 전체 경로를 되짚는다.
+                directory = posixpath.dirname(report.archive_entry)
+                aux_archive_entry = posixpath.join(directory, aux_basename)
+                aux_target = core.presign_artifact_upload(
+                    job_id,
+                    artifact_id=report.artifact_id,
+                    content_type=_ARTIFACT_CONTENT_TYPE,
+                    filename=aux_basename,
+                )
+                _upload(fetch, aux_target.upload_url, archive_path, aux_archive_entry)
+
             core.register_artifact(
                 job_id,
                 ArtifactSubmission(
@@ -234,6 +242,7 @@ def run_job(
                     format=report.fmt,
                     crs=report.crs,
                     gsd=report.gsd,
+                    auxiliary_files=report.auxiliary_files,
                 ),
             )
             registered += 1

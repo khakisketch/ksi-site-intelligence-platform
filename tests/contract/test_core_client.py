@@ -218,6 +218,7 @@ def test_register_artifact_does_not_send_a_lineage_anchor_field() -> None:
     )
     assert set(captured["body"]) == {
         "artifactId", "kind", "authority", "derivedFrom", "digest", "format", "crs", "gsd",
+        "auxiliaryFiles",
     }
 
 

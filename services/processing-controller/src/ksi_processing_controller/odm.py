@@ -66,9 +66,13 @@ INV-051 을 지키는 것이다.
 파생 서빙 계층의 몫이고(ADR-KSI-003, INV-051), 저장 단계에서 바꾸면 저장된
 바이트가 등록된 digest 와 달라진다.
 
-**메시는 예외다.** 텍스처·재질이 digest 에 함께 들어가 산출물 하나가 파일
-하나가 아니라서(``is_single_file=False``) 객체 키 하나에 충실히 담을 수 없다 —
-업로드 여부는 워커가 이 플래그로 판단한다.
+**메시는 파일이 여러 개다.** 텍스처·재질이 digest 에 함께 들어가 산출물
+하나가 파일 하나가 아니다(``is_single_file=False``) — 주 파일(``archive_entry``)
+은 기존 객체 키 하나에, 나머지(``auxiliary_files``)는 그 아래 basename 별
+하위 키에 올라간다(``ksi_core.processing_jobs.build_processing_artifact_object_key``
+의 ``filename`` 인자, mesh-multi-file-artifact-persistence). 워커는
+``is_single_file`` 로 "부속 파일을 더 올려야 하는가"만 분기하고, 등록 자체는
+파일 개수와 무관하게 항상 한다.
 
 ## 이 모듈이 하지 않는 것
 
@@ -276,10 +280,15 @@ class ArtifactReport:
     # 이 연결이 없어서 지금까지 digest 만 남기고 바이트를 버려 왔다.
     archive_entry: str = ""
     # 산출물 하나가 파일 하나인가. 메시처럼 텍스처·재질이 digest 에 함께 들어가는
-    # 산출물은 False 이고, 그런 산출물은 **객체 키 하나에 충실히 담을 수 없다** —
-    # 대표 파일만 올리면 저장된 바이트와 등록된 digest 가 어긋난다
-    # (risk mesh-auxiliary-files-not-persisted).
+    # 산출물은 False 다 — 워커가 이 플래그로 다중 파일 업로드 루프를 탄다
+    # (mesh-multi-file-artifact-persistence, worker.py 참고).
     is_single_file: bool = True
+    # is_single_file=False 일 때, archive_entry(주 파일) 외 나머지 파일들의
+    # **basename**(아카이브 내부 전체 경로가 아니라) — Core 의 객체 키 유도
+    # (build_processing_artifact_object_key)와 ProcessingArtifact.auxiliaryFiles
+    # 가 이 값을 그대로 쓴다. digest 는 여전히 archive_entry 전체 경로 기준으로
+    # 계산되므로(digest_archive_entries) 이 필드는 digest 계산과 무관하다.
+    auxiliary_files: tuple[str, ...] = ()
 
 
 def assert_engine_matches(
@@ -417,13 +426,19 @@ def plan_artifacts(
             aux_entries: list[str] = []
             if asset.auxiliary_suffixes:
                 directory = posixpath.dirname(asset.archive_entry)
-                aux_entries = [
+                # sorted — present 는 set(archive.namelist()) 라 반복 순서가
+                # 실행마다 달라질 수 있다. digest_archive_entries 는 내부에서
+                # 다시 정렬해 digest 자체는 이미 순서 무관이지만, 이 목록은
+                # 그대로 auxiliary_files(→ ArtifactReport → wire auxiliaryFiles)
+                # 로 나가므로 여기서도 정렬해야 같은 아카이브가 항상 같은
+                # wire 를 낸다(결정성).
+                aux_entries = sorted(
                     e
                     for e in present
                     if e != asset.archive_entry
                     and posixpath.dirname(e) == directory
                     and e.endswith(asset.auxiliary_suffixes)
-                ]
+                )
             if aux_entries:
                 digest = digest_archive_entries(archive, (asset.archive_entry, *aux_entries))
             else:
@@ -443,6 +458,7 @@ def plan_artifacts(
                     # 돼 있고 아카이브에 없으면 digest 는 단일 엔트리 해시라
                     # 저장·대조가 그대로 성립한다.
                     is_single_file=not aux_entries,
+                    auxiliary_files=tuple(posixpath.basename(e) for e in aux_entries),
                 )
             )
     if not any(report.authority == "source" for report in reports):

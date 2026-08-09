@@ -487,11 +487,20 @@ export interface ProcessingJobArtifactsView {
 }
 
 /** GET /v1/processing-jobs/{jobId}/artifacts/{artifactId}/download 응답. */
+export interface ArtifactFileView {
+  name: string;
+  objectKey: string;
+  downloadUrl: string;
+}
+
 export interface ArtifactDownloadResponse {
   verdict: string;
   objectKey: string | null;
   downloadUrl: string | null;
   expiresAt: string | null;
+  // 산출물이 파일 여러 개(메시 등)일 때만 채워진다 — 주 파일을 포함해 전부
+  // 나열한다(mesh-multi-file-artifact-persistence).
+  files: ArtifactFileView[] | null;
   detail: string | null;
 }
 

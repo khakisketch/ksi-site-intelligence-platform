@@ -82,6 +82,9 @@ class ArtifactSubmission:
     format: str
     crs: str | None
     gsd: float | None
+    # 주 파일(digest/objectKey 가 가리키는 파일) 외 나머지 파일들의 basename —
+    # 산출물이 파일 하나면 빈 튜플(mesh-multi-file-artifact-persistence).
+    auxiliary_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,9 +122,13 @@ class CoreClient(Protocol):
         ...
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str
+        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
     ) -> ArtifactUploadTarget:
-        """``POST /artifacts/upload-url``. UPLOAD_READY 외엔 :class:`CoreClientError`."""
+        """``POST /artifacts/upload-url``. UPLOAD_READY 외엔 :class:`CoreClientError`.
+
+        ``filename`` 은 다중 파일 산출물(mesh 등)에서 주 파일 외 나머지 각각을
+        올릴 때 채운다 — ``None`` 이면 주 파일 자리(기존 동작과 동일)다.
+        """
         ...
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
@@ -242,13 +249,17 @@ class HttpCoreClient:
         )
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str
+        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
     ) -> ArtifactUploadTarget:
         payload = self._post(
             f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-            what=f"upload-url:{artifact_id}",
+            what=f"upload-url:{artifact_id}:{filename or '(primary)'}",
             ok="UPLOAD_READY",
-            json={"artifactId": artifact_id, "contentType": content_type},
+            json={
+                "artifactId": artifact_id,
+                "contentType": content_type,
+                "filename": filename,
+            },
         )
         object_key = payload.get("objectKey")
         upload_url = payload.get("uploadUrl")
@@ -276,6 +287,7 @@ class HttpCoreClient:
                 "format": submission.format,
                 "crs": submission.crs,
                 "gsd": submission.gsd,
+                "auxiliaryFiles": list(submission.auxiliary_files),
             },
         )
 

@@ -50,8 +50,17 @@ class S3EvidenceStorage:
             self._client: S3Client = client
         else:
             import boto3  # noqa: PLC0415 -- 지연 import(모듈 docstring 참조)
+            from botocore.config import Config  # noqa: PLC0415 -- 위와 동일 사유
 
-            self._client = boto3.client("s3", endpoint_url=endpoint_url)
+            # signature_version 을 명시하지 않으면 MinIO 등 비-AWS 엔드포인트에서
+            # botocore 가 SigV2 스타일 presigned URL(?AWSAccessKeyId=...&Signature=...)
+            # 을 만들 수 있다 — 최신 MinIO 는 SigV4 만 받아 403 으로 거부한다
+            # (2026-08-08 실측: --s3-endpoint 로 실 MinIO 를 겨눈 최초 실기동에서
+            # 재현·확인. AWS 자체 엔드포인트는 URL 로 자동 판별해 이미 SigV4 를
+            # 쓰므로 이 명시가 그쪽 동작을 바꾸지 않는다).
+            self._client = boto3.client(
+                "s3", endpoint_url=endpoint_url, config=Config(signature_version="s3v4")
+            )
 
     def _presign(self, operation: str, params: dict[str, Any], ttl: timedelta) -> str:
         seconds = int(ttl.total_seconds())

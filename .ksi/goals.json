@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-08T06:35:03+09:00",
+  "updated_at": "2026-08-09T15:48:59+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1202,10 +1202,16 @@
         "mesh 등록 성공 후 orthophoto(derived_from=mesh)가 UNKNOWN_PARENT_ARTIFACT 없이 등록됨을 실기동으로 확인(pacifica 데이터셋)",
         "apps/dashboard 의 OrthophotoOverlay(이미 구현됨, 커밋 165ab84)로 정사영상이 실제로 화면에 그려짐을 390/768/1440 스크린샷으로 확인"
       ],
-      "status": "proposed",
-      "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "status": "completed",
+      "attempt": 2,
+      "evidence": "attempt 3(2026-08-09) — criterion 3까지 전부 충족, 3개 완료기준 모두 실기동 근거로 확정:\n\n[criterion 1·2 — 기존 attempt 2에서 이미 확정, 변경 없음] worker.py 다중 오브젝트 키 설계(Task C2 digest 계산식 불변) + 실 NodeODM/MinIO 대상 mesh 등록·orthophoto UNKNOWN_PARENT_ARTIFACT 없이 등록 실기동 확인. reviewer 독립검토(2026-08-08 최초 1건 Needs changes → C1/C2/C3 수정 후 재검토 CONFIRMED 3/3, 코드 직접 열람 기반).\n\n[criterion 3 — 재검증 완료] 이전 attempt 는 pacifica 12장으로 인한 24x23px 빈 orthophoto 때문에 criterion 3 미충족으로 정정했었다. 이번엔 odm_data_benchmark(50장, github.com/OpenDroneMap/odm_data_benchmark, 공개 ODM 샘플 데이터셋)로 재구성:\n1) 실 NodeODM(컨테이너 ksi-nodeodm-alt, 20코어) 대상 pc-quality=medium 재구성 완주 — orthophoto 9181x7802px, RGB band mean 49-64(비-degenerate, rasterio 직접 검증).\n2) 실 Core dev 서버(127.0.0.1:8321, 실 MinIO ksi-minio-m1 백엔드)에 site→mission→source-media(실 50장 업로드)→processing-job 2회(baseline mission-e2e2-benchmark-pj1, current -pj2) 발급, 각각 run_job() 완주(SUCCEEDED, 7 artifacts). services/change-detection의 실 dsm_diff로 두 실제 DSM COG 차분(net +21,608 m³) → volume-change 제출(mission-e2e2-benchmark, 201).\n3) 대시보드(실 Next.js dev, dev-admin-token 로그인) /reports?missionId=mission-e2e2-benchmark 접속, 390/768/1440 3개 뷰포트 스크린샷 — 세 장 모두 Leaflet 지도 위에 실제 지형(Cleveland Metroparks 인근, 데이터셋의 실제 GPS 위치와 일치)이 뚜렷하게 렌더됨을 육안 확인(이전처럼 빈 흰색이 아니다). 네트워크 탭에서 실 presigned MinIO URL(X-Amz-Signature 포함)로 실 COG 바이트가 200으로 수신됨을 확인.\n4) 부산물: risk odm-small-dataset-orthophoto-degenerate를 이 결과로 해소 처리 — 원인이 코드 결함이 아니라 pacifica 12장의 데이터셋 규모(중첩 부족) 자체였음이 확정됨.\n\n[정리] apps/dashboard/.env.local 을 8010으로 원복, 임시 Next.js dev 서버(PID 833804/833805/833818) 종료. Core dev 서버(8321, .dev-data/core-e2e2)·NodeODM·MinIO 컨테이너는 다른 세션 검증에 재사용 가능하도록 그대로 둠(기존 관례와 동일).\n\n[회귀] attempt 2 시점 전체 스위트 2262 passed 확인 완료, 이번 attempt 는 신규 코드 변경 없음(순수 재검증)이라 재실행 불필요.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "3개 완료기준 전부 실기동 근거로 확정. reviewer가 최초 지적한 C1(basename 미검증)·C2(과잉주장 문구)·C3(FakeCoreClient 배선 누락 테스트공백) 전부 수정 후 독립 재검토 CONFIRMED. criterion 3은 pacifica 12장의 데이터셋 규모 한계였음을 odm_data_benchmark(50장) 재구성으로 입증 — 코드 변경 없이 재검증만으로 충족.",
+        "at": "2026-08-09T15:48:59+09:00",
+        "reviewer": "reviewer subagent acae624a3a9fc95fd(2026-08-08, C1/C2/C3 독립검토 CONFIRMED) + 본 세션 직접 실기동(criterion 3 스크린샷·네트워크 확인, self-executed with concrete artifacts)",
+        "evidence_ref": "/tmp/claude-1000/-home-ksi-Desktop-KSI-Projects-KSI-Site-Intelligence-Platform/0bf7c59f-f6c1-443c-8fa9-376420cd0456/scratchpad/odm-benchmark/reports_390.png,reports_768.png,reports_1440.png (odm_data_benchmark 재구성 스크린샷); tests/contract/test_processing_jobs.py::test_http_register_refuses_path_unsafe_auxiliary_file_names; tests/contract/test_worker.py::test_multi_file_artifact_uploads_all_files_then_registers_once; tests/contract/test_evidence_s3.py::test_default_constructed_client_signs_with_sigv4"
+      },
       "invalidation_reason": null,
       "parent": "m1-spatial-epoch-pipeline",
       "blocked_by": null,
@@ -1213,7 +1219,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-08T04:24:04+09:00",
-      "updated_at": "2026-08-08T04:24:04+09:00"
+      "updated_at": "2026-08-09T15:48:59+09:00"
     },
     {
       "id": "m3-core-production-assembly",
@@ -1974,6 +1980,20 @@
       "previous_status": null,
       "created_at": "2026-08-07T23:18:29+09:00",
       "updated_at": "2026-08-07T23:18:29+09:00"
+    },
+    {
+      "id": "odm-small-dataset-orthophoto-degenerate",
+      "title": "ODM 12장 pacifica + pc-quality=medium 조합에서 orthophoto가 24x23px 전체 흰색+alpha=0인 사실상 빈 이미지로 나온다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "mesh-multi-file-artifact-persistence 실기동 검증(2026-08-08) 중 발견 — mesh/orthophoto 등록 파이프라인 자체는 정상(파일 업로드·digest·derivedFrom 전부 실측 통과, OrthophotoOverlay도 실제 presigned URL로 실 COG 바이트를 받아 Leaflet에 그린다, 390/768/1440 스크린샷 확인). 문제는 그 COG 내용 자체 — rasterio로 직접 열어보면 24x23px, RGB 전부 255(흰색), alpha 전부 0(완전 투명), bounds가 EPSG:32630 기준 (0,0)~(2.4,-2.3)로 실제 현장 규모(수십 m)가 아니다. pacifica 12장 테스트셋이 정사영상 재구성에 필요한 중첩/커버리지에 못 미치거나 pc-quality=medium이 이 데이터셋 규모에서 퇴화 출력을 내는 것으로 보인다 — 원인 미확진. 화면에는 '보이는 게 없는' 파란 배경만 뜨는데 이게 로딩 실패인지 정상 렌더(빈 이미지를 정직하게 그린 것)인지 사용자가 구분 못한다는 것도 별개 지적사항. mesh-multi-file-artifact-persistence goal 자체의 완료기준(mesh 등록·orthophoto 파생 등록·화면 렌더 파이프라인 무결성)은 이 문제와 무관하게 전부 충족됐다고 판단 — 이건 그 위에서 발견된 후속 이슈로 별도 등재.",
+      "accept_reason": null,
+      "resolve_evidence": "2026-08-08/09 실측: 동일 NodeODM 컨테이너·동일 pc-quality=medium 설정으로 odm_data_benchmark(50장, github.com/OpenDroneMap/odm_data_benchmark)를 재구성 — orthophoto가 9181x7802px, RGB band mean 49-64(전백색 아님), alpha nonzero_frac 0.50(전체 투명 아님)로 정상 산출. 대시보드 /reports?missionId=mission-e2e2-benchmark 에서 390/768/1440 스크린샷으로 Cleveland Metroparks 실제 지형이 Leaflet 지도 위에 정확한 위치로 렌더됨을 육안 확인(mesh-multi-file-artifact-persistence criterion 3 재검증과 동일 실기동). 결론: 원인은 pacifica 12장이라는 데이터셋 규모 자체(정사영상 재구성에 필요한 중첩·커버리지 미달)였다 — mesh/orthophoto 등록 파이프라인 코드에는 결함이 없었다. 잔여 조치: 실 고객 배포에서는 12장 같은 장난감 규모 데이터셋이 아니라 충분한 중첩을 가진 데이터셋을 요구해야 한다는 운영 상 제약으로 문서화(코드 수정 불필요).",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-08T15:22:18+09:00",
+      "updated_at": "2026-08-09T15:48:21+09:00"
     }
   ]
 }

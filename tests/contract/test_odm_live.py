@@ -532,6 +532,11 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
             odm=client,
             work_dir=tmp_path / "worker",
             poll_interval_seconds=15.0,
+            # 이게 없으면 orthophoto/dsm/dtm 이 "GSD 필수인데 없다"로 전부
+            # 조용히 건너뛰어진다(odm.plan_artifacts) — mesh-multi-file-
+            # artifact-persistence 검증 전에는 이 테스트가 그 셋의 등록을
+            # 요구하지 않아 드러나지 않았던 기존 공백(2026-08-08 실측 발견).
+            gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
         )
         assert time.monotonic() < deadline, "제한 시간 안에 완주하지 못했다"
 
@@ -543,6 +548,7 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
         reader_transport = TestClient(app, base_url="http://core.local")
         reader_transport.headers.update({"Authorization": f"Bearer {reader_token}"})
         download_client = httpx.Client(timeout=60.0)
+        mesh_seen = False
         for artifact in job_record.artifacts:
             resp = reader_transport.get(
                 f"/v1/processing-jobs/{job_id}/artifacts/{artifact.artifact_id}/download"
@@ -551,6 +557,29 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
             body = resp.json()
             assert body["verdict"] == "ARTIFACT_READY", body
 
+            if body.get("files"):
+                # [mesh-multi-file-artifact-persistence] artifact.digest 는
+                # 원본 아카이브 내부 경로(예: "odm_texturing/odm_textured_
+                # model_geo.obj")까지 섞어 결합 해싱한 값이다
+                # (odm.digest_archive_entries) — 그 경로 문자열은 워커
+                # 내부(odm_assets.py)에만 있고 Core 는 알지 못한다(의도된
+                # 경계: Core 는 basename 만 안다, ArtifactDownloadResponse.
+                # files[].name 참고). 그래서 재다운로드만으로 그 정확한
+                # digest 를 재계산할 수는 없다 — 대신 파일 개수·각 파일의
+                # 실제 다운로드 가능성·내용 존재를 확인한다(더 약하지만
+                # 달성 가능한 무결성 증거).
+                mesh_seen = True
+                assert len(body["files"]) == 1 + len(artifact.auxiliary_files), (
+                    artifact.artifact_id, body["files"]
+                )
+                for file_view in body["files"]:
+                    file_resp = download_client.get(file_view["downloadUrl"])
+                    assert file_resp.status_code == 200, (
+                        artifact.artifact_id, file_view["name"], file_resp.status_code
+                    )
+                    assert len(file_resp.content) > 0, (artifact.artifact_id, file_view["name"])
+                continue
+
             bytes_resp = download_client.get(body["downloadUrl"])
             assert bytes_resp.status_code == 200, (artifact.artifact_id, bytes_resp.status_code)
             got_digest = "sha256:" + hashlib.sha256(bytes_resp.content).hexdigest()
@@ -558,5 +587,18 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
                 f"{artifact.artifact_id}: 등록 digest={artifact.digest} != "
                 f"재다운로드 바이트 digest={got_digest}"
             )
+
+        assert mesh_seen, (
+            "이 실행에서 mesh(다중파일) 산출물이 등록되지 않았다 — "
+            "mesh-multi-file-artifact-persistence 경로가 실제로 안 탔다는 뜻이다"
+        )
+        orthophoto = next(
+            (a for a in job_record.artifacts if a.artifact_id == "orthophoto"), None
+        )
+        assert orthophoto is not None, (
+            "orthophoto 가 등록되지 않았다 — mesh 가 실제로 파생 부모로 실재하지 "
+            "않으면(UNKNOWN_PARENT_ARTIFACT) 여기 도달하지 못한다. mesh 가 등록됐는데도 "
+            "orthophoto 가 없다면 별개 원인(ODM 이 이번 재구성에서 정사영상을 안 냄 등)이다"
+        )
     finally:
         server.shutdown()

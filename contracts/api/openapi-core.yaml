@@ -1772,6 +1772,15 @@ paths:
                     gcpCount: { type: integer, minimum: 0 }
                     rmse: { type: number, minimum: 0 }
                     reportUri: { type: string, minLength: 1 }
+                auxiliaryFiles:
+                  description: >-
+                    산출물이 파일 여러 개(메시의 .mtl·텍스처 등)일 때, 주 파일
+                    (digest/objectKey 가 가리키는 파일) 외 나머지의 basename 목록.
+                    빈 배열(기본값)이면 파일 하나짜리 산출물이다
+                    (mesh-multi-file-artifact-persistence).
+                  type: array
+                  items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+                  default: []
       responses:
         '201':
           description: ARTIFACT_REGISTERED — verdict + 등록된 산출물의 계약 payload
@@ -1910,6 +1919,13 @@ paths:
               properties:
                 artifactId: { type: string, minLength: 1 }
                 contentType: { type: string, minLength: 1 }
+                filename:
+                  description: >-
+                    다중 파일 산출물(mesh 등)의 부속 파일 자리를 받을 때만
+                    채운다 — 생략·null 이면 주 파일 자리(기존 동작과 동일,
+                    mesh-multi-file-artifact-persistence). 주 파일 키 아래
+                    이 이름의 하위 키가 발급된다.
+                  type: [string, 'null']
       responses:
         '201':
           description: UPLOAD_READY — 서버가 정한 objectKey 와 presigned uploadUrl
@@ -3100,6 +3116,20 @@ components:
         objectKey: { type: [string, 'null'] }
         downloadUrl: { type: [string, 'null'] }
         expiresAt: { type: [string, 'null'], format: date-time }
+        files:
+          description: >-
+            산출물이 파일 여러 개(메시 등)일 때만 채워진다 — 주 파일을 포함해
+            **전부** 나열한다(objectKey/downloadUrl 과 겹쳐 특수 케이스하지
+            않도록). 파일 하나짜리 산출물은 null(생략) —
+            mesh-multi-file-artifact-persistence.
+          type: [array, 'null']
+          items:
+            type: object
+            required: [name, objectKey, downloadUrl]
+            properties:
+              name: { type: string }
+              objectKey: { type: string }
+              downloadUrl: { type: string }
         detail: { type: [string, 'null'] }
 
   securitySchemes:

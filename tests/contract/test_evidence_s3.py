@@ -108,3 +108,17 @@ def test_adapter_satisfies_port() -> None:
     assert callable(storage.presigned_put)
     assert callable(storage.presigned_get)
     assert callable(storage.delete)
+
+
+def test_default_constructed_client_signs_with_sigv4() -> None:
+    """[회귀] client 를 안 주면(운영 경로) SigV4 로 서명하는 client 를 스스로 만든다.
+
+    2026-08-08 에 signature_version 을 명시하지 않은 채 boto3.client 를 직접
+    구성해 MinIO 가 SigV2 스타일 presigned URL 을 403 으로 거부하는 걸 실측으로
+    발견했다(evidence_s3.py 참조) — 그 회귀를 이 테스트 없이는 다시 잡을 수
+    없었다. 네트워크는 타지 않는다: boto3 client 구성은 로컬 동작이고,
+    ``endpoint_url`` 로 향하는 실제 호출은 여기서 만들지 않는다.
+    """
+    storage = S3EvidenceStorage(bucket="ksi-evidence", endpoint_url="http://minio.invalid:9000")
+    config = storage._client.meta.config  # noqa: SLF001
+    assert config.signature_version == "s3v4"  # type: ignore[attr-defined]
