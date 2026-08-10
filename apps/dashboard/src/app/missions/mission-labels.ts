@@ -33,6 +33,15 @@ export const COVERAGE_NOT_REPORTED_LABEL: { label: string; tone: Tone } = {
   tone: "neutral",
 };
 
+// 처리 작업(재구성) 진행 상태 → 한국어(ksi_event_contracts.processing_job.ProcessingJobStatus).
+export const PROCESSING_JOB_STATUS_LABEL: Record<string, { label: string; tone: Tone }> = {
+  QUEUED: { label: "대기 중", tone: "neutral" },
+  RUNNING: { label: "처리 중", tone: "progress" },
+  SUCCEEDED: { label: "완료", tone: "positive" },
+  FAILED: { label: "실패", tone: "warning" },
+  CANCELLED: { label: "취소됨", tone: "neutral" },
+};
+
 // CoverageCell.state → 한국어(coverage-report.v1.1.json 11종 그대로).
 export const CELL_STATE_LABEL: Record<CoverageCellState, string> = {
   OBSERVED_HIGH_CONFIDENCE: "고신뢰 관찰",
