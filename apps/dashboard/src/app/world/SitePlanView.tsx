@@ -60,7 +60,7 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
         // y 축을 뒤집는다 — site_frame 의 +y(북)는 위쪽인데 SVG 의 +y 는 아래쪽이다.
         // 뒤집지 않으면 남북이 거울처럼 반대로 그려진다.
         viewBox={`${centerX - half} ${-(centerY + half)} ${half * 2} ${half * 2}`}
-        className="aspect-square w-full rounded-lg border border-neutral-200 bg-neutral-50"
+        className="aspect-square w-full rounded-lg border border-line bg-sunk"
         role="img"
         aria-label={`현장 평면도 — 개체 ${entities.length}건`}
       >
@@ -75,7 +75,7 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
                 cx={x}
                 cy={-y}
                 r={positionUncertaintyM}
-                className="fill-blue-500/10 stroke-blue-500/40"
+                className="fill-mid/10 stroke-mid/40"
                 vectorEffect="non-scaling-stroke"
               />
               {/* 속도 벡터 — 1초 뒤 위치까지. 등속 가정이 CPA/TTC 와 같은 전제다. */}
@@ -85,7 +85,7 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
                   y1={-y}
                   x2={x + vx}
                   y2={-(y + vy)}
-                  className="stroke-neutral-500"
+                  className="stroke-ink-muted"
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
                 />
@@ -94,12 +94,12 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
                 cx={x}
                 cy={-y}
                 r={half * 0.02}
-                className={isWorker ? "fill-amber-500" : "fill-neutral-800"}
+                className={isWorker ? "fill-high" : "fill-ink-1"}
               />
               <text
                 x={x + half * 0.03}
                 y={-y - half * 0.02}
-                className="fill-neutral-600"
+                className="fill-ink-2"
                 style={{ fontSize: half * 0.06 }}
               >
                 {state.entityId}
@@ -115,21 +115,21 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
             y1={-(centerY - half + padding)}
             x2={centerX - half + padding + scaleStepM}
             y2={-(centerY - half + padding)}
-            className="stroke-neutral-700"
+            className="stroke-ink-2"
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
           <text
             x={centerX - half + padding}
             y={-(centerY - half + padding) - half * 0.03}
-            className="fill-neutral-700"
+            className="fill-ink-2"
             style={{ fontSize: half * 0.06 }}
           >
             {scaleStepM} m
           </text>
         </g>
       </svg>
-      <figcaption className="text-xs text-neutral-500">
+      <figcaption className="text-xs text-ink-muted">
         현장 등록 좌표계({entities[0].state.siteFrame}) 평면도 · 위쪽이 +y · 옅은 원은
         위치 불확실성(RMS 반경) · 선은 1초 뒤 예상 위치(등속 가정, CPA/TTC 와 같은 전제)
       </figcaption>

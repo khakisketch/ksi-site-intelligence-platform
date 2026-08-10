@@ -78,7 +78,7 @@ export default async function AssetsPage({
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm text-neutral-600">
+        <p className="text-sm text-ink-2">
           결함 후보는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.
         </p>
         {missions.length === 0 ? (
@@ -93,10 +93,10 @@ export default async function AssetsPage({
               <li key={mission.missionId}>
                 <Link
                   href={`/assets?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="block rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50"
+                  className="block rounded-lg border border-line px-3 py-2 text-sm hover:bg-sunk"
                 >
                   <span className="font-medium">{mission.missionId}</span>
-                  <span className="ml-2 text-neutral-500">{mission.siteId}</span>
+                  <span className="ml-2 text-ink-muted">{mission.siteId}</span>
                 </Link>
               </li>
             ))}
@@ -128,12 +128,12 @@ export default async function AssetsPage({
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-neutral-200 p-4">
+      <section className="rounded-lg border border-line p-4">
         <h2 className="text-sm font-semibold">{view.missionId}</h2>
-        <p className="mt-1 text-sm text-neutral-600">
+        <p className="mt-1 text-sm text-ink-2">
           결함 후보 {view.candidateCount}건 · 사진 {view.sourceMediaIds.length}장
         </p>
-        <Link href="/assets" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+        <Link href="/assets" className="mt-2 inline-block text-sm text-accent-text hover:underline">
           다른 임무 선택
         </Link>
       </section>
@@ -144,10 +144,12 @@ export default async function AssetsPage({
             <Link
               key={id}
               href={`/assets?missionId=${encodeURIComponent(view.missionId)}&mediaId=${encodeURIComponent(id)}`}
-              className={`rounded-full border px-3 py-1 text-xs ${
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                // 선택 상태 = 액센트(무채색). 안전 상태색을 쓰지 않는다 —
+                // 이 칩은 "지금 보고 있는 사진"이지 위험도가 아니다.
                 id === selectedMediaId
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 hover:bg-neutral-50"
+                  ? "border-accent bg-accent text-accent-on"
+                  : "border-line-strong hover:bg-sunk"
               }`}
             >
               {id}
@@ -173,7 +175,7 @@ export default async function AssetsPage({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-left text-sm">
-            <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500">
+            <thead className="border-b border-line text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-3 py-2">후보 ID</th>
                 <th className="px-3 py-2">사진</th>
@@ -187,7 +189,7 @@ export default async function AssetsPage({
               {view.candidates.map(({ candidate }) => (
                 <tr
                   key={candidate.defectCandidateId}
-                  className="border-b border-neutral-100"
+                  className="border-b border-line"
                 >
                   <td className="px-3 py-2 font-mono text-xs">{candidate.defectCandidateId}</td>
                   <td className="px-3 py-2">{candidate.sourceMediaId}</td>

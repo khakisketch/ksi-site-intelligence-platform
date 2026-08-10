@@ -63,7 +63,7 @@ export default async function WorldPage({
   if (!siteId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm text-neutral-600">
+        <p className="text-sm text-ink-2">
           장비·작업자 상태는 현장 단위로 쌓입니다. 현장을 고르세요.
         </p>
         {sites.length === 0 ? (
@@ -77,10 +77,10 @@ export default async function WorldPage({
               <li key={site.siteId}>
                 <Link
                   href={`/world?siteId=${encodeURIComponent(site.siteId)}`}
-                  className="block rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50"
+                  className="block rounded-lg border border-line px-3 py-2 text-sm hover:bg-sunk"
                 >
                   <span className="font-medium">{site.name}</span>
-                  <span className="ml-2 text-neutral-500">{site.siteId}</span>
+                  <span className="ml-2 text-ink-muted">{site.siteId}</span>
                 </Link>
               </li>
             ))}
@@ -104,12 +104,12 @@ export default async function WorldPage({
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-neutral-200 p-4">
+      <section className="rounded-lg border border-line p-4">
         <h2 className="text-sm font-semibold">{view.siteId}</h2>
-        <p className="mt-1 text-sm text-neutral-600">
+        <p className="mt-1 text-sm text-ink-2">
           추적 중인 개체 {view.entityCount}건 (개체별 최신 관측)
         </p>
-        <Link href="/world" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+        <Link href="/world" className="mt-2 inline-block text-sm text-accent-text hover:underline">
           다른 현장 선택
         </Link>
       </section>
@@ -124,7 +124,7 @@ export default async function WorldPage({
           <SitePlanView entities={view.entities} />
           <div className="overflow-x-auto">
           <table className="w-full min-w-[42rem] text-left text-sm">
-            <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500">
+            <thead className="border-b border-line text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-3 py-2">개체</th>
                 <th className="px-3 py-2">종류</th>
@@ -138,7 +138,7 @@ export default async function WorldPage({
               {view.entities.map(({ state, positionUncertaintyM }) => (
                 <tr
                   key={state.entityId}
-                  className="border-b border-neutral-100"
+                  className="border-b border-line"
                 >
                   <td className="px-3 py-2 font-medium">{state.entityId}</td>
                   <td className="px-3 py-2">{state.sourceClass}</td>
@@ -147,7 +147,7 @@ export default async function WorldPage({
                   </td>
                   <td className="px-3 py-2">{formatUncertainty(positionUncertaintyM)}</td>
                   <td className="px-3 py-2">{speedOf(state.velocity).toFixed(2)} m/s</td>
-                  <td className="px-3 py-2 text-neutral-600">
+                  <td className="px-3 py-2 text-ink-2">
                     {state.observedAt}
                   </td>
                 </tr>
