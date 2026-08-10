@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-10T17:22:51+09:00",
+  "updated_at": "2026-08-11T03:09:56+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1287,10 +1287,16 @@
         "제출 후 /reports?missionId=...에서 EmptyState가 아니라 실제 변화 요약·체적·(있으면)정사영상이 렌더된다(390/768/1440 확인)",
         "실 Core+실 NodeODM으로 같은 현장 두 번 재구성한 뒤 이 UI로 제출해 위 결과가 실기동으로 확인된다"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "실기동 3개 기준 전부 실증. (1) MISSION_MISMATCH 결함 발견+수정: comparison-submit.ts currentMissionEpochs() 추가, ComparisonSubmitPanel.tsx '비교 시점(이후)' 드롭다운을 이 임무 소속으로 제한 — 수정 전에는 다른 임무 job을 current로 골라 구역까지 확정한 뒤 제출해야 서버 422(MISSION_MISMATCH)를 raw 텍스트로 받는 막다른 경로가 실재했음(실제로 재현). (2) 성공 위장 차단: comparison_worker.py — 변화탐지·부피 둘 다 스킵되면 SUCCEEDED 대신 FAILED로 보고하도록 수정 + 회귀 테스트 tests/contract/test_comparison_worker.py::test_neither_input_ready_reports_failed_not_empty_success 추가. (3) 실 인프라 e2e: 로컬 Core(8010)+실 NodeODM+MinIO로 site-m2-e2e-bellus 등록, odm_data_bellus(122장, GPS 태그 있음, Ohio Bellus)를 홀짝 61/61장으로 나눠 mission-m2-e2e-epoch-a/b 두 임무 발급→업로드→봉인→재구성 발행, 워커가 실제 ODM 완주(각 ~9분)해 7개 산출물(point_cloud/dsm/dtm/mesh/ortho/report/camera_poses) 등록 확인. 대시보드 UI(mission-m2-e2e-epoch-b 페이지)에서 baseline=epoch-a/current=epoch-b 선택 + AOI 구역(현장 실 GPS 경계) 확정 + 제출 → 워커가 변화탐지(6,001,513/6,001,543 후보) + 체적(순변화 -13,972,214.8 m³, 절대 오차한계는 GCP 부재로 미산출 — 상대비교임을 화면에 명시)을 계산·제출·SUCCEEDED 확인. /reports?missionId=mission-m2-e2e-epoch-b 를 390/768/1440 폭에서 렌더 확인 — 변화 요약·구역별 토공 변화·정사영상(로딩 후 실제 Ohio 위치로 정확히 fit)·'이번 계산에 쓴 기준' 4곳 전부 실제 값으로 렌더, 제출 화면과 결과 화면의 기준값(0.05m/5.0%/comparison-policy-v1) 일치 확인. 증거 원장: .dev-data/core-m2-e2e/{comparison-requests,change-detection,volume-changes}.jsonl. 테스트: 계약 193 passed / change-detection서비스 15 passed / 대시보드 vitest 127 passed(회귀 currentMissionEpochs 2건 포함), ruff/eslint/tsc 전부 clean. 부가로 code-review 워크플로(high)가 이 브랜치에서 결함 7건 추가 발견(reports 페이지가 임무의 최신 비교요청을 항상 참조해 여러 번 비교 시 기준값 패널이 실제 렌더된 결과와 어긋날 수 있음 등) — 완료기준 3개를 막지는 않아 이번 게이트 범위 밖으로 두고 별도 처리 대상으로 남김.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료기준 3개 전부 실기동 증거로 충족. 실기동 중 발견한 MISSION_MISMATCH 결함(currentJobId가 요청 경로 임무 소속이어야 하는 서버 제약을 화면이 몰랐음)을 comparison-submit.ts currentMissionEpochs() + ComparisonSubmitPanel.tsx 드롭다운 제한으로 수정. comparison_worker.py의 '계산 안 했는데 SUCCEEDED' 경로(INV-040 위반)도 FAILED로 차단 + 회귀 테스트 추가. 부가 code-review(high) 발견 결함 7건은 ReportFindings로 이미 보고됨 — 이번 시나리오(임무당 비교 1건)에서 발현 안 하는 것을 reviewer가 확인해 게이트 범위 밖으로 유지, 별도 후속 처리 대상.",
+        "at": "2026-08-11T03:09:56+09:00",
+        "reviewer": "reviewer subagent (독립 read-only, 원장·diff·테스트 로직 직접 대조, 반증 시도 실패)",
+        "evidence_ref": ".dev-data/core-m2-e2e/{comparison-requests,change-detection,volume-changes,processing-jobs}.jsonl + requestId mission-m2-e2e-epoch-b-cmp1"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
@@ -1298,7 +1304,7 @@
       "kind": "product",
       "verification_requested": "standard",
       "created_at": "2026-08-10T02:41:04+09:00",
-      "updated_at": "2026-08-10T17:22:51+09:00"
+      "updated_at": "2026-08-11T03:09:56+09:00"
     },
     {
       "id": "m3-processing-worker-runtime",
