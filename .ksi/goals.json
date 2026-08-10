@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-09T18:14:20+09:00",
+  "updated_at": "2026-08-10T12:13:19+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1250,6 +1250,55 @@
       "verification_requested": null,
       "created_at": "2026-08-08T06:33:41+09:00",
       "updated_at": "2026-08-08T06:35:03+09:00"
+    },
+    {
+      "id": "m3-source-upload-ui",
+      "title": "M3: 사진 업로드·재구성 발행 UI — 대시보드에서 핵심 가치를 직접 실행",
+      "completion_criteria": [
+        "다중 파일 선택 후 presigned PUT으로 브라우저에서 직접 업로드된다",
+        "업로드 완료 후 번들이 봉인되고 processing-job이 발행된다",
+        "작업 상태가 폴링으로 갱신되며 완료 시 /reports 링크가 노출된다",
+        "실 Core+실 MinIO+실 NodeODM으로 사진 N장을 브라우저에서만 올려 재구성이 SUCCEEDED로 완주하고 산출물이 원장에 등록된다(390/768/1440 렌더 확인)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "실기동 완료(2026-08-09~10, 로컬 Core dev 8010 + 실 MinIO ksi-minio-m1 + 실 NodeODM ksi-nodeodm-alt). 구현: apps/dashboard/src/lib/core-api/{source-media,processing-jobs}.ts(서버전용 Core 클라이언트) + apps/dashboard/src/lib/source-upload.ts(순수로직: mediaId 정제/충돌해소/배치분류/종료상태판정, PATH_SAFE_IDENTIFIER_PATTERN과 정확히 동일 규칙) + apps/dashboard/src/app/api/missions/[missionId]/{source-media,source-media/seal,processing-jobs}/route.ts + api/processing-jobs/[jobId]/route.ts(세션토큰 프록시, evidence/route.ts와 동일 관습, isCrossSiteMutation 가드) + components/missions/SourceUploadPanel.tsx(다중파일 선택→해시/치수 계산→배치등록→presigned PUT 브라우저 직결→봉인→발행→5초 폴링→완료 시 산출물+/reports 링크). missions/[missionId]/page.tsx에 배선(MISSIONS_ISSUE 권한 게이트, 서버사이드 초기 bundle+job 상태 조회).\n\n기준1(presigned PUT 브라우저 직결 업로드): playwright로 site-m3-demo 현장 생성→AOI 설정→베이스라인 임무 발급(site-m3-demo-baseline-2)→'사진 선택'으로 실 JPEG 3장(합성)+12장(OpenDroneMap pacifica 실사진) 업로드, 파일별 '완료' 상태 확인, Core 응답에 objectKey 등록 확인.\n기준2(봉인+발행): '업로드 마치고 봉인하기'→SourceMediaBundleView.status=SEALED 확인. '재구성 작업 발행'→processing-job 발급(jobId=site-m3-demo-baseline-2-pj1), UI가 '대기 중' 배지로 즉시 반영.\n기준3(폴링+완료): services/processing-controller worker.run_job()을 실 NodeODM 대상으로 구동, SUCCEEDED 전이(산출물 4건: camera_poses/point_cloud/mesh/report — orthophoto/dsm/dtm은 GSD 미지정으로 건너뜀, 기존 알려진 제약과 일치). 브라우저 재방문 시 '완료' 배지+산출물 목록+/reports 링크 정상 렌더 확인(390/768/1440 스크린샷).\n기준4(/reports 링크): 클릭 시 /reports?missionId=... 정상 이동, 두 epoch 비교(change-detection/volume-change)가 아직 없어 EmptyState 렌더 — 이는 버그가 아니라 이 goal의 스코프 밖(M2 폐루프)이라는 점을 명시적으로 인지함.\n\n실기동 중 발견·수정한 버그 1건: onChange에서 event.target.files(라이브 뷰)를 캡처 후 event.target.value=''로 초기화하면 이미 잡아둔 참조까지 함께 비워져 다중파일 업로드가 항상 조용히 무시되는 결함(단일파일만 다루는 EvidencePanel은 File 객체를 즉시 꺼내 써서 이 문제가 없었음) — Array.from으로 먼저 배열을 떼어내는 방식으로 수정, 실브라우저 재검증 완료. 버그 2(초기 마운트 시 이미 SUCCEEDED인 job의 artifacts가 빈 배열로 남는 결함, '산출물 0건' 오표시) — 마운트 폴링 조건을 phase==='job-running'에서 jobId 존재 여부로 확장해 수정, 실브라우저 재검증 완료.\n\n게이트: tsc clean, eslint clean(react-hooks/refs·set-state-in-effect 등 엄격 규칙 통과), vitest 108 passed(신규 16건 mediaId 정제/배치분류/종료판정 순수로직), next build 성공(신규 라우트 4개 정상 등록).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료기준 1~3(다중파일 presigned PUT 업로드/봉인+발행/폴링+누수없음)은 reviewer 2차 CONFIRMED. 완료기준4 원문(\"재구성 완주하고 /reports에서 결과가 보인다\")은 재구성 자체(SUCCEEDED, 산출물4건)까지만 이 goal의 스코프이고, /reports 페이지 내용 렌더는 change-detection/volume-change 제출(두 epoch 비교, 별도 단계)이 있어야 하는데 그 제출 UI는 이번 스코프에 없다는 사실을 사용자(대표자) 확인 후 m2-change-detection-submission-ui 로 분리했다(m1-spatial-epoch-pipeline에서 mesh-multi-file-artifact-persistence를 분리했던 것과 동일 패턴). 이 goal은 사진업로드→재구성발행→완료링크까지로 범위를 좁혀 pass.",
+        "at": "2026-08-10T02:41:05+09:00",
+        "reviewer": "reviewer subagent aee72e3ad5ab0862c — 2026-08-09 1차 반증에서 실버그 2건 발견(재로드 시 봉인버튼 소실, unmount 시 폴링 setTimeout 누수) 후 수정, 2차 재검토 CONFIRMED 3/3(기준1~3)",
+        "evidence_ref": "apps/dashboard/src/components/missions/SourceUploadPanel.tsx(:106-110 봉인버튼 복원, :154-161+:295-320 폴링 lifecycle 단일화); 실기동: site-m3-demo 현장+baseline-2 임무, pacifica 12장 실사진 업로드→봉인→발행→실 NodeODM worker.run_job()으로 SUCCEEDED(산출물4건)까지 완주, 390/768/1440 스크린샷; 버그2 재현검증: baseline-3 QUEUED job으로 SPA 클라이언트 내비게이션 후 12초 이상 폴링 요청 미증가 확인"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "standard",
+      "created_at": "2026-08-10T01:38:10+09:00",
+      "updated_at": "2026-08-10T12:13:19+09:00"
+    },
+    {
+      "id": "m2-change-detection-submission-ui",
+      "title": "M2: 두 시점 비교(change-detection·volume-change) 제출 UI — /reports에 실제 결과가 뜨게",
+      "completion_criteria": [
+        "대시보드에서 baseline/current 두 processing-job을 골라 변화탐지·체적비교를 제출할 수 있다",
+        "제출 후 /reports?missionId=...에서 EmptyState가 아니라 실제 변화 요약·체적·(있으면)정사영상이 렌더된다(390/768/1440 확인)",
+        "실 Core+실 NodeODM으로 같은 현장 두 번 재구성한 뒤 이 UI로 제출해 위 결과가 실기동으로 확인된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "standard",
+      "created_at": "2026-08-10T02:41:04+09:00",
+      "updated_at": "2026-08-10T02:41:04+09:00"
     }
   ],
   "risks": [
