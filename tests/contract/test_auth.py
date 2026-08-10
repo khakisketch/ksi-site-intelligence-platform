@@ -9,6 +9,7 @@ edge_sync.py 류의 "무인증 표면은 존재할 수 없다" fail-closed 배�
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import Depends, FastAPI
@@ -22,6 +23,7 @@ from ksi_core.auth import (
     PrincipalKind,
     PrincipalTokenRecord,
     Role,
+    TokenStatus,
     build_auth_router,
     mount_auth,
     principal_permissions,
@@ -185,7 +187,9 @@ def test_rejects_duplicate_digest() -> None:
         )
 
 
-def test_rejects_duplicate_principal_id() -> None:
+def test_rejects_conflicting_principal_id() -> None:
+    """같은 ``principal_id`` 가 서로 다른 신원(role 이 다름)으로 등록되면 거부한다 —
+    회전이 아니라 설정 오사고다(모듈 docstring "토큰 만료·회전" 절)."""
     with pytest.raises(AuthRegistryError):
         AuthRegistry(
             [
@@ -193,10 +197,29 @@ def test_rejects_duplicate_principal_id() -> None:
                     token_sha256=_digest("t1"), principal=_operator_principal(Role.VIEWER, "dup")
                 ),
                 PrincipalTokenRecord(
-                    token_sha256=_digest("t2"), principal=_operator_principal(Role.VIEWER, "dup")
+                    token_sha256=_digest("t2"), principal=_operator_principal(Role.ADMIN, "dup")
                 ),
             ]
         )
+
+
+def test_allows_same_principal_id_with_identical_identity_for_rotation() -> None:
+    """[핵심] 같은 ``principal_id`` 가 신원이 완전히 같은 채로 서로 다른 digest 두
+    개에 등록되는 것은 회전 중 겹침 구간의 정상 형태다 — 거부하지 않는다."""
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("new-token"),
+                principal=_operator_principal(Role.ADMIN, "rotating"),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest("old-token"),
+                principal=_operator_principal(Role.ADMIN, "rotating"),
+            ),
+        ]
+    )
+    assert registry.resolve("new-token") is not None
+    assert registry.resolve("old-token") is not None
 
 
 def test_rejects_empty_principal_id() -> None:
@@ -226,6 +249,62 @@ def test_resolve_known_token_returns_principal() -> None:
     principal = registry.resolve(_OPERATOR_TOKEN)
     assert principal is not None
     assert principal.principal_id == "viewer-1"
+
+
+def test_rejects_naive_not_after() -> None:
+    with pytest.raises(AuthRegistryError):
+        AuthRegistry(
+            [
+                PrincipalTokenRecord(
+                    token_sha256=_digest("t1"),
+                    principal=_operator_principal(),
+                    not_after=datetime(2026, 1, 1),  # naive — tz 없음
+                )
+            ]
+        )
+
+
+def test_resolve_returns_none_for_revoked_token() -> None:
+    """[핵심] ``status=REVOKED`` 토큰은 만료 여부와 무관하게 즉시 거부된다 —
+    폐기는 발급 중단이 아니라 검증 거부다(signing_keys.py 와 같은 의미)."""
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("leaked"),
+                principal=_operator_principal(),
+                status=TokenStatus.REVOKED,
+            )
+        ]
+    )
+    assert registry.resolve("leaked") is None
+
+
+def test_resolve_returns_none_after_not_after_passes() -> None:
+    """[핵심] ``not_after`` 이전에는 유효, 이후에는 거부 — 만료가 시각 기준으로
+    실제로 갈린다(회전 유예기간의 핵심 성질)."""
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("expiring"),
+                principal=_operator_principal(),
+                not_after=datetime(2026, 6, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    before = datetime(2026, 5, 31, tzinfo=UTC)
+    after = datetime(2026, 6, 2, tzinfo=UTC)
+    assert registry.resolve("expiring", now=before) is not None
+    assert registry.resolve("expiring", now=after) is None
+
+
+def test_resolve_without_not_after_never_expires() -> None:
+    """``not_after`` 를 안 주면(기존 배포 형식) 언제 조회해도 유효 — 회전을 안 쓰는
+    배포는 지금까지와 완전히 동일하게 동작한다(하위호환)."""
+    registry = AuthRegistry(
+        [PrincipalTokenRecord(token_sha256=_digest("forever"), principal=_operator_principal())]
+    )
+    far_future = datetime(2099, 1, 1, tzinfo=UTC)
+    assert registry.resolve("forever", now=far_future) is not None
 
 
 # ── principal_permissions 표 정합 ────────────────────────────────────────
@@ -412,16 +491,80 @@ def test_401_when_token_unknown() -> None:
     assert response.headers["www-authenticate"] == "Bearer"
 
 
+def test_401_when_token_expired() -> None:
+    """[핵심] 만료된 토큰이 실제 HTTP 경계에서 401 로 거부된다(수용기준 1) — 과거
+    ``not_after`` 를 줘서 ``datetime.now(UTC)`` 가 항상 그 뒤이게 만든다(시각
+    모킹 불필요)."""
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("expired-token"),
+                principal=_operator_principal(role=Role.ADMIN, principal_id="expired-1"),
+                not_after=datetime(2020, 1, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    app = _app_with_protected_route(registry)
+    client = TestClient(app)
+
+    response = client.get(
+        "/v1/sites/_protected", headers={"Authorization": "Bearer expired-token"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_401_when_token_revoked() -> None:
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("revoked-token"),
+                principal=_operator_principal(role=Role.ADMIN, principal_id="revoked-1"),
+                status=TokenStatus.REVOKED,
+            )
+        ]
+    )
+    app = _app_with_protected_route(registry)
+    client = TestClient(app)
+
+    response = client.get(
+        "/v1/sites/_protected", headers={"Authorization": "Bearer revoked-token"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
 def test_401_detail_does_not_hint_token_existence() -> None:
-    """세 401 분기가 동일한 일반 문구 — detail 로 토큰 존재 여부를 유추할 수 없다."""
+    """네 401 분기가 동일한 일반 문구 — detail 로 토큰 존재 여부·만료 여부를
+    유추할 수 없다."""
+    expired_registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("expired-for-detail"),
+                principal=_operator_principal(role=Role.ADMIN, principal_id="expired-detail-1"),
+                not_after=datetime(2020, 1, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    expired_client = TestClient(_app_with_protected_route(expired_registry))
     app = _app_with_protected_route(_registry())
     client = TestClient(app)
 
     missing = client.get("/v1/sites/_protected")
     malformed = client.get("/v1/sites/_protected", headers={"Authorization": "Basic xyz"})
     unknown = client.get("/v1/sites/_protected", headers={"Authorization": "Bearer bogus"})
+    expired = expired_client.get(
+        "/v1/sites/_protected", headers={"Authorization": "Bearer expired-for-detail"}
+    )
 
-    assert missing.json()["detail"] == malformed.json()["detail"] == unknown.json()["detail"]
+    assert (
+        missing.json()["detail"]
+        == malformed.json()["detail"]
+        == unknown.json()["detail"]
+        == expired.json()["detail"]
+    )
 
 
 def test_bearer_scheme_case_insensitive() -> None:

@@ -32,11 +32,28 @@ JWT/OAuth·사용자 관리 API 는 도입하지 않는다(외부 IdP 없는 파
 
 - 레지스트리 조립 시 불변식 위반은 :class:`AuthRegistryError` 로 **즉시** 거부한다
   (오염된 레지스트리로 기동하지 않는다).
-- 인증 실패(부재/형식오류/미지 토큰)는 사유를 가리지 않고 **동일한 일반 문구**의
-  401 을 반환한다 — detail 로 "토큰이 존재하지만 형식이 틀렸다" 같은 힌트를 주면
-  토큰 존재 여부를 추정할 수 있는 열거 오라클이 된다(edge_sync.py 감사 #8 관습).
+- 인증 실패(부재/형식오류/미지 토큰/만료/폐기)는 사유를 가리지 않고 **동일한
+  일반 문구**의 401 을 반환한다 — detail 로 "토큰이 존재하지만 만료됐다" 같은
+  힌트를 주면 토큰 존재 여부를 추정할 수 있는 열거 오라클이 된다(edge_sync.py
+  감사 #8 관습).
 - 보호 라우트가 ``app.state.auth_registry`` 없이 장착되면 그 자체가 조립 결함이다
   — 조용히 인증을 우회시키지 않고 :class:`RuntimeError` 로 즉시 드러낸다.
+
+## 토큰 만료·회전 — 서명키 회전과 같은 모양(``signing_keys.py`` 참조)
+
+digest 하나가 아니라 ``(digest, status, not_after)`` **레코드 세트**를 받는다 —
+회전이 성립하려면 새로 발급한 토큰과, 아직 기기·운영자 손에 남아 있는 이전
+토큰이 **겹치는 구간** 동안 함께 유효해야 한다(서명키의 ``ACTIVE`` + 유예기간
+``notAfter`` 와 동일한 이유). 그래서 같은 ``principal_id`` 에 대해 서로 다른
+digest 여러 개가 동시에 등록될 수 있다 — 단, 가리키는 신원(kind/role/device_id)
+이 완전히 같을 때만이다. 신원이 다른데 ``principal_id`` 만 같으면 설정 오사고
+(오타로 다른 사람을 같은 id 로 재등록)로 보고 거부한다.
+
+``resolve()`` 는 조회 시점(``now``)에 다음 순서로 판정한다: 미지 digest → 401,
+``status=REVOKED`` → 401, ``not_after`` 가 지났으면 → 401(둘 다 "만료됐다"는
+힌트 없이 동일 401 문구로 접힌다). 폐기는 :class:`KeyRegistry` 와 같은 이유로
+단조 방향이다 — 이 모듈 자체에는 되돌리는 API 를 두지 않는다(회전 절차 문서:
+``docs/security/AUTH_TOKEN_ROTATION.md``).
 """
 
 from __future__ import annotations
@@ -45,6 +62,7 @@ import hashlib
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -78,6 +96,17 @@ class PrincipalKind(StrEnum):
     OPERATOR = "OPERATOR"
     EDGE_DEVICE = "EDGE_DEVICE"
     PROCESSING_WORKER = "PROCESSING_WORKER"
+
+
+class TokenStatus(StrEnum):
+    """토큰 레코드 상태(``ksi_mission_contracts.signing.KeyStatus`` 와 같은 모양).
+
+    ``REVOKED`` 는 발급 중단이 아니라 검증 거부다 — 이미 배포된 토큰을 무효로
+    만드는 유일한 장치(모듈 docstring "토큰 만료·회전" 절 참조).
+    """
+
+    ACTIVE = "ACTIVE"
+    REVOKED = "REVOKED"
 
 
 class Permission(StrEnum):
@@ -122,10 +151,18 @@ class Principal:
 
 @dataclass(frozen=True, slots=True)
 class PrincipalTokenRecord:
-    """조립 시 주입되는 (digest, Principal) 레코드 — 토큰 원문은 여기 없다."""
+    """조립 시 주입되는 (digest, Principal, 상태) 레코드 — 토큰 원문은 여기 없다.
+
+    ``status``/``not_after`` 기본값은 "만료·회전 없는 고정 토큰" — 기존 배포
+    형식과 완전히 호환된다. 회전 중에는 같은 ``principal_id`` 에 대해 이전
+    digest(``not_after`` 로 유예기간 종료 예정) + 새 digest(``not_after=None``)
+    두 레코드가 동시에 존재한다(모듈 docstring "토큰 만료·회전" 절).
+    """
 
     token_sha256: str
     principal: Principal
+    status: TokenStatus = TokenStatus.ACTIVE
+    not_after: datetime | None = None
 
 
 class AuthRegistryError(ValueError):
@@ -143,6 +180,12 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
         raise AuthRegistryError(
             f"token_sha256 은 소문자 64자리 hex 여야 한다 (got {record.token_sha256!r}) — "
             "원문 토큰·대문자·경로 형태는 거부된다"
+        )
+    if record.not_after is not None and record.not_after.tzinfo is None:
+        # naive datetime 은 resolve() 의 만료 비교에서 TypeError 를 유발해
+        # fail-closed 보장을 깬다(signing_keys.py 의 같은 검증과 동일 이유).
+        raise AuthRegistryError(
+            f"{record.principal.principal_id}: not_after 는 tz-aware(UTC) 여야 한다"
         )
 
     principal = record.principal
@@ -188,25 +231,50 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
 
 
 class AuthRegistry:
-    """sha256(token) digest → Principal 매핑. 토큰 원문은 보유하지 않는다."""
+    """sha256(token) digest → (Principal, 상태) 매핑. 토큰 원문은 보유하지 않는다.
+
+    같은 ``principal_id`` 가 여러 digest 로 등록될 수 있다 — **단 가리키는
+    신원(``Principal`` 전체)이 완전히 같을 때만이다.** 그게 회전 중 겹침
+    구간의 정상 형태다(모듈 docstring). 신원이 다른데 id 만 같으면 설정
+    오사고로 보고 거부한다 — 그렇지 않으면 같은 id 아래 서로 다른 권한이
+    조용히 뒤섞인다.
+    """
 
     def __init__(self, records: Iterable[PrincipalTokenRecord]) -> None:
-        by_digest: dict[str, Principal] = {}
-        seen_principal_ids: set[str] = set()
+        by_digest: dict[str, PrincipalTokenRecord] = {}
+        principal_by_id: dict[str, Principal] = {}
         for record in records:
             _validate_record(record)
             if record.token_sha256 in by_digest:
                 raise AuthRegistryError(f"token_sha256 중복: {record.token_sha256}")
-            if record.principal.principal_id in seen_principal_ids:
-                raise AuthRegistryError(f"principal_id 중복: {record.principal.principal_id}")
-            by_digest[record.token_sha256] = record.principal
-            seen_principal_ids.add(record.principal.principal_id)
+            principal_id = record.principal.principal_id
+            existing = principal_by_id.get(principal_id)
+            if existing is not None and existing != record.principal:
+                raise AuthRegistryError(
+                    f"principal_id {principal_id!r} 가 서로 다른 신원으로 중복 등록됐다 — "
+                    "같은 id 는 회전 중인 토큰이라도 kind/role/deviceId 가 완전히 같아야 한다"
+                )
+            by_digest[record.token_sha256] = record
+            principal_by_id[principal_id] = record.principal
         self._by_digest = by_digest
 
-    def resolve(self, token: str) -> Principal | None:
-        """제시된 토큰 원문의 sha256 digest 로 조회한다. 미지 토큰은 ``None``."""
+    def resolve(self, token: str, *, now: datetime | None = None) -> Principal | None:
+        """제시된 토큰 원문의 sha256 digest 로 조회한다.
+
+        미지 토큰·폐기된(``REVOKED``) 토큰·``not_after`` 가 지난 토큰은 전부
+        같은 ``None`` 이다 — 호출부(``_resolve_principal``)가 이를 사유 구분
+        없는 동일 401 로 접는다(열거 오라클 방지, 모듈 docstring).
+        """
         digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        return self._by_digest.get(digest)
+        record = self._by_digest.get(digest)
+        if record is None:
+            return None
+        if record.status is TokenStatus.REVOKED:
+            return None
+        check_time = now if now is not None else datetime.now(UTC)
+        if record.not_after is not None and check_time > record.not_after:
+            return None
+        return record.principal
 
 
 # role → permission 표 하나가 SSOT(ADR-KSI-008 §2, ADR-KSI-015 D1/D2) —
@@ -303,7 +371,7 @@ def _resolve_principal(request: Request) -> Principal:
     if not sep or scheme.lower() != "bearer" or not token:
         raise _unauthorized()
 
-    principal = registry.resolve(token)
+    principal = registry.resolve(token, now=datetime.now(UTC))
     if principal is None:
         raise _unauthorized()
     return principal
