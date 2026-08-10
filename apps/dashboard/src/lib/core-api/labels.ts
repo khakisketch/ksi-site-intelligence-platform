@@ -122,6 +122,12 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
     "실제 촬영 범위가 최소 기준(95%)에 못 미칩니다. 간격을 줄이거나 구역을 나눠 다시 시도하세요.",
   TAKEOFF_HEIGHT_BELOW_MINIMUM: "이륙 안전 고도가 너무 낮습니다(최소 1.2m).",
   TAKEOFF_HEIGHT_EXCEEDS_ENVELOPE: "이륙 안전 고도가 비행 고도 상한을 초과합니다.",
+  // 원본 사진 업로드 · 재구성 발행(M3, B1/B2) — source_media.py/processing_jobs.py verdict.
+  BUNDLE_SEALED: "이미 봉인된 번들입니다. 추가 사진을 올리려면 새 임무를 발급하세요.",
+  EMPTY_BUNDLE: "등록된 사진이 없어 봉인할 수 없습니다. 먼저 사진을 올리세요.",
+  BUNDLE_NOT_SEALED: "번들이 아직 봉인되지 않았습니다 — 업로드를 마치고 봉인한 뒤 다시 시도하세요.",
+  ACTIVE_JOB_EXISTS: "이미 처리 중인 작업이 있습니다. 완료 후 다시 시도하세요.",
+  EGRESS_NOT_ALLOWED: "이 현장은 데이터 반출이 허용되지 않아 벤더 클라우드 처리를 만들 수 없습니다.",
 };
 
 export function humanizeApiError(

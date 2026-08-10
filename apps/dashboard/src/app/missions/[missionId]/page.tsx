@@ -2,13 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { getCoverageReport, getMission } from "@/lib/core-api/missions";
+import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
+import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
+import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
+import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
 import {
   CoverageReportSection,
   type CoverageReportResult,
@@ -30,6 +35,24 @@ async function fetchCoverageResult(missionId: string): Promise<CoverageReportRes
     }
     throw error;
   }
+}
+
+/**
+ * /reports 가 실제로 내용을 보여줄지 — change-detection·volume-change 둘 다
+ * 두 시점 비교 제출(별도 스텝, M2 영역)이 있어야 채워진다. 404 는 "아직 없음"
+ * 이지 오류가 아니다(reports/page.tsx 의 fetchChange/fetchVolume 과 같은 규약).
+ * 이 판정을 다시 계산하지 않고 그대로 재사용한다 — 규칙이 두 곳에 생기면 갈린다.
+ */
+async function hasComparisonReport(missionId: string): Promise<boolean> {
+  const [change, volume] = await Promise.all([
+    getChangeDetection(missionId)
+      .then(() => true)
+      .catch(() => false),
+    getVolumeChanges(missionId)
+      .then((v) => v.reports.length > 0)
+      .catch(() => false),
+  ]);
+  return change || volume;
 }
 
 export default async function MissionDetailPage({
@@ -55,12 +78,24 @@ export default async function MissionDetailPage({
     throw error;
   }
 
-  // 현장 이름은 부가 정보다 — 조회가 실패해도 임무 상세 자체는 보여야 하므로
-  // 실패를 삼키고 raw siteId 로 내려간다.
-  const [site, coverageResult] = await Promise.all([
+  // 현장 이름·업로드 패널 초기 상태는 전부 부가 정보다 — 하나가 실패해도
+  // 임무 상세 자체(좌 패널)는 보여야 한다(getSite 와 같은 원칙).
+  const [site, coverageResult, canIssue, sourceBundle, jobs, hasComparison] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
     fetchCoverageResult(mission.missionId),
+    whoAmI()
+      .then((who) => who.permissions.includes("MISSIONS_ISSUE"))
+      .catch(() => false),
+    // 404(등록된 적 없음)와 그 외 조회 실패를 동일하게 "아직 없음"으로 다룬다 —
+    // 이 패널의 시작 상태는 어차피 업로드 UI를 그대로 보여주므로 구분할 필요가 없다.
+    getSourceMediaBundle(mission.missionId).catch(() => null),
+    listProcessingJobs(mission.missionId)
+      .then((r) => r.jobs)
+      .catch(() => []),
+    hasComparisonReport(mission.missionId),
   ]);
+  // 최신 발급분 — 발급 순서가 곧 배열 순서라는 서버 계약은 없으므로 issuedAt 로 정렬한다.
+  const latestJob = [...jobs].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0] ?? null;
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
@@ -133,6 +168,14 @@ export default async function MissionDetailPage({
         <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">비행 결과</h3>
         <CoverageReportSection result={coverageResult} />
       </section>
+
+      <SourceUploadPanel
+        missionId={mission.missionId}
+        canIssue={canIssue}
+        initialBundle={sourceBundle}
+        initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
+        hasComparisonReport={hasComparison}
+      />
     </div>
   );
 }

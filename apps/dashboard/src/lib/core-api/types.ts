@@ -581,3 +581,79 @@ export interface SourceMediaViewResponse {
   height: number;
   sha256: string;
 }
+
+// ── 원본 사진 업로드 · 재구성 발행 (M3, B1/B2) ──────────────────────────────
+//
+// 파일 바이트는 대시보드 서버를 거치지 않는다 — presigned uploadUrl 로 브라우저가
+// 스토리지에 직접 PUT 한다(EvidencePanel 과 동일 원칙, ADR-KSI-010 §1).
+
+export interface SourceMediaFileClaim {
+  mediaId: string;
+  sha256: string;
+  bytes: number;
+  width: number;
+  height: number;
+  contentType: string;
+}
+
+export interface SourceMediaItemResultView {
+  mediaId: string;
+  verdict: string;
+  objectKey: string | null;
+  uploadUrl: string | null;
+  expiresAt: string | null;
+  detail: string | null;
+}
+
+export interface SourceMediaBatchResponse {
+  verdict: string;
+  detail: string | null;
+  results: SourceMediaItemResultView[];
+}
+
+export type SourceMediaBundleStatus = "OPEN" | "SEALED";
+
+export interface SourceMediaBundleView {
+  missionId: string;
+  status: SourceMediaBundleStatus;
+  mediaCount: number;
+  sourceBundleDigest: string | null;
+  sealedAt: string | null;
+  /** null 이면 아직 아무도 안 쟀다 — "검증 실패"와 다르다(모듈 docstring). */
+  verifiedAt: string | null;
+  lastMismatchAt: string | null;
+}
+
+export interface SourceMediaSealResponse {
+  verdict: string;
+  detail: string | null;
+  bundle: SourceMediaBundleView | null;
+}
+
+/** POST /v1/missions/{missionId}/processing-jobs 요청 — 무엇으로 어디서 돌릴지만. */
+export interface ProcessingJobIssueInput {
+  provider: "odm";
+  engineVersion: string;
+  engineDigest: string;
+  executionLocus: string;
+  licenseBasis: { licenseId: string; tier: string; attributionRequired: boolean };
+  processingParams: Record<string, unknown>;
+}
+
+/** 발급/조회 응답의 job 필드 — 화면이 쓰는 필드만 좁혀 선언한다(ProcessingJobView 전체 아님). */
+export interface ProcessingJobSummary {
+  jobId: string;
+  status: string;
+  issuedAt: string;
+  detail: string | null;
+}
+
+export interface ProcessingJobMutationResponse {
+  verdict: string;
+  detail: string | null;
+  job: ProcessingJobSummary | null;
+}
+
+export interface ProcessingJobListSummary {
+  jobs: ProcessingJobSummary[];
+}
