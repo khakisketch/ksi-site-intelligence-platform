@@ -35,6 +35,7 @@ from ksi_processing_controller.core_client import (
     JobInput,
     JobInputMedia,
     MeasuredImage,
+    PendingJob,
 )
 from ksi_processing_controller.odm import (
     OdmEngineInfo,
@@ -91,6 +92,13 @@ class FakeCoreClient:
     lease_calls: int = 0
     fail_on: str | None = None  # "verify" | "artifact:<id>" | "transition:<target>"
     _job_status: str = "QUEUED"
+
+    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
+        """이 파일의 시험 대상은 ``run_job(job_id, ...)`` 직접 호출이라 대기
+        목록을 쓰지 않는다 — ``CoreClient`` Protocol 을 구조적으로 만족시키기
+        위한 최소 구현(호출 시 실제 값이 필요한 시험은 test_runner.py 가 한다)."""
+        del limit
+        return []
 
     def acquire_lease(self, job_id: str) -> None:
         self.lease_calls += 1

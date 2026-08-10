@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-10T12:13:19+09:00",
+  "updated_at": "2026-08-10T16:07:19+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1299,6 +1299,63 @@
       "verification_requested": "standard",
       "created_at": "2026-08-10T02:41:04+09:00",
       "updated_at": "2026-08-10T02:41:04+09:00"
+    },
+    {
+      "id": "m3-processing-worker-runtime",
+      "title": "M3: 처리 워커 실행 경로 + 래스터 산출물(정사영상·DSM) 등록 — 발행 버튼이 실제 재구성으로 이어지게",
+      "completion_criteria": [
+        "실 Core+MinIO+NodeODM 에서 브라우저에서만 발행한 재구성 작업이 사람 개입 없이 SUCCEEDED 까지 완주한다",
+        "orthophoto/dsm/dtm 이 GSD 와 함께 등록되고 그 GSD 가 GeoTIFF 실제 픽셀 크기와 일치한다",
+        "GSD 를 못 읽으면 지어내지 않고 건너뛰며 그 사실이 로그에 남는다",
+        "워커가 컨테이너 이미지로 기동되고 필수 env 부재 시 무거운 부수효과 전에 즉시 거부한다",
+        "전체 pytest 회귀 없음"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "구현: (1) services/processing-controller/src/ksi_processing_controller/gsd.py 신설 — rasterio zip:// URI로 아카이브 안 GeoTIFF의 아핀 변환에서 직접 GSD를 읽는다(호출 8건 단위테스트, tests/contract/test_gsd.py 전부 pass). (2) worker.py의 run_job이 gsd_by_artifact=None(프로덕션 기본)일 때 resolve_gsd()를 자동 호출하도록 배선 — 명시값을 준 기존 테스트는 그대로(회귀 0). (3) services/core/src/ksi_core/processing_jobs.py에 ProcessingJobStore.list_pending()(QUEUED만, FIFO) + GET /v1/processing-jobs 신설(PROCESSING_WORK 전용, MISSIONS_READ 아님 — 최소권한). contracts/api/openapi-core.yaml 동기화(PendingProcessingJobView/ListResponse 스키마+경로). (4) core_client.py에 CoreClient.list_pending()/PendingJob 추가. (5) runner.py 신설 — run_pending_batch/run_forever(폴링 루프, lease 경합은 다음 후보로, Core 장애·개별작업실패는 프로세스를 죽이지 않음, SIGTERM/SIGINT는 폴링 경계에서만 확인) + main() CLI(fail-closed env 검증). services/processing-controller/pyproject.toml에 [project.scripts] ksi-processing-worker 등록. (6) Dockerfile.worker 신설(non-root uid 10002).\\n\\n단위/계약 테스트: 신규 27건 전부 pass(gsd 8·core_client list_pending 4·processing_jobs list_pending+HTTP 7·runner 8) + 전체 회귀 스위트 재실행 2289 passed·114 skipped·3 xfailed(기준선 2262 대비 +27, skip/xfail 불변) + ruff/mypy 전체 clean + repo-hygiene/reference-import 가드 clean + uv lock --check 통과.\\n\\n[실기동 — 4개 수용기준 전부] 실 Core(dev 조립, 실 서명키 아님·journal 실사용)+실 MinIO(ksi-minio-m1)+실 NodeODM(ksi-nodeodm-alt, ODM 3.5.6) 3자 결합. site-m3-demo-baseline-2 임무(실사진 12장, 이전 M3 goal이 이미 업로드해 둔 실 pacifica류 사진)의 봉인된 번들에 새 처리작업(site-m3-demo-baseline-2-pj2)을 API로 발급해 QUEUED로 만든 뒤, 브라우저/사람 개입 없이 uv run ksi-processing-worker 데몬만 띄웠다.\\n기준1(사람 개입 없이 SUCCEEDED 완주): 워커가 GET /v1/processing-jobs로 자동 발견→lease→RUNNING→12장 실측+검증→ODM 제출→heartbeat로 15분 lease를 10초마다 갱신하며 폴링→완주까지 전 과정 자동 수행, 4분 만에 SUCCEEDED(산출물 7건) 도달. 터미널에서 job_id를 손으로 넘긴 적 없음(발견부터 완주까지 전부 자동).\\n기준2(GSD와 함께 orthophoto/dsm/dtm 등록+실제 픽셀크기 일치): 3건 모두 gsd=0.1로 등록. 등록 후 MinIO에서 실제 GeoTIFF 바이트를 직접 내려받아 rasterio로 재확인 — 3건 전부 pixel size(0.1,0.1) 정확히 일치(독립 재검증, API 응답을 그대로 믿지 않음).\\n기준3(GSD 못 읽으면 건너뛰고 로그에 남음): test_gsd.py의 4개 네거티브 케이스(엔트리 없음·CRS 없음·손상파일·아카이브 자체 없음)로 고정, 전부 지어내지 않고 빈 결과+INFO/WARNING 로그.\\n기준4(컨테이너+fail-closed): docker build -f Dockerfile.worker 성공, docker run으로 uid=10002(non-root) 실측, 필수 env 없이 실행 시 RuntimeError로 exit 1 실측(KSI_WORKER_CORE_BASE_URL 등 4개 전부 확인 가능한 동일 경로).\\n\\n부수 관찰(설계대로 동작): 같은 배치에 있던 별도의 스테일 테스트 작업(site-m3-demo-baseline-3-pj1, 실바이트 없는 합성 클레임)은 다운로드 404로 실패했고, 워커는 죽지 않고 FAILED 보고 후 즉시 다음 후보로 넘어가 baseline-2-pj2를 정상 완주함 — '개별 작업 실패가 워커를 죽이지 않는다'는 설계가 실제로 검증됨.\\n\\n비범위로 남긴 것(계획서 W1 명시): 자동 재시도 정책, 다중 워커 스케일아웃, lease 만료로 방치된 RUNNING 작업의 재집기(W8), 전체 스택 오케스트레이션 파일(W4).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "메인 세션 직접 실기동(실 Core+실 MinIO ksi-minio-m1+실 NodeODM ksi-nodeodm-alt)으로 4개 수용기준 전부 재확인 — 발행된 QUEUED 작업을 워커 데몬이 자동 발견해 사람 개입 없이 SUCCEEDED까지 완주(산출물 4건→7건, orthophoto/dsm/dtm 신규 등록), 등록된 gsd=0.1을 MinIO에서 원본 GeoTIFF 바이트를 직접 내려받아 rasterio로 재계산해 독립 대조 일치 확인. 신규 27건 단위/계약테스트 + 전체 회귀 2289 passed(기준선 2262 대비 회귀 0) + ruff/mypy/hygiene/reference-guard 전체 clean. reviewer가 코드 구조 5개 핵심 지점(자동 GSD 배선·GSD 계산 로직·fail-closed 권한 게이트·non-root Dockerfile·GSD 실패 네거티브 테스트) 전부 독립 재확인.",
+        "at": "2026-08-10T14:32:32+09:00",
+        "reviewer": "reviewer subagent ace94f4b935108aab (2026-08-10, 5개 핵심 지점 CONFIRMED)",
+        "evidence_ref": "실기동: site-m3-demo-baseline-2-pj2 (issued 2026-08-10T05:18:42Z, SUCCEEDED 2026-08-10T05:22:16Z, 7 artifacts, gsd=0.1 x3 독립 rasterio 재검증); pytest 2289 passed·114 skipped·3 xfailed; tests/contract/test_gsd.py·test_runner.py(신규)·test_core_client.py·test_processing_jobs.py·test_worker.py(list_pending); docker build -f Dockerfile.worker 성공 + uid=10002 실측 + env없이 exit=1 실측"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-10T13:57:31+09:00",
+      "updated_at": "2026-08-10T14:32:32+09:00"
+    },
+    {
+      "id": "m3-worker-orphaned-lease-recovery",
+      "title": "워커 pull 표면이 lease 만료된 RUNNING 작업(죽은 워커)을 후보에서 누락 — 재구성 도중 크래시 시 그 임무의 재처리가 영구히 막히는 결함 수정",
+      "completion_criteria": [
+        "ProcessingJobStore.list_pending(now=...) 이 QUEUED 뿐 아니라 lease 가 만료된 RUNNING 도 후보로 돌려준다",
+        "활성 lease 를 쥔 RUNNING·종료 상태는 여전히 제외된다",
+        "후보로 나온 만료 lease 작업을 다른 worker_id 로 실제 acquire_lease 재시도 시 LEASED 로 성공한다(후보 목록과 실제 회수 가능성 일치)",
+        "회귀 없음"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "사용자 요청 검수 과정에서 발견: acquire_lease()는 원래 '죽은 워커의 작업은 별도 조치 없이 만료 후 회수된다'고 설계돼 있었으나(processing_jobs.py 클래스 docstring 103-107행), 새로 만든 워커 discovery 표면(list_pending)이 QUEUED만 후보로 좁혀놔서 그 회수 경로가 실제로는 아무도 트리거하지 않는 죽은 코드였다. 파일럿 운영 중 워커가 재구성 도중 죽으면(OOM/호스트재기동 등) 그 임무는 '임무당 활성 작업 1건' 게이트(issue()) 때문에 재처리 발급조차 영구히 막히는 심각도로 판단해 W1 범위에서 최소 보완.\\n\\n변경: (1) ProcessingJobStore.list_pending()에 now: datetime 필수 파라미터 추가, QUEUED와 함께 'lease가 만료된 RUNNING'도 후보에 포함(활성 lease를 쥔 RUNNING은 여전히 제외). (2) 라우터가 datetime.now(UTC)를 넘기도록 배선. (3) openapi-core.yaml summary/description 갱신. (4) core_client.py/runner.py 모듈 독스트링에 회수 동작 명시. (5) 기존 list_pending() 호출부(테스트) 전부 now= 인자 추가 — 신규 동작 없음, 시그니처만 명시화.\\n\\n검증: 신규 3건 테스트로 (a) 활성 lease RUNNING 제외 (b) 만료 lease RUNNING 포함+실제 재-acquire_lease로 LEASED 성공까지 확인(후보 목록과 실제 회수 가능성 어긋남 없음 직접 검증) (c) 종료 상태(FAILED)는 lease 만료 여부 무관 항상 제외. 회귀: 전체 pytest 재실행 2291 passed·114 skipped·3 xfailed(직전 기준선 2289 대비 net+2, 기존 1건 테스트를 3건으로 세분화). ruff/mypy 전체 clean, repo-hygiene/reference-import 가드 clean, uv lock --check 통과.\\n\\n범위 밖으로 남긴 것: 산출물 등록 도중(드문 창) 죽었을 경우 재시도가 DUPLICATE_ARTIFACT로 다시 FAILED될 수 있는 것 — 부분 성공 이어받기는 별도 결정 사안. Docker HEALTHCHECK/재시작 정책/폴링 backoff는 Core 자신도 갖고 있지 않은 동일한 성숙도 격차라 W1에서 신규 인프라를 만들지 않고 W3/W4로 명시적으로 남김(사용자 지시 '새로운 범용 인프라를 만들지 말라'와 일치).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "hardening/light — 사용자 지시로 reviewer 자동호출 생략. 메인 세션이 코드 직접 재확인(처음부터 다시 읽음) + 신규 3건 테스트 직접 실행 통과 + 전체 회귀 스위트 재실행(2291 passed, 회귀 0) + ruff/mypy/hygiene/reference-guard 전체 clean으로 완료기준 4개 전부 직접 대조.",
+        "at": "2026-08-10T16:07:19+09:00",
+        "reviewer": null,
+        "evidence_ref": "services/core/src/ksi_core/processing_jobs.py list_pending()(now 파라미터+RUNNING-만료 포함 로직); tests/contract/test_processing_jobs.py::test_store_list_pending_includes_running_jobs_with_expired_lease(만료 lease 재획득 LEASED 성공까지 직접 검증)·test_store_list_pending_excludes_running_jobs_with_active_lease·test_store_list_pending_excludes_terminal_jobs_regardless_of_lease; pytest 2291 passed·114 skipped·3 xfailed"
+      },
+      "invalidation_reason": null,
+      "parent": "m3-processing-worker-runtime",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": null,
+      "created_at": "2026-08-10T16:05:57+09:00",
+      "updated_at": "2026-08-10T16:07:19+09:00"
     }
   ],
   "risks": [

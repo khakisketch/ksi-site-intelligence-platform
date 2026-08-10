@@ -35,6 +35,18 @@ class CoreClientError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class PendingJob:
+    """워커가 다음에 잡을 후보 1건 — Core 의 ``PendingProcessingJobView`` 를 옮긴 것.
+
+    ``mission_id``·계약 내용이 없는 것이 의도다(``PROCESSING_WORK`` 는
+    ``MISSIONS_READ`` 를 포함하지 않는다 — Core 쪽 스키마 docstring 참조). lease 를
+    잡은 다음에야 :meth:`CoreClient.get_input` 이 전체 사양을 준다.
+    """
+
+    job_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class JobInputMedia:
     media_id: str
     download_url: str
@@ -102,6 +114,11 @@ class ArtifactUploadTarget:
 
 class CoreClient(Protocol):
     """워커가 필요로 하는 Core 표면. 이 이상을 워커가 알 필요는 없다."""
+
+    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
+        """``GET /v1/processing-jobs``. QUEUED + lease 만료된 RUNNING(죽은 워커가
+        쥐고 있던 작업), 오래된 것부터(FIFO)."""
+        ...
 
     def acquire_lease(self, job_id: str) -> None:
         """``POST /lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
@@ -178,6 +195,24 @@ class HttpCoreClient:
         if verdict not in accepted:
             raise CoreClientError(what=what, verdict=str(verdict), detail=payload.get("detail"))
         return payload
+
+    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
+        response = self._client.get(
+            f"{self._base_url}/v1/processing-jobs", params={"limit": limit}
+        )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise CoreClientError(
+                what="list-pending", verdict="NON_JSON_RESPONSE", detail=response.text[:200]
+            ) from exc
+        if response.status_code != 200:
+            raise CoreClientError(
+                what="list-pending",
+                verdict=f"HTTP_{response.status_code}",
+                detail=str(payload.get("detail")) if isinstance(payload, dict) else None,
+            )
+        return [PendingJob(job_id=item["jobId"]) for item in payload["jobs"]]
 
     def acquire_lease(self, job_id: str) -> None:
         self._post(
@@ -303,4 +338,5 @@ __all__ = [
     "JobInput",
     "JobInputMedia",
     "MeasuredImage",
+    "PendingJob",
 ]

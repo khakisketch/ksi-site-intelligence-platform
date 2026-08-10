@@ -141,7 +141,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.processing_artifact import (
     ArtifactAccuracy,
     ArtifactLineage,
@@ -1384,6 +1384,51 @@ class ProcessingJobStore:
             records = [r for r in self._jobs.values() if r.mission_id == mission_id]
         return sorted(records, key=lambda r: (r.issued_at, r.job_id))
 
+    def list_pending(self, *, now: datetime, limit: int = 50) -> list[ProcessingJobRecord]:
+        """``QUEUED`` + **lease 가 만료된 ``RUNNING``** 작업, 오래된 것부터(FIFO) —
+        워커가 다음에 잡을 후보를 고르는 표면(모듈 docstring "이 모듈이 하지
+        않는 것 — 큐에서 작업을 꺼내오지 않는다" 의 그 pull 표면을 여기서
+        만든다, ``processing-controller`` 패키지의 ``worker.py``/``runner.py``).
+
+        **왜 만료된 ``RUNNING`` 도 후보다**: ``acquire_lease`` 자체는 이미
+        "만료된 lease 는 없는 것과 같다 — 죽은 워커의 작업은 별도 조치 없이
+        만료 후 회수된다"고 설계돼 있다(이 클래스 docstring, ``JobLease.
+        is_active``). 그런데 이 표면이 처음엔 ``QUEUED`` 로만 좁혀져 있었다 —
+        그러면 워커를 죽인 뒤 아무도 그 jobId 를 다시 ``acquire_lease`` 하도록
+        시키지 않으므로, 이미 있는 회수 메커니즘이 후보 목록에서 걸러져
+        무의미해진다. 워커 하나가 재구성 도중 죽으면 그 임무는 lease 가
+        영원히 살아 있는 것처럼 보여, 재처리 작업 발급마저 막힌다(``issue()``
+        의 "임무당 활성 작업 1건" 게이트) — 첫 유료 파일럿처럼 장시간
+        무인 운영에서 반드시 만날 상황이다.
+
+        활성 lease 를 쥔 ``RUNNING``(다른 워커가 지금 살아서 돌리는 중)은
+        여전히 제외한다 — 살아있는 lease 를 밀어내는 것은 이 함수의 일이
+        아니고, ``acquire_lease`` 가 그 경우 ``LEASE_HELD_BY_ANOTHER`` 로
+        정확히 거부한다. ``SUCCEEDED``·``FAILED``·``CANCELLED`` 는 여전히
+        나오지 않는다.
+
+        재등록 시 중복(``DUPLICATE_ARTIFACT``)의 여지는 남는다 — 죽은
+        워커가 산출물 등록 도중(드문 창) 죽었다면 회수한 워커가 그 몇 건에서
+        막혀 ``FAILED`` 로 재수렴할 수 있다. 그래도 그 결과는 "영원히 멈춤"
+        보다 낫다 — 사유가 로그·``detail`` 에 남고, 사람이 개입할 신호가
+        생긴다. 산출물 등록을 재개 가능하게 만드는 것(부분 성공 이어받기)은
+        별도 결정 사안이다.
+        """
+        if limit < 0:
+            raise ValueError(f"limit 은 음수일 수 없다: {limit}")
+        with self._lock:
+            records = [
+                r
+                for r in self._jobs.values()
+                if r.status is ProcessingJobStatus.QUEUED
+                or (
+                    r.status is ProcessingJobStatus.RUNNING
+                    and (r.lease is None or not r.lease.is_active(now))
+                )
+            ]
+        ordered = sorted(records, key=lambda r: (r.issued_at, r.job_id))
+        return ordered[:limit]
+
     def list_for_site(
         self, site_id: str, *, limit: int | None = None
     ) -> list[ProcessingJobRecord]:
@@ -1642,6 +1687,23 @@ class ProcessingJobListResponse(_CamelModel):
     jobs: list[ProcessingJobView]
 
 
+class PendingProcessingJobView(_CamelModel):
+    """워커가 다음에 잡을 후보 1건 — **최소 노출**이다.
+
+    ``PROCESSING_WORK`` 는 ``MISSIONS_READ`` 를 포함하지 않는다(``auth.py``) —
+    워커가 이 표면에서 임무·현장·계약 내용까지 보게 하면 그 경계가 여기서
+    새 나간다. ``jobId`` 로 lease 를 잡은 **다음**에야 ``/input`` 이 그 작업의
+    전체 사양을 준다(``get_processing_job_input`` 과 동일 원칙).
+    """
+
+    job_id: str
+    issued_at: datetime
+
+
+class PendingProcessingJobListResponse(_CamelModel):
+    jobs: list[PendingProcessingJobView]
+
+
 class ProcessingJobMutationResponse(_CamelModel):
     verdict: str
     job: ProcessingJobView | None = None
@@ -1706,6 +1768,31 @@ def build_processing_jobs_router(
             if result.record is not None
             else None,
             detail=result.detail,
+        )
+
+    @router.get(
+        "/v1/processing-jobs",
+        response_model=PendingProcessingJobListResponse,
+    )
+    def list_pending_processing_jobs(
+        limit: int = Query(default=50, ge=1, le=200),  # noqa: B008
+        _principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> PendingProcessingJobListResponse:
+        """워커가 다음에 잡을 후보 목록 — ``QUEUED`` + lease 만료된 ``RUNNING``,
+        오래된 것부터(FIFO). 후자는 죽은 워커가 쥐고 있던 작업을 다른 워커가
+        회수하는 경로다(``ProcessingJobStore.list_pending`` docstring 참조).
+
+        경로가 ``/v1/processing-jobs/{job_id}`` 와 겹치지 않는다 — 이건 뒤에
+        segment 가 없는 컬렉션 경로다. **사람은 이 표면을 쓰지 않는다**
+        (``PROCESSING_WORK`` 게이트, ``list_for_mission`` 과 달리
+        ``MISSIONS_READ`` 가 아니다) — 워커가 어떤 임무·현장의 작업인지까지
+        알 필요가 없고, 알면 그 자체가 최소권한을 벗어난다.
+        """
+        return PendingProcessingJobListResponse(
+            jobs=[
+                PendingProcessingJobView(job_id=r.job_id, issued_at=r.issued_at)
+                for r in store.list_pending(now=datetime.now(UTC), limit=limit)
+            ]
         )
 
     @router.get(
@@ -2108,6 +2195,8 @@ __all__ = [
     "IllegalJobTransitionError",
     "JobLease",
     "JobSpec",
+    "PendingProcessingJobListResponse",
+    "PendingProcessingJobView",
     "ProcessingArtifactMutationResponse",
     "ProcessingArtifactRequest",
     "ProcessingJobListResponse",
