@@ -1811,6 +1811,35 @@ def build_processing_jobs_router(
             ]
         )
 
+    @router.get(
+        "/v1/sites/{site_id}/processing-jobs",
+        response_model=ProcessingJobListResponse,
+    )
+    def list_site_processing_jobs(
+        site_id: str,
+        limit: int = Query(default=50, ge=1, le=200),  # noqa: B008
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> ProcessingJobListResponse:
+        """이 현장의 재구성 epoch 목록 — **최신이 먼저**(``list_for_site`` 정렬 그대로).
+
+        두 시점 비교(W2)의 후보를 고르는 화면이 이 표면을 쓴다.
+        ``ProcessingJobRecord`` 가 곧 reconstruction epoch 이고 시계열 비교는 이
+        목록 위에서 이뤄진다는 것은 ``list_for_site`` docstring 이 이미 말하는데,
+        그 메서드에 HTTP 경로가 없어 화면이 임무마다 따로 물어봐야 했다(N+1).
+        판정 로직을 새로 만들지 않고 그 메서드를 그대로 부른다.
+
+        임무별 목록(``list_processing_jobs``)과 **같은 응답 모델**이라 산출물
+        (``artifacts``)이 이미 실린다 — 화면이 "이 epoch 에 point_cloud·dsm 이
+        있는가"를 추가 조회 없이 판단한다(비교 가능 여부 사전 표시).
+        """
+        del principal
+        return ProcessingJobListResponse(
+            jobs=[
+                _to_view(r, input_verified=store.is_input_verified(r))
+                for r in store.list_for_site(site_id, limit=limit)
+            ]
+        )
+
     @router.get("/v1/processing-jobs/{job_id}", response_model=ProcessingJobView)
     def get_processing_job(
         job_id: str,

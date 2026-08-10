@@ -32,16 +32,19 @@ from typing import Any, Protocol
 
 import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import (
+    DEFAULT_VOLUME_THRESHOLD_M as _POLICY_VOLUME_THRESHOLD_M,
+)
 from ksi_event_contracts.volume_change_report import VolumeChangeReport, ZoneVolumeDelta
 
 from ksi_change_detection.dsm_diff import DsmDiffError, align_and_diff, volume_delta_in_polygon
 
 logger = logging.getLogger(__name__)
 
-#: 재구성 노이즈 하한 기본값. **정책값이 아니라 출발점**이다 — 현장·엔진·GSD 에
-#: 따라 달라지고, 정해지면 호출자가 준다. 5cm 는 ODM 산출 DSM 에서 흔히 쓰는
-#: 관측 편의값이지 캘리브레이션된 수치가 아니다.
-DEFAULT_THRESHOLD_M = 0.05
+#: 재구성 노이즈 하한 기본값 — **정본은 계약 패키지**다(``ksi_event_contracts.
+#: comparison_policy``). 재노출 이유는 ``run_change_detection.
+#: DEFAULT_DISTANCE_THRESHOLD_M`` 과 같다(기존 import 유지 + 단일 정본).
+DEFAULT_THRESHOLD_M = _POLICY_VOLUME_THRESHOLD_M
 
 #: ODM 경로에서 오차한계를 못 내는 이유 — 리포트에 그대로 실린다(INV-024).
 ODM_NO_CHECKPOINT_NOTE = (
@@ -186,8 +189,18 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
             with dest.open("wb") as handle:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
+    except httpx.HTTPStatusError as exc:
+        # run_change_detection.py 의 _download 와 동일 근거 — str(exc) 자체가
+        # 요청 URL 원문(서명 포함)을 품고 있어 상태코드만 뽑는다(실 인프라
+        # 재현 중 발견: 서명이 실린 URL 을 FAILED detail 로 화면에 그대로
+        # 노출하고 있었다).
+        raise VolumeChangeRunError(
+            f"DSM 을 받지 못했다({url.split('?', 1)[0]}): HTTP {exc.response.status_code}"
+        ) from exc
     except httpx.HTTPError as exc:
-        raise VolumeChangeRunError(f"DSM 을 받지 못했다({url}): {exc}") from exc
+        raise VolumeChangeRunError(
+            f"DSM 을 받지 못했다({url.split('?', 1)[0]}): {type(exc).__name__}"
+        ) from exc
 
 
 __all__ = [

@@ -295,6 +295,36 @@ def test_a_missing_dsm_fails_without_submitting(
     assert core.get(f"/v1/missions/{_MISSION_ID}/volume-changes").status_code == 404
 
 
+def test_download_failure_message_does_not_leak_presigned_signature(
+    wired: tuple[_CoreSink, TestClient, str, httpx.Client],
+) -> None:
+    """[핵심][회귀] DSM 다운로드 실패 메시지가 presigned URL 서명을 그대로 물고
+    있으면 그 문구가 FAILED detail → /reports 화면까지 그대로 샌다(2026-08-10
+    실 인프라 재현으로 발견 — point cloud 쪽과 동일 결함, 대칭으로 고쳤다)."""
+    sink, _core, job_id, storage = wired
+    baseline, current = _sources(job_id)
+    signed_but_missing = ArtifactSource(
+        ref=current.ref,
+        download_url="http://storage.invalid/dsm-current-missing?X-Amz-Signature=deadbeef1234",
+    )
+
+    with pytest.raises(VolumeChangeRunError) as excinfo:
+        compute_and_submit(
+            sink=sink,
+            mission_id=_MISSION_ID,
+            volume_change_id="vc-e2e-signature-leak",
+            baseline=baseline,
+            current=signed_but_missing,
+            zones={"zone-0": _wgs84_square(10.0)},
+            zone_crs="EPSG:4326",
+            vertical_datum="ellipsoidal_native",
+            computed_at=_COMPUTED_AT,
+            http_client=storage,
+        )
+    assert "X-Amz-Signature" not in str(excinfo.value)
+    assert "deadbeef1234" not in str(excinfo.value)
+
+
 def _wgs84_square_far_outside_raster(size_m: float) -> dict[str, object]:
     """래스터에서 10km 떨어진 정사각 구역 — DsmDiffError("유효한 셀이 없다")를 낸다."""
     far_x, far_y = _ORIGIN_X + 10_000.0, _ORIGIN_Y + 10_000.0

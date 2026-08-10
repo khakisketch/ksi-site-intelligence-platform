@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 
 
@@ -80,6 +81,12 @@ class ComparisonRequest(_CamelModel):
     # 체적 비교를 아예 시도하지 않는다(zones 부재도 비활성 사유 중 하나).
     zones: dict[str, dict[str, Any]] | None = None
     zone_crs: str | None = None
+
+    # 이 요청이 **실제로 쓸/쓴** 기준값 — 생성 시점의 시스템 고정값을 zones 와
+    # 같은 이유로 값 복사해 굳힌다(참조가 아니다). 워커는 함수 기본값이 아니라
+    # 이 값을 써서 계산하고, 화면은 제출·결과 양쪽에서 이 값을 읽기 전용으로
+    # 표시한다(대표자 확정: 고정값이라고 숨기지 않는다).
+    policy: ComparisonPolicy
 
     status: ProcessingJobStatus
     requested_at: datetime

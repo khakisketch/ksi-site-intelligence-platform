@@ -49,6 +49,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ChangeDetectionResult
+from ksi_event_contracts.comparison_policy import (
+    DEFAULT_REVISIT_RATIO_THRESHOLD as _POLICY_REVISIT_RATIO_THRESHOLD,
+)
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -66,10 +69,14 @@ logger = logging.getLogger(__name__)
 
 # 조회 시 임계값을 주지 않았을 때 쓰는 값. **정책 기본값이 아니라 화면 초기값**이다
 # — 서버는 이 값으로 어떤 결정도 내리지 않고, 응답에 자기가 무슨 값을 썼는지
-# (revisitRatioThreshold) 반드시 함께 싣는다. 0.05 는 "점 20개 중 1개가 문턱을
-# 넘으면 눈에 띄는 변화"라는 관측 편의값이고 근거 있는 캘리브레이션이 아니다 —
-# 사이트별 정책값이 정해지면 요청이 그 값을 준다.
-DEFAULT_REVISIT_RATIO_THRESHOLD = 0.05
+# (revisitRatioThreshold) 반드시 함께 싣는다. 사이트별 정책값이 정해지면 요청이
+# 그 값을 준다.
+#
+# **정본은 계약 패키지**다(``ksi_event_contracts.comparison_policy``) — 화면이
+# "이 값을 쓴다"고 표시하려면 계산 쪽(services/change-detection)과 이 조회 쪽이
+# 같은 자리를 읽어야 하고, 그 공통 자리는 양쪽이 이미 의존하는 계약 패키지뿐이다
+# (Core 가 계산 서비스를 import 하면 scipy 가 control plane 으로 딸려온다).
+DEFAULT_REVISIT_RATIO_THRESHOLD = _POLICY_REVISIT_RATIO_THRESHOLD
 
 
 class ChangeDetectionVerdict(StrEnum):

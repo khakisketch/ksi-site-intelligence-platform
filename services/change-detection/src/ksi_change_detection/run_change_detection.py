@@ -33,17 +33,20 @@ import httpx
 import laspy
 import numpy as np
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_event_contracts.comparison_policy import (
+    DEFAULT_DISTANCE_THRESHOLD_M as _POLICY_DISTANCE_THRESHOLD_M,
+)
 from numpy.typing import NDArray
 
 from ksi_change_detection.point_cloud_diff import ChangeDetectionError, detect_change_candidates
 
 logger = logging.getLogger(__name__)
 
-#: C2C 후보 거리 문턱 기본값. **정책값이 아니라 출발점**이다(``run_volume_change.
-#: DEFAULT_THRESHOLD_M`` 과 같은 지위) — 현장·엔진에 따라 달라지고, 정해지면
-#: 호출자가 준다. 0.05m 는 재구성 노이즈 하한의 관측 편의값이지 캘리브레이션된
-#: 수치가 아니다.
-DEFAULT_DISTANCE_THRESHOLD_M = 0.05
+#: C2C 후보 거리 문턱 기본값 — **정본은 계약 패키지**다(``ksi_event_contracts.
+#: comparison_policy``). 여기서 재노출하는 이유는 기존 호출부·테스트의 import 를
+#: 그대로 두기 위해서고, 값을 여기서 다시 정하지 않는다: 화면이 "이 값을 쓴다"고
+#: 표시하려면 계산 쪽과 조회 쪽이 같은 자리를 읽어야 한다(그 모듈 docstring).
+DEFAULT_DISTANCE_THRESHOLD_M = _POLICY_DISTANCE_THRESHOLD_M
 
 
 class ChangeDetectionRunError(RuntimeError):
@@ -63,8 +66,20 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
             with dest.open("wb") as handle:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
+    except httpx.HTTPStatusError as exc:
+        # url 은 쿼리스트링(presigned 서명)을 잘라내고 남긴다 — httpx.HTTPStatusError
+        # 자신의 str() 도 str(exc.request.url) 을 그대로 품어(요청 URL 원문) 서명이
+        # 다시 새므로 str(exc) 를 통째로 쓰지 않고 상태코드만 뽑는다. 이 메시지는
+        # FAILED detail 로 원장에 남고 화면에 그대로 보인다(실 인프라 재현 중 발견:
+        # 서명이 실린 URL 을 사용자 화면에 그대로 노출하고 있었다).
+        raise ChangeDetectionRunError(
+            f"point cloud 를 받지 못했다({url.split('?', 1)[0]}): "
+            f"HTTP {exc.response.status_code}"
+        ) from exc
     except httpx.HTTPError as exc:
-        raise ChangeDetectionRunError(f"point cloud 를 받지 못했다({url}): {exc}") from exc
+        raise ChangeDetectionRunError(
+            f"point cloud 를 받지 못했다({url.split('?', 1)[0]}): {type(exc).__name__}"
+        ) from exc
 
 
 def _read_points(path: Path) -> NDArray[np.float64]:

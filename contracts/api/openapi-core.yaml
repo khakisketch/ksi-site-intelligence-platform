@@ -1513,6 +1513,35 @@ paths:
               schema: { $ref: '#/components/schemas/ProcessingJobListResponse' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/sites/{site_id}/processing-jobs:
+    get:
+      summary: List reconstruction epochs for a site (newest first)
+      description: >-
+        MISSIONS_READ 권한 필요. ProcessingJobRecord 가 곧 reconstruction epoch
+        이고(ADR-KSI-016 D3) 시계열 비교(변화·체적)는 이 목록 위에서 이뤄진다 —
+        두 시점 비교 화면이 후보를 고르는 표면이다. 임무별 목록과 **같은 응답
+        모델**이라 artifacts 가 그대로 실린다: 화면이 "이 epoch 에 point_cloud·
+        dsm 이 있는가"를 추가 조회 없이 판단한다. 정렬은 임무별 목록과 반대로
+        최신이 먼저다(저기는 한 임무의 처리 이력을 순서대로 읽는 용도고, 여기는
+        "가장 최근 epoch 부터 N개"가 기본 질문이다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 그 현장의 처리 작업 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingJobListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/processing-jobs:
     get:
       summary: List processing jobs a worker may (re)claim — QUEUED + orphaned RUNNING (FIFO)
@@ -1909,6 +1938,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/VolumeChangeListView' }
         '404': { description: 해당 임무의 체적 변화 리포트가 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/comparison-policy:
+    get:
+      summary: Read the fixed thresholds this deployment actually computes with (W2)
+      description: >-
+        MISSIONS_READ 권한 필요. **읽기 전용** — 사용자가 화면에서 임계값을
+        입력하지 않는다(대표자 확정, 2026-08-10: 시스템 고정값을 쓰되 결과·제출
+        화면 양쪽에 "이 값을 썼다"를 반드시 표시한다). 화면이 숫자를 자기
+        코드에 복제하면 계산 쪽이 바뀌어도 화면은 옛 숫자를 계속 말하고 그
+        거짓말은 어느 화면에서도 보이지 않는다 — 그래서 이 표면이 있다. 여기서
+        내려주는 값과 워커가 실제로 쓰는 값은 같은 모듈
+        (ksi_event_contracts.comparison_policy)에서 나온다. 비교 요청은 생성
+        시점에 이 값을 불변 스냅샷으로 굳혀 두므로(policy 필드), 이후 이 값이
+        바뀌어도 이미 만들어진 요청·결과는 그대로다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 지금 쓰이는 기준값 한 벌
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonPolicy' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/comparison-requests:
@@ -3400,13 +3451,14 @@ components:
         필요하다).
       type: object
       required:
-        [requestId, missionId, status, pointCloudBaseline, pointCloudBaselineUrl,
+        [requestId, missionId, status, policy, pointCloudBaseline, pointCloudBaselineUrl,
          pointCloudCurrent, pointCloudCurrentUrl, dsmBaseline, dsmBaselineUrl,
          dsmCurrent, dsmCurrentUrl, zones, zoneCrs]
       properties:
         requestId: { type: string }
         missionId: { type: string }
         status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        policy: { $ref: '#/components/schemas/ComparisonPolicy' }
         pointCloudBaseline:
           oneOf: [{ $ref: '#/components/schemas/ArtifactRef' }, { type: 'null' }]
         pointCloudBaselineUrl: { type: [string, 'null'] }
@@ -3432,6 +3484,25 @@ components:
       properties:
         jobId: { type: string }
         artifactId: { type: string }
+
+    ComparisonPolicy:
+      description: >-
+        두 시점 비교가 실제로 쓰는 고정 기준값 한 벌. 정본은
+        ksi_event_contracts.comparison_policy 이고, 조회 표면(/v1/comparison-policy)과
+        계산 코드(services/change-detection)가 같은 자리를 읽는다. 비교 요청은 생성
+        시점에 이 값을 불변 스냅샷으로 굳혀 둔다(comparison-request.v1.json 의 policy).
+      type: object
+      # schemaVersion 은 기본값이 있어 요청 본문에서 생략 가능하다 — FastAPI 가
+      # required 로 내지 않으므로 여기서도 빼야 계약과 구현이 갈리지 않는다
+      # (응답에는 항상 실린다).
+      required:
+        [policyVersion, distanceThresholdM, volumeThresholdM, revisitRatioThreshold]
+      properties:
+        schemaVersion: { type: string, enum: ['1.0'] }
+        policyVersion: { type: string }
+        distanceThresholdM: { type: number, minimum: 0 }
+        volumeThresholdM: { type: number, minimum: 0 }
+        revisitRatioThreshold: { type: number, minimum: 0, maximum: 1 }
 
     ComparisonRequestInputResponse:
       type: object

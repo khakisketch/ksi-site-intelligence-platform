@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CoreApiError } from "@/lib/core-api/client";
+import { listComparisonRequests } from "@/lib/core-api/comparison";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
 import {
@@ -11,6 +12,7 @@ import {
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
 import type {
   ChangeDetectionView,
+  ComparisonRequestContract,
   MissionRecordResponse,
   VolumeChangeListView,
 } from "@/lib/core-api/types";
@@ -55,6 +57,24 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
     return await listMissions();
   } catch {
     return [];
+  }
+}
+
+/**
+ * 그 임무의 최신 비교 요청 — 결과가 아직 없을 때 **왜 없는지**를 가르기 위해서다.
+ *
+ * "아직 요청조차 안 됨" · "계산 중" · "계산하다 실패함" 은 사용자에게 전혀 다른
+ * 사실인데, 결과 유무만 보면 셋이 똑같이 빈 화면이 된다. 조회 실패는 null 로
+ * 다뤄 이 안내만 비운다(결과 렌더를 가리지 않는다 — fetchVolume 과 같은 원칙).
+ */
+async function fetchLatestComparisonRequest(
+  missionId: string,
+): Promise<ComparisonRequestContract | null> {
+  try {
+    const listed = await listComparisonRequests(missionId);
+    return listed.requests[0] ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -121,9 +141,10 @@ export default async function ReportsPage({
     );
   }
 
-  const [{ view, error, notFound }, volume] = await Promise.all([
+  const [{ view, error, notFound }, volume, latestRequest] = await Promise.all([
     fetchChange(missionId),
     fetchVolume(missionId),
+    fetchLatestComparisonRequest(missionId),
   ]);
 
   if (error) {
@@ -148,12 +169,45 @@ export default async function ReportsPage({
     : null;
 
   if (notFound && !hasVolume) {
+    // "아직 계산되지 않음"의 이유를 가른다 — 요청 자체가 없는 것과, 요청은 있는데
+    // 계산 중인 것과, 계산하다 실패한 것은 사용자에게 전혀 다른 사실이다.
+    // ("계산했지만 변화가 없음"은 여기 오지 않는다 — 그때는 결과가 존재하므로
+    //  아래 정상 렌더로 가고 후보 0건이 숫자로 보인다.)
+    const status = latestRequest?.status ?? null;
+    if (status === "QUEUED" || status === "RUNNING") {
+      return (
+        <div className="flex flex-col gap-4 p-4 sm:p-5">
+          <EmptyState
+            title="비교를 계산하는 중입니다"
+            description={
+              `${status === "QUEUED" ? "순서를 기다리는 중" : "계산 중"}입니다 — ` +
+              "자료 크기에 따라 수 분 걸릴 수 있습니다. 잠시 후 새로고침하세요."
+            }
+            action={{ label: "임무 화면에서 진행 보기", href: `/missions/${encodeURIComponent(missionId)}` }}
+          />
+        </div>
+      );
+    }
+    if (status === "FAILED") {
+      return (
+        <div className="flex flex-col gap-4 p-4 sm:p-5">
+          <EmptyState
+            title="비교에 실패했습니다"
+            description={
+              (latestRequest?.detail ?? "실패 사유가 기록되지 않았습니다.") +
+              " 구역이나 시점을 바꿔 다시 요청할 수 있습니다."
+            }
+            action={{ label: "임무 화면에서 다시 요청", href: `/missions/${encodeURIComponent(missionId)}` }}
+          />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <EmptyState
           title="이 임무의 리포트가 아직 없습니다"
-          description="두 시점을 비교한 변화 탐지·체적 결과가 아직 보고되지 않았습니다."
-          action={{ label: "다른 임무 선택", href: "/reports" }}
+          description="두 시점 비교가 아직 요청되지 않았습니다 — 임무 화면에서 비교할 두 재구성 결과를 골라 제출하세요."
+          action={{ label: "임무 화면으로", href: `/missions/${encodeURIComponent(missionId)}` }}
         />
       </div>
     );
@@ -220,6 +274,14 @@ export default async function ReportsPage({
             ))}
           </dl>
 
+          {latest!.candidateCount === 0 && (
+            <p className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+              계산은 끝났고, <strong>움직인 것으로 볼 만한 지점이 없었습니다</strong> —
+              비교 자체를 못 한 것이 아닙니다(점 {latest!.pointCount.toLocaleString()}개를
+              모두 확인했고 기준({latest!.distanceThresholdM} m)을 넘는 것이 없었습니다).
+            </p>
+          )}
+
           <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
             <h3 className="font-semibold">비교 대상</h3>
             <p className="mt-1 font-mono text-xs text-neutral-600 dark:text-neutral-400">
@@ -243,6 +305,39 @@ export default async function ReportsPage({
           jobId={volume!.reports[0].report.current.jobId}
           artifactId={orthophotoArtifactId}
         />
+      )}
+
+      {/* 이번 결과가 **무슨 기준으로** 계산됐는지 — 고정값이라고 숨기지 않는다
+          (대표자 확정). 요청 생성 시점에 굳은 스냅샷이라, 시스템 기준이 나중에
+          바뀌어도 이 결과는 여기 적힌 값으로 계산된 것이 맞다. */}
+      {latestRequest && (
+        <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+          <h3 className="font-semibold">이번 계산에 쓴 기준 (고정값)</h3>
+          <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-neutral-500">움직임으로 칠 최소 거리</dt>
+              <dd className="mt-0.5">{latestRequest.policy.distanceThresholdM} m</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-neutral-500">재촬영 권고 비율</dt>
+              <dd className="mt-0.5">
+                {(latestRequest.policy.revisitRatioThreshold * 100).toFixed(1)} %
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-neutral-500">기준 묶음</dt>
+              <dd className="mt-0.5 font-mono text-xs">
+                {latestRequest.policy.policyVersion}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs text-neutral-500">
+            계산 범위:{" "}
+            {latestRequest.zones
+              ? `사용자가 확정한 구역 ${Object.keys(latestRequest.zones).length}개 (${latestRequest.zoneCrs})`
+              : "구역을 확정하지 않아 부피 비교는 하지 않았습니다"}
+          </p>
+        </section>
       )}
     </div>
   );

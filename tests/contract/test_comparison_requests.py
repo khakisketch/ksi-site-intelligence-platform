@@ -505,6 +505,76 @@ def test_zones_are_stored_as_a_value_not_a_site_reference(fx: _Fixture) -> None:
     assert "site_store" not in params
 
 
+# ── 기준값 스냅샷 (W2-3) ────────────────────────────────────────────────────
+
+
+def test_policy_is_snapshotted_at_creation(fx: _Fixture) -> None:
+    """생성 시점의 시스템 기준값이 요청에 값으로 굳는다 — 화면·워커가 같은 값을 본다."""
+    from ksi_event_contracts.comparison_policy import current_comparison_policy
+
+    result = fx.create()
+    assert result.record is not None
+    assert result.record.policy == current_comparison_policy()
+
+
+def test_existing_request_keeps_its_policy_when_system_thresholds_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] 시스템 기준값을 바꿔도 **이미 만들어진 요청의 스냅샷은 그대로**다.
+
+    zones 가 site.aoi 를 참조하지 않는 것과 같은 성질(대표자 확정) — 참조였다면
+    기준값을 바꾼 배포가 과거 결과의 해석까지 소급해 바꿔버리고, "그때 무슨
+    기준으로 쟀나"에 답할 수 없게 된다. 재생 경로도 원장에 적힌 값을 되살리는지
+    함께 고정한다(여기서 current_comparison_policy() 를 부르면 이 테스트가 깨진다).
+    """
+    import ksi_core.comparison_requests as module
+    from ksi_event_contracts.comparison_policy import ComparisonPolicy
+
+    fx = _Fixture(tmp_path)
+    journal_path = tmp_path / "comparison-requests.jsonl"
+    before = fx.create()
+    assert before.record is not None
+    original = before.record.policy
+
+    # 배포가 기준값을 바꾼 상황을 흉내낸다.
+    changed = ComparisonPolicy(
+        policy_version="comparison-policy-v99",
+        distance_threshold_m=0.99,
+        volume_threshold_m=0.98,
+        revisit_ratio_threshold=0.97,
+    )
+    monkeypatch.setattr(module, "current_comparison_policy", lambda: changed)
+
+    # 살아있는 store 의 기존 레코드는 그대로다.
+    assert fx.store.get(before.record.request_id) is not None
+    assert fx.store.get(before.record.request_id).policy == original  # type: ignore[union-attr]
+
+    # 재기동(재생) 후에도 그대로여야 한다 — 원장에 적힌 값을 되살리는지 확인.
+    fx.store._journal.close()  # noqa: SLF001 -- 같은 경로를 다시 열기 위해
+    replayed = ComparisonRequestStore(
+        DurableJournal(journal_path),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+    )
+    restored = replayed.get(before.record.request_id)
+    assert restored is not None
+    assert restored.policy == original, "재생이 현재 정책으로 과거 요청을 덮어썼다"
+
+    # 반면 **새** 요청은 바뀐 값을 쓴다(스냅샷이 화석이 아니라는 것).
+    fresh = replayed.create(
+        _BASELINE_MISSION_ID,  # 방향을 뒤집었으므로 current 쪽 임무도 바뀐다
+        baseline_job_id=fx.current_job_id,
+        current_job_id=fx.baseline_job_id,
+        zones=_ZONES,
+        zone_crs=_ZONE_CRS,
+        requested_by="op-1",
+        now=_NOW,
+    )
+    assert fresh.record is not None
+    assert fresh.record.policy == changed
+    replayed._journal.close()  # noqa: SLF001 -- 테스트 정리
+
+
 # ── 계약 스키마 정합 ────────────────────────────────────────────────────────
 
 

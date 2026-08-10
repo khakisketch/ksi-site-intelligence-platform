@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 import pytest
 from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import current_comparison_policy
 from ksi_processing_controller.core_client import (
     ComparisonInput,
     CoreClientError,
@@ -101,6 +102,7 @@ def _comparison_input(request_id: str) -> ComparisonInput:
         request_id=request_id,
         mission_id="mission-1",
         status="QUEUED",
+        policy=current_comparison_policy(),
         point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
         point_cloud_baseline_url="http://fake-storage/baseline.laz",
         point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),

@@ -8,11 +8,14 @@
    건너뛴다 — ``ComparisonInput.status`` 로만 판정한다, ``JobInput.status`` 와 동형).
 4. point_cloud 쌍이 둘 다 있으면 C2C 변화탐지를 계산해 제출한다.
 5. dsm 쌍 + 구역이 전부 있으면 체적 변화를 계산해 제출한다.
-6. 시도한 계산이 전부 통과했으면 ``SUCCEEDED`` 로 전이한다.
+6. 시도한 계산이 하나라도 있으면(요약이 비지 않았으면) ``SUCCEEDED`` 로 전이한다.
 
-어느 쪽도 시도하지 않는 요청(둘 다 조건 미충족)은 여기 도달하지 않는다 —
-``ComparisonRequestStore.create()`` 가 이미 ``NOTHING_TO_COMPARE`` 로 요청 생성
-자체를 거부한다(``ksi_core.comparison_requests`` 모듈 docstring).
+생성 시점엔 어느 쪽도 시도하지 않는 요청(둘 다 조건 미충족)은 여기 도달하지
+않는다 — ``ComparisonRequestStore.create()`` 가 이미 ``NOTHING_TO_COMPARE`` 로
+요청 생성 자체를 거부한다(``ksi_core.comparison_requests`` 모듈 docstring).
+하지만 생성 이후 입력이 사라질 수 있다(산출물 회수 등) — 그때 4~5 를 둘 다
+건너뛰면 요약이 빈 채로 남는다. 그 경우도 ``SUCCEEDED`` 로 보내지 않는다
+(아래 "실패는 전부 FAILED 로 수렴한다"와 같은 원칙 — 계산 안 한 성공은 없다).
 
 ## 실패는 전부 ``FAILED`` 로 수렴한다 (worker.py 와 동일 원칙)
 
@@ -131,6 +134,9 @@ def run_comparison_request(
                     current_download_url=comparison_input.point_cloud_current_url,
                     computed_at=computed_at,
                     http_client=fetch,
+                    # 함수 기본값이 아니라 **이 요청의 스냅샷**을 쓴다 — 그래야
+                    # 원장에 적힌 기준값이 실제로 쓴 값이 된다(모듈 docstring).
+                    distance_threshold_m=comparison_input.policy.distance_threshold_m,
                     work_dir=work_dir,
                 )
                 summaries.append(
@@ -172,6 +178,8 @@ def run_comparison_request(
                     vertical_datum=_VERTICAL_DATUM,
                     computed_at=computed_at,
                     http_client=fetch,
+                    # 위 변화탐지와 같은 이유 — 스냅샷된 기준값으로 잰다.
+                    threshold_m=comparison_input.policy.volume_threshold_m,
                     work_dir=work_dir,
                 )
                 summaries.append(f"체적 순변화 {vol_report.total_net_m3:.2f}m³")
@@ -182,6 +190,19 @@ def run_comparison_request(
                 # 있는 결정적 값이다 — 위 주석과 동일 근거.
                 now_message(f"[{request_id}] 체적 리포트 이미 기록됨(재시도, 안전) — {exc}")
                 summaries.append("체적 리포트 이미 기록됨(재시도)")
+
+        if not summaries:
+            # 생성 시점엔 변화탐지·체적 중 하나가 준비돼 있었으니(모듈 docstring
+            # "어느 쪽도 시도하지 않는 요청은 여기 도달하지 않는다" — Core 의
+            # NOTHING_TO_COMPARE 게이트) 여기 온 요청은 원래 계산할 거리가 있었다.
+            # 그런데 위 두 게이트를 모두 못 지났다는 건 입력이 생성 이후 사라졌다는
+            # 뜻이다(예: 산출물 회수, presign 대상 소실). 이걸 그냥 SUCCEEDED 로
+            # 넘기면 "계산 안 했는데 성공"이 되어 화면엔 "완료"가 뜨고 결과는
+            # 없다(INV-040 — 겉만 성공인 상태 금지). 아무것도 계산 못 했으면
+            # 실패로 보고한다 — 아래 except 가 FAILED 전이 + 재던지기를 맡는다.
+            raise ChangeDetectionRunError(
+                "비교할 자료를 받지 못했습니다 — 점군/높이자료 확인 필요"
+            )
 
         detail = "; ".join(summaries)
         core.transition_comparison(request_id, "SUCCEEDED", detail=detail)

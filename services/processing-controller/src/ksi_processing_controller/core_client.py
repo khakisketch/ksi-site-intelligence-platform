@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 
 
@@ -137,6 +138,10 @@ class ComparisonInput:
     # 요청(다른 워커가 이미 RUNNING 으로 바꿔 놓은 것)에 또 전이를 시도하면
     # ILLEGAL_TRANSITION 이다(worker.py 의 JobInput.status 와 동일 원칙).
     status: str
+    # 이 요청 생성 시점에 굳어진 기준값 — 계산 함수의 기본값 대신 **이 값**을
+    # 쓴다. 그래야 원장의 스냅샷이 "실제로 쓴 값"이 되고, 화면이 그 값을
+    # 표시하는 것이 사실이 된다(comparison_policy 모듈 docstring).
+    policy: ComparisonPolicy
     point_cloud_baseline: ArtifactRef | None
     point_cloud_baseline_url: str | None
     point_cloud_current: ArtifactRef | None
@@ -448,6 +453,7 @@ class HttpCoreClient:
             request_id=data["requestId"],
             mission_id=data["missionId"],
             status=data["status"],
+            policy=ComparisonPolicy.model_validate(data["policy"]),
             point_cloud_baseline=_ref("pointCloudBaseline"),
             point_cloud_baseline_url=data.get("pointCloudBaselineUrl"),
             point_cloud_current=_ref("pointCloudCurrent"),

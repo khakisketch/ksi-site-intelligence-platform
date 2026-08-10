@@ -1242,6 +1242,44 @@ def test_http_list_for_mission(tmp_path: Path) -> None:
     assert len(listed.json()["jobs"]) == 1
 
 
+def test_http_list_for_site_exposes_epochs_with_artifacts(tmp_path: Path) -> None:
+    """현장 단위 epoch 목록 — 두 시점 비교 화면이 후보를 고르는 표면(W2-3).
+
+    ``list_for_site`` 는 원래 있었는데 HTTP 경로가 없어 화면이 임무마다 따로
+    물어봐야 했다. 임무별 목록과 **같은 응답 모델**이라 ``artifacts`` 가 그대로
+    실리는지 함께 고정한다 — 화면이 "이 epoch 에 point_cloud·dsm 이 있는가"를
+    추가 조회 없이 판단하는 근거다.
+    """
+    client = _client(tmp_path)
+    issued = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]
+
+    listed = client.get(f"/v1/sites/{_SITE_ID}/processing-jobs")
+    assert listed.status_code == 200, listed.json()
+    jobs = listed.json()["jobs"]
+    assert [j["jobId"] for j in jobs] == [issued["jobId"]]
+    # 산출물 자리가 응답에 실제로 있다(아직 등록 전이라 빈 배열).
+    assert jobs[0]["artifacts"] == []
+    assert jobs[0]["siteId"] == _SITE_ID
+
+
+def test_http_list_for_site_does_not_leak_other_sites(tmp_path: Path) -> None:
+    """[음성] 다른 현장 id 로 물으면 남의 작업이 아니라 빈 목록이다."""
+    client = _client(tmp_path)
+    client.post(f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload())
+    listed = client.get("/v1/sites/site-somewhere-else/processing-jobs")
+    assert listed.status_code == 200
+    assert listed.json()["jobs"] == []
+
+
+def test_http_list_for_site_requires_missions_read(tmp_path: Path) -> None:
+    """워커 토큰(PROCESSING_WORK)은 이 표면을 쓸 수 없다 — 사람의 조회 표면이다."""
+    client = _client(tmp_path)
+    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    assert client.get(f"/v1/sites/{_SITE_ID}/processing-jobs").status_code == 403
+
+
 def test_http_list_pending_is_worker_only_and_minimal(tmp_path: Path) -> None:
     """워커의 pull 표면 — PROCESSING_WORK 만 통과하고, 최소 필드만 나온다."""
     client = _client(tmp_path)

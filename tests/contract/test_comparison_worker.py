@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 import rasterio
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_event_contracts.comparison_policy import current_comparison_policy
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 from ksi_geo_spatial.crs import reproject_point
 from ksi_processing_controller.comparison_worker import (
@@ -174,6 +175,7 @@ def test_full_success_path_submits_both_and_succeeds(tmp_path: Path) -> None:
             request_id="mission-1-cmp1",
             mission_id="mission-1",
             status="QUEUED",
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/baseline.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
@@ -209,6 +211,44 @@ def test_full_success_path_submits_both_and_succeeds(tmp_path: Path) -> None:
     assert len(succeeded) == 1
 
 
+def test_neither_input_ready_reports_failed_not_empty_success(tmp_path: Path) -> None:
+    """[핵심][회귀] 생성 시점엔 계산 대상이 있었지만(``NOTHING_TO_COMPARE`` 게이트를
+    통과) 워커가 입력을 받은 시점엔 point_cloud/dsm 이 전부 비어 있는 경우 —
+    두 계산 모두 건너뛰어 요약이 빈 채로 남는다. 이걸 그냥 SUCCEEDED 로 보내면
+    화면엔 "완료"가 뜨는데 결과는 없다(INV-040). FAILED 로 보고하고 원래
+    예외를 다시 던져야 한다(worker.py 와 동일 "실패는 전부 FAILED 로 수렴한다" 원칙)."""
+    core = FakeComparisonCoreClient(
+        comparison_input=ComparisonInput(
+            request_id="mission-1-cmp-empty",
+            mission_id="mission-1",
+            status="QUEUED",
+            policy=current_comparison_policy(),
+            point_cloud_baseline=None, point_cloud_baseline_url=None,
+            point_cloud_current=None, point_cloud_current_url=None,
+            dsm_baseline=None, dsm_baseline_url=None,
+            dsm_current=None, dsm_current_url=None,
+            zones=None, zone_crs=None,
+        )
+    )
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(404))) as client,
+        pytest.raises(ComparisonWorkerRunError),
+    ):
+        run_comparison_request(
+            "mission-1-cmp-empty", core=core, work_dir=tmp_path, http_client=client,
+            now_message=lambda _msg: None,
+        )
+
+    assert not core.change_detection_results
+    assert not core.volume_change_reports
+    succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
+    assert not succeeded
+    failed = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "FAILED"]
+    assert len(failed) == 1
+    assert failed[0][2] is not None  # detail 이 채워져 있다
+
+
 def test_duplicate_result_id_on_retry_is_treated_as_already_recorded(tmp_path: Path) -> None:
     """[핵심][회귀] 재시도(재시작·부분실패 후 재시도)로 이미 성공 제출한 결과를
     다시 계산+제출하면 Core 는 DUPLICATE_RESULT_ID/DUPLICATE_REPORT_ID 를 낸다
@@ -227,6 +267,7 @@ def test_duplicate_result_id_on_retry_is_treated_as_already_recorded(tmp_path: P
             request_id="mission-1-cmp-retry",
             mission_id="mission-1",
             status="RUNNING",  # 이미 한 번 RUNNING 으로 전이된 뒤의 재시도를 흉내낸다
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/baseline.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
@@ -288,6 +329,7 @@ def test_dsm_diff_error_on_bad_zone_reports_failed_not_uncaught(tmp_path: Path) 
             request_id="mission-1-cmp-badzone",
             mission_id="mission-1",
             status="QUEUED",
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/baseline.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
@@ -337,6 +379,7 @@ def test_resumed_request_skips_running_transition(tmp_path: Path) -> None:
             request_id="mission-1-cmp2",
             mission_id="mission-1",
             status="RUNNING",
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/baseline.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
@@ -366,6 +409,7 @@ def test_download_failure_reports_failed_and_reraises(tmp_path: Path) -> None:
             request_id="mission-1-cmp3",
             mission_id="mission-1",
             status="QUEUED",
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/missing.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
@@ -402,6 +446,7 @@ def test_failed_report_failure_does_not_swallow_original_exception(tmp_path: Pat
             request_id="mission-1-cmp4",
             mission_id="mission-1",
             status="QUEUED",
+            policy=current_comparison_policy(),
             point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
             point_cloud_baseline_url="http://fake-storage/missing.laz",
             point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),

@@ -161,3 +161,35 @@ def test_download_failure_raises_run_error(tmp_path: Path) -> None:
             computed_at=_COMPUTED_AT,
             http_client=client,
         )
+
+
+def test_download_failure_message_does_not_leak_presigned_signature(tmp_path: Path) -> None:
+    """[핵심][회귀] FAILED 사유가 그대로 화면에 노출된다(comparison_requests
+    detail → /reports) — presigned URL 의 서명 쿼리스트링까지 그 문구에 실리면
+    사용자 화면에 서명이 그대로 보인다(2026-08-10 실 인프라 재현으로 발견)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(404)
+
+    signed_url = (
+        "http://storage.test/x/missing.laz"
+        "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=deadbeef1234"
+    )
+    transport = httpx.MockTransport(handler)
+    with (
+        httpx.Client(transport=transport, base_url="http://storage.test") as client,
+        pytest.raises(ChangeDetectionRunError) as excinfo,
+    ):
+        compute_change_detection(
+            change_detection_id="mission-1-cmp5",
+            baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            baseline_download_url=signed_url,
+            current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            current_download_url=signed_url,
+            computed_at=_COMPUTED_AT,
+            http_client=client,
+        )
+    assert "X-Amz-Signature" not in str(excinfo.value)
+    assert "deadbeef1234" not in str(excinfo.value)
+    assert "http://storage.test/x/missing.laz" in str(excinfo.value)

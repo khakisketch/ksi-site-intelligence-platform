@@ -5,6 +5,11 @@ import type { ReactNode } from "react";
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
+import {
+  getComparisonPolicy,
+  listComparisonRequests,
+  listSiteProcessingJobs,
+} from "@/lib/core-api/comparison";
 import { getCoverageReport, getMission } from "@/lib/core-api/missions";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
@@ -12,6 +17,7 @@ import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ComparisonSubmitPanel } from "@/components/missions/ComparisonSubmitPanel";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
 import {
@@ -80,7 +86,17 @@ export default async function MissionDetailPage({
 
   // 현장 이름·업로드 패널 초기 상태는 전부 부가 정보다 — 하나가 실패해도
   // 임무 상세 자체(좌 패널)는 보여야 한다(getSite 와 같은 원칙).
-  const [site, coverageResult, canIssue, sourceBundle, jobs, hasComparison] = await Promise.all([
+  const [
+    site,
+    coverageResult,
+    canIssue,
+    sourceBundle,
+    jobs,
+    hasComparison,
+    siteJobs,
+    comparisonPolicy,
+    latestComparison,
+  ] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
     fetchCoverageResult(mission.missionId),
     whoAmI()
@@ -93,6 +109,16 @@ export default async function MissionDetailPage({
       .then((r) => r.jobs)
       .catch(() => []),
     hasComparisonReport(mission.missionId),
+    // 비교 후보는 **임무가 아니라 현장** 단위다 — 다른 시점(다른 임무)의 재구성과
+    // 비교하는 것이 이 기능의 전부다. 실패해도 이 패널만 비운다(다른 섹션과 동일 원칙).
+    listSiteProcessingJobs(mission.siteId)
+      .then((r) => r.jobs)
+      .catch(() => []),
+    // 기준값은 화면이 지어내지 않는다 — 못 받으면 null 로 두고 그 사실을 화면이 밝힌다.
+    getComparisonPolicy().catch(() => null),
+    listComparisonRequests(mission.missionId)
+      .then((r) => r.requests[0] ?? null)
+      .catch(() => null),
   ]);
   // 최신 발급분 — 발급 순서가 곧 배열 순서라는 서버 계약은 없으므로 issuedAt 로 정렬한다.
   const latestJob = [...jobs].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0] ?? null;
@@ -175,6 +201,15 @@ export default async function MissionDetailPage({
         initialBundle={sourceBundle}
         initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
         hasComparisonReport={hasComparison}
+      />
+
+      <ComparisonSubmitPanel
+        missionId={mission.missionId}
+        canIssue={canIssue}
+        siteJobs={siteJobs}
+        siteAoi={site?.aoi?.vertices ?? null}
+        policy={comparisonPolicy}
+        initialRequest={latestComparison}
       />
     </div>
   );

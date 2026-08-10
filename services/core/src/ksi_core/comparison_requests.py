@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import ComparisonPolicy, current_comparison_policy
 from ksi_event_contracts.comparison_request import ComparisonRequest
 from ksi_event_contracts.processing_artifact import ProcessingArtifact, ProcessingArtifactKind
 from ksi_event_contracts.processing_job import ProcessingJobStatus
@@ -200,6 +201,10 @@ class ComparisonRequestRecord:
     volume_change_ineligible_reason: str | None
     zones: dict[str, dict[str, Any]] | None
     zone_crs: str | None
+    # 요청 생성 시점의 기준값을 **값으로** 복사해 둔 것(zones 와 같은 원칙) —
+    # 나중에 시스템 기준값이 바뀌어도 이미 만들어진 요청·결과는 "그때 무슨
+    # 기준으로 쟀는지"를 스스로 답한다. 워커가 계산할 때 실제로 이 값을 쓴다.
+    policy: ComparisonPolicy
     status: ProcessingJobStatus
     requested_at: datetime
     requested_by: str
@@ -224,6 +229,7 @@ class ComparisonRequestRecord:
             volume_change_ineligible_reason=self.volume_change_ineligible_reason,
             zones=self.zones,
             zone_crs=self.zone_crs,
+            policy=self.policy,
             status=self.status,
             requested_at=self.requested_at,
             requested_by=self.requested_by,
@@ -345,6 +351,11 @@ class ComparisonRequestStore:
             volume_change_ineligible_reason=resolved.volume_change_ineligible_reason,
             zones=resolved.zones,
             zone_crs=resolved.zone_crs,
+            # **원장에 적힌 그 값**을 그대로 되살린다 — 여기서
+            # current_comparison_policy() 를 부르면 기준값을 바꾼 배포가 과거
+            # 요청의 기준까지 소급해 고쳐 쓰게 되고, 그건 "그때 무슨 기준으로
+            # 쟀나"에 답할 수 없게 만든다(zones 를 값으로 저장하는 것과 같은 이유).
+            policy=contract.policy,
             status=ProcessingJobStatus.QUEUED,
             requested_at=contract.requested_at,
             requested_by=contract.requested_by,
@@ -592,6 +603,9 @@ class ComparisonRequestStore:
                 volume_change_ineligible_reason=resolved.volume_change_ineligible_reason,
                 zones=resolved.zones,
                 zone_crs=resolved.zone_crs,
+                # 지금 이 배포가 쓰는 기준값을 값으로 굳힌다 — 이후 이 요청은
+                # 시스템 기준이 바뀌어도 자기 스냅샷으로만 계산된다.
+                policy=current_comparison_policy(),
                 status=ProcessingJobStatus.QUEUED,
                 requested_at=now,
                 requested_by=requested_by,
@@ -860,11 +874,16 @@ class ComparisonRequestInputView(_CamelModel):
     ``status`` 도 싣는다 — ``ProcessingJobStore`` 의 ``JobInput.status`` 와 같은
     이유다: 워커가 ``QUEUED``→``RUNNING`` 전이를 시도해도 되는지(재개된 작업이면
     이미 ``RUNNING`` 이라 그 전이가 ``ILLEGAL_TRANSITION``)를 이 값으로만 안다.
+
+    ``policy`` 는 이 요청이 생성될 때 굳어진 기준값이다 — 워커는 계산 함수의
+    기본값이 아니라 **이 값**을 써야 한다. 그래야 원장에 적힌 스냅샷이 "실제로
+    쓴 값"이 되고, 화면이 그 값을 표시하는 것이 거짓말이 아니게 된다.
     """
 
     request_id: str
     mission_id: str
     status: ProcessingJobStatus
+    policy: ComparisonPolicy
     point_cloud_baseline: ArtifactRef | None
     point_cloud_baseline_url: str | None
     point_cloud_current: ArtifactRef | None
@@ -904,6 +923,24 @@ def build_comparison_requests_router(
     store: ComparisonRequestStore, storage: EvidenceStorage
 ) -> APIRouter:
     router = APIRouter(tags=["comparison-requests"])
+
+    @router.get("/v1/comparison-policy", response_model=ComparisonPolicy)
+    def get_comparison_policy(
+        _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> ComparisonPolicy:
+        """이 배포가 실제 계산에 쓰는 기준값 — **읽기 전용**.
+
+        화면이 제출 전에 "이 값으로 계산됩니다"를 보여주기 위한 표면이다. 화면에
+        숫자를 복제하지 않는 이유는, 복제하는 순간 계산 쪽이 바뀌어도 화면은 옛
+        숫자를 계속 말하고 **그 거짓말이 어느 화면에서도 보이지 않기** 때문이다.
+        여기서 내려주는 값과 워커가 실제로 쓰는 값은 같은 모듈
+        (``ksi_event_contracts.comparison_policy``)에서 나온다.
+
+        바꾸는 표면은 없다(대표자 확정: 사용자가 화면에서 임계값을 입력하지
+        않는다). 값 자체를 바꾸려면 그 모듈의 상수와 ``policyVersion`` 을 함께
+        올리는 배포가 필요하다.
+        """
+        return current_comparison_policy()
 
     @router.post(
         "/v1/missions/{mission_id}/comparison-requests",
@@ -1107,6 +1144,7 @@ def build_comparison_requests_router(
                 request_id=request_id,
                 mission_id=record.mission_id,
                 status=record.status,
+                policy=record.policy,
                 point_cloud_baseline=record.point_cloud_baseline,
                 point_cloud_baseline_url=pc_baseline_url,
                 point_cloud_current=record.point_cloud_current,
