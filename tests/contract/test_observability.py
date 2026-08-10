@@ -190,6 +190,52 @@ def test_correlation_id_is_generated_when_absent(tmp_path: Path) -> None:
     assert len(response.headers[REQUEST_ID_HEADER]) > 0
 
 
+def test_metrics_route_label_collapses_unmatched_paths(tmp_path: Path) -> None:
+    """[핵심] 404 경로는 원본 문자열이 아니라 "unmatched" 라벨 하나로 묶인다 —
+    무인증 스캐너가 임의 경로를 계속 찔러도 계열 수가 늘지 않는다(카디널리티
+    방어). 이걸 지키지 않으면 route 라벨에 요청 경로 원문이 그대로 실린다."""
+    client = _assembled_client(tmp_path)
+    client.headers.update({"Authorization": f"Bearer {_TOKEN}"})
+
+    client.get("/this-route-does-not-exist")
+    client.get("/another-nonexistent-route")
+    body = client.get("/metrics").text
+
+    assert 'route="unmatched"' in body
+    assert "/this-route-does-not-exist" not in body
+    assert "/another-nonexistent-route" not in body
+
+
+def test_correlation_id_is_bound_before_metrics_middleware_runs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[핵심] ``CorrelationIdMiddleware`` 가 ``HttpMetricsMiddleware`` 보다 바깥에
+    등록돼 있어야, 후자가 찍는 요청 로그 줄에 correlation id 가 실린다
+    (app_assembly.py 의 등록 순서 주석이 실제로 지켜지는지 — 순서가 뒤바뀌어도
+    아무 테스트가 안 깨지면 사람이 쓴 주석만 그 정합성을 지키는 셈이 된다).
+    ``HttpMetricsMiddleware.__call__`` 은 ``logging`` 표준 로거로 직접 찍으므로
+    caplog 로 관측한다(JSON 포매터를 거치지 않는 raw LogRecord) — 다만
+    correlation id 를 레코드에 싣는 것은 ``_CorrelationIdFilter`` 이고 그건
+    ``configure_structured_logging`` 이 붙인 핸들러에만 달려 있어(테스트 조립엔
+    없음) caplog 자신의 핸들러에 같은 필터를 직접 붙여야 caplog 로 관측할 수
+    있다."""
+    from ksi_core.observability import _CorrelationIdFilter  # noqa: PLC0415
+
+    caplog.handler.addFilter(_CorrelationIdFilter())
+    client = _assembled_client(tmp_path)
+    client.headers.update({"Authorization": f"Bearer {_TOKEN}"})
+
+    with caplog.at_level(logging.INFO, logger="ksi_core.metrics"):
+        client.get("/health", headers={REQUEST_ID_HEADER: "trace-order-check"})
+
+    records = [r for r in caplog.records if r.name == "ksi_core.metrics"]
+    assert records, "ksi_core.metrics 로거가 요청 로그를 남기지 않았다"
+    has_correlation_id = any(
+        getattr(r, "correlation_id", None) == "trace-order-check" for r in records
+    )
+    assert has_correlation_id, "correlation id 누락 — 미들웨어 등록 순서가 뒤바뀌었을 수 있다"
+
+
 @pytest.mark.parametrize("target_status", ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"])
 def test_metrics_module_counts_processing_job_transitions(target_status: str) -> None:
     """[핵심] processing_jobs.py 가 실제로 이 카운터를 증가시킨다 — 모듈 수준

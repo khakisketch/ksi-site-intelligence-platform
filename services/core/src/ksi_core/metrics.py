@@ -158,8 +158,10 @@ class HttpMetricsMiddleware:
     missionId 값마다 별도 시계열이 생겨 카디널리티가 무한히 는다. Starlette
     라우터가 매칭 중에 같은 ``scope`` dict 에 ``scope["route"]`` 를 채워
     두므로, 하위 앱 호출이 끝난 뒤 그 값을 읽으면 된다 — 매칭 실패(404)면
-    ``route`` 가 없으므로 실제 경로를 그대로 쓴다(404 계열은 경로 종류가
-    한정적이라 카디널리티 위험이 낮다).
+    ``route`` 가 없다. 이때 요청받은 원본 경로를 라벨로 그대로 쓰면
+    ``/metrics`` 가 무인증 표면이라 임의 경로를 계속 찔러 계열이 무한정
+    늘어나는 경로가 열린다 — 그래서 매칭 실패는 전부 ``"unmatched"`` 라벨
+    하나로 묶는다(원본 경로는 로그 줄에 남으므로 진단은 거기서 한다).
 
     ## 요청마다 로그 한 줄도 낸다
 
@@ -195,10 +197,13 @@ class HttpMetricsMiddleware:
         duration = time.perf_counter() - started
         route = scope.get("route")
         route_path = getattr(route, "path", None) or scope.get("path", "?")
+        # 라벨은 매칭 실패 시 "unmatched" 로 뭉갠다(위 클래스 docstring) — 로그
+        # 줄은 진단을 위해 원본 경로(route_path)를 그대로 남긴다.
+        metric_route = route_path if route is not None else "unmatched"
         status = str(status_holder[0]) if status_holder else "-"
 
-        HTTP_REQUESTS.inc(method=method, route=route_path, status=status)
-        HTTP_REQUEST_DURATION.observe(duration, method=method, route=route_path)
+        HTTP_REQUESTS.inc(method=method, route=metric_route, status=status)
+        HTTP_REQUEST_DURATION.observe(duration, method=method, route=metric_route)
         logger.info(
             "%s %s -> %s (%.1fms)", method, route_path, status, duration * 1000
         )
