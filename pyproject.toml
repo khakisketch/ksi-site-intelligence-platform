@@ -172,6 +172,15 @@ module = [
 ]
 ignore_missing_imports = true
 
+# laspy 도 rasterio 와 같은 사유(설치되지만 py.typed 마커·스텁 패키지 없음, 2.7.0
+# 확인) — run_change_detection.py 가 point cloud(.laz) 를 읽는 데 쓴다.
+[[tool.mypy.overrides]]
+module = [
+    "laspy.*",
+    "laspy",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages", "services"]
 norecursedirs = ["references", "edge", "apps", "node_modules", ".venv"]

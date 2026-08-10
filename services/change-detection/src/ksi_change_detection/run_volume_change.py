@@ -34,7 +34,7 @@ import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.volume_change_report import VolumeChangeReport, ZoneVolumeDelta
 
-from ksi_change_detection.dsm_diff import align_and_diff, volume_delta_in_polygon
+from ksi_change_detection.dsm_diff import DsmDiffError, align_and_diff, volume_delta_in_polygon
 
 logger = logging.getLogger(__name__)
 
@@ -108,20 +108,23 @@ def compute_volume_change(
         _download(http_client, baseline.download_url, base_path)
         _download(http_client, current.download_url, curr_path)
 
-        diff = align_and_diff(base_path, curr_path)
-        deltas: list[ZoneVolumeDelta] = [
-            volume_delta_in_polygon(
-                diff,
-                polygon,
-                zone_id=zone_id,
-                from_crs=zone_crs,
-                threshold_m=threshold_m,
-                uncertainty_note=uncertainty_note,
-                baseline_rmse_m=baseline.rmse_m,
-                current_rmse_m=current.rmse_m,
-            )
-            for zone_id, polygon in zones.items()
-        ]
+        try:
+            diff = align_and_diff(base_path, curr_path)
+            deltas: list[ZoneVolumeDelta] = [
+                volume_delta_in_polygon(
+                    diff,
+                    polygon,
+                    zone_id=zone_id,
+                    from_crs=zone_crs,
+                    threshold_m=threshold_m,
+                    uncertainty_note=uncertainty_note,
+                    baseline_rmse_m=baseline.rmse_m,
+                    current_rmse_m=current.rmse_m,
+                )
+                for zone_id, polygon in zones.items()
+            ]
+        except DsmDiffError as exc:
+            raise VolumeChangeRunError(f"체적 계산 실패: {exc}") from exc
         crs = diff.crs
 
     return VolumeChangeReport(

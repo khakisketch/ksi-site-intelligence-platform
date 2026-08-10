@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-10T16:07:19+09:00",
+  "updated_at": "2026-08-10T17:22:51+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1287,7 +1287,7 @@
         "제출 후 /reports?missionId=...에서 EmptyState가 아니라 실제 변화 요약·체적·(있으면)정사영상이 렌더된다(390/768/1440 확인)",
         "실 Core+실 NodeODM으로 같은 현장 두 번 재구성한 뒤 이 UI로 제출해 위 결과가 실기동으로 확인된다"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
@@ -1298,7 +1298,7 @@
       "kind": "product",
       "verification_requested": "standard",
       "created_at": "2026-08-10T02:41:04+09:00",
-      "updated_at": "2026-08-10T02:41:04+09:00"
+      "updated_at": "2026-08-10T17:22:51+09:00"
     },
     {
       "id": "m3-processing-worker-runtime",

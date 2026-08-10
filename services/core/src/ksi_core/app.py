@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
     from ksi_core.auth import AuthRegistry
     from ksi_core.change_detection import ChangeDetectionStore
+    from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.edge_sync import EdgeSyncStore
@@ -69,6 +70,7 @@ def create_app(
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
     volume_change_store: VolumeChangeStore | None = None,
+    comparison_request_store: ComparisonRequestStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
@@ -135,6 +137,12 @@ def create_app(
             ``mission_store`` 와 ``processing_job_store`` 가 모두 필수다 — 결과는
             "어느 두 point cloud 산출물을 비교했나"로만 해석 가능하고, 그 참조를
             대조할 작업 원장이 없으면 "변화가 있었다"가 검증 불가능한 주장이 된다.
+        comparison_request_store: W2 "이 두 작업을 비교하라"는 요청의 수신·발견·
+            lease·전이 저장소. ``mission_store``·``processing_job_store``·
+            ``evidence_storage`` 가 모두 필수다 — baseline/current 참조를 대조할
+            작업 원장, 그리고 워커가 그 산출물을 읽어갈 presigned URL 을 발급할
+            스토리지가 없으면 이 표면 자체가 성립하지 않는다(processing_job_store
+            와 동일한 fail-closed 조립 원칙).
         equipment_state_store: Phase 3 장비 운동상태 수신·위험 평가 저장소.
             ``site_store`` 가 필수다 — 위치·속도는 좌표계 없이는 숫자일 뿐이고,
             현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
@@ -289,6 +297,17 @@ def create_app(
             " 쓰인다 (volume_reports.py '사람은 체적을 주장할 수 없다')"
         )
 
+    if comparison_request_store is not None and (
+        mission_store is None or processing_job_store is None or evidence_storage is None
+    ):
+        raise ValueError(
+            "comparison_request_store 는 mission_store·processing_job_store·"
+            "evidence_storage 와 함께 주어져야 한다 — 비교 요청은 '어느 두 처리"
+            " 작업을 비교하는가'로만 해석 가능하고, 워커가 그 산출물을 읽어갈"
+            " presigned URL 을 발급할 스토리지가 없으면 워커가 원본에 닿을 수"
+            " 없다(comparison_requests.py 모듈 docstring)"
+        )
+
     if equipment_state_store is not None and site_store is None:
         raise ValueError(
             "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
@@ -312,6 +331,7 @@ def create_app(
             defect_candidate_store,
             change_detection_store,
             volume_change_store,
+            comparison_request_store,
             equipment_state_store,
             equipment_support_store,
         )
@@ -448,6 +468,14 @@ def create_app(
         from ksi_core.volume_reports import mount_volume_reports
 
         mount_volume_reports(app, volume_change_store)
+
+    if comparison_request_store is not None:
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
+        # presigned URL 발급에 필요 — GET .../input, processing_job_store 와 동일 근거).
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        from ksi_core.comparison_requests import mount_comparison_requests
+
+        mount_comparison_requests(app, comparison_request_store, evidence_storage)
 
     if equipment_state_store is not None:
         from ksi_core.equipment_states import mount_equipment_states

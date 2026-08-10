@@ -1911,6 +1911,216 @@ paths:
         '404': { description: 해당 임무의 체적 변화 리포트가 없다 }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/comparison-requests:
+    post:
+      summary: Request that two completed processing-jobs be compared (W2)
+      description: >-
+        MISSIONS_ISSUE 권한 필요 — 재구성 발급과 같은 사람의 결정이다("무엇과
+        무엇을 비교할지"를 지목하는 것). 실제 계산(점군 C2C·DSM 체적)과 그
+        제출은 워커(PROCESSING_WORK)의 일이고, 이 표면은 그 계산을 요청만
+        한다. baselineJobId·currentJobId 는 둘 다 SUCCEEDED 이고 같은 현장에
+        속해야 하며 서로 달라야 한다. 요청 생성 시점에 각 작업의 등록된
+        산출물(point_cloud·dsm)을 조회해 changeDetectionEligible/
+        volumeChangeEligible 을 판정한다 — 둘 다 false 면(비교할 것이 없음)
+        요청 자체를 거부한다(422 NOTHING_TO_COMPARE). zones 는 site AOI 를
+        참조하지 않고 그 순간 넘긴 값 그대로 불변 스냅샷으로 저장된다(대표자
+        확정, 2026-08-10) — 나중에 현장 경계가 바뀌어도 이미 만든 요청에는
+        영향이 없다. 같은 baselineJobId+currentJobId 조합의 재요청은 새로
+        만들지 않고 기존 요청을 그대로 돌려준다(ALREADY_REQUESTED, 멱등).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          description: currentJobId 가 속한 임무와 같아야 한다.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baselineJobId, currentJobId]
+              properties:
+                baselineJobId: { type: string, minLength: 1 }
+                currentJobId: { type: string, minLength: 1 }
+                zones:
+                  description: >-
+                    zoneId -> GeoJSON Polygon. 생략하면 체적 비교는 시도되지
+                    않는다(점군 비교는 zones 없이도 가능하면 시도된다).
+                  type: object
+                  additionalProperties: { type: object }
+                zoneCrs: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: CREATED — verdict + 생성된 요청(status=QUEUED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestMutationResponse' }
+        '200':
+          description: ALREADY_REQUESTED — 같은 조합의 기존 요청을 그대로 반환(멱등 재요청)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestMutationResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '422':
+          description: >-
+            UNKNOWN_JOB / JOB_NOT_SUCCEEDED / SELF_COMPARISON / SITE_MISMATCH /
+            MISSION_MISMATCH / NOTHING_TO_COMPARE
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+    get:
+      summary: List comparison requests for a mission (newest first)
+      description: MISSIONS_READ 권한 필요. 그 임무의 비교 요청 이력.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 비교 요청 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/comparison-requests:
+    get:
+      summary: List comparison requests a worker may pick up — QUEUED + orphaned RUNNING (FIFO)
+      description: >-
+        PROCESSING_WORK 권한 필요 — **사람은 이 표면을 쓰지 않는다.**
+        `GET /v1/processing-jobs` 와 동형(최소권한 — jobId/requestId 만 노출,
+        임무·현장·비교 대상은 워커가 알 필요가 없다). QUEUED 뿐 아니라 lease
+        가 만료된 RUNNING(죽은 워커가 쥐고 있던 요청)도 나온다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 후보 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingComparisonRequestListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 Role 포함) }
+  /v1/comparison-requests/{request_id}:
+    get:
+      summary: Read one comparison request
+      description: MISSIONS_READ 권한 필요.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 요청 1건
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestView' }
+        '404': { description: 해당 비교 요청을 찾을 수 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/comparison-requests/{request_id}/lease:
+    post:
+      summary: Acquire (or renew) the lease on a comparison request
+      description: >-
+        PROCESSING_WORK 권한 필요. 같은 워커의 재호출은 갱신(heartbeat) —
+        `POST /v1/processing-jobs/{jobId}/lease` 와 동일 원자적 획득 규칙
+        (JobLease 재사용, W1 이 실기동으로 검증한 패턴).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema: { type: string }
+      responses:
+        '201':
+          description: LEASED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestMutationResponse' }
+        '200':
+          description: LEASE_RENEWED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestMutationResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409':
+          description: LEASE_HELD_BY_ANOTHER / REQUEST_NOT_ACTIVE
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/comparison-requests/{request_id}/input:
+    get:
+      summary: Read presigned download URLs for this request's baseline/current artifacts
+      description: >-
+        PROCESSING_WORK 권한 + 그 요청의 lease 필요. **워커가 baseline/current
+        원본을 읽는 유일한 경로다** — `GET /v1/processing-jobs/{jobId}/artifacts/
+        {artifactId}/download` 는 MISSIONS_READ 전용이라 워커가 남의 작업의
+        산출물을 그 표면으로 읽을 수 없다. 이 표면은 **그 요청이 가리키는
+        산출물에 한해서만** presigned GET 을 내준다 — 다른 임의 작업의 산출물은
+        여전히 못 본다(최소권한 유지).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: INPUT_READY
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestInputResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: LEASE_REQUIRED / LEASE_HELD_BY_ANOTHER }
+        '503': { description: STORAGE_UNAVAILABLE — Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/comparison-requests/{request_id}/transitions:
+    post:
+      summary: Transition a comparison request's status
+      description: >-
+        PROCESSING_WORK 권한 필요 — RUNNING/SUCCEEDED/FAILED 는 계산을 실제로
+        돌린 주체만 아는 사실이다(사람이 결과를 손으로 주장할 수 없다는 것과
+        같은 원칙). W2 는 CANCELLED 를 다루지 않는다(허용 전이표에 없음).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus]
+              properties:
+                targetStatus: { type: string, enum: [RUNNING, SUCCEEDED, FAILED] }
+                detail: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: TRANSITIONED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonRequestMutationResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: ILLEGAL_TRANSITION / LEASE_REQUIRED / LEASE_HELD_BY_ANOTHER }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/processing-jobs/{job_id}/artifacts/upload-url:
     post:
       summary: Issue a presigned PUT target for a reconstruction artifact's bytes
@@ -3132,6 +3342,106 @@ components:
               report: { type: object, additionalProperties: true }
               reportedBy: { type: [string, 'null'] }
               recordedAt: { type: string, format: date-time }
+
+    ComparisonRequestMutationResponse:
+      description: 비교 요청 생성·lease·전이 공통 응답. verdict 가 결과 코드고, request 는 성공 시에만 실린다.
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        request:
+          oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
+        detail: { type: [string, 'null'] }
+
+    ComparisonRequestListResponse:
+      description: >-
+        각 항목의 구조 정본은 contracts/schemas/comparison-request.v1.json 이다.
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    PendingComparisonRequestView:
+      description: >-
+        워커가 다음에 잡을 후보 1건 — 최소 노출(PendingProcessingJobView 와 동형).
+        PROCESSING_WORK 는 MISSIONS_READ 를 포함하지 않으므로 임무·현장·비교
+        대상까지 여기서 드러내지 않는다.
+      type: object
+      required: [requestId, requestedAt]
+      properties:
+        requestId: { type: string }
+        requestedAt: { type: string, format: date-time }
+
+    PendingComparisonRequestListResponse:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items: { $ref: '#/components/schemas/PendingComparisonRequestView' }
+
+    ComparisonRequestView:
+      description: >-
+        비교 요청 1건의 조회 표현 — 계약 payload + 운영 메타(lease). request 의
+        구조 정본은 contracts/schemas/comparison-request.v1.json 이다.
+      type: object
+      required: [request, leaseWorkerId, leaseExpiresAt]
+      properties:
+        request: { type: object, additionalProperties: true }
+        leaseWorkerId: { type: [string, 'null'] }
+        leaseExpiresAt: { type: [string, 'null'], format: date-time }
+
+    ComparisonRequestInputView:
+      description: >-
+        워커가 실제로 계산하는 데 필요한 것 — presigned GET URL + 그 산출물의
+        참조(jobId+artifactId, ChangeDetectionResult/VolumeChangeReport 제출에
+        필요하다).
+      type: object
+      required:
+        [requestId, missionId, status, pointCloudBaseline, pointCloudBaselineUrl,
+         pointCloudCurrent, pointCloudCurrentUrl, dsmBaseline, dsmBaselineUrl,
+         dsmCurrent, dsmCurrentUrl, zones, zoneCrs]
+      properties:
+        requestId: { type: string }
+        missionId: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        pointCloudBaseline:
+          oneOf: [{ $ref: '#/components/schemas/ArtifactRef' }, { type: 'null' }]
+        pointCloudBaselineUrl: { type: [string, 'null'] }
+        pointCloudCurrent:
+          oneOf: [{ $ref: '#/components/schemas/ArtifactRef' }, { type: 'null' }]
+        pointCloudCurrentUrl: { type: [string, 'null'] }
+        dsmBaseline:
+          oneOf: [{ $ref: '#/components/schemas/ArtifactRef' }, { type: 'null' }]
+        dsmBaselineUrl: { type: [string, 'null'] }
+        dsmCurrent:
+          oneOf: [{ $ref: '#/components/schemas/ArtifactRef' }, { type: 'null' }]
+        dsmCurrentUrl: { type: [string, 'null'] }
+        zones:
+          oneOf:
+            - { type: object, additionalProperties: { type: object } }
+            - { type: 'null' }
+        zoneCrs: { type: [string, 'null'] }
+
+    ArtifactRef:
+      description: 산출물 참조 — artifactId 는 처리 작업 단위로만 고유해 jobId 와 짝으로 해석한다.
+      type: object
+      required: [jobId, artifactId]
+      properties:
+        jobId: { type: string }
+        artifactId: { type: string }
+
+    ComparisonRequestInputResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        input:
+          oneOf: [{ $ref: '#/components/schemas/ComparisonRequestInputView' }, { type: 'null' }]
+        detail: { type: [string, 'null'] }
+
 
     ArtifactUploadUrlResponse:
       description: >-

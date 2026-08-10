@@ -9,7 +9,11 @@ requires-python = ">=3.12,<3.13"
 # rasterio 는 AGPL 엔진과 무관한 BSD 라이브러리다 — GSD(픽셀 표본거리)를
 # 등록하려는 GeoTIFF 자신의 아핀 변환에서 읽기 위해서만 쓴다(gsd.py). ODM/
 # NodeODM 코드를 참조하지 않으므로 ADR-KSI-012 D2 AGPL 경계와 무관하다.
+# ksi-change-detection 은 W2 비교 워커(comparison_worker.py)가 점군 C2C·체적
+# 계산+제출 함수(run_change_detection.py/run_volume_change.py)를 그대로 부르기
+# 위한 워크스페이스 의존이다 — 계산 로직을 이 패키지로 복제하지 않는다.
 dependencies = [
+    "ksi-change-detection",
     "ksi-event-contracts",
     "httpx>=0.27",
     "pillow>=10.0",
@@ -22,6 +26,7 @@ dependencies = [
 ksi-processing-worker = "ksi_processing_controller.runner:main"
 
 [tool.uv.sources]
+ksi-change-detection = { workspace = true }
 ksi-event-contracts = { workspace = true }
 
 [build-system]

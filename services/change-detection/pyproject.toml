@@ -14,9 +14,16 @@ requires-python = ">=3.12,<3.13"
 # 위해서다(그쪽 change_detection_result.py docstring "왜 계약 패키지에 사는가").
 # rasterio·ksi-geo-spatial 는 DSM 차분(dsm_diff.py) 용이다. point cloud C2C 는
 # scipy 만 쓰므로 두 계열이 한 패키지에 있지만, 서로를 import 하지 않는다.
+# laspy(BSD-3)+lazrs(MIT/Apache-2.0)는 ODM 산출 point cloud(.laz, odm_assets.py
+# POINT_CLOUD_ID)를 읽는다(run_change_detection.py) — 둘 다 허용 라이선스이고
+# AGPL/GPL 프로세스경계(ADR-KSI-012 D2)와 무관하다(point_cloud_diff.py 모듈
+# docstring 이 CloudCompare/Open3D 를 배제한 것과 같은 기준으로 봤을 때 이
+# 둘은 애초에 배제 대상이 아니다).
 dependencies = [
     "ksi-event-contracts",
     "ksi-geo-spatial",
+    "laspy>=2.5",
+    "lazrs>=0.6",
     "numpy>=1.26",
     "rasterio>=1.3",
     "scipy>=1.13",

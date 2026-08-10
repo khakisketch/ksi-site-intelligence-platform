@@ -161,6 +161,30 @@ class FakeCoreClient:
                 what="artifact", verdict="ARTIFACT_CONTRACT_VIOLATION", detail="테스트 강제 실패"
             )
 
+    # ── W2 비교 요청 표면 — 이 파일의 시험 대상(run_job)은 쓰지 않는다.
+    # CoreClient Protocol 구조 만족용 최소 스텁이다(comparison_worker 시험은
+    # test_comparison_worker.py 의 FakeComparisonCoreClient 가 실제로 구현한다).
+
+    def list_pending_comparisons(self, *, limit: int = 50) -> list[Any]:
+        raise NotImplementedError
+
+    def acquire_comparison_lease(self, request_id: str) -> None:
+        raise NotImplementedError
+
+    def get_comparison_input(self, request_id: str) -> Any:
+        raise NotImplementedError
+
+    def transition_comparison(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        raise NotImplementedError
+
+    def submit_change_detection(self, mission_id: str, result: Any) -> None:
+        raise NotImplementedError
+
+    def submit_volume_change(self, mission_id: str, report: Any) -> None:
+        raise NotImplementedError
+
 
 class FakeNodeOdm:
     """포트 계약만 만족하는 가짜 엔진 — test_odm_adapter.py 의 것과 같은 관용구."""

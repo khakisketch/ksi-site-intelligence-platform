@@ -33,6 +33,7 @@ from fastapi.responses import JSONResponse
 
 from ksi_core.app import create_app
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
@@ -133,6 +134,7 @@ def assemble_app(
     defect_candidate_journal = journal("defect-candidates.jsonl")
     change_detection_journal = journal("change-detection.jsonl")
     volume_change_journal = journal("volume-changes.jsonl")
+    comparison_request_journal = journal("comparison-requests.jsonl")
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -172,6 +174,18 @@ def assemble_app(
                 processing_job_store=processing_job_store,
             )
             if processing_job_store is not None
+            else None
+        ),
+        # W2 비교 요청(comparison_requests.py) — evidence_storage 까지 필요한
+        # 것은 워커가 baseline/current 원본을 읽어갈 presigned URL 을 이 표면이
+        # 직접 발급하기 때문이다(processing_job_store 와 동일 근거).
+        comparison_request_store=(
+            ComparisonRequestStore(
+                comparison_request_journal,
+                mission_store=mission_store,
+                processing_job_store=processing_job_store,
+            )
+            if processing_job_store is not None and evidence_storage is not None
             else None
         ),
         equipment_state_store=EquipmentStateStore(
