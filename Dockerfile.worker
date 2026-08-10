@@ -1,0 +1,39 @@
+# KSI 처리 워커 이미지 — services/processing-controller/src/ksi_processing_controller/
+# runner.py 의 main() 을 콘솔 스크립트(ksi-processing-worker)로 기동한다.
+#
+# Core 이미지(./Dockerfile)와 같은 이유로 저장소 전체를 컨텍스트로 넣는다 —
+# uv workspace 라 ksi-processing-controller 가 packages/*(ksi-event-contracts 등)
+# workspace 멤버에 의존하고, uv sync 가 workspace 전체의 pyproject.toml 을 봐야
+# 한다. .dockerignore 는 두 이미지가 공유한다(apps/·edge/·references/·models/ 등
+# 서버 런타임과 무관한 대용량 트리를 이미 걸러낸다 — 워커도 그것들을 쓰지 않는다).
+FROM python:3.12-slim
+
+# GDAL(rasterio 가 필요로 하는 네이티브 라이브러리) — gsd.py 가 아카이브 안
+# GeoTIFF 를 zip:// URI 로 직접 여는 데 GDAL 의 vsizip 가상 파일시스템을 쓴다.
+# rasterio wheel 은 GDAL 을 함께 번들하므로(manylinux) 이 설치는 방어적이다 —
+# 시스템 GDAL 이 없어도 pip/uv 로 설치된 rasterio 는 자체 GDAL 로 동작한다.
+# apt 캐시는 이미지에 남기지 않는다.
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.15 /uv /uvx /bin/
+
+WORKDIR /app
+
+COPY . .
+
+# Core Dockerfile 과 동일 원칙 — lock 을 신뢰하고 재해석하지 않는다.
+RUN uv sync --locked --all-packages
+
+# non-root — Core Dockerfile 과 동일 근거(chown -R 없이 venv 직접실행이면 런타임
+# 유저에게 /app 쓰기 권한이 필요 없다). 워커는 work_dir(볼륨 마운트 예정)에만
+# 쓰면 되고, 그 자리는 배포자가 이 유저가 쓸 수 있게 마련한다.
+RUN useradd --create-home --uid 10002 ksi-worker
+USER ksi-worker
+
+# HTTP 표면이 없다 — 이 프로세스는 폴링 데몬이라 EXPOSE 할 포트가 없다.
+
+# 필수 환경변수(KSI_WORKER_CORE_BASE_URL 등, runner.py main() 참조) 없이는
+# 즉시 RuntimeError 로 죽는다 — Core production.py 와 동일한 fail-closed 의도다.
+CMD ["/app/.venv/bin/ksi-processing-worker"]

@@ -23,6 +23,7 @@ from ksi_processing_controller.core_client import (
     HttpCoreClient,
     JobInputMedia,
     MeasuredImage,
+    PendingJob,
 )
 
 _BASE = "http://fake-core"
@@ -37,6 +38,49 @@ def _json_handler(status: int, body: dict) -> httpx.MockTransport:
         return httpx.Response(status, json=body)
 
     return httpx.MockTransport(handle)
+
+
+# ── list_pending ─────────────────────────────────────────────────────────
+
+
+def test_list_pending_parses_job_ids_in_order() -> None:
+    client = _client(
+        _json_handler(
+            200,
+            {
+                "jobs": [
+                    {"jobId": "job-1", "issuedAt": "2026-08-10T00:00:00Z"},
+                    {"jobId": "job-2", "issuedAt": "2026-08-10T00:00:01Z"},
+                ]
+            },
+        )
+    )
+    assert client.list_pending() == [PendingJob(job_id="job-1"), PendingJob(job_id="job-2")]
+
+
+def test_list_pending_empty_is_not_an_error() -> None:
+    client = _client(_json_handler(200, {"jobs": []}))
+    assert client.list_pending() == []
+
+
+def test_list_pending_sends_limit_as_query_param() -> None:
+    captured: dict = {}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        captured["limit"] = request.url.params.get("limit")
+        return httpx.Response(200, json={"jobs": []})
+
+    client = _client(httpx.MockTransport(handle))
+    client.list_pending(limit=7)
+    assert captured["limit"] == "7"
+
+
+def test_list_pending_forbidden_is_typed() -> None:
+    """[음성] 사람 토큰(권한 없음)으로 부르면 403 이 CoreClientError 로 온다."""
+    client = _client(_json_handler(403, {"detail": "권한이 부족하다"}))
+    with pytest.raises(CoreClientError) as excinfo:
+        client.list_pending()
+    assert excinfo.value.verdict == "HTTP_403"
 
 
 # ── lease — LEASED 와 LEASE_RENEWED 둘 다 성공이다 ───────────────────────────

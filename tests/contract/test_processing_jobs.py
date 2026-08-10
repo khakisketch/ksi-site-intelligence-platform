@@ -1242,6 +1242,44 @@ def test_http_list_for_mission(tmp_path: Path) -> None:
     assert len(listed.json()["jobs"]) == 1
 
 
+def test_http_list_pending_is_worker_only_and_minimal(tmp_path: Path) -> None:
+    """워커의 pull 표면 — PROCESSING_WORK 만 통과하고, 최소 필드만 나온다."""
+    client = _client(tmp_path)
+    issued = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]
+
+    _as_worker(client)
+    listed = client.get("/v1/processing-jobs")
+    assert listed.status_code == 200
+    jobs = listed.json()["jobs"]
+    assert len(jobs) == 1
+    assert jobs[0]["jobId"] == issued["jobId"]
+    # 임무·현장·계약 내용은 이 표면에 없다(최소권한) — PendingProcessingJobView.
+    assert set(jobs[0]) == {"jobId", "issuedAt"}
+
+
+def test_http_list_pending_operator_forbidden(tmp_path: Path) -> None:
+    """[음성] 사람(MISSIONS_READ 등)은 워커 전용 표면을 못 쓴다."""
+    client = _client(tmp_path)
+    client.post(f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload())
+    assert client.get("/v1/processing-jobs").status_code == 403
+
+
+def test_http_list_pending_excludes_running_jobs(tmp_path: Path) -> None:
+    """RUNNING 으로 전이된 작업은 후보 목록에서 사라진다 — 다른 워커가 이미 쥐고 있다."""
+    client = _client(tmp_path)
+    job_id = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+
+    _as_worker(client)
+    assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 201
+    client.post(f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"})
+
+    assert client.get("/v1/processing-jobs").json()["jobs"] == []
+
+
 def test_http_unknown_job_is_404(tmp_path: Path) -> None:
     client = _client(tmp_path)
     assert client.get("/v1/processing-jobs/no-such-job").status_code == 404
@@ -2190,3 +2228,143 @@ def test_store_list_for_site_does_not_leak_other_sites(tmp_path: Path) -> None:
     store = _job_store(tmp_path)
     assert store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record is not None
     assert store.list_for_site("site-does-not-exist") == []
+
+
+def test_store_list_pending_excludes_running_jobs_with_active_lease(tmp_path: Path) -> None:
+    """RUNNING 이고 lease 가 아직 살아있으면 다른 워커가 지금 돌리는 중이다 —
+    새 워커의 후보 목록에 다시 나타나면 안 된다."""
+    store = _job_store(tmp_path)
+    job = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert job is not None
+    assert [j.job_id for j in store.list_pending(now=_NOW)] == [job.job_id]
+
+    store.acquire_lease(job.job_id, worker_id="worker-1", now=_NOW)
+    store.transition(
+        job.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+    # 같은 now 로 조회 — lease(기본 15분)가 아직 유효한 시점이다.
+    assert store.list_pending(now=_NOW) == []
+
+
+def test_store_list_pending_includes_running_jobs_with_expired_lease(tmp_path: Path) -> None:
+    """[핵심] 워커가 재구성 도중 죽어도 그 작업이 영원히 멈추지 않는다 —
+    lease 가 만료되면 후보 목록에 다시 나타나 다른 워커가 회수할 수 있다.
+
+    이 표면이 처음엔 QUEUED 로만 좁혀져 있었다 — acquire_lease 자체는 만료된
+    lease 를 없는 것처럼 취급하도록 이미 설계돼 있었는데(모듈 docstring
+    "죽은 워커의 작업은 별도 조치 없이 만료 후 회수된다"), pull 표면이 그
+    회수 대상을 후보로 보여주지 않으면 아무도 다시 acquire_lease 를 시도하지
+    않아 그 설계가 무의미해진다.
+    """
+    store = _job_store(tmp_path)
+    job = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert job is not None
+    store.acquire_lease(job.job_id, worker_id="worker-1", now=_NOW)
+    store.transition(
+        job.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    after_expiry = _NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    assert [j.job_id for j in store.list_pending(now=after_expiry)] == [job.job_id]
+
+    # 실제로 다른 워커가 그 후보를 다시 잡을 수 있는지까지 — 후보로 나오는
+    # 것과 실제로 회수 가능한 것이 어긋나면(예: 후보 목록만 고쳐지고 게이트는
+    # 여전히 거부) 이 후보 목록은 거짓 희망이다.
+    reclaimed = store.acquire_lease(job.job_id, worker_id="worker-2", now=after_expiry)
+    assert reclaimed.verdict is ProcessingJobVerdict.LEASED
+
+
+def test_store_list_pending_excludes_terminal_jobs_regardless_of_lease(tmp_path: Path) -> None:
+    """[음성] SUCCEEDED 로 끝난 작업은 lease 만료 여부와 무관하게 후보가 아니다."""
+    store = _job_store(tmp_path)
+    job = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert job is not None
+    store.acquire_lease(job.job_id, worker_id="worker-1", now=_NOW)
+    store.transition(
+        job.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+    store.transition(
+        job.job_id, ProcessingJobStatus.FAILED, detail="테스트", actor="worker-1", now=_NOW
+    )
+
+    after_expiry = _NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    assert store.list_pending(now=after_expiry) == []
+
+
+def _second_mission_job_store(tmp_path: Path) -> tuple[ProcessingJobStore, str]:
+    """두 번째 임무(``_MISSION_ID`` 아님)를 가진 별도 저장소 세트.
+
+    ``issue()`` 는 임무당 활성(QUEUED·RUNNING) 작업을 1건으로 제한하므로, 같은
+    임무에서 QUEUED 두 건을 동시에 만들 수 없다 — FIFO 순서를 보려면 서로 다른
+    임무가 필요하다. 발급에는 봉인만 있으면 되고(SUCCEEDED 게이트만 실측 대조를
+    요구한다), 검증까지는 필요 없다.
+    """
+    second_mission_id = "mission-pj-2"
+    site_store = _site_store(tmp_path)
+    mission_store = _mission_store(tmp_path)
+    assert (
+        mission_store.record_issuance(
+            MissionRecord(
+                mission_id=second_mission_id,
+                site_id=_SITE_ID,
+                mission_type="BASELINE_MAPPING",
+                artifact_kind="contract",
+                contract={"schemaVersion": "1.2", "missionId": second_mission_id},
+                kmz_sha256=None,
+                route_pattern=None,
+                waypoint_count=None,
+                planned_coverage_ratio=None,
+                issued_at=_NOW,
+                issued_by="do-1",
+            )
+        ).value
+        == "RECORDED"
+    )
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "two-mission-source-media.jsonl"), mission_store=mission_store
+    )
+    for mission_id in (_MISSION_ID, second_mission_id):
+        assert (
+            source_media_store.register_batch(
+                mission_id,
+                [_claim(f"img-{i:03d}.jpg") for i in range(3)],
+                registered_by="op-1",
+                now=_NOW,
+            ).verdict.value
+            == "PROCESSED"
+        )
+        assert (
+            source_media_store.seal(mission_id, sealed_by="op-1", now=_NOW).verdict.value
+            == "SEALED"
+        )
+    store = ProcessingJobStore(
+        DurableJournal(tmp_path / "two-mission-processing-jobs.jsonl"),
+        source_media_store=source_media_store,
+        site_store=site_store,
+    )
+    return store, second_mission_id
+
+
+def test_store_list_pending_orders_by_issued_at_then_job_id(tmp_path: Path) -> None:
+    """워커의 pull 표면 — 오래된 것부터(FIFO)."""
+    store, second_mission_id = _second_mission_job_store(tmp_path)
+    first = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert first is not None
+    second_now = _NOW + timedelta(seconds=1)
+    second = store.issue(second_mission_id, _spec(), issued_by="op-1", now=second_now).record
+    assert second is not None
+
+    assert [j.job_id for j in store.list_pending(now=second_now)] == [first.job_id, second.job_id]
+
+
+def test_store_list_pending_respects_the_limit(tmp_path: Path) -> None:
+    """``list_for_site`` 와 같은 관례 — 0 은 "0건 요청"이지 오류가 아니다."""
+    store = _job_store(tmp_path)
+    assert store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record is not None
+    assert store.list_pending(now=_NOW, limit=0) == []
+
+
+def test_store_list_pending_rejects_negative_limit(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    with pytest.raises(ValueError, match="limit"):
+        store.list_pending(now=_NOW, limit=-1)

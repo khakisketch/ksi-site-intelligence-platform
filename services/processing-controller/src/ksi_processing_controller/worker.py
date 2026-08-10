@@ -55,6 +55,7 @@ from ksi_processing_controller.core_client import (
     CoreClientError,
     MeasuredImage,
 )
+from ksi_processing_controller.gsd import resolve_gsd
 from ksi_processing_controller.measure import measure_image
 from ksi_processing_controller.odm import (
     NodeOdmClient,
@@ -135,6 +136,15 @@ def run_job(
 
     실패 시 예외를 던진다(``FAILED`` 보고는 시도하되 삼키지 않는다) — 호출자
     (데몬 루프)가 재시도·알림을 정할 수 있게 원인을 그대로 넘긴다.
+
+    ``gsd_by_artifact`` 를 생략하면(``None``) 완주한 아카이브에서
+    :func:`~ksi_processing_controller.gsd.resolve_gsd` 로 **자동으로 읽는다** —
+    래스터 산출물(정사영상·DSM·DTM)마다 값을 손으로 채워 넘겨야 했던 지금까지의
+    호출부(테스트) 관행을 프로덕션 경로에서는 없앤다. 값을 명시적으로 넘기면
+    (테스트가 그렇게 한다) 그 값을 그대로 쓰고 자동 해석을 건너뛴다 — 자동
+    해석도 결국 못 읽으면 건너뛰므로(``gsd.py`` 모듈 docstring), 명시값과 자동값을
+    섞어서 "일부는 지정, 나머지는 자동"으로 두지 않는다: 하나라도 명시하면
+    그 dict 가 전체를 대표한다.
     """
     fetch = http_client or httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
@@ -198,9 +208,13 @@ def run_job(
         # ── 6. 산출물 계보 등록 ─────────────────────────────────────────
         archive_path = work_dir / "all.zip"
         odm.download_archive(uuid, archive_path)
-        reports = plan_artifacts(
-            archive_path, crs=job_input.site_crs, gsd_by_artifact=gsd_by_artifact
+        # None 이면(프로덕션 기본 경로) 완주한 아카이브 자신에서 읽는다 — 지어낸
+        # 값이 아니라 등록될 그 파일의 실제 픽셀 크기다(gsd.py 모듈 docstring).
+        # 명시적으로 넘겨받았으면(테스트) 그 값을 그대로 쓴다.
+        resolved_gsd = (
+            gsd_by_artifact if gsd_by_artifact is not None else resolve_gsd(archive_path)
         )
+        reports = plan_artifacts(archive_path, crs=job_input.site_crs, gsd_by_artifact=resolved_gsd)
         registered = 0
         for report in reports:
             # ① 자리를 받고 ② 그 자리에 쓰고 ③ 그다음에 등록한다.
