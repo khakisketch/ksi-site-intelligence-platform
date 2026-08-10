@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-11T05:31:11+09:00",
+  "updated_at": "2026-08-11T05:42:26+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1425,10 +1425,16 @@
         "회전 중 겹침 구간에서 신·구 토큰 동시 유효",
         "회전 절차가 문서화된다(서명키 회전과 같은 모양)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "구현: services/core/src/ksi_core/auth.py — TokenStatus(ACTIVE/REVOKED) enum 추가, PrincipalTokenRecord에 status(기본 ACTIVE)·not_after(기본 None, tz-aware 강제) 필드 추가(mission-contracts KeyRegistry/KeyStatus와 동일 모양). AuthRegistry.__init__: 같은 principal_id가 여러 digest로 등록될 수 있게 완화(회전 겹침 구간)하되 신원(kind/role/deviceId) 불일치는 여전히 거부(설정 오사고 방지) — principal_by_id dict로 신원 일치 검증. resolve(token, *, now=None): 미지/REVOKED/not_after 경과 토큰을 전부 동일 None(→401, 사유 미노출)으로 처리, now 기본값은 datetime.now(UTC)(다른 ksi_core 모듈과 동일 관습). production.py::_parse_principal_tokens: KSI_CORE_PRINCIPAL_TOKENS_JSON에 선택 필드 status/notAfter 파싱 추가(형식 오류는 RuntimeError, 기존 배포와 완전 하위호환). 문서: docs/security/AUTH_TOKEN_ROTATION.md 신규(SIGNING_KEY_LIFECYCLE.md와 같은 절 구성 — 회전 정기 절차/폐기 절차/확인되지 않은 것). 테스트: tests/contract/test_auth.py에 10건 신규(신원충돌 거부/회전허용/naive not_after 거부/REVOKED 즉시거부/not_after 시각 경계/무기한 하위호환/HTTP 401 만료·폐기/401 detail 4분기 동일문구), tests/contract/test_production_assembly.py에 3건 신규(알수없는 status 거부/naive notAfter 거부/HTTP 레벨 신구토큰 동시 인증 겹침구간 e2e). 전체 계약 테스트 1942 passed(기존 1932+신규 10), ruff/mypy clean(services/core/src 30개 파일).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T05:42:26+09:00",
+        "reviewer": "reviewer subagent a512085567bb75b69",
+        "evidence_ref": "auth.py/production.py/AUTH_TOKEN_ROTATION.md + tests/contract/test_auth.py,test_production_assembly.py + reviewer transcript a512085567bb75b69"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
@@ -1436,7 +1442,7 @@
       "kind": "product",
       "verification_requested": "strict",
       "created_at": "2026-08-11T04:43:37+09:00",
-      "updated_at": "2026-08-11T05:23:00+09:00"
+      "updated_at": "2026-08-11T05:42:26+09:00"
     },
     {
       "id": "m3-retention-scheduler",
@@ -1446,7 +1452,7 @@
         "tombstone-먼저 순서가 보존된다",
         "컨테이너에서 실동작 확인"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
       "evidence": null,
       "verdict": null,
@@ -1457,7 +1463,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-11T04:43:37+09:00",
-      "updated_at": "2026-08-11T04:43:37+09:00"
+      "updated_at": "2026-08-11T05:38:43+09:00"
     },
     {
       "id": "m2-closed-loop-revisit-mission",
