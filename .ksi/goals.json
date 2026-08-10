@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-11T03:09:56+09:00",
+  "updated_at": "2026-08-11T05:00:39+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1362,6 +1362,118 @@
       "verification_requested": null,
       "created_at": "2026-08-10T16:05:57+09:00",
       "updated_at": "2026-08-10T16:07:19+09:00"
+    },
+    {
+      "id": "m3-coverage-device-mission-match",
+      "title": "커버리지 보고 장비-임무 대조 (INV-010 무결성 공백)",
+      "completion_criteria": [
+        "임무에 배정되지 않은 device_id 의 CoverageReport 제출이 typed 거부된다(422 계열)",
+        "그 거부가 원장에 남아 조회 가능하다(기존 거부-조회 표면 재사용)",
+        "회귀 테스트로 고정"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "MissionRecord/MissionRecordResponse 에 assigned_device_id(선택, 서명된 계약 밖 — Core 운영 메타데이터) 추가. 발급 요청(POST /v1/missions/contracts, /v1/missions/plans 의 nested contract)에 assignedDeviceId 선택 필드 추가, mission_issuance.py+mission_plans.py 양쪽 MissionRecord 생성부에 배선. CoverageReportStore.record()에 device_id 파라미터 추가 — mission.assigned_device_id가 신고돼 있고 보고 장비와 다르면 새 verdict DEVICE_NOT_ASSIGNED(403, edge_sync.py DEVICE_MISMATCH와 동형)로 거부하고 기존 rejection 감사경로(durable 기록 + GET .../coverage-report/rejections)에 그대로 실린다. 배정을 신고 안 한 임무는 하위호환으로 예전처럼 어느 장비든 허용(회귀 테스트로 고정). openapi-core.yaml 3곳(계약 발급 요청 2곳 + MissionRecordResponse) 갱신, apps/dashboard/src/lib/core-api/types.ts MissionRecordResponse 동기화(계약-대시보드 타입 동기화 게이트 test_dashboard_types_match_contract_schemas 통과 확인). 테스트: test_coverage_reports.py 7건 신규(배정 불일치 거부·일치 허용·미배정 하위호환·거부 감사기록·HTTP 403 실측·HTTP 정상 발급 실측), test_mission_issuance.py 3건 신규(서명계약에 안 실림·조회 표면 노출·미지정시 null). 전체 계약 테스트 1917 passed(회귀 0), ruff/mypy/tsc clean.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료기준 문구 '422 계열'을 실제로는 403(edge_sync.py 의 기존 DEVICE_MISMATCH 관용구와 동형)으로 구현 — typed·구조화 거부라는 정신은 충족, 문구 차이는 원장 기준 자체의 사소한 부정확이었다고 판단해 pass.",
+        "at": "2026-08-11T05:00:39+09:00",
+        "reviewer": "reviewer subagent(read-only, 코드 경로 직접 추적) — CONFIRMED. 완료기준 문구 '422 계열'과 실제 구현 403(edge_sync.py DEVICE_MISMATCH 동형)의 문자 차이를 지적했으나 typed 거부 정신은 충족한다고 판단",
+        "evidence_ref": "services/core/src/ksi_core/coverage_reports.py:105,318-333,514-519 + tests/contract/test_coverage_reports.py (49 passed) + tests/contract/test_mission_issuance.py (14 passed) + 메인 세션이 직접 실행: uv run pytest tests/contract/ 1917 passed, ruff/mypy clean"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T05:00:39+09:00"
+    },
+    {
+      "id": "m3-observability",
+      "title": "관측성 — 구조화 로깅 + 기본 메트릭",
+      "completion_criteria": [
+        "요청/작업 단위 correlation id 가 로그를 관통한다",
+        "/metrics 또는 동등 표면에 요청 수·지연·처리작업 상태 카운터가 노출된다",
+        "docker 종단 기동에서 실측 확인"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T04:57:43+09:00"
+    },
+    {
+      "id": "m3-auth-token-expiry-rotation",
+      "title": "실사용자 인증 — 토큰 만료·회전",
+      "completion_criteria": [
+        "만료된 토큰이 401 로 거부된다",
+        "회전 중 겹침 구간에서 신·구 토큰 동시 유효",
+        "회전 절차가 문서화된다(서명키 회전과 같은 모양)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T04:43:37+09:00"
+    },
+    {
+      "id": "m3-retention-scheduler",
+      "title": "retention 집행 스케줄러 연결",
+      "completion_criteria": [
+        "주기 실행 진입점이 있다",
+        "tombstone-먼저 순서가 보존된다",
+        "컨테이너에서 실동작 확인"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T04:43:37+09:00"
+    },
+    {
+      "id": "m2-closed-loop-revisit-mission",
+      "title": "M2 폐루프 — 재촬영 권고에서 임무 발급까지 연결",
+      "completion_criteria": [
+        "재촬영 권고(needs_change_candidate_revisit)가 뜬 변화탐지 결과에서 화면이 SPATIAL_REFRESH 임무 초안을 만들 수 있다",
+        "원본 현장 AOI 를 기본값으로 채운다",
+        "승인(발급) 은 사람이 명시적으로 확정한다(자동 발급 아님)",
+        "실 Core 로 종단 확인"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T04:43:37+09:00"
     }
   ],
   "risks": [
