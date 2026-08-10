@@ -26,6 +26,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app_assembly import assemble_app, cli_optional_positive  # noqa: F401 -- re-export
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.observability import configure_structured_logging
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 
 _DEV_TOKENS: dict[Role, str] = {
@@ -220,6 +221,10 @@ def _build_dev_app_locked(
 
 
 def main() -> None:
+    # 사람이 터미널에서 읽는 스크립트라 JSON 이 아니라 한 줄 텍스트로 —
+    # production.py 는 반대(json_format=True, 로그 수집기가 읽는다). 형식만
+    # 다르고 correlation id 필터는 dev 도 그대로 받는다(같은 함수).
+    configure_structured_logging(json_format=False)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)

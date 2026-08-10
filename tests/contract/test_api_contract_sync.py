@@ -731,7 +731,11 @@ def test_no_unauthenticated_route_outside_allowlist(tmp_path: Path) -> None:
 # 대해서는 공허했다). 여기서 실행 가능한 두 조립이 공유하는 assemble_app 도 같은
 # 방식으로 훑어, "나중에 assemble_app 이 인증 없이 열어선 안 되는 라우트를 추가해도
 # 이 파일의 게이트가 못 본다"는 사각지대를 닫는다.
-_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST = frozenset({"/ready"})
+_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST = frozenset({"/ready", "/metrics"})
+# /metrics 는 /ready 와 같은 이유로 의도적 무인증이다 — Prometheus 스크레이퍼는
+# 인증 헤더를 안 보내는 것이 표준 배치이고, 표면 자체가 집계된 카운트·지연
+# 분포뿐 민감한 요청 내용을 담지 않는다(app_assembly.py 의 /metrics 라우트
+# docstring 참조).
 
 
 def test_no_unauthenticated_route_outside_allowlist_via_assemble_app(tmp_path: Path) -> None:

@@ -182,6 +182,7 @@ from ksi_core.evidence import (
     is_valid_artifact_id,
 )
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
+from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
 from ksi_core.source_media import SourceMediaRecord
 
 if TYPE_CHECKING:
@@ -1148,6 +1149,9 @@ class ProcessingJobStore:
                 )
             updated = replace(current, status=target, updated_at=now, terminal_detail=detail)
             self._jobs[job_id] = updated
+            # journal.append 가 성공한 뒤에만 센다 — 실패(STORE_UNAVAILABLE)까지
+            # 세면 "일어난 전이 수"가 아니라 "시도 수"가 되어 이름이 거짓말한다.
+            PROCESSING_JOB_TRANSITIONS.inc(target_status=target.value)
             return ProcessingJobResult(ProcessingJobVerdict.TRANSITIONED, record=updated)
 
     def register_artifact(

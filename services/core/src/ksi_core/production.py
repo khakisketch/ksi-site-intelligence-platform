@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any
 from ksi_core.app_assembly import assemble_app, cli_optional_positive
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.observability import configure_structured_logging
 from ksi_core.signing_keys import load_signing_keys
 
 if TYPE_CHECKING:
@@ -202,6 +203,13 @@ def build_production_app() -> FastAPI:
     uvicorn 팩토리 진입점(``--factory``)으로 쓰인다:
     ``uvicorn ksi_core.production:build_production_app --factory``.
     """
+    # 검증보다도 먼저다 — 검증 실패 메시지 자체도 구조화 로그로 남아야
+    # 배포 사고 조사에서 "그때 무슨 환경변수가 문제였는지"가 로그 수집기에서
+    # 검색 가능하다. correlation id 는 아직 없다(요청 밖이므로 "-"로 찍힌다).
+    configure_structured_logging(
+        level=os.environ.get("KSI_CORE_LOG_LEVEL", "INFO"), json_format=True
+    )
+
     # ── 1단계: 검증(가벼운 것부터) — 무거운 부수효과(S3 client·journal open) 이전에
     # 전부 끝낸다. 잘못된 배포는 어느 환경변수가 문제인지 즉시 알아야 한다.
     data_dir = _require_dir("KSI_CORE_DATA_DIR")

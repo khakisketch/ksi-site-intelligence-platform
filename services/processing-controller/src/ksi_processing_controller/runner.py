@@ -82,6 +82,10 @@ from ksi_processing_controller.comparison_worker import (
 )
 from ksi_processing_controller.core_client import CoreClient, CoreClientError, HttpCoreClient
 from ksi_processing_controller.http_node_odm import HttpNodeOdmClient
+from ksi_processing_controller.observability import (
+    bind_correlation_id,
+    configure_structured_logging,
+)
 from ksi_processing_controller.odm import NodeOdmClient
 from ksi_processing_controller.worker import WorkerRunError, run_job
 
@@ -107,31 +111,36 @@ def _try_reconstruction_candidates(
         return False
 
     for candidate in pending:
-        try:
-            run_job(
-                candidate.job_id,
-                core=core,
-                odm=odm,
-                work_dir=work_dir,
-                http_client=http_client,
-                poll_interval_seconds=heartbeat_interval_seconds,
-                now_message=now_message,
-            )
-            return True
-        except CoreClientError as exc:
-            if exc.verdict == "LEASE_HELD_BY_ANOTHER":
-                now_message(f"[{candidate.job_id}] 다른 워커가 이미 쥐고 있다 — 다음 후보로")
-            else:
-                now_message(
-                    f"[{candidate.job_id}] lease 취득 전 Core 오류 — 다음 후보로: {exc}"
+        # 이 후보를 처리하는 동안의 모든 로그 줄(아래 now_message 호출은 물론
+        # run_job 내부의 logger.* 호출까지)에 jobId 가 correlation id 로
+        # 실린다 — now_message 문자열 접두사 ``f"[{job_id}] ..."`` 는 사람이
+        # 읽을 땐 같은 정보지만 로그 수집기가 필드로 걸러 찾을 수는 없었다.
+        with bind_correlation_id(candidate.job_id):
+            try:
+                run_job(
+                    candidate.job_id,
+                    core=core,
+                    odm=odm,
+                    work_dir=work_dir,
+                    http_client=http_client,
+                    poll_interval_seconds=heartbeat_interval_seconds,
+                    now_message=now_message,
                 )
-            continue
-        except WorkerRunError as exc:
-            now_message(f"[{candidate.job_id}] 실패(Core 에 FAILED 보고 시도됨): {exc}")
-            return True
-        except Exception:  # noqa: BLE001 -- 예기치 못한 버그 하나가 워커 전체를 죽이지 않는다
-            logger.exception("[%s] 예기치 못한 오류 — 다음 후보로 넘어간다", candidate.job_id)
-            continue
+                return True
+            except CoreClientError as exc:
+                if exc.verdict == "LEASE_HELD_BY_ANOTHER":
+                    now_message(f"[{candidate.job_id}] 다른 워커가 이미 쥐고 있다 — 다음 후보로")
+                else:
+                    now_message(
+                        f"[{candidate.job_id}] lease 취득 전 Core 오류 — 다음 후보로: {exc}"
+                    )
+                continue
+            except WorkerRunError as exc:
+                now_message(f"[{candidate.job_id}] 실패(Core 에 FAILED 보고 시도됨): {exc}")
+                return True
+            except Exception:  # noqa: BLE001 -- 예기치 못한 버그 하나가 워커 전체를 죽이지 않는다
+                logger.exception("[%s] 예기치 못한 오류 — 다음 후보로 넘어간다", candidate.job_id)
+                continue
     return False
 
 
@@ -151,33 +160,34 @@ def _try_comparison_candidates(
         return False
 
     for candidate in pending:
-        try:
-            run_comparison_request(
-                candidate.request_id,
-                core=core,
-                work_dir=work_dir,
-                http_client=http_client,
-                now_message=now_message,
-            )
-            return True
-        except CoreClientError as exc:
-            if exc.verdict == "LEASE_HELD_BY_ANOTHER":
-                now_message(
-                    f"[{candidate.request_id}] 다른 워커가 이미 쥐고 있다 — 다음 후보로"
+        with bind_correlation_id(candidate.request_id):
+            try:
+                run_comparison_request(
+                    candidate.request_id,
+                    core=core,
+                    work_dir=work_dir,
+                    http_client=http_client,
+                    now_message=now_message,
                 )
-            else:
-                now_message(
-                    f"[{candidate.request_id}] lease 취득 전 Core 오류 — 다음 후보로: {exc}"
+                return True
+            except CoreClientError as exc:
+                if exc.verdict == "LEASE_HELD_BY_ANOTHER":
+                    now_message(
+                        f"[{candidate.request_id}] 다른 워커가 이미 쥐고 있다 — 다음 후보로"
+                    )
+                else:
+                    now_message(
+                        f"[{candidate.request_id}] lease 취득 전 Core 오류 — 다음 후보로: {exc}"
+                    )
+                continue
+            except ComparisonWorkerRunError as exc:
+                now_message(f"[{candidate.request_id}] 실패(Core 에 FAILED 보고 시도됨): {exc}")
+                return True
+            except Exception:  # noqa: BLE001 -- 예기치 못한 버그 하나가 워커 전체를 죽이지 않는다
+                logger.exception(
+                    "[%s] 예기치 못한 오류 — 다음 후보로 넘어간다", candidate.request_id
                 )
-            continue
-        except ComparisonWorkerRunError as exc:
-            now_message(f"[{candidate.request_id}] 실패(Core 에 FAILED 보고 시도됨): {exc}")
-            return True
-        except Exception:  # noqa: BLE001 -- 예기치 못한 버그 하나가 워커 전체를 죽이지 않는다
-            logger.exception(
-                "[%s] 예기치 못한 오류 — 다음 후보로 넘어간다", candidate.request_id
-            )
-            continue
+                continue
     return False
 
 
@@ -276,9 +286,12 @@ def _positive_float_env(name: str, *, default: float) -> float:
 
 def main() -> NoReturn:
     """CLI 진입점 — ``uv run ksi-processing-worker`` (``[project.scripts]``)."""
-    logging.basicConfig(
+    # 기본은 JSON(Dockerfile.worker 가 이 스크립트의 유일한 컨테이너 진입점이다
+    # — production.py 와 같은 이유). 터미널에서 직접 돌려보며 눈으로 읽을 때는
+    # KSI_WORKER_LOG_FORMAT=text 로 run_core_dev.py 와 같은 한 줄 형식을 쓴다.
+    configure_structured_logging(
         level=os.environ.get("KSI_WORKER_LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        json_format=os.environ.get("KSI_WORKER_LOG_FORMAT", "json").strip().lower() != "text",
     )
 
     core_base_url = _require_env("KSI_WORKER_CORE_BASE_URL")

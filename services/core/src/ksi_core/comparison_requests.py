@@ -67,6 +67,7 @@ from pydantic.alias_generators import to_camel
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
+from ksi_core.metrics import COMPARISON_REQUEST_TRANSITIONS
 from ksi_core.processing_jobs import (
     DEFAULT_LEASE_TTL,
     JobLease,
@@ -832,6 +833,8 @@ class ComparisonRequestStore:
                 )
             updated = replace(record, status=target, detail=detail, updated_at=now)
             self._requests[request_id] = updated
+            # processing_jobs.py 의 같은 위치와 동일 근거 — 성공한 전이만 센다.
+            COMPARISON_REQUEST_TRANSITIONS.inc(target_status=target.value)
             return ComparisonRequestResult(ComparisonRequestVerdict.TRANSITIONED, record=updated)
 
 
