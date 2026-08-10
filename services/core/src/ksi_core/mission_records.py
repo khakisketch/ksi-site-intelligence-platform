@@ -219,6 +219,15 @@ class MissionRecord:
     # 영속한다(재검토 P2 item③). contract-only 발급은 항상 None.
     plan_request: dict[str, Any] | None = None
     plan_request_digest: str | None = None
+    # 이 임무를 수행할 것으로 신고된 장비(INV-010 무결성 — coverage_reports.py
+    # 모듈 docstring의 "알려진 공백"을 닫는 필드). **서명된 계약의 일부가
+    # 아니다** — kmz_sha256·route_pattern 과 같은 지위로, Core 가 완료 판정
+    # 게이트에 쓰는 운영 메타데이터일 뿐 Manifold 로 가는 신뢰 경계 밖이다.
+    # None 이면 배정을 신고하지 않은 것이고, 그 임무는 예전과 같이(하위호환)
+    # 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할 수 있다 — "배정 안 함"과
+    # "아무나 허용"을 다른 정직으로 구분하지 않는다: 배정 개념 자체가 아직
+    # 선택적이라(1:1 대일 배치 전제, Fleet·Edge 이전) 강제할 근거가 없다.
+    assigned_device_id: str | None = None
 
 
 _VALID_ARTIFACT_KINDS = frozenset({"pair", "contract"})
@@ -239,6 +248,7 @@ def _record_to_dict(record: MissionRecord) -> dict[str, Any]:
         "issuedBy": record.issued_by,
         "planRequest": record.plan_request,
         "planRequestDigest": record.plan_request_digest,
+        "assignedDeviceId": record.assigned_device_id,
     }
 
 
@@ -303,6 +313,7 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         issued_by=raw["issuedBy"],
         plan_request=plan_request,
         plan_request_digest=plan_request_digest,
+        assigned_device_id=raw.get("assignedDeviceId"),
     )
 
 
@@ -462,6 +473,8 @@ class MissionRecordResponse(BaseModel):
     planned_coverage_ratio: float | None
     issued_at: datetime
     issued_by: str
+    # None 이면 배정을 신고하지 않은 임무다(MissionRecord.assigned_device_id 문서 참조).
+    assigned_device_id: str | None
     # 파생 필드다 — journal 에 적힌 상태가 아니라 조회 시점에 CoverageReportStore 를
     # 조회해 계산한다(완료 판정의 권위는 CoverageReport 하나뿐이다, INV-010). 이 임무에
     # 대해 접수된 보고가 없으면 null — "아직 안 날았다"와 "날았는데 보고가 없다"를
@@ -488,6 +501,7 @@ def _to_response(
         planned_coverage_ratio=record.planned_coverage_ratio,
         issued_at=record.issued_at,
         issued_by=record.issued_by,
+        assigned_device_id=record.assigned_device_id,
         coverage_completion_state=(
             latest_report.summary.completion_state if latest_report is not None else None
         ),

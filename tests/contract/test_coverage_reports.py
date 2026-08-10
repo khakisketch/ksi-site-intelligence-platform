@@ -45,9 +45,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA = _REPO_ROOT / "contracts" / "schemas" / "coverage-report.v1.1.json"
 
 _DEVICE_TOKEN = "edge-device-token"  # noqa: S105 — 테스트 고정값
+_OTHER_DEVICE_TOKEN = "edge-other-device-token"  # noqa: S105
 _VIEWER_TOKEN = "viewer-token"  # noqa: S105
 _MISSION_ID = "mission-cov-1"
 _SITE_ID = "site-001"
+_DEVICE_ID = "edge-001"
+_OTHER_DEVICE_ID = "edge-002"
 _NOW = datetime(2026, 8, 5, 3, 0, tzinfo=UTC)
 
 
@@ -64,7 +67,16 @@ def _registry() -> AuthRegistry:
                     principal_id="edge-1",
                     kind=PrincipalKind.EDGE_DEVICE,
                     role=None,
-                    device_id="edge-001",
+                    device_id=_DEVICE_ID,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_DEVICE_TOKEN),
+                principal=Principal(
+                    principal_id="edge-2",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id=_OTHER_DEVICE_ID,
                 ),
             ),
             PrincipalTokenRecord(
@@ -109,7 +121,9 @@ def _report_payload(
     }
 
 
-def _mission_store(tmp_path: Path, *, site_id: str = _SITE_ID) -> MissionStore:
+def _mission_store(
+    tmp_path: Path, *, site_id: str = _SITE_ID, assigned_device_id: str | None = None
+) -> MissionStore:
     store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
     plan_request = {"route": {"altitudeM": 40.0}}
     assert (
@@ -128,6 +142,7 @@ def _mission_store(tmp_path: Path, *, site_id: str = _SITE_ID) -> MissionStore:
                 issued_by="do-1",
                 plan_request=plan_request,
                 plan_request_digest=None,
+                assigned_device_id=assigned_device_id,
             )
         ).value
         == "RECORDED"
@@ -314,6 +329,106 @@ def test_site_mismatch_is_rejected(store: CoverageReportStore) -> None:
     payload = _report_payload(site_id="site-other")
     result = store.record(CoverageReport.model_validate(payload), now=_NOW)
     assert result.verdict is CoverageReportVerdict.SITE_MISMATCH
+
+
+# ── 장비-임무 대조 (INV-010 무결성 공백) ─────────────────────────────────────
+
+
+def test_device_not_assigned_is_rejected(tmp_path: Path) -> None:
+    """[핵심] 임무가 배정을 신고했는데 다른 장비가 올리면 거부한다."""
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    result = store.record(
+        CoverageReport.model_validate(_report_payload()),
+        now=_NOW,
+        device_id=_OTHER_DEVICE_ID,
+    )
+    assert result.verdict is CoverageReportVerdict.DEVICE_NOT_ASSIGNED
+    assert result.report is None  # 거부는 완료 판정 권위를 갖지 않는다
+
+
+def test_assigned_device_is_accepted(tmp_path: Path) -> None:
+    """배정된 바로 그 장비가 올리면 정상 접수된다."""
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    result = store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, device_id=_DEVICE_ID
+    )
+    assert result.verdict is CoverageReportVerdict.RECORDED
+
+
+def test_unassigned_mission_accepts_any_device(tmp_path: Path) -> None:
+    """[핵심][회귀] 배정을 신고하지 않은 임무는 예전처럼 어느 장비든 받는다 —
+    이 필드 도입이 기존 흐름(하드웨어 아직 없음)을 깨지 않는다."""
+    mission_store = _mission_store(tmp_path)  # assigned_device_id 생략 = None
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    result = store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, device_id=_OTHER_DEVICE_ID
+    )
+    assert result.verdict is CoverageReportVerdict.RECORDED
+
+
+def test_device_mismatch_rejection_is_journaled(tmp_path: Path) -> None:
+    """거부 판정도 감사기록에 남는다 — 다른 rejection 들과 같은 원칙
+    (risk coverage-report-rejection-not-auditable)."""
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    store.record(
+        CoverageReport.model_validate(_report_payload()),
+        now=_NOW,
+        reported_by="edge-2",
+        device_id=_OTHER_DEVICE_ID,
+    )
+    rejections = store.rejections(_MISSION_ID)
+    assert len(rejections) == 1
+    assert rejections[0].verdict is CoverageReportVerdict.DEVICE_NOT_ASSIGNED
+    assert rejections[0].reported_by == "edge-2"
+
+
+def test_device_mismatch_is_rejected_over_http(tmp_path: Path) -> None:
+    """[핵심] 실제 HTTP 경로로 — 인증된 장비 자신의 device_id 가 배정과 다르면
+    403 DEVICE_NOT_ASSIGNED. 인증(EDGE_DEVICE 인가) 통과 이후의 자원 단위
+    거부이므로 401 이 아니라 403 이다(edge_sync.py DEVICE_MISMATCH 와 동형)."""
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    app = FastAPI()
+    mount_auth(app, _registry())
+    mount_coverage_reports(app, store)
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_OTHER_DEVICE_TOKEN}"})
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+    assert response.status_code == 403
+    body = response.json()
+    assert body["verdict"] == "DEVICE_NOT_ASSIGNED"
+    assert store.latest(_MISSION_ID) is None  # 수용되지 않았다
+
+
+def test_assigned_device_submits_successfully_over_http(tmp_path: Path) -> None:
+    """배정된 장비 본인은 그대로 통과한다 — 이 필드가 정상 경로를 막지 않는다."""
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    client = _client(store)  # 기본 _DEVICE_TOKEN → device_id=_DEVICE_ID
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+    assert response.status_code == 201
+    assert response.json()["verdict"] == "RECORDED"
 
 
 # ── 영속·재생 ───────────────────────────────────────────────────────────────

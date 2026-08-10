@@ -174,6 +174,11 @@ export interface MissionRecordResponse {
   issuedAt: string;
   issuedBy: string;
   /**
+   * 이 임무를 수행할 것으로 신고된 장비(INV-010). null 이면 배정을 신고하지
+   * 않은 것 — 그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할 수 있다.
+   */
+  assignedDeviceId: string | null;
+  /**
    * 파생 필드 — 이 임무에 대해 접수된 최신 CoverageReport 의 completionState(서버가
    * 조회 시점에 계산, 대시보드는 재계산하지 않는다). null 이면 "아직 보고가 없다"다 —
    * 발급됐지만 비행 전인지, 비행했는데 보고가 없는지는 이 값만으로 구분되지 않는다

@@ -1008,7 +1008,11 @@ paths:
             INVALID_TIMESTAMP(tz-aware 아님) / 경로·본문 missionId 불일치
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
-        '403': { description: EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 }
+        '403':
+          description: >-
+            EDGE_DEVICE 가 아니거나 EDGE_SYNC_INGEST 권한 없음 / DEVICE_NOT_ASSIGNED
+            (임무가 다른 장비에 배정됐다, INV-010 — assignedDeviceId 를 신고하지
+            않은 임무는 이 거부가 걸리지 않는다)
     get:
       summary: Read the latest CoverageReport for a mission
       description: >-
@@ -2411,6 +2415,15 @@ paths:
                   exclusiveMinimum: 0
                   maximum: 168
                   description: 기본 24 — 7일(168시간) 상한(무기한 계약 발급 방지).
+                assignedDeviceId:
+                  type: [string, 'null']
+                  minLength: 1
+                  description: >-
+                    이 임무를 수행할 장비(INV-010). **서명된 계약에는 실리지
+                    않는다** — Core 가 커버리지 보고 수신 시 대조하는 운영
+                    메타데이터일 뿐이다. 생략하면 배정을 신고하지 않은 것이고,
+                    그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할 수
+                    있다(하위호환).
       responses:
         '201': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
         '422':
@@ -2503,6 +2516,10 @@ paths:
                         worldModelManifestId: { type: [string, 'null'] }
                         modelPackId: { type: [string, 'null'] }
                         calibrationProfileId: { type: [string, 'null'] }
+                    assignedDeviceId:
+                      type: [string, 'null']
+                      minLength: 1
+                      description: POST /v1/missions/contracts 의 같은 필드와 동일(INV-010).
                 aoi:
                   type: object
                   additionalProperties: false
@@ -3121,7 +3138,8 @@ components:
       type: object
       required:
         [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
-         waypointCount, plannedCoverageRatio, issuedAt, issuedBy, coverageCompletionState]
+         waypointCount, plannedCoverageRatio, issuedAt, issuedBy, assignedDeviceId,
+         coverageCompletionState]
       properties:
         missionId: { type: string }
         siteId: { type: string }
@@ -3142,6 +3160,12 @@ components:
             사전 점검 결과다.
         issuedAt: { type: string, format: date-time }
         issuedBy: { type: string }
+        assignedDeviceId:
+          type: [string, 'null']
+          description: >-
+            이 임무를 수행할 것으로 신고된 장비(INV-010). null 이면 배정을
+            신고하지 않은 것 — 그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를
+            보고할 수 있다.
         coverageCompletionState:
           type: [string, 'null']
           enum: [COMPLETED, COMPLETED_WITH_GAPS, ABORTED_SAFE, FAILED, null]
