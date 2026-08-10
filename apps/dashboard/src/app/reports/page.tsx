@@ -114,7 +114,7 @@ export default async function ReportsPage({
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="text-sm break-keep text-ink-2">
           변화 탐지 결과는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.
         </p>
         {missions.length === 0 ? (
@@ -128,10 +128,10 @@ export default async function ReportsPage({
               <li key={mission.missionId}>
                 <Link
                   href={`/reports?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="block rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                  className="block rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors hover:bg-sunk"
                 >
                   <span className="font-medium">{mission.missionId}</span>
-                  <span className="ml-2 text-neutral-500">{mission.siteId}</span>
+                  <span className="ml-2 text-ink-muted">{mission.siteId}</span>
                 </Link>
               </li>
             ))}
@@ -216,14 +216,17 @@ export default async function ReportsPage({
   const latest = notFound ? null : view.latest;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <h2 className="text-sm font-semibold">{missionId}</h2>
+      <section className="rounded-lg border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold break-keep text-ink-1">{missionId}</h2>
         {!notFound && (
-          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="num mt-1 text-sm text-ink-2">
             변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {latest!.computedAt}
           </p>
         )}
-        <Link href="/reports" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+        <Link
+          href="/reports"
+          className="mt-2 inline-block text-sm font-medium text-accent-text hover:underline"
+        >
           다른 임무 선택
         </Link>
       </section>
@@ -235,22 +238,34 @@ export default async function ReportsPage({
         />
       ) : (
         <>
+          {/* 권고가 켜졌을 때만 색이 붙는다 — 이 시스템에서 색은 안전 상태에만
+              쓴다(globals.css "의미가 없는 곳에 색을 쓰지 않는다"). high 토큰을
+              쓰는 이유도 같다: 원시 amber 를 직접 적으면 대비가 토큰 밖에서
+              결정돼 한 곳에서 관리할 수 없다. */}
           <section
             className={`rounded-lg border p-4 ${
               view.revisitRecommended
-                ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950"
-                : "border-neutral-200 dark:border-neutral-800"
+                ? "border-high bg-high-bg"
+                : "border-line bg-surface"
             }`}
           >
-            <h3 className="text-sm font-semibold">
+            <h3
+              className={`text-sm font-semibold break-keep ${
+                view.revisitRecommended ? "text-high-ink" : "text-ink-1"
+              }`}
+            >
               {view.revisitRecommended ? "추가 시점 수집 권고" : "추가 시점 수집 권고 없음"}
             </h3>
-            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+            <p
+              className={`mt-1 text-sm break-keep ${
+                view.revisitRecommended ? "text-high-ink" : "text-ink-2"
+              }`}
+            >
               변화 후보 비율 {formatRatioPercent(latest!.candidateRatio)} (기준{" "}
               {formatRatioPercent(view.revisitRatioThreshold)} 초과 시 권고)
             </p>
             {view.revisitRecommended && (
-              <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <p className="mt-2 text-sm break-keep text-high-ink">
                 자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
                 임무를 직접 발급하세요.
               </p>
@@ -264,27 +279,24 @@ export default async function ReportsPage({
               ["거리 문턱", `${latest!.distanceThresholdM} m`],
               ["최대 거리", latest!.maxDistanceM === null ? "—" : `${latest!.maxDistanceM.toFixed(2)} m`],
             ].map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
-              >
-                <dt className="text-xs text-neutral-500">{label}</dt>
-                <dd className="mt-1 text-lg font-semibold">{value}</dd>
+              <div key={label} className="rounded-lg border border-line bg-surface p-3">
+                <dt className="text-xs break-keep text-ink-muted">{label}</dt>
+                <dd className="num mt-1 text-lg font-semibold text-ink-1">{value}</dd>
               </div>
             ))}
           </dl>
 
           {latest!.candidateCount === 0 && (
-            <p className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+            <p className="rounded-lg border border-line bg-surface p-4 text-sm break-keep text-ink-2">
               계산은 끝났고, <strong>움직인 것으로 볼 만한 지점이 없었습니다</strong> —
               비교 자체를 못 한 것이 아닙니다(점 {latest!.pointCount.toLocaleString()}개를
               모두 확인했고 기준({latest!.distanceThresholdM} m)을 넘는 것이 없었습니다).
             </p>
           )}
 
-          <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-            <h3 className="font-semibold">비교 대상</h3>
-            <p className="mt-1 font-mono text-xs text-neutral-600 dark:text-neutral-400">
+          <section className="rounded-lg border border-line bg-surface p-4 text-sm">
+            <h3 className="font-semibold break-keep text-ink-1">비교 대상</h3>
+            <p className="mt-1 font-mono text-xs break-token text-ink-2">
               baseline: {latest!.baseline.jobId} / {latest!.baseline.artifactId}
               <br />
               current: {latest!.current.jobId} / {latest!.current.artifactId}
@@ -311,27 +323,29 @@ export default async function ReportsPage({
           (대표자 확정). 요청 생성 시점에 굳은 스냅샷이라, 시스템 기준이 나중에
           바뀌어도 이 결과는 여기 적힌 값으로 계산된 것이 맞다. */}
       {latestRequest && (
-        <section className="rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-          <h3 className="font-semibold">이번 계산에 쓴 기준 (고정값)</h3>
+        <section className="rounded-lg border border-line bg-surface p-4 text-sm">
+          <h3 className="font-semibold break-keep text-ink-1">이번 계산에 쓴 기준 (고정값)</h3>
           <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div>
-              <dt className="text-xs text-neutral-500">움직임으로 칠 최소 거리</dt>
-              <dd className="mt-0.5">{latestRequest.policy.distanceThresholdM} m</dd>
+              <dt className="text-xs break-keep text-ink-muted">움직임으로 칠 최소 거리</dt>
+              <dd className="num mt-0.5 text-ink-1">
+                {latestRequest.policy.distanceThresholdM} m
+              </dd>
             </div>
             <div>
-              <dt className="text-xs text-neutral-500">재촬영 권고 비율</dt>
-              <dd className="mt-0.5">
+              <dt className="text-xs break-keep text-ink-muted">재촬영 권고 비율</dt>
+              <dd className="num mt-0.5 text-ink-1">
                 {(latestRequest.policy.revisitRatioThreshold * 100).toFixed(1)} %
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-neutral-500">기준 묶음</dt>
-              <dd className="mt-0.5 font-mono text-xs">
+              <dt className="text-xs break-keep text-ink-muted">기준 묶음</dt>
+              <dd className="mt-0.5 font-mono text-xs break-token text-ink-1">
                 {latestRequest.policy.policyVersion}
               </dd>
             </div>
           </dl>
-          <p className="mt-2 text-xs text-neutral-500">
+          <p className="mt-2 text-xs break-keep text-ink-muted">
             계산 범위:{" "}
             {latestRequest.zones
               ? `사용자가 확정한 구역 ${Object.keys(latestRequest.zones).length}개 (${latestRequest.zoneCrs})`

@@ -60,7 +60,7 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
         // y 축을 뒤집는다 — site_frame 의 +y(북)는 위쪽인데 SVG 의 +y 는 아래쪽이다.
         // 뒤집지 않으면 남북이 거울처럼 반대로 그려진다.
         viewBox={`${centerX - half} ${-(centerY + half)} ${half * 2} ${half * 2}`}
-        className="aspect-square w-full rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900"
+        className="aspect-square w-full rounded-lg border border-neutral-200 bg-neutral-50"
         role="img"
         aria-label={`현장 평면도 — 개체 ${entities.length}건`}
       >
@@ -94,12 +94,12 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
                 cx={x}
                 cy={-y}
                 r={half * 0.02}
-                className={isWorker ? "fill-amber-500" : "fill-neutral-800 dark:fill-neutral-200"}
+                className={isWorker ? "fill-amber-500" : "fill-neutral-800"}
               />
               <text
                 x={x + half * 0.03}
                 y={-y - half * 0.02}
-                className="fill-neutral-600 dark:fill-neutral-400"
+                className="fill-neutral-600"
                 style={{ fontSize: half * 0.06 }}
               >
                 {state.entityId}
@@ -115,14 +115,14 @@ export function SitePlanView({ entities }: { entities: EquipmentStateItem[] }) {
             y1={-(centerY - half + padding)}
             x2={centerX - half + padding + scaleStepM}
             y2={-(centerY - half + padding)}
-            className="stroke-neutral-700 dark:stroke-neutral-300"
+            className="stroke-neutral-700"
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
           <text
             x={centerX - half + padding}
             y={-(centerY - half + padding) - half * 0.03}
-            className="fill-neutral-700 dark:fill-neutral-300"
+            className="fill-neutral-700"
             style={{ fontSize: half * 0.06 }}
           >
             {scaleStepM} m

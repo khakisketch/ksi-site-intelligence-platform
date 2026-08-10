@@ -39,11 +39,11 @@ export function DefectOverlay({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <div className="relative overflow-hidden rounded-lg border border-neutral-200">
         {/* 업로드 전이거나 URL 이 만료됐으면 이미지가 안 뜬다 — 폴리곤만 남기지 않고
             그 사실을 말한다(빈 사각형에 선만 떠 있으면 무엇이 잘못됐는지 모른다). */}
         {loadFailed ? (
-          <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-4 text-center text-sm text-neutral-500 dark:bg-neutral-900">
+          <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-4 text-center text-sm text-neutral-500">
             사진을 불러오지 못했습니다. 아직 업로드되지 않았거나 열람 링크가
             만료됐을 수 있습니다.
           </div>
@@ -101,12 +101,12 @@ export function DefectOverlay({
               onBlur={() => setSelected(null)}
               className={`w-full rounded px-2 py-1 text-left ${
                 selected === candidate.defectCandidateId
-                  ? "bg-amber-50 dark:bg-amber-950"
-                  : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                  ? "bg-amber-50"
+                  : "hover:bg-neutral-50"
               }`}
             >
               <span className="font-mono text-xs">{candidate.defectCandidateId}</span>
-              <span className="ml-2 text-neutral-600 dark:text-neutral-400">
+              <span className="ml-2 text-neutral-600">
                 신뢰도 {(candidate.confidence * 100).toFixed(1)}%
                 {candidate.measurements?.areaPx2 !== undefined &&
                   ` · ${candidate.measurements.areaPx2.toFixed(0)} px²`}

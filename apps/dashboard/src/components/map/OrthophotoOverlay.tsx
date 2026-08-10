@@ -37,7 +37,7 @@ export function OrthophotoOverlay({
     <section className="rounded-lg border border-line p-4">
       <h3 className="text-sm font-semibold">정사영상</h3>
       {state.phase === "unavailable" && (
-        <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+        <p className="mt-1 text-sm text-amber-700">
           정사영상을 불러오지 못했습니다 — {state.detail}
         </p>
       )}

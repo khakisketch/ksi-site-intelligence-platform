@@ -78,7 +78,7 @@ export default async function AssetsPage({
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="text-sm text-neutral-600">
           결함 후보는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.
         </p>
         {missions.length === 0 ? (
@@ -93,7 +93,7 @@ export default async function AssetsPage({
               <li key={mission.missionId}>
                 <Link
                   href={`/assets?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="block rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                  className="block rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50"
                 >
                   <span className="font-medium">{mission.missionId}</span>
                   <span className="ml-2 text-neutral-500">{mission.siteId}</span>
@@ -128,9 +128,9 @@ export default async function AssetsPage({
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+      <section className="rounded-lg border border-neutral-200 p-4">
         <h2 className="text-sm font-semibold">{view.missionId}</h2>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="mt-1 text-sm text-neutral-600">
           결함 후보 {view.candidateCount}건 · 사진 {view.sourceMediaIds.length}장
         </p>
         <Link href="/assets" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
@@ -146,8 +146,8 @@ export default async function AssetsPage({
               href={`/assets?missionId=${encodeURIComponent(view.missionId)}&mediaId=${encodeURIComponent(id)}`}
               className={`rounded-full border px-3 py-1 text-xs ${
                 id === selectedMediaId
-                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
-                  : "border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 hover:bg-neutral-50"
               }`}
             >
               {id}
@@ -173,7 +173,7 @@ export default async function AssetsPage({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-left text-sm">
-            <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500 dark:border-neutral-800">
+            <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500">
               <tr>
                 <th className="px-3 py-2">후보 ID</th>
                 <th className="px-3 py-2">사진</th>
@@ -187,7 +187,7 @@ export default async function AssetsPage({
               {view.candidates.map(({ candidate }) => (
                 <tr
                   key={candidate.defectCandidateId}
-                  className="border-b border-neutral-100 dark:border-neutral-900"
+                  className="border-b border-neutral-100"
                 >
                   <td className="px-3 py-2 font-mono text-xs">{candidate.defectCandidateId}</td>
                   <td className="px-3 py-2">{candidate.sourceMediaId}</td>
