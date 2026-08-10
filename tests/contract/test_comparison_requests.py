@@ -491,6 +491,83 @@ def test_idempotent_resubmit_returns_existing_request(fx: _Fixture) -> None:
     assert second.record.request_id == first.record.request_id
 
 
+def test_resubmit_with_a_confirmed_zone_is_a_new_request_not_a_replay(fx: _Fixture) -> None:
+    """[핵심][회귀] 구역 없이 한 번 요청한 뒤 구역을 확정해 다시 제출하면 **새
+    요청**이어야 한다.
+
+    예전 멱등 키는 (baselineJobId, currentJobId) 뿐이라, 구역 없이 만든 첫 요청이
+    영원히 돌아왔다 — 그 두 시점의 부피 비교를 받을 방법이 아예 없었고, 화면이
+    "구역이나 시점을 바꿔 다시 요청할 수 있다"고 안내하는 것과도 어긋났다.
+    """
+    without_zone = fx.create(zones=None, zone_crs=None)
+    assert without_zone.verdict is ComparisonRequestVerdict.CREATED
+    assert without_zone.record.volume_change_eligible is False
+
+    with_zone = fx.create()
+    assert with_zone.verdict is ComparisonRequestVerdict.CREATED
+    assert with_zone.record.request_id != without_zone.record.request_id
+    assert with_zone.record.volume_change_eligible is True
+
+
+def test_resubmit_with_the_same_zone_is_still_idempotent(fx: _Fixture) -> None:
+    """구역까지 똑같으면 여전히 같은 요청이다 — 네트워크 재시도가 요청을 복제하지
+    않는다는 원래 성질은 그대로다."""
+    first = fx.create()
+    second = fx.create()
+    assert second.verdict is ComparisonRequestVerdict.ALREADY_REQUESTED
+    assert second.record.request_id == first.record.request_id
+
+
+def test_idempotency_key_survives_a_restart(tmp_path: Path) -> None:
+    """[핵심][회귀] 재기동(원장 재생) 뒤에도 같은 재전송이 중복을 만들지 않는다.
+
+    멱등 키는 생성 시점(요청 원문)과 재생 시점(레코드)에 **같은 값**이어야 한다.
+    ``_resolve`` 가 부피 비적격이면 zones 를 떨구므로, 요청 원문으로 키를 만들면
+    두 시점의 키가 갈려 재기동 후 같은 재전송이 새 요청을 만든다. 그 갈림을
+    고정한다 — 부피가 안 되는 조합(dsm 없는 작업)을 일부러 쓴다.
+    """
+    missions = _mission_store(tmp_path)
+    sites = _site_store(tmp_path)
+    jobs, source_media = _job_store_impl(tmp_path, missions, sites)
+    # dsm 없이 point-cloud 만 — zones 를 줘도 부피는 비적격이라 정규화로 떨궈진다.
+    baseline = _succeeded_job(
+        jobs, source_media, _BASELINE_MISSION_ID, _artifact_spec("point-cloud")
+    )
+    current = _succeeded_job(
+        jobs, source_media, _CURRENT_MISSION_ID, _artifact_spec("point-cloud")
+    )
+
+    def _new_store() -> ComparisonRequestStore:
+        return ComparisonRequestStore(
+            DurableJournal(tmp_path / "comparison-requests.jsonl"),
+            mission_store=missions,
+            processing_job_store=jobs,
+        )
+
+    def _submit(store: ComparisonRequestStore) -> Any:
+        return store.create(
+            _CURRENT_MISSION_ID,
+            baseline_job_id=baseline,
+            current_job_id=current,
+            zones=_ZONES,
+            zone_crs=_ZONE_CRS,
+            requested_by="op-1",
+            now=_NOW,
+        )
+
+    store = _new_store()
+    first = _submit(store)
+    assert first.verdict is ComparisonRequestVerdict.CREATED
+    assert first.record.zones is None  # 정규화로 떨궈졌다 — 이 테스트의 전제
+    store._journal.close()  # noqa: SLF001 -- 같은 경로를 다시 열기 위해
+
+    replayed = _new_store()
+    again = _submit(replayed)
+    assert again.verdict is ComparisonRequestVerdict.ALREADY_REQUESTED
+    assert again.record.request_id == first.record.request_id
+    replayed._journal.close()  # noqa: SLF001 -- 테스트 정리
+
+
 def test_zones_are_stored_as_a_value_not_a_site_reference(fx: _Fixture) -> None:
     """[핵심] store 는 SiteStore 를 의존하지 않는다 — 구조적으로 site.aoi 를 읽을
     수 없으므로 zones 는 항상 요청 시점에 넘긴 값 그대로다(대표자 확정)."""

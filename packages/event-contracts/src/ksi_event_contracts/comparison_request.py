@@ -39,14 +39,6 @@ class _CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
-class NamedZone(_CamelModel):
-    """구역 폴리곤 1건 — ``run_volume_change.compute_volume_change`` 의 ``zones``
-    (``dict[zoneId, GeoJSON Polygon]``)과 대칭이도록 zoneId 를 필드로 갖는다."""
-
-    zone_id: str = Field(min_length=1)
-    polygon: dict[str, Any]
-
-
 class ComparisonRequest(_CamelModel):
     """contracts/schemas/comparison-request.v1.json 왕복 대상.
 
@@ -131,4 +123,4 @@ class ComparisonRequest(_CamelModel):
         return self
 
 
-__all__ = ["ComparisonRequest", "NamedZone"]
+__all__ = ["ComparisonRequest"]

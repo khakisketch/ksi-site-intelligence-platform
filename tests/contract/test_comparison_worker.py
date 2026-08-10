@@ -9,6 +9,7 @@ FAILED 로 수렴하고 원래 예외를 삼키지 않는다.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -247,6 +248,117 @@ def test_neither_input_ready_reports_failed_not_empty_success(tmp_path: Path) ->
     failed = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "FAILED"]
     assert len(failed) == 1
     assert failed[0][2] is not None  # detail 이 채워져 있다
+
+
+def test_lease_is_renewed_while_the_computation_runs(tmp_path: Path) -> None:
+    """[핵심][회귀] 계산이 lease TTL(15분)보다 오래 걸려도 lease 를 놓치지 않는다.
+
+    갱신이 없으면 만료된 RUNNING 요청을 다른 워커가 집어가 같은 계산을 중복으로
+    돌리고, 이쪽의 최종 SUCCEEDED 전이는 LEASE_HELD_BY_ANOTHER 로 거부돼
+    **성공한 계산이 FAILED 로 보고된다**. 여기서는 다운로드를 인위적으로 늦춰
+    (transport 에서 sleep) 갱신 tick 이 실제로 도는지 본다 — 취득 1회 + 갱신
+    n회가 되어야 한다."""
+    cloud = _grid(8)
+    base_laz = _write_laz(tmp_path / "baseline.laz", cloud)
+    curr_laz = _write_laz(tmp_path / "current.laz", cloud.copy())
+
+    core = FakeComparisonCoreClient(
+        comparison_input=ComparisonInput(
+            request_id="mission-1-cmp-slow",
+            mission_id="mission-1",
+            status="QUEUED",
+            policy=current_comparison_policy(),
+            point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            point_cloud_baseline_url="http://fake-storage/baseline.laz",
+            point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            point_cloud_current_url="http://fake-storage/current.laz",
+            dsm_baseline=None, dsm_baseline_url=None,
+            dsm_current=None, dsm_current_url=None,
+            zones=None, zone_crs=None,
+        )
+    )
+
+    files = {"baseline.laz": base_laz, "current.laz": curr_laz}
+
+    def slow_handler(request: httpx.Request) -> httpx.Response:
+        # 갱신 주기(아래 0.05s)보다 확실히 길게 — tick 이 여러 번 돌 시간을 준다.
+        time.sleep(0.3)
+        name = request.url.path.rsplit("/", 1)[-1]
+        path = files.get(name)
+        if path is None:
+            return httpx.Response(404)
+        return httpx.Response(200, content=path.read_bytes())
+
+    with httpx.Client(transport=httpx.MockTransport(slow_handler)) as client:
+        run_comparison_request(
+            "mission-1-cmp-slow", core=core, work_dir=tmp_path, http_client=client,
+            now_message=lambda _msg: None,
+            heartbeat_interval_seconds=0.05,
+        )
+
+    leases = [c for c in core.calls if c[0] == "cmp-lease"]
+    # 최초 취득 1회 + 계산 중 갱신 최소 1회.
+    assert len(leases) >= 2, f"lease 갱신이 돌지 않았다: {leases}"
+    succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
+    assert len(succeeded) == 1
+
+
+def test_heartbeat_failure_does_not_kill_the_computation(tmp_path: Path) -> None:
+    """[회귀] 갱신 왕복이 실패해도(일시적 Core 장애) 계산은 끝까지 간다.
+
+    갱신 실패로 계산을 중단하면 이미 제출한 부분 결과와 요청 상태가 어긋난다 —
+    lease 를 진짜 뺏긴 경우라면 마지막 전이가 거부되며 그때 FAILED 로 수렴하는
+    것이 이 모듈의 설계다(comparison_worker._LeaseHeartbeat docstring)."""
+    cloud = _grid(8)
+    base_laz = _write_laz(tmp_path / "baseline.laz", cloud)
+    curr_laz = _write_laz(tmp_path / "current.laz", cloud.copy())
+
+    class HeartbeatFailsCoreClient(FakeComparisonCoreClient):
+        def acquire_comparison_lease(self, request_id: str) -> None:
+            self.calls.append(("cmp-lease", request_id))
+            # 최초 취득은 통과시키고, 이후 갱신만 실패시킨다.
+            if len([c for c in self.calls if c[0] == "cmp-lease"]) > 1:
+                raise CoreClientError(
+                    what="comparison-lease", verdict="STORE_UNAVAILABLE", detail="테스트 강제"
+                )
+
+    core = HeartbeatFailsCoreClient(
+        comparison_input=ComparisonInput(
+            request_id="mission-1-cmp-beatfail",
+            mission_id="mission-1",
+            status="QUEUED",
+            policy=current_comparison_policy(),
+            point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            point_cloud_baseline_url="http://fake-storage/baseline.laz",
+            point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            point_cloud_current_url="http://fake-storage/current.laz",
+            dsm_baseline=None, dsm_baseline_url=None,
+            dsm_current=None, dsm_current_url=None,
+            zones=None, zone_crs=None,
+        )
+    )
+
+    files = {"baseline.laz": base_laz, "current.laz": curr_laz}
+
+    def slow_handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(0.2)
+        name = request.url.path.rsplit("/", 1)[-1]
+        path = files.get(name)
+        if path is None:
+            return httpx.Response(404)
+        return httpx.Response(200, content=path.read_bytes())
+
+    with httpx.Client(transport=httpx.MockTransport(slow_handler)) as client:
+        run_comparison_request(
+            "mission-1-cmp-beatfail", core=core, work_dir=tmp_path, http_client=client,
+            now_message=lambda _msg: None,
+            heartbeat_interval_seconds=0.05,
+        )
+
+    # 갱신이 실패했어도 계산은 완주해 결과가 제출되고 SUCCEEDED 로 끝났다.
+    assert len(core.change_detection_results) == 1
+    succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
+    assert len(succeeded) == 1
 
 
 def test_duplicate_result_id_on_retry_is_treated_as_already_recorded(tmp_path: Path) -> None:

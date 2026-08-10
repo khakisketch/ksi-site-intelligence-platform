@@ -47,6 +47,7 @@ SUCCEEDED 전이에 ``authority=source`` 산출물 등록을 요구하는데, �
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from dataclasses import dataclass, replace
@@ -182,6 +183,41 @@ def build_comparison_request_id(mission_id: str, sequence: int) -> str:
     return f"{mission_id}-cmp{sequence}"
 
 
+def _zone_fingerprint(
+    zones: dict[str, dict[str, Any]] | None, zone_crs: str | None
+) -> str:
+    """구역 한 벌을 멱등 판정용 문자열 하나로 — 같은 구역이면 같은 값이 나온다.
+
+    ``json.dumps(sort_keys=True)`` 를 쓰는 이유는 dict 순서가 요청마다 달라질 수
+    있어서다(브라우저·프록시가 키 순서를 보장하지 않는다). 좌표는 float 이라
+    표현이 흔들릴 수 있지만, 같은 화면이 만든 같은 폴리곤이면 같은 바이트로
+    직렬화된다 — 여기서 재시도 멱등을 판단하는 데는 그 정도면 충분하다(다르게
+    나오면 새 요청이 생길 뿐, 잘못된 결과가 나오지는 않는다).
+    """
+    if not zones:
+        return "-"
+    return json.dumps([zone_crs, zones], sort_keys=True, ensure_ascii=False)
+
+
+def _request_shape(record: ComparisonRequestRecord) -> tuple[str, str, str]:
+    """멱등 판정 키 — **무엇을 어느 범위로 비교하라는 지시인가**.
+
+    예전에는 ``(baselineJobId, currentJobId)`` 뿐이었다. 그러면 구역 없이 한 번
+    요청한 조합은 나중에 구역을 확정해 다시 제출해도 옛 요청(구역 없음, 이미
+    SUCCEEDED)이 그대로 돌아와 **그 두 시점의 부피 비교를 영영 받을 수 없었다**
+    — 화면이 "구역이나 시점을 바꿔 다시 요청할 수 있다"고 안내하는 것과도
+    어긋났다. 구역이 지시의 일부이므로 키에 넣는다.
+
+    임무·현장은 넣지 않는다 — jobId 가 이미 그것들을 결정한다(``_resolve`` 가
+    같은 현장·같은 임무를 강제한다).
+    """
+    return (
+        record.baseline_job_id,
+        record.current_job_id,
+        _zone_fingerprint(record.zones, record.zone_crs),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ComparisonRequestRecord:
     """비교 요청 1건의 projection — 계약 필드 + 운영 메타(lease)."""
@@ -292,7 +328,7 @@ class ComparisonRequestStore:
         self._processing_job_store = processing_job_store
         self._lock = threading.Lock()
         self._requests: dict[str, ComparisonRequestRecord] = {}
-        self._by_pair: dict[tuple[str, str], str] = {}
+        self._by_request_shape: dict[tuple[str, str, str], str] = {}
         self._sequence: dict[str, int] = {}
         try:
             self._replay(journal)
@@ -407,7 +443,7 @@ class ComparisonRequestStore:
 
     def _project(self, record: ComparisonRequestRecord) -> None:
         self._requests[record.request_id] = record
-        self._by_pair[(record.baseline_job_id, record.current_job_id)] = record.request_id
+        self._by_request_shape[_request_shape(record)] = record.request_id
 
     # ── 생성 게이트 (live·재생 공유) ─────────────────────────────────────
 
@@ -567,14 +603,6 @@ class ComparisonRequestStore:
                     ComparisonRequestVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
 
-            existing_id = self._by_pair.get((baseline_job_id, current_job_id))
-            if existing_id is not None:
-                return ComparisonRequestResult(
-                    ComparisonRequestVerdict.ALREADY_REQUESTED,
-                    detail="같은 조합(baselineJobId+currentJobId)의 요청이 이미 있다",
-                    record=self._requests[existing_id],
-                )
-
             verdict, detail, resolved = self._resolve(
                 mission_id=mission_id,
                 baseline_job_id=baseline_job_id,
@@ -584,6 +612,28 @@ class ComparisonRequestStore:
             )
             if verdict is not ComparisonRequestVerdict.CREATED or resolved is None:
                 return ComparisonRequestResult(verdict, detail=detail)
+
+            # 멱등 판정은 **_resolve 뒤**다. _resolve 가 zones 를 정규화하기
+            # 때문이다(부피가 비적격이면 zones 를 떨군다) — 요청 원문으로 키를
+            # 만들면 그 키가 레코드에 저장될 모양과 달라져, 재기동 후 _project
+            # 가 만든 키와 어긋나고 같은 재전송이 중복 요청을 만든다.
+            #
+            # 순서를 뒤로 미룬 대가: 이미 요청된 조합인데 그 사이 작업이 사라진
+            # 경우 ALREADY_REQUESTED 대신 UNKNOWN_JOB 이 나온다. 그게 더 사실에
+            # 가깝다 — 지금 그 조합은 실제로 비교할 수 없다.
+            existing_id = self._by_request_shape.get(
+                (
+                    baseline_job_id,
+                    current_job_id,
+                    _zone_fingerprint(resolved.zones, resolved.zone_crs),
+                )
+            )
+            if existing_id is not None:
+                return ComparisonRequestResult(
+                    ComparisonRequestVerdict.ALREADY_REQUESTED,
+                    detail="같은 조합(baselineJobId+currentJobId+구역)의 요청이 이미 있다",
+                    record=self._requests[existing_id],
+                )
 
             sequence = self._sequence.get(mission_id, 0) + 1
             request_id = build_comparison_request_id(mission_id, sequence)

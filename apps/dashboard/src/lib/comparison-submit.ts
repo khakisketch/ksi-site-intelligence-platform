@@ -121,15 +121,18 @@ export function comparisonEligibility(
   const volumeChange = baseline.hasDsm && current.hasDsm && zonesConfirmed;
 
   if (!changeDetection && !volumeChange) {
-    const missingPointCloud = !baseline.hasPointCloud || !current.hasPointCloud;
+    // 여기 오는 조합은 둘뿐이다. changeDetection 이 false 이므로 **점군은 반드시
+    // 빠져 있고**(그게 곧 "양쪽에 점군이 있다"의 부정), 동시에 부피도 안 되려면
+    // 높이자료가 없거나 구역이 확정되지 않아야 한다. 셋 중 하나만 어긋난
+    // 경우(예: 점군만 없고 높이자료·구역은 멀쩡)는 부분 비교가 가능해 위에서
+    // 이미 제출 가능으로 빠져나간다 — 그래서 갈래가 둘이다.
+    //
+    // 예전에는 여기 "한쪽에 높이자료가 없어 부피 비교를 할 수 없습니다" 갈래가
+    // 있었는데 도달할 수 없었다(그 상황은 변화 비교가 되므로 제출 가능이다).
     const missingDsm = !baseline.hasDsm || !current.hasDsm;
-    const reason = missingPointCloud && missingDsm
+    const reason = missingDsm
       ? "고른 두 결과에 비교할 자료가 없습니다(점군·높이자료 모두 없음)."
-      : missingPointCloud && !zonesConfirmed
-        ? "점군이 없어 변화 비교를 할 수 없고, 구역을 확정하지 않아 부피 비교도 할 수 없습니다."
-        : missingPointCloud
-          ? "고른 두 결과 중 한쪽에 점군이 없어 변화 비교를 할 수 없습니다."
-          : "고른 두 결과 중 한쪽에 높이자료가 없어 부피 비교를 할 수 없습니다.";
+      : "점군이 없어 변화 비교를 할 수 없고, 구역을 확정하지 않아 부피 비교도 할 수 없습니다.";
     return { changeDetection: false, volumeChange: false, blockedReason: reason };
   }
   return { changeDetection, volumeChange, blockedReason: null };

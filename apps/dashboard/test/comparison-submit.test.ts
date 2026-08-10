@@ -155,6 +155,42 @@ describe("comparisonEligibility", () => {
     expect(result.changeDetection).toBe(false);
     expect(canSubmitComparison(result)).toBe(false);
   });
+
+  it("[핵심] 점군만 없고 높이자료·구역은 멀쩡하면 **제출은 된다**(부피만 비교)", () => {
+    // 이 조합이 막다른 길이 아니라는 것이 요점이다 — 예전 사유 문구에는
+    // "한쪽에 높이자료가 없어 부피 비교를 할 수 없습니다" 갈래가 있었는데,
+    // 그 갈래에 닿으려면 이 조합이 '제출 불가'여야 했다. 실제로는 부분 비교가
+    // 되므로 그 문구는 영영 나올 수 없었다.
+    const result = comparisonEligibility(
+      epoch({ jobId: "a", hasPointCloud: false }),
+      epoch({ jobId: "b", hasPointCloud: false }),
+      true,
+    );
+    expect(canSubmitComparison(result)).toBe(true);
+    expect(result.changeDetection).toBe(false);
+    expect(result.volumeChange).toBe(true);
+  });
+
+  it("점군도 없고 구역도 확정 안 했으면 둘 다 말한다", () => {
+    const result = comparisonEligibility(
+      epoch({ jobId: "a", hasPointCloud: false }),
+      epoch({ jobId: "b", hasPointCloud: false }),
+      false,
+    );
+    expect(canSubmitComparison(result)).toBe(false);
+    expect(result.blockedReason).toContain("점군이 없어");
+    expect(result.blockedReason).toContain("구역을 확정하지 않아");
+  });
+
+  it("점군·높이자료가 둘 다 없으면 그렇게 말한다", () => {
+    const result = comparisonEligibility(
+      epoch({ jobId: "a", hasPointCloud: false, hasDsm: false }),
+      epoch({ jobId: "b", hasPointCloud: false, hasDsm: false }),
+      true,
+    );
+    expect(canSubmitComparison(result)).toBe(false);
+    expect(result.blockedReason).toContain("모두 없음");
+  });
 });
 
 describe("toZonePolygon", () => {

@@ -37,6 +37,7 @@ FAILED 넷뿐이다(``comparison_requests.py`` 의 ``_ALLOWED_TRANSITIONS``).
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,8 +64,80 @@ logger = logging.getLogger(__name__)
 _VERTICAL_DATUM = "ellipsoidal_native"
 
 
+#: lease 갱신 주기(초). Core 의 lease TTL 은 15분이고(``processing_jobs.
+#: DEFAULT_LEASE_TTL``) 여기 계산은 자료 크기에 따라 그보다 오래 걸릴 수 있다.
+#: runner.py 의 재구성 heartbeat 와 같은 값을 쓴다(``_DEFAULT_HEARTBEAT_
+#: INTERVAL_SECONDS``) — 두 워커가 같은 lease 규약 위에 있으므로 주기를 다르게
+#: 둘 이유가 없다.
+_HEARTBEAT_INTERVAL_SECONDS = 10.0
+
+
 class ComparisonWorkerRunError(RuntimeError):
     """비교 요청 실행이 실패했다 — Core 에는 이미 FAILED 로 보고를 시도했다."""
+
+
+class _LeaseHeartbeat:
+    """계산이 도는 동안 lease 를 주기적으로 갱신한다.
+
+    ## 왜 재구성 워커와 모양이 다른가
+
+    ``worker.py`` 는 ODM 완주를 **폴링**하므로 그 루프 안에서 갱신할 수 있다
+    (``run_to_completion(poll=...)``). 비교 계산은 폴링 지점이 없는 직선 코드다
+    (내려받고, KD-tree 를 돌리고, 제출한다) — 갱신할 자리가 아예 없어서 별도
+    스레드로 둔다. 계산 함수들에 콜백을 뚫는 대안은 ``ksi-change-detection``
+    의 순수 계산 API 에 워커의 관심사(lease)를 섞는 일이라 택하지 않았다.
+
+    ## 갱신 실패로 계산을 죽이지 않는다
+
+    갱신이 실패하는 경우는 둘이다 — 일시적 Core 장애(다음 tick 에 회복된다)와
+    lease 를 이미 뺏긴 경우(회복 불가). 둘을 여기서 가르지 않는다: 어느 쪽이든
+    **계산은 끝까지 돌리고**, 뺏긴 것이 사실이라면 마지막
+    ``transition_comparison`` 이 ``LEASE_HELD_BY_ANOTHER`` 로 거부하며 그때
+    FAILED 로 수렴한다. 중간에 끊으면 이미 제출한 부분 결과와 상태가 어긋난다.
+
+    ## context manager 가 아닌 이유
+
+    갱신 구간이 기존 ``try/except/finally`` 와 정확히 같아서, ``with`` 로
+    감싸면 계산 본문 전체를 한 단 더 들여쓰게 된다 — 그 재들여쓰기가 diff 를
+    실제 변경보다 크게 만든다. ``start()``/``stop()`` 을 그 ``try``/``finally``
+    에 그대로 얹는다.
+    """
+
+    def __init__(
+        self,
+        core: CoreClient,
+        request_id: str,
+        *,
+        interval_seconds: float,
+        now_message: Callable[[str], None],
+    ) -> None:
+        self._core = core
+        self._request_id = request_id
+        self._interval_seconds = interval_seconds
+        self._now_message = now_message
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _beat(self) -> None:
+        while not self._stop.wait(self._interval_seconds):
+            try:
+                self._core.acquire_comparison_lease(self._request_id)
+            except Exception as exc:  # noqa: BLE001 -- 클래스 docstring: 갱신 실패로 계산을 죽이지 않는다
+                self._now_message(
+                    f"[{self._request_id}] lease 갱신 실패(계산은 계속) — {exc}"
+                )
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._beat, name=f"cmp-lease-{self._request_id}", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            # 갱신 한 번이 왕복 중일 수 있다 — 그 왕복만 기다린다(무한 대기 금지).
+            self._thread.join(timeout=self._interval_seconds)
 
 
 def _change_detection_ready(comparison_input: ComparisonInput) -> bool:
@@ -94,11 +167,18 @@ def run_comparison_request(
     work_dir: Path,
     http_client: httpx.Client | None = None,
     now_message: Callable[[str], None] = logger.info,
+    heartbeat_interval_seconds: float = _HEARTBEAT_INTERVAL_SECONDS,
 ) -> None:
     """비교 요청 하나를 lease 취득부터 ``SUCCEEDED``/``FAILED`` 까지 끝까지 돈다.
 
     실패 시 예외를 던진다(``FAILED`` 보고는 시도하되 삼키지 않는다) — 호출자
     (데몬 루프)가 재시도·알림을 정할 수 있게 원인을 그대로 넘긴다.
+
+    계산이 도는 동안 lease 는 ``heartbeat_interval_seconds`` 마다 갱신된다
+    (``_lease_heartbeat``) — 자료가 크면 계산이 lease TTL(15분)을 넘길 수 있고,
+    그때 갱신이 없으면 다른 워커가 같은 요청을 집어가 중복 계산이 벌어지고
+    이쪽의 최종 전이는 ``LEASE_HELD_BY_ANOTHER`` 로 거부돼 **성공한 계산이
+    FAILED 로 보고된다**.
     """
     fetch = http_client or httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
@@ -113,6 +193,16 @@ def run_comparison_request(
     if comparison_input.status == "QUEUED":
         core.transition_comparison(request_id, "RUNNING")
         now_message(f"[{request_id}] RUNNING")
+
+    # lease 갱신은 여기서부터다 — 위(입력 조회·RUNNING 전이)는 왕복 몇 번이라
+    # TTL 을 위협하지 않고, 아래가 몇 분~수십 분짜리다. 정지는 finally 에서 한다.
+    heartbeat = _LeaseHeartbeat(
+        core,
+        request_id,
+        interval_seconds=heartbeat_interval_seconds,
+        now_message=now_message,
+    )
+    heartbeat.start()
 
     try:
         computed_at = datetime.now(UTC)
@@ -216,6 +306,9 @@ def run_comparison_request(
             now_message(f"[{request_id}] FAILED 보고도 실패(원인은 유지): {report_exc}")
         raise ComparisonWorkerRunError(f"[{request_id}] 실행 실패: {exc}") from exc
     finally:
+        # 최종 전이(SUCCEEDED/FAILED)까지 lease 를 쥔 채로 두고 그 뒤에 멈춘다 —
+        # 전이 직전에 멈추면 그 사이에 TTL 이 지나 전이가 거부될 수 있다.
+        heartbeat.stop()
         if own_client:
             fetch.close()
 

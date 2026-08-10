@@ -38,6 +38,7 @@ from ksi_event_contracts.comparison_policy import (
 )
 from numpy.typing import NDArray
 
+from ksi_change_detection.download_errors import download_failure_detail
 from ksi_change_detection.point_cloud_diff import ChangeDetectionError, detect_change_candidates
 
 logger = logging.getLogger(__name__)
@@ -67,18 +68,20 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
     except httpx.HTTPStatusError as exc:
-        # url 은 쿼리스트링(presigned 서명)을 잘라내고 남긴다 — httpx.HTTPStatusError
-        # 자신의 str() 도 str(exc.request.url) 을 그대로 품어(요청 URL 원문) 서명이
-        # 다시 새므로 str(exc) 를 통째로 쓰지 않고 상태코드만 뽑는다. 이 메시지는
-        # FAILED detail 로 원장에 남고 화면에 그대로 보인다(실 인프라 재현 중 발견:
-        # 서명이 실린 URL 을 사용자 화면에 그대로 노출하고 있었다).
+        # 상태코드가 곧 원인이라 str(exc)(요청 URL 원문을 품는다)를 쓸 이유가 없다.
         raise ChangeDetectionRunError(
-            f"point cloud 를 받지 못했다({url.split('?', 1)[0]}): "
-            f"HTTP {exc.response.status_code}"
+            download_failure_detail(
+                what="point cloud", url=url, cause=f"HTTP {exc.response.status_code}"
+            )
         ) from exc
     except httpx.HTTPError as exc:
+        # 전송 실패는 **원인 문자열이 곧 진단**이다(연결 거부·타임아웃·프로토콜
+        # 오류) — 클래스 이름만 남기면 그 진단이 사라진다. 서명 유출은 타입
+        # 열거가 아니라 출력 검사로 막는다(download_errors 모듈 docstring).
         raise ChangeDetectionRunError(
-            f"point cloud 를 받지 못했다({url.split('?', 1)[0]}): {type(exc).__name__}"
+            download_failure_detail(
+                what="point cloud", url=url, cause=f"{type(exc).__name__}: {exc}"
+            )
         ) from exc
 
 

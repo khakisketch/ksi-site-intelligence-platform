@@ -61,21 +61,43 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
 }
 
 /**
- * 그 임무의 최신 비교 요청 — 결과가 아직 없을 때 **왜 없는지**를 가르기 위해서다.
+ * 그 임무의 비교 요청 전부(최신 먼저) — 두 가지 서로 다른 질문에 답한다.
  *
- * "아직 요청조차 안 됨" · "계산 중" · "계산하다 실패함" 은 사용자에게 전혀 다른
- * 사실인데, 결과 유무만 보면 셋이 똑같이 빈 화면이 된다. 조회 실패는 null 로
- * 다뤄 이 안내만 비운다(결과 렌더를 가리지 않는다 — fetchVolume 과 같은 원칙).
+ * ① **결과가 아직 없을 때 왜 없는지**: "요청조차 안 됨"·"계산 중"·"실패함"은
+ *    사용자에게 전혀 다른 사실인데 결과 유무만 보면 셋이 똑같이 빈 화면이다.
+ *    이건 **최신** 요청이 답한다.
+ * ② **지금 보이는 결과가 무슨 기준으로 계산됐는지**: 이건 최신 요청이 아니라
+ *    **그 결과를 만든** 요청이 답한다(아래 `requestOf`).
+ *
+ * 조회 실패는 빈 배열로 다뤄 이 안내들만 비운다(결과 렌더를 가리지 않는다 —
+ * fetchVolume 과 같은 원칙).
  */
-async function fetchLatestComparisonRequest(
+async function fetchComparisonRequests(
   missionId: string,
-): Promise<ComparisonRequestContract | null> {
+): Promise<ComparisonRequestContract[]> {
   try {
-    const listed = await listComparisonRequests(missionId);
-    return listed.requests[0] ?? null;
+    return (await listComparisonRequests(missionId)).requests;
   } catch {
-    return null;
+    return [];
   }
+}
+
+/**
+ * 결과를 만든 요청을 찾는다 — `changeDetectionId`/`volumeChangeId` 는 그 결과를
+ * 만든 `requestId` 와 **같은 값**이다(비교 워커가 결정적으로 그렇게 붙인다,
+ * `comparison_worker.run_comparison_request`).
+ *
+ * 예전에는 기준 패널이 늘 최신 요청을 읽었다. 한 임무에 비교를 두 번 하면
+ * (예: 구역 없이 한 번, 구역을 확정해 한 번) 화면에 그려진 결과는 앞의 요청
+ * 것인데 기준·계산범위는 뒤의 요청 것이 뜬다 — 서로 모순된 화면이 되고,
+ * 그 모순은 화면 어디에도 표시되지 않는다.
+ */
+function requestOf(
+  requests: readonly ComparisonRequestContract[],
+  resultId: string | null | undefined,
+): ComparisonRequestContract | null {
+  if (!resultId) return null;
+  return requests.find((request) => request.requestId === resultId) ?? null;
 }
 
 /**
@@ -141,11 +163,14 @@ export default async function ReportsPage({
     );
   }
 
-  const [{ view, error, notFound }, volume, latestRequest] = await Promise.all([
+  const [{ view, error, notFound }, volume, requests] = await Promise.all([
     fetchChange(missionId),
     fetchVolume(missionId),
-    fetchLatestComparisonRequest(missionId),
+    fetchComparisonRequests(missionId),
   ]);
+  // 최신 요청은 "결과가 왜 없는지"에만 쓴다 — 기준 패널은 아래에서 결과와
+  // 짝지은 요청을 쓴다(requestOf docstring).
+  const latestRequest = requests[0] ?? null;
 
   if (error) {
     return (
@@ -214,6 +239,14 @@ export default async function ReportsPage({
   }
 
   const latest = notFound ? null : view.latest;
+  // 화면에 그려진 결과 각각을 만든 요청. 둘이 다른 요청일 수 있다(변화만 한 번,
+  // 구역을 확정해 부피까지 한 번) — 그때는 각 값을 자기 출처에서 읽는다.
+  const changeRequest = requestOf(requests, latest?.changeDetectionId);
+  const volumeRequest = hasVolume
+    ? requestOf(requests, volume.reports[0].report.volumeChangeId)
+    : null;
+  // 문턱·권고비율은 변화 탐지 쪽 개념이라 그 결과의 요청을 먼저 본다.
+  const basisRequest = changeRequest ?? volumeRequest;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <section className="rounded-lg border border-line bg-surface p-4">
@@ -321,36 +354,51 @@ export default async function ReportsPage({
 
       {/* 이번 결과가 **무슨 기준으로** 계산됐는지 — 고정값이라고 숨기지 않는다
           (대표자 확정). 요청 생성 시점에 굳은 스냅샷이라, 시스템 기준이 나중에
-          바뀌어도 이 결과는 여기 적힌 값으로 계산된 것이 맞다. */}
-      {latestRequest && (
+          바뀌어도 이 결과는 여기 적힌 값으로 계산된 것이 맞다.
+          출처는 **위에 그려진 결과를 만든 요청**이다(최신 요청이 아니다) —
+          requestOf docstring 참조. */}
+      {basisRequest && (
         <section className="rounded-lg border border-line bg-surface p-4 text-sm">
           <h3 className="font-semibold break-keep text-ink-1">이번 계산에 쓴 기준 (고정값)</h3>
           <dl className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div>
               <dt className="text-xs break-keep text-ink-muted">움직임으로 칠 최소 거리</dt>
               <dd className="num mt-0.5 text-ink-1">
-                {latestRequest.policy.distanceThresholdM} m
+                {basisRequest.policy.distanceThresholdM} m
               </dd>
             </div>
             <div>
               <dt className="text-xs break-keep text-ink-muted">재촬영 권고 비율</dt>
               <dd className="num mt-0.5 text-ink-1">
-                {(latestRequest.policy.revisitRatioThreshold * 100).toFixed(1)} %
+                {(basisRequest.policy.revisitRatioThreshold * 100).toFixed(1)} %
               </dd>
             </div>
             <div>
               <dt className="text-xs break-keep text-ink-muted">기준 묶음</dt>
               <dd className="mt-0.5 font-mono text-xs break-token text-ink-1">
-                {latestRequest.policy.policyVersion}
+                {basisRequest.policy.policyVersion}
               </dd>
             </div>
           </dl>
-          <p className="mt-2 text-xs break-keep text-ink-muted">
-            계산 범위:{" "}
-            {latestRequest.zones
-              ? `사용자가 확정한 구역 ${Object.keys(latestRequest.zones).length}개 (${latestRequest.zoneCrs})`
-              : "구역을 확정하지 않아 부피 비교는 하지 않았습니다"}
-          </p>
+          {/* 계산 범위(구역)는 부피 쪽 개념이라 **부피 결과를 만든 요청**에서
+              읽는다 — 부피 결과가 없으면 이 줄은 그리지 않는다(구역을 확정하지
+              않았다는 안내는 부피가 있을 때만 뜻이 있다). */}
+          {volumeRequest && (
+            <p className="mt-2 text-xs break-keep text-ink-muted">
+              계산 범위:{" "}
+              {volumeRequest.zones
+                ? `사용자가 확정한 구역 ${Object.keys(volumeRequest.zones).length}개 (${volumeRequest.zoneCrs})`
+                : "구역을 확정하지 않아 부피 비교는 하지 않았습니다"}
+            </p>
+          )}
+          {/* 변화와 부피가 서로 다른 요청에서 나왔으면 그 사실을 감추지 않는다 —
+              위 숫자는 변화 쪽 기준이고 계산 범위는 부피 쪽 것이다. */}
+          {changeRequest && volumeRequest && changeRequest.requestId !== volumeRequest.requestId && (
+            <p className="mt-2 text-xs break-keep text-ink-muted">
+              변화와 부피는 서로 다른 요청에서 계산됐습니다 (변화 {changeRequest.requestId} ·
+              부피 {volumeRequest.requestId}).
+            </p>
+          )}
         </section>
       )}
     </div>

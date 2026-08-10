@@ -193,3 +193,44 @@ def test_download_failure_message_does_not_leak_presigned_signature(tmp_path: Pa
     assert "X-Amz-Signature" not in str(excinfo.value)
     assert "deadbeef1234" not in str(excinfo.value)
     assert "http://storage.test/x/missing.laz" in str(excinfo.value)
+
+
+def test_transport_failure_keeps_the_cause_and_still_hides_the_signature(
+    tmp_path: Path,
+) -> None:
+    """[핵심][회귀] 전송 실패(연결 거부·타임아웃)는 **원인 문자열이 곧 진단**이다.
+
+    서명 유출을 막던 첫 수정이 예외 클래스 이름만 남기는 바람에
+    ``[Errno 111] Connection refused`` 같은 진짜 원인이 통째로 사라졌었다 —
+    방화벽 변경인지 DNS 실패인지 백엔드 지연인지 구분해야 하는 자리가 정확히
+    실 인프라 장애 대응이다. 원인은 살리되 서명은 여전히 지운다.
+    """
+    del tmp_path
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[Errno 111] Connection refused", request=request)
+
+    signed_url = (
+        "http://storage.test/x/pc.laz"
+        "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=deadbeef1234"
+    )
+    transport = httpx.MockTransport(handler)
+    with (
+        httpx.Client(transport=transport, base_url="http://storage.test") as client,
+        pytest.raises(ChangeDetectionRunError) as excinfo,
+    ):
+        compute_change_detection(
+            change_detection_id="mission-1-cmp6",
+            baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            baseline_download_url=signed_url,
+            current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            current_download_url=signed_url,
+            computed_at=_COMPUTED_AT,
+            http_client=client,
+        )
+    message = str(excinfo.value)
+    # 원인이 남아 있다 — 이게 이 테스트의 핵심이다.
+    assert "Connection refused" in message
+    # 그러면서도 서명은 없다.
+    assert "X-Amz-Signature" not in message
+    assert "deadbeef1234" not in message

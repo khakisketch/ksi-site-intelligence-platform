@@ -37,6 +37,7 @@ from ksi_event_contracts.comparison_policy import (
 )
 from ksi_event_contracts.volume_change_report import VolumeChangeReport, ZoneVolumeDelta
 
+from ksi_change_detection.download_errors import download_failure_detail
 from ksi_change_detection.dsm_diff import DsmDiffError, align_and_diff, volume_delta_in_polygon
 
 logger = logging.getLogger(__name__)
@@ -190,16 +191,17 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
     except httpx.HTTPStatusError as exc:
-        # run_change_detection.py 의 _download 와 동일 근거 — str(exc) 자체가
-        # 요청 URL 원문(서명 포함)을 품고 있어 상태코드만 뽑는다(실 인프라
-        # 재현 중 발견: 서명이 실린 URL 을 FAILED detail 로 화면에 그대로
-        # 노출하고 있었다).
+        # run_change_detection.py 의 _download 와 동일 근거(download_errors 모듈).
         raise VolumeChangeRunError(
-            f"DSM 을 받지 못했다({url.split('?', 1)[0]}): HTTP {exc.response.status_code}"
+            download_failure_detail(
+                what="DSM", url=url, cause=f"HTTP {exc.response.status_code}"
+            )
         ) from exc
     except httpx.HTTPError as exc:
         raise VolumeChangeRunError(
-            f"DSM 을 받지 못했다({url.split('?', 1)[0]}): {type(exc).__name__}"
+            download_failure_detail(
+                what="DSM", url=url, cause=f"{type(exc).__name__}: {exc}"
+            )
         ) from exc
 
 
