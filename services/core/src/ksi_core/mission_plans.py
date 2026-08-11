@@ -248,6 +248,32 @@ def _request_digest(plan_request_payload: dict[str, Any]) -> str:
     return _pair_digest(plan_request_payload)
 
 
+def _grid_from_camera(camera: Any, *, altitude_m: float) -> GridSpacing:
+    """카메라 스펙으로 격자 간격을 계산한다 — lawnmower/perimeter 공통 물리식.
+
+    두 패턴이 같은 계산을 공유해야 한다는 것은 우연이 아니라 명시적 결정이다
+    (ADR-KSI-011 D3, ``test_patrol_camera_computes_capture_interval``: "AUTONOMOUS_PATROL
+    도 route.camera 를 주면 lawnmower 와 동일하게... 동일 물리식·동일 카메라"). 이
+    변환 실패의 문구(``str(exc)``)는 두 분기가 이미 동일하게 썼다 — 분기별로 다른
+    것은 그 앞뒤의 "camera 와 spacing 을 함께 줄 수 없다"류 검증뿐이고, 그건 각
+    호출부에 그대로 남아 있다.
+    """
+    try:
+        return compute_grid_spacing(
+            CameraSpec(
+                sensor_width_mm=camera.sensor_width_mm,
+                focal_length_mm=camera.focal_length_mm,
+                image_width_px=camera.image_width_px,
+                image_height_px=camera.image_height_px,
+            ),
+            altitude_m=altitude_m,
+            front_overlap=camera.front_overlap,
+            side_overlap=camera.side_overlap,
+        )
+    except CameraSpecError as exc:
+        raise RouteGenerationError(str(exc)) from exc
+
+
 def build_mission_plan(
     request: MissionPlanRequest,
     *,
@@ -282,21 +308,7 @@ def build_mission_plan(
                     "route.camera 와 spacingM/captureIntervalM 을 함께 줄 수 없다 — "
                     "카메라를 주면 서버가 계산한다"
                 )
-            camera = request.route.camera
-            try:
-                grid = compute_grid_spacing(
-                    CameraSpec(
-                        sensor_width_mm=camera.sensor_width_mm,
-                        focal_length_mm=camera.focal_length_mm,
-                        image_width_px=camera.image_width_px,
-                        image_height_px=camera.image_height_px,
-                    ),
-                    altitude_m=request.route.altitude_m,
-                    front_overlap=camera.front_overlap,
-                    side_overlap=camera.side_overlap,
-                )
-            except CameraSpecError as exc:
-                raise RouteGenerationError(str(exc)) from exc
+            grid = _grid_from_camera(request.route.camera, altitude_m=request.route.altitude_m)
             spacing_m, capture_interval_m = grid.spacing_m, grid.capture_interval_m
 
         if spacing_m is None:
@@ -347,21 +359,7 @@ def build_mission_plan(
                     "route.camera 와 captureIntervalM 을 함께 줄 수 없다 — 카메라를 "
                     "주면 서버가 계산한다"
                 )
-            camera = request.route.camera
-            try:
-                grid = compute_grid_spacing(
-                    CameraSpec(
-                        sensor_width_mm=camera.sensor_width_mm,
-                        focal_length_mm=camera.focal_length_mm,
-                        image_width_px=camera.image_width_px,
-                        image_height_px=camera.image_height_px,
-                    ),
-                    altitude_m=request.route.altitude_m,
-                    front_overlap=camera.front_overlap,
-                    side_overlap=camera.side_overlap,
-                )
-            except CameraSpecError as exc:
-                raise RouteGenerationError(str(exc)) from exc
+            grid = _grid_from_camera(request.route.camera, altitude_m=request.route.altitude_m)
             # spacing_m(across-track 라인 간격)은 perimeter 에 스캔선 개념이 없어
             # 무의미하다 — capture_interval_m(along-track 촬영 간격)만 쓴다. 계산
             # 자체는 lawnmower 와 동일 물리식이라 MIN_FRONT_OVERLAP(0.6) 미만은

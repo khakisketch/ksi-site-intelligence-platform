@@ -297,6 +297,11 @@ def _find_artifact(
     return next((a for a in job.artifacts if a.kind is kind), None)
 
 
+def _ref_or_none(job_id: str, artifact: ProcessingArtifact | None) -> ArtifactRef | None:
+    """산출물이 있으면 그 (작업, 산출물) 참조를, 없으면 None을 만든다."""
+    return ArtifactRef(job_id=job_id, artifact_id=artifact.artifact_id) if artifact else None
+
+
 @dataclass(frozen=True, slots=True)
 class _Resolved:
     """검증을 통과한 요청의 파생값 — live 생성과 재생이 공유한다."""
@@ -553,28 +558,12 @@ class ComparisonRequestStore:
             None,
             _Resolved(
                 site_id=baseline_job.site_id,
-                point_cloud_baseline=(
-                    ArtifactRef(job_id=baseline_job_id, artifact_id=pc_baseline.artifact_id)
-                    if pc_baseline
-                    else None
-                ),
-                point_cloud_current=(
-                    ArtifactRef(job_id=current_job_id, artifact_id=pc_current.artifact_id)
-                    if pc_current
-                    else None
-                ),
+                point_cloud_baseline=_ref_or_none(baseline_job_id, pc_baseline),
+                point_cloud_current=_ref_or_none(current_job_id, pc_current),
                 change_detection_eligible=cd_eligible,
                 change_detection_ineligible_reason=cd_reason,
-                dsm_baseline=(
-                    ArtifactRef(job_id=baseline_job_id, artifact_id=dsm_baseline.artifact_id)
-                    if dsm_baseline
-                    else None
-                ),
-                dsm_current=(
-                    ArtifactRef(job_id=current_job_id, artifact_id=dsm_current.artifact_id)
-                    if dsm_current
-                    else None
-                ),
+                dsm_baseline=_ref_or_none(baseline_job_id, dsm_baseline),
+                dsm_current=_ref_or_none(current_job_id, dsm_current),
                 volume_change_eligible=vol_eligible,
                 volume_change_ineligible_reason=vol_reason,
                 zones=zones if vol_eligible else None,
@@ -972,6 +961,15 @@ def _presigned_url(
     return storage.presigned_get(object_key, ttl=DEFAULT_VIEW_TTL)
 
 
+def _presigned_url_or_none(
+    storage: EvidenceStorage, *, site_id: str, ref: ArtifactRef | None
+) -> str | None:
+    """참조가 있으면 그 산출물의 열람 URL을, 없으면 None을 만든다."""
+    if ref is None:
+        return None
+    return _presigned_url(storage, site_id=site_id, job_id=ref.job_id, artifact_id=ref.artifact_id)
+
+
 def build_comparison_requests_router(
     store: ComparisonRequestStore, storage: EvidenceStorage
 ) -> APIRouter:
@@ -1142,45 +1140,17 @@ def build_comparison_requests_router(
             return ComparisonRequestInputResponse(verdict=verdict.value, detail=detail)
 
         try:
-            pc_baseline_url = (
-                _presigned_url(
-                    storage,
-                    site_id=record.site_id,
-                    job_id=record.point_cloud_baseline.job_id,
-                    artifact_id=record.point_cloud_baseline.artifact_id,
-                )
-                if record.point_cloud_baseline is not None
-                else None
+            pc_baseline_url = _presigned_url_or_none(
+                storage, site_id=record.site_id, ref=record.point_cloud_baseline
             )
-            pc_current_url = (
-                _presigned_url(
-                    storage,
-                    site_id=record.site_id,
-                    job_id=record.point_cloud_current.job_id,
-                    artifact_id=record.point_cloud_current.artifact_id,
-                )
-                if record.point_cloud_current is not None
-                else None
+            pc_current_url = _presigned_url_or_none(
+                storage, site_id=record.site_id, ref=record.point_cloud_current
             )
-            dsm_baseline_url = (
-                _presigned_url(
-                    storage,
-                    site_id=record.site_id,
-                    job_id=record.dsm_baseline.job_id,
-                    artifact_id=record.dsm_baseline.artifact_id,
-                )
-                if record.dsm_baseline is not None
-                else None
+            dsm_baseline_url = _presigned_url_or_none(
+                storage, site_id=record.site_id, ref=record.dsm_baseline
             )
-            dsm_current_url = (
-                _presigned_url(
-                    storage,
-                    site_id=record.site_id,
-                    job_id=record.dsm_current.job_id,
-                    artifact_id=record.dsm_current.artifact_id,
-                )
-                if record.dsm_current is not None
-                else None
+            dsm_current_url = _presigned_url_or_none(
+                storage, site_id=record.site_id, ref=record.dsm_current
             )
         except EvidenceStorageError:
             logger.warning("비교 입력 URL 발급 실패: requestId=%s", request_id)
