@@ -295,6 +295,79 @@ def test_a_missing_dsm_fails_without_submitting(
     assert core.get(f"/v1/missions/{_MISSION_ID}/volume-changes").status_code == 404
 
 
+def test_download_failure_message_does_not_leak_presigned_signature(
+    wired: tuple[_CoreSink, TestClient, str, httpx.Client],
+) -> None:
+    """[핵심][회귀] DSM 다운로드 실패 메시지가 presigned URL 서명을 그대로 물고
+    있으면 그 문구가 FAILED detail → /reports 화면까지 그대로 샌다(2026-08-10
+    실 인프라 재현으로 발견 — point cloud 쪽과 동일 결함, 대칭으로 고쳤다)."""
+    sink, _core, job_id, storage = wired
+    baseline, current = _sources(job_id)
+    signed_but_missing = ArtifactSource(
+        ref=current.ref,
+        download_url="http://storage.invalid/dsm-current-missing?X-Amz-Signature=deadbeef1234",
+    )
+
+    with pytest.raises(VolumeChangeRunError) as excinfo:
+        compute_and_submit(
+            sink=sink,
+            mission_id=_MISSION_ID,
+            volume_change_id="vc-e2e-signature-leak",
+            baseline=baseline,
+            current=signed_but_missing,
+            zones={"zone-0": _wgs84_square(10.0)},
+            zone_crs="EPSG:4326",
+            vertical_datum="ellipsoidal_native",
+            computed_at=_COMPUTED_AT,
+            http_client=storage,
+        )
+    assert "X-Amz-Signature" not in str(excinfo.value)
+    assert "deadbeef1234" not in str(excinfo.value)
+
+
+def _wgs84_square_far_outside_raster(size_m: float) -> dict[str, object]:
+    """래스터에서 10km 떨어진 정사각 구역 — DsmDiffError("유효한 셀이 없다")를 낸다."""
+    far_x, far_y = _ORIGIN_X + 10_000.0, _ORIGIN_Y + 10_000.0
+    corners_xy = [
+        (far_x, far_y), (far_x + size_m, far_y),
+        (far_x + size_m, far_y - size_m), (far_x, far_y - size_m), (far_x, far_y),
+    ]
+    ring = [
+        list(reproject_point(x, y, from_crs="EPSG:5186", to_crs="EPSG:4326"))
+        for x, y in corners_xy
+    ]
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def test_a_zone_outside_the_raster_fails_without_submitting(
+    wired: tuple[_CoreSink, TestClient, str, httpx.Client],
+) -> None:
+    """[음성][회귀] dsm_diff.DsmDiffError(구역이 래스터 밖)가 VolumeChangeRunError
+    로 감싸이지 않고 그대로 새면, 이 함수를 자동으로 부르는 호출자(비교 워커,
+    W2)는 실패를 FAILED 로 보고하지 못하고 요청이 RUNNING 에 무기한 걸린다
+    (2026-08-10 실 인프라 재현으로 확인된 결함, run_change_detection.py 가 이미
+    ChangeDetectionError 를 감싸는 것과 대칭으로 고쳤다)."""
+    sink, core, job_id, storage = wired
+    baseline, current = _sources(job_id)
+
+    with pytest.raises(VolumeChangeRunError):
+        compute_and_submit(
+            sink=sink,
+            mission_id=_MISSION_ID,
+            volume_change_id="vc-e2e-outside-raster",
+            baseline=baseline,
+            current=current,
+            zones={"zone-far": _wgs84_square_far_outside_raster(10.0)},
+            zone_crs="EPSG:4326",
+            vertical_datum="ellipsoidal_native",
+            computed_at=_COMPUTED_AT,
+            http_client=storage,
+        )
+
+    core.headers.update({"Authorization": "Bearer admin"})
+    assert core.get(f"/v1/missions/{_MISSION_ID}/volume-changes").status_code == 404
+
+
 def test_identical_inputs_produce_an_identical_report(
     wired: tuple[_CoreSink, TestClient, str, httpx.Client],
 ) -> None:

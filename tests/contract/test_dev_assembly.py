@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
@@ -163,6 +164,11 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         ),
         "volume_change_store": VolumeChangeStore(
             DurableJournal(tmp_path / "volume-changes.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+        ),
+        "comparison_request_store": ComparisonRequestStore(
+            DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
         ),

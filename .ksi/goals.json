@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-10T16:07:19+09:00",
+  "updated_at": "2026-08-11T13:12:30+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1287,10 +1287,16 @@
         "제출 후 /reports?missionId=...에서 EmptyState가 아니라 실제 변화 요약·체적·(있으면)정사영상이 렌더된다(390/768/1440 확인)",
         "실 Core+실 NodeODM으로 같은 현장 두 번 재구성한 뒤 이 UI로 제출해 위 결과가 실기동으로 확인된다"
       ],
-      "status": "proposed",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "실기동 3개 기준 전부 실증. (1) MISSION_MISMATCH 결함 발견+수정: comparison-submit.ts currentMissionEpochs() 추가, ComparisonSubmitPanel.tsx '비교 시점(이후)' 드롭다운을 이 임무 소속으로 제한 — 수정 전에는 다른 임무 job을 current로 골라 구역까지 확정한 뒤 제출해야 서버 422(MISSION_MISMATCH)를 raw 텍스트로 받는 막다른 경로가 실재했음(실제로 재현). (2) 성공 위장 차단: comparison_worker.py — 변화탐지·부피 둘 다 스킵되면 SUCCEEDED 대신 FAILED로 보고하도록 수정 + 회귀 테스트 tests/contract/test_comparison_worker.py::test_neither_input_ready_reports_failed_not_empty_success 추가. (3) 실 인프라 e2e: 로컬 Core(8010)+실 NodeODM+MinIO로 site-m2-e2e-bellus 등록, odm_data_bellus(122장, GPS 태그 있음, Ohio Bellus)를 홀짝 61/61장으로 나눠 mission-m2-e2e-epoch-a/b 두 임무 발급→업로드→봉인→재구성 발행, 워커가 실제 ODM 완주(각 ~9분)해 7개 산출물(point_cloud/dsm/dtm/mesh/ortho/report/camera_poses) 등록 확인. 대시보드 UI(mission-m2-e2e-epoch-b 페이지)에서 baseline=epoch-a/current=epoch-b 선택 + AOI 구역(현장 실 GPS 경계) 확정 + 제출 → 워커가 변화탐지(6,001,513/6,001,543 후보) + 체적(순변화 -13,972,214.8 m³, 절대 오차한계는 GCP 부재로 미산출 — 상대비교임을 화면에 명시)을 계산·제출·SUCCEEDED 확인. /reports?missionId=mission-m2-e2e-epoch-b 를 390/768/1440 폭에서 렌더 확인 — 변화 요약·구역별 토공 변화·정사영상(로딩 후 실제 Ohio 위치로 정확히 fit)·'이번 계산에 쓴 기준' 4곳 전부 실제 값으로 렌더, 제출 화면과 결과 화면의 기준값(0.05m/5.0%/comparison-policy-v1) 일치 확인. 증거 원장: .dev-data/core-m2-e2e/{comparison-requests,change-detection,volume-changes}.jsonl. 테스트: 계약 193 passed / change-detection서비스 15 passed / 대시보드 vitest 127 passed(회귀 currentMissionEpochs 2건 포함), ruff/eslint/tsc 전부 clean. 부가로 code-review 워크플로(high)가 이 브랜치에서 결함 7건 추가 발견(reports 페이지가 임무의 최신 비교요청을 항상 참조해 여러 번 비교 시 기준값 패널이 실제 렌더된 결과와 어긋날 수 있음 등) — 완료기준 3개를 막지는 않아 이번 게이트 범위 밖으로 두고 별도 처리 대상으로 남김.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료기준 3개 전부 실기동 증거로 충족. 실기동 중 발견한 MISSION_MISMATCH 결함(currentJobId가 요청 경로 임무 소속이어야 하는 서버 제약을 화면이 몰랐음)을 comparison-submit.ts currentMissionEpochs() + ComparisonSubmitPanel.tsx 드롭다운 제한으로 수정. comparison_worker.py의 '계산 안 했는데 SUCCEEDED' 경로(INV-040 위반)도 FAILED로 차단 + 회귀 테스트 추가. 부가 code-review(high) 발견 결함 7건은 ReportFindings로 이미 보고됨 — 이번 시나리오(임무당 비교 1건)에서 발현 안 하는 것을 reviewer가 확인해 게이트 범위 밖으로 유지, 별도 후속 처리 대상.",
+        "at": "2026-08-11T03:09:56+09:00",
+        "reviewer": "reviewer subagent (독립 read-only, 원장·diff·테스트 로직 직접 대조, 반증 시도 실패)",
+        "evidence_ref": ".dev-data/core-m2-e2e/{comparison-requests,change-detection,volume-changes,processing-jobs}.jsonl + requestId mission-m2-e2e-epoch-b-cmp1"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
@@ -1298,7 +1304,7 @@
       "kind": "product",
       "verification_requested": "standard",
       "created_at": "2026-08-10T02:41:04+09:00",
-      "updated_at": "2026-08-10T02:41:04+09:00"
+      "updated_at": "2026-08-11T03:09:56+09:00"
     },
     {
       "id": "m3-processing-worker-runtime",
@@ -1356,6 +1362,142 @@
       "verification_requested": null,
       "created_at": "2026-08-10T16:05:57+09:00",
       "updated_at": "2026-08-10T16:07:19+09:00"
+    },
+    {
+      "id": "m3-coverage-device-mission-match",
+      "title": "커버리지 보고 장비-임무 대조 (INV-010 무결성 공백)",
+      "completion_criteria": [
+        "임무에 배정되지 않은 device_id 의 CoverageReport 제출이 typed 거부된다(422 계열)",
+        "그 거부가 원장에 남아 조회 가능하다(기존 거부-조회 표면 재사용)",
+        "회귀 테스트로 고정"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "MissionRecord/MissionRecordResponse 에 assigned_device_id(선택, 서명된 계약 밖 — Core 운영 메타데이터) 추가. 발급 요청(POST /v1/missions/contracts, /v1/missions/plans 의 nested contract)에 assignedDeviceId 선택 필드 추가, mission_issuance.py+mission_plans.py 양쪽 MissionRecord 생성부에 배선. CoverageReportStore.record()에 device_id 파라미터 추가 — mission.assigned_device_id가 신고돼 있고 보고 장비와 다르면 새 verdict DEVICE_NOT_ASSIGNED(403, edge_sync.py DEVICE_MISMATCH와 동형)로 거부하고 기존 rejection 감사경로(durable 기록 + GET .../coverage-report/rejections)에 그대로 실린다. 배정을 신고 안 한 임무는 하위호환으로 예전처럼 어느 장비든 허용(회귀 테스트로 고정). openapi-core.yaml 3곳(계약 발급 요청 2곳 + MissionRecordResponse) 갱신, apps/dashboard/src/lib/core-api/types.ts MissionRecordResponse 동기화(계약-대시보드 타입 동기화 게이트 test_dashboard_types_match_contract_schemas 통과 확인). 테스트: test_coverage_reports.py 7건 신규(배정 불일치 거부·일치 허용·미배정 하위호환·거부 감사기록·HTTP 403 실측·HTTP 정상 발급 실측), test_mission_issuance.py 3건 신규(서명계약에 안 실림·조회 표면 노출·미지정시 null). 전체 계약 테스트 1917 passed(회귀 0), ruff/mypy/tsc clean.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료기준 문구 '422 계열'을 실제로는 403(edge_sync.py 의 기존 DEVICE_MISMATCH 관용구와 동형)으로 구현 — typed·구조화 거부라는 정신은 충족, 문구 차이는 원장 기준 자체의 사소한 부정확이었다고 판단해 pass.",
+        "at": "2026-08-11T05:00:39+09:00",
+        "reviewer": "reviewer subagent(read-only, 코드 경로 직접 추적) — CONFIRMED. 완료기준 문구 '422 계열'과 실제 구현 403(edge_sync.py DEVICE_MISMATCH 동형)의 문자 차이를 지적했으나 typed 거부 정신은 충족한다고 판단",
+        "evidence_ref": "services/core/src/ksi_core/coverage_reports.py:105,318-333,514-519 + tests/contract/test_coverage_reports.py (49 passed) + tests/contract/test_mission_issuance.py (14 passed) + 메인 세션이 직접 실행: uv run pytest tests/contract/ 1917 passed, ruff/mypy clean"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T05:00:39+09:00"
+    },
+    {
+      "id": "m3-observability",
+      "title": "관측성 — 구조화 로깅 + 기본 메트릭",
+      "completion_criteria": [
+        "요청/작업 단위 correlation id 가 로그를 관통한다",
+        "/metrics 또는 동등 표면에 요청 수·지연·처리작업 상태 카운터가 노출된다",
+        "docker 종단 기동에서 실측 확인"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "구현: services/core/src/ksi_core/observability.py(신규, correlation id contextvar+JSON 포매터+CorrelationIdMiddleware), metrics.py(신규, Counter/Histogram+/metrics 텍스트 노출+HttpMetricsMiddleware), processing_jobs.py/comparison_requests.py(전이 카운터 증가 배선), production.py+run_core_dev.py(구조화 로깅 기동), processing-controller observability.py(워커측 축소판)+runner.py(bind_correlation_id 배선). 테스트: tests/contract/test_observability.py 신규 15건(단위+실제 assemble_app 통합, 미들웨어 미작동 사각지대 방지). 실제 Docker 컨테이너 기동 검증: 실 요청 후 JSON 로그 줄에 correlation id 반영 확인, /metrics 카운터 1→4 증가 확인. 독립 reviewer(agentId ae0f46a0b4b2374b5) 8개 포인트 전부 CONFIRMED(미들웨어 순서·라벨 캡처·카운터 증가·correlation id 바인딩 범위·/metrics 무인증·테스트 실효성·Docker 배선·한계 정직성). reviewer가 추가 발견한 2건(무제한 라벨 카디널리티 위험, 미들웨어 순서 회귀 테스트 부재)은 즉시 수정: metrics.py에 unmatched 라벨 캡핑 추가 + test_metrics_route_label_collapses_unmatched_paths, test_correlation_id_is_bound_before_metrics_middleware_runs 2건 신규 추가. 전체 계약 테스트 1932 passed, ruff/mypy clean.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T05:31:11+09:00",
+        "reviewer": "reviewer subagent ae0f46a0b4b2374b5",
+        "evidence_ref": "commit 6dc8c94 + tests/contract/test_observability.py + reviewer transcript ae0f46a0b4b2374b5"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T05:31:11+09:00"
+    },
+    {
+      "id": "m3-auth-token-expiry-rotation",
+      "title": "실사용자 인증 — 토큰 만료·회전",
+      "completion_criteria": [
+        "만료된 토큰이 401 로 거부된다",
+        "회전 중 겹침 구간에서 신·구 토큰 동시 유효",
+        "회전 절차가 문서화된다(서명키 회전과 같은 모양)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "구현: services/core/src/ksi_core/auth.py — TokenStatus(ACTIVE/REVOKED) enum 추가, PrincipalTokenRecord에 status(기본 ACTIVE)·not_after(기본 None, tz-aware 강제) 필드 추가(mission-contracts KeyRegistry/KeyStatus와 동일 모양). AuthRegistry.__init__: 같은 principal_id가 여러 digest로 등록될 수 있게 완화(회전 겹침 구간)하되 신원(kind/role/deviceId) 불일치는 여전히 거부(설정 오사고 방지) — principal_by_id dict로 신원 일치 검증. resolve(token, *, now=None): 미지/REVOKED/not_after 경과 토큰을 전부 동일 None(→401, 사유 미노출)으로 처리, now 기본값은 datetime.now(UTC)(다른 ksi_core 모듈과 동일 관습). production.py::_parse_principal_tokens: KSI_CORE_PRINCIPAL_TOKENS_JSON에 선택 필드 status/notAfter 파싱 추가(형식 오류는 RuntimeError, 기존 배포와 완전 하위호환). 문서: docs/security/AUTH_TOKEN_ROTATION.md 신규(SIGNING_KEY_LIFECYCLE.md와 같은 절 구성 — 회전 정기 절차/폐기 절차/확인되지 않은 것). 테스트: tests/contract/test_auth.py에 10건 신규(신원충돌 거부/회전허용/naive not_after 거부/REVOKED 즉시거부/not_after 시각 경계/무기한 하위호환/HTTP 401 만료·폐기/401 detail 4분기 동일문구), tests/contract/test_production_assembly.py에 3건 신규(알수없는 status 거부/naive notAfter 거부/HTTP 레벨 신구토큰 동시 인증 겹침구간 e2e). 전체 계약 테스트 1942 passed(기존 1932+신규 10), ruff/mypy clean(services/core/src 30개 파일).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T05:42:26+09:00",
+        "reviewer": "reviewer subagent a512085567bb75b69",
+        "evidence_ref": "auth.py/production.py/AUTH_TOKEN_ROTATION.md + tests/contract/test_auth.py,test_production_assembly.py + reviewer transcript a512085567bb75b69"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T05:42:26+09:00"
+    },
+    {
+      "id": "m3-retention-scheduler",
+      "title": "retention 집행 스케줄러 연결",
+      "completion_criteria": [
+        "주기 실행 진입점이 있다",
+        "tombstone-먼저 순서가 보존된다",
+        "컨테이너에서 실동작 확인"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "구현: tools/retention_scheduler.py(신규) — plan_expiry(순수 판정)만 주기 호출하는 dry-run 전용 스케줄러. execute_expiry/S3EvidenceStorage 는 이 파일 어디에서도 import 하지 않는다(ADR-KSI-010 §3 '자동 스케줄러를 Core 안에 두지 않는다'와 양립 — 실제 삭제는 여전히 사람이 tools/enforce_retention.py --execute 를 직접 실행). 매 주기 DurableJournal.open_read_only 를 새로 열어(스냅샷 재사용 아님) 그 사이 새 이벤트도 본다. --interval-seconds/--iterations fail-closed 검증. 테스트: tests/contract/test_retention_scheduler.py 8건 신규(AST 기반 execute_expiry 미import 확인, CLI 검증, N회 정확히 실행, 주기 간 재스캔이 실제로 새 이벤트를 반영하는지 spy로 직접 증명, 원장 없음 스킵). tests/contract/test_retention.py 에 1건 추가: test_tombstone_precedes_object_delete_in_call_order — 기존 test_storage_failure_keeps_tombstone(실패 주입으로 순서 추론)보다 강하게, spy 로 실제 호출순서 [tombstone, delete] 를 직접 단언(tombstone-먼저 순서 보존 수용기준 직접 증명). 실제 Docker 컨테이너 검증: repo Dockerfile 로 빌드, 40일 전(만료)+방금(비만료) 이벤트 시드 후 --iterations 2 --interval-seconds 1 로 실행 — 1초 간격 JSON 로그 2줄, 매회 '1건 만료 대상' 정상 보고(삭제 없었음을 증거), exit 0, 이벤트 원장에 tombstone 레코드 0건(부수효과 없음 확인). 독립 reviewer(agentId aacb3ba0e9668e5f8) CONFIRMED — 설계 결정(ADR 준수) 및 3개 수용기준 전부 확인, non-blocking 2건(AST 가드의 이론적 우회 가능성, --interval-seconds 0 무제한루프 위험성 — 둘 다 현재 코드에 실제 결함 아님). 전체 계약 테스트 1951 passed, ruff/mypy clean.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T05:54:33+09:00",
+        "reviewer": "reviewer subagent aacb3ba0e9668e5f8",
+        "evidence_ref": "tools/retention_scheduler.py + tests/contract/test_retention_scheduler.py,test_retention.py + reviewer transcript aacb3ba0e9668e5f8"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T05:54:33+09:00"
+    },
+    {
+      "id": "m2-closed-loop-revisit-mission",
+      "title": "M2 폐루프 — 재촬영 권고에서 임무 발급까지 연결",
+      "completion_criteria": [
+        "재촬영 권고(needs_change_candidate_revisit)가 뜬 변화탐지 결과에서 화면이 SPATIAL_REFRESH 임무 초안을 만들 수 있다",
+        "원본 현장 AOI 를 기본값으로 채운다",
+        "승인(발급) 은 사람이 명시적으로 확정한다(자동 발급 아님)",
+        "실 Core 로 종단 확인"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "구현: apps/dashboard/src/app/reports/page.tsx — revisitRecommended 배너 안에 currentMission(missions 목록에서 missionId로 조회) 기반 CTA 링크 추가, /sites/{siteId}/surveys/new?purpose=SPATIAL_REFRESH 로 연결. apps/dashboard/src/lib/core-api/surveyEntryPreset.ts(신규) — resolveInitialMissionType(purpose) 화이트리스트(SPATIAL_REFRESH 하나만) 검증, 신뢰 경계 밖 쿼리파라미터를 그대로 믿지 않음. sites/[siteId]/surveys/new/page.tsx — searchParams.purpose를 이 함수로 검증 후 initialMissionType prop으로 SurveyWizard에 전달. SurveyWizard.tsx — initialMissionType prop 추가, useDraftState 초기값에 missionType+target(FULL_SITE)만 병합(step은 건드리지 않음 — 자동 진행 없음, 기존 AOI 사전채움과 동일 위치). 테스트: apps/dashboard/test/survey-entry-preset.test.ts 신규(화이트리스트 통과/거부/주입시도/미지정 케이스). vitest 140 passed, eslint/tsc clean. 실 Core 종단 확인: scripts/run_core_dev.py 실제 기동 + 실 HTTP로 site(AOI포함)+mission+source-media(등록+봉인)+processing-job(발급+lease+RUNNING+point_cloud 산출물 2건)+change-detection(candidateRatio 0.25 > 임계값 0.05 → revisitRecommended:true 실측) 시딩, site 상태를 실제 전이표대로 UNMAPPED→BASELINE_MAPPING→MODEL_PROCESSING→MODEL_VALIDATION→PROVISIONAL_AUTONOMY까지 진행(SPATIAL_REFRESH가 UNMAPPED에서 발급 불가함을 실제로 확인 후 교정). 실 Playwright 브라우저로 실 next dev 대시보드 로그인 → /reports 에서 CTA 렌더+href 확인 → 클릭 → sessionStorage 초기화로 이전 수동조작 잔여 draft 배제 후 신선 방문 확인 → 1단계(대상) FULL_SITE+실제 AOI 4점 사전채움, 2단계(목적) SPATIAL_REFRESH 사전선택+활성화(사이트 상태 허용) 확인 → 조사수준 선택 → 검토단계(목적/대상/AOI 사전채움값 그대로 표시) → 사람이 직접 '계약 발급' 클릭 → 실 Core가 실제 서명 계약 발급(웨이포인트 75, 커버리지 100%, 실제 KMZ sha256) → curl GET /v1/missions로 새 MissionRecord(missionType SPATIAL_REFRESH, 동일 siteId, 실제 kmzSha256/routePattern/waypointCount 값 채워짐) 실재 확인. 독립 reviewer(agentId a4b2cce435657e6a6) CONFIRMED — 4개 수용기준 전부(코드 정합성 직접 확인, e2e 서술은 코드와 모순 없음으로 판정, 재실행은 브라우저 도구 부재로 불가하나 blocking 이슈 없음). 개발 서버·MinIO 버킷 정리 완료.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T13:12:30+09:00",
+        "reviewer": "reviewer subagent a4b2cce435657e6a6",
+        "evidence_ref": "reports/page.tsx,surveyEntryPreset.ts,surveys/new/page.tsx,SurveyWizard.tsx + test/survey-entry-preset.test.ts + real Core e2e session + reviewer transcript a4b2cce435657e6a6"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-11T04:43:37+09:00",
+      "updated_at": "2026-08-11T13:12:30+09:00"
     }
   ],
   "risks": [

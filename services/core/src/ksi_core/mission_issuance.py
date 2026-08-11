@@ -101,6 +101,11 @@ class MissionIssuanceRequest(BaseModel):
     accessible_general_coverage: float = Field(default=0.95, ge=0.95, le=1.0)
     artifacts: Artifacts = Field(default_factory=Artifacts)
     valid_for_hours: float = Field(default=24.0, gt=0.0, le=_MAX_VALID_FOR_HOURS)
+    # 서명된 계약에는 실리지 않는다(MissionRecord.assigned_device_id 문서 참조) —
+    # Core 가 INV-010 완료 판정에만 쓰는 운영 메타데이터다. 생략하면(None) 배정을
+    # 신고하지 않은 것이고, 그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할
+    # 수 있다(하위호환 — 기존 발급 흐름을 이 필드 도입이 깨지 않는다).
+    assigned_device_id: str | None = Field(default=None, min_length=1)
 
 
 def issue_mission_contract(
@@ -212,6 +217,7 @@ def build_mission_issuance_router(
             planned_coverage_ratio=None,
             issued_at=datetime.now(UTC),
             issued_by=principal.principal_id,
+            assigned_device_id=request.assigned_device_id,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
         return contract_payload

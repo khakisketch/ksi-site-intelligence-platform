@@ -30,7 +30,7 @@ function LevelProgress({ record }: { record: EquipmentSupportView }) {
           key={level}
           title={SUPPORT_LEVEL_LABEL[level]}
           className={`h-1.5 w-6 rounded-full ${
-            index <= reached ? "bg-emerald-500" : "bg-neutral-200 dark:bg-neutral-700"
+            index <= reached ? "bg-safe" : "bg-line"
           }`}
         />
       ))}
@@ -78,9 +78,9 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+      <section className="rounded-lg border border-line p-4">
         <h2 className="text-sm font-semibold">장비 지원 현황</h2>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="mt-1 text-sm text-ink-2">
           등록 {view.classCount}종 중 <strong>상용 지원 {view.productionSupportedCount}종</strong>.
           나머지는 검증 중이며 상용 안전지원으로 표시하지 않습니다.
         </p>
@@ -88,7 +88,7 @@ export default async function SettingsPage() {
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[44rem] text-left text-sm">
-          <thead className="border-b border-neutral-200 text-xs uppercase text-neutral-500 dark:border-neutral-800">
+          <thead className="border-b border-line text-xs uppercase text-ink-muted">
             <tr>
               <th className="px-3 py-2">장비 클래스</th>
               <th className="px-3 py-2">검증 단계</th>
@@ -102,7 +102,7 @@ export default async function SettingsPage() {
             {view.classes.map((record) => (
               <tr
                 key={record.classId}
-                className="border-b border-neutral-100 dark:border-neutral-900"
+                className="border-b border-line"
               >
                 <td className="px-3 py-2 font-medium">{record.classId}</td>
                 <td className="px-3 py-2">{SUPPORT_LEVEL_LABEL[record.state]}</td>
@@ -112,19 +112,19 @@ export default async function SettingsPage() {
                 <td className="px-3 py-2">
                   {/* 서버 파생값만 본다 — state 문자열로 다시 판단하지 않는다. */}
                   {record.productionSupported ? (
-                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">
+                    <span className="rounded bg-safe-bg px-2 py-0.5 text-xs font-semibold text-safe-ink">
                       상용 지원
                     </span>
                   ) : (
-                    <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                    <span className="rounded bg-sunk px-2 py-0.5 text-xs text-ink-2">
                       검증 중
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-neutral-600 dark:text-neutral-400">
+                <td className="px-3 py-2 text-ink-2">
                   {record.modelVersion ?? "—"}
                 </td>
-                <td className="px-3 py-2 text-neutral-600 dark:text-neutral-400">
+                <td className="px-3 py-2 text-ink-2">
                   {record.evidenceRefs.length === 0
                     ? "—"
                     : `${record.evidenceRefs.length}건`}

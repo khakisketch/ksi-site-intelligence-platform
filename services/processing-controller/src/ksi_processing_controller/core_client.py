@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
+from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_event_contracts.comparison_policy import ComparisonPolicy
+from ksi_event_contracts.volume_change_report import VolumeChangeReport
 
 
 class CoreClientError(RuntimeError):
@@ -112,6 +115,45 @@ class ArtifactUploadTarget:
     upload_url: str
 
 
+@dataclass(frozen=True, slots=True)
+class PendingComparisonRequest:
+    """비교 워커가 다음에 잡을 후보 1건 — ``PendingJob`` 과 동형(§ 그 docstring)."""
+
+    request_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonInput:
+    """``GET /v1/comparison-requests/{id}/input`` 을 옮긴 것.
+
+    ``*_url`` 은 presigned GET(바이트를 받을 자리), ``point_cloud_*``/``dsm_*``
+    (``ArtifactRef | None``)는 그 바이트가 어느 (작업, 산출물)인지다 —
+    ``ChangeDetectionResult``/``VolumeChangeReport`` 제출에 둘 다 필요하다.
+    각 쌍이 ``None`` 이면 그 비교(변화탐지/체적)는 이 요청에서 시도하지 않는다.
+    """
+
+    request_id: str
+    mission_id: str
+    # 워커가 QUEUED→RUNNING 전이를 시도해도 되는지는 이 값으로만 안다 — 재개된
+    # 요청(다른 워커가 이미 RUNNING 으로 바꿔 놓은 것)에 또 전이를 시도하면
+    # ILLEGAL_TRANSITION 이다(worker.py 의 JobInput.status 와 동일 원칙).
+    status: str
+    # 이 요청 생성 시점에 굳어진 기준값 — 계산 함수의 기본값 대신 **이 값**을
+    # 쓴다. 그래야 원장의 스냅샷이 "실제로 쓴 값"이 되고, 화면이 그 값을
+    # 표시하는 것이 사실이 된다(comparison_policy 모듈 docstring).
+    policy: ComparisonPolicy
+    point_cloud_baseline: ArtifactRef | None
+    point_cloud_baseline_url: str | None
+    point_cloud_current: ArtifactRef | None
+    point_cloud_current_url: str | None
+    dsm_baseline: ArtifactRef | None
+    dsm_baseline_url: str | None
+    dsm_current: ArtifactRef | None
+    dsm_current_url: str | None
+    zones: dict[str, dict[str, Any]] | None
+    zone_crs: str | None
+
+
 class CoreClient(Protocol):
     """워커가 필요로 하는 Core 표면. 이 이상을 워커가 알 필요는 없다."""
 
@@ -150,6 +192,34 @@ class CoreClient(Protocol):
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
         """``POST /artifacts``. ARTIFACT_REGISTERED 외엔 :class:`CoreClientError`."""
+        ...
+
+    # ── W2 비교 요청(comparison_requests.py) ────────────────────────────────
+
+    def list_pending_comparisons(self, *, limit: int = 50) -> list[PendingComparisonRequest]:
+        """``GET /v1/comparison-requests``. QUEUED + lease 만료된 RUNNING, 오래된 것부터."""
+        ...
+
+    def acquire_comparison_lease(self, request_id: str) -> None:
+        """``POST /comparison-requests/{id}/lease``. LEASED·LEASE_RENEWED 외엔 예외."""
+        ...
+
+    def get_comparison_input(self, request_id: str) -> ComparisonInput:
+        """``GET /comparison-requests/{id}/input``. INPUT_READY 외엔 :class:`CoreClientError`."""
+        ...
+
+    def transition_comparison(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        """``POST /comparison-requests/{id}/transitions``. TRANSITIONED 외엔 예외."""
+        ...
+
+    def submit_change_detection(self, mission_id: str, result: ChangeDetectionResult) -> None:
+        """``POST /v1/missions/{id}/change-detection``. RECORDED 외엔 :class:`CoreClientError`."""
+        ...
+
+    def submit_volume_change(self, mission_id: str, report: VolumeChangeReport) -> None:
+        """``POST /v1/missions/{id}/volume-changes``. RECORDED 외엔 :class:`CoreClientError`."""
         ...
 
 
@@ -326,17 +396,115 @@ class HttpCoreClient:
             },
         )
 
+    # ── W2 비교 요청(comparison_requests.py) ────────────────────────────────
+
+    def list_pending_comparisons(self, *, limit: int = 50) -> list[PendingComparisonRequest]:
+        response = self._client.get(
+            f"{self._base_url}/v1/comparison-requests", params={"limit": limit}
+        )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise CoreClientError(
+                what="list-pending-comparisons",
+                verdict="NON_JSON_RESPONSE",
+                detail=response.text[:200],
+            ) from exc
+        if response.status_code != 200:
+            raise CoreClientError(
+                what="list-pending-comparisons",
+                verdict=f"HTTP_{response.status_code}",
+                detail=str(payload.get("detail")) if isinstance(payload, dict) else None,
+            )
+        return [
+            PendingComparisonRequest(request_id=item["requestId"]) for item in payload["requests"]
+        ]
+
+    def acquire_comparison_lease(self, request_id: str) -> None:
+        self._post(
+            f"/v1/comparison-requests/{request_id}/lease",
+            what="comparison-lease",
+            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
+        )
+
+    def get_comparison_input(self, request_id: str) -> ComparisonInput:
+        response = self._client.get(f"{self._base_url}/v1/comparison-requests/{request_id}/input")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise CoreClientError(
+                what="comparison-input", verdict="NON_JSON_RESPONSE", detail=response.text[:200]
+            ) from exc
+        if payload.get("verdict") != "INPUT_READY":
+            raise CoreClientError(
+                what="comparison-input",
+                verdict=str(payload.get("verdict")),
+                detail=payload.get("detail"),
+            )
+        data = payload["input"]
+
+        def _ref(key: str) -> ArtifactRef | None:
+            raw = data.get(key)
+            if raw is None:
+                return None
+            return ArtifactRef(job_id=raw["jobId"], artifact_id=raw["artifactId"])
+
+        return ComparisonInput(
+            request_id=data["requestId"],
+            mission_id=data["missionId"],
+            status=data["status"],
+            policy=ComparisonPolicy.model_validate(data["policy"]),
+            point_cloud_baseline=_ref("pointCloudBaseline"),
+            point_cloud_baseline_url=data.get("pointCloudBaselineUrl"),
+            point_cloud_current=_ref("pointCloudCurrent"),
+            point_cloud_current_url=data.get("pointCloudCurrentUrl"),
+            dsm_baseline=_ref("dsmBaseline"),
+            dsm_baseline_url=data.get("dsmBaselineUrl"),
+            dsm_current=_ref("dsmCurrent"),
+            dsm_current_url=data.get("dsmCurrentUrl"),
+            zones=data.get("zones"),
+            zone_crs=data.get("zoneCrs"),
+        )
+
+    def transition_comparison(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        self._post(
+            f"/v1/comparison-requests/{request_id}/transitions",
+            what=f"comparison-transition→{target}",
+            ok="TRANSITIONED",
+            json={"targetStatus": target, "detail": detail},
+        )
+
+    def submit_change_detection(self, mission_id: str, result: ChangeDetectionResult) -> None:
+        self._post(
+            f"/v1/missions/{mission_id}/change-detection",
+            what=f"change-detection:{result.change_detection_id}",
+            ok="RECORDED",
+            json=result.model_dump(by_alias=True, mode="json", exclude_none=False),
+        )
+
+    def submit_volume_change(self, mission_id: str, report: VolumeChangeReport) -> None:
+        self._post(
+            f"/v1/missions/{mission_id}/volume-changes",
+            what=f"volume-change:{report.volume_change_id}",
+            ok="RECORDED",
+            json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
+        )
+
     def close(self) -> None:
         self._client.close()
 
 
 __all__ = [
     "ArtifactSubmission",
+    "ComparisonInput",
     "CoreClient",
     "CoreClientError",
     "HttpCoreClient",
     "JobInput",
     "JobInputMedia",
     "MeasuredImage",
+    "PendingComparisonRequest",
     "PendingJob",
 ]

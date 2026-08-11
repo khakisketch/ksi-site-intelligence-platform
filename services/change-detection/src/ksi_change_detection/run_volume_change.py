@@ -32,16 +32,20 @@ from typing import Any, Protocol
 
 import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import (
+    DEFAULT_VOLUME_THRESHOLD_M as _POLICY_VOLUME_THRESHOLD_M,
+)
 from ksi_event_contracts.volume_change_report import VolumeChangeReport, ZoneVolumeDelta
 
-from ksi_change_detection.dsm_diff import align_and_diff, volume_delta_in_polygon
+from ksi_change_detection.download_errors import download_failure_detail
+from ksi_change_detection.dsm_diff import DsmDiffError, align_and_diff, volume_delta_in_polygon
 
 logger = logging.getLogger(__name__)
 
-#: 재구성 노이즈 하한 기본값. **정책값이 아니라 출발점**이다 — 현장·엔진·GSD 에
-#: 따라 달라지고, 정해지면 호출자가 준다. 5cm 는 ODM 산출 DSM 에서 흔히 쓰는
-#: 관측 편의값이지 캘리브레이션된 수치가 아니다.
-DEFAULT_THRESHOLD_M = 0.05
+#: 재구성 노이즈 하한 기본값 — **정본은 계약 패키지**다(``ksi_event_contracts.
+#: comparison_policy``). 재노출 이유는 ``run_change_detection.
+#: DEFAULT_DISTANCE_THRESHOLD_M`` 과 같다(기존 import 유지 + 단일 정본).
+DEFAULT_THRESHOLD_M = _POLICY_VOLUME_THRESHOLD_M
 
 #: ODM 경로에서 오차한계를 못 내는 이유 — 리포트에 그대로 실린다(INV-024).
 ODM_NO_CHECKPOINT_NOTE = (
@@ -108,20 +112,23 @@ def compute_volume_change(
         _download(http_client, baseline.download_url, base_path)
         _download(http_client, current.download_url, curr_path)
 
-        diff = align_and_diff(base_path, curr_path)
-        deltas: list[ZoneVolumeDelta] = [
-            volume_delta_in_polygon(
-                diff,
-                polygon,
-                zone_id=zone_id,
-                from_crs=zone_crs,
-                threshold_m=threshold_m,
-                uncertainty_note=uncertainty_note,
-                baseline_rmse_m=baseline.rmse_m,
-                current_rmse_m=current.rmse_m,
-            )
-            for zone_id, polygon in zones.items()
-        ]
+        try:
+            diff = align_and_diff(base_path, curr_path)
+            deltas: list[ZoneVolumeDelta] = [
+                volume_delta_in_polygon(
+                    diff,
+                    polygon,
+                    zone_id=zone_id,
+                    from_crs=zone_crs,
+                    threshold_m=threshold_m,
+                    uncertainty_note=uncertainty_note,
+                    baseline_rmse_m=baseline.rmse_m,
+                    current_rmse_m=current.rmse_m,
+                )
+                for zone_id, polygon in zones.items()
+            ]
+        except DsmDiffError as exc:
+            raise VolumeChangeRunError(f"체적 계산 실패: {exc}") from exc
         crs = diff.crs
 
     return VolumeChangeReport(
@@ -183,8 +190,19 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
             with dest.open("wb") as handle:
                 for chunk in response.iter_bytes(1024 * 1024):
                     handle.write(chunk)
+    except httpx.HTTPStatusError as exc:
+        # run_change_detection.py 의 _download 와 동일 근거(download_errors 모듈).
+        raise VolumeChangeRunError(
+            download_failure_detail(
+                what="DSM", url=url, cause=f"HTTP {exc.response.status_code}"
+            )
+        ) from exc
     except httpx.HTTPError as exc:
-        raise VolumeChangeRunError(f"DSM 을 받지 못했다({url}): {exc}") from exc
+        raise VolumeChangeRunError(
+            download_failure_detail(
+                what="DSM", url=url, cause=f"{type(exc).__name__}: {exc}"
+            )
+        ) from exc
 
 
 __all__ = [

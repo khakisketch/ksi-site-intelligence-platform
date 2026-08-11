@@ -174,6 +174,11 @@ export interface MissionRecordResponse {
   issuedAt: string;
   issuedBy: string;
   /**
+   * 이 임무를 수행할 것으로 신고된 장비(INV-010). null 이면 배정을 신고하지
+   * 않은 것 — 그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할 수 있다.
+   */
+  assignedDeviceId: string | null;
+  /**
    * 파생 필드 — 이 임무에 대해 접수된 최신 CoverageReport 의 completionState(서버가
    * 조회 시점에 계산, 대시보드는 재계산하지 않는다). null 이면 "아직 보고가 없다"다 —
    * 발급됐지만 비행 전인지, 비행했는데 보고가 없는지는 이 값만으로 구분되지 않는다
@@ -656,4 +661,100 @@ export interface ProcessingJobMutationResponse {
 
 export interface ProcessingJobListSummary {
   jobs: ProcessingJobSummary[];
+}
+
+// ── 두 시점 비교(W2) ────────────────────────────────────────────────────────
+
+/**
+ * 현장 단위 epoch 목록의 항목 — `GET /v1/sites/{siteId}/processing-jobs`.
+ *
+ * 임무별 목록과 같은 서버 모델(`ProcessingJobView`)이라 `artifacts` 가 함께 온다.
+ * 화면은 그 배열로 "이 epoch 에 point_cloud·dsm 이 있는가"를 판단한다 — 비교
+ * 가능 여부를 제출 전에 보여주기 위해 산출물마다 다시 조회하지 않는다.
+ */
+export interface SiteProcessingJobSummary {
+  jobId: string;
+  missionId: string;
+  siteId: string;
+  status: string;
+  issuedAt: string;
+  detail: string | null;
+  artifacts: ProcessingArtifactSummary[];
+}
+
+export interface SiteProcessingJobListResponse {
+  jobs: SiteProcessingJobSummary[];
+}
+
+/**
+ * 비교 계산이 실제로 쓰는 고정 기준값 — `GET /v1/comparison-policy`.
+ *
+ * **화면은 이 값을 표시만 한다**(대표자 확정: 사용자가 임계값을 입력하지 않는다).
+ * 숫자를 화면 코드에 복제하지 않는 이유는 계산 쪽이 바뀌어도 화면이 옛 숫자를
+ * 계속 말하게 되기 때문이다 — 서버가 정본을 내려준다.
+ */
+export interface ComparisonPolicyView {
+  schemaVersion: string;
+  policyVersion: string;
+  distanceThresholdM: number;
+  volumeThresholdM: number;
+  revisitRatioThreshold: number;
+}
+
+/** 비교 요청 1건의 계약 payload(`comparison-request.v1.json`). */
+export interface ComparisonRequestContract {
+  schemaVersion: string;
+  requestId: string;
+  missionId: string;
+  siteId: string;
+  baselineJobId: string;
+  currentJobId: string;
+  pointCloudBaseline: ArtifactRefView | null;
+  pointCloudCurrent: ArtifactRefView | null;
+  changeDetectionEligible: boolean;
+  changeDetectionIneligibleReason: string | null;
+  dsmBaseline: ArtifactRefView | null;
+  dsmCurrent: ArtifactRefView | null;
+  volumeChangeEligible: boolean;
+  volumeChangeIneligibleReason: string | null;
+  zones: Record<string, Record<string, unknown>> | null;
+  zoneCrs: string | null;
+  /** 이 요청이 실제로 쓸/쓴 기준값의 불변 스냅샷 — 시스템 값이 바뀌어도 그대로다. */
+  policy: ComparisonPolicyView;
+  status: string;
+  requestedAt: string;
+  requestedBy: string;
+  updatedAt: string;
+  /** 종료 상태에서만 채워진다 — FAILED 로 끝난 이유. */
+  detail: string | null;
+}
+
+export interface ArtifactRefView {
+  jobId: string;
+  artifactId: string;
+}
+
+export interface ComparisonRequestMutationResponse {
+  verdict: string;
+  request: ComparisonRequestContract | null;
+  detail: string | null;
+}
+
+export interface ComparisonRequestListResponse {
+  requests: ComparisonRequestContract[];
+}
+
+/** `GET /v1/comparison-requests/{requestId}` — 계약 payload + 운영 메타. */
+export interface ComparisonRequestDetailView {
+  request: ComparisonRequestContract;
+  leaseWorkerId: string | null;
+  leaseExpiresAt: string | null;
+}
+
+/** 제출 본문 — 무엇을 비교할지와 확정한 구역만 정한다(임계값 자리는 없다). */
+export interface ComparisonRequestCreateInput {
+  baselineJobId: string;
+  currentJobId: string;
+  zones?: Record<string, Record<string, unknown>> | null;
+  zoneCrs?: string | null;
 }

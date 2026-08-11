@@ -218,7 +218,17 @@ type SubmitStatus = "idle" | "pending" | "success" | "error";
 const REVIEW_STEP = 3;
 const SUBMIT_STEP = 4;
 
-export function SurveyWizard({ site }: { site: SiteView }) {
+export function SurveyWizard({
+  site,
+  initialMissionType = null,
+}: {
+  site: SiteView;
+  /** 변화탐지 재방문 권고 등 외부 신호가 목적을 이미 답한 경우의 초깃값(M2 폐루프).
+   * "서버가 이미 아는 값을 다시 묻지 않는다"(위 주석)와 같은 원칙 — 대상(target)도
+   * 지금은 FULL_SITE 하나만 실동작이라 함께 채운다. 그래도 1~4단계는 그대로 거쳐야
+   * 발급되므로 사람의 명시적 검토·확정은 그대로 남는다. */
+  initialMissionType?: MissionType | null;
+}) {
   const router = useRouter();
   // 현장에 AOI 가 영속돼 있으면 그것을 기본값으로 채운다(risk site-aoi-not-persisted
   // 해소 — 매 조사마다 다시 그리지 않아도 된다). useDraftState 는 이 값을 최초
@@ -226,7 +236,11 @@ export function SurveyWizard({ site }: { site: SiteView }) {
   // 초안이 있으면(새로고침·뒤로가기) 그 초안이 우선한다.
   const [draft, setDraft, clearDraft] = useDraftState<SurveyDraft>(
     `ksi-wizard-survey-${site.siteId}`,
-    { ...INITIAL_DRAFT, aoi: site.aoi ? site.aoi.vertices : [] },
+    {
+      ...INITIAL_DRAFT,
+      aoi: site.aoi ? site.aoi.vertices : [],
+      ...(initialMissionType ? { missionType: initialMissionType, target: "FULL_SITE" } : {}),
+    },
   );
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

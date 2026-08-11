@@ -250,6 +250,99 @@ def test_negative_journal_segment_bytes_raises_runtime_error(
         build_production_app()
 
 
+def test_unknown_token_status_raises_runtime_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _valid_env(tmp_path)
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(
+        [
+            {
+                "tokenSha256": hashlib.sha256(b"x").hexdigest(),
+                "principalId": "p1",
+                "kind": "OPERATOR",
+                "role": "ADMIN",
+                "deviceId": None,
+                "status": "SUSPENDED",
+            }
+        ]
+    )
+    _apply_env(monkeypatch, env)
+
+    from ksi_core.production import build_production_app
+
+    with pytest.raises(RuntimeError, match="status"):
+        build_production_app()
+
+
+def test_naive_not_after_raises_runtime_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``notAfter`` 에 tz 없는 ISO 문자열이 오면 거부한다 — signing_keys.py 의
+    같은 검증(naive datetime 은 만료 비교에서 fail-closed 를 깬다)과 동일 이유."""
+    env = _valid_env(tmp_path)
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(
+        [
+            {
+                "tokenSha256": hashlib.sha256(b"x").hexdigest(),
+                "principalId": "p1",
+                "kind": "OPERATOR",
+                "role": "ADMIN",
+                "deviceId": None,
+                "notAfter": "2026-01-01T00:00:00",
+            }
+        ]
+    )
+    _apply_env(monkeypatch, env)
+
+    from ksi_core.production import build_production_app
+
+    with pytest.raises(RuntimeError, match="notAfter"):
+        build_production_app()
+
+
+def test_rotation_overlap_lets_old_and_new_token_both_authenticate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] 회전 절차의 핵심 성질 — 같은 ``principalId`` 로 발급된 새 토큰과
+    유예기간이 아직 안 지난 이전 토큰이 **동시에** 인증된다. 문서
+    (``docs/security/AUTH_TOKEN_ROTATION.md``)가 약속하는 겹침 구간이 실제
+    ``build_production_app`` 조립에서도 성립하는지 HTTP 경계로 확인한다."""
+    old_token = "old-rotating-token"  # noqa: S105 -- 테스트 고정값
+    new_token = "new-rotating-token"  # noqa: S105 -- 테스트 고정값
+    env = _valid_env(tmp_path)
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(
+        [
+            {
+                "tokenSha256": hashlib.sha256(new_token.encode()).hexdigest(),
+                "principalId": "rotating-admin",
+                "kind": "OPERATOR",
+                "role": "ADMIN",
+                "deviceId": None,
+            },
+            {
+                "tokenSha256": hashlib.sha256(old_token.encode()).hexdigest(),
+                "principalId": "rotating-admin",
+                "kind": "OPERATOR",
+                "role": "ADMIN",
+                "deviceId": None,
+                "notAfter": "2099-01-01T00:00:00Z",
+            },
+        ]
+    )
+    _apply_env(monkeypatch, env)
+
+    from ksi_core.production import build_production_app
+
+    client = TestClient(build_production_app())
+    old_response = client.get("/v1/auth/whoami", headers={"Authorization": f"Bearer {old_token}"})
+    new_response = client.get("/v1/auth/whoami", headers={"Authorization": f"Bearer {new_token}"})
+
+    assert old_response.status_code == 200
+    assert new_response.status_code == 200
+    assert old_response.json()["principalId"] == "rotating-admin"
+    assert new_response.json()["principalId"] == "rotating-admin"
+
+
 # ── 3. 정상 env → FastAPI 인스턴스 ─────────────────────────────────────────
 
 

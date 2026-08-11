@@ -689,6 +689,7 @@ def build_mission_plans_router(
             issued_by=principal.principal_id,
             plan_request=plan_request_payload,
             plan_request_digest=request_digest,
+            assigned_device_id=request.contract.assigned_device_id,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
         _persist_kmz(kmz_storage, record, result)

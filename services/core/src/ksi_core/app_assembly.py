@@ -7,15 +7,17 @@
 어떻게 엮어 ``create_app`` 을 부르는가"를 한 곳에만 두기 위해 dev 조립의
 본문을 그대로 옮긴 것이다(store 배선 자체는 로직 변경 없이 옮겼다).
 
-단, ``/ready`` 라우트(아래)는 이 파일이 **새로** 추가한 것이다 — dev 조립에
-원래 없었다(``git diff`` 로 확인: 옛 ``_build_dev_app_locked`` 는 ``create_app``
-호출로 곧장 끝났다). 그래서 "순수 추출"은 store 배선에 한정된 말이고, dev 서버
-동작 자체는 이 리팩터로 라우트 1개(``/ready``, 무인증)만큼 바뀌었다 — dev·
-production 양쪽에 동시에. ``/ready`` 는 의도적으로 무인증이다(오케스트레이터
-헬스체크는 인증 헤더를 안 보낸다) — 다만 ``tests/contract/test_api_contract_sync.py``
-의 "무인증 표면 allowlist" 게이트는 ``create_app`` 을 직접 불러 조립하므로 이
-파일이 얹는 라우트를 구조적으로 보지 못한다; 그 게이트는 이 파일이 만든 조립도
-따로 훑도록 확장돼 있다(같은 파일의 관련 테스트 참조).
+단, ``/ready``·``/metrics`` 라우트와 correlation-id·metrics 미들웨어(아래)는
+이 파일이 **새로** 추가한 것이다 — dev 조립에 원래 없었다(``git diff`` 로 확인:
+옛 ``_build_dev_app_locked`` 는 ``create_app`` 호출로 곧장 끝났다). 그래서
+"순수 추출"은 store 배선에 한정된 말이고, dev 서버 동작 자체는 이 라우트들
+만큼 바뀌었다 — dev·production 양쪽에 동시에. 둘 다 의도적으로 무인증이다
+(``/ready`` 는 오케스트레이터 헬스체크가, ``/metrics`` 는 Prometheus
+스크레이퍼가 인증 헤더를 안 보내는 것이 표준 배치다) — 다만
+``tests/contract/test_api_contract_sync.py`` 의 "무인증 표면 allowlist" 게이트는
+``create_app`` 을 직접 불러 조립하므로 이 파일이 얹는 라우트를 구조적으로 보지
+못한다; 그 게이트는 이 파일이 만든 조립도 따로 훑도록 확장돼 있다(같은 파일의
+관련 테스트 참조).
 
 ``cli_optional_positive`` 도 여기 둔다 — "0 = 없음, 음수 = 거부"라는 CLI→생성자
 변환 규약이 dev 전용이 아니라 production.py 의 환경변수 파싱에도 그대로
@@ -29,10 +31,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ksi_core.app import create_app
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
@@ -40,7 +43,9 @@ from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
+from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
 from ksi_core.mission_records import MissionStore
+from ksi_core.observability import CorrelationIdMiddleware
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
@@ -133,6 +138,7 @@ def assemble_app(
     defect_candidate_journal = journal("defect-candidates.jsonl")
     change_detection_journal = journal("change-detection.jsonl")
     volume_change_journal = journal("volume-changes.jsonl")
+    comparison_request_journal = journal("comparison-requests.jsonl")
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -174,6 +180,18 @@ def assemble_app(
             if processing_job_store is not None
             else None
         ),
+        # W2 비교 요청(comparison_requests.py) — evidence_storage 까지 필요한
+        # 것은 워커가 baseline/current 원본을 읽어갈 presigned URL 을 이 표면이
+        # 직접 발급하기 때문이다(processing_job_store 와 동일 근거).
+        comparison_request_store=(
+            ComparisonRequestStore(
+                comparison_request_journal,
+                mission_store=mission_store,
+                processing_job_store=processing_job_store,
+            )
+            if processing_job_store is not None and evidence_storage is not None
+            else None
+        ),
         equipment_state_store=EquipmentStateStore(
             equipment_state_journal, site_store=site_store
         ),
@@ -182,6 +200,27 @@ def assemble_app(
         mission_signing_key_id=mission_signing_key_id,
         expose_docs=expose_docs,
     )
+
+    # 미들웨어는 마지막 등록이 가장 바깥이다(Starlette 관례) — CorrelationId 를
+    # 가장 바깥에 두어 그 안의 HttpMetrics·라우팅·인증 전부의 로그가 같은
+    # correlation id 를 갖게 한다. 순서를 반대로 하면 미들웨어 자신의 로그(있다면)
+    # 는 id 가 없는 채로 찍힌다.
+    app.add_middleware(HttpMetricsMiddleware)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    @app.get("/metrics")
+    def metrics() -> PlainTextResponse:
+        """Prometheus 스크레이프 표면 — ``/ready`` 와 같은 이유로 무인증이다.
+
+        스크레이퍼는 인증 헤더를 보내지 않는 것이 표준 배치이고(네트워크
+        경계로 접근을 제한하는 것이 일반적 운영 관례), 이 표면 자체가 민감한
+        요청 내용을 담지 않는다(집계된 카운트·지연 분포뿐, 요청 본문 없음).
+        ``tests/contract/test_api_contract_sync.py`` 의
+        ``_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST`` 에 명시적으로 올라 있다.
+        """
+        return PlainTextResponse(
+            render_prometheus_text(), media_type="text/plain; version=0.0.4"
+        )
 
     @app.get("/ready")
     def ready() -> JSONResponse:

@@ -6,6 +6,7 @@ import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
+import { resolveInitialMissionType } from "@/lib/core-api/surveyEntryPreset";
 import type { SiteView } from "@/lib/core-api/types";
 
 import { SurveyWizard } from "./SurveyWizard";
@@ -14,10 +15,14 @@ import { SurveyWizard } from "./SurveyWizard";
 // UX 목표 §7 인증/데이터 정합 방침과 동일 정신: 서버가 이미 아는 값을 다시 묻지 않는다).
 export default async function NewSurveyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ siteId: string }>;
+  searchParams: Promise<{ purpose?: string }>;
 }) {
   const { siteId } = await params;
+  const { purpose } = await searchParams;
+  const initialMissionType = resolveInitialMissionType(purpose);
 
   // 데이터 조회는 JSX 생성과 분리한다 — sites/[siteId]/page.tsx 와 동일 관례
   // (try/catch 안에서 JSX 를 만들면 렌더 시점에 못 잡는 에러가 된다).
@@ -57,5 +62,5 @@ export default async function NewSurveyPage({
     );
   }
 
-  return <SurveyWizard site={site} />;
+  return <SurveyWizard site={site} initialMissionType={initialMissionType} />;
 }

@@ -84,6 +84,10 @@ class CoverageReportVerdict(StrEnum):
     RECORDED = "RECORDED"
     UNKNOWN_MISSION = "UNKNOWN_MISSION"
     SITE_MISMATCH = "SITE_MISMATCH"
+    # 임무가 assignedDeviceId 를 신고했는데 보고 장비가 그 장비가 아니다 —
+    # edge_sync.py 의 DEVICE_MISMATCH 와 동형(모듈 docstring _require_reporting_
+    # device "알려진 공백" 참조, 이 verdict 가 그 공백을 닫는다).
+    DEVICE_NOT_ASSIGNED = "DEVICE_NOT_ASSIGNED"
     UNSUPPORTED_COMPLETION = "UNSUPPORTED_COMPLETION"
     UNEXPLAINED_GAP = "UNEXPLAINED_GAP"
     NO_COVERAGE_EVIDENCE = "NO_COVERAGE_EVIDENCE"
@@ -96,6 +100,9 @@ _STATUS: dict[CoverageReportVerdict, int] = {
     CoverageReportVerdict.RECORDED: 201,
     CoverageReportVerdict.UNKNOWN_MISSION: 404,
     CoverageReportVerdict.SITE_MISMATCH: 422,
+    # edge_sync.py DEVICE_MISMATCH 와 같은 상태코드 — 인증은 됐지만(401 아님)
+    # 이 자원에 대해서는 아니다(403).
+    CoverageReportVerdict.DEVICE_NOT_ASSIGNED: 403,
     CoverageReportVerdict.UNSUPPORTED_COMPLETION: 422,
     CoverageReportVerdict.UNEXPLAINED_GAP: 422,
     CoverageReportVerdict.NO_COVERAGE_EVIDENCE: 422,
@@ -265,12 +272,23 @@ class CoverageReportStore:
         return self._journal.sealed_reason
 
     def record(
-        self, report: CoverageReport, *, now: datetime, reported_by: str | None = None
+        self,
+        report: CoverageReport,
+        *,
+        now: datetime,
+        reported_by: str | None = None,
+        device_id: str | None = None,
     ) -> CoverageReportResult:
         """보고 1건을 판정·durable 기록한다. 실패는 typed verdict 로 돌려준다.
 
         ``reported_by``: 제출한 Principal id. "언제 무엇을 봤다고 했는가"가 감사
         입력이라면 "누가 그렇게 말했는가"도 같이 남아야 한다(독립 재검토 B-3).
+
+        ``device_id``: 보고를 올린 EDGE_DEVICE 의 장비 id(``Principal.device_id``,
+        ``reported_by``=principal_id 와 다른 값일 수 있다). 임무가
+        ``assigned_device_id`` 를 신고했는데 이 값과 다르면 거부한다(INV-010).
+        ``None`` 이면 대조를 건너뛴다 — 호출자가 장비 신원을 안 넘긴 것으로,
+        기존(대조 없음) 테스트·호출부를 이 매개변수 추가가 깨지 않게 한다.
         """
         with self._lock:
             if self._journal.sealed_reason is not None:
@@ -296,6 +314,22 @@ class CoverageReportStore:
                     reported_by,
                     CoverageReportVerdict.SITE_MISMATCH,
                     "보고서의 siteId 가 임무 발급 기록과 다르다",
+                )
+            if (
+                mission.assigned_device_id is not None
+                and device_id is not None
+                and mission.assigned_device_id != device_id
+            ):
+                # 배정을 신고 안 한 임무(assigned_device_id is None)는 여전히
+                # 어느 장비든 받는다 — 이 대조는 배정이 실제로 선언된 임무에만
+                # 걸린다(모듈 docstring "알려진 공백"이 좁아지는 자리다).
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
+                    CoverageReportVerdict.DEVICE_NOT_ASSIGNED,
+                    f"이 임무에 배정된 장비는 {mission.assigned_device_id!r} 다 — "
+                    f"보고 장비 {device_id!r} 는 배정되지 않았다",
                 )
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
@@ -444,11 +478,12 @@ def _require_reporting_device(
     ``mission_id`` 를 인자로 받는 이유는 FastAPI 가 경로 파라미터를 주입해 이
     의존성이 라우트와 같은 시그니처를 갖게 하기 위해서다(값은 쓰지 않는다).
 
-    **알려진 공백(독립 재검토 B-3)**: 어느 장비가 그 임무를 수행했는지는 검사하지
-    않는다 — ``MissionRecord`` 에 device 필드가 없어 대조할 대상 자체가 없다.
-    따라서 인증된 장비면 **다른 장비의 임무도 닫을 수 있다**(edge-sync 의
-    ``DEVICE_MISMATCH`` 대칭이 여기엔 없다). 임무에 장비를 배정하는 개념이 아직
-    제품에 없어서 생긴 공백이고, 그 개념을 만드는 것은 제품 결정이다. 지금은
+    이 함수 자체는 "장비인가"만 본다 — "**그** 임무에 배정된 장비인가"는
+    ``CoverageReportStore.record`` 의 ``DEVICE_NOT_ASSIGNED`` 게이트가 맡는다
+    (``mission.assigned_device_id`` 대조, edge-sync 의 ``DEVICE_MISMATCH`` 와
+    동형). 그 대조는 임무가 배정을 신고했을 때만 걸린다 — 배정 개념 자체가
+    선택적이라(1:1 대일 배치 전제, 다대다 Fleet 관리는 아직 이 제품에 없다),
+    신고 안 한 임무는 예전처럼 인증된 어느 장비든 닫을 수 있다. 지금은 언제나
     **제출 주체를 원장에 남겨** 최소한 "누가 그렇게 말했는가"에는 답할 수 있게 한다.
     """
     if principal.kind is not PrincipalKind.EDGE_DEVICE:
@@ -477,7 +512,10 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
                 detail="경로의 missionId 와 본문의 missionId 가 다르다",
             )
         result = store.record(
-            report, now=datetime.now(UTC), reported_by=principal.principal_id
+            report,
+            now=datetime.now(UTC),
+            reported_by=principal.principal_id,
+            device_id=principal.device_id,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is CoverageReportVerdict.STORE_UNAVAILABLE:

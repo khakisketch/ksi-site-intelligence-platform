@@ -196,6 +196,43 @@ def test_issued_contract_carries_ledger_default_policies(tmp_path: Path) -> None
     assert policies["coveragePolicy"]["mandatoryAssetCoverage"] == 1.0
 
 
+def test_assigned_device_id_is_not_signed_into_the_contract(tmp_path: Path) -> None:
+    """[핵심] assignedDeviceId 는 Core 운영 메타데이터일 뿐 서명된 계약에는
+    실리지 않는다(MissionRecord.assigned_device_id 문서) — 신뢰 경계 밖."""
+    client, _registry, _key_id = _client_with_signing(tmp_path)
+    request = _valid_request(assignedDeviceId="edge-001")
+
+    response = client.post("/v1/missions/contracts", json=request)
+
+    assert response.status_code == 201
+    assert "assignedDeviceId" not in response.json()
+
+
+def test_assigned_device_id_is_visible_on_mission_record(tmp_path: Path) -> None:
+    """발급 시 신고한 배정이 조회 표면(GET /v1/missions/{id})에 그대로 보인다."""
+    client, _registry, _key_id = _client_with_signing(tmp_path)
+    request = _valid_request(assignedDeviceId="edge-001")
+    issue_response = client.post("/v1/missions/contracts", json=request)
+    assert issue_response.status_code == 201
+
+    read_response = client.get(f"/v1/missions/{request['missionId']}")
+
+    assert read_response.status_code == 200
+    assert read_response.json()["assignedDeviceId"] == "edge-001"
+
+
+def test_unassigned_mission_record_shows_null_device(tmp_path: Path) -> None:
+    """생략하면 null — 배정 안 함과 배정을 다른 값으로 착각하게 만들지 않는다."""
+    client, _registry, _key_id = _client_with_signing(tmp_path)
+    request = _valid_request()  # assignedDeviceId 생략
+    issue_response = client.post("/v1/missions/contracts", json=request)
+    assert issue_response.status_code == 201
+
+    read_response = client.get(f"/v1/missions/{request['missionId']}")
+
+    assert read_response.json()["assignedDeviceId"] is None
+
+
 def test_valid_for_hours_beyond_cap_rejected(tmp_path: Path) -> None:
     client, _registry, _key_id = _client_with_signing(tmp_path)
 

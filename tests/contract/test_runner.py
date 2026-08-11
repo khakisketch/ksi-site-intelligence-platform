@@ -22,14 +22,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
-from ksi_processing_controller.core_client import CoreClientError, PendingJob
+from ksi_event_contracts.change_detection_result import ArtifactRef
+from ksi_event_contracts.comparison_policy import current_comparison_policy
+from ksi_processing_controller.core_client import (
+    ComparisonInput,
+    CoreClientError,
+    PendingComparisonRequest,
+    PendingJob,
+)
 from ksi_processing_controller.runner import run_forever, run_pending_batch
 
 # tests/contract 는 rootdir 기반 수집이라 같은 디렉토리 모듈을 직접 import 한다
 # (test_dfine_detector.py 의 DetectorConformanceSuite 와 같은 관용구).
+from test_comparison_worker import FakeComparisonCoreClient, _grid, _storage_transport, _write_laz
 from test_worker import (  # noqa: E402
-    FakeCoreClient,
     FakeNodeOdm,
     _server_with_two_images,
     _worker_http_client,
@@ -37,15 +45,18 @@ from test_worker import (  # noqa: E402
 
 
 @dataclass
-class _PullableFakeCoreClient(FakeCoreClient):
-    """``FakeCoreClient`` + ``list_pending`` — 워커 루프 전용 확장.
+class _PullableFakeCoreClient(FakeComparisonCoreClient):
+    """``FakeComparisonCoreClient`` + ``list_pending``/``list_pending_comparisons``
+    — 워커 루프(재구성 + 비교) 전용 확장.
 
-    ``lease_conflict_for`` 에 적힌 jobId 는 ``LEASE_HELD_BY_ANOTHER`` 로
-    거부된다 — "다른 워커가 먼저 잡았다"를 흉내 낸다.
+    ``lease_conflict_for``/``comparison_lease_conflict_for`` 에 적힌 id 는
+    ``LEASE_HELD_BY_ANOTHER`` 로 거부된다 — "다른 워커가 먼저 잡았다"를 흉내 낸다.
     """
 
     pending: list[PendingJob] = field(default_factory=list)
     lease_conflict_for: frozenset[str] = field(default_factory=frozenset)
+    pending_comparisons: list[PendingComparisonRequest] = field(default_factory=list)
+    comparison_lease_conflict_for: frozenset[str] = field(default_factory=frozenset)
 
     def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
         return self.pending[:limit]
@@ -58,9 +69,48 @@ class _PullableFakeCoreClient(FakeCoreClient):
             )
         super().acquire_lease(job_id)
 
+    def list_pending_comparisons(self, *, limit: int = 50) -> list[PendingComparisonRequest]:
+        return self.pending_comparisons[:limit]
+
+    def acquire_comparison_lease(self, request_id: str) -> None:
+        if request_id in self.comparison_lease_conflict_for:
+            self.calls.append(("cmp-lease-conflict", request_id))
+            raise CoreClientError(
+                what="comparison-lease",
+                verdict="LEASE_HELD_BY_ANOTHER",
+                detail="다른 워커가 쥐고 있다",
+            )
+        super().acquire_comparison_lease(request_id)
+
 
 def _core(**kwargs: Any) -> _PullableFakeCoreClient:
     return _PullableFakeCoreClient(**kwargs)
+
+
+def _comparison_storage_client(tmp_path: Path) -> httpx.Client:
+    """point_cloud 만 있는 비교 요청 실행용 최소 storage — 실제 .laz 를 서빙한다."""
+    cloud = _grid(6)
+    base_laz = _write_laz(tmp_path / "baseline.laz", cloud)
+    curr_laz = _write_laz(tmp_path / "current.laz", cloud.copy())
+    return httpx.Client(
+        transport=_storage_transport({"baseline.laz": base_laz, "current.laz": curr_laz})
+    )
+
+
+def _comparison_input(request_id: str) -> ComparisonInput:
+    return ComparisonInput(
+        request_id=request_id,
+        mission_id="mission-1",
+        status="QUEUED",
+        policy=current_comparison_policy(),
+        point_cloud_baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+        point_cloud_baseline_url="http://fake-storage/baseline.laz",
+        point_cloud_current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+        point_cloud_current_url="http://fake-storage/current.laz",
+        dsm_baseline=None, dsm_baseline_url=None,
+        dsm_current=None, dsm_current_url=None,
+        zones=None, zone_crs=None,
+    )
 
 
 # ── run_pending_batch ───────────────────────────────────────────────────────
@@ -163,6 +213,108 @@ def test_all_candidates_conflicted_returns_false(tmp_path: Path) -> None:
     ran = run_pending_batch(
         core=core, odm=odm, work_dir=tmp_path, now_message=lambda _msg: None
     )
+
+    assert ran is False
+
+
+# ── run_pending_batch: 비교 요청 후보(W2) ───────────────────────────────────
+
+
+def test_falls_through_to_comparison_when_no_reconstruction_pending(tmp_path: Path) -> None:
+    """[핵심] 재구성 후보가 없으면(빈 목록) 비교 요청 후보를 본다 — 새 프로세스가
+    아니라 같은 폴링 라운드 안에서(모듈 docstring "왜 별도 데몬이 아닌가")."""
+    core = _core(
+        pending=[],  # 재구성 후보 없음
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+        comparison_input=_comparison_input("mission-1-cmp1"),
+    )
+    odm = FakeNodeOdm()
+
+    ran = run_pending_batch(
+        core=core, odm=odm, work_dir=tmp_path,
+        http_client=_comparison_storage_client(tmp_path),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert ("cmp-lease", "mission-1-cmp1") in core.calls
+    succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
+    assert len(succeeded) == 1
+
+
+def test_reconstruction_candidate_takes_priority_over_comparison(tmp_path: Path) -> None:
+    """재구성 후보가 있으면 비교 후보는 아예 보지 않는다(우선순위, 모듈 docstring)."""
+    core = _core(
+        pending=[PendingJob(job_id="job-1")],
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+    )
+    server = _server_with_two_images()
+    odm = FakeNodeOdm()
+
+    ran = run_pending_batch(
+        core=core, odm=odm, work_dir=tmp_path,
+        http_client=_worker_http_client(server),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert any(c[0] == "transition" and c[1] == "SUCCEEDED" for c in core.calls)
+    assert not any(c[0].startswith("cmp-") for c in core.calls)
+
+
+def test_comparison_lease_conflict_moves_to_the_next_candidate(tmp_path: Path) -> None:
+    """[핵심] 비교 요청도 재구성과 동형으로 lease 경합 시 다음 후보로 넘어간다."""
+    core = _core(
+        pending=[],
+        pending_comparisons=[
+            PendingComparisonRequest(request_id="mission-1-cmp1"),
+            PendingComparisonRequest(request_id="mission-1-cmp2"),
+        ],
+        comparison_lease_conflict_for=frozenset({"mission-1-cmp1"}),
+        comparison_input=_comparison_input("mission-1-cmp2"),
+    )
+    odm = FakeNodeOdm()
+
+    ran = run_pending_batch(
+        core=core, odm=odm, work_dir=tmp_path,
+        http_client=_comparison_storage_client(tmp_path),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert ("cmp-lease-conflict", "mission-1-cmp1") in core.calls
+    assert ("cmp-lease", "mission-1-cmp2") in core.calls
+
+
+def test_comparison_worker_run_error_counts_as_ran_and_does_not_propagate(tmp_path: Path) -> None:
+    """[핵심] 비교 실행 실패(ComparisonWorkerRunError)도 재구성과 동형으로 "돌렸다"로
+    센다 — 이미 Core 에 FAILED 보고를 시도했다."""
+    core = _core(
+        pending=[],
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+        comparison_input=_comparison_input("mission-1-cmp1"),
+    )
+    odm = FakeNodeOdm()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(404)  # 다운로드 실패를 강제해 계산을 터뜨린다
+
+    ran = run_pending_batch(
+        core=core, odm=odm, work_dir=tmp_path,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert any(c[0] == "cmp-transition" and c[1] == "FAILED" for c in core.calls)
+
+
+def test_both_lists_empty_returns_false(tmp_path: Path) -> None:
+    core = _core(pending=[], pending_comparisons=[])
+    odm = FakeNodeOdm()
+
+    ran = run_pending_batch(core=core, odm=odm, work_dir=tmp_path)
 
     assert ran is False
 

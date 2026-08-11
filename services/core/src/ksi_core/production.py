@@ -45,6 +45,12 @@ dev 조립은 ``--s3-endpoint``/``--s3-bucket`` 없이도 뜬다(증거·3D 파�
 프로세스 메모리·로그·환경변수 어디에도 원문 토큰이 존재하지 않는다 — dev
 스크립트처럼 콘솔에 토큰을 찍어 보여주는 경로도 여기 없다(그 경로 자체가
 원문을 프로세스가 알고 있어야만 가능하다).
+
+각 항목은 선택 필드 ``status``("ACTIVE"/"REVOKED", 기본 ACTIVE)와
+``notAfter``(ISO 8601 tz-aware, 기본 없음=만료 없음)를 가질 수 있다 — 회전
+중에는 같은 ``principalId`` 로 이전 digest(``notAfter`` 로 유예기간 종료
+시각)와 새 digest(``notAfter`` 없음) 두 항목을 함께 배포한다(``docs/security/
+AUTH_TOKEN_ROTATION.md``).
 """
 
 from __future__ import annotations
@@ -52,12 +58,21 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ksi_core.app_assembly import assemble_app, cli_optional_positive
-from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+    TokenStatus,
+)
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.observability import configure_structured_logging
 from ksi_core.signing_keys import load_signing_keys
 
 if TYPE_CHECKING:
@@ -68,6 +83,7 @@ _EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT = 500
 
 _KIND_VALUES = {kind.value: kind for kind in PrincipalKind}
 _ROLE_VALUES = {role.value: role for role in Role}
+_STATUS_VALUES = {status.value: status for status in TokenStatus}
 # auth.py 의 AuthRegistry 가 강제하는 것과 동일한 규약(소문자 64자리 hex) —
 # 형식이 틀린 digest 를 여기서 먼저 거부해야 "무거운 부수효과 이전에 검증을
 # 전부 끝낸다"(모듈 docstring)는 약속이 이 필드에 대해서도 실제로 성립한다.
@@ -147,6 +163,8 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         kind_raw = entry.get("kind")
         role_raw = entry.get("role")
         device_id = entry.get("deviceId")
+        status_raw = entry.get("status", TokenStatus.ACTIVE.value)
+        not_after_raw = entry.get("notAfter")
 
         if not isinstance(token_sha256, str) or not token_sha256:
             raise RuntimeError(
@@ -181,10 +199,37 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
             raise RuntimeError(
                 f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].deviceId 는 문자열이거나 null 이어야 한다"
             )
+        if status_raw not in _STATUS_VALUES:
+            raise RuntimeError(
+                f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].status={status_raw!r} 는 "
+                f"{sorted(_STATUS_VALUES)} 중 하나여야 한다"
+            )
+        status = _STATUS_VALUES[status_raw]
+
+        not_after: datetime | None = None
+        if not_after_raw is not None:
+            if not isinstance(not_after_raw, str):
+                raise RuntimeError(
+                    f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].notAfter 는 ISO 문자열이거나 "
+                    "null 이어야 한다"
+                )
+            try:
+                not_after = datetime.fromisoformat(not_after_raw)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].notAfter 를 파싱할 수 없다 — "
+                    f"{not_after_raw!r}"
+                ) from exc
+            if not_after.tzinfo is None:
+                raise RuntimeError(
+                    f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].notAfter 는 tz-aware 여야 한다"
+                )
 
         records.append(
             PrincipalTokenRecord(
                 token_sha256=token_sha256,
+                status=status,
+                not_after=not_after,
                 principal=Principal(
                     principal_id=principal_id,
                     kind=kind,
@@ -202,6 +247,13 @@ def build_production_app() -> FastAPI:
     uvicorn 팩토리 진입점(``--factory``)으로 쓰인다:
     ``uvicorn ksi_core.production:build_production_app --factory``.
     """
+    # 검증보다도 먼저다 — 검증 실패 메시지 자체도 구조화 로그로 남아야
+    # 배포 사고 조사에서 "그때 무슨 환경변수가 문제였는지"가 로그 수집기에서
+    # 검색 가능하다. correlation id 는 아직 없다(요청 밖이므로 "-"로 찍힌다).
+    configure_structured_logging(
+        level=os.environ.get("KSI_CORE_LOG_LEVEL", "INFO"), json_format=True
+    )
+
     # ── 1단계: 검증(가벼운 것부터) — 무거운 부수효과(S3 client·journal open) 이전에
     # 전부 끝낸다. 잘못된 배포는 어느 환경변수가 문제인지 즉시 알아야 한다.
     data_dir = _require_dir("KSI_CORE_DATA_DIR")

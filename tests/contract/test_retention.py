@@ -332,6 +332,36 @@ def test_storage_failure_keeps_tombstone(store: EventStore) -> None:
     assert artifact is not None and artifact.is_tombstoned
 
 
+def test_tombstone_precedes_object_delete_in_call_order(store: EventStore) -> None:
+    """[핵심] "원장이 먼저" 를 실패 주입 없이 **호출 순서 자체**로 직접 고정한다.
+
+    ``test_storage_failure_keeps_tombstone`` 은 delete 실패를 주입해 결과로
+    순서를 추론한다 — 이 테스트는 두 협력자를 감싸 실제 호출 시퀀스를
+    기록하고 ``["tombstone", "delete"]`` 순서를 직접 단언한다. 구현이 우연히
+    반대 순서로도 같은 결과를 낼 수 있는 리팩터를 놓치지 않기 위해서다.
+    """
+    _seed(store, event_id="evt-old", days_ago=100)
+    calls: list[str] = []
+
+    real_tombstone = store.tombstone_evidence
+
+    def _spy_tombstone(*args: Any, **kwargs: Any) -> Any:
+        calls.append("tombstone")
+        return real_tombstone(*args, **kwargs)
+
+    store.tombstone_evidence = _spy_tombstone  # type: ignore[method-assign]
+
+    class _SpyStorage(FakeStorage):
+        def delete(self, object_key: str) -> None:
+            calls.append("delete")
+            super().delete(object_key)
+
+    storage = _SpyStorage()
+    execute_expiry(store, storage, plan_expiry(store, _POLICY, now=_NOW), now=_NOW)
+
+    assert calls == ["tombstone", "delete"]
+
+
 def test_second_run_is_a_noop(store: EventStore) -> None:
     """재실행이 같은 대상을 다시 지우려 들지 않는다(집행은 수동 반복될 수 있다)."""
     _seed(store, event_id="evt-old", days_ago=100)

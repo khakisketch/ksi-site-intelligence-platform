@@ -44,25 +44,44 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export const DESKTOP_NAV_GROUPS: NavGroup[] = [
-  {
-    key: "top",
-    label: null,
-    items: DESKTOP_NAV_ITEMS.filter((item) => item.key === "home"),
-  },
-  {
-    key: "operations",
-    label: "현장 운영",
-    items: DESKTOP_NAV_ITEMS.filter((item) =>
-      ["sites", "missions", "events"].includes(item.key),
-    ),
-  },
-  {
-    key: "upcoming",
-    label: "준비 중",
-    items: DESKTOP_NAV_ITEMS.filter((item) => !item.implemented),
-  },
+// 그룹은 **분할**이지 선별이 아니다 — 아래 GROUP_OF_KEY 는 데스크톱 항목 전부를
+// 빠짐없이 한 그룹에 배정하고, `desktopNavGroups()` 가 NAV_ITEMS 순서 그대로
+// 잘라 넣는다. 예전에는 그룹마다 키 화이트리스트("현장 운영"은 sites/missions/
+// events, "준비 중"은 !implemented)로 골랐는데, 그러면 어느 목록에도 안 걸리는
+// 항목이 **조용히 사라진다**. 실제로 2026-08-08 에 assets·world·reports·settings
+// 가 준비 중 → 실동작으로 바뀌면서(implemented: false → true) "준비 중" 필터에서
+// 빠졌고, 받아줄 그룹이 없어 데스크톱 사이드바에서 통째로 사라졌다 — PRD §7.1 이
+// 못박은 10항목 중 6항목만 남았고, /reports 는 임무 상세 안의 버튼 말고는
+// 도달할 길이 없었다. 아래 nav-items.test.ts 가 "모든 항목이 정확히 한 그룹에
+// 있다"를 고정해 이 계열의 회귀를 막는다.
+const GROUP_OF_KEY: Record<string, string> = {
+  home: "top",
+  sites: "operations",
+  missions: "operations",
+  events: "operations",
+  assets: "insight",
+  world: "insight",
+  reports: "insight",
+  fleet: "upcoming",
+  data: "upcoming",
+  settings: "bottom",
+};
+
+const GROUP_LABELS: { key: string; label: string | null }[] = [
+  { key: "top", label: null },
+  { key: "operations", label: "현장 운영" },
+  // 현장에서 모은 것이 무엇을 말하는지 보는 자리 — 결함 후보·공간/장비 상태·
+  // 변화와 물량 리포트. "현장 운영"(계획하고 내보내는 일)과 축이 다르다.
+  { key: "insight", label: "분석·기록" },
+  { key: "upcoming", label: "준비 중" },
+  { key: "bottom", label: null },
 ];
+
+export const DESKTOP_NAV_GROUPS: NavGroup[] = GROUP_LABELS.map(({ key, label }) => ({
+  key,
+  label,
+  items: DESKTOP_NAV_ITEMS.filter((item) => GROUP_OF_KEY[item.key] === key),
+})).filter((group) => group.items.length > 0);
 
 // 모바일 하단 5탭: 오늘·임무·이벤트·현장·더보기(미구현 항목 진입점).
 export const MOBILE_TAB_ITEMS: NavItem[] = [

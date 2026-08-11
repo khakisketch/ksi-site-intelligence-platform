@@ -39,11 +39,11 @@ export function DefectOverlay({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <div className="relative overflow-hidden rounded-lg border border-line">
         {/* 업로드 전이거나 URL 이 만료됐으면 이미지가 안 뜬다 — 폴리곤만 남기지 않고
             그 사실을 말한다(빈 사각형에 선만 떠 있으면 무엇이 잘못됐는지 모른다). */}
         {loadFailed ? (
-          <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-4 text-center text-sm text-neutral-500 dark:bg-neutral-900">
+          <div className="flex aspect-[4/3] items-center justify-center bg-sunk p-4 text-center text-sm text-ink-muted">
             사진을 불러오지 못했습니다. 아직 업로드되지 않았거나 열람 링크가
             만료됐을 수 있습니다.
           </div>
@@ -79,10 +79,13 @@ export function DefectOverlay({
                 // 선 굵기를 원본 화소 기준으로 두면 축소 시 실선처럼 사라진다 —
                 // vector-effect 로 화면 기준 굵기를 유지한다.
                 vectorEffect="non-scaling-stroke"
+                // 결함 후보는 **언제나 위험색**이다 — 고르고 말고에 따라 색이
+                // 바뀌면 운영자는 색을 심각도로 못 읽는다(globals.css "색은
+                // 안전 상태에만"). 선택은 색이 아니라 굵기·불투명도로 나타낸다.
                 className={
                   isSelected
-                    ? "fill-amber-400/40 stroke-amber-500 stroke-2"
-                    : "fill-red-500/20 stroke-red-500 stroke-1"
+                    ? "fill-crit/35 stroke-crit stroke-2"
+                    : "fill-crit/20 stroke-crit stroke-1"
                 }
               />
             );
@@ -99,14 +102,16 @@ export function DefectOverlay({
               onMouseLeave={() => setSelected(null)}
               onFocus={() => setSelected(candidate.defectCandidateId)}
               onBlur={() => setSelected(null)}
-              className={`w-full rounded px-2 py-1 text-left ${
+              className={`w-full rounded px-2 py-1 text-left transition-colors ${
+                // 목록에서 가리키고 있다는 표시 = 액센트(무채색). 위 폴리곤과
+                // 같은 이유로 안전 상태색을 선택 표시에 쓰지 않는다.
                 selected === candidate.defectCandidateId
-                  ? "bg-amber-50 dark:bg-amber-950"
-                  : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                  ? "bg-accent-tint"
+                  : "hover:bg-sunk"
               }`}
             >
               <span className="font-mono text-xs">{candidate.defectCandidateId}</span>
-              <span className="ml-2 text-neutral-600 dark:text-neutral-400">
+              <span className="ml-2 text-ink-2">
                 신뢰도 {(candidate.confidence * 100).toFixed(1)}%
                 {candidate.measurements?.areaPx2 !== undefined &&
                   ` · ${candidate.measurements.areaPx2.toFixed(0)} px²`}

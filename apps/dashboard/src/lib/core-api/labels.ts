@@ -128,6 +128,16 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   BUNDLE_NOT_SEALED: "번들이 아직 봉인되지 않았습니다 — 업로드를 마치고 봉인한 뒤 다시 시도하세요.",
   ACTIVE_JOB_EXISTS: "이미 처리 중인 작업이 있습니다. 완료 후 다시 시도하세요.",
   EGRESS_NOT_ALLOWED: "이 현장은 데이터 반출이 허용되지 않아 벤더 클라우드 처리를 만들 수 없습니다.",
+  // 두 시점 비교 제출(W2) — comparison_requests.ComparisonRequestVerdict. 정상 동선에서는
+  // ComparisonSubmitPanel 이 대부분 미리 막지만(selectableEpochs·currentMissionEpochs·
+  // comparisonEligibility), 다른 탭에서 원장이 바뀌는 등 레이스로는 여전히 도달할 수 있다
+  // — 도달했을 때 내부 필드명이 그대로 섞인 서버 원문이 화면에 뜨지 않게 한다.
+  UNKNOWN_JOB: "선택한 재구성 결과를 찾을 수 없습니다. 목록을 새로고침한 뒤 다시 고르세요.",
+  JOB_NOT_SUCCEEDED: "아직 완료되지 않은 재구성입니다. 완료된 결과만 비교할 수 있습니다.",
+  SELF_COMPARISON: "같은 결과끼리는 비교할 수 없습니다. 서로 다른 두 시점을 고르세요.",
+  SITE_MISMATCH: "다른 현장의 결과끼리는 비교할 수 없습니다.",
+  MISSION_MISMATCH: "비교 시점(이후)은 이 임무에서 만든 결과여야 합니다. 목록을 새로고침한 뒤 다시 고르세요.",
+  NOTHING_TO_COMPARE: "고른 두 결과에 비교할 자료(점군·높이자료)가 없습니다.",
 };
 
 export function humanizeApiError(
