@@ -27,16 +27,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
 
+from ksi_event_contracts._base import _CamelModel
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.processing_job import ProcessingJobStatus
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
 class ComparisonRequest(_CamelModel):

@@ -31,8 +31,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
+
+from ksi_event_contracts._base import _CamelModel
 
 # INV-010 완료 임계 — 요청·보고서가 바꿀 수 없는 서버 고정값이다.
 MANDATORY_HAZARD_MIN = 1.0
@@ -76,12 +77,6 @@ class CompletionState(StrEnum):
     COMPLETED_WITH_GAPS = "COMPLETED_WITH_GAPS"
     ABORTED_SAFE = "ABORTED_SAFE"
     FAILED = "FAILED"
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra="forbid"
-    )
 
 
 class CoverageCell(_CamelModel):

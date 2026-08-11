@@ -37,8 +37,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
+
+from ksi_event_contracts._base import _CamelModel
 
 _DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
 
@@ -70,12 +71,6 @@ class ProcessingJobStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra="forbid"
-    )
 
 
 class DataResidency(_CamelModel):

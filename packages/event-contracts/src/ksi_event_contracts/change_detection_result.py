@@ -31,8 +31,9 @@ import math
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
+
+from ksi_event_contracts._base import _CamelModel
 
 # candidateRatio 재계산 대조 허용 오차 — 제출자가 float32 로 계산했을 수 있고
 # JSON 직렬화도 유한 자릿수라, 비트 단위 일치를 요구하면 정직한 결과가 거부된다.
@@ -69,10 +70,6 @@ def exceeds_revisit_threshold(
     if candidate_count == 0:
         return False
     return candidate_ratio > candidate_ratio_threshold
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
 class ArtifactRef(_CamelModel):

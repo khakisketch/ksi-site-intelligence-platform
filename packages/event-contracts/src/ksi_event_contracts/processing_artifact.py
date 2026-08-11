@@ -57,8 +57,9 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
+
+from ksi_event_contracts._base import _CamelModel
 
 _DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
 # contracts/schemas/processing-artifact.v1.1.json 의 auxiliaryFiles.items.pattern 과
@@ -109,12 +110,6 @@ _CRS_REQUIRED_KINDS = frozenset(
 _GSD_REQUIRED_KINDS = frozenset(
     {ProcessingArtifactKind.ORTHO, ProcessingArtifactKind.DSM, ProcessingArtifactKind.DTM}
 )
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra="forbid"
-    )
 
 
 class ArtifactLineage(_CamelModel):

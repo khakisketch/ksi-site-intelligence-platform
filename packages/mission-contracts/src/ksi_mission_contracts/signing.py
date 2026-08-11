@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,15 +24,17 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from ksi_domain.canonical_json import canonical_json_bytes
 
 
 def canonical_payload_bytes(contract: Mapping[str, Any]) -> bytes:
     """계약 dict의 서명대상 정규화 바이트열 (``signature`` 블록 제외, ADR-KSI-002 §2).
 
-    ``allow_nan=False`` (감사 #10): 기본값은 NaN/Infinity 를 비표준 JSON 토큰으로
-    직렬화해, Python 안에서는 서명·검증되지만 표준 파서(C++ Control Plane·감사
-    도구)로는 재파싱 불가한 계약이 만들어진다 — 같은 계약이 평면마다 다르게
-    해석되는 정규화 분열이다(offline_sync.payload_digest 와 동일 규약으로 통일).
+    정규화 규약 자체(key 정렬·최소 구분자·``allow_nan=False`` 등, 감사 #10 근거)는
+    ``ksi_domain.canonical_json_bytes`` 가 소유한다 — event-contracts 의
+    ``offline_sync.payload_digest`` 와 같은 규약을 공유해야 하기 때문이다(같은
+    "정규화"의 정의가 두 패키지에서 갈리면 안 된다). 이 함수는 그 위에 "signature
+    블록은 서명 대상에서 뺀다"는 이 도메인 고유 규칙만 얹는다.
 
     Raises:
         ValueError: NaN/Infinity 또는 JSON 도메인 밖 타입 포함 — 발행(sign) 시점의
@@ -41,9 +42,7 @@ def canonical_payload_bytes(contract: Mapping[str, Any]) -> bytes:
     """
     payload = {key: value for key, value in contract.items() if key != "signature"}
     try:
-        return json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
-        ).encode("utf-8")
+        return canonical_json_bytes(payload)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"계약을 정규 JSON 으로 표현할 수 없다: {exc}") from exc
 

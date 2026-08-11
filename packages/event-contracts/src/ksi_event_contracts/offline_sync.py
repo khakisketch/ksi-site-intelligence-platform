@@ -26,12 +26,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from ksi_domain.canonical_json import canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -76,31 +76,18 @@ class PayloadCanonicalizationError(ValueError):
 def payload_digest(payload: dict[str, Any]) -> str:
     """본문의 정규화 digest — ADR-KSI-002와 같은 정규화 규약을 재사용한다.
 
-    key 정렬·최소 구분자·``ensure_ascii=False`` UTF-8. 계약 서명과 같은 규약을 쓰는
-    이유는 두 곳에서 서로 다른 정규화를 쓰면 "같은 내용"의 정의가 갈리기 때문이다.
-
-    ``allow_nan=False`` 를 쓰는 이유(2차 반증 리뷰): 기본값은 NaN/Infinity를 ``NaN``·
-    ``Infinity`` 같은 **비표준 JSON 토큰**으로 직렬화한다. 그러면 표준 파서로 다시 읽을
-    수 없는 digest가 만들어지고, 서버·Edge가 서로 다른 파서를 쓸 때 "같은 내용"의 정의가
-    갈린다. 비JSON 타입(set·bytes 등)도 여기서 typed 예외로 바꿔 호출자가
-    :class:`IngestVerdict.MALFORMED_PAYLOAD` 로 변환할 수 있게 한다.
+    정규화 규약 자체(key 정렬·최소 구분자·``allow_nan=False``·lone-surrogate encode
+    실패 등, 2차 반증 리뷰·반증 리뷰 2026-07-29 P2-5 근거)는
+    ``ksi_domain.canonical_json_bytes`` 가 소유한다 — mission-contracts 의 계약
+    서명과 같은 규약을 공유해야 두 패키지에서 "같은 내용"의 정의가 갈리지 않는다.
+    실패를 이 도메인의 typed 예외(:class:`PayloadCanonicalizationError` →
+    :class:`IngestVerdict.MALFORMED_PAYLOAD`)로 강등하는 것만 여기서 한다.
 
     Raises:
         PayloadCanonicalizationError: NaN/Infinity 또는 JSON 직렬화 불가 타입 포함.
     """
     try:
-        canonical = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        # encode 도 try 안이다(반증 리뷰 2026-07-29 P2-5 실측) — stdlib json.loads 는
-        # 짝 없는 surrogate("\ud800")를 거부하지 않고 str 에 담는데, 그 str 은
-        # UTF-8 로 encode 할 수 없어 UnicodeEncodeError(ValueError 서브클래스)가
-        # "예외를 던지지 않는다" 계약을 뚫고 나가던 경로였다.
-        digest_input = canonical.encode("utf-8")
+        digest_input = canonical_json_bytes(payload)
     except (TypeError, ValueError) as exc:
         # ValueError: allow_nan=False 하에서 NaN/Infinity · lone surrogate encode 실패
         # TypeError: set·bytes·임의 객체 등 JSON 도메인 밖 타입

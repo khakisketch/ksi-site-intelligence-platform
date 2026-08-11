@@ -28,20 +28,12 @@ from typing import Any, Literal
 
 from ksi_domain.enums import EventStatus, Severity
 from ksi_domain.ontology import REGISTERED_ONTOLOGY_VERSIONS
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import field_validator, model_validator
 
+from ksi_event_contracts._base import _CamelModel
 from ksi_event_contracts.world_entity import ClassificationSource
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        extra="forbid",
-    )
 
 
 class ClipPolicy(_CamelModel):

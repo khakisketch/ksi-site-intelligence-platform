@@ -54,8 +54,20 @@ CANONICAL_TO_ORT: dict[TensorDtype, str] = {
 ORT_TO_CANONICAL: dict[str, TensorDtype] = {v: k for k, v in CANONICAL_TO_ORT.items()}
 
 
-class OnnxTensorContract(BaseModel):
-    """입력 텐서 계약 — 이름·shape·dtype·축 정책."""
+def _require_nonblank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("공백 문자열 불허")
+    return value
+
+
+class _TensorContractBase(BaseModel):
+    """입력·출력 텐서 계약의 공통부 — name/shape/dtype 셋과 그 검증 규칙.
+
+    입력(``axes``)·출력(``meaning``) 전용 필드만 하위 클래스가 각자 더한다.
+    pydantic 의 ``field_validator`` 는 필드별로 그 필드를 선언한 클래스에 달아야
+    하므로, 그 마지막 한 필드의 "공백 거부" 검증만은 하위 클래스에 남는다 —
+    본문은 :func:`_require_nonblank` 하나로 공유한다.
+    """
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -64,14 +76,11 @@ class OnnxTensorContract(BaseModel):
     # dtype 만 값 기반 수용(strict=False) — JSON 의 "float32" 문자열을 Enum 값으로
     # 받되, 미지원 값("float64" 등)은 여전히 거부된다.
     dtype: TensorDtype = Field(strict=False)
-    axes: str = Field(min_length=1)
 
-    @field_validator("name", "axes")
+    @field_validator("name")
     @classmethod
-    def _nonblank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("공백 문자열 불허")
-        return value
+    def _nonblank_name(cls, value: str) -> str:
+        return _require_nonblank(value)
 
     @field_validator("shape")
     @classmethod
@@ -83,30 +92,26 @@ class OnnxTensorContract(BaseModel):
         return value
 
 
-class OnnxOutputContract(BaseModel):
+class OnnxTensorContract(_TensorContractBase):
+    """입력 텐서 계약 — 이름·shape·dtype·축 정책."""
+
+    axes: str = Field(min_length=1)
+
+    @field_validator("axes")
+    @classmethod
+    def _nonblank_axes(cls, value: str) -> str:
+        return _require_nonblank(value)
+
+
+class OnnxOutputContract(_TensorContractBase):
     """출력 텐서 계약 — shape·dtype 은 추정이 아니라 **실제 세션에서 읽은 값**이다."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    name: str = Field(min_length=1)
-    shape: list[int] = Field(min_length=1)
-    dtype: TensorDtype = Field(strict=False)
     meaning: str = Field(min_length=1)
 
-    @field_validator("name", "meaning")
+    @field_validator("meaning")
     @classmethod
-    def _nonblank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("공백 문자열 불허")
-        return value
-
-    @field_validator("shape")
-    @classmethod
-    def _positive_int_dims(cls, value: list[int]) -> list[int]:
-        for dim in value:
-            if isinstance(dim, bool) or not isinstance(dim, int) or dim <= 0:
-                raise ValueError(f"차원은 bool 아닌 양의 int 여야 한다 ({dim!r})")
-        return value
+    def _nonblank_meaning(cls, value: str) -> str:
+        return _require_nonblank(value)
 
 
 class OnnxExportManifestV1(BaseModel):

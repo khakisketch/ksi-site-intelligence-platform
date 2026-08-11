@@ -36,19 +36,15 @@ import math
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
 
+from ksi_event_contracts._base import _CamelModel
 from ksi_event_contracts.change_detection_result import ArtifactRef
 
 # net = fill - cut 대조 허용 오차. 셀 단위 합산을 float 로 하므로 비트 일치를
 # 요구하면 정직한 결과가 거부된다(``RATIO_TOLERANCE`` 와 같은 이유). 체적은
 # m³ 단위 실수라 상대 오차로 본다.
 VOLUME_TOLERANCE_M3 = 1e-6
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
 class ZoneVolumeDelta(_CamelModel):

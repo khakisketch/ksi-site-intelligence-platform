@@ -26,11 +26,6 @@ ksi-site-intelligence-platform/
 │  └─ processing-controller/
 ├─ edge/
 │  └─ manifold-runtime/
-├─ workers/
-│  ├─ reconstruction-odm/
-│  ├─ change-detection/
-│  ├─ map-compiler/
-│  └─ dataset-builder/
 ├─ packages/
 │  ├─ domain/
 │  ├─ geo-core/
