@@ -247,6 +247,9 @@ export default async function ReportsPage({
     : null;
   // 문턱·권고비율은 변화 탐지 쪽 개념이라 그 결과의 요청을 먼저 본다.
   const basisRequest = changeRequest ?? volumeRequest;
+  // 재촬영 권고 CTA 가 어느 현장으로 보낼지 — 이 임무가 속한 site 를 이미 불러온
+  // missions 목록에서 찾는다(별도 조회 없이 재사용, M2 폐루프).
+  const currentMission = missions.find((mission) => mission.missionId === missionId) ?? null;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <section className="rounded-lg border border-line bg-surface p-4">
@@ -298,10 +301,20 @@ export default async function ReportsPage({
               {formatRatioPercent(view.revisitRatioThreshold)} 초과 시 권고)
             </p>
             {view.revisitRecommended && (
-              <p className="mt-2 text-sm break-keep text-high-ink">
-                자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
-                임무를 직접 발급하세요.
-              </p>
+              <>
+                <p className="mt-2 text-sm break-keep text-high-ink">
+                  자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
+                  임무를 직접 발급하세요.
+                </p>
+                {currentMission && (
+                  <Link
+                    href={`/sites/${encodeURIComponent(currentMission.siteId)}/surveys/new?purpose=SPATIAL_REFRESH`}
+                    className="tap-target mt-3 inline-block rounded-lg border border-high-ink bg-surface px-3 py-2 text-sm font-medium text-high-ink transition-colors hover:bg-high-bg"
+                  >
+                    SPATIAL_REFRESH 임무 초안 만들기
+                  </Link>
+                )}
+              </>
             )}
           </section>
 
