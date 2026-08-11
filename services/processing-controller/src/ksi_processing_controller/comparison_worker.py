@@ -52,6 +52,7 @@ from ksi_change_detection.run_volume_change import (
     VolumeChangeRunError,
     compute_and_submit,
 )
+from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
 
 from ksi_processing_controller.core_client import ComparisonInput, CoreClient, CoreClientError
 
@@ -297,7 +298,19 @@ def run_comparison_request(
         detail = "; ".join(summaries)
         core.transition_comparison(request_id, "SUCCEEDED", detail=detail)
         now_message(f"[{request_id}] SUCCEEDED — {detail}")
-    except (ChangeDetectionRunError, VolumeChangeRunError, httpx.HTTPError, CoreClientError) as exc:
+    except (
+        ChangeDetectionRunError,
+        VolumeChangeRunError,
+        # INV-020 좌표계 검증(run_change_detection.py/dsm_diff.py)이 raise 하는
+        # 그대로의 예외 — ChangeDetectionRunError/VolumeChangeRunError 로 감싸지
+        # 않는다(그쪽 모듈들의 기존 관례와 동형). 여기서 잡지 않으면 "실패는 전부
+        # FAILED 로 수렴한다"는 이 모듈의 원칙이 CRS 불일치에서만 깨져 워커가
+        # 그대로 죽는다.
+        CrsMismatchError,
+        UnsupportedCrsError,
+        httpx.HTTPError,
+        CoreClientError,
+    ) as exc:
         detail = str(exc)[:500]
         now_message(f"[{request_id}] 실패 — FAILED 보고 시도: {detail}")
         try:

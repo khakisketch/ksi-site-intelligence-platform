@@ -174,6 +174,7 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
+    ALLOWED_CONTENT_TYPES,
     DEFAULT_UPLOAD_TTL,
     DEFAULT_VIEW_TTL,
     EvidenceStorage,
@@ -351,6 +352,9 @@ class ProcessingJobVerdict(StrEnum):
     # 다운로드 요청이 가리키는 산출물이 이 작업에 등록돼 있지 않다.
     # ``INVALID_ARTIFACT_ID``(형식이 틀림, 422)와 다르다 — 형식은 맞는데 없다.
     ARTIFACT_NOT_FOUND = "ARTIFACT_NOT_FOUND"
+    # 임의 MIME 을 통과시키면 열람 URL 에서 브라우저가 스크립트로 해석할 수
+    # 있는 타입까지 저장소에 들어간다 — events.py/source_media.py 와 동형 방어.
+    UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
 
     # ── 산출물 등록 ──────────────────────────────────────────────────────
     ARTIFACT_REGISTERED = "ARTIFACT_REGISTERED"
@@ -399,6 +403,8 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     # 이 응답으로 생긴다(발급 계열과 같은 의미).
     ProcessingJobVerdict.UPLOAD_READY: 201,
     ProcessingJobVerdict.ARTIFACT_NOT_FOUND: 404,
+    # events.py 의 EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE 과 같은 415.
+    ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
 }
 
 
@@ -2016,6 +2022,13 @@ def build_processing_jobs_router(
         워커가 올리기를 마친 뒤에만 등록하고, 실패는 재시도로 끝난다(같은 키가
         나오므로 재시도가 사본을 만들지 않는다).
         """
+        if request.content_type not in ALLOWED_CONTENT_TYPES:
+            response.status_code = _STATUS[ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE]
+            return ArtifactUploadUrlResponse(
+                verdict=ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE.value,
+                detail=f"허용되지 않는 contentType: {request.content_type!r}",
+            )
+
         result = store.artifact_upload_target(
             job_id,
             artifact_id=request.artifact_id,

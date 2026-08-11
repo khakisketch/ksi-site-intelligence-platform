@@ -1964,6 +1964,23 @@ def test_http_upload_url_is_issued_to_the_leaseholder(tmp_path: Path) -> None:
     assert body["uploadUrl"].startswith("https://storage.invalid/")
 
 
+def test_http_upload_url_refuses_an_unsupported_content_type(tmp_path: Path) -> None:
+    """[핵심 음성][회귀 2026-08-11] 산출물 업로드 경로에만 MIME 허용목록이
+    빠져 있었다 — 증거 등록(events.py)·원본 사진(source_media.py)은 이미
+    ``ALLOWED_CONTENT_TYPES`` 로 막혀 있는데, 이 경로만 임의 문자열을 그대로
+    presigned PUT 에 실어 보냈다. 통과시키면 열람 URL 에서 브라우저가 스크립트로
+    해석할 수 있는 타입(text/html 등)까지 저장소에 들어간다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json={"artifactId": "point-cloud", "contentType": "text/html"},
+    )
+    assert response.status_code == 415, response.text
+    assert response.json()["verdict"] == "UNSUPPORTED_CONTENT_TYPE"
+
+
 def test_http_upload_url_is_deterministic_for_the_same_artifact(tmp_path: Path) -> None:
     """같은 (작업, 산출물)이면 같은 키다.
 
@@ -1973,7 +1990,7 @@ def test_http_upload_url_is_deterministic_for_the_same_artifact(tmp_path: Path) 
     """
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
-    payload = {"artifactId": "dsm", "contentType": "image/tiff"}
+    payload = {"artifactId": "dsm", "contentType": "application/octet-stream"}
 
     first = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
     second = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
@@ -2032,7 +2049,7 @@ def test_http_upload_url_refuses_a_worker_without_the_lease(tmp_path: Path) -> N
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "dsm", "contentType": "image/tiff"},
+        json={"artifactId": "dsm", "contentType": "application/octet-stream"},
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "LEASE_REQUIRED"
@@ -2093,7 +2110,7 @@ def test_http_upload_url_refuses_a_finished_job(tmp_path: Path) -> None:
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "late", "contentType": "image/tiff"},
+        json={"artifactId": "late", "contentType": "application/octet-stream"},
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "JOB_NOT_ACTIVE"

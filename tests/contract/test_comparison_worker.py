@@ -31,6 +31,7 @@ from ksi_processing_controller.core_client import (
     CoreClientError,
     PendingComparisonRequest,
 )
+from pyproj import CRS
 from rasterio.transform import from_origin
 
 # test_worker.py 와 같은 관용구(모듈 docstring 3항) — FakeCoreClient 를 그대로 확장한다.
@@ -48,6 +49,7 @@ def _write_laz(path: Path, points: np.ndarray) -> Path:
     header = laspy.LasHeader(point_format=3, version="1.2")
     header.offsets = [0.0, 0.0, 0.0]
     header.scales = [0.001, 0.001, 0.001]
+    header.add_crs(CRS.from_user_input("EPSG:5186"))
     las = laspy.LasData(header)
     las.x, las.y, las.z = points[:, 0], points[:, 1], points[:, 2]
     las.write(str(path))

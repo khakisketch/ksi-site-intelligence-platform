@@ -22,7 +22,7 @@ from ksi_change_detection.dsm_diff import (
     align_and_diff,
     volume_delta_in_polygon,
 )
-from ksi_geo_spatial.crs import CrsMismatchError
+from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
 from rasterio.transform import from_origin
 
 # EPSG:5186 중부원점 평면좌표. 셀 1m × 1m, 20×20 격자.
@@ -175,6 +175,24 @@ def test_mismatched_crs_is_refused(tmp_path: Path) -> None:
     current = _write_dsm(tmp_path / "curr.tif", _flat(101.0), crs="EPSG:5187")
 
     with pytest.raises(CrsMismatchError):
+        align_and_diff(baseline, current)
+
+
+def test_unsupported_crs_is_refused_even_when_both_epochs_match(tmp_path: Path) -> None:
+    """[핵심 음성][회귀 2026-08-11] 두 시점이 서로 '같은' 좌표계라도, 그 좌표계가
+    지원 화이트리스트 밖(다른 대륙의 UTM 존 등)이면 거부한다.
+
+    ``assert_same_crs`` 는 두 값이 같은지만 본다 — 둘 다 틀렸으면 그냥 통과한다.
+    실 개발 서버 종단 실행에서 두 재구성 산출물이 나란히 EPSG:32617(북미 동부
+    UTM 존, 한국 현장과 무관)로 태깅된 채 통과해 900만 점의 99.9995%가 변화
+    후보로 잡히고 평균 90m 하강이라는 물리적으로 말이 안 되는 결과가 나왔다
+    (실 실행 기록: candidateRatio=0.9999950012855028, netM3=-13,972,214.75).
+    화이트리스트가 이 정확한 실패를 막기 위해 이미 존재했지만 이 호출 경로에
+    배선돼 있지 않았다."""
+    baseline = _write_dsm(tmp_path / "base.tif", _flat(100.0), crs="EPSG:32617")
+    current = _write_dsm(tmp_path / "curr.tif", _flat(101.0), crs="EPSG:32617")
+
+    with pytest.raises(UnsupportedCrsError):
         align_and_diff(baseline, current)
 
 

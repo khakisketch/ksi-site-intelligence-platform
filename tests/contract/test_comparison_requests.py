@@ -925,6 +925,7 @@ def test_full_chain_from_submission_api_through_worker_to_result(
     from ksi_geo_spatial.crs import reproject_point
     from ksi_processing_controller.comparison_worker import run_comparison_request
     from ksi_processing_controller.core_client import HttpCoreClient
+    from pyproj import CRS
     from rasterio.transform import from_origin
 
     origin_x, origin_y = 200_000.0, 550_000.0
@@ -936,6 +937,7 @@ def test_full_chain_from_submission_api_through_worker_to_result(
         header = laspy.LasHeader(point_format=3, version="1.2")
         header.offsets = [0.0, 0.0, 0.0]
         header.scales = [0.001, 0.001, 0.001]
+        header.add_crs(CRS.from_user_input("EPSG:5186"))
         las = laspy.LasData(header)
         las.x, las.y, las.z = points[:, 0], points[:, 1], points[:, 2]
         las.write(str(path))

@@ -44,7 +44,7 @@ from typing import Any
 import numpy as np
 import rasterio
 from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
-from ksi_geo_spatial.crs import assert_same_crs, reproject_geometry
+from ksi_geo_spatial.crs import assert_same_crs, assert_supported_project_crs, reproject_geometry
 from numpy.typing import NDArray
 from rasterio import features
 from rasterio.warp import Resampling, reproject
@@ -84,6 +84,9 @@ def align_and_diff(baseline_path: Path, current_path: Path) -> DiffResult:
             )
         # INV-020 강제 지점. 다르면 여기서 멈춘다.
         crs = assert_same_crs(str(base_crs), str(curr_crs))
+        # 둘이 같아도 화이트리스트 밖(예: 엉뚱한 대륙의 UTM 존)이면 거부한다 —
+        # "그럴듯한 두 값이 같다"는 "맞는 좌표계"를 보증하지 않는다.
+        assert_supported_project_crs(crs)
 
         base = base_ds.read(1).astype(np.float64)
         base_valid = _valid_mask(base, base_ds.nodata)

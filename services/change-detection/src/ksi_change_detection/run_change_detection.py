@@ -36,6 +36,7 @@ from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetec
 from ksi_event_contracts.comparison_policy import (
     DEFAULT_DISTANCE_THRESHOLD_M as _POLICY_DISTANCE_THRESHOLD_M,
 )
+from ksi_geo_spatial.crs import assert_same_crs, assert_supported_project_crs
 from numpy.typing import NDArray
 
 from ksi_change_detection.download_errors import download_failure_detail
@@ -85,18 +86,21 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
         ) from exc
 
 
-def _read_points(path: Path) -> NDArray[np.float64]:
-    """LAZ/LAS 파일에서 (N, 3) 좌표 배열을 읽는다.
+def _read_points(path: Path) -> tuple[NDArray[np.float64], str | None]:
+    """LAZ/LAS 파일에서 (N, 3) 좌표 배열과 헤더에 박힌 좌표계를 읽는다.
 
     ``laspy`` 의 ``.x``/``.y``/``.z`` 는 헤더의 scale·offset 이 이미 적용된
-    실좌표(미터 단위, 원시 정수 ``X``/``Y``/``Z`` 가 아니다)다.
+    실좌표(미터 단위, 원시 정수 ``X``/``Y``/``Z`` 가 아니다)다. 좌표계는
+    VLR 에 박혀 있으면 읽히고, 없으면 ``None`` 이다(fail-closed 판단은 호출부 몫).
     """
     try:
         with laspy.open(path) as reader:
+            crs = reader.header.parse_crs()
             data = reader.read()
     except laspy.LaspyException as exc:
         raise ChangeDetectionRunError(f"point cloud 를 읽지 못했다({path}): {exc}") from exc
-    return np.column_stack((data.x, data.y, data.z)).astype(np.float64)
+    points = np.column_stack((data.x, data.y, data.z)).astype(np.float64)
+    return points, (str(crs) if crs is not None else None)
 
 
 def compute_change_detection(
@@ -124,8 +128,24 @@ def compute_change_detection(
         _download(http_client, baseline_download_url, base_path)
         _download(http_client, current_download_url, curr_path)
 
-        baseline_points = _read_points(base_path)
-        current_points = _read_points(curr_path)
+        baseline_points, baseline_crs = _read_points(base_path)
+        current_points, current_crs = _read_points(curr_path)
+
+    # INV-020 강제 지점 — dsm_diff.align_and_diff 와 동형. point_cloud_diff 는
+    # 정합(registration)을 하지 않고 "이미 같은 좌표계"라는 전제로 최근접거리를
+    # 재므로, 그 전제를 여기서 검증하지 않으면 서로 다른(심지어 지원 밖) 좌표계의
+    # 두 점군을 빼고도 "그럴듯한 변화 후보"를 만들어낸다(2026-08-11 실 종단
+    # 실행에서 EPSG:32617 로 라벨된 두 산출물이 검증 없이 통과해 후보비율
+    # 99.9995%·평균 90m 하강이라는 물리적으로 말이 안 되는 결과를 냈다).
+    if baseline_crs is None or current_crs is None:
+        raise ChangeDetectionRunError(
+            "point cloud 에 좌표계가 없다 — CRS 없는 point cloud 는 다른 시점과 비교할 수 없다"
+        )
+    # CrsMismatchError/UnsupportedCrsError 는 감싸지 않고 그대로 전파한다 —
+    # run_volume_change.compute_volume_change 가 align_and_diff 의 같은 두 예외를
+    # 감싸지 않는 것과 동형(그쪽은 DsmDiffError 만 잡는다).
+    crs = assert_same_crs(baseline_crs, current_crs)
+    assert_supported_project_crs(crs)
 
     try:
         candidates = detect_change_candidates(

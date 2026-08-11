@@ -21,14 +21,21 @@ from ksi_change_detection.run_change_detection import (
     compute_change_detection,
 )
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
+from pyproj import CRS
 
 _COMPUTED_AT = datetime(2026, 8, 10, 5, 0, tzinfo=UTC)
 
+# EPSG:5186 중부원점 — dsm_diff 쪽 테스트 픽스처(test_dsm_diff.py)와 동형.
+_DEFAULT_CRS = "EPSG:5186"
 
-def _write_laz(path: Path, points: np.ndarray) -> Path:
+
+def _write_laz(path: Path, points: np.ndarray, *, crs: str | None = _DEFAULT_CRS) -> Path:
     header = laspy.LasHeader(point_format=3, version="1.2")
     header.offsets = [0.0, 0.0, 0.0]
     header.scales = [0.001, 0.001, 0.001]
+    if crs is not None:
+        header.add_crs(CRS.from_user_input(crs))
     las = laspy.LasData(header)
     las.x = points[:, 0]
     las.y = points[:, 1]
@@ -140,6 +147,79 @@ def test_compute_and_submit_calls_sink(tmp_path: Path) -> None:
         )
 
     assert sink.calls == [("mission-1", result)]
+
+
+def test_missing_crs_is_refused(tmp_path: Path) -> None:
+    """[핵심 음성] 좌표계가 없는 point cloud 는 비교하지 않는다 — dsm_diff.
+    align_and_diff 의 'CRS 없는 래스터는 비교할 수 없다'와 동형."""
+    cloud = _grid(6)
+    base_path = _write_laz(tmp_path / "baseline.laz", cloud, crs=None)
+    curr_path = _write_laz(tmp_path / "current.laz", cloud.copy(), crs=None)
+    transport = _storage_transport({"baseline.laz": base_path, "current.laz": curr_path})
+
+    with (
+        httpx.Client(transport=transport, base_url="http://storage.test") as client,
+        pytest.raises(ChangeDetectionRunError, match="좌표계가 없다"),
+    ):
+        compute_change_detection(
+            change_detection_id="mission-1-cmp7",
+            baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            baseline_download_url="http://storage.test/x/baseline.laz",
+            current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            current_download_url="http://storage.test/x/current.laz",
+            computed_at=_COMPUTED_AT,
+            http_client=client,
+        )
+
+
+def test_mismatched_crs_is_refused(tmp_path: Path) -> None:
+    """[핵심 음성] 두 epoch 의 좌표계가 서로 다르면 거부한다(INV-020)."""
+    cloud = _grid(6)
+    base_path = _write_laz(tmp_path / "baseline.laz", cloud, crs="EPSG:5186")
+    curr_path = _write_laz(tmp_path / "current.laz", cloud.copy(), crs="EPSG:5187")
+    transport = _storage_transport({"baseline.laz": base_path, "current.laz": curr_path})
+
+    with (
+        httpx.Client(transport=transport, base_url="http://storage.test") as client,
+        pytest.raises(CrsMismatchError),
+    ):
+        compute_change_detection(
+            change_detection_id="mission-1-cmp8",
+            baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            baseline_download_url="http://storage.test/x/baseline.laz",
+            current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            current_download_url="http://storage.test/x/current.laz",
+            computed_at=_COMPUTED_AT,
+            http_client=client,
+        )
+
+
+def test_unsupported_crs_is_refused_even_when_both_epochs_match(tmp_path: Path) -> None:
+    """[핵심 음성][회귀 2026-08-11] 두 epoch 가 서로 '같은' 좌표계라도 그 좌표계가
+    지원 화이트리스트 밖(다른 대륙의 UTM 존 등)이면 거부한다 — dsm_diff.py 의
+    동형 회귀(test_dsm_diff.test_unsupported_crs_is_refused_even_when_both_epochs_match)
+    와 같은 실 사고를 점군 경로에서 재현한다. ``point_cloud_diff`` 는 정합
+    (registration)을 하지 않고 '이미 같은 좌표계'라는 전제로 최근접거리만 재므로,
+    이 검증이 없으면 서로 다른 대륙의 두 점군을 빼고도 그럴듯한 변화 후보를
+    만들어낸다."""
+    cloud = _grid(6)
+    base_path = _write_laz(tmp_path / "baseline.laz", cloud, crs="EPSG:32617")
+    curr_path = _write_laz(tmp_path / "current.laz", cloud.copy(), crs="EPSG:32617")
+    transport = _storage_transport({"baseline.laz": base_path, "current.laz": curr_path})
+
+    with (
+        httpx.Client(transport=transport, base_url="http://storage.test") as client,
+        pytest.raises(UnsupportedCrsError),
+    ):
+        compute_change_detection(
+            change_detection_id="mission-1-cmp9",
+            baseline=ArtifactRef(job_id="job-a", artifact_id="point-cloud"),
+            baseline_download_url="http://storage.test/x/baseline.laz",
+            current=ArtifactRef(job_id="job-b", artifact_id="point-cloud"),
+            current_download_url="http://storage.test/x/current.laz",
+            computed_at=_COMPUTED_AT,
+            http_client=client,
+        )
 
 
 def test_download_failure_raises_run_error(tmp_path: Path) -> None:
