@@ -58,6 +58,15 @@ class _NullEvidenceStorage:
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         raise NotImplementedError
 
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        raise NotImplementedError
+
+    def get_bytes(self, object_key: str) -> bytes:
+        raise NotImplementedError
+
+    def delete(self, object_key: str) -> None:
+        raise NotImplementedError
+
 
 def _assembled_client(tmp_path: Path) -> TestClient:
     opened: list[Any] = []
@@ -109,7 +118,7 @@ def test_json_formatter_includes_correlation_id_and_message() -> None:
         name="test.logger", level=logging.INFO, pathname=__file__, lineno=1,
         msg="hello %s", args=("world",), exc_info=None,
     )
-    record.correlation_id = "req-xyz"  # type: ignore[attr-defined]
+    record.correlation_id = "req-xyz"
 
     import json
 
