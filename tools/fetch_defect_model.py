@@ -16,10 +16,10 @@ HuggingFace 가 아니라 Google Drive 배포라 ``fetch_model.py`` 의 HF resol
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from pathlib import Path
 
+from _digest import DigestMismatchError, fetch_with_digest_verification, sha256_file
 from ksi_defect_detection.registry import DEFAULT_REGISTRY_PATH, load_model_entry
 
 
@@ -55,36 +55,28 @@ def fetch(model_id: str) -> int:
     for name, expected in entry.file_digests.items():
         target = dest / name
         if target.is_file():
-            actual = hashlib.sha256(target.read_bytes()).hexdigest()
-            if actual == expected:
+            if sha256_file(target) == expected:
                 print(f"= {name} 이미 있음 (digest 일치)")
                 continue
             print(f"! {name} digest 불일치 — 다시 받는다")
 
-        # gdown 은 자체 임시파일을 쓰지 않으므로 여기서 .part 로 받아 digest
-        # 통과 후에만 최종 이름으로 옮긴다(fetch_model.py 와 동일 원칙 — 중단된
-        # 다운로드가 최종 파일명으로 남아 다음 사람을 속이는 것을 막는다).
-        partial = target.with_suffix(target.suffix + ".part")
         print(f"↓ {name} ← google drive file {file_id}")
-        try:
+
+        # gdown 은 자체 임시파일을 쓰지 않으므로 여기서 .part 로 받는다 —
+        # fetch_with_digest_verification 이 digest 통과 후에만 최종 이름으로 옮긴다.
+        def _download(partial: Path) -> None:
             result = gdown.download(id=file_id, output=str(partial), quiet=False)
             if result is None:
-                print(f"✗ {name}: gdown 다운로드 실패", file=sys.stderr)
-                return 1
-            actual = hashlib.sha256(partial.read_bytes()).hexdigest()
-            if actual != expected:
-                print(
-                    f"✗ {name}: 받은 파일 digest {actual[:12]}… ≠ 원장 {expected[:12]}… — "
-                    "폐기함. Registry revision·file_id 가 맞는지 확인하라",
-                    file=sys.stderr,
-                )
-                return 1
-        finally:
-            if partial.is_file() and (
-                hashlib.sha256(partial.read_bytes()).hexdigest() != expected
-            ):
-                partial.unlink()
-        partial.replace(target)
+                raise RuntimeError(f"gdown 다운로드 실패: {file_id}")
+
+        try:
+            fetch_with_digest_verification(target, expected, _download)
+        except DigestMismatchError as exc:
+            print(f"✗ {exc} — Registry revision·file_id 가 맞는지 확인하라", file=sys.stderr)
+            return 1
+        except RuntimeError as exc:
+            print(f"✗ {name}: {exc}", file=sys.stderr)
+            return 1
         print(f"✓ {name} digest 일치")
 
     print(f"\n완료: {dest}")

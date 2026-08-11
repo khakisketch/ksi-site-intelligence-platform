@@ -22,7 +22,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -30,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from _digest import sha256_file
 
 _EXTENSION_CONTENT_TYPES: dict[str, str] = {
     ".jpg": "image/jpeg",
@@ -37,14 +37,6 @@ _EXTENSION_CONTENT_TYPES: dict[str, str] = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
-
-
-def _sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _image_size(path: Path) -> tuple[int, int]:
@@ -66,7 +58,7 @@ def _build_claim(path: Path) -> dict[str, Any]:
     width, height = _image_size(path)
     return {
         "mediaId": path.name,
-        "sha256": _sha256_of(path),
+        "sha256": sha256_file(path),
         "bytes": path.stat().st_size,
         "width": width,
         "height": height,

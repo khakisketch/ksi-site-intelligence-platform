@@ -17,23 +17,19 @@ sha256을 락 파일과 대조해 핀 이탈(브랜치 강제 push, 태그 리�
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
+# tools/_digest.py 를 가져오려면 tools/(이 파일의 부모의 부모)가 sys.path 에 있어야
+# 한다 — 스크립트를 직접 실행하면 파이썬이 자기 디렉터리(tools/edge/)만 넣는다.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _digest import sha256_file  # noqa: E402 -- 위 sys.path 조작 뒤에만 해석 가능
+
 DEFAULT_LOCK_PATH = Path(__file__).resolve().parents[2] / "edge" / "third_party" / "PSDK_LOCK.yaml"
 DEFAULT_DEST = Path(__file__).resolve().parents[2] / "edge" / "third_party" / "psdk"
-
-
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -93,7 +89,7 @@ def fetch(lock_path: Path, dest: Path) -> int:
         if not target.is_file():
             mismatches.append(f"{rel_path}: 파일 없음(핀 커밋에 존재하지 않음)")
             continue
-        actual_sha = _sha256(target)
+        actual_sha = sha256_file(target)
         if actual_sha != expected_sha:
             mismatches.append(f"{rel_path}: sha256 불일치(기대 {expected_sha}, 실제 {actual_sha})")
 

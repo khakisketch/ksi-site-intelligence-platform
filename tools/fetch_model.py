@@ -14,11 +14,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import sys
 import urllib.request
 from pathlib import Path
 
+from _digest import DigestMismatchError, fetch_with_digest_verification, sha256_file
 from ksi_perception.registry import DEFAULT_REGISTRY_PATH, load_model_entry
 
 
@@ -37,38 +37,25 @@ def fetch(model_id: str) -> int:
     for name, expected in entry.file_digests.items():
         target = dest / name
         if target.is_file():
-            actual = hashlib.sha256(target.read_bytes()).hexdigest()
-            if actual == expected:
+            if sha256_file(target) == expected:
                 print(f"= {name} 이미 있음 (digest 일치)")
                 continue
             print(f"! {name} digest 불일치 — 다시 받는다")
         print(f"↓ {name} ← {base}/{name}")
-        # 임시 파일로 받고 digest 통과 후에만 최종 이름으로 옮긴다 — 중단된 다운로드
-        # (네트워크 단절·Ctrl-C)가 최종 파일명으로 남아 다음 사람을 속이는 것을 막는다.
-        # (남아도 verify_local_model 이 거부하지만, 오염물 자체를 만들지 않는 것이 원칙.)
-        partial = target.with_suffix(target.suffix + ".part")
-        try:
+
+        def _download(partial: Path, name: str = name) -> None:
             with (
                 urllib.request.urlopen(f"{base}/{name}", timeout=120) as resp,  # noqa: S310
                 partial.open("wb") as out,
             ):
                 while chunk := resp.read(1 << 20):
                     out.write(chunk)
-            actual = hashlib.sha256(partial.read_bytes()).hexdigest()
-            if actual != expected:
-                print(
-                    f"✗ {name}: 받은 파일 digest {actual[:12]}… ≠ 원장 {expected[:12]}… — "
-                    "폐기함. Registry revision 이 맞는지 확인하라",
-                    file=sys.stderr,
-                )
-                return 1
-        finally:
-            # digest 미통과·중단 잔여물은 항상 제거(예외 경로 포함)
-            if partial.is_file() and (
-                hashlib.sha256(partial.read_bytes()).hexdigest() != expected
-            ):
-                partial.unlink()
-        partial.replace(target)
+
+        try:
+            fetch_with_digest_verification(target, expected, _download)
+        except DigestMismatchError as exc:
+            print(f"✗ {exc} — Registry revision 이 맞는지 확인하라", file=sys.stderr)
+            return 1
         print(f"✓ {name} digest 일치")
 
     print(f"\n완료: {dest}")

@@ -12,12 +12,12 @@ sha256 을 원장과 대조한다. 불일치는 fail-closed — Pillow 버전 �
 
 from __future__ import annotations
 
-import hashlib
 import sys
 import urllib.request
 from pathlib import Path
 
 import yaml
+from _digest import DigestMismatchError, fetch_with_digest_verification, sha256_file
 
 LEDGER = Path("docs/models/TEST_ASSETS.yaml")
 DEST = Path("models/test-assets")
@@ -36,31 +36,31 @@ def fetch() -> int:
         target = DEST / asset["name"]
         expected = asset["sha256"]
         if target.is_file():
-            actual = hashlib.sha256(target.read_bytes()).hexdigest()
-            if actual == expected:
+            if sha256_file(target) == expected:
                 print(f"= {asset['name']} 이미 있음 (digest 일치)")
                 continue
             print(f"! {asset['name']} digest 불일치 — 원장 기준으로 다시 받는다")
 
         print(f"↓ {asset['name']} ← {asset['source_url']}")
-        with urllib.request.urlopen(asset["source_url"], timeout=120) as resp:  # noqa: S310
-            raw = resp.read()
-        image = Image.open(BytesIO(raw)).convert("RGB")
-        image.thumbnail((800, 800))
-        target_tmp = target.with_suffix(target.suffix + ".part")
-        image.save(target_tmp, quality=92)
-        actual = hashlib.sha256(target_tmp.read_bytes()).hexdigest()
-        if actual != expected:
-            target_tmp.unlink()
+
+        def _fetch_and_reencode(target_tmp: Path, asset: dict[str, str] = asset) -> None:
+            with urllib.request.urlopen(asset["source_url"], timeout=120) as resp:  # noqa: S310
+                raw = resp.read()
+            image = Image.open(BytesIO(raw)).convert("RGB")
+            image.thumbnail((800, 800))
+            image.save(target_tmp, quality=92)
+
+        try:
+            fetch_with_digest_verification(target, expected, _fetch_and_reencode)
+        except DigestMismatchError as exc:
             print(
-                f"✗ {asset['name']}: 재인코딩 digest {actual[:12]}… ≠ 원장 {expected[:12]}… — "
-                "Pillow 버전 차이 가능성. 조용히 교체하지 말고 원장 갱신 절차를 따르라"
-                "(TEST_ASSETS.yaml 헤더)",
+                f"✗ {asset['name']}: 재인코딩 digest {exc.actual[:12]}… ≠ 원장 "
+                f"{exc.expected[:12]}… — Pillow 버전 차이 가능성. 조용히 교체하지 말고 "
+                "원장 갱신 절차를 따르라(TEST_ASSETS.yaml 헤더)",
                 file=sys.stderr,
             )
             failures += 1
             continue
-        target_tmp.replace(target)
         print(f"✓ {asset['name']} digest 일치")
 
     return 1 if failures else 0

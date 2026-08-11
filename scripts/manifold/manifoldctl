@@ -293,24 +293,14 @@ cmd_install() {
   mf_ssh "dji_app_ctl install -i '${MANIFOLD_REMOTE_ROOT}/${remote_rel}'"
 }
 
-cmd_uninstall() {
-  [ $# -ge 1 ] || mf_die "사용법: manifoldctl uninstall <app_name>"
-  mf_ssh "dji_app_ctl uninstall '$1'"
-}
-
-cmd_start() {
-  [ $# -ge 1 ] || mf_die "사용법: manifoldctl start <app_name>"
-  mf_ssh "dji_app_ctl start '$1'"
-}
-
-cmd_stop() {
-  [ $# -ge 1 ] || mf_die "사용법: manifoldctl stop <app_name>"
-  mf_ssh "dji_app_ctl stop '$1'"
-}
-
-cmd_restart() {
-  [ $# -ge 1 ] || mf_die "사용법: manifoldctl restart <app_name>"
-  mf_ssh "dji_app_ctl restart '$1'"
+# uninstall/start/stop/restart 는 검증 한 줄 + dji_app_ctl 위임 한 줄뿐이고 동사만
+# 다르다 — install(파일 존재·확장자 검사가 더 있다)·list(인자 없어도 됨)와 달리
+# 이 넷은 형태가 완전히 같아서 공용 함수로 묶는다.
+cmd_delegate() {
+  local verb="$1"
+  shift
+  [ $# -ge 1 ] || mf_die "사용법: manifoldctl $verb <app_name>"
+  mf_ssh "dji_app_ctl $verb '$1'"
 }
 
 cmd_list() {
@@ -333,10 +323,10 @@ case "$cmd" in
   shell)     cmd_shell ;;
   package)   cmd_package "$@" ;;
   install)   cmd_install "$@" ;;
-  uninstall) cmd_uninstall "$@" ;;
-  start)     cmd_start "$@" ;;
-  stop)      cmd_stop "$@" ;;
-  restart)   cmd_restart "$@" ;;
+  uninstall) cmd_delegate uninstall "$@" ;;
+  start)     cmd_delegate start "$@" ;;
+  stop)      cmd_delegate stop "$@" ;;
+  restart)   cmd_delegate restart "$@" ;;
   list)      cmd_list "$@" ;;
   *)
     echo "사용법: manifoldctl {env|doctor|build|deploy|run|status|cycle|fetch|shell|" >&2

@@ -312,14 +312,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 의존성 동기화 (locked, ABI 게이트용)
-        run: uv sync --locked --all-packages
-
       # readelf는 대상 아키텍처와 무관하게 ELF 바이트 포맷을 정적으로 파싱하므로
       # x86-64 러너에서 arm64 바이너리를 그대로 검사할 수 있다(실행 불필요).
+      # check_target_abi.py 는 stdlib(argparse/re/subprocess/sys/dataclasses/pathlib)만
+      # 쓰는 순수 스크립트라 워크스페이스 전체 동기화가 필요 없다 — `--no-project`로
+      # uv 가 관리하는 인터프리터만 쓴다. bare `python3`(시스템 인터프리터)로 내려가지는
+      # 않는다 — 그건 이 저장소가 이미 겪은 드리프트 사고(2026-08-04 감사, gates job
+      # 주석 참고)를 재도입한다.
       - name: ABI 게이트 (정적 링크·glibc 상한·RPATH)
         run: |
-          uv run python tools/edge/check_target_abi.py \
+          uv run --no-project python tools/edge/check_target_abi.py \
             edge/manifold-runtime/build-manifold3-ci/control_plane_tests \
             edge/manifold-runtime/build-manifold3-ci/conformance_tests
 
