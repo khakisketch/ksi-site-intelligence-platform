@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
-import { API_ERROR_MESSAGE } from "@/lib/core-api/labels";
+import { readableApiError } from "@/lib/core-api/labels";
 import {
   canSubmitComparison,
   comparisonEligibility,
@@ -26,40 +26,6 @@ import type {
 } from "@/lib/core-api/types";
 
 const POLL_INTERVAL_MS = 5000;
-
-/** 실패 응답 본문에서 읽어낼 수 있는 자리들 — 경로마다 모양이 다르다(아래 주석). */
-interface ErrorBodyShape {
-  /** 성공 경로의 판정값. 실패 응답에는 없다. */
-  verdict?: string;
-  /** `coreApiErrorResponse` 가 붙이는 Core verdict 코드. */
-  code?: string;
-  /** `coreApiErrorResponse` 가 이미 사람 말로 옮겨 둔 문구. */
-  message?: string;
-  /** Core 원문 — 내부 어휘가 섞여 있어 **마지막 수단**이다. 성공 응답에서는 null 이 온다. */
-  detail?: string | null;
-}
-
-/**
- * 실패 사유를 사람 말로 — **본문 모양이 경로마다 다르다는 것이 요점**이다.
- *
- * 성공 응답은 `{verdict, request}`, Core 오류는 `coreApiErrorResponse` 가 만든
- * `{message, code, detail}`, 출처 가드(403)는 `{message}` 뿐이다. 예전에는
- * `verdict` 와 `detail` 만 읽어서, 오류 응답에는 `verdict` 가 아예 없으니 늘
- * `detail`(Core 원문)로 떨어졌다 — 저장소 점검 중이면 사용자에게
- * "journal 봉인됨 — 재시작 필요"가 그대로 보였다. 이미 사람 말로 옮겨 둔
- * `message` 는 한 번도 쓰이지 않았다.
- *
- * 우선순위: 우리가 아는 코드의 문구 → 서버가 옮겨 준 문구 → 원문 → 기본값.
- */
-function readableError(body: ErrorBodyShape, fallback: string): string {
-  const code = body.verdict ?? body.code;
-  if (code && code in API_ERROR_MESSAGE) {
-    return API_ERROR_MESSAGE[code as keyof typeof API_ERROR_MESSAGE];
-  }
-  // `??` 로는 빈 문자열이 통과해 사용자에게 빈 오류가 보인다 — 내용이 있는
-  // 것만 고른다.
-  return [body.message, body.detail].find((text) => text) ?? fallback;
-}
 
 async function parseJsonSafe<T>(response: Response): Promise<Partial<T>> {
   try {
@@ -219,7 +185,7 @@ export function ComparisonSubmitPanel({
       );
       const body = await parseJsonSafe<ComparisonRequestMutationResponse>(response);
       if (!response.ok || !body.request) {
-        setError(readableError(body, "비교 요청 제출에 실패했습니다"));
+        setError(readableApiError(body, "비교 요청 제출에 실패했습니다"));
         return;
       }
       // 같은 조합의 재요청은 기존 요청을 그대로 돌려준다(ALREADY_REQUESTED) —

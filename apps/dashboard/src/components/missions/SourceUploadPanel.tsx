@@ -10,7 +10,7 @@ import {
   isTerminalJobStatus,
   summarizeUploadBatch,
 } from "@/lib/source-upload";
-import { API_ERROR_MESSAGE } from "@/lib/core-api/labels";
+import { API_ERROR_MESSAGE, readableApiError } from "@/lib/core-api/labels";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type {
@@ -285,7 +285,7 @@ export function SourceUploadPanel({
       });
       const body = await parseJsonSafe<SourceMediaSealResponse>(response);
       if (!response.ok || !body.bundle) {
-        setError(readableError(body.verdict, body.detail ?? "봉인에 실패했습니다"));
+        setError(readableApiError(body, "봉인에 실패했습니다"));
         setPhase("ready-to-seal");
         return;
       }
@@ -308,7 +308,7 @@ export function SourceUploadPanel({
       });
       const body = await parseJsonSafe<ProcessingJobMutationResponse>(response);
       if (!response.ok || !body.job) {
-        setError(readableError(body.verdict, body.detail ?? "재구성 작업 발행에 실패했습니다"));
+        setError(readableApiError(body, "재구성 작업 발행에 실패했습니다"));
         setPhase("sealed");
         return;
       }
