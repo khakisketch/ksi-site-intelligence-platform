@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import {
   assignUniqueMediaIds,
@@ -11,10 +11,13 @@ import {
   summarizeUploadBatch,
 } from "@/lib/source-upload";
 import { API_ERROR_MESSAGE, readableApiError } from "@/lib/core-api/labels";
+import { parseJsonSafe } from "@/lib/http";
+import { usePolling } from "@/hooks/usePolling";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type {
   ProcessingArtifactSummary,
+  ProcessingJobArtifactsView,
   ProcessingJobIssueInput,
   ProcessingJobMutationResponse,
   SourceMediaBatchResponse,
@@ -26,7 +29,6 @@ import type {
 // 서버 배치 상한(MAX_BATCH_SIZE=200) 아래로 여유있게 — 요청 1건 실패가 미치는
 // 범위를 줄인다(source_media.py 모듈 docstring: "한 요청당 상한").
 const BATCH_SIZE = 50;
-const POLL_INTERVAL_MS = 5000;
 
 // 재구성 발행 스펙 — 사용자 설정 UI는 이번 스코프 밖(docs/goals/HANDOFF_2026-08-09.md
 // §3-1). 실기동 예시(tests/contract/test_odm_live.py:473-480)와 같은 값을 쓴다.
@@ -62,14 +64,6 @@ type Phase =
 function readableError(code: string | undefined, fallback: string): string {
   if (code && code in API_ERROR_MESSAGE) return API_ERROR_MESSAGE[code as keyof typeof API_ERROR_MESSAGE];
   return fallback;
-}
-
-async function parseJsonSafe<T>(response: Response): Promise<Partial<T>> {
-  try {
-    return (await response.json()) as T;
-  } catch {
-    return {};
-  }
 }
 
 const FILE_STATUS_LABEL: Record<FileStatus, string> = {
@@ -119,51 +113,29 @@ export function SourceUploadPanel({
   const [jobStatus, setJobStatus] = useState<string | null>(initialJob?.status ?? null);
   const [artifacts, setArtifacts] = useState<ProcessingArtifactSummary[]>([]);
 
-  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 재귀 폴링 + 마운트 시 최초 호출을 전부 ref 간접참조로 건다 — 렌더 중 ref
-  // 갱신·effect 안 setState 동기호출을 둘 다 피한다(react-hooks/refs,
-  // react-hooks/set-state-in-effect. ErrorState.tsx 의 setTimeout 관용구와 같은 이유).
-  const pollJobRef = useRef<(id: string) => Promise<void>>(async () => {});
-
-  const pollJob = useCallback(async (id: string) => {
-    try {
-      const response = await fetch(`/api/processing-jobs/${encodeURIComponent(id)}`);
-      if (response.ok) {
-        const body = await parseJsonSafe<{ status: string; artifacts: ProcessingArtifactSummary[] }>(response);
-        if (body.status) {
-          setJobStatus(body.status);
-          setArtifacts(body.artifacts ?? []);
-          if (isTerminalJobStatus(body.status)) {
-            setPhase(body.status === "SUCCEEDED" ? "job-done" : "job-failed");
-            return;
-          }
-        }
-      }
-    } catch {
-      // 일시 네트워크 오류 — 폴링을 멈추지 않고 다음 tick 에 재시도한다.
-    }
-    pollTimer.current = setTimeout(() => void pollJobRef.current(id), POLL_INTERVAL_MS);
-  }, []);
-
-  useEffect(() => {
-    pollJobRef.current = pollJob;
-  }, [pollJob]);
-
   // jobId 가 생기거나 바뀔 때마다(마운트 시 복원 · handleIssue 발급 직후 둘 다)
   // 조회를 시작한다 — 진행 중이면 폴링을 이어가고, 이미 종료 상태라도 이 조회가
   // 있어야 artifacts 목록이 채워진다(서버 initialJob 은 jobId·status 만 넘긴다).
-  // 트리거를 이 effect 하나로 모은 이유: handleIssue 가 직접 pollJob 을 불러
-  // 시작한 폴링은 이 effect 의 cleanup 이 걸리지 않아 컴포넌트 unmount 시
-  // setTimeout 체인이 정리되지 않는 누수였다(reviewer 지적) — jobId 를 의존성에
-  // 넣어 상태 변경 자체가 effect 를 재실행시키게 하면 매 시작이 cleanup 을 갖는다.
-  useEffect(() => {
-    if (!jobId) return undefined;
-    const kickoff = setTimeout(() => void pollJobRef.current(jobId), 0);
-    return () => {
-      clearTimeout(kickoff);
-      if (pollTimer.current) clearTimeout(pollTimer.current);
-    };
-  }, [jobId]);
+  // jobId 가 유일한 재시작 경로라는 것이 핵심이다(usePolling 모듈 docstring) —
+  // handleIssue 가 직접 폴링을 불러 시작하면 그 시작은 cleanup 을 갖지 못해
+  // unmount 시 setTimeout 체인이 정리되지 않는 누수였다(reviewer 지적).
+  usePolling(
+    jobId,
+    async (id) => {
+      const response = await fetch(`/api/processing-jobs/${encodeURIComponent(id)}`);
+      if (!response.ok) return null;
+      const body = await parseJsonSafe<Pick<ProcessingJobArtifactsView, "status" | "artifacts">>(response);
+      return body.status ? { status: body.status, artifacts: body.artifacts ?? [] } : null;
+    },
+    (result) => isTerminalJobStatus(result.status),
+    (result) => {
+      setJobStatus(result.status);
+      setArtifacts(result.artifacts);
+      if (isTerminalJobStatus(result.status)) {
+        setPhase(result.status === "SUCCEEDED" ? "job-done" : "job-failed");
+      }
+    },
+  );
 
   async function refreshBundle() {
     try {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -16,6 +16,8 @@ import {
   toZonesPayload,
   type ComparisonEpoch,
 } from "@/lib/comparison-submit";
+import { parseJsonSafe } from "@/lib/http";
+import { usePolling } from "@/hooks/usePolling";
 import type {
   AoiVertex,
   ComparisonPolicyView,
@@ -24,16 +26,6 @@ import type {
   ComparisonRequestMutationResponse,
   SiteProcessingJobSummary,
 } from "@/lib/core-api/types";
-
-const POLL_INTERVAL_MS = 5000;
-
-async function parseJsonSafe<T>(response: Response): Promise<Partial<T>> {
-  try {
-    return (await response.json()) as T;
-  } catch {
-    return {};
-  }
-}
 
 function formatEpoch(epoch: ComparisonEpoch): string {
   const when = new Date(epoch.issuedAt);
@@ -125,45 +117,26 @@ export function ComparisonSubmitPanel({
   const [error, setError] = useState<string | null>(null);
   const [request, setRequest] = useState<ComparisonRequestContract | null>(initialRequest);
 
-  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollRef = useRef<(id: string) => Promise<void>>(async () => {});
-
   const baseline = epochs.find((e) => e.jobId === baselineJobId) ?? null;
   const current = epochs.find((e) => e.jobId === currentJobId) ?? null;
   const eligibility = comparisonEligibility(baseline, current, zonesConfirmed);
 
-  const poll = useCallback(async (id: string) => {
-    try {
-      const response = await fetch(`/api/comparison-requests/${encodeURIComponent(id)}`);
-      if (response.ok) {
-        const body = await parseJsonSafe<ComparisonRequestDetailView>(response);
-        if (body.request) {
-          setRequest(body.request);
-          if (isTerminalComparisonStatus(body.request.status)) return;
-        }
-      }
-    } catch {
-      // 일시 네트워크 오류 — 폴링을 멈추지 않고 다음 tick 에 재시도한다.
-    }
-    pollTimer.current = setTimeout(() => void pollRef.current(id), POLL_INTERVAL_MS);
-  }, []);
-
-  useEffect(() => {
-    pollRef.current = poll;
-  }, [poll]);
-
-  // 진행 중인 요청이 있을 때만 폴링한다. requestId 가 바뀌는 것 자체가 이
-  // effect 를 재실행시키므로 모든 폴링 시작이 cleanup 을 갖는다(모듈 docstring).
+  // 진행 중인 요청이 있을 때만 폴링한다. requestId 가 바뀌는 것 자체가 재시작
+  // 경로다(usePolling 모듈 docstring).
   const pendingRequestId =
     request !== null && !isTerminalComparisonStatus(request.status) ? request.requestId : null;
-  useEffect(() => {
-    if (!pendingRequestId) return undefined;
-    const kickoff = setTimeout(() => void pollRef.current(pendingRequestId), 0);
-    return () => {
-      clearTimeout(kickoff);
-      if (pollTimer.current) clearTimeout(pollTimer.current);
-    };
-  }, [pendingRequestId]);
+
+  usePolling(
+    pendingRequestId,
+    async (id) => {
+      const response = await fetch(`/api/comparison-requests/${encodeURIComponent(id)}`);
+      if (!response.ok) return null;
+      const body = await parseJsonSafe<ComparisonRequestDetailView>(response);
+      return body.request ?? null;
+    },
+    (req) => isTerminalComparisonStatus(req.status),
+    (req) => setRequest(req),
+  );
 
   async function handleSubmit() {
     setSubmitting(true);
