@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-11T05:54:33+09:00",
+  "updated_at": "2026-08-11T13:12:30+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1480,10 +1480,16 @@
         "승인(발급) 은 사람이 명시적으로 확정한다(자동 발급 아님)",
         "실 Core 로 종단 확인"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "구현: apps/dashboard/src/app/reports/page.tsx — revisitRecommended 배너 안에 currentMission(missions 목록에서 missionId로 조회) 기반 CTA 링크 추가, /sites/{siteId}/surveys/new?purpose=SPATIAL_REFRESH 로 연결. apps/dashboard/src/lib/core-api/surveyEntryPreset.ts(신규) — resolveInitialMissionType(purpose) 화이트리스트(SPATIAL_REFRESH 하나만) 검증, 신뢰 경계 밖 쿼리파라미터를 그대로 믿지 않음. sites/[siteId]/surveys/new/page.tsx — searchParams.purpose를 이 함수로 검증 후 initialMissionType prop으로 SurveyWizard에 전달. SurveyWizard.tsx — initialMissionType prop 추가, useDraftState 초기값에 missionType+target(FULL_SITE)만 병합(step은 건드리지 않음 — 자동 진행 없음, 기존 AOI 사전채움과 동일 위치). 테스트: apps/dashboard/test/survey-entry-preset.test.ts 신규(화이트리스트 통과/거부/주입시도/미지정 케이스). vitest 140 passed, eslint/tsc clean. 실 Core 종단 확인: scripts/run_core_dev.py 실제 기동 + 실 HTTP로 site(AOI포함)+mission+source-media(등록+봉인)+processing-job(발급+lease+RUNNING+point_cloud 산출물 2건)+change-detection(candidateRatio 0.25 > 임계값 0.05 → revisitRecommended:true 실측) 시딩, site 상태를 실제 전이표대로 UNMAPPED→BASELINE_MAPPING→MODEL_PROCESSING→MODEL_VALIDATION→PROVISIONAL_AUTONOMY까지 진행(SPATIAL_REFRESH가 UNMAPPED에서 발급 불가함을 실제로 확인 후 교정). 실 Playwright 브라우저로 실 next dev 대시보드 로그인 → /reports 에서 CTA 렌더+href 확인 → 클릭 → sessionStorage 초기화로 이전 수동조작 잔여 draft 배제 후 신선 방문 확인 → 1단계(대상) FULL_SITE+실제 AOI 4점 사전채움, 2단계(목적) SPATIAL_REFRESH 사전선택+활성화(사이트 상태 허용) 확인 → 조사수준 선택 → 검토단계(목적/대상/AOI 사전채움값 그대로 표시) → 사람이 직접 '계약 발급' 클릭 → 실 Core가 실제 서명 계약 발급(웨이포인트 75, 커버리지 100%, 실제 KMZ sha256) → curl GET /v1/missions로 새 MissionRecord(missionType SPATIAL_REFRESH, 동일 siteId, 실제 kmzSha256/routePattern/waypointCount 값 채워짐) 실재 확인. 독립 reviewer(agentId a4b2cce435657e6a6) CONFIRMED — 4개 수용기준 전부(코드 정합성 직접 확인, e2e 서술은 코드와 모순 없음으로 판정, 재실행은 브라우저 도구 부재로 불가하나 blocking 이슈 없음). 개발 서버·MinIO 버킷 정리 완료.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-11T13:12:30+09:00",
+        "reviewer": "reviewer subagent a4b2cce435657e6a6",
+        "evidence_ref": "reports/page.tsx,surveyEntryPreset.ts,surveys/new/page.tsx,SurveyWizard.tsx + test/survey-entry-preset.test.ts + real Core e2e session + reviewer transcript a4b2cce435657e6a6"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
@@ -1491,7 +1497,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-11T04:43:37+09:00",
-      "updated_at": "2026-08-11T05:49:46+09:00"
+      "updated_at": "2026-08-11T13:12:30+09:00"
     }
   ],
   "risks": [
