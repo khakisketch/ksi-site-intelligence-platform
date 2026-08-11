@@ -20,10 +20,16 @@ if [[ ! -f "$LOCK_FILE" ]]; then
 fi
 
 python3 - "$LOCK_FILE" "$PSDK_DIR" <<'PY'
-import hashlib
 import subprocess
 import sys
 from pathlib import Path
+
+# heredoc 으로 stdin 실행돼 __file__ 이 없다 — tools/_digest.py 를 가져오려면 CWD
+# 기준 상대경로로 넣는다. 이 스크립트 자신이 이미 LOCK_FILE/PSDK_DIR 를 저장소
+# 루트 기준 상대경로로 가정하므로(CI 는 `uv run --locked bash scripts/...`로 저장소
+# 루트에서 호출) 새로운 제약이 아니다.
+sys.path.insert(0, "tools")
+from _digest import sha256_file
 
 try:
     import yaml
@@ -82,11 +88,7 @@ for rel_path, expected_sha in checks.items():
         print(f"FAIL: {rel_path} 없음(핀 커밋에 존재해야 함)")
         bad = True
         continue
-    h = hashlib.sha256()
-    with target.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    actual_sha = h.hexdigest()
+    actual_sha = sha256_file(target)
     if actual_sha != expected_sha:
         print(f"FAIL: {rel_path} sha256 불일치(기대 {expected_sha}, 실제 {actual_sha})")
         bad = True
