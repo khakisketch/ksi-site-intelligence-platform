@@ -444,6 +444,16 @@ export function DesignSurfacePanel({
                 setPhase({ kind: "idle" });
               }}
             />
+            {/* IFC 를 여기서 직접 받도록 확장하지 않는다 — 서버가 IFC 를 받는 순간
+                검증·잔량 계산 전체(래스터 전제)를 이원화해야 한다. IFC 는 CLI 변환
+                도구로 GeoTIFF 를 만들어 이 경로에 태운다(도구가 좌표 기준 없는
+                파일을 거부하고, 결정적 바이트라 해시 대조도 그대로 성립한다). */}
+            <span className="text-[11.5px] break-keep text-ink-muted">
+              BIM/CAD 설계 파일(IFC)은 이 화면이 직접 받지 않습니다 — 저장소의 변환
+              도구(<span className="num">tools/convert_ifc_design_surface.py</span>)로 높이
+              GeoTIFF 를 만든 뒤 올리세요. 파일 안에 좌표 기준이 없으면 변환 단계에서
+              거부됩니다.
+            </span>
           </label>
 
           <button
