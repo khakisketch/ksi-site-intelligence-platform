@@ -38,6 +38,9 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
+from ksi_core.design_conformance_reports import DesignConformanceStore
+from ksi_core.design_conformance_requests import DesignConformanceRequestStore
+from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
@@ -135,10 +138,45 @@ def assemble_app(
     # **띄울 수 있는 서버에서는 404 다**(2026-08-08 reviewer 지적 F1: 신설 API 4종이
     # 어떤 실행 가능한 조립에도 장착돼 있지 않았다). 라이브러리를 API 로 만든 작업이
     # 다시 "아무도 못 쓰는 것"이 되는 자리라, 배선과 조립을 같은 커밋에서 닫는다.
+    # 설계 기준면(M4-A) — 현장에 매달린 자산이라 site_store 와 함께 조립한다.
+    # evidence_storage 가 없으면 store 는 구성되지만 라우트가 장착되지 않는다
+    # (create_app 참조) — source_media 와 같은 관습.
+    design_surface_journal = journal("design-surfaces.jsonl")
+    design_surface_store = DesignSurfaceStore(design_surface_journal, site_store=site_store)
     defect_candidate_journal = journal("defect-candidates.jsonl")
     change_detection_journal = journal("change-detection.jsonl")
     volume_change_journal = journal("volume-changes.jsonl")
     comparison_request_journal = journal("comparison-requests.jsonl")
+    # M4-A 설계 대비 잔량 — 요청(지시)과 리포트(결과)를 두 원장으로 나눈다.
+    # 리포트 원장은 요청 원장과 오브젝트 스토리지를 **둘 다** 필요로 한다: 리포트를
+    # 받는 순간 차분 래스터 바이트를 직접 재해싱해 워커의 신고와 대조하기 때문이다
+    # (design_conformance_reports.py 모듈 docstring). 그래서 두 store 는 재구성
+    # 작업 원장·스토리지가 있는 조립에서만 만들어진다.
+    design_conformance_request_journal = journal("design-conformance-requests.jsonl")
+    design_conformance_report_journal = journal("design-conformance.jsonl")
+    design_conformance_request_store = (
+        DesignConformanceRequestStore(
+            design_conformance_request_journal,
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            design_surface_store=design_surface_store,
+        )
+        if processing_job_store is not None and evidence_storage is not None
+        else None
+    )
+    design_conformance_report_store = (
+        DesignConformanceStore(
+            design_conformance_report_journal,
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            request_store=design_conformance_request_store,
+            storage=evidence_storage,
+        )
+        if design_conformance_request_store is not None
+        and processing_job_store is not None
+        and evidence_storage is not None
+        else None
+    )
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -152,6 +190,7 @@ def assemble_app(
             coverage_journal, mission_store=mission_store
         ),
         source_media_store=source_media_store,
+        design_surface_store=design_surface_store,
         processing_job_store=processing_job_store,
         defect_candidate_store=DefectCandidateStore(
             defect_candidate_journal,
@@ -192,6 +231,8 @@ def assemble_app(
             if processing_job_store is not None and evidence_storage is not None
             else None
         ),
+        design_conformance_request_store=design_conformance_request_store,
+        design_conformance_report_store=design_conformance_report_store,
         equipment_state_store=EquipmentStateStore(
             equipment_state_journal, site_store=site_store
         ),
@@ -229,10 +270,9 @@ def assemble_app(
         ``/health`` 는 프로세스 생존만 본다. 오케스트레이터가 ``/health`` 만 보면
         journal 이 봉인돼 모든 쓰기가 503 인 서버를 건강하다고 오판한다.
 
-        (``EdgeSyncStore`` 는 ``sealed_reason`` 을 직접 노출하지 않는다 — ``getattr``
-        기본값 ``None`` 이 안전하게 적용돼 이 store 는 봉인 판정에서 항상 빠진다는
-        뜻이다. 이 한계는 ``EdgeSyncStore`` 자체를 고쳐야 닫히고, 이 함수의 책임
-        밖이다.)
+        ``opened`` 에는 ``DurableJournal`` 과 ``EdgeSyncStore`` 가 함께 들어온다 —
+        둘 다 ``sealed_reason`` property 를 노출하므로(P0-1) ``getattr`` 은 순수
+        방어적 접근일 뿐, 어느 쪽도 봉인 판정에서 빠지지 않는다.
         """
         sealed = [j for j in opened if getattr(j, "sealed_reason", None) is not None]
         if sealed:

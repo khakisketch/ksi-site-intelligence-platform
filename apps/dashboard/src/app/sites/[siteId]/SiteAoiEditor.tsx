@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
+import { useMutation } from "@/hooks/useMutation";
 import type { AoiVertex, SiteFrame } from "@/lib/core-api/types";
 
 /**
@@ -18,34 +19,25 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
   const router = useRouter();
   const [vertices, setVertices] = useState<AoiVertex[]>([]);
   const [pending, setPending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { mutate, errorMessage } = useMutation();
 
   const canSubmit = vertices.length >= 3 && !pending;
 
   async function submit() {
     if (!canSubmit) return;
     setPending(true);
-    setErrorMessage(null);
-    try {
-      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/aoi`, {
+    await mutate(
+      `/api/sites/${encodeURIComponent(siteId)}/aoi`,
+      {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aoi: { vertices }, siteFrame }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setErrorMessage(
-          (payload && typeof payload.message === "string" && payload.message) ||
-            "요청을 처리하지 못했습니다.",
-        );
-        return;
-      }
-      router.refresh();
-    } catch {
-      setErrorMessage("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
-    } finally {
-      setPending(false);
-    }
+      },
+      () => {
+        router.refresh();
+      },
+    );
+    setPending(false);
   }
 
   return (

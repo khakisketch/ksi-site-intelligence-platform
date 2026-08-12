@@ -52,17 +52,27 @@ from ksi_change_detection.run_volume_change import (
     VolumeChangeRunError,
     compute_and_submit,
 )
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatumIncompatibleError,
+    assert_comparable_vertical,
+)
 from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
 
 from ksi_processing_controller.core_client import ComparisonInput, CoreClient, CoreClientError
 
 logger = logging.getLogger(__name__)
 
-# M1 의 유일한 엔진(ODM)은 구조화된 지오이드 변환을 내지 않는다 — 재구성 워커가
-# 등록하는 DSM 이 항상 이 수직기준이다(run_volume_change.py 모듈 docstring,
-# 기존 test_volume_change_end_to_end.py 가 이미 이 문자열 리터럴을 쓰는 것과
-# 동일 관용구 — ksi-geo-spatial 을 새 의존으로 끌어오지 않는다).
-_VERTICAL_DATUM = "ellipsoidal_native"
+#: **레거시 대체값** — 정본이 아니다.
+#:
+#: 이 상수는 원래 "M1 의 유일한 엔진(ODM)은 지오이드 변환을 내지 않으니 DSM 은
+#: 항상 타원체고다"라는 워커의 **가정**이었고, 그 가정이 그대로 리포트의
+#: ``verticalDatum`` 이 됐다. 지금은 산출물이 자기 수직기준을 스스로 선언하므로
+#: (``ProcessingArtifact.verticalReference``, v1.2) 정본은 산출물 쪽에 있다.
+#:
+#: 이 값이 남아 있는 이유는 하나다 — 수직기준 개념 이전에 등록된 M1/M2 산출물이
+#: 실재하고, 그것들의 비교를 소급해서 못 하게 만들지 않기로 했기 때문이다.
+#: 그 경우에만 쓰이고, 쓰일 때마다 경고를 남긴다(:func:`_resolve_vertical_datum`).
+_LEGACY_VERTICAL_DATUM = "ellipsoidal_native"
 
 
 #: lease 갱신 주기(초). Core 의 lease TTL 은 15분이고(``processing_jobs.
@@ -77,8 +87,17 @@ class ComparisonWorkerRunError(RuntimeError):
     """비교 요청 실행이 실패했다 — Core 에는 이미 FAILED 로 보고를 시도했다."""
 
 
-class _LeaseHeartbeat:
+class LeaseHeartbeat:
     """계산이 도는 동안 lease 를 주기적으로 갱신한다.
+
+    ## 왜 갱신 호출을 인자로 받는가
+
+    설계 대비 워커(``design_conformance_worker``)가 같은 필요를 갖는다 — 자료를
+    내려받고 차분하고 올리는 직선 코드라 갱신할 자리가 없다는 성질까지 같다.
+    두 워커가 부르는 Core 메서드만 다르므로(``acquire_comparison_lease`` vs
+    ``acquire_design_conformance_lease``) 그 한 줄을 호출자가 준다 — 이 클래스가
+    특정 Core Protocol 에 묶이면 두 벌이 되고, 그러면 "갱신 실패로 계산을 죽이지
+    않는다"는 판단도 두 벌이 된다.
 
     ## 왜 재구성 워커와 모양이 다른가
 
@@ -106,31 +125,33 @@ class _LeaseHeartbeat:
 
     def __init__(
         self,
-        core: CoreClient,
-        request_id: str,
+        renew: Callable[[], None],
+        label: str,
         *,
         interval_seconds: float,
         now_message: Callable[[str], None],
+        thread_name_prefix: str = "lease",
     ) -> None:
-        self._core = core
-        self._request_id = request_id
+        self._renew = renew
+        self._label = label
         self._interval_seconds = interval_seconds
         self._now_message = now_message
+        self._thread_name_prefix = thread_name_prefix
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def _beat(self) -> None:
         while not self._stop.wait(self._interval_seconds):
             try:
-                self._core.acquire_comparison_lease(self._request_id)
+                self._renew()
             except Exception as exc:  # noqa: BLE001 -- 클래스 docstring: 갱신 실패로 계산을 죽이지 않는다
-                self._now_message(
-                    f"[{self._request_id}] lease 갱신 실패(계산은 계속) — {exc}"
-                )
+                self._now_message(f"[{self._label}] lease 갱신 실패(계산은 계속) — {exc}")
 
     def start(self) -> None:
         self._thread = threading.Thread(
-            target=self._beat, name=f"cmp-lease-{self._request_id}", daemon=True
+            target=self._beat,
+            name=f"{self._thread_name_prefix}-{self._label}",
+            daemon=True,
         )
         self._thread.start()
 
@@ -159,6 +180,54 @@ def _volume_change_ready(comparison_input: ComparisonInput) -> bool:
         and bool(comparison_input.zones)
         and comparison_input.zone_crs is not None
     )
+
+
+def _resolve_vertical_datum(comparison_input: ComparisonInput) -> str:
+    """이 체적 비교 결과가 **어느 수직기준의 높이차**인가 — 리포트에 실을 값.
+
+    산출물이 스스로 선언한 값이 정본이다. 둘 다 선언돼 있으면 계열 일치를
+    :func:`assert_comparable_vertical` 로 판정한 뒤 그 datum 을 쓴다.
+
+    ## 미상(None)은 실패가 아니라 레거시 경로다
+
+    수직기준이 기록되기 전에 등록된 산출물이 실재한다. 그 비교를 소급해서
+    거부하면 이미 나온 M1/M2 결과를 재현할 수 없게 된다 — 둘 중 하나라도
+    ``None`` 이면 예전과 **정확히 같은 값**(:data:`_LEGACY_VERTICAL_DATUM`)을
+    쓰고 경고를 남긴다. 값이 바뀌지 않으므로 기존 리포트와 새 리포트가
+    갈라지지 않는다.
+
+    (설계면 대비 비교는 반대로 fail-closed 다 — 그쪽은 선언된 기준이 없으면
+    아예 숫자를 내지 않는다. 여기서 관대한 이유는 두 입력이 **같은
+    파이프라인이 만든 같은 종류의 산출물**이라 레거시 대체값이 실제로 맞기
+    때문이고, 설계면은 외부에서 들어와 그 전제가 성립하지 않기 때문이다.)
+
+    ## 계열이 같아도 datum 이 다르면 숫자를 내지 않는다
+
+    ``VolumeChangeReport.verticalDatum`` 은 값 하나다. 두 입력의 datum 이
+    실제로 다르면(예: ``ellipsoidal`` vs ``ellipsoidal_native``) 어느 쪽을
+    적어도 그 리포트는 절반은 거짓이 된다 — 한쪽을 골라 적는 대신 실패한다.
+    epoch DSM 두 장은 같은 재구성 파이프라인에서 나오므로 이 경우는 정상
+    운용에서 발생하지 않는다: 발생했다면 전제가 깨진 것이고, 그때 조용히
+    한쪽을 고르는 것이 가장 위험하다.
+    """
+    baseline = comparison_input.dsm_baseline_vertical_reference
+    current = comparison_input.dsm_current_vertical_reference
+    if baseline is None or current is None:
+        logger.warning(
+            "수직기준 미기록 산출물 — 레거시 상수로 대체: requestId=%s, datum=%s",
+            comparison_input.request_id,
+            _LEGACY_VERTICAL_DATUM,
+        )
+        return _LEGACY_VERTICAL_DATUM
+    # 계열이 다르면 VerticalDatumIncompatibleError — 아래 except 가 FAILED 로
+    # 수렴시킨다(이 모듈의 "실패는 전부 FAILED 로 수렴한다" 원칙).
+    assert_comparable_vertical(baseline, current)
+    if baseline.datum is not current.datum:
+        raise VolumeChangeRunError(
+            "두 산출물의 수직기준이 서로 다르다 — 하나의 verticalDatum 으로 적을 수 "
+            f"없다: baseline={baseline.datum.value}, current={current.datum.value}"
+        )
+    return baseline.datum.value
 
 
 def run_comparison_request(
@@ -197,11 +266,12 @@ def run_comparison_request(
 
     # lease 갱신은 여기서부터다 — 위(입력 조회·RUNNING 전이)는 왕복 몇 번이라
     # TTL 을 위협하지 않고, 아래가 몇 분~수십 분짜리다. 정지는 finally 에서 한다.
-    heartbeat = _LeaseHeartbeat(
-        core,
+    heartbeat = LeaseHeartbeat(
+        lambda: core.acquire_comparison_lease(request_id),
         request_id,
         interval_seconds=heartbeat_interval_seconds,
         now_message=now_message,
+        thread_name_prefix="cmp-lease",
     )
     heartbeat.start()
 
@@ -266,7 +336,7 @@ def run_comparison_request(
                     ),
                     zones=comparison_input.zones,
                     zone_crs=comparison_input.zone_crs,
-                    vertical_datum=_VERTICAL_DATUM,
+                    vertical_datum=_resolve_vertical_datum(comparison_input),
                     computed_at=computed_at,
                     http_client=fetch,
                     # 위 변화탐지와 같은 이유 — 스냅샷된 기준값으로 잰다.
@@ -308,6 +378,10 @@ def run_comparison_request(
         # 그대로 죽는다.
         CrsMismatchError,
         UnsupportedCrsError,
+        # 수직축 판정(_resolve_vertical_datum)의 거부 — 위 CRS 예외들과 같은
+        # 자리·같은 이유다(수평축이 아니라 수직축이라는 것만 다르다). 잡지
+        # 않으면 워커가 그대로 죽고 요청은 RUNNING 에 남는다.
+        VerticalDatumIncompatibleError,
         httpx.HTTPError,
         CoreClientError,
     ) as exc:
@@ -326,4 +400,4 @@ def run_comparison_request(
             fetch.close()
 
 
-__all__ = ["ComparisonWorkerRunError", "run_comparison_request"]
+__all__ = ["ComparisonWorkerRunError", "LeaseHeartbeat", "run_comparison_request"]

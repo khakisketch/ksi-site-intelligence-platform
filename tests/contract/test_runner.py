@@ -24,19 +24,29 @@ from typing import Any
 
 import httpx
 import pytest
+
+# tests/contract 는 rootdir 기반 수집이라 같은 디렉토리 모듈을 직접 import 한다
+# (test_dfine_detector.py 의 DetectorConformanceSuite 와 같은 관용구).
+from ksi_change_detection.diff_raster import sha256_of_file
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import current_comparison_policy
 from ksi_processing_controller.core_client import (
     ComparisonInput,
     CoreClientError,
+    DesignConformanceInput,
+    DesignSurfaceMeasurement,
+    DiffRasterUploadTarget,
     PendingComparisonRequest,
+    PendingDesignConformanceRequest,
+    PendingDesignSurface,
     PendingJob,
 )
 from ksi_processing_controller.runner import run_forever, run_pending_batch
-
-# tests/contract 는 rootdir 기반 수집이라 같은 디렉토리 모듈을 직접 import 한다
-# (test_dfine_detector.py 의 DetectorConformanceSuite 와 같은 관용구).
 from test_comparison_worker import FakeComparisonCoreClient, _grid, _storage_transport, _write_laz
+from test_design_conformance_compute import _flat, _ramp, _write_raster
+from test_design_conformance_worker import FakeCore as FakeConformanceCore
+from test_design_conformance_worker import _input as _conformance_input
+from test_design_conformance_worker import _transport as _conformance_transport
 from test_worker import (  # noqa: E402
     FakeNodeOdm,
     _server_with_two_images,
@@ -57,6 +67,66 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
     lease_conflict_for: frozenset[str] = field(default_factory=frozenset)
     pending_comparisons: list[PendingComparisonRequest] = field(default_factory=list)
     comparison_lease_conflict_for: frozenset[str] = field(default_factory=frozenset)
+    # M4-A — 설계면 검증·설계 대비 잔량 두 종류. 후자는 워커 시험의 가짜 Core
+    # (``test_design_conformance_worker.FakeCore``)에 그대로 위임한다: 이 파일의
+    # 관심사는 "어떤 순서로 무엇을 폴링하는가"이지 그 워커의 내부가 아니다.
+    pending_design_surfaces: list[PendingDesignSurface] = field(default_factory=list)
+    pending_design_conformances: list[PendingDesignConformanceRequest] = field(
+        default_factory=list
+    )
+    conformance: FakeConformanceCore | None = None
+
+    def list_pending_design_surfaces(
+        self, *, limit: int = 50
+    ) -> list[PendingDesignSurface]:
+        return self.pending_design_surfaces[:limit]
+
+    def report_design_surface_observation(
+        self, design_surface_id: str, measurement: DesignSurfaceMeasurement
+    ) -> str:
+        self.calls.append(("ds-observation", design_surface_id, measurement.sha256))
+        return "VERIFIED"
+
+    def report_design_surface_verification_failure(
+        self, design_surface_id: str, *, detail: str | None = None
+    ) -> None:
+        self.calls.append(("ds-verification-failure", design_surface_id, detail))
+
+    def list_pending_design_conformances(
+        self, *, limit: int = 50
+    ) -> list[PendingDesignConformanceRequest]:
+        return self.pending_design_conformances[:limit]
+
+    def acquire_design_conformance_lease(self, request_id: str) -> None:
+        self.calls.append(("dcf-lease", request_id))
+        assert self.conformance is not None
+        self.conformance.acquire_design_conformance_lease(request_id)
+
+    def get_design_conformance_input(self, request_id: str) -> DesignConformanceInput:
+        assert self.conformance is not None
+        return self.conformance.get_design_conformance_input(request_id)
+
+    def transition_design_conformance(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        self.calls.append(("dcf-transition", target, detail))
+        assert self.conformance is not None
+        self.conformance.transition_design_conformance(request_id, target, detail=detail)
+
+    def presign_diff_raster_upload(self, request_id: str) -> DiffRasterUploadTarget:
+        assert self.conformance is not None
+        return self.conformance.presign_diff_raster_upload(request_id)
+
+    def verify_diff_raster(self, request_id: str, *, digest: str, size_bytes: int) -> Any:
+        assert self.conformance is not None
+        return self.conformance.verify_diff_raster(
+            request_id, digest=digest, size_bytes=size_bytes
+        )
+
+    def submit_design_conformance(self, mission_id: str, report: Any) -> None:
+        self.calls.append(("dcf-submit", mission_id, report.design_conformance_id))
+        assert self.conformance is not None
+        self.conformance.submit_design_conformance(mission_id, report)
 
     def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
         return self.pending[:limit]
@@ -317,6 +387,140 @@ def test_both_lists_empty_returns_false(tmp_path: Path) -> None:
     ran = run_pending_batch(core=core, odm=odm, work_dir=tmp_path)
 
     assert ran is False
+
+
+# ── run_pending_batch: 설계면 검증·설계 대비 잔량 후보(M4-A) ───────────────
+
+
+def _design_surface_client(tmp_path: Path) -> httpx.Client:
+    """검증 대상 설계면 GeoTIFF 를 실제로 서빙한다(rasterio 가 진짜로 연다)."""
+    design_path = _write_raster(tmp_path / "pending-design.tif", _flat())
+    return httpx.Client(transport=_storage_transport({"pending-design.tif": design_path}))
+
+
+def _conformance_scene(tmp_path: Path) -> tuple[FakeConformanceCore, httpx.Client]:
+    """설계 대비 워커가 끝까지 돌 수 있는 장면 — 워커 시험의 픽스처를 그대로 쓴다."""
+    current_path = _write_raster(tmp_path / "current.tif", _ramp())
+    design_path = _write_raster(tmp_path / "design.tif", _flat())
+    design_sha = sha256_of_file(design_path).removeprefix("sha256:")
+    conformance = FakeConformanceCore(conformance_input=_conformance_input(design_sha))
+    client = httpx.Client(
+        transport=_conformance_transport(
+            conformance, {"current-dsm": current_path, "design": design_path}
+        )
+    )
+    return conformance, client
+
+
+def test_design_surface_verification_runs_before_comparison(tmp_path: Path) -> None:
+    """[우선순위] 설계면 검증은 초 단위 작업이면서 요청 생성을 막고 있다 — 비교보다 앞이다."""
+    core = _core(
+        pending=[],
+        pending_design_surfaces=[
+            PendingDesignSurface(
+                design_surface_id="site-1-ds1",
+                site_id="site-1",
+                download_url="http://fake-storage/pending-design.tif",
+            )
+        ],
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+    )
+
+    ran = run_pending_batch(
+        core=core,
+        odm=FakeNodeOdm(),
+        work_dir=tmp_path,
+        http_client=_design_surface_client(tmp_path),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    # 실제로 파일을 열어 재고 보고했다 — 신고값을 되읊은 것이 아니다.
+    observations = [c for c in core.calls if c[0] == "ds-observation"]
+    assert len(observations) == 1 and len(observations[0][2]) == 64
+    # 비교 후보는 아예 보지 않았다.
+    assert not any(str(c[0]).startswith("cmp-") for c in core.calls)
+
+
+def test_design_conformance_is_polled_last_and_runs_to_succeeded(tmp_path: Path) -> None:
+    """[우선순위] 앞의 셋이 비어야 설계 대비 후보를 본다 — 그리고 끝까지 돈다."""
+    conformance, client = _conformance_scene(tmp_path)
+    core = _core(
+        pending=[],
+        pending_design_surfaces=[],
+        pending_comparisons=[],
+        pending_design_conformances=[
+            PendingDesignConformanceRequest(request_id="mission-1-dcf1")
+        ],
+        conformance=conformance,
+    )
+
+    ran = run_pending_batch(
+        core=core, odm=FakeNodeOdm(), work_dir=tmp_path, http_client=client,
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert conformance.status == "SUCCEEDED"
+    assert [m for m, _r in conformance.submitted] == ["mission-1"]
+    assert ("dcf-lease", "mission-1-dcf1") in core.calls
+
+
+def test_comparison_candidate_takes_priority_over_design_conformance(tmp_path: Path) -> None:
+    """기존 경로(M1/M2)의 지연 특성을 새 기능이 밀어내지 않는다."""
+    conformance, _client = _conformance_scene(tmp_path)
+    core = _core(
+        pending=[],
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+        comparison_input=_comparison_input("mission-1-cmp1"),
+        pending_design_conformances=[
+            PendingDesignConformanceRequest(request_id="mission-1-dcf1")
+        ],
+        conformance=conformance,
+    )
+
+    ran = run_pending_batch(
+        core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        http_client=_comparison_storage_client(tmp_path),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert any(c[0] == "cmp-transition" and c[1] == "SUCCEEDED" for c in core.calls)
+    assert not any(str(c[0]).startswith("dcf-") for c in core.calls)
+
+
+def test_design_conformance_run_error_counts_as_ran(tmp_path: Path) -> None:
+    """Core 가 래스터 확인을 거부하면 워커가 FAILED 로 끝낸다 — "돌렸다"로 센다."""
+    conformance, client = _conformance_scene(tmp_path)
+    # 업로드된 것과 다른 바이트가 그 자리에 있다고 Core 가 판정한다.
+    conformance.swap_uploaded_with = b"someone-else-wrote-here"
+    core = _core(
+        pending=[],
+        pending_design_conformances=[
+            PendingDesignConformanceRequest(request_id="mission-1-dcf1")
+        ],
+        conformance=conformance,
+    )
+
+    ran = run_pending_batch(
+        core=core, odm=FakeNodeOdm(), work_dir=tmp_path, http_client=client,
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert conformance.status == "FAILED"
+    assert conformance.submitted == []
+
+
+def test_all_four_lists_empty_returns_false(tmp_path: Path) -> None:
+    core = _core(
+        pending=[],
+        pending_design_surfaces=[],
+        pending_comparisons=[],
+        pending_design_conformances=[],
+    )
+    assert run_pending_batch(core=core, odm=FakeNodeOdm(), work_dir=tmp_path) is False
 
 
 # ── run_forever ──────────────────────────────────────────────────────────

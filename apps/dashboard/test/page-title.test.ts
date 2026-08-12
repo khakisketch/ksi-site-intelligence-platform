@@ -31,6 +31,11 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("조사 계획");
   });
 
+  it("설계 기준면도 현장 상세보다 먼저 매칭된다", () => {
+    expect(resolvePageTitle("/sites/SITE-1/design")).toBe("설계 기준면");
+    expect(resolvePageTitle("/sites/SITE-1/design/")).toBe("설계 기준면");
+  });
+
   it("후행 슬래시가 있어도 같은 제목이다", () => {
     expect(resolvePageTitle("/sites/SITE-1/")).toBe("현장 상세");
     expect(resolvePageTitle("/sites/SITE-1/surveys/new/")).toBe("조사 계획");

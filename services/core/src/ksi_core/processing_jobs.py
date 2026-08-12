@@ -161,10 +161,11 @@ from ksi_event_contracts.processing_job import (
     ProcessingProvider,
     processing_job_wire_dict,
 )
+from ksi_event_contracts.vertical_reference import VerticalReference
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import (
     Permission,
     Principal,
@@ -183,6 +184,7 @@ from ksi_core.evidence import (
     is_valid_artifact_id,
 )
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
+from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
 from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
 from ksi_core.source_media import SourceMediaRecord
 
@@ -195,7 +197,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _NOT_FOUND_DETAIL = "해당 처리 작업을 찾을 수 없다"
-_STORE_UNAVAILABLE_DETAIL = "journal 봉인됨 — 재시작 필요"
+_STORE_UNAVAILABLE_DETAIL = JOURNAL_SEALED_DETAIL
 
 # 발급 시점 billing 의 rateBasis. "아직 재지 않았다"를 값 자체가 말한다 —
 # creditsCharged=0 만으로는 온프렘 무료 실행과 구분되지 않는다.
@@ -449,32 +451,6 @@ class JobSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class JobLease:
-    """작업 하나를 쥔 워커 — **만료는 저장된 플래그가 아니라 시각 비교다.**
-
-    ``released``/``expired`` 같은 불리언을 두지 않는 것이 의도다. 그런 필드는
-    누군가 갱신해줘야 참이 되고, 그 갱신을 빠뜨리면 죽은 워커가 영원히 살아
-    있는 것으로 보인다 — 시간축 상태를 실체화한 불리언으로 들고 있으면 그
-    불리언과 시계가 어긋나는 순간이 반드시 온다. 여기서는 ``expires_at`` 만
-    남기고 :meth:`is_active` 가 매번 ``now`` 로 판정한다.
-
-    재생에도 같은 성질이 필요하다 — journal 을 며칠 뒤에 재생하면 그때의
-    ``now`` 로 판정되어 자동으로 만료된 상태가 된다(재생 시점에 별도 만료 처리를
-    할 필요가 없다).
-    """
-
-    worker_id: str
-    granted_at: datetime
-    expires_at: datetime
-
-    def is_active(self, now: datetime) -> bool:
-        return now < self.expires_at
-
-    def held_by(self, worker_id: str, now: datetime) -> bool:
-        return self.is_active(now) and self.worker_id == worker_id
-
-
-@dataclass(frozen=True, slots=True)
 class ProcessingJobRecord:
     """처리 작업 1건의 projection — 계약 필드 + 운영 메타(누가·언제)."""
 
@@ -554,6 +530,11 @@ class ArtifactSpec:
     gsd: float | None
     accuracy: ArtifactAccuracy | None
     auxiliary_files: tuple[str, ...] = ()
+    # 이 산출물 높이의 수직기준 — **생산자가 선언하고 Core 는 기록만 한다**.
+    # Core 는 산출물 바이트를 읽지 않으므로(모듈 docstring) 이 값을 확인할
+    # 방법이 없고, 확인할 수 없는 값을 기본값으로 채우지도 않는다: None 이면
+    # "수직기준이 기록되지 않은 산출물"로 그대로 남는다(processing_artifact.py).
+    vertical_reference: VerticalReference | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,7 +568,7 @@ def build_processing_artifact_object_key(
     """산출물 바이트가 놓이는 자리 — **저장하지 않고 유도한다**.
 
     ``build_mission_kmz_object_key`` 와 같은 관습이다. 키를 레코드에 넣으면
-    계약(``processing-artifact.v1.1.json``, ``additionalProperties: false``)의
+    계약(``processing-artifact.v1.2.json``, ``additionalProperties: false``)의
     버전을 올려야 하는데, 그 값은 이미 레코드에 있는 식별자들의 함수라
     중복이다. 유도하면 계약이 그대로고, "같은 산출물(또는 그 부속 파일)은
     항상 같은 자리"가 저장 상태가 아니라 **정의**로 보장된다.
@@ -645,10 +626,6 @@ def build_job_id(mission_id: str, sequence: int) -> str:
 def _require_tz_aware(value: datetime, *, param: str) -> None:
     if value.tzinfo is None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat()
 
 
 def _require_aware_iso(raw: Any, field_name: str, job_id: str) -> datetime:
@@ -1055,7 +1032,7 @@ class ProcessingJobStore:
             job_id = build_job_id(mission_id, sequence)
             raw: dict[str, Any] = {
                 "kind": "processing-job-issued",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "jobId": job_id,
                 "sequence": sequence,
                 "missionId": mission_id,
@@ -1140,7 +1117,7 @@ class ProcessingJobStore:
                 )
             raw: dict[str, Any] = {
                 "kind": "processing-job-transitioned",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "jobId": job_id,
                 "before": current.status.value,
                 "after": target.value,
@@ -1209,6 +1186,7 @@ class ProcessingJobStore:
                     gsd=spec.gsd,
                     accuracy=spec.accuracy,
                     auxiliary_files=spec.auxiliary_files,
+                    vertical_reference=spec.vertical_reference,
                 )
             except ValueError as exc:
                 return ArtifactResult(
@@ -1220,7 +1198,7 @@ class ProcessingJobStore:
 
             raw: dict[str, Any] = {
                 "kind": "processing-artifact-registered",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "jobId": job_id,
                 "artifactId": artifact.artifact_id,
                 "artifact": processing_artifact_wire_dict(artifact),
@@ -1265,23 +1243,30 @@ class ProcessingJobStore:
                     detail=f"작업이 {job.status.value} 상태다 — 끝난 작업은 잡을 수 없다",
                 )
             current = job.lease
-            renewing = current is not None and current.held_by(worker_id, now)
-            if current is not None and current.is_active(now) and not renewing:
+            denial = check_lease(current, worker_id=worker_id, now=now)
+            renewing = current is not None and denial is None
+            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                assert current is not None  # HELD_BY_ANOTHER only when a lease exists
                 return ProcessingJobResult(
                     ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
                     record=job,
                     detail=(
-                        f"다른 워커({current.worker_id})가 {_iso(current.expires_at)} 까지 "
+                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
                         "이 작업을 쥐고 있다 — 만료 후 다시 시도한다"
                     ),
                 )
-            expires_at = now + ttl
+            new_lease = next_lease(
+                worker_id=worker_id,
+                now=now,
+                ttl=ttl,
+                granted_at=current.granted_at if renewing and current else None,
+            )
             raw: dict[str, Any] = {
                 "kind": "processing-job-leased",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "jobId": job_id,
                 "workerId": worker_id,
-                "expiresAt": _iso(expires_at),
+                "expiresAt": iso_utc(new_lease.expires_at),
                 "renewal": renewing,
             }
             try:
@@ -1290,14 +1275,7 @@ class ProcessingJobStore:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
-            updated = replace(
-                job,
-                lease=JobLease(
-                    worker_id=worker_id,
-                    granted_at=current.granted_at if renewing and current else now,
-                    expires_at=expires_at,
-                ),
-            )
+            updated = replace(job, lease=new_lease)
             self._jobs[job_id] = updated
             return ProcessingJobResult(
                 ProcessingJobVerdict.LEASE_RENEWED if renewing else ProcessingJobVerdict.LEASED,
@@ -1313,17 +1291,18 @@ class ProcessingJobStore:
         ``/input``·실행 상태 보고·산출물 등록이 전부 이 함수를 지난다. 각 경로가
         자기 조건문을 갖고 있으면 새 경로가 생길 때 빠뜨리기 쉽다.
         """
-        lease = job.lease
-        if lease is None or not lease.is_active(now):
+        denial = check_lease(job.lease, worker_id=worker_id, now=now)
+        if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
             return (
                 ProcessingJobVerdict.LEASE_REQUIRED,
                 "이 작업을 쥐고 있지 않다 — POST /v1/processing-jobs/{jobId}/lease 로 "
                 "먼저 잡는다(만료됐다면 다시 잡는다)",
             )
-        if lease.worker_id != worker_id:
+        if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+            assert job.lease is not None  # HELD_BY_ANOTHER only when a lease exists
             return (
                 ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
-                f"다른 워커({lease.worker_id})가 이 작업을 쥐고 있다",
+                f"다른 워커({job.lease.worker_id})가 이 작업을 쥐고 있다",
             )
         return None
 
@@ -1427,15 +1406,7 @@ class ProcessingJobStore:
         if limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [
-                r
-                for r in self._jobs.values()
-                if r.status is ProcessingJobStatus.QUEUED
-                or (
-                    r.status is ProcessingJobStatus.RUNNING
-                    and (r.lease is None or not r.lease.is_active(now))
-                )
-            ]
+            records = [r for r in self._jobs.values() if is_claimable(r.status, r.lease, now)]
         ordered = sorted(records, key=lambda r: (r.issued_at, r.job_id))
         return ordered[:limit]
 
@@ -1498,17 +1469,13 @@ def _residency_of(site: Any) -> DataResidency:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class LicenseBasisRequest(_CamelModel):
+class LicenseBasisRequest(CamelModel):
     license_id: str = Field(min_length=1)
     tier: str = Field(min_length=1)
     attribution_required: bool
 
 
-class ProcessingJobRequest(_CamelModel):
+class ProcessingJobRequest(CamelModel):
     """발급 요청 — **무엇으로 어디서** 돌릴지만 담는다.
 
     ``input``·``dataResidency``·``billing``·``status`` 필드가 의도적으로 없다.
@@ -1525,20 +1492,20 @@ class ProcessingJobRequest(_CamelModel):
     processing_params: dict[str, Any] = Field(default_factory=dict)
 
 
-class ProcessingJobTransitionRequest(_CamelModel):
+class ProcessingJobTransitionRequest(CamelModel):
     """상태 전이 요청 — ``actor`` 는 Principal 에서만 취득한다."""
 
     target_status: ProcessingJobStatus
     detail: str | None = None
 
 
-class ArtifactAccuracyRequest(_CamelModel):
+class ArtifactAccuracyRequest(CamelModel):
     gcp_count: int = Field(ge=0)
     rmse: float = Field(ge=0)
     report_uri: str = Field(min_length=1)
 
 
-class ArtifactUploadUrlRequest(_CamelModel):
+class ArtifactUploadUrlRequest(CamelModel):
     """산출물 바이트를 올릴 자리 요청 — **객체 키를 담을 자리가 없다**.
 
     ``ProcessingArtifactRequest`` 가 계보 앵커를 못 싣게 한 것과 같은 관용구다.
@@ -1554,7 +1521,7 @@ class ArtifactUploadUrlRequest(_CamelModel):
     filename: str | None = None
 
 
-class ArtifactUploadUrlResponse(_CamelModel):
+class ArtifactUploadUrlResponse(CamelModel):
     verdict: str
     object_key: str | None = None
     upload_url: str | None = None
@@ -1562,7 +1529,7 @@ class ArtifactUploadUrlResponse(_CamelModel):
     detail: str | None = None
 
 
-class ArtifactFileView(_CamelModel):
+class ArtifactFileView(CamelModel):
     """다운로드 가능한 파일 1건 — 주 파일이든 부속 파일이든 같은 모양."""
 
     name: str
@@ -1570,7 +1537,7 @@ class ArtifactFileView(_CamelModel):
     download_url: str
 
 
-class ArtifactDownloadResponse(_CamelModel):
+class ArtifactDownloadResponse(CamelModel):
     verdict: str
     object_key: str | None = None
     download_url: str | None = None
@@ -1583,7 +1550,7 @@ class ArtifactDownloadResponse(_CamelModel):
     detail: str | None = None
 
 
-class ProcessingArtifactRequest(_CamelModel):
+class ProcessingArtifactRequest(CamelModel):
     """산출물 등록 요청 — **계보 앵커를 담을 자리가 없다**.
 
     계약의 ``lineage`` 를 중첩 객체로 받지 않고 ``authority``·``derivedFrom``
@@ -1611,15 +1578,24 @@ class ProcessingArtifactRequest(_CamelModel):
     auxiliary_files: list[Annotated[str, Field(pattern=PATH_SAFE_IDENTIFIER_PATTERN.pattern)]] = (
         Field(default_factory=list)
     )
+    # 선택 입력(v1.2). ``ArtifactAccuracyRequest`` 처럼 요청 전용 사본을 두지
+    # 않고 계약 모델을 그대로 쓴다 — 이 값은 요청이 덜어낼 필드가 하나도 없는
+    # 순수 값 객체라, 사본을 두면 정본과 갈라질 자리만 생긴다(계약 패키지가
+    # VerticalReference 를 SSOT 로 세운 이유 그대로).
+    #
+    # 안 주면 None 이고, Core 는 그것을 어떤 기본값으로도 채우지 않는다.
+    # "옛 워커가 안 실어 보냈다"와 "이 산출물은 타원체고다"는 다른 사실이고,
+    # 후자를 Core 가 대신 주장하면 설계 대비 비교가 그 가정 위에서 숫자를 낸다.
+    vertical_reference: VerticalReference | None = None
 
 
-class ProcessingArtifactMutationResponse(_CamelModel):
+class ProcessingArtifactMutationResponse(CamelModel):
     verdict: str
     artifact: dict[str, Any] | None = None
     detail: str | None = None
 
 
-class JobInputMediaView(_CamelModel):
+class JobInputMediaView(CamelModel):
     """워커가 읽어야 할 파일 1건 — **신고값(sha256·해상도)이 없다.**
 
     없는 것이 이 모델의 요점이다. 워커가 정답을 알면 읽지 않고 되읊을 수 있고,
@@ -1633,7 +1609,7 @@ class JobInputMediaView(_CamelModel):
     expires_at: datetime
 
 
-class JobInputView(_CamelModel):
+class JobInputView(CamelModel):
     """작업 입력 전체 — 무엇으로 돌릴지 + 어떤 파일을 읽을지."""
 
     job_id: str
@@ -1654,13 +1630,13 @@ class JobInputView(_CamelModel):
     site_crs: str | None
 
 
-class JobInputResponse(_CamelModel):
+class JobInputResponse(CamelModel):
     verdict: str
     input: JobInputView | None = None
     detail: str | None = None
 
 
-class ProcessingJobView(_CamelModel):
+class ProcessingJobView(CamelModel):
     """작업 1건의 조회 표현 — 계약 payload + 운영 메타.
 
     ``contract`` 는 어댑터로 나가는 payload 그대로다(``processing_job_wire_dict``).
@@ -1693,11 +1669,11 @@ class ProcessingJobView(_CamelModel):
     lease_expires_at: datetime | None
 
 
-class ProcessingJobListResponse(_CamelModel):
+class ProcessingJobListResponse(CamelModel):
     jobs: list[ProcessingJobView]
 
 
-class PendingProcessingJobView(_CamelModel):
+class PendingProcessingJobView(CamelModel):
     """워커가 다음에 잡을 후보 1건 — **최소 노출**이다.
 
     ``PROCESSING_WORK`` 는 ``MISSIONS_READ`` 를 포함하지 않는다(``auth.py``) —
@@ -1710,11 +1686,11 @@ class PendingProcessingJobView(_CamelModel):
     issued_at: datetime
 
 
-class PendingProcessingJobListResponse(_CamelModel):
+class PendingProcessingJobListResponse(CamelModel):
     jobs: list[PendingProcessingJobView]
 
 
-class ProcessingJobMutationResponse(_CamelModel):
+class ProcessingJobMutationResponse(CamelModel):
     verdict: str
     job: ProcessingJobView | None = None
     detail: str | None = None
@@ -2191,6 +2167,7 @@ def build_processing_jobs_router(
             crs=request.crs,
             gsd=request.gsd,
             auxiliary_files=tuple(request.auxiliary_files),
+            vertical_reference=request.vertical_reference,
             accuracy=(
                 ArtifactAccuracy(
                     gcp_count=request.accuracy.gcp_count,

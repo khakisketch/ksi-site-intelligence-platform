@@ -17,10 +17,12 @@ app.py 의 조립 규칙(모듈 docstring "fail-closed 조립" 절, 4항목)이 
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from ksi_core import app as app_module
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
@@ -308,3 +310,27 @@ def test_equipment_state_store_without_site_store_raises(tmp_path: Path) -> None
                 site_store=_site_store(tmp_path),
             ),
         )
+
+
+# ── 규칙 8: 결합 규칙 표가 create_app 시그니처와 어긋나지 않는다 ────────────
+
+
+def test_assembly_requirements_table_keys_match_create_app_store_parameters() -> None:
+    """``_ASSEMBLY_REQUIREMENTS`` 표의 키 집합이 ``create_app`` 의 store 파라미터
+    집합과 정확히 일치하는지 검사한다.
+
+    새 store 를 ``create_app`` 에 추가하면서 결합 규칙(또는 "결합 없음") 등록을
+    깜빡하는 사고를 구조적으로 막는다 — 시그니처에는 있는데 표에 없거나, 표에는
+    있는데 시그니처에서 이름이 바뀌거나 사라지면 이 테스트가 즉시 잡는다.
+    """
+    signature_params = set(inspect.signature(create_app).parameters)
+    # mission_signing_key·evidence_storage 는 "*_store" 로 끝나지 않지만
+    # protected_surface 에 참여하는 보호 표면이다(app.py 결합 규칙 표 주석 참조).
+    non_store_protected_params = {"mission_signing_key", "evidence_storage"}
+    expected = {name for name in signature_params if name.endswith("_store")} | (
+        signature_params & non_store_protected_params
+    )
+
+    table_keys = {row[0] for row in app_module._ASSEMBLY_REQUIREMENTS}
+
+    assert table_keys == expected

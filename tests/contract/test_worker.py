@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 import pytest
+from ksi_event_contracts.vertical_reference import VerticalDatum, VerticalReferenceSource
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     ArtifactUploadTarget,
@@ -373,6 +374,44 @@ def test_crs_is_read_from_site_crs_field(tmp_path: Path) -> None:
     )
     point_cloud_2 = next(s for s in core_2.registered if s.artifact_id == "point-cloud")
     assert point_cloud_2.crs == "EPSG:5186"
+
+
+# ── 수직기준은 파이프라인이 선언한다 ─────────────────────────────────────────
+
+
+def test_spatial_artifacts_declare_the_pipeline_vertical_reference(tmp_path: Path) -> None:
+    """[핵심] 공간 산출물마다 "이 높이는 변환 안 한 타원체고다"가 근거와 함께 실린다.
+
+    이 값이 없던 동안 그 사실을 아는 유일한 자리는 **비교 워커의 하드코딩
+    상수**였다 — 산출물의 사실이 아니라 소비자의 가정이었다. 선언이 산출물에
+    붙어야 바깥에서 들어온 높이(설계면)와 비교할 때 계열을 판정할 수 있다.
+    """
+    core = _CrsCapturingCore(site_crs="EPSG:5186")
+    run_job(
+        "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+    )
+    spatial = [s for s in core.registered if s.crs is not None]
+    assert spatial, "공간 산출물이 하나도 등록되지 않았다 — 이 테스트가 공허하다"
+    for submission in spatial:
+        reference = submission.vertical_reference
+        assert reference is not None, f"{submission.artifact_id} 에 수직기준이 없다"
+        assert reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
+        assert reference.source is VerticalReferenceSource.PIPELINE_DECLARED
+        assert reference.basis.strip(), "근거 없는 선언은 추측이다"
+
+
+def test_artifacts_without_a_crs_declare_no_vertical_reference(tmp_path: Path) -> None:
+    """[비공허 대조] 좌표계가 없는 산출물(카메라 포즈)에는 달지 않는다 — 높이가
+    그 산출물 자체의 속성이 아닌 곳에 기준만 선언하면 없는 것을 있다고 읽힌다."""
+    core = _CrsCapturingCore(site_crs="EPSG:5186")
+    run_job(
+        "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+    )
+    non_spatial = [s for s in core.registered if s.crs is None]
+    assert non_spatial, "crs 가 null 인 산출물이 없다 — 이 대조가 공허하다"
+    assert all(s.vertical_reference is None for s in non_spatial)
 
 
 def test_missing_site_crs_refuses_before_touching_the_engine(tmp_path: Path) -> None:

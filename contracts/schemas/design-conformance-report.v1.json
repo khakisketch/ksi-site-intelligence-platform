@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/design-conformance-report.v1.json",
+  "title": "DesignConformanceReport v1.0",
+  "description": "설계 기준면 대비 현재 지형의 구역별 잔량(M4-A). volume-change-report.v1.json 의 형제이되 묻는 질문이 다르다 — 저기는 두 시점을 빼고('지난달 대비 얼마나 움직였나') 여기는 설계면과 현재를 뺀다('설계까지 얼마나 남았나'). 계산 엔진과 구역 결과 모양이 같아 zoneVolumeDelta 정의를 그대로 재사용한다.\n\n부호 규약도 그대로다: cut = 깎아야 할 양, fill = 쌓아야 할 양, net = fill - cut = 순 성토 필요량. 계산이 delta = 설계 표고 − 현재 표고 를 만들기 때문에 이 뜻이 성립한다.\n\ndiffRaster 가 이 계약의 두 번째 요점이다. 체적 집계에 실제로 쓴 그 격자를 GeoTIFF 로 영속해 지도가 읽게 한다 — 브라우저가 원본 두 장을 받아 다시 차분하면 두 번째 진실이 생기고 지도와 표가 조용히 갈린다. coreVerifiedDigestAt 은 그 참조를 주장에서 사실로 올리는 자리다: 워커가 '올렸다'고 말한 시각이 아니라 Core 가 업로드된 바이트를 직접 다시 해싱해 digest 와 같음을 확인한 시각이다.\n\n오차한계는 여기서도 정직하게 비어 있다(INV-024) — 설계면은 측정물이 아니라 RMSE 가 없고, 그래서 uncertaintyM3 는 null 이며 uncertaintyNote 가 그 이유를 사람 말로 적는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "designConformanceId",
+    "designSurfaceRef",
+    "current",
+    "crs",
+    "verticalReference",
+    "zones",
+    "policy",
+    "diffRaster",
+    "computedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "designConformanceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 리포트의 고유 식별자. 요청 id 에서 결정적으로 도출되며, 같은 값의 재제출은 멱등이다."
+    },
+    "designSurfaceRef": { "$ref": "#/$defs/designSurfaceRef" },
+    "current": { "$ref": "#/$defs/artifactRef" },
+    "crs": {
+      "type": "string",
+      "minLength": 1,
+      "description": "설계면과 현재 DSM 이 공유하는 수평 좌표계. 다르면 계산 자체가 거부된다(INV-020). diffRaster.crs 와 같아야 한다 — 다르면 지도와 표가 다른 좌표계를 말한다."
+    },
+    "verticalReference": { "$ref": "#/$defs/verticalReference" },
+    "zones": {
+      "type": "array",
+      "minItems": 1,
+      "description": "구역별 잔량. zoneId 는 중복될 수 없다 — 같은 구역이 두 번 집계되면 총합이 조용히 두 배가 된다.",
+      "items": { "$ref": "#/$defs/zoneVolumeDelta" }
+    },
+    "policy": { "$ref": "#/$defs/comparisonPolicy" },
+    "diffRaster": { "$ref": "#/$defs/diffRasterRef" },
+    "computedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "tz-aware 여야 한다 — 시간대 없는 시각은 나중에 어느 시점인지 복원할 수 없다."
+    }
+  },
+  "$defs": {
+    "designSurfaceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["designSurfaceId", "sha256"],
+      "description": "어느 설계면과 비교했는가 — 요청 시점의 VERIFIED 스냅샷. id 만으로는 부족하다: 같은 자산이 나중에 새 revision 으로 다시 등록될 수 있고, 그때 이 리포트가 무엇을 기준으로 낸 숫자였는지는 해시로만 되짚어진다.",
+      "properties": {
+        "designSurfaceId": { "type": "string", "minLength": 1 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "design-surface.v1 의 declared.sha256/observed.sha256 과 바이트 그대로 같은 문자열(VERIFIED 설계면은 그 둘이 같다). 접두사 붙은 digest 표기를 쓰지 않는 이유가 이것이다 — 같은 사실을 두 가지로 적으면 대조가 문자열 비교로 끝나지 않고, 변환을 잊은 한쪽이 조용히 '다르다'고 말한다."
+        }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId", "artifactId"],
+      "description": "비교한 현재 지형 산출물(DSM). artifactId 는 처리 작업 단위로만 고유하므로 jobId 가 반드시 함께 있어야 한다.",
+      "properties": {
+        "jobId": { "type": "string", "minLength": 1 },
+        "artifactId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "verticalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datum", "basis", "source"],
+      "description": "이 잔량이 어느 수직기준의 높이차인가 + 그것을 왜 아는가. 두 입력의 수직기준 계열이 같을 때만 계산이 성립하며(assert_comparable_vertical), 그 판정은 요청 생성 시점에 이미 끝나 있다. 정본은 ksi_event_contracts.vertical_reference 다.",
+      "properties": {
+        "datum": {
+          "description": "diffRaster.verticalReference.datum 과 같아야 한다 — 지도와 표가 다른 높이 기준을 말할 수 없다. 계열이 다른 기준끼리는 애초에 여기까지 오지 못한다(한국에서 타원체고와 정표고는 20~30m 차이다).",
+          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018"]
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "왜 이 값을 아는가 — 비울 수 없다."
+        },
+        "source": {
+          "description": "pipeline_declared = 처리 파이프라인이 자기 동작을 근거로 귀속한 값. user_declared = 업로더의 주장. 이 리포트의 값은 어느 쪽 입력에서 왔는지에 따라 달라질 수 있어 하나로 고정하지 않는다.",
+          "enum": ["pipeline_declared", "user_declared"]
+        }
+      }
+    },
+    "comparisonPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "policyVersion",
+        "distanceThresholdM",
+        "volumeThresholdM",
+        "revisitRatioThreshold"
+      ],
+      "description": "이 계산이 실제로 쓴 기준값 스냅샷 — 참조가 아니라 값이다(나중에 상수가 바뀌어도 이미 낸 리포트는 '그때 무슨 기준으로 쟀는지'를 스스로 답한다). 화면은 결과 옆에 이 값을 읽기 전용으로 표시한다 — 고정값이라고 숨기지 않는다(대표자 확정).",
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "policyVersion": { "type": "string", "minLength": 1 },
+        "distanceThresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "점군 C2C 후보 거리 문턱. 설계 대비 비교에는 쓰이지 않지만 정책 묶음을 통째로 스냅샷하므로 함께 실린다."
+        },
+        "volumeThresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "이 값 미만의 |높이차| 는 집계에서 제외된다. zones[*].thresholdM · diffRaster.thresholdM 과 **같은 값이어야 한다** — 셋이 갈라지면 범례가 말하는 기준과 집계에 쓴 기준이 달라지고, 그 거짓말은 어느 화면에서도 보이지 않는다."
+        },
+        "revisitRatioThreshold": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "diffRasterRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diffRasterId",
+        "digest",
+        "format",
+        "crs",
+        "verticalReference",
+        "width",
+        "height",
+        "pixelSizeXM",
+        "pixelSizeYM",
+        "transform",
+        "nodataEncoding",
+        "thresholdM",
+        "sizeBytes",
+        "coreVerifiedDigestAt"
+      ],
+      "description": "체적 집계에 실제로 쓴 높이차 격자 — 지도가 읽는 단 하나의 데이터 출처. 값 규약은 '설계 표고 − 현재 표고'로, 양수 = 쌓아야 함 / 음수 = 깎아야 함이며 zoneVolumeDelta 의 fill/cut 과 같은 방향이다.",
+      "properties": {
+        "diffRasterId": { "type": "string", "minLength": 1 },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "업로드된 GeoTIFF 바이트의 해시. 산출물 참조 관습대로 sha256: 접두사를 붙인다(설계면 쪽 sha256 필드는 파일 해시 원문이라 접두사가 없다 — 이름이 규약을 말한다)."
+        },
+        "format": { "const": "geotiff" },
+        "crs": { "type": "string", "minLength": 1 },
+        "verticalReference": {
+          "allOf": [{ "$ref": "#/$defs/verticalReference" }],
+          "description": "이 격자는 우리 계산이 만든 값이므로 귀속은 파이프라인이다 — 사용자가 주장할 수 있는 값이 아니다.",
+          "properties": {
+            "source": { "const": "pipeline_declared" }
+          }
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "pixelSizeXM": { "type": "number", "exclusiveMinimum": 0 },
+        "pixelSizeYM": { "type": "number", "exclusiveMinimum": 0 },
+        "transform": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "type": "number" },
+          "description": "rasterio Affine 순서 (a, b, c, d, e, f) — design-surface.v1 의 observed.transform 과 같은 규약."
+        },
+        "nodataEncoding": {
+          "const": "nan",
+          "description": "무효 셀(측정 불가)의 표현. 0 이 아니라 NaN 이다 — 0 은 '차이가 없다'는 뜻이 있는 값이라, 모르는 곳을 0 으로 칠하면 지도가 '설계대로 됐다'고 거짓말한다. 화면은 이 셀을 '모름'으로 따로 그린다(3상태 범례)."
+        },
+        "thresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "이 값 미만의 |높이차| 는 체적 집계에서 제외됐다. 래스터에는 실제 값이 그대로 남아 있으므로, 화면이 '집계 제외' 구간을 중립색으로 드러내려면 이 값이 필요하다. policy.volumeThresholdM 과 같은 값이다."
+        },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "coreVerifiedDigestAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Core 가 업로드된 바이트를 직접 다시 해싱해 digest 와 같음을 확인한 시각. 워커의 자기보고('올렸다')가 아니다 — 이 필드가 필수인 이유는, 확인 없이 만들어진 리포트가 지도의 출처를 주장만으로 세우는 것을 막기 위해서다."
+        }
+      }
+    },
+    "zoneVolumeDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zoneId",
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "areaM2",
+        "thresholdM",
+        "uncertaintyM3",
+        "uncertaintyNote"
+      ],
+      "description": "volume-change-report.v1.json 의 같은 이름 정의와 동일한 모양이다(계약 모델도 ZoneVolumeDelta 를 그대로 재사용한다). 부호 규약이 핵심이다 — cut(깎아야 할 양)·fill(쌓아야 할 양)은 둘 다 양수고, 방향은 net = fill - cut 하나로만 말한다.",
+      "properties": {
+        "zoneId": { "type": "string", "minLength": 1 },
+        "cutM3": { "type": "number", "minimum": 0 },
+        "fillM3": { "type": "number", "minimum": 0 },
+        "netM3": {
+          "type": "number",
+          "description": "fill - cut = 순 성토 필요량. 세 값은 독립이 아니라 둘이 셋째를 정하며, 계약 모델이 그 일치를 검사한다."
+        },
+        "areaM2": { "type": "number", "exclusiveMinimum": 0 },
+        "thresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "description": "policy.volumeThresholdM · diffRaster.thresholdM 과 같은 값이어야 한다."
+        },
+        "uncertaintyM3": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "nullable 필수. 설계 대비 비교에서는 항상 null 이다 — 설계면은 측정물이 아니라 검증된 RMSE 가 없고, 한쪽이라도 없으면 오차한계를 말할 수 없다(INV-024)."
+        },
+        "uncertaintyNote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "uncertaintyM3 가 null 인 이유. 비워둘 수 없다 — 숫자만 보여주고 한계를 감추면 화면이 '이 값은 믿을 만하다'고 말하는 것과 같다."
+        }
+      }
+    }
+  }
+}

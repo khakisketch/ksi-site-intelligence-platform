@@ -209,6 +209,19 @@ export default async function SiteDetailPage({
           )}
         </SectionCard>
 
+        {/* 설계 기준면은 현장 자산이지 임무 산출물이 아니다 — 한 번 올려 검증되면
+            이후 모든 임무가 같은 기준으로 잔량을 낸다. 그래서 임무가 아니라 현장
+            화면에 자리를 둔다. */}
+        <SectionCard
+          title="설계 기준면"
+          action={{ label: "관리", href: `/sites/${encodeURIComponent(site.siteId)}/design` }}
+        >
+          <p className="text-[13px] break-keep text-ink-muted">
+            완성된 지형의 계획고를 올려두면, 이후 촬영한 현재 지형과 견줘 구역별로 얼마나
+            더 깎고 더 쌓아야 하는지 계산할 수 있습니다.
+          </p>
+        </SectionCard>
+
         <SectionCard
           title="이 현장의 임무"
           action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}

@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/design-surface.v1.json",
+  "title": "DesignSurface v1.0",
+  "description": "설계 기준면 자산 1건(M4-A). 이 계약의 요점은 필드 하나가 아니라 **두 계층의 분리**다 — declared 는 전부 업로더의 주장이고, observed 는 전부 신뢰 경로가 파일 바이트를 읽어 잰 값이다. 사용자가 'EPSG:5186'이라고 적었다고 파일이 그렇다는 뜻이 아니며, 한 평면에 섞어 담으면 나중에 아무도 어느 쪽을 보고 있는지 알 수 없다.\n\nverticalReference 가 declared 안에만 있는 것이 그 분리의 시금석이다 — GeoTIFF 는 수직기준을 신뢰성 있게 담지 않아 관측할 수 없다. 파일이 compound CRS 로 수직 성분을 갖고 있으면 그 EPSG 코드만 observed.verticalCrsEpsg 로 관측되고, 선언과 계열이 모순되면 거부된다.\n\n상태기계: REGISTERED → SEALED → (VERIFIED | REJECTED). **SEALED 는 Core 가 증명한 사실이 아니라 클라이언트의 주장이다** — presigned PUT 을 클라이언트가 완료했다는 이유만으로 durable 상태를 '올라갔다'로 만들지 않는다(services/core 의 source_media 는 seal 단계에서 스토리지 바이트를 한 번도 읽지 않는다; 바이트를 읽는 것은 워커가 측정하고 Core 가 대조하는 verify 경로뿐이다). 그래서 conformance 요청의 입력이 될 수 있는 것은 VERIFIED 하나뿐이다. VERIFIED·REJECTED 는 둘 다 종단이며, 거부된 설계면의 복구는 되돌리기가 아니라 새 revision 등록이다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "designSurfaceId",
+    "siteId",
+    "name",
+    "revision",
+    "format",
+    "declared",
+    "observed",
+    "status",
+    "rejectionReason",
+    "registeredAt",
+    "registeredBy",
+    "sealedAt",
+    "verifiedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "designSurfaceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 설계면 자산의 고유 식별자. 객체 키 구성요소가 되므로 경로-안전해야 한다(Core 가 검증한다)."
+    },
+    "siteId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 설계면이 속한 현장. 설계면은 임무가 아니라 현장에 딸린 재사용 자산이다."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "사람이 읽는 이름(예: 'A공구 계획고')."
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "도면 개정 표기(예: 'Rev.C'). 같은 현장에 여러 판이 공존하므로, 어느 판을 기준으로 잔량을 냈는지가 리포트에서 되짚어져야 한다."
+    },
+    "format": {
+      "const": "geotiff",
+      "description": "지금은 GeoTIFF DEM 뿐이다. IFC 유래 표면은 M4-B 에서 이 값 집합을 늘린다."
+    },
+    "declared": { "$ref": "#/$defs/declared" },
+    "observed": { "$ref": "#/$defs/observed" },
+    "status": {
+      "description": "REGISTERED = 선언만 기록되고 presigned PUT 이 발급됐다. SEALED = 클라이언트가 업로드 완료를 주장했고 검증 대기 큐에 들어갔다(Core 가 파일을 확인한 것이 아니다). VERIFIED = 신뢰 경로가 바이트를 읽어 측정했고 관측이 선언과 전부 대조를 통과했다 — 비교의 입력 자격은 여기서 생긴다. REJECTED = 대조 실패, rejectionReason 에 사유가 남는다.",
+      "enum": ["REGISTERED", "SEALED", "VERIFIED", "REJECTED"]
+    },
+    "rejectionReason": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "nullable 필수. REJECTED 일 때만 값이고 그때는 비울 수 없다 — 사용자는 무엇을 고쳐 다시 올려야 하는지 알아야 한다(typed verdict + 사람 말 사유)."
+    },
+    "registeredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "tz-aware 여야 한다."
+    },
+    "registeredBy": { "type": "string", "minLength": 1 },
+    "sealedAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "nullable 필수. **클라이언트가 업로드 완료를 주장한 시각**이지 파일을 확인한 시각이 아니다."
+    },
+    "verifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "nullable 필수. 관측이 선언과 전부 대조를 통과한 시각 — 이 값이 있는 설계면만 비교에 쓸 수 있다."
+    }
+  },
+  "$defs": {
+    "declared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crs", "lengthUnit", "sha256", "verticalReference"],
+      "description": "업로더의 주장 한 벌 — 이 안의 값은 어느 것도 확인되지 않았다. 소비자는 '사용자가 그렇게 적었다'까지만 읽어야 한다.",
+      "properties": {
+        "crs": {
+          "type": "string",
+          "minLength": 1,
+          "description": "주장된 좌표계(예: 'EPSG:5186'). 정규화 후 observed.crs 와 다르면 CRS_DECLARATION_MISMATCH 로 거부된다."
+        },
+        "lengthUnit": {
+          "const": "meter",
+          "description": "평면 길이 단위. meter 만 받는다 — 피트 단위 도면이 미터로 취급되면 체적이 조용히 35배 틀린다."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "업로더가 계산해 적은 파일 해시(접두사 없는 16진 — sha256sum 출력 그대로). 관측값과 다르면 DIGEST_MISMATCH."
+        },
+        "verticalReference": { "$ref": "#/$defs/verticalReference" }
+      }
+    },
+    "observed": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "crs",
+        "verticalCrsEpsg",
+        "width",
+        "height",
+        "bandCount",
+        "dtype",
+        "nodata",
+        "nodataIsNan",
+        "pixelSizeXM",
+        "pixelSizeYM",
+        "transform",
+        "boundsMinX",
+        "boundsMinY",
+        "boundsMaxX",
+        "boundsMaxY",
+        "finiteCellCount",
+        "measuredAt",
+        "measuredBy"
+      ],
+      "description": "nullable 필수 — null 은 '아직 아무도 파일을 읽지 않았다'는 뜻이고, status=REJECTED 인데 null 인 것도 정상이다(파일이 열리지 않으면 관측 자체가 없다). 값이 있으면 그것은 신뢰 경로가 파일을 열어 실제로 잰 값 한 벌이며 판정은 들어 있지 않다. measuredBy/measuredAt 은 '누가·언제 쟀는가'일 뿐 '통과했다'를 말하지 않는다(source_media 의 SourceMediaMeasurement 와 같은 경계). 이 객체는 회전 변환·역전 bounds 같은 이상한 파일의 사실도 담을 수 있어야 한다 — 담지 못하면 그 파일을 만난 워커가 typed 거부를 보고하는 대신 죽고, 사용자는 이유를 받지 못한다.",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "읽은 바이트 전체의 해시. declared.sha256 과의 대조가 이 관측의 앵커이며, status=VERIFIED 는 이 둘이 같을 때만 성립한다."
+        },
+        "crs": {
+          "type": "string",
+          "minLength": 1,
+          "description": "파일이 실제로 들고 있는 수평 CRS(정규화 전 원문 표기)."
+        },
+        "verticalCrsEpsg": {
+          "type": ["integer", "null"],
+          "exclusiveMinimum": 0,
+          "description": "nullable 필수. compound CRS 의 수직 성분(EPSG). 대부분의 DEM 에는 없다(null 이 정상) — 있을 때만 선언과 대조하고, 계열이 모순되면 VERTICAL_DECLARATION_CONTRADICTED. '없음'은 선언을 뒷받침하지도 반박하지도 않는다."
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "bandCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "DEM 은 1 이어야 한다. 그 판정은 Core 가 UNSUPPORTED_BAND_COUNT 로 내린다 — 관측은 3밴드 정사영상을 잘못 올린 사실도 그대로 담는다."
+        },
+        "dtype": {
+          "type": "string",
+          "minLength": 1,
+          "description": "화소 자료형 원문(예: 'float32')."
+        },
+        "nodata": {
+          "type": ["number", "null"],
+          "description": "nullable 필수. 파일이 선언한 nodata 값이며, 지정하지 않은 래스터면 null. NaN 은 이 필드로 표현하지 않는다 — JSON 에 NaN 이 없어 실으면 계약이 왕복하지 못한다(아래 nodataIsNan)."
+        },
+        "nodataIsNan": {
+          "type": "boolean",
+          "description": "파일의 nodata 가 NaN 인가. nodata 를 null 로만 적으면 'nodata 를 지정하지 않은 파일'과 'NaN 을 nodata 로 쓰는 파일'이 같은 값이 되어, 차분 결과의 무효 셀 해석이 조용히 갈린다. true 이면 nodata 는 null 이어야 한다."
+        },
+        "pixelSizeXM": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "화소 크기(m). 부호 없는 크기다 — GeoTIFF affine 의 y 항은 통상 음수지만 여기 싣는 것은 그 크기이고, 방향은 transform 이 그대로 들고 있다."
+        },
+        "pixelSizeYM": { "type": "number", "exclusiveMinimum": 0 },
+        "transform": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "type": "number" },
+          "description": "rasterio Affine 순서 그대로 (a, b, c, d, e, f) = (x 화소크기, 행 회전, 좌상단 x, 열 회전, y 화소크기(통상 음수), 좌상단 y). to_gdal() 순서가 아니다 — 둘은 순서가 다르다."
+        },
+        "boundsMinX": { "type": "number" },
+        "boundsMinY": { "type": "number" },
+        "boundsMaxX": { "type": "number" },
+        "boundsMaxY": { "type": "number" },
+        "finiteCellCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "nodata·NaN 이 아닌 셀 수. 0 이면 그 파일에는 표고가 하나도 없다(NO_FINITE_CELLS) — 0 을 담을 수 있어야 원장이 그 거부 사유를 설명한다. width×height 를 넘을 수는 없다(측정 자체의 모순)."
+        },
+        "measuredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "tz-aware 여야 한다."
+        },
+        "measuredBy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "측정을 보고한 주체(워커 principal). '검증했다'가 아니라 '쟀다'는 뜻이다."
+        }
+      }
+    },
+    "verticalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datum", "basis", "source"],
+      "description": "높이의 기준 + 그 기준을 아는 근거 + 귀속. 정본은 packages/event-contracts 의 ksi_event_contracts.vertical_reference 이며 processing-artifact.v1.2.json 과 같은 모양이다. 다만 여기서는 source 가 user_declared 로 고정된다 — 이 블록은 업로더의 주장이지 파이프라인의 귀속이 아니다.",
+      "properties": {
+        "datum": {
+          "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것(설계자가 그 기준으로 납품했다). ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 남은 상태. orthometric_kngeoid2018 = KNGeoid2018 로 실현한 한국 정표고. 비교 가능성은 이 값이 아니라 계열(family)로 판정한다 — 앞의 둘은 같은 계열이고, 정표고와 섞으면 한국에서 20~30m 가 조용히 들어간다.",
+          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018"]
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "왜 이 값을 아는가 — 비울 수 없다. 예: '설계사 제공 도면 표제부에 타원체고 명시'. 근거를 적지 못하는 선언은 추측이고, 추측이 계약에 실리면 소비자는 그것을 사실로 다룬다."
+        },
+        "source": {
+          "const": "user_declared",
+          "description": "이 블록에서는 업로더의 주장 하나뿐이다. 파이프라인 귀속(pipeline_declared)은 산출물 쪽(processing-artifact.v1.2)의 값이다."
+        }
+      }
+    }
+  }
+}

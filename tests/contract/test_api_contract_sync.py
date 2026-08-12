@@ -28,6 +28,9 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
+from ksi_core.design_conformance_reports import DesignConformanceStore
+from ksi_core.design_conformance_requests import DesignConformanceRequestStore
+from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
@@ -114,8 +117,18 @@ def _max_assembly(tmp_path: Path) -> Any:
         source_media_store=source_media_store,
         site_store=site_store,
     )
+    design_surface_store = DesignSurfaceStore(
+        DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
+    )
+    storage = _NullEvidenceStorage()
+    design_conformance_request_store = DesignConformanceRequestStore(
+        DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=design_surface_store,
+    )
     return create_app(
-        evidence_storage=_NullEvidenceStorage(),
+        evidence_storage=storage,
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
@@ -125,6 +138,7 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
         source_media_store=source_media_store,
+        design_surface_store=design_surface_store,
         processing_job_store=processing_job_store,
         defect_candidate_store=DefectCandidateStore(
             DurableJournal(tmp_path / "defect-candidates.jsonl"),
@@ -145,6 +159,14 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
+        ),
+        design_conformance_request_store=design_conformance_request_store,
+        design_conformance_report_store=DesignConformanceStore(
+            DurableJournal(tmp_path / "design-conformance.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            request_store=design_conformance_request_store,
+            storage=storage,
         ),
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store

@@ -53,9 +53,14 @@ from ksi_event_contracts.comparison_policy import (
     DEFAULT_REVISIT_RATIO_THRESHOLD as _POLICY_REVISIT_RATIO_THRESHOLD,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
-from pydantic import BaseModel, ConfigDict
-from pydantic.alias_generators import to_camel
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
+from ksi_core.artifact_refs import ArtifactRefIssue, verify_artifact_pair
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -191,7 +196,10 @@ class ChangeDetectionStore:
         """``baseline``/``current`` 가 실제 등록된 point_cloud 산출물인가.
 
         live 수신과 journal 재생이 같은 함수를 쓴다 — 각자 조건문을 들고 있으면
-        한쪽만 고쳐지는 순간 원장이 거짓 검증을 되살린다.
+        한쪽만 고쳐지는 순간 원장이 거짓 검증을 되살린다. self-comparison 검사는
+        change-detection 고유 로직이다(volume 쪽은 계약 모델이 대신 한다) — 여기
+        그대로 두고, 산출물 존재·kind 검증만 ``artifact_refs.verify_artifact_pair``
+        로 공유한다.
         """
         if (result.baseline.job_id, result.baseline.artifact_id) == (
             result.current.job_id,
@@ -202,29 +210,25 @@ class ChangeDetectionStore:
                 "baseline 과 current 가 같은 산출물이다 — 자기 자신과의 C2C 는 전 점"
                 " 거리 0 이라 '변화 없음'으로 정직해 보이지만 아무것도 비교하지 않은 것이다",
             )
-        for label, ref in (("baseline", result.baseline), ("current", result.current)):
-            job = self._processing_job_store.get(ref.job_id)
-            if job is None:
-                return (
-                    ChangeDetectionVerdict.UNKNOWN_ARTIFACT,
-                    f"{label}.jobId={ref.job_id!r} 인 처리 작업이 없다",
-                )
-            artifact = next(
-                (a for a in job.artifacts if a.artifact_id == ref.artifact_id), None
-            )
-            if artifact is None:
-                return (
-                    ChangeDetectionVerdict.UNKNOWN_ARTIFACT,
-                    f"{label}.artifactId={ref.artifact_id!r} 가 작업 {ref.job_id!r} 에"
-                    " 등록된 적이 없다",
-                )
-            if artifact.kind is not ProcessingArtifactKind.POINT_CLOUD:
-                return (
-                    ChangeDetectionVerdict.ARTIFACT_KIND_MISMATCH,
-                    f"{label} 산출물의 kind 가 {artifact.kind.value!r} 다 — C2C 비교의"
-                    " 입력은 point_cloud 여야 한다",
-                )
-        return ChangeDetectionVerdict.RECORDED, None
+        issue = verify_artifact_pair(
+            self._processing_job_store,
+            result.baseline,
+            result.current,
+            required_kind=ProcessingArtifactKind.POINT_CLOUD,
+            kind_mismatch_detail=lambda label, kind: (
+                f"{label} 산출물의 kind 가 {kind.value!r} 다 — C2C 비교의"
+                " 입력은 point_cloud 여야 한다"
+            ),
+        )
+        if issue is None:
+            return ChangeDetectionVerdict.RECORDED, None
+        reason, detail = issue
+        verdict = (
+            ChangeDetectionVerdict.UNKNOWN_ARTIFACT
+            if reason is ArtifactRefIssue.UNKNOWN_ARTIFACT
+            else ChangeDetectionVerdict.ARTIFACT_KIND_MISMATCH
+        )
+        return verdict, detail
 
     @property
     def sealed_reason(self) -> str | None:
@@ -242,7 +246,7 @@ class ChangeDetectionStore:
             if self._journal.sealed_reason is not None:
                 return ChangeDetectionRecordResult(
                     ChangeDetectionVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             if self._mission_store.get(mission_id) is None:
                 return self._reject(
@@ -275,7 +279,7 @@ class ChangeDetectionStore:
 
             record = {
                 "kind": "change-detection-recorded",
-                "ts": now.astimezone(UTC).isoformat(),
+                "ts": iso_utc(now),
                 "missionId": mission_id,
                 "reportedBy": reported_by,
                 "result": result.model_dump(by_alias=True, mode="json", exclude_none=False),
@@ -285,7 +289,7 @@ class ChangeDetectionStore:
             except JournalSealedError:
                 return ChangeDetectionRecordResult(
                     ChangeDetectionVerdict.STORE_UNAVAILABLE,
-                    detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                    detail=JOURNAL_APPEND_FAILED_DETAIL,
                 )
             self._project(mission_id, result, reported_by, now)
             return ChangeDetectionRecordResult(ChangeDetectionVerdict.RECORDED)
@@ -301,7 +305,7 @@ class ChangeDetectionStore:
     ) -> ChangeDetectionRecordResult:
         record = {
             "kind": "change-detection-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "missionId": mission_id,
             "changeDetectionId": result.change_detection_id,
             "verdict": verdict.value,
@@ -313,7 +317,7 @@ class ChangeDetectionStore:
         except JournalSealedError:
             return ChangeDetectionRecordResult(
                 ChangeDetectionVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         return ChangeDetectionRecordResult(verdict, detail=detail)
 
@@ -330,16 +334,12 @@ class ChangeDetectionStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class ChangeDetectionResponse(_CamelModel):
+class ChangeDetectionResponse(CamelModel):
     verdict: str
     detail: str | None
 
 
-class ChangeDetectionView(_CamelModel):
+class ChangeDetectionView(CamelModel):
     """그 임무의 최신 변화 탐지 결과 + 재방문 권고.
 
     ``revisitRatioThreshold`` 를 함께 싣는 이유는 모듈 docstring 참고 — 권고

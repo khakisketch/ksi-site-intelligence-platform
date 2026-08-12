@@ -1,7 +1,16 @@
 // 마이크로카피 SSOT — docs/architecture/03_DASHBOARD_UX_GOALS.md §4 그대로 상수화.
 // 다른 곳에서 이 표를 우회해 새 라벨을 만들지 않는다.
 
-import type { EventSeverity, EventStatus, MissionType, Role, SiteStatus, TriageStatus } from "./types";
+import type {
+  DesignSurfaceRejectionReason,
+  DesignSurfaceStatus,
+  EventSeverity,
+  EventStatus,
+  MissionType,
+  Role,
+  SiteStatus,
+  TriageStatus,
+} from "./types";
 
 export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 
@@ -85,6 +94,96 @@ export const ROLE_LABEL: Record<Role, string> = {
   VIEWER: "열람자",
 };
 
+// ── 설계 기준면(M4-A) ──────────────────────────────────────────────────────
+//
+// 정본은 `ksi_event_contracts.design_surface.DesignSurfaceStatus` 와
+// `ksi_core.design_surfaces.DesignSurfaceRejectionReason` 이고 여기는 그 미러다
+// (tests/contract/test_design_surface_dashboard_sync.py 가 값 집합을 강제한다).
+//
+// **라벨 문구가 이 기능의 안전장치다.** `SEALED` 를 "업로드 완료"라고 부르면
+// 사용자는 파일이 확인됐다고 읽는다 — 그 시점에 Core 가 아는 것은 "클라이언트가
+// 다 올렸다고 말했다"뿐이고, 파일은 아무도 열어보지 않았다. 그래서 여기서는
+// 브라우저에서 일어난 일(로컬 사건)과 서버가 확인한 사실(durable)을 다른 말로
+// 부른다: 업로드가 끝나도 durable 상태는 "검증 대기"다.
+export const DESIGN_SURFACE_STATUS_LABEL: Record<
+  DesignSurfaceStatus,
+  { label: string; tone: Tone; description: string }
+> = {
+  REGISTERED: {
+    label: "등록됨(파일 없음)",
+    tone: "neutral",
+    description: "선언 내용만 기록됐습니다 — 파일은 아직 올라오지 않았습니다.",
+  },
+  SEALED: {
+    label: "검증 대기",
+    tone: "progress",
+    description:
+      "업로드를 마쳤다고 이 브라우저가 알렸고 서버가 그 주장을 기록했습니다 — " +
+      "아직 아무도 파일을 열어보지 않았습니다. 서버가 파일을 읽어 확인하는 중입니다.",
+  },
+  VERIFIED: {
+    label: "검증 완료",
+    tone: "positive",
+    description:
+      "서버가 파일을 직접 열어 재고, 적어 낸 내용과 전부 일치했습니다 — " +
+      "이제 이 설계면으로 잔량을 계산할 수 있습니다.",
+  },
+  REJECTED: {
+    label: "검증 실패",
+    tone: "warning",
+    description:
+      "파일 내용이 적어 낸 내용과 맞지 않습니다 — 되돌릴 수 없으므로 고친 뒤 " +
+      "새 개정판으로 다시 올리세요.",
+  },
+};
+
+/** 거부 사유 8종 → 사람 말 + 무엇을 고쳐야 하는지. */
+export const DESIGN_SURFACE_REJECTION_LABEL: Record<DesignSurfaceRejectionReason, string> = {
+  DIGEST_MISMATCH:
+    "올라온 파일이 적어 낸 파일과 다릅니다 — 다른 파일을 올렸거나 전송 중 손상됐습니다. 같은 파일을 새 개정판으로 다시 올리세요.",
+  CRS_DECLARATION_MISMATCH:
+    "파일이 들고 있는 좌표계가 적어 낸 좌표계와 다릅니다 — 파일의 실제 좌표계를 확인해 다시 적어 올리세요.",
+  UNSUPPORTED_CRS:
+    "이 제품이 지원하지 않는 좌표계입니다 — 현행 국가 평면직각좌표계(중부·서부·동부·동해)로 다시 만들어 올리세요.",
+  UNSUPPORTED_UNIT:
+    "평면 길이 단위가 미터가 아닙니다 — 피트 단위 도면은 받지 않습니다(부피가 조용히 35배 틀립니다).",
+  UNSUPPORTED_BAND_COUNT:
+    "높이 자료가 아닙니다 — 밴드가 여러 개인 것으로 보아 정사영상 같은 그림 파일을 올린 것 같습니다.",
+  NO_FINITE_CELLS:
+    "유효한 높이 값이 하나도 없습니다 — 전부 빈 값이거나 내용이 없는 파일입니다.",
+  VERTICAL_DECLARATION_CONTRADICTED:
+    "파일이 들고 있는 높이 기준이 적어 낸 기준과 맞지 않거나 해석할 수 없습니다 — 타원체 기준 높이와 해발 높이를 섞으면 20~30 m 가 조용히 틀립니다.",
+  UNREADABLE_RASTER:
+    "파일을 열지 못했습니다 — GeoTIFF 가 아니거나 손상됐습니다.",
+};
+
+/**
+ * 거부 사유를 사람 말로 — 모르는 코드는 **숨기지 않고** 원문을 보여준다.
+ *
+ * 서버에 사유가 하나 늘고 이 표가 안 따라간 순간, 사용자에게 빈 칸을 보여주는
+ * 것이 가장 나쁜 결과다(왜 막혔는지 알 길이 사라진다).
+ */
+export function humanizeDesignSurfaceRejection(reason: string | null): string {
+  if (!reason) return "사유가 기록되지 않았습니다.";
+  const known = DESIGN_SURFACE_REJECTION_LABEL[reason as DesignSurfaceRejectionReason];
+  return known ?? `검증에 실패했습니다. (${reason})`;
+}
+
+/**
+ * 수직 기준을 사람 말로 — 국내에서 두 기준의 차이는 20~30 m 다.
+ *
+ * 모르는 값은 원문 그대로 보여준다(라벨 누락이 "기준 없음"처럼 보이지 않게).
+ */
+export const VERTICAL_DATUM_LABEL: Record<string, string> = {
+  ellipsoidal: "타원체 기준 높이",
+  ellipsoidal_native: "타원체 기준 높이(지오이드 미적용)",
+  orthometric_kngeoid2018: "해발 높이(KNGeoid2018)",
+};
+
+export function humanizeVerticalDatum(datum: string): string {
+  return VERTICAL_DATUM_LABEL[datum] ?? datum;
+}
+
 // §3.4 에러 마이크로카피 — API verdict 코드를 사람 말로.
 export const API_ERROR_MESSAGE: Record<string, string> = {
   DUPLICATE_SITE_ID: "이미 등록된 현장 ID입니다. 다른 ID를 사용하세요.",
@@ -138,6 +237,25 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   SITE_MISMATCH: "다른 현장의 결과끼리는 비교할 수 없습니다.",
   MISSION_MISMATCH: "비교 시점(이후)은 이 임무에서 만든 결과여야 합니다. 목록을 새로고침한 뒤 다시 고르세요.",
   NOTHING_TO_COMPARE: "고른 두 결과에 비교할 자료(점군·높이자료)가 없습니다.",
+  // 설계 기준면 등록·봉인(M4-A) — design_surfaces.py verdict.
+  DECLARATION_CONFLICT:
+    "같은 이름·개정으로 다른 내용이 이미 등록돼 있습니다. 개정 표기를 바꿔서 올리세요.",
+  UNKNOWN_DESIGN_SURFACE: "등록되지 않은 설계 기준면입니다.",
+  ALREADY_JUDGED:
+    "이미 검증 판정이 끝난 설계 기준면입니다 — 되돌릴 수 없습니다. 고친 파일을 새 개정판으로 올리세요.",
+  NOT_SEALED: "아직 봉인되지 않았습니다 — 업로드를 마치고 봉인한 뒤 다시 시도하세요.",
+  // 설계 대비 잔량 요청(M4-A) — design_conformance_requests.py verdict. 정상
+  // 동선에서는 패널이 VERIFIED 설계면만 고르게 하지만, 다른 탭에서 원장이 바뀌는
+  // 레이스로는 여전히 도달한다.
+  DESIGN_SURFACE_NOT_VERIFIED:
+    "아직 검증되지 않은 설계 기준면입니다 — 검증이 끝난 것만 비교에 쓸 수 있습니다.",
+  NO_DSM_ARTIFACT: "고른 재구성 결과에 높이자료(DSM)가 없습니다.",
+  ZONES_REQUIRED:
+    "구역을 확정해야 합니다 — 설계 대비 잔량은 '어느 범위의' 잔량인지 없이는 답이 되지 않습니다.",
+  VERTICAL_REFERENCE_UNKNOWN:
+    "이 재구성 결과는 높이 기준이 기록되기 전에 만들어졌습니다 — 다시 재구성하면 비교할 수 있습니다.",
+  VERTICAL_DATUM_INCOMPATIBLE:
+    "설계 기준면과 현재 지형의 높이 기준 계열이 다릅니다 — 변환 없이 비교하면 20~30 m 가 틀리므로 계산하지 않습니다.",
 };
 
 export function humanizeApiError(

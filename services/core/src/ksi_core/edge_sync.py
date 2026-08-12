@@ -119,6 +119,7 @@ from ksi_core.auth import (
     require_permission,
     require_principal,
 )
+from ksi_core.durable_journal import _WRITE, _acquire_writer_lock, _fsync_dir
 from ksi_core.events import _STATUS as _EVENT_STATUS
 from ksi_core.events import EventStore, EventVerdict, classify_edge_bundle
 
@@ -126,10 +127,6 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
-
-# os.write 참조를 모듈 상수로 분리 — short-write fault injection 테스트가 전역
-# os 모듈을 건드리지 않고 이 경로만 대체할 수 있게(감사 finding #1 회귀 고정).
-_WRITE = os.write
 
 
 class StoreRecoveryError(RuntimeError):
@@ -193,15 +190,6 @@ def _hash_prefix(path: Path, through: int) -> tuple[str, int]:
     return digest.hexdigest(), newlines
 
 
-def _fsync_dir(directory: Path) -> None:
-    """디렉터리 엔트리를 durable 하게 만든다 — 파일 fsync 만으로는 부족하다(P0-1)."""
-    fd = os.open(directory, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 class EdgeSyncStore:
     """SyncLedger 규칙 + append-only journal 영속 + 단일 writer 잠금.
 
@@ -241,24 +229,12 @@ class EdgeSyncStore:
             raise
 
     def _acquire_writer_lock(self) -> None:
-        """flock 배타 잠금 — 두 프로세스가 같은 journal 에 쓰는 경합을 기동 거부로 막는다."""
-        import fcntl
+        """flock 배타 잠금 — 두 프로세스가 같은 journal 에 쓰는 경합을 기동 거부로 막는다.
 
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            # 잠금 파일 fd 는 store 수명 동안 유지된다(닫히면 잠금이 풀린다).
-            self._lock_fd = os.open(
-                self._path.with_suffix(self._path.suffix + ".lock"), os.O_CREAT | os.O_RDWR, 0o600
-            )
-        except OSError as exc:
-            raise StoreRecoveryError(f"잠금 파일 생성 실패: {type(exc).__name__}: {exc}") from exc
-        try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            os.close(self._lock_fd)
-            raise StoreRecoveryError(
-                f"{self._path}: 다른 프로세스가 journal 을 소유 중 — 단일 writer 위반"
-            ) from exc
+        획득 로직 자체는 ``durable_journal._acquire_writer_lock`` 공용부다(P0-1
+        2단계) — 이 store 는 실패 시 던질 예외 타입만 지정한다.
+        """
+        self._lock_fd = _acquire_writer_lock(self._path, error_cls=StoreRecoveryError)
 
     def close(self) -> None:
         """수신 봉인 + 잠금 해제 — 멱등(감사 #51).
@@ -496,6 +472,16 @@ class EdgeSyncStore:
     @property
     def sealed(self) -> bool:
         return self._sealed_reason is not None
+
+    @property
+    def sealed_reason(self) -> str | None:
+        """봉인 사유. 미봉인이면 ``None``, ``close()`` 이후면 ``"closed"``.
+
+        ``DurableJournal.sealed_reason`` (durable_journal.py) 과 동일한 모양 —
+        ``app_assembly.py`` 의 ``/ready`` 봉인 판정이 ``getattr(j, "sealed_reason",
+        None)`` 로 두 원장 타입을 동일하게 취급할 수 있게 한다(P0-1).
+        """
+        return self._sealed_reason
 
     def ingest_event_bundle(self, entry: JournalEntry) -> ServerIngestResult:
         """항목 1건 판정+영속. ``ACCEPTED`` 는 durable 성공 후에만 반환된다."""

@@ -81,9 +81,9 @@ from ksi_domain.enums import (
 from ksi_event_contracts.processing_job import DataResidency
 from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_planning import AreaOfInterest
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, principal_permissions, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
@@ -121,7 +121,7 @@ _STATUS: dict[SiteVerdict, int] = {
 }
 
 _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
-_STORE_UNAVAILABLE_DETAIL = "journal 봉인됨 — 재시작 필요"
+_STORE_UNAVAILABLE_DETAIL = JOURNAL_SEALED_DETAIL
 
 
 class SiteStoreRecoveryError(RuntimeError):
@@ -168,16 +168,6 @@ class SiteResult:
     verdict: SiteVerdict
     record: SiteRecord | None = None
     detail: str | None = None
-
-
-def _iso_utc(value: datetime) -> str:
-    """journal 에 쓸 ``ts`` — 항상 UTC 로 정규화한다(s2-residual-hardening #2).
-
-    오프셋을 그대로 두면 같은 순간이 원장에서 여러 표기로 남아, 문자열 정렬·
-    외부 도구의 시각 비교가 오프셋마다 다른 답을 낸다. events.py 의 ``_iso`` 와
-    같은 규약이다.
-    """
-    return value.astimezone(UTC).isoformat()
 
 
 def _parse_ts(value: str) -> datetime:
@@ -439,7 +429,7 @@ class SiteStore:
 
             raw: dict[str, Any] = {
                 "kind": "site-registered",
-                "ts": _iso_utc(now),
+                "ts": iso_utc(now),
                 "actor": actor,
                 "before": None,
                 "after": SiteStatus.UNMAPPED.value,
@@ -503,7 +493,7 @@ class SiteStore:
 
             raw: dict[str, Any] = {
                 "kind": "site-transitioned",
-                "ts": _iso_utc(now),
+                "ts": iso_utc(now),
                 "actor": actor,
                 "before": current.status.value,
                 "after": target.value,
@@ -575,7 +565,7 @@ class SiteStore:
 
             raw: dict[str, Any] = {
                 "kind": "site-aoi-set",
-                "ts": _iso_utc(now),
+                "ts": iso_utc(now),
                 "actor": actor,
                 "siteId": site_id,
                 "aoi": aoi.model_dump(by_alias=True, mode="json", exclude_none=True),
@@ -600,11 +590,7 @@ class SiteStore:
 # ── FastAPI 장착부 ────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class SiteRegistrationRequest(_CamelModel):
+class SiteRegistrationRequest(CamelModel):
     site_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     site_frame: SiteFrame
@@ -618,7 +604,7 @@ class SiteRegistrationRequest(_CamelModel):
     data_residency: DataResidency | None = None
 
 
-class SiteTransitionRequest(_CamelModel):
+class SiteTransitionRequest(CamelModel):
     """전이 요청 — ``actor`` 는 의도적으로 필드가 없다(인증 Principal 에서만 취득,
 
     ``extra="forbid"`` 가 body 에 ``actor`` 를 실어도 위조를 거부한다).
@@ -629,7 +615,7 @@ class SiteTransitionRequest(_CamelModel):
     reason: str = Field(min_length=1)
 
 
-class AoiSetRequest(_CamelModel):
+class AoiSetRequest(CamelModel):
     """PUT /v1/sites/{site_id}/aoi 요청 — 등록/교체 공용.
 
     ``site_frame`` 은 필수다 — 호출자가 등록본과 같은 좌표계를 전제로 그렸음을
@@ -640,7 +626,7 @@ class AoiSetRequest(_CamelModel):
     site_frame: SiteFrame
 
 
-class SiteView(_CamelModel):
+class SiteView(CamelModel):
     site_id: str
     name: str
     site_frame: dict[str, Any]
@@ -656,11 +642,11 @@ class SiteView(_CamelModel):
     data_residency: dict[str, Any] | None
 
 
-class SiteListResponse(_CamelModel):
+class SiteListResponse(CamelModel):
     sites: list[SiteView]
 
 
-class SiteMutationResponse(_CamelModel):
+class SiteMutationResponse(CamelModel):
     """등록/전이 응답 — 성공은 ``site`` 를, 실패는 ``detail`` 을 채운다(verdict 로 구분)."""
 
     verdict: str

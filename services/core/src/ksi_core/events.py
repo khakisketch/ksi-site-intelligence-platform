@@ -77,9 +77,9 @@ from ksi_domain.enums import (
 )
 from ksi_event_contracts.event_bundle import EventBundle
 from ksi_event_contracts.offline_sync import payload_digest
-from pydantic import BaseModel, ConfigDict, ValidationError
-from pydantic.alias_generators import to_camel
+from pydantic import ValidationError
 
+from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import JournalSealedError
 from ksi_core.evidence import (
@@ -240,10 +240,6 @@ class EvidenceRegistration:
 def _require_tz_aware(value: datetime, *, param: str) -> None:
     if value.tzinfo is None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat()
 
 
 class EventStoreRecoveryError(RuntimeError):
@@ -653,7 +649,7 @@ class EventStore:
             return EventVerdict.STATUS_NOT_EDGE_ASSERTABLE
 
         digest = payload_digest(payload)
-        ts_iso = _iso(received_at)
+        ts_iso = iso_utc(received_at)
         existing = self._events.get(event_key)
 
         if existing is None:
@@ -666,7 +662,7 @@ class EventStore:
                 "siteId": bundle.site_id,
                 "missionId": bundle.mission_id,
                 "edgeDeviceId": edge_device_id,
-                "occurredAt": _iso(bundle.occurred_at),
+                "occurredAt": iso_utc(bundle.occurred_at),
                 "receivedAt": ts_iso,
                 "before": None,
                 "after": {
@@ -768,7 +764,7 @@ class EventStore:
             except JournalSealedError:
                 return TriageTransitionResult(
                     EventVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             except (IllegalEventTransitionError, IllegalTriageTransitionError):
                 raise
@@ -777,7 +773,7 @@ class EventStore:
                 self._journal.close()
                 return TriageTransitionResult(
                     EventVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
 
     def _triage_transition_locked(
@@ -816,7 +812,7 @@ class EventStore:
                     ),
                 )
 
-        ts_iso = _iso(now)
+        ts_iso = iso_utc(now)
         actor_id = actor.principal_id
 
         if target is not None:
@@ -980,7 +976,7 @@ class EventStore:
 
             record = {
                 "kind": "evidence-registered",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "eventKey": event_key,
                 "siteId": existing.site_id,
                 "artifactId": artifact_id,
@@ -1019,7 +1015,7 @@ class EventStore:
 
             record = {
                 "kind": "evidence-tombstoned",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "eventKey": event_key,
                 "artifactId": artifact_id,
                 "objectKey": target.object_key,
@@ -1090,11 +1086,7 @@ class EventStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class EventSummaryResponse(_CamelModel):
+class EventSummaryResponse(CamelModel):
     event_key: str
     event_id: str
     site_id: str
@@ -1112,7 +1104,7 @@ class EventSummaryResponse(_CamelModel):
     received_at: datetime
 
 
-class EventDetailResponse(_CamelModel):
+class EventDetailResponse(CamelModel):
     event_key: str
     event_id: str
     site_id: str
@@ -1141,12 +1133,12 @@ class EventDetailResponse(_CamelModel):
     evidence: list[EvidenceSummary]
 
 
-class EventListResponse(_CamelModel):
+class EventListResponse(CamelModel):
     events: list[EventSummaryResponse]
     count: int
 
 
-class EventTransitionRequest(_CamelModel):
+class EventTransitionRequest(CamelModel):
     """트리아지 전이 요청.
 
     ``expected_bundle_digest``: 낙관적 동시성 토큰(s2-residual-hardening #7).
@@ -1166,13 +1158,13 @@ class EventTransitionRequest(_CamelModel):
     expected_bundle_digest: str | None = None
 
 
-class TransitionResponse(_CamelModel):
+class TransitionResponse(CamelModel):
     verdict: str
     detail: str | None = None
     event: EventDetailResponse | None = None
 
 
-class EvidenceSummary(_CamelModel):
+class EvidenceSummary(CamelModel):
     """상세 응답에 실리는 증거 1건. 열람 URL 은 담지 않는다(별도 발급 경로)."""
 
     artifact_id: str
@@ -1183,7 +1175,7 @@ class EvidenceSummary(_CamelModel):
     tombstone_reason: str | None
 
 
-class EvidenceUploadRequest(_CamelModel):
+class EvidenceUploadRequest(CamelModel):
     """증거 업로드 등록 요청 (ADR-KSI-010 §1).
 
     ``artifactId`` 는 호출자가 정한다 — 같은 증거를 재전송할 때 중복 등록을
@@ -1195,14 +1187,14 @@ class EvidenceUploadRequest(_CamelModel):
     content_type: str
 
 
-class EvidenceUploadResponse(_CamelModel):
+class EvidenceUploadResponse(CamelModel):
     artifact_id: str
     object_key: str
     upload_url: str
     expires_at: datetime
 
 
-class EvidenceViewResponse(_CamelModel):
+class EvidenceViewResponse(CamelModel):
     artifact_id: str
     content_type: str
     view_url: str

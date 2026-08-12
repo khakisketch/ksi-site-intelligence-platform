@@ -62,9 +62,13 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_event_contracts.coverage_report import CompletionState, CoverageReport
-from pydantic import BaseModel, ConfigDict
-from pydantic.alias_generators import to_camel
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
 from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -294,7 +298,7 @@ class CoverageReportStore:
             if self._journal.sealed_reason is not None:
                 return CoverageReportResult(
                     CoverageReportVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             mission = self._mission_store.get(report.mission_id)
             if mission is None:
@@ -337,7 +341,7 @@ class CoverageReportStore:
 
             record = {
                 "kind": "coverage-reported",
-                "ts": now.astimezone(UTC).isoformat(),
+                "ts": iso_utc(now),
                 "missionId": report.mission_id,
                 "siteId": report.site_id,
                 "completionState": report.summary.completion_state.value,
@@ -349,7 +353,7 @@ class CoverageReportStore:
             except JournalSealedError:
                 return CoverageReportResult(
                     CoverageReportVerdict.STORE_UNAVAILABLE,
-                    detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                    detail=JOURNAL_APPEND_FAILED_DETAIL,
                 )
             self._by_mission.setdefault(report.mission_id, []).append(
                 RecordedCoverageReport(report=report, reported_by=reported_by)
@@ -371,7 +375,7 @@ class CoverageReportStore:
         """
         record = {
             "kind": "coverage-report-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "missionId": report.mission_id,
             "siteId": report.site_id,
             "verdict": verdict.value,
@@ -384,7 +388,7 @@ class CoverageReportStore:
         except JournalSealedError:
             return CoverageReportResult(
                 CoverageReportVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         self._rejections_by_mission.setdefault(report.mission_id, []).append(
             RejectedCoverageReport(
@@ -424,17 +428,13 @@ class CoverageReportStore:
             return [r.report for r in self._by_mission.get(mission_id, ())]
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class CoverageReportResponse(_CamelModel):
+class CoverageReportResponse(CamelModel):
     verdict: str
     detail: str | None = None
     report: dict[str, Any] | None = None
 
 
-class CoverageReportView(_CamelModel):
+class CoverageReportView(CamelModel):
     """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지 + 누가 보고했는지."""
 
     mission_id: str
@@ -448,7 +448,7 @@ class CoverageReportView(_CamelModel):
     recovery_recommended: bool
 
 
-class CoverageRejectionView(_CamelModel):
+class CoverageRejectionView(CamelModel):
     """거부된 보고 1건 — 무엇을, 왜, 누가, 언제(본문은 싣지 않는다)."""
 
     verdict: str
@@ -457,7 +457,7 @@ class CoverageRejectionView(_CamelModel):
     rejected_at: datetime
 
 
-class CoverageRejectionListView(_CamelModel):
+class CoverageRejectionListView(CamelModel):
     """그 임무에 대해 서버가 거부한 보고들.
 
     거부가 0건인 것은 404 가 아니라 빈 목록이다 — "이 임무에는 거부가 없었다"는

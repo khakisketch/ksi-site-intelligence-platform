@@ -41,6 +41,9 @@ if TYPE_CHECKING:
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
+    from ksi_core.design_conformance_reports import DesignConformanceStore
+    from ksi_core.design_conformance_requests import DesignConformanceRequestStore
+    from ksi_core.design_surfaces import DesignSurfaceStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.equipment_states import EquipmentStateStore
     from ksi_core.equipment_support import EquipmentSupportStore
@@ -51,6 +54,181 @@ if TYPE_CHECKING:
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
+
+
+# 결합 규칙 표 — (store 인자명, 필수 동반 인자 그룹들, 거부 사유 문장).
+#
+# 각 행의 두 번째 요소는 "그룹의 튜플"이다. 그룹 하나는 "이 그룹 안 인자가 전부
+# 주어지면 충족"(AND)을 뜻하고, 그룹이 둘 이상이면 그중 하나만 충족해도 된다
+# (OR of AND) — evidence_storage 처럼 소비자가 여럿인 결합에 쓴다. 그룹이 빈
+# 튜플인 행(예: event_store)은 결합 검증이 없고 protected_surface 판정에만
+# 참여한다.
+#
+# 이 표의 키 집합이 곧 protected_surface 다(손으로 나열하지 않는다) — 아래
+# create_app 안에서 그대로 도출한다.
+#
+# 항목 순서 = 리팩터링 전 if 문 순서 그대로다(여러 결합 위반이 동시에 있는
+# 조립에서 어떤 오류 메시지가 먼저 뜨는지가 이 순서로 정해진다 — 바꾸지 않는다).
+# 각 문장은 INV 번호·ADR 번호·사고 이력을 담고 있으므로 한 글자도 바꾸지 않고
+# 옮겼다.
+_ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...] = (
+    (
+        "mission_signing_key",
+        (("mission_store", "site_store"),),
+        "mission_signing_key 가 주어지면 mission_store 와 site_store 가 모두"
+        " 필수다(ADR-KSI-008 §3) — 발급 레코드가 durable 기록되기 전에는 201 을"
+        " 반환하지 않는다(고아 발급 금지)",
+    ),
+    (
+        "evidence_storage",
+        (
+            ("event_store",),
+            ("source_media_store",),
+            ("mission_signing_key",),
+            ("design_surface_store",),
+        ),
+        "evidence_storage 는 소비자 저장소(event_store·source_media_store·"
+        "design_surface_store 또는"
+        " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
+        " 오브젝트 스토리지를 매단 채 기동하지 않는다."
+        "\n"
+        " 원래 이 가드는 event_store 만 요구했다(증거는 사건에 매달리는 것이라 사건"
+        " 원장 없이는 등록할 곳이 없다). 3D 파이프라인 입구(source_media)가 같은"
+        " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌고, 이제 임무"
+        " 발급이 KMZ 바이트 보관으로 세 번째 소비자가 됐다(risk"
+        " kmz-regeneration-determinism-timebomb) — 가드를 푼 것이 아니라 소비자"
+        " 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면 여전히 거부한다."
+        "\n"
+        " 설계 기준면(design_surface_store, M4-A)이 네 번째 소비자다 — 등록 시"
+        " presigned PUT, 검증 대기 목록에 presigned GET 을 이 포트로 낸다.",
+    ),
+    (
+        "edge_sync_store",
+        (("event_store",),),
+        "edge_sync_store 는 event_store 와 함께 주어져야 한다(ADR-KSI-008 §3)"
+        " — 수신은 ACK 했는데 트리아지에 보이지 않는 유실 표면으로 조립하지 않는다",
+    ),
+    (
+        "coverage_report_store",
+        (("mission_store",),),
+        "coverage_report_store 는 mission_store 와 함께 주어져야 한다(INV-010)"
+        " — 발급된 적 없는 임무의 커버리지 보고는 '무슨 근거로 날았나'에 답할 수"
+        " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다",
+    ),
+    (
+        "source_media_store",
+        (("mission_store",),),
+        "source_media_store 는 mission_store 와 함께 주어져야 한다"
+        " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
+        " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
+        " 동일 원칙",
+    ),
+    (
+        "design_surface_store",
+        (("site_store",),),
+        "design_surface_store 는 site_store 와 함께 주어져야 한다"
+        " — 설계 기준면은 '어느 현장의 계획고인가'로만 의미를 갖고, 객체 키도"
+        " siteId 를 필요로 한다. 등록된 적 없는 현장의 설계면을 받으면 그"
+        " 파일은 어느 비교에도 쓰이지 못한 채 원장에만 쌓인다"
+        " (source_media_store 와 동일 원칙)",
+    ),
+    (
+        "processing_job_store",
+        (("source_media_store", "site_store", "evidence_storage"),),
+        "processing_job_store 는 source_media_store·site_store·evidence_storage 와"
+        " 함께 주어져야 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·"
+        "digest)은 봉인된 번들이 정하고 반출 허용 여부는 현장이 정한다. 하나라도"
+        " 없으면 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다."
+        " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
+        " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
+        " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다",
+    ),
+    (
+        "defect_candidate_store",
+        (("mission_store", "source_media_store"),),
+        "defect_candidate_store 는 mission_store·source_media_store 와 함께 주어져야"
+        " 한다 — 결함 후보는 '어느 임무의 어느 사진 위 좌표인가'로만 의미를 갖는다."
+        " 참조 대상을 대조할 저장소가 없으면 서버는 그릴 수 없는 도형을 원장에"
+        " 쌓게 되고, 그건 조회 시점에 정상으로 보인다(defect_candidates.py"
+        " '서버는 후보를 그대로 받아 적지 않는다')",
+    ),
+    (
+        "change_detection_store",
+        (("mission_store", "processing_job_store"),),
+        "change_detection_store 는 mission_store·processing_job_store 와 함께"
+        " 주어져야 한다 — 변화 탐지 결과는 '어느 두 point cloud 산출물을"
+        " 비교했나'로만 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면"
+        " '변화가 있었다'가 아무도 재현할 수 없는 주장이 된다"
+        " (change_detection.py '서버가 검증하는 것')",
+    ),
+    (
+        "volume_change_store",
+        (("mission_store", "processing_job_store"),),
+        "volume_change_store 는 mission_store·processing_job_store 와 함께"
+        " 주어져야 한다 — 체적 리포트는 '어느 두 DSM 산출물을 비교했나'로만"
+        " 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면 '이만큼 깎였다'가"
+        " 아무도 재현할 수 없는 주장이 되고, 그 숫자는 정산·분쟁의 근거로"
+        " 쓰인다 (volume_reports.py '사람은 체적을 주장할 수 없다')",
+    ),
+    (
+        "comparison_request_store",
+        (("mission_store", "processing_job_store", "evidence_storage"),),
+        "comparison_request_store 는 mission_store·processing_job_store·"
+        "evidence_storage 와 함께 주어져야 한다 — 비교 요청은 '어느 두 처리"
+        " 작업을 비교하는가'로만 해석 가능하고, 워커가 그 산출물을 읽어갈"
+        " presigned URL 을 발급할 스토리지가 없으면 워커가 원본에 닿을 수"
+        " 없다(comparison_requests.py 모듈 docstring)",
+    ),
+    (
+        "design_conformance_request_store",
+        (
+            (
+                "mission_store",
+                "processing_job_store",
+                "design_surface_store",
+                "evidence_storage",
+            ),
+        ),
+        "design_conformance_request_store 는 mission_store·processing_job_store·"
+        "design_surface_store·evidence_storage 와 함께 주어져야 한다 — 설계 대비"
+        " 요청은 '검증된 어느 설계면을, 어느 처리 작업의 지형과' 로만 해석 가능하다."
+        " 설계면 원장이 없으면 VERIFIED 여부를 대조할 수 없어 미검증 자산으로"
+        " 계산이 시작되고, 스토리지가 없으면 워커가 두 입력 바이트를 읽을 수도"
+        " 차분 래스터를 올릴 수도 없다(comparison_request_store 와 동일 원칙)",
+    ),
+    (
+        "design_conformance_report_store",
+        (
+            (
+                "mission_store",
+                "processing_job_store",
+                "design_conformance_request_store",
+                "evidence_storage",
+            ),
+        ),
+        "design_conformance_report_store 는 mission_store·processing_job_store·"
+        "design_conformance_request_store·evidence_storage 와 함께 주어져야 한다"
+        " — 이 원장은 리포트를 받을 때 **차분 래스터 바이트를 직접 다시 해싱해**"
+        " 워커의 신고와 대조하고(design_conformance_reports.py 모듈 docstring),"
+        " 그 대조에 요청 원장(무엇을 지시했나)과 오브젝트 스토리지(실제 바이트)가"
+        " 둘 다 필요하다. 하나라도 없으면 워커의 자기보고가 그대로 원장이 되고,"
+        " 그러면 '유효한 리포트가 있는데 그 지도는 다른 파일'이 성립한다",
+    ),
+    (
+        "equipment_state_store",
+        (("site_store",),),
+        "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
+        " 좌표계 없이는 숫자일 뿐이고, 현장 등록 좌표계와 대조할 저장소가 없으면"
+        " 서로 다른 기준계의 점 사이 거리를 재는 CPA/TTC 가 성립해 버린다"
+        " (equipment_states.py EquipmentStateStore._judge)",
+    ),
+    # 아래 넷은 결합 검증이 없다(다른 store 를 요구하지 않는다) — protected_surface
+    # 판정에만 참여한다.
+    ("event_store", (), ""),
+    ("site_store", (), ""),
+    ("mission_store", (), ""),
+    ("equipment_support_store", (), ""),
+)
 
 
 def create_app(
@@ -66,11 +244,14 @@ def create_app(
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
     source_media_store: SourceMediaStore | None = None,
+    design_surface_store: DesignSurfaceStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
     volume_change_store: VolumeChangeStore | None = None,
     comparison_request_store: ComparisonRequestStore | None = None,
+    design_conformance_request_store: DesignConformanceRequestStore | None = None,
+    design_conformance_report_store: DesignConformanceStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
@@ -123,6 +304,12 @@ def create_app(
             별개로 ``evidence_storage`` 유무를 따른다 — presigned URL 을 발급할
             스토리지가 없으면 이 표면 자체가 장착되지 않는다(evidence 라우트와
             같은 관습).
+        design_surface_store: 설계 기준면(계획고 DEM) 등록·봉인·검증 저장소.
+            ``site_store`` 가 필수다 — 설계면은 현장에 매달린 자산이고 객체 키가
+            siteId 를 필요로 한다. 라우트 장착은 그와 별개로 ``evidence_storage``
+            유무를 따른다(source_media 와 같은 관습) — 업로드·다운로드 URL 을
+            낼 스토리지가 없으면 등록해도 파일을 올릴 곳이 없고, 워커가 바이트를
+            읽을 수 없어 VERIFIED 게이트가 영구히 닫힌 조립이 된다.
         processing_job_store: 3D 재구성 처리 작업(ADR-KSI-012) 발급·상태전이
             저장소. ``source_media_store`` 와 ``site_store`` 가 모두 필수다 —
             입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
@@ -143,6 +330,18 @@ def create_app(
             작업 원장, 그리고 워커가 그 산출물을 읽어갈 presigned URL 을 발급할
             스토리지가 없으면 이 표면 자체가 성립하지 않는다(processing_job_store
             와 동일한 fail-closed 조립 원칙).
+        design_conformance_request_store: M4-A "이 설계면과 이 지형을 비교하라"는
+            요청의 수신·발견·lease·전이 저장소. ``mission_store``·
+            ``processing_job_store``·``design_surface_store``·``evidence_storage``
+            가 모두 필수다 — VERIFIED 설계면만 입력이 되는지 대조하려면 설계면
+            원장이, 워커가 두 입력을 읽고 차분 래스터를 올리려면 스토리지가
+            필요하다(comparison_request_store 와 동일한 fail-closed 조립 원칙).
+        design_conformance_report_store: M4-A 설계 대비 잔량 리포트 원장.
+            위 요청 저장소와 ``evidence_storage`` 가 필수다 — 이 원장은 리포트를
+            받는 순간 **차분 래스터 바이트를 직접 다시 해싱해** 워커의 신고와
+            대조하고, 다르면 리포트를 기록하지 않고 요청을 FAILED 로 보낸다.
+            그 대조 없이 조립하면 "유효한 리포트가 있는데 지도는 다른 파일"이
+            성립한다(design_conformance_reports.py 모듈 docstring).
         equipment_state_store: Phase 3 장비 운동상태 수신·위험 평가 저장소.
             ``site_store`` 가 필수다 — 위치·속도는 좌표계 없이는 숫자일 뿐이고,
             현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
@@ -198,144 +397,46 @@ def create_app(
 
     # ── fail-closed 결합 검증(장착 전에 전부 확인 — 절반 조립으로 기동하지 않는다) ──
 
-    if mission_signing_key is not None or mission_signing_key_id is not None:
-        if mission_signing_key is None or mission_signing_key_id is None:
-            raise ValueError(
-                "mission_signing_key와 mission_signing_key_id는 함께 주어져야 한다"
-                " — 절반만 있는 서명 설정으로 조립하지 않는다"
-            )
-        if mission_store is None or site_store is None:
-            raise ValueError(
-                "mission_signing_key 가 주어지면 mission_store 와 site_store 가 모두"
-                " 필수다(ADR-KSI-008 §3) — 발급 레코드가 durable 기록되기 전에는 201 을"
-                " 반환하지 않는다(고아 발급 금지)"
-            )
-
-    if (
-        evidence_storage is not None
-        and event_store is None
-        and source_media_store is None
-        and mission_signing_key is None
+    if (mission_signing_key is not None or mission_signing_key_id is not None) and (
+        mission_signing_key is None or mission_signing_key_id is None
     ):
         raise ValueError(
-            "evidence_storage 는 소비자 저장소(event_store·source_media_store 또는"
-            " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
-            " 오브젝트 스토리지를 매단 채 기동하지 않는다."
-            "\n"
-            " 원래 이 가드는 event_store 만 요구했다(증거는 사건에 매달리는 것이라 사건"
-            " 원장 없이는 등록할 곳이 없다). 3D 파이프라인 입구(source_media)가 같은"
-            " 스토리지 포트를 두 번째 소비자로 쓰면서 그 전제가 좁아졌고, 이제 임무"
-            " 발급이 KMZ 바이트 보관으로 세 번째 소비자가 됐다(risk"
-            " kmz-regeneration-determinism-timebomb) — 가드를 푼 것이 아니라 소비자"
-            " 집합을 실제에 맞춘 것이고, 소비자가 하나도 없으면 여전히 거부한다."
+            "mission_signing_key와 mission_signing_key_id는 함께 주어져야 한다"
+            " — 절반만 있는 서명 설정으로 조립하지 않는다"
         )
 
-    if edge_sync_store is not None and event_store is None:
-        raise ValueError(
-            "edge_sync_store 는 event_store 와 함께 주어져야 한다(ADR-KSI-008 §3)"
-            " — 수신은 ACK 했는데 트리아지에 보이지 않는 유실 표면으로 조립하지 않는다"
-        )
+    # 표(_ASSEMBLY_REQUIREMENTS)에 있는 각 인자의 실제 값 — 결합 검증 루프와
+    # protected_surface 판정이 여기서 이름으로 값을 찾는다.
+    _provided: dict[str, Any] = {
+        "mission_signing_key": mission_signing_key,
+        "evidence_storage": evidence_storage,
+        "edge_sync_store": edge_sync_store,
+        "coverage_report_store": coverage_report_store,
+        "source_media_store": source_media_store,
+        "design_surface_store": design_surface_store,
+        "processing_job_store": processing_job_store,
+        "defect_candidate_store": defect_candidate_store,
+        "change_detection_store": change_detection_store,
+        "volume_change_store": volume_change_store,
+        "comparison_request_store": comparison_request_store,
+        "design_conformance_request_store": design_conformance_request_store,
+        "design_conformance_report_store": design_conformance_report_store,
+        "equipment_state_store": equipment_state_store,
+        "event_store": event_store,
+        "site_store": site_store,
+        "mission_store": mission_store,
+        "equipment_support_store": equipment_support_store,
+    }
 
-    if coverage_report_store is not None and mission_store is None:
-        raise ValueError(
-            "coverage_report_store 는 mission_store 와 함께 주어져야 한다(INV-010)"
-            " — 발급된 적 없는 임무의 커버리지 보고는 '무슨 근거로 날았나'에 답할 수"
-            " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다"
-        )
+    for _store_name, _requirement_groups, _reason in _ASSEMBLY_REQUIREMENTS:
+        if _provided[_store_name] is None:
+            continue
+        if _requirement_groups and not any(
+            all(_provided[_dep] is not None for _dep in _group) for _group in _requirement_groups
+        ):
+            raise ValueError(_reason)
 
-    if source_media_store is not None and mission_store is None:
-        raise ValueError(
-            "source_media_store 는 mission_store 와 함께 주어져야 한다"
-            " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
-            " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
-            " 동일 원칙"
-        )
-
-    if processing_job_store is not None and (
-        source_media_store is None or site_store is None or evidence_storage is None
-    ):
-        raise ValueError(
-            "processing_job_store 는 source_media_store·site_store·evidence_storage 와"
-            " 함께 주어져야 한다(ADR-KSI-012, INV-050) — 처리 작업의 입력(장수·화소·"
-            "digest)은 봉인된 번들이 정하고 반출 허용 여부는 현장이 정한다. 하나라도"
-            " 없으면 그 값들을 요청이 스스로 주장하는 구성이 되므로 조립하지 않는다."
-            " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
-            " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
-            " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다"
-        )
-
-    if defect_candidate_store is not None and (
-        mission_store is None or source_media_store is None
-    ):
-        raise ValueError(
-            "defect_candidate_store 는 mission_store·source_media_store 와 함께 주어져야"
-            " 한다 — 결함 후보는 '어느 임무의 어느 사진 위 좌표인가'로만 의미를 갖는다."
-            " 참조 대상을 대조할 저장소가 없으면 서버는 그릴 수 없는 도형을 원장에"
-            " 쌓게 되고, 그건 조회 시점에 정상으로 보인다(defect_candidates.py"
-            " '서버는 후보를 그대로 받아 적지 않는다')"
-        )
-
-    if change_detection_store is not None and (
-        mission_store is None or processing_job_store is None
-    ):
-        raise ValueError(
-            "change_detection_store 는 mission_store·processing_job_store 와 함께"
-            " 주어져야 한다 — 변화 탐지 결과는 '어느 두 point cloud 산출물을"
-            " 비교했나'로만 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면"
-            " '변화가 있었다'가 아무도 재현할 수 없는 주장이 된다"
-            " (change_detection.py '서버가 검증하는 것')"
-        )
-
-    if volume_change_store is not None and (
-        mission_store is None or processing_job_store is None
-    ):
-        raise ValueError(
-            "volume_change_store 는 mission_store·processing_job_store 와 함께"
-            " 주어져야 한다 — 체적 리포트는 '어느 두 DSM 산출물을 비교했나'로만"
-            " 해석 가능하다. 그 참조를 대조할 작업 원장이 없으면 '이만큼 깎였다'가"
-            " 아무도 재현할 수 없는 주장이 되고, 그 숫자는 정산·분쟁의 근거로"
-            " 쓰인다 (volume_reports.py '사람은 체적을 주장할 수 없다')"
-        )
-
-    if comparison_request_store is not None and (
-        mission_store is None or processing_job_store is None or evidence_storage is None
-    ):
-        raise ValueError(
-            "comparison_request_store 는 mission_store·processing_job_store·"
-            "evidence_storage 와 함께 주어져야 한다 — 비교 요청은 '어느 두 처리"
-            " 작업을 비교하는가'로만 해석 가능하고, 워커가 그 산출물을 읽어갈"
-            " presigned URL 을 발급할 스토리지가 없으면 워커가 원본에 닿을 수"
-            " 없다(comparison_requests.py 모듈 docstring)"
-        )
-
-    if equipment_state_store is not None and site_store is None:
-        raise ValueError(
-            "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
-            " 좌표계 없이는 숫자일 뿐이고, 현장 등록 좌표계와 대조할 저장소가 없으면"
-            " 서로 다른 기준계의 점 사이 거리를 재는 CPA/TTC 가 성립해 버린다"
-            " (equipment_states.py EquipmentStateStore._judge)"
-        )
-
-    protected_surface = any(
-        surface is not None
-        for surface in (
-            edge_sync_store,
-            event_store,
-            site_store,
-            mission_store,
-            mission_signing_key,
-            evidence_storage,
-            coverage_report_store,
-            source_media_store,
-            processing_job_store,
-            defect_candidate_store,
-            change_detection_store,
-            volume_change_store,
-            comparison_request_store,
-            equipment_state_store,
-            equipment_support_store,
-        )
-    )
+    protected_surface = any(value is not None for value in _provided.values())
     if protected_surface and auth_registry is None:
         raise ValueError(
             "보호 표면(edge_sync_store·event_store·site_store·mission_store·서명키·"
@@ -446,6 +547,14 @@ def create_app(
 
         mount_source_media(app, source_media_store, evidence_storage)
 
+    if design_surface_store is not None and evidence_storage is not None:
+        # source_media 와 같은 관습 — presigned URL 을 낼 스토리지가 없으면 이
+        # 표면 자체가 존재하지 않는다(등록만 받고 올릴 곳이 없는 구성을 만들지
+        # 않는다). store 자체는 evidence_storage 없이도 구성될 수 있다.
+        from ksi_core.design_surfaces import mount_design_surfaces
+
+        mount_design_surfaces(app, design_surface_store, evidence_storage)
+
     if processing_job_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
         # 다운로드 URL 발급에 필요 — GET .../input).
@@ -476,6 +585,25 @@ def create_app(
         from ksi_core.comparison_requests import mount_comparison_requests
 
         mount_comparison_requests(app, comparison_request_store, evidence_storage)
+
+    if design_conformance_request_store is not None:
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 설계면·DSM 을
+        # 읽어갈 presigned GET 과 차분 래스터 업로드 PUT 을 이 표면이 발급한다).
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        from ksi_core.design_conformance_requests import mount_design_conformance_requests
+
+        mount_design_conformance_requests(
+            app, design_conformance_request_store, evidence_storage
+        )
+
+    if design_conformance_report_store is not None:
+        # 같은 사후조건 — 이 표면은 리포트를 받을 때 스토리지 바이트를 직접 읽는다.
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        from ksi_core.design_conformance_reports import mount_design_conformance_reports
+
+        mount_design_conformance_reports(
+            app, design_conformance_report_store, evidence_storage
+        )
 
     if equipment_state_store is not None:
         from ksi_core.equipment_states import mount_equipment_states

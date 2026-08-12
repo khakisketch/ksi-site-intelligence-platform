@@ -12,6 +12,15 @@ dependencies = [
     "ksi-mission-planning",
     # Phase 3 장비 운동상태·CPA/TTC·재관찰 권고 — equipment_states.py 가 소비한다.
     "ksi-equipment-intelligence",
+    # 설계 기준면 검증(design_surfaces.py)이 **계산 엔진과 같은** 좌표계 판정을
+    # 써야 하기 때문이다(normalise_crs·SUPPORTED_PROJECT_CRS). Core 가 자기
+    # 규칙을 따로 들면 "Core 는 받았는데 align_and_diff 는 거부하는" 설계면이
+    # 생기고, 그 불일치는 업로드 며칠 뒤 비교 요청에서야 드러난다.
+    # 비용은 알고 있다 — 이 패키지가 pyproj·rasterio(GDAL)를 물고 있어
+    # control plane 이미지가 그만큼 무거워진다. 그럼에도 좌표계 화이트리스트를
+    # 복제하는 것보다 낫다고 판단했다(구 측지계 혼입은 수백 미터 오차다).
+    # Core 는 이 패키지의 **순수 판정 함수만** 쓴다 — 래스터 I/O 는 하지 않는다.
+    "ksi-geo-spatial",
     "fastapi>=0.115",
     "cryptography>=42",
 ]
@@ -35,3 +44,4 @@ ksi-event-contracts = { workspace = true }
 ksi-mission-contracts = { workspace = true }
 ksi-mission-planning = { workspace = true }
 ksi-equipment-intelligence = { workspace = true }
+ksi-geo-spatial = { workspace = true }

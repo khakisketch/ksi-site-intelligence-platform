@@ -32,6 +32,16 @@ INV-023(Geo 투영은 외삽하지 않는다, 신뢰 불가 조건에서 typed �
 - M1 의 시점 간 상대 비교는 두 epoch 가 **같은 파이프라인의 타원체고**를
   공유한다는 전제로만 성립하며, 산출물에는 그 사실을
   ``verticalDatum = "ellipsoidal_native"`` 로 명시해 싣는다.
+
+## 계약·판정은 여기 살지 않는다
+
+``VerticalDatum``·``VerticalReference``·계열 판정(``family_of``,
+``assert_comparable_vertical``)의 정본은
+:mod:`ksi_event_contracts.vertical_reference` 다. 그 판정들의 소비자가
+Core(control plane)라서 pyproj·rasterio 를 물고 있는 이 패키지에 두면 래스터
+스택이 Core 로 딸려오기 때문이다(이유 전문은 그 모듈 docstring). 이 모듈은
+**기존 import 경로를 유지하기 위해 그 이름들을 재수출**하고, 지오이드 격자
+보간처럼 실제 측지 연산이 필요한 것만 직접 구현한다.
 """
 
 from __future__ import annotations
@@ -39,30 +49,25 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
 import rasterio
+from ksi_event_contracts.vertical_reference import (
+    UnrecognizedVerticalCrsError,
+    VerticalDatum,
+    VerticalDatumFamily,
+    VerticalDatumIncompatibleError,
+    VerticalReference,
+    VerticalReferenceSource,
+    assert_comparable_vertical,
+    family_of,
+    vertical_datum_from_epsg,
+)
 from numpy.typing import NDArray
 
 #: 격자 파일 경로를 지정하는 환경변수. 미설정이면 정표고 변환을 쓸 수 없다.
 GEOID_GRID_ENV = "KSI_GEOID_GRID"
-
-
-class VerticalDatum(StrEnum):
-    """산출물이 어느 수직기준인지 — wire 계약에 실리는 값.
-
-    ``ELLIPSOIDAL_NATIVE`` 는 "재구성 엔진이 낸 타원체고를 변환 없이 그대로
-    쓴다"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로
-    선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할
-    수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는
-    산출물이 곧 재처리 대상 목록이 된다.
-    """
-
-    ELLIPSOIDAL = "ellipsoidal"
-    ELLIPSOIDAL_NATIVE = "ellipsoidal_native"
-    ORTHOMETRIC_KNGEOID2018 = "orthometric_kngeoid2018"
 
 
 class GeoidUnavailableError(RuntimeError):
@@ -196,12 +201,23 @@ def orthometric_to_ellipsoidal(
     return height_m + _separation(grid, lat_deg=lat_deg, lon_deg=lon_deg)
 
 
+# 재수출 포함 — 정본은 ksi_event_contracts.vertical_reference 이고(모듈 docstring),
+# 여기 이름들은 기존 import 경로와 "수직축은 이 모듈에서 찾는다"는 관용을 유지하기
+# 위한 것이다. 값 객체는 하나뿐이라 두 경로가 갈라질 수 없다.
 __all__ = [
     "GEOID_GRID_ENV",
     "GeoidGrid",
     "GeoidUnavailableError",
+    "UnrecognizedVerticalCrsError",
     "VerticalDatum",
+    "VerticalDatumFamily",
+    "VerticalDatumIncompatibleError",
+    "VerticalReference",
+    "VerticalReferenceSource",
+    "assert_comparable_vertical",
     "ellipsoidal_to_orthometric",
+    "family_of",
     "load_geoid_grid",
     "orthometric_to_ellipsoidal",
+    "vertical_datum_from_epsg",
 ]

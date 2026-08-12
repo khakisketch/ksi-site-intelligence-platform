@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useMutation } from "@/hooks/useMutation";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { requiresAutonomyApproval } from "@/lib/core-api/siteAutonomyGate";
 import type { SiteStatus } from "@/lib/core-api/types";
@@ -40,7 +41,7 @@ export function SiteTransitionActions({
   const [evidence, setEvidence] = useState("");
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { mutate, errorMessage } = useMutation();
 
   // SUSPENDED 는 저장소가 기억한 진입 직전 상태로만 복귀한다(동적 규칙 — 정적 표에
   // 없다). 그 외 상태는 정적 표를 그대로 쓴다.
@@ -63,30 +64,21 @@ export function SiteTransitionActions({
   async function submit() {
     if (!targetStatus) return;
     setPending(true);
-    setErrorMessage(null);
-    try {
-      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/transitions`, {
+    await mutate(
+      `/api/sites/${encodeURIComponent(siteId)}/transitions`,
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetStatus, evidence, reason }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setErrorMessage(
-          (payload && typeof payload.message === "string" && payload.message) ||
-            "요청을 처리하지 못했습니다.",
-        );
-        return;
-      }
-      setEvidence("");
-      setReason("");
-      setTargetStatus("");
-      router.refresh();
-    } catch {
-      setErrorMessage("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
-    } finally {
-      setPending(false);
-    }
+      },
+      () => {
+        setEvidence("");
+        setReason("");
+        setTargetStatus("");
+        router.refresh();
+      },
+    );
+    setPending(false);
   }
 
   if (allowedTargets.length === 0) {

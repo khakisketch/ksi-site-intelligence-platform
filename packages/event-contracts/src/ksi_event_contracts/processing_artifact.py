@@ -37,9 +37,32 @@ tiles_3d(다중 LOD라 단일 해상도로 대표되지 않는다)는 gsd를 nul
 이 셋의 "GSD가 고유 속성인가"는 근거가 갈리는 판단이라, 근거가 갈리면 생산자
 쪽을 더 신뢰해 허용하는 쪽을 택했다.
 
-계약 정본은 ``contracts/schemas/processing-artifact.v1.1.json``이고 이 모듈은 그
-스키마의 Python 표현이다(v1.0은 이 파일이 auxiliaryFiles 없이도 여전히 유효하다는
+계약 정본은 ``contracts/schemas/processing-artifact.v1.2.json``이고 이 모듈은 그
+스키마의 Python 표현이다(v1.1·v1.0은 이 파일이 새 필드 없이도 여전히 유효하다는
 것을 보이는 golden 비교용으로 보존한다 — coverage-report.v1/v1.1과 같은 관례).
+
+## ``vertical_reference`` — v1.2, 그리고 왜 "없음"이 승격되지 않는가
+
+이 산출물의 높이가 **어느 수직기준의 높이인가**를 산출물 자신이 싣는다. 이 값이
+없던 동안 그 사실을 아는 유일한 자리는 비교 워커의 하드코딩 상수
+(``comparison_worker._LEGACY_VERTICAL_DATUM``)였다 — 즉 리포트는 "이건 타원체고다"라고
+말하면서 그걸 어떻게 아는지는 아무도 몰랐다. 두 epoch 가 같은 파이프라인에서
+나오는 동안은 틀려도 상쇄돼 드러나지 않지만, 설계면처럼 **바깥에서 들어온
+높이**와 비교하는 순간 지오이드고(한국 20~30m)가 조용히 섞인다.
+
+**옛 산출물은 소급 승격되지 않는다.** 이 필드가 없는 v1.1 레코드는 journal
+replay 에서 ``None``으로 재생된다(``extra="forbid"``는 *추가* 필드만 막는다).
+그 ``None``에 기본 datum 을 채워 넣는 경로는 **의도적으로 없다** — 채우면
+"기록된 사실"과 "우리가 가정한 값"이 같은 자리에 앉아 구분이 사라지고, 그
+가정이 설계 대비 비교에 그대로 흘러든다. 소비자는 ``None``을 "수직기준이
+기록되기 전에 등록된 산출물"로 읽고 fail-closed 해야 한다
+(설계 대비 비교의 ``VERTICAL_REFERENCE_UNKNOWN``).
+
+그래서 wire 규약도 대칭이다: 값이 있으면 실어서 **v1.2 문서**가 되고, 없으면
+키째 빠져 **v1.1 문서**로 남는다(``auxiliary_files``·``RiskField.hazardType``과
+같은 관례) — 문서의 버전 자체가 "생산자가 수직기준을 밝혔는가"를 말한다.
+명시적 ``null``(v1.2 를 아는 생산자가 "모른다"고 밝힌 경우)도 계약상 유효하며
+모델은 그것을 ``None``으로 읽는다.
 
 ## ``auxiliary_files`` — mesh-multi-file-artifact-persistence
 
@@ -60,6 +83,7 @@ from typing import Annotated, Any
 from pydantic import Field, model_validator
 
 from ksi_event_contracts._base import _CamelModel
+from ksi_event_contracts.vertical_reference import VerticalReference
 
 _DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
 # contracts/schemas/processing-artifact.v1.1.json 의 auxiliaryFiles.items.pattern 과
@@ -143,7 +167,7 @@ class ArtifactAccuracy(_CamelModel):
 
 
 class ProcessingArtifact(_CamelModel):
-    """재구성 산출물 1건 — ``contracts/schemas/processing-artifact.v1.json`` SSOT."""
+    """재구성 산출물 1건 — ``contracts/schemas/processing-artifact.v1.2.json`` SSOT."""
 
     artifact_id: str = Field(min_length=1)
     job_id: str = Field(min_length=1)
@@ -157,6 +181,9 @@ class ProcessingArtifact(_CamelModel):
     auxiliary_files: tuple[Annotated[str, Field(pattern=_BASENAME_PATTERN)], ...] = Field(
         default_factory=tuple
     )
+    #: v1.2 — 이 산출물 높이의 수직기준 + 근거 + 귀속. ``None``은 "아직 기록되기
+    #: 전에 등록된 산출물"이고 **그 상태 그대로 남는다**(모듈 docstring).
+    vertical_reference: VerticalReference | None = None
 
     @model_validator(mode="after")
     def _crs_and_gsd_required_by_kind(self) -> ProcessingArtifact:
@@ -199,4 +226,11 @@ def processing_artifact_wire_dict(artifact: ProcessingArtifact) -> dict[str, Any
         # 빈 배열은 "파일 하나짜리 산출물"의 기본값이다 — v1.0 소비자와의 wire
         # 호환을 위해 키째 뺀다(RiskField의 hazardType 과 같은 관례).
         data.pop("auxiliaryFiles", None)
+    if artifact.vertical_reference is None:
+        # **여기가 v1.2와 v1.1의 경계다.** 수직기준을 모르는 산출물은 그 사실을
+        # null 로 주장하지 않고 v1.1 문서로 남는다 — v1.1 소비자(와 v1.1 골든
+        # 스키마)가 옛 산출물을 그대로 계속 읽는다. 반대로 값이 있으면 실려서
+        # 그 문서는 v1.2이고 v1.1 은 그것을 거부한다(additionalProperties:false).
+        # "이행"이 실제로 일어났다는 것이 두 방향 모두에서 확인된다.
+        data.pop("verticalReference", None)
     return data

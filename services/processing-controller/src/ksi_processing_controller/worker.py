@@ -48,6 +48,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
@@ -79,6 +84,30 @@ class WorkerRunError(RuntimeError):
 # ``format`` 필드가 말한다. 여기서 kind→MIME 표를 만들면 두 곳이 서로 다른
 # 진실을 말할 수 있다.
 _ARTIFACT_CONTENT_TYPE = "application/octet-stream"
+
+# 이 파이프라인이 내놓는 높이가 어느 기준의 높이인가 — **파이프라인이 자기
+# 동작을 근거로 선언한다.**
+#
+# 왜 여기인가: 이 사실을 아는 곳은 여기뿐이다. Core 는 산출물 바이트를 읽지
+# 않고, 비교 워커는 두 산출물을 받아 빼기만 한다. 그동안 이 값은 비교 워커의
+# 하드코딩 상수(``comparison_worker._LEGACY_VERTICAL_DATUM``)로 살아 있었는데, 그건
+# 산출물의 사실이 아니라 **소비자의 가정**이었다 — 같은 파이프라인끼리 비교하는
+# 동안은 틀려도 상쇄돼 드러나지 않지만, 설계면처럼 바깥에서 들어온 높이와
+# 비교하는 순간 지오이드고(한국 20~30m)가 조용히 섞인다.
+#
+# 왜 ``ELLIPSOIDAL_NATIVE`` 인가: ODM 은 RTK 가 준 타원체고를 그대로 흘려보낸다.
+# 우리가 아는 것은 "이 높이가 타원체고임을 측정했다"가 아니라 **"변환을 하지
+# 않았다"** 이고, 그 상태를 가리키는 값이 정확히 이것이다(지오이드 격자가
+# 확보되면 이 값이 남아 있는 산출물이 곧 재처리 대상 목록이 된다).
+# 그래서 source 도 ``PIPELINE_DECLARED`` 다 — 측정이 아니라 귀속이다.
+_ODM_VERTICAL_REFERENCE = VerticalReference(
+    datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+    basis=(
+        "ODM 이 RTK 타원체고를 변환 없이 그대로 출력한다 — 지오이드 격자 미확보로 "
+        "정표고 변환을 수행하지 않았다"
+    ),
+    source=VerticalReferenceSource.PIPELINE_DECLARED,
+)
 
 
 def _download(client: httpx.Client, url: str, dest: Path) -> None:
@@ -257,6 +286,13 @@ def run_job(
                     crs=report.crs,
                     gsd=report.gsd,
                     auxiliary_files=report.auxiliary_files,
+                    # 좌표계가 없는 산출물(카메라 포즈·리포트)에는 수직기준을
+                    # 달지 않는다 — crs 를 null 로 두는 것과 같은 이유로, 높이가
+                    # 그 산출물 자체의 속성이 아닌 곳에 기준만 선언하면 소비자가
+                    # 없는 것을 있다고 읽는다. 공간 산출물에는 전부 붙는다.
+                    vertical_reference=(
+                        _ODM_VERTICAL_REFERENCE if report.crs is not None else None
+                    ),
                 ),
             )
             registered += 1

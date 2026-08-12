@@ -61,9 +61,19 @@ export function formatRatioPercent(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
 
-/** 체적을 사람이 읽는 문자열로 — 소수 1자리(그 이상은 재구성 정밀도가 못 받친다). */
+/**
+ * 체적을 사람이 읽는 문자열로 — 소수 1자리(그 이상은 재구성 정밀도가 못 받친다).
+ *
+ * `-0` 을 `0` 으로 눕히는 한 줄이 있는 이유: 집계가 한쪽 부호뿐인 구역에서는
+ * 서버가 빈 합계를 `-0.0` 으로 낸다(`dsm_diff.volume_delta_in_polygon` 의
+ * `-sum()`). 설계 대비 잔량은 **구역을 깎을 곳과 쌓을 곳으로 나누는 것이 목적**
+ * 이라 그 경우가 예외가 아니라 기본값이고, 그대로 두면 "-0 m³ 깎아야 함"이
+ * 화면의 절반에 뜬다(`toLocaleString` 이 음의 0 의 부호를 보존한다). 값이
+ * 아니라 표기의 문제라 계약·집계는 건드리지 않고 여기서만 눕힌다.
+ */
 export function formatVolumeM3(value: number): string {
-  return `${value.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} m³`;
+  const shown = value === 0 ? 0 : value;
+  return `${shown.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} m³`;
 }
 
 /** 순변화는 방향이 보여야 한다 — 증가에 명시적 `+` 를 붙인다. */
