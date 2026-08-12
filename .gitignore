@@ -34,6 +34,10 @@ apps/dashboard/node_modules/
 apps/dashboard/.next/
 apps/dashboard/.env.local
 
+# 운영 환경변수 실물 — 토큰 digest·객체저장소 자격증명이 들어간다. 예제만 커밋한다
+# (deploy/.env.example). scripts/manifold/manifold.env 와 같은 관례.
+deploy/.env
+
 # Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
 # 계보는 edge/third_party/PSDK_LOCK.yaml(커밋)이 SSOT, 실물은 tools/edge/fetch_psdk.py로 fetch.
 /.secrets/
