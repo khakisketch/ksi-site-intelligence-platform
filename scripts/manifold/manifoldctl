@@ -101,7 +101,14 @@ cmd_build() {
   fi
 
   mf_log "컨테이너($MANIFOLD_BUILD_IMAGE)에서 빌드 — 정본 경로(실기 userland와 동일한 gcc9.4/cmake3.16.3/glibc2.31)"
+  # --user 로 호스트 uid:gid 를 넘긴다. 넘기지 않으면 컨테이너가 root 로 돌아
+  # build_dir 산출물이 전부 root 소유가 되고, 바로 아래 .ksi_build_sha 스탬프가
+  # "허가 거부"로 죽는다 — 빌드는 성공했는데 deploy 가 영구히 막힌다(2026-08-12
+  # 실기 세션 실측: 컨테이너 ctest 2/2 통과 직후 스탬프 단계에서 EACCES).
+  # build_dir 은 docker 가 만들면 root 소유가 되므로 호스트가 먼저 만든다.
+  mkdir -p "$build_dir"
   docker run --rm --platform linux/arm64 \
+    --user "$(id -u):$(id -g)" \
     -v "$MANIFOLD_REPO_ROOT/edge/manifold-runtime:/workspace/src:ro" \
     -v "$build_dir:/workspace/build" \
     -w /workspace \

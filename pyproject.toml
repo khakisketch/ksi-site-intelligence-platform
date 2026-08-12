@@ -7,6 +7,22 @@ requires-python = ">=3.12,<3.13"
 [tool.uv]
 package = false
 
+# mmcv/mmengine([mixercseg] extra, MODEL-P4-001)는 PyPI 메타데이터에 순정
+# opencv-python 을 강제한다. base 는 opencv-python-headless 를 쓰는데, 두 배포판이
+# 동일한 `cv2/` 최상위 네임스페이스에 파일을 설치해(둘 다 `cv2/__init__.py` 등을
+# 같은 경로에 씀) uv/pip 가 그중 하나를 나중에 제거하면(RECORD 매니페스트 기준
+# 삭제) 남은 배포판이 실제로 쓰던 cv2/ 디렉터리까지 통째로 지워진다 — `uv pip list`
+# 엔 opencv-python-headless 가 설치돼 있다고 나오는데도 `import cv2` 가
+# ModuleNotFoundError 로 깨지는 이유(2026-08-07, 2026-08-12 재현: extra 부착→해제
+# 순서로 실측). 이건 uv 리졸버 버그가 아니라 두 배포판이 같은 파일 경로를 놓고
+# 벌이는 설치 충돌이라 override-dependencies(버전 제약만 바꿈, 패키지 이름 교체
+# 불가)로는 못 고친다 — opencv-python 을 애초에 설치 후보에서 빼야 한다.
+# mmcv/mmengine 이 import cv2 로 쓰는 함수(imread/imwrite/resize/cvtColor 등)는
+# headless 빌드에도 다 있다(GUI 전용 highgui, 예: imshow 만 빠짐 — 서버리스
+# adapter 는 안 씀). exclude-dependencies 는 워크스페이스 루트 pyproject.toml
+# 에서만 읽힌다(uv 0.11.15 문서 확인) — 멤버 pyproject.toml 에 적어도 무시된다.
+exclude-dependencies = ["opencv-python"]
+
 [tool.uv.workspace]
 members = ["packages/*", "services/*"]
 # references/: 읽기 전용 참고 서브모듈 — dependency resolution 물리 차단 (REFERENCE_REPOS_LOCK rules)

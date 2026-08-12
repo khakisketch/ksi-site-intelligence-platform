@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -125,6 +127,43 @@ def test_extra_file_in_model_dir_blocks_load(tmp_path: Path) -> None:
     result = load_mixercseg_detector(local_dir=tmp_path)
     assert result.status is MixerCSegLoadStatus.REGISTRY_REJECTED
     assert result.detail is not None and "unverified_extra_file" in result.detail
+
+
+def test_vendor_import_does_not_pollute_sys_modules() -> None:
+    """[risk defect-detection-vendor-syspath-pollution] 로드 후 'models'/'VMamba'
+    라는 흔한 top-level 이름이 sys.modules 에 남지 않는다 — 남으면 프로세스의
+    다른 곳에서 같은 이름을 import 할 때 벤더 코드를 잘못 받는다."""
+    result = load_mixercseg_detector(local_dir=_MODEL_DIR, device="cpu")
+    assert result.ok, result.detail
+    assert "models" not in sys.modules
+    assert "VMamba" not in sys.modules
+
+
+def test_vendor_import_does_not_clobber_preexisting_bare_names() -> None:
+    """[risk defect-detection-vendor-syspath-pollution] 로드 전에 이미
+    'models'/'VMamba' 라는 이름으로 뭔가 다른 게 import 돼 있었다면(흔한 이름이라
+    실제로 있을 수 있다), 로드가 끝난 뒤 그 값을 그대로 복구한다 — 우리가
+    영구히 덮어쓰지 않는다."""
+    fake_models = types.ModuleType("models")
+    fake_vmamba = types.ModuleType("VMamba")
+    original_models = sys.modules.get("models")
+    original_vmamba = sys.modules.get("VMamba")
+    sys.modules["models"] = fake_models
+    sys.modules["VMamba"] = fake_vmamba
+    try:
+        result = load_mixercseg_detector(local_dir=_MODEL_DIR, device="cpu")
+        assert result.ok, result.detail
+        assert sys.modules["models"] is fake_models
+        assert sys.modules["VMamba"] is fake_vmamba
+    finally:
+        if original_models is not None:
+            sys.modules["models"] = original_models
+        else:
+            sys.modules.pop("models", None)
+        if original_vmamba is not None:
+            sys.modules["VMamba"] = original_vmamba
+        else:
+            sys.modules.pop("VMamba", None)
 
 
 def test_load_never_touches_network(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -318,6 +318,63 @@ def test_asyncapi_refs_point_to_existing_latest_schemas() -> None:
     assert "event-bundle.v1.json" not in text and "event-bundle.v1.1.json" not in text
 
 
+def test_openapi_refs_resolve_to_defined_targets() -> None:
+    """openapi-core.yaml 전수 $ref 해소 검사 (risk openapi-dangling-ref-ungated).
+
+    ④·⑤(아래)는 문서에 이미 적힌 모델 **이름**끼리만 대조한다 — 그 이름이
+    애초에 ``components/schemas`` 에 정의돼 있는지는 어느 기존 게이트도 보지
+    않는다. 실측(2026-08-07): M1 에서 두 경로에 ``ArtifactUploadUrlResponse``·
+    ``ArtifactDownloadResponse`` 를 $ref 로 걸어 놓고 정의를 빠뜨렸는데도 이
+    파일의 검사 14건이 전부 통과했다.
+
+    문서 전체를 순회해 모든 $ref 를 모으고, 두 갈래 스타일을 각각 해소한다:
+      - 내부 참조(``#/components/schemas/X`` 등) — 문서 자신의 트리에서 그
+        JSON 포인터 경로가 실제로 존재하는가.
+      - 상대 파일 참조(``../schemas/X.json``) — 그 경로의 파일이 실제로
+        존재하는가.
+    그 외 형태(원격 ``https://`` URL 등)는 이 저장소 안에서 해소할 수 없으므로
+    그 자체로 실패다.
+    """
+    doc: dict[str, Any] = yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
+    refs: list[tuple[str, str]] = []
+
+    def collect(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "$ref" and isinstance(value, str):
+                    refs.append((path, value))
+                else:
+                    collect(value, f"{path}/{key}")
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                collect(item, f"{path}[{index}]")
+
+    collect(doc, "$")
+    assert refs, "openapi-core.yaml 에 $ref 가 없다"
+
+    dangling: list[str] = []
+    for pointer_path, ref in refs:
+        if ref.startswith("#/"):
+            target: Any = doc
+            for part in ref[2:].split("/"):
+                if isinstance(target, dict) and part in target:
+                    target = target[part]
+                else:
+                    dangling.append(f"{pointer_path} -> {ref} (문서 안에 정의가 없다)")
+                    break
+        elif ref.startswith("../"):
+            if not (_OPENAPI.parent / ref).resolve().is_file():
+                dangling.append(f"{pointer_path} -> {ref} (파일이 없다)")
+        else:
+            dangling.append(
+                f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)"
+            )
+
+    assert not dangling, (
+        f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
+    )
+
+
 # ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────
 #
 # 위 검사들은 경로·메서드·security 존재만 본다. 그래서 Core 가

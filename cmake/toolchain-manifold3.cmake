@@ -90,17 +90,36 @@ function(ksi_check_manifold3_toolchain_drift)
   if(KSI_ALLOW_TOOLCHAIN_DRIFT)
     return()
   endif()
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+
+  # 검사 대상 언어는 호출부의 project(LANGUAGES ...) 가 정한다. C++ 만 보면
+  # C 전용 프로젝트(edge/psdk-tap 은 project(... LANGUAGES C))에서
+  # CMAKE_CXX_COMPILER_ID 가 빈 문자열이라 "감지된 컴파일러: ." 로 무조건
+  # FATAL_ERROR 가 난다 — 드리프트가 없는데도 게이트가 막는다(2026-08-12 실측:
+  # psdk-tap 을 실기 타깃으로 configure 하는 경로가 이 이유로 전면 차단돼 있었다).
+  # C++ 가 켜져 있으면 C++ 를(기존 동작 보존), 아니면 C 를 본다.
+  if(CMAKE_CXX_COMPILER_ID)
+    set(_lang "CXX")
+  elseif(CMAKE_C_COMPILER_ID)
+    set(_lang "C")
+  else()
+    message(FATAL_ERROR
+      "Manifold 3 타깃 정책(KSI_TARGET_MANIFOLD3=ON) 드리프트 검사가 컴파일러 신원을 "
+      "읽지 못했다 — 이 함수는 project() **이후**에 불러야 한다.")
+  endif()
+  set(_id "${CMAKE_${_lang}_COMPILER_ID}")
+  set(_version "${CMAKE_${_lang}_COMPILER_VERSION}")
+
+  if(NOT _id STREQUAL "GNU")
     message(FATAL_ERROR
       "Manifold 3 타깃 정책(KSI_TARGET_MANIFOLD3=ON)은 GNU gcc/g++를 전제한다 — "
-      "감지된 컴파일러: ${CMAKE_CXX_COMPILER_ID}. 의도적 우회는 -DKSI_ALLOW_TOOLCHAIN_DRIFT=ON.")
+      "감지된 ${_lang} 컴파일러: ${_id}. 의도적 우회는 -DKSI_ALLOW_TOOLCHAIN_DRIFT=ON.")
   endif()
-  string(REPLACE "." ";" _ver_list "${CMAKE_CXX_COMPILER_VERSION}")
+  string(REPLACE "." ";" _ver_list "${_version}")
   list(GET _ver_list 0 _major)
   if(NOT _major STREQUAL "${KSI_MANIFOLD_EXPECTED_GCC_MAJOR}")
     message(FATAL_ERROR
       "Manifold 3 실기는 gcc ${KSI_MANIFOLD_EXPECTED_GCC_MAJOR}.x인데 "
-      "이 빌드는 gcc ${CMAKE_CXX_COMPILER_VERSION}로 구성됐다 — 실기와 다른 컴파일러로 "
+      "이 빌드는 ${_lang} 컴파일러 gcc ${_version}로 구성됐다 — 실기와 다른 컴파일러로 "
       "타깃 산출물을 만드는 것을 차단한다(ABI/경고 드리프트 방지). "
       "의도적이면 -DKSI_ALLOW_TOOLCHAIN_DRIFT=ON.")
   endif()

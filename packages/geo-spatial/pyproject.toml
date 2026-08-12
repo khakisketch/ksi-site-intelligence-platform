@@ -22,7 +22,11 @@ requires-python = ">=3.12,<3.13"
 # 재수출한다. 반대 방향(계약 패키지가 이 패키지를 의존)으로 두면 pyproj·rasterio
 # (GDAL)가 Core(control plane)까지 딸려온다 — comparison_policy 를 계약 패키지로
 # 올린 것과 같은 이유다. 계약 패키지는 pydantic 만 물고 있어 이 방향은 무겁지 않다.
-dependencies = ["pyproj>=3.7", "rasterio>=1.3", "numpy>=1.26", "ksi-event-contracts"]
+# rasterio>=1.5.1: 1.5.1 이 numpy 2.5 의 'Setting the shape on a NumPy array has been
+# deprecated' 를 DatasetReader.read() 내부에서 view reshape 로 바꿔 해소했다
+# (rasterio gh-3592, PR#3597, CHANGES.txt 1.5.1 확인) — .ksi/goals.json risk
+# rasterio-numpy25-shape-deprecation.
+dependencies = ["pyproj>=3.7", "rasterio>=1.5.1", "numpy>=1.26", "ksi-event-contracts"]
 
 [build-system]
 requires = ["hatchling"]

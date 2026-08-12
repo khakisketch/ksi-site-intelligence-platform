@@ -2577,7 +2577,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: 'https://ksi.example/schemas/volume-change-report.v1.json'
+              $ref: ../schemas/volume-change-report.v1.json
       responses:
         '201':
           description: RECORDED — durable 기록 성공(멱등 재전송 포함)
