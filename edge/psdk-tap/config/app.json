@@ -1,0 +1,36 @@
+{
+    "user_app_id": "probe_id1234567",
+    "firmware_version": "00.01.00.02",
+    "is_ai_rendering": "false",
+    "platform": "manifold3",
+    "name":{
+        "name_cn": "KSI探针",
+        "name_en": "ksi-psdk-tap",
+        "name_jp": "KSIプローブ",
+        "name_fr": "KSI Sonde"
+    },
+    "description": {
+        "description_cn": [
+            "KSI PSDK 遥测/直播回调采集器（原始数据，不做判定）"
+        ],
+        "description_en": [
+            "KSI PSDK telemetry/liveview callback collector (raw data, no judgment made here)"
+        ],
+        "description_jp": [
+            "KSI PSDKテレメトリ/ライブビューコールバック収集機（生データ、判定なし）"
+        ],
+        "description_fr": [
+            "Collecteur de rappels PSDK KSI (données brutes)"
+        ]
+    },
+    "maintainer": {
+        "maintainer_cn": "KSI",
+        "maintainer_en": "KSI",
+        "maintainer_jp": "KSI",
+        "maintainer_fr": "KSI"
+    },
+    "ver_min": "00.00.00.00",
+    "ver_max": "99.99.99.99",
+    "bin": "../build-manifold3/psdk_tap",
+    "userconfig": []
+}

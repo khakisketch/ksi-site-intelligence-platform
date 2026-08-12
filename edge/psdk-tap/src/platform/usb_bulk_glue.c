@@ -15,15 +15,25 @@
 #include <unistd.h>
 
 /* Manifold3/M4-계열 USB gadget 이 노출하는 것으로 관측된 고정 VID/PID·채널 표.
- * 출처: edge/third_party/psdk/samples/sample_c/platform/linux/manifold3/hal/hal_usb_bulk.h
- * (LINUX_USB_VID/PID, LINUX_USB_BULK{1,2,3}_* 매크로) — 벤더 샘플의 하드코딩된 상수를
- * 그대로 옮긴 값이며 실기로 재검증되지 않았다(README 참조). */
+ * 원 출처: edge/third_party/psdk/samples/sample_c/platform/linux/manifold3/hal/
+ * hal_usb_bulk.h (LINUX_USB_VID/PID, LINUX_USB_BULK{1,2,3}_* 매크로) — 벤더 샘플의
+ * 하드코딩된 상수를 그대로 옮긴 값이었다.
+ *
+ * **2026-08-12 실기로 재검증, 벤더 값과 실측이 어긋남을 확인**: 벤더 샘플은
+ * interfaceNum={2,6,3} 을 문서화하지만, 이 세션의 실기(`ls /dev/usb-ffs/`)에는
+ * bulk2·bulk3·bulk4·bulk5 만 존재하고 **bulk6 은 없다**(오늘 RC 경유 펌웨어 갱신
+ * 이후 채널 번호가 바뀐 것으로 추정 — 확인 필요, 갱신 전 상태는 관측 못 함).
+ * interfaceNum=6 을 그대로 두면 InitDeviceModeChannel 의 open("/dev/usb-ffs/bulk6/…")
+ * 이 ENOENT 로 실패한다. 실기에 실제로 존재하는 4개 채널 중 벤더 표에 없던 여분
+ * (bulk4 또는 bulk5) 중 어느 쪽이 옛 "BULK2"(widget/HMS 등 2번째 논리채널) 대응인지는
+ * 이 세션에서 확정하지 못했다 — bulk4 로 우선 시도한다(순번상 가장 가능성 높은 후보,
+ * 실기 재검증 필요는 여전히 유효, README 참조). */
 #define KSI_USB_VID 0x2CA3u
 #define KSI_USB_PID 0x3181u
 
 static const T_DjiHalUsbBulkChannelInfo kKnownManifold3Channels[DJI_HAL_USB_BULK_NUM_MAX] = {
     {.interfaceNum = 2, .endPointIn = 0x83, .endPointOut = 0x02},
-    {.interfaceNum = 6, .endPointIn = 0x87, .endPointOut = 0x06},
+    {.interfaceNum = 4, .endPointIn = 0x87, .endPointOut = 0x06},
     {.interfaceNum = 3, .endPointIn = 0x84, .endPointOut = 0x03},
 };
 

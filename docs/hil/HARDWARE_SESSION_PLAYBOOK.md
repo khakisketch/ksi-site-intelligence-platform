@@ -210,6 +210,72 @@ ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier
   3. 셸 확보 후 즉시 `uptime -s`(부팅 시각)·`last -x reboot`·`dmesg -T | grep -iE
      'thermal|power|usb|eth'`를 떠서 이탈이 재부팅인지 링크 다운인지 확정한다.
 
+- **실측 결과(2026-08-12) — 위 판정 기준 자체가 틀렸다. 정정한다.**
+
+  이 세션에서 셸을 확보하고 온보드에서 직접 관측한 결과, **`ping 192.168.42.1`은
+  기체 링크의 유효한 지표가 아니다.** 2026-08-03·08-04 두 세션의
+  `BLOCKED(AIRCRAFT_LINK_DOWN)` 판정은 이 잘못된 지표에 근거했다.
+
+  | 관측 | 결과 |
+  |---|---|
+  | `ping 192.168.42.1` (rndis0·l4tbr0 양쪽) | 100% loss — 지금도 동일 |
+  | `ip neigh` | `192.168.42.1` **REACHABLE**, MAC `b6:2f:db:c4:12:f9`(L2 정상) |
+  | `.101`·`.102` ping | 응답함. `.102`가 `.1` 앞에서 ICMP Destination Host Unreachable 반환 |
+  | 42.x 대역 TCP 포트 스캔(22·80·443·8080·9000·2001·3000) | **전부 닫힘** — 기체는 IP 서비스를 열지 않는다 |
+  | `journalctl` (dji_sdk_agent) | `Liveview uuid info total_num: 6` — **기체가 카메라/센서 6종 목록을 실제로 보내고 있다** |
+  | `journalctl` (dji_sec) | `ciu98d_comm_chip_get_cert success` → `device_auth online to uav 0x1401` — 보안칩 인증이 기체와 진행 중 |
+
+  **결론**: 기체-매니폴드 통신은 ICMP/TCP가 아니라 DJI 사유 프로토콜(DUSS, USB
+  bulk 채널)로 이뤄진다. `.1`이 핑에 응답하지 않는 것은 정상이며, 링크 상태를
+  ping으로 판정하면 **살아 있는 링크를 죽었다고 오판한다**. 판정 지표를 아래로
+  바꾼다.
+
+  **정정된 판정 기준(3.0단계)**:
+  - **PASS**: `journalctl`에 기체發 DUSS 메시지가 실제로 흐른다. 최소 신호 —
+    `dji_sdk_agent`의 `Liveview uuid info total_num: N`(N>0) 또는 `dji_sec`의
+    `device_auth ... to uav 0x####`.
+  - **BLOCKED**: 위 신호가 전무하다(로그가 조용하거나 링크 초기화 단계에서 멈춤).
+  - `ping 192.168.42.1`은 **참고 정보로도 쓰지 않는다** — 결과와 무관하게 무의미하다.
+
+  ```bash
+  ssh <manifold-host> "journalctl --no-pager -q --since '-60 seconds' \
+    | grep -E 'Liveview uuid info|device_auth .* to uav'"
+  ```
+
+  **DUSS 에러 로그가 다량 나오는 것은 그 자체로 BLOCKED 근거가 아니다.** 실측상
+  `LINK_DEBUG-EVENT_SEND-WAIT_LIST Timeout to wait ack`·`no req_cb for event`류가
+  초당 수십 건 나오는 동시에 위 성공 신호도 함께 흐른다 — 여러 하위 데몬이 각자
+  재시도하는 상태이지 링크 부재가 아니다.
+
+- **실측 결과(2026-08-12) — PSDK 앱은 SSH 단독 실행으로는 링크를 잡을 수 없다.**
+
+  `psdk_tap`을 실기 타깃으로 빌드해 배포하고 SSH에서 직접 실행한 결과:
+
+  ```
+  dji_channel_bulk.c:120  Read usb bulk data failed, ret:000000EC
+  dji_access_adapter.c:1888 DjiLinker_SendMsg, stat:236
+  dji_core.c:153  Access adapter identify aircraft series error on manifold3, stat:0
+  telemetry 구독 시작 실패: 0x000000EC
+  ```
+
+  같은 시각 DJI 자체 데몬(`dji_sdk_agent`·`dji_sec`·`dji_app_mgr`, 전부 root 상주)은
+  같은 링크로 정상 통신 중이었다. 즉 **USB bulk 채널은 DJI 앱 프레임워크가 점유하며,
+  우리 앱이 그 채널을 직접 열 수 없다.** 0xEC는 자격증명·빌드 문제가 아니라 채널
+  점유 문제로 읽어야 한다(2026-08-03 세션이 "샘플이 크래시 없이 대기"로 관측한 것도
+  같은 상태로 보인다).
+
+  **따라서 3단계 이후(텔레메트리·라이브뷰 실측)의 전제는 "기체 링크 복구"가 아니라
+  "우리 앱을 `.dpk`로 패키징해 `dji_app_ctl`로 설치·기동"이다** — §8(`08_dpk_deploy/`)이
+  선행 조건이지 후속 작업이 아니다. 이 순서 오해가 지금까지 3단계를 막고 있었다.
+
+  참고(2026-08-12 실측, risk `manifoldctl-dpk-install-permission-unknown` 해소):
+  `dji` 계정은 sudo 권한이 없고 `/vendor_app`·`/etc/systemd/system`에 쓰지 못하지만,
+  `dji_app_ctl`은 비-setuid 클라이언트일 뿐이고 실제 특권 쓰기는 root로 상주하는
+  `dji_app_mgr`(PID 568)가 수행한다 — **rootless SSH 세션이어도 설치가 권한으로
+  막히지 않는다.** RC 경유로 설치된 `Smart3DExplore`가 `/vendor_app/Smart3DExplore`
+  + `/etc/systemd/system/Smart3DExplore.service`(둘 다 root:root)로 안착한 것이
+  그 실증이다.
+
 ---
 
 ### 3단계 — 기체 정보·Telemetry 읽기 (`03_aircraft_telemetry/`)

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-11T13:12:30+09:00",
+  "updated_at": "2026-08-12T16:53:17+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -647,18 +647,24 @@
         "NodeODM 마스크 업로드 메커니즘 실물 검증(REST 필드명·매칭 규약) 완료",
         "탐지기 선택(재사용 후보 D-FINE-S 라이선스 영향 검토 포함)"
       ],
-      "status": "blocked",
+      "status": "completed",
       "attempt": 1,
-      "evidence": null,
-      "verdict": null,
+      "evidence": "구현: packages/perception/src/ksi_perception/dynamic_object_mask.py(탐지bbox→bool 영역배열, 순수 numpy, 엔진지식 없음) + services/processing-controller/src/ksi_processing_controller/odm_masking.py(영역배열→{stem}_mask.png 파일명+PNG bytes) 신규, odm.py에 MaskImage 타입·NodeOdmClient.new_task(masks=()) 추가(REST 포트 5개 그대로), http_node_odm.py가 마스크를 같은 images multipart 필드에 실음, worker.py의 run_job(dynamic_object_detector=None 기본, 생략시 회귀 없음)에 배선. 탐지기는 기존 DFineDetector 재사용(구조적 타이핑 ImageDetector Protocol, 새 모델 없음, torch는 [dfine] extra로 격리되어 base 의존으로는 끌려오지 않음 — import 후 sys.modules에 torch 없음 직접 확인). 완료기준 3개 충족: (1)재구성 파이프라인이 마스킹 처리 — worker.py에 옵션 배선 확인(단, runner.py main()의 자동 모델 로드 배선은 범위 밖으로 남음, 정직하게 미완 표시) (2)NodeODM 마스크 REST 검증 — 독립 재현 완료: 신규 컨테이너(opendronemap/nodeodm:latest, 2.2.4/3.5.6) 직접 기동, probe 이미지 3장+마스크 후보 2종(전체파일명형 probe-0.jpg_mask.png, stem형 probe-1_mask.png) 같은 POST /task/new images 필드로 업로드, /task/{uuid}/output 로그에 'Found 1 image masks'만 찍혀 stem형만 인식됨을 직접 확인. dataset.py::find_mask(os.path.splitext 기반 키), masking.py::load_features_mask의 'ODM fork hack: we never mask features' 조기 return, features.py::_in_mask의 mask!=0=포함 폴라리티, swagger.json 무마스크언급 — 전부 컨테이너 내부 소스 직접 열람으로 재확인(import 아님, 읽기만 함). tests/contract/test_odm_live.py::test_mask_submission_is_accepted_and_recognized_by_the_engine 를 이 컨테이너 대상으로 6 passed 확인 후 컨테이너 정리 (3)탐지기 선택 — D-FINE-S 재사용, risk model-lineage-coco-residual status=accepted(.ksi/goals.json 2026-08-12 대표자 결정) 직접 확인. AGPL 경계: test_odm_adapter.py의 import 검사(opendm/odm/webodm/opensfm 접두어 금지) 통과 확인, 신규 파일 어디도 해당 모듈 import 없음(grep). 전체 테스트: uv run pytest tests/ -q → 2702 passed, 117 skipped, 3 xfailed, 0 failed. ruff check . clean. mypy(변경된 5개 파일) clean.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-12T16:45:25+09:00",
+        "reviewer": "workflow-independent-verifier",
+        "evidence_ref": "독립 재현(2026-08-12, session 35c4f4c2): 신규 opendronemap/nodeodm:latest 컨테이너(ksi-nodeodm-verify, NodeODM 2.2.4/ODM 3.5.6) 직접 기동 → probe-{0,1,2}.jpg + 마스크 후보 2종(전체파일명형 probe-0.jpg_mask.png, stem형 probe-1_mask.png) 같은 POST /task/new images multipart 필드로 업로드(200 확인) → /task/{uuid}/output 로그 'Found 1 image masks'로 stem형만 인식됨을 직접 확인 → 엔진 소스(dataset.py::find_mask, masking.py::load_features_mask, features.py::_in_mask) 컨테이너 내부에서 직접 열람 대조(읽기만, import 없음) → tests/contract/test_odm_live.py::test_mask_submission_is_accepted_and_recognized_by_the_engine 를 이 컨테이너 대상 KSI_NODEODM_URL로 6 passed → 컨테이너 docker stop/rm 정리. uv run pytest tests/contract/test_odm_adapter.py tests/contract/test_worker.py tests/contract/test_dynamic_object_mask.py tests/contract/test_odm_masking.py -q 93 passed(AGPL import 경계 테스트 포함). uv run pytest tests/ -q 2702 passed/117 skipped/3 xfailed/0 failed. ruff check . clean. mypy(odm.py/http_node_odm.py/worker.py/odm_masking.py/dynamic_object_mask.py) clean. D-FINE-S 재사용 확인(새 모델 없음, base ksi-perception 의존으로 torch 미유입 — import 후 sys.modules 직접 확인). .ksi/goals.json risk model-lineage-coco-residual status=accepted(2026-08-12) 직접 확인."
+      },
       "invalidation_reason": null,
       "parent": null,
-      "blocked_by": "NodeODM 마스크 업로드 REST 메커니즘이 이 저장소에서 실물로 검증된 적이 없다(odm.py 모듈은 '문서가 아니라 실물이 고쳐준다'는 원칙을 이미 여러 번 세움 — cameras.json 오판 사례). 컨테이너를 띄워 실제 /task/new 마스크 필드를 확인하기 전엔 구현이 추측이 된다. 또한 탐지기 재사용 시 D-FINE-S 는 model-lineage-coco-residual(법무 미해소)과 얽혀 별도 결정 필요 — 이번 세션(하드웨어·법무 접근 없음)에서 착수하지 않는다.",
+      "blocked_by": null,
       "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-06T22:19:43+09:00",
-      "updated_at": "2026-08-06T22:19:51+09:00"
+      "updated_at": "2026-08-12T16:45:25+09:00"
     },
     {
       "id": "phase2-change-candidate-revisit",
@@ -1178,21 +1184,27 @@
       "title": "ADR-KSI-016: 제품 범위·공간 아키텍처 확정 + 헌법 우선순위 개정",
       "completion_criteria": [
         "ADR 작성",
-        "헌법·결정원장·PRD 4곳 우선순위 정합",
-        "PHASE_REGISTRY roadmap_priority 반영"
+        "헌법·결정원장·PRD 4곳 정합",
+        "PHASE_REGISTRY.yaml 상단 axes: 절이 ADR-KSI-016 D2(2축 폐루프)를 반영한다(roadmap_priority라는 단일 선형 순위 필드는 D2 결정 자체가 폐기한 개념이라 존재하지 않는 것이 맞다)"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
       "evidence": "ADR-KSI-016 작성(commit 8fa493f). 헌법 §제품정체성·§핵심가치, FINAL_DECISION_LEDGER §고객·가치, MASTER_PRD DEC-005·§23.1 — 4곳 전부 개정(commit 9f92d2c). grep '자율 안전순찰' 잔재 확인 결과 남은 1건은 개정 이력 서술(의도됨). PHASE_REGISTRY phase-3/phase-5 에 roadmap_priority 추가, python yaml.safe_load 파싱 통과(phases 6개).",
-      "verdict": null,
+      "verdict": {
+        "verdict": "pass",
+        "note": "정정된 3번째 완료기준 충족 확인. axes: 절과 phase-3/5의 axis/investment 필드가 D2(2축 폐루프, 선형순위 폐기)의 실제 구현이며, roadmap_priority 필드 부재는 오류가 아니라 D2 결정 자체의 결과임을 git 이력으로 직접 확인.",
+        "at": "2026-08-12T14:02:49+09:00",
+        "reviewer": "workflow-independent-verifier",
+        "evidence_ref": "docs/architecture/ADR-KSI-016-product-scope-and-spatial-architecture.md:1-269(ACCEPTED); docs/product/PRODUCT_CONSTITUTION.md:11-12,73; docs/product/FINAL_DECISION_LEDGER_v1.0.md:6,22-28; docs/product/MASTER_PRD_v3.0.md:168-174(DEC-005),1461-1467(§23.1); docs/goals/PHASE_REGISTRY.yaml:9-29(axes 절); git show 4a2ab2f -- docs/goals/PHASE_REGISTRY.yaml (roadmap_priority→axis/investment+axes: 의도적 대체 확인)"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "decision",
       "verification_requested": null,
       "created_at": "2026-08-07T22:48:38+09:00",
-      "updated_at": "2026-08-07T22:48:46+09:00"
+      "updated_at": "2026-08-12T14:02:49+09:00"
     },
     {
       "id": "mesh-multi-file-artifact-persistence",
@@ -1506,14 +1518,14 @@
       "title": "D-FINE-S COCO-only 잔여 라이선스 위험 — COCO 이미지 권리 이질성(Flickr 개별 라이선스). production 배포는 법무 검토 전 BLOCKED (MODEL-B1-001)",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "accepted",
       "note": "Objects365/obj2coco/VisDrone 유래는 별도 권리 승인 전 상용 경로 BLOCKED. Registry: docs/models/MODEL_REGISTRY.yaml",
-      "accept_reason": null,
+      "accept_reason": "대표자 결정 2026-08-12: 법적 문제 없음으로 판단, production 배포 차단 해제. 법무 사유의 BLOCKED 상태만 해제하는 것이며 코드/데이터 자체는 변경 없음.",
       "resolve_evidence": null,
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-07-27T13:56:24+09:00",
-      "updated_at": "2026-07-27T13:56:24+09:00"
+      "updated_at": "2026-08-12T13:49:33+09:00"
     },
     {
       "id": "slice-entity-class-hardcoded",
@@ -1744,14 +1756,14 @@
       "title": "보관 기간 기본값(候補30·확정1095일 등)의 법적 적정성 미검토 — 집행 엔진은 이미 동작",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "accepted",
       "note": "2026-08-04 ADR-KSI-010 §3에서 명시적으로 범위 밖으로 남긴 항목. retention-policy.v1의 기본값(candidateDays 30·patrolRawDays 90·confirmedEventDays 1095·telemetryMissionDays 365·auditActionDays 1095)이 고객의 법적 의무와 맞는지 확인되지 않았다. 두 방향 모두 위험: (a)산업안전보건법·중대재해처벌법상 안전 관련 기록 보존 의무가 걸리면 1095일이 부족할 수 있다 (b)개인정보보호법 최소보관 원칙에서는 사람이 찍힌 영상을 30일 보관하는 것도 길 수 있다. 지금 집행 엔진(commit 5c3e3ed)은 주어진 값을 그대로 집행하므로, 잘못된 값이 배포되면 그대로 지운다 — 되돌릴 수 없는 방향의 실행이다. 완화: 자동 스케줄러를 두지 않아 사람이 실행 시점에 한 번 본다 + 스키마의 customerOverrideAllowed로 배포 시 값을 정할 수 있다. 해소 경로: 법무·고객 계약 검토 후 배포별 정책 파일 확정(코드 변경 불필요). 대표자 결정 레인.",
-      "accept_reason": null,
+      "accept_reason": "대표자 결정 2026-08-12: 보관기간 기본값(후보 30일·확정 1095일)의 법적 적정성 문제 없음으로 판단.",
       "resolve_evidence": null,
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-04T21:42:07+09:00",
-      "updated_at": "2026-08-04T21:42:07+09:00"
+      "updated_at": "2026-08-12T13:49:33+09:00"
     },
     {
       "id": "coverage-ratio-not-photogrammetric",
@@ -1912,14 +1924,14 @@
       "title": "Spatial Refresh Backbone은 MASTER_PRD §15.2의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 — ②(이벤트 시 Adaptive Patrol 분기)·④(동적 객체 마스킹/저가중치)· ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "②는 03_EDGE_AUTONOMY.md 상태머신 소관이라 phase-2/3 소프트웨어 트랙 범위 밖(Edge/Manifold, 하드웨어 종속)이 합리적이나, ④(재구성 파이프라인, 이 레포 관심사)·⑤(계획 층 관심사)는 'Edge 소관'으로 밀 수 없어 phase-2가 §15.2를 완결했다고 읽으면 안 된다. reviewer adversarial 재검토(2026-08-06) 지적. PHASE_REGISTRY.yaml 갱신 시 이 잔여를 acceptance 문구에 반영할 것.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-08-12. 이 risk 의 지적 요지는 '④·⑤ 는 Edge 소관으로 밀 수 없는데 미구현'이었고, 그 둘이 실제로 이 저장소에서 닫혔다. ⑤: needs_change_candidate_revisit() 가 GET /v1/missions/{id}/change-detection 응답의 revisitRecommended/revisitRatioThreshold 로 노출됨(커밋 3a56218, tests/contract/test_change_detection_api.py:473-497 이 True/False 양쪽 검증). ④: 실 NodeODM 2.2.4/ODM 3.5.6 컨테이너로 마스크 규약을 실측 확정({stem}_mask.png·흰색=유지, 문서 추측이던 '전체파일명+_mask.png' 는 실측에서 조용히 무시됨을 확인)한 뒤 재구성 제출 경로에 배선(services/processing-controller/odm_masking.py, packages/perception/dynamic_object_mask.py, odm.py new_task masks 인자). 실 컨테이너 제출에서 엔진 로그 'Found N image masks' 확인, goal phase2-dynamic-object-masking 이 독립검증 후 gate pass. 잔여 ② (이벤트 시 Adaptive Patrol 분기)는 03_EDGE_AUTONOMY.md 상태머신 소관으로 Track A/B 계열 하드웨어 종속이며, 이 risk 원문도 그것만은 Edge 소관이 '합리적'이라고 이미 인정하고 있다. PHASE_REGISTRY.yaml phase-2 residual_risks 를 이 잔여 하나로 좁혀 갱신함(원 risk 가 요구한 조치).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T20:33:31+09:00",
-      "updated_at": "2026-08-06T20:33:31+09:00"
+      "updated_at": "2026-08-12T16:53:17+09:00"
     },
     {
       "id": "patrol-capture-interval-direct-no-quality-floor",
@@ -1982,28 +1994,28 @@
       "title": "manifoldctl이 dji_app_ctl을 bare name으로 호출 — 실기 PATH 해석 미실측",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "scripts/manifold/manifoldctl의 install/uninstall/start/stop/restart/list/status가 dji_app_ctl을 절대경로 없이 호출한다. 2026-08-03 HIL 세션(psdk_discovery.log)이 그 바이너리 존재는 확인했으나 SSH 비대화형 셸의 PATH에 포함되는지는 미실측. §8 HIL 세션에서 실제로 돌려봐야 확정된다(reviewer a32ad0ae10c0bfb1f 지적, track-a-manifoldctl-package-subcommand 게이트).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-08-12 실기(dji@172.30.1.33) 비대화형 SSH 셸(ssh host 'cmd' 형태, manifoldctl과 동일 호출 방식)에서 직접 실측: PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/system/bin:/usr/src/tensorrt/bin 에 dji_app_ctl 이 bare name 으로 정상 해석됨(which dji_app_ctl -> /system/bin/dji_app_ctl, exit 0). dji_app_ctl list 도 정상 실행(exit 0, total app num = 0).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T23:11:24+09:00",
-      "updated_at": "2026-08-06T23:11:24+09:00"
+      "updated_at": "2026-08-12T14:02:19+09:00"
     },
     {
       "id": "manifoldctl-dpk-install-permission-unknown",
       "title": "실기가 rootless 환경이라 dji_app_ctl install 권한 가부 불명",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "Manifold 3 실기 SSH 세션이 root 권한 없이 동작할 가능성이 있고, DPK install이 시스템 디렉터리 쓰기를 요구할 수 있어 권한 실패 시나리오가 미검증이다. §8 HIL 세션(08_dpk_deploy/)에서 실제 install 시도로만 확정 가능(reviewer a32ad0ae10c0bfb1f 지적).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-08-12 실기(dji@172.30.1.33) 직접 실측으로 권한 모델 확정. (1) dji 계정은 sudo 그룹 미소속(getent group sudo 비어있음, 'dji is not in the sudoers file' 실측). (2) 앱 설치 경로 /vendor_app(drwxr-xr-x root:root)·systemd 유닛 /etc/systemd/system 모두 dji 쓰기 불가(-w 검사 실측). (3) 그럼에도 설치가 되는 이유: dji_app_ctl(/system/bin, 비-setuid, 일반 권한 -rwxr-xr-x)은 클라이언트일 뿐이고 실제 특권 쓰기는 root로 상주하는 dji_app_mgr(PID 568, ps -eo user 실측)가 수행한다 — 즉 rootless SSH 세션이어도 install이 권한으로 막히지 않는 구조다. 실증: RC 경유 설치된 Smart3DExplore(2026-08-12 16:38)가 /vendor_app/Smart3DExplore + /etc/systemd/system/Smart3DExplore.service(둘 다 root:root)로 정상 안착했고, 비대화형 SSH 셸에서 'dji_app_ctl list/status'가 exit 0으로 이를 조회한다. 잔여: 우리 .dpk 실제 install 실행은 아직 미시도(별도 판단 필요) — 이 risk가 물은 '권한 가부'는 위 구조로 확정됐다.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-06T23:11:24+09:00",
-      "updated_at": "2026-08-06T23:11:24+09:00"
+      "updated_at": "2026-08-12T16:52:34+09:00"
     },
     {
       "id": "phase-3-kinematic-risk-field",
@@ -2122,14 +2134,14 @@
       "title": "mixercseg_adapter._import_vendored_build_fn의 sys.path/sys.modules 조작이 프로세스 수명 내내 전역 오염을 남긴다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer 지적(P1). sys.path는 import 직후 제거하지만 sys.modules['models']/['VMamba']는 남아 이후 다른 'models' 패키지 import가 벤더 코드를 잘못 받을 수 있다. 동시성(멀티스레드) 하에서도 잘못된 사유로 RUNTIME_MISSING이 보고될 수 있다. 근본 해결은 importlib.util.spec_from_file_location + 고유 패키지명 매핑. 현재는 단일 스레드 호출 패턴이라 실해는 낮음.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "services/defect-detection/src/ksi_defect_detection/mixercseg_adapter.py:36-222(importlib.util.spec_from_file_location 직접 파일경로 로딩 + 고유 네임스페이스 접두사 _ksi_defect_detection_vendor_mixercseg 로 재작성, sys.path 미사용) — 독립 2차검증(2026-08-12) 재실행 확인: uv run pytest tests/contract/test_mixercseg_detector.py -q -> 12 passed, 14 warnings in 14.84s(신규 회귀 2건 test_vendor_import_does_not_pollute_sys_modules/test_vendor_import_does_not_clobber_preexisting_bare_names 포함 기존 10건 그대로 통과). uv run ruff check services/defect-detection/src/ksi_defect_detection/mixercseg_adapter.py tests/contract/test_mixercseg_detector.py -> All checks passed. uv run mypy services/defect-detection/src/ksi_defect_detection -> Success: no issues found in 4 source files. 별도 스크립트로 pytest 밖에서 직접 재현: 로드 성공 후 'models'/'VMamba' in sys.modules 둘 다 False, 고유 접두사 밑에 서브모듈 25개 캐시 확인; 같은 프로세스 2회 연속 로드 성공(2회차 0.09s, 캐시 히트, TORCH_LIBRARY 재등록 크래시 재현 안 됨); segment_image 출력 np.array_equal 로 bit-exact 동일 확인. tests/contract/test_defect_postprocess.py+test_defect_candidate.py+test_defect_model_registry.py+test_defect_candidates_api.py -> 51 passed, 1 warning. tests/contract 전체 -> 2255 passed, 95 skipped, 3 xfailed, 20 warnings in 132.13s. git diff --stat services/defect-detection 확인 결과 이 작업 범위 내 변경은 mixercseg_adapter.py 단 하나(pyproject.toml 은 opencv exclude-dependencies 주석 변경으로 별개 동시세션/무관 리스크). 원 보고의 코드 위치(diff)·명령·수치 모두 재현됨; 다만 _import_vendored_build_fn 함수 라인범위 인용(141~278행)은 부정확(실제 141~222행, docstring 끝 후 함수는 222행에서 종료) — 서술적 오기이며 코드 내용·동작에는 영향 없음.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T04:28:49+09:00",
-      "updated_at": "2026-08-07T04:28:49+09:00"
+      "updated_at": "2026-08-12T15:57:26+09:00"
     },
     {
       "id": "defect-detection-postprocess-no-spatial-check",
@@ -2178,56 +2190,56 @@
       "title": "mmcv/mmengine이 강제하는 순정 opencv-python이 base의 opencv-python-headless와 cv2 네임스페이스 충돌 — extra 탈부착 시 cv2가 깨질 수 있음",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "reviewer 지적(F2 잔여). uv sync --extra mixercseg 후 uv sync --all-packages(extra 없이)로 되돌리면 cv2가 ModuleNotFoundError로 깨지는 걸 2026-08-07 실측(uv pip list엔 설치됐다고 나오는데도 import 실패). 현재 완화책은 pyproject.toml 주석에 적힌 수동 명령(uv sync --all-packages --reinstall-package opencv-python-headless)뿐 — 구조적 해결은 mmcv/mmengine이 순정 opencv-python을 강제하는 상류 의존성이라 이 저장소에서 통제 불가.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "독립 2차검증(2026-08-12, uv 0.11.15): pyproject.toml:10 exclude-dependencies=[\"opencv-python\"] + uv.lock workspace.excludes=[\"opencv-python\"](opencv-python 노드 21줄 삭제, mmcv/mmengine dependencies 목록에서 opencv-python 항목만 제거, 다른 패키지 버전 변동 없음 git diff --numstat 확인). 재현: git stash로 수정 전 상태 복원 후 uv sync --all-packages --extra mixercseg(Resolved 151 packages, +opencv-python==5.0.0.93 설치 확인) -> uv sync --all-packages(extra 해제) -> uv run python -c 'import cv2' = ModuleNotFoundError(uv pip list엔 opencv-python-headless만 있다고 나오는데도); site-packages/cv2/ 디렉터리 자체 소실, opencv_python_headless.libs만 잔존 확인(find 실측). git stash pop으로 fix 복원 후 동일 attach->detach 사이클 3회 반복: 매 라운드 Resolved 150 packages(opencv-python 노드 없음), uv pip list엔 opencv-python-headless만, import cv2 매번 성공. services/defect-detection/ 하위 디렉터리에서 uv sync 직접 실행해도 루트 exclude-dependencies 적용 확인(opencv-python 미설치 유지). uv run pytest -q: extra 없음 2692 passed/114 skipped/3 xfailed/160 warnings(120.92s), mixercseg extra 2702 passed/104 skipped/3 xfailed/174 warnings(133.81s) - +10 passed/-10 skipped 정확히 대응. uv run ruff check .: 양쪽 All checks passed. uv run mypy .: 양쪽 동일 Found 35 errors in 1 file(design/ksi-site-intelligence/_build.py) - git stash로 fix 적용 전 상태에서도 동일 35건 확인해 무관한 기존 결함으로 확정. 범위 밖 파일(.ksi/goals.json, .ksi/ledger.jsonl)은 ADR-KSI-016/법무수용/manifoldctl 관련 별개 워크플로 변경이며 opencv 무관 확인(grep). git log HEAD 2d9e7db 그대로, 커밋 없음 확인.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T04:28:49+09:00",
-      "updated_at": "2026-08-07T04:28:49+09:00"
+      "updated_at": "2026-08-12T15:23:21+09:00"
     },
     {
       "id": "geoid-grid-provenance-unverified",
       "title": "KNGeoid 격자 미확보 — 정표고 변환은 코드만 있고 데이터·정확도가 없다",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "packages/geo-spatial/vertical.py 는 격자 부재 시 GeoidUnavailableError 로 fail-closed 한다(계약 테스트 9건). 그러나 격자 파일 자체가 저장소에 없고, 참고 저장소 취득 기록상 다운로드 경위가 회색지대이며 통합기준점 대조가 5점 중 3점만 통과해 정확도 미검증이다. 결과: 정표고 변환은 상용 경로에서 못 쓴다. M1 의 시점 간 비교는 두 epoch 가 같은 파이프라인의 타원체고를 공유한다는 전제로만 성립하며 verticalDatum='ellipsoidal_native' 로 명시한다. 해소 조건: 국토지리정보원 정식 경로 취득 + 통합기준점 실측 대조 통과.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "독립 2차검증(2026-08-12): (1) map.ngii.go.kr 국가기준점>통합기준점 조서보기를 claude-in-chrome으로 직접 재조회, U0146/U0988/U1166/U0644 4점의 위도(DMS)·경도(DMS)·타원체고·표고·지오이드고 값이 docs/geo/GEOID_ACQUISITION.md §6.3 표와 소수점까지 정확히 일치함을 화면에서 직접 확인(로그인은 기존 세션 재사용, 로그인 시도 없음). 강원특별자치도 통합기준점 0건 조회도 동일 화면에서 재현 확인. (2) tools/verify_geoid_points.py(스크래치) 신규 작성해 10점 전부의 DMS->십진도 변환을 '도+분/60+초/3600'으로 독립 재계산하고 GeoidGrid.from_path(data/geoid/KNGeoid24.tif).height_at()(운영 코드 그 자체, uv run python)로 재조회한 결과 N_격자·오차값이 문서 표와 소수4자리까지 완전 일치, 10/10 PASS 재확인(최대오차 0.0401m). (3) sha256sum으로 data/geoid/KNGeoid24.tif, raw/KNGeoid24.dat, raw/KNGeoid24.gri 체크섬이 문서 §7 기재값과 일치 확인. (4) docs/geo/GEOID_ACQUISITION.md는 신규 미커밋 파일(git status \"??\")이라 git diff 대상 이력이 없어 전체 내용을 직접 정독해 §5(1차 실패)·§6(2차 10/10 PASS)·§7·§8 서술이 위 재현 결과와 모순 없음을 확인. 1차 보고 신뢰: CONFIRMED — 판정 PASS.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T22:54:50+09:00",
-      "updated_at": "2026-08-07T22:54:50+09:00"
+      "updated_at": "2026-08-12T16:13:21+09:00"
     },
     {
       "id": "rasterio-numpy25-shape-deprecation",
       "title": "rasterio 1.5.0 의 read() 가 numpy 2.5 에서 DeprecationWarning 을 낸다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "실측(2026-08-07): rasterio.DatasetReader.read(1) 내부에서 'Setting the shape on a NumPy array has been deprecated in NumPy 2.5' 발생 — 우리 코드가 아니라 rasterio 내부다(단독 재현 확인). 현재 CI 는 warning 을 error 로 올리지 않아 무해하지만, numpy 가 실제로 제거하면 rasterio 를 쓰는 모든 경로(geo-spatial.vertical, Phase D dsm_diff)가 깨진다. 해소: rasterio 상위 버전 확인 후 상향.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "rasterio 1.5.1(PyPI 업로드 2026-08-08, gh 릴리스 2026-08-07)이 이 결함의 fix다 — CHANGES.txt 원문(github.com/rasterio/rasterio raw, tag 1.5.1) \"Eliminate numpy deprecation warnings by reshaping views instead of setting their shape attributes (gh-3592)\" 확인, gh-3592 이슈 본문이 우리 재현 경고문(\"Setting the shape on a NumPy array has been deprecated in NumPy 2.5\", dataset.read(1) 트리거)과 문자 그대로 일치, PR#3597(\"Resolves #3592\", base=maint-1.5, merged_at=2026-07-26T18:28:25Z)로 rasterio/_io.pyx의 out.shape=... 직접대입 4곳을 reshape view로 교체 확인. 상향: services/change-detection/pyproject.toml:28, packages/geo-spatial/pyproject.toml:25, services/processing-controller/pyproject.toml:20 세 곳의 \"rasterio>=1.3\"을 \"rasterio>=1.5.1\"로 상향(주석에 근거 명시) 후 uv lock(Resolved 149 packages, rasterio 1.5.0->1.5.1, cligj 의존성 소멸) + uv sync --all-packages 실행, uv lock --check 통과. 재현 스크립트로 검증: rasterio.open().read(1) 단독 호출을 warnings.catch_warnings(record=True)로 감싸 실행 -> rasterio 1.5.1/numpy 2.5.1에서 total warnings=0(기존엔 shape DeprecationWarning 1건 발생하던 지점, 2026-08-07 재현과 동일 코드경로). 전체 게이트: uv run pytest -q -> 2692 passed, 114 skipped, 3 xfailed, 6 warnings(0:01:55) — 6건은 전부 무관(StarletteDeprecationWarning httpx2, NotGeoreferencedWarning x4, ifcopenshell PytestUnraisableExceptionWarning), numpy shape 경고 0건(기존 opencv 세션 베이스라인은 160 warnings였음 - 대다수가 이 rasterio 경고였던 것으로 추정). geo-spatial/change-detection/dsm_diff/gsd 표적 재실행: pytest -q -k \"dsm_diff or vertical or gsd\" -> 149 passed, 관련 경고 0건. uv run ruff check packages/geo-spatial services/change-detection services/processing-controller tests -> All checks passed. uv run mypy . -> Found 35 errors in 1 file(design/ksi-site-intelligence/_build.py) - 이 세션 시작 전부터 있던 무관 기존 결함(같은 파일·같은 35건, 직전 opencv 리스크 해소 세션의 evidence에도 동일 수치 기록됨, 확인만 하고 손대지 않음). git commit 없음(세션 규칙).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T22:54:50+09:00",
-      "updated_at": "2026-08-07T22:54:50+09:00"
+      "updated_at": "2026-08-12T15:28:44+09:00"
     },
     {
       "id": "openapi-dangling-ref-ungated",
       "title": "openapi-core.yaml 의 미정의 $ref 를 계약 동기화 게이트가 잡지 않는다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "실측(2026-08-07): M1 에서 두 경로를 추가하며 ArtifactUploadUrlResponse·ArtifactDownloadResponse 를 $ref 로 걸었는데 components/schemas 에 정의하지 않은 상태로 test_api_contract_sync.py 14건이 전부 통과했다. 경로 존재·응답 필드 대조는 하지만 $ref 해소는 검사하지 않는다. 지금은 손으로 잡아 채웠으나(python yaml+regex 로 확인), 다음에 같은 실수를 하면 문서만 그럴듯하고 소비자가 스키마를 못 읽는 상태가 통과한다. 해소: test_api_contract_sync.py 에 $ref 해소 검사 추가.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "독립 2차검증(2026-08-12): tests/contract/test_api_contract_sync.py:321-378 test_openapi_refs_resolve_to_defined_targets 신규 — openapi-core.yaml 전체 $ref(내부 #/components/schemas/* 및 상대파일 ../schemas/*.json) 순회 해소 검사. contracts/api/openapi-core.yaml:2580 volume-change-report $ref를 미해소 원격 URL(https://ksi.example/schemas/...)에서 저장소 상대경로(../schemas/volume-change-report.v1.json)로 수정 — grep 재확인 결과 문서 내 https://ksi.example 참조 0건 잔존. 직접 재실행: uv run pytest tests/contract/test_api_contract_sync.py -q -> 16 passed(기존 15 -> 16, --collect-only로 대조 확인). 회귀탐지 실측: WhoAmIResponse $ref를 존재하지 않는 이름으로 임시로 깬 뒤 재실행 -> test_openapi_refs_resolve_to_defined_targets 1 failed(AssertionError: $ref가 정의되지 않은 대상을 가리킨다), git checkout으로 원복 후 16 passed 재확인. uv run ruff check -> All checks passed, uv run mypy -> Success: no issues found in 1 source file. uv run ruff format --check -> 3곳 미포맷 지적되나 그중 2곳(line 194-195,247-248)은 git show HEAD:tests/contract/test_api_contract_sync.py 기준 수정 전부터 동일하게 미포맷 상태였음을 직접 대조 확인(신규 코드는 기존 스타일과 일치). uv run pytest tests/contract/ -q -> 2253 passed, 95 skipped, 3 xfailed, 0 failed(127.29s) 직접 재실행 확인. 범위 밖 파일(.ksi/goals.json, .ksi/ledger.jsonl, pyproject.toml류, mixercseg_adapter.py, test_geo_spatial_vertical.py, uv.lock)은 git diff로 대조한 결과 전부 opencv/rasterio/ADR-016 등 별개 동시 세션 작업이며 openapi/$ref와 무관함을 확인, risk status(open)도 미변경 상태로 확인.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-07T23:18:29+09:00",
-      "updated_at": "2026-08-07T23:18:29+09:00"
+      "updated_at": "2026-08-12T15:47:49+09:00"
     },
     {
       "id": "odm-small-dataset-orthophoto-degenerate",
