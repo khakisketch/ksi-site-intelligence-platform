@@ -16,14 +16,18 @@ from pathlib import Path
 import pytest
 from ksi_event_contracts.vertical_reference import (
     _DATUM_FAMILY,  # noqa: PLC2701 -- 표 전수 커버 검사를 위한 의도적 내부 접근
+    _GEOID_BRIDGEABLE_ORTHOMETRIC,  # noqa: PLC2701 -- 격자 보유 목록 전수 검사
     _VERTICAL_CRS_EPSG_TO_DATUM,  # noqa: PLC2701 -- 화이트리스트 전수 검사
     UnrecognizedVerticalCrsError,
+    VerticalBridge,
     VerticalDatum,
     VerticalDatumFamily,
     VerticalDatumIncompatibleError,
     VerticalReference,
     VerticalReferenceSource,
+    assert_bridgeable_vertical,
     assert_comparable_vertical,
+    bridge_between,
     family_of,
     vertical_datum_from_epsg,
 )
@@ -138,6 +142,140 @@ def test_every_datum_pair_is_decided_by_family_not_by_equality() -> None:
 
 
 # --------------------------------------------------------------------------
+# bridge_between / assert_bridgeable_vertical — "이을 수 있는가"
+#
+# 계열이 다르면 무조건 거부하던 판정이 셋으로 갈라졌다. 실무 설계도면은 거의 항상
+# 정표고라, 계열 불일치를 통째로 거부하면 한국 도면이 100% 막힌다. 그렇다고 아무
+# 격자나 갖다 쓰면 리포트가 말하는 기준과 실제로 쓴 기준이 갈라진다.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (VerticalDatum.ELLIPSOIDAL, VerticalDatum.ELLIPSOIDAL_NATIVE),
+        (VerticalDatum.ELLIPSOIDAL_NATIVE, VerticalDatum.ELLIPSOIDAL),
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2024, VerticalDatum.ORTHOMETRIC_KNGEOID2024),
+    ],
+)
+def test_same_reference_needs_no_bridge(a: VerticalDatum, b: VerticalDatum) -> None:
+    """**같은 기준**이면 격자가 필요 없다 — 격자를 요구하면 되던 계산이 막힌다.
+
+    타원체고 계열의 두 값은 같은 물리량이다 — ``ellipsoidal_native`` 는 "우리가
+    변환을 안 해서 타원체고로 남았다"는 귀속 표시이지 다른 기준이 아니다.
+    """
+    assert bridge_between(_ref(a), _ref(b)) is VerticalBridge.DIRECT
+    assert assert_bridgeable_vertical(_ref(a), _ref(b)) is VerticalBridge.DIRECT
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2018, VerticalDatum.ORTHOMETRIC_KNGEOID2024),
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2024, VerticalDatum.ORTHOMETRIC_KNGEOID2018),
+    ],
+)
+def test_different_geoid_realizations_are_not_directly_comparable(
+    a: VerticalDatum, b: VerticalDatum
+) -> None:
+    """[핵심] 둘 다 정표고여도 **실현이 다르면 그냥 뺄 수 없다.**
+
+    KNGeoid18 과 KNGeoid24 는 같은 지점에서 서로 다른 값을 준다(모델 차이 최대
+    0.071m, ``docs/geo/GEOID_ACQUISITION.md`` 실측). 그 크기는 재구성 잡음으로
+    버리는 집계 문턱(0.05m)보다 커서, 변환 없이 빼면 잡음보다 큰 오차가 물량에
+    그대로 들어간다 — 이 모듈이 계열 불일치를 거부하는 것과 정확히 같은 사고다.
+
+    실현 간 변환은 두 모델의 격자를 모두 가져야 가능한데 이 시스템은 KNGeoid24
+    격자만 갖고 있다. **없는 능력을 있다고 판정하지 않는다.**
+    """
+    assert bridge_between(_ref(a), _ref(b)) is VerticalBridge.NONE
+    with pytest.raises(VerticalDatumIncompatibleError, match="실현한 지오이드 모델이 다르다"):
+        assert_bridgeable_vertical(_ref(a), _ref(b))
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2024, VerticalDatum.ELLIPSOIDAL_NATIVE),
+        (VerticalDatum.ELLIPSOIDAL_NATIVE, VerticalDatum.ORTHOMETRIC_KNGEOID2024),
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2024, VerticalDatum.ELLIPSOIDAL),
+        (VerticalDatum.ELLIPSOIDAL, VerticalDatum.ORTHOMETRIC_KNGEOID2024),
+    ],
+)
+def test_kngeoid2024_orthometric_is_bridgeable_in_both_orders(
+    a: VerticalDatum, b: VerticalDatum
+) -> None:
+    """[핵심] **이 조합이 통과하는 것이 한국 설계도면의 정상 경로다.**
+
+    우리 재구성 파이프라인은 ``ellipsoidal_native`` 를 내고 도면은 해발이다.
+    판정 순서는 답을 바꾸지 않는다 — 어느 쪽을 옮길지는 계산하는 쪽이 정한다.
+    """
+    assert bridge_between(_ref(a), _ref(b)) is VerticalBridge.GEOID_GRID
+    assert assert_bridgeable_vertical(_ref(a), _ref(b)) is VerticalBridge.GEOID_GRID
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2018, VerticalDatum.ELLIPSOIDAL_NATIVE),
+        (VerticalDatum.ELLIPSOIDAL_NATIVE, VerticalDatum.ORTHOMETRIC_KNGEOID2018),
+        (VerticalDatum.ORTHOMETRIC_KNGEOID2018, VerticalDatum.ELLIPSOIDAL),
+    ],
+)
+def test_an_orthometric_datum_we_have_no_grid_for_is_refused(
+    a: VerticalDatum, b: VerticalDatum
+) -> None:
+    """[핵심][음성] KNGeoid18 격자가 없으므로 KNGeoid24 격자로 대신 변환하지 않는다.
+
+    계열만 보면 "정표고 ↔ 타원체고" 라 이을 수 있어 보이지만, 되돌릴 격자가
+    **그 모델의 격자**여야 한다. 다른 모델을 쓰면 국내 지점 대조 기준 최대 7cm
+    가 결과에 들어가고(집계 문턱 0.05m 와 같은 자릿수), 무엇보다 리포트가
+    "KNGeoid18 기준"이라고 말하면서 실제로는 다른 격자를 쓴 것이 된다.
+    """
+    assert bridge_between(_ref(a), _ref(b)) is VerticalBridge.NONE
+    with pytest.raises(VerticalDatumIncompatibleError):
+        assert_bridgeable_vertical(_ref(a), _ref(b))
+
+
+def test_the_refusal_message_says_both_datums_and_what_we_do_have() -> None:
+    """거부 사유만 읽고도 무엇을 고쳐야 하는지 알 수 있어야 한다."""
+    with pytest.raises(VerticalDatumIncompatibleError) as excinfo:
+        assert_bridgeable_vertical(
+            _ref(VerticalDatum.ELLIPSOIDAL_NATIVE),
+            _ref(VerticalDatum.ORTHOMETRIC_KNGEOID2018),
+        )
+    message = str(excinfo.value)
+    assert VerticalDatum.ELLIPSOIDAL_NATIVE.value in message
+    assert VerticalDatum.ORTHOMETRIC_KNGEOID2018.value in message
+    # 20~30m 는 이 거부가 왜 존재하는지의 크기다 — 사라지면 안 된다.
+    assert "20~30m" in message
+    # 우리가 **가진** 기준을 말해 준다(그래야 재등록으로 풀 수 있다).
+    assert VerticalDatum.ORTHOMETRIC_KNGEOID2024.value in message
+
+
+def test_bridgeable_list_holds_only_orthometric_members() -> None:
+    """격자 보유 목록에 타원체고 멤버가 섞이면 판정이 뒤집힌다 — 표를 전수 검사한다."""
+    assert _GEOID_BRIDGEABLE_ORTHOMETRIC
+    for datum in _GEOID_BRIDGEABLE_ORTHOMETRIC:
+        assert family_of(datum) is VerticalDatumFamily.ORTHOMETRIC
+
+
+def test_two_epoch_comparison_did_not_get_loosened() -> None:
+    """[회귀] 변환 경로가 없는 계산은 여전히 계열 일치만 통과한다.
+
+    ``assert_comparable_vertical`` 은 두 epoch 비교(``comparison_worker``)가 쓴다 —
+    그쪽에는 지오이드 격자를 적용하는 코드가 없다. 설계 대비 경로가 열렸다고 이
+    함수까지 느슨해지면, 아무도 잇지 않은 채 "이을 수 있다"는 판정만 받고 20~30m
+    가 그대로 섞인다.
+    """
+    with pytest.raises(VerticalDatumIncompatibleError):
+        assert_comparable_vertical(
+            _ref(VerticalDatum.ELLIPSOIDAL_NATIVE),
+            _ref(VerticalDatum.ORTHOMETRIC_KNGEOID2024),
+        )
+
+
+# --------------------------------------------------------------------------
 # vertical_datum_from_epsg
 # --------------------------------------------------------------------------
 
@@ -175,6 +313,19 @@ def test_unknown_vertical_crs_code_is_refused_not_ignored(code: int) -> None:
     with pytest.raises(UnrecognizedVerticalCrsError) as excinfo:
         vertical_datum_from_epsg(code)
     assert str(code) in str(excinfo.value)
+
+
+def test_an_observed_epsg_code_can_never_by_itself_grant_a_geoid_bridge() -> None:
+    """관측된 수직 CRS 는 **기준면**을 말할 뿐 어느 지오이드 모델인지 말하지 않는다.
+
+    2026-08-12 실측(pyproj 전수 조회) 기준 한국 육상 정표고 수직 CRS 는 5193
+    하나뿐이라, 이 표가 정표고 멤버 중 무엇을 돌려줄지는 임의 선택이다. 그래서
+    **격자로 이어붙일 수 없는 쪽**을 고른다 — 누가 이 값을 변환 판정에 잘못
+    먹이더라도 그 오작동이 "조용한 변환"이 아니라 "거부"가 되게.
+    """
+    for datum in _VERTICAL_CRS_EPSG_TO_DATUM.values():
+        if family_of(datum) is VerticalDatumFamily.ORTHOMETRIC:
+            assert datum not in _GEOID_BRIDGEABLE_ORTHOMETRIC
 
 
 def test_observed_codes_never_map_to_the_native_residual_state() -> None:

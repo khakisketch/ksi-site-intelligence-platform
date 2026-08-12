@@ -11,10 +11,19 @@
    주장했다"일 뿐이라(``design_surface`` 계약 docstring) 그 파일이 무엇인지 아무도
    모른다. 검증 안 된 자산으로 시작한 계산은 실패해도 **자산 결함인지 계산 결함인지**
    구분되지 않는다.
-2. **수직기준 계열이 다르면 여기서 거부한다.** 타원체고와 정표고를 그냥 빼면
+2. **수직기준을 이을 수 없으면 여기서 거부한다.** 타원체고와 정표고를 그냥 빼면
    한국에서 20~30m 가 조용히 섞이고 결과는 여전히 숫자다. 계산 엔진도 자기
    입구에서 같은 판정을 하지만(``run_design_conformance``), 요청 생성 시점에
    막아야 사용자가 **몇 분 뒤 FAILED** 가 아니라 **즉시 사유**를 받는다.
+
+   다만 판정은 "계열이 같은가"가 아니라 **"이을 수 있는가"** 다
+   (``assert_bridgeable_vertical``). 실무 설계도면은 거의 항상 정표고라, 계열
+   불일치를 통째로 거부하면 한국 도면이 100% 막힌다. 지오이드 격자로 이을 수
+   있는 조합은 통과시키고, **실제로 격자를 읽어 변환하는 일은 워커**가 한다 —
+   격자는 워커의 환경(``KSI_GEOID_GRID``)에 붙어 있고 Core 는 pyproj·rasterio 를
+   의존하지 않기 때문이다(``vertical_reference`` 모듈 docstring). 그래서 여기서
+   내주는 답은 "된다"가 아니라 **"이을 수 있는 종류다"** 이고, 격자가 없어서 못
+   하는 경우는 워커가 FAILED 사유로 구분해 돌려준다.
 3. **현재 DSM 이 수직기준을 밝히지 않으면 거부한다**(``VERTICAL_REFERENCE_UNKNOWN``).
    두 epoch 비교는 같은 파이프라인 산출물끼리라 레거시 대체값이 실제로 맞지만
    (``comparison_worker._resolve_vertical_datum``), 설계면은 그 전제가 성립하지
@@ -73,7 +82,7 @@ from ksi_event_contracts.processing_job import ProcessingJobStatus
 from ksi_event_contracts.vertical_reference import (
     VerticalDatumIncompatibleError,
     VerticalReference,
-    assert_comparable_vertical,
+    assert_bridgeable_vertical,
 )
 from pydantic import Field
 
@@ -168,7 +177,9 @@ class DesignConformanceRequestVerdict(StrEnum):
     ZONES_REQUIRED = "ZONES_REQUIRED"
     #: 현재 DSM 이 수직기준을 밝히지 않는다(수직기준 기록 이전의 산출물) — 재처리하면 된다.
     VERTICAL_REFERENCE_UNKNOWN = "VERTICAL_REFERENCE_UNKNOWN"
-    #: 설계면과 현재 DSM 의 수직기준 계열이 다르다 — 변환 없이 비교하지 않는다.
+    #: 설계면과 현재 DSM 의 수직기준을 **어떤 지오이드 격자로도 이을 수 없다**.
+    #: "격자가 없어서 지금은 못 한다"와는 다른 사실이다 — 그쪽은 요청을 만들 수
+    #: 있고 워커가 ``GeoidUnavailableError`` 로 FAILED 사유를 남긴다.
     VERTICAL_DATUM_INCOMPATIBLE = "VERTICAL_DATUM_INCOMPATIBLE"
     UNKNOWN_REQUEST = "UNKNOWN_REQUEST"
     REQUEST_NOT_ACTIVE = "REQUEST_NOT_ACTIVE"
@@ -631,7 +642,11 @@ class DesignConformanceRequestStore:
                 None,
             )
         try:
-            assert_comparable_vertical(dsm.vertical_reference, surface.declared.vertical_reference)
+            # "계열이 같은가"가 아니라 "이을 수 있는가" 다 — 격자로 이을 수 있는
+            # 조합은 여기서 통과시키고, 격자 유무는 워커가 답한다(모듈 docstring).
+            assert_bridgeable_vertical(
+                dsm.vertical_reference, surface.declared.vertical_reference
+            )
         except VerticalDatumIncompatibleError as exc:
             return (
                 DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE,

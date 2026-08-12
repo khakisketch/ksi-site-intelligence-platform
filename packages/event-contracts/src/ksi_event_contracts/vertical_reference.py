@@ -79,11 +79,21 @@ class VerticalDatum(StrEnum):
     두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의
     높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와
     비교 가능성은 다른 축이다.
+
+    **정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는
+    기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를
+    타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은
+    "이 높이가 어느 격자로 되돌려지는가"다. 모델이 다르면 국내 지점 대조에서
+    수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적
+    집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서
+    모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와
+    잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).
     """
 
     ELLIPSOIDAL = "ellipsoidal"
     ELLIPSOIDAL_NATIVE = "ellipsoidal_native"
     ORTHOMETRIC_KNGEOID2018 = "orthometric_kngeoid2018"
+    ORTHOMETRIC_KNGEOID2024 = "orthometric_kngeoid2024"
 
 
 class VerticalDatumFamily(StrEnum):
@@ -104,6 +114,7 @@ _DATUM_FAMILY: dict[VerticalDatum, VerticalDatumFamily] = {
     VerticalDatum.ELLIPSOIDAL: VerticalDatumFamily.ELLIPSOIDAL,
     VerticalDatum.ELLIPSOIDAL_NATIVE: VerticalDatumFamily.ELLIPSOIDAL,
     VerticalDatum.ORTHOMETRIC_KNGEOID2018: VerticalDatumFamily.ORTHOMETRIC,
+    VerticalDatum.ORTHOMETRIC_KNGEOID2024: VerticalDatumFamily.ORTHOMETRIC,
 }
 
 # 표 완전성 자가검증 — 새 VerticalDatum 멤버를 추가하고 이 표를 안 고치면
@@ -112,6 +123,24 @@ _DATUM_FAMILY: dict[VerticalDatum, VerticalDatumFamily] = {
 if set(_DATUM_FAMILY) != set(VerticalDatum):
     raise AssertionError("_DATUM_FAMILY 가 VerticalDatum 전 멤버를 커버하지 않는다")
 
+
+#: **지오이드 격자로 타원체고와 이어붙일 수 있는 정표고 기준** — 이 시스템이 실제로
+#: 격자를 가진 모델만 넣는다.
+#:
+#: 2026-08-12 현재 확보·검증된 격자는 KNGeoid24 하나다(``data/geoid/KNGeoid24.tif``,
+#: 국토지리정보원 정식 취득, 전국 통합기준점 10점 전원 통과·최대오차 0.0401m —
+#: ``docs/geo/GEOID_ACQUISITION.md``). ``ORTHOMETRIC_KNGEOID2018`` 은 **일부러 빼
+#: 두었다**: KNGeoid18 격자가 없고, 대신 KNGeoid24 격자를 써서 "KNGeoid18 로 실현한
+#: 정표고"를 되돌리면 두 모델의 차이(국내 지점 대조 0.001~0.071m)가 결과에 그대로
+#: 들어간다. 그 크기는 집계 문턱 0.05m 와 같은 자릿수라 무시할 수 없고, 무엇보다
+#: 리포트가 "KNGeoid18 기준으로 변환했다"고 말하게 되는데 그건 사실이 아니다
+#: (``_VERTICAL_CRS_EPSG_TO_DATUM`` 이 EGM96/EGM2008 을 거부하는 것과 같은 근거 —
+#: 계열이 맞아도 이름이 틀리면 거짓말이다).
+#:
+#: 이 집합이 비면 정표고 경로 전체가 자동으로 닫힌다(격자를 잃었을 때의 정상 상태).
+_GEOID_BRIDGEABLE_ORTHOMETRIC: frozenset[VerticalDatum] = frozenset(
+    {VerticalDatum.ORTHOMETRIC_KNGEOID2024}
+)
 
 #: 관측된 수직 CRS(EPSG) → 그 파일이 말하는 수직기준.
 #:
@@ -138,10 +167,19 @@ _VERTICAL_CRS_EPSG_TO_DATUM: dict[int, VerticalDatum] = {
     5019: VerticalDatum.ELLIPSOIDAL,
     # GeoTIFF VerticalCSTypeGeoKey — WGS 84 타원체 기준 높이.
     5030: VerticalDatum.ELLIPSOIDAL,
-    # EPSG:5193 KVD1964 height — 인천 평균해면 기준 한국 정표고. KNGeoid2018 은
-    # 이 기준면을 실현하는 격자 모델이라, 계열 판정 목적에서는 같은 자리를
-    # 가리킨다. (이 계약의 정표고 멤버가 하나뿐이라 가능한 단순화이며,
-    # 소비자는 :func:`family_of` 결과만 쓴다.)
+    # EPSG:5193 KVD1964 height — 인천 평균해면 기준 한국 정표고.
+    #
+    # **EPSG 수직 CRS 코드는 기준면을 식별하지 지오이드 모델을 식별하지 않는다.**
+    # 2026-08-12 실측(``pyproj.database.query_crs_info(pj_types=["VERTICAL_CRS"])``
+    # 전수 조회): 한국 육상을 덮는 비폐기 수직 CRS 는 5193 하나뿐이고, 나머지
+    # (3855 EGM2008 / 5773 EGM96 / 5714 MSL …)는 전부 세계 기준이라 아래 화이트
+    # 리스트가 이미 거부한다. 즉 **KNGeoid24 용으로 새로 매핑할 코드가 없다.**
+    #
+    # 그래서 이 표가 정표고 멤버 중 무엇을 돌려줄지는 임의 선택이 될 수밖에 없고,
+    # 여기서는 **격자로 이어붙일 수 없는 쪽**(KNGeoid2018)을 고른다. 이 함수의
+    # 반환값은 :func:`family_of` 대조(선언 반박)에만 쓰이지만, 언젠가 누가
+    # :func:`bridge_between` 에 잘못 먹이더라도 그 방향의 오작동이 "조용한 변환"이
+    # 아니라 "거부"가 되게 하기 위해서다.
     5193: VerticalDatum.ORTHOMETRIC_KNGEOID2018,
 }
 
@@ -208,6 +246,108 @@ def assert_comparable_vertical(a: VerticalReference, b: VerticalReference) -> No
     )
 
 
+class VerticalBridge(StrEnum):
+    """두 수직기준을 나란히 놓으려면 무엇이 필요한가 — **판정만** 한다.
+
+    :func:`assert_comparable_vertical` 은 "변환 없이 빼도 되는가" 하나만 묻는다.
+    설계 대비 잔량은 그 질문으로 부족하다: 실무 설계도면은 거의 항상 정표고이고
+    우리 재구성 파이프라인은 타원체고를 내므로, 그 조합을 통째로 거부하면
+    **한국 도면이 100% 막힌다.** 그렇다고 격자 없이 맞추면 20~30m 가 조용히
+    틀린다. 그래서 거부/통과의 2분법을 셋으로 나눈다.
+
+    이 판정이 계약 패키지에 사는 이유는 :class:`VerticalDatum` 과 같다 —
+    **소비자가 Core(control plane)** 다. Core 는 요청을 받는 자리에서 "이 지시가
+    계산 가능한가"를 즉시 답해야 하는데, pyproj·rasterio 를 물고 있는
+    ``ksi-geo-spatial`` 을 의존할 수 없다. 그래서 **"격자로 이을 수 있는가"라는
+    순수 표 판정은 여기**, **실제로 격자를 읽어 N 을 보간하는 일은 워커**로
+    나뉜다. 격자가 그 배포에 실제로 붙어 있는지는 Core 가 알 수 없는 사실이고
+    (워커의 환경변수다), 그래서 :attr:`GEOID_GRID` 는 "된다"가 아니라
+    **"격자가 있으면 된다"**는 뜻이다.
+    """
+
+    #: 같은 계열 — 변환 없이 그대로 뺀다.
+    DIRECT = "direct"
+    #: 계열이 다르지만 지오이드 격자로 이을 수 있다. 격자가 없으면 계산하는 쪽이
+    #: 거부한다(``GeoidUnavailableError``) — 그 거부는 **이 판정과 다른 사실**이다.
+    GEOID_GRID = "geoid_grid"
+    #: 어떤 격자로도 이 시스템이 메울 수 없다 — 즉시 거부가 정답이다.
+    NONE = "none"
+
+
+def bridge_between(a: VerticalReference, b: VerticalReference) -> VerticalBridge:
+    """두 수직기준을 잇는 방법 — 없으면 :attr:`VerticalBridge.NONE`.
+
+    ``a``/``b`` 의 순서는 판정에 영향이 없다(어느 쪽을 옮길지는 계산하는 쪽이
+    정한다 — 설계 대비 경로는 **측정물인 DSM 을 두고 설계면을 옮긴다**).
+    """
+    family_a = family_of(a.datum)
+    family_b = family_of(b.datum)
+    if family_a == family_b:
+        # 같은 계열이라고 곧바로 DIRECT 는 아니다 — **정표고 계열 안에서도 실현이
+        # 다르면 다른 기준이다.** KNGeoid18 과 KNGeoid24 는 둘 다 정표고지만 같은
+        # 지점에서 서로 다른 값을 준다(docs/geo/GEOID_ACQUISITION.md 실측: 모델
+        # 차이 최대 0.071m). 그 크기는 우리가 재구성 잡음으로 버리는 집계 문턱
+        # (0.05m)과 같은 자릿수라, 변환 없이 빼면 "잡음보다 큰 오차"가 물량에
+        # 그대로 들어간다. 이건 아래 GEOID_GRID 거부 문구가 말하는 것과 정확히
+        # 같은 사고다 — 리포트가 말하는 기준과 실제로 쓴 기준이 갈라진다.
+        #
+        # 반대로 타원체고 계열의 두 값은 **같은 물리량**이다. ELLIPSOIDAL_NATIVE 는
+        # "우리가 변환을 안 해서 타원체고로 남았다"는 우리 쪽 귀속 표시이지 다른
+        # 기준이 아니다(이 모듈 상단 주석). 그래서 그 둘만 서로 DIRECT 다.
+        #
+        # 실현 간 변환(2018↔2024)은 이 시스템에 없다 — 두 격자를 모두 갖고 차분해야
+        # 하는데 KNGeoid18 격자가 없다. 없는 능력을 있다고 판정하지 않는다.
+        if a.datum == b.datum or family_a is VerticalDatumFamily.ELLIPSOIDAL:
+            return VerticalBridge.DIRECT
+        return VerticalBridge.NONE
+    if {family_a, family_b} != {VerticalDatumFamily.ELLIPSOIDAL, VerticalDatumFamily.ORTHOMETRIC}:
+        # 새 계열이 생겼는데 잇는 법을 아무도 안 적어 둔 경우. 추측하지 않는다.
+        return VerticalBridge.NONE
+    orthometric = a.datum if family_a is VerticalDatumFamily.ORTHOMETRIC else b.datum
+    if orthometric in _GEOID_BRIDGEABLE_ORTHOMETRIC:
+        return VerticalBridge.GEOID_GRID
+    return VerticalBridge.NONE
+
+
+def assert_bridgeable_vertical(a: VerticalReference, b: VerticalReference) -> VerticalBridge:
+    """이을 수 있으면 그 방법을, 없으면 typed 거부.
+
+    ``assert_comparable_vertical`` 과 같은 자리에서 부르되(비교 연산의 입구),
+    **지오이드 격자를 쓸 수 있는 경로에서만** 쓴다. 두 epoch 비교처럼 변환 경로가
+    아예 없는 계산은 계속 ``assert_comparable_vertical`` 이다 — 거기서 이 함수를
+    쓰면 "이을 수 있다"는 판정만 받고 정작 아무도 잇지 않는다.
+    """
+    bridge = bridge_between(a, b)
+    if bridge is not VerticalBridge.NONE:
+        return bridge
+    family_a = family_of(a.datum)
+    family_b = family_of(b.datum)
+    head = (
+        f"수직기준을 이을 수 없다: {a.datum.value}({family_a.value}) vs "
+        f"{b.datum.value}({family_b.value}). "
+    )
+    if family_a == family_b:
+        # 같은 계열인데 거부됐다면 정표고 실현이 서로 다른 경우뿐이다 — 위
+        # bridge_between 참조. 계열 불일치 문구를 그대로 쓰면 "타원체고와 정표고의
+        # 차이"를 말하게 되는데 여기서는 둘 다 정표고라 사람을 헷갈리게 한다.
+        raise VerticalDatumIncompatibleError(
+            head + "둘 다 정표고지만 **실현한 지오이드 모델이 다르다** — 같은 지점에서 "
+            "서로 다른 값을 준다(모델 차이 최대 0.071m, 재구성 잡음으로 버리는 집계 "
+            "문턱 0.05m 보다 크다). 실현 간 변환은 두 모델의 격자를 모두 가져야 "
+            "가능한데 이 시스템은 "
+            f"{sorted(datum.value for datum in _GEOID_BRIDGEABLE_ORTHOMETRIC)} "
+            "격자만 갖고 있다. 한쪽 격자로 대신 맞추면 리포트가 말하는 기준과 실제로 "
+            "쓴 기준이 달라진다"
+        )
+    raise VerticalDatumIncompatibleError(
+        head + "타원체고와 정표고의 차이는 한국에서 20~30m 이고, 그 간극은 **그 정표고를 "
+        "실현한 지오이드 모델의 격자**로만 메울 수 있다 — 이 시스템이 격자를 가진 "
+        f"정표고 기준은 {sorted(datum.value for datum in _GEOID_BRIDGEABLE_ORTHOMETRIC)} "
+        "뿐이다. 다른 모델의 격자로 대신 변환하면 결과는 그럴듯한 숫자가 되지만 리포트가 "
+        "말하는 기준과 실제로 쓴 기준이 달라진다"
+    )
+
+
 def vertical_datum_from_epsg(vertical_crs_epsg: int) -> VerticalDatum:
     """관측된 수직 CRS(EPSG 코드)가 말하는 수직기준. 모르면 거부한다.
 
@@ -231,12 +371,15 @@ def vertical_datum_from_epsg(vertical_crs_epsg: int) -> VerticalDatum:
 
 __all__ = [
     "UnrecognizedVerticalCrsError",
+    "VerticalBridge",
     "VerticalDatum",
     "VerticalDatumFamily",
     "VerticalDatumIncompatibleError",
     "VerticalReference",
     "VerticalReferenceSource",
+    "assert_bridgeable_vertical",
     "assert_comparable_vertical",
+    "bridge_between",
     "family_of",
     "vertical_datum_from_epsg",
 ]

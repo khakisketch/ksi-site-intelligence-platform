@@ -78,8 +78,8 @@
       "description": "이 잔량이 어느 수직기준의 높이차인가 + 그것을 왜 아는가. 두 입력의 수직기준 계열이 같을 때만 계산이 성립하며(assert_comparable_vertical), 그 판정은 요청 생성 시점에 이미 끝나 있다. 정본은 ksi_event_contracts.vertical_reference 다.",
       "properties": {
         "datum": {
-          "description": "diffRaster.verticalReference.datum 과 같아야 한다 — 지도와 표가 다른 높이 기준을 말할 수 없다. 계열이 다른 기준끼리는 애초에 여기까지 오지 못한다(한국에서 타원체고와 정표고는 20~30m 차이다).",
-          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018"]
+          "description": "diffRaster.verticalReference.datum 과 같아야 한다 — 지도와 표가 다른 높이 기준을 말할 수 없다. 이 값은 **실측된 현재 DSM 의 기준**이다: 설계면이 정표고였다면 계산 전에 지오이드 격자로 DSM 쪽 계열로 옮겨졌고, 어느 격자로 얼마를 더했는지는 basis 에 적힌다. 이을 수 없는 기준끼리는 애초에 여기까지 오지 못한다(한국에서 타원체고와 정표고는 20~30m 차이다).",
+          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018", "orthometric_kngeoid2024"]
         },
         "basis": {
           "type": "string",

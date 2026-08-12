@@ -2508,7 +2508,7 @@ paths:
                   properties:
                     datum:
                       type: string
-                      enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018]
+                      enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018, orthometric_kngeoid2024]
                     basis:
                       description: >-
                         왜 이 값을 아는가 — 비울 수 없다(예: 'ODM 이 RTK 타원체고를
@@ -4206,7 +4206,7 @@ components:
       properties:
         datum:
           type: string
-          enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018]
+          enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018, orthometric_kngeoid2024]
         basis: { type: string, minLength: 1 }
         source: { type: string, enum: [pipeline_declared, user_declared] }
 

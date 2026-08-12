@@ -858,3 +858,36 @@ def test_no_unauthenticated_route_outside_allowlist_via_assemble_app(tmp_path: P
     finally:
         for journal in opened:
             journal.close()
+
+
+def test_vertical_datum_enum_matches_the_python_ssot() -> None:
+    """openapi-core.yaml 의 datum enum 이 VerticalDatum SSOT 와 어긋나지 않는다.
+
+    **이 게이트가 없어서 실제로 드리프트가 났다**(2026-08-12): 정표고 설계면을
+    잇는 작업이 ``VerticalDatum.ORTHOMETRIC_KNGEOID2024`` 를 추가하고
+    ``processing-artifact.v1.2.json``·``design-surface.v1.json`` 은 갱신했는데
+    openapi 만 3값으로 남았다 — 산출물 스키마는 새 값을 허용하는데 그 산출물을
+    등록하는 API 계약은 금지하는 상태였다. 기존 검사들은 경로·메서드·$ref 해소·
+    응답 필드 이름만 보고 **enum 값은 보지 않아** 아무것도 잡지 못했다.
+
+    이 저장소에서 ``contracts/`` 는 코드보다 상위 권위다(00_READ_FIRST). 그러니
+    권위가 코드보다 **좁은** 상태를 조용히 두지 않는다.
+    """
+    from ksi_event_contracts.vertical_reference import VerticalDatum
+
+    text = _OPENAPI.read_text(encoding="utf-8")
+    expected = {datum.value for datum in VerticalDatum}
+
+    # `datum:` 바로 아래 오는 `enum: [...]` 만 본다 — 다른 enum(source 등)과 섞이지
+    # 않게. openapi 는 이 자리를 flow 시퀀스 한 줄로 쓴다(파일 관례).
+    found = re.findall(r"datum:\s*\n\s*type: string\s*\n\s*enum: \[([^\]]+)\]", text)
+    assert found, "openapi-core.yaml 에서 datum enum 을 못 찾았다 — 게이트가 공허하다"
+
+    for index, raw in enumerate(found):
+        values = {token.strip() for token in raw.split(",")}
+        assert values == expected, (
+            f"openapi-core.yaml 의 datum enum #{index} 가 VerticalDatum 과 다르다.\n"
+            f"  openapi: {sorted(values)}\n"
+            f"  python : {sorted(expected)}\n"
+            "VerticalDatum 에 값을 추가했으면 openapi 와 관련 JSON 스키마도 함께 넓힌다."
+        )

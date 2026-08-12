@@ -71,6 +71,8 @@ from ksi_event_contracts.vertical_reference import (
     VerticalReference,
     VerticalReferenceSource,
 )
+from ksi_geo_spatial.crs import reproject_point
+from ksi_geo_spatial.vertical import GeoidGrid, GeoidUnavailableError
 from rasterio.transform import from_origin
 
 _ORIGIN_X = 200_000.0
@@ -95,9 +97,16 @@ _DESIGN_VERTICAL = VerticalReference(
     basis="설계사 제공 도면 표제부에 타원체고 명시",
     source=VerticalReferenceSource.USER_DECLARED,
 )
+#: 격자를 갖고 있지 **않은** 모델로 선언된 정표고 — 계열이 맞아도 이을 수 없다.
 _ORTHOMETRIC_VERTICAL = VerticalReference(
     datum=VerticalDatum.ORTHOMETRIC_KNGEOID2018,
     basis="설계사가 국가 수준점 기준 정표고로 작성했다고 표기",
+    source=VerticalReferenceSource.USER_DECLARED,
+)
+#: 실무 도면의 정상 경로 — 우리가 격자를 가진 모델로 선언된 해발 높이.
+_ORTHOMETRIC_2024_VERTICAL = VerticalReference(
+    datum=VerticalDatum.ORTHOMETRIC_KNGEOID2024,
+    basis="설계사 제공 도면 표제부에 인천 평균해면 기준 표고 명시",
     source=VerticalReferenceSource.USER_DECLARED,
 )
 
@@ -199,6 +208,7 @@ def _run(
     policy: ComparisonPolicy | None = None,
     zones: dict[str, dict[str, Any]] | None = None,
     work_dir: Path | None = None,
+    geoid_grid: GeoidGrid | None = None,
 ) -> tuple[DesignConformanceReport, Path]:
     return compute_design_conformance(
         design_conformance_id="dc-1",
@@ -211,6 +221,7 @@ def _run(
         computed_at=_COMPUTED_AT,
         http_client=storage,
         publish_diff_raster=publisher or _Publisher(),
+        geoid_grid=geoid_grid,
         work_dir=work_dir,
     )
 
@@ -457,6 +468,316 @@ def test_diff_raster_vertical_reference_is_pipeline_declared_and_inherits_the_ds
         assert reference.source is VerticalReferenceSource.PIPELINE_DECLARED
         assert reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
         assert report.vertical_reference.datum is reference.datum
+    finally:
+        shutil.rmtree(raster_path.parent, ignore_errors=True)
+
+
+# ── 정표고 설계면: 지오이드 격자로 이어서 계산한다 ─────────────────────────
+#
+# 실무 설계도면은 거의 항상 해발(정표고)이고 우리 파이프라인은 타원체고를 낸다.
+# 이 절의 테스트가 지키는 것은 셋이다: **변환량이 손계산과 같은가**, **변환해서
+# 낸 숫자가 처음부터 같은 계열이었을 때와 같은가**, **격자가 없으면 숫자를 만들지
+# 않는가**.
+#
+# 합성 격자는 **경도에 대해 기울어져 있다**(N = base + slope×(lon−ref)). 상수
+# 격자를 쓰면 "구역 대표점 하나로 상수 보정"하는 구현도 통과해 버리는데, 실 격자의
+# 기울기는 1km 현장에서 최대 4cm(집계 문턱 0.05m 와 같은 자릿수)라 그 구현은
+# 틀린 것이다. 기울기가 있으면 셀별 보간만 통과한다.
+#
+# 1도 셀의 이중선형 보간은 **경도에 선형인 함수를 정확히 재현**하므로, 기대 N 을
+# 해석식으로 손계산할 수 있다 — 격자 파일 없이도 골든이 성립한다.
+
+_GEOID_BASE_M = 25.0
+_GEOID_SLOPE_M_PER_DEG = 10.0
+_GEOID_REF_LON = 126.5
+
+
+def _expected_n_m(lon_deg: float) -> float:
+    """합성 격자가 그 경도에서 내놓아야 하는 지오이드고(해석식)."""
+    return _GEOID_BASE_M + _GEOID_SLOPE_M_PER_DEG * (lon_deg - _GEOID_REF_LON)
+
+
+def _synthetic_geoid_grid(path: Path, *, far_away: bool = False) -> GeoidGrid:
+    """경도로 기울어진 합성 지오이드 격자(EPSG:4326, 1도 셀).
+
+    ``far_away`` 면 시험용 래스터가 격자 **밖**에 놓이도록 서쪽으로 옮긴다 —
+    외삽 금지(INV-023)를 시험하는 배치다.
+    """
+    west = 120.0 if far_away else 126.0
+    north = 39.0
+    rows, cols = 5, 5
+    lons = west + 0.5 + np.arange(cols, dtype=np.float64)
+    values = np.tile(
+        _GEOID_BASE_M + _GEOID_SLOPE_M_PER_DEG * (lons - _GEOID_REF_LON), (rows, 1)
+    )
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=rows,
+        width=cols,
+        count=1,
+        dtype="float64",
+        crs="EPSG:4326",
+        transform=from_origin(west, north, 1.0, 1.0),
+    ) as dataset:
+        dataset.write(values, 1)
+    return GeoidGrid.from_path(path)
+
+
+def _cell_lonlat(row: int, col: int) -> tuple[float, float]:
+    """시험용 래스터 (row, col) 셀 **중심**의 경위도.
+
+    구현이 쓰는 ``rasterio.warp.transform`` 이 아니라 ``reproject_point`` 로 따로
+    계산한다 — 같은 함수로 기대값을 만들면 반 셀 밀림·행열 뒤바뀜을 못 잡는다.
+    """
+    return reproject_point(
+        _ORIGIN_X + col + 0.5, _ORIGIN_Y - row - 0.5, from_crs=_CRS, to_crs="EPSG:4326"
+    )
+
+
+def _orthometric_of(ellipsoidal: np.ndarray) -> np.ndarray:
+    """같은 지형을 **정표고로 적어 놓은** 설계면 — H = h − N (셀마다 다른 N)."""
+    out = ellipsoidal.astype(np.float64).copy()
+    for row in range(_SIZE):
+        for col in range(_SIZE):
+            lon, _lat = _cell_lonlat(row, col)
+            out[row, col] -= _expected_n_m(lon)
+    return out
+
+
+def _orthometric_design(
+    tmp_path: Path,
+    values: np.ndarray,
+    *,
+    name: str = "design-ortho",
+    current_values: np.ndarray | None = None,
+) -> tuple[httpx.Client, CurrentDsmSource, DesignSource]:
+    current_path = _write_raster(
+        tmp_path / "current.tif", _ramp() if current_values is None else current_values
+    )
+    design_path = _write_raster(tmp_path / f"{name}.tif", values)
+    storage = _storage({"current-dsm": current_path, "design": design_path})
+    current = CurrentDsmSource(
+        ref=ArtifactRef(job_id="job-1", artifact_id="dsm-current"),
+        download_url="https://storage.invalid/current-dsm",
+        vertical_reference=_CURRENT_VERTICAL,
+    )
+    design = DesignSource(
+        design_surface_id="ds-1",
+        sha256=sha256_of_file(design_path).removeprefix("sha256:"),
+        download_url="https://storage.invalid/design",
+        vertical_reference=_ORTHOMETRIC_2024_VERTICAL,
+    )
+    return storage, current, design
+
+
+def test_orthometric_design_converted_equals_the_same_surface_declared_ellipsoidal(
+    golden: tuple[httpx.Client, CurrentDsmSource, DesignSource], tmp_path: Path
+) -> None:
+    """[핵심] 등가성 — 같은 설계면을 정표고로 넣고 변환한 결과 == 타원체고로 넣은 결과.
+
+    설계면을 ``H = 110 − N`` 로 적어 두면 변환 후 정확히 110(평탄 설계면)이 되어야
+    한다. 그러면 구역 수량이 이 파일의 골든(성토 1100 / 절토 900 / 순 +200)과
+    **완전히** 같아야 한다. N 을 상수로 보정하거나 부호를 뒤집으면 여기서 깨진다.
+    """
+    grid = _synthetic_geoid_grid(tmp_path / "geoid.tif")
+    storage, current, design = _orthometric_design(tmp_path, _orthometric_of(_flat()))
+
+    converted, converted_path = _run(storage, current, design, geoid_grid=grid)
+    ellipsoidal_storage, ellipsoidal_current, ellipsoidal_design = golden
+    baseline, baseline_path = _run(
+        ellipsoidal_storage, ellipsoidal_current, ellipsoidal_design
+    )
+    try:
+        zone = converted.zones[0]
+        assert zone.fill_m3 == pytest.approx(_EXPECTED_FILL_M3, abs=1e-6)
+        assert zone.cut_m3 == pytest.approx(_EXPECTED_CUT_M3, abs=1e-6)
+        assert zone.net_m3 == pytest.approx(_EXPECTED_FILL_M3 - _EXPECTED_CUT_M3, abs=1e-6)
+        assert zone.fill_m3 == pytest.approx(baseline.zones[0].fill_m3, abs=1e-6)
+        assert zone.cut_m3 == pytest.approx(baseline.zones[0].cut_m3, abs=1e-6)
+    finally:
+        shutil.rmtree(converted_path.parent, ignore_errors=True)
+        shutil.rmtree(baseline_path.parent, ignore_errors=True)
+
+
+def test_the_applied_geoid_separation_matches_hand_calculation_cell_by_cell(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 변환량 골든 — 차분 격자에서 되짚은 N 이 셀마다 손계산과 같다.
+
+    현재 지형을 평탄 100m 로 두고 설계면을 정표고 85m 로 두면
+    ``delta = (85 + N) − 100`` 이므로 **차분 격자에서 N 을 그대로 되짚을 수 있다.**
+    기대값은 합성 격자의 해석식(경도의 1차식)이라 구현과 무관하게 계산된다.
+    """
+    grid = _synthetic_geoid_grid(tmp_path / "geoid.tif")
+    storage, current, design = _orthometric_design(
+        tmp_path, _flat(85.0), current_values=_flat(100.0)
+    )
+
+    report, raster_path = _run(storage, current, design, geoid_grid=grid)
+    try:
+        with rasterio.open(raster_path) as dataset:
+            delta = dataset.read(1)
+        for row, col in ((0, 0), (0, 19), (19, 0), (10, 7)):
+            lon, _lat = _cell_lonlat(row, col)
+            expected = (85.0 + _expected_n_m(lon)) - 100.0
+            assert float(delta[row, col]) == pytest.approx(expected, abs=1e-6), (
+                f"({row},{col}) 셀의 지오이드 보정이 손계산과 다르다"
+            )
+        # 격자가 기울어져 있으므로 셀마다 값이 달라야 한다 — 전부 같으면 구역
+        # 대표점 하나로 상수 보정한 것이고, 그 구현은 실 격자에서 최대 4cm 틀린다.
+        assert float(delta[0, 0]) != pytest.approx(float(delta[0, 19]), abs=1e-9)
+        assert report.zones[0].fill_m3 > 0.0
+    finally:
+        shutil.rmtree(raster_path.parent, ignore_errors=True)
+
+
+def test_the_report_says_which_grid_converted_which_direction(tmp_path: Path) -> None:
+    """[핵심] 변환 사실이 결과에 남는다 — 화면이 그대로 읽어 준다.
+
+    datum 은 실측된 현재 DSM 의 것을 승계하므로(``ellipsoidal_native``) 그 값만으로는
+    "설계면이 정표고였다"를 알 수 없다. 그래서 근거(basis)에 격자·방향·적용량이
+    실려야 하고, 대시보드는 이 문장을 숫자 바로 옆에 띄운다.
+    """
+    grid = _synthetic_geoid_grid(tmp_path / "geoid.tif")
+    storage, current, design = _orthometric_design(
+        tmp_path, _flat(85.0), current_values=_flat(100.0)
+    )
+
+    report, raster_path = _run(storage, current, design, geoid_grid=grid)
+    try:
+        basis = report.vertical_reference.basis
+        assert "geoid.tif" in basis  # 어느 격자로
+        assert grid.source_sha256 is not None and grid.source_sha256[:12] in basis
+        assert "정표고 → 타원체고" in basis  # 어느 방향으로
+        assert "h = H + N" in basis
+        assert "20~30m" not in basis  # 거부 문구가 성공 리포트에 새어 나오지 않는다
+        # 얼마나 — 합성 격자의 이 창에서 N 은 30m 대다(해석식과 대조).
+        lon_west, _ = _cell_lonlat(0, 0)
+        assert f"{_expected_n_m(lon_west):.3f}" in basis
+        assert report.vertical_reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
+        assert report.diff_raster.vertical_reference.basis == basis
+    finally:
+        shutil.rmtree(raster_path.parent, ignore_errors=True)
+
+
+def test_a_design_outside_the_geoid_grid_is_refused_not_extrapolated(
+    tmp_path: Path,
+) -> None:
+    """[음성] 격자 범위 밖은 외삽하지 않는다(INV-023) — 숫자를 만들지 않는다."""
+    grid = _synthetic_geoid_grid(tmp_path / "geoid-far.tif", far_away=True)
+    storage, current, design = _orthometric_design(tmp_path, _flat(85.0))
+
+    with pytest.raises(GeoidUnavailableError):
+        _run(storage, current, design, geoid_grid=grid)
+
+
+def test_without_a_grid_an_orthometric_design_is_refused_before_any_download(
+    tmp_path: Path,
+) -> None:
+    """[핵심][음성] 격자가 없으면 거부한다 — N=0 으로 대치하지 않고, 받으러 가지도 않는다.
+
+    사유 타입이 ``GeoidUnavailableError`` 인 것이 요점이다:
+    ``VerticalDatumIncompatibleError``("이 도면은 이을 수 없다")와 달리 이것은
+    "격자를 붙이면 그대로 계산된다"는 뜻이라, 사람이 고칠 자리가 다르다.
+    """
+    _storage_client, current, design = _orthometric_design(tmp_path, _flat(85.0))
+
+    def explode(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("격자도 없는데 바이트를 받으러 갔다")
+
+    with pytest.raises(GeoidUnavailableError) as excinfo:
+        _run(httpx.Client(transport=httpx.MockTransport(explode)), current, design)
+    message = str(excinfo.value)
+    assert "KSI_GEOID_GRID" in message
+    assert VerticalDatum.ORTHOMETRIC_KNGEOID2024.value in message
+
+
+def test_a_grid_does_not_unlock_a_datum_we_have_no_grid_for(tmp_path: Path) -> None:
+    """[음성] 격자를 쥐고 있어도 KNGeoid18 로 선언된 설계면은 거부한다.
+
+    "정표고니까 아무 격자로나 되돌리면 된다"가 이 저장소의 규칙이 아니다 —
+    되돌릴 격자는 **그 선언이 말하는 모델의 격자**여야 한다.
+    """
+    grid = _synthetic_geoid_grid(tmp_path / "geoid.tif")
+    _storage_client, current, design = _orthometric_design(tmp_path, _flat(85.0))
+    stale_model = DesignSource(
+        design_surface_id=design.design_surface_id,
+        sha256=design.sha256,
+        download_url=design.download_url,
+        vertical_reference=_ORTHOMETRIC_VERTICAL,
+    )
+
+    def explode(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("이을 수 없는 수직기준인데 바이트를 받으러 갔다")
+
+    with pytest.raises(VerticalDatumIncompatibleError):
+        _run(
+            httpx.Client(transport=httpx.MockTransport(explode)),
+            current,
+            stale_model,
+            geoid_grid=grid,
+        )
+
+
+def test_conversion_keeps_nodata_cells_unmeasured(tmp_path: Path) -> None:
+    """[음성] 변환이 '모름'을 숫자로 바꾸지 않는다 — nodata 는 nodata 로 남는다."""
+    grid = _synthetic_geoid_grid(tmp_path / "geoid.tif")
+    design_values = _orthometric_of(_flat())
+    design_values[:, 5] = _NODATA
+    storage, current, design = _orthometric_design(tmp_path, design_values)
+
+    report, raster_path = _run(storage, current, design, geoid_grid=grid)
+    try:
+        with rasterio.open(raster_path) as dataset:
+            delta = dataset.read(1)
+        assert np.isnan(delta[:, 5]).all()
+        assert np.isfinite(delta[:, 0]).all()
+        # 그 열이 빠졌으므로 골든에서 그 열 몫(설계 110 − 현재 105 = +5, 20행)만
+        # 줄어든다: 1100 − 100 = 1000.
+        assert report.zones[0].fill_m3 == pytest.approx(_EXPECTED_FILL_M3 - 100.0, abs=1e-6)
+    finally:
+        shutil.rmtree(raster_path.parent, ignore_errors=True)
+
+
+# ── 실 KNGeoid24 격자 대조 (격자 없는 환경에서는 skip) ─────────────────────
+#
+# 위 합성 격자 테스트가 변환 수학·배선을 상시 검증하므로 이 skip 은 "기능 미검증"이
+# 아니다(test_geo_spatial_vertical.py 와 같은 관례). 여기서만 확인되는 것은 **실제
+# 국가 격자를 물렸을 때 나오는 값**이다.
+
+_REAL_KNGEOID24_PATH = Path("data/geoid/KNGeoid24.tif")
+
+_real_grid_only = pytest.mark.skipif(
+    not _REAL_KNGEOID24_PATH.is_file(),
+    reason="실 KNGeoid24 격자 없음 — docs/geo/GEOID_ACQUISITION.md 취득·변환 절차 참조",
+)
+
+
+@_real_grid_only
+def test_real_kngeoid24_grid_applies_the_expected_separation(tmp_path: Path) -> None:
+    """[핵심] 실 격자 골든 — 시험 좌표(중부원점 200km/550km)에서 N=23.3809m 를 더한다.
+
+    ``h = H + N`` 손계산: 설계면 정표고 85m, 현재 지형 평탄 100m →
+    차분 = 85 + 23.3809 − 100 = 8.3809m. 격자 재변환·좌표 규약 변경 등으로 값이
+    달라지면 이 골든이 깨진다(``test_geo_spatial_vertical`` 의 서울시청 23.325m
+    고정과 같은 역할).
+    """
+    grid = GeoidGrid.from_path(_REAL_KNGEOID24_PATH)
+    storage, current, design = _orthometric_design(tmp_path, _flat(85.0))
+
+    report, raster_path = _run(storage, current, design, geoid_grid=grid)
+    try:
+        lon, lat = _cell_lonlat(0, 0)
+        n_here = grid.height_at(lat_deg=lat, lon_deg=lon)
+        assert n_here == pytest.approx(23.3809, abs=0.001)
+
+        with rasterio.open(raster_path) as dataset:
+            delta = dataset.read(1)
+        assert float(delta[0, 0]) == pytest.approx(85.0 + n_here - 100.0, abs=1e-5)
+        assert float(delta[0, 0]) == pytest.approx(8.3809, abs=0.001)
+        assert "KNGeoid24.tif" in report.vertical_reference.basis
     finally:
         shutil.rmtree(raster_path.parent, ignore_errors=True)
 

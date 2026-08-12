@@ -42,6 +42,7 @@ from test_design_conformance_compute import (  # noqa: E402
     _DESIGN_VERTICAL,
     _EXPECTED_CUT_M3,
     _EXPECTED_FILL_M3,
+    _ORTHOMETRIC_2024_VERTICAL,
     _ORTHOMETRIC_VERTICAL,
     _flat,
     _full_extent_zone,
@@ -268,7 +269,13 @@ def test_digest_mismatch_at_verification_prevents_any_report(
 def test_incompatible_vertical_datum_fails_before_uploading_anything(
     tmp_path: Path,
 ) -> None:
-    """수직기준 계열이 다르면 계산 전에 멈춘다 — 스토리지에 아무것도 올리지 않는다."""
+    """수직기준을 **이을 수 없으면** 계산 전에 멈춘다 — 스토리지에 아무것도 올리지 않는다.
+
+    ``ORTHOMETRIC_KNGEOID2018`` 을 앵커로 쓰는 것이 이 테스트의 핵심이다: 격자를
+    확보한 뒤에도 "격자로 이을 수 없는 조합"은 남아야 하고(우리는 KNGeoid18 격자를
+    갖고 있지 않다), 그 거부는 **격자가 없어서 못 하는 것과 다른 사유**로 나와야
+    한다(``GeoidUnavailableError`` 쪽은 별도 테스트).
+    """
     current_path = _write_raster(tmp_path / "current.tif", _ramp())
     design_path = _write_raster(tmp_path / "design.tif", _flat())
     design_sha = sha256_of_file(design_path).removeprefix("sha256:")
@@ -279,13 +286,77 @@ def test_incompatible_vertical_datum_fails_before_uploading_anything(
         transport=_transport(core, {"current-dsm": current_path, "design": design_path})
     )
 
-    with pytest.raises(DesignConformanceWorkerRunError, match="수직기준 계열"):
+    with pytest.raises(DesignConformanceWorkerRunError, match="수직기준을 이을 수 없다"):
         run_design_conformance_request(
             _REQUEST_ID, core=core, work_dir=tmp_path / "work", http_client=client,
             now_message=lambda _msg: None,
         )
     assert core.uploaded is None
     assert ("upload-url", _REQUEST_ID) not in core.calls
+    assert core.status == "FAILED"
+
+
+def test_a_missing_geoid_grid_fails_with_its_own_reason_not_as_an_incompatible_datum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심][음성] 격자가 없는 배포에서 해발 도면은 **FAILED + 격자 사유**다.
+
+    같은 FAILED 라도 사람이 고칠 자리가 다르다 — 이쪽은 "이 배포에 격자를 붙여라"
+    이고, 앞 테스트(``KNGeoid18``)는 "이 도면은 이 산출물과 이을 수 없다"다. 그래서
+    원장·화면에 남는 detail 이 서로 구분돼야 한다. 숫자는 어느 쪽도 만들지 않는다.
+    """
+    monkeypatch.delenv("KSI_GEOID_GRID", raising=False)
+    current_path = _write_raster(tmp_path / "current.tif", _ramp())
+    design_path = _write_raster(tmp_path / "design.tif", _flat())
+    design_sha = sha256_of_file(design_path).removeprefix("sha256:")
+    core = FakeCore(
+        conformance_input=_input(design_sha, design_vertical=_ORTHOMETRIC_2024_VERTICAL)
+    )
+    client = httpx.Client(
+        transport=_transport(core, {"current-dsm": current_path, "design": design_path})
+    )
+
+    with pytest.raises(DesignConformanceWorkerRunError, match="KSI_GEOID_GRID"):
+        run_design_conformance_request(
+            _REQUEST_ID, core=core, work_dir=tmp_path / "work", http_client=client,
+            now_message=lambda _msg: None,
+        )
+
+    assert core.submitted == []
+    assert core.uploaded is None
+    assert core.status == "FAILED"
+    failed = [call for call in core.calls if call[0] == "transition" and call[1] == "FAILED"]
+    detail = str(failed[0][2])
+    assert "KSI_GEOID_GRID" in detail
+    assert "이을 수 없다" not in detail
+
+
+def test_a_configured_but_broken_geoid_grid_is_reported_not_silently_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[음성] 격자 경로를 지정해 놓고 파일이 없으면 **그 사실이 FAILED 로 나온다.**
+
+    미설정(= 정표고를 안 쓴다)과 설정-실패(= 배포가 깨졌다)를 같은 것으로 다루면,
+    오타 하나가 "격자 없음" 경로로 조용히 빠져 원인이 가려진다
+    (``load_geoid_grid`` 의 설계를 워커 배선이 실제로 지키는지 확인한다).
+    """
+    monkeypatch.setenv("KSI_GEOID_GRID", str(tmp_path / "no-such-grid.tif"))
+    current_path = _write_raster(tmp_path / "current.tif", _ramp())
+    design_path = _write_raster(tmp_path / "design.tif", _flat())
+    design_sha = sha256_of_file(design_path).removeprefix("sha256:")
+    # 설계면이 타원체고라 변환이 **필요 없는** 요청이다 — 그래도 깨진 설정은 숨기지
+    # 않는다. 여기서 조용히 넘어가면 정작 정표고 요청이 왔을 때 원인을 찾기 어렵다.
+    core = FakeCore(conformance_input=_input(design_sha))
+    client = httpx.Client(
+        transport=_transport(core, {"current-dsm": current_path, "design": design_path})
+    )
+
+    with pytest.raises(DesignConformanceWorkerRunError, match="no-such-grid.tif"):
+        run_design_conformance_request(
+            _REQUEST_ID, core=core, work_dir=tmp_path / "work", http_client=client,
+            now_message=lambda _msg: None,
+        )
+    assert core.submitted == []
     assert core.status == "FAILED"
 
 

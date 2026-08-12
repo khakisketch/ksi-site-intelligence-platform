@@ -151,12 +151,12 @@ def test_vertical_datum_values_are_explicit() -> None:
 # ---------------------------------------------------------------------------
 # 실 KNGeoid24 격자 대조 (risk `geoid-grid-provenance-unverified`).
 #
-# 격자 파일 자체(data/geoid/KNGeoid24.tif)는 대용량 바이너리라 git에 커밋하지
-# 않는다(.gitignore `/data/geoid/`) — tools/convert_geoid_grid.py 로 재생성하거나
-# docs/geo/GEOID_ACQUISITION.md 의 취득 경로를 따른다. 없는 환경(CI 포함)에서는
-# 이 아래 테스트 전부 skip — 위의 합성 격자 테스트들이 보간 수학 자체는 상시
-# 검증하므로 skip이 "기능 미검증"은 아니다(별도 게이트, test_dfine_detector.py 와
-# 같은 관례).
+# 변환본 data/geoid/KNGeoid24.tif(1.4MB)는 **저장소에 추적된다** — .gitignore 가
+# 무시하는 것은 원본 `/data/geoid/raw/` 뿐이다(2026-08-12 실측: `git ls-files
+# data/geoid/` 가 이 파일을 낸다). 그래도 skipif 를 남겨 두는 이유는 얕은 체크아웃
+# ·LFS 미확보 같은 환경에서 파일이 없을 수 있어서다. 없으면 이 아래는 skip 이고,
+# 위의 합성 격자 테스트들이 보간 수학 자체는 상시 검증하므로 그 skip 이 "기능
+# 미검증"은 아니다(별도 게이트, test_dfine_detector.py 와 같은 관례).
 # ---------------------------------------------------------------------------
 
 _REAL_KNGEOID24_PATH = Path("data/geoid/KNGeoid24.tif")

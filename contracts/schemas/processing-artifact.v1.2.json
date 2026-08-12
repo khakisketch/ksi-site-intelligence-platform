@@ -135,8 +135,8 @@
       "description": "이 산출물의 높이가 어느 수직기준의 높이인가 + 그것을 왜 아는가. nullable **필수**(accuracy·crs·gsd 와 같은 관례) — 생략과 명시적 null 을 구분하기 위해서다. null 은 'v1.2 를 아는 생산자가 이 산출물의 수직기준을 모른다고 밝혔다'는 뜻이고, 필드 자체가 없으면 그것은 v1.2 문서가 아니라 v1.1 문서다(수직기준 개념 이전에 등록된 산출물). 두 경우 모두 소비자는 '미상'으로 다루지만, 어느 쪽인지가 남아야 재처리 대상 판별이 추측이 되지 않는다.\n\n값이 있으면 그것은 **관측이 아니라 귀속(provenance)** 이다 — 어떤 파일 포맷도 수직기준을 신뢰성 있게 담지 않는다. 그래서 datum 하나가 아니라 basis(왜 아는가)와 source(누구의 주장인가)를 함께 강제한다. 정본은 packages/event-contracts 의 ksi_event_contracts.vertical_reference 다.",
       "properties": {
         "datum": {
-          "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 그대로 남은 상태(지오이드 격자 확보 시 재처리 대상 목록이 된다). orthometric_kngeoid2018 = KNGeoid2018 로 실현한 한국 정표고. 비교 가능성은 이 값이 아니라 계열(family)로 판정한다 — 앞의 둘은 같은 계열이라 서로 빼도 되고, 정표고와는 격자 없이 섞으면 한국에서 20~30m 가 조용히 들어간다.",
-          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018"]
+          "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 그대로 남은 상태(지오이드 격자 확보 시 재처리 대상 목록이 된다). orthometric_kngeoid2018 / orthometric_kngeoid2024 = 한국 정표고이며, 뒤의 이름은 그 높이를 타원체고와 잇는 지오이드 격자 모델이다. 비교 가능성은 이 값이 아니라 계열(family)로 판정한다 — 앞의 둘은 같은 계열이라 서로 빼도 되고, 정표고와는 격자 없이 섞으면 한국에서 20~30m 가 조용히 들어간다.",
+          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018", "orthometric_kngeoid2024"]
         },
         "basis": {
           "type": "string",

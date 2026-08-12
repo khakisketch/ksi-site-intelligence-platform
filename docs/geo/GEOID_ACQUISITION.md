@@ -274,8 +274,18 @@ data/geoid/KNGeoid24.tif       sha256:88e2cfd63507062d1daa3304456422ccf8f8669e14
                                 (변환 산출물 — tools/convert_geoid_grid.py 재실행으로 재생성 가능)
 ```
 
-`data/`는 `.gitignore` 대상이라 저장소에 커밋되지 않는다(`/models/` 와 같은
-패턴 — 실 바이너리는 커밋하지 않고 계보만 이 문서로 추적). 벤치마크 CSV
+**추적 정책은 `/models/` 와 다르게 간다**(2026-08-12 결정, 커밋 830c829):
+
+| 경로 | git | 왜 |
+|---|---|---|
+| `data/geoid/KNGeoid24.tif` (1.4MB) | **추적** | 런타임이 실제로 읽는 파일(`KSI_GEOID_GRID`). 이걸 빼면 새 개발자가 이 저장소만으로는 정표고 경로를 못 돌린다 |
+| `data/geoid/raw/` (9.6MB) | 무시 | 원본. 계보는 위 sha256 과 이 문서가 고정하고, `tools/convert_geoid_grid.py` 로 변환본을 재생성할 수 있다 |
+
+모델 가중치(`/models/`)는 공개 URL 이라 `tools/fetch_model.py` 로 자동 취득이
+성립하지만, **KNGeoid 는 로그인 + 신청서 제출을 사람이 거쳐야 하는 경로라 같은
+fetch 스크립트를 만들 수 없다**(§1 참조) — 그래서 같은 패턴을 적용하지 않았다.
+
+벤치마크 CSV
 (`data/geoid/benchmarks/ngii_gps_reference_points_20231107.csv`, §5.1)는 이 세션의
 스크래치 공간에만 있고 저장소에 옮기지 않았다 — 필요하면 §5.1 의 다운로드 절차로
 재획득 가능(`atchFileId=FILE_000000002836809&fileDetailSn=1`, data.go.kr).

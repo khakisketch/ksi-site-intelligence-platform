@@ -52,6 +52,7 @@ from ksi_change_detection.run_design_conformance import (
 )
 from ksi_event_contracts.vertical_reference import VerticalDatumIncompatibleError
 from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
+from ksi_geo_spatial.vertical import GeoidUnavailableError, load_geoid_grid
 
 from ksi_processing_controller.comparison_worker import LeaseHeartbeat
 from ksi_processing_controller.core_client import (
@@ -150,6 +151,11 @@ def run_design_conformance_request(
 
     raster_path: Path | None = None
     try:
+        # 격자 적재는 try 안이다 — 설정이 깨졌으면(경로는 있는데 파일이 없음)
+        # ``load_geoid_grid`` 가 던지고, 그 실패도 FAILED 로 수렴해야 한다.
+        # 미설정이면 None 이고, 그건 "정표고를 안 쓴다"는 정상 상태다. 계산 쪽이
+        # 변환이 필요한데 None 인 경우에만 거부한다(run_design_conformance).
+        geoid_grid = load_geoid_grid()
         report, raster_path = compute_design_conformance(
             design_conformance_id=conformance_input.design_conformance_id,
             diff_raster_id=conformance_input.diff_raster_id,
@@ -170,6 +176,7 @@ def run_design_conformance_request(
             # 적힌 기준값이 실제로 쓴 값이 된다(comparison_worker 와 같은 근거).
             policy=conformance_input.policy,
             computed_at=datetime.now(UTC),
+            geoid_grid=geoid_grid,
             http_client=fetch,
             publish_diff_raster=_DiffRasterPublisher(
                 core, request_id, http_client=fetch, now_message=now_message
@@ -198,6 +205,11 @@ def run_design_conformance_request(
         CrsMismatchError,
         UnsupportedCrsError,
         VerticalDatumIncompatibleError,
+        # 격자가 없거나(설정 누락) 현장이 격자 범위 밖이면 변환을 못 한다 —
+        # **위의 VerticalDatumIncompatibleError 와 다른 사실**이고, detail 로
+        # 원장·화면에 그대로 남아 둘이 구분된다("격자를 붙여라" vs "이 도면은
+        # 이 산출물과 이을 수 없다").
+        GeoidUnavailableError,
         httpx.HTTPError,
         CoreClientError,
     ) as exc:

@@ -178,6 +178,7 @@ export const VERTICAL_DATUM_LABEL: Record<string, string> = {
   ellipsoidal: "타원체 기준 높이",
   ellipsoidal_native: "타원체 기준 높이(지오이드 미적용)",
   orthometric_kngeoid2018: "해발 높이(KNGeoid2018)",
+  orthometric_kngeoid2024: "해발 높이(KNGeoid2024)",
 };
 
 export function humanizeVerticalDatum(datum: string): string {

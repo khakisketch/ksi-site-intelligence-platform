@@ -99,9 +99,16 @@ _DESIGN_VERTICAL = VerticalReference(
     basis="설계사 제공 도면 표제부에 타원체고 명시",
     source=VerticalReferenceSource.USER_DECLARED,
 )
+#: 격자를 갖고 있지 **않은** 모델로 선언된 정표고 — 계열이 맞아도 이을 수 없다.
 _ORTHOMETRIC_DESIGN_VERTICAL = VerticalReference(
     datum=VerticalDatum.ORTHOMETRIC_KNGEOID2018,
     basis="설계사가 국가 수준점 기준 정표고로 작성했다고 표기",
+    source=VerticalReferenceSource.USER_DECLARED,
+)
+#: 실무 도면의 정상 경로 — 우리가 격자를 가진 모델로 선언된 해발 높이.
+_ORTHOMETRIC_2024_DESIGN_VERTICAL = VerticalReference(
+    datum=VerticalDatum.ORTHOMETRIC_KNGEOID2024,
+    basis="설계사 제공 도면 표제부에 인천 평균해면 기준 표고 명시",
     source=VerticalReferenceSource.USER_DECLARED,
 )
 
@@ -339,8 +346,33 @@ def test_sealed_but_unverified_surface_is_refused(tmp_path: Path) -> None:
     assert fixture.requests.list_for_mission(_CURRENT_MISSION_ID) == []
 
 
+def test_orthometric_design_that_a_geoid_grid_can_bridge_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 해발 도면 × 타원체고 DSM — **요청을 만든다**(실무 도면의 정상 경로).
+
+    Core 는 "이을 수 있는 종류인가"만 답한다. 격자가 그 배포에 실제로 붙어 있는지는
+    워커의 환경(``KSI_GEOID_GRID``)이라 Core 가 알 수 없는 사실이고, 여기서 미리
+    막으면 격자를 붙여 둔 배포에서도 한국 도면이 전부 거부된다.
+    """
+    fixture = Fixture(tmp_path, design_vertical=_ORTHOMETRIC_2024_DESIGN_VERTICAL)
+    result = fixture.create()
+    assert result.verdict is DesignConformanceRequestVerdict.CREATED
+    record = result.record
+    assert record is not None
+    # 요청은 **선언된 그대로**를 싣는다 — 변환은 워커가 하고, 지시가 그 사실을
+    # 미리 고쳐 쓰지 않는다(그러면 무엇을 변환했는지 되짚을 수 없다).
+    assert record.design_vertical_reference.datum is VerticalDatum.ORTHOMETRIC_KNGEOID2024
+    assert fixture.requests.list_pending(now=_NOW) == [record]
+
+
 def test_incompatible_vertical_datum_is_refused_before_any_computation(tmp_path: Path) -> None:
-    """[핵심] 정표고 설계면 × 타원체고 DSM — 계산에 들어가기 전에 거부한다."""
+    """[핵심][음성] 격자를 가진 적 없는 모델(KNGeoid18)로 선언된 정표고는 즉시 거부.
+
+    격자를 확보한 뒤에도 이 거부는 남아야 한다 — 되돌릴 격자는 그 선언이 말하는
+    **모델의** 격자여야 하고, 다른 모델로 대신 변환하면 리포트가 말하는 기준과
+    실제로 쓴 기준이 갈라진다.
+    """
     fixture = Fixture(tmp_path, design_vertical=_ORTHOMETRIC_DESIGN_VERTICAL)
     result = fixture.create()
     assert result.verdict is DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE

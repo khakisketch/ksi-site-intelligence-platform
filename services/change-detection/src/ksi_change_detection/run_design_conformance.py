@@ -42,14 +42,52 @@
 RMSE 만으로 계산하면 "검증된 한쪽만큼만 틀릴 수 있다"는 거짓말이 된다. 그래서
 두 값 다 ``None`` 을 넘기고, 사유를 리포트에 실어 화면까지 보낸다.
 
-## 수직기준은 계산 **전**에 막는다
+## 수직기준은 계산 **전**에 판정하고, 계산 **안**에서 잇는다
 
 타원체고와 정표고를 그냥 빼면 한국에서 20~30m 가 조용히 섞이고 결과는 여전히
-숫자다. ``assert_comparable_vertical`` 을 다운로드보다도 먼저 부른다 — 어차피
-거부할 계산에 스토리지 바이트를 쓰지 않는다. Core 도 요청 생성 시점에 같은
-판정을 하지만(fail-closed 는 요청 경로), 계산 엔진이 그 판정을 **자기 입구에서도**
-강제하지 않으면 다른 호출자가 생기는 날 조용히 뚫린다(``dsm_diff`` 가 CRS 를
-자기 입구에서 다시 보는 것과 같은 근거).
+숫자다. 그래서 ``assert_bridgeable_vertical`` 을 다운로드보다도 먼저 부른다 —
+어차피 거부할 계산에 스토리지 바이트를 쓰지 않는다. Core 도 요청 생성 시점에
+같은 판정을 하지만(fail-closed 는 요청 경로), 계산 엔진이 그 판정을 **자기
+입구에서도** 강제하지 않으면 다른 호출자가 생기는 날 조용히 뚫린다(``dsm_diff``
+가 CRS 를 자기 입구에서 다시 보는 것과 같은 근거).
+
+**판정과 변환이 갈라져 있는 이유**(대표자 결정 2026-08-12 "자동으로 맞춰서
+계산한다"): 실무 설계도면은 거의 항상 정표고(해발)이고 우리 재구성 파이프라인은
+타원체고를 낸다. 둘을 잇는 지오이드고 N 은 격자 파일에서만 나오는데, 그 파일이
+붙어 있는 곳은 **워커의 환경**(``KSI_GEOID_GRID``)이지 Core 가 아니다. 그래서
+
+- Core: "이 두 기준을 이을 수 있는 종류인가"라는 **순수 표 판정**만 한다.
+- 여기: 격자를 실제로 읽어 **설계면 높이를 현재 DSM 의 계열로 올린다.**
+
+옮기는 쪽은 **언제나 설계면**이다. 차분 격자의 수직기준은 실측된 현재 DSM 의
+것을 승계하므로(:func:`_diff_vertical_reference`), 측정물을 건드리면 지도가
+말하는 기준 자체가 바뀐다. 설계면은 보통 더 성긴 격자라 비용도 그쪽이 싸다.
+
+격자가 없으면(``KSI_GEOID_GRID`` 미설정 또는 읽기 실패) 숫자를 만들지 않는다.
+그 거부는 :class:`~ksi_geo_spatial.vertical.GeoidUnavailableError` 이고,
+"수직기준이 근본적으로 이어지지 않는다"(``VerticalDatumIncompatibleError``) 와
+**다른 타입**이다 — 사람이 받는 사유가 "격자를 붙여라"와 "이 도면은 못 쓴다"로
+갈라져야 하기 때문이다.
+
+## N 은 셀마다 다르다 — 구역 대표점 하나로 상수 보정하지 않는다
+
+지오이드고는 위치의 함수다. 현장 하나 안에서 얼마나 변하는지를 실 격자
+(``data/geoid/KNGeoid24.tif``, 셀 간격 0.01636° ≈ 1.82km)로 재 보면:
+
+- 전국 |∇N| 중앙값 0.028 m/km, 상위 5% 0.0495 m/km, 최대 0.1376 m/km.
+- 1km 현장에서 중심 한 점의 N 을 상수로 쓰면 최대 편차 0.011~0.041m
+  (서울·부산·판교·속초·제주 실측), 2km 현장에서는 0.083m 까지 벌어진다.
+
+이 크기는 집계 문턱(``policy.volumeThresholdM`` 기본 0.05m)과 같은 자릿수다.
+게다가 상수 보정의 오차는 **기울기**라서 현장 한쪽은 성토로, 반대쪽은 절토로
+쏠린다 — 실 격자로 적분해 보면 1km² 현장에서 |오차|·면적이 4,500~13,300 m³,
+2km 각 현장에서 107,000 m³ 다(순증감에서는 상당 부분 상쇄돼 **보이지 않지만**
+cut·fill 은 따로 보고되는 값이다).
+
+비용은 실측으로 **100만 셀(1m 격자 1km²) 1.2초**다(격자 조회 자체는 셀당 1.1µs,
+나머지는 좌표변환·래스터 입출력). 같은 함수 안의 다운로드·재투영과 같은
+자릿수다. 정확도가 문턱과 같은 자릿수로 걸려 있고 비용은 파이프라인의 잡음
+수준이라, **셀별 보간이 답이다.**
 
 ## 왜 래스터 업로드가 이 함수 한가운데 있나
 
@@ -65,6 +103,7 @@ RMSE 만으로 계산하면 "검증된 한쪽만큼만 틀릴 수 있다"는 거
 from __future__ import annotations
 
 import logging
+import math
 import shutil
 import tempfile
 from collections.abc import Mapping
@@ -74,6 +113,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+import numpy as np
+import rasterio
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.design_conformance_report import (
@@ -82,11 +123,24 @@ from ksi_event_contracts.design_conformance_report import (
     DiffRasterRef,
 )
 from ksi_event_contracts.vertical_reference import (
+    VerticalBridge,
+    VerticalDatumFamily,
     VerticalReference,
     VerticalReferenceSource,
-    assert_comparable_vertical,
+    assert_bridgeable_vertical,
+    family_of,
 )
 from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
+from ksi_geo_spatial.crs import assert_supported_project_crs
+from ksi_geo_spatial.vertical import (
+    GEOID_GRID_ENV,
+    GeoidGrid,
+    GeoidUnavailableError,
+    ellipsoidal_to_orthometric,
+    orthometric_to_ellipsoidal,
+)
+from rasterio.transform import xy as raster_cell_centre
+from rasterio.warp import transform as warp_coordinates
 
 from ksi_change_detection.diff_raster import sha256_of_file, write_diff_geotiff
 from ksi_change_detection.download_errors import download_failure_detail
@@ -101,6 +155,12 @@ DESIGN_SURFACE_NOT_MEASURED_NOTE = (
     "양쪽 입력이 모두 독립 검사점으로 검증됐을 때만 낼 수 있다. 이 값은 현재 지형과 "
     "설계면의 표고차를 그대로 적분한 상대량이다"
 )
+
+
+#: 지오이드 보정을 한 번에 처리할 셀 수 — 경위도 변환이 파이썬 리스트를 거치므로
+#: (``rasterio.warp.transform`` 의 반환형) 한 덩어리가 크면 메모리가 튄다.
+#: 100만 셀이면 리스트 두 개가 수십 MB 수준이고, 호출 오버헤드는 무시할 만하다.
+_GEOID_CHUNK_CELLS = 1_000_000
 
 
 class DesignConformanceRunError(RuntimeError):
@@ -164,6 +224,7 @@ def compute_design_conformance(
     computed_at: datetime,
     http_client: httpx.Client,
     publish_diff_raster: DiffRasterPublisher,
+    geoid_grid: GeoidGrid | None = None,
     work_dir: Path | None = None,
     uncertainty_note: str = DESIGN_SURFACE_NOT_MEASURED_NOTE,
 ) -> tuple[DesignConformanceReport, Path]:
@@ -186,6 +247,10 @@ def compute_design_conformance(
         http_client: 스토리지 바이트를 받는 클라이언트.
         publish_diff_raster: 래스터를 올리고 Core 의 digest 확인 시각을 돌려주는 쪽
             (모듈 docstring "왜 래스터 업로드가 이 함수 한가운데 있나").
+        geoid_grid: 정표고↔타원체고를 이을 지오이드 격자. 호출자가 주입한다
+            (``load_geoid_grid()``) — 이 함수가 환경변수를 직접 읽으면 같은 입력이
+            환경에 따라 다른 답을 내면서도 그 사실이 인자에 드러나지 않는다.
+            계열이 같아 변환이 필요 없으면 ``None`` 이어도 된다.
         work_dir: 임시 파일을 둘 상위 디렉터리(기본: 시스템 임시 디렉터리).
         uncertainty_note: 오차한계가 없는 이유. 기본값을 바꿀 이유는 거의 없다.
 
@@ -195,14 +260,30 @@ def compute_design_conformance(
         (재시도·검증). ``shutil.rmtree(path.parent)`` 로 지우면 된다.
 
     Raises:
-        VerticalDatumIncompatibleError: 두 입력의 수직기준 계열이 다르다.
+        VerticalDatumIncompatibleError: 두 입력의 수직기준을 **어떤 격자로도** 이을
+            수 없다 — 이 도면으로는 계산 자체가 성립하지 않는다.
+        GeoidUnavailableError: 이을 수는 있는데 **격자가 없거나 범위 밖**이다 —
+            위와 달리 격자를 붙이면 그대로 계산된다. 두 사유를 같은 타입으로
+            뭉치면 사람이 무엇을 고쳐야 하는지 알 수 없다.
         DesignConformanceRunError: 다운로드·해시 대조·차분·집계 중 하나가 실패했다.
     """
     if not zones:
         raise DesignConformanceRunError("잴 구역이 하나도 주어지지 않았다")
 
-    # 계산 전에 막는다 — 계열이 다르면 어떤 숫자도 내지 않는다(모듈 docstring).
-    assert_comparable_vertical(current_dsm.vertical_reference, design.vertical_reference)
+    # 계산 전에 판정한다 — 이을 수 없으면 어떤 숫자도 내지 않는다(모듈 docstring).
+    bridge = assert_bridgeable_vertical(
+        current_dsm.vertical_reference, design.vertical_reference
+    )
+    if bridge is VerticalBridge.GEOID_GRID and geoid_grid is None:
+        # 다운로드 **전**에 멈춘다 — 어차피 못 낼 숫자에 스토리지 바이트를 쓰지 않는다.
+        raise GeoidUnavailableError(
+            f"설계면({design.vertical_reference.datum.value})과 현재 DSM"
+            f"({current_dsm.vertical_reference.datum.value})의 수직기준 계열이 달라 "
+            "지오이드 격자로 변환해야 하는데 격자가 없다 — "
+            f"{GEOID_GRID_ENV} 미설정이거나 그 경로를 읽지 못했다. N=0 으로 대치하면 "
+            "한국에서 20~30m 가 조용히 틀린다. 이것은 '이 도면은 비교할 수 없다'가 "
+            "아니라 '격자를 붙이면 계산된다'는 뜻이다"
+        )
 
     threshold_m = policy.volume_threshold_m
     out_dir = Path(tempfile.mkdtemp(prefix="design-conformance-", dir=work_dir))
@@ -212,7 +293,20 @@ def compute_design_conformance(
             design_path = Path(tmp) / "design.tif"
             _download(http_client, current_dsm.download_url, current_path, what="현재 DSM")
             _download(http_client, design.download_url, design_path, what="설계면")
+            # 해시 대조는 **받은 그대로의 바이트**로 한다 — 변환보다 먼저다.
             _assert_design_bytes_unchanged(design_path, design)
+
+            geoid_applied: _GeoidApplied | None = None
+            if bridge is VerticalBridge.GEOID_GRID:
+                assert geoid_grid is not None  # noqa: S101 -- 위에서 None 을 이미 거부했다
+                bridged_path = Path(tmp) / "design-bridged.tif"
+                geoid_applied = _bridge_design_heights(
+                    design_path,
+                    bridged_path,
+                    target_family=family_of(current_dsm.vertical_reference.datum),
+                    grid=geoid_grid,
+                )
+                design_path = bridged_path
 
             try:
                 # ── 부호 규약: 인자 이름이 아니라 이 주석이 뜻이다 ──────────────
@@ -248,7 +342,7 @@ def compute_design_conformance(
 
         # 리포트와 래스터 참조는 **같은 객체**를 쓴다 — 계약이 둘의 datum 일치를
         # 검사하는데, 두 번 만들면 나중에 한쪽만 바뀔 여지가 생긴다.
-        vertical_reference = _diff_vertical_reference(current_dsm, design)
+        vertical_reference = _diff_vertical_reference(current_dsm, design, geoid_applied)
         report = DesignConformanceReport(
             design_conformance_id=design_conformance_id,
             design_surface_ref=DesignSurfaceRef(
@@ -298,12 +392,138 @@ def compute_design_conformance(
     return report, raster_path
 
 
+@dataclass(frozen=True, slots=True)
+class _GeoidApplied:
+    """설계면에 **실제로 적용한** 지오이드 보정 — 리포트 근거에 그대로 실린다.
+
+    "격자로 변환했다"는 문장은 *어느 격자로, 어느 방향으로, 얼마나* 를 말하지
+    못하면 검증할 수 없는 주장이다. 화면은 이 값들이 녹아든 ``basis`` 를 숫자
+    바로 옆에 띄우므로(대시보드 ``DesignConformancePanel``), 사용자는 N 이
+    한국 상식 범위(15~35m)인지 그 자리에서 알아볼 수 있다.
+    """
+
+    #: 사람이 읽을 방향 — 예 ``"정표고 → 타원체고(h = H + N)"``.
+    direction: str
+    #: 어느 격자였나(``GeoidGrid.provenance``).
+    grid: str
+    #: 적용한 지오이드고의 범위(m). 셀마다 다르므로 한 값이 아니다.
+    n_min_m: float
+    n_max_m: float
+    #: 실제로 보정한 유효 셀 수.
+    cell_count: int
+
+
+def _bridge_design_heights(
+    design_path: Path,
+    out_path: Path,
+    *,
+    target_family: VerticalDatumFamily,
+    grid: GeoidGrid,
+) -> _GeoidApplied:
+    """설계면 높이를 현재 DSM 의 계열에 맞춘다 — **셀마다** 그 셀의 N 으로.
+
+    셀 중심의 투영좌표를 경위도로 옮겨(``rasterio.warp.transform``) 격자에서 N 을
+    이중선형 보간한다. 왜 구역 대표점 하나로 상수 보정하지 않는지는 모듈
+    docstring "N 은 셀마다 다르다" 에 실측 수치로 적혀 있다.
+
+    변환은 :func:`~ksi_geo_spatial.vertical.orthometric_to_ellipsoidal` /
+    :func:`~ksi_geo_spatial.vertical.ellipsoidal_to_orthometric` 를 그대로 쓴다 —
+    부호(``h = H + N``)를 여기서 다시 쓰면 정본이 둘이 된다.
+
+    **nodata 셀은 건드리지 않는다.** 그 셀에는 높이가 없으므로 변환할 것도 없고,
+    격자 범위 밖이라는 이유로 계산 전체를 막을 이유도 없다. 반대로 **유효 셀이
+    격자 밖이면 거부한다** — 외삽하지 않는다(INV-023).
+
+    좌표는 100만 셀 단위로 끊어 처리한다. 경위도를 한 번에 리스트로 만들면 큰
+    설계면(0.25m 격자 1km² = 1600만 셀)에서 메모리가 GB 단위로 튄다.
+    """
+    with rasterio.open(design_path) as dataset:
+        if dataset.crs is None:
+            raise DesignConformanceRunError(
+                "설계면에 좌표계가 없다 — 어느 지점의 지오이드고인지 알 수 없으면 "
+                "정표고를 타원체고로 바꿀 수 없다"
+            )
+        # 화이트리스트 밖 좌표계면 여기서 멈춘다(``dsm_diff`` 와 같은 근거) —
+        # 엉뚱한 좌표계로 경위도를 계산하면 N 을 다른 나라에서 읽어 온다.
+        crs = assert_supported_project_crs(str(dataset.crs))
+        values = dataset.read(1).astype(np.float64)
+        transform = dataset.transform
+        nodata = dataset.nodata
+
+    valid = np.isfinite(values)
+    if nodata is not None and math.isfinite(nodata):
+        valid &= values != nodata
+    rows, cols = np.nonzero(valid)
+    if rows.size == 0:
+        raise DesignConformanceRunError(
+            "설계면에 유효한 높이 셀이 하나도 없다 — 변환할 것이 없다"
+        )
+
+    convert = (
+        orthometric_to_ellipsoidal
+        if target_family is VerticalDatumFamily.ELLIPSOIDAL
+        else ellipsoidal_to_orthometric
+    )
+    heights = values[rows, cols]
+    converted = np.empty_like(heights)
+    for start in range(0, rows.size, _GEOID_CHUNK_CELLS):
+        chunk = slice(start, start + _GEOID_CHUNK_CELLS)
+        xs, ys = raster_cell_centre(transform, rows[chunk], cols[chunk])
+        lons, lats = warp_coordinates(crs, "EPSG:4326", list(xs), list(ys))
+        converted[chunk] = [
+            convert(float(height), lat_deg=lat, lon_deg=lon, grid=grid)
+            for height, lat, lon in zip(heights[chunk], lats, lons, strict=True)
+        ]
+
+    # 기록하는 값은 **지오이드고 N 자체**다 — 방향에 따라 부호가 뒤집히는 보정량을
+    # 그대로 실으면 리포트의 N 이 음수로 보여, 한국 상식 범위(15~35m) 대조가 깨진다.
+    separations = (
+        converted - heights
+        if target_family is VerticalDatumFamily.ELLIPSOIDAL
+        else heights - converted
+    )
+    out = values.copy()
+    out[rows, cols] = converted
+    # 프로파일은 **원본에서 물려받지 않고 필요한 것만 새로 적는다.** 물려받으면
+    # 압축·타일링 조합 같은 원본의 쓰기 옵션이 딸려와 경고를 내고, 여기서 중요한
+    # 것은 격자 기하(crs/transform)와 nodata 뿐이다. dtype 은 float64 로 고정한다 —
+    # 원본이 float32 면 H+N 이 float32 로 되접혀 정밀도가 깎인다. 이 파일은 차분
+    # 직전의 임시 산출물이라 크기는 문제가 아니다.
+    with rasterio.open(
+        out_path,
+        "w",
+        driver="GTiff",
+        height=out.shape[0],
+        width=out.shape[1],
+        count=1,
+        dtype="float64",
+        crs=crs,
+        transform=transform,
+        nodata=nodata,
+    ) as dataset:
+        dataset.write(out, 1)
+
+    return _GeoidApplied(
+        direction=(
+            "정표고 → 타원체고(h = H + N)"
+            if target_family is VerticalDatumFamily.ELLIPSOIDAL
+            else "타원체고 → 정표고(H = h − N)"
+        ),
+        grid=grid.provenance,
+        n_min_m=float(separations.min()),
+        n_max_m=float(separations.max()),
+        cell_count=int(rows.size),
+    )
+
+
 def _diff_vertical_reference(
-    current_dsm: CurrentDsmSource, design: DesignSource
+    current_dsm: CurrentDsmSource,
+    design: DesignSource,
+    geoid_applied: _GeoidApplied | None,
 ) -> VerticalReference:
     """차분 격자의 수직기준 — **현재 DSM 의 datum 을 승계**한다.
 
-    두 입력의 계열이 같다는 것은 이미 확인됐고(``assert_comparable_vertical``),
+    두 입력을 이을 수 있다는 것은 이미 확인됐고(``assert_bridgeable_vertical``),
     같은 계열 안에서 ``ellipsoidal`` 과 ``ellipsoidal_native`` 의 차이는 비교
     가능성이 아니라 **재처리 대상 표시**다(``VerticalDatum`` docstring). 현재
     DSM 이 "변환하지 못해 남은 상태"라면 그것을 빼서 만든 격자도 같은 상태이므로,
@@ -311,16 +531,32 @@ def _diff_vertical_reference(
     설계면 쪽 값을 쓰면 "설계자가 의도적으로 고른 기준"이라는 뜻이 결과에 옮겨
     붙는데, 그건 이 격자에 대한 사실이 아니다.
 
+    **변환을 했다면 그 사실이 여기 남는다.** 설계면을 지오이드 격자로 옮겨서 낸
+    숫자와 처음부터 같은 계열이라 그냥 뺀 숫자는 datum 이 같아도 **온 길이
+    다르다** — 어느 격자로 얼마를 더했는지가 결과에 드러나지 않으면, 나중에
+    격자가 바뀌었을 때 어느 리포트를 다시 계산해야 하는지 아무도 답할 수 없다.
+
     ``source`` 는 언제나 ``PIPELINE_DECLARED`` 다 — 이 값은 우리 계산이 만든
     것이고, 사용자가 주장할 수 있는 자리가 아니다(계약도 이것만 받는다).
     """
+    if geoid_applied is None:
+        conversion = (
+            "두 입력의 수직기준 계열이 같아 변환 없이 그대로 뺐다"
+        )
+    else:
+        conversion = (
+            f"설계면 높이를 지오이드 격자 {geoid_applied.grid} 로 셀마다 보간해 "
+            f"{geoid_applied.direction} 로 옮긴 뒤 뺐다 — 적용한 지오이드고 N "
+            f"{geoid_applied.n_min_m:.3f}~{geoid_applied.n_max_m:.3f}m "
+            f"({geoid_applied.cell_count:,}셀)"
+        )
     return VerticalReference(
         datum=current_dsm.vertical_reference.datum,
         basis=(
-            "현재 DSM 과 설계면의 표고차 격자 — 두 입력의 수직기준 계열이 같음을 계산 전에 "
-            f"확인했고(현재 DSM: {current_dsm.vertical_reference.datum.value}, 설계면: "
-            f"{design.vertical_reference.datum.value}), 격자의 기준은 실측된 현재 DSM 의 "
-            "것을 그대로 승계한다"
+            "현재 DSM 과 설계면의 표고차 격자 — 현재 DSM: "
+            f"{current_dsm.vertical_reference.datum.value}, 설계면: "
+            f"{design.vertical_reference.datum.value}. {conversion}. 격자의 기준은 "
+            "실측된 현재 DSM 의 것을 그대로 승계한다"
         ),
         source=VerticalReferenceSource.PIPELINE_DECLARED,
     )

@@ -212,11 +212,9 @@ export function DesignSurfacePanel({
     phase.kind === "registering" ||
     phase.kind === "uploading" ||
     phase.kind === "sealing";
-  const orthometricBlocked = heightKind === "orthometric";
   const canSubmit =
     canWrite &&
     !busy &&
-    !orthometricBlocked &&
     file !== null &&
     name.trim() !== "" &&
     revision.trim() !== "" &&
@@ -243,7 +241,11 @@ export function DesignSurfacePanel({
               lengthUnit: "meter",
               sha256,
               verticalReference: {
-                datum: "ellipsoidal",
+                // 사용자가 고른 것을 그대로 보낸다. 해발을 고르면 KNGeoid24 로
+                // 실현한 정표고라고 선언되고, 잔량 계산이 그 격자로 되돌린다 —
+                // 선언과 실제로 쓰는 격자가 같은 이름을 가리켜야 한다.
+                datum:
+                  heightKind === "orthometric" ? "orthometric_kngeoid2024" : "ellipsoidal",
                 basis: basis.trim(),
                 source: "user_declared",
               },
@@ -370,8 +372,12 @@ export function DesignSurfacePanel({
           {/* 높이 기준을 고르게 하는 것이 이 폼에서 가장 중요한 자리다. 선택지를
               하나로 줄여 놓고 "타원체 기준"으로 강제하면, 해발 높이 도면을 가진
               사용자가 사실이 아닌 것을 적어 내게 되고 그 순간 20~30 m 가 조용히
-              결과에 들어간다. 그래서 두 선택지를 다 두고, 아직 받을 수 없는 쪽은
-              막되 왜 막히는지 밝힌다. */}
+              결과에 들어간다.
+
+              2026-08-12 부터 해발 높이도 받는다 — 국가 지오이드 모델(KNGeoid24)을
+              정식 경로로 확보·검증했고(전국 기준점 10점 전원 통과), 잔량 계산이
+              그 격자로 셀마다 되돌린 뒤 차분한다. 사용자가 고른 값이 그대로
+              선언으로 저장되므로 여기서 거짓을 적을 이유가 없다. */}
           <fieldset className="flex flex-col gap-1.5">
             <legend className="text-[11.5px] break-keep text-ink-muted">
               이 도면의 높이는 무엇을 기준으로 하나요
@@ -400,12 +406,13 @@ export function DesignSurfacePanel({
               />
               <span>해발 높이(표고) — 국내 측량 성과·설계도면에서 흔히 쓰는 기준입니다.</span>
             </label>
-            {orthometricBlocked && (
-              <p className="rounded-md bg-high-bg px-2.5 py-2 text-[12.5px] break-keep text-high-ink">
-                해발 높이 도면은 <strong className="font-bold">아직 받지 않습니다</strong> —
-                두 기준을 바꾸려면 국가 지오이드 모델이 필요한데 아직 확보·검증되지
-                않았습니다. 변환 없이 그냥 비교하면 결과가 20~30 m 틀리므로, 틀린 숫자를
-                내는 대신 여기서 멈춥니다. 도면을 타원체 기준으로 다시 받아 올리세요.
+            {heightKind === "orthometric" && (
+              <p className="rounded-md bg-sunk px-2.5 py-2 text-[12.5px] break-keep text-ink-2">
+                해발 높이 도면은 계산할 때{" "}
+                <strong className="font-bold">국가 지오이드 모델(KNGeoid24)</strong>로 드론
+                측량과 같은 기준으로 자동으로 맞춥니다 — 지점마다 다른 보정값을 격자에서
+                읽어 적용하며, 얼마를 적용했는지는 결과 화면에 그대로 남습니다. 이 모델이
+                연결되지 않은 환경에서는 숫자를 내는 대신 그 사유로 멈춥니다.
               </p>
             )}
           </fieldset>

@@ -795,7 +795,10 @@ export type DesignSurfaceRejectionReason = (typeof DESIGN_SURFACE_REJECTION_REAS
 
 /** 높이의 기준 + 그 기준을 아는 근거 + 귀속(`vertical_reference.VerticalReference`). */
 export interface VerticalReference {
-  /** `ellipsoidal` · `ellipsoidal_native` · `orthometric_kngeoid2018`. */
+  /**
+   * `ellipsoidal` · `ellipsoidal_native` · `orthometric_kngeoid2018` ·
+   * `orthometric_kngeoid2024`.
+   */
   datum: string;
   /** 왜 이 값을 아는가 — 비울 수 없다(계약이 강제). */
   basis: string;

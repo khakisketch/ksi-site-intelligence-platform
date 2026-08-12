@@ -201,8 +201,8 @@
       "description": "높이의 기준 + 그 기준을 아는 근거 + 귀속. 정본은 packages/event-contracts 의 ksi_event_contracts.vertical_reference 이며 processing-artifact.v1.2.json 과 같은 모양이다. 다만 여기서는 source 가 user_declared 로 고정된다 — 이 블록은 업로더의 주장이지 파이프라인의 귀속이 아니다.",
       "properties": {
         "datum": {
-          "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것(설계자가 그 기준으로 납품했다). ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 남은 상태. orthometric_kngeoid2018 = KNGeoid2018 로 실현한 한국 정표고. 비교 가능성은 이 값이 아니라 계열(family)로 판정한다 — 앞의 둘은 같은 계열이고, 정표고와 섞으면 한국에서 20~30m 가 조용히 들어간다.",
-          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018"]
+          "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것(설계자가 그 기준으로 납품했다). ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 남은 상태. orthometric_kngeoid2018 / orthometric_kngeoid2024 = 한국 정표고(해발)이며, 뒤의 이름은 그 높이를 타원체고와 잇는 지오이드 격자 모델이다. 비교 가능성은 계열(family)이 답하지만 **변환 가능성은 모델까지 봐야 한다** — 이 시스템은 KNGeoid24 격자만 갖고 있어 orthometric_kngeoid2024 만 타원체고로 되돌린다(다른 모델의 격자로 대신 변환하면 리포트가 말하는 기준과 실제로 쓴 기준이 갈라진다). 격자 없이 두 계열을 섞으면 한국에서 20~30m 가 조용히 들어간다.",
+          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018", "orthometric_kngeoid2024"]
         },
         "basis": {
           "type": "string",

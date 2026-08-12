@@ -20,18 +20,25 @@ GNSS/RTK 가 직접 주는 높이는 **타원체고**(h) — 지구 타원체 �
 INV-023(Geo 투영은 외삽하지 않는다, 신뢰 불가 조건에서 typed 실패)과 같은
 원칙이다.
 
-## 데이터 확보 상태 (2026-08-07)
+## 데이터 확보 상태 (2026-08-12)
 
-**KNGeoid18 격자 파일은 이 저장소에 없다.** 참고 저장소(ksi-terra)의 취득
-기록에 따르면 다운로드 경위가 회색지대이고(로그인 UX 와 실제 서버 응답이
-불일치), 통합기준점 실측 대조가 5점 중 3점만 허용 오차를 통과해 정확도 검증이
-미완이다. 따라서:
+**KNGeoid24 격자를 확보·검증했다** — 국토지리정보원 국토정보플랫폼 정식 취득,
+GeoTIFF 변환본 ``data/geoid/KNGeoid24.tif``(저장소에 추적됨), 전국 10개 시도에
+분산된 통합기준점 10점 전원 통과(최대오차 0.0401m, RMSE 0.0247m). 취득·변환·
+대조 기록 전문은 ``docs/geo/GEOID_ACQUISITION.md`` 다. 이로써 risk
+`geoid-grid-provenance-unverified` 의 해소 조건("정식 경로 취득 + 통합기준점
+실측 대조 통과")이 충족됐고, **정표고 변환이 상용 경로에 열렸다** — 설계 대비
+잔량(M4-A)이 정표고 도면을 받아 h = H + N 으로 올린 뒤 차분한다.
 
-- **정식 취득 경로와 정확도가 확인되기 전까지 정표고 변환을 상용 경로에서
-  쓰지 않는다** (risk `geoid-grid-provenance-unverified`).
+두 가지는 그대로다:
+
+- **KNGeoid18 격자는 여전히 없다.** ``ORTHOMETRIC_KNGEOID2018`` 로 선언된
+  높이를 KNGeoid24 격자로 되돌리지 않는다(계약 쪽
+  ``_GEOID_BRIDGEABLE_ORTHOMETRIC`` 주석에 근거).
 - M1 의 시점 간 상대 비교는 두 epoch 가 **같은 파이프라인의 타원체고**를
-  공유한다는 전제로만 성립하며, 산출물에는 그 사실을
-  ``verticalDatum = "ellipsoidal_native"`` 로 명시해 싣는다.
+  공유한다는 전제 위에 있고, 산출물은 그 사실을
+  ``verticalDatum = "ellipsoidal_native"`` 로 명시해 싣는다 — 격자가 생겼다고
+  과거 산출물이 소급해서 정표고가 되지는 않는다.
 
 ## 계약·판정은 여기 살지 않는다
 
@@ -46,6 +53,7 @@ Core(control plane)라서 pyproj·rasterio 를 물고 있는 이 패키지에 �
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 from dataclasses import dataclass
@@ -55,12 +63,15 @@ import numpy as np
 import rasterio
 from ksi_event_contracts.vertical_reference import (
     UnrecognizedVerticalCrsError,
+    VerticalBridge,
     VerticalDatum,
     VerticalDatumFamily,
     VerticalDatumIncompatibleError,
     VerticalReference,
     VerticalReferenceSource,
+    assert_bridgeable_vertical,
     assert_comparable_vertical,
+    bridge_between,
     family_of,
     vertical_datum_from_epsg,
 )
@@ -89,6 +100,12 @@ class GeoidGrid:
     origin_lat_deg: float
     cell_size_lon_deg: float
     cell_size_lat_deg: float
+    #: 이 격자가 온 파일의 이름과 바이트 해시 — **변환 사실을 리포트에 남기기
+    #: 위한 것**이다. "지오이드 격자로 변환했다"는 문장은 어느 격자인지 말하지
+    #: 못하면 검증 불가능한 주장이고, 모델이 다르면 결과가 수 cm 어긋난다.
+    #: 경로는 배포마다 다르므로 파일 이름만 남기고, 동일성은 해시가 답한다.
+    source_name: str | None = None
+    source_sha256: str | None = None
 
     @classmethod
     def from_path(cls, path: Path) -> GeoidGrid:
@@ -99,6 +116,10 @@ class GeoidGrid:
                 )
             values = dataset.read(1).astype(np.float64)
             transform = dataset.transform
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
         # rasterio Affine: (a=셀 폭, b, c=좌상단 x, d, e=셀 높이(음수), f=좌상단 y)
         return cls(
             values=values,
@@ -107,7 +128,16 @@ class GeoidGrid:
             cell_size_lon_deg=float(transform.a),
             # e 는 북쪽이 위인 격자에서 음수다 — 절대값이 셀 높이.
             cell_size_lat_deg=float(-transform.e),
+            source_name=path.name,
+            source_sha256=digest.hexdigest(),
         )
+
+    @property
+    def provenance(self) -> str:
+        """"어느 격자였나" 를 사람이 읽을 한 줄 — 리포트 근거(basis)에 실린다."""
+        if self.source_name is None or self.source_sha256 is None:
+            return "출처가 기록되지 않은 지오이드 격자(메모리에서 직접 만든 격자)"
+        return f"{self.source_name}(sha256:{self.source_sha256[:12]}…)"
 
     def height_at(self, *, lat_deg: float, lon_deg: float) -> float:
         """그 지점의 지오이드고 N (m). 격자 밖이면 거부한다(외삽 금지).
@@ -209,12 +239,15 @@ __all__ = [
     "GeoidGrid",
     "GeoidUnavailableError",
     "UnrecognizedVerticalCrsError",
+    "VerticalBridge",
     "VerticalDatum",
     "VerticalDatumFamily",
     "VerticalDatumIncompatibleError",
     "VerticalReference",
     "VerticalReferenceSource",
+    "assert_bridgeable_vertical",
     "assert_comparable_vertical",
+    "bridge_between",
     "ellipsoidal_to_orthometric",
     "family_of",
     "load_geoid_grid",
