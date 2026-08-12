@@ -33,6 +33,7 @@ from ksi_processing_controller import odm as odm_module
 from ksi_processing_controller.odm import (
     ArtifactReport,
     EngineIdentityMismatch,
+    MaskImage,
     OdmEngineInfo,
     OdmError,
     OdmTaskState,
@@ -234,6 +235,7 @@ class FakeNodeOdm:
             entries if entries is not None else {a.archive_entry for a in ODM_ASSETS}
         )
         self.submitted: list[SourceImage] = []
+        self.submitted_masks: list[MaskImage] = []
         self.removed: list[str] = []
         self._state_index = 0
 
@@ -242,9 +244,12 @@ class FakeNodeOdm:
             engine="odm", engine_version=self.engine_version, node_version="2.2.4"
         )
 
-    def new_task(self, images: Any, options: dict[str, Any]) -> str:
+    def new_task(
+        self, images: Any, options: dict[str, Any], *, masks: Any = ()
+    ) -> str:
         del options
         self.submitted = list(images)
+        self.submitted_masks = list(masks)
         return "task-uuid-1"
 
     def task_info(self, uuid: str) -> OdmTaskState:
@@ -442,6 +447,31 @@ def test_run_polls_until_completion() -> None:
     assert uuid == "task-uuid-1"
     assert polls == 2
     assert [i.media_id for i in engine.submitted] == ["img-1.jpg"]
+
+
+def test_run_forwards_masks_to_new_task() -> None:
+    """[핵심] 마스크는 ``new_task`` 로 그대로 전달된다 — 별도 REST 호출이 아니다
+    (odm_masking 모듈 docstring 1번, 실기동 확인)."""
+    engine = FakeNodeOdm()
+    masks = [MaskImage(filename="img-1_mask.png", png_bytes=b"\x89PNG-fake")]
+
+    run_to_completion(
+        engine, _IMAGES, expected_version=_ENGINE_VERSION, options={},
+        poll=lambda: None, masks=masks,
+    )
+
+    assert engine.submitted_masks == masks
+
+
+def test_run_without_masks_submits_none_by_default() -> None:
+    """마스킹을 쓰지 않는 기존 호출부는 동작이 그대로다(회귀 없음)."""
+    engine = FakeNodeOdm()
+
+    run_to_completion(
+        engine, _IMAGES, expected_version=_ENGINE_VERSION, options={}, poll=lambda: None
+    )
+
+    assert engine.submitted_masks == []
 
 
 def test_run_refuses_before_submitting_when_engine_differs() -> None:

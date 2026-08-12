@@ -63,6 +63,7 @@ from ksi_processing_controller.core_client import (
 from ksi_processing_controller.gsd import resolve_gsd
 from ksi_processing_controller.measure import measure_image
 from ksi_processing_controller.odm import (
+    MaskImage,
     NodeOdmClient,
     OdmError,
     SourceImage,
@@ -71,6 +72,7 @@ from ksi_processing_controller.odm import (
     plan_artifacts,
     run_to_completion,
 )
+from ksi_processing_controller.odm_masking import ImageDetector, build_mask_for_photo
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +162,7 @@ def run_job(
     gsd_by_artifact: dict[str, float] | None = None,
     poll_interval_seconds: float = 10.0,
     now_message: Callable[[str], None] = logger.info,
+    dynamic_object_detector: ImageDetector | None = None,
 ) -> None:
     """작업 하나를 lease 취득부터 ``SUCCEEDED``/``FAILED`` 까지 끝까지 돈다.
 
@@ -174,6 +177,15 @@ def run_job(
     해석도 결국 못 읽으면 건너뛰므로(``gsd.py`` 모듈 docstring), 명시값과 자동값을
     섞어서 "일부는 지정, 나머지는 자동"으로 두지 않는다: 하나라도 명시하면
     그 dict 가 전체를 대표한다.
+
+    ``dynamic_object_detector`` 를 생략하면(``None``, 기본값) 마스킹 없이
+    지금까지와 동일하게 동작한다 — 이 매개변수는 PRD §15.2 ④(동적 객체
+    마스킹)의 선택적 활성화 지점이다. 값을 주면(예: 실제 로드된
+    ``DFineDetector``) 실측 단계(4번)에서 이미 로컬에 받아둔 사진마다 탐지를
+    돌려 마스크를 만들고, ODM 제출(5번)에 함께 싣는다(``odm_masking`` 모듈
+    docstring — 파일명 규약·폴라리티는 실물로 검증됐다). 사진 1장의 탐지
+    실패는 그 사진의 마스크만 건너뛰고 작업 전체를 막지 않는다 — 마스킹은
+    보조 개선이지 재구성 성공의 필요조건이 아니다.
     """
     fetch = http_client or httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
@@ -193,8 +205,9 @@ def run_job(
         now_message(f"[{job_id}] RUNNING")
 
     try:
-        # ── 4. 실측 + 보고 ──────────────────────────────────────────────
+        # ── 4. 실측 + 보고(+ 동적 객체 탐지 — 이미 로컬에 받은 그 사진으로) ──
         measurements: list[MeasuredImage] = []
+        masks: list[MaskImage] = []
         for media in job_input.media:
             local_path = work_dir / media.media_id
             _download(fetch, media.download_url, local_path)
@@ -205,7 +218,25 @@ def run_job(
                     size_bytes=size, width=width, height=height,
                 )
             )
+            if dynamic_object_detector is not None:
+                try:
+                    mask = build_mask_for_photo(
+                        dynamic_object_detector, local_path, filename=media.media_id
+                    )
+                except (OSError, ValueError, RuntimeError) as exc:
+                    # 사진 1장의 탐지 실패가 재구성 자체를 막지 않는다(docstring) —
+                    # measure_image 와 달리 이 실패는 Core 보고 대상이 아니다
+                    # (마스킹은 신고값 검증이 아니라 보조 개선이다).
+                    now_message(
+                        f"[{job_id}] {media.media_id} 동적 객체 탐지 실패 — "
+                        f"마스크 없이 계속: {exc}"
+                    )
+                    mask = None
+                if mask is not None:
+                    masks.append(mask)
         now_message(f"[{job_id}] 실측 {len(measurements)}장 완료 — 대조 보고")
+        if dynamic_object_detector is not None:
+            now_message(f"[{job_id}] 동적 객체 마스크 {len(masks)}장 생성")
         core.verify_source_media(job_input.mission_id, measurements)
 
         # ── 5. 엔진 신원 대조 + 제출 + 완주 대기 ────────────────────────
@@ -231,6 +262,7 @@ def run_job(
             expected_version=job_input.engine_version,
             options=job_input.processing_params,
             poll=_heartbeat,
+            masks=masks,
         )
         now_message(f"[{job_id}] ODM 완주 uuid={uuid}")
 

@@ -222,6 +222,76 @@ def test_task_lifecycle_and_failure_propagation(
         client.close()
 
 
+def test_mask_submission_is_accepted_and_recognized_by_the_engine(
+    client: HttpNodeOdmClient, tmp_path: Path
+) -> None:
+    """[핵심·실물이 고쳐준 것] 동적 객체 마스크가 제출 단계에서 거부되지 않고,
+    엔진이 실제로 파일명 규약(``{stem}_mask.png``)으로 사진과 매칭한다
+    (odm_masking 모듈 docstring 1·2번).
+
+    ``/task/new`` 는 여기서도 200 을 준다는 사실만으로는 마스크가 인식됐는지
+    알 수 없다(모듈 docstring 3번 — 에러도 200 으로 온다) — 그래서 엔진
+    콘솔 로그(``/task/{uuid}/output``, 이 어댑터의 5개 REST 포트 밖의
+    디버깅 전용 side-channel)를 raw httpx 로 직접 대조한다.
+    """
+    import functools
+    import http.server
+    import threading
+    import time
+
+    import httpx
+    import numpy as np
+    from ksi_processing_controller.odm_masking import build_mask_image
+
+    images = _tiny_jpegs(tmp_path)
+    # render_mask_png(odm_masking.py, 실물 검증된 폴라리티)로 실제 마스크
+    # 바이트를 만든다 — REST 는 내용을 검사하지 않지만, 엔진의 마스크 로더는
+    # 유효한 PNG 를 기대한다(dataset.py::find_mask 는 존재만 확인하지만,
+    # 그 뒤 opensfm 이 실제로 파일을 읽는다).
+    regions = np.zeros((64, 64), dtype=bool)
+    regions[10:40, 10:40] = True
+    masks = [build_mask_image(p.name, regions) for p in images]
+
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        uuid = client.new_task(
+            [SourceImage(media_id=p.name, download_url=f"{base}/{p.name}") for p in images],
+            {},
+            masks=masks,
+        )
+        assert uuid, "마스크를 실었다고 제출 자체가 거부되지 않는다"
+
+        # 합성 이미지라 데이터셋/특징 단계에서 결국 실패하지만(기존 테스트와 같은
+        # 전제), 그 전에 opensfm 단계가 마스크를 로드하고 로그를 남긴다.
+        for _ in range(60):
+            state = client.task_info(uuid)
+            if state.status in {
+                OdmTaskStatus.FAILED, OdmTaskStatus.COMPLETED, OdmTaskStatus.CANCELED
+            }:
+                break
+            time.sleep(2)
+
+        output = httpx.get(f"{_URL}/task/{uuid}/output", params={"line": 0}, timeout=10.0)
+        output.raise_for_status()
+        lines = output.json()
+        mask_lines = [ln for ln in lines if "image mask" in ln.lower()]
+        assert mask_lines, (
+            f"엔진 로그에 마스크 인식 기록이 없다 — 규약이 어긋났을 수 있다: {lines}"
+        )
+        assert f"Found {len(masks)} image masks" in mask_lines[0], mask_lines[0]
+
+        client.remove_task(uuid)
+    finally:
+        server.shutdown()
+        client.close()
+
+
 # ── 완주 계약 — 실제 사진이 있어야 확인된다 ──────────────────────────────────
 
 
