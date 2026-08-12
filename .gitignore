@@ -2,6 +2,16 @@
 # 파일 자체는 tools/fetch_model.py 로 명시적으로 받는다(런타임 자동 다운로드 금지).
 /models/
 
+# 지오이드 격자 **원본**만 무시한다 — 변환본 data/geoid/KNGeoid24.tif(1.4MB)는 추적한다.
+# /models/ 와 다르게 가는 이유: 모델 가중치는 공개 URL 이라 tools/fetch_model.py 로
+# 자동 취득이 성립하지만, KNGeoid 는 국토정보플랫폼(map.ngii.go.kr)이 **로그인 + 신청서
+# 제출**을 요구하는 경로라 fetch 스크립트를 만들 수 없다(2026-08-12 실측 — 이름·생년월일·
+# 사용목적·준수사항 동의를 사람이 채워야 내려준다). 런타임이 실제로 읽는 변환본을
+# 추적하지 않으면 새 개발자가 이 저장소만으로는 정표고 경로를 못 돌린다.
+# 원본(.dat/.gri, 9.6MB)은 무시하되 계보는 docs/geo/GEOID_ACQUISITION.md 가 sha256 과
+# 취득 절차로 고정한다(tools/convert_geoid_grid.py 로 재생성 가능).
+/data/geoid/raw/
+
 # 빌드 산출물·캐시 — 로컬 절대경로가 박혀 CI 를 오염시킨다(2026-07-27 CI 실패 재발 방지)
 # build/·build-asan/·build-manifold3/·build-host/ 등을 전부 포괄(2026-08-03 Manifold3 HIL
 # 세션 정리). edge 하위 네이티브 트리는 manifold-runtime 하나가 아니다(psdk-tap, 향후

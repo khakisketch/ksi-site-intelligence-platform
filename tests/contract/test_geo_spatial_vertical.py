@@ -146,3 +146,64 @@ def test_vertical_datum_values_are_explicit() -> None:
     """산출물이 어느 수직기준인지 wire 에 실릴 값 — 문자열을 지어내지 않는다."""
     assert VerticalDatum.ELLIPSOIDAL.value == "ellipsoidal"
     assert VerticalDatum.ORTHOMETRIC_KNGEOID2018.value == "orthometric_kngeoid2018"
+
+
+# ---------------------------------------------------------------------------
+# 실 KNGeoid24 격자 대조 (risk `geoid-grid-provenance-unverified`).
+#
+# 격자 파일 자체(data/geoid/KNGeoid24.tif)는 대용량 바이너리라 git에 커밋하지
+# 않는다(.gitignore `/data/geoid/`) — tools/convert_geoid_grid.py 로 재생성하거나
+# docs/geo/GEOID_ACQUISITION.md 의 취득 경로를 따른다. 없는 환경(CI 포함)에서는
+# 이 아래 테스트 전부 skip — 위의 합성 격자 테스트들이 보간 수학 자체는 상시
+# 검증하므로 skip이 "기능 미검증"은 아니다(별도 게이트, test_dfine_detector.py 와
+# 같은 관례).
+# ---------------------------------------------------------------------------
+
+_REAL_KNGEOID24_PATH = Path("data/geoid/KNGeoid24.tif")
+
+pytestmark_real_grid = pytest.mark.skipif(
+    not _REAL_KNGEOID24_PATH.is_file(),
+    reason=(
+        "실 KNGeoid24 격자 없음 — tools/convert_geoid_grid.py 로 변환 후 실행"
+        "(docs/geo/GEOID_ACQUISITION.md 취득·변환 절차 참조)"
+    ),
+)
+
+
+@pytestmark_real_grid
+def test_real_kngeoid24_grid_returns_seoul_geoid_height_in_expected_range() -> None:
+    """서울시청 지점 지오이드고가 한국 상식 범위[15,35]m 안이고 실측값과 근접한지.
+
+    기대값 23.325m 는 이 파일로 실제 변환·조회해 얻은 값을 고정한 것이다
+    (KNGeoid18 공개 문헌상 같은 지점 23.31m 와 1cm 남짓 차이 — 모델 버전 개선
+    범위로 타당하다). 회귀가 생기면(격자 재변환·좌표 규약 변경 등) 이 값이
+    바뀐다.
+    """
+    grid = GeoidGrid.from_path(_REAL_KNGEOID24_PATH)
+    n = grid.height_at(lat_deg=37.5665, lon_deg=126.9780)
+    assert 15.0 <= n <= 35.0
+    assert n == pytest.approx(23.325, abs=0.01)
+
+
+@pytestmark_real_grid
+def test_load_geoid_grid_via_env_wires_the_real_grid_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KSI_GEOID_GRID 가 실 파일을 가리킬 때 load_geoid_grid()→변환까지 실제로 동작.
+
+    이것이 ``load_geoid_grid()`` 가 기대하는 "configured" 경로 메커니즘 — 파일
+    경로를 코드에 하드코드하지 않고 환경변수로만 연결한다(모듈 docstring 의
+    "미설정과 설정-실패를 다르게 다룬다" 설계를 그대로 통과).
+    """
+    monkeypatch.setenv("KSI_GEOID_GRID", str(_REAL_KNGEOID24_PATH.resolve()))
+    grid = load_geoid_grid()
+    assert grid is not None
+
+    # H = h - N. 서울 부근 임의 타원체고 100.0m 로 정표고를 계산해 왕복 확인.
+    h = 100.0
+    orthometric = ellipsoidal_to_orthometric(h, lat_deg=37.5665, lon_deg=126.9780, grid=grid)
+    assert orthometric == pytest.approx(h - 23.325, abs=0.01)
+    roundtrip = orthometric_to_ellipsoidal(
+        orthometric, lat_deg=37.5665, lon_deg=126.9780, grid=grid
+    )
+    assert roundtrip == pytest.approx(h, abs=1e-6)
