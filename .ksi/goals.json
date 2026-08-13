@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T00:36:52+09:00",
+  "updated_at": "2026-08-14T01:19:29+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2623,14 +2623,14 @@
       "title": "comparison_worker.py·design_conformance_worker.py의 예외 목록에 OSError가 없다 — 디스크 오류가 FAILED 보고 없이 무한 재시도될 수 있다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-13 processing-controller-work-dir-cleanup 게이트의 독립 검토가 재확인. design_conformance_worker.py는 이미 shutil.rmtree로 실제 정리를 하므로 디스크 적재 위험은 없다 — 남은 건 'OSError류 예외가 FAILED로 안 잡히고 요청이 QUEUED/RUNNING에 계속 남는다'는 좁은 경우뿐이라 low로 등재. comparison_worker.py도 입력 다운로드는 tempfile.TemporaryDirectory라 자동 정리되므로 같은 낮은 우선순위.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "b0ff385 (comparison_worker.py/design_conformance_worker.py OSError→FAILED 수렴, RUNNING 이후 mkdir/download/write/upload 단계 fail-closed). 검증: uv run pytest tests/contract/test_comparison_worker.py tests/contract/test_design_conformance_worker.py -v 27 passed; ruff clean; mypy 15 files clean. Codex가 별도 worktree(codex/nonoverlap-stability)에서 구현, 독립 reviewer + 직접 실행으로 확인 후 선별 반영.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-13T22:49:45+09:00",
-      "updated_at": "2026-08-13T22:49:45+09:00"
+      "updated_at": "2026-08-14T01:19:29+09:00"
     },
     {
       "id": "region-extraction-multipolygon-branch-untested",
