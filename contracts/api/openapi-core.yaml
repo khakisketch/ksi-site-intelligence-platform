@@ -1445,6 +1445,160 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음(사람 역할은 이 권한을 갖지 않는다) }
+  /v1/sites/{site_id}/work-areas:
+    post:
+      summary: Register a persistent work area (M4-C)
+      description: >-
+        SITES_WRITE 권한 필요. **기하는 이 순간 굳는다** — 잘못 그렸으면 supersedes
+        로 새 구역을 만든다(그때 이전 구역은 자동으로 ARCHIVED 된다). 제자리 수정을
+        허용하면 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀌어, 숫자는
+        그대로인데 그 숫자가 무엇을 잰 것인지가 달라진다.
+
+
+        폴리곤은 등록 시점에 검사한다(GeoJSON Polygon · 닫힌 외곽 고리 · 유한 좌표 ·
+        EPSG:4326 이면 경위도 범위) — 통과시키면 나중에 래스터 마스킹 단계에서
+        사람이 이해할 수 없는 예외로 터지는 것들이다. 자기교차·구역 간 겹침·현장 AOI
+        이탈은 **막지 않는다**(정당한 운용이다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, polygon, crs]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                polygon:
+                  description: GeoJSON Polygon. 요청의 zones[zoneId] 에 이 값이 그대로 복사된다.
+                  type: object
+                crs: { type: string, minLength: 1 }
+                supersedes:
+                  description: 기하를 고칠 때 이전 구역의 id. 주면 그 구역은 자동으로 보관된다.
+                  type: [string, 'null']
+      responses:
+        '201':
+          description: REGISTERED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaResponse' }
+        '404': { description: UNKNOWN_SITE · SUPERSEDES_NOT_FOUND }
+        '409': { description: SUPERSEDES_OTHER_SITE · TOO_MANY_ACTIVE }
+        '422': { description: INVALID_WORK_AREA — 폴리곤이 쓸 수 없는 모양이다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+    get:
+      summary: List a site's work areas
+      description: SITES_READ 권한 필요. 기본은 고를 수 있는 것(ACTIVE)만.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: query, name: include_archived, required: false, schema: { type: boolean } }
+      responses:
+        '200':
+          description: 등록 순서 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/archive:
+    post:
+      summary: Archive a work area — not a delete
+      description: >-
+        SITES_WRITE 권한 필요. 더 이상 새 비교에 고를 수 없게 한다. **지우지 않는
+        이유**: 이 구역으로 낸 리포트들이 zoneId 로 이 id 를 들고 있어, 지우면 그
+        리포트들이 무슨 범위였는지를 잃는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ARCHIVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaResponse' }
+        '404': { description: UNKNOWN_WORK_AREA }
+        '409': { description: ALREADY_ARCHIVED }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/design-progress:
+    get:
+      summary: Zone-by-zone progress against the design surface (M4-C)
+      description: >-
+        SITES_READ 권한 필요. **저장된 값이 아니라 파생값**이다 — 사람이 지정한
+        '원지형 기준' 리포트와 가장 최근 리포트를 같은 구역끼리 빼서 조회 시점에
+        만든다(계획 = 기준 시점 잔량, 잔여 = 최신 잔량, 완료 = 계획 − 잔여).
+
+
+        **이어붙이기를 거부하는 조건**: 설계면 해시 · 집계 문턱 · 수직기준 · 좌표계
+        중 하나라도 다르면 표를 만들지 않고 detail 에 사유를 낸다. 다른 자로 잰 두
+        값의 차이는 진척이 아닌데, 그 결과는 어느 화면에서도 이상해 보이지 않는다.
+
+
+        표를 못 내는 경우에도 200 이고 detail 이 채워진다 — 화면이 "아직 데이터가
+        없다"와 "이어붙일 수 없다"를 갈라 말해야 하기 때문이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: query, name: design_surface_id, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: 진척 표 또는 왜 못 내는지(둘 중 하나는 항상 채워진다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignProgressResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/missions/{mission_id}/design-conformance/{design_conformance_id}/progress-baseline:
+    post:
+      summary: Mark this report as the pre-construction baseline (M4-C)
+      description: >-
+        MISSIONS_ISSUE 권한 필요(설계 대비 요청 생성과 같은 자리 — 구역·현장의 영속
+        자산이 아니라 "이 임무의 어느 결과를 기준으로 볼지" 판단이다). 계획 물량이
+        이 리포트에서 나온다. **자동으로 고르지
+        않는 이유**가 이 엔드포인트의 존재 이유다 — 가장 오래된 리포트를 기준으로
+        삼으면, 첫 비행이 이미 시공 중이었을 때 계획 물량이 조용히 깎인다.
+
+
+        덮어쓸 수 있다(잘못 지정하는 일이 실제로 있다). 이전 지정도 저널에 남으므로
+        "언제 무엇을 기준으로 봤는가"는 되짚어진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: design_conformance_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [designSurfaceId]
+              properties:
+                designSurfaceId: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: BASELINE_SET
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressBaselineResponse' }
+        '404': { description: UNKNOWN_REPORT }
+        '409':
+          description: >-
+            REJECTED(그 리포트가 다른 설계면으로 계산됐다 · 원장이 봉인됨) ·
+            UNKNOWN_SITE(요청 기록이 없어 현장을 특정할 수 없다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressBaselineResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
   /v1/sites/{site_id}/design-surfaces:
     post:
       summary: Register a design surface (planned-grade DEM) and issue a presigned PUT
@@ -1758,11 +1912,21 @@ paths:
               properties:
                 designSurfaceId: { type: string, minLength: 1 }
                 currentJobId: { type: string, minLength: 1 }
+                workAreaIds:
+                  description: >-
+                    등록된 작업구역(M4-C)을 고른다. Core 가 폴리곤을 **값으로** 풀어
+                    zones 에 넣고, zoneId 는 workAreaId 가 된다 — 그래서 다음 시점의
+                    리포트와 자동으로 이어지고 진척 계산이 성립한다. zones 와 동시에
+                    주면 422 WORK_AREA_UNUSABLE(어느 쪽이 진짜 지시인지 서버가 골라
+                    주면 화면이 보낸 것과 계산에 쓴 것이 갈릴 수 있다).
+                  type: [array, 'null']
+                  items: { type: string, minLength: 1 }
                 zones:
                   description: >-
                     {zoneId: GeoJSON Polygon}. 현장 AOI 를 자동으로 쓰지 않는다 —
                     사용자 확인을 거친 폴리곤 값을 화면이 싣는다. 비교 요청과 달리
-                    **생략할 수 없다**.
+                    **생략할 수 없다**(workAreaIds 를 주지 않는 한). 즉석 폴리곤은
+                    매번 좌표가 달라 시계열로 이어지지 않는다.
                   type: [object, 'null']
                   additionalProperties: { type: object }
                 zoneCrs: { type: [string, 'null'] }
@@ -1782,8 +1946,8 @@ paths:
         '422':
           description: >-
             UNKNOWN_JOB · JOB_NOT_SUCCEEDED · MISSION_MISMATCH · SITE_MISMATCH ·
-            NO_DSM_ARTIFACT · ZONES_REQUIRED · VERTICAL_REFERENCE_UNKNOWN ·
-            VERTICAL_DATUM_INCOMPATIBLE
+            NO_DSM_ARTIFACT · ZONES_REQUIRED · WORK_AREA_UNUSABLE ·
+            VERTICAL_REFERENCE_UNKNOWN · VERTICAL_DATUM_INCOMPATIBLE
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
@@ -4326,6 +4490,52 @@ components:
         surfaces:
           type: array
           items: { type: object, additionalProperties: true }
+    # ── M4-C 작업구역·진척 ────────────────────────────────────────────────
+    # 계약 정본은 contracts/schemas/work-area.v1.json 과
+    # packages/event-contracts 의 work_area.py·design_progress.py 다 —
+    # 여기서는 API 표면의 봉투(verdict·detail)만 적는다.
+    WorkAreaResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        workArea:
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: 'null' }
+    WorkAreaListResponse:
+      type: object
+      required: [workAreas]
+      properties:
+        workAreas:
+          type: array
+          items: { type: object, additionalProperties: true }
+    ProgressBaselineResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+    DesignProgressResponse:
+      type: object
+      # progress 와 detail 중 **하나는 항상 채워진다** — 빈 표를 200 으로 내면
+      # 화면이 "데이터 없음"과 "이어붙일 수 없음"을 갈라 말할 수 없다.
+      properties:
+        progress:
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: 'null' }
+        unmatchedZoneIds:
+          description: 한쪽 시점에만 있던 구역 — 표에서 빠진 이유를 화면이 밝힌다.
+          type: array
+          items: { type: string }
+        detail: { type: [string, 'null'] }
+        latestMissionId:
+          description: >-
+            최신 리포트가 속한 임무 — UI 편의값(히트맵은 임무 스코프 표면이라
+            거기로 건너뛸 때만 쓴다). progress 가 없으면 항상 null.
+          type: [string, 'null']
     PendingDesignSurfaceView:
       type: object
       # 선언값(sha256·crs)이 **없는 것이 이 모델의 요점이다** — 워커가 정답을

@@ -257,6 +257,17 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
     "이 재구성 결과는 높이 기준이 기록되기 전에 만들어졌습니다 — 다시 재구성하면 비교할 수 있습니다.",
   VERTICAL_DATUM_INCOMPATIBLE:
     "설계 기준면과 현재 지형의 높이 기준 계열이 다릅니다 — 변환 없이 비교하면 20~30 m 가 틀리므로 계산하지 않습니다.",
+  // 작업구역(M4-C) — work_areas.py · design_conformance_requests.py verdict.
+  WORK_AREA_UNUSABLE:
+    "고른 작업구역을 쓸 수 없습니다 — 다른 현장 소속이거나 보관된 구역일 수 있습니다.",
+  UNKNOWN_WORK_AREA: "등록된 적 없는 작업구역입니다.",
+  SUPERSEDES_NOT_FOUND: "대체하려는 작업구역을 찾을 수 없습니다.",
+  SUPERSEDES_OTHER_SITE: "대체 대상이 다른 현장 소속입니다.",
+  ALREADY_ARCHIVED: "이미 보관된 작업구역입니다.",
+  TOO_MANY_ACTIVE:
+    "이 현장의 작업구역이 상한에 도달했습니다 — 쓰지 않는 구역을 먼저 보관하세요.",
+  INVALID_WORK_AREA: "작업구역 폴리곤 형식이 올바르지 않습니다.",
+  UNKNOWN_REPORT: "그 설계 대비 잔량 리포트를 찾을 수 없습니다.",
 };
 
 export function humanizeApiError(

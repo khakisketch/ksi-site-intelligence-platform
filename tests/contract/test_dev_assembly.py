@@ -36,6 +36,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
+from ksi_core.work_areas import WorkAreaStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -137,11 +138,16 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     storage = _NullEvidenceStorage()
     # M4-A — 리포트 원장은 요청 원장과 스토리지를 둘 다 물고 있어야 만들어진다
     # (리포트 수신 시 차분 래스터 바이트를 직접 재해싱한다).
+    work_area_store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas.jsonl"),
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
         mission_store=mission_store,
         processing_job_store=processing_job_store,
         design_surface_store=design_surface_store,
+        work_area_store=work_area_store,
     )
     return {
         "evidence_storage": storage,
@@ -167,6 +173,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         ),
         "source_media_store": source_media_store,
         "design_surface_store": design_surface_store,
+        "work_area_store": work_area_store,
         "processing_job_store": processing_job_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),

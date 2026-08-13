@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
+    from ksi_core.work_areas import WorkAreaStore
 
 
 # 결합 규칙 표 — (store 인자명, 필수 동반 인자 그룹들, 거부 사유 문장).
@@ -122,6 +123,14 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
         " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
         " 동일 원칙",
+    ),
+    (
+        "work_area_store",
+        (("site_store",),),
+        "work_area_store 는 site_store 와 함께 주어져야 한다"
+        " — 작업구역은 '어느 현장의 어디인가'로만 의미를 갖고, 등록된 적 없는"
+        " 현장의 구역은 어느 비교에도 쓰이지 못한 채 원장에만 쌓인다"
+        " (design_surface_store 와 동일 원칙)",
     ),
     (
         "design_surface_store",
@@ -252,6 +261,7 @@ def create_app(
     comparison_request_store: ComparisonRequestStore | None = None,
     design_conformance_request_store: DesignConformanceRequestStore | None = None,
     design_conformance_report_store: DesignConformanceStore | None = None,
+    work_area_store: WorkAreaStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     expose_docs: bool = True,
@@ -420,6 +430,7 @@ def create_app(
         "volume_change_store": volume_change_store,
         "comparison_request_store": comparison_request_store,
         "design_conformance_request_store": design_conformance_request_store,
+        "work_area_store": work_area_store,
         "design_conformance_report_store": design_conformance_report_store,
         "equipment_state_store": equipment_state_store,
         "event_store": event_store,
@@ -604,6 +615,17 @@ def create_app(
         mount_design_conformance_reports(
             app, design_conformance_report_store, evidence_storage
         )
+        # 진척(M4-C)은 같은 원장을 읽는 파생 조회다 — 별도 store 를 만들지 않고
+        # 리포트 저장소 위에 라우터만 얹는다. 작업구역 저장소는 구역 이름을 붙이는
+        # 데만 쓰이므로 없어도 표는 나온다(zoneId 만 보인다).
+        from ksi_core.design_progress import mount_design_progress
+
+        mount_design_progress(app, design_conformance_report_store, work_area_store)
+
+    if work_area_store is not None:
+        from ksi_core.work_areas import mount_work_areas
+
+        mount_work_areas(app, work_area_store)
 
     if equipment_state_store is not None:
         from ksi_core.equipment_states import mount_equipment_states

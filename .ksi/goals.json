@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-13T13:38:26+09:00",
+  "updated_at": "2026-08-13T15:05:11+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1678,6 +1678,29 @@
       "verification_requested": null,
       "created_at": "2026-08-13T13:08:22+09:00",
       "updated_at": "2026-08-13T13:38:26+09:00"
+    },
+    {
+      "id": "m4c-work-area-progress",
+      "title": "M4-C: 작업구역 + 계획 대비 진척 — 잔여량에서 공정관리로",
+      "completion_criteria": [
+        "현장에 작업구역을 이름과 함께 등록해두면 다음 비교부터 그리지 않고 고른다(기하는 등록 후 불변, 수정은 새 구역+supersedes)",
+        "같은 작업구역·같은 설계면으로 낸 두 시점 리포트를 이어 구역별 계획·완료·잔여·진척률을 낸다(계획=원지형 기준 리포트, 잔여=최신 리포트, 완료=계획-잔여)",
+        "원지형 기준 리포트를 사람이 명시적으로 지정하며 그 시점 날짜가 화면에 항상 함께 보인다",
+        "문턱값이나 수직기준이 다른 두 리포트는 이어붙이지 않고 typed 거부한다",
+        "진척률이 흙 물량 기준이고 정산 근거가 아니라는 사실을 화면이 말한다"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "[구현] 계약 신설 — packages/event-contracts/work_area.py(WorkArea, 기하 불변+supersedes 사슬), design_progress.py(ZoneProgress/DesignProgress, done=계획-잔여 자기검증). Core — work_areas.py(DurableJournal 기반 저장소, 등록시 기하 검증+상한 64+대체 자동보관), design_progress.py(파생 조회, 4축 이어붙이기 거부: 설계면해시·문턱·수직기준·좌표계), design_conformance_requests.py에 workAreaIds 경로 추가(zones와 동시지정 거부, _resolve 이후 현장 소속 재대조). app.py/app_assembly.py 조립 배선(_ASSEMBLY_REQUIREMENTS 표에 work_area_store 추가). openapi-core.yaml 5개 경로 문서화(work-areas CRUD·archive·design-progress·progress-baseline).\n\n[대시보드] work-areas 페이지(등록 지도+목록, 배경 에이전트 작성 후 메인이 코드 리뷰 — 규율 잘 따름: 기하 불변·supersedes 흐름·leaflet remount 처리), progress 페이지(설계면 피커+구역별 계획/완료/잔여/진척률 표+히트맵, 메인 작성), DesignConformancePanel에 작업구역 다중선택 vs 즉석그리기 토글 추가(메인 작성), site 상세 화면에 작업구역 카드+진척 링크 추가.\n\n[게이트 — 메인 세션 직접 실행] pytest 2809 passed(신규 10개 파일 포함, work-area 19건·design-progress 순수함수 14건·HTTP라우트 4건(황금값 75.2% 종단 재확인)·work-area↔conformance 배선 6건) / mypy 278파일 clean / ruff clean / hygiene·reference·PSDK핀 가드 통과 / uv lock --check 통과 / 대시보드 tsc 0·eslint clean·vitest 186 passed·next build 성공(신규 라우트 6개 전부 등록 확인).\n\n[실브라우저 종단 확인 — 메인이 직접] MinIO 컨테이너 + Core dev 서버(S3 배선) + 대시보드 dev 서버를 새로 띄워 실제 로그인→작업구역 등록(지도에서 폴리곤 그려 제출, '작업구역을 등록했습니다' 확인)→목록 표시(식별자·등록시각·좌표계·꼭짓점 수 정확)→보관(즉시 '사용 중 0건/보관됨 1건'으로 반영, 보관 사유 문구 확인)까지 전 구간 실행. 진척 화면(설계면 없을 때 안내+링크), site 상세 화면의 작업구역 카드·진척 링크 클릭 시 실제 네비게이션(URL 변경 확인) 전부 브라우저로 재현. 검증 후 컨테이너·dev 서버 전부 정리, .env.local 원상복구.\n\n[검증 범위 밖 — 명시] DesignConformancePanel의 작업구역 다중선택 토글 자체는 실브라우저로 못 봤다 — 그 화면에 도달하려면 실 mission+DSM 처리작업까지 필요해 이번 세션 시간상 생략했다. 대신 그 경로가 보내는 정확한 요청 모양(workAreaIds)이 실 Core 저장소로 201을 받는 것은 test_http_route_accepts_work_area_ids 로 HTTP 종단 확인됨. 진척 표의 실데이터 렌더(계획/완료/잔여/진척률 숫자)도 실브라우저 미확인 — 대신 test_design_progress_routes.py 가 실제 요청→lease→래스터업로드→Core재해싱→리포트기록 전구간을 거친 두 리포트로 75.2% 골든값을 HTTP 종단 재확인.",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 1,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-13T13:46:53+09:00",
+      "updated_at": "2026-08-13T15:05:11+09:00"
     }
   ],
   "risks": [

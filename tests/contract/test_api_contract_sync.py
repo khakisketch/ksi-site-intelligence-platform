@@ -42,6 +42,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
+from ksi_core.work_areas import WorkAreaStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -121,11 +122,16 @@ def _max_assembly(tmp_path: Path) -> Any:
         DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
     )
     storage = _NullEvidenceStorage()
+    work_area_store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas.jsonl"),
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
         mission_store=mission_store,
         processing_job_store=processing_job_store,
         design_surface_store=design_surface_store,
+        work_area_store=work_area_store,
     )
     return create_app(
         evidence_storage=storage,
@@ -168,6 +174,7 @@ def _max_assembly(tmp_path: Path) -> Any:
             request_store=design_conformance_request_store,
             storage=storage,
         ),
+        work_area_store=work_area_store,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),

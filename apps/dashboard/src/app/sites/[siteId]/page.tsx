@@ -222,6 +222,28 @@ export default async function SiteDetailPage({
           </p>
         </SectionCard>
 
+        {/* 작업구역도 설계 기준면과 같은 이유로 현장 화면에 산다 — 비교할 때마다
+            새로 그리지 않고 한 번 등록해두는 자산이라서다(M4-C). */}
+        <SectionCard
+          title="작업구역"
+          action={{
+            label: "관리",
+            href: `/sites/${encodeURIComponent(site.siteId)}/work-areas`,
+          }}
+        >
+          <p className="text-[13px] break-keep text-ink-muted">
+            이름을 붙여 등록해두면 이후 잔량·진척을 낼 때마다 지도에 새로 그리는 대신 이
+            구역을 고르기만 하면 됩니다 — 지난번과 이번이 같은 범위라야 계획 대비 진척을
+            계산할 수 있습니다.{" "}
+            <Link
+              href={`/sites/${encodeURIComponent(site.siteId)}/progress`}
+              className="font-semibold text-accent-text hover:underline"
+            >
+              계획 대비 진척 보기 →
+            </Link>
+          </p>
+        </SectionCard>
+
         <SectionCard
           title="이 현장의 임무"
           action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}

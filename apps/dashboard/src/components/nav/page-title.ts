@@ -30,9 +30,11 @@ export function resolvePageTitle(pathname: string | null): string {
     return NAV_ITEMS.find((item) => item.href === `/coming-soon/${section}`)?.label ?? "준비 중";
   }
 
-  // /sites/{id}/surveys/new · /sites/{id}/design 이 /sites/{id} 보다 먼저 걸려야 한다.
+  // /sites/{id}/surveys/new · /sites/{id}/design · /sites/{id}/work-areas 가
+  // /sites/{id} 보다 먼저 걸려야 한다.
   if (/^\/sites\/[^/]+\/surveys\/new\/?$/.test(pathname)) return "조사 계획";
   if (/^\/sites\/[^/]+\/design\/?$/.test(pathname)) return "설계 기준면";
+  if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
   if (/^\/events\/[^/]+\/?$/.test(pathname)) return "이벤트 상세";
   if (/^\/missions\/[^/]+\/?$/.test(pathname)) return "임무 상세";

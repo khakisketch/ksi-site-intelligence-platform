@@ -6,11 +6,13 @@ import type {
   DesignConformanceRequestCreateInput,
   DesignConformanceRequestListResponse,
   DesignConformanceRequestMutationResponse,
+  DesignProgressResponse,
   DesignSurfaceListResponse,
   DesignSurfaceRegisterInput,
   DesignSurfaceRegisterResponse,
   DesignSurfaceSealResponse,
   DiffRasterViewResponse,
+  ProgressBaselineResponse,
 } from "./types";
 
 /**
@@ -128,5 +130,40 @@ export async function getDiffRasterView(
 ): Promise<DiffRasterViewResponse> {
   return coreFetch<DiffRasterViewResponse>(
     `/v1/missions/${encodeURIComponent(missionId)}/design-conformance/${encodeURIComponent(designConformanceId)}/diff-raster`,
+  );
+}
+
+/**
+ * 이 리포트를 "원지형 기준"으로 지정한다 — 계획 물량이 여기서 나온다(M4-C).
+ *
+ * 자동으로 고르지 않는 이유가 이 호출의 존재 이유다. 가장 오래된 리포트를
+ * 기준으로 삼으면, 첫 비행이 이미 시공 중이었을 때 계획 물량이 조용히 깎인다.
+ * 덮어쓸 수 있다 — 잘못 지정하는 일이 실제로 있다.
+ */
+export async function setProgressBaseline(
+  missionId: string,
+  designConformanceId: string,
+  designSurfaceId: string,
+): Promise<ProgressBaselineResponse> {
+  return coreFetch<ProgressBaselineResponse>(
+    `/v1/missions/${encodeURIComponent(missionId)}/design-conformance/${encodeURIComponent(designConformanceId)}/progress-baseline`,
+    { method: "POST", body: { designSurfaceId } },
+  );
+}
+
+/**
+ * 구역별 계획·완료·잔여·진척률(M4-C) — **저장된 값이 아니라 파생값**이다.
+ *
+ * 200 이 항상 성공을 뜻하지 않는다 — `progress` 와 `detail` 중 하나는 항상
+ * 채워진다("아직 데이터가 없다"와 "이어붙일 수 없다"를 화면이 갈라 말해야
+ * 해서다). 호출부는 반드시 `progress` 의 존재로 분기해야 한다.
+ */
+export async function getDesignProgress(
+  siteId: string,
+  designSurfaceId: string,
+): Promise<DesignProgressResponse> {
+  return coreFetch<DesignProgressResponse>(
+    `/v1/sites/${encodeURIComponent(siteId)}/design-progress`,
+    { query: { design_surface_id: designSurfaceId } },
   );
 }

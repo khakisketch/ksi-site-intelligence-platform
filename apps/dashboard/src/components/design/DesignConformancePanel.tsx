@@ -25,7 +25,9 @@ import type {
   DesignConformanceRequestMutationResponse,
   DesignConformanceRequestView,
   DesignSurface,
+  ProgressBaselineResponse,
   SiteProcessingJobSummary,
+  WorkArea,
 } from "@/lib/core-api/types";
 
 /**
@@ -95,12 +97,85 @@ function ZoneRow({ zone }: { zone: DesignConformanceEntry["report"]["zones"][num
   );
 }
 
+function SetBaselineButton({
+  missionId,
+  canIssue,
+  designSurfaceId,
+  designConformanceId,
+}: {
+  missionId: string;
+  canIssue: boolean;
+  designSurfaceId: string;
+  designConformanceId: string;
+}) {
+  const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (!canIssue) return null;
+
+  async function handleClick() {
+    setState("saving");
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/missions/${encodeURIComponent(missionId)}/design-conformance/${encodeURIComponent(designConformanceId)}/progress-baseline`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ designSurfaceId }),
+        },
+      );
+      const body = await parseJsonSafe<ProgressBaselineResponse>(response);
+      if (!response.ok) {
+        setState("error");
+        setMessage(readableApiError(body, "원지형 기준 지정에 실패했습니다"));
+        return;
+      }
+      setState("done");
+    } catch {
+      setState("error");
+      setMessage("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        className="btn w-fit"
+        disabled={state === "saving" || state === "done"}
+        onClick={() => void handleClick()}
+      >
+        {state === "saving"
+          ? "지정하는 중…"
+          : state === "done"
+            ? "원지형 기준으로 지정됨"
+            : "이 리포트를 원지형 기준으로 지정"}
+      </button>
+      {message && (
+        <span className="text-[12px] break-keep text-crit-ink" role="alert">
+          {message}
+        </span>
+      )}
+      {state === "idle" && (
+        <span className="text-[12px] break-keep text-ink-muted">
+          시공 전 지형으로 낸 리포트일 때만 지정하세요 — 계획 물량의 근거가 됩니다.
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ConformanceResult({
   missionId,
+  siteId,
+  canIssue,
   entry,
   totalNetM3,
 }: {
   missionId: string;
+  siteId: string;
+  canIssue: boolean;
   entry: DesignConformanceEntry;
   totalNetM3: number | null;
 }) {
@@ -161,6 +236,23 @@ function ConformanceResult({
         designConformanceId={report.designConformanceId}
         thresholdM={report.diffRaster.thresholdM}
       />
+
+      {/* 계획 대비 진척(M4-C)의 입구 둘 — "이게 계획이다" 지정과 "지금까지 얼마나
+          됐나" 조회는 다른 화면·다른 시점의 일이라 나란히 둔다. */}
+      <div className="flex flex-col gap-2 border-t border-line pt-3">
+        <SetBaselineButton
+          missionId={missionId}
+          canIssue={canIssue}
+          designSurfaceId={report.designSurfaceRef.designSurfaceId}
+          designConformanceId={report.designConformanceId}
+        />
+        <Link
+          href={`/sites/${encodeURIComponent(siteId)}/progress?designSurfaceId=${encodeURIComponent(report.designSurfaceRef.designSurfaceId)}`}
+          className="text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+        >
+          이 설계면의 계획 대비 진척 보기 →
+        </Link>
+      </div>
     </div>
   );
 }
@@ -172,6 +264,7 @@ export function DesignConformancePanel({
   surfaces,
   siteJobs,
   siteAoi,
+  workAreas,
   initialRequest,
   initialReport,
   initialTotalNetM3,
@@ -184,6 +277,8 @@ export function DesignConformancePanel({
   siteJobs: SiteProcessingJobSummary[];
   /** 현장 경계 — **초기값으로만** 쓴다(자동 확정하지 않는다). */
   siteAoi: AoiVertex[] | null;
+  /** 그 현장에 등록된 작업구역(ACTIVE) — 고르면 다음 시점과 자동으로 이어진다(M4-C). */
+  workAreas: WorkArea[];
   /** 새로고침 복원용 — 그 임무의 최신 설계 대비 요청(없으면 null). */
   initialRequest: DesignConformanceRequestView | null;
   /** 이미 계산된 최신 리포트(없으면 null). */
@@ -196,6 +291,11 @@ export function DesignConformancePanel({
 
   const [designSurfaceId, setDesignSurfaceId] = useState("");
   const [currentJobId, setCurrentJobId] = useState("");
+  // 작업구역이 하나라도 있으면 그쪽을 기본으로 — 있는데 안 쓰면 진척이 다시 끊긴다.
+  const [zoneMode, setZoneMode] = useState<"work-areas" | "draw">(
+    workAreas.length > 0 ? "work-areas" : "draw",
+  );
+  const [selectedWorkAreaIds, setSelectedWorkAreaIds] = useState<string[]>([]);
   const [vertices, setVertices] = useState<AoiVertex[]>(siteAoi ?? []);
   const [zonesConfirmed, setZonesConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -230,32 +330,42 @@ export function DesignConformancePanel({
     setSubmitting(true);
     setError(null);
     try {
-      const zonePayload = toZonesPayload(vertices);
-      if (zonePayload === null) {
-        setError("구역을 먼저 확정하세요 — 범위 없이는 남은 물량을 낼 수 없습니다.");
-        return;
+      let requestBody: Record<string, unknown>;
+      if (zoneMode === "work-areas") {
+        if (selectedWorkAreaIds.length === 0) {
+          setError("작업구역을 하나 이상 고르세요 — 범위 없이는 남은 물량을 낼 수 없습니다.");
+          return;
+        }
+        requestBody = { designSurfaceId, currentJobId, workAreaIds: selectedWorkAreaIds };
+      } else {
+        const zonePayload = toZonesPayload(vertices);
+        if (zonePayload === null) {
+          setError("구역을 먼저 확정하세요 — 범위 없이는 남은 물량을 낼 수 없습니다.");
+          return;
+        }
+        requestBody = {
+          designSurfaceId,
+          currentJobId,
+          zones: zonePayload.zones,
+          zoneCrs: zonePayload.zoneCrs,
+        };
       }
       const response = await fetch(
         `/api/missions/${encodeURIComponent(missionId)}/design-conformance-requests`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            designSurfaceId,
-            currentJobId,
-            zones: zonePayload.zones,
-            zoneCrs: zonePayload.zoneCrs,
-          }),
+          body: JSON.stringify(requestBody),
         },
       );
-      const body = await parseJsonSafe<DesignConformanceRequestMutationResponse>(response);
-      if (!response.ok || !body.request) {
-        setError(readableApiError(body, "설계 대비 잔량 요청에 실패했습니다"));
+      const responseBody = await parseJsonSafe<DesignConformanceRequestMutationResponse>(response);
+      if (!response.ok || !responseBody.request) {
+        setError(readableApiError(responseBody, "설계 대비 잔량 요청에 실패했습니다"));
         return;
       }
       // 같은 조합의 재요청은 기존 요청을 그대로 돌려준다(ALREADY_REQUESTED) —
       // 오류가 아니라 재사용이므로 그 요청의 상태를 이어서 보여준다.
-      setRequest(body.request);
+      setRequest(responseBody.request);
     } catch {
       setError("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
     } finally {
@@ -264,14 +374,12 @@ export function DesignConformancePanel({
   }
 
   const inProgress = request !== null && !isTerminalComparisonStatus(request.status);
+  const zoneReady =
+    zoneMode === "work-areas"
+      ? selectedWorkAreaIds.length > 0
+      : zonesConfirmed && vertices.length >= 3;
   const canSubmit =
-    canIssue &&
-    !submitting &&
-    !inProgress &&
-    designSurfaceId !== "" &&
-    currentJobId !== "" &&
-    zonesConfirmed &&
-    vertices.length >= 3;
+    canIssue && !submitting && !inProgress && designSurfaceId !== "" && currentJobId !== "" && zoneReady;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -361,46 +469,120 @@ export function DesignConformancePanel({
             </label>
           </div>
 
-          {/* ── 구역 확인·수정·확정 (ComparisonSubmitPanel 과 같은 UX) ───── */}
+          {/* ── 구역 선택: 작업구역(권장) vs 즉석 그리기 ───────────────── */}
           <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <p className="text-[12.5px] break-keep text-ink-muted">
-              {siteAoi
-                ? "현장 경계를 초기값으로 표시했습니다 — 그대로 쓰거나 지도에서 고쳐 그린 뒤 확정하세요."
-                : "이 현장은 경계가 설정돼 있지 않습니다 — 지도에서 구역을 직접 그린 뒤 확정하세요."}{" "}
-              두 시점 비교와 달리 <strong className="font-bold">구역 확정은 필수</strong>
-              입니다 — 범위 없이는 &ldquo;얼마나 남았나&rdquo;에 답할 수 없습니다.
-            </p>
-            <AoiPolygonMap
-              value={vertices}
-              onChange={(next) => {
-                setVertices(next);
-                setZonesConfirmed(false);
-              }}
-              readOnly={inProgress}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="btn w-fit"
-                disabled={vertices.length < 3 || zonesConfirmed || inProgress}
-                onClick={() => setZonesConfirmed(true)}
-              >
-                이 구역으로 확정
-              </button>
-              <span
-                className={
-                  zonesConfirmed
-                    ? "text-[12.5px] break-keep text-safe-ink"
-                    : "text-[12.5px] break-keep text-ink-muted"
-                }
-              >
-                {zonesConfirmed
-                  ? "구역 확정됨 — 이 범위 안의 잔량을 계산합니다."
-                  : vertices.length < 3
-                    ? "꼭짓점을 3개 이상 찍어야 구역이 됩니다."
-                    : "아직 확정 전입니다."}
-              </span>
-            </div>
+            {workAreas.length > 0 && (
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="구역 선택 방식">
+                <button
+                  type="button"
+                  className={zoneMode === "work-areas" ? "btn btn-primary" : "btn"}
+                  disabled={inProgress}
+                  onClick={() => setZoneMode("work-areas")}
+                >
+                  등록된 작업구역에서 고르기
+                </button>
+                <button
+                  type="button"
+                  className={zoneMode === "draw" ? "btn btn-primary" : "btn"}
+                  disabled={inProgress}
+                  onClick={() => setZoneMode("draw")}
+                >
+                  지도에 즉석으로 그리기
+                </button>
+              </div>
+            )}
+
+            {zoneMode === "work-areas" ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-[12.5px] break-keep text-ink-muted">
+                  <strong className="font-bold">권장</strong> — 등록된 작업구역을 고르면 다음
+                  비행의 결과와 자동으로 이어져{" "}
+                  <Link
+                    href={`/sites/${encodeURIComponent(siteId)}/progress`}
+                    className="font-semibold text-accent-text hover:underline"
+                  >
+                    계획 대비 진척
+                  </Link>
+                  을 계산할 수 있습니다. 즉석 폴리곤은 매번 범위가 달라 진척으로
+                  이어지지 않습니다.
+                </p>
+                {workAreas.length === 0 ? (
+                  <p className="text-[12.5px] break-keep text-ink-muted">
+                    이 현장에는 등록된 작업구역이 없습니다.{" "}
+                    <Link
+                      href={`/sites/${encodeURIComponent(siteId)}/work-areas`}
+                      className="font-semibold text-accent-text hover:underline"
+                    >
+                      작업구역 등록하기
+                    </Link>
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {workAreas.map((area) => (
+                      <li key={area.workAreaId}>
+                        <label className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-[12.5px] break-keep">
+                          <input
+                            type="checkbox"
+                            checked={selectedWorkAreaIds.includes(area.workAreaId)}
+                            disabled={inProgress}
+                            onChange={(event) => {
+                              setSelectedWorkAreaIds((prev) =>
+                                event.target.checked
+                                  ? [...prev, area.workAreaId]
+                                  : prev.filter((id) => id !== area.workAreaId),
+                              );
+                              setError(null);
+                            }}
+                          />
+                          <span className="font-semibold">{area.name}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="text-[12.5px] break-keep text-ink-muted">
+                  {siteAoi
+                    ? "현장 경계를 초기값으로 표시했습니다 — 그대로 쓰거나 지도에서 고쳐 그린 뒤 확정하세요."
+                    : "이 현장은 경계가 설정돼 있지 않습니다 — 지도에서 구역을 직접 그린 뒤 확정하세요."}{" "}
+                  이 범위는 <strong className="font-bold">이번 한 번만</strong> 쓰입니다 —
+                  다음 비행 결과와 이어 진척을 보려면 위에서 등록된 작업구역을 고르세요.
+                </p>
+                <AoiPolygonMap
+                  value={vertices}
+                  onChange={(next) => {
+                    setVertices(next);
+                    setZonesConfirmed(false);
+                  }}
+                  readOnly={inProgress}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn w-fit"
+                    disabled={vertices.length < 3 || zonesConfirmed || inProgress}
+                    onClick={() => setZonesConfirmed(true)}
+                  >
+                    이 구역으로 확정
+                  </button>
+                  <span
+                    className={
+                      zonesConfirmed
+                        ? "text-[12.5px] break-keep text-safe-ink"
+                        : "text-[12.5px] break-keep text-ink-muted"
+                    }
+                  >
+                    {zonesConfirmed
+                      ? "구역 확정됨 — 이 범위 안의 잔량을 계산합니다."
+                      : vertices.length < 3
+                        ? "꼭짓점을 3개 이상 찍어야 구역이 됩니다."
+                        : "아직 확정 전입니다."}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {!inProgress && (
@@ -452,6 +634,8 @@ export function DesignConformancePanel({
       {initialReport && (
         <ConformanceResult
           missionId={missionId}
+          siteId={siteId}
+          canIssue={canIssue}
           entry={initialReport}
           totalNetM3={initialTotalNetM3}
         />

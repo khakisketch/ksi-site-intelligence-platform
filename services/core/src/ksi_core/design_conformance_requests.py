@@ -115,6 +115,7 @@ if TYPE_CHECKING:
 
     from ksi_core.design_surfaces import DesignSurfaceStore
     from ksi_core.mission_records import MissionStore
+    from ksi_core.work_areas import WorkAreaStore
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,9 @@ class DesignConformanceRequestVerdict(StrEnum):
     NO_DSM_ARTIFACT = "NO_DSM_ARTIFACT"
     #: 구역이 확정되지 않았다. 설계 대비 잔량은 "어느 범위의" 잔량인지 없이 성립하지 않는다.
     ZONES_REQUIRED = "ZONES_REQUIRED"
+    #: 고른 작업구역을 쓸 수 없다 — 없거나, 다른 현장이거나, 보관됐거나, 좌표계가
+    #: 섞였거나, ``zones`` 와 동시에 지정됐다(M4-C). 사유는 detail 이 사람 말로 적는다.
+    WORK_AREA_UNUSABLE = "WORK_AREA_UNUSABLE"
     #: 현재 DSM 이 수직기준을 밝히지 않는다(수직기준 기록 이전의 산출물) — 재처리하면 된다.
     VERTICAL_REFERENCE_UNKNOWN = "VERTICAL_REFERENCE_UNKNOWN"
     #: 설계면과 현재 DSM 의 수직기준을 **어떤 지오이드 격자로도 이을 수 없다**.
@@ -219,6 +223,7 @@ _STATUS: dict[DesignConformanceRequestVerdict, int] = {
     DesignConformanceRequestVerdict.SITE_MISMATCH: 422,
     DesignConformanceRequestVerdict.NO_DSM_ARTIFACT: 422,
     DesignConformanceRequestVerdict.ZONES_REQUIRED: 422,
+    DesignConformanceRequestVerdict.WORK_AREA_UNUSABLE: 422,
     DesignConformanceRequestVerdict.VERTICAL_REFERENCE_UNKNOWN: 422,
     DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE: 422,
     DesignConformanceRequestVerdict.UNKNOWN_REQUEST: 404,
@@ -398,11 +403,15 @@ class DesignConformanceRequestStore:
         mission_store: MissionStore,
         processing_job_store: ProcessingJobStore,
         design_surface_store: DesignSurfaceStore,
+        work_area_store: WorkAreaStore | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
         self._design_surface_store = design_surface_store
+        # 작업구역 저장소가 없으면 ``workAreaIds`` 경로가 닫힌다(즉석 폴리곤은
+        # 그대로 된다) — 조립 표가 동반을 강제하므로 프로덕션에서는 항상 있다.
+        self._work_area_store = work_area_store
         self._lock = threading.Lock()
         self._requests: dict[str, DesignConformanceRequestRecord] = {}
         self._by_request_shape: dict[tuple[str, str, str], str] = {}
@@ -677,6 +686,50 @@ class DesignConformanceRequestStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
+    def _zones_from_work_areas(
+        self,
+        work_area_ids: list[str],
+        *,
+        current_job_id: str,
+        zones: dict[str, dict[str, Any]] | None,
+    ) -> tuple[dict[str, dict[str, Any]], str] | str:
+        """작업구역 id → ``(zones, zoneCrs)`` **값**. 실패 시 사람이 읽는 사유 (M4-C).
+
+        **현장 소속 검사는 여기서 하지 않는다.** 이 시점에는 현장을 모른다 — 현장은
+        처리 작업이 알려주는데, 그 작업의 유효성 판정(``_resolve``)은 구역이 이미
+        있어야 시작한다. 그래서 순서를 이렇게 둔다: 여기서 폴리곤만 풀고,
+        ``_resolve`` 가 현장을 확정한 뒤 :meth:`_assert_work_areas_of_site` 가 대조한다.
+        이렇게 하면 "작업이 없다"는 실패가 ``WORK_AREA_UNUSABLE`` 이 아니라 원래
+        이름인 ``UNKNOWN_JOB`` 으로 나온다(같은 실패를 두 이름으로 부르지 않는다).
+        """
+        del current_job_id  # 현장 대조는 _resolve 이후로 미룬다(위 docstring)
+        if zones:
+            return (
+                "workAreaIds 와 zones 를 동시에 줬다 — 어느 쪽이 진짜 지시인지 서버가 "
+                "골라 주면 화면이 보낸 것과 계산에 쓴 것이 갈릴 수 있다. 하나만 준다"
+            )
+        if self._work_area_store is None:
+            return (
+                "이 배포에는 작업구역 저장소가 조립되지 않았다 — zones 로 직접 폴리곤을 "
+                "주는 경로를 쓴다"
+            )
+        return self._work_area_store.resolve_zones(work_area_ids, site_id=None)
+
+    def _assert_work_areas_of_site(
+        self, work_area_ids: list[str], *, site_id: str
+    ) -> str | None:
+        """고른 구역이 전부 이 현장 것인가 — 아니면 사람이 읽는 사유."""
+        if self._work_area_store is None:  # pragma: no cover -- 호출부가 이미 걸렀다
+            return None
+        owners = self._work_area_store.site_of(work_area_ids)
+        others = owners - {site_id}
+        if others:
+            return (
+                f"고른 작업구역이 다른 현장 소속이다: {sorted(others)} — "
+                f"이 비교의 현장은 {site_id!r} 다. 다른 현장의 구역으로는 잴 수 없다"
+            )
+        return None
+
     def create(
         self,
         mission_id: str,
@@ -687,6 +740,7 @@ class DesignConformanceRequestStore:
         zone_crs: str | None,
         requested_by: str,
         now: datetime,
+        work_area_ids: list[str] | None = None,
     ) -> DesignConformanceRequestResult:
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -695,6 +749,16 @@ class DesignConformanceRequestStore:
                     DesignConformanceRequestVerdict.STORE_UNAVAILABLE,
                     detail=JOURNAL_SEALED_DETAIL,
                 )
+            if work_area_ids is not None:
+                resolved_zones = self._zones_from_work_areas(
+                    work_area_ids, current_job_id=current_job_id, zones=zones
+                )
+                if isinstance(resolved_zones, str):
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.WORK_AREA_UNUSABLE,
+                        detail=resolved_zones,
+                    )
+                zones, zone_crs = resolved_zones
             verdict, detail, resolved = self._resolve(
                 mission_id=mission_id,
                 design_surface_id=design_surface_id,
@@ -706,6 +770,16 @@ class DesignConformanceRequestStore:
                 return DesignConformanceRequestResult(verdict, detail=detail)
             assert zones is not None  # noqa: S101 -- _resolve 가 빈 zones 를 이미 거부한다
             assert zone_crs is not None  # noqa: S101
+            if work_area_ids is not None:
+                # 현장은 이제 확정됐다(``_resolve`` 가 설계면·작업의 현장 일치까지
+                # 이미 봤다) — 여기서 고른 구역의 소속을 대조한다.
+                mismatch = self._assert_work_areas_of_site(
+                    work_area_ids, site_id=resolved.site_id
+                )
+                if mismatch is not None:
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.WORK_AREA_UNUSABLE, detail=mismatch
+                    )
 
             existing_id = self._by_request_shape.get(
                 (design_surface_id, current_job_id, zone_fingerprint(zones, zone_crs))
@@ -1046,10 +1120,22 @@ class DesignConformanceRequestCreateInput(CamelModel):
     같은 근거) — 대시보드가 사용자 확인을 거친 폴리곤 값을 여기 싣는다. 다만
     저쪽과 달리 **생략할 수 없다**: 구역 없는 설계 대비 잔량은 답이 아니라 질문의
     누락이다(``ZONES_REQUIRED``).
+
+    구역을 주는 길은 둘이고 **동시에 쓸 수 없다**(M4-C):
+
+    - ``workAreaIds`` — 등록된 작업구역을 고른다. Core 가 폴리곤을 값으로 풀어
+      ``zones`` 에 넣는다. ``zoneId`` 가 ``workAreaId`` 라 다음 시점의 리포트와
+      자동으로 이어진다(진척 계산의 전제).
+    - ``zones``/``zoneCrs`` — 즉석 폴리곤. 한 번 보고 마는 비교에 남겨 둔 경로다.
+      매번 좌표가 달라지므로 시계열로 이어지지 않는다.
+
+    둘 다 주면 거부한다 — 어느 쪽이 진짜 지시인지 서버가 골라 주면, 화면이 보낸
+    것과 계산에 쓴 것이 갈릴 수 있다.
     """
 
     design_surface_id: str = Field(min_length=1)
     current_job_id: str = Field(min_length=1)
+    work_area_ids: list[str] | None = None
     zones: dict[str, dict[str, Any]] | None = None
     zone_crs: str | None = None
 
@@ -1224,6 +1310,7 @@ def build_design_conformance_requests_router(
             current_job_id=request.current_job_id,
             zones=request.zones,
             zone_crs=request.zone_crs,
+            work_area_ids=request.work_area_ids,
             requested_by=principal.principal_id,
             now=datetime.now(UTC),
         )

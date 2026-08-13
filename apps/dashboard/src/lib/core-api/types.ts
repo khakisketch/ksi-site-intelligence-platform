@@ -923,12 +923,104 @@ export interface DesignConformanceRequestListResponse {
   requests: DesignConformanceRequestView[];
 }
 
-/** 제출 본문 — 어느 설계면을 어느 재구성 결과와 견줄지 + 확정한 구역. */
+/**
+ * 제출 본문 — 어느 설계면을 어느 재구성 결과와 견줄지 + 확정한 구역.
+ *
+ * 구역을 주는 길은 둘이고 **동시에 쓸 수 없다**(M4-C): 등록된 작업구역을 고르거나
+ * (`workAreaIds`), 즉석 폴리곤을 싣거나(`zones`/`zoneCrs`). 앞의 것만 다음 시점의
+ * 리포트와 이어져 진척이 나온다 — 즉석 폴리곤은 매번 좌표가 달라 시계열이 끊긴다.
+ */
 export interface DesignConformanceRequestCreateInput {
   designSurfaceId: string;
   currentJobId: string;
+  workAreaIds?: string[] | null;
   zones?: Record<string, Record<string, unknown>> | null;
   zoneCrs?: string | null;
+}
+
+/**
+ * 현장에 영구적으로 사는 작업구역(M4-C) — 기하는 등록 후 불변이다.
+ *
+ * 고치면 새 구역이고 `supersedes` 가 이전 것을 가리킨다(그때 이전 구역은 보관된다).
+ * 제자리 수정을 허용하면 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀐다.
+ */
+export interface WorkArea {
+  schemaVersion: string;
+  workAreaId: string;
+  siteId: string;
+  name: string;
+  polygon: Record<string, unknown>;
+  crs: string;
+  status: "ACTIVE" | "ARCHIVED";
+  supersedes: string | null;
+  createdAt: string;
+}
+
+export interface WorkAreaListResponse {
+  workAreas: WorkArea[];
+}
+
+export interface WorkAreaResponse {
+  verdict: string;
+  detail: string | null;
+  workArea: WorkArea | null;
+}
+
+export interface WorkAreaRegisterInput {
+  name: string;
+  polygon: Record<string, unknown>;
+  crs: string;
+  supersedes?: string | null;
+}
+
+/**
+ * 구역 하나의 계획 대비 진척 — 절토와 성토를 **합치지 않는다**.
+ *
+ * 합계 하나로 뭉개면 "5000 깎고 5000 쌓는" 현장과 "아무것도 안 한" 현장이 같은
+ * 숫자가 된다. 비율이 `null` 이면 그 방향의 계획이 없다는 뜻이고, `0%` 로 그리면
+ * "할 일이 있는데 하나도 안 했다"는 반대 뜻이 된다 — `basis` 가 이유를 적는다.
+ */
+export interface ZoneProgress {
+  zoneId: string;
+  zoneName: string | null;
+  plannedCutM3: number;
+  plannedFillM3: number;
+  remainingCutM3: number;
+  remainingFillM3: number;
+  /** 계획 − 잔여. **음수일 수 있다**(되메우기·재시공·붕괴). */
+  doneCutM3: number;
+  doneFillM3: number;
+  cutProgressRatio: number | null;
+  fillProgressRatio: number | null;
+  basis: string;
+}
+
+export interface DesignProgress {
+  schemaVersion: string;
+  siteId: string;
+  designSurfaceId: string;
+  designSurfaceSha256: string;
+  baselineDesignConformanceId: string;
+  /** 기준 시점 — **화면이 항상 함께 띄운다**(이미 시공된 뒤면 계획이 과소 계상된다). */
+  baselineComputedAt: string;
+  latestDesignConformanceId: string;
+  latestComputedAt: string;
+  thresholdM: number;
+  zones: ZoneProgress[];
+}
+
+/** `progress` 와 `detail` 중 하나는 항상 채워진다 — 빈 표를 내지 않는다. */
+export interface DesignProgressResponse {
+  progress: DesignProgress | null;
+  unmatchedZoneIds: string[];
+  detail: string | null;
+  /** 최신 리포트가 속한 임무 — 히트맵(임무 스코프 표면)으로 건너뛸 때만 쓰는 UI 편의값. */
+  latestMissionId: string | null;
+}
+
+export interface ProgressBaselineResponse {
+  verdict: string;
+  detail: string | null;
 }
 
 /** 어느 설계면과 비교했는가 — 요청 시점 VERIFIED 스냅샷. */

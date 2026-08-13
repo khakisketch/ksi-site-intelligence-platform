@@ -53,6 +53,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
+from ksi_core.work_areas import WorkAreaStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -152,6 +153,14 @@ def assemble_app(
     # 받는 순간 차분 래스터 바이트를 직접 재해싱해 워커의 신고와 대조하기 때문이다
     # (design_conformance_reports.py 모듈 docstring). 그래서 두 store 는 재구성
     # 작업 원장·스토리지가 있는 조립에서만 만들어진다.
+    # 작업구역(M4-C) — 현장에 매달린 자산이라 site_store 와 함께 조립한다.
+    # 설계 대비 요청이 이 저장소에서 폴리곤을 **값으로** 복사해 가므로,
+    # 요청 저장소보다 먼저 만들어져야 한다.
+    work_area_journal = journal("work-areas.jsonl")
+    work_area_store = WorkAreaStore(
+        work_area_journal,
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
     design_conformance_request_journal = journal("design-conformance-requests.jsonl")
     design_conformance_report_journal = journal("design-conformance.jsonl")
     design_conformance_request_store = (
@@ -160,6 +169,7 @@ def assemble_app(
             mission_store=mission_store,
             processing_job_store=processing_job_store,
             design_surface_store=design_surface_store,
+            work_area_store=work_area_store,
         )
         if processing_job_store is not None and evidence_storage is not None
         else None
@@ -191,6 +201,7 @@ def assemble_app(
         ),
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,
+        work_area_store=work_area_store,
         processing_job_store=processing_job_store,
         defect_candidate_store=DefectCandidateStore(
             defect_candidate_journal,

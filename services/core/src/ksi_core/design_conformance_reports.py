@@ -185,6 +185,15 @@ class DesignConformanceStore:
         self._lock = threading.Lock()
         self._by_mission: dict[str, list[RecordedDesignConformance]] = {}
         self._ids_by_mission: dict[str, dict[str, DesignConformanceReport]] = {}
+        # 진척(M4-C)은 **현장 단위**로 읽는다 — 리포트는 임무에 매달려 기록되지만,
+        # "A공구가 계획 대비 얼마나 됐나"는 임무 경계를 넘는 질문이다(기준 시점과
+        # 최신 시점은 서로 다른 임무다). site 는 요청 레코드가 이미 알고 있으므로
+        # 새로 저장하지 않고 투영 시점에 얻는다.
+        self._by_site: dict[str, list[RecordedDesignConformance]] = {}
+        # (siteId, designSurfaceId) → 원지형 기준으로 지정된 리포트 id.
+        # 사람이 명시적으로 지정한다 — 가장 오래된 것을 자동으로 고르지 않는다.
+        # 첫 비행이 이미 시공 중이었으면 그 자동 추측이 계획 물량을 조용히 깎는다.
+        self._progress_baselines: dict[tuple[str, str], str] = {}
         try:
             self._replay(journal)
         except DesignConformanceRecoveryError:
@@ -202,6 +211,9 @@ class DesignConformanceStore:
         for raw in journal.replay():
             kind = raw.get("kind")
             if kind == "design-conformance-rejected":
+                continue
+            if kind == "design-conformance-progress-baseline-set":
+                self._apply_progress_baseline(raw)
                 continue
             if kind != "design-conformance-recorded":
                 raise DesignConformanceRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
@@ -239,15 +251,124 @@ class DesignConformanceStore:
         recorded_at: datetime,
         core_recomputed_digest: str,
     ) -> None:
-        self._by_mission.setdefault(mission_id, []).append(
-            RecordedDesignConformance(
-                report=report,
-                reported_by=reported_by,
-                recorded_at=recorded_at,
-                core_recomputed_digest=core_recomputed_digest,
-            )
+        recorded = RecordedDesignConformance(
+            report=report,
+            reported_by=reported_by,
+            recorded_at=recorded_at,
+            core_recomputed_digest=core_recomputed_digest,
         )
+        self._by_mission.setdefault(mission_id, []).append(recorded)
         self._ids_by_mission.setdefault(mission_id, {})[report.design_conformance_id] = report
+        request = self._request_store.get_by_design_conformance_id(
+            report.design_conformance_id
+        )
+        if request is not None:
+            # 요청이 없는 리포트는 ``_judge`` 가 이미 거부하므로 여기 오지 않는다.
+            # 그래도 None 을 견디는 이유는, 이 색인이 없다고 기록 자체를 잃으면
+            # 안 되기 때문이다(진척은 부가 조회지 원장이 아니다).
+            self._by_site.setdefault(request.site_id, []).append(recorded)
+
+    # ── 진척 기준 시점 (M4-C) ────────────────────────────────────────────
+
+    def _apply_progress_baseline(self, raw: dict[str, Any]) -> None:
+        """기준 지정 레코드를 projection 에 반영 — 재생도 live 와 같은 강도로 검증한다."""
+        site_id = raw["siteId"]
+        design_surface_id = raw["designSurfaceId"]
+        design_conformance_id = raw["designConformanceId"]
+        if not (
+            isinstance(site_id, str)
+            and isinstance(design_surface_id, str)
+            and isinstance(design_conformance_id, str)
+        ):
+            raise DesignConformanceRecoveryError(
+                "재생: 진척 기준 레코드의 식별자가 문자열이 아니다"
+            )
+        # 지정 대상 리포트가 실제로 기록돼 있어야 한다 — 없는 리포트를 기준으로
+        # 삼으면 조회가 500 으로 죽거나 조용히 빈 표를 낸다.
+        if not any(
+            recorded.report.design_conformance_id == design_conformance_id
+            for recorded in self._by_site.get(site_id, ())
+        ):
+            raise DesignConformanceRecoveryError(
+                f"재생: 진척 기준으로 지정된 리포트가 원장에 없다 — "
+                f"siteId={site_id} designConformanceId={design_conformance_id}"
+            )
+        self._progress_baselines[site_id, design_surface_id] = design_conformance_id
+
+    def progress_baseline_id(self, site_id: str, design_surface_id: str) -> str | None:
+        with self._lock:
+            return self._progress_baselines.get((site_id, design_surface_id))
+
+    def set_progress_baseline(
+        self,
+        *,
+        site_id: str,
+        design_surface_id: str,
+        design_conformance_id: str,
+        actor: str,
+        now: datetime,
+    ) -> tuple[bool, str | None]:
+        """이 리포트를 '원지형 기준'으로 지정한다 — ``(성공, 사유)``.
+
+        덮어쓰기를 허용한다(잘못 지정하는 일이 실제로 있다). 이전 지정도 저널에
+        남으므로 "언제 무엇을 기준으로 봤는가"는 되짚어진다.
+        """
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return False, JOURNAL_SEALED_DETAIL
+            match = next(
+                (
+                    recorded
+                    for recorded in self._by_site.get(site_id, ())
+                    if recorded.report.design_conformance_id == design_conformance_id
+                ),
+                None,
+            )
+            if match is None:
+                return False, (
+                    f"현장 {site_id!r} 에 designConformanceId={design_conformance_id!r} "
+                    "인 리포트가 없다"
+                )
+            if match.report.design_surface_ref.design_surface_id != design_surface_id:
+                return False, (
+                    f"그 리포트는 설계면 "
+                    f"{match.report.design_surface_ref.design_surface_id!r} 로 낸 것인데 "
+                    f"요청은 {design_surface_id!r} 다 — 다른 설계면의 잔량을 계획 물량으로 "
+                    "쓸 수 없다"
+                )
+            raw: dict[str, Any] = {
+                "kind": "design-conformance-progress-baseline-set",
+                "ts": iso_utc(now),
+                "actor": actor,
+                "siteId": site_id,
+                "designSurfaceId": design_surface_id,
+                "designConformanceId": design_conformance_id,
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return False, JOURNAL_SEALED_DETAIL
+            self._progress_baselines[site_id, design_surface_id] = design_conformance_id
+            return True, None
+
+    def site_history(self, site_id: str) -> list[RecordedDesignConformance]:
+        """현장의 리포트 전부 — 기록 순서(오래된 것 먼저). 진척 조회의 입력이다."""
+        with self._lock:
+            return list(self._by_site.get(site_id, ()))
+
+    def site_of(self, design_conformance_id: str) -> str | None:
+        """그 리포트가 어느 현장의 것인가 — 요청 레코드에서 얻는다(저장하지 않는다).
+
+        ``diff_raster_object_key`` 가 객체 키를 요청에서 유도하는 것과 같은 자리다.
+        """
+        request = self._request_store.get_by_design_conformance_id(design_conformance_id)
+        return None if request is None else request.site_id
+
+    def mission_of(self, design_conformance_id: str) -> str | None:
+        """그 리포트가 어느 임무의 것인가 — 진척 화면이 히트맵(임무 스코프)으로
+        건너뛸 때만 쓰는 UI 편의값이다. 저장하지 않고 요청 레코드에서 얻는다."""
+        request = self._request_store.get_by_design_conformance_id(design_conformance_id)
+        return None if request is None else request.mission_id
 
     # ── 판정 (live·재생 공유, 스토리지 없이) ─────────────────────────────
 
