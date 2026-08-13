@@ -503,6 +503,42 @@ def test_nothing_to_compare_is_rejected(fx: _Fixture) -> None:
     assert result.verdict is ComparisonRequestVerdict.NOTHING_TO_COMPARE
 
 
+@pytest.mark.parametrize(
+    "bad_polygon",
+    [
+        {"type": "Point", "coordinates": [1, 2]},
+        {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]},
+        {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]]},  # 안 닫힘
+        {"type": "Polygon", "coordinates": [[["a", "b"], [1, 0], [1, 1], ["a", "b"]]]},
+        {"type": "Polygon"},
+        {"nonsense": True},
+    ],
+)
+def test_ad_hoc_zone_geometry_is_validated_at_request_time(
+    fx: _Fixture, bad_polygon: dict[str, object]
+) -> None:
+    """2026-08-13 프로젝트 두뇌 재감사 확정 발견의 회귀 방지 — comparison_requests 쪽.
+
+    design_conformance_requests.py 와 같은 검사(assert_zones_are_usable)를 공유한다.
+    """
+    result = fx.create(zones={"zone-a": bad_polygon})
+    assert result.verdict is ComparisonRequestVerdict.ZONES_INVALID, result
+    assert result.detail is not None and "zone-a" in result.detail
+
+
+def test_ad_hoc_zone_count_is_capped(fx: _Fixture) -> None:
+    many_zones = {
+        f"zone-{i}": {
+            "type": "Polygon",
+            "coordinates": [[[i, 0], [i + 1, 0], [i + 1, 1], [i, 1], [i, 0]]],
+        }
+        for i in range(65)
+    }
+    result = fx.create(zones=many_zones)
+    assert result.verdict is ComparisonRequestVerdict.ZONES_INVALID, result
+    assert result.detail is not None and "65" in result.detail
+
+
 def test_idempotent_resubmit_returns_existing_request(fx: _Fixture) -> None:
     first = fx.create()
     assert first.verdict is ComparisonRequestVerdict.CREATED

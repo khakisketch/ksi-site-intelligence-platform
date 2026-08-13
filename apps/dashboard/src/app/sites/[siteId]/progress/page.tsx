@@ -178,7 +178,8 @@ export default async function SiteProgressPage({
     );
   }
 
-  const { progress, unmatchedZoneIds, detail, latestMissionId } = progressResponse;
+  const { progress, unmatchedZoneIds, areaMismatchZoneIds, detail, latestMissionId } =
+    progressResponse;
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5">
@@ -218,6 +219,14 @@ export default async function SiteProgressPage({
               <p className="text-[12px] break-keep text-ink-muted">
                 이번 표에서 뺀 구역 {unmatchedZoneIds.length}건(기준 또는 최신 한쪽에만
                 있었습니다): {unmatchedZoneIds.join(", ")}
+              </p>
+            )}
+            {areaMismatchZoneIds.length > 0 && (
+              <p className="text-[12px] break-keep text-ink-muted">
+                이번 표에서 뺀 구역 {areaMismatchZoneIds.length}건(zoneId는 같지만 측정
+                면적이 기준 시점과 크게 달라 같은 곳을 쟀다고 볼 수 없었습니다 — 즉석으로
+                그린 구역이 매번 다른 범위였거나, 이번 비행에서 일부가 안 찍혔을 수
+                있습니다): {areaMismatchZoneIds.join(", ")}
               </p>
             )}
             <ul className="flex flex-col gap-2">

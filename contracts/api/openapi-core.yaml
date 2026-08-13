@@ -4530,6 +4530,12 @@ components:
           description: 한쪽 시점에만 있던 구역 — 표에서 빠진 이유를 화면이 밝힌다.
           type: array
           items: { type: string }
+        areaMismatchZoneIds:
+          description: >-
+            양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 "같은 곳을
+            쟀다"고 볼 수 없어 표에서 뺀 구역 — unmatched 와는 다른 사유다.
+          type: array
+          items: { type: string }
         detail: { type: [string, 'null'] }
         latestMissionId:
           description: >-

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-13T15:15:06+09:00",
+  "updated_at": "2026-08-13T16:52:07+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1707,6 +1707,33 @@
       "verification_requested": null,
       "created_at": "2026-08-13T13:46:53+09:00",
       "updated_at": "2026-08-13T15:15:06+09:00"
+    },
+    {
+      "id": "wf1-progress-zone-integrity-fix",
+      "title": "M4-D 착수 전 필수 수정 — 진척 구역 면적 대조 + 즉석 zones 기하 검증 + CRS 재투영 fail-closed",
+      "completion_criteria": [
+        "derive_progress가 zoneId 일치만으로 이어붙이지 않고 area_m2 불일치(10%초과)를 감지해 표에서 제외+area_mismatch_zone_ids로 알린다 (완료기준 1/3)",
+        "즉석 zones dict 입력(comparison_requests·design_conformance_requests)이 등록된 작업구역과 동일한 폴리곤 검증+개수상한을 받는다 (완료기준 2/3)",
+        "geo-spatial reproject_point/geometry가 inf/nan을 예외 없이 반환하지 않고 ReprojectionFailedError로 fail-closed하며 dsm_diff가 그것을 DsmDiffError로 흡수한다 (완료기준 3/3)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "설계 코드 3파일 수정(design_progress.py area_m2 10% 문턱 대조+area_mismatch_zone_ids, comparison_requests.py/design_conformance_requests.py assert_zones_are_usable+MAX_AD_HOC_ZONES=64, crs.py ReprojectionFailedError+dsm_diff.py try/except 확장). 신규 테스트 12건. 전체 워크스페이스 pytest 2894 passed, mypy/ruff clean, 대시보드 tsc/eslint/vitest(190)/next build 전부 green, hygiene/pin/reference/uv-lock 가드 통과.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "WF1(project-brain-reaudit, 114 에이전트) 확정 발견 3건 수정. 리뷰어가 지적한 두 보완사항(HTTP 라우트 레벨 areaMismatchZoneIds 테스트 부재, MAX_AD_HOC_ZONES/MAX_ACTIVE_WORK_AREAS 리터럴 중복)도 반영 완료.",
+        "at": "2026-08-13T16:51:50+09:00",
+        "reviewer": "reviewer-subagent x3 (독립·병렬, change-review 모드)",
+        "evidence_ref": "reviewer 1(design_progress area-mismatch): CONFIRMED-FIXED, agentId a1d6595d7a4d273c3 / reviewer 2(즉석 zones 폴리곤 검증): CONFIRMED-FIXED, agentId a91d08c0006903c83 / reviewer 3(CRS 재투영 fail-closed, critical): CONFIRMED-FIXED, agentId ad7207e2cc60c400d — 전체 워크스페이스 pytest 2895 passed·mypy·ruff·대시보드 tsc/eslint/vitest/build·hygiene/pin/reference/uv-lock 가드 직접 실행 확인"
+      },
+      "invalidation_reason": null,
+      "parent": "m4c-work-area-progress",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": null,
+      "created_at": "2026-08-13T16:37:23+09:00",
+      "updated_at": "2026-08-13T16:51:50+09:00"
     }
   ],
   "risks": [
@@ -2479,6 +2506,34 @@
       "previous_status": null,
       "created_at": "2026-08-13T09:59:12+09:00",
       "updated_at": "2026-08-13T09:59:12+09:00"
+    },
+    {
+      "id": "processing-controller-work-dir-unbounded-retry",
+      "title": "work_dir 미정리로 디스크 무한 적재 + '실패는 FAILED로 수렴' 예외 목록이 뚫려 무한 재시도 — 실제 촬영 규모에서 M4-D 보고서 생성 자체가 멈춘다",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "WF1(2026-08-13, project-brain-reaudit) 확정 발견. services/processing-controller/src/ksi_processing_controller/worker.py:270(work_dir 미정리) + :338(예외 목록 닫혀있어 디스크 오류가 무한 15분 재시도). M4-D 구현 전 필수는 아니나(진척 계산 정확성과 무관) 실제 임무 규모(사진 수백 장)에서 M4-D가 실사용 불가해질 수 있어 우선순위 높음.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-13T16:52:07+09:00",
+      "updated_at": "2026-08-13T16:52:07+09:00"
+    },
+    {
+      "id": "bim-integration-ifc-mm-unit-double-scale",
+      "title": "mm 단위 IFC + georeferencing 조합에서 좌표가 1000배 축소(길이 배율 이중 적용) — 계획고가 조용히 5m씩 틀린 채 설계면 등록·잔량 계산을 통과한다",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "WF1(2026-08-13, project-brain-reaudit) 확정 발견. services/bim-integration/src/ksi_bim_integration/ifc_reference_model.py:290 — auto_local2global에 이미 미터로 환산한 좌표를 넘겨 IfcMapConversion.Scale이 다시 곱해진다. IFC/BIM 설계면 입력 경로에만 영향(주 경로인 GeoTIFF 직접 업로드는 무관). IFC 경로를 쓰는 현장이 생기기 전에 고쳐야 한다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-13T16:52:07+09:00",
+      "updated_at": "2026-08-13T16:52:07+09:00"
     }
   ]
 }

@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from ksi_core.design_progress import derive_progress
+from ksi_core.design_progress import AREA_MISMATCH_RATIO_THRESHOLD, derive_progress
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.design_conformance_report import (
@@ -44,13 +44,13 @@ def _vertical(datum: VerticalDatum = VerticalDatum.ELLIPSOIDAL_NATIVE) -> Vertic
     )
 
 
-def _zone(zone_id: str, *, cut: float, fill: float) -> ZoneVolumeDelta:
+def _zone(zone_id: str, *, cut: float, fill: float, area: float = 1000.0) -> ZoneVolumeDelta:
     return ZoneVolumeDelta(
         zone_id=zone_id,
         cut_m3=cut,
         fill_m3=fill,
         net_m3=fill - cut,
-        area_m2=1000.0,
+        area_m2=area,
         threshold_m=0.05,
         uncertainty_m3=None,
         uncertainty_note=_UNCERTAINTY_NOTE,
@@ -192,6 +192,68 @@ def test_no_common_zone_means_no_table_and_a_reason() -> None:
     assert derived.progress is None
     assert derived.detail is not None
     assert "같은 작업구역" in derived.detail
+
+
+# ── zoneId가 같아도 같은 곳을 쟀다는 보장은 없다 ──────────────────────────
+def test_area_mismatch_excludes_the_zone_and_reports_it_separately() -> None:
+    """면적이 10% 넘게 다르면 zoneId가 같아도 표에서 뺀다 — unmatched와는 다른 사유다.
+
+    2026-08-13 프로젝트 두뇌 재감사 확정 발견의 회귀 방지: 등록된 작업구역이라도
+    두 시점의 DSM 커버리지가 다르면(구름·비행경로 차이) 그 차이가 조용히 '완료'로
+    계상됐다. 실측 재현: wa-1(100x100m) 기준 리포트는 전 구역 1m 절토(계획
+    10000m³·area 10000m²) → 다음 주 남쪽 절반이 nodata로 area 5000m²·cut 5000m³.
+    옛 코드는 진척 50%를 냈다(흙을 한 삽도 안 옮겨도).
+    """
+    baseline = _report(
+        "dc-b",
+        [_zone("wa-1", cut=10000.0, fill=0.0, area=10000.0), _zone("wa-2", cut=100.0, fill=0.0)],
+    )
+    latest = _report(
+        "dc-l",
+        [_zone("wa-1", cut=5000.0, fill=0.0, area=5000.0), _zone("wa-2", cut=40.0, fill=0.0)],
+    )
+
+    derived = derive_progress(baseline, latest, site_id="site-1")
+
+    assert derived.progress is not None
+    # wa-1 은 면적이 반토막이라 빠지고, wa-2 만 표에 남는다.
+    assert [z.zone_id for z in derived.progress.zones] == ["wa-2"]
+    assert derived.area_mismatch_zone_ids == ("wa-1",)
+    assert derived.unmatched_zone_ids == ()  # 양쪽에 다 있었다 — unmatched 가 아니다
+
+
+def test_small_area_difference_within_tolerance_still_computes() -> None:
+    """정상적인 재구성 편차(문턱 이내)는 그대로 이어붙인다 — 과민하게 막지 않는다."""
+    within_tolerance = 1000.0 * (1.0 - AREA_MISMATCH_RATIO_THRESHOLD / 2)
+    baseline = _report("dc-b", [_zone("wa-1", cut=100.0, fill=0.0, area=1000.0)])
+    latest = _report("dc-l", [_zone("wa-1", cut=40.0, fill=0.0, area=within_tolerance)])
+
+    derived = derive_progress(baseline, latest, site_id="site-1")
+
+    assert derived.progress is not None
+    assert derived.area_mismatch_zone_ids == ()
+    assert [z.zone_id for z in derived.progress.zones] == ["wa-1"]
+
+
+def test_all_matched_zones_area_mismatch_means_no_table_and_a_reason() -> None:
+    """이어붙일 수 있는 구역이 하나도 안 남으면 표를 안 만들고 사유를 낸다.
+
+    즉석 그리기 경로의 실제 발생 형태: 매번 같은 고정 zoneId('comparison-zone')를
+    쓰므로 완전히 다른 두 폴리곤이 여기로 들어온다.
+    """
+    baseline = _report(
+        "dc-b", [_zone("comparison-zone", cut=8000.0, fill=0.0, area=12000.0)]
+    )
+    latest = _report(
+        "dc-l", [_zone("comparison-zone", cut=5000.0, fill=0.0, area=9500.0)]
+    )
+
+    derived = derive_progress(baseline, latest, site_id="site-1")
+
+    assert derived.progress is None
+    assert derived.area_mismatch_zone_ids == ("comparison-zone",)
+    assert derived.detail is not None
+    assert "측정 면적" in derived.detail
 
 
 # ── 현장에서 실제로 일어나는 상태 ────────────────────────────────────────

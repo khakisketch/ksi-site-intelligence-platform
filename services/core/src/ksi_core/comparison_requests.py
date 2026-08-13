@@ -44,6 +44,17 @@ store 의 도메인 책임으로 남는다.
 요청 레코드는 ``site.aoi`` 를 참조(foreign key)하지 않고 폴리곤 값 자체를
 갖는다(대표자 확정, 2026-08-10) — 나중에 현장 경계가 바뀌어도 이미 만든 요청·
 결과는 그대로 유지된다.
+
+## 즉석 폴리곤도 등록된 작업구역과 같은 검사를 받는다
+
+``zones`` 는 등록을 거치지 않고 요청에 직접 실리는 값이라, 작업구역
+(``WorkArea``) 계약이 강제하는 기하 검사가 이 경로엔 저절로 따라오지 않는다.
+:func:`assert_zones_are_usable` 이 그 검사를 여기서도 강제한다(2026-08-13
+프로젝트 두뇌 재감사 확정 발견 — 이 검사 없이는 Point·안 닫힌 고리·글자
+좌표까지 그대로 durable 저널에 실려, 실패 사유를 워커가 몇 분 뒤 이해할 수
+없는 예외로 대신 말했다). ``design_conformance_requests.py`` 가 이 함수를
+그대로 재사용한다 — 두 경로가 각자 검사를 복제하면 한쪽만 고쳐지는 순간
+갈라진다.
 """
 
 from __future__ import annotations
@@ -63,6 +74,7 @@ from ksi_event_contracts.comparison_request import ComparisonRequest
 from ksi_event_contracts.processing_artifact import ProcessingArtifact, ProcessingArtifactKind
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 from ksi_event_contracts.vertical_reference import VerticalReference
+from ksi_event_contracts.work_area import assert_polygon_is_usable
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
@@ -77,6 +89,7 @@ from ksi_core.processing_jobs import (
     ProcessingJobStore,
     build_processing_artifact_object_key,
 )
+from ksi_core.work_areas import MAX_ACTIVE_WORK_AREAS
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -134,6 +147,9 @@ class ComparisonRequestVerdict(StrEnum):
     MISSION_MISMATCH = "MISSION_MISMATCH"
     # 두 작업 어느 쪽도 point_cloud+dsm(+구역) 조합을 갖추지 못했다 — 계산할 것이 없다.
     NOTHING_TO_COMPARE = "NOTHING_TO_COMPARE"
+    #: 즉석 구역(zones)의 폴리곤을 쓸 수 없다 — 타입·닫힘·좌표·개수 상한 중 하나를
+    #: 어겼다. 워커까지 보내지 않고 여기서 사람 말로 거부한다.
+    ZONES_INVALID = "ZONES_INVALID"
     UNKNOWN_REQUEST = "UNKNOWN_REQUEST"
     REQUEST_NOT_ACTIVE = "REQUEST_NOT_ACTIVE"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -163,6 +179,7 @@ _STATUS: dict[ComparisonRequestVerdict, int] = {
     ComparisonRequestVerdict.SITE_MISMATCH: 422,
     ComparisonRequestVerdict.MISSION_MISMATCH: 422,
     ComparisonRequestVerdict.NOTHING_TO_COMPARE: 422,
+    ComparisonRequestVerdict.ZONES_INVALID: 422,
     ComparisonRequestVerdict.UNKNOWN_REQUEST: 404,
     ComparisonRequestVerdict.REQUEST_NOT_ACTIVE: 409,
     ComparisonRequestVerdict.STORE_UNAVAILABLE: 503,
@@ -204,6 +221,38 @@ def zone_fingerprint(
     if not zones:
         return "-"
     return json.dumps([zone_crs, zones], sort_keys=True, ensure_ascii=False)
+
+
+#: 즉석(zones) 요청 한 건이 한 번에 실을 수 있는 구역 수 상한. 등록된 작업구역의
+#: ``MAX_ACTIVE_WORK_AREAS``(work_areas.py)를 그대로 재사용한다 — 리터럴을
+#: 복제하면 한쪽만 바뀌는 날 두 상한이 말없이 갈린다. 값이 같은 이유도 하나다 —
+#: 구역마다 워커가 래스터 마스킹을 한 번씩 돌므로, 상한 없이 두면 요청 하나가
+#: 워커를 임의로 오래 붙잡는다.
+MAX_AD_HOC_ZONES = MAX_ACTIVE_WORK_AREAS
+
+
+def assert_zones_are_usable(zones: dict[str, dict[str, Any]], *, zone_crs: str) -> str | None:
+    """즉석 폴리곤이 래스터 마스킹까지 살아남을 수 있는가 — 아니면 사람이 읽는 사유.
+
+    ``design_conformance_requests`` 도 이 함수를 그대로 쓴다(``zone_fingerprint``
+    와 같은 이유로 private 이 아니다). 등록된 작업구역은 ``WorkArea`` 계약이
+    ``assert_polygon_is_usable`` 을 이미 강제하는데, 즉석 경로는 등록을 거치지
+    않아 그 검사가 저절로 따라오지 않는다 — 여기서 같은 검사를 명시적으로
+    적용하지 않으면 "등록된 구역은 안전하고 즉석 구역은 아니다"라는 갈라진
+    보장이 생긴다.
+    """
+    if len(zones) > MAX_AD_HOC_ZONES:
+        return (
+            f"구역이 {len(zones)}개다 — 즉석 구역은 한 번에 {MAX_AD_HOC_ZONES}개까지만 "
+            "받는다(구역마다 워커가 래스터 마스킹을 한 번씩 돈다). 반복해서 재는 범위는 "
+            "작업구역으로 등록하면 상한 없이 여러 시점에 쓸 수 있다"
+        )
+    for zone_id, polygon in zones.items():
+        try:
+            assert_polygon_is_usable(polygon, crs=zone_crs)
+        except ValueError as exc:
+            return f"구역 {zone_id!r} 의 폴리곤을 쓸 수 없다 — {exc}"
+    return None
 
 
 def _request_shape(record: ComparisonRequestRecord) -> tuple[str, str, str]:
@@ -534,6 +583,11 @@ class ComparisonRequestStore:
                 if artifact is None
             ]
             cd_reason = f"{'·'.join(missing)} 작업에 point_cloud 산출물이 없다"
+
+        if zones and zone_crs is not None:
+            zones_error = assert_zones_are_usable(zones, zone_crs=zone_crs)
+            if zones_error is not None:
+                return (ComparisonRequestVerdict.ZONES_INVALID, zones_error, None)
 
         dsm_baseline = _find_artifact(baseline_job, ProcessingArtifactKind.DSM)
         dsm_current = _find_artifact(current_job, ProcessingArtifactKind.DSM)

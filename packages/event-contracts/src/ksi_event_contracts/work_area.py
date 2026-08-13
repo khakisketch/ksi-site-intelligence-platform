@@ -37,6 +37,15 @@ REJECTED 의 복구 경로를 "되돌리기"가 아니라 "새 revision 재등�
 AOI 안에 드는지. 앞의 둘은 rasterio 가 관용적으로 처리하고, 뒤의 둘은 **정당한
 운용**이다 — 절토부와 성토부가 경계에서 겹칠 수 있고, 진입도로는 현장 외곽을
 넘어갈 수 있다. 여기서 막으면 제품이 현장을 틀렸다고 우기게 된다.
+
+## 이 검사는 등록된 구역만의 것이 아니다
+
+:func:`assert_polygon_is_usable` 은 이 계약 밖으로도 공개된다 — 비교/설계
+대비 요청이 여전히 지원하는 **즉석 폴리곤**(``zones`` dict, 등록 없이 한 번
+보고 마는 경로)에도 같은 검사가 필요하기 때문이다(2026-08-13 프로젝트 두뇌
+재감사 확정 발견: 그 경로엔 이 검사가 전혀 없어서 점 하나짜리 도형까지
+그대로 durable 저널에 실렸다). 두 경로가 검사를 공유해야 "등록된 구역은
+안전하고 즉석 구역은 아니다"라는 갈라진 보장이 생기지 않는다.
 """
 
 from __future__ import annotations
@@ -94,7 +103,7 @@ class WorkArea(_CamelModel):
 
     @model_validator(mode="after")
     def _polygon_is_usable(self) -> WorkArea:
-        _assert_polygon(self.polygon, crs=self.crs)
+        assert_polygon_is_usable(self.polygon, crs=self.crs)
         if self.supersedes is not None and self.supersedes == self.work_area_id:
             raise ValueError(
                 f"supersedes 가 자기 자신을 가리킨다: {self.work_area_id!r} — "
@@ -103,7 +112,7 @@ class WorkArea(_CamelModel):
         return self
 
 
-def _assert_polygon(polygon: dict[str, Any], *, crs: str) -> None:
+def assert_polygon_is_usable(polygon: dict[str, Any], *, crs: str) -> None:
     """래스터 마스킹까지 살아남을 수 있는 폴리곤인지 — 아니면 여기서 사람 말로 거부한다.
 
     이 검사가 없으면 같은 결함이 ``dsm_diff.volume_delta_in_polygon`` 의
@@ -172,4 +181,5 @@ __all__ = [
     "MAX_RING_POSITIONS",
     "WorkArea",
     "WorkAreaStatus",
+    "assert_polygon_is_usable",
 ]

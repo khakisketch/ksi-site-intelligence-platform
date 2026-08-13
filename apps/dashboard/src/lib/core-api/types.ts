@@ -1013,6 +1013,8 @@ export interface DesignProgress {
 export interface DesignProgressResponse {
   progress: DesignProgress | null;
   unmatchedZoneIds: string[];
+  /** 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 표에서 뺀 구역 — unmatched 와 다른 사유. */
+  areaMismatchZoneIds: string[];
   detail: string | null;
   /** 최신 리포트가 속한 임무 — 히트맵(임무 스코프 표면)으로 건너뛸 때만 쓰는 UI 편의값. */
   latestMissionId: string | null;

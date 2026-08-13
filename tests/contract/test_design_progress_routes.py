@@ -111,6 +111,7 @@ class ProgressFixture:
         fill_m3: float,
         raster: bytes,
         computed_at: datetime | None = None,
+        area_m2: float = 400.0,
     ) -> DesignConformanceReport:
         """요청 생성 → lease → RUNNING → 래스터 업로드 → Core 재해싱 확인 → 리포트 기록."""
         created = self.base.create(
@@ -151,7 +152,7 @@ class ProgressFixture:
                     cut_m3=cut_m3,
                     fill_m3=fill_m3,
                     net_m3=fill_m3 - cut_m3,
-                    area_m2=400.0,
+                    area_m2=area_m2,
                     threshold_m=record.policy.volume_threshold_m,
                     uncertainty_m3=None,
                     uncertainty_note="설계면은 측정물이 아니라 검사점 RMSE 가 없다",
@@ -252,6 +253,50 @@ def test_setting_the_baseline_then_reading_progress_matches_hand_calculation(
     assert zone["cutProgressRatio"] == pytest.approx(0.752)
     assert body["latestMissionId"] == _CURRENT_MISSION_ID
     assert body["progress"]["latestDesignConformanceId"] == latest.design_conformance_id
+
+
+def test_area_mismatch_is_serialized_over_http_not_just_the_pure_function(
+    progress: ProgressFixture,
+) -> None:
+    """areaMismatchZoneIds 가 요청→lease→래스터→Core 재해싱을 실제로 거친 뒤에도 살아남는다.
+
+    ``test_design_progress.py`` 가 순수 함수로 이미 고정한 규칙(2026-08-13 프로젝트
+    두뇌 재감사 확정 발견의 회귀 방지)이 라우터 직렬화까지 그대로 옮겨지는지 —
+    필드 이름 하나만 틀려도 화면은 빈 배열을 받고 아무 경고도 못 낸다.
+    """
+    baseline = progress.submit(
+        current_job_id=progress.base.current_job_id,
+        cut_m3=5000.0,
+        fill_m3=0.0,
+        raster=b"raster-a",
+        area_m2=400.0,
+    )
+    progress.submit(
+        current_job_id=progress.latest_job_id,
+        cut_m3=1000.0,
+        fill_m3=0.0,
+        raster=b"raster-b",
+        area_m2=100.0,  # 기준의 25% — 10% 문턱을 크게 넘는다
+    )
+    client = TestClient(progress.app())
+
+    baseline_set = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance/{baseline.design_conformance_id}/progress-baseline",
+        json={"designSurfaceId": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    assert baseline_set.status_code == 201, baseline_set.json()
+
+    response = client.get(
+        f"/v1/sites/{_SITE_ID}/design-progress",
+        params={"design_surface_id": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["progress"] is None
+    assert body["areaMismatchZoneIds"] == ["zone-a"]
+    assert body["detail"] is not None and "측정 면적" in body["detail"]
 
 
 def test_baseline_from_a_different_design_surface_is_rejected(

@@ -28,6 +28,7 @@ WGS84 로 들어오고 래스터가 투영좌표계인 것이 정상 경로이�
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 from typing import Any
 
@@ -56,6 +57,22 @@ class UnsupportedCrsError(ValueError):
 
 class CrsMismatchError(ValueError):
     """서로 다른 좌표계를 직접 비교·병합하려 했다 (INV-020)."""
+
+
+class ReprojectionFailedError(ValueError):
+    """재투영이 유한하지 않은 값(inf/nan)을 냈다 — fail-closed.
+
+    pyproj 의 ``Transformer.transform`` 은 기본값(``errcheck=False``)으로는
+    변환 불가 지점에 예외를 내지 않고 ``(inf, inf)``/``(nan, nan)`` 을 그대로
+    돌려준다. 수직축은 격자 밖이면 ``GeoidUnavailableError`` 로 거부하는데
+    (``vertical.py``, fail-closed 원칙의 정본), 수평축만 조용히 값을 만들면
+    호출자가 그 값을 그대로 셀 좌표로 쓴다 — 폴리곤 전체가 실패하면 마스크가
+    0셀이 돼 그나마 드러나지만, **일부 꼭짓점만** 실패하면 rasterio 가 남은
+    꼭짓점만으로 다른 도형을 그려 "정상 종료"한다. 그러면 실제 구역의 일부만
+    잰 값이 오류 표시 없이 리포트로 나간다(2026-08-13 프로젝트 두뇌 재감사
+    확정 발견 — 유일한 critical 등급. 실측 재현: 꼭짓점 6개 중 1개만 위경도가
+    뒤바뀐 폴리곤이 예외 없이 실제 구역의 28%만 잰 값을 냈다).
+    """
 
 
 def normalise_crs(crs: str) -> str:
@@ -123,11 +140,22 @@ def _transformer(from_crs: str, to_crs: str) -> Transformer:
 def reproject_point(
     x: float, y: float, *, from_crs: str, to_crs: str
 ) -> tuple[float, float]:
-    """점 하나를 재투영한다. 좌표 순서는 항상 (x=경도/동, y=위도/북)이다."""
+    """점 하나를 재투영한다. 좌표 순서는 항상 (x=경도/동, y=위도/북)이다.
+
+    결과가 유한하지 않으면(inf/nan) :class:`ReprojectionFailedError` 를 낸다 —
+    조용히 inf/nan 을 돌려주면 호출자가 그 값을 셀 좌표로 그대로 쓴다.
+    """
     source = normalise_crs(from_crs)
     target = normalise_crs(to_crs)
     new_x, new_y = _transformer(source, target).transform(x, y)
-    return (float(new_x), float(new_y))
+    new_x, new_y = float(new_x), float(new_y)
+    if not math.isfinite(new_x) or not math.isfinite(new_y):
+        raise ReprojectionFailedError(
+            f"({x}, {y}) [{source}] 을 {target} 로 재투영한 값이 유한하지 않다: "
+            f"({new_x}, {new_y}) — 좌표축이 뒤바뀌었거나(경도·위도 순서) 변환 "
+            "정의 범위 밖일 수 있다"
+        )
+    return (new_x, new_y)
 
 
 def _reproject_ring(
@@ -199,6 +227,7 @@ __all__ = [
     "DEFAULT_CRS",
     "SUPPORTED_PROJECT_CRS",
     "CrsMismatchError",
+    "ReprojectionFailedError",
     "UnsupportedCrsError",
     "assert_same_crs",
     "assert_supported_project_crs",

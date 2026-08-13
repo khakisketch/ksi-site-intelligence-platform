@@ -88,7 +88,7 @@ from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
-from ksi_core.comparison_requests import zone_fingerprint
+from ksi_core.comparison_requests import assert_zones_are_usable, zone_fingerprint
 from ksi_core.design_surfaces import (
     DESIGN_SURFACE_CONTENT_TYPE,
     build_design_surface_object_key,
@@ -176,6 +176,9 @@ class DesignConformanceRequestVerdict(StrEnum):
     NO_DSM_ARTIFACT = "NO_DSM_ARTIFACT"
     #: 구역이 확정되지 않았다. 설계 대비 잔량은 "어느 범위의" 잔량인지 없이 성립하지 않는다.
     ZONES_REQUIRED = "ZONES_REQUIRED"
+    #: 즉석 구역(zones)의 폴리곤을 쓸 수 없다 — 타입·닫힘·좌표·개수 상한 중 하나를
+    #: 어겼다. 워커까지 보내지 않고 여기서 사람 말로 거부한다.
+    ZONES_INVALID = "ZONES_INVALID"
     #: 고른 작업구역을 쓸 수 없다 — 없거나, 다른 현장이거나, 보관됐거나, 좌표계가
     #: 섞였거나, ``zones`` 와 동시에 지정됐다(M4-C). 사유는 detail 이 사람 말로 적는다.
     WORK_AREA_UNUSABLE = "WORK_AREA_UNUSABLE"
@@ -223,6 +226,7 @@ _STATUS: dict[DesignConformanceRequestVerdict, int] = {
     DesignConformanceRequestVerdict.SITE_MISMATCH: 422,
     DesignConformanceRequestVerdict.NO_DSM_ARTIFACT: 422,
     DesignConformanceRequestVerdict.ZONES_REQUIRED: 422,
+    DesignConformanceRequestVerdict.ZONES_INVALID: 422,
     DesignConformanceRequestVerdict.WORK_AREA_UNUSABLE: 422,
     DesignConformanceRequestVerdict.VERTICAL_REFERENCE_UNKNOWN: 422,
     DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE: 422,
@@ -593,6 +597,9 @@ class DesignConformanceRequestStore:
                 "구역 폴리곤의 좌표계(zoneCrs)가 없다",
                 None,
             )
+        zones_error = assert_zones_are_usable(zones, zone_crs=zone_crs)
+        if zones_error is not None:
+            return (DesignConformanceRequestVerdict.ZONES_INVALID, zones_error, None)
         surface = self._design_surface_store.get(design_surface_id)
         if surface is None:
             return (

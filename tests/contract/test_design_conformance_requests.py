@@ -402,6 +402,44 @@ def test_missing_zones_is_refused(fixture: Fixture) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "bad_polygon",
+    [
+        {"type": "Point", "coordinates": [1, 2]},
+        {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]},  # 3점(닫힌 것 포함)
+        {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]]},  # 안 닫힘
+        {"type": "Polygon", "coordinates": [[["a", "b"], [1, 0], [1, 1], ["a", "b"]]]},
+        {"type": "Polygon"},  # coordinates 키 없음
+        {"nonsense": True},
+    ],
+)
+def test_ad_hoc_zone_geometry_is_validated_at_request_time(
+    fixture: Fixture, bad_polygon: dict[str, object]
+) -> None:
+    """2026-08-13 프로젝트 두뇌 재감사 확정 발견의 회귀 방지.
+
+    이 검사가 없으면 여섯 변형 전부 CREATED 로 통과해 durable 저널에 실렸고,
+    실패는 몇 분 뒤 워커가 이해할 수 없는 예외로 대신 말했다. 등록된 작업구역
+    경로는 이미 같은 검사를 받는다(WorkArea 계약) — 즉석 경로만 비어 있었다.
+    """
+    result = fixture.create(zones={"zone-a": bad_polygon})
+    assert result.verdict is DesignConformanceRequestVerdict.ZONES_INVALID, result
+    assert result.detail is not None and "zone-a" in result.detail
+
+
+def test_ad_hoc_zone_count_is_capped(fixture: Fixture) -> None:
+    many_zones = {
+        f"zone-{i}": {
+            "type": "Polygon",
+            "coordinates": [[[i, 0], [i + 1, 0], [i + 1, 1], [i, 1], [i, 0]]],
+        }
+        for i in range(65)
+    }
+    result = fixture.create(zones=many_zones)
+    assert result.verdict is DesignConformanceRequestVerdict.ZONES_INVALID, result
+    assert result.detail is not None and "65" in result.detail
+
+
 def test_job_without_dsm_is_refused(tmp_path: Path) -> None:
     fixture = Fixture(tmp_path, with_dsm=False)
     assert fixture.create().verdict is DesignConformanceRequestVerdict.NO_DSM_ARTIFACT

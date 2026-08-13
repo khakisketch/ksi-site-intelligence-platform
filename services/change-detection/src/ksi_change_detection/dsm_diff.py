@@ -165,13 +165,12 @@ def volume_delta_in_polygon(
     if threshold_m < 0.0 or not math.isfinite(threshold_m):
         raise DsmDiffError(f"threshold_m 은 0 이상의 finite 여야 한다: {threshold_m!r}")
 
-    geometry = (
-        polygon_geojson
-        if _same_frame(from_crs, diff.crs)
-        else reproject_geometry(polygon_geojson, from_crs=from_crs, to_crs=diff.crs)
-    )
-
     try:
+        geometry = (
+            polygon_geojson
+            if _same_frame(from_crs, diff.crs)
+            else reproject_geometry(polygon_geojson, from_crs=from_crs, to_crs=diff.crs)
+        )
         zone_mask = features.geometry_mask(
             [geometry],
             out_shape=diff.diff_m.shape,
@@ -180,6 +179,12 @@ def volume_delta_in_polygon(
             all_touched=False,
         )
     except ValueError as exc:
+        # reproject_geometry 가 여기서 낼 수 있는 ReprojectionFailedError 도
+        # ValueError 하위형이다 — 재투영이 유한하지 않은 값을 냈을 때(좌표계 밖
+        # 이거나 위경도가 뒤바뀐 폴리곤) geometry_mask 까지 가지 않고 여기서
+        # 잡는다. 잡지 않으면 일부 꼭짓점만 실패한 폴리곤이 남은 꼭짓점만으로
+        # "정상 종료"해 실제 구역의 일부만 잰 값이 오류 없이 나간다
+        # (2026-08-13 프로젝트 두뇌 재감사 확정 발견, critical).
         raise DsmDiffError(f"구역 폴리곤을 래스터 격자에 올릴 수 없다: {exc}") from exc
 
     selected = zone_mask & diff.valid

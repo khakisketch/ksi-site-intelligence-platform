@@ -19,6 +19,7 @@ from ksi_geo_spatial.crs import (
     DEFAULT_CRS,
     SUPPORTED_PROJECT_CRS,
     CrsMismatchError,
+    ReprojectionFailedError,
     UnsupportedCrsError,
     assert_same_crs,
     assert_supported_project_crs,
@@ -113,6 +114,38 @@ def test_reproject_geometry_converts_polygon_rings() -> None:
     for x, y in ring:
         assert 150_000.0 < x < 250_000.0
         assert 500_000.0 < y < 600_000.0
+
+
+def test_reproject_point_refuses_a_non_finite_result_instead_of_returning_inf() -> None:
+    """2026-08-13 프로젝트 두뇌 재감사 확정 발견의 회귀 방지 — 유일한 critical 등급.
+
+    pyproj 는 기본값으로 변환 불가 지점을 예외 대신 (inf, inf) 로 돌려준다.
+    경도·위도가 뒤바뀐 좌표(위도 자리에 126.978 같은 범위 밖 값)가 실제로 그
+    입력이다 — 옛 코드는 이 값을 그대로 반환했고, 폴리곤 꼭짓점 중 일부만
+    이렇게 실패하면 rasterio 가 남은 꼭짓점만으로 도형을 그려 "정상 종료"해
+    실제 구역의 일부만 잰 값이 오류 없이 나갔다.
+    """
+    with pytest.raises(ReprojectionFailedError):
+        # x=37.5665(경도치고는 그럴듯하다), y=126.978 — 위도 범위(±90) 밖이라
+        # pyproj 가 (inf, inf) 를 낸다(실측 확인).
+        reproject_point(37.5665, 126.9780, from_crs="EPSG:4326", to_crs=DEFAULT_CRS)
+
+
+def test_reproject_geometry_propagates_the_non_finite_refusal() -> None:
+    """폴리곤 꼭짓점 하나만 실패해도 전체를 거부한다 — 일부만 조용히 통과시키지 않는다."""
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [_SEOUL_LON_DEG, _SEOUL_LAT_DEG],
+                [_SEOUL_LON_DEG + 0.001, _SEOUL_LAT_DEG],
+                [37.5665, 126.9780],  # 이 한 점만 위경도가 뒤바뀌었다
+                [_SEOUL_LON_DEG, _SEOUL_LAT_DEG],
+            ]
+        ],
+    }
+    with pytest.raises(ReprojectionFailedError):
+        reproject_geometry(polygon, from_crs="EPSG:4326", to_crs=DEFAULT_CRS)
 
 
 def test_reproject_geometry_refuses_unsupported_geometry_type() -> None:

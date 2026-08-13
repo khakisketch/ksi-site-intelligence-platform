@@ -26,12 +26,21 @@
 - **수직기준(datum)** — 한국에서 타원체고와 정표고는 20~30m 차이다.
 - **좌표계(crs)** — 면적이 달라지면 체적이 달라진다.
 
-## 구역 맞춤은 ``zoneId`` 로만 한다
+## 구역 맞춤은 ``zoneId`` 로 하지만, 그것만으로는 "같은 곳을 쟀다"를 보장하지 않는다
 
 작업구역(M4-C)을 쓰면 ``zoneId`` 가 곧 ``workAreaId`` 라 두 시점이 자연히 이어진다.
 즉석 폴리곤으로 낸 리포트는 ``zoneId`` 가 매번 같은 고정 문자열이라 **좌표가 달라도
-이어져 버릴 수 있다** — 그 경우를 위해 응답이 ``zoneSource`` 로 무엇을 기준으로
-이었는지 밝힌다(화면이 "작업구역으로 이었다"와 "이름만 같았다"를 갈라 보여준다).
+이어져 버릴 수 있다.** 등록된 작업구역이라도 안심할 수 없다 — ``ZoneVolumeDelta``
+의 ``cut``/``fill``/``area`` 는 구역의 명목 면적이 아니라 **그 비행에서 실제로
+잰 셀들만의 값**이라(``dsm_diff.volume_delta_in_polygon``), 두 시점의 DSM 커버리지가
+다르면(구름·그늘·비행경로 차이) 그 차이가 조용히 "완료"로 계상된다.
+
+그래서 이 모듈은 zoneId 로 짝지은 뒤 **두 리포트가 이미 갖고 있는**
+``ZoneVolumeDelta.area_m2`` 를 대조한다 — 값싼 반증 수단이 요청에 이미 실려 있는데
+쓰지 않을 이유가 없다(2026-08-13 프로젝트 두뇌 재감사 확인). 면적이
+:data:`AREA_MISMATCH_RATIO_THRESHOLD` 이상 벌어지면 그 구역은 "같은 곳을 쟀다"고
+보지 않고 표에서 빼며, 이유를 ``areaMismatchZoneIds`` 로 따로 알린다 — zoneId가
+같다는 사실만으로 안심시키지 않는다.
 
 한쪽에만 있는 구역은 표에서 빼고 ``unmatchedZoneIds`` 로 따로 알린다 — 조용히
 빠지면 총합이 달라진 이유를 아무도 모른다.
@@ -77,6 +86,20 @@ _BASIS_REGRESSED = (
     "계산 오류가 아니라 현장 상태다"
 )
 
+#: 두 시점의 측정 면적(``ZoneVolumeDelta.area_m2``)이 이 비율 넘게 다르면 "같은
+#: 곳을 쟀다"고 보지 않는다. **관측 편의값이다** — 항공 재구성마다 구역 경계
+#: 부근 몇 % 편차는 정상이고, 이 값은 그 정상 편차와 "다른 범위를 쟀다"(즉석
+#: 폴리곤 재사용·DSM 커버리지 손실)를 가르는 출발점이지 캘리브레이션된 수치가
+#: 아니다(``DEFAULT_DISTANCE_THRESHOLD_M`` 와 같은 지위 — comparison_policy.py 참고).
+AREA_MISMATCH_RATIO_THRESHOLD = 0.10
+
+
+def _area_mismatch(baseline_area_m2: float, latest_area_m2: float) -> bool:
+    larger = max(baseline_area_m2, latest_area_m2)
+    if larger <= 0.0:
+        return False
+    return abs(latest_area_m2 - baseline_area_m2) / larger > AREA_MISMATCH_RATIO_THRESHOLD
+
 
 @dataclass(frozen=True, slots=True)
 class ProgressDerivation:
@@ -84,6 +107,9 @@ class ProgressDerivation:
 
     progress: DesignProgress | None
     unmatched_zone_ids: tuple[str, ...] = ()
+    #: zoneId 는 양쪽에 다 있었지만 측정 면적이 10% 넘게 달라 "같은 곳을 쟀다"고
+    #: 볼 수 없어 표에서 뺀 구역. unmatched 와 다른 사유이므로 따로 센다.
+    area_mismatch_zone_ids: tuple[str, ...] = ()
     detail: str | None = None
 
 
@@ -159,10 +185,34 @@ def derive_progress(
             ),
         )
 
+    # zoneId 가 같아도 "같은 곳을 쟀다"는 보장이 안 된다(모듈 docstring) — 두
+    # 리포트가 이미 갖고 있는 area_m2 를 대조해 갈라낸다.
+    comparable = [
+        zone_id
+        for zone_id in matched
+        if not _area_mismatch(baseline_zones[zone_id].area_m2, latest_zones[zone_id].area_m2)
+    ]
+    area_mismatch = tuple(
+        sorted(zone_id for zone_id in matched if zone_id not in comparable)
+    )
+    if not comparable:
+        return ProgressDerivation(
+            None,
+            unmatched_zone_ids=unmatched,
+            area_mismatch_zone_ids=area_mismatch,
+            detail=(
+                "공통 구역은 있지만 전부 측정 면적이 기준 시점과 크게 달라 같은 곳을 "
+                "쟀다고 볼 수 없다 — zoneId가 같아도 이번 비행에서 그 구역 일부가 안 "
+                "찍혔거나(구름·그늘·비행경로 차이), 즉석으로 그린 구역이 매번 다른 "
+                "범위였을 수 있다. 작업구역을 등록해 범위를 고정하거나, 같은 범위로 "
+                "다시 재야 진척이 나온다"
+            ),
+        )
+
     names = zone_names or {}
     zones = [
         _zone_progress(baseline_zones[zone_id], latest_zones[zone_id], names.get(zone_id))
-        for zone_id in matched
+        for zone_id in comparable
     ]
     progress = DesignProgress(
         site_id=site_id,
@@ -175,7 +225,9 @@ def derive_progress(
         threshold_m=latest.policy.volume_threshold_m,
         zones=zones,
     )
-    return ProgressDerivation(progress, unmatched_zone_ids=unmatched)
+    return ProgressDerivation(
+        progress, unmatched_zone_ids=unmatched, area_mismatch_zone_ids=area_mismatch
+    )
 
 
 def _zone_progress(
@@ -242,6 +294,9 @@ class DesignProgressResponse(CamelModel):
     progress: DesignProgress | None = None
     #: 한쪽 시점에만 있던 구역. 표에서 빠진 이유를 화면이 밝힌다.
     unmatched_zone_ids: list[str] = Field(default_factory=list)
+    #: 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 "같은 곳을 쟀다"고
+    #: 볼 수 없어 표에서 뺀 구역 — unmatched 와는 다른 사유라 따로 알린다.
+    area_mismatch_zone_ids: list[str] = Field(default_factory=list)
     detail: str | None = None
     #: 최신 리포트가 속한 임무 — **UI 편의값일 뿐 도메인 모델의 일부가 아니다**
     #: (그래서 ``DesignProgress`` 가 아니라 여기 있다). 화면이 히트맵(임무 스코프
@@ -370,6 +425,7 @@ def build_design_progress_router(
         return DesignProgressResponse(
             progress=derived.progress,
             unmatched_zone_ids=list(derived.unmatched_zone_ids),
+            area_mismatch_zone_ids=list(derived.area_mismatch_zone_ids),
             detail=derived.detail,
             latest_mission_id=(
                 store.mission_of(latest.design_conformance_id)
@@ -390,6 +446,7 @@ def mount_design_progress(
 
 
 __all__ = [
+    "AREA_MISMATCH_RATIO_THRESHOLD",
     "DesignProgressResponse",
     "ProgressBaselineRequest",
     "ProgressBaselineResponse",
