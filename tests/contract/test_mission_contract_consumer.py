@@ -16,6 +16,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_mission_contracts.consumer import (
+    ActivationRefusal,
     ContractInputError,
     MissionContractConsumer,
     VerificationKeyError,
@@ -286,3 +287,146 @@ def test_cli_activates_using_public_keys_only(
     assert body["activated"] is True
     assert body["missionId"] == "mission-001"
 
+
+# ── rollback·견고성 회귀 (2026-08-14 독립 반증에서 실측 재현된 구멍) ──────────
+
+
+def _contract_with(
+    *,
+    not_before: str,
+    reserve_percent: int,
+    max_altitude_m: float,
+    mission_id: str = "mission-001",
+) -> dict[str, Any]:
+    """같은 임무의 다른 발급본 — validity.notBefore 와 안전 항목만 달리한다."""
+    contract = _unsigned_contract(mission_id)
+    contract["validity"]["notBefore"] = not_before
+    contract["policies"]["batteryPolicy"]["defaultReservePercent"] = reserve_percent
+    contract["flightEnvelope"]["maxAltitudeM"] = max_altitude_m
+    return contract
+
+
+def test_older_still_signed_contract_cannot_roll_back_active_policy(tmp_path: Path) -> None:
+    """[high-risk regression] 서명이 살아있는 **이전 발급본**으로 되돌릴 수 없다.
+
+    Core 가 임무 중 정책을 조여 재발급해도 이전 계약은 자기 validity 창이 끝나기
+    전까지 암호학적으로 유효하다. 그것만으로 활성화를 허용하면 배터리 예비량·고도
+    상한 같은 안전 항목이 조용히 되돌아간다(2026-08-14 실측: 40%→10%, 60m→120m).
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    newer = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    _write_candidate(candidate, sign_contract(newer, key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    active_bytes = consumer.active_path.read_bytes()
+
+    older = _contract_with(
+        not_before="2026-07-25T00:00:00Z", reserve_percent=10, max_altitude_m=120.0
+    )
+    _write_candidate(candidate, sign_contract(older, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert not receipt.activated
+    assert receipt.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+    # 활성 파일이 바이트 단위로 그대로여야 한다 — 되돌림이 부분적으로도 없어야 한다.
+    assert consumer.active_path.read_bytes() == active_bytes
+    active = consumer.load_active(now=_IN_WINDOW)
+    assert active.is_valid and active.model is not None
+    assert active.model.policies.battery_policy.default_reserve_percent == 40
+    assert active.model.flight_envelope.max_altitude_m == 60.0
+
+
+def test_newer_reissue_and_same_contract_reactivation_still_activate(tmp_path: Path) -> None:
+    """rollback 방어가 정상 재발급·동일 계약 재활성화를 막지 않는다."""
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    first = _contract_with(
+        not_before="2026-07-25T00:00:00Z", reserve_percent=30, max_altitude_m=120.0
+    )
+    signed_first = sign_contract(first, key, "core-1")
+    _write_candidate(candidate, signed_first)
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    # 같은 계약 재활성화(동일 digest) — 멱등하게 통과한다.
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    # 더 나중에 발급된 계약 — 통과해야 한다.
+    newer = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    _write_candidate(candidate, sign_contract(newer, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert receipt.activated
+    assert receipt.verdict is SignatureVerdict.VALID
+    active = consumer.load_active(now=_IN_WINDOW)
+    assert active.model is not None
+    assert active.model.policies.battery_policy.default_reserve_percent == 40
+
+
+def test_other_mission_contract_is_not_blocked_by_rollback_guard(tmp_path: Path) -> None:
+    """다른 임무의 계약은 순서를 비교할 공통 축이 없다 — 막지 않는다."""
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    active_first = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    _write_candidate(candidate, sign_contract(active_first, key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    other = _contract_with(
+        not_before="2026-07-25T00:00:00Z",
+        reserve_percent=10,
+        max_altitude_m=120.0,
+        mission_id="mission-002",
+    )
+    _write_candidate(candidate, sign_contract(other, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert receipt.activated
+    assert receipt.mission_id == "mission-002"
+
+
+def test_deeply_nested_candidate_is_refused_not_crashed(tmp_path: Path) -> None:
+    """[regression] 깊게 중첩된 JSON 은 typed 거부여야 한다 — 프로세스가 죽으면 안 된다.
+
+    CPython json 디코더는 재귀식이라 크기 상한 안에서도 RecursionError 를 던진다.
+    RuntimeError 계열이라 기존 except 에 걸리지 않아, 후보 파일 하나로 소비자를
+    크래시 루프에 빠뜨릴 수 있었다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    depth = 200_000
+    candidate.write_bytes(b"[" * depth + b"]" * depth)
+
+    with pytest.raises(ContractInputError, match="중첩"):
+        consumer.activate_file(candidate, now=_IN_WINDOW)
+    assert not consumer.active_path.exists()
+
+
+def test_symlinked_active_contract_is_refused_on_read(tmp_path: Path) -> None:
+    """읽기 경로도 쓰기 경로와 같이 symlink 를 거부한다(방어 비대칭 제거)."""
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    _write_candidate(candidate, sign_contract(_unsigned_contract(), key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_bytes(consumer.active_path.read_bytes())
+    consumer.active_path.unlink()
+    consumer.active_path.symlink_to(elsewhere)
+
+    loaded = consumer.load_active(now=_IN_WINDOW)
+    assert not loaded.is_valid
+    assert loaded.verdict is SignatureVerdict.MALFORMED_CONTRACT
+    assert loaded.detail is not None and "symlink" in loaded.detail

@@ -165,6 +165,14 @@ _CRITICAL_ARTIFACT_FIELDS = ("riskFieldArtifact", "trajectoryArtifact", "viewpoi
 _RISK_FIELD_CONTENT_TYPE = "application/json"
 _MAX_RISK_FIELD_BYTES = 1024 * 1024
 
+# 아래 두 상한은 **잠정 정책값**이다(2026-08-14 독립 반증 대응). 값 자체는 대표자
+# 확정 대상이지만, 상한이 아예 없으면 "50년짜리 validity", "무관 entity 5000개를
+# 끼운 wildcard RiskField" 같은 것이 CRITICAL 확정을 그대로 통과하는 것이 실측으로
+# 재현됐다 — 숫자를 미정으로 두는 것과 검사를 안 하는 것은 다르다.
+# risk: critical-event-riskfield-evidence-gate-presence-only
+_MAX_RISK_FIELD_VALIDITY_SECONDS = 24 * 60 * 60
+_MAX_RISK_FIELD_SOURCE_ENTITIES = 64
+
 _NOT_FOUND_DETAIL = "이벤트를 찾을 수 없다"
 
 # Evidence 판정 → HTTP (ADR-KSI-010 §1). REGISTERED 는 성공 경로라 여기 없다.
@@ -407,6 +415,43 @@ def _payload_is_nonempty(value: Any) -> bool:
     return True
 
 
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _coordinate_count(value: Any, *, depth: int = 0) -> int:
+    """중첩 좌표 배열에서 실제 좌표(숫자 쌍/삼중)의 개수를 센다.
+
+    형상의 **의미**는 판정하지 않는다 — Core 는 위험 중첩을 재계산하지 않는다는
+    이 모듈의 경계를 유지한다. 여기서 막는 것은 "좌표가 하나도 없는데 껍데기
+    구조만 있는" 퇴화 payload 다.
+    """
+    if depth > 8 or not isinstance(value, (list, tuple)):
+        return 0
+    if value and all(_is_finite_number(item) for item in value):
+        return 1 if len(value) >= 2 else 0
+    return sum(_coordinate_count(item, depth=depth + 1) for item in value)
+
+
+def _geometry_is_degenerate(geometry: Any) -> str | None:
+    """구조적으로만 존재하고 좌표가 없는 geometry 면 사유를, 아니면 ``None``.
+
+    ``_payload_is_nonempty`` 는 ``{"type":"Polygon","coordinates":[]}`` 처럼
+    **비어있지 않은 dict 안에 빈 좌표**가 든 경우를 통과시킨다(2026-08-14 실측:
+    빈 좌표 폴리곤·점 하나·임의 문자열이 모두 CRITICAL 확정 통과). 위험장이라고
+    주장하면서 좌표가 없으면 그것은 증거가 아니다.
+    """
+    if isinstance(geometry, dict):
+        if "coordinates" in geometry and _coordinate_count(geometry.get("coordinates")) == 0:
+            return "geometry.payload.coordinates에 좌표가 없다"
+        geometries = geometry.get("geometries")
+        if isinstance(geometries, list) and (
+            not geometries or all(_geometry_is_degenerate(item) for item in geometries)
+        ):
+            return "geometry.payload.geometries가 비어있거나 모두 퇴화됐다"
+    return None
+
+
 def _reject_nonfinite_json(value: str) -> None:
     raise ValueError(f"비정규 JSON 숫자: {value}")
 
@@ -492,10 +537,27 @@ def _verify_critical_evidence(
             EventVerdict.EVIDENCE_INCOMPLETE,
             detail="CRITICAL RiskField geometry.payload가 비어있다",
         )
+    degenerate = _geometry_is_degenerate(risk_field.geometry.payload)
+    if degenerate is not None:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=f"CRITICAL RiskField geometry가 퇴화됐다 — {degenerate}",
+        )
     if risk_field.validity.to < risk_field.validity.from_:
         return _CriticalEvidenceCheck(
             EventVerdict.EVIDENCE_INCOMPLETE,
             detail="CRITICAL RiskField validity.to가 validity.from보다 앞선다",
+        )
+    validity_span = (risk_field.validity.to - risk_field.validity.from_).total_seconds()
+    if validity_span > _MAX_RISK_FIELD_VALIDITY_SECONDS:
+        # 폭 상한이 없으면 수십 년짜리 창 하나로 아무 시점의 사건이나 덮을 수 있다.
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField validity 창이 "
+                f"{_MAX_RISK_FIELD_VALIDITY_SECONDS}초 상한을 넘는다 — "
+                "그 사건 시점에 계산된 위험장이라고 볼 수 없다"
+            ),
         )
     if not (risk_field.validity.from_ <= record.occurred_at <= risk_field.validity.to):
         return _CriticalEvidenceCheck(
@@ -508,6 +570,28 @@ def _verify_critical_evidence(
         return _CriticalEvidenceCheck(
             EventVerdict.EVIDENCE_INCOMPLETE,
             detail="CRITICAL RiskField sourceEntityIds가 event entities를 모두 포함하지 않는다",
+        )
+    if len(source_entities) > _MAX_RISK_FIELD_SOURCE_ENTITIES:
+        # subset 검사만 있으면 무관한 id 를 대량으로 끼운 wildcard 위험장이 아무
+        # 사건에나 들어맞는다 — 상한으로 그 경로를 끊는다.
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField sourceEntityIds가 "
+                f"{_MAX_RISK_FIELD_SOURCE_ENTITIES}개 상한을 넘는다 — "
+                "이 사건을 위해 계산된 위험장이라고 볼 수 없다"
+            ),
+        )
+    if not risk_field.uncertainty:
+        # INV-021 이 명시하는 축이다 — "위치 불확실성을 포함해도 위험조건이
+        # 유지되는가". 빈 dict 를 통과시키면 그 판단 근거가 아예 없는 위험장이
+        # CRITICAL 확정을 통과한다(2026-08-14 실측).
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField uncertainty가 비어있다 — 위치 불확실성을 "
+                "반영한 위험 판단 근거가 없다"
+            ),
         )
     horizon = risk_field.risk_model.prediction_horizon_seconds
     if not math.isfinite(horizon) or horizon <= 0:

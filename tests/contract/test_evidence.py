@@ -483,6 +483,35 @@ def test_critical_confirmation_reports_storage_outage_separately(
             "occurredAt",
         ),
         (lambda payload: payload.update({"sourceEntityIds": ["other-entity"]}), "entities"),
+        # ── 2026-08-14 독립 반증에서 실측으로 통과하던 것들 ──────────────────
+        # 구조는 있는데 좌표가 없는 퇴화 geometry.
+        (
+            lambda payload: payload.update(
+                {
+                    "geometry": {
+                        "format": "GEOJSON_2D",
+                        "payload": {"type": "Polygon", "coordinates": []},
+                    }
+                }
+            ),
+            "퇴화",
+        ),
+        # 수십 년짜리 validity 창 — 아무 시점의 사건이나 덮는다.
+        (
+            lambda payload: payload.update(
+                {"validity": {"from": "2000-01-01T00:00:00Z", "to": "2050-01-01T00:00:00Z"}}
+            ),
+            "상한",
+        ),
+        # 무관한 entity 를 대량으로 끼운 wildcard 위험장.
+        (
+            lambda payload: payload.update(
+                {"sourceEntityIds": [f"ent-noise-{i:05d}" for i in range(5000)] + ["ent-trk-001"]}
+            ),
+            "상한",
+        ),
+        # INV-021 이 명시하는 위치 불확실성 축이 통째로 비어있다.
+        (lambda payload: payload.update({"uncertainty": {}}), "uncertainty"),
     ],
 )
 def test_critical_confirmation_rejects_semantically_invalid_risk_field(

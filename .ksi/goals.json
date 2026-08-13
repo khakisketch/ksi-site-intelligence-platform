@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T01:19:29+09:00",
+  "updated_at": "2026-08-14T02:53:39+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2581,14 +2581,14 @@
       "title": "INV-021 CRITICAL 확정게이트가 evidence.riskFieldArtifact의 실존 여부만 확인 — 진짜 위험장 계산 없이도 통과",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "regressed",
       "note": "services/core/src/ksi_core/events.py:339-343(_evidence_gate_violation)의 CRITICAL 확정 게이트는 evidence.riskFieldArtifact/trajectoryArtifact/viewpointHistoryArtifact 값이 비어있지 않은지만 본다(모듈 docstring 명시: '서버는 기하학적 위험중첩을 재계산하지 않는다 — 근거 보존과 fail-closed 거부만 소유한다', 의도된 설계). 실제 RiskField를 조립하는 packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py의 build_dynamic_risk_field(RISK-004)는 프로덕션 호출부 0건(테스트만 호출, 2026-08-13 grep 실측) — 그런데 이 함수 자신의 docstring이 '위험장 지오메트리 합성(스윕볼륨·가려짐 반영)은 이 모듈 범위 밖 — 별도 제품 결정 필요'라고 명시해 캐스팅 준비만 있고 지오메트리를 만들 방법이 없다. 형제 함수 cpa_ttc/reobservation_signal은 services/core/src/ksi_core/equipment_states.py의 /risk-assessment 엔드포인트(장비-대상 쌍 온디맨드 CPA/TTC 조회, 커밋 a495e7e)로 배선됐지만 이는 evidence.riskFieldArtifact와 무관한 별개 기능이라 이 게이트를 채우지 못한다. 실제 리스크장 아티팩트 생성 주체는 CLAUDE.md 통제경계상 Manifold(전술 인지·위험·능동인지 소유)일 가능성이 높은데 그 앱 자체가 아직 없다(mission-contract-verification-unwired와 동일 계열, Track A/B 하드웨어 종속). 오늘 지오이드/IFC/마스킹/dataResidency처럼 '한 줄 배선'으로 못 고친다 — 지오메트리 합성 방식 자체가 미결정 제품 문제. 해소 조건: RISK-003 지오메트리 합성 방식이 대표자 결정으로 확정되고, 그 산출물을 build_dynamic_risk_field에 실어 evidence.riskFieldArtifact를 실제로 채우는 프로덕션 경로(Manifold 또는 Core)가 생긴다.",
       "accept_reason": null,
-      "resolve_evidence": null,
-      "reopen_reason": null,
-      "previous_status": null,
+      "resolve_evidence": "services/core/src/ksi_core/events.py _verify_critical_evidence + tests/contract/test_evidence.py CRITICAL RiskField suite (registered/non-tombstoned, storage bytes, model/geometry/validity/entities, digest snapshot, storage outage, race); focused 158 passed and full 3026 passed (2026-08-14). Production generator residual transferred to riskfield-production-generator-unwired.",
+      "reopen_reason": "독립 검증(2026-08-14, 반증 목적 병렬 에이전트, 실제 HTTP PoC)에서 'resolve_evidence'가 주장한 수정이 이 리스크의 실질(진짜 위험판정 증거 없이 CRITICAL 확정 통과)을 막지 못함을 재현: (1) CRITICAL — 위험판정 파일을 올리는 권한과 사건을 확정하는 권한이 분리돼있지 않아, 승인하는 사람과 동일한 FIELD_OPERATOR 계정이 직접 손으로 만든 가짜 RiskField를 올리고 그대로 확정까지 통과시킴(EDGE_DEVICE/Manifold 경유 없이 end-to-end 재현). (2) HIGH — 유효기간 폭 상한 없음(50년 폭도 통과). (3) HIGH — 대상 장비(entity) 커버리지가 무제한 상위집합 대비 subset 검사라 5000개 무관 entity를 끼워도 통과. (4) MEDIUM — geometry '비어있지 않음' 검사가 구조적 존재만 보고 퇴화된(면적 0, 점 하나, 임의 문자열) 형상을 못 거름. (5) MEDIUM — INV-021이 명시하는 'uncertainty'(위치 불확실성) 필드를 아예 검사하지 않음, 빈 {}도 통과. (6) MEDIUM — 확정 시점에 못박은 content digest가 write-only라 이후 아무도 재검증하지 않아 lock 안/밖 read 사이 바이트 치환에 취약. 형식 검사(등록·비폐기·JSON 스키마·시각/entity subset 검사)는 실제로 개선됐으나 위 항목들 때문에 이 리스크의 원래 취지(진짜 위험장 계산 없이 통과하는 것을 막는다)는 아직 미해결. 재현 PoC 및 상세는 세션 기록 참조.",
+      "previous_status": "resolved",
       "created_at": "2026-08-13T09:59:12+09:00",
-      "updated_at": "2026-08-13T09:59:12+09:00"
+      "updated_at": "2026-08-14T02:44:51+09:00"
     },
     {
       "id": "processing-controller-work-dir-unbounded-retry",
@@ -2609,14 +2609,14 @@
       "title": "mm 단위 IFC + georeferencing 조합에서 좌표가 1000배 축소(길이 배율 이중 적용) — 계획고가 조용히 5m씩 틀린 채 설계면 등록·잔량 계산을 통과한다",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "WF1(2026-08-13, project-brain-reaudit) 확정 발견. services/bim-integration/src/ksi_bim_integration/ifc_reference_model.py:290 — auto_local2global에 이미 미터로 환산한 좌표를 넘겨 IfcMapConversion.Scale이 다시 곱해진다. IFC/BIM 설계면 입력 경로에만 영향(주 경로인 GeoTIFF 직접 업로드는 무관). IFC 경로를 쓰는 현장이 생기기 전에 고쳐야 한다.",
       "accept_reason": null,
-      "resolve_evidence": null,
-      "reopen_reason": null,
-      "previous_status": null,
+      "resolve_evidence": "services/bim-integration/src/ksi_bim_integration/ifc_reference_model.py:_georeference_output_scale_to_meters; tests/contract/test_ifc_reference_model.py::test_millimetre_georeference_without_map_unit_uses_project_unit + ::test_millimetre_ifc_rigid_operation_output_is_normalized_to_metres; tests/contract/test_convert_ifc_design_surface.py::test_millimetre_georeference_converts_to_same_design_surface; focused IFC suite 34 passed; Ruff/mypy/diff check passed (2026-08-14)",
+      "reopen_reason": "2026-08-14 후속 검토에서 mm 프로젝트의 IfcProjectedCRS.MapUnit 생략 및 IfcRigidOperation 경로가 auto_local2global 출력 단위를 미터로 재정규화하지 않아 1000배 확대되는 회귀를 재현함",
+      "previous_status": "regressed",
       "created_at": "2026-08-13T16:52:07+09:00",
-      "updated_at": "2026-08-13T16:52:07+09:00"
+      "updated_at": "2026-08-14T01:56:18+09:00"
     },
     {
       "id": "comparison-design-conformance-worker-osrerror-not-failed",
@@ -2645,6 +2645,62 @@
       "previous_status": null,
       "created_at": "2026-08-14T00:36:52+09:00",
       "updated_at": "2026-08-14T00:36:52+09:00"
+    },
+    {
+      "id": "riskfield-production-generator-unwired",
+      "title": "RISK-003 RiskField 지오메트리 합성·artifact 생산 경로가 프로덕션에 미배선 — 검증 소비자는 있으나 실제 위험장 생성 주체가 없다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14 분리 추적. Core CRITICAL 확정 소비자는 등록·비폐기 artifact와 RiskField JSON bytes/geometry/validity/entities/digest를 fail-closed 검증하도록 구현됐지만, build_dynamic_risk_field의 geometry를 실제로 합성하고 evidence.riskFieldArtifact를 저장·참조하는 Manifold/Core 생산 호출부는 아직 없다. 해소 조건: RISK-003 형상 합성 방식과 소유권 결정, 프로덕션 producer 배선, 실제 artifact를 이용한 HIL/계약 E2E 증거.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T01:39:26+09:00",
+      "updated_at": "2026-08-14T01:39:26+09:00"
+    },
+    {
+      "id": "critical-event-riskfield-evidence-no-provenance-binding",
+      "title": "CRITICAL 확정에 쓰이는 RiskField 증거에 발생주체(장비/Manifold) 검증이 없음 — 확정하는 사람이 그 증거도 직접 만들어 올릴 수 있다",
+      "lens": "role",
+      "severity": "critical",
+      "status": "open",
+      "note": "2026-08-14 독립 검증(실제 HTTP PoC, POST /v1/events/{event_key}/evidence + POST .../transitions 실행)에서 재현. EVENTS_TRIAGE 권한 하나로 증거 업로드와 사건 확정을 모두 할 수 있고, EDGE_DEVICE 주체는애초에 증거 업로드 라우트 권한이 없어 evidence.py의 registered_by가 record.edge_device_id와 대조되지 않는다. 즉 동일한 FIELD_OPERATOR 계정이 손으로 만든 임의 RiskField JSON(임의 유효기간·임의 entity 목록·퇴화된 geometry·빈 uncertainty)을 올리고 그대로 CRITICAL 확정까지 통과시킬 수 있음을 실제 재현(TestClient, 목킹 없음). INV-021의 취지(기계가 계산한 실제 위험 근거가 있을 때만 확정)를 형식검사만으로는 충족하지 못한다 — 발생주체(Manifold/장비) 서명 또는 최소한 업로드 권한과 확정 권한의 분리가 필요해 보인다. critical-event-riskfield-evidence-gate-presence-only(reopen됨)와 riskfield-production-generator-unwired(별도 등록됨)에 이미 있는 '형식 검사 항목'과는 다른 축(발생주체 신뢰) — 별도 항목으로 추적한다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T02:45:15+09:00",
+      "updated_at": "2026-08-14T02:45:15+09:00"
+    },
+    {
+      "id": "mission-contract-no-issuance-ordering-field",
+      "title": "Mission Contract v1.2 스키마에 발급 순서 필드(issuedAt/revision/supersedes)가 없다 — rollback 방어가 validity.notBefore 단조성 휴리스틱에 의존한다",
+      "lens": "time-axis",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14. 서명이 유효한 이전 발급본으로 안전 정책을 되돌리는 rollback 이 실측 재현되어(예비량 40%→10%, 고도 60m→120m), consumer.py 에 validity.notBefore 단조성 기반 SUPERSEDED_CONTRACT 거부를 넣어 막았다. 다만 이는 스키마 변경 없이 쓸 수 있는 유일한 순서 근거를 쓴 것이라 한계가 있다: notBefore 가 동일한 두 발급본은 구분하지 못한다. 근본 해법은 계약 스키마에 발급 순서 필드를 넣고 소비자가 그것으로 판정하는 것이며, 이는 contracts/schemas/mission-contract.v1.2.json 변경이라 제품 결정이 필요하다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T02:53:39+09:00",
+      "updated_at": "2026-08-14T02:53:39+09:00"
+    },
+    {
+      "id": "evidence-artifact-content-not-bound-to-registration",
+      "title": "증거 artifact 바이트가 등록 레코드에 묶여있지 않다 — 같은 object_key 내용이 나중에 교체돼도 아무도 확인하지 않는다",
+      "lens": "db",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14 독립 반증. EvidenceArtifact 는 object_key/content_type 만 들고 content digest 를 등록 시점에 기록하지 않는다(presigned PUT 흐름이라 등록이 업로드보다 먼저다). CRITICAL 확정 시 계산해 못박는 contentSha256 은 저장만 되고 이후 어떤 경로도 다시 읽지 않아(repo 전역 grep 확인) write-only 감사 필드다. 결과: 잠금 밖 검증 read 와 잠금 안 commit 사이, 그리고 확정 이후에도 같은 object_key 의 바이트가 교체될 수 있고(S3 presigned PUT 은 TTL 동안 재사용 가능) 확정된 사건의 감사 스냅샷이 실제 저장물과 조용히 어긋날 수 있다. 잠금 안 재검사는 ledger 메타데이터(object_key/content_type/tombstoned_at)만 비교한다. 해소 방향 후보: (a) 업로드 완료 시 digest 를 artifact 레코드에 확정 기록하고 검증이 그것과 대조, (b) 확정된 증거의 object 를 immutable/versioned 로 고정, (c) 감사 경로가 frozen digest 를 실제로 재검증. 잠금 밖 스토리지 read 는 느린 스토리지가 원장 잠금을 막지 않게 하려는 의도적 설계라 단순히 잠금 안으로 옮기는 것은 답이 아니다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T02:53:39+09:00",
+      "updated_at": "2026-08-14T02:53:39+09:00"
     }
   ]
 }
