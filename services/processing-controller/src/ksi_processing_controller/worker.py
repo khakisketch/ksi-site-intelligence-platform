@@ -24,6 +24,27 @@
 던진다. **전이 자체가 실패해도**(lease 만료 등) 원래 예외를 삼키지 않는다 —
 호출자가 "무엇이 실제로 문제였는지"를 알아야 하고, 전이 실패는 부수 정보다.
 
+이 문장은 예외 **종류**를 가리지 않는다 — ``OdmError``/``httpx.HTTPError``/
+``CoreClientError`` 셋으로 좁혀 잡던 예전 코드는 이 문장을 어겼다. 디스크가
+찼을 때(``OSError``) 나는 예외는 이 셋 어디에도 안 걸려 이 함수를 그냥
+빠져나갔고, 그러면 :class:`WorkerRunError` 로 감싸이지 않아 ``runner.py`` 의
+``_try_candidates`` 가 "이번 라운드는 아무 일도 안 했다"로 오판해 **같은
+작업을 다음 라운드에 그대로 다시 시도한다** — lease 는 여전히 이 워커가
+쥐고 있고 job 은 여전히 ``RUNNING`` 이므로 Core 에 FAILED 로 보고되지 않고
+영원히 되돈다(2026-08-13 프로젝트 두뇌 재감사 확정 발견). 그래서 여기서는
+``Exception`` 전체를 잡는다 — ``KeyboardInterrupt``/``SystemExit`` 은
+``BaseException`` 이라 이 그물에 안 걸리므로 프로세스 종료 신호는 그대로
+전파된다.
+
+## 작업 디렉터리는 이 작업이 끝나면 비운다
+
+``work_dir`` 는 재구성·비교·설계면 검증·설계 대비 잔량 네 종류 작업이 전부
+공유한다(프로세스당 동시에 하나만 돈다 — 아래 참조). 이 함수가 그 자리에
+받은 사진·완주 아카이브를 성공이든 실패든 끝에 지우지 않으면, 재시도마다
+(그리고 다음 작업마다) 새 사진이 쌓이기만 해서 영속 볼륨이 무한히 찬다
+(같은 재감사 발견 — work_dir 정리 없음). 성공 시에도 지운다 — 산출물은
+이미 Core/스토리지에 등록됐으므로 로컬 사본은 더 필요 없다.
+
 ## 이 모듈이 하지 않는 것
 
 - **큐에서 작업을 꺼내오지 않는다.** jobId 를 인자로 받는다(Core 에 pull 표면이
@@ -120,6 +141,22 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
                 handle.write(chunk)
 
 
+def _cleanup_work_files(
+    job_id: str, paths: list[Path], now_message: Callable[[str], None]
+) -> None:
+    """이 작업이 ``work_dir`` 에 남긴 파일을 지운다 — 성공이든 실패든.
+
+    지우다 나는 오류는 로그만 남기고 삼킨다. 정리 실패로 이 작업의 진짜
+    결과(``SUCCEEDED``/``FAILED``)가 가려지면 안 된다 — 원래 예외를 삼키지
+    않는다는 이 모듈의 규율과 같은 이유다.
+    """
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            now_message(f"[{job_id}] 작업 파일 정리 실패(무시하고 계속): {path} — {exc}")
+
+
 def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> None:
     """아카이브 안 파일 하나를 presigned PUT 으로 흘려보낸다.
 
@@ -204,12 +241,17 @@ def run_job(
         core.transition(job_id, "RUNNING")
         now_message(f"[{job_id}] RUNNING")
 
+    # 이 작업이 work_dir 에 실제로 만든 파일 — 성공이든 실패든 finally 에서
+    # 지운다. 다운로드를 시도하기 *전에* 경로를 넣는다 — 중간에 끊겨도(디스크
+    # 가득·네트워크 오류) 부분 파일이 남을 수 있고, 그것도 청소 대상이다.
+    downloaded_paths: list[Path] = []
     try:
         # ── 4. 실측 + 보고(+ 동적 객체 탐지 — 이미 로컬에 받은 그 사진으로) ──
         measurements: list[MeasuredImage] = []
         masks: list[MaskImage] = []
         for media in job_input.media:
             local_path = work_dir / media.media_id
+            downloaded_paths.append(local_path)
             _download(fetch, media.download_url, local_path)
             sha256, size, width, height = measure_image(local_path)
             measurements.append(
@@ -268,6 +310,7 @@ def run_job(
 
         # ── 6. 산출물 계보 등록 ─────────────────────────────────────────
         archive_path = work_dir / "all.zip"
+        downloaded_paths.append(archive_path)
         odm.download_archive(uuid, archive_path)
         # None 이면(프로덕션 기본 경로) 완주한 아카이브 자신에서 읽는다 — 지어낸
         # 값이 아니라 등록될 그 파일의 실제 픽셀 크기다(gsd.py 모듈 docstring).
@@ -335,9 +378,13 @@ def run_job(
         # 건너뛴 산출물이 있는데 계획 수를 적으면 원장이 없는 것을 있다고 말한다.
         core.transition(job_id, "SUCCEEDED", detail=f"산출물 {registered}건")
         now_message(f"[{job_id}] SUCCEEDED")
-    except (OdmError, httpx.HTTPError, CoreClientError) as exc:
-        # verify 거부·산출물 거부처럼 **Core 가 스스로 판정을 거부한 경우**도
-        # 여기서 잡는다 — 안 잡으면 그 실패가 FAILED 보고 없이 그냥 새어나간다.
+    except Exception as exc:  # noqa: BLE001 -- 모듈 docstring: 4~6 단계는 종류를 안 가린다.
+        # verify 거부·산출물 거부처럼 **Core 가 스스로 판정을 거부한 경우**도,
+        # OSError(디스크 가득 등)처럼 이 함수 바깥의 자원 문제도 전부 여기서
+        # 잡는다 — 좁게 잡으면 그 예외가 WorkerRunError 로 감싸이지 않고 그냥
+        # 새어나가, 호출자(runner.py)가 "이번 라운드는 아무 일도 안 했다"로
+        # 오판해 FAILED 보고 없이 같은 작업을 영원히 재시도한다(모듈 docstring
+        # "실패는 전부 FAILED 로 수렴한다" 참조 — 2026-08-13 확정 발견).
         detail = str(exc)[:500]
         now_message(f"[{job_id}] 실패 — FAILED 보고 시도: {detail}")
         try:
@@ -348,6 +395,7 @@ def run_job(
             now_message(f"[{job_id}] FAILED 보고도 실패(원인은 유지): {report_exc}")
         raise WorkerRunError(f"[{job_id}] 실행 실패: {exc}") from exc
     finally:
+        _cleanup_work_files(job_id, downloaded_paths, now_message)
         if own_client:
             fetch.close()
 

@@ -20,6 +20,7 @@ NodeODM 으로 고정한다 — 네트워크·컨테이너 없이, 각 단계가
 from __future__ import annotations
 
 import base64
+import hashlib
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -362,14 +363,34 @@ def test_already_running_job_is_not_re_transitioned(tmp_path: Path) -> None:
 
 
 def test_measurement_comes_from_the_actual_downloaded_bytes(tmp_path: Path) -> None:
-    """[핵심] MeasuredImage 가 mock 값이 아니라 로컬 파일에서 실제로 계산된다."""
+    """[핵심] MeasuredImage 가 mock 값이 아니라 실제로 받은 바이트에서 계산된다.
+
+    work_dir 청소(2026-08-13 확정 발견 수정)로 ``run_job`` 이 끝나면 파일이
+    안 남는다 — "파일이 로컬에 남아 있다"가 아니라 "측정값이 실제 원본 바이트와
+    일치한다"로 직접 검증한다(더 강한 증거이지 우회가 아니다).
+    """
     core = FakeCoreClient()
+    captured: list[MeasuredImage] = []
+    original_verify = core.verify_source_media
+
+    def _capturing_verify(mission_id: str, measurements: list[MeasuredImage]) -> None:
+        captured.extend(measurements)
+        original_verify(mission_id, measurements)
+
+    core.verify_source_media = _capturing_verify  # type: ignore[method-assign]
+
     run_job(
         "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
         poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
     )
-    downloaded = list(tmp_path.glob("img-*.png"))
-    assert len(downloaded) == 2, "원본이 로컬에 실제로 저장돼야 실측이 가능하다"
+
+    expected_sha256 = hashlib.sha256(_TINY_PNG).hexdigest()
+    assert {m.media_id for m in captured} == {"img-1.png", "img-2.png"}
+    for measured in captured:
+        assert measured.sha256 == expected_sha256, "mock 값이 아니라 실제 바이트에서 계산돼야 한다"
+        assert measured.size_bytes == len(_TINY_PNG)
+        assert measured.width == 1
+        assert measured.height == 1
     verify_call = next(c for c in core.calls if c[0] == "verify")
     assert verify_call[2] == ("img-1.png", "img-2.png")
 
@@ -564,6 +585,72 @@ def test_original_exception_is_not_swallowed_even_if_failed_report_also_fails(
     assert cause.verdict == "MISMATCH", (
         f"FAILED 보고 실패(STORE_UNAVAILABLE)가 원래 원인(MISMATCH)을 가렸다: {cause}"
     )
+
+
+# ── work_dir 청소 + 좁았던 예외 목록 (2026-08-13 프로젝트 두뇌 재감사 확정 발견) ──
+
+
+def test_work_dir_is_emptied_after_a_successful_run(tmp_path: Path) -> None:
+    """work_dir 는 네 종류 작업이 공유한다 — 성공해도 사진·아카이브를 남기면
+    다음 작업(또는 다음 재시도)마다 쌓여 영속 볼륨이 무한히 찬다."""
+    core = FakeCoreClient()
+    odm = FakeNodeOdm()
+    server = _server_with_two_images()
+
+    run_job(
+        "job-1", core=core, odm=odm, work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(server),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+    )
+
+    assert list(tmp_path.iterdir()) == [], "성공했는데 work_dir 에 파일이 남았다"
+
+
+def test_work_dir_is_emptied_after_a_failed_run(tmp_path: Path) -> None:
+    """실패해도 이미 받아둔 사진은 지운다 — 실패한 작업의 잔해가 디스크를 갉아먹으면 안 된다."""
+    core = FakeCoreClient(fail_on="verify")
+    with pytest.raises(WorkerRunError):
+        run_job(
+            "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+        )
+
+    assert list(tmp_path.iterdir()) == [], "실패했는데 work_dir 에 사진이 남았다"
+
+
+def test_a_disk_write_failure_is_reported_as_failed_not_left_hanging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[회귀] 디스크가 찼을 때(OSError)도 FAILED 로 수렴한다.
+
+    옛 코드는 ``except (OdmError, httpx.HTTPError, CoreClientError)`` 로 좁게
+    잡았다 — OSError 는 셋 중 어디에도 안 걸려 이 함수를 그냥 빠져나갔다. 그러면
+    WorkerRunError 로 감싸이지 않아 runner.py 의 ``_try_candidates`` 가 "이번
+    라운드는 아무 일도 안 했다"로 오판하고, lease 를 쥔 채 RUNNING 으로 남은 같은
+    작업을 FAILED 보고 없이 다음 라운드에 또 시도한다 — 영원히.
+    """
+    import ksi_processing_controller.worker as worker_module
+
+    def _raise_disk_full(client: httpx.Client, url: str, dest: Path) -> None:
+        del client, url
+        dest.write_bytes(b"\x00\x00\x00\x00")  # 디스크가 찼을 때 흔히 남는 부분 파일
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(worker_module, "_download", _raise_disk_full)
+
+    core = FakeCoreClient()
+    with pytest.raises(WorkerRunError, match="No space left on device"):
+        run_job(
+            "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+            poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+        )
+
+    failed_calls = [c for c in core.calls if c[0] == "transition" and c[1] == "FAILED"]
+    assert len(failed_calls) == 1, "OSError 가 FAILED 보고 없이 새어나갔다"
+    assert "No space left on device" in (failed_calls[0][2] or "")
+    # 부분 파일까지 지워졌는가 — 디스크가 찬 상황에서 자기가 남긴 부분 파일을
+    # 못 치우면 재시도가 시작부터 더 불리해진다.
+    assert list(tmp_path.iterdir()) == []
 
 
 # ── 산출물 바이트 (M1) ──────────────────────────────────────────────────────

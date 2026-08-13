@@ -246,6 +246,66 @@ def test_download_failure_is_raised_and_never_reported_as_unreadable(tmp_path: P
     assert not core.observations
 
 
+# ── work_dir 청소 (2026-08-13 프로젝트 두뇌 재감사 확정 발견의 회귀 방지) ──
+#
+# 이 워커는 정리 코드가 아예 없었다 — 검증마다(자주·값싸게 도는 것이 이
+# 워커의 설계 의도) 내려받은 GeoTIFF 를 work_dir 에 영구히 남겼다. 세 완주
+# 경로(검증 완료·거부·다운로드 실패) 모두에서 지워지는지 본다.
+
+
+def test_verified_run_leaves_no_file_behind(tmp_path: Path) -> None:
+    path = _write_design_surface(tmp_path / "design.tif")
+    work_dir = tmp_path / "work"
+    core = _FakeCore()
+    with _client_serving(path) as http_client:
+        verify_design_surface(
+            "site-001-ds1",
+            download_url=_DOWNLOAD_URL,
+            core=core,
+            http_client=http_client,
+            work_dir=work_dir,
+        )
+
+    assert list(work_dir.iterdir()) == [], "검증 성공했는데 work_dir 에 파일이 남았다"
+
+
+def test_rejected_run_leaves_no_file_behind(tmp_path: Path) -> None:
+    broken = tmp_path / "broken.tif"
+    broken.write_bytes(b"broken")
+    work_dir = tmp_path / "work"
+    core = _FakeCore()
+    with _client_serving(broken) as http_client:
+        verify_design_surface(
+            "site-001-ds1",
+            download_url=_DOWNLOAD_URL,
+            core=core,
+            http_client=http_client,
+            work_dir=work_dir,
+        )
+
+    assert list(work_dir.iterdir()) == [], "거부됐는데 work_dir 에 파일이 남았다"
+
+
+def test_download_failure_leaves_no_partial_file_behind(tmp_path: Path) -> None:
+    work_dir = tmp_path / "work"
+    core = _FakeCore()
+    with (
+        _client_serving(None, status=503) as http_client,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        verify_design_surface(
+            "site-001-ds1",
+            download_url=_DOWNLOAD_URL,
+            core=core,
+            http_client=http_client,
+            work_dir=work_dir,
+        )
+
+    assert not work_dir.exists() or list(work_dir.iterdir()) == [], (
+        "다운로드가 실패했는데 부분 파일이 work_dir 에 남았다"
+    )
+
+
 def test_core_rejection_is_a_normal_completion(tmp_path: Path) -> None:
     """거부는 워커의 실패가 아니다 — 같은 파일을 다시 읽어도 결과는 같다."""
     path = _write_design_surface(tmp_path / "design.tif")

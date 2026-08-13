@@ -216,18 +216,29 @@ def verify_design_surface(
     이 함수에게는 정상 완주다(모듈 docstring §3).
     """
     local_path = work_dir / f"{design_surface_id}.tif"
-    download_design_surface(download_url, destination=local_path, http_client=http_client)
     try:
-        measurement = measure_design_surface(local_path)
-    except DesignSurfaceMeasurementError as exc:
-        logger.warning("설계면을 읽지 못했다: designSurfaceId=%s (%s)", design_surface_id, exc)
-        core.report_design_surface_verification_failure(design_surface_id, detail=str(exc))
-        return "REJECTED"
-    verdict = core.report_design_surface_observation(design_surface_id, measurement)
-    logger.info(
-        "설계면 검증 보고 완료: designSurfaceId=%s verdict=%s", design_surface_id, verdict
-    )
-    return verdict
+        download_design_surface(download_url, destination=local_path, http_client=http_client)
+        try:
+            measurement = measure_design_surface(local_path)
+        except DesignSurfaceMeasurementError as exc:
+            logger.warning("설계면을 읽지 못했다: designSurfaceId=%s (%s)", design_surface_id, exc)
+            core.report_design_surface_verification_failure(design_surface_id, detail=str(exc))
+            return "REJECTED"
+        verdict = core.report_design_surface_observation(design_surface_id, measurement)
+        logger.info(
+            "설계면 검증 보고 완료: designSurfaceId=%s verdict=%s", design_surface_id, verdict
+        )
+        return verdict
+    finally:
+        # work_dir 는 이 워커도 재구성·비교·설계 대비 잔량과 공유한다(runner.py
+        # run_pending_batch). 성공·거부·다운로드 실패 어느 경우든 내려받은
+        # GeoTIFF 를 지운다 — 안 지우면 검증마다(자주·값싸게 도는 것이 이
+        # 워커의 설계 의도, 모듈 docstring) 영속 볼륨에 파일이 그대로 쌓인다
+        # (2026-08-13 프로젝트 두뇌 재감사가 재구성 워커에서 확정한 것과 같은
+        # 결함이 여기 정리 자체가 아예 없는 형태로 남아 있었다 — 독립 검토가
+        # 그 수정을 검증하며 함께 찾았다). 다운로드가 실패해 부분 파일만 있어도
+        # ``missing_ok=True`` 로 안전하다.
+        local_path.unlink(missing_ok=True)
 
 
 __all__ = [

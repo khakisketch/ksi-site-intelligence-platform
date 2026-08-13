@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-13T18:47:37+09:00",
+  "updated_at": "2026-08-13T22:49:45+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1762,6 +1762,33 @@
       "verification_requested": null,
       "created_at": "2026-08-13T18:47:23+09:00",
       "updated_at": "2026-08-13T18:47:37+09:00"
+    },
+    {
+      "id": "processing-controller-work-dir-cleanup",
+      "title": "처리 워커 디스크 무한 적재 + 무한 재시도 수정 — work_dir 정리 + FAILED 수렴 예외 확대",
+      "completion_criteria": [
+        "재구성 워커(worker.py)가 성공·실패 모두에서 다운로드한 사진·완주 아카이브를 work_dir에서 지운다 (완료기준 1/3)",
+        "run_job의 예외 처리가 모듈 자체 docstring이 약속한 대로 4~6단계의 모든 예외(OSError 포함)를 잡아 FAILED 전이를 시도하고 WorkerRunError로 감싸 재던진다 — runner.py가 같은 작업을 FAILED 보고 없이 무한 재시도하지 않는다 (완료기준 2/3)",
+        "설계면 검증 워커(design_surface_verifier.py)도 검증 성공·거부·다운로드 실패 세 경로 모두에서 내려받은 GeoTIFF를 지운다 (완료기준 3/3)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "worker.py: downloaded_paths 추적+_cleanup_work_files(finally에서 unlink) 추가, except (OdmError,httpx.HTTPError,CoreClientError) → except Exception으로 확대(모듈 docstring이 이미 약속한 대로). design_surface_verifier.py: verify_design_surface 전체를 try/finally로 감싸 local_path.unlink(missing_ok=True) 추가. 신규 테스트 6건(worker.py 3건+design_surface_verifier.py 3건)+기존 1건 갱신(파일존재 검사→실측값 대조로 더 강하게). 독립 reviewer가 both 부분 CONFIRMED-FIXED 판정(causal chain을 runner.py까지 직접 추적해 확인), 워크스페이스 pytest 2901 passed·mypy·ruff 전부 직접 재실행해 green 확인.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "재구성 워커(worker.py)와 설계면 검증 워커(design_surface_verifier.py) 둘 다 수정. comparison_worker.py/design_conformance_worker.py의 좁은 예외 목록(OSError 미포함)은 독립 검토가 발견했지만 이번 범위에 안 넣었다 — design_conformance_worker.py는 이미 실제 정리 코드가 있어(shutil.rmtree) 디스크 적재 위험은 낮고, 두 파일 다 '무한 재시도' 위험만 남아 낮은 우선순위로 별도 리스크 등재.",
+        "at": "2026-08-13T22:49:34+09:00",
+        "reviewer": "reviewer-subagent x2 (독립, change-review 모드 — worker.py 1회 + design_surface_verifier.py 재확인 1회)",
+        "evidence_ref": "worker.py(재구성 워커) 수정: CONFIRMED-FIXED — cleanup 위치·예외 확대 범위·runner.py로 이어지는 인과관계(WorkerRunError→ran_but_failed→True)까지 직접 추적해 확인. design_surface_verifier.py 수정: CONFIRMED-FIXED — 다운로드 실패 전파 규율(재시도 대상이지 REJECTED 아님)이 정리 코드 추가로도 안 깨졌음을 확인. 신규 테스트 6건+갱신 1건, 워크스페이스 pytest 2901 passed·mypy·ruff 직접 재실행 green."
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": null,
+      "created_at": "2026-08-13T22:47:07+09:00",
+      "updated_at": "2026-08-13T22:49:34+09:00"
     }
   ],
   "risks": [
@@ -2540,14 +2567,14 @@
       "title": "work_dir 미정리로 디스크 무한 적재 + '실패는 FAILED로 수렴' 예외 목록이 뚫려 무한 재시도 — 실제 촬영 규모에서 M4-D 보고서 생성 자체가 멈춘다",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "WF1(2026-08-13, project-brain-reaudit) 확정 발견. services/processing-controller/src/ksi_processing_controller/worker.py:270(work_dir 미정리) + :338(예외 목록 닫혀있어 디스크 오류가 무한 15분 재시도). M4-D 구현 전 필수는 아니나(진척 계산 정확성과 무관) 실제 임무 규모(사진 수백 장)에서 M4-D가 실사용 불가해질 수 있어 우선순위 높음.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "goal processing-controller-work-dir-cleanup gate pass — worker.py+design_surface_verifier.py 수정, 독립 검토 2건 CONFIRMED-FIXED",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-13T16:52:07+09:00",
-      "updated_at": "2026-08-13T16:52:07+09:00"
+      "updated_at": "2026-08-13T22:49:45+09:00"
     },
     {
       "id": "bim-integration-ifc-mm-unit-double-scale",
@@ -2562,6 +2589,20 @@
       "previous_status": null,
       "created_at": "2026-08-13T16:52:07+09:00",
       "updated_at": "2026-08-13T16:52:07+09:00"
+    },
+    {
+      "id": "comparison-design-conformance-worker-osrerror-not-failed",
+      "title": "comparison_worker.py·design_conformance_worker.py의 예외 목록에 OSError가 없다 — 디스크 오류가 FAILED 보고 없이 무한 재시도될 수 있다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "2026-08-13 processing-controller-work-dir-cleanup 게이트의 독립 검토가 재확인. design_conformance_worker.py는 이미 shutil.rmtree로 실제 정리를 하므로 디스크 적재 위험은 없다 — 남은 건 'OSError류 예외가 FAILED로 안 잡히고 요청이 QUEUED/RUNNING에 계속 남는다'는 좁은 경우뿐이라 low로 등재. comparison_worker.py도 입력 다운로드는 tempfile.TemporaryDirectory라 자동 정리되므로 같은 낮은 우선순위.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-13T22:49:45+09:00",
+      "updated_at": "2026-08-13T22:49:45+09:00"
     }
   ]
 }
