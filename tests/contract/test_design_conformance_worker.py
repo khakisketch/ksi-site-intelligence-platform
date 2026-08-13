@@ -424,3 +424,33 @@ def test_failed_transition_failure_keeps_the_original_cause(
             _REQUEST_ID, core=core, work_dir=tmp_path / "work", http_client=client,
             now_message=lambda _msg: None,
         )
+
+
+def test_work_directory_oserror_after_running_reports_failed_once(
+    scene: tuple[FakeCore, httpx.Client],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RUNNING 뒤 mkdir 실패도 FAILED 한 번 + 원래 OSError cause로 수렴한다."""
+    core, client = scene
+    disk_error = OSError("disk unavailable: " + "x" * 600)
+
+    def fail_mkdir(_path: Path, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise disk_error
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    with pytest.raises(DesignConformanceWorkerRunError) as exc_info:
+        run_design_conformance_request(
+            _REQUEST_ID,
+            core=core,
+            work_dir=tmp_path / "work",
+            http_client=client,
+            now_message=lambda _msg: None,
+        )
+
+    assert exc_info.value.__cause__ is disk_error
+    transitions = [call for call in core.calls if call[0] == "transition"]
+    assert [call[1] for call in transitions] == ["RUNNING", "FAILED"]
+    assert transitions[-1][2] is not None
+    assert len(transitions[-1][2]) == 500

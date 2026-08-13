@@ -558,6 +558,55 @@ def test_download_failure_reports_failed_and_reraises(tmp_path: Path) -> None:
     assert failed[0][2] is not None  # detail 이 채워져 있다
 
 
+def test_work_directory_oserror_after_running_reports_failed_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RUNNING 뒤 mkdir 실패도 FAILED 한 번 + 원래 OSError cause로 수렴한다."""
+    request_id = "mission-1-cmp-disk-error"
+    core = FakeComparisonCoreClient(
+        comparison_input=ComparisonInput(
+            request_id=request_id,
+            mission_id="mission-1",
+            status="QUEUED",
+            policy=current_comparison_policy(),
+            point_cloud_baseline=None,
+            point_cloud_baseline_url=None,
+            point_cloud_current=None,
+            point_cloud_current_url=None,
+            dsm_baseline=None,
+            dsm_baseline_url=None,
+            dsm_current=None,
+            dsm_current_url=None,
+            zones=None,
+            zone_crs=None,
+        )
+    )
+    disk_error = OSError("disk unavailable: " + "x" * 600)
+
+    def fail_mkdir(_path: Path, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise disk_error
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    with (
+        httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500))) as client,
+        pytest.raises(ComparisonWorkerRunError) as exc_info,
+    ):
+        run_comparison_request(
+            request_id,
+            core=core,
+            work_dir=tmp_path / "work",
+            http_client=client,
+            now_message=lambda _msg: None,
+        )
+
+    assert exc_info.value.__cause__ is disk_error
+    transitions = [call for call in core.calls if call[0] == "cmp-transition"]
+    assert [call[1] for call in transitions] == ["RUNNING", "FAILED"]
+    assert transitions[-1][2] is not None
+    assert len(transitions[-1][2]) == 500
+
+
 def test_failed_report_failure_does_not_swallow_original_exception(tmp_path: Path) -> None:
     """FAILED 보고 자체가 실패해도(예: lease 만료) 원래 원인이 그대로 올라온다
     (worker.py 모듈 docstring "실패는 전부 FAILED 로 수렴한다"와 동일 원칙)."""

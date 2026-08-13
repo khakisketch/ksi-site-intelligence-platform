@@ -126,12 +126,8 @@ def run_design_conformance_request(
     실패 시 예외를 던진다(``FAILED`` 보고는 시도하되 삼키지 않는다) — 호출자
     (데몬 루프)가 재시도·알림을 정할 수 있게 원인을 그대로 넘긴다.
     """
-    fetch = http_client or httpx.Client(
-        timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
-    )
+    fetch = http_client
     own_client = http_client is None
-    work_dir.mkdir(parents=True, exist_ok=True)
-
     now_message(f"[{request_id}] lease 취득")
     core.acquire_design_conformance_lease(request_id)
     conformance_input = core.get_design_conformance_input(request_id)
@@ -140,17 +136,26 @@ def run_design_conformance_request(
         core.transition_design_conformance(request_id, "RUNNING")
         now_message(f"[{request_id}] RUNNING")
 
-    heartbeat = LeaseHeartbeat(
-        lambda: core.acquire_design_conformance_lease(request_id),
-        request_id,
-        interval_seconds=heartbeat_interval_seconds,
-        now_message=now_message,
-        thread_name_prefix="dcf-lease",
-    )
-    heartbeat.start()
-
+    heartbeat: LeaseHeartbeat | None = None
+    heartbeat_started = False
     raster_path: Path | None = None
     try:
+        if fetch is None:
+            fetch = httpx.Client(
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
+            )
+        heartbeat = LeaseHeartbeat(
+            lambda: core.acquire_design_conformance_lease(request_id),
+            request_id,
+            interval_seconds=heartbeat_interval_seconds,
+            now_message=now_message,
+            thread_name_prefix="dcf-lease",
+        )
+        heartbeat.start()
+        heartbeat_started = True
+        # RUNNING 이후 작업 디렉터리 생성도 실행 실패 경계 안에 둔다. 디스크 오류가
+        # try 밖에서 나면 요청이 FAILED로 수렴하지 못하고 영구 RUNNING에 남는다.
+        work_dir.mkdir(parents=True, exist_ok=True)
         # 격자 적재는 try 안이다 — 설정이 깨졌으면(경로는 있는데 파일이 없음)
         # ``load_geoid_grid`` 가 던지고, 그 실패도 FAILED 로 수렴해야 한다.
         # 미설정이면 None 이고, 그건 "정표고를 안 쓴다"는 정상 상태다. 계산 쪽이
@@ -212,6 +217,8 @@ def run_design_conformance_request(
         GeoidUnavailableError,
         httpx.HTTPError,
         CoreClientError,
+        # mkdir/download/write/upload에서 발생하는 로컬 파일 I/O 실패.
+        OSError,
     ) as exc:
         detail = str(exc)[:500]
         now_message(f"[{request_id}] 실패 — FAILED 보고 시도: {detail}")
@@ -225,12 +232,13 @@ def run_design_conformance_request(
         raise DesignConformanceWorkerRunError(f"[{request_id}] 실행 실패: {exc}") from exc
     finally:
         # 최종 전이까지 lease 를 쥔 채로 두고 그 뒤에 멈춘다(비교 워커와 동일).
-        heartbeat.stop()
+        if heartbeat_started and heartbeat is not None:
+            heartbeat.stop()
         if raster_path is not None:
             # 계산 함수의 계약: 래스터 파일 정리는 호출자 몫이다(업로드 뒤에도
             # 워커가 그 바이트를 다시 볼 수 있어야 해서 그쪽이 지우지 않는다).
             shutil.rmtree(raster_path.parent, ignore_errors=True)
-        if own_client:
+        if own_client and fetch is not None:
             fetch.close()
 
 

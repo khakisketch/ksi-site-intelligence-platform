@@ -250,12 +250,8 @@ def run_comparison_request(
     이쪽의 최종 전이는 ``LEASE_HELD_BY_ANOTHER`` 로 거부돼 **성공한 계산이
     FAILED 로 보고된다**.
     """
-    fetch = http_client or httpx.Client(
-        timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
-    )
+    fetch = http_client
     own_client = http_client is None
-    work_dir.mkdir(parents=True, exist_ok=True)
-
     now_message(f"[{request_id}] lease 취득")
     core.acquire_comparison_lease(request_id)
     comparison_input = core.get_comparison_input(request_id)
@@ -266,16 +262,25 @@ def run_comparison_request(
 
     # lease 갱신은 여기서부터다 — 위(입력 조회·RUNNING 전이)는 왕복 몇 번이라
     # TTL 을 위협하지 않고, 아래가 몇 분~수십 분짜리다. 정지는 finally 에서 한다.
-    heartbeat = LeaseHeartbeat(
-        lambda: core.acquire_comparison_lease(request_id),
-        request_id,
-        interval_seconds=heartbeat_interval_seconds,
-        now_message=now_message,
-        thread_name_prefix="cmp-lease",
-    )
-    heartbeat.start()
-
+    heartbeat: LeaseHeartbeat | None = None
+    heartbeat_started = False
     try:
+        if fetch is None:
+            fetch = httpx.Client(
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
+            )
+        heartbeat = LeaseHeartbeat(
+            lambda: core.acquire_comparison_lease(request_id),
+            request_id,
+            interval_seconds=heartbeat_interval_seconds,
+            now_message=now_message,
+            thread_name_prefix="cmp-lease",
+        )
+        heartbeat.start()
+        heartbeat_started = True
+        # 실행 소유권(RUNNING)을 확립한 뒤부터의 파일 I/O는 모두 아래 except로
+        # 수렴한다. mkdir을 try 밖에 두면 디스크 오류 하나로 요청이 영구 RUNNING이다.
+        work_dir.mkdir(parents=True, exist_ok=True)
         computed_at = datetime.now(UTC)
         summaries: list[str] = []
 
@@ -384,6 +389,9 @@ def run_comparison_request(
         VerticalDatumIncompatibleError,
         httpx.HTTPError,
         CoreClientError,
+        # mkdir/download/write/upload의 로컬 파일 I/O 실패도 RUNNING 이후 실패다.
+        # 이를 놓치면 프로세스만 죽고 Core 요청은 RUNNING에 고착된다(INV-040).
+        OSError,
     ) as exc:
         detail = str(exc)[:500]
         now_message(f"[{request_id}] 실패 — FAILED 보고 시도: {detail}")
@@ -395,8 +403,9 @@ def run_comparison_request(
     finally:
         # 최종 전이(SUCCEEDED/FAILED)까지 lease 를 쥔 채로 두고 그 뒤에 멈춘다 —
         # 전이 직전에 멈추면 그 사이에 TTL 이 지나 전이가 거부될 수 있다.
-        heartbeat.stop()
-        if own_client:
+        if heartbeat_started and heartbeat is not None:
+            heartbeat.stop()
+        if own_client and fetch is not None:
             fetch.close()
 
 
