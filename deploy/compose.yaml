@@ -16,7 +16,9 @@
 # - TLS 종단·역방향 프록시: 배포 환경(로드밸런서·Ingress)마다 달라 여기서 정하지 않는다.
 #   Core 는 평문 HTTP 로 8000 을 연다 — **공개망에 그대로 노출하지 않는다.**
 # - 대시보드(apps/dashboard): Next.js 앱은 별도 배포 경로다.
-# - 백업: 아래 볼륨 둘(ksi-data, ksi-signing-keys)이 백업 대상이라는 사실만 밝힌다.
+# - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)와
+#   **호스트 디렉터리 `deploy/signing-keys/`**(서명키) 둘이다. 서명키는 명명 볼륨이
+#   아니다(아래 core 의 volumes 주석 참조). 자세한 것은 docs/ops/DEPLOYMENT.md §8.
 
 name: ksi
 
@@ -56,7 +58,14 @@ services:
       - ksi-data:/var/lib/ksi/data
       # 서명키. **컨테이너 재생성과 무관하게 살아남아야 한다** — 재생성마다 새 키가
       # 생기면 이미 현장에 발급된 Mission Contract 가 전부 검증 실패한다.
-      - ksi-signing-keys:/var/lib/ksi/signing-keys:ro
+      #
+      # 명명 볼륨이 아니라 **호스트 디렉터리 바인드**다. 키는 사람이 openssl 로
+      # 만들어 넣는 것이고(DEPLOYMENT.md §2), 명명 볼륨이면 그 파일을 볼륨 안으로
+      # 넣을 문서화된 수단이 없어 빈 볼륨으로 뜬 Core 가 SigningKeyError 로
+      # 죽는다(2026-08-13 독립 검토 지적 — 그 전까지 명명 볼륨이었다).
+      # "키는 컨테이너 밖에 살고 Core 는 읽기만 한다"는 이 파일의 원래 의도를
+      # 바인드가 그대로 실현한다.
+      - ./signing-keys:/var/lib/ksi/signing-keys:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -133,9 +142,10 @@ services:
     restart: unless-stopped
 
 volumes:
-  # 백업 대상 ─ 이 둘이 사라지면 복구할 수 없다.
+  # 백업 대상 ─ 사라지면 복구할 수 없다.
+  # (서명키는 여기 없다 ─ 호스트의 deploy/signing-keys/ 디렉터리이며 그 경로를
+  #  통째로 백업한다. DEPLOYMENT.md §8.)
   ksi-data:
-  ksi-signing-keys:
   # 재생성 가능 ─ 객체는 원본이므로 백업 대상이지만, 아래 둘은 작업 캐시다.
   ksi-objects:
   ksi-worker-work:

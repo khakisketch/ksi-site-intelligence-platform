@@ -28,21 +28,32 @@
 > `m3-retention-scheduler`·`m2-comparison-request-store`·`m2-closed-loop-revisit-mission`
 > 등)로 세분돼 대부분 완료 게이트를 통과했다 — "(미등록)"을 문자 그대로 "아직 손 안
 > 댐"으로 읽지 않는다. 정확한 현재 상태는 이 표가 아니라 `ksi-goals.py report`.
-| M4 | (미등록) | 설계층 v1(도면·계획고 대비) + 실기 트랙 합류 | BIM 정합은 이미 착수돼 있고(`services/bim-integration`), M1의 좌표계 위에서만 의미를 갖는다 |
+| M4-A | `m4a-design-conformance` (+ 하위 `m4a-geoid-vertical-bridge`·`m4a-ifc-design-surface-tool`) | 설계층 v1 — 설계면 등록·봉인·검증 → 설계 기준면 대비 절·성토 잔량 → 대시보드 3화면. 정표고(해발) 설계면은 KNGeoid24 격자로 자동 정합하고, IFC 설계도면은 변환 도구로 설계면 GeoTIFF를 만들어 올린다 | **2026-08-13 등록**(작업은 그 전에 완료돼 있었고 원장에만 없었다 — 커밋 `2d9e7db`·`897d877`·`48c710b`). BIM 정합은 이미 있었고(`services/bim-integration`) M1의 좌표계 위에서만 의미를 갖는다 |
+| M4-B | (미등록·우선순위 미확정) | IFC 네이티브 입력 — 서버가 설계도면을 직접 받는다 | M4-A가 변환 도구 경로를 택했으므로(계약 확장이 아니라), 실무 설계 파일이 GeoTIFF 변환으로 충분하다고 말하면 이 항목의 우선순위 자체가 내려간다. 실무 IFC 실물 확보 후 판단 |
 | (별도) | `mesh-multi-file-artifact-persistence` | mesh(다중파일) 산출물 저장 지원 — 정사영상이 mesh 를 부모로 등록되려면 mesh 자체가 먼저 등록돼야 한다 | `worker.py:205`의 "산출물 1건=파일 1개" 스코프컷(등록 digest와 업로드 바이트 일치 계약, Task C2) 때문에 mesh가 통째로 업로드 스킵된다. 비용 대비 가치가 낮아 M1~M3 이후로 미룬다(§하지 말아야 할 개발) |
 
 ## 하드웨어 트랙 (도착·승인 대기 — 준비 완료 상태 유지)
 
-| ID | 내용 | 게이트 |
-|---|---|---|
-| H1 | 벤치 SSH 인계 → 환경 인벤토리 → B2 TensorRT 온타깃 검증 | USB-C 이더넷 어댑터 (track-b 잔여) |
-| H2 | Cellular Dongle 2 + 국내 유심 실측 (`ip addr`/`ping`/`curl` — ADR-KSI-005 정정 검증) | 동글+유심 구매 |
-| H3 | Track A PSDK 스파이크: 9항목 SpikeEvidence + 비행상태 topic(ADR-KSI-006) + Frame-Telemetry p95≤50ms | 기체 + PSDK 개발자 승인 |
-| H4 | KMZ 실기 임포트 검증 (Pilot 2 — WPML 스펙 caveats 해소: wpmz/ 폴더명·M4D droneEnumValue) | RC Plus 2 |
+> **[2026-08-13 정정]** 아래 표의 "게이트" 열은 2026-08-08 당시 **구매·승인 대기**를
+> 적은 것이었다. 2026-08-12 실기 세션(`hil_raw_logs/SESS-20260812T170000Z-MANIFOLD-LINK`,
+> 커밋 `f6063a1`·`04f1c24`)이 그 전제를 바꿨다 — **장비도 자격도 확보돼 있다.**
+> 남은 것은 조달이 아니라 실기 디버깅이다. 이 구분을 흐리면 다음 세션이 다시
+> "장비가 없어서 못 한다"로 읽는다.
 
-하드웨어 트랙은 마일스톤 트랙과 **경합하지 않는다** — 구매·승인 대기가 게이트라
-개발 리소스를 나눠 쓰지 않는다. 실기 사진이 확보되면 M1이 만든 같은 파이프라인으로
-교체 검증한다(M1은 ODM 공개 샘플 데이터셋으로 먼저 뚫는다).
+| ID | 내용 | 게이트 (2026-08-13 실측) |
+|---|---|---|
+| H1 | 벤치 SSH 인계 → 환경 인벤토리 → B2 TensorRT 온타깃 검증 | **열림** — USB-C 이더넷 어댑터 확보, 매니폴드 온보드 셸 접속 성공 |
+| H2 | Cellular Dongle 2 + 국내 유심 실측 (`ip addr`/`ping`/`curl` — ADR-KSI-005 정정 검증) | **동글+유심 구매 — 남은 유일한 조달 항목** |
+| H3 | Track A PSDK 스파이크: 9항목 SpikeEvidence + 비행상태 topic(ADR-KSI-006) + Frame-Telemetry p95≤50ms | 기체·PSDK 자격 **확보됨**. 실제 관문은 `psdk_tap`이 `.dpk` 설치 후 SDK 시작 단계에서 크래시하는 것 + USB bulk 채널 번호 미확정 |
+| H4 | KMZ 실기 임포트 검증 (Pilot 2 — WPML 스펙 caveats 해소: wpmz/ 폴더명·M4D droneEnumValue) | RC Plus 2 **확보됨** — 실기 세션 일정만 필요 |
+
+하드웨어 트랙은 마일스톤 트랙과 **경합하지 않는다**. 실기 사진이 확보되면 M1이 만든
+같은 파이프라인으로 교체 검증한다(M1은 ODM 공개 샘플 데이터셋으로 먼저 뚫었다).
+
+**8단계(dpk 설치)가 3~7단계보다 선행한다.** PSDK 앱을 SSH에서 직접 실행하면 USB bulk
+채널을 열지 못한다 — 채널은 DJI 앱 프레임워크가 점유하며, 우리 앱도 `.dpk`로 설치돼
+`dji_app_ctl`로 기동돼야 같은 자격을 얻는다. 이 순서 오해가 2026-08-03·08-04 두 세션을
+3단계에서 멈춰 세웠다(`docs/hil/HARDWARE_SESSION_PLAYBOOK.md` §3.0).
 
 ## 두 축의 현재 (ADR-KSI-016 D2)
 
@@ -52,12 +63,16 @@
 
 | 축 | 지금 | 왜 |
 |---|---|---|
-| Site Intelligence Core | **진행** | 막힌 것 없음 — M1~M3이 이 축이다 |
-| Autonomous Acquisition | **차단** | 우선순위가 아니라 게이트다 — H1~H4가 장비·PSDK 승인 대기 |
+| Site Intelligence Core | **진행** | 막힌 것 없음 — M1~M4-A가 이 축이다 |
+| Autonomous Acquisition | **차단(성격 변경 2026-08-13)** | 더 이상 조달 대기가 아니다. H1·H3·H4의 장비·자격은 확보됐고, 실제 관문은 `psdk_tap` 크래시 해소다 — **디버깅 과제**이며 실기 세션에서만 진행된다 |
 
 **차단과 강등을 구분한다.** Acquisition 축은 뒤로 미룬 것이 아니라 막혀 있고,
 게이트가 열리는 즉시 착수한다. 이 구분을 흐리면 하드웨어 도착 시 "그건 낮은
 순위였는데"가 다시 나온다.
+
+**2026-08-13 추가 — 차단의 종류도 구분한다.** "장비가 없다"와 "우리 코드가 실기에서
+크래시한다"는 대응이 완전히 다르다. 전자는 기다림이고 후자는 작업이다. 원장의
+`track-a` 사유가 2026-08-04자로 굳어 있어 후자를 전자로 읽고 있었다.
 
 ## 지금 추가 투자를 하지 않는 것 (ADR-KSI-016 D5)
 

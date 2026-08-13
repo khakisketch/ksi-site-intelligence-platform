@@ -21,7 +21,7 @@ Core 는 필수 환경변수가 하나라도 없거나 형식이 틀리면 **기
 | 항목 | 왜 필요한가 |
 |---|---|
 | Docker + Docker Compose | 아래 compose 가 Core·워커·MinIO·NodeODM 을 함께 띄운다 |
-| 영속 볼륨 2개 | 원장(`ksi-data`)과 서명키(`ksi-signing-keys`). **이 둘이 백업 대상이다** |
+| 영속 저장소 2곳 | 원장은 명명 볼륨 `ksi-data`, 서명키는 **호스트 디렉터리 `deploy/signing-keys/`**(볼륨이 아니다 — §2). **이 둘이 백업 대상이다**(§8) |
 | Mission Contract 서명키 | Core 는 키를 만들지 않는다 — 미리 만들어 둬야 한다(§2) |
 | 접근 토큰 | 사람·워커가 Core 를 부를 자격증명(§3) |
 | (선택) 지오이드 격자 | 해발 기준 설계도면을 받으려면 필요(§4) |
@@ -34,7 +34,12 @@ Core 는 필수 환경변수가 하나라도 없거나 형식이 틀리면 **기
 한 번으로 전부 검증 실패한다. 그건 이 제품의 근본 전제(서버가 죽어도 로컬에서 유효한
 계약은 유효하다)를 정면으로 어긴다. 그래서 키는 **컨테이너 밖에 살고 Core 는 읽기만 한다.**
 
+**위치가 정해져 있다 — `deploy/signing-keys/`** 다. compose 가 이 디렉터리를 그대로
+컨테이너 안 `/var/lib/ksi/signing-keys` 로 읽기전용 바인드한다(`deploy/compose.yaml`).
+다른 곳에 만들면 Core 는 그 키를 볼 수 없다.
+
 ```bash
+cd deploy
 mkdir -p signing-keys && cd signing-keys
 KEY_ID="core-$(date +%Y-%m)"
 openssl genpkey -algorithm ed25519 -out "$KEY_ID.private.pem"
@@ -58,6 +63,54 @@ openssl pkey -in "$KEY_ID.private.pem" -pubout -out "$KEY_ID.public.pem"
 Core 는 기동 시 이 매니페스트를 검증한다 — 활성 키가 REVOKED 이거나, 개인키와 공개키가
 어긋나거나, 개인키 권한이 느슨하면(`chmod 600` 안 했으면) **기동을 거부한다.**
 
+마지막으로 **소유자를 컨테이너의 uid 로 넘긴다.** Core 는 uid 10001 non-root 로 도는데
+개인키는 `0600`(소유자만 읽기)이라 파일 소유자가 10001 이 아니면 읽지 못한다. 권한을
+느슨하게 푸는 길은 없다 — 로더가 그룹·타인 비트를 거부한다(위 문단). 소유자를 옮기는
+것이 유일한 방법이다.
+
+```bash
+cd ..                                     # deploy/
+docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt
+```
+
+`sudo chown -R 10001:10001 signing-keys` 도 같은 결과다. 위 형태를 기본으로 두는 이유는
+호스트 root 권한 없이 docker 만으로 되기 때문이고, `init-volumes` 가 볼륨에 하는 일과
+같은 방식이다.
+
+**이 뒤로는 키 파일을 사람 계정으로 못 읽고 그 디렉터리에 새 파일도 못 만든다** —
+디렉터리 자체의 소유자가 10001 로 바뀌었기 때문이다. 의도된 결과다(키를 아무나 읽을 수
+있으면 서명 신뢰가 무너진다). 다만 **키 회전은 그 디렉터리에 새 파일을 만드는 일**이므로,
+회전할 때 무엇을 실행해야 하는지를 아래에 못박아 둔다.
+
+### 2-1. 회전·백업 — 소유권을 잠시 되돌린다
+
+회전 절차 자체(새 키쌍 → `keys.json` 갱신 → 이전 키 `notAfter` → 재기동 → 파기)의 정본은
+`docs/security/SIGNING_KEY_LIFECYCLE.md` 다. 이 compose 배포에서는 **그 절차 앞뒤로 소유권
+전환을 한 번씩 감싼다.**
+
+```bash
+cd deploy
+UID_ME=$(id -u); GID_ME=$(id -g)
+
+# 1) 작업 전 — 내 계정으로 되돌린다
+docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R "$UID_ME:$GID_ME" /mnt
+
+# 2) SIGNING_KEY_LIFECYCLE.md §회전 1~3 을 signing-keys/ 안에서 그대로 실행
+#    (새 키쌍 생성 · chmod 600 · keys.json 의 active 교체 · 이전 키 notAfter 부여)
+
+# 3) 작업 후 — 다시 컨테이너 uid 로 넘긴다
+docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt
+
+# 4) Core 재기동 — 기동 시 매니페스트가 재검증된다
+docker compose up -d --force-recreate core
+```
+
+백업도 같은 이유로 1) 을 먼저 하거나, 되돌리지 않고 `docker run --rm -v
+"$PWD/signing-keys":/mnt busybox tar -cf - -C /mnt .` 로 컨테이너를 통해 읽는다.
+
+**3) 을 빼먹으면 재기동한 Core 가 키를 못 읽고 기동을 거부한다** — 조용히 옛 키로 도는
+일은 없다(§7 표의 "권한 거부" 행).
+
 ## 3. 접근 토큰 — 원문은 서버에 두지 않는다
 
 Core 는 토큰 **원문을 모른다.** `sha256` digest 만 갖는다. 그래서 프로세스 메모리·로그·
@@ -66,11 +119,15 @@ Core 는 토큰 **원문을 모른다.** `sha256` digest 만 갖는다. 그래�
 ```bash
 # 사람(관리자)용
 ADMIN_TOKEN=$(openssl rand -hex 32)
-printf '%s' "$ADMIN_TOKEN" | sha256sum      # ← 이 digest 를 Core 에 준다
+printf '%s' "$ADMIN_TOKEN" | sha256sum | awk '{print $1}'   # ← 이 digest 를 Core 에 준다
 # 워커용
 WORKER_TOKEN=$(openssl rand -hex 32)
-printf '%s' "$WORKER_TOKEN" | sha256sum
+printf '%s' "$WORKER_TOKEN" | sha256sum | awk '{print $1}'
 ```
+
+`awk '{print $1}'` 를 빼먹지 않는다 — `sha256sum` 은 `<64자리hex>  -` 형태로 뒤에 공백과
+대시를 붙여 출력하고, 그걸 그대로 넣으면 Core 가 `tokenSha256 은 소문자 64자리 hex 여야
+한다` 로 기동을 거부한다.
 
 - **digest** 는 `KSI_CORE_PRINCIPAL_TOKENS_JSON` 에 넣는다(Core 쪽).
 - **원문** 은 사용자에게 전달하고, 워커 것은 `KSI_WORKER_CORE_TOKEN` 에 넣는다.
@@ -123,8 +180,10 @@ curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8000/v1/sites
 | 증상 | 원인 | 조치 |
 |---|---|---|
 | `KSI_CORE_* 이 없다` 로 즉시 종료 | 필수 변수 누락 | 로그가 지목한 변수를 `.env` 에 채운다 |
-| `tokenSha256 은 소문자 64자리 hex 여야 한다` | 원문 토큰을 그대로 넣었거나 대문자 | `sha256sum` 출력(소문자)을 넣는다 |
-| `키 매니페스트를 읽을 수 없다` | `keys.json` 없음/형식 오류 | §2 |
+| `tokenSha256 은 소문자 64자리 hex 여야 한다` | 원문 토큰을 그대로 넣었거나, `sha256sum` 출력의 뒤쪽 `  -` 까지 붙여넣었거나, 대문자 | `sha256sum \| awk '{print $1}'` 출력을 넣는다(§3) |
+| `키 매니페스트를 읽을 수 없다` | `keys.json` 이 없거나 형식 오류거나, **`deploy/signing-keys/` 가 아닌 다른 곳에 만들었다**(compose 가 바인드하는 경로는 이 하나뿐이다) | §2 — 경로부터 확인한다 |
+| `개인키 권한이 너무 열려 있다` | `chmod 600` 누락 | §2 |
+| 키는 있는데 Core 가 `keys.json` 을 못 읽는다(권한 거부) | 파일 소유자가 uid 10001 이 아니다 — Core 는 non-root 라 `0600` 파일을 소유자가 아니면 못 읽는다 | §2 마지막 단계(`docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt`) |
 | 기동은 됐는데 `/ready` 가 503 | 원장이 봉인됨 | 응답의 `sealedCount` 확인 후 원장 상태 조사 — 쓰기를 계속하면 안 된다 |
 | 워커가 붙지 못함(401) | `KSI_WORKER_CORE_TOKEN` 원문과 Core 의 digest 불일치 | §3 을 다시 한다(원문↔digest 쌍) |
 | 재구성이 `EngineIdentityMismatch` 로 거부 | NodeODM 이미지가 바뀌어 엔진 버전이 작업 지시와 다름 | 의도된 거부다 — 작업의 `engineVersion` 과 실제 엔진을 맞춘다 |
@@ -133,8 +192,9 @@ curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8000/v1/sites
 
 ## 8. 백업
 
-- **반드시**: `ksi-data`(원장 — 사라지면 현장·임무·산출물 이력이 사라진다),
-  `ksi-signing-keys`(사라지면 발급된 계약을 검증할 수 없다).
+- **반드시**: `ksi-data` 볼륨(원장 — 사라지면 현장·임무·산출물 이력이 사라진다),
+  `deploy/signing-keys/` **디렉터리**(사라지면 발급된 계약을 검증할 수 없다 — 볼륨이
+  아니라 호스트 경로다).
 - **권장**: `ksi-objects`(사진·점군·정사영상 원본. 재촬영 말고는 복구 수단이 없다).
 - 재생성 가능: `ksi-worker-work`·`ksi-odm`(작업 캐시).
 

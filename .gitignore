@@ -38,6 +38,10 @@ apps/dashboard/.env.local
 # (deploy/.env.example). scripts/manifold/manifold.env 와 같은 관례.
 deploy/.env
 
+# Mission Contract 서명 개인키. compose 가 이 디렉터리를 컨테이너로 읽기전용
+# 바인드한다(DEPLOYMENT.md §2) — 커밋되면 발급 계약 전체의 신뢰가 무너진다.
+deploy/signing-keys/
+
 # Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
 # 계보는 edge/third_party/PSDK_LOCK.yaml(커밋)이 SSOT, 실물은 tools/edge/fetch_psdk.py로 fetch.
 /.secrets/
