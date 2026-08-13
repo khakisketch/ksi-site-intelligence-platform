@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-13T11:02:38+09:00",
+  "updated_at": "2026-08-13T11:35:26+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1538,6 +1538,34 @@
       "verification_requested": "standard",
       "created_at": "2026-08-13T11:02:26+09:00",
       "updated_at": "2026-08-13T11:02:38+09:00"
+    },
+    {
+      "id": "elapsed-time-live-wiring",
+      "title": "홈 콜아웃·이벤트상세 경과시간 표시를 실시간 갱신으로 전환(ElapsedTime.tsx 배선)",
+      "completion_criteria": [
+        "표시 문구·SLA 판정 로직이 기존과 동일(회귀 없음)",
+        "마운트 후 시간 경과에 따라 실제로 텍스트가 갱신됨을 실측 확인",
+        "SSR 첫 페인트가 하이드레이션 경고 없이 기존과 동일",
+        "page.tsx의 다른 콜아웃 분기와 EventDetailPanel의 다른 Fact는 영향 없음"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "useTick(hooks/useTick.ts) 신규 — 60초마다 리렌더만 강제, 값 계산은 호출부 책임. ElapsedTime.tsx 를 이 훅으로 갈아탐(동작 동일, 오히려 매 렌더 최신 props 반영이라 더 정확). TopUnattendedHeadline.tsx(신규)로 page.tsx 콜아웃 헤드라인을, AckElapsedFact.tsx(신규)로 EventDetailPanel '확인 경과' Fact를 각각 실시간화 — 둘 다 기존 서버 계산 로직(formatElapsed/ackSlaState/ackSlaMs)을 그대로 재사용, 새 판정 없음. DwellBar.tsx는 종결 이벤트에서 시계를 멈추는 조건이 있어 의도적으로 안 건드림. 구현자·독립검증자 각각 실 Core+dev서버+브라우저로 홈/이벤트상세 두 화면을 새로고침 없이 70~90초 실측 대기해 텍스트가 실제로 갱신됨을 스크린샷으로 확인(예: '6분째'→'7분째'), 하이드레이션 경고 없음, 다른 Fact/Callout 분기 무변화 확인. 이후 메인 세션이 5개 diff 전체를 직접 재검토 + tsc/eslint/vitest(177/177) 직접 재실행으로 재확인. 컴포넌트 렌더 테스트는 이 저장소 vitest 설정(jsdom 미사용, node 환경)과 맞지 않아 추가하지 않음 — 기존 관례와 일치.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "독립검증 PASS(실브라우저 70~90초 실측 대기로 텍스트 갱신 확인, 하이드레이션 경고 없음, 회귀 없음). 메인 세션이 diff 전량 재검토 + tsc/eslint/vitest 177 재실행으로 재확인 완료.",
+        "at": "2026-08-13T11:35:26+09:00",
+        "reviewer": "workflow verify agent(claude, read-only) + 메인 세션 직접 재검증",
+        "evidence_ref": "apps/dashboard/src/hooks/useTick.ts, TopUnattendedHeadline.tsx, events/AckElapsedFact.tsx, ElapsedTime.tsx, page.tsx, EventDetailPanel.tsx — workflow run wf_7431d65f-9be"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "standard",
+      "created_at": "2026-08-13T11:05:53+09:00",
+      "updated_at": "2026-08-13T11:35:26+09:00"
     }
   ],
   "risks": [
