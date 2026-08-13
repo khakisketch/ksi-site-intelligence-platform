@@ -335,19 +335,30 @@ def build_design_progress_router(
             return DesignProgressResponse(
                 detail="지정된 기준 리포트를 찾을 수 없다 — 기준을 다시 지정해야 한다"
             )
-        latest = next(
-            (
-                r.report
-                for r in reversed(history)
-                if r.report.design_conformance_id != baseline_id
-            ),
-            None,
-        )
-        if latest is None:
+        # "최신"은 **기록 순서**가 아니라 **계산 시각**(computed_at)으로 고른다 —
+        # 기록 순서(리포트가 원장에 append된 순서)와 계산 시각은 보통 같이 가지만,
+        # 사람이 지난 epoch를 다시 계산해 나중에 제출하면(예: 1주차 재검산을 3주차
+        # 제출 이후에 함) 둘이 갈린다. 기록 순서로 고르면 그 재검산이 조용히
+        # "최신"으로 뽑혀 실제로는 기준보다 이른 시점을 최신이라 부르게 된다
+        # (독립 검토 2026-08-13 지적 — 반증은 아니었으나 완료기준 목록에 없던 공백).
+        candidates = [
+            r.report for r in history if r.report.design_conformance_id != baseline_id
+        ]
+        if not candidates:
             return DesignProgressResponse(
                 detail=(
                     "기준 시점 말고 다른 비교가 아직 없다 — 최신 지형으로 설계 대비 잔량을 "
                     "한 번 더 계산하면 진척이 나온다"
+                )
+            )
+        latest = max(candidates, key=lambda report: report.computed_at)
+        if latest.computed_at <= baseline.computed_at:
+            return DesignProgressResponse(
+                detail=(
+                    f"가장 최근에 계산된 리포트({latest.computed_at.isoformat()})가 기준 "
+                    f"시점({baseline.computed_at.isoformat()})보다 앞서거나 같다 — 진척은 "
+                    "기준 이후 시점에 대해서만 말이 된다. 기준 이후 지형으로 다시 계산하거나 "
+                    "기준 지정을 다시 확인한다"
                 )
             )
         names = (

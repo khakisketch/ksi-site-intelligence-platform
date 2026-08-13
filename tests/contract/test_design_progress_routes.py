@@ -92,9 +92,25 @@ class ProgressFixture:
                 "dsm-2", kind=ProcessingArtifactKind.DSM, vertical_reference=_DSM_VERTICAL
             ),
         )
+        # 세 번째 epoch — "기록 순서 vs 계산 시각이 갈리는" 시나리오 전용.
+        self.third_job_id = _succeeded_job(
+            self.base.jobs,
+            self.base.source_media,
+            _CURRENT_MISSION_ID,
+            _artifact_spec("point-cloud-3"),
+            _artifact_spec(
+                "dsm-3", kind=ProcessingArtifactKind.DSM, vertical_reference=_DSM_VERTICAL
+            ),
+        )
 
     def submit(
-        self, *, current_job_id: str, cut_m3: float, fill_m3: float, raster: bytes
+        self,
+        *,
+        current_job_id: str,
+        cut_m3: float,
+        fill_m3: float,
+        raster: bytes,
+        computed_at: datetime | None = None,
     ) -> DesignConformanceReport:
         """요청 생성 → lease → RUNNING → 래스터 업로드 → Core 재해싱 확인 → 리포트 기록."""
         created = self.base.create(
@@ -107,7 +123,9 @@ class ProgressFixture:
         self.base.running(record.request_id)
         object_key = self.base.upload_raster(record, raster)
         digest, size = recompute_diff_raster_digest(self.base.storage, object_key)
-        artifact_id = "dsm-2" if current_job_id == self.latest_job_id else "dsm"
+        artifact_id = {self.latest_job_id: "dsm-2", self.third_job_id: "dsm-3"}.get(
+            current_job_id, "dsm"
+        )
         verified = self.base.requests.record_diff_raster_verification(
             record.request_id,
             digest=digest,
@@ -154,7 +172,7 @@ class ProgressFixture:
                 size_bytes=diff_raster.size_bytes,
                 core_verified_digest_at=diff_raster.verified_at,
             ),
-            computed_at=datetime.now(UTC),
+            computed_at=computed_at or datetime.now(UTC),
         )
         outcome = self.reports.record(
             _CURRENT_MISSION_ID, report, now=datetime.now(UTC), reported_by="worker-1"
@@ -260,3 +278,101 @@ def test_unknown_report_cannot_be_set_as_baseline(progress: ProgressFixture) -> 
         headers=_auth(_ADMIN_TOKEN),
     )
     assert response.status_code == 404
+
+
+# ── "최신"은 기록 순서가 아니라 계산 시각으로 고른다 (독립 검토 2026-08-13 지적) ──
+
+
+def test_latest_report_is_chosen_by_computed_time_not_recording_order(
+    progress: ProgressFixture,
+) -> None:
+    """기록은 T2(3번째 job)가 T3(2번째 job)보다 나중이지만, 계산 시각은 반대다.
+
+    사람이 지난 epoch 를 다시 계산해 나중에 제출하면(1주차 재검산을 3주차 제출
+    이후에 하는 식) 원장에 쌓이는 순서와 계산 시각 순서가 갈린다. 원장 append
+    순서로 "최신"을 고르면 이 재검산이 조용히 최신으로 뽑힌다 — 계산 시각으로
+    골라야 실제로 더 나중 지형을 가리킨다.
+    """
+    t1 = datetime(2026, 8, 1, tzinfo=UTC)
+    t2 = datetime(2026, 8, 10, tzinfo=UTC)  # 계산은 나중(진짜 최신이어야 함)
+    t3 = datetime(2026, 8, 5, tzinfo=UTC)  # 계산은 더 이르지만 원장엔 나중에 기록됨
+
+    baseline = progress.submit(
+        current_job_id=progress.base.current_job_id,
+        cut_m3=5000.0,
+        fill_m3=0.0,
+        raster=b"t1",
+        computed_at=t1,
+    )
+    really_latest = progress.submit(
+        current_job_id=progress.latest_job_id,
+        cut_m3=2000.0,
+        fill_m3=0.0,
+        raster=b"t2",
+        computed_at=t2,
+    )
+    recorded_after_but_computed_earlier = progress.submit(
+        current_job_id=progress.third_job_id,
+        cut_m3=4000.0,
+        fill_m3=0.0,
+        raster=b"t3",
+        computed_at=t3,
+    )
+    del recorded_after_but_computed_earlier
+
+    client = TestClient(progress.app())
+    baseline_set = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance/{baseline.design_conformance_id}/progress-baseline",
+        json={"designSurfaceId": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    assert baseline_set.status_code == 201, baseline_set.json()
+
+    response = client.get(
+        f"/v1/sites/{_SITE_ID}/design-progress",
+        params={"design_surface_id": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    body = response.json()
+    assert body["detail"] is None, body
+    assert (
+        body["progress"]["latestDesignConformanceId"] == really_latest.design_conformance_id
+    )
+    assert body["progress"]["zones"][0]["remainingCutM3"] == pytest.approx(2000.0)
+
+
+def test_a_report_computed_before_the_baseline_is_refused_as_latest(
+    progress: ProgressFixture,
+) -> None:
+    """진척은 기준 이후 시점에 대해서만 말이 된다 — 시간이 거꾸로면 typed 거부."""
+    baseline = progress.submit(
+        current_job_id=progress.base.current_job_id,
+        cut_m3=5000.0,
+        fill_m3=0.0,
+        raster=b"later",
+        computed_at=datetime(2026, 8, 10, tzinfo=UTC),
+    )
+    progress.submit(
+        current_job_id=progress.latest_job_id,
+        cut_m3=4000.0,
+        fill_m3=0.0,
+        raster=b"earlier",
+        computed_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+
+    client = TestClient(progress.app())
+    baseline_set = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance/{baseline.design_conformance_id}/progress-baseline",
+        json={"designSurfaceId": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    assert baseline_set.status_code == 201, baseline_set.json()
+
+    response = client.get(
+        f"/v1/sites/{_SITE_ID}/design-progress",
+        params={"design_surface_id": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    body = response.json()
+    assert body["progress"] is None
+    assert "앞서거나 같다" in body["detail"]
