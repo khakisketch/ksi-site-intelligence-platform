@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-12T19:47:30+09:00",
+  "updated_at": "2026-08-13T11:02:38+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1510,6 +1510,34 @@
       "verification_requested": null,
       "created_at": "2026-08-11T04:43:37+09:00",
       "updated_at": "2026-08-11T13:12:30+09:00"
+    },
+    {
+      "id": "data-residency-wizard-wiring",
+      "title": "현장등록 위저드에 dataResidency(INV-050 반출통제) 선언 입력을 추가",
+      "completion_criteria": [
+        "미응답(unset)이면 POST /v1/sites 바디에 dataResidency 키 자체가 없다(회귀 없음, fail-closed 유지)",
+        "반출허용/거부를 명시하면 egressAllowed+jurisdiction 이 실제로 서버에 저장된다(브라우저 실측)",
+        "두 위저드(SiteRegistrationWizard·SiteRegistrationOnlyWizard) 모두 반영",
+        "등록 후 편집 UI는 만들지 않는다(스키마가 의도적으로 없다고 명시)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "두 위저드(SiteRegistrationWizard.tsx·SiteRegistrationOnlyWizard.tsx)에 반출허용 3지 질문(미정/예/아니오)+법역 입력 추가, 공용 순수함수 src/lib/data-residency.ts::buildDataResidencyInput. 구현자가 실 Core+dev 서버+브라우저로 3가지 시나리오(예+KR, 미응답, 아니오+KR) 등록 후 GET /v1/sites 로 저장값 확인. 독립검증자가 별도 dev 서버 인스턴스로 동일 3케이스를 Chrome DevTools 네트워크탭에서 재현(미응답=키 없음, 입력시=정확한 shape) + jurisdiction 누락 curl 422 재현 + 양쪽 위저드 diff 확인 + tsc/eslint/vitest(177/177) 재실행. 이후 내(메인 세션)가 git diff 전체 재검토, tsc/eslint/vitest 직접 재실행(클린/177 passed)으로 3중 확인. 커밋 예정.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "독립검증 PASS(브라우저 네트워크탭 실측 3케이스+curl 422 재현). 메인 세션이 diff 전량 재검토 + tsc/eslint/vitest 177 재실행으로 재확인 완료.",
+        "at": "2026-08-13T11:02:38+09:00",
+        "reviewer": "workflow verify agent(claude, read-only) + 메인 세션 직접 재검증",
+        "evidence_ref": "apps/dashboard/src/lib/data-residency.ts, apps/dashboard/test/data-residency.test.ts, SiteRegistrationWizard.tsx, SiteRegistrationOnlyWizard.tsx, sites.ts — workflow run wf_27ffd1fb-5fb"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "standard",
+      "created_at": "2026-08-13T11:02:26+09:00",
+      "updated_at": "2026-08-13T11:02:38+09:00"
     }
   ],
   "risks": [
@@ -2268,6 +2296,20 @@
       "previous_status": null,
       "created_at": "2026-08-12T19:47:30+09:00",
       "updated_at": "2026-08-12T19:47:30+09:00"
+    },
+    {
+      "id": "critical-event-riskfield-evidence-gate-presence-only",
+      "title": "INV-021 CRITICAL 확정게이트가 evidence.riskFieldArtifact의 실존 여부만 확인 — 진짜 위험장 계산 없이도 통과",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "services/core/src/ksi_core/events.py:339-343(_evidence_gate_violation)의 CRITICAL 확정 게이트는 evidence.riskFieldArtifact/trajectoryArtifact/viewpointHistoryArtifact 값이 비어있지 않은지만 본다(모듈 docstring 명시: '서버는 기하학적 위험중첩을 재계산하지 않는다 — 근거 보존과 fail-closed 거부만 소유한다', 의도된 설계). 실제 RiskField를 조립하는 packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py의 build_dynamic_risk_field(RISK-004)는 프로덕션 호출부 0건(테스트만 호출, 2026-08-13 grep 실측) — 그런데 이 함수 자신의 docstring이 '위험장 지오메트리 합성(스윕볼륨·가려짐 반영)은 이 모듈 범위 밖 — 별도 제품 결정 필요'라고 명시해 캐스팅 준비만 있고 지오메트리를 만들 방법이 없다. 형제 함수 cpa_ttc/reobservation_signal은 services/core/src/ksi_core/equipment_states.py의 /risk-assessment 엔드포인트(장비-대상 쌍 온디맨드 CPA/TTC 조회, 커밋 a495e7e)로 배선됐지만 이는 evidence.riskFieldArtifact와 무관한 별개 기능이라 이 게이트를 채우지 못한다. 실제 리스크장 아티팩트 생성 주체는 CLAUDE.md 통제경계상 Manifold(전술 인지·위험·능동인지 소유)일 가능성이 높은데 그 앱 자체가 아직 없다(mission-contract-verification-unwired와 동일 계열, Track A/B 하드웨어 종속). 오늘 지오이드/IFC/마스킹/dataResidency처럼 '한 줄 배선'으로 못 고친다 — 지오메트리 합성 방식 자체가 미결정 제품 문제. 해소 조건: RISK-003 지오메트리 합성 방식이 대표자 결정으로 확정되고, 그 산출물을 build_dynamic_risk_field에 실어 evidence.riskFieldArtifact를 실제로 채우는 프로덕션 경로(Manifold 또는 Core)가 생긴다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-13T09:59:12+09:00",
+      "updated_at": "2026-08-13T09:59:12+09:00"
     }
   ]
 }

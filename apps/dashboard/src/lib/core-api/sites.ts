@@ -1,7 +1,7 @@
 import "server-only";
 
 import { coreFetch } from "./client";
-import type { AoiVertex, SiteFrame, SiteStatus, SiteView } from "./types";
+import type { AoiVertex, DataResidency, SiteFrame, SiteStatus, SiteView } from "./types";
 
 export async function listSites(): Promise<SiteView[]> {
   const body = await coreFetch<{ sites: SiteView[] }>("/v1/sites");
@@ -18,6 +18,12 @@ export interface RegisterSiteInput {
   siteFrame: SiteFrame;
   /** 선택 — 생략하면 등록 후 setSiteAoi 로 나중에 설정한다(UNMAPPED 상태에서만). */
   aoi?: { vertices: AoiVertex[] };
+  /**
+   * 선택 — 생략은 반출 불가를 뜻한다(INV-050, 관대한 기본값 아님). 등록 이후
+   * 변경 경로는 의도적으로 없다 — 반출 허용은 법적 판단이라 SITES_WRITE 로
+   * 조용히 바꿀 값이 아니다(contracts/api/openapi-core.yaml dataResidency 설명).
+   */
+  dataResidency?: DataResidency;
 }
 
 export async function registerSite(input: RegisterSiteInput): Promise<SiteView> {

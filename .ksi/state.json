@@ -97,12 +97,12 @@
       "at": "2026-08-06T22:41:40+09:00"
     },
     "edge/manifold-runtime": {
-      "status": "risk",
-      "note": "TTL overflow(#14)·schemaVersion(#16) fixed(77d8013). #52 mutation 저항성은 폐쇄 커밋 목록에 없고 별도 추적도 끊겨 있었음 — hardening-mutation-resistance-tracking-lost 로 재등록",
-      "audit_ref": "codebase-audit wf_badb277c-ee7 (2026-08-06 stale 13개 재감사) @ HEAD 3a25ee1",
-      "at_sha": "3a25ee1",
-      "at_module_sha": "976df01",
-      "at": "2026-08-06T22:41:39+09:00"
+      "status": "green",
+      "note": "#52(mutation 저항성) 원 finding 복원 불가로 abandoned, 대체 goal edge-manifold-runtime-mutation-resistance-review 로 독립 재점검 완료(변이 28건 중 생존 0, 등가변이 M5 1건 증명, 커밋 965db6b/7e67ddd) — risk 아님으로 정정",
+      "audit_ref": "edge-manifold-runtime-mutation-resistance-review",
+      "at_sha": "6d0a0b8",
+      "at_module_sha": "7e67ddd",
+      "at": "2026-08-13T09:45:35+09:00"
     },
     "tests": {
       "status": "unknown",
