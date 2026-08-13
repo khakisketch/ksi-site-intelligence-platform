@@ -45,12 +45,15 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import numpy as np
 import rasterio
 
 from ksi_change_detection.dsm_diff import DiffResult
+
+if TYPE_CHECKING:
+    from ksi_event_contracts.design_conformance_report import DiffRasterRef
 
 #: GeoTIFF 쓰기 프로파일 — **호출부가 고를 수 없는 고정값**(모듈 docstring: 결정성).
 #: ``nodata`` 는 NaN 이고, 그것이 "모름"의 유일한 표현이다.
@@ -102,6 +105,44 @@ def write_diff_geotiff(diff: DiffResult, path: Path) -> None:
         dataset.write(values, 1)
 
 
+class DiffRasterReadError(ValueError):
+    """읽어온 GeoTIFF 가 이미 검증된 참조(``DiffRasterRef``)와 어긋난다 — fail-closed."""
+
+
+def read_diff_geotiff(path: Path, *, ref: DiffRasterRef) -> DiffResult:
+    """``write_diff_geotiff`` 의 왕복 — 단, crs·transform·cell_area_m2 는 **파일에서
+    다시 파싱하지 않고 이미 검증된 ``ref`` 에서 그대로 가져온다**.
+
+    ``ref`` 는 :class:`~ksi_event_contracts.design_conformance_report.
+    DesignConformanceReport` 에 이미 실려 self-consistency validator 를 통과한
+    값이다(모듈 docstring "sha256 도 여기 산다" 와 같은 신뢰 경계 — 신뢰할 수
+    있는 값은 다시 재보다 그대로 가져다 쓴다). ``dataset.height``/``width`` 만
+    ``ref`` 와 대조해 방어적으로 확인한다 — 파일과 계약이 어긋난 사고(다른
+    래스터가 그 자리에 있는 경우)를 조용히 넘기지 않는다.
+
+    무효 셀은 ``write_diff_geotiff`` 가 NaN 으로 썼으므로, 읽을 때도 ``np.isfinite``
+    로 되짚는다 — 0 이 아니라 NaN 이 "모름"의 유일한 표현이라는 규약이 왕복에서도
+    성립한다(모듈 docstring).
+    """
+    with rasterio.open(path) as dataset:
+        if dataset.height != ref.height or dataset.width != ref.width:
+            raise DiffRasterReadError(
+                f"{path} 의 크기({dataset.width}x{dataset.height}) 가 ref 의 크기"
+                f"({ref.width}x{ref.height}) 와 다르다 — 파일과 계약이 어긋난 사고다"
+            )
+        values = dataset.read(1).astype(np.float64)
+
+    valid = np.isfinite(values)
+    diff_m = np.where(valid, values, 0.0)
+    return DiffResult(
+        diff_m=diff_m,
+        valid=valid,
+        transform=rasterio.Affine(*ref.transform),
+        crs=ref.crs,
+        cell_area_m2=ref.pixel_size_x_m * ref.pixel_size_y_m,
+    )
+
+
 def sha256_of_file(path: Path) -> str:
     """파일 바이트의 sha256 — ``sha256:`` 접두사가 붙은 산출물 참조 표기.
 
@@ -120,6 +161,8 @@ def sha256_of_file(path: Path) -> str:
 __all__ = [
     "DIFF_RASTER_PROFILE",
     "NON_DETERMINISTIC_TIFF_TAGS",
+    "DiffRasterReadError",
+    "read_diff_geotiff",
     "sha256_of_file",
     "write_diff_geotiff",
 ]

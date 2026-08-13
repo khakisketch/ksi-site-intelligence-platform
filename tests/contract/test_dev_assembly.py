@@ -33,6 +33,8 @@ from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
+from ksi_core.region_extraction_reports import RegionExtractionStore
+from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -149,6 +151,20 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         design_surface_store=design_surface_store,
         work_area_store=work_area_store,
     )
+    design_conformance_report_store = DesignConformanceStore(
+        DurableJournal(tmp_path / "design-conformance.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=processing_job_store,
+        request_store=design_conformance_request_store,
+        storage=storage,
+    )
+    # M4-E — 변화 영역 추출 요청/리포트는 RECORDED 된 설계 대비 잔량 리포트가
+    # 있어야만 만들어진다(design_conformance_report_store 뒤에 조립한다).
+    region_extraction_request_store = RegionExtractionRequestStore(
+        DurableJournal(tmp_path / "region-extraction-requests.jsonl"),
+        mission_store=mission_store,
+        design_conformance_report_store=design_conformance_report_store,
+    )
     return {
         "evidence_storage": storage,
         "auth_registry": AuthRegistry(
@@ -196,12 +212,13 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             processing_job_store=processing_job_store,
         ),
         "design_conformance_request_store": design_conformance_request_store,
-        "design_conformance_report_store": DesignConformanceStore(
-            DurableJournal(tmp_path / "design-conformance.jsonl"),
+        "design_conformance_report_store": design_conformance_report_store,
+        "region_extraction_request_store": region_extraction_request_store,
+        "region_extraction_report_store": RegionExtractionStore(
+            DurableJournal(tmp_path / "region-extraction.jsonl"),
             mission_store=mission_store,
-            processing_job_store=processing_job_store,
-            request_store=design_conformance_request_store,
-            storage=storage,
+            request_store=region_extraction_request_store,
+            design_conformance_report_store=design_conformance_report_store,
         ),
         "equipment_state_store": EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store

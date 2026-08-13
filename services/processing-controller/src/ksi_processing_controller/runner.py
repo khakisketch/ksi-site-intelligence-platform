@@ -93,6 +93,7 @@ from ksi_processing_controller.core_client import (
     PendingDesignConformanceRequest,
     PendingDesignSurface,
     PendingJob,
+    PendingRegionExtractionRequest,
     WorkerCoreClient,
 )
 from ksi_processing_controller.design_conformance_worker import (
@@ -107,6 +108,10 @@ from ksi_processing_controller.observability import (
 )
 from ksi_processing_controller.odm import NodeOdmClient
 from ksi_processing_controller.odm_masking import ImageDetector
+from ksi_processing_controller.region_extraction_worker import (
+    RegionExtractionWorkerRunError,
+    run_region_extraction_request,
+)
 from ksi_processing_controller.worker import WorkerRunError, run_job
 
 logger = logging.getLogger(__name__)
@@ -188,11 +193,11 @@ def run_pending_batch(
     (``None``, 기본값) :func:`~ksi_processing_controller.worker.run_job` 도
     같은 기본값으로 마스킹 없이 돈다 — 회귀 없음.
 
-    ## 폴링 우선순위 — 재구성 → 설계면 검증 → 두 시점 비교 → 설계 대비 잔량
+    ## 폴링 우선순위 — 재구성 → 설계면 검증 → 두 시점 비교 → 설계 대비 잔량 → 변화 영역 추출
 
-    한 라운드에 하나만 돌리므로 순서가 곧 지연 배분이다. 근거는 셋:
+    한 라운드에 하나만 돌리므로 순서가 곧 지연 배분이다. 근거는 넷:
 
-    1. **재구성이 먼저다.** 나머지 셋의 입력(DSM·점군)을 만드는 것이 재구성이고,
+    1. **재구성이 먼저다.** 나머지의 입력(DSM·점군)을 만드는 것이 재구성이고,
        밀려 있으면 그 뒤 전부가 굶는다(기존 판단 유지 — 이 순서를 바꾸면 M1/M2
        지연 특성이 달라진다).
     2. **설계면 검증이 그 다음이다.** 파일 하나를 해시하는 초 단위 작업인데,
@@ -202,12 +207,16 @@ def run_pending_batch(
     3. **비교가 설계 대비보다 앞이다.** 둘 다 분 단위 계산이라 어느 쪽을 먼저
        둬도 처리량은 같지만, 기존 경로(M1/M2)의 지연 특성을 새 기능이 밀어내지
        않게 둔다 — 새로 들어온 쪽이 기다리는 편이 회귀가 아니다.
+    4. **변화 영역 추출이 가장 뒤다(M4-E).** 이 요청은 설계 대비 잔량 리포트가
+       이미 기록된 뒤에만 만들어질 수 있고(생성 게이트 ``UNKNOWN_DESIGN_
+       CONFORMANCE``), 계산 자체도 이미 있는 diffRaster 를 다시 읽는 값싼
+       후처리다 — 새 기능이 기존 넷의 지연 특성을 밀어내지 않게 가장 뒤에 둔다.
 
     반환값은 "이번 라운드에 실제로 무언가를 하나 돌렸는가"다 — 성공이든 워커가
     스스로 실패로 끝냈든(이미 Core 에 ``FAILED`` 보고를 시도했다) ``True`` 다.
     **다른 워커에게 lease 를 뺏겼거나 Core 가 후보 하나에 대해 오류를 낸 것은 이
-    워커가 아무 일도 안 한 것과 같으므로** 다음 후보로 넘어간다 — 네 목록을 전부
-    소진해도 아무것도 못 돌렸으면 ``False``(호출자가 대기할 시간이다).
+    워커가 아무 일도 안 한 것과 같으므로** 다음 후보로 넘어간다 — 다섯 목록을
+    전부 소진해도 아무것도 못 돌렸으면 ``False``(호출자가 대기할 시간이다).
 
     ``http_client`` 는 시험 주입용이다(각 워커가 이미 받는 자리를 그대로
     통과시킨다) — 생략하면(프로덕션 기본 경로) 각자 실제 ``httpx.Client`` 를
@@ -262,6 +271,15 @@ def run_pending_batch(
             now_message=now_message,
         )
 
+    def _run_region_extraction(candidate: PendingRegionExtractionRequest) -> None:
+        run_region_extraction_request(
+            candidate.request_id,
+            core=core,
+            work_dir=work_dir,
+            http_client=http_client,
+            now_message=now_message,
+        )
+
     if _try_candidates(
         "재구성 작업",
         list_fn=core.list_pending,
@@ -292,12 +310,21 @@ def run_pending_batch(
         now_message=now_message,
     ):
         return True
-    return _try_candidates(
+    if _try_candidates(
         "설계 대비 잔량",
         list_fn=core.list_pending_design_conformances,
         id_of=lambda c: c.request_id,
         run_fn=_run_design_conformance,
         ran_but_failed=(DesignConformanceWorkerRunError,),
+        now_message=now_message,
+    ):
+        return True
+    return _try_candidates(
+        "변화 영역 추출",
+        list_fn=core.list_pending_region_extractions,
+        id_of=lambda c: c.request_id,
+        run_fn=_run_region_extraction,
+        ran_but_failed=(RegionExtractionWorkerRunError,),
         now_message=now_message,
     )
 

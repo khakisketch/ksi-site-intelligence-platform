@@ -40,6 +40,8 @@ from ksi_processing_controller.core_client import (
     PendingDesignConformanceRequest,
     PendingDesignSurface,
     PendingJob,
+    PendingRegionExtractionRequest,
+    RegionExtractionInput,
 )
 from ksi_processing_controller.odm_masking import odm_mask_filename
 from ksi_processing_controller.runner import run_forever, run_pending_batch
@@ -78,6 +80,12 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
         default_factory=list
     )
     conformance: FakeConformanceCore | None = None
+    # M4-E — 변화 영역 추출. 이 파일의 관심사는 폴링 순서이지 그 워커의 내부가
+    # 아니므로, 기존 후보 넷과 같은 근거로 목록만 흉내 낸다(비어 있으면 아무
+    # 일도 안 한다) — 나머지 메서드는 Protocol 충족용 스텁이다.
+    pending_region_extractions: list[PendingRegionExtractionRequest] = field(
+        default_factory=list
+    )
 
     def list_pending_design_surfaces(
         self, *, limit: int = 50
@@ -154,6 +162,27 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
                 detail="다른 워커가 쥐고 있다",
             )
         super().acquire_comparison_lease(request_id)
+
+    def list_pending_region_extractions(
+        self, *, limit: int = 50
+    ) -> list[PendingRegionExtractionRequest]:
+        return self.pending_region_extractions[:limit]
+
+    def acquire_region_extraction_lease(self, request_id: str) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    def get_region_extraction_input(  # pragma: no cover
+        self, request_id: str
+    ) -> RegionExtractionInput:
+        raise NotImplementedError
+
+    def transition_region_extraction(  # pragma: no cover
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        raise NotImplementedError
+
+    def submit_region_extraction(self, mission_id: str, report: Any) -> None:  # pragma: no cover
+        raise NotImplementedError
 
 
 def _core(**kwargs: Any) -> _PullableFakeCoreClient:

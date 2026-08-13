@@ -20,8 +20,10 @@ from typing import Any, Protocol
 
 import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
+from ksi_event_contracts.change_region_report import ChangeRegionSetReport
 from ksi_event_contracts.comparison_policy import ComparisonPolicy
-from ksi_event_contracts.design_conformance_report import DesignConformanceReport
+from ksi_event_contracts.design_conformance_report import DesignConformanceReport, DiffRasterRef
+from ksi_event_contracts.region_extraction_policy import RegionExtractionPolicy
 from ksi_event_contracts.vertical_reference import VerticalReference
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 
@@ -341,6 +343,70 @@ class DesignConformanceCoreClient(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class PendingRegionExtractionRequest:
+    """변화 영역 추출 워커가 다음에 잡을 후보 1건 — ``PendingComparisonRequest`` 동형."""
+
+    request_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RegionExtractionInput:
+    """``GET /v1/region-extraction-requests/{id}/input`` 을 옮긴 것.
+
+    이 요청은 설계 대비 잔량 리포트가 이미 만든 diffRaster 를 **다시 만들지
+    않고 읽기만** 한다 — 그래서 ``diff_raster`` 는 그 원본 리포트의 ``DiffRasterRef``
+    를 그대로 옮긴 것이고, ``threshold_m``/``crs`` 도 그 리포트의 값이다(계산이
+    새로 정하는 값이 아니다). ``extraction_policy`` 만 예외다 — policy-owned
+    기반안(``region_extraction_policy.py`` 모듈 docstring)에 따라 Core 가
+    ``current_region_extraction_policy()`` 를 매 호출마다 새로 계산해 준다.
+    """
+
+    request_id: str
+    mission_id: str
+    status: str
+    design_conformance_id: str
+    change_region_set_id: str
+    diff_raster_id: str
+    diff_raster_url: str
+    diff_raster: DiffRasterRef
+    threshold_m: float
+    crs: str
+    extraction_policy: RegionExtractionPolicy
+
+
+class RegionExtractionCoreClient(Protocol):
+    """변화 영역 추출 워커가 쓰는 Core 표면 — ``DesignConformanceCoreClient`` 와 같은 관용구.
+
+    :class:`CoreClient` 에 합치지 않는 이유도 같다: 이 워커는 재구성·비교·
+    설계면 검증 표면을 하나도 쓰지 않는다.
+    """
+
+    def list_pending_region_extractions(
+        self, *, limit: int = 50
+    ) -> list[PendingRegionExtractionRequest]:
+        """``GET /v1/region-extraction-requests``. QUEUED + lease 만료된 RUNNING."""
+        ...
+
+    def acquire_region_extraction_lease(self, request_id: str) -> None:
+        """``POST /{id}/lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
+        ...
+
+    def get_region_extraction_input(self, request_id: str) -> RegionExtractionInput:
+        """``GET /{id}/input``. INPUT_READY 외엔 :class:`CoreClientError`."""
+        ...
+
+    def transition_region_extraction(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        """``POST /{id}/transitions``. TRANSITIONED 외엔 :class:`CoreClientError`."""
+        ...
+
+    def submit_region_extraction(self, mission_id: str, report: ChangeRegionSetReport) -> None:
+        """``POST /v1/missions/{id}/region-extraction``. RECORDED 외엔 예외."""
+        ...
+
+
 class CoreClient(Protocol):
     """워커가 필요로 하는 Core 표면. 이 이상을 워커가 알 필요는 없다."""
 
@@ -411,13 +477,17 @@ class CoreClient(Protocol):
 
 
 class WorkerCoreClient(
-    CoreClient, DesignSurfaceCoreClient, DesignConformanceCoreClient, Protocol
+    CoreClient,
+    DesignSurfaceCoreClient,
+    DesignConformanceCoreClient,
+    RegionExtractionCoreClient,
+    Protocol,
 ):
-    """폴링 루프(:mod:`runner`) 하나가 요구하는 표면 전부 — 네 종류 후보의 합집합.
+    """폴링 루프(:mod:`runner`) 하나가 요구하는 표면 전부 — 다섯 종류 후보의 합집합.
 
-    Protocol 을 셋으로 나눠 두고 여기서만 합치는 이유: 각 워커 함수는 자기가 쓰는
+    Protocol 을 나눠 두고 여기서만 합치는 이유: 각 워커 함수는 자기가 쓰는
     것만 요구해야 가짜 구현이 작아지고(``run_comparison_request`` 는 설계면 표면을
-    모른다), 반대로 **한 프로세스가 네 종류를 다 도는 것**은 runner 의 사실이라
+    모른다), 반대로 **한 프로세스가 다섯 종류를 다 도는 것**은 runner 의 사실이라
     그 자리에서만 합집합을 요구한다.
     """
 
@@ -894,6 +964,79 @@ class HttpCoreClient:
             json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
         )
 
+    # ── M4-E 변화 영역 자동 추출 (region_extraction_requests.py) ────────────
+
+    def list_pending_region_extractions(
+        self, *, limit: int = 50
+    ) -> list[PendingRegionExtractionRequest]:
+        payload = self._get_json(
+            "/v1/region-extraction-requests",
+            what="list-pending-region-extractions",
+            params={"limit": limit},
+        )
+        return [
+            PendingRegionExtractionRequest(request_id=item["requestId"])
+            for item in payload["requests"]
+        ]
+
+    def acquire_region_extraction_lease(self, request_id: str) -> None:
+        self._post(
+            f"/v1/region-extraction-requests/{request_id}/lease",
+            what="region-extraction-lease",
+            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
+        )
+
+    def get_region_extraction_input(self, request_id: str) -> RegionExtractionInput:
+        response = self._client.get(
+            f"{self._base_url}/v1/region-extraction-requests/{request_id}/input"
+        )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise CoreClientError(
+                what="region-extraction-input",
+                verdict="NON_JSON_RESPONSE",
+                detail=response.text[:200],
+            ) from exc
+        if payload.get("verdict") != "INPUT_READY":
+            raise CoreClientError(
+                what="region-extraction-input",
+                verdict=str(payload.get("verdict")),
+                detail=payload.get("detail"),
+            )
+        data = payload["input"]
+        return RegionExtractionInput(
+            request_id=data["requestId"],
+            mission_id=data["missionId"],
+            status=data["status"],
+            design_conformance_id=data["designConformanceId"],
+            change_region_set_id=data["changeRegionSetId"],
+            diff_raster_id=data["diffRasterId"],
+            diff_raster_url=data["diffRasterUrl"],
+            diff_raster=DiffRasterRef.model_validate(data["diffRaster"]),
+            threshold_m=data["thresholdM"],
+            crs=data["crs"],
+            extraction_policy=RegionExtractionPolicy.model_validate(data["extractionPolicy"]),
+        )
+
+    def transition_region_extraction(
+        self, request_id: str, target: str, *, detail: str | None = None
+    ) -> None:
+        self._post(
+            f"/v1/region-extraction-requests/{request_id}/transitions",
+            what=f"region-extraction-transition→{target}",
+            ok="TRANSITIONED",
+            json={"targetStatus": target, "detail": detail},
+        )
+
+    def submit_region_extraction(self, mission_id: str, report: ChangeRegionSetReport) -> None:
+        self._post(
+            f"/v1/missions/{mission_id}/region-extraction",
+            what=f"region-extraction:{report.change_region_set_id}",
+            ok="RECORDED",
+            json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
+        )
+
     def close(self) -> None:
         self._client.close()
 
@@ -917,5 +1060,8 @@ __all__ = [
     "PendingDesignConformanceRequest",
     "PendingDesignSurface",
     "PendingJob",
+    "PendingRegionExtractionRequest",
+    "RegionExtractionCoreClient",
+    "RegionExtractionInput",
     "WorkerCoreClient",
 ]

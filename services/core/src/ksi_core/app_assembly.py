@@ -50,6 +50,8 @@ from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
 from ksi_core.mission_records import MissionStore
 from ksi_core.observability import CorrelationIdMiddleware
 from ksi_core.processing_jobs import ProcessingJobStore
+from ksi_core.region_extraction_reports import RegionExtractionStore
+from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -187,6 +189,34 @@ def assemble_app(
         and evidence_storage is not None
         else None
     )
+    # 변화 영역 자동 추출(M4-E) — 설계 대비 잔량 리포트가 이미 기록된 뒤에만
+    # 만들 수 있는 후속 요청이라, design_conformance_report_store 조립 직후 둔다.
+    # 두 store 모두 evidence_storage 를 직접 쓰지 않는다(요청 store 는 diffRaster
+    # 를 design_conformance_report_store 경유로 읽고, 리포트 store 는 바이트
+    # 재해싱이 없다 — 모듈 docstring) — 그래도 design_conformance_report_store
+    # 자체가 evidence_storage 없이는 조립되지 않으므로 조건은 그대로 물려받는다.
+    region_extraction_request_journal = journal("region-extraction-requests.jsonl")
+    region_extraction_report_journal = journal("region-extraction.jsonl")
+    region_extraction_request_store = (
+        RegionExtractionRequestStore(
+            region_extraction_request_journal,
+            mission_store=mission_store,
+            design_conformance_report_store=design_conformance_report_store,
+        )
+        if design_conformance_report_store is not None
+        else None
+    )
+    region_extraction_report_store = (
+        RegionExtractionStore(
+            region_extraction_report_journal,
+            mission_store=mission_store,
+            request_store=region_extraction_request_store,
+            design_conformance_report_store=design_conformance_report_store,
+        )
+        if region_extraction_request_store is not None
+        and design_conformance_report_store is not None
+        else None
+    )
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -244,6 +274,8 @@ def assemble_app(
         ),
         design_conformance_request_store=design_conformance_request_store,
         design_conformance_report_store=design_conformance_report_store,
+        region_extraction_request_store=region_extraction_request_store,
+        region_extraction_report_store=region_extraction_report_store,
         equipment_state_store=EquipmentStateStore(
             equipment_state_journal, site_store=site_store
         ),

@@ -51,6 +51,8 @@ if TYPE_CHECKING:
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_records import MissionStore
     from ksi_core.processing_jobs import ProcessingJobStore
+    from ksi_core.region_extraction_reports import RegionExtractionStore
+    from ksi_core.region_extraction_requests import RegionExtractionRequestStore
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
@@ -224,6 +226,37 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " 그러면 '유효한 리포트가 있는데 그 지도는 다른 파일'이 성립한다",
     ),
     (
+        "region_extraction_request_store",
+        (
+            (
+                "mission_store",
+                "design_conformance_report_store",
+                "evidence_storage",
+            ),
+        ),
+        "region_extraction_request_store 는 mission_store·design_conformance_report_"
+        "store·evidence_storage 와 함께 주어져야 한다 — 변화 영역 추출 요청은 'RECORDED"
+        " 된 어느 설계 대비 잔량 리포트에서 뽑으라는 지시인가'로만 해석 가능하고,"
+        " 워커가 그 diffRaster 를 읽어갈 presigned URL 을 발급할 스토리지가 없으면 이"
+        " 표면 자체가 성립하지 않는다(design_conformance_request_store 와 동일한"
+        " fail-closed 조립 원칙)",
+    ),
+    (
+        "region_extraction_report_store",
+        (
+            (
+                "mission_store",
+                "design_conformance_report_store",
+                "region_extraction_request_store",
+            ),
+        ),
+        "region_extraction_report_store 는 mission_store·design_conformance_report_"
+        "store·region_extraction_request_store 와 함께 주어져야 한다 — 이 원장은"
+        " 리포트를 받을 때 요청 원장과 원본 설계 대비 잔량 리포트를 대조해서만"
+        " 기록한다(region_extraction_reports.py 모듈 docstring). 하나라도 없으면 그"
+        " 대조가 성립하지 않는다",
+    ),
+    (
         "equipment_state_store",
         (("site_store",),),
         "equipment_state_store 는 site_store 와 함께 주어져야 한다 — 위치·속도는"
@@ -261,6 +294,8 @@ def create_app(
     comparison_request_store: ComparisonRequestStore | None = None,
     design_conformance_request_store: DesignConformanceRequestStore | None = None,
     design_conformance_report_store: DesignConformanceStore | None = None,
+    region_extraction_request_store: RegionExtractionRequestStore | None = None,
+    region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
@@ -352,6 +387,17 @@ def create_app(
             대조하고, 다르면 리포트를 기록하지 않고 요청을 FAILED 로 보낸다.
             그 대조 없이 조립하면 "유효한 리포트가 있는데 지도는 다른 파일"이
             성립한다(design_conformance_reports.py 모듈 docstring).
+        region_extraction_request_store: M4-E "이 설계 대비 잔량 리포트에서 변화
+            영역을 뽑아라"는 요청의 수신·발견·lease·전이 저장소.
+            ``mission_store``·``design_conformance_report_store``·
+            ``evidence_storage`` 가 모두 필수다 — RECORDED 된 설계 대비 잔량
+            리포트만 입력이 되는지 대조하려면 그 원장이, 워커가 diffRaster 를
+            읽으려면 스토리지가 필요하다.
+        region_extraction_report_store: M4-E 변화 영역 추출 리포트 원장. 위 요청
+            저장소와 ``design_conformance_report_store`` 가 필수다 — 이 원장은
+            리포트를 받을 때 요청과 원본 설계 대비 잔량 리포트를 대조해서만
+            기록한다(바이트 재해싱은 없다 — region_extraction_reports.py 모듈
+            docstring).
         equipment_state_store: Phase 3 장비 운동상태 수신·위험 평가 저장소.
             ``site_store`` 가 필수다 — 위치·속도는 좌표계 없이는 숫자일 뿐이고,
             현장 등록 좌표계와 대조하지 않으면 서로 다른 기준계의 점 사이 거리를
@@ -432,6 +478,8 @@ def create_app(
         "design_conformance_request_store": design_conformance_request_store,
         "work_area_store": work_area_store,
         "design_conformance_report_store": design_conformance_report_store,
+        "region_extraction_request_store": region_extraction_request_store,
+        "region_extraction_report_store": region_extraction_report_store,
         "equipment_state_store": equipment_state_store,
         "event_store": event_store,
         "site_store": site_store,
@@ -621,6 +669,22 @@ def create_app(
         from ksi_core.design_progress import mount_design_progress
 
         mount_design_progress(app, design_conformance_report_store, work_area_store)
+
+    if region_extraction_request_store is not None:
+        # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 diffRaster 를
+        # 읽어갈 presigned GET 을 이 표면이 발급한다).
+        assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        assert design_conformance_report_store is not None  # noqa: S101 -- 위 결합 검증의 사후조건
+        from ksi_core.region_extraction_requests import mount_region_extraction_requests
+
+        mount_region_extraction_requests(
+            app, region_extraction_request_store, design_conformance_report_store, evidence_storage
+        )
+
+    if region_extraction_report_store is not None:
+        from ksi_core.region_extraction_reports import mount_region_extraction
+
+        mount_region_extraction(app, region_extraction_report_store)
 
     if work_area_store is not None:
         from ksi_core.work_areas import mount_work_areas
