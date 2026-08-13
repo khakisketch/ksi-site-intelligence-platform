@@ -12,7 +12,7 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="하단 메뉴"
-      className="fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
+      className="print:hidden fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       {/* 비활성 라벨에 --ink-muted(#878D94)를 쓰면 흰 배경에서 명도비 3.35:1 로 AA 미달이다
           (하위호환 text-foreground/60 은 합성색 ≈4.89:1 로 통과했었다 — 토큰 이관이 대비를

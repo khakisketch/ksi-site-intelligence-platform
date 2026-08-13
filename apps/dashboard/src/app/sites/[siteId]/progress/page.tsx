@@ -234,6 +234,12 @@ export default async function SiteProgressPage({
                 <ZoneProgressRow key={zone.zoneId} zone={zone} />
               ))}
             </ul>
+            <Link
+              href={`/sites/${encodeURIComponent(site.siteId)}/report?designSurfaceId=${encodeURIComponent(designSurfaceId)}`}
+              className="text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+            >
+              현장 보고서 내보내기 →
+            </Link>
           </section>
 
           {latestMissionId && (

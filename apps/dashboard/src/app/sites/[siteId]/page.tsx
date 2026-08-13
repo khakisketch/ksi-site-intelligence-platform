@@ -240,6 +240,12 @@ export default async function SiteDetailPage({
               className="font-semibold text-accent-text hover:underline"
             >
               계획 대비 진척 보기 →
+            </Link>{" "}
+            <Link
+              href={`/sites/${encodeURIComponent(site.siteId)}/report`}
+              className="font-semibold text-accent-text hover:underline"
+            >
+              현장 보고서 내보내기 →
             </Link>
           </p>
         </SectionCard>

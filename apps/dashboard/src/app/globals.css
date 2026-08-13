@@ -365,3 +365,43 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   인쇄 — 현장 보고서(M4-D)
+
+   앱 셸(`layout.tsx`)은 화면 전용으로 지어졌다: `body`는 `lg:h-screen` +
+   `lg:overflow-hidden`로 뷰포트에 고정되고 `main`만 스크롤한다. 문서와 앱을
+   가르는 그 설계가 인쇄에서는 정반대로 작동한다 — 뷰포트 밖으로 밀린 본문이
+   그대로 잘려 나간다. 그래서 인쇄 매체에서만 그 고정을 푼다(`!important`가
+   필요한 이유: Tailwind 유틸리티 클래스와 이 규칙이 같은 특이도라 순서에
+   기대지 않는다).
+
+   `print:hidden`(Tailwind 내장 `@media print` 변형)은 사이드바·상단바·하단
+   탭·내보내기 버튼 각각에 개별로 건다 — 여기서 셀렉터로 다시 감추지 않는다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  main {
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* 범례 스와치·상태 배지처럼 배경색 자체가 정보인 요소는 브라우저 기본값이
+     인쇄에서 배경을 지운다 — 그러면 "문턱 미만" 중립색과 "쌓기/깎기" 색이
+     전부 흰 칸으로 보여 범례가 거짓말을 하게 된다. */
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* 구역·물량 표가 열이 많아 세로보다 가로가 넉넉해야 한 줄에 든다. 프린터
+     대화상자에서 사용자가 뒤집을 수 있는 값이라 강제가 아니라 권고다. */
+  @page {
+    size: landscape;
+  }
+}

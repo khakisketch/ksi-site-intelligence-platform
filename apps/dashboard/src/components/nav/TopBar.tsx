@@ -26,7 +26,7 @@ function todayLabel(): { date: string; weekday: string } {
 function TopBarFrame({ title, children }: { title: string; children: React.ReactNode }) {
   const { date, weekday } = todayLabel();
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
+    <header className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
       <PageTitle fallback={title} />
       <span className="hidden items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1 text-[13px] text-ink-2 sm:inline-flex">
         <strong className="font-semibold text-ink-1">{date}</strong>

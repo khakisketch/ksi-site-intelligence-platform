@@ -23,7 +23,7 @@ export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
   return (
     <nav
       aria-label="주 메뉴"
-      className="hidden bg-sidebar pt-[18px] pb-6 text-sidebar-text lg:flex lg:flex-col lg:overflow-y-auto"
+      className="print:hidden hidden bg-sidebar pt-[18px] pb-6 text-sidebar-text lg:flex lg:flex-col lg:overflow-y-auto"
     >
       <div className="flex items-center gap-[9px] px-[18px] pb-[22px]">
         <span

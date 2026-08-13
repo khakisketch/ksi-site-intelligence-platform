@@ -35,6 +35,8 @@ export function resolvePageTitle(pathname: string | null): string {
   if (/^\/sites\/[^/]+\/surveys\/new\/?$/.test(pathname)) return "조사 계획";
   if (/^\/sites\/[^/]+\/design\/?$/.test(pathname)) return "설계 기준면";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
+  if (/^\/sites\/[^/]+\/progress\/?$/.test(pathname)) return "계획 대비 진척";
+  if (/^\/sites\/[^/]+\/report\/?$/.test(pathname)) return "현장 보고서";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
   if (/^\/events\/[^/]+\/?$/.test(pathname)) return "이벤트 상세";
   if (/^\/missions\/[^/]+\/?$/.test(pathname)) return "임무 상세";

@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 
 import { registerKoreaProjections, proj4 } from "@/lib/geo/proj4-defs";
+import { usePrintMapResize } from "@/hooks/usePrintMapResize";
 
 registerKoreaProjections();
 
@@ -42,6 +43,7 @@ function RasterLayer({
   onState: (state: LoadState) => void;
 }) {
   const map = useMap();
+  usePrintMapResize(map);
 
   useEffect(() => {
     let cancelled = false;

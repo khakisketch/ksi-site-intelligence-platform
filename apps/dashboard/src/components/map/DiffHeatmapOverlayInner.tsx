@@ -7,6 +7,7 @@ import { MapContainer, TileLayer, useMap } from "react-leaflet";
 
 import { registerKoreaProjections, proj4 } from "@/lib/geo/proj4-defs";
 import { DIFF_CELL_COLOR, classifyDiffCell, diffIntensity } from "@/lib/design-conformance";
+import { usePrintMapResize } from "@/hooks/usePrintMapResize";
 
 registerKoreaProjections();
 
@@ -59,6 +60,7 @@ function DiffRasterLayer({
   onState: (state: DiffLoadState) => void;
 }) {
   const map = useMap();
+  usePrintMapResize(map);
 
   useEffect(() => {
     let cancelled = false;
