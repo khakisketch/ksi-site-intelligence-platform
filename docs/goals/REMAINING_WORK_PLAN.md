@@ -41,11 +41,19 @@
 > M4-F: 설계 판(revision) 계보 + 판 간 물량 차이. 단면(F3)·LandXML(F5)은 실무
 > 설계 파일 실물 확보 전까지 순위를 매기지 않는다(추측 개발이 된다).
 >
-> **잔여 리스크(같은 재감사가 확정, M4-D를 막지는 않되 등재됨)**: 처리 워커의
-> `work_dir` 미정리+무한 재시도 조합이 실제 임무 규모에서 보고서 생성 자체를
-> 멈출 수 있음(`processing-controller-work-dir-unbounded-retry`), IFC mm 단위
-> 설계면 입력에서 좌표 1000배 축소(`bim-integration-ifc-mm-unit-double-scale`,
-> IFC 경로에만 영향). 둘 다 `.ksi/goals.json` risks 에 open으로 등재.
+> **[2026-08-13 해소]** 처리 워커의 `work_dir` 미정리+무한 재시도
+> (`processing-controller-work-dir-unbounded-retry`)는 재구성 워커
+> (`worker.py`)와 설계면 검증 워커(`design_surface_verifier.py`) 둘 다 수정해
+> 닫았다(goal `processing-controller-work-dir-cleanup`, 독립 검토 2건
+> CONFIRMED-FIXED). 같은 검토가 `comparison_worker.py`·
+> `design_conformance_worker.py`의 예외 목록에도 `OSError`가 없는 것을
+> 찾았으나, 실제 정리 코드(`shutil.rmtree`/`tempfile.TemporaryDirectory`)가
+> 이미 있어 디스크 적재 위험은 없다고 확인돼 low 리스크로만 등재
+> (`comparison-design-conformance-worker-osrerror-not-failed`).
+>
+> **남은 리스크**: IFC mm 단위 설계면 입력에서 좌표 1000배 축소
+> (`bim-integration-ifc-mm-unit-double-scale`, IFC 경로에만 영향 — 주 경로인
+> GeoTIFF 직접 업로드는 무관). `.ksi/goals.json` risks 에 open으로 등재.
 
 ## 하드웨어 트랙 (도착·승인 대기 — 준비 완료 상태 유지)
 
