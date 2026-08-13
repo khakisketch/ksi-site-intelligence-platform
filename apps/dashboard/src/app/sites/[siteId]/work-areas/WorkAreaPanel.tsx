@@ -7,6 +7,7 @@ import { StateBadge } from "@/components/ui/StatusBadge";
 import { COMPARISON_ZONE_CRS, toZonePolygon } from "@/lib/comparison-submit";
 import { readableApiError } from "@/lib/core-api/labels";
 import { parseJsonSafe } from "@/lib/http";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { WORK_AREA_STATUS_LABEL, partitionWorkAreas, polygonToVertices } from "@/lib/work-areas";
 import type {
   AoiVertex,
@@ -29,11 +30,6 @@ import type {
  * 구역 보관, 두 건을 한 번에 바꾸는데 응답은 앞의 것만 싣고 온다. 뒤의 것을
  * 화면이 짐작해서 칠하면 서버 규칙을 여기에 복제하는 셈이라, 짐작 대신 읽는다.
  */
-
-function formatMoment(iso: string): string {
-  const when = new Date(iso);
-  return Number.isNaN(when.getTime()) ? iso : when.toLocaleString("ko-KR");
-}
 
 function WorkAreaCard({
   area,
@@ -74,7 +70,7 @@ function WorkAreaCard({
         </div>
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">등록</dt>
-          <dd className="num">{formatMoment(area.createdAt)}</dd>
+          <dd className="num">{formatKoreanDateTime(area.createdAt)}</dd>
         </div>
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">좌표계</dt>

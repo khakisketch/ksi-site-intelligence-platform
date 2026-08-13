@@ -15,6 +15,7 @@ import {
   formatVolumeM3,
 } from "@/lib/core-api/phase34-labels";
 import { isTerminalComparisonStatus, toZonesPayload } from "@/lib/comparison-submit";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { conformanceReadySurfaces, designComparableJobs } from "@/lib/design-conformance";
 import { parseJsonSafe } from "@/lib/http";
 import { usePolling } from "@/hooks/usePolling";
@@ -49,10 +50,7 @@ import type {
  */
 
 function formatJob(job: SiteProcessingJobSummary): string {
-  const when = new Date(job.issuedAt);
-  const stamp = Number.isNaN(when.getTime())
-    ? job.issuedAt
-    : when.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+  const stamp = formatKoreanDateTime(job.issuedAt, { dateStyle: "medium", timeStyle: "short" });
   return `${stamp} · ${job.jobId}`;
 }
 
@@ -192,7 +190,7 @@ function ConformanceResult({
       </div>
 
       <p className="text-[12px] break-keep text-ink-2">
-        {new Date(report.computedAt).toLocaleString("ko-KR")} 계산 · 좌표계 {report.crs} ·
+        {formatKoreanDateTime(report.computedAt)} 계산 · 좌표계 {report.crs} ·
         높이 기준 {humanizeVerticalDatum(report.verticalReference.datum)}
       </p>
 

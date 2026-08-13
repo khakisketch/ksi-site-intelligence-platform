@@ -1,3 +1,4 @@
+import { formatKoreanDateTime } from "@/lib/datetime";
 import {
   describeVolumeUncertainty,
   formatNetVolumeM3,
@@ -86,7 +87,7 @@ export function VolumeChangeSummary({
           )}
         </div>
         <p className="text-[12.5px] text-ink-2 break-keep">
-          {new Date(report.computedAt).toLocaleString("ko-KR")} 계산 · 좌표계{" "}
+          {formatKoreanDateTime(report.computedAt)} 계산 · 좌표계{" "}
           {report.crs}
         </p>
       </header>

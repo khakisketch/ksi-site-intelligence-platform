@@ -8,6 +8,7 @@ import { listDesignSurfaces } from "@/lib/core-api/design";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DiffHeatmapOverlay } from "@/components/map/DiffHeatmapOverlay";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatNetVolumeM3, formatVolumeM3 } from "@/lib/core-api/phase34-labels";
 import type { DesignSurface, ZoneProgress } from "@/lib/core-api/types";
 
@@ -20,11 +21,6 @@ import type { DesignSurface, ZoneProgress } from "@/lib/core-api/types";
  * "데이터 없음"과 다른 사실로 화면에 나온다 — 둘을 뭉개면 사용자가 무엇을 해야
  * 진척이 나오는지 알 수 없다.
  */
-
-function formatMoment(iso: string): string {
-  const when = new Date(iso);
-  return Number.isNaN(when.getTime()) ? iso : when.toLocaleString("ko-KR");
-}
 
 function ProgressBar({ ratio }: { ratio: number | null }) {
   if (ratio === null) {
@@ -212,8 +208,8 @@ export default async function SiteProgressPage({
               </span>
             </div>
             <p className="rounded-md border border-line bg-sunk px-2.5 py-2 text-[12px] break-keep text-ink-2">
-              기준(원지형) {formatMoment(progress.baselineComputedAt)} → 최신{" "}
-              {formatMoment(progress.latestComputedAt)}. 기준 시점이 이미 일부 시공된
+              기준(원지형) {formatKoreanDateTime(progress.baselineComputedAt)} → 최신{" "}
+              {formatKoreanDateTime(progress.latestComputedAt)}. 기준 시점이 이미 일부 시공된
               뒤였다면 계획이 실제보다 적게 잡힙니다 — 기준을 다시 확인하세요. 이 진척은
               정산·기성 근거가 아닙니다(설계면은 측정물이 아니라 검증된 오차한계가
               없습니다).

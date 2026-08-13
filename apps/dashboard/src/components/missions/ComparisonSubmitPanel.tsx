@@ -16,6 +16,7 @@ import {
   toZonesPayload,
   type ComparisonEpoch,
 } from "@/lib/comparison-submit";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { parseJsonSafe } from "@/lib/http";
 import { usePolling } from "@/hooks/usePolling";
 import type {
@@ -28,10 +29,7 @@ import type {
 } from "@/lib/core-api/types";
 
 function formatEpoch(epoch: ComparisonEpoch): string {
-  const when = new Date(epoch.issuedAt);
-  const stamp = Number.isNaN(when.getTime())
-    ? epoch.issuedAt
-    : when.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+  const stamp = formatKoreanDateTime(epoch.issuedAt, { dateStyle: "medium", timeStyle: "short" });
   return `${stamp} · ${epoch.jobId}`;
 }
 

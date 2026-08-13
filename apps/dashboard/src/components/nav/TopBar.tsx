@@ -5,19 +5,21 @@ import { logout } from "@/app/login/actions";
 import { whoAmI } from "@/lib/core-api/auth";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
+import { SEOUL_TIME_ZONE } from "@/lib/datetime";
 
 import { PageTitle } from "./PageTitle";
 import { resolvePageTitle } from "./page-title";
 
-// 현장은 한국이고 서버는 어디서든 돌 수 있다 — 날짜를 서버 로컬 시간대로 찍으면
-// 자정 근처에서 운영자가 보는 날짜와 어긋난다.
-const SEOUL = "Asia/Seoul";
-
 function todayLabel(): { date: string; weekday: string } {
   const now = new Date();
   return {
-    date: new Intl.DateTimeFormat("ko-KR", { dateStyle: "long", timeZone: SEOUL }).format(now),
-    weekday: new Intl.DateTimeFormat("ko-KR", { weekday: "long", timeZone: SEOUL }).format(now),
+    date: new Intl.DateTimeFormat("ko-KR", { dateStyle: "long", timeZone: SEOUL_TIME_ZONE }).format(
+      now,
+    ),
+    weekday: new Intl.DateTimeFormat("ko-KR", {
+      weekday: "long",
+      timeZone: SEOUL_TIME_ZONE,
+    }).format(now),
   };
 }
 

@@ -15,6 +15,7 @@ import {
   declaredObservedRows,
   pendingVerification,
 } from "@/lib/design-conformance";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { parseJsonSafe } from "@/lib/http";
 import { usePolling } from "@/hooks/usePolling";
 import type {
@@ -74,8 +75,7 @@ async function sha256Hex(file: File): Promise<string> {
 
 function formatMoment(iso: string | null): string {
   if (!iso) return "—";
-  const when = new Date(iso);
-  return Number.isNaN(when.getTime()) ? iso : when.toLocaleString("ko-KR");
+  return formatKoreanDateTime(iso);
 }
 
 /** 선언 vs 관측 — **한 줄로 합치지 않는 것이 이 표의 존재 이유다.** */
