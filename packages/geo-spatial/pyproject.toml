@@ -15,7 +15,18 @@ requires-python = ">=3.12,<3.13"
 # `uv pip install --dry-run pyproj rasterio` → pyproj 3.7.2 · rasterio 1.5.0 ·
 # affine 2.4.0 · cligj 0.7.2 정상 해결. 라이선스는 pyproj MIT / rasterio BSD-3 /
 # PROJ·GDAL MIT 계열로 AGPL 경계(ADR-KSI-012 D2)와 무관하다.
-dependencies = ["pyproj>=3.7", "rasterio>=1.3", "numpy>=1.26"]
+#
+# **ksi-event-contracts 는 왜 여기 있고 방향은 왜 이쪽인가.** 수직기준 계약
+# (`VerticalDatum`·`VerticalReference`·계열 판정)의 정본은 계약 패키지에 있고
+# (ksi_event_contracts/vertical_reference.py 모듈 docstring), 이 모듈은 그것을
+# 재수출한다. 반대 방향(계약 패키지가 이 패키지를 의존)으로 두면 pyproj·rasterio
+# (GDAL)가 Core(control plane)까지 딸려온다 — comparison_policy 를 계약 패키지로
+# 올린 것과 같은 이유다. 계약 패키지는 pydantic 만 물고 있어 이 방향은 무겁지 않다.
+# rasterio>=1.5.1: 1.5.1 이 numpy 2.5 의 'Setting the shape on a NumPy array has been
+# deprecated' 를 DatasetReader.read() 내부에서 view reshape 로 바꿔 해소했다
+# (rasterio gh-3592, PR#3597, CHANGES.txt 1.5.1 확인) — .ksi/goals.json risk
+# rasterio-numpy25-shape-deprecation.
+dependencies = ["pyproj>=3.7", "rasterio>=1.5.1", "numpy>=1.26", "ksi-event-contracts"]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,3 +34,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ksi_geo_spatial"]
+
+[tool.uv.sources]
+ksi-event-contracts = { workspace = true }

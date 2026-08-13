@@ -10,14 +10,21 @@ import {
   listComparisonRequests,
   listSiteProcessingJobs,
 } from "@/lib/core-api/comparison";
+import {
+  getDesignConformance,
+  listDesignConformanceRequests,
+  listDesignSurfaces,
+} from "@/lib/core-api/design";
 import { getCoverageReport, getMission } from "@/lib/core-api/missions";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { getSite } from "@/lib/core-api/sites";
+import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ComparisonSubmitPanel } from "@/components/missions/ComparisonSubmitPanel";
+import { DesignConformancePanel } from "@/components/design/DesignConformancePanel";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
 import {
@@ -96,6 +103,10 @@ export default async function MissionDetailPage({
     siteJobs,
     comparisonPolicy,
     latestComparison,
+    designSurfaces,
+    latestDesignRequest,
+    designConformance,
+    workAreas,
   ] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
     fetchCoverageResult(mission.missionId),
@@ -119,6 +130,21 @@ export default async function MissionDetailPage({
     listComparisonRequests(mission.missionId)
       .then((r) => r.requests[0] ?? null)
       .catch(() => null),
+    // 설계 대비 잔량(M4-A) — 셋 다 부가 정보다. 조회가 실패하거나 아직 없으면
+    // (리포트는 404 가 "아직 계산 안 됨"이다) 그 패널만 비운다.
+    listDesignSurfaces(mission.siteId)
+      .then((r) => r.surfaces)
+      .catch(() => []),
+    listDesignConformanceRequests(mission.missionId)
+      .then((r) => r.requests[0] ?? null)
+      .catch(() => null),
+    getDesignConformance(mission.missionId).catch(() => null),
+    // 작업구역(M4-C) — 현장 단위 자산이라 comparison siteJobs 와 같은 사유로
+    // missionId 가 아니라 siteId 로 조회한다. 실패해도 이 패널은 즉석 그리기로
+    // 대체된다(work-area 목록이 부가 정보라는 원칙 그대로).
+    listWorkAreas(mission.siteId)
+      .then((r) => r.workAreas)
+      .catch(() => []),
   ]);
   // 최신 발급분 — 발급 순서가 곧 배열 순서라는 서버 계약은 없으므로 issuedAt 로 정렬한다.
   const latestJob = [...jobs].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0] ?? null;
@@ -210,6 +236,19 @@ export default async function MissionDetailPage({
         siteAoi={site?.aoi?.vertices ?? null}
         policy={comparisonPolicy}
         initialRequest={latestComparison}
+      />
+
+      <DesignConformancePanel
+        missionId={mission.missionId}
+        siteId={mission.siteId}
+        canIssue={canIssue}
+        surfaces={designSurfaces}
+        siteJobs={siteJobs}
+        siteAoi={site?.aoi?.vertices ?? null}
+        workAreas={workAreas}
+        initialRequest={latestDesignRequest}
+        initialReport={designConformance?.reports[0] ?? null}
+        initialTotalNetM3={designConformance?.latestTotalNetM3 ?? null}
       />
     </div>
   );

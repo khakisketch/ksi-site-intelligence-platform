@@ -126,13 +126,15 @@ static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
         }
     }
 
-    if (args->num_samples <= 0) {
-        fprintf(stderr, "--num-samples 는 필수이고 0보다 커야 한다\n");
-        return false;
-    }
+    /* --num-samples 생략 시 unbounded(<=0, shared_state.h 의 기존 규약 그대로) —
+     * DJI 앱 프레임워크(dji_app_mgr)가 dpk 로 설치한 앱을 systemd 서비스로 기동할 때
+     * 인자 없이 실행한다(2026-08-12 실기 실측: ExecStart 가 무인자로 우리 바이너리를
+     * 불렀고, 그때 이 필드가 필수였던 탓에 exit(2)/INVALIDARGUMENT 로 설치가 통째로
+     * 롤백됐다 — dji_app_mgr 로그 'upgrade_start_third_psdk_app failed' 3회 재시도 후
+     * 'app install fail'). --duration-sec 는 여전히 기본 60초로 유한하다(무인자 실행이
+     * 무한정 도는 것은 원치 않는다 — 필요하면 --duration-sec 로 늘린다). */
     if (args->out_path == NULL || args->out_path[0] == '\0') {
-        fprintf(stderr, "--out 은 필수다\n");
-        return false;
+        args->out_path = "/tmp/ksi-psdk-tap.ndjson";
     }
     if (args->camera_index < 1 || args->camera_index > 3) {
         fprintf(stderr, "--camera-index 는 1, 2, 3 중 하나여야 한다\n");
@@ -253,6 +255,20 @@ int main(int argc, char **argv)
     rc = DjiCore_Init(&user_info);
     if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         fprintf(stderr, "DjiCore_Init 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        goto fail_before_core;
+    }
+
+    /* DjiCore_Init 만으로는 부족하다 — dji_app_mgr(dpk 로 설치된 앱을 systemd 로 기동한
+     * 뒤 "app_upgrade_verify_real_app_id_info_after_start_app" 로 앱에게 신원 확인
+     * 메시지를 보낸다)가 이 호출 전에는 응답을 받지 못한다. 2026-08-12 실기 실측:
+     * 이 호출 없이 설치하면 dji_app_mgr 로그에 "send message to psdk app fail,
+     * result = -1002"가 5회 재시도 끝에 실패로 끝나고 설치가 롤백됐다(result=53).
+     * 레퍼런스 샘플(edge/third_party/psdk/samples/sample_c/platform/linux/manifold3/
+     * application/main.c)도 DjiCore_Init 직후 모듈 등록을 마치고 이 호출로 마무리한다
+     * — 이 호출이 SDK를 "앱이 살아있고 요청에 응답 가능한 상태"로 전환하는 지점이다. */
+    rc = DjiCore_ApplicationStart();
+    if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        fprintf(stderr, "DjiCore_ApplicationStart 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
         goto fail_before_core;
     }
 

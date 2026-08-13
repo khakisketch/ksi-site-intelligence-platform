@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.edge_sync import EdgeSyncStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRODUCTION_SOURCE = (
@@ -559,5 +560,69 @@ def test_ready_is_503_when_a_journal_is_sealed(
         assert response.status_code == 503
         assert response.json()["ready"] is False
     finally:
+        for journal in opened:
+            journal.close()
+
+
+def test_ready_is_503_when_edge_sync_store_is_sealed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``EdgeSyncStore`` 봉인도 ``/ready`` 에 반영된다(P0-1 회귀 고정).
+
+    수정 전에는 ``EdgeSyncStore`` 가 ``sealed_reason`` property 를 노출하지
+    않아 ``app_assembly.ready()`` 의 ``getattr(j, "sealed_reason", None)`` 이
+    기본값 ``None`` 에 걸렸다 — 이 store 가 봉인돼도 ``/ready`` 는 계속 200 을
+    냈다(edge-sync 수신 전부가 503 인데 오케스트레이터는 정상으로 오판).
+    """
+    from ksi_core.app_assembly import assemble_app as _assemble_app
+    from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+
+    opened: list[Any] = []
+
+    def _journal(name: str) -> DurableJournal:
+        journal = DurableJournal(tmp_path / "ready-seal-edge" / name)
+        opened.append(journal)
+        return journal
+
+    auth_registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(b"z").hexdigest(),
+                principal=Principal(
+                    principal_id="op-3", kind=PrincipalKind.OPERATOR, role=Role.ADMIN,
+                    device_id=None,
+                ),
+            )
+        ]
+    )
+    seal_app = _assemble_app(
+        tmp_path / "ready-seal-edge",
+        journal=_journal,
+        opened=opened,
+        edge_sync_snapshot_every=None,
+        auth_registry=auth_registry,
+        evidence_storage=None,
+        mission_signing_key=Ed25519PrivateKey.generate(),
+        mission_signing_key_id="ready-seal-edge-test-key",
+    )
+    try:
+        client = TestClient(seal_app)
+        assert client.get("/ready").status_code == 200
+
+        edge_sync_store = next(o for o in opened if isinstance(o, EdgeSyncStore))
+        # close() 는 EdgeSyncStore.close() 문서화대로 sealed_reason 을 "closed"
+        # 로 남긴다 — DurableJournal 과 동일한 봉인 의미론(durable_journal.py:396
+        # 대칭)이므로, append 실패를 재현하지 않고도 봉인 상태를 만들 수 있다.
+        edge_sync_store.close()
+
+        assert edge_sync_store.sealed_reason is not None
+        response = client.get("/ready")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["ready"] is False
+        assert body["sealedCount"] >= 1
+    finally:
+        # close() 는 두 원장 타입 모두 멱등이다 — 이미 닫힌 edge_sync_store 도
+        # 안전하게 다시 닫을 수 있다(위 close() 문서 참조).
         for journal in opened:
             journal.close()

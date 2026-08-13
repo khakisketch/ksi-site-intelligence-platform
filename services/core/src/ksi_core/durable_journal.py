@@ -88,6 +88,33 @@ def _fsync_dir(directory: Path) -> None:
         os.close(fd)
 
 
+def _acquire_writer_lock(path: Path, *, error_cls: type[Exception]) -> int:
+    """flock 배타 잠금 fd 획득 — 두 프로세스가 같은 journal 에 쓰는 경합을 기동 거부로 막는다.
+
+    ``DurableJournal`` 과 ``edge_sync.EdgeSyncStore`` 가 동형으로 구현하던 잠금
+    획득부의 공용화(P0-1 2단계). 두 원장은 실패 시 던지는 예외 타입이 다르므로
+    (``JournalRecoveryError`` / ``StoreRecoveryError`` — 각자의 호출자·테스트가
+    구체 타입으로 잡는다) 호출자가 ``error_cls`` 로 지정한다. 메시지 문면은
+    두 원장에서 원래 동일했으므로 그대로 보존한다.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # 잠금 파일 fd 는 인스턴스 수명 동안 유지된다(닫히면 잠금이 풀린다).
+        lock_fd = os.open(
+            path.with_suffix(path.suffix + ".lock"), os.O_CREAT | os.O_RDWR, 0o600
+        )
+    except OSError as exc:
+        raise error_cls(f"잠금 파일 생성 실패: {type(exc).__name__}: {exc}") from exc
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        os.close(lock_fd)
+        raise error_cls(
+            f"{path}: 다른 프로세스가 journal 을 소유 중 — 단일 writer 위반"
+        ) from exc
+    return lock_fd
+
+
 class DurableJournal:
     """append-only journal — 단일 writer 잠금 + fail-closed 재생 + 예외 시 봉인.
 
@@ -151,25 +178,7 @@ class DurableJournal:
 
     def _acquire_writer_lock(self) -> None:
         """flock 배타 잠금 — 두 프로세스가 같은 journal 에 쓰는 경합을 기동 거부로 막는다."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            # 잠금 파일 fd 는 인스턴스 수명 동안 유지된다(닫히면 잠금이 풀린다).
-            self._lock_fd = os.open(
-                self._path.with_suffix(self._path.suffix + ".lock"),
-                os.O_CREAT | os.O_RDWR,
-                0o600,
-            )
-        except OSError as exc:
-            raise JournalRecoveryError(
-                f"잠금 파일 생성 실패: {type(exc).__name__}: {exc}"
-            ) from exc
-        try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            os.close(self._lock_fd)
-            raise JournalRecoveryError(
-                f"{self._path}: 다른 프로세스가 journal 을 소유 중 — 단일 writer 위반"
-            ) from exc
+        self._lock_fd = _acquire_writer_lock(self._path, error_cls=JournalRecoveryError)
 
     def _segment_path(self, sequence: int) -> Path:
         """봉인된 세그먼트 경로 — ``journal.jsonl`` → ``journal.0001.jsonl``."""

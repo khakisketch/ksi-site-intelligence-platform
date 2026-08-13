@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
+import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import type { AoiVertex, MissionPlanRequest, MissionPlanResponse, SiteFrame } from "@/lib/core-api/types";
 
 const STEP_LABELS = [
@@ -25,6 +26,9 @@ const STEP_LABELS = [
 interface WizardFormState {
   siteId: string;
   name: string;
+  /** 데이터 반출 선언(INV-050) — "unset" 은 미응답, 등록 후 다시 물을 경로가 없다. */
+  egressChoice: EgressChoice;
+  jurisdiction: string;
   aoi: AoiVertex[];
   crs: string;
   verticalDatum: string;
@@ -67,9 +71,17 @@ const MAX_ALTITUDE_M = 150;
 // 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
 const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
 
+const EGRESS_CHOICE_OPTIONS: Array<{ value: EgressChoice; label: string }> = [
+  { value: "unset", label: "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)" },
+  { value: "allow", label: "예 — 외부/벤더 클라우드 처리를 허용합니다" },
+  { value: "deny", label: "아니오 — 사내 서버에서만 처리합니다" },
+];
+
 const INITIAL_FORM: WizardFormState = {
   siteId: "",
   name: "",
+  egressChoice: "unset",
+  jurisdiction: "",
   aoi: [],
   crs: "",
   verticalDatum: "",
@@ -272,12 +284,22 @@ export function SiteRegistrationWizard() {
         // POST 를 보내기 전에 표시한다(응답을 못 받아도 서버는 등록했을 수 있다).
         const wasAttemptedBefore = sitePostAttemptedRef.current;
         sitePostAttemptedRef.current = true;
+        const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
         const siteRes = await fetch("/api/sites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // 1단계에서 그린 AOI 를 등록과 함께 영속한다(risk site-aoi-not-persisted 해소) —
           // 그래야 이 현장의 다음 조사부터는 SurveyWizard 가 다시 그리지 않고 이 값을 기본값으로 쓴다.
-          body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame, aoi: { vertices: form.aoi } }),
+          // dataResidency 를 답하지 않았으면(unset) buildDataResidencyInput 이
+          // undefined 를 돌려주고, JSON.stringify 가 undefined 값 키를 생략한다 —
+          // 그래야 서버가 미선언을 fail-closed(반출 불가)로 해석한다(INV-050).
+          body: JSON.stringify({
+            siteId,
+            name: form.name.trim(),
+            siteFrame,
+            aoi: { vertices: form.aoi },
+            dataResidency,
+          }),
         });
         if (!siteRes.ok) {
           const body = await parseJsonSafe(siteRes);
@@ -392,8 +414,13 @@ export function SiteRegistrationWizard() {
   }, [currentStep, clearDraft]);
 
   const trimmedSiteId = form.siteId.trim();
+  const jurisdictionRequired = form.egressChoice !== "unset";
   const stepValid: Record<number, boolean> = {
-    0: trimmedSiteId.length > 0 && SITE_ID_PATTERN.test(trimmedSiteId) && form.name.trim().length > 0,
+    0:
+      trimmedSiteId.length > 0 &&
+      SITE_ID_PATTERN.test(trimmedSiteId) &&
+      form.name.trim().length > 0 &&
+      (!jurisdictionRequired || form.jurisdiction.trim().length > 0),
     1: form.aoi.length >= 3 && isConvexPolygon(form.aoi),
     2:
       form.crs.trim().length > 0 &&
@@ -530,6 +557,55 @@ export function SiteRegistrationWizard() {
               className={inputClassName}
             />
           </Field>
+
+          <fieldset className="flex flex-col gap-2 sm:col-span-2">
+            <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
+              데이터 반출 허용
+            </legend>
+            <p className="text-[11.5px] break-keep text-ink-muted">
+              이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로
+              내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려
+              3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더
+              필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게
+              &quot;반출 불가&quot;로 처리됩니다.
+            </p>
+            {EGRESS_CHOICE_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`tap-target flex items-center gap-2 rounded-md border px-3 py-2 text-sm break-keep ${
+                  form.egressChoice === opt.value
+                    ? "border-accent bg-accent-tint"
+                    : "border-line-strong bg-surface"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="egress-choice-full"
+                  value={opt.value}
+                  checked={form.egressChoice === opt.value}
+                  onChange={() => update({ egressChoice: opt.value })}
+                />
+                {opt.label}
+              </label>
+            ))}
+          </fieldset>
+
+          {jurisdictionRequired && (
+            <Field
+              label="기준 법역"
+              helpText="어느 나라(지역)의 법을 기준으로 판단했는지 적어주세요. 예: KR"
+              required
+              wide
+            >
+              <input
+                type="text"
+                value={form.jurisdiction}
+                onChange={(event) => update({ jurisdiction: event.target.value })}
+                placeholder="KR"
+                className={inputClassName}
+              />
+            </Field>
+          )}
         </>
       )}
 

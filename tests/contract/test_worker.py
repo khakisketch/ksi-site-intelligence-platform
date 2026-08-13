@@ -27,7 +27,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 import pytest
+from ksi_domain.detection import BoundingBox, Detection
+from ksi_domain.detection_adapter import AdapterResult
+from ksi_event_contracts.vertical_reference import VerticalDatum, VerticalReferenceSource
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     ArtifactUploadTarget,
@@ -44,6 +48,7 @@ from ksi_processing_controller.odm import (
     SourceImage,
 )
 from ksi_processing_controller.odm_assets import ODM_ASSETS
+from ksi_processing_controller.odm_masking import odm_mask_filename
 from ksi_processing_controller.worker import WorkerRunError, run_job
 
 # 1x1 PNG — Pillow 가 실제로 열어 width=height=1 을 읽는다(mock 아님).
@@ -200,6 +205,7 @@ class FakeNodeOdm:
         self.states = states or [OdmTaskState(status=OdmTaskStatus.COMPLETED)]
         self.entries = entries if entries is not None else {a.archive_entry for a in ODM_ASSETS}
         self.submitted: list[SourceImage] = []
+        self.submitted_masks: list[Any] = []
         self.info_calls = 0
         self._state_index = 0
 
@@ -207,9 +213,12 @@ class FakeNodeOdm:
         self.info_calls += 1
         return OdmEngineInfo(engine="odm", engine_version=self.engine_version, node_version="2.2.4")
 
-    def new_task(self, images: Any, options: dict[str, Any]) -> str:
+    def new_task(
+        self, images: Any, options: dict[str, Any], *, masks: Any = ()
+    ) -> str:
         del options
         self.submitted = list(images)
+        self.submitted_masks = list(masks)
         return "task-uuid-1"
 
     def task_info(self, uuid: str) -> OdmTaskState:
@@ -233,6 +242,49 @@ class FakeNodeOdm:
 
     def remove_task(self, uuid: str) -> None:
         del uuid
+
+
+class _FakeDetector:
+    """포트 계약(``ImageDetector``, 구조적 타이핑)만 만족하는 가짜 탐지기.
+
+    호출마다 미리 정한 결과를 순서대로 낸다 — media_id 는 안 받는다(실제
+    ``DFineDetector.detect_image`` 도 이미지 배열만 받는다, ``odm_masking.py``
+    모듈 참고).
+    """
+
+    def __init__(self, results: list[AdapterResult]) -> None:
+        self._results = results
+        self.calls = 0
+
+    def detect_image(self, image: np.ndarray) -> AdapterResult:
+        del image
+        result = self._results[min(self.calls, len(self._results) - 1)]
+        self.calls += 1
+        return result
+
+
+class _RaisingDetector:
+    """탐지 자체가 예외로 실패하는 가짜 — 사진 1장의 탐지 실패가 작업을 막지
+    않는지 본다."""
+
+    def detect_image(self, image: np.ndarray) -> AdapterResult:
+        del image
+        raise RuntimeError("탐지 런타임 실패(테스트 강제)")
+
+
+def _person_result() -> AdapterResult:
+    detection = Detection(
+        detection_class="Person",
+        confidence=0.9,
+        bbox=BoundingBox(x_min=0.0, y_min=0.0, x_max=1.0, y_max=1.0),
+        source_class_id=0,
+        source_class_name="person",
+    )
+    return AdapterResult(detections=[detection], dropped=[], clipped=[])
+
+
+def _empty_result() -> AdapterResult:
+    return AdapterResult(detections=[], dropped=[], clipped=[])
 
 
 def _worker_http_client(server: _FakeHttpServer) -> httpx.Client:
@@ -373,6 +425,44 @@ def test_crs_is_read_from_site_crs_field(tmp_path: Path) -> None:
     )
     point_cloud_2 = next(s for s in core_2.registered if s.artifact_id == "point-cloud")
     assert point_cloud_2.crs == "EPSG:5186"
+
+
+# ── 수직기준은 파이프라인이 선언한다 ─────────────────────────────────────────
+
+
+def test_spatial_artifacts_declare_the_pipeline_vertical_reference(tmp_path: Path) -> None:
+    """[핵심] 공간 산출물마다 "이 높이는 변환 안 한 타원체고다"가 근거와 함께 실린다.
+
+    이 값이 없던 동안 그 사실을 아는 유일한 자리는 **비교 워커의 하드코딩
+    상수**였다 — 산출물의 사실이 아니라 소비자의 가정이었다. 선언이 산출물에
+    붙어야 바깥에서 들어온 높이(설계면)와 비교할 때 계열을 판정할 수 있다.
+    """
+    core = _CrsCapturingCore(site_crs="EPSG:5186")
+    run_job(
+        "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+    )
+    spatial = [s for s in core.registered if s.crs is not None]
+    assert spatial, "공간 산출물이 하나도 등록되지 않았다 — 이 테스트가 공허하다"
+    for submission in spatial:
+        reference = submission.vertical_reference
+        assert reference is not None, f"{submission.artifact_id} 에 수직기준이 없다"
+        assert reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
+        assert reference.source is VerticalReferenceSource.PIPELINE_DECLARED
+        assert reference.basis.strip(), "근거 없는 선언은 추측이다"
+
+
+def test_artifacts_without_a_crs_declare_no_vertical_reference(tmp_path: Path) -> None:
+    """[비공허 대조] 좌표계가 없는 산출물(카메라 포즈)에는 달지 않는다 — 높이가
+    그 산출물 자체의 속성이 아닌 곳에 기준만 선언하면 없는 것을 있다고 읽힌다."""
+    core = _CrsCapturingCore(site_crs="EPSG:5186")
+    run_job(
+        "job-1", core=core, odm=FakeNodeOdm(), work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+    )
+    non_spatial = [s for s in core.registered if s.crs is None]
+    assert non_spatial, "crs 가 null 인 산출물이 없다 — 이 대조가 공허하다"
+    assert all(s.vertical_reference is None for s in non_spatial)
 
 
 def test_missing_site_crs_refuses_before_touching_the_engine(tmp_path: Path) -> None:
@@ -623,3 +713,69 @@ def test_upload_sends_an_explicit_content_length_not_chunked_encoding(tmp_path: 
         )
         assert "content-length" in request.headers, f"{path}: Content-Length 가 없다"
         assert int(request.headers["content-length"]) == len(request.content)
+
+
+# ── 동적 객체 마스킹 (PRD §15.2 ④, dynamic_object_detector 주입 지점) ────────
+
+
+def test_no_detector_means_no_masking_by_default(tmp_path: Path) -> None:
+    """[회귀] ``dynamic_object_detector`` 를 생략하면 지금까지와 동일하게
+    동작한다 — 마스크가 하나도 만들어지지 않는다."""
+    odm = FakeNodeOdm()
+    _run(FakeCoreClient(), odm, _server_with_two_images(), tmp_path)
+    assert odm.submitted_masks == []
+
+
+def test_detector_generates_a_mask_per_photo_with_a_detection(tmp_path: Path) -> None:
+    """[핵심] 탐지된 사진마다 ``{stem}_mask.png`` 규약의 마스크가 NodeODM 제출에
+    함께 실린다(odm_masking 모듈 docstring — 실물 검증된 규약)."""
+    odm = FakeNodeOdm()
+    detector = _FakeDetector([_person_result(), _person_result()])
+
+    run_job(
+        "job-1", core=FakeCoreClient(), odm=odm, work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+        dynamic_object_detector=detector,
+    )
+
+    assert detector.calls == 2, "사진 2장 모두 탐지를 거쳐야 한다"
+    assert {m.filename for m in odm.submitted_masks} == {
+        odm_mask_filename("img-1.png"),
+        odm_mask_filename("img-2.png"),
+    }
+    for mask in odm.submitted_masks:
+        assert mask.png_bytes.startswith(b"\x89PNG"), "PNG 매직바이트가 없다"
+
+
+def test_detector_produces_no_mask_when_nothing_detected(tmp_path: Path) -> None:
+    """동적 객체가 없는 사진은 마스크를 만들지 않는다 — 전부 흰색 마스크는
+    ODM 입장에서 무의미하다(odm_masking.build_mask_for_photo docstring)."""
+    odm = FakeNodeOdm()
+    detector = _FakeDetector([_empty_result(), _empty_result()])
+
+    run_job(
+        "job-1", core=FakeCoreClient(), odm=odm, work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+        dynamic_object_detector=detector,
+    )
+
+    assert odm.submitted_masks == []
+
+
+def test_detector_failure_on_one_photo_does_not_fail_the_job(tmp_path: Path) -> None:
+    """[음성] 탐지 자체가 예외를 던져도 재구성은 계속된다 — 마스킹은 보조
+    개선이지 재구성 성공의 필요조건이 아니다(run_job docstring)."""
+    core = FakeCoreClient()
+    odm = FakeNodeOdm()
+
+    run_job(
+        "job-1", core=core, odm=odm, work_dir=tmp_path,
+        poll_interval_seconds=0, http_client=_worker_http_client(_server_with_two_images()),
+        gsd_by_artifact={"orthophoto": 0.03, "dsm": 0.05, "dtm": 0.05},
+        dynamic_object_detector=_RaisingDetector(),
+    )
+
+    assert odm.submitted_masks == []
+    assert ("transition", "SUCCEEDED", "산출물 7건") in core.calls

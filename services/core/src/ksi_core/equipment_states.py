@@ -57,9 +57,14 @@ from ksi_equipment_intelligence.reobservation_signal import (
     needs_active_reobservation,
     position_uncertainty_m,
 )
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
 from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -198,7 +203,7 @@ class EquipmentStateStore:
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return EquipmentStateResult(
-                    EquipmentStateVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
+                    EquipmentStateVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             for state in states:
                 verdict, detail = self._judge(site_id, state)
@@ -207,7 +212,7 @@ class EquipmentStateStore:
 
             record = {
                 "kind": "equipment-states-recorded",
-                "ts": now.astimezone(UTC).isoformat(),
+                "ts": iso_utc(now),
                 "siteId": site_id,
                 "reportedBy": reported_by,
                 "states": [
@@ -219,7 +224,7 @@ class EquipmentStateStore:
             except JournalSealedError:
                 return EquipmentStateResult(
                     EquipmentStateVerdict.STORE_UNAVAILABLE,
-                    detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                    detail=JOURNAL_APPEND_FAILED_DETAIL,
                 )
             for state in states:
                 self._project(site_id, state, reported_by, now)
@@ -238,7 +243,7 @@ class EquipmentStateStore:
     ) -> EquipmentStateResult:
         record = {
             "kind": "equipment-states-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "siteId": site_id,
             "verdict": verdict.value,
             "detail": detail,
@@ -250,7 +255,7 @@ class EquipmentStateStore:
         except JournalSealedError:
             return EquipmentStateResult(
                 EquipmentStateVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         return EquipmentStateResult(verdict, detail=detail)
 
@@ -273,21 +278,17 @@ class EquipmentStateStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class EquipmentStateBatchRequest(_CamelModel):
+class EquipmentStateBatchRequest(CamelModel):
     states: list[KinematicState] = Field(min_length=1)
 
 
-class EquipmentStateBatchResponse(_CamelModel):
+class EquipmentStateBatchResponse(CamelModel):
     verdict: str
     detail: str | None
     recorded_count: int
 
 
-class EquipmentStateItem(_CamelModel):
+class EquipmentStateItem(CamelModel):
     state: dict[str, Any]
     reported_by: str | None
     recorded_at: datetime
@@ -296,13 +297,13 @@ class EquipmentStateItem(_CamelModel):
     position_uncertainty_m: float
 
 
-class EquipmentStateListView(_CamelModel):
+class EquipmentStateListView(CamelModel):
     site_id: str
     entity_count: int
     entities: list[EquipmentStateItem]
 
 
-class RiskAssessmentView(_CamelModel):
+class RiskAssessmentView(CamelModel):
     """지목된 두 개체 쌍의 CPA/TTC + 재관찰 권고.
 
     ``timeToCollisionS`` 가 ``None`` 인 것은 "위험 없음"이 아니라 **"이 지평선

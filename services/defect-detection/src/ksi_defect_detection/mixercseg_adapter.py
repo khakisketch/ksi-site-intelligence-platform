@@ -33,7 +33,10 @@ pickle 자체의 임의코드실행 가능성을 없애지는 않는다. 등재�
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import sys
+import threading
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -45,6 +48,21 @@ if TYPE_CHECKING:
     import numpy as np
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor" / "mixercseg"
+
+# upstream 코드가 절대 import 로 쓰는 최상위 이름("from models...", "from
+# VMamba...") — 둘 다 흔한 이름이라 프로세스의 다른 'models'/'VMamba' 와 충돌할
+# 수 있다(risk defect-detection-vendor-syspath-pollution). 로드 도중에만
+# sys.modules 에 이 bare 이름으로 잠깐 등록했다가, 끝나면 아래 접두사 밑으로
+# 옮겨 담고 bare 이름은 지운다.
+_VENDOR_TOP_NAMES = ("models", "VMamba")
+_VENDOR_NS_PREFIX = "_ksi_defect_detection_vendor_mixercseg"
+
+# _import_vendored_build_fn 은 프로세스당 최대 1회만 실제 import 를 실행하고
+# 그 뒤로는 이 캐시를 반환한다(락으로 동시 호출 직렬화). 이유는 함수
+# docstring 의 "재호출 안전성" 항목 참고 — 캐시가 없으면 두 번째 로드부터
+# PyTorch TORCH_LIBRARY 네이티브 등록 충돌로 깨진다.
+_vendor_build_fn_lock = threading.Lock()
+_vendor_build_fn_cache: Any | None = None
 
 
 class MixerCSegLoadStatus(StrEnum):
@@ -65,42 +83,143 @@ class MixerCSegLoadResult:
         return self.status is MixerCSegLoadStatus.OK
 
 
+def _is_vendor_sys_modules_key(key: str) -> bool:
+    """``key`` 가 이번 벤더 로드로 생겼을 수 있는 'models'/'VMamba' 계열인가.
+
+    정확히 그 이름이거나(top package) 그 이름으로 시작하는 dotted 하위
+    모듈만 해당한다(``"models.decoder"`` 는 해당, ``"other.models.x"`` 는
+    비해당) — 그 외 torch/triton/mmcv 등은 이 필터로 절대 걸리지 않는다.
+    """
+    return key in _VENDOR_TOP_NAMES or any(
+        key.startswith(f"{top}.") for top in _VENDOR_TOP_NAMES
+    )
+
+
+def _relocate_vendor_sys_modules(*, keep: bool) -> None:
+    """이번 호출로 ``sys.modules`` 에 생긴 'models'/'VMamba' 계열 항목을 정리한다.
+
+    ``keep=True`` (로드 성공): 고유 접두사(``_VENDOR_NS_PREFIX``) 밑으로 옮겨
+    담아 재호출 캐시로 삼는다 — bare 이름은 남기지 않는다.
+    ``keep=False`` (로드 실패): 통째로 버린다. 실패 도중 부분적으로 생긴
+    하위 모듈을 캐시로 남기면 다음 재시도가 일관성 없는 상태를 이어받는다.
+
+    ``models``/``VMamba`` 가 아닌 다른 이름(``torch``, ``triton``, ``mmcv`` 등)은
+    이 함수가 절대 건드리지 않는다 — "새로 생긴 걸 전부 정리"하는 넓은 청소는
+    2026-08-08 조사에서 PyTorch ``TORCH_LIBRARY`` 네이티브 등록 재실행 크래시를
+    낸 원인이었다(아래 ``load_mixercseg_detector`` 재호출 관련 docstring 참고).
+    """
+    for key in [k for k in sys.modules if _is_vendor_sys_modules_key(k)]:
+        module = sys.modules.pop(key)
+        if keep:
+            sys.modules[f"{_VENDOR_NS_PREFIX}.{key}"] = module
+
+
+def _spec_for_vendor_package(name: str, package_dir: Path) -> importlib.machinery.ModuleSpec:
+    """``package_dir`` 을 ``name`` 으로 로드할 spec 을 파일 경로로 직접 만든다.
+
+    ``__init__.py`` 가 있으면 일반 패키지로 spec 을 만든다(``models`` 가
+    이 경우). 없으면(``VMamba`` 가 이 경우 — upstream 자체가 top-level
+    ``__init__.py`` 없이 ``VMamba.models...`` 로 import 한다) PEP 420 네임스페이스
+    패키지와 동등한 spec(``loader=None``)을 직접 구성한다 — 어느 쪽이든
+    ``sys.path``/``sys.modules`` 에 이미 뭐가 있는지와 무관하게 항상 이
+    디렉토리에서 로드됨을 보장한다(``importlib.import_module`` 이었다면
+    같은 이름의 기존 캐시를 잘못 돌려줄 수 있었다).
+    """
+    init_file = package_dir / "__init__.py"
+    if init_file.is_file():
+        spec = importlib.util.spec_from_file_location(
+            name, init_file, submodule_search_locations=[str(package_dir)]
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"벤더 패키지 진입점을 찾을 수 없음: {init_file}")
+        return spec
+    namespace_spec = importlib.machinery.ModuleSpec(name, loader=None, is_package=True)
+    namespace_spec.submodule_search_locations = [str(package_dir)]
+    return namespace_spec
+
+
 def _import_vendored_build_fn() -> Any:
-    """벤더링된 MixerCSeg 코드를 로드한다.
+    """벤더링된 MixerCSeg 코드를 로드해 ``build_MixerCSeg`` 를 반환한다.
 
     upstream 코드가 ``from models.decoder import ...``/``from VMamba.models...``
     처럼 저장소 루트가 ``sys.path`` 에 있다고 가정하는 절대 import 를 쓴다(벤더링
     시 재작성하지 않음 — upstream 대조·업데이트를 쉽게 유지하려는 선택,
     ``_vendor/mixercseg/NOTICE.md`` 참고). ``models``/``VMamba`` 는 흔한 top-level
-    이름이라 다른 곳과 충돌할 수 있어, import 하는 동안만 ``sys.path`` 에 넣고
-    끝나면 바로 뺀다 — 이미 import 된 서브모듈은 ``sys.modules`` 캐시에 남아
-    재호출 비용은 없다.
+    이름이라 프로세스의 다른 곳에서 이미 그 이름으로 뭔가를 import 했다면(가장
+    흔하게는 ``models`` — Django 스타일 앱, 튜토리얼 스크립트 등 어디서든 쓰는
+    이름) ``importlib.import_module("models")`` 는 그 기존 캐시를 그대로
+    돌려줘 벤더 코드 대신 엉뚱한 모듈을 로드할 수 있었다(risk
+    defect-detection-vendor-syspath-pollution, reviewer 지적 P1).
 
-    ``sys.modules`` 캐시를 로드 완료 후 지우는 "정리"는 **시도했다가 되돌렸다**
-    (2026-08-08, risk defect-detection-vendor-syspath-pollution 조사) — 실측
-    결과 이 프로세스에서 ``load_mixercseg_detector`` 를 두 번째 호출하면
+    그래서 ``models``/``VMamba`` 둘 다 :func:`_spec_for_vendor_package` 로
+    **파일 경로를 직접 지정**해 spec 을 만든다 — ``sys.modules``/``sys.path``
+    에 이미 뭐가 있든 상관없이 항상 ``_VENDOR_DIR`` 밑의 실제 파일에서
+    로드됨을 보장한다(``sys.path`` 를 아예 건드리지 않으므로 이전처럼
+    "일시적 sys.path 삽입" 구간에서 다른 스레드가 끼어들 여지도 없다). upstream
+    내부의 'from models.xxx import ...'/'from VMamba.models... import ...'
+    절대 import 가 여전히 ``sys.modules['models']``/``sys.modules['VMamba']``
+    를 bare 이름으로 찾으므로, exec 직전에만 그 이름으로 등록해 둔다
+    (``importlib`` 공식 문서 "Importing a source file directly" 관용구).
+
+    로드가 끝나면(성공이든 실패든) :func:`_relocate_vendor_sys_modules` 가
+    'models'/'VMamba' 계열 bare 이름을 ``sys.modules`` 에서 지운다 — 성공 시엔
+    고유 접두사 밑으로 옮겨 재호출 캐시로 삼고, 실패 시엔 버린다. 호출 전에
+    'models'/'VMamba' 가 이미 다른 목적으로 caching 돼 있었다면(드묾) 원래 값을
+    그대로 복구한다.
+
+    ## 재호출 안전성 — 프로세스당 최대 1회만 실제 import
+
+    ``_vendor_build_fn_cache`` 모듈 전역에 결과를 캐시하고, 이후 호출은 그
+    캐시만 반환한다(``_vendor_build_fn_lock`` 으로 동시 호출도 직렬화 —
+    ``sys.modules`` 갱신 자체가 여러 스레드가 겹치면 안전하지 않은 공유 상태다).
+    이 캐싱은 단순 비용 절감이 아니다 — **재호출 시 두 번째 import 자체를 아예
+    실행하지 않는 것**이 안전성의 전제다: ``sys.modules`` 캐시를 로드 완료 후
+    지우는 "정리"를 시도했다가 되돌린 적이 있다(2026-08-08, 같은 risk 조사) —
+    실측 결과 그 프로세스에서 ``load_mixercseg_detector`` 를 두 번째 호출하면
     ``RuntimeError: Only a single TORCH_LIBRARY can be used to register the
     namespace _inductor_test``(``torch/_inductor/test_operators.py`` 재import
-    시 발생)로 즉시 깨진다 — PyTorch 의 ``TORCH_LIBRARY`` 네이티브 등록은
+    시 발생)로 즉시 깨졌다 — PyTorch 의 ``TORCH_LIBRARY`` 네이티브 등록은
     프로세스 전역이라 Python 쪽 ``sys.modules`` 를 지우고 재import 해도 그
-    네이티브 등록은 "처음 한 번만" 규칙을 어기면 예외를 던진다. 즉 이 캐싱은
-    단순 비용 절감이 아니라 **재호출 안전성의 전제**다 — 지우면 두 번째 로드부터
-    깨진다. 진짜 오염 방지책은 sys.modules 정리가 아니라 이 top-level import
-    자체를 프로세스당 최대 1회로 막는 게이트(예: 모듈 전역 캐시)가 될 텐데,
-    그건 이 함수의 스코프를 넘는 별도 설계라 남겨둔다.
+    네이티브 등록은 "처음 한 번만" 규칙을 어기면 예외를 던진다. 그래서 이
+    함수는 'models'/'VMamba' bare 이름만 지우고(위 두 문단), 벤더 코드 자체의
+    **재실행**은 프로세스당 정확히 1회로 게이트한다 — 두 방식을 합쳐야 "오염
+    없음"과 "재호출 안전"을 동시에 만족한다.
     """
-    import importlib
+    global _vendor_build_fn_cache
 
-    vendor_path = str(_VENDOR_DIR)
-    inserted = vendor_path not in sys.path
-    if inserted:
-        sys.path.insert(0, vendor_path)
-    try:
-        models_module = importlib.import_module("models")
-    finally:
-        if inserted and vendor_path in sys.path:
-            sys.path.remove(vendor_path)
-    return models_module.build_MixerCSeg
+    with _vendor_build_fn_lock:
+        if _vendor_build_fn_cache is not None:
+            return _vendor_build_fn_cache
+
+        saved_top: dict[str, Any] = {name: sys.modules.get(name) for name in _VENDOR_TOP_NAMES}
+
+        succeeded = False
+        try:
+            # VMamba 를 먼저 등록한다 — models.encoder.vss_block 이 로드 도중
+            # 'from VMamba.models.vmamba import TransMixer' 를 걸어 VMamba 가
+            # 먼저 sys.modules 에 있어야 한다.
+            vmamba_spec = _spec_for_vendor_package("VMamba", _VENDOR_DIR / "VMamba")
+            vmamba_module = importlib.util.module_from_spec(vmamba_spec)
+            sys.modules["VMamba"] = vmamba_module
+            if vmamba_spec.loader is not None:  # 일반 패키지면 실행할 __init__ 이 있다
+                vmamba_spec.loader.exec_module(vmamba_module)
+
+            models_spec = _spec_for_vendor_package("models", _VENDOR_DIR / "models")
+            models_module = importlib.util.module_from_spec(models_spec)
+            sys.modules["models"] = models_module
+            assert models_spec.loader is not None  # models/__init__.py 는 항상 실존
+            models_spec.loader.exec_module(models_module)
+            succeeded = True
+        finally:
+            _relocate_vendor_sys_modules(keep=succeeded)
+            for name, original in saved_top.items():
+                if original is not None:
+                    sys.modules[name] = original
+                else:
+                    sys.modules.pop(name, None)
+
+        _vendor_build_fn_cache = models_module.build_MixerCSeg
+        return _vendor_build_fn_cache
 
 
 class MixerCSegDetector:

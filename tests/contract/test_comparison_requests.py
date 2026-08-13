@@ -65,6 +65,11 @@ from ksi_core.source_media import SourceMediaClaim, SourceMediaMeasurement, Sour
 from ksi_event_contracts.comparison_request import ComparisonRequest
 from ksi_event_contracts.processing_artifact import LineageAuthority, ProcessingArtifactKind
 from ksi_event_contracts.processing_job import ExecutionLocus, LicenseBasis, ProcessingProvider
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA = _REPO_ROOT / "contracts" / "schemas" / "comparison-request.v1.json"
@@ -219,7 +224,10 @@ _RASTER_KINDS = frozenset(
 
 
 def _artifact_spec(
-    artifact_id: str, *, kind: ProcessingArtifactKind = ProcessingArtifactKind.POINT_CLOUD
+    artifact_id: str,
+    *,
+    kind: ProcessingArtifactKind = ProcessingArtifactKind.POINT_CLOUD,
+    vertical_reference: VerticalReference | None = None,
 ) -> ArtifactSpec:
     # 래스터 계열(ortho/dsm/dtm)은 gsd 가 필수다(계약 위반 게이트) — 나머지는 null.
     return ArtifactSpec(
@@ -232,6 +240,9 @@ def _artifact_spec(
         crs="EPSG:5186",
         gsd=0.05 if kind in _RASTER_KINDS else None,
         accuracy=None,
+        # 기본값이 None 인 것이 기본 fixture 를 "수직기준 개념 이전에 등록된
+        # 산출물"로 만든다 — 그 경로가 계속 살아 있는지가 이 파일의 회귀 대상이다.
+        vertical_reference=vertical_reference,
     )
 
 
@@ -297,7 +308,9 @@ def _running_job(jobs: ProcessingJobStore, mission_id: str) -> str:
 class _Fixture:
     """(비교 요청 저장소, 처리 작업 저장소, 미리 만든 SUCCEEDED baseline/current jobId)."""
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(
+        self, tmp_path: Path, *, dsm_vertical_reference: VerticalReference | None = None
+    ) -> None:
         self.missions = _mission_store(tmp_path)
         self.sites = _site_store(tmp_path)
         self.jobs, self.source_media = _job_store_impl(tmp_path, self.missions, self.sites)
@@ -306,14 +319,22 @@ class _Fixture:
             self.source_media,
             _BASELINE_MISSION_ID,
             _artifact_spec("point-cloud"),
-            _artifact_spec("dsm", kind=ProcessingArtifactKind.DSM),
+            _artifact_spec(
+                "dsm",
+                kind=ProcessingArtifactKind.DSM,
+                vertical_reference=dsm_vertical_reference,
+            ),
         )
         self.current_job_id = _succeeded_job(
             self.jobs,
             self.source_media,
             _CURRENT_MISSION_ID,
             _artifact_spec("point-cloud"),
-            _artifact_spec("dsm", kind=ProcessingArtifactKind.DSM),
+            _artifact_spec(
+                "dsm",
+                kind=ProcessingArtifactKind.DSM,
+                vertical_reference=dsm_vertical_reference,
+            ),
         )
         self.store = ComparisonRequestStore(
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
@@ -714,6 +735,31 @@ def test_list_pending_includes_running_with_expired_lease(fx: _Fixture) -> None:
     assert reclaimed.verdict is ComparisonRequestVerdict.LEASED
 
 
+def test_list_pending_expiry_boundary_is_exclusive(fx: _Fixture) -> None:
+    """[경계] 만료 시각 그 순간부터 후보다 — 1초 전은 아직 아니다.
+
+    ``ProcessingJobStore`` 쪽 대칭 테스트
+    (``test_processing_jobs.py::test_store_list_pending_expiry_boundary_is_exclusive``)와
+    같은 규칙을 검증한다 — 둘 다 ``ksi_core.leasing`` 의 같은 순수 함수를 쓴다.
+    """
+    result = fx.create()
+    request_id = result.record.request_id
+    leased = fx.store.acquire_lease(request_id, worker_id="worker-a", now=_NOW)
+    assert leased.record is not None
+    assert leased.record.lease is not None
+    expires_at = leased.record.lease.expires_at
+    fx.store.transition(
+        request_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-a", now=_NOW
+    )
+
+    just_before = expires_at - timedelta(seconds=1)
+    assert fx.store.list_pending(now=just_before) == []
+
+    assert [r.request_id for r in fx.store.list_pending(now=expires_at)] == [request_id]
+    reclaimed = fx.store.acquire_lease(request_id, worker_id="worker-b", now=expires_at)
+    assert reclaimed.verdict is ComparisonRequestVerdict.LEASED
+
+
 # ── 입력 조회 최소권한 ───────────────────────────────────────────────────
 
 
@@ -752,6 +798,49 @@ def test_input_returns_urls_only_for_this_requests_artifacts(fx: _Fixture) -> No
     }
     assert body["input"]["dsmBaseline"] == {"jobId": fx.baseline_job_id, "artifactId": "dsm"}
     assert body["input"]["dsmCurrent"] == {"jobId": fx.current_job_id, "artifactId": "dsm"}
+
+
+def _leased_input(fx: _Fixture) -> dict[str, Any]:
+    """lease 를 잡고 ``/input`` 을 받아 온 ``input`` 본문."""
+    request_id = fx.create().record.request_id
+    client = _client(fx.store, token=_WORKER_TOKEN, storage=_FakeStorage())
+    fx.store.acquire_lease(request_id, worker_id="worker-1", now=datetime.now(UTC))
+    response = client.get(f"/v1/comparison-requests/{request_id}/input")
+    assert response.status_code == 200, response.json()
+    body: dict[str, Any] = response.json()["input"]
+    return body
+
+
+def test_input_carries_the_vertical_reference_the_dsms_declared(tmp_path: Path) -> None:
+    """[핵심] 워커가 리포트에 실을 수직기준의 출처는 **산출물이 등록 시 선언한
+    값**이다 — Core 는 그 값을 전달만 한다(읽지도, 채우지도 않는다).
+
+    요청 레코드에 복사해 두지 않고 입력 발급 시점에 조회하므로(presigned URL 과
+    같은 자리), 요청 계약(``ComparisonRequest``)은 한 세대도 갈라지지 않는다.
+    """
+    declared = VerticalReference(
+        datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+        basis="ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        source=VerticalReferenceSource.PIPELINE_DECLARED,
+    )
+    body = _leased_input(_Fixture(tmp_path, dsm_vertical_reference=declared))
+
+    expected = {
+        "datum": "ellipsoidal_native",
+        "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        "source": "pipeline_declared",
+    }
+    assert body["dsmBaselineVerticalReference"] == expected
+    assert body["dsmCurrentVerticalReference"] == expected
+
+
+def test_input_leaves_the_vertical_reference_null_for_older_artifacts(fx: _Fixture) -> None:
+    """[회귀] 수직기준이 기록되기 전에 등록된 산출물은 ``null`` 로 온다 — Core 가
+    "아마 타원체고겠지"를 대신 주장하지 않는다. 워커가 그 null 을 보고 레거시
+    상수로 대체하는 것이 이 milestone 의 M1/M2 무효화 금지 경로다."""
+    body = _leased_input(fx)
+    assert body["dsmBaselineVerticalReference"] is None
+    assert body["dsmCurrentVerticalReference"] is None
 
 
 def test_input_requires_lease(fx: _Fixture) -> None:

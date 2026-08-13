@@ -32,7 +32,7 @@
     "verticalDatum": {
       "type": "string",
       "minLength": 1,
-      "description": "표고의 기준. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환 없이 그대로 — 지오이드 격자가 없어 정표고로 못 바꾼 상태이며, 이 값이 남은 리포트가 곧 나중에 재계산할 대상 목록이다. orthometric_kngeoid2018 = KNGeoid 로 보정한 정표고."
+      "description": "표고의 기준. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환 없이 그대로 — 우리 파이프라인이 내는 값이고, 두 시점 비교(이 리포트)는 양쪽이 같은 기준이라 그대로 뺀다. orthometric_kngeoid2018 / orthometric_kngeoid2024 = 한국 정표고(해발)이며 뒤의 이름은 그 높이를 타원체고와 잇는 지오이드 격자 모델이다 — 실현이 다르면 서로 다른 기준이라 그냥 빼지 않는다(모델 차이 최대 0.071m). 이 리포트의 두 epoch 는 같은 파이프라인 산출물이라 변환 경로가 없다(설계 대비 잔량 경로만 격자로 잇는다 — packages/event-contracts 의 bridge_between 참조)."
     },
     "zones": {
       "type": "array",

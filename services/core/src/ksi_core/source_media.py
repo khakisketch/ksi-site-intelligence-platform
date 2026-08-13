@@ -91,9 +91,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
@@ -426,10 +426,6 @@ def _require_tz_aware(value: datetime, *, param: str) -> None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat()
-
-
 def _require_aware_iso(raw: Any, field_name: str, mission_id: str) -> datetime:
     """journal 의 ISO 시각을 tz-aware datetime 으로 — naive·비문자열은 기동 거부."""
     if not isinstance(raw, str):
@@ -635,7 +631,7 @@ class SourceMediaStore:
             if self._journal.sealed_reason is not None:
                 return BatchRegistrationResult(
                     SourceMediaBatchVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             mission = self._mission_store.get(mission_id)
             if mission is None:
@@ -659,7 +655,7 @@ class SourceMediaStore:
                         SourceMediaItemResult(
                             claim.media_id,
                             SourceMediaItemVerdict.JOURNAL_UNAVAILABLE,
-                            detail="journal 봉인됨 — 재시작 필요",
+                            detail=JOURNAL_SEALED_DETAIL,
                         )
                     )
                     continue
@@ -716,7 +712,7 @@ class SourceMediaStore:
 
         journal_record = {
             "kind": "source-media-registered",
-            "ts": _iso(now),
+            "ts": iso_utc(now),
             "missionId": bundle.mission_id,
             "siteId": bundle.site_id,
             "mediaId": claim.media_id,
@@ -734,7 +730,7 @@ class SourceMediaStore:
             return bundle, SourceMediaItemResult(
                 claim.media_id,
                 SourceMediaItemVerdict.JOURNAL_UNAVAILABLE,
-                detail="journal 봉인됨 — 재시작 필요",
+                detail=JOURNAL_SEALED_DETAIL,
             ), True
 
         record = SourceMediaRecord(
@@ -766,7 +762,7 @@ class SourceMediaStore:
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return SealResult(
-                    SourceBundleSealVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
+                    SourceBundleSealVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             mission = self._mission_store.get(mission_id)
             if mission is None:
@@ -785,7 +781,7 @@ class SourceMediaStore:
             digest = compute_source_bundle_digest(mission_id, bundle.media)
             journal_record = {
                 "kind": "source-media-sealed",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "missionId": mission_id,
                 "sourceBundleDigest": digest,
                 "mediaCount": len(bundle.media),
@@ -795,7 +791,7 @@ class SourceMediaStore:
                 self._journal.append(journal_record)
             except JournalSealedError:
                 return SealResult(
-                    SourceBundleSealVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
+                    SourceBundleSealVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             sealed_bundle = replace(
                 bundle, sealed_at=now, sealed_by=sealed_by, source_bundle_digest=digest
@@ -825,7 +821,7 @@ class SourceMediaStore:
             if self._journal.sealed_reason is not None:
                 return VerificationResult(
                     SourceBundleVerifyVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             bundle = self._bundles.get(mission_id)
             if bundle is None:
@@ -865,7 +861,7 @@ class SourceMediaStore:
 
             journal_record = {
                 "kind": "source-media-verified",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "missionId": mission_id,
                 "verdict": verdict.value,
                 # 판정이 아니라 **측정값**이 원장의 사실이다 — 재생이 이걸로
@@ -890,7 +886,7 @@ class SourceMediaStore:
             except JournalSealedError:
                 return VerificationResult(
                     SourceBundleVerifyVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
 
             if verdict is SourceBundleVerifyVerdict.VERIFIED:
@@ -910,11 +906,7 @@ class SourceMediaStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class SourceMediaFileClaim(_CamelModel):
+class SourceMediaFileClaim(CamelModel):
     """업로더가 신고하는 파일 1건의 주장 — 이 시점에는 검증하지 않는다.
 
     ``mediaId`` 는 호출자가 정한다(``evidence.py`` 의 ``artifactId`` 관습과
@@ -929,11 +921,11 @@ class SourceMediaFileClaim(_CamelModel):
     content_type: str = Field(min_length=1)
 
 
-class SourceMediaBatchRequest(_CamelModel):
+class SourceMediaBatchRequest(CamelModel):
     files: list[SourceMediaFileClaim] = Field(min_length=1, max_length=MAX_BATCH_SIZE)
 
 
-class SourceMediaItemView(_CamelModel):
+class SourceMediaItemView(CamelModel):
     media_id: str
     verdict: str
     object_key: str | None = None
@@ -942,13 +934,13 @@ class SourceMediaItemView(_CamelModel):
     detail: str | None = None
 
 
-class SourceMediaBatchResponse(_CamelModel):
+class SourceMediaBatchResponse(CamelModel):
     verdict: str
     detail: str | None = None
     results: list[SourceMediaItemView]
 
 
-class SourceMediaBundleView(_CamelModel):
+class SourceMediaBundleView(CamelModel):
     """번들 상태·장수·digest — 미검증 상태를 그대로 노출한다."""
 
     mission_id: str
@@ -964,13 +956,13 @@ class SourceMediaBundleView(_CamelModel):
     last_mismatch_at: datetime | None
 
 
-class SourceMediaSealResponse(_CamelModel):
+class SourceMediaSealResponse(CamelModel):
     verdict: str
     detail: str | None = None
     bundle: SourceMediaBundleView | None = None
 
 
-class SourceMediaMeasurementItem(_CamelModel):
+class SourceMediaMeasurementItem(CamelModel):
     """워커가 실측한 파일 1건. **판정 필드가 없는 것이 이 모델의 요점이다.**"""
 
     media_id: str = Field(min_length=1)
@@ -980,7 +972,7 @@ class SourceMediaMeasurementItem(_CamelModel):
     height: int = Field(ge=1)
 
 
-class SourceMediaVerifyRequest(_CamelModel):
+class SourceMediaVerifyRequest(CamelModel):
     """실측 보고 — 등록된 전 파일을 한 번에 준다(부분 검증은 검증이 아니다).
 
     등록(:class:`SourceMediaBatchRequest`)과 달리 ``max_length`` 가 **없다.**
@@ -992,7 +984,7 @@ class SourceMediaVerifyRequest(_CamelModel):
     measurements: list[SourceMediaMeasurementItem] = Field(min_length=1)
 
 
-class SourceMediaVerifyResponse(_CamelModel):
+class SourceMediaVerifyResponse(CamelModel):
     verdict: str
     detail: str | None = None
     bundle: SourceMediaBundleView | None = None
@@ -1014,7 +1006,7 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
     )
 
 
-class SourceMediaViewResponse(_CamelModel):
+class SourceMediaViewResponse(CamelModel):
     """사진 1장의 열람 URL + 원장이 아는 화소수·digest.
 
     ``width``/``height`` 는 **업로더가 신고한 값**이다(전 바이트를 읽은 워커가

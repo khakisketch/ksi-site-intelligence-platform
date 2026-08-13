@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import type { EventSummaryResponse } from "@/lib/core-api/types";
 import { ackSlaState, formatElapsed, isUnattended, type SlaState } from "@/lib/core-api/triage";
+import { useTick } from "@/hooks/useTick";
 
 const absoluteFormatter = new Intl.DateTimeFormat("ko-KR", {
   dateStyle: "medium",
@@ -40,27 +39,17 @@ export function ElapsedTime({
 }) {
   const { occurredAt } = event;
   const unattended = isUnattended(event);
-  const [state, setState] = useState<{ text: string; sla: SlaState | null } | null>(null);
-
-  useEffect(() => {
-    const occurred = new Date(occurredAt).getTime();
-    const update = () => {
-      const elapsed = Math.max(0, Date.now() - occurred);
-      setState({
-        text: formatElapsed(elapsed, { unattended }),
-        sla: ackSlaState(event, elapsed),
-      });
-    };
-    update();
-    const timer = setInterval(update, 60_000);
-    return () => clearInterval(timer);
-    // event 객체 전체가 아니라 판정에 실제로 쓰이는 값만 의존한다 —
-    // 목록이 재조회될 때마다 새 객체가 와서 타이머가 리셋되는 것을 막는다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [occurredAt, unattended, event.severity, event.status, event.triage]);
+  // useTick 은 값 계산을 하지 않는다 — 60초마다 리렌더만 강제한다(hooks/useTick.ts).
+  // 여기서 매 렌더마다 현재 props(event)로 새로 계산하므로, 목록 재조회로 event 가
+  // 새 객체가 되어도(참조만 바뀌고 값은 같아도) 타이머 자체는 안 흔들린다 — useTick 의
+  // 내부 effect 가 의존하는 건 고정값 intervalMs 뿐이다.
+  const now = useTick(60_000);
+  const elapsed = now === null ? null : Math.max(0, now - new Date(occurredAt).getTime());
+  const text = elapsed === null ? null : formatElapsed(elapsed, { unattended });
+  const slaRaw: SlaState | null = elapsed === null ? null : ackSlaState(event, elapsed);
 
   const absolute = absoluteFormatter.format(new Date(occurredAt));
-  const sla = state?.sla && state.sla !== "ok" ? state.sla : null;
+  const sla = slaRaw && slaRaw !== "ok" ? slaRaw : null;
 
   return (
     // suppressHydrationWarning — 시각 표시는 서버와 클라이언트가 필연적으로 갈린다.
@@ -75,7 +64,7 @@ export function ElapsedTime({
         title={absolute}
         suppressHydrationWarning
       >
-        {state?.text ?? absolute}
+        {text ?? absolute}
       </span>
       {sla && (
         <span className={`text-xs ${sla === "breached" ? "text-crit-ink" : "text-high-ink"}`}>

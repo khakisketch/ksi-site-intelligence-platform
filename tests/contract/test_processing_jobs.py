@@ -73,6 +73,11 @@ from ksi_event_contracts.processing_job import (
     ProcessingJobStatus,
     ProcessingProvider,
 )
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 from ksi_mission_contracts.models import SiteFrame
 
 _MISSION_ID = "mission-pj-1"
@@ -207,6 +212,7 @@ def _artifact_spec(
     crs: str | None = "EPSG:5186",
     gsd: float | None = None,
     accuracy: ArtifactAccuracy | None = None,
+    vertical_reference: VerticalReference | None = None,
 ) -> ArtifactSpec:
     return ArtifactSpec(
         artifact_id=artifact_id,
@@ -218,6 +224,7 @@ def _artifact_spec(
         crs=crs,
         gsd=gsd,
         accuracy=accuracy,
+        vertical_reference=vertical_reference,
     )
 
 
@@ -1006,6 +1013,65 @@ def test_replay_refuses_artifact_on_a_non_running_job(tmp_path: Path) -> None:
         _rebuild(tmp_path)
 
 
+# ── verticalReference(v1.2) 하위호환 — 원장 파일로 확인한다 ──────────────────
+
+
+def test_replay_of_a_v1_1_artifact_record_keeps_vertical_reference_none(tmp_path: Path) -> None:
+    """[핵심 a] verticalReference 키가 **아예 없는** 옛 레코드가 그대로 재생된다.
+
+    Pydantic 의 ``X | None = None`` 만 보고 하위호환을 가정하지 않는다 — 실제
+    원장 파일에 그 키가 없다는 것을 먼저 확인하고, 재기동해서 ``None`` 으로
+    복원되는지 본다. 그리고 그 ``None`` 은 **임의 값으로 채워지지 않는다**:
+    "옛 워커가 안 밝혔다"와 "이 산출물은 타원체고다"는 다른 사실이다.
+    """
+    _seeded_success_journal(tmp_path)
+    records = _journal_lines(tmp_path)
+    artifact_record = next(r for r in records if r["kind"] == "processing-artifact-registered")
+    assert "verticalReference" not in artifact_record["artifact"], (
+        "수직기준을 안 실은 등록이 원장에 v1.2 모양으로 기록됐다 — 옛 소비자가 깨진다"
+    )
+
+    restored = _rebuild(tmp_path)
+    record = restored.get(f"{_MISSION_ID}-pj1")
+    assert record is not None
+    assert record.status is ProcessingJobStatus.SUCCEEDED
+    assert record.artifacts[0].vertical_reference is None
+
+
+def test_registered_vertical_reference_survives_replay(tmp_path: Path) -> None:
+    """[비공허 대조] 실어 보낸 수직기준은 원장에 남고 재기동해도 그대로다 —
+    위 테스트가 "아무것도 저장 안 돼서" 통과하는 것이 아니다."""
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _running_job(store, tmp_path)
+    reference = VerticalReference(
+        datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+        basis="ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        source=VerticalReferenceSource.PIPELINE_DECLARED,
+    )
+    result = store.register_artifact(
+        job_id,
+        _artifact_spec(vertical_reference=reference),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    journal.close()
+
+    artifact_record = next(
+        r for r in _journal_lines(tmp_path) if r["kind"] == "processing-artifact-registered"
+    )
+    assert artifact_record["artifact"]["verticalReference"] == {
+        "datum": "ellipsoidal_native",
+        "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        "source": "pipeline_declared",
+    }
+
+    record = _rebuild(tmp_path).get(job_id)
+    assert record is not None
+    assert record.artifacts[0].vertical_reference == reference
+
+
 def test_replay_refuses_duplicate_artifact_id(tmp_path: Path) -> None:
     _seeded_success_journal(tmp_path)
     records = _journal_lines(tmp_path)
@@ -1589,6 +1655,49 @@ def test_http_artifact_request_cannot_forge_lineage_anchor(
     job_id = _issued_and_running(client)
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload(**forged)
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_http_artifact_carries_vertical_reference_through_to_the_contract(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 워커가 실어 보낸 수직기준이 그대로 계약 payload 로 나온다 —
+    Core 는 그것을 확인하지도, 바꾸지도, 지어내지도 않는다(기록만 한다)."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    declared = {
+        "datum": "ellipsoidal_native",
+        "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        "source": "pipeline_declared",
+    }
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=_artifact_payload(verticalReference=declared),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["artifact"]["verticalReference"] == declared
+
+
+def test_http_artifact_without_vertical_reference_omits_the_key(tmp_path: Path) -> None:
+    """[핵심] 안 보낸 산출물의 응답에는 그 키가 아예 없다 — 옛 소비자의 wire 가
+    그대로다. Core 가 기본값(예: 타원체고)을 채워 넣으면 여기서 드러난다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload())
+    assert response.status_code == 201, response.text
+    assert "verticalReference" not in response.json()["artifact"]
+
+
+def test_http_artifact_vertical_reference_without_basis_is_rejected(tmp_path: Path) -> None:
+    """[음성] 근거 없는 수직기준 선언은 등록 표면에서 거부된다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=_artifact_payload(
+            verticalReference={"datum": "ellipsoidal", "source": "user_declared"}
+        ),
     )
     assert response.status_code == 422, response.text
 
@@ -2326,6 +2435,33 @@ def test_store_list_pending_includes_running_jobs_with_expired_lease(tmp_path: P
     # 것과 실제로 회수 가능한 것이 어긋나면(예: 후보 목록만 고쳐지고 게이트는
     # 여전히 거부) 이 후보 목록은 거짓 희망이다.
     reclaimed = store.acquire_lease(job.job_id, worker_id="worker-2", now=after_expiry)
+    assert reclaimed.verdict is ProcessingJobVerdict.LEASED
+
+
+def test_store_list_pending_expiry_boundary_is_exclusive(tmp_path: Path) -> None:
+    """[경계] 만료 시각 그 순간부터 후보다 — 1초 전은 아직 아니다.
+
+    ``JobLease.is_active`` 는 ``now < expires_at`` 이므로, ``now`` 가 정확히
+    ``expires_at`` 과 같은 순간부터 이미 만료다(``leasing.check_lease`` /
+    ``leasing.is_claimable`` 공유 규칙, ``test_leasing.py`` 의 단위 테스트와
+    대칭).
+    """
+    store = _job_store(tmp_path)
+    job = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert job is not None
+    leased = store.acquire_lease(job.job_id, worker_id="worker-1", now=_NOW)
+    assert leased.record is not None
+    assert leased.record.lease is not None
+    expires_at = leased.record.lease.expires_at
+    store.transition(
+        job.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    just_before = expires_at - timedelta(seconds=1)
+    assert store.list_pending(now=just_before) == []
+
+    assert [j.job_id for j in store.list_pending(now=expires_at)] == [job.job_id]
+    reclaimed = store.acquire_lease(job.job_id, worker_id="worker-2", now=expires_at)
     assert reclaimed.verdict is ProcessingJobVerdict.LEASED
 
 

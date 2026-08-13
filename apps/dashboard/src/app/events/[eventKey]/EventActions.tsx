@@ -3,9 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useMutation } from "@/hooks/useMutation";
 import type { EventStatus, TriageStatus } from "@/lib/core-api/types";
 
 type PendingAction = "confirm" | "dismiss" | "assign" | null;
+
+// 서버 SSOT: packages/domain/src/ksi_domain/enums.py _ALLOWED_EVENT_TRANSITIONS.
+// CONFIRMED_EVENT 로 전이 가능한 출발 EventStatus 집합 — 이 상태에서만 확정 버튼을
+// 보인다(그 외 상태에서 확정을 시도하면 서버가 IllegalEventTransitionError 로 막는다).
+const CONFIRMABLE_EVENT_STATUSES: ReadonlySet<EventStatus> = new Set(["FINDING"]);
+
+// 서버 SSOT: packages/domain/src/ksi_domain/enums.py _ALLOWED_TRIAGE_TRANSITIONS.
+// ASSIGNED 로 전이 가능한 출발 TriageStatus 집합 — 이미 배정된(NONE 이 아닌) 사건은
+// 배정 패널을 숨긴다.
+const ASSIGNABLE_TRIAGE_STATUSES: ReadonlySet<TriageStatus> = new Set(["NONE"]);
+
+// 트리아지 배정은 대응 사건이 CONFIRMED_EVENT 일 때만 허용된다(events.py
+// _apply_triage_status_transition — EventStatus·TriageStatus 결합 규칙이라
+// enums.py 의 단일 전이표에는 없다. 이 표와는 별도로 store 계층이 집행한다).
+const ASSIGNABLE_EVENT_STATUS: EventStatus = "CONFIRMED_EVENT";
 
 export function EventActions({
   eventKey,
@@ -29,7 +45,7 @@ export function EventActions({
   const [reason, setReason] = useState("");
   const [assignee, setAssignee] = useState("");
   const [pending, setPending] = useState<PendingAction>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { mutate, errorMessage } = useMutation();
 
   // 서버 전이표(packages/domain/src/ksi_domain/enums.py _ALLOWED_EVENT_TRANSITIONS) —
   // 도달 불가능한 액션 버튼을 숨긴다(예전엔 항상 노출해 409를 반복시켰다).
@@ -38,47 +54,32 @@ export function EventActions({
   // (독립 재검토 2차 A-1: !isFinal 만으로는 UNRESOLVED 를 걸러내지 못해 409 를 냈다).
   const canDismiss = !isFinal && status !== "UNRESOLVED";
   // CONFIRMED_EVENT 는 FINDING 에서만 도달 가능하다 — 그 외 상태에선 버튼 자체를 숨긴다.
-  const canConfirm = status === "FINDING";
+  const canConfirm = CONFIRMABLE_EVENT_STATUSES.has(status);
   // 트리아지 배정(ASSIGNED)은 CONFIRMED_EVENT 사건 + triage=NONE(아직 미배정)일 때만
-  // 허용된다(events.py _apply_triage_status_transition + _ALLOWED_TRIAGE_TRANSITIONS[NONE]).
-  // status 만 보고 triage 축을 안 보면 이미 배정된 사건에서도 패널이 노출돼 409 를 낸다
-  // (독립 재검토 2차 A-2).
-  const canAssign = status === "CONFIRMED_EVENT" && triage === "NONE";
+  // 허용된다. status 만 보고 triage 축을 안 보면 이미 배정된 사건에서도 패널이 노출돼
+  // 409 를 낸다(독립 재검토 2차 A-2).
+  const canAssign = status === ASSIGNABLE_EVENT_STATUS && ASSIGNABLE_TRIAGE_STATUSES.has(triage);
   // CONFIRMED_EVENT/DISMISSED 전이는 서버가 reason 을 필수로 요구한다(events.py
   // _REASON_REQUIRED_STATUSES) — 예전엔 "선택"으로 표기해 빈 사유로도 제출돼 422 를 냈다.
   const reasonMissing = reason.trim().length === 0;
 
   async function submit(action: PendingAction, body: Record<string, unknown>) {
     setPending(action);
-    setErrorMessage(null);
-    try {
-      const response = await fetch(`/api/events/${encodeURIComponent(eventKey)}/transitions`, {
+    await mutate(
+      `/api/events/${encodeURIComponent(eventKey)}/transitions`,
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // 낙관적 동시성 토큰을 모든 전이에 싣는다 — 개별 호출부가 빠뜨릴 수
         // 없도록 여기 한 곳에서 붙인다.
         body: JSON.stringify({ ...body, expectedBundleDigest: bundleDigest }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setErrorMessage(
-          (payload && typeof payload.message === "string" && payload.message) ||
-            "요청을 처리하지 못했습니다.",
-        );
-        // 토큰이 낡아서 막힌 경우엔 화면을 갱신해 새 지문을 받아온다 — 안 그러면
-        // 사용자가 같은 낡은 토큰으로 계속 재시도해 막다른 길이 된다.
-        if (response.status === 409) {
-          router.refresh();
-        }
-        return;
-      }
-      setReason("");
-      router.refresh();
-    } catch {
-      setErrorMessage("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
-    } finally {
-      setPending(null);
-    }
+      },
+      () => {
+        setReason("");
+        router.refresh();
+      },
+    );
+    setPending(null);
   }
 
   return (

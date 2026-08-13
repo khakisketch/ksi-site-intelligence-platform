@@ -9,6 +9,7 @@ FAILED 로 수렴하고 원래 예외를 삼키지 않는다.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,11 @@ import pytest
 import rasterio
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
 from ksi_event_contracts.comparison_policy import current_comparison_policy
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 from ksi_geo_spatial.crs import reproject_point
 from ksi_processing_controller.comparison_worker import (
@@ -310,7 +316,7 @@ def test_heartbeat_failure_does_not_kill_the_computation(tmp_path: Path) -> None
 
     갱신 실패로 계산을 중단하면 이미 제출한 부분 결과와 요청 상태가 어긋난다 —
     lease 를 진짜 뺏긴 경우라면 마지막 전이가 거부되며 그때 FAILED 로 수렴하는
-    것이 이 모듈의 설계다(comparison_worker._LeaseHeartbeat docstring)."""
+    것이 이 모듈의 설계다(comparison_worker.LeaseHeartbeat docstring)."""
     cloud = _grid(8)
     base_laz = _write_laz(tmp_path / "baseline.laz", cloud)
     curr_laz = _write_laz(tmp_path / "current.laz", cloud.copy())
@@ -584,6 +590,143 @@ def test_failed_report_failure_does_not_swallow_original_exception(tmp_path: Pat
             "mission-1-cmp4", core=core, work_dir=tmp_path, http_client=client,
             now_message=lambda _msg: None,
         )
+
+
+# ── 리포트의 verticalDatum 은 어디서 오는가 (M4-A 쟁점 1 ④) ──────────────────
+#
+# 예전엔 워커의 하드코딩 상수 하나였다 — 리포트가 "이건 타원체고다"라고 말하면서
+# 그걸 어떻게 아는지는 아무도 몰랐다. 이제 정본은 **산출물이 스스로 선언한 값**
+# (``ProcessingArtifact.verticalReference``)이고, 상수는 그 값이 없는 옛 산출물의
+# 대체값으로만 남는다.
+
+
+def _vertical_dsm_core(
+    request_id: str,
+    *,
+    baseline_reference: VerticalReference | None,
+    current_reference: VerticalReference | None,
+) -> FakeComparisonCoreClient:
+    """체적 계산만 하는(점군 없는) 비교 요청 — 수직기준만 바꿔가며 쓴다."""
+    return FakeComparisonCoreClient(
+        comparison_input=ComparisonInput(
+            request_id=request_id,
+            mission_id="mission-1",
+            status="QUEUED",
+            policy=current_comparison_policy(),
+            point_cloud_baseline=None, point_cloud_baseline_url=None,
+            point_cloud_current=None, point_cloud_current_url=None,
+            dsm_baseline=ArtifactRef(job_id="job-a", artifact_id="dsm"),
+            dsm_baseline_url="http://fake-storage/baseline.tif",
+            dsm_current=ArtifactRef(job_id="job-b", artifact_id="dsm"),
+            dsm_current_url="http://fake-storage/current.tif",
+            zones=_ZONES,
+            zone_crs="EPSG:4326",
+            dsm_baseline_vertical_reference=baseline_reference,
+            dsm_current_vertical_reference=current_reference,
+        )
+    )
+
+
+def _declared(datum: VerticalDatum) -> VerticalReference:
+    return VerticalReference(
+        datum=datum,
+        basis="테스트 — 산출물 등록 시 파이프라인이 선언한 값",
+        source=VerticalReferenceSource.PIPELINE_DECLARED,
+    )
+
+
+def _run_vertical_case(
+    core: FakeComparisonCoreClient, request_id: str, tmp_path: Path
+) -> None:
+    transport = _storage_transport(
+        {
+            "baseline.tif": _write_dsm(tmp_path / "baseline.tif", 100.0),
+            "current.tif": _write_dsm(tmp_path / "current.tif", 101.0),
+        }
+    )
+    with httpx.Client(transport=transport) as client:
+        run_comparison_request(
+            request_id, core=core, work_dir=tmp_path, http_client=client,
+            now_message=lambda _msg: None,
+        )
+
+
+def test_report_carries_the_datum_the_artifacts_declared(tmp_path: Path) -> None:
+    """[핵심] 두 산출물이 같은 수직기준을 선언했으면 **그 값**이 리포트에 실린다.
+
+    상수(``ellipsoidal_native``)가 아니라 ``ellipsoidal`` 을 쓴다 — 상수가 아직
+    남아 있어도 이 단언이 통과하는 일이 없게 하려는 것이다.
+    """
+    core = _vertical_dsm_core(
+        "mission-1-cmp-vr",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        current_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+    )
+
+    _run_vertical_case(core, "mission-1-cmp-vr", tmp_path)
+
+    assert len(core.volume_change_reports) == 1
+    _, report = core.volume_change_reports[0]
+    assert report.vertical_datum == "ellipsoidal"
+
+
+def test_missing_declaration_falls_back_to_the_legacy_constant(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[회귀] 한쪽이라도 수직기준을 안 밝힌 산출물이면 **예전과 정확히 같은 값**을
+    쓰고 경고를 남긴다 — 수직기준 개념 이전에 등록된 M1/M2 산출물의 비교를
+    소급해서 못 하게 만들지 않는다(이 milestone 의 무효화 금지 요건)."""
+    core = _vertical_dsm_core(
+        "mission-1-cmp-legacy",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        current_reference=None,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="ksi_processing_controller.comparison_worker"):
+        _run_vertical_case(core, "mission-1-cmp-legacy", tmp_path)
+
+    assert len(core.volume_change_reports) == 1
+    _, report = core.volume_change_reports[0]
+    assert report.vertical_datum == "ellipsoidal_native"
+    # 조용히 대체하지 않는다 — 재처리 대상을 나중에 찾을 수 있어야 한다.
+    assert any("수직기준 미기록" in record.message for record in caplog.records)
+    succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
+    assert len(succeeded) == 1
+
+
+def test_incompatible_datum_families_fail_instead_of_producing_numbers(tmp_path: Path) -> None:
+    """[핵심] 타원체고와 정표고를 그냥 빼지 않는다 — 한국에서 20~30m 가 조용히
+    섞인다. 이론상 같은 파이프라인끼리는 발생하지 않지만, 발생했다면 전제가
+    깨진 것이므로 숫자를 내지 않고 FAILED 로 수렴한다."""
+    core = _vertical_dsm_core(
+        "mission-1-cmp-incompat",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL_NATIVE),
+        current_reference=_declared(VerticalDatum.ORTHOMETRIC_KNGEOID2018),
+    )
+
+    with pytest.raises(ComparisonWorkerRunError):
+        _run_vertical_case(core, "mission-1-cmp-incompat", tmp_path)
+
+    assert core.volume_change_reports == []
+    failed = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "FAILED"]
+    assert len(failed) == 1
+
+
+def test_same_family_but_different_datums_still_refuses_to_pick_one(tmp_path: Path) -> None:
+    """계열이 같아도 datum 이 다르면 리포트의 verticalDatum 한 자리에 어느 쪽을
+    적어도 절반은 거짓이 된다 — 한쪽을 고르는 대신 실패한다(fail-closed)."""
+    core = _vertical_dsm_core(
+        "mission-1-cmp-mixed",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        current_reference=_declared(VerticalDatum.ELLIPSOIDAL_NATIVE),
+    )
+
+    with pytest.raises(ComparisonWorkerRunError):
+        _run_vertical_case(core, "mission-1-cmp-mixed", tmp_path)
+
+    assert core.volume_change_reports == []
+    failed = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "FAILED"]
+    assert len(failed) == 1
 
 
 def test_pending_comparison_request_is_a_lightweight_reference() -> None:

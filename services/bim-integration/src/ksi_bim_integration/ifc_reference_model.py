@@ -74,6 +74,22 @@ class IfcGeoreference:
     orthogonal_height: float
 
 
+@dataclass(frozen=True, slots=True)
+class IfcSurfaceMesh:
+    """site_frame(미터) 삼각형 메쉬 — 정점 ``(N, 3)`` + 삼각형 인덱스 ``(M, 3)``.
+
+    ``vertices`` 는 :func:`sample_points_from_ifc` 가 반환하는 것과 **같은 값·같은
+    순서**다(그 함수가 이 메쉬의 정점을 그대로 반환한다). ``faces`` 는 모듈
+    docstring 의 "메쉬 정점 샘플링 한계"(큰 평면이 정점 몇 개로만 표현됨)를
+    소비자가 우회해야 할 때 필요한 연결정보다 — 예: 설계면 래스터화는 정점만
+    찍으면 대부분 구멍이라 삼각형 면을 직접 굽는다
+    (``tools/convert_ifc_design_surface.py``).
+    """
+
+    vertices: NDArray[np.float64]
+    faces: NDArray[np.int64]
+
+
 def has_georeferencing(ifc_file: ifcopenshell.file) -> bool:
     """``IfcCoordinateOperation``(IfcMapConversion·IfcMapConversionScaled·
     IfcRigidOperation 의 상위타입) 존재만으로 판정한다 — ``IfcProjectedCRS`` 는
@@ -216,6 +232,20 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
             IFC2X3 스키마이거나, 길이 단위를 읽을 수 없거나, 지오메트리를 가진 요소가
             하나도 없을 때.
     """
+    return sample_mesh_from_ifc(ifc_path).vertices
+
+
+def sample_mesh_from_ifc(ifc_path: Path) -> IfcSurfaceMesh:
+    """:func:`sample_points_from_ifc` 와 같은 추출을 **연결정보(faces)까지** 낸다.
+
+    거부 조건·좌표 변환·단위 정규화 계약은 전부 :func:`sample_points_from_ifc`
+    의 docstring 그대로다 — 두 함수가 같은 구현을 공유한다(점 함수가 이 함수에
+    위임한다). 여기서만 다른 것은 반환 형태 하나다: 요소별 삼각형 인덱스를 전체
+    정점 배열 기준으로 이어 붙여 ``(M, 3)`` 으로 낸다.
+
+    Raises:
+        IfcReferenceModelError: :func:`sample_points_from_ifc` 와 동일.
+    """
     try:
         ifc_file = ifcopenshell.open(str(ifc_path))
     except Exception as exc:  # noqa: BLE001 — ifcopenshell 이 다양한 파서 예외를 던진다
@@ -234,6 +264,7 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
     settings.set("use-world-coords", True)
 
     world_points: list[list[float]] = []
+    triangles: list[list[int]] = []
     for element in ifc_file.by_type("IfcElement"):
         if not element.Representation:
             continue
@@ -245,9 +276,13 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
             continue
         # ifcopenshell.geom.create_shape 의 반환 타입은 백엔드별 Union 이라 정적으로
         # 좁혀지지 않는다 — settings 기본값(triangulation 백엔드)에서는 항상
-        # .geometry.verts 를 갖는 실측 동작이다(2026-08-06 왕복 스크립트 확인).
+        # .geometry.verts / .geometry.faces 를 갖는 실측 동작이다(2026-08-06 왕복
+        # 스크립트 + 2026-08-12 faces 실측: 정점 4개 평면에서 faces=[2,0,1,2,3,0]).
         geometry = shape.geometry  # type: ignore[union-attr]
         verts = np.array(geometry.verts, dtype=np.float64).reshape(-1, 3)  # type: ignore[union-attr]
+        faces = np.array(geometry.faces, dtype=np.int64).reshape(-1, 3)  # type: ignore[union-attr]
+        # 요소별 인덱스는 그 요소의 정점 기준이다 — 전체 배열 기준으로 밀어 잇는다.
+        offset = len(world_points)
         for vertex in verts:
             local_matrix = np.eye(4)
             # 미터 환산은 여기서 — auto_local2global 이 map 변환을 얹기 **전**이다
@@ -255,19 +290,26 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
             local_matrix[:3, 3] = vertex * unit_scale
             global_matrix = ifc_geolocation.auto_local2global(ifc_file, local_matrix)
             world_points.append(global_matrix[:3, 3].tolist())
+        for tri in faces:
+            triangles.append([offset + int(tri[0]), offset + int(tri[1]), offset + int(tri[2])])
 
     if not world_points:
         raise IfcReferenceModelError(
             f"{ifc_path}: 지오메트리를 가진 IfcElement 가 하나도 없다 — "
             "빈 as-designed 모델로는 비교 baseline 을 만들 수 없다"
         )
-    return np.array(world_points, dtype=np.float64)
+    return IfcSurfaceMesh(
+        vertices=np.array(world_points, dtype=np.float64),
+        faces=np.array(triangles, dtype=np.int64).reshape(-1, 3),
+    )
 
 
 __all__ = [
     "IfcGeoreference",
     "IfcReferenceModelError",
+    "IfcSurfaceMesh",
     "has_georeferencing",
     "read_georeference",
+    "sample_mesh_from_ifc",
     "sample_points_from_ifc",
 ]

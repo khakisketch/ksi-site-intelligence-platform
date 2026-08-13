@@ -28,6 +28,9 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
+from ksi_core.design_conformance_reports import DesignConformanceStore
+from ksi_core.design_conformance_requests import DesignConformanceRequestStore
+from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
@@ -39,6 +42,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
+from ksi_core.work_areas import WorkAreaStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -114,8 +118,23 @@ def _max_assembly(tmp_path: Path) -> Any:
         source_media_store=source_media_store,
         site_store=site_store,
     )
+    design_surface_store = DesignSurfaceStore(
+        DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
+    )
+    storage = _NullEvidenceStorage()
+    work_area_store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas.jsonl"),
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    design_conformance_request_store = DesignConformanceRequestStore(
+        DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=design_surface_store,
+        work_area_store=work_area_store,
+    )
     return create_app(
-        evidence_storage=_NullEvidenceStorage(),
+        evidence_storage=storage,
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
@@ -125,6 +144,7 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
         source_media_store=source_media_store,
+        design_surface_store=design_surface_store,
         processing_job_store=processing_job_store,
         defect_candidate_store=DefectCandidateStore(
             DurableJournal(tmp_path / "defect-candidates.jsonl"),
@@ -146,6 +166,15 @@ def _max_assembly(tmp_path: Path) -> Any:
             mission_store=mission_store,
             processing_job_store=processing_job_store,
         ),
+        design_conformance_request_store=design_conformance_request_store,
+        design_conformance_report_store=DesignConformanceStore(
+            DurableJournal(tmp_path / "design-conformance.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            request_store=design_conformance_request_store,
+            storage=storage,
+        ),
+        work_area_store=work_area_store,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),
@@ -294,6 +323,63 @@ def test_asyncapi_refs_point_to_existing_latest_schemas() -> None:
     # 페이로드를 와이어 계약으로 안내하던 drift(감사 #34).
     assert "mission-contract.v1.json" not in text
     assert "event-bundle.v1.json" not in text and "event-bundle.v1.1.json" not in text
+
+
+def test_openapi_refs_resolve_to_defined_targets() -> None:
+    """openapi-core.yaml 전수 $ref 해소 검사 (risk openapi-dangling-ref-ungated).
+
+    ④·⑤(아래)는 문서에 이미 적힌 모델 **이름**끼리만 대조한다 — 그 이름이
+    애초에 ``components/schemas`` 에 정의돼 있는지는 어느 기존 게이트도 보지
+    않는다. 실측(2026-08-07): M1 에서 두 경로에 ``ArtifactUploadUrlResponse``·
+    ``ArtifactDownloadResponse`` 를 $ref 로 걸어 놓고 정의를 빠뜨렸는데도 이
+    파일의 검사 14건이 전부 통과했다.
+
+    문서 전체를 순회해 모든 $ref 를 모으고, 두 갈래 스타일을 각각 해소한다:
+      - 내부 참조(``#/components/schemas/X`` 등) — 문서 자신의 트리에서 그
+        JSON 포인터 경로가 실제로 존재하는가.
+      - 상대 파일 참조(``../schemas/X.json``) — 그 경로의 파일이 실제로
+        존재하는가.
+    그 외 형태(원격 ``https://`` URL 등)는 이 저장소 안에서 해소할 수 없으므로
+    그 자체로 실패다.
+    """
+    doc: dict[str, Any] = yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
+    refs: list[tuple[str, str]] = []
+
+    def collect(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "$ref" and isinstance(value, str):
+                    refs.append((path, value))
+                else:
+                    collect(value, f"{path}/{key}")
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                collect(item, f"{path}[{index}]")
+
+    collect(doc, "$")
+    assert refs, "openapi-core.yaml 에 $ref 가 없다"
+
+    dangling: list[str] = []
+    for pointer_path, ref in refs:
+        if ref.startswith("#/"):
+            target: Any = doc
+            for part in ref[2:].split("/"):
+                if isinstance(target, dict) and part in target:
+                    target = target[part]
+                else:
+                    dangling.append(f"{pointer_path} -> {ref} (문서 안에 정의가 없다)")
+                    break
+        elif ref.startswith("../"):
+            if not (_OPENAPI.parent / ref).resolve().is_file():
+                dangling.append(f"{pointer_path} -> {ref} (파일이 없다)")
+        else:
+            dangling.append(
+                f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)"
+            )
+
+    assert not dangling, (
+        f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
+    )
 
 
 # ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────
@@ -779,3 +865,36 @@ def test_no_unauthenticated_route_outside_allowlist_via_assemble_app(tmp_path: P
     finally:
         for journal in opened:
             journal.close()
+
+
+def test_vertical_datum_enum_matches_the_python_ssot() -> None:
+    """openapi-core.yaml 의 datum enum 이 VerticalDatum SSOT 와 어긋나지 않는다.
+
+    **이 게이트가 없어서 실제로 드리프트가 났다**(2026-08-12): 정표고 설계면을
+    잇는 작업이 ``VerticalDatum.ORTHOMETRIC_KNGEOID2024`` 를 추가하고
+    ``processing-artifact.v1.2.json``·``design-surface.v1.json`` 은 갱신했는데
+    openapi 만 3값으로 남았다 — 산출물 스키마는 새 값을 허용하는데 그 산출물을
+    등록하는 API 계약은 금지하는 상태였다. 기존 검사들은 경로·메서드·$ref 해소·
+    응답 필드 이름만 보고 **enum 값은 보지 않아** 아무것도 잡지 못했다.
+
+    이 저장소에서 ``contracts/`` 는 코드보다 상위 권위다(00_READ_FIRST). 그러니
+    권위가 코드보다 **좁은** 상태를 조용히 두지 않는다.
+    """
+    from ksi_event_contracts.vertical_reference import VerticalDatum
+
+    text = _OPENAPI.read_text(encoding="utf-8")
+    expected = {datum.value for datum in VerticalDatum}
+
+    # `datum:` 바로 아래 오는 `enum: [...]` 만 본다 — 다른 enum(source 등)과 섞이지
+    # 않게. openapi 는 이 자리를 flow 시퀀스 한 줄로 쓴다(파일 관례).
+    found = re.findall(r"datum:\s*\n\s*type: string\s*\n\s*enum: \[([^\]]+)\]", text)
+    assert found, "openapi-core.yaml 에서 datum enum 을 못 찾았다 — 게이트가 공허하다"
+
+    for index, raw in enumerate(found):
+        values = {token.strip() for token in raw.split(",")}
+        assert values == expected, (
+            f"openapi-core.yaml 의 datum enum #{index} 가 VerticalDatum 과 다르다.\n"
+            f"  openapi: {sorted(values)}\n"
+            f"  python : {sorted(expected)}\n"
+            "VerticalDatum 에 값을 추가했으면 openapi 와 관련 JSON 스키마도 함께 넓힌다."
+        )

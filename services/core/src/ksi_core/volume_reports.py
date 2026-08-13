@@ -36,9 +36,14 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
-from pydantic import BaseModel, ConfigDict
-from pydantic.alias_generators import to_camel
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
+from ksi_core.artifact_refs import ArtifactRefIssue, verify_artifact_pair
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -169,31 +174,29 @@ class VolumeChangeStore:
         ``_check_self_consistency``) — 여기서 다시 보지 않는 이유는 검사가 두
         곳에 있으면 한쪽만 고쳐지기 때문이다.
 
-        live 수신과 journal 재생이 같은 함수를 쓴다.
+        live 수신과 journal 재생이 같은 함수를 쓴다 — 산출물 존재·kind 검증은
+        ``artifact_refs.verify_artifact_pair`` 로 ``change_detection.py`` 와
+        공유한다.
         """
-        for label, ref in (("baseline", report.baseline), ("current", report.current)):
-            job = self._processing_job_store.get(ref.job_id)
-            if job is None:
-                return (
-                    VolumeChangeVerdict.UNKNOWN_ARTIFACT,
-                    f"{label}.jobId={ref.job_id!r} 인 처리 작업이 없다",
-                )
-            artifact = next(
-                (a for a in job.artifacts if a.artifact_id == ref.artifact_id), None
-            )
-            if artifact is None:
-                return (
-                    VolumeChangeVerdict.UNKNOWN_ARTIFACT,
-                    f"{label}.artifactId={ref.artifact_id!r} 가 작업 {ref.job_id!r} 에"
-                    " 등록된 적이 없다",
-                )
-            if artifact.kind is not ProcessingArtifactKind.DSM:
-                return (
-                    VolumeChangeVerdict.ARTIFACT_KIND_MISMATCH,
-                    f"{label} 산출물의 kind 가 {artifact.kind.value!r} 다 — 체적 차분의"
-                    " 입력은 dsm 이어야 한다(표면 함수 z=f(x,y) 의 적분이다)",
-                )
-        return VolumeChangeVerdict.RECORDED, None
+        issue = verify_artifact_pair(
+            self._processing_job_store,
+            report.baseline,
+            report.current,
+            required_kind=ProcessingArtifactKind.DSM,
+            kind_mismatch_detail=lambda label, kind: (
+                f"{label} 산출물의 kind 가 {kind.value!r} 다 — 체적 차분의"
+                " 입력은 dsm 이어야 한다(표면 함수 z=f(x,y) 의 적분이다)"
+            ),
+        )
+        if issue is None:
+            return VolumeChangeVerdict.RECORDED, None
+        reason, detail = issue
+        verdict = (
+            VolumeChangeVerdict.UNKNOWN_ARTIFACT
+            if reason is ArtifactRefIssue.UNKNOWN_ARTIFACT
+            else VolumeChangeVerdict.ARTIFACT_KIND_MISMATCH
+        )
+        return verdict, detail
 
     @property
     def sealed_reason(self) -> str | None:
@@ -211,7 +214,7 @@ class VolumeChangeStore:
             if self._journal.sealed_reason is not None:
                 return VolumeChangeRecordResult(
                     VolumeChangeVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             if self._mission_store.get(mission_id) is None:
                 return self._reject(
@@ -244,7 +247,7 @@ class VolumeChangeStore:
 
             record = {
                 "kind": "volume-change-recorded",
-                "ts": now.astimezone(UTC).isoformat(),
+                "ts": iso_utc(now),
                 "missionId": mission_id,
                 "reportedBy": reported_by,
                 "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
@@ -254,7 +257,7 @@ class VolumeChangeStore:
             except JournalSealedError:
                 return VolumeChangeRecordResult(
                     VolumeChangeVerdict.STORE_UNAVAILABLE,
-                    detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                    detail=JOURNAL_APPEND_FAILED_DETAIL,
                 )
             self._project(mission_id, report, reported_by, now)
             return VolumeChangeRecordResult(VolumeChangeVerdict.RECORDED)
@@ -270,7 +273,7 @@ class VolumeChangeStore:
     ) -> VolumeChangeRecordResult:
         record = {
             "kind": "volume-change-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "missionId": mission_id,
             "volumeChangeId": report.volume_change_id,
             "verdict": verdict.value,
@@ -282,7 +285,7 @@ class VolumeChangeStore:
         except JournalSealedError:
             return VolumeChangeRecordResult(
                 VolumeChangeVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         return VolumeChangeRecordResult(verdict, detail=detail)
 
@@ -305,22 +308,18 @@ class VolumeChangeStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class VolumeChangeResponse(_CamelModel):
+class VolumeChangeResponse(CamelModel):
     verdict: str
     detail: str | None
 
 
-class VolumeChangeEntry(_CamelModel):
+class VolumeChangeEntry(CamelModel):
     report: dict[str, Any]
     reported_by: str | None
     recorded_at: datetime
 
 
-class VolumeChangeListView(_CamelModel):
+class VolumeChangeListView(CamelModel):
     """그 임무의 체적 리포트 이력 — 최신이 먼저.
 
     ``totalNetM3`` 는 **최신 리포트의** 전 구역 순변화다. 화면이 구역 배열을

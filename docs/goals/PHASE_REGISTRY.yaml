@@ -153,11 +153,23 @@ phases:
       - "Spatial Refresh Backbone + Coverage Recovery"
 
     residual_risks:
+      # 2026-08-12 갱신: §15.2 5개 항목 중 ④·⑤가 닫히면서 이 잔여가 ②(Edge 소관)
+      # 하나로 좁혀졌다 — 원 문구는 "④·⑤는 Edge 소관으로 밀 수 없다"가 요지였고
+      # 그 둘이 실제로 이 저장소에서 닫혔으므로 그 지적은 해소됐다.
+      # ⑤ 변화 후보 재방문: needs_change_candidate_revisit() 가 신호 함수에 그치지
+      #   않고 GET /v1/missions/{id}/change-detection 응답의 revisitRecommended/
+      #   revisitRatioThreshold 로 노출됨(커밋 3a56218).
+      # ④ 동적 객체 마스킹: 실 NodeODM(2.2.4/ODM 3.5.6) 컨테이너로 마스크 규약을
+      #   실측 확정({stem}_mask.png, 흰색=유지)한 뒤 재구성 제출 경로에 배선
+      #   (odm_masking.py·dynamic_object_mask.py, goal phase2-dynamic-object-masking
+      #   gate pass). 단 이 NodeODM 포크는 sparse(카메라 포즈) 단계에서 마스크를
+      #   의도적으로 무시하므로 마스킹이 듣는 곳은 dense 단계다 — "완전 제거"가
+      #   아니라는 사실을 완료 판정에 그대로 남긴다.
       - >-
-        MASTER_PRD §15.2 의 5개 항목 중 ①(일정간격 수집)만 실코드로 닫혔다 —
-        ②(이벤트 시 Adaptive Patrol 분기, Edge 소관)·④(동적 객체 마스킹/저가중치)·
-        ⑤(변화 후보 영역 추가 시점 수집)는 미구현·미선언
-        (risk phase2-backbone-prd-items-partial, open).
+        MASTER_PRD §15.2 의 ②(이벤트 시 Adaptive Patrol 분기)는 여전히 미구현이다 —
+        03_EDGE_AUTONOMY.md 상태머신 소관이라 Manifold/Edge 하드웨어 트랙에 속하며
+        (Track A/B 와 동일 계열), 이 저장소의 소프트웨어 트랙에서 닫을 수 있는
+        항목이 아니다. ①·④·⑤ 는 닫혔다(위 주석 참조).
       # 2026-08-08 실사(technical-product-audit)로 확인: 아래 2건은 이미 해소됨
       # (.ksi/goals.json risk status=resolved, 2026-08-07) — 이 절이 최신 편집
       # (4a44828/4a2ab2f) 이후에도 반영이 안 돼 있었다. patrol-capture-interval-

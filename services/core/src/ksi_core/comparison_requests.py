@@ -21,12 +21,13 @@ SUCCEEDED 전이에 ``authority=source`` 산출물 등록을 요구하는데, �
 
 ## lease 는 발명하지 않고 재사용한다
 
-:class:`~ksi_core.processing_jobs.JobLease` 를 그대로 import 해서 쓴다 —
-``worker_id``·``granted_at``·``expires_at``·``is_active``·``held_by`` 뿐인
-순수 데이터클래스라 재구성 특유 필드가 없다. 원자적 획득(``threading.Lock``
-기반 확인-후-기록)과 ``list_pending`` 의 "QUEUED + lease 만료된 RUNNING"
-필터도 ``ProcessingJobStore`` 의 것과 같은 알고리즘을 다시 구현한다(레코드
-타입이 달라 제네릭화는 하지 않는다 — 그 자체가 별도 리팩터 리스크다).
+:class:`~ksi_core.leasing.JobLease` 와 그 판정 순수 함수(``check_lease``·
+``is_claimable``·``next_lease``)를 그대로 import 해서 쓴다 —
+``ProcessingJobStore`` 와 동일한 lease 프로토콜이라, 소유권 검사와
+``list_pending`` 의 "QUEUED + lease 만료된 RUNNING" 필터를 여기서 다시
+구현하지 않는다(P1-2). store 클래스 자체는 합치지 않는다 — 레코드 타입·
+전이표(``CANCELLED`` 유무)가 다르고, journal append·verdict 번역은 각
+store 의 도메인 책임으로 남는다.
 
 ## 워커가 baseline/current 원본을 읽는 유일한 경로
 
@@ -61,16 +62,17 @@ from ksi_event_contracts.comparison_policy import ComparisonPolicy, current_comp
 from ksi_event_contracts.comparison_request import ComparisonRequest
 from ksi_event_contracts.processing_artifact import ProcessingArtifact, ProcessingArtifactKind
 from ksi_event_contracts.processing_job import ProcessingJobStatus
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from ksi_event_contracts.vertical_reference import VerticalReference
+from pydantic import Field
 
+from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
+from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
 from ksi_core.metrics import COMPARISON_REQUEST_TRANSITIONS
 from ksi_core.processing_jobs import (
     DEFAULT_LEASE_TTL,
-    JobLease,
     ProcessingJobRecord,
     ProcessingJobStore,
     build_processing_artifact_object_key,
@@ -84,7 +86,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _NOT_FOUND_DETAIL = "해당 비교 요청을 찾을 수 없다"
-_STORE_UNAVAILABLE_DETAIL = "journal 봉인됨 — 재시작 필요"
+_STORE_UNAVAILABLE_DETAIL = JOURNAL_SEALED_DETAIL
 
 _ACTIVE_STATUSES = frozenset({ProcessingJobStatus.QUEUED, ProcessingJobStatus.RUNNING})
 
@@ -184,10 +186,14 @@ def build_comparison_request_id(mission_id: str, sequence: int) -> str:
     return f"{mission_id}-cmp{sequence}"
 
 
-def _zone_fingerprint(
+def zone_fingerprint(
     zones: dict[str, dict[str, Any]] | None, zone_crs: str | None
 ) -> str:
     """구역 한 벌을 멱등 판정용 문자열 하나로 — 같은 구역이면 같은 값이 나온다.
+
+    ``design_conformance_requests`` 도 같은 멱등 규칙을 쓴다(구역이 지시의
+    일부라는 판단이 두 요청 종류에서 동일하다) — 그래서 private 이 아니다.
+    복제하면 한쪽 정규화만 바뀌는 날 같은 재전송이 한쪽에서만 중복 요청을 만든다.
 
     ``json.dumps(sort_keys=True)`` 를 쓰는 이유는 dict 순서가 요청마다 달라질 수
     있어서다(브라우저·프록시가 키 순서를 보장하지 않는다). 좌표는 float 이라
@@ -215,7 +221,7 @@ def _request_shape(record: ComparisonRequestRecord) -> tuple[str, str, str]:
     return (
         record.baseline_job_id,
         record.current_job_id,
-        _zone_fingerprint(record.zones, record.zone_crs),
+        zone_fingerprint(record.zones, record.zone_crs),
     )
 
 
@@ -287,8 +293,7 @@ def _require_tz_aware(value: datetime, *, param: str) -> None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat()
+_iso = iso_utc
 
 
 def _find_artifact(
@@ -615,7 +620,7 @@ class ComparisonRequestStore:
                 (
                     baseline_job_id,
                     current_job_id,
-                    _zone_fingerprint(resolved.zones, resolved.zone_crs),
+                    zone_fingerprint(resolved.zones, resolved.zone_crs),
                 )
             )
             if existing_id is not None:
@@ -653,7 +658,7 @@ class ComparisonRequestStore:
             )
             raw = {
                 "kind": "comparison-request-created",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "request": record.to_contract().model_dump(
                     by_alias=True, mode="json", exclude_none=False
                 ),
@@ -672,6 +677,29 @@ class ComparisonRequestStore:
         with self._lock:
             return self._requests.get(request_id)
 
+    def vertical_reference_of(self, ref: ArtifactRef | None) -> VerticalReference | None:
+        """그 산출물이 등록 시 선언한 수직기준 — 없으면 ``None``.
+
+        요청 레코드에 복사해 두지 않고 **입력 발급 시점에 조회**한다(presigned
+        URL 과 같은 자리·같은 이유): 요청 계약(``ComparisonRequest``)은 "무엇을
+        비교하라"는 지시이고 수직기준은 그 지시가 아니라 **산출물의 성질**이다.
+        지시에 복사해 두면 산출물 쪽 사실과 두 벌이 되고, 옛 요청은 필드가
+        없어 계약이 또 한 세대 갈라진다.
+
+        ``None`` 인 경우는 둘이다 — 수직기준이 기록되기 전에 등록된 산출물,
+        그리고 v1.2 를 아는 생산자가 명시적으로 "모른다"고 밝힌 경우. 여기서
+        둘을 가르지 않는다(소비자는 어느 쪽이든 '미상'으로 다뤄야 한다).
+        어떤 기본값도 채우지 않는다 — Core 는 산출물 바이트를 읽지 않아 이
+        값을 확인할 수 없고, 대신 주장하면 그 가정 위에서 숫자가 나온다.
+        """
+        if ref is None:
+            return None
+        job = self._processing_job_store.get(ref.job_id)
+        if job is None:
+            return None
+        artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
+        return artifact.vertical_reference if artifact is not None else None
+
     def list_for_mission(self, mission_id: str) -> list[ComparisonRequestRecord]:
         with self._lock:
             records = [r for r in self._requests.values() if r.mission_id == mission_id]
@@ -684,13 +712,7 @@ class ComparisonRequestStore:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
             records = [
-                r
-                for r in self._requests.values()
-                if r.status is ProcessingJobStatus.QUEUED
-                or (
-                    r.status is ProcessingJobStatus.RUNNING
-                    and (r.lease is None or not r.lease.is_active(now))
-                )
+                r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
             ]
         ordered = sorted(records, key=lambda r: (r.requested_at, r.request_id))
         return ordered[:limit]
@@ -699,17 +721,18 @@ class ComparisonRequestStore:
     def _check_lease_locked(
         record: ComparisonRequestRecord, *, worker_id: str, now: datetime
     ) -> tuple[ComparisonRequestVerdict, str] | None:
-        lease = record.lease
-        if lease is None or not lease.is_active(now):
+        denial = check_lease(record.lease, worker_id=worker_id, now=now)
+        if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
             return (
                 ComparisonRequestVerdict.LEASE_REQUIRED,
                 "이 요청의 lease 를 먼저 잡아야 한다",
             )
-        if lease.worker_id != worker_id:
+        if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+            assert record.lease is not None  # HELD_BY_ANOTHER only when a lease exists
             return (
                 ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER,
-                f"다른 워커({lease.worker_id})가 {_iso(lease.expires_at)} 까지 이 요청을 "
-                "쥐고 있다 — 만료 후 다시 시도한다",
+                f"다른 워커({record.lease.worker_id})가 {iso_utc(record.lease.expires_at)} 까지 "
+                "이 요청을 쥐고 있다 — 만료 후 다시 시도한다",
             )
         return None
 
@@ -735,23 +758,30 @@ class ComparisonRequestStore:
                     detail=f"요청이 {record.status.value} 상태다 — 끝난 요청은 잡을 수 없다",
                 )
             current = record.lease
-            renewing = current is not None and current.held_by(worker_id, now)
-            if current is not None and current.is_active(now) and not renewing:
+            denial = check_lease(current, worker_id=worker_id, now=now)
+            renewing = current is not None and denial is None
+            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                assert current is not None  # HELD_BY_ANOTHER only when a lease exists
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER,
                     detail=(
-                        f"다른 워커({current.worker_id})가 {_iso(current.expires_at)} 까지 "
+                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
                         "이 요청을 쥐고 있다 — 만료 후 다시 시도한다"
                     ),
                     record=record,
                 )
-            expires_at_ts = now + ttl
+            new_lease = next_lease(
+                worker_id=worker_id,
+                now=now,
+                ttl=ttl,
+                granted_at=current.granted_at if renewing and current else None,
+            )
             raw = {
                 "kind": "comparison-request-leased",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "requestId": request_id,
                 "workerId": worker_id,
-                "expiresAt": _iso(expires_at_ts),
+                "expiresAt": iso_utc(new_lease.expires_at),
                 "renewal": renewing,
             }
             try:
@@ -760,14 +790,7 @@ class ComparisonRequestStore:
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
-            updated = replace(
-                record,
-                lease=JobLease(
-                    worker_id=worker_id,
-                    granted_at=current.granted_at if renewing and current else now,
-                    expires_at=expires_at_ts,
-                ),
-            )
+            updated = replace(record, lease=new_lease)
             self._requests[request_id] = updated
             return ComparisonRequestResult(
                 ComparisonRequestVerdict.LEASE_RENEWED
@@ -808,7 +831,7 @@ class ComparisonRequestStore:
                 )
             raw = {
                 "kind": "comparison-request-transitioned",
-                "ts": _iso(now),
+                "ts": iso_utc(now),
                 "requestId": request_id,
                 "targetStatus": target.value,
                 "detail": detail,
@@ -839,11 +862,7 @@ def _require_aware_iso(raw: Any, field_name: str, request_id: str) -> datetime:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class ComparisonRequestCreateInput(_CamelModel):
+class ComparisonRequestCreateInput(CamelModel):
     """요청 생성 본문 — **무엇을 비교할지**만 정한다.
 
     구역은 site.aoi 를 자동으로 쓰지 않는다(모듈 docstring) — 대시보드가
@@ -857,7 +876,7 @@ class ComparisonRequestCreateInput(_CamelModel):
     zone_crs: str | None = None
 
 
-class ComparisonRequestView(_CamelModel):
+class ComparisonRequestView(CamelModel):
     """비교 요청 1건의 조회 표현 — 계약 payload + 운영 메타."""
 
     request: dict[str, Any]
@@ -865,17 +884,17 @@ class ComparisonRequestView(_CamelModel):
     lease_expires_at: datetime | None
 
 
-class ComparisonRequestMutationResponse(_CamelModel):
+class ComparisonRequestMutationResponse(CamelModel):
     verdict: str
     request: dict[str, Any] | None = None
     detail: str | None = None
 
 
-class ComparisonRequestListResponse(_CamelModel):
+class ComparisonRequestListResponse(CamelModel):
     requests: list[dict[str, Any]]
 
 
-class PendingComparisonRequestView(_CamelModel):
+class PendingComparisonRequestView(CamelModel):
     """워커가 다음에 잡을 후보 1건 — 최소 노출(``PendingProcessingJobView`` 와 동형).
 
     ``PROCESSING_WORK`` 는 ``MISSIONS_READ`` 를 포함하지 않으므로 임무·현장·
@@ -887,16 +906,16 @@ class PendingComparisonRequestView(_CamelModel):
     requested_at: datetime
 
 
-class PendingComparisonRequestListResponse(_CamelModel):
+class PendingComparisonRequestListResponse(CamelModel):
     requests: list[PendingComparisonRequestView]
 
 
-class ComparisonRequestTransitionRequest(_CamelModel):
+class ComparisonRequestTransitionRequest(CamelModel):
     target_status: ProcessingJobStatus
     detail: str | None = None
 
 
-class ComparisonRequestInputView(_CamelModel):
+class ComparisonRequestInputView(CamelModel):
     """워커가 실제로 계산하는 데 필요한 것 — presigned GET URL + 그 산출물의 참조
     (모듈 docstring "워커가 원본을 읽는 유일한 경로").
 
@@ -936,9 +955,20 @@ class ComparisonRequestInputView(_CamelModel):
     dsm_current_url: str | None
     zones: dict[str, dict[str, Any]] | None
     zone_crs: str | None
+    #: 두 DSM 산출물이 등록 시 선언한 수직기준 — ``VolumeChangeReport.
+    #: verticalDatum`` 에 실릴 값의 **출처**다. 워커가 상수를 가정하던 자리를
+    #: 산출물의 사실로 바꾼다. ``None`` 은 '미상'이고(수직기준이 기록되기 전에
+    #: 등록된 산출물 등) Core 는 그 자리를 채우지 않는다 —
+    #: :meth:`ComparisonRequestStore.vertical_reference_of` docstring 참조.
+    #: 점군 쪽에 같은 필드가 없는 이유는 ``ChangeDetectionResult`` 에 수직기준
+    #: 필드가 없어서다(쓰이지 않을 값을 워커까지 실어 나르지 않는다).
+    #: 기본값을 두지 않는다 — 이 뷰의 다른 nullable 필드와 같은 관례이고, 새
+    #: 응답 경로가 생겼을 때 "안 채우면 조용히 null" 이 되지 않게 한다.
+    dsm_baseline_vertical_reference: VerticalReference | None
+    dsm_current_vertical_reference: VerticalReference | None
 
 
-class ComparisonRequestInputResponse(_CamelModel):
+class ComparisonRequestInputResponse(CamelModel):
     verdict: str
     input: ComparisonRequestInputView | None = None
     detail: str | None = None
@@ -1178,6 +1208,8 @@ def build_comparison_requests_router(
                 dsm_current_url=dsm_current_url,
                 zones=record.zones,
                 zone_crs=record.zone_crs,
+                dsm_baseline_vertical_reference=store.vertical_reference_of(record.dsm_baseline),
+                dsm_current_vertical_reference=store.vertical_reference_of(record.dsm_current),
             ),
         )
 
@@ -1245,4 +1277,5 @@ __all__ = [
     "build_comparison_request_id",
     "build_comparison_requests_router",
     "mount_comparison_requests",
+    "zone_fingerprint",
 ]

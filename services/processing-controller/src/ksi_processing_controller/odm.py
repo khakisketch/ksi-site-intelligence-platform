@@ -33,6 +33,12 @@ ODM/NodeODM 은 AGPL-3.0 이고, ADR-KSI-012 D2 가 그은 금지선은 **"엔�
 4. **상태 코드 30 은 ``errorMessage`` 를 동반한다** — ``{"status": {"code": 30,
    "errorMessage": "Cannot process dataset"}}``. 그 문자열을 우리가 지어내지
    않고 그대로 옮긴다.
+5. **동적 객체 마스크는 별도 REST 필드가 아니라 같은 ``new_task`` 업로드에
+   얹는 파일이고, 파일명 규약은 ``{stem}_mask.png`` 다** — 문서가 흔히 말하는
+   "전체 파일명+ `_mask.png`"이 아니다(2026-08-12, 같은 컨테이너로 재확인).
+   전체 규약·폴라리티·알려진 한계는 :mod:`~ksi_processing_controller.
+   odm_masking` 모듈 docstring 이 갖는다 — 여기는 :class:`MaskImage` 라는
+   wire 타입만 정의한다(엔진 사실 자체는 그 모듈이 소유).
 
 ## ``engineVersion`` 은 지시였다 — 여기서 사실과 대조한다
 
@@ -229,6 +235,23 @@ class SourceImage:
     download_url: str
 
 
+@dataclass(frozen=True, slots=True)
+class MaskImage:
+    """동적 객체 마스크 1건 — 같은 업로드 배치에서 원본 사진 옆에 실린다.
+
+    ``SourceImage`` 와 달리 ``download_url`` 이 없다 — 마스크는 Core 가 갖고
+    있는 산출물이 아니라 워커가 그 자리에서 탐지 결과로 만드는 바이트다
+    (``ksi_processing_controller.odm_masking.build_mask_for_photo``).
+    ``filename`` 은 이미 ODM 이 인식하는 규약(``{stem}_mask.png``, 그 모듈
+    docstring 이 실물로 확인한 사실)을 따라야 한다 — 이 dataclass 자신은
+    그 규약을 강제하지 않는다(강제는 만드는 쪽의 책임, 여기는 wire 타입일
+    뿐이다).
+    """
+
+    filename: str
+    png_bytes: bytes
+
+
 class NodeOdmClient(Protocol):
     """NodeODM REST 표면 — **이 다섯 개가 AGPL 경계의 전부다.**
 
@@ -240,8 +263,20 @@ class NodeOdmClient(Protocol):
         """``GET /info`` — 엔진 신원 확인용."""
         ...
 
-    def new_task(self, images: Sequence[SourceImage], options: dict[str, Any]) -> str:
-        """``POST /task/new`` — 작업 uuid 를 돌려준다."""
+    def new_task(
+        self,
+        images: Sequence[SourceImage],
+        options: dict[str, Any],
+        *,
+        masks: Sequence[MaskImage] = (),
+    ) -> str:
+        """``POST /task/new`` — 작업 uuid 를 돌려준다.
+
+        ``masks`` 는 같은 업로드 배치에 실리는 동적 객체 마스크다 — 별도 REST
+        호출이 아니다(모듈 docstring 5번, ``odm_masking`` 모듈 docstring).
+        기본값 ``()`` 는 기존 호출부(마스킹을 쓰지 않는 경로)를 그대로
+        통과시킨다.
+        """
         ...
 
     def task_info(self, uuid: str) -> OdmTaskState:
@@ -476,6 +511,7 @@ def run_to_completion(
     expected_version: str,
     options: dict[str, Any],
     poll: Callable[[], None],
+    masks: Sequence[MaskImage] = (),
     max_polls: int = 10_000,
 ) -> str:
     """엔진 신원 확인 → 제출 → 종료까지 폴링. 완료된 작업의 uuid 를 돌려준다.
@@ -484,12 +520,15 @@ def run_to_completion(
     않는다 — 테스트가 실제로 기다리게 만들지 않기 위해서다). 워커는 이 콜백
     안에서 Core lease 를 갱신한다(모듈 docstring "하지 않는 것").
 
+    ``masks`` 는 그대로 ``new_task`` 로 전달된다(기본값 ``()`` — 마스킹을 쓰지
+    않는 기존 호출부는 동작이 그대로다).
+
     ``max_polls`` 는 상한이다. NodeODM 이 상태를 영영 바꾸지 않는 경우(엔진
     행) 워커가 무한 루프에 갇히는 대신 실패로 끝난다 — 갇힌 워커는 Core lease 를
     계속 갱신하며 그 작업을 점유한다.
     """
     assert_engine_matches(client.info(), expected_version=expected_version)
-    uuid = client.new_task(images, options)
+    uuid = client.new_task(images, options, masks=masks)
     for _ in range(max_polls):
         state = client.task_info(uuid)
         if state.status in _TERMINAL_STATUSES:
@@ -511,6 +550,7 @@ __all__ = [
     "ODM_ENGINE_NAME",
     "ArtifactReport",
     "EngineIdentityMismatch",
+    "MaskImage",
     "NodeOdmClient",
     "OdmEngineInfo",
     "OdmError",

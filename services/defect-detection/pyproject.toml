@@ -29,12 +29,17 @@ dependencies = [
 # 실측 확인). selective_scan CUDA 커널(VMamba/models/kernels)은 벤더링하지
 # 않는다 — 미설치 시 자동으로 순정 PyTorch 폴백 경로로 넘어간다(느리지만 정확,
 # csms6s.py 자체 로직).
-# 알려진 함정: mmcv/mmengine 이 (헤드리스가 아닌) 순정 opencv-python 을 강제
-# 의존한다 — base 의 opencv-python-headless 와 같은 cv2 네임스페이스를 놓고
-# 충돌해, extra 를 설치했다가 나중에 뺄 때(uv sync --all-packages, extra 없이)
-# cv2 가 깨질 수 있다(2026-08-07 실측: ModuleNotFoundError, uv pip list 엔
-# 버젓이 설치돼 있다고 나오는데도). 복구: `uv sync --all-packages --reinstall-
-# package opencv-python-headless`.
+# mmcv/mmengine 은 PyPI 메타데이터상 (헤드리스가 아닌) 순정 opencv-python 을
+# 강제 의존한다 — base 의 opencv-python-headless 와 같은 `cv2/` 파일 경로에 설치돼
+# extra 탈부착 시 cv2 가 깨질 수 있었던 문제(2026-08-07 실측: ModuleNotFoundError,
+# uv pip list 엔 버젓이 설치돼 있다고 나오는데도)는 워크스페이스 루트
+# pyproject.toml 의 `tool.uv.exclude-dependencies = ["opencv-python"]` 로 구조적
+# 해결됨(2026-08-12) — opencv-python 자체가 설치 후보에서 빠져 파일 충돌이
+# 원천적으로 발생하지 않는다. mmcv/mmengine 이 실제로 쓰는 cv2 함수(imread/
+# imwrite/resize/cvtColor 등)는 headless 빌드에도 있어 동작에 지장 없다(GUI 전용
+# highgui 만 빠짐 — 서버리스 adapter 는 안 씀). exclude-dependencies 는
+# 워크스페이스 루트에서만 읽히므로(uv 0.11.15 확인) 여기(멤버 pyproject.toml)엔
+# 안 적는다.
 mixercseg = [
     "torch>=2.13",
     "mmcv<2.0",

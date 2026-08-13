@@ -48,6 +48,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
@@ -58,6 +63,7 @@ from ksi_processing_controller.core_client import (
 from ksi_processing_controller.gsd import resolve_gsd
 from ksi_processing_controller.measure import measure_image
 from ksi_processing_controller.odm import (
+    MaskImage,
     NodeOdmClient,
     OdmError,
     SourceImage,
@@ -66,6 +72,7 @@ from ksi_processing_controller.odm import (
     plan_artifacts,
     run_to_completion,
 )
+from ksi_processing_controller.odm_masking import ImageDetector, build_mask_for_photo
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +86,30 @@ class WorkerRunError(RuntimeError):
 # ``format`` 필드가 말한다. 여기서 kind→MIME 표를 만들면 두 곳이 서로 다른
 # 진실을 말할 수 있다.
 _ARTIFACT_CONTENT_TYPE = "application/octet-stream"
+
+# 이 파이프라인이 내놓는 높이가 어느 기준의 높이인가 — **파이프라인이 자기
+# 동작을 근거로 선언한다.**
+#
+# 왜 여기인가: 이 사실을 아는 곳은 여기뿐이다. Core 는 산출물 바이트를 읽지
+# 않고, 비교 워커는 두 산출물을 받아 빼기만 한다. 그동안 이 값은 비교 워커의
+# 하드코딩 상수(``comparison_worker._LEGACY_VERTICAL_DATUM``)로 살아 있었는데, 그건
+# 산출물의 사실이 아니라 **소비자의 가정**이었다 — 같은 파이프라인끼리 비교하는
+# 동안은 틀려도 상쇄돼 드러나지 않지만, 설계면처럼 바깥에서 들어온 높이와
+# 비교하는 순간 지오이드고(한국 20~30m)가 조용히 섞인다.
+#
+# 왜 ``ELLIPSOIDAL_NATIVE`` 인가: ODM 은 RTK 가 준 타원체고를 그대로 흘려보낸다.
+# 우리가 아는 것은 "이 높이가 타원체고임을 측정했다"가 아니라 **"변환을 하지
+# 않았다"** 이고, 그 상태를 가리키는 값이 정확히 이것이다(지오이드 격자가
+# 확보되면 이 값이 남아 있는 산출물이 곧 재처리 대상 목록이 된다).
+# 그래서 source 도 ``PIPELINE_DECLARED`` 다 — 측정이 아니라 귀속이다.
+_ODM_VERTICAL_REFERENCE = VerticalReference(
+    datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+    basis=(
+        "ODM 이 RTK 타원체고를 변환 없이 그대로 출력한다 — 지오이드 격자 미확보로 "
+        "정표고 변환을 수행하지 않았다"
+    ),
+    source=VerticalReferenceSource.PIPELINE_DECLARED,
+)
 
 
 def _download(client: httpx.Client, url: str, dest: Path) -> None:
@@ -131,6 +162,7 @@ def run_job(
     gsd_by_artifact: dict[str, float] | None = None,
     poll_interval_seconds: float = 10.0,
     now_message: Callable[[str], None] = logger.info,
+    dynamic_object_detector: ImageDetector | None = None,
 ) -> None:
     """작업 하나를 lease 취득부터 ``SUCCEEDED``/``FAILED`` 까지 끝까지 돈다.
 
@@ -145,6 +177,15 @@ def run_job(
     해석도 결국 못 읽으면 건너뛰므로(``gsd.py`` 모듈 docstring), 명시값과 자동값을
     섞어서 "일부는 지정, 나머지는 자동"으로 두지 않는다: 하나라도 명시하면
     그 dict 가 전체를 대표한다.
+
+    ``dynamic_object_detector`` 를 생략하면(``None``, 기본값) 마스킹 없이
+    지금까지와 동일하게 동작한다 — 이 매개변수는 PRD §15.2 ④(동적 객체
+    마스킹)의 선택적 활성화 지점이다. 값을 주면(예: 실제 로드된
+    ``DFineDetector``) 실측 단계(4번)에서 이미 로컬에 받아둔 사진마다 탐지를
+    돌려 마스크를 만들고, ODM 제출(5번)에 함께 싣는다(``odm_masking`` 모듈
+    docstring — 파일명 규약·폴라리티는 실물로 검증됐다). 사진 1장의 탐지
+    실패는 그 사진의 마스크만 건너뛰고 작업 전체를 막지 않는다 — 마스킹은
+    보조 개선이지 재구성 성공의 필요조건이 아니다.
     """
     fetch = http_client or httpx.Client(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
@@ -164,8 +205,9 @@ def run_job(
         now_message(f"[{job_id}] RUNNING")
 
     try:
-        # ── 4. 실측 + 보고 ──────────────────────────────────────────────
+        # ── 4. 실측 + 보고(+ 동적 객체 탐지 — 이미 로컬에 받은 그 사진으로) ──
         measurements: list[MeasuredImage] = []
+        masks: list[MaskImage] = []
         for media in job_input.media:
             local_path = work_dir / media.media_id
             _download(fetch, media.download_url, local_path)
@@ -176,7 +218,25 @@ def run_job(
                     size_bytes=size, width=width, height=height,
                 )
             )
+            if dynamic_object_detector is not None:
+                try:
+                    mask = build_mask_for_photo(
+                        dynamic_object_detector, local_path, filename=media.media_id
+                    )
+                except (OSError, ValueError, RuntimeError) as exc:
+                    # 사진 1장의 탐지 실패가 재구성 자체를 막지 않는다(docstring) —
+                    # measure_image 와 달리 이 실패는 Core 보고 대상이 아니다
+                    # (마스킹은 신고값 검증이 아니라 보조 개선이다).
+                    now_message(
+                        f"[{job_id}] {media.media_id} 동적 객체 탐지 실패 — "
+                        f"마스크 없이 계속: {exc}"
+                    )
+                    mask = None
+                if mask is not None:
+                    masks.append(mask)
         now_message(f"[{job_id}] 실측 {len(measurements)}장 완료 — 대조 보고")
+        if dynamic_object_detector is not None:
+            now_message(f"[{job_id}] 동적 객체 마스크 {len(masks)}장 생성")
         core.verify_source_media(job_input.mission_id, measurements)
 
         # ── 5. 엔진 신원 대조 + 제출 + 완주 대기 ────────────────────────
@@ -202,6 +262,7 @@ def run_job(
             expected_version=job_input.engine_version,
             options=job_input.processing_params,
             poll=_heartbeat,
+            masks=masks,
         )
         now_message(f"[{job_id}] ODM 완주 uuid={uuid}")
 
@@ -257,6 +318,13 @@ def run_job(
                     crs=report.crs,
                     gsd=report.gsd,
                     auxiliary_files=report.auxiliary_files,
+                    # 좌표계가 없는 산출물(카메라 포즈·리포트)에는 수직기준을
+                    # 달지 않는다 — crs 를 null 로 두는 것과 같은 이유로, 높이가
+                    # 그 산출물 자체의 속성이 아닌 곳에 기준만 선언하면 소비자가
+                    # 없는 것을 있다고 읽는다. 공간 산출물에는 전부 붙는다.
+                    vertical_reference=(
+                        _ODM_VERTICAL_REFERENCE if report.crs is not None else None
+                    ),
                 ),
             )
             registered += 1

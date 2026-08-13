@@ -81,9 +81,9 @@ from ksi_mission_planning import (
     perimeter_route,
 )
 from ksi_mission_planning.camera import DEFAULT_FRONT_OVERLAP, DEFAULT_SIDE_OVERLAP
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pydantic.alias_generators import to_camel
+from pydantic import Field, ValidationError
 
+from ksi_core.api_base import CamelModel
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.identifiers import is_path_safe_identifier
@@ -122,11 +122,7 @@ _LAWNMOWER_TYPES = frozenset(
 _PERIMETER_TYPES = frozenset({MissionType.AUTONOMOUS_PATROL, MissionType.INCIDENT_SURVEY})
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class RouteParams(_CamelModel):
+class RouteParams(CamelModel):
     """경로 생성 파라미터 — 고도는 계약 FlightEnvelope 로 생성기가 재게이트한다.
 
     고도의 수직기준은 이륙점 상대(relativeToStartPoint) — 2026-07-29 대표자 확정,
@@ -160,7 +156,7 @@ class RouteParams(_CamelModel):
     sweep_direction_deg: float | None = None
 
 
-class CameraParams(_CamelModel):
+class CameraParams(CamelModel):
     """매핑 카메라 스펙 + 원하는 중복도 — 주면 서버가 격자 간격을 **계산**한다.
 
     이걸 주는 쪽이 권장 경로다(ADR-KSI-011 D2). 간격을 직접 적으면 서버는 그 값이
@@ -178,20 +174,20 @@ class CameraParams(_CamelModel):
     side_overlap: float = DEFAULT_SIDE_OVERLAP
 
 
-class DroneProfileParams(_CamelModel):
+class DroneProfileParams(CamelModel):
     drone_enum_value: int
     drone_sub_enum_value: int
     payload_enum_value: int
     payload_position_index: int = 0
 
 
-class WaylineParams(_CamelModel):
+class WaylineParams(CamelModel):
     auto_flight_speed_ms: float
     takeoff_security_height_m: float
     global_transitional_speed_ms: float
 
 
-class MissionPlanRequest(_CamelModel):
+class MissionPlanRequest(CamelModel):
     """계약 발급 요청 + 구역 + 경로/기체 파라미터 — 한 요청이 두 산출물의 단일 근원."""
 
     contract: MissionIssuanceRequest

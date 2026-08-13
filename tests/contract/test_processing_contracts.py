@@ -19,6 +19,7 @@ from ksi_event_contracts.processing_artifact import (
     processing_artifact_wire_dict,
 )
 from ksi_event_contracts.processing_job import ProcessingJob, processing_job_wire_dict
+from ksi_event_contracts.vertical_reference import VerticalDatum, VerticalReferenceSource
 from pydantic import ValidationError
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
@@ -28,6 +29,18 @@ _JOB_SCHEMA_FILE = "processing-job.v1.json"
 # 비교용으로만 남긴다(아래 test_artifact_without_auxiliary_files_also_satisfies_v1_0).
 _ARTIFACT_SCHEMA_FILE = "processing-artifact.v1.1.json"
 _ARTIFACT_SCHEMA_FILE_V1_0 = "processing-artifact.v1.json"
+# v1.2 가 정본(verticalReference 추가). 위 ``_ARTIFACT_SCHEMA_FILE`` 이 v1.2 가
+# **아니라** v1.1 을 가리키는 것은 의도다 — 수직기준을 밝히지 않은 산출물의 wire 는
+# 그 필드가 키째 빠져 여전히 v1.1 문서이고(processing_artifact_wire_dict), 이 파일의
+# 기존 테스트 전부가 그 문서를 검증한다. v1.2 는 verticalReference 를 실은 wire 전용.
+_ARTIFACT_SCHEMA_FILE_V1_2 = "processing-artifact.v1.2.json"
+
+# 재구성 워커가 실제로 싣는 값과 같은 모양(worker._ODM_VERTICAL_REFERENCE).
+_VERTICAL_REFERENCE_WIRE: dict[str, Any] = {
+    "datum": "ellipsoidal_native",
+    "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력한다",
+    "source": "pipeline_declared",
+}
 
 
 def _load_schema(name: str) -> dict[str, Any]:
@@ -93,7 +106,13 @@ def _valid_artifact_dict(
 
 
 @pytest.mark.parametrize(
-    "schema_file", [_JOB_SCHEMA_FILE, _ARTIFACT_SCHEMA_FILE, _ARTIFACT_SCHEMA_FILE_V1_0]
+    "schema_file",
+    [
+        _JOB_SCHEMA_FILE,
+        _ARTIFACT_SCHEMA_FILE,
+        _ARTIFACT_SCHEMA_FILE_V1_0,
+        _ARTIFACT_SCHEMA_FILE_V1_2,
+    ],
 )
 def test_schema_file_is_valid_draft202012(schema_file: str) -> None:
     Draft202012Validator.check_schema(_load_schema(schema_file))
@@ -371,6 +390,122 @@ def test_non_raster_spatial_kinds_allow_null_gsd_but_require_crs(
     assert artifact.gsd is None
     schema = _load_schema(_ARTIFACT_SCHEMA_FILE)
     Draft202012Validator(schema).validate(processing_artifact_wire_dict(artifact))
+
+
+# ── verticalReference (v1.2) — 하위호환이 "가정"이 아니라 사실인지 ────────────
+#
+# Pydantic 의 ``X | None = None`` 만으로 하위호환이 보장된다고 가정하지 않는다.
+# 확인해야 할 것이 네 갈래고, 아래가 그 네 갈래 각각이다:
+#   (a) 그 필드를 모르는 옛 payload 가 그대로 파싱되는가
+#   (b) 새 산출물의 wire 가 실제로 v1.2 계약을 만족하는가
+#   (c) 옛 payload 가 조용히 v1.2 로 승격되지 않는가
+#   (d) 기존 스위트 전체가 그대로인가(전체 실행으로 확인 — 여기 코드로는 없다)
+
+
+def test_v1_1_payload_without_vertical_reference_parses_as_none() -> None:
+    """[a] verticalReference 키가 **아예 없는** 옛 payload 가 그대로 파싱된다.
+
+    journal replay 가 옛 레코드에 하는 일이 정확히 이것이다(extra="forbid" 는
+    *추가* 필드만 막지, 빠진 optional 필드를 막지 않는다). 실제 원장 파일로
+    같은 사실을 다시 확인하는 것은
+    tests/contract/test_processing_jobs.py::test_replay_of_a_v1_1_artifact_record_keeps_vertical_reference_none.
+    """
+    payload = _valid_artifact_dict()
+    assert "verticalReference" not in payload
+    artifact = ProcessingArtifact.model_validate(payload)
+    assert artifact.vertical_reference is None
+
+
+def test_wire_without_vertical_reference_still_satisfies_v1_1_and_v1_0() -> None:
+    """[a] 그렇게 파싱한 산출물의 wire 는 옛 소비자가 그대로 읽는다 — 키가 없다."""
+    artifact = ProcessingArtifact.model_validate(_valid_artifact_dict())
+    wire = processing_artifact_wire_dict(artifact)
+    assert "verticalReference" not in wire
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE)).validate(wire)
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_0)).validate(wire)
+
+
+def test_artifact_with_vertical_reference_roundtrips_v1_2() -> None:
+    """[b] 새 산출물의 wire 가 v1.2 계약을 실제로 만족한다(모델 왕복 포함)."""
+    payload = {**_valid_artifact_dict(kind="dsm"), "verticalReference": _VERTICAL_REFERENCE_WIRE}
+    payload["format"] = "cog"
+    payload["lineage"]["authority"] = "derived"
+    payload["lineage"]["derivedFrom"] = ["point-cloud"]
+
+    artifact = ProcessingArtifact.model_validate(payload)
+    assert artifact.vertical_reference is not None
+    assert artifact.vertical_reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
+    assert artifact.vertical_reference.source is VerticalReferenceSource.PIPELINE_DECLARED
+
+    wire = processing_artifact_wire_dict(artifact)
+    assert wire["verticalReference"] == _VERTICAL_REFERENCE_WIRE
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(wire)
+
+    # 계약이 지정한 그 직렬화(exclude_none=False)도 같은 스키마를 통과한다 —
+    # wire 규약을 거치지 않은 원형도 v1.2 문서다.
+    raw = artifact.model_dump(by_alias=True, mode="json", exclude_none=False)
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(raw)
+
+
+def test_vertical_reference_wire_is_rejected_by_v1_1() -> None:
+    """[b] v1.2 로만 표현되는 사실을 v1.1 이 조용히 받아주지 않는다.
+
+    받아주면 "버전을 올렸다"는 말이 성립하지 않는다
+    (test_artifact_with_auxiliary_files_roundtrips 와 같은 관례).
+    """
+    payload = {**_valid_artifact_dict(), "verticalReference": _VERTICAL_REFERENCE_WIRE}
+    wire = processing_artifact_wire_dict(ProcessingArtifact.model_validate(payload))
+    assert list(Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE)).iter_errors(wire))
+    assert list(Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_0)).iter_errors(wire))
+
+
+def test_v1_1_payload_is_not_silently_promoted_to_v1_2() -> None:
+    """[c][핵심] 옛 payload 를 읽었다고 v1.2 의미가 생기지 않는다.
+
+    모델은 값을 지어내지 않고(``None`` 유지), 그 산출물의 wire 는 v1.2 의
+    ``required`` 를 만족하지 못한다 — 즉 **문서의 버전 자체가** "이 생산자는
+    수직기준을 밝히지 않았다"를 말한다. 소비자(설계 대비 비교)는 그 신호로
+    VERTICAL_REFERENCE_UNKNOWN 을 판정하고 숫자를 내지 않는다.
+    """
+    artifact = ProcessingArtifact.model_validate(_valid_artifact_dict())
+    assert artifact.vertical_reference is None, "없던 필드가 임의 값으로 채워졌다"
+
+    wire = processing_artifact_wire_dict(artifact)
+    errors = list(Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).iter_errors(wire))
+    assert errors, "verticalReference 없는 문서가 v1.2 를 통과했다 — 조용한 승격"
+    assert any("verticalReference" in error.message for error in errors)
+
+
+def test_explicit_null_vertical_reference_is_v1_2_and_stays_none() -> None:
+    """[c] 명시적 null(= v1.2 를 아는 생산자가 "모른다"고 밝힌 경우)도 유효하다.
+
+    두 경우(키 없음 / 명시적 null)는 소비자에게 똑같이 "미상"이지만, 문서
+    수준에서는 구분된다 — 어느 쪽인지가 남아야 재처리 대상 판별이 추측이
+    되지 않는다(accuracy 가 nullable **필수** 인 것과 같은 이유).
+    """
+    payload = {**_valid_artifact_dict(), "verticalReference": None}
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(payload)
+    artifact = ProcessingArtifact.model_validate(payload)
+    assert artifact.vertical_reference is None
+
+
+def test_vertical_reference_without_basis_is_rejected() -> None:
+    """[비공허 대조] 근거 없는 수직기준 선언은 스키마·모델 양쪽이 거부한다 —
+    "왜 아는가"를 못 적는 선언은 사실이 아니라 추측이다."""
+    for bad in ({"datum": "ellipsoidal", "source": "user_declared"},
+                {"datum": "ellipsoidal", "basis": "   ", "source": "user_declared"}):
+        payload = {**_valid_artifact_dict(), "verticalReference": bad}
+        with pytest.raises(ValidationError):
+            ProcessingArtifact.model_validate(payload)
+    schema_errors = list(
+        Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).iter_errors(
+            {
+                **_valid_artifact_dict(),
+                "verticalReference": {"datum": "ellipsoidal", "source": "user_declared"},
+            }
+        )
+    )
+    assert schema_errors, "basis 없는 verticalReference 가 스키마를 통과했다"
 
 
 # ── 공허 방지 ────────────────────────────────────────────────────────────────

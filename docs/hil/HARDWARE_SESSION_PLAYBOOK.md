@@ -1,8 +1,17 @@
 # Hardware Session Playbook (Track A — DJI Matrice 4D + RC Plus 2 + Manifold 3)
 
-- 상태: **1~2단계 실기 검증 완료**(2026-08-03, `SESS-20260803T125616Z-PENDING-SN`),
-  3단계 이후는 기체 데이터 링크 재확립 대기 — 세션 중 실기가 네트워크에서 이탈해
-  중단됨(원인 미확인, 다음 세션에서 §3.0으로 우선 확인)
+- 상태: **1~2단계 실기 검증 완료**(2026-08-03, `SESS-20260803T125616Z-PENDING-SN`).
+  **3.0단계 PASS**(2026-08-12, `SESS-20260812T170000Z-MANIFOLD-LINK`) — 기체 링크는
+  살아 있다. 다음 관문은 **8단계(dpk 설치·기동)이며 3~7단계보다 선행한다**(§3.0 본문 참조).
+  현재 남은 차단 요인은 장비가 아니라 `psdk_tap`이 SDK 시작 단계에서 크래시하는 것 +
+  USB bulk 채널 번호 미확정이다.
+
+  > **이 머리말은 2026-08-13에 정정됐다.** 이전 판은 "3단계 이후는 기체 데이터 링크
+  > 재확립 대기 — 세션 중 실기가 네트워크에서 이탈해 중단됨(원인 미확인)"이었다.
+  > 그 판정 둘 다 2026-08-12 온보드 실측으로 무효가 됐다: ① 링크 판정에 쓴 `ping`이
+  > 애초에 무효한 지표였고 ② "실기가 사라진다"는 호스트 측 ARP 해석 실패였다(기기는
+  > uptime 단절 없이 계속 돌고 있었다). §3.0 본문은 그때 정정됐는데 이 머리말이
+  > 따라가지 않아 두 세션이 "장비 대기"로 오독될 뻔했다.
 - 근거: `docs/product/MASTER_PRD_v3.0.md` §20.3(SPIKE_REQUIRED 9항목), §21.1(Edge 실시간
   목표), `docs/dji/SPIKE_PROCEDURE.md`(8단계 실행 순서, 이 문서가 그 절차의 운영 세부판),
   `.ksi/goals.json` `track-a` 목표
@@ -209,6 +218,117 @@ ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier
      원인 규명이 구조적으로 불가능하다. **이것이 이 항목의 실제 병목이다.**
   3. 셸 확보 후 즉시 `uptime -s`(부팅 시각)·`last -x reboot`·`dmesg -T | grep -iE
      'thermal|power|usb|eth'`를 떠서 이탈이 재부팅인지 링크 다운인지 확정한다.
+
+- **실측 결과(2026-08-12) — "장치가 사라진다"는 판정이 반증됐다. 장치는 살아 있었다.**
+
+  이 세션에서 셸을 확보한 직후 온보드에 5분 주기 상태 기록을 심었다(cron, 사용자 권한
+  — `dji` 계정은 sudo 가 없어 systemd 저널 영속화는 못 한다). 그 뒤 **같은 이탈이
+  재현됐고**, 이번에는 이탈 구간이 통째로 온보드에 남았다.
+
+  | 시각(KST) | 호스트에서 본 것 | 온보드 기록 |
+  |---|---|---|
+  | 17:24 | SSH 두절. `ping` → `From 172.30.1.43 Destination Host Unreachable` | — |
+  | 17:20~18:55 | 계속 무응답 | **5분 간격 기록이 단절 없이 이어짐.** uptime 카운터 연속 증가(2579s→8279s, 재부팅 흔적 0), `eth0 UP 172.30.1.33/24` **동일 IP 유지** |
+  | 18:56:30 | — | 재부팅 1회(uptime 8279s→212s) — 이탈보다 **1시간 30분 뒤**라 이탈의 원인이 아니다 |
+  | 19:0x | 다시 도달 가능 | 정상 |
+
+  **결론: 기기가 사라진 것이 아니라 관측자–기기 사이 경로가 끊긴 것이다.**
+  호스트가 받은 `Destination Host Unreachable` 의 발신자는 **호스트 자신**(`172.30.1.43`)
+  이다 — 내 쪽에서 상대를 ARP 해석하지 못했다는 뜻이지 상대가 없다는 뜻이 아니다.
+
+  **따라서 2026-08-03·08-04 의 "장치가 링크 레벨에서 사라졌다" 판정도 근거를 잃는다.**
+  그 판정들은 전부 호스트 측 스윕만으로 내려진 것이고, 이 문서 자신이 그 한계를
+  적어뒀다("호스트에서는 더 좁힐 수 없다 — 물리 관측 필요"). 온보드 증거가 생기자
+  반대 결론이 나왔다. 전원 상실·과열 정지·서스펜드 가설은 **이번 재현에 한해** 전부
+  배제된다(uptime 이 연속이므로 무엇도 프로세스를 멈추지 않았다).
+
+  남은 후보는 우리 쪽 네트워크 경로다: 스위치/AP 의 MAC 테이블 만료·포트 플랩,
+  유선-무선 세그먼트 전환, 케이블. 이건 호스트에서 좁힐 수 있는 종류다.
+
+  **절차 변경**: 3.0단계 이탈을 판정할 때 **호스트 관측만으로 BLOCKED 를 찍지 않는다.**
+  셸을 확보하는 즉시 아래를 심고, 이탈이 나면 재접속 후 그 기록부터 본다.
+
+  ```bash
+  # 온보드(dji 계정, sudo 불필요) — 5분마다 uptime·IP·경고레벨 로그 요약을 남긴다.
+  # 하루 최대 수 MB 로 억제한다(초기 판에서 5분당 5MB 를 먹어 디스크를 위협했다 —
+  # 실기 여유 공간이 8.6GB 뿐이다).
+  crontab -l 2>/dev/null | grep -v ksi_health_log.sh > /tmp/ct
+  echo "*/5 * * * * /home/dji/ksi_health_log.sh" >> /tmp/ct && crontab /tmp/ct
+  ```
+
+  재접속 후 이탈 구간 판정:
+
+  | 온보드 기록 | 해석 |
+  |---|---|
+  | 기록이 **끊겼다** | 기기가 실제로 멈췄다(전원·과열·재부팅) — uptime 리셋 여부로 갈린다 |
+  | 기록이 **이어졌고 IP 도 같다** | 기기는 정상. **네트워크 경로 문제다** — 스위치·케이블·세그먼트를 본다 |
+  | 기록은 이어졌는데 IP 가 바뀌었다 | DHCP 임대 갱신 — 새 IP 로 재접속 |
+
+- **실측 결과(2026-08-12) — 3.0단계 판정 기준(ping) 자체도 틀렸다. 정정한다.**
+
+  이 세션에서 셸을 확보하고 온보드에서 직접 관측한 결과, **`ping 192.168.42.1`은
+  기체 링크의 유효한 지표가 아니다.** 2026-08-03·08-04 두 세션의
+  `BLOCKED(AIRCRAFT_LINK_DOWN)` 판정은 이 잘못된 지표에 근거했다.
+
+  | 관측 | 결과 |
+  |---|---|
+  | `ping 192.168.42.1` (rndis0·l4tbr0 양쪽) | 100% loss — 지금도 동일 |
+  | `ip neigh` | `192.168.42.1` **REACHABLE**, MAC `b6:2f:db:c4:12:f9`(L2 정상) |
+  | `.101`·`.102` ping | 응답함. `.102`가 `.1` 앞에서 ICMP Destination Host Unreachable 반환 |
+  | 42.x 대역 TCP 포트 스캔(22·80·443·8080·9000·2001·3000) | **전부 닫힘** — 기체는 IP 서비스를 열지 않는다 |
+  | `journalctl` (dji_sdk_agent) | `Liveview uuid info total_num: 6` — **기체가 카메라/센서 6종 목록을 실제로 보내고 있다** |
+  | `journalctl` (dji_sec) | `ciu98d_comm_chip_get_cert success` → `device_auth online to uav 0x1401` — 보안칩 인증이 기체와 진행 중 |
+
+  **결론**: 기체-매니폴드 통신은 ICMP/TCP가 아니라 DJI 사유 프로토콜(DUSS, USB
+  bulk 채널)로 이뤄진다. `.1`이 핑에 응답하지 않는 것은 정상이며, 링크 상태를
+  ping으로 판정하면 **살아 있는 링크를 죽었다고 오판한다**. 판정 지표를 아래로
+  바꾼다.
+
+  **정정된 판정 기준(3.0단계)**:
+  - **PASS**: `journalctl`에 기체發 DUSS 메시지가 실제로 흐른다. 최소 신호 —
+    `dji_sdk_agent`의 `Liveview uuid info total_num: N`(N>0) 또는 `dji_sec`의
+    `device_auth ... to uav 0x####`.
+  - **BLOCKED**: 위 신호가 전무하다(로그가 조용하거나 링크 초기화 단계에서 멈춤).
+  - `ping 192.168.42.1`은 **참고 정보로도 쓰지 않는다** — 결과와 무관하게 무의미하다.
+
+  ```bash
+  ssh <manifold-host> "journalctl --no-pager -q --since '-60 seconds' \
+    | grep -E 'Liveview uuid info|device_auth .* to uav'"
+  ```
+
+  **DUSS 에러 로그가 다량 나오는 것은 그 자체로 BLOCKED 근거가 아니다.** 실측상
+  `LINK_DEBUG-EVENT_SEND-WAIT_LIST Timeout to wait ack`·`no req_cb for event`류가
+  초당 수십 건 나오는 동시에 위 성공 신호도 함께 흐른다 — 여러 하위 데몬이 각자
+  재시도하는 상태이지 링크 부재가 아니다.
+
+- **실측 결과(2026-08-12) — PSDK 앱은 SSH 단독 실행으로는 링크를 잡을 수 없다.**
+
+  `psdk_tap`을 실기 타깃으로 빌드해 배포하고 SSH에서 직접 실행한 결과:
+
+  ```
+  dji_channel_bulk.c:120  Read usb bulk data failed, ret:000000EC
+  dji_access_adapter.c:1888 DjiLinker_SendMsg, stat:236
+  dji_core.c:153  Access adapter identify aircraft series error on manifold3, stat:0
+  telemetry 구독 시작 실패: 0x000000EC
+  ```
+
+  같은 시각 DJI 자체 데몬(`dji_sdk_agent`·`dji_sec`·`dji_app_mgr`, 전부 root 상주)은
+  같은 링크로 정상 통신 중이었다. 즉 **USB bulk 채널은 DJI 앱 프레임워크가 점유하며,
+  우리 앱이 그 채널을 직접 열 수 없다.** 0xEC는 자격증명·빌드 문제가 아니라 채널
+  점유 문제로 읽어야 한다(2026-08-03 세션이 "샘플이 크래시 없이 대기"로 관측한 것도
+  같은 상태로 보인다).
+
+  **따라서 3단계 이후(텔레메트리·라이브뷰 실측)의 전제는 "기체 링크 복구"가 아니라
+  "우리 앱을 `.dpk`로 패키징해 `dji_app_ctl`로 설치·기동"이다** — §8(`08_dpk_deploy/`)이
+  선행 조건이지 후속 작업이 아니다. 이 순서 오해가 지금까지 3단계를 막고 있었다.
+
+  참고(2026-08-12 실측, risk `manifoldctl-dpk-install-permission-unknown` 해소):
+  `dji` 계정은 sudo 권한이 없고 `/vendor_app`·`/etc/systemd/system`에 쓰지 못하지만,
+  `dji_app_ctl`은 비-setuid 클라이언트일 뿐이고 실제 특권 쓰기는 root로 상주하는
+  `dji_app_mgr`(PID 568)가 수행한다 — **rootless SSH 세션이어도 설치가 권한으로
+  막히지 않는다.** RC 경유로 설치된 `Smart3DExplore`가 `/vendor_app/Smart3DExplore`
+  + `/etc/systemd/system/Smart3DExplore.service`(둘 다 root:root)로 안착한 것이
+  그 실증이다.
 
 ---
 

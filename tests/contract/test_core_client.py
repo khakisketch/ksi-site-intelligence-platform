@@ -17,6 +17,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from ksi_event_contracts.comparison_policy import current_comparison_policy
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     CoreClientError,
@@ -266,6 +272,44 @@ def test_register_artifact_does_not_send_a_lineage_anchor_field() -> None:
     }
 
 
+def test_register_artifact_sends_vertical_reference_only_when_declared() -> None:
+    """[핵심] 수직기준을 모르면 그 키를 아예 보내지 않는다 — 옛 워커의 payload 와
+    바이트가 같다. 알면 근거·귀속까지 통째로 보낸다(datum 하나만 보내지 않는다)."""
+    bodies: list[dict] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        import json
+
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201, json={"verdict": "ARTIFACT_REGISTERED"})
+
+    def submission(reference: VerticalReference | None) -> ArtifactSubmission:
+        return ArtifactSubmission(
+            artifact_id="dsm", kind="dsm", authority="derived", derived_from=("point-cloud",),
+            digest="sha256:" + "d" * 64, format="cog", crs="EPSG:5186", gsd=0.05,
+            vertical_reference=reference,
+        )
+
+    client = _client(httpx.MockTransport(handle))
+    client.register_artifact("job-1", submission(None))
+    client.register_artifact(
+        "job-1",
+        submission(
+            VerticalReference(
+                datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+                basis="ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+                source=VerticalReferenceSource.PIPELINE_DECLARED,
+            )
+        ),
+    )
+    assert "verticalReference" not in bodies[0]
+    assert bodies[1]["verticalReference"] == {
+        "datum": "ellipsoidal_native",
+        "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+        "source": "pipeline_declared",
+    }
+
+
 def test_register_artifact_contract_violation_is_typed() -> None:
     client = _client(
         _json_handler(422, {"verdict": "ARTIFACT_CONTRACT_VIOLATION", "detail": "gsd 필수"})
@@ -280,6 +324,62 @@ def test_register_artifact_contract_violation_is_typed() -> None:
             ),
         )
     assert excinfo.value.verdict == "ARTIFACT_CONTRACT_VIOLATION"
+
+
+# ── get_comparison_input: 수직기준 전달 ──────────────────────────────────
+
+
+def _comparison_input_body(vertical_reference: dict | None) -> dict:
+    return {
+        "verdict": "INPUT_READY",
+        "input": {
+            "requestId": "mission-1-cmp1",
+            "missionId": "mission-1",
+            "status": "QUEUED",
+            "policy": current_comparison_policy().model_dump(by_alias=True, mode="json"),
+            "pointCloudBaseline": None, "pointCloudBaselineUrl": None,
+            "pointCloudCurrent": None, "pointCloudCurrentUrl": None,
+            "dsmBaseline": {"jobId": "job-a", "artifactId": "dsm"},
+            "dsmBaselineUrl": "https://fake-storage/baseline.tif",
+            "dsmCurrent": {"jobId": "job-b", "artifactId": "dsm"},
+            "dsmCurrentUrl": "https://fake-storage/current.tif",
+            "zones": None, "zoneCrs": None,
+            "dsmBaselineVerticalReference": vertical_reference,
+            "dsmCurrentVerticalReference": vertical_reference,
+        },
+    }
+
+
+def test_comparison_input_parses_the_declared_vertical_references() -> None:
+    """산출물이 선언한 수직기준이 워커까지 값 그대로 도달한다 — 워커가 리포트의
+    verticalDatum 을 상수로 가정하지 않게 하는 유일한 경로다."""
+    client = _client(
+        _json_handler(
+            200,
+            _comparison_input_body(
+                {
+                    "datum": "ellipsoidal_native",
+                    "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
+                    "source": "pipeline_declared",
+                }
+            ),
+        )
+    )
+    comparison_input = client.get_comparison_input("mission-1-cmp1")
+    reference = comparison_input.dsm_baseline_vertical_reference
+    assert reference is not None
+    assert reference.datum is VerticalDatum.ELLIPSOIDAL_NATIVE
+    assert reference.source is VerticalReferenceSource.PIPELINE_DECLARED
+    assert comparison_input.dsm_current_vertical_reference == reference
+
+
+def test_comparison_input_keeps_a_missing_vertical_reference_as_none() -> None:
+    """[회귀] 수직기준 미상(옛 산출물)은 None 으로 남는다 — 클라이언트가 어떤
+    기본값도 채우지 않는다(채우면 워커의 레거시 경고가 영영 안 뜬다)."""
+    client = _client(_json_handler(200, _comparison_input_body(None)))
+    comparison_input = client.get_comparison_input("mission-1-cmp1")
+    assert comparison_input.dsm_baseline_vertical_reference is None
+    assert comparison_input.dsm_current_vertical_reference is None
 
 
 # ── 공통: NON_JSON_RESPONSE ──────────────────────────────────────────────

@@ -68,9 +68,14 @@ from ksi_domain.capability import (
     is_demotion,
     is_production_supported,
 )
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -269,7 +274,7 @@ class EquipmentSupportStore:
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return EquipmentSupportResult(
-                    EquipmentSupportVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
+                    EquipmentSupportVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             if class_id in self._records:
                 return EquipmentSupportResult(
@@ -308,7 +313,7 @@ class EquipmentSupportStore:
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return EquipmentSupportResult(
-                    EquipmentSupportVerdict.STORE_UNAVAILABLE, detail="journal 봉인됨 — 재시작 필요"
+                    EquipmentSupportVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             current = self._records.get(class_id)
             if current is None:
@@ -372,7 +377,7 @@ class EquipmentSupportStore:
         """``self._lock`` 을 쥔 채로만 호출된다."""
         record = {
             "kind": kind,
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "classId": class_id,
             "state": state.value,
             "evidenceRefs": list(evidence_refs),
@@ -385,7 +390,7 @@ class EquipmentSupportStore:
         except JournalSealedError:
             return EquipmentSupportResult(
                 EquipmentSupportVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         # 새 단계의 증거는 이번 전이가 제시한 것만이다 — 승급 때 쌓인 증거를
         # 강등된 상태가 그대로 물려받으면 "이 단계는 검증됐다"는 잘못된 신호가
@@ -423,7 +428,7 @@ class EquipmentSupportStore:
         """거부도 원장에 남긴다 — 누가 무슨 승급을 시도해 막혔는지가 감사 입력이다."""
         record = {
             "kind": "equipment-support-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "classId": class_id,
             "attemptedState": target.value,
             "verdict": verdict.value,
@@ -435,7 +440,7 @@ class EquipmentSupportStore:
         except JournalSealedError:
             return EquipmentSupportResult(
                 EquipmentSupportVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         return EquipmentSupportResult(verdict, detail=detail)
 
@@ -456,25 +461,21 @@ class EquipmentSupportStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class EquipmentSupportRegisterRequest(_CamelModel):
+class EquipmentSupportRegisterRequest(CamelModel):
     class_id: str = Field(min_length=1)
     evidence_refs: list[str] = Field(default_factory=list)
     model_version: str | None = None
     risk_pack_version: str | None = None
 
 
-class EquipmentSupportTransitionRequest(_CamelModel):
+class EquipmentSupportTransitionRequest(CamelModel):
     state: EquipmentSupportLevel
     evidence_refs: list[str] = Field(default_factory=list)
     model_version: str | None = None
     risk_pack_version: str | None = None
 
 
-class EquipmentSupportView(_CamelModel):
+class EquipmentSupportView(CamelModel):
     """계약(``equipment-support-state.v1.json``) 필드 + 파생 표시 플래그.
 
     ``productionSupported`` 를 서버가 계산해서 내는 이유는 모듈 docstring 3항 —
@@ -491,13 +492,13 @@ class EquipmentSupportView(_CamelModel):
     updated_by: str
 
 
-class EquipmentSupportListView(_CamelModel):
+class EquipmentSupportListView(CamelModel):
     class_count: int
     production_supported_count: int
     classes: list[EquipmentSupportView]
 
 
-class EquipmentSupportMutationResponse(_CamelModel):
+class EquipmentSupportMutationResponse(CamelModel):
     verdict: str
     detail: str | None
     record: EquipmentSupportView | None

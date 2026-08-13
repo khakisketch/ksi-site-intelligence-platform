@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useDraftState } from "@/hooks/useDraftState";
+import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import type { SiteFrame } from "@/lib/core-api/types";
 
 // ADR-KSI-015 이후 "등록만 하고 임무는 나중"은 권한 부족이 아니라 사용자 선택이다 —
@@ -29,6 +30,9 @@ interface FormState {
   crs: string;
   verticalDatum: string;
   transformVersion: string;
+  /** 데이터 반출 선언(INV-050) — "unset" 은 미응답, 등록 후 다시 물을 경로가 없다. */
+  egressChoice: EgressChoice;
+  jurisdiction: string;
 }
 
 const INITIAL_FORM: FormState = {
@@ -37,7 +41,15 @@ const INITIAL_FORM: FormState = {
   crs: "",
   verticalDatum: "",
   transformVersion: "1.0.0",
+  egressChoice: "unset",
+  jurisdiction: "",
 };
+
+const EGRESS_CHOICE_OPTIONS: Array<{ value: EgressChoice; label: string }> = [
+  { value: "unset", label: "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)" },
+  { value: "allow", label: "예 — 외부/벤더 클라우드 처리를 허용합니다" },
+  { value: "deny", label: "아니오 — 사내 서버에서만 처리합니다" },
+];
 
 const SITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -126,10 +138,14 @@ export function SiteRegistrationOnlyWizard() {
       // 등록했을 수 있고, 그 경우 다음 시도의 409 는 내가 만든 것이다.
       const wasAttemptedBefore = postAttemptedRef.current;
       postAttemptedRef.current = true;
+      const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
       const res = await fetch("/api/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame }),
+        // dataResidency 를 답하지 않았으면(unset) buildDataResidencyInput 이
+        // undefined 를 돌려주고, JSON.stringify 가 undefined 값 키를 생략한다 —
+        // 그래야 서버가 미선언을 fail-closed(반출 불가)로 해석한다(INV-050).
+        body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame, dataResidency }),
       });
       if (!res.ok) {
         const body = await parseJsonSafe(res);
@@ -177,8 +193,13 @@ export function SiteRegistrationOnlyWizard() {
   }, [draftClearedForSuccess]);
 
   const trimmedSiteId = form.siteId.trim();
+  const jurisdictionRequired = form.egressChoice !== "unset";
   const stepValid: Record<number, boolean> = {
-    0: trimmedSiteId.length > 0 && SITE_ID_PATTERN.test(trimmedSiteId) && form.name.trim().length > 0,
+    0:
+      trimmedSiteId.length > 0 &&
+      SITE_ID_PATTERN.test(trimmedSiteId) &&
+      form.name.trim().length > 0 &&
+      (!jurisdictionRequired || form.jurisdiction.trim().length > 0),
     1:
       form.crs.trim().length > 0 &&
       form.verticalDatum.trim().length > 0 &&
@@ -265,6 +286,54 @@ export function SiteRegistrationOnlyWizard() {
               className={inputClassName}
             />
           </Field>
+
+          <fieldset className="flex flex-col gap-2 sm:col-span-2">
+            <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
+              데이터 반출 허용
+            </legend>
+            <p className="text-[11.5px] break-keep text-ink-muted">
+              이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로
+              내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려
+              3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더
+              필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게
+              &quot;반출 불가&quot;로 처리됩니다.
+            </p>
+            {EGRESS_CHOICE_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`tap-target flex items-center gap-2 rounded-md border px-3 py-2 text-sm break-keep ${
+                  form.egressChoice === opt.value
+                    ? "border-accent bg-accent-tint"
+                    : "border-line-strong bg-surface"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="egress-choice-only"
+                  value={opt.value}
+                  checked={form.egressChoice === opt.value}
+                  onChange={() => update({ egressChoice: opt.value })}
+                />
+                {opt.label}
+              </label>
+            ))}
+          </fieldset>
+
+          {jurisdictionRequired && (
+            <Field
+              label="기준 법역"
+              helpText="어느 나라(지역)의 법을 기준으로 판단했는지 적어주세요. 예: KR"
+              required
+            >
+              <input
+                type="text"
+                value={form.jurisdiction}
+                onChange={(event) => update({ jurisdiction: event.target.value })}
+                placeholder="KR"
+                className={inputClassName}
+              />
+            </Field>
+          )}
         </>
       )}
 

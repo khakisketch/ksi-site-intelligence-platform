@@ -758,3 +758,338 @@ export interface ComparisonRequestCreateInput {
   zones?: Record<string, Record<string, unknown>> | null;
   zoneCrs?: string | null;
 }
+
+// ── 설계 기준면 · 설계 대비 잔량 (M4-A) ─────────────────────────────────────
+//
+// 이 블록의 규율 하나: **선언(declared)과 관측(observed)을 절대 한 평면에 섞지
+// 않는다.** 서버 계약(contracts/schemas/design-surface.v1.json)이 두 블록을
+// 이름으로 갈라 두었고, 화면이 그것을 하나로 합치는 순간 사용자는 "내가 적은
+// 값"과 "파일에서 읽어낸 값"을 구분할 수 없게 된다 — 그 구분이 이 기능의 전부다.
+
+export const DESIGN_SURFACE_STATUSES = [
+  "REGISTERED",
+  "SEALED",
+  "VERIFIED",
+  "REJECTED",
+] as const;
+export type DesignSurfaceStatus = (typeof DESIGN_SURFACE_STATUSES)[number];
+
+/**
+ * 설계면이 비교 입력이 되지 못하는 typed 사유 8종
+ * (`ksi_core.design_surfaces.DesignSurfaceRejectionReason`).
+ *
+ * 서버가 코드를 주고 화면이 한국어로 옮긴다(labels.ts) — 서버의 `detail` 문장을
+ * 그대로 띄우면 내부 어휘가 사용자에게 새어 나간다.
+ */
+export const DESIGN_SURFACE_REJECTION_REASONS = [
+  "DIGEST_MISMATCH",
+  "CRS_DECLARATION_MISMATCH",
+  "UNSUPPORTED_CRS",
+  "UNSUPPORTED_UNIT",
+  "UNSUPPORTED_BAND_COUNT",
+  "NO_FINITE_CELLS",
+  "VERTICAL_DECLARATION_CONTRADICTED",
+  "UNREADABLE_RASTER",
+] as const;
+export type DesignSurfaceRejectionReason = (typeof DESIGN_SURFACE_REJECTION_REASONS)[number];
+
+/** 높이의 기준 + 그 기준을 아는 근거 + 귀속(`vertical_reference.VerticalReference`). */
+export interface VerticalReference {
+  /**
+   * `ellipsoidal` · `ellipsoidal_native` · `orthometric_kngeoid2018` ·
+   * `orthometric_kngeoid2024`.
+   */
+  datum: string;
+  /** 왜 이 값을 아는가 — 비울 수 없다(계약이 강제). */
+  basis: string;
+  /** `user_declared`(업로더 주장) · `pipeline_declared`(우리 파이프라인 귀속). */
+  source: string;
+}
+
+/** 업로더의 주장 한 벌 — **이 안의 값은 어느 것도 확인되지 않았다.** */
+export interface DesignSurfaceDeclared {
+  crs: string;
+  lengthUnit: "meter";
+  sha256: string;
+  verticalReference: VerticalReference;
+}
+
+/** 신뢰 경로(워커)가 파일을 열어 **실제로 잰 값** 한 벌 — 판정은 들어 있지 않다. */
+export interface DesignSurfaceObserved {
+  sha256: string;
+  crs: string;
+  /** compound CRS 의 수직 성분. 대부분의 DEM 에는 없다(null 이 정상). */
+  verticalCrsEpsg: number | null;
+  width: number;
+  height: number;
+  bandCount: number;
+  dtype: string;
+  nodata: number | null;
+  nodataIsNan: boolean;
+  pixelSizeXM: number;
+  pixelSizeYM: number;
+  transform: [number, number, number, number, number, number];
+  boundsMinX: number;
+  boundsMinY: number;
+  boundsMaxX: number;
+  boundsMaxY: number;
+  finiteCellCount: number;
+  measuredAt: string;
+  measuredBy: string;
+}
+
+/** 설계 기준면 자산 1건(`contracts/schemas/design-surface.v1.json`). */
+export interface DesignSurface {
+  schemaVersion: string;
+  designSurfaceId: string;
+  siteId: string;
+  name: string;
+  revision: string;
+  format: "geotiff";
+  declared: DesignSurfaceDeclared;
+  /** 아직 아무도 재지 않았으면 null. REJECTED 인데 null 인 경우도 정상이다. */
+  observed: DesignSurfaceObserved | null;
+  status: DesignSurfaceStatus;
+  /** REJECTED 일 때의 typed verdict — 그 외 상태에서는 null. */
+  rejectionReason: string | null;
+  registeredAt: string;
+  registeredBy: string;
+  /** 클라이언트가 업로드 완료를 **주장한** 시각이다 — 파일을 확인한 시각이 아니다. */
+  sealedAt: string | null;
+  verifiedAt: string | null;
+}
+
+/** POST /v1/sites/{siteId}/design-surfaces 요청 본문. */
+export interface DesignSurfaceRegisterInput {
+  name: string;
+  revision: string;
+  declared: DesignSurfaceDeclared;
+}
+
+export interface DesignSurfaceRegisterResponse {
+  verdict: string;
+  detail: string | null;
+  designSurfaceId: string | null;
+  objectKey: string | null;
+  /** REGISTERED 일 때만 채워진다 — 발급 실패는 STORE_UNAVAILABLE 로 격하된다. */
+  uploadUrl: string | null;
+  expiresAt: string | null;
+  surface: DesignSurface | null;
+}
+
+export interface DesignSurfaceSealResponse {
+  verdict: string;
+  detail: string | null;
+  surface: DesignSurface | null;
+}
+
+export interface DesignSurfaceListResponse {
+  surfaces: DesignSurface[];
+}
+
+/** 요청 1건의 조회 표현 — 지시 + 요청 시점 스냅샷 + 운영 메타. */
+export interface DesignConformanceRequestView {
+  requestId: string;
+  /** 리포트 id — requestId 에서 결정적으로 도출된다. */
+  designConformanceId: string;
+  missionId: string;
+  siteId: string;
+  designSurfaceId: string;
+  /** 요청 시점 VERIFIED 설계면의 **관측된** 해시(접두사 없는 16진). */
+  designSurfaceSha256: string;
+  current: ArtifactRefView;
+  zones: Record<string, Record<string, unknown>>;
+  zoneCrs: string;
+  policy: ComparisonPolicyView;
+  status: string;
+  requestedAt: string;
+  requestedBy: string;
+  updatedAt: string;
+  detail: string | null;
+  leaseWorkerId: string | null;
+  leaseExpiresAt: string | null;
+  /** Core 가 차분 래스터 바이트를 직접 재해싱해 확인한 값 — 아직 없으면 null. */
+  diffRasterDigest: string | null;
+  diffRasterVerifiedAt: string | null;
+}
+
+export interface DesignConformanceRequestMutationResponse {
+  verdict: string;
+  request: DesignConformanceRequestView | null;
+  detail: string | null;
+}
+
+export interface DesignConformanceRequestListResponse {
+  requests: DesignConformanceRequestView[];
+}
+
+/**
+ * 제출 본문 — 어느 설계면을 어느 재구성 결과와 견줄지 + 확정한 구역.
+ *
+ * 구역을 주는 길은 둘이고 **동시에 쓸 수 없다**(M4-C): 등록된 작업구역을 고르거나
+ * (`workAreaIds`), 즉석 폴리곤을 싣거나(`zones`/`zoneCrs`). 앞의 것만 다음 시점의
+ * 리포트와 이어져 진척이 나온다 — 즉석 폴리곤은 매번 좌표가 달라 시계열이 끊긴다.
+ */
+export interface DesignConformanceRequestCreateInput {
+  designSurfaceId: string;
+  currentJobId: string;
+  workAreaIds?: string[] | null;
+  zones?: Record<string, Record<string, unknown>> | null;
+  zoneCrs?: string | null;
+}
+
+/**
+ * 현장에 영구적으로 사는 작업구역(M4-C) — 기하는 등록 후 불변이다.
+ *
+ * 고치면 새 구역이고 `supersedes` 가 이전 것을 가리킨다(그때 이전 구역은 보관된다).
+ * 제자리 수정을 허용하면 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀐다.
+ */
+export interface WorkArea {
+  schemaVersion: string;
+  workAreaId: string;
+  siteId: string;
+  name: string;
+  polygon: Record<string, unknown>;
+  crs: string;
+  status: "ACTIVE" | "ARCHIVED";
+  supersedes: string | null;
+  createdAt: string;
+}
+
+export interface WorkAreaListResponse {
+  workAreas: WorkArea[];
+}
+
+export interface WorkAreaResponse {
+  verdict: string;
+  detail: string | null;
+  workArea: WorkArea | null;
+}
+
+export interface WorkAreaRegisterInput {
+  name: string;
+  polygon: Record<string, unknown>;
+  crs: string;
+  supersedes?: string | null;
+}
+
+/**
+ * 구역 하나의 계획 대비 진척 — 절토와 성토를 **합치지 않는다**.
+ *
+ * 합계 하나로 뭉개면 "5000 깎고 5000 쌓는" 현장과 "아무것도 안 한" 현장이 같은
+ * 숫자가 된다. 비율이 `null` 이면 그 방향의 계획이 없다는 뜻이고, `0%` 로 그리면
+ * "할 일이 있는데 하나도 안 했다"는 반대 뜻이 된다 — `basis` 가 이유를 적는다.
+ */
+export interface ZoneProgress {
+  zoneId: string;
+  zoneName: string | null;
+  plannedCutM3: number;
+  plannedFillM3: number;
+  remainingCutM3: number;
+  remainingFillM3: number;
+  /** 계획 − 잔여. **음수일 수 있다**(되메우기·재시공·붕괴). */
+  doneCutM3: number;
+  doneFillM3: number;
+  cutProgressRatio: number | null;
+  fillProgressRatio: number | null;
+  basis: string;
+}
+
+export interface DesignProgress {
+  schemaVersion: string;
+  siteId: string;
+  designSurfaceId: string;
+  designSurfaceSha256: string;
+  baselineDesignConformanceId: string;
+  /** 기준 시점 — **화면이 항상 함께 띄운다**(이미 시공된 뒤면 계획이 과소 계상된다). */
+  baselineComputedAt: string;
+  latestDesignConformanceId: string;
+  latestComputedAt: string;
+  thresholdM: number;
+  zones: ZoneProgress[];
+}
+
+/** `progress` 와 `detail` 중 하나는 항상 채워진다 — 빈 표를 내지 않는다. */
+export interface DesignProgressResponse {
+  progress: DesignProgress | null;
+  unmatchedZoneIds: string[];
+  detail: string | null;
+  /** 최신 리포트가 속한 임무 — 히트맵(임무 스코프 표면)으로 건너뛸 때만 쓰는 UI 편의값. */
+  latestMissionId: string | null;
+}
+
+export interface ProgressBaselineResponse {
+  verdict: string;
+  detail: string | null;
+}
+
+/** 어느 설계면과 비교했는가 — 요청 시점 VERIFIED 스냅샷. */
+export interface DesignSurfaceRef {
+  designSurfaceId: string;
+  sha256: string;
+}
+
+/**
+ * 체적 집계에 실제로 쓴 높이차 격자 — 지도가 읽는 **단 하나의** 데이터 출처.
+ *
+ * 값 규약은 `설계 표고 − 현재 표고`: 양수 = 쌓아야 함, 음수 = 깎아야 함.
+ */
+export interface DiffRasterRef {
+  diffRasterId: string;
+  digest: string;
+  format: "geotiff";
+  crs: string;
+  verticalReference: VerticalReference;
+  width: number;
+  height: number;
+  pixelSizeXM: number;
+  pixelSizeYM: number;
+  transform: [number, number, number, number, number, number];
+  /** 무효 셀(측정 불가)의 표현 — **0 이 아니라 NaN 이다**. */
+  nodataEncoding: "nan";
+  /** 이 값 미만의 |높이차| 는 체적 집계에서 제외됐다(범례가 이 값을 쓴다). */
+  thresholdM: number;
+  sizeBytes: number;
+  coreVerifiedDigestAt: string;
+}
+
+/** contracts/schemas/design-conformance-report.v1.json. */
+export interface DesignConformanceReport {
+  schemaVersion: string;
+  designConformanceId: string;
+  designSurfaceRef: DesignSurfaceRef;
+  current: ArtifactRefView;
+  crs: string;
+  verticalReference: VerticalReference;
+  /** 구역별 잔량 — `cut` = 깎아야 할 양, `fill` = 쌓아야 할 양, `net = fill - cut`. */
+  zones: ZoneVolumeDelta[];
+  policy: ComparisonPolicyView;
+  diffRaster: DiffRasterRef;
+  computedAt: string;
+}
+
+export interface DesignConformanceEntry {
+  report: DesignConformanceReport;
+  reportedBy: string | null;
+  recordedAt: string;
+  /** Core 가 기록 시점에 직접 재계산한 digest — "확인된 사실"임을 말할 근거. */
+  coreRecomputedDigest: string;
+}
+
+export interface DesignConformanceListView {
+  missionId: string;
+  reportCount: number;
+  /** 최신 리포트의 전 구역 순 성토 필요량 — 서버가 계산해 준다. */
+  latestTotalNetM3: number | null;
+  reports: DesignConformanceEntry[];
+}
+
+/** 지도가 차분 래스터를 얻는 **유일한** 경로의 응답. */
+export interface DiffRasterViewResponse {
+  designConformanceId: string;
+  diffRasterId: string;
+  digest: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  expiresAt: string;
+}

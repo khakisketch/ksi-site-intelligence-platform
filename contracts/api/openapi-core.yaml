@@ -93,7 +93,24 @@ info:
   # upload-url(워커가 올릴 자리 발급) + GET .../artifacts/{artifactId}/download
   # (등록된 산출물 열람). 이전에는 재구성이 성공해도 digest 만 남고 바이트가
   # 버려져 사람이 볼 수 있는 것이 없었다(ADR-KSI-016). 표면 추가라 minor.
-  version: 1.18.0
+  # 1.19.0 — M4-A 설계 기준면 자산 신설: POST·GET /v1/sites/{siteId}/design-surfaces ·
+  # POST .../{id}/seal(SITES_WRITE) · GET /v1/design-surfaces(검증 대기 큐) ·
+  # POST /v1/design-surfaces/{id}/observations · .../verification-failure
+  # (PROCESSING_WORK, 워커 전용). 선언(업로더 주장)과 관측(워커가 바이트를 읽어
+  # 잰 값)을 계약에서 이름으로 가르고, 대조 판정은 Core 가 한다 — SEALED 는
+  # "업로드했다는 주장"일 뿐이고 비교 입력 자격은 VERIFIED 하나뿐이다.
+  # 새 표면 추가라 minor.
+  # 1.20.0 — M4-A 설계 대비 잔량: POST·GET /v1/missions/{id}/design-conformance-
+  # requests(MISSIONS_ISSUE·MISSIONS_READ) · GET /v1/design-conformance-requests ·
+  # POST .../{id}/lease · GET .../input · POST .../transitions ·
+  # POST .../diff-raster-upload-url · POST .../diff-raster-verification
+  # (PROCESSING_WORK) · POST·GET /v1/missions/{id}/design-conformance ·
+  # GET .../{id}/diff-raster. **신뢰 경계가 이 판의 요점이다**: 워커의 "올렸다,
+  # 해시는 이거다"는 근거가 아니라 신고일 뿐이고, Core 가 그 객체 바이트를 직접
+  # 읽어 자기 hashlib 으로 다시 계산해 같을 때만 확인 사실이 남는다. 리포트를
+  # 원장에 굳히는 순간에도 같은 재해싱을 한 번 더 해서, "유효한 리포트가 있는데
+  # 그 지도는 다른 파일"인 상태를 구조적으로 없앤다. 새 표면 추가라 minor.
+  version: 1.20.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1428,6 +1445,803 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음(사람 역할은 이 권한을 갖지 않는다) }
+  /v1/sites/{site_id}/work-areas:
+    post:
+      summary: Register a persistent work area (M4-C)
+      description: >-
+        SITES_WRITE 권한 필요. **기하는 이 순간 굳는다** — 잘못 그렸으면 supersedes
+        로 새 구역을 만든다(그때 이전 구역은 자동으로 ARCHIVED 된다). 제자리 수정을
+        허용하면 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀌어, 숫자는
+        그대로인데 그 숫자가 무엇을 잰 것인지가 달라진다.
+
+
+        폴리곤은 등록 시점에 검사한다(GeoJSON Polygon · 닫힌 외곽 고리 · 유한 좌표 ·
+        EPSG:4326 이면 경위도 범위) — 통과시키면 나중에 래스터 마스킹 단계에서
+        사람이 이해할 수 없는 예외로 터지는 것들이다. 자기교차·구역 간 겹침·현장 AOI
+        이탈은 **막지 않는다**(정당한 운용이다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, polygon, crs]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                polygon:
+                  description: GeoJSON Polygon. 요청의 zones[zoneId] 에 이 값이 그대로 복사된다.
+                  type: object
+                crs: { type: string, minLength: 1 }
+                supersedes:
+                  description: 기하를 고칠 때 이전 구역의 id. 주면 그 구역은 자동으로 보관된다.
+                  type: [string, 'null']
+      responses:
+        '201':
+          description: REGISTERED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaResponse' }
+        '404': { description: UNKNOWN_SITE · SUPERSEDES_NOT_FOUND }
+        '409': { description: SUPERSEDES_OTHER_SITE · TOO_MANY_ACTIVE }
+        '422': { description: INVALID_WORK_AREA — 폴리곤이 쓸 수 없는 모양이다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+    get:
+      summary: List a site's work areas
+      description: SITES_READ 권한 필요. 기본은 고를 수 있는 것(ACTIVE)만.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: query, name: include_archived, required: false, schema: { type: boolean } }
+      responses:
+        '200':
+          description: 등록 순서 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/archive:
+    post:
+      summary: Archive a work area — not a delete
+      description: >-
+        SITES_WRITE 권한 필요. 더 이상 새 비교에 고를 수 없게 한다. **지우지 않는
+        이유**: 이 구역으로 낸 리포트들이 zoneId 로 이 id 를 들고 있어, 지우면 그
+        리포트들이 무슨 범위였는지를 잃는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: work_area_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ARCHIVED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkAreaResponse' }
+        '404': { description: UNKNOWN_WORK_AREA }
+        '409': { description: ALREADY_ARCHIVED }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/design-progress:
+    get:
+      summary: Zone-by-zone progress against the design surface (M4-C)
+      description: >-
+        SITES_READ 권한 필요. **저장된 값이 아니라 파생값**이다 — 사람이 지정한
+        '원지형 기준' 리포트와 가장 최근 리포트를 같은 구역끼리 빼서 조회 시점에
+        만든다(계획 = 기준 시점 잔량, 잔여 = 최신 잔량, 완료 = 계획 − 잔여).
+
+
+        **이어붙이기를 거부하는 조건**: 설계면 해시 · 집계 문턱 · 수직기준 · 좌표계
+        중 하나라도 다르면 표를 만들지 않고 detail 에 사유를 낸다. 다른 자로 잰 두
+        값의 차이는 진척이 아닌데, 그 결과는 어느 화면에서도 이상해 보이지 않는다.
+
+
+        표를 못 내는 경우에도 200 이고 detail 이 채워진다 — 화면이 "아직 데이터가
+        없다"와 "이어붙일 수 없다"를 갈라 말해야 하기 때문이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: query, name: design_surface_id, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: 진척 표 또는 왜 못 내는지(둘 중 하나는 항상 채워진다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignProgressResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/missions/{mission_id}/design-conformance/{design_conformance_id}/progress-baseline:
+    post:
+      summary: Mark this report as the pre-construction baseline (M4-C)
+      description: >-
+        MISSIONS_ISSUE 권한 필요(설계 대비 요청 생성과 같은 자리 — 구역·현장의 영속
+        자산이 아니라 "이 임무의 어느 결과를 기준으로 볼지" 판단이다). 계획 물량이
+        이 리포트에서 나온다. **자동으로 고르지
+        않는 이유**가 이 엔드포인트의 존재 이유다 — 가장 오래된 리포트를 기준으로
+        삼으면, 첫 비행이 이미 시공 중이었을 때 계획 물량이 조용히 깎인다.
+
+
+        덮어쓸 수 있다(잘못 지정하는 일이 실제로 있다). 이전 지정도 저널에 남으므로
+        "언제 무엇을 기준으로 봤는가"는 되짚어진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: design_conformance_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [designSurfaceId]
+              properties:
+                designSurfaceId: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: BASELINE_SET
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressBaselineResponse' }
+        '404': { description: UNKNOWN_REPORT }
+        '409':
+          description: >-
+            REJECTED(그 리포트가 다른 설계면으로 계산됐다 · 원장이 봉인됨) ·
+            UNKNOWN_SITE(요청 기록이 없어 현장을 특정할 수 없다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressBaselineResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+  /v1/sites/{site_id}/design-surfaces:
+    post:
+      summary: Register a design surface (planned-grade DEM) and issue a presigned PUT
+      description: >-
+        SITES_WRITE 권한 필요. 등록은 **선언의 기록**일 뿐이다 — 201 은 "파일이
+        좋다"가 아니라 "어디에 올리면 되는지 정해졌다"는 뜻이다. `declared` 안의
+        값(crs·sha256·verticalReference)은 전부 업로더의 주장이고 이 시점에는
+        아무도 확인하지 않는다. `declared.verticalReference.source` 는
+        `user_declared` 여야 한다(계약이 강제) — 파이프라인 귀속을 업로더 주장
+        자리에 담지 않는다.
+
+
+        `designSurfaceId` 는 서버가 만든다(`{siteId}-ds{n}`) — 객체 키도 서버가
+        만든다(`sites/{siteId}/design-surfaces/{designSurfaceId}`). 같은 현장의
+        같은 (name, revision) 재전송은 선언이 같으면 멱등 재발급(새 URL)이고,
+        선언이 다르면 409 DECLARATION_CONFLICT 다 — 같은 개정 표기가 두 개의 서로
+        다른 내용을 가리키면 리포트가 "어느 판 기준인가"에 답할 수 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, revision, declared]
+              properties:
+                name: { type: string, minLength: 1 }
+                revision: { type: string, minLength: 1 }
+                declared:
+                  type: object
+                  additionalProperties: false
+                  required: [crs, sha256, verticalReference]
+                  description: >-
+                    전부 업로더의 주장. 구조 정본은
+                    contracts/schemas/design-surface.v1.json 의 declared 블록.
+                  properties:
+                    crs: { type: string, minLength: 1 }
+                    lengthUnit: { type: string, enum: [meter], default: meter }
+                    sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                    verticalReference:
+                      type: object
+                      additionalProperties: false
+                      required: [datum, basis, source]
+                      properties:
+                        datum: { type: string }
+                        basis: { type: string, minLength: 1 }
+                        source: { type: string, enum: [user_declared] }
+      responses:
+        '201':
+          description: REGISTERED — 업로드용 presigned PUT 동봉
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceRegisterResponse' }
+        '404': { description: UNKNOWN_SITE — 등록된 적 없는 현장 }
+        '409': { description: DECLARATION_CONFLICT — 같은 이름·개정이 다른 선언으로 이미 있다 }
+        '422': { description: INVALID_SITE_ID — 경로-안전하지 않은 siteId }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨/스토리지 장애, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+    get:
+      summary: List a site's design surfaces (declared vs observed, status, rejection reason)
+      description: >-
+        SITES_READ 권한 필요. 미검증 상태를 감추지 않는다 — 화면이 "무엇이 주장이고
+        무엇이 확인된 사실인가"를 그리려면 declared·observed 두 블록이 다 보여야
+        한다. 상태는 REGISTERED/SEALED/VERIFIED/REJECTED 이고, 비교 입력 자격은
+        VERIFIED 하나뿐이다(SEALED 는 "업로드했다고 클라이언트가 주장했다"일 뿐).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 등록 순서 결정적 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/design-surfaces/{design_surface_id}/seal:
+    post:
+      summary: Record the client's claim that the upload finished (no bytes are read)
+      description: >-
+        SITES_WRITE 권한 필요. **이 호출은 스토리지를 한 바이트도 읽지 않는다.**
+        Core 가 증명하는 것은 "더 이상 내용을 바꾸지 않기로 봉인했다"는 원장 쪽
+        사실뿐이고, 파일이 실제로 있는지·선언과 같은지는 아무도 확인하지 않았다
+        (Core 는 객체 바이트를 중계하지 않는다, ADR-KSI-010 §1). 그래서 SEALED 는
+        검증이 아니라 **검증 대기 큐 진입**이다.
+
+
+        재호출은 에러가 아니라 200 ALREADY_SEALED(무기록 멱등)다. 이미 판정이
+        끝난(VERIFIED·REJECTED) 설계면은 409 ALREADY_JUDGED — 복구 경로는
+        되돌리기가 아니라 새 revision 등록이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: design_surface_id, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: SEALED — 검증 대기 큐 진입
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceSealResponse' }
+        '200':
+          description: ALREADY_SEALED — 무기록 멱등
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceSealResponse' }
+        '404': { description: UNKNOWN_DESIGN_SURFACE — 없거나 다른 현장의 id }
+        '409': { description: ALREADY_JUDGED — 이미 VERIFIED·REJECTED }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
+  /v1/design-surfaces:
+    get:
+      summary: Pending-verification queue for the worker (SEALED only, download URL only)
+      description: >-
+        **PROCESSING_WORK 권한 필요**(워커 전용). SEALED 상태만 제공한다 —
+        REGISTERED 는 아직 파일이 없을 수 있고, 판정이 끝난 것은 워커가 할 일이
+        없다. `status` 를 SEALED 이외로 주면 422 다.
+
+
+        **응답에 선언값(sha256·CRS)이 실리지 않는다.** 워커에게 정답을 주면 바이트를
+        읽지 않고 되읊어 통과할 수 있다 — 여기서 주는 것은 "어느 파일을 어디서
+        받아라"뿐이다(GET /v1/processing-jobs/{jobId}/input 과 같은 원칙).
+
+
+        lease 가 없다 — 검증은 멱등이라 둘 이상의 워커가 같은 파일을 재도 먼저
+        도착한 관측이 판정을 굳히고 나머지는 무기록 거절된다. 스토리지 URL 발급에
+        실패한 항목은 그 1건만 목록에서 빠진다(전체를 503 으로 만들지 않는다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          required: false
+          description: SEALED 만 허용(기본값). 다른 값은 422.
+          schema: { type: string, default: SEALED }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 봉인 순서(FIFO) 후보 목록 + 다운로드 URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingDesignSurfaceListResponse' }
+        '422': { description: status 가 SEALED 가 아니다 }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 역할은 이 권한을 갖지 않는다) }
+  /v1/design-surfaces/{design_surface_id}/observations:
+    post:
+      summary: Report measured raster facts; Core compares them against the declaration
+      description: >-
+        **PROCESSING_WORK 권한 필요**(워커 전용). 이 권한이 여기 붙는 것이 핵심이다
+        — 설계면을 올린 주체(SITES_WRITE)가 자기 신고값을 스스로 검증할 수 없다.
+
+
+        워커가 보내는 것은 **측정값뿐이고 판정이 아니다**. `measuredAt`/`measuredBy`
+        도 요청에 없다 — 둘 다 Core 가 서버 시계와 인증된 principal 로 채운다.
+        대조는 Core 가 하고(sha256 → 단위 → 밴드 수 → 유효셀 → CRS → 수직기준),
+        journal 에 남는 사실은 측정값이라 재생이 **다시 대조**한다 — 원장의 판정만
+        고쳐도 기동에서 걸린다.
+
+
+        SEALED 에서만 받는다. 봉인 전이면 409 NOT_SEALED(대조 대상 내용이 아직
+        확정되지 않았다), 이미 판정됐으면 200 ALREADY_JUDGED(무기록 멱등).
+        거부는 422 이고 `rejectionReason` 에 typed verdict 가 실린다:
+        DIGEST_MISMATCH · CRS_DECLARATION_MISMATCH · UNSUPPORTED_CRS ·
+        UNSUPPORTED_UNIT · UNSUPPORTED_BAND_COUNT · NO_FINITE_CELLS ·
+        VERTICAL_DECLARATION_CONTRADICTED.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: design_surface_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [sha256, crs, width, height, bandCount, dtype, pixelSizeXM, pixelSizeYM,
+                 transform, boundsMinX, boundsMinY, boundsMaxX, boundsMaxY, finiteCellCount]
+              properties:
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                crs: { type: string, minLength: 1 }
+                # compound CRS 의 수직 성분. 대부분의 DEM 에는 없다(null 이 정상).
+                verticalCrsEpsg: { type: [integer, 'null'], minimum: 1 }
+                width: { type: integer, minimum: 1 }
+                height: { type: integer, minimum: 1 }
+                bandCount: { type: integer, minimum: 1 }
+                dtype: { type: string, minLength: 1 }
+                nodata: { type: [number, 'null'] }
+                # NaN 은 JSON 에 없다 — NaN nodata 는 이 불리언으로 싣는다.
+                nodataIsNan: { type: boolean, default: false }
+                pixelSizeXM: { type: number, exclusiveMinimum: 0 }
+                pixelSizeYM: { type: number, exclusiveMinimum: 0 }
+                transform:
+                  type: array
+                  minItems: 6
+                  maxItems: 6
+                  items: { type: number }
+                boundsMinX: { type: number }
+                boundsMinY: { type: number }
+                boundsMaxX: { type: number }
+                boundsMaxY: { type: number }
+                finiteCellCount: { type: integer, minimum: 0 }
+      responses:
+        '201':
+          description: VERIFIED — 관측이 선언과 전부 일치했다(이제 비교 입력 자격이 있다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '200':
+          description: ALREADY_JUDGED — 이미 판정된 설계면(무기록 멱등)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '422':
+          description: >-
+            REJECTED(rejectionReason 참조) 또는 INVALID_MEASUREMENT(측정치가 스스로
+            모순 — 예: 유효셀 수 > 전체 셀 수). 422 인 이유: 요청 형식은 옳고
+            **내용이 사실과 다르다** — 같은 값으로 재시도해도 결과가 같다.
+        '404': { description: UNKNOWN_DESIGN_SURFACE }
+        '409': { description: NOT_SEALED — 봉인 전에는 대조 대상이 확정되지 않았다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-surfaces/{design_surface_id}/verification-failure:
+    post:
+      summary: Report that the file could not be opened at all (UNREADABLE_RASTER)
+      description: >-
+        **PROCESSING_WORK 권한 필요**(워커 전용). "관측이 선언과 다르다"가 아니라
+        **관측 자체가 없다**는 보고라 관측 경로와 분리돼 있다. 이 경로가 실을 수
+        있는 사유는 UNREADABLE_RASTER **하나뿐**이고 요청에 사유 필드가 없다 —
+        워커가 NO_FINITE_CELLS 같은 Core 의 판정을 자기 입으로 만들어낼 수 없어야
+        한다. 결과는 REJECTED(종단) 이며, 복구는 새 revision 등록이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: design_surface_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                detail: { type: [string, 'null'], maxLength: 2000 }
+      responses:
+        '201':
+          description: REJECTED — rejectionReason=UNREADABLE_RASTER
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '200':
+          description: ALREADY_JUDGED — 이미 판정된 설계면(무기록 멱등)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '404': { description: UNKNOWN_DESIGN_SURFACE }
+        '409': { description: NOT_SEALED — 봉인되지 않은 설계면은 검증 대상이 아니다 }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/missions/{mission_id}/design-conformance-requests:
+    post:
+      summary: Request a design-conformance (remaining cut/fill vs the planned surface) run
+      description: >-
+        MISSIONS_ISSUE 권한 필요 — 계산해 제출하는 것은 워커의 일이지만 "무엇을
+        무엇과 비교할지" 지목하는 것은 사람의 결정이다(비교 요청 생성과 같은 자리).
+
+
+        **계산 전에 막는 것들(fail-closed)**: 검증되지 않은 설계면(409
+        DESIGN_SURFACE_NOT_VERIFIED — SEALED 는 "업로드했다는 주장"일 뿐이다),
+        수직기준 계열 불일치(422 VERTICAL_DATUM_INCOMPATIBLE — 타원체고와 정표고를
+        그냥 빼면 한국에서 20~30m 가 조용히 섞인다), 수직기준이 기록되기 전에
+        등록된 DSM(422 VERTICAL_REFERENCE_UNKNOWN — 재처리하면 비교할 수 있다),
+        구역 미확정(422 ZONES_REQUIRED — 설계 대비 잔량은 "어느 범위의" 잔량인지
+        없이 성립하지 않는다).
+
+
+        구역·기준값·설계면 해시는 **값으로** 스냅샷된다 — 나중에 현장 경계나
+        시스템 기준값이 바뀌어도 이미 만든 요청은 그때 무엇으로 쟀는지 스스로
+        답한다. 같은 (설계면+현재 작업+구역) 재전송은 200 ALREADY_REQUESTED 다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [designSurfaceId, currentJobId]
+              properties:
+                designSurfaceId: { type: string, minLength: 1 }
+                currentJobId: { type: string, minLength: 1 }
+                workAreaIds:
+                  description: >-
+                    등록된 작업구역(M4-C)을 고른다. Core 가 폴리곤을 **값으로** 풀어
+                    zones 에 넣고, zoneId 는 workAreaId 가 된다 — 그래서 다음 시점의
+                    리포트와 자동으로 이어지고 진척 계산이 성립한다. zones 와 동시에
+                    주면 422 WORK_AREA_UNUSABLE(어느 쪽이 진짜 지시인지 서버가 골라
+                    주면 화면이 보낸 것과 계산에 쓴 것이 갈릴 수 있다).
+                  type: [array, 'null']
+                  items: { type: string, minLength: 1 }
+                zones:
+                  description: >-
+                    {zoneId: GeoJSON Polygon}. 현장 AOI 를 자동으로 쓰지 않는다 —
+                    사용자 확인을 거친 폴리곤 값을 화면이 싣는다. 비교 요청과 달리
+                    **생략할 수 없다**(workAreaIds 를 주지 않는 한). 즉석 폴리곤은
+                    매번 좌표가 달라 시계열로 이어지지 않는다.
+                  type: [object, 'null']
+                  additionalProperties: { type: object }
+                zoneCrs: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: CREATED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestMutationResponse' }
+        '200':
+          description: ALREADY_REQUESTED — 같은 지시가 이미 있다(멱등)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestMutationResponse' }
+        '404': { description: UNKNOWN_MISSION · UNKNOWN_DESIGN_SURFACE }
+        '409': { description: DESIGN_SURFACE_NOT_VERIFIED }
+        '422':
+          description: >-
+            UNKNOWN_JOB · JOB_NOT_SUCCEEDED · MISSION_MISMATCH · SITE_MISMATCH ·
+            NO_DSM_ARTIFACT · ZONES_REQUIRED · WORK_AREA_UNUSABLE ·
+            VERTICAL_REFERENCE_UNKNOWN · VERTICAL_DATUM_INCOMPATIBLE
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_ISSUE 권한 없음 }
+    get:
+      summary: List a mission's design-conformance requests (newest first)
+      description: MISSIONS_READ 권한 필요.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 최신 우선 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/design-conformance-requests:
+    get:
+      summary: Pending design-conformance requests for a worker (QUEUED + orphaned RUNNING)
+      description: >-
+        PROCESSING_WORK 권한 필요 — **사람은 이 표면을 쓰지 않는다.**
+        `GET /v1/comparison-requests` 와 동형(최소권한 — requestId·requestedAt 만
+        노출). lease 가 만료된 RUNNING(죽은 워커가 쥐고 있던 요청)도 나온다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 후보 목록(없으면 빈 배열)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingDesignConformanceRequestListResponse'
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 Role 포함) }
+  /v1/design-conformance-requests/{request_id}/lease:
+    post:
+      summary: Acquire (or renew) the lease on one design-conformance request
+      description: >-
+        PROCESSING_WORK 권한 필요. 같은 워커의 재호출은 갱신(200 LEASE_RENEWED,
+        최초 취득 시각 보존)이다. 만료 판정은 저장된 플래그가 아니라 시각 비교라
+        (`leasing.JobLease`), 죽은 워커의 요청은 별도 조치 없이 회수된다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: LEASED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestMutationResponse' }
+        '200':
+          description: LEASE_RENEWED — 같은 워커의 갱신
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestMutationResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: LEASE_HELD_BY_ANOTHER · REQUEST_NOT_ACTIVE }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-conformance-requests/{request_id}/input:
+    get:
+      summary: Fetch the worker's inputs — presigned GET for the design surface and the current DSM
+      description: >-
+        PROCESSING_WORK 권한 필요 + **lease 를 쥔 워커만** 통과한다(상호배제와
+        접근범위 축소를 동시에 한다). 설계면·현재 DSM 의 열람 URL, 두 입력의
+        수직기준, 구역, 요청 시점 기준값 스냅샷, 그리고 Core 가 도출한
+        designConformanceId·diffRasterId 를 준다.
+
+
+        `designSurfaceSha256` 을 함께 주는 것은 설계면 **검증** 큐와 반대다 —
+        거기서는 워커가 신고값을 알면 파일을 읽지 않고 되읊을 수 있어 주지
+        않지만, 여기서 이 값의 용도는 판정이 아니라 "받아온 바이트가 그때 검증된
+        그 파일인가"다(스토리지 교체·손상을 값싸게 잡는다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: INPUT_READY
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceInputResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER }
+        '422': { description: VERTICAL_REFERENCE_UNKNOWN — 산출물의 수직기준을 읽을 수 없다 }
+        '503': { description: STORAGE_UNAVAILABLE — URL 발급 실패, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-conformance-requests/{request_id}/transitions:
+    post:
+      summary: Transition a design-conformance request (worker only)
+      description: >-
+        PROCESSING_WORK 권한 필요 + lease 보유 필수. QUEUED→RUNNING→
+        {SUCCEEDED,FAILED} 만 허용된다(CANCELLED 없음 — 정체된 RUNNING 은 lease
+        만료로 회수된다). 종료된 요청의 결론은 고쳐 쓰지 않는다(409
+        ILLEGAL_TRANSITION).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus]
+              properties:
+                targetStatus:
+                  type: string
+                  enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
+                detail: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: TRANSITIONED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceRequestMutationResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: ILLEGAL_TRANSITION · LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER }
+        '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-conformance-requests/{request_id}/diff-raster-upload-url:
+    post:
+      summary: Issue a presigned PUT for the diff raster (the server chooses the object key)
+      description: >-
+        PROCESSING_WORK 권한 필요 + lease 보유 필수. **워커가 객체 키를 고르지
+        않는다** — 키는 요청에서 결정적으로 유도되므로
+        (`sites/{siteId}/design-conformance/{designConformanceId}`) 재시도가 같은
+        자리를 덮어써 orphan 이 쌓이지 않는다.
+
+
+        종료된(SUCCEEDED·FAILED) 요청에는 발급하지 않는다(409 REQUEST_NOT_ACTIVE)
+        — 이미 원장에 굳은 리포트의 래스터가 나중에 다른 바이트로 바뀌는 창을
+        영구히 닫는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: UPLOAD_READY — presigned PUT + 서버가 정한 objectKey
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiffRasterUploadUrlResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: REQUEST_NOT_ACTIVE · LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER }
+        '503': { description: STORAGE_UNAVAILABLE — 발급 실패, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-conformance-requests/{request_id}/diff-raster-verification:
+    post:
+      summary: Core re-reads the uploaded object and re-hashes it — the worker's claim is not evidence
+      description: >-
+        PROCESSING_WORK 권한 필요 + lease 보유 필수. **이 경로가 이 milestone 의
+        신뢰 경계다.** 워커가 "올렸다, 해시는 이거다"라고 말한 것만으로는 아무
+        사실도 성립하지 않는다 — Core 가 그 객체 바이트를 직접 읽어 자기
+        hashlib 으로 digest 를 다시 계산하고, 신고와 **같을 때만** 확인 사실을
+        원장에 남긴다.
+
+
+        응답의 `verifiedAt` 은 리포트의 `diffRaster.coreVerifiedDigestAt` 에
+        그대로 실릴 값이다(계약 필수 필드) — 즉 이 확인 없이는 리포트를 조립할
+        수조차 없다. 불일치는 422 DIFF_RASTER_DIGEST_MISMATCH 이고 응답에 Core 가
+        실제로 계산한 digest 가 함께 온다. 객체를 읽지 못하면 503
+        DIFF_RASTER_UNREADABLE — 확인 없이 통과시키지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [digest, sizeBytes]
+              description: 워커의 신고 — Core 는 이것을 믿지 않고 대조 대상으로만 쓴다.
+              properties:
+                digest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+                sizeBytes: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: DIFF_RASTER_VERIFIED — Core 가 직접 계산한 digest·크기·확인 시각
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiffRasterVerificationResponse' }
+        '404': { description: UNKNOWN_REQUEST }
+        '409': { description: REQUEST_NOT_ACTIVE · LEASE_REQUIRED · LEASE_HELD_BY_ANOTHER }
+        '422': { description: DIFF_RASTER_DIGEST_MISMATCH — 재해싱 결과가 신고와 다르다 }
+        '503': { description: DIFF_RASTER_UNREADABLE · STORE_UNAVAILABLE, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/missions/{mission_id}/design-conformance:
+    post:
+      summary: Submit a design-conformance report (Core re-hashes the diff raster before recording)
+      description: >-
+        **PROCESSING_WORK 권한 필요**(워커 전용) — 사람은 잔량을 주장할 수 없다.
+        이 숫자는 공정·정산 판단의 근거가 될 수 있고, 그럴수록 계산된 것이어야
+        한다(volume-changes 와 같은 원칙).
+
+
+        Core 는 기록 **직전에** 차분 래스터 객체를 다시 읽어 해싱하고, 리포트의
+        `diffRaster.digest`·`sizeBytes` 와 다르면 **리포트를 기록하지 않고** 그
+        요청을 FAILED(DIFF_RASTER_DIGEST_MISMATCH)로 끝낸다. 이 재확인은 요청
+        쪽 확인과 중복이 아니라 다른 창을 막는다 — 그 사이에 객체가 다른 바이트로
+        덮였을 수 있다. 그래서 다음 불변식이 성립한다: **원장에 있는 모든 리포트에
+        대해, 그 digest 로 스토리지 바이트를 다시 해싱하면 항상 같다.**
+
+
+        설계면·현재 산출물·기준값이 요청 스냅샷과 어긋나거나, Core 가 확인한 적
+        없는 래스터를 참조하면 전부 422 로 거부된다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: >-
+                구조 정본은 contracts/schemas/design-conformance-report.v1.json.
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: RECORDED — Core 가 재해싱으로 확인한 뒤 원장에 굳혔다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '409': { description: DUPLICATE_REPORT_ID — 같은 id 로 다른 내용을 덮어쓸 수 없다 }
+        '422':
+          description: >-
+            UNKNOWN_REQUEST · REQUEST_MISMATCH · DESIGN_SURFACE_MISMATCH ·
+            ARTIFACT_MISMATCH · UNKNOWN_ARTIFACT · ARTIFACT_KIND_MISMATCH ·
+            POLICY_MISMATCH · DIFF_RASTER_NOT_VERIFIED ·
+            DIFF_RASTER_DIGEST_MISMATCH
+        '503': { description: DIFF_RASTER_UNREADABLE · STORE_UNAVAILABLE, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음(사람 Role 포함) }
+    get:
+      summary: List a mission's design-conformance reports (newest first)
+      description: >-
+        MISSIONS_READ 권한 필요. 결과가 없으면 404 다 — 빈 목록을 주면 "아직 계산
+        안 됨"과 "잔량이 0"을 소비자가 구분할 수 없다. `coreRecomputedDigest` 는
+        Core 가 기록 시점에 직접 재계산한 값이라, 화면이 "확인된 사실"이라고 말할
+        근거가 된다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: 최신 우선 이력 + 최신 리포트의 전 구역 순 성토 필요량
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignConformanceListView' }
+        '404': { description: 해당 임무의 설계 대비 잔량 리포트가 없다 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/design-conformance/{design_conformance_id}/diff-raster:
+    get:
+      summary: Presigned GET for the stored diff raster — the map's only data source
+      description: >-
+        MISSIONS_READ 권한 필요. 대시보드는 **반드시 이 경로로만** 히트맵 데이터를
+        얻는다. 브라우저가 원본 두 장을 받아 다시 차분하는 경로를 만들지 않는
+        이유가 이 엔드포인트의 존재 이유다 — 그러면 지도와 표가 서로 다른 두
+        진실을 갖게 되고 그 어긋남은 어느 화면에서도 보이지 않는다. 여기서
+        내려주는 것은 체적 집계에 **실제로 쓴 그 격자**다(값 규약: 설계 표고 −
+        현재 표고, 무효 셀은 NaN — 0 이 아니다).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: design_conformance_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 열람 URL + digest·크기(내려받은 바이트를 화면이 대조할 수 있다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiffRasterViewResponse' }
+        '404': { description: 해당 리포트를 찾을 수 없다 }
+        '503': { description: 열람 URL 발급 실패 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/processing-jobs:
     post:
       summary: Issue a 3D reconstruction processing job on the sealed source bundle
@@ -1842,6 +2656,35 @@ paths:
                   type: array
                   items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
                   default: []
+                verticalReference:
+                  description: >-
+                    이 산출물 높이의 수직기준 + 그것을 왜 아는가(계약 정본:
+                    contracts/schemas/processing-artifact.v1.2.json). **생산자가
+                    선언하고 Core 는 기록만 한다** — Core 는 산출물 바이트를 읽지
+                    않아 이 값을 확인할 수 없다. 생략하면(옛 워커) null 로 남고,
+                    Core 는 어떤 기본값도 채우지 않는다: "안 밝혔다"와 "타원체고다"는
+                    다른 사실이고, 후자를 Core 가 대신 주장하면 설계 대비 비교가
+                    그 가정 위에서 숫자를 낸다. 소비자는 null 을 '수직기준 미상'으로
+                    읽고 fail-closed 해야 한다.
+                  type: [object, 'null']
+                  additionalProperties: false
+                  required: [datum, basis, source]
+                  properties:
+                    datum:
+                      type: string
+                      enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018, orthometric_kngeoid2024]
+                    basis:
+                      description: >-
+                        왜 이 값을 아는가 — 비울 수 없다(예: 'ODM 이 RTK 타원체고를
+                        변환 없이 그대로 출력'). 근거를 못 적는 선언은 추측이다.
+                      type: string
+                      minLength: 1
+                    source:
+                      description: >-
+                        pipeline_declared = 처리 파이프라인이 자기 동작을 근거로
+                        귀속. user_declared = 업로더의 주장. 둘 다 관측이 아니다.
+                      type: string
+                      enum: [pipeline_declared, user_declared]
       responses:
         '201':
           description: ARTIFACT_REGISTERED — verdict + 등록된 산출물의 계약 payload
@@ -1898,7 +2741,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: 'https://ksi.example/schemas/volume-change-report.v1.json'
+              $ref: ../schemas/volume-change-report.v1.json
       responses:
         '201':
           description: RECORDED — durable 기록 성공(멱등 재전송 포함)
@@ -3477,7 +4320,8 @@ components:
       required:
         [requestId, missionId, status, policy, pointCloudBaseline, pointCloudBaselineUrl,
          pointCloudCurrent, pointCloudCurrentUrl, dsmBaseline, dsmBaselineUrl,
-         dsmCurrent, dsmCurrentUrl, zones, zoneCrs]
+         dsmCurrent, dsmCurrentUrl, zones, zoneCrs,
+         dsmBaselineVerticalReference, dsmCurrentVerticalReference]
       properties:
         requestId: { type: string }
         missionId: { type: string }
@@ -3500,6 +4344,35 @@ components:
             - { type: object, additionalProperties: { type: object } }
             - { type: 'null' }
         zoneCrs: { type: [string, 'null'] }
+        dsmBaselineVerticalReference:
+          oneOf: [{ $ref: '#/components/schemas/VerticalReference' }, { type: 'null' }]
+        dsmCurrentVerticalReference:
+          description: >-
+            두 DSM 산출물이 등록 시 선언한 수직기준(contracts/schemas/
+            processing-artifact.v1.2.json). VolumeChangeReport.verticalDatum 에
+            실릴 값의 출처다 — 워커는 이 값을 쓰고, 상수를 가정하지 않는다.
+            null 은 '수직기준 미상'(그 개념 이전에 등록된 산출물 등)이고 Core 는
+            그 자리를 어떤 기본값으로도 채우지 않는다. 둘 중 하나라도 null 이면
+            워커는 레거시 상수(ellipsoidal_native)로 대체하고 경고를 남긴다 —
+            기존 M1/M2 산출물의 비교를 무효화하지 않기 위해서다.
+          oneOf: [{ $ref: '#/components/schemas/VerticalReference' }, { type: 'null' }]
+
+    VerticalReference:
+      description: >-
+        높이의 기준 + 그 기준을 아는 근거 + 귀속. 정본은
+        packages/event-contracts 의 ksi_event_contracts.vertical_reference 다.
+        값이 있어도 그것은 관측이 아니라 귀속이다 — 어떤 파일 포맷도 수직기준을
+        신뢰성 있게 담지 않으므로 datum 하나가 아니라 basis(왜 아는가)와
+        source(누구의 주장인가)를 함께 강제한다.
+      type: object
+      additionalProperties: false
+      required: [datum, basis, source]
+      properties:
+        datum:
+          type: string
+          enum: [ellipsoidal, ellipsoidal_native, orthometric_kngeoid2018, orthometric_kngeoid2024]
+        basis: { type: string, minLength: 1 }
+        source: { type: string, enum: [pipeline_declared, user_declared] }
 
     ArtifactRef:
       description: 산출물 참조 — artifactId 는 처리 작업 단위로만 고유해 jobId 와 짝으로 해석한다.
@@ -3580,6 +4453,277 @@ components:
               downloadUrl: { type: string }
         detail: { type: [string, 'null'] }
 
+    # ── 설계 기준면(M4-A) ────────────────────────────────────────────────
+    #
+    # `surface` 필드의 구조 정본은 contracts/schemas/design-surface.v1.json 이다
+    # (declared=주장 / observed=사실 두 블록 + 상태 + 거부 사유). 여기서는 자유
+    # 형태로 두고 필드 이름만 대조한다 — 위 "타입은 구현의 정밀도까지 복제하지
+    # 않는다" 주석과 같은 원칙.
+    DesignSurfaceRegisterResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict:
+          description: REGISTERED · UNKNOWN_SITE · DECLARATION_CONFLICT · INVALID_SITE_ID · STORE_UNAVAILABLE
+          type: string
+        detail: { type: [string, 'null'] }
+        designSurfaceId: { type: [string, 'null'] }
+        objectKey: { type: [string, 'null'] }
+        # REGISTERED 일 때만 채워진다 — 발급 실패는 STORE_UNAVAILABLE 로 격하되고
+        # 원장 등록은 이미 durable 하다(같은 선언 재전송으로 재발급된다).
+        uploadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'] }
+        surface: { type: [object, 'null'], additionalProperties: true }
+    DesignSurfaceSealResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict:
+          description: SEALED · ALREADY_SEALED · UNKNOWN_DESIGN_SURFACE · ALREADY_JUDGED · STORE_UNAVAILABLE
+          type: string
+        detail: { type: [string, 'null'] }
+        surface: { type: [object, 'null'], additionalProperties: true }
+    DesignSurfaceListResponse:
+      type: object
+      required: [surfaces]
+      properties:
+        surfaces:
+          type: array
+          items: { type: object, additionalProperties: true }
+    # ── M4-C 작업구역·진척 ────────────────────────────────────────────────
+    # 계약 정본은 contracts/schemas/work-area.v1.json 과
+    # packages/event-contracts 의 work_area.py·design_progress.py 다 —
+    # 여기서는 API 표면의 봉투(verdict·detail)만 적는다.
+    WorkAreaResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        workArea:
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: 'null' }
+    WorkAreaListResponse:
+      type: object
+      required: [workAreas]
+      properties:
+        workAreas:
+          type: array
+          items: { type: object, additionalProperties: true }
+    ProgressBaselineResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+    DesignProgressResponse:
+      type: object
+      # progress 와 detail 중 **하나는 항상 채워진다** — 빈 표를 200 으로 내면
+      # 화면이 "데이터 없음"과 "이어붙일 수 없음"을 갈라 말할 수 없다.
+      properties:
+        progress:
+          oneOf:
+            - { type: object, additionalProperties: true }
+            - { type: 'null' }
+        unmatchedZoneIds:
+          description: 한쪽 시점에만 있던 구역 — 표에서 빠진 이유를 화면이 밝힌다.
+          type: array
+          items: { type: string }
+        detail: { type: [string, 'null'] }
+        latestMissionId:
+          description: >-
+            최신 리포트가 속한 임무 — UI 편의값(히트맵은 임무 스코프 표면이라
+            거기로 건너뛸 때만 쓴다). progress 가 없으면 항상 null.
+          type: [string, 'null']
+    PendingDesignSurfaceView:
+      type: object
+      # 선언값(sha256·crs)이 **없는 것이 이 모델의 요점이다** — 워커가 정답을
+      # 되읊어 통과하는 경로를 구조적으로 없앤다.
+      required: [designSurfaceId, siteId, sealedAt, downloadUrl, expiresAt]
+      properties:
+        designSurfaceId: { type: string }
+        siteId: { type: string }
+        sealedAt: { type: [string, 'null'] }
+        downloadUrl: { type: string }
+        expiresAt: { type: string }
+    PendingDesignSurfaceListResponse:
+      type: object
+      required: [surfaces]
+      properties:
+        surfaces:
+          type: array
+          items: { $ref: '#/components/schemas/PendingDesignSurfaceView' }
+    DesignSurfaceObservationResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict:
+          description: >-
+            VERIFIED · REJECTED · UNKNOWN_DESIGN_SURFACE · NOT_SEALED ·
+            ALREADY_JUDGED · INVALID_MEASUREMENT · STORE_UNAVAILABLE
+          type: string
+        detail: { type: [string, 'null'] }
+        # typed verdict — 화면이 한국어 문구로 번역한다(8종).
+        rejectionReason: { type: [string, 'null'] }
+        surface: { type: [object, 'null'], additionalProperties: true }
+    DesignConformanceRequestView:
+      type: object
+      description: >-
+        설계 대비 요청 1건 — 지시 + **요청 시점 스냅샷**(설계면 해시·구역·기준값)
+        + 운영 메타(lease·Core 가 확인한 래스터 digest).
+      # nullable 이어도 **자리는 항상 있다**(모델에 기본값이 없다) — 소비자가
+      # "키가 없다"와 "값이 null 이다"를 가르지 않아도 되게 한다.
+      required:
+        [requestId, designConformanceId, missionId, siteId, designSurfaceId,
+         designSurfaceSha256, current, zones, zoneCrs, policy, status,
+         requestedAt, requestedBy, updatedAt, detail, leaseWorkerId,
+         leaseExpiresAt, diffRasterDigest, diffRasterVerifiedAt]
+      properties:
+        requestId: { type: string }
+        # 리포트 id — requestId 에서 결정적으로 도출된다(리포트에는 requestId 가
+        # 없으므로 Core 가 결과를 지시로 되짚는 유일한 경로다).
+        designConformanceId: { type: string }
+        missionId: { type: string }
+        siteId: { type: string }
+        designSurfaceId: { type: string }
+        # 요청 시점 VERIFIED 설계면의 **관측된** 해시(접두사 없는 16진).
+        designSurfaceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        current: { type: object, additionalProperties: true }
+        zones: { type: object, additionalProperties: { type: object } }
+        zoneCrs: { type: string }
+        policy: { type: object, additionalProperties: true }
+        status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED] }
+        requestedAt: { type: string, format: date-time }
+        requestedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+        detail: { type: [string, 'null'] }
+        leaseWorkerId: { type: [string, 'null'] }
+        leaseExpiresAt: { type: [string, 'null'], format: date-time }
+        # Core 가 차분 래스터 바이트를 직접 재해싱해 확인한 값 — 아직 없으면 null.
+        diffRasterDigest: { type: [string, 'null'] }
+        diffRasterVerifiedAt: { type: [string, 'null'], format: date-time }
+    DesignConformanceRequestMutationResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        request:
+          oneOf:
+            - { $ref: '#/components/schemas/DesignConformanceRequestView' }
+            - { type: 'null' }
+        detail: { type: [string, 'null'] }
+    DesignConformanceRequestListResponse:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items: { $ref: '#/components/schemas/DesignConformanceRequestView' }
+    PendingDesignConformanceRequestListResponse:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            type: object
+            required: [requestId, requestedAt]
+            description: 최소 노출 — lease 를 잡은 다음에야 /input 이 전체 사양을 준다.
+            properties:
+              requestId: { type: string }
+              requestedAt: { type: string, format: date-time }
+    DesignConformanceInputResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        input:
+          type: [object, 'null']
+          additionalProperties: false
+          required:
+            [requestId, missionId, status, policy, designConformanceId, diffRasterId,
+             designSurfaceId, designSurfaceSha256, designSurfaceUrl,
+             designVerticalReference, current, currentUrl, currentVerticalReference,
+             zones, zoneCrs]
+          properties:
+            requestId: { type: string }
+            missionId: { type: string }
+            status: { type: string }
+            policy: { type: object, additionalProperties: true }
+            designConformanceId: { type: string }
+            diffRasterId: { type: string }
+            designSurfaceId: { type: string }
+            designSurfaceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            designSurfaceUrl: { type: string }
+            designVerticalReference: { type: object, additionalProperties: true }
+            current: { type: object, additionalProperties: true }
+            currentUrl: { type: string }
+            currentVerticalReference: { type: object, additionalProperties: true }
+            zones: { type: object, additionalProperties: { type: object } }
+            zoneCrs: { type: string }
+    DiffRasterUploadUrlResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        # 서버가 정한 자리 — 워커가 고르지 않는다.
+        objectKey: { type: [string, 'null'] }
+        uploadUrl: { type: [string, 'null'] }
+        contentType: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        detail: { type: [string, 'null'] }
+    DiffRasterVerificationResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        # **Core 가 스토리지 바이트에서 직접 계산한 값**(신고값이 아니다).
+        digest: { type: [string, 'null'] }
+        sizeBytes: { type: [integer, 'null'] }
+        # 리포트의 diffRaster.coreVerifiedDigestAt 에 그대로 실린다.
+        verifiedAt: { type: [string, 'null'], format: date-time }
+        detail: { type: [string, 'null'] }
+    DesignConformanceResponse:
+      type: object
+      required: [verdict, detail]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+    DesignConformanceListView:
+      type: object
+      required: [missionId, reportCount, latestTotalNetM3, reports]
+      properties:
+        missionId: { type: string }
+        reportCount: { type: integer }
+        # 최신 리포트의 전 구역 순 성토 필요량 — 화면이 배열을 직접 합산하지 않게
+        # 서버가 계산해 준다(합산 규칙이 두 곳에 있으면 한쪽만 고쳐진다).
+        latestTotalNetM3: { type: [number, 'null'] }
+        reports:
+          type: array
+          items:
+            type: object
+            required: [report, recordedAt, coreRecomputedDigest]
+            properties:
+              report:
+                description: contracts/schemas/design-conformance-report.v1.json
+                type: object
+                additionalProperties: true
+              reportedBy: { type: [string, 'null'] }
+              recordedAt: { type: string, format: date-time }
+              coreRecomputedDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    DiffRasterViewResponse:
+      type: object
+      required:
+        [designConformanceId, diffRasterId, digest, sizeBytes, downloadUrl, expiresAt]
+      properties:
+        designConformanceId: { type: string }
+        diffRasterId: { type: string }
+        digest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        sizeBytes: { type: integer }
+        downloadUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
   securitySchemes:
     bearerAuth:
       type: http

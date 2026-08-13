@@ -57,9 +57,14 @@ from ksi_event_contracts.defect_candidate import (
     DefectCandidate,
     defect_candidate_wire_dict,
 )
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 
+from ksi_core.api_base import (
+    JOURNAL_APPEND_FAILED_DETAIL,
+    JOURNAL_SEALED_DETAIL,
+    CamelModel,
+    iso_utc,
+)
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
@@ -259,7 +264,7 @@ class DefectCandidateStore:
             if self._journal.sealed_reason is not None:
                 return DefectCandidateResult(
                     DefectCandidateVerdict.STORE_UNAVAILABLE,
-                    detail="journal 봉인됨 — 재시작 필요",
+                    detail=JOURNAL_SEALED_DETAIL,
                 )
             if not candidates:
                 return self._reject(
@@ -327,7 +332,7 @@ class DefectCandidateStore:
 
             record = {
                 "kind": "defect-candidates-recorded",
-                "ts": now.astimezone(UTC).isoformat(),
+                "ts": iso_utc(now),
                 "missionId": mission_id,
                 "reportedBy": reported_by,
                 "candidates": [defect_candidate_wire_dict(c) for c in fresh],
@@ -337,7 +342,7 @@ class DefectCandidateStore:
             except JournalSealedError:
                 return DefectCandidateResult(
                     DefectCandidateVerdict.STORE_UNAVAILABLE,
-                    detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                    detail=JOURNAL_APPEND_FAILED_DETAIL,
                 )
             for candidate in fresh:
                 self._append_projection(mission_id, candidate, reported_by, now)
@@ -361,7 +366,7 @@ class DefectCandidateStore:
         """
         record = {
             "kind": "defect-candidates-rejected",
-            "ts": now.astimezone(UTC).isoformat(),
+            "ts": iso_utc(now),
             "missionId": mission_id,
             "verdict": verdict.value,
             "detail": detail,
@@ -373,7 +378,7 @@ class DefectCandidateStore:
         except JournalSealedError:
             return DefectCandidateResult(
                 DefectCandidateVerdict.STORE_UNAVAILABLE,
-                detail="durable 기록 실패 — journal 봉인(재시작 필요)",
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
             )
         return DefectCandidateResult(verdict, detail=detail)
 
@@ -386,17 +391,13 @@ class DefectCandidateStore:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
-
-class DefectCandidateBatchRequest(_CamelModel):
+class DefectCandidateBatchRequest(CamelModel):
     """추론 워커가 한 번에 올리는 후보 묶음."""
 
     candidates: list[DefectCandidate] = Field(min_length=1)
 
 
-class DefectCandidateBatchResponse(_CamelModel):
+class DefectCandidateBatchResponse(CamelModel):
     """세 필드 모두 **필수**다 — 기본값을 두지 않는다.
 
     ``verdict`` 만 읽는 클라이언트는 멱등 재전송(아무것도 새로 안 들어감)과 실제
@@ -410,7 +411,7 @@ class DefectCandidateBatchResponse(_CamelModel):
     recorded_count: int
 
 
-class DefectCandidateItem(_CamelModel):
+class DefectCandidateItem(CamelModel):
     """조회 응답의 후보 1건 — 계약 payload + 수신 메타."""
 
     candidate: dict[str, Any]
@@ -418,7 +419,7 @@ class DefectCandidateItem(_CamelModel):
     recorded_at: datetime
 
 
-class DefectCandidateListView(_CamelModel):
+class DefectCandidateListView(CamelModel):
     """그 임무의 결함 후보 목록.
 
     ``sourceMediaIds`` 는 후보가 걸린 사진 목록이다 — 화면이 "어느 사진에 결함이

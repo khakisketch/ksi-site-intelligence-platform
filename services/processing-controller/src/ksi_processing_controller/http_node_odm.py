@@ -18,6 +18,12 @@ httpx 로 HTTP 를 말하는 것 외에 아무 판단도 하지 않는다. 상�
   asset"}`` 이거나(``getAssetsArchivePath`` 거부) 중첩 경로면 404 HTML 이다.
 - **``POST /task/new`` 는 multipart 다.** ``images`` 필드에 파일들을 싣고
   ``options`` 는 JSON 문자열 하나로 보낸다.
+- **동적 객체 마스크도 같은 ``images`` 필드에, 같은 호출로 싣는다.** NodeODM
+  REST 자체엔 마스크 개념이 없다(``/swagger.json`` 이 마스크를 언급하지
+  않는다) — ODM 엔진이 업로드된 이미지 디렉터리를 파일명 패턴
+  (``{stem}_mask.png``)으로 스캔해서 알아챈다. 규약 전체와 그 근거는
+  :mod:`~ksi_processing_controller.odm_masking` 모듈 docstring 참고
+  (2026-08-12 실기동 확인).
 
 ## 원본 사진을 이 프로세스가 통과시킨다
 
@@ -47,6 +53,7 @@ import httpx
 
 from ksi_processing_controller.odm import (
     ARCHIVE_ASSET,
+    MaskImage,
     NodeOdmClient,
     OdmEngineInfo,
     OdmError,
@@ -89,11 +96,22 @@ class HttpNodeOdmClient:
     def info(self) -> OdmEngineInfo:
         return OdmEngineInfo.from_payload(self._get_json("/info", what="/info"))
 
-    def new_task(self, images: Sequence[SourceImage], options: dict[str, Any]) -> str:
+    def new_task(
+        self,
+        images: Sequence[SourceImage],
+        options: dict[str, Any],
+        *,
+        masks: Sequence[MaskImage] = (),
+    ) -> str:
         """원본을 받아 multipart 로 넘기고 uuid 를 돌려준다.
 
         presigned URL 을 NodeODM 에 넘기지 않고 이 프로세스가 바이트를 통과시킨다
         (모듈 docstring) — 인가가 엔진 컨테이너로 복제되지 않게.
+
+        ``masks`` 는 같은 ``images`` multipart 필드에 얹는다 — 새 REST 호출이
+        아니다(모듈 docstring, ``odm_masking`` 모듈 docstring). 마스크는
+        워커가 그 자리에서 만든 바이트라 ``SourceImage`` 처럼 다시 받아올
+        URL 이 없다.
         """
         if not images:
             raise OdmError("/task/new: 넘길 사진이 없다")
@@ -107,6 +125,8 @@ class HttpNodeOdmClient:
                     f"/task/new: 원본 {image.media_id} 를 받지 못했다 — {exc}"
                 ) from exc
             files.append(("images", (image.media_id, fetched.content, "image/jpeg")))
+        for mask in masks:
+            files.append(("images", (mask.filename, mask.png_bytes, "image/png")))
 
         try:
             response = self._client.post(

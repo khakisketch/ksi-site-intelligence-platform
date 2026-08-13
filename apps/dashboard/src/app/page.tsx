@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { SiteCard, type SiteFact } from "@/components/site/SiteCard";
+import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
 
 // 홈은 여러 독립 카드로 구성된다 — 하나의 Core API 호출이 실패해도 나머지 카드는 정상 표시되어야
 // 하므로(각 fetch를 개별 격리), 개별 실패를 던지지 않고 결과로 감싸는 얕은 헬퍼를 쓴다.
@@ -119,7 +120,9 @@ function Callout({
   cta,
 }: {
   tone: "crit" | "neutral";
-  title: string;
+  // ReactNode — topUnattended 분기는 여기에 실시간으로 갈아타는 client 컴포넌트
+  // (TopUnattendedHeadline)를 싣는다. 다른 분기는 여전히 고정 문자열을 준다.
+  title: React.ReactNode;
   sub: string;
   cta?: { label: string; href: string };
 }) {
@@ -251,11 +254,15 @@ export default async function HomePage() {
     const elapsedLabel = formatElapsed(now.getTime() - new Date(topUnattended.occurredAt).getTime(), {
       unattended: true,
     });
-    const title = elapsedLabel === "방금 들어옴" ? "방금 들어온 미조치 이벤트가 있습니다" : `${elapsedLabel} 이벤트가 있습니다`;
+    const initialTitle =
+      elapsedLabel === "방금 들어옴" ? "방금 들어온 미조치 이벤트가 있습니다" : `${elapsedLabel} 이벤트가 있습니다`;
     calloutNode = (
       <Callout
         tone="crit"
-        title={title}
+        // 서버 렌더 시점에 고정된 initialTitle 은 SSR·마운트 전 페인트용 스냅샷이다 —
+        // 마운트 후 TopUnattendedHeadline 이 60초마다 실제 경과로 갈아탄다(하드코딩된
+        // "12분째"가 화면을 열어둔 채로 안 바뀌던 문제, ElapsedTime.tsx 참고).
+        title={<TopUnattendedHeadline occurredAt={topUnattended.occurredAt} initialText={initialTitle} />}
         sub={`${siteName} ${humanizeEventType(topUnattended.eventType)} · 담당자가 없는 이벤트가 모두 ${unattendedEvents.length}건입니다`}
         cta={{ label: "지금 확인하기", href: `/events/${encodeURIComponent(topUnattended.eventKey)}` }}
       />

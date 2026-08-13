@@ -22,6 +22,9 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
+from ksi_core.design_conformance_reports import DesignConformanceStore
+from ksi_core.design_conformance_requests import DesignConformanceRequestStore
+from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
@@ -33,6 +36,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
+from ksi_core.work_areas import WorkAreaStore
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,8 +132,25 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         source_media_store=source_media_store,
         site_store=site_store,
     )
+    design_surface_store = DesignSurfaceStore(
+        DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
+    )
+    storage = _NullEvidenceStorage()
+    # M4-A — 리포트 원장은 요청 원장과 스토리지를 둘 다 물고 있어야 만들어진다
+    # (리포트 수신 시 차분 래스터 바이트를 직접 재해싱한다).
+    work_area_store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas.jsonl"),
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    design_conformance_request_store = DesignConformanceRequestStore(
+        DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=design_surface_store,
+        work_area_store=work_area_store,
+    )
     return {
-        "evidence_storage": _NullEvidenceStorage(),
+        "evidence_storage": storage,
         "auth_registry": AuthRegistry(
             [
                 PrincipalTokenRecord(
@@ -151,6 +172,8 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
         "source_media_store": source_media_store,
+        "design_surface_store": design_surface_store,
+        "work_area_store": work_area_store,
         "processing_job_store": processing_job_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),
@@ -171,6 +194,14 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
+        ),
+        "design_conformance_request_store": design_conformance_request_store,
+        "design_conformance_report_store": DesignConformanceStore(
+            DurableJournal(tmp_path / "design-conformance.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            request_store=design_conformance_request_store,
+            storage=storage,
         ),
         "equipment_state_store": EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store

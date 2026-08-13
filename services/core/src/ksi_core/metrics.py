@@ -138,12 +138,17 @@ PROCESSING_JOB_TRANSITIONS = Counter(
 COMPARISON_REQUEST_TRANSITIONS = Counter(
     "ksi_core_comparison_request_transitions_total", "두 시점 비교 요청 상태 전이 수(도착 상태별)"
 )
+DESIGN_CONFORMANCE_REQUEST_TRANSITIONS = Counter(
+    "ksi_core_design_conformance_request_transitions_total",
+    "설계 대비 잔량 요청 상태 전이 수(도착 상태별)",
+)
 
 _ALL_METRICS: tuple[Counter | Histogram, ...] = (
     HTTP_REQUESTS,
     HTTP_REQUEST_DURATION,
     PROCESSING_JOB_TRANSITIONS,
     COMPARISON_REQUEST_TRANSITIONS,
+    DESIGN_CONFORMANCE_REQUEST_TRANSITIONS,
 )
 
 
@@ -224,6 +229,7 @@ def render_prometheus_text() -> str:
 
 __all__ = [
     "COMPARISON_REQUEST_TRANSITIONS",
+    "DESIGN_CONFORMANCE_REQUEST_TRANSITIONS",
     "HTTP_REQUESTS",
     "HTTP_REQUEST_DURATION",
     "PROCESSING_JOB_TRANSITIONS",

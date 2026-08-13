@@ -14,32 +14,22 @@ import {
   humanizeApiError,
   humanizeEventType,
 } from "@/lib/core-api/labels";
-import { ackSlaMs, ackSlaState, formatElapsed, isUnattended } from "@/lib/core-api/triage";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EventActions } from "./[eventKey]/EventActions";
+import { AckElapsedFact } from "./AckElapsedFact";
 
 // 시안 우측 396px 상세 레일(triage-d-ink-mono.html .detail) 의 실데이터 버전 —
 // events/[eventKey]/page.tsx 의 사실 패널과 같은 항목을 보여주되, 그 파일은 건드리지
 // 않고 표시 로직만 복제한다(과제 지시). EventActions 는 그대로 import 해 재사용한다.
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" });
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return dateFormatter.format(date);
-}
-
-// DwellBar.tsx 의 동명 헬퍼와 같은 반올림 규칙 — export 되어 있지 않아 복제한다.
-function formatTargetDuration(ms: number): string {
-  if (ms >= DAY) return `${Math.round(ms / DAY)}일`;
-  if (ms >= HOUR) return `${Math.round(ms / HOUR)}시간`;
-  return `${Math.max(1, Math.round(ms / MINUTE))}분`;
 }
 
 // 시안 .fact — 라벨열 고정폭 + 하단 구분선. events/[eventKey]/page.tsx 의 Field 와
@@ -154,16 +144,13 @@ export async function EventDetailPanel({
   // 개수를 세지 않는다 — events/[eventKey]/page.tsx 와 같은 이유(스키마 필드 수 ≠ 증거 개수).
   const hasBundle = Boolean(event.bundle) && Object.keys(event.bundle).length > 0;
 
-  // 방치 시간·확인 SLA — triage.ts 가 정본이다(SLA 값은 여기서 바꾸지 않는다). 서버 렌더
-  // 시점의 스냅샷이라 목록의 DwellBar 처럼 실시간으로 째깍이지는 않는다.
+  // "확인 경과" Fact 의 초기값 — AckElapsedFact(client) 가 마운트 후 60초마다 실제
+  // 경과로 갈아탈 때까지 보여줄 서버 렌더 시점 스냅샷이다. SLA 판정·텍스트 조합은
+  // triage.ts 가 정본이고, 그 계산은 AckElapsedFact 안에 있다(여기서 중복하지 않는다).
   // react-hooks/purity: `Date.now()` 는 렌더 중 호출이 금지된다 — 이 저장소 관례대로
   // (app/page.tsx) `new Date()` + `.getTime()` 을 쓴다.
   const now = new Date();
-  const elapsedMs = Math.max(0, now.getTime() - new Date(event.occurredAt).getTime());
-  const unattended = isUnattended(event);
-  const elapsedText = formatElapsed(elapsedMs, { unattended });
-  const slaState = ackSlaState(event, elapsedMs);
-  const slaTarget = ackSlaMs(event.severity);
+  const initialElapsedMs = Math.max(0, now.getTime() - new Date(event.occurredAt).getTime());
 
   const fullPageHref = `/events/${encodeURIComponent(event.eventKey)}`;
 
@@ -243,26 +230,7 @@ export async function EventDetailPanel({
         />
         <Fact
           label="확인 경과"
-          value={
-            <span>
-              <span className="num">{elapsedText}</span>
-              {unattended && (
-                <span
-                  className={
-                    slaState === "breached"
-                      ? "text-crit-ink ml-1.5 font-semibold"
-                      : slaState === "due-soon"
-                        ? "text-high-ink ml-1.5 font-medium"
-                        : "text-ink-muted ml-1.5"
-                  }
-                >
-                  · 목표 {formatTargetDuration(slaTarget)}
-                  {slaState === "breached" && " · 확인 목표 초과"}
-                  {slaState === "due-soon" && " · 확인 목표 임박"}
-                </span>
-              )}
-            </span>
-          }
+          value={<AckElapsedFact event={event} initialElapsedMs={initialElapsedMs} />}
         />
       </dl>
 

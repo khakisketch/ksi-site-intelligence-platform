@@ -1,0 +1,152 @@
+# KSI Core 최소 운영 조합 — Core · 객체저장소(MinIO) · 재구성 엔진(NodeODM) · 처리 워커
+#
+# 이 파일이 하는 일은 "띄울 수 있는 하나의 조합"을 보여주는 것이다. 값은 전부
+# deploy/.env 에서 오고, 그 원본은 deploy/.env.example 이다. 절차는
+# docs/ops/DEPLOYMENT.md.
+#
+# ## 왜 NodeODM 을 별도 컨테이너로 두는가
+#
+# ODM/NodeODM 은 AGPL-3.0 이다. ADR-KSI-012 D2 가 그은 선은 "엔진 코드를 고치지 말고
+# 우리 코드와 한 저작물로 묶지 마라"이고, 그래서 우리는 **무수정 이미지를 띄워 REST 로만
+# 부른다**(services/processing-controller/.../odm.py 모듈 docstring). 이 compose 가
+# 이미지를 build 하지 않고 pull 만 하는 것이 그 경계의 실물이다.
+#
+# ## 이 파일이 하지 않는 것
+#
+# - TLS 종단·역방향 프록시: 배포 환경(로드밸런서·Ingress)마다 달라 여기서 정하지 않는다.
+#   Core 는 평문 HTTP 로 8000 을 연다 — **공개망에 그대로 노출하지 않는다.**
+# - 대시보드(apps/dashboard): Next.js 앱은 별도 배포 경로다.
+# - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)와
+#   **호스트 디렉터리 `deploy/signing-keys/`**(서명키) 둘이다. 서명키는 명명 볼륨이
+#   아니다(아래 core 의 volumes 주석 참조). 자세한 것은 docs/ops/DEPLOYMENT.md §8.
+
+name: ksi
+
+services:
+  # 볼륨 소유권 초기화 — 이게 없으면 배포가 깨진다.
+  #
+  # Docker 명명 볼륨은 이미지에 그 경로가 없으면 **root:root 로 생성된다.** Core 는
+  # uid 10001, 워커는 uid 10002 로 도는 non-root 프로세스라(Dockerfile 의 useradd,
+  # RCE 지속화를 막으려는 의도된 설계) 그대로 두면 원장 파일 하나 못 만들고 죽는다.
+  # 이미지에 mkdir 를 넣어 해결할 수도 있지만, 그러면 "볼륨을 안 붙이면 컨테이너
+  # 안에 쓰기 시작한다"는 더 나쁜 실패 모드가 생긴다 — 여기서 한 번만 맞춘다.
+  init-volumes:
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        chown 10001:10001 /mnt/data
+        chown 10002:10002 /mnt/worker
+        echo "volume ownership set"
+    volumes:
+      - ksi-data:/mnt/data
+      - ksi-worker-work:/mnt/worker
+    user: root
+    restart: "no"
+
+  core:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # 필수 환경변수가 하나라도 없으면 production.py 가 RuntimeError 로 즉시 죽는다.
+    # 조용히 뜨지 않는 것이 의도된 동작이다 — 로그에 어느 변수가 왜 문제인지 나온다.
+    env_file: .env
+    volumes:
+      # 원장. 이게 사라지면 현장·임무·산출물 이력이 사라진다.
+      - ksi-data:/var/lib/ksi/data
+      # 서명키. **컨테이너 재생성과 무관하게 살아남아야 한다** — 재생성마다 새 키가
+      # 생기면 이미 현장에 발급된 Mission Contract 가 전부 검증 실패한다.
+      #
+      # 명명 볼륨이 아니라 **호스트 디렉터리 바인드**다. 키는 사람이 openssl 로
+      # 만들어 넣는 것이고(DEPLOYMENT.md §2), 명명 볼륨이면 그 파일을 볼륨 안으로
+      # 넣을 문서화된 수단이 없어 빈 볼륨으로 뜬 Core 가 SigningKeyError 로
+      # 죽는다(2026-08-13 독립 검토 지적 — 그 전까지 명명 볼륨이었다).
+      # "키는 컨테이너 밖에 살고 Core 는 읽기만 한다"는 이 파일의 원래 의도를
+      # 바인드가 그대로 실현한다.
+      - ./signing-keys:/var/lib/ksi/signing-keys:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      # /health 가 아니라 /ready 를 본다 — /health 는 프로세스 생존만 보므로,
+      # 원장이 봉인돼 모든 쓰기가 503 인 서버를 건강하다고 오판한다
+      # (app_assembly.py 의 ready() docstring).
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      # Core 와 별도 이미지다 — 워커는 HTTP 표면이 없는 폴링 데몬이고 자기 uid(10002)와
+      # CMD(ksi-processing-worker 콘솔 스크립트)를 갖는다. command 를 여기서 덮어쓰지
+      # 않는다 — Dockerfile.worker 의 CMD 가 SSOT 다.
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    volumes:
+      # 사진을 내려받아 재구성하는 공간. 용량이 크고, 중단 후 재개를 위해 영속이 낫다.
+      - ksi-worker-work:/var/lib/ksi/worker
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+      core:
+        condition: service_healthy
+      nodeodm:
+        condition: service_started
+    restart: unless-stopped
+
+  minio:
+    # 객체 저장소. 이미 클라우드 S3 를 쓴다면 이 서비스를 지우고 .env 의
+    # KSI_CORE_S3_ENDPOINT 만 그쪽으로 돌린다.
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ksi-objects:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  nodeodm:
+    # 무수정 상류 이미지 — 빌드하지 않는다(AGPL 프로세스 경계, 위 주석 참조).
+    #
+    # 태그를 latest 로 둔 이유: 이 저장소가 실기동으로 확인한 조합이
+    # NodeODM 2.2.4 / ODM 3.5.6(2026-08-06·08-12 실측)인데, 상류가 그 조합에
+    # 대응하는 불변 태그를 게시하지 않는다. **Core 는 이 값을 믿지 않는다** —
+    # ProcessingJob.engineVersion 과 /info 의 engineVersion 을 제출 전에 대조하고
+    # 다르면 EngineIdentityMismatch 로 거부한다(odm.py). 즉 이미지가 조용히
+    # 바뀌면 작업이 실패하지 계보가 거짓이 되지는 않는다.
+    image: opendronemap/nodeodm:latest
+    volumes:
+      - ksi-odm:/var/www/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+volumes:
+  # 백업 대상 ─ 사라지면 복구할 수 없다.
+  # (서명키는 여기 없다 ─ 호스트의 deploy/signing-keys/ 디렉터리이며 그 경로를
+  #  통째로 백업한다. DEPLOYMENT.md §8.)
+  ksi-data:
+  # 재생성 가능 ─ 객체는 원본이므로 백업 대상이지만, 아래 둘은 작업 캐시다.
+  ksi-objects:
+  ksi-worker-work:
+  ksi-odm:
