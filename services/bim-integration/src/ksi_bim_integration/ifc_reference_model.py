@@ -194,6 +194,81 @@ def _length_unit_scale_to_meters(ifc_file: ifcopenshell.file, ifc_path: Path) ->
     return scale
 
 
+def _named_length_unit_scale_to_meters(
+    unit: ifcopenshell.entity_instance,
+    *,
+    ifc_path: Path,
+) -> float:
+    """IfcNamedUnit 하나의 수치 → 미터 배율을 계산한다.
+
+    ``calculate_unit_scale`` 은 프로젝트 ``IfcUnitAssignment`` 만 읽으므로
+    ``IfcProjectedCRS.MapUnit`` 처럼 별도로 연결된 단위에는 쓸 수 없다. 지원하는
+    변환 사슬은 IfcOpenShell 자체 계산과 같은 IfcConversionBasedUnit → IfcSIUnit
+    경로다. 알 수 없는 단위를 1.0으로 가정하지 않는다.
+    """
+    if getattr(unit, "UnitType", None) != "LENGTHUNIT":
+        raise IfcReferenceModelError(
+            f"{ifc_path}: IfcProjectedCRS.MapUnit이 LENGTHUNIT가 아니다"
+        )
+
+    scale = 1.0
+    current = unit
+    visited: set[int] = set()
+    while current.is_a("IfcConversionBasedUnit"):
+        current_id = current.id()
+        if current_id in visited:
+            raise IfcReferenceModelError(
+                f"{ifc_path}: IfcProjectedCRS.MapUnit 변환 사슬에 순환이 있다"
+            )
+        visited.add(current_id)
+        factor = current.ConversionFactor
+        try:
+            scale *= float(factor.ValueComponent.wrappedValue)
+            current = factor.UnitComponent
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise IfcReferenceModelError(
+                f"{ifc_path}: IfcProjectedCRS.MapUnit 변환 계수를 읽을 수 없다"
+            ) from exc
+
+    if not current.is_a("IfcSIUnit") or current.Name != "METRE":
+        raise IfcReferenceModelError(
+            f"{ifc_path}: IfcProjectedCRS.MapUnit을 미터로 환산할 수 없다 "
+            f"(got {current.is_a()})"
+        )
+    scale *= float(ifcopenshell.util.unit.get_prefix_multiplier(current.Prefix))
+    if not math.isfinite(scale) or scale <= 0:
+        raise IfcReferenceModelError(
+            f"{ifc_path}: IfcProjectedCRS.MapUnit 배율이 유효하지 않다 (got {scale!r})"
+        )
+    return scale
+
+
+def _georeference_output_scale_to_meters(
+    ifc_file: ifcopenshell.file,
+    *,
+    project_unit_scale: float,
+    ifc_path: Path,
+) -> float:
+    """``auto_local2global`` 출력 좌표 단위 → 미터 배율.
+
+    변환 결과는 ``TargetCRS.MapUnit`` 단위다. IFC4.3에서 TargetCRS는 있으나
+    ``MapUnit``이 생략되면 프로젝트 길이 단위를 사용한다. ``IfcRigidOperation``도
+    Scale 필드가 없으므로 이 출력 정규화가 없으면 mm 프로젝트가 1000배 커진다.
+
+    TargetCRS 자체가 없는 half-set 파일은 표준 폴백을 적용할 CRS가 없다. 이 경우는
+    기존 호환 동작대로 IfcOpenShell 변환 결과가 미터라고 간주한다. 호출자는
+    ``has_georeferencing``과 별개로 이런 불완전 파일의 CRS 적합성을 검증해야 한다.
+    """
+    operation = ifc_file.by_type("IfcCoordinateOperation")[0]
+    target_crs = getattr(operation, "TargetCRS", None)
+    if target_crs is None:
+        return 1.0
+    map_unit = getattr(target_crs, "MapUnit", None)
+    if map_unit is None:
+        return project_unit_scale
+    return _named_length_unit_scale_to_meters(map_unit, ifc_path=ifc_path)
+
+
 def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
     """IFC 파일의 모든 IfcElement 지오메트리 정점을 site_frame(map) 좌표로 **미터**
     단위로 추출한다.
@@ -208,17 +283,24 @@ def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:
     형상도 멀쩡해서, 그 결과는 "변화 없음"이라는 정직한 답처럼 보인다
     (risk ``bim-unit-of-measurement-untested``).
 
-    그래서 ``ifcopenshell.util.unit.calculate_unit_scale`` 로 프로젝트 단위 → SI 미터
-    배율을 읽어 곱한다. 이 변환은 근사가 아니라 파일이 선언한 값에 따른 정확한 환산이고,
-    미터 파일이면 배율이 1.0 이라 아무것도 바뀌지 않는다.
+    ``ifcopenshell.geom.create_shape`` 의 정점은 프로젝트 단위가 아니라 이미 SI 미터다
+    (``add_mesh_representation`` 이 SI 입력을 프로젝트 단위로 저장하고 geometry engine이
+    다시 미터로 내는 왕복을 mm 픽스처로 고정한다). georeferencing 이 없으면 따라서 그
+    값을 그대로 반환한다.
 
-    **곱하는 시점이 중요하다 — georeference 변환 *전*이다.** ``auto_local2global`` 의
-    출력은 두 부분이 섞여 있다: map 변환(IfcMapConversion 의 Eastings/Northings, map
-    CRS 단위 = 미터)과 로컬 지오메트리(프로젝트 단위). 변환 *후*에 한 번 곱하면 이미
-    미터인 map 변환까지 같이 줄어들어 좌표가 통째로 어긋난다 — mm 프로젝트에서
-    실측하면 (1000, 2000, 50) 이 (1, 2, 0.05) 가 된다. 변환 전에 로컬 정점만 미터로
-    바꾸면 두 분기 모두 일관되게 미터가 된다(2026-08-08 실측:
-    georeference 없음 → 0.001, 있음 → 1000.001).
+    **georeference 변환의 입력 단위는 반대다.** ``auto_local2global`` 은
+    IfcMapConversion.Scale 을 포함해 *프로젝트 단위의 local matrix*를 map 단위로
+    바꾼다. 이미 미터인 geometry 정점을 그대로 넣거나 다시 ``unit_scale`` 을 곱하면
+    Scale 과 단위 환산을 이중 적용한다. 그래서 georeference 가 있을 때만 geometry
+    정점을 ``unit_scale`` 로 나눠 원래 프로젝트 단위로 되돌린 뒤 표준 변환에 넣는다.
+    mm 프로젝트(Scale=0.001, MapUnit=METRE)의 1m 정점은
+    ``1m / 0.001 = 1000mm`` 로 복원된 뒤 MapConversion 이 정확히 1m map offset 으로
+    만든다(risk ``bim-integration-ifc-mm-unit-double-scale``).
+
+    그 변환의 **출력은 map 단위**이므로 마지막에 다시 미터로 정규화한다. 명시된
+    ``IfcProjectedCRS.MapUnit``을 우선하고, MapUnit이 없으면 IFC4.3 규약대로 프로젝트
+    길이 단위를 쓴다. 이 단계가 없으면 mm 프로젝트의 IfcRigidOperation 또는 MapUnit
+    생략 파일이 반대로 1000배 커진다.
 
     georeferencing 이 없으면 로컬 좌표를 (미터로 환산해) 그대로 반환한다 —
     호출자가 :func:`has_georeferencing` 로 미리 확인해야 한다.
@@ -259,6 +341,16 @@ def sample_mesh_from_ifc(ifc_path: Path) -> IfcSurfaceMesh:
         )
 
     unit_scale = _length_unit_scale_to_meters(ifc_file, ifc_path)
+    georeferenced = has_georeferencing(ifc_file)
+    georeference_output_scale = (
+        _georeference_output_scale_to_meters(
+            ifc_file,
+            project_unit_scale=unit_scale,
+            ifc_path=ifc_path,
+        )
+        if georeferenced
+        else 1.0
+    )
 
     settings = ifcopenshell.geom.settings()
     settings.set("use-world-coords", True)
@@ -284,12 +376,19 @@ def sample_mesh_from_ifc(ifc_path: Path) -> IfcSurfaceMesh:
         # 요소별 인덱스는 그 요소의 정점 기준이다 — 전체 배열 기준으로 밀어 잇는다.
         offset = len(world_points)
         for vertex in verts:
+            if not georeferenced:
+                # ifcopenshell geometry engine 의 반환 계약은 SI 미터다. 선언 단위를
+                # 여기서 다시 곱하면 mm 파일을 1000배 축소한다.
+                world_points.append(vertex.tolist())
+                continue
+
             local_matrix = np.eye(4)
-            # 미터 환산은 여기서 — auto_local2global 이 map 변환을 얹기 **전**이다
-            # (docstring "곱하는 시점이 중요하다").
-            local_matrix[:3, 3] = vertex * unit_scale
+            # auto_local2global 은 프로젝트 단위 입력을 받는다. geometry engine 이
+            # 이미 미터로 바꿨으므로 원래 단위로 되돌린 뒤 IfcMapConversion.Scale 을
+            # 딱 한 번 적용한다.
+            local_matrix[:3, 3] = vertex / unit_scale
             global_matrix = ifc_geolocation.auto_local2global(ifc_file, local_matrix)
-            world_points.append(global_matrix[:3, 3].tolist())
+            world_points.append((global_matrix[:3, 3] * georeference_output_scale).tolist())
         for tri in faces:
             triangles.append([offset + int(tri[0]), offset + int(tri[1]), offset + int(tri[2])])
 

@@ -31,6 +31,7 @@ def _build_ifc(
     add_element: bool = True,
     length_prefix: str | None = None,
     assign_units: bool = True,
+    assign_map_unit: bool = True,
 ) -> Path:
     """최소 IFC4 파일을 조립한다 — Project+Site+Building(+선택적 요소 지오메트리).
 
@@ -61,16 +62,24 @@ def _build_ifc(
 
     if georeference is not None:
         ifcopenshell.api.georeference.add_georeferencing(f)
+        projected_crs: dict[str, object] = {"Name": "EPSG:5186"}
+        if assign_map_unit:
+            # EPSG:5186 좌표는 m다. 이름만으로 단위를 추론하지 않고 IFC에 명시한다.
+            projected_crs["MapUnit"] = ifcopenshell.api.unit.add_si_unit(
+                f, unit_type="LENGTHUNIT"
+            )
         ifcopenshell.api.georeference.edit_georeferencing(
             f,
-            projected_crs={"Name": "EPSG:5186"},
+            projected_crs=projected_crs,
             coordinate_operation={
                 "Eastings": georeference["eastings"],
                 "Northings": georeference["northings"],
                 "OrthogonalHeight": georeference["orthogonal_height"],
                 "XAxisAbscissa": 1.0,
                 "XAxisOrdinate": 0.0,
-                "Scale": 1.0,
+                # IfcMapConversion.Scale 은 project unit → map unit 배율이다. map CRS
+                # (EPSG:5186)는 m이므로 mm 프로젝트는 0.001, m 프로젝트는 1.0.
+                "Scale": 0.001 if length_prefix == "MILLI" and assign_map_unit else 1.0,
             },
         )
 
@@ -267,7 +276,11 @@ def test_georeference_rotation_matches_hand_derivation(tmp_path: Path) -> None:
 # 검사로 정정.
 
 
-def _build_ifc_with_rigid_operation(tmp_path: Path) -> Path:
+def _build_ifc_with_rigid_operation(
+    tmp_path: Path,
+    *,
+    length_prefix: str | None = None,
+) -> Path:
     """IfcRigidOperation 은 edit_georeferencing() 의 coordinate_operation 딕셔너리로
     못 채운다 — FirstCoordinate/SecondCoordinate 가 IfcMeasureValue(SELECT) 타입이라
     맨 float 대입이 거부된다(ifcopenshell 실측). 저수준 속성 대입으로 직접 채운다."""
@@ -279,7 +292,14 @@ def _build_ifc_with_rigid_operation(tmp_path: Path) -> Path:
     ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="P")
     # _build_ifc 와 같은 이유로 METRE 를 명시한다 — assign_unit() 기본은 mm 다.
     ifcopenshell.api.unit.assign_unit(
-        f, units=[ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT")]
+        f,
+        units=[
+            ifcopenshell.api.unit.add_si_unit(
+                f,
+                unit_type="LENGTHUNIT",
+                prefix=length_prefix,
+            )
+        ],
     )
     ifcopenshell.api.context.add_context(f, context_type="Model")
     ifcopenshell.api.georeference.add_georeferencing(f, ifc_class="IfcRigidOperation")
@@ -333,6 +353,36 @@ def test_sample_points_applies_transform_for_ifc_rigid_operation(tmp_path: Path)
     assert actual == expected
 
 
+def test_millimetre_ifc_rigid_operation_output_is_normalized_to_metres(
+    tmp_path: Path,
+) -> None:
+    """[high-risk regression] RigidOperation은 Scale이 없고 MapUnit도 생략된다.
+
+    좌표는 project unit인 mm이므로 FirstCoordinate=1000은 최종 1m다. geometry
+    engine의 1m 정점을 1000mm로 복원해 rigid 변환한 뒤, 출력을 다시 m로 바꾼다.
+    """
+    path = _build_ifc_with_rigid_operation(tmp_path, length_prefix="MILLI")
+    f = ifcopenshell.open(str(path))
+    model_context = f.by_type("IfcGeometricRepresentationContext")[0]
+    element = ifcopenshell.api.root.create_entity(
+        f, ifc_class="IfcBuildingElementProxy", name="E-mm"
+    )
+    rep = ifcopenshell.api.geometry.add_mesh_representation(
+        f,
+        model_context,
+        vertices=[[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+        faces=[[[0, 1, 2]]],
+    )
+    ifcopenshell.api.geometry.assign_representation(f, element, rep)
+    path2 = tmp_path / "rigid_operation_mm_with_geom.ifc"
+    f.write(str(path2))
+
+    points = sample_points_from_ifc(path2)
+    expected = {(1.0, 2.0, 0.05), (2.0, 2.0, 0.05), (1.0, 3.0, 0.05)}
+    actual = {tuple(round(v, 6) for v in row) for row in points}
+    assert actual == expected
+
+
 def test_read_georeference_rejects_ifc_rigid_operation(tmp_path: Path) -> None:
     """read_georeference() 는 IfcMapConversion 계열만 지원 — IfcRigidOperation 은
     필드명이 달라(FirstCoordinate 대 Eastings) typed 로 거부한다(크래시 아님)."""
@@ -365,17 +415,77 @@ def test_has_georeferencing_rejects_ifc2x3() -> None:
 
 
 def test_millimetre_project_is_returned_in_metres(tmp_path: Path) -> None:
-    """[핵심] mm 로 작성된 IFC 의 1000mm 정점이 1.0m 로 나온다."""
+    """[핵심] mm IFC에 저장된 1000mm 정점이 1.0m 로 나온다.
+
+    ifcopenshell ``add_mesh_representation`` 입력은 파일 단위와 무관하게 SI(m)다.
+    따라서 이 픽스처의 입력 1.0은 mm 파일 안에 1000.0으로 저장되고 geometry
+    engine은 다시 1.0m로 반환한다. 예전 기대값 0.001은 이 API 계약을 거꾸로 읽어
+    단위 이중 적용 결함을 정답으로 고정하고 있었다.
+    """
     metres = _build_ifc(tmp_path, name="unit_m")
     millis = _build_ifc(tmp_path, name="unit_mm", length_prefix="MILLI")
 
     m_points = sample_points_from_ifc(metres)
     mm_points = sample_points_from_ifc(millis)
 
-    # 같은 정점 좌표(0,0,0)/(1,0,0)/(0,1,0)를 넣었지만 단위 해석이 다르다 —
-    # mm 파일의 "1" 은 1mm 이므로 미터로는 0.001 이어야 한다.
+    raw_mm = ifcopenshell.open(str(millis)).by_type("IfcCartesianPointList3D")[0].CoordList
+    assert np.abs(np.asarray(raw_mm)).max() == pytest.approx(1000.0)
     assert np.isclose(np.abs(m_points).max(), 1.0)
-    assert np.isclose(np.abs(mm_points).max(), 0.001)
+    assert np.isclose(np.abs(mm_points).max(), 1.0)
+
+
+def test_millimetre_georeference_applies_length_scale_exactly_once(tmp_path: Path) -> None:
+    """[high-risk regression] geometry engine은 mm IFC 정점을 이미 m로 반환한다.
+
+    그 값에 0.001을 다시 곱하고 MapConversion.Scale까지 적용하면 1m 변이 1µm가
+    된다. 표준 변환에는 원래 project unit(1000mm)을 넣어 map offset 1m를 얻는다.
+    """
+    origin = np.array([1000.0, 2000.0, 50.0])
+    path = _build_ifc(
+        tmp_path,
+        name="unit_mm_georeferenced",
+        length_prefix="MILLI",
+        georeference={
+            "eastings": origin[0],
+            "northings": origin[1],
+            "orthogonal_height": origin[2],
+        },
+    )
+
+    points = sample_points_from_ifc(path)
+    offsets = points - origin
+    assert np.abs(offsets).max() == pytest.approx(1.0)
+    assert any(np.allclose(offset, [1.0, 0.0, 0.0]) for offset in offsets)
+    assert any(np.allclose(offset, [0.0, 1.0, 0.0]) for offset in offsets)
+
+
+def test_millimetre_georeference_without_map_unit_uses_project_unit(
+    tmp_path: Path,
+) -> None:
+    """[high-risk regression] TargetCRS는 있지만 MapUnit이 없으면 project unit 폴백이다.
+
+    mm 프로젝트에서 map translation 1000/2000/50과 Scale=1은 각각
+    1m/2m/0.05m다. 변환 결과를 그대로 미터로 읽으면 반대로 1000배 커진다.
+    """
+    path = _build_ifc(
+        tmp_path,
+        name="unit_mm_georeferenced_without_map_unit",
+        length_prefix="MILLI",
+        assign_map_unit=False,
+        georeference={
+            "eastings": 1000.0,
+            "northings": 2000.0,
+            "orthogonal_height": 50.0,
+        },
+    )
+    f = ifcopenshell.open(str(path))
+    assert f.by_type("IfcProjectedCRS")[0].MapUnit is None
+    assert f.by_type("IfcMapConversion")[0].Scale == pytest.approx(1.0)
+
+    points = sample_points_from_ifc(path)
+    expected = {(1.0, 2.0, 0.05), (2.0, 2.0, 0.05), (1.0, 3.0, 0.05)}
+    actual = {tuple(round(v, 6) for v in row) for row in points}
+    assert actual == expected
 
 
 def test_metre_project_is_unchanged(tmp_path: Path) -> None:
@@ -394,7 +504,7 @@ def test_missing_length_unit_is_rejected(tmp_path: Path) -> None:
 
 
 def test_threshold_comparison_is_meaningful_after_normalisation(tmp_path: Path) -> None:
-    """[소비자 관점] 정규화 후에는 mm 파일과 m 파일이 같은 문턱에서 같게 판정된다.
+    """[소비자 관점] 같은 물리 형상의 mm/m 파일은 같은 문턱에서 같게 판정된다.
 
     이 테스트가 없으면 "미터로 돌려준다"가 이 함수 안에서만 참이고, 실제 소비자인
     변화탐지가 그 값을 어떻게 쓰는지는 아무도 확인하지 않는다.
@@ -402,20 +512,19 @@ def test_threshold_comparison_is_meaningful_after_normalisation(tmp_path: Path) 
     from ksi_change_detection.point_cloud_diff import detect_change_candidates
 
     baseline = sample_points_from_ifc(_build_ifc(tmp_path, name="cmp_m"))
-    # 같은 형상을 mm 로 쓴 파일 — 정규화 후에는 baseline 의 1/1000 크기다.
+    # 같은 1m 형상을 mm 프로젝트에 저장하면 raw IFC 좌표는 1000이지만 반환은 1m다.
     scaled = sample_points_from_ifc(_build_ifc(tmp_path, name="cmp_mm", length_prefix="MILLI"))
 
-    # 0.5m 문턱: baseline(최대 1m)과 mm 모델(최대 1mm)은 그만큼 떨어져 있지 않다.
+    # 같은 물리 형상끼리는 당연히 후보가 없어야 한다.
     near = detect_change_candidates(
         baseline=baseline, current=baseline, distance_threshold_m=0.5
     )
     assert near.candidate_count == 0
 
-    # 두 모델을 비교하면 최대 1m 차이 — 0.5m 문턱을 넘는 점이 있다.
-    far = detect_change_candidates(
+    cross_unit = detect_change_candidates(
         baseline=scaled, current=baseline, distance_threshold_m=0.5
     )
-    assert far.candidate_count > 0
+    assert cross_unit.candidate_count == 0
 
 
 # ── IFC2X3 대칭 (risk bim-sample-points-ifc2x3-asymmetry) ─────────────────────

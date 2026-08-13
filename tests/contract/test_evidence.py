@@ -14,6 +14,7 @@ Core 는 바이트를 중계하지 않는다 — 원장에 등록하고 presigne
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ from ksi_core.evidence import (
     EvidenceVerdict,
     build_object_key,
 )
+from ksi_domain.enums import EventStatus
+from ksi_event_contracts.offline_sync import payload_digest
 
 _ADMIN_TOKEN = "evidence-test-admin"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "evidence-test-viewer"  # noqa: S105 -- 테스트 고정값
@@ -135,6 +138,79 @@ def _bundle(event_id: str = "evt-1") -> dict[str, Any]:
             },
         },
     }
+
+
+def _critical_evidence_refs() -> dict[str, Any]:
+    return {
+        "clips": ["clip-01"],
+        "riskFieldArtifact": "risk-1",
+        "trajectoryArtifact": "trajectory-1",
+        "viewpointHistoryArtifact": "viewpoint-1",
+    }
+
+
+def _project_critical_finding(store: EventStore) -> None:
+    for status in ("EVIDENCE_COLLECTION", "FINDING"):
+        payload = _bundle()
+        payload.update(
+            {
+                "status": status,
+                "severity": "CRITICAL",
+                "evidence": _critical_evidence_refs(),
+            }
+        )
+        verdict = store.project_bundle(
+            payload,
+            edge_device_id="dev-1",
+            received_at=datetime.now(UTC),
+        )
+        assert verdict.value == "EVENT_UPDATED"
+
+
+def _risk_field_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schemaVersion": "1.0",
+        "riskFieldId": "risk-1",
+        "type": "DYNAMIC",
+        "sourceEntityIds": ["ent-trk-001"],
+        "validity": {
+            "from": "2026-08-03T23:59:59Z",
+            "to": "2026-08-04T00:00:01Z",
+        },
+        "geometry": {
+            "format": "PARAMETRIC_VOLUME",
+            "payload": {"shape": "capsule", "radiusM": 2.5},
+        },
+        "riskModel": {
+            "policyId": "critical-person-proximity-v1",
+            "severity": 0.98,
+            "predictionHorizonSeconds": 5.0,
+        },
+        "uncertainty": {"positionSigmaM": 0.2},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _register_critical_artifacts(store: EventStore, storage: FakeStorage) -> bytes:
+    for artifact_id, content_type in (
+        ("clip-01", "video/mp4"),
+        ("risk-1", "application/json"),
+        ("trajectory-1", "application/octet-stream"),
+        ("viewpoint-1", "application/octet-stream"),
+    ):
+        result = _register(store, artifact_id, content_type=content_type)
+        assert result.verdict is EvidenceVerdict.REGISTERED
+    raw = json.dumps(
+        _risk_field_payload(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    risk_artifact = store.get_evidence("dev-1::evt-1", "risk-1")
+    assert risk_artifact is not None
+    storage.put_bytes(risk_artifact.object_key, raw, content_type="application/json")
+    return raw
 
 
 @pytest.fixture
@@ -313,6 +389,186 @@ def test_tombstone_requires_reason(store: EventStore) -> None:
 def test_naive_timestamp_is_refused(store: EventStore) -> None:
     with pytest.raises(ValueError, match="now"):
         _register(store, now=datetime(2026, 8, 4, 0, 0, 0))  # noqa: DTZ001 -- 의도적 naive
+
+
+# ── CRITICAL RiskField 실증거 게이트 (INV-021) ───────────────────────────
+
+
+def test_critical_confirmation_verifies_risk_field_bytes_and_snapshots_digest(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    _project_critical_finding(store)
+    raw = _register_critical_artifacts(store, storage)
+    before = store.get("dev-1::evt-1")
+    assert before is not None
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={
+            "targetStatus": "CONFIRMED_EVENT",
+            "reason": "RiskField 원문과 현장 증거 확인",
+            "expectedBundleDigest": payload_digest(before.bundle),
+        },
+        headers=_auth(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verdict"] == "TRANSITIONED"
+    transitioned = store.get("dev-1::evt-1")
+    assert transitioned is not None and transitioned.status is EventStatus.CONFIRMED_EVENT
+    snapshot = transitioned.transitions[-1]["evidenceSnapshot"]["riskFieldVerification"]
+    assert snapshot["contentSha256"] == hashlib.sha256(raw).hexdigest()
+    assert snapshot["contentLengthBytes"] == len(raw)
+    assert snapshot["eventBundleDigest"] == payload_digest(before.bundle)
+    assert snapshot["sourceEntityIds"] == ["ent-trk-001"]
+    assert snapshot["geometryFormat"] == "PARAMETRIC_VOLUME"
+
+
+def test_critical_confirmation_requires_registered_artifacts(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    _project_critical_finding(store)
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={"targetStatus": "CONFIRMED_EVENT", "reason": "문자열만 있음"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "EVIDENCE_INCOMPLETE"
+    assert "등록되지 않았다" in response.json()["detail"]
+
+
+def test_critical_confirmation_reports_storage_outage_separately(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    risk_artifact = store.get_evidence("dev-1::evt-1", "risk-1")
+    assert risk_artifact is not None
+    storage._blobs.pop(risk_artifact.object_key)
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={"targetStatus": "CONFIRMED_EVENT", "reason": "스토리지 장애"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["verdict"] == "STORE_UNAVAILABLE"
+    assert response.headers["retry-after"] == "30"
+    assert store.get("dev-1::evt-1").status is EventStatus.FINDING  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "detail"),
+    [
+        (lambda payload: payload.update({"riskFieldId": "other-risk"}), "riskFieldId"),
+        (
+            lambda payload: payload.update(
+                {"geometry": {"format": "PARAMETRIC_VOLUME", "payload": {}}}
+            ),
+            "geometry.payload",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "validity": {
+                        "from": "2026-08-04T00:00:01Z",
+                        "to": "2026-08-04T00:00:02Z",
+                    }
+                }
+            ),
+            "occurredAt",
+        ),
+        (lambda payload: payload.update({"sourceEntityIds": ["other-entity"]}), "entities"),
+    ],
+)
+def test_critical_confirmation_rejects_semantically_invalid_risk_field(
+    store: EventStore,
+    storage: FakeStorage,
+    tmp_path: Path,
+    mutate: Any,
+    detail: str,
+) -> None:
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    payload = _risk_field_payload()
+    mutate(payload)
+    risk_artifact = store.get_evidence("dev-1::evt-1", "risk-1")
+    assert risk_artifact is not None
+    storage.put_bytes(
+        risk_artifact.object_key,
+        json.dumps(payload).encode("utf-8"),
+        content_type="application/json",
+    )
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={"targetStatus": "CONFIRMED_EVENT", "reason": "의미 검증"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "EVIDENCE_INCOMPLETE"
+    assert detail in response.json()["detail"]
+
+
+def test_critical_confirmation_rejects_tombstoned_reference(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    store.tombstone_evidence(
+        event_key="dev-1::evt-1",
+        artifact_id="trajectory-1",
+        reason="보관 기한 만료",
+        now=datetime.now(UTC),
+    )
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={"targetStatus": "CONFIRMED_EVENT", "reason": "폐기 참조"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 422
+    assert "폐기됐다" in response.json()["detail"]
+
+
+def test_critical_confirmation_detects_artifact_change_during_storage_read(
+    store: EventStore,
+    storage: FakeStorage,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """스토리지 I/O 중 증거 상태가 바뀌면 검증한 것과 굳힌 것이 달라지지 않는다."""
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    original_get = storage.get_bytes
+
+    def get_then_tombstone(object_key: str) -> bytes:
+        raw = original_get(object_key)
+        result = store.tombstone_evidence(
+            event_key="dev-1::evt-1",
+            artifact_id="trajectory-1",
+            reason="검증 경합 주입",
+            now=datetime.now(UTC),
+        )
+        assert result.verdict is EvidenceVerdict.REGISTERED
+        return raw
+
+    monkeypatch.setattr(storage, "get_bytes", get_then_tombstone)
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={"targetStatus": "CONFIRMED_EVENT", "reason": "경합 반증"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["verdict"] == "STALE_EVENT_VIEW"
+    assert store.get("dev-1::evt-1").status is EventStatus.FINDING  # type: ignore[union-attr]
 
 
 # ── HTTP 표면 ──────────────────────────────────────────────────────────────

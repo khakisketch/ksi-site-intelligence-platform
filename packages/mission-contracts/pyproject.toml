@@ -5,6 +5,9 @@ description = "Mission Contract 계약 모델·서명 검증 (contracts/schemas 
 requires-python = ">=3.12,<3.13"
 dependencies = ["pydantic>=2.7", "cryptography>=42", "ksi-domain"]
 
+[project.scripts]
+ksi-mission-contract-consumer = "ksi_mission_contracts.consumer:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

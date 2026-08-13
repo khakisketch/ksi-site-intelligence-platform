@@ -51,9 +51,19 @@
 > 이미 있어 디스크 적재 위험은 없다고 확인돼 low 리스크로만 등재
 > (`comparison-design-conformance-worker-osrerror-not-failed`).
 >
-> **남은 리스크**: IFC mm 단위 설계면 입력에서 좌표 1000배 축소
-> (`bim-integration-ifc-mm-unit-double-scale`, IFC 경로에만 영향 — 주 경로인
-> GeoTIFF 직접 업로드는 무관). `.ksi/goals.json` risks 에 open으로 등재.
+> **[2026-08-14 해소]** IFC mm 단위 설계면 입력의 좌표 1000배 축소
+> (`bim-integration-ifc-mm-unit-double-scale`)는 IfcOpenShell의 SI meter 출력을
+> `IfcMapConversion` 입력 단위로 한 번만 변환하도록 수정했고, mm georeference와
+> 설계면 계약 테스트로 고정했다. 후속 검토에서 발견된 반대 방향 1000배 확대
+> (`IfcProjectedCRS.MapUnit` 생략, mm `IfcRigidOperation`)도 변환 출력의 MapUnit 또는
+> 프로젝트 단위 폴백을 미터로 정규화하고 각각 회귀 테스트로 고정했다. 리스크를
+> 재발 기록 후 새 증거로 다시 해소했으며 원장 상태는 `resolved`다.
+>
+> **남은 안전 리스크**: Mission Contract 소비자는 검증·원자적 활성화 경계를
+> 제공하지만 실제 Manifold 실행 경로에 아직 배선되지 않았고
+> (`mission-contract-verification-unwired`), CRITICAL RiskField의 프로덕션 생성기도
+> 아직 연결되지 않았다(`riskfield-production-generator-unwired`). 둘 다 원장에
+> `open`으로 유지하며 현장 운용 준비 완료로 표시하지 않는다.
 
 ## 하드웨어 트랙 (도착·승인 대기 — 준비 완료 상태 유지)
 

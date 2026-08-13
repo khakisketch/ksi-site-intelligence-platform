@@ -33,9 +33,12 @@ DEFAULT_VIEW_TTL = timedelta(minutes=5)
 
 # 허용 MIME — 임의 타입을 그대로 스토리지에 넘기면 브라우저가 열람 URL 에서
 # 스크립트로 해석할 수 있는 것(text/html·image/svg+xml)까지 들어온다.
-# 증거는 사진·영상·포인트클라우드뿐이므로 allowlist 로 좁힌다.
+# 증거는 사진·영상·포인트클라우드와 Core 가 의미 검증하는 구조화 산출물로
+# 좁힌다. ``application/json`` 은 CRITICAL RiskField 원문을 검증·고정하기 위한
+# 타입이다. HTML/SVG/JavaScript 같은 실행 가능 브라우저 타입은 계속 거부한다.
 ALLOWED_CONTENT_TYPES = frozenset(
     {
+        "application/json",
         "image/jpeg",
         "image/png",
         "image/webp",

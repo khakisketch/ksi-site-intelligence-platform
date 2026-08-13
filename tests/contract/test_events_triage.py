@@ -310,7 +310,9 @@ def test_confirm_critical_missing_artifacts_is_evidence_incomplete(store: EventS
     assert result.verdict is EventVerdict.EVIDENCE_INCOMPLETE
 
 
-def test_confirm_critical_with_full_evidence_transitions(store: EventStore) -> None:
+def test_confirm_critical_with_only_string_references_is_evidence_incomplete(
+    store: EventStore,
+) -> None:
     _project_to_finding(
         store,
         "evt-critical-full",
@@ -331,7 +333,8 @@ def test_confirm_critical_with_full_evidence_transitions(store: EventStore) -> N
         actor=_actor(),
         now=datetime.now(UTC),
     )
-    assert result.verdict is EventVerdict.TRANSITIONED
+    assert result.verdict is EventVerdict.EVIDENCE_INCOMPLETE
+    assert result.detail is not None and "검증 스토리지" in result.detail
 
 
 # ── DISMISSED reason 필수 ────────────────────────────────────────────────

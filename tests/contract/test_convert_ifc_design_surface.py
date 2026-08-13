@@ -48,6 +48,7 @@ def _build_ifc(
     name: str,
     georeference: dict[str, float] | None,
     crs_name: str = "EPSG:5186",
+    length_prefix: str | None = None,
     vertices: list[list[float]] | None = None,
     faces: list[list[list[int]]] | None = None,
 ) -> Path:
@@ -59,7 +60,9 @@ def _build_ifc(
     """
     f = ifcopenshell.api.project.create_file(version="IFC4")
     ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="Test Project")
-    length_unit = ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT")
+    length_unit = ifcopenshell.api.unit.add_si_unit(
+        f, unit_type="LENGTHUNIT", prefix=length_prefix
+    )
     ifcopenshell.api.unit.assign_unit(f, units=[length_unit])
     model_context = ifcopenshell.api.context.add_context(f, context_type="Model")
     body_context = ifcopenshell.api.context.add_context(
@@ -73,16 +76,19 @@ def _build_ifc(
 
     if georeference is not None:
         ifcopenshell.api.georeference.add_georeferencing(f)
+        # EPSG:5186은 m 단위다. mm 프로젝트의 Scale=0.001이 project→map 단위
+        # 변환이라는 계약을 픽스처 자체에도 명시한다.
+        map_unit = ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT")
         ifcopenshell.api.georeference.edit_georeferencing(
             f,
-            projected_crs={"Name": crs_name},
+            projected_crs={"Name": crs_name, "MapUnit": map_unit},
             coordinate_operation={
                 "Eastings": georeference["eastings"],
                 "Northings": georeference["northings"],
                 "OrthogonalHeight": georeference["orthogonal_height"],
                 "XAxisAbscissa": 1.0,
                 "XAxisOrdinate": 0.0,
-                "Scale": 1.0,
+                "Scale": 0.001 if length_prefix == "MILLI" else 1.0,
             },
         )
 
@@ -137,6 +143,33 @@ def test_converts_plane_to_hand_computed_geotiff(tmp_path: Path) -> None:
     assert band.shape == (10, 10)
     assert np.isfinite(band).all()
     np.testing.assert_allclose(band, 35.0)
+
+
+def test_millimetre_georeference_converts_to_same_design_surface(tmp_path: Path) -> None:
+    """IFC→GeoTIFF 실제 소비자 회귀 — mm 파일도 같은 10m 평면·35m 계획고다.
+
+    점 추출 함수 단독 테스트만 있으면 그 값이 래스터화 과정에서 다시 축소돼도 놓친다.
+    bounds, 격자 크기, 높이를 함께 고정해 1000배 수평/수직 오류를 모두 잡는다.
+    """
+    ifc = _build_ifc(
+        tmp_path,
+        name="plane_mm",
+        length_prefix="MILLI",
+        georeference={"eastings": 1000.0, "northings": 2000.0, "orthogonal_height": 30.0},
+    )
+    out = tmp_path / "plane_mm.tif"
+    summary = convert(ifc, out, cell_size=1.0)
+
+    assert (summary.rows, summary.cols) == (10, 10)
+    assert summary.finite_cells == 100
+    assert summary.z_min_m == pytest.approx(35.0)
+    assert summary.z_max_m == pytest.approx(35.0)
+    with rasterio.open(out) as ds:
+        assert ds.bounds.left == pytest.approx(1000.0)
+        assert ds.bounds.right == pytest.approx(1010.0)
+        assert ds.bounds.bottom == pytest.approx(2000.0)
+        assert ds.bounds.top == pytest.approx(2010.0)
+        np.testing.assert_allclose(ds.read(1), 35.0)
 
 
 def test_uncovered_cells_stay_nan_not_interpolated(tmp_path: Path) -> None:

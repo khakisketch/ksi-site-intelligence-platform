@@ -51,13 +51,18 @@ edge-sync journal 에 이미 durable 하므로 장비 sync 를 독살하지 않�
 심각도별 Evidence 정책(MASTER_PRD §17.1)을 요구한다 — ``HIGH`` 이상은
 ``evidence.clips`` 가 비어있으면 거부, ``CRITICAL`` 은
 ``riskFieldArtifact``/``trajectoryArtifact``/``viewpointHistoryArtifact`` 도
-필수다. 통과 시 감사 레코드에 ``spatialContext`` 스냅샷을 남긴다. 서버는
-기하학적 위험중첩을 재계산하지 않는다 — 근거 보존과 fail-closed 거부만 소유한다.
+필수다. CRITICAL 은 문자열 존재로 끝내지 않고 참조 artifact의 등록·비폐기 상태와
+RiskField JSON 원문(스키마·기하 payload·유효시간·근거 entity)을 검증하며, exact
+bytes SHA-256을 감사 스냅샷에 남긴다. 서버는 기하학적 위험중첩을 새로 합성하지
+않는다 — Edge가 만든 위험장의 의미 정합과 근거 보존, fail-closed 거부만 소유한다.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import math
 import threading
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -75,6 +80,7 @@ from ksi_domain.enums import (
     assert_triage_transition,
     can_event_transition,
 )
+from ksi_equipment_intelligence.risk_field import RiskField
 from ksi_event_contracts.event_bundle import EventBundle
 from ksi_event_contracts.offline_sync import payload_digest
 from pydantic import ValidationError
@@ -156,6 +162,8 @@ _EVENT_KEY_SEPARATOR = "::"
 _REASON_REQUIRED_STATUSES = frozenset({EventStatus.CONFIRMED_EVENT, EventStatus.DISMISSED})
 _EVIDENCE_GATED_SEVERITIES = frozenset({Severity.HIGH, Severity.CRITICAL})
 _CRITICAL_ARTIFACT_FIELDS = ("riskFieldArtifact", "trajectoryArtifact", "viewpointHistoryArtifact")
+_RISK_FIELD_CONTENT_TYPE = "application/json"
+_MAX_RISK_FIELD_BYTES = 1024 * 1024
 
 _NOT_FOUND_DETAIL = "이벤트를 찾을 수 없다"
 
@@ -342,6 +350,200 @@ def _evidence_gate_violation(bundle: dict[str, Any]) -> str | None:
                     f"CRITICAL 확정은 evidence.{field_name} 이 필수다(EVIDENCE_INCOMPLETE)"
                 )
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class _CriticalEvidenceVerification:
+    """잠금 밖에서 검증한 CRITICAL 증거와 잠금 안 재검사용 상태."""
+
+    bundle_digest: str
+    artifact_state: tuple[tuple[str, str, str, str | None], ...]
+    snapshot: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _CriticalEvidenceCheck:
+    verdict: EventVerdict
+    detail: str | None = None
+    verification: _CriticalEvidenceVerification | None = None
+
+
+def _critical_artifact_ids(bundle: dict[str, Any]) -> tuple[str, ...]:
+    evidence = bundle.get("evidence") or {}
+    clips = evidence.get("clips") or []
+    values = [*clips, *(evidence.get(name) for name in _CRITICAL_ARTIFACT_FIELDS)]
+    return tuple(dict.fromkeys(value for value in values if isinstance(value, str) and value))
+
+
+def _referenced_artifact_state(
+    record: EventRecord, artifact_ids: tuple[str, ...]
+) -> tuple[tuple[str, str, str, str | None], ...]:
+    """참조 증거의 등록 상태를 결정적으로 직렬화한다(경합 재검사용)."""
+    by_id = {artifact.artifact_id: artifact for artifact in record.evidence}
+    state: list[tuple[str, str, str, str | None]] = []
+    for artifact_id in artifact_ids:
+        artifact = by_id.get(artifact_id)
+        if artifact is None:
+            state.append((artifact_id, "", "", "MISSING"))
+            continue
+        state.append(
+            (
+                artifact.artifact_id,
+                artifact.object_key,
+                artifact.content_type,
+                iso_utc(artifact.tombstoned_at) if artifact.tombstoned_at is not None else None,
+            )
+        )
+    return tuple(state)
+
+
+def _payload_is_nonempty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (dict, list, tuple, set, bytes, bytearray)):
+        return bool(value)
+    return True
+
+
+def _reject_nonfinite_json(value: str) -> None:
+    raise ValueError(f"비정규 JSON 숫자: {value}")
+
+
+def _verify_critical_evidence(
+    record: EventRecord,
+    storage: EvidenceStorage,
+    *,
+    verified_at: datetime,
+) -> _CriticalEvidenceCheck:
+    """CRITICAL 확정 전에 RiskField 원문과 참조 artifact를 fail-closed 검증한다."""
+    artifact_ids = _critical_artifact_ids(record.bundle)
+    by_id = {artifact.artifact_id: artifact for artifact in record.evidence}
+    for artifact_id in artifact_ids:
+        artifact = by_id.get(artifact_id)
+        if artifact is None:
+            return _CriticalEvidenceCheck(
+                EventVerdict.EVIDENCE_INCOMPLETE,
+                detail=f"CRITICAL 증거 artifact {artifact_id!r} 가 원장에 등록되지 않았다",
+            )
+        if artifact.is_tombstoned:
+            return _CriticalEvidenceCheck(
+                EventVerdict.EVIDENCE_INCOMPLETE,
+                detail=f"CRITICAL 증거 artifact {artifact_id!r} 는 폐기됐다",
+            )
+
+    evidence = record.bundle.get("evidence") or {}
+    risk_field_id = evidence.get("riskFieldArtifact")
+    if not isinstance(risk_field_id, str) or not risk_field_id:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField artifact 참조가 유효한 문자열이 아니다",
+        )
+    risk_artifact = by_id.get(risk_field_id)
+    if risk_artifact is None:  # 구조 게이트와 위 등록 검사가 선행하므로 방어 분기다.
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField artifact가 등록되지 않았다",
+        )
+    if risk_artifact.content_type != _RISK_FIELD_CONTENT_TYPE:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField artifact contentType은 "
+                f"{_RISK_FIELD_CONTENT_TYPE} 이어야 한다"
+            ),
+        )
+
+    try:
+        raw = storage.get_bytes(risk_artifact.object_key)
+    except EvidenceStorageError:
+        return _CriticalEvidenceCheck(
+            EventVerdict.STORE_UNAVAILABLE,
+            detail="CRITICAL RiskField artifact를 스토리지에서 읽을 수 없다",
+        )
+    if not raw or len(raw) > _MAX_RISK_FIELD_BYTES:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField artifact가 비어있거나 "
+                f"{_MAX_RISK_FIELD_BYTES} bytes 제한을 초과한다"
+            ),
+        )
+    try:
+        decoded = json.loads(
+            raw.decode("utf-8"),
+            parse_constant=_reject_nonfinite_json,
+        )
+        risk_field = RiskField.model_validate(decoded)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, ValidationError):
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField artifact가 유효한 RiskField v1 JSON이 아니다",
+        )
+
+    if risk_field.risk_field_id != risk_field_id:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="RiskField.riskFieldId가 event evidence 참조와 일치하지 않는다",
+        )
+    if not _payload_is_nonempty(risk_field.geometry.payload):
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField geometry.payload가 비어있다",
+        )
+    if risk_field.validity.to < risk_field.validity.from_:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField validity.to가 validity.from보다 앞선다",
+        )
+    if not (risk_field.validity.from_ <= record.occurred_at <= risk_field.validity.to):
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField validity가 event occurredAt을 포함하지 않는다",
+        )
+    event_entities = set(record.bundle.get("entities") or [])
+    source_entities = set(risk_field.source_entity_ids)
+    if not event_entities or not event_entities.issubset(source_entities):
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField sourceEntityIds가 event entities를 모두 포함하지 않는다",
+        )
+    horizon = risk_field.risk_model.prediction_horizon_seconds
+    if not math.isfinite(horizon) or horizon <= 0:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField predictionHorizonSeconds는 유한한 양수여야 한다",
+        )
+
+    artifact_state = _referenced_artifact_state(record, artifact_ids)
+    digest = hashlib.sha256(raw).hexdigest()
+    snapshot = {
+        "eventBundleDigest": payload_digest(record.bundle),
+        "artifactId": risk_artifact.artifact_id,
+        "objectKey": risk_artifact.object_key,
+        "contentType": risk_artifact.content_type,
+        "contentLengthBytes": len(raw),
+        "contentSha256": digest,
+        "riskFieldId": risk_field.risk_field_id,
+        "schemaVersion": risk_field.schema_version,
+        "type": risk_field.type,
+        "sourceEntityIds": risk_field.source_entity_ids,
+        "validity": {
+            "from": iso_utc(risk_field.validity.from_),
+            "to": iso_utc(risk_field.validity.to),
+        },
+        "geometryFormat": risk_field.geometry.format,
+        "verifiedAt": iso_utc(verified_at),
+    }
+    return _CriticalEvidenceCheck(
+        EventVerdict.TRANSITIONED,
+        verification=_CriticalEvidenceVerification(
+            bundle_digest=payload_digest(record.bundle),
+            artifact_state=artifact_state,
+            snapshot=snapshot,
+        ),
+    )
 
 
 class EventStore:
@@ -746,9 +948,56 @@ class EventStore:
         actor: Principal,
         now: datetime,
         expected_bundle_digest: str | None = None,
+        evidence_storage: EvidenceStorage | None = None,
     ) -> TriageTransitionResult:
-        """``event_key``(=``{edgeDeviceId}::{eventId}``) 사건의 서버측 전이."""
+        """``event_key``(=``{edgeDeviceId}::{eventId}``) 사건의 서버측 전이.
+
+        CRITICAL 확정의 오브젝트 스토리지 읽기는 원장 잠금 **밖**에서 한다. 읽는
+        동안 bundle 또는 참조 artifact 상태가 바뀌면 잠금을 다시 잡은 뒤
+        ``STALE_EVENT_VIEW`` 로 거부한다. 느린 스토리지가 projection·트리아지
+        전체를 멈추거나, 검증한 것과 기록한 것이 달라지는 경로를 모두 막는다.
+        """
         _require_tz_aware(now, param="now")
+        critical_candidate: EventRecord | None = None
+        with self._lock:
+            existing = self._events.get(event_key)
+            if (
+                target is EventStatus.CONFIRMED_EVENT
+                and existing is not None
+                and existing.status is EventStatus.FINDING
+                and reason is not None
+                and reason.strip()
+            ):
+                if expected_bundle_digest is not None:
+                    actual_digest = payload_digest(existing.bundle)
+                    if actual_digest != expected_bundle_digest:
+                        return TriageTransitionResult(
+                            EventVerdict.STALE_EVENT_VIEW,
+                            detail=(
+                                "화면에 표시된 이후 사건 내용이 갱신됐다 — 새로고침 후 다시 "
+                                "시도하라(전이는 적용되지 않았다)"
+                            ),
+                        )
+                violation = _evidence_gate_violation(existing.bundle)
+                if violation is None and existing.severity is Severity.CRITICAL:
+                    critical_candidate = existing
+
+        critical_verification: _CriticalEvidenceVerification | None = None
+        if critical_candidate is not None:
+            if evidence_storage is None:
+                return TriageTransitionResult(
+                    EventVerdict.EVIDENCE_INCOMPLETE,
+                    detail="CRITICAL 확정에는 RiskField artifact 검증 스토리지가 필요하다",
+                )
+            check = _verify_critical_evidence(
+                critical_candidate,
+                evidence_storage,
+                verified_at=now,
+            )
+            if check.verification is None:
+                return TriageTransitionResult(check.verdict, detail=check.detail)
+            critical_verification = check.verification
+
         with self._lock:
             try:
                 return self._triage_transition_locked(
@@ -760,6 +1009,7 @@ class EventStore:
                     assignee=assignee,
                     actor=actor,
                     now=now,
+                    critical_verification=critical_verification,
                 )
             except JournalSealedError:
                 return TriageTransitionResult(
@@ -787,6 +1037,7 @@ class EventStore:
         actor: Principal,
         now: datetime,
         expected_bundle_digest: str | None = None,
+        critical_verification: _CriticalEvidenceVerification | None = None,
     ) -> TriageTransitionResult:
         if (target is None) == (triage_target is None):
             return TriageTransitionResult(
@@ -817,7 +1068,12 @@ class EventStore:
 
         if target is not None:
             return self._apply_event_status_transition(
-                existing, target=target, reason=reason, actor_id=actor_id, ts_iso=ts_iso
+                existing,
+                target=target,
+                reason=reason,
+                actor_id=actor_id,
+                ts_iso=ts_iso,
+                critical_verification=critical_verification,
             )
 
         assert triage_target is not None  # noqa: S101 -- 위 XOR 게이트가 보장
@@ -838,6 +1094,7 @@ class EventStore:
         reason: str | None,
         actor_id: str,
         ts_iso: str,
+        critical_verification: _CriticalEvidenceVerification | None = None,
     ) -> TriageTransitionResult:
         try:
             assert_event_transition(existing.status, target)
@@ -855,6 +1112,26 @@ class EventStore:
             if violation is not None:
                 return TriageTransitionResult(EventVerdict.EVIDENCE_INCOMPLETE, detail=violation)
             evidence_snapshot = {"spatialContext": existing.bundle.get("spatialContext", {})}
+            if existing.severity is Severity.CRITICAL:
+                if critical_verification is None:
+                    return TriageTransitionResult(
+                        EventVerdict.EVIDENCE_INCOMPLETE,
+                        detail="CRITICAL RiskField artifact 내용이 검증되지 않았다",
+                    )
+                artifact_ids = _critical_artifact_ids(existing.bundle)
+                current_artifact_state = _referenced_artifact_state(existing, artifact_ids)
+                if (
+                    payload_digest(existing.bundle) != critical_verification.bundle_digest
+                    or current_artifact_state != critical_verification.artifact_state
+                ):
+                    return TriageTransitionResult(
+                        EventVerdict.STALE_EVENT_VIEW,
+                        detail=(
+                            "RiskField 검증 중 사건 또는 증거 상태가 갱신됐다 — "
+                            "새로고침 후 다시 시도하라"
+                        ),
+                    )
+                evidence_snapshot["riskFieldVerification"] = critical_verification.snapshot
 
         record = {
             "kind": "event-transitioned",
@@ -1318,6 +1595,7 @@ def build_events_router(
             actor=principal,
             now=datetime.now(UTC),
             expected_bundle_digest=request.expected_bundle_digest,
+            evidence_storage=evidence_storage,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is EventVerdict.STORE_UNAVAILABLE:

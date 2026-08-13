@@ -887,6 +887,7 @@ paths:
                 artifactId: { type: string, minLength: 1 }
                 contentType:
                   enum:
+                    - application/json
                     - image/jpeg
                     - image/png
                     - image/webp
