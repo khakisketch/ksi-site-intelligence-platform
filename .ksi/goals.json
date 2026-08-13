@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-13T16:52:07+09:00",
+  "updated_at": "2026-08-13T18:47:37+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1734,6 +1734,34 @@
       "verification_requested": null,
       "created_at": "2026-08-13T16:37:23+09:00",
       "updated_at": "2026-08-13T16:51:50+09:00"
+    },
+    {
+      "id": "m4d-report-export",
+      "title": "M4-D 현장 보고서 내보내기 — browser-print",
+      "completion_criteria": [
+        "구역 진척 표+(id 매칭 성공시)설계 대비 잔량 표+히트맵/정사영상 지도를 한 번의 서버 렌더로 조립해 화면과 종이가 같은 조회 결과를 말한다 (완료기준 1/4)",
+        "latestDesignConformanceId 매칭 실패 시(0번째 가정 없이 실제 id로) 진척 표는 살아남고 잔량 표만 생략되는 degrade가 테스트로 커버된다 (완료기준 2/4)",
+        "정산·기성 근거 아님 문구·집계 문턱·수직기준·unmatchedZoneIds/areaMismatchZoneIds 한계 안내가 화면과 문자 그대로 동일하게 인쇄 대상에 노출된다 (완료기준 3/4)",
+        "인쇄 대상 본문에 설계 기준면 ID·기준/최신 리포트 ID가 렌더돼 종이만으로도 어느 리포트로 낸 건지 되짚을 수 있다 (완료기준 4/4)"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "Core 코드 변경 0 — 새 대시보드 화면 /sites/[siteId]/report 하나로 기존 getDesignProgress/getDesignConformance/getProcessingJobArtifacts 세 조회만 재사용. worktree 구현→3렌즈 독립검토(정확성 CONFIRMED-OK·한계표시 CONFIRMED-OK·계보 PARTIAL)→내가 계보 gap 직접 수정(설계면/리포트 식별자 <dl> 2곳 추가)→재검토 CONFIRMED-FIXED. 신규 테스트 21건(collect-site-report-data 13 + report-csv 8). main 머지 후 tsc/eslint(전체)/vitest(211 passed)/next build 전부 직접 재실행해 green 확인. 실브라우저로 로그인+/report 페이지 접속해 nav·타이틀·empty-state degrade 렌더 확인(스크린샷). 미완: 실제 데이터(설계면 검증+진척 계산)로 표 렌더 및 브라우저 인쇄 프리뷰의 사람 확인은 사진 데이터 없어 못 함 — 배포 전 필요.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "browser-print 확정안 그대로 구현, Core 코드 변경 0. 미완으로 남긴 것: 실제 사진 데이터로 진척·잔량이 계산된 상태에서의 전체 렌더 확인과 브라우저 인쇄 프리뷰(PDF로 저장)의 사람 확인 — 사진 데이터가 없어 이번에는 할 수 없었고, 계획 자체가 이 단계를 자동화 불가로 명시했다. 배포 전 필요.",
+        "at": "2026-08-13T18:47:37+09:00",
+        "reviewer": "reviewer-subagent x4 (독립·병렬 3렌즈 + 계보 재검토 1회, change-review 모드)",
+        "evidence_ref": "정확성(종이==화면): CONFIRMED-OK / 한계표시(정산 근거 아님+한계 안내): CONFIRMED-OK / 계보(어느 리포트로 냈나): 최초 PARTIAL(인쇄 본문에 식별자 없음, CSV에만 있었음) → 직접 수정(설계면·리포트 ID <dl> 2곳 추가) → 재검토 CONFIRMED-FIXED. 전체 워크스페이스 대시보드 tsc/eslint/vitest(211 passed)/next build를 worktree와 main 머지 후 두 번 다 직접 재실행해 green 확인. 실브라우저 로그인+/report 페이지 렌더 확인(스크린샷, nav·타이틀·empty-state degrade)."
+      },
+      "invalidation_reason": null,
+      "parent": "m4c-work-area-progress",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-13T18:47:23+09:00",
+      "updated_at": "2026-08-13T18:47:37+09:00"
     }
   ],
   "risks": [
