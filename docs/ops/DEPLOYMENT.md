@@ -25,6 +25,7 @@ Core 는 필수 환경변수가 하나라도 없거나 형식이 틀리면 **기
 | Mission Contract 서명키 | Core 는 키를 만들지 않는다 — 미리 만들어 둬야 한다(§2) |
 | 접근 토큰 | 사람·워커가 Core 를 부를 자격증명(§3) |
 | (선택) 지오이드 격자 | 해발 기준 설계도면을 받으려면 필요(§4) |
+| (선택) 동적 객체 마스킹 모델 | 재구성 산출물에서 사람·차량을 지우려면 필요 — 기본은 꺼짐(`deploy/.env.example` 의 `KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR`, `tools/fetch_model.py` 로 받는다) |
 
 ## 2. 서명키 먼저 만든다
 
@@ -128,6 +129,7 @@ curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8000/v1/sites
 | 워커가 붙지 못함(401) | `KSI_WORKER_CORE_TOKEN` 원문과 Core 의 digest 불일치 | §3 을 다시 한다(원문↔digest 쌍) |
 | 재구성이 `EngineIdentityMismatch` 로 거부 | NodeODM 이미지가 바뀌어 엔진 버전이 작업 지시와 다름 | 의도된 거부다 — 작업의 `engineVersion` 과 실제 엔진을 맞춘다 |
 | 해발 기준 설계면이 거부됨 | `KSI_GEOID_GRID` 미설정 | §4 |
+| `KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR` 설정 시 워커가 기동 자체를 거부(`RuntimeError` — 정확한 문구는 원인마다 다르다: "존재하는 디렉터리가 아니다" 또는 "동적 객체 탐지기 로드 실패") | 그 경로에 유효한 모델이 없음(경로 없음·digest 불일치·`[dfine]` extra 미설치 등) — 의도된 fail-closed 다, 마스킹이 켜졌다고 믿는데 조용히 꺼진 채 도는 것을 막는다 | `tools/fetch_model.py` 로 모델을 다시 받거나, 마스킹을 원치 않으면 그 변수를 비운다 |
 
 ## 8. 백업
 

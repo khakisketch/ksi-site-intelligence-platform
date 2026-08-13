@@ -75,6 +75,13 @@ from typing import NoReturn
 
 import httpx
 
+# dfine.py 모듈 최상단은 torch/transformers 를 끌어오지 않는다(둘 다
+# load_dfine_detector 내부의 지연 import 다) — 그래서 이 top-level import 는
+# ksi-perception 의 base 의존만으로 안전하다(pyproject.toml 주석 "torch/transformers
+# 는 끌려오지 않는다"). torch 가 실제로 필요해지는 시점은 감지기를 실제로
+# 돌릴 때뿐이고, 그마저도 로드 시점에 typed RUNTIME_MISSING 으로 갈린다.
+from ksi_perception.dfine import load_dfine_detector
+
 from ksi_processing_controller.comparison_worker import (
     ComparisonWorkerRunError,
     run_comparison_request,
@@ -99,6 +106,7 @@ from ksi_processing_controller.observability import (
     configure_structured_logging,
 )
 from ksi_processing_controller.odm import NodeOdmClient
+from ksi_processing_controller.odm_masking import ImageDetector
 from ksi_processing_controller.worker import WorkerRunError, run_job
 
 logger = logging.getLogger(__name__)
@@ -170,8 +178,15 @@ def run_pending_batch(
     heartbeat_interval_seconds: float = _DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     http_client: httpx.Client | None = None,
     now_message: Callable[[str], None] = logger.info,
+    dynamic_object_detector: ImageDetector | None = None,
 ) -> bool:
     """대기 목록에서 후보를 순서대로 시도해 하나를 끝까지 돈다.
+
+    ``dynamic_object_detector`` 는 재구성 후보(``_run_reconstruction``)에만
+    의미가 있다 — 비교·설계면 검증·설계 대비 잔량은 이미 완주한 산출물을
+    읽을 뿐 사진을 새로 ODM 에 올리지 않으므로 마스킹과 무관하다. 생략하면
+    (``None``, 기본값) :func:`~ksi_processing_controller.worker.run_job` 도
+    같은 기본값으로 마스킹 없이 돈다 — 회귀 없음.
 
     ## 폴링 우선순위 — 재구성 → 설계면 검증 → 두 시점 비교 → 설계 대비 잔량
 
@@ -208,6 +223,7 @@ def run_pending_batch(
             http_client=http_client,
             poll_interval_seconds=heartbeat_interval_seconds,
             now_message=now_message,
+            dynamic_object_detector=dynamic_object_detector,
         )
 
     def _run_design_surface_verification(candidate: PendingDesignSurface) -> None:
@@ -297,6 +313,7 @@ def run_forever(
     sleep: Callable[[float], None] = time.sleep,
     should_stop: Callable[[], bool] = lambda: False,
     now_message: Callable[[str], None] = logger.info,
+    dynamic_object_detector: ImageDetector | None = None,
 ) -> None:
     """``should_stop()`` 이 참이 될 때까지 :func:`run_pending_batch` 를 반복한다.
 
@@ -304,6 +321,10 @@ def run_forever(
     바로 다음 라운드로 넘어간다 — 돌린 게 없을 때만 ``poll_interval_seconds``
     만큼 쉰다. 그래야 밀린 QUEUED 작업들이 폴링 간격만큼씩 지연되며 순서대로
     빠지지 않고, 빈 상태에서는 Core 를 쉬지 않고 두드리지 않는다.
+
+    ``dynamic_object_detector`` 는 그대로 :func:`run_pending_batch` 로,
+    거기서 다시 재구성 후보에만 :func:`~ksi_processing_controller.worker.run_job`
+    으로 흘러간다(PRD §15.2 ④ 선택적 활성화 지점 — 생략하면 회귀 없음).
     """
     while not should_stop():
         ran = run_pending_batch(
@@ -313,6 +334,7 @@ def run_forever(
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             http_client=http_client,
             now_message=now_message,
+            dynamic_object_detector=dynamic_object_detector,
         )
         if not ran:
             sleep(poll_interval_seconds)
@@ -339,6 +361,49 @@ def _positive_float_env(name: str, *, default: float) -> float:
     return value
 
 
+_DYNAMIC_OBJECT_MODEL_DIR_ENV = "KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR"
+
+
+def _load_dynamic_object_detector_from_env() -> ImageDetector | None:
+    """``KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR`` — 동적 객체 마스킹의 선택적 스위치
+    (PRD §15.2 ④, ``worker.py::run_job`` 의 ``dynamic_object_detector`` 주입 지점).
+
+    **기본은 꺼짐이다.** torch·모델 가중치가 모든 배포에 있는 게 아니다
+    (``ksi-perception`` 은 base 의존이라 이 값을 안 주면 torch 는 끝까지
+    import 되지 않는다 — 위 top-level import 주석 참고). 미설정이면(``None``
+    또는 빈 문자열) ``None`` 을 돌려준다 — 지금까지와 완전히 동일한 동작.
+
+    **설정했는데 로드가 실패하면 워커 기동 자체를 거부한다(fail-closed).**
+    ``production.py``/``_require_env`` 와 같은 정신이다: "미설정 시 기본 꺼짐"과
+    "명시적으로 켰는데 조용히 꺼진 채 도는 것"은 다른 사안이다 — 후자를
+    허용하면 운영자가 "이 배포는 사람·차량을 지운다"고 믿고 있는데 실제로는
+    한 번도 지운 적 없는 상태가, 로그를 뒤지지 않는 한 구분되지 않는다. 그래서
+    이 값이 있는 한 로드 실패는 경고로 넘기지 않고 즉시 ``RuntimeError`` 다 —
+    운영자는 경로를 고치거나, 마스킹을 정말 원치 않으면 이 변수 자체를 지운다.
+    (반대로 사진 1장의 탐지 실패는 ``run_job`` 안에서 경고만 남기고 계속한다
+    — 그건 이미 켜진 마스킹이 부분적으로 못 하는 경우이지, 마스킹을 켤 수
+    있는지 자체가 불확실한 경우가 아니다.)
+    """
+    raw = os.environ.get(_DYNAMIC_OBJECT_MODEL_DIR_ENV)
+    if not raw:
+        return None
+    local_dir = Path(raw)
+    if not local_dir.is_dir():
+        raise RuntimeError(
+            f"{_DYNAMIC_OBJECT_MODEL_DIR_ENV}={raw!r} 는 존재하는 디렉터리가 아니다 — "
+            "tools/fetch_model.py 로 모델을 먼저 받는다"
+        )
+    result = load_dfine_detector(local_dir=local_dir)
+    if not result.ok:
+        raise RuntimeError(
+            f"{_DYNAMIC_OBJECT_MODEL_DIR_ENV}={raw!r} 로 동적 객체 탐지기 로드 실패"
+            f"({result.status}): {result.detail} — 마스킹을 켜려면 이 경로를 고치고, "
+            f"원치 않으면 {_DYNAMIC_OBJECT_MODEL_DIR_ENV} 를 설정하지 않는다"
+        )
+    assert result.detector is not None
+    return result.detector
+
+
 def main() -> NoReturn:
     """CLI 진입점 — ``uv run ksi-processing-worker`` (``[project.scripts]``)."""
     # 기본은 JSON(Dockerfile.worker 가 이 스크립트의 유일한 컨테이너 진입점이다
@@ -362,6 +427,9 @@ def main() -> NoReturn:
     heartbeat_interval_seconds = _positive_float_env(
         "KSI_WORKER_HEARTBEAT_INTERVAL_SECONDS", default=_DEFAULT_HEARTBEAT_INTERVAL_SECONDS
     )
+    # 미설정이면 None(마스킹 없음, 회귀 없음) — 설정했는데 로드 실패면 여기서
+    # RuntimeError 로 워커 기동 자체가 거부된다(fail-closed, 함수 docstring).
+    dynamic_object_detector = _load_dynamic_object_detector_from_env()
 
     core = HttpCoreClient(core_base_url, token=core_token)
     odm = HttpNodeOdmClient(nodeodm_base_url)
@@ -376,10 +444,13 @@ def main() -> NoReturn:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
+    # 운영자가 로그만 보고 "지금 이 배포가 사람·차량을 지우는 배포인가"를 알 수
+    # 있어야 한다 — masking=on/off 를 기존 시작 로그 줄에 얹는다.
+    masking_state = "on" if dynamic_object_detector is not None else "off"
     logger.info(
-        "워커 시작 — core=%s nodeodm=%s work_dir=%s poll=%ss heartbeat=%ss",
+        "워커 시작 — core=%s nodeodm=%s work_dir=%s poll=%ss heartbeat=%ss masking=%s",
         core_base_url, nodeodm_base_url, work_dir, poll_interval_seconds,
-        heartbeat_interval_seconds,
+        heartbeat_interval_seconds, masking_state,
     )
     try:
         run_forever(
@@ -389,6 +460,7 @@ def main() -> NoReturn:
             poll_interval_seconds=poll_interval_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             should_stop=stop_event.is_set,
+            dynamic_object_detector=dynamic_object_detector,
         )
     finally:
         core.close()

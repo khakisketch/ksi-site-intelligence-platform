@@ -41,6 +41,7 @@ from ksi_processing_controller.core_client import (
     PendingDesignSurface,
     PendingJob,
 )
+from ksi_processing_controller.odm_masking import odm_mask_filename
 from ksi_processing_controller.runner import run_forever, run_pending_batch
 from test_comparison_worker import FakeComparisonCoreClient, _grid, _storage_transport, _write_laz
 from test_design_conformance_compute import _flat, _ramp, _write_raster
@@ -49,6 +50,8 @@ from test_design_conformance_worker import _input as _conformance_input
 from test_design_conformance_worker import _transport as _conformance_transport
 from test_worker import (  # noqa: E402
     FakeNodeOdm,
+    _FakeDetector,
+    _person_result,
     _server_with_two_images,
     _worker_http_client,
 )
@@ -566,3 +569,147 @@ def test_run_forever_sleeps_only_on_idle_rounds(
     )
 
     assert sleep_calls == [2.5, 2.5]
+
+
+# ── 동적 객체 마스킹 배선(PRD §15.2 ④) — run_pending_batch/run_forever/main ──
+#
+# 오늘 세 번째로 발견된 패턴이었다(지오이드 격자 자동변환·IFC 설계면 변환에
+# 이어): worker.py::run_job 은 dynamic_object_detector 를 이미 받는데, 그
+# 인자를 채워 넘기는 호출자가 프로덕션 폴링 경로(run_pending_batch·run_forever·
+# main)에 없어 컨테이너로 띄운 워커는 한 번도 마스킹을 하지 않았다. 아래는
+# "주입한 stub 감지기가 실제로 run_job 까지 전달돼 마스크 파일을 만드는가"를
+# mock 호출 여부가 아니라 odm.submitted_masks 실물로 확인한다.
+
+
+def test_run_pending_batch_wires_detector_into_reconstruction_and_masks_are_submitted(
+    tmp_path: Path,
+) -> None:
+    """[핵심] run_pending_batch(dynamic_object_detector=...) 가 run_job 까지 실제로
+    닿아 마스크 파일을 만든다 — 주입만 받고 안 쓰이는 회귀를 막는다."""
+    core = _core(pending=[PendingJob(job_id="job-1")])
+    server = _server_with_two_images()
+    odm = FakeNodeOdm()
+    detector = _FakeDetector([_person_result(), _person_result()])
+
+    ran = run_pending_batch(
+        core=core,
+        odm=odm,
+        work_dir=tmp_path,
+        http_client=_worker_http_client(server),
+        now_message=lambda _msg: None,
+        dynamic_object_detector=detector,
+    )
+
+    assert ran is True
+    assert detector.calls == 2, "사진 2장 모두 실제로 탐지를 거쳤다"
+    assert {m.filename for m in odm.submitted_masks} == {
+        odm_mask_filename("img-1.png"),
+        odm_mask_filename("img-2.png"),
+    }
+
+
+def test_run_pending_batch_defaults_to_no_masking(tmp_path: Path) -> None:
+    """[회귀] dynamic_object_detector 를 생략하면(기본) 지금까지와 동일하게
+    마스킹 없이 동작한다."""
+    core = _core(pending=[PendingJob(job_id="job-1")])
+    server = _server_with_two_images()
+    odm = FakeNodeOdm()
+
+    ran = run_pending_batch(
+        core=core, odm=odm, work_dir=tmp_path,
+        http_client=_worker_http_client(server),
+        now_message=lambda _msg: None,
+    )
+
+    assert ran is True
+    assert odm.submitted_masks == []
+
+
+def test_run_forever_forwards_dynamic_object_detector_to_run_pending_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] run_forever 가 받은 detector 를 매 라운드 run_pending_batch 로
+    그대로 넘긴다 — 이 연결이 끊기면 main() 이 아무리 detector 를 만들어도
+    폴링 루프에 닿지 않는다."""
+    import ksi_processing_controller.runner as runner_module
+
+    detector = _FakeDetector([_person_result()])
+    seen: list[Any] = []
+
+    def _fake_run_pending_batch(**kwargs: Any) -> bool:
+        seen.append(kwargs.get("dynamic_object_detector"))
+        return False
+
+    monkeypatch.setattr(runner_module, "run_pending_batch", _fake_run_pending_batch)
+
+    checks = {"n": 0}
+
+    def should_stop() -> bool:
+        checks["n"] += 1
+        return checks["n"] > 1
+
+    run_forever(
+        core=_core(),
+        odm=FakeNodeOdm(),
+        work_dir=tmp_path,
+        should_stop=should_stop,
+        sleep=lambda _s: None,
+        dynamic_object_detector=detector,
+    )
+
+    assert seen == [detector]
+
+
+# ── _load_dynamic_object_detector_from_env: 선택적 활성화 스위치 ───────────
+#
+# KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR. 기본은 꺼짐(미설정 → None, 회귀 없음).
+# 설정했는데 로드가 실패하면 fail-closed — 경고만 남기고 마스킹 없이 계속
+# 돌지 않고 워커 기동 자체를 거부한다(runner.py 함수 docstring 이 근거를 담는다).
+
+
+def test_dynamic_object_model_dir_unset_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[회귀] 미설정이면 마스킹 없이 지금까지와 동일하게 동작한다."""
+    import ksi_processing_controller.runner as runner_module
+
+    monkeypatch.delenv(runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV, raising=False)
+
+    assert runner_module._load_dynamic_object_detector_from_env() is None
+
+
+def test_dynamic_object_model_dir_empty_string_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ksi_processing_controller.runner as runner_module
+
+    monkeypatch.setenv(runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV, "")
+
+    assert runner_module._load_dynamic_object_detector_from_env() is None
+
+
+def test_dynamic_object_model_dir_missing_path_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] 명시적으로 켰는데 경로 자체가 없으면 조용히 꺼지지 않고 워커
+    기동을 거부한다 — "설정 안 함"과 "설정했는데 못 씀"은 다른 사안이다."""
+    import ksi_processing_controller.runner as runner_module
+
+    missing = tmp_path / "no-such-model-dir"
+    monkeypatch.setenv(runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV, str(missing))
+
+    with pytest.raises(RuntimeError, match=runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV):
+        runner_module._load_dynamic_object_detector_from_env()
+
+
+def test_dynamic_object_model_dir_registry_rejection_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[핵심] 경로는 존재하지만 모델 파일이 없어 Registry 검증이 실패하면
+    (예: digest 대조 대상 파일 부재) 경고로 넘어가지 않고 기동을 거부한다."""
+    import ksi_processing_controller.runner as runner_module
+
+    empty_dir = tmp_path / "empty-model-dir"
+    empty_dir.mkdir()
+    monkeypatch.setenv(runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV, str(empty_dir))
+
+    with pytest.raises(RuntimeError, match=runner_module._DYNAMIC_OBJECT_MODEL_DIR_ENV):
+        runner_module._load_dynamic_object_detector_from_env()
