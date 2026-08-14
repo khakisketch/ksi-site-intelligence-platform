@@ -1018,18 +1018,16 @@ def _mono_ns_to_utc(mono_ns: int, *, anchor_mono_ns: int, anchor_wall_utc: datet
 def _mono_us_to_utc(mono_us: float, *, anchor_mono_ns: int, anchor_wall_utc: datetime) -> datetime:
     """단조시계 값(마이크로초)을 :func:`_mono_ns_to_utc`와 동일한 앵커로 환산한다.
 
-    ``sensor_us``(``--timestamp-basis sensor``)가 이 함수를 쓴다. **가정**: C tap이
-    쓰는 ``sensor_us``는 이미 호스트의 ``CLOCK_MONOTONIC``(=``meta.clock.mono_ns``와
-    같은 도메인)으로 정규화된 값이라고 전제한다 — PSDK 조사 결과(Q2)에 따르면
-    liveview 콜백은 카메라 자체 타임스탬프를 노출하지 않고, FC subscription의
-    ``T_DjiDataTimestamp``는 기종별로 다른 로컬 클록(FC 전원인가 후 경과 등) 기준이라
-    호스트 monotonic과 원천적으로 다른 도메인이다. 두 도메인을 하나의 ``meta.clock``
-    앵커만으로 환산하는 것은 C tap이 자체적으로 두 클록 간 오프셋을 추정해
-    ``sensor_us``를 호스트 monotonic 도메인으로 이미 정규화해 뒀을 때만 물리적으로
-    맞다. 이 전제가 C tap 구현과 실제로 일치하는지는 이 파일만으로 확인할 수
-    없다 — 계약 문서(위 모듈 docstring 인용)가 "단조시계 값은 meta.clock 앵커로
-    UTC로 환산한다"고 명시한 것을 문자 그대로 따른 것이며, 어긋난다면 tap-log
-    계약 자체를 수정해야 한다(이 파일 단독으로 고칠 수 없다).
+    ``sensor_us``(``--timestamp-basis sensor``)가 이 함수를 쓴다. 이 함수에 도달하려면
+    :func:`convert_tap_log_to_samples`가 meta의
+    ``timestamp_contract.sensor_us_domain == "host_monotonic_us"``를 이미 확인한다.
+    즉 C tap이 두 endpoint timestamp를 **실제로** host ``CLOCK_MONOTONIC``과 같은
+    microsecond domain으로 정규화했고, 그 근거를 HIL에서 검증한 경우만 허용한다.
+
+    PSDK의 raw local timestamp(FC ``T_DjiDataTimestamp`` 또는 Perception
+    ``imageInfo.timeStamp``)는 이 함수에 넣으면 안 된다. 단위·epoch·wrap·공통 clock
+    domain이 확정되지 않은 raw 값은 NDJSON의 ``sensor_timestamp_raw_u64``에만 남고,
+    current tap은 ``sensor_us_domain="unverified"``로 기록하므로 fail-closed 된다.
     """
     return _mono_ns_to_utc(
         round(mono_us * 1000.0), anchor_mono_ns=anchor_mono_ns, anchor_wall_utc=anchor_wall_utc
@@ -1122,17 +1120,20 @@ def convert_tap_log_to_samples(
     입력 계약(다른 워커가 같은 계약으로 구현):
 
     - ``{"type":"meta",...,"clock":{"mono_ns":...,"wall_utc":"..."},
-      "capabilities":{"frame_sensor_ts":bool,"telemetry_sensor_ts":bool}}`` — 정확히
-      1개, 반드시 이후 sample 레코드보다 먼저.
+      "capabilities":{"frame_sensor_ts":bool,"telemetry_sensor_ts":bool},
+      "timestamp_contract":{"sensor_us_domain":"..."}}`` — 정확히 1개, 반드시
+      이후 sample 레코드보다 먼저. ``timestamp_contract``는 ``sensor`` basis에서만
+      필수다. v1 raw log는 ``recv`` 진단으로는 계속 읽을 수 있다.
     - ``{"type":"sample","i":N,"frame":{"recv_mono_ns":...,"sensor_us":...|null},
       "telemetry":{...}}`` — 0개 이상.
     - ``{"type":"stat",...}`` — 변환 대상이 아니므로 무시한다.
 
-    ``timestamp_basis="sensor"``인데 ``meta.capabilities.frame_sensor_ts`` 또는
-    ``telemetry_sensor_ts``가 ``false``이면 **파일 전체를 fail-closed로 중단**한다
-    (``recv``로 조용히 대체하지 않는다 — 이게 이 인자가 존재하는 이유다). 개별
-    표본의 ``sensor_us``가 ``null``이면 그 표본에서 중단한다(둘 다 "중단"이지
-    "건너뛰기"가 아니다).
+    ``timestamp_basis="sensor"``는 세 가지를 모두 요구한다: (1) 두 sensor
+    capability가 JSON boolean ``true``, (2) ``timestamp_contract.sensor_us_domain``가
+    정확히 ``"host_monotonic_us"``, (3) 각 표본의 ``sensor_us``가 null이 아님.
+    이 중 하나라도 아니면 **파일 전체를 fail-closed로 중단**한다. 특히 raw device
+    timestamp가 존재해도 unit/domain이 unverified이면 ``sensor_us``로 추정·환산하거나
+    ``recv``로 조용히 대체하지 않는다.
 
     Raises:
         ValueError: JSON 파싱 실패, meta 레코드 누락/중복/순서 위반, capability
@@ -1185,14 +1186,34 @@ def convert_tap_log_to_samples(
                 capabilities = record.get("capabilities", {})
                 if not isinstance(capabilities, dict):
                     raise ValueError(f"tap-log line {line_no}: meta.capabilities는 객체여야 한다")
-                frame_ok = bool(capabilities.get("frame_sensor_ts", False))
-                telemetry_ok = bool(capabilities.get("telemetry_sensor_ts", False))
+                frame_ok = capabilities.get("frame_sensor_ts", False)
+                telemetry_ok = capabilities.get("telemetry_sensor_ts", False)
+                if not isinstance(frame_ok, bool) or not isinstance(telemetry_ok, bool):
+                    raise ValueError(
+                        f"tap-log line {line_no}: meta.capabilities.frame_sensor_ts/"
+                        "telemetry_sensor_ts는 JSON boolean이어야 한다 (fail-closed)"
+                    )
                 if not frame_ok or not telemetry_ok:
                     raise ValueError(
                         f"tap-log line {line_no}: --timestamp-basis sensor 요청인데 "
                         f"meta.capabilities.frame_sensor_ts={frame_ok}/"
                         f"telemetry_sensor_ts={telemetry_ok} — 둘 다 true여야 한다 "
                         "(fail-closed: recv로 조용히 대체하지 않는다)"
+                    )
+                timestamp_contract = record.get("timestamp_contract")
+                if not isinstance(timestamp_contract, dict):
+                    raise ValueError(
+                        f"tap-log line {line_no}: --timestamp-basis sensor 요청인데 "
+                        "meta.timestamp_contract가 없다/객체가 아니다 — raw device clock을 "
+                        "host monotonic으로 추정하지 않는다 (fail-closed)"
+                    )
+                sensor_us_domain = timestamp_contract.get("sensor_us_domain")
+                if sensor_us_domain != "host_monotonic_us":
+                    raise ValueError(
+                        f"tap-log line {line_no}: --timestamp-basis sensor 요청인데 "
+                        "meta.timestamp_contract.sensor_us_domain이 "
+                        f"'host_monotonic_us'가 아니다 (받음: {sensor_us_domain!r}) — "
+                        "raw device clock을 meta.clock 앵커에 붙이지 않는다 (fail-closed)"
                     )
             continue
 
@@ -1245,7 +1266,9 @@ def _timestamp_basis_notice(timestamp_bases: Sequence[str]) -> str | None:
     if basis == "sensor":
         return (
             "이 표본은 --timestamp-basis sensor로 수집됐다 — meta.capabilities가 두 "
-            "타임스탬프 모두 장치 자체 센서 타임스탬프임을 보증한 표본만 포함한다."
+            "타임스탬프 모두 존재하고 timestamp_contract가 host monotonic microsecond "
+            "domain으로 정규화됐음을 명시한 표본만 포함한다. HIL raw clock-domain "
+            "검증은 별도로 보존해야 한다."
         )
     return None
 

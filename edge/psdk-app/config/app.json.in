@@ -1,0 +1,28 @@
+{
+  "user_app_id": "@KSI_PSDK_APP_DPK_USER_APP_ID@",
+  "firmware_version": "@KSI_PSDK_APP_FIRMWARE_VERSION@",
+  "is_ai_rendering": "false",
+  "platform": "manifold3",
+  "name": {
+    "name_cn": "KSI边缘影子",
+    "name_en": "ksi-edge-shadow",
+    "name_jp": "KSIエッジシャドー",
+    "name_fr": "KSI Edge Shadow"
+  },
+  "description": {
+    "description_cn": ["KSI Manifold 3原生影子感知应用（不发送飞行命令）"],
+    "description_en": ["KSI Manifold 3 native shadow perception application; no flight commands."],
+    "description_jp": ["KSI Manifold 3ネイティブシャドー認識アプリ。飛行命令は送信しません。"],
+    "description_fr": ["Application KSI Manifold 3 de perception fantome, sans commande de vol."]
+  },
+  "maintainer": {
+    "maintainer_cn": "KSI",
+    "maintainer_en": "KSI",
+    "maintainer_jp": "KSI",
+    "maintainer_fr": "KSI"
+  },
+  "ver_min": "00.00.00.00",
+  "ver_max": "99.99.99.99",
+  "bin": "@KSI_PSDK_APP_DPK_BINARY@",
+  "userconfig": []
+}

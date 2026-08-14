@@ -40,6 +40,11 @@ enum class ActionIntentKind {
     kCaptureImage,  ///< 촬영(비행 상태를 바꾸지 않음)
 };
 
+// Stable wire names for audit records.  This is intentionally separate from
+// CommandVerdict::ToString: a shadow journal must say which high-level intent
+// was judged without serializing an implementation enum ordinal.
+const char* ToString(ActionIntentKind kind);
+
 /// 명령 거부 사유. 성공은 kAccepted 하나뿐이고 나머지는 전부 거부다(fail-closed).
 enum class CommandVerdict {
     kAccepted,

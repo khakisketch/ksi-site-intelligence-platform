@@ -1063,21 +1063,23 @@ def _tap_meta_line(
     anchor_wall_utc: str = "2026-08-04T00:00:00Z",
     frame_sensor_ts: bool = True,
     telemetry_sensor_ts: bool = True,
+    sensor_us_domain: str | None = "host_monotonic_us",
 ) -> str:
-    return json.dumps(
-        {
-            "type": "meta",
-            "tap_version": 1,
-            "psdk_version": "1.0.0",
-            "started_at_utc": anchor_wall_utc,
-            "aircraft_sn": "SN-TAP",
-            "clock": {"mono_ns": anchor_mono_ns, "wall_utc": anchor_wall_utc},
-            "capabilities": {
-                "frame_sensor_ts": frame_sensor_ts,
-                "telemetry_sensor_ts": telemetry_sensor_ts,
-            },
-        }
-    )
+    payload: dict[str, object] = {
+        "type": "meta",
+        "tap_version": 1,
+        "psdk_version": "1.0.0",
+        "started_at_utc": anchor_wall_utc,
+        "aircraft_sn": "SN-TAP",
+        "clock": {"mono_ns": anchor_mono_ns, "wall_utc": anchor_wall_utc},
+        "capabilities": {
+            "frame_sensor_ts": frame_sensor_ts,
+            "telemetry_sensor_ts": telemetry_sensor_ts,
+        },
+    }
+    if sensor_us_domain is not None:
+        payload["timestamp_contract"] = {"sensor_us_domain": sensor_us_domain}
+    return json.dumps(payload)
 
 
 def _tap_sample_line(
@@ -1087,12 +1089,17 @@ def _tap_sample_line(
     telemetry_recv_mono_ns: int,
     frame_sensor_us: float | None = None,
     telemetry_sensor_us: float | None = None,
+    frame_sensor_timestamp_raw_u64: str | None = None,
 ) -> str:
     return json.dumps(
         {
             "type": "sample",
             "i": i,
-            "frame": {"recv_mono_ns": frame_recv_mono_ns, "sensor_us": frame_sensor_us},
+            "frame": {
+                "recv_mono_ns": frame_recv_mono_ns,
+                "sensor_us": frame_sensor_us,
+                "sensor_timestamp_raw_u64": frame_sensor_timestamp_raw_u64,
+            },
             "telemetry": {
                 "recv_mono_ns": telemetry_recv_mono_ns,
                 "sensor_us": telemetry_sensor_us,
@@ -1164,6 +1171,61 @@ def test_convert_tap_log_sensor_basis_fails_closed_on_capability_false(tmp_path:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="fail-closed"):
+        convert_tap_log_to_samples(
+            path, session_id="S", aircraft_sn="A", timestamp_basis="sensor"
+        )
+
+
+def test_convert_tap_log_sensor_basis_fails_closed_on_unverified_raw_timestamp_domain(
+    tmp_path: Path,
+) -> None:
+    """Perception raw timestamp가 존재해도 host monotonic domain으로 추정하지 않는다."""
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(
+            frame_sensor_ts=True,
+            telemetry_sensor_ts=True,
+            sensor_us_domain="unverified",
+        ),
+        _tap_sample_line(
+            i=0,
+            frame_recv_mono_ns=0,
+            telemetry_recv_mono_ns=0,
+            frame_sensor_us=1.0,
+            telemetry_sensor_us=1.0,
+            frame_sensor_timestamp_raw_u64="18446744073709551615",
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensor_us_domain"):
+        convert_tap_log_to_samples(
+            path, session_id="S", aircraft_sn="A", timestamp_basis="sensor"
+        )
+
+
+def test_convert_tap_log_sensor_basis_fails_closed_without_timestamp_contract(
+    tmp_path: Path,
+) -> None:
+    """v1 meta가 raw sensor field를 주장해도 normalized clock proof 없이는 거부한다."""
+    path = tmp_path / "tap.ndjson"
+    lines = [
+        _tap_meta_line(
+            frame_sensor_ts=True,
+            telemetry_sensor_ts=True,
+            sensor_us_domain=None,
+        ),
+        _tap_sample_line(
+            i=0,
+            frame_recv_mono_ns=0,
+            telemetry_recv_mono_ns=0,
+            frame_sensor_us=1.0,
+            telemetry_sensor_us=1.0,
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="timestamp_contract"):
         convert_tap_log_to_samples(
             path, session_id="S", aircraft_sn="A", timestamp_basis="sensor"
         )

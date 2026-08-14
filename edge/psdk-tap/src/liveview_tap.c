@@ -2,6 +2,8 @@
 
 #include <dji_liveview.h>
 
+#include <string.h>
+
 #include "psdk_tap/clock_util.h"
 
 /* DjiLiveview_H264Callback 시그니처(dji_liveview.h:196)에는 사용자 컨텍스트 인자가
@@ -36,7 +38,11 @@ static void OnH264Frame(E_DjiLiveViewCameraPosition position, const uint8_t *buf
     (void) len; /* 픽셀 내용은 이 tap 의 관심사가 아니다 — 도착 시각만 정직하게 적는다. */
 
     if (g_liveview_state != NULL) {
-        ksi_shared_state_on_frame(g_liveview_state, recv_mono_ns);
+        ksi_frame_event_t event;
+        memset(&event, 0, sizeof(event));
+        event.recv_mono_ns = recv_mono_ns;
+        event.source = KSI_FRAME_SOURCE_LIVEVIEW_H264;
+        ksi_shared_state_on_frame(g_liveview_state, event);
     }
 }
 

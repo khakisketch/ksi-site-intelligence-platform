@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from ksi_core.design_conformance_reports import DesignConformanceStore
     from ksi_core.design_conformance_requests import DesignConformanceRequestStore
     from ksi_core.design_surfaces import DesignSurfaceStore
+    from ksi_core.edge_dispatch import EdgeDispatchStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.equipment_states import EquipmentStateStore
     from ksi_core.equipment_support import EquipmentSupportStore
@@ -110,6 +111,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         (("event_store",),),
         "edge_sync_store 는 event_store 와 함께 주어져야 한다(ADR-KSI-008 §3)"
         " — 수신은 ACK 했는데 트리아지에 보이지 않는 유실 표면으로 조립하지 않는다",
+    ),
+    (
+        "edge_dispatch_store",
+        (("mission_store",),),
+        "edge_dispatch_store 는 mission_store 와 함께 주어져야 한다(REQ-MSN-101)"
+        " — 배정되지 않았거나 발급 기록이 없는 임무를 Edge에 dispatch하지 않는다",
     ),
     (
         "coverage_report_store",
@@ -278,6 +285,7 @@ def create_app(
     registry: CapabilityRegistry | None = None,
     auth_registry: AuthRegistry | None = None,
     edge_sync_store: EdgeSyncStore | None = None,
+    edge_dispatch_store: EdgeDispatchStore | None = None,
     event_store: EventStore | None = None,
     site_store: SiteStore | None = None,
     mission_store: MissionStore | None = None,
@@ -467,6 +475,7 @@ def create_app(
         "mission_signing_key": mission_signing_key,
         "evidence_storage": evidence_storage,
         "edge_sync_store": edge_sync_store,
+        "edge_dispatch_store": edge_dispatch_store,
         "coverage_report_store": coverage_report_store,
         "source_media_store": source_media_store,
         "design_surface_store": design_surface_store,
@@ -498,7 +507,8 @@ def create_app(
     protected_surface = any(value is not None for value in _provided.values())
     if protected_surface and auth_registry is None:
         raise ValueError(
-            "보호 표면(edge_sync_store·event_store·site_store·mission_store·서명키·"
+            "보호 표면(edge_sync_store·edge_dispatch_store·event_store·site_store·"
+            "mission_store·서명키·"
             "커버리지 보고)을 하나라도 주입하려면 auth_registry 가 필수다(ADR-KSI-008 §3)"
             " — 인증 없는"
             " 보호 표면은 존재할 수 없다"
@@ -522,6 +532,16 @@ def create_app(
         # event_store 는 위에서 함께 주어졌음을 확인했다(None 이 아니다).
         assert event_store is not None  # noqa: S101 -- 위 결합 검증이 보장
         mount_edge_sync(app, edge_sync_store, event_store=event_store)
+
+    if edge_dispatch_store is not None:
+        from ksi_core.edge_dispatch import mount_edge_dispatch
+
+        mount_edge_dispatch(
+            app,
+            edge_dispatch_store,
+            event_store=event_store,
+            evidence_storage=evidence_storage,
+        )
 
     if event_store is not None:
         from ksi_core.events import mount_events

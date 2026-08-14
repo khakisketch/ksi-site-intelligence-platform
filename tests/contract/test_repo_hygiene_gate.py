@@ -59,6 +59,21 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _git_path(name: str) -> Path:
+    """현재 checkout의 실제 Git 관리 파일을 찾는다.
+
+    일반 checkout은 ``.git/`` 디렉터리를 쓰지만 linked worktree는 ``.git`` 파일이
+    공용 repository의 ``worktrees/<name>/``를 가리킨다. 위생 변이 테스트는 어느
+    checkout에서도 실 index가 아니라 그 복사본만 바꿔야 하므로 Git에게 index 위치를
+    물어본다.
+    """
+    result = _git("rev-parse", "--git-path", name)
+    if result.returncode != 0:
+        raise RuntimeError(f"git --git-path {name} failed: {result.stderr}")
+    path = Path(result.stdout.strip())
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
 @pytest.fixture
 def tracked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TrackedFileFactory]:
     """임시 파일을 격리된 git index 사본에 강제로 넣었다가 반드시 되돌리는 픽스처.
@@ -67,7 +82,7 @@ def tracked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Tr
     방어인데, gitignore에 막혀 index에 못 들어가면 정작 **가드 자체**는 한 번도
     실행되지 않는다. 여기서 검증하려는 건 두 번째 방어선이므로 일부러 우회한다.
 
-    GIT_INDEX_FILE을 tmp_path 밑 임시 사본으로 돌리는 이유: 실제 .git/index를 직접
+    GIT_INDEX_FILE을 tmp_path 밑 임시 사본으로 돌리는 이유: 실제 Git index를 직접
     add -f/reset하면 동시 실행(같은 저장소에서 겹쳐 도는 검증 세션 등)이 같은
     인덱스를 놓고 경합하고, 프로세스가 teardown 전에 죽으면 실 저장소에 스테이징이
     영구히 남는다(2026-08-06 실측 재현 — 검증 워크플로가 전체 스위트를 동시에 두 번
@@ -84,7 +99,7 @@ def tracked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Tr
     **똑같이** 나온다(독립 재검토 실측 반증).
     """
     isolated_index = tmp_path / "index"
-    shutil.copy2(REPO_ROOT / ".git" / "index", isolated_index)
+    shutil.copy2(_git_path("index"), isolated_index)
     monkeypatch.setenv("GIT_INDEX_FILE", str(isolated_index))
 
     scratch_dir = REPO_ROOT / "tests" / "contract" / f"_hygiene_mutation_scratch_{uuid.uuid4().hex}"

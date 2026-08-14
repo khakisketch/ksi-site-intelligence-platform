@@ -31,6 +31,27 @@ typedef struct {
     int64_t recv_mono_ns;
     bool has_sensor_us; /* false 면 sample 줄에 sensor_us:null 로 쓴다 */
     int64_t sensor_us;
+
+    /* ``sensor_us``와 절대 섞지 않는 원시 device timestamp 진단 필드.
+     *
+     * PSDK perception imageInfo.timeStamp의 단위·epoch·clock domain은 현 시점에
+     * 검증되지 않았다. 따라서 이 값은 decimal string으로만 보존한다. ``sensor_us``로
+     * 변환하거나 host CLOCK_MONOTONIC 앵커에 붙이는 호출자는 없다. */
+    bool has_sensor_timestamp_raw_u64;
+    uint64_t sensor_timestamp_raw_u64;
+
+    /* perception source일 때만 채우는 callback metadata. 픽셀 buffer는 절대 저장하지
+     * 않는다 — 이 HIL tap은 시각/전달 경로 진단기이지 이미지 수집기가 아니다. */
+    bool has_perception_metadata;
+    uint16_t perception_data_id;
+    uint16_t perception_sequence;
+    uint32_t perception_data_type;
+    uint32_t perception_raw_index;
+    uint8_t perception_raw_direction;
+    uint8_t perception_bpp;
+    uint32_t perception_width;
+    uint32_t perception_height;
+    uint32_t perception_buffer_len;
 } ksi_ndjson_endpoint_t;
 
 void ksi_ndjson_write_meta(ksi_ndjson_writer_t *writer,
@@ -41,7 +62,10 @@ void ksi_ndjson_write_meta(ksi_ndjson_writer_t *writer,
                             int64_t anchor_mono_ns,
                             const char *anchor_wall_utc,
                             bool capability_frame_sensor_ts,
-                            bool capability_telemetry_sensor_ts);
+                            bool capability_telemetry_sensor_ts,
+                            const char *frame_source,
+                            const char *frame_timestamp_provenance,
+                            const char *sensor_us_domain);
 
 void ksi_ndjson_write_sample(ksi_ndjson_writer_t *writer,
                               int64_t sample_index,

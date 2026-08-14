@@ -71,7 +71,10 @@ void ksi_ndjson_write_meta(ksi_ndjson_writer_t *writer,
                             int64_t anchor_mono_ns,
                             const char *anchor_wall_utc,
                             bool capability_frame_sensor_ts,
-                            bool capability_telemetry_sensor_ts)
+                            bool capability_telemetry_sensor_ts,
+                            const char *frame_source,
+                            const char *frame_timestamp_provenance,
+                            const char *sensor_us_domain)
 {
     pthread_mutex_lock(&writer->mutex);
     fprintf(writer->file, "{\"type\":\"meta\",\"tap_version\":%d,\"psdk_version\":", tap_version);
@@ -87,9 +90,16 @@ void ksi_ndjson_write_meta(ksi_ndjson_writer_t *writer,
     fprintf(writer->file, ",\"clock\":{\"mono_ns\":%" PRId64 ",\"wall_utc\":", anchor_mono_ns);
     write_json_escaped_string(writer->file, anchor_wall_utc);
     fprintf(writer->file,
-            "},\"capabilities\":{\"frame_sensor_ts\":%s,\"telemetry_sensor_ts\":%s}}\n",
+            "},\"capabilities\":{\"frame_sensor_ts\":%s,\"telemetry_sensor_ts\":%s}",
             capability_frame_sensor_ts ? "true" : "false",
             capability_telemetry_sensor_ts ? "true" : "false");
+    fprintf(writer->file, ",\"frame_source\":");
+    write_json_escaped_string(writer->file, frame_source);
+    fprintf(writer->file, ",\"frame_timestamp_provenance\":");
+    write_json_escaped_string(writer->file, frame_timestamp_provenance);
+    fprintf(writer->file, ",\"timestamp_contract\":{\"sensor_us_domain\":");
+    write_json_escaped_string(writer->file, sensor_us_domain);
+    fputs("}}\n", writer->file);
     fflush(writer->file);
     pthread_mutex_unlock(&writer->mutex);
 }
@@ -101,6 +111,30 @@ static void write_endpoint(FILE *file, ksi_ndjson_endpoint_t endpoint)
         fprintf(file, "%" PRId64, endpoint.sensor_us);
     } else {
         fputs("null", file);
+    }
+    fputs(",\"sensor_timestamp_raw_u64\":", file);
+    if (endpoint.has_sensor_timestamp_raw_u64) {
+        /* JSON number는 JavaScript에서 uint64 정밀도를 잃는다. 이 raw diagnostic
+         * 값은 의도적으로 decimal string으로 기록해 아무 언어에서도 비가역 변환이
+         * 일어나지 않게 한다. */
+        fprintf(file, "\"%" PRIu64 "\"", endpoint.sensor_timestamp_raw_u64);
+    } else {
+        fputs("null", file);
+    }
+    if (endpoint.has_perception_metadata) {
+        fprintf(file,
+                ",\"perception\":{\"data_id\":%u,\"sequence\":%u,\"data_type\":%" PRIu32
+                ",\"raw_index\":%" PRIu32 ",\"raw_direction\":%u,\"bpp\":%u,\"width\":%" PRIu32
+                ",\"height\":%" PRIu32 ",\"buffer_len\":%" PRIu32 "}",
+                (unsigned int) endpoint.perception_data_id,
+                (unsigned int) endpoint.perception_sequence,
+                endpoint.perception_data_type,
+                endpoint.perception_raw_index,
+                (unsigned int) endpoint.perception_raw_direction,
+                (unsigned int) endpoint.perception_bpp,
+                endpoint.perception_width,
+                endpoint.perception_height,
+                endpoint.perception_buffer_len);
     }
     fputc('}', file);
 }

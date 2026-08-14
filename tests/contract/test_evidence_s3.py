@@ -11,8 +11,10 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import pytest
 from ksi_core.evidence import EvidenceStorageError
@@ -31,7 +33,17 @@ class FakeS3Client:
         if self._fail is not None:
             raise self._fail
         self.presign_calls.append((operation, Params, ExpiresIn))
-        return f"https://s3.invalid/{Params['Key']}?op={operation}&exp={ExpiresIn}"
+        query: dict[str, str | int] = {"op": operation, "exp": ExpiresIn}
+        if "ChecksumSHA256" in Params:
+            # Digest-bound capabilities must be SigV4 signed headers, not a
+            # checksum-looking query parameter. This mirrors S3's wire form.
+            query.update(
+                {
+                    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+                    "X-Amz-SignedHeaders": "content-type;host;x-amz-checksum-sha256",
+                }
+            )
+        return f"https://s3.invalid/{Params['Key']}?{urlencode(query)}"
 
     def delete_object(self, *, Bucket: str, Key: str) -> None:
         if self._fail is not None:
@@ -56,6 +68,89 @@ def test_upload_url_signs_content_type() -> None:
     assert params["Key"] == "sites/s1/events/d1/e1/clip"
     assert expires == 900
     assert url.startswith("https://s3.invalid/")
+
+
+def test_digest_bound_upload_signs_checksum_and_returns_required_headers() -> None:
+    """Edge capability binds the durable hex digest to the actual S3 PUT body."""
+    client = FakeS3Client()
+    digest = "sha256:" + "a" * 64
+    capability = _storage(client).presigned_put_bound_digest(
+        "sites/s1/events/d1/e1/clip",
+        content_type="video/mp4",
+        content_digest=digest,
+        ttl=timedelta(minutes=15),
+    )
+    operation, params, expires = client.presign_calls[0]
+    expected_checksum = base64.b64encode(bytes.fromhex("a" * 64)).decode("ascii")
+    assert operation == "put_object"
+    assert params["ChecksumSHA256"] == expected_checksum
+    assert params["ContentType"] == "video/mp4"
+    assert expires == 900
+    assert capability.upload_url.startswith("https://s3.invalid/")
+    assert capability.required_headers == {
+        "Content-Type": "video/mp4",
+        "x-amz-checksum-sha256": expected_checksum,
+    }
+
+
+@pytest.mark.parametrize("digest", ["sha256:ABC", "sha256:" + "a" * 63, "not-a-digest"])
+def test_digest_bound_upload_refuses_malformed_digest(digest: str) -> None:
+    client = FakeS3Client()
+    with pytest.raises(ValueError, match="content digest"):
+        _storage(client).presigned_put_bound_digest(
+            "k", content_type="image/png", content_digest=digest, ttl=timedelta(minutes=1)
+        )
+    assert not client.presign_calls
+
+
+class SigV2LikeS3Client(FakeS3Client):
+    """A deterministic injected-client regression for botocore's SigV2 fallback."""
+
+    def generate_presigned_url(
+        self, operation: str, *, Params: dict[str, Any], ExpiresIn: int
+    ) -> str:
+        if self._fail is not None:
+            raise self._fail
+        self.presign_calls.append((operation, Params, ExpiresIn))
+        return (
+            f"https://s3.invalid/{Params['Key']}?"
+            "AWSAccessKeyId=test&Expires=123&Signature=legacy&"
+            "x-amz-checksum-sha256=looks-bound-but-is-not"
+        )
+
+
+def test_digest_bound_upload_refuses_injected_non_sigv4_presigner() -> None:
+    """A checksum query value is not a replacement for a signed checksum header."""
+    with pytest.raises(EvidenceStorageError, match="requires SigV4"):
+        _storage(SigV2LikeS3Client()).presigned_put_bound_digest(
+            "k",
+            content_type="image/png",
+            content_digest="sha256:" + "a" * 64,
+            ttl=timedelta(minutes=1),
+        )
+
+
+def test_digest_bound_upload_uses_real_sigv4_signed_headers_without_network() -> None:
+    """botocore가 checksum header를 실제 SigV4 signed-header set에 넣는지 본다."""
+    boto3 = pytest.importorskip("boto3")
+    from botocore.config import Config
+
+    client = boto3.client(
+        "s3",
+        region_name="us-east-1",
+        aws_access_key_id="test-access-key",
+        aws_secret_access_key="test-secret-key",
+        config=Config(signature_version="s3v4"),
+    )
+    capability = S3EvidenceStorage(bucket="ksi-evidence", client=client).presigned_put_bound_digest(
+        "sites/s1/events/d1/e1/clip",
+        content_type="video/mp4",
+        content_digest="sha256:" + "a" * 64,
+        ttl=timedelta(minutes=5),
+    )
+    query = parse_qs(urlparse(capability.upload_url).query)
+    assert query["X-Amz-Algorithm"] == ["AWS4-HMAC-SHA256"]
+    assert query["X-Amz-SignedHeaders"] == ["content-type;host;x-amz-checksum-sha256"]
 
 
 def test_view_url_does_not_sign_content_type() -> None:
@@ -102,12 +197,14 @@ def test_empty_bucket_is_refused() -> None:
 
 def test_adapter_satisfies_port() -> None:
     """포트 계약 — Core 는 이 세 메서드만 본다."""
-    from ksi_core.evidence import EvidenceStorage
+    from ksi_core.evidence import DigestBoundEvidenceStorage, EvidenceStorage
 
     storage: EvidenceStorage = _storage(FakeS3Client())
     assert callable(storage.presigned_put)
     assert callable(storage.presigned_get)
     assert callable(storage.delete)
+    bound_storage: DigestBoundEvidenceStorage = _storage(FakeS3Client())
+    assert callable(bound_storage.presigned_put_bound_digest)
 
 
 def test_default_constructed_client_signs_with_sigv4() -> None:

@@ -98,6 +98,7 @@ from ksi_core.evidence import (
     EvidenceVerdict,
     build_object_key,
     expires_at,
+    is_sha256_digest,
     is_valid_artifact_id,
 )
 from ksi_core.identifiers import is_path_safe_identifier
@@ -181,6 +182,7 @@ _EVIDENCE_STATUS: dict[EvidenceVerdict, int] = {
     EvidenceVerdict.UNKNOWN_ARTIFACT: 404,
     EvidenceVerdict.INVALID_ARTIFACT_ID: 422,
     EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
+    EvidenceVerdict.INVALID_CONTENT_DIGEST: 422,
     EvidenceVerdict.DUPLICATE_ARTIFACT: 409,
     EvidenceVerdict.ALREADY_TOMBSTONED: 410,
     EvidenceVerdict.REGISTERED: 201,
@@ -311,9 +313,7 @@ def make_event_key(edge_device_id: str, event_id: str) -> str:
     return f"{edge_device_id}{_EVENT_KEY_SEPARATOR}{event_id}"
 
 
-def classify_edge_bundle(
-    payload: Mapping[str, Any], *, edge_device_id: str
-) -> EventVerdict | None:
+def classify_edge_bundle(payload: Mapping[str, Any], *, edge_device_id: str) -> EventVerdict | None:
     """수신 **전** 정책 게이트 — 위반이면 typed verdict, 통과하면 ``None``.
 
     edge-sync 라우터가 ``EdgeSyncStore.ingest_event_bundle`` 을 호출하기 전에
@@ -347,16 +347,13 @@ def _evidence_gate_violation(bundle: dict[str, Any]) -> str | None:
     clips = evidence.get("clips")
     if not clips:
         return (
-            f"{severity_raw} 이상 확정은 evidence.clips 가 비어있으면 안 된다"
-            "(EVIDENCE_INCOMPLETE)"
+            f"{severity_raw} 이상 확정은 evidence.clips 가 비어있으면 안 된다(EVIDENCE_INCOMPLETE)"
         )
 
     if severity_raw == Severity.CRITICAL.value:
         for field_name in _CRITICAL_ARTIFACT_FIELDS:
             if not evidence.get(field_name):
-                return (
-                    f"CRITICAL 확정은 evidence.{field_name} 이 필수다(EVIDENCE_INCOMPLETE)"
-                )
+                return f"CRITICAL 확정은 evidence.{field_name} 이 필수다(EVIDENCE_INCOMPLETE)"
     return None
 
 
@@ -648,8 +645,13 @@ class EventStore:
         except EventStoreRecoveryError:
             journal.close()
             raise
-        except (KeyError, ValueError, TypeError, IllegalEventTransitionError,
-                IllegalTriageTransitionError) as exc:
+        except (
+            KeyError,
+            ValueError,
+            TypeError,
+            IllegalEventTransitionError,
+            IllegalTriageTransitionError,
+        ) as exc:
             # 재생 실패는 전부 typed 로 묶는다(독립 재검토 P2-6) — sites.py 의
             # SiteStoreRecoveryError·mission_records.py 의 MissionStoreRecoveryError
             # 와 대칭. raw 예외가 새면 호출자가 "기동 거부"와 "우연한 버그"를
@@ -785,9 +787,7 @@ class EventStore:
             if (
                 target_status is not existing.status
                 and target_status in _REASON_REQUIRED_STATUSES
-                and not (
-                    isinstance(record.get("reason"), str) and str(record["reason"]).strip()
-                )
+                and not (isinstance(record.get("reason"), str) and str(record["reason"]).strip())
             ):
                 # live 가 확정/기각에 요구하는 세 가지는 전이표·비공백 reason·
                 # evidence 다(모듈 docstring). 재생이 셋 중 둘만 태우면 사유 없는
@@ -836,10 +836,15 @@ class EventStore:
                     f"재생: 허용되지 않은 contentType({record['contentType']!r}) "
                     f"— eventKey={event_key}"
                 )
+            content_digest = record.get("contentDigest")
+            if content_digest is not None and not is_sha256_digest(content_digest):
+                raise EventStoreRecoveryError(
+                    f"재생: contentDigest 형식이 유효하지 않다({content_digest!r}) "
+                    f"— eventKey={event_key}"
+                )
             if any(a.artifact_id == record["artifactId"] for a in existing.evidence):
                 raise EventStoreRecoveryError(
-                    f"재생: artifactId 중복 등록({record['artifactId']!r}) "
-                    f"— eventKey={event_key}"
+                    f"재생: artifactId 중복 등록({record['artifactId']!r}) — eventKey={event_key}"
                 )
             artifact = EvidenceArtifact(
                 artifact_id=record["artifactId"],
@@ -849,6 +854,7 @@ class EventStore:
                 content_type=record["contentType"],
                 registered_at=_require_aware_iso(record["ts"], "ts", event_key),
                 registered_by=record["registeredBy"],
+                content_digest=content_digest,
             )
             self._events[event_key] = replace(
                 existing,
@@ -1302,6 +1308,7 @@ class EventStore:
         content_type: str,
         registered_by: str,
         now: datetime,
+        content_digest: str | None = None,
     ) -> EvidenceRegistration:
         """증거물 1건을 원장에 등록하고 그 객체 키를 돌려준다.
 
@@ -1317,6 +1324,8 @@ class EventStore:
             # 임의 MIME 을 통과시키면 열람 URL 에서 브라우저가 스크립트로 해석할
             # 수 있는 타입(text/html·image/svg+xml)까지 들어온다.
             return EvidenceRegistration(EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE)
+        if content_digest is not None and not is_sha256_digest(content_digest):
+            return EvidenceRegistration(EvidenceVerdict.INVALID_CONTENT_DIGEST)
 
         with self._lock:
             existing = self._events.get(event_key)
@@ -1345,6 +1354,8 @@ class EventStore:
                 "contentType": content_type,
                 "registeredBy": registered_by,
             }
+            if content_digest is not None:
+                record["contentDigest"] = content_digest
             self._append_and_apply(record)
             artifact = self._events[event_key].evidence[-1]
         return EvidenceRegistration(EvidenceVerdict.REGISTERED, artifact=artifact)
@@ -1366,9 +1377,7 @@ class EventStore:
             existing = self._events.get(event_key)
             if existing is None:
                 return EvidenceRegistration(EvidenceVerdict.UNKNOWN_EVENT)
-            target = next(
-                (a for a in existing.evidence if a.artifact_id == artifact_id), None
-            )
+            target = next((a for a in existing.evidence if a.artifact_id == artifact_id), None)
             if target is None:
                 return EvidenceRegistration(EvidenceVerdict.UNKNOWN_ARTIFACT)
             if target.is_tombstoned:
@@ -1696,9 +1705,7 @@ def build_events_router(
     return router
 
 
-def _mount_evidence_routes(
-    router: APIRouter, store: EventStore, storage: EvidenceStorage
-) -> None:
+def _mount_evidence_routes(router: APIRouter, store: EventStore, storage: EvidenceStorage) -> None:
     """증거 업로드·열람 경로 (ADR-KSI-010 §1).
 
     Core 는 바이트를 중계하지 않는다 — 원장에 등록한 뒤 presigned URL 만 준다.
@@ -1709,9 +1716,7 @@ def _mount_evidence_routes(
 
     # status_code 로 선언한다 — response.status_code 동적 지정만 하면 OpenAPI 에
     # 200 으로 남아 계약이 실제와 다른 코드를 말한다(sites.py 의 같은 주석 참조).
-    @router.post(
-        "/{event_key}/evidence", response_model=EvidenceUploadResponse, status_code=201
-    )
+    @router.post("/{event_key}/evidence", response_model=EvidenceUploadResponse, status_code=201)
     def register_evidence(
         event_key: str,
         request: EvidenceUploadRequest,

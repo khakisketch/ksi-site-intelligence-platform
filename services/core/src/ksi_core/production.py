@@ -62,6 +62,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ksi_mission_contracts.risk_policy import RiskPolicyPackV1, risk_policy_pack_wire_dict
+from ksi_mission_contracts.runtime_profile import (
+    EdgeRuntimeProfileV1,
+    edge_runtime_profile_wire_dict,
+)
+
 from ksi_core.app_assembly import assemble_app, cli_optional_positive
 from ksi_core.auth import (
     AuthRegistry,
@@ -241,6 +247,67 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
     return records
 
 
+def _optional_risk_policy_packs() -> tuple[dict[str, Any], ...]:
+    """``KSI_CORE_RISK_POLICY_PACKS_JSON``을 typed로 읽는다.
+
+    설정이 없으면 Edge mission pull은 안전하게 빈 큐(204)다. 즉시 운영을 막는
+    전역 필수 환경변수로 만들지 않되, pack 없이 형상·공분산 기본값을 발명해
+    dispatch하는 경로는 만들지 않는다.
+    """
+    raw = os.environ.get("KSI_CORE_RISK_POLICY_PACKS_JSON")
+    if raw is None:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError("KSI_CORE_RISK_POLICY_PACKS_JSON 이 유효한 JSON 이 아니다") from exc
+    if not isinstance(payload, list):
+        raise RuntimeError("KSI_CORE_RISK_POLICY_PACKS_JSON 은 배열이어야 한다")
+    packs: list[dict[str, Any]] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"KSI_CORE_RISK_POLICY_PACKS_JSON[{index}] 는 object 여야 한다")
+        try:
+            packs.append(risk_policy_pack_wire_dict(RiskPolicyPackV1.model_validate(item)))
+        except Exception as exc:  # noqa: BLE001 -- 환경 설정은 전부 fail-closed
+            raise RuntimeError(
+                f"KSI_CORE_RISK_POLICY_PACKS_JSON[{index}] 가 RiskPolicyPack v1.0이 아니다"
+            ) from exc
+    return tuple(packs)
+
+
+def _optional_edge_runtime_profiles() -> tuple[dict[str, Any], ...]:
+    """``KSI_CORE_EDGE_RUNTIME_PROFILES_JSON``을 typed로 읽는다.
+
+    profile이 없으면 Edge dispatch는 risk pack이 있어도 204다. 모델/보정의
+    식별자만으로 DPK가 경로·카메라값·장비 크기를 추정하게 두지 않는다.
+    """
+    raw = os.environ.get("KSI_CORE_EDGE_RUNTIME_PROFILES_JSON")
+    if raw is None:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "KSI_CORE_EDGE_RUNTIME_PROFILES_JSON 이 유효한 JSON 이 아니다"
+        ) from exc
+    if not isinstance(payload, list):
+        raise RuntimeError("KSI_CORE_EDGE_RUNTIME_PROFILES_JSON 은 배열이어야 한다")
+    profiles: list[dict[str, Any]] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise RuntimeError(
+                f"KSI_CORE_EDGE_RUNTIME_PROFILES_JSON[{index}] 는 object 여야 한다"
+            )
+        try:
+            profiles.append(edge_runtime_profile_wire_dict(EdgeRuntimeProfileV1.model_validate(item)))
+        except Exception as exc:  # noqa: BLE001 -- 환경 설정은 전부 fail-closed
+            raise RuntimeError(
+                f"KSI_CORE_EDGE_RUNTIME_PROFILES_JSON[{index}] 가 EdgeRuntimeProfile v1.0이 아니다"
+            ) from exc
+    return tuple(profiles)
+
+
 def build_production_app() -> FastAPI:
     """환경변수만으로 프로덕션 Core 앱을 조립한다 — 실패는 전부 fail-closed.
 
@@ -271,6 +338,8 @@ def build_production_app() -> FastAPI:
     expose_docs = _expose_docs_env()
 
     principal_records = _parse_principal_tokens(principal_tokens_raw)
+    risk_policy_packs = _optional_risk_policy_packs()
+    edge_runtime_profiles = _optional_edge_runtime_profiles()
 
     # ── 2단계: 무거운 조립 — 여기부터는 검증을 통과한 입력만 다룬다.
 
@@ -302,6 +371,8 @@ def build_production_app() -> FastAPI:
             evidence_storage=evidence_storage,
             mission_signing_key=key_set.active_private_key,
             mission_signing_key_id=key_set.active_key_id,
+            risk_policy_packs=risk_policy_packs,
+            edge_runtime_profiles=edge_runtime_profiles,
             expose_docs=expose_docs,
         )
     except BaseException:

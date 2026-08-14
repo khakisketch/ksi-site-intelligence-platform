@@ -1,8 +1,9 @@
 # KSI Edge — Manifold native control plane (Stage C-3 골격)
 #
 # 이 빌드는 **호스트에서 그대로 빌드·테스트되는** 순수 C++17 계약 골격이다.
-# DJI PSDK·CUDA·TensorRT 의존은 아직 없다 — 실기/HIL 증거 전까지 비행명령 경로를
-# 활성화하지 않는다는 Stage C 범위 제약(승인된 금지 항목)에 따른 것이다.
+# DJI PSDK 의존은 이 라이브러리에 없고, CUDA·TensorRT 어댑터는 명시적 opt-in으로만
+# 빌드된다. 실기/HIL 증거 전까지 비행명령 경로를 활성화하지 않는다는 Stage C 범위
+# 제약(승인된 금지 항목)은 그대로 유지한다.
 # 실제 Manifold 3 타깃 툴체인은 docs/edge/MANIFOLD3_TOOLCHAIN.md 참조.
 #
 # cmake 하한: 이 파일이 실제로 쓰는 최신 기능은 add_link_options(3.13)이고 3.17+
@@ -46,6 +47,21 @@ if(KSI_ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
 endif()
 
+# TensorRT is a device-provided dynamic runtime, not a host/CI dependency.
+# Opting in is deliberately explicit: the target ABI gate separately requires
+# --allow-nvidia-libs plus Manifold HIL proof before this profile can be used.
+option(KSI_ENABLE_TENSORRT "build the optional native TensorRT D-FINE adapter" OFF)
+set(KSI_TENSORRT_ROOT "" CACHE PATH "TensorRT/CUDA root on the Manifold image")
+
+# The DPK ABI policy allows third-party code only when statically linked.  A
+# concrete HTTPS executor therefore remains an explicit opt-in and rejects a
+# shared libcurl at configure time; the final ELF ABI gate remains the last
+# authority for curl's transitive dependencies.
+option(KSI_ENABLE_CURL_EDGE_TRANSPORT
+       "build the optional statically-linked libcurl HTTPS executor" OFF)
+set(KSI_CURL_STATIC_EXTRA_LIBRARIES "" CACHE STRING
+    "semicolon-separated absolute .a dependencies for the reviewed libcurl bundle")
+
 add_library(ksi_control_plane
   src/command.cpp
   src/supervisor.cpp
@@ -56,6 +72,143 @@ target_include_directories(ksi_control_plane PUBLIC
 target_compile_options(ksi_control_plane PRIVATE
   -Wall -Wextra -Wpedantic -Werror
 )
+
+# Edge data plane — PSDK callback은 이 라이브러리의 bounded ingress에 바이트만
+# 복사하고, TensorRT/추적/위험/원장 작업은 별도 worker가 맡는다. DJI FC 제어
+# 라이브러리는 어떤 target에도 링크하지 않는다(INV-001).
+add_library(ksi_edge_runtime
+  src/activation.cpp
+  src/runtime_profile.cpp
+  src/calibrated_projector.cpp
+  src/artifact_vault.cpp
+  src/crypto.cpp
+  src/frame_queue.cpp
+  src/telemetry.cpp
+  src/world_entity.cpp
+  src/dfine.cpp
+  src/tensorrt.cpp
+  src/event_timing.cpp
+  src/evidence_builder.cpp
+  src/risk.cpp
+  src/shadow.cpp
+  src/store_forward.cpp
+  src/pipeline.cpp
+  src/sync.cpp
+  src/core_sync_http.cpp
+)
+target_include_directories(ksi_edge_runtime PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+# ksi_edge_runtime는 std::mutex와 SQLite POSIX VFS를 사용한다. 정적 runtime library의
+# 소비자(독립 contract tests와 PSDK app 모두)가 이 의존성을 최종 링크에서 받도록
+# PUBLIC으로 둔다. PSDK app에만 우연히 pthread/dl을 직접 넣으면 standalone target
+# 검증이 통과하지 않고, 정적 DPK 산출물의 실제 링크 조건도 숨겨진다.
+find_package(Threads REQUIRED)
+target_link_libraries(ksi_edge_runtime PUBLIC ksi_control_plane)
+target_compile_options(ksi_edge_runtime PRIVATE
+  -Wall -Wextra -Wpedantic -Werror
+)
+
+# DPK는 glibc 이외의 동적 의존성을 허용하지 않는다. FindSQLite3는 일부 배포판에서
+# CMAKE_FIND_LIBRARY_SUFFIXES=.a 보다 pkg-config/공유 라이브러리를 우선할 수 있어,
+# Manifold target에서는 정확히 정적 archive를 찾고 없으면 fail-closed 한다. 그렇지
+# 않으면 WAL store-and-forward가 켜진 것처럼 보여도 .dpk가 libsqlite3.so에 의존한다.
+if(KSI_TARGET_MANIFOLD3)
+  find_path(KSI_EDGE_SQLITE_INCLUDE_DIR sqlite3.h)
+  find_file(KSI_EDGE_SQLITE_STATIC_LIBRARY
+    NAMES libsqlite3.a
+    HINTS
+      "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu"
+      "${CMAKE_SYSROOT}/usr/lib"
+      "/usr/lib/aarch64-linux-gnu"
+      "/usr/lib"
+      "/usr/local/lib"
+  )
+  if(NOT KSI_EDGE_SQLITE_INCLUDE_DIR OR NOT KSI_EDGE_SQLITE_STATIC_LIBRARY)
+    message(FATAL_ERROR
+      "KSI_TARGET_MANIFOLD3 requires sqlite3.h and a static libsqlite3.a; "
+      "a DPK must not dynamically depend on libsqlite3.so")
+  endif()
+  target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=1)
+  target_include_directories(ksi_edge_runtime SYSTEM PRIVATE "${KSI_EDGE_SQLITE_INCLUDE_DIR}")
+  # PUBLIC은 static runtime library의 최종 소비자에게 archive를 전파한다. 아래의
+  # pthread/dl은 이 call 뒤에 넣어 GNU ld의 단일 패스 해석 순서도 보장한다.
+  target_link_libraries(ksi_edge_runtime PUBLIC "${KSI_EDGE_SQLITE_STATIC_LIBRARY}")
+else()
+  find_package(SQLite3 QUIET)
+  if(SQLite3_FOUND)
+    target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=1)
+    target_link_libraries(ksi_edge_runtime PRIVATE SQLite::SQLite3)
+  else()
+    # 개발 호스트가 SQLite 개발 헤더를 갖지 않아도 순수 안전 루프 검증은 가능하다.
+    # 이 경우 store-and-forward는 kBackendUnavailable로 fail-closed이며, Docker/HIL
+    # gate에서 SQLite WAL backend를 반드시 다시 빌드·실행한다.
+    target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=0)
+    message(STATUS "ksi_edge_runtime: SQLite3 development package unavailable; WAL backend disabled")
+  endif()
+endif()
+# sqlite3.a와 runtime의 std::mutex가 요구하는 시스템 라이브러리는 archive 뒤에
+# 위치해야 한다. 이 순서를 runtime target에 귀속해 standalone CTest와 DPK가 같은
+# 실제 최종 링크 조건을 검증한다.
+target_link_libraries(ksi_edge_runtime PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+
+if(KSI_ENABLE_TENSORRT)
+  find_path(KSI_TENSORRT_INCLUDE_DIR NvInfer.h
+    HINTS "${KSI_TENSORRT_ROOT}/include" /usr/include /usr/local/include)
+  find_path(KSI_TENSORRT_PARSER_INCLUDE_DIR NvOnnxParser.h
+    HINTS "${KSI_TENSORRT_ROOT}/include" /usr/include /usr/local/include)
+  find_path(KSI_CUDA_INCLUDE_DIR cuda_runtime_api.h
+    HINTS "${KSI_TENSORRT_ROOT}/include" /usr/local/cuda/include /usr/include)
+  find_library(KSI_TENSORRT_LIBRARY nvinfer
+    HINTS "${KSI_TENSORRT_ROOT}/lib" "${KSI_TENSORRT_ROOT}/lib64" /usr/lib /usr/lib/aarch64-linux-gnu)
+  find_library(KSI_TENSORRT_PARSER_LIBRARY nvonnxparser
+    HINTS "${KSI_TENSORRT_ROOT}/lib" "${KSI_TENSORRT_ROOT}/lib64" /usr/lib /usr/lib/aarch64-linux-gnu)
+  find_library(KSI_CUDART_LIBRARY cudart
+    HINTS "${KSI_TENSORRT_ROOT}/lib" "${KSI_TENSORRT_ROOT}/lib64" /usr/local/cuda/lib64 /usr/lib)
+  if(NOT KSI_TENSORRT_INCLUDE_DIR OR NOT KSI_TENSORRT_PARSER_INCLUDE_DIR OR
+     NOT KSI_CUDA_INCLUDE_DIR OR NOT KSI_TENSORRT_LIBRARY OR
+     NOT KSI_TENSORRT_PARSER_LIBRARY OR NOT KSI_CUDART_LIBRARY)
+    message(FATAL_ERROR
+      "KSI_ENABLE_TENSORRT=ON requires NvInfer.h, NvOnnxParser.h, cuda_runtime_api.h, nvinfer, nvonnxparser, and cudart")
+  endif()
+  target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_TENSORRT=1)
+  target_include_directories(ksi_edge_runtime SYSTEM PRIVATE
+    "${KSI_TENSORRT_INCLUDE_DIR}" "${KSI_TENSORRT_PARSER_INCLUDE_DIR}" "${KSI_CUDA_INCLUDE_DIR}")
+  target_link_libraries(ksi_edge_runtime PRIVATE
+    "${KSI_TENSORRT_LIBRARY}" "${KSI_TENSORRT_PARSER_LIBRARY}" "${KSI_CUDART_LIBRARY}")
+else()
+  target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_TENSORRT=0)
+endif()
+
+if(KSI_ENABLE_CURL_EDGE_TRANSPORT)
+  set(CURL_USE_STATIC_LIBS TRUE)
+  find_package(CURL REQUIRED)
+  if(NOT CURL_LIBRARY MATCHES "\\.a$")
+    message(FATAL_ERROR
+      "KSI_ENABLE_CURL_EDGE_TRANSPORT=ON requires a static libcurl (.a); DPK cannot depend on a shared libcurl")
+  endif()
+  if(NOT KSI_CURL_STATIC_EXTRA_LIBRARIES)
+    message(FATAL_ERROR
+      "KSI_ENABLE_CURL_EDGE_TRANSPORT=ON requires KSI_CURL_STATIC_EXTRA_LIBRARIES: reviewed absolute .a dependencies for libcurl (the distro libcurl.a alone is not a DPK-safe bundle)")
+  endif()
+  foreach(_curl_static_dependency IN LISTS KSI_CURL_STATIC_EXTRA_LIBRARIES)
+    if(NOT IS_ABSOLUTE "${_curl_static_dependency}" OR
+       NOT EXISTS "${_curl_static_dependency}" OR
+       NOT "${_curl_static_dependency}" MATCHES "\\.a$")
+      message(FATAL_ERROR
+        "KSI_CURL_STATIC_EXTRA_LIBRARIES entry must be an existing absolute .a archive: ${_curl_static_dependency}")
+    endif()
+  endforeach()
+  target_sources(ksi_edge_runtime PRIVATE src/curl_https_executor.cpp)
+  target_compile_definitions(ksi_edge_runtime PUBLIC KSI_EDGE_HAVE_CURL_TRANSPORT=1)
+  # Do not link CURL::libcurl here: FindCURL may attach shared transitive
+  # dependencies even when CURL_LIBRARY itself ends in .a.  The reviewed
+  # archive list above is the only non-glibc TLS dependency surface.
+  target_include_directories(ksi_edge_runtime SYSTEM PRIVATE ${CURL_INCLUDE_DIRS})
+  target_link_libraries(ksi_edge_runtime PRIVATE "${CURL_LIBRARY}" ${KSI_CURL_STATIC_EXTRA_LIBRARIES})
+else()
+  target_compile_definitions(ksi_edge_runtime PUBLIC KSI_EDGE_HAVE_CURL_TRANSPORT=0)
+endif()
 
 option(KSI_BUILD_TESTS "control plane 계약 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)
@@ -74,4 +227,18 @@ if(KSI_BUILD_TESTS)
   target_include_directories(conformance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
   target_compile_options(conformance_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME action_intent_conformance COMMAND conformance_tests)
+
+  add_executable(edge_runtime_tests tests/edge_runtime_tests.cpp)
+  target_link_libraries(edge_runtime_tests PRIVATE ksi_edge_runtime)
+  target_compile_options(edge_runtime_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME edge_runtime_contract COMMAND edge_runtime_tests)
+
+  # This offline companion executes the same optional TensorRT adapter as the
+  # DPK and writes semantic results for the Python ONNX oracle.  It is built
+  # with contract tests, never installed into the production DPK.
+  add_executable(tensorrt_differential_runner tools/tensorrt_differential_runner.cpp)
+  target_link_libraries(tensorrt_differential_runner PRIVATE ksi_edge_runtime)
+  target_compile_options(tensorrt_differential_runner PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME tensorrt_differential_runner_contract
+           COMMAND tensorrt_differential_runner --version)
 endif()

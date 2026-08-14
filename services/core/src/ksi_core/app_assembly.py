@@ -42,6 +42,11 @@ from ksi_core.design_conformance_reports import DesignConformanceStore
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.edge_dispatch import (
+    EdgeDispatchStore,
+    EdgeRuntimeProfileRegistry,
+    RiskPolicyPackRegistry,
+)
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
@@ -91,6 +96,8 @@ def assemble_app(
     evidence_storage: EvidenceStorage | None,
     mission_signing_key: Ed25519PrivateKey,
     mission_signing_key_id: str,
+    risk_policy_packs: tuple[dict[str, Any], ...] = (),
+    edge_runtime_profiles: tuple[dict[str, Any], ...] = (),
     expose_docs: bool = True,
 ) -> FastAPI:
     """모든 store 를 조립하고 ``create_app`` 을 호출한다 — dev/production 공용.
@@ -115,6 +122,17 @@ def assemble_app(
     opened.append(edge_sync_store)
 
     mission_store = MissionStore(mission_journal)
+    # Edge dispatch는 별도 journal에 envelope/activation receipt를 남긴다. policy
+    # pack이 비어 있으면 endpoint는 204만 반환한다 — 임의 default pack으로 장비를
+    # dispatch하지 않는 fail-closed 기본값이다.
+    edge_dispatch_store = EdgeDispatchStore(
+        journal("edge-dispatch.jsonl"),
+        mission_store=mission_store,
+        risk_policy_packs=RiskPolicyPackRegistry(risk_policy_packs),
+        edge_runtime_profiles=EdgeRuntimeProfileRegistry(edge_runtime_profiles),
+        private_key=mission_signing_key,
+        key_id=mission_signing_key_id,
+    )
     # 커버리지 보고는 임무 발급 기록과 대조해서만 받는다(INV-010) — 발급된 적
     # 없는 임무의 관찰 결과는 "무슨 근거로 날았나"에 답할 수 없다.
     coverage_journal = journal("coverage-reports.jsonl")
@@ -225,6 +243,7 @@ def assemble_app(
         mission_store=mission_store,
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
+        edge_dispatch_store=edge_dispatch_store,
         evidence_storage=evidence_storage,
         coverage_report_store=CoverageReportStore(
             coverage_journal, mission_store=mission_store

@@ -2,6 +2,20 @@
 
 namespace ksi::control_plane {
 
+const char* ToString(ActionIntentKind kind) {
+    switch (kind) {
+        case ActionIntentKind::kHold:
+            return "HOLD";
+        case ActionIntentKind::kReturnToHome:
+            return "RETURN_TO_HOME";
+        case ActionIntentKind::kGotoViewpoint:
+            return "GOTO_VIEWPOINT";
+        case ActionIntentKind::kCaptureImage:
+            return "CAPTURE_IMAGE";
+    }
+    return "UNKNOWN";
+}
+
 CommandVerdict VerifyActionIntent(const ActionIntent& intent,
                                   const std::string& active_digest,
                                   UtcMillis now_utc_ms) {
@@ -25,6 +39,15 @@ CommandVerdict VerifyActionIntent(const ActionIntent& intent,
     }
     if (now_utc_ms < 0 || now_utc_ms > kMaxUtcMs) {
         return CommandVerdict::kMalformed;
+    }
+    switch (intent.kind) {
+        case ActionIntentKind::kHold:
+        case ActionIntentKind::kReturnToHome:
+        case ActionIntentKind::kGotoViewpoint:
+        case ActionIntentKind::kCaptureImage:
+            break;
+        default:
+            return CommandVerdict::kMalformed;
     }
     if (intent.kind == ActionIntentKind::kGotoViewpoint && intent.target_viewpoint_id.empty()) {
         // 목적지 없는 이동 의도 — 하류가 기본값을 지어내는 fail-open 을 계약이 차단.

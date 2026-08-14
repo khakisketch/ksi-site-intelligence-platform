@@ -352,9 +352,15 @@ def test_viewer_permissions() -> None:
     )
 
 
-def test_edge_device_permissions_fixed_regardless_of_role_table() -> None:
+def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_table() -> None:
     perms = principal_permissions(_device_principal())
-    assert perms == frozenset({Permission.EDGE_SYNC_INGEST})
+    assert perms == frozenset(
+        {
+            Permission.EDGE_SYNC_INGEST,
+            Permission.EDGE_MISSION_PULL,
+            Permission.EDGE_EVIDENCE_WRITE,
+        }
+    )
 
 
 # ── 구조 불변식(ADR-KSI-015) — 역할 이름과 무관해 다음 재편에도 살아남는다 ──────
@@ -406,9 +412,17 @@ def test_every_write_permission_has_a_role_without_it(perm: Permission) -> None:
     assert any(perm not in perms for perms in _ROLE_PERMISSIONS.values())
 
 
-def test_no_role_has_edge_sync_ingest() -> None:
+@pytest.mark.parametrize(
+    "permission",
+    (
+        Permission.EDGE_SYNC_INGEST,
+        Permission.EDGE_MISSION_PULL,
+        Permission.EDGE_EVIDENCE_WRITE,
+    ),
+)
+def test_no_role_has_edge_only_permission(permission: Permission) -> None:
     """EDGE_DEVICE 전용 권한이 어떤 사람 역할에도 새지 않는다."""
-    assert all(Permission.EDGE_SYNC_INGEST not in perms for perms in _ROLE_PERMISSIONS.values())
+    assert all(permission not in perms for perms in _ROLE_PERMISSIONS.values())
 
 
 def test_no_role_has_processing_work() -> None:
@@ -685,7 +699,7 @@ def test_whoami_edge_device() -> None:
         "kind": "EDGE_DEVICE",
         "role": None,
         "deviceId": "rig-42",
-        "permissions": ["EDGE_SYNC_INGEST"],
+        "permissions": ["EDGE_EVIDENCE_WRITE", "EDGE_MISSION_PULL", "EDGE_SYNC_INGEST"],
     }
 
 

@@ -76,6 +76,9 @@ hil_raw_logs/
     07_frame_telemetry_timing/
       <UTC_ts>__frame_telemetry.jsonl     # capture_frame_telemetry_timing.py collect 산출물
       <UTC_ts>__frame_telemetry_summary.json  # 같은 스크립트 summarize 산출물
+      <UTC_ts>__candidate_durable_timing/ # private DPK event-timing-*.json 사본
+      <UTC_ts>__candidate_durable_timing_summary.json
+                                           # summarize_event_candidate_timing.py 산출물
     08_dpk_deploy/
       <UTC_ts>__dpk_deploy.log
 ```

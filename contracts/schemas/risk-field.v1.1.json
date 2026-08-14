@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/risk-field.v1.1.json",
+  "title": "RiskField v1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "riskFieldId",
+    "type",
+    "sourceEntityIds",
+    "validity",
+    "geometry",
+    "riskModel",
+    "uncertainty",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.1" },
+    "riskFieldId": { "type": "string", "minLength": 1 },
+    "type": { "enum": ["STATIC", "DERIVED", "DYNAMIC", "PREDICTED"] },
+    "hazardType": { "type": "string" },
+    "sourceEntityIds": { "type": "array", "items": { "type": "string" } },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "to": { "type": "string", "format": "date-time" }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "payload"],
+      "properties": {
+        "format": { "enum": ["GEOJSON_2D", "EXTRUDED_POLYGON", "MESH", "VOXEL_GRID", "PARAMETRIC_VOLUME"] },
+        "payload": {}
+      }
+    },
+    "riskModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyId", "severity", "predictionHorizonSeconds"],
+      "properties": {
+        "policyId": { "type": "string", "minLength": 1 },
+        "severity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "predictionHorizonSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "closestApproachM": { "type": "number" },
+        "timeToCollisionS": { "type": "number" }
+      }
+    },
+    "uncertainty": { "type": "object" },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["riskPolicyPackDigest", "calibrationProfileId", "sourceTimestamp"],
+      "properties": {
+        "riskPolicyPackDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "calibrationProfileId": { "type": "string", "minLength": 1 },
+        "sourceTimestamp": { "type": "string", "format": "date-time" },
+        "sensorTimestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

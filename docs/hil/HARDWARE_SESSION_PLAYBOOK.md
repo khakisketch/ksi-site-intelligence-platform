@@ -431,27 +431,47 @@ ssh <manifold-host> 'ip -brief addr; ip route; cat /sys/class/net/rndis0/carrier
 `docs/product/DOMAIN_INVARIANTS.md` INV-025(CONFIRMED 승격의 시점 증거 전제조건)가
 기대는 시간 정합성이 실제로 확보되는지 확인한다.
 
-**구현 상태(2026-08-04): 코드는 있고, 실기 실행은 아직 없다.** `edge/psdk-tap`(C
-수집기)과 `collect --source tap-log` 경로가 모두 구현됐다 — 아래 블록은 이제 설계가
-아니라 실제 인자를 가진 명령이다. 다만 **이 경로 전체가 실기에서 한 번도 돌지
-않았다**: `psdk_tap` 타깃은 PSDK 실물(`tools/edge/fetch_psdk.py`)과 App Key
-(`edge/psdk-tap/config/dji_sdk_app_info.h`)가 있어야 빌드되고, 그 둘은 기체 연결과
-함께 오는 물건이다. CI가 검증하는 건 PSDK 비의존 순수 로직(pairing)뿐이다 —
-`--out` 경로·`--num-samples` 동작·NDJSON 스키마는 실기에서 처음 확인된다.
+**구현 상태(2026-08-14): 소프트웨어 경로는 있고, 실기 실행은 아직 없다.**
+`edge/psdk-tap`(C 수집기), official `.dpk` build target, 그리고
+`collect --source tap-log` 경로는 구현·target ABI 검증됐다. 다만 **이 경로 전체가
+실기에서 한 번도 돌지 않았다**: `psdk_tap`은 PSDK 실물과 DJI-issued App credential이
+필요하고, DPK 설치·기동 성공도 별도 HIL 증거가 필요하다. CI가 검증하는 것은
+PSDK 비의존 pairing logic뿐이다 — callback, `/tmp` output, NDJSON, 프레임 수렴은
+실기에서 처음 확인된다.
+
+**순서 강제:** 2026-08-12 실측상 SSH에서 executable을 직접 실행하면 USB bulk channel을
+얻지 못한다. 따라서 이 단계는 **8단계 DPK 설치·기동이 PASS 또는 해당 앱의 정상 기동
+로그를 남긴 뒤에만** 수행한다. 아래 명령의 DPK는 DJI-issued `user_app_id`와 실제
+credential을 써야 하며, CI의 test ID package는 설치하지 않는다.
 
 **실행 항목** — ADR-KSI-009 D3(수집은 C, 판정은 Python) 적용:
 ```bash
-# 1) 실기에서 C tap이 PSDK liveview + FC subscription 콜백으로 NDJSON을 쓴다
-ssh <manifold-host> 'edge/psdk-tap/build/psdk_tap --num-samples 400 \
-    --out /open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson'
-rsync -az <manifold-host>:/open_app/ksi_hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/ \
-    hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/
+# 1) 개발 PC/target container에서 official HIL DPK 생성 (실제 DJI-issued ID만 사용)
+cmake -S edge/psdk-tap -B edge/psdk-tap/build-manifold3 \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-manifold3.cmake \
+    -DKSI_TARGET_MANIFOLD3=ON \
+    -DKSI_PSDK_TAP_APP_INFO_HEADER=/secure/dji_sdk_app_info.h \
+    -DKSI_PSDK_TAP_BUILD_DPK=ON \
+    -DKSI_PSDK_TAP_DPK_USER_APP_ID=<DJI_issued_id>
+cmake --build edge/psdk-tap/build-manifold3 --target ksi_psdk_tap_dpk -j
 
-# 2) 개발 PC(Python 3.12)에서 tap의 raw NDJSON을 공식 판정 도구가 읽는 JSONL로 변환
+# 2) DPK manager가 app을 기동하게 한다. SSH 직접 ./psdk_tap 실행은 금지.
+scripts/manifold/manifoldctl install \
+    edge/psdk-tap/build-manifold3/dpk/out/ksi-psdk-tap_v00.01.00.02.dpk
+scripts/manifold/manifoldctl restart ksi-psdk-tap
+scripts/manifold/manifoldctl status ksi-psdk-tap
+
+# 3) 무인자 DPK는 기본 60초 수집 후 /tmp에 raw NDJSON을 쓴다. 실제 권한/경로는 로그로 검증.
+sleep 65
+scp <manifold-host>:/tmp/ksi-psdk-tap.ndjson \
+    hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson
+
+# 4) 개발 PC(Python 3.12)에서 raw NDJSON을 공식 JSONL로 변환한다.
+# Liveview frame sensor timestamp가 없으므로 recv 진단만 가능하며 sensor PASS를 주장하지 않는다.
 uv run python tools/hil/capture_frame_telemetry_timing.py collect \
     --source tap-log --tap-log hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__psdk_tap.ndjson \
     --session-id "$SESSION_ID" --aircraft-sn <실측 기체SN> \
-    --timestamp-basis sensor \
+    --timestamp-basis recv \
     --out hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__frame_telemetry.jsonl
 ```
 
@@ -465,10 +485,54 @@ uv run python tools/hil/capture_frame_telemetry_timing.py collect \
 
 **`--timestamp-basis`는 필수 인자다**(기본값 없음 — 무의식적 선택을 차단). PRD
 §21.1 "Sensor Timestamp alignment"의 정본은 `sensor`(카메라/Telemetry 자체
-타임스탬프)이지만, PSDK가 그 값을 노출하지 않으면 `recv`(파이프라인 도착 시각)로
-대체하되 그 사실을 `test_procedure`·`latency_result`에 명시한다 — 대체 정의로 낸
-PASS를 "센서 시각 정합 PASS"라고 부르면 안 된다(정의 변경은 profile v2 문제이므로
-대표자 결정 레인).
+타임스탬프)이다. 현재 PSDK Liveview callback은 frame sensor timestamp를 주지 않으므로
+위의 `recv`(파이프라인 도착 시각) 결과는 수신 경로 진단만 뜻한다. `recv`로 숫자가
+좋아도 **sensor alignment PASS/VERIFIED/CONFIRMED 승격 근거가 아니며**, sensor source를
+실제로 확보해 `frame_sensor_ts=true` raw record를 다시 수집하기 전에는 이 단계의 sensor
+criterion은 `BLOCKED`로 남긴다.
+
+**별도 PSDK perception stream을 RGB timestamp로 오인하지 않는다(2026-08-14 재확인).**
+PSDK 3.16.0의 `dji_perception.h`에는 `DjiPerceptionImageCallback`과
+`T_DjiPerceptionImageInfo.timeStamp`가 있고, DJI의
+[Perception Data 문서](https://developer.dji.com/doc/payload-sdk-tutorial/en/function-overview/advanced-function/perception-data.html)는
+M4D에서 Manifold 3를 통해 받는 **회색조 시각-perception 카메라** 스트림이라고 명시한다.
+이는 `DjiLiveview_StartImageStream(..., PIXFMT_RGB_PACKED, ...)`의 payload RGB frame과
+서로 다른 센서·형상·callback이다. 따라서 perception `timeStamp`를 수신시각에 가장 가까운
+Liveview RGB frame에 복사하거나 `frame_sensor_ts=true`로 표시하는 것은 금지한다.
+
+이를 sensor-timing 경로로 채택하려면 별도 `SPIKE-DJI-07`에서 다음을 실증해야 한다.
+
+- 설치된 DPK 안에서 perception USB logical channel과 실제 callback 수신을 먼저 기록한다.
+- `timeStamp`의 단위·epoch·wrap 규칙, 그리고 HARD_SYNC timestamp와의 동일 time domain을
+  100개 이상의 raw 쌍으로 검증한다. PSDK header의 `uint64_t` 필드명만으로 단위나
+  host monotonic 환산을 추정하지 않는다.
+- perception grayscale camera의 intrinsics/extrinsics와 D-FINE 입력 계약을 별도로 검증한다.
+  이 증거는 RGB payload camera calibration 또는 RGB timing의 대체물이 아니다.
+
+`edge/psdk-tap`에는 이 첫 항목을 위한 raw probe가 구현돼 있다. DPK가 argv 없이
+기동되므로 perception probe package는 아래와 같이 compile-time default를 명시해 만든다.
+
+```bash
+cmake -S edge/psdk-tap -B edge/psdk-tap/build-manifold3-perception \
+    -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-manifold3.cmake \
+    -DKSI_TARGET_MANIFOLD3=ON \
+    -DKSI_PSDK_TAP_APP_INFO_HEADER=/secure/dji_sdk_app_info.h \
+    -DKSI_PSDK_TAP_BUILD_DPK=ON \
+    -DKSI_PSDK_TAP_DPK_USER_APP_ID=<DJI_issued_id_max_16_ascii_bytes> \
+    -DKSI_PSDK_TAP_DEFAULT_FRAME_SOURCE=perception \
+    -DKSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION=front
+cmake --build edge/psdk-tap/build-manifold3-perception --target ksi_psdk_tap_dpk -j
+```
+
+이 probe의 NDJSON v2 `frame.sensor_timestamp_raw_u64`는 lossless decimal string이고
+`meta.timestamp_contract.sensor_us_domain="unverified"`다. 즉 callback 수신/USB mapping
+및 raw sequence 분석을 위한 증거일 뿐, `sensor_us`나 sensor-alignment 표본이 아니다.
+Python 변환기의 `--timestamp-basis sensor`는 `host_monotonic_us`라는 명시적 정규화 계약이
+없으면 fail-closed하므로, 위 100개 raw 쌍 clock-domain 실증을 마치기 전에는 sensor PASS가
+나올 수 없다.
+
+그 spike가 끝나기 전에는 현재 tap의 `frame_sensor_ts=false`와 RGB pipeline의
+`SENSOR_ALIGNMENT_REQUIRED`가 정본이다.
 
 **표본 수는 넉넉히 요청한다** — 공식 최소 100인데 드롭률이 미지수이므로 400~600
 요청을 권장(30fps면 20~30초). 200 요청 후 드롭으로 99개가 되면 세션이 헛돈다.
@@ -484,8 +548,9 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
 `measurement_status`/`acceptance_status`)
 
 **판정 기준** (`docs/hil/CAPABILITY_ACCEPTANCE.md` "시간동기" 행과 동일 기준 — 2축):
-- **`measurement_status=MEASURED` + `acceptance_status=PASS`**: 표본 수 ≥ 100(권장,
-  통계적 신뢰를 위한 최소치) **그리고** p95 ≤ 50ms. VERIFIED 승격 근거는 이 조합뿐이다.
+- **`measurement_status=MEASURED` + `acceptance_status=PASS` + `timestamp_basis=sensor`**:
+  표본 수 ≥ 100(권장, 통계적 신뢰를 위한 최소치) **그리고** p95 ≤ 50ms. VERIFIED 승격
+  근거는 이 조합뿐이다. `timestamp_basis=recv`의 PASS는 이 행을 만족하지 않는다.
 - **`measurement_status=MEASURED` + `acceptance_status=FAIL`**: p95 > 50ms. 표본 수가
   충분해도 **VERIFIED 승격 금지** — 목표 미달은 별도로 리스크 기록(`.ksi/goals.json`
   risk 항목 등)으로 남기고, 이 단계는 `BLOCKED`(사유: "p95 목표 미달 —
@@ -500,6 +565,84 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
 
 ---
 
+### 7.5단계 — TensorRT ↔ ONNX corpus differential (`07_frame_telemetry_timing/`의 별도 evidence)
+
+이 단계는 live flight나 PSDK callback에서 실행하지 않는다. 동일 Manifold TensorRT/CUDA
+ABI에서 registered ONNX로 engine을 만들고, raw RGB corpus 최소 10개를 C++ TensorRT runner와
+Python ONNX oracle에 각각 통과시켜 input tensor digest·class/query·confidence·original-pixel
+bbox·typed drops가 일치하는지 확인한다. raw corpus/ONNX/engine/evidence는 git 밖의 durable
+URI에 보관한다.
+
+1. `corpus.json`의 canonical digest, ONNX digest, `preprocessor_config.json` digest,
+   corpus ID/count 및 허용오차(`confidenceAtol <= 0.001`, `bboxAtolPx <= 0.5`)를 **unsigned
+   candidate** `EdgeRuntimeProfile.tensorRtDifferential`에 채운다. candidate는 Core 서명 전에는
+   perception을 활성화하지 않는다.
+2. Manifold target에서 `KSI_ENABLE_TENSORRT=ON`과 `tensorrt_differential_runner`를 빌드한다.
+   C++ runner가 `BACKEND_UNAVAILABLE`, ONNX digest mismatch, engine build/load/inference 실패를
+   내면 `BLOCKED`이며 CPU/Python fallback으로 바꾸지 않는다.
+3. 개발 PC의 Python 3.12에서
+   `tools/edge/verify_tensorrt_differential.py verify`를 실행한다. 정확한 command와 corpus
+   wire 형식은 [`edge/manifold-runtime` README](../../edge/manifold-runtime/README.md#tensorrt--onnx-differential-evidence)를
+   따른다.
+4. canonical evidence digest를 candidate에 넣은 뒤에만 Core가 signed profile을 발행한다.
+   같은 artifact를 재검사할 때는 `--require-profile-evidence-digest`를 추가한다.
+
+**PASS 기록 조건**: 결과 evidence와 raw TensorRT/ONNX report의 durable URI, ONNX·preprocessor
+·corpus·evidence digest, runner/target TensorRT version, sample count(≥10), two tolerances 및
+`PASS` 결과가 모두 있어야 한다. TensorRT differential PASS는 모델 경계 software evidence일
+뿐이다. DPK 설치/restart, RGB/telemetry timing, calibrated projection, 5 Hz, hardware verified,
+production supported로 승격하지 않는다.
+
+### 7.6단계 — Edge candidate durable latency (`07_frame_telemetry_timing/`의 별도 evidence)
+
+**목적**: `REQ-EVT-101`의 후보 생성 부분을 실측한다. 범위는 의도적으로 좁다:
+PSDK RGB callback의 동일 process `CLOCK_MONOTONIC` 수신시각부터 SQLite의
+candidate+evidence transaction이 durable `ACCEPTED`를 반환할 때까지다. 이 DPK slice는
+사용자 로컬경보와 Core→사용자 서버알림을 구현하지 않으므로, 이 단계는 Critical
+1초/2초/5초 전체 SLO를 PASS시키는 경로가 아니다.
+
+**전제조건**: signed perception profile, registered TensorRT/ONNX differential evidence,
+calibration, sensor-time alignment이 모두 충족되어 실제 candidate가 만들어져야 한다. 현재
+표준 DPK는 이 입력들이 없으면 capture-only이므로 artifact가 0개인 것이 정상이며, 그
+경우 이 단계는 `NOT_MEASURED`다. 테스트 입력이 Critical 사건을 대표한다는 근거도 이
+artifact 밖에서 별도로 남긴다.
+
+**수집**:
+
+1. DPK를 중지한 뒤, private `PERCEPTION_STATE_DIR/artifacts/`의
+   `event-timing-*.json` **사본**만 raw log로 옮긴다. 원본 vault를 수정·rename·삭제하지
+   않는다.
+2. HIL machine에서 고정 validator를 실행한다. `build_commit`은 session manifest와 같은
+   commit이어야 한다.
+
+```bash
+uv run python tools/hil/summarize_event_candidate_timing.py summarize \
+  --in-dir hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__candidate_durable_timing \
+  --out hil_raw_logs/$SESSION_ID/07_frame_telemetry_timing/<UTC_ts>__candidate_durable_timing_summary.json \
+  --session-id "$SESSION_ID" \
+  --build-commit "$(git rev-parse HEAD)"
+```
+
+validator는 schema/stage/clock domain, integer latency 재계산, duplicate candidate ID,
+손상 JSON을 검증한다. 기준값은 CLI로 바꿀 수 없는
+`ksi-edge-candidate-durability-v1`의 **모든** measured sample `max <= 1000 ms`다.
+
+**판정**:
+
+- `evidenceStatus=VALID`, `measurementStatus=MEASURED`,
+  `candidateDurabilityBudget.status=WITHIN_BUDGET`: 해당 좁은 candidate-durable stage의
+  실측 evidence다. hardware/production 또는 전체 REQ-EVT-101 PASS로 승격하지 않는다.
+- `NOT_MEASURED`, `PARTIAL`, `INVALID`, `NOT_EVALUABLE`: PASS가 아니다. clock rollback,
+  callback timestamp/worker clock 부재, corrupt copy, duplicate input 등의 구체 사유를
+  summary와 session note에 남긴다. 남은 좋은 표본만으로 PASS를 주장하지 않는다.
+- `EXCEEDED`: 실측한 candidate-durable stage가 1초 목표를 넘었다. `BLOCKED`
+  (`requirement_not_met`)로 남기며, 처리율/queue/engine 경로를 별도 분석한다.
+
+전체 Critical SLO에는 위 raw artifact 외에 (a) 입력이 실제 Critical임을 묶는 replay/HIL
+lineage, (b) 사용자 로컬경보 2초, (c) 서버 연결 시 사용자 알림 5초의 별도 timestamped
+evidence가 필요하다. 현재 shadow slice에는 (b)/(c) 구현이 없으므로 이 세 항목을
+`EventBundle.timing`에 추정치로 쓰거나 완료로 표기하지 않는다.
+
 ### 8단계 — DPK 설치·재시작 검증 (`08_dpk_deploy/`)
 
 **목적**: 배포 경로(빌드된 페이로드 애플리케이션을 Manifold/기체에 설치하고 재시작 후
@@ -509,9 +652,11 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
 기준으로 그대로 따른다.
 
 **실행 항목**:
-- KSI 빌드(또는 최소한 공식 샘플 빌드)를 배포 절차대로 설치
-- 대상 장치(Manifold 또는 페이로드) 재시작
-- 재시작 후 애플리케이션이 자동/수동으로 정상 기동하는지 확인
+- DJI-issued `user_app_id`와 실제 credential로 만든 `.dpk`만
+  `scripts/manifold/manifoldctl install <local.dpk>`로 설치
+- `scripts/manifold/manifoldctl restart <app_name>` 뒤
+  `scripts/manifold/manifoldctl status <app_name>` 및 `list <app_name>`를 기록
+- 재시작 후 애플리케이션이 정상 기동하고, HIL probe라면 raw output 파일까지 실제로 생성되는지 확인
 
 **수집 증거**: `hil_raw_logs/<session_id>/08_dpk_deploy/<UTC_ts>__dpk_deploy.log`
 (설치 명령·출력, 재시작 전후 상태, 기동 로그)
@@ -521,6 +666,44 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
   기동했다.
 - **BLOCKED**: 설치 실패 또는 재시작 후 기동 실패 → "운영 배포가 동작한다"는 주장을
   하지 않는다.
+
+### 8.1단계 — activation control-plane companion (activation-enabled DPK에만)
+
+`KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION=ON`인 DPK는 `active-dispatch.native.v1` handoff를
+읽을 뿐, Mission Dispatch를 자체 pull하거나 Python verifier를 callback에서 실행하지
+않는다. 별도 Python 3.12 `ksi-edge-dispatch-sync` companion이 한 번에
+`GET /v1/edge-sync/missions/next` → 기존 signed verifier → matching activation receipt POST를
+수행한다. Core bearer는 private `0600` file에서만 읽고, supplied CA + exact Core SPKI pin을
+검증한 뒤에만 header를 보내며 redirect를 따르지 않는다.
+
+**실기 제약**: 현 Manifold 기본 Python은 3.8.10이고 이 package는 Python 3.12를 요구한다.
+현재 `.dpk`도 native executable만 package한다. 따라서 operator는 stock Python을 백포트하거나
+DPK callback에 Python을 넣지 말고, 실제 DPK 사용자와 같은 private `0700` activation state
+directory에 접근 가능한 별도 검토된 non-root Python 3.12 runtime(또는 동등한 atomic handoff)을
+먼저 제공해야 한다. directory ownership/mode, Core CA/SPKI pin, public key registry, token file의
+소유권은 HIL에서 실측한다. 이 조건이 없으면 DPK는 capture-only로 남고 이 단계는 `BLOCKED`다.
+
+비밀값은 command line·raw log·git에 넣지 않는다. 실제 값은 operator가 private file/secure
+configuration에 넣고, log에는 아래와 같은 non-secret verdict만 남긴다.
+
+```bash
+# 3.12 companion이 실제 native handoff directory를 보는 환경에서 one-shot 실행.
+ksi-edge-dispatch-sync \
+  --core-base-url https://<core_origin> \
+  --tls-ca-bundle <reviewed_ca_bundle> \
+  --core-spki-pin sha256//<core_spki_pin> \
+  --bearer-token-file <private_0600_edge_token> \
+  --keys-dir <public_verification_key_directory> \
+  --state-dir <same_private_0700_activation_state_dir> \
+  --edge-device-id <device_id> \
+  --runtime-version <runtime_version>
+```
+
+**추가 PASS 증거**: `NO_MISSION`(204), successful
+`ACTIVATED_AND_RECORDED`, 그리고 receipt network/5xx failure 뒤
+`ACTIVATED_RECEIPT_PENDING` 상태에서도 private native handoff가 유지되고 다음 one-shot이
+같은 pending dispatch를 idempotently receipt 처리하는 redacted log가 필요하다. 이 결과는
+PSDK ingress/telemetry/RGB/timing HIL을 대체하지 않으며, 실제 비행 command를 수행하지 않는다.
 
 ## 3. 세션 종료 후
 
