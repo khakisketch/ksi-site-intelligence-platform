@@ -24,6 +24,7 @@ import {
   isUnattended,
   type SlaState,
 } from "@/lib/core-api/triage";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -46,11 +47,6 @@ const SLA_SUFFIX: Record<Exclude<SlaState, "ok">, string> = {
   breached: "확인 목표 초과",
   "due-soon": "확인 목표 임박",
 };
-
-const absoluteFormatter = new Intl.DateTimeFormat("ko-KR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 interface DwellState {
   text: string;
@@ -88,7 +84,10 @@ export function DwellBar({ event }: { event: EventSummaryResponse }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.occurredAt, event.severity, event.status, event.triage]);
 
-  const fallbackText = absoluteFormatter.format(new Date(event.occurredAt));
+  const fallbackText = formatKoreanDateTime(event.occurredAt, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
   const text = state?.text ?? fallbackText;
   const showBar = state !== null && state.pct !== null;
   const sla = state?.sla ?? null;

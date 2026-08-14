@@ -1,11 +1,10 @@
 // 임무 목록/상세 공통 표시 포맷터.
-
-export function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(iso));
-}
+//
+// 날짜/시각 표시는 여기서 만들지 않는다 — @/lib/datetime 의 formatKoreanDateTime 을
+// 쓴다. 서버 컨테이너가 어느 시간대로 뜨든 항상 서울 기준으로 찍히게 하기 위한
+// 이 저장소의 표준 경로다(risk dashboard-mission-format-bypasses-seoul-timezone,
+// 이 파일이 그 규율을 안 따르고 timeZone 없는 Intl.DateTimeFormat 을 직접 써서
+// 서버가 UTC 로 뜨면 9시간 어긋나던 것을 해소).
 
 /** 순수 비율→퍼센트 포맷터(계획/실측 공용) — 어떤 비율인지의 의미는 호출부가 말한다. */
 export function formatRatio(ratio: number): string {

@@ -7,8 +7,9 @@ import type { CoverageReportView } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
-import { formatDateTime, formatRatio } from "@/app/missions/format";
+import { formatRatio } from "@/app/missions/format";
 import { CELL_STATE_LABEL, COMPLETION_STATE_LABEL } from "@/app/missions/mission-labels";
 
 /** 임무 상세 화면의 "비행 결과" 섹션이 받는 조회 결과 — 서버 판정 그대로다. */
@@ -61,7 +62,8 @@ export function CoverageReportSection({ result }: { result: CoverageReportResult
         <StatusBadge label={completion.label} tone={completion.tone} />
         {recoveryRecommended && <StatusBadge label="재커버 권고" tone="caution" />}
         <span className="text-[12.5px] break-keep text-ink-muted">
-          {formatDateTime(latest.timestamp)} 보고 · 보고 장비 {reportedBy ?? "확인 불가"}
+          {formatKoreanDateTime(latest.timestamp, { dateStyle: "medium", timeStyle: "short" })} 보고 · 보고
+          장비 {reportedBy ?? "확인 불가"}
         </span>
       </div>
 

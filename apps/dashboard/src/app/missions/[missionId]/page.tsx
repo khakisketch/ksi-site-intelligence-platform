@@ -32,8 +32,9 @@ import {
   CoverageReportSection,
   type CoverageReportResult,
 } from "@/components/missions/CoverageReportSection";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
-import { formatCoverageRatio, formatDateTime, formatNullable } from "../format";
+import { formatCoverageRatio, formatNullable } from "../format";
 import { ARTIFACT_KIND_LABEL, MISSION_TYPE_LABEL, ROUTE_PATTERN_LABEL } from "../mission-labels";
 
 // 커버리지 보고 조회 실패를 상세 화면 전체가 아니라 이 섹션 하나로 국소화한다 —
@@ -208,7 +209,14 @@ export default async function MissionDetailPage({
           <dl className="divide-y divide-line border-t border-line">
             <FieldRow label="웨이포인트 수" value={<span className="num">{formatNullable(mission.waypointCount)}</span>} />
             <FieldRow label="계획 커버리지" value={<span className="num">{formatCoverageRatio(mission.plannedCoverageRatio)}</span>} />
-            <FieldRow label="발급 일시" value={<span className="num">{formatDateTime(mission.issuedAt)}</span>} />
+            <FieldRow
+              label="발급 일시"
+              value={
+                <span className="num">
+                  {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+              }
+            />
             <FieldRow label="발급자" value={mission.issuedBy} />
           </dl>
         </section>

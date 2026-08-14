@@ -10,8 +10,9 @@ import type { MissionRecordResponse, SiteView } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
-import { formatCoverageRatio, formatDateTime, formatNullable } from "./format";
+import { formatCoverageRatio, formatNullable } from "./format";
 import {
   COMPLETION_STATE_LABEL,
   COVERAGE_NOT_REPORTED_LABEL,
@@ -142,7 +143,11 @@ function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; si
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-2.5">
           <Fact label="웨이포인트" value={formatNullable(mission.waypointCount)} numeric />
           <Fact label="계획 커버리지" value={formatCoverageRatio(mission.plannedCoverageRatio)} numeric />
-          <Fact label="발급 일시" value={formatDateTime(mission.issuedAt)} numeric />
+          <Fact
+            label="발급 일시"
+            value={formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
+            numeric
+          />
           <Fact label="발급자" value={mission.issuedBy} />
         </div>
         <p className="border-t border-line pt-2.5 text-[12px] break-keep text-ink-2">

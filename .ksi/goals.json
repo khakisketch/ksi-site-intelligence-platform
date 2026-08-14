@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T12:23:26+09:00",
+  "updated_at": "2026-08-14T14:24:06+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2736,14 +2736,14 @@
       "title": "임무 목록·상세·이벤트 목록 화면이 lib/datetime.ts를 안 거치고 시간대 없는 포맷터를 그대로 쓴다 — 서버가 UTC로 뜨면 발급 일시가 9시간 어긋난다",
       "lens": "time-axis",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 독립 검토(reviewer agent)+직접 git diff 대조로 확인. apps/dashboard/src/app/missions/format.ts(커밋 dcf8f34, 이번 diff 밖)의 formatDateTime()이 new Intl.DateTimeFormat(\"ko-KR\",{dateStyle,timeStyle}).format(new Date(iso))를 timeZone 없이 쓴다 — lib/datetime.ts가 명시적으로 막으려던 바로 그 패턴(서버 컨테이너가 UTC로 뜨면 표시 시각이 9시간 어긋나고 자정 근처엔 날짜 자체가 바뀜). 사용처 확인: missions/page.tsx:145(발급 일시), missions/[missionId]/page.tsx:211(발급 일시), events/page.tsx:104-107,162(occurredAt) — 전부 트래픽이 높은 화면. 이번 세션 diff는 이 줄들을 건드리지 않아(문맥 줄로 확인) 회귀는 아니지만, lib/datetime.ts 도입 이후에도 안 옮겨진 기존 부채다. 해소: 세 곳을 formatKoreanDateTime으로 교체하고 missions/format.ts의 중복 구현을 제거.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-08-14 수정. missions/format.ts의 formatDateTime(timeZone 없음) 제거, missions/page.tsx·missions/[missionId]/page.tsx·components/missions/CoverageReportSection.tsx·events/page.tsx·events/DwellBar.tsx 5곳 전부 lib/datetime.ts의 formatKoreanDateTime으로 교체(기존 dateStyle/timeStyle 옵션은 원래 표시 형식 그대로 보존). 검증: vitest 217/217 passed, eslint clean, next build 전체 라우트 통과.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T12:14:20+09:00",
-      "updated_at": "2026-08-14T12:14:20+09:00"
+      "updated_at": "2026-08-14T14:24:06+09:00"
     },
     {
       "id": "edge-runtime-tests-silently-skip-without-sqlite",

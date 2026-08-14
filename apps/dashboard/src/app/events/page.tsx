@@ -22,6 +22,7 @@ import { groupForTriage, isUnattended } from "@/lib/core-api/triage";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { DwellBar } from "./DwellBar";
 import { EventDetailPanel } from "./EventDetailPanel";
 import { EventRowLink } from "./EventRowLink";
@@ -101,11 +102,6 @@ const QUEUE_TILES: { value: TriageStatus; label: string }[] = [
   { value: "CLOSED", label: "종결" },
 ];
 
-const occurredFormatter = new Intl.DateTimeFormat("ko-KR", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
-
 // 좌측 심각도 띠 — 색만으로 구분하지 않는다(옆에 라벨 배지가 항상 함께 선다).
 // 미판정은 회색으로 두되 띠 자체는 그린다: 자리를 비우면 행마다 들여쓰기가 어긋난다.
 const SEVERITY_STRIPE: Record<EventSeverity, string> = {
@@ -159,7 +155,9 @@ function EventRow({
             <span aria-hidden="true" className="text-ink-muted">
               ·
             </span>
-            <span className="num">{occurredFormatter.format(new Date(event.occurredAt))}</span>
+            <span className="num">
+              {formatKoreanDateTime(event.occurredAt, { dateStyle: "short", timeStyle: "short" })}
+            </span>
           </p>
           <div className="mt-1.5">
             <DwellBar event={event} />
