@@ -8,7 +8,9 @@
 2. `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
 3. `docs/product/MASTER_PRD_v3.0.md`
 4. `contracts/`
-5. Architecture/Acceptance 문서
+5. Architecture/Acceptance 문서 — 전체 구성 한 장 개요는
+   `docs/architecture/00_SYSTEM_OVERVIEW.md`(두-폐루프 원칙 + 현재 도달점),
+   실행 우선순위(P0~P3)는 `docs/architecture/ADR-KSI-018` 참조
 6. Reference Adoption 문서
 7. Pinned reference repositories
 
