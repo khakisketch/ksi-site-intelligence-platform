@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T14:24:06+09:00",
+  "updated_at": "2026-08-14T14:28:22+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1846,6 +1846,31 @@
       "verification_requested": "strict",
       "created_at": "2026-08-14T12:23:12+09:00",
       "updated_at": "2026-08-14T12:23:18+09:00"
+    },
+    {
+      "id": "autonomous-acquisition-closed-loop",
+      "title": "Autonomous Acquisition Closed Loop — 실제 M4D 기준 종단 폐루프 1회 완주",
+      "completion_criteria": [
+        "임무 발급 → Manifold 수신·검증(서명·TTL·rollback 거부)",
+        "실제 Matrice 4D 임무 수행(사람 개입은 이륙 승인만)",
+        "사진/위치/자세 자동 수집 + dataset 자동 봉인",
+        "사람 손 업로드 없이 서버 ingest → reconstruction 자동 연결",
+        "변화/진척 분석 → 재관측 필요 판정 → 새 임무 초안까지 자동",
+        "통신두절 시 onboard loop 지속 + 복구 후 동기화(저장후전달 실증)",
+        "전 과정이 실제 현장 1회 비행에서 종단으로 관측·기록됨(HIL 증거, 자기보고 불인정)"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-08-14T14:28:22+09:00",
+      "updated_at": "2026-08-14T14:28:22+09:00"
     }
   ],
   "risks": [
