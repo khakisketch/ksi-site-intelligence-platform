@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { listComparisonRequests } from "@/lib/core-api/comparison";
-import { humanizeApiError } from "@/lib/core-api/labels";
+import { MISSION_TYPE_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
 import {
   getChangeDetection,
@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
 type Result =
   | { view: ChangeDetectionView; error: null; notFound: false }
@@ -136,24 +137,33 @@ export default async function ReportsPage({
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm break-keep text-ink-2">
-          변화 탐지 결과는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.
-        </p>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-[19px] font-bold tracking-tight break-keep">임무별 비교 결과</h2>
+          <p className="text-sm break-keep text-ink-2">
+            변화 탐지와 체적 변화는 임무 단위로 따로 계산됩니다. 임무를 선택하면 결과가 없는
+            이유도 함께 확인할 수 있습니다.
+          </p>
+        </div>
         {missions.length === 0 ? (
           <EmptyState
             title="발급된 임무가 없습니다"
             action={{ label: "임무 목록", href: "/missions" }}
           />
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {missions.map((mission) => (
               <li key={mission.missionId}>
                 <Link
                   href={`/reports?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="block rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors hover:bg-sunk"
+                  className="tap-target flex h-full flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-sm transition-colors hover:bg-sunk"
                 >
-                  <span className="font-medium">{mission.missionId}</span>
-                  <span className="ml-2 text-ink-muted">{mission.siteId}</span>
+                  <span className="font-semibold break-keep">
+                    {MISSION_TYPE_LABEL[mission.missionType]} · {mission.siteId}
+                  </span>
+                  <span className="num text-[11.5px] break-token text-ink-muted">{mission.missionId}</span>
+                  <span className="text-[12px] break-keep text-ink-2">
+                    발급 {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
+                  </span>
                 </Link>
               </li>
             ))}

@@ -27,6 +27,7 @@ import { ComparisonSubmitPanel } from "@/components/missions/ComparisonSubmitPan
 import { DesignConformancePanel } from "@/components/design/DesignConformancePanel";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
+import { MissionLifecycle } from "@/components/missions/MissionLifecycle";
 import {
   CoverageReportSection,
   type CoverageReportResult,
@@ -212,6 +213,13 @@ export default async function MissionDetailPage({
           </dl>
         </section>
       </div>
+
+      <MissionLifecycle
+        coverage={coverageResult}
+        bundle={sourceBundle}
+        latestJob={latestJob}
+        hasComparisonReport={hasComparison}
+      />
 
       {/* 비행 결과 — CoverageReport 의 존재와 서버 판정을 그대로 보여준다(INV-010).
           발급 메타(위)와 분리한다: 저건 "무엇을 지시했나", 이건 "실제로 무슨 일이

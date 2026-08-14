@@ -673,28 +673,42 @@ export function SiteRegistrationWizard() {
       )}
 
       {currentStep === 3 && (
-        <p className="text-sm break-keep text-ink-2 sm:col-span-2">
-          BIM/도면·기존 모델 가져오기는 이 버전에서는 지원하지 않습니다. &quot;다음&quot;을 눌러
-          계속 진행하세요.
-        </p>
+        <section className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-4 text-sm sm:col-span-2">
+          <h2 className="font-semibold break-keep text-ink-1">BIM·도면은 현재 연결되지 않습니다</h2>
+          <p className="break-keep text-ink-2">
+            이 초기 등록은 현장 외곽과 기준 좌표계를 먼저 고정합니다. BIM·도면·기존 모델은
+            이 단계에서 업로드하거나 임무 계획에 반영할 수 없습니다.
+          </p>
+          <p className="text-[12.5px] break-keep text-ink-muted">
+            등록 후 설계 기준면 화면에서 검증 가능한 파일을 별도로 등록하세요. 지금은 추가
+            입력 없이 계속 진행합니다.
+          </p>
+        </section>
       )}
 
       {currentStep === 4 && (
-        <>
-          <TagInput
-            label="비행 금지·민감 구역"
-            helpText="이 버전은 회피 경로 생성을 지원하지 않습니다 — 값을 입력하면 다음으로 진행할 수 없습니다. 실제 회피가 필요하면 등록 후 별도로 처리하세요."
-            values={form.excludedVolumes}
-            onChange={(excludedVolumes) => update({ excludedVolumes })}
-            placeholder="구역 이름을 입력 후 Enter (쉼표로 여러 개 추가 가능)"
-          />
+        <section className="flex flex-col gap-3 rounded-lg border border-high bg-high-bg p-4 text-sm sm:col-span-2">
+          <h2 className="font-semibold break-keep text-high-ink">비행 금지·민감 구역 회피는 아직 지원하지 않습니다</h2>
+          <p className="break-keep text-ink-2">
+            현재 경로 생성 엔진은 제외 구역을 반영하거나 회피 경로를 보장할 수 없습니다. 이
+            화면에 구역 이름을 입력해도 안전 제어가 되지 않으므로, 입력 기능을 노출하지
+            않습니다.
+          </p>
+          <p className="text-[12.5px] break-keep text-ink-2">
+            계획 범위에 금지·민감 구역이 있다면 이 흐름으로 임무를 발급하지 말고 현장 경계를
+            먼저 안전하게 조정하세요.
+          </p>
           {form.excludedVolumes.length > 0 && (
-            <p className="text-sm break-keep text-high-ink sm:col-span-2">
-              현재 경로 생성 엔진이 구역 회피를 보증할 수 없어, 값이 있으면 7단계에서 발급이
-              거부됩니다. 비워두고 계속하세요.
-            </p>
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-high bg-surface p-3">
+              <p className="text-[12.5px] break-keep text-high-ink">
+                이전 임시 입력 {form.excludedVolumes.length}건 때문에 다음 단계로 갈 수 없습니다.
+              </p>
+              <button type="button" onClick={() => update({ excludedVolumes: [] })} className="btn">
+                이전 임시 입력 지우기
+              </button>
+            </div>
           )}
-        </>
+        </section>
       )}
 
       {currentStep === 5 && (
@@ -863,7 +877,12 @@ export function SiteRegistrationWizard() {
       {currentStep === 7 && (
         <div className="flex flex-col gap-3 sm:col-span-2">
           {result ? (
-            <dl className="flex flex-col gap-3 rounded-lg border border-line bg-page px-4 py-3 text-sm">
+            <>
+              <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] break-keep text-ink-2">
+                아래 값은 계획 결과입니다. 실제 비행·기체 상태·커버리지 결과는 임무 상세에서
+                비행 보고가 도착한 뒤 확인해야 합니다.
+              </p>
+              <dl className="flex flex-col gap-3 rounded-lg border border-line bg-page px-4 py-3 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="break-keep text-ink-2">웨이포인트 수</dt>
                 <dd className="num font-medium">{result.waypointCount.toLocaleString("ko-KR")}</dd>
@@ -876,7 +895,8 @@ export function SiteRegistrationWizard() {
                 <dt className="break-keep text-ink-2">KMZ SHA-256</dt>
                 <dd className="num text-xs break-token">{result.kmzSha256}</dd>
               </div>
-            </dl>
+              </dl>
+            </>
           ) : (
             <p className="text-sm break-keep text-ink-2">발급 결과를 불러오지 못했습니다.</p>
           )}

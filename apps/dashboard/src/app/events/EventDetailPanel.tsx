@@ -18,18 +18,15 @@ import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EventActions } from "./[eventKey]/EventActions";
 import { AckElapsedFact } from "./AckElapsedFact";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
 // 시안 우측 396px 상세 레일(triage-d-ink-mono.html .detail) 의 실데이터 버전 —
 // events/[eventKey]/page.tsx 의 사실 패널과 같은 항목을 보여주되, 그 파일은 건드리지
 // 않고 표시 로직만 복제한다(과제 지시). EventActions 는 그대로 import 해 재사용한다.
 
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" });
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return dateFormatter.format(date);
+  return formatKoreanDateTime(value, { dateStyle: "medium", timeStyle: "short" });
 }
 
 // 시안 .fact — 라벨열 고정폭 + 하단 구분선. events/[eventKey]/page.tsx 의 Field 와

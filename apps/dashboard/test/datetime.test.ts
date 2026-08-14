@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatKoreanDateTime, SEOUL_TIME_ZONE } from "@/lib/datetime";
+import { formatKoreanDate, formatKoreanDateTime, SEOUL_TIME_ZONE } from "@/lib/datetime";
 
 // 회귀 방지: 서버가 어느 시간대로 돌든(테스트 러너의 TZ 도 포함) 한국 시각으로
 // 찍혀야 한다 — 예전 formatMoment 관용구(timeZone 없이 toLocaleString)는 이
@@ -14,6 +14,20 @@ describe("formatKoreanDateTime", () => {
       hour12: false,
     });
     expect(formatted).toContain("09:00");
+  });
+
+  it("오전/오후 locale 표현에 기대지 않고 24시간제로 같은 문자열을 만든다", () => {
+    expect(formatKoreanDateTime("2026-08-13T13:07:59.000Z")).toBe("2026. 8. 13. 22:07:59");
+    expect(
+      formatKoreanDateTime("2026-08-13T13:07:59.000Z", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
+    ).toBe("2026. 8. 13. 22:07");
+  });
+
+  it("날짜만 쓰는 화면도 서울 기준 날짜를 쓴다", () => {
+    expect(formatKoreanDate("2026-08-12T15:30:00.000Z")).toBe("2026. 8. 13.");
   });
 
   it("한국 자정 근처 UTC 시각은 한국 날짜로 다음 날이다", () => {

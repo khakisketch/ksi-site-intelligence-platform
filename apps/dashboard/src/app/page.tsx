@@ -10,6 +10,8 @@ import { CoreApiError } from "@/lib/core-api/client";
 import {
   EVENT_SEVERITY_LABEL,
   MISSION_TYPE_LABEL,
+  SEVERITY_UNSET_LABEL,
+  SITE_STATUS_LABEL,
   TRIAGE_STATUS_LABEL,
   humanizeApiError,
   humanizeEventType,
@@ -75,6 +77,7 @@ const PATROLLABLE_SITE_STATUSES = new Set<SiteStatus>([
 ]);
 const HIGH_SEVERITY = new Set<EventSeverity>(["HIGH", "CRITICAL"]);
 const TIMELINE_LIMIT = 8;
+const HOME_SITE_LIMIT = 3;
 
 // 현장은 한국이고 서버는 어디서든 돈다 — TopBar.tsx 와 같은 근거로 시간대를 고정한다.
 // 이걸 빼면 UTC 서버에서 한국시간 00:00~09:00 이벤트가 '오늘'로 잡히지 않아, 상단바가
@@ -192,6 +195,62 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   );
 }
 
+type WorkItem = {
+  key: string;
+  href: string;
+  label: string;
+  detail: string;
+  badge?: React.ReactNode;
+};
+
+/**
+ * 홈의 첫 목록은 "무엇이 등록됐나"가 아니라 "지금 무엇을 해야 하나"다. 데이터가
+ * 없는 처리 진행률이나 기체 상태는 꾸며 내지 않고, 현재 Core가 실제로 준 이벤트·현장
+ * 상태에서만 우선순위를 만든다.
+ */
+function WorkQueue({ items }: { items: WorkItem[] }) {
+  return (
+    <section className="rounded-lg border border-line bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+        <div>
+          <h2 className="text-[15px] font-bold tracking-tight break-keep">지금 확인할 일</h2>
+          <p className="mt-0.5 text-[12px] break-keep text-ink-muted">
+            이벤트와 현장 상태에서 바로 할 수 있는 다음 행동만 보여줍니다.
+          </p>
+        </div>
+        <Link href="/events" className="tap-target flex items-center text-[12.5px] font-semibold text-accent-text hover:underline">
+          이벤트 대기열
+        </Link>
+      </div>
+      {items.length === 0 ? (
+        <p className="px-4 py-4 text-[13px] break-keep text-ink-2">
+          지금 바로 확인이 필요한 이벤트나 재매핑 요청이 없습니다. 현장별 최신 상태는 현장 목록에서 확인하세요.
+        </p>
+      ) : (
+        <ol className="divide-y divide-line">
+          {items.map((item, index) => (
+            <li key={item.key}>
+              <Link
+                href={item.href}
+                className="tap-target flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunk"
+              >
+                <span className="num grid size-6 flex-none place-items-center rounded-full bg-sunk text-[11.5px] font-bold text-ink-2">
+                  {index + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-semibold break-keep">{item.label}</span>
+                  <span className="mt-0.5 block text-[12px] break-keep text-ink-2">{item.detail}</span>
+                </span>
+                {item.badge}
+              </Link>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 export default async function HomePage() {
   const [sitesResult, eventsResult, missionsResult, whoAmIResult] = await Promise.all([
     // *Cached 를 쓰는 이유는 캐싱 자체가 아니라 **셸과 본문이 같은 스냅샷을 보게** 하기
@@ -226,6 +285,38 @@ export default async function HomePage() {
 
   const topUnattended =
     eventsResult.ok && unattendedEvents.length > 0 ? sortForTriage(unattendedEvents)[0] : null;
+
+  const workItems: WorkItem[] = [];
+  if (eventsResult.ok) {
+    for (const event of sortForTriage(unattendedEvents).slice(0, 3)) {
+      const severity = event.severity
+        ? EVENT_SEVERITY_LABEL[event.severity]
+        : SEVERITY_UNSET_LABEL;
+      const siteName = siteById.get(event.siteId)?.name ?? event.siteId;
+      const elapsed = formatElapsed(now.getTime() - new Date(event.occurredAt).getTime(), {
+        unattended: true,
+      });
+      workItems.push({
+        key: `event-${event.eventKey}`,
+        href: `/events/${encodeURIComponent(event.eventKey)}`,
+        label: `${siteName} · ${humanizeEventType(event.eventType)}`,
+        detail: `${elapsed} · 증거와 판단 근거를 확인하세요.`,
+        badge: <StatusBadge label={severity.label} tone={severity.tone} />,
+      });
+    }
+  }
+  if (sitesResult.ok && workItems.length < 3) {
+    for (const site of blockedSites.slice(0, 3 - workItems.length)) {
+      const nextStep = site.status === "UNMAPPED" ? "현장 외곽을 확인하고 초기 매핑을 계획하세요." : "최신 모델을 만들기 위한 재조사를 계획하세요.";
+      workItems.push({
+        key: `site-${site.siteId}`,
+        href: `/sites/${encodeURIComponent(site.siteId)}`,
+        label: `${site.name} · ${SITE_STATUS_LABEL[site.status].label}`,
+        detail: nextStep,
+        badge: <StateBadge label="다음 행동" tone="caution" />,
+      });
+    }
+  }
 
   // /sites/new 는 SITES_WRITE·MISSIONS_ISSUE 를 둘 다 요구한다(ADR-KSI-015 이후
   // 실제로는 두 권한이 항상 같이 붙어 있지만, 표가 갈려도 반쪽 상태를 안 만들려고
@@ -434,6 +525,8 @@ export default async function HomePage() {
         />
       </div>
 
+      <WorkQueue items={workItems} />
+
       {!sitesResult.ok ? (
         sitesResult.forbidden ? (
           <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
@@ -446,17 +539,17 @@ export default async function HomePage() {
         sites.length > 0 && (
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-2.5">
-              <h2 className="text-[15px] font-bold tracking-tight break-keep">현장</h2>
+              <h2 className="text-[15px] font-bold tracking-tight break-keep">우선 현장</h2>
               <span className="break-keep text-[12.5px] text-ink-muted">
-                {sites.length}곳
+                상태 확인이 필요한 순서로 {Math.min(sortedSites.length, HOME_SITE_LIMIT)}곳
                 {blockedSites.length > 0 && ` · ${blockedSites.length}곳은 아직 순찰할 수 없습니다`}
               </span>
-              <Link href="/sites" className="ml-auto text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
+              <Link href="/sites" className="tap-target ml-auto flex items-center text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
                 전체 보기
               </Link>
             </div>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(238px,1fr))] gap-3">
-              {sortedSites.map((site) => (
+              {sortedSites.slice(0, HOME_SITE_LIMIT).map((site) => (
                 <SiteCard
                   key={site.siteId}
                   site={site}
@@ -476,7 +569,7 @@ export default async function HomePage() {
               있다. 여기 목록은 날짜 필터 없이 최신 8건이라, 조용한 현장에서는 몇 달 전
               '현장 등록'이 그 제목 아래 뜬다. 제목이 내용보다 강하게 주장하면 안 된다. */}
           <h2 className="text-[15px] font-bold tracking-tight break-keep">최근 활동</h2>
-          <Link href="/events" className="ml-auto text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
+          <Link href="/events" className="tap-target ml-auto flex items-center text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
             이벤트 이력
           </Link>
         </div>

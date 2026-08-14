@@ -245,9 +245,25 @@ body {
 .tap-target {
   min-height: 36px;
 }
+/* 화면 폭이 태블릿 이하이면 입력장치를 정확히 판별할 수 없는 원격 브라우저·데스크톱
+   창에서도 손가락 기준을 지킨다. lg 이상에서만 조밀한 36px 도구 밀도를 허용한다. */
+@media (max-width: 1023px) {
+  .tap-target {
+    min-height: 44px;
+  }
+}
 @media (pointer: coarse) {
   .tap-target {
     min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Leaflet의 기본 zoom control은 30px라 현장 태블릿에서 조작하기 어렵다. 지도 자체의
+     위치·축척은 건드리지 않고, 실제 클릭 영역만 터치 기준으로 넓힌다. */
+  .leaflet-touch .leaflet-control-zoom a {
+    width: 44px;
+    height: 44px;
+    line-height: 44px;
   }
 }
 
@@ -255,6 +271,26 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* 긴 앱 내비게이션을 매번 통과하지 않아도 되도록 본문 앵커를 제공한다. 평소에는
+   화면을 차지하지 않고, 키보드로 포커스를 받았을 때만 상단에 나타난다. */
+.skip-link {
+  position: fixed;
+  z-index: 50;
+  top: 8px;
+  left: 8px;
+  transform: translateY(-160%);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-on);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: transform 0.12s ease;
+}
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

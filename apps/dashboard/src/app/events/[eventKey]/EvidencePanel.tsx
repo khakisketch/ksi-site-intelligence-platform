@@ -5,16 +5,11 @@ import { useRouter } from "next/navigation";
 
 import { API_ERROR_MESSAGE } from "@/lib/core-api/labels";
 import type { EvidenceSummary, EvidenceUploadResponse, EvidenceViewResponse } from "@/lib/core-api/types";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
 // Core 가 받는 MIME allowlist 와 같은 목록(ADR-KSI-010 §1) — 여기서 미리 걸러
 // "고르고 나서 415" 를 막는다. 서버 검사가 정본이고 이건 편의다.
-const ACCEPTED = "image/jpeg,image/png,image/webp,video/mp4,video/webm";
-
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Asia/Seoul",
-});
+const ACCEPTED = "application/json,image/jpeg,image/png,image/webp,video/mp4,video/webm";
 
 /**
  * 파일명을 경로-안전 artifactId 로 바꾼다.
@@ -164,7 +159,7 @@ export function EvidencePanel({
                     {artifact.artifactId}
                   </span>
                   <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
-                    {dateFormatter.format(new Date(artifact.registeredAt))}
+                    {formatKoreanDateTime(artifact.registeredAt, { dateStyle: "medium", timeStyle: "short" })}
                   </span>
                 </div>
                 <p className="text-[11.5px] break-keep text-ink-muted">
@@ -174,7 +169,9 @@ export function EvidencePanel({
                 {artifact.tombstonedAt ? (
                   // "없음"이 아니라 "폐기됨" — 사고 조사에서 이 둘은 다른 사실이다.
                   <p className="rounded-md bg-sunk px-2.5 py-2 text-[12px] break-keep text-ink-2">
-                    보관 정책으로 폐기되었습니다({dateFormatter.format(new Date(artifact.tombstonedAt))}).
+                    보관 정책으로 폐기되었습니다(
+                    {formatKoreanDateTime(artifact.tombstonedAt, { dateStyle: "medium", timeStyle: "short" })}
+                    ).
                     {artifact.tombstoneReason && ` 사유: ${artifact.tombstoneReason}`}
                   </p>
                 ) : view ? (
@@ -192,7 +189,7 @@ export function EvidencePanel({
                       <video src={view.viewUrl} controls className="max-h-80 w-full rounded-md" />
                     )}
                     <p className="text-[11px] break-keep text-ink-muted">
-                      이 링크는 {dateFormatter.format(new Date(view.expiresAt))}에 만료됩니다.
+                      이 링크는 {formatKoreanDateTime(view.expiresAt, { dateStyle: "medium", timeStyle: "short" })}에 만료됩니다.
                     </p>
                   </div>
                 ) : (

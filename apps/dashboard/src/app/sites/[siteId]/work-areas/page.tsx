@@ -68,7 +68,7 @@ export default async function SiteWorkAreasPage({
         >
           ← {site.name}
         </Link>
-        <h1 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h1>
+        <h2 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h2>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
           현장에 이름을 붙여 등록해 두는 비교 구역입니다. 한 번 등록해 두면 이후 잔량·진척을
           낼 때마다 지도에 새로 그리는 대신 이 구역을{" "}

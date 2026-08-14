@@ -6,6 +6,7 @@ import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { getNavCounts } from "@/components/nav/nav-counts";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { TopBar } from "@/components/nav/TopBar";
+import { resolvePageTitle } from "@/components/nav/page-title";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
 import "./globals.css";
@@ -33,6 +34,7 @@ export default async function RootLayout({
   const headerStore = await headers();
   // 로그인 화면에는 세션이 없다 — 여기서 집계를 부르면 매번 401 왕복만 늘린다.
   const onLoginPage = headerStore.get(PATHNAME_HEADER) === "/login";
+  const currentPageTitle = resolvePageTitle(headerStore.get(PATHNAME_HEADER)) || "KSI Site Intelligence";
   const navCounts = onLoginPage ? undefined : await getNavCounts();
 
   return (
@@ -59,10 +61,22 @@ export default async function RootLayout({
             : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[216px_1fr]"
         }
       >
+        {!onLoginPage && (
+          <a href="#main-content" className="skip-link">
+            본문으로 건너뛰기
+          </a>
+        )}
         <DesktopSidebar counts={navCounts} />
         <div className="flex min-h-full flex-col lg:min-h-0 lg:overflow-hidden">
           <TopBar />
-          <main className="flex-1 pb-16 lg:min-h-0 lg:overflow-y-auto lg:pb-0">{children}</main>
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="flex-1 pb-16 lg:min-h-0 lg:overflow-y-auto lg:pb-0"
+          >
+            {!onLoginPage && <h1 className="sr-only">{currentPageTitle}</h1>}
+            {children}
+          </main>
         </div>
         <MobileBottomNav />
       </body>

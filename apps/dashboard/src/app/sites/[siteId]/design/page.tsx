@@ -65,7 +65,7 @@ export default async function SiteDesignPage({
         >
           ← {site.name}
         </Link>
-        <h1 className="break-keep text-[19px] font-bold tracking-tight">설계 기준면</h1>
+        <h2 className="break-keep text-[19px] font-bold tracking-tight">설계 기준면</h2>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
           완성된 지형의 계획고를 담은 높이 자료(GeoTIFF)를 올려두면, 이후 촬영한
           현재 지형과 견줘 <strong className="font-bold">구역별로 얼마나 더 깎고 더

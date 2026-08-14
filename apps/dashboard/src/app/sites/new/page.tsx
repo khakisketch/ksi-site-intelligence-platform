@@ -65,9 +65,9 @@ export default async function NewSitePage({
         <p className="text-[10.5px] font-bold tracking-[0.1em] text-ink-muted uppercase break-keep">
           현장 등록
         </p>
-        <h1 className="text-[17px] font-bold tracking-tight break-keep">
+        <h2 className="text-[17px] font-bold tracking-tight break-keep">
           베이스라인 임무까지 이어서 발급할까요?
-        </h1>
+        </h2>
         <p className="text-[13px] break-keep text-ink-2">
           어느 쪽을 골라도 나중에 언제든 임무를 발급할 수 있습니다 — 지금 정하는 건 이번
           흐름의 길이일 뿐입니다.

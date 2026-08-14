@@ -696,7 +696,12 @@ export function SurveyWizard({
   } else if (draft.step === REVIEW_STEP) {
     const targetOpt = TARGET_OPTIONS.find((o) => o.value === draft.target);
     stepContent = (
-      <dl className="flex flex-col gap-3 text-sm sm:col-span-2">
+      <div className="flex flex-col gap-3 sm:col-span-2">
+        <p className="rounded-lg border border-line bg-sunk px-3 py-2.5 text-[12.5px] break-keep text-ink-2">
+          이 단계는 서명된 임무 계약을 발급합니다. 기체·배터리·현장 통신 상태나 실제 이륙
+          가능 여부는 아직 확인하지 않으므로, 계약 발급을 비행 승인으로 해석하지 마세요.
+        </p>
+        <dl className="flex flex-col gap-3 text-sm">
         <div className="flex justify-between gap-4">
           <dt className="text-ink-2">대상</dt>
           <dd className="text-right break-keep">{targetOpt?.label ?? "—"}</dd>
@@ -762,7 +767,8 @@ export function SurveyWizard({
             {draft.fallbackPolicyId} · 촬영 {draft.capturePolicyId}
           </dd>
         </div>
-      </dl>
+        </dl>
+      </div>
     );
   } else if (draft.step === SUBMIT_STEP) {
     stepContent = (

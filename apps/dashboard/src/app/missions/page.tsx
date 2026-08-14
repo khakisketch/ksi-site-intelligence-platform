@@ -110,12 +110,17 @@ function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; si
   const coverage = mission.coverageCompletionState
     ? COMPLETION_STATE_LABEL[mission.coverageCompletionState]
     : COVERAGE_NOT_REPORTED_LABEL;
+  const nextCheck = !mission.coverageCompletionState
+    ? "비행 결과 보고가 아직 없습니다. 계약만으로 비행 상태를 단정할 수 없습니다."
+    : mission.coverageCompletionState === "COMPLETED"
+      ? "비행 결과가 보고되었습니다. 사진 묶음과 재구성·비교 결과를 확인하세요."
+      : "비행 결과가 완전하지 않습니다. 상세에서 커버리지와 복구 권고를 확인하세요.";
 
   return (
     <li>
       <Link
         href={`/missions/${encodeURIComponent(mission.missionId)}`}
-        className="flex h-full flex-col gap-2.5 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-line-strong hover:bg-sunk"
+        className="tap-target flex h-full flex-col gap-2.5 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-line-strong hover:bg-sunk"
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
           <span className="min-w-0">
@@ -140,6 +145,9 @@ function MissionCard({ mission, siteName }: { mission: MissionRecordResponse; si
           <Fact label="발급 일시" value={formatDateTime(mission.issuedAt)} numeric />
           <Fact label="발급자" value={mission.issuedBy} />
         </div>
+        <p className="border-t border-line pt-2.5 text-[12px] break-keep text-ink-2">
+          <span className="font-semibold">다음 확인</span> · {nextCheck}
+        </p>
       </Link>
     </li>
   );

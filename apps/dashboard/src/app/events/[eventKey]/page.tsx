@@ -17,19 +17,13 @@ import {
 } from "@/lib/core-api/labels";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { EventActions } from "./EventActions";
 import { EvidencePanel } from "./EvidencePanel";
 
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return dateFormatter.format(date);
+  return formatKoreanDateTime(value, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function fieldString(record: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -188,18 +182,9 @@ export default async function EventDetailPage({
 
   const confirmation = findConfirmation(event.transitions);
   const severity = event.severity ? EVENT_SEVERITY_LABEL[event.severity] : SEVERITY_UNSET_LABEL;
-  // 캡처 프레임·바운딩박스·신뢰도를 보여줄 데이터 경로가 없다(감사 확인) — 그래서
-  // 자리표시만 둔다.
-  //
-  // **개수를 세지 않는다.** 여기 있던 `Object.keys(event.bundle).length` 는 증거 개수가
-  // 아니라 EventBundle **스키마의 최상위 필드 수**(schemaVersion·eventId·missionId·…)라,
-  // 증거가 하나도 없는 사건에서도 "15개 항목"처럼 읽혔다. 셀 수 없는 것을 숫자로
-  // 말하느니 없다고 말하는 편이 낫다.
-  const hasBundle = Boolean(event.bundle) && Object.keys(event.bundle).length > 0;
-
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <Link href="/events" className="text-sm underline break-keep">
+      <Link href="/events" className="tap-target inline-flex w-fit items-center text-sm underline break-keep">
         ← 목록으로
       </Link>
 
@@ -209,7 +194,7 @@ export default async function EventDetailPage({
         <p className="num text-ink-muted text-[10.5px] font-bold tracking-wide break-token uppercase">
           {event.eventKey}
         </p>
-        <h1 className="text-lg font-bold break-keep">{humanizeEventType(event.eventType)}</h1>
+        <h2 className="text-lg font-bold break-keep">{humanizeEventType(event.eventType)}</h2>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge label={severity.label} tone={severity.tone} />
           <StatusBadge
@@ -228,19 +213,22 @@ export default async function EventDetailPage({
         )}
       </div>
 
+      {canTriage && (
+        <p className="rounded-lg border border-line bg-sunk px-3 py-2.5 text-[12.5px] break-keep text-ink-2">
+          먼저 아래 증거와 전이 이력을 확인한 뒤, 현재 사실에 맞게 트리아지 상태를 변경하세요.
+        </p>
+      )}
+
+      {/* 확정의 근거가 되는 증거를 전이 이력과 제어보다 먼저 둔다. */}
+      <EvidencePanel
+        eventKey={event.eventKey}
+        evidence={event.evidence}
+        canUpload={canTriage}
+      />
+
       {/* 1024+ 2열: 좌 전이 이력 / 우 사실 패널 + 액션(시안 .work 396px 상세 폭에 맞춤). */}
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
-        <div className="flex flex-col gap-4 lg:col-start-2">
-          {/* 캡처 프레임·바운딩박스·신뢰도는 데이터 경로가 없다 — 그리지 않고
-              정직한 자리표시만 둔다. */}
-          <div className="border-line-strong bg-sunk flex items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center">
-            <p className="text-ink-muted text-[12.5px] break-keep">
-              {hasBundle
-                ? "엣지가 보낸 증거 번들이 수신돼 있습니다 · 캡처 프레임·바운딩박스 표시는 준비 중"
-                : "이 사건에 수신된 증거 번들이 없습니다"}
-            </p>
-          </div>
-
+        <div className="flex flex-col gap-4 lg:col-start-2 lg:sticky lg:top-4">
           <dl className="flex flex-col rounded-lg border border-line bg-surface px-4">
             <Field
               label="현장"
@@ -285,12 +273,6 @@ export default async function EventDetailPage({
         </div>
 
         <div className="flex flex-col gap-4 lg:col-start-1 lg:row-start-1">
-        <EvidencePanel
-          eventKey={event.eventKey}
-          evidence={event.evidence}
-          canUpload={canTriage}
-        />
-
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-medium break-keep">전이 이력</h2>
           {event.transitions.length === 0 ? (

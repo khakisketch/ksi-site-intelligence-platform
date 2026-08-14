@@ -17,14 +17,46 @@ import { listMissions } from "@/lib/core-api/missions";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
 import type { SiteView } from "@/lib/core-api/types";
+import { formatKoreanDate } from "@/lib/datetime";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" });
-
 const MISSION_LIMIT = 5;
 const EVENT_LIMIT = 5;
+
+function nextActionFor(site: SiteView): { title: string; description: string; href?: string } {
+  switch (site.status) {
+    case "UNMAPPED":
+      return {
+        title: "현장 외곽을 확인한 뒤 초기 매핑을 계획하세요",
+        description: "기준 지도가 없어 순찰을 시작할 수 없습니다. 외곽(AOI)을 저장하고 베이스라인 임무를 검토하세요.",
+      };
+    case "REMAP_REQUIRED":
+    case "MODEL_STALE":
+      return {
+        title: "새 조사로 현장 모델을 최신 상태로 만드세요",
+        description: "이전 모델로는 현재 현장을 단정할 수 없습니다. 재조사 임무를 계획한 뒤 결과를 검토하세요.",
+      };
+    case "BASELINE_MAPPING":
+    case "MODEL_PROCESSING":
+    case "MODEL_VALIDATION":
+      return {
+        title: "처리·검증 결과를 기다리는 중입니다",
+        description: "자동으로 순찰 가능 상태가 되었다고 가정하지 않습니다. 완료된 임무의 CoverageReport와 현장 상태를 함께 확인하세요.",
+      };
+    case "SUSPENDED":
+      return {
+        title: "운영 중단 사유와 복귀 조건을 검토하세요",
+        description: "중단 상태에서는 새 자율운영을 시작하지 않습니다. 관리자가 상태 이력과 복귀 조건을 확인해야 합니다.",
+      };
+    default:
+      return {
+        title: "현장 상태를 확인하고 필요한 조사를 계획하세요",
+        description: "발급된 임무와 검토 대기 이벤트를 확인해 다음 행동을 결정하세요.",
+      };
+  }
+}
 
 /**
  * 섹션 조회 결과 — **권한 부재와 장애를 구분한다.**
@@ -147,6 +179,7 @@ export default async function SiteDetailPage({
   const surveyActionLabel = site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 조사";
 
   const statusLabel = SITE_STATUS_LABEL[site.status];
+  const nextAction = nextActionFor(site);
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
@@ -158,7 +191,7 @@ export default async function SiteDetailPage({
                 {site.siteId}
               </p>
               {/* topbar 가 '현장 상세' 를 이미 찍는다 — 여기 h1 은 대상 이름이라 중복이 아니다. */}
-              <h1 className="break-keep text-[19px] font-bold tracking-tight">{site.name}</h1>
+              <h2 className="break-keep text-[19px] font-bold tracking-tight">{site.name}</h2>
             </div>
             {canStartSurvey ? (
               <Link href={`/sites/${encodeURIComponent(site.siteId)}/surveys/new`} className="btn btn-primary">
@@ -188,6 +221,12 @@ export default async function SiteDetailPage({
             )}
           </div>
         </div>
+
+        <section className="rounded-lg border border-line bg-surface p-4">
+          <h2 className="text-[13.5px] font-bold break-keep">다음 행동</h2>
+          <p className="mt-1 break-keep text-[13px] font-semibold">{nextAction.title}</p>
+          <p className="mt-1 break-keep text-[12.5px] text-ink-2">{nextAction.description}</p>
+        </section>
 
         <SectionCard title="현장 외곽(AOI)">
           {site.aoi ? (
@@ -237,15 +276,15 @@ export default async function SiteDetailPage({
             계산할 수 있습니다.{" "}
             <Link
               href={`/sites/${encodeURIComponent(site.siteId)}/progress`}
-              className="font-semibold text-accent-text hover:underline"
+              className="tap-target inline-flex items-center font-semibold text-accent-text hover:underline"
             >
-              계획 대비 진척 보기 →
+              계획 대비 진척 보기
             </Link>{" "}
             <Link
               href={`/sites/${encodeURIComponent(site.siteId)}/report`}
-              className="font-semibold text-accent-text hover:underline"
+              className="tap-target inline-flex items-center font-semibold text-accent-text hover:underline"
             >
-              현장 보고서 내보내기 →
+              현장 보고서 내보내기
             </Link>
           </p>
         </SectionCard>
@@ -268,7 +307,7 @@ export default async function SiteDetailPage({
                   >
                     <span className="break-keep font-medium">{MISSION_TYPE_LABEL[mission.missionType]}</span>
                     <span className="num text-[12px] whitespace-nowrap text-ink-muted">
-                      {dateFormatter.format(new Date(mission.issuedAt))}
+                      {formatKoreanDate(mission.issuedAt)}
                     </span>
                   </Link>
                 </li>
@@ -297,7 +336,7 @@ export default async function SiteDetailPage({
                     >
                       <StatusBadge label={eventStatusLabel.label} tone={eventStatusLabel.tone} />
                       <span className="num text-[12px] whitespace-nowrap text-ink-muted">
-                        {dateFormatter.format(new Date(event.occurredAt))}
+                      {formatKoreanDate(event.occurredAt)}
                       </span>
                     </Link>
                   </li>
@@ -316,18 +355,28 @@ export default async function SiteDetailPage({
             <Fact label="수직 기준면" value={site.siteFrame.verticalDatum} isToken />
             <Fact label="단위" value={site.siteFrame.unit} />
             <Fact label="변환 버전" value={site.siteFrame.transformVersion} isToken />
-            <Fact label="등록" value={dateFormatter.format(new Date(site.registeredAt))} isToken />
-            <Fact label="최근 갱신" value={dateFormatter.format(new Date(site.updatedAt))} isToken />
+            <Fact label="등록" value={formatKoreanDate(site.registeredAt)} isToken />
+            <Fact label="최근 갱신" value={formatKoreanDate(site.updatedAt)} isToken />
           </dl>
         </div>
 
         {canTransition ? (
-          <SiteTransitionActions
-            siteId={site.siteId}
-            status={site.status}
-            resumeTarget={site.resumeTarget}
-            canApproveAutonomy={canApproveAutonomy}
-          />
+          <details className="rounded-lg border border-line bg-surface p-4">
+            <summary className="tap-target flex cursor-pointer items-center font-semibold break-keep">
+              관리자 상태 전이
+            </summary>
+            <p className="mt-2 text-[12px] break-keep text-ink-muted">
+              현장 상태 전이는 운용 가능 여부를 바꿉니다. 현재 상태와 전이 사유를 확인한 뒤 진행하세요.
+            </p>
+            <div className="mt-3">
+              <SiteTransitionActions
+                siteId={site.siteId}
+                status={site.status}
+                resumeTarget={site.resumeTarget}
+                canApproveAutonomy={canApproveAutonomy}
+              />
+            </div>
+          </details>
         ) : (
           <p className="text-[12px] break-keep text-ink-muted">
             현장 상태를 전이하려면 현장 등록 권한이 필요합니다.

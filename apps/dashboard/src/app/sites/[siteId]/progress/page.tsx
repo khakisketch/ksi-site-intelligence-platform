@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { getDesignProgress } from "@/lib/core-api/design";
-import { humanizeApiError } from "@/lib/core-api/labels";
+import { DESIGN_SURFACE_STATUS_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 import { listDesignSurfaces } from "@/lib/core-api/design";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -79,7 +79,7 @@ function SurfacePicker({ siteId, surfaces }: { siteId: string; surfaces: DesignS
         이 현장에는 등록된 설계 기준면이 없습니다.{" "}
         <Link
           href={`/sites/${encodeURIComponent(siteId)}/design`}
-          className="font-semibold text-accent-text hover:underline"
+          className="tap-target inline-flex items-center font-semibold text-accent-text hover:underline"
         >
           설계 기준면 올리기
         </Link>
@@ -92,9 +92,14 @@ function SurfacePicker({ siteId, surfaces }: { siteId: string; surfaces: DesignS
         <li key={surface.designSurfaceId}>
           <Link
             href={`/sites/${encodeURIComponent(siteId)}/progress?designSurfaceId=${encodeURIComponent(surface.designSurfaceId)}`}
-            className="block rounded-lg border border-line bg-surface p-3 text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+            className="tap-target flex flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-[12.5px] transition-colors hover:bg-sunk"
           >
-            {surface.name} · {surface.revision}
+            <span className="font-semibold break-keep text-accent-text">
+              {surface.name} · {surface.revision}
+            </span>
+            <span className="text-[11.5px] break-keep text-ink-2">
+              {DESIGN_SURFACE_STATUS_LABEL[surface.status].label} · {surface.verifiedAt ? `검증 ${formatKoreanDateTime(surface.verifiedAt, { dateStyle: "medium", timeStyle: "short" })}` : `등록 ${formatKoreanDateTime(surface.registeredAt, { dateStyle: "medium", timeStyle: "short" })}`}
+            </span>
           </Link>
         </li>
       ))}
@@ -136,7 +141,7 @@ export default async function SiteProgressPage({
       >
         ← {site.name}
       </Link>
-      <h1 className="break-keep text-[19px] font-bold tracking-tight">계획 대비 진척</h1>
+      <h2 className="break-keep text-[19px] font-bold tracking-tight">계획 대비 진척</h2>
       <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
         시공 전 지형을 기준으로 계획한 절토·성토량 중, 지금까지 얼마를 끝냈고 얼마가
         남았는지를 구역별로 보여줍니다. 흙 물량만 셉니다 — 구조물·포장 공정은 여기

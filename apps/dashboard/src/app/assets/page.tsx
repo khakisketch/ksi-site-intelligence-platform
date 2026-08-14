@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { CoreApiError } from "@/lib/core-api/client";
-import { humanizeApiError } from "@/lib/core-api/labels";
+import { MISSION_TYPE_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
 import { getSourceMediaView, listDefectCandidates } from "@/lib/core-api/phase34";
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
@@ -12,6 +12,7 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { formatKoreanDateTime } from "@/lib/datetime";
 
 import { DefectOverlay } from "./DefectOverlay";
 
@@ -78,9 +79,13 @@ export default async function AssetsPage({
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <p className="text-sm text-ink-2">
-          결함 후보는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.
-        </p>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-[19px] font-bold tracking-tight break-keep">결함 후보 검토</h2>
+          <p className="text-sm break-keep text-ink-2">
+            현재 이 화면은 자산대장이 아니라, 임무 사진에서 생성된 결함 후보를 검토하는
+            화면입니다. 임무를 선택해 원본 사진과 후보의 근거를 확인하세요.
+          </p>
+        </div>
         {missions.length === 0 ? (
           <EmptyState
             title="발급된 임무가 없습니다"
@@ -88,15 +93,20 @@ export default async function AssetsPage({
             action={{ label: "임무 목록", href: "/missions" }}
           />
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {missions.map((mission) => (
               <li key={mission.missionId}>
                 <Link
                   href={`/assets?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="block rounded-lg border border-line px-3 py-2 text-sm hover:bg-sunk"
+                  className="tap-target flex h-full flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-sm transition-colors hover:bg-sunk"
                 >
-                  <span className="font-medium">{mission.missionId}</span>
-                  <span className="ml-2 text-ink-muted">{mission.siteId}</span>
+                  <span className="font-semibold break-keep">
+                    {MISSION_TYPE_LABEL[mission.missionType]} · {mission.siteId}
+                  </span>
+                  <span className="num text-[11.5px] break-token text-ink-muted">{mission.missionId}</span>
+                  <span className="text-[12px] break-keep text-ink-2">
+                    발급 {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
+                  </span>
                 </Link>
               </li>
             ))}
@@ -133,7 +143,7 @@ export default async function AssetsPage({
         <p className="mt-1 text-sm text-ink-2">
           결함 후보 {view.candidateCount}건 · 사진 {view.sourceMediaIds.length}장
         </p>
-        <Link href="/assets" className="mt-2 inline-block text-sm text-accent-text hover:underline">
+        <Link href="/assets" className="tap-target mt-2 inline-flex items-center text-sm text-accent-text hover:underline">
           다른 임무 선택
         </Link>
       </section>

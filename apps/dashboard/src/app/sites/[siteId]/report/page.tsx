@@ -4,7 +4,11 @@ import { notFound } from "next/navigation";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getDesignConformance, getDesignProgress, listDesignSurfaces } from "@/lib/core-api/design";
 import { getProcessingJobArtifacts } from "@/lib/core-api/phase34";
-import { humanizeApiError, humanizeVerticalDatum } from "@/lib/core-api/labels";
+import {
+  DESIGN_SURFACE_STATUS_LABEL,
+  humanizeApiError,
+  humanizeVerticalDatum,
+} from "@/lib/core-api/labels";
 import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DiffHeatmapOverlay } from "@/components/map/DiffHeatmapOverlay";
@@ -72,7 +76,7 @@ function SurfacePicker({ siteId, surfaces }: { siteId: string; surfaces: DesignS
         이 현장에는 등록된 설계 기준면이 없습니다.{" "}
         <Link
           href={`/sites/${encodeURIComponent(siteId)}/design`}
-          className="font-semibold text-accent-text hover:underline"
+          className="tap-target inline-flex items-center font-semibold text-accent-text hover:underline"
         >
           설계 기준면 올리기
         </Link>
@@ -85,9 +89,14 @@ function SurfacePicker({ siteId, surfaces }: { siteId: string; surfaces: DesignS
         <li key={surface.designSurfaceId}>
           <Link
             href={`/sites/${encodeURIComponent(siteId)}/report?designSurfaceId=${encodeURIComponent(surface.designSurfaceId)}`}
-            className="block rounded-lg border border-line bg-surface p-3 text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+            className="tap-target flex flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-[12.5px] transition-colors hover:bg-sunk"
           >
-            {surface.name} · {surface.revision}
+            <span className="font-semibold break-keep text-accent-text">
+              {surface.name} · {surface.revision}
+            </span>
+            <span className="text-[11.5px] break-keep text-ink-2">
+              {DESIGN_SURFACE_STATUS_LABEL[surface.status].label} · {surface.verifiedAt ? `검증 ${formatKoreanDateTime(surface.verifiedAt, { dateStyle: "medium", timeStyle: "short" })}` : `등록 ${formatKoreanDateTime(surface.registeredAt, { dateStyle: "medium", timeStyle: "short" })}`}
+            </span>
           </Link>
         </li>
       ))}
@@ -272,9 +281,9 @@ export default async function SiteReportPage({
       >
         ← {site.name}
       </Link>
-      <h1 className="break-keep text-[19px] font-bold tracking-tight">
+      <h2 className="break-keep text-[19px] font-bold tracking-tight">
         현장 보고서 — {site.name}
-      </h1>
+      </h2>
       <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
         계획 대비 진척과(있으면) 설계 대비 남은 물량을 인쇄·저장할 수 있는 형태로
         묶었습니다. 화면에 그려진 것과 같은 조회 결과를 그대로 옮긴 것이라 화면의

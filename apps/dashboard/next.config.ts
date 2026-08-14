@@ -1,6 +1,11 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
+const extraAllowedDevOrigins = (process.env.KSI_DASHBOARD_ALLOWED_DEV_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
   // 홈 디렉터리에 무관한 package-lock.json 이 있어 Turbopack 이 workspace root 를
   // 잘못 추론한다 — apps/dashboard 를 명시적으로 고정한다.
@@ -15,7 +20,9 @@ const nextConfig: NextConfig = {
   //
   // 프로덕션 빌드(`next build`/`start`)에는 영향이 없다 — 이 옵션은 dev 서버의
   // 자산 요청에만 적용된다.
-  allowedDevOrigins: ["127.0.0.1"],
+  // Tailscale/LAN 주소는 머신마다 다르므로 저장소에 하드코딩하지 않고 개발 서버
+  // 실행 시 쉼표 구분 환경변수로만 추가한다.
+  allowedDevOrigins: ["127.0.0.1", ...extraAllowedDevOrigins],
 };
 
 export default nextConfig;

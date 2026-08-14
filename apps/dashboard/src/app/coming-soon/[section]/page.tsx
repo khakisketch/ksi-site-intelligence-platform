@@ -17,6 +17,11 @@ const SECTION_BLURB: Record<string, string> = {
   settings: "계정·조직 설정을 관리하는 화면입니다.",
 };
 
+const AVAILABLE_NEXT_ACTION: Record<string, { label: string; href: string }> = {
+  fleet: { label: "장비 지원 단계 보기", href: "/settings" },
+  data: { label: "현장 상태 보기", href: "/sites" },
+};
+
 // TopBar 가 이미 섹션 이름 h1(item.label) 을 렌더한다(page-title.ts) — 본문에서
 // 같은 이름을 또 찍지 않고, EmptyState 의 title 은 일반화된 문구로 둔다.
 export default async function ComingSoonPage({
@@ -27,13 +32,14 @@ export default async function ComingSoonPage({
   const { section } = await params;
   const item = NAV_ITEMS.find((i) => i.href === `/coming-soon/${section}`);
   if (!item) notFound();
+  const nextAction = AVAILABLE_NEXT_ACTION[section] ?? { label: "홈으로", href: "/" };
 
   return (
     <div className="p-4 sm:p-5">
       <EmptyState
         title="준비 중인 기능입니다"
-        description={SECTION_BLURB[section] ?? `${item.label} 화면은 아직 준비 중입니다.`}
-        action={{ label: "홈으로", href: "/" }}
+        description={`${SECTION_BLURB[section] ?? `${item.label} 화면은 아직 준비 중입니다.`} 현재 이 기능의 운영 데이터와 제어 API는 대시보드에 연결되지 않았습니다.`}
+        action={nextAction}
       />
     </div>
   );

@@ -66,7 +66,7 @@ export async function TopBar() {
         </span>
         <Link
           href={loginHref}
-          className="tap-target flex items-center rounded-md border border-line-strong px-3 text-[13px] font-semibold hover:bg-sunk"
+          className="tap-target flex min-h-11 items-center rounded-md border border-line-strong px-3 text-[13px] font-semibold hover:bg-sunk"
         >
           다시 로그인
         </Link>
@@ -91,7 +91,7 @@ export async function TopBar() {
       <form action={logout}>
         <button
           type="submit"
-          className="tap-target flex items-center rounded-md px-2 text-[13px] text-ink-2 hover:bg-sunk hover:text-ink-1"
+          className="tap-target flex min-h-11 items-center rounded-md px-2 text-[13px] text-ink-2 hover:bg-sunk hover:text-ink-1"
         >
           로그아웃
         </button>

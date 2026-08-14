@@ -238,6 +238,13 @@ export default async function EventsPage({
       ? sitesSettled.value.map((site) => [site.siteId, site.name])
       : [],
   );
+  const siteOptions =
+    sitesSettled.status === "fulfilled"
+      ? sitesSettled.value.map((site) => ({
+          value: site.siteId,
+          label: `${site.name} · ${site.siteId}`,
+        }))
+      : [];
 
   const triageCounts = new Map<TriageStatus, number>();
   if (baseEvents) {
@@ -321,6 +328,13 @@ export default async function EventsPage({
       </nav>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <FilterSelect
+          label="현장"
+          paramKey="siteId"
+          value={sp.siteId ?? ""}
+          options={siteOptions}
+          currentParams={filterSelectParams}
+        />
         <FilterSelect
           label="상태"
           paramKey="status"

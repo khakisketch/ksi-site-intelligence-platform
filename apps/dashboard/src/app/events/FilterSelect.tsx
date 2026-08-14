@@ -39,9 +39,13 @@ export function FilterSelect({
   }
 
   return (
-    <label className="flex items-center gap-1.5 text-[12.5px] break-keep text-ink-2">
+    <label className="flex max-w-full items-center gap-1.5 text-[12.5px] break-keep text-ink-2">
       <span>{label}</span>
-      <select className="input w-auto" value={value} onChange={handleChange}>
+      <select
+        className="input w-auto max-w-[calc(100vw-6rem)] sm:max-w-xs"
+        value={value}
+        onChange={handleChange}
+      >
         <option value="">전체</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
