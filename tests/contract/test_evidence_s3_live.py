@@ -36,6 +36,7 @@ skip 사유에 "확인되지 않았다"를 적어, 초록불이 확인으로 읽
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import uuid as uuid_mod
 from datetime import timedelta
@@ -64,12 +65,15 @@ _BUCKET = "ksi-evidence-live"
 @pytest.fixture(scope="module")
 def s3_client() -> object:
     boto3 = pytest.importorskip("boto3")
+    from botocore.config import Config
+
     client = boto3.client(
         "s3",
         endpoint_url=_ENDPOINT,
         aws_access_key_id=_KEY,
         aws_secret_access_key=_SECRET,
         region_name="us-east-1",
+        config=Config(signature_version="s3v4"),
     )
     with contextlib.suppress(Exception):  # 이미 있으면 그대로 쓴다
         client.create_bucket(Bucket=_BUCKET)
@@ -103,6 +107,45 @@ def test_presigned_put_then_get_round_trips_the_bytes(
     assert got.status_code == 200
     assert got.content == payload
     assert got.headers["content-type"] == "image/jpeg"
+
+
+def test_digest_bound_put_rejects_different_bytes_at_storage(
+    storage: S3EvidenceStorage,
+) -> None:
+    """[핵심] Edge가 주장한 sha256와 다른 본문은 스토리지가 받아서는 안 된다.
+
+    가짜 SDK 테스트는 ``ChecksumSHA256`` 파라미터가 전달됐다는 사실까지만
+    보장한다. 이 실기동 테스트는 presigned capability의 헤더와 실제 PUT body가
+    불일치할 때 S3 호환 스토리지가 거부하는지를 확인한다.
+    """
+    payload = b"checksum-bound evidence"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    good_key = _key()
+    good = storage.presigned_put_bound_digest(
+        good_key,
+        content_type="image/jpeg",
+        content_digest=digest,
+        ttl=timedelta(minutes=5),
+    )
+    good_response = httpx.put(good.upload_url, content=payload, headers=good.required_headers)
+    assert good_response.status_code == 200, good_response.text
+
+    forged_key = _key()
+    forged = storage.presigned_put_bound_digest(
+        forged_key,
+        content_type="image/jpeg",
+        content_digest=digest,
+        ttl=timedelta(minutes=5),
+    )
+    forged_response = httpx.put(
+        forged.upload_url, content=b"different bytes", headers=forged.required_headers
+    )
+    assert 400 <= forged_response.status_code < 500, (
+        "checksum-bound presigned PUT이 다른 바이트를 수락했다 — "
+        f"status={forged_response.status_code}, body={forged_response.text}"
+    )
+    storage.delete(good_key)
+    storage.delete(forged_key)
 
 
 @pytest.mark.parametrize(

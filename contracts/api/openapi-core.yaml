@@ -110,7 +110,10 @@ info:
   # 읽어 자기 hashlib 으로 다시 계산해 같을 때만 확인 사실이 남는다. 리포트를
   # 원장에 굳히는 순간에도 같은 재해싱을 한 번 더 해서, "유효한 리포트가 있는데
   # 그 지도는 다른 파일"인 상태를 구조적으로 없앤다. 새 표면 추가라 minor.
-  version: 1.20.0
+  # 1.21.0 — Manifold 3 Edge shadow vertical slice: GET signed dispatch,
+  # activation receipt, device-owned evidence upload. Core does not expose any
+  # flight-control API and Edge cannot create CONFIRMED_EVENT.
+  version: 1.21.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -132,8 +135,8 @@ paths:
       summary: Resolve the authenticated Principal and its effective permissions
       description: >-
         인증만 요구한다(인가 없음, ADR-KSI-008 §2). OPERATOR 는
-        role·permissions 를, EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST 고정
-        권한을 반환한다.
+        role·permissions 를, EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST·
+        EDGE_MISSION_PULL·EDGE_EVIDENCE_WRITE 고정 권한을 반환한다.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -694,6 +697,104 @@ paths:
             CONFIRMED_EVENT/DISMISSED — 확정/기각은 서버 트리아지 전용)
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After 후 재전송 }
         '401': { description: 인증 실패 }
+  /v1/edge-sync/missions/next:
+    get:
+      summary: Pull the next signed MissionDispatchEnvelope for this Edge device
+      description: >-
+        EDGE_MISSION_PULL 권한 + EDGE_DEVICE 신원이 필요하다. Core는 명시적으로
+        ``assignedDeviceId``가 일치하는 mission만 반환하고, Mission Contract v1.2
+        원문·그 canonical digest·RiskPolicyPack v1.0 원문·그 digest·EdgeRuntimeProfile
+        v1.0 원문·그 digest·device ID·TTL을 outer Ed25519 서명으로 묶는다
+        (REQ-MSN-101, INV-011/012/042). 미배정 mission, 없는/만료된 policy/profile,
+        만료 계약은 **빈 큐(204)** 로만 보이며 기본 장비 형상·보정값을 지어내지
+        않는다. 같은 미활성 dispatch의 재조회는 ACK
+        유실에도 같은 dispatchId를 되돌린다.
+
+        이 API는 판단/수집 계약 전달만 하며 DJI flight-control command를 만들지
+        않는다. wire 정본은 `contracts/schemas/mission-dispatch-envelope.v1.json`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: 현재 장비에 바인딩된 서명 dispatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MissionDispatchEnvelopeV1' }
+        '204': { description: 현재 device에 dispatch할 mission 없음 }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_MISSION_PULL 권한 없음 }
+        '503': { description: EDGE_DISPATCH_STORE_UNAVAILABLE }
+  /v1/edge-sync/missions/{dispatch_id}/activation-receipts:
+    post:
+      summary: Record a verified Edge activation receipt for one dispatch
+      description: >-
+        EDGE_MISSION_PULL 권한 + EDGE_DEVICE 신원 필요. receipt의 dispatchId,
+        deviceId, missionId, contract/policy digest는 서버가 durable하게 발급한
+        envelope와 정확히 같아야 하며, server time과 activatedAt 모두 dispatch TTL
+        안에 있어야 하고 activatedAt은 Core 수신시각보다 미래일 수 없다. 장비는 다른 장비
+        dispatch의 존재 여부를 일반 404 외에
+        알 수 없다. activation은 execution proof나 CONFIRMED_EVENT가 아니라
+        계약 검증을 통과한 runtime activation 사실이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: dispatch_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivationReceiptV1' }
+      responses:
+        '201':
+          description: ACTIVATED — durable receipt recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivationReceiptResponse' }
+        '200': { description: ALREADY_ACTIVATED — exact retry }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_MISSION_PULL 권한 없음 }
+        '404': { description: dispatch가 없거나 다른 device 소유(일반 문구) }
+        '422': { description: RECEIPT_MISMATCH (미래 activatedAt 포함) 또는 FastAPI body validation failure }
+        '503': { description: EDGE_DISPATCH_STORE_UNAVAILABLE }
+  /v1/edge-sync/events/{event_key}/evidence:
+    post:
+      summary: Register or retry an evidence upload for the Edge-owned event
+      description: >-
+        EDGE_EVIDENCE_WRITE 권한 + EDGE_DEVICE 신원 필요. eventKey의 edgeDeviceId가
+        인증 장비와 같을 때만 증거 원장 등록 후 presigned PUT URL을 낸다. 다른
+        device event와 존재하지 않는 event는 같은 일반 404다. 순서는 **Candidate
+        EventBundle durable ACK → evidence 등록·PUT → 재시도 완료 → operator
+        confirmation** 이며, 이 경로는 Event status를 바꾸지 않는다. 같은
+        artifactId/contentType/contentDigest 재전송은 새 URL만 발급하는 200이고,
+        다른 contentType/contentDigest 또는 tombstoned artifact 재사용은 거부한다.
+        응답의 requiredUploadHeaders는 presigned PUT capability의 일부이므로 Edge는
+        헤더 이름·값을 바꾸지 않고 객체 스토리지 PUT에 전달해야 한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: event_key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EdgeEvidenceUploadRequest' }
+      responses:
+        '201':
+          description: REGISTERED — durable evidence registration then upload URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EdgeEvidenceUploadResponse' }
+        '200': { description: existing registration retry with a fresh upload URL }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_EVIDENCE_WRITE 권한 없음 }
+        '404': { description: event가 없거나 다른 device 소유(일반 문구) }
+        '409': { description: DUPLICATE_ARTIFACT with incompatible content type/digest or tombstone }
+        '415': { description: UNSUPPORTED_CONTENT_TYPE }
+        '422': { description: INVALID_ARTIFACT_ID 또는 body validation failure }
+        '503': { description: EVENT_STORE_UNAVAILABLE, EVIDENCE_STORAGE_UNAVAILABLE 또는 EVIDENCE_DIGEST_BINDING_UNAVAILABLE }
   /v1/edge-sync/devices/{device_id}/sequence:
     get:
       summary: Query a device's last accepted sequence (recovery path)
@@ -3608,6 +3709,91 @@ components:
         deviceId: { type: string }
         # 아직 한 건도 받지 않은 장비는 null — 0 이 아니다(0 은 유효한 첫 순번).
         lastSequence: { type: [integer, 'null'] }
+    DispatchValidity:
+      type: object
+      required: [notBefore, notAfter]
+      properties:
+        notBefore: { type: string, format: date-time }
+        notAfter: { type: string, format: date-time }
+    Ed25519Signature:
+      type: object
+      required: [algorithm, keyId, digest, signature]
+      properties:
+        algorithm: { const: Ed25519 }
+        keyId: { type: string }
+        digest: { type: string }
+        signature: { type: string }
+    MissionDispatchEnvelopeV1:
+      description: >-
+        Mission Contract v1.2, RiskPolicyPack v1.0, EdgeRuntimeProfile v1.0을 원문 그대로 포함하는 outer
+        signed dispatch. nested 구조의 wire 정본은
+        contracts/schemas/mission-dispatch-envelope.v1.json 이다.
+      type: object
+      required:
+        [dispatchId, edgeDeviceId, missionId, missionContract, missionContractDigest,
+         riskPolicyPack, riskPolicyPackDigest, edgeRuntimeProfile, edgeRuntimeProfileDigest,
+         validity, signature]
+      properties:
+        schemaVersion: { const: '1.0' }
+        dispatchId: { type: string }
+        edgeDeviceId: { type: string }
+        missionId: { type: string }
+        missionContract: { type: object, additionalProperties: true }
+        missionContractDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        riskPolicyPack: { type: object, additionalProperties: true }
+        riskPolicyPackDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        # Raw nested bytes are intentionally preserved for the outer Ed25519
+        # signature. The detailed deployment contract lives in the separately
+        # versioned JSON Schema, not in FastAPI's generated component registry.
+        edgeRuntimeProfile: { type: object, additionalProperties: true }
+        edgeRuntimeProfileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        validity: { $ref: '#/components/schemas/DispatchValidity' }
+        signature: { $ref: '#/components/schemas/Ed25519Signature' }
+    ActivationReceiptV1:
+      type: object
+      required:
+        [dispatchId, edgeDeviceId, missionId, missionContractDigest,
+         riskPolicyPackDigest, activatedAt, runtimeVersion]
+      properties:
+        schemaVersion: { const: '1.0' }
+        dispatchId: { type: string }
+        edgeDeviceId: { type: string }
+        missionId: { type: string }
+        missionContractDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        riskPolicyPackDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        activatedAt: { type: string, format: date-time }
+        runtimeVersion: { type: string }
+    EdgeDispatchVerdict:
+      type: string
+      enum:
+        [ISSUED, EXISTING, NO_MISSION, ACTIVATED, ALREADY_ACTIVATED, NOT_FOUND,
+         RECEIPT_MISMATCH, STORE_UNAVAILABLE]
+    ActivationReceiptResponse:
+      type: object
+      required: [verdict, dispatchId]
+      properties:
+        verdict: { $ref: '#/components/schemas/EdgeDispatchVerdict' }
+        dispatchId: { type: string }
+    EdgeEvidenceUploadRequest:
+      type: object
+      required: [artifactId, contentType, contentDigest]
+      properties:
+        artifactId: { type: string }
+        contentType: { type: string }
+        contentDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    EdgeEvidenceUploadResponse:
+      type: object
+      required: [artifactId, objectKey, uploadUrl, expiresAt, reusedRegistration, contentDigest, requiredUploadHeaders]
+      properties:
+        artifactId: { type: string }
+        objectKey: { type: string }
+        uploadUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+        reusedRegistration: { type: boolean }
+        contentDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        requiredUploadHeaders:
+          type: object
+          additionalProperties: { type: string }
     EventSummaryResponse:
       description: >-
         트리아지 대기열의 한 줄. eventType 은 목록에서 "무슨 일인지"를 답하는

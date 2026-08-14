@@ -1,0 +1,14 @@
+/* Copy to dji_sdk_app_info.h (or keep an equivalent file outside the repo and
+ * pass -DKSI_PSDK_APP_INFO_HEADER=/secure/path/dji_sdk_app_info.h).  Never
+ * commit real DJI values. */
+#ifndef KSI_PSDK_APP_DJI_SDK_APP_INFO_H
+#define KSI_PSDK_APP_DJI_SDK_APP_INFO_H
+
+#define USER_APP_NAME               "your_app_name"
+#define USER_APP_ID                 "your_app_id"
+#define USER_APP_KEY                "your_app_key"
+#define USER_APP_LICENSE            "your_app_license"
+#define USER_DEVELOPER_ACCOUNT      "your_developer_account"
+#define USER_BAUD_RATE              "460800"
+
+#endif  /* KSI_PSDK_APP_DJI_SDK_APP_INFO_H */

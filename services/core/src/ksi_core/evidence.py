@@ -19,11 +19,12 @@ URL 을 아는 것과 권한을 가진 것이 같아지므로, 수명은 분 단
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from .identifiers import is_path_safe_identifier
 
@@ -49,6 +50,7 @@ ALLOWED_CONTENT_TYPES = frozenset(
 )
 
 _ARTIFACT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_SHA256_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class EvidenceVerdict(StrEnum):
@@ -58,6 +60,7 @@ class EvidenceVerdict(StrEnum):
     UNKNOWN_EVENT = "UNKNOWN_EVENT"
     INVALID_ARTIFACT_ID = "INVALID_ARTIFACT_ID"
     UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
+    INVALID_CONTENT_DIGEST = "INVALID_CONTENT_DIGEST"
     DUPLICATE_ARTIFACT = "DUPLICATE_ARTIFACT"
     UNKNOWN_ARTIFACT = "UNKNOWN_ARTIFACT"
     ALREADY_TOMBSTONED = "ALREADY_TOMBSTONED"
@@ -69,6 +72,39 @@ class EvidenceStorageError(Exception):
     스토리지 장애를 '증거 없음'으로 뭉개지 않는다. 둘은 사고 조사에서 완전히
     다른 사실이고, 조용한 성공은 이 제품에서 가장 나쁜 거짓말이다.
     """
+
+
+@dataclass(frozen=True, slots=True)
+class DigestBoundUploadCapability:
+    """스토리지가 digest를 강제하는 1회성 Edge 업로드 capability.
+
+    ``upload_url``만으로는 PUT에 필요한 signed headers를 전달할 수 없다. Edge는
+    이 ``required_headers``를 그대로 보낸 뒤에만 PUT을 완료로 기록해야 한다.
+    """
+
+    upload_url: str
+    required_headers: dict[str, str]
+
+
+@runtime_checkable
+class DigestBoundEvidenceStorage(Protocol):
+    """Edge evidence의 바이트 digest를 PUT 자체에 bind하는 선택적 포트.
+
+    기존 operator evidence 경로는 wire 호환성을 위해 :class:`EvidenceStorage`만
+    요구한다. 반면 Edge 경로는 content digest를 원장에 주장하는 만큼, 이를 실제
+    업로드에 강제할 수 있는 구현체가 없으면 URL을 발급하지 않고 fail-closed 한다.
+    """
+
+    def presigned_put_bound_digest(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        content_digest: str,
+        ttl: timedelta,
+    ) -> DigestBoundUploadCapability:
+        """digest-bound PUT URL과 반드시 보낼 signed headers를 발급한다."""
+        ...
 
 
 class EvidenceStorage(Protocol):
@@ -129,6 +165,11 @@ class EvidenceArtifact:
     content_type: str
     registered_at: datetime
     registered_by: str
+    # Edge store-and-forward supplies a digest before the presigned PUT.  It is
+    # optional for the pre-existing operator path, whose wire contract remains
+    # unchanged, but when it is present it becomes part of the durable artifact
+    # identity and makes a retry with different bytes a conflict.
+    content_digest: str | None = None
     tombstoned_at: datetime | None = None
     tombstone_reason: str | None = None
 
@@ -145,6 +186,23 @@ def is_valid_artifact_id(value: str) -> bool:
     갈라질 때 한쪽만 느슨해지는 것을 막으려면 지금 같은 규칙임을 명시해 둔다.
     """
     return _ARTIFACT_ID_PATTERN.fullmatch(value) is not None
+
+
+def is_sha256_digest(value: object) -> bool:
+    """``sha256:<64 lowercase hex>`` evidence binding 형식인지 확인한다."""
+    return isinstance(value, str) and _SHA256_DIGEST_PATTERN.fullmatch(value) is not None
+
+
+def sha256_digest_to_s3_checksum(value: str) -> str:
+    """``sha256:<lowercase hex>``를 S3 ``ChecksumSHA256`` base64 값으로 바꾼다.
+
+    S3의 API 필드는 사람이 읽기 쉬운 hex digest가 아니라 원시 SHA-256 32 bytes의
+    base64를 요구한다. 이 변환을 Edge adapter마다 따로 구현하면 prefix나 바이트
+    변환 실수로 checksum binding이 조용히 사라질 수 있어 스토리지 경계에 둔다.
+    """
+    if not is_sha256_digest(value):
+        raise ValueError("content digest must be sha256:<64 lowercase hex>")
+    return base64.b64encode(bytes.fromhex(value.removeprefix("sha256:"))).decode("ascii")
 
 
 def build_object_key(*, site_id: str, event_key: str, artifact_id: str) -> str:
@@ -181,6 +239,8 @@ __all__ = [
     "ALLOWED_CONTENT_TYPES",
     "DEFAULT_UPLOAD_TTL",
     "DEFAULT_VIEW_TTL",
+    "DigestBoundEvidenceStorage",
+    "DigestBoundUploadCapability",
     "EvidenceArtifact",
     "EvidenceStorage",
     "EvidenceStorageError",
@@ -188,4 +248,6 @@ __all__ = [
     "build_object_key",
     "expires_at",
     "is_valid_artifact_id",
+    "is_sha256_digest",
+    "sha256_digest_to_s3_checksum",
 ]

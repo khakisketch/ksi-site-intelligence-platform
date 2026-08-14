@@ -10,9 +10,9 @@ JWT/OAuth·사용자 관리 API 는 도입하지 않는다(외부 IdP 없는 파
 
 - ``OPERATOR``(사람): :class:`Role` 필수, ``device_id`` 는 가질 수 없다. 권한은
   모듈 상수 ``_ROLE_PERMISSIONS`` 표 하나로만 결정된다(엔드포인트 산재 금지).
-- ``EDGE_DEVICE``(장비): role 없음, ``device_id`` 필수. 권한은 항상
-  ``{EDGE_SYNC_INGEST}`` 고정 — role 표와 무관하다(edge-sync 수신 인증 장비
-  바인딩은 :mod:`ksi_core.edge_sync` 장착부에서 이 Principal 을 소비한다).
+- ``EDGE_DEVICE``(장비): role 없음, ``device_id`` 필수. 권한은 항상 Edge 전용
+  최소 집합(ingest·자기 mission pull·자기 evidence write)으로 고정 — role 표와
+  무관하다(edge-sync 장착부에서 이 Principal 을 소비한다).
 - ``PROCESSING_WORKER``(3D 재구성 워커): role 없음, ``device_id`` 도 없음. 권한은
   항상 ``{PROCESSING_WORK}`` 고정.
 
@@ -119,6 +119,10 @@ class Permission(StrEnum):
     EVENTS_READ = "EVENTS_READ"
     EVENTS_TRIAGE = "EVENTS_TRIAGE"
     EDGE_SYNC_INGEST = "EDGE_SYNC_INGEST"
+    # Edge device 전용: 서명된 자기 MissionDispatchEnvelope만 pull하고, 자신이
+    # projection한 event에만 증거 등록 URL을 받는다. 사람 Role에는 절대 넣지 않는다.
+    EDGE_MISSION_PULL = "EDGE_MISSION_PULL"
+    EDGE_EVIDENCE_WRITE = "EDGE_EVIDENCE_WRITE"
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
@@ -312,7 +316,13 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 }
 
 # EDGE_DEVICE 는 role 표와 무관하게 항상 이 고정 집합이다(ADR-KSI-008 §2).
-_EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset({Permission.EDGE_SYNC_INGEST})
+_EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
+    {
+        Permission.EDGE_SYNC_INGEST,
+        Permission.EDGE_MISSION_PULL,
+        Permission.EDGE_EVIDENCE_WRITE,
+    }
+)
 
 # PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무
 # 발급·사건 분류에 손댈 이유가 없고, 손댈 수 있으면 처리 파이프라인 하나가

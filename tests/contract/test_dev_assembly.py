@@ -26,6 +26,11 @@ from ksi_core.design_conformance_reports import DesignConformanceStore
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.edge_dispatch import (
+    EdgeDispatchStore,
+    EdgeRuntimeProfileRegistry,
+    RiskPolicyPackRegistry,
+)
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
@@ -125,6 +130,19 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     안 고치면 아래 경로 대조가 조용히 통과한다(F1 의 실패 양식이 그대로 재발).
     """
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    signing_key = Ed25519PrivateKey.generate()
+    signing_key_id = "dev-assembly-test-key"
+    # 최대 조립은 route 장착 범위를 확인하는 테스트다. 빈 registry는 명시적으로
+    # fail-closed(204)이며, 임의 risk policy를 만들어 이 조립 테스트가 정책을
+    # 발급하는 경로가 되지 않게 한다.
+    edge_dispatch_store = EdgeDispatchStore(
+        DurableJournal(tmp_path / "edge-dispatch.jsonl"),
+        mission_store=mission_store,
+        risk_policy_packs=RiskPolicyPackRegistry(()),
+        edge_runtime_profiles=EdgeRuntimeProfileRegistry(()),
+        private_key=signing_key,
+        key_id=signing_key_id,
+    )
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
@@ -181,6 +199,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             ]
         ),
         "edge_sync_store": EdgeSyncStore(tmp_path / "edge-sync.jsonl"),
+        "edge_dispatch_store": edge_dispatch_store,
         "event_store": EventStore(DurableJournal(tmp_path / "events.jsonl")),
         "site_store": site_store,
         "mission_store": mission_store,
@@ -226,8 +245,8 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "equipment_support_store": EquipmentSupportStore(
             DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
-        "mission_signing_key": Ed25519PrivateKey.generate(),
-        "mission_signing_key_id": "dev-assembly-test-key",
+        "mission_signing_key": signing_key,
+        "mission_signing_key_id": signing_key_id,
     }
 
 

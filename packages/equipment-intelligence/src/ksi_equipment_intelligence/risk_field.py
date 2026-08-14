@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from ksi_equipment_intelligence.cpa_ttc import (
@@ -55,12 +55,32 @@ class RiskModel(BaseModel):
     time_to_collision_s: float | None = None
 
 
-class RiskField(BaseModel):
-    """contracts/schemas/risk-field.v1.json 왕복 대상 — required 필드는 스키마와 동일."""
+class RiskFieldLineage(BaseModel):
+    """v1.1 Edge 생성 RiskField의 재현 필수 계보.
+
+    v1.0은 기존 Core 입력과의 호환을 위해 그대로 읽는다. v1.1은 RiskPolicyPack
+    digest·보정 profile·근거 시각을 빼면 같은 위험장을 재현하거나 검증할 수 없으므로
+    이 블록을 required로 둔다(INV-020/022).
+    """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
-    schema_version: Literal["1.0"] = "1.0"
+    risk_policy_pack_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    calibration_profile_id: str = Field(min_length=1)
+    source_timestamp: AwareDatetime
+    sensor_timestamp: AwareDatetime | None = None
+
+
+class RiskField(BaseModel):
+    """v1.0/v1.1 RiskField transition reader.
+
+    Core는 이행 기간에 두 wire 세대를 모두 읽는다. 새 Edge producer는 v1.1만
+    만들며, 그 경우 ``lineage``와 ``EXTRUDED_POLYGON``을 강제한다.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     risk_field_id: str = Field(min_length=1)
     type: RiskFieldType
     hazard_type: str | None = None
@@ -69,6 +89,18 @@ class RiskField(BaseModel):
     geometry: RiskFieldGeometry
     risk_model: RiskModel
     uncertainty: dict[str, Any] = Field(default_factory=dict)
+    lineage: RiskFieldLineage | None = None
+
+    @model_validator(mode="after")
+    def _version_rules(self) -> RiskField:
+        if self.schema_version == "1.0" and self.lineage is not None:
+            raise ValueError("RiskField v1.0에는 lineage를 넣을 수 없다")
+        if self.schema_version == "1.1":
+            if self.lineage is None:
+                raise ValueError("RiskField v1.1에는 lineage가 필수다")
+            if self.geometry.format != "EXTRUDED_POLYGON":
+                raise ValueError("새 Edge RiskField v1.1 geometry는 EXTRUDED_POLYGON이어야 한다")
+        return self
 
 
 def risk_field_wire_dict(field: RiskField) -> dict[str, Any]:
@@ -85,12 +117,17 @@ def risk_field_wire_dict(field: RiskField) -> dict[str, Any]:
     wire = field.model_dump(by_alias=True, mode="json", exclude_none=False)
     if wire.get("hazardType") is None:
         wire.pop("hazardType", None)
+    if wire.get("lineage") is None:
+        wire.pop("lineage", None)
     risk_model = wire.get("riskModel")
     if isinstance(risk_model, dict):
         if risk_model.get("closestApproachM") is None:
             risk_model.pop("closestApproachM", None)
         if risk_model.get("timeToCollisionS") is None:
             risk_model.pop("timeToCollisionS", None)
+    lineage = wire.get("lineage")
+    if isinstance(lineage, dict) and lineage.get("sensorTimestamp") is None:
+        lineage.pop("sensorTimestamp", None)
     return wire
 
 
@@ -130,6 +167,8 @@ def build_dynamic_risk_field(
     validity: RiskFieldValidity,
     geometry: RiskFieldGeometry,
     hazard_type: str | None = None,
+    schema_version: Literal["1.0", "1.1"] = "1.0",
+    lineage: RiskFieldLineage | None = None,
 ) -> RiskField:
     """장비-대상 KinematicState 쌍에서 DYNAMIC RiskField 를 만든다(RISK-004).
 
@@ -137,7 +176,9 @@ def build_dynamic_risk_field(
     :func:`~ksi_equipment_intelligence.cpa_ttc.closest_point_of_approach`/
     :func:`~ksi_equipment_intelligence.cpa_ttc.time_to_collision` 로 채운다 —
     이 값들은 지어낼 수 없는 계산값이므로 이 함수가 유일한 조립 지점이다.
-    ``geometry``/``sourceEntityIds`` 는 호출자 책임(모듈 docstring).
+    ``geometry``/``sourceEntityIds`` 는 호출자 책임(모듈 docstring). 새 Edge
+    producer는 ``schema_version="1.1"``과 계보를 넘겨야 하며, 이때 geometry는
+    보수적 이동 footprint를 담은 ``EXTRUDED_POLYGON``만 허용한다.
 
     ``validity`` 는 호출자가 만들지만 **관측 시각과의 관계는 여기서 검사한다** —
     두 상태를 관측한 시점이 유효구간 밖이면, 그 위험장은 자기가 근거로 삼은 관측이
@@ -166,6 +207,7 @@ def build_dynamic_risk_field(
     )
     _require_validity_covers_observations(validity, equipment_state, subject_state)
     return RiskField(
+        schema_version=schema_version,
         risk_field_id=risk_field_id,
         type="DYNAMIC",
         hazard_type=hazard_type,
@@ -179,6 +221,7 @@ def build_dynamic_risk_field(
             closest_approach_m=cpa.distance_m,
             time_to_collision_s=ttc,
         ),
+        lineage=lineage,
     )
 
 
@@ -186,6 +229,7 @@ __all__ = [
     "GeometryFormat",
     "RiskField",
     "RiskFieldGeometry",
+    "RiskFieldLineage",
     "RiskFieldType",
     "RiskFieldValidity",
     "RiskModel",

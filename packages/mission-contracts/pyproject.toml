@@ -7,6 +7,8 @@ dependencies = ["pydantic>=2.7", "cryptography>=42", "ksi-domain"]
 
 [project.scripts]
 ksi-mission-contract-consumer = "ksi_mission_contracts.consumer:main"
+ksi-edge-dispatch-activate = "ksi_mission_contracts.edge_activation:main"
+ksi-edge-dispatch-sync = "ksi_mission_contracts.edge_dispatch_sync:main"
 
 [build-system]
 requires = ["hatchling"]

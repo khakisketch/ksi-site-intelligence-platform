@@ -24,6 +24,7 @@
 #include "psdk_tap/clock_util.h"
 #include "psdk_tap/liveview_tap.h"
 #include "psdk_tap/ndjson_writer.h"
+#include "psdk_tap/perception_tap.h"
 #include "psdk_tap/shared_state.h"
 #include "psdk_tap/telemetry_tap.h"
 #include "platform/logger_console_glue.h"
@@ -31,15 +32,32 @@
 #include "platform/socket_glue.h"
 #include "platform/usb_bulk_glue.h"
 
-#define KSI_TAP_VERSION 1
+#define KSI_TAP_VERSION 2
 #define KSI_TELEMETRY_RING_CAPACITY 512  /* 400Hz 로 약 1.28초치 버퍼 */
 #define KSI_POLL_INTERVAL_NS 200000000LL /* 시그널을 200ms 내 반응성으로 관측한다 */
+
+/* DPK service는 argv 없이 실행한다. HIL에서 perception raw-timestamp probe를 설치할
+ * 때만 CMake cache 입력으로 기본 source를 바꾼다. 일반 DPK의 안전한 기본값은 계속
+ * Liveview H264다. */
+#ifndef KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE
+#define KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE "liveview"
+#endif
+#ifndef KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION
+#define KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION "front"
+#endif
+
+typedef enum {
+    KSI_TAP_INPUT_LIVEVIEW = 0,
+    KSI_TAP_INPUT_PERCEPTION = 1,
+} ksi_tap_input_source_t;
 
 typedef struct {
     int64_t num_samples;
     const char *out_path;
     int camera_index;      /* 1..3 */
     bool camera_source_4k; /* false=vis(기본) */
+    ksi_tap_input_source_t frame_source;
+    ksi_perception_direction_t perception_direction;
     int64_t duration_sec;
     const char *aircraft_sn; /* NULL 허용 — PSDK 는 기체 SN 을 payload 에 노출하지 않는다 */
 } ksi_cli_args_t;
@@ -56,8 +74,55 @@ static void PrintUsage(const char *argv0)
 {
     fprintf(stderr,
             "사용법: %s --num-samples N --out PATH [--camera-index 1|2|3]\n"
-            "         [--camera-source vis|4k] [--duration-sec N] [--aircraft-sn SN]\n",
+            "         [--camera-source vis|4k] [--frame-source liveview|perception]\n"
+            "         [--perception-direction down|front|rear|up|left|right]\n"
+            "         [--duration-sec N] [--aircraft-sn SN]\n",
             argv0);
+}
+
+static bool ParseFrameSource(const char *value, ksi_tap_input_source_t *out)
+{
+    if (strcmp(value, "liveview") == 0) {
+        *out = KSI_TAP_INPUT_LIVEVIEW;
+        return true;
+    }
+    if (strcmp(value, "perception") == 0) {
+        *out = KSI_TAP_INPUT_PERCEPTION;
+        return true;
+    }
+    return false;
+}
+
+static bool ParsePerceptionDirection(const char *value, ksi_perception_direction_t *out)
+{
+    if (strcmp(value, "down") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_DOWN;
+    } else if (strcmp(value, "front") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_FRONT;
+    } else if (strcmp(value, "rear") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_REAR;
+    } else if (strcmp(value, "up") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_UP;
+    } else if (strcmp(value, "left") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_LEFT;
+    } else if (strcmp(value, "right") == 0) {
+        *out = KSI_PERCEPTION_DIRECTION_RIGHT;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static const char *FrameSourceName(ksi_tap_input_source_t source)
+{
+    return source == KSI_TAP_INPUT_PERCEPTION ? "perception_grayscale" : "liveview_h264";
+}
+
+static const char *FrameTimestampProvenance(ksi_tap_input_source_t source)
+{
+    return source == KSI_TAP_INPUT_PERCEPTION
+               ? "perception_image_info_timestamp_raw_unverified"
+               : "liveview_callback_receive_monotonic_only";
 }
 
 static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
@@ -66,6 +131,17 @@ static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
     args->out_path = NULL;
     args->camera_index = 1;
     args->camera_source_4k = false;
+    if (!ParseFrameSource(KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE, &args->frame_source)) {
+        fprintf(stderr, "빌드 기본 KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE가 잘못됐다: %s\n",
+                KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE);
+        return false;
+    }
+    if (!ParsePerceptionDirection(KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION,
+                                  &args->perception_direction)) {
+        fprintf(stderr, "빌드 기본 KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION가 잘못됐다: %s\n",
+                KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION);
+        return false;
+    }
     args->duration_sec = 60;
     args->aircraft_sn = NULL;
 
@@ -74,6 +150,8 @@ static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
         OPT_OUT,
         OPT_CAMERA_INDEX,
         OPT_CAMERA_SOURCE,
+        OPT_FRAME_SOURCE,
+        OPT_PERCEPTION_DIRECTION,
         OPT_DURATION_SEC,
         OPT_AIRCRAFT_SN,
         OPT_HELP,
@@ -83,6 +161,8 @@ static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
         {"out", required_argument, NULL, OPT_OUT},
         {"camera-index", required_argument, NULL, OPT_CAMERA_INDEX},
         {"camera-source", required_argument, NULL, OPT_CAMERA_SOURCE},
+        {"frame-source", required_argument, NULL, OPT_FRAME_SOURCE},
+        {"perception-direction", required_argument, NULL, OPT_PERCEPTION_DIRECTION},
         {"duration-sec", required_argument, NULL, OPT_DURATION_SEC},
         {"aircraft-sn", required_argument, NULL, OPT_AIRCRAFT_SN},
         {"help", no_argument, NULL, OPT_HELP},
@@ -108,6 +188,20 @@ static bool ParseArgs(int argc, char **argv, ksi_cli_args_t *args)
                     args->camera_source_4k = true;
                 } else {
                     fprintf(stderr, "--camera-source 는 vis 또는 4k 여야 한다: %s\n", optarg);
+                    return false;
+                }
+                break;
+            case OPT_FRAME_SOURCE:
+                if (!ParseFrameSource(optarg, &args->frame_source)) {
+                    fprintf(stderr, "--frame-source 는 liveview 또는 perception 이어야 한다: %s\n", optarg);
+                    return false;
+                }
+                break;
+            case OPT_PERCEPTION_DIRECTION:
+                if (!ParsePerceptionDirection(optarg, &args->perception_direction)) {
+                    fprintf(stderr,
+                            "--perception-direction 은 down|front|rear|up|left|right 중 하나여야 한다: %s\n",
+                            optarg);
                     return false;
                 }
                 break;
@@ -215,13 +309,15 @@ int main(int argc, char **argv)
     snprintf(psdk_version, sizeof(psdk_version), "%d.%d.%d", DJI_VERSION_MAJOR, DJI_VERSION_MINOR,
              DJI_VERSION_MODIFY);
 
-    /* capabilities: liveview 콜백엔 센서 타임스탬프가 없다(조사 확정, frame_sensor_ts
-     * 항상 false). FC subscription 콜백은 T_DjiDataTimestamp 를 싣는다(telemetry_sensor_ts
-     * true) — 단 그 기준시각이 정확히 무엇인지는 기종별로 다르다고 PSDK 문서가 명시하고
-     * Manifold3/M4D 조합에 대해서는 미확인이다(telemetry_tap.h 상단 주석 참조). */
+    /* capabilities: Liveview에는 sensor timestamp가 없고, Perception raw timestamp도
+     * unit/domain이 아직 검증되지 않았으므로 frame_sensor_ts는 어느 mode에서도 false다.
+     * FC subscription은 T_DjiDataTimestamp를 싣지만 host CLOCK_MONOTONIC과 같은 domain
+     * 이라는 근거가 없다. 따라서 sensor_us_domain=unverified를 raw log 계약에 명시해
+     * Python converter가 --timestamp-basis sensor를 fail-closed하게 한다. */
     ksi_ndjson_write_meta(&writer, KSI_TAP_VERSION, psdk_version, started_at_utc, args.aircraft_sn,
                            anchor_mono_ns, anchor_wall_utc, /*frame_sensor_ts=*/false,
-                           /*telemetry_sensor_ts=*/true);
+                           /*telemetry_sensor_ts=*/true, FrameSourceName(args.frame_source),
+                           FrameTimestampProvenance(args.frame_source), "unverified");
 
     /* --- 시스템 환경 준비: Osal 은 모든 PSDK 앱에 필수, Socket 은 liveview 에 필수,
      * UsbBulk 는 Manifold3 의 CONFIG_HARDWARE_CONNECTION=USB_BULK 에 필수. --- */
@@ -294,9 +390,17 @@ int main(int argc, char **argv)
         .camera_position_index = args.camera_index,
         .camera_source_4k = args.camera_source_4k,
     };
-    rc = KsiLiveviewTap_Start(&liveview_config, &state);
+    ksi_perception_config_t perception_config = {
+        .direction = args.perception_direction,
+    };
+    if (args.frame_source == KSI_TAP_INPUT_LIVEVIEW) {
+        rc = KsiLiveviewTap_Start(&liveview_config, &state);
+    } else {
+        rc = KsiPerceptionTap_Start(&perception_config, &state);
+    }
     if (rc != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        fprintf(stderr, "liveview 시작 실패: 0x%08" PRIX64 "\n", (uint64_t) rc);
+        fprintf(stderr, "%s source 시작 실패: 0x%08" PRIX64 "\n", FrameSourceName(args.frame_source),
+                (uint64_t) rc);
         KsiTelemetryTap_Stop();
         ksi_ndjson_write_stat(&writer, 0, 0, 0, 0, args.num_samples, "error", true);
         ksi_shared_state_destroy(&state);
@@ -327,7 +431,11 @@ int main(int argc, char **argv)
         }
     }
 
-    KsiLiveviewTap_Stop(&liveview_config);
+    if (args.frame_source == KSI_TAP_INPUT_LIVEVIEW) {
+        KsiLiveviewTap_Stop(&liveview_config);
+    } else {
+        KsiPerceptionTap_Stop(&perception_config);
+    }
     KsiTelemetryTap_Stop();
     /* DjiCore_DeInit 은 최선 노력으로만 부른다 — 실기 미연결 상태에서의 동작은
      * 이 작업 범위 밖(실기 미검증)이라 반환값을 치명적 오류로 취급하지 않는다. */

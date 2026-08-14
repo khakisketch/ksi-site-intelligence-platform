@@ -18,8 +18,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlparse
 
-from .evidence import EvidenceStorageError
+from .evidence import (
+    DigestBoundUploadCapability,
+    EvidenceStorageError,
+    sha256_digest_to_s3_checksum,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - 타입 전용
     from mypy_boto3_s3.client import S3Client
@@ -81,6 +86,28 @@ class S3EvidenceStorage:
             ) from exc
         return str(url)
 
+    @staticmethod
+    def _require_digest_bound_sigv4(url: str) -> None:
+        """Ensure a returned capability actually signs its checksum header.
+
+        A caller may inject a boto3 client for tests or a non-AWS endpoint.  A
+        client whose presigner silently falls back to SigV2 can still produce a
+        URL containing ``x-amz-checksum-sha256`` as a *query* parameter, but
+        not a SigV4 signed header.  That is not the capability this Edge API
+        promises.  Inspect the locally generated URL and refuse it before Core
+        returns any upload authority.
+        """
+        query = parse_qs(urlparse(url).query)
+        algorithm = query.get("X-Amz-Algorithm", [""])[0]
+        signed_headers = query.get("X-Amz-SignedHeaders", [""])[0]
+        actual_headers = {header.strip().lower() for header in signed_headers.split(";")}
+        required_headers = {"content-type", "host", "x-amz-checksum-sha256"}
+        if algorithm != "AWS4-HMAC-SHA256" or not required_headers.issubset(actual_headers):
+            raise EvidenceStorageError(
+                "digest-bound presigned PUT requires SigV4 signed Content-Type and "
+                "x-amz-checksum-sha256 headers"
+            )
+
     def presigned_put(self, object_key: str, *, content_type: str, ttl: timedelta) -> str:
         # ContentType 을 서명에 포함한다 — 포함하지 않으면 업로더가 임의 타입으로
         # 올릴 수 있어 라우터의 MIME allowlist 가 발급 시점 장식이 된다.
@@ -88,6 +115,41 @@ class S3EvidenceStorage:
             "put_object",
             {"Bucket": self._bucket, "Key": object_key, "ContentType": content_type},
             ttl,
+        )
+
+    def presigned_put_bound_digest(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        content_digest: str,
+        ttl: timedelta,
+    ) -> DigestBoundUploadCapability:
+        """발급 digest와 다른 바이트를 스토리지가 거부하는 Edge PUT capability.
+
+        ``ChecksumSHA256``는 SigV4 PUT 서명의 일부다. 업로더가 같은 checksum
+        header를 보내지 않거나 다른 바이트를 쓰면 S3 호환 스토리지가 PUT을
+        거부한다. URL만 반환하면 이 필수 header가 사라지므로 capability와 함께
+        명시적으로 돌려준다.
+        """
+        checksum = sha256_digest_to_s3_checksum(content_digest)
+        url = self._presign(
+            "put_object",
+            {
+                "Bucket": self._bucket,
+                "Key": object_key,
+                "ContentType": content_type,
+                "ChecksumSHA256": checksum,
+            },
+            ttl,
+        )
+        self._require_digest_bound_sigv4(url)
+        return DigestBoundUploadCapability(
+            upload_url=url,
+            required_headers={
+                "Content-Type": content_type,
+                "x-amz-checksum-sha256": checksum,
+            },
         )
 
     def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:

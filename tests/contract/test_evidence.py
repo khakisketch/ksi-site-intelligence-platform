@@ -309,6 +309,39 @@ def test_register_then_replay_preserves_artifact(store: EventStore, tmp_path: Pa
     assert not artifact.is_tombstoned
 
 
+def test_optional_evidence_digest_is_validated_and_replayed(
+    store: EventStore, tmp_path: Path
+) -> None:
+    digest = "sha256:" + "a" * 64
+    result = store.register_evidence(
+        event_key="dev-1::evt-1",
+        artifact_id="edge-risk-01.json",
+        content_type="application/octet-stream",
+        registered_by="edge-dev-1",
+        now=datetime.now(UTC),
+        content_digest=digest,
+    )
+    assert result.verdict is EvidenceVerdict.REGISTERED
+    assert result.artifact is not None and result.artifact.content_digest == digest
+    assert (
+        store.register_evidence(
+            event_key="dev-1::evt-1",
+            artifact_id="bad-digest",
+            content_type="application/octet-stream",
+            registered_by="edge-dev-1",
+            now=datetime.now(UTC),
+            content_digest="not-a-digest",
+        ).verdict
+        is EvidenceVerdict.INVALID_CONTENT_DIGEST
+    )
+
+    journal_path = tmp_path / "events.jsonl"
+    store._journal.close()  # noqa: SLF001 -- flock 해제(재기동 시뮬레이션)
+    reopened = EventStore(DurableJournal(journal_path))
+    artifact = reopened.get_evidence("dev-1::evt-1", "edge-risk-01.json")
+    assert artifact is not None and artifact.content_digest == digest
+
+
 def test_duplicate_artifact_id_is_refused(store: EventStore) -> None:
     """같은 id 재등록을 허용하면 앞선 증거의 객체 키를 조용히 덮어쓴다."""
     assert _register(store).verdict is EvidenceVerdict.REGISTERED
@@ -422,6 +455,59 @@ def test_critical_confirmation_verifies_risk_field_bytes_and_snapshots_digest(
     assert snapshot["eventBundleDigest"] == payload_digest(before.bundle)
     assert snapshot["sourceEntityIds"] == ["ent-trk-001"]
     assert snapshot["geometryFormat"] == "PARAMETRIC_VOLUME"
+
+
+def test_critical_confirmation_accepts_risk_field_v1_1_during_transition(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """Core 전이 reader는 기존 v1.0뿐 아니라 새 Edge v1.1 원문도 검증한다."""
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    payload = _risk_field_payload(
+        schemaVersion="1.1",
+        type="PREDICTED",
+        geometry={
+            "format": "EXTRUDED_POLYGON",
+            "payload": {
+                "vertices": [[100.0, 200.0], [101.0, 200.0], [101.0, 201.0]],
+                "zMinM": 20.0,
+                "zMaxM": 25.0,
+            },
+        },
+        lineage={
+            "riskPolicyPackDigest": "sha256:" + "a" * 64,
+            "calibrationProfileId": "evidence-test-cal-1",
+            "sourceTimestamp": "2026-08-04T00:00:00Z",
+            "sensorTimestamp": "2026-08-04T00:00:00Z",
+        },
+    )
+    risk_artifact = store.get_evidence("dev-1::evt-1", "risk-1")
+    assert risk_artifact is not None
+    raw = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    storage.put_bytes(risk_artifact.object_key, raw, content_type="application/json")
+    before = store.get("dev-1::evt-1")
+    assert before is not None
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={
+            "targetStatus": "CONFIRMED_EVENT",
+            "reason": "v1.1 RiskField 계보와 기하 확인",
+            "expectedBundleDigest": payload_digest(before.bundle),
+        },
+        headers=_auth(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verdict"] == "TRANSITIONED"
+    transitioned = store.get("dev-1::evt-1")
+    assert transitioned is not None and transitioned.status is EventStatus.CONFIRMED_EVENT
+    snapshot = transitioned.transitions[-1]["evidenceSnapshot"]["riskFieldVerification"]
+    assert snapshot["schemaVersion"] == "1.1"
+    assert snapshot["geometryFormat"] == "EXTRUDED_POLYGON"
+    assert snapshot["contentSha256"] == hashlib.sha256(raw).hexdigest()
 
 
 def test_critical_confirmation_requires_registered_artifacts(

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/mission-dispatch-envelope.v1.json",
+  "title": "MissionDispatchEnvelope v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dispatchId",
+    "edgeDeviceId",
+    "missionId",
+    "missionContract",
+    "missionContractDigest",
+    "riskPolicyPack",
+    "riskPolicyPackDigest",
+    "edgeRuntimeProfile",
+    "edgeRuntimeProfileDigest",
+    "validity",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "dispatchId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "edgeDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "missionId": { "type": "string", "minLength": 1 },
+    "missionContract": { "$ref": "mission-contract.v1.2.json" },
+    "missionContractDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "riskPolicyPack": { "$ref": "risk-policy-pack.v1.json" },
+    "riskPolicyPackDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "edgeRuntimeProfile": { "$ref": "edge-runtime-profile.v1.json" },
+    "edgeRuntimeProfileDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notBefore", "notAfter"],
+      "properties": {
+        "notBefore": { "type": "string", "format": "date-time" },
+        "notAfter": { "type": "string", "format": "date-time" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "digest", "signature"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "signature": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

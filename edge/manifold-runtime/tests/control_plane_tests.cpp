@@ -108,6 +108,11 @@ void TestMalformedCommandRejected() {
     negative_ttl.ttl_ms = -1;
     Check(VerifyActionIntent(negative_ttl, kActiveDigest, kIssuedAt) == CommandVerdict::kMalformed,
           "음수 TTL 명령은 거부");
+
+    ActionIntent unknown_kind = ValidIntent();
+    unknown_kind.kind = static_cast<ActionIntentKind>(99);
+    Check(VerifyActionIntent(unknown_kind, kActiveDigest, kIssuedAt) == CommandVerdict::kMalformed,
+          "정의되지 않은 고수준 의도 enum 은 거부");
 }
 
 void TestSupervisorStartsFailClosed() {
@@ -472,6 +477,14 @@ void TestVerdictStringsAreDistinct() {
     Check(std::string(ToString(CommandVerdict::kMalformed)) == "MALFORMED", "MALFORMED");
     Check(std::string(ToString(CommandVerdict::kSupervisorNotReady)) == "SUPERVISOR_NOT_READY",
           "supervisor 사유가 인가 사유와 다른 문자열");
+
+    Check(std::string(ToString(ActionIntentKind::kHold)) == "HOLD", "HOLD intent kind");
+    Check(std::string(ToString(ActionIntentKind::kReturnToHome)) == "RETURN_TO_HOME",
+          "RETURN_TO_HOME intent kind");
+    Check(std::string(ToString(ActionIntentKind::kGotoViewpoint)) == "GOTO_VIEWPOINT",
+          "GOTO_VIEWPOINT intent kind");
+    Check(std::string(ToString(ActionIntentKind::kCaptureImage)) == "CAPTURE_IMAGE",
+          "CAPTURE_IMAGE intent kind");
 
     Check(std::string(ToString(SupervisorState::kFailClosed)) == "FAIL_CLOSED", "FAIL_CLOSED");
     Check(std::string(ToString(SupervisorState::kNominal)) == "NOMINAL", "NOMINAL");

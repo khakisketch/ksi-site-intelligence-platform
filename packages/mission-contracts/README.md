@@ -27,3 +27,38 @@ The public key directory must contain `keys.json` and `<keyId>.public.pem`; no
 private key belongs on the execution consumer. The state directory must be a
 real directory owned by the consumer process user with no group/other access
 (`0700`); active contracts are written as `0600` files.
+
+## Edge dispatch sync companion
+
+`ksi-edge-dispatch-sync` is a one-shot, activation-time control-plane companion:
+it pulls only `GET /v1/edge-sync/missions/next`, gives the exact bounded JSON
+bytes to the existing dispatch verifier, and posts that verifier's exact
+`ActivationReceiptV1` to the matching receipt route. It is not a PSDK callback,
+native frame/safety-loop process, or DJI flight-control client.
+
+```bash
+ksi-edge-dispatch-sync \
+  --core-base-url https://<core_origin> \
+  --tls-ca-bundle <reviewed_ca_bundle> \
+  --core-spki-pin sha256//<core_spki_pin> \
+  --bearer-token-file <private_0600_edge_token> \
+  --keys-dir <public_verification_key_directory> \
+  --state-dir <private_0700_activation_state_directory> \
+  --edge-device-id <device_id> \
+  --runtime-version <runtime_version>
+```
+
+The command requires an HTTPS origin, supplied CA bundle, exact SPKI pin,
+owner-only regular token file, private state directory, and bounded responses.
+It never follows redirects or emits the token or dispatch body. `204` means no
+mission. If receipt delivery fails, a verified local activation remains valid;
+a supervised later invocation retries the same still-pending Core dispatch
+idempotently.
+
+This package requires Python 3.12. The stock Manifold 3 Python 3.8 environment
+cannot run it, and the current `.dpk` packages only the native executable. A
+live activation-enabled deployment therefore needs a separately reviewed,
+non-frame-loop Python 3.12 companion with access to the exact private native
+handoff directory (or an equivalently atomic, approved handoff). That deployment
+and its permissions/TLS evidence are HIL gates, not established by this CLI's
+software tests.

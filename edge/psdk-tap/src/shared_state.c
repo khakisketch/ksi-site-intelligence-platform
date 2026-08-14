@@ -64,7 +64,7 @@ void ksi_shared_state_on_telemetry(ksi_shared_state_t *state, ksi_telemetry_even
     pthread_mutex_unlock(&state->mutex);
 }
 
-void ksi_shared_state_on_frame(ksi_shared_state_t *state, int64_t frame_mono_ns)
+void ksi_shared_state_on_frame(ksi_shared_state_t *state, ksi_frame_event_t event)
 {
     pthread_mutex_lock(&state->mutex);
     state->frames_received += 1;
@@ -75,7 +75,7 @@ void ksi_shared_state_on_frame(ksi_shared_state_t *state, int64_t frame_mono_ns)
     }
 
     ksi_pairing_result_t result;
-    bool found = ksi_ring_find_nearest(&state->ring, frame_mono_ns, &result);
+    bool found = ksi_ring_find_nearest(&state->ring, event.recv_mono_ns, &result);
     if (!found) {
         /* telemetry 표본이 아직 하나도 없다 — telemetry.recv_mono_ns 를 정직하게 채울 수
          * 없으므로 지어내지 않고 이 프레임을 버린다(카운터로만 남긴다). */
@@ -97,14 +97,38 @@ void ksi_shared_state_on_frame(ksi_shared_state_t *state, int64_t frame_mono_ns)
     /* 파일 I/O 는 락 밖에서 한다 — 안 그러면 telemetry 콜백(빠른 push 만 해야 함)이 프레임
      * 콜백의 디스크 쓰기 지연에 걸려 대기하게 된다. */
     ksi_ndjson_endpoint_t frame_ep = {
-        .recv_mono_ns = frame_mono_ns,
+        .recv_mono_ns = event.recv_mono_ns,
         .has_sensor_us = false, /* liveview 콜백엔 센서 타임스탬프가 없다(조사 확정) */
         .sensor_us = 0,
+        .has_sensor_timestamp_raw_u64 = event.has_raw_sensor_timestamp_u64,
+        .sensor_timestamp_raw_u64 = event.raw_sensor_timestamp_u64,
+        .has_perception_metadata = event.has_perception_metadata,
+        .perception_data_id = event.perception_data_id,
+        .perception_sequence = event.perception_sequence,
+        .perception_data_type = event.perception_data_type,
+        .perception_raw_index = event.perception_raw_index,
+        .perception_raw_direction = event.perception_raw_direction,
+        .perception_bpp = event.perception_bpp,
+        .perception_width = event.perception_width,
+        .perception_height = event.perception_height,
+        .perception_buffer_len = event.perception_buffer_len,
     };
     ksi_ndjson_endpoint_t telemetry_ep = {
         .recv_mono_ns = result.telemetry.recv_mono_ns,
         .has_sensor_us = result.telemetry.has_sensor_us,
         .sensor_us = result.telemetry.sensor_us,
+        .has_sensor_timestamp_raw_u64 = false,
+        .sensor_timestamp_raw_u64 = 0,
+        .has_perception_metadata = false,
+        .perception_data_id = 0,
+        .perception_sequence = 0,
+        .perception_data_type = 0,
+        .perception_raw_index = 0,
+        .perception_raw_direction = 0,
+        .perception_bpp = 0,
+        .perception_width = 0,
+        .perception_height = 0,
+        .perception_buffer_len = 0,
     };
     ksi_ndjson_write_sample(state->writer, sample_index, frame_ep, telemetry_ep,
                              result.telemetry.has_hw_flag, result.telemetry.hw_flag,

@@ -43,6 +43,35 @@ endif()
 option(KSI_PSDK_TAP_LOGIC_TESTS_ONLY
        "PSDK·자격증명 없이 순수 로직 테스트만 구성한다(CI 전용, 기본 OFF)" OFF)
 
+# HIL probe의 official DPK package는 실제 PSDK executable을 전제로 한다. Logic-only
+# test 모드에서 이 옵션을 켜면 package target이 없다는 사실을 뒤늦게 발견하므로,
+# configure 단계에서 두 모드의 충돌을 fail-closed로 밝힌다.
+option(KSI_PSDK_TAP_BUILD_DPK "enable official build_dpk.sh target for the HIL probe" OFF)
+set(KSI_PSDK_TAP_DPK_USER_APP_ID "" CACHE STRING "DJI-issued user_app_id for this DPK")
+set(KSI_PSDK_TAP_FIRMWARE_VERSION "00.01.00.02" CACHE STRING "HIL probe DPK firmware version")
+# dji_app_ctl가 DPK executable을 argv 없이 기동하므로, HIL raw-perception probe를 만들
+# 때만 이 compile-time defaults를 바꾼다. 기본은 기존 Liveview H264 진단 경로다.
+set(KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE "liveview" CACHE STRING
+    "argv-less DPK default frame source: liveview or perception")
+set_property(CACHE KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE PROPERTY STRINGS liveview perception)
+set(KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION "front" CACHE STRING
+    "argv-less DPK perception direction: down/front/rear/up/left/right")
+set_property(CACHE KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION PROPERTY STRINGS
+             down front rear up left right)
+if(NOT KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE MATCHES "^(liveview|perception)$")
+  message(FATAL_ERROR
+    "KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE must be liveview or perception")
+endif()
+if(NOT KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION MATCHES "^(down|front|rear|up|left|right)$")
+  message(FATAL_ERROR
+    "KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION must be down/front/rear/up/left/right")
+endif()
+if(KSI_PSDK_TAP_LOGIC_TESTS_ONLY AND KSI_PSDK_TAP_BUILD_DPK)
+  message(FATAL_ERROR
+    "KSI_PSDK_TAP_BUILD_DPK=ON conflicts with KSI_PSDK_TAP_LOGIC_TESTS_ONLY=ON; "
+    "a DPK requires the real PSDK executable")
+endif()
+
 if(KSI_PSDK_TAP_LOGIC_TESTS_ONLY)
   message(STATUS
     "psdk-tap: LOGIC_TESTS_ONLY — psdk_tap 실행파일을 구성하지 않는다. "
@@ -54,17 +83,24 @@ if(NOT KSI_PSDK_TAP_LOGIC_TESTS_ONLY)
 
 # --- 자격증명 게이트 ---------------------------------------------------------------
 # "자격증명(dji_sdk_app_info.h)은 빌드 입력이지 소스가 아니다" — 없으면 조용히
-# 스텁/더미로 넘어가지 않고 여기서 명확하게 실패한다.
-set(KSI_PSDK_TAP_APP_INFO_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/config/dji_sdk_app_info.h")
+# 스텁/더미로 넘어가지 않고 여기서 명확하게 실패한다. 외부 owner-only 경로도 받아
+# DPK HIL 빌드가 worktree에 credential을 복사하도록 강요하지 않는다.
+set(KSI_PSDK_TAP_APP_INFO_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/config/dji_sdk_app_info.h" CACHE FILEPATH
+    "DJI PSDK credential header (untracked deployment input)")
 if(NOT EXISTS "${KSI_PSDK_TAP_APP_INFO_HEADER}")
   message(FATAL_ERROR
-    "edge/psdk-tap/config/dji_sdk_app_info.h 가 없다.\n"
-    "developer.dji.com 에서 발급받은 앱 정보로 다음을 해라:\n"
-    "  cp edge/psdk-tap/config/dji_sdk_app_info.h.example edge/psdk-tap/config/dji_sdk_app_info.h\n"
-    "  (편집해서 USER_APP_NAME 등 실제 값 채우기)\n"
+    "DJI credential header를 찾지 못했다: ${KSI_PSDK_TAP_APP_INFO_HEADER}\n"
+    "developer.dji.com에서 발급받은 dji_sdk_app_info.h를 만들고 "
+    "-DKSI_PSDK_TAP_APP_INFO_HEADER=<외부 경로>로 지정해라.\n"
+    "예시는 edge/psdk-tap/config/dji_sdk_app_info.h.example 이다.\n"
     "이 파일은 저장소 루트 .gitignore 의 `**/dji_sdk_app_info.h` 규칙으로 항상 무시된다 — "
     "실수로 커밋될 위험이 없다. 자세한 건 edge/psdk-tap/README.md 참조.")
 endif()
+get_filename_component(_tap_app_info_name "${KSI_PSDK_TAP_APP_INFO_HEADER}" NAME)
+if(NOT _tap_app_info_name STREQUAL "dji_sdk_app_info.h")
+  message(FATAL_ERROR "KSI_PSDK_TAP_APP_INFO_HEADER의 파일명은 dji_sdk_app_info.h 여야 한다")
+endif()
+get_filename_component(KSI_PSDK_TAP_APP_INFO_DIR "${KSI_PSDK_TAP_APP_INFO_HEADER}" DIRECTORY)
 
 # --- PSDK 위치 ----------------------------------------------------------------------
 # vendored PSDK 트리(edge/third_party/psdk)는 fetch 산출물이다(ADR-KSI-009 D5 — 핀하되
@@ -121,6 +157,7 @@ if(NOT KSI_PSDK_TAP_HAVE_LIBUSB)
 endif()
 
 find_package(Threads REQUIRED)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../psdk-platform/psdk_platform.cmake")
 
 # --- 실행파일 -------------------------------------------------------------------------
 add_executable(psdk_tap
@@ -130,17 +167,15 @@ add_executable(psdk_tap
   src/ndjson_writer.c
   src/shared_state.c
   src/liveview_tap.c
+  src/perception_tap.c
   src/telemetry_tap.c
-  src/platform/osal_glue.c
-  src/platform/socket_glue.c
-  src/platform/usb_bulk_glue.c
-  src/platform/logger_console_glue.c
 )
+ksi_add_psdk_platform_glue(psdk_tap)
 
 target_include_directories(psdk_tap PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/config
+  ${KSI_PSDK_TAP_APP_INFO_DIR}
 )
 # SYSTEM — 벤더 헤더(anonymous union 등)가 우리 -Wpedantic -Werror 에 걸리지 않게 한다.
 target_include_directories(psdk_tap SYSTEM PRIVATE
@@ -148,6 +183,10 @@ target_include_directories(psdk_tap SYSTEM PRIVATE
 )
 
 target_compile_options(psdk_tap PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_compile_definitions(psdk_tap PRIVATE
+  KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE=\"${KSI_PSDK_TAP_DEFAULT_FRAME_SOURCE}\"
+  KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION=\"${KSI_PSDK_TAP_DEFAULT_PERCEPTION_DIRECTION}\"
+)
 target_link_libraries(psdk_tap PRIVATE psdk_static Threads::Threads m dl)
 
 if(KSI_PSDK_TAP_HAVE_LIBUSB)
@@ -157,14 +196,64 @@ if(KSI_PSDK_TAP_HAVE_LIBUSB)
   target_link_libraries(psdk_tap PRIVATE ${LIBUSB_LIBRARIES})
 endif()
 
+# HIL probe도 SSH에서 직접 실행하면 PSDK USB bulk channel을 얻지 못한다. 실제
+# telemetry/liveview 관측은 official DPK를 dji_app_ctl로 설치해 시작해야 한다.
+# user_app_id는 DJI가 발급하므로 default package를 만들지 않는다.
+if(KSI_PSDK_TAP_BUILD_DPK)
+  if(NOT KSI_TARGET_MANIFOLD3)
+    message(FATAL_ERROR
+      "KSI_PSDK_TAP_BUILD_DPK=ON requires KSI_TARGET_MANIFOLD3=ON")
+  endif()
+  if(NOT KSI_PSDK_TAP_DPK_USER_APP_ID)
+    message(FATAL_ERROR
+      "KSI_PSDK_TAP_BUILD_DPK=ON requires DJI-issued -DKSI_PSDK_TAP_DPK_USER_APP_ID=<id>")
+  endif()
+  if(NOT KSI_PSDK_TAP_DPK_USER_APP_ID MATCHES "^[A-Za-z0-9._-]+$")
+    message(FATAL_ERROR
+      "KSI_PSDK_TAP_DPK_USER_APP_ID must contain only letters, digits, dot, underscore, or hyphen")
+  endif()
+  # DJI build_dpk.sh rejects user_app_id longer than 16 bytes. The character
+  # allow-list above is ASCII, so CMake string length equals the package byte
+  # count; fail here before an expensive target build reaches the vendor tool.
+  string(LENGTH "${KSI_PSDK_TAP_DPK_USER_APP_ID}" _ksi_psdk_tap_user_app_id_length)
+  if(_ksi_psdk_tap_user_app_id_length GREATER 16)
+    message(FATAL_ERROR "KSI_PSDK_TAP_DPK_USER_APP_ID must be at most 16 ASCII bytes")
+  endif()
+  if(NOT KSI_PSDK_TAP_FIRMWARE_VERSION MATCHES
+     "^[0-9][0-9]\\.[0-9][0-9]\\.[0-9][0-9]\\.[0-9][0-9]$")
+    message(FATAL_ERROR
+      "KSI_PSDK_TAP_FIRMWARE_VERSION must have the form 00.00.00.00")
+  endif()
+  set(KSI_PSDK_TAP_DPK_BINARY "../psdk_tap")
+  configure_file(config/app.json.in "${CMAKE_CURRENT_BINARY_DIR}/dpk/app.json" @ONLY)
+  add_custom_target(ksi_psdk_tap_dpk
+    COMMAND "${KSI_PSDK_ROOT}/tools/build_dpk/build_dpk.sh"
+            -i "${CMAKE_CURRENT_BINARY_DIR}/dpk/app.json"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/dpk/out"
+    DEPENDS psdk_tap
+    COMMENT "Generating official Manifold 3 HIL probe .dpk with DJI build_dpk.sh"
+    VERBATIM
+  )
+endif()
+
 endif()  # NOT KSI_PSDK_TAP_LOGIC_TESTS_ONLY
 
 # --- 테스트: pairing.c 순수 로직만, PSDK 의존 없음 -------------------------------------
 option(KSI_BUILD_TESTS "psdk-tap 순수 로직 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)
+  find_package(Threads REQUIRED)
   enable_testing()
   add_executable(psdk_tap_pairing_tests tests/pairing_tests.c src/pairing.c)
   target_include_directories(psdk_tap_pairing_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_compile_options(psdk_tap_pairing_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME psdk_tap_pairing COMMAND psdk_tap_pairing_tests)
+
+  # NDJSON v2 contract test: no PSDK/callback dependency, but proves that an
+  # unverified perception timestamp remains a lossless raw string rather than
+  # being silently re-labelled sensor_us.
+  add_executable(psdk_tap_ndjson_writer_tests tests/ndjson_writer_tests.c src/ndjson_writer.c)
+  target_include_directories(psdk_tap_ndjson_writer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_compile_options(psdk_tap_ndjson_writer_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(psdk_tap_ndjson_writer_tests PRIVATE Threads::Threads)
+  add_test(NAME psdk_tap_ndjson_writer COMMAND psdk_tap_ndjson_writer_tests)
 endif()

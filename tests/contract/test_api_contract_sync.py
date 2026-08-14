@@ -32,6 +32,11 @@ from ksi_core.design_conformance_reports import DesignConformanceStore
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.edge_dispatch import (
+    EdgeDispatchStore,
+    EdgeRuntimeProfileRegistry,
+    RiskPolicyPackRegistry,
+)
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
@@ -43,6 +48,7 @@ from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_mission_contracts.risk_policy import RiskPolicyPackV1
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OPENAPI = _REPO_ROOT / "contracts" / "api" / "openapi-core.yaml"
@@ -109,6 +115,37 @@ def _max_assembly(tmp_path: Path) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    signing_key = Ed25519PrivateKey.generate()
+    risk_policy_pack = RiskPolicyPackV1.model_validate(
+        {
+            "schemaVersion": "1.0",
+            "riskPolicyPackId": "contract-sync-risk-pack",
+            "validity": {
+                "notBefore": "2026-01-01T00:00:00Z",
+                "notAfter": "2027-01-01T00:00:00Z",
+            },
+            "calibrationProfileId": "contract-sync-calibration",
+            "equipmentPolicies": [
+                {
+                    "equipmentClass": "Excavator",
+                    "riskFieldPolicyId": "contract-sync-excavator",
+                    "footprint": {"lengthM": 9.0, "widthM": 3.0, "heightM": 4.0},
+                    "prediction": {"horizonSeconds": 5.0, "samplePeriodSeconds": 0.25},
+                    "covarianceSigmaMultiplier": 3.0,
+                    "occlusionExpansionM": 1.0,
+                    "severity": 0.8,
+                }
+            ],
+        }
+    )
+    edge_dispatch_store = EdgeDispatchStore(
+        DurableJournal(tmp_path / "edge-dispatch.jsonl"),
+        mission_store=mission_store,
+        risk_policy_packs=RiskPolicyPackRegistry([risk_policy_pack]),
+        edge_runtime_profiles=EdgeRuntimeProfileRegistry(()),
+        private_key=signing_key,
+        key_id="contract-sync-test-key",
+    )
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
@@ -137,6 +174,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         evidence_storage=storage,
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
+        edge_dispatch_store=edge_dispatch_store,
         event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
         site_store=site_store,
         mission_store=mission_store,
@@ -181,7 +219,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         equipment_support_store=EquipmentSupportStore(
             DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
-        mission_signing_key=Ed25519PrivateKey.generate(),
+        mission_signing_key=signing_key,
         mission_signing_key_id="contract-sync-test-key",
     )
 

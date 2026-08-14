@@ -38,6 +38,36 @@ typedef struct {
     const char *stop_reason; /* 정적 문자열 리터럴만 담는다(소유권 없음) */
 } ksi_shared_state_t;
 
+typedef enum {
+    /* DJI Liveview H264 callback: sensor timestamp가 전혀 없다. */
+    KSI_FRAME_SOURCE_LIVEVIEW_H264 = 0,
+    /* DJI Perception grayscale callback: raw timeStamp는 있지만 단위/domain 미검증. */
+    KSI_FRAME_SOURCE_PERCEPTION_GRAYSCALE = 1,
+} ksi_frame_source_t;
+
+/* 프레임 callback이 shared state에 넘기는 metadata-only event.
+ *
+ * ``raw_sensor_timestamp_u64``는 PSDK perception imageInfo.timeStamp를 손실 없이
+ * 보존하기 위한 진단 값이다. 이는 ``sensor_us``가 아니며, downstream 공식 sensor
+ * alignment 판정에 쓰일 수 없다. */
+typedef struct {
+    int64_t recv_mono_ns;
+    ksi_frame_source_t source;
+    bool has_raw_sensor_timestamp_u64;
+    uint64_t raw_sensor_timestamp_u64;
+
+    bool has_perception_metadata;
+    uint16_t perception_data_id;
+    uint16_t perception_sequence;
+    uint32_t perception_data_type;
+    uint32_t perception_raw_index;
+    uint8_t perception_raw_direction;
+    uint8_t perception_bpp;
+    uint32_t perception_width;
+    uint32_t perception_height;
+    uint32_t perception_buffer_len;
+} ksi_frame_event_t;
+
 bool ksi_shared_state_init(ksi_shared_state_t *state, int ring_capacity,
                             int64_t target_num_samples, ksi_ndjson_writer_t *writer);
 void ksi_shared_state_destroy(ksi_shared_state_t *state);
@@ -45,10 +75,10 @@ void ksi_shared_state_destroy(ksi_shared_state_t *state);
 /* telemetry_tap 콜백에서 호출 — 링 push 만 한다(디스크 I/O 없음, 빠르게 반환). */
 void ksi_shared_state_on_telemetry(ksi_shared_state_t *state, ksi_telemetry_event_t event);
 
-/* liveview_tap 콜백에서 호출 — 가장 가까운 telemetry 를 찾아 sample 줄을 쓰고
- * 카운터를 갱신한다. 목표 표본 수에 도달하면 done 을 세팅하고 대기 중인 메인 스레드를
- * 깨운다. */
-void ksi_shared_state_on_frame(ksi_shared_state_t *state, int64_t frame_mono_ns);
+/* liveview/perception callback에서 호출 — 가장 가까운 telemetry를 찾아 sample 줄을
+ * 쓰고 카운터를 갱신한다. raw timestamp는 dedicated raw field로만 기록한다.
+ * 목표 표본 수에 도달하면 done을 세팅하고 대기 중인 메인 스레드를 깨운다. */
+void ksi_shared_state_on_frame(ksi_shared_state_t *state, ksi_frame_event_t event);
 
 /* signal 핸들러/watchdog 등 외부 사유로 즉시 멈추게 한다(멱등). */
 void ksi_shared_state_request_stop(ksi_shared_state_t *state, const char *reason);
