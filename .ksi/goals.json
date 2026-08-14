@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T12:14:20+09:00",
+  "updated_at": "2026-08-14T12:23:26+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1817,6 +1817,35 @@
       "verification_requested": null,
       "created_at": "2026-08-14T00:33:46+09:00",
       "updated_at": "2026-08-14T00:36:43+09:00"
+    },
+    {
+      "id": "manifold3-edge-shadow-vertical-slice",
+      "title": "Manifold 3 Edge Shadow 수직 슬라이스 — 임무 전달·위험판정·저장후전달·C++ 파이프라인",
+      "completion_criteria": [
+        "서명된 MissionDispatchEnvelope 발급·Edge 전용 활성화 검증(미래시각 거부, 재발급 rollback 아님)",
+        "RiskField v1.1 lineage로 실제 위험판정 생산 경로 확보(Edge 인증 채널)",
+        "SQLite WAL 저장후전달이 순서 보장 + crash 후 미업로드 evidence 우선 재시도",
+        "PSDK 앱이 DJI Flight Control을 직접 호출하지 않음(소스 스캔+ELF 검증)",
+        "전체 게이트(pytest·ruff·mypy·C++ CTest) green"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "커밋 e1118d1(워크트리)+병합 커밋(main). 독립 검증 전부 직접 실행: pytest 3003→(main 병합 후)3107 passed 0 failed·ruff clean·mypy 313 files clean. C++ 최초 CTest는 SQLite3 dev 헤더 부재로 WAL 백엔드 비활성인 채 104/135 checks만 실행됐음을 독립 reviewer가 발견 — apt-get download(root 불요)로 .deb 확보해 실물 SQLite로 재빌드, 135/135 전체 통과(main 병합 후 재확인 완료). 비행 경계는 KSI 소스 전체 grep으로 DjiFlightController_* 호출·include 전무 직접 확인. reviewer 2건(비행경계 소스검증, 저장후전달 순서·durability)이 안전경계 두 축을 각각 반증. 스키마는 기존 risk-field.v1.json 등 안 건드리고 v1.1을 별도 파일로 추가(하위호환).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "",
+        "at": "2026-08-14T12:23:18+09:00",
+        "reviewer": "reviewer-agent(a2ada649b8ada0297, 저장후전달 순서·WAL durability 반증) + 직접 실행(pytest/ruff/mypy/CTest, main 병합 후 재확인)",
+        "evidence_ref": "e1118d1(워크트리 커밋), main 병합 커밋. pytest 3107 passed/0 failed, ruff clean, mypy 313 files, C++ CTest 4/4(SQLite 실물, 135/135 checks), 소스 grep DjiFlightController_* 전무."
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-08-14T12:23:12+09:00",
+      "updated_at": "2026-08-14T12:23:18+09:00"
     }
   ],
   "risks": [
@@ -2651,14 +2680,14 @@
       "title": "RISK-003 RiskField 지오메트리 합성·artifact 생산 경로가 프로덕션에 미배선 — 검증 소비자는 있으나 실제 위험장 생성 주체가 없다",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 분리 추적. Core CRITICAL 확정 소비자는 등록·비폐기 artifact와 RiskField JSON bytes/geometry/validity/entities/digest를 fail-closed 검증하도록 구현됐지만, build_dynamic_risk_field의 geometry를 실제로 합성하고 evidence.riskFieldArtifact를 저장·참조하는 Manifold/Core 생산 호출부는 아직 없다. 해소 조건: RISK-003 형상 합성 방식과 소유권 결정, 프로덕션 producer 배선, 실제 artifact를 이용한 HIL/계약 E2E 증거.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "manifold3-edge-shadow-vertical-slice 병합(main). packages/mission-contracts/src/ksi_mission_contracts/risk_policy.py + edge/manifold-runtime/src/risk.cpp가 실제 RiskField v1.1을 생산해 Edge 인증 채널(edge_dispatch_sync.py)로 evidence 업로드 경로에 올린다 — 2026-08-14 독립 확인(직접 grep으로 risk.cpp의 SerializeRiskFieldV11 → sync.cpp의 transport->RegisterEvidence 호출 경로 추적). 주의: 이 리스크는 '생산 주체 부재'만 다룬다 — '누가 생산했는지 증명 안 됨(발생주체 검증)' 문제는 별개로 critical-event-riskfield-evidence-no-provenance-binding에 남아있고 이번 작업으로도 안 닫힘(lineage 필드는 자기선언, Core evidence 업로드 라우트는 여전히 EVENTS_TRIAGE 인간 권한만으로 열림 — events.py 미변경 직접 확인).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T01:39:26+09:00",
-      "updated_at": "2026-08-14T01:39:26+09:00"
+      "updated_at": "2026-08-14T12:23:26+09:00"
     },
     {
       "id": "critical-event-riskfield-evidence-no-provenance-binding",
@@ -2715,6 +2744,20 @@
       "previous_status": null,
       "created_at": "2026-08-14T12:14:20+09:00",
       "updated_at": "2026-08-14T12:14:20+09:00"
+    },
+    {
+      "id": "edge-runtime-tests-silently-skip-without-sqlite",
+      "title": "edge_runtime_tests가 SQLite3 dev 패키지 없는 빌드에서 저장후전달 순서·WAL 복구 assertion을 조용히 건너뛰고도 exit 0을 낸다",
+      "lens": "db",
+      "severity": "low",
+      "status": "open",
+      "note": "2026-08-14 독립 검증(reviewer agent + 직접 재현). edge_runtime_tests.cpp의 TestArtifactVaultAndStoreForward가 !sqlite_backend_compiled()면 즉시 return해 순서 보장(strict_order)·WAL close/reopen durability assertion 135개 중 31개를 건너뛴다. main()은 실행된 Check()가 전부 통과하면 무조건 exit 0을 내므로, SQLite3 dev 헤더 없는 host(ubuntu-latest 기본 이미지 등)에서 이 바이너리를 돌리면 '전부 통과'가 찍혀도 저장후전달의 핵심 안전 보장은 검증되지 않은 채로 그린이 뜬다. 실제로 이번 세션의 첫 호스트 빌드가 정확히 이 상태였다(104/135 checks만 실행, CMakeCache.txt에 SQLite3_INCLUDE_DIR-NOTFOUND 확인) — apt-get download로 .deb를 받아 실물 SQLite로 재빌드한 뒤에야 135/135 전체가 돌았다. 다행히 런타임 코드 자체(store_forward.cpp)는 SQLite 없을 때 fail-closed(kBackendUnavailable)만 반환하고 성공으로 위장하지 않는다 — 문제는 런타임 동작이 아니라 테스트 스위트가 핵심 주장을 검증했다고 착각하게 만드는 구조다. .github/workflows/ci.yml의 edge-control-plane job(plain cmake, KSI_TARGET_MANIFOLD3 미지정)이 실제로 SQLite dev 헤더가 있는 러너에서 도는지 미확인 — edge-manifold-target job(Docker, libsqlite3-dev 설치됨)은 정적 아카이브 못 찾으면 FATAL_ERROR라 안전하지만 별개 job이다. 해소 방향: SQLite 없을 때 main()이 명시적 SKIP/경고를 exit code나 stderr로 남기게 하거나, CI가 SQLite 부재 시 실패하도록 강제.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T12:20:28+09:00",
+      "updated_at": "2026-08-14T12:20:28+09:00"
     }
   ]
 }
