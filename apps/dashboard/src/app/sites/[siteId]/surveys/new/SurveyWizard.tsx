@@ -11,13 +11,19 @@ import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
 import type {
   AoiVertex,
+  MissionDerivation,
   MissionPlanRequest,
   MissionPlanResponse,
   MissionType,
+  ReobservationGrade,
   SiteStatus,
   SiteView,
 } from "@/lib/core-api/types";
 import { isMissionTypeAllowedAtSiteStatus, missionTypeDisabledReason } from "@/lib/core-api/missionSiteGate";
+import {
+  REOBSERVATION_GRADE_LABEL,
+  describeCaptureUnavailableReason,
+} from "@/lib/core-api/surveyEntryPreset";
 import { formatCoverageRatio } from "@/app/missions/format";
 
 // PRD §7.4 5스텝 라벨 그대로 — UX 목표 §2 "5클릭 = 예산 그 자체".
@@ -190,6 +196,8 @@ interface SurveyDraft {
   riskPolicyPackId: string;
   fallbackPolicyId: string;
   capturePolicyId: string;
+  /** 재관측 초안이 넘긴 계보(ADR-KSI-019 G5) — 최초 매핑 등 일반 진입은 null. */
+  derivedFrom: MissionDerivation | null;
 }
 
 // 고급 설정 기본값 — 백엔드에 해석 레지스트리가 없어 서버가 추측하지 않는 값들이다
@@ -211,7 +219,30 @@ const INITIAL_DRAFT: SurveyDraft = {
   riskPolicyPackId: "default-risk-policy",
   fallbackPolicyId: "default-fallback-policy",
   capturePolicyId: "default-capture-policy",
+  derivedFrom: null,
 };
+
+/**
+ * 도출된 겹침 값에 가장 가까운 조사 수준 프리셋을 고른다 — 위저드는 세 단계
+ * (빠른/표준/정밀)로만 겹침을 고르므로, 연속값인 서버 제안을 그대로 선택지로
+ * 만들 수 없다. **값을 반올림해서 지어내지 않는다**: 정확한 제안 수치는
+ * 별도 정보 패널에 그대로 보여주고, 이 함수는 시작 선택값만 고른다 — 운영자가
+ * 다른 수준을 고르면 그 정확한 값 대신 해당 프리셋이 그대로 제출된다.
+ */
+function closestSurveyLevel(frontOverlap: number, sideOverlap: number): SurveyLevel {
+  let best: SurveyLevel = "STANDARD";
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const key of Object.keys(LEVEL_PRESETS) as SurveyLevel[]) {
+    const preset = LEVEL_PRESETS[key];
+    const distance =
+      Math.abs(preset.frontOverlap - frontOverlap) + Math.abs(preset.sideOverlap - sideOverlap);
+    if (distance < bestDistance) {
+      best = key;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
 
 type SubmitStatus = "idle" | "pending" | "success" | "error";
 
@@ -222,6 +253,8 @@ export function SurveyWizard({
   site,
   initialMissionType = null,
   initialAoi = null,
+  initialCapturePlan = null,
+  initialDerivation = null,
 }: {
   site: SiteView;
   /** 변화탐지 재방문 권고 등 외부 신호가 목적을 이미 답한 경우의 초깃값(M2 폐루프).
@@ -233,6 +266,19 @@ export function SurveyWizard({
    * 경우의 초깃값 — 현장 전체 AOI 대신 이 값을 채운다. 화면에서 다시 그려
    * 바꿀 수 있는 건 그대로다(아래 AOI 지도는 항상 편집 가능). */
   initialAoi?: AoiVertex[] | null;
+  /** 재관측 초안이 함께 도출한 촬영 계획 제안(ADR-KSI-019 G5) — 고도는 그대로,
+   * 겹침은 가장 가까운 조사 수준으로 위저드 시작값을 채운다. 제안일 뿐이라
+   * 2단계에서 사람이 그대로 바꿀 수 있다. */
+  initialCapturePlan?: {
+    altitudeM: number | null;
+    frontOverlap: number | null;
+    sideOverlap: number | null;
+    grade: ReobservationGrade | null;
+    rationale: string[];
+    unavailableReason: string | null;
+  } | null;
+  /** 이 임무가 어느 변화 영역에서 나왔는가 — 그대로 발급 요청에 실려 간다. */
+  initialDerivation?: MissionDerivation | null;
 }) {
   const router = useRouter();
   // 현장에 AOI 가 영속돼 있으면 그것을 기본값으로 채운다(risk site-aoi-not-persisted
@@ -246,6 +292,24 @@ export function SurveyWizard({
       ...INITIAL_DRAFT,
       aoi: initialAoi ?? (site.aoi ? site.aoi.vertices : []),
       ...(initialMissionType ? { missionType: initialMissionType, target: "FULL_SITE" } : {}),
+      // 재관측 촬영 계획 제안(ADR-KSI-019 G5) — 고도는 정확히, 겹침은 가장 가까운
+      // 조사 수준으로 시작값을 채운다. 값을 지어내지 않는다: 직전 촬영 조건을
+      // 몰라서 서버가 제안하지 못했으면(altitudeM === null) 아무것도 채우지 않고
+      // 기존 동작(빈 상태로 시작) 그대로 둔다.
+      ...(initialCapturePlan?.altitudeM != null
+        ? {
+            altitudeM: initialCapturePlan.altitudeM,
+            ...(initialCapturePlan.frontOverlap != null && initialCapturePlan.sideOverlap != null
+              ? {
+                  level: closestSurveyLevel(
+                    initialCapturePlan.frontOverlap,
+                    initialCapturePlan.sideOverlap,
+                  ),
+                }
+              : {}),
+          }
+        : {}),
+      ...(initialDerivation ? { derivedFrom: initialDerivation } : {}),
     },
   );
   const [status, setStatus] = useState<SubmitStatus>("idle");
@@ -336,6 +400,8 @@ export function SurveyWizard({
           takeoffSecurityHeightM: draft.takeoffSecurityHeightM,
           globalTransitionalSpeedMs: draft.globalTransitionalSpeedMs,
         },
+        // 재관측 임무의 계보(ADR-KSI-019 G5) — 어느 변화 영역에서 나왔는지 그대로 싣는다.
+        ...(draft.derivedFrom ? { derivedFrom: draft.derivedFrom } : {}),
       };
 
       const response = await fetch("/api/mission-plans", {
@@ -542,6 +608,33 @@ export function SurveyWizard({
   } else if (draft.step === 2) {
     stepContent = (
       <div className="flex flex-col gap-4 sm:col-span-2">
+        {/* 재관측 촬영 계획 제안(ADR-KSI-019 G5) — 접지 않고 항상 보여준다.
+            자동 제안을 검토 없이 통과시키지 않기 위해서다. */}
+        {initialCapturePlan?.grade && (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-accent bg-accent-tint p-3">
+            <p className="text-[12.5px] font-semibold break-keep text-ink-1">
+              서버 제안: {REOBSERVATION_GRADE_LABEL[initialCapturePlan.grade].label}
+            </p>
+            <p className="text-[12.5px] break-keep text-ink-2">
+              {REOBSERVATION_GRADE_LABEL[initialCapturePlan.grade].description} 아래 값을
+              시작값으로 채웠습니다 — 그대로 쓰거나 직접 바꿀 수 있습니다.
+            </p>
+            {initialCapturePlan.rationale.length > 0 && (
+              <ul className="ml-4 list-disc text-[12px] break-keep text-ink-muted">
+                {initialCapturePlan.rationale.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {initialCapturePlan?.unavailableReason && (
+          <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+            <p className="text-[12.5px] break-keep text-ink-2">
+              {describeCaptureUnavailableReason(initialCapturePlan.unavailableReason)}
+            </p>
+          </div>
+        )}
         <div className="flex gap-2">
           {(Object.keys(LEVEL_PRESETS) as SurveyLevel[]).map((key) => (
             <button

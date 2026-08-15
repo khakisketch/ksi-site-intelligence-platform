@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveInitialMissionType } from "@/lib/core-api/surveyEntryPreset";
+import {
+  describeCaptureUnavailableReason,
+  resolveInitialMissionType,
+  resolveReobservationCapturePreset,
+} from "@/lib/core-api/surveyEntryPreset";
+import type { SpatialRefreshDraftResponse } from "@/lib/core-api/types";
+
+function draft(overrides: Partial<SpatialRefreshDraftResponse> = {}): SpatialRefreshDraftResponse {
+  return {
+    verdict: "DRAFT_READY",
+    aoi: { vertices: [] },
+    hullOvercaptureRatio: null,
+    regionAreaM2: null,
+    netM3: null,
+    cutM3: null,
+    fillM3: null,
+    unmeasurableRatio: null,
+    siteUnmeasurableCellRatio: null,
+    captureGrade: null,
+    captureAltitudeM: null,
+    captureFrontOverlap: null,
+    captureSideOverlap: null,
+    captureGsdM: null,
+    baselineGsdM: null,
+    captureSignalToNoise: null,
+    captureRationale: [],
+    captureUnavailableReason: null,
+    detail: null,
+    ...overrides,
+  };
+}
 
 /**
  * `/sites/[siteId]/surveys/new?purpose=...` 의 화이트리스트 — 이 쿼리 파라미터는
@@ -20,5 +50,56 @@ describe("resolveInitialMissionType", () => {
 
   it("파라미터 부재는 null", () => {
     expect(resolveInitialMissionType(undefined)).toBeNull();
+  });
+});
+
+describe("resolveReobservationCapturePreset", () => {
+  it("초안이 촬영 조건을 주면 값을 그대로 옮긴다 — 지어내지 않는다", () => {
+    const preset = resolveReobservationCapturePreset(
+      draft({
+        captureGrade: "DETAILED",
+        captureAltitudeM: 56,
+        captureFrontOverlap: 0.8,
+        captureSideOverlap: 0.7,
+        captureRationale: ["평균 표고 변화가 노이즈 바닥의 1.2배"],
+      }),
+    );
+
+    expect(preset).toMatchObject({
+      grade: "DETAILED",
+      altitudeM: 56,
+      frontOverlap: 0.8,
+      sideOverlap: 0.7,
+    });
+    expect(preset?.rationale).toHaveLength(1);
+    expect(preset?.unavailableReason).toBeNull();
+  });
+
+  it("촬영 조건을 모르면 값을 지어내지 않고 사유만 넘긴다", () => {
+    const preset = resolveReobservationCapturePreset(
+      draft({ captureUnavailableReason: "BASELINE_CAPTURE_UNKNOWN" }),
+    );
+
+    expect(preset?.altitudeM).toBeNull();
+    expect(preset?.frontOverlap).toBeNull();
+    expect(preset?.grade).toBeNull();
+    expect(preset?.unavailableReason).toBe("BASELINE_CAPTURE_UNKNOWN");
+  });
+
+  it("AOI 가 없으면(발급 실패 형태) null이다", () => {
+    expect(resolveReobservationCapturePreset(draft({ verdict: "ERROR", aoi: null }))).toBeNull();
+  });
+});
+
+describe("describeCaptureUnavailableReason", () => {
+  it("알려진 코드를 한국어 문장으로 바꾼다 — 코드를 화면에 그대로 내지 않는다", () => {
+    const text = describeCaptureUnavailableReason("BASELINE_CAPTURE_UNKNOWN");
+    expect(text).not.toContain("BASELINE_CAPTURE_UNKNOWN");
+    expect(text).toContain("직전 촬영 조건");
+  });
+
+  it("null·모르는 코드는 null", () => {
+    expect(describeCaptureUnavailableReason(null)).toBeNull();
+    expect(describeCaptureUnavailableReason("SOME_NEW_CODE")).toBeNull();
   });
 });

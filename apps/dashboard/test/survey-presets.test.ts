@@ -53,3 +53,44 @@ describe("조사 수준 프리셋", () => {
     }
   });
 });
+
+/**
+ * ``closestSurveyLevel`` 사본 — SurveyWizard.tsx 의 것과 동일 로직(같은 사본
+ * 사유, 위 docstring). 서버가 제안한 연속값 겹침(ADR-KSI-019 G5)을 위저드의
+ * 3단계 프리셋 중 가장 가까운 것으로 매핑한다 — 위저드가 세 단계로만 겹침을
+ * 고를 수 있어서다.
+ */
+function closestSurveyLevel(frontOverlap: number, sideOverlap: number): keyof typeof LEVEL_PRESETS {
+  let best: keyof typeof LEVEL_PRESETS = "STANDARD";
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const key of Object.keys(LEVEL_PRESETS) as Array<keyof typeof LEVEL_PRESETS>) {
+    const preset = LEVEL_PRESETS[key];
+    const distance =
+      Math.abs(preset.frontOverlap - frontOverlap) + Math.abs(preset.sideOverlap - sideOverlap);
+    if (distance < bestDistance) {
+      best = key;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+describe("closestSurveyLevel", () => {
+  it("정확히 STANDARD 프리셋과 같은 겹침은 STANDARD를 고른다", () => {
+    expect(closestSurveyLevel(0.8, 0.7)).toBe("STANDARD");
+  });
+
+  it("INTENSIVE 도출값(0.85/0.8)은 STANDARD보다 PRECISE에 더 가깝다", () => {
+    // STANDARD 거리 = |0.85-0.8|+|0.8-0.7| = 0.15, PRECISE 거리 = |0.85-0.9|+|0.8-0.8| = 0.05
+    expect(closestSurveyLevel(0.85, 0.8)).toBe("PRECISE");
+  });
+
+  it("FAST 프리셋과 같은 낮은 겹침은 FAST를 고른다", () => {
+    expect(closestSurveyLevel(0.65, 0.55)).toBe("FAST");
+  });
+
+  it("항상 세 프리셋 중 하나를 반환한다 — 임의 값을 지어내지 않는다", () => {
+    const result = closestSurveyLevel(0.72, 0.6);
+    expect(Object.keys(LEVEL_PRESETS)).toContain(result);
+  });
+});

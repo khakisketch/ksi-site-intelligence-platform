@@ -253,6 +253,12 @@ export interface MissionRecordResponse {
    * (missions/[missionId] 상세의 GET .../coverage-report 404 와 함께 봐야 한다).
    */
   coverageCompletionState: CompletionState | null;
+  /**
+   * 이 임무가 어느 분석 결과에서 나왔는가(ADR-KSI-019 G5). null 이면 최초 매핑
+   * 임무이거나 계약 단독 발급이다 — plan_request 에 실려 영속되는 운영
+   * 메타데이터를 그대로 노출한 것이라 서명 계약에는 없다.
+   */
+  derivedFrom: MissionDerivation | null;
 }
 
 export const COVERAGE_CELL_STATES = [
@@ -428,6 +434,11 @@ export interface MissionPlanRequest {
   route: MissionPlanRouteInput;
   drone: MissionPlanDroneInput;
   wayline: MissionPlanWaylineInput;
+  /**
+   * 재관측 임무의 계보(ADR-KSI-019 G5) — 이 임무가 어느 변화 영역에서 나왔는가.
+   * 서명 계약에는 들어가지 않는다(운영 메타데이터, MissionDerivation 참조).
+   */
+  derivedFrom?: MissionDerivation;
 }
 
 export interface MissionPlanResponse {
@@ -1228,9 +1239,18 @@ export interface RegionExtractionListView {
   reports: RegionExtractionEntry[];
 }
 
+/** 도출된 재관측 촬영 등급(ADR-KSI-019 G5) — 두 신호가 각각 다른 레버를 움직인 결과다. */
+export const REOBSERVATION_GRADES = ["STANDARD", "DETAILED", "INTENSIVE"] as const;
+export type ReobservationGrade = (typeof REOBSERVATION_GRADES)[number];
+
 /**
- * 재관찰 초안 응답 — **발급이 아니다**. AOI(볼록 껍질, WGS84)와 진단값만 준다.
- * `verdict`가 "DRAFT_READY"가 아니면(에러 응답 경로) `aoi`는 null이다.
+ * 재관찰 초안 응답 — **발급이 아니다**. AOI(볼록 껍질, WGS84) + 진단값 +
+ * 도출된 촬영 계획 제안을 준다. `verdict`가 "DRAFT_READY"가 아니면(에러 응답
+ * 경로) `aoi`는 null이다.
+ *
+ * `capture*` 필드는 **제안**이지 게이트가 아니다 — 최종 검증(비행 봉투·중복도
+ * 하한)은 여전히 서버의 발급 엔드포인트가 한다. 직전 촬영 조건을 모르면
+ * (계약 단독 발급 등) `captureUnavailableReason`만 채워지고 나머지는 null이다.
  */
 export interface SpatialRefreshDraftResponse {
   verdict: string;
@@ -1242,5 +1262,24 @@ export interface SpatialRefreshDraftResponse {
   fillM3: number | null;
   unmeasurableRatio: number | null;
   siteUnmeasurableCellRatio: number | null;
+  captureGrade: ReobservationGrade | null;
+  captureAltitudeM: number | null;
+  captureFrontOverlap: number | null;
+  captureSideOverlap: number | null;
+  captureGsdM: number | null;
+  baselineGsdM: number | null;
+  captureSignalToNoise: number | null;
+  /** 왜 이 등급인지 사람이 읽는 근거 문장들 — 도출이 성립했으면 비지 않는다. */
+  captureRationale: string[];
+  /** 도출이 성립하지 않은 사유(BASELINE_CAPTURE_UNKNOWN·CAPTURE_DERIVATION_FAILED). */
+  captureUnavailableReason: string | null;
   detail: string | null;
+}
+
+/** 재관측 임무의 계보(ADR-KSI-019 G5) — 어느 분석 결과에서 나왔는가. */
+export interface MissionDerivation {
+  sourceMissionId: string;
+  changeRegionSetId: string;
+  regionId: string;
+  captureGrade: ReobservationGrade | null;
 }
