@@ -43,6 +43,35 @@
 원래 §맥락·§결과의 논지(둘은 대체재가 아니다, PSDK와 Cloud API는 책임이 다른
 경로다)는 그대로 유효하다 — 다만 "Cloud API 전체 = Dock 단계"라는 등식만 틀렸다.
 
+## 2026-08-15 갱신 — 위 §2026-08-14 "Wayline Management가 Pilot 2 경로에도
+있다"는 서술과 상충하는 근거 발견 (미해결)
+
+`docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md`(2026-08-15 조사, GitHub
+공식 미러 `dji-sdk/Cloud-API-Doc` 원문 직접 인용)에서 **정반대 결론**을 얻었다:
+Wayline Management 관련 문서 파일은 검색·구조 조회 어느 쪽으로도 전부
+`dock-to-cloud/` 경로 아래에서만 나왔고, `pilot-to-cloud/` 아래에는 하나도
+없었다 — 있는 것은 Live Flight Controls(DRC, 실시간 조종)뿐이었다.
+
+**두 서술을 나란히 놓는다 — 어느 쪽도 임의로 정답 처리하지 않는다:**
+
+| | §2026-08-14(위) | §2026-08-15(신규 조사) |
+|---|---|---|
+| 주장 | Pilot 2 경로에 Wayline Management **있음** | Pilot 2 경로에 Wayline Management 문서 자체가 **없음** |
+| 근거 | 서술만 있고 이 문서에 직접 인용 URL이 남아있지 않음 | GitHub raw 파일 URL 직접 인용(`docs/dji/12_...md` §확인됨 1·4) |
+| 확인 방식 | 미상(그 세션의 실제 열람 경로가 기록에 없음) | `dji-sdk/Cloud-API-Doc` 문서 트리 구조 조회 + 파일 원문 |
+
+`docs/dji/11_DJI_CAPABILITY_VERIFICATION.md`(§2026-08-14가 참조한 것으로
+보이는 기존 조사 문서)에도 "Wayline"이라는 단어가 전혀 없다 — §2026-08-14의
+근거가 어느 문서·URL에서 왔는지 이 저장소 안에서 재추적할 수 없다.
+
+**결론: 문서 대조만으로는 해소되지 않는다.** HIL 담당자가 실기 세션에서
+직접 열어 확정해야 한다 — `docs/hil/HARDWARE_SESSION_PLAYBOOK.md` §9단계(신설)
+가 그 확인 절차다. 그때까지 **§2026-08-14의 "조기 채택 후보로 연다"는 결정
+자체는 유지하되, "Wayline Management가 이미 확인됐다"는 전제로 실제 MQTT
+Wayline 클라이언트 코드를 지금 작성하지는 않는다** — 확인 안 된 프로토콜을
+구현하면, 실기에서 그 경로가 없는 것으로 밝혀졌을 때 버릴 코드를 만드는
+것이고, 있는 것으로 밝혀져도 추측으로 짠 구현이 맞는다는 보장이 없다.
+
 ---
 
 ## 맥락
