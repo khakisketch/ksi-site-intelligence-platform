@@ -109,6 +109,7 @@ from ksi_core.processing_jobs import (
     ProcessingJobStore,
     build_processing_artifact_object_key,
 )
+from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -1289,9 +1290,27 @@ def _to_view(record: DesignConformanceRequestRecord) -> DesignConformanceRequest
     )
 
 
+#: 설계 대비 잔량이 성공한 뒤 자동으로 잇는 변화 영역 추출 요청의 신고 주체.
+#: 사람 principal 이 아니라 이 문자열로 남겨, 화면·감사 로그에서 "누가 눌렀나"가
+#: 아니라 "설계 대비 성공이 자동으로 이었다"는 사실이 그대로 보이게 한다.
+_AUTO_CHAIN_ACTOR = "system:design-conformance-auto-chain"
+
+
 def build_design_conformance_requests_router(
-    store: DesignConformanceRequestStore, storage: EvidenceStorage
+    store: DesignConformanceRequestStore,
+    storage: EvidenceStorage,
+    *,
+    region_extraction_store: RegionExtractionRequestStore | None = None,
 ) -> APIRouter:
+    """``region_extraction_store`` 가 주어지면 잔량 계산 성공을 변화 영역
+    추출로 자동으로 잇는다(대표자 결정 2026-08-15, region-extraction-ux-decision) —
+    사람이 버튼을 한 번 더 누르지 않아도 "설계 대비 분석"이라는 하나의 상위
+    작업 안에서 잔량 계산과 변화 영역 추출이 이어진다. 자동으로 잇지 **않는**
+    것은 재관측 Mission 발급이다 — 변화 영역을 보고 재관측할지는 여전히
+    사람이 지도에서 고른다(``region_extraction_reports.py`` 의
+    ``getSpatialRefreshDraft`` 가 "임무를 발급하지 않는다"고 이미 밝힌 경계와
+    같은 자리다).
+    """
     router = APIRouter(tags=["design-conformance-requests"])
 
     @router.post(
@@ -1470,16 +1489,41 @@ def build_design_conformance_requests_router(
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DesignConformanceRequestMutationResponse:
         """워커만 전이한다 — RUNNING/SUCCEEDED/FAILED 는 계산을 돌린 주체만 아는 사실이다."""
+        now = datetime.now(UTC)
         result = store.transition(
             request_id,
             request.target_status,
             detail=request.detail,
             actor=principal.principal_id,
-            now=datetime.now(UTC),
+            now=now,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is DesignConformanceRequestVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
+        if (
+            region_extraction_store is not None
+            and result.verdict is DesignConformanceRequestVerdict.TRANSITIONED
+            and result.record is not None
+            and request.target_status is ProcessingJobStatus.SUCCEEDED
+        ):
+            # 잔량 계산 성공 → 변화 영역 추출을 자동으로 잇는다(모듈 docstring
+            # region-extraction-ux-decision). 실패해도 이 응답(설계 대비 전이
+            # 자체는 이미 성공)을 되돌리지 않는다 — 다음 폴링에서 사람이나
+            # 재시도가 그 구멍을 메울 수 있어야 하고, 이미 굳은 성공을 이
+            # 부가 작업 하나 때문에 취소할 이유는 없다.
+            chain_result = region_extraction_store.create(
+                result.record.mission_id,
+                design_conformance_id=result.record.design_conformance_id,
+                requested_by=_AUTO_CHAIN_ACTOR,
+                now=now,
+            )
+            if chain_result.record is None:
+                logger.warning(
+                    "[%s] 변화 영역 추출 자동 연동 실패 — verdict=%s detail=%s",
+                    request_id,
+                    chain_result.verdict.value,
+                    chain_result.detail,
+                )
         return DesignConformanceRequestMutationResponse(
             verdict=result.verdict.value,
             request=_to_view(result.record) if result.record is not None else None,
@@ -1657,9 +1701,17 @@ def _artifact_object_key(record: DesignConformanceRequestRecord) -> str:
 
 
 def mount_design_conformance_requests(
-    app: FastAPI, store: DesignConformanceRequestStore, storage: EvidenceStorage
+    app: FastAPI,
+    store: DesignConformanceRequestStore,
+    storage: EvidenceStorage,
+    *,
+    region_extraction_store: RegionExtractionRequestStore | None = None,
 ) -> None:
-    app.include_router(build_design_conformance_requests_router(store, storage))
+    app.include_router(
+        build_design_conformance_requests_router(
+            store, storage, region_extraction_store=region_extraction_store
+        )
+    )
 
 
 __all__ = [

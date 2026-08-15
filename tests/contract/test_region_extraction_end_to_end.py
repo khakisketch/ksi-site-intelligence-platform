@@ -187,3 +187,113 @@ def test_design_conformance_then_region_extraction_end_to_end(tmp_path: Path) ->
     assert draft.status_code == 200, draft.json()
     assert draft.json()["verdict"] == "DRAFT_READY"
     assert len(draft.json()["aoi"]["vertices"]) >= 3
+
+
+def test_region_extraction_request_is_auto_chained_after_design_conformance_success(
+    tmp_path: Path,
+) -> None:
+    """[핵심] region_extraction_store 를 넘기면 사람이 ③(수동 POST)을 안 눌러도 된다.
+
+    region-extraction-ux-decision(2026-08-15, 대표자 확정): 설계 대비 잔량
+    계산이 성공하면 변화 영역 추출은 자동으로 잇는다 — 재관측 Mission 발급만
+    사람이 계속 고른다. 위 시험과 같은 픽스처를 쓰되 ③ 의 수동 POST 를
+    빼고, 워커가 성공 전이를 보고하는 그 순간 요청이 이미 QUEUED 로 있는지를
+    직접 본다.
+    """
+    current_path = _write_raster(tmp_path / "current.tif", _ramp())
+    design_path = _write_raster(tmp_path / "design.tif", _flat())
+    design_sha = sha256_of_file(design_path).removeprefix("sha256:")
+
+    base = Fixture(tmp_path, design_sha256=design_sha)
+    base.storage.put_bytes(
+        build_design_surface_object_key(
+            site_id=base.sites.get(_SITE_ID).site_id,  # type: ignore[union-attr]
+            design_surface_id=base.design_surface_id,
+        ),
+        design_path.read_bytes(),
+        content_type="application/octet-stream",
+    )
+    base.storage.put_bytes(
+        build_processing_artifact_object_key(
+            site_id=_SITE_ID, job_id=base.current_job_id, artifact_id="dsm"
+        ),
+        current_path.read_bytes(),
+        content_type="application/octet-stream",
+    )
+    design_conformance_reports = DesignConformanceStore(
+        DurableJournal(tmp_path / "design-conformance.jsonl"),
+        mission_store=base.missions,
+        processing_job_store=base.jobs,
+        request_store=base.requests,
+        storage=base.storage,
+    )
+    region_extraction_requests = RegionExtractionRequestStore(
+        DurableJournal(tmp_path / "region-extraction-requests.jsonl"),
+        mission_store=base.missions,
+        design_conformance_report_store=design_conformance_reports,
+    )
+
+    app = FastAPI()
+    mount_auth(app, _registry())
+    # 유일한 차이 — region_extraction_store 를 넘겨 자동 연동을 켠다.
+    mount_design_conformance_requests(
+        app, base.requests, base.storage, region_extraction_store=region_extraction_requests
+    )
+    mount_design_conformance_reports(app, design_conformance_reports, base.storage)
+    # 사람이 같은 조합을 다시 눌렀을 때의 멱등성(아래)을 HTTP 경로로 확인하려고
+    # 수동 표면도 그대로 장착해 둔다 — 자동 연동이 이 표면을 없애지 않는다.
+    mount_region_extraction_requests(
+        app, region_extraction_requests, design_conformance_reports, base.storage
+    )
+
+    human = TestClient(app)
+    human.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+
+    created = human.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance-requests",
+        json={
+            "designSurfaceId": base.design_surface_id,
+            "currentJobId": base.current_job_id,
+            "zones": {"zone-all": _full_extent_zone()},
+            "zoneCrs": _CRS,
+        },
+    )
+    assert created.status_code == 201, created.json()
+    dcf_request_id = created.json()["request"]["requestId"]
+    # design_conformance_id_of 는 항등이다(모듈 docstring) — 첫 추출 요청의
+    # id 는 결정적으로 유도된다(build_region_extraction_request_id).
+    expected_rex_id = f"{dcf_request_id}-rex1"
+
+    assert region_extraction_requests.get(expected_rex_id) is None, (
+        "설계 대비 요청이 아직 안 끝났는데 변화 영역 추출이 벌써 있으면 안 된다"
+    )
+
+    worker_http = TestClient(app)
+    core_client = HttpCoreClient("http://core.test", token=_WORKER_TOKEN, client=worker_http)
+    storage_http = httpx.Client(transport=_storage_transport(base.storage))
+    try:
+        run_design_conformance_request(
+            dcf_request_id,
+            core=core_client,
+            work_dir=tmp_path / "work-dcf",
+            http_client=storage_http,
+            now_message=lambda _msg: None,
+        )
+    finally:
+        storage_http.close()
+
+    # ③ 을 사람이 누르지 않았는데도 이미 QUEUED 로 있다.
+    chained = region_extraction_requests.get(expected_rex_id)
+    assert chained is not None
+    assert chained.status is ProcessingJobStatus.QUEUED
+    assert chained.requested_by == "system:design-conformance-auto-chain"
+
+    # 같은 조합을 사람이 다시 눌러도(예: 대시보드에서 재확인) 중복을 만들지
+    # 않는다 — create() 의 기존 멱등성을 그대로 물려받는다.
+    duplicate = human.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance/{dcf_request_id}"
+        "/region-extraction-requests",
+    )
+    assert duplicate.status_code == 200, duplicate.json()
+    assert duplicate.json()["verdict"] == "ALREADY_REQUESTED"
+    assert duplicate.json()["request"]["requestId"] == chained.request_id

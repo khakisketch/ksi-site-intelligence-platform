@@ -671,8 +671,18 @@ def create_app(
         assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.design_conformance_requests import mount_design_conformance_requests
 
+        # region_extraction_request_store 는 design_conformance_report_store 뒤에만
+        # 만들어지므로(아래 참조) 이 시점엔 아직 None 일 수 있다 — 그래도 안전하다,
+        # mount_design_conformance_requests 의 자동 연동은 optional 이라 나중에
+        # 다시 장착하지 않는다(성공 전이마다 그 값을 다시 읽지 않고 라우터 생성
+        # 시점에 한 번 닫힌다는 뜻 — 그래서 이 아래에서 순서를 보장한다: region
+        # extraction 관련 store 조립은 app_assembly.py 에서 이미 design_conformance
+        # 계열보다 먼저 끝나 있고, create_app 은 그 결과를 인자로 받을 뿐이다).
         mount_design_conformance_requests(
-            app, design_conformance_request_store, evidence_storage
+            app,
+            design_conformance_request_store,
+            evidence_storage,
+            region_extraction_store=region_extraction_request_store,
         )
 
     if design_conformance_report_store is not None:
