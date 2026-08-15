@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T11:11:33+09:00",
+  "updated_at": "2026-08-15T11:39:12+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2013,6 +2013,35 @@
         "변화영역(region-extraction) 결과가 설계 대비 요청의 구역(zone/ROI)과 무관하게 항상 전체 지형을 대상으로 계산된다는 사실을 화면 또는 API 응답에서 확인할 수 있다",
         "장기적으로 ROI에 변화영역 추출 범위를 연동할지(ROI 연동 모델) 현재 방식(site 전체 스캔)을 유지할지는 이번 과제에서 결정하지 않는다 — 실제 현장(E2E-FIELD) 사용 경험을 본 뒤 별도로 결정"
       ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "대표자 지시(2026-08-15)로 문구를 짧은 배지 방식으로 교체: 긴 안내 문단 대신 apps/dashboard/src/components/ui/StatusBadge.tsx 의 기존 StateBadge 재사용. DesignConformancePanel.tsx — 구역 선택 UI 옆(배지 '선택한 구역 기준')·'구역별 남은 물량' 결과 제목 옆(같은 배지)·하단 '이 임무의 변화 영역 보기 →' 링크 옆('현장 전체 기준' 배지). changes/page.tsx 헤더 제목 옆 + ChangeRegionExplorer.tsx 결과 요약 '변화 영역 N곳' 제목 옆에 '현장 전체 기준' 배지. 계산 로직·API 스키마 변경 없음(기존 read-only 필드만 재사용, 재확인). 실제 dev 서버(Core :8010 + dashboard :3000, 이미 떠 있던 실 데이터)에 로그인해 임무 site-e2e-pacifica-survey-1786723849041 로 두 화면을 렌더해 스크린샷 4장 확보 — 구역 기준 -9,000 m³(comparison-zone) vs 현장 전체 기준 -16,200 m³ 가 같은 임무에서 실제로 다르게 나오는 걸 배지 옆에서 확인. 재검증: npm run lint 통과, npx tsc --noEmit 통과, npm test -- --run 217/217 통과. 여전히 미커밋.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "배지 방식(선택한 구역 기준/현장 전체 기준)으로 대표자 지시대로 재작업. reviewer가 파일 3개 전체를 직접 읽고 배지 배치·문구 간결성·범위 유지(계산 로직·API 불변) 확인, 반증 없음. lint/tsc/test(217/217) 통과. 여전히 미커밋 — 커밋은 사용자 확인 후 별도.",
+        "at": "2026-08-15T11:39:12+09:00",
+        "reviewer": "reviewer subagent a633ba1cef3fcdaa7 (독립 재검토, read-only)",
+        "evidence_ref": "apps/dashboard/src/components/design/DesignConformancePanel.tsx, apps/dashboard/src/app/sites/[siteId]/changes/page.tsx, apps/dashboard/src/app/sites/[siteId]/changes/ChangeRegionExplorer.tsx (미커밋) + 실 dev 서버(:8010/:3000) 스크린샷 4장(mission site-e2e-pacifica-survey-1786723849041, comparison-zone -9,000 m³ vs 현장 전체 -16,200 m³ 실제 대비 확인)"
+      },
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:11:33+09:00",
+      "updated_at": "2026-08-15T11:39:12+09:00"
+    },
+    {
+      "id": "aol-1-spatial-model-lifecycle",
+      "title": "AOL-1 G1: 공간모델 생애주기 — 현장이 '공간모델 없음/있음/오래됨'을 서버가 판단한다",
+      "completion_criteria": [
+        "재구성(ProcessingJob) 성공이 현장 상태를 자동 전진시킨다(사람이 화면에서 누르지 않아도)",
+        "현장 조회 응답에 현재 공간모델의 유무·생성 임무·촬영시각·최신도가 실린다",
+        "노후(MODEL_STALE) 판정 기준이 코드에 명시되고 그 기준으로 자동 판정된다",
+        "기존 임무타입x현장상태 게이트(INV-052)와 모순되는 전이를 만들지 않는다",
+        "contract test 로 자동 전이·노후 판정이 고정된다"
+      ],
       "status": "proposed",
       "attempt": 1,
       "evidence": null,
@@ -2023,8 +2052,120 @@
       "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
-      "created_at": "2026-08-15T11:11:33+09:00",
-      "updated_at": "2026-08-15T11:11:33+09:00"
+      "created_at": "2026-08-15T11:25:15+09:00",
+      "updated_at": "2026-08-15T11:25:15+09:00"
+    },
+    {
+      "id": "aol-1-mission-execution-lifecycle",
+      "title": "AOL-1 G2: 임무 실행 생애주기 — 발급 기록에서 끝나지 않고 배포·실행·완료 상태를 갖는다",
+      "completion_criteria": [
+        "MissionRecord 가 발급 이후 상태(배포됨/실행중/완료/중단)를 갖고 전이표로 강제된다",
+        "CoverageReport 수신이 그 임무의 완료 상태와 결선된다",
+        "임무 화면에서 그 임무가 실제로 날았는지 사람이 구분할 수 있다",
+        "기존 발급 멱등성·짝 산출물 규약을 깨지 않는다",
+        "contract test 로 전이표와 CoverageReport 결선이 고정된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:25:15+09:00",
+      "updated_at": "2026-08-15T11:25:15+09:00"
+    },
+    {
+      "id": "aol-1-capture-auto-ingest",
+      "title": "AOL-1 G4: 촬영 → 서버 자동 ingest — 사람 손 사진 업로드 제거 (ADR-KSI-018 P1)",
+      "completion_criteria": [
+        "비행 후 사진이 사람의 수동 업로드 없이 해당 임무의 source media 번들로 들어온다",
+        "번들 봉인·digest 검증 규약을 우회하지 않는다",
+        "ingest 완료가 ProcessingJob 발행으로 이어진다",
+        "실제 기체 데이터 1회로 종단 관측된다(자기보고 불인정)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:25:15+09:00",
+      "updated_at": "2026-08-15T11:25:15+09:00"
+    },
+    {
+      "id": "aol-1-mission-to-aircraft-delivery",
+      "title": "AOL-1 G3: 임무를 기체까지 보내는 공식 경로 — 현재는 운영자가 KMZ 를 손으로 옮긴다",
+      "completion_criteria": [
+        "발급된 KMZ 가 정의된 경로로 기체/조종기에 도달한다",
+        "M4D 가 그 경로를 실제로 지원하는지 실기로 확인된 근거가 남는다(ADR-KSI-004 미확인 2건)",
+        "확인 실패 시 '운영자 수동 이관'이 공식 경로임을 문서가 명시한다",
+        "서버→기체 비행명령 하향 경계(check_shadow_flight_boundary)를 넓히지 않는다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:25:16+09:00",
+      "updated_at": "2026-08-15T11:25:16+09:00"
+    },
+    {
+      "id": "aol-3-terrain-aware-planning",
+      "title": "AOL-3 G6: 공간모델 인지 경로계획 — DSM/Point Cloud 를 경로계획 입력으로 (AOL-1 이후에만 착수)",
+      "completion_criteria": [
+        "DSM 기반 지형 추종 고도가 경로에 반영된다",
+        "공간모델이 없거나 못 읽으면 기존 이륙점-상대 고도 경로가 그대로 나온다(ADR-KSI-019 D3 반순환 불변식)",
+        "비행 봉투·고도 상한 게이트를 우회하지 않는다",
+        "AOL-1 종단 1회 완주 이후에 착수됐다는 증거가 있다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:25:16+09:00",
+      "updated_at": "2026-08-15T11:25:16+09:00"
+    },
+    {
+      "id": "aol-2-reobservation-planning-depth",
+      "title": "AOL-2 G5: 재관측 계획 심화 — 초안 AOI 에서 멈추지 않고 변화 정도에 맞춘 촬영계획까지",
+      "completion_criteria": [
+        "변화영역의 크기·변화량에 따라 촬영 고도/중복도/촬영간격이 조정된 재관측 계획이 나온다",
+        "운영자는 계획을 확인·승인만 하면 되고 수치를 처음부터 입력하지 않아도 된다",
+        "기존 변화영역→AOI 초안 경로(region_extraction_reports)를 재구현하지 않고 확장한다",
+        "계획 커버리지 사전 게이트를 우회하지 않는다",
+        "contract test 로 밀도 조정 규칙이 고정된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T11:25:29+09:00",
+      "updated_at": "2026-08-15T11:25:29+09:00"
     }
   ],
   "risks": [

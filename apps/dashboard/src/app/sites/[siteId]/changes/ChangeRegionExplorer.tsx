@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ChangeRegionMap } from "@/components/map/ChangeRegionMap";
+import { StateBadge } from "@/components/ui/StatusBadge";
 import { formatNetVolumeM3, formatRatioPercent, formatVolumeM3 } from "@/lib/core-api/phase34-labels";
 import type { AoiVertex, ChangeRegion, ChangeRegionSetReport } from "@/lib/core-api/types";
 
@@ -92,9 +93,12 @@ export function ChangeRegionExplorer({
         )}
 
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
-          <h3 className="text-[13.5px] font-bold break-keep">
-            변화 영역 {report.regions.length}곳
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[13.5px] font-bold break-keep">
+              변화 영역 {report.regions.length}곳
+            </h3>
+            <StateBadge label="현장 전체 기준" tone="neutral" />
+          </div>
           {report.filteredRegionCount > 0 && (
             <p className="text-[11.5px] break-keep text-ink-muted">
               너무 작은 영역 {report.filteredRegionCount}곳은 제외했습니다.

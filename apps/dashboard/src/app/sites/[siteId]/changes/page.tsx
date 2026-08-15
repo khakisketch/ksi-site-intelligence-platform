@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { MISSION_TYPE_LABEL, humanizeApiError } from "@/lib/core-api/labels";
@@ -56,7 +57,13 @@ export default async function SiteChangesPage({
       >
         ← {site.name}
       </Link>
-      <h2 className="break-keep text-[19px] font-bold tracking-tight">변화 영역 · 재확인 필요</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="break-keep text-[19px] font-bold tracking-tight">변화 영역 · 재확인 필요</h2>
+        {/* region-extraction-scope-clarity(2026-08-15): 설계 대비 잔량 화면에서
+            구역을 나눠 계산했더라도 이 화면은 그 구역과 무관하게 항상 현장
+            전체를 훑는다 — 배지 하나로 짧게 대비되게 밝힌다. */}
+        <StateBadge label="현장 전체 기준" tone="neutral" />
+      </div>
       <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
         설계 대비 잔량이 크게 달라진 곳을 자동으로 묶어 보여줍니다. 영역을 골라 다음 비행의
         촬영 범위로 바로 넘길 수 있습니다.
@@ -143,6 +150,12 @@ export default async function SiteChangesPage({
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5">
       {header}
+      <Link
+        href={`/missions/${encodeURIComponent(missionId)}`}
+        className="w-fit text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+      >
+        ← 이 계산의 근거가 된 설계 대비 잔량 보기
+      </Link>
       {latest.report.regions.length === 0 ? (
         <EmptyState
           title="이번 계산에서는 변화 영역이 없었습니다"

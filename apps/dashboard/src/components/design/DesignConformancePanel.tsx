@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { DiffHeatmapOverlay } from "@/components/map/DiffHeatmapOverlay";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
 import { humanizeVerticalDatum, readableApiError } from "@/lib/core-api/labels";
 import {
@@ -181,7 +181,10 @@ function ConformanceResult({
   return (
     <div className="flex flex-col gap-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-[13px] font-bold break-keep">구역별 남은 물량</h4>
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-[13px] font-bold break-keep">구역별 남은 물량</h4>
+          <StateBadge label="선택한 구역 기준" tone="neutral" />
+        </div>
         {totalNetM3 !== null && (
           <span className="text-[13px] tabular-nums">
             전체 순 잔량 {formatNetVolumeM3(totalNetM3)}
@@ -250,6 +253,17 @@ function ConformanceResult({
         >
           이 설계면의 계획 대비 진척 보기 →
         </Link>
+        {/* region-extraction-scope-clarity: 위 구역과 달리 이 결과는 현장
+            전체 기준이다 — 배지로 바로 대비되게 옆에 붙인다. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/sites/${encodeURIComponent(siteId)}/changes?missionId=${encodeURIComponent(missionId)}`}
+            className="text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+          >
+            이 임무의 변화 영역 보기 →
+          </Link>
+          <StateBadge label="현장 전체 기준" tone="neutral" />
+        </div>
       </div>
     </div>
   );
@@ -469,6 +483,14 @@ export function DesignConformancePanel({
 
           {/* ── 구역 선택: 작업구역(권장) vs 즉석 그리기 ───────────────── */}
           <div className="flex flex-col gap-2 border-t border-line pt-3">
+            {/* region-extraction-scope-clarity(2026-08-15): 여기서 고른 구역은
+                이 잔량 계산에만 적용된다 — 뒤이어 자동으로 도는 변화 영역
+                추출은 구역과 무관하게 항상 현장 전체를 훑는다(zone-blind가
+                설계, 버그 아님). 배지 하나로 짧게 짚어 둔다. */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11.5px] break-keep text-ink-muted">이 물량은</span>
+              <StateBadge label="선택한 구역 기준" tone="neutral" />
+            </div>
             {workAreas.length > 0 && (
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="구역 선택 방식">
                 <button
