@@ -1,11 +1,28 @@
-"""Shadow DPK의 DJI Flight Control 경계를 검증한다.
+"""Shadow DPK의 DJI 기체 기동(motion-commanding) 경계를 검증한다.
 
 이 도구는 세 사실을 의도적으로 분리한다.
 
-1. KSI C/C++ source에 ``dji_flight_control.h`` 또는
-   ``DjiFlightController_*`` 직접 호출이 없는가.
-2. 최종 ELF가 해결하지 못한 Flight Controller 외부 참조를 갖지 않는가.
+1. KSI C/C++ source에 금지 header(``_FLIGHT_HEADERS``) include 또는
+   금지 API(``_MOTION_SYMBOL_PREFIXES``) 직접 호출이 없는가.
+2. 최종 ELF가 해결하지 못한 그 API의 외부 참조를 갖지 않는가.
 3. 공식 PSDK static archive가 같은 object file에 남기는 *정의*까지 0개인가.
+
+## 2026-08-15 — 경계 대상이 넓어졌다 (ADR-KSI-020)
+
+원래 이 게이트는 ``DjiFlightController_*`` 한 계열만 봤다. 그런데 PSDK 3.16.0에는
+**기체를 실제로 움직이는 API가 그 계열 말고도 더 있다** — 특히
+``DjiWaypointV3_UploadKmzFile`` + ``DjiWaypointV3_Action(START)`` 두 줄이면
+KMZ 임무를 기체에 올려 시동·이륙·비행·착륙까지 시킬 수 있다(공식 샘플
+``samples/sample_c/module_sample/waypoint_v3/test_waypoint_v3.c`` 가 그 전 과정을
+그대로 보여준다). ``DjiFlightController_`` 만 막는 게이트는 이 경로를 통과시킨다 —
+즉 "KSI 바이너리는 기체를 못 움직인다"는 보증이 실제로는 성립하지 않았다.
+
+또 하나: 원래 header 검사는 ``dji_flight_control.h`` 를 찾았는데 PSDK의 실제 파일명은
+``dji_flight_controller.h`` 다. 존재하지 않는 이름을 찾고 있었으므로 header 층은
+한 번도 발화할 수 없었다(호출·심볼 층이 받쳐서 경계 자체가 뚫린 건 아니다).
+
+두 가지 모두 이 개정에서 닫는다. **경계 자체를 넓히는 결정이 아니라, 원래 선언한
+경계("KSI 는 기체를 직접 움직이지 않는다")를 실제로 강제하게 만드는 수정이다.**
 
 1·2는 KSI가 직접 보장할 수 있는 shadow-only 경계라 기본 실행에서 실패 사유다.
 3은 ``--require-zero-defined-symbols``일 때만 실패로 승격한다. PSDK 3.16.0의
@@ -31,13 +48,35 @@ from pathlib import Path
 
 _ELF_MAGIC = b"\x7fELF"
 _SOURCE_SUFFIXES = frozenset({".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"})
-_FLIGHT_HEADER_RE = re.compile(
-    r'^[^\S\r\n]*#\s*include\s*[<"]dji_flight_control\.h[>"]', re.MULTILINE
+#: 기체를 움직이거나 비행을 종료시키는 PSDK 3.16.0 header. 파일명은 실측이다
+#: (``edge/third_party/psdk/psdk_lib/include/``) — 추정으로 적지 않는다.
+_FLIGHT_HEADERS = (
+    "dji_flight_controller.h",  # 이·착륙·RTH·joystick·긴급제동
+    "dji_waypoint_v2.h",  # 임무 실행(구세대)
+    "dji_waypoint_v3.h",  # KMZ 업로드 + 임무 START — 시동·이륙까지 포함
+    "dji_interest_point.h",  # 관심지점 선회 비행
+    "dji_fts.h",  # 비행종료장치(낙하산) 트리거
 )
-_FLIGHT_CALL_RE = re.compile(r"\b(DjiFlightController_[A-Za-z0-9_]*)\s*\(")
-_FLIGHT_SYMBOL_RE = re.compile(r"\b(DjiFlightController_[A-Za-z0-9_]*)\b")
+#: 위 header가 노출하는 함수 계열. header include 없이 extern 선언만으로 부르는
+#: 우회를 막으려면 심볼 쪽도 같은 집합이어야 한다.
+_MOTION_SYMBOL_PREFIXES = (
+    "DjiFlightController",
+    "DjiWaypointV2",
+    "DjiWaypointV3",
+    "DjiInterestPoint",
+    "DjiFts",
+)
+
+_HEADER_ALTERNATION = "|".join(re.escape(header) for header in _FLIGHT_HEADERS)
+_SYMBOL_ALTERNATION = "|".join(_MOTION_SYMBOL_PREFIXES)
+
+_FLIGHT_HEADER_RE = re.compile(
+    rf'^[^\S\r\n]*#\s*include\s*[<"](?:{_HEADER_ALTERNATION})[>"]', re.MULTILINE
+)
+_FLIGHT_CALL_RE = re.compile(rf"\b((?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)\s*\(")
+_FLIGHT_SYMBOL_RE = re.compile(rf"\b((?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)\b")
 _OBJDUMP_DIRECT_CALL_RE = re.compile(
-    r"\b(?:bl|blx|callq?|jal)\b[^\n<]*<(?P<symbol>DjiFlightController_[A-Za-z0-9_]*)>",
+    rf"\b(?:bl|blx|callq?|jal)\b[^\n<]*<(?P<symbol>(?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)>",
     re.IGNORECASE,
 )
 
