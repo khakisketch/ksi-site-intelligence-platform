@@ -45,6 +45,68 @@ export interface SiteView {
   modelMaxAgeDays: number | null;
 }
 
+/**
+ * 현장의 공간모델 판정(ADR-KSI-019 G1). `AGE_POLICY_UNDECLARED` 는 "판정하지 않았다"이지
+ * "최신"이 아니다 — 화면이 그 둘을 같게 보여주면 근거 없는 안심을 준다.
+ */
+export const SPATIAL_MODEL_STATES = [
+  "ABSENT",
+  "FRESH",
+  "STALE",
+  "AGE_POLICY_UNDECLARED",
+] as const;
+export type SpatialModelState = (typeof SPATIAL_MODEL_STATES)[number];
+
+/**
+ * 임무 실행 생애주기(ADR-KSI-019 G2). `IN_FLIGHT` 가 없는 것은 의도다 —
+ * 서버가 비행 중 텔레메트리를 받지 않으므로 "지금 날고 있다"는 아는 사실이 아니다.
+ */
+export const MISSION_EXECUTION_STATUSES = [
+  "ISSUED",
+  "DISPATCHED",
+  "ACTIVATED",
+  "COMPLETED",
+  "ENDED_INCOMPLETE",
+  "CANCELLED",
+] as const;
+export type MissionExecutionStatus = (typeof MISSION_EXECUTION_STATUSES)[number];
+
+/** GET /v1/sites/{siteId}/spatial-model — 매 호출 재계산되는 파생 판정. */
+export interface SpatialModelView {
+  siteId: string;
+  state: SpatialModelState;
+  /** 판정 근거가 된 최신 재구성 작업. `ABSENT` 면 null. */
+  epochJobId: string | null;
+  /** 그 작업이 성공한 시각. **촬영 시각이 아니라 등록 시각**이다. */
+  registeredAt: string | null;
+  ageDays: number | null;
+  maxAgeDays: number | null;
+  sourceArtifactCount: number;
+  succeededEpochCount: number;
+  siteStatus: SiteStatus;
+  /** false 면 현장 상태가 실제 모델 유무와 어긋난다(예: 순찰 준비인데 모델 없음). */
+  siteStatusMatchesModel: boolean;
+}
+
+export interface MissionExecutionHistoryEntry {
+  missionId: string;
+  before: MissionExecutionStatus;
+  after: MissionExecutionStatus;
+  updatedAt: string;
+  updatedBy: string;
+  detail: string | null;
+}
+
+/** GET /v1/missions/{missionId}/execution — 전이가 없으면 status 는 ISSUED. */
+export interface MissionExecutionView {
+  missionId: string;
+  status: MissionExecutionStatus;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  detail: string | null;
+  history: MissionExecutionHistoryEntry[];
+}
+
 /** 처리 작업의 벤더 클라우드 실행 가부를 정하는 현장 속성(INV-050). */
 export interface DataResidency {
   egressAllowed: boolean;

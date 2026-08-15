@@ -15,7 +15,7 @@ import {
   listDesignConformanceRequests,
   listDesignSurfaces,
 } from "@/lib/core-api/design";
-import { getCoverageReport, getMission } from "@/lib/core-api/missions";
+import { getCoverageReport, getMission, getMissionExecution } from "@/lib/core-api/missions";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
@@ -97,6 +97,7 @@ export default async function MissionDetailPage({
   // 임무 상세 자체(좌 패널)는 보여야 한다(getSite 와 같은 원칙).
   const [
     site,
+    execution,
     coverageResult,
     canIssue,
     sourceBundle,
@@ -111,6 +112,9 @@ export default async function MissionDetailPage({
     workAreas,
   ] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
+    // 실행 상태 표면이 없는 조립이거나 조회에 실패하면 null 로 둔다 — 화면은 그때
+    // 아무것도 단정하지 않는다(MissionLifecycle 의 execution === null 경로).
+    getMissionExecution(mission.missionId).catch(() => null),
     fetchCoverageResult(mission.missionId),
     whoAmI()
       .then((who) => who.permissions.includes("MISSIONS_ISSUE"))
@@ -223,6 +227,7 @@ export default async function MissionDetailPage({
       </div>
 
       <MissionLifecycle
+        execution={execution}
         coverage={coverageResult}
         bundle={sourceBundle}
         latestJob={latestJob}

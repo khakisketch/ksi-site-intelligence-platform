@@ -1,7 +1,11 @@
 import "server-only";
 
 import { coreFetch, coreFetchBinary, type CoreBinaryResponse } from "./client";
-import type { CoverageReportView, MissionRecordResponse } from "./types";
+import type {
+  CoverageReportView,
+  MissionExecutionView,
+  MissionRecordResponse,
+} from "./types";
 
 export async function listMissions(siteId?: string): Promise<MissionRecordResponse[]> {
   return coreFetch<MissionRecordResponse[]>("/v1/missions", { query: { siteId } });
@@ -28,5 +32,19 @@ export async function getMissionKmz(missionId: string): Promise<CoreBinaryRespon
 export async function getCoverageReport(missionId: string): Promise<CoverageReportView> {
   return coreFetch<CoverageReportView>(
     `/v1/missions/${encodeURIComponent(missionId)}/coverage-report`,
+  );
+}
+
+/**
+ * 그 임무의 실행 생애주기(ADR-KSI-019 G2) — 발급 이후 무슨 일이 있었는가.
+ *
+ * 전이가 한 번도 없었으면 status 는 `ISSUED` 이고 history 는 빈 배열이다
+ * (레코드 부재 = ISSUED). 이 값은 **완료 판정의 권위가 아니라 CoverageReport
+ * 원장의 투영**이므로(INV-010), 화면이 완료를 단정할 때는 커버리지 보고를 근거로
+ * 삼는다. 실행 상태 표면이 없는 조립에서는 404 이고 `CoreApiError` 로 전파된다.
+ */
+export async function getMissionExecution(missionId: string): Promise<MissionExecutionView> {
+  return coreFetch<MissionExecutionView>(
+    `/v1/missions/${encodeURIComponent(missionId)}/execution`,
   );
 }

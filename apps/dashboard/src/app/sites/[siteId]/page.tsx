@@ -11,11 +11,12 @@ import {
   MISSION_TYPE_LABEL,
   humanizeApiError,
   SITE_STATUS_LABEL,
+  spatialModelSummary,
 } from "@/lib/core-api/labels";
 import { listEvents } from "@/lib/core-api/events";
 import { listMissions } from "@/lib/core-api/missions";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
-import { getSite } from "@/lib/core-api/sites";
+import { getSite, getSpatialModel } from "@/lib/core-api/sites";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDate } from "@/lib/datetime";
 
@@ -156,14 +157,23 @@ export default async function SiteDetailPage({
   }
 
   // 임무·이벤트·권한 조회는 현장 조회와 독립 — 하나가 실패해도 다른 섹션은 계속 보여준다.
-  const [missionsResult, eventsResult, canIssueMission, canTransitionSite, canApproveAutonomySite] =
-    await Promise.allSettled([
-      listMissions(site.siteId),
-      listEvents({ siteId: site.siteId }),
-      hasAllPermissions("MISSIONS_ISSUE"),
-      hasAllPermissions("SITES_WRITE"),
-      hasAllPermissions("SITES_AUTONOMY_APPROVE"),
-    ]);
+  const [
+    missionsResult,
+    eventsResult,
+    canIssueMission,
+    canTransitionSite,
+    canApproveAutonomySite,
+    spatialModelResult,
+  ] = await Promise.allSettled([
+    listMissions(site.siteId),
+    listEvents({ siteId: site.siteId }),
+    hasAllPermissions("MISSIONS_ISSUE"),
+    hasAllPermissions("SITES_WRITE"),
+    hasAllPermissions("SITES_AUTONOMY_APPROVE"),
+    // 재구성 원장이 없는 조립에서는 이 표면 자체가 없다(404) — 그때는 "모델 없음"이
+    // 아니라 **아무것도 표시하지 않는다**. 없는 것과 확인할 수 없는 것은 다르다.
+    getSpatialModel(site.siteId),
+  ]);
   const missions = sectionOutcome(missionsResult);
   const events = sectionOutcome(
     eventsResult.status === "fulfilled"
@@ -180,6 +190,9 @@ export default async function SiteDetailPage({
 
   const statusLabel = SITE_STATUS_LABEL[site.status];
   const nextAction = nextActionFor(site);
+  const spatialModel =
+    spatialModelResult.status === "fulfilled" ? spatialModelResult.value : null;
+  const spatialSummary = spatialModel ? spatialModelSummary(spatialModel) : null;
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
@@ -220,6 +233,19 @@ export default async function SiteDetailPage({
               </span>
             )}
           </div>
+
+          {/* 공간모델 최신도(ADR-KSI-019 G1) — 서버가 매 조회 재계산한 파생 판정이다.
+              조회에 실패했거나 표면이 없으면 아무것도 그리지 않는다: 확인할 수 없는
+              것을 "없음"으로 그리면 화면이 서버가 하지 않은 판정을 대신한다. */}
+          {spatialSummary && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+              <span className="text-[12px] break-keep text-ink-muted">공간모델</span>
+              <StatusBadge label={spatialSummary.label} tone={spatialSummary.tone} />
+              <span className="min-w-0 text-[12.5px] break-keep text-ink-2">
+                {spatialSummary.detail}
+              </span>
+            </div>
+          )}
         </div>
 
         <section className="rounded-lg border border-line bg-surface p-4">

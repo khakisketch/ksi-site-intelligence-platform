@@ -1,7 +1,14 @@
 import "server-only";
 
 import { coreFetch } from "./client";
-import type { AoiVertex, DataResidency, SiteFrame, SiteStatus, SiteView } from "./types";
+import type {
+  AoiVertex,
+  DataResidency,
+  SiteFrame,
+  SiteStatus,
+  SiteView,
+  SpatialModelView,
+} from "./types";
 
 export async function listSites(): Promise<SiteView[]> {
   const body = await coreFetch<{ sites: SiteView[] }>("/v1/sites");
@@ -10,6 +17,36 @@ export async function listSites(): Promise<SiteView[]> {
 
 export async function getSite(siteId: string): Promise<SiteView> {
   return coreFetch<SiteView>(`/v1/sites/${encodeURIComponent(siteId)}`);
+}
+
+/**
+ * 이 현장에 공간모델이 있는가·낡았는가(ADR-KSI-019 G1).
+ *
+ * 서버가 매 호출 재계산하는 파생 판정이라 대시보드가 캐시하거나 재계산하지 않는다.
+ * 재구성 원장이 없는 조립에서는 이 표면 자체가 없다(404) — 그때 화면은 "모델 없음"이
+ * 아니라 "확인할 수 없음"으로 다뤄야 한다.
+ */
+export async function getSpatialModel(siteId: string): Promise<SpatialModelView> {
+  return coreFetch<SpatialModelView>(
+    `/v1/sites/${encodeURIComponent(siteId)}/spatial-model`,
+  );
+}
+
+export interface SetModelAgePolicyInput {
+  /** null 이면 철회 — 철회하면 서버가 노후를 판정하지 않는다. */
+  maxAgeDays: number | null;
+}
+
+/** 이 현장의 공간모델 노후 판정 기준(일)을 선언·교체·철회한다. */
+export async function setSiteModelAgePolicy(
+  siteId: string,
+  input: SetModelAgePolicyInput,
+): Promise<SiteView> {
+  const body = await coreFetch<{ site: SiteView }>(
+    `/v1/sites/${encodeURIComponent(siteId)}/model-age-policy`,
+    { method: "PUT", body: input },
+  );
+  return body.site;
 }
 
 export interface RegisterSiteInput {

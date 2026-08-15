@@ -6,9 +6,11 @@ import type {
   DesignSurfaceStatus,
   EventSeverity,
   EventStatus,
+  MissionExecutionStatus,
   MissionType,
   Role,
   SiteStatus,
+  SpatialModelState,
   TriageStatus,
 } from "./types";
 
@@ -26,6 +28,72 @@ export const SITE_STATUS_LABEL: Record<SiteStatus, { label: string; tone: Tone }
   REMAP_REQUIRED: { label: "재매핑 필요", tone: "warning" },
   SUSPENDED: { label: "운영 중단", tone: "warning" },
 };
+
+/**
+ * 임무 실행 생애주기 라벨(ADR-KSI-019 G2). 내부 상태값을 화면에 그대로 내지 않는다 —
+ * 운영자가 읽는 것은 "기체로 전달됨"이지 "DISPATCHED" 가 아니다.
+ */
+export const MISSION_EXECUTION_STATUS_LABEL: Record<
+  MissionExecutionStatus,
+  { label: string; tone: Tone }
+> = {
+  ISSUED: { label: "발급됨", tone: "neutral" },
+  DISPATCHED: { label: "기체로 전달됨", tone: "progress" },
+  ACTIVATED: { label: "기체가 확인함", tone: "progress" },
+  COMPLETED: { label: "완료 보고됨", tone: "positive" },
+  ENDED_INCOMPLETE: { label: "완료되지 않고 끝남", tone: "warning" },
+  CANCELLED: { label: "취소됨", tone: "neutral" },
+};
+
+/**
+ * 공간모델 상태 요약 — 결론 한 줄과 그 근거 한 줄.
+ *
+ * **미선언을 "최신"으로 표시하지 않는다.** "판정하지 않았다"와 "판정했더니 최신이다"는
+ * 다른 사실이고, 전자를 후자로 보여주면 화면이 근거 없는 안심을 준다(ADR-KSI-019 G1).
+ * 현장 상태와 모델 유무가 어긋나면(`siteStatusMatchesModel === false`) 그 모순이
+ * 결론보다 먼저 읽혀야 한다 — 순찰 준비인데 모델이 없는 현장이 정상으로 보이면 안 된다.
+ */
+export function spatialModelSummary(input: {
+  state: SpatialModelState;
+  ageDays: number | null;
+  maxAgeDays: number | null;
+  siteStatusMatchesModel: boolean;
+}): { label: string; detail: string; tone: Tone } {
+  if (!input.siteStatusMatchesModel) {
+    return {
+      label: "현장 상태와 어긋남",
+      detail: "현장은 모델이 있는 단계로 표시돼 있는데 실제 공간모델이 없습니다. 확인이 필요합니다.",
+      tone: "warning",
+    };
+  }
+  const age = input.ageDays === null ? null : Math.floor(input.ageDays);
+  switch (input.state) {
+    case "ABSENT":
+      return {
+        label: "공간모델 없음",
+        detail: "아직 이 현장의 3차원 모델이 만들어지지 않았습니다.",
+        tone: "neutral",
+      };
+    case "FRESH":
+      return {
+        label: "최신",
+        detail: `마지막 재구성이 ${age}일 전입니다(기준 ${input.maxAgeDays}일 이내).`,
+        tone: "positive",
+      };
+    case "STALE":
+      return {
+        label: "오래됨",
+        detail: `마지막 재구성이 ${age}일 전으로 기준 ${input.maxAgeDays}일을 넘겼습니다.`,
+        tone: "warning",
+      };
+    case "AGE_POLICY_UNDECLARED":
+      return {
+        label: "판정 안 함",
+        detail: "며칠이면 오래된 것으로 볼지 기준이 정해지지 않아 최신도를 판정하지 않았습니다.",
+        tone: "caution",
+      };
+  }
+}
 
 export const EVENT_STATUS_LABEL: Record<EventStatus, { label: string; tone: Tone }> = {
   OBSERVATION: { label: "관측됨", tone: "neutral" },
