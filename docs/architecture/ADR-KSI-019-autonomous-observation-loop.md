@@ -104,27 +104,53 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
 
 ## 4. GAP — 목표까지 비어 있는 것
 
+> **완료 등급 주의 (2026-08-15 갱신).** 아래에서 닫힌 것으로 표시된 항목의 등급은
+> `Backend Ready` + 일부 `Product Ready`(대시보드 표시)이고 **`HIL Proven` 이 아니다**
+> (ADR-KSI-018 완료 판정 규율). 실기 비행은 여전히 0회이며, 종단 시험의 커버리지
+> 보고·재구성 워커는 계약대로 행동하는 대역이다.
+
 | # | GAP | 현재 상태 | 단계 |
 |---|---|---|---|
-| G1 | 공간모델 최신도 판단이 자동이 아니다 | 상태머신·`MODEL_STALE`은 있으나 전이는 전부 사람이 화면에서 누른다. 재구성 성공이 상태를 전진시키지 않고, 나이 기준 노후 판정 규칙이 없다 | AOL-1 |
-| G2 | 임무에 실행 생애주기가 없다 | `MissionRecord`는 **발급 기록**뿐 — 배포됨/비행중/완료 상태가 없다. CoverageReport 수신 계약은 있으나 임무 상태와 이어져 있지 않다 | AOL-1 |
-| G3 | 임무를 기체까지 보내는 공식 경로가 없다 | 운영자가 KMZ를 내려받아 손으로 옮긴다. `services/dji-gateway`는 3줄 골격이고, M4D의 Pilot Cloud 지원 자체가 미확인(ADR-KSI-004) | AOL-1 |
-| G4 | 촬영 → 서버 자동 ingest가 없다 | 사람이 사진을 손으로 올린다(ADR-KSI-018 P1과 동일 항목) | AOL-1 |
+| G1 | 공간모델 최신도 판단이 자동이 아니다 | **닫힘(2026-08-15)** — 재구성 발급이 `BASELINE_MAPPING→MODEL_PROCESSING`을, 원본 산출물을 가진 성공이 `MODEL_PROCESSING→MODEL_VALIDATION`을, 매핑 계열 임무 **배포**가 `UNMAPPED/REMAP_REQUIRED→BASELINE_MAPPING`을 자동 전진시킨다. 노후 기준은 서버가 지어내지 않고 현장이 선언하며(`PUT /v1/sites/{id}/model-age-policy`), 미선언은 `FRESH`로 뭉개지 않고 `AGE_POLICY_UNDECLARED`로 낸다. 자율운영 승인 간선은 자동 전진이 밟지 않으며 규칙표 전수 검사가 그 보증을 강제한다. **남은 것**: 노후 스윕의 주기 실행 주체(표면만 있고 스케줄러는 배포 운영 소관) | AOL-1 |
+| G2 | 임무에 실행 생애주기가 없다 | **닫힘(2026-08-15)** — `MissionExecutionStatus`(ISSUED/DISPATCHED/ACTIVATED/COMPLETED/ENDED_INCOMPLETE/CANCELLED)와 별도 원장. 장비 pull·서명 activation receipt·접수된 CoverageReport 세 신호가 자동 결선되고, 사람은 DISPATCHED·CANCELLED만 선언한다. 이 축은 완료 판정의 권위가 아니라 CoverageReport 원장의 **투영**이며(INV-010), 투영 원장이 봉인돼도 커버리지 접수는 201이다. `IN_FLIGHT`는 서버가 아는 사실이 아니라 만들지 않았다(INV-001) | AOL-1 |
+| G3 | 임무를 기체까지 보내는 공식 경로가 없다 | **여전히 열림** — M4D의 Pilot Cloud 지원이 미확인이라(ADR-KSI-004) 설계할 근거가 없다. 대신 **수동 이관을 서버가 기록할 수 있게** 했다(`POST /v1/missions/{id}/execution-transitions` 의 DISPATCHED 선언) — 자동화가 아니라 수동 경로를 공식 경로로 정직하게 다루는 것이다 | AOL-1 |
+| G4 | 촬영 → 서버 자동 ingest가 없다 | **서술 정정 + 닫힘(2026-08-15)** — 원래 서술("사람이 사진을 손으로 올린다")은 실측과 달랐다: `tools/upload_source_bundle.py`(533줄, 테스트 있음)가 이미 브라우저 없이 등록·업로드·봉인·재구성 발행을 했다. 실제 구멍은 **그 명령을 임무마다 치는 주체**였고 `tools/ingest_watch.py`가 그것을 닫는다(`<root>/<missionId>/` 규약, 복사 중 디렉터리 정지 유예, 실패 재시도, 건너뜀 사유 보고). **남은 것**: 기체→지상 회수 경로 자체는 여전히 SD카드 수동 오프로드다(ADR-KSI-013 D1/D2, 실기 관문) | AOL-1 |
 | G5 | 재관측 임무 계획에 사람 단계가 남아 있다 | 초안 AOI까지는 자동, 발급은 위저드를 사람이 끝까지 눌러야 한다. 촬영밀도를 변화 정도에 맞춰 조정하지 않는다 | AOL-2 |
 | G6 | 경로계획이 지형을 모른다 | 고도는 이륙점 상대 단일값(`altitudeReference: relativeToStartPoint`)이고 계획기에 DSM 입력이 없다 — 지형 추종·이격·장애물 인지 전부 미구현 | AOL-3 |
 
+### 4.1 반순환 불변식(D3)에 회귀 게이트가 생겼다
+
+`tests/contract/test_anti_circularity_gate.py` — ①재구성 원장이 조립되지 않은 앱에서
+`BASELINE_MAPPING` 짝 발급이 201로 성립하는지 ②그 조립이 정말로 재구성 표면을 갖지
+않는지(공허 방지) ③경로 계획 패키지가 재구성·공간모델 모듈로 의존을 시작하지 않는지
+셋을 본다. AOL-3의 지형 인지가 **선택적 강화**로만 들어가게 하는 강제 지점이다.
+
 ## 5. 최소 개발 순서 (실측 반영)
 
-1. **G1 공간모델 생애주기** — 재구성 성공이 현장 상태를 전진시키고, "없음/있음/오래됨"을
-   서버가 판단한다. (AOL-1·AOL-2 양쪽의 분기 조건이라 먼저다)
-2. **G2 임무 실행 생애주기** — 발급 이후 상태 + CoverageReport 결선. 3·4번의 수신처다.
-3. **G4 촬영 자동 ingest** — 사람 손 업로드 제거. ADR-KSI-018 P1.
-4. **G3 임무 배포 경로** — DJI 실기 확인이 관문(ADR-KSI-004 §2026-08-14 갱신). 실기
-   확인 전까지 "운영자 수동 이관"이 공식 경로로 남는다.
-5. **AOL-1 종단 1회** — 경계 → 매핑 임무 → 실행 → 촬영 → 재구성 → 공간모델 등록.
-6. **G5 재관측 계획 자동화 심화** → **AOL-2 종단 1회**.
+1. ~~**G1 공간모델 생애주기**~~ — **완료 2026-08-15**. 근거: `tests/contract/test_spatial_model.py`
+   (54건), `services/core/src/ksi_core/spatial_model.py`.
+2. ~~**G2 임무 실행 생애주기**~~ — **완료 2026-08-15**. 근거: `tests/contract/test_mission_execution.py`
+   (39건) + `test_coverage_reports.py`·`test_edge_dispatch_api.py` 의 결선 시험.
+3. ~~**G4 촬영 자동 ingest**~~ — **완료 2026-08-15**(서술 정정, §4 참조). 근거:
+   `tools/ingest_watch.py`, `tests/contract/test_ingest_watch.py`(25건).
+4. **G3 임무 배포 경로** — **여전히 열림.** DJI 실기 확인이 관문(ADR-KSI-004
+   §2026-08-14 갱신). 확인 전까지 "운영자 수동 이관"이 공식 경로이며, 이제 그 이관을
+   서버가 기록한다(§4 G3).
+5. ~~**AOL-1 종단 1회**~~ — **완료 2026-08-15(소프트웨어)**. 근거:
+   `tests/e2e/test_aol1_mapping_autonomy.py`(9건) — 경계 → 매핑 임무 → 배포 → 실행 →
+   촬영 회수 → 재구성 → 공간모델 등록까지 **사람이 현장 상태를 손으로 옮기는 단계 없이**
+   통과하고, 그 사실을 현장 원장의 actor 전수 검사가 강제한다. **실기는 아니다** —
+   커버리지 보고·재구성 워커는 계약대로 행동하는 대역이다.
+6. **G5 재관측 계획 자동화 심화** → **AOL-2 종단 1회**. 계획 문서:
+   `docs/superpowers/plans/2026-08-15-aol-2-reobservation-depth.md`.
 7. 실제 현장 검증(`SITE-INTELLIGENCE-E2E-FIELD`).
 8. **그 다음에만 G6(AOL-3)** — 지형/공간모델 인지 경로계획.
+
+### 5.1 구현 계획 문서
+
+- AOL-1: `docs/superpowers/plans/2026-08-15-aol-1-mapping-autonomy.md` (1·2·3·5번 = 완료)
+- AOL-2: `docs/superpowers/plans/2026-08-15-aol-2-reobservation-depth.md` (6번 = 미착수)
+- G3·G6은 각각 실기 관문·본 ADR D2의 순서 고정 때문에 계획을 쓰지 않았다.
 
 ## 6. 결과
 
