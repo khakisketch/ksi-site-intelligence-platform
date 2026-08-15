@@ -333,3 +333,116 @@ def can_triage_transition(cur: TriageStatus, nxt: TriageStatus) -> bool:
     except IllegalTriageTransitionError:
         return False
     return True
+
+
+class MissionExecutionStatus(StrEnum):
+    """임무 1건의 실행 생애주기 (ADR-KSI-019 G2).
+
+    ``MissionRecord``(``ksi_core.mission_records``)는 **발급 기록**이라 "이 임무가
+    실제로 날았는가"에 답하지 못했다. 이 enum 이 그 축을 연다.
+
+    ## 없는 상태가 하나 있다 — ``IN_FLIGHT``
+
+    KSI 는 비행 중 텔레메트리를 받지 않는다(INV-001 — 서버는 프레임별 제어·수신
+    주체가 아니다). 그래서 "지금 날고 있다"는 서버가 아는 사실이 아니다.
+    ``ACTIVATED``(Edge 가 계약을 활성화했다고 서명해 보고한 시점)가 완료 이전
+    구간에서 **서버가 실제로 아는 가장 앞선 사실**이고, 그 앞에 없는 상태를
+    지어내지 않는다 — 지어내면 화면이 그 값을 사실처럼 보여줄 자리가 생긴다.
+    """
+
+    #: 계약·경로가 발급됐다. 실행 레코드가 아직 없는 임무의 기본값이다.
+    ISSUED = "ISSUED"
+    #: 기체 쪽으로 넘어갔다 — Edge 가 envelope 을 pull 했거나, 운영자가 KMZ 를
+    #: 손으로 옮겼다고 신고했다(수동 이관이 아직 공식 경로다, ADR-KSI-019 G3).
+    DISPATCHED = "DISPATCHED"
+    #: Edge 가 activation receipt 를 서명해 보고했다.
+    ACTIVATED = "ACTIVATED"
+    #: CoverageReport 가 ``COMPLETED`` 로 접수됐다(INV-010 게이트 통과).
+    COMPLETED = "COMPLETED"
+    #: CoverageReport 가 접수됐지만 완료가 아니다
+    #: (``COMPLETED_WITH_GAPS``·``ABORTED_SAFE``·``FAILED``).
+    ENDED_INCOMPLETE = "ENDED_INCOMPLETE"
+    #: 사람이 이 임무를 접었다.
+    CANCELLED = "CANCELLED"
+
+
+class IllegalMissionExecutionTransitionError(ValueError):
+    """허용되지 않은 MissionExecutionStatus 전이 시도 시 발생."""
+
+
+_MES = MissionExecutionStatus
+
+# 허용 전이표(SSOT). 이 저장소의 다른 상태머신들과 세 가지가 다르고, 셋 다 의도다:
+#
+# ① **앞으로 건너뛰기를 허용한다.** 운영자가 KMZ 를 손으로 옮겨 날린 임무는
+#    DISPATCHED·ACTIVATED 신호가 아예 없다(ADR-KSI-019 G3 — 실기 확인 전까지 수동
+#    이관이 공식 경로다). 그 임무의 완료 보고를 실행 상태 때문에 거부하면 INV-010 의
+#    완료 판정 권위가 CoverageReport 원장에서 이 필드로 넘어간다. 이 축은 게이트가
+#    아니라 **관측 기록**이다.
+#
+# ② **COMPLETED ↔ ENDED_INCOMPLETE 는 양방향이다.** 완료 판정의 권위는 CoverageReport
+#    원장이고 이 필드는 그 원장의 투영이다. 나중에 접수된 보고가 결론을 바꾸면 투영도
+#    따라가야 한다 — 안 따라가면 두 표면이 서로 다른 완료를 말한다. 다만 그 둘에서
+#    CANCELLED 로는 가지 않는다: 이미 끝난 비행을 취소하는 것은 뜻이 없다.
+#
+# ③ **CANCELLED 만 진짜 종단이다.** 사람이 접은 임무를 시스템 신호(장비 pull·커버리지
+#    접수)가 되살리지 않는다. 되살려야 하면 새 임무를 발급한다.
+#
+# 자기 자신으로의 전이는 어디에도 없다 — 중복 신호(같은 envelope 재 pull 등)가 원장에
+# 빈 레코드를 쌓지 않게 한다.
+_ALLOWED_MISSION_EXECUTION_TRANSITIONS: dict[
+    MissionExecutionStatus, set[MissionExecutionStatus]
+] = {
+    _MES.ISSUED: {
+        _MES.DISPATCHED,
+        _MES.ACTIVATED,
+        _MES.COMPLETED,
+        _MES.ENDED_INCOMPLETE,
+        _MES.CANCELLED,
+    },
+    _MES.DISPATCHED: {
+        _MES.ACTIVATED,
+        _MES.COMPLETED,
+        _MES.ENDED_INCOMPLETE,
+        _MES.CANCELLED,
+    },
+    _MES.ACTIVATED: {_MES.COMPLETED, _MES.ENDED_INCOMPLETE, _MES.CANCELLED},
+    _MES.COMPLETED: {_MES.ENDED_INCOMPLETE},
+    _MES.ENDED_INCOMPLETE: {_MES.COMPLETED},
+    _MES.CANCELLED: set(),
+}
+
+# 표 완전성 자가검증 — mission_gating.MISSION_TYPE_ALLOWED_SITE_STATUSES 와 동일 관습.
+if set(_ALLOWED_MISSION_EXECUTION_TRANSITIONS) != set(MissionExecutionStatus):
+    raise AssertionError(
+        "_ALLOWED_MISSION_EXECUTION_TRANSITIONS 가 MissionExecutionStatus 전 멤버를 "
+        "커버하지 않는다 — 조용한 기본 허용/거부를 만들지 않는다"
+    )
+
+
+def can_mission_execution_transition(
+    cur: MissionExecutionStatus, nxt: MissionExecutionStatus
+) -> bool:
+    """``cur → nxt`` MissionExecutionStatus 전이 허용 여부를 예외 없이 bool 로 반환한다."""
+    return nxt in _ALLOWED_MISSION_EXECUTION_TRANSITIONS.get(cur, set())
+
+
+def assert_mission_execution_transition(
+    cur: MissionExecutionStatus, nxt: MissionExecutionStatus
+) -> None:
+    """``cur → nxt`` 전이가 허용되는지 검증한다 (ADR-KSI-019 G2 강제 지점).
+
+    Raises:
+        IllegalMissionExecutionTransitionError: 표에 없는 전이일 때(예: 취소된
+            임무의 완료 보고, ACTIVATED → DISPATCHED 역행).
+    """
+    if not can_mission_execution_transition(cur, nxt):
+        allowed = (
+            ", ".join(
+                sorted(s.value for s in _ALLOWED_MISSION_EXECUTION_TRANSITIONS.get(cur, set()))
+            )
+            or "없음"
+        )
+        raise IllegalMissionExecutionTransitionError(
+            f"허용되지 않은 임무 실행 상태 전이: {cur.value} → {nxt.value} (허용: {allowed})"
+        )
