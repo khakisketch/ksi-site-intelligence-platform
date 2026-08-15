@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T20:47:53+09:00",
+  "updated_at": "2026-08-15T21:02:14+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3014,14 +3014,14 @@
       "title": "CRITICAL 확정에 쓰이는 RiskField 증거에 발생주체(장비/Manifold) 검증이 없음 — 확정하는 사람이 그 증거도 직접 만들어 올릴 수 있다",
       "lens": "role",
       "severity": "critical",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 독립 검증(실제 HTTP PoC, POST /v1/events/{event_key}/evidence + POST .../transitions 실행)에서 재현. EVENTS_TRIAGE 권한 하나로 증거 업로드와 사건 확정을 모두 할 수 있고, EDGE_DEVICE 주체는애초에 증거 업로드 라우트 권한이 없어 evidence.py의 registered_by가 record.edge_device_id와 대조되지 않는다. 즉 동일한 FIELD_OPERATOR 계정이 손으로 만든 임의 RiskField JSON(임의 유효기간·임의 entity 목록·퇴화된 geometry·빈 uncertainty)을 올리고 그대로 CRITICAL 확정까지 통과시킬 수 있음을 실제 재현(TestClient, 목킹 없음). INV-021의 취지(기계가 계산한 실제 위험 근거가 있을 때만 확정)를 형식검사만으로는 충족하지 못한다 — 발생주체(Manifold/장비) 서명 또는 최소한 업로드 권한과 확정 권한의 분리가 필요해 보인다. critical-event-riskfield-evidence-gate-presence-only(reopen됨)와 riskfield-production-generator-unwired(별도 등록됨)에 이미 있는 '형식 검사 항목'과는 다른 축(발생주체 신뢰) — 별도 항목으로 추적한다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 447b521 — EvidenceArtifact.device_bound 추가, 원인이던 두 갈래 문제를 모두 닫음: (1) POST /v1/events/{key}/evidence(EVENTS_TRIAGE, 장비 대조 없음) 로 riskField/trajectory/viewpointHistory 를 등록해도 CRITICAL 확정이 통과하지 않는다 — _verify_critical_evidence 가 참조 artifact 의 device_bound 를 확인하고 거부한다. (2) 등록 경로 자체는 그대로 열어뒀지만(수동 clips 첨부는 여전히 필요) 이 세 필드만 edge-sync 의 장비신원 대조 경로(POST /v1/edge-sync/events/{key}/evidence, event.edge_device_id==caller 이미 검증됨)에서 등록된 것만 인정. 원 위험이 재현한 정확한 시나리오(동일 FIELD_OPERATOR 계정이 임의 RiskField JSON 올리고 CRITICAL 확정 통과)를 tests/contract/test_evidence.py::test_critical_confirmation_rejects_artifacts_not_registered_through_a_device_bound_route 로 그대로 재현해 이제 422 EVIDENCE_INCOMPLETE 로 거부됨을 직접 실행 확인(TestClient, 목킹 없음). 기존 CRITICAL 통과 테스트 전부(49건) 재실행해 회귀 없음 확인, 전체 스위트 3338 passed. 잔여: 자매 위험 riskfield-provenance-no-device-signature(장비별 비대칭키 서명, 실장비 키 프로비저닝 필요)는 이 수정의 범위 밖 — 별도로 남겨둠.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T02:45:15+09:00",
-      "updated_at": "2026-08-14T02:45:15+09:00"
+      "updated_at": "2026-08-15T21:02:14+09:00"
     },
     {
       "id": "mission-contract-no-issuance-ordering-field",
