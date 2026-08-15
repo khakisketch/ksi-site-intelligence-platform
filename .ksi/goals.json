@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-14T14:28:22+09:00",
+  "updated_at": "2026-08-15T03:54:34+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1871,6 +1871,81 @@
       "verification_requested": "strict",
       "created_at": "2026-08-14T14:28:22+09:00",
       "updated_at": "2026-08-14T14:28:22+09:00"
+    },
+    {
+      "id": "site-intelligence-e2e-sw",
+      "title": "SITE-INTELLIGENCE-E2E-SW — 사진→NodeODM→설계대비→변화영역→지도→재관측 임무 소프트웨어 폐루프 1회 완주",
+      "completion_criteria": [
+        "실제 사진 12장으로 NodeODM 재구성 성공(산출물 7종 등록)",
+        "동일 한국 CRS의 설계기준면·현재지형으로 설계 대비 잔량 계산 성공",
+        "변화영역 자동추출로 최소 1개 영역 생성",
+        "지도 화면에서 그 영역이 렌더링됨",
+        "그 영역을 선택해 재관측 Mission이 실제로 발급됨"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "실행 로그(이 세션): NodeODM 재구성 job=site-e2e-pacifica-survey-1786723849041-pj1 SUCCEEDED, 산출물 7종(point-cloud/camera-poses/mesh/orthophoto/dsm/dtm/report) 등록 확인(GET /v1/missions/.../processing-jobs). 설계 대비 요청 dcf3 SUCCEEDED, 순변화 -16200m3(GET /v1/missions/.../design-conformance-requests). 변화영역 추출 rex1 SUCCEEDED, region 1개(cutM3=16200, areaM2=8100)(GET /v1/missions/.../region-extraction). /sites/site-e2e-pacifica/changes 화면 스크린샷으로 지도 렌더링 확인(사용자에게 전송함). 재관측 Mission site-e2e-pacifica-survey-1786726340707 실제 발급 확인(GET /v1/missions?siteId=...). REAL(사진->NodeODM)과 SYNTHETIC(현재지형/설계면, CRS 문제로 대체)를 보고서에서 구간 분리해 명시함.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "SITE-INTELLIGENCE-E2E-OPERATOR(웹 UI만으로 완주)와 SITE-INTELLIGENCE-E2E-FIELD(실제 한국 GPS/RTK 촬영)는 별도 — 이번 PASS는 SW 상태기계 검증 범위로 한정. region-extraction-requests는 UI 트리거 없어 curl로 대체(공백, region-extraction-ux-decision에서 추적).",
+        "at": "2026-08-15T03:31:33+09:00",
+        "reviewer": "대표자(사용자) — 2026-08-15 대화에서 등급표(E2E-RECONSTRUCTION-REAL/SPATIAL-ANALYSIS-SW/REVISIT-SW 전부 PASS) 직접 확인 후 'SW PASS 판정은 유지해도 됩니다' 승인",
+        "evidence_ref": "session:8f74ab75-f35b-4488-81bf-82f6f22b6c09 (이 대화 — 사용자 확인 메시지 2026-08-15)"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T03:30:46+09:00",
+      "updated_at": "2026-08-15T03:31:33+09:00"
+    },
+    {
+      "id": "crs-metadata-provenance-mismatch",
+      "title": "ProcessingArtifact CRS 메타데이터가 실제 파일과 불일치 — Core 신고값을 실측값으로 강제",
+      "completion_criteria": [
+        "워커가 산출물 등록 시 보고하는 crs 필드가 실제 생성된 파일에서 읽은 값과 항상 같다(추정·기본값 대입 금지)",
+        "회귀 테스트로 실제파일CRS==워커보고CRS 일치를 고정"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "services/processing-controller/src/ksi_processing_controller/odm.py: plan_artifacts()가 site crs를 그대로 신고하던 것을 고쳐, needs_crs 산출물(dsm/dtm/orthophoto=cog, point-cloud=laz)은 아카이브 속 파일을 실제로 열어(rasterio/laspy) 읽은 CRS를 우선 신고하고, 읽을 수 없을 때만(mesh의 obj 포함) site crs로 폴백하도록 변경. laspy/ksi-geo-spatial을 processing-controller의 직접 의존으로 선언(uv lock 재생성 확인). 회귀 테스트 2건 신규(tests/contract/test_odm_adapter.py): test_dsm_crs_is_read_from_the_real_file_not_assumed_from_site(실제 EPSG:32630 GeoTIFF를 dsm.tif로 넣고 site crs=EPSG:5186과 다르게 EPSG:32630이 신고되는지 확인), test_dsm_crs_falls_back_to_site_crs_when_file_has_none(파싱 불가 시 기존 동작 유지 확인). 실행 결과: uv run pytest tests/contract/test_odm_adapter.py -q => 50 passed. uv run pytest tests/contract/ -q -k 'not test_odm_live' => 2663 passed, 0 failed, 10 skipped, 8 deselected, 3 xfailed. ruff check 통과, mypy 통과.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "hardening/light — 관련 회귀 테스트로 충분(이 goal kind 기본 정책). mesh(obj)·camera-poses(needs_crs=False)는 원천적으로 CRS 없는 포맷이라 site crs 폴백이 유지됨(의도된 동작, 버그 아님).",
+        "at": "2026-08-15T03:54:34+09:00",
+        "reviewer": null,
+        "evidence_ref": "tests/contract/test_odm_adapter.py::test_dsm_crs_is_read_from_the_real_file_not_assumed_from_site,test_dsm_crs_falls_back_to_site_crs_when_file_has_none — 이 세션 실행 로그"
+      },
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": null,
+      "created_at": "2026-08-15T03:30:46+09:00",
+      "updated_at": "2026-08-15T03:54:34+09:00"
+    },
+    {
+      "id": "region-extraction-ux-decision",
+      "title": "변화영역 자동추출 트리거 UX — 설계 대비 계산과 자동 연동 vs 별도 버튼",
+      "completion_criteria": [
+        "설계 대비 계산 완료 후 변화영역 추출을 자동으로 이어갈지, 사람이 임계값 등 조건을 고른 뒤 별도 트리거할지 대표자가 결정",
+        "결정 후 그에 맞는 UI를 웹 화면에 연결(curl 없이 완주 가능해야 함)"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "decision",
+      "verification_requested": null,
+      "created_at": "2026-08-15T03:30:46+09:00",
+      "updated_at": "2026-08-15T03:30:46+09:00"
     }
   ],
   "risks": [
@@ -2621,14 +2696,14 @@
       "title": "Mission Contract 서명 검증에 프로덕션 호출부가 0건 — INV-011 의 '강제'는 현재 능력 선언이지 강제가 아니다",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-12 grep 실측: verify_contract(packages/mission-contracts/src/ksi_mission_contracts/signing.py:201)와 그 유일한 공개 진입점 load_verified_contract(:335)를 packages/·services/·edge/ 어디서도 호출하지 않는다(테스트만 호출). edge/manifold-runtime 은 command.cpp·supervisor.cpp 뿐이고 계약·서명 관련 코드가 없다(grep 0건). DOMAIN_INVARIANTS.md INV-011 은 '미서명·digest 불일치·schemaVersion 불일치·TTL 만료 계약은 거부된다 / 강제: ksi_mission_contracts 서명 검증'이라고 적었지만, 실제로 그 거부를 수행하는 런타임 경로가 없다 — 검증 능력이 있는 것과 검증이 일어나는 것은 다르다. 과거 capability-support-level-transition-unwired 와 동일한 계열의 결함이다. 소비자는 ADR-KSI-007 상 Manifold 인데 그 앱이 아직 없어 하드웨어 트랙(Track A) 종속이다 — 지금 고칠 수 있는 것이 아니라 기록해서 추적한다. 해소 조건: Manifold PSDK 앱이 계약을 수신할 때 load_verified_contract 를 거치고, 그 거부 경로가 HIL 로 실증된다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "12-agent 코드감사(2026-08-14): 원 주장('packages/services/edge 어디서도 verify_contract/load_verified_contract 호출 안 함', 2026-08-12 실측)은 커밋 e1118d1(2026-08-14)로 반증됨 — packages/mission-contracts/src/ksi_mission_contracts/dispatch.py:260,292, edge_activation.py:552, edge_dispatch_sync.py:457 가 프로덕션 CLI 엔트리포인트 3개(pyproject.toml:9-11 등록: ksi-edge-dispatch-activate/sync)로 실제 호출됨. C++ 쪽도 edge/manifold-runtime/src/activation.cpp:387-466 + edge/psdk-app/src/main.cpp:1098-1131 이 1초 주기로 native activation snapshot 을 재확인해 없거나 만료되면 fail-closed. 이 리스크가 다룬 좁은 범위('프로덕션 호출부 0건')는 해소. 남은 두 개별 축(자동기동 배선 미비·위조계약 거부 HIL 미검증)은 별도 리스크로 분리 등재함.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-12T19:47:30+09:00",
-      "updated_at": "2026-08-12T19:47:30+09:00"
+      "updated_at": "2026-08-14T15:05:03+09:00"
     },
     {
       "id": "critical-event-riskfield-evidence-gate-presence-only",
@@ -2783,6 +2858,146 @@
       "previous_status": null,
       "created_at": "2026-08-14T12:20:28+09:00",
       "updated_at": "2026-08-14T12:20:28+09:00"
+    },
+    {
+      "id": "mission-dispatch-cli-no-autostart-wiring",
+      "title": "Mission Contract 서명검증 CLI(ksi-edge-dispatch-activate/sync)가 부팅·주기 실행되도록 자동기동 배선이 안 됨 — systemd unit/DPK 시작 스크립트 어디에도 없음",
+      "lens": "other",
+      "severity": "medium",
+      "status": "accepted",
+      "note": "2026-08-14 12-agent 코드감사 확인: CLI 자체(verify_contract/load_verified_contract 호출)는 실재하나 grep 결과 systemd unit·DPK 패키징 매니페스트·docker 어디에도 이 CLI를 자동 실행하는 설정이 없다. 실기에서 이 검증이 실제로 상시 도는지는 배선이 먼저 있어야 확인 가능. 해소 조건: DPK 시작 스크립트 또는 systemd unit 추가(소프트웨어 작업, 하드웨어 불요) + 부팅 후 CLI가 실제 동작 중임을 실기로 1회 확인.",
+      "accept_reason": "2026-08-14 재조사(docs/hil/HARDWARE_SESSION_PLAYBOOK.md §8.1)로 원 사유가 부정확했음이 드러남 — 이 항목은 '자동실행 배선 안 함'이 아니라 '자동실행 배선이 아직 성립할 수 없음'이었다: (1) §8.1이 이 CLI를 처음부터 HIL 세션 중 사람이 수동 one-shot으로 돌리는 절차로 문서화해 뒀다(자동화 대상으로 설계된 적이 없다) (2) 매니폴드에 검토된 non-root Python 3.12 실행환경을 올리는 방법 자체가 아직 대표자 결정 사안으로 남아있다(백포트 금지·DPK native-only 유지가 이미 확정, 대안 방법 미확정) (3) dji 계정은 sudo가 없어 systemd 등록 자체를 dji_app_ctl 경유 없이는 할 수 없고 그 경로는 현재 .dpk가 네이티브 실행파일만 패키징하는 것과 충돌한다. 셋 다 코드로 지금 못 푸는 순서 문제라 정확한 새 리스크(mission-dispatch-cli-python312-runtime-provisioning-undecided)로 대체 등록하고 이 항목은 원 사유 오류로 수용 처리한다.",
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T17:36:41+09:00"
+    },
+    {
+      "id": "mission-contract-rejection-not-hil-verified",
+      "title": "위조·만료·rollback 계약이 실제 Manifold 3 장비에서 거부되는지 HIL 실증 없음 — 코드·단위테스트로만 검증됨",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14 12-agent 코드감사 확인: consumer.py의 서명·TTL·rollback 거부 로직(커밋 ac3db47/09fe5a7)은 pytest로 광범위하게 검증됐으나, 실제 Manifold 3 장비에 위조/만료/구버전 계약을 밀어넣어 거부되는 것을 관측한 HIL 세션은 없다. 해소 조건: 실기 HIL 세션에서 3종(미서명·TTL만료·rollback) 계약을 실제로 밀어넣고 거부를 로그로 확인.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T15:05:03+09:00"
+    },
+    {
+      "id": "riskpolicypack-edgeruntimeprofile-no-rollback-defense",
+      "title": "RiskPolicyPack·EdgeRuntimeProfile 에는 Mission Contract와 달리 rollback(약한 정책으로 되돌리기) 방어가 없음 — 09fe5a7과 동일 계열 결함이 다른 축에 남아있음",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "2026-08-14 12-agent 코드감사 확인: _superseded_detail(consumer.py:261-321, notBefore 단조성 검증)은 Mission Contract 에만 적용되고 호출부가 그 한 곳뿐이다(grep 확인). RiskPolicyPack·EdgeRuntimeProfile은 자체 TTL(validity)만 있고 '더 오래되고 약한 정책으로 교체'를 막는 순서 검증이 전혀 없다 — Core 서명키 보유자가 동일 Mission Contract를 가리키며 더 약한 RiskPolicyPack을 실은 새 envelope에 서명하면 아무 저항 없이 활성화된다. 09fe5a7이 막은 것과 동일한 위협 계열. 해소 조건: RiskPolicyPack/EdgeRuntimeProfile에도 notBefore 단조성 또는 발급순서 필드 기반 방어 추가(소프트웨어 작업, 하드웨어 불요).",
+      "accept_reason": null,
+      "resolve_evidence": "2026-08-14 구현: packages/mission-contracts/src/ksi_mission_contracts/edge_activation.py에 _policy_rollback_detail() 추가 — Mission Contract의 _superseded_detail(consumer.py)과 동일한 validity.notBefore 단조성 검사를 RiskPolicyPack·EdgeRuntimeProfile 두 축에 각각 적용, activate_mission_dispatch_file()이 내부 계약 활성화 전에 호출. digest가 같은(내용 불변) 재발급은 막지 않는다(정상 재활성화와 rollback을 구분). DispatchVerdict에 SUPERSEDED_RISK_POLICY_PACK/SUPERSEDED_EDGE_RUNTIME_PROFILE 신규. 신규 테스트 3건(더 이른 pack 거부·더 이른 profile 거부·digest 불변 재발급은 통과) + 돌연변이 검증(방어 비활성화 시 신규 테스트 2건이 정확히 실패 확인). tests/contract/test_edge_dispatch_contracts.py 28 passed, 전체 스위트 3141 passed·23 skipped·3 xfailed, ruff/mypy(packages services tests tools) clean.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T17:34:05+09:00"
+    },
+    {
+      "id": "riskfield-evidence-daemon-not-assembled",
+      "title": "RiskField 증거 업로드 체인(EdgePipeline→StoreForwardSyncDriver→CoreRestSyncTransport)을 실제로 상시 구동하는 프로덕션 서비스 바이너리가 없음 — 라이브러리·테스트로만 존재",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14 12-agent 코드감사 확인: 체인 자체는 실재하고 통합테스트로 검증됨(risk.cpp SerializeRiskFieldV11 → evidence_builder.cpp → pipeline.cpp → sync.cpp → core_sync_http.cpp → services/core edge_dispatch.py register_edge_evidence). 그러나 edge/manifold-runtime/CMakeLists.txt는 라이브러리와 테스트/툴 실행파일만 빌드하고, 실 PSDK 콜백+실 Core 엔드포인트를 상대로 이 체인을 계속 구동하는 데몬 타깃이 없다. 참고: 기존 riskfield-production-generator-unwired 리스크(resolved)가 인용한 파일(edge_dispatch_sync.py)은 오기 — 실제 경로는 core_sync_http.cpp/sync.cpp(C++)이며 그 파이썬 모듈과 무관. 해소 조건: EdgePipeline+StoreForwardSyncDriver+CoreRestSyncTransport를 묶는 데몬 조립(소프트웨어, 하드웨어 불요) + 실 장비 bearer-token 채널로 실제 업로드 확인(HIL).",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T15:05:03+09:00"
+    },
+    {
+      "id": "riskfield-provenance-no-device-signature",
+      "title": "RiskField 증거가 채널 수준 bearer-token 인증만 있고 장비별 암호서명이 없음 — 토큰 파일 보유자는 누구나 자기완결적으로 조작된 RiskField를 제출 가능",
+      "lens": "secret",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-14 12-agent 코드감사 확인: register_edge_evidence(EDGE_EVIDENCE_WRITE 권한+장비ID 일치+digest-bound presigned PUT)와 CRITICAL 확정 시 자기정합성 검증(events.py:456-598)은 실재하나, 전부 '내용이 내적으로 일관됐는가'만 검증하고 '이 바이트를 실제로 그 장비가 만들었는가'는 검증하지 않는다. riskPolicyPackDigest·calibrationProfileId도 형식(정규식)만 검사되고 신뢰 레지스트리 대조가 없다(grep 0건). 해소 조건: 장비별 비대칭키로 RiskField digest 서명 + Core의 등록된 공개키 대조(소프트웨어 설계·구현은 가능, 실 장비 키 프로비저닝 확인은 HIL 필요).",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T15:05:03+09:00"
+    },
+    {
+      "id": "edge-device-cannot-call-source-media-ingest",
+      "title": "자동화된 P1 수집 파이프라인의 최대 걸림돌 — EDGE_DEVICE 주체는 사진 등록/봉인/재구성 발행 엔드포인트를 호출할 권한이 없음(MISSIONS_ISSUE 미보유)",
+      "lens": "role",
+      "severity": "high",
+      "status": "resolved",
+      "note": "2026-08-14 12-agent 코드감사 확인: POST /v1/missions/{id}/source-media, /seal, 그리고 POST /v1/missions/{id}/processing-jobs 는 전부 Permission.MISSIONS_ISSUE를 요구하는데(auth.py), EDGE_DEVICE 주체의 고정 권한집합은 {EDGE_SYNC_INGEST, EDGE_MISSION_PULL, EDGE_EVIDENCE_WRITE}뿐이라 MISSIONS_ISSUE가 없다(auth.py:112-125,280-325). wire 계약 자체는 이미 순수 JSON REST라 무인 장비가 바로 호출 가능한 형태지만, 지금 권한모델로는 어떤 자격으로도 자동화 장비가 이 엔드포인트를 부를 수 없다 — P1(사람 손 업로드 0회) 폐루프를 막는 단일 최대 병목. 해소 조건: EDGE_DEVICE(또는 신규 주체)에 self-mission 범위로 한정된 신규 권한(예: EDGE_SOURCE_MEDIA_WRITE) 부여 — 대표자의 보안정책 결정이 선행되어야 함(auth.py가 왜 각 주체에 최소권한만 주는지 명시적으로 설계된 이유가 있음, MISSIONS_ISSUE 자체를 넓히지 않는 것이 원칙과 일치).",
+      "accept_reason": null,
+      "resolve_evidence": "2026-08-14 구현+검증: auth.py에 Permission.EDGE_SOURCE_MEDIA_WRITE 추가(EDGE_DEVICE 고정 권한집합에 포함) + require_permission_any() 헬퍼. source_media.py의 register_source_media/seal_source_media, processing_jobs.py의 issue_processing_job 이 이제 MISSIONS_ISSUE(사람, 아무 mission) 또는 EDGE_SOURCE_MEDIA_WRITE(장비, 자기 mission_id 한정)를 허용. register_batch/seal/issue 는 caller_device_id 인자로 mission.assigned_device_id 와 대조해 불일치 시 UNKNOWN_MISSION 과 동일한 404 로 접는다(다른 장비 mission 존재 여부 비노출, edge_dispatch.py 의 기존 관습과 동일). 계약테스트 신규 12건(store 6건+HTTP 2건 in test_source_media.py, store 3건+HTTP 2건 in test_processing_jobs.py) 전부 통과 + 기존 test_auth.py 2건 갱신. 전체 스위트 재실행: 3120 passed·23 skipped·3 xfailed, ruff clean, mypy(auth.py/source_media.py/processing_jobs.py) clean.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-14T15:05:03+09:00",
+      "updated_at": "2026-08-14T15:21:26+09:00"
+    },
+    {
+      "id": "ifc-georeference-scale-and-crs-silent-misinterpretation",
+      "title": "IFC georeference 변환이 Scale<=0·geographic CRS·Scale없는 연산의 단위불일치를 조용히 잘못 처리 — 2026-08-14 발견+수정",
+      "lens": "other",
+      "severity": "medium",
+      "status": "resolved",
+      "note": "2026-08-14 codex/nonoverlap-stability 워크트리 정리 중 유용한 edge-case 테스트 4건을 main 현재 구현 기준으로 이식하다가(사용자 승인) 발견: services/bim-integration/src/ksi_bim_integration/ifc_reference_model.py의 _georeference_output_scale_to_meters가 (1) IfcMapConversion.Scale이 0/음수/비유한이어도 검증 없이 통과시켜 ifcopenshell의 auto_local2global 내부 'Scale or 1' falsy-fallback이 잘못된 0을 조용히 1로 치환하도록 방치, (2) TargetCRS가 IfcGeographicCRS(경위도, MapUnit 없음)일 때 'MapUnit 생략→project 단위 폴백' 분기를 잘못 타서 각도값을 미터로 오인, (3) IfcRigidOperation(Scale 필드 자체가 스키마에 없음, ifcopenshell 실측 AttributeError로 확인)에서 project 단위와 명시적으로 다른 TargetCRS.MapUnit이 주어져도 다리 놓을 방법 없이 조용히 잘못된 값을 냄 — 셋 다 값은 유한하고 형상도 멀쩡해 '정답처럼 보이는 오답'이 되는, 이 파일이 이미 반복적으로 겪은 것과 같은 계열의 결함(risk bim-integration-ifc-mm-unit-double-scale과 동일 위험군). 즉시 수정: Scale 유한양수 검증(AttributeError를 sentinel로 구분해 'Scale 필드 자체 없음'과 'Scale=None(스펙상 1.0 폴백, 정상)'을 분리) + TargetCRS.is_a('IfcProjectedCRS') 검증 + Scale 필드 없는 연산의 project/target 단위 일치 검증, 전부 IfcReferenceModelError typed 거부로. 테스트 4건 신규(RED 확인 후 GREEN) + 전체 IFC/BIM 스위트 38 passed, ruff/mypy clean.",
+      "accept_reason": null,
+      "resolve_evidence": "services/bim-integration/src/ksi_bim_integration/ifc_reference_model.py의 _georeference_output_scale_to_meters 재작성(2026-08-14). tests/contract/test_ifc_reference_model.py 신규 4건: test_map_conversion_rejects_non_positive_scale, test_rigid_operation_rejects_geographic_angle_target, test_rigid_operation_rejects_source_target_unit_mismatch(수정 전 3건 모두 RED로 결함 재현 확인 후 수정, GREEN 전환), test_map_conversion_preserves_non_unit_survey_scale(회귀 없음 확인용, 수정 전에도 이미 PASS). uv run pytest tests/contract/test_ifc_reference_model.py tests/contract/test_convert_ifc_design_surface.py: 38 passed. ruff check services/bim-integration: clean. mypy services/bim-integration: clean.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-14T15:28:58+09:00",
+      "updated_at": "2026-08-14T15:29:05+09:00"
+    },
+    {
+      "id": "source-media-sealed-bundle-identity-count-only",
+      "title": "이미 봉인된 번들과의 대조가 장수뿐 — 장수가 같으면 내용이 달라도 '이미 완료'로 접힌다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "2026-08-14 자동 수집 업로더(tools/upload_source_bundle.py) 구현 중 발견. 재실행이 BUNDLE_SEALED 를 받으면 GET /v1/missions/{id}/source-media 로 봉인 여부와 mediaCount 를 대조해 같으면 수렴(성공)으로 처리한다 — 주기 실행이 첫 성공 이후 영원히 실패로 뜨는 것을 막기 위해서다. 한계: SourceMediaBundleView 가 mediaId 목록을 노출하지 않아(source_media.py:981-994, status/mediaCount/digest/시각만) 장수가 지금 얻을 수 있는 가장 강한 대조다. 따라서 '같은 장수의 다른 사진 묶음'을 올리려는 재실행은 조용히 성공으로 보고된다. 장수가 다르면 정상적으로 실패한다(회귀 테스트 test_rerun_with_different_photo_count_stays_a_failure 로 고정). 해소 방향 후보: (a) 번들 조회에 mediaId 목록 또는 manifest digest 를 노출해 클라이언트가 집합 대조, (b) 클라이언트가 compute_source_bundle_digest 와 같은 규칙으로 digest 를 재계산해 대조(서버 로직 복제라 비선호). 실제 위험도는 낮다 — 같은 임무 id 에 다른 사진 묶음을 올리는 것 자체가 비정상 운용이고, 그 경우에도 서버 번들·재구성 입력은 처음 봉인된 것 그대로 유지된다(조용한 데이터 오염이 아니라 조용한 무시).",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T16:32:27+09:00",
+      "updated_at": "2026-08-14T16:32:27+09:00"
+    },
+    {
+      "id": "mission-dispatch-cli-python312-runtime-provisioning-undecided",
+      "title": "매니폴드에 non-root Python 3.12 실행환경을 어떻게 올릴지 결정 안 됨 — 그 전까지 계약검증 CLI 자동실행은 성립 불가",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "docs/hil/HARDWARE_SESSION_PLAYBOOK.md §8.1이 이미 명시: 실기 기본 Python은 3.8.10이고 ksi-edge-dispatch-sync/activate는 StrEnum 등 3.12 전용 문법을 쓴다(ADR-KSI-009 D3와 동일 계열 제약). 백포트는 이미 기각됐고(ADR-KSI-009 D3, DPK native-only 유지), 대안(uv standalone CPython 등)은 언급만 되고 실기 검증된 절차가 없다. dji 계정은 sudo가 없어 /etc/systemd/system 직접 쓰기가 불가하고, DJI 앱 프레임워크(dji_app_mgr)를 경유하는 유일한 경로는 현재 .dpk가 네이티브 실행파일만 패키징하는 것과 맞지 않는다. 그래서 지금 이 CLI는 HIL 세션 중 사람이 손으로 1회 실행하는 절차로만 문서화돼 있다(§8.1 'one-shot 실행'). 해소 조건: (1) 대표자가 실행환경 방식(uv standalone Python 3.12 설치 등)을 결정 (2) 그 방식을 HIL로 실기 검증(디렉터리 소유권·권한·Core CA/SPKI pin·토큰 파일 접근 등 §8.1이 이미 나열한 조건) (3) 그 위에서만 자동 주기 실행(systemd timer 등) 배선이 의미를 가진다 — 실행환경 없이 배선만 먼저 만들면 검증 불가능한 설정 파일을 근거 없이 만드는 것이라 지금은 하지 않는다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-14T17:36:56+09:00",
+      "updated_at": "2026-08-14T17:36:56+09:00"
+    },
+    {
+      "id": "flight-boundary-elf-check-not-wired-or-executed",
+      "title": "안전경계 ELF 검증(nm/objdump 실물 바이너리 대조)이 실행된 적 없고 psdk-tap/src가 소스 스캔 대상에서 빠져있었음",
+      "lens": "other",
+      "severity": "low",
+      "status": "resolved",
+      "note": "goal manifold3-edge-shadow-vertical-slice(completed)의 완료기준 '소스 스캔+ELF 검증' 중 ELF 검증 절반이 실행된 증거가 없었다(2026-08-14 코드감사 확인) — tools/edge/check_shadow_flight_boundary.py는 존재·테스트도 있으나 실제 빌드된 바이너리에 돌린 기록이 없었고, CI edge-psdk-tap job은 LOGIC_TESTS_ONLY=ON(PSDK vendor tree 미fetch)이라 검사할 실물 ELF 자체가 없다. 소스 스캔 쪽도 tests/contract/test_shadow_flight_boundary_gate.py의 scan_source_roots()가 edge/psdk-tap/src를 빠뜨리고 있었다(수동 grep은 커버했으나 자동 테스트는 아니었음).",
+      "accept_reason": null,
+      "resolve_evidence": "2026-08-14: (1) tests/contract/test_shadow_flight_boundary_gate.py scan_source_roots() 호출에 edge/psdk-tap/src 추가 — 6 passed. (2) 신규 tools/edge/verify_flight_boundary_on_built_target.sh — 실제 빌드된 ELF를 자동 탐색해 check_shadow_flight_boundary.py를 기본+strict 게이트 둘 다로 실행하는 재현 가능 절차. (3) 실기 툴체인(gcc 9.4.0, HIL 세션 SESS-20260812 산출물)으로 만들어진 edge/psdk-tap/build-manifold3/{psdk_tap,psdk_tap_pairing_tests} 실물 ELF 2개에 대해 처음으로 실행: 기본(비-strict) 안전경계 게이트 둘 다 통과(exit 0) — DjiFlightController_* 직접 호출 0건을 소스 스캔+nm+objdump 세 경로 모두로 실측 확인. strict 게이트는 module docstring이 이미 예고한 벤더 정의(dji_error.c.o의 DjiFlightController_GetDjiErrorCode) 하나로 예상대로 실패 — 이는 KSI 호출이 아니라 PSDK 3.16.0 아카이브 자체의 알려진 특성. 돌연변이 검증: 가짜 DjiFlightController_StartGoHome() 호출을 소스에 주입 후 스크립트가 exit 1로 정확히 잡음 확인, 제거 후 exit 0 복원 확인. edge/psdk-app 는 이 호스트가 실기와 다른 gcc(13.3 vs 9.x)라 툴체인 드리프트 게이트가 로컬 빌드를 막아 이번에는 검증 못함(edge-manifold-target과 같은 컨테이너 빌드 필요, 후속 과제로 남김). CI에 PSDK fetch를 상시 넣는 것은 라이선스 승인 범위 결정이라 이번 세션에서 임의로 하지 않음(대표자 판단 필요).",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-14T17:40:44+09:00",
+      "updated_at": "2026-08-14T17:40:44+09:00"
     }
   ]
 }
