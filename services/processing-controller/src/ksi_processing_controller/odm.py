@@ -93,12 +93,18 @@ from __future__ import annotations
 import hashlib
 import logging
 import posixpath
+import tempfile
 import zipfile
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
+
+import laspy
+import rasterio
+from ksi_geo_spatial.crs import UnsupportedCrsError, normalise_crs
+from rasterio.errors import RasterioIOError
 
 from ksi_processing_controller.odm_assets import ODM_ASSETS, OdmAsset
 
@@ -408,6 +414,48 @@ def iter_archive_entry_bytes(
             yield from iter(lambda: handle.read(chunk_size), b"")
 
 
+def _real_crs_from_entry(archive: zipfile.ZipFile, entry: str, fmt: str) -> str | None:
+    """산출물 파일을 실제로 열어 임베디드 CRS를 읽는다 — 신고를 실측으로 대체.
+
+    좌표계가 없는 포맷(mesh 의 ``.obj`` 등)이거나, 헤더에 CRS 가 없거나,
+    파싱이 실패하면 ``None`` 이다 — 호출부가 그때만 사이트 프로젝트 CRS로
+    폴백한다. 없다고 지어내지 않고, 있는데 무시하지도 않는다
+    (:mod:`ksi_change_detection.run_change_detection` 의 ``_read_points`` 와
+    같은 ``laspy.header.parse_crs()`` 관용구, 래스터는
+    ``design_surface_verifier.py`` 와 같은 ``rasterio`` 관용구).
+    """
+    if fmt not in ("cog", "laz"):
+        return None
+    try:
+        with archive.open(entry) as handle:
+            data = handle.read()
+    except KeyError:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=f".{fmt}") as tmp:
+        tmp.write(data)
+        tmp.flush()
+        try:
+            if fmt == "cog":
+                with rasterio.open(tmp.name) as dataset:
+                    if dataset.crs is None:
+                        return None
+                    wkt = dataset.crs.to_wkt()
+            else:
+                with laspy.open(tmp.name) as reader:
+                    parsed = reader.header.parse_crs()
+                if parsed is None:
+                    return None
+                wkt = str(parsed)
+        except (RasterioIOError, laspy.LaspyException, OSError) as exc:
+            logger.warning("%s 의 실제 CRS를 읽지 못했다(%s) — site crs로 대체한다", entry, exc)
+            return None
+    try:
+        return normalise_crs(wkt)
+    except UnsupportedCrsError as exc:
+        logger.warning("%s 의 실제 CRS(%s)를 정규화하지 못했다 — site crs로 대체한다", entry, exc)
+        return None
+
+
 def plan_artifacts(
     archive_path: Path,
     *,
@@ -478,6 +526,14 @@ def plan_artifacts(
                 digest = digest_archive_entries(archive, (asset.archive_entry, *aux_entries))
             else:
                 digest = digest_archive_entry(archive, asset.archive_entry)
+            # 실제로 파일을 열어 읽은 CRS가 있으면 그것을 신고한다 — 없으면(포맷에
+            # CRS가 없거나 헤더가 비었거나 파싱 실패) 그때만 site crs로 폴백한다.
+            # 이전엔 실측 없이 site crs를 항상 신고해, 재구성이 GPS 없이 임의
+            # 좌표계로 돌았을 때도 등록된 crs 가 실제 파일과 달랐다(2026-08-15
+            # 실물 확인 — DSM 실제 EPSG:32630, Core 신고값 EPSG:5186).
+            reported_crs = None
+            if asset.needs_crs:
+                reported_crs = _real_crs_from_entry(archive, asset.archive_entry, asset.fmt) or crs
             reports.append(
                 ArtifactReport(
                     artifact_id=asset.artifact_id,
@@ -486,7 +542,7 @@ def plan_artifacts(
                     derived_from=asset.derived_from,
                     digest=digest,
                     fmt=asset.fmt,
-                    crs=crs if asset.needs_crs else None,
+                    crs=reported_crs,
                     gsd=gsd,
                     archive_entry=asset.archive_entry,
                     # 부속 파일이 **실제로 있을 때만** 파일 하나가 아니다. 선언만

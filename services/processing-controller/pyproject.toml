@@ -20,12 +20,19 @@ requires-python = ">=3.12,<3.13"
 # ``dynamic_object_detector`` 주입 지점의 호출자 몫이다 — 이 서비스 자신은
 # 모델을 로드하지 않는다. ksi-domain 은 odm_masking.py 가 직접 참조하는
 # AdapterResult 때문에 명시 선언한다(위 규칙과 동형).
+# ksi-geo-spatial 과 laspy 는 odm.py 의 plan_artifacts 가 산출물의 실제
+# CRS를 신고하기 전에 검증하려고(normalise_crs) 직접 import 한다(2026-08-15,
+# 실물 확인으로 site crs 를 그대로 신고하던 이전 동작을 고쳤다 — 위와 같은
+# "직접 import 하는 패키지는 직접 선언한다" 규칙). laspy 는 이미
+# ksi-change-detection 을 통해 전이 의존으로 들어와 있었다.
 dependencies = [
     "ksi-change-detection",
     "ksi-domain",
     "ksi-event-contracts",
+    "ksi-geo-spatial",
     "ksi-perception",
     "httpx>=0.27",
+    "laspy>=2.5",
     "pillow>=10.0",
     "rasterio>=1.5.1",  # 1.5.1: numpy 2.5 shape-attribute DeprecationWarning 해소(gh-3592/PR#3597)
     # 설계면 검증(design_surface_verifier.py)이 직접 import 한다 — numpy 는 유효셀
@@ -45,6 +52,7 @@ ksi-processing-worker = "ksi_processing_controller.runner:main"
 ksi-change-detection = { workspace = true }
 ksi-domain = { workspace = true }
 ksi-event-contracts = { workspace = true }
+ksi-geo-spatial = { workspace = true }
 ksi-perception = { workspace = true }
 
 [build-system]

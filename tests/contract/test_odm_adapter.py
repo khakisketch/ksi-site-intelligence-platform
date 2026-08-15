@@ -23,7 +23,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
+import rasterio
 from ksi_event_contracts.processing_artifact import (
     LineageAuthority,
     ProcessingArtifact,
@@ -47,6 +49,7 @@ from ksi_processing_controller.odm import (
     unwrap_response,
 )
 from ksi_processing_controller.odm_assets import ODM_ASSETS, POINT_CLOUD_ID
+from rasterio.transform import from_origin
 
 _PACKAGE_ROOT = (
     Path(odm_module.__file__).resolve().parent
@@ -334,6 +337,66 @@ def test_camera_poses_carry_no_crs(tmp_path: Path) -> None:
     reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
     poses = next(r for r in reports if r.artifact_id == "camera-poses")
     assert poses.crs is None
+
+
+# ── CRS 는 신고가 아니라 실측이다 (2026-08-15 실물 확인 — DSM 실제
+#    EPSG:32630 인데 등록된 crs 는 site crs "EPSG:5186" 이었다) ────────────────
+
+
+def _real_geotiff_bytes(epsg: str) -> bytes:
+    """단일 밴드 2x2 GeoTIFF — 임베디드 CRS만 의미 있고 셀 값은 무관하다."""
+    with rasterio.io.MemoryFile() as memfile:
+        with memfile.open(
+            driver="GTiff",
+            height=2,
+            width=2,
+            count=1,
+            dtype="uint8",
+            crs=epsg,
+            transform=from_origin(0, 2, 1, 1),
+        ) as dataset:
+            dataset.write(np.zeros((2, 2), dtype="uint8"), 1)
+        return memfile.read()
+
+
+def _archive_with_real_dsm(tmp_path: Path, *, dsm_epsg: str) -> Path:
+    """표준 all.zip 이되, dsm.tif 만 실제 GeoTIFF(다른 CRS)로 채운다.
+
+    나머지 엔트리는 기존 관용구(플레이스홀더 텍스트)를 그대로 둔다 — 그래야
+    "실측이 있으면 그것을 쓰고, 없으면(파싱 실패) site crs 로 폴백한다"는
+    분기 둘 다를 이 archive 하나로 같이 확인할 수 있다.
+    """
+    dsm_entry = next(a for a in ODM_ASSETS if a.artifact_id == "dsm").archive_entry
+    path = tmp_path / "all.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for asset in ODM_ASSETS:
+            if asset.archive_entry == dsm_entry:
+                archive.writestr(dsm_entry, _real_geotiff_bytes(dsm_epsg))
+            else:
+                archive.writestr(asset.archive_entry, f"내용:{asset.archive_entry}".encode())
+    return path
+
+
+def test_dsm_crs_is_read_from_the_real_file_not_assumed_from_site(tmp_path: Path) -> None:
+    """[핵심] 산출물의 crs는 실제로 그 파일을 열어 읽은 값이다 — site crs 를 그냥 베끼지 않는다.
+
+    GPS 없이 재구성되면 NodeODM 은 site crs 와 무관한 임의 좌표계를 낸다
+    (실물 확인, EPSG:32630). 이전엔 이 경우에도 site crs 를 그대로 신고해
+    Core 의 산출물 메타데이터가 실제 파일과 어긋났다.
+    """
+    archive_path = _archive_with_real_dsm(tmp_path, dsm_epsg="EPSG:32630")
+    reports = plan_artifacts(archive_path, crs=_CRS, gsd_by_artifact=_GSD)
+    dsm = next(r for r in reports if r.artifact_id == "dsm")
+    assert dsm.crs == "EPSG:32630"
+    assert dsm.crs != _CRS
+
+
+def test_dsm_crs_falls_back_to_site_crs_when_file_has_none(tmp_path: Path) -> None:
+    """실제 파일에서 읽을 CRS가 없으면(파싱 실패 등) site crs 로 폴백한다 —
+    조용히 빈 값으로 두지 않는다."""
+    reports = plan_artifacts(_archive(tmp_path), crs=_CRS, gsd_by_artifact=_GSD)
+    dsm = next(r for r in reports if r.artifact_id == "dsm")
+    assert dsm.crs == _CRS
 
 
 def test_missing_optional_assets_are_skipped_not_failed(tmp_path: Path) -> None:
