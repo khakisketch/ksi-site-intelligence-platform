@@ -2506,6 +2506,39 @@ paths:
               schema: { $ref: '#/components/schemas/ProcessingJobListResponse' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/sites/{site_id}/spatial-model:
+    get:
+      summary: Judge whether this site has a spatial model and how old it is
+      description: >-
+        SITES_READ 권한 필요. **저장된 값이 아니라 매 호출 재계산**이다 — 판정을
+        어딘가에 저장하면 그 값과 처리 작업 원장이 갈라져 "둘 중 뭐가 진실이냐"가
+        생긴다(ADR-KSI-016 D3 — ProcessingJobRecord 가 곧 재구성 epoch 이므로 그
+        옆에 두 번째 원장을 만들지 않는다).
+
+        ``SUCCEEDED`` 이면서 ``lineage.authority=source`` 산출물을 가진 작업만
+        epoch 로 센다(INV-051) — 파생 산출물(Mesh·정사영상·DSM)만 있는 성공은
+        모델로 세지 않는다. 나이 기준은 현장이 선언한 modelMaxAgeDays 이고,
+        미선언이면 노후를 **판정하지 않는다**(AGE_POLICY_UNDECLARED — FRESH 로
+        뭉개면 화면이 근거 없는 안심을 준다).
+
+        siteStatusMatchesModel=false 는 현장 상태가 모델 유무와 어긋난다는 뜻이다
+        (예: PATROL_READY 인데 모델이 없다). 조회는 판정만 하고 상태를 고치지
+        않는다 — 조회가 원장을 되돌리면 상태가 조회 시점에 따라 달라진다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 판정 결과 + 그 판정의 근거
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpatialModelView' }
+        '404': { description: 등록되지 않은 현장 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_READ 권한 없음 }
   /v1/processing-jobs:
     get:
       summary: List processing jobs a worker may (re)claim — QUEUED + orphaned RUNNING (FIFO)
@@ -3717,6 +3750,36 @@ components:
         # null 은 "노후 기준 미선언"이고 그 뜻은 **판정하지 않음**이지 "최신"이
         # 아니다(ADR-KSI-019 G1). PUT /v1/sites/{site_id}/model-age-policy 로 선언·철회.
         modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
+    SpatialModelView:
+      description: >-
+        현장의 공간모델 판정(ADR-KSI-019 G1). 결론(state)과 그 결론이 나온
+        근거(epochJobId·registeredAt·ageDays·maxAgeDays)를 함께 싣는다 — 근거 없는
+        자동 판정은 운영자가 검토할 수 없다.
+      type: object
+      required:
+        [siteId, state, epochJobId, registeredAt, ageDays, maxAgeDays,
+         sourceArtifactCount, succeededEpochCount, siteStatus, siteStatusMatchesModel]
+      properties:
+        siteId: { type: string }
+        state:
+          description: >-
+            ABSENT(원본 산출물을 가진 성공 재구성이 없다) / FRESH(선언된 기준 안,
+            경계 포함) / STALE(기준 초과) / AGE_POLICY_UNDECLARED(epoch 은 있으나
+            현장이 기준을 선언하지 않아 노후를 판정하지 않았다).
+          type: string
+          enum: [ABSENT, FRESH, STALE, AGE_POLICY_UNDECLARED]
+        # 판정 근거가 된 최신 epoch 의 작업 id. ABSENT 면 null.
+        epochJobId: { type: [string, 'null'] }
+        # 그 epoch 이 SUCCEEDED 로 전이한 시각. **촬영 시각이 아니라 등록 시각**이다.
+        registeredAt: { type: [string, 'null'] }
+        ageDays: { type: [number, 'null'] }
+        maxAgeDays: { type: [integer, 'null'] }
+        sourceArtifactCount: { type: integer }
+        succeededEpochCount: { type: integer }
+        siteStatus: { type: string }
+        # false 면 현장 상태가 실제 모델 유무와 어긋난다(자동 전진이 막혔거나
+        # 사람이 근거 없이 상태를 올렸다). 조회는 판정만 하고 고치지 않는다.
+        siteStatusMatchesModel: { type: boolean }
     SiteListResponse:
       type: object
       required: [sites]

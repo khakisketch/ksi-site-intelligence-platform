@@ -642,6 +642,17 @@ def create_app(
 
         mount_processing_jobs(app, processing_job_store, evidence_storage)
 
+    if site_store is not None and processing_job_store is not None:
+        # 공간모델 조회(ADR-KSI-019 G1)는 **두 저장소가 모두 있을 때만** 장착한다 —
+        # 재구성 원장이 없는 조립에서 이 표면을 열면 모든 현장이 영원히 ABSENT 라고
+        # 답하는 거짓 표면이 된다. 없는 편이 정직하다(source_media·evidence 라우트가
+        # 같은 이유로 이미 그렇게 동작한다).
+        from ksi_core.spatial_model import mount_spatial_model
+
+        mount_spatial_model(
+            app, site_store=site_store, processing_job_store=processing_job_store
+        )
+
     if defect_candidate_store is not None:
         from ksi_core.defect_candidates import mount_defect_candidates
 

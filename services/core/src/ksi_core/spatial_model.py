@@ -48,17 +48,26 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
+from fastapi import APIRouter, Depends, HTTPException
+from ksi_domain.enums import SiteStatus
 from ksi_event_contracts.processing_artifact import LineageAuthority
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 
+from ksi_core.api_base import CamelModel
+from ksi_core.auth import Permission, Principal, require_permission
+
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
     from ksi_core.processing_jobs import ProcessingJobRecord
+    from ksi_core.sites import SiteStore
 
 _SECONDS_PER_DAY = 86400.0
+_SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
 
 
 class SpatialModelState(StrEnum):
@@ -167,10 +176,131 @@ def evaluate_spatial_model(
     )
 
 
+#: 그 현장 상태가 "공간모델이 있다"를 전제로 하는가.
+#:
+#: ``MODEL_VALIDATION`` 을 포함한다 — 검증할 모델이 없는 검증 상태는 성립하지 않는다.
+#: ``MODEL_STALE`` 도 포함한다 — 낡았다는 판정 자체가 모델의 존재를 전제한다.
+#: ``BASELINE_MAPPING``·``MODEL_PROCESSING`` 은 **제외**다: 그 둘은 정확히 "아직
+#: 모델이 없고 만드는 중"인 상태다.
+_STATUSES_THAT_ASSUME_A_MODEL: frozenset[SiteStatus] = frozenset(
+    {
+        SiteStatus.MODEL_VALIDATION,
+        SiteStatus.PROVISIONAL_AUTONOMY,
+        SiteStatus.PATROL_READY,
+        SiteStatus.PATROL_ACTIVE,
+        SiteStatus.MODEL_STALE,
+    }
+)
+
+
+def site_status_matches_model(state: SpatialModelState, site_status: SiteStatus) -> bool:
+    """현장 상태가 실제 모델 유무와 앞뒤가 맞는가.
+
+    거짓이면 자동 전진이 막혔거나 사람이 근거 없이 상태를 올린 것이다 — 화면이 그
+    모순을 볼 수 있어야 한다. 이 함수는 **판정만** 하고 아무것도 고치지 않는다:
+    조회가 원장을 되돌리기 시작하면 상태가 조회 시점에 따라 달라진다.
+
+    낡은 모델(``STALE``)은 모순이 아니다 — 모델이 낡은 것과 없는 것은 다른 사실이고,
+    ``MODEL_STALE`` 은 그 낡음을 이미 표현하는 정상 상태다.
+    """
+    if site_status not in _STATUSES_THAT_ASSUME_A_MODEL:
+        return True
+    return state is not SpatialModelState.ABSENT
+
+
+class SpatialModelView(CamelModel):
+    """조회 응답 — 결론과 근거와 현장 상태 정합을 함께 낸다."""
+
+    site_id: str
+    state: str
+    epoch_job_id: str | None
+    registered_at: str | None
+    age_days: float | None
+    max_age_days: int | None
+    source_artifact_count: int
+    succeeded_epoch_count: int
+    site_status: str
+    #: 거짓이면 현장 상태가 실제 모델 유무와 어긋난다(위 함수 docstring).
+    site_status_matches_model: bool
+
+
+class _SiteJobLister(Protocol):
+    """이 라우터가 처리 작업 저장소에 요구하는 전부 — 그 현장의 작업 목록 하나뿐.
+
+    ``ProcessingJobStore`` 전체를 타입으로 요구하면 이 모듈이 그 저장소의 발급·
+    lease·산출물 표면 전체에 결합된다. 조회 판정에 필요한 것은 읽기 하나다.
+    """
+
+    def list_for_site(
+        self, site_id: str, *, limit: int | None = ...
+    ) -> list[ProcessingJobRecord]: ...
+
+
+def build_spatial_model_router(
+    *, site_store: SiteStore, processing_job_store: _SiteJobLister
+) -> APIRouter:
+    router = APIRouter(prefix="/v1/sites", tags=["sites"])
+
+    @router.get("/{site_id}/spatial-model", response_model=SpatialModelView)
+    def get_spatial_model(
+        site_id: str,
+        _principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
+    ) -> SpatialModelView:
+        """이 현장의 공간모델 유무·최신도. 저장된 값이 아니라 **매 호출 재계산**이다.
+
+        재계산이 요점이다 — 판정을 어딘가에 저장하면 그 값과 처리 작업 원장이
+        갈라질 수 있고, 그 순간 "둘 중 뭐가 진실이냐"가 생긴다(모듈 docstring).
+        """
+        site = site_store.get(site_id)
+        if site is None:
+            raise HTTPException(status_code=404, detail=_SITE_NOT_FOUND_DETAIL)
+        status = evaluate_spatial_model(
+            processing_job_store.list_for_site(site_id),
+            now=datetime.now(UTC),
+            max_age_days=site.model_max_age_days,
+        )
+        return SpatialModelView(
+            site_id=site_id,
+            state=status.state.value,
+            epoch_job_id=status.epoch_job_id,
+            registered_at=(
+                status.registered_at.isoformat() if status.registered_at is not None else None
+            ),
+            age_days=status.age_days,
+            max_age_days=status.max_age_days,
+            source_artifact_count=status.source_artifact_count,
+            succeeded_epoch_count=status.succeeded_epoch_count,
+            site_status=site.status.value,
+            site_status_matches_model=site_status_matches_model(status.state, site.status),
+        )
+
+    return router
+
+
+def mount_spatial_model(
+    app: FastAPI, *, site_store: SiteStore, processing_job_store: _SiteJobLister
+) -> None:
+    """앱에 공간모델 조회 라우터를 장착한다.
+
+    호출자는 **처리 작업 저장소가 실제로 있을 때만** 부른다 — 재구성 원장이 없는
+    조립에서 이 표면을 열면 모든 현장이 영원히 ``ABSENT`` 라고 답하는 거짓 표면이
+    된다(``create_app`` 참조).
+    """
+    app.include_router(
+        build_spatial_model_router(
+            site_store=site_store, processing_job_store=processing_job_store
+        )
+    )
+
+
 __all__ = [
     "SpatialModelState",
     "SpatialModelStatus",
+    "SpatialModelView",
+    "build_spatial_model_router",
     "evaluate_spatial_model",
     "has_source_artifact",
     "is_spatial_model_epoch",
+    "mount_spatial_model",
+    "site_status_matches_model",
 ]

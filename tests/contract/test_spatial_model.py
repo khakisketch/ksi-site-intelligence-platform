@@ -19,6 +19,7 @@ from ksi_core.spatial_model import (
     has_source_artifact,
     is_spatial_model_epoch,
 )
+from ksi_domain.enums import SiteStatus
 from ksi_event_contracts.processing_artifact import (
     ArtifactLineage,
     LineageAuthority,
@@ -288,3 +289,207 @@ def test_evaluation_does_not_mutate_its_input() -> None:
 
     assert record.status == before["status"]
     assert record.updated_at == before["updated_at"]
+
+
+# --- 조회 표면 ----------------------------------------------------------------
+#
+# 여기서부터는 판정 함수가 아니라 **라우터**를 본다: 현장 조회·404·권한·상태 정합
+# 플래그. FRESH/STALE 판정 자체는 위 순수 함수 테스트가 이미 고정했으므로 반복하지
+# 않는다. 실제 ProcessingJobStore 와의 배선은 AOL-1 종단 테스트가 확인한다.
+
+
+class _JobsStub:
+    """``list_for_site`` 만 노출하는 최소 스텁.
+
+    실제 ``ProcessingJobStore`` 로 성공 epoch 를 만들려면 봉인된 번들·lease·산출물
+    등록까지 전 경로를 태워야 한다(그건 ``test_processing_jobs.py`` 소관이다).
+    이 스텁은 **라우터가 site_id 로 그 현장의 작업만 읽는가**를 본다 — 다른
+    현장의 작업을 섞어 넣어 그 사실을 실제로 검사한다.
+    """
+
+    def __init__(self, records: list[ProcessingJobRecord]) -> None:
+        self._records = records
+
+    def list_for_site(
+        self, site_id: str, *, limit: int | None = None
+    ) -> list[ProcessingJobRecord]:
+        matched = [r for r in self._records if r.site_id == site_id]
+        return matched if limit is None else matched[:limit]
+
+
+def _spatial_model_client(
+    tmp_path: Any, *, records: list[ProcessingJobRecord] | None = None
+) -> Any:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from ksi_core.auth import (
+        AuthRegistry,
+        Principal,
+        PrincipalKind,
+        PrincipalTokenRecord,
+        Role,
+        mount_auth,
+    )
+    from ksi_core.durable_journal import DurableJournal
+    from ksi_core.sites import SiteStore, mount_sites
+    from ksi_core.spatial_model import mount_spatial_model
+    from ksi_mission_contracts.models import SiteFrame
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-a",
+        "테스트 현장",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="op-1",
+        now=_NOW,
+    )
+
+    def _digest(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("sm-operator"),
+                principal=Principal(
+                    principal_id="op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.FIELD_OPERATOR,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest("sm-device"),
+                principal=Principal(
+                    principal_id="edge-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id="dev-1",
+                ),
+            ),
+        ]
+    )
+
+    app = FastAPI()
+    mount_auth(app, registry)
+    mount_sites(app, site_store)
+    mount_spatial_model(
+        app, site_store=site_store, processing_job_store=_JobsStub(records or [])
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": "Bearer sm-operator"})
+    return client, site_store
+
+
+def test_spatial_model_endpoint_reports_absent_for_new_site(tmp_path: Any) -> None:
+    client, _ = _spatial_model_client(tmp_path)
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["siteId"] == "site-a"
+    assert body["state"] == "ABSENT"
+    assert body["epochJobId"] is None
+    assert body["siteStatus"] == "UNMAPPED"
+    assert body["siteStatusMatchesModel"] is True
+
+
+def test_spatial_model_endpoint_reads_only_this_site(tmp_path: Any) -> None:
+    """다른 현장의 epoch 를 이 현장의 것으로 세지 않는다."""
+    mine = _record(job_id="j-mine", site_id="site-a", with_source=True)
+    theirs = _record(job_id="j-theirs", site_id="site-b", with_source=True)
+    client, site_store = _spatial_model_client(tmp_path, records=[mine, theirs])
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op-1", now=_NOW)
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["epochJobId"] == "j-mine"
+    assert body["succeededEpochCount"] == 1
+    assert body["maxAgeDays"] == 30
+
+
+def test_spatial_model_endpoint_reports_undeclared_policy(tmp_path: Any) -> None:
+    client, _ = _spatial_model_client(
+        tmp_path, records=[_record(site_id="site-a", with_source=True)]
+    )
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["state"] == "AGE_POLICY_UNDECLARED"
+    assert body["maxAgeDays"] is None
+
+
+def test_spatial_model_endpoint_flags_status_model_mismatch(tmp_path: Any) -> None:
+    """[핵심] 현장 상태가 PATROL_READY 인데 모델이 없으면 화면이 그 모순을 본다.
+
+    자동 전진이 막혔거나 사람이 손으로 상태를 올린 경우다. 조용히 넘기면 화면이
+    "모델 있는 현장"으로 읽는다. 조회는 판정만 하고 아무것도 고치지 않는다 —
+    조회가 원장을 되돌리기 시작하면 상태가 조회 시점에 따라 달라진다.
+    """
+    client, site_store = _spatial_model_client(tmp_path)
+    for target in (
+        SiteStatus.BASELINE_MAPPING,
+        SiteStatus.MODEL_PROCESSING,
+        SiteStatus.MODEL_VALIDATION,
+        SiteStatus.PROVISIONAL_AUTONOMY,
+        SiteStatus.PATROL_READY,
+    ):
+        site_store.transition(
+            "site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW
+        )
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["state"] == "ABSENT"
+    assert body["siteStatus"] == "PATROL_READY"
+    assert body["siteStatusMatchesModel"] is False
+    # 조회가 상태를 되돌리지 않았다.
+    assert site_store.get("site-a").status is SiteStatus.PATROL_READY
+
+
+def test_stale_model_on_a_patrol_ready_site_is_not_a_mismatch(tmp_path: Any) -> None:
+    """모델이 낡은 것과 모델이 없는 것은 다르다 — 낡음은 모순이 아니다."""
+    client, site_store = _spatial_model_client(
+        tmp_path,
+        records=[
+            _record(site_id="site-a", updated_at=_NOW - timedelta(days=400), with_source=True)
+        ],
+    )
+    for target in (
+        SiteStatus.BASELINE_MAPPING,
+        SiteStatus.MODEL_PROCESSING,
+        SiteStatus.MODEL_VALIDATION,
+        SiteStatus.PROVISIONAL_AUTONOMY,
+        SiteStatus.PATROL_READY,
+    ):
+        site_store.transition(
+            "site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW
+        )
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op-1", now=_NOW)
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["state"] == "STALE"
+    assert body["siteStatusMatchesModel"] is True
+
+
+def test_spatial_model_endpoint_is_404_for_unknown_site(tmp_path: Any) -> None:
+    client, _ = _spatial_model_client(tmp_path)
+
+    assert client.get("/v1/sites/nope/spatial-model").status_code == 404
+
+
+def test_spatial_model_endpoint_requires_sites_read(tmp_path: Any) -> None:
+    client, _ = _spatial_model_client(tmp_path)
+
+    response = client.get(
+        "/v1/sites/site-a/spatial-model", headers={"Authorization": "Bearer sm-device"}
+    )
+
+    assert response.status_code == 403
