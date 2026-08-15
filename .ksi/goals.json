@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T15:59:28+09:00",
+  "updated_at": "2026-08-15T17:11:50+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2154,18 +2154,18 @@
         "계획 커버리지 사전 게이트를 우회하지 않는다",
         "contract test 로 밀도 조정 규칙이 고정된다"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "변화영역 신호(평균 표고변화/노이즈 바닥, 측정 불가 비율)에서 촬영 등급/고도/중복도를 도출해 spatial-refresh-draft 에 실음(packages/mission-planning/src/ksi_mission_planning/reobservation.py). tests/contract/test_reobservation_capture.py 13 passed, tests/e2e/test_aol2_reobservation.py 2 passed(assemble_app+실제 HTTP+실제 워커로 1세대->설계대비잔량->변화영역->도출초안->2세대 발급까지 완주, succeededEpochCount==2) — 직접 실행 확인. 발급 자체는 여전히 사람이 위저드를 끝까지 누른다(D4에 따른 의도, 미완 아님). 도출값은 제안이며 INV-015 하한은 서버가 별도로 강제(below-floor 발급 422 로 직접 확인). 정책값 2개(DETAIL_ESCALATION_SNR, OVERLAP_ESCALATION_UNMEASURABLE_RATIO)와 '재관측이 현장상태를 PATROL_READY 에 그대로 두는' 설계는 대표자 검토 필요(ADR-KSI-019 §5.2). 실기 미검증(Backend Ready).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:29+09:00",
-      "updated_at": "2026-08-15T11:25:29+09:00"
+      "updated_at": "2026-08-15T17:11:50+09:00"
     }
   ],
   "risks": [

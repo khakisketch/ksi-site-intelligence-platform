@@ -1,5 +1,26 @@
 # AOL-2 분석 기반 재관측 — 계획 심화 구현 계획
 
+> **실행 완료 (2026-08-15).** 5개 Task 전부 구현·검증됐다. 커밋 5건
+> (`b236575`…`61a7c3f`), 전체 스위트 `3322 passed / 23 skipped / 3 xfailed`,
+> `ruff check` · 관련 `mypy` 전부 통과 — 전부 직접 실행 확인. 대시보드 Task 4
+> (`apps/dashboard/test/survey-entry-preset.test.ts` +5, `survey-presets.test.ts`
+> +4)도 포함해 검증했다.
+>
+> **완료 등급은 `Backend Ready` + 일부 `Product Ready`(대시보드)이고 `HIL Proven`
+> 이 아니다**(ADR-KSI-018 완료 판정 규율). 실기 비행 0회이며 종단 시험의 커버리지
+> 보고·재구성 워커는 계약대로 행동하는 대역이다.
+>
+> **실측으로 새로 드러난 것 하나** — 계획 자체는 맞았지만 그 구현이 실측 위에서
+> 드러낸 사실: 재관측(`SPATIAL_REFRESH`) 임무의 배포·재구성 성공은 G1 의 자동 전진
+> 규칙표(`_JOB_STATUS_SITE_ADVANCE`)의 출발 상태에 들지 않는다 — 그래서 2세대가
+> 성공해도 현장 상태는 `PATROL_READY` 그대로 멈춘다(`BASELINE_MAPPING` 으로
+> 되돌아가지 않는 것은 계획대로지만, `MODEL_PROCESSING`/`MODEL_VALIDATION` 도 다시
+> 거치지 않는 것까지는 계획이 명시하지 않았었다). ADR-KSI-019 §5.2 에 대표자 검토
+> 대상으로 기록했다.
+>
+> 아래 본문은 실행 당시의 계획 원문이다(체크박스는 갱신하지 않았다). 실제 결과는
+> ADR-KSI-019 §4 G5·§5 6번·§5.2.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **선행 조건:** `docs/superpowers/plans/2026-08-15-aol-1-mapping-autonomy.md` 완료. 이 계획은 그 계획이 만든 `SpatialModelStatus`·`MissionExecutionStatus` 를 소비한다.

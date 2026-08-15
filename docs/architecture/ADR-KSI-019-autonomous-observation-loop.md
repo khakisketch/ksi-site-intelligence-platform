@@ -115,7 +115,7 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
 | G2 | 임무에 실행 생애주기가 없다 | **닫힘(2026-08-15)** — `MissionExecutionStatus`(ISSUED/DISPATCHED/ACTIVATED/COMPLETED/ENDED_INCOMPLETE/CANCELLED)와 별도 원장. 장비 pull·서명 activation receipt·접수된 CoverageReport 세 신호가 자동 결선되고, 사람은 DISPATCHED·CANCELLED만 선언한다. 이 축은 완료 판정의 권위가 아니라 CoverageReport 원장의 **투영**이며(INV-010), 투영 원장이 봉인돼도 커버리지 접수는 201이다. `IN_FLIGHT`는 서버가 아는 사실이 아니라 만들지 않았다(INV-001) | AOL-1 |
 | G3 | 임무를 기체까지 보내는 공식 경로가 없다 | **여전히 열림** — M4D의 Pilot Cloud 지원이 미확인이라(ADR-KSI-004) 설계할 근거가 없다. 대신 **수동 이관을 서버가 기록할 수 있게** 했다(`POST /v1/missions/{id}/execution-transitions` 의 DISPATCHED 선언) — 자동화가 아니라 수동 경로를 공식 경로로 정직하게 다루는 것이다 | AOL-1 |
 | G4 | 촬영 → 서버 자동 ingest가 없다 | **서술 정정 + 닫힘(2026-08-15)** — 원래 서술("사람이 사진을 손으로 올린다")은 실측과 달랐다: `tools/upload_source_bundle.py`(533줄, 테스트 있음)가 이미 브라우저 없이 등록·업로드·봉인·재구성 발행을 했다. 실제 구멍은 **그 명령을 임무마다 치는 주체**였고 `tools/ingest_watch.py`가 그것을 닫는다(`<root>/<missionId>/` 규약, 복사 중 디렉터리 정지 유예, 실패 재시도, 건너뜀 사유 보고). **남은 것**: 기체→지상 회수 경로 자체는 여전히 SD카드 수동 오프로드다(ADR-KSI-013 D1/D2, 실기 관문) | AOL-1 |
-| G5 | 재관측 임무 계획에 사람 단계가 남아 있다 | 초안 AOI까지는 자동, 발급은 위저드를 사람이 끝까지 눌러야 한다. 촬영밀도를 변화 정도에 맞춰 조정하지 않는다 | AOL-2 |
+| G5 | 재관측 임무 계획에 사람 단계가 남아 있다 | **닫힘(2026-08-15, 밀도 자동조정만)** — 변화영역 리포트의 신호(평균 표고변화/노이즈 바닥, 측정 불가 비율)에서 등급(STANDARD/DETAILED/INTENSIVE)·고도·중복도를 서버가 도출해 재관찰 초안(`spatial-refresh-draft`)에 싣는다(`packages/mission-planning/src/ksi_mission_planning/reobservation.py`). **발급은 여전히 사람이 위저드를 끝까지 누른다** — 그 자체는 D4(자율성 경계를 이 단계에서 넓히지 않는다)의 의도된 결과이지 미완이 아니다. 도출값은 **제안**이지 **관문**이 아니다: 운영자가 다른 값으로 발급해도 INV-015 하한은 서버가 별도로 여전히 강제한다. **정책값 2개는 대표자 검토 대상**(§5.2) | AOL-2 |
 | G6 | 경로계획이 지형을 모른다 | 고도는 이륙점 상대 단일값(`altitudeReference: relativeToStartPoint`)이고 계획기에 DSM 입력이 없다 — 지형 추종·이격·장애물 인지 전부 미구현 | AOL-3 |
 
 ### 4.1 반순환 불변식(D3)에 회귀 게이트가 생겼다
@@ -141,16 +141,40 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
    촬영 회수 → 재구성 → 공간모델 등록까지 **사람이 현장 상태를 손으로 옮기는 단계 없이**
    통과하고, 그 사실을 현장 원장의 actor 전수 검사가 강제한다. **실기는 아니다** —
    커버리지 보고·재구성 워커는 계약대로 행동하는 대역이다.
-6. **G5 재관측 계획 자동화 심화** → **AOL-2 종단 1회**. 계획 문서:
-   `docs/superpowers/plans/2026-08-15-aol-2-reobservation-depth.md`.
+6. ~~**G5 재관측 계획 자동화 심화** → **AOL-2 종단 1회**~~ — **완료 2026-08-15(소프트웨어)**.
+   근거: `tests/contract/test_reobservation_capture.py`(13건), `tests/e2e/test_aol2_reobservation.py`
+   (2건) — 1세대 매핑 → 설계 대비 잔량 → 변화 영역 → 밀도 도출 초안 → 그 초안에서
+   발급된 2세대 매핑까지 통과하고 공간모델이 `succeededEpochCount == 2` 로 갱신된다.
+   **실측으로 드러난 것**: 재관측(`SPATIAL_REFRESH`)의 배포·재구성 성공은 G1의 자동
+   전진 규칙표(`_JOB_STATUS_SITE_ADVANCE`/`advance_for_mission_dispatched`)의 출발
+   조건에 들지 않는다 — 그래서 현장 상태가 `BASELINE_MAPPING` 으로 되돌아가지 않을
+   뿐 아니라 `MODEL_PROCESSING`/`MODEL_VALIDATION` 도 다시 거치지 않고 `PATROL_READY`
+   그대로 멈춘다. 매핑 계열과 다른 의도된 설계로 보이나(재관측 중이라고 순찰을 멈출
+   근거가 문서에 없다) **명시적으로 검토된 결정은 아니다** — 대표자 확인 대상.
 7. 실제 현장 검증(`SITE-INTELLIGENCE-E2E-FIELD`).
 8. **그 다음에만 G6(AOL-3)** — 지형/공간모델 인지 경로계획.
 
 ### 5.1 구현 계획 문서
 
 - AOL-1: `docs/superpowers/plans/2026-08-15-aol-1-mapping-autonomy.md` (1·2·3·5번 = 완료)
-- AOL-2: `docs/superpowers/plans/2026-08-15-aol-2-reobservation-depth.md` (6번 = 미착수)
+- AOL-2: `docs/superpowers/plans/2026-08-15-aol-2-reobservation-depth.md` (6번 = 완료, 소프트웨어)
 - G3·G6은 각각 실기 관문·본 ADR D2의 순서 고정 때문에 계획을 쓰지 않았다.
+
+### 5.2 대표자 검토 대상 — 재관측 정책값 2개 + 현장 상태 정지 여부
+
+`reobservation.py` 의 두 임계값은 관측 데이터로 보정된 값이 아니라 보수적으로 고른
+시작점이다(모듈 docstring이 이미 스스로 그렇게 표시한다):
+
+- `DETAIL_ESCALATION_SNR = 2.0` — 평균 표고 변화가 노이즈 바닥의 몇 배 미만이면
+  해상도(고도)를 조일지.
+- `OVERLAP_ESCALATION_UNMEASURABLE_RATIO = 0.2` — 직전 관측의 측정 불가 비율이
+  얼마를 넘으면 중복도를 올릴지.
+
+그리고 §5 6번에서 실측으로 드러난 대로, **재관측 완주가 현장 상태를 `PATROL_READY`
+에 그대로 둔다**(매핑 계열처럼 `MODEL_PROCESSING`/`MODEL_VALIDATION` 을 다시 거치지
+않는다) — 자율운영 중 부분 재관측이 순찰을 멈출 근거가 없다는 판단으로 보수적으로
+그렇게 뒀으나, 문서가 이를 명시적으로 결정한 적은 없다. 실제 현장 데이터가 쌓이면
+세 값 모두 대표자 결정으로 고친다.
 
 ## 6. 결과
 
