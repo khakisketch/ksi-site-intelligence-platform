@@ -1,5 +1,12 @@
 # ADR-KSI-004 — DJI 연동 이원화: PSDK 우선, Cloud API는 Dock 단계 재개
 
+> **[2026-08-15 — ADR-KSI-020]** 아래 §2026-08-14/08-15 갱신은 **임무를 기체까지
+> 보내는 문제를 Cloud API 축에서만** 다뤘다. 그 상충은 여전히 미해결이되, **결론은
+> 바뀐다** — 온보드(PSDK) 축에 `DjiWaypointV3_UploadKmzFile` + `_Action(START)` 가
+> 있어 Dock 없이 성립 가능한 경로가 존재한다. 본 ADR의 "PSDK 우선" 전제가 오히려
+> 처음부터 옳았던 셈이고, 정작 그 PSDK 안의 임무 실행 API를 아무도 열어보지
+> 않았다. 정정 전문은 ADR-KSI-020.
+
 - 상태: ACCEPTED (2026-07-29, 대표자 확정) → **부분 갱신 (2026-08-14, 대표자 확정)**
 - 관련: MASTER_PRD §1.2.C, §20.2(Profile A/B), §28(R7 위험), FINAL_DECISION_LEDGER §하드웨어자율성,
   ADR-KSI-005(연결 아키텍처 갱신), 신규 ADR-KSI-XXX(현장 운용 UX 경계)

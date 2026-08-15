@@ -46,6 +46,12 @@
   포함돼 있지 않다.
 - `SPIKE-DJI-09`(비행시간/발열/전력) — 실제 비행 시간 누적이 필요해 별도 비행 세션.
 
+> **[2026-08-15 추가 — ADR-KSI-020]** 위 금지에 **온보드 임무 실행(`DjiWaypointV3_Action`,
+> `DjiWaypointV2_*`, `DjiInterestPoint_*`, `DjiFts_*`)** 도 명시적으로 포함된다.
+> 특히 `DjiWaypointV3_Action(START)` 는 "임무를 건다"처럼 들리지만 **시동·이륙을
+> 실제로 수행한다.** 10단계는 그 계열 중 `Init`(과 조건부 `UploadKmzFile`)의 **반환값만**
+> 보는 확인이며, 프로펠러 제거가 전제다.
+
 ## 1. 사전 준비 (세션 착수 전)
 
 - [ ] 기체·RC·Manifold 완충 및 물리 점검(프로펠러·짐벌 잠금 해제 등 — 표준 DJI 사전
@@ -753,6 +759,30 @@ DJI Cloud API의 Wayline Management(사전 계획 임무 업로드·실행)가 �
 **이 단계가 절대 하지 않는 것**: wayline 실제 업로드·발급·실행. 인증
 성공만으로 "Wayline Management 가 된다"고 결론 내지 않는다(부트스트랩 인증과
 실제 임무 배포 기능은 별개 사실이다 — 조사 문서 §3/§미확인 참조).
+
+### 10단계 — 온보드 임무 실행 API 기종 지원 판별 (`10_waypoint_support_probe/`, 신설 2026-08-15)
+
+> 근거: ADR-KSI-020 §3.1. **읽기 1회짜리 확인이지만, 절차를 틀리면 실제로 이륙한다.**
+
+**먼저 물리적으로 막는다: 프로펠러를 제거한 상태에서만 수행한다.**
+
+1. **DJI 공식 샘플 트리에서만 한다.** KSI 소스(`edge/psdk-app/src` 등)에는
+   `DjiWaypointV3_*` 를 넣지 않는다 — 안전 게이트가 막고, 막는 것이 의도다.
+2. **`DjiWaypointV3_Init()` 반환값만 본다.** SUCCESS 면 M4D 지원, 
+   `DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT` 면 미지원이다. **이 값 하나가
+   G3 설계 방향을 가른다.**
+3. **`DjiTest_WaypointV3RunSample()` 을 그대로 호출하지 않는다.** 그 함수는 Init
+   다음에 KMZ 업로드와 `DjiWaypointV3_Action(START)` 까지 이어지고, START 는
+   시동·이륙을 실제로 건다(샘플이 비행상태를 `IN_AIR` 까지 기다리는 것이 그 증거).
+4. U1이 SUCCESS 일 때만, 같은 조건(프로펠러 제거)에서 **우리가 발급한 KMZ**로
+   `DjiWaypointV3_UploadKmzFile()` 반환값까지 확인한다. **`Action` 은 호출하지 않는다.**
+5. 확대된 안전 게이트를 실제 빌드 산출물 대상으로 재실행한다
+   (`tools/edge/verify_flight_boundary_on_built_target.sh`). strict 층 보고 심볼이
+   늘어도 벤더 정의면 실패가 아니다(ADR-KSI-020 D3 체크포인트).
+
+**PASS 증거**: Init 반환코드 raw, (해당 시) Upload 반환코드 raw, 게이트 재실행 출력.
+
+**이 단계가 절대 하지 않는 것**: `DjiWaypointV3_Action` 호출, 프로펠러 장착 상태 실행.
 
 ## 3. 세션 종료 후
 

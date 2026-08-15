@@ -7,6 +7,13 @@
   목표 원장 `autonomous-acquisition-closed-loop`(부모 목표)
 - 본 ADR은 **구현 지시가 아니라 목표 구조·순서의 고정**이다. 실측 근거는 §2, 미구현 항목은 §4.
 
+> **[2026-08-15 정정 — ADR-KSI-020]** 본 ADR의 §4 G3·D4·§5 는 "Dock 없이는 서버가
+> 계획한 임무를 무인 실행시킬 경로가 없다"는 전제 위에 쓰였다. **그 전제가 틀렸다.**
+> 핀된 PSDK 3.16.0에 `DjiWaypointV3_UploadKmzFile` + `DjiWaypointV3_Action(START)`
+> (KMZ 업로드 후 시동·이륙·비행·착륙)이 존재하며 M4D는 PSDK가 아는 기종이다.
+> 능력은 있고, **KSI가 쓰지 않기로 한 것**이다. 정정 전문과 새 순서(FIELD-0~3)는
+> ADR-KSI-020. 아래 §4 G3·D4·§5 7~8번은 그 ADR이 대체한다.
+
 ## 1. 맥락 — "Point Cloud 기반 자율비행"이라고 쓰면 순환논리가 된다
 
 목표를 "3D/Point Cloud를 이용한 자율비행"으로 적으면, 공간모델이 아직 없는 **최초
@@ -38,7 +45,7 @@
 | 임무 → 사진 → 처리작업 계보 | 미디어 키·번들 봉인·`jobId = f(missionId, seq)` | `.../source_media.py:209`, `.../processing_jobs.py:619` |
 | 임무 완료 판정 계약(수신측) | CoverageReport 수신·완료 주장 검증(INV-010) | `services/core/src/ksi_core/coverage_reports.py` |
 | Manifold 임무 전달 계약 | 서명 `MissionDispatchEnvelope` + activation receipt | `services/core/src/ksi_core/edge_dispatch.py` |
-| 비행제어 금지 경계(negative gate) | 빌드된 Edge 바이너리에 DJI 비행제어 심볼이 있으면 실패 | `tools/edge/check_shadow_flight_boundary.py`, `tests/contract/test_shadow_flight_boundary_gate.py` |
+| 비행제어 금지 경계(negative gate) | 빌드된 Edge 바이너리에 DJI 기체 기동 심볼이 있으면 실패 (2026-08-15 대상 확대: 임무 실행·선회·비행종료 계열 포함, ADR-KSI-020 D3) | `tools/edge/check_shadow_flight_boundary.py`, `tests/contract/test_shadow_flight_boundary_gate.py` |
 
 검증: `tests/contract/test_mission_plans.py` · `test_mission_planning.py` ·
 `test_camera_grid.py` · `test_mission_site_status_gate.py` ·
@@ -91,9 +98,15 @@ refinement)** 로 들어가야 하며, 없으면 AOL-1 경로가 그대로 나�
 | 사람 | 비행 시작 전 승인 · 필요 시 중단·통제권 회수 |
 | DJI 비행 시스템 | 승인된 임무의 실제 실행(저수준 비행·회피·RTH) |
 
-`check_shadow_flight_boundary` 게이트(KSI Edge 바이너리에 DJI 비행제어 심볼 금지)는
+`check_shadow_flight_boundary` 게이트(KSI Edge 바이너리에 DJI 기체 기동 심볼 금지)는
 AOL-1~3 어느 단계에서도 완화하지 않는다. KSI가 직접 이륙·착륙·비상제어를 수행하는
 확장은 본 ADR의 범위 밖이며 별도 결정을 요구한다.
+
+> **[2026-08-15 사유 정정 — ADR-KSI-020 D4]** 이 표는 유지하되 **이유가 바뀐다.**
+> "DJI가 그 경로를 열어주지 않아서"가 아니라 **"열려 있지만 우리가 검증하지 않았고,
+> 검증 전에는 쓰지 않기로 해서"** 다. 게이트 자체도 같은 날 정정됐다 — 원래 금지
+> 목록이 존재하지 않는 헤더명을 찾고 있었고 임무 실행 계열(`DjiWaypointV3_*`)을
+> 전혀 보지 않아, 선언한 경계가 실제로는 강제되지 않고 있었다.
 
 ### D5 — 용어: `AOL-n` 은 PRD §25의 `Phase n` 과 **다른 축**이다
 
@@ -113,7 +126,7 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
 |---|---|---|---|
 | G1 | 공간모델 최신도 판단이 자동이 아니다 | **닫힘(2026-08-15)** — 재구성 발급이 `BASELINE_MAPPING→MODEL_PROCESSING`을, 원본 산출물을 가진 성공이 `MODEL_PROCESSING→MODEL_VALIDATION`을, 매핑 계열 임무 **배포**가 `UNMAPPED/REMAP_REQUIRED→BASELINE_MAPPING`을 자동 전진시킨다. 노후 기준은 서버가 지어내지 않고 현장이 선언하며(`PUT /v1/sites/{id}/model-age-policy`), 미선언은 `FRESH`로 뭉개지 않고 `AGE_POLICY_UNDECLARED`로 낸다. 자율운영 승인 간선은 자동 전진이 밟지 않으며 규칙표 전수 검사가 그 보증을 강제한다. **남은 것**: 노후 스윕의 주기 실행 주체(표면만 있고 스케줄러는 배포 운영 소관) | AOL-1 |
 | G2 | 임무에 실행 생애주기가 없다 | **닫힘(2026-08-15)** — `MissionExecutionStatus`(ISSUED/DISPATCHED/ACTIVATED/COMPLETED/ENDED_INCOMPLETE/CANCELLED)와 별도 원장. 장비 pull·서명 activation receipt·접수된 CoverageReport 세 신호가 자동 결선되고, 사람은 DISPATCHED·CANCELLED만 선언한다. 이 축은 완료 판정의 권위가 아니라 CoverageReport 원장의 **투영**이며(INV-010), 투영 원장이 봉인돼도 커버리지 접수는 201이다. `IN_FLIGHT`는 서버가 아는 사실이 아니라 만들지 않았다(INV-001) | AOL-1 |
-| G3 | 임무를 기체까지 보내는 공식 경로가 없다 | **여전히 열림, 2026-08-15 재조사로 더 좁혀짐** — DJI 공식 문서(GitHub 원문 직접 인용, `docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md`)상 Wayline Management(사전계획 임무 배포)는 `Dock-to-Cloud` 경로에만 있고 이 저장소의 실제 구성(Dock 없음)인 `Pilot-to-Cloud` 경로에는 없는 것으로 보인다 — 그런데 이 결과가 `ADR-KSI-004` §2026-08-14 갱신의 기존 서술과 상충해 **미해결로 남겨뒀다**(같은 ADR §2026-08-15 참조). 실기 확인 전까지 추측으로 MQTT Wayline 클라이언트를 짜지 않는다. 대신 **수동 이관을 서버가 기록할 수 있게** 했다(`POST /v1/missions/{id}/execution-transitions` 의 DISPATCHED 선언, AOL-1 G2) — 이게 프로토콜과 무관하게 이미 완성된, 실제로 안전하게 미리 만들 수 있었던 부분이었다. `docs/hil/HARDWARE_SESSION_PLAYBOOK.md` §9단계(신설)가 다음 실기 세션의 저비용 확인 절차다 | AOL-1 |
+| G3 | 임무를 기체까지 보내는 공식 경로가 없다 | **서술 정정(2026-08-15, ADR-KSI-020) — "경로가 없다"가 틀렸다.** 두 축을 구분해야 한다. ①**Cloud API 축(서버→기체 원격)**: Wayline Management 문서가 `Dock-to-Cloud` 아래에만 있고 `Pilot-to-Cloud` 에는 없다(`docs/dji/12`, GitHub 원문 인용) — 이 축은 여전히 열려 있고 `ADR-KSI-004` §2026-08-14 서술과의 상충도 미해결이다. ②**PSDK 축(온보드)**: 핀된 PSDK 3.16.0에 `DjiWaypointV3_UploadKmzFile` + `_Action(START)` 가 있고 공식 샘플이 그 한 번으로 시동·이륙·비행·착륙까지 가는 것을 보여준다. **즉 Dock 없이 성립 가능한 경로가 있다.** 미확인은 "M4D가 그 함수를 지원하는가"(호출 1회로 판별)와 "우리 KMZ를 받아들이는가"(H4)다. **KSI는 그 경로를 쓰지 않기로 했다** — 능력 부재가 아니라 정책이며, 게이트가 그 정책을 강제한다(ADR-KSI-020 D3). 수동 이관 기록(`POST /v1/missions/{id}/execution-transitions` DISPATCHED 선언)은 그대로 유효하다 | AOL-1 |
 | G4 | 촬영 → 서버 자동 ingest가 없다 | **서술 정정 + 닫힘(2026-08-15)** — 원래 서술("사람이 사진을 손으로 올린다")은 실측과 달랐다: `tools/upload_source_bundle.py`(533줄, 테스트 있음)가 이미 브라우저 없이 등록·업로드·봉인·재구성 발행을 했다. 실제 구멍은 **그 명령을 임무마다 치는 주체**였고 `tools/ingest_watch.py`가 그것을 닫는다(`<root>/<missionId>/` 규약, 복사 중 디렉터리 정지 유예, 실패 재시도, 건너뜀 사유 보고). **남은 것**: 기체→지상 회수 경로 자체는 여전히 SD카드 수동 오프로드다(ADR-KSI-013 D1/D2, 실기 관문) | AOL-1 |
 | G5 | 재관측 임무 계획에 사람 단계가 남아 있다 | **닫힘(2026-08-15, 밀도 자동조정만)** — 변화영역 리포트의 신호(평균 표고변화/노이즈 바닥, 측정 불가 비율)에서 등급(STANDARD/DETAILED/INTENSIVE)·고도·중복도를 서버가 도출해 재관찰 초안(`spatial-refresh-draft`)에 싣는다(`packages/mission-planning/src/ksi_mission_planning/reobservation.py`). **발급은 여전히 사람이 위저드를 끝까지 누른다** — 그 자체는 D4(자율성 경계를 이 단계에서 넓히지 않는다)의 의도된 결과이지 미완이 아니다. 도출값은 **제안**이지 **관문**이 아니다: 운영자가 다른 값으로 발급해도 INV-015 하한은 서버가 별도로 여전히 강제한다. **정책값 2개는 대표자 결정으로 현재값 유지**(§5.2) | AOL-2 |
 | G6 | 경로계획이 지형을 모른다 | **부분 착수(2026-08-15, Unit 1)** — 대표자 결정으로 §5 순서(실제 현장 검증 이후)를 앞당겨 착수. 표고 샘플러(`ksi_geo_spatial.terrain.TerrainGrid`)와 지형추종 고도 계산 순수 함수(`ksi_mission_planning.terrain.compute_altitude_profile`)가 소프트웨어로 존재하고 검증됨 — 그러나 **아직 어디에도 이어지지 않았다**: `wpml.py`/`coverage.py`(KMZ 발급 경로)는 여전히 웨이포인트당 단일 고도만 받고, Core 쪽에서 현장 DTM을 찾아 이 계산기에 먹이는 배선도 없다(소비자 없음, 의도적으로 미룸). 구조물 이격·장애물 인지·데이터 부족 적응촬영·동적 재계획(Unit 2~5)은 미착수 | AOL-3 |
@@ -151,8 +164,10 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
    뿐 아니라 `MODEL_PROCESSING`/`MODEL_VALIDATION` 도 다시 거치지 않고 `PATROL_READY`
    그대로 멈춘다. **대표자 결정(2026-08-15, §5.2)으로 이 동작을 그대로 유지하기로
    확정** — 자율운영 중 부분 재관측이 순찰을 멈출 근거가 없다는 판단이다.
-7. 실제 현장 검증(`SITE-INTELLIGENCE-E2E-FIELD`).
-8. **그 다음에만 G6(AOL-3)** — 지형/공간모델 인지 경로계획.
+7. ~~실제 현장 검증~~ · 8. ~~그 다음에만 G6(AOL-3)~~ — **ADR-KSI-020 §5가 대체한다**:
+   `FIELD-0`(지상 통합: 앱 기동·PSDK 연결·기종 지원 판별·KMZ 인식) → `FIELD-1`(첫
+   실제 매핑 비행) → `FIELD-2`(분석→재관측 2회차 = AOL 현장 실증) → `FIELD-3`(지형추종
+   웨이포인트 고도 배선). **FIELD-0 이전에 새 기능을 만들지 않는다.**
 
 ### 5.1 구현 계획 문서
 

@@ -1,5 +1,14 @@
 # DJI Cloud API — Wayline(임무) 원격 배포 경로 조사 (G3용)
 
+> **[2026-08-15 범위 한정 — ADR-KSI-020]** 이 조사는 **Cloud API 축만** 다뤘다.
+> 아래 §핵심 결론의 "Dock을 사지 않는 한 DJI 쪽에 그런 경로 자체가 없다"는 문장을
+> **온보드(PSDK) 축까지 일반화해 읽으면 안 된다** — 그 축은 이 조사의 대상이
+> 아니었고, 실제로는 `DjiWaypointV3_UploadKmzFile` + `_Action(START)` 로 Dock 없이
+> 성립 가능한 경로가 핀된 PSDK 3.16.0 안에 있다(ADR-KSI-020 §2).
+>
+> **Cloud API 축의 조사 결과 자체는 유효하며 철회하지 않는다** — 사람이 현장에
+> 없는 형태(서버→기체 원격 배포)를 원할 때 다시 필요하다.
+
 > 2026-08-15 조사. 출처는 DJI 공식 GitHub 미러 `dji-sdk/Cloud-API-Doc`(developer.dji.com
 > Cloud API 문서의 원문 소스로 보임)와 그 사이트 자체를 검색엔진 경유로 확인한 결과다.
 > **주의**: `dji-sdk/Cloud-API-Doc` 저장소의 마지막 커밋은 2024-11-07(v1.11.3)이다 —

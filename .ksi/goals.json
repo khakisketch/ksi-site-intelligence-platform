@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T21:05:12+09:00",
+  "updated_at": "2026-08-15T23:58:13+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2166,6 +2166,143 @@
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:29+09:00",
       "updated_at": "2026-08-15T17:11:50+09:00"
+    },
+    {
+      "id": "field-0-ground-integration",
+      "title": "FIELD-0 지상 통합 — 비행 없이 매니폴드·기체·임무파일이 실제로 이어지는지 확인",
+      "completion_criteria": [
+        "매니폴드에 전원·네트워크가 살아있는 세션에서 우리 앱(.dpk)이 실제로 설치·기동된다",
+        "앱이 PSDK 로 기체와 연결되고 기체 식별·텔레메트리를 실제로 읽는다",
+        "임무 실행 API 기종 지원 여부가 DJI 공식 샘플 트리에서 Init 반환값만으로 판별돼 기록된다 — 업로드·START 호출 금지, 프로펠러 제거 상태, KSI 소스에는 넣지 않는다(ADR-KSI-020 §3.1)",
+        "확대된 안전 게이트를 실제 빌드 산출물 대상으로 재실행해 결과를 기록한다",
+        "커버리지 보고를 실제 장비 자격으로 낼 수 있는지 확인된다(INV-010 완료 판정의 권위)",
+        "전 과정이 hil_raw_logs 세션으로 남고 자기보고가 아니다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:25:28+09:00",
+      "updated_at": "2026-08-15T23:58:13+09:00"
+    },
+    {
+      "id": "field-1-first-mapping-flight",
+      "title": "FIELD-1 첫 실제 매핑 비행 — 우리 현장 사진으로 공간모델이 처음 만들어진다",
+      "completion_criteria": [
+        "KSI 가 만든 매핑 계획이 Pilot 2 에서 확인되고 사람 승인 후 실제 웨이포인트 비행으로 수행된다",
+        "실제 M4D 사진이 서버로 ingest 되어 재구성이 완주한다(합성·공개샘플 아님)",
+        "정사영상·DSM·DTM·점군이 실제 현장 데이터로 등록되고 화면에 뜬다",
+        "계획 커버리지 주장이 실제 촬영 결과와 대조돼 기록된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:25:28+09:00",
+      "updated_at": "2026-08-15T23:25:28+09:00"
+    },
+    {
+      "id": "field-2-reobservation-loop-field",
+      "title": "FIELD-2 현장 폐루프 — 1회차 분석이 만든 재관측 임무로 2회차를 실제로 난다",
+      "completion_criteria": [
+        "FIELD-1 산출 공간모델에서 설계 대비·변화 분석이 실제 데이터로 수행된다",
+        "그 결과가 재관측 영역과 촬영 계획을 만든다",
+        "그 계획으로 2회차 실제 비행이 수행된다",
+        "2회차 사진으로 공간모델이 갱신된다",
+        "사람 개입은 승인·이륙 범위를 넘지 않았음이 원장으로 확인된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:25:28+09:00",
+      "updated_at": "2026-08-15T23:25:28+09:00"
+    },
+    {
+      "id": "field-3-terrain-aware-flight",
+      "title": "FIELD-3 지형추종 비행 — 웨이포인트마다 다른 고도가 실제 비행파일에 실린다",
+      "completion_criteria": [
+        "실제 현장 DTM 에서 웨이포인트별 지형고가 샘플링된다",
+        "compute_altitude_profile 이 KMZ 발급 경로에 배선된다",
+        "wpml.py 의 균일고도 제약이 해소되고 웨이포인트별 고도가 실제 비행파일에 실린다",
+        "반순환 불변식(공간모델 없이 최초 매핑 발급 가능)이 회귀 게이트로 유지된다",
+        "실제 비행으로 지형을 따라 고도가 변하는 것이 관측된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:25:28+09:00",
+      "updated_at": "2026-08-15T23:25:28+09:00"
+    },
+    {
+      "id": "decision-psdk-flight-execution-authorization",
+      "title": "KSI가 매니폴드를 통해 기체를 직접 실행시키는 것을 허용할 것인가 (FIELD-1 이후 판단)",
+      "completion_criteria": [
+        "FIELD-0 의 기종 지원 판별 결과가 있다",
+        "FIELD-1 이 성공했다",
+        "허용 시 안전 경계(check_shadow_flight_boundary)를 어디까지 여는지 명시된다",
+        "불허 시 사람이 Pilot 2 로 시작하는 방식을 공식 경로로 유지한다는 것이 문서화된다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "decision",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:25:28+09:00",
+      "updated_at": "2026-08-15T23:25:28+09:00"
+    },
+    {
+      "id": "field-0a-kmz-acceptance",
+      "title": "FIELD-0a 비행파일 수용성 + 카메라 실측 — 조종기만 있으면 오늘 할 수 있다 (FIELD-1의 유일한 전제)",
+      "completion_criteria": [
+        "우리가 발급한 KMZ 를 Pilot 2 가 실제로 임포트하고 항로로 표시한다(거부되면 그 사유가 기록된다)",
+        "Pilot 2 에서 매핑 임무를 직접 만들어 내보낸 KMZ 를 확보해 우리 산출물과 태그 단위로 대조한 결과가 기록된다(risk kmz-format-never-diffed-against-dji-sample 의 8개 차이 항목 각각에 대해 실제 거부 사유인지 판정)",
+        "기체로 지상에서 사진 1장을 찍어 EXIF/XMP 에서 실제 초점거리·센서·해상도를 읽어 기록한다(risk mapping-camera-constants-are-not-m4d)",
+        "읽어낸 값으로 대시보드 카메라 기본값을 교체하고 기존 커버리지 계약 시험이 그대로 통과하는지 확인한다",
+        "매니폴드는 이 목표에 필요하지 않다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": null,
+      "created_at": "2026-08-15T23:58:13+09:00",
+      "updated_at": "2026-08-15T23:58:13+09:00"
     }
   ],
   "risks": [
@@ -3232,6 +3369,62 @@
       "previous_status": null,
       "created_at": "2026-08-15T21:05:12+09:00",
       "updated_at": "2026-08-15T21:05:12+09:00"
+    },
+    {
+      "id": "shadow-flight-gate-missed-mission-execution-apis",
+      "title": "안전 게이트가 임무 실행 API(DjiWaypointV3_*)를 전혀 보지 않았고, 막던 헤더명은 존재조차 하지 않았다",
+      "lens": "other",
+      "severity": "high",
+      "status": "resolved",
+      "note": "check_shadow_flight_boundary 는 DjiFlightController_ 한 계열만 봤다. PSDK 3.16.0 의 DjiWaypointV3_UploadKmzFile + _Action(START) 두 줄이면 KMZ 임무를 올려 시동·이륙·비행·착륙까지 가는데(공식 샘플 test_waypoint_v3.c 가 그 전 과정을 보여준다) 게이트 어느 층도 이를 잡지 않았다 — '빌드된 KSI 바이너리는 기체를 못 움직인다'는 보증이 실제로는 성립하지 않았다. 추가로 header 층은 dji_flight_control.h 를 찾았으나 PSDK 실제 파일명은 dji_flight_controller.h 라 한 번도 발화할 수 없었다(호출·심볼 층이 받쳐 경계 자체가 뚫리진 않음). 발견 경위: G3 를 Cloud API 축에서만 조사해 온 것을 GPT 지적으로 재검토하다가 PSDK 원본 실측.",
+      "accept_reason": null,
+      "resolve_evidence": "tools/edge/check_shadow_flight_boundary.py — 금지 대상을 실측 기준 집합으로 재정의(_FLIGHT_HEADERS: dji_flight_controller.h·dji_waypoint_v2.h·dji_waypoint_v3.h·dji_interest_point.h·dji_fts.h / _MOTION_SYMBOL_PREFIXES: DjiFlightController·DjiWaypointV2·DjiWaypointV3·DjiInterestPoint·DjiFts). source/nm/objdump 세 층 모두 같은 집합을 쓴다. tests/contract/test_shadow_flight_boundary_gate.py 11 passed — 신규 3종: ①WaypointV3 업로드+START 가 header+call 2건으로 거부됨 ②waypoint_v2/interest_point/fts 계열 parametrize 거부 ③금지 헤더명이 핀된 PSDK 트리에 실제 존재하는지 검사(없는 이름을 막는 상태로 되돌아가지 않게). 기존 edge/ source root 스캔은 위반 0 유지. 결정 기록: ADR-KSI-020 D3.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-15T23:24:48+09:00",
+      "updated_at": "2026-08-15T23:24:48+09:00"
+    },
+    {
+      "id": "terrain-altitude-vertical-reference-mismatch",
+      "title": "지형추종 계산기가 절대표고를 내면서 이륙점 상대 비행봉투와 직접 비교 — 양방향 오판",
+      "lens": "other",
+      "severity": "high",
+      "status": "resolved",
+      "note": "compute_altitude_profile 이 '지형표고+AGL+여유'라는 절대표고를 내고 그것을 FlightEnvelope(altitude_reference='relativeToStartPoint', 대표자 2026-07-29 확정) 의 min/max 와 직접 비교했다. ①오통과: 표고 112m 현장에서 AGL 30m 요청 → 142m 가 규제상한 150m 안이라 통과하지만, 기체는 이륙점 기준으로 받으므로 실제 지상고 142m(의도의 4.7배·규제 위반). ②오거부: 표고 130m 현장은 160>150 으로 ENVELOPE_VIOLATION — 실제로는 완전히 합법인 지상 30m 비행인데 영원히 계획 불가. 한국 토목현장 상당수가 이 표고대다. 리뷰를 통과한 이유: 계약 테스트가 min/max 두 필드만 흉내 내는 Mock 봉투를 써서 altitude_reference 의 존재 자체가 시험에 나타나지 않았다.",
+      "accept_reason": null,
+      "resolve_evidence": "packages/mission-planning/src/ksi_mission_planning/terrain.py — 출력이 두 값으로 분리됨: commanded_height_m(이륙점 상대, WPML executeHeight 에 실리는 값·봉투 대조도 이 값) / absolute_elevation_m(절대, DSM 여유값 전용). takeoff_terrain_elevation_m 을 필수 인자로 승격(모르면 계획을 못 낸다). 봉투가 다른 수직기준을 선언하면 TerrainReferenceMismatch 로 typed 거부. 지오이드 불필요 — 두 표고의 차라서 상수항 소거. tests/contract/test_terrain_altitude_planner.py 12 passed: Mock 봉투를 실제 FlightEnvelope 로 교체(결함을 가리던 원인 제거), 오통과 방향 회귀(112m 현장 → 명령 30m·절대 142m), 오거부 방향 회귀(130m 현장이 30m 비행 계획 성공), 지형추종 추적성(지상고 일정 유지), 수직기준 불일치 거부. ruff/mypy clean.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-15T23:57:52+09:00",
+      "updated_at": "2026-08-15T23:57:52+09:00"
+    },
+    {
+      "id": "kmz-format-never-diffed-against-dji-sample",
+      "title": "우리 KMZ 를 DJI 공식 샘플과 한 번도 대조한 적 없음 — 2026-08-15 첫 대조에서 차이 다수 발견",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "핀된 PSDK 에 DJI 공식 샘플 KMZ(waypoint_v3/waypoint_file/waypoint_v3_test_file.kmz)가 들어 있는데 지금까지 아무도 풀어보지 않았다. 첫 대조 결과 차이: ①네임스페이스 우리 wpmz/1.0.2 vs 샘플 1.0.3 ②payloadInfo 에 payloadSubEnumValue 없음 ③template.kml Placemark 에 per-point height/ellipsoidHeight 없음(샘플은 useGlobalHeight=1 이어도 항상 씀) ④waylineCoordinateSysParam 에 positioningType 없음 ⑤Document 에 createTime/updateTime 없음 ⑥waylines.wpml Folder 에 distance/duration 없음 ⑦heading 하위 waypointHeadingAngle/waypointPoiPoint/waypointHeadingPoiIndex/waypointHeadingAngleEnable 없음 ⑧useStraightLine 없음. 역방향: 우리만 있는 waypointHeadingPathMode 를 코드는 '무조건 필수(공식 표 raw 확인)'라 적었으나 DJI 공식 샘플에는 없다 — 서로 어긋난다. 이 항목들이 실제 거부 사유인지 무해한 선택 요소인지는 미확정이며, 결함 확정이 아니라 FIELD-0a 대조 목록이다. 지금까지는 이런 목록조차 없었다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-15T23:57:52+09:00",
+      "updated_at": "2026-08-15T23:57:52+09:00"
+    },
+    {
+      "id": "mapping-camera-constants-are-not-m4d",
+      "title": "매핑 카메라 상수가 M4D 값이 아니다 — 1인치 20MP 급 대체값이 모든 임무의 사진 밀도를 정하고 있다",
+      "lens": "other",
+      "severity": "high",
+      "status": "open",
+      "note": "대시보드 두 위저드가 sensorWidthMm=13.2·focalLengthMm=8.8·5472x3648 을 기본값으로 넣는다(SiteRegistrationWizard.tsx:64, SurveyWizard.tsx:166). 코드 주석이 'M4D 실측 스펙은 미확정(H4)이라 매핑용 기체 카메라 급 값을 쓴다'고 정직하게 적어뒀다. 이 값이 GSD·footprint·격자 간격·촬영 간격·커버리지 판정 전부를 정하므로 실질적으로 **모든 매핑 임무의 사진 밀도**가 미검증 상수 위에 서 있다. PSDK 에는 페이로드 카메라 내부파라미터 조회 API 가 없다(dji_camera_manager.h 는 focus/zoom 조작뿐, 내부파라미터는 스테레오 인지 카메라용 dji_perception.h 에만 있다). 해소 경로: 기체로 지상에서 사진 1장 찍어 EXIF/XMP 를 읽는다 — 비행 불필요, FIELD-0a 에서 가능. references/repos/ksi-terra 에 DJI 사진 XMP 분석 구현이 이미 있다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-15T23:57:52+09:00",
+      "updated_at": "2026-08-15T23:57:52+09:00"
     }
   ]
 }
