@@ -76,6 +76,7 @@ def test_current_ksi_source_roots_have_no_flight_control_header_or_call() -> Non
     violations = scan_source_roots(
         (
             _ROOT / "edge" / "psdk-app" / "src",
+            _ROOT / "edge" / "psdk-tap" / "src",
             _ROOT / "edge" / "manifold-runtime" / "src",
             _ROOT / "edge" / "manifold-runtime" / "include",
         )
