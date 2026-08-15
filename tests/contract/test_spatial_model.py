@@ -493,3 +493,216 @@ def test_spatial_model_endpoint_requires_sites_read(tmp_path: Any) -> None:
     )
 
     assert response.status_code == 403
+
+
+# --- 자동 전진 ----------------------------------------------------------------
+
+
+def _lifecycle_pair(tmp_path: Any, *, records: list[ProcessingJobRecord] | None = None) -> Any:
+    """(lifecycle, site_store) — site-a 는 UNMAPPED 로 등록된 상태."""
+    from ksi_core.durable_journal import DurableJournal
+    from ksi_core.sites import SiteStore
+    from ksi_core.spatial_model import SpatialModelLifecycle
+    from ksi_mission_contracts.models import SiteFrame
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-a",
+        "테스트 현장",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="op-1",
+        now=_NOW,
+    )
+    lifecycle = SpatialModelLifecycle(
+        site_store=site_store, processing_job_store=_JobsStub(records or [])
+    )
+    return lifecycle, site_store
+
+
+def _advance_site(site_store: Any, target: SiteStatus) -> None:
+    """UNMAPPED 에서 목표 상태까지 합법 경로로 민다(테스트 준비 전용)."""
+    path = {
+        SiteStatus.BASELINE_MAPPING: (SiteStatus.BASELINE_MAPPING,),
+        SiteStatus.MODEL_PROCESSING: (
+            SiteStatus.BASELINE_MAPPING,
+            SiteStatus.MODEL_PROCESSING,
+        ),
+        SiteStatus.MODEL_VALIDATION: (
+            SiteStatus.BASELINE_MAPPING,
+            SiteStatus.MODEL_PROCESSING,
+            SiteStatus.MODEL_VALIDATION,
+        ),
+        SiteStatus.PATROL_READY: (
+            SiteStatus.BASELINE_MAPPING,
+            SiteStatus.MODEL_PROCESSING,
+            SiteStatus.MODEL_VALIDATION,
+            SiteStatus.PROVISIONAL_AUTONOMY,
+            SiteStatus.PATROL_READY,
+        ),
+    }[target]
+    for step in path:
+        result = site_store.transition(
+            "site-a", step, evidence="test", reason="test", actor="test", now=_NOW
+        )
+        assert result.verdict.value == "TRANSITIONED", result.detail
+
+
+def test_job_issued_advances_baseline_mapping_to_model_processing(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.BASELINE_MAPPING)
+
+    outcome = lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.QUEUED, job_id="site-a-m1-pj1", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ADVANCED
+    assert site_store.get("site-a").status is SiteStatus.MODEL_PROCESSING
+
+
+def test_job_succeeded_advances_model_processing_to_model_validation(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_PROCESSING)
+
+    outcome = lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.SUCCEEDED, job_id="site-a-m1-pj1", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ADVANCED
+    assert site_store.get("site-a").status is SiteStatus.MODEL_VALIDATION
+
+
+def test_auto_advance_never_crosses_the_autonomy_approval_edge(tmp_path: Any) -> None:
+    """[핵심] 자동 전진이 사람의 승인 간선을 대신 밟지 않는다.
+
+    MODEL_VALIDATION → PROVISIONAL_AUTONOMY 는 SITES_AUTONOMY_APPROVE 전용이다
+    (ADR-KSI-015 D2). 재구성 성공 하나로 자율운영이 열리면 그 권한이 장식이 된다.
+    """
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_VALIDATION)
+
+    outcome = lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.SUCCEEDED, job_id="site-a-m1-pj2", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ALREADY_PAST
+    assert site_store.get("site-a").status is SiteStatus.MODEL_VALIDATION
+
+
+def test_no_advance_rule_targets_an_autonomy_approval_edge() -> None:
+    """전진 규칙표 자체가 승인 간선을 담지 않는다는 구조적 보증.
+
+    위 테스트는 한 경우를 반증하고, 이 테스트는 표 전체를 본다 — 나중에 규칙이
+    추가돼도 승인 간선이 섞여 들어오면 여기서 즉시 드러난다.
+    """
+    from ksi_core.spatial_model import (  # noqa: PLC2701 -- 규칙표 전수 검사를 위한 의도적 내부 접근
+        _JOB_STATUS_SITE_ADVANCE,
+    )
+    from ksi_domain.enums import requires_autonomy_approval
+
+    for source, target in _JOB_STATUS_SITE_ADVANCE.values():
+        assert not requires_autonomy_approval(source, target), (
+            f"자동 전진 규칙이 승인 간선을 담고 있다: {source.value} → {target.value}"
+        )
+
+
+def test_advance_from_wrong_status_is_reported_not_raised(tmp_path: Any) -> None:
+    """[핵심] UNMAPPED 현장에 재구성 성공이 들어와도 예외를 던지지 않는다.
+
+    전진 실패가 원래 요청(워커의 성공 보고)을 깨뜨리면, 현장 상태가 어긋났다는
+    이유로 되돌릴 수 없는 계산 결과가 유실된다.
+    """
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+
+    outcome = lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.SUCCEEDED, job_id="x-pj1", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT
+    assert site_store.get("site-a").status is SiteStatus.UNMAPPED
+
+
+@pytest.mark.parametrize(
+    "status", [ProcessingJobStatus.FAILED, ProcessingJobStatus.CANCELLED]
+)
+def test_failed_and_cancelled_jobs_do_not_move_the_site(
+    tmp_path: Any, status: ProcessingJobStatus
+) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_PROCESSING)
+
+    assert (
+        lifecycle.advance_for_job_status("site-a", status, job_id="x", now=_NOW)
+        is SiteAdvanceOutcome.NO_RULE
+    )
+    assert site_store.get("site-a").status is SiteStatus.MODEL_PROCESSING
+
+
+def test_unknown_site_is_reported_not_raised(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, _ = _lifecycle_pair(tmp_path)
+
+    assert (
+        lifecycle.advance_for_job_status(
+            "ghost", ProcessingJobStatus.SUCCEEDED, job_id="x", now=_NOW
+        )
+        is SiteAdvanceOutcome.UNKNOWN_SITE
+    )
+
+
+def test_advance_writes_a_system_actor_into_the_site_journal(tmp_path: Any) -> None:
+    """누가 옮겼는지가 원장에 남는다 — 자동 전이도 감사 대상이다."""
+    import json
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_PROCESSING)
+
+    lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.SUCCEEDED, job_id="site-a-m1-pj1", now=_NOW
+    )
+
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "sites.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    last = entries[-1]
+    assert last["kind"] == "site-transitioned"
+    assert last["actor"] == "system:spatial-model-lifecycle"
+    assert "site-a-m1-pj1" in last["evidence"]
+    assert last["reason"]
+
+
+def test_suspended_site_is_not_advanced(tmp_path: Any) -> None:
+    """운영 중단된 현장을 자동화가 되살리지 않는다."""
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_PROCESSING)
+    site_store.transition(
+        "site-a", SiteStatus.SUSPENDED, evidence="e", reason="r", actor="admin", now=_NOW
+    )
+
+    outcome = lifecycle.advance_for_job_status(
+        "site-a", ProcessingJobStatus.SUCCEEDED, job_id="x", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT
+    assert site_store.get("site-a").status is SiteStatus.SUSPENDED

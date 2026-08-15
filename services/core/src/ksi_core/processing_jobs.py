@@ -196,6 +196,11 @@ if TYPE_CHECKING:
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
 
+    # SpatialModelLifecycle 의 런타임 import 는 순환이다 — spatial_model 이 이 모듈의
+    # ProcessingJobRecord 를(역시 TYPE_CHECKING 으로) 참조한다. 이 방향의 의존은
+    # 타입에만 존재한다.
+    from ksi_core.spatial_model import SpatialModelLifecycle
+
 logger = logging.getLogger(__name__)
 
 _NOT_FOUND_DETAIL = "해당 처리 작업을 찾을 수 없다"
@@ -1737,8 +1742,17 @@ _require_processing_job_issue = require_permission_any(
 
 
 def build_processing_jobs_router(
-    store: ProcessingJobStore, storage: EvidenceStorage
+    store: ProcessingJobStore,
+    storage: EvidenceStorage,
+    site_lifecycle: SpatialModelLifecycle | None = None,
 ) -> APIRouter:
+    """``site_lifecycle`` 이 주어지면 재구성 신호가 현장 상태를 전진시킨다(ADR-KSI-019 G1).
+
+    선택 인자인 이유는 하위호환이 아니라 조립의 정직성이다 — ``SiteStore`` 없이
+    조립된 앱에서는 전진시킬 대상이 없다. 그리고 **전진 결과는 이 라우터의 응답을
+    절대 바꾸지 않는다**: 현장 상태가 어긋났다는 이유로 워커의 재구성 성공 보고가
+    실패하면 되돌릴 수 없는 계산 결과가 유실된다(``SpatialModelLifecycle`` docstring).
+    """
     router = APIRouter(tags=["processing-jobs"])
 
     @router.post(
@@ -1773,6 +1787,20 @@ def build_processing_jobs_router(
                 principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
             ),
         )
+        if (
+            site_lifecycle is not None
+            and result.verdict is ProcessingJobVerdict.ISSUED
+            and result.record is not None
+        ):
+            # 재구성 작업이 만들어졌다 = 처리가 시작됐다 → BASELINE_MAPPING →
+            # MODEL_PROCESSING. **반환값을 의도적으로 무시한다** — 전진 실패가 이
+            # 응답을 바꾸면 안 된다(결과는 SITE_AUTO_ADVANCES metric 과 로그에 남는다).
+            site_lifecycle.advance_for_job_status(
+                result.record.site_id,
+                ProcessingJobStatus.QUEUED,
+                job_id=result.record.job_id,
+                now=datetime.now(UTC),
+            )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
@@ -1893,6 +1921,19 @@ def build_processing_jobs_router(
             # 있는 동안 취소가 막히면, 정확히 취소가 필요한 상황에서 막힌다.
             requires_lease=request.target_status is not ProcessingJobStatus.CANCELLED,
         )
+        if (
+            site_lifecycle is not None
+            and result.verdict is ProcessingJobVerdict.TRANSITIONED
+            and result.record is not None
+        ):
+            # 원본 산출물을 가진 SUCCEEDED = 공간모델이 생겼다 → MODEL_PROCESSING →
+            # MODEL_VALIDATION. 발급 훅과 같은 이유로 반환값을 무시한다.
+            site_lifecycle.advance_for_job_status(
+                result.record.site_id,
+                request.target_status,
+                job_id=result.record.job_id,
+                now=datetime.now(UTC),
+            )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
@@ -2226,16 +2267,22 @@ def build_processing_jobs_router(
 
 
 def mount_processing_jobs(
-    app: FastAPI, store: ProcessingJobStore, storage: EvidenceStorage
+    app: FastAPI,
+    store: ProcessingJobStore,
+    storage: EvidenceStorage,
+    site_lifecycle: SpatialModelLifecycle | None = None,
 ) -> None:
     """앱에 처리 작업 라우터를 장착한다.
 
     ``storage`` 가 필요해진 것은 워커 입력 수신(``GET .../input``)이 원본
     다운로드 URL 을 발급하기 때문이다 — B2 시점에는 이 표면이 presigned URL 을
     전혀 내주지 않아 스토리지를 몰라도 됐다.
+
+    ``site_lifecycle`` 을 주면 재구성 발급·성공이 현장 상태를 자동 전진시킨다
+    (ADR-KSI-019 G1). 안 주면 예전과 같이 아무것도 전진시키지 않는다.
     """
     app.state.processing_job_store = store
-    app.include_router(build_processing_jobs_router(store, storage))
+    app.include_router(build_processing_jobs_router(store, storage, site_lifecycle))
 
 
 __all__ = [

@@ -46,6 +46,7 @@ AGE_POLICY_UNDECLARED` 로 낸다 — "판정하지 않았다"와 "판정했더�
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,12 +60,16 @@ from ksi_event_contracts.processing_job import ProcessingJobStatus
 
 from ksi_core.api_base import CamelModel
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.metrics import SITE_AUTO_ADVANCES
+from ksi_core.sites import SiteVerdict
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.processing_jobs import ProcessingJobRecord
     from ksi_core.sites import SiteStore
+
+logger = logging.getLogger(__name__)
 
 _SECONDS_PER_DAY = 86400.0
 _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
@@ -208,6 +213,163 @@ def site_status_matches_model(state: SpatialModelState, site_status: SiteStatus)
     return state is not SpatialModelState.ABSENT
 
 
+class SiteAdvanceOutcome(StrEnum):
+    """자동 전진 1회의 결과 — 실패도 typed 로 돌려주고 예외를 던지지 않는다."""
+
+    ADVANCED = "ADVANCED"
+    #: 이 신호에 대응하는 전진 규칙이 없다(FAILED·CANCELLED 등).
+    NO_RULE = "NO_RULE"
+    #: 규칙의 출발 상태가 아니고, 진행 축에서 이미 도착 상태를 지났다.
+    ALREADY_PAST = "ALREADY_PAST"
+    #: 출발 상태도 아니고 뒤쪽도 아니다 — 상태머신이 허용하지 않는다.
+    ILLEGAL_FROM_CURRENT = "ILLEGAL_FROM_CURRENT"
+    UNKNOWN_SITE = "UNKNOWN_SITE"
+    STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+
+
+#: SSOT — 처리 작업 상태가 현장을 **어디서 어디로** 밀어야 하는가. (출발, 도착) 쌍인
+#: 것이 요점이다: 출발 상태가 아닌 현장은 건드리지 않는다. 상태머신이 허용한다는
+#: 이유로 아무 데서나 밀면 자동화가 사람의 판단을 덮어쓴다.
+#:
+#: 이 표에 자율운영 승인 간선(``requires_autonomy_approval`` 참)을 넣지 않는다 —
+#: 그 보증은 ``test_spatial_model.py`` 의 규칙표 전수 검사가 구조적으로 강제한다.
+_JOB_STATUS_SITE_ADVANCE: dict[ProcessingJobStatus, tuple[SiteStatus, SiteStatus]] = {
+    # 재구성 작업이 만들어졌다 = 처리가 시작됐다.
+    ProcessingJobStatus.QUEUED: (SiteStatus.BASELINE_MAPPING, SiteStatus.MODEL_PROCESSING),
+    # 원본 산출물을 가진 성공 = 공간모델이 생겼다. **검증까지 자동으로 하지 않는다** —
+    # MODEL_VALIDATION 이 종착이고 그 다음(자율 개시)은 사람의 승인이다.
+    ProcessingJobStatus.SUCCEEDED: (
+        SiteStatus.MODEL_PROCESSING,
+        SiteStatus.MODEL_VALIDATION,
+    ),
+}
+
+#: 매핑 진행 축의 선형 순서 — "이미 지났다"를 판정하는 데만 쓴다. ``SUSPENDED``·
+#: ``REMAP_REQUIRED`` 는 축 밖이라 넣지 않는다(둘 다 ILLEGAL 로 읽히는 것이 맞다:
+#: 운영 중단·재매핑 대기 현장을 자동화가 앞으로 밀면 안 된다).
+_PROGRESS_ORDER: tuple[SiteStatus, ...] = (
+    SiteStatus.UNMAPPED,
+    SiteStatus.BASELINE_MAPPING,
+    SiteStatus.MODEL_PROCESSING,
+    SiteStatus.MODEL_VALIDATION,
+    SiteStatus.PROVISIONAL_AUTONOMY,
+    SiteStatus.PATROL_READY,
+    SiteStatus.PATROL_ACTIVE,
+)
+
+#: 자동 전이의 actor — 사람과 구분된다. 감사 원장에서 "이 전이를 누가 했나"에
+#: 답할 수 있어야 자동화가 사람의 결정을 조용히 대신하지 않았음을 보일 수 있다.
+_SYSTEM_ACTOR = "system:spatial-model-lifecycle"
+
+
+def _is_at_or_past(current: SiteStatus, target: SiteStatus) -> bool:
+    """``current`` 가 매핑 진행 축에서 ``target`` 이후인가 — 축 밖이면 거짓."""
+    if current not in _PROGRESS_ORDER or target not in _PROGRESS_ORDER:
+        return False
+    return _PROGRESS_ORDER.index(current) >= _PROGRESS_ORDER.index(target)
+
+
+class SpatialModelLifecycle:
+    """재구성 신호를 받아 현장 상태를 전진시킨다 — 라우터 계층에서만 호출한다.
+
+    ## 왜 저장소 안이 아니라 여기인가
+
+    ``ProcessingJobStore`` 안에서 ``SiteStore`` 를 부르면 두 잠금을 겹쳐 쥐게 되고,
+    그 순간 잠금 순서가 아키텍처 제약이 된다. 여기서는 작업 저장소 호출이 **끝난
+    뒤** 별도로 부르므로 겹치지 않는다.
+
+    ## 전진 실패는 원래 요청을 깨뜨리지 않는다
+
+    모든 실패를 :class:`SiteAdvanceOutcome` 으로 돌려주고 예외를 던지지 않는다.
+    현장 상태가 어긋났다는 이유로 워커의 재구성 성공 보고가 500 이 되면, 되돌릴 수
+    없는 계산 결과가 유실된다. 대신 결과를 metric(``SITE_AUTO_ADVANCES``)으로 세고
+    비정상(``ILLEGAL_FROM_CURRENT``)만 로그로 남긴다.
+    """
+
+    def __init__(
+        self, *, site_store: SiteStore, processing_job_store: _SiteJobLister
+    ) -> None:
+        self._site_store = site_store
+        self._processing_job_store = processing_job_store
+
+    def advance_for_job_status(
+        self,
+        site_id: str,
+        job_status: ProcessingJobStatus,
+        *,
+        job_id: str,
+        now: datetime,
+    ) -> SiteAdvanceOutcome:
+        """재구성 작업 상태 하나를 현장 전진 신호로 해석한다."""
+        rule = _JOB_STATUS_SITE_ADVANCE.get(job_status)
+        if rule is None:
+            return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
+        source, target = rule
+        return self._advance(
+            site_id,
+            source_statuses=(source,),
+            target=target,
+            evidence=f"processingJob={job_id} status={job_status.value}",
+            reason="재구성 신호에 따른 자동 전진(ADR-KSI-019 G1)",
+            now=now,
+        )
+
+    def _advance(
+        self,
+        site_id: str,
+        *,
+        source_statuses: tuple[SiteStatus, ...],
+        target: SiteStatus,
+        evidence: str,
+        reason: str,
+        now: datetime,
+    ) -> SiteAdvanceOutcome:
+        """전진 1회 — 세 진입점(작업 상태·임무 배포·노후 스윕)이 공유한다."""
+        site = self._site_store.get(site_id)
+        if site is None:
+            return _record_outcome(SiteAdvanceOutcome.UNKNOWN_SITE, target=target)
+        if site.status not in source_statuses:
+            outcome = (
+                SiteAdvanceOutcome.ALREADY_PAST
+                if _is_at_or_past(site.status, target)
+                else SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT
+            )
+            if outcome is SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT:
+                logger.warning(
+                    "자동 전진 건너뜀 — site=%s 현재=%s 규칙=%s→%s (%s)",
+                    site_id,
+                    site.status.value,
+                    "|".join(s.value for s in source_statuses),
+                    target.value,
+                    evidence,
+                )
+            return _record_outcome(outcome, target=target)
+
+        result = self._site_store.transition(
+            site_id,
+            target,
+            evidence=evidence,
+            reason=reason,
+            actor=_SYSTEM_ACTOR,
+            now=now,
+        )
+        if result.verdict is SiteVerdict.TRANSITIONED:
+            return _record_outcome(SiteAdvanceOutcome.ADVANCED, target=target)
+        if result.verdict is SiteVerdict.STORE_UNAVAILABLE:
+            return _record_outcome(SiteAdvanceOutcome.STORE_UNAVAILABLE, target=target)
+        return _record_outcome(SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT, target=target)
+
+
+def _record_outcome(
+    outcome: SiteAdvanceOutcome, *, target: SiteStatus | None
+) -> SiteAdvanceOutcome:
+    """결과를 세고 그대로 돌려준다 — 건너뛴 전진이 조용히 사라지지 않게."""
+    SITE_AUTO_ADVANCES.inc(
+        outcome=outcome.value, target_status=target.value if target is not None else "none"
+    )
+    return outcome
+
+
 class SpatialModelView(CamelModel):
     """조회 응답 — 결론과 근거와 현장 상태 정합을 함께 낸다."""
 
@@ -294,6 +456,8 @@ def mount_spatial_model(
 
 
 __all__ = [
+    "SiteAdvanceOutcome",
+    "SpatialModelLifecycle",
     "SpatialModelState",
     "SpatialModelStatus",
     "SpatialModelView",

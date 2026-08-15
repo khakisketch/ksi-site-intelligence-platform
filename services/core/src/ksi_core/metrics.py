@@ -132,6 +132,10 @@ HTTP_REQUESTS = Counter(
 HTTP_REQUEST_DURATION = Histogram(
     "ksi_core_http_request_duration_seconds", "HTTP 요청 처리 시간(초)"
 )
+SITE_AUTO_ADVANCES = Counter(
+    "ksi_site_auto_advances_total",
+    "재구성·임무 실행 신호에 따른 현장 상태 자동 전진 시도 결과(ADR-KSI-019 G1)",
+)
 PROCESSING_JOB_TRANSITIONS = Counter(
     "ksi_core_processing_job_transitions_total", "재구성 작업 상태 전이 수(도착 상태별)"
 )
@@ -146,6 +150,7 @@ DESIGN_CONFORMANCE_REQUEST_TRANSITIONS = Counter(
 _ALL_METRICS: tuple[Counter | Histogram, ...] = (
     HTTP_REQUESTS,
     HTTP_REQUEST_DURATION,
+    SITE_AUTO_ADVANCES,
     PROCESSING_JOB_TRANSITIONS,
     COMPARISON_REQUEST_TRANSITIONS,
     DESIGN_CONFORMANCE_REQUEST_TRANSITIONS,
@@ -233,6 +238,7 @@ __all__ = [
     "HTTP_REQUESTS",
     "HTTP_REQUEST_DURATION",
     "PROCESSING_JOB_TRANSITIONS",
+    "SITE_AUTO_ADVANCES",
     "Counter",
     "Histogram",
     "HttpMetricsMiddleware",

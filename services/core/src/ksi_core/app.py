@@ -639,8 +639,22 @@ def create_app(
         # 다운로드 URL 발급에 필요 — GET .../input).
         assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.processing_jobs import mount_processing_jobs
+        from ksi_core.spatial_model import SpatialModelLifecycle
 
-        mount_processing_jobs(app, processing_job_store, evidence_storage)
+        # 현장 저장소가 없으면 전진시킬 대상이 없다 — 그때는 예전과 같이 아무것도
+        # 전진시키지 않는다(자동화가 없는 조립도 유효한 조립이다).
+        mount_processing_jobs(
+            app,
+            processing_job_store,
+            evidence_storage,
+            (
+                SpatialModelLifecycle(
+                    site_store=site_store, processing_job_store=processing_job_store
+                )
+                if site_store is not None
+                else None
+            ),
+        )
 
     if site_store is not None and processing_job_store is not None:
         # 공간모델 조회(ADR-KSI-019 G1)는 **두 저장소가 모두 있을 때만** 장착한다 —
