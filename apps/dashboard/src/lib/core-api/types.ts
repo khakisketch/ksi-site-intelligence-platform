@@ -37,6 +37,12 @@ export interface SiteView {
    * 화면이 null 을 "아직 모름"으로 읽어 허용처럼 보여주면 안 된다.
    */
   dataResidency: DataResidency | null;
+  /**
+   * 공간모델 노후 판정 기준(일). null 은 "미선언"이고 그 뜻은 **판정하지 않음**이지
+   * "최신"이 아니다 — 화면이 null 을 최신으로 읽으면 근거 없는 안심을 준다
+   * (ADR-KSI-019 G1).
+   */
+  modelMaxAgeDays: number | null;
 }
 
 /** 처리 작업의 벤더 클라우드 실행 가부를 정하는 현장 속성(INV-050). */

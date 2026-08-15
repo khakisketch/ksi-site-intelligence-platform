@@ -105,6 +105,7 @@ class SiteVerdict(StrEnum):
     AOI_SET = "AOI_SET"
     SITE_FRAME_MISMATCH = "SITE_FRAME_MISMATCH"
     AOI_LOCKED = "AOI_LOCKED"
+    MODEL_AGE_POLICY_SET = "MODEL_AGE_POLICY_SET"
 
 
 _STATUS: dict[SiteVerdict, int] = {
@@ -118,6 +119,7 @@ _STATUS: dict[SiteVerdict, int] = {
     SiteVerdict.AOI_SET: 200,
     SiteVerdict.SITE_FRAME_MISMATCH: 422,
     SiteVerdict.AOI_LOCKED: 409,
+    SiteVerdict.MODEL_AGE_POLICY_SET: 200,
 }
 
 _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
@@ -147,6 +149,14 @@ class SiteRecord:
     # None 은 "선언되지 않았다"이고 **반출 불가로 읽힌다**(fail-closed). 구버전
     # journal 레코드가 이 값을 가질 수 없으므로 기본을 허용 쪽에 둘 수 없다.
     data_residency: dict[str, Any] | None = None
+    # 이 현장의 공간모델 노후 판정 기준(일). ``None`` 은 **미선언**이고, 미선언은
+    # "최신"이 아니라 "판정하지 않음"으로 읽힌다
+    # (:mod:`ksi_core.spatial_model` 의 ``AGE_POLICY_UNDECLARED``).
+    # MASTER_PRD §6.3 은 ``MODEL_STALE`` 이라는 상태만 정의하고 며칠이면 낡은
+    # 것인지는 정하지 않았다 — 서버가 기본값을 박으면 근거 없는 숫자가 현장의
+    # 자율운영 가능 여부를 가른다(ADR-KSI-019 G1). ``data_residency`` 와 같은
+    # 이유로 구버전 journal 레코드는 전부 ``None`` 으로 재생된다.
+    model_max_age_days: int | None = None
 
     def __post_init__(self) -> None:
         if self.registered_at.tzinfo is None:
@@ -237,6 +247,8 @@ class SiteStore:
                     self._apply_transitioned(raw)
                 elif kind == "site-aoi-set":
                     self._apply_aoi_set(raw)
+                elif kind == "site-model-age-policy-set":
+                    self._apply_model_age_policy_set(raw)
                 else:
                     raise ValueError(f"알 수 없는 kind: {kind!r}")
             except (KeyError, ValueError, TypeError) as exc:
@@ -365,6 +377,35 @@ class SiteStore:
         AreaOfInterest.model_validate(aoi_payload)  # fail-closed 재검증
         ts = _parse_ts(raw["ts"])
         self._sites[site_id] = replace(current, aoi=aoi_payload, updated_at=ts)
+
+    def _apply_model_age_policy_set(self, raw: dict[str, Any]) -> None:
+        """공간모델 노후 기준 선언·철회 레코드를 projection 에 반영한다.
+
+        ``_apply_aoi_set`` 과 같은 강도로 재검증한다 — 미지 site 면 재생을 거부하고
+        (fail-closed), 값은 ``None``(철회) 또는 1 이상 정수만 허용한다. 손으로 고친
+        원장이 0 일·음수 기준을 되살릴 수 없다.
+
+        AOI 와 달리 **현장 상태 게이트는 없다** — 이 값은 매핑 시작 이후에도 바뀌는
+        것이 정상이다(:meth:`set_model_age_policy` docstring).
+        """
+        site_id = raw["siteId"]
+        current = self._sites.get(site_id)
+        if current is None:
+            raise ValueError(f"미지 siteId 노후 기준 선언 레코드: {site_id}")
+        max_age_days = raw["maxAgeDays"]
+        if max_age_days is not None and (
+            not isinstance(max_age_days, int)
+            or isinstance(max_age_days, bool)
+            or max_age_days < 1
+        ):
+            raise ValueError(
+                f"재생: maxAgeDays 는 null 이거나 1 이상 정수여야 한다: "
+                f"siteId={site_id} value={max_age_days!r}"
+            )
+        ts = _parse_ts(raw["ts"])
+        self._sites[site_id] = replace(
+            current, model_max_age_days=max_age_days, updated_at=ts
+        )
 
     # ── 공개 API ────────────────────────────────────────────────────
     def register(
@@ -577,6 +618,62 @@ class SiteStore:
             self._apply_aoi_set(raw)
             return SiteResult(SiteVerdict.AOI_SET, record=self._sites[site_id])
 
+    def set_model_age_policy(
+        self,
+        site_id: str,
+        *,
+        max_age_days: int | None,
+        actor: str,
+        now: datetime,
+    ) -> SiteResult:
+        """이 현장의 공간모델 노후 판정 기준(일)을 선언·교체·철회한다(ADR-KSI-019 G1).
+
+        ``max_age_days=None`` 은 **철회**다 — 되돌릴 수 없는 정책은 정책이 아니다.
+        철회하면 :func:`~ksi_core.spatial_model.evaluate_spatial_model` 이 노후를
+        판정하지 않고 ``AGE_POLICY_UNDECLARED`` 를 낸다.
+
+        AOI 와 달리 **현장 상태로 잠그지 않는다**. 현장의 변화 속도는 매핑이 시작된
+        뒤에 알게 되는 사실이고, 그때 기준을 못 고치면 정책이 첫 추측에 갇힌다.
+        AOI 잠금의 근거(UI 초기값 고정)는 여기에 해당하지 않는다.
+
+        0 일·음수는 거부한다 — "매 순간 낡음"은 정책이 아니라 사고이고, 그 값이
+        기록되면 그 현장은 자율운영에서 영구히 끊긴다.
+        """
+        if now.tzinfo is None:
+            raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
+        if max_age_days is not None and max_age_days < 1:
+            return SiteResult(
+                SiteVerdict.INVALID_SITE,
+                detail=(
+                    "maxAgeDays 는 1 이상이어야 한다 — 0·음수는 '매 순간 낡음'이라 "
+                    "정책이 아니라 사고다"
+                ),
+            )
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+
+            current = self._sites.get(site_id)
+            if current is None:
+                return SiteResult(SiteVerdict.UNKNOWN_SITE, detail=_SITE_NOT_FOUND_DETAIL)
+
+            raw: dict[str, Any] = {
+                "kind": "site-model-age-policy-set",
+                "ts": iso_utc(now),
+                "actor": actor,
+                "siteId": site_id,
+                "before": current.model_max_age_days,
+                "maxAgeDays": max_age_days,
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+            self._apply_model_age_policy_set(raw)
+            return SiteResult(
+                SiteVerdict.MODEL_AGE_POLICY_SET, record=self._sites[site_id]
+            )
+
     def get(self, site_id: str) -> SiteRecord | None:
         with self._lock:
             return self._sites.get(site_id)
@@ -626,6 +723,19 @@ class AoiSetRequest(CamelModel):
     site_frame: SiteFrame
 
 
+class ModelAgePolicyRequest(CamelModel):
+    """PUT /v1/sites/{site_id}/model-age-policy 요청 — 선언·교체·철회 공용.
+
+    ``max_age_days`` 는 **필수 필드이고 null 을 허용**한다. 생략 가능하게 두면
+    "필드를 안 보냄"과 "철회"가 같은 요청이 되어, 부분 갱신 의도로 보낸 요청이
+    조용히 기준을 지운다.
+    """
+
+    max_age_days: int | None = Field(
+        description="공간모델 노후 판정 기준(일). null 이면 철회 — 노후를 판정하지 않는다."
+    )
+
+
 class SiteView(CamelModel):
     site_id: str
     name: str
@@ -640,6 +750,9 @@ class SiteView(CamelModel):
     # 미선언이면 null 을 그대로 노출한다 — 화면이 "반출 허용"을 기본값처럼
     # 보여주지 않게. null 의 뜻은 "반출 불가"다(SiteRecord.data_residency).
     data_residency: dict[str, Any] | None
+    # 미선언이면 null. null 의 뜻은 "노후를 판정하지 않는다"이지 "최신"이 아니다
+    # (SiteRecord.model_max_age_days, ADR-KSI-019 G1).
+    model_max_age_days: int | None = None
 
 
 class SiteListResponse(CamelModel):
@@ -665,6 +778,7 @@ def _to_view(record: SiteRecord) -> SiteView:
         updated_at=record.updated_at.isoformat(),
         aoi=record.aoi,
         data_residency=record.data_residency,
+        model_max_age_days=record.model_max_age_days,
     )
 
 
@@ -764,6 +878,32 @@ def build_sites_router(store: SiteStore) -> APIRouter:
             site_id,
             request.aoi,
             site_frame=request.site_frame,
+            actor=principal.principal_id,
+            now=datetime.now(UTC),
+        )
+        response.status_code = _STATUS[result.verdict]
+        return SiteMutationResponse(
+            verdict=result.verdict.value,
+            site=_to_view(result.record) if result.record is not None else None,
+            detail=result.detail,
+        )
+
+    @router.put("/{site_id}/model-age-policy", response_model=SiteMutationResponse)
+    def set_site_model_age_policy(
+        site_id: str,
+        request: ModelAgePolicyRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
+    ) -> SiteMutationResponse:
+        """공간모델 노후 판정 기준을 선언·교체·철회한다(ADR-KSI-019 G1).
+
+        ``SITES_AUTONOMY_APPROVE`` 를 요구하지 않는다 — 이 값은 전이를 직접 일으키지
+        않고 판정 입력일 뿐이며, 실제 ``MODEL_STALE`` 전이는 별도 스윕 표면이
+        일으킨다(자율 개시·정식 순찰 승인만 2차 게이트 대상, ADR-KSI-015 D2).
+        """
+        result = store.set_model_age_policy(
+            site_id,
+            max_age_days=request.max_age_days,
             actor=principal.principal_id,
             now=datetime.now(UTC),
         )

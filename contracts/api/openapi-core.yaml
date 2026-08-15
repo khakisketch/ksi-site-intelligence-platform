@@ -377,6 +377,50 @@ paths:
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/sites/{site_id}/model-age-policy:
+    put:
+      summary: Declare, replace or withdraw the site's spatial-model staleness threshold
+      description: >-
+        SITES_WRITE 권한 필요. maxAgeDays 는 이 현장의 공간모델이 며칠 지나면 낡은
+        것으로 볼지의 기준이다. null 이면 **철회**이고, 철회된 현장은 노후를
+        판정하지 않는다(GET /v1/sites/{site_id}/spatial-model 의
+        AGE_POLICY_UNDECLARED). 서버는 기본값을 두지 않는다 — MASTER_PRD §6.3 이
+        MODEL_STALE 이라는 상태만 정의하고 기준은 정하지 않았으므로, 서버가 숫자를
+        지어내면 근거 없는 값이 현장의 자율운영 가능 여부를 가른다(ADR-KSI-019 G1).
+        AOI 와 달리 현장 상태로 잠기지 않는다 — 변화 속도는 매핑 시작 이후에 알게
+        되는 사실이고, 그때 기준을 못 고치면 정책이 첫 추측에 갇힌다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [maxAgeDays]
+              properties:
+                maxAgeDays:
+                  type: [integer, "null"]
+                  minimum: 1
+                  description: >-
+                    공간모델 노후 판정 기준(일). null 이면 철회. 0·음수는 "매 순간
+                    낡음"이라 정책이 아니라 사고이므로 422 로 거부한다.
+      responses:
+        '200':
+          description: MODEL_AGE_POLICY_SET — verdict + 갱신된 SiteView
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteMutationResponse' }
+        '404': { description: UNKNOWN_SITE }
+        '422': { description: INVALID_SITE — maxAgeDays 가 1 미만 }
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
   /v1/sites/{site_id}/equipment-states:
     post:
       summary: Ingest equipment/worker kinematic states (Phase 3, PRD RISK-002)
@@ -3670,6 +3714,9 @@ components:
         # null 은 "반출 미선언"이고 그 뜻은 **반출 불가**다(INV-050). 화면이
         # 허용을 기본값처럼 보여주지 않게 null 을 그대로 싣는다.
         dataResidency: { type: [object, 'null'], additionalProperties: true }
+        # null 은 "노후 기준 미선언"이고 그 뜻은 **판정하지 않음**이지 "최신"이
+        # 아니다(ADR-KSI-019 G1). PUT /v1/sites/{site_id}/model-age-policy 로 선언·철회.
+        modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
     SiteListResponse:
       type: object
       required: [sites]

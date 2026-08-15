@@ -46,8 +46,8 @@ def _artifact(
 ) -> ProcessingArtifact:
     """산출물 1건 — 파생은 원본을 부모로 가리킨다(INV-051 계약 검증 통과용)."""
     return ProcessingArtifact(
-        artifactId=f"{job_id}-{suffix}",
-        jobId=job_id,
+        artifact_id=f"{job_id}-{suffix}",
+        job_id=job_id,
         kind=(
             ProcessingArtifactKind.POINT_CLOUD
             if authority is LineageAuthority.SOURCE
@@ -55,8 +55,8 @@ def _artifact(
         ),
         lineage=ArtifactLineage(
             authority=authority,
-            sourceDigest=_SOURCE_DIGEST,
-            derivedFrom=[] if authority is LineageAuthority.SOURCE else [f"{job_id}-pc"],
+            source_digest=_SOURCE_DIGEST,
+            derived_from=[] if authority is LineageAuthority.SOURCE else [f"{job_id}-pc"],
         ),
         digest="sha256:" + hashlib.sha256(f"{job_id}-{suffix}".encode()).hexdigest(),
         format="laz" if authority is LineageAuthority.SOURCE else "obj",

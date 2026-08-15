@@ -34,7 +34,7 @@ ADR-KSI-019 §5 의 8단계를 실행 가능한 계획 단위로 쪼갠 것이�
 - **언어 규약**: 코드 식별자는 영어, docstring·주석은 한국어. 기존 파일의 밀도와 어조를 그대로 따른다.
 - **테스트 실행**: `ulimit -n 8192` 를 먼저 올린 뒤 `uv run pytest`. FD 기본값 1024 로는 전체 스위트가 인프라 사유로 깨진다.
 - **대시보드**: `cd apps/dashboard && npm run test` · `npm run lint` · `npm run build`.
-- **정적 검사**: `uv run ruff check .` · `uv run ruff format --check .` · `uv run mypy` (CI scope).
+- **정적 검사**: `uv run ruff check .` · `uv run mypy` (CI scope). **`ruff format --check` 는 게이트가 아니다** — CI(`.github/workflows/ci.yml`)가 돌리지 않고, 저장소 170개 파일이 이미 그 검사를 통과하지 못한다(2026-08-15 실측). 새로 만드는 파일에는 `uv run ruff format <새 파일>` 을 적용하되, **기존 파일을 통째로 재포맷하지 않는다** — 무관한 대량 diff 가 리뷰를 못 하게 만든다.
 - **INV-052 보존**: 현장 상태 전이는 `ksi_domain.enums.assert_site_transition` 을 **통해서만** 한다. 전이표를 새로 만들거나 우회하지 않는다.
 - **INV-051 보존**: `authority=source` 산출물 없는 `SUCCEEDED` 는 없다. 이 계획은 그 게이트를 완화하지 않고 **읽기만** 한다.
 - **INV-010 보존**: 완료 판정의 권위는 CoverageReport 하나다. 이 계획이 추가하는 `MissionExecutionStatus` 는 완료 판정의 **권위가 아니라 투영**이며, 커버리지 보고 접수를 막는 조건으로 절대 쓰지 않는다.
@@ -579,8 +579,8 @@ Run: `ulimit -n 8192 && uv run pytest tests/contract/test_spatial_model.py -v`
 
 - [ ] **Step 5: 정적 검사**
 
-Run: `uv run ruff check services/core/src/ksi_core/spatial_model.py tests/contract/test_spatial_model.py && uv run ruff format --check services/core/src/ksi_core/spatial_model.py`
-기대: 전부 통과. 실패하면 `uv run ruff format` 으로 정리 후 재실행.
+Run: `uv run ruff check services/core/src/ksi_core/spatial_model.py tests/contract/test_spatial_model.py`
+기대: 통과. 새로 만든 두 파일에만 `uv run ruff format <파일>` 을 적용한다(기존 파일은 건드리지 않는다).
 
 - [ ] **Step 6: 커밋**
 
@@ -2980,7 +2980,7 @@ Run:
 ```bash
 ulimit -n 8192
 uv run pytest -q
-uv run ruff check . && uv run ruff format --check .
+uv run ruff check .
 uv run mypy
 cd apps/dashboard && npm run test && npm run lint && npm run build
 ```

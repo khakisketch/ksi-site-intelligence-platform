@@ -8,6 +8,7 @@ BASELINE_MAPPING → … → PATROL_READY 전 구간을 **실제 HTTP 전이**�
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -1128,3 +1129,157 @@ def test_replay_failure_releases_journal_lock(tmp_path: Path) -> None:
     # 잠금이 해제됐다면 재조립이 flock 경합 없이 같은 예외로 재실패한다.
     with pytest.raises(SiteStoreRecoveryError):
         SiteStore(DurableJournal(path))
+
+
+# ── 공간모델 노후 기준 선언 (ADR-KSI-019 G1) ──────────────────────────
+
+
+def _put_model_age_policy(
+    client: TestClient,
+    site_id: str,
+    max_age_days: int | None,
+    *,
+    token: str = _FIELD_OPERATOR_TOKEN,
+) -> Any:
+    return client.put(
+        f"/v1/sites/{site_id}/model-age-policy",
+        json={"maxAgeDays": max_age_days},
+        headers=_auth(token),
+    )
+
+
+def test_model_age_policy_defaults_to_undeclared(tmp_path: Path) -> None:
+    """[핵심] 이 필드 도입 이전 journal 로 재생된 현장은 미선언이다.
+
+    ``data_residency`` 와 같은 이유 — 구버전 레코드에 없던 필드의 기본값을 임의의
+    숫자로 두면 기존 현장 전체가 조용히 어떤 노후 정책을 갖게 된다. 서버가 노후
+    기준을 지어내지 않는다는 것이 ADR-KSI-019 G1 의 요점이다.
+    """
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+
+    body = client.get("/v1/sites/site-001", headers=_auth(_FIELD_OPERATOR_TOKEN)).json()
+
+    assert body["modelMaxAgeDays"] is None
+
+
+def test_model_age_policy_can_be_declared_and_replaced(tmp_path: Path) -> None:
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+
+    first = _put_model_age_policy(client, "site-001", 30)
+    assert first.status_code == 200
+    assert first.json()["verdict"] == "MODEL_AGE_POLICY_SET"
+    assert first.json()["site"]["modelMaxAgeDays"] == 30
+
+    second = _put_model_age_policy(client, "site-001", 7)
+    assert second.status_code == 200
+    assert second.json()["site"]["modelMaxAgeDays"] == 7
+
+
+def test_model_age_policy_can_be_withdrawn(tmp_path: Path) -> None:
+    """선언을 되돌리는 경로가 있어야 한다 — 되돌릴 수 없는 정책은 정책이 아니다."""
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+    _put_model_age_policy(client, "site-001", 30)
+
+    withdrawn = _put_model_age_policy(client, "site-001", None)
+
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["site"]["modelMaxAgeDays"] is None
+
+
+def test_model_age_policy_is_not_locked_by_site_status(tmp_path: Path) -> None:
+    """AOI 와 달리 현장 상태로 잠그지 않는다.
+
+    현장의 변화 속도는 매핑 시작 이후에 알게 되는 사실이고, 그때 기준을 못 고치면
+    정책이 첫 추측에 갇힌다.
+    """
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+    _transition(client, "site-001", "BASELINE_MAPPING")
+
+    assert _put_model_age_policy(client, "site-001", 14).status_code == 200
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_non_positive_age_policy_is_refused(tmp_path: Path, bad: int) -> None:
+    """0 일·음수는 '매 순간 낡음'이라 정책이 아니라 사고다."""
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+
+    response = _put_model_age_policy(client, "site-001", bad)
+
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "INVALID_SITE"
+
+
+def test_model_age_policy_unknown_site_returns_404(tmp_path: Path) -> None:
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+
+    assert _put_model_age_policy(client, "nope", 30).status_code == 404
+
+
+def test_model_age_policy_requires_sites_write_permission(tmp_path: Path) -> None:
+    client = TestClient(_build_app(DurableJournal(tmp_path / "sites.jsonl")))
+    _register(client)
+
+    assert _put_model_age_policy(client, "site-001", 30, token=_VIEWER_TOKEN).status_code == 403
+
+
+def test_model_age_policy_survives_replay(tmp_path: Path) -> None:
+    """journal 재생 후에도 선언이 남는다."""
+    journal_path = tmp_path / "sites.jsonl"
+    journal1 = DurableJournal(journal_path)
+    client = TestClient(_build_app(journal1))
+    _register(client)
+    _put_model_age_policy(client, "site-001", 14)
+    journal1.close()
+
+    reopened = SiteStore(DurableJournal(journal_path))
+
+    record = reopened.get("site-001")
+    assert record is not None
+    assert record.model_max_age_days == 14
+
+
+def test_model_age_policy_records_actor_in_the_journal(tmp_path: Path) -> None:
+    """누가 기준을 정했는지가 남는다 — 자율운영 가능 여부를 가르는 값이다."""
+    journal_path = tmp_path / "sites.jsonl"
+    client = TestClient(_build_app(DurableJournal(journal_path)))
+    _register(client)
+    _put_model_age_policy(client, "site-001", 21)
+
+    records = [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    policy_records = [r for r in records if r["kind"] == "site-model-age-policy-set"]
+
+    assert len(policy_records) == 1
+    assert policy_records[0]["actor"] == "fo-1"
+    assert policy_records[0]["maxAgeDays"] == 21
+    assert policy_records[0]["before"] is None
+
+
+def test_replay_refuses_age_policy_for_unregistered_site(tmp_path: Path) -> None:
+    """오염된 원장으로 기동하지 않는다(fail-closed) — AOI 재생과 같은 원칙."""
+    journal_path = tmp_path / "sites.jsonl"
+    journal_path.write_text(
+        json.dumps(
+            {
+                "kind": "site-model-age-policy-set",
+                "ts": datetime.now(UTC).isoformat(),
+                "actor": "fo-1",
+                "siteId": "ghost",
+                "before": None,
+                "maxAgeDays": 30,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SiteStoreRecoveryError):
+        SiteStore(DurableJournal(journal_path))

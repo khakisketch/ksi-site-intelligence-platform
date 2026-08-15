@@ -538,7 +538,7 @@ Run: `ulimit -n 8192 && uv run pytest tests/contract/test_reobservation_capture.
 
 ```bash
 uv run ruff check packages/mission-planning tests/contract/test_reobservation_capture.py
-uv run ruff format --check packages/mission-planning
+uv run ruff format packages/mission-planning/src/ksi_mission_planning/reobservation.py tests/contract/test_reobservation_capture.py
 uv run mypy
 git add packages/mission-planning tests/contract/test_reobservation_capture.py
 git commit -m "feat(mission-planning): derive reobservation capture from change signals
@@ -1148,7 +1148,7 @@ Run:
 ```bash
 ulimit -n 8192
 uv run pytest -q
-uv run ruff check . && uv run ruff format --check .
+uv run ruff check .
 uv run mypy
 cd apps/dashboard && npm run test && npm run lint && npm run build
 ```
