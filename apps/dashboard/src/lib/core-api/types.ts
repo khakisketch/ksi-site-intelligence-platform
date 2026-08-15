@@ -1095,3 +1095,84 @@ export interface DiffRasterViewResponse {
   downloadUrl: string;
   expiresAt: string;
 }
+
+// ── 변화 영역 자동 추출 (M4-E, region-extraction) ───────────────────────────
+//
+// contracts: packages/event-contracts/src/ksi_event_contracts/change_region_report.py,
+// region_extraction_policy.py. 화면은 이 값을 읽기 전용으로 표시만 한다 —
+// 판정(어느 영역이 중요한지 등)은 서버가 이미 내렸다.
+
+/** 이 계산이 실제로 쓴 추출 기준값 스냅샷 — 화면은 그대로 표시만 한다. */
+export interface RegionExtractionPolicy {
+  schemaVersion: string;
+  policyVersion: string;
+  minRegionAreaM2: number;
+  connectivity: 4 | 8;
+}
+
+/**
+ * 변화 영역 한 건. `polygon`/`convexHullPolygon`은 native CRS(지도에 못 그림) —
+ * 지도는 `convexHullPolygonWgs84`만 쓴다. hull 계산이 실패하면
+ * `aoiDraftUnavailableReason`만 채워지고 나머지 hull 필드는 전부 null이다
+ * (서버 모델 불변식, change_region_report.py `_check_hull_consistency`).
+ */
+export interface ChangeRegion {
+  regionId: string;
+  /** zoneId 자리에 regionId 를 싣는다(서버 재사용 규약). */
+  volume: ZoneVolumeDelta;
+  pixelCount: number;
+  polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  convexHullPolygon: (GeoJSON.Polygon | GeoJSON.MultiPolygon) | null;
+  convexHullPolygonWgs84: GeoJSON.Polygon | null;
+  hullOvercaptureRatio: number | null;
+  aoiDraftUnavailableReason: string | null;
+  unmeasurableRatio: number;
+}
+
+/** contracts: change_region_report.py ChangeRegionSetReport. */
+export interface ChangeRegionSetReport {
+  schemaVersion: string;
+  changeRegionSetId: string;
+  designConformanceId: string;
+  diffRasterId: string;
+  crs: string;
+  thresholdM: number;
+  extractionPolicy: RegionExtractionPolicy;
+  /** 빈 배열도 유효하다 — "변화 없음"과 "아직 계산 안 됨"은 다른 사실이다. */
+  regions: ChangeRegion[];
+  filteredRegionCount: number;
+  unmeasurableCellRatio: number;
+  unmeasurableAreaM2: number;
+  totalCellCount: number;
+  computedAt: string;
+}
+
+export interface RegionExtractionEntry {
+  report: ChangeRegionSetReport;
+  reportedBy: string | null;
+  recordedAt: string;
+}
+
+export interface RegionExtractionListView {
+  missionId: string;
+  reportCount: number;
+  /** 최신 우선. */
+  reports: RegionExtractionEntry[];
+}
+
+/**
+ * 재관찰 초안 응답 — **발급이 아니다**. AOI(볼록 껍질, WGS84)와 진단값만 준다.
+ * `verdict`가 "DRAFT_READY"가 아니면(에러 응답 경로) `aoi`는 null이다.
+ */
+export interface SpatialRefreshDraftResponse {
+  verdict: string;
+  aoi: { vertices: AoiVertex[] } | null;
+  hullOvercaptureRatio: number | null;
+  regionAreaM2: number | null;
+  netM3: number | null;
+  cutM3: number | null;
+  fillM3: number | null;
+  unmeasurableRatio: number | null;
+  siteUnmeasurableCellRatio: number | null;
+  detail: string | null;
+}

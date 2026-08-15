@@ -280,7 +280,7 @@ export default async function ReportsPage({
       {notFound ? (
         <EmptyState
           title="변화 탐지 결과가 없습니다"
-          description="두 시점의 point cloud 를 비교한 결과가 아직 보고되지 않았습니다."
+          description="두 시점을 비교한 변화 탐지 결과가 아직 보고되지 않았습니다."
         />
       ) : (
         <>

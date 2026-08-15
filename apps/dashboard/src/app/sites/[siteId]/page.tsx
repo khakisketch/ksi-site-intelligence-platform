@@ -289,6 +289,21 @@ export default async function SiteDetailPage({
           </p>
         </SectionCard>
 
+        {/* 변화 영역도 설계 대비 잔량 위에서 계산되지만(M4-E), 목적이 다르다 —
+            "지금 몇 %인가"가 아니라 "어디를 다시 봐야 하나·다음엔 어디를 찍나"다. */}
+        <SectionCard
+          title="변화 영역 · 재확인 필요"
+          action={{
+            label: "보기",
+            href: `/sites/${encodeURIComponent(site.siteId)}/changes`,
+          }}
+        >
+          <p className="text-[13px] break-keep text-ink-muted">
+            설계 대비 잔량이 크게 달라진 곳을 자동으로 찾아 지도에 보여줍니다. 영역을 골라 다음
+            비행의 촬영 범위로 바로 넘길 수 있습니다.
+          </p>
+        </SectionCard>
+
         <SectionCard
           title="이 현장의 임무"
           action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}
