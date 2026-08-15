@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T10:49:08+09:00",
+  "updated_at": "2026-08-15T11:11:33+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -1987,6 +1987,32 @@
         "같은 설계면·현재지형에 서로 다른 구역(zone)으로 설계 대비 요청을 2회 이상 연속 실행했을 때, 각 변화영역 추출 결과의 volume이 그 요청 자신의 설계 대비 총량과 일치하는지 확인",
         "불일치라면 원인(구역 폴리곤이 diff raster 계산/저장에 실제로 반영되는지, region-extraction이 zone과 무관하게 전체 raster를 대상으로 도는 것이 의도된 동작인지)을 규명하고 문서화 또는 수정"
       ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "워크플로 조사 완료(2026-08-15) — 코드 3갈래 추적 + 결정론적 pytest 재현(같은 design surface+current job, zone만 다른 요청 A/B). 결론: 버그 아님, 설계상 zone-blind. 근거: (1) run_design_conformance.py의 compute_design_conformance()가 align_and_diff(current,design)를 zones 인자 없이 항상 site 전체 extent로 계산(312-316행), write_diff_geotiff도 그 전체 배열을 그대로 저장(332-333행) — 재현에서 A/B의 diff raster object key는 다르지만(설계상 design_conformance_id별 유일, 확인됨) 저장된 바이트의 sha256이 완전히 동일(0186338c...). (2) region_extraction.py의 compute_change_regions()/run_region_extraction.py는 애초에 zone/polygon 파라미터가 없어(시그니처 확인) 항상 raster 전체를 threshold로 훑는다 — 재현에서 cut 셀이 0개여야 할 B(zone-half)에도 cutM3=900인 region이 그대로 나옴을 실측 확인. (3) 반면 design-conformance report 자신의 zone 합계(volume_delta_in_polygon, dsm_diff.py 146-219행)는 정상 — A net=200, B net=1100으로 실제로 다르게 계산됨. 조회 경로·캐시 오염은 아님(diff_raster_object_key가 design_conformance_id로 유일함을 별도 확인, region-extraction이 참조한 key도 각자 자기 것과 일치). 결론: '구역 합계'(design-conformance zones)와 '변화영역 volume'(region-extraction)은 원래 다른 것을 재는 수치 — zone 합계는 구역으로 오려낸 부분합, region-extraction은 zone과 무관하게 site 전체에서 threshold 넘는 연결영역을 찾는 것(4개 계약 모델 모두 zone/ROI 필드 없음으로 일관 확인). 코드 수정 없음(사용자 지시: 원인이 결함이 아니면 고치지 않는다).",
+      "verdict": {
+        "verdict": "pass",
+        "note": "조사·문서화 완료로 기준 충족. 코드 수정 안 함(버그 아님). API/화면이 이 의미 차이를 명시하지 않아 혼동 소지가 있다는 점만 후속 논의 필요 — 새 UI 제작은 이번 범위 밖.",
+        "at": "2026-08-15T11:08:30+09:00",
+        "reviewer": null,
+        "evidence_ref": "워크플로 wf_70382df0-695 (trace 3건 + 결정론적 pytest 재현, sha256 일치 확인)"
+      },
+      "invalidation_reason": null,
+      "parent": "autonomous-acquisition-closed-loop",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": null,
+      "created_at": "2026-08-15T10:49:08+09:00",
+      "updated_at": "2026-08-15T11:08:30+09:00"
+    },
+    {
+      "id": "region-extraction-scope-clarity",
+      "title": "변화영역 추출 scope를 UI/API에서 오해 없이 표현 — ROI와 무관하게 site 전체 대상임을 명시",
+      "completion_criteria": [
+        "변화영역(region-extraction) 결과가 설계 대비 요청의 구역(zone/ROI)과 무관하게 항상 전체 지형을 대상으로 계산된다는 사실을 화면 또는 API 응답에서 확인할 수 있다",
+        "장기적으로 ROI에 변화영역 추출 범위를 연동할지(ROI 연동 모델) 현재 방식(site 전체 스캔)을 유지할지는 이번 과제에서 결정하지 않는다 — 실제 현장(E2E-FIELD) 사용 경험을 본 뒤 별도로 결정"
+      ],
       "status": "proposed",
       "attempt": 1,
       "evidence": null,
@@ -1995,10 +2021,10 @@
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
       "ungated_attempts": 0,
-      "kind": "hardening",
+      "kind": "product",
       "verification_requested": null,
-      "created_at": "2026-08-15T10:49:08+09:00",
-      "updated_at": "2026-08-15T10:49:08+09:00"
+      "created_at": "2026-08-15T11:11:33+09:00",
+      "updated_at": "2026-08-15T11:11:33+09:00"
     }
   ],
   "risks": [
