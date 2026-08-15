@@ -243,6 +243,15 @@ def _named_length_unit_scale_to_meters(
     return scale
 
 
+# IfcRigidOperation 스키마에는 Scale 필드 자체가 없다(ifcopenshell 실측:
+# ``entity.Scale`` 접근이 AttributeError). ``getattr(op, "Scale", _NO_SCALE_FIELD)``
+# 로 그 부재를 "필드가 있는데 값이 None(=1.0 폴백, 스펙 정상)"과 구분한다 —
+# IfcMapConversion.Scale 이 아직 안 채워진 상태는 실측상 ``None`` 을 그냥
+# 돌려준다(AttributeError 아님), 그건 유효한 스펙 폴백이라 여기서 거부 대상이
+# 아니다.
+_NO_SCALE_FIELD = object()
+
+
 def _georeference_output_scale_to_meters(
     ifc_file: ifcopenshell.file,
     *,
@@ -258,15 +267,56 @@ def _georeference_output_scale_to_meters(
     TargetCRS 자체가 없는 half-set 파일은 표준 폴백을 적용할 CRS가 없다. 이 경우는
     기존 호환 동작대로 IfcOpenShell 변환 결과가 미터라고 간주한다. 호출자는
     ``has_georeferencing``과 별개로 이런 불완전 파일의 CRS 적합성을 검증해야 한다.
+
+    이 함수는 두 가지 부정확 조합도 typed 로 거부한다(둘 다 값은 유한하고
+    형상도 멀쩡해서 "정답처럼 보이는 오답"을 만드는 계열이다 — 모듈 docstring
+    "지오메트리 샘플링 방식" 절과 같은 위험):
+
+    1. **Scale ≤ 0 또는 비유한값** — ``auto_local2global`` 내부가 쓰는
+       ``element.Scale or 1`` 표현식은 Python 진리값 평가상 ``0.0`` 이 falsy라
+       잘못 기록된 0 을 조용히 1 로 치환한다. 여기서 먼저 거부해 그 폴백에
+       도달하지 못하게 한다.
+    2. **TargetCRS 가 길이 좌표계가 아닌데 MapUnit 생략 폴백을 타는 경우** —
+       ``IfcGeographicCRS``(경위도, AngleUnit/HeightUnit)는 ``MapUnit`` 자체를
+       선언하지 않는다. 그 부재를 "MapUnit 생략된 프로젝션 좌표계"와 같은
+       것으로 취급하면 경위도 각도값을 미터 오프셋으로 잘못 해석한다.
+    3. **Scale 필드가 없는 연산(IfcRigidOperation)의 project/target 단위 불일치**
+       — Scale 이 없으면 project 단위와 target 단위를 다리 놓을 방법이 없다.
+       ``MapUnit`` 생략(폴백=project 단위, 정상)과 ``MapUnit`` 이 명시적으로
+       **다른** 단위로 채워진 경우(다리 없이 못 건넘, 거부)를 구분한다.
     """
     operation = ifc_file.by_type("IfcCoordinateOperation")[0]
+    scale = getattr(operation, "Scale", _NO_SCALE_FIELD)
+    if scale is not None and scale is not _NO_SCALE_FIELD:
+        # ifcopenshell 의 동적 속성 접근은 정적으로 float 로 좁혀지지 않는다
+        # (다른 union-attr 회피와 같은 이유, 파일 상단 참조).
+        scale_value = float(scale)  # type: ignore[arg-type]
+        if not math.isfinite(scale_value) or scale_value <= 0:
+            raise IfcReferenceModelError(
+                f"{ifc_path}: {operation.is_a()}.Scale 이 유효한 양수가 아니다 "
+                f"(got {scale_value!r})"
+            )
     target_crs = getattr(operation, "TargetCRS", None)
     if target_crs is None:
         return 1.0
     map_unit = getattr(target_crs, "MapUnit", None)
     if map_unit is None:
+        if not target_crs.is_a("IfcProjectedCRS"):
+            raise IfcReferenceModelError(
+                f"{ifc_path}: TargetCRS({target_crs.is_a()})가 projected length 좌표계가 "
+                "아니다 — geographic(경위도) 좌표를 미터 좌표로 가장할 수 없다"
+            )
         return project_unit_scale
-    return _named_length_unit_scale_to_meters(map_unit, ifc_path=ifc_path)
+    map_unit_scale = _named_length_unit_scale_to_meters(map_unit, ifc_path=ifc_path)
+    if scale is _NO_SCALE_FIELD and not math.isclose(
+        map_unit_scale, project_unit_scale, rel_tol=1e-9
+    ):
+        raise IfcReferenceModelError(
+            f"{ifc_path}: {operation.is_a()} 는 Scale 필드가 없어 source/target 길이 "
+            f"단위가 다르면 다리를 놓을 수 없다 "
+            f"(project={project_unit_scale!r}, target={map_unit_scale!r})"
+        )
+    return map_unit_scale
 
 
 def sample_points_from_ifc(ifc_path: Path) -> NDArray[np.float64]:

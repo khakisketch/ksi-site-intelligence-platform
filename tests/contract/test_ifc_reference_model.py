@@ -32,6 +32,7 @@ def _build_ifc(
     length_prefix: str | None = None,
     assign_units: bool = True,
     assign_map_unit: bool = True,
+    scale_override: float | None = None,
 ) -> Path:
     """최소 IFC4 파일을 조립한다 — Project+Site+Building(+선택적 요소 지오메트리).
 
@@ -79,7 +80,13 @@ def _build_ifc(
                 "XAxisOrdinate": 0.0,
                 # IfcMapConversion.Scale 은 project unit → map unit 배율이다. map CRS
                 # (EPSG:5186)는 m이므로 mm 프로젝트는 0.001, m 프로젝트는 1.0.
-                "Scale": 0.001 if length_prefix == "MILLI" and assign_map_unit else 1.0,
+                # scale_override 는 이 자동계산을 대체한다 — 잘못된 값(0 이하)이나
+                # 단위비가 아닌 실측량(측량 결합축척)을 직접 시험할 때 쓴다.
+                "Scale": (
+                    scale_override
+                    if scale_override is not None
+                    else (0.001 if length_prefix == "MILLI" and assign_map_unit else 1.0)
+                ),
             },
         )
 
@@ -280,10 +287,17 @@ def _build_ifc_with_rigid_operation(
     tmp_path: Path,
     *,
     length_prefix: str | None = None,
+    assign_map_unit: bool = False,
+    map_unit_prefix: str | None = None,
 ) -> Path:
     """IfcRigidOperation 은 edit_georeferencing() 의 coordinate_operation 딕셔너리로
     못 채운다 — FirstCoordinate/SecondCoordinate 가 IfcMeasureValue(SELECT) 타입이라
-    맨 float 대입이 거부된다(ifcopenshell 실측). 저수준 속성 대입으로 직접 채운다."""
+    맨 float 대입이 거부된다(ifcopenshell 실측). 저수준 속성 대입으로 직접 채운다.
+
+    ``assign_map_unit=True`` 면 TargetCRS 에 명시적 MapUnit 을 붙인다 —
+    IfcRigidOperation 은 Scale 필드가 없어 project/target 단위가 다르면 다리를
+    놓을 방법이 없다(``map_unit_prefix`` 로 그 불일치를 만든다).
+    """
     # ifcopenshell 의 create_file 타입 스텁은 "IFC4X3_ADD2" 를 선언하지 않지만
     # (IFC2X3/IFC4/IFC4X3 셋만 나열) 런타임은 실제로 받는다(직접 실측 확인,
     # 결과 f.schema 는 "IFC4X3" 로 보고됨) — IfcRigidOperation 자체가 이 애드온
@@ -307,6 +321,11 @@ def _build_ifc_with_rigid_operation(
     op.FirstCoordinate = f.createIfcLengthMeasure(1000.0)
     op.SecondCoordinate = f.createIfcLengthMeasure(2000.0)
     op.Height = 50.0
+    if assign_map_unit:
+        target_crs = op.TargetCRS
+        target_crs.MapUnit = ifcopenshell.api.unit.add_si_unit(
+            f, unit_type="LENGTHUNIT", prefix=map_unit_prefix
+        )
     path = tmp_path / "rigid_operation.ifc"
     f.write(str(path))
     return path
@@ -390,6 +409,39 @@ def test_read_georeference_rejects_ifc_rigid_operation(tmp_path: Path) -> None:
     f = ifcopenshell.open(str(path))
     with pytest.raises(IfcReferenceModelError, match="IfcRigidOperation"):
         read_georeference(f)
+
+
+def test_rigid_operation_rejects_source_target_unit_mismatch(tmp_path: Path) -> None:
+    """IfcRigidOperation에는 Scale이 없으므로 mm source를 m target으로 옮길 수 없다."""
+    path = _build_ifc_with_rigid_operation(
+        tmp_path,
+        length_prefix="MILLI",
+        assign_map_unit=True,
+        map_unit_prefix=None,
+    )
+    with pytest.raises(IfcReferenceModelError, match="source/target 길이 단위"):
+        sample_points_from_ifc(path)
+
+
+def test_rigid_operation_rejects_geographic_angle_target(tmp_path: Path) -> None:
+    """geographic longitude/latitude를 metre geometry로 가장하지 않는다."""
+    path = _build_ifc_with_rigid_operation(tmp_path)
+    f = ifcopenshell.open(str(path))
+    angle_unit = ifcopenshell.api.unit.add_si_unit(f, unit_type="PLANEANGLEUNIT")
+    height_unit = ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT")
+    geographic = f.create_entity(
+        "IfcGeographicCRS",
+        Name="EPSG:4326",
+        GeodeticDatum="World Geodetic System 1984",
+        PrimeMeridian="Greenwich",
+        AngleUnit=angle_unit,
+        HeightUnit=height_unit,
+    )
+    f.by_type("IfcRigidOperation")[0].TargetCRS = geographic
+    f.write(str(path))
+
+    with pytest.raises(IfcReferenceModelError, match="projected length 좌표"):
+        sample_points_from_ifc(path)
 
 
 def test_has_georeferencing_rejects_ifc2x3() -> None:
@@ -486,6 +538,38 @@ def test_millimetre_georeference_without_map_unit_uses_project_unit(
     expected = {(1.0, 2.0, 0.05), (2.0, 2.0, 0.05), (1.0, 3.0, 0.05)}
     actual = {tuple(round(v, 6) for v in row) for row in points}
     assert actual == expected
+
+
+def test_map_conversion_rejects_non_positive_scale(tmp_path: Path) -> None:
+    """ifcopenshell의 ``Scale or 1`` fallback이 잘못된 0을 정상값으로 숨기지 못한다."""
+    path = _build_ifc(
+        tmp_path,
+        name="invalid_scale",
+        georeference={
+            "eastings": 0.0,
+            "northings": 0.0,
+            "orthogonal_height": 0.0,
+        },
+        scale_override=0.0,
+    )
+    with pytest.raises(IfcReferenceModelError, match="유효한 양수"):
+        sample_points_from_ifc(path)
+
+
+def test_map_conversion_preserves_non_unit_survey_scale(tmp_path: Path) -> None:
+    """Scale은 단위비만이 아니라 측량 결합 축척도 포함할 수 있어 원값을 존중한다."""
+    path = _build_ifc(
+        tmp_path,
+        name="survey_scale",
+        georeference={
+            "eastings": 1000.0,
+            "northings": 2000.0,
+            "orthogonal_height": 0.0,
+        },
+        scale_override=0.9996,
+    )
+    points = sample_points_from_ifc(path)
+    assert any(np.allclose(point, [1000.9996, 2000.0, 0.0]) for point in points)
 
 
 def test_metre_project_is_unchanged(tmp_path: Path) -> None:
