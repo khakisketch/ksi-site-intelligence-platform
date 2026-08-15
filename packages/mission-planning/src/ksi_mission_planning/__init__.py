@@ -18,6 +18,18 @@ from ksi_mission_planning.coverage import (
     perimeter_route,
 )
 from ksi_mission_planning.geometry import AreaOfInterest, GeoPoint
+from ksi_mission_planning.reobservation import (
+    DETAIL_ALTITUDE_FACTOR,
+    DETAIL_ESCALATION_SNR,
+    INTENSIVE_FRONT_OVERLAP,
+    INTENSIVE_SIDE_OVERLAP,
+    OVERLAP_ESCALATION_UNMEASURABLE_RATIO,
+    BaselineCapture,
+    ChangeSignals,
+    ReobservationCapturePlan,
+    ReobservationGrade,
+    derive_reobservation_capture,
+)
 from ksi_mission_planning.wpml import (
     KNOWN_DRONE_ENUM_VALUES,
     DroneProfile,
@@ -31,17 +43,26 @@ from ksi_mission_planning.wpml import (
 __all__ = [
     "DEFAULT_FRONT_OVERLAP",
     "DEFAULT_SIDE_OVERLAP",
+    "DETAIL_ALTITUDE_FACTOR",
+    "DETAIL_ESCALATION_SNR",
+    "INTENSIVE_FRONT_OVERLAP",
+    "INTENSIVE_SIDE_OVERLAP",
     "KNOWN_DRONE_ENUM_VALUES",
     "MIN_FRONT_OVERLAP",
     "MIN_SIDE_OVERLAP",
+    "OVERLAP_ESCALATION_UNMEASURABLE_RATIO",
     "AreaOfInterest",
+    "BaselineCapture",
     "CameraSpec",
     "CameraSpecError",
+    "ChangeSignals",
     "DroneProfile",
     "GeoPoint",
     "GridSpacing",
     "KmzBuildError",
     "LawnmowerResult",
+    "ReobservationCapturePlan",
+    "ReobservationGrade",
     "RouteGenerationError",
     "RouteWaypoint",
     "WaylineMissionConfig",
@@ -49,6 +70,7 @@ __all__ = [
     "build_template_kml",
     "build_waylines_wpml",
     "compute_grid_spacing",
+    "derive_reobservation_capture",
     "lawnmower_route",
     "perimeter_route",
 ]
