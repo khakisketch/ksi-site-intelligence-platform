@@ -480,6 +480,24 @@ class MissionRecordResponse(BaseModel):
     # 대해 접수된 보고가 없으면 null — "아직 안 날았다"와 "날았는데 보고가 없다"를
     # 이 필드 하나로는 구분하지 못한다는 사실 자체가 상세 화면이 보여줘야 할 정보다.
     coverage_completion_state: CompletionState | None
+    # 이 임무가 어느 분석 결과에서 나왔는가(ADR-KSI-019 G5) — plan_request 에 실려
+    # 영속되는 운영 메타데이터를 그대로 노출한다. 최초 매핑 임무·contract 단독
+    # 발급은 null. 기본값을 두지 않는다 — assignedDeviceId·coverageCompletionState
+    # 와 같은 관용구(필드는 항상 있고 값이 nullable)를 그대로 따른다.
+    derived_from: dict[str, Any] | None
+
+
+def _derivation_of(record: MissionRecord) -> dict[str, Any] | None:
+    """발급 요청에 실려 영속된 계보 — 계약이 아니라 요청에서 읽는다(``plan_request``).
+
+    ``plan_request`` 는 짝 발급에만 있다 — 계약 단독 발급·최초 매핑 임무는
+    ``None`` 이다.
+    """
+    plan_request = record.plan_request
+    if not isinstance(plan_request, dict):
+        return None
+    derived = plan_request.get("derivedFrom")
+    return derived if isinstance(derived, dict) else None
 
 
 def _to_response(
@@ -505,6 +523,7 @@ def _to_response(
         coverage_completion_state=(
             latest_report.summary.completion_state if latest_report is not None else None
         ),
+        derived_from=_derivation_of(record),
     )
 
 
@@ -519,13 +538,28 @@ def build_mission_records_router(
     @router.get("", response_model=list[MissionRecordResponse])
     def list_missions(
         site_id: str | None = Query(default=None, alias="siteId"),
+        derived_from_region: str | None = Query(default=None, alias="derivedFromRegion"),
         principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> list[MissionRecordResponse]:
+        """``derivedFromRegion`` 은 그 변화 영역에서 나온 재관측 임무만 걸러 낸다.
+
+        ``derived_from.regionId`` 는 리포트 재계산마다 값이 바뀔 수 있는
+        일반 문자열이라 원장이 인덱스를 두지 않는다 — 목록이 임무 수 규모라
+        선형 스캔 비용이 낮다.
+        """
         del principal  # 인가만 필요 — 조회 결과에 신원을 싣지 않는다.
-        return [
+        records = [
             _to_response(r, coverage_report_store=coverage_report_store)
             for r in mission_store.list(site_id=site_id)
         ]
+        if derived_from_region is not None:
+            records = [
+                r
+                for r in records
+                if r.derived_from is not None
+                and r.derived_from.get("regionId") == derived_from_region
+            ]
+        return records
 
     @router.get("/{mission_id}", response_model=MissionRecordResponse)
     def get_mission(

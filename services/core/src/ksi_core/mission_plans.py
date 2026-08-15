@@ -187,6 +187,32 @@ class WaylineParams(CamelModel):
     global_transitional_speed_ms: float
 
 
+class MissionDerivation(CamelModel):
+    """이 임무가 어느 분석 결과에서 나왔는가 — **서명 계약의 일부가 아니다.**
+
+    ``assigned_device_id``·``kmz_sha256`` 과 같은 지위의 운영 메타데이터다
+    (``MissionRecord`` 참조). 계약에 넣으면 Manifold 가 받는 신뢰 경계 안으로
+    서버측 분석 산출물이 들어가고, mission-contract 스키마 자체가 바뀐다 —
+    계보를 아는 것은 Core 의 일이지 기체의 일이 아니다.
+
+    이 필드는 ``MissionPlanRequest`` 최상위에 있고 ``request.contract``
+    (``MissionIssuanceRequest``, 서명 대상)와는 완전히 분리된 형제 필드다 —
+    :func:`build_mission_plan` 이 서명 계약을 조립할 때 ``request.contract`` 만
+    읽으므로 이 필드가 새어 들어갈 경로가 구조적으로 없다.
+
+    값의 실재를 발급 시점에 대조하지 **않는다**: 변화영역 리포트는 회전·보관
+    정책을 따로 타므로 나중에 없을 수 있고, 그때 계보 기록이 무효가 되면
+    안 된다(``coverage_reports`` 가 재생 시 임무 대조를 다시 하지 않는 것과
+    같은 이유).
+    """
+
+    source_mission_id: str = Field(min_length=1)
+    change_region_set_id: str = Field(min_length=1)
+    region_id: str = Field(min_length=1)
+    #: 초안이 제안한 등급. 운영자가 값을 고쳐도 이 필드는 "무엇을 제안받았나"로 남는다.
+    capture_grade: str | None = None
+
+
 class MissionPlanRequest(CamelModel):
     """계약 발급 요청 + 구역 + 경로/기체 파라미터 — 한 요청이 두 산출물의 단일 근원."""
 
@@ -195,6 +221,8 @@ class MissionPlanRequest(CamelModel):
     route: RouteParams
     drone: DroneProfileParams
     wayline: WaylineParams
+    #: 재관측 임무의 계보(ADR-KSI-019 G5). 최초 매핑 임무는 없다 — 선택 필드다.
+    derived_from: MissionDerivation | None = None
 
 
 def _require_wayline_takeoff_height_compatible(

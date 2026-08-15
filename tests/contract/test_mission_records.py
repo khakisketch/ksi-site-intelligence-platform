@@ -1253,3 +1253,132 @@ def test_coverage_completion_state_is_null_when_store_not_wired(tmp_path: Path) 
     assert listing.json()[0]["coverageCompletionState"] is None
 
     journal.close()
+
+
+# ── 임무 계보 (ADR-KSI-019 G5) ──────────────────────────────────────────
+
+
+def test_pair_issuance_records_the_change_region_it_came_from(tmp_path: Path) -> None:
+    """[핵심] 재관측 임무가 어느 분석 결과에서 나왔는지 원장이 안다.
+
+    없으면 "이 비행은 왜 했나"에 원장이 답하지 못하고, 폐루프가 사람의 기억에
+    의존한다.
+    """
+    client, _store, _journal = _client(tmp_path)
+    payload = _plan_request(mission_id="mission-derived-1")
+    payload["derivedFrom"] = {
+        "sourceMissionId": "mission-source-1",
+        "changeRegionSetId": "crs-1",
+        "regionId": "r-1",
+        "captureGrade": "DETAILED",
+    }
+
+    issue = client.post(
+        "/v1/missions/plans", json=payload, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+
+    assert issue.status_code == 201, issue.json()
+    detail = client.get(
+        "/v1/missions/mission-derived-1", headers=_auth_header(_VIEWER_TOKEN)
+    ).json()
+    assert detail["derivedFrom"] == {
+        "sourceMissionId": "mission-source-1",
+        "changeRegionSetId": "crs-1",
+        "regionId": "r-1",
+        "captureGrade": "DETAILED",
+    }
+
+
+def test_derivation_is_optional(tmp_path: Path) -> None:
+    """최초 매핑 임무는 계보가 없다 — 없다고 발급을 막지 않는다."""
+    client, _store, _journal = _client(tmp_path)
+
+    issue = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(mission_id="mission-no-derivation"),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+
+    assert issue.status_code == 201, issue.json()
+    detail = client.get(
+        "/v1/missions/mission-no-derivation", headers=_auth_header(_VIEWER_TOKEN)
+    ).json()
+    assert detail["derivedFrom"] is None
+
+
+def test_derivation_does_not_enter_the_signed_contract(tmp_path: Path) -> None:
+    """[핵심] 계보는 운영 메타데이터이지 서명 계약의 일부가 아니다.
+
+    ``assigned_device_id``·``kmz_sha256`` 과 같은 지위다. 계약에 넣으면 Manifold 가
+    받는 신뢰 경계 안으로 서버측 분석 산출물이 들어가고, 계약 스키마도 바뀐다.
+    """
+    client, _store, _journal = _client(tmp_path)
+    payload = _plan_request(mission_id="mission-derived-2")
+    payload["derivedFrom"] = {
+        "sourceMissionId": "mission-source-1",
+        "changeRegionSetId": "crs-1",
+        "regionId": "r-1",
+    }
+    client.post("/v1/missions/plans", json=payload, headers=_auth_header(_FIELD_OPERATOR_TOKEN))
+
+    contract = client.get(
+        "/v1/missions/mission-derived-2/contract", headers=_auth_header(_VIEWER_TOKEN)
+    ).json()
+
+    assert "derivedFrom" not in contract
+    # 계보를 담은 필드 이름이 다른 이름으로도 새지 않는지 — mission-contract
+    # 스키마가 아는 필드 밖의 것은 전부 거부한다(계약 모델 자체가 extra="forbid").
+    assert "sourceMissionId" not in contract
+    assert "changeRegionSetId" not in contract
+
+
+def test_missions_can_be_filtered_by_source_region(tmp_path: Path) -> None:
+    client, _store, _journal = _client(tmp_path)
+    derived_payload = _plan_request(mission_id="mission-from-r1")
+    derived_payload["derivedFrom"] = {
+        "sourceMissionId": "mission-source-1",
+        "changeRegionSetId": "crs-1",
+        "regionId": "r-1",
+    }
+    client.post(
+        "/v1/missions/plans", json=derived_payload, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    client.post(
+        "/v1/missions/plans",
+        json=_plan_request(mission_id="mission-unrelated"),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+
+    listed = client.get(
+        "/v1/missions",
+        params={"derivedFromRegion": "r-1"},
+        headers=_auth_header(_VIEWER_TOKEN),
+    )
+
+    assert listed.status_code == 200, listed.json()
+    assert [m["missionId"] for m in listed.json()] == ["mission-from-r1"]
+
+
+def test_idempotent_reissue_keeps_the_same_derivation(tmp_path: Path) -> None:
+    """같은 요청 재전송이 계보를 지우거나 바꾸지 않는다(멱등 재발급 경로)."""
+    client, _store, _journal = _client(tmp_path)
+    payload = _plan_request(mission_id="mission-derived-idem")
+    payload["derivedFrom"] = {
+        "sourceMissionId": "mission-source-1",
+        "changeRegionSetId": "crs-1",
+        "regionId": "r-1",
+    }
+
+    first = client.post(
+        "/v1/missions/plans", json=payload, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+    second = client.post(
+        "/v1/missions/plans", json=payload, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
+    )
+
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 200, "동일 요청 재시도는 멱등 200"
+    detail = client.get(
+        "/v1/missions/mission-derived-idem", headers=_auth_header(_VIEWER_TOKEN)
+    ).json()
+    assert detail["derivedFrom"]["regionId"] == "r-1"
