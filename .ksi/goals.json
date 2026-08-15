@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T11:39:12+09:00",
+  "updated_at": "2026-08-15T15:59:28+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2042,18 +2042,18 @@
         "기존 임무타입x현장상태 게이트(INV-052)와 모순되는 전이를 만들지 않는다",
         "contract test 로 자동 전이·노후 판정이 고정된다"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "재구성 발급/성공/매핑임무 배포가 현장 상태를 자동 전진(services/core/src/ksi_core/spatial_model.py). 노후 기준은 현장 선언(PUT /v1/sites/{id}/model-age-policy), 미선언은 AGE_POLICY_UNDECLARED 로 판정 유보. 자율운영 승인 간선은 규칙표 전수 검사로 차단. tests/contract/test_spatial_model.py 54 passed, test_sites_api.py 66 passed — 직접 실행 확인. 실기 미검증(Backend Ready).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T11:25:15+09:00"
+      "updated_at": "2026-08-15T15:59:27+09:00"
     },
     {
       "id": "aol-1-mission-execution-lifecycle",
@@ -2065,18 +2065,18 @@
         "기존 발급 멱등성·짝 산출물 규약을 깨지 않는다",
         "contract test 로 전이표와 CoverageReport 결선이 고정된다"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "MissionExecutionStatus 6종 + 별도 원장(services/core/src/ksi_core/mission_execution.py). 장비 pull/서명 activation receipt/접수된 CoverageReport 3신호 자동 결선, 사람은 DISPATCHED·CANCELLED 만 선언. 투영 원장 봉인돼도 커버리지 접수 201 유지(INV-010 권위 보존) — 그 테스트 포함 test_mission_execution.py 39 + test_coverage_reports.py 56 + test_edge_dispatch_api.py 11 passed, 직접 실행 확인.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T11:25:15+09:00"
+      "updated_at": "2026-08-15T15:59:28+09:00"
     },
     {
       "id": "aol-1-capture-auto-ingest",
@@ -2087,18 +2087,18 @@
         "ingest 완료가 ProcessingJob 발행으로 이어진다",
         "실제 기체 데이터 1회로 종단 관측된다(자기보고 불인정)"
       ],
-      "status": "proposed",
+      "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "원래 목표 서술 정정: upload_source_bundle.py 가 이미 브라우저 없는 등록·업로드·봉인·재구성 발행을 수행 중이었고 실제 구멍은 트리거였다. tools/ingest_watch.py 가 <root>/<missionId>/ 규약으로 임무별 1회 트리거(정지 유예로 복사 중 디렉터리 배제, 실패는 완료로 기록하지 않아 재시도, 건너뜀 사유 보고). tests/contract/test_ingest_watch.py 25 passed + CLI --help 실행 확인. 기체→지상 회수 경로 자체는 여전히 SD카드 수동 오프로드(ADR-KSI-013, 실기 관문).",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T11:25:15+09:00"
+      "updated_at": "2026-08-15T15:59:28+09:00"
     },
     {
       "id": "aol-1-mission-to-aircraft-delivery",

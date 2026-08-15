@@ -1,5 +1,23 @@
 # AOL-1 매핑 자율 — 소프트웨어 종단 구현 계획
 
+> **실행 완료 (2026-08-15).** 13개 Task 전부 구현·검증됐다. 커밋 10건
+> (`5a9f46d`…`5240dfd`), 전체 스위트 `3299 passed / 23 skipped / 3 xfailed`,
+> `ruff check` · `mypy`(322 files) · 대시보드 `vitest` 227 · `eslint` · `tsc` ·
+> `next build` 전부 통과 — 전부 직접 실행 확인.
+>
+> **완료 등급은 `Backend Ready` + 일부 `Product Ready`(대시보드)이고 `HIL Proven`
+> 이 아니다**(ADR-KSI-018 완료 판정 규율). 실기 비행 0회이며 종단 시험의 커버리지
+> 보고·재구성 워커는 계약대로 행동하는 대역이다.
+>
+> **계획 대비 달라진 것 두 가지** — 실측이 계획을 정정했다:
+> 1. `ruff format --check` 는 이 저장소의 게이트가 **아니다**(CI 가 안 돌리고 170개
+>    파일이 이미 통과 못 한다). Global Constraints 를 그에 맞게 고쳤다.
+> 2. Task 11(G4)의 전제가 좁아졌다 — 브라우저 없는 업로더는 이미 있었고 실제 구멍은
+>    트리거였다. ADR-KSI-019 §4 의 G4 서술도 함께 정정했다.
+>
+> 아래 본문은 실행 당시의 계획 원문이다(체크박스는 갱신하지 않았다 — 계획과 실제
+> 결과를 섞으면 무엇이 계획이었는지 알 수 없게 된다). 실제 결과는 ADR-KSI-019 §4·§5.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 현장 경계에서 시작해 매핑 임무 발급 → 실행 상태 추적 → 촬영 자동 수집 → 재구성 성공 → 현장 상태 자동 전진까지, 사람이 화면 버튼을 눌러 상태를 옮기지 않아도 서버가 스스로 판단하는 AOL-1 루프를 소프트웨어로 완주한다.
