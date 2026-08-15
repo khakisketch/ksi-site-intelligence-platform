@@ -1,5 +1,25 @@
 # AOL-3 Unit 1 — 지형추종 고도 계획기 Implementation Plan
 
+> **실행 완료 (2026-08-15).** Task 1·2 전부 구현·검증됐다. 커밋 2건
+> (`f5e052b`, `de45137`), 관련 테스트 15건 전부 통과(geo-spatial 7 + mission-planning 8),
+> `ruff check`·`mypy` 통과, 전체 스위트 `3337 passed`(회귀 없음) — 전부 직접 실행 확인.
+> `test_anti_circularity_gate.py` 도 통과(D3 반순환 불변식 유지).
+>
+> **계획 대비 달라진 것 두 가지** — 둘 다 실제로 테스트를 돌려서 발견했다:
+> 1. `TerrainGrid` 는 스펙이 말한 "GeoidGrid 와 완전히 동형"보다 더 많은 일을 한다 —
+>    DTM/DSM 은 보통 투영좌표계라 질의 지점을 재투영하는 단계, 그리고 nodata 센티널
+>    값을 표고로 잘못 읽지 않도록 마스킹하는 단계가 필요했다(계획 문서 작성 시점에
+>    이미 반영해 코드와 일치).
+> 2. `elevation_at` 의 경계 판정에 부동소수 허용오차가 필요했다 — WGS84↔투영좌표계
+>    왕복 재투영이 정확히 0을 내지 않고 ~1e-9 수준 잡음을 남겨, 격자 경계에 정확히
+>    걸친 정상 지점이 "범위 밖"으로 잘못 거부됐다(첫 테스트 실행에서 실제로 재현·확인).
+>    허용오차 추가 + 명시적 clamp 로 고쳤다 — clamp 없이 허용오차만 넓히면 음수
+>    인덱스가 반대쪽 끝 셀을 조용히 읽는 별개의 버그가 생긴다.
+>
+> **명시적으로 안 한 것** (계획 그대로) — 실제 KMZ 발급 경로(`wpml.py`)에 잇지 않았다
+> (그 파일은 지금 웨이포인트당 고도를 하나로만 받는다). Core 쪽에서 현장 DTM을 찾아
+> 이 계산기에 먹이는 배선도 없다(소비자가 아직 없다). 둘 다 후속 작업.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 공간모델(DTM/DSM)에서 임의 지점의 표고를 읽는 유틸과, 그 표고로부터 웨이포인트별
