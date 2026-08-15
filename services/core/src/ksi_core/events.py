@@ -476,6 +476,29 @@ def _verify_critical_evidence(
             )
 
     evidence = record.bundle.get("evidence") or {}
+    # riskField/trajectory/viewpointHistory 세 필드만 — clips 는 대상이 아니다
+    # (사람이 직접 촬영본을 첨부하는 경로는 그대로 열려 있어야 한다). 이
+    # 세 필드는 "기계가 계산한 실제 위험 근거"를 요구하는데(INV-021), 등록
+    # 경로 자체가 장비 신원을 대조하지 않으면 그 요구가 형식뿐이 된다 — 확정을
+    # 여는 사람이 자기 손으로 만든 값을 그대로 확정 근거로 쓸 수 있었다
+    # (risk critical-event-riskfield-evidence-no-provenance-binding, 2026-08-14
+    # 실제 HTTP PoC 로 재현: 동일 FIELD_OPERATOR 계정이 임의 RiskField JSON을
+    # 올리고 그대로 CRITICAL 확정까지 통과시켰다).
+    for field_name in _CRITICAL_ARTIFACT_FIELDS:
+        referenced_id = evidence.get(field_name)
+        if not isinstance(referenced_id, str) or not referenced_id:
+            continue  # 형식 검사는 아래 개별 검증(리스크필드)이나 위 루프가 이미 담당한다.
+        referenced_artifact = by_id.get(referenced_id)
+        if referenced_artifact is not None and not referenced_artifact.device_bound:
+            return _CriticalEvidenceCheck(
+                EventVerdict.EVIDENCE_INCOMPLETE,
+                detail=(
+                    f"CRITICAL 증거 artifact {referenced_id!r}({field_name})는 장비 신원이 "
+                    "대조되는 경로로 등록되지 않았다 — 사람이 임의로 채운 값일 수 있어 "
+                    "CRITICAL 확정 근거로 쓸 수 없다"
+                ),
+            )
+
     risk_field_id = evidence.get("riskFieldArtifact")
     if not isinstance(risk_field_id, str) or not risk_field_id:
         return _CriticalEvidenceCheck(
@@ -855,6 +878,9 @@ class EventStore:
                 registered_at=_require_aware_iso(record["ts"], "ts", event_key),
                 registered_by=record["registeredBy"],
                 content_digest=content_digest,
+                # 이 필드가 없는 원장(이 수정 이전에 기록된 줄)은 미결속으로
+                # 취급한다 — 없는 사실을 있는 것으로 승격하지 않는다.
+                device_bound=bool(record.get("deviceBound", False)),
             )
             self._events[event_key] = replace(
                 existing,
@@ -1309,6 +1335,7 @@ class EventStore:
         registered_by: str,
         now: datetime,
         content_digest: str | None = None,
+        device_bound: bool = False,
     ) -> EvidenceRegistration:
         """증거물 1건을 원장에 등록하고 그 객체 키를 돌려준다.
 
@@ -1353,6 +1380,7 @@ class EventStore:
                 "objectKey": object_key,
                 "contentType": content_type,
                 "registeredBy": registered_by,
+                "deviceBound": device_bound,
             }
             if content_digest is not None:
                 record["contentDigest"] = content_digest
@@ -1541,6 +1569,9 @@ class EvidenceSummary(CamelModel):
     content_type: str
     registered_at: datetime
     registered_by: str
+    #: 장비 신원이 대조되는 경로로 등록됐는가 — 화면이 "사람이 올린 값"과
+    #: "장비가 올린 값"을 구분해 보여줄 수 있게 노출한다.
+    device_bound: bool
     tombstoned_at: datetime | None
     tombstone_reason: str | None
 
@@ -1571,6 +1602,7 @@ class EvidenceViewResponse(CamelModel):
     expires_at: datetime
     registered_at: datetime
     registered_by: str
+    device_bound: bool
 
 
 def _to_summary(record: EventRecord) -> EventSummaryResponse:
@@ -1616,6 +1648,7 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
                 content_type=a.content_type,
                 registered_at=a.registered_at,
                 registered_by=a.registered_by,
+                device_bound=a.device_bound,
                 tombstoned_at=a.tombstoned_at,
                 tombstone_reason=a.tombstone_reason,
             )
@@ -1777,6 +1810,7 @@ def _mount_evidence_routes(router: APIRouter, store: EventStore, storage: Eviden
             expires_at=expires_at(now, DEFAULT_VIEW_TTL),
             registered_at=artifact.registered_at,
             registered_by=artifact.registered_by,
+            device_bound=artifact.device_bound,
         )
 
 

@@ -192,14 +192,23 @@ def _risk_field_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
-def _register_critical_artifacts(store: EventStore, storage: FakeStorage) -> bytes:
-    for artifact_id, content_type in (
-        ("clip-01", "video/mp4"),
-        ("risk-1", "application/json"),
-        ("trajectory-1", "application/octet-stream"),
-        ("viewpoint-1", "application/octet-stream"),
+def _register_critical_artifacts(
+    store: EventStore, storage: FakeStorage, *, device_bound: bool = True
+) -> bytes:
+    """CRITICAL 확정을 통과할 4건을 등록한다.
+
+    ``device_bound`` 는 riskField/trajectory/viewpointHistory 세 필드에만
+    적용한다(clip 은 사람이 직접 첨부해도 되는 경로라 대상이 아니다) — 기본값
+    True 는 "장비가 실제로 올린 것"이라는 정상 경로를 흉내 낸다. False 로
+    호출하면 그 반대(사람이 직접 채운 값)를 재현해 게이트가 거부하는지 본다.
+    """
+    for artifact_id, content_type, bound in (
+        ("clip-01", "video/mp4", False),
+        ("risk-1", "application/json", device_bound),
+        ("trajectory-1", "application/octet-stream", device_bound),
+        ("viewpoint-1", "application/octet-stream", device_bound),
     ):
-        result = _register(store, artifact_id, content_type=content_type)
+        result = _register(store, artifact_id, content_type=content_type, device_bound=bound)
         assert result.verdict is EvidenceVerdict.REGISTERED
     raw = json.dumps(
         _risk_field_payload(),
@@ -290,6 +299,7 @@ def _register(store: EventStore, artifact_id: str = "clip-01", **kwargs: Any) ->
         content_type=kwargs.pop("content_type", "video/mp4"),
         registered_by=kwargs.pop("registered_by", "op-admin"),
         now=kwargs.pop("now", datetime.now(UTC)),
+        device_bound=kwargs.pop("device_bound", False),
     )
 
 
@@ -508,6 +518,40 @@ def test_critical_confirmation_accepts_risk_field_v1_1_during_transition(
     assert snapshot["schemaVersion"] == "1.1"
     assert snapshot["geometryFormat"] == "EXTRUDED_POLYGON"
     assert snapshot["contentSha256"] == hashlib.sha256(raw).hexdigest()
+
+
+def test_critical_confirmation_rejects_artifacts_not_registered_through_a_device_bound_route(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """[핵심] 사람이 손으로 채운 RiskField 값으로는 CRITICAL 확정이 통과하지 않는다.
+
+    risk critical-event-riskfield-evidence-no-provenance-binding — 이전에는
+    EVENTS_TRIAGE 권한 하나(운영자 계정)로 증거 등록과 CRITICAL 확정을 모두 할
+    수 있어서, 같은 계정이 임의 RiskField JSON을 올리고 그대로 확정까지
+    통과시킬 수 있었다. 여기서는 완전히 유효한 RiskField 원문을 올리되(내용
+    자체는 흠이 없다), 장비 신원이 대조되는 경로가 아니라 사람이 쓰는 일반
+    경로로 등록한다 — 그래도 거부돼야 한다.
+    """
+    _project_critical_finding(store)
+    raw = _register_critical_artifacts(store, storage, device_bound=False)
+    del raw
+    before = store.get("dev-1::evt-1")
+    assert before is not None
+
+    response = _client(store, storage, tmp_path).post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={
+            "targetStatus": "CONFIRMED_EVENT",
+            "reason": "RiskField 원문과 현장 증거 확인",
+            "expectedBundleDigest": payload_digest(before.bundle),
+        },
+        headers=_auth(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "EVIDENCE_INCOMPLETE"
+    assert "장비 신원" in response.json()["detail"]
+    assert store.get("dev-1::evt-1").status is EventStatus.FINDING  # type: ignore[union-attr]
 
 
 def test_critical_confirmation_requires_registered_artifacts(

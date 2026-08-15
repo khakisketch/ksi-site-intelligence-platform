@@ -589,6 +589,9 @@ def _mount_edge_evidence_route(
                 registered_by=edge.principal_id,
                 now=now,
                 content_digest=request.content_digest,
+                # 이 라우트만 진입 시점에 이미 event.edge_device_id == edge.device_id
+                # 를 확인했다(위) — 그래서 여기서만 device_bound=True 다.
+                device_bound=True,
             )
         except JournalSealedError as exc:
             raise HTTPException(status_code=503, detail="EVENT_STORE_UNAVAILABLE") from exc

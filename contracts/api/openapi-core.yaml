@@ -4404,12 +4404,17 @@ components:
     EvidenceSummary:
       description: 상세 응답에 실리는 증거 1건. tombstonedAt 이 있으면 폐기된 것이다.
       type: object
-      required: [artifactId, contentType, registeredAt, registeredBy, tombstonedAt, tombstoneReason]
+      required:
+        [artifactId, contentType, registeredAt, registeredBy, deviceBound, tombstonedAt,
+         tombstoneReason]
       properties:
         artifactId: { type: string }
         contentType: { type: string }
         registeredAt: { type: string, format: date-time }
         registeredBy: { type: string }
+        # 장비 신원이 대조되는 경로(edge-sync)로 등록됐는가 — CRITICAL 확정의
+        # riskField/trajectory/viewpointHistory 증거는 이게 참이어야 통과한다.
+        deviceBound: { type: boolean }
         tombstonedAt: { type: [string, 'null'], format: date-time }
         tombstoneReason: { type: [string, 'null'] }
     EvidenceUploadResponse:
@@ -4427,7 +4432,8 @@ components:
         expiresAt: { type: string, format: date-time }
     EvidenceViewResponse:
       type: object
-      required: [artifactId, contentType, viewUrl, expiresAt, registeredAt, registeredBy]
+      required:
+        [artifactId, contentType, viewUrl, expiresAt, registeredAt, registeredBy, deviceBound]
       properties:
         artifactId: { type: string }
         contentType: { type: string }
@@ -4435,6 +4441,7 @@ components:
         expiresAt: { type: string, format: date-time }
         registeredAt: { type: string, format: date-time }
         registeredBy: { type: string }
+        deviceBound: { type: boolean }
     MissionRecordResponse:
       description: >-
         발급된 임무의 조회 표현. ADR-KSI-007 이원 산출물 중 이 레코드가 가리키는

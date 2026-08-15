@@ -170,6 +170,20 @@ class EvidenceArtifact:
     # unchanged, but when it is present it becomes part of the durable artifact
     # identity and makes a retry with different bytes a conflict.
     content_digest: str | None = None
+    # True only when this artifact was registered through the device-bound
+    # edge-sync route, which checks the calling device's identity against the
+    # event's own edge_device_id before writing anything (see
+    # ksi_core.edge_dispatch._mount_edge_evidence_route). The plain operator
+    # route (ksi_core.events._mount_evidence_routes) never sets this — a human
+    # holding EVENTS_TRIAGE has no device identity to bind. This is the fact
+    # CRITICAL confirmation's RiskField gate checks before trusting
+    # evidence.riskFieldArtifact/trajectoryArtifact/viewpointHistoryArtifact
+    # (risk critical-event-riskfield-evidence-no-provenance-binding): without
+    # it, the same account that confirms CRITICAL could also have fabricated
+    # the artifact it confirms against. Defaults to False so replaying a
+    # journal written before this field existed conservatively treats old
+    # evidence as unbound, not as trusted.
+    device_bound: bool = False
     tombstoned_at: datetime | None = None
     tombstone_reason: str | None = None
 

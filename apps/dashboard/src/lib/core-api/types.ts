@@ -161,6 +161,8 @@ export interface EvidenceSummary {
   contentType: string;
   registeredAt: string;
   registeredBy: string;
+  /** 장비 신원이 대조되는 경로로 등록됐는가 — CRITICAL 확정용 위험 증거는 이게 참이어야 한다. */
+  deviceBound: boolean;
   /** 값이 있으면 보관 정책으로 폐기된 것 — "없음"과 구분해서 보여준다. */
   tombstonedAt: string | null;
   tombstoneReason: string | null;
@@ -195,6 +197,7 @@ export interface EvidenceViewResponse {
   expiresAt: string;
   registeredAt: string;
   registeredBy: string;
+  deviceBound: boolean;
 }
 
 export interface EventTransitionInput {
