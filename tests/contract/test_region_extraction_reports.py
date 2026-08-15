@@ -376,6 +376,38 @@ def test_spatial_refresh_draft_returns_a_real_area_of_interest(fixture: Fixture)
     assert "missionId" not in body
 
 
+def test_spatial_refresh_draft_without_a_baseline_says_why_instead_of_guessing(
+    fixture: Fixture,
+) -> None:
+    """[핵심] 직전 촬영 조건을 모르면 지어내지 않는다(ADR-KSI-019 G5).
+
+    이 fixture 의 임무(``_CURRENT_MISSION_ID``)는 계약 단독 발급
+    (``artifactKind="contract"``)이라 ``planRequest`` 가 없어 고도·중복도·카메라를
+    알 수 없다. 그때 기본값을 꽂으면 그 값이 어디서 왔는지 아무도 모르는 채로
+    비행 계획이 된다 — ``ChangeRegion.aoi_draft_unavailable_reason`` 이 hull 실패를
+    다루는 방식과 같은 관용구로 사유를 낸다.
+    """
+    request = fixture.request()
+    report = fixture.valid_report(request)
+    fixture.reports.record(_CURRENT_MISSION_ID, report, now=datetime.now(UTC))
+    client = TestClient(fixture.app())
+
+    response = client.get(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction/"
+        f"{request.change_region_set_id}/regions/r-1/spatial-refresh-draft",
+        headers=_auth(_VIEWER_TOKEN),
+    )
+
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["verdict"] == "DRAFT_READY"
+    assert body["aoi"] is not None  # AOI 는 여전히 나온다 — 촬영 계획만 모른다
+    assert body["captureGrade"] is None
+    assert body["captureAltitudeM"] is None
+    assert body["captureUnavailableReason"] == "BASELINE_CAPTURE_UNKNOWN"
+    assert body["captureRationale"] == []
+
+
 def test_spatial_refresh_draft_is_explicit_when_the_hull_is_unavailable(
     fixture: Fixture,
 ) -> None:

@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 from dataclasses import dataclass
@@ -43,6 +44,17 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_event_contracts.change_region_report import ChangeRegion, ChangeRegionSetReport
 from ksi_event_contracts.region_extraction_policy import current_region_extraction_policy
+from ksi_mission_contracts.models import FlightEnvelope
+from ksi_mission_planning import (
+    DEFAULT_FRONT_OVERLAP,
+    DEFAULT_SIDE_OVERLAP,
+    BaselineCapture,
+    CameraSpec,
+    CameraSpecError,
+    ChangeSignals,
+    ReobservationCapturePlan,
+    derive_reobservation_capture,
+)
 from ksi_mission_planning.geometry import AreaOfInterest, GeoPoint
 from pydantic import ValidationError
 
@@ -60,12 +72,20 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.design_conformance_reports import DesignConformanceStore
-    from ksi_core.mission_records import MissionStore
+    from ksi_core.mission_records import MissionRecord, MissionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
+
+logger = logging.getLogger(__name__)
 
 #: 세 곳의 문턱값이 같은지 볼 때의 허용 오차 — ``design_conformance_report.
 #: _THRESHOLD_TOLERANCE_M`` 과 같은 자릿수.
 _THRESHOLD_TOLERANCE_M = 1e-12
+
+#: 직전 촬영 조건을 알 수 없을 때의 사유 코드. ``ChangeRegion.
+#: aoi_draft_unavailable_reason`` 과 같은 관용구다 — 모르는 값을 기본값으로
+#: 채우지 않고 "모른다"를 코드로 낸다.
+_BASELINE_UNKNOWN = "BASELINE_CAPTURE_UNKNOWN"
+_CAPTURE_DERIVATION_FAILED = "CAPTURE_DERIVATION_FAILED"
 
 
 class RegionExtractionVerdict(StrEnum):
@@ -353,6 +373,15 @@ class RegionExtractionStore:
                     return entry
         return None
 
+    def mission_of(self, mission_id: str) -> MissionRecord | None:
+        """그 임무의 발급 기록 — 재관찰 초안이 직전 촬영 조건을 읽는 유일한 통로.
+
+        이 저장소가 이미 물고 있는 ``mission_store`` 를 라우터에 노출하는 좁은
+        접근자다(``sealed_reason`` 과 같은 관용구) — 라우터가 사설 속성
+        (``store._mission_store``)에 직접 닿지 않게 한다.
+        """
+        return self._mission_store.get(mission_id)
+
 
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
@@ -379,7 +408,13 @@ class SpatialRefreshDraftVerdict(StrEnum):
 
 
 class SpatialRefreshDraftResponse(CamelModel):
-    """재관찰 초안 — "발급됨" 이 아니다(모듈 docstring). AOI 만 준다."""
+    """재관찰 초안 — "발급됨" 이 아니다(모듈 docstring). AOI + 촬영 계획 초안을 준다.
+
+    촬영 계획 필드(``capture*``)는 :func:`~ksi_mission_planning.
+    derive_reobservation_capture` 의 순수 도출 결과다(ADR-KSI-019 G5) — 최종
+    게이트가 아니라 **제안**이다. 직전 촬영 조건을 알 수 없으면(계약 단독 발급
+    등) ``captureUnavailableReason`` 만 채우고 나머지 ``capture*`` 는 null 이다.
+    """
 
     verdict: str
     aoi: dict[str, Any] | None = None
@@ -390,6 +425,18 @@ class SpatialRefreshDraftResponse(CamelModel):
     fill_m3: float | None = None
     unmeasurable_ratio: float | None = None
     site_unmeasurable_cell_ratio: float | None = None
+    capture_grade: str | None = None
+    capture_altitude_m: float | None = None
+    capture_front_overlap: float | None = None
+    capture_side_overlap: float | None = None
+    capture_gsd_m: float | None = None
+    baseline_gsd_m: float | None = None
+    capture_signal_to_noise: float | None = None
+    #: 왜 이 등급인지 사람이 읽는 근거 문장들. 도출이 성립했으면 절대 비지 않는다.
+    capture_rationale: list[str] = []
+    #: 도출이 성립하지 않은 사유. ``BASELINE_CAPTURE_UNKNOWN``(직전 촬영 조건을
+    #: 모른다) 또는 ``CAPTURE_DERIVATION_FAILED``(조건은 있으나 도출이 실패했다).
+    capture_unavailable_reason: str | None = None
     detail: str | None = None
 
 
@@ -403,6 +450,40 @@ def _entry_view(entry: RecordedRegionExtraction) -> RegionExtractionEntry:
 
 def _find_region(report: ChangeRegionSetReport, region_id: str) -> ChangeRegion | None:
     return next((r for r in report.regions if r.region_id == region_id), None)
+
+
+def _baseline_capture_of(record: MissionRecord) -> BaselineCapture | None:
+    """그 임무의 발급 요청에서 직전 촬영 조건을 읽는다 — 없으면 ``None``.
+
+    ``plan_request`` 는 짝 발급(``artifact_kind="pair"``)에만 있다. 계약 단독
+    발급은 경로가 없으므로 고도·카메라도 없다. 요청이 카메라를 직접 지정하지
+    않고 간격(spacing/captureInterval)을 직접 준 경로(INV-015 의 "직접 지정
+    경로")도 GSD 를 계산할 근거가 없으므로 모른다고 답한다 — 기본값을 지어내지
+    않는다.
+    """
+    plan_request = record.plan_request
+    if not isinstance(plan_request, dict):
+        return None
+    route = plan_request.get("route")
+    if not isinstance(route, dict):
+        return None
+    camera = route.get("camera")
+    if not isinstance(camera, dict):
+        return None
+    try:
+        return BaselineCapture(
+            altitude_m=float(route["altitudeM"]),
+            front_overlap=float(camera.get("frontOverlap", DEFAULT_FRONT_OVERLAP)),
+            side_overlap=float(camera.get("sideOverlap", DEFAULT_SIDE_OVERLAP)),
+            camera=CameraSpec(
+                sensor_width_mm=float(camera["sensorWidthMm"]),
+                focal_length_mm=float(camera["focalLengthMm"]),
+                image_width_px=int(camera["imageWidthPx"]),
+                image_height_px=int(camera["imageHeightPx"]),
+            ),
+        )
+    except (KeyError, TypeError, ValueError, CameraSpecError):
+        return None
 
 
 def _aoi_from_hull_wgs84(hull_polygon_wgs84: dict[str, Any]) -> AreaOfInterest:
@@ -511,6 +592,40 @@ def build_region_extraction_router(store: RegionExtractionStore) -> APIRouter:
                 detail=f"이 영역의 hull 이 유효한 재관찰 구역을 만들지 못한다: {exc}",
             ) from exc
 
+        capture: ReobservationCapturePlan | None = None
+        capture_unavailable: str | None = None
+        mission = store.mission_of(mission_id)
+        baseline = _baseline_capture_of(mission) if mission is not None else None
+        if baseline is None or mission is None:
+            capture_unavailable = _BASELINE_UNKNOWN
+        else:
+            try:
+                envelope_raw = (mission.contract or {}).get("flightEnvelope")
+                if not isinstance(envelope_raw, dict):
+                    raise ValueError("계약에 flightEnvelope 이 없다")  # noqa: TRY301
+                capture = derive_reobservation_capture(
+                    baseline=baseline,
+                    signals=ChangeSignals(
+                        area_m2=region.volume.area_m2,
+                        cut_m3=region.volume.cut_m3,
+                        fill_m3=region.volume.fill_m3,
+                        volume_threshold_m=region.volume.threshold_m,
+                        unmeasurable_ratio=region.unmeasurable_ratio,
+                    ),
+                    envelope=FlightEnvelope.model_validate(envelope_raw),
+                )
+            except (ValueError, ValidationError) as exc:
+                # 도출 실패가 AOI 초안까지 죽이지 않는다 — AOI 는 그 자체로 유용하다.
+                capture_unavailable = _CAPTURE_DERIVATION_FAILED
+                logger.warning(
+                    "재관측 촬영 계획 도출 실패 mission=%s changeRegionSetId=%s "
+                    "regionId=%s: %s",
+                    mission_id,
+                    change_region_set_id,
+                    region_id,
+                    exc,
+                )
+
         return SpatialRefreshDraftResponse(
             verdict=SpatialRefreshDraftVerdict.DRAFT_READY.value,
             aoi=aoi.model_dump(by_alias=True, mode="json"),
@@ -521,6 +636,15 @@ def build_region_extraction_router(store: RegionExtractionStore) -> APIRouter:
             fill_m3=region.volume.fill_m3,
             unmeasurable_ratio=region.unmeasurable_ratio,
             site_unmeasurable_cell_ratio=entry.report.unmeasurable_cell_ratio,
+            capture_grade=capture.grade.value if capture is not None else None,
+            capture_altitude_m=capture.altitude_m if capture is not None else None,
+            capture_front_overlap=capture.front_overlap if capture is not None else None,
+            capture_side_overlap=capture.side_overlap if capture is not None else None,
+            capture_gsd_m=capture.gsd_m if capture is not None else None,
+            baseline_gsd_m=capture.baseline_gsd_m if capture is not None else None,
+            capture_signal_to_noise=capture.signal_to_noise if capture is not None else None,
+            capture_rationale=list(capture.rationale) if capture is not None else [],
+            capture_unavailable_reason=capture_unavailable,
         )
 
     return router
