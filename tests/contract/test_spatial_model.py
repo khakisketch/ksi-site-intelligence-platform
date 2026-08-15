@@ -706,3 +706,303 @@ def test_suspended_site_is_not_advanced(tmp_path: Any) -> None:
 
     assert outcome is SiteAdvanceOutcome.ILLEGAL_FROM_CURRENT
     assert site_store.get("site-a").status is SiteStatus.SUSPENDED
+
+
+# --- 매핑 임무 배포 → 매핑 시작 ------------------------------------------------
+
+
+def test_mapping_mission_dispatch_starts_baseline_mapping(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+    from ksi_domain.enums import MissionType
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+
+    outcome = lifecycle.advance_for_mission_dispatched(
+        "site-a", MissionType.BASELINE_MAPPING, mission_id="m-1", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ADVANCED
+    assert site_store.get("site-a").status is SiteStatus.BASELINE_MAPPING
+
+
+def test_remap_required_also_starts_baseline_mapping(tmp_path: Any) -> None:
+    """재매핑 지시를 받은 현장에 매핑 임무가 배포되면 그것이 곧 재매핑 시작이다."""
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+    from ksi_domain.enums import MissionType
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_VALIDATION)
+    site_store.transition(
+        "site-a", SiteStatus.REMAP_REQUIRED, evidence="e", reason="r", actor="op", now=_NOW
+    )
+
+    outcome = lifecycle.advance_for_mission_dispatched(
+        "site-a", MissionType.SURVEY_GRADE_MAPPING, mission_id="m-2", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ADVANCED
+    assert site_store.get("site-a").status is SiteStatus.BASELINE_MAPPING
+
+
+@pytest.mark.parametrize(
+    "mission_type_value",
+    ["AUTONOMOUS_PATROL", "SPATIAL_REFRESH", "ASSET_INSPECTION", "INCIDENT_SURVEY"],
+)
+def test_non_mapping_mission_dispatch_does_not_move_the_site(
+    tmp_path: Any, mission_type_value: str
+) -> None:
+    """[핵심] 순찰·재관측·사고조사 배포가 현장을 매핑 시작으로 되돌리지 않는다.
+
+    특히 INCIDENT_SURVEY 는 UNMAPPED 에서도 발급 가능하지만(INV-052 의 보수적 추론)
+    지도를 만드는 임무가 아니다 — 사고조사 한 번이 현장을 전진시키면 그 추론이
+    상태머신까지 번진다.
+    """
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+    from ksi_domain.enums import MissionType
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+
+    outcome = lifecycle.advance_for_mission_dispatched(
+        "site-a", MissionType(mission_type_value), mission_id="m-3", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.NO_RULE
+    assert site_store.get("site-a").status is SiteStatus.UNMAPPED
+
+
+def test_mapping_dispatch_on_an_already_mapping_site_is_already_past(tmp_path: Any) -> None:
+    """두 번째 매핑 임무 배포가 진행 중인 현장을 되돌리지 않는다."""
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+    from ksi_domain.enums import MissionType
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path)
+    _advance_site(site_store, SiteStatus.MODEL_PROCESSING)
+
+    outcome = lifecycle.advance_for_mission_dispatched(
+        "site-a", MissionType.BASELINE_MAPPING, mission_id="m-2", now=_NOW
+    )
+
+    assert outcome is SiteAdvanceOutcome.ALREADY_PAST
+    assert site_store.get("site-a").status is SiteStatus.MODEL_PROCESSING
+
+
+# --- 노후 스윕 ---------------------------------------------------------------
+
+
+def _aged_epoch(days: int = 400) -> ProcessingJobRecord:
+    return _record(
+        job_id="j-aged",
+        site_id="site-a",
+        updated_at=_NOW - timedelta(days=days),
+        with_source=True,
+    )
+
+
+def test_staleness_sweep_moves_patrol_ready_to_model_stale(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op", now=_NOW)
+
+    outcome = lifecycle.sweep_staleness("site-a", now=_NOW)
+
+    assert outcome is SiteAdvanceOutcome.ADVANCED
+    assert site_store.get("site-a").status is SiteStatus.MODEL_STALE
+
+
+def test_staleness_sweep_does_nothing_without_a_declared_policy(tmp_path: Any) -> None:
+    """[핵심] 노후 기준을 선언하지 않은 현장을 서버가 임의로 낡았다고 하지 않는다.
+
+    기준을 지어내면 그 숫자가 근거 없이 현장의 자율운영을 끊는다.
+    """
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+
+    outcome = lifecycle.sweep_staleness("site-a", now=_NOW)
+
+    assert outcome is SiteAdvanceOutcome.NO_RULE
+    assert site_store.get("site-a").status is SiteStatus.PATROL_READY
+
+
+def test_staleness_sweep_leaves_a_fresh_model_alone(tmp_path: Any) -> None:
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path, records=[_aged_epoch(days=2)])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op", now=_NOW)
+
+    assert lifecycle.sweep_staleness("site-a", now=_NOW) is SiteAdvanceOutcome.NO_RULE
+    assert site_store.get("site-a").status is SiteStatus.PATROL_READY
+
+
+def test_staleness_sweep_does_not_touch_sites_outside_patrol(tmp_path: Any) -> None:
+    """매핑·처리·검증 중인 현장은 건드리지 않는다 — 노후가 이미 진행 중 작업으로 표현돼 있다."""
+    from ksi_core.spatial_model import SiteAdvanceOutcome
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path, records=[_aged_epoch()])
+    site_store.set_model_age_policy("site-a", max_age_days=1, actor="op", now=_NOW)
+
+    assert lifecycle.sweep_staleness("site-a", now=_NOW) is SiteAdvanceOutcome.NO_RULE
+    assert site_store.get("site-a").status is SiteStatus.UNMAPPED
+
+
+def test_staleness_sweep_records_the_age_evidence(tmp_path: Any) -> None:
+    """왜 낡았다고 판정했는지가 원장에 남는다 — 자율운영을 끊는 전이다."""
+    import json
+
+    lifecycle, site_store = _lifecycle_pair(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op", now=_NOW)
+
+    lifecycle.sweep_staleness("site-a", now=_NOW)
+
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "sites.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    last = [e for e in entries if e["kind"] == "site-transitioned"][-1]
+    assert last["after"] == "MODEL_STALE"
+    assert "j-aged" in last["evidence"]
+    assert "maxAge=30d" in last["evidence"]
+
+
+# --- 노후 스윕 표면 -----------------------------------------------------------
+
+
+def _sweep_client(tmp_path: Any, *, records: list[ProcessingJobRecord] | None = None) -> Any:
+    """조회 + 스윕 표면을 함께 장착한 조립(lifecycle 주입)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from ksi_core.auth import (
+        AuthRegistry,
+        Principal,
+        PrincipalKind,
+        PrincipalTokenRecord,
+        Role,
+        mount_auth,
+    )
+    from ksi_core.durable_journal import DurableJournal
+    from ksi_core.sites import SiteStore, mount_sites
+    from ksi_core.spatial_model import SpatialModelLifecycle, mount_spatial_model
+    from ksi_mission_contracts.models import SiteFrame
+
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store.register(
+        "site-a",
+        "테스트 현장",
+        SiteFrame.model_validate(
+            {
+                "crs": "EPSG:5186",
+                "verticalDatum": "KNGeoid2018",
+                "unit": "meter",
+                "transformVersion": "1.0.0",
+            }
+        ),
+        actor="op-1",
+        now=_NOW,
+    )
+    jobs = _JobsStub(records or [])
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(b"sweep-admin").hexdigest(),
+                principal=Principal(
+                    principal_id="admin-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(b"sweep-viewer").hexdigest(),
+                principal=Principal(
+                    principal_id="viewer-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                ),
+            ),
+        ]
+    )
+    app = FastAPI()
+    mount_auth(app, registry)
+    mount_sites(app, site_store)
+    mount_spatial_model(
+        app,
+        site_store=site_store,
+        processing_job_store=jobs,
+        lifecycle=SpatialModelLifecycle(site_store=site_store, processing_job_store=jobs),
+    )
+    client = TestClient(app)
+    client.headers.update({"Authorization": "Bearer sweep-admin"})
+    return client, site_store
+
+
+def test_sweep_endpoint_moves_a_stale_patrol_ready_site(tmp_path: Any) -> None:
+    client, site_store = _sweep_client(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op", now=_NOW)
+
+    body = client.post("/v1/sites/site-a/spatial-model/staleness-sweep").json()
+
+    assert body["state"] == "STALE"
+    assert body["siteStatus"] == "MODEL_STALE"
+    assert site_store.get("site-a").status is SiteStatus.MODEL_STALE
+
+
+def test_sweep_endpoint_is_a_no_op_without_a_policy(tmp_path: Any) -> None:
+    client, site_store = _sweep_client(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+
+    body = client.post("/v1/sites/site-a/spatial-model/staleness-sweep").json()
+
+    assert body["state"] == "AGE_POLICY_UNDECLARED"
+    assert site_store.get("site-a").status is SiteStatus.PATROL_READY
+
+
+def test_read_endpoint_never_moves_the_site(tmp_path: Any) -> None:
+    """[핵심] 조회는 원장을 바꾸지 않는다 — 스윕만 바꾼다.
+
+    조회가 상태를 옮기면 현장 상태가 "누가 언제 화면을 열었는가"에 좌우된다.
+    """
+    client, site_store = _sweep_client(tmp_path, records=[_aged_epoch()])
+    _advance_site(site_store, SiteStatus.PATROL_READY)
+    site_store.set_model_age_policy("site-a", max_age_days=30, actor="op", now=_NOW)
+
+    body = client.get("/v1/sites/site-a/spatial-model").json()
+
+    assert body["state"] == "STALE"
+    assert site_store.get("site-a").status is SiteStatus.PATROL_READY
+
+
+def test_sweep_endpoint_requires_sites_write(tmp_path: Any) -> None:
+    client, _ = _sweep_client(tmp_path)
+
+    response = client.post(
+        "/v1/sites/site-a/spatial-model/staleness-sweep",
+        headers={"Authorization": "Bearer sweep-viewer"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_sweep_endpoint_is_404_for_unknown_site(tmp_path: Any) -> None:
+    client, _ = _sweep_client(tmp_path)
+
+    assert (
+        client.post("/v1/sites/nope/spatial-model/staleness-sweep").status_code == 404
+    )
+
+
+def test_sweep_surface_is_absent_without_a_lifecycle(tmp_path: Any) -> None:
+    """lifecycle 없이 장착하면 스윕 표면 자체가 없다 — 조용히 no-op 하지 않는다."""
+    client, _ = _spatial_model_client(tmp_path)
+
+    assert (
+        client.post("/v1/sites/site-a/spatial-model/staleness-sweep").status_code == 405
+        or client.post("/v1/sites/site-a/spatial-model/staleness-sweep").status_code == 404
+    )

@@ -42,6 +42,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
@@ -180,6 +181,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         mission_store=mission_store,
         coverage_report_store=CoverageReportStore(
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+        ),
+        mission_execution_store=MissionExecutionStore(
+            DurableJournal(tmp_path / "mission-execution.jsonl"), mission_store=mission_store
         ),
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,

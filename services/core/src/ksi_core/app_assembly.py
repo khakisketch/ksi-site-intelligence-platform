@@ -52,6 +52,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
+from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observability import CorrelationIdMiddleware
 from ksi_core.processing_jobs import ProcessingJobStore
@@ -122,6 +123,12 @@ def assemble_app(
     opened.append(edge_sync_store)
 
     mission_store = MissionStore(mission_journal)
+    # 임무 실행 생애주기(ADR-KSI-019 G2) — 발급 원장과 별도 원장이다. 발급 시점에
+    # 이 원장에 쓰지 않으므로(레코드 부재 = ISSUED) 발급 경로의 201 계약을 건드리지
+    # 않는다.
+    mission_execution_store = MissionExecutionStore(
+        journal("mission-execution.jsonl"), mission_store=mission_store
+    )
     # Edge dispatch는 별도 journal에 envelope/activation receipt를 남긴다. policy
     # pack이 비어 있으면 endpoint는 204만 반환한다 — 임의 default pack으로 장비를
     # dispatch하지 않는 fail-closed 기본값이다.
@@ -248,6 +255,7 @@ def assemble_app(
         coverage_report_store=CoverageReportStore(
             coverage_journal, mission_store=mission_store
         ),
+        mission_execution_store=mission_execution_store,
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,
         work_area_store=work_area_store,

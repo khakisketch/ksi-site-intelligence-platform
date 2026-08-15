@@ -136,6 +136,10 @@ SITE_AUTO_ADVANCES = Counter(
     "ksi_site_auto_advances_total",
     "재구성·임무 실행 신호에 따른 현장 상태 자동 전진 시도 결과(ADR-KSI-019 G1)",
 )
+MISSION_EXECUTION_TRANSITIONS = Counter(
+    "ksi_core_mission_execution_transitions_total",
+    "임무 실행 생애주기 전이 수(도착 상태별, ADR-KSI-019 G2)",
+)
 PROCESSING_JOB_TRANSITIONS = Counter(
     "ksi_core_processing_job_transitions_total", "재구성 작업 상태 전이 수(도착 상태별)"
 )
@@ -151,6 +155,7 @@ _ALL_METRICS: tuple[Counter | Histogram, ...] = (
     HTTP_REQUESTS,
     HTTP_REQUEST_DURATION,
     SITE_AUTO_ADVANCES,
+    MISSION_EXECUTION_TRANSITIONS,
     PROCESSING_JOB_TRANSITIONS,
     COMPARISON_REQUEST_TRANSITIONS,
     DESIGN_CONFORMANCE_REQUEST_TRANSITIONS,
@@ -234,6 +239,7 @@ def render_prometheus_text() -> str:
 
 __all__ = [
     "COMPARISON_REQUEST_TRANSITIONS",
+    "MISSION_EXECUTION_TRANSITIONS",
     "DESIGN_CONFORMANCE_REQUEST_TRANSITIONS",
     "HTTP_REQUESTS",
     "HTTP_REQUEST_DURATION",

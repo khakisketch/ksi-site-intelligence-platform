@@ -22,8 +22,12 @@ from ksi_core.edge_dispatch import (
 )
 from ksi_core.events import EventStore, EventVerdict, make_event_key
 from ksi_core.evidence import DigestBoundUploadCapability
+from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionRecord, MissionRecordVerdict, MissionStore
+from ksi_core.sites import SiteStore
+from ksi_domain.enums import MissionExecutionStatus, SiteStatus
 from ksi_mission_contracts.dispatch import DispatchVerdict, verify_mission_dispatch_envelope
+from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1
 from ksi_mission_contracts.runtime_profile import EdgeRuntimeProfileV1
 from ksi_mission_contracts.signing import KeyRegistry, sign_contract
@@ -312,9 +316,15 @@ def _profile(now: datetime) -> EdgeRuntimeProfileV1:
     )
 
 
-def _client(
-    tmp_path: Path, *, evidence_storage: _LegacyStorage | None = None
-) -> tuple[TestClient, KeyRegistry, EventStore, EdgeDispatchStore]:
+def _client_with_site(
+    tmp_path: Path,
+    *,
+    evidence_storage: _LegacyStorage | None = None,
+    with_site: bool = True,
+) -> tuple[
+    TestClient, KeyRegistry, EventStore, EdgeDispatchStore, MissionExecutionStore, SiteStore | None
+]:
+    """``create_app`` 조립 그대로 — site_store 를 함께 넘겨 현장 전진 배선까지 켠다."""
     now = datetime.now(UTC)
     mission_key = Ed25519PrivateKey.generate()
     dispatch_key = Ed25519PrivateKey.generate()
@@ -352,17 +362,52 @@ def _client(
         private_key=dispatch_key,
         key_id="dispatch-key",
     )
+    execution_store = MissionExecutionStore(
+        DurableJournal(tmp_path / "mission-execution.jsonl"), mission_store=mission_store
+    )
+    site_store = None
+    if with_site:
+        site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+        assert (
+            site_store.register(
+                "site-001",
+                "테스트 현장",
+                SiteFrame.model_validate(
+                    {
+                        "crs": "EPSG:5186",
+                        "verticalDatum": "KNGeoid2018",
+                        "unit": "meter",
+                        "transformVersion": "1.0.0",
+                    }
+                ),
+                actor="test-harness",
+                now=now,
+            ).verdict.value
+            == "REGISTERED"
+        )
     app = create_app(
         auth_registry=_auth(),
         mission_store=mission_store,
         event_store=event_store,
         evidence_storage=evidence_storage if evidence_storage is not None else _Storage(),
         edge_dispatch_store=dispatch_store,
+        mission_execution_store=execution_store,
+        site_store=site_store,
     )
     registry = KeyRegistry()
     registry.register("mission-key", mission_key.public_key())
     registry.register("dispatch-key", dispatch_key.public_key())
-    return TestClient(app), registry, event_store, dispatch_store
+    return TestClient(app), registry, event_store, dispatch_store, execution_store, site_store
+
+
+def _client(
+    tmp_path: Path, *, evidence_storage: _LegacyStorage | None = None
+) -> tuple[TestClient, KeyRegistry, EventStore, EdgeDispatchStore, MissionExecutionStore]:
+    """현장 원장 없이 조립 — 기존 dispatch 테스트들이 쓰는 좁은 형태."""
+    client, registry, events, dispatch, execution, _site = _client_with_site(
+        tmp_path, evidence_storage=evidence_storage, with_site=False
+    )
+    return client, registry, events, dispatch, execution
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -372,7 +417,7 @@ def _headers(token: str) -> dict[str, str]:
 def test_edge_receives_only_its_signed_dispatch_and_activation_is_idempotent(
     tmp_path: Path,
 ) -> None:
-    client, key_registry, _event_store, _dispatch_store = _client(tmp_path)
+    client, key_registry, _event_store, _dispatch_store, _execution_store = _client(tmp_path)
     first = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
     assert first.status_code == 200
     envelope = first.json()
@@ -407,7 +452,7 @@ def test_edge_receives_only_its_signed_dispatch_and_activation_is_idempotent(
 def test_future_dated_activation_receipt_is_rejected_without_consuming_dispatch(
     tmp_path: Path,
 ) -> None:
-    client, _key_registry, _event_store, _dispatch_store = _client(tmp_path)
+    client, _key_registry, _event_store, _dispatch_store, _execution_store = _client(tmp_path)
     mission = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
     assert mission.status_code == 200
     envelope = mission.json()
@@ -438,7 +483,7 @@ def test_future_dated_activation_receipt_is_rejected_without_consuming_dispatch(
 
 def test_replay_rejects_historical_future_dated_activation_receipt(tmp_path: Path) -> None:
     """A pre-hardening journal must not restore an impossible audit assertion."""
-    client, _key_registry, _event_store, dispatch_store = _client(tmp_path)
+    client, _key_registry, _event_store, dispatch_store, _execution_store = _client(tmp_path)
     mission = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
     assert mission.status_code == 200
     envelope = mission.json()
@@ -480,7 +525,7 @@ def test_replay_rejects_activation_journal_timestamp_outside_dispatch_ttl(
     tmp_path: Path,
 ) -> None:
     """Receipt and Core journal time must both remain inside the dispatch TTL."""
-    client, _key_registry, _event_store, dispatch_store = _client(tmp_path)
+    client, _key_registry, _event_store, dispatch_store, _execution_store = _client(tmp_path)
     mission = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
     assert mission.status_code == 200
     envelope = mission.json()
@@ -521,7 +566,7 @@ def test_replay_rejects_activation_journal_timestamp_outside_dispatch_ttl(
 def test_cross_device_mission_and_evidence_are_hidden_and_operator_has_no_edge_permissions(
     tmp_path: Path,
 ) -> None:
-    client, _registry, _event_store, _dispatch_store = _client(tmp_path)
+    client, _registry, _event_store, _dispatch_store, _execution_store = _client(tmp_path)
     own = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
     assert own.status_code == 200
     dispatch_id = own.json()["dispatchId"]
@@ -587,7 +632,7 @@ def test_cross_device_mission_and_evidence_are_hidden_and_operator_has_no_edge_p
 
 def test_edge_evidence_requires_checksum_bound_storage_before_registration(tmp_path: Path) -> None:
     """Legacy presigned PUT alone cannot support an Edge digest claim."""
-    client, _registry, event_store, _dispatch_store = _client(
+    client, _registry, event_store, _dispatch_store, _execution_store = _client(
         tmp_path, evidence_storage=_LegacyStorage()
     )
     event_key = make_event_key(_EDGE_ID, "evt-001")
@@ -602,3 +647,107 @@ def test_edge_evidence_requires_checksum_bound_storage_before_registration(tmp_p
     assert response.status_code == 503
     assert response.json()["detail"] == "EVIDENCE_DIGEST_BINDING_UNAVAILABLE"
     assert event_store.get_evidence(event_key, body["artifactId"]) is None
+
+
+# ── 임무 실행 생애주기 결선 (ADR-KSI-019 G2) ──────────────────────────
+
+
+def test_edge_pull_marks_the_mission_dispatched(tmp_path: Path) -> None:
+    """[핵심] 장비가 envelope 을 가져가면 서버가 그 임무를 '배포됨'으로 안다.
+
+    이게 없으면 임무 원장에 '발급했다'만 남고 '날았는지 모른다'가 영구히 남는다.
+    """
+    client, _registry, _events, _dispatch, execution = _client(tmp_path)
+    assert execution.effective_status("mission-edge-001") is MissionExecutionStatus.ISSUED
+
+    assert (
+        client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN)).status_code
+        == 200
+    )
+
+    assert execution.effective_status("mission-edge-001") is MissionExecutionStatus.DISPATCHED
+
+
+def test_activation_receipt_marks_the_mission_activated(tmp_path: Path) -> None:
+    client, _registry, _events, _dispatch, execution = _client(tmp_path)
+    envelope = client.get(
+        "/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN)
+    ).json()
+    receipt = {
+        "schemaVersion": "1.0",
+        "dispatchId": envelope["dispatchId"],
+        "edgeDeviceId": _EDGE_ID,
+        "missionId": envelope["missionId"],
+        "missionContractDigest": envelope["missionContractDigest"],
+        "riskPolicyPackDigest": envelope["riskPolicyPackDigest"],
+        "activatedAt": datetime.now(UTC).isoformat(),
+        "runtimeVersion": "manifold-runtime-test",
+    }
+
+    assert (
+        client.post(
+            f"/v1/edge-sync/missions/{envelope['dispatchId']}/activation-receipts",
+            json=receipt,
+            headers=_headers(_EDGE_TOKEN),
+        ).status_code
+        == 201
+    )
+
+    assert execution.effective_status("mission-edge-001") is MissionExecutionStatus.ACTIVATED
+
+
+def test_repeated_pull_does_not_pile_up_execution_records(tmp_path: Path) -> None:
+    """중복 신호가 원장에 빈 레코드를 쌓지 않는다 — 자기 자신으로의 전이는 없다."""
+    client, _registry, _events, _dispatch, execution = _client(tmp_path)
+
+    client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
+    client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
+
+    assert len(execution.history("mission-edge-001")) == 1
+
+
+def test_cancelled_mission_is_not_resurrected_by_a_device_pull(tmp_path: Path) -> None:
+    """[핵심] 사람이 접은 임무를 장비 신호가 되살리지 않는다 — 그래도 pull 은 200 이다.
+
+    전이표가 되살림을 막고, 그 거부가 장비의 임무 수신 응답을 바꾸지 않는다는 것이
+    함께 중요하다 — 이 축은 게이트가 아니라 관측 기록이기 때문이다.
+    """
+    client, _registry, _events, _dispatch, execution = _client(tmp_path)
+    execution.transition(
+        "mission-edge-001",
+        MissionExecutionStatus.CANCELLED,
+        detail=None,
+        actor="op-1",
+        now=datetime.now(UTC),
+    )
+
+    response = client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN))
+
+    assert response.status_code == 200
+    assert execution.effective_status("mission-edge-001") is MissionExecutionStatus.CANCELLED
+
+
+def test_mapping_mission_pull_also_starts_the_site_mapping(tmp_path: Path) -> None:
+    """[핵심] 매핑 계열 임무 배포가 현장을 BASELINE_MAPPING 으로 전진시킨다.
+
+    이 fixture 의 임무 타입은 UNIFIED_SITE_SURVEY 로 매핑 계열이다
+    (``MAPPING_FROM_SCRATCH_MISSION_TYPES``). **배포가 기준인 것이 요점이다** —
+    발급만 하고 안 날린 임무가 현장 상태를 옮기면 계획 문서가 관측 사실을 참칭한다.
+
+    ``create_app`` 을 그대로 쓴다 — 훅을 손으로 재현하면 실제 배선의 결함을 놓친다.
+    """
+    client, _registry, _events, _dispatch, execution, site_store = _client_with_site(tmp_path)
+    assert site_store is not None
+    before = site_store.get("site-001")
+    assert before is not None
+    assert before.status is SiteStatus.UNMAPPED
+
+    assert (
+        client.get("/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN)).status_code
+        == 200
+    )
+
+    assert execution.effective_status("mission-edge-001") is MissionExecutionStatus.DISPATCHED
+    record = site_store.get("site-001")
+    assert record is not None
+    assert record.status is SiteStatus.BASELINE_MAPPING

@@ -61,6 +61,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_domain.enums import MissionExecutionStatus
 from ksi_event_contracts.coverage_report import CompletionState, CoverageReport
 
 from ksi_core.api_base import (
@@ -75,6 +76,7 @@ from ksi_core.durable_journal import DurableJournal, JournalSealedError
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from ksi_core.mission_execution import MissionExecutionStore
     from ksi_core.mission_records import MissionStore
 
 logger = logging.getLogger(__name__)
@@ -491,7 +493,16 @@ def _require_reporting_device(
     return principal
 
 
-def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
+def build_coverage_reports_router(
+    store: CoverageReportStore,
+    mission_execution_store: MissionExecutionStore | None = None,
+) -> APIRouter:
+    """``mission_execution_store`` 를 주면 접수된 보고가 임무 실행 상태를 옮긴다.
+
+    **완료 판정의 권위는 이 접수(원장)이고 실행 상태는 그 투영이다**(INV-010) —
+    그래서 투영 쓰기의 성패가 이 라우터의 응답을 바꾸지 않는다. 투영 원장이
+    봉인돼도 커버리지 접수는 201 이어야 한다: 권위가 뒤집히면 안 된다.
+    """
     router = APIRouter(prefix="/v1/missions", tags=["coverage"])
 
     @router.post("/{mission_id}/coverage-report", status_code=201)
@@ -517,6 +528,30 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
             reported_by=principal.principal_id,
             device_id=principal.device_id,
         )
+        if (
+            mission_execution_store is not None
+            and result.verdict is CoverageReportVerdict.RECORDED
+            and result.report is not None
+        ):
+            # 접수된(=INV-010 게이트를 통과한) 보고만 실행 상태를 옮긴다.
+            # 거부된 주장이 상태를 옮기면 화면에서 사실처럼 읽힌다
+            # (``CoverageReportStore._reject`` — RECORDED 만 완료 판정 권위를 가진다).
+            # **반환값을 의도적으로 무시한다**: 투영 쓰기 실패가 접수 응답을 바꾸면
+            # 완료 판정의 권위가 원장에서 투영으로 뒤집힌다.
+            mission_execution_store.transition(
+                mission_id,
+                (
+                    MissionExecutionStatus.COMPLETED
+                    if result.report.summary.completion_state is CompletionState.COMPLETED
+                    else MissionExecutionStatus.ENDED_INCOMPLETE
+                ),
+                detail=(
+                    "coverageReport completionState="
+                    f"{result.report.summary.completion_state.value}"
+                ),
+                actor="system:coverage-report",
+                now=datetime.now(UTC),
+            )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is CoverageReportVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
@@ -583,5 +618,9 @@ def build_coverage_reports_router(store: CoverageReportStore) -> APIRouter:
     return router
 
 
-def mount_coverage_reports(app: FastAPI, store: CoverageReportStore) -> None:
-    app.include_router(build_coverage_reports_router(store))
+def mount_coverage_reports(
+    app: FastAPI,
+    store: CoverageReportStore,
+    mission_execution_store: MissionExecutionStore | None = None,
+) -> None:
+    app.include_router(build_coverage_reports_router(store, mission_execution_store))

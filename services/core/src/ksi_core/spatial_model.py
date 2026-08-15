@@ -54,7 +54,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException
-from ksi_domain.enums import SiteStatus
+from ksi_domain.enums import MissionType, SiteStatus
+from ksi_domain.mission_gating import MAPPING_FROM_SCRATCH_MISSION_TYPES
 from ksi_event_contracts.processing_artifact import LineageAuthority
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 
@@ -287,8 +288,18 @@ class SpatialModelLifecycle:
     """
 
     def __init__(
-        self, *, site_store: SiteStore, processing_job_store: _SiteJobLister
+        self,
+        *,
+        site_store: SiteStore,
+        processing_job_store: _SiteJobLister | None = None,
     ) -> None:
+        """``processing_job_store`` 는 노후 스윕에만 필요하다.
+
+        없이도 임무 배포·재구성 신호에 따른 전진은 성립한다 — 재구성 원장이 없는
+        조립에서도 "매핑 임무가 배포됐으니 현장이 매핑을 시작했다"는 사실은 참이다.
+        스윕만 판정 근거(epoch 목록)를 잃어 아무것도 하지 않고, 그 사실을 로그로
+        드러낸다(조용한 no-op 을 만들지 않는다).
+        """
         self._site_store = site_store
         self._processing_job_store = processing_job_store
 
@@ -311,6 +322,81 @@ class SpatialModelLifecycle:
             target=target,
             evidence=f"processingJob={job_id} status={job_status.value}",
             reason="재구성 신호에 따른 자동 전진(ADR-KSI-019 G1)",
+            now=now,
+        )
+
+    def advance_for_mission_dispatched(
+        self,
+        site_id: str,
+        mission_type: MissionType,
+        *,
+        mission_id: str,
+        now: datetime,
+    ) -> SiteAdvanceOutcome:
+        """매핑 계열 임무가 기체로 넘어갔다 = 그 현장의 매핑이 시작됐다.
+
+        **발급이 아니라 배포가 기준이다** — 발급만 하고 안 날린 임무가 현장 상태를
+        옮기면, 계획 단계의 문서가 관측 사실을 참칭한다. 어느 임무타입이 "지도를
+        처음부터 만드는" 계열인지는 :data:`~ksi_domain.mission_gating.
+        MAPPING_FROM_SCRATCH_MISSION_TYPES` 가 SSOT다(여기에 목록을 복사하지 않는다).
+        """
+        if mission_type not in MAPPING_FROM_SCRATCH_MISSION_TYPES:
+            return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
+        return self._advance(
+            site_id,
+            # REMAP_REQUIRED 도 출발점이다 — 재매핑 지시를 받은 현장에 매핑 임무가
+            # 배포되면 그것이 곧 재매핑 시작이다(_MAPPING_FROM_SCRATCH 와 같은 집합).
+            source_statuses=(SiteStatus.UNMAPPED, SiteStatus.REMAP_REQUIRED),
+            target=SiteStatus.BASELINE_MAPPING,
+            evidence=f"mission={mission_id} type={mission_type.value} dispatched",
+            reason="매핑 계열 임무 배포에 따른 자동 전진(ADR-KSI-019 G1)",
+            now=now,
+        )
+
+    def sweep_staleness(self, site_id: str, *, now: datetime) -> SiteAdvanceOutcome:
+        """모델이 현장이 선언한 나이 기준을 넘었으면 ``MODEL_STALE`` 로 옮긴다.
+
+        선언이 없으면(``AGE_POLICY_UNDECLARED``) 아무것도 하지 않는다 — 서버가 기준을
+        지어내 자율운영을 끊지 않는다.
+
+        ``PATROL_READY``·``PATROL_ACTIVE`` 에서만 동작한다: 그 둘이 "이 모델을 믿고
+        자율로 돈다"를 뜻하는 상태이고, 나머지 상태에서는 노후가 이미 진행 중인
+        작업(매핑·처리·검증)으로 표현돼 있다.
+
+        **조회가 아니라 명시적 표면이 부른다** — 조회가 원장을 바꾸면 상태가 조회
+        시점에 따라 달라진다. 주기 실행은 배포 운영(systemd timer·cron)의 몫이다.
+        """
+        if self._processing_job_store is None:
+            # 판정 근거(재구성 epoch 목록)가 없는 조립이다. 조용히 넘기지 않고
+            # 로그로 드러낸다 — 이 조립에서는 노후가 영원히 판정되지 않는다.
+            logger.warning(
+                "노후 스윕 건너뜀 — site=%s: 재구성 원장이 이 조립에 없다", site_id
+            )
+            return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
+        site = self._site_store.get(site_id)
+        if site is None:
+            return _record_outcome(
+                SiteAdvanceOutcome.UNKNOWN_SITE, target=SiteStatus.MODEL_STALE
+            )
+        if site.status not in (SiteStatus.PATROL_READY, SiteStatus.PATROL_ACTIVE):
+            return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
+        status = evaluate_spatial_model(
+            self._processing_job_store.list_for_site(site_id),
+            now=now,
+            max_age_days=site.model_max_age_days,
+        )
+        if status.state is not SpatialModelState.STALE:
+            return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
+        assert status.age_days is not None  # noqa: S101 -- STALE 은 나이가 있을 때만 나온다
+        return self._advance(
+            site_id,
+            source_statuses=(SiteStatus.PATROL_READY, SiteStatus.PATROL_ACTIVE),
+            target=SiteStatus.MODEL_STALE,
+            evidence=(
+                f"epoch={status.epoch_job_id} age={status.age_days:.1f}d "
+                f"maxAge={status.max_age_days}d"
+            ),
+            reason="공간모델 노후 판정에 따른 자동 전진(ADR-KSI-019 G1)",
             now=now,
         )
 
@@ -399,8 +485,12 @@ class _SiteJobLister(Protocol):
 
 
 def build_spatial_model_router(
-    *, site_store: SiteStore, processing_job_store: _SiteJobLister
+    *,
+    site_store: SiteStore,
+    processing_job_store: _SiteJobLister,
+    lifecycle: SpatialModelLifecycle | None = None,
 ) -> APIRouter:
+    """``lifecycle`` 을 주면 노후 스윕 표면이 함께 장착된다."""
     router = APIRouter(prefix="/v1/sites", tags=["sites"])
 
     @router.get("/{site_id}/spatial-model", response_model=SpatialModelView)
@@ -436,11 +526,45 @@ def build_spatial_model_router(
             site_status_matches_model=site_status_matches_model(status.state, site.status),
         )
 
+    if lifecycle is not None:
+
+        @router.post(
+            "/{site_id}/spatial-model/staleness-sweep", response_model=SpatialModelView
+        )
+        def sweep_site_staleness(
+            site_id: str,
+            _principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
+        ) -> SpatialModelView:
+            """노후 판정을 지금 적용한다 — 운영자·배치 잡이 부르는 **명시적** 표면.
+
+            조회(``GET .../spatial-model``)가 이 일을 하지 않는 것이 의도다: 조회가
+            원장을 바꾸면 현장 상태가 "누가 언제 화면을 열었는가"에 좌우된다.
+
+            **주기 실행은 이 서비스가 소유하지 않는다** — systemd timer·cron 같은
+            배포 운영 계층이 이 엔드포인트를 부른다. 서버 안에 스케줄러를 두면 그
+            주기가 배포 설정이 아니라 코드가 되고, 운영에서 관측하기 어려워진다.
+
+            ``SITES_AUTONOMY_APPROVE`` 를 요구하지 않는다 — PATROL_READY →
+            MODEL_STALE 은 자율을 **끊는** 방향이라 승인 간선이 아니다
+            (``requires_autonomy_approval`` 참조). 자율 복귀에는 여전히 재검증
+            경로와 승인이 필요하다.
+            """
+            if site_store.get(site_id) is None:
+                raise HTTPException(status_code=404, detail=_SITE_NOT_FOUND_DETAIL)
+            lifecycle.sweep_staleness(site_id, now=datetime.now(UTC))
+            # 스윕 결과와 무관하게 **판정 후 현재 상태**를 그대로 낸다 — 옮겼든
+            # 안 옮겼든 호출자가 알고 싶은 것은 "지금 이 현장이 어떤가"다.
+            return get_spatial_model(site_id, _principal)
+
     return router
 
 
 def mount_spatial_model(
-    app: FastAPI, *, site_store: SiteStore, processing_job_store: _SiteJobLister
+    app: FastAPI,
+    *,
+    site_store: SiteStore,
+    processing_job_store: _SiteJobLister,
+    lifecycle: SpatialModelLifecycle | None = None,
 ) -> None:
     """앱에 공간모델 조회 라우터를 장착한다.
 
@@ -450,7 +574,9 @@ def mount_spatial_model(
     """
     app.include_router(
         build_spatial_model_router(
-            site_store=site_store, processing_job_store=processing_job_store
+            site_store=site_store,
+            processing_job_store=processing_job_store,
+            lifecycle=lifecycle,
         )
     )
 

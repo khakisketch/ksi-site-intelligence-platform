@@ -7,7 +7,31 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+    mount_auth,
+)
+from ksi_core.durable_journal import DurableJournal
+from ksi_core.mission_execution import (
+    MissionExecutionRecoveryError,
+    MissionExecutionStore,
+    MissionExecutionVerdict,
+    mount_mission_execution,
+)
+from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_domain.enums import (
     _ALLOWED_MISSION_EXECUTION_TRANSITIONS,  # noqa: PLC2701 -- 전이표 전수 검사를 위한 의도적 내부 접근
     IllegalMissionExecutionTransitionError,
@@ -110,3 +134,381 @@ def test_in_flight_status_does_not_exist() -> None:
     """
     assert not any("FLIGHT" in member.value for member in MissionExecutionStatus)
     assert not any("FLYING" in member.value for member in MissionExecutionStatus)
+
+
+# ── 원장 (MissionExecutionStore) ────────────────────────────────────────
+
+
+_NOW = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
+_SITE_FRAME: dict[str, str] = {
+    "crs": "EPSG:5186",
+    "verticalDatum": "KNGeoid2018",
+    "unit": "meter",
+    "transformVersion": "1.0.0",
+}
+
+
+def _mission_store(
+    tmp_path: Path,
+    *,
+    mission_ids: tuple[str, ...] = ("m-1",),
+    journal: DurableJournal | None = None,
+) -> MissionStore:
+    """``journal`` 을 직접 주면 재생 테스트가 그 핸들을 닫을 수 있다(단일 writer 잠금)."""
+    store = MissionStore(
+        journal if journal is not None else DurableJournal(tmp_path / "missions.jsonl")
+    )
+    for mission_id in mission_ids:
+        assert (
+            store.record_issuance(
+                MissionRecord(
+                    mission_id=mission_id,
+                    site_id="site-a",
+                    mission_type="BASELINE_MAPPING",
+                    artifact_kind="contract",
+                    contract={"missionId": mission_id, "siteFrame": _SITE_FRAME},
+                    kmz_sha256=None,
+                    route_pattern=None,
+                    waypoint_count=None,
+                    planned_coverage_ratio=None,
+                    issued_at=_NOW,
+                    issued_by="op-1",
+                )
+            ).value
+            == "RECORDED"
+        )
+    return store
+
+
+def _execution_store(
+    tmp_path: Path, *, journal: DurableJournal | None = None
+) -> MissionExecutionStore:
+    return MissionExecutionStore(
+        journal if journal is not None else DurableJournal(tmp_path / "mission-execution.jsonl"),
+        mission_store=_mission_store(tmp_path),
+    )
+
+
+def test_mission_with_no_record_reads_as_issued(tmp_path: Path) -> None:
+    """[핵심] 레코드 부재가 ISSUED 다 — 발급 경로를 건드리지 않는다.
+
+    발급 시점에 실행 레코드를 함께 쓰면 ADR-KSI-008 §3 의 "durable 기록 전 201
+    금지" 경로에 두 번째 원장 쓰기가 끼어들고, 그 쓰기가 실패할 때 이미 성립한
+    계약 발급이 실패한다.
+    """
+    store = _execution_store(tmp_path)
+
+    assert store.status_of("m-1") is None
+    assert store.effective_status("m-1") is _ME.ISSUED
+    assert store.history("m-1") == []
+
+
+def test_transition_records_and_projects(tmp_path: Path) -> None:
+    store = _execution_store(tmp_path)
+
+    result = store.transition(
+        "m-1", _ME.DISPATCHED, detail="RC 로 이관", actor="op-1", now=_NOW
+    )
+
+    assert result.verdict is MissionExecutionVerdict.TRANSITIONED
+    assert store.effective_status("m-1") is _ME.DISPATCHED
+    assert store.status_of("m-1") is _ME.DISPATCHED
+    history = store.history("m-1")
+    assert len(history) == 1
+    assert history[0].before is _ME.ISSUED
+    assert history[0].after is _ME.DISPATCHED
+    assert history[0].updated_by == "op-1"
+    assert history[0].detail == "RC 로 이관"
+
+
+def test_unknown_mission_is_refused(tmp_path: Path) -> None:
+    """발급된 적 없는 임무의 실행 상태는 받지 않는다(coverage_reports 와 같은 원칙)."""
+    store = _execution_store(tmp_path)
+
+    result = store.transition("nope", _ME.DISPATCHED, detail=None, actor="op-1", now=_NOW)
+
+    assert result.verdict is MissionExecutionVerdict.UNKNOWN_MISSION
+    assert store.history("nope") == []
+
+
+def test_illegal_transition_is_typed_not_raised(tmp_path: Path) -> None:
+    store = _execution_store(tmp_path)
+    store.transition("m-1", _ME.CANCELLED, detail=None, actor="op-1", now=_NOW)
+
+    result = store.transition("m-1", _ME.COMPLETED, detail=None, actor="sys", now=_NOW)
+
+    assert result.verdict is MissionExecutionVerdict.ILLEGAL_TRANSITION
+    assert store.effective_status("m-1") is _ME.CANCELLED
+
+
+def test_naive_now_is_refused(tmp_path: Path) -> None:
+    store = _execution_store(tmp_path)
+
+    with pytest.raises(ValueError, match="tz-aware"):
+        store.transition(
+            "m-1",
+            _ME.DISPATCHED,
+            detail=None,
+            actor="op-1",
+            now=datetime(2026, 8, 15, 12, 0),  # noqa: DTZ001
+        )
+
+
+def test_replay_reconstructs_status_and_history(tmp_path: Path) -> None:
+    mission_journal = DurableJournal(tmp_path / "missions.jsonl")
+    journal = DurableJournal(tmp_path / "mission-execution.jsonl")
+    store = MissionExecutionStore(
+        journal, mission_store=_mission_store(tmp_path, journal=mission_journal)
+    )
+    store.transition("m-1", _ME.DISPATCHED, detail=None, actor="o", now=_NOW)
+    store.transition("m-1", _ME.ACTIVATED, detail=None, actor="o", now=_NOW)
+    journal.close()
+    mission_journal.close()
+
+    reopened = MissionExecutionStore(
+        DurableJournal(tmp_path / "mission-execution.jsonl"),
+        mission_store=MissionStore(DurableJournal(tmp_path / "missions.jsonl")),
+    )
+
+    assert reopened.effective_status("m-1") is _ME.ACTIVATED
+    assert len(reopened.history("m-1")) == 2
+
+
+def _write_raw_journal(path: Path, records: list[dict[str, Any]]) -> None:
+    path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+
+
+def test_replay_refuses_an_illegal_sequence(tmp_path: Path) -> None:
+    """[핵심] 손으로 고친 원장이 불법 전이를 되살릴 수 없다.
+
+    sites._apply_transitioned·processing_jobs._replay_transition 과 같은 원칙 —
+    재생도 live 와 같은 전이표를 다시 태운다.
+    """
+    ts = _NOW.isoformat()
+    _write_raw_journal(
+        tmp_path / "mission-execution.jsonl",
+        [
+            {"kind": "mission-execution-transitioned", "missionId": "m-1",
+             "before": "ISSUED", "after": "CANCELLED", "ts": ts, "actor": "o", "detail": None},
+            {"kind": "mission-execution-transitioned", "missionId": "m-1",
+             "before": "CANCELLED", "after": "COMPLETED", "ts": ts, "actor": "o", "detail": None},
+        ],
+    )
+
+    with pytest.raises(MissionExecutionRecoveryError):
+        MissionExecutionStore(
+            DurableJournal(tmp_path / "mission-execution.jsonl"),
+            mission_store=_mission_store(tmp_path),
+        )
+
+
+def test_replay_refuses_a_forged_before_value(tmp_path: Path) -> None:
+    """원장이 스스로 모순이면 조용히 덮어쓰지 않는다."""
+    ts = _NOW.isoformat()
+    _write_raw_journal(
+        tmp_path / "mission-execution.jsonl",
+        [
+            {"kind": "mission-execution-transitioned", "missionId": "m-1",
+             "before": "ISSUED", "after": "DISPATCHED", "ts": ts, "actor": "o", "detail": None},
+            # before 가 실제 현재 상태(DISPATCHED)와 다르다.
+            {"kind": "mission-execution-transitioned", "missionId": "m-1",
+             "before": "ISSUED", "after": "COMPLETED", "ts": ts, "actor": "o", "detail": None},
+        ],
+    )
+
+    with pytest.raises(MissionExecutionRecoveryError):
+        MissionExecutionStore(
+            DurableJournal(tmp_path / "mission-execution.jsonl"),
+            mission_store=_mission_store(tmp_path),
+        )
+
+
+def test_replay_refuses_naive_timestamp(tmp_path: Path) -> None:
+    _write_raw_journal(
+        tmp_path / "mission-execution.jsonl",
+        [
+            {"kind": "mission-execution-transitioned", "missionId": "m-1",
+             "before": "ISSUED", "after": "DISPATCHED",
+             "ts": "2026-08-15T12:00:00", "actor": "o", "detail": None},
+        ],
+    )
+
+    with pytest.raises(MissionExecutionRecoveryError):
+        MissionExecutionStore(
+            DurableJournal(tmp_path / "mission-execution.jsonl"),
+            mission_store=_mission_store(tmp_path),
+        )
+
+
+def test_replay_refuses_unknown_kind(tmp_path: Path) -> None:
+    _write_raw_journal(
+        tmp_path / "mission-execution.jsonl",
+        [{"kind": "something-else", "missionId": "m-1", "ts": _NOW.isoformat()}],
+    )
+
+    with pytest.raises(MissionExecutionRecoveryError):
+        MissionExecutionStore(
+            DurableJournal(tmp_path / "mission-execution.jsonl"),
+            mission_store=_mission_store(tmp_path),
+        )
+
+
+# ── API 표면 ────────────────────────────────────────────────────────────
+
+
+_OPERATOR_TOKEN = "me-operator"  # noqa: S105 -- 테스트 고정 토큰
+_VIEWER_TOKEN = "me-viewer"  # noqa: S105
+_DEVICE_TOKEN = "me-device"  # noqa: S105
+
+
+def _api_client(tmp_path: Path) -> TestClient:
+    """mount_auth + mount_mission_execution 최소 조립 — 이 표면만 본다."""
+
+    def _digest(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OPERATOR_TOKEN),
+                principal=Principal(
+                    principal_id="op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.FIELD_OPERATOR,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="viewer-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_DEVICE_TOKEN),
+                principal=Principal(
+                    principal_id="edge-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id="dev-1",
+                ),
+            ),
+        ]
+    )
+    app = FastAPI()
+    mount_auth(app, registry)
+    mount_mission_execution(app, _execution_store(tmp_path))
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_OPERATOR_TOKEN}"})
+    return client
+
+
+def _declare(
+    client: TestClient, mission_id: str, target: str, *, token: str = _OPERATOR_TOKEN, **body: Any
+) -> Any:
+    return client.post(
+        f"/v1/missions/{mission_id}/execution-transitions",
+        json={"targetStatus": target, **body},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_operator_can_declare_dispatched(tmp_path: Path) -> None:
+    """운영자가 KMZ 를 손으로 옮겼다는 사실을 서버가 기록할 수 있어야 한다.
+
+    실기 확인 전까지 수동 이관이 공식 경로다(ADR-KSI-019 G3). 그 경로를 서버가
+    기록하지 못하면 임무 원장에 "날았는지 모른다"만 남는다.
+    """
+    client = _api_client(tmp_path)
+
+    response = _declare(client, "m-1", "DISPATCHED", detail="RC Plus 2 로 KMZ 이관")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "DISPATCHED"
+    assert client.get("/v1/missions/m-1/execution").json()["status"] == "DISPATCHED"
+
+
+def test_operator_can_cancel(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+
+    assert _declare(client, "m-1", "CANCELLED").status_code == 200
+    assert client.get("/v1/missions/m-1/execution").json()["status"] == "CANCELLED"
+
+
+@pytest.mark.parametrize("target", ["ACTIVATED", "COMPLETED", "ENDED_INCOMPLETE", "ISSUED"])
+def test_operator_cannot_declare_machine_reported_states(tmp_path: Path, target: str) -> None:
+    """[핵심] 사람이 장비·커버리지가 만드는 사실을 손으로 찍을 수 없다.
+
+    COMPLETED 는 CoverageReport 접수가 만드는 사실이고(INV-010), ACTIVATED 는
+    Edge 의 서명 receipt 가 만든다. 사람이 찍을 수 있으면 그 상태는 근거가 아니라
+    주장이 된다 — processing_jobs 의 "PROCESSING_WORK 는 어느 Role 에도 없다"와
+    같은 원칙이다.
+    """
+    client = _api_client(tmp_path)
+
+    response = _declare(client, "m-1", target)
+
+    assert response.status_code == 403
+    assert client.get("/v1/missions/m-1/execution").json()["status"] == "ISSUED"
+
+
+def test_viewer_cannot_declare_transitions(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+
+    assert _declare(client, "m-1", "DISPATCHED", token=_VIEWER_TOKEN).status_code == 403
+
+
+def test_get_execution_returns_issued_for_untouched_mission(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+
+    body = client.get("/v1/missions/m-1/execution").json()
+
+    assert body["status"] == "ISSUED"
+    assert body["history"] == []
+    assert body["updatedAt"] is None
+
+
+def test_get_execution_is_404_for_unknown_mission(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+
+    assert client.get("/v1/missions/nope/execution").status_code == 404
+
+
+def test_declare_on_unknown_mission_is_404(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+
+    assert _declare(client, "nope", "DISPATCHED").status_code == 404
+
+
+def test_illegal_declaration_is_409(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+    _declare(client, "m-1", "CANCELLED")
+
+    assert _declare(client, "m-1", "DISPATCHED").status_code == 409
+
+
+def test_history_is_exposed_in_order(tmp_path: Path) -> None:
+    client = _api_client(tmp_path)
+    _declare(client, "m-1", "DISPATCHED", detail="1차 이관")
+
+    body = client.get("/v1/missions/m-1/execution").json()
+
+    assert [e["after"] for e in body["history"]] == ["DISPATCHED"]
+    assert body["history"][0]["updatedBy"] == "op-1"
+    assert body["history"][0]["detail"] == "1차 이관"
+
+
+def test_device_cannot_read_execution(tmp_path: Path) -> None:
+    """EDGE_DEVICE 는 MISSIONS_READ 를 갖지 않는다 — 임무 원장 열람 표면이 아니다."""
+    client = _api_client(tmp_path)
+
+    response = client.get(
+        "/v1/missions/m-1/execution", headers={"Authorization": f"Bearer {_DEVICE_TOKEN}"}
+    )
+
+    assert response.status_code == 403

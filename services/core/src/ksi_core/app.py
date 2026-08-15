@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
+    from ksi_core.mission_execution import MissionExecutionStore
     from ksi_core.mission_records import MissionStore
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.region_extraction_reports import RegionExtractionStore
@@ -124,6 +125,14 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "coverage_report_store 는 mission_store 와 함께 주어져야 한다(INV-010)"
         " — 발급된 적 없는 임무의 커버리지 보고는 '무슨 근거로 날았나'에 답할 수"
         " 없다. 보고서는 임무 발급 기록과 대조해서만 받는다",
+    ),
+    (
+        "mission_execution_store",
+        (("mission_store",),),
+        "mission_execution_store 는 mission_store 와 함께 주어져야 한다"
+        " (ADR-KSI-019 G2) — 발급된 적 없는 임무의 실행 사실만 원장에 남으면"
+        " '무슨 근거로 날았나'에 답할 수 없다. coverage_report_store 와 동일 원칙이고,"
+        " 이 원장은 그 원장의 투영이므로 같은 전제를 공유해야 한다",
     ),
     (
         "source_media_store",
@@ -293,6 +302,7 @@ def create_app(
     mission_signing_key_id: str | None = None,
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
+    mission_execution_store: MissionExecutionStore | None = None,
     source_media_store: SourceMediaStore | None = None,
     design_surface_store: DesignSurfaceStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
@@ -477,6 +487,7 @@ def create_app(
         "edge_sync_store": edge_sync_store,
         "edge_dispatch_store": edge_dispatch_store,
         "coverage_report_store": coverage_report_store,
+        "mission_execution_store": mission_execution_store,
         "source_media_store": source_media_store,
         "design_surface_store": design_surface_store,
         "processing_job_store": processing_job_store,
@@ -526,6 +537,20 @@ def create_app(
 
         mount_sites(app, site_store)
 
+    # 현장 상태 자동 전진(ADR-KSI-019 G1) — 재구성 신호·임무 배포·노후 스윕 세
+    # 진입점이 같은 인스턴스를 공유한다. 두 저장소 중 하나라도 없으면 전진시킬
+    # 대상이 없으므로 None 이고, 그때는 예전과 같이 아무것도 전진시키지 않는다
+    # (자동화가 없는 조립도 유효한 조립이다).
+    site_lifecycle = None
+    if site_store is not None:
+        from ksi_core.spatial_model import SpatialModelLifecycle
+
+        # processing_job_store 는 노후 스윕에만 필요하다 — 없어도 임무 배포·재구성
+        # 신호 전진은 성립한다(그 조립에는 재구성 신호 자체가 없다).
+        site_lifecycle = SpatialModelLifecycle(
+            site_store=site_store, processing_job_store=processing_job_store
+        )
+
     if edge_sync_store is not None:
         from ksi_core.edge_sync import mount_edge_sync
 
@@ -541,6 +566,9 @@ def create_app(
             edge_dispatch_store,
             event_store=event_store,
             evidence_storage=evidence_storage,
+            # 장비의 임무 pull·activation 이 실행 상태를 옮긴다(ADR-KSI-019 G2).
+            mission_execution_store=mission_execution_store,
+            site_lifecycle=site_lifecycle,
         )
 
     if event_store is not None:
@@ -614,7 +642,20 @@ def create_app(
     if coverage_report_store is not None:
         from ksi_core.coverage_reports import mount_coverage_reports
 
-        mount_coverage_reports(app, coverage_report_store)
+        mount_coverage_reports(app, coverage_report_store, mission_execution_store)
+
+    if mission_execution_store is not None:
+        # 임무 실행 생애주기(ADR-KSI-019 G2) — 발급 기록만으로는 "이 임무가 실제로
+        # 날았는가"에 답할 수 없다. 이 표면이 그 축을 연다.
+        from ksi_core.mission_execution import mount_mission_execution
+
+        mount_mission_execution(
+            app,
+            mission_execution_store,
+            mission_store=mission_store,
+            # 운영자의 "기체로 넘겼다" 선언이 매핑 계열이면 현장도 함께 전진한다.
+            site_lifecycle=site_lifecycle,
+        )
 
     if source_media_store is not None and evidence_storage is not None:
         # evidence_storage 없이는 라우트를 장착하지 않는다(evidence 라우트와 같은
@@ -639,22 +680,8 @@ def create_app(
         # 다운로드 URL 발급에 필요 — GET .../input).
         assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.processing_jobs import mount_processing_jobs
-        from ksi_core.spatial_model import SpatialModelLifecycle
 
-        # 현장 저장소가 없으면 전진시킬 대상이 없다 — 그때는 예전과 같이 아무것도
-        # 전진시키지 않는다(자동화가 없는 조립도 유효한 조립이다).
-        mount_processing_jobs(
-            app,
-            processing_job_store,
-            evidence_storage,
-            (
-                SpatialModelLifecycle(
-                    site_store=site_store, processing_job_store=processing_job_store
-                )
-                if site_store is not None
-                else None
-            ),
-        )
+        mount_processing_jobs(app, processing_job_store, evidence_storage, site_lifecycle)
 
     if site_store is not None and processing_job_store is not None:
         # 공간모델 조회(ADR-KSI-019 G1)는 **두 저장소가 모두 있을 때만** 장착한다 —
@@ -664,7 +691,11 @@ def create_app(
         from ksi_core.spatial_model import mount_spatial_model
 
         mount_spatial_model(
-            app, site_store=site_store, processing_job_store=processing_job_store
+            app,
+            site_store=site_store,
+            processing_job_store=processing_job_store,
+            # 노후 스윕 표면도 함께 장착한다 — 주기 실행은 배포 운영이 소유한다.
+            lifecycle=site_lifecycle,
         )
 
     if defect_candidate_store is not None:

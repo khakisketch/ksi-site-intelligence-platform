@@ -114,6 +114,21 @@ MISSION_TYPE_ALLOWED_SITE_STATUSES: dict[MissionType, frozenset[SiteStatus]] = {
     _MT.INCIDENT_SURVEY: _ALL_EXCEPT_SUSPENDED,
 }
 
+#: "지도를 처음부터 만든다" 계열 임무타입 — ``_MAPPING_FROM_SCRATCH`` **현장 상태**
+#: 집합의 짝이다. 그 임무의 배포가 현장을 ``BASELINE_MAPPING`` 으로 밀어야 하는지
+#: 판정하는 곳(``ksi_core.spatial_model``)이 이 집합을 읽는다 — 그 판정이 임무타입
+#: 목록을 자기 파일에 복사하면 새 매핑 계열 타입이 추가될 때 한쪽만 갱신된다.
+#:
+#: ``INCIDENT_SURVEY`` 는 ``UNMAPPED`` 에서도 발급 가능하지만 **지도를 만드는 임무가
+#: 아니라서 제외한다**. 그 허용 자체가 문서 문언이 아니라 FINAL_DECISION_LEDGER
+#: DEC-013 으로부터의 보수적 추론이고(INV-052, 모듈 docstring), 사고조사 한 번이
+#: 현장을 "매핑 시작"으로 전진시키면 그 추론이 상태머신까지 번진다.
+MAPPING_FROM_SCRATCH_MISSION_TYPES: frozenset[MissionType] = frozenset(
+    mission_type
+    for mission_type, statuses in MISSION_TYPE_ALLOWED_SITE_STATUSES.items()
+    if _ST.UNMAPPED in statuses and mission_type is not _MT.INCIDENT_SURVEY
+)
+
 # 표 완전성 자가검증 — MissionType 멤버가 늘었는데 표를 안 고치면 여기서 즉시
 # ImportError 로 드러난다(assert_site_transition 의 SUSPENDED 키 완전성 유지
 # 관습과 동일 정신, "조용한 기본 허용" 방지).
@@ -157,6 +172,7 @@ def assert_mission_type_allowed_at_site_status(
 
 
 __all__ = [
+    "MAPPING_FROM_SCRATCH_MISSION_TYPES",
     "MISSION_TYPE_ALLOWED_SITE_STATUSES",
     "MissionTypeNotAllowedForSiteStatusError",
     "assert_mission_type_allowed_at_site_status",

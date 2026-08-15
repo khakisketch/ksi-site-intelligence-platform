@@ -1123,6 +1123,81 @@ paths:
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/execution:
+    get:
+      summary: Read the mission's execution lifecycle status and history
+      description: >-
+        MISSIONS_READ 권한 필요. MissionRecord 는 **발급 기록**이라 "이 임무가 실제로
+        날았는가"에 답하지 못한다 — 이 표면이 그 축을 연다(ADR-KSI-019 G2).
+
+        전이가 한 번도 없었으면 status 는 ISSUED 이고 history 는 빈 배열이다
+        (**레코드 부재 = ISSUED**). 발급 시점에 실행 원장에 쓰지 않는 것이 의도다:
+        쓰면 ADR-KSI-008 §3 의 "durable 기록 전 201 금지" 경로에 두 번째 원장 쓰기가
+        끼어들어, 그 쓰기가 실패할 때 이미 성립한 계약 발급이 실패한다.
+
+        이 값은 **완료 판정의 권위가 아니라 CoverageReport 원장의 투영**이다
+        (INV-010). 커버리지 접수·재구성 발급의 전제조건으로 쓰지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 현재 실행 상태 + 전이 이력(오래된 것부터)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MissionExecutionView' }
+        '404': { description: 발급된 적 없는 임무 }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/execution-transitions:
+    post:
+      summary: Declare an execution fact a human knows (DISPATCHED / CANCELLED only)
+      description: >-
+        MISSIONS_ISSUE 권한 필요. 사람이 선언할 수 있는 상태는 **DISPATCHED**(기체로
+        넘겼다)와 **CANCELLED**(접는다) 둘뿐이다. 실기 확인 전까지 운영자가 KMZ 를
+        손으로 옮기는 것이 공식 경로이므로(ADR-KSI-019 G3), 서버가 그 사실을 기록할
+        수 있어야 임무 원장에 "날았는지 모른다"만 남지 않는다.
+
+        ACTIVATED 는 Edge 의 서명 activation receipt 가, COMPLETED/ENDED_INCOMPLETE 는
+        CoverageReport 접수가 만드는 사실이라 **누구도 선언할 수 없다**(403) —
+        사람이 찍을 수 있으면 그 상태는 근거가 아니라 주장이 된다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetStatus]
+              properties:
+                targetStatus:
+                  type: string
+                  enum: [DISPATCHED, CANCELLED]
+                  description: >-
+                    표에 없는 값(ACTIVATED·COMPLETED·ENDED_INCOMPLETE·ISSUED)은 403 이다.
+                detail:
+                  type: [string, 'null']
+                  description: 어떻게 넘겼는가를 사람 말로 남기는 자리(예 "RC Plus 2 로 이관").
+      responses:
+        '200':
+          description: TRANSITIONED — 갱신된 실행 상태
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MissionExecutionView' }
+        '404': { description: 발급된 적 없는 임무 }
+        '409': { description: ILLEGAL_TRANSITION — 현재 상태에서 갈 수 없는 전이 }
+        '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
+        '401': { description: 인증 실패 }
+        '403': { description: 사람이 선언할 수 없는 상태이거나 MISSIONS_ISSUE 권한 없음 }
   /v1/missions/{mission_id}/coverage-report:
     post:
       summary: Submit the post-flight CoverageReport (INV-010 완료 게이트)
@@ -2539,6 +2614,40 @@ paths:
         '404': { description: 등록되지 않은 현장 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/spatial-model/staleness-sweep:
+    post:
+      summary: Apply the staleness verdict now (explicit, operator/batch triggered)
+      description: >-
+        SITES_WRITE 권한 필요. 이 현장의 공간모델이 선언된 나이 기준을 넘었으면
+        PATROL_READY/PATROL_ACTIVE → MODEL_STALE 로 전이시킨다. 기준을 선언하지 않은
+        현장은 **아무것도 하지 않는다** — 서버가 기준을 지어내 자율운영을 끊지 않는다.
+
+        조회(GET .../spatial-model)가 이 일을 하지 않는 것이 의도다: 조회가 원장을
+        바꾸면 현장 상태가 "누가 언제 화면을 열었는가"에 좌우된다.
+
+        **주기 실행은 이 서비스가 소유하지 않는다** — systemd timer·cron 같은 배포
+        운영 계층이 이 엔드포인트를 부른다. 서버 안에 스케줄러를 두면 그 주기가 배포
+        설정이 아니라 코드가 되고 운영에서 관측하기 어려워진다.
+
+        SITES_AUTONOMY_APPROVE 를 요구하지 않는다 — PATROL_READY → MODEL_STALE 은
+        자율을 **끊는** 방향이라 승인 간선이 아니다. 자율 복귀에는 여전히 재검증
+        경로(MODEL_PROCESSING → MODEL_VALIDATION → PROVISIONAL_AUTONOMY)와 승인이
+        필요하다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: site_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 스윕 후의 판정 결과(옮겼든 안 옮겼든 현재 상태를 낸다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpatialModelView' }
+        '404': { description: 등록되지 않은 현장 }
+        '401': { description: 인증 실패 }
+        '403': { description: SITES_WRITE 권한 없음 }
   /v1/processing-jobs:
     get:
       summary: List processing jobs a worker may (re)claim — QUEUED + orphaned RUNNING (FIFO)
@@ -3750,6 +3859,38 @@ components:
         # null 은 "노후 기준 미선언"이고 그 뜻은 **판정하지 않음**이지 "최신"이
         # 아니다(ADR-KSI-019 G1). PUT /v1/sites/{site_id}/model-age-policy 로 선언·철회.
         modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
+    MissionExecutionHistoryEntry:
+      type: object
+      required: [missionId, before, after, updatedAt, updatedBy, detail]
+      properties:
+        missionId: { type: string }
+        before: { type: string }
+        after: { type: string }
+        updatedAt: { type: string }
+        updatedBy: { type: string }
+        detail: { type: [string, 'null'] }
+    MissionExecutionView:
+      description: >-
+        임무 실행 생애주기(ADR-KSI-019 G2). ISSUED → DISPATCHED → ACTIVATED →
+        COMPLETED|ENDED_INCOMPLETE, 그리고 CANCELLED. **앞으로 건너뛰기를 허용한다** —
+        수동 이관 임무는 DISPATCHED·ACTIVATED 신호가 아예 없고, 그 임무의 완료 보고를
+        실행 상태 때문에 거부하면 INV-010 의 완료 판정 권위가 이 필드로 넘어간다.
+        IN_FLIGHT 는 없다: KSI 는 비행 중 텔레메트리를 받지 않으므로(INV-001)
+        "지금 날고 있다"는 서버가 아는 사실이 아니다.
+      type: object
+      required: [missionId, status, updatedAt, updatedBy, detail, history]
+      properties:
+        missionId: { type: string }
+        status:
+          type: string
+          enum: [ISSUED, DISPATCHED, ACTIVATED, COMPLETED, ENDED_INCOMPLETE, CANCELLED]
+        # 전이가 한 번도 없었으면 null — 그 경우 status 는 ISSUED 다.
+        updatedAt: { type: [string, 'null'] }
+        updatedBy: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/MissionExecutionHistoryEntry' }
     SpatialModelView:
       description: >-
         현장의 공간모델 판정(ADR-KSI-019 G1). 결론(state)과 그 결론이 나온

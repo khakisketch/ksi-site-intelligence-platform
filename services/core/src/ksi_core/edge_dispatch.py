@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_domain.enums import MissionExecutionStatus
 from ksi_mission_contracts.dispatch import (
     ActivationReceiptV1,
     DispatchValidity,
@@ -46,10 +47,14 @@ from ksi_core.evidence import (
     EvidenceVerdict,
     expires_at,
 )
+from ksi_core.mission_execution import advance_site_for_dispatch
 from ksi_core.mission_records import MissionStore
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from ksi_core.mission_execution import MissionExecutionStore
+    from ksi_core.spatial_model import SpatialModelLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -459,8 +464,15 @@ def build_edge_dispatch_router(
     *,
     event_store: EventStore | None = None,
     evidence_storage: EvidenceStorage | None = None,
+    mission_execution_store: MissionExecutionStore | None = None,
+    site_lifecycle: SpatialModelLifecycle | None = None,
 ) -> APIRouter:
-    """별도 Edge sync router — 기존 operator evidence 권한을 약화하지 않는다."""
+    """별도 Edge sync router — 기존 operator evidence 권한을 약화하지 않는다.
+
+    ``mission_execution_store`` 를 주면 dispatch·activation 이 임무 실행 상태를
+    자동으로 옮긴다(ADR-KSI-019 G2). **그 결과는 이 라우터의 응답을 절대 바꾸지
+    않는다** — 투영 원장의 가용성이 장비의 임무 수신을 막으면 안 된다.
+    """
     router = APIRouter(prefix="/v1/edge-sync", tags=["edge-sync"])
 
     @router.get("/missions/next", response_model=MissionDispatchEnvelopeV1)
@@ -475,6 +487,25 @@ def build_edge_dispatch_router(
         if result.verdict is EdgeDispatchVerdict.STORE_UNAVAILABLE:
             raise HTTPException(status_code=503, detail="EDGE_DISPATCH_STORE_UNAVAILABLE")
         assert result.envelope is not None  # noqa: S101 -- ISSUED/EXISTING만 이 경로
+        if mission_execution_store is not None:
+            # 임무가 기체 쪽으로 넘어갔다 → DISPATCHED. **반환값을 의도적으로
+            # 무시한다**: 이미 CANCELLED 인 임무의 재 pull 은 전이표가 막고, 그
+            # 거부가 장비의 임무 수신 응답을 바꾸면 안 된다(ADR-KSI-019 G2 —
+            # 이 축은 게이트가 아니라 관측 기록이다).
+            mission_execution_store.transition(
+                str(result.envelope.get("missionId", "")),
+                MissionExecutionStatus.DISPATCHED,
+                detail=f"edge pull dispatchId={result.envelope.get('dispatchId')}",
+                actor=f"system:edge-dispatch:{edge.device_id}",
+                now=datetime.now(UTC),
+            )
+            # 매핑 계열 임무의 배포는 그 현장의 매핑 시작이기도 하다(ADR-KSI-019 G1).
+            # 운영자 수동 선언 경로(mission_execution 라우터)와 같은 헬퍼를 공유한다.
+            advance_site_for_dispatch(
+                str(result.envelope.get("missionId", "")),
+                mission_store=store._mission_store,  # noqa: SLF001 -- 같은 조립의 발급 원장
+                site_lifecycle=site_lifecycle,
+            )
         return MissionDispatchEnvelopeV1.model_validate(result.envelope)
 
     @router.post(
@@ -503,6 +534,17 @@ def build_edge_dispatch_router(
             raise HTTPException(status_code=503, detail="EDGE_DISPATCH_STORE_UNAVAILABLE")
         if result.verdict is EdgeDispatchVerdict.ALREADY_ACTIVATED:
             response.status_code = 200
+        if mission_execution_store is not None:
+            # 기체가 계약을 활성화했다고 서명해 보고했다 → ACTIVATED. 재수신
+            # (ALREADY_ACTIVATED)에도 같은 전이를 시도하지만 자기 자신으로의 전이는
+            # 전이표에 없으므로 원장에 빈 레코드가 쌓이지 않는다.
+            mission_execution_store.transition(
+                receipt.mission_id,
+                MissionExecutionStatus.ACTIVATED,
+                detail=f"activation receipt dispatchId={dispatch_id}",
+                actor=f"system:edge-activation:{edge.device_id}",
+                now=datetime.now(UTC),
+            )
         return ActivationReceiptResponse(verdict=result.verdict, dispatch_id=dispatch_id)
 
     if event_store is not None and evidence_storage is not None:
@@ -603,11 +645,17 @@ def mount_edge_dispatch(
     *,
     event_store: EventStore | None = None,
     evidence_storage: EvidenceStorage | None = None,
+    mission_execution_store: MissionExecutionStore | None = None,
+    site_lifecycle: SpatialModelLifecycle | None = None,
 ) -> None:
     app.state.edge_dispatch_store = store
     app.include_router(
         build_edge_dispatch_router(
-            store, event_store=event_store, evidence_storage=evidence_storage
+            store,
+            event_store=event_store,
+            evidence_storage=evidence_storage,
+            mission_execution_store=mission_execution_store,
+            site_lifecycle=site_lifecycle,
         )
     )
 

@@ -38,7 +38,9 @@ from ksi_core.coverage_reports import (
     mount_coverage_reports,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionRecord, MissionStore
+from ksi_domain.enums import MissionExecutionStatus
 from ksi_event_contracts.coverage_report import CoverageReport
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -843,3 +845,109 @@ def test_rejections_survive_restart(tmp_path: Path) -> None:
     assert len(rejections) == 1
     assert rejections[0].verdict is CoverageReportVerdict.UNSUPPORTED_COMPLETION
     assert rejections[0].reported_by == "edge-1"
+
+
+# ── 임무 실행 생애주기 결선 (ADR-KSI-019 G2) ──────────────────────────
+
+
+def _client_with_execution(
+    tmp_path: Path,
+) -> tuple[TestClient, MissionExecutionStore]:
+    """커버리지 접수 + 실행 상태 투영 조립.
+
+    두 원장이 **같은 발급 원장**을 공유해야 한다 — 서로 다른 MissionStore 를 쓰면
+    한쪽이 임무를 모르는 조립이 되어 검증이 공허해진다.
+    """
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    coverage_store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    execution_store = MissionExecutionStore(
+        DurableJournal(tmp_path / "mission-execution.jsonl"), mission_store=mission_store
+    )
+    app = FastAPI()
+    mount_auth(app, _registry())
+    mount_coverage_reports(app, coverage_store, execution_store)
+    client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {_DEVICE_TOKEN}"})
+    return client, execution_store
+
+
+def test_completed_report_marks_the_mission_completed(tmp_path: Path) -> None:
+    client, execution = _client_with_execution(tmp_path)
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+
+    assert response.status_code == 201, response.text
+    assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.COMPLETED
+
+
+@pytest.mark.parametrize("completion", ["ABORTED_SAFE", "FAILED", "COMPLETED_WITH_GAPS"])
+def test_non_completed_report_marks_the_mission_ended_incomplete(
+    tmp_path: Path, completion: str
+) -> None:
+    client, execution = _client_with_execution(tmp_path)
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(completion=completion),
+    )
+
+    assert response.status_code == 201, response.text
+    assert (
+        execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ENDED_INCOMPLETE
+    )
+
+
+def test_rejected_report_does_not_move_the_execution_status(tmp_path: Path) -> None:
+    """[핵심] 거부된 보고는 실행 상태를 옮기지 않는다.
+
+    RECORDED 만 완료 판정 권위를 가진다(``CoverageReportStore._reject``). 거부된
+    주장이 실행 상태를 옮기면 그 값이 화면에서 사실처럼 읽힌다.
+    """
+    client, execution = _client_with_execution(tmp_path)
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(cells=[]),  # 관찰 증거 0건 → NO_COVERAGE_EVIDENCE
+    )
+
+    assert response.status_code == 422
+    assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ISSUED
+
+
+def test_a_later_report_corrects_the_projection(tmp_path: Path) -> None:
+    """나중에 접수된 보고가 결론을 바꾸면 투영도 따라간다(COMPLETED ↔ ENDED_INCOMPLETE)."""
+    client, execution = _client_with_execution(tmp_path)
+    client.post(f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload())
+    assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.COMPLETED
+
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(completion="ABORTED_SAFE"),
+    )
+
+    assert (
+        execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ENDED_INCOMPLETE
+    )
+
+
+def test_coverage_acceptance_survives_a_sealed_execution_journal(tmp_path: Path) -> None:
+    """[핵심] 실행 상태 원장이 봉인돼도 커버리지 접수는 201 이다.
+
+    완료 판정의 권위는 CoverageReport 원장이다(INV-010). 그 접수가 투영 원장의
+    가용성에 좌우되면 권위가 뒤집힌다.
+    """
+    client, execution = _client_with_execution(tmp_path)
+    # 투영 원장을 닫아 봉인 상태로 만든다 — 이후 모든 전이가 STORE_UNAVAILABLE 이
+    # 된다(DurableJournal.close 가 sealed_reason 을 "closed" 로 세운다).
+    execution._journal.close()  # noqa: SLF001
+
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report", json=_report_payload()
+    )
+
+    assert response.status_code == 201, response.text
+    assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ISSUED
