@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-15T23:58:13+09:00",
+  "updated_at": "2026-08-16T00:45:34+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2303,6 +2303,29 @@
       "verification_requested": null,
       "created_at": "2026-08-15T23:58:13+09:00",
       "updated_at": "2026-08-15T23:58:13+09:00"
+    },
+    {
+      "id": "decision-flight-ceiling-reference-split",
+      "title": "법적 비행 상한과 DJI 고도 기준을 어떻게 분리할 것인가 (FIELD-3 전 확정)",
+      "completion_criteria": [
+        "항공안전법 시행규칙의 해당 조문 원문이 근거로 확보돼 저장소에 인용된다",
+        "일반 지역(지표면·수면·물건 상단 150m)과 밀집 지역(주변 최고 장애물 상단) 두 기준이 계약 모델에서 어떻게 표현되는지 정해진다",
+        "DJI 이륙점 상대 기준과 법적 기준이 한 값에 겹쳐 있는 현재 FlightEnvelope 구조를 어떻게 쪼갤지 정해진다",
+        "밀집 지역 판정에 DSM 기반 장애물 상단을 쓸지, 쓴다면 발급 게이트의 어느 지점인지 정해진다",
+        "결정 전까지 현재 상한을 유지한다는 것이 문서로 남는다"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "decision",
+      "verification_requested": null,
+      "created_at": "2026-08-16T00:45:34+09:00",
+      "updated_at": "2026-08-16T00:45:34+09:00"
     }
   ],
   "risks": [
