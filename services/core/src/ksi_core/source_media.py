@@ -94,7 +94,13 @@ from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    PrincipalKind,
+    require_permission,
+    require_permission_any,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     ALLOWED_CONTENT_TYPES,
@@ -619,12 +625,20 @@ class SourceMediaStore:
         *,
         registered_by: str,
         now: datetime,
+        caller_device_id: str | None = None,
     ) -> BatchRegistrationResult:
         """배치 1건을 처리한다 — 요청 수준 게이트 통과 후 항목별로 typed 판정한다.
 
         요청 수준(``UNKNOWN_MISSION``/``BUNDLE_SEALED``/``STORE_UNAVAILABLE``)은
         배치 전체에 적용되고 개별 결과가 없다. 통과하면(``PROCESSED``) 항목마다
         독립 판정한다 — 한 파일의 claim 충돌이 나머지 파일의 등록을 막지 않는다.
+
+        ``caller_device_id`` 는 Edge 장비 호출일 때만 넘긴다(사람 호출은
+        ``None`` — 아무 mission 이나 허용). 값이 있는데 그 mission 의
+        ``assigned_device_id`` 와 다르면 **``UNKNOWN_MISSION`` 과 같은 판정**을
+        낸다 — "이 mission 은 존재하지만 네 것이 아니다"를 별도 코드로
+        노출하면 다른 장비의 mission 존재 여부를 확인하는 열거 오라클이 된다
+        (edge_dispatch.py 의 event 소유권 판정과 동일 관습).
         """
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -634,7 +648,9 @@ class SourceMediaStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             mission = self._mission_store.get(mission_id)
-            if mission is None:
+            if mission is None or (
+                caller_device_id is not None and mission.assigned_device_id != caller_device_id
+            ):
                 return BatchRegistrationResult(
                     SourceMediaBatchVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
                 )
@@ -752,11 +768,20 @@ class SourceMediaStore:
             content_type=claim.content_type,
         ), False
 
-    def seal(self, mission_id: str, *, sealed_by: str, now: datetime) -> SealResult:
+    def seal(
+        self,
+        mission_id: str,
+        *,
+        sealed_by: str,
+        now: datetime,
+        caller_device_id: str | None = None,
+    ) -> SealResult:
         """번들을 봉인하고 :func:`compute_source_bundle_digest` 로 digest 를 굳힌다.
 
         이미 봉인된 번들의 재호출은 에러가 아니라 ``ALREADY_SEALED``(기존 digest
-        재반환) — 재시도가 안전해야 한다.
+        재반환) — 재시도가 안전해야 한다. ``caller_device_id`` 의미는
+        :meth:`register_batch` 와 동일(자기 mission 아니면 ``UNKNOWN_MISSION``
+        과 같은 판정으로 접는다).
         """
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -765,7 +790,9 @@ class SourceMediaStore:
                     SourceBundleSealVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             mission = self._mission_store.get(mission_id)
-            if mission is None:
+            if mission is None or (
+                caller_device_id is not None and mission.assigned_device_id != caller_device_id
+            ):
                 return SealResult(
                     SourceBundleSealVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
                 )
@@ -902,6 +929,17 @@ class SourceMediaStore:
         with self._lock:
             return self._bundles.get(mission_id)
 
+    def assigned_device_id(self, mission_id: str) -> str | None:
+        """``mission_id`` 에 배정된 장비 ID(없거나 mission 부재면 None).
+
+        Edge 장비 self-mission 범위 검증 전용 — ``register_batch``/``seal``
+        의 ``caller_device_id`` 인자, 그리고 ``processing_jobs.ProcessingJobStore``
+        가 같은 판정을 재사용한다.
+        """
+        with self._lock:
+            mission = self._mission_store.get(mission_id)
+        return mission.assigned_device_id if mission is not None else None
+
 
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
@@ -1024,6 +1062,13 @@ class SourceMediaViewResponse(CamelModel):
     sha256: str
 
 
+# 모듈 수준 싱글턴 — B008(Depends 인자에서 함수 호출 금지) 회피 + 두 엔드포인트
+# (register/seal)가 같은 권한 판정 객체를 공유한다.
+_require_source_media_write = require_permission_any(
+    Permission.MISSIONS_ISSUE, Permission.EDGE_SOURCE_MEDIA_WRITE
+)
+
+
 def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage) -> APIRouter:
     router = APIRouter(prefix="/v1/missions", tags=["source-media"])
 
@@ -1067,7 +1112,7 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
         mission_id: str,
         request: SourceMediaBatchRequest,
         response: Response,
-        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+        principal: Principal = Depends(_require_source_media_write),  # noqa: B008
     ) -> SourceMediaBatchResponse:
         now = datetime.now(UTC)
         claims = [
@@ -1082,7 +1127,13 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
             for f in request.files
         ]
         result = store.register_batch(
-            mission_id, claims, registered_by=principal.principal_id, now=now
+            mission_id,
+            claims,
+            registered_by=principal.principal_id,
+            now=now,
+            caller_device_id=(
+                principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
+            ),
         )
         response.status_code = _BATCH_STATUS[result.verdict]
         if result.verdict is SourceMediaBatchVerdict.STORE_UNAVAILABLE:
@@ -1101,9 +1152,16 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
     def seal_source_media(
         mission_id: str,
         response: Response,
-        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+        principal: Principal = Depends(_require_source_media_write),  # noqa: B008
     ) -> SourceMediaSealResponse:
-        result = store.seal(mission_id, sealed_by=principal.principal_id, now=datetime.now(UTC))
+        result = store.seal(
+            mission_id,
+            sealed_by=principal.principal_id,
+            now=datetime.now(UTC),
+            caller_device_id=(
+                principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
+            ),
+        )
         response.status_code = _SEAL_STATUS[result.verdict]
         if result.verdict is SourceBundleSealVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"

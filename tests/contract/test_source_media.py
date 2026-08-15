@@ -49,6 +49,8 @@ _NOW = datetime(2026, 8, 5, 3, 0, tzinfo=UTC)
 _ADMIN_TOKEN = "source-media-admin"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "source-media-viewer"  # noqa: S105
 _WORKER_TOKEN = "source-media-worker"  # noqa: S105
+_EDGE_TOKEN = "source-media-edge"  # noqa: S105
+_OTHER_EDGE_TOKEN = "source-media-edge-other"  # noqa: S105
 
 
 def _sha(seed: str) -> str:
@@ -84,7 +86,11 @@ def _record(media_id: str, *, seed: str | None = None) -> SourceMediaRecord:
 
 
 def _mission_store(
-    tmp_path: Path, *, site_id: str = _SITE_ID, path: str = "missions.jsonl"
+    tmp_path: Path,
+    *,
+    site_id: str = _SITE_ID,
+    path: str = "missions.jsonl",
+    assigned_device_id: str | None = None,
 ) -> MissionStore:
     store = MissionStore(DurableJournal(tmp_path / path))
     assert (
@@ -101,6 +107,7 @@ def _mission_store(
                 planned_coverage_ratio=None,
                 issued_at=_NOW,
                 issued_by="do-1",
+                assigned_device_id=assigned_device_id,
             )
         ).value
         == "RECORDED"
@@ -192,6 +199,98 @@ def test_unknown_mission_is_rejected(store: SourceMediaStore) -> None:
         "mission-never-issued", [_claim("img-1.jpg")], registered_by="op-1", now=_NOW
     )
     assert result.verdict is SourceMediaBatchVerdict.UNKNOWN_MISSION
+
+
+# ── Edge 장비 self-mission 범위 (EDGE_SOURCE_MEDIA_WRITE, risk
+# edge-device-cannot-call-source-media-ingest 해소) ─────────────────────────
+
+_EDGE_DEVICE_ID = "edge-drone-1"
+_OTHER_EDGE_DEVICE_ID = "edge-drone-2"
+
+
+@pytest.fixture
+def assigned_store(tmp_path: Path) -> SourceMediaStore:
+    """미션이 ``_EDGE_DEVICE_ID`` 에 배정된 store — self-scoping 테스트 전용."""
+    return SourceMediaStore(
+        DurableJournal(tmp_path / "assigned-source-media.jsonl"),
+        mission_store=_mission_store(
+            tmp_path, path="assigned-missions.jsonl", assigned_device_id=_EDGE_DEVICE_ID
+        ),
+    )
+
+
+def test_assigned_device_id_reflects_mission_assignment(assigned_store: SourceMediaStore) -> None:
+    assert assigned_store.assigned_device_id(_MISSION_ID) == _EDGE_DEVICE_ID
+    assert assigned_store.assigned_device_id("mission-never-issued") is None
+
+
+def test_register_batch_allows_the_assigned_edge_device(assigned_store: SourceMediaStore) -> None:
+    result = assigned_store.register_batch(
+        _MISSION_ID,
+        [_claim("img-1.jpg")],
+        registered_by=_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_EDGE_DEVICE_ID,
+    )
+    assert result.verdict is SourceMediaBatchVerdict.PROCESSED
+    assert result.items[0].verdict is SourceMediaItemVerdict.REGISTERED
+
+
+def test_register_batch_rejects_a_different_edge_device_as_unknown_mission(
+    assigned_store: SourceMediaStore,
+) -> None:
+    """자기 것이 아닌 mission 은 존재 여부를 노출하지 않고 UNKNOWN_MISSION 과 동일하게 접는다."""
+    result = assigned_store.register_batch(
+        _MISSION_ID,
+        [_claim("img-1.jpg")],
+        registered_by=_OTHER_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_OTHER_EDGE_DEVICE_ID,
+    )
+    assert result.verdict is SourceMediaBatchVerdict.UNKNOWN_MISSION
+
+
+def test_seal_rejects_a_different_edge_device_as_unknown_mission(
+    assigned_store: SourceMediaStore,
+) -> None:
+    assigned_store.register_batch(
+        _MISSION_ID,
+        [_claim("img-1.jpg")],
+        registered_by=_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_EDGE_DEVICE_ID,
+    )
+    result = assigned_store.seal(
+        _MISSION_ID,
+        sealed_by=_OTHER_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_OTHER_EDGE_DEVICE_ID,
+    )
+    assert result.verdict is SourceBundleSealVerdict.UNKNOWN_MISSION
+
+
+def test_seal_allows_the_assigned_edge_device(assigned_store: SourceMediaStore) -> None:
+    assigned_store.register_batch(
+        _MISSION_ID,
+        [_claim("img-1.jpg")],
+        registered_by=_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_EDGE_DEVICE_ID,
+    )
+    result = assigned_store.seal(
+        _MISSION_ID, sealed_by=_EDGE_DEVICE_ID, now=_NOW, caller_device_id=_EDGE_DEVICE_ID
+    )
+    assert result.verdict is SourceBundleSealVerdict.SEALED
+
+
+def test_human_caller_is_not_scoped_to_the_assigned_device(
+    assigned_store: SourceMediaStore,
+) -> None:
+    """``caller_device_id=None``(사람 호출)은 mission 의 assigned_device_id 와 무관하다."""
+    result = assigned_store.register_batch(
+        _MISSION_ID, [_claim("img-1.jpg")], registered_by="op-admin", now=_NOW
+    )
+    assert result.verdict is SourceMediaBatchVerdict.PROCESSED
 
 
 @pytest.mark.parametrize("bad_id", ["../evil.jpg", "a/b.jpg", ".hidden"])
@@ -718,6 +817,24 @@ def _auth_registry() -> AuthRegistry:
                     device_id=None,
                 ),
             ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_EDGE_TOKEN),
+                principal=Principal(
+                    principal_id="edge-drone-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id=_EDGE_DEVICE_ID,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_OTHER_EDGE_TOKEN),
+                principal=Principal(
+                    principal_id="edge-drone-2",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id=_OTHER_EDGE_DEVICE_ID,
+                ),
+            ),
         ]
     )
 
@@ -737,6 +854,24 @@ def _client(tmp_path: Path, *, storage: FakeStorage | None) -> TestClient:
     client = TestClient(app)
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     return client
+
+
+def _client_with_assigned_edge_device(tmp_path: Path, *, storage: FakeStorage | None) -> TestClient:
+    """``_EDGE_DEVICE_ID`` 에 배정된 mission 을 가진 client — HTTP self-scoping 테스트 전용."""
+    mission_store = _mission_store(
+        tmp_path, path="http-edge-missions.jsonl", assigned_device_id=_EDGE_DEVICE_ID
+    )
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "http-edge-source-media.jsonl"), mission_store=mission_store
+    )
+    app = create_app(
+        auth_registry=_auth_registry(),
+        mission_store=mission_store,
+        evidence_storage=storage,
+        source_media_store=source_media_store,
+        mission_signing_key=None,
+    )
+    return TestClient(app)
 
 
 def _file_payload(media_id: str, *, seed: str | None = None) -> dict[str, Any]:
@@ -805,6 +940,44 @@ def test_viewer_cannot_register_or_seal(tmp_path: Path) -> None:
     assert register.status_code == 403
     seal = client.post(f"/v1/missions/{_MISSION_ID}/source-media/seal", headers=headers)
     assert seal.status_code == 403
+
+
+def test_http_assigned_edge_device_can_register_and_seal(tmp_path: Path) -> None:
+    client = _client_with_assigned_edge_device(tmp_path, storage=FakeStorage())
+    headers = {"Authorization": f"Bearer {_EDGE_TOKEN}"}
+    register = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+        headers=headers,
+    )
+    assert register.status_code == 201, register.text
+    seal = client.post(f"/v1/missions/{_MISSION_ID}/source-media/seal", headers=headers)
+    assert seal.status_code == 201, seal.text
+    assert seal.json()["verdict"] == "SEALED"
+
+
+def test_http_unassigned_edge_device_gets_the_same_404_as_unknown_mission(
+    tmp_path: Path,
+) -> None:
+    """자기 mission 이 아닌 장비는 403(권한부족)이 아니라 404(존재 안 함)로 접힌다."""
+    client = _client_with_assigned_edge_device(tmp_path, storage=FakeStorage())
+    other_headers = {"Authorization": f"Bearer {_OTHER_EDGE_TOKEN}"}
+    register = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+        headers=other_headers,
+    )
+    assert register.status_code == 404, register.text
+
+    unknown_mission_register = client.post(
+        "/v1/missions/mission-never-issued/source-media",
+        json={"files": [_file_payload("img-1.jpg")]},
+        headers={"Authorization": f"Bearer {_EDGE_TOKEN}"},
+    )
+    assert unknown_mission_register.status_code == register.status_code
+    # 상태 코드뿐 아니라 본문까지 같아야 한다 — 그렇지 않으면 다른 필드로
+    # "존재하지만 내 것이 아니다"가 새어나갈 수 있다(reviewer 2026-08-14 지적).
+    assert unknown_mission_register.json() == register.json()
 
 
 def test_viewer_can_read_status(tmp_path: Path) -> None:

@@ -123,6 +123,14 @@ class Permission(StrEnum):
     # projection한 event에만 증거 등록 URL을 받는다. 사람 Role에는 절대 넣지 않는다.
     EDGE_MISSION_PULL = "EDGE_MISSION_PULL"
     EDGE_EVIDENCE_WRITE = "EDGE_EVIDENCE_WRITE"
+    # Edge device 전용: 자기 mission_id 범위에서만 원본 사진 배치 등록/봉인 및
+    # 재구성 작업 발행. MISSIONS_ISSUE(사람, 아무 mission)보다 좁다 — 라우터가
+    # mission.assigned_device_id != principal.device_id 를 UNKNOWN_MISSION 과
+    # 같은 404 로 접어 자기 것이 아닌 mission 의 존재 여부를 노출하지 않는다
+    # (edge_dispatch.py 의 event 소유권 판정과 동일 관습). 사람 Role 에는 넣지
+    # 않는다(자동화 장비 최소권한 원칙, 2026-08-14 risk
+    # edge-device-cannot-call-source-media-ingest 해소).
+    EDGE_SOURCE_MEDIA_WRITE = "EDGE_SOURCE_MEDIA_WRITE"
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
@@ -321,6 +329,7 @@ _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.EDGE_SYNC_INGEST,
         Permission.EDGE_MISSION_PULL,
         Permission.EDGE_EVIDENCE_WRITE,
+        Permission.EDGE_SOURCE_MEDIA_WRITE,
     }
 )
 
@@ -397,6 +406,27 @@ def require_permission(perm: Permission) -> Callable[[Principal], Principal]:
 
     def _check(principal: Principal = Depends(_resolve_principal)) -> Principal:  # noqa: B008
         if perm not in principal_permissions(principal):
+            raise HTTPException(status_code=403, detail="권한이 부족하다")
+        return principal
+
+    return _check
+
+
+def require_permission_any(*perms: Permission) -> Callable[[Principal], Principal]:
+    """``perms`` 중 하나라도 가진 Principal 을 통과시킨다.
+
+    같은 엔드포인트를 사람(``MISSIONS_ISSUE``, 아무 mission)과 Edge 장비
+    (``EDGE_SOURCE_MEDIA_WRITE``, 자기 mission 만)가 서로 다른 범위로 함께
+    쓸 때만 쓴다 — 범위 좁히기(자기 mission 검증)는 이 의존성이 아니라
+    핸들러/store 가 한다(``require_permission`` 과 달리 여기서는 "권한 있음"
+    만 보장하지 "그 mission 이 자기 것" 까지는 보장하지 않는다).
+    """
+    if not perms:
+        raise ValueError("require_permission_any 는 최소 1개의 Permission 이 필요하다")
+
+    def _check(principal: Principal = Depends(_resolve_principal)) -> Principal:  # noqa: B008
+        granted = principal_permissions(principal)
+        if not any(p in granted for p in perms):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
         return principal
 

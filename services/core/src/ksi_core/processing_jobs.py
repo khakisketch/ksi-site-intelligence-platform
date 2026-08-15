@@ -169,8 +169,10 @@ from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import (
     Permission,
     Principal,
+    PrincipalKind,
     principal_permissions,
     require_permission,
+    require_permission_any,
     require_principal,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
@@ -966,13 +968,24 @@ class ProcessingJobStore:
 
     # ── 공개 API ────────────────────────────────────────────────────────
     def issue(
-        self, mission_id: str, spec: JobSpec, *, issued_by: str, now: datetime
+        self,
+        mission_id: str,
+        spec: JobSpec,
+        *,
+        issued_by: str,
+        now: datetime,
+        caller_device_id: str | None = None,
     ) -> ProcessingJobResult:
         """봉인된 번들 위에 처리 작업을 발급한다.
 
         게이트 순서는 **싼 것부터**다 — 번들 존재/봉인 → INV-050 → 활성 작업
         중복. 반출 위반을 활성 작업 검사보다 먼저 보는 이유는, 두 번째 요청이
         409 를 받아 "중복만 아니면 통과할 것"으로 오해되지 않게 하기 위해서다.
+
+        ``caller_device_id`` 는 Edge 장비 호출일 때만 넘긴다(사람 호출은
+        ``None``). 값이 있는데 그 mission 의 배정 장비와 다르면
+        ``source_media.py`` 의 ``register_batch``/``seal`` 과 동일하게
+        ``UNKNOWN_MISSION`` 과 같은 판정으로 접는다(열거 오라클 방지).
         """
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -981,7 +994,10 @@ class ProcessingJobStore:
                     ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
             bundle = self._source_media.get(mission_id)
-            if bundle is None:
+            if bundle is None or (
+                caller_device_id is not None
+                and self._source_media.assigned_device_id(mission_id) != caller_device_id
+            ):
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_MISSION,
                     detail="해당 임무의 원본 미디어 번들이 없다 — 사진을 먼저 올린다",
@@ -1714,6 +1730,12 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
     )
 
 
+# 모듈 수준 싱글턴 — B008 회피(source_media.py 의 동일 관습).
+_require_processing_job_issue = require_permission_any(
+    Permission.MISSIONS_ISSUE, Permission.EDGE_SOURCE_MEDIA_WRITE
+)
+
+
 def build_processing_jobs_router(
     store: ProcessingJobStore, storage: EvidenceStorage
 ) -> APIRouter:
@@ -1728,7 +1750,7 @@ def build_processing_jobs_router(
         mission_id: str,
         request: ProcessingJobRequest,
         response: Response,
-        principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
+        principal: Principal = Depends(_require_processing_job_issue),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
         spec = JobSpec(
             provider=request.provider,
@@ -1743,7 +1765,13 @@ def build_processing_jobs_router(
             processing_params=request.processing_params,
         )
         result = store.issue(
-            mission_id, spec, issued_by=principal.principal_id, now=datetime.now(UTC)
+            mission_id,
+            spec,
+            issued_by=principal.principal_id,
+            now=datetime.now(UTC),
+            caller_device_id=(
+                principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
+            ),
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
