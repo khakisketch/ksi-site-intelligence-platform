@@ -242,6 +242,36 @@ def _envelope() -> tuple[dict[str, Any], KeyRegistry, Ed25519PrivateKey]:
     )
 
 
+def _envelope_with_pack(
+    pack: RiskPolicyPackV1,
+    *,
+    mission_key: Ed25519PrivateKey,
+    dispatch_key: Ed25519PrivateKey,
+    dispatch_id: str,
+) -> dict[str, Any]:
+    """Same shape as :func:`_envelope`, but with caller-chosen keys/pack.
+
+    Reusing the same keys (and therefore the same :class:`KeyRegistry`) across
+    two calls is what makes "activate envelope A, then try to activate an
+    older-policy envelope B for the same mission" a same-device, same-trust
+    scenario rather than a key-mismatch one.
+    """
+    signed_contract = sign_contract(_unsigned_contract(), mission_key, "mission-key")
+    envelope = build_mission_dispatch_envelope(
+        dispatch_id=dispatch_id,
+        edge_device_id="edge-001",
+        mission_contract=signed_contract,
+        risk_policy_pack=pack,
+        edge_runtime_profile=_profile(),
+        validity=DispatchValidity(
+            not_before=_NOW - timedelta(minutes=1), not_after=_NOW + timedelta(minutes=20)
+        ),
+        private_key=dispatch_key,
+        key_id="dispatch-key",
+    )
+    return envelope.model_dump(by_alias=True, mode="json")
+
+
 def _resign_outer(raw: dict[str, Any], signing_key: Ed25519PrivateKey) -> dict[str, Any]:
     unsigned = {field: value for field, value in raw.items() if field != "signature"}
     return sign_contract(unsigned, signing_key, "dispatch-key")
@@ -1018,6 +1048,216 @@ def test_dispatch_activation_uses_upstream_consumer_and_preserves_exact_retry_re
     )
     assert retry.activated and retry.reused_activation
     assert retry.activation_receipt == first.activation_receipt
+
+
+# ── RiskPolicyPack/EdgeRuntimeProfile rollback defense ──────────────────────
+# risk riskpolicypack-edgeruntimeprofile-no-rollback-defense (2026-08-14) — the
+# same threat 09fe5a7 closed for the inner Mission Contract
+# (ActivationRefusal.SUPERSEDED_CONTRACT), on the two axes only the outer
+# dispatch envelope carries.
+
+
+def _older_pack(*, not_before: str, risk_policy_pack_id: str = "risk-pack-1") -> RiskPolicyPackV1:
+    return RiskPolicyPackV1.model_validate(
+        {
+            "schemaVersion": "1.0",
+            "riskPolicyPackId": risk_policy_pack_id,
+            "validity": {"notBefore": not_before, "notAfter": "2026-08-15T00:00:00Z"},
+            "calibrationProfileId": "cal-001",
+            "equipmentPolicies": [
+                {
+                    "equipmentClass": "Excavator",
+                    "riskFieldPolicyId": "excavator-v1",
+                    "footprint": {"lengthM": 9.0, "widthM": 3.0, "heightM": 4.0},
+                    # 예비량/문턱류를 흉내 낸 값 — 실제 반증 사례(mission-contract
+                    # rollback, 예비량 40%→10%)와 같은 계열의 "약해진 정책"을 상징한다.
+                    "prediction": {"horizonSeconds": 1.0, "samplePeriodSeconds": 0.25},
+                    "covarianceSigmaMultiplier": 1.0,
+                    "occlusionExpansionM": 0.1,
+                    "severity": 0.2,
+                }
+            ],
+        }
+    )
+
+
+def test_older_risk_policy_pack_is_rejected_as_rollback(tmp_path: Path) -> None:
+    """이미 활성인 RiskPolicyPack보다 이른 후보는 서명이 유효해도 거부된다."""
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    current = _envelope_with_pack(
+        _older_pack(not_before="2026-08-14T00:00:00Z"),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-current",
+    )
+    current_path = tmp_path / "current.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    first = activate_mission_dispatch_file(
+        current_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.dispatch_verdict is DispatchVerdict.VALID and first.activated
+
+    # 서명은 진짜고 TTL도 안 지났다 — 단지 이전에 발급된, 더 이른 정책이다.
+    older = _envelope_with_pack(
+        _older_pack(not_before="2026-08-13T00:00:00Z"),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-rollback",
+    )
+    older_path = tmp_path / "older.json"
+    older_path.write_text(json.dumps(older), encoding="utf-8")
+    rollback_attempt = activate_mission_dispatch_file(
+        older_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert rollback_attempt.dispatch_verdict is DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK
+    assert not rollback_attempt.activated
+    # 거부됐으니 활성 스냅샷은 여전히 첫 번째(강한 정책) 것이다.
+    assert first.active_snapshot_path is not None
+    still_active = json.loads(first.active_snapshot_path.read_text(encoding="utf-8"))
+    assert still_active["riskPolicyPackDigest"] == json.loads(current_path.read_text())[
+        "riskPolicyPackDigest"
+    ]
+
+
+def test_older_edge_runtime_profile_is_rejected_as_rollback(tmp_path: Path) -> None:
+    """이미 활성인 EdgeRuntimeProfile보다 이른 후보도 같은 이유로 거부된다."""
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    def _profile_with(not_before: str) -> EdgeRuntimeProfileV1:
+        raw = _profile().model_dump(by_alias=True, mode="json")
+        raw["validity"]["notBefore"] = not_before
+        return EdgeRuntimeProfileV1.model_validate(raw)
+
+    def _envelope_with_profile(
+        profile: EdgeRuntimeProfileV1, *, dispatch_id: str
+    ) -> dict[str, Any]:
+        signed_contract = sign_contract(_unsigned_contract(), mission_key, "mission-key")
+        envelope = build_mission_dispatch_envelope(
+            dispatch_id=dispatch_id,
+            edge_device_id="edge-001",
+            mission_contract=signed_contract,
+            risk_policy_pack=_pack(),
+            edge_runtime_profile=profile,
+            validity=DispatchValidity(
+                not_before=_NOW - timedelta(minutes=1), not_after=_NOW + timedelta(minutes=20)
+            ),
+            private_key=dispatch_key,
+            key_id="dispatch-key",
+        )
+        return envelope.model_dump(by_alias=True, mode="json")
+
+    current_path = tmp_path / "current.json"
+    current_path.write_text(
+        json.dumps(
+            _envelope_with_profile(
+                _profile_with("2026-08-14T00:00:00Z"), dispatch_id="dispatch-current"
+            )
+        ),
+        encoding="utf-8",
+    )
+    first = activate_mission_dispatch_file(
+        current_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.dispatch_verdict is DispatchVerdict.VALID and first.activated
+
+    older_path = tmp_path / "older.json"
+    older_path.write_text(
+        json.dumps(
+            _envelope_with_profile(
+                _profile_with("2026-08-13T00:00:00Z"), dispatch_id="dispatch-rollback"
+            )
+        ),
+        encoding="utf-8",
+    )
+    rollback_attempt = activate_mission_dispatch_file(
+        older_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert rollback_attempt.dispatch_verdict is DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE
+    assert not rollback_attempt.activated
+
+
+def test_reactivating_the_unchanged_risk_policy_pack_is_not_a_rollback(tmp_path: Path) -> None:
+    """digest가 같은(내용이 안 바뀐) pack 재전송은 rollback 판정에 걸리지 않는다.
+
+    ``notBefore`` 단조성 검사가 ``digest`` 변경분에만 적용되는지 고정한다 —
+    안 걸면 정상적인 재활성화(같은 mission, 새 dispatch_id, 동일 pack)까지
+    막힌다.
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+    pack = _older_pack(not_before="2026-08-14T00:00:00Z")
+
+    first_path = tmp_path / "first.json"
+    first_path.write_text(
+        json.dumps(
+            _envelope_with_pack(
+                pack, mission_key=mission_key, dispatch_key=dispatch_key, dispatch_id="dispatch-a"
+            )
+        ),
+        encoding="utf-8",
+    )
+    first = activate_mission_dispatch_file(
+        first_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.activated
+
+    # 새 dispatch_id, 같은(digest 동일) pack — 재발급이지 rollback이 아니다.
+    second_path = tmp_path / "second.json"
+    second_path.write_text(
+        json.dumps(
+            _envelope_with_pack(
+                pack, mission_key=mission_key, dispatch_key=dispatch_key, dispatch_id="dispatch-b"
+            )
+        ),
+        encoding="utf-8",
+    )
+    second = activate_mission_dispatch_file(
+        second_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert second.dispatch_verdict is DispatchVerdict.VALID
+    assert second.activated
 
 
 def test_native_handoff_is_repaired_on_idempotent_retry_and_removed_before_replacement_failure(

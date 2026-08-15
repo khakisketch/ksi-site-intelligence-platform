@@ -529,6 +529,49 @@ def _snapshot_matches_active_contract(
     return mission_contract_digest(active) == envelope.mission_contract_digest
 
 
+def _policy_rollback_detail(
+    existing: ActiveDispatchSnapshotV1, envelope: MissionDispatchEnvelopeV1
+) -> tuple[DispatchVerdict, str] | None:
+    """Same threat as ``MissionContractConsumer._superseded_detail``, on the
+    two axes that check cannot see.
+
+    The inner Mission Contract can stay unchanged (or be a normal, later
+    reissue) while the outer envelope swaps in an *older* RiskPolicyPack or
+    EdgeRuntimeProfile for the same mission — e.g. a reserve-margin or
+    altitude-ceiling relaxation replayed from an earlier, still-validly-signed
+    envelope. Neither field has an issuance-order field in its schema (same
+    limitation as Mission Contract v1.2 —
+    ``mission-contract-no-issuance-ordering-field``), so this uses the same
+    ``validity.notBefore`` monotonicity heuristic, scoped to the same mission
+    and only when the candidate's digest actually differs from what is active
+    (an unchanged pack/profile is a reactivation, not a rollback).
+
+    Returns ``None`` when there is nothing to compare (different mission) or
+    the candidate is not older on either axis.
+    """
+    if existing.mission_id != envelope.mission_id:
+        return None
+    if envelope.risk_policy_pack_digest != existing.risk_policy_pack_digest:
+        existing_pack = RiskPolicyPackV1.model_validate(existing.risk_policy_pack)
+        new_pack = RiskPolicyPackV1.model_validate(envelope.risk_policy_pack)
+        if new_pack.validity.not_before < existing_pack.validity.not_before:
+            return (
+                DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK,
+                "이미 활성인 RiskPolicyPack보다 이른 validity.notBefore를 가진 후보다 — "
+                "이전 정책으로 되돌리는 활성화를 거부한다",
+            )
+    if envelope.edge_runtime_profile_digest != existing.edge_runtime_profile_digest:
+        existing_profile = EdgeRuntimeProfileV1.model_validate(existing.edge_runtime_profile)
+        new_profile = EdgeRuntimeProfileV1.model_validate(envelope.edge_runtime_profile)
+        if new_profile.validity.not_before < existing_profile.validity.not_before:
+            return (
+                DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE,
+                "이미 활성인 EdgeRuntimeProfile보다 이른 validity.notBefore를 가진 후보다 — "
+                "이전 설정으로 되돌리는 활성화를 거부한다",
+            )
+    return None
+
+
 def activate_mission_dispatch_file(
     dispatch_path: Path,
     *,
@@ -598,6 +641,16 @@ def activate_mission_dispatch_file(
             ),
             active_snapshot_path=snapshot_path,
         )
+
+    if existing is not None:
+        rollback = _policy_rollback_detail(existing, envelope)
+        if rollback is not None:
+            verdict, detail = rollback
+            return DispatchActivationResult(
+                dispatch_verdict=verdict,
+                activated=False,
+                detail=detail,
+            )
 
     raw_contract = raw.get("missionContract")
     raw_policy = raw.get("riskPolicyPack")

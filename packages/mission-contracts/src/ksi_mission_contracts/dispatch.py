@@ -119,6 +119,16 @@ class DispatchVerdict(StrEnum):
     EDGE_RUNTIME_PROFILE_EXPIRED = "EDGE_RUNTIME_PROFILE_EXPIRED"
     VALIDITY_OUTSIDE_CONTRACT = "VALIDITY_OUTSIDE_CONTRACT"
     DEVICE_MISMATCH = "DEVICE_MISMATCH"
+    # Activation-layer refusals (edge_activation.py), reusing this enum the same
+    # way MISSION_CONTRACT_INVALID already does — "signature is real, but this
+    # local device won't load it now" is a different question than envelope
+    # verification, but the two verdict spaces are deliberately not split
+    # (single result type for the whole activate_mission_dispatch_file call).
+    # Mirrors ActivationRefusal.SUPERSEDED_CONTRACT (consumer.py) on the two
+    # dispatch-only axes it cannot see (risk-2026-08-14
+    # riskpolicypack-edgeruntimeprofile-no-rollback-defense).
+    SUPERSEDED_RISK_POLICY_PACK = "SUPERSEDED_RISK_POLICY_PACK"
+    SUPERSEDED_EDGE_RUNTIME_PROFILE = "SUPERSEDED_EDGE_RUNTIME_PROFILE"
 
 
 @dataclass(frozen=True, slots=True)
