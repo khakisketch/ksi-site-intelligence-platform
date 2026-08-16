@@ -176,6 +176,18 @@ def _register_pair_mission_with_capture(
         ).verdict.value
         == "ARTIFACT_REGISTERED"
     )
+    # dsm 은 파생 kind(INV-051) — SUCCEEDED 게이트(assert_succeeded_is_backed)를
+    # 정직하게 통과하려면 source-eligible artifact 가 최소 1건 필요하다. camera_poses
+    # 필러는 이 테스트가 실제로 보는 dsm 존재 여부(구역 추출 대상)에 영향을 주지 않는다.
+    camera_poses_spec = _artifact_spec(
+        f"filler-camera-poses-{record.job_id}", kind=ProcessingArtifactKind.CAMERA_POSES
+    )
+    assert (
+        base.jobs.register_artifact(
+            record.job_id, camera_poses_spec, registered_by="w-1", now=_PAIR_NOW
+        ).verdict.value
+        == "ARTIFACT_REGISTERED"
+    )
     _verify_bundle(base.source_media, mission_id)
     assert (
         base.jobs.transition(

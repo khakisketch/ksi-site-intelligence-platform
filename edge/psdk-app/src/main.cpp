@@ -2110,8 +2110,13 @@ int Run() {
     while (g_termination_requested == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    runtime.PrintStatistics();
+    // cleanup() (via StopWorker()) joins DrainWorker before we read its
+    // std::string/std::optional members below -- PrintStatistics() used to run
+    // first, racing the still-live worker thread's per-second/per-frame writes
+    // to those same members (a data race, UB, observed to be able to tear or
+    // dereference freed memory on shutdown). Order matters here.
     cleanup();
+    runtime.PrintStatistics();
     return 0;
 }
 

@@ -57,6 +57,7 @@ def fetch_with_digest_verification(
             강등하지 않는다. 어느 경로든 ``finally`` 가 잔여물 정리를 보장한다.
     """
     partial = target.with_suffix(target.suffix + ".part")
+    actual: str | None = None
     try:
         fetch_fn(partial)
         actual = sha256_file(partial)
@@ -64,8 +65,9 @@ def fetch_with_digest_verification(
             raise DigestMismatchError(target.name, expected=expected_sha256, actual=actual)
     finally:
         # digest 미통과·중단 잔여물은 항상 제거(예외 경로 포함). 성공 시에는
-        # partial 의 digest 가 이미 일치하므로 이 조건에 걸리지 않고 아래
-        # replace 로 넘어간다.
-        if partial.is_file() and sha256_file(partial) != expected_sha256:
+        # 위에서 이미 구한 actual 을 재사용해 같은 파일을 두 번 해싱하지
+        # 않는다 — fetch_fn 이 actual 계산 전에 예외를 던졌다면 actual 은
+        # None 이고, 그 경우도 잔여물이므로 무조건 지운다.
+        if partial.is_file() and actual != expected_sha256:
             partial.unlink()
     partial.replace(target)

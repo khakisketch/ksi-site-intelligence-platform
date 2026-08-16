@@ -7,6 +7,14 @@ import { WizardShell } from "@/components/wizard/WizardShell";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useDraftState } from "@/hooks/useDraftState";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
+import {
+  EGRESS_CHOICE_OPTIONS,
+  Field,
+  SITE_ID_PATTERN,
+  isRetryOfOwnSitePost,
+  nextOwnPostSiteId,
+  parseJsonSafe,
+} from "@/lib/site-registration/shared";
 import type { SiteFrame } from "@/lib/core-api/types";
 
 // ADR-KSI-015 이후 "등록만 하고 임무는 나중"은 권한 부족이 아니라 사용자 선택이다 —
@@ -45,63 +53,7 @@ const INITIAL_FORM: FormState = {
   jurisdiction: "",
 };
 
-const EGRESS_CHOICE_OPTIONS: Array<{ value: EgressChoice; label: string }> = [
-  { value: "unset", label: "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)" },
-  { value: "allow", label: "예 — 외부/벤더 클라우드 처리를 허용합니다" },
-  { value: "deny", label: "아니오 — 사내 서버에서만 처리합니다" },
-];
-
-const SITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
 const inputClassName = "input";
-
-function Field({
-  label,
-  helpText,
-  error,
-  required,
-  children,
-}: {
-  label: string;
-  helpText?: string;
-  error?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    // label 이 입력을 **감싼다** — htmlFor/id 짝 대신 암묵적 연결을 쓴다. 형제로 두면
-    // 접근가능 이름이 placeholder 로 잡히는데(2026-08-04 렌더 확인에서 실제 재현:
-    // "현장 ID" 가 아니라 "영숫자로 시작, -/_/. 만 허용…"), placeholder 는 입력을 시작하면
-    // 사라져서 스크린리더 사용자가 필드 이름을 잃는다. help/error 는 label 밖에 둔다 —
-    // 안에 넣으면 이름에 합쳐져 이름이 문단만큼 길어진다.
-    <div className="flex flex-col gap-1.5">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[12.5px] font-semibold break-keep text-ink-1">
-          {label}
-          {required && (
-            <span aria-hidden className="ml-0.5 text-crit">
-              *
-            </span>
-          )}
-        </span>
-        {children}
-      </label>
-      {error ? (
-        <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
-      ) : (
-        helpText && <p className="text-[11.5px] break-keep text-ink-muted">{helpText}</p>
-      )}
-    </div>
-  );
-}
-
-async function parseJsonSafe(res: Response): Promise<{ message?: string; code?: string }> {
-  try {
-    return (await res.json()) as { message?: string; code?: string };
-  } catch {
-    return {};
-  }
-}
 
 type SubmitPhase = "idle" | "pending" | "error" | "success";
 
@@ -112,8 +64,11 @@ export function SiteRegistrationOnlyWizard() {
     INITIAL_FORM,
   );
   const [currentStep, setCurrentStep] = useState(0);
-  // "이 실행에서 이미 POST 를 보냈다" — 409 를 재시도로 해석해도 되는지의 유일한 근거.
-  const postAttemptedRef = useRef(false);
+  // "이 실행에서 어떤 siteId 로 이미 POST 를 보냈나" — 409 를 재시도로 해석해도
+  // 되는지의 유일한 근거. **siteId 로 스코프한다** — 그냥 boolean 이면 siteId 'A'
+  // 로 실패한 뒤 사용자가 무관한 siteId 'B' 로 고쳐 재제출했을 때도 'B' 의 409 를
+  // "내 재시도"로 오판한다(isRetryOfOwnSitePost 주석 참조).
+  const postAttemptedSiteIdRef = useRef<string | null>(null);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -135,9 +90,9 @@ export function SiteRegistrationOnlyWizard() {
 
     try {
       // POST 를 **보내기 전에** 표시한다 — 네트워크 예외로 응답을 못 받아도 서버는
-      // 등록했을 수 있고, 그 경우 다음 시도의 409 는 내가 만든 것이다.
-      const wasAttemptedBefore = postAttemptedRef.current;
-      postAttemptedRef.current = true;
+      // 등록했을 수 있고, 그 경우 같은 siteId 로 보낸 다음 시도의 409 는 내가 만든 것이다.
+      const previousAttemptedSiteId = postAttemptedSiteIdRef.current;
+      postAttemptedSiteIdRef.current = siteId;
       const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
       const res = await fetch("/api/sites", {
         method: "POST",
@@ -149,22 +104,38 @@ export function SiteRegistrationOnlyWizard() {
       });
       if (!res.ok) {
         const body = await parseJsonSafe(res);
+        // 응답을 받았으니 "모른다"를 갱신한다 — 확정 409 면 비운다(아래 주석).
+        postAttemptedSiteIdRef.current = nextOwnPostSiteId(siteId, res.status, body.code);
         // 409(DUPLICATE_SITE_ID)를 성공으로 보는 것은 **재시도일 때뿐이다.**
         //
         // 무조건 성공으로 처리하면, 남이 이미 쓴 siteId 를 처음 입력한 사람에게도
         // "현장이 등록되었습니다"라고 말하고 **그 남의 현장**(좌표계가 전혀 다를 수
         // 있다) 상세로 안내한다 — 저장이 일어나지 않았는데 초록불이 뜨는 경로다
         // (독립 재검토 2026-08-04 적발). 첫 시도의 409 는 진짜 중복이므로 실패다.
-        // **이전 값**을 본다 — 방금 위에서 true 로 세웠으므로 현재 값을 읽으면 항상
-        // 참이 되어 검사가 통째로 죽는다.
-        const isRetryOfOurOwnPost =
-          wasAttemptedBefore && res.status === 409 && body.code === "DUPLICATE_SITE_ID";
+        // **같은 siteId 로 보냈고 그 결과를 모르는 시도가 있었을 때만** 재시도로
+        // 인정한다 — 직전 시도가 409 를 받았다면 서버가 "이미 있다"를 확정한 것이라
+        // 그 뒤의 409 도 남의 현장이다(isRetryOfOwnSitePost·nextOwnPostSiteId 주석).
+        const isRetryOfOurOwnPost = isRetryOfOwnSitePost(
+          previousAttemptedSiteId,
+          siteId,
+          res.status,
+          body.code,
+        );
         if (!isRetryOfOurOwnPost) {
           setSubmitError(body.message ?? "요청을 처리하지 못했습니다.");
           setSubmitPhase("error");
           return;
         }
       }
+      // 여기 도달하는 경로는 둘이다: 진짜 성공(2xx), 그리고 위에서 **내 재시도로
+      // 인정된 409**. 둘 다 "이 현장은 내 것"이므로 판정 근거를 남긴다.
+      //
+      // 세 번째 인자가 `undefined` 인 것은 실수가 아니라 **의도**다 — 인정된 409
+      // 경로에서 실제 코드(DUPLICATE_SITE_ID)를 넘기면 비우기 분기에 걸려 방금
+      // 인정한 소유권이 도로 지워진다. 응답이 아니라 "여기 온 이상 내 것"이라는
+      // 사실로 갱신하는 자리다. `body` 가 위 블록 스코프라 무심코 넘길 수는 없지만
+      // (컴파일 실패), 블록 밖으로 끌어내는 리팩터링이 이 방어를 없앨 수 있다.
+      postAttemptedSiteIdRef.current = nextOwnPostSiteId(siteId, res.status, undefined);
       setSubmitPhase("success");
       setCurrentStep(2);
       // 셸(사이드바 현장 배지)은 layout 에 있어 클라이언트 네비게이션으로는 다시 그려지지

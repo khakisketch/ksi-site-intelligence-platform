@@ -1,20 +1,14 @@
 "use client";
 
 import type { EventSummaryResponse } from "@/lib/core-api/types";
-import { ackSlaMs, ackSlaState, formatElapsed, isUnattended } from "@/lib/core-api/triage";
+import {
+  ackSlaMs,
+  ackSlaState,
+  formatElapsed,
+  formatTargetDuration,
+  isUnattended,
+} from "@/lib/core-api/triage";
 import { useTick } from "@/hooks/useTick";
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-// DwellBar.tsx 의 동명 헬퍼와 같은 반올림 규칙 — export 되어 있지 않아 복제한다
-// (EventDetailPanel.tsx 가 서버 컴포넌트였을 때부터 있던 주석 그대로).
-function formatTargetDuration(ms: number): string {
-  if (ms >= DAY) return `${Math.round(ms / DAY)}일`;
-  if (ms >= HOUR) return `${Math.round(ms / HOUR)}시간`;
-  return `${Math.max(1, Math.round(ms / MINUTE))}분`;
-}
 
 /**
  * EventDetailPanel 의 "확인 경과" Fact 값 — 원래 서버 렌더 시점에 고정된 스냅샷이던 것을

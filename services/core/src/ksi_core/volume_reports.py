@@ -82,6 +82,9 @@ _STATUS: dict[VolumeChangeVerdict, int] = {
 }
 
 
+_UNKNOWN_MISSION_DETAIL = "발급된 적 없는 임무의 체적 리포트는 받지 않는다"
+
+
 class VolumeChangeRecoveryError(RuntimeError):
     """volume-change journal 재생 실패 — 오염된 원장으로 기동하지 않는다."""
 
@@ -140,7 +143,14 @@ class VolumeChangeStore:
             mission_id = raw["missionId"]
             report = VolumeChangeReport.model_validate(raw["report"])
             # 재생도 live 와 같은 게이트를 태운다 — journal 조작으로 해석 불가능한
-            # 리포트가 되살아나는 경로를 막는다.
+            # 리포트가 되살아나는 경로를 막는다. live record() 는 임무 존재부터
+            # 검사한다(UNKNOWN_MISSION) — 재생이 그 검사를 건너뛰면, 임무가 삭제되거나
+            # 애초에 발급된 적 없는 채로 기록된 레코드가 재기동마다 조용히 되살아난다.
+            if self._mission_store.get(mission_id) is None:
+                raise VolumeChangeRecoveryError(
+                    f"재생: 기록될 수 없는 리포트(UNKNOWN_MISSION: {_UNKNOWN_MISSION_DETAIL}) — "
+                    f"missionId={mission_id} volumeChangeId={report.volume_change_id}"
+                )
             verdict, detail = self._judge_references(report)
             if verdict is not VolumeChangeVerdict.RECORDED:
                 raise VolumeChangeRecoveryError(
@@ -223,7 +233,7 @@ class VolumeChangeStore:
                     now,
                     reported_by,
                     VolumeChangeVerdict.UNKNOWN_MISSION,
-                    "발급된 적 없는 임무의 체적 리포트는 받지 않는다",
+                    _UNKNOWN_MISSION_DETAIL,
                 )
             existing = self._ids_by_mission.get(mission_id, {}).get(report.volume_change_id)
             if existing is not None:

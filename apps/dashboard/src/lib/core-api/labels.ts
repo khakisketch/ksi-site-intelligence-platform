@@ -132,6 +132,18 @@ export function humanizeEventType(eventType: string | null): string {
   return EVENT_TYPE_LABEL[eventType] ?? eventType;
 }
 
+/**
+ * 증거의 `deviceBound` — 장비 신원이 대조되는 경로로 등록됐는가. CRITICAL 확정용
+ * 위험 증거는 이게 참이어야 한다(types.ts EvidenceSummary 주석). neutral/positive
+ * 로 뭉개면 미대조 증거가 "그냥 증거 하나"로 보여 CRITICAL 확정 화면에서 주의를
+ * 끌지 못한다 — caution/warning 계열로 구분한다.
+ */
+export function evidenceDeviceBoundLabel(deviceBound: boolean): { label: string; tone: Tone } {
+  return deviceBound
+    ? { label: "장비 신원 대조됨", tone: "positive" }
+    : { label: "장비 신원 미대조", tone: "warning" };
+}
+
 // 정본: services/core/src/ksi_core/mission_plans.py 미션타입→경로패턴 제약
 // (docs/architecture/03_DASHBOARD_UX_GOALS.md §7). 화면마다 별도 라벨을 만들지 않는다 —
 // 홈·현장 상세·임무 목록 전부 이 표 하나를 참조한다.
@@ -331,6 +343,7 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   UNKNOWN_WORK_AREA: "등록된 적 없는 작업구역입니다.",
   SUPERSEDES_NOT_FOUND: "대체하려는 작업구역을 찾을 수 없습니다.",
   SUPERSEDES_OTHER_SITE: "대체 대상이 다른 현장 소속입니다.",
+  SUPERSEDES_NOT_ACTIVE: "대체 대상이 이미 보관된 작업구역입니다 — 보관된 구역은 다시 대체할 수 없습니다.",
   ALREADY_ARCHIVED: "이미 보관된 작업구역입니다.",
   TOO_MANY_ACTIVE:
     "이 현장의 작업구역이 상한에 도달했습니다 — 쓰지 않는 구역을 먼저 보관하세요.",

@@ -795,6 +795,41 @@ def test_succeeded_passes_with_a_source_artifact(tmp_path: Path) -> None:
     assert result.verdict is ProcessingJobVerdict.TRANSITIONED
 
 
+def test_succeeded_is_refused_when_source_authority_is_on_a_derived_kind(
+    tmp_path: Path,
+) -> None:
+    """[핵심] kind 가 파생(mesh 등)이면 authority=source 라 적어도 근거가 안 된다.
+
+    ``ArtifactLineage`` 는 kind 와 authority 를 의도적으로 묶지 않으므로
+    (event-contracts, processing_artifact.py docstring), 계약만으로는 워커가
+    메시에 ``authority=source`` 를 적어 등록할 수 있다 — 계약 위반이 아니다.
+    ADR-KSI-003/INV-051 은 Point Cloud·카메라 포즈만 원본 SSOT 라고 정했으므로,
+    이런 산출물은 등록엔 성공하되 SUCCEEDED 의 근거로는 인정되면 안 된다.
+    """
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    masquerading = store.register_artifact(
+        job_id,
+        _artifact_spec(
+            "mesh-claiming-source",
+            kind=ProcessingArtifactKind.MESH,
+            authority=LineageAuthority.SOURCE,
+            crs="EPSG:5186",
+        ),
+        registered_by="w-1",
+        now=_NOW,
+    )
+    # 등록 자체는 계약 위반이 아니다 — kind/authority 결합은 계약이 강제하지 않는다.
+    assert masquerading.verdict is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    result = store.transition(
+        job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+    )
+    assert result.verdict is ProcessingJobVerdict.UNBACKED_SUCCESS
+    record = store.get(job_id)
+    assert record is not None
+    assert record.status is ProcessingJobStatus.RUNNING
+
+
 def test_failed_and_cancelled_need_no_artifact(tmp_path: Path) -> None:
     """게이트는 SUCCEEDED 에만 걸린다 — 실패·취소는 산출물 없이 끝나는 게 정상이다."""
     for target in (ProcessingJobStatus.FAILED, ProcessingJobStatus.CANCELLED):

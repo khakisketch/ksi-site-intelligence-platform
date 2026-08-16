@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any
 
 from ksi_domain.enums import EventStatus, Severity
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -37,3 +37,9 @@ class EventCandidate(BaseModel):
     last_seen_at: datetime
     status: EventStatus = EventStatus.OBSERVATION
     detail: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _last_seen_not_before_first_seen(self) -> EventCandidate:
+        if self.last_seen_at < self.first_seen_at:
+            raise ValueError("lastSeenAt 이 firstSeenAt 보다 앞선다")
+        return self

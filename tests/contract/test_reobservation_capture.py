@@ -294,6 +294,31 @@ def test_negative_threshold_is_refused(
         )
 
 
+def test_baseline_capture_rejects_nan_front_overlap(camera: CameraSpec) -> None:
+    """회귀 시험(2026-08-16): NaN 은 `< MIN_FRONT_OVERLAP` 비교를 조용히 통과해
+
+    INV-015 하한 클램프를 우회했다 — 생성 시점에 fail closed 로 막는다.
+    """
+    with pytest.raises(ValueError, match="front_overlap"):
+        BaselineCapture(
+            altitude_m=80.0, front_overlap=float("nan"), side_overlap=0.7, camera=camera
+        )
+
+
+def test_baseline_capture_rejects_nan_side_overlap(camera: CameraSpec) -> None:
+    with pytest.raises(ValueError, match="side_overlap"):
+        BaselineCapture(
+            altitude_m=80.0, front_overlap=0.8, side_overlap=float("nan"), camera=camera
+        )
+
+
+def test_baseline_capture_rejects_infinite_overlap(camera: CameraSpec) -> None:
+    with pytest.raises(ValueError, match="front_overlap"):
+        BaselineCapture(
+            altitude_m=80.0, front_overlap=float("inf"), side_overlap=0.7, camera=camera
+        )
+
+
 def test_unmeasurable_ratio_out_of_range_is_refused(
     baseline: BaselineCapture, envelope: FlightEnvelope
 ) -> None:

@@ -64,6 +64,7 @@ class WorkAreaVerdict(StrEnum):
     INVALID_WORK_AREA = "INVALID_WORK_AREA"
     SUPERSEDES_NOT_FOUND = "SUPERSEDES_NOT_FOUND"
     SUPERSEDES_OTHER_SITE = "SUPERSEDES_OTHER_SITE"
+    SUPERSEDES_NOT_ACTIVE = "SUPERSEDES_NOT_ACTIVE"
     ALREADY_ARCHIVED = "ALREADY_ARCHIVED"
     TOO_MANY_ACTIVE = "TOO_MANY_ACTIVE"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -77,6 +78,7 @@ _STATUS: dict[WorkAreaVerdict, int] = {
     WorkAreaVerdict.INVALID_WORK_AREA: 422,
     WorkAreaVerdict.SUPERSEDES_NOT_FOUND: 404,
     WorkAreaVerdict.SUPERSEDES_OTHER_SITE: 409,
+    WorkAreaVerdict.SUPERSEDES_NOT_ACTIVE: 409,
     WorkAreaVerdict.ALREADY_ARCHIVED: 409,
     WorkAreaVerdict.TOO_MANY_ACTIVE: 409,
     WorkAreaVerdict.STORE_UNAVAILABLE: 503,
@@ -161,6 +163,15 @@ class WorkAreaStore:
             if previous.site_id != area.site_id:
                 raise ValueError(
                     f"supersedes 대상이 다른 현장이다: {previous.site_id!r} != {area.site_id!r}"
+                )
+            if previous.status is not WorkAreaStatus.ACTIVE:
+                # register() 가 이미 ACTIVE 아닌 대상의 supersedes 를 거부하므로
+                # (SUPERSEDES_NOT_ACTIVE) 정상 기록이라면 여기 도달할 수 없다 —
+                # 도달했다면 journal 이 상한 우회를 낳던 옛 결함의 흔적이거나
+                # 변조된 레코드다. fail-closed 로 기동을 거부한다.
+                raise ValueError(
+                    f"supersedes 대상이 이미 ACTIVE 가 아니다: {area.supersedes!r} "
+                    f"(status={previous.status.value}, workAreaId={area.work_area_id})"
                 )
             # 대체는 이전 것을 반드시 보관 상태로 만든다(모듈 docstring) — 재생에서도
             # 같은 부수효과를 재현하지 않으면 projection 이 기록과 갈라진다.
@@ -302,6 +313,20 @@ class WorkAreaStore:
                         detail=(
                             f"대체 대상은 현장 {previous.site_id!r} 소속인데 요청은 "
                             f"현장 {site_id!r} 다"
+                        ),
+                    )
+                if previous.status is not WorkAreaStatus.ACTIVE:
+                    # 상한 우회 통로 — supersedes 는 "이전 ACTIVE 하나를 이 ACTIVE
+                    # 하나로 순증 없이 교체"할 때만 상한 검사를 면제한다. 이미
+                    # ARCHIVED 인 대상을 다시 "대체"하게 두면 그 재보관은 무보수
+                    # no-op 이고 새 등록만 순증으로 남아, 이 경로를 반복 호출해
+                    # 상한을 무제한으로 넘길 수 있다.
+                    return WorkAreaResult(
+                        WorkAreaVerdict.SUPERSEDES_NOT_ACTIVE,
+                        detail=(
+                            f"대체하려는 작업구역 {supersedes!r} 은 이미 ACTIVE 가 "
+                            f"아니다(status={previous.status.value}) — 보관된 구역은 "
+                            "다시 대체할 수 없다"
                         ),
                     )
             active_count = sum(

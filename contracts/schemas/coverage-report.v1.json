@@ -3,7 +3,9 @@
   "$id": "https://ksi.example/schemas/coverage-report.v1.json",
   "title": "CoverageReport",
   "type": "object",
+  "additionalProperties": false,
   "required": [
+    "schemaVersion",
     "missionId",
     "siteId",
     "timestamp",
@@ -11,6 +13,9 @@
     "summary"
   ],
   "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
     "missionId": {
       "type": "string"
     },

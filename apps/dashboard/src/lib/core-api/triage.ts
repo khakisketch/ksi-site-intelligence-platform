@@ -95,7 +95,7 @@ export function formatElapsed(ms: number, { unattended }: { unattended: boolean 
   const suffix = unattended ? "째 미조치" : " 전";
   if (ms >= DAY) {
     const days = Math.floor(ms / DAY);
-    return unattended ? `${days}일${suffix}` : `${days}일${suffix}`;
+    return `${days}일${suffix}`;
   }
   if (ms >= HOUR) {
     const hours = Math.floor(ms / HOUR);
@@ -106,6 +106,17 @@ export function formatElapsed(ms: number, { unattended }: { unattended: boolean 
   const mins = Math.floor(ms / MINUTE);
   if (mins < 1) return unattended ? "방금 들어옴" : "방금";
   return `${mins}분${suffix}`;
+}
+
+/**
+ * SLA 목표 시간을 사람 말로 (예: "15분", "4시간", "1일"). AckElapsedFact.tsx 와
+ * DwellBar.tsx 가 각자 복제해 쓰던 것을 여기 하나로 합친다 — 반올림 규칙이
+ * 두 화면에서 갈리면 같은 목표값이 다른 글자로 보이게 된다.
+ */
+export function formatTargetDuration(ms: number): string {
+  if (ms >= DAY) return `${Math.round(ms / DAY)}일`;
+  if (ms >= HOUR) return `${Math.round(ms / HOUR)}시간`;
+  return `${Math.max(1, Math.round(ms / MINUTE))}분`;
 }
 
 /**

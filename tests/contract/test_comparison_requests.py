@@ -262,6 +262,11 @@ def _verify_bundle(source_media: SourceMediaStore, mission_id: str) -> None:
     assert result.verdict.value in {"VERIFIED", "ALREADY_VERIFIED"}, result
 
 
+_SOURCE_ELIGIBLE_KINDS = frozenset(
+    {ProcessingArtifactKind.POINT_CLOUD, ProcessingArtifactKind.CAMERA_POSES}
+)
+
+
 def _succeeded_job(
     jobs: ProcessingJobStore,
     source_media: SourceMediaStore,
@@ -269,7 +274,15 @@ def _succeeded_job(
     *artifact_specs: ArtifactSpec,
 ) -> str:
     """발급 → lease → RUNNING → 산출물 등록 → 입력 검증 → SUCCEEDED 까지 실제로
-    진행한 jobId."""
+    진행한 jobId.
+
+    호출부가 넘긴 artifact_specs 중 source-eligible kind(POINT_CLOUD/CAMERA_POSES,
+    INV-051)가 하나도 없으면 이 헬퍼가 CAMERA_POSES 필러를 하나 더 등록한다 —
+    SUCCEEDED 게이트(assert_succeeded_is_backed)를 정직하게 통과시키기 위함이지,
+    호출부가 실제로 검증하려는 artifact 구성(예: point_cloud 없이 dsm 만 있는 경우의
+    비교 가능성)을 바꾸지 않는다. CAMERA_POSES 는 change_detection_eligible(point_cloud
+    존재 여부)·volume_change_eligible(dsm 존재 여부) 어느 쪽도 건드리지 않아 중립적이다
+    (test_nothing_to_compare_is_rejected 가 이미 같은 패턴을 쓰고 있었다)."""
     record = jobs.issue(mission_id, _job_spec(), issued_by="op-1", now=_NOW).record
     assert record is not None
     assert jobs.acquire_lease(record.job_id, worker_id="w-1", now=_NOW).verdict in {
@@ -282,7 +295,15 @@ def _succeeded_job(
         ).verdict
         is ProcessingJobVerdict.TRANSITIONED
     )
-    for spec in artifact_specs:
+    all_specs = list(artifact_specs)
+    if not any(spec.kind in _SOURCE_ELIGIBLE_KINDS for spec in all_specs):
+        all_specs.append(
+            _artifact_spec(
+                f"filler-camera-poses-{record.job_id}",
+                kind=ProcessingArtifactKind.CAMERA_POSES,
+            )
+        )
+    for spec in all_specs:
         result = jobs.register_artifact(record.job_id, spec, registered_by="w-1", now=_NOW)
         assert result.verdict is ProcessingJobVerdict.ARTIFACT_REGISTERED, result
     _verify_bundle(source_media, mission_id)

@@ -262,8 +262,17 @@ class CoverageReportStore:
             if kind not in (None, "coverage-reported"):
                 raise CoverageReportRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
             report = CoverageReport.model_validate(raw["report"])
-            # 재생도 live 와 같은 게이트를 태운다 — journal 조작으로 근거 없는
-            # COMPLETED 가 되살아나는 경로를 막는다(events.py 재생 게이트와 대칭).
+            # 재생은 judge_report 의 자체정합 게이트(①~④: UNSUPPORTED_COMPLETION·
+            # UNEXPLAINED_GAP·NO_COVERAGE_EVIDENCE·SELF_CONTRADICTORY_SUMMARY)만
+            # live 와 동일하게 태운다 — journal 조작으로 근거 없는 COMPLETED 가
+            # 되살아나는 경로를 막는다(events.py 재생 게이트와 대칭). live 의 임무
+            # 대조(⑤: UNKNOWN_MISSION·SITE_MISMATCH, 같은 이유로 DEVICE_NOT_ASSIGNED
+            # 도)는 **의도적으로** 재생하지 않는다 — 그건 수신 시점 게이트이고,
+            # 임무 원장은 이 원장과 따로 회전·보관 정책을 타서 재생 시점엔 없을 수
+            # 있다. 이미 접수된 기록을 나중에(다른 원장의 상태 변화로) 부정하지
+            # 않는다(INV-010, 독립 재검토 B-2 — 예전엔 이 문서 자체가 "재생도 같은
+            # 강도"라고 과장했다가 정정됐다; test_replay_restores_history 가 이
+            # 비대칭을 고정한다).
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
                 raise CoverageReportRecoveryError(

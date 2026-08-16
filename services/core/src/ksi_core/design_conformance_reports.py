@@ -116,6 +116,9 @@ class DesignConformanceVerdict(StrEnum):
     #: 그 자리의 객체를 읽지 못했다 — 확인 없이 기록하지 않는다.
     DIFF_RASTER_UNREADABLE = "DIFF_RASTER_UNREADABLE"
     DUPLICATE_REPORT_ID = "DUPLICATE_REPORT_ID"
+    #: 요청이 이미 종결(FAILED)됐다 — 실패로 닫힌 요청 위에 성공 리포트를 남기면
+    #: 요청 생애주기와 리포트 원장이 완료 여부를 서로 다르게 말한다.
+    REQUEST_ALREADY_TERMINAL = "REQUEST_ALREADY_TERMINAL"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
 
@@ -133,6 +136,7 @@ _STATUS: dict[DesignConformanceVerdict, int] = {
     DesignConformanceVerdict.DIFF_RASTER_DIGEST_MISMATCH: 422,
     DesignConformanceVerdict.DIFF_RASTER_UNREADABLE: 503,
     DesignConformanceVerdict.DUPLICATE_REPORT_ID: 409,
+    DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL: 409,
     DesignConformanceVerdict.STORE_UNAVAILABLE: 503,
 }
 
@@ -356,6 +360,20 @@ class DesignConformanceStore:
         with self._lock:
             return list(self._by_site.get(site_id, ()))
 
+    def has_report_for(self, design_conformance_id: str) -> bool:
+        """이 id 로 기록된 리포트가 있나 — 요청 원장 쪽 두 게이트의 입력이다.
+
+        요청 저장소가 "리포트 없는 SUCCEEDED"와 "기록 후 래스터 재작성"을 막을 때
+        이 술어를 주입받아 쓴다(:class:`~ksi_core.design_conformance_requests.
+        DesignConformanceRequestStore` 의 ``report_exists``). 임무를 모른 채 물어야
+        하므로 임무별 색인을 가로질러 본다 — id 는 요청에서 결정적으로 도출돼
+        전역 유일하다(``design_conformance_id_of``).
+        """
+        with self._lock:
+            return any(
+                design_conformance_id in ids for ids in self._ids_by_mission.values()
+            )
+
     def site_of(self, design_conformance_id: str) -> str | None:
         """그 리포트가 어느 현장의 것인가 — 요청 레코드에서 얻는다(저장하지 않는다).
 
@@ -519,6 +537,34 @@ class DesignConformanceStore:
             verdict, detail = self._judge(report, mission_id)
             if verdict is not DesignConformanceVerdict.RECORDED:
                 return self._reject(mission_id, report, now, reported_by, verdict, detail)
+            # **종결(FAILED)된 요청 위에는 리포트를 받지 않는다 — 수신 시점 전용 게이트다.**
+            # ``_judge`` 의 대조들(설계면·산출물·기준값)은 "요청이 지목한 것과 같은가"만
+            # 보므로 이미 FAILED 로 닫힌 요청도 스냅샷이 남아 있어 전부 통과한다. 그러면
+            # 요청 이력은 실패인데 리포트 원장에는 성공 리포트가 있는 모순이 남는다.
+            #
+            # 이 검사를 ``_judge`` 안에 두면 안 된다 — ``_judge`` 는 재생도 태우는데,
+            # 재생 시점의 요청 상태는 "그때 받았을 때"가 아니라 "지금까지 전이한 결과"다.
+            # 리포트를 정상 기록한 뒤 요청이 FAILED 로 닫히는 순서는 합법이므로(전이
+            # 게이트는 SUCCEEDED 에만 리포트를 요구한다), 재생에서 이걸 보면 그 정상
+            # 이력이 기동 거부(``DesignConformanceRecoveryError``)로 바뀐다. 이미 받은
+            # 기록을 나중에 부정하지 않는다 — coverage_reports 의 임무 대조와 같은 원칙.
+            receipt_request = self._request_store.get_by_design_conformance_id(
+                report.design_conformance_id
+            )
+            if (
+                receipt_request is not None
+                and receipt_request.status is ProcessingJobStatus.FAILED
+            ):
+                return self._reject(
+                    mission_id,
+                    report,
+                    now,
+                    reported_by,
+                    DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL,
+                    f"요청이 이미 {receipt_request.status.value} 로 닫혔다 — 실패로 "
+                    "종결된 요청에 리포트를 기록하면 요청 이력과 리포트 원장이 완료 "
+                    "여부를 서로 다르게 말하게 된다",
+                )
             # ``_judge`` 는 원장끼리의 대조까지다. 이 아래가 **바이트를 읽는** 유일한
             # 자리이고, 이 모듈이 존재하는 이유다.
 

@@ -253,11 +253,11 @@ static bool FillUserInfo(T_DjiUserInfo *user_info)
     memset(user_info, 0, sizeof(*user_info));
 
     if (strlen(USER_APP_NAME) >= sizeof(user_info->appName) ||
-        strlen(USER_APP_ID) > sizeof(user_info->appId) ||
-        strlen(USER_APP_KEY) > sizeof(user_info->appKey) ||
-        strlen(USER_APP_LICENSE) > sizeof(user_info->appLicense) ||
+        strlen(USER_APP_ID) >= sizeof(user_info->appId) ||
+        strlen(USER_APP_KEY) >= sizeof(user_info->appKey) ||
+        strlen(USER_APP_LICENSE) >= sizeof(user_info->appLicense) ||
         strlen(USER_DEVELOPER_ACCOUNT) >= sizeof(user_info->developerAccount) ||
-        strlen(USER_BAUD_RATE) > sizeof(user_info->baudRate)) {
+        strlen(USER_BAUD_RATE) >= sizeof(user_info->baudRate)) {
         fprintf(stderr, "dji_sdk_app_info.h 의 필드 길이가 한도를 넘는다\n");
         return false;
     }

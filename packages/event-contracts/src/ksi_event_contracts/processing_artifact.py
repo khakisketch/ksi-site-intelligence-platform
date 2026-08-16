@@ -77,6 +77,7 @@ replay 에서 ``None``으로 재생된다(``extra="forbid"``는 *추가* 필드�
 
 from __future__ import annotations
 
+import math
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -164,6 +165,18 @@ class ArtifactAccuracy(_CamelModel):
     gcp_count: int = Field(ge=0)
     rmse: float = Field(ge=0)
     report_uri: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _rmse_must_be_finite(self) -> ArtifactAccuracy:
+        """``Field(ge=0)``는 ``+inf``를 걸러내지 않는다 — ``inf >= 0``은 참이라 통과한다.
+
+        JSON 자체도 리터럴 ``Infinity``/``NaN``을 ``json.loads`` 기본값으로 허용해
+        wire 상에서 그대로 들어올 수 있다. rmse는 측량 정확도의 실측값이라 non-finite는
+        "정확도를 측정했다"는 주장과 모순된다 — 등록 시점에 거부한다.
+        """
+        if not math.isfinite(self.rmse):
+            raise ValueError(f"rmse 는 finite 여야 한다 (got {self.rmse!r})")
+        return self
 
 
 class ProcessingArtifact(_CamelModel):

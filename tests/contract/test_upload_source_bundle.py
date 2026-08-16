@@ -252,6 +252,34 @@ def test_directory_of_photos_reaches_reconstruction_with_no_human_step(tmp_path:
         assert storage.get_bytes(object_key) == photo.read_bytes()
 
 
+def test_nested_source_directory_is_discovered_like_sd_card_layout(tmp_path: Path) -> None:
+    """SD카드 회수 레이아웃(``DCIM/100MEDIA/`` 하위)도 찾는다.
+
+    ``_collect_files`` 가 ``source_dir.iterdir()``(비재귀)였을 때는 이 레이아웃에서
+    발견 0장으로 떨어져 영구 재시도 실패가 됐다 —
+    ``tests/contract/test_ingest_watch.py::test_finds_images_in_nested_directories``
+    가 고정하는 것과 같은 레이아웃을, 같은 재귀 규칙(``rglob``)으로 여기서도 찾는다.
+    """
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    nested_dir = tmp_path / "photos" / "DCIM" / "100MEDIA"
+    nested_dir.mkdir(parents=True)
+    Image.new("RGB", (64, 48), color=(10, 100, 150)).save(nested_dir / "DJI_0001.JPG", "JPEG")
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        seal=True,
+        put_object=_StorageUploads(storage),
+    )
+
+    assert outcome.discovered == 1
+    assert outcome.uploaded == 1
+    assert outcome.failures == []
+    assert outcome.sealed is True
+
+
 def test_rerun_uploads_no_bytes_again(tmp_path: Path) -> None:
     """[핵심] 같은 디렉터리로 다시 돌리면 바이트를 다시 올리지 않는다.
 

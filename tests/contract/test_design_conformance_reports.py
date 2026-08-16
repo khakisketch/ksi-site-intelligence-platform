@@ -773,3 +773,65 @@ def test_end_to_end_human_request_worker_run_and_map_download(tmp_path: Path) ->
 def storage_http_get(storage: Any, download_url: str) -> bytes:
     """열람 URL 이 가리키는 바이트 — 지도가 하는 일과 같다."""
     return storage.get_bytes(download_url.split("/get/", 1)[1])
+
+
+# ── 종결(FAILED)된 요청 위에 리포트를 남기지 않는다 (2026-08-16 독립 검토) ──
+
+
+def test_report_against_a_failed_request_is_refused(fixture: ReportFixture) -> None:
+    """[핵심] 실패로 닫힌 요청에 리포트를 기록하면 요청 이력과 리포트 원장이
+    완료 여부를 서로 다르게 말한다.
+
+    ``_judge_against_request`` 의 대조들(설계면·산출물·기준값·digest)은 전부
+    "요청이 지목한 것과 같은가"만 보므로, FAILED 로 닫힌 요청도 스냅샷이 그대로
+    남아 있어 전부 통과한다 — 그래서 별도 게이트가 필요하다.
+    """
+    record, verified_at = fixture.prepared()
+    report = _report(record, verified_at)
+
+    failed = fixture.base.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.FAILED,
+        detail="운영상 중단",
+        actor="worker-1",
+        now=datetime.now(UTC),
+    )
+    assert failed.verdict is DesignConformanceRequestVerdict.TRANSITIONED, failed
+
+    outcome = fixture.reports.record(
+        _CURRENT_MISSION_ID, report, now=datetime.now(UTC), reported_by="worker-1"
+    )
+    assert outcome.verdict is DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL, outcome
+    # 원장에 아무것도 안 남았는지까지 본다.
+    assert fixture.reports.get(_CURRENT_MISSION_ID, record.design_conformance_id) is None
+
+
+def test_replay_keeps_a_report_whose_request_later_failed(
+    fixture: ReportFixture,
+) -> None:
+    """[회귀] 종결 검사는 **수신 시점 전용**이다 — 재생에서 보면 안 된다.
+
+    리포트를 정상 기록한 뒤 요청이 FAILED 로 닫히는 순서는 합법이다(전이 게이트는
+    SUCCEEDED 에만 리포트를 요구한다). 그 정상 이력이 재생에서 기동 거부로 바뀌면
+    "이미 받은 기록을 나중에 부정한다" — coverage_reports 임무 대조와 같은 원칙.
+    """
+    record, verified_at = fixture.prepared()
+    report = _report(record, verified_at)
+    recorded = fixture.reports.record(
+        _CURRENT_MISSION_ID, report, now=datetime.now(UTC), reported_by="worker-1"
+    )
+    assert recorded.verdict is DesignConformanceVerdict.RECORDED, recorded
+
+    fixture.base.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.FAILED,
+        detail="기록 뒤 운영상 중단",
+        actor="worker-1",
+        now=datetime.now(UTC),
+    )
+
+    # 재생이 이 리포트를 그대로 복원해야 한다(예외 없이).
+    replayed = _reopen(fixture)
+    entry = replayed.get(_CURRENT_MISSION_ID, record.design_conformance_id)
+    assert entry is not None
+    assert entry.core_recomputed_digest == _RASTER_DIGEST

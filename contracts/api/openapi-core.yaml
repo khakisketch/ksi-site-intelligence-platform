@@ -764,7 +764,7 @@ paths:
         유실에도 같은 dispatchId를 되돌린다.
 
         이 API는 판단/수집 계약 전달만 하며 DJI flight-control command를 만들지
-        않는다. wire 정본은 `contracts/schemas/mission-dispatch-envelope.v1.json`.
+        않는다. wire 정본은 `contracts/schemas/mission-dispatch-envelope.v1.1.json`.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1758,7 +1758,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WorkAreaResponse' }
         '404': { description: UNKNOWN_SITE · SUPERSEDES_NOT_FOUND }
-        '409': { description: SUPERSEDES_OTHER_SITE · TOO_MANY_ACTIVE }
+        '409': { description: SUPERSEDES_OTHER_SITE · SUPERSEDES_NOT_ACTIVE · TOO_MANY_ACTIVE }
         '422': { description: INVALID_WORK_AREA — 폴리곤이 쓸 수 없는 모양이다 }
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
@@ -4065,7 +4065,7 @@ components:
       description: >-
         Mission Contract v1.2, RiskPolicyPack v1.0, EdgeRuntimeProfile v1.0을 원문 그대로 포함하는 outer
         signed dispatch. nested 구조의 wire 정본은
-        contracts/schemas/mission-dispatch-envelope.v1.json 이다.
+        contracts/schemas/mission-dispatch-envelope.v1.1.json 이다.
       type: object
       required:
         [dispatchId, edgeDeviceId, missionId, missionContract, missionContractDigest,
@@ -4768,7 +4768,7 @@ components:
         artifacts:
           description: >-
             이 작업에 등록된 산출물의 계약 payload(등록 순). 구조 정본은
-            contracts/schemas/processing-artifact.v1.json 이다. SUCCEEDED 를
+            contracts/schemas/processing-artifact.v1.2.json 이다. SUCCEEDED 를
             받쳐주는 근거가 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수
             있게 싣는다(INV-051).
           type: array
@@ -4814,7 +4814,7 @@ components:
     ProcessingArtifactMutationResponse:
       description: >-
         산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은
-        contracts/schemas/processing-artifact.v1.json 이다 — Core 가 채운
+        contracts/schemas/processing-artifact.v1.2.json 이다 — Core 가 채운
         jobId·lineage.sourceDigest 를 포함한 완전한 계약 payload 다.
       type: object
       required: [verdict]

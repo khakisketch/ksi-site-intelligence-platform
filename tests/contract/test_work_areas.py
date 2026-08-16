@@ -333,6 +333,109 @@ def test_active_count_is_capped_but_supersede_is_not_a_net_increase(tmp_path: Pa
     assert fixed.verdict is WorkAreaVerdict.REGISTERED
 
 
+def test_superseding_an_already_archived_area_is_refused(tmp_path: Path) -> None:
+    """이미 ARCHIVED 된 구역을 다시 '대체'하면 안 된다.
+
+    이 경로가 상한 검사를 면제받으므로(대체는 순증이 아니다), 이미 보관된 대상을
+    반복해서 대체하면 상한 없이 ACTIVE 구역을 계속 만들 수 있었다(재보관은
+    무보수 no-op 이고 새 등록만 순증으로 남는다). supersedes 대상은 ACTIVE 여야만
+    한다.
+    """
+    store = _store(tmp_path)
+    area = store.register(
+        "site-1",
+        name="A공구",
+        polygon=_polygon(),
+        crs="EPSG:4326",
+        supersedes=None,
+        now=_NOW,
+        actor="admin",
+    ).work_area
+    assert area is not None
+    archived = store.archive(area.work_area_id, site_id="site-1", now=_NOW, actor="admin")
+    assert archived.verdict is WorkAreaVerdict.ARCHIVED
+
+    before = len(store.list_for_site("site-1", include_archived=True))
+    result = store.register(
+        "site-1",
+        name="재대체 시도",
+        polygon=_polygon(x=127.02),
+        crs="EPSG:4326",
+        supersedes=area.work_area_id,
+        now=_NOW,
+        actor="admin",
+    )
+    assert result.verdict is WorkAreaVerdict.SUPERSEDES_NOT_ACTIVE
+    assert result.work_area is None
+    # 거부됐으니 아무 레코드도 새로 생기지 않는다 — 상한 우회 통로가 닫혀 있다.
+    assert len(store.list_for_site("site-1", include_archived=True)) == before
+
+    # 반복 호출해도 계속 거부된다 — N번 불러 ACTIVE 를 상한 없이 늘릴 수 없다.
+    for _ in range(3):
+        repeat = store.register(
+            "site-1",
+            name="재대체 재시도",
+            polygon=_polygon(x=127.03),
+            crs="EPSG:4326",
+            supersedes=area.work_area_id,
+            now=_NOW,
+            actor="admin",
+        )
+        assert repeat.verdict is WorkAreaVerdict.SUPERSEDES_NOT_ACTIVE
+    active = [
+        a
+        for a in store.list_for_site("site-1", include_archived=True)
+        if a.status is WorkAreaStatus.ACTIVE
+    ]
+    assert active == []
+
+
+def test_replay_refuses_a_supersede_of_a_non_active_target(tmp_path: Path) -> None:
+    """레코드가 이미 ARCHIVED 인 대상을 대체한다고 적혀 있으면 재생을 거부한다(fail-closed).
+
+    register() 가 이 상태를 이제 막지만, 옛 journal(결함이 있던 시절에 쓰인)이나
+    변조된 레코드를 재생할 때는 이 검사가 마지막 방어선이다.
+    """
+    journal_path = tmp_path / "work-areas.jsonl"
+    first = WorkArea(
+        work_area_id="wa-site-1-0001",
+        site_id="site-1",
+        name="A",
+        polygon=_polygon(),
+        crs="EPSG:4326",
+        status=WorkAreaStatus.ARCHIVED,
+        created_at="2026-08-13T04:00:00+00:00",
+    )
+    second = WorkArea(
+        work_area_id="wa-site-1-0002",
+        site_id="site-1",
+        name="A(정정)",
+        polygon=_polygon(x=127.01),
+        crs="EPSG:4326",
+        status=WorkAreaStatus.ACTIVE,
+        supersedes="wa-site-1-0001",
+        created_at="2026-08-13T04:00:00+00:00",
+    )
+    with journal_path.open("w", encoding="utf-8") as fh:
+        for area in (first, second):
+            fh.write(
+                json.dumps(
+                    {
+                        "kind": "work-area-registered",
+                        "ts": "2026-08-13T04:00:00+00:00",
+                        "actor": "admin",
+                        "siteId": "site-1",
+                        "workAreaId": area.work_area_id,
+                        "workArea": area.model_dump(by_alias=True, mode="json"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    with pytest.raises(WorkAreaStoreRecoveryError, match="이미 ACTIVE 가 아니다"):
+        _store(tmp_path)
+
+
 def test_replay_restores_status_including_the_supersede_side_effect(tmp_path: Path) -> None:
     """대체가 이전 것을 보관시키는 부수효과까지 재생돼야 projection 이 기록과 갈라지지 않는다."""
     store = _store(tmp_path)

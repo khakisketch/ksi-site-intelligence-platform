@@ -137,6 +137,54 @@ def test_altitude_change_rate_beyond_ratio_is_rejected() -> None:
     assert profile.segments[1].commanded_height_m is None
 
 
+def test_altitude_change_rate_at_zero_horizontal_distance_is_rejected() -> None:
+    """수평이동 없이 고도만 뛰면(중복 웨이포인트·제자리 상승) 무한 비율로 거부한다.
+
+    회귀 시험(2026-08-16): ``horizontal_m > 0.0`` 가드가 0/0 나눗셈을 피하려다
+    수평거리가 정확히 0 인 구간의 고도변화율 검사 전체를 건너뛰고 있었다.
+    """
+    samples = [
+        WaypointTerrainSample(waypoint=_point(37.5000, 127.0000), terrain_elevation_m=50.0),
+        # 같은 좌표, 지형고도만 30m 뛴다 — 수평거리 0 이라 비율은 정의상 무한대.
+        WaypointTerrainSample(waypoint=_point(37.5000, 127.0000), terrain_elevation_m=80.0),
+    ]
+
+    profile = compute_altitude_profile(
+        samples=samples,
+        takeoff_terrain_elevation_m=0.0,
+        target_agl_m=40.0,
+        safety_margin_m=0.0,
+        max_altitude_change_ratio=0.5,
+        envelope=_envelope(),
+        provenance="p",
+    )
+
+    assert profile.segments[0].status is AltitudeSegmentStatus.OK
+    assert profile.segments[1].status is AltitudeSegmentStatus.RATE_LIMIT_EXCEEDED
+    assert profile.segments[1].commanded_height_m is None
+
+
+def test_true_duplicate_waypoint_with_no_altitude_change_is_ok() -> None:
+    """수평거리도 고도변화도 0 이면(완전 중복 웨이포인트) 위반이 아니다."""
+    samples = [
+        WaypointTerrainSample(waypoint=_point(37.5000, 127.0000), terrain_elevation_m=50.0),
+        WaypointTerrainSample(waypoint=_point(37.5000, 127.0000), terrain_elevation_m=50.0),
+    ]
+
+    profile = compute_altitude_profile(
+        samples=samples,
+        takeoff_terrain_elevation_m=0.0,
+        target_agl_m=40.0,
+        safety_margin_m=0.0,
+        max_altitude_change_ratio=0.5,
+        envelope=_envelope(),
+        provenance="p",
+    )
+
+    assert profile.all_ok is True
+    assert profile.segments[1].status is AltitudeSegmentStatus.OK
+
+
 def test_clearance_is_none_without_a_surface_sample() -> None:
     """DSM(지표고)이 없으면 여유값은 None 이다 — 0 으로 채우지 않는다."""
     samples = [

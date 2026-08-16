@@ -497,6 +497,11 @@ def test_missing_site_crs_refuses_before_touching_the_engine(tmp_path: Path) -> 
         )
     assert odm.info_calls == 0, "crs 가 없는데 엔진에 이미 제출을 시도했다"
     assert not any(c[0] == "transition" and c[1] == "RUNNING" for c in core.calls)
+    # siteCrs 결손도 다른 WorkerRunError 경로와 똑같이 FAILED 로 수렴해야 한다
+    # (test_verify_mismatch_transitions_to_failed_and_reraises 와 동일 패턴) —
+    # 그렇지 않으면 작업이 QUEUED 에 갇혀 FIFO 선두를 영원히 막는다.
+    failed_calls = [c for c in core.calls if c[0] == "transition" and c[1] == "FAILED"]
+    assert len(failed_calls) == 1
 
 
 # ── 실패는 FAILED 로 수렴한다 ────────────────────────────────────────────────

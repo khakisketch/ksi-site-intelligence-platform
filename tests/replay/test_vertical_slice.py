@@ -320,6 +320,39 @@ def test_tracker_rejects_invalid_threshold() -> None:
         MinimalTracker(iou_threshold=1.5)
 
 
+def test_tracker_rejects_invalid_max_missed_frames() -> None:
+    with pytest.raises(ValueError, match="max_missed_frames"):
+        MinimalTracker(max_missed_frames=0)
+
+
+def test_tracker_evicts_stale_track_after_missed_frame_budget() -> None:
+    """[Eviction] max_missed_frames 를 넘겨 매칭 안 된 track 은 제거되고, 재등장한
+    detection 은 옛 track_id 를 재사용하지 않고 새 id 를 받는다(무한 성장 방지 반증
+    대응 — _active 가 매칭 안 된 track 을 영원히 들고 있지 않는지 공개 API 로 확인).
+    """
+    tracker = MinimalTracker(max_missed_frames=1)
+    box = {"x_min": 100.0, "y_min": 100.0, "x_max": 200.0, "y_max": 300.0}
+    first = tracker.assign([person_detection(**box)])
+    tracker.assign([])  # 1회 미매칭 — 아직 유예 범위 내
+    tracker.assign([])  # 2회 연속 미매칭 — 유예를 넘겨 제거된다
+    reappeared = tracker.assign([person_detection(**box)])
+    assert reappeared[0][0] != first[0][0], (
+        "제거됐어야 할 track_id 가 재등장한 detection 에 재사용됐다 — 미제거 회귀"
+    )
+
+
+def test_tracker_retains_track_within_missed_frame_budget() -> None:
+    """[Eviction 경계] 유예 프레임 수 이내의 짧은 미검출 구간은 track_id 를 유지한다
+    — eviction 이 가림·일시 미검출까지 과도하게 끊지 않는지 확인."""
+    tracker = MinimalTracker(max_missed_frames=5)
+    box = {"x_min": 100.0, "y_min": 100.0, "x_max": 200.0, "y_max": 300.0}
+    first = tracker.assign([person_detection(**box)])
+    tracker.assign([])
+    tracker.assign([])
+    reappeared = tracker.assign([person_detection(**box)])
+    assert reappeared[0][0] == first[0][0], "유예 범위 내 재등장은 같은 track_id 를 유지해야 한다"
+
+
 def test_foot_point_is_bottom_center_not_centroid() -> None:
     """접지점은 하단 중앙 — 중심을 쓰면 대상 높이 절반만큼 체계적 오차가 생긴다."""
     detection = person_detection(x_min=100.0, y_min=200.0, x_max=200.0, y_max=600.0)

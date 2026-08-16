@@ -13,6 +13,10 @@ ADR-KSI-021(2026-08-16) 이후로는 **이중 잠금**도 함께 고정한다 �
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import stat
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -490,3 +494,123 @@ def test_check_flight_boundary_wires_allowlist_through_to_scan(tmp_path: Path) -
     # display_path가 tmp_path 절대경로라 매니페스트의 상대경로와 다르므로 여전히
     # 위반이다(고의 — allowedIn이 저장소 상대경로 규약임을 확인하는 회귀 시험).
     assert result.source_violations != ()
+
+
+# --- wrapper(verify_flight_boundary_on_built_target.sh) exit-code 회귀 ---------
+#
+# 예전 버전은 strict 게이트(--require-zero-defined-symbols)의 exit code를
+# `|| echo ... 차단 아님` 으로 무조건 삼켰다 — 그래서 ELF에 새로 정의된
+# Flight Control 심볼이 있어도 wrapper 전체는 0(PASS)으로 끝날 수 있었다. 아래
+# 시험은 실제 wrapper 스크립트를 subprocess로 돌려 그 exit code를 고정한다.
+# `nm`/`objdump`는 가짜 실행파일로 PATH 앞에 꽂아 결과를 통제한다 — 실물 ELF나
+# aarch64 툴체인 없이도 strict 게이트의 두 경로(벤더 잡음만 / 새 심볼 있음)를
+# 재현할 수 있다.
+
+_WRAPPER = _ROOT / "tools" / "edge" / "verify_flight_boundary_on_built_target.sh"
+
+_FAKE_NM = """#!/usr/bin/env bash
+case "$1" in
+  -u) cat "${KSI_TEST_NM_UNDEFINED:-/dev/null}" ;;
+  --defined-only) cat "${KSI_TEST_NM_DEFINED:-/dev/null}" ;;
+  *) exit 1 ;;
+esac
+"""
+
+_FAKE_OBJDUMP = """#!/usr/bin/env bash
+cat "${KSI_TEST_OBJDUMP:-/dev/null}"
+"""
+
+
+def _install_fake_binutils(bin_dir: Path) -> None:
+    """nm/objdump(및 aarch64 변형)를 가짜 스크립트로 깐다 — 내용은 env var로 넘긴다."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    nm_path = bin_dir / "nm"
+    nm_path.write_text(_FAKE_NM, encoding="utf-8")
+    nm_path.chmod(nm_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    for name in ("objdump", "aarch64-linux-gnu-objdump", "llvm-objdump"):
+        objdump_path = bin_dir / name
+        objdump_path.write_text(_FAKE_OBJDUMP, encoding="utf-8")
+        objdump_path.chmod(
+            objdump_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+        )
+
+
+def _run_wrapper(
+    tmp_path: Path,
+    *,
+    defined_symbols_output: str,
+    undefined_symbols_output: str = "",
+    objdump_output: str = "",
+) -> subprocess.CompletedProcess[str]:
+    if shutil.which("bash") is None:
+        pytest.skip("bash unavailable in this environment")
+
+    build_dir = tmp_path / "build-manifold3"
+    build_dir.mkdir()
+    candidate = build_dir / "fake_target"
+    candidate.write_bytes(b"\x7fELF" + b"\x00" * 16)
+    candidate.chmod(candidate.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    fake_bin_dir = tmp_path / "fake-bin"
+    _install_fake_binutils(fake_bin_dir)
+
+    defined_file = tmp_path / "nm_defined.txt"
+    defined_file.write_text(defined_symbols_output, encoding="utf-8")
+    undefined_file = tmp_path / "nm_undefined.txt"
+    undefined_file.write_text(undefined_symbols_output, encoding="utf-8")
+    objdump_file = tmp_path / "objdump.txt"
+    objdump_file.write_text(objdump_output, encoding="utf-8")
+
+    env = dict(os.environ)
+    env["PATH"] = f"{fake_bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["KSI_TEST_NM_DEFINED"] = str(defined_file)
+    env["KSI_TEST_NM_UNDEFINED"] = str(undefined_file)
+    env["KSI_TEST_OBJDUMP"] = str(objdump_file)
+    # 실제 배포용 allowlist를 명시 지정하지 않는 기본 경로를 시험한다.
+    env.pop("KSI_FLIGHT_EXECUTION_ALLOWLIST", None)
+
+    return subprocess.run(
+        ["bash", str(_WRAPPER), str(build_dir)],
+        cwd=_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def test_wrapper_passes_when_elf_has_only_known_vendor_noise(tmp_path: Path) -> None:
+    """DjiFlightController_GetDjiErrorCode 하나만 정의돼 있으면 strict 게이트도 통과해야 한다."""
+    completed = _run_wrapper(
+        tmp_path,
+        defined_symbols_output=(
+            "0000000000000000 T DjiFlightController_GetDjiErrorCode\n"
+        ),
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "strict 게이트 통과" in completed.stdout
+    assert "기본·strict 안전경계 게이트를 통과했다" in completed.stdout
+
+
+def test_wrapper_fails_when_a_new_flight_control_symbol_is_defined(tmp_path: Path) -> None:
+    """회귀 시험: 알려진 벤더 잡음 외 새 Flight Control 심볼은 wrapper 전체를 실패시켜야 한다.
+
+    수정 전에는 strict 게이트의 exit code가 `|| echo ... 차단 아님` 으로 항상
+    버려졌다 — 그래서 이 시나리오(기본 게이트는 통과하지만 strict 게이트가
+    새 심볼 때문에 실패)에서도 wrapper 전체가 exit 0(PASS)이었다. 이 시험은
+    exit code가 실제로 비영(1)이 되는 것을 고정한다.
+    """
+    completed = _run_wrapper(
+        tmp_path,
+        defined_symbols_output=(
+            "0000000000000000 T DjiFlightController_GetDjiErrorCode\n"
+            "0000000000000010 T DjiFlightController_StartGoHome\n"
+        ),
+    )
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1, combined
+    assert "기본 게이트 통과" in completed.stdout  # 기본 게이트는 여전히 통과(직접호출/헤더 없음)
+    assert "strict 안전경계 게이트 실패" in combined
+    assert "strict zero-symbol gate failed" in combined
+    assert "DjiFlightController_StartGoHome" in combined

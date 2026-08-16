@@ -7,6 +7,22 @@ import { useMutation } from "@/hooks/useMutation";
 import type { MissionExecutionStatus, MissionExecutionView } from "@/lib/core-api/types";
 
 /**
+ * 미리 보여줄 거부 사유. `CANCELLED` 는 "이미 전달됨"과 다른 사실이다 — 취소된
+ * 임무는 애초에 날려선 안 되는 것이지, 늦게 눌러서 거부되는 게 아니다. 둘을 같은
+ * 문장으로 뭉개면 조종자가 "취소됐다"를 "누군가 이미 처리했다"로 오해할 수 있다.
+ * null 이면 경고를 보여주지 않는다(ISSUED 이거나 상태를 아직 모름).
+ */
+export function manualDispatchRejectionWarning(
+  executionStatus: MissionExecutionStatus | null,
+): string | null {
+  if (executionStatus === null || executionStatus === "ISSUED") return null;
+  if (executionStatus === "CANCELLED") {
+    return "취소된 임무입니다 — 비행해서는 안 됩니다.";
+  }
+  return "이미 전달이 확인된 임무라 서버가 거부할 수 있습니다.";
+}
+
+/**
  * [수동 이관 신고] — 자동 전달(ADR-KSI-019 G1)이 확인되지 않는 동안, KMZ 를 직접
  * 조종기로 옮긴 사람이 "내가 기체로 넘겼다"는 사실을 서버에 남긴다.
  *
@@ -45,9 +61,10 @@ export function ManualDispatchButton({
     );
   }
 
-  // 이미 전달이 확인된 뒤라는 걸 알면 미리 알려준다 — 눌러도 되지만(버튼을 지우지
-  // 않는다는 원칙), 왜 거부될 수 있는지 누르기 전에 말해 둔다.
-  const likelyRejected = executionStatus !== null && executionStatus !== "ISSUED";
+  // 이미 전달이 확인됐거나 취소된 뒤라는 걸 알면 미리 알려준다 — 눌러도 되지만
+  // (버튼을 지우지 않는다는 원칙), 왜 거부될 수 있는지·왜 눌러선 안 되는지
+  // 누르기 전에 말해 둔다.
+  const rejectionWarning = manualDispatchRejectionWarning(executionStatus);
 
   async function handleClick() {
     setPending(true);
@@ -79,7 +96,7 @@ export function ManualDispatchButton({
       </button>
       <p className="text-[12px] break-keep text-ink-2">
         KMZ 를 직접 조종기로 옮겼다면 눌러서 서버에 남기세요.
-        {likelyRejected && " 이미 전달이 확인된 임무라 서버가 거부할 수 있습니다."}
+        {rejectionWarning && ` ${rejectionWarning}`}
       </p>
       {done && !errorMessage && (
         <p role="status" className="text-[12px] break-keep text-safe-ink">

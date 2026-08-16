@@ -106,11 +106,13 @@ class Histogram:
             items = sorted(self._data.items())
         for key, (counts, total, count) in items:
             base_labels = dict(key)
-            cumulative = 0
+            # counts[i] 는 observe() 가 이미 누적(cumulative 'le') 값으로 채워
+            # 둔다 — 버킷 경계 이상인 모든 관측마다 증가시키므로. 여기서 다시
+            # running sum 을 더하면 이미 누적된 값을 또 누적해 버킷 값이 실제
+            # 관측 수를 넘어 계속 불어난다(단조성 위반). 그대로 낸다.
             for bound, bucket_count in zip(self._buckets, counts, strict=True):
-                cumulative += bucket_count
                 le_labels = {**base_labels, "le": str(bound)}
-                lines.append(f"{self.name}_bucket{_format_labels(le_labels)} {cumulative}")
+                lines.append(f"{self.name}_bucket{_format_labels(le_labels)} {bucket_count}")
             inf_labels = {**base_labels, "le": "+Inf"}
             lines.append(f"{self.name}_bucket{_format_labels(inf_labels)} {count}")
             lines.append(f"{self.name}_sum{_format_labels(base_labels)} {total}")

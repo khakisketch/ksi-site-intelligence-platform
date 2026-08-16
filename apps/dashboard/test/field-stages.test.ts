@@ -150,6 +150,17 @@ describe("② 비행", () => {
     const flight = deriveFieldStages(input({ execution: execution("ENDED_INCOMPLETE") }))[1];
     expect(flight.auto.tone).toBe("warning");
   });
+
+  // 확정 결함 수정: 취소된 임무의 카드에서 auto 배지("비행하지 마세요")·[임무 시작]
+  // 버튼(deriveFlightStart, "시작할 수 없습니다")은 날지 말라고 하는데 manual 만
+  // "Pilot 2 앱에서 직접 시작할 수 있습니다"라고 초대하면 같은 카드 안에서 문장이
+  // 서로 반대를 말한다.
+  it("취소된 임무는 수동 경로도 시작을 권하지 않는다", () => {
+    const flight = deriveFieldStages(input({ execution: execution("CANCELLED") }))[1];
+    expect(flight.manual).not.toBeNull();
+    expect(flight.manual).not.toContain("직접 시작할 수 있습니다");
+    expect(flight.manual).toContain("취소된 임무");
+  });
 });
 
 describe("[임무 시작] 버튼", () => {

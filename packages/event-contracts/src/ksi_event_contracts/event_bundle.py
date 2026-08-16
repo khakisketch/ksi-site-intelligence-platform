@@ -18,17 +18,39 @@ entity fingerprint 를 갖는다. 자유 dict 중복 저장이 아니라 WorldEn
 :func:`ksi_event_contracts.assembly.world_entity_fingerprint` (entity_id 를 제외한
 내용 기반 sha256) 뿐이다. 수신자는 대응 WorldEntity 확보 시 같은 함수로 재계산해
 대조한다 — 불일치는 "bundle 이 가리키는 entity 가 그 entity 가 아니다"이다.
+
+## INV-030 강화 (2026-08-16) — clip 길이 교차검증 + EVIDENCE_DEGRADED
+
+``ClipPolicy.pre_seconds``/``post_seconds`` 는 이전엔 무제약 float(음수·NaN 허용)
+였고, evidence 저장 실패를 기록할 스키마 필드가 없었다. 이번 변경:
+
+- ``ClipPolicy`` 필드에 finite·비음수 제약을 걸고, :class:`EventBundle` 에
+  ``severity`` 대비 INV-030 표(3/5/10초) 교차검증 model_validator 를 추가했다.
+- ``Evidence.storage_status`` (:class:`EvidenceStorageStatus`, 값
+  ``EVIDENCE_DEGRADED`` 하나)를 추가해 저장 실패를 침묵 성공과 구분한다.
+
+**보류된 결정**: 이 스키마 계열은 v1.0→v1.1 에서 순수 additive(옵션 필드만
+추가) 변경조차 매번 schemaVersion 을 올렸다(선례). 그 관례를 그대로 따르면
+이번 것도 v1.3 이어야 하지만, 그러면 ``schema_version: Literal`` 이 깨져 이
+저장소 전역의 ``"schemaVersion": "1.2"`` 하드코딩 fixture(15개 이상,
+``tests/contract/`` 다수 + AsyncAPI 문서)가 전부 갱신 대상이 된다 — 이 좁은
+수정 범위를 넘는 저장소 전역 변경이라 여기서 임의로 단행하지 않았다.
+**대신** ``schema_version`` 은 ``"1.2"`` 로 유지하고 ``storage_status`` 를
+additive-optional 필드로만 추가했다(``extra="forbid"`` 라서 이 필드 자체는
+모델에 선언해야 통과하지만, 부재 시 기존 payload 는 그대로 유효하다). v1.3
+정식 채번 여부는 스키마 소유자의 별도 결정이 필요하다.
 """
 
 from __future__ import annotations
 
 import re
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from ksi_domain.enums import EventStatus, Severity
 from ksi_domain.ontology import REGISTERED_ONTOLOGY_VERSIONS
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from ksi_event_contracts._base import _CamelModel
 from ksi_event_contracts.world_entity import ClassificationSource
@@ -36,9 +58,36 @@ from ksi_event_contracts.world_entity import ClassificationSource
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
+# INV-030 — Evidence Clip 전후 길이(초) 표(SSOT). Candidate/High/Critical = 3/5/10초.
+# MEDIUM 은 §17.2 상 재검증 경로라 클립 정책이 정의돼 있지 않다(감사 #26·#37 —
+# 표에 없는 severity 로 임의 길이를 지어내면 초판처럼 CRITICAL 이 축소된 클립을
+# 받는 드리프트가 재발한다). ``ksi_perception.pipeline`` 은 이 표를 재사용한다 —
+# 별도 사본을 두면 그 자체가 드리프트 재발 지점이 된다(이 모델이 유일한 SSOT).
+EVIDENCE_CLIP_SECONDS: dict[Severity, float] = {
+    Severity.CANDIDATE: 3.0,
+    Severity.HIGH: 5.0,
+    Severity.CRITICAL: 10.0,
+}
+
+
 class ClipPolicy(_CamelModel):
-    pre_seconds: float
-    post_seconds: float
+    """INV-030 강제 지점.
+
+    필드 제약(finite·비음수)은 여기서 본다. ``severity`` 대비 정확한 3/5/10초
+    일치는 이 모델이 아니라 :class:`EventBundle` 의 model_validator
+    (``_clip_policy_matches_severity``)가 본다 — ``severity`` 는 형제 필드로
+    ``EventBundle`` 에만 있어(``Evidence``·``ClipPolicy`` 는 그 값을 모른다),
+    교차검증은 그 상위 모델에서만 가능하다.
+    """
+
+    pre_seconds: float = Field(ge=0, allow_inf_nan=False)
+    post_seconds: float = Field(ge=0, allow_inf_nan=False)
+
+
+class EvidenceStorageStatus(StrEnum):
+    """INV-030 — evidence 아티팩트 저장 실패는 숨기지 않고 이 상태로 명시 기록한다."""
+
+    EVIDENCE_DEGRADED = "EVIDENCE_DEGRADED"
 
 
 class Evidence(_CamelModel):
@@ -53,6 +102,10 @@ class Evidence(_CamelModel):
     viewpoint_history_artifact: str | None = None
     bundle_digest: str | None = None
     edge_signature: str | None = None
+    # INV-030 — 스토리지 업로드 실패를 침묵 성공으로 뭉개지 않는다. 프로듀서가
+    # 업로드 실패를 감지하면 여기 EVIDENCE_DEGRADED 를 명시 기록한다(부재=정상
+    # 저장 — "시도해서 실패"와 "애초에 만들 게 없었다"를 구분하는 필드다).
+    storage_status: EvidenceStorageStatus | None = None
 
 
 class ClassificationLineage(_CamelModel):
@@ -152,6 +205,35 @@ class EventBundle(_CamelModel):
             surplus = sorted(lineage_ids - entity_ids)
             raise ValueError(
                 f"classification lineage 불일치 — 누락 {missing}, 잉여 {surplus}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _clip_policy_matches_severity(self) -> EventBundle:
+        """INV-030 — ``evidence.clip_policy`` 가 실리면 severity 표(3/5/10초)와 정확히
+        일치해야 한다. ``severity`` 는 이 모델의 형제 필드라 여기서만 교차검증할 수
+        있다(``Evidence``/``ClipPolicy`` 단독으로는 severity 를 볼 수 없다).
+
+        알려진 한계: ``severity`` 가 아직 배정되지 않아 ``None`` 이면(예: 이른 단계
+        산출물) 이 교차검증을 건너뛴다 — 그 경우 :class:`ClipPolicy` 의 필드 제약
+        (finite·비음수)만 적용되고, 길이가 실제 severity 정책과 맞는지는 severity 가
+        채워지는 시점(재검증 없이는) 보장되지 않는다.
+        """
+        clip_policy = self.evidence.clip_policy
+        if clip_policy is None or self.severity is None:
+            return self
+        expected = EVIDENCE_CLIP_SECONDS.get(self.severity)
+        if expected is None:
+            raise ValueError(
+                f"severity {self.severity.value} 의 Evidence Clip 정책이 정의돼 있지 "
+                f"않다(INV-030 표: {sorted(s.value for s in EVIDENCE_CLIP_SECONDS)}) — "
+                "clip_policy 를 실을 수 없다"
+            )
+        if clip_policy.pre_seconds != expected or clip_policy.post_seconds != expected:
+            raise ValueError(
+                f"evidence.clipPolicy 가 INV-030 표와 불일치 — severity "
+                f"{self.severity.value} 는 전후 {expected}초여야 하는데 "
+                f"preSeconds={clip_policy.pre_seconds}, postSeconds={clip_policy.post_seconds}"
             )
         return self
 

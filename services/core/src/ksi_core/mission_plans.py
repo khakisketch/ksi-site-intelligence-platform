@@ -641,12 +641,12 @@ def build_mission_plans_router(
         200 으로 저장된 산출물을 재생성해 그대로 반환한다(모듈 docstring "멱등
         재발급" 참조) — 다른 요청이면 여전히 409 ``MISSION_ID_CONFLICT``.
         """
+        plan_request_payload = request.model_dump(by_alias=True, mode="json", exclude_none=True)
+        reject_lone_surrogates(plan_request_payload)
+
         contract_request_payload = request.contract.model_dump(
             by_alias=True, mode="json", exclude_none=True
         )
-        reject_lone_surrogates(contract_request_payload)
-
-        plan_request_payload = request.model_dump(by_alias=True, mode="json", exclude_none=True)
         request_digest = _request_digest(plan_request_payload)
 
         verdict = precheck_issuance(

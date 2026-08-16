@@ -44,6 +44,17 @@ function DrawControl({
 }) {
   const map = useMap();
   const groupRef = useRef<L.FeatureGroup>(new L.FeatureGroup());
+  // onChange 는 SiteRegistrationWizard 등에서 매 렌더 새로 만들어지는
+  // 병합형 콜백(`(aoi) => update({aoi})`)일 수 있다 — 아래 effect 는 [map]
+  // 에만 의존해 마운트 시 한 번만 리스너를 붙인다. ref 로 최신 콜백을 항상
+  // 가리키게 하지 않으면 최초 마운트 시점의 onChange 스냅샷(그 시점의 다른
+  // 폼 필드 값들을 닫고 있는)이 이후 모든 편집에 재생되어 다른 필드를
+  // 덮어써 버린다. ref 갱신은 렌더 중이 아니라 커밋 후(effect, deps 없음)
+  // 에 해야 한다 — 렌더 중 ref.current 대입은 react-hooks/refs 위반.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   useEffect(() => {
     const group = groupRef.current;
@@ -77,11 +88,11 @@ function DrawControl({
       const layers = group.getLayers() as L.Polygon[];
       const last = layers[layers.length - 1];
       if (!last) {
-        onChange([]);
+        onChangeRef.current([]);
         return;
       }
       const vertices = toVertices(last);
-      onChange(vertices.slice(0, _MAX_AOI_VERTICES));
+      onChangeRef.current(vertices.slice(0, _MAX_AOI_VERTICES));
     };
 
     const onCreated = (e: L.LeafletEvent) => {
@@ -103,7 +114,7 @@ function DrawControl({
       map.removeControl(control);
       map.removeLayer(group);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 최초 마운트에만 컨트롤 부착, value 는 초기값으로만 사용
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 최초 마운트에만 컨트롤 부착, value 는 초기값으로만 사용, onChange 는 onChangeRef 로 최신값 참조
   }, [map]);
 
   return null;

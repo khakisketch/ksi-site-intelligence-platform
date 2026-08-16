@@ -45,6 +45,9 @@ from ksi_event_contracts.assembly import (
     world_entity_fingerprint,
 )
 from ksi_event_contracts.event_bundle import (
+    EVIDENCE_CLIP_SECONDS as _EVENT_BUNDLE_EVIDENCE_CLIP_SECONDS,
+)
+from ksi_event_contracts.event_bundle import (
     ClassificationLineage,
     ClipPolicy,
     EventBundle,
@@ -146,23 +149,51 @@ class MinimalTracker:
     CLASSIFICATION_CONFLICT(2차 방어)가 잡는다.
 
     결정적이다 — 같은 입력 순서에 같은 track_id 를 배정한다(재현성).
+
+    **Eviction (staleness, efficiency 반증 대응):** ``_active`` 는 매칭 안 된 detection
+    마다 새 항목을 쌓기만 하고 한 번도 비우지 않으면 실행 시간에 비례해 무한정
+    자란다 — 장시간 임무에서 메모리와 매 프레임 매칭 비용(O(len(detections)*
+    len(active)))이 계속 늘어난다. 각 항목에 "마지막으로 매칭된 프레임 번호"를
+    같이 들고, ``max_missed_frames`` 프레임 연속으로 매칭되지 않은 track 은
+    다음 호출 시작 시 제거한다. ``assign()`` 호출 1회 = 프레임 1장(호출자가
+    시각순으로 부른다는 기존 계약, ``run_vertical_slice`` 참고)이므로 별도
+    타임스탬프 인자 없이 내부 카운터로 충분하다. 기본값 30 은 도메인에서
+    유도된 상수가 아니라 "짧은 가림·미검출 구간은 흡수하되 무한 성장은 막는다"는
+    보수적 정책값이다(재검토 필요 시 조정 지점).
     """
 
-    def __init__(self, *, iou_threshold: float = 0.3) -> None:
+    def __init__(self, *, iou_threshold: float = 0.3, max_missed_frames: int = 30) -> None:
         if not (0.0 < iou_threshold <= 1.0):
             raise ValueError(f"iou_threshold 는 (0,1] 범위여야 한다 ({iou_threshold!r})")
+        if max_missed_frames < 1:
+            raise ValueError(f"max_missed_frames 는 1 이상이어야 한다 ({max_missed_frames!r})")
         self._iou_threshold = iou_threshold
+        self._max_missed_frames = max_missed_frames
         self._next_id = 1
-        self._active: dict[str, tuple[BoundingBox, str]] = {}  # track → (bbox, class)
+        self._frame_counter = 0
+        # track → (bbox, class, 마지막으로 매칭된 frame_counter)
+        self._active: dict[str, tuple[BoundingBox, str, int]] = {}
 
     def assign(self, detections: list[Detection]) -> list[tuple[str, Detection]]:
         """탐지 목록에 track_id 를 배정한다. 입력 순서대로 그리디 매칭."""
+        self._frame_counter += 1
+        current_frame = self._frame_counter
+        # 오래 매칭되지 않은 track 을 이번 프레임의 매칭보다 먼저 비운다 — 새
+        # detection 이 방금 죽은 track_id 를 우연히 재사용하지 않게 매칭 전에 정리.
+        stale = [
+            track_id
+            for track_id, (_, _, last_seen) in self._active.items()
+            if current_frame - last_seen > self._max_missed_frames
+        ]
+        for track_id in stale:
+            del self._active[track_id]
+
         assigned: list[tuple[str, Detection]] = []
         claimed: set[str] = set()
         for detection in detections:
             best_id: str | None = None
             best_iou = 0.0
-            for track_id, (previous_bbox, previous_class) in self._active.items():
+            for track_id, (previous_bbox, previous_class, _) in self._active.items():
                 if track_id in claimed:
                     continue
                 if previous_class != detection.detection_class:
@@ -174,7 +205,7 @@ class MinimalTracker:
                 best_id = f"trk-{self._next_id:03d}"
                 self._next_id += 1
             claimed.add(best_id)
-            self._active[best_id] = (detection.bbox, detection.detection_class)
+            self._active[best_id] = (detection.bbox, detection.detection_class, current_frame)
             assigned.append((best_id, detection))
         return assigned
 
@@ -318,11 +349,12 @@ class EventBuildStatus(StrEnum):
 # INV-030 — Evidence Clip 전후 길이(초). mission-contract evidencePolicy 의
 # candidate/high/critical 3단계와 정합해야 한다(감사 #26·#37: 초판은 2단계라
 # CRITICAL 이 5초 클립을 받았다). 여기 없는 severity 는 typed 거부.
-EVIDENCE_CLIP_SECONDS: dict[Severity, float] = {
-    Severity.CANDIDATE: 3.0,
-    Severity.HIGH: 5.0,
-    Severity.CRITICAL: 10.0,
-}
+#
+# SSOT 는 ksi_event_contracts.event_bundle 이다(EventBundle 자신도 이 표로
+# clip_policy·severity 정합을 교차검증한다) — 여기서 재선언하면 두 표가
+# 갈라질 때 감사 #26·#37 급 드리프트가 재발한다. 이름은 하위 호환 re-export
+# 로 유지한다(tests/replay/vertical_slice.py 가 이 이름으로 가져간다).
+EVIDENCE_CLIP_SECONDS = _EVENT_BUNDLE_EVIDENCE_CLIP_SECONDS
 
 
 @dataclass(frozen=True, slots=True)

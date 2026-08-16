@@ -22,6 +22,17 @@ from _digest import DigestMismatchError, fetch_with_digest_verification, sha256_
 LEDGER = Path("docs/models/TEST_ASSETS.yaml")
 DEST = Path("models/test-assets")
 
+# Pillow는 save() 시 format= 이 없으면 대상 경로의 확장자로 포맷을 추론한다.
+# fetch_with_digest_verification 은 항상 ``<target>.part`` 임시 경로에 쓰므로
+# 확장자가 ``.part`` 가 되어 추론이 실패한다 — 최종 파일명(target)의 확장자로
+# 명시적으로 매핑해 넘긴다.
+_PIL_FORMAT_BY_SUFFIX = {
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".png": "PNG",
+    ".webp": "WEBP",
+}
+
 
 def fetch() -> int:
     from io import BytesIO
@@ -43,12 +54,22 @@ def fetch() -> int:
 
         print(f"↓ {asset['name']} ← {asset['source_url']}")
 
-        def _fetch_and_reencode(target_tmp: Path, asset: dict[str, str] = asset) -> None:
+        def _fetch_and_reencode(
+            target_tmp: Path, asset: dict[str, str] = asset, target: Path = target
+        ) -> None:
             with urllib.request.urlopen(asset["source_url"], timeout=120) as resp:  # noqa: S310
                 raw = resp.read()
             image = Image.open(BytesIO(raw)).convert("RGB")
             image.thumbnail((800, 800))
-            image.save(target_tmp, quality=92)
+            suffix = target.suffix.lower()
+            try:
+                pil_format = _PIL_FORMAT_BY_SUFFIX[suffix]
+            except KeyError:
+                raise ValueError(
+                    f"{asset['name']}: 알 수 없는 확장자 {suffix!r} — "
+                    "_PIL_FORMAT_BY_SUFFIX 에 저장 포맷 매핑을 추가하라"
+                ) from None
+            image.save(target_tmp, format=pil_format, quality=92)
 
         try:
             fetch_with_digest_verification(target, expected, _fetch_and_reencode)

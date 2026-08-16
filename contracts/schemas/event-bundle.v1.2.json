@@ -91,16 +91,19 @@
         },
         "clipPolicy": {
           "type": "object",
+          "description": "INV-030 — 전후 클립 길이(초). Candidate/High/Critical = 3/5/10초, severity 대비 정합은 Pydantic 게이트(EventBundle._clip_policy_matches_severity)가 강제한다.",
           "required": [
             "preSeconds",
             "postSeconds"
           ],
           "properties": {
             "preSeconds": {
-              "type": "number"
+              "type": "number",
+              "minimum": 0
             },
             "postSeconds": {
-              "type": "number"
+              "type": "number",
+              "minimum": 0
             }
           }
         },
@@ -115,6 +118,13 @@
         },
         "edgeSignature": {
           "type": "string"
+        },
+        "storageStatus": {
+          "type": "string",
+          "enum": [
+            "EVIDENCE_DEGRADED"
+          ],
+          "description": "INV-030 — evidence 아티팩트 저장 실패는 숨기지 않고 EVIDENCE_DEGRADED 로 명시 기록한다. 부재 = 정상 저장(또는 애초에 시도된 아티팩트 없음)."
         }
       }
     },

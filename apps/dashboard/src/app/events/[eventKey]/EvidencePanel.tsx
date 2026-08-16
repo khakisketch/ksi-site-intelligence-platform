@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { API_ERROR_MESSAGE } from "@/lib/core-api/labels";
+import { StateBadge } from "@/components/ui/StatusBadge";
+import { API_ERROR_MESSAGE, evidenceDeviceBoundLabel } from "@/lib/core-api/labels";
 import type { EvidenceSummary, EvidenceUploadResponse, EvidenceViewResponse } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
@@ -149,14 +150,18 @@ export function EvidencePanel({
         <ul className="flex flex-col gap-2">
           {evidence.map((artifact) => {
             const view = viewing[artifact.artifactId];
+            const deviceBound = evidenceDeviceBoundLabel(artifact.deviceBound);
             return (
               <li
                 key={artifact.artifactId}
                 className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="num break-token text-[12.5px] font-semibold">
-                    {artifact.artifactId}
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="num break-token text-[12.5px] font-semibold">
+                      {artifact.artifactId}
+                    </span>
+                    <StateBadge label={deviceBound.label} tone={deviceBound.tone} />
                   </span>
                   <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
                     {formatKoreanDateTime(artifact.registeredAt, { dateStyle: "medium", timeStyle: "short" })}

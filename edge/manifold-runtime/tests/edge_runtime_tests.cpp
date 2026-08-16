@@ -1923,6 +1923,49 @@ void TestCandidateTimingArtifacts() {
     std::filesystem::remove_all(directory, cleanup_error);
 }
 
+void TestWorldStateTrackerEviction() {
+    // max_tracks=1 forces the eviction question immediately: without it, once
+    // the single slot is taken, a genuinely new, non-overlapping detection is
+    // silently dropped for the rest of the mission.
+    ksi::edge::WorldStateTracker tracker(0.5F, 1U, 2U);
+    ksi::edge::TelemetryTimeline timeline(4U);
+    Check(timeline.Record(Telemetry(1'000'000LL)) == ksi::edge::TelemetryVerdict::kRecorded,
+          "eviction test telemetry queued");
+    const auto alignment = timeline.Align(FrameMeta(1U, 1'020'000LL), 50'000LL);
+    Check(alignment.sample.has_value(), "eviction test alignment carries a sample");
+
+    ksi::edge::Detection first;
+    first.class_id = 0U;
+    first.class_name = "Person";
+    first.confidence = 0.9F;
+    first.box = {0.0F, 0.0F, 10.0F, 10.0F};
+    const auto first_update = tracker.Update({first}, alignment, FrameMeta(1U));
+    Check(first_update.size() == 1U && tracker.track_count() == 1U,
+          "first detection occupies the only track slot");
+    const std::string first_track_id = first_update.front().entity_id;
+
+    // Two frames with nothing to match keeps the stale track alive (missed
+    // count has not yet exceeded max_missed_frames=2).
+    Check(tracker.Update({}, alignment, FrameMeta(2U)).empty() && tracker.track_count() == 1U,
+          "one missed frame does not evict yet");
+    Check(tracker.Update({}, alignment, FrameMeta(3U)).empty() && tracker.track_count() == 1U,
+          "two missed frames does not evict yet (boundary is exclusive)");
+
+    // A different, non-overlapping detection on the frame that pushes the
+    // stale track past max_missed_frames: it must be evicted and replaced,
+    // not silently dropped because the tracker was "full".
+    ksi::edge::Detection second;
+    second.class_id = 1U;
+    second.class_name = "Vehicle";
+    second.confidence = 0.9F;
+    second.box = {100.0F, 100.0F, 110.0F, 110.0F};
+    const auto second_update = tracker.Update({second}, alignment, FrameMeta(4U));
+    Check(second_update.size() == 1U && tracker.track_count() == 1U,
+          "a genuinely new detection registers once the stale track is evicted");
+    Check(second_update.front().entity_id != first_track_id,
+          "the evicted track's id is not silently reused for the new detection");
+}
+
 void TestPipeline() {
     ksi::edge::BoundedFrameQueue queue(2U, 64U);
     ksi::edge::TelemetryTimeline timeline(4U);
@@ -3863,6 +3906,7 @@ int main(int argc, char** argv) {
     TestCurlExecutorGuards();
 #endif
     TestCandidateTimingArtifacts();
+    TestWorldStateTrackerEviction();
     TestPipeline();
     TestNativeArtifactWire();
     TestNativeEvidenceBuilder();

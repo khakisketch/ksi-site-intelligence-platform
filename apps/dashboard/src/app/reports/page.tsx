@@ -266,7 +266,7 @@ export default async function ReportsPage({
         <h2 className="text-sm font-semibold break-keep text-ink-1">{missionId}</h2>
         {!notFound && (
           <p className="num mt-1 text-sm text-ink-2">
-            변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {latest!.computedAt}
+            변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {formatKoreanDateTime(latest!.computedAt)}
           </p>
         )}
         <Link

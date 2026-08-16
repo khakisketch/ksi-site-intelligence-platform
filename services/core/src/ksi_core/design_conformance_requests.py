@@ -112,6 +112,8 @@ from ksi_core.processing_jobs import (
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from fastapi import FastAPI
 
     from ksi_core.design_surfaces import DesignSurfaceStore
@@ -213,6 +215,14 @@ class DesignConformanceRequestVerdict(StrEnum):
     DIFF_RASTER_DIGEST_MISMATCH = "DIFF_RASTER_DIGEST_MISMATCH"
     #: 그 자리의 객체를 읽지 못했다(부재·스토리지 장애) — 확인 없이 통과시키지 않는다.
     DIFF_RASTER_UNREADABLE = "DIFF_RASTER_UNREADABLE"
+    #: 이 요청에 리포트가 기록된 적이 없는데 성공을 주장했다. 성공은 결과가 있어야
+    #: 성공이다 — 리포트 없는 SUCCEEDED 는 뒤따르는 자동 연동(구역 추출)을 존재하지
+    #: 않는 결과 위에 쌓는다.
+    NO_REPORT_RECORDED = "NO_REPORT_RECORDED"
+    #: 이미 리포트가 이 id 로 기록됐다 — 그 리포트가 특정 digest 를 가리키고 있으므로
+    #: 같은 자리의 래스터를 다시 쓰거나 다시 확인할 수 없다(기록된 숫자와 지도가
+    #: 서로 다른 바이트를 가리키게 된다).
+    REPORT_ALREADY_RECORDED = "REPORT_ALREADY_RECORDED"
 
 
 _STATUS: dict[DesignConformanceRequestVerdict, int] = {
@@ -248,6 +258,9 @@ _STATUS: dict[DesignConformanceRequestVerdict, int] = {
     # ``design_surfaces`` 의 MISMATCH 와 같은 자리). 재시도로 해결되지 않는다.
     DesignConformanceRequestVerdict.DIFF_RASTER_DIGEST_MISMATCH: 422,
     DesignConformanceRequestVerdict.DIFF_RASTER_UNREADABLE: 503,
+    # 둘 다 워커의 요청 순서가 규약을 어긴 것이지 스토리지·입력 문제가 아니다.
+    DesignConformanceRequestVerdict.NO_REPORT_RECORDED: 422,
+    DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED: 409,
 }
 
 
@@ -409,11 +422,18 @@ class DesignConformanceRequestStore:
         processing_job_store: ProcessingJobStore,
         design_surface_store: DesignSurfaceStore,
         work_area_store: WorkAreaStore | None = None,
+        report_exists: Callable[[str], bool] | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
         self._design_surface_store = design_surface_store
+        # "이 designConformanceId 로 리포트가 이미 기록됐나" — 리포트 원장에 직접
+        # 의존하지 않고 술어만 주입받는다. 리포트 저장소가 이미 **이쪽**을 참조하므로
+        # (``DesignConformanceStore._request_store``) 반대 방향 참조를 들이면 순환이
+        # 된다. 미주입이면 두 게이트(리포트 없는 SUCCEEDED · 기록 후 래스터 재작성)가
+        # 닫히지 않으므로 조립 표가 항상 넘긴다 — 테스트 픽스처만 생략한다.
+        self._report_exists = report_exists
         # 작업구역 저장소가 없으면 ``workAreaIds`` 경로가 닫힌다(즉석 폴리곤은
         # 그대로 된다) — 조립 표가 동반을 강제하므로 프로덕션에서는 항상 있다.
         self._work_area_store = work_area_store
@@ -849,6 +869,26 @@ class DesignConformanceRequestStore:
         with self._lock:
             return self._requests.get(request_id)
 
+    def bind_report_existence(self, report_exists: Callable[[str], bool]) -> None:
+        """리포트 존재 술어를 조립 후에 걸어준다.
+
+        생성자로 못 받는 이유는 순환이다 — 리포트 원장이 이 저장소를 인자로 받아
+        만들어지므로(``DesignConformanceStore(request_store=...)``) 이쪽이 그것을
+        생성자에서 요구하면 서로를 먼저 요구하게 된다. 조립 표
+        (:func:`ksi_core.app_assembly`)가 두 원장을 다 만든 뒤 한 번 호출한다.
+        """
+        self._report_exists = report_exists
+
+    def report_already_recorded(self, design_conformance_id: str) -> bool:
+        """이 id 로 리포트가 이미 기록됐나 — 주입된 술어에 위임한다.
+
+        미주입(테스트 픽스처)이면 ``False`` 를 돌려 기존 동작을 유지한다. 조립 표는
+        항상 주입하므로(:mod:`ksi_core.app`) 프로덕션에서는 실제 리포트 원장을 본다.
+        """
+        if self._report_exists is None:
+            return False
+        return self._report_exists(design_conformance_id)
+
     def get_by_design_conformance_id(
         self, design_conformance_id: str
     ) -> DesignConformanceRequestRecord | None:
@@ -992,6 +1032,26 @@ class DesignConformanceRequestStore:
         now: datetime,
     ) -> DesignConformanceRequestResult:
         _require_tz_aware(now, param="now")
+        # **리포트 존재 확인은 우리 락 밖에서 한다 — 교착 방지.**
+        #
+        # 리포트 원장은 설계상 이 저장소를 참조한다(``record()`` 가 자기 락을 쥔 채
+        # ``get_by_design_conformance_id`` 를 부른다: report-lock → request-lock).
+        # 그런데 이 확인을 ``with self._lock:`` 안에서 하면 반대 방향
+        # (request-lock → report-lock)이 생겨 AB-BA 교착이 닫힌다 — 라우트가 sync
+        # ``def`` 라 FastAPI 가 스레드풀에서 돌리므로 실제로 동시에 뛴다(리포트를
+        # 제출하는 워커와 다른 요청을 성공 전이시키는 워커). 2026-08-16 독립 검토가
+        # 적발했고 락 순서만 흉내낸 재현으로 실재를 확인했다.
+        #
+        # 락 밖 확인의 TOCTOU 는 fail-closed 쪽으로만 틀린다: 리포트는 append-only 라
+        # 술어는 False→True 로만 바뀐다. "없다"를 보고 거부한 직후 리포트가 들어오면
+        # 그 워커는 다시 호출하면 되고(불필요한 1회 거부), "있다"를 본 뒤 사라지는
+        # 일은 없다. designConformanceId 는 requestId 에서 순수 도출이라
+        # (:func:`design_conformance_id_of`) 레코드를 읽지 않고도 구할 수 있다.
+        report_missing_for_success = False
+        if target is ProcessingJobStatus.SUCCEEDED and self._report_exists is not None:
+            report_missing_for_success = not self._report_exists(
+                design_conformance_id_of(request_id)
+            )
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return DesignConformanceRequestResult(
@@ -1015,6 +1075,22 @@ class DesignConformanceRequestStore:
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.ILLEGAL_TRANSITION,
                     detail=str(exc),
+                    record=record,
+                )
+            # **성공은 결과가 있어야 성공이다.** 전이표는 RUNNING→SUCCEEDED 를 항상
+            # 허용하므로(상태기계만 보면 합법) lease 를 쥔 워커가 리포트를 한 번도
+            # 올리지 않고 SUCCEEDED 만 선언할 수 있었다 — 그러면 요청 목록은 성공인데
+            # 리포트 조회는 404 인 모순이 남고, 라우터의 자동 연동이 그 위에 구역
+            # 추출 요청까지 발급한다(존재하지 않는 차분 위에 후속 작업이 쌓인다).
+            # FAILED 에는 걸지 않는다 — 실패는 결과가 없는 것이 정상이다.
+            # 판정 자체는 락 밖에서 이미 끝났다(위 주석 — 교착 방지).
+            if report_missing_for_success:
+                return DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.NO_REPORT_RECORDED,
+                    detail=(
+                        "이 요청으로 기록된 리포트가 없다 — 리포트를 먼저 제출해야 "
+                        "성공으로 전이할 수 있다"
+                    ),
                     record=record,
                 )
             raw = {
@@ -1565,6 +1641,21 @@ def build_design_conformance_requests_router(
                     "다시 쓰지 않는다"
                 ),
             )
+        # 요청이 아직 RUNNING 이어도 **리포트가 이미 기록됐으면** 래스터를 다시 쓸 수
+        # 없다. 객체 키가 결정적이라(같은 id = 같은 자리) 재업로드는 기록된 리포트가
+        # 가리키는 digest 의 바이트를 덮어쓴다 — 리포트의 숫자와 내려받는 지도가 서로
+        # 다른 바이트를 가리키게 되고, 조회 경로는 읽을 때 다시 해싱하지 않는다.
+        if store.report_already_recorded(record.design_conformance_id):
+            response.status_code = _STATUS[
+                DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED
+            ]
+            return DiffRasterUploadUrlResponse(
+                verdict=DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED.value,
+                detail=(
+                    "이 요청의 리포트가 이미 기록됐다 — 기록된 digest 가 가리키는 "
+                    "래스터를 덮어쓸 수 없다"
+                ),
+            )
         denied = DesignConformanceRequestStore._check_lease_locked(
             record, worker_id=principal.principal_id, now=datetime.now(UTC)
         )
@@ -1627,6 +1718,19 @@ def build_design_conformance_requests_router(
             return DiffRasterVerificationResponse(
                 verdict=DesignConformanceRequestVerdict.REQUEST_NOT_ACTIVE.value,
                 detail=f"요청이 {record.status.value} 상태다 — 끝난 요청은 다시 확인하지 않는다",
+            )
+        # 업로드 URL 발급과 같은 이유다(그 라우트 주석 참조) — 리포트가 이미 특정
+        # digest 를 가리키고 있으면 재확인으로 그 값을 갈아끼울 수 없다.
+        if store.report_already_recorded(record.design_conformance_id):
+            response.status_code = _STATUS[
+                DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED
+            ]
+            return DiffRasterVerificationResponse(
+                verdict=DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED.value,
+                detail=(
+                    "이 요청의 리포트가 이미 기록됐다 — 기록된 digest 를 다른 "
+                    "바이트로 다시 확인할 수 없다"
+                ),
             )
         denied = DesignConformanceRequestStore._check_lease_locked(
             record, worker_id=principal.principal_id, now=now

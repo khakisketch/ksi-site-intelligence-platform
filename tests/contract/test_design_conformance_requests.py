@@ -872,3 +872,138 @@ def test_replay_refuses_an_unknown_record_kind(fixture: Fixture) -> None:
         handle.write('{"kind": "made-up", "requestId": "x"}\n')
     with pytest.raises(DesignConformanceRequestRecoveryError, match="알 수 없는 journal"):
         _reopen(fixture)
+
+
+# ── 리포트 없는 SUCCEEDED · 리포트 기록 후 래스터 재작성 (2026-08-16 독립 검토) ──
+#
+# 두 게이트 다 리포트 원장을 봐야 판정되므로, 요청 저장소는 술어를 주입받는다
+# (``bind_report_existence`` — 조립 표가 건다). 픽스처는 기본적으로 주입하지
+# 않으므로 여기서 명시적으로 건다.
+
+
+def test_succeeded_without_a_recorded_report_is_refused(fixture: Fixture) -> None:
+    """[핵심] lease 를 쥔 워커가 리포트를 한 번도 올리지 않고 성공만 선언할 수 없다.
+
+    막지 않으면 요청 목록은 SUCCEEDED 인데 리포트 조회는 404 인 모순이 남고,
+    라우터의 자동 연동이 그 위에 구역 추출 요청까지 발급한다.
+    """
+    fixture.requests.bind_report_existence(lambda _dcid: False)
+    record = fixture.created()
+    assert (
+        fixture.requests.acquire_lease(
+            record.request_id, worker_id="worker-1", now=_NOW
+        ).verdict
+        is DesignConformanceRequestVerdict.LEASED
+    )
+    fixture.requests.transition(
+        record.request_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    result = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail="다 했다(주장)",
+        actor="worker-1",
+        now=_NOW,
+    )
+    assert result.verdict is DesignConformanceRequestVerdict.NO_REPORT_RECORDED, result
+    # 상태가 실제로 안 넘어갔는지까지 본다 — verdict 만 바꾸고 넘기면 의미가 없다.
+    still = fixture.requests.get(record.request_id)
+    assert still is not None and still.status is ProcessingJobStatus.RUNNING
+
+
+def test_succeeded_is_allowed_once_a_report_exists(fixture: Fixture) -> None:
+    """게이트가 정상 경로를 막지 않는다 — 리포트가 있으면 그대로 성공한다."""
+    fixture.requests.bind_report_existence(lambda _dcid: True)
+    record = fixture.created()
+    fixture.requests.acquire_lease(record.request_id, worker_id="worker-1", now=_NOW)
+    fixture.requests.transition(
+        record.request_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    result = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail=None,
+        actor="worker-1",
+        now=_NOW,
+    )
+    assert result.verdict is DesignConformanceRequestVerdict.TRANSITIONED, result
+
+
+def test_failed_does_not_require_a_report(fixture: Fixture) -> None:
+    """실패는 결과가 없는 것이 정상이다 — FAILED 에까지 리포트를 요구하면
+    워커가 실패를 보고할 길이 막힌다."""
+    fixture.requests.bind_report_existence(lambda _dcid: False)
+    record = fixture.created()
+    fixture.requests.acquire_lease(record.request_id, worker_id="worker-1", now=_NOW)
+    fixture.requests.transition(
+        record.request_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    result = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.FAILED,
+        detail="지오이드 격자 없음",
+        actor="worker-1",
+        now=_NOW,
+    )
+    assert result.verdict is DesignConformanceRequestVerdict.TRANSITIONED, result
+
+
+def test_report_existence_is_reported_through_the_public_predicate(
+    fixture: Fixture,
+) -> None:
+    """래스터 두 라우트가 이 술어로 판정한다 — 미주입이면 기존 동작(False)."""
+    record = fixture.created()
+    assert fixture.requests.report_already_recorded(record.design_conformance_id) is False
+
+    fixture.requests.bind_report_existence(
+        lambda dcid: dcid == record.design_conformance_id
+    )
+    assert fixture.requests.report_already_recorded(record.design_conformance_id) is True
+    assert fixture.requests.report_already_recorded("다른-id") is False
+
+
+def test_report_existence_is_checked_outside_the_request_lock(fixture: Fixture) -> None:
+    """[회귀] 교착 방지 — 요청 락을 쥔 채 리포트 원장을 부르지 않는다.
+
+    리포트 원장은 설계상 이 저장소를 참조한다(``record()`` 가 report-lock 을 쥔 채
+    ``get_by_design_conformance_id`` 를 부른다). 그래서 이쪽이 request-lock 을 쥔 채
+    리포트 원장을 부르면 AB-BA 교착이 닫힌다 — 라우트가 sync ``def`` 라 FastAPI 가
+    스레드풀에서 돌리므로 실제로 동시에 뛴다.
+
+    술어 안에서 **요청 락을 다시 잡아본다**: 락 밖에서 불렸다면 즉시 잡히고,
+    안에서 불렸다면 non-reentrant 라 잡히지 않는다(그때 이 테스트가 실패한다).
+    """
+    record = fixture.created()
+    fixture.requests.acquire_lease(record.request_id, worker_id="worker-1", now=_NOW)
+    fixture.requests.transition(
+        record.request_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-1", now=_NOW
+    )
+
+    observed: dict[str, bool] = {}
+
+    def predicate(_dcid: str) -> bool:
+        # 요청 저장소의 락이 이 시점에 풀려 있어야 한다.
+        acquired = fixture.requests._lock.acquire(blocking=False)
+        observed["lock_free"] = acquired
+        if acquired:
+            fixture.requests._lock.release()
+        return False
+
+    fixture.requests.bind_report_existence(predicate)
+    result = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail=None,
+        actor="worker-1",
+        now=_NOW,
+    )
+
+    assert observed.get("lock_free") is True, (
+        "리포트 존재 술어가 요청 락을 쥔 채 불렸다 — 리포트 원장이 반대 방향으로 "
+        "이 저장소를 부르므로 AB-BA 교착이 된다"
+    )
+    # 게이트 자체는 그대로 동작해야 한다(술어가 False 를 돌려줬다).
+    assert result.verdict is DesignConformanceRequestVerdict.NO_REPORT_RECORDED, result
