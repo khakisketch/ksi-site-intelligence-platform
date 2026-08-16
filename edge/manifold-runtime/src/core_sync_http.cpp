@@ -991,6 +991,88 @@ bool IsCoreOrigin(const std::string& value) {
     return ParseStrictHttpsUrl(value, true, &parsed);
 }
 
+// Core 의 source-media 는 ``^[0-9a-f]{64}$`` 를 요구한다(접두 없음). 우리 내부
+// 표기는 "sha256:" 접두라 전송 직전에만 벗긴다 — 저널에는 접두를 유지해서
+// 알고리즘이 값 안에 남아 있게 한다.
+std::string BareSha256Hex(const std::string& digest) {
+    return IsSha256Digest(digest) ? digest.substr(7U) : std::string{};
+}
+
+bool IsValidSourceMediaClaim(const SourceMediaUploadClaim& claim) {
+    return ArtifactVault::IsSafeArtifactId(claim.media_id) &&
+           IsAllowedEvidenceContentType(claim.content_type) && IsValidHeaderValue(claim.content_type) &&
+           IsSha256Digest(claim.content_digest) && claim.byte_count > 0U && claim.width > 0U &&
+           claim.height > 0U;
+}
+
+std::string SourceMediaBatchJson(const SourceMediaUploadClaim& claim) {
+    std::string output = "{\"files\":[{\"mediaId\":\"";
+    output += EscapeJson(claim.media_id);
+    output += "\",\"sha256\":\"";
+    output += BareSha256Hex(claim.content_digest);
+    output += "\",\"bytes\":";
+    output += std::to_string(claim.byte_count);
+    output += ",\"width\":";
+    output += std::to_string(claim.width);
+    output += ",\"height\":";
+    output += std::to_string(claim.height);
+    output += ",\"contentType\":\"";
+    output += EscapeJson(claim.content_type);
+    output += "\"}]}";
+    return output;
+}
+
+// 한 요청에 한 장만 싣는다. Core 는 200장까지 받지만, 배치 응답은 항목마다
+// 판정이 갈리므로 장당 상태기계에 그대로 대응시키려면 1:1 이 맞다 — 부분 성공을
+// 한 덩어리로 뭉개면 "무엇이 올라갔는가"가 저널과 어긋난다. 처리량이 문제로
+// 드러나면 FIELD-0b U7 실측 뒤에 배치를 키운다.
+SourceMediaRegistrationResult ParseSourceMediaRegistration(const HttpsResponse& response,
+                                                           std::size_t maximum_response_bytes,
+                                                           const SourceMediaUploadClaim& claim) {
+    if (response.status_code != 201 || response.body.size() > maximum_response_bytes) {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    JsonValue value;
+    std::string batch_verdict;
+    if (!ParseJsonObject(response.body, maximum_response_bytes, &value) ||
+        !RequiredString(value, "verdict", &batch_verdict) || batch_verdict != "PROCESSED") {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    const JsonValue* results = FindMember(value, "results");
+    if (results == nullptr || results->type != JsonType::kArray || results->array_value.size() != 1U) {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    const JsonValue& item = results->array_value.front();
+    std::string media_id;
+    std::string item_verdict;
+    if (!RequiredString(item, "mediaId", &media_id) || media_id != claim.media_id ||
+        !RequiredString(item, "verdict", &item_verdict)) {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    if (item_verdict != "REGISTERED") {
+        // STORAGE_UNAVAILABLE·JOURNAL_UNAVAILABLE 은 같은 신고값으로 다시 부르면
+        // 멱등 재발급된다. CLAIM_CONFLICT·INVALID_MEDIA_ID 는 재시도로 풀리지
+        // 않는다 — 그 구분을 여기서 유지해야 배출 루프가 헛돌지 않는다.
+        return {item_verdict == "STORAGE_UNAVAILABLE" || item_verdict == "JOURNAL_UNAVAILABLE"
+                    ? CoreSyncVerdict::kRetryableFailure
+                    : CoreSyncVerdict::kPermanentFailure,
+                {},
+                {}};
+    }
+    std::string upload_url;
+    if (!RequiredString(item, "uploadUrl", &upload_url) || !IsStrictHttpsUrl(upload_url)) {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    // 헤더는 응답에서 받지 않고 우리가 신고한 값으로 만든다(헤더 파일 주석).
+    return {CoreSyncVerdict::kAcknowledged, upload_url, {{"Content-Type", claim.content_type}}};
+}
+
+bool IsSourceMediaUploadHeaders(const std::map<std::string, std::string>& headers,
+                                const std::string& content_type) {
+    return headers.size() == 1U && headers.begin()->first == "Content-Type" &&
+           headers.begin()->second == content_type;
+}
+
 }  // namespace
 
 const char* ToString(HttpsRequestVerdict verdict) {
@@ -1218,6 +1300,135 @@ CoreSyncVerdict CoreRestSyncTransport::PutEvidence(const EvidenceRecord& evidenc
         return CoreSyncVerdict::kRetryableFailure;
     }
     return CoreSyncVerdict::kPermanentFailure;
+}
+
+CoreRestSourceMediaTransport::CoreRestSourceMediaTransport(CoreRestSourceMediaConfig config,
+                                                           IHttpsRequestExecutor* executor,
+                                                           ArtifactVault* spool)
+    : config_(std::move(config)), executor_(executor), spool_(spool) {
+    if (!IsCoreOrigin(config_.core_base_url) || !IsValidBearerToken(config_.bearer_token) ||
+        executor_ == nullptr || spool_ == nullptr || config_.maximum_core_response_bytes == 0U ||
+        config_.maximum_core_response_bytes > 1024U * 1024U) {
+        throw std::invalid_argument("invalid Core REST source media transport configuration");
+    }
+    if (config_.core_base_url.back() == '/') {
+        config_.core_base_url.pop_back();
+    }
+}
+
+SourceMediaRegistrationResult CoreRestSourceMediaTransport::RegisterSourceMedia(
+    const std::string& mission_id, const SourceMediaUploadClaim& claim) {
+    if (!IsPathSafeIdentifier(mission_id) || !IsValidSourceMediaClaim(claim)) {
+        return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+    }
+    const std::string body = SourceMediaBatchJson(claim);
+    HttpsRequest request;
+    request.endpoint = HttpsEndpoint::kCore;
+    request.method = "POST";
+    request.url = config_.core_base_url + "/v1/missions/" + PercentEncodePathSegment(mission_id) +
+                  "/source-media";
+    request.headers = {{"Authorization", "Bearer " + config_.bearer_token},
+                       {"Content-Type", "application/json"}};
+    request.body.assign(body.begin(), body.end());
+    request.maximum_response_bytes = config_.maximum_core_response_bytes;
+    HttpsResponse response;
+    const HttpsRequestVerdict execution = executor_->Execute(request, &response);
+    const CoreSyncVerdict transport =
+        ValidateCoreResponse(execution, response, config_.maximum_core_response_bytes);
+    if (transport != CoreSyncVerdict::kAcknowledged) {
+        return {transport, {}, {}};
+    }
+    // 401(토큰 만료·회전)·403(권한 철회)·404(Core 가 아직 이 임무를 모름)는 요청
+    // 자체가 구조적으로 잘못된 것이 아니다 — 외부 상태가 바뀌면(토큰 재발급,
+    // Core 쪽 임무 등록 반영) 다음 시도에서 풀릴 수 있다. PutSourceMedia 가
+    // 401/403 을 retryable 로 다루는 것과 같은 기준이다("어떤 경우에도 바이트를
+    // 지우지 않는다"). 여기서 걸러야 ParseSourceMediaRegistration 의 "201 아니면
+    // 전부 영구 실패" 판정에 섞여 PushItem 이 스풀 사본을 지우고 QUARANTINED 로
+    // 보내는 일이 없다.
+    if (response.status_code == 401 || response.status_code == 403 || response.status_code == 404) {
+        return {CoreSyncVerdict::kRetryableFailure, {}, {}};
+    }
+    return ParseSourceMediaRegistration(response, config_.maximum_core_response_bytes, claim);
+}
+
+CoreSyncVerdict CoreRestSourceMediaTransport::PutSourceMedia(
+    const SourceMediaItemRecord& item, const SourceMediaRegistrationResult& registration) {
+    if (registration.verdict != CoreSyncVerdict::kAcknowledged ||
+        !IsStrictHttpsUrl(registration.upload_url) ||
+        !IsSourceMediaUploadHeaders(registration.required_upload_headers, item.content_type) ||
+        !ArtifactVault::IsSafeArtifactId(item.artifact_id) || item.local_path.empty()) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    // 스풀 바이트를 digest 로 다시 확인하고 올린다. 다운로드 직후에 이미 쟀지만,
+    // 그 사이에 재기동이 끼면 "저널이 말하는 그 파일"임을 다시 확인해야 한다.
+    std::vector<std::uint8_t> bytes;
+    const ArtifactVaultResult read = spool_->ReadAndVerifyDigest(item.artifact_id, item.local_path,
+                                                                 item.content_digest, &bytes);
+    if (read.verdict != ArtifactVaultVerdict::kPersisted) {
+        return read.verdict == ArtifactVaultVerdict::kStorageError ? CoreSyncVerdict::kRetryableFailure
+                                                                   : CoreSyncVerdict::kPermanentFailure;
+    }
+    if (bytes.size() != item.byte_count) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    HttpsRequest request;
+    request.endpoint = HttpsEndpoint::kEvidenceUpload;
+    request.method = "PUT";
+    request.url = registration.upload_url;
+    request.headers = registration.required_upload_headers;
+    request.body = std::move(bytes);
+    request.maximum_response_bytes = config_.maximum_core_response_bytes;
+    HttpsResponse response;
+    const HttpsRequestVerdict execution = executor_->Execute(request, &response);
+    if (execution != HttpsRequestVerdict::kCompleted) {
+        return MapExecutorVerdict(execution);
+    }
+    if (response.body.size() > config_.maximum_core_response_bytes) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    if (response.status_code >= 200 && response.status_code < 300) {
+        return CoreSyncVerdict::kAcknowledged;
+    }
+    // 갓 발급된 presigned URL 도 만료·정책으로 거부될 수 있다. 재시도하면 배출
+    // 루프가 재등록해 새 권한을 받는다 — 어떤 경우에도 바이트를 지우지 않는다.
+    if (response.status_code == 401 || response.status_code == 403 ||
+        IsRetryableStatus(response.status_code)) {
+        return CoreSyncVerdict::kRetryableFailure;
+    }
+    return CoreSyncVerdict::kPermanentFailure;
+}
+
+CoreSyncVerdict CoreRestSourceMediaTransport::SealSourceMedia(const std::string& mission_id) {
+    if (!IsPathSafeIdentifier(mission_id)) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    HttpsRequest request;
+    request.endpoint = HttpsEndpoint::kCore;
+    request.method = "POST";
+    request.url = config_.core_base_url + "/v1/missions/" + PercentEncodePathSegment(mission_id) +
+                  "/source-media/seal";
+    request.headers = {{"Authorization", "Bearer " + config_.bearer_token}};
+    request.maximum_response_bytes = config_.maximum_core_response_bytes;
+    HttpsResponse response;
+    const HttpsRequestVerdict execution = executor_->Execute(request, &response);
+    const CoreSyncVerdict transport =
+        ValidateCoreResponse(execution, response, config_.maximum_core_response_bytes);
+    if (transport != CoreSyncVerdict::kAcknowledged) {
+        return transport;
+    }
+    if (response.status_code != 200 && response.status_code != 201) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    JsonValue value;
+    std::string verdict;
+    if (!ParseJsonObject(response.body, config_.maximum_core_response_bytes, &value) ||
+        !RequiredString(value, "verdict", &verdict)) {
+        return CoreSyncVerdict::kPermanentFailure;
+    }
+    // ALREADY_SEALED 도 성공이다 — 재기동이 봉인 직후에 끼었다는 뜻이지, 우리가
+    // 잘못 불렀다는 뜻이 아니다.
+    return verdict == "SEALED" || verdict == "ALREADY_SEALED" ? CoreSyncVerdict::kAcknowledged
+                                                              : CoreSyncVerdict::kPermanentFailure;
 }
 
 }  // namespace ksi::edge

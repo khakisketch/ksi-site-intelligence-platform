@@ -178,6 +178,22 @@ const char* ToString(ArtifactVaultVerdict verdict) {
     return "UNKNOWN";
 }
 
+const char* ToString(ArtifactRemovalVerdict verdict) {
+    switch (verdict) {
+        case ArtifactRemovalVerdict::kRemoved:
+            return "REMOVED";
+        case ArtifactRemovalVerdict::kAlreadyAbsent:
+            return "ALREADY_ABSENT";
+        case ArtifactRemovalVerdict::kInvalidArtifactId:
+            return "INVALID_ARTIFACT_ID";
+        case ArtifactRemovalVerdict::kUnsafeArtifact:
+            return "UNSAFE_ARTIFACT";
+        case ArtifactRemovalVerdict::kStorageError:
+            return "STORAGE_ERROR";
+    }
+    return "UNKNOWN";
+}
+
 ArtifactVault::ArtifactVault(std::string base_directory, std::size_t max_artifact_bytes)
     : base_directory_(std::move(base_directory)), max_artifact_bytes_(max_artifact_bytes) {
     if (base_directory_.empty() || max_artifact_bytes_ == 0U) {
@@ -293,6 +309,36 @@ ArtifactVaultResult ArtifactVault::Persist(const std::string& artifact_id, const
     }
     return {ArtifactVaultVerdict::kPersisted,
             {artifact_id, destination, digest, static_cast<std::uint64_t>(size)}};
+}
+
+ArtifactRemovalVerdict ArtifactVault::Remove(const std::string& artifact_id) {
+    if (!IsSafeArtifactId(artifact_id)) {
+        return ArtifactRemovalVerdict::kInvalidArtifactId;
+    }
+    const std::filesystem::path directory(base_directory_);
+    const std::filesystem::path target = directory / artifact_id;
+    struct stat existing {};
+    if (lstat(target.c_str(), &existing) != 0) {
+        return errno == ENOENT ? ArtifactRemovalVerdict::kAlreadyAbsent
+                               : ArtifactRemovalVerdict::kStorageError;
+    }
+    // Persist() 가 만든 산출물의 성질과 정확히 같은 것만 지운다. 링크 수까지
+    // 보는 이유: 다른 이름이 같은 inode 를 가리키고 있다면 여기서 unlink 해도
+    // 바이트가 사라지지 않는다 — "지웠다"는 보고가 거짓이 된다.
+    if (!S_ISREG(existing.st_mode) || S_ISLNK(existing.st_mode) || existing.st_uid != geteuid() ||
+        (existing.st_mode & 0077) != 0 || existing.st_nlink != 1) {
+        return ArtifactRemovalVerdict::kUnsafeArtifact;
+    }
+    if (unlink(target.c_str()) != 0) {
+        return errno == ENOENT ? ArtifactRemovalVerdict::kAlreadyAbsent
+                               : ArtifactRemovalVerdict::kStorageError;
+    }
+    // 디렉터리 엔트리를 fsync 하지 않으면 "지웠다"가 재기동을 넘지 못한다.
+    // 전원이 끊긴 뒤 파일이 되살아나면 스풀 예산 계산이 실제 점유와 어긋난다.
+    if (!FsyncDirectory(directory)) {
+        return ArtifactRemovalVerdict::kStorageError;
+    }
+    return ArtifactRemovalVerdict::kRemoved;
 }
 
 ArtifactVaultResult ArtifactVault::ReadAndVerify(const StoredArtifact& expected,
