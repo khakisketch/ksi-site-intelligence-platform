@@ -3,6 +3,7 @@ import "server-only";
 import { coreFetch, coreFetchBinary, type CoreBinaryResponse } from "./client";
 import type {
   CoverageReportView,
+  MissionExecutionStatus,
   MissionExecutionView,
   MissionRecordResponse,
 } from "./types";
@@ -46,5 +47,26 @@ export async function getCoverageReport(missionId: string): Promise<CoverageRepo
 export async function getMissionExecution(missionId: string): Promise<MissionExecutionView> {
   return coreFetch<MissionExecutionView>(
     `/v1/missions/${encodeURIComponent(missionId)}/execution`,
+  );
+}
+
+export interface MissionExecutionTransitionInput {
+  targetStatus: MissionExecutionStatus;
+  detail?: string | null;
+}
+
+/**
+ * 실행 상태를 사람이 선언한다 — Core 는 `DISPATCHED`·`CANCELLED` 만 사람 선언으로
+ * 받는다(mission_execution.py `_HUMAN_DECLARABLE`). 그 외 대상 상태나 권한 없는
+ * 요청은 403 이고, 현재 상태에서 허용되지 않는 전이는 409 다 — 둘 다 `CoreApiError`
+ * 로 전파된다. 현장 화면의 [수동 이관 신고] 버튼이 이 함수를 부른다.
+ */
+export async function declareMissionExecutionTransition(
+  missionId: string,
+  input: MissionExecutionTransitionInput,
+): Promise<MissionExecutionView> {
+  return coreFetch<MissionExecutionView>(
+    `/v1/missions/${encodeURIComponent(missionId)}/execution-transitions`,
+    { method: "POST", body: input },
   );
 }

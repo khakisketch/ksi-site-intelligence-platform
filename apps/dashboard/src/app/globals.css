@@ -252,6 +252,15 @@ body {
     min-height: 44px;
   }
 }
+/* 현장 화면(/field) 안에서는 입력장치 판별에 기대지 않고 항상 44px 이다 — 사유는
+   `@layer components` 의 `.btn-field` / `.field-controls` 주석. 이 규칙만 레이어
+   밖에 있는 이유는 `.tap-target` 자체가 레이어 밖이기 때문이다: 레이어 없는 선언은
+   레이어에 든 선언을 특이도와 무관하게 이긴다. 이 규칙을 `@layer components` 안에
+   두면 아무 일도 일어나지 않는다(실제로 그렇게 두었다가 렌더 확인에서 36px 로 잡혔다). */
+.field-controls .tap-target {
+  min-height: 44px;
+}
+
 @media (pointer: coarse) {
   .tap-target {
     min-height: 44px;
@@ -346,6 +355,47 @@ body {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
   }
+
+  /* 현장(/field) 전용 크기 — `.btn` 과 **함께** 쓴다: `class="btn btn-field"`.
+     모양·색은 전부 `.btn` 계열이 그대로 갖고, 여기서는 손가락 치수만 덮는다
+     (그래서 이 규칙이 `.btn` 뒤에 온다 — 같은 특이도라 순서가 승자를 정한다).
+
+     `.btn` 은 44px 을 `@media (pointer: coarse)` 뒤에 둔다. 그 판별에 기댈 수 없는
+     자리가 이번에 생겼다: 조종기 웹뷰(DJI RC Plus / Pilot 2)가 자신을 어떤 pointer
+     로 보고하는지 우리는 아직 재보지 않았다(FIELD-0b U9). fine 으로 보고하면 현장
+     버튼이 38px 로 떨어지고, 장갑 낀 손에는 그게 곧 오조작이다. 그래서 현장 화면의
+     버튼만 **조건 없이** 44×44 를 갖는다.
+
+     min-width 까지 주는 이유: 높이만 44 로 키운 아이콘/짧은 라벨 버튼("×", "OK")은
+     여전히 가로로 좁아 실제 타깃 면적이 44×44 가 아니다.
+
+     기존 `.btn` 은 건드리지 않는다 — 데스크톱 도구 밀도(38px)가 이 변경에 딸려
+     헐거워지면 안 된다. */
+  .btn-field {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 18px;
+    font-size: 15px;
+  }
+
+  /* 현장 화면이 **재사용하는** 기존 컨트롤의 치수 보정.
+     `.btn-field` 는 /field 가 직접 그리는 버튼에 붙일 수 있지만, KmzDownloadButton·
+     SourceUploadPanel 처럼 임무 화면과 공유하는 컴포넌트는 className 을 안에서
+     고정한다. 그 컴포넌트를 현장용으로 포크하면 두 화면의 동작이 갈리고, 포크한
+     쪽이 조용히 뒤처진다 — 이 화면의 존재 이유가 바로 그 컨트롤들(KMZ 다운로드·
+     사진 업로드)이라 뒤처지면 안 된다.
+
+     그래서 컴포넌트를 건드리지 않고 **현장 화면 안에서만** 치수를 올린다.
+     `.btn` 규칙 자체는 그대로다 — 데스크톱 도구 밀도는 영향받지 않는다. */
+  .field-controls .btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .field-controls .input {
+    min-height: 44px;
+  }
+  /* `.tap-target` 은 이 레이어 밖에 정의돼 있어 여기서 덮이지 않는다 — 그 짝은
+     파일 위쪽 `.tap-target` 정의 옆에 있다. */
 
   /* 되돌릴 수 없는 판정 전용. 확정과 오탐이 같은 회색이면 손이 먼저 움직인다. */
   .btn-danger {

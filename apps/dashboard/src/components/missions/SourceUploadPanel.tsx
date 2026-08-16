@@ -153,7 +153,13 @@ export function SourceUploadPanel({
   async function handleFiles(files: File[]) {
     setError(null);
     if (files.length === 0) return;
-    const mediaIds = assignUniqueMediaIds(files.map((f) => f.name));
+    const mediaIds = await assignUniqueMediaIds(files.map((f) => f.name));
+    if (mediaIds === null) {
+      // 같은 파일명이 완전히 같은 형태로 두 번 이상 선택됐다 — 해시 접미사는
+      // 이름 자체의 함수라 이 경우는 갈라놓을 수 없다(값을 지어내지 않는다).
+      setError("같은 이름의 파일이 두 번 이상 선택되었습니다 — 파일명을 확인하고 다시 선택하세요.");
+      return;
+    }
     const initial: UploadItem[] = files.map((file, i) => ({
       file,
       mediaId: mediaIds[i],

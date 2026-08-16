@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { isChromelessPath } from "./chromeless-path";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
@@ -18,7 +19,9 @@ export interface NavCounts {
 // 남기되 마스터·디테일이 유지되는 값이다.
 export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
   const pathname = usePathname();
-  if (pathname === "/login") return null;
+  // 셸을 벗는 화면(/login · /field/*)에서는 레일 자체가 없다 — 판정은 layout.tsx 와
+  // 같은 술어를 쓴다(둘이 갈리면 그리드 트랙만 남고 레일이 사라진다).
+  if (isChromelessPath(pathname)) return null;
 
   return (
     <nav

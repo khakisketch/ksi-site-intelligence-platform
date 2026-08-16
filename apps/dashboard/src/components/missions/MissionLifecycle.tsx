@@ -1,5 +1,5 @@
 import { COMPLETION_STATE_LABEL, PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
-import { MISSION_EXECUTION_STATUS_LABEL } from "@/lib/core-api/labels";
+import { MISSION_EXECUTION_STATUS_LABEL, type Tone } from "@/lib/core-api/labels";
 import type { CoverageReportResult } from "@/components/missions/CoverageReportSection";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type {
@@ -46,6 +46,19 @@ function stageLabel(tone: StageTone): string {
   if (tone === "active") return "진행 중";
   if (tone === "warning") return "확인 필요";
   return "대기";
+}
+
+/**
+ * 단계 논리 톤(StageTone) → 배지 색(Tone). 이 대응 자체를 내보내는 이유는 다른
+ * 화면(예: field-stages.ts)이 같은 MissionExecutionStatus 를 자기 표로 다시 색칠할
+ * 때 이 대응과 갈릴 수 있어서다 — field-stages.test.ts 의 교차 시험이 이 함수를
+ * 기준으로 두 화면의 톤이 같은지 고정한다.
+ */
+export function stageBadgeTone(tone: StageTone): Tone {
+  if (tone === "warning") return "warning";
+  if (tone === "done") return "positive";
+  if (tone === "active") return "progress";
+  return "neutral";
 }
 
 /**
@@ -151,7 +164,7 @@ export function MissionLifecycle(input: MissionLifecycleInput) {
           <li key={stage.title} className={`rounded-md border p-2.5 ${stageClass(stage.tone)}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="num text-[10.5px] font-bold">{index + 1}</span>
-              <StatusBadge label={stageLabel(stage.tone)} tone={stage.tone === "warning" ? "warning" : stage.tone === "done" ? "positive" : stage.tone === "active" ? "progress" : "neutral"} />
+              <StatusBadge label={stageLabel(stage.tone)} tone={stageBadgeTone(stage.tone)} />
             </div>
             <p className="mt-2 text-[12.5px] font-semibold break-keep">{stage.title}</p>
             <p className="mt-0.5 text-[11.5px] break-keep">{stage.detail}</p>

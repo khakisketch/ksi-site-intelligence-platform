@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { isChromelessPath } from "./chromeless-path";
 import { MOBILE_TAB_ITEMS } from "./nav-items";
 
 export function MobileBottomNav() {
   const pathname = usePathname();
-  if (pathname === "/login") return null;
+  // /login 과 같은 사유로 /field/* 에서도 숨긴다 — 현장 화면은 하단 탭이 아니라
+  // 화면 안의 큰 버튼으로 이동한다(layout.tsx 의 isChromelessPath 와 같은 술어).
+  if (isChromelessPath(pathname)) return null;
 
   return (
     <nav

@@ -9,7 +9,15 @@ import { PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/core-api/session-coo
 // Route Handler·Server Component 는 이 proxy 를 신뢰하지 않고 각자 세션을 다시
 // 확인한다(Next 공식 문서: "Always verify authentication ... rather than relying
 // on Proxy alone" — matcher 변경이 조용히 보호를 없앨 수 있어서다).
-const PUBLIC_PATHS = ["/login"];
+// ── /field 가 여기 있는 이유 ────────────────────────────────────────────────
+// Pilot 2 서드파티 클라우드 웹뷰가 302 를 그대로 따라가 준다는 보장이 우리에겐 없다
+// (FIELD-0b U9 에서 실측하기 전까지 **모른다**). 리다이렉트를 삼키는 웹뷰에서는
+// 세션이 없을 때 화면이 그냥 빈 채로 멈추고, 현장에서 그건 "앱이 죽었다"로 읽힌다.
+// 그래서 /field 는 리다이렉트 대상에서 빼고, 화면이 직접 인라인 로그인 폼을 그린다.
+//
+// 이건 화면을 여는 것이지 데이터를 여는 게 아니다 — /field 의 서버 컴포넌트는
+// 다른 화면과 똑같이 세션을 다시 확인하고, 세션이 없으면 Core 를 아예 부르지 않는다.
+const PUBLIC_PATHS = ["/login", "/field"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
