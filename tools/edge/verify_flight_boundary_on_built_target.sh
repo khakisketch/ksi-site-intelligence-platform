@@ -20,6 +20,15 @@
 #   tools/edge/verify_flight_boundary_on_built_target.sh [빌드 디렉터리...]
 #   (인자 없으면 edge/psdk-tap/build-manifold3, edge/psdk-app/build-manifold3
 #   를 이 순서로 찾는다 — 실기 툴체인(gcc 9.x)으로 만든 빌드만 대상이다.)
+#
+# ADR-KSI-021(2026-08-16) — flight-execution allowlist manifest 가 환경변수로
+# 지정돼 있으면 **두 번** 돌린다: allowlist 미적용(항상)과 적용(있을 때만).
+# 두 출력의 차이가 곧 "이 빌드가 실제로 연 것"이다 — 그 차이를 항상 인쇄한다.
+# 기본 빌드(FLIGHT_EXECUTION 옵션 OFF)는 allowlist 를 줘도 어차피 소스에
+# flight_execution/ 이 없으므로 차이가 없어야 정상이다. 이 변수는 명시 지정
+# 시에만 전달된다 — 이 스크립트를 그냥 실행하면 지금까지와 동일하게 동작한다.
+#   KSI_FLIGHT_EXECUTION_ALLOWLIST=edge/flight-execution-allowlist.v1.json \
+#     tools/edge/verify_flight_boundary_on_built_target.sh
 
 set -euo pipefail
 
@@ -56,7 +65,7 @@ for build_dir in "${BUILD_DIRS[@]}"; do
     found_any=1
     echo "=== $candidate ==="
     if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}"; then
-      echo "  (기본 게이트 통과 — 직접 호출/헤더 경계 확인됨)"
+      echo "  (기본 게이트 통과 — 직접 호출/헤더 경계 확인됨, allowlist 미적용)"
     else
       failures=1
     fi
@@ -64,6 +73,16 @@ for build_dir in "${BUILD_DIRS[@]}"; do
     # GetDjiErrorCode)가 있으면 실패하는 게 정상이다 — 정보용으로만 함께 남긴다.
     python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" --require-zero-defined-symbols \
       || echo "  (strict 게이트는 알려진 벤더 정의 때문에 실패 — module docstring 참조, 차단 아님)"
+
+    if [ -n "${KSI_FLIGHT_EXECUTION_ALLOWLIST:-}" ]; then
+      echo "  --- allowlist 적용 재실행 (${KSI_FLIGHT_EXECUTION_ALLOWLIST}) ---"
+      if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" \
+        --allow-mission-execution "$KSI_FLIGHT_EXECUTION_ALLOWLIST"; then
+        echo "  (allowlist 적용 게이트 통과 — 위 미적용 출력과의 차이가 '이 빌드가 연 것'이다)"
+      else
+        failures=1
+      fi
+    fi
     echo
   done < <(find "$build_dir" -maxdepth 1 -type f -executable -print0)
 done
