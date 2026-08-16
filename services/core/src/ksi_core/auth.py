@@ -131,6 +131,15 @@ class Permission(StrEnum):
     # 않는다(자동화 장비 최소권한 원칙, 2026-08-14 risk
     # edge-device-cannot-call-source-media-ingest 해소).
     EDGE_SOURCE_MEDIA_WRITE = "EDGE_SOURCE_MEDIA_WRITE"
+    # Edge device 전용: **자기에게 배정된** mission 의 KMZ 바이트 하나만 받는다.
+    # ``MISSIONS_READ`` 를 주지 않는 이유가 이 권한의 존재 이유다 — 그 권한은 전
+    # 현장의 임무 목록·상세·원본 미디어를 함께 연다. 장비 하나가 뚫리면 그 순간
+    # 전 현장 좌표가 새는 것과, 그 장비에 이미 배정된 경로 하나가 새는 것은 다른
+    # 크기의 사고다. ``EDGE_SOURCE_MEDIA_WRITE`` 를 ``MISSIONS_ISSUE`` 와 따로
+    # 만든 것과 정확히 같은 판단(자동화 장비 최소권한). 범위 좁히기(자기 mission
+    # 인가)는 이 권한이 아니라 라우터가 하고, 불일치는 403 이 아니라 404 로 접는다
+    # — 403 은 "그 임무는 존재한다"를 알려주는 존재 오라클이다.
+    EDGE_MISSION_KMZ_READ = "EDGE_MISSION_KMZ_READ"
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
@@ -330,6 +339,7 @@ _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.EDGE_MISSION_PULL,
         Permission.EDGE_EVIDENCE_WRITE,
         Permission.EDGE_SOURCE_MEDIA_WRITE,
+        Permission.EDGE_MISSION_KMZ_READ,
     }
 )
 

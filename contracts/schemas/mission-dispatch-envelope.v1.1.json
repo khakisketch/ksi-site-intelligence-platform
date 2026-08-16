@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/mission-dispatch-envelope.v1.1.json",
+  "title": "MissionDispatchEnvelope v1.1",
+  "description": "v1.0 + kmzSha256. ADR-KSI-007 은 KMZ 와 Mission Contract 를 같은 요청·같은 FlightEnvelope 에서 짝으로 발급하도록 정했지만, 그 짝 관계는 지금까지 발급 시점의 서버 내부 규약일 뿐 **전달 경로 어디서도 기계 검증되지 않았다** — 기체가 손으로 옮겨받은 KMZ 가 활성화된 계약의 짝이라는 보장이 없었다. 이 필드가 그 불변식을 처음으로 검증 가능하게 만든다: Core 가 서명한 digest 와 Edge 가 실제로 받은 KMZ 의 sha256 이 다르면 활성화 전체를 거부한다. 바이트가 아니라 digest 를 싣는 이유는 봉투가 저널·1MB 응답 상한 안에 남아야 하기 때문이다(KMZ 바이트는 GET /v1/missions/{missionId}/kmz 로 따로 받는다).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dispatchId",
+    "edgeDeviceId",
+    "missionId",
+    "missionContract",
+    "missionContractDigest",
+    "riskPolicyPack",
+    "riskPolicyPackDigest",
+    "edgeRuntimeProfile",
+    "edgeRuntimeProfileDigest",
+    "kmzSha256",
+    "validity",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.1" },
+    "dispatchId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "edgeDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "missionId": { "type": "string", "minLength": 1 },
+    "missionContract": { "$ref": "mission-contract.v1.2.json" },
+    "missionContractDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "riskPolicyPack": { "$ref": "risk-policy-pack.v1.json" },
+    "riskPolicyPackDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "edgeRuntimeProfile": { "$ref": "edge-runtime-profile.v1.json" },
+    "edgeRuntimeProfileDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "kmzSha256": {
+      "description": "이 임무의 발급 KMZ 바이트의 sha256(bare hex — MissionRecord.kmzSha256 과 같은 표기이며, 접두사 sha256: 를 쓰는 다른 digest 필드들과 표기가 다른 것은 의도적이다: 이 값의 정본은 Core 의 발급 원장이고 그 표기를 그대로 옮긴다). **null 은 '아직 모른다'가 아니라 '이 임무에는 KMZ 가 없다'(계약 단독 발급)는 확정 사실이다** — Edge 는 그때 이전 임무의 KMZ 를 지운다. 그래서 이 필드는 필수이며, 키가 아예 없는 봉투는 malformed 다: 있으면 대조하고 없으면 넘어가는 선택 필드였다면 필드를 떨어뜨리는 것만으로 대조를 우회할 수 있다.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notBefore", "notAfter"],
+      "properties": {
+        "notBefore": { "type": "string", "format": "date-time" },
+        "notAfter": { "type": "string", "format": "date-time" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "digest", "signature"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "signature": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

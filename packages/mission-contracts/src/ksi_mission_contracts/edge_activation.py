@@ -9,13 +9,31 @@ digest before delegating the inner contract activation to that consumer.
 It runs only at activation/recovery time.  No frame callback or safety-loop
 operation imports this module; native C++ consumes only a locally durable
 activation snapshot after this verifier has succeeded.
-"""
+
+## The flight route travels beside the contract, not inside it
+
+A v1.1 envelope declares ``kmzSha256``: the sha256 of the KMZ that Core issued
+as this mission's pair (ADR-KSI-007).  The bytes themselves arrive separately —
+they are far too large for the signed envelope — so this module is where the
+pair invariant finally becomes checkable.  A KMZ carries no signature of its
+own, which means the Core-signed digest is its *only* provenance: if the bytes
+we hold hash to something else, the route on disk is not the route the contract
+was issued with, and the whole activation is refused
+(:class:`DispatchVerdict.KMZ_DIGEST_MISMATCH`) rather than activating a contract
+next to a stale route.
+
+A declared ``null`` digest is not "unknown" but "this mission has no KMZ", and
+it makes this module **delete** any route left over from an earlier mission.
+Activating a contract while a previous mission's flight plan stays on disk under
+the same well-known filename is the exact failure the deletion exists to
+prevent."""
 
 from __future__ import annotations
 
 import argparse
 import base64
 import copy
+import hashlib
 import json
 import math
 import os
@@ -45,6 +63,7 @@ from ksi_mission_contracts.dispatch import (
     DispatchValidity,
     DispatchVerdict,
     MissionDispatchEnvelopeV1,
+    kmz_bytes_match_envelope,
     mission_contract_digest,
     verify_mission_dispatch_envelope,
 )
@@ -58,7 +77,15 @@ from ksi_mission_contracts.signing import KeyRegistry
 _ACTIVE_DISPATCH_FILENAME = "active-dispatch.json"
 _NATIVE_ACTIVE_DISPATCH_FILENAME = "active-dispatch.native.v1"
 _NATIVE_RUNTIME_PROFILE_FILENAME = "active-edge-runtime-profile.native.v1"
+_ACTIVE_MISSION_KMZ_FILENAME = "active-mission.kmz"
+_NATIVE_MISSION_KMZ_FILENAME = "active-mission-kmz.native.v1"
 _MAX_DISPATCH_BYTES = 1024 * 1024
+_NATIVE_MISSION_KMZ_MAGIC = "KSI_EDGE_NATIVE_MISSION_KMZ_V1"
+# KMZ 는 zip 이라 봉투(1MB)보다 커질 수 있지만, 이건 웨이라인 하나이지 미디어가
+# 아니다 — 이 저장소가 실제로 발급하는 KMZ 는 수십 KB 규모다. 상한은 그 사실의
+# 선언이 아니라 매니폴드(여유 8.6GB)에서 한 번에 메모리에 올릴 수 있는 크기의
+# 보수적 경계다. C++ 판독기도 같은 상한을 독립적으로 강제한다(mission_kmz.hpp).
+_MAX_MISSION_KMZ_BYTES = 8 * 1024 * 1024
 
 
 class _CamelModel(BaseModel):
@@ -77,6 +104,10 @@ class ActiveDispatchSnapshotV1(_CamelModel):
     risk_policy_pack_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     edge_runtime_profile: dict[str, Any]
     edge_runtime_profile_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    # 활성화된 봉투가 선언한 KMZ digest 그대로(bare hex, ``None`` = 계약 단독).
+    # 기본값이 있는 것은 이 파일이 v1.1 이전 활성화 기록과도 읽히기 위해서다 —
+    # 봉투 쪽 필수성은 ``MissionDispatchEnvelopeV1`` 이 이미 강제한다.
+    kmz_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     validity: DispatchValidity
     activated_at: datetime
     runtime_version: str = Field(min_length=1)
@@ -150,6 +181,23 @@ def _native_snapshot_path(consumer: MissionContractConsumer) -> Path:
 def _native_runtime_profile_path(consumer: MissionContractConsumer) -> Path:
     """Native C++ perception handoff, published before its activation marker."""
     return consumer.active_path.parent / _NATIVE_RUNTIME_PROFILE_FILENAME
+
+
+def _mission_kmz_path(consumer: MissionContractConsumer) -> Path:
+    """The verified KMZ bytes themselves, under one well-known private name."""
+    return consumer.active_path.parent / _ACTIVE_MISSION_KMZ_FILENAME
+
+
+def _native_mission_kmz_path(consumer: MissionContractConsumer) -> Path:
+    """Sidecar naming the KMZ this activation bound, in the native line format.
+
+    The KMZ is opaque bytes to everything on this side of the boundary, so the
+    sidecar is what makes it self-describing: which dispatch, which mission,
+    which contract digest, and the sha256/length C++ re-derives before handing
+    the file to anything.  Its absence is a capture-only state, exactly like the
+    other native handoffs.
+    """
+    return consumer.active_path.parent / _NATIVE_MISSION_KMZ_FILENAME
 
 
 def _load_snapshot(path: Path) -> ActiveDispatchSnapshotV1 | None:
@@ -421,6 +469,73 @@ def _write_native_runtime_profile_atomically(
     )
 
 
+def _native_mission_kmz_bytes(
+    snapshot: ActiveDispatchSnapshotV1, kmz_byte_count: int
+) -> bytes:
+    """Serialize the KMZ sidecar in the same strict fixed field set as its siblings.
+
+    ``kmz_sha256`` is bare hex here because that is what Core's issuance ledger
+    and the signed envelope both use; the ``sha256:`` prefixed fields beside it
+    keep their own notation rather than being silently normalized to a third one.
+    """
+    if snapshot.kmz_sha256 is None:
+        raise ContractInputError("cannot describe a KMZ sidecar without a bound digest")
+    if kmz_byte_count <= 0:
+        raise ContractInputError("cannot describe an empty KMZ")
+    lines = [
+        _NATIVE_MISSION_KMZ_MAGIC,
+        f"dispatch_id_b64={_native_b64(snapshot.dispatch_id)}",
+        f"edge_device_id_b64={_native_b64(snapshot.edge_device_id)}",
+        f"kmz_byte_count={kmz_byte_count}",
+        f"kmz_sha256={snapshot.kmz_sha256}",
+        f"mission_contract_digest={snapshot.mission_contract_digest}",
+        f"mission_id_b64={_native_b64(snapshot.mission_id)}",
+        "",
+    ]
+    return "\n".join(lines).encode("ascii")
+
+
+def _publish_mission_kmz(
+    consumer: MissionContractConsumer,
+    snapshot: ActiveDispatchSnapshotV1,
+    kmz_bytes: bytes | None,
+) -> None:
+    """Replace (or remove) the local flight route for the activation being published.
+
+    Ordering inside this function is the same fail-closed shape as the other
+    native handoffs: the *describing* record dies first and is born last, so a
+    crash anywhere in between leaves a sidecar-less KMZ, which C++ refuses,
+    rather than a sidecar pointing at bytes that are no longer there.
+
+    Callers pass bytes that :func:`kmz_bytes_match_envelope` already accepted;
+    the digest is recomputed here anyway because this is the last point before
+    the bytes become durable local state.
+    """
+    kmz_path = _mission_kmz_path(consumer)
+    sidecar_path = _native_mission_kmz_path(consumer)
+    _invalidate_native_snapshot(sidecar_path, label="native mission KMZ sidecar")
+    if snapshot.kmz_sha256 is None:
+        if kmz_bytes is not None:
+            raise ContractInputError("cannot publish KMZ bytes for a contract-only activation")
+        # 계약 단독 발급 — 이전 임무의 경로를 남겨두지 않는다(모듈 docstring).
+        _invalidate_native_snapshot(kmz_path, label="active mission KMZ")
+        return
+    if kmz_bytes is None:
+        # ``kmz_bytes_match_envelope`` 가 호출부에서 이미 막았어야 하는 조합이다.
+        # 그래도 여기서 조용히 "지운다"로 흘려보내지 않는 이유: 이 함수만 놓고 보면
+        # 삭제가 그럴듯해 보이는데, 그 경로가 열리면 "바이트를 못 받았다"가
+        # "경로를 지운다"로 조용히 승격된다.
+        raise ContractInputError("bound KMZ digest has no bytes to publish")
+    if hashlib.sha256(kmz_bytes).hexdigest() != snapshot.kmz_sha256:
+        raise ContractInputError("KMZ bytes stopped matching the bound digest before publish")
+    _write_private_atomically(kmz_path, kmz_bytes, label="active mission KMZ")
+    _write_private_atomically(
+        sidecar_path,
+        _native_mission_kmz_bytes(snapshot, len(kmz_bytes)),
+        label="native mission KMZ sidecar",
+    )
+
+
 def _invalidate_native_snapshot(
     path: Path, *, label: str = "native active dispatch handoff"
 ) -> None:
@@ -514,6 +629,7 @@ def _snapshot_matches_active_contract(
         or snapshot.risk_policy_pack != envelope.risk_policy_pack
         or snapshot.edge_runtime_profile_digest != envelope.edge_runtime_profile_digest
         or snapshot.edge_runtime_profile != envelope.edge_runtime_profile
+        or snapshot.kmz_sha256 != envelope.kmz_sha256
         or snapshot.validity != envelope.validity
         or snapshot.runtime_version != runtime_version
     ):
@@ -579,6 +695,7 @@ def activate_mission_dispatch_file(
     registry: KeyRegistry,
     expected_edge_device_id: str,
     runtime_version: str,
+    kmz_bytes: bytes | None = None,
     now: datetime | None = None,
 ) -> DispatchActivationResult:
     """Verify and activate one downloaded dispatch, or return its exact retry receipt.
@@ -587,6 +704,11 @@ def activate_mission_dispatch_file(
     Then, and only then, the unchanged upstream MissionContractConsumer verifies
     and atomically replaces the inner contract.  The native handoff is written
     last; a crash in between is fail-closed because C++ sees no new handoff.
+
+    ``kmz_bytes`` are the route bytes the caller fetched for this same mission.
+    They are checked against the signed ``kmzSha256`` **before** any local state
+    moves, so a mismatch costs nothing: the previous activation stays exactly as
+    it was and the caller can retry once it holds the right file.
     """
     effective_now = _effective_now(now)
     if not runtime_version:
@@ -605,6 +727,15 @@ def activate_mission_dispatch_file(
             detail=verification.detail,
         )
     envelope = verification.envelope
+    if not kmz_bytes_match_envelope(envelope, kmz_bytes):
+        return DispatchActivationResult(
+            dispatch_verdict=DispatchVerdict.KMZ_DIGEST_MISMATCH,
+            activated=False,
+            detail=(
+                "서명된 봉투가 선언한 kmzSha256 과 손에 든 KMZ 바이트가 짝이 아니다 — "
+                "계약만 활성화하고 경로를 낡은 것으로 두는 대신 활성화 전체를 거부한다"
+            ),
+        )
     snapshot_path = _snapshot_path(consumer)
     native_snapshot_path = _native_snapshot_path(consumer)
     native_runtime_profile_path = _native_runtime_profile_path(consumer)
@@ -625,6 +756,7 @@ def activate_mission_dispatch_file(
         # its activation marker last on an idempotent retry; no contract
         # verification is duplicated here.
         _write_native_runtime_profile_atomically(native_runtime_profile_path, existing)
+        _publish_mission_kmz(consumer, existing, kmz_bytes)
         _write_native_snapshot_atomically(native_snapshot_path, existing)
         return DispatchActivationResult(
             dispatch_verdict=DispatchVerdict.VALID,
@@ -676,6 +808,11 @@ def activate_mission_dispatch_file(
         native_runtime_profile_path,
         label="native Edge runtime profile handoff",
     )
+    # 사이드카를 먼저 죽인다 — 새 KMZ 를 쓰다 죽어도 "낡은 사이드카 + 새 바이트"
+    # 조합이 생기지 않는다(C++ 은 사이드카 없는 KMZ 를 쓰지 않는다).
+    _invalidate_native_snapshot(
+        _native_mission_kmz_path(consumer), label="native mission KMZ sidecar"
+    )
     if not _activate_inner_contract(consumer, raw_contract, now=effective_now):
         return DispatchActivationResult(
             dispatch_verdict=DispatchVerdict.MISSION_CONTRACT_INVALID,
@@ -691,12 +828,14 @@ def activate_mission_dispatch_file(
         risk_policy_pack_digest=envelope.risk_policy_pack_digest,
         edge_runtime_profile=copy.deepcopy(dict(raw_profile)),
         edge_runtime_profile_digest=envelope.edge_runtime_profile_digest,
+        kmz_sha256=envelope.kmz_sha256,
         validity=envelope.validity,
         activated_at=effective_now,
         runtime_version=runtime_version,
     )
     _write_snapshot_atomically(snapshot_path, snapshot)
     _write_native_runtime_profile_atomically(native_runtime_profile_path, snapshot)
+    _publish_mission_kmz(consumer, snapshot, kmz_bytes)
     _write_native_snapshot_atomically(native_snapshot_path, snapshot)
     return DispatchActivationResult(
         dispatch_verdict=DispatchVerdict.VALID,
@@ -732,17 +871,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--edge-device-id", required=True)
     parser.add_argument("--runtime-version", required=True)
+    parser.add_argument(
+        "--kmz",
+        type=Path,
+        help=(
+            "이 임무의 KMZ 파일. 봉투가 kmzSha256 을 선언하면 필수다 — 없으면 "
+            "KMZ_DIGEST_MISMATCH 로 거부된다(못 받은 것과 없어도 되는 것을 "
+            "구분한다)"
+        ),
+    )
     parser.add_argument("--now", help="RFC3339 verification time for replay/HIL")
     parser.add_argument("dispatch", type=Path)
     args = parser.parse_args(argv)
     try:
         registry = load_verification_keys(args.keys_dir)
+        kmz_bytes = (
+            None
+            if args.kmz is None
+            else _read_bounded(args.kmz, limit=_MAX_MISSION_KMZ_BYTES, label="mission KMZ")
+        )
         result = activate_mission_dispatch_file(
             args.dispatch,
             consumer=MissionContractConsumer(registry=registry, state_dir=args.state_dir),
             registry=registry,
             expected_edge_device_id=args.edge_device_id,
             runtime_version=args.runtime_version,
+            kmz_bytes=kmz_bytes,
             now=_parse_now(args.now),
         )
     except (ContractInputError, VerificationKeyError, ValueError) as exc:

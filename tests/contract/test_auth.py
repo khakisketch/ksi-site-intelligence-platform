@@ -360,6 +360,7 @@ def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_ta
             Permission.EDGE_MISSION_PULL,
             Permission.EDGE_EVIDENCE_WRITE,
             Permission.EDGE_SOURCE_MEDIA_WRITE,
+            Permission.EDGE_MISSION_KMZ_READ,
         }
     )
 
@@ -420,6 +421,7 @@ def test_every_write_permission_has_a_role_without_it(perm: Permission) -> None:
         Permission.EDGE_MISSION_PULL,
         Permission.EDGE_EVIDENCE_WRITE,
         Permission.EDGE_SOURCE_MEDIA_WRITE,
+        Permission.EDGE_MISSION_KMZ_READ,
     ),
 )
 def test_no_role_has_edge_only_permission(permission: Permission) -> None:
@@ -703,6 +705,7 @@ def test_whoami_edge_device() -> None:
         "deviceId": "rig-42",
         "permissions": [
             "EDGE_EVIDENCE_WRITE",
+            "EDGE_MISSION_KMZ_READ",
             "EDGE_MISSION_PULL",
             "EDGE_SOURCE_MEDIA_WRITE",
             "EDGE_SYNC_INGEST",

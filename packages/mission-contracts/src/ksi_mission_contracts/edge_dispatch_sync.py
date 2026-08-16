@@ -12,6 +12,20 @@ does not follow redirects, and validates the pin before it sends a bearer.
 All network failures leave an already valid local activation intact.  Core
 will continue returning its unacknowledged dispatch, so the next invocation
 can replay the same activation and receipt idempotently.
+
+## Two GETs, one connection profile
+
+A v1.1 envelope names its KMZ by digest only, so this module fetches the bytes
+in a second request over the same pinned configuration before it activates
+anything.  The order matters: the envelope is verified *first*, and the mission
+id used to build the KMZ route comes out of that verified envelope rather than
+out of the raw response body — an unverified pull must not be able to steer
+which resource this device asks Core for.
+
+A KMZ fetch failure is deliberately its own verdict rather than an activation
+attempt with no bytes.  Failing to obtain the route is a transport problem that
+the next invocation may well fix; it is not evidence that the signed pair is
+wrong, and it leaves the previous activation untouched.
 """
 
 from __future__ import annotations
@@ -44,14 +58,27 @@ from ksi_mission_contracts.consumer import (
     VerificationKeyError,
     load_verification_keys,
 )
-from ksi_mission_contracts.dispatch import ActivationReceiptV1, DispatchVerdict
-from ksi_mission_contracts.edge_activation import activate_mission_dispatch_file
+from ksi_mission_contracts.dispatch import (
+    ActivationReceiptV1,
+    DispatchVerdict,
+    MissionDispatchEnvelopeV1,
+    verify_mission_dispatch_envelope,
+)
+from ksi_mission_contracts.edge_activation import (
+    _MAX_MISSION_KMZ_BYTES,
+    _read_json_object,
+    activate_mission_dispatch_file,
+)
 from ksi_mission_contracts.signing import KeyRegistry
 
 _MAX_DISPATCH_RESPONSE_BYTES = 1024 * 1024
 _MAX_RECEIPT_RESPONSE_BYTES = 64 * 1024
 _MAX_BEARER_TOKEN_BYTES = 4096
-_SAFE_DISPATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# dispatchId 와 missionId 는 같은 경로-안전 문자 집합을 쓴다(Core 의
+# ``ksi_core.identifiers.PATH_SAFE_IDENTIFIER_PATTERN``) — 두 벌로 나누면 한쪽만
+# 넓어지는 drift 가 생긴다.
+_SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_KMZ_CONTENT_TYPE = "application/vnd.google-earth.kmz"
 
 
 class PrivateBearerTokenVerdict(StrEnum):
@@ -162,6 +189,8 @@ class CoreDispatchTransportError(RuntimeError):
 
 class EdgeDispatchCoreTransport(Protocol):
     def pull_next(self) -> CoreDispatchHttpResponse: ...
+
+    def download_mission_kmz(self, mission_id: str) -> CoreDispatchHttpResponse: ...
 
     def record_activation(
         self, dispatch_id: str, receipt: ActivationReceiptV1
@@ -287,7 +316,13 @@ class PinnedHttpsEdgeDispatchTransport:
         self._timeout_seconds = timeout_seconds
 
     def _request(
-        self, *, method: str, route: str, body: bytes | None, maximum_response_bytes: int
+        self,
+        *,
+        method: str,
+        route: str,
+        body: bytes | None,
+        maximum_response_bytes: int,
+        accept: str = "application/json",
     ) -> CoreDispatchHttpResponse:
         if method not in {"GET", "POST"} or not route.startswith("/") or "#" in route:
             raise CoreDispatchTransportError(retryable=False)
@@ -317,7 +352,7 @@ class PinnedHttpsEdgeDispatchTransport:
             if not hmac.compare_digest(actual_spki_digest, self._expected_spki_digest):
                 raise CoreDispatchTransportError(retryable=False)
             headers = {
-                "Accept": "application/json",
+                "Accept": accept,
                 "Authorization": f"Bearer {self._bearer_token}",
                 "Host": self._origin.host_header,
             }
@@ -347,10 +382,30 @@ class PinnedHttpsEdgeDispatchTransport:
             maximum_response_bytes=_MAX_DISPATCH_RESPONSE_BYTES,
         )
 
+    def download_mission_kmz(self, mission_id: str) -> CoreDispatchHttpResponse:
+        """Fetch this mission's KMZ over the same pinned Core configuration.
+
+        The route is the operator-facing download, not a device-only twin: Core
+        keeps one resolution path (cache → regenerate → digest check → issued
+        bytes) so the device and a human downloading from the dashboard cannot
+        end up holding different files for the same mission.  The device's own
+        token narrows *which* mission it may ask for, and Core answers a
+        non-assigned mission with the same 404 it gives an unknown one.
+        """
+        if not _SAFE_PATH_SEGMENT.fullmatch(mission_id):
+            raise CoreDispatchTransportError(retryable=False)
+        return self._request(
+            method="GET",
+            route=f"/v1/missions/{mission_id}/kmz",
+            body=None,
+            maximum_response_bytes=_MAX_MISSION_KMZ_BYTES,
+            accept=_KMZ_CONTENT_TYPE,
+        )
+
     def record_activation(
         self, dispatch_id: str, receipt: ActivationReceiptV1
     ) -> CoreDispatchHttpResponse:
-        if not _SAFE_DISPATCH_ID.fullmatch(dispatch_id) or receipt.dispatch_id != dispatch_id:
+        if not _SAFE_PATH_SEGMENT.fullmatch(dispatch_id) or receipt.dispatch_id != dispatch_id:
             raise CoreDispatchTransportError(retryable=False)
         body = json.dumps(
             receipt.model_dump(by_alias=True, mode="json"),
@@ -401,6 +456,11 @@ class EdgeDispatchSyncVerdict(StrEnum):
     NO_MISSION = "NO_MISSION"
     PULL_RETRYABLE_FAILURE = "PULL_RETRYABLE_FAILURE"
     PULL_REJECTED = "PULL_REJECTED"
+    # KMZ 를 못 받은 것은 "짝이 틀렸다"가 아니라 "아직 손에 없다"다 — 활성화를
+    # 시도조차 하지 않고 이전 활성화를 그대로 둔다(다음 호출이 같은 dispatch 를
+    # 다시 받아 같은 자리에서 재시도한다).
+    KMZ_FETCH_RETRYABLE_FAILURE = "KMZ_FETCH_RETRYABLE_FAILURE"
+    KMZ_FETCH_REJECTED = "KMZ_FETCH_REJECTED"
     ACTIVATION_REJECTED = "ACTIVATION_REJECTED"
     ACTIVATED_AND_RECORDED = "ACTIVATED_AND_RECORDED"
     ACTIVATED_RECEIPT_PENDING = "ACTIVATED_RECEIPT_PENDING"
@@ -417,6 +477,47 @@ class EdgeDispatchSyncResult:
 
 def _is_json_content_type(value: str) -> bool:
     return value.split(";", 1)[0].strip().lower() == "application/json"
+
+
+def _fetch_mission_kmz(
+    transport: EdgeDispatchCoreTransport, envelope: MissionDispatchEnvelopeV1
+) -> bytes | None | EdgeDispatchSyncResult:
+    """Get this mission's route bytes, or the sync verdict explaining why not.
+
+    Returning ``None`` is a real answer, not a failure: the envelope declared no
+    KMZ, so the activation will *remove* whatever route is on disk.  The
+    :class:`EdgeDispatchSyncResult` return means the fetch itself did not settle
+    and nothing local should move yet.
+    """
+    if envelope.kmz_sha256 is None:
+        return None
+    try:
+        fetched = transport.download_mission_kmz(envelope.mission_id)
+    except CoreDispatchTransportError as error:
+        return EdgeDispatchSyncResult(
+            EdgeDispatchSyncVerdict.KMZ_FETCH_RETRYABLE_FAILURE
+            if error.retryable
+            else EdgeDispatchSyncVerdict.KMZ_FETCH_REJECTED,
+        )
+    if fetched.status_code != 200:
+        # 404 는 여기서 "이 임무엔 KMZ 가 없다"로 읽히지 않는다 — 그 사실은 서명된
+        # 봉투가 이미 반대로 말했다. 배정 어긋남·레코드 소실 어느 쪽이든 서명과
+        # 원장이 갈라진 상태이므로 활성화하지 않는다.
+        return EdgeDispatchSyncResult(
+            EdgeDispatchSyncVerdict.KMZ_FETCH_RETRYABLE_FAILURE
+            if fetched.status_code >= 500
+            else EdgeDispatchSyncVerdict.KMZ_FETCH_REJECTED,
+            http_status=fetched.status_code,
+        )
+    if not fetched.body or len(fetched.body) > _MAX_MISSION_KMZ_BYTES:
+        return EdgeDispatchSyncResult(
+            EdgeDispatchSyncVerdict.KMZ_FETCH_REJECTED, http_status=200
+        )
+    # Content-Type 은 대조하지 않는다 — 이 바이트의 진위는 서명된 digest 가
+    # 판정하고(activate_mission_dispatch_file), 헤더는 그 판정에 아무것도 더하지
+    # 못한다. 봉투 pull 이 JSON 여부를 보는 것과는 상황이 다르다: 그쪽은 digest 로
+    # 자기를 증명하기 전에 파싱부터 해야 한다.
+    return fetched.body
 
 
 def synchronize_edge_dispatch_once(
@@ -454,12 +555,33 @@ def synchronize_edge_dispatch_once(
     candidate_path: Path | None = None
     try:
         candidate_path = _write_private_dispatch_candidate(state_directory, pulled.body)
+        # 봉투를 **먼저** 검증한다 — 아래에서 KMZ 경로를 만드는 missionId 는 검증을
+        # 통과한 봉투에서 나와야 한다. 검증 전 원문에서 뽑으면 Core 응답을 조작할
+        # 수 있는 누군가가 이 장비가 무엇을 요청할지 고르게 된다. 여기서 통과한
+        # 봉투는 activate_mission_dispatch_file 이 한 번 더 검증한다(활성화 판정의
+        # 소유자는 그쪽 하나라는 관습을 깨지 않는다 — 여기서는 어떤 상태도 바꾸지
+        # 않는다).
+        verification = verify_mission_dispatch_envelope(
+            _read_json_object(candidate_path, label="MissionDispatchEnvelope candidate"),
+            registry,
+            expected_edge_device_id=edge_device_id,
+            now=now,
+        )
+        if not verification.is_valid or verification.envelope is None:
+            return EdgeDispatchSyncResult(
+                EdgeDispatchSyncVerdict.ACTIVATION_REJECTED,
+                dispatch_verdict=verification.verdict,
+            )
+        kmz_result = _fetch_mission_kmz(transport, verification.envelope)
+        if isinstance(kmz_result, EdgeDispatchSyncResult):
+            return kmz_result
         activation = activate_mission_dispatch_file(
             candidate_path,
             consumer=MissionContractConsumer(registry=registry, state_dir=state_directory),
             registry=registry,
             expected_edge_device_id=edge_device_id,
             runtime_version=runtime_version,
+            kmz_bytes=kmz_result,
             now=now,
         )
     except (ContractInputError, VerificationKeyError, ValueError):

@@ -1,13 +1,59 @@
-"""서명된 MissionDispatchEnvelope v1.0 검증 경계.
+"""서명된 MissionDispatchEnvelope v1.0/v1.1 검증 경계.
 
 Mission Contract v1.2의 wire 형식은 변경하지 않는다. Core가 장비 ID, 내부 계약
 digest, RiskPolicyPack digest, 더 짧거나 같은 TTL을 하나의 Ed25519 서명으로 묶고,
 Edge는 이 모듈의 단일 진입점으로 구조·양쪽 digest·양쪽 서명·모든 TTL을 함께
 검증한다. 어느 하나라도 실패하면 activation은 불가하다.
+
+## v1.1 — ``kmzSha256`` (ADR-KSI-007 짝 불변식의 첫 기계 검증)
+
+v1.1은 v1.0에 ``kmzSha256`` 하나를 더한다. Core는 발급 원장의 값을 그대로 실어
+서명하고, Edge는 따로 내려받은 KMZ 바이트의 sha256이 이 값과 다르면
+:class:`DispatchVerdict.KMZ_DIGEST_MISMATCH` 로 **활성화 전체를 거부**한다
+(``edge_activation`` 이 그 강제 지점). 바이트가 아니라 digest를 싣는 이유는 봉투가
+저널과 1MB 응답 상한 안에 남아야 하기 때문이다.
+
+## 왜 두 버전을 함께 받는가 (v1.0을 거부하지 않는다)
+
+봉투는 TTL 5분짜리 일회성 기록이지만 **dispatch journal은 append-only라 재생 시
+과거 봉투 전부를 다시 통과시킨다**(``EdgeDispatchStore._replay`` — 설명할 수 없는
+레코드는 Core 기동 자체를 멈춘다). 리터럴을 "1.1" 하나로 좁히면 이미 v1.0 레코드가
+쌓인 저널을 가진 Core가 **기동하지 못한다** — 안전과 무관한 이유로 발화하는
+fail-closed는 정확히 이 저장소가 피하려는 종류의 실패다.
+
+대신 **발행은 언제나 v1.1**이고(:func:`build_mission_dispatch_envelope`), v1.0은
+"kmzSha256 필드가 아예 없는 봉투"로만 유효하다.
+
+그리고 **한 번 서명된 봉투를 이 모델로 재직렬화해 다시 내보내지 않는다.** pydantic
+기본 직렬화는 v1.0 봉투에 ``"kmzSha256": null`` 키를 새로 만들고, 서명 대상은 필드
+집합이 아니라 정규화된 바이트열이라(ADR-KSI-002 §2) 그 순간 봉투가 자기 서명을
+통과하지 못한다. 이건 이 모델이 ``missionContract`` 를 원문 dict 그대로 보존하는
+것과 정확히 같은 이유다 — 저장·전달은 원문 dict 로 하고, 모델은 그 원문을 검증하는
+데 쓴다(``EdgeDispatchStore._replay`` 와 ``GET /v1/edge-sync/missions/next``).
+
+## sunset — v1.0 수용 범위가 계획보다 넓다 (독립 재검토 2026-08)
+
+원래 의도는 "v1.0은 ``EdgeDispatchStore._replay`` 가 과거 저널 레코드를 설명하기
+위해서만 받는다"였다. 그런데 ``schema_version: Literal["1.0", "1.1"]`` 이 모델
+필드라 :func:`verify_mission_dispatch_envelope`(Edge의 활성화-시점 wire 검증,
+``edge_activation.py``/``edge_dispatch_sync.py`` 가 호출)도 같이 넓어졌다 — Core
+개인키로 서명된 v1.0 봉투 하나가 KMZ 결속(ADR-KSI-007)을 건너뛰고 활성화 시 기존
+KMZ 를 지우게 만들 수 있다는 뜻이다. TTL 5분 + Core 개인키 서명 필요라 실효 위험은
+낮게 평가했다(``_replay`` 쪽 수용은 append-only 저널이 과거 발행분을 다시 통과시켜야
+하므로 필연적이지만, wire 검증 쪽은 그렇지 않다). ``verify_mission_dispatch_envelope``
+를 v1.1 전용으로 좁히려면 이 모델과 별개로 "구조 검증만 하는 v1.0/v1.1 겸용 모델"과
+"서명까지 검증하는 v1.1 전용 모델"을 나눠야 해서 이번 재검토 범위를 넘겼다 — 아직
+좁히지 못했다는 사실 자체를 여기 남긴다. v1.1 이 완전히 자리잡아 배포된 모든 Core의
+dispatch journal 에서 v1.0 레코드가 TTL 을 넘겨 자연 소멸하면(장비가 재시작 없이도
+그 시점 이후로는 이 관용을 더 필요로 하지 않으면) 이 sunset 문단과 함께 v1.0 수용
+자체를 제거한다.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -36,6 +82,8 @@ from ksi_mission_contracts.signing import (
 )
 
 _PATH_SAFE_ID = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+# ``MissionRecord.kmz_sha256`` 과 같은 bare hex 표기(모델 필드 주석 참조).
+_KMZ_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class _CamelModel(BaseModel):
@@ -54,9 +102,13 @@ class DispatchValidity(_CamelModel):
 
 
 class MissionDispatchEnvelopeV1(_CamelModel):
-    """``mission-dispatch-envelope.v1.json`` wire 모델."""
+    """``mission-dispatch-envelope.v1.{0,1}.json`` wire 모델(모듈 docstring 참조)."""
 
-    schema_version: Literal["1.0"] = "1.0"
+    # sunset: "1.0" 은 원래 EdgeDispatchStore._replay 의 과거 저널 레코드 재생
+    # 전용으로만 의도했지만, 이 필드가 verify_mission_dispatch_envelope(Edge wire
+    # 검증)와 공유돼 그쪽도 함께 넓어졌다 — 아직 좁히지 못했다(모듈 docstring
+    # "sunset — v1.0 수용 범위가 계획보다 넓다" 참조).
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     dispatch_id: str = Field(pattern=_PATH_SAFE_ID)
     edge_device_id: str = Field(pattern=_PATH_SAFE_ID)
     mission_id: str = Field(min_length=1)
@@ -72,11 +124,24 @@ class MissionDispatchEnvelopeV1(_CamelModel):
     # inputs and is required even when an older capture-only DPK cannot use it.
     edge_runtime_profile: dict[str, Any]
     edge_runtime_profile_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    # v1.1 전용. bare hex 인 것은 의도적이다 — 정본이 Core 발급 원장의
+    # ``MissionRecord.kmz_sha256`` 이고 그 표기를 그대로 옮긴다. ``None`` 은
+    # "아직 모른다"가 아니라 "이 임무에는 KMZ 가 없다"(계약 단독 발급)는 확정
+    # 사실이고, Edge 는 그때 남아 있던 이전 KMZ 를 **지운다**.
+    kmz_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     validity: DispatchValidity
     signature: Ed25519Signature
 
     @model_validator(mode="after")
     def _cross_bindings(self) -> MissionDispatchEnvelopeV1:
+        # 버전과 필드 존재는 **양방향**으로 묶는다. v1.1 에서 키를 떨어뜨리는
+        # 것만으로 KMZ 대조를 조용히 건너뛸 수 있으면 이 필드는 보증이 아니라
+        # 장식이다(그래서 default 가 있어도 "명시되지 않은 v1.1" 은 거부한다).
+        declared = "kmz_sha256" in self.model_fields_set
+        if self.schema_version == "1.1" and not declared:
+            raise ValueError("v1.1 봉투는 kmzSha256 을 반드시 선언해야 한다(null 도 선언이다)")
+        if self.schema_version == "1.0" and declared:
+            raise ValueError("v1.0 봉투에는 kmzSha256 자리가 없다 — schemaVersion 을 1.1 로 올려라")
         contract = MissionContractV1_2.model_validate(self.mission_contract)
         pack = RiskPolicyPackV1.model_validate(self.risk_policy_pack)
         profile = EdgeRuntimeProfileV1.model_validate(self.edge_runtime_profile)
@@ -129,6 +194,12 @@ class DispatchVerdict(StrEnum):
     # riskpolicypack-edgeruntimeprofile-no-rollback-defense).
     SUPERSEDED_RISK_POLICY_PACK = "SUPERSEDED_RISK_POLICY_PACK"
     SUPERSEDED_EDGE_RUNTIME_PROFILE = "SUPERSEDED_EDGE_RUNTIME_PROFILE"
+    # KMZ 는 서명이 없다 — 그래서 "서명된 봉투가 선언한 digest"가 그 파일의 유일한
+    # 진위 근거다. 받은 바이트가 그 digest 와 다르거나(전송 손상·중간자·구 임무
+    # 잔존), digest 를 선언한 봉투인데 바이트를 전혀 못 받았으면 활성화 **전체**를
+    # 거부한다 — 계약만 활성화하고 경로는 낡은 것을 남기는 것이 정확히 ADR-KSI-007
+    # 이 막으려던 상태(짝이 어긋난 산출물 쌍)다.
+    KMZ_DIGEST_MISMATCH = "KMZ_DIGEST_MISMATCH"
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,8 +267,15 @@ def build_mission_dispatch_envelope(
     validity: DispatchValidity,
     private_key: Ed25519PrivateKey,
     key_id: str,
+    kmz_sha256: str | None = None,
 ) -> MissionDispatchEnvelopeV1:
-    """Core 전용 발행기. 모든 inner binding을 구성 시점에도 typed로 확인한다."""
+    """Core 전용 발행기. 모든 inner binding을 구성 시점에도 typed로 확인한다.
+
+    ``kmz_sha256`` 은 발급 원장(``MissionRecord.kmz_sha256``)의 값을 그대로 받는다 —
+    이 함수는 KMZ 를 다시 만들거나 해싱하지 않는다. ``None`` 은 계약 단독 발급이라는
+    확정 사실이고, 발행되는 봉투는 **언제나 v1.1** 이라 그 사실이 서명 안에 실린다
+    (모듈 docstring "왜 두 버전을 함께 받는가").
+    """
     contract_model = MissionContractV1_2.model_validate(dict(mission_contract))
     pack_model = (
         risk_policy_pack
@@ -227,8 +305,10 @@ def build_mission_dispatch_envelope(
             "dispatch validity는 Mission Contract/RiskPolicyPack/"
             "EdgeRuntimeProfile validity 안에 있어야 한다"
         )
+    if kmz_sha256 is not None and not _KMZ_SHA256_RE.fullmatch(kmz_sha256):
+        raise ValueError("kmzSha256 은 소문자 64자리 hex 여야 한다")
     unsigned = {
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1",
         "dispatchId": dispatch_id,
         "edgeDeviceId": edge_device_id,
         "missionId": contract_model.mission_id,
@@ -238,9 +318,33 @@ def build_mission_dispatch_envelope(
         "riskPolicyPackDigest": risk_policy_pack_digest(pack_wire),
         "edgeRuntimeProfile": profile_wire,
         "edgeRuntimeProfileDigest": edge_runtime_profile_digest(profile_wire),
+        "kmzSha256": kmz_sha256,
         "validity": _wire(validity),
     }
     return MissionDispatchEnvelopeV1.model_validate(sign_contract(unsigned, private_key, key_id))
+
+
+def kmz_bytes_match_envelope(
+    envelope: MissionDispatchEnvelopeV1, kmz_bytes: bytes | None
+) -> bool:
+    """받은 KMZ 바이트가 서명된 봉투가 선언한 것인가 — 판정 하나를 한 곳에만 둔다.
+
+    네 경우가 전부다:
+
+    - digest 선언 없음(계약 단독) + 바이트 없음 → 참(정상. 기존 KMZ 는 지워진다)
+    - digest 선언 없음 + 바이트 있음 → **거짓**. 서명이 "이 임무엔 KMZ 가 없다"고
+      말하는데 파일이 하나 있으면 그 파일의 출처를 설명하는 서명이 없다.
+    - digest 선언 + 바이트 없음 → 거짓(못 받은 것과 안 받아도 되는 것은 다르다)
+    - digest 선언 + 바이트 있음 → sha256 이 정확히 같을 때만 참
+
+    비교는 :func:`hmac.compare_digest` 로 한다. 타이밍이 여기서 비밀을 새게 하는
+    현실적 경로는 없지만, digest 비교의 기본형을 이 저장소 안에서 하나로 둔다.
+    """
+    if envelope.kmz_sha256 is None:
+        return kmz_bytes is None
+    if kmz_bytes is None:
+        return False
+    return hmac.compare_digest(hashlib.sha256(kmz_bytes).hexdigest(), envelope.kmz_sha256)
 
 
 def _outer_verdict(verdict: SignatureVerdict) -> DispatchVerdict:
@@ -267,7 +371,11 @@ def verify_mission_dispatch_envelope(
     except Exception as exc:  # noqa: BLE001 -- 모든 untrusted wire 입력은 typed 거부
         return DispatchVerificationResult(DispatchVerdict.MALFORMED_DISPATCH, detail=str(exc))
 
-    outer = verify_contract(raw, registry, expected_schema_version="1.0", now=now)
+    # 버전은 모델이 이미 {"1.0","1.1"} 로 좁혔다 — 여기서 그 값을 그대로 쓰는 것은
+    # 신뢰가 아니라 이미 통과한 검증의 재사용이다(임의 문자열은 위에서 걸린다).
+    outer = verify_contract(
+        raw, registry, expected_schema_version=envelope.schema_version, now=now
+    )
     if not outer.is_valid:
         return DispatchVerificationResult(_outer_verdict(outer.verdict), detail=outer.detail)
 
@@ -341,6 +449,7 @@ __all__ = [
     "DispatchVerificationResult",
     "MissionDispatchEnvelopeV1",
     "build_mission_dispatch_envelope",
+    "kmz_bytes_match_envelope",
     "mission_contract_digest",
     "verify_mission_dispatch_envelope",
 ]

@@ -43,3 +43,12 @@ Pilot 2에서 임포트된 웨이포인트 미션을 선택하고 "시작"을 �
   공급**한다 — 두 번 따로 계산하지 않는다(drift 방지).
 - 실제 KMZ 파일 전달 자동화(파일을 RC Plus 2로 넘기는 물리/네트워크 경로)는
   본 ADR의 범위 밖으로 남기고, 필요 시점에 별도로 확정한다.
+
+## 갱신 (2026-08-16) — 짝 불변식의 기계 검증
+
+위 "두 산출물은 반드시 같은 site_frame·정책 버전으로 짝지어 발급한다"는 지금까지
+발급 시점 서버 내부 규약일 뿐, 전달 경로 어디에서도 검증되지 않았다. Edge dispatch
+(`MissionDispatchEnvelope` v1.1)가 발급 원장의 `kmzSha256`을 Core 서명 안에 실어
+보내면서, 이 짝 불변식이 **전달 경로에서 처음으로 기계 검증**된다 — Edge는 받은
+KMZ 바이트의 sha256이 서명된 값과 다르면 활성화 전체를 거부한다(`DispatchVerdict.
+KMZ_DIGEST_MISMATCH`, `ksi_mission_contracts.dispatch`/`edge_activation`).

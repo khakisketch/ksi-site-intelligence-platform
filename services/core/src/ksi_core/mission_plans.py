@@ -84,7 +84,13 @@ from ksi_mission_planning.camera import DEFAULT_FRONT_OVERLAP, DEFAULT_SIDE_OVER
 from pydantic import Field, ValidationError
 
 from ksi_core.api_base import CamelModel
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    PrincipalKind,
+    require_permission,
+    require_permission_any,
+)
 from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
@@ -597,6 +603,14 @@ def _persist_kmz(
 _KMZ_CACHE_TTL_S = 300.0
 _KMZ_CACHE_MAX_ENTRIES = 256
 
+# KMZ 다운로드는 사람(``MISSIONS_READ``, 아무 임무)과 Edge 장비
+# (``EDGE_MISSION_KMZ_READ``, 자기 배정 임무만)가 **같은 라우트**로 쓴다. 이
+# 의존성은 "권한 있음"까지만 보장한다 — 범위 좁히기(그 임무가 자기 것인가)는
+# 핸들러가 하고, 불일치는 404 로 접는다(``require_permission_any`` docstring).
+_KMZ_DOWNLOAD_PERMISSION = require_permission_any(
+    Permission.MISSIONS_READ, Permission.EDGE_MISSION_KMZ_READ
+)
+
 
 def build_mission_plans_router(
     *,
@@ -717,49 +731,28 @@ def build_mission_plans_router(
         _persist_kmz(kmz_storage, record, result)
         return result
 
-    @router.get("/{mission_id}/kmz")
-    def download_mission_kmz(
-        mission_id: str,
-        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
-    ) -> Response:
-        """저장된 ``plan_request`` 로 KMZ 를 재생성해 바이트로 내려준다.
+    def _resolve_kmz_bytes(record: MissionRecord) -> bytes:
+        """"발급 당시 그 파일"을 얻는 **유일한** 해석 경로 — 4단 폴백 전부.
 
-        발급 응답의 ``kmzBase64`` 는 그 순간 한 번만 있고 어디에도 저장되지
-        않는다(모듈 docstring "멱등 재발급" — 바이트 자체는 journal 에 없다) —
-        운영자가 위저드를 끝까지 눌러도 손에 파일이 없는 막다른 길이 되는 지점이
-        이 엔드포인트다. 재생성은 결정론적이므로(``build_kmz`` 계열은 시각·난수·
-        UUID 의존이 없다) 매 조회마다 저장된 요청으로 다시 만든다.
+        캐시 → 재생성 → 재생성 sha256 대조 → 발급 시 보관본. 이 순서와 그 안의
+        판정들이 이 저장소에서 "KMZ 다운로드"의 정의다. 장비 경로(Edge companion)
+        를 열면서 두 번째 해석 경로를 만들지 않는 이유가 여기 있다 — 폴백 하나가
+        한쪽에만 있으면 같은 임무의 KMZ 가 사람이 받을 때와 기체가 받을 때 서로
+        다른 바이트가 되거나, 한쪽만 영구 409 가 된다.
 
-        재생성이 현재 정책으로 실패하거나(``_regenerate_pair_artifact`` 와 동일한
-        typed 거부 관습, POST ``/plans`` 멱등 재발급 참조) 재생성 sha256 이 저장된
-        ``kmzSha256`` 과 다르면(하류 로직 변경으로 결정성 가정이 깨진 경우) 200 을
-        주지 않는다 — "발급됐다고 기록된 파일"과 다른 바이트를 그 이름으로 내려주면
-        운영자가 기체에 옮긴 파일이 서버 기록과 어긋난 채로 비행하게 된다.
+        경로별 대칭 인가(자기 것인가)는 호출부가 이미 끝냈다고 가정한다 — 이
+        함수는 "무엇을 내려줄 것인가"만 답한다.
         """
-        del principal  # 인가만 필요 — MissionRecordResponse 와 동일 관습.
-        if not is_path_safe_identifier(mission_id):
-            # 발급 경로가 이미 같은 검사를 통과한 값만 저장소 키로 쓰므로 정상
-            # 경로에서는 도달하지 않는다. 그래도 여기서 한 번 더 막는 이유는 이
-            # 값이 아래에서 Content-Disposition 헤더로 조립되기 때문이다 —
-            # 원장이 손대어진 경우까지 헤더 조립 전에 끊는다(방어 심층).
-            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
-        record = mission_store.get(mission_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
-        if record.artifact_kind != "pair" or record.plan_request is None:
-            raise HTTPException(
-                status_code=404,
-                detail="이 임무 레코드는 KMZ 산출물이 없다(계약 단독 발급)",
-            )
+        cache_key = record.mission_id
         now = time.monotonic()
         with kmz_cache_lock:
-            cached = kmz_cache.get(mission_id)
+            cached = kmz_cache.get(cache_key)
             if cached is not None:
                 cached_sha, cached_bytes, expires_at = cached
                 if expires_at > now and cached_sha == record.kmz_sha256:
-                    kmz_cache.move_to_end(mission_id)
-                    return _kmz_response(mission_id, cached_bytes)
-                del kmz_cache[mission_id]
+                    kmz_cache.move_to_end(cache_key)
+                    return cached_bytes
+                del kmz_cache[cache_key]
         try:
             regenerated = _regenerate_pair_artifact(
                 record, private_key=private_key, key_id=key_id
@@ -783,7 +776,7 @@ def build_mission_plans_router(
                     "mission_id=%s 재생성 실패했지만 발급 시 보관된 KMZ 로 응답한다",
                     record.mission_id,
                 )
-                return _kmz_response(mission_id, stored)
+                return stored
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -813,7 +806,7 @@ def build_mission_plans_router(
                     "기록 %s) 발급 시 보관된 KMZ 로 응답한다",
                     record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
                 )
-                return _kmz_response(mission_id, stored)
+                return stored
             logger.error(
                 "mission_id=%s KMZ 다운로드가 결정성 위반으로 영구 거부됐다 "
                 "(재생성 sha256=%s, 기록된 kmzSha256=%s) — 이 발급 시점 이후 서버 "
@@ -832,15 +825,65 @@ def build_mission_plans_router(
             )
         kmz_bytes = base64.b64decode(regenerated["kmzBase64"])
         with kmz_cache_lock:
-            kmz_cache[mission_id] = (
+            kmz_cache[cache_key] = (
                 regenerated["kmzSha256"],
                 kmz_bytes,
                 time.monotonic() + _KMZ_CACHE_TTL_S,
             )
-            kmz_cache.move_to_end(mission_id)
+            kmz_cache.move_to_end(cache_key)
             while len(kmz_cache) > _KMZ_CACHE_MAX_ENTRIES:
                 kmz_cache.popitem(last=False)
-        return _kmz_response(mission_id, kmz_bytes)
+        return kmz_bytes
+
+    @router.get("/{mission_id}/kmz")
+    def download_mission_kmz(
+        mission_id: str,
+        principal: Principal = Depends(_KMZ_DOWNLOAD_PERMISSION),  # noqa: B008
+    ) -> Response:
+        """저장된 ``plan_request`` 로 KMZ 를 재생성해 바이트로 내려준다.
+
+        발급 응답의 ``kmzBase64`` 는 그 순간 한 번만 있고 어디에도 저장되지
+        않는다(모듈 docstring "멱등 재발급" — 바이트 자체는 journal 에 없다) —
+        운영자가 위저드를 끝까지 눌러도 손에 파일이 없는 막다른 길이 되는 지점이
+        이 엔드포인트다. 해석 경로 전부(:func:`_resolve_kmz_bytes`)는 사람과 기체가
+        **같은 것 하나**를 쓴다.
+
+        ## 두 종류의 주체가 같은 표면을 쓴다
+
+        사람(``MISSIONS_READ``)은 아무 임무의 KMZ 를 받는다. 장비
+        (``EDGE_MISSION_KMZ_READ``)는 **자기에게 배정된** 임무 하나만 받는다 —
+        ``assigned_device_id`` 불일치는 403 이 아니라 **404** 다: 403 은 "그
+        missionId 는 존재하지만 네 것이 아니다"를 알려주는 존재 오라클이고, 장비
+        토큰 하나로 임무 식별자 공간을 훑을 수 있게 된다(edge_dispatch.py 의
+        cross-device event 를 일반 404 로 접는 것과 같은 관습).
+
+        별도의 ``/v1/edge-sync/...`` KMZ 라우터를 만들지 않는 이유: 캐시·서명키·
+        보관 스토리지가 이 클로저 하나에 있어 두 번 배선하면 재생성 비용이 두 배가
+        되고, 폴백 4단이 두 곳에서 갈릴 수 있다.
+        """
+        if not is_path_safe_identifier(mission_id):
+            # 발급 경로가 이미 같은 검사를 통과한 값만 저장소 키로 쓰므로 정상
+            # 경로에서는 도달하지 않는다. 그래도 여기서 한 번 더 막는 이유는 이
+            # 값이 아래에서 Content-Disposition 헤더로 조립되기 때문이다 —
+            # 원장이 손대어진 경우까지 헤더 조립 전에 끊는다(방어 심층).
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        record = mission_store.get(mission_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        if principal.kind is PrincipalKind.EDGE_DEVICE and (
+            principal.device_id is None
+            or record.assigned_device_id != principal.device_id
+        ):
+            # 미배정(assigned_device_id=None) 임무도 여기서 막힌다 — 배정 없는
+            # 임무를 "아무 장비나 가져갈 수 있는 임무"로 읽지 않는 것은
+            # EdgeDispatchStore.next_for_device 와 같은 판단(INV-011/012)이다.
+            raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
+        if record.artifact_kind != "pair" or record.plan_request is None:
+            raise HTTPException(
+                status_code=404,
+                detail="이 임무 레코드는 KMZ 산출물이 없다(계약 단독 발급)",
+            )
+        return _kmz_response(mission_id, _resolve_kmz_bytes(record))
 
     return router
 

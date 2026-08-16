@@ -136,9 +136,14 @@ def _plan_request(
 
 _ISSUER_TOKEN = "mission-issuer-token"  # noqa: S105 — 테스트 고정 토큰
 # 3개 OPERATOR role 전부 MISSIONS_READ 를 갖는다(auth.py _ROLE_PERMISSIONS) — KMZ
-# 다운로드의 403(권한 없음)을 재현하려면 role 표 밖의 EDGE_DEVICE 가 필요하다
+# 다운로드의 403(권한 없음)을 재현하려면 role 표 밖의 principal 이 필요하다
 # (test_coverage_reports.py 와 동일 관습, 그 표도 role 로는 재현 못 하는 401/403 이다).
-_NO_MISSIONS_READ_TOKEN = "kmz-edge-device-token"  # noqa: S105 — 테스트 고정 토큰
+# **EDGE_DEVICE 는 더 이상 403 앵커가 아니다**: 장비는 이제 EDGE_MISSION_KMZ_READ
+# 를 갖고 같은 라우트를 자기 배정 임무 범위로 쓴다 — 남은
+# "어떤 KMZ 권한도 없는" 주체는 PROCESSING_WORKER 하나다(권한 고정집합
+# {PROCESSING_WORK}).
+_NO_KMZ_PERMISSION_TOKEN = "kmz-processing-worker-token"  # noqa: S105 — 테스트 고정 토큰
+_UNASSIGNED_DEVICE_TOKEN = "kmz-edge-device-token"  # noqa: S105 — 테스트 고정 토큰
 
 
 def _digest(token: str) -> str:
@@ -158,12 +163,21 @@ def _auth_registry() -> AuthRegistry:
                 ),
             ),
             PrincipalTokenRecord(
-                token_sha256=_digest(_NO_MISSIONS_READ_TOKEN),
+                token_sha256=_digest(_UNASSIGNED_DEVICE_TOKEN),
                 principal=Principal(
                     principal_id="edge-1",
                     kind=PrincipalKind.EDGE_DEVICE,
                     role=None,
                     device_id="edge-001",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_NO_KMZ_PERMISSION_TOKEN),
+                principal=Principal(
+                    principal_id="worker-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
                 ),
             ),
         ]
@@ -938,18 +952,38 @@ def test_kmz_download_requires_authentication_401(tmp_path: Path) -> None:
     assert response.status_code == 401
 
 
-def test_kmz_download_forbidden_without_missions_read_403(tmp_path: Path) -> None:
-    """[수용기준 3] MISSIONS_READ 없는 principal 은 403."""
+def test_kmz_download_forbidden_without_any_kmz_permission_403(tmp_path: Path) -> None:
+    """[수용기준 3] MISSIONS_READ 도 EDGE_MISSION_KMZ_READ 도 없는 주체는 403."""
     client, _registry = _client(tmp_path)
     issued = client.post("/v1/missions/plans", json=_plan_request())
     assert issued.status_code == 201
 
     response = client.get(
         "/v1/missions/mission-001/kmz",
-        headers={"Authorization": f"Bearer {_NO_MISSIONS_READ_TOKEN}"},
+        headers={"Authorization": f"Bearer {_NO_KMZ_PERMISSION_TOKEN}"},
     )
 
     assert response.status_code == 403
+
+
+def test_kmz_download_by_unassigned_device_is_404_not_403(tmp_path: Path) -> None:
+    """장비가 권한은 있어도 **자기 것이 아니면** 404 다 — 403 은 존재 오라클이다.
+
+    이 요청의 임무(``mission-001``)는 ``assignedDeviceId`` 자체가 없다. 배정 없는
+    임무를 "아무 장비나 가져갈 수 있는 임무"로 읽지 않는다는 판정까지 함께 고정한다
+    (``EdgeDispatchStore.next_for_device`` 와 같은 근거, INV-011/012).
+    """
+    client, _registry = _client(tmp_path)
+    issued = client.post("/v1/missions/plans", json=_plan_request())
+    assert issued.status_code == 201
+
+    response = client.get(
+        "/v1/missions/mission-001/kmz",
+        headers={"Authorization": f"Bearer {_UNASSIGNED_DEVICE_TOKEN}"},
+    )
+
+    assert response.status_code == 404
+    assert "content-disposition" not in response.headers
 
 
 def test_kmz_download_rejects_when_regeneration_hash_no_longer_matches(tmp_path: Path) -> None:
