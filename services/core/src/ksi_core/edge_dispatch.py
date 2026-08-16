@@ -16,10 +16,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import JSONResponse
 from ksi_domain.enums import MissionExecutionStatus
 from ksi_mission_contracts.dispatch import (
     ActivationReceiptV1,
@@ -33,7 +34,7 @@ from ksi_mission_contracts.runtime_profile import (
     EdgeRuntimeProfileV1,
     edge_runtime_profile_wire_dict,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
@@ -60,6 +61,26 @@ logger = logging.getLogger(__name__)
 
 _NOT_FOUND = "요청한 Edge 리소스를 찾을 수 없다"
 _DISPATCH_TTL = timedelta(minutes=5)
+# ksi_mission_contracts.dispatch._PATH_SAFE_ID 와 동일 패턴(그 상수는 private라
+# 모듈 경계를 넘지 않는다 — 이 파일은 services/core 안에서만 일한다는 작업
+# 경계를 지킨다).
+_PATH_SAFE_ID = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+
+
+class _BoundDispatchReceipt(Protocol):
+    """dispatch envelope에 binding되는 receipt 공통 필드 — activation·flight-start 공용.
+
+    ``ActivationReceiptV1``(ksi_mission_contracts.dispatch)과 이 모듈의
+    ``FlightStartReceiptV1``이 구조적으로 이 Protocol을 만족한다.
+    ``EdgeDispatchStore._receipt_matches_dispatch``가 두 receipt 종류에 대해
+    같은 binding 검증 로직을 재사용하기 위한 것뿐이다 — 새 추상화가 아니다.
+    """
+
+    dispatch_id: str
+    edge_device_id: str
+    mission_id: str
+    mission_contract_digest: str
+    risk_policy_pack_digest: str
 
 
 class EdgeDispatchRecoveryError(RuntimeError):
@@ -76,6 +97,13 @@ class EdgeDispatchVerdict(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     RECEIPT_MISMATCH = "RECEIPT_MISMATCH"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+    # flight-start-receipts 전용(ADR-KSI-021 §9). activation-receipts의
+    # ISSUED/EXISTING·ACTIVATED/ALREADY_ACTIVATED 짝과 같은 자리다 — 이름만
+    # 다르다. NOT_ACTIVATED는 그 짝에 없는 새 검사다: activation 사실이 없는
+    # 기체가 무엇을 START 했다는 것인지 Core는 설명할 수 없다.
+    FLIGHT_START_RECORDED = "FLIGHT_START_RECORDED"
+    FLIGHT_START_ALREADY_RECORDED = "FLIGHT_START_ALREADY_RECORDED"
+    NOT_ACTIVATED = "NOT_ACTIVATED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +118,44 @@ class ActivationResult:
     verdict: EdgeDispatchVerdict
     receipt: ActivationReceiptV1 | None = None
     detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FlightStartResult:
+    """flight-start-receipts 접수 판정. ``outcome``은 durable하게 저장된 값과 동일하다."""
+
+    verdict: EdgeDispatchVerdict
+    outcome: str | None = None
+    detail: str | None = None
+
+
+class FlightStartVerdict(StrEnum):
+    """Edge가 ``Action(START)`` 시도 결과로 보고하는 원인(ADR-KSI-021 §5 [0]~[10]).
+
+    ``STARTED``만 ``Action(START)`` 호출까지 실제로 도달했다는 뜻이다. 나머지는
+    전부 그 호출 **이전** 관문에서 fail-closed로 멈췄다는 뜻이며(§5의 순서 그대로
+    나열했다), Core에 저장되는 ``outcome``에는 ``REFUSED_`` 접두어가 붙는다
+    (:func:`_flight_start_outcome`) — §9 "아무도 시도 안 했다와 게이트가 막았다가
+    구분되지 않는다"를 막기 위해서다.
+    """
+
+    STARTED = "STARTED"
+    STAGE_INSUFFICIENT = "STAGE_INSUFFICIENT"
+    ACTIVATION_SNAPSHOT_INVALID = "ACTIVATION_SNAPSHOT_INVALID"
+    FLIGHT_AUTHORIZATION_INVALID = "FLIGHT_AUTHORIZATION_INVALID"
+    ARMING_TOKEN_INVALID = "ARMING_TOKEN_INVALID"
+    KMZ_DIGEST_MISMATCH = "KMZ_DIGEST_MISMATCH"
+    ENVELOPE_REVALIDATION_FAILED = "ENVELOPE_REVALIDATION_FAILED"
+    CONSERVATIVE_CEILING_GUARD = "CONSERVATIVE_CEILING_GUARD"
+    SUPERVISOR_NOT_READY = "SUPERVISOR_NOT_READY"
+    VEHICLE_PRECONDITION_FAILED = "VEHICLE_PRECONDITION_FAILED"
+
+
+def _flight_start_outcome(verdict: FlightStartVerdict) -> str:
+    """저장·응답에 쓰는 ``outcome`` 문자열 — 거부도 성공과 같은 형식으로 남긴다(§9)."""
+    if verdict is FlightStartVerdict.STARTED:
+        return verdict.value
+    return f"REFUSED_{verdict.value}"
 
 
 class RiskPolicyPackRegistry:
@@ -180,6 +246,7 @@ class EdgeDispatchStore:
         self._dispatches: dict[str, dict[str, Any]] = {}
         self._dispatch_order: list[str] = []
         self._activations: dict[str, dict[str, Any]] = {}
+        self._flight_start_receipts: dict[str, dict[str, Any]] = {}
         try:
             self._replay()
         except BaseException:
@@ -195,11 +262,20 @@ class EdgeDispatchStore:
             try:
                 kind = raw["kind"]
                 if kind == "dispatch-issued":
-                    envelope = MissionDispatchEnvelopeV1.model_validate(raw["envelope"])
+                    stored = raw["envelope"]
+                    if not isinstance(stored, Mapping):
+                        raise ValueError("dispatch journal envelope는 object여야 한다")
+                    envelope = MissionDispatchEnvelopeV1.model_validate(stored)
                     dispatch_id = envelope.dispatch_id
                     if dispatch_id in self._dispatches:
                         raise ValueError(f"중복 dispatchId: {dispatch_id!r}")
-                    self._dispatches[dispatch_id] = envelope.model_dump(by_alias=True, mode="json")
+                    # 모델은 **검증**에 쓰고 보관은 저널에 적힌 원문 그대로 한다.
+                    # 모델을 거쳐 다시 덤프하면 그 시점 스키마의 optional 필드가
+                    # 새로 생겨(예: v1.0 봉투에 kmzSha256=null) 서명 대상 바이트열이
+                    # 바뀌고, 그 봉투는 장비에서 INVALID_DISPATCH_SIGNATURE 가 된다
+                    # (dispatch.py 모듈 docstring — missionContract 원문 보존과 같은
+                    # 이유). 저널은 append-only 라 이 경로는 과거 발행분 전부를 탄다.
+                    self._dispatches[dispatch_id] = copy.deepcopy(dict(stored))
                     self._dispatch_order.append(dispatch_id)
                 elif kind == "dispatch-activated":
                     dispatch_id = raw["dispatchId"]
@@ -221,6 +297,35 @@ class EdgeDispatchStore:
                     if not receipt_is_valid or not recorded_at_is_valid:
                         raise ValueError(f"dispatch activation TTL 불일치: {dispatch_id!r}")
                     self._activations[dispatch_id] = receipt.model_dump(by_alias=True, mode="json")
+                elif kind == "dispatch-flight-start-reported":
+                    dispatch_id = raw["dispatchId"]
+                    if dispatch_id not in self._dispatches:
+                        raise ValueError(
+                            f"존재하지 않는 dispatch flight-start 보고: {dispatch_id!r}"
+                        )
+                    # activation-receipts 가 먼저 성립해야 한다 — Edge 가 활성화했다고
+                    # 보고한 적 없는 계약으로 무엇을 START 했다는 것인지 Core 는 설명할
+                    # 수 없다(§9, live 경로 record_flight_start 와 같은 전제).
+                    if dispatch_id not in self._activations:
+                        raise ValueError(f"activation 이전의 flight-start 보고: {dispatch_id!r}")
+                    if dispatch_id in self._flight_start_receipts:
+                        raise ValueError(f"중복 dispatch flight-start 보고: {dispatch_id!r}")
+                    flight_start_receipt = FlightStartReceiptV1.model_validate(raw["receipt"])
+                    envelope_raw = self._dispatches[dispatch_id]
+                    if not self._receipt_matches_dispatch(flight_start_receipt, envelope_raw):
+                        raise ValueError(f"dispatch flight-start binding 불일치: {dispatch_id!r}")
+                    recorded_at = self._aware_timestamp(
+                        raw["ts"], field="dispatch flight-start journal ts"
+                    )
+                    if flight_start_receipt.reported_at > recorded_at:
+                        raise ValueError(f"미래 flight-start 보고: {dispatch_id!r}")
+                    outcome = _flight_start_outcome(flight_start_receipt.verdict)
+                    if raw.get("outcome") != outcome:
+                        raise ValueError(f"flight-start outcome 불일치: {dispatch_id!r}")
+                    self._flight_start_receipts[dispatch_id] = {
+                        "receipt": flight_start_receipt.model_dump(by_alias=True, mode="json"),
+                        "outcome": outcome,
+                    }
                 else:
                     raise ValueError(f"알 수 없는 dispatch journal kind: {kind!r}")
             except (KeyError, TypeError, ValueError) as exc:
@@ -248,7 +353,7 @@ class EdgeDispatchStore:
 
     @staticmethod
     def _receipt_matches_dispatch(
-        receipt: ActivationReceiptV1, envelope_raw: Mapping[str, Any]
+        receipt: _BoundDispatchReceipt, envelope_raw: Mapping[str, Any]
     ) -> bool:
         return (
             receipt.dispatch_id == envelope_raw.get("dispatchId")
@@ -353,6 +458,13 @@ class EdgeDispatchStore:
                         validity=DispatchValidity(not_before=now, not_after=not_after),
                         private_key=self._private_key,
                         key_id=self._key_id,
+                        # 발급 원장의 값을 그대로 싣는다 — 여기서 KMZ 를 다시
+                        # 만들거나 해싱하지 않는다(그러면 "발급된 그 파일"이
+                        # 아니라 "지금 만들면 나오는 파일"을 보증하게 된다).
+                        # 계약 단독 발급이면 None 이고, 그건 "이 임무엔 KMZ 가
+                        # 없다"는 확정 사실로 서명 안에 실린다(장비는 그때 남아
+                        # 있던 이전 임무의 KMZ 를 지운다).
+                        kmz_sha256=mission.kmz_sha256,
                     )
                 except (TypeError, ValueError):
                     logger.error(
@@ -424,6 +536,76 @@ class EdgeDispatchStore:
             self._activations[receipt.dispatch_id] = receipt_wire
             return ActivationResult(EdgeDispatchVerdict.ACTIVATED, receipt=receipt)
 
+    def flight_start_receipt_of(self, dispatch_id: str) -> dict[str, Any] | None:
+        """그 dispatch 의 flight-start 보고 원문(``receipt``·``outcome``) — 없으면 ``None``.
+
+        상태가 아니라 영수증이다(ADR-KSI-021 §9) — ``MissionExecutionStore`` 를
+        옮기지 않으므로, 이 접수 사실을 조회할 수 있는 유일한 표면이 이것이다.
+        """
+        with self._lock:
+            stored = self._flight_start_receipts.get(dispatch_id)
+            return copy.deepcopy(stored) if stored is not None else None
+
+    def record_flight_start(
+        self, *, device_id: str, receipt: FlightStartReceiptV1, now: datetime
+    ) -> FlightStartResult:
+        """``POST .../flight-start-receipts`` 의 durable 접수 — ``record_activation`` 과 같은 모양.
+
+        ``MissionExecutionStatus`` 를 전이하지 않는다(ADR-KSI-021 §9) — "Edge 가
+        START 를 시도했다고 서명해 보고했다"는 사실에 대응하는 기존 상태가 없고,
+        이 receipt 가 그 상태를 새로 만들지 않는다(``IN_FLIGHT`` 는 존재하지
+        않는다). 거부(``verdict != STARTED``)도 성공과 **정확히 같은 저장 경로**를
+        타므로 "아무도 시도 안 했다"와 "게이트가 막았다"가 저널에서 구분된다.
+        """
+        if now.tzinfo is None:
+            raise ValueError("now는 tz-aware여야 한다")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return FlightStartResult(EdgeDispatchVerdict.STORE_UNAVAILABLE)
+            envelope = self._dispatches.get(receipt.dispatch_id)
+            if envelope is None or envelope.get("edgeDeviceId") != device_id:
+                return FlightStartResult(EdgeDispatchVerdict.NOT_FOUND)
+            # activation 사실이 없는 기체가 무엇을 START 했다는 것인지 Core 는
+            # 설명할 수 없다 — 순서를 지어내지 않는다(모듈 전역 "값을 지어내지
+            # 마라" 원칙의 이 엔드포인트 버전).
+            if receipt.dispatch_id not in self._activations:
+                return FlightStartResult(EdgeDispatchVerdict.NOT_ACTIVATED)
+            if receipt.edge_device_id != device_id or not self._receipt_matches_dispatch(
+                receipt, envelope
+            ):
+                return FlightStartResult(EdgeDispatchVerdict.RECEIPT_MISMATCH)
+            # activation-receipts 와 같은 이유로 미래 시각 주장을 거부한다
+            # (record_activation 의 같은 주석 참조) — 새 cross-device·timing
+            # oracle 을 만들지 않도록 verdict 는 일반형으로 유지한다.
+            if receipt.reported_at > now:
+                return FlightStartResult(EdgeDispatchVerdict.RECEIPT_MISMATCH)
+            outcome = _flight_start_outcome(receipt.verdict)
+            prior = self._flight_start_receipts.get(receipt.dispatch_id)
+            receipt_wire = receipt.model_dump(by_alias=True, mode="json")
+            if prior is not None:
+                if prior["receipt"] == receipt_wire and prior["outcome"] == outcome:
+                    return FlightStartResult(
+                        EdgeDispatchVerdict.FLIGHT_START_ALREADY_RECORDED, outcome=outcome
+                    )
+                return FlightStartResult(EdgeDispatchVerdict.RECEIPT_MISMATCH)
+            try:
+                self._journal.append(
+                    {
+                        "kind": "dispatch-flight-start-reported",
+                        "ts": now.isoformat(),
+                        "dispatchId": receipt.dispatch_id,
+                        "outcome": outcome,
+                        "receipt": receipt_wire,
+                    }
+                )
+            except JournalSealedError:
+                return FlightStartResult(EdgeDispatchVerdict.STORE_UNAVAILABLE)
+            self._flight_start_receipts[receipt.dispatch_id] = {
+                "receipt": receipt_wire,
+                "outcome": outcome,
+            }
+            return FlightStartResult(EdgeDispatchVerdict.FLIGHT_START_RECORDED, outcome=outcome)
+
 
 class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
@@ -450,6 +632,48 @@ class EdgeEvidenceUploadResponse(CamelModel):
 class ActivationReceiptResponse(CamelModel):
     verdict: EdgeDispatchVerdict
     dispatch_id: str
+
+
+class FlightStartReceiptV1(CamelModel):
+    """Edge가 Core에 기록을 요청하는 ``Action(START)`` 시도 사실 — 확정 event가 아니다.
+
+    ``ActivationReceiptV1``(ksi_mission_contracts.dispatch)과 같은 층위다: "기체가
+    날고 있다"는 상태가 아니라 "Edge가 START를 시도했다고 서명해 보고했다"는
+    사실이다(ADR-KSI-021 §9). ``verdict``가 ``STARTED``가 아니면
+    ``Action(START)`` 호출 자체에 도달하지 못했다는 뜻이고, 그때는
+    ``actionReturnCode``를 실을 수 없다 — 아직 부르지 않은 호출의 반환값은
+    존재하지 않는다.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    dispatch_id: str = Field(pattern=_PATH_SAFE_ID)
+    edge_device_id: str = Field(pattern=_PATH_SAFE_ID)
+    mission_id: str = Field(min_length=1)
+    mission_contract_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    risk_policy_pack_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reported_at: AwareDatetime
+    runtime_version: str = Field(min_length=1)
+    verdict: FlightStartVerdict
+    # ADR §5 [10] "UploadKmzFile → Action(START), 반환값을 기록한다" — 그 호출까지
+    # 도달했을 때만(``verdict == STARTED``) 존재하는 원문 반환코드.
+    action_return_code: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _return_code_only_when_started(self) -> FlightStartReceiptV1:
+        if self.verdict is not FlightStartVerdict.STARTED and self.action_return_code is not None:
+            raise ValueError(
+                "Action(START) 호출 전 거부(verdict != STARTED)에는 "
+                "actionReturnCode가 있을 수 없다"
+            )
+        return self
+
+
+class FlightStartReceiptResponse(CamelModel):
+    verdict: EdgeDispatchVerdict
+    dispatch_id: str
+    # 접수(RECORDED/ALREADY_RECORDED)에만 채워진다 — 거부 응답(404/409/422/503)은
+    # HTTPException 이라 이 모델을 거치지 않는다.
+    outcome: str | None = None
 
 
 def _edge_principal(principal: Principal) -> Principal:
@@ -506,7 +730,11 @@ def build_edge_dispatch_router(
                 mission_store=store._mission_store,  # noqa: SLF001 -- 같은 조립의 발급 원장
                 site_lifecycle=site_lifecycle,
             )
-        return MissionDispatchEnvelopeV1.model_validate(result.envelope)
+        # 서명된 봉투는 **발행 시점의 바이트 그대로** 나간다 — response_model 을
+        # 거쳐 재직렬화하면 그 사이 스키마에 생긴 optional 필드가 붙어 서명 대상이
+        # 바뀐다(store._replay 의 같은 주석 참조). response_model 선언은 그대로 두어
+        # OpenAPI 문서·계약 대조 게이트가 이 응답의 정본을 계속 가리키게 한다.
+        return JSONResponse(content=result.envelope)
 
     @router.post(
         "/missions/{dispatch_id}/activation-receipts",
@@ -546,6 +774,44 @@ def build_edge_dispatch_router(
                 now=datetime.now(UTC),
             )
         return ActivationReceiptResponse(verdict=result.verdict, dispatch_id=dispatch_id)
+
+    @router.post(
+        "/missions/{dispatch_id}/flight-start-receipts",
+        response_model=FlightStartReceiptResponse,
+        status_code=201,
+    )
+    def record_flight_start(
+        dispatch_id: str,
+        receipt: FlightStartReceiptV1,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.EDGE_MISSION_PULL)),  # noqa: B008
+    ) -> FlightStartReceiptResponse:
+        """ADR-KSI-021 §9 접수 — ``record_activation`` 과 정확히 같은 모양.
+
+        ``MissionExecutionStore`` 를 전이하지 않는다: 이 receipt 에 대응하는 실행
+        상태가 없고(``IN_FLIGHT`` 는 만들지 않는다), 없는 상태를 지어내느니 이 축을
+        아예 건드리지 않는 편이 정직하다.
+        """
+        edge = _edge_principal(principal)
+        assert edge.device_id is not None  # noqa: S101
+        if receipt.dispatch_id != dispatch_id:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        result = store.record_flight_start(
+            device_id=edge.device_id, receipt=receipt, now=datetime.now(UTC)
+        )
+        if result.verdict is EdgeDispatchVerdict.NOT_FOUND:
+            raise HTTPException(status_code=404, detail=_NOT_FOUND)
+        if result.verdict is EdgeDispatchVerdict.NOT_ACTIVATED:
+            raise HTTPException(status_code=409, detail=EdgeDispatchVerdict.NOT_ACTIVATED.value)
+        if result.verdict is EdgeDispatchVerdict.RECEIPT_MISMATCH:
+            raise HTTPException(status_code=422, detail=EdgeDispatchVerdict.RECEIPT_MISMATCH.value)
+        if result.verdict is EdgeDispatchVerdict.STORE_UNAVAILABLE:
+            raise HTTPException(status_code=503, detail="EDGE_DISPATCH_STORE_UNAVAILABLE")
+        if result.verdict is EdgeDispatchVerdict.FLIGHT_START_ALREADY_RECORDED:
+            response.status_code = 200
+        return FlightStartReceiptResponse(
+            verdict=result.verdict, dispatch_id=dispatch_id, outcome=result.outcome
+        )
 
     if event_store is not None and evidence_storage is not None:
         _mount_edge_evidence_route(router, event_store, evidence_storage)
@@ -670,6 +936,9 @@ __all__ = [
     "EdgeDispatchStore",
     "EdgeDispatchVerdict",
     "EdgeRuntimeProfileRegistry",
+    "FlightStartReceiptV1",
+    "FlightStartResult",
+    "FlightStartVerdict",
     "RiskPolicyPackRegistry",
     "build_edge_dispatch_router",
     "mount_edge_dispatch",

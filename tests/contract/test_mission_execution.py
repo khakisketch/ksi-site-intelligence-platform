@@ -136,6 +136,35 @@ def test_in_flight_status_does_not_exist() -> None:
     assert not any("FLYING" in member.value for member in MissionExecutionStatus)
 
 
+# ADR-KSI-021 §9 — packages/domain/src/ksi_domain/enums.py 무변경 고정.
+_DOMAIN_ENUMS_PATH = (
+    Path(__file__).resolve().parents[2] / "packages" / "domain" / "src" / "ksi_domain" / "enums.py"
+)
+_DOMAIN_ENUMS_SHA256 = "cc744a627b1328e921f48049c6e2f9308717e9604d9287920a8ef4c4c6f07932"
+
+
+def test_domain_enums_file_is_unchanged_by_flight_start_receipts_work() -> None:
+    """[핵심] ADR-KSI-021 §9 — 이 파일은 flight-start-receipts 접수 작업으로 1바이트도 안 바뀐다.
+
+    ``MissionExecutionStatus`` 에 ``IN_FLIGHT`` 류 멤버를 추가하고 싶은 유혹은 그
+    접수 작업 내내 존재한다(§9: "'기체가 날고 있다'는 상태가 아니다 — IN_FLIGHT를
+    만들지 않는다"). ``test_in_flight_status_does_not_exist`` 처럼 멤버 이름만
+    대조하면 그 유혹을 다 못 잡는다 — 문서·주석만 슬쩍 바뀌는 것도 놓친다. 그래서
+    파일 전체를 해시로 고정한다.
+
+    이 시험이 실패하면 두 경우뿐이다: (1) ADR-KSI-021 범위의 작업이 이 파일을
+    건드렸다 — 되돌려라. (2) 이 파일이 **이 ADR 과 무관한** 이유로 정당하게
+    바뀌었다 — 그렇다면 사람이 새 내용을 검토해 ``MissionExecutionStatus`` 멤버
+    집합이 그대로인지 확인한 뒤 아래 해시 상수를 갱신한다(이 시험 자체를 지우지
+    않는다).
+    """
+    digest = hashlib.sha256(_DOMAIN_ENUMS_PATH.read_bytes()).hexdigest()
+    assert digest == _DOMAIN_ENUMS_SHA256, (
+        "packages/domain/src/ksi_domain/enums.py 가 변경됐다 — "
+        "ADR-KSI-021 §9는 MissionExecutionStatus 에 멤버를 추가하지 않는다"
+    )
+
+
 # ── 원장 (MissionExecutionStore) ────────────────────────────────────────
 
 

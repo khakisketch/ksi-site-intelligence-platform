@@ -284,9 +284,13 @@ class _FakeDispatchTransport:
         self,
         pulls: list[CoreDispatchHttpResponse | CoreDispatchTransportError],
         receipts: list[CoreDispatchHttpResponse | CoreDispatchTransportError],
+        kmz: list[CoreDispatchHttpResponse | CoreDispatchTransportError] | None = None,
     ) -> None:
         self._pulls = pulls
         self._receipts = receipts
+        # 봉투가 kmzSha256 을 선언하지 않으면 companion 은 이 경로를 아예 타지
+        # 않는다 — 기본 빈 목록이 그 사실을 시험이 되짚게 한다(호출되면 IndexError).
+        self._kmz = kmz if kmz is not None else []
         self.paths: list[str] = []
         self.receipts: list[tuple[str, dict[str, Any]]] = []
 
@@ -302,6 +306,10 @@ class _FakeDispatchTransport:
     def pull_next(self) -> CoreDispatchHttpResponse:
         self.paths.append("GET /v1/edge-sync/missions/next")
         return self._next(self._pulls)
+
+    def download_mission_kmz(self, mission_id: str) -> CoreDispatchHttpResponse:
+        self.paths.append(f"GET /v1/missions/{mission_id}/kmz")
+        return self._next(self._kmz)
 
     def record_activation(
         self, dispatch_id: str, receipt: Any
@@ -372,7 +380,9 @@ def test_new_contract_schemas_validate_wire() -> None:
             (schemas / "edge-runtime-profile.v1.json").read_text(encoding="utf-8")
         ),
     }
-    schema = json.loads((schemas / "mission-dispatch-envelope.v1.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (schemas / "mission-dispatch-envelope.v1.1.json").read_text(encoding="utf-8")
+    )
     validator = Draft202012Validator(schema, resolver=RefResolver.from_schema(schema, store=store))
     validator.validate(raw)
     Draft202012Validator(store["https://ksi.example/schemas/risk-policy-pack.v1.json"]).validate(
@@ -845,6 +855,199 @@ def test_pinned_transport_rejects_fragmented_response_above_limit(
             body=None,
             maximum_response_bytes=3,
         )
+    assert not raised.value.retryable
+
+
+def test_pinned_transport_download_mission_kmz_issues_exact_route_method_and_accept_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[MEDIUM] ``download_mission_kmz`` 의 실제 HTTP 호출부를 실측 대조한다.
+
+    새 sync 시험은 전부 ``_FakeDispatchTransport`` 를 지나는데, 그 대역은 라우트
+    문자열 ``f"GET /v1/missions/{mission_id}/kmz"`` 를 **자기가 다시 만들어** 기록하고
+    시험은 그 기록을 대조할 뿐이었다 — 실제 라우트를 오타로 바꾸거나 mission_id
+    가드를 통째로 지워도 대역을 지나는 시험은 전부 통과했다. ``pull_next`` 를 실측
+    대조하는 위 시험(``test_pinned_transport_validates_spki_before_sending_bearer``)과
+    같은 관습을 ``download_mission_kmz`` 에도 편다 — 진짜 HTTP 클라이언트
+    (``http.client.HTTPSConnection``)를 지나는 GET method·정확한 경로 문자열·
+    Accept 헤더를 대조한다.
+    """
+    calls: list[object] = []
+    kmz_body = b"PK\x03\x04kmz-golden-bytes"
+
+    class _Certificate:
+        class _PublicKey:
+            @staticmethod
+            def public_bytes(*_args: object) -> bytes:
+                return b"test-spki"
+
+        @staticmethod
+        def public_key() -> _Certificate._PublicKey:
+            return _Certificate._PublicKey()
+
+    class _Socket:
+        @staticmethod
+        def getpeercert(*, binary_form: bool) -> bytes:
+            assert binary_form
+            return b"test-certificate"
+
+    class _Response:
+        status = 200
+
+        def __init__(self) -> None:
+            self._remaining = kmz_body
+
+        def read(self, maximum: int) -> bytes:
+            chunk = self._remaining[:maximum]
+            self._remaining = self._remaining[len(chunk) :]
+            return chunk
+
+        @staticmethod
+        def getheader(name: str, default: str) -> str:
+            assert name == "Content-Type"
+            return "application/vnd.google-earth.kmz"
+
+    class _Connection:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.sock: _Socket | None = None
+
+        def connect(self) -> None:
+            calls.append("connect")
+            self.sock = _Socket()
+
+        @staticmethod
+        def getresponse() -> _Response:
+            return _Response()
+
+        @staticmethod
+        def close() -> None:
+            calls.append("close")
+
+        @staticmethod
+        def request(
+            method: str, route: str, *, body: bytes | None, headers: dict[str, str]
+        ) -> None:
+            calls.append((method, route, body, headers))
+
+    monkeypatch.setattr(
+        edge_dispatch_sync.ssl, "create_default_context", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        edge_dispatch_sync.x509, "load_der_x509_certificate", lambda _raw: _Certificate()
+    )
+    monkeypatch.setattr(edge_dispatch_sync.http.client, "HTTPSConnection", _Connection)
+    pin = "sha256//" + base64.b64encode(hashlib.sha256(b"test-spki").digest()).decode("ascii")
+    transport = PinnedHttpsEdgeDispatchTransport(
+        core_base_url="https://core.example",
+        ca_bundle=tmp_path / "unused.pem",
+        core_spki_pin=pin,
+        bearer_token="edge-token",
+    )
+
+    response = transport.download_mission_kmz("mission-edge-001")
+
+    assert response == CoreDispatchHttpResponse(
+        200, kmz_body, "application/vnd.google-earth.kmz"
+    )
+    assert calls[0] == "connect"
+    assert calls[1] == (
+        "GET",
+        "/v1/missions/mission-edge-001/kmz",
+        None,
+        {
+            "Accept": "application/vnd.google-earth.kmz",
+            "Authorization": "Bearer edge-token",
+            "Host": "core.example",
+        },
+    )
+    assert calls[2] == "close"
+
+    # mission_id 는 경로-안전 문자 집합 밖으로 나가면 아예 요청을 만들지 않는다 —
+    # 그 가드가 지워지면 검증되지 않은 문자열이 그대로 경로에 꽂힌다.
+    calls.clear()
+    with pytest.raises(CoreDispatchTransportError) as raised:
+        transport.download_mission_kmz("../etc/passwd")
+    assert not raised.value.retryable
+    assert calls == []
+
+
+def test_pinned_transport_download_mission_kmz_enforces_8mib_response_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """8MiB 를 넘는 KMZ 응답은 조각난 TCP 배달로도 상한을 빠져나가지 못한다."""
+
+    class _Certificate:
+        class _PublicKey:
+            @staticmethod
+            def public_bytes(*_args: object) -> bytes:
+                return b"test-spki"
+
+        @staticmethod
+        def public_key() -> _Certificate._PublicKey:
+            return _Certificate._PublicKey()
+
+    class _Socket:
+        @staticmethod
+        def getpeercert(*, binary_form: bool) -> bytes:
+            assert binary_form
+            return b"test-certificate"
+
+    oversized = b"k" * (edge_activation._MAX_MISSION_KMZ_BYTES + 1)
+
+    class _Response:
+        status = 200
+
+        def __init__(self) -> None:
+            self._remaining = oversized
+
+        def read(self, maximum: int) -> bytes:
+            chunk = self._remaining[:maximum]
+            self._remaining = self._remaining[len(chunk) :]
+            return chunk
+
+        @staticmethod
+        def getheader(_name: str, default: str) -> str:
+            return "application/vnd.google-earth.kmz"
+
+    class _Connection:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.sock: _Socket | None = None
+
+        def connect(self) -> None:
+            self.sock = _Socket()
+
+        @staticmethod
+        def getresponse() -> _Response:
+            return _Response()
+
+        @staticmethod
+        def close() -> None:
+            return None
+
+        @staticmethod
+        def request(
+            _method: str, _route: str, *, body: bytes | None, headers: dict[str, str]
+        ) -> None:
+            assert body is None
+            assert headers["Accept"] == "application/vnd.google-earth.kmz"
+
+    monkeypatch.setattr(
+        edge_dispatch_sync.ssl, "create_default_context", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        edge_dispatch_sync.x509, "load_der_x509_certificate", lambda _raw: _Certificate()
+    )
+    monkeypatch.setattr(edge_dispatch_sync.http.client, "HTTPSConnection", _Connection)
+    pin = "sha256//" + base64.b64encode(hashlib.sha256(b"test-spki").digest()).decode("ascii")
+    transport = PinnedHttpsEdgeDispatchTransport(
+        core_base_url="https://core.example",
+        ca_bundle=tmp_path / "unused.pem",
+        core_spki_pin=pin,
+        bearer_token="edge-token",
+    )
+
+    with pytest.raises(CoreDispatchTransportError) as raised:
+        transport.download_mission_kmz("mission-edge-001")
     assert not raised.value.retryable
 
 
@@ -1403,3 +1606,342 @@ def test_risk_field_v1_1_requires_lineage_and_extruded_geometry() -> None:
         RiskField.model_validate(
             {**risk_field_wire_dict(field), "geometry": {"format": "GEOJSON_2D", "payload": {}}}
         )
+
+
+# ── KMZ digest 결속 (ADR-KSI-007 짝 불변식의 첫 기계 검증) ──────────────────
+#
+# KMZ 는 서명이 없다. 지금까지 "계약과 KMZ 가 같은 요청에서 나온 짝"이라는 것은
+# 발급 시점 서버 내부의 규약일 뿐이었고, 전달 경로 어디에서도 검증되지 않았다 —
+# 사람이 조종기에 옮긴 파일이 그 계약의 짝인지 확인할 방법이 아무 데도 없었다.
+# 아래 시험들이 고정하는 것은 그 검증이 **활성화를 실제로 막는가**다.
+
+_KMZ_BODY = b"PK\x03\x04ksi-golden-wayline-bytes"
+_KMZ_SHA256 = hashlib.sha256(_KMZ_BODY).hexdigest()
+
+
+def _envelope_with_kmz(
+    *,
+    kmz_sha256: str | None,
+    dispatch_id: str = "dispatch-001",
+    mission_key: Ed25519PrivateKey | None = None,
+    dispatch_key: Ed25519PrivateKey | None = None,
+) -> tuple[dict[str, Any], KeyRegistry, Ed25519PrivateKey]:
+    """:func:`_envelope` 와 같은 모양이되 KMZ digest 를 고른다.
+
+    같은 키를 두 번 넘길 수 있게 열어둔 이유는 "KMZ 를 실은 봉투를 활성화한 뒤 같은
+    장비·같은 신뢰로 KMZ 없는 봉투를 활성화한다"가 키 불일치 시나리오가 아니라
+    정상 재배포 시나리오여야 하기 때문이다.
+    """
+    mission_key = mission_key if mission_key is not None else Ed25519PrivateKey.generate()
+    dispatch_key = dispatch_key if dispatch_key is not None else Ed25519PrivateKey.generate()
+    signed_contract = sign_contract(_unsigned_contract(), mission_key, "mission-key")
+    envelope = build_mission_dispatch_envelope(
+        dispatch_id=dispatch_id,
+        edge_device_id="edge-001",
+        mission_contract=signed_contract,
+        risk_policy_pack=_pack(),
+        edge_runtime_profile=_profile(),
+        validity=DispatchValidity(
+            not_before=_NOW - timedelta(minutes=1), not_after=_NOW + timedelta(minutes=20)
+        ),
+        private_key=dispatch_key,
+        key_id="dispatch-key",
+        kmz_sha256=kmz_sha256,
+    )
+    return (
+        envelope.model_dump(by_alias=True, mode="json"),
+        _registry(mission_key, dispatch_key),
+        dispatch_key,
+    )
+
+
+def _candidate_file(tmp_path: Path, raw: dict[str, Any], name: str = "dispatch.json") -> Path:
+    path = tmp_path / name
+    path.write_text(json.dumps(raw, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    return path
+
+
+def _activate(
+    candidate: Path,
+    state_directory: Path,
+    registry: KeyRegistry,
+    *,
+    kmz_bytes: bytes | None,
+) -> Any:
+    return activate_mission_dispatch_file(
+        candidate,
+        consumer=MissionContractConsumer(registry=registry, state_dir=state_directory),
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        kmz_bytes=kmz_bytes,
+        now=_NOW,
+    )
+
+
+def test_activation_binds_the_kmz_and_publishes_its_marker_last(tmp_path: Path) -> None:
+    """[핵심] 정상 경로 — 바이트·사이드카가 남고, 활성화 표식이 **마지막**이다.
+
+    순서가 중요한 이유: 표식이 먼저 생기면 KMZ 쓰기가 실패한 순간 C++ 은 "활성화됐다"
+    고 읽으면서 경로는 이전 임무 것을 보게 된다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    state_directory = _private_state_directory(tmp_path)
+
+    result = _activate(
+        _candidate_file(tmp_path, raw), state_directory, registry, kmz_bytes=_KMZ_BODY
+    )
+
+    assert result.activated is True
+    assert result.dispatch_verdict is DispatchVerdict.VALID
+    kmz_path = state_directory / "active-mission.kmz"
+    sidecar_path = state_directory / "active-mission-kmz.native.v1"
+    assert kmz_path.read_bytes() == _KMZ_BODY
+    assert kmz_path.stat().st_mode & 0o077 == 0
+    sidecar = sidecar_path.read_text(encoding="ascii")
+    assert sidecar.startswith("KSI_EDGE_NATIVE_MISSION_KMZ_V1\n")
+    assert f"kmz_sha256={_KMZ_SHA256}\n" in sidecar
+    assert f"kmz_byte_count={len(_KMZ_BODY)}\n" in sidecar
+    assert f"mission_contract_digest={raw['missionContractDigest']}\n" in sidecar
+    assert (state_directory / "active-dispatch.native.v1").is_file()
+
+
+def test_wrong_kmz_bytes_refuse_the_whole_activation_without_touching_local_state(
+    tmp_path: Path,
+) -> None:
+    """[핵심] digest 불일치는 계약까지 포함해 활성화 **전체**를 거부한다.
+
+    거부가 판정 순서상 어디에 있는지가 이 시험의 요점이다: 로컬 상태가 하나도 움직이지
+    않았다는 것(활성 계약 파일 자체가 생기지 않았다는 것)이 "계약만 활성화되고 경로는
+    낡은 채로 남는" 상태를 구조적으로 배제한다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    state_directory = _private_state_directory(tmp_path)
+
+    result = _activate(
+        _candidate_file(tmp_path, raw), state_directory, registry, kmz_bytes=b"not-that-file"
+    )
+
+    assert result.activated is False
+    assert result.dispatch_verdict is DispatchVerdict.KMZ_DIGEST_MISMATCH
+    assert not (state_directory / "active-mission.kmz").exists()
+    assert not (state_directory / "active-mission-kmz.native.v1").exists()
+    assert not (state_directory / "active-contract.json").exists()
+    assert not (state_directory / "active-dispatch.native.v1").exists()
+
+
+def test_declared_kmz_digest_with_no_bytes_is_refused_not_treated_as_no_kmz(
+    tmp_path: Path,
+) -> None:
+    """못 받은 것과 받을 필요가 없는 것은 다르다.
+
+    봉투가 digest 를 선언했는데 바이트가 없으면, 그 임무를 "KMZ 없는 임무"로 강등해
+    활성화하는 순간 이 결속은 바이트를 빼는 것만으로 우회된다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    state_directory = _private_state_directory(tmp_path)
+
+    result = _activate(_candidate_file(tmp_path, raw), state_directory, registry, kmz_bytes=None)
+
+    assert result.activated is False
+    assert result.dispatch_verdict is DispatchVerdict.KMZ_DIGEST_MISMATCH
+
+
+def test_kmz_bytes_for_an_envelope_that_declares_none_are_refused(tmp_path: Path) -> None:
+    """반대 방향도 막는다 — 서명이 "KMZ 없음"이라고 말하는데 파일이 하나 있으면
+    그 파일의 출처를 설명하는 서명이 어디에도 없다."""
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=None)
+    state_directory = _private_state_directory(tmp_path)
+
+    result = _activate(
+        _candidate_file(tmp_path, raw), state_directory, registry, kmz_bytes=_KMZ_BODY
+    )
+
+    assert result.activated is False
+    assert result.dispatch_verdict is DispatchVerdict.KMZ_DIGEST_MISMATCH
+
+
+def test_crash_between_kmz_publish_and_activation_marker_recovers_on_retry(
+    tmp_path: Path,
+) -> None:
+    """[핵심, 부분 쓰기 복구] 표식만 없는 상태에서 재시도하면 그대로 복구된다.
+
+    활성화 도중 프로세스가 죽으면 "계약·경로는 새것, 표식은 없음"이 남는다 — C++ 에게는
+    capture-only 다. Core 는 ACK 없는 같은 dispatch 를 계속 돌려주므로 다음 호출이
+    같은 자리에서 재시도하고, 그때 **계약 검증을 다시 하지 않고** 표식만 다시 세운다
+    (``reused_activation``). 이 복구가 없으면 크래시 한 번이 임무를 영구히 막는다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    state_directory = _private_state_directory(tmp_path)
+    candidate = _candidate_file(tmp_path, raw)
+    first = _activate(candidate, state_directory, registry, kmz_bytes=_KMZ_BODY)
+    assert first.activated is True
+
+    # 표식 직전에 죽은 상태를 그대로 재현한다.
+    (state_directory / "active-dispatch.native.v1").unlink()
+    (state_directory / "active-mission-kmz.native.v1").unlink()
+
+    retried = _activate(candidate, state_directory, registry, kmz_bytes=_KMZ_BODY)
+
+    assert retried.activated is True
+    assert retried.reused_activation is True
+    assert retried.activation_receipt == first.activation_receipt
+    assert (state_directory / "active-dispatch.native.v1").is_file()
+    assert (state_directory / "active-mission-kmz.native.v1").is_file()
+    assert (state_directory / "active-mission.kmz").read_bytes() == _KMZ_BODY
+
+
+def test_null_digest_removes_the_kmz_a_previous_mission_left_behind(tmp_path: Path) -> None:
+    """[핵심, null digest 정리] 계약 단독 발급은 남아 있던 경로를 **지운다**.
+
+    지우지 않으면 KMZ 없는 임무를 활성화한 기체의 디스크에 이전 임무의 비행경로가
+    같은 파일명으로 남는다 — 그 파일을 집어 올리는 코드가 나중에 생기면 그 순간
+    "활성 계약과 다른 임무의 경로"가 성립한다. 없앨 수 있을 때 없앤다.
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    state_directory = _private_state_directory(tmp_path)
+    with_kmz, registry, _key = _envelope_with_kmz(
+        kmz_sha256=_KMZ_SHA256, mission_key=mission_key, dispatch_key=dispatch_key
+    )
+    assert _activate(
+        _candidate_file(tmp_path, with_kmz, "a.json"),
+        state_directory,
+        registry,
+        kmz_bytes=_KMZ_BODY,
+    ).activated
+    assert (state_directory / "active-mission.kmz").is_file()
+
+    without_kmz, _registry2, _key2 = _envelope_with_kmz(
+        kmz_sha256=None,
+        dispatch_id="dispatch-002",
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+    )
+    result = _activate(
+        _candidate_file(tmp_path, without_kmz, "b.json"), state_directory, registry, kmz_bytes=None
+    )
+
+    assert result.activated is True
+    assert not (state_directory / "active-mission.kmz").exists()
+    assert not (state_directory / "active-mission-kmz.native.v1").exists()
+
+
+def test_dispatch_sync_fetches_the_kmz_over_the_same_pinned_transport(tmp_path: Path) -> None:
+    """컴패니언이 봉투 pull 직후 같은 연결 설정으로 KMZ 를 받아 활성화까지 잇는다.
+
+    호출 순서 자체를 고정한다 — KMZ 경로에 쓰이는 missionId 는 **검증을 통과한**
+    봉투에서 나와야 하므로, pull 과 활성화 사이에 정확히 한 번 들어간다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    transport = _FakeDispatchTransport(
+        [
+            CoreDispatchHttpResponse(
+                200,
+                json.dumps(raw, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                "application/json; charset=utf-8",
+            )
+        ],
+        [CoreDispatchHttpResponse(201)],
+        [CoreDispatchHttpResponse(200, _KMZ_BODY, "application/vnd.google-earth.kmz")],
+    )
+    state_directory = _private_state_directory(tmp_path)
+
+    result = synchronize_edge_dispatch_once(
+        transport=transport,
+        registry=registry,
+        state_directory=state_directory,
+        edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert result.verdict is EdgeDispatchSyncVerdict.ACTIVATED_AND_RECORDED
+    assert transport.paths == [
+        "GET /v1/edge-sync/missions/next",
+        "GET /v1/missions/mission-edge-001/kmz",
+        "POST /v1/edge-sync/missions/dispatch-001/activation-receipts",
+    ]
+    assert (state_directory / "active-mission.kmz").read_bytes() == _KMZ_BODY
+
+
+def test_dispatch_sync_kmz_fetch_failure_does_not_activate_anything(tmp_path: Path) -> None:
+    """KMZ 를 못 받은 것은 "짝이 틀렸다"가 아니라 "아직 손에 없다"다.
+
+    활성화를 시도조차 하지 않고(영수증도 보내지 않고) 다음 호출로 미룬다 — Core 는
+    ACK 없는 같은 dispatch 를 계속 돌려주므로 재시도가 성립한다.
+    """
+    raw, registry, _key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    transport = _FakeDispatchTransport(
+        [
+            CoreDispatchHttpResponse(
+                200,
+                json.dumps(raw, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                "application/json; charset=utf-8",
+            )
+        ],
+        [CoreDispatchHttpResponse(201)],
+        [CoreDispatchTransportError(retryable=True)],
+    )
+    state_directory = _private_state_directory(tmp_path)
+
+    result = synchronize_edge_dispatch_once(
+        transport=transport,
+        registry=registry,
+        state_directory=state_directory,
+        edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert result.verdict is EdgeDispatchSyncVerdict.KMZ_FETCH_RETRYABLE_FAILURE
+    assert transport.paths == [
+        "GET /v1/edge-sync/missions/next",
+        "GET /v1/missions/mission-edge-001/kmz",
+    ]
+    assert not (state_directory / "active-contract.json").exists()
+    assert not (state_directory / "active-mission.kmz").exists()
+
+
+def test_v1_0_envelope_still_verifies_after_the_v1_1_field_was_added(tmp_path: Path) -> None:
+    """이미 발행돼 저널에 남은 v1.0 봉투가 계속 검증된다.
+
+    dispatch journal 은 append-only 라 재생이 과거 발행분 **전부**를 다시 통과시킨다 —
+    새 필드를 필수로 좁히면 안전과 무관한 이유로 Core 가 기동하지 못한다. 대신 v1.0 은
+    "kmzSha256 자리가 아예 없는 봉투"로만 유효하고, 그 봉투는 KMZ 없는 임무와 같은
+    취급을 받는다(활성화는 되고 남아 있던 경로는 지워진다).
+    """
+    raw, registry, dispatch_key = _envelope_with_kmz(kmz_sha256=None)
+    legacy = {key: value for key, value in raw.items() if key != "kmzSha256"}
+    legacy["schemaVersion"] = "1.0"
+    legacy = _resign_outer(legacy, dispatch_key)
+
+    verification = verify_mission_dispatch_envelope(
+        legacy, registry, expected_edge_device_id="edge-001", now=_NOW
+    )
+
+    assert verification.verdict is DispatchVerdict.VALID
+    assert verification.envelope is not None
+    assert verification.envelope.kmz_sha256 is None
+    state_directory = _private_state_directory(tmp_path)
+    assert _activate(
+        _candidate_file(tmp_path, legacy), state_directory, registry, kmz_bytes=None
+    ).activated
+
+
+def test_v1_1_envelope_that_omits_the_kmz_field_is_malformed() -> None:
+    """v1.1 인데 필드를 통째로 뺀 봉투는 거부된다.
+
+    "있으면 대조하고 없으면 넘어간다"였다면 이 결속은 키 하나를 지우는 것만으로
+    무력화된다 — 그래서 null 도 **선언**이어야 한다.
+    """
+    raw, registry, dispatch_key = _envelope_with_kmz(kmz_sha256=_KMZ_SHA256)
+    stripped = _resign_outer(
+        {key: value for key, value in raw.items() if key != "kmzSha256"}, dispatch_key
+    )
+
+    result = verify_mission_dispatch_envelope(
+        stripped, registry, expected_edge_device_id="edge-001", now=_NOW
+    )
+
+    assert result.verdict is DispatchVerdict.MALFORMED_DISPATCH

@@ -113,7 +113,16 @@ info:
   # 1.21.0 — Manifold 3 Edge shadow vertical slice: GET signed dispatch,
   # activation receipt, device-owned evidence upload. Core does not expose any
   # flight-control API and Edge cannot create CONFIRMED_EVENT.
-  version: 1.21.0
+  # 1.22.0 — KMZ 를 사람 손 없이 장비까지 보낸다. ① GET /v1/missions/{id}/kmz 가
+  # EDGE_MISSION_KMZ_READ(신설, EDGE_DEVICE 고정집합 전용)도 받는다 — 장비는 자기
+  # 배정 임무 하나로 범위가 좁고 불일치는 404 다. MISSIONS_READ 를 주지 않은 이유는
+  # 그 권한이 전 현장 임무 목록·상세·원본 미디어를 함께 열기 때문이다. ②
+  # MissionDispatchEnvelope 에 kmzSha256 추가(v1.1) — ADR-KSI-007 의 "같은 요청에서
+  # 짝으로 발급" 불변식이 지금까지 발급 시점의 서버 내부 규약일 뿐 전달 경로 어디서도
+  # 검증되지 않았다. 이제 Edge 가 받은 바이트의 sha256 이 서명된 값과 다르면 활성화
+  # 전체를 거부한다. 기존 표면을 깨지 않는 확장이라 minor(구 v1.0 봉투는 계속
+  # 검증된다 — dispatch journal 재생이 과거 레코드를 다시 통과시키기 때문이다).
+  version: 1.22.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -800,6 +809,43 @@ paths:
         '403': { description: EDGE_MISSION_PULL 권한 없음 }
         '404': { description: dispatch가 없거나 다른 device 소유(일반 문구) }
         '422': { description: RECEIPT_MISMATCH (미래 activatedAt 포함) 또는 FastAPI body validation failure }
+        '503': { description: EDGE_DISPATCH_STORE_UNAVAILABLE }
+  /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts:
+    post:
+      summary: Record that Edge signed and reported an Action(START) attempt (ADR-KSI-021 §9)
+      description: >-
+        EDGE_MISSION_PULL 권한 + EDGE_DEVICE 신원 필요. activation-receipts와 정확히
+        같은 모양이다. 이 receipt는 "기체가 날고 있다"는 상태가 아니라 "Edge가
+        START를 시도했다고 서명해 보고했다"는 사실이며, MissionExecutionStatus를
+        전이하지 않는다(IN_FLIGHT는 존재하지 않는다). verdict가 STARTED가 아니면
+        Action(START) 호출 자체에 도달하지 못했다는 뜻이고, 그때는
+        actionReturnCode를 실을 수 없다. 거부(verdict != STARTED)도 성공과 정확히
+        같은 저장 경로를 타므로 "아무도 시도 안 했다"와 "게이트가 막았다"가
+        저널에서 구분된다. activation 사실이 없는 기체의 보고는 순서를 지어내지
+        않고 거부한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: dispatch_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FlightStartReceiptV1' }
+      responses:
+        '201':
+          description: FLIGHT_START_RECORDED — durable receipt recorded (success or refusal alike)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FlightStartReceiptResponse' }
+        '200': { description: FLIGHT_START_ALREADY_RECORDED — exact retry }
+        '401': { description: 인증 실패 }
+        '403': { description: EDGE_MISSION_PULL 권한 없음 }
+        '404': { description: dispatch가 없거나 다른 device 소유(일반 문구) }
+        '409': { description: NOT_ACTIVATED — activation 사실 없는 기체의 보고 }
+        '422': { description: RECEIPT_MISMATCH 또는 FastAPI body validation failure }
         '503': { description: EDGE_DISPATCH_STORE_UNAVAILABLE }
   /v1/edge-sync/events/{event_key}/evidence:
     post:
@@ -3421,7 +3467,20 @@ paths:
     get:
       summary: Download the issued mission's KMZ file
       description: >-
-        MISSIONS_READ 권한 필요. 저장된 plan_request 로 매 조회마다 재생성해 반환한다
+        MISSIONS_READ **또는** EDGE_MISSION_KMZ_READ 권한 필요. 사람과 기체가 같은
+        표면을 쓰되 범위가 다르다: 사람은 아무 임무의 KMZ 를, EDGE_DEVICE 는
+        `assignedDeviceId` 가 자기인 임무 하나만 받는다. 불일치는 403 이 아니라
+        **404** 다 — 403 은 "그 missionId 는 존재한다"를 알려주는 존재 오라클이라
+        장비 토큰 하나로 임무 식별자 공간을 훑을 수 있게 된다(edge-sync 의
+        cross-device 404 와 같은 관습). 배정이 아예 없는(assignedDeviceId=null)
+        임무도 장비에게는 404 다.
+
+        신규 라우트를 만들지 않고 기존 표면의 권한을 넓힌다:
+        아래 4단 폴백·캐시·서명키가 한 클로저에 있어 두 번 배선하면 재생성 비용이
+        두 배가 되고, 폴백 하나가 한쪽에만 남으면 같은 임무의 KMZ 가 사람이 받을
+        때와 기체가 받을 때 달라진다.
+
+        저장된 plan_request 로 매 조회마다 재생성해 반환한다
         (build_kmz 계열은 시각·난수·UUID 의존이 없어 재생성이 결정론적이다). 재생성
         sha256 이 레코드의 kmzSha256 과 다르면 그 바이트를 발급된 파일로 내려주지
         않는다 — 이 엔드포인트가 약속하는 것은 "발급 당시 그 파일"이다.
@@ -3447,13 +3506,17 @@ paths:
           content:
             application/vnd.google-earth.kmz:
               schema: { type: string, format: binary }
-        '404': { description: 레코드 없음(일반 문구) 또는 KMZ 산출물이 없는 계약 단독 레코드 }
+        '404':
+          description: >-
+            레코드 없음(일반 문구), KMZ 산출물이 없는 계약 단독 레코드, 또는
+            EDGE_DEVICE 가 자기에게 배정되지 않은 임무를 요청함(셋이 같은 문구로
+            접힌다 — 존재 오라클 차단).
         '409':
           description: >-
             저장된 요청으로 산출물을 더 이상 재현할 수 없고(정책 변경 또는 해시
             불일치) **보관된 원본 바이트도 없다**(오브젝트 스토리지 없는 조립).
         '401': { description: 인증 실패 }
-        '403': { description: MISSIONS_READ 권한 없음 }
+        '403': { description: MISSIONS_READ·EDGE_MISSION_KMZ_READ 둘 다 없음 }
   /v1/missions/contracts:
     post:
       summary: Issue a signed Mission Contract (v1.2)
@@ -4022,6 +4085,12 @@ components:
         # versioned JSON Schema, not in FastAPI's generated component registry.
         edgeRuntimeProfile: { type: object, additionalProperties: true }
         edgeRuntimeProfileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        # v1.1 부터. bare hex 인 것은 발급 원장(MissionRecord.kmzSha256)의 표기를
+        # 그대로 옮기기 때문이다. null 은 "아직 모른다"가 아니라 "이 임무에는 KMZ 가
+        # 없다"(계약 단독 발급)는 확정 사실이고, 장비는 그때 남아 있던 이전 임무의
+        # KMZ 를 지운다. 봉투 안에서는 필수 필드다(v1.1 스키마 파일 참조) —
+        # 여기 required 에 없는 것은 FastAPI 모델에 기본값이 있어서일 뿐이다.
+        kmzSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
         validity: { $ref: '#/components/schemas/DispatchValidity' }
         signature: { $ref: '#/components/schemas/Ed25519Signature' }
     ActivationReceiptV1:
@@ -4041,14 +4110,57 @@ components:
     EdgeDispatchVerdict:
       type: string
       enum:
-        [ISSUED, EXISTING, NO_MISSION, ACTIVATED, ALREADY_ACTIVATED, NOT_FOUND,
-         RECEIPT_MISMATCH, STORE_UNAVAILABLE]
+        [ISSUED, EXISTING, NO_MISSION, NO_RUNTIME_PROFILE, ACTIVATED,
+         ALREADY_ACTIVATED, NOT_FOUND, RECEIPT_MISMATCH, STORE_UNAVAILABLE,
+         FLIGHT_START_RECORDED, FLIGHT_START_ALREADY_RECORDED, NOT_ACTIVATED]
     ActivationReceiptResponse:
       type: object
       required: [verdict, dispatchId]
       properties:
         verdict: { $ref: '#/components/schemas/EdgeDispatchVerdict' }
         dispatchId: { type: string }
+    FlightStartVerdict:
+      type: string
+      description: >-
+        Edge가 Action(START) 시도 결과로 보고하는 원인(ADR-KSI-021 §5 [0]~[10]).
+        STARTED만 Action(START) 호출까지 실제로 도달했다는 뜻이고, 나머지는
+        전부 그 호출 이전 관문에서 fail-closed로 멈췄다는 뜻이다.
+      enum:
+        [STARTED, STAGE_INSUFFICIENT, ACTIVATION_SNAPSHOT_INVALID,
+         FLIGHT_AUTHORIZATION_INVALID, ARMING_TOKEN_INVALID, KMZ_DIGEST_MISMATCH,
+         ENVELOPE_REVALIDATION_FAILED, CONSERVATIVE_CEILING_GUARD,
+         SUPERVISOR_NOT_READY, VEHICLE_PRECONDITION_FAILED]
+    FlightStartReceiptV1:
+      type: object
+      required:
+        [dispatchId, edgeDeviceId, missionId, missionContractDigest,
+         riskPolicyPackDigest, reportedAt, runtimeVersion, verdict]
+      properties:
+        schemaVersion: { const: '1.0' }
+        dispatchId: { type: string }
+        edgeDeviceId: { type: string }
+        missionId: { type: string }
+        missionContractDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        riskPolicyPackDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        reportedAt: { type: string, format: date-time }
+        runtimeVersion: { type: string }
+        verdict: { $ref: '#/components/schemas/FlightStartVerdict' }
+        actionReturnCode:
+          type: string
+          nullable: true
+          description: >-
+            Action(START) 호출까지 도달했을 때만(verdict == STARTED) 존재하는
+            원문 반환코드. 그 외에는 지어내지 않고 null이다.
+    FlightStartReceiptResponse:
+      type: object
+      required: [verdict, dispatchId]
+      properties:
+        verdict: { $ref: '#/components/schemas/EdgeDispatchVerdict' }
+        dispatchId: { type: string }
+        outcome:
+          type: string
+          nullable: true
+          description: 접수(RECORDED/ALREADY_RECORDED)에만 채워진다.
     EdgeEvidenceUploadRequest:
       type: object
       required: [artifactId, contentType, contentDigest]

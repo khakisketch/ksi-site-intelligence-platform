@@ -95,6 +95,18 @@ add_library(ksi_edge_runtime
   src/pipeline.cpp
   src/sync.cpp
   src/core_sync_http.cpp
+  # 활성화된 임무의 비행경로(KMZ) 판독. PSDK 심볼 0개 — 이 파일은 바이트가 서명된
+  # 봉투의 digest 와 짝인지만 판정하고, 그 바이트를 기체에 올리는 어댑터는 실기
+  # 확인 뒤에 별도로 붙는다.
+  src/mission_kmz.cpp
+  # 원본 사진 자동 회수. PSDK 심볼 0개 — 실기 미확인은 IMediaSourcePort 뒤로
+  # 전량 격리돼 있어 호스트 CI 에서 그대로 검증된다.
+  src/jpeg_dimensions.cpp
+  src/media_offload.cpp
+  # ADR-KSI-021 §5 — 임무 실행 START 전 안전 판단 + §2/§8 arming/abort 파일
+  # 프로토콜. PSDK 심볼 0개(파일 상단 주석 참조) — 어댑터는 실기 확인 후
+  # edge/psdk-app/src/flight_execution/ 에서 별도로 붙는다.
+  src/flight_execution.cpp
 )
 target_include_directories(ksi_edge_runtime PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -210,6 +222,17 @@ else()
   target_compile_definitions(ksi_edge_runtime PUBLIC KSI_EDGE_HAVE_CURL_TRANSPORT=0)
 endif()
 
+# ADR-KSI-021 §5[3]/§8 — 현장 arming/abort CLI. Python 컴패니언(3.8.10) 대신
+# C++ 인 이유는 두 파일 상단 주석 참조. 실배치 도구라 KSI_BUILD_TESTS 와
+# 무관하게 항상 빌드한다(테스트만 그 옵션 아래 게이팅한다).
+add_executable(ksi_edge_flight_arm tools/ksi_edge_flight_arm.cpp)
+target_link_libraries(ksi_edge_flight_arm PRIVATE ksi_edge_runtime)
+target_compile_options(ksi_edge_flight_arm PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_executable(ksi_edge_flight_abort tools/ksi_edge_flight_abort.cpp)
+target_link_libraries(ksi_edge_flight_abort PRIVATE ksi_edge_runtime)
+target_compile_options(ksi_edge_flight_abort PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 option(KSI_BUILD_TESTS "control plane 계약 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)
   enable_testing()
@@ -241,4 +264,7 @@ if(KSI_BUILD_TESTS)
   target_compile_options(tensorrt_differential_runner PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME tensorrt_differential_runner_contract
            COMMAND tensorrt_differential_runner --version)
+
+  add_test(NAME ksi_edge_flight_arm_contract COMMAND ksi_edge_flight_arm --version)
+  add_test(NAME ksi_edge_flight_abort_contract COMMAND ksi_edge_flight_abort --version)
 endif()

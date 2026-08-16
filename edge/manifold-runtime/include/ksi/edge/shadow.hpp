@@ -116,6 +116,21 @@ public:
                             control_plane::UtcMillis now_utc_ms,
                             IShadowActionJournal* journal);
 
+    // ── flight_execution.hpp [7] 재사용 지점(ADR-KSI-021 §5) ───────────────
+    //
+    // 읽기 전용이다 — last_wall_clock_utc_ms_ 를 갱신하지 않는다. 시계 역행은
+    // 이 러닝타임 전체가 공유하는 워터마크로 이미 잡힌다(Evaluate 가 프레임
+    // 루프의 매 heartbeat 마다 갱신한다); flight_execution 은 그 워터마크를
+    // 다시 쓰지 않고 대조만 한다("그 판정 재사용" — 새 시계 추적을 만들지
+    // 않는다).
+    control_plane::UtcMillis LastWallClockUtcMs() const { return last_wall_clock_utc_ms_; }
+    bool IsActivationUsable(control_plane::UtcMillis now_utc_ms) const {
+        return IsContextUsable(now_utc_ms);
+    }
+    control_plane::SupervisorState ControlPlaneStateAt(control_plane::UtcMillis now_utc_ms) const {
+        return control_plane_.StateAt(now_utc_ms);
+    }
+
 private:
     bool IsContextUsable(control_plane::UtcMillis now_utc_ms) const;
 

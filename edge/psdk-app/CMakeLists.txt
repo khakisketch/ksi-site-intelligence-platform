@@ -71,6 +71,17 @@ if(KSI_PSDK_APP_ENABLE_CORE_SYNC)
       "build the optional statically-linked libcurl HTTPS executor" FORCE)
 endif()
 
+# Media offload proves MediaOffloadWorker::RunOnce is actually driven by a
+# production main loop (previously only called from edge_runtime_tests.cpp).
+# No PSDK DjiCameraManager_* adapter exists anywhere in this repository yet,
+# so the camera-facing IMediaSourcePort stays FakeMediaSourcePort until a real
+# adapter lands -- enabling this option verifies the worker's periodic drive
+# loop, its Core-facing HTTPS transport, and its recoverable-failure handling
+# inside the packaged binary.  It does not recover a single real photo.
+option(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD
+       "enable the FakeMediaSourcePort-backed source-media offload worker (no PSDK camera adapter yet)"
+       OFF)
+
 if(COMMAND ksi_check_manifold3_toolchain_drift)
   ksi_check_manifold3_toolchain_drift()
 endif()
@@ -261,6 +272,19 @@ if(KSI_PSDK_APP_ENABLE_CORE_SYNC)
   endif()
 else()
   target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_CORE_SYNC_CONFIGURED=0)
+endif()
+if(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD)
+  if(NOT KSI_PSDK_APP_ENABLE_CORE_SYNC)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires KSI_PSDK_APP_ENABLE_CORE_SYNC=ON; it reuses that HTTPS executor and bearer token rather than opening a second one")
+  endif()
+  if(NOT KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION=ON; the rights marker lives beside the activation snapshot")
+  endif()
+  target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=1)
+else()
+  target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=0)
 endif()
 if(KSI_PSDK_APP_HAVE_LIBUSB)
   target_compile_definitions(ksi_psdk_app PRIVATE LIBUSB_INSTALLED)
