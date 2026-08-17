@@ -1,9 +1,18 @@
-// PRD §7.1 taxonomy — 명칭·순서를 그대로 유지한다(docs/architecture/03_DASHBOARD_UX_GOALS.md §6).
+// PRD §7.1 taxonomy — **자리(key)와 순서**를 그대로 유지한다
+// (docs/architecture/03_DASHBOARD_UX_GOALS.md §6).
 // 구현된 항목만 href 를 실제 라우트로, 나머지는 /coming-soon 접두 라우트로 연결한다.
 // 2026-08-08: Phase 3/4 Core API 신설로 assets(결함 후보)·world(장비 운동상태)·
 // reports(변화 탐지)·settings(장비 지원단계) 4섹션이 실동작으로 전환됐다.
 // fleet 은 Phase 5(Dock 하드웨어 검증 선행), data 는 데이터셋·모델 라이선스
 // 레지스트리가 아직 코드로 없어 준비 중으로 남는다 — 링크를 숨기지 않는다(UX 목표 §6).
+//
+// 2026-08-17: **label 은 PRD 슬롯 이름이 아니라 그 자리가 지금 실제로 보여주는 것**을
+// 적는다. 실동작 전환 때 두 슬롯이 이름보다 훨씬 좁은 내용으로 채워졌고, 슬롯 이름을
+// 그대로 제목으로 쓰면서 화면이 약속하지 않은 범위를 약속했다 — assets 는 자산대장이
+// 없는데 "자산·시설물"이었고(본문에 "이 화면은 자산대장이 아닙니다" 고지가 붙어 있었다),
+// settings 는 장비 지원단계 표 하나인데 "설정"이었다(2026-08-13 UI 감사 21·24번).
+// ADR-KSI-020 §5 동결로 없는 기능을 만들어 이름을 맞출 수 없으므로 이름을 내용에 맞춘다.
+// key·href·순서는 그대로다 — 계정·조직 설정이 실제로 생기면 label 만 "설정"으로 되돌린다.
 
 export interface NavItem {
   key: string;
@@ -20,12 +29,12 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "sites", label: "현장", href: "/sites", implemented: true, mobile: true },
   { key: "missions", label: "임무", href: "/missions", implemented: true, mobile: true },
   { key: "events", label: "이벤트", href: "/events", implemented: true, mobile: true },
-  { key: "assets", label: "자산·시설물", href: "/assets", implemented: true, mobile: false },
+  { key: "assets", label: "결함 후보", href: "/assets", implemented: true, mobile: false },
   { key: "world", label: "2D·3D World", href: "/world", implemented: true, mobile: false },
   { key: "reports", label: "보고서", href: "/reports", implemented: true, mobile: false },
   { key: "fleet", label: "Fleet·Edge", href: "/coming-soon/fleet", implemented: false, mobile: false },
   { key: "data", label: "Data·AI", href: "/coming-soon/data", implemented: false, mobile: false },
-  { key: "settings", label: "설정", href: "/settings", implemented: true, mobile: false },
+  { key: "settings", label: "장비 지원단계", href: "/settings", implemented: true, mobile: false },
 ];
 
 // 데스크톱 사이드 10항목(PRD §7.1) — "오늘"은 모바일 전용 별칭이라 데스크톱엔 제외.
