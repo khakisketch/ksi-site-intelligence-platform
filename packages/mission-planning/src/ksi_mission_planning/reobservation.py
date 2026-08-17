@@ -42,6 +42,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -116,6 +117,20 @@ class BaselineCapture:
     front_overlap: float
     side_overlap: float
     camera: CameraSpec
+
+    def __post_init__(self) -> None:
+        # fail closed: NaN·inf 는 아래쪽 비교(`front < MIN_FRONT_OVERLAP`)를
+        # 조용히 통과한다(`float('nan') < x` 는 항상 False) — INV-015 하한
+        # 클램프가 걸리지 않은 채로 새어나간다. 생성 시점에 거부한다.
+        for name, value in (
+            ("front_overlap", self.front_overlap),
+            ("side_overlap", self.side_overlap),
+        ):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"{name} 는 finite 여야 한다: {value!r} — "
+                    "NaN·inf 는 INV-015 하한 클램프를 우회한다"
+                )
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,21 +20,12 @@ import {
   ackSlaMs,
   ackSlaState,
   formatElapsed,
+  formatTargetDuration,
   isSettled,
   isUnattended,
   type SlaState,
 } from "@/lib/core-api/triage";
 import { formatKoreanDateTime } from "@/lib/datetime";
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-function formatTargetDuration(ms: number): string {
-  if (ms >= DAY) return `${Math.round(ms / DAY)}일`;
-  if (ms >= HOUR) return `${Math.round(ms / HOUR)}시간`;
-  return `${Math.max(1, Math.round(ms / MINUTE))}분`;
-}
 
 const FILL_CLASS: Record<EventSeverity, string> = {
   CRITICAL: "bg-crit",

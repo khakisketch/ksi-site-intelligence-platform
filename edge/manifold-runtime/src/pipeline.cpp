@@ -60,10 +60,13 @@ DfineRawOutput InferenceTensorOutput::View() const {
     return {logits.data(), boxes_cxcywh.data(), query_count, class_count};
 }
 
-WorldStateTracker::WorldStateTracker(float association_iou_threshold, std::size_t max_tracks)
-    : association_iou_threshold_(association_iou_threshold), max_tracks_(max_tracks) {
+WorldStateTracker::WorldStateTracker(float association_iou_threshold, std::size_t max_tracks,
+                                     std::uint64_t max_missed_frames)
+    : association_iou_threshold_(association_iou_threshold),
+      max_tracks_(max_tracks),
+      max_missed_frames_(max_missed_frames) {
     if (!std::isfinite(association_iou_threshold_) || association_iou_threshold_ < 0.0F ||
-        association_iou_threshold_ > 1.0F || max_tracks_ == 0) {
+        association_iou_threshold_ > 1.0F || max_tracks_ == 0 || max_missed_frames_ == 0) {
         throw std::invalid_argument("invalid world tracker configuration");
     }
 }
@@ -75,6 +78,16 @@ std::vector<TrackedWorldEntity> WorldStateTracker::Update(
     if (!alignment.sample.has_value()) {
         return updated;
     }
+    ++frame_counter_;
+    // Evict tracks that have gone too long without a match, before this
+    // frame's detections are matched, so a freed slot is never mistaken for
+    // the track that just vacated it.
+    tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
+                                 [this](const Track& track) {
+                                     return frame_counter_ - track.last_seen_frame >
+                                            max_missed_frames_;
+                                 }),
+                 tracks_.end());
     std::vector<bool> assigned(tracks_.size(), false);
     for (const Detection& detection : detections) {
         if (!IsFiniteDetection(detection)) {
@@ -107,7 +120,7 @@ std::vector<TrackedWorldEntity> WorldStateTracker::Update(
             entity.telemetry = *alignment.sample;
             entity.alignment_verdict = alignment.verdict;
             entity.observation_count = 1;
-            tracks_.push_back({entity});
+            tracks_.push_back({entity, frame_counter_});
             assigned.push_back(true);
             updated.push_back(entity);
             continue;
@@ -118,6 +131,7 @@ std::vector<TrackedWorldEntity> WorldStateTracker::Update(
         track.entity.telemetry = *alignment.sample;
         track.entity.alignment_verdict = alignment.verdict;
         ++track.entity.observation_count;
+        track.last_seen_frame = frame_counter_;
         assigned[best_index] = true;
         updated.push_back(track.entity);
     }
@@ -288,6 +302,17 @@ PipelineReport EdgePipeline::ProcessOne(IFrameInference* inference, IWorldProjec
         }
         const WorldEntityVerdict world_entity =
             ValidateNativeWorldEntity(projection_output.world_entity);
+        // TODO(INV-025): this guard is currently unreachable -- calibrated_projector.cpp
+        // unconditionally sets localization_state to "INSUFFICIENT_OBSERVATION" and no
+        // code path here or in calibrated_projector.cpp ever assigns "CONFIRMED". It is
+        // also the wrong check even if it were reachable: INV-025 requires >=2 *distinct
+        // calibrated camera poses* with CALIBRATED_POSE-kind evidence, and
+        // ``observation_count`` (an IoU-tracker frame-match counter) can grow past 2 from
+        // repeated matches against the same camera pose with no new geometric constraint.
+        // Left as-is (not rewritten to check real pose/evidence-kind data) so this stays a
+        // small, auditable placeholder rather than a speculative expansion of
+        // calibrated_projector.cpp's localization_state logic, which is a separate,
+        // larger feature. Revisit together if/when that logic starts assigning CONFIRMED.
         if (world_entity != WorldEntityVerdict::kValid ||
             (entity.observation_count < 2U &&
              projection_output.world_entity.localization_state == "CONFIRMED")) {

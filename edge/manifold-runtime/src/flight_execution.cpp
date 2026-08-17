@@ -1615,8 +1615,16 @@ KmzEnvelopeRederivationResult RederiveKmzAltitudeEnvelope(const std::string& kmz
         if (filename == kWaylinesEntryName) {
             std::string decompressed;
             if (header.method == 0U) {
-                if (header.compressed_size != header.uncompressed_size ||
-                    header.uncompressed_size > kMaximumWaylinesUncompressedBytes) {
+                // STORED entries are uncompressed by ZIP-format definition -- the two
+                // sizes must be equal. A mismatch here is not an oversized payload, it
+                // is a malformed/corrupted/tampered local header (e.g. a hand-crafted or
+                // bit-flipped KMZ); report it as such rather than as kWaylinesTooLarge so
+                // a 10-byte entry with mismatched sizes isn't misreported as "too large".
+                if (header.compressed_size != header.uncompressed_size) {
+                    result.verdict = KmzEnvelopeRederivationVerdict::kZipMalformed;
+                    return result;
+                }
+                if (header.uncompressed_size > kMaximumWaylinesUncompressedBytes) {
                     result.verdict = KmzEnvelopeRederivationVerdict::kWaylinesTooLarge;
                     return result;
                 }

@@ -41,6 +41,12 @@ typedef struct {
     bool is_usb_host;
     int ep_in_fd;  /* device 모드(FunctionFS)에서만 유효 */
     int ep_out_fd; /* device 모드(FunctionFS)에서만 유효 */
+    /* g_active_channels_mutex 로 보호되는 in-flight WriteData/ReadData 호출 수.
+     * DeInit 은 채널을 배열에서 뺀 뒤 이 값이 0 이 될 때까지 기다렸다가 free() 한다
+     * (아래 AcquireActiveChannel/ReleaseActiveChannel/UnregisterAndDrainChannel 참조) —
+     * blocking I/O(write/read, libusb_bulk_transfer(timeout=0)) 도중 DeInit 이 같은
+     * 핸들을 free() 하는 use-after-free 창을 없앤다. */
+    int refcount;
 #ifdef LIBUSB_INSTALLED
     libusb_context *usb_context;         /* host 모드에서만 유효 */
     libusb_device_handle *usb_handle;    /* host 모드에서만 유효 */
@@ -62,6 +68,10 @@ typedef struct {
 #define KSI_USB_BULK_MAX_ACTIVE_CHANNELS 8
 static KsiUsbBulkChannel *g_active_channels[KSI_USB_BULK_MAX_ACTIVE_CHANNELS];
 static pthread_mutex_t g_active_channels_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* refcount 가 0 으로 드레인될 때마다 broadcast 된다 — DeInit 이 기다리는 신호.
+ * 항상 g_active_channels_mutex 를 잡은 채로 wait/signal 한다(모든 갱신이 이미
+ * 그 락 아래에 있으므로 별도 락은 필요 없다). */
+static pthread_cond_t g_active_channels_drained = PTHREAD_COND_INITIALIZER;
 
 static bool RegisterActiveChannel(KsiUsbBulkChannel *channel)
 {
@@ -78,26 +88,57 @@ static bool RegisterActiveChannel(KsiUsbBulkChannel *channel)
     return registered;
 }
 
-static void UnregisterActiveChannel(const KsiUsbBulkChannel *channel)
+/* 배열에서 channel 을 찾으면 그 자리에서 즉시 refcount++ 하고 포인터를 반환한다
+ * ("살아있는 핸들인지 확인"과 "그 핸들을 계속 쓰겠다고 예약"을 한 락 구간에서
+ * 원자적으로 처리 — WriteData/ReadData 전용). DeInit 이 이미 배열에서 뺀 뒤라면
+ * (드레인 대기 중이거나 free 이후) NULL 을 반환하므로 호출자는 절대 역참조하지
+ * 않는다. */
+static KsiUsbBulkChannel *AcquireActiveChannel(const void *handle)
 {
+    KsiUsbBulkChannel *found = NULL;
     pthread_mutex_lock(&g_active_channels_mutex);
     for (int i = 0; i < KSI_USB_BULK_MAX_ACTIVE_CHANNELS; ++i) {
-        if (g_active_channels[i] == channel) {
-            g_active_channels[i] = NULL;
+        if (g_active_channels[i] == handle) {
+            found = g_active_channels[i];
+            found->refcount++;
             break;
         }
     }
     pthread_mutex_unlock(&g_active_channels_mutex);
+    return found;
 }
 
-static bool IsActiveChannel(const void *handle)
+/* AcquireActiveChannel 로 얻은 참조를 반납한다. WriteData/ReadData 는 블로킹
+ * I/O 가 끝난 뒤(성공/실패 무관) 반드시 이걸 호출해야 DeInit 의 드레인 대기가
+ * 풀린다. */
+static void ReleaseActiveChannel(KsiUsbBulkChannel *channel)
+{
+    pthread_mutex_lock(&g_active_channels_mutex);
+    channel->refcount--;
+    if (channel->refcount == 0) {
+        pthread_cond_broadcast(&g_active_channels_drained);
+    }
+    pthread_mutex_unlock(&g_active_channels_mutex);
+}
+
+/* DeInit 전용: channel 을 배열에서 빼서 새 Acquire 를 더 이상 못 받게 막은 뒤,
+ * 이미 진행 중인(블로킹 I/O 안에 있는) 호출들의 refcount 가 0 으로 드레인될
+ * 때까지 같은 락 아래에서 pthread_cond_wait 로 기다린다. 반환값이 false 면
+ * handle 이 애초에 활성 채널이 아니었다는 뜻 — 호출자는 free() 하면 안 된다. */
+static bool UnregisterAndDrainChannel(KsiUsbBulkChannel *channel)
 {
     bool found = false;
     pthread_mutex_lock(&g_active_channels_mutex);
     for (int i = 0; i < KSI_USB_BULK_MAX_ACTIVE_CHANNELS; ++i) {
-        if (g_active_channels[i] == handle) {
+        if (g_active_channels[i] == channel) {
+            g_active_channels[i] = NULL;
             found = true;
             break;
+        }
+    }
+    if (found) {
+        while (channel->refcount > 0) {
+            pthread_cond_wait(&g_active_channels_drained, &g_active_channels_mutex);
         }
     }
     pthread_mutex_unlock(&g_active_channels_mutex);
@@ -200,11 +241,16 @@ static T_DjiReturnCode KsiUsbBulk_Init(T_DjiHalUsbBulkInfo usbBulkInfo, T_DjiUsb
 
 static T_DjiReturnCode KsiUsbBulk_DeInit(T_DjiUsbBulkHandle usbBulkHandle)
 {
-    if (usbBulkHandle == NULL || !IsActiveChannel(usbBulkHandle)) {
+    if (usbBulkHandle == NULL) {
         return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
     KsiUsbBulkChannel *channel = (KsiUsbBulkChannel *) usbBulkHandle;
-    UnregisterActiveChannel(channel);
+    /* 배열에서 빼고, 이미 진행 중인 WriteData/ReadData 가 다 끝날 때까지(refcount==0)
+     * 기다린 뒤에야 아래에서 fd 를 닫고 free() 한다 — 그 전에는 이 핸들을 참조하는
+     * 다른 스레드의 블로킹 I/O 가 살아있을 수 있다. */
+    if (!UnregisterAndDrainChannel(channel)) {
+        return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
+    }
     if (!channel->is_usb_host) {
         if (channel->ep_in_fd >= 0) {
             close(channel->ep_in_fd);
@@ -231,68 +277,83 @@ static T_DjiReturnCode KsiUsbBulk_DeInit(T_DjiUsbBulkHandle usbBulkHandle)
 static T_DjiReturnCode KsiUsbBulk_WriteData(T_DjiUsbBulkHandle usbBulkHandle, const uint8_t *buf, uint32_t len,
                                              uint32_t *realLen)
 {
-    if (!IsActiveChannel(usbBulkHandle)) {
-        /* 우리가 내준 적 없는 핸들 — 위 주석 참조(호스트 실측에서 실제로 관측된 경로).
-         * 역참조하지 않고 정직하게 실패한다. */
+    /* AcquireActiveChannel 이 "활성 채널인지 확인"과 "refcount++ 로 이 호출이 끝날
+     * 때까지 DeInit 의 free() 를 막기" 를 한 락 구간에서 원자적으로 한다 — 확인과
+     * 역참조 사이에 DeInit 이 끼어들 틈이 없다(위 usb_bulk-uaf 주석 참조). */
+    KsiUsbBulkChannel *channel = AcquireActiveChannel(usbBulkHandle);
+    if (channel == NULL) {
+        /* 우리가 내준 적 없는(또는 이미 DeInit 중인) 핸들 — 역참조하지 않고
+         * 정직하게 실패한다. */
         *realLen = 0;
         return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
-    KsiUsbBulkChannel *channel = (KsiUsbBulkChannel *) usbBulkHandle;
+    T_DjiReturnCode result;
     if (!channel->is_usb_host) {
         ssize_t written = write(channel->ep_out_fd, buf, len);
         if (written < 0) {
             *realLen = 0;
-            return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+        } else {
+            *realLen = (uint32_t) written;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
         }
-        *realLen = (uint32_t) written;
-        return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
-    }
+    } else {
 #ifdef LIBUSB_INSTALLED
-    int transferred = 0;
-    int rc = libusb_bulk_transfer(channel->usb_handle, channel->endpoint_out, (unsigned char *) buf,
-                                   (int) len, &transferred, 0);
-    if (rc != 0) {
-        *realLen = 0;
-        return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
-    }
-    *realLen = (uint32_t) transferred;
-    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+        int transferred = 0;
+        int rc = libusb_bulk_transfer(channel->usb_handle, channel->endpoint_out, (unsigned char *) buf,
+                                       (int) len, &transferred, 0);
+        if (rc != 0) {
+            *realLen = 0;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+        } else {
+            *realLen = (uint32_t) transferred;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+        }
 #else
-    *realLen = 0;
-    return DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT;
+        *realLen = 0;
+        result = DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT;
 #endif
+    }
+    ReleaseActiveChannel(channel);
+    return result;
 }
 
 static T_DjiReturnCode KsiUsbBulk_ReadData(T_DjiUsbBulkHandle usbBulkHandle, uint8_t *buf, uint32_t len,
                                             uint32_t *realLen)
 {
-    if (!IsActiveChannel(usbBulkHandle)) {
+    KsiUsbBulkChannel *channel = AcquireActiveChannel(usbBulkHandle);
+    if (channel == NULL) {
         *realLen = 0;
         return DJI_ERROR_SYSTEM_MODULE_CODE_INVALID_PARAMETER;
     }
-    KsiUsbBulkChannel *channel = (KsiUsbBulkChannel *) usbBulkHandle;
+    T_DjiReturnCode result;
     if (!channel->is_usb_host) {
         ssize_t bytes_read = read(channel->ep_in_fd, buf, len);
         if (bytes_read < 0) {
             *realLen = 0;
-            return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+        } else {
+            *realLen = (uint32_t) bytes_read;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
         }
-        *realLen = (uint32_t) bytes_read;
-        return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
-    }
+    } else {
 #ifdef LIBUSB_INSTALLED
-    int transferred = 0;
-    int rc = libusb_bulk_transfer(channel->usb_handle, channel->endpoint_in, buf, (int) len, &transferred, 0);
-    if (rc != 0) {
-        *realLen = 0;
-        return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
-    }
-    *realLen = (uint32_t) transferred;
-    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+        int transferred = 0;
+        int rc = libusb_bulk_transfer(channel->usb_handle, channel->endpoint_in, buf, (int) len, &transferred, 0);
+        if (rc != 0) {
+            *realLen = 0;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
+        } else {
+            *realLen = (uint32_t) transferred;
+            result = DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+        }
 #else
-    *realLen = 0;
-    return DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT;
+        *realLen = 0;
+        result = DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT;
 #endif
+    }
+    ReleaseActiveChannel(channel);
+    return result;
 }
 
 static T_DjiReturnCode KsiUsbBulk_GetDeviceInfo(T_DjiHalUsbBulkDeviceInfo *deviceInfo)

@@ -203,12 +203,14 @@
               "const": "RETURN_ENERGY_PLUS_RESERVE"
             },
             "defaultReservePercent": {
+              "description": "INV-013: RTH 예비 배터리 비율. 15 미만은 DJI의 더 보수적인 저배터리 보호판단을 무시할 위험이 있어 허용하지 않는다 (바닥값은 대표자 확정 대기 — TODO 참고).",
               "type": "number",
               "default": 30,
-              "minimum": 0,
+              "minimum": 15,
               "maximum": 100
             },
             "siteOverrideAllowed": {
+              "description": "예약됨: 이 계약을 발급한 서버가 현장별로 defaultReservePercent를 조정했음을 나타내려는 의도였으나, 그 조정값을 담는 별도 필드가 아직 없다 — 조정 결과는 defaultReservePercent 자체에 담긴다. 이 필드는 현재 어떤 코드 경로에서도 true 외의 값을 내보내거나 읽지 않는다(reserved, unenforced).",
               "const": true
             }
           },

@@ -233,19 +233,25 @@ def run_job(
     now_message(f"[{job_id}] lease 취득")
     core.acquire_lease(job_id)
     job_input = core.get_input(job_id)
-    if job_input.site_crs is None:
-        # 현장 원장 이상 상태 — 여기서 계속하면 crs 없는 산출물을 만들게 된다.
-        raise WorkerRunError(f"[{job_id}] siteCrs 가 없다 — 현장 원장 이상 상태")
-
-    if job_input.status == "QUEUED":
-        core.transition(job_id, "RUNNING")
-        now_message(f"[{job_id}] RUNNING")
 
     # 이 작업이 work_dir 에 실제로 만든 파일 — 성공이든 실패든 finally 에서
     # 지운다. 다운로드를 시도하기 *전에* 경로를 넣는다 — 중간에 끊겨도(디스크
     # 가득·네트워크 오류) 부분 파일이 남을 수 있고, 그것도 청소 대상이다.
     downloaded_paths: list[Path] = []
     try:
+        if job_input.site_crs is None:
+            # 현장 원장 이상 상태 — 여기서 계속하면 crs 없는 산출물을 만들게 된다.
+            # try 안에서 던져야 아래 except 가 FAILED 를 Core 에 보고한다 —
+            # try 밖에서 던지면(과거 버그) 이 예외가 FAILED 전이 없이 그냥
+            # 새어나가 작업이 QUEUED 에 갇히고, list_pending 이 오래된 순으로
+            # 돌려주는 한 이 작업이 매 스캔마다 선두를 막아 다른 작업도 전부
+            # 멈춘다.
+            raise WorkerRunError(f"[{job_id}] siteCrs 가 없다 — 현장 원장 이상 상태")
+
+        if job_input.status == "QUEUED":
+            core.transition(job_id, "RUNNING")
+            now_message(f"[{job_id}] RUNNING")
+
         # ── 4. 실측 + 보고(+ 동적 객체 탐지 — 이미 로컬에 받은 그 사진으로) ──
         measurements: list[MeasuredImage] = []
         masks: list[MaskImage] = []

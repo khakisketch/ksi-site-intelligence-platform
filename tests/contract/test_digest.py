@@ -93,6 +93,35 @@ def test_preexisting_target_is_not_touched_when_verification_never_runs(
     assert target.read_bytes() == _HELLO
 
 
+def test_successful_fetch_hashes_the_file_only_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[회귀] 성공 경로에서 ``sha256_file`` 이 두 번(본문에서 한 번, finally 에서
+    다시 한 번) 불리던 버그 — 대용량 모델 파일마다 검증 시간이 배로 들었다.
+    이제 이미 구한 ``actual`` 을 finally 에서 재사용해야 하므로 성공 시
+    ``sha256_file`` 호출은 정확히 1회여야 한다."""
+    import _digest
+
+    target = tmp_path / "model.bin"
+    call_count = 0
+    real_sha256_file = _digest.sha256_file
+
+    def _counting_sha256_file(path: Path) -> str:
+        nonlocal call_count
+        call_count += 1
+        return real_sha256_file(path)
+
+    monkeypatch.setattr(_digest, "sha256_file", _counting_sha256_file)
+
+    def _write_hello(partial: Path) -> None:
+        partial.write_bytes(_HELLO)
+
+    fetch_with_digest_verification(target, _HELLO_SHA256, _write_hello)
+
+    assert call_count == 1
+    assert target.read_bytes() == _HELLO
+
+
 def test_fetch_fn_exception_propagates_and_cleans_up_partial_bytes(
     tmp_path: Path,
 ) -> None:

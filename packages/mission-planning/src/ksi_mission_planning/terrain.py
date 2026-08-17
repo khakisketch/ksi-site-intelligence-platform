@@ -55,6 +55,11 @@ if TYPE_CHECKING:
 #: WPML ``executeHeightMode`` 가 같은 값으로 고정돼 있다(ADR-KSI-011 D1, INV-020).
 _EXPECTED_ALTITUDE_REFERENCE = "relativeToStartPoint"
 
+#: 이 값 이하의 수평거리는 "같은 지점"으로 취급한다(``geometry.py`` 의 부동소수
+#: 잡음 임계값과 동일). 이 이하에서 고도변화율은 수평거리로 나눌 수 없으므로
+#: 비율이 아니라 무한대(=자동 위반)로 판정한다 — 조용히 건너뛰지 않는다.
+_HORIZONTAL_EPSILON_M = 1e-6
+
 
 class TerrainReferenceMismatch(ValueError):
     """봉투가 이 계산기와 다른 수직기준을 선언했다 — typed 실패(계산하지 않는다)."""
@@ -230,10 +235,22 @@ def compute_altitude_profile(
                 sample.waypoint.lon_deg,
             )
             altitude_delta_m = abs(commanded - previous.commanded_height_m)
-            if (
-                horizontal_m > 0.0
-                and altitude_delta_m / horizontal_m > max_altitude_change_ratio
-            ):
+            if horizontal_m <= _HORIZONTAL_EPSILON_M:
+                # 수평거리가 (거의) 0 이면 비율을 나눌 수 없다 — 건너뛰지 않고
+                # 고도변화가 있으면 무한대 비율(=자동 위반)로 판정한다.
+                rate_exceeded = altitude_delta_m > _HORIZONTAL_EPSILON_M
+                rate_rationale = (
+                    f"이전 지점과 수평거리가 사실상 0m 인데 고도변화 "
+                    f"{altitude_delta_m:.1f}m 가 있다 — 변화율이 무한대라 상한 "
+                    f"{max_altitude_change_ratio} 를 넘는다",
+                )
+            else:
+                rate_exceeded = altitude_delta_m / horizontal_m > max_altitude_change_ratio
+                rate_rationale = (
+                    f"이전 지점 대비 고도변화 {altitude_delta_m:.1f}m / 수평거리 "
+                    f"{horizontal_m:.1f}m 가 상한 {max_altitude_change_ratio} 를 넘는다",
+                )
+            if rate_exceeded:
                 segment = WaypointAltitudePlan(
                     waypoint=sample.waypoint,
                     terrain_elevation_m=sample.terrain_elevation_m,
@@ -241,10 +258,7 @@ def compute_altitude_profile(
                     absolute_elevation_m=None,
                     clearance_m=None,
                     status=AltitudeSegmentStatus.RATE_LIMIT_EXCEEDED,
-                    rationale=(
-                        f"이전 지점 대비 고도변화 {altitude_delta_m:.1f}m / 수평거리 "
-                        f"{horizontal_m:.1f}m 가 상한 {max_altitude_change_ratio} 를 넘는다",
-                    ),
+                    rationale=rate_rationale,
                 )
                 segments.append(segment)
                 previous = segment

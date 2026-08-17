@@ -263,6 +263,28 @@ class UnbackedSuccessError(ValueError):
     """산출물 없이 ``SUCCEEDED`` 를 주장했다(INV-051)."""
 
 
+# INV-051 — authority=source 를 주장할 수 있는 kind 의 닫힌 집합.
+#
+# ``ArtifactLineage``(event-contracts, processing_artifact.py)는 의도적으로
+# kind 와 authority 를 계약 레벨에서 묶지 않는다 — "향후 provider별 예외(예:
+# 어떤 엔진이 point_cloud 를 다른 원본에서 재생성하는 경로)를 스키마 레벨에서
+# 미리 봉인하지 않기 위해서"다(같은 모듈 docstring). 그 결과 계약만으로는
+# ``kind=mesh, authority=source`` 같은 산출물도 통과한다 — 파생 산출물(메시·
+# 정사영상·DSM/DTM·3D Tiles·리포트)이 원본 권위를 자칭할 수 있다는 뜻이다.
+#
+# ADR-KSI-003 은 Point Cloud/카메라 포즈가 원본 SSOT 라고 정했고, ODM 어댑터
+# (``ksi_processing_controller.odm_assets.ODM_ASSETS``)의 실제 파이프라인
+# 계보도 이 둘만 ``authority=SOURCE`` 로 등록한다 — 나머지는 전부 파생이다.
+# 이 게이트는 그 사실을 Core 쪽에서도 강제한다: ``SUCCEEDED`` 를 받치는
+# source 산출물은 **이 집합에 속하는 kind** 여야 한다. 지금은 이 저장소
+# 로컬의 상수일 뿐이다 — provider 가 늘어나 예외가 생기면 계약 레벨 enum
+# (예: ``ProcessingArtifactKind`` 에 "source-eligible" 플래그)으로 승격하는
+# 편이 나을 수 있다(judgmentCallFlag 참고).
+SOURCE_ELIGIBLE_ARTIFACT_KINDS: frozenset[ProcessingArtifactKind] = frozenset(
+    {ProcessingArtifactKind.POINT_CLOUD, ProcessingArtifactKind.CAMERA_POSES}
+)
+
+
 def assert_succeeded_is_backed(
     target: ProcessingJobStatus,
     artifacts: Sequence[ProcessingArtifact],
@@ -275,8 +297,12 @@ def assert_succeeded_is_backed(
     기계의 모양을 정하고 이 함수는 그 상태를 주장할 근거가 원장에 있는지를
     본다. live 경로와 재생 경로가 같은 함수를 쓴다(전이표와 같은 이유).
 
-    **산출물(authority=source).** 파생물만 있는 성공은 원본 없이 파생을 주장하는
-    상태다(ADR-KSI-003, 모듈 docstring).
+    **산출물(authority=source, kind 이 source-eligible).** 파생물만 있는 성공은
+    원본 없이 파생을 주장하는 상태다(ADR-KSI-003, 모듈 docstring). 계약
+    (``ArtifactLineage``)은 kind 와 authority 를 의도적으로 묶지 않으므로,
+    ``authority=source`` 만 보면 메시·정사영상 같은 파생 kind 가 원본을
+    자칭해도 통과한다 — 그래서 여기서 kind 도 함께
+    본다(:data:`SOURCE_ELIGIBLE_ARTIFACT_KINDS`, INV-051).
 
     **입력 검증.** 재구성을 실제로 돌린 워커는 정의상 전 바이트를 읽었으므로
     무엇을 읽었는지 보고할 수 있다. 그 보고 없이 성공을 인정하면 과금 근거
@@ -289,11 +315,17 @@ def assert_succeeded_is_backed(
     """
     if target is not ProcessingJobStatus.SUCCEEDED:
         return
-    if not any(a.lineage.authority is LineageAuthority.SOURCE for a in artifacts):
+    if not any(
+        a.lineage.authority is LineageAuthority.SOURCE
+        and a.kind in SOURCE_ELIGIBLE_ARTIFACT_KINDS
+        for a in artifacts
+    ):
         raise UnbackedSuccessError(
             "INV-051 — 이 작업에는 authority=source 산출물이 없다. 재구성이 "
             "성공했다면 원본(포인트클라우드·카메라 포즈 계열) 산출물이 최소 "
-            "1건 등록돼 있어야 한다 — 파생물만으로는 완료를 주장할 수 없다"
+            "1건 등록돼 있어야 한다 — 파생물만으로는, 그리고 kind 가 원본으로 "
+            "인정되지 않는 산출물(mesh·ortho·dsm·dtm·tiles_3d·report)만으로는 "
+            "완료를 주장할 수 없다"
         )
     if not input_verified:
         raise UnbackedSuccessError(

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field
 
@@ -111,6 +112,7 @@ class CoverageSummary(_CamelModel):
 class CoverageReport(_CamelModel):
     """비행 1회의 커버리지 보고 — 완료 판정의 입력."""
 
+    schema_version: Literal["1.1"] = "1.1"
     mission_id: str = Field(min_length=1)
     site_id: str = Field(min_length=1)
     timestamp: datetime

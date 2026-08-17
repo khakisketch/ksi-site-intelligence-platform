@@ -601,3 +601,34 @@ def test_replay_refuses_result_that_live_would_reject(tmp_path: Path) -> None:
         ChangeDetectionStore(
             journal, mission_store=missions, processing_job_store=jobs
         )
+
+
+def test_replay_refuses_result_for_a_mission_that_was_never_issued(tmp_path: Path) -> None:
+    """[핵심 음성] journal 을 손으로 고쳐 발급된 적 없는 임무의 결과를 되살릴 수 없다.
+
+    live record() 는 UNKNOWN_MISSION 을 가장 먼저 검사한다(``self._mission_store.get``)
+    — 재생이 그 검사를 건너뛰면, 임무가 삭제되거나 애초에 발급된 적 없는 채로
+    기록된 레코드가 재기동마다 조용히 되살아난다.
+    """
+    missions = _mission_store(tmp_path)  # _MISSION_ID 만 발급돼 있다
+    jobs = _job_store(tmp_path, DurableJournal(tmp_path / "processing-jobs.jsonl"))
+    job_id = _job_with_artifacts(jobs, _artifact_spec("pc-baseline"), _artifact_spec("pc-current"))
+    journal_path = tmp_path / "change-detection.jsonl"
+    journal_path.write_text(
+        json.dumps(
+            {
+                "kind": "change-detection-recorded",
+                "ts": _NOW.isoformat(),
+                "missionId": "mission-never-issued",
+                "reportedBy": "worker-1",
+                "result": _result_payload(job_id),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    journal = DurableJournal(journal_path)
+    with pytest.raises(ChangeDetectionRecoveryError, match="UNKNOWN_MISSION"):
+        ChangeDetectionStore(
+            journal, mission_store=missions, processing_job_store=jobs
+        )

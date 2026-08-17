@@ -78,6 +78,10 @@ _HULL_WGS84_TOO_WIDE = {
         ]
     ],
 }
+# 구조가 깨진 hull — "coordinates" 자체가 없다. 저장 시점엔 구조 검증이 없는
+# dict[str, Any] 라 이런 값도 그대로 실릴 수 있다 — KeyError/IndexError/
+# TypeError 가 새 500 이 아니라 다른 hull 결함과 같은 422 로 나와야 한다.
+_HULL_WGS84_MALFORMED = {"type": "Polygon"}
 
 
 def _volume(*, threshold_m: float, region_id: str = "r-1") -> ZoneVolumeDelta:
@@ -436,6 +440,29 @@ def test_spatial_refresh_draft_rejects_an_aoi_wider_than_the_10km_gate(
     """
     request = fixture.request()
     report = fixture.valid_report(request, hull_wgs84=_HULL_WGS84_TOO_WIDE)
+    fixture.reports.record(_CURRENT_MISSION_ID, report, now=datetime.now(UTC))
+    client = TestClient(fixture.app())
+
+    response = client.get(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction/"
+        f"{request.change_region_set_id}/regions/r-1/spatial-refresh-draft",
+        headers=_auth(_VIEWER_TOKEN),
+    )
+    assert response.status_code == 422, response.json()
+
+
+def test_spatial_refresh_draft_422s_for_a_structurally_malformed_hull(
+    fixture: Fixture,
+) -> None:
+    """[회귀] hull 이 있어도 구조가 깨졌으면(coordinates 없음 등) 422 다, 500 이 아니다.
+
+    ``convex_hull_polygon_wgs84`` 는 구조 검증 없는 ``dict[str, Any]`` 라
+    기록 시점에 이런 값도 그대로 저장될 수 있다 — ``_aoi_from_hull_wgs84`` 가
+    ``KeyError``/``IndexError``/``TypeError`` 를 그대로 새게 두면 다른 hull
+    결함(10km 초과 등)과 달리 unhandled 500 이 된다.
+    """
+    request = fixture.request()
+    report = fixture.valid_report(request, hull_wgs84=_HULL_WGS84_MALFORMED)
     fixture.reports.record(_CURRENT_MISSION_ID, report, now=datetime.now(UTC))
     client = TestClient(fixture.app())
 

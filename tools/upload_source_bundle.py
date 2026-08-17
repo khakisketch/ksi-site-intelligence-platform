@@ -143,9 +143,15 @@ def _image_size(path: Path) -> tuple[int, int]:
 
 
 def _collect_files(source_dir: Path) -> list[Path]:
+    """디렉터리(하위 포함)의 사진 파일 — ``ingest_watch._image_files`` 와 같은
+    재귀 규칙이다. SD카드 회수 레이아웃(``<root>/<missionId>/DCIM/100MEDIA/*.JPG``)은
+    한 단계짜리 나열(``iterdir``)로는 안 잡혀 발견 0장·영구 재시도 실패로 이어진다
+    (``tests/contract/test_ingest_watch.py::test_finds_images_in_nested_directories``
+    가 같은 레이아웃을 고정한다).
+    """
     return sorted(
         p
-        for p in source_dir.iterdir()
+        for p in source_dir.rglob("*")
         if p.is_file() and p.suffix.lower() in _EXTENSION_CONTENT_TYPES
     )
 

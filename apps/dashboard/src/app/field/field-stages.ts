@@ -150,7 +150,14 @@ function flightStage(input: FieldStageInput): FieldStage {
     key: "flight",
     title: "비행",
     auto: status === null ? { ...UNKNOWN_EXECUTION } : FLIGHT_REPORT[status],
-    manual: "자동 시작이 없어도 Pilot 2 앱에서 이 임무를 직접 시작할 수 있습니다.",
+    // CANCELLED 는 위 auto 배지("비행하지 마세요")·아래 [임무 시작] 버튼
+    // (deriveFlightStart, "시작할 수 없습니다")과 이미 "날지 말라"고 말하는 상태다.
+    // 그 옆에서 수동 경로가 "Pilot 2 에서 직접 시작할 수 있습니다"라고 하면 같은
+    // 카드 안에서 두 문장이 서로 반대를 말한다 — 취소된 임무는 수동 시작도 막는다.
+    manual:
+      status === "CANCELLED"
+        ? "취소된 임무입니다 — Pilot 2 앱에서도 시작하지 마세요."
+        : "자동 시작이 없어도 Pilot 2 앱에서 이 임무를 직접 시작할 수 있습니다.",
   };
 }
 

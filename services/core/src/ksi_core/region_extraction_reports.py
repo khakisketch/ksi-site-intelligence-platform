@@ -492,9 +492,18 @@ def _aoi_from_hull_wgs84(hull_polygon_wgs84: dict[str, Any]) -> AreaOfInterest:
     GeoJSON 링은 닫혀 있다(첫 점 = 마지막 점) — ``AreaOfInterest`` 는 마지막→첫
     변을 암묵적으로 닫으므로, 닫는 중복 꼭짓점을 빼지 않으면 "중복 꼭짓점"으로
     거부된다.
+
+    ``hull_polygon_wgs84`` 는 구조 검증 없는 ``dict[str, Any]`` 다(저장 시점의
+    hull 계산 결과를 그대로 실은 것) — ``coordinates``/링/좌표 쌍 중 하나라도
+    어긋나면 ``KeyError``/``IndexError``/``TypeError`` 대신 ``ValueError`` 로
+    바꿔 던진다. 호출부가 typed 422 로 잡는 예외가 ``(ValidationError,
+    ValueError)`` 뿐이라, 여기서 잡지 않으면 잘못된 hull 이 500 으로 샌다.
     """
-    ring = hull_polygon_wgs84["coordinates"][0]
-    vertices = [GeoPoint(lon_deg=float(lon), lat_deg=float(lat)) for lon, lat in ring]
+    try:
+        ring = hull_polygon_wgs84["coordinates"][0]
+        vertices = [GeoPoint(lon_deg=float(lon), lat_deg=float(lat)) for lon, lat in ring]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f"hull GeoJSON 구조가 올바르지 않다: {exc}") from exc
     if len(vertices) >= 2 and vertices[0] == vertices[-1]:
         vertices = vertices[:-1]
     return AreaOfInterest(vertices=vertices)

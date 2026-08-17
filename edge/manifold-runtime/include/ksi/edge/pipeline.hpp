@@ -67,9 +67,22 @@ struct TrackedWorldEntity {
 
 // Deterministic IoU tracker.  It gives perception a stable local entity ID but
 // does not assert that a one-frame detection is a confirmed domain event.
+//
+// Eviction: without it, ``tracks_`` only grows (every unmatched detection
+// creates a new slot) and once it reaches ``max_tracks``, every subsequent
+// detection that cannot match an existing (possibly long-stale) track is
+// silently dropped for the rest of the mission -- a permanent perception
+// blind spot on any sufficiently long or busy run. A track that goes
+// ``max_missed_frames`` consecutive ``Update()`` calls without being matched
+// is evicted at the start of the next call, before new detections are
+// matched, so a freed slot cannot be confused with the track that just
+// vacated it. ``max_missed_frames`` is a conservative policy value (absorb
+// short occlusion/misdetection gaps, bound unlimited growth), not a derived
+// domain constant -- revisit if field data says otherwise.
 class WorldStateTracker {
 public:
-    WorldStateTracker(float association_iou_threshold, std::size_t max_tracks);
+    WorldStateTracker(float association_iou_threshold, std::size_t max_tracks,
+                       std::uint64_t max_missed_frames = 30);
 
     std::vector<TrackedWorldEntity> Update(const std::vector<Detection>& detections,
                                            const TelemetryAlignment& alignment,
@@ -79,11 +92,16 @@ public:
 private:
     struct Track {
         TrackedWorldEntity entity;
+        // ``frame_counter_`` value as of the last frame this track matched a
+        // detection (or was created).
+        std::uint64_t last_seen_frame = 0;
     };
 
     float association_iou_threshold_;
     std::size_t max_tracks_;
+    std::uint64_t max_missed_frames_;
     std::uint64_t next_entity_number_ = 1;
+    std::uint64_t frame_counter_ = 0;
     std::vector<Track> tracks_;
 };
 

@@ -5,6 +5,7 @@ import {
   ackSlaState,
   UNCLASSIFIED_ACK_SLA_MS,
   formatElapsed,
+  formatTargetDuration,
   isSettled,
   isUnattended,
   sortForTriage,
@@ -16,6 +17,7 @@ import type { EventSeverity, EventStatus, EventSummaryResponse, TriageStatus } f
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
 
 function event(overrides: Partial<EventSummaryResponse> = {}): EventSummaryResponse {
   return {
@@ -133,5 +135,22 @@ describe("경과 시간 표기", () => {
   it("1분 미만은 숫자를 세지 않는다", () => {
     expect(formatElapsed(30_000, { unattended: true })).toBe("방금 들어옴");
     expect(formatElapsed(30_000, { unattended: false })).toBe("방금");
+  });
+
+  it("하루 이상 방치돼도 '~일째 미조치'로 진행 중임을 드러낸다", () => {
+    expect(formatElapsed(3 * DAY, { unattended: true })).toBe("3일째 미조치");
+    expect(formatElapsed(3 * DAY, { unattended: false })).toBe("3일 전");
+  });
+});
+
+describe("SLA 목표 시간 표기", () => {
+  it("일/시간/분 단위로 반올림해 표기한다 — AckElapsedFact·DwellBar 공용", () => {
+    expect(formatTargetDuration(3 * DAY)).toBe("3일");
+    expect(formatTargetDuration(4 * HOUR)).toBe("4시간");
+    expect(formatTargetDuration(15 * MINUTE)).toBe("15분");
+  });
+
+  it("1분 미만도 0분이 아니라 최소 1분으로 표기한다", () => {
+    expect(formatTargetDuration(30_000)).toBe("1분");
   });
 });

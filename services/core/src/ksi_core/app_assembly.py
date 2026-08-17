@@ -214,6 +214,17 @@ def assemble_app(
         and evidence_storage is not None
         else None
     )
+    # 리포트 원장은 요청 원장을 **참조해서** 만들어지므로(request_store=...) 반대
+    # 방향을 생성자 인자로 넣으면 순환이다. 그래서 조립이 끝난 뒤 술어 하나만
+    # 뒤로 걸어준다 — 이게 없으면 요청 원장의 두 게이트(리포트 없는 SUCCEEDED ·
+    # 리포트 기록 후 래스터 재작성)가 조용히 열린 채로 뜬다.
+    if (
+        design_conformance_request_store is not None
+        and design_conformance_report_store is not None
+    ):
+        design_conformance_request_store.bind_report_existence(
+            design_conformance_report_store.has_report_for
+        )
     # 변화 영역 자동 추출(M4-E) — 설계 대비 잔량 리포트가 이미 기록된 뒤에만
     # 만들 수 있는 후속 요청이라, design_conformance_report_store 조립 직후 둔다.
     # 두 store 모두 evidence_storage 를 직접 쓰지 않는다(요청 store 는 diffRaster

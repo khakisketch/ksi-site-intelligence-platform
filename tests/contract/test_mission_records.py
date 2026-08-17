@@ -1009,6 +1009,42 @@ def test_lone_surrogate_in_site_frame_rejected_for_contracts_endpoint(tmp_path: 
     journal.close()
 
 
+def test_lone_surrogate_in_derived_from_rejected_422_not_500(tmp_path: Path) -> None:
+    """derivedFrom 은 ``request.contract`` 의 형제 필드라 계약 서브객체 검사만으로는
+    잡히지 않는다 — 잡히지 않으면 ``_request_digest``→``canonical_payload_bytes``
+    가 전체 요청을 UTF-8 로 strict encode 하다 UnicodeEncodeError 로 죽어 (500)
+    발급 경계의 선제 422 를 우회한다.
+
+    ``captureGrade`` 를 고른다: ``sourceMissionId``/``changeRegionSetId``/
+    ``regionId`` 는 ``Field(min_length=1)`` 제약이 있어 pydantic-core 가 lone
+    surrogate 를 핸들러 진입 **전** ``string_unicode`` 검증 오류로 먼저
+    거부한다(그 오류 자체가 원문을 그대로 에코하다 별개의 500 을 낸다 — 이
+    파일의 초점인 핸들러 내부 digest 경로가 아니다). 제약 없는 plain
+    ``str | None`` 필드만 pydantic 검증을 그대로 통과해 핸들러까지 도달하고,
+    거기서 이 회귀가 실제로 재현된다."""
+    client, store, journal = _client(tmp_path)
+
+    plan_request = _plan_request()
+    plan_request["derivedFrom"] = {
+        "sourceMissionId": "mission-000",
+        "changeRegionSetId": "crs-1",
+        "regionId": "region-1",
+        "captureGrade": "A\ud800",
+    }
+
+    response = _post_json_with_lone_surrogate(
+        client,
+        "/v1/missions/plans",
+        plan_request,
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "INVALID_TEXT_ENCODING"
+    assert store.list() == []
+
+    journal.close()
+
+
 # ── ⑥-보강 INV-011 — 재기동(새 MissionStore) 후 실 계약 왕복 정확 일치 ──────
 
 

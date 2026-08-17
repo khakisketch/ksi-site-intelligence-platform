@@ -124,9 +124,13 @@ def _report_payload(
 
 
 def _mission_store(
-    tmp_path: Path, *, site_id: str = _SITE_ID, assigned_device_id: str | None = None
+    tmp_path: Path,
+    *,
+    site_id: str = _SITE_ID,
+    assigned_device_id: str | None = None,
+    journal_name: str = "missions.jsonl",
 ) -> MissionStore:
-    store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    store = MissionStore(DurableJournal(tmp_path / journal_name))
     plan_request = {"route": {"altitudeM": 40.0}}
     assert (
         store.record_issuance(
@@ -502,6 +506,65 @@ def test_replay_restores_history(tmp_path: Path) -> None:
     try:
         # mission_store 가 비어 있어도 **재생은** 통과한다 — 임무 대조는 수신
         # 시점의 게이트이고, 이미 받은 기록을 나중에 부정하지 않는다.
+        assert len(reborn.history(_MISSION_ID)) == 1
+    finally:
+        reborn_journal.close()
+
+
+def test_replay_does_not_reject_on_site_mismatch_against_current_mission_store(
+    tmp_path: Path,
+) -> None:
+    """[핵심][회귀] 재생은 site 대조(⑤)를 하지 않는다 — 수신 시점 게이트다(INV-010,
+    독립 재검토 B-2).
+
+    재생 시점의 mission_store 에 **같은 missionId 로 다른 siteId** 의 임무가 있어도
+    (임무 원장이 이 원장과 따로 회전·보관되는 시나리오를 흉내) 이미 접수된 보고는
+    부정되지 않는다 — live 였다면 SITE_MISMATCH 로 거부됐을 조합이다.
+    """
+    mission_store = _mission_store(tmp_path)  # site_id=_SITE_ID
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(CoverageReport.model_validate(_report_payload()), now=_NOW)
+    journal.close()
+
+    drifted_missions = _mission_store(
+        tmp_path, site_id="site-drifted", journal_name="missions-drifted.jsonl"
+    )
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(reborn_journal, mission_store=drifted_missions)
+    try:
+        assert len(reborn.history(_MISSION_ID)) == 1
+        latest = reborn.latest(_MISSION_ID)
+        assert latest is not None
+        assert latest.site_id == _SITE_ID, "접수 당시 보고서의 siteId 가 그대로 유지된다"
+    finally:
+        reborn_journal.close()
+
+
+def test_replay_does_not_reject_on_device_mismatch_against_current_mission_store(
+    tmp_path: Path,
+) -> None:
+    """[핵심][회귀] 재생은 device 배정 대조도 하지 않는다 — ⑤(임무 대조)와 같은
+    이유(수신 시점 게이트, 임무 원장의 별도 회전·보관)로 receive-time 전용이다.
+
+    재생 시점의 mission_store 에 **같은 missionId 가 다른 장비에 배정**돼 있어도
+    이미 접수된 보고는 부정되지 않는다 — live 였다면 DEVICE_NOT_ASSIGNED 로 거부됐을
+    조합이다.
+    """
+    mission_store = _mission_store(tmp_path, assigned_device_id=_DEVICE_ID)
+    journal = DurableJournal(tmp_path / "coverage.jsonl")
+    store = CoverageReportStore(journal, mission_store=mission_store)
+    store.record(
+        CoverageReport.model_validate(_report_payload()), now=_NOW, device_id=_DEVICE_ID
+    )
+    journal.close()
+
+    drifted_missions = _mission_store(
+        tmp_path, assigned_device_id=_OTHER_DEVICE_ID, journal_name="missions-drifted.jsonl"
+    )
+    reborn_journal = DurableJournal(tmp_path / "coverage.jsonl")
+    reborn = CoverageReportStore(reborn_journal, mission_store=drifted_missions)
+    try:
         assert len(reborn.history(_MISSION_ID)) == 1
     finally:
         reborn_journal.close()

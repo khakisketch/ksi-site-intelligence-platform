@@ -10,6 +10,14 @@ import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
+import {
+  EGRESS_CHOICE_OPTIONS,
+  Field,
+  SITE_ID_PATTERN,
+  isRetryOfOwnSitePost,
+  nextOwnPostSiteId,
+  parseJsonSafe,
+} from "@/lib/site-registration/shared";
 import type { AoiVertex, MissionPlanRequest, MissionPlanResponse, SiteFrame } from "@/lib/core-api/types";
 
 const STEP_LABELS = [
@@ -71,12 +79,6 @@ const MAX_ALTITUDE_M = 150;
 // 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
 const MAX_FLIGHT_ALTITUDE_M = MAX_ALTITUDE_M - 10;
 
-const EGRESS_CHOICE_OPTIONS: Array<{ value: EgressChoice; label: string }> = [
-  { value: "unset", label: "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)" },
-  { value: "allow", label: "예 — 외부/벤더 클라우드 처리를 허용합니다" },
-  { value: "deny", label: "아니오 — 사내 서버에서만 처리합니다" },
-];
-
 const INITIAL_FORM: WizardFormState = {
   siteId: "",
   name: "",
@@ -103,8 +105,6 @@ const INITIAL_FORM: WizardFormState = {
   objectives: ["초기 매핑"],
 };
 
-const SITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
 const inputClassName = "input";
 const numericInputClassName = "input num";
 
@@ -117,59 +117,9 @@ interface SubmitResult {
   kmzSha256: string;
 }
 
-async function parseJsonSafe(res: Response): Promise<{ message?: string; code?: string }> {
-  try {
-    return (await res.json()) as { message?: string; code?: string };
-  } catch {
-    return {};
-  }
-}
-
 function formatCoverage(ratio: number | null): string {
   if (ratio === null) return "정보 없음";
   return `${(ratio * 100).toFixed(1)}%`;
-}
-
-function Field({
-  label,
-  helpText,
-  error,
-  required,
-  wide,
-  children,
-}: {
-  label: string;
-  helpText?: string;
-  /** 값이 있는데 조건을 어겼을 때만 넘긴다 — 빈 필수 필드는 `required` 로 충분하다. */
-  error?: string;
-  required?: boolean;
-  /** 2열 그리드에서 전체 폭을 써야 하는 필드(예: 이름·좁은 폭에서 읽기 나쁜 필드). */
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    // label 이 입력을 감싼다 — 형제로 두면 접근가능 이름이 placeholder 로 잡히고,
-    // placeholder 는 입력을 시작하면 사라진다(SiteRegistrationOnlyWizard.tsx 의 같은
-    // 주석 참조 — 2026-08-04 렌더 확인에서 실제 재현).
-    <div className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[12.5px] font-semibold break-keep text-ink-1">
-          {label}
-          {required && (
-            <span aria-hidden className="ml-0.5 text-crit">
-              *
-            </span>
-          )}
-        </span>
-        {children}
-      </label>
-      {error ? (
-        <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>
-      ) : (
-        helpText && <p className="text-[11.5px] break-keep text-ink-muted">{helpText}</p>
-      )}
-    </div>
-  );
 }
 
 function TagInput({
@@ -259,7 +209,10 @@ export function SiteRegistrationWizard() {
 
   const siteRegisteredRef = useRef(false);
   // siteRegisteredRef 와 다르다 — 이쪽은 "성공했다"가 아니라 "보냈다"를 기억한다.
-  const sitePostAttemptedRef = useRef(false);
+  // **siteId 로 스코프한다** — 그냥 boolean 이면 siteId 'A' 로 실패한 뒤 사용자가
+  // 무관한 siteId 'B' 로 고쳐 재제출했을 때도 'B' 의 409 를 "내 재시도"로 오판한다
+  // (isRetryOfOwnSitePost 주석 참조, SiteRegistrationOnlyWizard 공통 회귀).
+  const sitePostAttemptedSiteIdRef = useRef<string | null>(null);
   const missionIdRef = useRef<string | null>(null);
   const draftClearedRef = useRef(false);
 
@@ -282,8 +235,8 @@ export function SiteRegistrationWizard() {
     try {
       if (!siteRegisteredRef.current) {
         // POST 를 보내기 전에 표시한다(응답을 못 받아도 서버는 등록했을 수 있다).
-        const wasAttemptedBefore = sitePostAttemptedRef.current;
-        sitePostAttemptedRef.current = true;
+        const previousAttemptedSiteId = sitePostAttemptedSiteIdRef.current;
+        sitePostAttemptedSiteIdRef.current = siteId;
         const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
         const siteRes = await fetch("/api/sites", {
           method: "POST",
@@ -303,17 +256,42 @@ export function SiteRegistrationWizard() {
         });
         if (!siteRes.ok) {
           const body = await parseJsonSafe(siteRes);
+          // 응답을 받았으니 "모른다"를 갱신한다 — 확정 409 면 비운다.
+          sitePostAttemptedSiteIdRef.current = nextOwnPostSiteId(
+            siteId,
+            siteRes.status,
+            body.code,
+          );
           // 409 는 **재시도일 때만** 성공이다 — 첫 시도의 409 는 남이 이미 쓴 siteId 다
           // (SiteRegistrationOnlyWizard 의 같은 주석 참조, 독립 재검토 2026-08-04).
-          // **이전 값**을 본다(위에서 true 로 세웠으므로 현재 값은 항상 참이다).
-          const alreadyRegistered =
-            wasAttemptedBefore && siteRes.status === 409 && body.code === "DUPLICATE_SITE_ID";
+          // **같은 siteId 로 보냈고 그 결과를 모르는 시도가 있었을 때만** 재시도로
+          // 인정한다 — 여기서 틀리면 남의 현장 앞으로 임무 계약까지 발급된다.
+          const alreadyRegistered = isRetryOfOwnSitePost(
+            previousAttemptedSiteId,
+            siteId,
+            siteRes.status,
+            body.code,
+          );
           if (!alreadyRegistered) {
             setSubmitError(body.message ?? "요청을 처리하지 못했습니다.");
             setSubmitPhase("error");
             return;
           }
         }
+        // 여기 도달하는 경로는 둘이다: 진짜 성공(2xx), 그리고 위에서 **내 재시도로
+        // 인정된 409**. 둘 다 "이 현장은 내 것"이므로 판정 근거를 남긴다 —
+        // handleBack 이 siteRegisteredRef 만 되돌리므로, 여기서 비우면 같은 siteId
+        // 재-POST 의 409 를 남의 현장으로 오판한다(3차 독립 검토 적발).
+        //
+        // 세 번째 인자가 `undefined` 인 것은 실수가 아니라 **의도**다 — 인정된 409
+        // 경로에서 실제 코드(DUPLICATE_SITE_ID)를 넘기면 비우기 분기에 걸려 방금
+        // 인정한 소유권이 도로 지워진다. 응답이 아니라 "여기 온 이상 내 것"이라는
+        // 사실로 갱신하는 자리다.
+        sitePostAttemptedSiteIdRef.current = nextOwnPostSiteId(
+          siteId,
+          siteRes.status,
+          undefined,
+        );
         siteRegisteredRef.current = true;
       }
 
