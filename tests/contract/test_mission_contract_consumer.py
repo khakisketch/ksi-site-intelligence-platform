@@ -370,6 +370,64 @@ def test_newer_reissue_and_same_contract_reactivation_still_activate(tmp_path: P
     assert active.model.policies.battery_policy.default_reserve_percent == 40
 
 
+def test_same_not_before_weaker_contract_cannot_replace_active(tmp_path: Path) -> None:
+    """[high-risk regression] ``notBefore`` 가 **같은** 다른 내용의 계약은 거부한다.
+
+    notBefore 가 같으면 어느 쪽이 나중 발급본인지 가릴 근거가 아예 없다. 그 상태에서
+    통과시키면 예비량·고도 상한을 되돌리는 계약이 순서 판정을 우회한다(risk
+    ``mission-contract-no-issuance-ordering-field`` 가 지목한 구멍). 순서 근거가
+    없으면 fail-closed 로 거부한다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    active_contract = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    _write_candidate(candidate, sign_contract(active_contract, key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    active_bytes = consumer.active_path.read_bytes()
+
+    # notBefore 만 같고 안전 항목이 느슨해진 계약.
+    weaker = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=10, max_altitude_m=120.0
+    )
+    _write_candidate(candidate, sign_contract(weaker, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert not receipt.activated
+    assert receipt.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+    assert consumer.active_path.read_bytes() == active_bytes
+    active = consumer.load_active(now=_IN_WINDOW)
+    assert active.is_valid and active.model is not None
+    assert active.model.policies.battery_policy.default_reserve_percent == 40
+    assert active.model.flight_envelope.max_altitude_m == 60.0
+
+
+def test_same_not_before_identical_contract_reactivation_still_activates(
+    tmp_path: Path,
+) -> None:
+    """동일 계약 재활성화는 순서 판정 대상이 아니다 — 엄격화 후에도 멱등 통과한다.
+
+    digest 동일성 판정이 notBefore 비교보다 **앞에** 있어야 성립한다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    contract = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    signed = sign_contract(contract, key, "core-1")
+    _write_candidate(candidate, signed)
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+    assert receipt.activated
+    assert receipt.verdict is SignatureVerdict.VALID
+
+
 def test_other_mission_contract_is_not_blocked_by_rollback_guard(tmp_path: Path) -> None:
     """다른 임무의 계약은 순서를 비교할 공통 축이 없다 — 막지 않는다."""
     key = Ed25519PrivateKey.generate()

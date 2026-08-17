@@ -1408,6 +1408,69 @@ def test_older_edge_runtime_profile_is_rejected_as_rollback(tmp_path: Path) -> N
     assert not rollback_attempt.activated
 
 
+def test_same_not_before_different_risk_policy_pack_is_rejected(tmp_path: Path) -> None:
+    """[high-risk regression] ``notBefore`` 가 **같은** 다른 pack 도 거부한다.
+
+    같은 notBefore 는 어느 쪽이 나중 발급본인지 가릴 근거가 못 된다. 통과시키면
+    정책 교체가 순서 판정을 우회한다 — MissionContractConsumer 쪽과 같은 규약으로
+    fail-closed 로 막는다(2026-08-18).
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    current = _envelope_with_pack(
+        _older_pack(not_before="2026-08-14T00:00:00Z"),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-current",
+    )
+    current_path = tmp_path / "current.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    first = activate_mission_dispatch_file(
+        current_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.dispatch_verdict is DispatchVerdict.VALID and first.activated
+
+    # notBefore 는 같고 정책 내용만 느슨해졌다 — digest 가 달라 재활성화가 아니다.
+    # pack id 는 그대로 둔다: 바꾸면 Mission Contract 의 정책 참조와 어긋나 봉투가
+    # 아예 만들어지지 않아(dispatch.py 검증) 이 축을 시험할 수 없다.
+    relaxed_raw = _older_pack(not_before="2026-08-14T00:00:00Z").model_dump(
+        by_alias=True, mode="json"
+    )
+    relaxed_raw["equipmentPolicies"][0]["severity"] = 0.05
+    sideways = _envelope_with_pack(
+        RiskPolicyPackV1.model_validate(relaxed_raw),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-sideways",
+    )
+    sideways_path = tmp_path / "sideways.json"
+    sideways_path.write_text(json.dumps(sideways), encoding="utf-8")
+    attempt = activate_mission_dispatch_file(
+        sideways_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert attempt.dispatch_verdict is DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK
+    assert not attempt.activated
+    assert first.active_snapshot_path is not None
+    still_active = json.loads(first.active_snapshot_path.read_text(encoding="utf-8"))
+    assert still_active["riskPolicyPackDigest"] == json.loads(current_path.read_text())[
+        "riskPolicyPackDigest"
+    ]
+
+
 def test_reactivating_the_unchanged_risk_policy_pack_is_not_a_rollback(tmp_path: Path) -> None:
     """digest가 같은(내용이 안 바뀐) pack 재전송은 rollback 판정에 걸리지 않는다.
 

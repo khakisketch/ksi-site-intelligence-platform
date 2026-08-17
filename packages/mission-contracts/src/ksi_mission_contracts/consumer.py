@@ -275,14 +275,27 @@ class MissionContractConsumer:
 
         계약 스키마(v1.2)에는 발급 순서를 담는 필드(``issuedAt``·``revision``·
         ``supersedes``)가 **없다**. 그래서 여기서는 스키마 변경 없이 쓸 수 있는 유일한
-        순서 근거인 ``validity.notBefore`` 의 단조성으로 막는다 — 같은 임무에 대해
-        더 이른 ``notBefore`` 를 들고 온 후보는 이전 발급본으로 보고 거부한다. 같은
-        계약의 재활성화(동일 digest)와 ``notBefore`` 가 같거나 더 뒤인 정상 재발급은
-        그대로 통과한다.
+        순서 근거인 ``validity.notBefore`` 의 단조성으로 막는다.
 
-        **한계를 분명히 한다**: ``notBefore`` 가 같은 두 계약은 이 규칙으로 못 가른다.
-        진짜 해법은 계약 스키마에 발급 순서 필드를 넣는 것이고, 그건 계약 변경이라
-        제품 결정이 필요하다(risk ``mission-contract-no-issuance-ordering-field``).
+        판정 순서가 중요하다 — **digest 동일성을 먼저** 본다. 같은 계약의 재활성화는
+        순서 판정 대상이 아니라 멱등 연산이므로, 순서 비교보다 앞에서 통과시킨다.
+        그 다음에야 ``notBefore`` 를 **엄격 부등호**로 비교한다: 후보가 활성 계약보다
+        확실히 더 뒤(``>``)일 때만 통과다.
+
+        즉 ``notBefore`` 가 **같은데 내용이 다른** 후보는 거부한다(2026-08-18).
+        같으면 어느 쪽이 나중 발급본인지 가릴 근거가 아예 없고, 이 저장소의 규약은
+        그럴 때 통과가 아니라 fail-closed 다(ADR-KSI-002 §6). 이전에는 ``>=`` 라
+        그 경우가 무저항 통과였고, 그것이 risk
+        ``mission-contract-no-issuance-ordering-field`` 가 지목한 구멍이었다 —
+        스키마 변경 없이 여기서 닫는다.
+
+        **알아둘 것(키 로테이션)**: ``mission_plans.py`` 의 멱등 재발급
+        (``_regenerate_pair_artifact``)은 원 레코드의 ``issued_at`` 을 재사용해 계약을
+        다시 서명한다. 입력·생성기가 같으면 바이트가 같아 digest 단축으로 통과하지만,
+        **서명키가 로테이션돼 ``keyId`` 가 달라지면 "같은 notBefore·다른 digest"** 가
+        되어 이 규칙에 걸린다. 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
+        재생성본을 쓰지 않아 무해하다 — 나중에 재생성 산출물을 기체 경로에 연결한다면
+        이 상호작용을 먼저 풀어야 한다.
         """
         if self._active_path.is_symlink() or not self._active_path.exists():
             return None
@@ -305,19 +318,22 @@ class MissionContractConsumer:
             # 다른 임무의 계약이다 — 순서를 비교할 공통 축이 없다.
             return None
 
+        # 동일 계약 재활성화는 순서 판정 대상이 아니다 — 순서 비교보다 먼저 통과시킨다.
+        active_digest = sha256_digest(canonical_payload_bytes(active_data))
+        if active_digest == candidate_digest:
+            return None
+
         active_not_before = _parse_contract_instant(active.model.validity.not_before)
         candidate_not_before = _parse_contract_instant(candidate.validity.not_before)
         if active_not_before is None or candidate_not_before is None:
             return None
-        if candidate_not_before >= active_not_before:
+        # 엄격 부등호 — 확실히 더 뒤인 발급본만 통과한다. 같으면 순서 근거가 없다.
+        if candidate_not_before > active_not_before:
             return None
 
-        active_digest = sha256_digest(canonical_payload_bytes(active_data))
-        if active_digest == candidate_digest:
-            return None
         return (
-            "이미 활성인 계약보다 이른 validity.notBefore를 가진 후보다 — "
-            "이전 발급본으로 되돌리는 활성화를 거부한다"
+            "이미 활성인 계약과 같거나 이른 validity.notBefore를 가진 후보다 — "
+            "이전 발급본으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다"
         )
 
     def load_active(self, *, now: datetime | None = None) -> LoadedContract:

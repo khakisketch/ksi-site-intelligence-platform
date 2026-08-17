@@ -655,35 +655,41 @@ def _policy_rollback_detail(
     reissue) while the outer envelope swaps in an *older* RiskPolicyPack or
     EdgeRuntimeProfile for the same mission — e.g. a reserve-margin or
     altitude-ceiling relaxation replayed from an earlier, still-validly-signed
-    envelope. Neither field has an issuance-order field in its schema (same
-    limitation as Mission Contract v1.2 —
-    ``mission-contract-no-issuance-ordering-field``), so this uses the same
-    ``validity.notBefore`` monotonicity heuristic, scoped to the same mission
-    and only when the candidate's digest actually differs from what is active
-    (an unchanged pack/profile is a reactivation, not a rollback).
+    envelope. Neither field has an issuance-order field in its schema, so this
+    uses the same ``validity.notBefore`` monotonicity rule as
+    ``MissionContractConsumer._superseded_detail``, scoped to the same mission
+    and applied only when the candidate's digest actually differs from what is
+    active (an unchanged pack/profile is a reactivation, not a rollback).
+
+    The comparison is strict on both axes (2026-08-18): a candidate is admitted
+    only when its ``notBefore`` is **strictly later**. An equal ``notBefore``
+    with different content carries no ordering evidence at all, so it is refused
+    rather than admitted — the same fail-closed rule the Mission Contract axis
+    now uses. Because the digest-difference check above already excludes
+    reactivations, tightening ``<`` to ``<=`` cannot block a normal reissue.
 
     Returns ``None`` when there is nothing to compare (different mission) or
-    the candidate is not older on either axis.
+    the candidate is strictly newer on both axes.
     """
     if existing.mission_id != envelope.mission_id:
         return None
     if envelope.risk_policy_pack_digest != existing.risk_policy_pack_digest:
         existing_pack = RiskPolicyPackV1.model_validate(existing.risk_policy_pack)
         new_pack = RiskPolicyPackV1.model_validate(envelope.risk_policy_pack)
-        if new_pack.validity.not_before < existing_pack.validity.not_before:
+        if new_pack.validity.not_before <= existing_pack.validity.not_before:
             return (
                 DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK,
-                "이미 활성인 RiskPolicyPack보다 이른 validity.notBefore를 가진 후보다 — "
-                "이전 정책으로 되돌리는 활성화를 거부한다",
+                "이미 활성인 RiskPolicyPack과 같거나 이른 validity.notBefore를 가진 후보다 — "
+                "이전 정책으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
             )
     if envelope.edge_runtime_profile_digest != existing.edge_runtime_profile_digest:
         existing_profile = EdgeRuntimeProfileV1.model_validate(existing.edge_runtime_profile)
         new_profile = EdgeRuntimeProfileV1.model_validate(envelope.edge_runtime_profile)
-        if new_profile.validity.not_before < existing_profile.validity.not_before:
+        if new_profile.validity.not_before <= existing_profile.validity.not_before:
             return (
                 DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE,
-                "이미 활성인 EdgeRuntimeProfile보다 이른 validity.notBefore를 가진 후보다 — "
-                "이전 설정으로 되돌리는 활성화를 거부한다",
+                "이미 활성인 EdgeRuntimeProfile과 같거나 이른 validity.notBefore를 가진 후보다 — "
+                "이전 설정으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
             )
     return None
 
