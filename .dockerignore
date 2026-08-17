@@ -59,3 +59,12 @@ design/**/index.html
 # .claude/.ksi — 에이전트 작업 상태, 컨테이너에 담을 이유가 없다.
 .claude/
 .ksi/
+.ai/
+
+# dev 조립·테스트 트리 — uv workspace 멤버가 아니라(members = packages/*, services/*)
+# `uv sync` 에 필요 없고, 런타임 CMD 도 참조하지 않는다. 특히 scripts/run_core_dev.py
+# 는 **실행 가능한 dev 조립**이라 dev 고정 토큰 5개를 평문으로 들고 있다 — 그것이
+# 운영 이미지에 실리면 INV-040 이 막으려는 사고 클래스 그 자체다(2026-08-18 적대적
+# 검증 지적). tests/ 도 같은 리터럴을 담고 런타임과 무관하다.
+scripts/
+tests/

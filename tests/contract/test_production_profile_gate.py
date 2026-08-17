@@ -62,6 +62,9 @@ _FORBIDDEN_MODULE_PREFIXES = (
     "faker",
     "run_core_dev",
     "conftest",
+    # packages/test-vectors 아래라 경로 검사(references/scripts/tests)에도 안 걸린다 —
+    # 이름으로 막지 않으면 어느 검사에도 안 잡힌다.
+    "ksi_test_vectors",
     # 이 목록의 실질 — 배선 검증용 placeholder 파이프라인. EventBundle 에
     # {"rule": "vertical-slice-demo"} 를 실어 "실제 위험 판정 규칙이 아니다"라고
     # 스스로 밝히는 모듈이라, 운영 조립에 실리면 INV-040 위반 그 자체다.
@@ -307,3 +310,65 @@ def test_no_dev_token_literal_in_any_production_closure_source(
     assert scanned > 0, "스캔한 파일이 0건이면 이 테스트는 공허하다"
     # 원래 사각지대였던 파일이 실제로 스캔 목록에 들어왔는지 못박는다.
     assert _ANCHOR_MODULE[entrypoint] in scanned_names
+
+
+# ── 빌드 컨텍스트: 실행 가능한 dev 조립이 운영 이미지에 실리지 않는다 ──────────
+#
+# import closure 게이트는 "무엇이 로드되는가"를 보지 "이미지에 무엇이 들어있는가"를
+# 보지 않는다. 둘은 다른 축이다 — 로드되지 않아도 이미지 안에 있으면 누군가 실행할
+# 수 있다. 2026-08-18 적대적 검증이 실제로 이 구멍을 찾았다: .dockerignore 가
+# scripts/ 를 빼지 않아 dev 고정 토큰 5개를 든 run_core_dev.py 가 운영 이미지에
+# 그대로 실리고 있었다.
+
+_DOCKERFILES = ("Dockerfile", "Dockerfile.worker")
+
+
+def _dockerignore_entries() -> set[str]:
+    text = (_REPO_ROOT / ".dockerignore").read_text(encoding="utf-8")
+    return {
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+
+def test_dev_assembly_tree_is_excluded_from_the_build_context() -> None:
+    """dev 조립·테스트 트리가 .dockerignore 로 빠진다.
+
+    두 Dockerfile 이 모두 ``COPY . .`` 로 저장소 전체를 넣으므로, 제외는
+    .dockerignore 한 곳에서만 일어난다 — 그 사실도 함께 고정한다.
+    """
+    for name in _DOCKERFILES:
+        content = (_REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "COPY . ." in content, f"{name} 의 COPY 범위가 바뀌었다 — 이 게이트를 재검토하라"
+
+    entries = _dockerignore_entries()
+    for required in ("scripts/", "tests/"):
+        assert required in entries, (
+            f".dockerignore 에 {required} 가 없다 — 운영 이미지에 dev 조립이 실린다"
+        )
+
+
+def test_no_executable_dev_assembly_survives_the_build_context() -> None:
+    """dev 토큰을 든 **실행 가능한 조립**이 빌드 컨텍스트에 남지 않는다.
+
+    문서·예시 문자열(``tools/*.py`` docstring 의 사용 예)까지 금지하지는 않는다 —
+    막아야 할 것은 "dev 자격증명으로 앱을 세우는 실행 경로"이지 문자열 자체가
+    아니다. 그 경계를 여기서 명시한다.
+    """
+    excluded_roots = {entry.rstrip("/") for entry in _dockerignore_entries()}
+    survivors = []
+    for path in _REPO_ROOT.rglob("*.py"):
+        try:
+            relative = path.relative_to(_REPO_ROOT)
+        except ValueError:  # pragma: no cover - rglob 는 항상 하위 경로다
+            continue
+        if not relative.parts or relative.parts[0] in excluded_roots:
+            continue
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if any(literal in source for literal in _DEV_TOKEN_LITERALS) and (
+            "create_app(" in source or "assemble_app(" in source
+        ):
+            survivors.append(str(relative))
+
+    assert survivors == [], f"dev 자격증명으로 앱을 조립하는 파일이 빌드 컨텍스트에 남았다: {survivors}"
