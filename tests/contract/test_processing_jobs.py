@@ -1930,6 +1930,72 @@ def test_http_artifact_vertical_reference_without_basis_is_rejected(tmp_path: Pa
     assert response.status_code == 422, response.text
 
 
+@pytest.mark.parametrize(
+    "accuracy",
+    [
+        pytest.param(
+            {
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://r/1.pdf",
+                "checkpointCount": 0,
+                "checkpointRmseM": 0.042,
+            },
+            id="검사점 없이 절대 RMSE 주장",
+        ),
+        pytest.param(
+            {"gcpCount": 12, "rmse": 0.03, "reportUri": "s3://r/1.pdf", "checkpointCount": 5},
+            id="검사점만 있고 잔차 없음",
+        ),
+        pytest.param(
+            {
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://r/1.pdf",
+                "checkpointCount": 8,
+                "checkpointRmseM": -1.0,
+            },
+            id="음수 검사점 잔차",
+        ),
+    ],
+)
+def test_http_accuracy_without_independent_checkpoints_is_rejected(
+    accuracy: dict[str, Any], tmp_path: Path
+) -> None:
+    """[음성·INV-024] 검사점 규칙 위반은 등록 표면에서 **422** 로 거부된다.
+
+    500 이면 안 된다 — 워커의 core_client 는 비-JSON 응답을 NON_JSON_RESPONSE 로
+    싸서 던지므로, 운영자가 "생산자의 영구 계약 위반"과 "Core 장애"를 구분하지
+    못한다. 계약 모델의 게이트가 요청 표면까지 실제로 닿는지 고정한다.
+    """
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=_artifact_payload(accuracy=accuracy),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_http_checkpoint_backed_accuracy_is_accepted(tmp_path: Path) -> None:
+    """[비공허 대조] 검사점과 잔차가 함께 실리면 등록된다 — 과잉 거부가 아니다."""
+    client = _client(tmp_path)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=_artifact_payload(
+            accuracy={
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://r/1.pdf",
+                "checkpointCount": 8,
+                "checkpointRmseM": 0.042,
+            }
+        ),
+    )
+    assert response.status_code == 201, response.text
+
+
 @pytest.mark.parametrize("token", [_ADMIN_TOKEN, _VIEWER_TOKEN])
 def test_http_humans_cannot_register_artifacts(tmp_path: Path, token: str) -> None:
     """[음성] 산출물 등록도 워커 전용이다 — 사람이 근거를 만들어 넣지 못한다."""

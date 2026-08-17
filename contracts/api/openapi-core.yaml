@@ -3022,7 +3022,7 @@ paths:
                 verticalReference:
                   description: >-
                     이 산출물 높이의 수직기준 + 그것을 왜 아는가(계약 정본:
-                    contracts/schemas/processing-artifact.v1.2.json). **생산자가
+                    contracts/schemas/processing-artifact.v1.2.json(검사점을 실으면 v1.3.json)). **생산자가
                     선언하고 Core 는 기록만 한다** — Core 는 산출물 바이트를 읽지
                     않아 이 값을 확인할 수 없다. 생략하면(옛 워커) null 로 남고,
                     Core 는 어떤 기본값도 채우지 않는다: "안 밝혔다"와 "타원체고다"는
@@ -4792,7 +4792,7 @@ components:
         artifacts:
           description: >-
             이 작업에 등록된 산출물의 계약 payload(등록 순). 구조 정본은
-            contracts/schemas/processing-artifact.v1.2.json 이다. SUCCEEDED 를
+            contracts/schemas/processing-artifact.v1.2.json(검사점을 실으면 v1.3.json) 이다. SUCCEEDED 를
             받쳐주는 근거가 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수
             있게 싣는다(INV-051).
           type: array
@@ -4838,7 +4838,7 @@ components:
     ProcessingArtifactMutationResponse:
       description: >-
         산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은
-        contracts/schemas/processing-artifact.v1.2.json 이다 — Core 가 채운
+        contracts/schemas/processing-artifact.v1.2.json(검사점을 실으면 v1.3.json) 이다 — Core 가 채운
         jobId·lineage.sourceDigest 를 포함한 완전한 계약 payload 다.
       type: object
       required: [verdict]

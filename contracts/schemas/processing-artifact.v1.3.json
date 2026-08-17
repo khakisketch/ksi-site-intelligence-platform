@@ -154,9 +154,54 @@
         "checkpointRmseM": {
           "type": "number",
           "minimum": 0,
-          "description": "독립 검사점 기준 RMSE(meter) — 절대정확도 주장의 유일한 자리. checkpointCount > 0 일 때만 실린다. 서버는 산출물 바이트를 읽지 않으므로 이 값은 생산자 신고이지 서버 관측이 아니다(귀속)."
+          "description": "독립 검사점 기준 RMSE(meter) — 절대정확도 주장의 유일한 자리. checkpointCount > 0 일 때만 실린다. 서버는 산출물 바이트를 읽지 않으므로 이 값은 생산자 신고이지 서버 관측이 아니다(귀속). 0 은 허용하지 않는다 — 절대오차 0m 은 물리적으로 불가능한 주장이다.",
+          "exclusiveMinimum": 0
         }
-      }
+      },
+      "allOf": [
+        {
+          "description": "INV-024: 검사점 잔차를 실었으면 검사점이 실제로 1개 이상이어야 한다. 두 필드는 함께 있거나 함께 없다 — 이 규칙을 스키마가 직접 인코딩한다 (계약 문서가 정본이므로 코드에만 두면 정본이 금지 조합을 허용하게 된다).",
+          "if": {
+            "type": "object",
+            "properties": {
+              "checkpointRmseM": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "checkpointRmseM"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checkpointCount": {
+                "minimum": 1
+              }
+            }
+          }
+        },
+        {
+          "description": "검사점을 뒀다고 선언했으면 그 잔차도 실려야 한다.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "checkpointCount": {
+                "minimum": 1
+              }
+            },
+            "required": [
+              "checkpointCount"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checkpointRmseM": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
     },
     "auxiliaryFiles": {
       "type": "array",

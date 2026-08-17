@@ -329,6 +329,54 @@ def test_checkpoint_backed_accuracy_wire_is_v1_3_and_v1_2_rejects_it() -> None:
         Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(wire)
 
 
+@pytest.mark.parametrize(
+    "accuracy",
+    [
+        pytest.param(
+            {
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://b/r.pdf",
+                "checkpointCount": 0,
+                "checkpointRmseM": 0.042,
+            },
+            id="검사점 0인데 잔차 주장",
+        ),
+        pytest.param(
+            {
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://b/r.pdf",
+                "checkpointCount": 8,
+                "checkpointRmseM": None,
+            },
+            id="검사점만 있고 잔차 없음",
+        ),
+        pytest.param(
+            {
+                "gcpCount": 12,
+                "rmse": 0.03,
+                "reportUri": "s3://b/r.pdf",
+                "checkpointCount": 1,
+                "checkpointRmseM": 0.0,
+            },
+            id="절대오차 0m",
+        ),
+    ],
+)
+def test_v1_3_schema_itself_rejects_broken_checkpoint_pairings(
+    accuracy: dict[str, Any],
+) -> None:
+    """[음성] 페어링 규칙을 **스키마 문서 자체**가 거부한다.
+
+    계약 문서가 정본이므로(CLAUDE.md 권위 순서) 규칙을 코드에만 두면 정본이 금지
+    조합을 허용하게 된다 — 그러면 다른 언어 소비자가 스키마만 보고 그 조합을 만든다.
+    """
+    schema = _load_schema(_ARTIFACT_SCHEMA_FILE_V1_3)
+    validator = Draft202012Validator(schema["properties"]["accuracy"])
+    assert list(validator.iter_errors(accuracy)), "스키마가 금지 조합을 통과시켰다"
+
+
 def test_accuracy_without_checkpoints_stays_a_v1_2_document() -> None:
     """[비공허 대조] 검사점을 주장하지 않는 정확도 wire 는 두 키가 빠져 v1.2 로 남는다."""
     payload = _valid_artifact_dict()

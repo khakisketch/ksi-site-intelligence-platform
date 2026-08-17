@@ -223,15 +223,18 @@ class ArtifactAccuracy(_CamelModel):
             raise ValueError(
                 f"checkpointRmseM 은 finite 여야 한다 (got {self.checkpoint_rmse_m!r})"
             )
-        if self.checkpoint_rmse_m is not None and self.checkpoint_rmse_m < 0:
+        if self.checkpoint_rmse_m is not None and self.checkpoint_rmse_m <= 0:
+            # 0 도 거부한다 — 절대오차 0m 은 물리적으로 불가능한 주장이고, 그것을
+            # 받아주면 "검사점을 뒀다"는 형식만 갖춘 완벽 정확도 신고가 통과한다.
             raise ValueError(
-                f"checkpointRmseM 은 음수일 수 없다 (got {self.checkpoint_rmse_m!r})"
+                f"checkpointRmseM 은 양수여야 한다 (got {self.checkpoint_rmse_m!r})"
             )
         return self
 
 
 class ProcessingArtifact(_CamelModel):
-    """재구성 산출물 1건 — ``contracts/schemas/processing-artifact.v1.2.json`` SSOT."""
+    """재구성 산출물 1건 — SSOT 는 ``contracts/schemas/processing-artifact.v1.2.json``
+    (검사점을 실으면 ``v1.3.json``)."""
 
     artifact_id: str = Field(min_length=1)
     job_id: str = Field(min_length=1)

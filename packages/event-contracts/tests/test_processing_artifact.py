@@ -92,3 +92,15 @@ def test_checkpoint_rmse_rejects_non_finite_values(bad: float) -> None:
             checkpoint_count=4,
             checkpoint_rmse_m=bad,
         )
+
+
+def test_zero_checkpoint_rmse_is_rejected() -> None:
+    """절대오차 0m 은 물리적으로 불가능한 주장이다 — 형식만 갖춘 완벽 정확도 신고를 막는다."""
+    with pytest.raises(ValidationError):
+        ArtifactAccuracy(
+            gcp_count=12,
+            rmse=0.03,
+            report_uri="s3://r/1.pdf",
+            checkpoint_count=1,
+            checkpoint_rmse_m=0.0,
+        )

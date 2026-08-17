@@ -44,16 +44,25 @@
     "lineage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["authority", "derivedFrom", "sourceDigest"],
+      "required": [
+        "authority",
+        "derivedFrom",
+        "sourceDigest"
+      ],
       "description": "INV-051 강제 지점 — 원본/파생 계보. 파생 산출물을 원본의 권위로 대체해 측정·완료 판정 근거로 쓰지 않기 위해, '무엇에서 파생됐는가'를 계약이 직접 강제한다.",
       "properties": {
         "authority": {
           "description": "source = 원본 capture 를 직접 처리한 결과(Point Cloud SSOT 계열). derived = 원본에서 재생성한 파생 서빙 계층 — 언제든 원본에서 다시 만들 수 있어야 한다(ADR-KSI-003).",
-          "enum": ["source", "derived"]
+          "enum": [
+            "source",
+            "derived"
+          ]
         },
         "derivedFrom": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "이 산출물의 직접 부모 artifactId 목록. authority=source 면 빈 배열이고, authority=derived 면 최소 1개가 있어야 한다(아래 allOf) — 파생은 단방향이고 계보 없이 파생을 주장할 수 없다."
         },
         "sourceDigest": {
@@ -66,12 +75,16 @@
         {
           "if": {
             "properties": {
-              "authority": { "const": "derived" }
+              "authority": {
+                "const": "derived"
+              }
             }
           },
           "then": {
             "properties": {
-              "derivedFrom": { "minItems": 1 }
+              "derivedFrom": {
+                "minItems": 1
+              }
             }
           }
         }
@@ -88,19 +101,32 @@
       "description": "파일 형식(예: laz, obj, gltf, cog, 3dtiles, pdf) — kind·provider 조합마다 달라 enum 으로 고정하지 않는다."
     },
     "crs": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1,
       "description": "이 산출물이 참조하는 좌표계 — 재구성 작업 전체가 공유하는 site CRS. nullable — report/camera_poses 는 그 자체로 공간 좌표계를 갖지 않는 산출물일 수 있어 null 을 허용한다(생략이 아니라 명시적 null). point_cloud/ortho/dsm/dtm/mesh/tiles_3d 는 공간 산출물의 정의상 좌표계 없이 성립하지 않으므로 아래 allOf 가 null 을 금지한다."
     },
     "gsd": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "exclusiveMinimum": 0,
       "description": "지상 표본 거리(GSD, m/px 상당). nullable — 래스터 계열(ortho/dsm/dtm)만 픽셀 단위 표본거리가 산출물 자체의 고유 속성이라 아래 allOf 가 null 을 금지한다. point_cloud(점 간격이지 픽셀 GSD 가 아니다)·mesh(포인트클라우드+텍스처에서 유도된 근사 기하라 단일 GSD 가 고유하지 않다)·tiles_3d(다중 LOD 타일이라 단일 해상도로 대표되지 않는다)·camera_poses·report 는 GSD 가 그 산출물 자체의 고유 속성이 아니어서 null 을 허용한다."
     },
     "accuracy": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
-      "required": ["gcpCount", "rmse", "reportUri"],
+      "required": [
+        "gcpCount",
+        "rmse",
+        "reportUri"
+      ],
       "description": "측량 정확도(GCP/RMSE) 리포트 — nullable. ODM 경로에는 구조화된 정확도 리포트가 없어(ADR-KSI-012 결과) null 이 된다. 이 필드가 null 인 비율이 ADR-KSI-012 D3(Pix4D 로 갈아타는 전환 트리거) 판단의 계측점이라, 값을 생략하지 않고 명시적으로 null 을 실어 '측정 안 함'과 '필드를 잊음'을 구분한다.",
       "properties": {
         "gcpCount": {
@@ -111,7 +137,7 @@
         "rmse": {
           "type": "number",
           "minimum": 0,
-          "description": "GCP 기준 RMSE(단위: crs 의 선형 단위, 통상 meter)."
+          "description": "GCP 피팅 잔차(단위: crs 의 선형 단위, 통상 meter). **절대정확도가 아니다**(INV-024) — 피팅에 쓴 점의 잔차이므로 쓰지 않은 지점의 오차를 말하지 않는다. 절대 RMSE 주장은 독립 검사점이 필요하며 그 자리는 v1.3 의 checkpointCount/checkpointRmseM 이다."
         },
         "reportUri": {
           "type": "string",
@@ -129,14 +155,26 @@
       "description": "산출물 1건이 파일 여러 개로 이뤄질 때(메시의 .mtl·텍스처 등), 주 파일(objectKey가 가리키는 그 파일) 옆에 함께 저장된 보조 파일들의 basename 목록 — 경로가 아니라 파일명뿐이다(services/core의 build_processing_artifact_object_key가 artifactId 디렉터리 아래 이 이름으로 저장 위치를 유도한다). 생략되거나 빈 배열이면 이 산출물은 파일 하나다(v1.0과 동일 동작)."
     },
     "verticalReference": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
-      "required": ["datum", "basis", "source"],
+      "required": [
+        "datum",
+        "basis",
+        "source"
+      ],
       "description": "이 산출물의 높이가 어느 수직기준의 높이인가 + 그것을 왜 아는가. nullable **필수**(accuracy·crs·gsd 와 같은 관례) — 생략과 명시적 null 을 구분하기 위해서다. null 은 'v1.2 를 아는 생산자가 이 산출물의 수직기준을 모른다고 밝혔다'는 뜻이고, 필드 자체가 없으면 그것은 v1.2 문서가 아니라 v1.1 문서다(수직기준 개념 이전에 등록된 산출물). 두 경우 모두 소비자는 '미상'으로 다루지만, 어느 쪽인지가 남아야 재처리 대상 판별이 추측이 되지 않는다.\n\n값이 있으면 그것은 **관측이 아니라 귀속(provenance)** 이다 — 어떤 파일 포맷도 수직기준을 신뢰성 있게 담지 않는다. 그래서 datum 하나가 아니라 basis(왜 아는가)와 source(누구의 주장인가)를 함께 강제한다. 정본은 packages/event-contracts 의 ksi_event_contracts.vertical_reference 다.",
       "properties": {
         "datum": {
           "description": "ellipsoidal = 타원체 기준 높이를 의도적으로 선택한 것. ellipsoidal_native = 재구성 엔진이 낸 타원체고를 변환하지 못해 그대로 남은 상태(지오이드 격자 확보 시 재처리 대상 목록이 된다). orthometric_kngeoid2018 / orthometric_kngeoid2024 = 한국 정표고이며, 뒤의 이름은 그 높이를 타원체고와 잇는 지오이드 격자 모델이다. 비교 가능성은 이 값이 아니라 계열(family)로 판정한다 — 앞의 둘은 같은 계열이라 서로 빼도 되고, 정표고와는 격자 없이 섞으면 한국에서 20~30m 가 조용히 들어간다.",
-          "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018", "orthometric_kngeoid2024"]
+          "enum": [
+            "ellipsoidal",
+            "ellipsoidal_native",
+            "orthometric_kngeoid2018",
+            "orthometric_kngeoid2024"
+          ]
         },
         "basis": {
           "type": "string",
@@ -145,7 +183,10 @@
         },
         "source": {
           "description": "pipeline_declared = 산출물을 만든 처리 파이프라인이 자기 동작을 근거로 귀속한 값(근거가 코드·설정에 있어 감사 가능). user_declared = 업로더의 주장(파일에서 자동 확인 불가). 둘 다 관측이 아니며, 차이는 신뢰도가 아니라 틀렸을 때 고칠 자리다.",
-          "enum": ["pipeline_declared", "user_declared"]
+          "enum": [
+            "pipeline_declared",
+            "user_declared"
+          ]
         }
       }
     }
@@ -156,14 +197,25 @@
       "if": {
         "properties": {
           "kind": {
-            "enum": ["point_cloud", "ortho", "dsm", "dtm", "mesh", "tiles_3d"]
+            "enum": [
+              "point_cloud",
+              "ortho",
+              "dsm",
+              "dtm",
+              "mesh",
+              "tiles_3d"
+            ]
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
-          "crs": { "type": "string" }
+          "crs": {
+            "type": "string"
+          }
         }
       }
     },
@@ -171,13 +223,23 @@
       "description": "래스터 계열(ortho/dsm/dtm)은 gsd 가 null 일 수 없다.",
       "if": {
         "properties": {
-          "kind": { "enum": ["ortho", "dsm", "dtm"] }
+          "kind": {
+            "enum": [
+              "ortho",
+              "dsm",
+              "dtm"
+            ]
+          }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
-          "gsd": { "type": "number" }
+          "gsd": {
+            "type": "number"
+          }
         }
       }
     }

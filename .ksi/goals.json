@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T06:41:35+09:00",
+  "updated_at": "2026-08-18T07:05:31+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3613,6 +3613,34 @@
       "previous_status": null,
       "created_at": "2026-08-18T06:41:35+09:00",
       "updated_at": "2026-08-18T06:41:35+09:00"
+    },
+    {
+      "id": "core-handler-validationerror-leaks-500",
+      "title": "Core 핸들러 본문에서 계약 모델을 만드는 자리마다 ValidationError 가 500 으로 샌다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-18 적대적 검증. create_app 에 ValidationError 핸들러가 없어(확인), 요청 검증 단계를 지난 뒤 핸들러 본문에서 계약 모델을 생성하는 모든 자리가 같은 성질을 갖는다 — pydantic ValueError 가 그대로 올라가 500 + text/plain 이 나간다. 워커의 core_client._post 는 비-JSON 응답을 NON_JSON_RESPONSE 로 싸므로 운영자가 '생산자의 영구 계약 위반'과 'Core 장애'를 구분할 수 없다. processing_jobs 의 accuracy 자리는 요청 모델을 계약 모델로 교체해 닫았으나(422), 같은 패턴이 남은 다른 핸들러를 전수 조사해야 한다. rmse=Infinity 로 이 커밋 이전에도 재현되던 표면이다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T07:05:31+09:00",
+      "updated_at": "2026-08-18T07:05:31+09:00"
+    },
+    {
+      "id": "api-contract-sync-ignores-field-constraints",
+      "title": "계약 정합 게이트가 minimum·pattern 등 필드 제약을 대조하지 않아 드리프트가 영구 미탐이다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "test_api_contract_sync.py 가 '타입까지는 보지 않는다'고 의도를 명시하며 이름·required 만 대조한다. 실제로 그 사각지대에서 드리프트가 발생했다(2026-08-18): openapi 는 checkpointRmseM 에 minimum:0 을 적었는데 요청 모델에는 ge=0 이 없어 음수가 통과했다. 해당 건은 요청 모델을 계약 모델로 교체해 해소했으나, 게이트 자체가 제약을 안 보는 성질은 그대로다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T07:05:31+09:00",
+      "updated_at": "2026-08-18T07:05:31+09:00"
     }
   ]
 }
