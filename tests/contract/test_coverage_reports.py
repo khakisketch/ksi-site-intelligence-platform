@@ -1189,3 +1189,73 @@ def test_the_check_does_not_apply_to_hazard_or_asset_ratios(tmp_path: Path) -> N
         ),
     )
     assert response.status_code == 201
+
+
+# ── 조회 응답 — 귀속·대사 ──────────────────────────────────────────────────
+
+
+def test_view_always_carries_the_attribution_note(store: CoverageReportStore) -> None:
+    """[핵심] 귀속 캡션은 대사 가능 여부와 무관하게 항상 채워진다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["ratioAttributionNote"]
+    assert "기체" in body["ratioAttributionNote"]
+
+
+def test_view_carries_the_planned_ratio_when_available(store: CoverageReportStore) -> None:
+    """기본 픽스처는 planned_coverage_ratio=1.0 이므로 그 값이 그대로 나온다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["plannedGeneralCoverageRatio"] == pytest.approx(1.0)
+    assert body["plannedGeneralCoverageUnavailableReason"] is None
+
+
+def test_view_explains_when_the_planned_ratio_is_unavailable(tmp_path: Path) -> None:
+    """계획 추정치가 없는 임무는 null + 이름 붙인 사유를 낸다("—" 가 아니다)."""
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=None),
+    )
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["plannedGeneralCoverageRatio"] is None
+    assert body["plannedGeneralCoverageUnavailableReason"]

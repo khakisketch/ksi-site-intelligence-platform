@@ -4241,9 +4241,19 @@ components:
         detail: { type: [string, 'null'] }
         report: { type: [object, 'null'], additionalProperties: true }
     CoverageReportView:
-      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지 + Coverage Recovery 권고.
+      description: 그 임무의 최신 보고 + 접수 건수 + 누가 보고했는지 + Coverage Recovery 권고 + 귀속·대사.
       type: object
-      required: [missionId, reportCount, latest, reportedBy, recoveryRecommended]
+      required:
+        [
+          missionId,
+          reportCount,
+          latest,
+          reportedBy,
+          recoveryRecommended,
+          ratioAttributionNote,
+          plannedGeneralCoverageRatio,
+          plannedGeneralCoverageUnavailableReason,
+        ]
       properties:
         missionId: { type: string }
         reportCount: { type: integer }
@@ -4260,6 +4270,20 @@ components:
             사유있는 미관찰 Cell 이 남아 있으면 true. 자동 재발급을 트리거하지
             않는다 — 운영자가 원본 site AOI 로 SPATIAL_REFRESH 임무를
             POST /v1/missions/plans 에 재발급하라는 신호일 뿐이다.
+        ratioAttributionNote:
+          type: string
+          description: >-
+            "이 세 비율은 기체가 신고한 값이고 서버는 재계산하지 못한다"는
+            사실 — 항상 채워진다(대사 가능 여부와 무관, INV-010).
+        plannedGeneralCoverageRatio:
+          type: [number, 'null']
+          description: >-
+            발급 시점 lawnmower 경로 생성기가 계산한 일반영역 커버 상한 추정치.
+            perimeter 패턴·계약 단독 발급이면 null 이고
+            plannedGeneralCoverageUnavailableReason 이 대신 채워진다.
+        plannedGeneralCoverageUnavailableReason:
+          type: [string, 'null']
+          description: plannedGeneralCoverageRatio 가 null 일 때만 채워지는 이름 붙인 사유.
     DefectCandidateBatchResponse:
       description: 결함 후보 배치 접수 판정. recordedCount 는 **새로** 기록된 건수다.
       type: object

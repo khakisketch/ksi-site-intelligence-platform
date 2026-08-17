@@ -316,6 +316,19 @@ export interface CoverageReportView {
    * SPATIAL_REFRESH 임무를 재발급하라는 신호일 뿐이다.
    */
   recoveryRecommended: boolean;
+  /**
+   * "이 세 비율은 기체가 신고한 값이고 서버는 재계산하지 못한다" — 항상 채워진다.
+   * 대사 가능 여부와 무관하게 상시 노출한다(귀속과 대사를 분리, 2026-08-18 설계).
+   */
+  ratioAttributionNote: string;
+  /**
+   * 발급 시점 계획 커버 상한 추정치. UI 는 이 원 숫자를 "비행 결과" 캡션에
+   * 반복하지 않는다 — 발급 메타 패널의 "계획 커버리지" 필드와 나란히 두지
+   * 않는다는 기존 원칙(missions/[missionId]/page.tsx) 때문이다.
+   */
+  plannedGeneralCoverageRatio: number | null;
+  /** plannedGeneralCoverageRatio 가 null 일 때만 채워지는 이름 붙인 사유. */
+  plannedGeneralCoverageUnavailableReason: string | null;
 }
 
 // 3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개는

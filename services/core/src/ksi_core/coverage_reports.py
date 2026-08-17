@@ -484,6 +484,12 @@ class CoverageReportStore:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
 
+    def mission_planned_general_ratio(self, mission_id: str) -> float | None:
+        """이 임무의 계획 일반영역 커버 추정치 — 없으면 ``None``(대사 불가)."""
+        with self._lock:
+            mission = self._mission_store.get(mission_id)
+            return mission.planned_coverage_ratio if mission is not None else None
+
     def rejections(self, mission_id: str) -> list[RejectedCoverageReport]:
         """그 임무에 대해 서버가 **거부한** 보고들(수신 순서 보존).
 
@@ -505,6 +511,12 @@ class CoverageReportResponse(CamelModel):
     report: dict[str, Any] | None = None
 
 
+_RATIO_ATTRIBUTION_NOTE = (
+    "이 세 비율은 기체가 계산해 신고한 값입니다. 서버는 구역 분류(위험구역/자산/"
+    "일반)를 갖고 있지 않아 재계산하지 못합니다(INV-010)."
+)
+
+
 class CoverageReportView(CamelModel):
     """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지 + 누가 보고했는지."""
 
@@ -517,6 +529,14 @@ class CoverageReportView(CamelModel):
     # 자동 재발급을 트리거하지 않는다: 운영자/오퍼레이터가 이 신호를 보고 원본 site
     # AOI 로 SPATIAL_REFRESH 임무를 POST /v1/missions/plans 에 재발급한다.
     recovery_recommended: bool
+    # 귀속 — 이 비율이 기체 신고값이라는 사실은 항상 참이라 항상 채워진다.
+    ratio_attribution_note: str
+    # 대사 — 계획 커버 추정치. 없으면(perimeter 패턴·계약 전용 발급) None 이고
+    # planned_general_coverage_unavailable_reason 이 대신 채워진다. UI 는 이 원 숫자를
+    # "비행 결과" 캡션에 반복하지 않는다(page.tsx:239 의 기존 원칙 — 계획과 실측을
+    # 나란히 두지 않는다) — 프로그램적 소비(추후 감사·내보내기)를 위해 API 에는 남긴다.
+    planned_general_coverage_ratio: float | None
+    planned_general_coverage_unavailable_reason: str | None
 
 
 class CoverageRejectionView(CamelModel):
@@ -643,12 +663,21 @@ def build_coverage_reports_router(
         recorded = store.latest_recorded(mission_id)
         if recorded is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+        planned_ratio = store.mission_planned_general_ratio(mission_id)
         return CoverageReportView(
             mission_id=mission_id,
             report_count=len(store.history(mission_id)),
             latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
             reported_by=recorded.reported_by,
             recovery_recommended=recorded.report.needs_coverage_recovery(),
+            ratio_attribution_note=_RATIO_ATTRIBUTION_NOTE,
+            planned_general_coverage_ratio=planned_ratio,
+            planned_general_coverage_unavailable_reason=(
+                None
+                if planned_ratio is not None
+                else "이 임무의 발급 경로에 계획 커버 추정치가 없습니다"
+                " (perimeter 경로이거나 계약 단독 발급일 수 있습니다)"
+            ),
         )
 
     @router.get(
