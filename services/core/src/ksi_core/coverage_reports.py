@@ -197,9 +197,14 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
     return CoverageReportVerdict.RECORDED, None
 
 
-# 부동소수 직렬화 잔차 허용치 — packages/event-contracts 의 _RATIO_EPS 와 동일한
-# 값이지만 독립 상수로 둔다(이 모듈이 그 패키지의 사설 상수를 import 하지 않는다).
-_PLANNED_COVERAGE_EPS = 1e-9
+# planned_coverage_ratio 는 lawnmower 경로 생성기가 스캔선 기하(각도·간격·중복)로
+# 계산한 값이다 — 단순 직렬화 잔차가 아니라 **두 독립된 기하 계산** 사이의 오차라
+# packages/event-contracts 의 _RATIO_EPS(1e-9, 직렬화 잔차용)로는 부족하다. 실측
+# 확인(2026-08-18, test_aol2_reobservation.py 재현): 같은 논리적 "1.0" 이 계획
+# 경로에서 0.9999999260359301 로 나와 신고값 1.0 과 7.4e-8 차이가 났다 — 이 패키지의
+# 기하 계산 오차 허용 관례(geometry.py _EPSILON_M·coverage.py _FOLD_EPSILON_M·
+# terrain.py _HORIZONTAL_EPSILON_M, 전부 1e-6)와 같은 값을 쓴다.
+_PLANNED_COVERAGE_EPS = 1e-6
 
 
 def _exceeds_planned_coverage(report: CoverageReport, mission: MissionRecord) -> bool:
