@@ -114,7 +114,12 @@
 
 - **INV-040** Production에서 mock/placeholder/static always-go 금지. 외부 의존 실패는
   데모 데이터로 가리지 않고 fail-closed로 정직하게 드러낸다.
-  _강제: 코드리뷰 게이트 + production profile 테스트 (미구현)._
+  _강제: 코드리뷰 게이트 + `tests/contract/test_production_profile_gate.py` — 두
+  운영 진입점(Core `build_production_app`·워커 `runner`)을 subprocess 로 실제 실행해
+  import closure 에 mock/dev/placeholder 모듈이 없고, references·scripts·tests 경로의
+  모듈이 섞이지 않으며, closure 전체 소스에 dev 토큰 리터럴이 없음을 고정한다.
+  **미완**: 모듈 단위 검사라 정상 라이브러리 안의 가짜 클래스(예: `httpx.MockTransport`)는
+  잡지 못한다 — 그 축은 코드리뷰 게이트 몫이다. Edge C++ 의 static always-go 축도 별개다._
 - **INV-041** `CapabilityVerificationState`(VERIFIED/SPIKE_REQUIRED/BLOCKED — 장비기능 검증)와
   `EquipmentSupportLevel`(DATASET_AVAILABLE→…→PRODUCTION_SUPPORTED — 장비 지원단계)은 별개
   개념이며, PRODUCTION_SUPPORTED만 상용 안전지원으로 표시한다. 미검증 기능은 UX에 노출하지

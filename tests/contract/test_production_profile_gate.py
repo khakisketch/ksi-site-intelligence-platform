@@ -1,0 +1,283 @@
+"""INV-040 강제 게이트 — 운영 조립의 import closure 에 mock/dev 모듈이 없다.
+
+INV-040 은 "Production 에서 mock/placeholder/static always-go 금지"를 요구하고
+강제 수단으로 *코드리뷰 게이트 + production profile 테스트* 를 병기한다. 앞의 것은
+사람이고, 이 파일이 뒤의 것이다.
+
+**이 저장소에 "production profile" 이라는 설정값은 없다.** ``KSI_ENV``·``KSI_PROFILE``
+류 환경변수가 아예 없고(grep 0건), 프로파일은 오직 **어느 진입점을 실행하는가**로만
+정의된다 — Core 는 ``Dockerfile`` CMD → :func:`ksi_core.production.build_production_app`,
+워커는 ``Dockerfile.worker`` CMD → ``ksi_processing_controller.runner:main``. 그래서
+이 게이트도 설정을 읽지 않고 **그 두 진입점을 실제로 실행해 sys.modules 를 본다**.
+
+``tests/contract/test_production_assembly.py`` 가 이미 dev 토큰 리터럴과
+``run_core_dev`` import 를 막지만 **``production.py`` 파일 한 개의 텍스트만** 읽는다 —
+``app_assembly.py`` 를 포함한 나머지 조립 경로 전체가 사각지대였다. 이 파일은 그
+검사를 closure 전체로 넓힌다.
+
+이 게이트는 신규 요구가 아니라 **현재 성질의 회귀 금지**다(2026-08-18 실측: 두
+진입점 모두 mock 계열 미로드). ``tests/contract/test_anti_circularity_gate.py`` 가
+자기 목적을 그렇게 적은 것과 같은 구조이고, 그 파일의 두 관례를 그대로 따른다 —
+①별도 파일로 격리하고 fixture 를 공유 conftest 로 빼지 않는다(중복이 여기서는 비용이
+아니라 격리다. 다른 테스트의 fixture 변경이 이 게이트의 판정을 바꾸면 안 된다),
+②"공허 방지" 단언을 함께 건다(검사 대상이 실제로 존재했음을 증명하지 못하면 초록불이
+거짓말이 된다).
+
+**subprocess 를 쓰는 이유**: pytest 는 한 프로세스에서 전 테스트를 수집·실행하므로
+``sys.modules`` 가 다른 테스트 파일의 import 로 오염된다. in-process 로 짜면 오늘은
+우연히 통과하고(저장소 어느 테스트도 ``unittest.mock`` 을 import 하지 않는다) 누가
+mock 을 쓰는 테스트를 하나 추가하는 순간 무관한 이유로 깨지거나 판정이 실행 순서에
+종속된다. 그건 게이트가 아니다.
+
+**이 게이트가 못 보는 것**: 모듈 단위만 본다. ``httpx.MockTransport`` 처럼 정상
+런타임 라이브러리 **안의 클래스**로 만드는 가짜는 모듈 이름으로 잡히지 않는다.
+그 축은 INV-040 이 병기한 코드리뷰 게이트 몫으로 남는다.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+from collections.abc import Iterable
+from pathlib import Path
+
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 운영 closure 에 있으면 안 되는 모듈. **정확일치 또는 점(.) 프리픽스 일치만** 쓴다 —
+# 부분문자열 매칭은 정상 런타임 모듈을 오탐한다(2026-08-18 실측: anyio._core._testing,
+# anyio.abc._testing, pydantic._internal._mock_val_ser).
+_FORBIDDEN_MODULE_PREFIXES = (
+    "unittest.mock",
+    "pytest",
+    "_pytest",
+    "moto",
+    "responses",
+    "respx",
+    "faker",
+    "run_core_dev",
+    "conftest",
+    # 이 목록의 실질 — 배선 검증용 placeholder 파이프라인. EventBundle 에
+    # {"rule": "vertical-slice-demo"} 를 실어 "실제 위험 판정 규칙이 아니다"라고
+    # 스스로 밝히는 모듈이라, 운영 조립에 실리면 INV-040 위반 그 자체다.
+    "ksi_perception.pipeline",
+)
+
+_DEV_TOKEN_LITERALS = (
+    "dev-admin-token",
+    "dev-field-operator-token",
+    "dev-viewer-token",
+    "dev-edge-device-token",
+    "dev-processing-worker-token",
+)
+
+# closure 덤프를 만드는 자식 프로세스 스크립트. 결과는 stdout 이 아니라 파일로
+# 넘긴다 — 로깅 핸들러가 stderr 로 가더라도 파일 경유가 더 견고하다.
+_DUMP_TEMPLATE = """\
+import json, sys
+{body}
+modules = {{
+    name: getattr(mod, "__file__", None)
+    for name, mod in sorted(sys.modules.items())
+    if mod is not None
+}}
+with open({out!r}, "w", encoding="utf-8") as handle:
+    json.dump(modules, handle)
+"""
+
+_CORE_BODY = """\
+from ksi_core.production import build_production_app
+build_production_app()
+"""
+
+# 워커는 import 까지만 한다 — runner.main() 은 폴링 루프라 돌아오지 않는다.
+_WORKER_BODY = """\
+import ksi_processing_controller.runner
+"""
+
+
+def forbidden_modules(loaded: Iterable[str]) -> tuple[str, ...]:
+    """금지 모듈만 골라 정렬해 반환한다 — 정확일치 또는 점 프리픽스 일치.
+
+    판정을 순수 함수로 빼는 이유는 합성 입력으로 **탐지기 자체가 no-op 이 아님**을
+    시험하기 위해서다(``tests/contract/test_repo_hygiene_gate.py`` 의 규율:
+    "스크립트가 0을 반환한다"가 아니라 "위반을 주입하면 실제로 실패한다"를 본다).
+    """
+    hits = {
+        name
+        for name in loaded
+        for prefix in _FORBIDDEN_MODULE_PREFIXES
+        if name == prefix or name.startswith(prefix + ".")
+    }
+    return tuple(sorted(hits))
+
+
+def _write_signing_keys(keys_dir: Path) -> None:
+    """test_production_assembly.py 에서 의도적으로 복제 — 위 docstring 의 격리 이유 참조."""
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    key_id = "core-prod-gate-key"
+    key = Ed25519PrivateKey.generate()
+    private_path = keys_dir / f"{key_id}.private.pem"
+    private_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    private_path.chmod(0o600)
+    (keys_dir / f"{key_id}.public.pem").write_bytes(
+        key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+    )
+    (keys_dir / "keys.json").write_text(
+        json.dumps({"active": key_id, "keys": [{"keyId": key_id, "status": "ACTIVE"}]}),
+        encoding="utf-8",
+    )
+
+
+def _valid_env(tmp_path: Path) -> dict[str, str]:
+    """운영 조립이 요구하는 필수 환경변수 5개.
+
+    ``production.py`` 가 필수 환경변수를 늘리면 이 함수와
+    ``test_production_assembly.py:_valid_env`` **둘 다** 고쳐야 한다 — 복제는 격리
+    목적이라 유지하지만, 고치는 사람이 두 곳을 봐야 한다는 사실을 여기 남긴다.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    signing_dir = tmp_path / "signing"
+    _write_signing_keys(signing_dir)
+    tokens = [
+        {
+            "tokenSha256": hashlib.sha256(b"prod-gate-token").hexdigest(),
+            "principalId": "prod-admin",
+            "kind": "OPERATOR",
+            "role": "ADMIN",
+            "deviceId": None,
+        }
+    ]
+    return {
+        "KSI_CORE_DATA_DIR": str(data_dir),
+        "KSI_CORE_SIGNING_KEYS_DIR": str(signing_dir),
+        "KSI_CORE_S3_ENDPOINT": "http://127.0.0.1:9000",
+        "KSI_CORE_S3_BUCKET": "prod-evidence",
+        "KSI_CORE_PRINCIPAL_TOKENS_JSON": json.dumps(tokens),
+    }
+
+
+def _dump_closure(body: str, tmp_path: Path, env: dict[str, str] | None = None) -> dict[str, str]:
+    """자식 프로세스에서 ``body`` 를 실행하고 그 시점 ``sys.modules`` 를 돌려준다."""
+    out_path = tmp_path / "closure.json"
+    script = _DUMP_TEMPLATE.format(body=body, out=str(out_path))
+    child_env = dict(env or {})
+    child_env.setdefault("PATH", "/usr/bin:/bin")
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=child_env,
+        cwd=str(_REPO_ROOT),
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            f"운영 진입점 실행이 실패했다 (exit {result.returncode})\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    loaded: dict[str, str] = json.loads(out_path.read_text(encoding="utf-8"))
+    return loaded
+
+
+def test_forbidden_module_detector_is_not_a_no_op() -> None:
+    """탐지기가 실제로 잡고, 정상 모듈은 오탐하지 않는다.
+
+    두 번째 단언이 핵심이다 — 부분문자열 매칭으로 회귀하면 여기서 걸린다.
+    """
+    assert forbidden_modules(["ksi_core.app", "unittest.mock"]) == ("unittest.mock",)
+    assert forbidden_modules(["pytest", "ksi_core.app"]) == ("pytest",)
+    assert forbidden_modules(["ksi_perception.pipeline"]) == ("ksi_perception.pipeline",)
+    assert forbidden_modules(["anyio._core._testing", "pydantic._internal._mock_val_ser"]) == ()
+    assert forbidden_modules(["ksi_perception.detector"]) == ()
+
+
+def test_core_production_closure_loads_no_mock_or_dev_module(tmp_path: Path) -> None:
+    """Core 운영 조립을 **실제로 호출한** 뒤의 import closure 가 깨끗하다."""
+    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+
+    # 공허 방지 — 조립이 실제로 끝까지 갔는지부터 확인한다. evidence_s3/boto3 는
+    # production.py 에서 지연 import 되므로, 이 둘이 있어야 "모듈 import 만 하고
+    # 조립은 안 했다"가 아님이 증명된다.
+    assert "ksi_core.app_assembly" in loaded
+    assert "ksi_core.evidence_s3" in loaded
+    assert "boto3" in loaded
+
+    hits = forbidden_modules(loaded)
+    assert hits == (), f"운영 closure 에 금지 모듈이 실렸다: {hits}"
+
+
+def test_worker_closure_loads_no_mock_or_dev_module(tmp_path: Path) -> None:
+    """처리 워커 진입점의 import closure 도 같은 기준으로 깨끗하다."""
+    loaded = _dump_closure(_WORKER_BODY, tmp_path)
+
+    assert "ksi_processing_controller.worker" in loaded  # 공허 방지
+
+    hits = forbidden_modules(loaded)
+    assert hits == (), f"워커 closure 에 금지 모듈이 실렸다: {hits}"
+
+
+def test_no_production_closure_module_lives_under_references_or_scripts_or_tests(
+    tmp_path: Path,
+) -> None:
+    """운영 closure 의 어떤 모듈도 references/·scripts/·tests/ 아래에서 오지 않는다.
+
+    CLAUDE.md 의 "Never import runtime code directly from ``references/``" 를 기계로
+    검사하는 첫 지점이다.
+    """
+    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+
+    offenders = []
+    in_repo = 0
+    for name, path in loaded.items():
+        if not path:
+            continue
+        try:
+            relative = Path(path).resolve().relative_to(_REPO_ROOT)
+        except ValueError:
+            continue  # 저장소 밖(표준 라이브러리·site-packages)은 이 검사 대상이 아니다
+        in_repo += 1
+        if relative.parts and relative.parts[0] in ("references", "scripts", "tests"):
+            offenders.append(f"{name} → {relative}")
+
+    assert in_repo > 0, "저장소 안 모듈이 0건이면 이 테스트는 공허하다"
+    assert offenders == [], f"운영 closure 가 금지 경로의 모듈을 끌고 있다: {offenders}"
+
+
+def test_no_dev_token_literal_in_any_production_closure_source(tmp_path: Path) -> None:
+    """closure 전체 소스에 dev 토큰 리터럴이 없다 — 기존 파일 1개 검사를 확대한다."""
+    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+
+    scanned = 0
+    scanned_names = set()
+    for name, path in loaded.items():
+        if not path or not name.startswith("ksi_"):
+            continue
+        source_path = Path(path)
+        if not source_path.is_file():
+            continue
+        source = source_path.read_text(encoding="utf-8", errors="replace")
+        scanned += 1
+        scanned_names.add(name)
+        for literal in _DEV_TOKEN_LITERALS:
+            assert literal not in source, f"{name} 에 dev 토큰 리터럴이 있다: {literal!r}"
+        assert "import run_core_dev" not in source, f"{name} 이 run_core_dev 를 import 한다"
+        assert "from run_core_dev" not in source, f"{name} 이 run_core_dev 에서 import 한다"
+
+    assert scanned > 0, "스캔한 파일이 0건이면 이 테스트는 공허하다"
+    # 원래 사각지대였던 파일이 실제로 스캔 목록에 들어왔는지 못박는다.
+    assert "ksi_core.app_assembly" in scanned_names
