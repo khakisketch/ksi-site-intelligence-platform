@@ -125,12 +125,18 @@
 
 - **INV-040** Production에서 mock/placeholder/static always-go 금지. 외부 의존 실패는
   데모 데이터로 가리지 않고 fail-closed로 정직하게 드러낸다.
-  _강제: 코드리뷰 게이트 + `tests/contract/test_production_profile_gate.py` — 두
-  운영 진입점(Core `build_production_app`·워커 `runner`)을 subprocess 로 실제 실행해
-  import closure 에 mock/dev/placeholder 모듈이 없고, references·scripts·tests 경로의
-  모듈이 섞이지 않으며, closure 전체 소스에 dev 토큰 리터럴이 없음을 고정한다.
-  **미완**: 모듈 단위 검사라 정상 라이브러리 안의 가짜 클래스(예: `httpx.MockTransport`)는
-  잡지 못한다 — 그 축은 코드리뷰 게이트 몫이다. Edge C++ 의 static always-go 축도 별개다._
+  _강제: 코드리뷰 게이트 + `tests/contract/test_production_profile_gate.py` — 두 운영
+  진입점의 import closure 를 subprocess 로 떠서 ①mock/dev/placeholder 모듈 부재
+  ②references·scripts·tests 경로 모듈 유입 없음 ③closure 전체 소스에 dev 토큰 리터럴
+  없음을 고정한다(세 검사 모두 Core·워커 양쪽에 적용). Core 는 `build_production_app()`
+  을 실제 호출하고, 워커는 `runner` import 까지만 한다(`main()` 은 폴링 루프라 돌아오지
+  않는다).
+  **미완**: ①모듈 단위 검사라 정상 라이브러리 안의 가짜 클래스(예: `httpx.MockTransport`)는
+  잡지 못한다 — 그 축은 코드리뷰 게이트 몫이다. ②워커의 지연 import 서브트리
+  (`_load_dynamic_object_detector_from_env` 아래 torch/transformers)는 closure 에 들어오지
+  않는다 — 모듈 단위 게이트의 구조적 한계다. ③`packages/mission-contracts` 의 Edge console
+  script 3건은 이 게이트 밖이다(현재 위반 없음을 실측했으나 회귀 감시는 없다).
+  ④Edge C++ 의 static always-go 축은 별개다._
 - **INV-041** `CapabilityVerificationState`(VERIFIED/SPIKE_REQUIRED/BLOCKED — 장비기능 검증)와
   `EquipmentSupportLevel`(DATASET_AVAILABLE→…→PRODUCTION_SUPPORTED — 장비 지원단계)은 별개
   개념이며, PRODUCTION_SUPPORTED만 상용 안전지원으로 표시한다. 미검증 기능은 UX에 노출하지

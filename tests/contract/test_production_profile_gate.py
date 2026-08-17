@@ -194,6 +194,20 @@ def _dump_closure(body: str, tmp_path: Path, env: dict[str, str] | None = None) 
     return loaded
 
 
+# 진입점별 공허 방지 앵커 — 그 closure 에서만 나오는 모듈이라야 의미가 있다.
+_ANCHOR_MODULE = {
+    "core": "ksi_core.app_assembly",
+    "worker": "ksi_processing_controller.core_client",
+}
+
+
+def _closure_for(entrypoint: str, tmp_path: Path) -> dict[str, str]:
+    """진입점 이름으로 closure 를 뜬다 — Core 만 env 가 필요하다."""
+    if entrypoint == "core":
+        return _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+    return _dump_closure(_WORKER_BODY, tmp_path)
+
+
 def test_forbidden_module_detector_is_not_a_no_op() -> None:
     """탐지기가 실제로 잡고, 정상 모듈은 오탐하지 않는다.
 
@@ -231,15 +245,17 @@ def test_worker_closure_loads_no_mock_or_dev_module(tmp_path: Path) -> None:
     assert hits == (), f"워커 closure 에 금지 모듈이 실렸다: {hits}"
 
 
+@pytest.mark.parametrize("entrypoint", ["core", "worker"])
 def test_no_production_closure_module_lives_under_references_or_scripts_or_tests(
-    tmp_path: Path,
+    entrypoint: str, tmp_path: Path
 ) -> None:
     """운영 closure 의 어떤 모듈도 references/·scripts/·tests/ 아래에서 오지 않는다.
 
     CLAUDE.md 의 "Never import runtime code directly from ``references/``" 를 기계로
-    검사하는 첫 지점이다.
+    검사하는 첫 지점이다. **두 진입점 모두** 검사한다 — Core 만 보면 워커 closure 의
+    ksi_* 모듈 상당수(core_client 등)가 영원히 사각지대로 남는다.
     """
-    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+    loaded = _closure_for(entrypoint, tmp_path)
 
     offenders = []
     in_repo = 0
@@ -255,12 +271,22 @@ def test_no_production_closure_module_lives_under_references_or_scripts_or_tests
             offenders.append(f"{name} → {relative}")
 
     assert in_repo > 0, "저장소 안 모듈이 0건이면 이 테스트는 공허하다"
+    # 이름 앵커 — in_repo 는 .venv 안 패키지로도 채워질 수 있어 개수만으로는 약하다.
+    assert _ANCHOR_MODULE[entrypoint] in loaded
     assert offenders == [], f"운영 closure 가 금지 경로의 모듈을 끌고 있다: {offenders}"
 
 
-def test_no_dev_token_literal_in_any_production_closure_source(tmp_path: Path) -> None:
-    """closure 전체 소스에 dev 토큰 리터럴이 없다 — 기존 파일 1개 검사를 확대한다."""
-    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+@pytest.mark.parametrize("entrypoint", ["core", "worker"])
+def test_no_dev_token_literal_in_any_production_closure_source(
+    entrypoint: str, tmp_path: Path
+) -> None:
+    """closure 전체 소스에 dev 토큰 리터럴이 없다 — 기존 파일 1개 검사를 확대한다.
+
+    **두 진입점 모두** 스캔한다. Core 만 보면 워커 전용 모듈이 빠지는데, 그 중
+    ``core_client`` 는 워커의 Bearer 토큰을 세팅하는 자리다 — 거기 dev 토큰 기본값이
+    들어가도 Core-only 스캔은 통과한다.
+    """
+    loaded = _closure_for(entrypoint, tmp_path)
 
     scanned = 0
     scanned_names = set()
@@ -280,4 +306,4 @@ def test_no_dev_token_literal_in_any_production_closure_source(tmp_path: Path) -
 
     assert scanned > 0, "스캔한 파일이 0건이면 이 테스트는 공허하다"
     # 원래 사각지대였던 파일이 실제로 스캔 목록에 들어왔는지 못박는다.
-    assert "ksi_core.app_assembly" in scanned_names
+    assert _ANCHOR_MODULE[entrypoint] in scanned_names

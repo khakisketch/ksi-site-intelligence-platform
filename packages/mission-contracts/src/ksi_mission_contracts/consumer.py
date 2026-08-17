@@ -265,7 +265,7 @@ class MissionContractConsumer:
         *,
         now: datetime | None,
     ) -> str | None:
-        """이미 활성인 계약보다 **오래된** 후보면 거부 사유를, 아니면 ``None``.
+        """이미 활성인 계약을 **순서 근거 없이 교체하려는** 후보면 거부 사유, 아니면 ``None``.
 
         서명이 유효하고 TTL 안이어도 그것만으로 "지금 실을 계약"이 되지는 않는다.
         Core 가 임무 중 정책을 조여 계약을 재발급하면 이전 계약은 자기 validity 창이
@@ -283,19 +283,29 @@ class MissionContractConsumer:
         확실히 더 뒤(``>``)일 때만 통과다.
 
         즉 ``notBefore`` 가 **같은데 내용이 다른** 후보는 거부한다(2026-08-18).
-        같으면 어느 쪽이 나중 발급본인지 가릴 근거가 아예 없고, 이 저장소의 규약은
-        그럴 때 통과가 아니라 fail-closed 다(ADR-KSI-002 §6). 이전에는 ``>=`` 라
-        그 경우가 무저항 통과였고, 그것이 risk
-        ``mission-contract-no-issuance-ordering-field`` 가 지목한 구멍이었다 —
-        스키마 변경 없이 여기서 닫는다.
+        같으면 어느 쪽이 나중 발급본인지 가릴 근거가 아예 없으니, 통과가 아니라
+        거부한다 — 이건 이 커밋의 판단이지 기존 ADR 이 정해 둔 규칙이 아니다.
+        이전에는 ``>=`` 라 그 경우가 무저항 통과였다.
 
-        **알아둘 것(키 로테이션)**: ``mission_plans.py`` 의 멱등 재발급
-        (``_regenerate_pair_artifact``)은 원 레코드의 ``issued_at`` 을 재사용해 계약을
-        다시 서명한다. 입력·생성기가 같으면 바이트가 같아 digest 단축으로 통과하지만,
-        **서명키가 로테이션돼 ``keyId`` 가 달라지면 "같은 notBefore·다른 digest"** 가
-        되어 이 규칙에 걸린다. 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
-        재생성본을 쓰지 않아 무해하다 — 나중에 재생성 산출물을 기체 경로에 연결한다면
-        이 상호작용을 먼저 풀어야 한다.
+        **이 가드의 실제 사정거리(과대평가 금지)**: 현 Core 는 "같은 missionId·다른
+        내용" 계약을 애초에 만들지 않는다 — 두 발급 경로 모두 ``record_issuance`` 를
+        지나고 같은 ``missionId`` 재사용은 ``MISSION_ID_CONFLICT``(409)로 막힌다. 실제
+        정책 조임은 **새 missionId** 로 나가는데, 그 경우 위 ``mission_id`` 불일치
+        분기에서 이 함수가 아예 ``None`` 을 반환한다. 그래서 이 규칙이 지금 막는 것은
+        "Core 밖에서 조립된 옛 계약 재생"뿐이고, 정상 파이프라인에는 걸리는 트래픽이
+        없다. 게다가 활성 계약 파일이 없거나 TTL 이 만료됐으면 위에서 이미 ``None``
+        으로 빠져나간다(fail-open 세 곳) — 이 가드만으로 rollback 이 닫혔다고 말할 수
+        없다. risk ``mission-contract-no-issuance-ordering-field`` 는 계속 열려 있다.
+
+        **알아둘 것**: 서명키 로테이션은 이 규칙에 걸리지 **않는다** —
+        ``canonical_payload_bytes`` 가 ``signature`` 블록을 통째로 제외하므로
+        ``keyId`` 가 바뀌어도 digest 는 같고, 위 digest 단축에서 먼저 통과한다.
+        "같은 notBefore·다른 digest" 를 실제로 만드는 트리거는 따로 있다:
+        ``mission_plans.py`` 의 멱등 재발급(``_regenerate_pair_artifact``)이 원
+        ``issued_at`` 을 재사용해 재서명하는 상태에서 서버 고정 안전상수·경로
+        생성기가 드리프트하는 경우다(risk ``kmz-regeneration-determinism-timebomb``
+        와 같은 사고 클래스). 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
+        재생성본을 쓰지 않아 무해하다.
         """
         if self._active_path.is_symlink() or not self._active_path.exists():
             return None

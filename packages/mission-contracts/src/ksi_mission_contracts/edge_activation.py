@@ -655,43 +655,51 @@ def _policy_rollback_detail(
     reissue) while the outer envelope swaps in an *older* RiskPolicyPack or
     EdgeRuntimeProfile for the same mission — e.g. a reserve-margin or
     altitude-ceiling relaxation replayed from an earlier, still-validly-signed
-    envelope. Neither field has an issuance-order field in its schema, so this
-    uses the same ``validity.notBefore`` monotonicity rule as
-    ``MissionContractConsumer._superseded_detail``, scoped to the same mission
-    and applied only when the candidate's digest actually differs from what is
-    active (an unchanged pack/profile is a reactivation, not a rollback).
+    envelope.
 
-    The comparison is strict on both axes (2026-08-18): a candidate is admitted
-    only when its ``notBefore`` is **strictly later**. An equal ``notBefore``
-    with different content carries no ordering evidence at all, so it is refused
-    rather than admitted — the same fail-closed rule the Mission Contract axis
-    now uses. Because the digest-difference check above already excludes
-    reactivations, tightening ``<`` to ``<=`` cannot block a normal reissue.
+    **The ordering evidence is the envelope's own ``validity.notBefore``, not
+    the pack's or profile's** (corrected 2026-08-18). Those two carry an
+    operator-authored deployment window: Core reads them verbatim from
+    ``KSI_CORE_RISK_POLICY_PACKS_JSON`` / ``..._EDGE_RUNTIME_PROFILES_JSON`` and
+    never stamps them. So on those axes "same notBefore, different digest" is a
+    normal edit, not a rollback — refusing it would leave the **looser** old
+    policy on the aircraft, which is exactly the state an attacker wants
+    (fail-unsafe). The envelope's ``notBefore``, by contrast, is stamped by the
+    server at dispatch time, so it is real ordering evidence.
 
-    Returns ``None`` when there is nothing to compare (different mission) or
-    the candidate is strictly newer on both axes.
+    A candidate is admitted when its envelope is **strictly later**. An equal or
+    earlier envelope that changes policy content is refused: replaying an old
+    envelope cannot swap policy, and an equal timestamp carries no ordering
+    evidence, so it is refused rather than admitted (the same fail-closed rule
+    ``MissionContractConsumer._superseded_detail`` uses). Content that did not
+    change is never a rollback, so digests are compared first.
+
+    Returns ``None`` when there is nothing to compare (different mission), when
+    the envelope is strictly later, or when neither policy digest changed.
     """
     if existing.mission_id != envelope.mission_id:
         return None
-    if envelope.risk_policy_pack_digest != existing.risk_policy_pack_digest:
-        existing_pack = RiskPolicyPackV1.model_validate(existing.risk_policy_pack)
-        new_pack = RiskPolicyPackV1.model_validate(envelope.risk_policy_pack)
-        if new_pack.validity.not_before <= existing_pack.validity.not_before:
-            return (
-                DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK,
-                "이미 활성인 RiskPolicyPack과 같거나 이른 validity.notBefore를 가진 후보다 — "
-                "이전 정책으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
-            )
-    if envelope.edge_runtime_profile_digest != existing.edge_runtime_profile_digest:
-        existing_profile = EdgeRuntimeProfileV1.model_validate(existing.edge_runtime_profile)
-        new_profile = EdgeRuntimeProfileV1.model_validate(envelope.edge_runtime_profile)
-        if new_profile.validity.not_before <= existing_profile.validity.not_before:
-            return (
-                DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE,
-                "이미 활성인 EdgeRuntimeProfile과 같거나 이른 validity.notBefore를 가진 후보다 — "
-                "이전 설정으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
-            )
-    return None
+    pack_changed = envelope.risk_policy_pack_digest != existing.risk_policy_pack_digest
+    profile_changed = (
+        envelope.edge_runtime_profile_digest != existing.edge_runtime_profile_digest
+    )
+    if not pack_changed and not profile_changed:
+        # 두 축 모두 내용이 그대로다 — 재활성화이지 rollback 이 아니다.
+        return None
+    if envelope.validity.not_before > existing.validity.not_before:
+        # 서버가 더 나중에 각인한 봉투다 — 정상 재dispatch(정책 조임 포함).
+        return None
+    if pack_changed:
+        return (
+            DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK,
+            "이미 활성인 dispatch 와 같거나 이른 봉투가 RiskPolicyPack 을 바꾸려 한다 — "
+            "이전 정책으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
+        )
+    return (
+        DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE,
+        "이미 활성인 dispatch 와 같거나 이른 봉투가 EdgeRuntimeProfile 을 바꾸려 한다 — "
+        "이전 설정으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다",
+    )
 
 
 def activate_mission_dispatch_file(
