@@ -19,9 +19,18 @@
 - 폐루프 서버 결선(발급→배포→커버리지→사진회수→재구성작업→산출물→모델갱신→재관측 임무)은
   e2e 2건(`tests/e2e/test_aol1_mapping_autonomy.py`, `test_aol2_reobservation.py`)으로
   **Backend Ready**. 사람 개입 없는 상태 전이까지 검증됨.
-- 남은 소프트웨어 구간: **재구성 7단계가 mock 대역**(`services/processing-controller/.../worker.py`
-  인터페이스 + e2e mock worker). 실제 엔진(NodeODM) 완주·산출물 바이트 영속/서빙·좌표변환·
-  물량(DSM diff)은 미완 — 2026-08-07 리뷰가 실측한 최대 공백과 일치.
+- e2e 2건이 재구성 워커를 **대역(mock)으로 돌리는 것은 사실이나**, 그것이 "실엔진 경로가
+  미완"이라는 뜻은 아니다 — 실엔진 계약은 별도 파일(`tests/contract/test_odm_live.py`)이
+  실 NodeODM·실 MinIO 대상으로 검증한다. 아래 정정 참조.
+
+> **2026-08-18 정정.** 이 문서 초판은 S2(실재구성 종단)를 "미완"으로 적었으나, 근거로 삼은
+> 것이 2026-08-07 시점의 낡은 관측이었다. 목표 원장을 직접 확인한 결과
+> `m1-spatial-epoch-pipeline`(바이트 영속→정좌표→체적 리포트→화면)이 **2026-08-09에
+> 완료 판정**됐고(증거: 실 NodeODM+MinIO+Core 대상 `test_odm_live.py`,
+> `test_geo_spatial_vertical.py`, `test_dsm_diff.py` 골든값, PR #2 merge 1419c5f),
+> `site-intelligence-e2e-sw`·`m3-processing-worker-runtime`·`m2-change-detection-submission-ui`·
+> `m4a-design-conformance` 도 모두 completed 다. 좌표변환(pyproj·지오이드)·물량(DSM diff)·
+> 산출물 presigned 서빙은 이미 구현돼 있다. **S2 는 신규 과제가 아니라 회귀 확인 대상이다.**
 - 하드웨어 없이는 불가: track-a/b(Manifold 3 전원+네트워크), FIELD-0~3(실기·현장),
   phase-5(Dock 조달 판단).
 - 대표자 서면 결정 대기 4건: PSDK 직접 실행 허용 여부, 비행 상한 기준 분리,
@@ -46,20 +55,42 @@
 - 한계(정직): 코드 교정은 Backend Ready까지다. 실기 수용성(기체가 파일을 받아들이는가)과
   카메라 실측은 FIELD-0a에서만 확정된다.
 
-### S2. 실재구성 종단 완주 (P1의 남은 소프트웨어 절반)
-- 내용: NodeODM 로컬 컨테이너로 실제 재구성 1회 완주 → 산출물 바이트 영속·서빙(뷰어 최소 경로)
-  → 좌표변환(pyproj·지오이드) → DSM diff 물량·변화 리포트.
-- 근거: 폐루프에서 mock으로 남은 유일한 구간. 2026-08-07 리뷰의 권고 다음 과제
-  ("실사진 세트로 epoch 파이프라인 종단 완주")와 동일.
-- 확인 필요(착수 시): 실사진 세트 부재 시 공개 표본 데이터셋으로 완주 → 실사진 재완주는
-  FIELD-1 이후로 명시 구분.
-- 상세 계획: 착수 시 작성.
+### S2. 실재구성 경로 회귀 확인 (신규 구현 아님)
+- 내용: 이미 완료된 실엔진 경로가 **현재 코드에서도 여전히 성립하는지** 재확인한다.
+  로컬 상주 환경으로 실행 가능하다: NodeODM `127.0.0.1:13000`(컨테이너 `ksi-nodeodm`,
+  NodeODM 2.2.4 / ODM 3.5.6), MinIO `127.0.0.1:19000`(컨테이너 `ksi-minio-m1`,
+  자격은 컨테이너 env), 실 DJI 드론 사진
+  `~/Desktop/KSI-Projects/datasets/odm_data_toledo/images`(87장)·`odm_data_bellus`(122장).
 
-### S3. P3 — 지도 하나 UI
+```bash
+KSI_NODEODM_URL=http://127.0.0.1:13000 \
+KSI_ODM_IMAGES=/home/ksi/Desktop/KSI-Projects/datasets/odm_data_toledo/images \
+KSI_S3_ENDPOINT=http://127.0.0.1:19000 KSI_S3_KEY=... KSI_S3_SECRET=... \
+  uv run pytest tests/contract/test_odm_live.py -q -rs
+```
+
+- 근거: 이 경로는 CI 기본 경로에서 skip 되므로(컨테이너에 CI 를 묶지 않는 의도된 결정)
+  **회귀가 조용히 들어올 수 있는 구간**이다. 주기적 실행이 그 침묵을 메운다.
+- 남는 것(정직): 실 M4D 기체 사진으로의 완주는 여전히 FIELD-1 소관이다 — 지금 쓰는
+  toledo/bellus 는 공개 샘플이다.
+
+### S3. P3 — 지도 하나 UI ← 소프트웨어 트랙의 실질적 다음 과제
 - 내용: 한 지도에서 "지난 현장 → 현재 → 변화 영역 → 재확인 → 다음 비행"이 한 흐름으로
   보이는 화면. 대표자 P3 문언 그대로.
-- 근거: S2의 산출물 서빙이 선행돼야 실데이터로 붙는다 → S2 다음.
-- 상세 계획: S2 완료 후 작성.
+- 2026-08-18 조사로 확인된 현재 상태:
+  - 5요소 중 **"지난 현장" 시각화만 없고** 나머지 넷은 구현돼 있으나 세 화면에 흩어져 있다
+    (`/reports`, `/sites/[siteId]/changes`, `/sites/[siteId]/report`).
+  - **한 지도에 겹칠 수 없는 구조다** — `AoiPolygonMapInner`·`ChangeRegionMapInner`·
+    `DiffHeatmapOverlayInner`·`OrthophotoOverlayInner` 가 각자 `MapContainer` 를 소유하고
+    각자 `fitBounds` 를 건다. 레이어를 `MapContainer` 밖으로 빼는 리팩터가 선행돼야 한다
+    (각 Inner 가 이미 레이어를 별도 함수 컴포넌트로 분리해 둬 이식 자체는 크지 않다).
+  - **새 Core API 는 필요 없다** — `fetchOrthophotoArtifactId(jobId)` 가 임의 jobId 를 받는데
+    지금은 current 로만 호출된다. baseline jobId 로 한 번 더 부르면 "지난 현장" 레이어가 생긴다.
+    (baseline epoch 에 ortho 산출물이 실제로 있는지는 **확인 필요** — 실데이터 확인 사항.)
+  - 변화 영역 → 재관측 발급 동선이 현재 **화면 3개·클릭 8~9회**다.
+- 착수 전 사용자 확인 필요: "한 지도"가 **레이어를 겹쳐 보는 것**인지 **좌우로 두 시점을
+  나란히 두는 것**인지 — 코드로는 판단 불가. 모호하면 얇게 하나 만들어 보여주고 정한다.
+- 상세 계획: 착수 시 작성.
 
 ### S4. 신뢰·증거 하드닝 (사이사이 소화 가능)
 - regressed 리스크 `critical-event-riskfield-evidence-gate-presence-only`(INV-021 게이트가
