@@ -1117,7 +1117,9 @@ def test_replay_restores_checkpoint_backed_accuracy(tmp_path: Path) -> None:
             }
     _write_journal(tmp_path, records)
     restored = _rebuild(tmp_path)
-    artifact = restored.get(f"{_MISSION_ID}-pj1").artifacts[0]
+    restored_job = restored.get(f"{_MISSION_ID}-pj1")
+    assert restored_job is not None
+    artifact = restored_job.artifacts[0]
     assert artifact.accuracy is not None
     assert artifact.accuracy.checkpoint_count == 8
     assert artifact.accuracy.checkpoint_rmse_m == 0.042

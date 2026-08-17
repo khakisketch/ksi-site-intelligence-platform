@@ -371,4 +371,6 @@ def test_no_executable_dev_assembly_survives_the_build_context() -> None:
         ):
             survivors.append(str(relative))
 
-    assert survivors == [], f"dev 자격증명으로 앱을 조립하는 파일이 빌드 컨텍스트에 남았다: {survivors}"
+    assert survivors == [], (
+        f"dev 자격증명으로 앱을 조립하는 파일이 빌드 컨텍스트에 남았다: {survivors}"
+    )
