@@ -1553,9 +1553,19 @@ class ProcessingJobTransitionRequest(CamelModel):
 
 
 class ArtifactAccuracyRequest(CamelModel):
+    """정확도 신고 — 게이트는 계약 모델(:class:`ArtifactAccuracy`)이 소유한다.
+
+    여기서 검사를 겹쳐 두지 않는 것은 의도다. 계약 모델의 validator 하나가 등록
+    수신과 journal 재생 양쪽을 동시에 막는다(``_replay_artifact`` 가 같은
+    ``ProcessingArtifact.model_validate`` 를 다시 태운다) — 게이트를 핸들러에 두면
+    재생 경로가 뚫린 채 남는다.
+    """
+
     gcp_count: int = Field(ge=0)
     rmse: float = Field(ge=0)
     report_uri: str = Field(min_length=1)
+    checkpoint_count: int = Field(default=0, ge=0)
+    checkpoint_rmse_m: float | None = None
 
 
 class ArtifactUploadUrlRequest(CamelModel):
@@ -2274,6 +2284,8 @@ def build_processing_jobs_router(
                     gcp_count=request.accuracy.gcp_count,
                     rmse=request.accuracy.rmse,
                     report_uri=request.accuracy.report_uri,
+                    checkpoint_count=request.accuracy.checkpoint_count,
+                    checkpoint_rmse_m=request.accuracy.checkpoint_rmse_m,
                 )
                 if request.accuracy is not None
                 else None

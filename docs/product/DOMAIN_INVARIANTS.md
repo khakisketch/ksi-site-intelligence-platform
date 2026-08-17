@@ -72,7 +72,18 @@
   _강제: InterpolationResult/ProjectionResult 타입 + 골든 테스트 (P0-2/P0-4)._
 - **INV-024** RTK Fix는 정확도 신호이지 절대정확도 검증이 아니다. 독립 checkpoint 없이
   절대 RMSE를 표시하지 않는다.
-  _강제: Spatial Quality Report 로직 (Terra 정직성 계승, 미구현)._
+  _강제: ① `ArtifactAccuracy` 검사점 게이트(`packages/event-contracts/.../processing_artifact.py`)
+  — `rmse` 는 GCP 피팅 잔차로 의미가 고정되고, 절대 RMSE 주장은
+  `checkpointCount`·`checkpointRmseM` 쌍으로만 표현되며 한쪽만 실리면 등록 422
+  (`ARTIFACT_CONTRACT_VIOLATION`)와 journal 재생 실패로 양쪽에서 막힌다
+  (`processing-artifact.v1.3.json`). ② 리포트 오차한계 정직성
+  (`dsm_diff._uncertainty_m3`, `VolumeChangeReport.uncertaintyM3/Note`) — 양쪽 epoch 모두
+  검증된 RMSE 가 있을 때만 값을 내고 없으면 null+사유.
+  **미완**: 서버는 산출물 바이트를 읽지 않으므로 신고된 검사점 수·잔차의 진위는 확인
+  불가다(귀속이지 관측이 아니다) — 현장 측량 검사점 대조는 실장비 작업이다. 검사점
+  값을 비교 입력으로 전달해 `uncertaintyM3` 를 실제로 채우는 경로도 아직 연결되지
+  않았다(`comparison_worker.py` 가 여전히 None 을 넘긴다). RTK 상태 수집 경로는 없고
+  실기 사진 없이는 필드 확정 불가다._
 - **INV-025** `WorldEntity.uncertainty.localization_state = CONFIRMED`는
   관측 집합 전체가 `CALIBRATED_POSE` 시점 증거를 가지며, 서로 다른 보정
   Camera Pose 참조가 2개 이상일 때만 허용한다.

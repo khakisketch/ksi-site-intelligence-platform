@@ -160,11 +160,32 @@ class ArtifactLineage(_CamelModel):
 
 
 class ArtifactAccuracy(_CamelModel):
-    """측량 정확도(GCP/RMSE) 리포트 — ODM 경로에서는 이 모델 전체가 None이 된다."""
+    """측량 정확도 리포트 — ODM 경로에서는 이 모델 전체가 None이 된다.
+
+    **``rmse`` 는 절대정확도가 아니다**(INV-024). GCP 로 피팅한 뒤의 잔차, 즉 "쓴
+    점들에 얼마나 잘 맞췄나"이지 "쓰지 않은 지점에서 얼마나 틀리나"가 아니다. 피팅에
+    쓴 점의 잔차로 절대정확도를 주장하는 것은 자기 답안으로 자기 채점을 하는 것과
+    같아서, 독립 검사점(checkpoint — 피팅에 쓰지 않고 남겨 둔 측량점) 없이는 절대
+    RMSE 를 말할 수 없다. Terra 수용 기준의 "GCP 와 CP 가 분리된다"가 이 뜻이다.
+
+    그래서 절대정확도 주장은 ``checkpoint_count``·``checkpoint_rmse_m`` 쌍으로만
+    표현되고, 둘은 함께 있거나 함께 없어야 한다. 검사점 없이 절대 RMSE 를 싣는
+    wire 는 이 계약에서 **표현 자체가 불가능**하다 — 그것이 INV-024 의 강제 지점이다.
+
+    **경계(중요)**: 이 게이트가 강제하는 것은 *형식*이지 숫자의 참이 아니다. Core 는
+    산출물 바이트를 읽지 않으므로(openapi-core.yaml 의 등록 계약 명시) 생산자가 신고한
+    검사점 수·잔차가 사실인지 확인할 방법이 없다 — ``verticalReference`` 와 같은
+    성질의 **귀속(provenance)이지 관측이 아니다**. 신고값을 사실로 올리려면 현장
+    측량 검사점 좌표와 산출물을 대조하는 별도 경로가 필요하고, 그건 측량기·현장
+    작업이다. 이 docstring 을 지우지 말 것 — 없으면 다음 사람이 이 게이트를
+    "정확도가 검증됐다"로 읽는다.
+    """
 
     gcp_count: int = Field(ge=0)
     rmse: float = Field(ge=0)
     report_uri: str = Field(min_length=1)
+    checkpoint_count: int = Field(default=0, ge=0)
+    checkpoint_rmse_m: float | None = None
 
     @model_validator(mode="after")
     def _rmse_must_be_finite(self) -> ArtifactAccuracy:
@@ -176,6 +197,36 @@ class ArtifactAccuracy(_CamelModel):
         """
         if not math.isfinite(self.rmse):
             raise ValueError(f"rmse 는 finite 여야 한다 (got {self.rmse!r})")
+        return self
+
+    @model_validator(mode="after")
+    def _absolute_rmse_needs_independent_checkpoints(self) -> ArtifactAccuracy:
+        """INV-024 — 검사점과 그 잔차는 함께 있거나 함께 없다.
+
+        한쪽만 실리면 둘 다 거부한다. ``checkpoint_rmse_m`` 만 있으면 근거 없는 절대
+        정확도 주장이고, ``checkpoint_count`` 만 있으면 "검사점을 뒀다"는 말만 남아
+        아무것도 강제하지 못하는 장식이 된다.
+        """
+        has_count = self.checkpoint_count > 0
+        has_rmse = self.checkpoint_rmse_m is not None
+        if has_rmse and not has_count:
+            raise ValueError(
+                "INV-024 위반: checkpointRmseM 은 독립 검사점 없이 주장할 수 없다 "
+                f"(checkpointCount={self.checkpoint_count})"
+            )
+        if has_count and not has_rmse:
+            raise ValueError(
+                f"INV-024 위반: checkpointCount={self.checkpoint_count} 인데 "
+                "checkpointRmseM 이 없다 — 검사점 잔차 없이는 정확도 주장이 성립하지 않는다"
+            )
+        if self.checkpoint_rmse_m is not None and not math.isfinite(self.checkpoint_rmse_m):
+            raise ValueError(
+                f"checkpointRmseM 은 finite 여야 한다 (got {self.checkpoint_rmse_m!r})"
+            )
+        if self.checkpoint_rmse_m is not None and self.checkpoint_rmse_m < 0:
+            raise ValueError(
+                f"checkpointRmseM 은 음수일 수 없다 (got {self.checkpoint_rmse_m!r})"
+            )
         return self
 
 
@@ -228,11 +279,19 @@ def processing_artifact_wire_dict(artifact: ProcessingArtifact) -> dict[str, Any
     항상 명시적으로 싣는다(값 또는 null).
     """
     data = artifact.model_dump(by_alias=True, mode="json", exclude={"accuracy", "crs", "gsd"})
-    data["accuracy"] = (
-        artifact.accuracy.model_dump(by_alias=True, mode="json")
-        if artifact.accuracy is not None
-        else None
-    )
+    if artifact.accuracy is not None:
+        accuracy = artifact.accuracy.model_dump(by_alias=True, mode="json")
+        if artifact.accuracy.checkpoint_rmse_m is None:
+            # **v1.3 과 v1.2 의 경계** — verticalReference 와 같은 관례다. 독립
+            # 검사점을 주장하지 않는 정확도 리포트는 그 사실을 0/null 로 싣지 않고
+            # 키째 빠져 v1.2 문서로 남는다. 검사점을 실은 리포트만 v1.3 이고,
+            # v1.2 는 그것을 거부한다(additionalProperties:false) — 이행이 실제로
+            # 일어났음이 두 방향에서 확인된다.
+            accuracy.pop("checkpointCount", None)
+            accuracy.pop("checkpointRmseM", None)
+        data["accuracy"] = accuracy
+    else:
+        data["accuracy"] = None
     data["crs"] = artifact.crs
     data["gsd"] = artifact.gsd
     if not artifact.auxiliary_files:

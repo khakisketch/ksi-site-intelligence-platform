@@ -2979,6 +2979,17 @@ paths:
                 crs: { type: [string, 'null'] }
                 gsd: { type: [number, 'null'], exclusiveMinimum: 0 }
                 accuracy:
+                  description: >-
+                    측량 정확도 신고 — nullable(ODM 경로는 null).
+                    **rmse 는 절대정확도가 아니다**(INV-024): GCP 로 피팅한 뒤의
+                    잔차, 즉 "쓴 점에 얼마나 잘 맞췄나"이지 "쓰지 않은 지점에서
+                    얼마나 틀리나"가 아니다. 절대 RMSE 주장은 독립 검사점
+                    (피팅에 쓰지 않고 남겨 둔 측량점)이 있을 때만 성립하므로
+                    checkpointCount·checkpointRmseM 쌍으로만 표현한다 — 둘은
+                    함께 있거나 함께 없어야 하고, 한쪽만 실리면 422
+                    (ARTIFACT_CONTRACT_VIOLATION)로 거부한다.
+                    서버는 산출물 바이트를 읽지 않으므로 이 값들은 생산자
+                    신고(귀속)이지 서버 관측이 아니다.
                   type: [object, 'null']
                   additionalProperties: false
                   required: [gcpCount, rmse, reportUri]
@@ -2986,6 +2997,19 @@ paths:
                     gcpCount: { type: integer, minimum: 0 }
                     rmse: { type: number, minimum: 0 }
                     reportUri: { type: string, minLength: 1 }
+                    checkpointCount:
+                      description: >-
+                        피팅에 쓰지 않고 남겨 둔 독립 검사점 수. 생략 시 0 이며,
+                        0 이면 절대 RMSE 를 주장할 수 없다.
+                      type: integer
+                      minimum: 0
+                      default: 0
+                    checkpointRmseM:
+                      description: >-
+                        독립 검사점 기준 RMSE(meter) — 절대정확도 주장의 유일한
+                        자리. checkpointCount > 0 일 때만 실린다.
+                      type: [number, 'null']
+                      minimum: 0
                 auxiliaryFiles:
                   description: >-
                     산출물이 파일 여러 개(메시의 .mtl·텍스처 등)일 때, 주 파일

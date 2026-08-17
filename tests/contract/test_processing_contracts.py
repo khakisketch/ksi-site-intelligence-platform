@@ -34,6 +34,10 @@ _ARTIFACT_SCHEMA_FILE_V1_0 = "processing-artifact.v1.json"
 # 그 필드가 키째 빠져 여전히 v1.1 문서이고(processing_artifact_wire_dict), 이 파일의
 # 기존 테스트 전부가 그 문서를 검증한다. v1.2 는 verticalReference 를 실은 wire 전용.
 _ARTIFACT_SCHEMA_FILE_V1_2 = "processing-artifact.v1.2.json"
+# v1.3 은 독립 검사점(checkpointCount/checkpointRmseM)을 실은 정확도 리포트 전용이다
+# (INV-024). 검사점을 주장하지 않는 산출물의 wire 는 두 키가 빠져 여전히 v1.2
+# 문서이므로, 위 상수들이 v1.3 을 가리키지 않는 것은 verticalReference 때와 같은 의도다.
+_ARTIFACT_SCHEMA_FILE_V1_3 = "processing-artifact.v1.3.json"
 
 # 재구성 워커가 실제로 싣는 값과 같은 모양(worker._ODM_VERTICAL_REFERENCE).
 _VERTICAL_REFERENCE_WIRE: dict[str, Any] = {
@@ -112,6 +116,7 @@ def _valid_artifact_dict(
         _ARTIFACT_SCHEMA_FILE,
         _ARTIFACT_SCHEMA_FILE_V1_0,
         _ARTIFACT_SCHEMA_FILE_V1_2,
+        _ARTIFACT_SCHEMA_FILE_V1_3,
     ],
 )
 def test_schema_file_is_valid_draft202012(schema_file: str) -> None:
@@ -297,6 +302,44 @@ def test_populated_accuracy_artifact_is_valid() -> None:
 
     schema = _load_schema(_ARTIFACT_SCHEMA_FILE)
     Draft202012Validator(schema).validate(processing_artifact_wire_dict(artifact))
+
+
+def test_checkpoint_backed_accuracy_wire_is_v1_3_and_v1_2_rejects_it() -> None:
+    """[INV-024] 검사점을 실은 정확도 wire 는 v1.3 문서이고 v1.2 는 거부한다.
+
+    이행이 실제로 일어났음을 두 방향에서 확인한다 — verticalReference 이행 때와 같은 관례.
+    """
+    payload = _valid_artifact_dict()
+    payload["accuracy"] = {
+        "gcpCount": 12,
+        "rmse": 0.03,
+        "reportUri": "s3://bucket/report.pdf",
+        "checkpointCount": 8,
+        "checkpointRmseM": 0.042,
+    }
+    payload["verticalReference"] = _VERTICAL_REFERENCE_WIRE
+    artifact = ProcessingArtifact.model_validate(payload)
+    wire = processing_artifact_wire_dict(artifact)
+    assert wire["accuracy"]["checkpointRmseM"] == 0.042
+
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_3)).validate(wire)
+    # v1.2(검사점을 모르는 스키마)는 additionalProperties:false 라 이 wire 를 거부해야
+    # 한다 — v1.3 으로만 표현 가능한 사실을 v1.2 가 조용히 받아주면 이행이 아니다.
+    with pytest.raises(Exception):  # noqa: B017,PT011 — jsonschema ValidationError
+        Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(wire)
+
+
+def test_accuracy_without_checkpoints_stays_a_v1_2_document() -> None:
+    """[비공허 대조] 검사점을 주장하지 않는 정확도 wire 는 두 키가 빠져 v1.2 로 남는다."""
+    payload = _valid_artifact_dict()
+    payload["accuracy"] = {"gcpCount": 12, "rmse": 0.03, "reportUri": "s3://bucket/report.pdf"}
+    payload["verticalReference"] = _VERTICAL_REFERENCE_WIRE
+    artifact = ProcessingArtifact.model_validate(payload)
+    wire = processing_artifact_wire_dict(artifact)
+
+    assert "checkpointCount" not in wire["accuracy"]
+    assert "checkpointRmseM" not in wire["accuracy"]
+    Draft202012Validator(_load_schema(_ARTIFACT_SCHEMA_FILE_V1_2)).validate(wire)
 
 
 def test_accuracy_missing_key_still_defaults_to_null() -> None:
