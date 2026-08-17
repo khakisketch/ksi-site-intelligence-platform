@@ -98,6 +98,8 @@ class CoverageReportVerdict(StrEnum):
     UNEXPLAINED_GAP = "UNEXPLAINED_GAP"
     NO_COVERAGE_EVIDENCE = "NO_COVERAGE_EVIDENCE"
     SELF_CONTRADICTORY_SUMMARY = "SELF_CONTRADICTORY_SUMMARY"
+    # 칸 총수<2 인데 비율이 0과 1 사이 — has_impossible_fractional_ratio() 참조.
+    INSUFFICIENT_CELLS_FOR_RATIO = "INSUFFICIENT_CELLS_FOR_RATIO"
     INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -113,6 +115,7 @@ _STATUS: dict[CoverageReportVerdict, int] = {
     CoverageReportVerdict.UNEXPLAINED_GAP: 422,
     CoverageReportVerdict.NO_COVERAGE_EVIDENCE: 422,
     CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY: 422,
+    CoverageReportVerdict.INSUFFICIENT_CELLS_FOR_RATIO: 422,
     CoverageReportVerdict.INVALID_TIMESTAMP: 422,
     CoverageReportVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -160,6 +163,15 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
             CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY,
             f"요약이 전 구역 100% 를 말하는데 관찰되지 않은 Cell 이 {len(unobserved)}개 "
             f"있다 — 어떤 가중치에서도 모순이다. 예: {unobserved[:3]}",
+        )
+    if report.has_impossible_fractional_ratio():
+        summary = report.summary
+        return (
+            CoverageReportVerdict.INSUFFICIENT_CELLS_FOR_RATIO,
+            f"칸이 {len(report.cells)}개인데 위험구역 {summary.mandatory_hazard_ratio:.4f}·"
+            f"자산 {summary.mandatory_asset_ratio:.4f}·일반영역 "
+            f"{summary.accessible_general_ratio:.4f} 중 하나가 0과 1 사이다 — 칸이 2개 "
+            "미만이면 0.0/1.0 외의 비율은 산술적으로 만들 수 없다",
         )
     if not report.meets_completion_thresholds():
         summary = report.summary

@@ -1014,3 +1014,66 @@ def test_coverage_acceptance_survives_a_sealed_execution_journal(tmp_path: Path)
 
     assert response.status_code == 201, response.text
     assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ISSUED
+
+
+# ── 대사(reconciliation) — 검사 1: 산술적으로 불가능한 비율 ──────────────────
+
+
+def test_a_single_cell_cannot_support_a_fractional_ratio(store: CoverageReportStore) -> None:
+    """[핵심] 재현한 그 결함 — 칸 1개 + 비율 0.96 은 산술적으로 불가능하다.
+
+    관찰 칸이 1개뿐이면 그 카테고리의 분모가 몇이든 1 이하다 — 분수로 만들 수
+    있는 값은 0.0과 1.0뿐이다. 카테고리별 칸 수를 몰라도(서버는 위험구역/자산/
+    일반 분류를 갖고 있지 않다) 이 논증은 성립한다.
+    """
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[{"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"}],
+        ),
+    )
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "INSUFFICIENT_CELLS_FOR_RATIO"
+
+
+def test_a_single_fully_observed_cell_is_not_flagged(store: CoverageReportStore) -> None:
+    """칸 1개여도 비율이 정확히 1.0 이면 이 검사에 안 걸린다(정상 케이스 보존).
+
+    이 사례는 waypoint_count=75·planned_coverage_ratio=1.0 인 기본 _mission_store
+    픽스처를 그대로 쓰므로 검사 2(계획 초과)도 걸리지 않는다 — 순수하게 검사 1만
+    분리해서 확인한다.
+    """
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[{"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"}],
+        ),
+    )
+    assert response.status_code == 201
+    assert response.json()["verdict"] == "RECORDED"
+
+
+def test_two_cells_with_a_fractional_ratio_is_not_flagged(store: CoverageReportStore) -> None:
+    """칸이 2개면 이 검사가 안 걸린다 — 0.5 같은 값이 산술적으로 가능해진다."""
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
