@@ -828,3 +828,74 @@ def test_evidence_storage_without_any_consumer_store_refuses_assembly() -> None:
             evidence_storage=FakeStorage(),
             mission_signing_key=None,
         )
+
+
+def test_confirmed_evidence_is_refused_when_the_bytes_are_swapped_afterwards(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """[핵심] 확정이 못박은 바이트와 지금 저장소의 바이트가 다르면 열람을 거부한다.
+
+    확정 시점 검증이 아무리 촘촘해도 그 검증은 확정 순간의 바이트에만 결속된다.
+    이후 같은 object_key 가 교체되면(스토리지 자격증명 보유자·잘못된 운영 스크립트·
+    버킷 정책 사고) 열람 경로는 교체본을 '확정된 CRITICAL 증거'로 계속 내준다.
+    스토리지 장애(503)와 바이트 교체(409)는 다른 사실이므로 코드도 달라야 한다.
+    """
+    _project_critical_finding(store)
+    raw = _register_critical_artifacts(store, storage)
+    before = store.get("dev-1::evt-1")
+    assert before is not None
+    client = _client(store, storage, tmp_path)
+
+    confirm = client.post(
+        "/v1/events/dev-1::evt-1/transitions",
+        json={
+            "targetStatus": "CONFIRMED_EVENT",
+            "reason": "RiskField 원문과 현장 증거 확인",
+            "expectedBundleDigest": payload_digest(before.bundle),
+        },
+        headers=_auth(),
+    )
+    assert confirm.status_code == 200
+
+    # 확정 직후에는 열린다 — 재검증이 정상 경로를 막지 않는다는 대조군이다.
+    ok = client.get("/v1/events/dev-1::evt-1/evidence/risk-1", headers=_auth())
+    assert ok.status_code == 200
+
+    # 같은 object_key 의 바이트만 갈아끼운다(길이도 digest 도 달라진다).
+    risk_artifact = store.get_evidence("dev-1::evt-1", "risk-1")
+    assert risk_artifact is not None
+    swapped = json.dumps(
+        _risk_field_payload(
+            riskModel={
+                "policyId": "critical-person-proximity-v1",
+                "severity": 0.11,
+                "predictionHorizonSeconds": 5.0,
+            }
+        ),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    assert swapped != raw
+    storage.put_bytes(risk_artifact.object_key, swapped, content_type="application/json")
+
+    refused = client.get("/v1/events/dev-1::evt-1/evidence/risk-1", headers=_auth())
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "CONTENT_DIGEST_MISMATCH"
+
+
+def test_evidence_without_a_pinned_digest_is_still_viewable(
+    store: EventStore, storage: FakeStorage, tmp_path: Path
+) -> None:
+    """확정된 적 없는(=못박힌 digest 가 없는) 증거는 재검증 대상이 아니다.
+
+    이 재검증은 확정이 실제로 해싱한 artifact 하나에만 걸린다. 확정 전 증거나
+    clip 처럼 해싱된 적 없는 증거까지 막으면 정상 열람이 죽는다.
+    """
+    _project_critical_finding(store)
+    _register_critical_artifacts(store, storage)
+    # 확정 전이를 부르지 않는다 — evidenceSnapshot 자체가 없다.
+    response = _client(store, storage, tmp_path).get(
+        "/v1/events/dev-1::evt-1/evidence/clip-01", headers=_auth()
+    )
+    assert response.status_code == 200
