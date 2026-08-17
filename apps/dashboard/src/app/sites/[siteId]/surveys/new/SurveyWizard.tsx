@@ -9,6 +9,7 @@ import { WizardShell } from "@/components/wizard/WizardShell";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
+import { M4D_DRONE, M4D_WIDE_CAMERA } from "@/lib/aircraft";
 import type {
   AoiVertex,
   MissionDerivation,
@@ -159,15 +160,8 @@ const LEVEL_PRESETS: Record<
   PRECISE: { label: "정밀", frontOverlap: 0.9, sideOverlap: 0.8, autoFlightSpeedMs: 3 },
 };
 
-// 기체 카메라 스펙 — 기체마다 고정이라 현장/기체 등록 시 저장할 값이다.
-// **M4D 실측 스펙은 아직 미확정(H4)** 이라 지금은 매핑용 기체 카메라 급 값을
-// 쓴다. 확정되면 이 상수 하나만 바꾸면 된다(간격은 서버가 다시 계산한다).
-const DEFAULT_CAMERA = {
-  sensorWidthMm: 13.2,
-  focalLengthMm: 8.8,
-  imageWidthPx: 5472,
-  imageHeightPx: 3648,
-} as const;
+// 기체 카메라 — 단일 출처는 @/lib/aircraft (공식 스펙 유도값, EXIF 실측 대체 예정).
+const DEFAULT_CAMERA = M4D_WIDE_CAMERA;
 
 type NumericDraftKey =
   | "altitudeM"
@@ -212,9 +206,9 @@ const INITIAL_DRAFT: SurveyDraft = {
   altitudeM: 40,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
-  droneEnumValue: 99,
-  droneSubEnumValue: 0,
-  payloadEnumValue: 65534,
+  droneEnumValue: M4D_DRONE.droneEnumValue,
+  droneSubEnumValue: M4D_DRONE.droneSubEnumValue,
+  payloadEnumValue: M4D_DRONE.payloadEnumValue,
   viewpointPolicyId: "default-viewpoint-policy",
   riskPolicyPackId: "default-risk-policy",
   fallbackPolicyId: "default-fallback-policy",
