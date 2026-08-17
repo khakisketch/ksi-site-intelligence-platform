@@ -129,6 +129,7 @@ def _mission_store(
     site_id: str = _SITE_ID,
     assigned_device_id: str | None = None,
     journal_name: str = "missions.jsonl",
+    planned_coverage_ratio: float | None = 1.0,
 ) -> MissionStore:
     store = MissionStore(DurableJournal(tmp_path / journal_name))
     plan_request = {"route": {"altitudeM": 40.0}}
@@ -143,7 +144,7 @@ def _mission_store(
                 kmz_sha256="deadbeef",
                 route_pattern="lawnmower",
                 waypoint_count=75,
-                planned_coverage_ratio=1.0,
+                planned_coverage_ratio=planned_coverage_ratio,
                 issued_at=_NOW,
                 issued_by="do-1",
                 plan_request=plan_request,
@@ -1070,6 +1071,117 @@ def test_two_cells_with_a_fractional_ratio_is_not_flagged(store: CoverageReportS
             hazard=1.0,
             asset=1.0,
             general=1.0,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+# ── 대사(reconciliation) — 검사 2: 계획 커버 추정치 초과 ──────────────────────
+
+
+def test_reported_general_ratio_cannot_exceed_the_planned_estimate(tmp_path: Path) -> None:
+    """[핵심] 계획 커버 추정치(0.85)를 초과한 일반영역 관찰(0.96)은 불가능하다.
+
+    plannedCoverageRatio 는 이상적 촬영 조건을 가정한 상한이다(mission_plans.py
+    가 발급 시점에 이미 이 값을 accessibleGeneralCoverage 요구치와 대조한다).
+    계획된 경로만 날았다는 전제 하에, 실제 관찰이 그 상한을 넘을 수 없다.
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.85),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "EXCEEDS_PLANNED_COVERAGE"
+
+
+def test_reported_ratio_within_the_planned_estimate_is_recorded(tmp_path: Path) -> None:
+    """계획값 이하의 신고는 이 검사에 안 걸린다(정상 케이스 보존).
+
+    general 은 기존 INV-010 임계(≥0.95)도 만족해야 하므로 planned_coverage_ratio
+    를 0.95 이상으로 잡는다 — 0.85 처럼 낮은 계획값은 유효한 COMPLETED 보고 자체가
+    성립할 수 없다(어떤 general 값도 0.95 미만이면 기존 임계에 걸리고, 0.95 이상이면
+    항상 0.85 를 넘어 이 검사에 걸린다 — 두 제약이 동시에 만족 가능한 구간이 없다).
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.97),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+def test_missing_planned_ratio_skips_the_check_instead_of_rejecting(tmp_path: Path) -> None:
+    """계획 추정치가 없는 임무(예: perimeter 패턴)는 이 검사를 건너뛴다 — 거부하지
+    않는다(설계 결정: null이면 대사 불가로 표시할 뿐 막지 않는다)."""
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=None),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+def test_the_check_does_not_apply_to_hazard_or_asset_ratios(tmp_path: Path) -> None:
+    """검사 2는 accessibleGeneralRatio 하나에만 걸린다 — 위험구역·자산 비율은
+    plannedCoverageRatio 와 다른 계산 기반이라 대상이 아니다(설계 결정).
+
+    hazard·asset 은 INV-010 이 항상 정확히 1.0 을 요구하므로(그 아래는 이미
+    UNSUPPORTED_COMPLETION 으로 거부된다) planned_coverage_ratio=0.97 보다 큰
+    값(1.0)을 항상 갖는다 — 검사 2 가 실수로 이 둘에도 적용된다면 이 보고는
+    거부돼야 하는데, 실제로는 general(0.96)만 대조되므로 통과해야 한다.
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.97),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
             cells=[
                 {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
                 {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},

@@ -77,7 +77,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.mission_records import MissionStore
+    from ksi_core.mission_records import MissionRecord, MissionStore
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,9 @@ class CoverageReportVerdict(StrEnum):
     SELF_CONTRADICTORY_SUMMARY = "SELF_CONTRADICTORY_SUMMARY"
     # 칸 총수<2 인데 비율이 0과 1 사이 — has_impossible_fractional_ratio() 참조.
     INSUFFICIENT_CELLS_FOR_RATIO = "INSUFFICIENT_CELLS_FOR_RATIO"
+    # accessibleGeneralRatio 가 발급 경로의 plannedCoverageRatio(이상적 조건 상한)
+    # 를 넘는다 — 계획대로만 날았다는 전제 하에 불가능하다.
+    EXCEEDS_PLANNED_COVERAGE = "EXCEEDS_PLANNED_COVERAGE"
     INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -116,6 +119,7 @@ _STATUS: dict[CoverageReportVerdict, int] = {
     CoverageReportVerdict.NO_COVERAGE_EVIDENCE: 422,
     CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY: 422,
     CoverageReportVerdict.INSUFFICIENT_CELLS_FOR_RATIO: 422,
+    CoverageReportVerdict.EXCEEDS_PLANNED_COVERAGE: 422,
     CoverageReportVerdict.INVALID_TIMESTAMP: 422,
     CoverageReportVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -191,6 +195,33 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
             f"예: {gaps[:3]}",
         )
     return CoverageReportVerdict.RECORDED, None
+
+
+# 부동소수 직렬화 잔차 허용치 — packages/event-contracts 의 _RATIO_EPS 와 동일한
+# 값이지만 독립 상수로 둔다(이 모듈이 그 패키지의 사설 상수를 import 하지 않는다).
+_PLANNED_COVERAGE_EPS = 1e-9
+
+
+def _exceeds_planned_coverage(report: CoverageReport, mission: MissionRecord) -> bool:
+    """계획 커버 추정치를 초과한 일반영역 관찰을 주장하는가.
+
+    ``mission.planned_coverage_ratio`` 는 발급 시점에 lawnmower 경로 생성기가
+    이상적 촬영 조건을 가정해 계산한 **상한**이다(``mission_plans.py`` 가 발급
+    게이트에서 이미 이 값을 ``accessibleGeneralCoverage`` 요구치와 대조해 뒀다).
+    계획된 경로만 날았다는 전제 하에, 실제 관찰이 그 상한을 넘는
+    ``accessibleGeneralRatio`` 를 주장하면 불가능하다.
+
+    hazard/asset 비율에는 적용하지 않는다 — 그 둘은 서버가 Cell 분류를 갖고
+    있지 않아 이 추정치와 다른 계산 기반이다(``CoverageSummary`` docstring).
+
+    ``planned_coverage_ratio`` 가 ``None`` 이면(perimeter 패턴·계약 전용 발급)
+    ``False`` 를 돌려준다 — 유도 불가는 거부 사유가 아니다.
+    """
+    if mission.planned_coverage_ratio is None:
+        return False
+    return report.summary.accessible_general_ratio > (
+        mission.planned_coverage_ratio + _PLANNED_COVERAGE_EPS
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,6 +388,23 @@ class CoverageReportStore:
                     CoverageReportVerdict.DEVICE_NOT_ASSIGNED,
                     f"이 임무에 배정된 장비는 {mission.assigned_device_id!r} 다 — "
                     f"보고 장비 {device_id!r} 는 배정되지 않았다",
+                )
+            if report.summary.completion_state is CompletionState.COMPLETED and (
+                _exceeds_planned_coverage(report, mission)
+            ):
+                # 이건 임무 원장(다른 원장)의 값과의 대조라 SITE_MISMATCH·
+                # DEVICE_NOT_ASSIGNED 와 같은 "수신 시점 게이트" 지위다 — 재생 시에는
+                # 재검사하지 않는다(위 _replay 는 그대로 둔다, 이미 그 두 게이트를
+                # 재생하지 않는 것과 동일 원칙).
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
+                    CoverageReportVerdict.EXCEEDS_PLANNED_COVERAGE,
+                    "COMPLETED 주장의 accessibleGeneralRatio"
+                    f"({report.summary.accessible_general_ratio:.4f})가 발급 경로의 "
+                    f"plannedCoverageRatio({mission.planned_coverage_ratio:.4f})를 "
+                    "초과한다 — 계획된 경로로는 도달할 수 없다",
                 )
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
