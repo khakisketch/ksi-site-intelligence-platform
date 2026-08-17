@@ -331,6 +331,24 @@ export interface CoverageReportView {
   plannedGeneralCoverageUnavailableReason: string | null;
 }
 
+/** 서버가 거부한 보고 1건 — 무엇을, 왜, 누가, 언제(본문은 싣지 않는다). */
+export interface CoverageRejectionView {
+  verdict: string;
+  detail: string | null;
+  reportedBy: string | null;
+  rejectedAt: string;
+}
+
+/**
+ * 그 임무에 대해 서버가 거부한 보고들. 0건은 빈 배열이지 오류가 아니다 —
+ * "거부가 없었다"는 그 자체로 답이다.
+ */
+export interface CoverageRejectionListView {
+  missionId: string;
+  rejectionCount: number;
+  rejections: CoverageRejectionView[];
+}
+
 // 3역할(ADR-KSI-015 D1) — 구 5역할 중 현장관리·안전관리·드론운영 3개는
 // FIELD_OPERATOR 하나로 합쳐졌다(구 역할 이름은 ADR-KSI-015 참조).
 export type Role = "ADMIN" | "FIELD_OPERATOR" | "VIEWER";
