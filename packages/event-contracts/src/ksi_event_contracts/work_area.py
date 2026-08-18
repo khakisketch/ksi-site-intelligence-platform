@@ -66,6 +66,10 @@ MAX_RING_POSITIONS = 512
 #: 이 계약이 경위도 범위를 검사하는 좌표계. 다른 투영좌표계는 값의 범위가
 #: 제각각이라 여기서 판정하지 않는다(그 판정은 래스터와 맞춰보는 단계의 일이다).
 _LONLAT_CRS = "EPSG:4326"
+# float 로 표현 가능한 상한(약 1.8e308) 아래로 넉넉히 잡은 좌표 상한. 파이썬 int 는
+# 자리수 제한이 없어 ``10**400`` 같은 값이 요청으로 들어오는데, 그걸 float 으로
+# 바꾸는 순간 OverflowError 가 나고 그건 typed 거부를 지나쳐 500 이 된다.
+_MAX_SAFE_COORDINATE = 1e300
 
 
 class WorkAreaStatus(StrEnum):
@@ -168,6 +172,13 @@ def _assert_position(position: Any, *, crs: str, where: str) -> None:
         # True 가 들어오면 1.0 으로 조용히 통과한다.
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise ValueError(f"{where}: {axis} 좌표가 수가 아니다 — {value!r}")
+        # 파이썬 int 는 자리수 제한이 없어 ``10**400`` 같은 값이 그대로 들어온다.
+        # ``math.isfinite`` 는 인자를 float 으로 바꾸면서 **OverflowError** 를 던지는데
+        # 그건 ValueError 가 아니라 호출자의 typed 거부를 지나쳐 500 으로 샌다
+        # (2026-08-18 실측 — 이 헬퍼를 쓰는 세 표면이 전부 500 이었다). float 범위를
+        # 먼저 확인해 다른 좌표 오류와 같은 ValueError 로 거부한다.
+        if isinstance(value, int) and abs(value) > _MAX_SAFE_COORDINATE:
+            raise ValueError(f"{where}: {axis} 좌표가 표현 범위를 넘는다 — {value!r}")
         if not math.isfinite(value):
             raise ValueError(f"{where}: {axis} 좌표가 유한하지 않다 — {value!r}")
     if crs.strip().upper() == _LONLAT_CRS:

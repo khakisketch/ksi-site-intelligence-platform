@@ -389,11 +389,19 @@ def build_equipment_states_router(store: EquipmentStateStore) -> APIRouter:
         site_id: str,
         equipment_entity_id: str = Query(alias="equipmentEntityId"),  # noqa: B008
         subject_entity_id: str = Query(alias="subjectEntityId"),  # noqa: B008
-        horizon_s: float = Query(alias="horizonS", gt=0.0),  # noqa: B008
-        combined_radius_m: float = Query(alias="combinedRadiusM", ge=0.0),  # noqa: B008
-        max_observation_gap_s: float = Query(alias="maxObservationGapS", ge=0.0),  # noqa: B008
+        # ``allow_inf_nan=False`` 가 넷 다 붙는 이유: ``ge``/``gt`` 만으로는 ``inf`` 가
+        # 통과한다(``inf >= 0`` 은 참). 그 값이 하류 CPA/TTC 계산으로 흘러가면
+        # ``needs_active_reobservation`` 이 typed except 밖에서 ValueError 를 던져
+        # 500 이 된다(2026-08-18 실측).
+        horizon_s: float = Query(alias="horizonS", gt=0.0, allow_inf_nan=False),  # noqa: B008
+        combined_radius_m: float = Query(  # noqa: B008
+            alias="combinedRadiusM", ge=0.0, allow_inf_nan=False
+        ),
+        max_observation_gap_s: float = Query(  # noqa: B008
+            alias="maxObservationGapS", ge=0.0, allow_inf_nan=False
+        ),
         position_uncertainty_threshold_m: float = Query(  # noqa: B008
-            alias="positionUncertaintyThresholdM", ge=0.0
+            alias="positionUncertaintyThresholdM", ge=0.0, allow_inf_nan=False
         ),
         _principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> RiskAssessmentView:

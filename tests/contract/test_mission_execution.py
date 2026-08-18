@@ -541,3 +541,47 @@ def test_device_cannot_read_execution(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 403
+
+
+# ── lone surrogate — durable 원장 영구 오염 (2026-08-18 전수 조사 Class D) ────
+
+
+def test_lone_surrogate_detail_is_rejected_before_the_journal_is_written(
+    tmp_path: Path,
+) -> None:
+    """[high-risk regression] ``detail`` 의 lone surrogate 는 **기록 전에** 거부된다.
+
+    ``detail`` 은 제약이 없어 요청 검증을 통과한다. 그대로 두면 순서가 이렇게 된다 —
+    ①journal 에 기록 성공(``ensure_ascii=True`` 라 ASCII 이스케이프로 들어간다)
+    ②projection 전이 완료 ③**그 뒤** 응답 모델 직렬화에서 ``UnicodeEncodeError``.
+    즉 500 이 나가지만 전이는 이미 일어났고, 그 임무의 조회·후속 전이가 **영원히**
+    500 이 된다. 재시작해도 replay 가 성공해 그대로 재현된다 — 원장을 손으로 고쳐야
+    복구된다. FIELD_OPERATOR 토큰이면 누구나 쏠 수 있다.
+
+    그래서 단언이 3단이다: ①422 ②원장 미기록 ③그 뒤 정상 흐름이 살아 있다.
+    """
+    client = _api_client(tmp_path)
+    # 500 을 예외로 튀우지 않고 응답으로 관측한다 — 기본 클라이언트면 "에러"로만
+    # 보이고 "422 가 아니다"로는 안 보인다.
+    probe = TestClient(client.app, raise_server_exceptions=False)
+    probe.headers.update(dict(client.headers))
+
+    hostile = probe.post(
+        "/v1/missions/m-1/execution-transitions",
+        content=json.dumps(
+            {"targetStatus": "DISPATCHED", "detail": "a\ud800b"}, ensure_ascii=True
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert hostile.status_code == 422, f"{hostile.status_code} {hostile.text[:200]}"
+
+    # ② 원장에 아무것도 안 쓰였다 — 거부가 기록보다 앞이어야 한다.
+    journal_path = tmp_path / "mission-execution.jsonl"
+    if journal_path.exists():
+        assert "\\ud800" not in journal_path.read_text(encoding="utf-8")
+
+    # ③ 그 뒤 정상 흐름이 살아 있다 — 오염됐다면 여기가 500 이 된다.
+    ok = _declare(probe, "m-1", "DISPATCHED", detail="정상 이관")
+    assert ok.status_code == 200, f"{ok.status_code} {ok.text[:200]}"
+    read_back = probe.get("/v1/missions/m-1/execution")
+    assert read_back.status_code == 200, f"{read_back.status_code} {read_back.text[:200]}"

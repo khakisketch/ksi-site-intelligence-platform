@@ -39,8 +39,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
+
+from ksi_event_contracts._base import _CamelModel
 
 DefectType = Literal["CRACK"]  # MODEL-P4-001 scope — 균열만. 확장은 CiF 파인튜닝 후 별도 결정.
 GeometryFormat = Literal["IMAGE_POLYGON_2D"]
@@ -50,14 +51,18 @@ GeometryFormat = Literal["IMAGE_POLYGON_2D"]
 GeometryPayload = list[tuple[float, float]] | None
 
 
-class ImageSize(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
+# 다섯 모델 모두 `_CamelModel` 을 상속한다(2026-08-18). 이전에는 각자 동일한
+# ConfigDict 를 재정의했는데, 그 사본에는 베이스의 ``allow_inf_nan=False`` 가
+# 없어서 measurements 의 ``+inf`` 가 검증을 통과해 durable 원장을 봉인시켰다
+# (재조사 F1 — ``ge=0.0`` 은 대체재가 아니다: ``inf >= 0`` 이 참이라 +inf 만
+# 통과한다). 바깥 래퍼의 설정은 중첩 모델로 전파되지 않으므로(실측) 각 모델이
+# 직접 베이스를 상속해야 한다.
+class ImageSize(_CamelModel):
     width_px: int = Field(gt=0)
     height_px: int = Field(gt=0)
 
 
-class DefectGeometry(BaseModel):
+class DefectGeometry(_CamelModel):
     """``payload`` 는 ``IMAGE_POLYGON_2D`` 일 때 ``[[x, y], ...]`` 픽셀 좌표 목록
     (윤곽 1개) 이다 — 원본 마스크 래스터가 아니라 ``cv2.findContours`` 류의 요약.
 
@@ -71,38 +76,30 @@ class DefectGeometry(BaseModel):
     갈라지지 않는다"는 계약 자체가 깨져 있었다(reviewer 재검토 잔여 지적).
     """
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
-
     format: GeometryFormat
     payload: GeometryPayload = Field(default=None, min_length=3)
 
 
-class DefectMeasurements(BaseModel):
+class DefectMeasurements(_CamelModel):
     """``meanWidthPx`` 는 면적/길이로 역산한 **평균** 폭이다 — 최댓값이 아니다
     (필드명이 예전엔 ``maxWidthPx`` 였다가 계산 내용과 안 맞아 개명함, reviewer
     지적 F4). 최댓값이 필요한 소비자는 이 근사치를 그대로 신뢰하면 안 된다."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     area_px2: float | None = Field(default=None, ge=0.0)
     length_px: float | None = Field(default=None, ge=0.0)
     mean_width_px: float | None = Field(default=None, ge=0.0)
 
 
-class DefectModelRef(BaseModel):
+class DefectModelRef(_CamelModel):
     """계보 앵커 — ``ksi_perception.registry.ModelEntry`` 와 동형(모델 신원 +
     원본 artifact digest). 어떤 모델이 이 후보를 냈는지 wire 에 항상 싣는다."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     model_id: str = Field(min_length=1)
     source_digests: dict[str, str] = Field(default_factory=dict)
 
 
-class DefectCandidate(BaseModel):
+class DefectCandidate(_CamelModel):
     """contracts/schemas/defect-candidate.v1.json 왕복 대상 — required 필드는 스키마와 동일."""
-
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     schema_version: Literal["1.0"] = "1.0"
     defect_candidate_id: str = Field(min_length=1)

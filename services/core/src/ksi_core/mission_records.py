@@ -159,6 +159,14 @@ def find_lone_surrogate_path(value: object, *, _path: str = "$") -> str | None:
         return None
     if isinstance(value, Mapping):
         for key, sub in value.items():
+            # **키도 검사한다**(2026-08-18). 값만 보면 ``{"w\\ud801eights": "v"}`` 처럼
+            # 키에 실린 lone surrogate 가 통과하고, pydantic 의 json-mode dump 가 그
+            # 키를 U+FFFD 로 바꿔 원장에 적는다 — 생산자가 보낸 것과 **다른 키**가
+            # durable 하게 남는 조용한 오염이다(재조사 실측).
+            if isinstance(key, str):
+                found = find_lone_surrogate_path(key, _path=f"{_path}.<key>")
+                if found is not None:
+                    return found
             found = find_lone_surrogate_path(sub, _path=f"{_path}.{key}")
             if found is not None:
                 return found
