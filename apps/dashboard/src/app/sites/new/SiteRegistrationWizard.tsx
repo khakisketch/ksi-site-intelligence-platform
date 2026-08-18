@@ -95,6 +95,10 @@ const INITIAL_FORM: WizardFormState = {
   autoFlightSpeedMs: 5,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
+  // 99 는 M4T(열화상) 추정값이고 **우리 기체(M4D)의 값이 아니다** — M4D 추정 1000.
+  // wpml.py 의 KNOWN_DRONE_ENUM_VALUES 에도 M4D 시리즈 값이 없다(미확인, H4).
+  // FIELD-0a 에서 Pilot 2 가 내보낸 KMZ 를 대조해 확정한다
+  // (risk mission-drone-enum-value-is-not-m4d, docs/hil/FIELD_0A_CHECKLIST.md).
   droneEnumValue: 99,
   droneSubEnumValue: 0,
   payloadEnumValue: 65534,

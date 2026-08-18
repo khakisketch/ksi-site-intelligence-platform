@@ -212,6 +212,10 @@ const INITIAL_DRAFT: SurveyDraft = {
   altitudeM: 40,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
+  // 99 는 M4T(열화상) 추정값이고 **우리 기체(M4D)의 값이 아니다** — M4D 추정 1000.
+  // wpml.py 의 KNOWN_DRONE_ENUM_VALUES 에도 M4D 시리즈 값이 없다(미확인, H4).
+  // FIELD-0a 에서 Pilot 2 가 내보낸 KMZ 를 대조해 확정한다
+  // (risk mission-drone-enum-value-is-not-m4d, docs/hil/FIELD_0A_CHECKLIST.md).
   droneEnumValue: 99,
   droneSubEnumValue: 0,
   payloadEnumValue: 65534,
@@ -912,6 +916,15 @@ export function SurveyWizard({
                       {(result.gridBasis.gsdM * 100).toFixed(1)}cm/px
                     </dd>
                   </div>
+                  {/* 이 세 수치는 전부 DEFAULT_CAMERA 에서 파생된다. 그 상수가 M4D
+                      실측이 아니라는 사실이 코드 주석에만 있으면 사용자는 확정값으로
+                      읽는다 — 값을 고치는 것은 FIELD-0a 의 일이고, 여기서 할 수 있는
+                      것은 무엇에 기대고 있는지 밝히는 것이다(risk
+                      mapping-camera-constants-are-not-m4d, INV-040 의 정신). */}
+                  <p className="text-ink-muted mt-1 text-[12px] break-keep">
+                    이 수치는 M4D 실측 전 대체 카메라 상수를 기준으로 계산됐습니다.
+                    실기 확인 후 달라질 수 있습니다.
+                  </p>
                 </>
               )}
               <div className="flex justify-between gap-4">

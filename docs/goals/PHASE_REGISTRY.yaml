@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-08"
+updated: "2026-08-17"
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이
@@ -21,9 +21,12 @@ axes:
     title: "Autonomous Acquisition — Manifold Runtime, Perception, Local World Model, Viewpoint/Path, Mission Execution"
     state: BLOCKED
     note: >-
-      **우선순위가 낮아서가 아니라 차단돼 있다.** H1~H4(벤치 SSH·Cellular
-      Dongle 실측·PSDK 스파이크·KMZ 실기 임포트)가 전부 장비 조달·PSDK 개발자
-      승인 대기이고, HIL 세션의 기체 링크는 AIRCRAFT_LINK_DOWN 이었다. 현재
+      **우선순위가 낮아서가 아니라 차단돼 있다.** [2026-08-17 갱신] 이전 서술
+      ("H1~H4 가 전부 장비 조달·PSDK 개발자 승인 대기")은 낡았다 — 2026-08-13
+      실측으로 **장비도 자격도 확보됐고**(REMAINING_WORK_PLAN.md §하드웨어 트랙),
+      남은 조달은 H2(셀룰러 동글+유심) 하나뿐이다. 실제 관문은 조달도 디버깅도
+      아니고 **매니폴드가 네트워크에 없다는 것**, 즉 장비 세션 부재다
+      (원장 track-a 사유 2026-08-14 재정정). 현재
       edge/ 에 있는 것은 명령 유효성 판정·안전 상태기·PSDK 탭이며 perception·
       tracking·next-best-view 는 미착수 — 목표 아키텍처(03_EDGE_AUTONOMY.md)가
       곧 현재 능력이 아니다. 게이트가 열리는 즉시 착수한다.
@@ -32,6 +35,10 @@ phases:
   - id: phase-0
     title: "Capability & Calibration Foundation"
     # 하드웨어 Spike(M4D·Manifold 실기)가 남아 있으므로 phase-0 전체는 DONE이 아니다.
+    # [2026-08-17] 이 IN_PROGRESS 는 **하드웨어 포함 전체 phase** 기준이다.
+    # 소프트웨어 수용은 이미 PASS 이고(아래 software_acceptance), 원장 goal
+    # `phase-0`(제목이 "(SW)")가 그 범위만 추적해 completed 다 — 두 값이 다른 것이
+    # 정상이다. **충돌로 읽고 원장을 invalidate 하지 말 것**(실제로 그 오독이 나왔다).
     status: IN_PROGRESS
 
     software_implementation: COMPLETE
@@ -124,6 +131,8 @@ phases:
     title: "Baseline Mapping & Unified Mission"
     # Coverage Recovery 의 Edge 실시간 gap-fill(03_EDGE_AUTONOMY.md COVERAGE_RECOVERY
     # 상태)은 하드웨어 종속(Track A/B 계열)이므로 phase-2 전체는 DONE 이 아니다.
+    # [2026-08-17] phase-0 과 같다 — 이 IN_PROGRESS 는 하드웨어 포함 전체 기준이고
+    # 원장 goal `phase-2` 는 소프트웨어 범위만 추적한다. 충돌이 아니다.
     status: IN_PROGRESS
 
     software_implementation: COMPLETE
@@ -283,7 +292,11 @@ phases:
     # 남기고 시장 전략에서 제거한다 — 첫 유료 건설 현장 이전에 다른 산업은 없다.
     # Dock 경로 자체의 관문은 여전히 ADR-KSI-004(Dock 3 + M4D 제3자 payload
     # 제약 실검증)다.
-    status: PLANNED
+    # [2026-08-17] PLANNED → BLOCKED. 이 문서 스스로 "차단과 강등을 구분한다"고
+    # 강조하는데 정작 phase-5 만 PLANNED 였다 — 원장(`blocked`)과 어휘를 맞춘다.
+    # 첫 관문은 기술이 아니라 대표자 동결 해제(ADR-KSI-016 D5)이고, 그 뒤에
+    # Dock 하드웨어 검증이 두 번째 관문으로 남는다.
+    status: BLOCKED
     investment: FROZEN_UNTIL_FIRST_PAID_SITE  # ADR-KSI-016 D5
     acceptance:
       - "Dock Capability VERIFIED 후 원격 반복운영·다현장 Fleet·산업 Pack"
