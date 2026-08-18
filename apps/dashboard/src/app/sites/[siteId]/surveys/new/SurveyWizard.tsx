@@ -906,6 +906,16 @@ export function SurveyWizard({
                       {(result.gridBasis.gsdM * 100).toFixed(1)}cm/px
                     </dd>
                   </div>
+                  {/* 이 세 수치는 전부 카메라 상수에서 파생된다. 기종·페이로드 값은
+                      DJI 공식 표로 확정됐지만(@/lib/aircraft) **카메라 초점거리는
+                      아직 유도값**이다 — 공식 스펙에 실초점거리가 없어 35mm 환산에서
+                      역산했고, 실기 EXIF 실측(FIELD-0a 절차 C)이 그 값을 대체한다.
+                      그 사실이 코드 주석에만 있으면 사용자는 확정값으로 읽는다
+                      (risk mapping-camera-constants-are-not-m4d, INV-040 의 정신). */}
+                  <p className="text-ink-muted mt-1 text-[12px] break-keep">
+                    이 수치는 M4D 실측 전 유도한 카메라 상수를 기준으로 계산됐습니다.
+                    실기 확인 후 달라질 수 있습니다.
+                  </p>
                 </>
               )}
               <div className="flex justify-between gap-4">
