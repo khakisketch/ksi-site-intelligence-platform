@@ -31,7 +31,7 @@ import type {
  */
 export type FieldCoverageInput =
   | { kind: "reported"; completionState: CompletionState; recoveryRecommended: boolean }
-  | { kind: "not-reported" }
+  | { kind: "not-reported"; hasPendingRejection: boolean }
   | { kind: "error" };
 
 /**
@@ -197,12 +197,23 @@ function mediaStage(input: FieldStageInput): FieldStage {
 function resultStage(input: FieldStageInput): FieldStage {
   const coverage = input.coverage;
   if (coverage.kind === "not-reported") {
-    return {
-      key: "result",
-      title: "결과",
-      auto: { label: "보고 없음", detail: "비행 결과 보고가 아직 도착하지 않았습니다.", tone: "neutral" },
-      manual: null,
-    };
+    return coverage.hasPendingRejection
+      ? {
+          key: "result",
+          title: "결과",
+          auto: {
+            label: "방금 제출이 접수되지 않았습니다",
+            detail: "서버가 완료 보고를 거부했습니다 — 재비행이 필요할 수 있습니다. 자세한 사유는 임무 상세 화면에서 확인하세요.",
+            tone: "caution",
+          },
+          manual: null,
+        }
+      : {
+          key: "result",
+          title: "결과",
+          auto: { label: "보고 없음", detail: "비행 결과 보고가 아직 도착하지 않았습니다.", tone: "neutral" },
+          manual: null,
+        };
   }
   if (coverage.kind === "error") {
     return {

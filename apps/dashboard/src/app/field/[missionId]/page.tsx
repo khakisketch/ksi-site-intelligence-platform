@@ -5,7 +5,12 @@ import { notFound } from "next/navigation";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, MISSION_TYPE_LABEL } from "@/lib/core-api/labels";
-import { getCoverageReport, getMission, getMissionExecution } from "@/lib/core-api/missions";
+import {
+  getCoverageReport,
+  getCoverageRejections,
+  getMission,
+  getMissionExecution,
+} from "@/lib/core-api/missions";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
 import { getSite } from "@/lib/core-api/sites";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
@@ -59,7 +64,13 @@ async function fetchCoverage(
   } catch (error) {
     // 404 는 "아직 보고 없음"이지 오류가 아니다(임무 상세 화면과 같은 규약).
     if (error instanceof CoreApiError && error.status === 404) {
-      return { input: { kind: "not-reported" }, report: null };
+      // 접수된 보고가 없다 — 그래도 "거부된 시도"가 있었을 수 있다(예: 방금
+      // 근거 없는 완료 보고를 냈다가 막혔다). 조종사가 지금 재비행 여부를
+      // 판단해야 하는 자리라 그 사실만 확인한다(숫자는 보지 않는다).
+      const hasPendingRejection = await getCoverageRejections(missionId)
+        .then((r) => r.rejectionCount > 0)
+        .catch(() => false);
+      return { input: { kind: "not-reported", hasPendingRejection }, report: null };
     }
     if (error instanceof CoreApiError) return { input: { kind: "error" }, report: null };
     throw error;

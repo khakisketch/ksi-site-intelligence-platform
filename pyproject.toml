@@ -131,6 +131,11 @@ exclude = [
     "^references/",
     "^edge/",
     "^apps/",
+    # design/: 정적 디자인 사이트 생성기라 런타임 제품 코드가 아니고 어떤 CI 잡도
+    # 타입체크하지 않는다. 빼두지 않으면 `mypy .` 만 이 파일을 끌어와 35개 오류를
+    # 내고, CI 명령(`mypy packages services tests tools`)은 0건이라 두 명령이 다른
+    # 답을 낸다 — 그 차이가 다음 세션에게 제품 회귀로 오인된다(2026-08-17).
+    "^design/",
     "^tools/vector-extraction/",
     "^services/defect-detection/src/ksi_defect_detection/_vendor/",
 ]

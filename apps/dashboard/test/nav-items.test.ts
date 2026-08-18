@@ -13,6 +13,13 @@ import {
 // 승격되면서 정확히 그렇게 사라졌고, /reports(두 시점 비교 결과 화면 전체)는
 // 임무 상세 안의 버튼 말고는 데스크톱에서 갈 방법이 없었다. 화면은 정상으로
 // 보이므로 렌더 테스트로도 안 잡힌다 — 목록 자체를 대조해야 잡힌다.
+//
+// 2026-08-17: 이 파일은 **자리(key)와 순서**를 고정하고, 라벨 문자열은 고정하지 않는다.
+// PRD §7.1 은 정보구조 슬롯을 못박은 것이고, 화면에 찍는 이름은 그 슬롯이 지금 실제로
+// 보여주는 것을 따라야 한다(assets → "결함 후보", settings → "장비 지원단계";
+// 2026-08-13 UI 감사 21·24번). 라벨 문자열을 여기서 못박으면 그 정직한 개명이 회귀로
+// 잡히고, key 를 못박으면 이 파일이 원래 막으려던 회귀 — 항목이 조용히 사라지는 것 —
+// 만 잡힌다. 라벨↔topbar 제목 동기화는 page-title.test.ts 가 따로 강제한다.
 
 describe("DESKTOP_NAV_GROUPS", () => {
   it("[핵심][회귀] 데스크톱 항목이 하나도 빠짐없이 어느 그룹엔가 들어간다", () => {
@@ -27,20 +34,28 @@ describe("DESKTOP_NAV_GROUPS", () => {
   });
 
   it("[핵심] PRD §7.1 이 못박은 데스크톱 10항목이 그대로 있다", () => {
-    // 명칭·순서 둘 다 PRD 고정값이다(docs/product/MASTER_PRD_v3.0.md §7.1).
-    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.label));
+    // 자리와 순서 둘 다 PRD 고정값이다(docs/product/MASTER_PRD_v3.0.md §7.1).
+    // 주석의 PRD 이름과 실제 라벨이 다른 두 줄은 그 슬롯이 아직 PRD 범위대로 채워지지
+    // 않았다는 뜻이다 — 채워지면 라벨을 PRD 이름으로 되돌린다.
+    const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
     expect(grouped).toEqual([
-      "홈",
-      "현장",
-      "임무",
-      "이벤트",
-      "자산·시설물",
-      "2D·3D World",
-      "보고서",
-      "Fleet·Edge",
-      "Data·AI",
-      "설정",
+      "home", // 홈
+      "sites", // 현장
+      "missions", // 임무
+      "events", // 이벤트
+      "assets", // PRD "자산·시설물" — 현재 화면은 임무 사진의 결함 후보뿐
+      "world", // 2D·3D World
+      "reports", // 보고서
+      "fleet", // Fleet·Edge
+      "data", // Data·AI
+      "settings", // PRD "설정" — 현재 화면은 장비 지원단계 표뿐
     ]);
+  });
+
+  it("모든 항목이 비어 있지 않고 서로 겹치지 않는 이름을 갖는다", () => {
+    const labels = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.label));
+    expect(labels.every((label) => label.trim().length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
   it("그룹 순서가 NAV_ITEMS 순서를 뒤집지 않는다(PRD 가 순서를 고정한다)", () => {
