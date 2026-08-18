@@ -97,7 +97,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_event_contracts.event_bundle import EventBundle
@@ -131,6 +131,32 @@ logger = logging.getLogger(__name__)
 
 class StoreRecoveryError(RuntimeError):
     """journal 재적재/잠금 실패 — 오염·경합 상태로 기동하지 않는다(fail-closed)."""
+
+
+#: payload 중첩 상한 — 읽기 경로들의 실측 한계(pydantic 재적재 ~199단, 투영
+#: deepcopy ~500단)보다 훨씬 낮게 잡는다. 실제 EventBundle 은 한 자리 깊이다.
+_MAX_PAYLOAD_NESTING_DEPTH = 32
+
+
+def _payload_depth_violation(payload: Any) -> str | None:
+    """payload 중첩이 상한을 넘으면 거부 사유를, 아니면 ``None``.
+
+    **재귀가 아니라 명시적 스택으로 순회한다** — 이 검사 자체가 깊은 입력에서
+    RecursionError 의 또 다른 근원이 되면 안 된다.
+    """
+    stack: list[tuple[Any, int]] = [(payload, 0)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > _MAX_PAYLOAD_NESTING_DEPTH:
+            return (
+                f"payload 중첩이 상한({_MAX_PAYLOAD_NESTING_DEPTH})을 넘는다 — "
+                "재적재·투영 경로가 읽을 수 없는 구조는 원장에 싣지 않는다"
+            )
+        if isinstance(value, Mapping):
+            stack.extend((sub, depth + 1) for sub in value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend((sub, depth + 1) for sub in value)
+    return None
 
 
 class ServerVerdict(StrEnum):
@@ -490,6 +516,18 @@ class EdgeSyncStore:
                 return ServerIngestResult(
                     ServerVerdict.STORE_UNAVAILABLE,
                     detail=f"durable append 실패로 봉인됨 — 재시작 필요 ({self._sealed_reason})",
+                )
+            # 중첩 깊이를 원장 반영 **전에** 상한한다(2026-08-18 재조사 F3/F4).
+            # 쓰기(json.dumps)는 사실상 무제한인데 읽기 경로들의 한계는 그보다
+            # 낮다 — pydantic 재적재는 ~199단에서, events 투영의 deepcopy 는
+            # ~500단에서 터진다. 즉 상한 없이는 **201 ACK 를 준 payload 가
+            # 재기동을 영구히 막거나**(재적재 실패로 create_app 자체가 안 뜬다)
+            # events 원장을 봉인한다. ACK 후 Edge 는 로컬 사본을 지우므로 그건
+            # 곧 현장 데이터 유실이다. 실제 EventBundle 은 한 자리 깊이면 충분하다.
+            depth_detail = _payload_depth_violation(entry.payload)
+            if depth_detail is not None:
+                return ServerIngestResult(
+                    ServerVerdict.INVALID_EVENT_BUNDLE, detail=depth_detail
                 )
             # payload 가 EventBundle v1.2 인지 원장 반영 **전에** 검증한다 —
             # 계보 없는 이벤트가 멱등 원장을 선점하면, Edge 가 수정본을 보내도

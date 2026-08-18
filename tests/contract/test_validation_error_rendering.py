@@ -242,3 +242,111 @@ def test_shallow_geometry_is_still_accepted(depth: int) -> None:
     from ksi_core.events import _geometry_is_degenerate  # noqa: PLC2701
 
     assert _geometry_is_degenerate(_nested_geometry(depth)) is None
+
+
+# ── 재조사(2026-08-18, 미조사 라우터 6개)가 찾은 결함 회귀 ───────────────────
+
+
+@pytest.mark.parametrize("depth", [968, 2000, 9000])
+def test_deeply_nested_legal_json_renders_as_422_json(depth: int, tmp_path: Path) -> None:
+    """[F5] 깊게 중첩된 **합법** JSON 도 422 를 JSON 으로 받는다.
+
+    이전에는 pydantic 이 올바르게 422 를 판정한 뒤, 그 오류 상세에 되실린 입력을
+    ``jsonable_encoder`` 가 그리다 RecursionError 로 500 이 났다. 임계 깊이는 그
+    시점 스택 잔량에 따라 968~1000 사이에서 흔들리므로 회귀 테스트는 여유 있는
+    깊이를 쓴다(재조사 판정의 테스트 주의사항).
+    """
+    client = _client(tmp_path)
+    nested = "[" * depth + "1" + "]" * depth
+    response = client.post(
+        "/v1/sites",
+        content=('{"siteId": ' + nested + "}").encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code != 500, response.text[:200]
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_defect_measurement_infinity_is_rejected_by_the_contract() -> None:
+    """[F1] 결함후보 measurements 의 ``+inf`` 는 계약이 거부한다 — 원장 봉인 차단.
+
+    다섯 모델이 자체 ConfigDict 를 재정의해 베이스의 유한성 게이트에서 빠져
+    있었고, ``ge=0.0`` 은 ``inf >= 0`` 이 참이라 +inf 를 통과시켰다(실측: 접수
+    503 + 원장 봉인 → 이후 정상 요청도 영구 503).
+    """
+    from ksi_event_contracts.defect_candidate import DefectMeasurements
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        DefectMeasurements(area_px2=float("inf"))
+    assert DefectMeasurements(area_px2=12.5).area_px2 == 12.5  # 비공허 대조
+
+
+def test_lone_surrogate_in_mapping_keys_is_found() -> None:
+    """[F2 부속] surrogate **키**도 잡는다 — 값만 보면 pydantic 의 json-mode dump 가
+    그 키를 U+FFFD 로 바꿔, 생산자가 보낸 것과 **다른 키**가 원장에 남는다(조용한 오염)."""
+    from ksi_core.mission_records import find_lone_surrogate_path
+
+    assert find_lone_surrogate_path({"w\ud801eights": "v"}) is not None
+    assert find_lone_surrogate_path({"weights": "v\ud801x"}) is not None
+    assert find_lone_surrogate_path({"weights": "value"}) is None  # 비공허 대조
+
+
+def test_edge_payload_nesting_is_capped_before_the_ledger() -> None:
+    """[F3/F4] 원장이 받아 적은 payload 는 재적재·투영 경로가 반드시 읽을 수 있어야 한다.
+
+    쓰기(json.dumps)는 사실상 무제한인데 읽기 한계는 낮다(pydantic 재적재 ~199단,
+    투영 deepcopy ~500단). 상한 없이는 **201 ACK 를 준 payload 가 재기동을 영구히
+    막는다** — ACK 후 Edge 는 로컬 사본을 지우므로 곧 현장 데이터 유실이다.
+    """
+    from ksi_core.edge_sync import _payload_depth_violation  # noqa: PLC2701
+
+    def nest(depth: int) -> dict[str, Any]:
+        value: dict[str, Any] = {"a": 1}
+        for _ in range(depth):
+            value = {"a": value}
+        return value
+
+    assert _payload_depth_violation(nest(199)) is not None
+    assert _payload_depth_violation(nest(5000)) is not None  # 검사 자체도 재귀가 아니다
+    assert _payload_depth_violation(nest(3)) is None  # 비공허 대조
+
+
+def test_overflowing_progress_ratio_folds_into_a_typed_reason() -> None:
+    """[F6] 진척 비율이 float 범위를 넘으면 500 이 아니라 typed 사유다.
+
+    리포트가 원장에 남아 있는 한 조회가 영원히 500 이던 자리 — 이 함수의 계약
+    ("못 내면 이유를 낸다")대로 표현 불가 구역을 사유로 접는다.
+    """
+    from datetime import UTC, datetime
+
+    from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
+
+    def zone(cut: float) -> ZoneVolumeDelta:
+        return ZoneVolumeDelta(
+            zone_id="z1", cut_m3=cut, fill_m3=0.0, net_m3=-cut, area_m2=1.0,
+            threshold_m=0.05, uncertainty_note="검증 전",
+        )
+
+    def report(cut: float, when: str) -> Any:
+
+        # DesignConformanceReport 의 필수 필드 구성은 픽스처가 길어 여기서는 파생
+        # 함수의 구역 비교 로직만 시험한다 — derive_progress 는 순수 함수라
+        # 최소 속성만 갖춘 대역으로 충분하다.
+        class _Report:
+            def __init__(self) -> None:
+                self.zones = [zone(cut)]
+                self.computed_at = datetime.fromisoformat(when).replace(tzinfo=UTC)
+
+        return _Report()
+
+    # 실제 재현값(재조사 F6): 기준 1.001e-6 / 최신 1e308 → done/planned 오버플로.
+    # derive_progress 전체를 태우려면 리포트 픽스처가 무거우므로, 여기서는 오버플로
+    # 조합이 ZoneProgress 검증에서 ValidationError 를 내는 성질만 고정한다 —
+    # derive_progress 의 접기 분기는 그 예외 타입 하나에 걸려 있다.
+    from ksi_core.design_progress import _zone_progress  # noqa: PLC2701
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        _zone_progress(zone(1.001e-6), zone(1e308), None)
+    assert _zone_progress(zone(5000.0), zone(1240.0), None).cut_progress_ratio is not None

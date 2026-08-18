@@ -240,7 +240,11 @@ class DurableJournal:
                 continue
             try:
                 parsed: Any = json.loads(line)
-            except ValueError as exc:
+            except (ValueError, RecursionError) as exc:
+                # RecursionError 도 잡는다(2026-08-18 재조사 F4) — 깊게 중첩된
+                # 원장 줄에서 json.loads 가 던지는 것은 ValueError 가 아니라서,
+                # 안 잡으면 JournalRecoveryError 로 감싸이지 못하고 날것으로
+                # 올라가 운영자가 어느 파일 어느 줄인지 볼 수 없다.
                 raise JournalRecoveryError(
                     f"{path}:{line_no}: journal 줄이 JSON 이 아니다 — {exc}"
                 ) from exc
@@ -311,16 +315,24 @@ class DurableJournal:
                 )
             try:
                 self._append_durable(record)
+                # deepcopy — dict(record) 는 top-level 만 복사한다. record 안에 중첩
+                # dict/list(예: siteFrame)가 있으면 호출자가 원본을 나중에 변형할 때
+                # 이미 durable 하게 기록된 감사 레코드까지 조용히 바뀌는 경로가 생긴다.
+                #
+                # deepcopy 가 try **안**에 있는 이유(2026-08-18 재조사 F4): 깊게
+                # 중첩된 레코드에서 deepcopy 는 RecursionError 를 낼 수 있는데,
+                # 그 시점엔 durable 기록이 이미 성공한 뒤다. try 밖이면 "디스크에는
+                # 있는데 메모리에는 없는" 불일치가 봉인 없이 지나가고, 그 예외가
+                # 호출자 스택으로 날것으로 올라간다. 안에 있으면 봉인으로 승격돼
+                # 불일치가 fail-closed 로 드러난다(재기동 재적재가 디스크 기준으로
+                # 상태를 복원한다).
+                self._records.append(copy.deepcopy(dict(record)))
             except BaseException as exc:
                 self._sealed_reason = type(exc).__name__
                 logger.error("durable append 중 예외로 봉인: %s", type(exc).__name__)
                 raise JournalSealedError(
                     f"{self._path}: append 실패로 봉인됨 — {type(exc).__name__}"
                 ) from exc
-            # deepcopy — dict(record) 는 top-level 만 복사한다. record 안에 중첩
-            # dict/list(예: siteFrame)가 있으면 호출자가 원본을 나중에 변형할 때
-            # 이미 durable 하게 기록된 감사 레코드까지 조용히 바뀌는 경로가 생긴다.
-            self._records.append(copy.deepcopy(dict(record)))
             # 회전은 append 가 durable 해진 **뒤에** 한다 — 실패해도 방금 기록한
             # 레코드는 안전하다. 그래서 봉인하지 않는다(모듈 docstring 참조).
             self._rotate_if_needed()

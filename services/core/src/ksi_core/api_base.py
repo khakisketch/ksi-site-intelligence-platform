@@ -27,7 +27,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -66,7 +65,15 @@ JOURNAL_SEALED_DETAIL = "journal 봉인됨 — 재시작 필요"
 JOURNAL_APPEND_FAILED_DETAIL = "durable 기록 실패 — journal 봉인(재시작 필요)"
 
 
-def _render_safe(value: Any) -> Any:
+#: 422 본문에 되싣는 ``input`` 의 중첩 예산. 실제 오류 상세가 이 깊이를 쓸 일은
+#: 없고, 이 상한이 없으면 깊게 중첩된 **합법** JSON(예: 970단 배열)이 422 를
+#: 그리다 RecursionError 로 500 이 된다(2026-08-18 재조사 F5 — 임계 깊이는 그
+#: 시점 스택 잔량에 따라 968~1000 사이에서 흔들렸다).
+_RENDER_DEPTH_BUDGET = 32
+_RENDER_TRUNCATED = "<truncated: nesting depth exceeded>"
+
+
+def _render_safe(value: Any, *, depth: int = 0) -> Any:
     """422 본문에 실어도 JSON 직렬화가 깨지지 않는 형태로 바꾼다.
 
     FastAPI 기본 검증 핸들러는 오류 상세의 ``input`` 에 **문제의 값을 그대로**
@@ -75,9 +82,21 @@ def _render_safe(value: Any) -> Any:
     품은 문자열이면 **422 를 그리다가** 터진다 — 아무도 안 잡아 500 + text/plain 이
     나간다(2026-08-18 실측).
 
-    비유한 실수도 lone surrogate 도 **문법적으로 합법인 JSON 입력**이다. 즉 파서
-    우회가 아니라 정상 요청이고, 그래서 어느 라우트에서든 재현된다.
+    비유한 실수도 lone surrogate 도 깊은 중첩도 **문법적으로 합법인 JSON 입력**이다.
+    즉 파서 우회가 아니라 정상 요청이고, 그래서 어느 라우트에서든 재현된다.
+
+    깊이 예산이 이 함수 자신에게도 걸리는 이유: 되싣는 값의 중첩이 재귀 한도를
+    넘으면 이 함수 자체가 RecursionError 의 두 번째 근원이 된다. 예산 초과분은
+    마커 문자열로 접는다 — 그 깊이의 오류 상세는 어차피 사람이 읽지 못한다.
+
+    ``jsonable_encoder`` 를 거치지 않고 여기서 전 타입을 직접 접는 이유도 같다 —
+    그 인코더의 재귀에는 예산을 줄 수 없다. JSON 원시 타입 밖의 값(pydantic 이
+    ``ctx`` 에 싣는 예외 객체 등)은 ``repr`` 로 접는다.
     """
+    if depth > _RENDER_DEPTH_BUDGET:
+        return _RENDER_TRUNCATED
+    if value is None or isinstance(value, (bool, int)):
+        return value
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return repr(value)
@@ -86,15 +105,18 @@ def _render_safe(value: Any) -> Any:
         try:
             value.encode("utf-8")
         except UnicodeEncodeError:
-            # surrogatepass 로 실제 코드포인트를 보존해 되돌려준다 — 어느 글자가
+            # backslashreplace 로 실제 코드포인트를 보존해 되돌려준다 — 어느 글자가
             # 문제인지 요청자가 알아야 고칠 수 있다.
             return value.encode("utf-8", "backslashreplace").decode("ascii")
         return value
     if isinstance(value, dict):
-        return {_render_safe(k): _render_safe(v) for k, v in value.items()}
+        return {
+            str(_render_safe(k, depth=depth + 1)): _render_safe(v, depth=depth + 1)
+            for k, v in value.items()
+        }
     if isinstance(value, (list, tuple)):
-        return [_render_safe(item) for item in value]
-    return value
+        return [_render_safe(item, depth=depth + 1) for item in value]
+    return repr(value)[:200]
 
 
 def mount_validation_error_handler(app: FastAPI) -> None:
@@ -114,7 +136,9 @@ def mount_validation_error_handler(app: FastAPI) -> None:
     async def _validation_error(  # pyright: ignore[reportUnusedFunction]
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        # jsonable_encoder 를 쓰지 않는다 — 그 인코더의 재귀에는 깊이 예산을 줄 수
+        # 없어, 깊게 중첩된 합법 입력이 되실릴 때 인코더가 먼저 터진다(F5 실측).
         return JSONResponse(
             status_code=422,
-            content={"detail": _render_safe(jsonable_encoder(exc.errors()))},
+            content={"detail": _render_safe(list(exc.errors()))},
         )

@@ -84,9 +84,17 @@ _MAX_VALID_FOR_HOURS = 168.0  # 7일 상한 — 무기한 계약 발급 방지(�
 
 
 class MissionIssuanceRequest(BaseModel):
-    """구역+임무타입 발급 요청 — 사이트별로 실제 달라지는 값만 받는다."""
+    """구역+임무타입 발급 요청 — 사이트별로 실제 달라지는 값만 받는다.
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    ``allow_inf_nan=False`` 는 심층 방어다(2026-08-18 재조사) — 현재 이 요청의 실수
+    필드들은 전부 필드별 제약(범위·isfinite validator)으로 이미 막혀 있어 유출은
+    없지만, 그건 설정이 아니라 필드별 규율에 기댄 방어라 **새 float 필드가 추가되는
+    순간 열린다**. 설정으로 두면 잊을 자리가 없다.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid", allow_inf_nan=False
+    )
 
     mission_id: str = Field(min_length=1)
     site_id: str = Field(min_length=1)

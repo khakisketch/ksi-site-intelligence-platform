@@ -60,7 +60,7 @@ from ksi_event_contracts.design_progress import (
     ZoneProgress,
 )
 from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ksi_core.api_base import CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
@@ -210,10 +210,33 @@ def derive_progress(
         )
 
     names = zone_names or {}
-    zones = [
-        _zone_progress(baseline_zones[zone_id], latest_zones[zone_id], names.get(zone_id))
-        for zone_id in comparable
-    ]
+    zones = []
+    unrepresentable: list[str] = []
+    for zone_id in comparable:
+        try:
+            zones.append(
+                _zone_progress(baseline_zones[zone_id], latest_zones[zone_id], names.get(zone_id))
+            )
+        except ValidationError:
+            # done/planned 가 float 범위를 넘어 inf 가 되면 ZoneProgress 의 유한성
+            # 게이트(allow_inf_nan=False)가 거부한다. 여기서 안 잡으면 조회 라우트가
+            # 500 을 내고, 리포트가 원장에 남아 있는 한 **그 현장의 진척 조회가
+            # 영원히 500** 이다(2026-08-18 재조사 F6 실측: 기준 cut 1e-6 급 + 최신
+            # cut 1e308 조합). 이 함수의 계약은 "못 내면 이유를 낸다"이므로 그
+            # 구역을 typed 사유로 접는다 — 숫자를 지어내 표를 채우지 않는다.
+            unrepresentable.append(zone_id)
+    if unrepresentable:
+        return ProgressDerivation(
+            None,
+            unmatched_zone_ids=unmatched,
+            area_mismatch_zone_ids=area_mismatch,
+            detail=(
+                "일부 구역의 진척 비율이 수로 표현되지 않는다"
+                f"(구역: {', '.join(sorted(unrepresentable))}) — 두 시점의 절·성토 "
+                "물량 차이가 계산 범위를 넘었다. 리포트 물량 값이 실측 범위를 "
+                "벗어났는지(워커 오염 입력) 확인이 필요하다"
+            ),
+        )
     progress = DesignProgress(
         site_id=site_id,
         design_surface_id=latest.design_surface_ref.design_surface_id,

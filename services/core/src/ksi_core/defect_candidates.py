@@ -67,6 +67,7 @@ from ksi_core.api_base import (
 )
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.mission_records import reject_lone_surrogates
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -449,6 +450,12 @@ def build_defect_candidates_router(store: DefectCandidateStore) -> APIRouter:
         사람이 손으로 "여기 균열이 있다"를 원장에 주장할 수 없다. 사람의 판단은
         결함 후보가 아니라 이벤트 트리아지로 표현된다.
         """
+        # **원장 기록 전에** 거부한다. ``sourceDigests`` 같은 자유 문자열 자리에
+        # lone surrogate 가 실리면 기록은 201 로 성공하는데, 그 임무의 조회가
+        # 응답 직렬화에서 UnicodeEncodeError 로 **영원히** 500 이 된다 — 재기동
+        # 후 재적재해도 그대로다(재조사 F2 실측). 나중에 올린 깨끗한 후보까지
+        # 같은 500 에 파묻힌다.
+        reject_lone_surrogates(body.model_dump(by_alias=True, mode="json", exclude_none=True))
         result = store.record_batch(
             mission_id,
             body.candidates,
