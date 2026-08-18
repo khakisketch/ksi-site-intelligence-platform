@@ -7,22 +7,25 @@ import {
   listSitesCached,
 } from "@/lib/core-api/cached";
 import { CoreApiError } from "@/lib/core-api/client";
+import { listSiteProcessingJobs } from "@/lib/core-api/comparison";
 import {
   EVENT_SEVERITY_LABEL,
-  MISSION_TYPE_LABEL,
   SEVERITY_UNSET_LABEL,
-  SITE_STATUS_LABEL,
-  TRIAGE_STATUS_LABEL,
   humanizeApiError,
   humanizeEventType,
 } from "@/lib/core-api/labels";
+import { listRegionExtraction } from "@/lib/core-api/region-extraction";
 import { ackSlaState, formatElapsed, isSettled, isUnattended, sortForTriage } from "@/lib/core-api/triage";
-import type { EventSeverity, SiteStatus, SiteView } from "@/lib/core-api/types";
+import type { MissionRecordResponse, SiteStatus, SiteView } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
-import { SiteCard, type SiteFact } from "@/components/site/SiteCard";
+import { ReobsSuggestions, type ReobsSuggestion } from "@/components/site/ReobsSuggestions";
+import { StatStrip } from "@/components/ui/StatStrip";
+
+import { PortfolioTable } from "./PortfolioTable";
+import { ProcessingCard, type ProcessingCardItem } from "./ProcessingCard";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
+import { normalizePortfolioSort, sortPortfolio, type PortfolioRow } from "./portfolio";
 
 // 홈은 여러 독립 카드로 구성된다 — 하나의 Core API 호출이 실패해도 나머지 카드는 정상 표시되어야
 // 하므로(각 fetch를 개별 격리), 개별 실패를 던지지 않고 결과로 감싸는 얕은 헬퍼를 쓴다.
@@ -52,13 +55,13 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   }
 }
 
-/** 지표 타일의 보조문구 — 값을 못 구한 이유를 구분해서 말한다. */
+/** 지표 칸의 보조문구 — 값을 못 구한 이유를 구분해서 말한다. */
 function unavailableNote(result: { ok: false; forbidden: boolean }): string {
   return result.forbidden ? "볼 권한이 없습니다" : "불러오지 못했습니다";
 }
 
-// 이 두 상태는 '기준 지도가 없어 순찰을 시작할 수 없다'는 같은 뜻이다 — 현장 카드를
-// '할 일' 모양으로 바꾸고, 콜아웃·지표 타일이 같은 정의를 공유하도록 한 곳에 둔다.
+// 이 두 상태는 '기준 지도가 없어 순찰을 시작할 수 없다'는 같은 뜻이다 — 헤드라인·지표·
+// 포트폴리오 표가 같은 정의를 공유하도록 한 곳에 둔다.
 const BLOCKED_SITE_STATUSES = new Set<SiteStatus>(["UNMAPPED", "REMAP_REQUIRED"]);
 
 // "순찰 가능"은 **화이트리스트로만** 정의한다.
@@ -75,183 +78,198 @@ const PATROLLABLE_SITE_STATUSES = new Set<SiteStatus>([
   "PATROL_ACTIVE",
   "PROVISIONAL_AUTONOMY",
 ]);
-const HIGH_SEVERITY = new Set<EventSeverity>(["HIGH", "CRITICAL"]);
-const TIMELINE_LIMIT = 8;
-const HOME_SITE_LIMIT = 3;
 
-// 현장은 한국이고 서버는 어디서든 돈다 — TopBar.tsx 와 같은 근거로 시간대를 고정한다.
-// 이걸 빼면 UTC 서버에서 한국시간 00:00~09:00 이벤트가 '오늘'로 잡히지 않아, 상단바가
-// 말하는 날짜와 본문 타임라인이 어긋난다.
-const SEOUL = "Asia/Seoul";
+/** 헤드라인 아래 '다음에 할 일' 칩 수 — 네 개를 넘기면 한 줄에서 훑히지 않는다. */
+const NEXT_PILL_LIMIT = 3;
 
-function formatShortDate(iso: string): string {
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "long",
-    day: "numeric",
-    timeZone: SEOUL,
-  }).format(new Date(iso));
-}
+// ── 홈이 추가로 두드리는 표면의 범위 ────────────────────────────────────────
+//
+// 처리 작업은 현장 단위, 변화 영역은 임무 단위 조회다 — 전 현장·전 임무를 훑으면
+// 홈 한 번에 수십 번 왕복한다. 상위 몇 건으로 자르고, **자른 범위를 화면에 밝힌다**
+// (카드의 scopeNote). 범위를 숨기면 "처리 중 0건"이 전 현장을 다 본 결과처럼 읽힌다.
+const PROCESSING_SITE_LIMIT = 4;
+const PROCESSING_ITEM_LIMIT = 5;
+const REOBS_MISSION_LIMIT = 6;
+const REOBS_ITEM_LIMIT = 5;
 
-/** 서울 기준 연-월-일. 문자열 비교로 '같은 날'을 판정하려고 쓴다 —
- *  getFullYear/getMonth/getDate 는 **서버 로컬** 시간대를 읽으므로 여기서는 쓸 수 없다. */
-function seoulDayKey(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: SEOUL,
-  }).format(date);
-}
+/** 아직 끝나지 않았거나 실패한 것만 — 완료·취소된 작업은 '기다리는 일'이 아니다. */
+const PENDING_JOB_STATUSES = new Set(["QUEUED", "RUNNING", "FAILED"]);
 
-function formatTimelineTime(iso: string): string {
-  const date = new Date(iso);
-  const sameDay = seoulDayKey(date) === seoulDayKey(new Date());
-  return sameDay
-    ? new Intl.DateTimeFormat("ko-KR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-        timeZone: SEOUL,
-      }).format(date)
-    : formatShortDate(iso);
-}
-
-function Callout({
+/**
+ * 헤드라인 — "지금 무엇을 해야 하나"에 답하는 화면 최상단 한 장(Console v2 §1).
+ *
+ * 왼쪽 4px 색띠와 태그 칩만으로 상태를 말하고, 본문에는 그 판단의 근거(범위·건수)를
+ * 둔다. 오른쪽은 행동 열이다 — 읽고 나서 손이 가는 자리가 항상 같은 곳이어야 한다.
+ */
+function Headline({
   tone,
+  tag,
+  scope,
   title,
   sub,
-  cta,
+  pills = [],
+  actions = [],
 }: {
   tone: "crit" | "neutral";
+  tag: string;
+  scope?: string;
   // ReactNode — topUnattended 분기는 여기에 실시간으로 갈아타는 client 컴포넌트
   // (TopUnattendedHeadline)를 싣는다. 다른 분기는 여전히 고정 문자열을 준다.
   title: React.ReactNode;
-  sub: string;
-  cta?: { label: string; href: string };
+  sub?: string;
+  pills?: { key: string; label: string; href: string; tone: "crit" | "high" | "neutral" }[];
+  actions?: { key: string; label: string; href: string; primary?: boolean }[];
 }) {
+  const dotClass = { crit: "bg-crit", high: "bg-high", neutral: "bg-ink-muted" };
+
   return (
-    <div
-      className={`flex flex-wrap items-center gap-4 rounded-lg border border-line bg-surface p-4 ${
-        tone === "crit" ? "border-l-4 border-l-crit" : ""
+    <section
+      className={`flex flex-wrap items-stretch overflow-hidden rounded-lg border border-line border-l-4 bg-surface ${
+        tone === "crit" ? "border-l-crit" : "border-l-line-strong"
       }`}
     >
-      <span
-        aria-hidden="true"
-        className={`flex size-10 flex-none items-center justify-center rounded-lg text-lg font-extrabold ${
-          tone === "crit" ? "bg-crit-bg text-crit" : "bg-sunk text-ink-2"
-        }`}
-      >
-        {tone === "crit" ? "!" : "✓"}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="break-keep text-[15.5px] font-bold tracking-tight">{title}</p>
-        <p className="break-keep text-[13px] text-ink-2">{sub}</p>
-      </div>
-      {cta && (
-        <Link href={cta.href} className="btn btn-primary tap-target flex-none">
-          {cta.label}
-        </Link>
-      )}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  note,
-  tone,
-}: {
-  label: string;
-  value: React.ReactNode;
-  note?: string;
-  tone?: "crit";
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-surface p-3.5">
-      <span className="break-keep text-xs font-semibold text-ink-2">{label}</span>
-      <span className={`num text-[26px] leading-tight font-bold tracking-tight ${tone === "crit" ? "text-crit" : ""}`}>
-        {value}
-      </span>
-      {note && <span className="break-keep text-[11.5px] text-ink-muted">{note}</span>}
-    </div>
-  );
-}
-
-type TimelineItem = {
-  key: string;
-  at: string;
-  content: React.ReactNode;
-  badge?: React.ReactNode;
-};
-
-function TimelineRow({ item }: { item: TimelineItem }) {
-  return (
-    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-line py-2.5 last:border-b-0">
-      <span className="num text-xs whitespace-nowrap text-ink-muted">{formatTimelineTime(item.at)}</span>
-      <span className="min-w-0 break-keep text-[13.5px]">{item.content}</span>
-      <span className="justify-self-end">{item.badge}</span>
-    </div>
-  );
-}
-
-type WorkItem = {
-  key: string;
-  href: string;
-  label: string;
-  detail: string;
-  badge?: React.ReactNode;
-};
-
-/**
- * 홈의 첫 목록은 "무엇이 등록됐나"가 아니라 "지금 무엇을 해야 하나"다. 데이터가
- * 없는 처리 진행률이나 기체 상태는 꾸며 내지 않고, 현재 Core가 실제로 준 이벤트·현장
- * 상태에서만 우선순위를 만든다.
- */
-function WorkQueue({ items }: { items: WorkItem[] }) {
-  return (
-    <section className="rounded-lg border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
-        <div>
-          <h2 className="text-[15px] font-bold tracking-tight break-keep">지금 확인할 일</h2>
-          <p className="mt-0.5 text-[12px] break-keep text-ink-muted">
-            이벤트와 현장 상태에서 바로 할 수 있는 다음 행동만 보여줍니다.
-          </p>
+      <div className="min-w-[260px] flex-1 px-4 py-3">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-[4px] px-1.5 py-0.5 text-[11px] font-bold whitespace-nowrap ${
+              tone === "crit" ? "bg-crit-bg text-crit-ink" : "bg-idle-bg text-idle-ink"
+            }`}
+          >
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+            {tag}
+          </span>
+          {scope && <span className="text-[11.5px] break-keep text-ink-muted">{scope}</span>}
         </div>
-        <Link href="/events" className="tap-target flex items-center text-[12.5px] font-semibold text-accent-text hover:underline">
-          이벤트 대기열
-        </Link>
-      </div>
-      {items.length === 0 ? (
-        <p className="px-4 py-4 text-[13px] break-keep text-ink-2">
-          지금 바로 확인이 필요한 이벤트나 재매핑 요청이 없습니다. 현장별 최신 상태는 현장 목록에서 확인하세요.
-        </p>
-      ) : (
-        <ol className="divide-y divide-line">
-          {items.map((item, index) => (
-            <li key={item.key}>
+        <p className="text-[18.5px] leading-tight font-bold tracking-tight break-keep">{title}</p>
+        {sub && <p className="mt-1 text-[12.5px] break-keep text-ink-2">{sub}</p>}
+        {pills.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {pills.map((pill) => (
               <Link
-                href={item.href}
-                className="tap-target flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunk"
+                key={pill.key}
+                href={pill.href}
+                className="tap-target inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-[11.5px] break-keep transition-colors hover:border-line-strong hover:bg-sunk"
               >
-                <span className="num grid size-6 flex-none place-items-center rounded-full bg-sunk text-[11.5px] font-bold text-ink-2">
-                  {index + 1}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-semibold break-keep">{item.label}</span>
-                  <span className="mt-0.5 block text-[12px] break-keep text-ink-2">{item.detail}</span>
-                </span>
-                {item.badge}
+                <span aria-hidden="true" className={`size-1.5 rounded-full ${dotClass[pill.tone]}`} />
+                {pill.label}
               </Link>
-            </li>
+            ))}
+          </div>
+        )}
+      </div>
+      {actions.length > 0 && (
+        <div className="flex flex-none flex-wrap items-center gap-2 border-line bg-sunk px-4 py-3 sm:border-l">
+          {actions.map((action) => (
+            <Link
+              key={action.key}
+              href={action.href}
+              className={`btn tap-target ${action.primary ? "btn-primary" : ""}`}
+            >
+              {action.label}
+            </Link>
           ))}
-        </ol>
+        </div>
       )}
     </section>
   );
 }
 
-export default async function HomePage() {
+/**
+ * 처리 중·대기 작업 — 상위 현장 몇 곳만 훑는다(`PROCESSING_SITE_LIMIT`).
+ *
+ * 현장별로 실패를 격리한다: 한 현장의 조회가 죽어도 나머지 현장의 작업은 그대로
+ * 보여야 한다. 전부 실패했을 때만 카드가 사유를 말한다 — 일부 실패를 "없음"으로
+ * 뭉개면 진행 중인 작업이 화면에서 사라진다.
+ *
+ * **404 는 장애가 아니다.** Core 는 오브젝트 스토리지가 없는 조립에서 재구성 표면을
+ * 아예 장착하지 않는다(app.py: "없는 편이 정직하다"). 그 배포에서 이 카드가 "불러오지
+ * 못했습니다"라고 하면 고칠 수 없는 오류를 매일 보게 된다 — 그건 이 배포에 그 기능이
+ * 없다는 사실이고, 그렇게 말해야 한다.
+ */
+async function loadProcessing(
+  sites: SiteView[],
+): Promise<{ items: ProcessingCardItem[]; unavailable: "absent" | "failed" | null }> {
+  if (sites.length === 0) return { items: [], unavailable: null };
+
+  const settled = await Promise.allSettled(
+    sites.map((site) => listSiteProcessingJobs(site.siteId, PROCESSING_ITEM_LIMIT * 2)),
+  );
+
+  const items: ProcessingCardItem[] = [];
+  let failures = 0;
+  let notFound = 0;
+  settled.forEach((result, index) => {
+    if (result.status !== "fulfilled") {
+      failures += 1;
+      if (result.reason instanceof CoreApiError && result.reason.status === 404) notFound += 1;
+      return;
+    }
+    const site = sites[index];
+    for (const job of result.value.jobs) {
+      if (!PENDING_JOB_STATUSES.has(job.status)) continue;
+      items.push({
+        jobId: job.jobId,
+        siteId: site.siteId,
+        siteName: site.name,
+        status: job.status,
+        issuedAt: job.issuedAt,
+        detail: job.detail,
+      });
+    }
+  });
+
+  items.sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
+  const unavailable =
+    failures < sites.length ? null : notFound === sites.length ? "absent" : "failed";
+  return { items: items.slice(0, PROCESSING_ITEM_LIMIT), unavailable };
+}
+
+/**
+ * 재관측 제안 — 최근 임무 몇 건의 변화 영역 추출 결과를 모은다.
+ *
+ * 계산된 적이 없는 임무는 404 다(대부분이 그렇다) — 그건 오류가 아니라 빈 결과이므로
+ * 조용히 건너뛴다. 순변화가 큰 순으로 자르되 **부호는 버리지 않는다**: 쌓인 곳과 깎인
+ * 곳은 같은 크기라도 다른 사실이고, 화면은 그 값을 그대로 옮긴다.
+ */
+async function loadReobs(
+  missions: MissionRecordResponse[],
+  siteById: Map<string, SiteView>,
+): Promise<ReobsSuggestion[]> {
+  if (missions.length === 0) return [];
+
+  const settled = await Promise.allSettled(
+    missions.map((mission) => listRegionExtraction(mission.missionId)),
+  );
+
+  const items: ReobsSuggestion[] = [];
+  settled.forEach((result, index) => {
+    if (result.status !== "fulfilled") return;
+    const mission = missions[index];
+    const latest = result.value.reports[0];
+    if (!latest) return;
+    for (const region of latest.report.regions) {
+      items.push({
+        regionId: region.regionId,
+        siteId: mission.siteId,
+        siteName: siteById.get(mission.siteId)?.name ?? mission.siteId,
+        missionId: mission.missionId,
+        changeRegionSetId: latest.report.changeRegionSetId,
+        netM3: region.volume.netM3,
+      });
+    }
+  });
+
+  items.sort((a, b) => Math.abs(b.netM3) - Math.abs(a.netM3));
+  return items.slice(0, REOBS_ITEM_LIMIT);
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; sort?: string }>;
+}) {
+  const { q, sort } = await searchParams;
+
   const [sitesResult, eventsResult, missionsResult, whoAmIResult] = await Promise.all([
     // *Cached 를 쓰는 이유는 캐싱 자체가 아니라 **셸과 본문이 같은 스냅샷을 보게** 하기
     // 위해서다 — 사이드바 배지가 "검토 3"인데 아래 카드가 4건이면 그 화면은 못 믿는다.
@@ -283,209 +301,173 @@ export default async function HomePage() {
     ? sites.filter((s) => PATROLLABLE_SITE_STATUSES.has(s.status)).length
     : 0;
 
-  const topUnattended =
-    eventsResult.ok && unattendedEvents.length > 0 ? sortForTriage(unattendedEvents)[0] : null;
-
-  const workItems: WorkItem[] = [];
-  if (eventsResult.ok) {
-    for (const event of sortForTriage(unattendedEvents).slice(0, 3)) {
-      const severity = event.severity
-        ? EVENT_SEVERITY_LABEL[event.severity]
-        : SEVERITY_UNSET_LABEL;
-      const siteName = siteById.get(event.siteId)?.name ?? event.siteId;
-      const elapsed = formatElapsed(now.getTime() - new Date(event.occurredAt).getTime(), {
-        unattended: true,
-      });
-      workItems.push({
-        key: `event-${event.eventKey}`,
-        href: `/events/${encodeURIComponent(event.eventKey)}`,
-        label: `${siteName} · ${humanizeEventType(event.eventType)}`,
-        detail: `${elapsed} · 증거와 판단 근거를 확인하세요.`,
-        badge: <StatusBadge label={severity.label} tone={severity.tone} />,
-      });
-    }
-  }
-  if (sitesResult.ok && workItems.length < 3) {
-    for (const site of blockedSites.slice(0, 3 - workItems.length)) {
-      const nextStep = site.status === "UNMAPPED" ? "현장 외곽을 확인하고 초기 매핑을 계획하세요." : "최신 모델을 만들기 위한 재조사를 계획하세요.";
-      workItems.push({
-        key: `site-${site.siteId}`,
-        href: `/sites/${encodeURIComponent(site.siteId)}`,
-        label: `${site.name} · ${SITE_STATUS_LABEL[site.status].label}`,
-        detail: nextStep,
-        badge: <StateBadge label="다음 행동" tone="caution" />,
-      });
-    }
-  }
+  const triaged = eventsResult.ok ? sortForTriage(unattendedEvents) : [];
+  const topUnattended = triaged[0] ?? null;
 
   // /sites/new 는 SITES_WRITE·MISSIONS_ISSUE 를 둘 다 요구한다(ADR-KSI-015 이후
   // 실제로는 두 권한이 항상 같이 붙어 있지만, 표가 갈려도 반쪽 상태를 안 만들려고
   // fail-closed AND 를 유지한다) — 여기서 링크 노출 여부도 같은 기준으로 맞춘다.
   // SITES_WRITE 만 보고 버튼을 보여주면, 두 권한이 갈린 미래 역할에게 눌러도
   // "권한이 없습니다"만 보이는 막다른 링크를 주게 된다.
-  const canRegisterSite =
-    whoAmIResult.ok &&
-    whoAmIResult.value.permissions.includes("SITES_WRITE") &&
-    whoAmIResult.value.permissions.includes("MISSIONS_ISSUE");
+  const permissions = whoAmIResult.ok ? whoAmIResult.value.permissions : [];
+  const canIssueMissions = permissions.includes("MISSIONS_ISSUE");
+  const canRegisterSite = permissions.includes("SITES_WRITE") && canIssueMissions;
 
-  // ── 콜아웃 — "오늘 뭘 해야 하나"에 답하는 단일 헤드라인 ─────────────────
-  let calloutNode: React.ReactNode = null;
+  // ── 포트폴리오 행 ────────────────────────────────────────────────────
+  //
+  // 미조치 수는 이벤트 조회가 성공했을 때만 숫자다 — 실패·권한부재면 `null` 로 두어
+  // 표가 "0건"이라 말하지 않게 한다(그 칸은 "—" 로 그려진다).
+  const lastMissionBySite = new Map<string, string>();
+  for (const mission of missions) {
+    const previous = lastMissionBySite.get(mission.siteId);
+    if (!previous || new Date(mission.issuedAt).getTime() > new Date(previous).getTime()) {
+      lastMissionBySite.set(mission.siteId, mission.issuedAt);
+    }
+  }
+
+  const portfolioRows: PortfolioRow[] = sites.map((site) => ({
+    siteId: site.siteId,
+    name: site.name,
+    status: site.status,
+    registeredAt: site.registeredAt,
+    lastMissionAt: missionsResult.ok ? (lastMissionBySite.get(site.siteId) ?? null) : null,
+    unattendedCount: eventsResult.ok
+      ? unattendedEvents.filter((e) => e.siteId === site.siteId).length
+      : null,
+    blocked: BLOCKED_SITE_STATUSES.has(site.status),
+  }));
+
+  // 오른쪽 카드들이 훑을 현장·임무는 표의 기본 정렬(확인 필요한 순)과 같은 기준으로
+  // 고른다 — 표 맨 위 현장과 옆 카드가 서로 다른 현장을 말하면 두 번 읽게 된다.
+  const attentionOrder = sortPortfolio(portfolioRows, "attention");
+  const processingSites = attentionOrder
+    .slice(0, PROCESSING_SITE_LIMIT)
+    .map((row) => siteById.get(row.siteId))
+    .filter((site): site is SiteView => site !== undefined);
+
+  const recentMissions = [...missions]
+    .sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime())
+    .slice(0, REOBS_MISSION_LIMIT);
+
+  const [processing, reobsItems] = await Promise.all([
+    loadProcessing(processingSites),
+    loadReobs(recentMissions, siteById),
+  ]);
+
+  // ── 헤드라인 ─────────────────────────────────────────────────────────
+  const nextPills: { key: string; label: string; href: string; tone: "crit" | "high" | "neutral" }[] = [];
+  for (const event of triaged.slice(0, NEXT_PILL_LIMIT)) {
+    const siteName = siteById.get(event.siteId)?.name ?? event.siteId;
+    const elapsed = formatElapsed(now.getTime() - new Date(event.occurredAt).getTime(), {
+      unattended: true,
+    });
+    nextPills.push({
+      key: `event-${event.eventKey}`,
+      label: `${siteName} · ${humanizeEventType(event.eventType)} · ${elapsed}`,
+      href: `/events/${encodeURIComponent(event.eventKey)}`,
+      tone: event.severity === "CRITICAL" || event.severity === "HIGH" ? "crit" : "high",
+    });
+  }
+  for (const site of blockedSites.slice(0, NEXT_PILL_LIMIT - nextPills.length)) {
+    nextPills.push({
+      key: `site-${site.siteId}`,
+      label: `${site.name} · ${site.status === "UNMAPPED" ? "초기 조사 필요" : "재조사 필요"}`,
+      href: `/sites/${encodeURIComponent(site.siteId)}`,
+      tone: "neutral",
+    });
+  }
+
+  let headlineNode: React.ReactNode = null;
   if (!eventsResult.ok && eventsResult.forbidden) {
     // 권한이 없어 이벤트를 못 보는 역할에게 헤드라인은 "장애"가 아니라 "여긴 네 일이
     // 아니다"여야 한다 — 재시도 버튼도 주지 않는다(눌러도 결과가 같다).
-    calloutNode = (
+    headlineNode = (
       <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
         이 계정은 이벤트를 볼 권한이 없어 미조치 이벤트 현황을 표시하지 않습니다.
       </p>
     );
   } else if (!eventsResult.ok) {
-    calloutNode = <ErrorState message={eventsResult.message} retryable />;
+    headlineNode = <ErrorState message={eventsResult.message} retryable />;
   } else if (topUnattended) {
-    const siteName = siteById.get(topUnattended.siteId)?.name ?? topUnattended.siteId;
+    const site = siteById.get(topUnattended.siteId);
+    const siteName = site?.name ?? topUnattended.siteId;
+    const severity = topUnattended.severity
+      ? EVENT_SEVERITY_LABEL[topUnattended.severity]
+      : SEVERITY_UNSET_LABEL;
     const elapsedLabel = formatElapsed(now.getTime() - new Date(topUnattended.occurredAt).getTime(), {
       unattended: true,
     });
     const initialTitle =
       elapsedLabel === "방금 들어옴" ? "방금 들어온 미조치 이벤트가 있습니다" : `${elapsedLabel} 이벤트가 있습니다`;
-    calloutNode = (
-      <Callout
+    headlineNode = (
+      <Headline
         tone="crit"
+        tag={`지금 확인 · ${severity.label}`}
+        scope={`미조치 ${unattendedEvents.length}건 · 열린 이벤트 ${openEventsCount}건`}
         // 서버 렌더 시점에 고정된 initialTitle 은 SSR·마운트 전 페인트용 스냅샷이다 —
         // 마운트 후 TopUnattendedHeadline 이 60초마다 실제 경과로 갈아탄다(하드코딩된
         // "12분째"가 화면을 열어둔 채로 안 바뀌던 문제, ElapsedTime.tsx 참고).
         title={<TopUnattendedHeadline occurredAt={topUnattended.occurredAt} initialText={initialTitle} />}
-        sub={`${siteName} ${humanizeEventType(topUnattended.eventType)} · 담당자가 없는 이벤트가 모두 ${unattendedEvents.length}건입니다`}
-        cta={{ label: "지금 확인하기", href: `/events/${encodeURIComponent(topUnattended.eventKey)}` }}
+        sub={`${siteName} ${humanizeEventType(topUnattended.eventType)} · 담당자가 없는 이벤트입니다`}
+        pills={nextPills}
+        actions={[
+          {
+            key: "open-event",
+            label: "지금 확인하기",
+            href: `/events/${encodeURIComponent(topUnattended.eventKey)}`,
+            primary: true,
+          },
+          ...(site
+            ? [{ key: "open-site", label: "현장 열기", href: `/sites/${encodeURIComponent(site.siteId)}` }]
+            : []),
+        ]}
       />
     );
   } else if (blockedSites.length > 0) {
     const target = blockedSites[0];
     const names = blockedSites.length > 1 ? `${target.name} 외 ${blockedSites.length - 1}곳` : target.name;
-    calloutNode = (
-      <Callout
+    headlineNode = (
+      <Headline
         tone="crit"
+        tag="조사 필요"
+        scope={`등록 현장 ${sites.length}곳`}
         title={`순찰을 시작할 수 없는 현장 ${blockedSites.length}곳`}
-        sub={`${names} · 조사 비행부터 필요합니다`}
-        cta={{ label: "현장 확인하기", href: `/sites/${encodeURIComponent(target.siteId)}` }}
+        sub={`${names} · 기준 지도를 만들 조사 비행부터 필요합니다`}
+        pills={nextPills}
+        actions={[
+          { key: "open-site", label: "현장 열기", href: `/sites/${encodeURIComponent(target.siteId)}` },
+          ...(canIssueMissions
+            ? [
+                {
+                  key: "plan",
+                  label: "조사 계획하기",
+                  href: `/sites/${encodeURIComponent(target.siteId)}/surveys/new`,
+                  primary: true,
+                },
+              ]
+            : []),
+        ]}
       />
     );
   } else if (sites.length > 0) {
-    calloutNode = (
-      <Callout
+    headlineNode = (
+      <Headline
         tone="neutral"
-        title="미조치 이벤트가 없습니다"
+        tag="확인 대기 없음"
         // "모두 순찰 가능"이라 단언하지 않는다 — 이 분기는 '조사 비행이 필요한 현장이
         // 없다'는 뜻일 뿐, 준비 중·모델 노후·운영 중단 현장이 남아 있을 수 있다.
-        // 실제 순찰 가능 대수는 아래 지표 타일이 화이트리스트로 세어 말한다.
-        sub={`등록 현장 ${sites.length}곳 · 지금 확인이 필요한 이벤트는 없습니다.`}
+        // 실제 순찰 가능 대수는 아래 지표 띠가 화이트리스트로 세어 말한다.
+        scope={`등록 현장 ${sites.length}곳`}
+        title="지금 확인이 필요한 이벤트가 없습니다"
+        sub="현장별 최신 상태는 아래 포트폴리오에서 확인하세요."
       />
     );
   }
-
-  // ── 현장 카드 그리드 ─────────────────────────────────────────────────
-  const sortedSites = [...sites].sort((a, b) => {
-    const aBlocked = BLOCKED_SITE_STATUSES.has(a.status);
-    const bBlocked = BLOCKED_SITE_STATUSES.has(b.status);
-    if (aBlocked !== bBlocked) return aBlocked ? -1 : 1;
-    return a.name.localeCompare(b.name, "ko");
-  });
-
-  function riskBadgeFor(siteId: string): React.ReactNode {
-    const risky = unattendedEvents.filter((e) => e.siteId === siteId && e.severity && HIGH_SEVERITY.has(e.severity));
-    if (risky.length === 0) return null;
-    const severity: EventSeverity = risky.some((e) => e.severity === "CRITICAL") ? "CRITICAL" : "HIGH";
-    const label = EVENT_SEVERITY_LABEL[severity];
-    return <StatusBadge label={`${label.label} ${risky.length}`} tone={label.tone} />;
-  }
-
-  function factsFor(site: SiteView): SiteFact[] {
-    const facts: SiteFact[] = [{ key: "등록일", value: formatShortDate(site.registeredAt), numeric: true }];
-    if (missionsResult.ok) {
-      facts.push({
-        key: "발급 임무",
-        value: String(missions.filter((m) => m.siteId === site.siteId).length),
-        numeric: true,
-      });
-    }
-    if (eventsResult.ok) {
-      facts.push({
-        key: "미조치 이벤트",
-        value: String(unattendedEvents.filter((e) => e.siteId === site.siteId).length),
-        numeric: true,
-      });
-    }
-    if (BLOCKED_SITE_STATUSES.has(site.status)) {
-      facts.push({
-        key: "다음 할 일",
-        value: site.status === "UNMAPPED" ? "조사 비행 계획" : "재조사 비행 계획",
-        emphasis: true,
-      });
-    }
-    return facts;
-  }
-
-  function todoMessageFor(site: SiteView): string | undefined {
-    if (site.status === "UNMAPPED") {
-      return "기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.";
-    }
-    if (site.status === "REMAP_REQUIRED") {
-      return "현장 모델이 최신이 아니어서 재매핑이 필요합니다. 재조사 비행을 계획하세요.";
-    }
-    return undefined;
-  }
-
-  // ── 타임라인 — 이벤트 발생·현장 등록·임무 발급을 하나의 시간순 로그로 ───
-  const timelineItems: TimelineItem[] = [];
-  if (eventsResult.ok) {
-    for (const event of events) {
-      const triageLabel = TRIAGE_STATUS_LABEL[event.triage];
-      timelineItems.push({
-        key: `event-${event.eventKey}`,
-        at: event.occurredAt,
-        content: (
-          <>
-            <b className="font-semibold">{humanizeEventType(event.eventType)}</b> 감지 —{" "}
-            {siteById.get(event.siteId)?.name ?? event.siteId}
-          </>
-        ),
-        badge: <StateBadge label={triageLabel.label} tone={triageLabel.tone} />,
-      });
-    }
-  }
-  if (sitesResult.ok) {
-    for (const site of sites) {
-      timelineItems.push({
-        key: `site-${site.siteId}`,
-        at: site.registeredAt,
-        content: (
-          <>
-            <b className="font-semibold">{site.name}</b> 현장 등록
-          </>
-        ),
-      });
-    }
-  }
-  if (missionsResult.ok) {
-    for (const mission of missions) {
-      timelineItems.push({
-        key: `mission-${mission.missionId}`,
-        at: mission.issuedAt,
-        content: (
-          <>
-            <b className="font-semibold">{MISSION_TYPE_LABEL[mission.missionType]}</b> 임무 발급 —{" "}
-            {siteById.get(mission.siteId)?.name ?? mission.siteId}
-          </>
-        ),
-      });
-    }
-  }
-  timelineItems.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  const recentTimeline = timelineItems.slice(0, TIMELINE_LIMIT);
 
   return (
     // 화면 이름은 topbar 가 갖는다(스크롤해도 남는 자리) — 여기서 h1 을 또 찍으면
     // 같은 말이 두 번 나오고 본문 첫 화면이 그만큼 밀린다.
-    <div className="flex flex-col gap-5 p-4 sm:p-5">
+    <div className="flex flex-col gap-4 p-4 sm:p-5">
       {sitesResult.ok && sites.length === 0 && (
         <EmptyState
           title="아직 등록된 현장이 없습니다"
@@ -498,87 +480,90 @@ export default async function HomePage() {
         />
       )}
 
-      {calloutNode}
+      {headlineNode}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          label="미조치 이벤트"
-          value={eventsResult.ok ? unattendedEvents.length : "—"}
-          tone={eventsResult.ok && unattendedEvents.length > 0 ? "crit" : undefined}
-          note={eventsResult.ok ? `전체 열린 이벤트 ${openEventsCount}건 중` : unavailableNote(eventsResult)}
-        />
-        <StatTile
-          label="확인 SLA 초과"
-          value={eventsResult.ok ? slaBreachedCount : "—"}
-          tone={eventsResult.ok && slaBreachedCount > 0 ? "crit" : undefined}
-          note={eventsResult.ok ? "즉시 확인이 필요합니다" : unavailableNote(eventsResult)}
-        />
-        <StatTile
-          label="순찰 가능 현장"
-          value={sitesResult.ok ? `${patrolReadyCount}/${sites.length}` : "—"}
-          note={sitesResult.ok ? "등록 현장 중" : unavailableNote(sitesResult)}
-        />
-        <StatTile
-          label="발급된 임무"
-          value={missionsResult.ok ? missions.length : "—"}
-          note={missionsResult.ok ? "누적 발급 건수" : unavailableNote(missionsResult)}
-        />
-      </div>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <StatStrip
+            items={[
+              {
+                key: "unattended",
+                label: "미조치 이벤트",
+                value: eventsResult.ok ? unattendedEvents.length : "—",
+                unit: eventsResult.ok ? "건" : undefined,
+                tone: eventsResult.ok && unattendedEvents.length > 0 ? "crit" : undefined,
+                note: eventsResult.ok ? `열린 이벤트 ${openEventsCount}건 중` : unavailableNote(eventsResult),
+                href: eventsResult.ok ? "/events" : undefined,
+              },
+              {
+                key: "sla",
+                label: "확인 목표 초과",
+                value: eventsResult.ok ? slaBreachedCount : "—",
+                unit: eventsResult.ok ? "건" : undefined,
+                tone: eventsResult.ok && slaBreachedCount > 0 ? "crit" : undefined,
+                note: eventsResult.ok ? "즉시 확인이 필요합니다" : unavailableNote(eventsResult),
+                href: eventsResult.ok ? "/events" : undefined,
+              },
+              {
+                key: "patrol",
+                label: "순찰 가능 현장",
+                value: sitesResult.ok ? `${patrolReadyCount}/${sites.length}` : "—",
+                note: sitesResult.ok ? "등록 현장 중" : unavailableNote(sitesResult),
+                href: sitesResult.ok ? "/sites" : undefined,
+              },
+            ]}
+          />
 
-      <WorkQueue items={workItems} />
-
-      {!sitesResult.ok ? (
-        sitesResult.forbidden ? (
-          <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
-            이 계정은 현장 목록을 볼 권한이 없습니다.
-          </p>
-        ) : (
-          <ErrorState message={sitesResult.message} retryable />
-        )
-      ) : (
-        sites.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-baseline gap-2.5">
-              <h2 className="text-[15px] font-bold tracking-tight break-keep">우선 현장</h2>
-              <span className="break-keep text-[12.5px] text-ink-muted">
-                상태 확인이 필요한 순서로 {Math.min(sortedSites.length, HOME_SITE_LIMIT)}곳
-                {blockedSites.length > 0 && ` · ${blockedSites.length}곳은 아직 순찰할 수 없습니다`}
-              </span>
-              <Link href="/sites" className="tap-target ml-auto flex items-center text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
-                전체 보기
-              </Link>
-            </div>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(238px,1fr))] gap-3">
-              {sortedSites.slice(0, HOME_SITE_LIMIT).map((site) => (
-                <SiteCard
-                  key={site.siteId}
-                  site={site}
-                  facts={factsFor(site)}
-                  todoMessage={todoMessageFor(site)}
-                  riskSlot={riskBadgeFor(site.siteId)}
-                />
-              ))}
-            </div>
-          </div>
-        )
-      )}
-
-      <div className="flex flex-col gap-3">
-        <div className="flex items-baseline gap-2.5">
-          {/* 시안 제목은 "오늘 있었던 일"이지만 그건 항목이 전부 당일이라는 목업 전제 위에
-              있다. 여기 목록은 날짜 필터 없이 최신 8건이라, 조용한 현장에서는 몇 달 전
-              '현장 등록'이 그 제목 아래 뜬다. 제목이 내용보다 강하게 주장하면 안 된다. */}
-          <h2 className="text-[15px] font-bold tracking-tight break-keep">최근 활동</h2>
-          <Link href="/events" className="tap-target ml-auto flex items-center text-[12.5px] font-semibold break-keep text-accent-text hover:underline">
-            이벤트 이력
-          </Link>
-        </div>
-        <div className="rounded-lg border border-line bg-surface px-4 py-1">
-          {recentTimeline.length === 0 ? (
-            <p className="py-3 text-sm break-keep text-ink-muted">최근 활동이 없습니다.</p>
+          {!sitesResult.ok ? (
+            sitesResult.forbidden ? (
+              <p className="rounded-lg border border-line bg-surface p-4 text-[13px] break-keep text-ink-2">
+                이 계정은 현장 목록을 볼 권한이 없습니다.
+              </p>
+            ) : (
+              <ErrorState message={sitesResult.message} retryable />
+            )
           ) : (
-            recentTimeline.map((item) => <TimelineRow key={item.key} item={item} />)
+            sites.length > 0 && (
+              <PortfolioTable
+                rows={portfolioRows}
+                initialQuery={q ?? ""}
+                initialSort={normalizePortfolioSort(sort)}
+                canPlanSurvey={canIssueMissions}
+                meta={
+                  missionsResult.ok
+                    ? `${sites.length}곳 · 발급 임무 ${missions.length}건`
+                    : `${sites.length}곳 · 임무 이력을 불러오지 못했습니다`
+                }
+              />
+            )
           )}
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <ProcessingCard
+            items={processing.items}
+            scopeNote={
+              processingSites.length === 0
+                ? "훑을 현장이 없습니다"
+                : `상위 ${processingSites.length}개 현장 기준`
+            }
+            unavailableNote={
+              processing.unavailable === "absent"
+                ? "이 서버에는 사진 처리(재구성) 표면이 없습니다. 처리 결과를 쓰려면 저장소 연결이 필요합니다."
+                : processing.unavailable === "failed"
+                  ? "처리 작업 목록을 불러오지 못했습니다."
+                  : undefined
+            }
+          />
+          <ReobsSuggestions
+            items={reobsItems}
+            scopeNote={
+              recentMissions.length === 0
+                ? "변화 탐지를 돌린 임무가 아직 없습니다."
+                : `최근 임무 ${recentMissions.length}건 기준입니다.`
+            }
+            canIssueMissions={canIssueMissions}
+          />
         </div>
       </div>
     </div>
