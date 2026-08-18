@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
+import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
  *  0 과 "모름"은 다른 상태이고, 안전 화면에서 그 둘을 같게 보이면 안 된다. */
@@ -15,9 +16,17 @@ export interface NavCounts {
 // PRD §7.1 "모바일/태블릿 하단 메뉴" — 768(태블릿)도 하단 탭이어야 하므로 lg(1024) 이상에서만
 // 사이드바를 보인다(md=768 을 쓰면 태블릿에서 본문 폭이 폰보다 좁아지는 결함 재발, CLAUDE.md 근거).
 //
-// 폭은 시안을 따른다: 1280+ 216px · 1024~1279 176px. 태블릿 가로에서 본문을 최대한
+// 폭은 시안을 따른다: 1280+ 232px · 1024~1279 176px(Console v2 §0). 태블릿 가로에서 본문을 최대한
 // 남기되 마스터·디테일이 유지되는 값이다.
-export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
+export function DesktopSidebar({
+  counts,
+  userBlock,
+}: {
+  counts?: NavCounts;
+  /** 레일 하단 사용자 블록. 세션을 읽는 **서버** 컴포넌트라 여기서 import 하지 않고
+   *  layout.tsx 가 넘긴다 — 클라이언트 컴포넌트 안에 서버 컴포넌트를 중첩할 수 없다. */
+  userBlock?: React.ReactNode;
+}) {
   const pathname = usePathname();
   // 셸을 벗는 화면(/login · /field/*)에서는 레일 자체가 없다 — 판정은 layout.tsx 와
   // 같은 술어를 쓴다(둘이 갈리면 그리드 트랙만 남고 레일이 사라진다).
@@ -26,7 +35,7 @@ export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
   return (
     <nav
       aria-label="주 메뉴"
-      className="print:hidden hidden bg-sidebar pt-[18px] pb-6 text-sidebar-text lg:flex lg:flex-col lg:overflow-y-auto"
+      className="print:hidden hidden bg-sidebar pt-[18px] pb-2.5 text-sidebar-text lg:flex lg:flex-col lg:overflow-hidden"
     >
       <div className="flex items-center gap-[9px] px-[18px] pb-[22px]">
         <span
@@ -40,14 +49,18 @@ export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
             현장 지능
           </span>
           {/* 176px 레일(1024~1279)에서는 두 줄로 접혀 브랜드 블록이 위아래로 벌어진다.
-              장식 문구라 216px 레일에서만 보인다. */}
+              장식 문구라 232px 레일에서만 보인다. */}
           <span className="hidden font-mono text-[10.5px] tracking-[0.04em] text-sidebar-muted xl:block">
             SITE INTELLIGENCE
           </span>
         </span>
       </div>
 
-      <div className="px-2.5">
+      <div className="px-3 pb-3">
+        <SidebarSearchTrigger />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
         {DESKTOP_NAV_GROUPS.map((group) => (
           <div key={group.key}>
             {group.label && (
@@ -95,6 +108,8 @@ export function DesktopSidebar({ counts }: { counts?: NavCounts }) {
           </div>
         ))}
       </div>
+
+      {userBlock}
     </nav>
   );
 }
