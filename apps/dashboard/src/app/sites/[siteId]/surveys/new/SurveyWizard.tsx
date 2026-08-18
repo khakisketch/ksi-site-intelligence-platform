@@ -25,9 +25,20 @@ import {
   describeCaptureUnavailableReason,
 } from "@/lib/core-api/surveyEntryPreset";
 import { formatCoverageRatio } from "@/app/missions/format";
+import { MISSION_TYPE_LABEL } from "@/lib/core-api/labels";
 
 // PRD §7.4 5스텝 라벨 그대로 — UX 목표 §2 "5클릭 = 예산 그 자체".
 const STEP_LABELS = ["대상", "목적", "조사 수준", "자동 계획 검토", "전송 및 승인"];
+
+// 레일에 붙는 한 줄 설명 — 라벨만으로는 그 단계가 무엇을 묻는지 도착해야 알 수 있었다.
+// 라벨과 같은 순서·같은 길이를 유지한다(WizardShell 이 index 로 짝짓는다).
+const STEP_HINTS = [
+  "어디를 찍을지",
+  "무엇을 위한 비행인지",
+  "얼마나 촘촘히 찍을지",
+  "서버가 만든 경로 확인",
+  "서명된 계약 발급",
+];
 
 type RoutePattern = "lawnmower" | "perimeter";
 
@@ -245,6 +256,24 @@ function closestSurveyLevel(frontOverlap: number, sideOverlap: number): SurveyLe
 }
 
 type SubmitStatus = "idle" | "pending" | "success" | "error";
+
+/** 요약 열의 한 줄 — 아직 안 고른 값은 비워 두지 않고 "아직 고르지 않음"이라 말한다. */
+function SummaryRow({
+  label,
+  value,
+  numeric = false,
+}: {
+  label: string;
+  value: string;
+  numeric?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[76px_minmax(0,1fr)] items-baseline gap-2.5 border-b border-line py-2 last:border-b-0">
+      <dt className="text-[11.5px] break-keep text-ink-muted">{label}</dt>
+      <dd className={`min-w-0 text-[12.5px] break-keep ${numeric ? "num" : ""}`}>{value}</dd>
+    </div>
+  );
+}
 
 const REVIEW_STEP = 3;
 const SUBMIT_STEP = 4;
@@ -933,10 +962,70 @@ export function SurveyWizard({
     );
   }
 
+  // 레일 위 배지 — 이 위저드가 재관측 제안에서 시작됐다는 사실은 계보(derivedFrom)에
+  // 이미 실려 있다. 지어내지 않고 그 값이 있을 때만 밝힌다(ADR-KSI-019 G5).
+  const originBadge = draft.derivedFrom ? (
+    <div className="rounded-md border border-mid bg-mid-bg px-2.5 py-2">
+      <p className="text-[11.5px] font-bold break-keep text-mid-ink">재관측 제안에서 시작됨</p>
+      <p className="num mt-px text-[11px] break-token text-mid-ink">
+        {draft.derivedFrom.sourceMissionId} · {draft.derivedFrom.regionId}
+      </p>
+    </div>
+  ) : undefined;
+
+  // 오른쪽 요약 — **여기서 새로 계산하지 않는다.** 지금까지 고른 값을 그대로 다시
+  // 보여줄 뿐이라(경로·소요 시간은 서버가 4단계에서 계산해 내려준다) 단계가 넘어가도
+  // 앞에서 고른 것이 화면에서 사라지지 않게 하는 것이 전부다.
+  const chosenLevel = draft.level ? LEVEL_PRESETS[draft.level] : null;
+  const summaryAside = (
+    <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <div className="border-b border-line px-4 py-2.5">
+        <h2 className="text-[13.5px] font-bold tracking-tight break-keep">지금까지 고른 것</h2>
+      </div>
+      <dl className="px-4 py-1">
+        <SummaryRow label="현장" value={site.name} />
+        <SummaryRow
+          label="대상"
+          value={
+            draft.target
+              ? (TARGET_OPTIONS.find((option) => option.value === draft.target)?.label ?? draft.target)
+              : "아직 고르지 않음"
+          }
+        />
+        <SummaryRow
+          label="목적"
+          value={draft.missionType ? MISSION_TYPE_LABEL[draft.missionType] : "아직 고르지 않음"}
+        />
+        <SummaryRow
+          label="조사 수준"
+          value={
+            chosenLevel
+              ? `${chosenLevel.label} · 겹침 ${Math.round(chosenLevel.frontOverlap * 100)}/${Math.round(
+                  chosenLevel.sideOverlap * 100,
+                )}%`
+              : "아직 고르지 않음"
+          }
+        />
+        <SummaryRow label="촬영 고도" value={`${draft.altitudeM} m`} numeric />
+        <SummaryRow
+          label="촬영 범위"
+          value={draft.aoi.length > 0 ? `꼭짓점 ${draft.aoi.length}개` : "아직 그리지 않음"}
+          numeric={draft.aoi.length > 0}
+        />
+      </dl>
+      <p className="border-t border-line px-4 py-2 text-[11px] break-keep text-ink-muted">
+        경로와 소요 시간은 다음 단계에서 서버가 계산합니다 — 이 화면은 추정하지 않습니다.
+      </p>
+    </section>
+  );
+
   return (
     <WizardShell
       title={`${site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 현장조사"} — ${site.name}`}
       stepLabels={STEP_LABELS}
+      stepHints={STEP_HINTS}
+      origin={originBadge}
+      aside={summaryAside}
       currentStep={draft.step}
       onBack={onBack}
       onNext={onNext}
