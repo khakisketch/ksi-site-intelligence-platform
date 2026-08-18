@@ -64,7 +64,11 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.metrics import MISSION_EXECUTION_TRANSITIONS
-from ksi_core.mission_records import MISSION_NOT_FOUND_DETAIL, MissionStore
+from ksi_core.mission_records import (
+    MISSION_NOT_FOUND_DETAIL,
+    MissionStore,
+    reject_lone_surrogates,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -367,6 +371,14 @@ def build_mission_execution_router(
         문 앞의 ``require_permission`` 하나로 표현할 수 없다(``processing_jobs``
         전이 라우트와 같은 구조).
         """
+        # **durable 기록 전에** 거부한다. ``detail`` 은 제약이 없어 요청 검증을
+        # 통과하는데, lone surrogate 가 들어오면 순서가 이렇게 된다 — ①journal 기록
+        # 성공(ensure_ascii=True 라 ASCII 이스케이프로 들어간다) ②projection 전이
+        # 완료 ③**그 뒤** 응답 직렬화에서 UnicodeEncodeError. 500 이 나가지만 전이는
+        # 이미 일어났고, 그 임무의 조회·후속 전이가 영원히 500 이 된다 — 재시작해도
+        # replay 가 성공해 그대로 재현되므로 원장을 손으로 고쳐야 복구된다
+        # (2026-08-18 실측). 발급 라우터 두 곳이 쓰는 것과 같은 가드다.
+        reject_lone_surrogates(request.model_dump(by_alias=True, mode="json", exclude_none=True))
         required = _HUMAN_DECLARABLE.get(request.target_status)
         if required is None:
             raise HTTPException(

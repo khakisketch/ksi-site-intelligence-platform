@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
+from ksi_core.api_base import mount_validation_error_handler
 from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 
 if TYPE_CHECKING:
@@ -440,6 +441,12 @@ def create_app(
         openapi_url="/openapi.json" if expose_docs else None,
     )
     app.state.capability_registry = capability_registry
+
+    # 요청 검증 422 를 항상 JSON 으로 그린다 — 기본 핸들러는 오류 상세에 문제의 값을
+    # 되싣는데, 그 값이 비유한 실수나 lone surrogate 면 422 를 그리다 터져 500 +
+    # text/plain 이 나간다(2026-08-18 실측, api_base 참조). 장착은 여기 한 곳이면
+    # 충분하다 — dev·production 조립 모두 create_app 을 거친다.
+    mount_validation_error_handler(app)
 
     @app.get("/health")
     def health() -> dict[str, str]:

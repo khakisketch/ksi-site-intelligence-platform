@@ -22,14 +22,35 @@ event-contracts 는 계약 패키지다 — 서비스가 계약 패키지의 pri
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
+from typing import Any
 
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 
 class CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    """``allow_inf_nan=False`` 는 요청 표면의 durable 원장 보호다.
+
+    ``NaN``/``Infinity`` 는 합법 JSON 입력인데 ``DurableJournal._append_durable`` 은
+    ``json.dumps(allow_nan=False)`` 를 쓰고, ``append`` 는 그 예외를 **봉인으로 승격**한다
+    — 한 번의 요청으로 그 저장소가 프로세스 수명 내내 죽는다(2026-08-18 전수 조사).
+    요청 검증 단계에서 422 로 거부해야 워커가 "영구 계약 위반"과 "일시 장애"를 가른다.
+    계약 패키지(`ksi_event_contracts._base._CamelModel`)도 같은 설정을 갖는다 — 소유는
+    계층별로 분리하되 이 성질은 양쪽 다 필요하다.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        allow_inf_nan=False,
+    )
 
 
 def iso_utc(value: datetime) -> str:
@@ -43,3 +64,57 @@ def iso_utc(value: datetime) -> str:
 
 JOURNAL_SEALED_DETAIL = "journal 봉인됨 — 재시작 필요"
 JOURNAL_APPEND_FAILED_DETAIL = "durable 기록 실패 — journal 봉인(재시작 필요)"
+
+
+def _render_safe(value: Any) -> Any:
+    """422 본문에 실어도 JSON 직렬화가 깨지지 않는 형태로 바꾼다.
+
+    FastAPI 기본 검증 핸들러는 오류 상세의 ``input`` 에 **문제의 값을 그대로**
+    되싣는다. 그런데 Starlette ``JSONResponse.render`` 는 ``json.dumps(allow_nan=False)``
+    + ``.encode("utf-8")`` 이라, 그 값이 ``NaN``/``Infinity`` 이거나 lone surrogate 를
+    품은 문자열이면 **422 를 그리다가** 터진다 — 아무도 안 잡아 500 + text/plain 이
+    나간다(2026-08-18 실측).
+
+    비유한 실수도 lone surrogate 도 **문법적으로 합법인 JSON 입력**이다. 즉 파서
+    우회가 아니라 정상 요청이고, 그래서 어느 라우트에서든 재현된다.
+    """
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return repr(value)
+        return value
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            # surrogatepass 로 실제 코드포인트를 보존해 되돌려준다 — 어느 글자가
+            # 문제인지 요청자가 알아야 고칠 수 있다.
+            return value.encode("utf-8", "backslashreplace").decode("ascii")
+        return value
+    if isinstance(value, dict):
+        return {_render_safe(k): _render_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_render_safe(item) for item in value]
+    return value
+
+
+def mount_validation_error_handler(app: FastAPI) -> None:
+    """요청 검증 422 를 **항상 JSON 으로** 그리게 한다.
+
+    ``RequestValidationError`` 는 FastAPI 의 요청 파싱 층만 던진다 — 여기에 핸들러를
+    달아도 다른 예외는 하나도 삼키지 않는다. 바뀌는 것은 "이미 422 로 판정된 것"의
+    렌더링뿐이라, 진짜 서버 결함을 4xx 로 감출 경로가 구조적으로 없다.
+
+    **``pydantic.ValidationError`` 전역 핸들러는 일부러 달지 않는다.** 그건 핸들러
+    본문·저장소에서 나는 오류까지 삼켜 "네 요청이 잘못됐다"는 거짓말로 원장 오염을
+    덮는다 — 이 저장소의 규약은 "의심스러우면 크게 실패한다"이지 "4xx 로 접는다"가
+    아니다(``DurableJournal.append`` 가 append 예외를 봉인으로 승격하는 것과 같은 정신).
+    """
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": _render_safe(jsonable_encoder(exc.errors()))},
+        )
