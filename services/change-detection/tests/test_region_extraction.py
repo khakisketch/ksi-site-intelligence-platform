@@ -17,6 +17,8 @@ from ksi_change_detection.dsm_diff import DiffResult
 from ksi_change_detection.region_extraction import (
     HULL_CONSISTENCY_CHECK_FAILED,
     RegionExtractionError,
+    _exterior_points,
+    _vectorize_label,
     compute_change_regions,
 )
 from ksi_event_contracts.change_region_report import MAX_REGIONS, ChangeRegionSetReport
@@ -282,3 +284,25 @@ def test_hull_overcapture_ratio_exceeds_one_for_an_l_shaped_region() -> None:
     ratio = report.regions[0].hull_overcapture_ratio
     assert ratio is not None
     assert ratio > 1.0
+
+
+def test_the_multipolygon_join_is_defensive_and_stays_correct_downstream() -> None:
+    """[핵심] 조각난 마스크가 오면 MultiPolygon 으로 합치고, 하류가 그대로 옳다.
+
+    이 분기는 compute_change_regions 경로로는 실행되지 않는다 — 라벨 마스크는
+    4-연결이든 8-연결이든 항상 하나의 8-연결 성분이고, GDAL 은 그런 성분을 Polygon
+    하나로 낸다(대각선 계단·코너 접촉·도넛·체커보드 전부 단일 Polygon 임을 실측했다).
+    즉 GDAL 동작이 바뀌었을 때를 대비한 방어이고, 여기서 직접 호출해 계약으로 고정한다.
+    """
+    mask = np.zeros((8, 8), dtype=bool)
+    mask[1:3, 1:3] = True  # 4픽셀 조각
+    mask[5:8, 5:9] = True  # 9픽셀 조각(5:9 는 8 에서 잘린다) — 위 조각과 8-연결로도 안 닿는다
+
+    geometry = _vectorize_label(mask, _TRANSFORM)
+
+    assert geometry["type"] == "MultiPolygon"
+    assert len(geometry["coordinates"]) == 2
+
+    # 하류: 두 조각의 외곽선이 전부 hull 입력으로 들어간다.
+    points = _exterior_points(geometry)
+    assert len(points) == 10

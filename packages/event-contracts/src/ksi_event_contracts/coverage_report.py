@@ -41,6 +41,9 @@ MANDATORY_HAZARD_MIN = 1.0
 MANDATORY_ASSET_MIN = 1.0
 ACCESSIBLE_GENERAL_MIN = 0.95
 
+# 부동소수 직렬화 잔차 허용치 — mission_plans.py 의 "+ 1e-9" 관례와 동일.
+_RATIO_EPS = 1e-9
+
 
 class CoverageCellState(StrEnum):
     """Coverage Cell 상태 — 관찰 결과 또는 **미관찰 사유**(MASTER_PRD §15.5)."""
@@ -172,3 +175,23 @@ class CoverageReport(_CamelModel):
             and summary.accessible_general_ratio >= 1.0
         )
         return all_full and bool(self.unobserved_cells())
+
+    def has_impossible_fractional_ratio(self) -> bool:
+        """칸 총수가 2개 미만인데 비율이 0과 1 사이(양 끝 제외)면 산술적으로
+        불가능하다.
+
+        분수 k/d(d ≤ 전체 칸 수)로 표현 가능한 값 중 d<2 일 때 만들 수 있는 건
+        0.0과 1.0뿐이다 — **카테고리별 칸 수를 몰라도 성립하는 순수 산술**이다
+        (서버는 위험구역/자산/일반 분류를 갖고 있지 않다, INV-010). 카테고리 배정을
+        전제하는 더 정밀한 판정(칸 수 ≥ 2인 경우의 Farey 분수 도달 가능성)은
+        연속값으로 계산된 실사용 비율에 대해 false positive 위험이 커 채택하지
+        않는다 — 이 함수가 닫는 건 이 경계 사례 하나다.
+        """
+        if len(self.cells) >= 2:
+            return False
+        ratios = (
+            self.summary.mandatory_hazard_ratio,
+            self.summary.mandatory_asset_ratio,
+            self.summary.accessible_general_ratio,
+        )
+        return any(_RATIO_EPS < r < 1.0 - _RATIO_EPS for r in ratios)

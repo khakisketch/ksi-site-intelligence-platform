@@ -2043,17 +2043,23 @@
         "contract test 로 자동 전이·노후 판정이 고정된다"
       ],
       "status": "in_progress",
-      "attempt": 1,
-      "evidence": "재구성 발급/성공/매핑임무 배포가 현장 상태를 자동 전진(services/core/src/ksi_core/spatial_model.py). 노후 기준은 현장 선언(PUT /v1/sites/{id}/model-age-policy), 미선언은 AGE_POLICY_UNDECLARED 로 판정 유보. 자율운영 승인 간선은 규칙표 전수 검사로 차단. tests/contract/test_spatial_model.py 54 passed, test_sites_api.py 66 passed — 직접 실행 확인. 실기 미검증(Backend Ready).",
-      "verdict": null,
+      "attempt": 2,
+      "evidence": null,
+      "verdict": {
+        "verdict": "refuted",
+        "note": "기준2 미충족 — '현장 조회 응답에 ... 촬영시각 ... 이 실린다'. (a) 촬영시각 필드가 아예 없다: SpatialModelView 는 registeredAt(등록 시각)만 갖고, 모듈 docstring:38-44 이 스스로 '등록된 시각이지 세상을 관측한 시각이 아니다 … 촬영 시각을 끌어오려면 임무 실행 생애주기(G2)가 먼저 있어야 한다'고 명시한다. 그 G2 는 같은 라운드에 구현됐는데 배선하지 않았다. (b) 기본 현장 조회(GET /v1/sites/{id})가 아니라 별도 엔드포인트(/spatial-model)에만 있다 — 대시보드가 두 호출을 페이지에서 합칠 뿐이라 API 계약 차원에서는 '현장 조회 응답'이 아니다. 남은 작업: mission_execution 의 실행 시각을 촬영시각으로 배선하거나, 완료기준을 실제 범위에 맞게 정정(amend-criteria)한다.",
+        "at": "2026-08-17T18:15:10+09:00",
+        "reviewer": "독립 reviewer 서브에이전트(read-only, 반증 지시)",
+        "evidence_ref": "2026-08-17 세션 reviewer 반증 보고 + 메인 직접 확인(spatial_model.py:38-44 docstring, SpatialModelView:459-472)"
+      },
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T15:59:27+09:00"
+      "updated_at": "2026-08-17T18:15:10+09:00"
     },
     {
       "id": "aol-1-mission-execution-lifecycle",
@@ -2065,18 +2071,24 @@
         "기존 발급 멱등성·짝 산출물 규약을 깨지 않는다",
         "contract test 로 전이표와 CoverageReport 결선이 고정된다"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 1,
-      "evidence": "MissionExecutionStatus 6종 + 별도 원장(services/core/src/ksi_core/mission_execution.py). 장비 pull/서명 activation receipt/접수된 CoverageReport 3신호 자동 결선, 사람은 DISPATCHED·CANCELLED 만 선언. 투영 원장 봉인돼도 커버리지 접수 201 유지(INV-010 권위 보존) — 그 테스트 포함 test_mission_execution.py 39 + test_coverage_reports.py 56 + test_edge_dispatch_api.py 11 passed, 직접 실행 확인.",
-      "verdict": null,
+      "evidence": "실행 명령: ulimit -n 8192 && uv run pytest tests/contract/test_spatial_model.py tests/contract/test_mission_execution.py tests/contract/test_reobservation_capture.py tests/e2e/test_aol1_mapping_autonomy.py tests/e2e/test_aol2_reobservation.py tests/contract/test_anti_circularity_gate.py -q → 124 passed (2026-08-17). 전체 스위트 3449 passed / 23 skipped / 3 xfailed. 구현: services/core/src/ksi_core/mission_execution.py, packages/domain/src/ksi_domain/enums.py:338-420(MissionExecutionStatus + 전이표 + 전멤버 커버 assert). 결선: services/core/src/ksi_core/coverage_reports.py:540-563. 화면: apps/dashboard/src/components/missions/MissionLifecycle.tsx:68-90. 테스트 수집 실측 test_mission_execution.py=40건.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "완료 등급: Backend Ready + Product Ready(대시보드 MissionLifecycle). HIL Proven 아님 — 실기 비행 0회. 대역 검증(A): 종단 시험의 커버리지 보고·재구성 워커는 Mock 이 아니라 실제 pydantic 스키마를 통과하는 HTTP 페이로드이고 sha256 재측정까지 강제로 통과한다 — ADR-KSI-020 §5.3 의 Mock 봉투 패턴은 재현되지 않았다.",
+        "at": "2026-08-17T18:15:10+09:00",
+        "reviewer": "독립 reviewer 서브에이전트(read-only, 반증 지시)",
+        "evidence_ref": "2026-08-17 세션 reviewer 반증 보고 — 기준 5개 전부 충족 판정, 근거 file:line 포함"
+      },
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T15:59:28+09:00"
+      "updated_at": "2026-08-17T18:15:10+09:00"
     },
     {
       "id": "aol-1-capture-auto-ingest",
@@ -2155,17 +2167,23 @@
         "contract test 로 밀도 조정 규칙이 고정된다"
       ],
       "status": "in_progress",
-      "attempt": 1,
-      "evidence": "변화영역 신호(평균 표고변화/노이즈 바닥, 측정 불가 비율)에서 촬영 등급/고도/중복도를 도출해 spatial-refresh-draft 에 실음(packages/mission-planning/src/ksi_mission_planning/reobservation.py). tests/contract/test_reobservation_capture.py 13 passed, tests/e2e/test_aol2_reobservation.py 2 passed(assemble_app+실제 HTTP+실제 워커로 1세대->설계대비잔량->변화영역->도출초안->2세대 발급까지 완주, succeededEpochCount==2) — 직접 실행 확인. 발급 자체는 여전히 사람이 위저드를 끝까지 누른다(D4에 따른 의도, 미완 아님). 도출값은 제안이며 INV-015 하한은 서버가 별도로 강제(below-floor 발급 422 로 직접 확인). 정책값 2개(DETAIL_ESCALATION_SNR, OVERLAP_ESCALATION_UNMEASURABLE_RATIO)와 '재관측이 현장상태를 PATROL_READY 에 그대로 두는' 설계는 대표자 검토 필요(ADR-KSI-019 §5.2). 실기 미검증(Backend Ready).",
-      "verdict": null,
+      "attempt": 2,
+      "evidence": null,
+      "verdict": {
+        "verdict": "refuted",
+        "note": "기준1 미충족 — '촬영 고도/중복도/촬영간격이 조정된 재관측 계획이 나온다'. 고도·중복도는 확실히 조정되지만(reobservation.py:212-244) **촬영간격이 산출물에 없다**: ReobservationCapturePlan(:136-150)에 필드 자체가 없고 SpatialRefreshDraftResponse 에도 없다. 발급 시점에 mission_plans.py 가 고도·중복도에서 간격을 암묵 재계산할 뿐이고(전 임무타입 공통 기존 기능, 재관측 전용 아님) 운영자에게 '간격이 조정됐다'를 보여주는 표면이 없다. 부기: 중복도 자동 채움이 3단계 프리셋 최근접값으로 근사된다(SurveyWizard.tsx:230-249). 남은 작업: capture interval 을 계획 산출물·응답·화면에 싣거나, 완료기준에서 그 항을 빼는 근거를 남긴다.",
+        "at": "2026-08-17T18:15:10+09:00",
+        "reviewer": "독립 reviewer 서브에이전트(read-only, 반증 지시)",
+        "evidence_ref": "2026-08-17 세션 reviewer 반증 보고 + 메인 직접 확인(reobservation.py:136-150 필드 목록, capture_interval grep 0건)"
+      },
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:29+09:00",
-      "updated_at": "2026-08-15T17:11:50+09:00"
+      "updated_at": "2026-08-17T18:15:10+09:00"
     },
     {
       "id": "field-0-ground-integration",
@@ -3269,14 +3287,14 @@
       "title": "region_extraction.py의 MultiPolygon 결합 분기가 어떤 테스트에서도 실제로 안 탄다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "M4-E 4렌즈 검증(결정성 렌즈)이 발견. 여러 개의 분리된 shapes가 한 라벨로 합쳐지는 경로(region_extraction.py:217-227)를 강제하는 테스트가 없다 — 코드 추론(GDALPolygonize 결정적 스캔라인 + 리스트 순회)으로는 결정적일 것으로 강하게 추정되나 실측 확인은 안 됨. 결정성 위반 증거는 아니고 커버리지 사각지대일 뿐.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 819322d. 리스크 서술 정정: 이 분기는 '테스트를 안 쓴 것'이 아니라 compute_change_regions 경로로 **도달 불가**다 — 라벨 마스크는 4/8-연결 어느 쪽이든 항상 단일 8-연결 성분이고 GDAL 은 그것을 Polygon 하나로 낸다(대각선 계단·코너 접촉·도넛·체커보드·무작위 마스크 4,000회 전수 검사에서 len(shapes)>1 0건). 하류 결함도 없음을 강제 실행으로 확인(MultiPolygon 2조각 → _exterior_points 10점 → hull 정상). 사실을 _vectorize_label docstring 에 남기고 pragma 를 아래 else 와 맞췄으며, _vectorize_label 을 직접 호출하는 계약 테스트로 고정(test_the_multipolygon_join_is_defensive_and_stays_correct_downstream). 15건 통과.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T00:36:52+09:00",
-      "updated_at": "2026-08-14T00:36:52+09:00"
+      "updated_at": "2026-08-17T18:16:17+09:00"
     },
     {
       "id": "riskfield-production-generator-unwired",
@@ -3325,14 +3343,14 @@
       "title": "증거 artifact 바이트가 등록 레코드에 묶여있지 않다 — 같은 object_key 내용이 나중에 교체돼도 아무도 확인하지 않는다",
       "lens": "db",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 독립 반증. EvidenceArtifact 는 object_key/content_type 만 들고 content digest 를 등록 시점에 기록하지 않는다(presigned PUT 흐름이라 등록이 업로드보다 먼저다). CRITICAL 확정 시 계산해 못박는 contentSha256 은 저장만 되고 이후 어떤 경로도 다시 읽지 않아(repo 전역 grep 확인) write-only 감사 필드다. 결과: 잠금 밖 검증 read 와 잠금 안 commit 사이, 그리고 확정 이후에도 같은 object_key 의 바이트가 교체될 수 있고(S3 presigned PUT 은 TTL 동안 재사용 가능) 확정된 사건의 감사 스냅샷이 실제 저장물과 조용히 어긋날 수 있다. 잠금 안 재검사는 ledger 메타데이터(object_key/content_type/tombstoned_at)만 비교한다. 해소 방향 후보: (a) 업로드 완료 시 digest 를 artifact 레코드에 확정 기록하고 검증이 그것과 대조, (b) 확정된 증거의 object 를 immutable/versioned 로 고정, (c) 감사 경로가 frozen digest 를 실제로 재검증. 잠금 밖 스토리지 read 는 느린 스토리지가 원장 잠금을 막지 않게 하려는 의도적 설계라 단순히 잠금 안으로 옮기는 것은 답이 아니다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 e8695d1. 열람 URL 발급 직전에 확정 스냅샷의 contentSha256/길이/objectKey 를 되읽어 재해싱 대조하고 어긋나면 409 CONTENT_DIGEST_MISMATCH 로 fail-closed(events.py view_evidence + _verify_pinned_evidence_content). 회귀 테스트 2건: tests/contract/test_evidence.py::test_confirmed_evidence_is_refused_when_the_bytes_are_swapped_afterwards(교체 시 409) · ::test_evidence_without_a_pinned_digest_is_still_viewable(못박힌 digest 없으면 정상 200). 실행 확인 2 passed. 남는 창 셋(presigned TTL·해싱 안 된 증거·미열람 시 미탐지)은 코드 주석에 명시.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T02:53:39+09:00",
-      "updated_at": "2026-08-14T02:53:39+09:00"
+      "updated_at": "2026-08-17T18:16:17+09:00"
     },
     {
       "id": "dashboard-mission-format-bypasses-seoul-timezone",
@@ -3353,14 +3371,14 @@
       "title": "edge_runtime_tests가 SQLite3 dev 패키지 없는 빌드에서 저장후전달 순서·WAL 복구 assertion을 조용히 건너뛰고도 exit 0을 낸다",
       "lens": "db",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 독립 검증(reviewer agent + 직접 재현). edge_runtime_tests.cpp의 TestArtifactVaultAndStoreForward가 !sqlite_backend_compiled()면 즉시 return해 순서 보장(strict_order)·WAL close/reopen durability assertion 135개 중 31개를 건너뛴다. main()은 실행된 Check()가 전부 통과하면 무조건 exit 0을 내므로, SQLite3 dev 헤더 없는 host(ubuntu-latest 기본 이미지 등)에서 이 바이너리를 돌리면 '전부 통과'가 찍혀도 저장후전달의 핵심 안전 보장은 검증되지 않은 채로 그린이 뜬다. 실제로 이번 세션의 첫 호스트 빌드가 정확히 이 상태였다(104/135 checks만 실행, CMakeCache.txt에 SQLite3_INCLUDE_DIR-NOTFOUND 확인) — apt-get download로 .deb를 받아 실물 SQLite로 재빌드한 뒤에야 135/135 전체가 돌았다. 다행히 런타임 코드 자체(store_forward.cpp)는 SQLite 없을 때 fail-closed(kBackendUnavailable)만 반환하고 성공으로 위장하지 않는다 — 문제는 런타임 동작이 아니라 테스트 스위트가 핵심 주장을 검증했다고 착각하게 만드는 구조다. .github/workflows/ci.yml의 edge-control-plane job(plain cmake, KSI_TARGET_MANIFOLD3 미지정)이 실제로 SQLite dev 헤더가 있는 러너에서 도는지 미확인 — edge-manifold-target job(Docker, libsqlite3-dev 설치됨)은 정적 아카이브 못 찾으면 FATAL_ERROR라 안전하지만 별개 job이다. 해소 방향: SQLite 없을 때 main()이 명시적 SKIP/경고를 exit code나 stderr로 남기게 하거나, CI가 SQLite 부재 시 실패하도록 강제.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 aa46106. 실측: 수정 전 SQLite 헤더 없는 호스트에서 'edge runtime tests: 245 checks passed' + exit 0(31개 assertion 미실행이 안 보임). 수정 후 같은 호스트에서 '239 checks passed, 7 groups skipped' + [SKIP] 7줄 + [WARN] 요약. 위약 단언 Check(true,...) 5건 제거, native evidence oracle 자기참조 단언 제거, :1747 긍정형 블록은 return 없이 감싸 뒤 검사 소실 방지. KSI_EDGE_TESTS_REQUIRE_SQLITE=1 → exit 1 확인, CMake -DKSI_REQUIRE_SQLITE=ON → configure FATAL_ERROR 확인. CI 두 configure 스텝에 -DKSI_REQUIRE_SQLITE=ON 추가(러너 이미지 변경 노출 차단). 백엔드 부재 fail-closed 검증 3건은 보존.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T12:20:28+09:00",
-      "updated_at": "2026-08-14T12:20:28+09:00"
+      "updated_at": "2026-08-17T18:16:17+09:00"
     },
     {
       "id": "mission-dispatch-cli-no-autostart-wiring",
@@ -3465,14 +3483,14 @@
       "title": "이미 봉인된 번들과의 대조가 장수뿐 — 장수가 같으면 내용이 달라도 '이미 완료'로 접힌다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 자동 수집 업로더(tools/upload_source_bundle.py) 구현 중 발견. 재실행이 BUNDLE_SEALED 를 받으면 GET /v1/missions/{id}/source-media 로 봉인 여부와 mediaCount 를 대조해 같으면 수렴(성공)으로 처리한다 — 주기 실행이 첫 성공 이후 영원히 실패로 뜨는 것을 막기 위해서다. 한계: SourceMediaBundleView 가 mediaId 목록을 노출하지 않아(source_media.py:981-994, status/mediaCount/digest/시각만) 장수가 지금 얻을 수 있는 가장 강한 대조다. 따라서 '같은 장수의 다른 사진 묶음'을 올리려는 재실행은 조용히 성공으로 보고된다. 장수가 다르면 정상적으로 실패한다(회귀 테스트 test_rerun_with_different_photo_count_stays_a_failure 로 고정). 해소 방향 후보: (a) 번들 조회에 mediaId 목록 또는 manifest digest 를 노출해 클라이언트가 집합 대조, (b) 클라이언트가 compute_source_bundle_digest 와 같은 규칙으로 digest 를 재계산해 대조(서버 로직 복제라 비선호). 실제 위험도는 낮다 — 같은 임무 id 에 다른 사진 묶음을 올리는 것 자체가 비정상 운용이고, 그 경우에도 서버 번들·재구성 입력은 처음 봉인된 것 그대로 유지된다(조용한 데이터 오염이 아니라 조용한 무시).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 4e2d623. 재실행 수렴 판정을 mediaCount 에서 sourceBundleDigest 로 교체(_sealed_bundle_matches), claim 생성을 배치 루프 앞으로 옮겨 판정 시점에 전체 지문 확보. 매니페스트 구성은 Core 함수 하나로 위임(compute_source_bundle_digest_from_claims)해 두 진입점이 항상 같은 지문을 낸다. 회귀 테스트: tests/contract/test_upload_source_bundle.py::test_rerun_with_the_same_count_but_different_photos_stays_a_failure. **그 테스트가 결함을 실제로 잡는지 판정을 장수로 되돌려 확인함**(되돌리면 already_complete=True 로 실패). test_source_media.py 72건 + upload 15건 전부 통과.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T16:32:27+09:00",
-      "updated_at": "2026-08-14T16:32:27+09:00"
+      "updated_at": "2026-08-17T18:16:17+09:00"
     },
     {
       "id": "mission-dispatch-cli-python312-runtime-provisioning-undecided",
@@ -3577,14 +3595,14 @@
       "title": "발급되는 모든 비행파일이 M4T 기종값(99)을 싣고 있을 가능성 — 우리 기체는 M4D",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "SurveyWizard.tsx:215 가 droneEnumValue=99 를 기본값으로 보내는데 근거 주석이 없다(출처 미상 매직넘버). wpml.py 의 저장소 참고표(60/89/67/77/91)를 핀된 PSDK dji_typedef.h 의 DJI_AIRCRAFT_TYPE_* 와 대조하니 5/5 전부 일치한다 — 두 열거값이 같은 체계로 보인다. 그 매핑을 M4 계열에 적용하면 99=M4T(열화상), 100=M4TD, 990=M4E, 1000=M4D 다. 즉 우리 기체는 1000 인데 99(다른 기종)를 싣고 있다. 확정은 아니다 — 일치한 5개가 모두 구형 기종이라 DJI 가 M4 계열에서 체계를 바꿨을 가능성이 남는다. FIELD-0a 에서 두 값으로 만든 KMZ 를 각각 임포트해 결정적으로 판별한다. 기종값이 틀리면 Pilot 2 가 거부하거나 다른 기체 프로파일로 해석할 수 있다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "DJI Cloud API Product Support 표(2026-08-18): M4D=100/sub0, payload 98 — apps/dashboard/src/lib/aircraft.ts 로 발급 기본값 교체, FIELD-0a 킷 A/B 재생성(tools/build_field0a_kit.py). 실기 임포트 수용 확정은 field-0a-kmz-acceptance criteria 에 이미 포함",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-16T00:47:07+09:00",
-      "updated_at": "2026-08-16T00:47:07+09:00"
+      "updated_at": "2026-08-18T05:11:45+09:00"
     },
     {
       "id": "rollback-guard-fail-open-and-mission-id-laundering",
@@ -3655,6 +3673,34 @@
       "previous_status": "open",
       "created_at": "2026-08-18T11:04:19+09:00",
       "updated_at": "2026-08-18T11:44:54+09:00"
+    },
+    {
+      "id": "coverage-report-single-cell-fractional-ratio",
+      "title": "커버리지 보고 완료 판정이 칸 1개 + 자기신고 비율로 우회 가능",
+      "lens": "gaming",
+      "severity": "high",
+      "status": "resolved",
+      "note": "관찰 칸 1개만 담고 비율을 1.0/1.0/0.96 으로 신고하면 judge_report() 가 RECORDED 를 냈다(contradicts_full_coverage 는 세 비율이 전부 1.0 일 때만 걸려 이 사례를 피해 간다). 2026-08-18 재현 확인.",
+      "accept_reason": null,
+      "resolve_evidence": "has_impossible_fractional_ratio() 추가 — 칸 총수<2 이면서 비율이 0과 1 사이면 422 INSUFFICIENT_CELLS_FOR_RATIO 로 거부. 회귀 테스트 tests/contract/test_coverage_reports.py::test_a_single_cell_cannot_support_a_fractional_ratio 로 고정, 실행 확인 PASS.",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-18T02:54:17+09:00",
+      "updated_at": "2026-08-18T02:54:17+09:00"
+    },
+    {
+      "id": "coverage-reconciliation-not-in-print-or-csv",
+      "title": "커버리지 귀속·대사 정보가 인쇄 보고서·CSV 에는 전파되지 않는다",
+      "lens": "role",
+      "severity": "low",
+      "status": "open",
+      "note": "2026-08-18 설계로 임무 상세 화면·현장 화면에는 귀속·대사·거부 이력이 노출되지만, 인쇄 보고서(/sites/{siteId}/report)와 CSV 내보내기에는 커버리지 숫자 자체가 아예 없다. 발주처가 받는 문서는 화면보다 계속 확신에 차 있는 상태로 남는다 — '이 보고서가 무엇에 관한 문서인가'를 먼저 정해야 하는 별도 설계가 선행돼야 한다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T03:07:07+09:00",
+      "updated_at": "2026-08-18T03:07:07+09:00"
     }
   ]
 }

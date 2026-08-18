@@ -64,6 +64,10 @@ class EvidenceVerdict(StrEnum):
     DUPLICATE_ARTIFACT = "DUPLICATE_ARTIFACT"
     UNKNOWN_ARTIFACT = "UNKNOWN_ARTIFACT"
     ALREADY_TOMBSTONED = "ALREADY_TOMBSTONED"
+    # 확정이 못박은 바이트와 지금 그 자리에 있는 바이트가 다르다 — "없음"도
+    # "폐기됨"도 아닌 세 번째 사실이다. 이 셋을 한 코드로 뭉개면 사고 조사에서
+    # 스토리지 사고와 증거 조작을 구분할 수 없다.
+    CONTENT_DIGEST_MISMATCH = "CONTENT_DIGEST_MISMATCH"
 
 
 class EvidenceStorageError(Exception):

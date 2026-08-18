@@ -17,12 +17,21 @@ import {
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EventActions } from "./[eventKey]/EventActions";
+import { EvidencePanel } from "./[eventKey]/EvidencePanel";
 import { AckElapsedFact } from "./AckElapsedFact";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 // 시안 우측 396px 상세 레일(triage-d-ink-mono.html .detail) 의 실데이터 버전 —
-// events/[eventKey]/page.tsx 의 사실 패널과 같은 항목을 보여주되, 그 파일은 건드리지
-// 않고 표시 로직만 복제한다(과제 지시). EventActions 는 그대로 import 해 재사용한다.
+// events/[eventKey]/page.tsx 의 사실 패널과 같은 항목을 보여준다. EventActions 와
+// EvidencePanel 은 그대로 import 해 재사용한다.
+//
+// 2026-08-17: 처음에는 EvidencePanel 이 재사용 목록에서 빠져 자리표시만 그렸고, 그
+// 결과 같은 증거를 두고 이 화면만 아직 열어볼 수 없다고 말했다 — 경로는 이미 있었다.
+// 표시 로직을 복제하면 반드시 갈라진다. 이 파일은 async 서버 컴포넌트이고 EvidencePanel
+// 은 "use client" 이지만, 서버 컴포넌트가 client 컴포넌트를 import 하는 것은 정상 경로다
+// (EventActions 를 같은 이유로 이미 그렇게 쓰고 있다).
+// 이 주석에 옛 자리표시 문구를 그대로 옮겨 적지 말 것 — evidence-panel-wiring.test.ts
+// 가 그 문자열의 부재로 회귀를 잡는다.
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -138,8 +147,6 @@ export async function EventDetailPanel({
     whoSettled.status === "fulfilled" && whoSettled.value.permissions.includes("EVENTS_TRIAGE");
 
   const severity = event.severity ? EVENT_SEVERITY_LABEL[event.severity] : SEVERITY_UNSET_LABEL;
-  // 개수를 세지 않는다 — events/[eventKey]/page.tsx 와 같은 이유(스키마 필드 수 ≠ 증거 개수).
-  const hasBundle = Boolean(event.bundle) && Object.keys(event.bundle).length > 0;
 
   // "확인 경과" Fact 의 초기값 — AckElapsedFact(client) 가 마운트 후 60초마다 실제
   // 경과로 갈아탈 때까지 보여줄 서버 렌더 시점 스냅샷이다. SLA 판정·텍스트 조합은
@@ -187,14 +194,12 @@ export async function EventDetailPanel({
         </div>
       </div>
 
-      {/* 캡처 프레임·바운딩박스·신뢰도는 데이터 경로가 없다 — 그리지 않고 정직한
-          자리표시만 둔다(events/[eventKey]/page.tsx 와 동일한 판단). */}
-      <div className="border-line-strong bg-sunk mx-4 mt-3 flex items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center">
-        <p className="text-ink-muted text-[12px] break-keep">
-          {hasBundle
-            ? "증거 번들이 수신돼 있습니다 · 캡처 영상 열람 경로 준비 중"
-            : "이 사건에 수신된 증거 번들이 없습니다"}
-        </p>
+      {/* 증거는 전체 화면(events/[eventKey]/page.tsx)과 **같은 컴포넌트를 그대로** 쓴다 —
+          같은 사건의 같은 사실을 두 화면이 다르게 그리면 그중 하나는 반드시 거짓말이 된다.
+          열람 URL 발급·폐기 표시·업로드는 전부 EvidencePanel 안에 있고 여기서 복제하지
+          않는다. 캡처 프레임·바운딩박스는 여전히 데이터 경로가 없어 그리지 않는다. */}
+      <div className="mx-4 mt-3">
+        <EvidencePanel eventKey={event.eventKey} evidence={event.evidence} canUpload={canTriage} />
       </div>
 
       <dl className="mx-4 mt-3 flex flex-col rounded-lg border border-line px-3">
