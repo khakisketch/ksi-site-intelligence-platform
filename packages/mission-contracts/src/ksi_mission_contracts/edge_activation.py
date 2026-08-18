@@ -52,6 +52,7 @@ from pydantic.alias_generators import to_camel
 
 from ksi_mission_contracts.consumer import (
     ContractInputError,
+    DispatchHighWaterMark,
     MissionContractConsumer,
     VerificationKeyError,
     _parse_json_object,
@@ -702,6 +703,48 @@ def _policy_rollback_detail(
     )
 
 
+def _dispatch_rollback_detail(
+    mark: DispatchHighWaterMark | None, envelope: MissionDispatchEnvelopeV1
+) -> str | None:
+    """이 기체가 **이미 실었던 세대보다 뒤로 가는** 봉투면 거부 사유, 아니면 ``None``.
+
+    ``_policy_rollback_detail`` 은 활성 스냅샷이 남아 있고 ``missionId`` 가 같을
+    때만 돈다. 그래서 두 갈래가 열려 있었다(2026-08-18 적대적 검증):
+
+    - 스냅샷 파일을 지우면 정책 순서 판정을 통째로 건너뛴다.
+    - **새 missionId 로 나가면** 비교 축이 없어 판정이 아예 실행되지 않는다. 그런데
+      실제 정책 조임이 바로 새 missionId 로 나가므로, 공격자는 임무를 갈아 끼우는
+      것만으로 느슨한 옛 정책을 다시 실을 수 있었다.
+
+    순서 근거는 봉투 자신의 ``validity.notBefore`` 다 — pack/profile 의 것과 달리
+    **서버가 dispatch 를 내보내는 순간 각인**하므로(``edge_dispatch.py``) 임무가
+    달라도 비교할 수 있다.
+
+    내용이 하나도 안 바뀐 봉투는 순서 판정 대상이 아니다(멱등 재활성화). 세 digest
+    가 모두 같으면 ``dispatch_id`` 가 달라도 안전 상태가 그대로이므로 통과시킨다.
+
+    **정상 운영에서 막히면**: Core 가 그 임무를 다시 dispatch 하면 된다 — 새 봉투는
+    새 시각으로 각인되므로 통과한다. 계약 재발급이 아니라 dispatch 재발급이라
+    missionId 도 그대로다.
+    """
+    if mark is None:
+        return None
+    unchanged = (
+        envelope.mission_contract_digest == mark.mission_contract_digest
+        and envelope.risk_policy_pack_digest == mark.risk_policy_pack_digest
+        and envelope.edge_runtime_profile_digest == mark.edge_runtime_profile_digest
+    )
+    if unchanged:
+        return None
+    if envelope.validity.not_before > mark.not_before:
+        return None
+    return (
+        "이 기체가 이미 실었던 dispatch 와 같거나 이른 봉투가 계약·정책·런타임 설정을 "
+        "바꾸려 한다 — 임무 id 가 달라도 되돌림은 거부한다. 필요하면 Core 가 다시 "
+        "dispatch 하면 통과한다"
+    )
+
+
 def activate_mission_dispatch_file(
     dispatch_path: Path,
     *,
@@ -798,6 +841,18 @@ def activate_mission_dispatch_file(
                 detail=detail,
             )
 
+    # 위 판정은 활성 스냅샷이 있고 missionId 가 같을 때만 돈다. 스냅샷이 없거나
+    # 임무가 다르면 아무 말도 하지 않는다 — 그 두 구멍을 기체 전체 고수위가 닫는다.
+    superseded_dispatch = _dispatch_rollback_detail(
+        consumer.highwater.dispatch_mark(), envelope
+    )
+    if superseded_dispatch is not None:
+        return DispatchActivationResult(
+            dispatch_verdict=DispatchVerdict.SUPERSEDED_DISPATCH,
+            activated=False,
+            detail=superseded_dispatch,
+        )
+
     raw_contract = raw.get("missionContract")
     raw_policy = raw.get("riskPolicyPack")
     raw_profile = raw.get("edgeRuntimeProfile")
@@ -846,6 +901,16 @@ def activate_mission_dispatch_file(
         validity=envelope.validity,
         activated_at=effective_now,
         runtime_version=runtime_version,
+    )
+    # 스냅샷보다 **먼저** 고수위를 올린다 — 여기서 죽으면 표식만 앞서는데, 같은
+    # 봉투 재시도는 세 digest 가 같아 멱등 통과다. 반대 순서면 실은 적 있는 세대가
+    # 표식에 안 남아, 스냅샷을 지우는 것만으로 되돌림이 다시 열린다.
+    consumer.highwater.record_dispatch(
+        not_before=envelope.validity.not_before,
+        dispatch_id=envelope.dispatch_id,
+        mission_contract_digest=envelope.mission_contract_digest,
+        risk_policy_pack_digest=envelope.risk_policy_pack_digest,
+        edge_runtime_profile_digest=envelope.edge_runtime_profile_digest,
     )
     _write_snapshot_atomically(snapshot_path, snapshot)
     _write_native_runtime_profile_atomically(native_runtime_profile_path, snapshot)

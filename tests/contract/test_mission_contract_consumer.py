@@ -488,3 +488,171 @@ def test_symlinked_active_contract_is_refused_on_read(tmp_path: Path) -> None:
     assert not loaded.is_valid
     assert loaded.verdict is SignatureVerdict.MALFORMED_CONTRACT
     assert loaded.detail is not None and "symlink" in loaded.detail
+
+
+def _contract_expiring(
+    *, not_before: str, not_after: str, reserve_percent: int, max_altitude_m: float
+) -> dict[str, Any]:
+    contract = _contract_with(
+        not_before=not_before, reserve_percent=reserve_percent, max_altitude_m=max_altitude_m
+    )
+    contract["validity"]["notAfter"] = not_after
+    return contract
+
+
+def test_waiting_for_the_active_contract_to_expire_does_not_reopen_rollback(
+    tmp_path: Path,
+) -> None:
+    """[high-risk regression] **기다리기만 하면** 되돌릴 수 있던 구멍을 막는다.
+
+    순서 근거를 활성 파일이 들고 있으면, 그 파일의 TTL 이 지나는 순간 비교 대상이
+    사라져 판정이 통째로 건너뛰어졌다(2026-08-18 적대적 검증, risk
+    ``rollback-guard-fail-open-and-mission-id-laundering`` 의 첫 갈래). 권한도
+    파일 접근도 필요 없는 경로라 셋 중 가장 나쁘다 — 공격자는 시계만 보면 된다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    # 조인 계약이지만 창이 짧다.
+    tightened = _contract_expiring(
+        not_before="2026-07-25T06:00:00Z",
+        not_after="2026-07-25T13:00:00Z",
+        reserve_percent=40,
+        max_altitude_m=60.0,
+    )
+    _write_candidate(candidate, sign_contract(tightened, key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    # 활성 계약이 만료된 뒤, 아직 살아있는 **이전 발급본**을 다시 민다.
+    after_expiry = datetime(2026, 7, 25, 14, 0, 0, tzinfo=UTC)
+    assert not consumer.load_active(now=after_expiry).is_valid
+    older = _contract_with(
+        not_before="2026-07-25T00:00:00Z", reserve_percent=10, max_altitude_m=120.0
+    )
+    _write_candidate(candidate, sign_contract(older, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=after_expiry)
+
+    assert not receipt.activated
+    assert receipt.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+
+
+def test_deleting_the_active_contract_does_not_reopen_rollback(tmp_path: Path) -> None:
+    """[high-risk regression] 활성 파일을 **지워도** 되돌림은 거부된다.
+
+    같은 원인의 두 번째 갈래다 — 비교 대상을 없애면 판정이 돌지 않았다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    newer = _contract_with(
+        not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+    )
+    _write_candidate(candidate, sign_contract(newer, key, "core-1"))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    consumer.active_path.unlink()
+
+    older = _contract_with(
+        not_before="2026-07-25T00:00:00Z", reserve_percent=10, max_altitude_m=120.0
+    )
+    _write_candidate(candidate, sign_contract(older, key, "core-1"))
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert not receipt.activated
+    assert receipt.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+    # 거부됐으니 활성 계약은 여전히 없다 — 느슨한 계약이 빈 자리를 차지하지 않는다.
+    assert not consumer.active_path.exists()
+
+
+def test_reactivating_the_same_contract_after_deletion_is_idempotent(tmp_path: Path) -> None:
+    """[false-positive guard] 같은 계약을 다시 싣는 것은 되돌림이 아니다.
+
+    고수위는 세대를 기억하지 파일 존재를 기억하는 게 아니다. 활성 파일이 사라진
+    복구 상황에서 **같은** 계약을 다시 싣는 것까지 막으면 그건 방어가 아니라 고장이다.
+    """
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    raw = _write_candidate(
+        candidate,
+        sign_contract(
+            _contract_with(
+                not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+            ),
+            key,
+            "core-1",
+        ),
+    )
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    consumer.active_path.unlink()
+
+    receipt = consumer.activate_file(candidate, now=_IN_WINDOW)
+
+    assert receipt.activated
+    assert consumer.active_path.read_bytes() == raw
+
+
+def test_a_newer_contract_still_activates_after_the_active_file_is_gone(tmp_path: Path) -> None:
+    """[false-positive guard] 활성 파일이 없어도 **더 나중** 발급본은 실린다."""
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    _write_candidate(
+        candidate,
+        sign_contract(
+            _contract_with(
+                not_before="2026-07-25T00:00:00Z", reserve_percent=10, max_altitude_m=120.0
+            ),
+            key,
+            "core-1",
+        ),
+    )
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    consumer.active_path.unlink()
+
+    _write_candidate(
+        candidate,
+        sign_contract(
+            _contract_with(
+                not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+            ),
+            key,
+            "core-1",
+        ),
+    )
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+
+def test_a_corrupt_high_water_file_refuses_activation_instead_of_forgetting(
+    tmp_path: Path,
+) -> None:
+    """망가진 고수위는 **빈 고수위로 되돌아가지 않는다** — 그러면 망가뜨리기가 우회다."""
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    _write_candidate(
+        candidate,
+        sign_contract(
+            _contract_with(
+                not_before="2026-07-25T06:00:00Z", reserve_percent=40, max_altitude_m=60.0
+            ),
+            key,
+            "core-1",
+        ),
+    )
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+    consumer.highwater.path.write_text('{"schemaVersion": "1.0", "contracts": 3}')
+
+    _write_candidate(
+        candidate,
+        sign_contract(
+            _contract_with(
+                not_before="2026-07-25T00:00:00Z", reserve_percent=10, max_altitude_m=120.0
+            ),
+            key,
+            "core-1",
+        ),
+    )
+    with pytest.raises(ContractInputError):
+        consumer.activate_file(candidate, now=_IN_WINDOW)

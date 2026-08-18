@@ -19,7 +19,7 @@ import re
 import stat
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -41,6 +41,9 @@ _KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _MAX_MANIFEST_BYTES = 64 * 1024
 _MAX_CONTRACT_BYTES = 1024 * 1024
 _ACTIVE_FILENAME = "active-contract.json"
+_HIGHWATER_FILENAME = "activation-highwater.json"
+_HIGHWATER_SCHEMA_VERSION = "1.0"
+_MAX_HIGHWATER_BYTES = 256 * 1024
 
 
 class VerificationKeyError(RuntimeError):
@@ -201,6 +204,217 @@ def load_verification_keys(keys_dir: Path) -> KeyRegistry:
     return registry
 
 
+@dataclass(frozen=True, slots=True)
+class ContractHighWaterMark:
+    """이 임무에 대해 **이미 실었던** 가장 나중 계약."""
+
+    not_before: datetime
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class DispatchHighWaterMark:
+    """이 기체에 **이미 실었던** 가장 나중 dispatch 봉투."""
+
+    not_before: datetime
+    dispatch_id: str
+    mission_contract_digest: str
+    risk_policy_pack_digest: str
+    edge_runtime_profile_digest: str
+
+
+def _require_instant(raw: Any, *, field: str) -> datetime:
+    parsed = _parse_contract_instant(raw)
+    if parsed is None:
+        raise ContractInputError(f"활성화 고수위 {field}가 tz-aware RFC3339 시각이 아니다")
+    return parsed
+
+
+def _require_text(raw: Any, *, field: str) -> str:
+    if not isinstance(raw, str) or not raw:
+        raise ContractInputError(f"활성화 고수위 {field}가 비어있지 않은 문자열이 아니다")
+    return raw
+
+
+def _instant_wire(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _write_private_atomically(
+    path: Path, raw: bytes, *, state_dir: Path, prefix: str, label: str
+) -> None:
+    if path.is_symlink():
+        raise ContractInputError(f"{label} 경로가 symlink라 교체를 거부한다")
+
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=state_dir, prefix=prefix, suffix=".tmp", delete=False
+        ) as stream:
+            temp_path = Path(stream.name)
+            os.chmod(stream.name, 0o600)
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_path, path)
+        directory_fd = os.open(state_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError as exc:
+        raise ContractInputError(
+            f"{label} 파일을 원자적으로 저장할 수 없다: {type(exc).__name__}"
+        ) from exc
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+class ActivationHighWater:
+    """활성화된 적 있는 세대를 **활성 파일 바깥에** 남기는 durable 표식.
+
+    ## 왜 별도 파일인가
+
+    rollback 방어(:meth:`MissionContractConsumer._superseded_detail` 와 dispatch
+    쪽의 같은 계열 판정)는 지금까지 **활성 파일 자체**를 순서 근거로 썼다. 그래서
+    세 갈래로 뚫렸다(2026-08-18 적대적 검증 실측, risk
+    ``rollback-guard-fail-open-and-mission-id-laundering``).
+
+    1. 활성 계약의 TTL 이 지나면 비교 없이 통과한다 — 공격자는 **기다리기만** 하면 된다.
+    2. 활성 계약 파일을 지우면 비교 대상이 없어 통과한다.
+    3. dispatch 스냅샷 파일이 없으면 정책 순서 판정을 통째로 건너뛴다.
+
+    셋 다 원인이 하나다: 순서 근거를 **수명이 짧은 활성 파일이 들고 있었다.** 이
+    클래스는 그 근거를 활성 파일의 수명과 분리해 상태 디렉터리에 남긴다. 활성
+    계약이 만료돼도, 지워져도, 고수위는 남는다.
+
+    ## 두 축을 따로 기억한다
+
+    계약 축은 **임무별**이다. 계약의 ``validity.notBefore`` 가 서버 발급 시각이라는
+    보장이 없기 때문이다(예약 임무면 창의 시작일 수 있다) — 서로 다른 임무 사이의
+    순서 근거로 쓰면 정상 임무를 거부할 수 있다.
+
+    봉투 축은 **기체 전체 하나**다. dispatch 봉투의 ``validity.notBefore`` 는
+    서버가 dispatch 를 내보내는 순간 각인한다(``edge_dispatch.py``). 그래서 임무가
+    달라도 순서를 비교할 수 있고, 바로 그 점이 "새 missionId 로 세탁하면 가드가
+    아예 안 돈다"는 구멍을 닫는다.
+
+    ## 막지 못하는 것 (과대평가 금지)
+
+    고수위 파일 **자체를 지우면** 다시 뚫린다. 상태 디렉터리에 쓸 수 있는 침입자를
+    로컬 파일 하나로 막을 수는 없다 — 그건 TPM 같은 단조 카운터의 일이다. 여기서
+    실제로 닫히는 것은 **권한이 필요 없는 경로**(TTL 만료를 기다리기)이고, 나머지
+    두 갈래는 "파일을 하나 더 지워야 한다"로 비용이 오른다.
+
+    파일이 **읽히지만 망가져 있으면** 활성화를 거부한다(fail-closed). 조용히 빈
+    고수위로 되돌아가면 "망가뜨리기"가 그대로 우회 수단이 되기 때문이다.
+    """
+
+    def __init__(self, *, state_dir: Path) -> None:
+        self._state_dir = state_dir
+        self._path = state_dir / _HIGHWATER_FILENAME
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def contract_mark(self, mission_id: str) -> ContractHighWaterMark | None:
+        record = self._load().get("contracts", {}).get(mission_id)
+        if record is None:
+            return None
+        if not isinstance(record, dict):
+            raise ContractInputError("활성화 고수위 contracts 항목이 object가 아니다")
+        return ContractHighWaterMark(
+            not_before=_require_instant(record.get("notBefore"), field="contracts[].notBefore"),
+            digest=_require_text(record.get("digest"), field="contracts[].digest"),
+        )
+
+    def dispatch_mark(self) -> DispatchHighWaterMark | None:
+        record = self._load().get("dispatch")
+        if record is None:
+            return None
+        return DispatchHighWaterMark(
+            not_before=_require_instant(record.get("notBefore"), field="dispatch.notBefore"),
+            dispatch_id=_require_text(record.get("dispatchId"), field="dispatch.dispatchId"),
+            mission_contract_digest=_require_text(
+                record.get("missionContractDigest"), field="dispatch.missionContractDigest"
+            ),
+            risk_policy_pack_digest=_require_text(
+                record.get("riskPolicyPackDigest"), field="dispatch.riskPolicyPackDigest"
+            ),
+            edge_runtime_profile_digest=_require_text(
+                record.get("edgeRuntimeProfileDigest"),
+                field="dispatch.edgeRuntimeProfileDigest",
+            ),
+        )
+
+    def record_contract(self, *, mission_id: str, not_before: datetime, digest: str) -> None:
+        """이 임무의 고수위를 올린다 — **내리지는 않는다.**"""
+        state = self._load()
+        contracts = dict(state.get("contracts", {}))
+        existing = contracts.get(mission_id)
+        if isinstance(existing, dict):
+            previous = _require_instant(existing.get("notBefore"), field="contracts[].notBefore")
+            if previous > not_before:
+                return
+        contracts[mission_id] = {"notBefore": _instant_wire(not_before), "digest": digest}
+        state["contracts"] = contracts
+        self._store(state)
+
+    def record_dispatch(
+        self,
+        *,
+        not_before: datetime,
+        dispatch_id: str,
+        mission_contract_digest: str,
+        risk_policy_pack_digest: str,
+        edge_runtime_profile_digest: str,
+    ) -> None:
+        """기체 전체 봉투 고수위를 올린다 — **내리지는 않는다.**"""
+        state = self._load()
+        existing = state.get("dispatch")
+        if isinstance(existing, dict):
+            previous = _require_instant(existing.get("notBefore"), field="dispatch.notBefore")
+            if previous > not_before:
+                return
+        state["dispatch"] = {
+            "notBefore": _instant_wire(not_before),
+            "dispatchId": dispatch_id,
+            "missionContractDigest": mission_contract_digest,
+            "riskPolicyPackDigest": risk_policy_pack_digest,
+            "edgeRuntimeProfileDigest": edge_runtime_profile_digest,
+        }
+        self._store(state)
+
+    def _load(self) -> dict[str, Any]:
+        if self._path.is_symlink():
+            raise ContractInputError("활성화 고수위 파일 경로가 symlink라 사용을 거부한다")
+        if not self._path.exists():
+            return {"schemaVersion": _HIGHWATER_SCHEMA_VERSION}
+        raw = _read_bounded(self._path, limit=_MAX_HIGHWATER_BYTES, label="활성화 고수위")
+        state = _parse_json_object(raw, label="활성화 고수위")
+        if state.get("schemaVersion") != _HIGHWATER_SCHEMA_VERSION:
+            raise ContractInputError("활성화 고수위 파일의 schemaVersion을 모른다")
+        if not isinstance(state.get("contracts", {}), dict):
+            raise ContractInputError("활성화 고수위 contracts가 object가 아니다")
+        dispatch = state.get("dispatch")
+        if dispatch is not None and not isinstance(dispatch, dict):
+            raise ContractInputError("활성화 고수위 dispatch가 object가 아니다")
+        return state
+
+    def _store(self, state: dict[str, Any]) -> None:
+        state["schemaVersion"] = _HIGHWATER_SCHEMA_VERSION
+        raw = json.dumps(state, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        _write_private_atomically(
+            self._path,
+            raw,
+            state_dir=self._state_dir,
+            prefix=".activation-highwater.",
+            label="활성화 고수위",
+        )
+
+
 class MissionContractConsumer:
     """검증된 계약만 로컬 실행 상태로 활성화하는 생산 소비자."""
 
@@ -208,10 +422,16 @@ class MissionContractConsumer:
         self._registry = registry
         self._state_dir = state_dir
         self._active_path = state_dir / _ACTIVE_FILENAME
+        self._highwater = ActivationHighWater(state_dir=state_dir)
 
     @property
     def active_path(self) -> Path:
         return self._active_path
+
+    @property
+    def highwater(self) -> ActivationHighWater:
+        """활성 파일 수명과 분리된 순서 근거 — dispatch 계층도 같은 표식을 쓴다."""
+        return self._highwater
 
     def activate_file(
         self,
@@ -249,6 +469,15 @@ class MissionContractConsumer:
                 detail=superseded,
             )
 
+        # 고수위를 **먼저** 올린다. 여기서 죽으면 표식만 앞서는데, 같은 계약을
+        # 다시 실으면 digest 가 같아 멱등 통과다 — 반대 순서(활성 파일 먼저)로
+        # 죽으면 실은 적 있는 계약이 표식에 안 남아 되돌림에 다시 뚫린다.
+        self._ensure_trusted_state_dir(create=True)
+        not_before = _parse_contract_instant(model.validity.not_before)
+        if not_before is not None:
+            self._highwater.record_contract(
+                mission_id=mission_id, not_before=not_before, digest=digest
+            )
         self._write_active_atomically(raw)
         return ActivationReceipt(
             verdict=SignatureVerdict.VALID,
@@ -291,11 +520,15 @@ class MissionContractConsumer:
         내용" 계약을 애초에 만들지 않는다 — 두 발급 경로 모두 ``record_issuance`` 를
         지나고 같은 ``missionId`` 재사용은 ``MISSION_ID_CONFLICT``(409)로 막힌다. 실제
         정책 조임은 **새 missionId** 로 나가는데, 그 경우 위 ``mission_id`` 불일치
-        분기에서 이 함수가 아예 ``None`` 을 반환한다. 그래서 이 규칙이 지금 막는 것은
-        "Core 밖에서 조립된 옛 계약 재생"뿐이고, 정상 파이프라인에는 걸리는 트래픽이
-        없다. 게다가 활성 계약 파일이 없거나 TTL 이 만료됐으면 위에서 이미 ``None``
-        으로 빠져나간다(fail-open 세 곳) — 이 가드만으로 rollback 이 닫혔다고 말할 수
-        없다. risk ``mission-contract-no-issuance-ordering-field`` 는 계속 열려 있다.
+        분기에서 이 함수가 아예 ``None`` 을 반환한다. 그래서 **이 활성 파일 비교**가
+        막는 것은 "Core 밖에서 조립된 옛 계약 재생"뿐이다.
+
+        2026-08-18 에 축이 더 붙었다. 활성 파일이 없거나 TTL 이 지나 이 비교가
+        통째로 건너뛰던 fail-open 은 :meth:`_durable_superseded_detail` 의 고수위
+        표식이 닫는다(활성 파일 수명과 분리된 순서 근거). 임무를 갈아 끼우는 세탁은
+        이 계층이 아니라 봉투 계층이 기체 전체 고수위로 막는다(``edge_activation``).
+        계약 스키마에 발급 순서 필드를 넣는 근본 해법(risk
+        ``mission-contract-no-issuance-ordering-field``)은 여전히 열려 있다.
 
         **알아둘 것**: 서명키 로테이션은 이 규칙에 걸리지 **않는다** —
         ``canonical_payload_bytes`` 가 ``signature`` 블록을 통째로 제외하므로
@@ -307,6 +540,10 @@ class MissionContractConsumer:
         와 같은 사고 클래스). 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
         재생성본을 쓰지 않아 무해하다.
         """
+        durable = self._durable_superseded_detail(candidate, candidate_digest)
+        if durable is not None:
+            return durable
+
         if self._active_path.is_symlink() or not self._active_path.exists():
             return None
         try:
@@ -344,6 +581,32 @@ class MissionContractConsumer:
         return (
             "이미 활성인 계약과 같거나 이른 validity.notBefore를 가진 후보다 — "
             "이전 발급본으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다"
+        )
+
+    def _durable_superseded_detail(self, candidate: Any, candidate_digest: str) -> str | None:
+        """활성 파일이 **없거나 만료돼도** 남는 순서 근거로 같은 판정을 한다.
+
+        위 :meth:`_superseded_detail` 의 활성 파일 비교는 두 갈래로 우회됐다(risk
+        ``rollback-guard-fail-open-and-mission-id-laundering``): 활성 계약의 TTL 이
+        지나기를 **기다리거나**, 활성 파일을 **지우면** 판정 자체가 돌지 않았다.
+        고수위 표식은 둘 다에서 살아남는다(:class:`ActivationHighWater`).
+
+        판정 축은 여전히 **임무별**이다 — 계약의 ``notBefore`` 는 서버 발급 시각이라는
+        보장이 없어 임무 사이의 순서 근거로 쓸 수 없다. 임무를 갈아 끼우는 세탁은
+        봉투 축(``edge_activation``)이 기체 전체 고수위로 막는다.
+        """
+        mark = self._highwater.contract_mark(candidate.mission_id)
+        if mark is None:
+            return None
+        if mark.digest == candidate_digest:
+            # 같은 계약의 재활성화 — 순서 판정 대상이 아니라 멱등 연산이다.
+            return None
+        candidate_not_before = _parse_contract_instant(candidate.validity.not_before)
+        if candidate_not_before is not None and candidate_not_before > mark.not_before:
+            return None
+        return (
+            "이 임무에 이미 실었던 계약과 같거나 이른 validity.notBefore를 가진 후보다 — "
+            "활성 계약이 만료되거나 지워져도 되돌림은 거부한다"
         )
 
     def load_active(self, *, now: datetime | None = None) -> LoadedContract:
@@ -399,36 +662,13 @@ class MissionContractConsumer:
 
     def _write_active_atomically(self, raw: bytes) -> None:
         self._ensure_trusted_state_dir(create=True)
-        if self._active_path.is_symlink():
-            raise ContractInputError("활성 Mission Contract 경로가 symlink라 교체를 거부한다")
-
-        temp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=self._state_dir,
-                prefix=".active-contract.",
-                suffix=".tmp",
-                delete=False,
-            ) as stream:
-                temp_path = Path(stream.name)
-                os.chmod(stream.name, 0o600)
-                stream.write(raw)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temp_path, self._active_path)
-            directory_fd = os.open(self._state_dir, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        except OSError as exc:
-            raise ContractInputError(
-                f"활성 Mission Contract를 원자적으로 저장할 수 없다: {type(exc).__name__}"
-            ) from exc
-        finally:
-            if temp_path is not None and temp_path.exists():
-                temp_path.unlink()
+        _write_private_atomically(
+            self._active_path,
+            raw,
+            state_dir=self._state_dir,
+            prefix=".active-contract.",
+            label="활성 Mission Contract",
+        )
 
 
 def _parse_cli_time(raw: str | None) -> datetime | None:
@@ -496,10 +736,13 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "ActivationHighWater",
     "ActivationReceipt",
     "ActivationRefusal",
     "ActivationVerdict",
+    "ContractHighWaterMark",
     "ContractInputError",
+    "DispatchHighWaterMark",
     "MissionContractConsumer",
     "VerificationKeyError",
     "load_verification_keys",

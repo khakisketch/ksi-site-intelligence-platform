@@ -194,6 +194,12 @@ class DispatchVerdict(StrEnum):
     # riskpolicypack-edgeruntimeprofile-no-rollback-defense).
     SUPERSEDED_RISK_POLICY_PACK = "SUPERSEDED_RISK_POLICY_PACK"
     SUPERSEDED_EDGE_RUNTIME_PROFILE = "SUPERSEDED_EDGE_RUNTIME_PROFILE"
+    # 위 둘은 **같은 missionId 안에서만** 비교한다. 임무를 갈아 끼우면 비교 축이
+    # 사라져 가드가 아예 돌지 않았다(risk
+    # rollback-guard-fail-open-and-mission-id-laundering). 봉투의 notBefore 는
+    # 서버가 dispatch 를 내보내는 순간 각인하므로 임무와 무관한 순서 근거다 —
+    # 이 판정은 그것으로 기체 전체 고수위를 강제한다.
+    SUPERSEDED_DISPATCH = "SUPERSEDED_DISPATCH"
     # KMZ 는 서명이 없다 — 그래서 "서명된 봉투가 선언한 digest"가 그 파일의 유일한
     # 진위 근거다. 받은 바이트가 그 digest 와 다르거나(전송 손상·중간자·구 임무
     # 잔존), digest 를 선언한 봉투인데 바이트를 전혀 못 받았으면 활성화 **전체**를
