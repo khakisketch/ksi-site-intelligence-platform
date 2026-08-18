@@ -334,10 +334,18 @@ def run_comparison_request(
                     baseline=ArtifactSource(
                         ref=comparison_input.dsm_baseline,
                         download_url=comparison_input.dsm_baseline_url,
+                        # **검사점 잔차만** 흘린다(INV-024). accuracy.rmse 는 GCP
+                        # 피팅 잔차라 절대정확도가 아니고, 그걸 여기 꽂으면
+                        # "검증 없는 수치가 진짜 오차한계처럼 실리는" 위반이
+                        # 그대로 재도입된다. 이 자리는 예전에 늘 None 이었고,
+                        # 그래서 uncertaintyM3 계산 경로가 존재하면서도 한 번도
+                        # 실행된 적이 없었다(2026-08-18 배선).
+                        rmse_m=comparison_input.dsm_baseline_checkpoint_rmse_m,
                     ),
                     current=ArtifactSource(
                         ref=comparison_input.dsm_current,
                         download_url=comparison_input.dsm_current_url,
+                        rmse_m=comparison_input.dsm_current_checkpoint_rmse_m,
                     ),
                     zones=comparison_input.zones,
                     zone_crs=comparison_input.zone_crs,

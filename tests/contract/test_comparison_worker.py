@@ -654,8 +654,10 @@ def _vertical_dsm_core(
     *,
     baseline_reference: VerticalReference | None,
     current_reference: VerticalReference | None,
+    baseline_checkpoint_rmse_m: float | None = None,
+    current_checkpoint_rmse_m: float | None = None,
 ) -> FakeComparisonCoreClient:
-    """체적 계산만 하는(점군 없는) 비교 요청 — 수직기준만 바꿔가며 쓴다."""
+    """체적 계산만 하는(점군 없는) 비교 요청 — 수직기준·검사점 잔차만 바꿔가며 쓴다."""
     return FakeComparisonCoreClient(
         comparison_input=ComparisonInput(
             request_id=request_id,
@@ -672,6 +674,8 @@ def _vertical_dsm_core(
             zone_crs="EPSG:4326",
             dsm_baseline_vertical_reference=baseline_reference,
             dsm_current_vertical_reference=current_reference,
+            dsm_baseline_checkpoint_rmse_m=baseline_checkpoint_rmse_m,
+            dsm_current_checkpoint_rmse_m=current_checkpoint_rmse_m,
         )
     )
 
@@ -741,6 +745,62 @@ def test_missing_declaration_falls_back_to_the_legacy_constant(
     assert any("수직기준 미기록" in record.message for record in caplog.records)
     succeeded = [c for c in core.calls if c[0] == "cmp-transition" and c[1] == "SUCCEEDED"]
     assert len(succeeded) == 1
+
+
+def test_uncertainty_is_computed_when_both_epochs_are_checkpoint_verified(
+    tmp_path: Path,
+) -> None:
+    """[핵심·INV-024] 양쪽 epoch 이 독립 검사점으로 검증됐으면 오차한계가 **실제로 나온다**.
+
+    이 경로는 계산 코드가 존재하는데도 입력이 한 번도 도달한 적이 없었다 —
+    워커가 ``rmse_m`` 을 늘 ``None`` 으로 넘겨 ``uncertaintyM3`` 가 항상 비어
+    있었다(2026-08-18 배선). 이 단언이 그 비공허성을 지킨다.
+    """
+    core = _vertical_dsm_core(
+        "mission-1-cmp-unc",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        current_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        baseline_checkpoint_rmse_m=0.03,
+        current_checkpoint_rmse_m=0.04,
+    )
+
+    _run_vertical_case(core, "mission-1-cmp-unc", tmp_path)
+
+    assert len(core.volume_change_reports) == 1
+    _, report = core.volume_change_reports[0]
+    assert report.zones, "구역이 비면 이 단언이 공허해진다"
+    for zone in report.zones:
+        assert zone.uncertainty_m3 is not None, "검증된 두 epoch 인데 오차한계가 비었다"
+        assert zone.uncertainty_m3 > 0
+
+
+@pytest.mark.parametrize(
+    ("baseline_rmse", "current_rmse"),
+    [(0.03, None), (None, 0.04), (None, None)],
+    ids=["기준만 검증", "최신만 검증", "둘 다 미검증"],
+)
+def test_uncertainty_stays_null_unless_both_epochs_are_verified(
+    baseline_rmse: float | None, current_rmse: float | None, tmp_path: Path
+) -> None:
+    """[회귀·INV-024] 한쪽만 알면 차분의 오차를 말할 수 없다 — 0 으로 채우지 않는다.
+
+    모르는 쪽을 0 으로 두면 "검증된 한쪽만큼만 틀릴 수 있다"는 거짓 주장이 된다.
+    """
+    core = _vertical_dsm_core(
+        "mission-1-cmp-unc-partial",
+        baseline_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        current_reference=_declared(VerticalDatum.ELLIPSOIDAL),
+        baseline_checkpoint_rmse_m=baseline_rmse,
+        current_checkpoint_rmse_m=current_rmse,
+    )
+
+    _run_vertical_case(core, "mission-1-cmp-unc-partial", tmp_path)
+
+    assert len(core.volume_change_reports) == 1
+    _, report = core.volume_change_reports[0]
+    assert report.zones
+    for zone in report.zones:
+        assert zone.uncertainty_m3 is None
 
 
 def test_incompatible_datum_families_fail_instead_of_producing_numbers(tmp_path: Path) -> None:

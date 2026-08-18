@@ -212,6 +212,19 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
     principal = record.principal
     if not principal.principal_id:
         raise AuthRegistryError("principal_id 는 빈 문자열일 수 없다")
+    # lone surrogate 를 조립 시점에 거부한다(2026-08-18). `principal_id` 는 요청으로
+    # 조작할 수 없고 `KSI_CORE_PRINCIPAL_TOKENS_JSON` 으로만 들어오는데, `json.loads`
+    # 는 `\ud800` 이스케이프를 그대로 살려 넘긴다. 그런 값이 들어오면 그 principal 로
+    # 인증한 요청의 **응답 직렬화**가 UnicodeEncodeError 로 터져 500 이 된다(실측:
+    # `GET /v1/auth/whoami`). 요청 표면이 아니라 배포 설정 경계의 문제라, 막을 자리도
+    # 요청이 아니라 여기다 — 잘못된 설정으로 뜬 서버는 뜨는 순간 실패해야 한다.
+    try:
+        principal.principal_id.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise AuthRegistryError(
+            f"principal_id 에 UTF-8 로 표현할 수 없는 문자가 있다 "
+            f"({principal.principal_id!r}) — 이 신원으로 인증한 응답이 직렬화되지 않는다"
+        ) from exc
 
     if principal.kind is PrincipalKind.OPERATOR:
         if principal.role is None:

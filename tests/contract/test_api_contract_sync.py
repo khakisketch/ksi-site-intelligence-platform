@@ -940,3 +940,183 @@ def test_vertical_datum_enum_matches_the_python_ssot() -> None:
             f"  python : {sorted(expected)}\n"
             "VerticalDatum 에 값을 추가했으면 openapi 와 관련 JSON 스키마도 함께 넓힌다."
         )
+
+
+# ── ⑥ 수치 제약 드리프트 — 새로 생기는 것만 잡는다 ──────────────────────────
+#
+# 위 ④⑤는 필드 이름·필수 여부만 대조하고 minimum/pattern 류는 의도적으로 안 본다.
+# 그 사각지대에서 실제로 드리프트가 났었다(2026-08-18: openapi 는 checkpointRmseM 에
+# minimum:0 을 적었는데 요청 모델에는 ge=0 이 없어 음수가 통과했다 — 그 건은 요청
+# 모델을 계약 모델로 교체해 해소).
+#
+# **왜 전수 강제가 아니라 baseline 인가**: 현재 어긋난 24건을 전수 확인한 결과
+# **실제로 뚫리는 것은 0건**이었다. 문서에만 있는 제약(maxAltitudeM 150, wayline
+# 속도·높이 범위 등)은 전부 계약 모델 validator 나 생성기가 강제하고 그 실패는
+# 핸들러가 422 로 잡는다(mission_plans.py 의 `except (RouteGenerationError,
+# KmzBuildError)`). 즉 위치가 다를 뿐 약속이 깨진 것이 아니다. 그 24건을 전부
+# 실패로 만드는 게이트는 거짓 경보만 늘리고, 진짜 신호를 그 안에 묻는다.
+#
+# 그래서 이 게이트는 **알려진 목록 밖의 새 드리프트**만 잡는다. 새 필드에 문서와
+# 코드가 다른 제약을 달면 여기서 걸린다.
+
+_CONSTRAINT_KEYS = (
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "minLength", "maxLength", "pattern", "minItems", "maxItems",
+)
+
+#: 2026-08-18 전수 확인 — 전부 "문서와 코드의 표현 위치가 다를 뿐 약속은 지켜진다".
+#: 각 항목은 실제로 그 제약이 어디서 강제되는지 확인한 뒤 등재한 것이다.
+#: 새 항목을 넣으려면 **먼저 실제로 뚫리는지 확인**해야 한다 — 뚫리면 등재가 아니라 수정이다.
+_KNOWN_CONSTRAINT_DRIFT: frozenset[str] = frozenset({
+    # 계약 모델 validator 가 강제(FlightEnvelope._envelope_is_coherent 의 규제 상한).
+    "POST /v1/missions/contracts(body).flightEnvelope.maxAltitudeM.maximum",
+    "POST /v1/missions/plans(body).contract.flightEnvelope.maxAltitudeM.maximum",
+    # WaylineMissionConfig.__post_init__ 이 강제, 핸들러가 KmzBuildError → 422.
+    "POST /v1/missions/plans(body).wayline.autoFlightSpeedMs.exclusiveMinimum",
+    "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.exclusiveMinimum",
+    "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.maximum",
+    "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.maximum",
+    "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.minimum",
+    "POST /v1/missions/plans(body).route.captureIntervalM.minimum",
+    # 구현에만 있는 제약(문서가 덜 엄격) — 코드가 더 조이는 방향이라 약속 위반이 아니다.
+    "POST /v1/missions/plans(body).aoi.vertices.maxItems",
+    "PUT /v1/sites/{site_id}/aoi(body).aoi.vertices.maxItems",
+    "POST /v1/design-surfaces/{design_surface_id}/observations(body)"
+    ".verticalCrsEpsg.exclusiveMinimum",
+    "POST /v1/design-surfaces/{design_surface_id}/observations(body).verticalCrsEpsg.minimum",
+    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).dispatchId.pattern",
+    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).edgeDeviceId.pattern",
+    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).missionId.minLength",
+    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).runtimeVersion.minLength",
+    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
+    ".actionReturnCode.minLength",
+    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).dispatchId.pattern",
+    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).edgeDeviceId.pattern",
+    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).missionId.minLength",
+    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
+    ".runtimeVersion.minLength",
+    # 스토어·핸들러가 강제.
+    "POST /v1/events/{event_key}/evidence(body).artifactId.minLength",
+    "POST /v1/missions/{mission_id}/comparison-requests(body).zoneCrs.minLength",
+    "PUT /v1/sites/{site_id}/model-age-policy(body).maxAgeDays.minimum",
+})
+
+
+def _unwrap_optional(spec: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    """``anyOf: [T, null]``(Optional 필드의 형태)에서 실제 타입 분기를 꺼낸다."""
+    for branch in node.get("anyOf", ()):
+        resolved = _resolve_ref(spec, branch)
+        if isinstance(resolved, dict) and resolved.get("type") != "null":
+            return resolved
+    return node
+
+
+def _collect_constraint_drift(
+    *,
+    doc_spec: dict[str, Any],
+    impl_spec: dict[str, Any],
+    doc_node: Any,
+    impl_node: Any,
+    trail: str,
+    drift: list[str],
+    seen: set[str],
+) -> None:
+    doc_node = _resolve_ref(doc_spec, doc_node)
+    impl_node = _resolve_ref(impl_spec, impl_node)
+    if not isinstance(doc_node, dict) or not isinstance(impl_node, dict):
+        return
+    if trail in seen or len(seen) > 4000:  # 순환 $ref·폭주 방어
+        return
+    seen.add(trail)
+    for combinator in ("anyOf", "allOf", "oneOf"):
+        if combinator in impl_node and "properties" not in impl_node:
+            for branch in impl_node[combinator]:
+                resolved = _resolve_ref(impl_spec, branch)
+                if isinstance(resolved, dict) and "properties" in resolved:
+                    _collect_constraint_drift(
+                        doc_spec=doc_spec, impl_spec=impl_spec, doc_node=doc_node,
+                        impl_node=resolved, trail=trail, drift=drift, seen=seen,
+                    )
+            return
+    doc_props = doc_node.get("properties") or {}
+    impl_props = impl_node.get("properties") or {}
+    for name in sorted(set(doc_props) & set(impl_props)):
+        doc_field = _resolve_ref(doc_spec, doc_props[name])
+        impl_field = _resolve_ref(impl_spec, impl_props[name])
+        if not isinstance(doc_field, dict) or not isinstance(impl_field, dict):
+            continue
+        doc_flat = _unwrap_optional(doc_spec, doc_field)
+        impl_flat = _unwrap_optional(impl_spec, impl_field)
+        for key in _CONSTRAINT_KEYS:
+            if doc_flat.get(key) != impl_flat.get(key):
+                drift.append(f"{trail}.{name}.{key}")
+        _collect_constraint_drift(
+            doc_spec=doc_spec, impl_spec=impl_spec, doc_node=doc_field,
+            impl_node=impl_field, trail=f"{trail}.{name}", drift=drift, seen=seen,
+        )
+
+
+def test_no_new_numeric_constraint_drift_between_doc_and_implementation(tmp_path: Path) -> None:
+    """[게이트] 문서와 구현의 수치 제약이 **새로** 갈라지지 않는다.
+
+    알려진 24건(전부 "표현 위치가 다를 뿐 약속은 지켜진다"로 실측 확인)은 위
+    허용 목록에 근거와 함께 등재돼 있다. 그 밖의 항목이 나오면 **먼저 실제로
+    뚫리는지 확인**해야 한다 — 뚫리면 목록 등재가 아니라 수정이다.
+    """
+    doc = _doc()
+    impl = _implemented_spec(tmp_path)
+    drift: list[str] = []
+    seen: set[str] = set()
+
+    for path, operations in (doc.get("paths") or {}).items():
+        impl_path = (impl.get("paths") or {}).get(path)
+        if not isinstance(operations, dict) or not isinstance(impl_path, dict):
+            continue
+        for method, operation in operations.items():
+            impl_operation = impl_path.get(method)
+            if not isinstance(operation, dict) or not isinstance(impl_operation, dict):
+                continue
+            doc_body = _json_request_schema(doc, operation)
+            impl_body = _json_request_schema(impl, impl_operation)
+            if doc_body is None or impl_body is None:
+                continue
+            _collect_constraint_drift(
+                doc_spec=doc, impl_spec=impl, doc_node=doc_body, impl_node=impl_body,
+                trail=f"{method.upper()} {path}(body)", drift=drift, seen=seen,
+            )
+
+    assert seen, "요청 본문을 하나도 순회하지 못했다면 이 게이트는 공허하다"
+    unknown = sorted(set(drift) - _KNOWN_CONSTRAINT_DRIFT)
+    assert not unknown, (
+        "문서와 구현의 수치 제약이 새로 갈라졌다 — 먼저 그 제약이 실제로 뚫리는지 "
+        f"확인하라(뚫리면 목록 등재가 아니라 수정이다): {unknown}"
+    )
+
+
+def test_the_constraint_drift_allowlist_is_not_stale(tmp_path: Path) -> None:
+    """[공허 방지] 허용 목록에 **이미 해소된 항목**이 남아 있지 않다.
+
+    해소된 항목이 목록에 남으면 그 자리에 새 드리프트가 생겨도 조용히 통과한다.
+    """
+    doc = _doc()
+    impl = _implemented_spec(tmp_path)
+    drift: list[str] = []
+    seen: set[str] = set()
+    for path, operations in (doc.get("paths") or {}).items():
+        impl_path = (impl.get("paths") or {}).get(path)
+        if not isinstance(operations, dict) or not isinstance(impl_path, dict):
+            continue
+        for method, operation in operations.items():
+            impl_operation = impl_path.get(method)
+            if not isinstance(operation, dict) or not isinstance(impl_operation, dict):
+                continue
+            doc_body = _json_request_schema(doc, operation)
+            impl_body = _json_request_schema(impl, impl_operation)
+            if doc_body is None or impl_body is None:
+                continue
+            _collect_constraint_drift(
+                doc_spec=doc, impl_spec=impl, doc_node=doc_body, impl_node=impl_body,
+                trail=f"{method.upper()} {path}(body)", drift=drift, seen=seen,
+            )
+    stale = sorted(_KNOWN_CONSTRAINT_DRIFT - set(drift))
+    assert not stale, f"허용 목록에 이미 해소된 항목이 남아 있다 — 지워라: {stale}"

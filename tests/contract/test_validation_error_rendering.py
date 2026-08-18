@@ -350,3 +350,47 @@ def test_overflowing_progress_ratio_folds_into_a_typed_reason() -> None:
     with pytest.raises(ValidationError):
         _zone_progress(zone(1.001e-6), zone(1e308), None)
     assert _zone_progress(zone(5000.0), zone(1240.0), None).cut_progress_ratio is not None
+
+
+def test_auth_registry_refuses_a_principal_id_that_cannot_be_serialized() -> None:
+    """[경계] 직렬화 불가한 신원은 **조립 시점**에 거부한다.
+
+    `principal_id` 는 요청으로 조작할 수 없고 배포 설정
+    (`KSI_CORE_PRINCIPAL_TOKENS_JSON`)으로만 들어온다. lone surrogate 가 섞이면 그
+    신원으로 인증한 응답의 직렬화가 터져 500 이 된다 — 잘못된 설정으로 뜬 서버는
+    뜨는 순간 실패해야 한다(요청 표면이 아니라 여기가 막을 자리인 이유).
+    """
+    from ksi_core.auth import AuthRegistryError
+
+    with pytest.raises(AuthRegistryError, match="UTF-8"):
+        AuthRegistry(
+            [
+                PrincipalTokenRecord(
+                    token_sha256=hashlib.sha256(b"t").hexdigest(),
+                    principal=Principal(
+                        principal_id="op-\ud800-1",
+                        kind=PrincipalKind.OPERATOR,
+                        role=Role.ADMIN,
+                        device_id=None,
+                    ),
+                )
+            ]
+        )
+
+
+def test_auth_registry_still_accepts_a_normal_principal_id() -> None:
+    """[비공허 대조] 정상 신원은 그대로 조립된다 — 과잉 거부가 아니다."""
+    registry = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(b"t").hexdigest(),
+                principal=Principal(
+                    principal_id="운영자-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
+                    device_id=None,
+                ),
+            )
+        ]
+    )
+    assert registry is not None

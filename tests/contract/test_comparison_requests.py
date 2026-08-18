@@ -63,7 +63,11 @@ from ksi_core.processing_jobs import (
 from ksi_core.sites import SiteFrame, SiteStore
 from ksi_core.source_media import SourceMediaClaim, SourceMediaMeasurement, SourceMediaStore
 from ksi_event_contracts.comparison_request import ComparisonRequest
-from ksi_event_contracts.processing_artifact import LineageAuthority, ProcessingArtifactKind
+from ksi_event_contracts.processing_artifact import (
+    ArtifactAccuracy,
+    LineageAuthority,
+    ProcessingArtifactKind,
+)
 from ksi_event_contracts.processing_job import ExecutionLocus, LicenseBasis, ProcessingProvider
 from ksi_event_contracts.vertical_reference import (
     VerticalDatum,
@@ -228,6 +232,7 @@ def _artifact_spec(
     *,
     kind: ProcessingArtifactKind = ProcessingArtifactKind.POINT_CLOUD,
     vertical_reference: VerticalReference | None = None,
+    accuracy: ArtifactAccuracy | None = None,
 ) -> ArtifactSpec:
     # 래스터 계열(ortho/dsm/dtm)은 gsd 가 필수다(계약 위반 게이트) — 나머지는 null.
     return ArtifactSpec(
@@ -239,7 +244,7 @@ def _artifact_spec(
         format="laz",
         crs="EPSG:5186",
         gsd=0.05 if kind in _RASTER_KINDS else None,
-        accuracy=None,
+        accuracy=accuracy,
         # 기본값이 None 인 것이 기본 fixture 를 "수직기준 개념 이전에 등록된
         # 산출물"로 만든다 — 그 경로가 계속 살아 있는지가 이 파일의 회귀 대상이다.
         vertical_reference=vertical_reference,
@@ -330,7 +335,11 @@ class _Fixture:
     """(비교 요청 저장소, 처리 작업 저장소, 미리 만든 SUCCEEDED baseline/current jobId)."""
 
     def __init__(
-        self, tmp_path: Path, *, dsm_vertical_reference: VerticalReference | None = None
+        self,
+        tmp_path: Path,
+        *,
+        dsm_vertical_reference: VerticalReference | None = None,
+        dsm_accuracy: ArtifactAccuracy | None = None,
     ) -> None:
         self.missions = _mission_store(tmp_path)
         self.sites = _site_store(tmp_path)
@@ -344,6 +353,7 @@ class _Fixture:
                 "dsm",
                 kind=ProcessingArtifactKind.DSM,
                 vertical_reference=dsm_vertical_reference,
+                accuracy=dsm_accuracy,
             ),
         )
         self.current_job_id = _succeeded_job(
@@ -355,6 +365,7 @@ class _Fixture:
                 "dsm",
                 kind=ProcessingArtifactKind.DSM,
                 vertical_reference=dsm_vertical_reference,
+                accuracy=dsm_accuracy,
             ),
         )
         self.store = ComparisonRequestStore(
@@ -898,6 +909,47 @@ def test_input_leaves_the_vertical_reference_null_for_older_artifacts(fx: _Fixtu
     body = _leased_input(fx)
     assert body["dsmBaselineVerticalReference"] is None
     assert body["dsmCurrentVerticalReference"] is None
+
+
+def test_input_carries_the_checkpoint_rmse_the_dsms_declared(tmp_path: Path) -> None:
+    """[핵심·INV-024] 워커가 오차한계 계산에 쓸 값은 **독립 검사점 잔차**뿐이다.
+
+    수직기준과 같은 관례 — 요청 레코드에 복사하지 않고 입력 발급 시점에 산출물
+    원장에서 조회한다. **``accuracy.rmse``(GCP 피팅 잔차)는 절대 싣지 않는다** —
+    그걸 흘리면 "검증 없는 수치가 진짜 오차한계처럼 실리는" INV-024 위반을 이
+    배선이 그대로 재도입한다.
+    """
+    verified = ArtifactAccuracy(
+        gcp_count=12,
+        rmse=0.03,
+        report_uri="s3://r/1.pdf",
+        checkpoint_count=8,
+        checkpoint_rmse_m=0.042,
+    )
+    body = _leased_input(_Fixture(tmp_path, dsm_accuracy=verified))
+
+    assert body["dsmBaselineCheckpointRmseM"] == 0.042
+    assert body["dsmCurrentCheckpointRmseM"] == 0.042
+
+
+def test_input_leaves_checkpoint_rmse_null_when_only_fit_rmse_exists(tmp_path: Path) -> None:
+    """[회귀] 검사점 없는 정확도(GCP 피팅 잔차만)는 ``null`` 로 온다.
+
+    ``rmse=0.03`` 이 있어도 그것은 절대정확도가 아니므로 오차한계 입력이 될 수
+    없다 — Core 가 그 값을 대신 흘리면 INV-024 재도입이다.
+    """
+    fit_only = ArtifactAccuracy(gcp_count=12, rmse=0.03, report_uri="s3://r/1.pdf")
+    body = _leased_input(_Fixture(tmp_path, dsm_accuracy=fit_only))
+
+    assert body["dsmBaselineCheckpointRmseM"] is None
+    assert body["dsmCurrentCheckpointRmseM"] is None
+
+
+def test_input_leaves_checkpoint_rmse_null_without_any_accuracy(fx: _Fixture) -> None:
+    """[회귀] 정확도 신고가 아예 없는 산출물(ODM 경로)도 ``null`` — 기본값을 지어내지 않는다."""
+    body = _leased_input(fx)
+    assert body["dsmBaselineCheckpointRmseM"] is None
+    assert body["dsmCurrentCheckpointRmseM"] is None
 
 
 def test_input_requires_lease(fx: _Fixture) -> None:
