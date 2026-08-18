@@ -16,10 +16,11 @@ waylines-wpml, 2026-07-29 정독). 요지:
   데이터 없이 안전한 ``relativeToStartPoint`` 만 쓴다.
 - waypoint ``index`` 는 0부터 연속 증가.
 
-**기체 enum 을 하드코딩하지 않는다** — 문서 스냅샷의 droneEnumValue 표(60=M300,
-89=M350, 77=M3E/T/M, 91=M3D/TD)에 **M4D 시리즈 값이 없다.** 추측으로 박으면
-Pilot 2 가 조용히 거부/오해석할 수 있으므로 :class:`DroneProfile` 로 호출자가
-명시하고, 실값은 H4 실기 검증(실제 Pilot 2 export 샘플 unzip)으로 확정한다.
+**기체 enum 을 하드코딩하지 않는다** — :class:`DroneProfile` 로 호출자가 명시한다.
+M4 시리즈 값은 2026-08-18 DJI Cloud API Product Support 표에서 확인했다
+(M4D/M4TD=100(sub 0/1)·M4E/M4T=99(sub 0/1)·M4D 카메라 payload=98). 과거의
+PSDK ``dji_typedef.h`` 매핑 가설(M4D=1000)은 폐기한다 — WPML enum 과 PSDK
+aircraft type 은 다른 체계다. 실기 수용 확정은 FIELD-0a(Pilot 2 임포트)로 남는다.
 
 KMZ 에는 서명이 없다 — 안전 게이트(고도 봉투 등)는 상류 coverage.py 가 수행하고,
 Manifold 측 정책 집행은 서명된 Mission Contract 가 소유한다(이원 산출물 원칙).
@@ -40,13 +41,18 @@ from ksi_mission_planning.coverage import RouteWaypoint
 KML_NS = "http://www.opengis.net/kml/2.2"
 WPML_NS = "http://www.dji.com/wpmz/1.0.2"
 
-# 문서 스냅샷에서 확인된 droneEnumValue 참고표 — **M4D 시리즈 값은 미확인**(H4).
+# droneEnumValue 참고표 — 정본은 DJI Cloud API Product Support 페이지의
+# "Enumeration Values of Aircraft, RC and Dock" 표다(WPML common-element 문서가
+# 그 표를 참조하라고 명시, 2026-08-18 확인).
+# https://developer.dji.com/doc/cloud-api-tutorial/en/overview/product-support.html
 KNOWN_DRONE_ENUM_VALUES = {
     60: "Matrice 300 RTK",
     89: "Matrice 350 RTK",
     67: "Matrice 30/30T",
     77: "Mavic 3E/3T/3M",
     91: "Matrice 3D/3TD",
+    99: "Matrice 4E/4T (sub 0=4E, 1=4T)",
+    100: "Matrice 4D/4TD (sub 0=4D, 1=4TD)",
 }
 
 # zip 멤버 타임스탬프 고정 — 같은 입력이면 바이트 동일(재현성·digest 안정).

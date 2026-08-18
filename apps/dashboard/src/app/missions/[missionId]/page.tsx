@@ -15,7 +15,13 @@ import {
   listDesignConformanceRequests,
   listDesignSurfaces,
 } from "@/lib/core-api/design";
-import { getCoverageReport, getMission, getMissionExecution } from "@/lib/core-api/missions";
+import {
+  getCoverageReport,
+  getCoverageRejections,
+  getMission,
+  getMissionExecution,
+} from "@/lib/core-api/missions";
+import type { CoverageRejectionListView } from "@/lib/core-api/types";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
@@ -49,6 +55,19 @@ async function fetchCoverageResult(missionId: string): Promise<CoverageReportRes
       return { kind: "error", error };
     }
     throw error;
+  }
+}
+
+/**
+ * 거부 이력은 항상 부가 정보다 — 조회 실패해도 "비행 결과" 섹션 자체는 보여야
+ * 한다(fetchCoverageResult 와 같은 원칙). rejectionCount=0 도 유효한 성공 응답이라
+ * catch 블록이 아니라 null 로만 실패를 표시한다.
+ */
+async function fetchCoverageRejections(missionId: string): Promise<CoverageRejectionListView | null> {
+  try {
+    return await getCoverageRejections(missionId);
+  } catch {
+    return null;
   }
 }
 
@@ -99,6 +118,7 @@ export default async function MissionDetailPage({
     site,
     execution,
     coverageResult,
+    rejectionsResult,
     canIssue,
     sourceBundle,
     jobs,
@@ -116,6 +136,7 @@ export default async function MissionDetailPage({
     // 아무것도 단정하지 않는다(MissionLifecycle 의 execution === null 경로).
     getMissionExecution(mission.missionId).catch(() => null),
     fetchCoverageResult(mission.missionId),
+    fetchCoverageRejections(mission.missionId),
     whoAmI()
       .then((who) => who.permissions.includes("MISSIONS_ISSUE"))
       .catch(() => false),
@@ -239,7 +260,7 @@ export default async function MissionDetailPage({
           있었나" — 계획 커버리지(위 "계획 커버리지" 필드)와 절대 나란히 두지 않는다. */}
       <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
         <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">비행 결과</h3>
-        <CoverageReportSection result={coverageResult} />
+        <CoverageReportSection result={coverageResult} rejections={rejectionsResult} />
       </section>
 
       <SourceUploadPanel

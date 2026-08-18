@@ -73,7 +73,10 @@ async function fetchPhoto(
 }
 
 /**
- * 자산·시설물 — Phase 4 표면 결함(균열) 후보 (PRD §25 Phase 4, MODEL-P4-001).
+ * 결함 후보 — Phase 4 표면 결함(균열) 후보 (PRD §25 Phase 4, MODEL-P4-001).
+ *
+ * PRD §7.1 의 슬롯 이름은 "자산·시설물"이지만, 이 화면이 실제로 보여주는 것은 임무
+ * 사진에서 나온 결함 후보뿐이다(자산 엔티티 0개) — 이름을 내용에 맞췄다(2026-08-17).
  *
  * 결함 후보는 **임무 단위**로 쌓인다(어느 비행에서 찍은 사진인가). 그래서 이 화면은
  * 임무를 고르는 것으로 시작하고, 그 안에서 사진을 골라 폴리곤을 원본 위에 겹친다.
@@ -96,10 +99,13 @@ export default async function AssetsPage({
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-col gap-1">
-          <h2 className="text-[17px] font-bold tracking-tight break-keep">결함 후보 검토</h2>
+          <h2 className="text-[17px] font-bold tracking-tight break-keep">결함 후보</h2>
+          {/* 문구는 main 쪽(2026-08-17)을 따른다 — "이건 자산대장이 아닙니다"라는
+              사과를 빼고, 자산대장이 **아직 없다**는 사실만 남긴 개선이다(INV-040 의
+              정신). 활자 크기는 이 화면이 콘솔 눈금으로 옮겨온 값을 유지한다. */}
           <p className="text-[12.5px] break-keep text-ink-2">
-            현재 이 화면은 자산대장이 아니라, 임무 사진에서 생성된 결함 후보를 검토하는
-            화면입니다. 임무를 선택해 원본 사진과 후보의 근거를 확인하세요.
+            임무를 선택해 그 임무 사진에서 생성된 결함 후보와 근거를 확인하세요.
+            자산·시설물 단위로 이력을 쌓는 대장은 아직 없습니다.
           </p>
         </div>
         {missions.length === 0 ? (

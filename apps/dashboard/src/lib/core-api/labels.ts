@@ -287,6 +287,8 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   UNSUPPORTED_CONTENT_TYPE: "지원하지 않는 파일 형식입니다. 사진(JPEG·PNG·WebP)이나 영상(MP4·WebM)만 올릴 수 있습니다.",
   INVALID_ARTIFACT_ID: "파일 이름에 쓸 수 없는 문자가 있습니다.",
   ALREADY_TOMBSTONED: "보관 기간이 지나 폐기된 증거입니다.",
+  CONTENT_DIGEST_MISMATCH:
+    "확정 당시 기록된 파일과 저장소의 파일이 다릅니다. 이 증거는 열 수 없습니다.",
   EVIDENCE_STORAGE_UNAVAILABLE: "증거 저장소에 연결하지 못했습니다. 잠시 후 다시 시도하세요.",
   INVALID_SITE: "입력한 현장 정보가 올바르지 않습니다.",
   INVALID_REQUEST: "요청 내용이 올바르지 않습니다. 입력값을 확인하세요.",

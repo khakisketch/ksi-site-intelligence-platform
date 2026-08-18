@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -15,6 +16,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -57,6 +59,7 @@ namespace {
 
 int g_failures = 0;
 int g_checks = 0;
+int g_skipped_groups = 0;
 
 void Check(bool condition, const char* what) {
     ++g_checks;
@@ -64,6 +67,20 @@ void Check(bool condition, const char* what) {
         ++g_failures;
         std::fprintf(stderr, "FAIL: %s\n", what);
     }
+}
+
+// SQLite 를 컴파일해 넣지 않은 호스트에서 통째로 건너뛰는 계약 묶음을 집계한다.
+// 조용한 skip 은 "실패 0건"과 종료코드로 구분되지 않아, 초록불이 아무것도 주장하지
+// 않는 상태를 만든다(tests/conftest.py 의 KSI_REQUIRE_REAL_MODEL 앵커와 같은 문제).
+// 예전에는 다섯 자리가 Check(true, "... skipped on this host") 라는 위약 단언까지
+// 넣어 skip 을 통과 카운트로 둔갑시켰다.
+bool SqliteBackendReady(const char* what) {
+    if (ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
+        return true;
+    }
+    ++g_skipped_groups;
+    std::fprintf(stderr, "[SKIP] %s — SQLite 백엔드가 이 빌드에 없다\n", what);
+    return false;
 }
 
 constexpr std::int64_t kUtcMs = 1'725'000'000'000LL;
@@ -1727,7 +1744,10 @@ void TestCoreRestSyncWire() {
               ToString(executor.requests[2].body) == kWireArtifactBytes,
           "presigned evidence PUT carries only Core-issued checksum headers and never the Core bearer");
 
-    if (ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
+    // 부정형으로 바꿔 return 하면 안 된다 — 이 블록 뒤에는 SQLite 와 무관한 검사
+    // (malformed eventId 거부·non-canonical digest 거부·presigned URL fail-closed·
+    // Bearer 주입 거부)가 계속 이어진다. 감싸기만 하고 흐름은 그대로 둔다.
+    if (SqliteBackendReady("Core REST wire + store-forward 저널 연동")) {
         ksi::edge::SqliteStoreForward store(database.string());
         Check(store.Open() == ksi::edge::StoreForwardVerdict::kAccepted,
               "Core REST wire fixture opens SQLite journal");
@@ -2011,7 +2031,10 @@ void TestPipeline() {
 std::string BuildNativeEventPayloadForOracle(
     std::vector<ksi::edge::EvidenceRecord>* evidence_output = nullptr,
     std::string* risk_field_id_output = nullptr) {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
+    // 이 헬퍼와 아래 TestNativeEvidenceOracle 의 단언은 한 쌍이다 — 여기서 빈 문자열을
+    // 돌려주고 저쪽이 "비었다"를 단언하면, 제품 코드는 한 번도 안 불리고 테스트가 자기
+    // 픽스처를 확인하는 자기참조가 된다. 그래서 skip 집계는 여기 한 번만 올린다.
+    if (!SqliteBackendReady("native evidence oracle 계약")) {
         return {};
     }
     const std::filesystem::path directory = UniqueTestDirectory("native-evidence");
@@ -2098,7 +2121,10 @@ void TestNativeEvidenceBuilder() {
     std::string risk_field_id;
     const std::string payload = BuildNativeEventPayloadForOracle(&evidence, &risk_field_id);
     if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(payload.empty(), "native evidence oracle is unavailable without durable SQLite backend");
+        // 단언하지 않는다 — payload 는 위 헬퍼가 무조건 {} 를 돌려준 결과이고
+        // 제품 코드(NativeCandidateEvidenceBuilder)는 이 경로에서 불리지 않는다.
+        // 그것을 Check 로 세면 통과 카운트만 늘고 아무것도 주장하지 않는다.
+        // skip 집계는 헬퍼 쪽에서 이미 올렸다.
         return;
     }
     Check(!payload.empty() && payload.find("\"schemaVersion\":\"1.2\"") != std::string::npos &&
@@ -2609,9 +2635,7 @@ void TestCoreRestSourceMediaWire() {
 }
 
 void TestSourceMediaJournalGuards() {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(true, "source media journal guard tests require the SQLite journal backend (skipped on "
-                    "this host)");
+    if (!SqliteBackendReady("source media journal 가드 계약")) {
         return;
     }
     const std::filesystem::path database =
@@ -2755,8 +2779,7 @@ void FillFakeSource(ksi::edge::FakeMediaSourcePort* source, const std::vector<st
 }
 
 void TestMediaOffloadConveyor() {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(true, "media offload conveyor requires the SQLite journal backend (skipped on this host)");
+    if (!SqliteBackendReady("media offload 컨베이어 계약")) {
         return;
     }
     const std::filesystem::path spool_directory = UniqueTestDirectory("media-offload-spool");
@@ -2954,9 +2977,7 @@ void TestMediaOffloadConveyor() {
 }
 
 void TestMediaOffloadUploadDurableBeforePurge() {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(true, "durable-before-purge test requires the SQLite journal backend (skipped on this "
-                    "host)");
+    if (!SqliteBackendReady("purge 이전 durable 기록 순서 계약")) {
         return;
     }
     const std::filesystem::path spool_directory = UniqueTestDirectory("media-offload-order-spool");
@@ -3020,9 +3041,7 @@ void TestMediaOffloadUploadDurableBeforePurge() {
 }
 
 void TestMediaOffloadRightsReleasedDuringOffload() {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(true, "rights-during-offload test requires the SQLite journal backend (skipped on this "
-                    "host)");
+    if (!SqliteBackendReady("offload 중 권한 보유 구간 계약")) {
         return;
     }
     const std::filesystem::path spool_directory = UniqueTestDirectory("media-offload-rights-spool");
@@ -3072,9 +3091,7 @@ void TestMediaOffloadRightsReleasedDuringOffload() {
 }
 
 void TestMediaOffloadReconcilesRightsAtStartup() {
-    if (!ksi::edge::SqliteStoreForward::sqlite_backend_compiled()) {
-        Check(true, "startup rights reconciliation test requires the SQLite journal backend (skipped on "
-                    "this host)");
+    if (!SqliteBackendReady("기동 시 권한 재조정 계약")) {
         return;
     }
     const std::filesystem::path spool_directory = UniqueTestDirectory("media-offload-startup-spool");
@@ -3926,10 +3943,24 @@ int main(int argc, char** argv) {
     TestFlightExecutionArmingTokenDirect();
     TestFlightExecutionAbortRequestDirect();
     TestFlightExecutionPipeline();
+    if (g_skipped_groups > 0) {
+        std::fprintf(stderr,
+                     "[WARN] SQLite 백엔드 없이 %d개 계약 묶음을 건너뛰었다 — "
+                     "이 실행은 저장후전달 순서·WAL 복구를 검증하지 않았다.\n",
+                     g_skipped_groups);
+        const char* require = std::getenv("KSI_EDGE_TESTS_REQUIRE_SQLITE");
+        if (require != nullptr && std::string_view(require) == "1") {
+            std::fprintf(stderr,
+                         "[FAIL] KSI_EDGE_TESTS_REQUIRE_SQLITE=1 인데 건너뛴 묶음이 있다.\n");
+            return 1;
+        }
+    }
     if (g_failures == 0) {
-        std::printf("edge runtime tests: %d checks passed\n", g_checks);
+        std::printf("edge runtime tests: %d checks passed, %d groups skipped\n",
+                    g_checks, g_skipped_groups);
         return 0;
     }
-    std::fprintf(stderr, "edge runtime tests: %d/%d checks failed\n", g_failures, g_checks);
+    std::fprintf(stderr, "edge runtime tests: %d/%d checks failed, %d groups skipped\n",
+                 g_failures, g_checks, g_skipped_groups);
     return 1;
 }
