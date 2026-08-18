@@ -8,13 +8,15 @@ import { EmptyState } from "@/components/ui/EmptyState";
 //
 // 섹션별 한 줄 설명은 PRD §7.1 데스크톱 사이드 메뉴 taxonomy 의 항목명 자체가 뜻하는
 // 범위를 그대로 풀어 쓴 것이다 — 수치·일정·건수 등 API 가 안 주는 값은 넣지 않는다.
+//
+// 2026-08-17: 준비 중으로 남은 fleet·data 만 둔다. assets·world·reports·settings 는
+// 2026-08-08 에 실동작으로 전환돼 아래 notFound() 가드에 걸리므로 **도달 불가능한 죽은
+// 문자열**이었는데, 그중 settings 항목("계정·조직 설정을 관리하는 화면입니다")이 화면에
+// 보인 적도 없으면서 코드를 읽는 다음 구현자에게 그 슬롯의 정의로 읽혔다. 실제 /settings
+// 는 장비 지원단계 표 하나다 — 그래서 라벨도 "장비 지원단계"로 고쳤다(nav-items.ts).
 const SECTION_BLURB: Record<string, string> = {
-  assets: "현장의 자산·시설물을 등록하고 상태를 관리하는 화면입니다.",
-  world: "현장의 2D·3D 모델을 탐색하는 화면입니다.",
-  reports: "현장 조사·이벤트 이력을 보고서로 정리하는 화면입니다.",
   fleet: "기체·Edge 장비 상태를 관리하는 화면입니다.",
   data: "수집 데이터와 AI 모델을 관리하는 화면입니다.",
-  settings: "계정·조직 설정을 관리하는 화면입니다.",
 };
 
 const AVAILABLE_NEXT_ACTION: Record<string, { label: string; href: string }> = {
