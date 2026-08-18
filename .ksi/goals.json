@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T19:07:57+09:00",
+  "updated_at": "2026-08-18T19:49:48+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2475,24 +2475,24 @@
         "대표자가 셋 중 하나를 택한다: (1) 조사에 한국 좌표계 GCP 부착을 필수로 한다(정공법·정산 물량 가능) (2) 화이트리스트를 넓혀 UTM 산출물도 비교 허용하되 화면이 '절대 물량 아님'을 강하게 말한다 (3) 현행 유지 — 실제 사진으로는 이 기능을 쓰지 않는다",
         "택한 방향이 FIELD-1 조사 계획에 반영된다"
       ],
-      "status": "in_progress",
+      "status": "completed",
       "attempt": 3,
       "evidence": "attempt 3 — 커밋 9a5cb47. 2차 검토 지적(재실행 멱등성) 반영 완료: tests/contract/test_upload_source_bundle.py 재실행 2건 추가(같은 명령 재실행이 실패가 아니다 · 봉인된 번들에 다른 기준점은 명시적 실패). 전체 3495건·ruff·mypy·대시보드 빌드 통과. 남은 미확인은 실기 1건(한국 기준점으로 ODM 이 EPSG:5186 성과를 내는지 — FIELD-1).",
       "verdict": {
-        "verdict": "refuted",
-        "note": "2차 검토: 1차 지적 2건은 해소 확인(업로드 도구 테스트 4건이 실제 Core 를 두드림·어댑터 6건 실재). 그러나 **새 결함** 발견 — 기준점을 붙여 봉인한 뒤 같은 명령을 재실행하면 BUNDLE_SEALED 를 실패로 오판한다. 이 도구의 '재시도는 같은 명령' 계약을 GCP 경로에서만 깨고, FIELD_1 절차 문서가 제시하는 명령이 정확히 그 형태다. 내가 직접 재현 확인 후 9a5cb47 로 수정: 번들을 먼저 읽어 같은 파일이면 무동작 성공, 다른 파일이면 명시적 실패. 구분을 정확히 하려고 번들 뷰에 groundControlSha256 추가. 재실행 테스트 2건 신설.",
-        "at": "2026-08-18T17:32:50+09:00",
-        "reviewer": "독립 reviewer 서브에이전트(read-only, 2차)",
-        "evidence_ref": "a2ca8e7843c29d774"
+        "verdict": "pass",
+        "note": "대표자 선택(가: 조사에 한국 평면직각좌표계 기준점 부착 필수)을 실행 가능하게 배선하고 FIELD-1 준비 문서로 반영. 1·2차 지적(첨부 테스트 0건 · 재실행 BUNDLE_SEALED 오판)과 병합 중 발견(지역 지문 누락) 모두 수정 후 3차에서 새 결함 0건. 실기로 EPSG:5186 성과가 나오는지는 FIELD-1 소관 — field-1-ground-control 이 그 확인을 진다.",
+        "at": "2026-08-18T19:32:35+09:00",
+        "reviewer": "독립 reviewer 3차(a769858)",
+        "evidence_ref": "reviewer 3차 판정 pass — 근거 8건(upload_source_bundle.py:253-271 지역지문 기준점 반영 · :440-460 봉인상태 선판독 · source_media.py:494-501 두 진입점 위임구조 · :961-973/:663-673 등록·재생 동일 화이트리스트 · :978-982 봉인후 거부 · worker.py:306+odm.py:587-612 워커 실측 대조 · test_upload_source_bundle.py:775-807 실앱 재실행 통과 · FIELD_1_GROUND_CONTROL.md:74-105). 검토 트리 동일성은 메인이 확인: git diff --stat origin/main HEAD 공백, git status 공백, HEAD=f0a2cb7=origin/main. 로컬 전량 검증: ruff clean · mypy 339파일 clean · pytest 3512 passed/23 skipped/3 xfailed"
       },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 0,
       "kind": "decision",
       "verification_requested": null,
       "created_at": "2026-08-18T16:05:38+09:00",
-      "updated_at": "2026-08-18T17:32:50+09:00"
+      "updated_at": "2026-08-18T19:32:35+09:00"
     },
     {
       "id": "field-1-ground-control",
@@ -3657,14 +3657,14 @@
       "title": "계약 rollback 가드가 세 경로로 무력화된다 — fail-open 2곳 + missionId 세탁",
       "lens": "gaming",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-18 적대적 검증 실측. (1) consumer.py 는 활성 계약 파일 부재·TTL 만료 시 판정 없이 None 을 반환한다(fail-open 2곳) — 만료를 기다리거나 활성 파일을 지우면 이전 계약 재생이 통과한다. (2) edge_activation.py 는 활성 스냅샷 파일이 없으면 정책 순서 판정을 통째로 건너뛴다. (3) mission_id 가 다르면 비교 축이 없어 가드가 실행되지 않는데 실제 정책 조임은 새 missionId 로 나가므로, 이 가드의 사정거리는 'Core 밖에서 조립된 옛 계약 재생' 하나뿐이다. 근본 해법은 임무별 고수위 표식(최고 세대 기록) 또는 계약 스키마 발급 순서 필드(제품 결정 필요). 관련: mission-contract-no-issuance-ordering-field",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "커밋 예정 브랜치 fix/rollback-guard-durable-highwater. 세 갈래 각각에 회귀 테스트를 걸고 변형 검증까지 했다. (1)(2) fail-open: consumer.py 의 ActivationHighWater 가 순서 근거를 활성 파일 수명과 분리 — test_waiting_for_the_active_contract_to_expire_does_not_reopen_rollback · test_deleting_the_active_contract_does_not_reopen_rollback. (3) missionId 세탁: edge_activation.py 의 _dispatch_rollback_detail 이 봉투 notBefore(서버가 dispatch 시각으로 각인)로 기체 전체 고수위를 강제 — test_a_new_mission_id_cannot_launder_a_policy_rollback · test_deleting_the_active_snapshot_does_not_reopen_policy_rollback. 오탐 방지 3건(같은 계약 재활성화 · 활성 파일 소실 후 더 나중 계약 · 다른 임무의 더 나중 봉투)도 함께 고정. 변형 검증: 두 판정을 각각 무력화하면 해당 테스트 2건씩 실패. 전량 3520 passed · ruff · mypy 339파일 통과.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-18T06:41:35+09:00",
-      "updated_at": "2026-08-18T06:41:35+09:00"
+      "updated_at": "2026-08-18T19:49:48+09:00"
     },
     {
       "id": "perception-pipeline-production-status-undecided",
@@ -3763,6 +3763,20 @@
       "previous_status": "open",
       "created_at": "2026-08-18T19:07:57+09:00",
       "updated_at": "2026-08-18T19:07:57+09:00"
+    },
+    {
+      "id": "activation-highwater-file-is-deletable-local-state",
+      "title": "활성화 고수위가 로컬 파일이라 지우면 순서 근거가 사라진다 — 로컬 파일로 닫을 수 있는 한계",
+      "lens": "time-axis",
+      "severity": "low",
+      "status": "accepted",
+      "note": "2026-08-18. rollback-guard-fail-open-and-mission-id-laundering 을 닫으면서 남은 잔여. 고수위 표식(state_dir/activation-highwater.json)은 활성 계약·스냅샷과 독립이라 그 둘을 지우거나 만료시키는 것으로는 안 뚫리지만, 표식 파일 자체를 지우면 다시 빈 상태로 돌아간다. 상태 디렉터리는 0700·소유자 검사를 받지만 그 디렉터리에 쓸 수 있는 침입자를 로컬 파일로 막을 수는 없다 — 근본 해법은 TPM 같은 하드웨어 단조 카운터이고 매니폴드에 그 표면이 있는지 미확인. 망가진 표식은 fail-closed(활성화 거부)라 '조용히 잊기'는 막혀 있고, 실제로 필요한 것은 '지웠다'와 '처음부터 없었다'를 구분할 방법이다. 지금 닫힌 것 대비 남은 비용이 훨씬 크므로 수용한다.",
+      "accept_reason": "권한 없는 경로(TTL 만료 대기)는 닫혔고, 남은 경로는 상태 디렉터리 쓰기 권한을 이미 가진 공격자에 한정된다. 그 수준의 침입자는 검증키 디렉터리도 만질 수 있어 로컬 파일 하나로 방어할 수 있는 범위를 벗어난다 — 하드웨어 신뢰근원은 FIELD-0b 이후 매니폴드 실물에서 판단한다.",
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-18T19:49:48+09:00",
+      "updated_at": "2026-08-18T19:49:48+09:00"
     }
   ]
 }

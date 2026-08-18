@@ -41,7 +41,10 @@ from ksi_mission_contracts.dispatch import (
     build_mission_dispatch_envelope,
     verify_mission_dispatch_envelope,
 )
-from ksi_mission_contracts.edge_activation import activate_mission_dispatch_file
+from ksi_mission_contracts.edge_activation import (
+    DispatchActivationResult,
+    activate_mission_dispatch_file,
+)
 from ksi_mission_contracts.edge_dispatch_sync import (
     CoreDispatchHttpResponse,
     CoreDispatchTransportError,
@@ -62,10 +65,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 _NOW = datetime(2026, 8, 14, 12, tzinfo=UTC)
 
 
-def _unsigned_contract() -> dict[str, Any]:
+def _unsigned_contract(mission_id: str = "mission-edge-001") -> dict[str, Any]:
     return {
         "schemaVersion": "1.2",
-        "missionId": "mission-edge-001",
+        "missionId": mission_id,
         "siteId": "site-001",
         "missionType": "UNIFIED_SITE_SURVEY",
         "validity": {"notBefore": "2026-08-14T00:00:00Z", "notAfter": "2026-08-15T00:00:00Z"},
@@ -249,6 +252,7 @@ def _envelope_with_pack(
     dispatch_key: Ed25519PrivateKey,
     dispatch_id: str,
     envelope_not_before: datetime | None = None,
+    mission_id: str = "mission-edge-001",
 ) -> dict[str, Any]:
     """Same shape as :func:`_envelope`, but with caller-chosen keys/pack.
 
@@ -256,8 +260,12 @@ def _envelope_with_pack(
     two calls is what makes "activate envelope A, then try to activate an
     older-policy envelope B for the same mission" a same-device, same-trust
     scenario rather than a key-mismatch one.
+
+    ``mission_id`` exists for the opposite case: the same trusted device and the
+    same signing keys, but a *different* mission — which is exactly how a policy
+    rollback used to slip past the same-mission ordering check.
     """
-    signed_contract = sign_contract(_unsigned_contract(), mission_key, "mission-key")
+    signed_contract = sign_contract(_unsigned_contract(mission_id), mission_key, "mission-key")
     envelope = build_mission_dispatch_envelope(
         dispatch_id=dispatch_id,
         edge_device_id="edge-001",
@@ -2082,3 +2090,171 @@ def test_v1_1_envelope_that_omits_the_kmz_field_is_malformed() -> None:
     )
 
     assert result.verdict is DispatchVerdict.MALFORMED_DISPATCH
+
+
+def _tighter_pack(*, not_before: str) -> RiskPolicyPackV1:
+    """``_older_pack`` 과 **내용이 다른** pack — 조인 정책 쪽을 상징한다."""
+    raw = _older_pack(not_before=not_before).model_dump(by_alias=True, mode="json")
+    raw["equipmentPolicies"][0]["occlusionExpansionM"] = 1.5
+    raw["equipmentPolicies"][0]["severity"] = 0.9
+    return RiskPolicyPackV1.model_validate(raw)
+
+
+def _activate_envelope(
+    path: Path,
+    envelope: dict[str, Any],
+    *,
+    consumer: MissionContractConsumer,
+    registry: KeyRegistry,
+    now: datetime = _NOW,
+) -> DispatchActivationResult:
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    return activate_mission_dispatch_file(
+        path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=now,
+    )
+
+
+def test_a_new_mission_id_cannot_launder_a_policy_rollback(tmp_path: Path) -> None:
+    """[high-risk regression] **임무를 갈아 끼워** 옛 정책을 다시 싣지 못한다.
+
+    기존 순서 판정(``_policy_rollback_detail``)은 활성 스냅샷과 후보의 ``missionId``
+    가 같을 때만 돈다. 다르면 "비교 축이 없다"며 통과시켰는데, 실제 정책 조임은
+    **새 missionId** 로 나가므로 공격자는 임무만 바꿔 달면 가드를 통째로 우회할 수
+    있었다(2026-08-18 적대적 검증, risk
+    ``rollback-guard-fail-open-and-mission-id-laundering`` 의 세 번째 갈래).
+
+    순서 근거는 봉투 자신의 ``validity.notBefore`` 다 — 서버가 dispatch 를 내보내는
+    순간 각인하므로 임무가 달라도 비교할 수 있다.
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    tightened = _activate_envelope(
+        tmp_path / "tightened.json",
+        _envelope_with_pack(
+            _tighter_pack(not_before="2026-08-14T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-tightened",
+            envelope_not_before=_NOW - timedelta(minutes=1),
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+    assert tightened.activated
+
+    # 서명도 TTL도 진짜인 **이전** 봉투. 임무만 다른 것으로 갈아 끼웠다.
+    laundered = _activate_envelope(
+        tmp_path / "laundered.json",
+        _envelope_with_pack(
+            _older_pack(not_before="2026-08-13T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-laundered",
+            envelope_not_before=_NOW - timedelta(minutes=30),
+            mission_id="mission-edge-laundered",
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+
+    assert laundered.dispatch_verdict is DispatchVerdict.SUPERSEDED_DISPATCH
+    assert not laundered.activated
+    # 거부됐으니 조인 정책이 그대로 남아 있다.
+    assert tightened.active_snapshot_path is not None
+    still_active = json.loads(tightened.active_snapshot_path.read_text(encoding="utf-8"))
+    assert still_active["missionId"] == "mission-edge-001"
+
+
+def test_deleting_the_active_snapshot_does_not_reopen_policy_rollback(tmp_path: Path) -> None:
+    """[high-risk regression] 활성 스냅샷을 **지워도** 정책 되돌림은 거부된다.
+
+    같은 원인의 다른 갈래 — 순서 근거를 스냅샷 파일이 들고 있으면 그 파일을 지우는
+    것만으로 판정이 사라졌다.
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    first = _activate_envelope(
+        tmp_path / "current.json",
+        _envelope_with_pack(
+            _tighter_pack(not_before="2026-08-14T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-current",
+            envelope_not_before=_NOW - timedelta(minutes=1),
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+    assert first.activated and first.active_snapshot_path is not None
+    first.active_snapshot_path.unlink()
+
+    rolled_back = _activate_envelope(
+        tmp_path / "older.json",
+        _envelope_with_pack(
+            _older_pack(not_before="2026-08-13T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-rollback",
+            envelope_not_before=_NOW - timedelta(minutes=30),
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+
+    assert rolled_back.dispatch_verdict is DispatchVerdict.SUPERSEDED_DISPATCH
+    assert not rolled_back.activated
+    assert not first.active_snapshot_path.exists()
+
+
+def test_a_later_dispatch_for_a_different_mission_still_activates(tmp_path: Path) -> None:
+    """[false-positive guard] **나중에** 나간 봉투는 임무가 달라도 실린다.
+
+    기체 전체 고수위가 "다음 임무"까지 막으면 그건 방어가 아니라 고장이다. Core 는
+    dispatch 를 내보내는 시각으로 봉투를 각인하므로 다음 임무는 항상 더 뒤다.
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    first = _activate_envelope(
+        tmp_path / "first.json",
+        _envelope_with_pack(
+            _older_pack(not_before="2026-08-14T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-first",
+            envelope_not_before=_NOW - timedelta(minutes=30),
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+    assert first.activated
+
+    second = _activate_envelope(
+        tmp_path / "second.json",
+        _envelope_with_pack(
+            _tighter_pack(not_before="2026-08-14T00:00:00Z"),
+            mission_key=mission_key,
+            dispatch_key=dispatch_key,
+            dispatch_id="dispatch-second",
+            envelope_not_before=_NOW - timedelta(minutes=1),
+            mission_id="mission-edge-002",
+        ),
+        consumer=consumer,
+        registry=registry,
+    )
+
+    assert second.dispatch_verdict is DispatchVerdict.VALID
+    assert second.activated
