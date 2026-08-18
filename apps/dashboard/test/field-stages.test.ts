@@ -41,7 +41,7 @@ function input(overrides: Partial<FieldStageInput> = {}): FieldStageInput {
     artifactKind: "pair",
     execution: null,
     media: { kind: "not-registered" },
-    coverage: { kind: "not-reported" },
+    coverage: { kind: "not-reported", hasPendingRejection: false },
     ...overrides,
   };
 }
@@ -262,9 +262,22 @@ describe("③ 사진 회수", () => {
 
 describe("④ 결과", () => {
   it("보고가 없으면 없다고만 말한다", () => {
-    const result = deriveFieldStages(input({ coverage: { kind: "not-reported" } }))[3];
+    const result = deriveFieldStages(
+      input({ coverage: { kind: "not-reported", hasPendingRejection: false } }),
+    )[3];
     expect(result.auto.tone).toBe("neutral");
     expect(result.auto.detail).toContain("아직 도착하지 않았");
+  });
+
+  it("[핵심] 방금 거부된 제출이 있으면 재비행 판단 신호를 낸다", () => {
+    // 접수된 보고는 없지만(404) 거부 이력이 있다 — "보고 없음"으로 뭉개면
+    // 조종사가 방금 제출이 왜 안 됐는지 모른 채 그냥 기다리게 된다.
+    const result = deriveFieldStages(
+      input({ coverage: { kind: "not-reported", hasPendingRejection: true } }),
+    )[3];
+    expect(result.auto.tone).toBe("caution");
+    expect(result.auto.label).toBe("방금 제출이 접수되지 않았습니다");
+    expect(result.auto.detail).toContain("재비행");
   });
 
   it("조회 실패를 '보고 없음'으로 뭉개지 않는다", () => {

@@ -129,6 +129,7 @@ def _mission_store(
     site_id: str = _SITE_ID,
     assigned_device_id: str | None = None,
     journal_name: str = "missions.jsonl",
+    planned_coverage_ratio: float | None = 1.0,
 ) -> MissionStore:
     store = MissionStore(DurableJournal(tmp_path / journal_name))
     plan_request = {"route": {"altitudeM": 40.0}}
@@ -143,7 +144,7 @@ def _mission_store(
                 kmz_sha256="deadbeef",
                 route_pattern="lawnmower",
                 waypoint_count=75,
-                planned_coverage_ratio=1.0,
+                planned_coverage_ratio=planned_coverage_ratio,
                 issued_at=_NOW,
                 issued_by="do-1",
                 plan_request=plan_request,
@@ -1014,3 +1015,247 @@ def test_coverage_acceptance_survives_a_sealed_execution_journal(tmp_path: Path)
 
     assert response.status_code == 201, response.text
     assert execution.effective_status(_MISSION_ID) is MissionExecutionStatus.ISSUED
+
+
+# ── 대사(reconciliation) — 검사 1: 산술적으로 불가능한 비율 ──────────────────
+
+
+def test_a_single_cell_cannot_support_a_fractional_ratio(store: CoverageReportStore) -> None:
+    """[핵심] 재현한 그 결함 — 칸 1개 + 비율 0.96 은 산술적으로 불가능하다.
+
+    관찰 칸이 1개뿐이면 그 카테고리의 분모가 몇이든 1 이하다 — 분수로 만들 수
+    있는 값은 0.0과 1.0뿐이다. 카테고리별 칸 수를 몰라도(서버는 위험구역/자산/
+    일반 분류를 갖고 있지 않다) 이 논증은 성립한다.
+    """
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[{"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"}],
+        ),
+    )
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "INSUFFICIENT_CELLS_FOR_RATIO"
+
+
+def test_a_single_fully_observed_cell_is_not_flagged(store: CoverageReportStore) -> None:
+    """칸 1개여도 비율이 정확히 1.0 이면 이 검사에 안 걸린다(정상 케이스 보존).
+
+    이 사례는 waypoint_count=75·planned_coverage_ratio=1.0 인 기본 _mission_store
+    픽스처를 그대로 쓰므로 검사 2(계획 초과)도 걸리지 않는다 — 순수하게 검사 1만
+    분리해서 확인한다.
+    """
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[{"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"}],
+        ),
+    )
+    assert response.status_code == 201
+    assert response.json()["verdict"] == "RECORDED"
+
+
+def test_two_cells_with_a_fractional_ratio_is_not_flagged(store: CoverageReportStore) -> None:
+    """칸이 2개면 이 검사가 안 걸린다 — 0.5 같은 값이 산술적으로 가능해진다."""
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+# ── 대사(reconciliation) — 검사 2: 계획 커버 추정치 초과 ──────────────────────
+
+
+def test_reported_general_ratio_cannot_exceed_the_planned_estimate(tmp_path: Path) -> None:
+    """[핵심] 계획 커버 추정치(0.85)를 초과한 일반영역 관찰(0.96)은 불가능하다.
+
+    plannedCoverageRatio 는 이상적 촬영 조건을 가정한 상한이다(mission_plans.py
+    가 발급 시점에 이미 이 값을 accessibleGeneralCoverage 요구치와 대조한다).
+    계획된 경로만 날았다는 전제 하에, 실제 관찰이 그 상한을 넘을 수 없다.
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.85),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "EXCEEDS_PLANNED_COVERAGE"
+
+
+def test_reported_ratio_within_the_planned_estimate_is_recorded(tmp_path: Path) -> None:
+    """계획값 이하의 신고는 이 검사에 안 걸린다(정상 케이스 보존).
+
+    general 은 기존 INV-010 임계(≥0.95)도 만족해야 하므로 planned_coverage_ratio
+    를 0.95 이상으로 잡는다 — 0.85 처럼 낮은 계획값은 유효한 COMPLETED 보고 자체가
+    성립할 수 없다(어떤 general 값도 0.95 미만이면 기존 임계에 걸리고, 0.95 이상이면
+    항상 0.85 를 넘어 이 검사에 걸린다 — 두 제약이 동시에 만족 가능한 구간이 없다).
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.97),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+def test_missing_planned_ratio_skips_the_check_instead_of_rejecting(tmp_path: Path) -> None:
+    """계획 추정치가 없는 임무(예: perimeter 패턴)는 이 검사를 건너뛴다 — 거부하지
+    않는다(설계 결정: null이면 대사 불가로 표시할 뿐 막지 않는다)."""
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=None),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=1.0,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+def test_the_check_does_not_apply_to_hazard_or_asset_ratios(tmp_path: Path) -> None:
+    """검사 2는 accessibleGeneralRatio 하나에만 걸린다 — 위험구역·자산 비율은
+    plannedCoverageRatio 와 다른 계산 기반이라 대상이 아니다(설계 결정).
+
+    hazard·asset 은 INV-010 이 항상 정확히 1.0 을 요구하므로(그 아래는 이미
+    UNSUPPORTED_COMPLETION 으로 거부된다) planned_coverage_ratio=0.97 보다 큰
+    값(1.0)을 항상 갖는다 — 검사 2 가 실수로 이 둘에도 적용된다면 이 보고는
+    거부돼야 하는데, 실제로는 general(0.96)만 대조되므로 통과해야 한다.
+    """
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=0.97),
+    )
+    client = _client(store)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            hazard=1.0,
+            asset=1.0,
+            general=0.96,
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ],
+        ),
+    )
+    assert response.status_code == 201
+
+
+# ── 조회 응답 — 귀속·대사 ──────────────────────────────────────────────────
+
+
+def test_view_always_carries_the_attribution_note(store: CoverageReportStore) -> None:
+    """[핵심] 귀속 캡션은 대사 가능 여부와 무관하게 항상 채워진다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["ratioAttributionNote"]
+    assert "기체" in body["ratioAttributionNote"]
+
+
+def test_view_carries_the_planned_ratio_when_available(store: CoverageReportStore) -> None:
+    """기본 픽스처는 planned_coverage_ratio=1.0 이므로 그 값이 그대로 나온다."""
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["plannedGeneralCoverageRatio"] == pytest.approx(1.0)
+    assert body["plannedGeneralCoverageUnavailableReason"] is None
+
+
+def test_view_explains_when_the_planned_ratio_is_unavailable(tmp_path: Path) -> None:
+    """계획 추정치가 없는 임무는 null + 이름 붙인 사유를 낸다("—" 가 아니다)."""
+    store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"),
+        mission_store=_mission_store(tmp_path, planned_coverage_ratio=None),
+    )
+    client = _client(store)
+    client.post(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        json=_report_payload(
+            cells=[
+                {"cellId": "c-1", "state": "OBSERVED_HIGH_CONFIDENCE"},
+                {"cellId": "c-2", "state": "RECONSTRUCTION_READY"},
+            ]
+        ),
+    )
+    response = client.get(
+        f"/v1/missions/{_MISSION_ID}/coverage-report",
+        headers={"Authorization": f"Bearer {_VIEWER_TOKEN}"},
+    )
+    body = response.json()
+    assert body["plannedGeneralCoverageRatio"] is None
+    assert body["plannedGeneralCoverageUnavailableReason"]

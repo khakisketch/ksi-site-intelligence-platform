@@ -184,6 +184,7 @@ _EVIDENCE_STATUS: dict[EvidenceVerdict, int] = {
     EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
     EvidenceVerdict.INVALID_CONTENT_DIGEST: 422,
     EvidenceVerdict.DUPLICATE_ARTIFACT: 409,
+    EvidenceVerdict.CONTENT_DIGEST_MISMATCH: 409,
     EvidenceVerdict.ALREADY_TOMBSTONED: 410,
     EvidenceVerdict.REGISTERED: 201,
 }
@@ -648,6 +649,87 @@ def _verify_critical_evidence(
             snapshot=snapshot,
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class PinnedEvidenceContent:
+    """CRITICAL 확정이 못박은 증거 바이트의 신원 — 이후 열람이 대조하는 기준.
+
+    확정 시점 ``evidenceSnapshot.riskFieldVerification`` 에 굳은 값을 그대로
+    되읽은 것이다(:func:`_verify_critical_evidence` 가 쓴 그 자리). 그 값이 기록만
+    되고 아무도 읽지 않으면, 같은 object_key 의 바이트가 확정 뒤 교체돼도 열람
+    경로는 그것을 확정된 증거로 계속 내준다
+    (risk evidence-artifact-content-not-bound-to-registration).
+    """
+
+    artifact_id: str
+    object_key: str
+    content_sha256: str
+    content_length_bytes: int
+    pinned_at: str
+
+
+def _pinned_evidence_content(
+    record: EventRecord, artifact_id: str
+) -> PinnedEvidenceContent | None:
+    """확정 전이 레코드에서 이 artifact 에 못박힌 바이트 신원을 되읽는다.
+
+    최신 레코드부터 훑는다 — 확정은 종단이라 사실상 한 건이지만, 거꾸로 읽는
+    것이 "마지막으로 확정된 사실"이라는 의미와 맞는다. 형식이 어긋난 스냅샷
+    (이 필드가 없던 시절의 원장·오염)은 **없는 것으로 본다**: 여기서 예외를
+    던지면 증거 열람 표면 전체가 500 이 되고, 그 실패는 "바이트가 바뀌었다"와
+    구분되지 않는다. 대신 재검증에서 빠졌다는 사실을 로그로 남긴다.
+    """
+    for entry in reversed(record.transitions):
+        if entry.get("kind") != "event-transitioned":
+            continue
+        snapshot = entry.get("evidenceSnapshot")
+        if not isinstance(snapshot, dict):
+            continue
+        verification = snapshot.get("riskFieldVerification")
+        if not isinstance(verification, dict) or verification.get("artifactId") != artifact_id:
+            continue
+        object_key = verification.get("objectKey")
+        digest = verification.get("contentSha256")
+        length = verification.get("contentLengthBytes")
+        pinned_at = verification.get("verifiedAt")
+        if not (
+            isinstance(object_key, str)
+            and isinstance(digest, str)
+            and isinstance(length, int)
+            and isinstance(pinned_at, str)
+        ):
+            logger.warning(
+                "확정 스냅샷의 형식이 어긋나 재검증에서 제외한다 — artifactId=%s", artifact_id
+            )
+            return None
+        return PinnedEvidenceContent(
+            artifact_id=artifact_id,
+            object_key=object_key,
+            content_sha256=digest,
+            content_length_bytes=length,
+            pinned_at=pinned_at,
+        )
+    return None
+
+
+def _verify_pinned_evidence_content(
+    storage: EvidenceStorage, pinned: PinnedEvidenceContent, *, object_key: str
+) -> str | None:
+    """어긋난 사유를 문자열로, 일치하면 None.
+
+    object_key 자체가 바뀐 경우도 잡는다 — 바이트를 읽기 전에 걸러 불필요한
+    다운로드를 피한다.
+    """
+    if object_key != pinned.object_key:
+        return f"objectKey 가 다르다: 확정={pinned.object_key} 현재={object_key}"
+    raw = storage.get_bytes(object_key)
+    if len(raw) != pinned.content_length_bytes:
+        return f"길이가 다르다: 확정={pinned.content_length_bytes} 현재={len(raw)}"
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != pinned.content_sha256:
+        return f"digest 가 다르다: 확정={pinned.content_sha256} 현재={digest}"
+    return None
 
 
 class EventStore:
@@ -1432,6 +1514,16 @@ class EventStore:
                 return None
             return next((a for a in record.evidence if a.artifact_id == artifact_id), None)
 
+    def pinned_evidence_content(
+        self, event_key: str, artifact_id: str
+    ) -> PinnedEvidenceContent | None:
+        """확정이 못박은 바이트 신원 — 없으면 None(재검증 대상 아님)."""
+        with self._lock:
+            record = self._events.get(event_key)
+            if record is None:
+                return None
+            return _pinned_evidence_content(record, artifact_id)
+
     # ── 조회 ────────────────────────────────────────────────────────────
 
     def get(self, event_key: str) -> EventRecord | None:
@@ -1799,7 +1891,35 @@ def _mount_evidence_routes(router: APIRouter, store: EventStore, storage: Eviden
             # 사고 조사에서 이 둘을 구분하지 못하면 원장의 값어치가 없다.
             raise HTTPException(status_code=410, detail=EvidenceVerdict.ALREADY_TOMBSTONED.value)
         now = datetime.now(UTC)
+        # 확정이 못박은 digest 를 여기서 되읽어 대조한다 — 그 값이 기록만 되고
+        # 아무도 읽지 않으면, 같은 object_key 의 바이트가 확정 뒤 교체돼도 열람은
+        # 그것을 확정된 증거로 계속 내준다. 대상은 확정이 실제로 해싱한 artifact
+        # 하나뿐이라(RiskField JSON, 확정 시점에 1MiB 이하로 검증됨) 영상·점군을
+        # 매 열람마다 읽는 일은 생기지 않는다.
+        #
+        # 남는 창 셋 — 이 재검증이 닫지 않는다:
+        #  (1) presigned GET 발급~클라이언트 실제 GET 사이(TTL). Core 가 바이트를
+        #      중계하지 않는 한 서버가 없앨 수 없다(ADR-KSI-010 §1).
+        #  (2) clips·trajectory·viewpointHistory 는 확정 시점에 해싱되지 않아
+        #      못박힌 digest 자체가 없다 → 재검증 대상이 아니다.
+        #  (3) 아무도 열지 않으면 교체는 탐지되지 않는다(정기 스윕은 별도 과제).
+        pinned = store.pinned_evidence_content(event_key, artifact_id)
         try:
+            if pinned is not None:
+                mismatch = _verify_pinned_evidence_content(
+                    storage, pinned, object_key=artifact.object_key
+                )
+                if mismatch is not None:
+                    logger.error(
+                        "확정된 증거 바이트가 교체됐다 — eventKey=%s artifactId=%s: %s",
+                        event_key,
+                        artifact_id,
+                        mismatch,
+                    )
+                    raise HTTPException(
+                        status_code=_EVIDENCE_STATUS[EvidenceVerdict.CONTENT_DIGEST_MISMATCH],
+                        detail=EvidenceVerdict.CONTENT_DIGEST_MISMATCH.value,
+                    )
             url = storage.presigned_get(artifact.object_key, ttl=DEFAULT_VIEW_TTL)
         except EvidenceStorageError as exc:
             raise HTTPException(status_code=503, detail="EVIDENCE_STORAGE_UNAVAILABLE") from exc
@@ -1831,6 +1951,7 @@ __all__ = [
     "EventSummaryResponse",
     "EventTransitionRequest",
     "EventVerdict",
+    "PinnedEvidenceContent",
     "TransitionResponse",
     "TriageTransitionResult",
     "build_events_router",

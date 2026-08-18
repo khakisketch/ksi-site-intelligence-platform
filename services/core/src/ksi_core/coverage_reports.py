@@ -77,7 +77,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.mission_records import MissionStore
+    from ksi_core.mission_records import MissionRecord, MissionStore
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,11 @@ class CoverageReportVerdict(StrEnum):
     UNEXPLAINED_GAP = "UNEXPLAINED_GAP"
     NO_COVERAGE_EVIDENCE = "NO_COVERAGE_EVIDENCE"
     SELF_CONTRADICTORY_SUMMARY = "SELF_CONTRADICTORY_SUMMARY"
+    # 칸 총수<2 인데 비율이 0과 1 사이 — has_impossible_fractional_ratio() 참조.
+    INSUFFICIENT_CELLS_FOR_RATIO = "INSUFFICIENT_CELLS_FOR_RATIO"
+    # accessibleGeneralRatio 가 발급 경로의 plannedCoverageRatio(이상적 조건 상한)
+    # 를 넘는다 — 계획대로만 날았다는 전제 하에 불가능하다.
+    EXCEEDS_PLANNED_COVERAGE = "EXCEEDS_PLANNED_COVERAGE"
     INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -113,6 +118,8 @@ _STATUS: dict[CoverageReportVerdict, int] = {
     CoverageReportVerdict.UNEXPLAINED_GAP: 422,
     CoverageReportVerdict.NO_COVERAGE_EVIDENCE: 422,
     CoverageReportVerdict.SELF_CONTRADICTORY_SUMMARY: 422,
+    CoverageReportVerdict.INSUFFICIENT_CELLS_FOR_RATIO: 422,
+    CoverageReportVerdict.EXCEEDS_PLANNED_COVERAGE: 422,
     CoverageReportVerdict.INVALID_TIMESTAMP: 422,
     CoverageReportVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -161,6 +168,15 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
             f"요약이 전 구역 100% 를 말하는데 관찰되지 않은 Cell 이 {len(unobserved)}개 "
             f"있다 — 어떤 가중치에서도 모순이다. 예: {unobserved[:3]}",
         )
+    if report.has_impossible_fractional_ratio():
+        summary = report.summary
+        return (
+            CoverageReportVerdict.INSUFFICIENT_CELLS_FOR_RATIO,
+            f"칸이 {len(report.cells)}개인데 위험구역 {summary.mandatory_hazard_ratio:.4f}·"
+            f"자산 {summary.mandatory_asset_ratio:.4f}·일반영역 "
+            f"{summary.accessible_general_ratio:.4f} 중 하나가 0과 1 사이다 — 칸이 2개 "
+            "미만이면 0.0/1.0 외의 비율은 산술적으로 만들 수 없다",
+        )
     if not report.meets_completion_thresholds():
         summary = report.summary
         return (
@@ -179,6 +195,38 @@ def judge_report(report: CoverageReport) -> tuple[CoverageReportVerdict, str | N
             f"예: {gaps[:3]}",
         )
     return CoverageReportVerdict.RECORDED, None
+
+
+# planned_coverage_ratio 는 lawnmower 경로 생성기가 스캔선 기하(각도·간격·중복)로
+# 계산한 값이다 — 단순 직렬화 잔차가 아니라 **두 독립된 기하 계산** 사이의 오차라
+# packages/event-contracts 의 _RATIO_EPS(1e-9, 직렬화 잔차용)로는 부족하다. 실측
+# 확인(2026-08-18, test_aol2_reobservation.py 재현): 같은 논리적 "1.0" 이 계획
+# 경로에서 0.9999999260359301 로 나와 신고값 1.0 과 7.4e-8 차이가 났다 — 이 패키지의
+# 기하 계산 오차 허용 관례(geometry.py _EPSILON_M·coverage.py _FOLD_EPSILON_M·
+# terrain.py _HORIZONTAL_EPSILON_M, 전부 1e-6)와 같은 값을 쓴다.
+_PLANNED_COVERAGE_EPS = 1e-6
+
+
+def _exceeds_planned_coverage(report: CoverageReport, mission: MissionRecord) -> bool:
+    """계획 커버 추정치를 초과한 일반영역 관찰을 주장하는가.
+
+    ``mission.planned_coverage_ratio`` 는 발급 시점에 lawnmower 경로 생성기가
+    이상적 촬영 조건을 가정해 계산한 **상한**이다(``mission_plans.py`` 가 발급
+    게이트에서 이미 이 값을 ``accessibleGeneralCoverage`` 요구치와 대조해 뒀다).
+    계획된 경로만 날았다는 전제 하에, 실제 관찰이 그 상한을 넘는
+    ``accessibleGeneralRatio`` 를 주장하면 불가능하다.
+
+    hazard/asset 비율에는 적용하지 않는다 — 그 둘은 서버가 Cell 분류를 갖고
+    있지 않아 이 추정치와 다른 계산 기반이다(``CoverageSummary`` docstring).
+
+    ``planned_coverage_ratio`` 가 ``None`` 이면(perimeter 패턴·계약 전용 발급)
+    ``False`` 를 돌려준다 — 유도 불가는 거부 사유가 아니다.
+    """
+    if mission.planned_coverage_ratio is None:
+        return False
+    return report.summary.accessible_general_ratio > (
+        mission.planned_coverage_ratio + _PLANNED_COVERAGE_EPS
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,6 +394,23 @@ class CoverageReportStore:
                     f"이 임무에 배정된 장비는 {mission.assigned_device_id!r} 다 — "
                     f"보고 장비 {device_id!r} 는 배정되지 않았다",
                 )
+            if report.summary.completion_state is CompletionState.COMPLETED and (
+                _exceeds_planned_coverage(report, mission)
+            ):
+                # 이건 임무 원장(다른 원장)의 값과의 대조라 SITE_MISMATCH·
+                # DEVICE_NOT_ASSIGNED 와 같은 "수신 시점 게이트" 지위다 — 재생 시에는
+                # 재검사하지 않는다(위 _replay 는 그대로 둔다, 이미 그 두 게이트를
+                # 재생하지 않는 것과 동일 원칙).
+                return self._reject(
+                    report,
+                    now,
+                    reported_by,
+                    CoverageReportVerdict.EXCEEDS_PLANNED_COVERAGE,
+                    "COMPLETED 주장의 accessibleGeneralRatio"
+                    f"({report.summary.accessible_general_ratio:.4f})가 발급 경로의 "
+                    f"plannedCoverageRatio({mission.planned_coverage_ratio:.4f})를 "
+                    "초과한다 — 계획된 경로로는 도달할 수 없다",
+                )
             verdict, detail = judge_report(report)
             if verdict is not CoverageReportVerdict.RECORDED:
                 return self._reject(report, now, reported_by, verdict, detail)
@@ -424,6 +489,12 @@ class CoverageReportStore:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
 
+    def mission_planned_general_ratio(self, mission_id: str) -> float | None:
+        """이 임무의 계획 일반영역 커버 추정치 — 없으면 ``None``(대사 불가)."""
+        with self._lock:
+            mission = self._mission_store.get(mission_id)
+            return mission.planned_coverage_ratio if mission is not None else None
+
     def rejections(self, mission_id: str) -> list[RejectedCoverageReport]:
         """그 임무에 대해 서버가 **거부한** 보고들(수신 순서 보존).
 
@@ -445,6 +516,12 @@ class CoverageReportResponse(CamelModel):
     report: dict[str, Any] | None = None
 
 
+_RATIO_ATTRIBUTION_NOTE = (
+    "이 세 비율은 기체가 계산해 신고한 값입니다. 서버는 구역 분류(위험구역/자산/"
+    "일반)를 갖고 있지 않아 재계산하지 못합니다(INV-010)."
+)
+
+
 class CoverageReportView(CamelModel):
     """조회 응답 — 최신 보고 + 이 임무에 대해 몇 건이 접수됐는지 + 누가 보고했는지."""
 
@@ -457,6 +534,14 @@ class CoverageReportView(CamelModel):
     # 자동 재발급을 트리거하지 않는다: 운영자/오퍼레이터가 이 신호를 보고 원본 site
     # AOI 로 SPATIAL_REFRESH 임무를 POST /v1/missions/plans 에 재발급한다.
     recovery_recommended: bool
+    # 귀속 — 이 비율이 기체 신고값이라는 사실은 항상 참이라 항상 채워진다.
+    ratio_attribution_note: str
+    # 대사 — 계획 커버 추정치. 없으면(perimeter 패턴·계약 전용 발급) None 이고
+    # planned_general_coverage_unavailable_reason 이 대신 채워진다. UI 는 이 원 숫자를
+    # "비행 결과" 캡션에 반복하지 않는다(page.tsx:239 의 기존 원칙 — 계획과 실측을
+    # 나란히 두지 않는다) — 프로그램적 소비(추후 감사·내보내기)를 위해 API 에는 남긴다.
+    planned_general_coverage_ratio: float | None
+    planned_general_coverage_unavailable_reason: str | None
 
 
 class CoverageRejectionView(CamelModel):
@@ -583,12 +668,21 @@ def build_coverage_reports_router(
         recorded = store.latest_recorded(mission_id)
         if recorded is None:
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+        planned_ratio = store.mission_planned_general_ratio(mission_id)
         return CoverageReportView(
             mission_id=mission_id,
             report_count=len(store.history(mission_id)),
             latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
             reported_by=recorded.reported_by,
             recovery_recommended=recorded.report.needs_coverage_recovery(),
+            ratio_attribution_note=_RATIO_ATTRIBUTION_NOTE,
+            planned_general_coverage_ratio=planned_ratio,
+            planned_general_coverage_unavailable_reason=(
+                None
+                if planned_ratio is not None
+                else "이 임무의 발급 경로에 계획 커버 추정치가 없습니다"
+                " (perimeter 경로이거나 계약 단독 발급일 수 있습니다)"
+            ),
         )
 
     @router.get(

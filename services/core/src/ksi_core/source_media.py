@@ -359,6 +359,38 @@ class SourceMediaBundle:
         return self.verified_at is not None
 
 
+def compute_source_bundle_digest_from_claims(
+    mission_id: str, claims: Iterable[SourceMediaClaim]
+) -> str:
+    """등록 **전** 단계에서도 부를 수 있는 digest — 매니페스트 구성의 SSOT.
+
+    :func:`compute_source_bundle_digest` 가 이 함수에 위임한다. 진입점이 둘인 이유는
+    업로더(``tools/upload_source_bundle.py``)가 "내가 들고 있는 이 묶음이 이미 봉인된
+    그 묶음인가"를 판정해야 하는데, 그 시점에는 아직 :class:`SourceMediaRecord`
+    (객체 키·등록 시각)가 없기 때문이다. 업로더가 매니페스트를 자기 손으로 다시 짜면
+    한쪽만 바뀌는 순간 그 대조가 조용히 무의미해진다 — 그래서 **같은 함수**를 부르게
+    한다(``compare_measurements`` 를 live·재생 공용 판정으로 둔 것과 같은 이유).
+    """
+    manifest: dict[str, Any] = {
+        "missionId": mission_id,
+        "media": sorted(
+            (
+                {
+                    "mediaId": claim.media_id,
+                    "sha256": claim.sha256,
+                    "bytes": claim.size_bytes,
+                    "width": claim.width,
+                    "height": claim.height,
+                    "contentType": claim.content_type,
+                }
+                for claim in claims
+            ),
+            key=lambda entry: entry["mediaId"],
+        ),
+    }
+    return sha256_digest(canonical_payload_bytes(manifest))
+
+
 def compute_source_bundle_digest(mission_id: str, media: Iterable[SourceMediaRecord]) -> str:
     """정규 정렬된 매니페스트의 SHA-256 — 업로드 순서와 무관한 재현성 앵커.
 
@@ -371,25 +403,14 @@ def compute_source_bundle_digest(mission_id: str, media: Iterable[SourceMediaRec
     객체 키는 매니페스트에 싣지 않는다 — digest 는 **내용**의 지문이지 저장소
     레이아웃의 지문이 아니다(버킷 구조가 나중에 바뀌어도 과거 digest 가
     흔들리지 않게).
+
+    매니페스트 구성 자체는 :func:`compute_source_bundle_digest_from_claims` 에
+    위임한다 — 등록 전 단계(업로더)와 등록 후 단계(이 함수)가 **반드시 같은
+    지문**을 내야 하기 때문이다.
     """
-    manifest: dict[str, Any] = {
-        "missionId": mission_id,
-        "media": sorted(
-            (
-                {
-                    "mediaId": record.media_id,
-                    "sha256": record.sha256,
-                    "bytes": record.size_bytes,
-                    "width": record.width,
-                    "height": record.height,
-                    "contentType": record.content_type,
-                }
-                for record in media
-            ),
-            key=lambda entry: entry["mediaId"],
-        ),
-    }
-    return sha256_digest(canonical_payload_bytes(manifest))
+    return compute_source_bundle_digest_from_claims(
+        mission_id, (record.claim for record in media)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1308,5 +1329,6 @@ __all__ = [
     "build_source_media_router",
     "compare_measurements",
     "compute_source_bundle_digest",
+    "compute_source_bundle_digest_from_claims",
     "mount_source_media",
 ]
