@@ -170,6 +170,13 @@ class ComparisonInput:
     # 워커까지 실어 나르지 않는다.
     dsm_baseline_vertical_reference: VerticalReference | None = None
     dsm_current_vertical_reference: VerticalReference | None = None
+    # 각 DSM 이 등록 시 신고한 **독립 검사점 잔차**(m). 체적 오차한계
+    # (``uncertaintyM3``) 계산이 받을 자격이 있는 유일한 값이다 —
+    # ``accuracy.rmse``(GCP 피팅 잔차)는 절대정확도가 아니므로 Core 가 이 자리에
+    # 싣지 않는다(INV-024). ``None`` 이면 그 epoch 은 검증되지 않았고, 한쪽만
+    # 알아도 차분의 오차는 말할 수 없어 오차한계는 ``None`` 이 된다.
+    dsm_baseline_checkpoint_rmse_m: float | None = None
+    dsm_current_checkpoint_rmse_m: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -748,6 +755,8 @@ class HttpCoreClient:
             zone_crs=data.get("zoneCrs"),
             dsm_baseline_vertical_reference=_vertical_reference("dsmBaselineVerticalReference"),
             dsm_current_vertical_reference=_vertical_reference("dsmCurrentVerticalReference"),
+            dsm_baseline_checkpoint_rmse_m=data.get("dsmBaselineCheckpointRmseM"),
+            dsm_current_checkpoint_rmse_m=data.get("dsmCurrentCheckpointRmseM"),
         )
 
     def transition_comparison(

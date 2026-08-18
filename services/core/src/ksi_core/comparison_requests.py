@@ -754,6 +754,28 @@ class ComparisonRequestStore:
         artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
         return artifact.vertical_reference if artifact is not None else None
 
+    def checkpoint_rmse_of(self, ref: ArtifactRef | None) -> float | None:
+        """그 산출물이 등록 시 신고한 **독립 검사점 잔차**(m) — 없으면 ``None``.
+
+        ``vertical_reference_of`` 와 같은 관례(요청 레코드에 복사하지 않고 입력
+        발급 시점에 조회, 기본값을 채우지 않음)다.
+
+        **``accuracy.rmse`` 는 절대 반환하지 않는다** — 그것은 GCP 피팅 잔차이지
+        절대정확도가 아니다(INV-024). 여기서 그 값을 흘리면 "검증 없는 수치가
+        진짜 오차한계처럼 실리는" 위반을 이 배선이 그대로 재도입한다. 워커의
+        오차한계 계산(``dsm_diff._uncertainty_m3``)이 받을 자격이 있는 값은
+        ``checkpoint_rmse_m`` 하나뿐이다.
+        """
+        if ref is None:
+            return None
+        job = self._processing_job_store.get(ref.job_id)
+        if job is None:
+            return None
+        artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
+        if artifact is None or artifact.accuracy is None:
+            return None
+        return artifact.accuracy.checkpoint_rmse_m
+
     def list_for_mission(self, mission_id: str) -> list[ComparisonRequestRecord]:
         with self._lock:
             records = [r for r in self._requests.values() if r.mission_id == mission_id]
@@ -1020,6 +1042,11 @@ class ComparisonRequestInputView(CamelModel):
     #: 응답 경로가 생겼을 때 "안 채우면 조용히 null" 이 되지 않게 한다.
     dsm_baseline_vertical_reference: VerticalReference | None
     dsm_current_vertical_reference: VerticalReference | None
+    #: 각 DSM 이 등록 시 신고한 독립 검사점 잔차(m) — ``checkpoint_rmse_of`` 참조.
+    #: ``None`` 이면 그 epoch 은 검증되지 않았고, 워커의 오차한계도 ``None`` 이
+    #: 된다(INV-024 — 한쪽만 알면 차분의 오차를 말할 수 없다).
+    dsm_baseline_checkpoint_rmse_m: float | None
+    dsm_current_checkpoint_rmse_m: float | None
 
 
 class ComparisonRequestInputResponse(CamelModel):
@@ -1264,6 +1291,8 @@ def build_comparison_requests_router(
                 zone_crs=record.zone_crs,
                 dsm_baseline_vertical_reference=store.vertical_reference_of(record.dsm_baseline),
                 dsm_current_vertical_reference=store.vertical_reference_of(record.dsm_current),
+                dsm_baseline_checkpoint_rmse_m=store.checkpoint_rmse_of(record.dsm_baseline),
+                dsm_current_checkpoint_rmse_m=store.checkpoint_rmse_of(record.dsm_current),
             ),
         )
 

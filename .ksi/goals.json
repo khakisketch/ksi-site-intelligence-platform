@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T11:44:54+09:00",
+  "updated_at": "2026-08-18T12:12:01+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3651,14 +3651,14 @@
       "title": "계약 정합 게이트가 minimum·pattern 등 필드 제약을 대조하지 않아 드리프트가 영구 미탐이다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "test_api_contract_sync.py 가 '타입까지는 보지 않는다'고 의도를 명시하며 이름·required 만 대조한다. 실제로 그 사각지대에서 드리프트가 발생했다(2026-08-18): openapi 는 checkpointRmseM 에 minimum:0 을 적었는데 요청 모델에는 ge=0 이 없어 음수가 통과했다. 해당 건은 요청 모델을 계약 모델로 교체해 해소했으나, 게이트 자체가 제약을 안 보는 성질은 그대로다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "tests/contract/test_api_contract_sync.py 에 수치 제약 드리프트 게이트 2건 추가(새 드리프트 탐지 + 허용목록 stale 탐지). 전수 강제가 아니라 baseline 방식 — 현재 어긋남 24건을 전수 확인해 실제로 뚫리는 것이 0건임을 실측했고(문서에만 있는 제약은 계약 모델 validator·생성기가 강제, 핸들러가 422), 항목별 근거를 허용목록에 등재했다. 돌연변이 검증 양방향(목록에서 제거 시 새 드리프트로 탐지 / 가짜 항목 추가 시 stale 로 탐지).",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-18T07:05:31+09:00",
-      "updated_at": "2026-08-18T07:05:31+09:00"
+      "updated_at": "2026-08-18T12:12:01+09:00"
     },
     {
       "id": "core-500-leak-audit-coverage-gap",

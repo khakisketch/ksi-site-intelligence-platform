@@ -4967,7 +4967,8 @@ components:
         [requestId, missionId, status, policy, pointCloudBaseline, pointCloudBaselineUrl,
          pointCloudCurrent, pointCloudCurrentUrl, dsmBaseline, dsmBaselineUrl,
          dsmCurrent, dsmCurrentUrl, zones, zoneCrs,
-         dsmBaselineVerticalReference, dsmCurrentVerticalReference]
+         dsmBaselineVerticalReference, dsmCurrentVerticalReference,
+         dsmBaselineCheckpointRmseM, dsmCurrentCheckpointRmseM]
       properties:
         requestId: { type: string }
         missionId: { type: string }
@@ -5002,6 +5003,21 @@ components:
             워커는 레거시 상수(ellipsoidal_native)로 대체하고 경고를 남긴다 —
             기존 M1/M2 산출물의 비교를 무효화하지 않기 위해서다.
           oneOf: [{ $ref: '#/components/schemas/VerticalReference' }, { type: 'null' }]
+        dsmBaselineCheckpointRmseM:
+          type: [number, 'null']
+          minimum: 0
+        dsmCurrentCheckpointRmseM:
+          description: >-
+            각 DSM 이 등록 시 신고한 독립 검사점 잔차(meter,
+            processing-artifact.v1.3.json 의 checkpointRmseM). 워커의 체적
+            오차한계(uncertaintyM3) 계산이 받을 자격이 있는 유일한 값이다 —
+            accuracy.rmse(GCP 피팅 잔차)는 절대정확도가 아니므로 이 자리에
+            싣지 않는다(INV-024). null 은 '그 epoch 은 검증되지 않음'이고,
+            둘 중 하나라도 null 이면 오차한계는 null 이 된다(한쪽만 알면
+            차분의 오차를 말할 수 없다). 값의 진위는 서버가 확인하지 않는다
+            (귀속이지 관측이 아니다).
+          type: [number, 'null']
+          minimum: 0
 
     VerticalReference:
       description: >-
