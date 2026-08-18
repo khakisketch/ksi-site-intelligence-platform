@@ -29,14 +29,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.source_media import (
     GroundControlRecord,
+    GroundControlResult,
     GroundControlVerdict,
     SourceMediaClaim,
     SourceMediaRecord,
@@ -82,7 +85,9 @@ def store(tmp_path: Path) -> SourceMediaStore:
     )
 
 
-def _register(store: SourceMediaStore, *, crs: str = "EPSG:5186", sha: str = _GCP_SHA):
+def _register(
+    store: SourceMediaStore, *, crs: str = "EPSG:5186", sha: str = _GCP_SHA
+) -> GroundControlResult:
     return store.register_ground_control(
         _MISSION_ID,
         sha256=sha,
@@ -142,7 +147,8 @@ def test_non_korean_grid_is_refused_at_registration(store: SourceMediaStore, crs
     result = _register(store, crs=crs)
     assert result.verdict is GroundControlVerdict.UNSUPPORTED_CRS
     assert result.detail is not None
-    assert store.get(_MISSION_ID) is None or store.get(_MISSION_ID).ground_control is None
+    bundle = store.get(_MISSION_ID)
+    assert bundle is None or bundle.ground_control is None
 
 
 def test_unparseable_crs_is_refused(store: SourceMediaStore) -> None:
@@ -250,7 +256,7 @@ def test_digest_distinguishes_different_ground_control() -> None:
 # ── 재생 ───────────────────────────────────────────────────────────────────
 
 
-def _rewrite_journal(path: Path, mutate) -> None:
+def _rewrite_journal(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
     lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     mutated = [mutate(raw) for raw in lines]
     path.write_text(
@@ -288,7 +294,7 @@ def test_replay_refuses_forged_out_of_whitelist_crs(tmp_path: Path) -> None:
     _register(store)
     journal.close()
 
-    def _forge(raw: dict) -> dict:
+    def _forge(raw: dict[str, Any]) -> dict[str, Any]:
         if raw.get("kind") == "source-media-ground-control-registered":
             raw["crs"] = "EPSG:32617"
         return raw
