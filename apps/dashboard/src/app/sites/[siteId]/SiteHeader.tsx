@@ -3,7 +3,13 @@ import Link from "next/link";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
-import { SITE_TABS, type SiteEpoch, type SiteTabKey } from "@/lib/site-epochs";
+import {
+  SITE_TABS,
+  ambiguousEpochDays,
+  epochDayKey,
+  type SiteEpoch,
+  type SiteTabKey,
+} from "@/lib/site-epochs";
 import type { SiteView } from "@/lib/core-api/types";
 
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
@@ -19,6 +25,14 @@ const EPOCH_DOT: Record<string, string> = {
 const CHIP_DATE = new Intl.DateTimeFormat("ko-KR", {
   month: "numeric",
   day: "numeric",
+  timeZone: "Asia/Seoul",
+});
+
+// 같은 날에 두 번 이상 처리한 현장에서만 쓴다 — 판정은 site-epochs 가 한다.
+const CHIP_TIME = new Intl.DateTimeFormat("ko-KR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
   timeZone: "Asia/Seoul",
 });
 
@@ -59,6 +73,7 @@ export function SiteHeader({
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { tab, epoch: selectedEpochId ?? undefined };
+  const sameDayEpochs = ambiguousEpochDays(epochs);
   const surveyLabel = site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 조사";
 
   return (
@@ -115,6 +130,12 @@ export function SiteHeader({
           epochs.map((epoch) => {
             const active = epoch.jobId === selectedEpochId;
             const label = PROCESSING_JOB_STATUS_LABEL[epoch.status];
+            // 같은 날짜가 겹치는 칩만 시각을 붙인다 — 전부 붙이면 며칠 간격인지가
+            // 안 읽힌다(그 판정은 site-epochs.ambiguousEpochDays 가 소유한다).
+            const when = new Date(epoch.issuedAt);
+            const chipText = sameDayEpochs.has(epochDayKey(epoch.issuedAt))
+              ? `${CHIP_DATE.format(when)} ${CHIP_TIME.format(when)}`
+              : CHIP_DATE.format(when);
             return (
               <Link
                 key={epoch.jobId}
@@ -131,7 +152,7 @@ export function SiteHeader({
                   aria-hidden="true"
                   className={`size-1.5 rounded-full ${EPOCH_DOT[epoch.status] ?? "bg-line-strong"}`}
                 />
-                {CHIP_DATE.format(new Date(epoch.issuedAt))}
+                {chipText}
               </Link>
             );
           })

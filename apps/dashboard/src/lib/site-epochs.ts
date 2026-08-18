@@ -59,6 +59,40 @@ export function findEpoch(
   return epochs.find((epoch) => epoch.jobId === jobId) ?? null;
 }
 
+// 현장은 한국이고 서버는 어디서든 돈다 — 날짜 판정은 서울 기준으로 고정한다
+// (lib/datetime.ts 와 같은 규율). 이 키는 표시용이 아니라 **같은 날인지** 비교용이다.
+const SEOUL_DAY = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "Asia/Seoul",
+});
+
+/** 그 시점이 속한 서울 기준 날짜(YYYY-MM-DD). 파싱 불가면 원문을 키로 쓴다. */
+export function epochDayKey(iso: string): string {
+  const when = new Date(iso);
+  return Number.isNaN(when.getTime()) ? iso : SEOUL_DAY.format(when);
+}
+
+/**
+ * **같은 날짜에 둘 이상 있는** 시점들의 날짜 — 그 날짜의 칩은 시각까지 보여야 한다.
+ *
+ * 실데이터로 처음 돌려본 날 바로 드러난 문제다(2026-08-18): 같은 날 두 번 처리한
+ * 현장의 칩이 둘 다 "8. 18."로 찍혀 눈으로 구분되지 않았다. 상태 점 색이 다르긴
+ * 하지만 그건 처리 상태이지 시점이 아니라, 둘 다 완료된 뒤에는 완전히 같아진다.
+ *
+ * 날짜가 겹치지 않는 흔한 경우에는 시각을 붙이지 않는다 — 모든 칩에 시각을 달면
+ * 줄이 길어져 정작 며칠 간격인지가 안 읽힌다.
+ */
+export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const epoch of epochs) {
+    const key = epochDayKey(epoch.issuedAt);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, n]) => n > 1).map(([key]) => key));
+}
+
 // ── 탭 ────────────────────────────────────────────────────────────────────
 //
 // 현장 상세는 예전에 카드 여덟 장을 세로로 쌓아, 각 카드가 "이런 기능이 있습니다"를

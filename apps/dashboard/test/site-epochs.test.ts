@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   SITE_TABS,
+  ambiguousEpochDays,
+  epochDayKey,
   findEpoch,
   normalizeSiteTab,
   resolveEpochId,
@@ -77,6 +79,37 @@ describe("URL 의 시점 값", () => {
     expect(resolveEpochId([], "무엇이든")).toBeNull();
     expect(findEpoch([], null)).toBeNull();
     expect(findEpoch(epochs, "없는id")).toBeNull();
+  });
+});
+
+describe("같은 날 겹치는 시점", () => {
+  it("한 날짜에 둘 이상이면 그 날짜를 집어낸다", () => {
+    // 실데이터 확인(2026-08-18)에서 드러난 문제 — 같은 날 두 번 처리하면 칩이
+    // 둘 다 "8. 18."로 찍혀 눈으로 구분되지 않았다.
+    const epochs = toSiteEpochs([
+      job({ jobId: "a", issuedAt: "2026-08-18T06:06:52Z" }),
+      job({ jobId: "b", issuedAt: "2026-08-18T06:06:53Z" }),
+      job({ jobId: "c", issuedAt: "2026-08-10T06:00:00Z" }),
+    ]);
+    expect([...ambiguousEpochDays(epochs)]).toEqual(["2026-08-18"]);
+  });
+
+  it("날짜가 겹치지 않으면 아무것도 집어내지 않는다 — 전부 시각을 붙이지 않는다", () => {
+    const epochs = toSiteEpochs([
+      job({ jobId: "a", issuedAt: "2026-08-18T06:00:00Z" }),
+      job({ jobId: "b", issuedAt: "2026-08-10T06:00:00Z" }),
+    ]);
+    expect(ambiguousEpochDays(epochs).size).toBe(0);
+  });
+
+  it("날짜 판정은 서울 기준이다 — UTC 자정 근처에서 날이 갈린다", () => {
+    // 2026-08-17T16:00Z = 서울 8월 18일 01:00. UTC 로 읽으면 다른 날이 된다.
+    expect(epochDayKey("2026-08-17T16:00:00Z")).toBe("2026-08-18");
+    expect(epochDayKey("2026-08-17T14:00:00Z")).toBe("2026-08-17");
+  });
+
+  it("파싱할 수 없는 값도 키를 만든다 — 그 칩만 스스로와 같아진다", () => {
+    expect(epochDayKey("언제인지모름")).toBe("언제인지모름");
   });
 });
 
