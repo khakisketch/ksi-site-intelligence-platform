@@ -241,6 +241,25 @@ class SourceImage:
     download_url: str
 
 
+#: ODM 이 기준점으로 인식하는 **유일한** 파일 이름 — 업로드 묶음 안에 이 이름으로
+#: 들어가야 한다(Core 의 ``source_media.GROUND_CONTROL_FILENAME`` 과 같은 값).
+GROUND_CONTROL_FILENAME = "gcp_list.txt"
+
+
+@dataclass(frozen=True, slots=True)
+class GroundControlFile:
+    """이 조사의 지상 기준점 파일 — 엔진이 성과를 낼 좌표계를 정하는 입력.
+
+    사진처럼 Core 에서 받아오는 바이트이지만 ``SourceImage`` 와 따로 두는 이유는
+    **파일 이름이 규약**이기 때문이다: ODM 은 업로드 묶음 안의 ``gcp_list.txt``
+    만 기준점으로 인식한다. ``crs`` 는 Core 원장에 등록된 선언값이고, 파일 첫
+    줄이 그 선언과 같은지는 워커가 제출 전에 대조한다.
+    """
+
+    crs: str
+    content: bytes
+
+
 @dataclass(frozen=True, slots=True)
 class MaskImage:
     """동적 객체 마스크 1건 — 같은 업로드 배치에서 원본 사진 옆에 실린다.
@@ -275,8 +294,13 @@ class NodeOdmClient(Protocol):
         options: dict[str, Any],
         *,
         masks: Sequence[MaskImage] = (),
+        ground_control: GroundControlFile | None = None,
     ) -> str:
         """``POST /task/new`` — 작업 uuid 를 돌려준다.
+
+        ``ground_control`` 이 있으면 같은 배치에 ``gcp_list.txt`` 로 실린다 —
+        엔진은 그때 EXIF 대신 그 성과의 좌표계로 결과를 낸다(기본값 ``None`` 은
+        기존 호출부를 그대로 통과시킨다).
 
         ``masks`` 는 같은 업로드 배치에 실리는 동적 객체 마스크다 — 별도 REST
         호출이 아니다(모듈 docstring 5번, ``odm_masking`` 모듈 docstring).
@@ -560,6 +584,34 @@ def plan_artifacts(
     return reports
 
 
+def assert_ground_control_matches(content: bytes, *, declared_crs: str) -> None:
+    """기준점 파일의 **첫 줄이 신고된 좌표계와 같은지** 본다 — 다르면 typed 실패.
+
+    ODM 의 ``gcp_list.txt`` 는 첫 줄에 좌표계를 적고 그 아래로 기준점을 나열한다.
+    엔진은 그 첫 줄을 믿고 성과의 좌표계를 정하는데, Core 원장에는 업로더가 신고한
+    값이 남는다 — 둘이 갈리면 원장은 EPSG:5186 이라 말하고 실제 성과는 다른
+    좌표계인 상태가 되고, 그 어긋남은 비교 결과의 숫자로만(그것도 그럴듯하게)
+    드러난다. 그래서 제출 전에 대조한다.
+
+    비교는 **대소문자·앞뒤 공백만 무시**한다. 첫 줄이 PROJ 문자열이거나 ``WGS84
+    UTM 17N`` 같은 서술형이면 EPSG 코드와 문자열로 같아질 수 없으므로 실패다 —
+    그건 이 시스템이 받는 형식이 아니라는 뜻이고(Core 가 EPSG 코드만 허용한다),
+    엔진에 넘기기 전에 멈추는 편이 맞다.
+    """
+    text = content.decode("utf-8", errors="replace")
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if not first_line:
+        raise OdmError(
+            "기준점 파일이 비어 있다 — 첫 줄에 좌표계가 있어야 한다"
+        )
+    if first_line.casefold() != declared_crs.strip().casefold():
+        raise OdmError(
+            f"기준점 파일의 좌표계가 신고와 다르다 — 파일 첫 줄 {first_line!r}, "
+            f"등록된 신고값 {declared_crs!r}. 엔진은 파일을 믿고 원장은 신고를 "
+            "믿으므로 이대로 돌리면 두 값이 갈린 성과가 남는다"
+        )
+
+
 def run_to_completion(
     client: NodeOdmClient,
     images: Sequence[SourceImage],
@@ -568,6 +620,7 @@ def run_to_completion(
     options: dict[str, Any],
     poll: Callable[[], None],
     masks: Sequence[MaskImage] = (),
+    ground_control: GroundControlFile | None = None,
     max_polls: int = 10_000,
 ) -> str:
     """엔진 신원 확인 → 제출 → 종료까지 폴링. 완료된 작업의 uuid 를 돌려준다.
@@ -576,15 +629,15 @@ def run_to_completion(
     않는다 — 테스트가 실제로 기다리게 만들지 않기 위해서다). 워커는 이 콜백
     안에서 Core lease 를 갱신한다(모듈 docstring "하지 않는 것").
 
-    ``masks`` 는 그대로 ``new_task`` 로 전달된다(기본값 ``()`` — 마스킹을 쓰지
-    않는 기존 호출부는 동작이 그대로다).
+    ``masks``·``ground_control`` 은 그대로 ``new_task`` 로 전달된다(기본값 —
+    마스킹·기준점을 쓰지 않는 기존 호출부는 동작이 그대로다).
 
     ``max_polls`` 는 상한이다. NodeODM 이 상태를 영영 바꾸지 않는 경우(엔진
     행) 워커가 무한 루프에 갇히는 대신 실패로 끝난다 — 갇힌 워커는 Core lease 를
     계속 갱신하며 그 작업을 점유한다.
     """
     assert_engine_matches(client.info(), expected_version=expected_version)
-    uuid = client.new_task(images, options, masks=masks)
+    uuid = client.new_task(images, options, masks=masks, ground_control=ground_control)
     for _ in range(max_polls):
         state = client.task_info(uuid)
         if state.status in _TERMINAL_STATUSES:

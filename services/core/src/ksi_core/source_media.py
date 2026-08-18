@@ -90,6 +90,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_geo_spatial.crs import SUPPORTED_PROJECT_CRS, UnsupportedCrsError, normalise_crs
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field
 
@@ -134,6 +135,22 @@ class SourceMediaBatchVerdict(StrEnum):
     PROCESSED = "PROCESSED"
     UNKNOWN_MISSION = "UNKNOWN_MISSION"
     BUNDLE_SEALED = "BUNDLE_SEALED"
+    STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+
+
+class GroundControlVerdict(StrEnum):
+    """기준점 파일 등록 판정.
+
+    ``UNSUPPORTED_CRS`` 는 이 표면의 존재 이유다 — 허용 목록 밖 좌표계를 받아
+    두면 재구성은 성공하고 비교 단계에서야 거부돼, 몇 분짜리 재구성을 돌린 뒤에
+    막힌다. 등록 시점에 막는 편이 훨씬 싸고 사유도 분명하다.
+    """
+
+    REGISTERED = "REGISTERED"
+    UNKNOWN_MISSION = "UNKNOWN_MISSION"
+    BUNDLE_SEALED = "BUNDLE_SEALED"
+    UNSUPPORTED_CRS = "UNSUPPORTED_CRS"
+    CLAIM_CONFLICT = "CLAIM_CONFLICT"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
 
@@ -184,6 +201,21 @@ _BATCH_STATUS: dict[SourceMediaBatchVerdict, int] = {
     SourceMediaBatchVerdict.STORE_UNAVAILABLE: 503,
 }
 
+#: 기준점 파일의 저장 형식 — 텍스트지만 브라우저가 해석할 이유가 없어
+#: octet-stream 으로 둔다(허용 목록 안, ``evidence.ALLOWED_CONTENT_TYPES``).
+GROUND_CONTROL_CONTENT_TYPE = "application/octet-stream"
+
+_GROUND_CONTROL_STATUS: dict[GroundControlVerdict, int] = {
+    GroundControlVerdict.REGISTERED: 201,
+    GroundControlVerdict.UNKNOWN_MISSION: 404,
+    GroundControlVerdict.BUNDLE_SEALED: 409,
+    GroundControlVerdict.CLAIM_CONFLICT: 409,
+    # 422 — 요청 형식은 맞지만 그 값으로는 이 시스템이 할 일이 없다
+    # (design_surfaces 의 좌표계 거부와 같은 코드).
+    GroundControlVerdict.UNSUPPORTED_CRS: 422,
+    GroundControlVerdict.STORE_UNAVAILABLE: 503,
+}
+
 _SEAL_STATUS: dict[SourceBundleSealVerdict, int] = {
     SourceBundleSealVerdict.SEALED: 201,
     SourceBundleSealVerdict.ALREADY_SEALED: 200,
@@ -222,6 +254,54 @@ def build_source_media_object_key(*, site_id: str, mission_id: str, media_id: st
     if not is_path_safe_identifier(media_id):
         raise ValueError(f"경로-안전하지 않은 mediaId: {media_id!r}")
     return f"sites/{site_id}/missions/{mission_id}/source/{media_id}"
+
+
+#: 지상 기준점 파일의 고정 객체 이름 — 재구성 엔진(ODM)이 이 이름으로만 인식한다.
+GROUND_CONTROL_FILENAME = "gcp_list.txt"
+
+
+def build_ground_control_object_key(*, site_id: str, mission_id: str) -> str:
+    """기준점 파일 자리 — 사진과 같은 폴더에 고정 이름으로 하나만 둔다.
+
+    임무당 1건이라 식별자를 받지 않는다: 두 벌을 두면 "어느 것으로 재구성했나"가
+    원장 밖 지식이 된다.
+    """
+    if not is_path_safe_identifier(site_id):
+        raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
+    if not is_path_safe_identifier(mission_id):
+        raise ValueError(f"경로-안전하지 않은 missionId: {mission_id!r}")
+    return f"sites/{site_id}/missions/{mission_id}/source/{GROUND_CONTROL_FILENAME}"
+
+
+@dataclass(frozen=True, slots=True)
+class GroundControlRecord:
+    """이 임무의 지상 기준점 파일 — **좌표계를 신고와 함께** 원장에 남긴다.
+
+    ## 왜 이 레코드가 필요한가
+
+    재구성 엔진은 사진의 GPS 만으로는 그 지역의 UTM 좌표계로 결과를 낸다. 두
+    시점 비교는 현행 한국 평면직각좌표계에서만 허용되므로(``ksi_geo_spatial.crs``
+    화이트리스트, INV-020), **기준점 없이 찍은 조사는 비교 단계에 도달하지 못한다**
+    (2026-08-18 실측: 사진 87장 재구성 2회가 모두 EPSG:32617 로 나와 거부됨).
+
+    기준점 파일이 좌표계를 선언하면 엔진이 그 좌표계로 성과를 내고, 두 시점이
+    같은 기준에 묶여 절대 표고 차이(같은 실측에서 0.29 m)도 사라진다.
+
+    ## 신고와 내용을 누가 대조하나
+
+    Core 는 바이트를 만지지 않는다(ADR-KSI-010 §1) — 여기서는 **신고된 좌표계가
+    허용 목록 안인지**만 본다. 파일 첫 줄이 그 신고와 실제로 같은지는 파일을
+    내려받는 워커가 대조하고, 어긋나면 그 작업을 실패로 끝낸다(사진의 sha256 을
+    워커가 실측 대조하는 것과 같은 분담).
+    """
+
+    sha256: str
+    size_bytes: int
+    #: 이 파일이 선언하는 좌표계(예: ``EPSG:5186``) — 허용 목록 안이어야 등록된다.
+    crs: str
+    object_key: str
+    registered_at: datetime
+    registered_by: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,6 +423,8 @@ class SourceMediaBundle:
     mission_id: str
     site_id: str
     media: tuple[SourceMediaRecord, ...] = ()
+    #: 이 조사에 붙은 지상 기준점 파일(있으면 1건). 봉인 전에만 붙일 수 있다.
+    ground_control: GroundControlRecord | None = None
     sealed_at: datetime | None = None
     sealed_by: str | None = None
     source_bundle_digest: str | None = None
@@ -363,7 +445,9 @@ class SourceMediaBundle:
 
 
 def compute_source_bundle_digest_from_claims(
-    mission_id: str, claims: Iterable[SourceMediaClaim]
+    mission_id: str,
+    claims: Iterable[SourceMediaClaim],
+    ground_control: GroundControlRecord | None = None,
 ) -> str:
     """등록 **전** 단계에서도 부를 수 있는 digest — 매니페스트 구성의 SSOT.
 
@@ -373,6 +457,10 @@ def compute_source_bundle_digest_from_claims(
     (객체 키·등록 시각)가 없기 때문이다. 업로더가 매니페스트를 자기 손으로 다시 짜면
     한쪽만 바뀌는 순간 그 대조가 조용히 무의미해진다 — 그래서 **같은 함수**를 부르게
     한다(``compare_measurements`` 를 live·재생 공용 판정으로 둔 것과 같은 이유).
+
+    ``ground_control`` 도 같은 이유로 여기서 받는다: 기준점이 붙은 조사와 안 붙은
+    조사는 서로 다른 입력이라, 두 진입점 중 한쪽만 그것을 세면 같은 묶음이 두 개의
+    지문을 갖게 된다.
     """
     manifest: dict[str, Any] = {
         "missionId": mission_id,
@@ -391,28 +479,25 @@ def compute_source_bundle_digest_from_claims(
             key=lambda entry: entry["mediaId"],
         ),
     }
+    # 기준점 파일은 **있을 때만** 매니페스트에 실린다. 없을 때 빈 키를 넣으면
+    # 기존 번들의 digest 가 전부 바뀌어, 이미 봉인된 원장이 재생에서 불일치로
+    # 거부된다(_replay_seal 의 재계산 대조).
+    if ground_control is not None:
+        manifest["groundControl"] = {
+            "sha256": ground_control.sha256,
+            "bytes": ground_control.size_bytes,
+            "crs": ground_control.crs,
+        }
     return sha256_digest(canonical_payload_bytes(manifest))
 
 
-def compute_source_bundle_digest(mission_id: str, media: Iterable[SourceMediaRecord]) -> str:
-    """정규 정렬된 매니페스트의 SHA-256 — 업로드 순서와 무관한 재현성 앵커.
-
-    ``mediaId`` 기준으로 먼저 정렬해 리스트 순서를 고정한 뒤(``canonical_
-    payload_bytes`` 는 dict 키만 정렬하고 리스트 순서는 건드리지 않는다),
-    ``ksi_mission_contracts.signing`` 의 정규화·digest 함수를 그대로 재사용한다
-    (``mission_plans._pair_digest`` 와 동일 구성 — 별도 정규화를 새로 만들지
-    않는다, ADR-KSI-002 §2/§3).
-
-    객체 키는 매니페스트에 싣지 않는다 — digest 는 **내용**의 지문이지 저장소
-    레이아웃의 지문이 아니다(버킷 구조가 나중에 바뀌어도 과거 digest 가
-    흔들리지 않게).
-
-    매니페스트 구성 자체는 :func:`compute_source_bundle_digest_from_claims` 에
-    위임한다 — 등록 전 단계(업로더)와 등록 후 단계(이 함수)가 **반드시 같은
-    지문**을 내야 하기 때문이다.
-    """
+def compute_source_bundle_digest(
+    mission_id: str,
+    media: Iterable[SourceMediaRecord],
+    ground_control: GroundControlRecord | None = None,
+) -> str:
     return compute_source_bundle_digest_from_claims(
-        mission_id, (record.claim for record in media)
+        mission_id, (record.claim for record in media), ground_control
     )
 
 
@@ -433,6 +518,13 @@ class BatchRegistrationResult:
     verdict: SourceMediaBatchVerdict
     detail: str | None = None
     items: tuple[SourceMediaItemResult, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GroundControlResult:
+    verdict: GroundControlVerdict
+    detail: str | None = None
+    record: GroundControlRecord | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -506,6 +598,8 @@ class SourceMediaStore:
                 self._replay_registration(mission_id, raw)
             elif kind == "source-media-sealed":
                 self._replay_seal(mission_id, raw)
+            elif kind == "source-media-ground-control-registered":
+                self._replay_ground_control(mission_id, raw)
             elif kind == "source-media-verified":
                 self._replay_verification(mission_id, raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
@@ -549,6 +643,46 @@ class SourceMediaStore:
             bundle = SourceMediaBundle(mission_id=mission_id, site_id=raw["siteId"])
         self._bundles[mission_id] = replace(bundle, media=(*bundle.media, record))
 
+    def _replay_ground_control(self, mission_id: str, raw: dict[str, Any]) -> None:
+        """기준점 레코드 재생 — **기록된 좌표계를 다시 검증한다.**
+
+        live 경로가 막는 것(허용 목록 밖 좌표계·봉인 후 등록·중복)을 재생에서도
+        같은 강도로 막는다. journal 을 손으로 고쳐 UTM 기준점을 붙인 번들을
+        되살리면, 그 조사로 만든 성과가 비교 단계에서 조용히 다른 좌표계로
+        섞인다(_replay_seal 의 digest 재계산과 같은 정신).
+        """
+        bundle = self._bundles.get(mission_id)
+        if bundle is not None and bundle.is_sealed:
+            raise SourceMediaRecoveryError(
+                f"재생: 봉인된 번들에 기준점 등록 레코드가 있다 — missionId={mission_id}"
+            )
+        if bundle is not None and bundle.ground_control is not None:
+            raise SourceMediaRecoveryError(
+                f"재생: 기준점이 두 번 등록됐다 — missionId={mission_id}"
+            )
+        crs = raw["crs"]
+        try:
+            normalised = normalise_crs(crs)
+        except UnsupportedCrsError as exc:
+            raise SourceMediaRecoveryError(
+                f"재생: 해석할 수 없는 기준점 좌표계({crs!r}) — missionId={mission_id}: {exc}"
+            ) from exc
+        if normalised not in SUPPORTED_PROJECT_CRS:
+            raise SourceMediaRecoveryError(
+                f"재생: 허용 목록 밖 기준점 좌표계({normalised}) — missionId={mission_id}"
+            )
+        record = GroundControlRecord(
+            sha256=raw["sha256"],
+            size_bytes=raw["bytes"],
+            crs=normalised,
+            object_key=raw["objectKey"],
+            registered_at=_require_aware_iso(raw["ts"], "ts", mission_id),
+            registered_by=raw["registeredBy"],
+        )
+        if bundle is None:
+            bundle = SourceMediaBundle(mission_id=mission_id, site_id=raw["siteId"])
+        self._bundles[mission_id] = replace(bundle, ground_control=record)
+
     def _replay_seal(self, mission_id: str, raw: dict[str, Any]) -> None:
         bundle = self._bundles.get(mission_id)
         if bundle is None or not bundle.media:
@@ -559,7 +693,7 @@ class SourceMediaStore:
             raise SourceMediaRecoveryError(
                 f"재생: 이미 봉인된 번들의 중복 봉인 레코드 — missionId={mission_id}"
             )
-        recomputed = compute_source_bundle_digest(mission_id, bundle.media)
+        recomputed = compute_source_bundle_digest(mission_id, bundle.media, bundle.ground_control)
         if recomputed != raw["sourceBundleDigest"]:
             # 재생 게이트의 핵심 — journal 을 손으로 고쳐 매니페스트와 어긋난
             # digest 를 봉인 상태로 위조할 수 없다(coverage_reports._replay 대칭).
@@ -792,6 +926,116 @@ class SourceMediaStore:
             content_type=claim.content_type,
         ), False
 
+    def register_ground_control(
+        self,
+        mission_id: str,
+        *,
+        sha256: str,
+        size_bytes: int,
+        crs: str,
+        registered_by: str,
+        now: datetime,
+        caller_device_id: str | None = None,
+    ) -> GroundControlResult:
+        """이 조사의 기준점 파일 1건을 등록한다 — **봉인 전에만**.
+
+        같은 내용 재전송은 멱등이다(새 URL 은 라우터가 다시 발급한다). 다른 내용을
+        같은 임무에 붙이려 하면 ``CLAIM_CONFLICT`` — 조용히 덮어쓰면 이미 계산된
+        재구성이 어느 기준점으로 나온 것인지 알 수 없게 된다.
+
+        ``caller_device_id`` 의미는 :meth:`register_batch` 와 동일하다.
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return GroundControlResult(
+                    GroundControlVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
+                )
+            mission = self._mission_store.get(mission_id)
+            if mission is None or (
+                caller_device_id is not None and mission.assigned_device_id != caller_device_id
+            ):
+                return GroundControlResult(
+                    GroundControlVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
+                )
+            try:
+                normalised = normalise_crs(crs)
+            except UnsupportedCrsError as exc:
+                return GroundControlResult(GroundControlVerdict.UNSUPPORTED_CRS, detail=str(exc))
+            if normalised not in SUPPORTED_PROJECT_CRS:
+                return GroundControlResult(
+                    GroundControlVerdict.UNSUPPORTED_CRS,
+                    detail=(
+                        f"{normalised} 은 이 시스템이 비교에 쓰는 좌표계가 아니다 — 허용: "
+                        f"{sorted(SUPPORTED_PROJECT_CRS)}. 기준점 성과를 현행 한국 "
+                        "평면직각좌표계로 받아야 두 시점 비교가 성립한다"
+                    ),
+                )
+
+            bundle = self._bundles.get(mission_id) or SourceMediaBundle(
+                mission_id=mission_id, site_id=mission.site_id
+            )
+            if bundle.is_sealed:
+                return GroundControlResult(
+                    GroundControlVerdict.BUNDLE_SEALED,
+                    detail="번들이 이미 봉인됐다 — 기준점은 봉인 전에만 붙일 수 있다",
+                )
+
+            existing = bundle.ground_control
+            if existing is not None:
+                same = (
+                    existing.sha256 == sha256
+                    and existing.size_bytes == size_bytes
+                    and existing.crs == normalised
+                )
+                if same:
+                    # 멱등 재전송 — journal 에 다시 쓰지 않는다(새로 기록할 사실이 없다).
+                    return GroundControlResult(
+                        GroundControlVerdict.REGISTERED, record=existing
+                    )
+                return GroundControlResult(
+                    GroundControlVerdict.CLAIM_CONFLICT,
+                    detail="이 임무에는 다른 내용의 기준점 파일이 이미 등록돼 있다",
+                )
+
+            try:
+                object_key = build_ground_control_object_key(
+                    site_id=bundle.site_id, mission_id=bundle.mission_id
+                )
+            except ValueError as exc:
+                return GroundControlResult(
+                    GroundControlVerdict.UNKNOWN_MISSION, detail=str(exc)
+                )
+
+            journal_record = {
+                "kind": "source-media-ground-control-registered",
+                "ts": iso_utc(now),
+                "missionId": bundle.mission_id,
+                "siteId": bundle.site_id,
+                "objectKey": object_key,
+                "sha256": sha256,
+                "bytes": size_bytes,
+                "crs": normalised,
+                "registeredBy": registered_by,
+            }
+            try:
+                self._journal.append(journal_record)
+            except JournalSealedError:
+                return GroundControlResult(
+                    GroundControlVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
+                )
+
+            record = GroundControlRecord(
+                sha256=sha256,
+                size_bytes=size_bytes,
+                crs=normalised,
+                object_key=object_key,
+                registered_at=now,
+                registered_by=registered_by,
+            )
+            self._bundles[mission_id] = replace(bundle, ground_control=record)
+            return GroundControlResult(GroundControlVerdict.REGISTERED, record=record)
+
     def seal(
         self,
         mission_id: str,
@@ -829,7 +1073,7 @@ class SourceMediaStore:
             if bundle.is_sealed:
                 return SealResult(SourceBundleSealVerdict.ALREADY_SEALED, bundle=bundle)
 
-            digest = compute_source_bundle_digest(mission_id, bundle.media)
+            digest = compute_source_bundle_digest(mission_id, bundle.media, bundle.ground_control)
             journal_record = {
                 "kind": "source-media-sealed",
                 "ts": iso_utc(now),
@@ -1022,6 +1266,31 @@ class SourceMediaBundleView(CamelModel):
     # 마지막 불일치 보고 시각. verified_at 이 null 인데 이 값이 있으면 "아직
     # 안 쟀다"가 아니라 **"재봤는데 어긋났다"**다 — 화면이 둘을 구분해야 한다.
     last_mismatch_at: datetime | None
+    # 이 조사에 기준점이 붙었는가와 그 좌표계. null 이면 안 붙은 것이고, 그 조사의
+    # 성과로는 두 시점 비교를 할 수 없다(엔진이 UTM 으로 낸다) — 화면이 그 사실을
+    # 미리 말할 수 있도록 목록·상세 응답에 함께 싣는다.
+    ground_control_crs: str | None = None
+    # 같은 좌표계라도 성과가 다르면 다른 기준점이다 — 재실행하는 도구가 "이미
+    # 붙인 그 파일인가"를 정확히 판단할 수 있게 지문도 함께 낸다.
+    ground_control_sha256: str | None = None
+
+
+class GroundControlRequest(CamelModel):
+    """기준점 파일 등록 요청 — 내용이 아니라 **신고**다(Core 는 바이트를 안 읽는다)."""
+
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bytes: int = Field(ge=1, le=64 * 1024 * 1024)
+    #: 이 파일이 선언하는 좌표계. 허용 목록 밖이면 등록 자체가 거부된다.
+    crs: str = Field(min_length=1, max_length=64)
+
+
+class GroundControlResponse(CamelModel):
+    verdict: str
+    detail: str | None = None
+    object_key: str | None = None
+    upload_url: str | None = None
+    expires_at: datetime | None = None
+    crs: str | None = None
 
 
 class SourceMediaSealResponse(CamelModel):
@@ -1077,6 +1346,12 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
         sealed_at=bundle.sealed_at,
         verified_at=bundle.verified_at,
         last_mismatch_at=bundle.last_mismatch_at,
+        ground_control_crs=(
+            bundle.ground_control.crs if bundle.ground_control is not None else None
+        ),
+        ground_control_sha256=(
+            bundle.ground_control.sha256 if bundle.ground_control is not None else None
+        ),
     )
 
 
@@ -1178,6 +1453,67 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
             verdict=result.verdict.value,
             detail=result.detail,
             results=[_to_item_view(item, now=now) for item in result.items],
+        )
+
+    @router.post(
+        "/{mission_id}/source-media/ground-control",
+        response_model=GroundControlResponse,
+        status_code=201,
+    )
+    def register_ground_control(
+        mission_id: str,
+        request: GroundControlRequest,
+        response: Response,
+        principal: Principal = Depends(_require_source_media_write),  # noqa: B008
+    ) -> GroundControlResponse:
+        """지상 기준점 파일을 이 조사에 붙인다(봉인 전에만, 임무당 1건).
+
+        사진과 같은 방식이다 — Core 는 자리(objectKey)와 업로드 URL 만 내주고
+        바이트는 스토리지로 직접 간다(ADR-KSI-010 §1). 다른 점 하나는 **좌표계를
+        여기서 막는다**는 것이다: 허용 목록 밖 좌표계를 받아 두면 재구성이 끝난
+        뒤 비교 단계에서야 거부돼, 몇 분을 버리고 사유도 멀리서 나타난다.
+        """
+        now = datetime.now(UTC)
+        result = store.register_ground_control(
+            mission_id,
+            sha256=request.sha256,
+            size_bytes=request.bytes,
+            crs=request.crs,
+            registered_by=principal.principal_id,
+            now=now,
+            caller_device_id=(
+                principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
+            ),
+        )
+        response.status_code = _GROUND_CONTROL_STATUS[result.verdict]
+        if result.verdict is GroundControlVerdict.STORE_UNAVAILABLE:
+            response.headers["Retry-After"] = "30"
+        if result.verdict is not GroundControlVerdict.REGISTERED or result.record is None:
+            return GroundControlResponse(verdict=result.verdict.value, detail=result.detail)
+
+        record = result.record
+        try:
+            url = storage.presigned_put(
+                record.object_key,
+                content_type=GROUND_CONTROL_CONTENT_TYPE,
+                ttl=DEFAULT_UPLOAD_TTL,
+            )
+        except EvidenceStorageError:
+            logger.warning("기준점 presigned PUT 발급 실패: %s", record.object_key)
+            response.status_code = 503
+            response.headers["Retry-After"] = "30"
+            return GroundControlResponse(
+                verdict=GroundControlVerdict.REGISTERED.value,
+                object_key=record.object_key,
+                crs=record.crs,
+                detail="등록은 됐으나 URL 발급에 실패했다 — 같은 내용으로 재요청하면 재발급된다",
+            )
+        return GroundControlResponse(
+            verdict=result.verdict.value,
+            object_key=record.object_key,
+            upload_url=url,
+            expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
+            crs=record.crs,
         )
 
     @router.post(
@@ -1340,6 +1676,12 @@ __all__ = [
     "SourceMediaVerifyResponse",
     "SourceMediaViewResponse",
     "VerificationResult",
+    "GROUND_CONTROL_CONTENT_TYPE",
+    "GROUND_CONTROL_FILENAME",
+    "GroundControlRecord",
+    "GroundControlResult",
+    "GroundControlVerdict",
+    "build_ground_control_object_key",
     "build_source_media_object_key",
     "build_source_media_router",
     "compare_measurements",

@@ -188,7 +188,7 @@ from ksi_core.evidence import (
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
 from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
-from ksi_core.source_media import SourceMediaRecord
+from ksi_core.source_media import GroundControlRecord, SourceMediaRecord
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -598,6 +598,10 @@ class JobInputResult:
     # 현장 등록 시점에 확정된 CRS — 워커가 처리 산출물에 실을 좌표계.
     # None 이면 현장이 없거나 site_frame 이 비어 있다(원장 이상 상태).
     site_crs: str | None = None
+    # 이 조사에 붙은 기준점 파일(있으면). 워커는 이걸 재구성 엔진에 함께 넘겨
+    # 성과가 선언된 좌표계로 나오게 한다 — 없으면 엔진이 EXIF 만 보고 UTM 을
+    # 고르고, 그 성과는 두 시점 비교 단계에서 거부된다(2026-08-18 실측).
+    ground_control: GroundControlRecord | None = None
     detail: str | None = None
 
 
@@ -1408,6 +1412,7 @@ class ProcessingJobStore:
             record=record,
             media=bundle.media,
             site_crs=site_crs,
+            ground_control=bundle.ground_control,
         )
 
     def _active_job_locked(self, mission_id: str) -> ProcessingJobRecord | None:
@@ -1664,6 +1669,15 @@ class JobInputMediaView(CamelModel):
     expires_at: datetime
 
 
+class JobInputGroundControlView(CamelModel):
+    """워커가 기준점 파일을 받아갈 자리 — 사진과 같은 방식(presigned GET)."""
+
+    crs: str
+    sha256: str
+    download_url: str
+    expires_at: datetime
+
+
 class JobInputView(CamelModel):
     """작업 입력 전체 — 무엇으로 돌릴지 + 어떤 파일을 읽을지."""
 
@@ -1683,6 +1697,9 @@ class JobInputView(CamelModel):
     # 원장이 이상 상태다(발급이 이미 site 존재를 강제하므로 정상 경로에서는
     # 나타나지 않는다).
     site_crs: str | None
+    # 기준점 파일이 붙어 있으면 그 좌표계와 다운로드 URL. null 이면 안 붙은
+    # 조사이고, 워커는 엔진에 아무것도 넘기지 않는다(기존 동작 그대로).
+    ground_control: JobInputGroundControlView | None = None
 
 
 class JobInputResponse(CamelModel):
@@ -2049,6 +2066,21 @@ def build_processing_jobs_router(
                 )
                 for item in result.media
             ]
+            # 기준점 파일도 같은 try 안에서 발급한다 — 사진만 받고 기준점을 못
+            # 받은 채로 돌리면 엔진이 UTM 성과를 내고, 그 실패는 몇 분 뒤
+            # 비교 단계에서야 드러난다. 전부 아니면 의미가 없다(위 docstring).
+            ground_control = (
+                JobInputGroundControlView(
+                    crs=result.ground_control.crs,
+                    sha256=result.ground_control.sha256,
+                    download_url=storage.presigned_get(
+                        result.ground_control.object_key, ttl=DEFAULT_VIEW_TTL
+                    ),
+                    expires_at=expires_at(now, DEFAULT_VIEW_TTL),
+                )
+                if result.ground_control is not None
+                else None
+            )
         except EvidenceStorageError:
             logger.warning("처리 작업 입력 URL 발급 실패: jobId=%s", job_id)
             response.status_code = _STATUS[ProcessingJobVerdict.STORAGE_UNAVAILABLE]
@@ -2074,6 +2106,7 @@ def build_processing_jobs_router(
                 image_count=record.input.image_count,
                 media=media,
                 site_crs=result.site_crs,
+                ground_control=ground_control,
             ),
         )
 

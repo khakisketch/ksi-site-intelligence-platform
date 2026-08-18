@@ -53,6 +53,8 @@ import httpx
 
 from ksi_processing_controller.odm import (
     ARCHIVE_ASSET,
+    GROUND_CONTROL_FILENAME,
+    GroundControlFile,
     MaskImage,
     NodeOdmClient,
     OdmEngineInfo,
@@ -102,6 +104,7 @@ class HttpNodeOdmClient:
         options: dict[str, Any],
         *,
         masks: Sequence[MaskImage] = (),
+        ground_control: GroundControlFile | None = None,
     ) -> str:
         """원본을 받아 multipart 로 넘기고 uuid 를 돌려준다.
 
@@ -112,6 +115,10 @@ class HttpNodeOdmClient:
         아니다(모듈 docstring, ``odm_masking`` 모듈 docstring). 마스크는
         워커가 그 자리에서 만든 바이트라 ``SourceImage`` 처럼 다시 받아올
         URL 이 없다.
+
+        ``ground_control`` 도 같은 필드에 ``gcp_list.txt`` 라는 **고정 이름**으로
+        얹는다 — ODM 은 그 이름으로만 기준점을 인식한다. 이 파일이 있으면 엔진은
+        EXIF 대신 이 성과의 좌표계로 결과를 낸다.
         """
         if not images:
             raise OdmError("/task/new: 넘길 사진이 없다")
@@ -127,6 +134,10 @@ class HttpNodeOdmClient:
             files.append(("images", (image.media_id, fetched.content, "image/jpeg")))
         for mask in masks:
             files.append(("images", (mask.filename, mask.png_bytes, "image/png")))
+        if ground_control is not None:
+            files.append(
+                ("images", (GROUND_CONTROL_FILENAME, ground_control.content, "text/plain"))
+            )
 
         try:
             response = self._client.post(

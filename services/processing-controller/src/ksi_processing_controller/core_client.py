@@ -61,6 +61,19 @@ class JobInputMedia:
 
 
 @dataclass(frozen=True, slots=True)
+class JobInputGroundControl:
+    """이 작업에 붙은 기준점 파일 — 좌표계 **신고값**과 받아올 자리.
+
+    ``crs`` 는 Core 원장의 선언이고, 파일 내용이 그 선언과 같은지는 워커가
+    제출 전에 대조한다(사진의 sha256 을 워커가 실측 대조하는 것과 같은 분담).
+    """
+
+    crs: str
+    sha256: str
+    download_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class JobInput:
     """``GET /input`` 을 옮긴 것 — **신고값이 없다**(source_media.py 참고)."""
 
@@ -77,6 +90,9 @@ class JobInput:
     # 현장 등록 시점의 CRS — Core 가 site_store 에서 읽어 준다(워커·발급자가
     # 자기 신고하지 않는다). None 이면 현장 원장 이상 상태다.
     site_crs: str | None
+    # 기준점 파일(있으면). None 이면 이 조사는 기준점 없이 찍혔고, 엔진은 EXIF 로
+    # 좌표계를 고른다 — 그 성과는 두 시점 비교에서 거부된다.
+    ground_control: JobInputGroundControl | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -606,6 +622,13 @@ class HttpCoreClient:
                 JobInputMedia(media_id=m["mediaId"], download_url=m["downloadUrl"])
                 for m in data["media"]
             ),
+            ground_control=(
+                JobInputGroundControl(
+                    crs=gc["crs"], sha256=gc["sha256"], download_url=gc["downloadUrl"]
+                )
+                if (gc := data.get("groundControl")) is not None
+                else None
+            ),
         )
 
     def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
@@ -1063,6 +1086,7 @@ __all__ = [
     "DiffRasterUploadTarget",
     "HttpCoreClient",
     "JobInput",
+    "JobInputGroundControl",
     "JobInputMedia",
     "MeasuredImage",
     "PendingComparisonRequest",

@@ -55,18 +55,21 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from _digest import sha256_file
 from ksi_core.source_media import (
+    GroundControlRecord,
     SourceMediaClaim,
     compute_source_bundle_digest_from_claims,
 )
@@ -95,6 +98,10 @@ RECONSTRUCTION_SPEC: dict[str, Any] = {
 }
 
 _CONFIRMED_CACHE_NAME = "uploaded.json"
+
+#: 지문 계산에는 쓰이지 않는 자리를 채우기 위한 고정 시각 — 이 레코드는 서버에
+#: 보내지 않고 매니페스트 대조에만 쓴다(내용 필드만 지문에 들어간다).
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 #: presigned URL 에 바이트를 올리는 이음매 — ``(url, body, *, content_type, timeout) -> 상태코드``.
 PutObject = Callable[..., int]
@@ -233,11 +240,19 @@ def _is_bundle_sealed_response(response: httpx.Response) -> bool:
         return False
 
 
-def _local_bundle_digest(mission_id: str, claims: list[dict[str, Any]]) -> str:
+def _local_bundle_digest(
+    mission_id: str,
+    claims: list[dict[str, Any]],
+    ground_control: GroundControlRecord | None = None,
+) -> str:
     """이 디렉터리가 만들 번들의 지문 — 서버의 sourceBundleDigest 와 같은 규칙이다.
 
     매니페스트 구성은 Core 함수 하나가 SSOT 다. 여기서 다시 짜면 한쪽만 바뀌는
     순간 이 대조가 조용히 무의미해진다.
+
+    **기준점도 세어야 한다.** 서버는 봉인 지문에 기준점을 포함하므로, 여기서 빼면
+    기준점을 붙인 조사를 재실행할 때마다 "다른 묶음"으로 읽혀 재등록을 시도하고
+    BUNDLE_SEALED 로 실패한다(2026-08-18 병합에서 실제로 그렇게 깨졌다).
     """
     return compute_source_bundle_digest_from_claims(
         mission_id,
@@ -252,6 +267,7 @@ def _local_bundle_digest(mission_id: str, claims: list[dict[str, Any]]) -> str:
             )
             for claim in claims
         ],
+        ground_control,
     )
 
 
@@ -294,6 +310,8 @@ def _register_and_upload(
     confirmed: dict[str, str],
     state_dir: Path | None,
     outcome: SyncOutcome,
+    # 봉인 지문 대조용 — 서버가 기준점을 지문에 포함하므로 여기서도 세야 한다.
+    ground_control_record: GroundControlRecord | None = None,
     put_object: PutObject,
 ) -> None:
     """등록 + 실제 PUT 업로드. 결과는 ``outcome`` 에 누적한다."""
@@ -311,7 +329,9 @@ def _register_and_upload(
             claim_by_path[path] = _build_claim(path)
         except Exception as exc:  # noqa: BLE001 -- 파일 하나의 실패로 전체를 죽이지 않는다
             outcome.failures.append(f"{path.name}: claim 생성 실패 — {type(exc).__name__}: {exc}")
-    local_digest = _local_bundle_digest(mission_id, list(claim_by_path.values()))
+    local_digest = _local_bundle_digest(
+        mission_id, list(claim_by_path.values()), ground_control_record
+    )
 
     for batch_index, batch in enumerate(_chunks(files, batch_size), start=1):
         claims: list[dict[str, Any]] = []
@@ -393,6 +413,101 @@ def _register_and_upload(
             store_confirmed(state_dir, confirmed)
 
 
+def attach_ground_control(
+    client: httpx.Client,
+    mission_id: str,
+    path: Path,
+    crs: str,
+    outcome: SyncOutcome,
+    *,
+    put_object: PutObject = default_put_object,
+    timeout: float = 60.0,
+) -> bool:
+    """기준점 파일을 번들에 붙인다 — **봉인 전에** 불러야 한다.
+
+    이 파일이 있어야 재구성 성과가 한국 평면직각좌표계로 나오고, 그래야 두 시점
+    비교가 성립한다(없으면 엔진이 EXIF 로 UTM 을 고르고 비교 단계에서 거부된다).
+    ``crs`` 는 파일 첫 줄과 같아야 한다 — 다르면 워커가 제출 전에 멈춘다.
+
+    ## 재실행이 실패가 되지 않게 하는 것이 이 함수의 절반이다
+
+    이 도구의 계약은 "재시도는 같은 명령을 다시 부르면 된다"이다(모듈 docstring).
+    그런데 서버는 봉인된 번들의 기준점 등록을 ``BUNDLE_SEALED`` 로 거부하므로,
+    등록을 무조건 부르면 **성공적으로 끝난 조사를 같은 명령으로 재실행할 때마다
+    실패로 끝난다** — FIELD_1_GROUND_CONTROL.md 가 제시하는 명령이 정확히 그 형태다
+    (독립 검토 2026-08-18 적발).
+
+    그래서 먼저 번들 상태를 본다. 이미 봉인됐고 붙어 있는 기준점이 **같은 파일**
+    이면 할 일이 없다(성공). 봉인됐는데 **다른 파일**이거나 기준점이 아예 없으면
+    그건 조용히 넘어갈 일이 아니다 — 그 조사는 지금 올리려는 기준점으로 만들어진
+    성과가 아니다.
+    """
+    payload = path.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+
+    bundle = _fetch_bundle(client, mission_id)
+    if bundle is not None and bundle.get("status") == "SEALED":
+        if bundle.get("groundControlSha256") == digest and bundle.get("groundControlCrs") == crs:
+            # 같은 명령의 재실행 — 이미 이 기준점으로 봉인돼 있다.
+            return True
+        registered_crs = bundle.get("groundControlCrs")
+        registered_sha = str(bundle.get("groundControlSha256"))[:12]
+        outcome.failures.append(
+            "이 임무는 이미 봉인됐고, 붙어 있는 기준점이 지금 올리려는 파일과 다르다"
+            f"(등록됨: {registered_crs}/{registered_sha}, 요청: {crs}/{digest[:12]}) — "
+            "새 임무로 발급해 다시 올려야 한다"
+        )
+        return False
+
+    request = {"sha256": digest, "bytes": len(payload), "crs": crs}
+    try:
+        response = client.post(
+            f"/v1/missions/{mission_id}/source-media/ground-control", json=request
+        )
+    except httpx.HTTPError as exc:
+        outcome.failures.append(f"기준점 등록 요청 실패 — {type(exc).__name__}: {exc}")
+        return False
+    if response.status_code not in (200, 201):
+        body = response.json() if response.headers.get("content-type", "").startswith(
+            "application/json"
+        ) else {}
+        outcome.failures.append(
+            f"기준점 등록 거부({response.status_code}) — "
+            f"{body.get('verdict')}: {body.get('detail')}"
+        )
+        return False
+    upload_url = response.json().get("uploadUrl")
+    if not upload_url:
+        outcome.failures.append("기준점 등록은 됐으나 업로드 URL 이 오지 않았다")
+        return False
+    status = put_object(
+        upload_url, payload, content_type="application/octet-stream", timeout=timeout
+    )
+    if status not in (200, 201, 204):
+        outcome.failures.append(f"기준점 PUT 실패({status})")
+        return False
+    return True
+
+
+def _fetch_bundle(client: httpx.Client, mission_id: str) -> dict[str, Any] | None:
+    """현재 번들 상태 — 등록된 적 없으면(404) None. 조회 실패도 None 으로 접는다.
+
+    조회가 안 되면 등록을 시도해 서버가 판정하게 둔다 — 여기서 실패로 끊으면
+    일시적 조회 오류가 업로드 전체를 막는다.
+    """
+    try:
+        response = client.get(f"/v1/missions/{mission_id}/source-media")
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def seal_bundle(client: httpx.Client, mission_id: str, outcome: SyncOutcome) -> bool:
     """번들 봉인. ``ALREADY_SEALED``(200)도 성공으로 다룬다 — 재시도가 안전해야 한다."""
     try:
@@ -447,6 +562,8 @@ def run_sync(
     state_dir: Path | None = None,
     seal: bool = False,
     start_reconstruction: bool = False,
+    ground_control: Path | None = None,
+    ground_control_crs: str | None = None,
     put_object: PutObject = default_put_object,
 ) -> SyncOutcome:
     """디렉터리 → 등록 → 업로드 → (봉인) → (재구성 발행) 전 과정 1회.
@@ -465,6 +582,19 @@ def run_sync(
         return outcome
 
     confirmed = load_confirmed(state_dir)
+    # 기준점을 붙일 예정이면 그 레코드를 미리 만들어 지문 대조에 함께 넣는다 —
+    # 서버의 봉인 지문이 기준점을 포함하기 때문이다(_local_bundle_digest).
+    ground_control_record: GroundControlRecord | None = None
+    if ground_control is not None and ground_control_crs is not None:
+        payload = ground_control.read_bytes()
+        ground_control_record = GroundControlRecord(
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size_bytes=len(payload),
+            crs=ground_control_crs,
+            object_key="",  # 지문에 안 들어간다(내용의 지문이지 저장소 배치의 지문이 아니다)
+            registered_at=_EPOCH,
+            registered_by="",
+        )
     _register_and_upload(
         client,
         mission_id=mission_id,
@@ -475,7 +605,23 @@ def run_sync(
         state_dir=state_dir,
         outcome=outcome,
         put_object=put_object,
+        ground_control_record=ground_control_record,
     )
+
+    # 기준점은 **봉인 전**에 붙인다 — 봉인이 입력 확정이라 그 뒤에는 못 붙인다.
+    if ground_control is not None and not outcome.failures:
+        if ground_control_crs is None:
+            outcome.failures.append("기준점 파일에는 좌표계를 함께 줘야 한다")
+        elif not attach_ground_control(
+            client,
+            mission_id,
+            ground_control,
+            ground_control_crs,
+            outcome,
+            put_object=put_object,
+            timeout=timeout,
+        ):
+            return outcome
 
     if not seal or outcome.failures:
         return outcome
@@ -518,12 +664,25 @@ def main() -> int:
         help="봉인 후 재구성 작업까지 발행한다(--seal 필요). 이 플래그가 사람의 마지막 "
         "버튼을 대체한다",
     )
+    parser.add_argument(
+        "--ground-control",
+        default=None,
+        help="지상 기준점 파일(gcp_list.txt) 경로 — 봉인 전에 번들에 붙는다. "
+        "이 파일이 있어야 재구성 성과가 한국 좌표계로 나오고 두 시점 비교가 성립한다",
+    )
+    parser.add_argument(
+        "--ground-control-crs",
+        default=None,
+        help="기준점 성과의 좌표계(예: EPSG:5186) — 파일 첫 줄과 같아야 한다",
+    )
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP 요청 타임아웃(초)")
     args = parser.parse_args()
 
     token = args.token or os.environ.get("KSI_CORE_TOKEN")
     if not token:
         parser.error("--token 또는 KSI_CORE_TOKEN 환경변수가 필요하다")
+    if bool(args.ground_control) != bool(args.ground_control_crs):
+        parser.error("--ground-control 과 --ground-control-crs 는 함께 줘야 한다")
     if args.start_reconstruction and not args.seal:
         parser.error("--start-reconstruction 은 --seal 과 함께 써야 한다(봉인 전 재구성 불가)")
 
@@ -548,6 +707,8 @@ def main() -> int:
             state_dir=state_dir,
             seal=args.seal,
             start_reconstruction=args.start_reconstruction,
+            ground_control=Path(args.ground_control) if args.ground_control else None,
+            ground_control_crs=args.ground_control_crs,
         )
 
     if outcome.already_complete:
