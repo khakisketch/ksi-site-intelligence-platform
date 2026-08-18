@@ -84,11 +84,14 @@ from ksi_processing_controller.core_client import (
 from ksi_processing_controller.gsd import resolve_gsd
 from ksi_processing_controller.measure import measure_image
 from ksi_processing_controller.odm import (
+    GROUND_CONTROL_FILENAME,
+    GroundControlFile,
     MaskImage,
     NodeOdmClient,
     OdmError,
     SourceImage,
     assert_engine_matches,
+    assert_ground_control_matches,
     iter_archive_entry_bytes,
     plan_artifacts,
     run_to_completion,
@@ -287,6 +290,23 @@ def run_job(
             now_message(f"[{job_id}] 동적 객체 마스크 {len(masks)}장 생성")
         core.verify_source_media(job_input.mission_id, measurements)
 
+        # ── 4-b. 기준점 파일 — 받아서 **선언과 내용을 대조한 뒤** 넘긴다 ──
+        #
+        # Core 는 바이트를 안 읽으므로(ADR-KSI-010 §1) 원장의 crs 는 신고값이다.
+        # 그 신고가 파일 첫 줄과 다르면 엔진은 파일을 믿고 다른 좌표계로 성과를
+        # 내고, 원장에는 신고값이 남는다 — 두 값이 갈린 채로 비교까지 흘러가면
+        # 그 어긋남은 화면 어디에도 안 보인다. 여기서 막는다.
+        ground_control: GroundControlFile | None = None
+        if job_input.ground_control is not None:
+            gc_path = work_dir / GROUND_CONTROL_FILENAME
+            downloaded_paths.append(gc_path)
+            _download(fetch, job_input.ground_control.download_url, gc_path)
+            content = gc_path.read_bytes()
+            declared = job_input.ground_control.crs
+            assert_ground_control_matches(content, declared_crs=declared)
+            ground_control = GroundControlFile(crs=declared, content=content)
+            now_message(f"[{job_id}] 기준점 파일 확인 — 좌표계 {declared}")
+
         # ── 5. 엔진 신원 대조 + 제출 + 완주 대기 ────────────────────────
         assert_engine_matches(odm.info(), expected_version=job_input.engine_version)
         images = [
@@ -311,6 +331,7 @@ def run_job(
             options=job_input.processing_params,
             poll=_heartbeat,
             masks=masks,
+            ground_control=ground_control,
         )
         now_message(f"[{job_id}] ODM 완주 uuid={uuid}")
 

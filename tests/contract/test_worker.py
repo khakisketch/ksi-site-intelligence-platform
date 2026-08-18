@@ -207,6 +207,7 @@ class FakeNodeOdm:
         self.entries = entries if entries is not None else {a.archive_entry for a in ODM_ASSETS}
         self.submitted: list[SourceImage] = []
         self.submitted_masks: list[Any] = []
+        self.submitted_ground_control: Any = None
         self.info_calls = 0
         self._state_index = 0
 
@@ -215,11 +216,17 @@ class FakeNodeOdm:
         return OdmEngineInfo(engine="odm", engine_version=self.engine_version, node_version="2.2.4")
 
     def new_task(
-        self, images: Any, options: dict[str, Any], *, masks: Any = ()
+        self,
+        images: Any,
+        options: dict[str, Any],
+        *,
+        masks: Any = (),
+        ground_control: Any = None,
     ) -> str:
         del options
         self.submitted = list(images)
         self.submitted_masks = list(masks)
+        self.submitted_ground_control = ground_control
         return "task-uuid-1"
 
     def task_info(self, uuid: str) -> OdmTaskState:

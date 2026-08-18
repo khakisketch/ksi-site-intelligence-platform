@@ -35,6 +35,7 @@ from ksi_processing_controller import odm as odm_module
 from ksi_processing_controller.odm import (
     ArtifactReport,
     EngineIdentityMismatch,
+    GroundControlFile,
     MaskImage,
     OdmEngineInfo,
     OdmError,
@@ -42,6 +43,7 @@ from ksi_processing_controller.odm import (
     OdmTaskStatus,
     SourceImage,
     assert_engine_matches,
+    assert_ground_control_matches,
     iter_archive_entry_bytes,
     parse_task_status,
     plan_artifacts,
@@ -239,6 +241,7 @@ class FakeNodeOdm:
         )
         self.submitted: list[SourceImage] = []
         self.submitted_masks: list[MaskImage] = []
+        self.submitted_ground_control: Any = None
         self.removed: list[str] = []
         self._state_index = 0
 
@@ -248,11 +251,17 @@ class FakeNodeOdm:
         )
 
     def new_task(
-        self, images: Any, options: dict[str, Any], *, masks: Any = ()
+        self,
+        images: Any,
+        options: dict[str, Any],
+        *,
+        masks: Any = (),
+        ground_control: Any = None,
     ) -> str:
         del options
         self.submitted = list(images)
         self.submitted_masks = list(masks)
+        self.submitted_ground_control = ground_control
         return "task-uuid-1"
 
     def task_info(self, uuid: str) -> OdmTaskState:
@@ -721,3 +730,50 @@ def test_iter_archive_entry_bytes_refuses_a_missing_entry(tmp_path: Path) -> Non
     """[음성] 없는 엔트리를 빈 바이트로 돌려주지 않는다."""
     with pytest.raises(OdmError):
         list(iter_archive_entry_bytes(_archive(tmp_path), "does/not/exist.tif"))
+
+
+# ── 기준점 파일 — 신고와 내용의 대조 (2026-08-18 실증에서 생긴 표면) ───────────
+
+
+def test_ground_control_first_line_matching_declaration_passes() -> None:
+    content = b"EPSG:5186\n205000.0 521000.0 34.2 2648 2147 DJI_0001.JPG\n"
+    assert_ground_control_matches(content, declared_crs="EPSG:5186")
+
+
+def test_ground_control_first_line_comparison_ignores_case_and_spacing() -> None:
+    content = b"  epsg:5186  \n205000.0 521000.0 34.2 2648 2147 DJI_0001.JPG\n"
+    assert_ground_control_matches(content, declared_crs="EPSG:5186")
+
+
+def test_ground_control_first_line_differing_from_declaration_is_refused() -> None:
+    """엔진은 파일을 믿고 원장은 신고를 믿는다 — 둘이 갈리면 제출 전에 멈춘다."""
+    content = b"EPSG:32617\n441024.1 4564001.8 345.1 2648 2147 IMG_1356.jpg\n"
+    with pytest.raises(OdmError, match="신고와 다르다"):
+        assert_ground_control_matches(content, declared_crs="EPSG:5186")
+
+
+def test_ground_control_descriptive_first_line_is_refused() -> None:
+    """``WGS84 UTM 17N`` 같은 서술형은 이 시스템이 받는 형식이 아니다."""
+    content = b"WGS84 UTM 17N\n441024.1 4564001.8 345.1 2648 2147 IMG_1356.jpg\n"
+    with pytest.raises(OdmError, match="신고와 다르다"):
+        assert_ground_control_matches(content, declared_crs="EPSG:5186")
+
+
+def test_empty_ground_control_file_is_refused() -> None:
+    with pytest.raises(OdmError, match="비어 있다"):
+        assert_ground_control_matches(b"\n  \n", declared_crs="EPSG:5186")
+
+
+def test_run_to_completion_passes_ground_control_to_the_engine() -> None:
+    """배선 확인 — 워커가 넘긴 기준점이 엔진 제출까지 그대로 간다."""
+    client = FakeNodeOdm(states=[OdmTaskState(status=OdmTaskStatus.COMPLETED)])
+    gcp = GroundControlFile(crs="EPSG:5186", content=b"EPSG:5186\n")
+    run_to_completion(
+        client,
+        [SourceImage(media_id="a.jpg", download_url="https://example.test/a")],
+        expected_version=_ENGINE_VERSION,
+        options={},
+        poll=lambda: None,
+        ground_control=gcp,
+    )
+    assert client.submitted_ground_control is gcp

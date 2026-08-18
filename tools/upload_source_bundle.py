@@ -55,6 +55,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -349,6 +350,57 @@ def _register_and_upload(
             store_confirmed(state_dir, confirmed)
 
 
+def attach_ground_control(
+    client: httpx.Client,
+    mission_id: str,
+    path: Path,
+    crs: str,
+    outcome: SyncOutcome,
+    *,
+    put_object: PutObject = default_put_object,
+    timeout: float = 60.0,
+) -> bool:
+    """기준점 파일을 번들에 붙인다 — **봉인 전에** 불러야 한다.
+
+    이 파일이 있어야 재구성 성과가 한국 평면직각좌표계로 나오고, 그래야 두 시점
+    비교가 성립한다(없으면 엔진이 EXIF 로 UTM 을 고르고 비교 단계에서 거부된다).
+    ``crs`` 는 파일 첫 줄과 같아야 한다 — 다르면 워커가 제출 전에 멈춘다.
+    """
+    payload = path.read_bytes()
+    request = {
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "bytes": len(payload),
+        "crs": crs,
+    }
+    try:
+        response = client.post(
+            f"/v1/missions/{mission_id}/source-media/ground-control", json=request
+        )
+    except httpx.HTTPError as exc:
+        outcome.failures.append(f"기준점 등록 요청 실패 — {type(exc).__name__}: {exc}")
+        return False
+    if response.status_code not in (200, 201):
+        body = response.json() if response.headers.get("content-type", "").startswith(
+            "application/json"
+        ) else {}
+        outcome.failures.append(
+            f"기준점 등록 거부({response.status_code}) — "
+            f"{body.get('verdict')}: {body.get('detail')}"
+        )
+        return False
+    upload_url = response.json().get("uploadUrl")
+    if not upload_url:
+        outcome.failures.append("기준점 등록은 됐으나 업로드 URL 이 오지 않았다")
+        return False
+    status = put_object(
+        upload_url, payload, content_type="application/octet-stream", timeout=timeout
+    )
+    if status not in (200, 201, 204):
+        outcome.failures.append(f"기준점 PUT 실패({status})")
+        return False
+    return True
+
+
 def seal_bundle(client: httpx.Client, mission_id: str, outcome: SyncOutcome) -> bool:
     """번들 봉인. ``ALREADY_SEALED``(200)도 성공으로 다룬다 — 재시도가 안전해야 한다."""
     try:
@@ -403,6 +455,8 @@ def run_sync(
     state_dir: Path | None = None,
     seal: bool = False,
     start_reconstruction: bool = False,
+    ground_control: Path | None = None,
+    ground_control_crs: str | None = None,
     put_object: PutObject = default_put_object,
 ) -> SyncOutcome:
     """디렉터리 → 등록 → 업로드 → (봉인) → (재구성 발행) 전 과정 1회.
@@ -432,6 +486,21 @@ def run_sync(
         outcome=outcome,
         put_object=put_object,
     )
+
+    # 기준점은 **봉인 전**에 붙인다 — 봉인이 입력 확정이라 그 뒤에는 못 붙인다.
+    if ground_control is not None and not outcome.failures:
+        if ground_control_crs is None:
+            outcome.failures.append("기준점 파일에는 좌표계를 함께 줘야 한다")
+        elif not attach_ground_control(
+            client,
+            mission_id,
+            ground_control,
+            ground_control_crs,
+            outcome,
+            put_object=put_object,
+            timeout=timeout,
+        ):
+            return outcome
 
     if not seal or outcome.failures:
         return outcome
@@ -474,12 +543,25 @@ def main() -> int:
         help="봉인 후 재구성 작업까지 발행한다(--seal 필요). 이 플래그가 사람의 마지막 "
         "버튼을 대체한다",
     )
+    parser.add_argument(
+        "--ground-control",
+        default=None,
+        help="지상 기준점 파일(gcp_list.txt) 경로 — 봉인 전에 번들에 붙는다. "
+        "이 파일이 있어야 재구성 성과가 한국 좌표계로 나오고 두 시점 비교가 성립한다",
+    )
+    parser.add_argument(
+        "--ground-control-crs",
+        default=None,
+        help="기준점 성과의 좌표계(예: EPSG:5186) — 파일 첫 줄과 같아야 한다",
+    )
     parser.add_argument("--timeout", type=float, default=60.0, help="HTTP 요청 타임아웃(초)")
     args = parser.parse_args()
 
     token = args.token or os.environ.get("KSI_CORE_TOKEN")
     if not token:
         parser.error("--token 또는 KSI_CORE_TOKEN 환경변수가 필요하다")
+    if bool(args.ground_control) != bool(args.ground_control_crs):
+        parser.error("--ground-control 과 --ground-control-crs 는 함께 줘야 한다")
     if args.start_reconstruction and not args.seal:
         parser.error("--start-reconstruction 은 --seal 과 함께 써야 한다(봉인 전 재구성 불가)")
 
@@ -504,6 +586,8 @@ def main() -> int:
             state_dir=state_dir,
             seal=args.seal,
             start_reconstruction=args.start_reconstruction,
+            ground_control=Path(args.ground_control) if args.ground_control else None,
+            ground_control_crs=args.ground_control_crs,
         )
 
     if outcome.already_complete:

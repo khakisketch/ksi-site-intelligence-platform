@@ -709,6 +709,14 @@ export interface SourceMediaBundleView {
   /** null 이면 아직 아무도 안 쟀다 — "검증 실패"와 다르다(모듈 docstring). */
   verifiedAt: string | null;
   lastMismatchAt: string | null;
+  /**
+   * 이 조사에 붙은 기준점 파일의 좌표계. **null 은 "기준점 없이 찍힌 조사"**이고,
+   * 그 뜻은 이 조사의 성과로는 두 시점 비교를 할 수 없다는 것이다 — 재구성 엔진은
+   * 사진의 GPS 만으로는 그 지역 UTM 좌표계로 성과를 내고, 비교는 현행 한국
+   * 평면직각좌표계에서만 성립한다(INV-020). 화면이 이 값을 "없어도 그만"으로
+   * 다루면, 운영자는 재구성이 끝난 뒤에야 비교가 안 된다는 걸 알게 된다.
+   */
+  groundControlCrs: string | null;
 }
 
 export interface SourceMediaSealResponse {
