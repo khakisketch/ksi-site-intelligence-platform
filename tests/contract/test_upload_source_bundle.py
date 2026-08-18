@@ -607,3 +607,121 @@ def test_reconstruction_is_never_issued_without_seal(tmp_path: Path, seal: bool)
 
     assert outcome.sealed is seal
     assert (outcome.processing_job_id is not None) is seal
+
+
+# ── 지상 기준점(GCP) — 조사가 비교 가능해지려면 붙어야 하는 파일 ──────────────
+#
+# 이 네 개가 없으면 `attach_ground_control` 은 아무도 부르지 않는 코드다. 특히
+# **거부됐을 때 봉인되지 않는다**는 성질은 이 도구에만 있는 순서 규칙이라
+# (Core 는 봉인 요청을 받으면 봉인한다) 여기서 고정하지 않으면 지켜질 근거가 없다.
+
+
+def _gcp_file(directory: Path, crs: str = "EPSG:5186") -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "gcp_list.txt"
+    path.write_text(
+        f"{crs}\n205123.456 521987.654 34.210 2648 2147 photo-0.jpg\n", encoding="utf-8"
+    )
+    return path
+
+
+def test_ground_control_is_attached_before_sealing(tmp_path: Path) -> None:
+    """붙고 나서 봉인된다 — 봉인 뒤에는 Core 가 받지 않으므로 순서가 곧 기능이다."""
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 3)
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        ground_control=_gcp_file(tmp_path / "gcp"),
+        ground_control_crs="EPSG:5186",
+        put_object=_StorageUploads(storage),
+    )
+
+    assert outcome.failures == []
+    assert outcome.sealed is True
+    # 도구의 자기보고가 아니라 서버가 본 사실로 확인한다.
+    bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
+    assert bundle["status"] == "SEALED"
+    assert bundle["groundControlCrs"] == "EPSG:5186"
+
+
+def test_refused_ground_control_leaves_the_bundle_unsealed(tmp_path: Path) -> None:
+    """[핵심] 비교할 수 없는 조사를 잠그지 않는다.
+
+    허용 목록 밖 좌표계(여기서는 실제로 부딪힌 UTM 17N)는 Core 가 거부한다. 그때
+    봉인까지 진행하면 "재구성은 되는데 두 시점 비교는 영영 불가능한" 조사가
+    확정된다 — 사진을 다시 찍는 것 말고는 되돌릴 방법이 없다.
+    """
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 3)
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        start_reconstruction=True,
+        ground_control=_gcp_file(tmp_path / "gcp", crs="EPSG:32617"),
+        ground_control_crs="EPSG:32617",
+        put_object=_StorageUploads(storage),
+    )
+
+    assert outcome.failures, "허용 목록 밖 좌표계인데 실패가 기록되지 않았다"
+    assert any("UNSUPPORTED_CRS" in message for message in outcome.failures)
+    assert outcome.sealed is False
+    assert outcome.processing_job_id is None
+    bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
+    assert bundle["status"] == "OPEN"
+    assert bundle["groundControlCrs"] is None
+
+
+def test_ground_control_without_crs_is_refused_before_touching_the_server(
+    tmp_path: Path,
+) -> None:
+    """좌표계 없는 기준점은 신고가 성립하지 않는다 — 봉인도 하지 않는다."""
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 2)
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        ground_control=_gcp_file(tmp_path / "gcp"),
+        ground_control_crs=None,
+        put_object=_StorageUploads(storage),
+    )
+
+    assert any("좌표계" in message for message in outcome.failures)
+    assert outcome.sealed is False
+
+
+def test_no_ground_control_keeps_the_previous_behaviour(tmp_path: Path) -> None:
+    """기준점을 안 주면 기존 경로 그대로다 — 이 기능이 기존 조사를 막지 않는다."""
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 3)
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        start_reconstruction=True,
+        put_object=_StorageUploads(storage),
+    )
+
+    assert outcome.failures == []
+    assert outcome.sealed is True
+    assert outcome.processing_job_id is not None
+    assert client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()["groundControlCrs"] is None
