@@ -9,6 +9,7 @@ import { WizardShell } from "@/components/wizard/WizardShell";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
+import { M4D_DRONE, M4D_WIDE_CAMERA } from "@/lib/aircraft";
 import type {
   AoiVertex,
   MissionDerivation,
@@ -159,15 +160,8 @@ const LEVEL_PRESETS: Record<
   PRECISE: { label: "정밀", frontOverlap: 0.9, sideOverlap: 0.8, autoFlightSpeedMs: 3 },
 };
 
-// 기체 카메라 스펙 — 기체마다 고정이라 현장/기체 등록 시 저장할 값이다.
-// **M4D 실측 스펙은 아직 미확정(H4)** 이라 지금은 매핑용 기체 카메라 급 값을
-// 쓴다. 확정되면 이 상수 하나만 바꾸면 된다(간격은 서버가 다시 계산한다).
-const DEFAULT_CAMERA = {
-  sensorWidthMm: 13.2,
-  focalLengthMm: 8.8,
-  imageWidthPx: 5472,
-  imageHeightPx: 3648,
-} as const;
+// 기체 카메라 — 단일 출처는 @/lib/aircraft (공식 스펙 유도값, EXIF 실측 대체 예정).
+const DEFAULT_CAMERA = M4D_WIDE_CAMERA;
 
 type NumericDraftKey =
   | "altitudeM"
@@ -212,13 +206,9 @@ const INITIAL_DRAFT: SurveyDraft = {
   altitudeM: 40,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
-  // 99 는 M4T(열화상) 추정값이고 **우리 기체(M4D)의 값이 아니다** — M4D 추정 1000.
-  // wpml.py 의 KNOWN_DRONE_ENUM_VALUES 에도 M4D 시리즈 값이 없다(미확인, H4).
-  // FIELD-0a 에서 Pilot 2 가 내보낸 KMZ 를 대조해 확정한다
-  // (risk mission-drone-enum-value-is-not-m4d, docs/hil/FIELD_0A_CHECKLIST.md).
-  droneEnumValue: 99,
-  droneSubEnumValue: 0,
-  payloadEnumValue: 65534,
+  droneEnumValue: M4D_DRONE.droneEnumValue,
+  droneSubEnumValue: M4D_DRONE.droneSubEnumValue,
+  payloadEnumValue: M4D_DRONE.payloadEnumValue,
   viewpointPolicyId: "default-viewpoint-policy",
   riskPolicyPackId: "default-risk-policy",
   fallbackPolicyId: "default-fallback-policy",
@@ -916,13 +906,14 @@ export function SurveyWizard({
                       {(result.gridBasis.gsdM * 100).toFixed(1)}cm/px
                     </dd>
                   </div>
-                  {/* 이 세 수치는 전부 DEFAULT_CAMERA 에서 파생된다. 그 상수가 M4D
-                      실측이 아니라는 사실이 코드 주석에만 있으면 사용자는 확정값으로
-                      읽는다 — 값을 고치는 것은 FIELD-0a 의 일이고, 여기서 할 수 있는
-                      것은 무엇에 기대고 있는지 밝히는 것이다(risk
-                      mapping-camera-constants-are-not-m4d, INV-040 의 정신). */}
+                  {/* 이 세 수치는 전부 카메라 상수에서 파생된다. 기종·페이로드 값은
+                      DJI 공식 표로 확정됐지만(@/lib/aircraft) **카메라 초점거리는
+                      아직 유도값**이다 — 공식 스펙에 실초점거리가 없어 35mm 환산에서
+                      역산했고, 실기 EXIF 실측(FIELD-0a 절차 C)이 그 값을 대체한다.
+                      그 사실이 코드 주석에만 있으면 사용자는 확정값으로 읽는다
+                      (risk mapping-camera-constants-are-not-m4d, INV-040 의 정신). */}
                   <p className="text-ink-muted mt-1 text-[12px] break-keep">
-                    이 수치는 M4D 실측 전 대체 카메라 상수를 기준으로 계산됐습니다.
+                    이 수치는 M4D 실측 전 유도한 카메라 상수를 기준으로 계산됐습니다.
                     실기 확인 후 달라질 수 있습니다.
                   </p>
                 </>

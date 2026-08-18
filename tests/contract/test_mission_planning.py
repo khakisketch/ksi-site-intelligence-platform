@@ -1224,3 +1224,11 @@ def test_narrow_strip_single_line_still_allowed() -> None:
     )
     assert result.waypoints
     assert result.coverage_ratio == 1.0
+
+
+def test_known_drone_enum_table_covers_the_m4_series() -> None:
+    """M4 시리즈 공식 값(DJI Cloud API Product Support 표, 2026-08-18 확인)이 참고표에 있다."""
+    from ksi_mission_planning.wpml import KNOWN_DRONE_ENUM_VALUES
+
+    assert KNOWN_DRONE_ENUM_VALUES[100] == "Matrice 4D/4TD (sub 0=4D, 1=4TD)"
+    assert KNOWN_DRONE_ENUM_VALUES[99] == "Matrice 4E/4T (sub 0=4E, 1=4T)"

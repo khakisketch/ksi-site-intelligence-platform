@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { useDraftState } from "@/hooks/useDraftState";
 import { isConvexPolygon } from "@/lib/geometry";
+import { M4D_DRONE, M4D_WIDE_CAMERA } from "@/lib/aircraft";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import {
   EGRESS_CHOICE_OPTIONS,
@@ -66,14 +67,8 @@ interface WizardFormState {
 // "반쪽 상태"가 남으므로 입력 단계에서 막는다.
 const MIN_FRONT_OVERLAP = 0.6;
 const MIN_SIDE_OVERLAP = 0.5;
-// 기체 카메라 — 기체마다 고정이라 등록 시 저장할 값이다. **M4D 실측 스펙은
-// 미확정(H4)** 이라 지금은 매핑용 기체 카메라 급 값을 쓴다.
-const DEFAULT_CAMERA = {
-  sensorWidthMm: 13.2,
-  focalLengthMm: 8.8,
-  imageWidthPx: 5472,
-  imageHeightPx: 3648,
-} as const;
+// 기체 카메라 — 단일 출처는 @/lib/aircraft (공식 스펙 유도값, EXIF 실측 대체 예정).
+const DEFAULT_CAMERA = M4D_WIDE_CAMERA;
 
 const MAX_ALTITUDE_M = 150;
 // 계약 봉투는 비행 고도보다 10m 여유를 둔다 — 그 여유까지 상한 안이어야 한다.
@@ -95,13 +90,9 @@ const INITIAL_FORM: WizardFormState = {
   autoFlightSpeedMs: 5,
   takeoffSecurityHeightM: 20,
   globalTransitionalSpeedMs: 10,
-  // 99 는 M4T(열화상) 추정값이고 **우리 기체(M4D)의 값이 아니다** — M4D 추정 1000.
-  // wpml.py 의 KNOWN_DRONE_ENUM_VALUES 에도 M4D 시리즈 값이 없다(미확인, H4).
-  // FIELD-0a 에서 Pilot 2 가 내보낸 KMZ 를 대조해 확정한다
-  // (risk mission-drone-enum-value-is-not-m4d, docs/hil/FIELD_0A_CHECKLIST.md).
-  droneEnumValue: 99,
-  droneSubEnumValue: 0,
-  payloadEnumValue: 65534,
+  droneEnumValue: M4D_DRONE.droneEnumValue,
+  droneSubEnumValue: M4D_DRONE.droneSubEnumValue,
+  payloadEnumValue: M4D_DRONE.payloadEnumValue,
   viewpointPolicyId: "default-viewpoint-policy",
   riskPolicyPackId: "default-risk-policy",
   fallbackPolicyId: "default-fallback-policy",

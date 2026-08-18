@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T03:07:07+09:00",
+  "updated_at": "2026-08-18T05:11:45+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3595,14 +3595,14 @@
       "title": "발급되는 모든 비행파일이 M4T 기종값(99)을 싣고 있을 가능성 — 우리 기체는 M4D",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "SurveyWizard.tsx:215 가 droneEnumValue=99 를 기본값으로 보내는데 근거 주석이 없다(출처 미상 매직넘버). wpml.py 의 저장소 참고표(60/89/67/77/91)를 핀된 PSDK dji_typedef.h 의 DJI_AIRCRAFT_TYPE_* 와 대조하니 5/5 전부 일치한다 — 두 열거값이 같은 체계로 보인다. 그 매핑을 M4 계열에 적용하면 99=M4T(열화상), 100=M4TD, 990=M4E, 1000=M4D 다. 즉 우리 기체는 1000 인데 99(다른 기종)를 싣고 있다. 확정은 아니다 — 일치한 5개가 모두 구형 기종이라 DJI 가 M4 계열에서 체계를 바꿨을 가능성이 남는다. FIELD-0a 에서 두 값으로 만든 KMZ 를 각각 임포트해 결정적으로 판별한다. 기종값이 틀리면 Pilot 2 가 거부하거나 다른 기체 프로파일로 해석할 수 있다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "DJI Cloud API Product Support 표(2026-08-18): M4D=100/sub0, payload 98 — apps/dashboard/src/lib/aircraft.ts 로 발급 기본값 교체, FIELD-0a 킷 A/B 재생성(tools/build_field0a_kit.py). 실기 임포트 수용 확정은 field-0a-kmz-acceptance criteria 에 이미 포함",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-16T00:47:07+09:00",
-      "updated_at": "2026-08-16T00:47:07+09:00"
+      "updated_at": "2026-08-18T05:11:45+09:00"
     },
     {
       "id": "coverage-report-single-cell-fractional-ratio",

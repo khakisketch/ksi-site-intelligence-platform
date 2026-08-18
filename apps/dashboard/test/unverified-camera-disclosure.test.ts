@@ -22,12 +22,24 @@ describe("미검증 카메라 상수 고지", () => {
     expect(SURVEY).toContain("M4D 실측 전");
   });
 
-  it("기체 식별번호 99 가 우리 기체 값이 아니라는 출처가 두 위저드 모두에 남아 있다", () => {
-    // 99 는 M4T(열화상) 추정값이고 M4D 추정은 1000 이다. 근거 없는 매직넘버로
-    // 두면 Pilot 2 가 거부하거나 다른 기체 프로파일로 해석해도 이유를 못 찾는다.
+  it("기체 값은 한 곳에서만 온다 — 위저드에 매직넘버를 다시 심지 않는다", () => {
+    // 이 단언은 2026-08-18 병합에서 바뀌었다. 기종·페이로드는 DJI Cloud API 공식
+    // 표로 **확정**됐으므로(100/0/98) 예전 단언("droneEnumValue: 99 라는 추정값과
+    // 그 출처가 남아 있다")은 더 이상 사실을 지키지 못한다. 대신 지키는 것은
+    // "두 위저드가 각자 숫자를 들고 있지 않다"이다 — 그래야 EXIF 실측이 도착했을 때
+    // aircraft.ts 한 곳만 고치면 되고, 한쪽만 고쳐 갈라지는 일이 없다.
     for (const source of [SURVEY, SITE_REGISTRATION]) {
-      expect(source).toContain("droneEnumValue: 99");
-      expect(source).toContain("M4D");
+      expect(source).toContain("M4D_DRONE");
+      expect(source).toContain('from "@/lib/aircraft"');
+      expect(source).not.toMatch(/droneEnumValue:\s*\d/);
     }
+  });
+
+  it("단일 출처가 무엇이 확정이고 무엇이 유도값인지 구분해 적어 둔다", () => {
+    // 초점거리는 공식 미기재라 환산에서 역산한 값이다 — 그 구분이 사라지면
+    // 화면의 지상 해상도가 실측 근거를 가진 숫자처럼 읽힌다.
+    const aircraft = readFileSync(join(process.cwd(), "src/lib/aircraft.ts"), "utf8");
+    expect(aircraft).toContain("유도");
+    expect(aircraft).toContain("EXIF");
   });
 });
