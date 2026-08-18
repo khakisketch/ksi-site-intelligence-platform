@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableRow, TableShell } from "@/components/ui/TableShell";
 import { listSitesCached } from "@/lib/core-api/cached";
+import { describeComparisonFailure } from "@/lib/comparison-failure";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -259,10 +260,11 @@ export default async function ReportsPage({
         <div className="flex flex-col gap-4 p-4 sm:p-5">
           <EmptyState
             title="비교에 실패했습니다"
-            description={
-              (latestRequest?.detail ?? "실패 사유가 기록되지 않았습니다.") +
-              " 구역이나 시점을 바꿔 다시 요청할 수 있습니다."
-            }
+            // 예전에는 서버 원문 뒤에 안내 문장을 그냥 이어 붙여서, 마침표 없는
+            // 원문 다음에 다음 문장이 달라붙었다("…들어온다 구역이나 시점을…").
+            // 이제 요약과 원문을 층으로 나눈다(comparison-failure.ts).
+            description={describeComparisonFailure(latestRequest?.detail ?? null).summary}
+            blockedReason={describeComparisonFailure(latestRequest?.detail ?? null).evidence ?? undefined}
             action={{ label: "임무 화면에서 다시 요청", href: `/missions/${encodeURIComponent(missionId)}` }}
           />
         </div>
