@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T16:57:19+09:00",
+  "updated_at": "2026-08-18T17:12:55+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2458,9 +2458,15 @@
         "택한 방향이 FIELD-1 조사 계획에 반영된다"
       ],
       "status": "in_progress",
-      "attempt": 1,
-      "evidence": "대표자 결정: (가) 조사에 한국 좌표계 기준점 부착. 실행 배선 완료 — commit be59ba0. 근거: (1) 계약 테스트 tests/contract/test_ground_control.py 15건 통과(허용목록·봉인·중복·digest 하위호환·재생 위조 거부, EPSG:32652 도 거부) (2) ODM 어댑터 테스트 6건 통과(파일 첫줄 vs 신고 대조·엔진 전달) (3) 로컬 Core+MinIO 실행: EPSG:5186 등록 201·업로드 200·번들뷰 groundControlCrs 노출, EPSG:32617 거부 422 + 번들 OPEN 유지, 워커 job input 에 crs+downloadUrl 전달 확인 (4) 전체 3489건·ruff·mypy·대시보드 tsc/lint/404테스트/빌드 통과. 미검증: 실제 한국 기준점으로 ODM 이 EPSG:5186 성과를 내는지 — FIELD-1 필요",
-      "verdict": null,
+      "attempt": 2,
+      "evidence": "재시도(attempt 2) — 브랜치 feat/ground-control-ingestion, 커밋 30449f5 기준. 검토 지적 반영 완료.\n(1) Core 기준점 입구: tests/contract/test_ground_control.py 15건 — 허용목록(EPSG:32652 포함 거부)·봉인후 거부·중복 거부·digest 하위호환·재생 위조 거부.\n(2) 워커 대조: tests/contract/test_odm_adapter.py:738-775 6건 — 파일 첫줄 vs 신고 대조 4종 + 엔진 전달 1건, 호출 위치는 worker.py:293-308(대조) < :310-335(제출).\n(3) 업로드 도구: tests/contract/test_upload_source_bundle.py 4건 신설(30449f5) — 봉인 전 부착·거부 시 번들 OPEN 유지·좌표계 누락 거부·미사용 시 기존 동작. 변형 검증: 부착을 봉인 뒤로 옮기면 3건 실패.\n(4) 로컬 실행(Core :8011 + MinIO): EPSG:5186 등록 201/업로드 200/번들뷰 노출, EPSG:32617 거부 422 + 번들 OPEN, 워커 job input 에 crs+downloadUrl 전달.\n(5) FIELD-1 반영: docs/hil/FIELD_1_GROUND_CONTROL.md + 목표 field-1-ground-control 등록.\n(6) CI 동일 명령: uv lock --check · ruff check . · mypy packages services tests tools · pytest 전체 3489건 통과.\n미확인(명시): 실제 한국 기준점으로 ODM 이 EPSG:5186 성과를 내는지 — 측량된 현장 필요(FIELD-1).",
+      "verdict": {
+        "verdict": "refuted",
+        "note": "refuted 2건 중 1건은 유효, 1건은 오독. [유효] tools/upload_source_bundle.py 의 attach_ground_control 이 테스트 0건 — 거부된 기준점일 때 봉인하지 않는다는 순서 규칙이 이 도구에만 있어 아무도 강제하지 않고 있었다. 30449f5 로 4건 추가하고 변형 검증(붙이기를 봉인 뒤로 옮기면 3건 실패)까지 확인. [오독] 'test_odm_adapter.py 에 기준점 테스트 0건' 지적은 검토 중 내가 병합 작업으로 브랜치를 tmp-pr9 로 옮겨 둬서 검토자가 다른 트리를 읽은 결과 — feat/ground-control-ingestion 에는 6건 존재하고 통과한다(tests/contract/test_odm_adapter.py:738-775). 검토 중 작업 트리를 건드린 것은 내 절차 오류다.",
+        "at": "2026-08-18T17:12:40+09:00",
+        "reviewer": "독립 reviewer 서브에이전트(read-only)",
+        "evidence_ref": "adee7bd68391732c0"
+      },
       "invalidation_reason": null,
       "parent": null,
       "blocked_by": null,
@@ -2468,7 +2474,7 @@
       "kind": "decision",
       "verification_requested": null,
       "created_at": "2026-08-18T16:05:38+09:00",
-      "updated_at": "2026-08-18T16:57:06+09:00"
+      "updated_at": "2026-08-18T17:12:55+09:00"
     },
     {
       "id": "field-1-ground-control",
