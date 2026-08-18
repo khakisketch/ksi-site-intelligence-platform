@@ -96,7 +96,17 @@ def compute_gsd_m(camera: CameraSpec, altitude_m: float) -> float:
         raise CameraSpecError(f"altitude_m 는 양의 finite 여야 한다 ({altitude_m!r})")
     sensor_w_m = camera.sensor_width_mm / 1000.0
     focal_m = camera.focal_length_mm / 1000.0
-    return (sensor_w_m * altitude_m) / (focal_m * camera.image_width_px)
+    denominator = focal_m * camera.image_width_px
+    # 초점거리가 subnormal(예: 5e-324)이면 ``/1000`` 에서 0.0 으로 언더플로해 분모가
+    # 0 이 된다 — CameraSpec 의 ``gt=0`` 은 5e-324 를 통과시키므로 여기까지 온다.
+    # ZeroDivisionError 는 typed 실패가 아니라 호출자를 지나쳐 500 으로 샌다
+    # (2026-08-18 실측: 임무 발급 라우트가 500). fail-closed 로 거부한다.
+    if denominator <= 0 or not math.isfinite(denominator):
+        raise CameraSpecError(
+            "focal_length_mm × image_width_px 가 0 으로 언더플로했다 — "
+            f"GSD 를 계산할 수 없다 (focal_length_mm={camera.focal_length_mm!r})"
+        )
+    return (sensor_w_m * altitude_m) / denominator
 
 
 def footprint_m(camera: CameraSpec, gsd_m: float) -> tuple[float, float]:

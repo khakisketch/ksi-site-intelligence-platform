@@ -135,3 +135,110 @@ def test_normal_body_is_unaffected(tmp_path: Path) -> None:
     # 필드가 모자라 422 인 것은 정상이다 — 이 게이트가 막는 것은 500 하나다.
     assert response.status_code != 500, response.text
     assert response.status_code != 404, "라우트가 장착되지 않으면 이 게이트는 공허하다"
+
+
+# ── 자리별 결함 — 전수 조사 Class B/C 회귀 (2026-08-18) ──────────────────────
+#
+# 아래는 라우트 픽스처가 필요 없는 순수 계약·계산 층 회귀다. HTTP 표면 회귀는
+# 각 모듈의 계약 테스트 파일이 자기 관례로 갖는다.
+
+
+def test_oversized_integer_coordinate_is_a_typed_refusal_not_an_overflow() -> None:
+    """[Class B] 파이썬 int 는 자리수 제한이 없어 ``10**400`` 이 그대로 들어온다.
+
+    ``math.isfinite`` 가 float 변환에서 **OverflowError** 를 던지면 그건 ValueError 가
+    아니라 호출자의 typed 거부를 지나쳐 500 이 된다 — 이 헬퍼를 쓰는 세 표면
+    (작업구역 등록·비교 요청·설계 대비 요청)이 전부 그랬다.
+    """
+    from ksi_event_contracts.work_area import assert_polygon_is_usable
+
+    huge = 10**400
+    ring = [[huge, 0.0], [1.0, 0.0], [1.0, 1.0], [huge, 0.0]]
+    with pytest.raises(ValueError, match="표현 범위"):
+        assert_polygon_is_usable({"type": "Polygon", "coordinates": [ring]}, crs="EPSG:5186")
+
+
+def test_normal_polygon_is_still_usable() -> None:
+    """[비공허 대조] 정상 폴리곤은 그대로 통과한다 — 과잉 거부가 아니다."""
+    from ksi_event_contracts.work_area import assert_polygon_is_usable
+
+    ring = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+    assert_polygon_is_usable({"type": "Polygon", "coordinates": [ring]}, crs="EPSG:5186")
+
+
+def test_subnormal_focal_length_is_a_typed_refusal_not_a_zero_division() -> None:
+    """[Class B] subnormal 초점거리는 ``/1000`` 에서 0.0 으로 언더플로한다.
+
+    ``CameraSpec`` 의 ``gt=0`` 은 ``5e-324`` 를 통과시키므로 계산까지 도달하고,
+    ``ZeroDivisionError`` 는 typed 실패가 아니라 500 으로 샌다.
+    """
+    from ksi_mission_planning.camera import CameraSpec, CameraSpecError, compute_gsd_m
+
+    camera = CameraSpec(
+        sensor_width_mm=17.3, focal_length_mm=5e-324, image_width_px=5280, image_height_px=3956
+    )
+    with pytest.raises(CameraSpecError, match="언더플로"):
+        compute_gsd_m(camera, 40.0)
+
+
+def test_normal_camera_still_computes_gsd() -> None:
+    """[비공허 대조] 정상 카메라의 GSD 계산은 그대로다."""
+    from ksi_mission_planning.camera import CameraSpec, compute_gsd_m
+
+    camera = CameraSpec(
+        sensor_width_mm=17.3, focal_length_mm=12.0, image_width_px=5280, image_height_px=3956
+    )
+    assert compute_gsd_m(camera, 40.0) == pytest.approx(0.010922, rel=1e-3)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_contract_models_reject_non_finite_floats(bad: float) -> None:
+    """[Class C] 계약 베이스가 비유한 실수를 거부한다 — 원장 봉인 차단.
+
+    ``DurableJournal`` 은 ``json.dumps(allow_nan=False)`` 를 쓰고 append 예외를
+    **봉인으로 승격**한다. 비유한 값이 검증을 통과해 원장에 닿으면 그 저장소가
+    프로세스 수명 내내 죽는다 — 한 요청으로 서비스가 영구히 멈추는 경로다.
+    """
+    from ksi_event_contracts.coverage_report import CoverageCell, CoverageCellState
+    from pydantic import ValidationError
+
+    state = next(iter(CoverageCellState))
+    with pytest.raises(ValidationError):
+        CoverageCell(cell_id="c1", state=state, quality=bad)
+
+
+def test_contract_models_still_accept_finite_floats() -> None:
+    """[비공허 대조] 정상 실수와 None 은 그대로 통과한다."""
+    from ksi_event_contracts.coverage_report import CoverageCell, CoverageCellState
+
+    state = next(iter(CoverageCellState))
+    assert CoverageCell(cell_id="c1", state=state, quality=0.9).quality == 0.9
+    assert CoverageCell(cell_id="c2", state=state, quality=None).quality is None
+
+
+def _nested_geometry(depth: int) -> dict[str, Any]:
+    geometry: dict[str, Any] = {"type": "Point", "coordinates": [[1.0, 2.0], [3.0, 4.0]]}
+    for _ in range(depth):
+        geometry = {"type": "GeometryCollection", "geometries": [geometry]}
+    return geometry
+
+
+@pytest.mark.parametrize("depth", [400, 900, 5000])
+def test_deeply_nested_geometry_is_refused_not_a_recursion_error(depth: int) -> None:
+    """[Class B] 깊게 중첩된 GeometryCollection 이 ``RecursionError`` 를 내면 안 된다.
+
+    ``RecursionError`` 는 ``ValueError`` 도 ``ValidationError`` 도 아니라 어떤 typed
+    거부에도 안 걸려 500 으로 샌다. 상한을 넘으면 **퇴화로 판정**한다 — Core 가
+    끝까지 읽지 못한 구조를 CRITICAL 확정 근거로 삼을 수 없다(fail-closed).
+    """
+    from ksi_core.events import _geometry_is_degenerate  # noqa: PLC2701 -- 순수 판정 함수
+
+    assert _geometry_is_degenerate(_nested_geometry(depth)) is not None
+
+
+@pytest.mark.parametrize("depth", [0, 1, 3])
+def test_shallow_geometry_is_still_accepted(depth: int) -> None:
+    """[비공허 대조] 실제 위험장이 쓰는 얕은 형상은 퇴화로 판정되지 않는다."""
+    from ksi_core.events import _geometry_is_degenerate  # noqa: PLC2701
+
+    assert _geometry_is_degenerate(_nested_geometry(depth)) is None

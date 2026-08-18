@@ -123,6 +123,9 @@ _NOT_FOUND_DETAIL = "해당 임무의 원본 미디어 번들을 찾을 수 없�
 # 한 요청당 상한 — 수백~수천 장이 몇 번의 요청으로 끝나되, 한 요청이 무한정
 # 커져 journal 잠금을 오래 쥐는 것을 막는다.
 MAX_BATCH_SIZE = 200
+# 신고 해상도 상한 — `runtime_profile.py` 의 reference_width/height 와 같은 값.
+# 크기 정책이 아니라 영구 장애 차단이 목적이다(아래 width/height 주석 참조).
+_MAX_MEDIA_DIMENSION_PX = 16_384
 
 
 class SourceMediaBatchVerdict(StrEnum):
@@ -954,8 +957,14 @@ class SourceMediaFileClaim(CamelModel):
     media_id: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bytes: int = Field(ge=1)
-    width: int = Field(ge=1)
-    height: int = Field(ge=1)
+    # 상한이 있어야 하는 이유는 크기 정책이 아니라 **영구 장애 차단**이다. 파이썬 int 는
+    # 자리수 제한이 없어 10**200 같은 신고가 들어오는데, 그 값은 봉인(되돌릴 수 없다)을
+    # 지난 뒤 processing-job 발급에서 width*height 로 곱해져 float 범위를 넘고
+    # OverflowError 가 난다 — 그때부터 그 임무는 **완전히 정상인 요청으로도** 영원히
+    # 500 이다(2026-08-18 실측: 등록 201 → 봉인 201 → 발급 500 영구).
+    # 상한값은 runtime_profile.py 의 reference_width/height 관례를 그대로 쓴다.
+    width: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
+    height: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
     content_type: str = Field(min_length=1)
 
 
@@ -1006,8 +1015,14 @@ class SourceMediaMeasurementItem(CamelModel):
     media_id: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bytes: int = Field(ge=1)
-    width: int = Field(ge=1)
-    height: int = Field(ge=1)
+    # 상한이 있어야 하는 이유는 크기 정책이 아니라 **영구 장애 차단**이다. 파이썬 int 는
+    # 자리수 제한이 없어 10**200 같은 신고가 들어오는데, 그 값은 봉인(되돌릴 수 없다)을
+    # 지난 뒤 processing-job 발급에서 width*height 로 곱해져 float 범위를 넘고
+    # OverflowError 가 난다 — 그때부터 그 임무는 **완전히 정상인 요청으로도** 영원히
+    # 500 이다(2026-08-18 실측: 등록 201 → 봉인 201 → 발급 500 영구).
+    # 상한값은 runtime_profile.py 의 reference_width/height 관례를 그대로 쓴다.
+    width: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
+    height: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
 
 
 class SourceMediaVerifyRequest(CamelModel):

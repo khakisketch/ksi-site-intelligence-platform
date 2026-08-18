@@ -430,20 +430,36 @@ def _coordinate_count(value: Any, *, depth: int = 0) -> int:
     return sum(_coordinate_count(item, depth=depth + 1) for item in value)
 
 
-def _geometry_is_degenerate(geometry: Any) -> str | None:
+#: ``geometries`` 중첩 상한 — ``_coordinate_count`` 의 ``depth > 8`` 과 같은 자리수.
+#: 실제 위험장은 이 깊이를 쓰지 않는다(C++ 생산자는 단일 EXTRUDED_POLYGON 을 낸다).
+_MAX_GEOMETRY_NESTING_DEPTH = 8
+
+
+def _geometry_is_degenerate(geometry: Any, *, depth: int = 0) -> str | None:
     """구조적으로만 존재하고 좌표가 없는 geometry 면 사유를, 아니면 ``None``.
 
     ``_payload_is_nonempty`` 는 ``{"type":"Polygon","coordinates":[]}`` 처럼
     **비어있지 않은 dict 안에 빈 좌표**가 든 경우를 통과시킨다(2026-08-14 실측:
     빈 좌표 폴리곤·점 하나·임의 문자열이 모두 CRITICAL 확정 통과). 위험장이라고
     주장하면서 좌표가 없으면 그것은 증거가 아니다.
+
+    ``geometries`` 축에도 깊이 상한이 있어야 한다 — 없으면 깊게 중첩된
+    ``GeometryCollection`` 이 ``RecursionError`` 를 내고, 그건 ``ValueError`` 도
+    ``ValidationError`` 도 아니라 어떤 typed 거부에도 안 걸려 500 으로 샌다
+    (2026-08-18 실측: depth 900 에서 재현). 바로 위 ``_coordinate_count`` 가 같은
+    이유로 이미 ``depth > 8`` 상한을 갖는다 — 그 관례를 이 축에도 맞춘다.
+    상한을 넘으면 통과가 아니라 **퇴화로 판정**한다: Core 가 끝까지 읽지 못한
+    구조를 CRITICAL 확정의 근거로 삼을 수 없다(fail-closed).
     """
+    if depth > _MAX_GEOMETRY_NESTING_DEPTH:
+        return "geometry.payload 중첩이 너무 깊어 판정할 수 없다"
     if isinstance(geometry, dict):
         if "coordinates" in geometry and _coordinate_count(geometry.get("coordinates")) == 0:
             return "geometry.payload.coordinates에 좌표가 없다"
         geometries = geometry.get("geometries")
         if isinstance(geometries, list) and (
-            not geometries or all(_geometry_is_degenerate(item) for item in geometries)
+            not geometries
+            or all(_geometry_is_degenerate(item, depth=depth + 1) for item in geometries)
         ):
             return "geometry.payload.geometries가 비어있거나 모두 퇴화됐다"
     return None
