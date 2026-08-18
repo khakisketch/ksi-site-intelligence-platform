@@ -365,13 +365,38 @@ def attach_ground_control(
     이 파일이 있어야 재구성 성과가 한국 평면직각좌표계로 나오고, 그래야 두 시점
     비교가 성립한다(없으면 엔진이 EXIF 로 UTM 을 고르고 비교 단계에서 거부된다).
     ``crs`` 는 파일 첫 줄과 같아야 한다 — 다르면 워커가 제출 전에 멈춘다.
+
+    ## 재실행이 실패가 되지 않게 하는 것이 이 함수의 절반이다
+
+    이 도구의 계약은 "재시도는 같은 명령을 다시 부르면 된다"이다(모듈 docstring).
+    그런데 서버는 봉인된 번들의 기준점 등록을 ``BUNDLE_SEALED`` 로 거부하므로,
+    등록을 무조건 부르면 **성공적으로 끝난 조사를 같은 명령으로 재실행할 때마다
+    실패로 끝난다** — FIELD_1_GROUND_CONTROL.md 가 제시하는 명령이 정확히 그 형태다
+    (독립 검토 2026-08-18 적발).
+
+    그래서 먼저 번들 상태를 본다. 이미 봉인됐고 붙어 있는 기준점이 **같은 파일**
+    이면 할 일이 없다(성공). 봉인됐는데 **다른 파일**이거나 기준점이 아예 없으면
+    그건 조용히 넘어갈 일이 아니다 — 그 조사는 지금 올리려는 기준점으로 만들어진
+    성과가 아니다.
     """
     payload = path.read_bytes()
-    request = {
-        "sha256": hashlib.sha256(payload).hexdigest(),
-        "bytes": len(payload),
-        "crs": crs,
-    }
+    digest = hashlib.sha256(payload).hexdigest()
+
+    bundle = _fetch_bundle(client, mission_id)
+    if bundle is not None and bundle.get("status") == "SEALED":
+        if bundle.get("groundControlSha256") == digest and bundle.get("groundControlCrs") == crs:
+            # 같은 명령의 재실행 — 이미 이 기준점으로 봉인돼 있다.
+            return True
+        registered_crs = bundle.get("groundControlCrs")
+        registered_sha = str(bundle.get("groundControlSha256"))[:12]
+        outcome.failures.append(
+            "이 임무는 이미 봉인됐고, 붙어 있는 기준점이 지금 올리려는 파일과 다르다"
+            f"(등록됨: {registered_crs}/{registered_sha}, 요청: {crs}/{digest[:12]}) — "
+            "새 임무로 발급해 다시 올려야 한다"
+        )
+        return False
+
+    request = {"sha256": digest, "bytes": len(payload), "crs": crs}
     try:
         response = client.post(
             f"/v1/missions/{mission_id}/source-media/ground-control", json=request
@@ -399,6 +424,25 @@ def attach_ground_control(
         outcome.failures.append(f"기준점 PUT 실패({status})")
         return False
     return True
+
+
+def _fetch_bundle(client: httpx.Client, mission_id: str) -> dict[str, Any] | None:
+    """현재 번들 상태 — 등록된 적 없으면(404) None. 조회 실패도 None 으로 접는다.
+
+    조회가 안 되면 등록을 시도해 서버가 판정하게 둔다 — 여기서 실패로 끊으면
+    일시적 조회 오류가 업로드 전체를 막는다.
+    """
+    try:
+        response = client.get(f"/v1/missions/{mission_id}/source-media")
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def seal_bundle(client: httpx.Client, mission_id: str, outcome: SyncOutcome) -> bool:

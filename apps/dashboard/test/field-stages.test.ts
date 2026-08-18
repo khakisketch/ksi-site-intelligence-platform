@@ -33,6 +33,7 @@ function bundle(overrides: Partial<SourceMediaBundleView> = {}): SourceMediaBund
     verifiedAt: null,
     lastMismatchAt: null,
     groundControlCrs: null,
+    groundControlSha256: null,
     ...overrides,
   };
 }

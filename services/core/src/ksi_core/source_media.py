@@ -1260,6 +1260,9 @@ class SourceMediaBundleView(CamelModel):
     # 성과로는 두 시점 비교를 할 수 없다(엔진이 UTM 으로 낸다) — 화면이 그 사실을
     # 미리 말할 수 있도록 목록·상세 응답에 함께 싣는다.
     ground_control_crs: str | None = None
+    # 같은 좌표계라도 성과가 다르면 다른 기준점이다 — 재실행하는 도구가 "이미
+    # 붙인 그 파일인가"를 정확히 판단할 수 있게 지문도 함께 낸다.
+    ground_control_sha256: str | None = None
 
 
 class GroundControlRequest(CamelModel):
@@ -1335,6 +1338,9 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
         last_mismatch_at=bundle.last_mismatch_at,
         ground_control_crs=(
             bundle.ground_control.crs if bundle.ground_control is not None else None
+        ),
+        ground_control_sha256=(
+            bundle.ground_control.sha256 if bundle.ground_control is not None else None
         ),
     )
 

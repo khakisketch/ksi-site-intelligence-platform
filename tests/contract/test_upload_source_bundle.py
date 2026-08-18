@@ -45,6 +45,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from upload_source_bundle import (  # noqa: E402 -- 위 sys.path 조작 뒤에만 해석 가능
     RECONSTRUCTION_SPEC,
+    SyncOutcome,
     load_confirmed,
     run_sync,
 )
@@ -725,3 +726,80 @@ def test_no_ground_control_keeps_the_previous_behaviour(tmp_path: Path) -> None:
     assert outcome.sealed is True
     assert outcome.processing_job_id is not None
     assert client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()["groundControlCrs"] is None
+
+
+def test_rerunning_the_same_command_with_ground_control_is_not_a_failure(
+    tmp_path: Path,
+) -> None:
+    """[핵심] 이 도구의 계약은 "재시도는 같은 명령을 다시 부르면 된다"이다.
+
+    서버는 봉인된 번들의 기준점 등록을 BUNDLE_SEALED 로 거부하므로, 등록을 무조건
+    부르면 **성공적으로 끝난 조사를 재실행할 때마다 실패로 끝난다**. FIELD-1 절차
+    문서가 제시하는 명령이 정확히 이 형태라, 현장에서 가장 먼저 부딪히는 결함이
+    됐을 것이다(독립 검토 2026-08-18 적발 → 이 테스트로 고정).
+    """
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 3)
+    gcp = _gcp_file(tmp_path / "gcp")
+
+    def _run() -> SyncOutcome:
+        return run_sync(
+            client,
+            mission_id=_MISSION_ID,
+            source_dir=tmp_path / "photos",
+            state_dir=tmp_path / "state",
+            seal=True,
+            start_reconstruction=True,
+            ground_control=gcp,
+            ground_control_crs="EPSG:5186",
+            put_object=_StorageUploads(storage),
+        )
+
+    first = _run()
+    assert first.failures == []
+    second = _run()
+    assert second.failures == [], f"같은 명령의 재실행이 실패로 끝났다: {second.failures}"
+    assert second.sealed is True
+
+
+def test_sealed_bundle_with_a_different_ground_control_file_is_reported(
+    tmp_path: Path,
+) -> None:
+    """재실행 관용이 **다른 기준점을 조용히 삼키는** 것으로 번지면 안 된다.
+
+    이미 봉인된 조사에 다른 성과를 올리려는 것은 재시도가 아니라 착오다 — 그
+    조사의 성과는 지금 올리려는 기준점으로 만들어진 것이 아니다.
+    """
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    _photos(tmp_path / "photos", 3)
+
+    first = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        ground_control=_gcp_file(tmp_path / "gcp-a"),
+        ground_control_crs="EPSG:5186",
+        put_object=_StorageUploads(storage),
+    )
+    assert first.failures == []
+
+    other = tmp_path / "gcp-b" / "gcp_list.txt"
+    other.parent.mkdir(parents=True, exist_ok=True)
+    other.write_text(
+        "EPSG:5186\n999999.000 888888.000 12.000 100 100 photo-1.jpg\n", encoding="utf-8"
+    )
+    second = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=tmp_path / "photos",
+        state_dir=tmp_path / "state",
+        seal=True,
+        ground_control=other,
+        ground_control_crs="EPSG:5186",
+        put_object=_StorageUploads(storage),
+    )
+    assert any("이미 봉인" in message for message in second.failures), second.failures

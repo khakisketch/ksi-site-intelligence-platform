@@ -717,6 +717,8 @@ export interface SourceMediaBundleView {
    * 다루면, 운영자는 재구성이 끝난 뒤에야 비교가 안 된다는 걸 알게 된다.
    */
   groundControlCrs: string | null;
+  /** 기준점 파일의 지문 — 같은 좌표계의 다른 성과와 구분한다. */
+  groundControlSha256: string | null;
 }
 
 export interface SourceMediaSealResponse {

@@ -4734,6 +4734,12 @@ components:
             이 조사에 붙은 기준점 파일의 좌표계. null 이면 기준점 없이 찍힌
             조사이고, 그 성과로는 두 시점 비교를 할 수 없다(엔진이 EXIF 로 UTM 을
             고른다) — 화면이 그 사실을 미리 말할 수 있게 목록에 함께 싣는다.
+        groundControlSha256:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: >-
+            기준점 파일의 지문. 같은 좌표계라도 성과가 다르면 다른 기준점이라,
+            재실행하는 도구가 "이미 붙인 그 파일인가"를 이 값으로 판단한다.
     GroundControlRequest:
       description: >-
         기준점 파일 등록 요청 — 내용이 아니라 **신고**다(Core 는 바이트를 읽지 않는다).
