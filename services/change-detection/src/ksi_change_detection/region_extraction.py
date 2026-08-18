@@ -201,6 +201,15 @@ def _vectorize_label(mask: np.ndarray, transform: Any) -> dict[str, Any]:
     잡아도 다른 라벨과 섞일 일이 없다. 대신 같은 라벨 안에서 대각선으로만
     이어진 셀들을 GDAL 이 하나의 폴리곤으로 그리게 해, 불필요하게 조각난
     MultiPolygon 을 피한다.
+
+    그래서 아래 MultiPolygon 결합 분기는 ``compute_change_regions`` 경로에서는
+    실행되지 않는다 — 라벨 마스크는 4-연결이든 8-연결이든 항상 하나의 8-연결
+    성분이고, GDAL 은 그런 성분을 Polygon 하나로 낸다(대각선 계단·코너 접촉·
+    도넛·체커보드 전부 단일 Polygon 으로 나오는 것을 실측했다. 구멍과 자기접촉은
+    같은 폴리곤의 내부 링이 되지, 별도 shape 로 갈라지지 않는다). 이 분기는
+    그 GDAL 동작이 바뀌었을 때를 대비한 방어이고, 테스트가 이 함수를 직접 불러
+    계약으로 고정한다(``test_region_extraction.py`` 의
+    ``test_the_multipolygon_join_is_defensive_and_stays_correct_downstream``).
     """
     shapes = [
         geom
@@ -218,7 +227,9 @@ def _vectorize_label(mask: np.ndarray, transform: Any) -> dict[str, Any]:
     for geom in shapes:
         if geom["type"] == "Polygon":
             polygons.append(geom["coordinates"])
-        elif geom["type"] == "MultiPolygon":
+        # pragma 이유는 아래 else 와 같다 — features.shapes 는 Polygon 만 낸다
+        # (무작위 마스크 4,000회 전수 검사에서 MultiPolygon 0건).
+        elif geom["type"] == "MultiPolygon":  # pragma: no cover
             polygons.extend(geom["coordinates"])
         else:  # pragma: no cover -- GDAL 이 이 두 타입 외에는 내지 않는다
             raise RegionExtractionError(
