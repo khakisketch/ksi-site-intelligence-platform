@@ -1,0 +1,1211 @@
+{
+  "map": {
+    "leafletContainer": 1,
+    "zoomControl": 1,
+    "polygon": 2,
+    "loadedTiles": 10,
+    "consoleErrors": [],
+    "requestFailures": [
+      "http://100.116.163.1:3020/favicon.ico?favicon.2vob68tjqpejf.ico :: net::ERR_ABORTED"
+    ]
+  },
+  "responsive": [
+    {
+      "label": "tablet",
+      "route": "/",
+      "screenshot": "31-home-tablet-1024-viewport.png",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [
+        {
+          "tag": "A",
+          "text": "전체 보기",
+          "width": 49,
+          "height": 18.8
+        },
+        {
+          "tag": "A",
+          "text": "이벤트 이력",
+          "width": 60.5,
+          "height": 18.8
+        }
+      ],
+      "measurements": [
+        {
+          "tag": "A",
+          "text": "홈",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장9",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무4",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트4",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "자산·시설물",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "2D·3D World",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "보고서",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Fleet·Edge",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Data·AI",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "설정",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "지금 확인하기",
+          "width": 111.7,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "전체 보기",
+          "width": 49,
+          "height": 18.8
+        },
+        {
+          "tag": "A",
+          "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WS",
+          "width": 261.3,
+          "height": 317.5
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑기준 지도가 없어 순찰을 시작할 수 없습",
+          "width": 261.3,
+          "height": 317.5
+        },
+        {
+          "tag": "A",
+          "text": "데모 현장 1site-demo-1미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을",
+          "width": 261.3,
+          "height": 317.5
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록site-busan-port-a미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "상태코드 확인SITE-STATUSCHECK미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑기준 지도가 없어 순찰을 시작할 수 없습",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "진척 계산 실증 현장site-progress-demo미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록일8월 5일발급 임무0미조치 이벤트0",
+          "width": 261.3,
+          "height": 242.8
+        },
+        {
+          "tag": "A",
+          "text": "이벤트 이력",
+          "width": 60.5,
+          "height": 18.8
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "tablet",
+      "route": "/events",
+      "screenshot": "32-events-tablet-1024-viewport.png",
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [],
+      "measurements": [
+        {
+          "tag": "A",
+          "text": "홈",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장9",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무4",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트4",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "자산·시설물",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "2D·3D World",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "보고서",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Fleet·Edge",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Data·AI",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "설정",
+          "width": 156,
+          "height": 44
+        },
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "미배정4",
+          "width": 196,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "조치 중0",
+          "width": 196,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "재점검0",
+          "width": 196,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "종결0",
+          "width": 196,
+          "height": 63.3
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체관측됨후보증거 수집 중소견확정오탐 처리미해결",
+          "width": 113,
+          "height": 44
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체후보중간높음위험",
+          "width": 69,
+          "height": 44
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체미배정배정됨조치 중재점검 요청해결됨종료",
+          "width": 110,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 8:149일째 미조치목표 4시간확인 목표 초과",
+          "width": 414,
+          "height": 151
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 9:029일째 미조치목표 4시간확인 목표 초과",
+          "width": 414,
+          "height": 151
+        },
+        {
+          "tag": "A",
+          "text": "양산 물류센터 증축 현장사람 감지·26. 8. 4. AM 9:419일째 미조치목표 4시간확인 목표 초과심각도",
+          "width": 414,
+          "height": 130
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록사람 감지·26. 8. 4. AM 10:059일째 미조치목표 4시간확인 목표 초과심각",
+          "width": 414,
+          "height": 130
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/",
+      "screenshot": "33-home-mobile-390-viewport.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [
+        {
+          "tag": "A",
+          "text": "전체 보기",
+          "width": 49,
+          "height": 18.8
+        },
+        {
+          "tag": "A",
+          "text": "이벤트 이력",
+          "width": 60.5,
+          "height": 18.8
+        }
+      ],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "지금 확인하기",
+          "width": 111.7,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "전체 보기",
+          "width": 49,
+          "height": 18.8
+        },
+        {
+          "tag": "A",
+          "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WS",
+          "width": 358,
+          "height": 232.8
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑기준 지도가 없어 순찰을 시작할 수 없습",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "데모 현장 1site-demo-1미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록site-busan-port-a미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "상태코드 확인SITE-STATUSCHECK미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑기준 지도가 없어 순찰을 시작할 수 없습",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "진척 계산 실증 현장site-progress-demo미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행",
+          "width": 358,
+          "height": 179.8
+        },
+        {
+          "tag": "A",
+          "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록일8월 5일발급 임무0미조치 이벤트0",
+          "width": 358,
+          "height": 132.3
+        },
+        {
+          "tag": "A",
+          "text": "이벤트 이력",
+          "width": 60.5,
+          "height": 18.8
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/events",
+      "screenshot": "34-events-mobile-390-viewport.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "미배정4",
+          "width": 175,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "조치 중0",
+          "width": 175,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "재점검0",
+          "width": 175,
+          "height": 63.3
+        },
+        {
+          "tag": "A",
+          "text": "종결0",
+          "width": 175,
+          "height": 63.3
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체관측됨후보증거 수집 중소견확정오탐 처리미해결",
+          "width": 113,
+          "height": 44
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체후보중간높음위험",
+          "width": 69,
+          "height": 44
+        },
+        {
+          "tag": "SELECT",
+          "text": "전체미배정배정됨조치 중재점검 요청해결됨종료",
+          "width": 110,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 8:149일째 미조치목표 4시간확인 목표 초과",
+          "width": 324,
+          "height": 121.5
+        },
+        {
+          "tag": "A",
+          "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 9:029일째 미조치목표 4시간확인 목표 초과",
+          "width": 324,
+          "height": 121.5
+        },
+        {
+          "tag": "A",
+          "text": "양산 물류센터 증축 현장사람 감지·26. 8. 4. AM 9:419일째 미조치목표 4시간확인 목표 초과심각도",
+          "width": 324,
+          "height": 121.5
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록사람 감지·26. 8. 4. AM 10:059일째 미조치목표 4시간확인 목표 초과심각",
+          "width": 324,
+          "height": 121.5
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/sites/site-demo-1",
+      "screenshot": "35-site-detail-mobile-390-viewport.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [
+        {
+          "tag": "A",
+          "text": "Zoom in",
+          "width": 30,
+          "height": 30
+        },
+        {
+          "tag": "A",
+          "text": "Zoom out",
+          "width": 30,
+          "height": 30
+        },
+        {
+          "tag": "A",
+          "text": "Leaflet",
+          "width": 53.3,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "OpenStreetMap",
+          "width": 87.8,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "관리",
+          "width": 23,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "관리",
+          "width": 23,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "계획 대비 진척 보기 →",
+          "width": 118.9,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "현장 보고서 내보내기 →",
+          "width": 127.8,
+          "height": 17
+        }
+      ],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "베이스라인 임무 발급",
+          "width": 152.2,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Zoom in",
+          "width": 30,
+          "height": 30
+        },
+        {
+          "tag": "A",
+          "text": "Zoom out",
+          "width": 30,
+          "height": 30
+        },
+        {
+          "tag": "A",
+          "text": "Leaflet",
+          "width": 53.3,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "OpenStreetMap",
+          "width": 87.8,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "관리",
+          "width": 23,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "관리",
+          "width": 23,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "계획 대비 진척 보기 →",
+          "width": 118.9,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "현장 보고서 내보내기 →",
+          "width": 127.8,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "전체보기",
+          "width": 46,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "초기 매핑2026. 8. 5.",
+          "width": 340,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "전체보기",
+          "width": 46,
+          "height": 44
+        },
+        {
+          "tag": "SELECT",
+          "text": "선택하세요초기 매핑 중운영 중단",
+          "width": 324,
+          "height": 44
+        },
+        {
+          "tag": "TEXTAREA",
+          "text": "",
+          "width": 324,
+          "height": 76
+        },
+        {
+          "tag": "TEXTAREA",
+          "text": "",
+          "width": 324,
+          "height": 76
+        },
+        {
+          "tag": "BUTTON",
+          "text": "상태 전이",
+          "width": 324,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/more",
+      "screenshot": "36-more-mobile-390-viewport.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "자산·시설물",
+          "width": 356,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "2D·3D World",
+          "width": 356,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "보고서",
+          "width": 356,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "Fleet·Edge준비 중",
+          "width": 356,
+          "height": 46.4
+        },
+        {
+          "tag": "A",
+          "text": "Data·AI준비 중",
+          "width": 356,
+          "height": 46.4
+        },
+        {
+          "tag": "A",
+          "text": "설정",
+          "width": 356,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/sites/site-demo-1/surveys/new",
+      "screenshot": "37-survey-mobile-390-viewport.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [
+        {
+          "tag": "A",
+          "text": "목록으로",
+          "width": 46,
+          "height": 18.8
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        }
+      ],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "목록으로",
+          "width": 46,
+          "height": 18.8
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "INPUT",
+          "text": "survey-target",
+          "width": 13,
+          "height": 13
+        },
+        {
+          "tag": "BUTTON",
+          "text": "다음",
+          "width": 58.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [],
+      "requestFailures": []
+    },
+    {
+      "label": "mobile",
+      "route": "/events/edge-dev-001%3A%3Aevt-demo-004",
+      "screenshot": "38-event-detail-mobile-390.png",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "coarsePointer": true,
+      "horizontalOverflow": false,
+      "below44": [
+        {
+          "tag": "A",
+          "text": "← 목록으로",
+          "width": 358,
+          "height": 20
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록",
+          "width": 134.8,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "msn-demo-001",
+          "width": 92,
+          "height": 17
+        },
+        {
+          "tag": "INPUT",
+          "text": "",
+          "width": 1,
+          "height": 1
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "원본 데이터(개발 전용)",
+          "width": 332,
+          "height": 20
+        }
+      ],
+      "measurements": [
+        {
+          "tag": "BUTTON",
+          "text": "로그아웃",
+          "width": 63.8,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "← 목록으로",
+          "width": 358,
+          "height": 20
+        },
+        {
+          "tag": "A",
+          "text": "부산신항 배후단지 A블록",
+          "width": 134.8,
+          "height": 17
+        },
+        {
+          "tag": "A",
+          "text": "msn-demo-001",
+          "width": 92,
+          "height": 17
+        },
+        {
+          "tag": "TEXTAREA",
+          "text": "",
+          "width": 324,
+          "height": 76
+        },
+        {
+          "tag": "BUTTON",
+          "text": "오탐으로 종결",
+          "width": 111.7,
+          "height": 44
+        },
+        {
+          "tag": "INPUT",
+          "text": "",
+          "width": 1,
+          "height": 1
+        },
+        {
+          "tag": "BUTTON",
+          "text": "열어보기",
+          "width": 72,
+          "height": 44
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "원본 데이터(개발 전용)",
+          "width": 332,
+          "height": 20
+        },
+        {
+          "tag": "A",
+          "text": "오늘",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "현장",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "임무",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "이벤트",
+          "width": 78,
+          "height": 44
+        },
+        {
+          "tag": "A",
+          "text": "더보기",
+          "width": 78,
+          "height": 44
+        }
+      ],
+      "consoleErrors": [
+        "pageerror: Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <HTTPAccessFallbackErrorBoundary pathname=\"/events/ed...\" notFound={{...}} forbidden={undefined} ...>\n      <RedirectBoundary>\n        <RedirectErrorBoundary router={{...}}>\n          <InnerLayoutRouter url=\"/events/ed...\" tree={[...]} params={{eventKey:\"...\"}} cacheNode={{rsc:{...}, ...}} ...>\n            <SegmentViewNode type=\"page\" pagePath=\"events/[ev...\">\n              <SegmentTrieNode>\n              <EventDetailPage>\n                <div className=\"flex flex-...\">\n                  <LinkComponent>\n                  <div>\n                  <div className=\"flex flex-...\">\n                    <div>\n                    <div className=\"flex flex-...\">\n                      <EvidencePanel eventKey=\"edge-dev-0...\" evidence={[...]} canUpload={true}>\n                        <section className=\"flex flex-...\">\n                          <div>\n                          <ul className=\"flex flex-...\">\n                            <li className=\"flex flex-...\">\n                              <div className=\"flex flex-...\">\n                                <span>\n                                <span className=\"num text-[11.5px] whitespace-nowrap text-ink-muted\">\n+                                 2026. 8. 4. 오후 10:38\n-                                 2026. 8. 4. PM 10:38\n                              ...\n                      ...\n                  ...\n            ...\n          ...\n"
+      ],
+      "requestFailures": []
+    }
+  ],
+  "keyboard": [
+    {
+      "step": 1,
+      "tag": "A",
+      "text": "홈",
+      "href": "/",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 2,
+      "tag": "A",
+      "text": "현장9",
+      "href": "/sites",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 3,
+      "tag": "A",
+      "text": "임무4",
+      "href": "/missions",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 4,
+      "tag": "A",
+      "text": "이벤트4",
+      "href": "/events",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 5,
+      "tag": "A",
+      "text": "자산·시설물",
+      "href": "/assets",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 6,
+      "tag": "A",
+      "text": "2D·3D World",
+      "href": "/world",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 7,
+      "tag": "A",
+      "text": "보고서",
+      "href": "/reports",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    },
+    {
+      "step": 8,
+      "tag": "A",
+      "text": "Fleet·Edge",
+      "href": "/coming-soon/fleet",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px"
+    }
+  ]
+}

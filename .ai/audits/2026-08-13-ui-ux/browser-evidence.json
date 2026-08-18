@@ -1,0 +1,5760 @@
+[
+  {
+    "name": "로그인",
+    "screenshot": "01-login-desktop.png",
+    "url": "http://100.116.163.1:3020/login",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 66,
+    "bodyExcerpt": "KSI\nKSI Site Intelligence\n\n발급받은 Bearer 토큰으로 로그인하세요.\n\nBearer 토큰\n로그인",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "KSI Site Intelligence"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그인",
+        "disabled": false,
+        "name": "로그인"
+      }
+    ],
+    "links": [],
+    "controls": [
+      {
+        "tag": "INPUT",
+        "type": "password",
+        "name": "Bearer 토큰",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그인",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "홈",
+    "screenshot": "02-home-desktop.png",
+    "url": "http://100.116.163.1:3020/",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 1729,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n홈\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n!\n\n9일째 미조치 이벤트가 있습니다\n\n김해 산업단지 3공구 신축공사 사람 감지 · 담당자가 없는 이벤트가 모두 4건입니다\n\n지금 확인하기\n미조치 이벤트\n4\n전체 열린 이벤트 4건 중\n확인 SLA 초과\n4\n즉시 확인이 필요합니다\n순찰 가능 현장\n0/9\n등록 현장 중\n발급된 임무\n4\n누적 발급 건수\n현장\n9곳 · 8곳은 아직 순찰할 수 없습니다\n전체 보기\n권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사\nSITE-WSPLIT-01\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n김해 산업단지 3공구 신축공사\nsite-gimhae-3gonggu\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n2\n다음 할 일\n조사 비행 계획\n데모 현장 1\nsite-demo-1\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 5일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n부산신항 배후단지 A블록\nsite-busan-port-a\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n상태코드 확인\nSITE-STATUSCHECK\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n양산 물류센터 증축 현장\nsite-yangsan-logistics\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n진척 계산 실증 현장\nsite-progress-demo\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 13일\n발급 임무\n2\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n카운트 갱신 확인 현장\nSITE-WSPLIT-02\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\nAOI 잠금 검증용\nsite-aoi-lock-verify\n초기 매핑 중\n등록일\n8월 5일\n발급 임무\n0\n미조치 이벤트\n0\n최근 활동\n이벤트 이력\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:07\n진척 계산 실증 현장 현장 등록\n8월 5일\n초기 매핑 임무 발급 — 데모 현장 1\n8월 5일\nAOI 잠금 검증용 현장 등록\n8월 5일\n데모 현장 1 현장 등록\n8월 4일\n상태코드 확인 현장 등록\n8월 4일\n초기 매핑 임무 발급 — 카운트 갱신 확인 현장",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "홈"
+      },
+      {
+        "level": "H2",
+        "text": "현장"
+      },
+      {
+        "level": "H2",
+        "text": "최근 활동"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "지금 확인하기",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "전체 보기",
+        "href": "/sites"
+      },
+      {
+        "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-01"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트2다음 할 일조사 비행 계획",
+        "href": "/sites/site-gimhae-3gonggu"
+      },
+      {
+        "text": "데모 현장 1site-demo-1미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 5일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "부산신항 배후단지 A블록site-busan-port-a미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-busan-port-a"
+      },
+      {
+        "text": "상태코드 확인SITE-STATUSCHECK미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-STATUSCHECK"
+      },
+      {
+        "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-yangsan-logistics"
+      },
+      {
+        "text": "진척 계산 실증 현장site-progress-demo미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 13일발급 임무2미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-02"
+      },
+      {
+        "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록일8월 5일발급 임무0미조치 이벤트0",
+        "href": "/sites/site-aoi-lock-verify"
+      },
+      {
+        "text": "이벤트 이력",
+        "href": "/events"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 목록",
+    "screenshot": "03-sites-desktop.png",
+    "url": "http://100.116.163.1:3020/sites",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 865,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n9곳\n\n현장 등록\n상태코드 확인\nSITE-STATUSCHECK\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n0건\n권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사\nSITE-WSPLIT-01\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n0건\n카운트 갱신 확인 현장\nSITE-WSPLIT-02\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n1건\nAOI 잠금 검증용\nsite-aoi-lock-verify\n초기 매핑 중\n등록\n2026. 8. 5.\n갱신\n2026. 8. 5.\n발급 임무\n0건\n부산신항 배후단지 A블록\nsite-busan-port-a\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n0건\n데모 현장 1\nsite-demo-1\n미매핑\n등록\n2026. 8. 5.\n갱신\n2026. 8. 5.\n발급 임무\n1건\n김해 산업단지 3공구 신축공사\nsite-gimhae-3gonggu\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n0건\n진척 계산 실증 현장\nsite-progress-demo\n미매핑\n등록\n2026. 8. 13.\n갱신\n2026. 8. 13.\n발급 임무\n2건\n양산 물류센터 증축 현장\nsite-yangsan-logistics\n미매핑\n등록\n2026. 8. 4.\n갱신\n2026. 8. 4.\n발급 임무\n0건",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "현장 등록",
+        "href": "/sites/new"
+      },
+      {
+        "text": "상태코드 확인SITE-STATUSCHECK미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무0건",
+        "href": "/sites/SITE-STATUSCHECK"
+      },
+      {
+        "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무0건",
+        "href": "/sites/SITE-WSPLIT-01"
+      },
+      {
+        "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무1건",
+        "href": "/sites/SITE-WSPLIT-02"
+      },
+      {
+        "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록2026. 8. 5.갱신2026. 8. 5.발급 임무0건",
+        "href": "/sites/site-aoi-lock-verify"
+      },
+      {
+        "text": "부산신항 배후단지 A블록site-busan-port-a미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무0건",
+        "href": "/sites/site-busan-port-a"
+      },
+      {
+        "text": "데모 현장 1site-demo-1미매핑등록2026. 8. 5.갱신2026. 8. 5.발급 임무1건",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무0건",
+        "href": "/sites/site-gimhae-3gonggu"
+      },
+      {
+        "text": "진척 계산 실증 현장site-progress-demo미매핑등록2026. 8. 13.갱신2026. 8. 13.발급 임무2건",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑등록2026. 8. 4.갱신2026. 8. 4.발급 임무0건",
+        "href": "/sites/site-yangsan-logistics"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 상세",
+    "screenshot": "04-site-detail-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 668,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 상세\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\nSITE-DEMO-1\n\n데모 현장 1\n베이스라인 임무 발급\n미매핑\n현장 외곽(AOI)\n+\n−\n Leaflet | © OpenStreetMap\n설계 기준면\n관리\n\n완성된 지형의 계획고를 올려두면, 이후 촬영한 현재 지형과 견줘 구역별로 얼마나 더 깎고 더 쌓아야 하는지 계산할 수 있습니다.\n\n작업구역\n관리\n\n이름을 붙여 등록해두면 이후 잔량·진척을 낼 때마다 지도에 새로 그리는 대신 이 구역을 고르기만 하면 됩니다 — 지난번과 이번이 같은 범위라야 계획 대비 진척을 계산할 수 있습니다. 계획 대비 진척 보기 → 현장 보고서 내보내기 →\n\n이 현장의 임무\n전체보기\n초기 매핑\n2026. 8. 5.\n이 현장의 이벤트\n전체보기\n\n아직 없습니다.\n\n현장 좌표계\n좌표계(CRS)\nEPSG:5186\n수직 기준면\nKNGeoid2018\n단위\nmeter\n변환 버전\n1.0.0\n등록\n2026. 8. 5.\n최근 갱신\n2026. 8. 5.\n상태 전이\n다음 상태\n선택하세요\n초기 매핑 중\n운영 중단\n근거 (필수)\n사유 (필수)\n상태 전이",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 상세"
+      },
+      {
+        "level": "H1",
+        "text": "데모 현장 1"
+      },
+      {
+        "level": "H2",
+        "text": "현장 외곽(AOI)"
+      },
+      {
+        "level": "H2",
+        "text": "설계 기준면"
+      },
+      {
+        "level": "H2",
+        "text": "작업구역"
+      },
+      {
+        "level": "H2",
+        "text": "이 현장의 임무"
+      },
+      {
+        "level": "H2",
+        "text": "이 현장의 이벤트"
+      },
+      {
+        "level": "H2",
+        "text": "현장 좌표계"
+      },
+      {
+        "level": "H2",
+        "text": "상태 전이"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "상태 전이",
+        "disabled": true,
+        "name": "상태 전이"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "베이스라인 임무 발급",
+        "href": "/sites/site-demo-1/surveys/new"
+      },
+      {
+        "text": "+",
+        "href": "#"
+      },
+      {
+        "text": "−",
+        "href": "#"
+      },
+      {
+        "text": "Leaflet",
+        "href": "https://leafletjs.com"
+      },
+      {
+        "text": "OpenStreetMap",
+        "href": "https://www.openstreetmap.org/copyright"
+      },
+      {
+        "text": "관리",
+        "href": "/sites/site-demo-1/design"
+      },
+      {
+        "text": "관리",
+        "href": "/sites/site-demo-1/work-areas"
+      },
+      {
+        "text": "계획 대비 진척 보기 →",
+        "href": "/sites/site-demo-1/progress"
+      },
+      {
+        "text": "현장 보고서 내보내기 →",
+        "href": "/sites/site-demo-1/report"
+      },
+      {
+        "text": "전체보기",
+        "href": "/missions?siteId=site-demo-1"
+      },
+      {
+        "text": "초기 매핑2026. 8. 5.",
+        "href": "/missions/site-demo-1-survey-1785916130924"
+      },
+      {
+        "text": "전체보기",
+        "href": "/events?siteId=site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "다음 상태선택하세요초기 매핑 중운영 중단",
+        "disabled": false
+      },
+      {
+        "tag": "TEXTAREA",
+        "type": null,
+        "name": "근거 (필수)",
+        "disabled": false
+      },
+      {
+        "tag": "TEXTAREA",
+        "type": null,
+        "name": "사유 (필수)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "상태 전이",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "작업구역",
+    "screenshot": "05-site-work-areas-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/work-areas",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 781,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n작업구역\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 데모 현장 1\n작업구역\n\n현장에 이름을 붙여 등록해 두는 비교 구역입니다. 한 번 등록해 두면 이후 잔량·진척을 낼 때마다 지도에 새로 그리는 대신 이 구역을 고르기만 하면 되고, 지난번과 이번이 정확히 같은 범위라서 “계획 대비 얼마나 진행됐나”가 비로소 계산됩니다.\n\n그래서 한 번 등록한 모양은 고칠 수 없습니다 — 잘못 그렸다면 대신할 구역을 새로 등록하세요(이전 구역은 자동으로 보관되고, 이미 낸 리포트는 그때의 범위를 그대로 가리킵니다).\n\n새 작업구역 등록\n\n이름을 붙여 등록해 두면 이후 비교마다 이 구역을 고르기만 하면 됩니다. 등록한 모양은 고칠 수 없습니다 — 잘못 그렸으면 목록에서 “다시 그리기”로 대신할 구역을 등록하세요.\n\n이름 — 현장에서 부르는 말로 적으세요(예: 3공구 성토부)\n범위 — 지도에서 폴리곤을 그리세요(꼭짓점 3개 이상)\n+\n−\nDraw a polygon\nEdit layers\nDelete layers\n Leaflet | © OpenStreetMap\n아직 구역이 되지 않았습니다 — 꼭짓점을 3개 이상 찍으세요. 좌표는 위경도(EPSG:4326)로 저장됩니다 (현장 등록 좌표계는 EPSG:5186입니다).\n등록\n사용 중인 작업구역\n0건\n\n아직 등록된 작업구역이 없습니다.",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "작업구역"
+      },
+      {
+        "level": "H1",
+        "text": "작업구역"
+      },
+      {
+        "level": "H2",
+        "text": "새 작업구역 등록"
+      },
+      {
+        "level": "H2",
+        "text": "사용 중인 작업구역"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "등록",
+        "disabled": true,
+        "name": "등록"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 데모 현장 1",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "+",
+        "href": "#"
+      },
+      {
+        "text": "−",
+        "href": "#"
+      },
+      {
+        "text": "Draw a polygon",
+        "href": "#"
+      },
+      {
+        "text": "Edit layers",
+        "href": "#"
+      },
+      {
+        "text": "Delete layers",
+        "href": "#"
+      },
+      {
+        "text": "Leaflet",
+        "href": "https://leafletjs.com"
+      },
+      {
+        "text": "OpenStreetMap",
+        "href": "https://www.openstreetmap.org/copyright"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "이름 — 현장에서 부르는 말로 적으세요(예: 3공구 성토부)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "등록",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "설계 기준",
+    "screenshot": "06-site-design-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-progress-demo/design",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 1564,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n설계 기준면\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 진척 계산 실증 현장\n설계 기준면\n\n완성된 지형의 계획고를 담은 높이 자료(GeoTIFF)를 올려두면, 이후 촬영한 현재 지형과 견줘 구역별로 얼마나 더 깎고 더 쌓아야 하는지를 계산할 수 있습니다.\n\n새 설계 기준면 올리기\n\n아래 값은 전부 사용자가 적어 내는 주장입니다 — 올린 뒤 서버가 파일을 직접 열어 재고 대조합니다. 맞지 않으면 그 자리에서 거부되고, 무엇이 어긋났는지 아래 목록에 뜹니다.\n\n이름\n개정 표기 — 같은 이름·개정으로 다른 내용은 받지 않습니다\n도면의 좌표계 — 현장 등록값을 기본으로 채웠습니다. 도면이 다르면 고치세요.\n이 도면의 높이는 무엇을 기준으로 하나요\n타원체 기준 높이 — 드론 측량(RTK)이 그대로 내는 높이와 같은 기준입니다.\n해발 높이(표고) — 국내 측량 성과·설계도면에서 흔히 쓰는 기준입니다.\n그 기준을 어떻게 아는지 — 비워둘 수 없습니다\n계획고 파일(GeoTIFF · 높이 자료 1밴드)\nBIM/CAD 설계 파일(IFC)은 이 화면이 직접 받지 않습니다 — 저장소의 변환 도구(tools/convert_ifc_design_surface.py)로 높이 GeoTIFF 를 만든 뒤 올리세요. 파일 안에 좌표 기준이 없으면 변환 단계에서 거부됩니다.\n올리고 검증 요청\n등록된 설계 기준면\n전체 1건 · 검증 완료 1건\nA공구 계획고 · Rev.1\n검증 완료\n\n서버가 파일을 직접 열어 재고, 적어 낸 내용과 전부 일치했습니다 — 이제 이 설계면으로 잔량을 계산할 수 있습니다.\n\n식별자\nsite-progress-demo-ds1\n등록\n2026. 8. 13. 오후 10:07:59\n봉인(업로드 주장)\n2026. 8. 13. 오후 10:09:02\n검증 완료\n2026. 8. 13. 오후 10:09:02\n항목\n적어 낸 값(주장)\n파일에서 읽은 값(확인됨)\n파일 해시(sha256)\n064a59a7350ae34a2c4e1ed112a1fdf2b7a18c3e5635fbc81b9f6af9e13b32c5\n064a59a7350ae34a2c4e1ed112a1fdf2b7a18c3e5635fbc81b9f6af9e13b32c5\n좌표계\nEPSG:5186\nEPSG:5186\n평면 단위\n미터\n미터(좌표계에서 확인)\n격자 크기\n—\n100 × 100 화소\n화소 크기\n—\n1.000 × 1.000 m\n밴드 수\n1 (높이 자료)\n1\n유효 높이 셀\n—\n10,000개\n파일 안의 높이 기준(수직 CRS)\n—\n파일에 없음(정상 — 대부분의 높이자료가 그렇습니다)\n높이 기준\n타원체 기준 높이\n근거: 설계사 제공 도면 표제부에 타원체고 명시(실증용 합성 도면)\n높이 자료 파일은 이 값을 담지 않습니다 — 확인할 방법이 없어 끝까지 주장으로 남습니다.\n\n검증이 끝난 설계 기준면은 임무 화면의 설계 대비 잔량에서 고를 수 있습니다 — 같은 현장에서 촬영·재구성이 끝난 임무로 가세요. 이 현장의 임무 보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "설계 기준면"
+      },
+      {
+        "level": "H1",
+        "text": "설계 기준면"
+      },
+      {
+        "level": "H2",
+        "text": "새 설계 기준면 올리기"
+      },
+      {
+        "level": "H2",
+        "text": "등록된 설계 기준면"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "올리고 검증 요청",
+        "disabled": true,
+        "name": "올리고 검증 요청"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 진척 계산 실증 현장",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "이 현장의 임무 보기",
+        "href": "/missions?siteId=site-progress-demo"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "이름",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "개정 표기 — 같은 이름·개정으로 다른 내용은 받지 않습니다",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "도면의 좌표계 — 현장 등록값을 기본으로 채웠습니다. 도면이 다르면 고치세요.",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "타원체 기준 높이 — 드론 측량(RTK)이 그대로 내는 높이와 같은 기준입니다.",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "해발 높이(표고) — 국내 측량 성과·설계도면에서 흔히 쓰는 기준입니다.",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "그 기준을 어떻게 아는지 — 비워둘 수 없습니다",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "file",
+        "name": "계획고 파일(GeoTIFF · 높이 자료 1밴드)BIM/CAD 설계 파일(IFC)은 이 화면이 직접 받지 않습니다 — 저장소의 변환 도구(tools/convert_ifc_design_surface.py)로 높이 GeoTIFF 를 만든 뒤 올리세요. 파일 안에 좌표 기준이 없으면 변환 단계에서 거부됩니다.",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "올리고 검증 요청",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [
+      "pageerror: Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <RedirectBoundary>\n      <RedirectErrorBoundary router={{...}}>\n        <InnerLayoutRouter url=\"/sites/sit...\" tree={[...]} params={{siteId:\"si...\"}} cacheNode={{rsc:{...}, ...}} ...>\n          <SegmentViewNode type=\"page\" pagePath=\"sites/[sit...\">\n            <SegmentTrieNode>\n            <SiteDesignPage>\n              <div className=\"flex flex-...\">\n                <div>\n                <DesignSurfacePanel siteId=\"site-progr...\" siteCrs=\"EPSG:5186\" canWrite={true} initialSurfaces={[...]}>\n                  <div className=\"flex flex-...\">\n                    <section>\n                    <section className=\"flex flex-...\">\n                      <div>\n                      <ul className=\"flex flex-...\">\n                        <SurfaceCard surface={{...}}>\n                          <li className=\"flex flex-...\">\n                            <div>\n                            <p>\n                            <dl className=\"grid grid-...\">\n                              <div>\n                              <div className=\"flex flex-col\">\n                                <dt>\n                                <dd className=\"num\">\n+                                 2026. 8. 13. 오후 10:07:59\n-                                 2026. 8. 13. PM 10:07:59\n                              ...\n                            ...\n                      ...\n          ...\n        ...\n"
+    ],
+    "requestFailures": []
+  },
+  {
+    "name": "설계 대비 진척",
+    "screenshot": "07-site-progress-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-progress-demo/progress",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 319,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n계획 대비 진척\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 진척 계산 실증 현장\n계획 대비 진척\n\n시공 전 지형을 기준으로 계획한 절토·성토량 중, 지금까지 얼마를 끝냈고 얼마가 남았는지를 구역별로 보여줍니다. 흙 물량만 셉니다 — 구조물·포장 공정은 여기 들어가지 않습니다.\n\n어느 설계 기준면 대비 진척을 볼까요?\nA공구 계획고 · Rev.1",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "계획 대비 진척"
+      },
+      {
+        "level": "H1",
+        "text": "계획 대비 진척"
+      },
+      {
+        "level": "H3",
+        "text": "어느 설계 기준면 대비 진척을 볼까요?"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 진척 계산 실증 현장",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "A공구 계획고 · Rev.1",
+        "href": "/sites/site-progress-demo/progress?designSurfaceId=site-progress-demo-ds1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 보고서",
+    "screenshot": "08-site-report-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-progress-demo/report",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 339,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 보고서\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 진척 계산 실증 현장\n현장 보고서 — 진척 계산 실증 현장\n\n계획 대비 진척과(있으면) 설계 대비 남은 물량을 인쇄·저장할 수 있는 형태로 묶었습니다. 화면에 그려진 것과 같은 조회 결과를 그대로 옮긴 것이라 화면의 표·지도와 다른 숫자가 나올 수 없습니다.\n\n어느 설계 기준면 보고서를 만들까요?\nA공구 계획고 · Rev.1",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 보고서"
+      },
+      {
+        "level": "H1",
+        "text": "현장 보고서 — 진척 계산 실증 현장"
+      },
+      {
+        "level": "H3",
+        "text": "어느 설계 기준면 보고서를 만들까요?"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 진척 계산 실증 현장",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "A공구 계획고 · Rev.1",
+        "href": "/sites/site-progress-demo/report?designSurfaceId=site-progress-demo-ds1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 방식 선택",
+    "screenshot": "09-new-site-choice-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/new",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 368,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n베이스라인 임무까지 이어서 발급할까요?\n\n어느 쪽을 골라도 나중에 언제든 임무를 발급할 수 있습니다 — 지금 정하는 건 이번 흐름의 길이일 뿐입니다.\n\n등록 + 베이스라인 임무 발급\n현장 외곽(AOI)·촬영 계획까지 이어서 입력하고 바로 임무를 발급합니다.\n등록만 먼저\n현장 기본정보·좌표계만 등록합니다. 임무는 현장 상세 화면에서 나중에 발급할 수 있습니다.\n목록으로",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      },
+      {
+        "level": "H1",
+        "text": "베이스라인 임무까지 이어서 발급할까요?"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "등록 + 베이스라인 임무 발급현장 외곽(AOI)·촬영 계획까지 이어서 입력하고 바로 임무를 발급합니다.",
+        "href": "/sites/new?mode=full"
+      },
+      {
+        "text": "등록만 먼저현장 기본정보·좌표계만 등록합니다. 임무는 현장 상세 화면에서 나중에 발급할 수 있습니다.",
+        "href": "/sites/new?mode=registration-only"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장만 등록",
+    "screenshot": "10-site-registration-only-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=registration-only",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 596,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n1\n기본정보\n2\n좌표계\n3\n완료\n\n등록만 먼저 진행합니다. 베이스라인 임무는 등록 후 현장 상세 화면에서 언제든 발급할 수 있습니다.\n\n현장 ID*\n\n영숫자로 시작, -/_/. 만 허용, 공백·/ 금지\n\n현장 이름*\n데이터 반출 허용\n\n이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로 내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려 3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더 필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게 \"반출 불가\"로 처리됩니다.\n\n지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)\n예 — 외부/벤더 클라우드 처리를 허용합니다\n아니오 — 사내 서버에서만 처리합니다\n3단계 중 1단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": true,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": true,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 ID*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 이름*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "예 — 외부/벤더 클라우드 처리를 허용합니다",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "아니오 — 사내 서버에서만 처리합니다",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "임무 목록",
+    "screenshot": "17-missions-desktop.png",
+    "url": "http://100.116.163.1:3020/missions",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 651,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n임무\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n초기 매핑 · 카운트 갱신 확인 현장\nSITE-WSPLIT-02-survey-1785842528970\n비행 보고 없음\n격자(매핑)\n웨이포인트\n24\n계획 커버리지\n—\n발급 일시\n2026. 8. 4. PM 8:22\n발급자\ndev-drone_operator\n초기 매핑 · 데모 현장 1\nsite-demo-1-survey-1785916130924\n비행 보고 없음\n격자(매핑)\n웨이포인트\n455\n계획 커버리지\n100.0%\n발급 일시\n2026. 8. 5. PM 4:48\n발급자\ndev-admin\n초기 매핑 · 진척 계산 실증 현장\nsite-progress-demo-epoch1\n비행 보고 없음\n웨이포인트\n—\n계획 커버리지\n—\n발급 일시\n2026. 8. 13. PM 10:09\n발급자\ndev-admin\n초기 매핑 · 진척 계산 실증 현장\nsite-progress-demo-epoch2\n비행 보고 없음\n웨이포인트\n—\n계획 커버리지\n—\n발급 일시\n2026. 8. 13. PM 10:09\n발급자\ndev-admin",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "임무"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "초기 매핑 · 카운트 갱신 확인 현장SITE-WSPLIT-02-survey-1785842528970비행 보고 없음격자(매핑)웨이포인트24계획 커버리지—발급 일시2026. 8. 4. PM 8:22발급자dev-drone_operator",
+        "href": "/missions/SITE-WSPLIT-02-survey-1785842528970"
+      },
+      {
+        "text": "초기 매핑 · 데모 현장 1site-demo-1-survey-1785916130924비행 보고 없음격자(매핑)웨이포인트455계획 커버리지100.0%발급 일시2026. 8. 5. PM 4:48발급자dev-admin",
+        "href": "/missions/site-demo-1-survey-1785916130924"
+      },
+      {
+        "text": "초기 매핑 · 진척 계산 실증 현장site-progress-demo-epoch1비행 보고 없음웨이포인트—계획 커버리지—발급 일시2026. 8. 13. PM 10:09발급자dev-admin",
+        "href": "/missions/site-progress-demo-epoch1"
+      },
+      {
+        "text": "초기 매핑 · 진척 계산 실증 현장site-progress-demo-epoch2비행 보고 없음웨이포인트—계획 커버리지—발급 일시2026. 8. 13. PM 10:09발급자dev-admin",
+        "href": "/missions/site-progress-demo-epoch2"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "임무 상세",
+    "screenshot": "18-mission-detail-desktop.png",
+    "url": "http://100.116.163.1:3020/missions/site-demo-1-survey-1785916130924",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 750,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n임무 상세\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 임무 목록으로\n\nSITE-DEMO-1-SURVEY-1785916130924\n\n초기 매핑\n경로+계약 짝\n격자(매핑)\n현장\n데모 현장 1\nKMZ SHA-256\n199fadaeabfa00b008b027e3ef70802f28e8eeac789dea9bc13a49a6daa87384\nKMZ 다운로드\n사실\n웨이포인트 수\n455\n계획 커버리지\n100.0%\n발급 일시\n2026. 8. 5. PM 4:48\n발급자\ndev-admin\n비행 결과\n\n아직 비행 보고가 도착하지 않았습니다\n\n이 임무가 아직 비행 전이거나, 비행했지만 보고가 서버에 아직 도착하지 않았을 수 있습니다 — 이 화면만으로는 둘을 구분할 수 없습니다. 커버리지 보고는 비행한 장비만 올릴 수 있습니다.\n\n사진 업로드 · 재구성\n사진 선택\n두 시점 비교\n비교 가능한 결과 0건\n\n비교하려면 이 현장에서 완료된 재구성이 두 개 이상 있어야 합니다 — 지금은 0건입니다. 같은 구역을 다른 시점에 한 번 더 촬영·재구성한 뒤 다시 오세요.\n\n설계 대비 잔량\n검증된 설계면 0건\n\n이 현장에는 검증이 끝난 설계 기준면이 없습니다 — 계획고 파일을 먼저 올리고 검증을 통과해야 잔량을 낼 수 있습니다. 설계 기준면 올리기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "임무 상세"
+      },
+      {
+        "level": "H2",
+        "text": "초기 매핑"
+      },
+      {
+        "level": "H3",
+        "text": "사실"
+      },
+      {
+        "level": "H3",
+        "text": "비행 결과"
+      },
+      {
+        "level": "H3",
+        "text": "사진 업로드 · 재구성"
+      },
+      {
+        "level": "H3",
+        "text": "두 시점 비교"
+      },
+      {
+        "level": "H3",
+        "text": "설계 대비 잔량"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "KMZ 다운로드",
+        "disabled": false,
+        "name": "KMZ 다운로드"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 임무 목록으로",
+        "href": "/missions"
+      },
+      {
+        "text": "데모 현장 1",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "설계 기준면 올리기",
+        "href": "/sites/site-demo-1/design"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "KMZ 다운로드",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "file",
+        "name": "사진 선택",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "이벤트 목록",
+    "screenshot": "19-events-desktop.png",
+    "url": "http://100.116.163.1:3020/events",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 679,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n이벤트\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n미배정\n4\n조치 중\n0\n재점검\n0\n종결\n0\n상태\n전체\n관측됨\n후보\n증거 수집 중\n소견\n확정\n오탐 처리\n미해결\n심각도\n전체\n후보\n중간\n높음\n위험\n트리아지\n전체\n미배정\n배정됨\n조치 중\n재점검 요청\n해결됨\n종료\n\n총 4건 · 아직 아무도 보지 않은 건 4건\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 8:14\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 9:02\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n양산 물류센터 증축 현장\n\n사람 감지\n·\n26. 8. 4. AM 9:41\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n부산신항 배후단지 A블록\n\n사람 감지\n·\n26. 8. 4. AM 10:05\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n왼쪽에서 이벤트를 선택하세요\n\n목록에서 행을 클릭하면 여기에 상세 정보가 표시됩니다.",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "이벤트"
+      },
+      {
+        "level": "H2",
+        "text": "왼쪽에서 이벤트를 선택하세요"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "미배정4",
+        "href": "/events?triage=NONE"
+      },
+      {
+        "text": "조치 중0",
+        "href": "/events?triage=ACTION_IN_PROGRESS"
+      },
+      {
+        "text": "재점검0",
+        "href": "/events?triage=REINSPECTION_REQUESTED"
+      },
+      {
+        "text": "종결0",
+        "href": "/events?triage=CLOSED"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 8:149일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 9:029일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-002"
+      },
+      {
+        "text": "양산 물류센터 증축 현장사람 감지·26. 8. 4. AM 9:419일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-003"
+      },
+      {
+        "text": "부산신항 배후단지 A블록사람 감지·26. 8. 4. AM 10:059일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-004"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "상태전체관측됨후보증거 수집 중소견확정오탐 처리미해결",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "심각도전체후보중간높음위험",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "트리아지전체미배정배정됨조치 중재점검 요청해결됨종료",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "이벤트 상세",
+    "screenshot": "20-event-detail-desktop.png",
+    "url": "http://100.116.163.1:3020/events/edge-dev-001%3A%3Aevt-demo-004",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 694,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n이벤트 상세\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n← 목록으로\n\nEDGE-DEV-001::EVT-DEMO-004\n\n사람 감지\n심각도 미판정\n관측됨\n미배정\n\n엣지가 보낸 증거 번들이 수신돼 있습니다 · 캡처 프레임·바운딩박스 표시는 준비 중\n\n현장\n부산신항 배후단지 A블록\n임무\nmsn-demo-001\n엣지 장치\nedge-dev-001\n담당자\n미배정\n발생 시각\n2026. 8. 4. AM 10:05\n수신 시각\n2026. 8. 4. AM 10:36\n최근 충돌 시각\n—\n트리아지 조치\n사유 (필수)\n\n소견(FINDING) 단계에서만 확정할 수 있습니다 — 현재 상태에서는 확정을 진행할 수 없습니다.\n\n오탐으로 종결\n증거\n증거 추가\ne2e-test-01.png\n2026. 8. 4. 오후 10:38\n\nimage/png · 등록 dev-admin\n\n열어보기\n전이 이력\n엣지 수신 · edge-dev-001\n2026. 8. 4. AM 10:36\n\n상태: — → 관측됨\n\n트리아지: — → 미배정\n\n증거 등록 · dev-admin\n2026. 8. 4. PM 10:38\n\ne2e-test-01.png\n\n원본 데이터(개발 전용)",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "이벤트 상세"
+      },
+      {
+        "level": "H1",
+        "text": "사람 감지"
+      },
+      {
+        "level": "H2",
+        "text": "트리아지 조치"
+      },
+      {
+        "level": "H2",
+        "text": "증거"
+      },
+      {
+        "level": "H2",
+        "text": "전이 이력"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "오탐으로 종결",
+        "disabled": true,
+        "name": "오탐으로 종결"
+      },
+      {
+        "text": "열어보기",
+        "disabled": false,
+        "name": "열어보기"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "← 목록으로",
+        "href": "/events"
+      },
+      {
+        "text": "부산신항 배후단지 A블록",
+        "href": "/sites/site-busan-port-a"
+      },
+      {
+        "text": "msn-demo-001",
+        "href": "/missions/msn-demo-001"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "TEXTAREA",
+        "type": null,
+        "name": "사유 (필수)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "오탐으로 종결",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "file",
+        "name": "증거 추가",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "열어보기",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [
+      "pageerror: Hydration failed because the server rendered text didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <HTTPAccessFallbackErrorBoundary pathname=\"/events/ed...\" notFound={{...}} forbidden={undefined} ...>\n      <RedirectBoundary>\n        <RedirectErrorBoundary router={{...}}>\n          <InnerLayoutRouter url=\"/events/ed...\" tree={[...]} params={{eventKey:\"...\"}} cacheNode={{rsc:{...}, ...}} ...>\n            <SegmentViewNode type=\"page\" pagePath=\"events/[ev...\">\n              <SegmentTrieNode>\n              <EventDetailPage>\n                <div className=\"flex flex-...\">\n                  <LinkComponent>\n                  <div>\n                  <div className=\"flex flex-...\">\n                    <div>\n                    <div className=\"flex flex-...\">\n                      <EvidencePanel eventKey=\"edge-dev-0...\" evidence={[...]} canUpload={true}>\n                        <section className=\"flex flex-...\">\n                          <div>\n                          <ul className=\"flex flex-...\">\n                            <li className=\"flex flex-...\">\n                              <div className=\"flex flex-...\">\n                                <span>\n                                <span className=\"num text-[11.5px] whitespace-nowrap text-ink-muted\">\n+                                 2026. 8. 4. 오후 10:38\n-                                 2026. 8. 4. PM 10:38\n                              ...\n                      ...\n                  ...\n            ...\n          ...\n"
+    ],
+    "requestFailures": []
+  },
+  {
+    "name": "자산·시설물",
+    "screenshot": "21-assets-desktop.png",
+    "url": "http://100.116.163.1:3020/assets",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 372,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n자산·시설물\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n결함 후보는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.\n\nSITE-WSPLIT-02-survey-1785842528970SITE-WSPLIT-02\nsite-demo-1-survey-1785916130924site-demo-1\nsite-progress-demo-epoch1site-progress-demo\nsite-progress-demo-epoch2site-progress-demo",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "자산·시설물"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "SITE-WSPLIT-02-survey-1785842528970SITE-WSPLIT-02",
+        "href": "/assets?missionId=SITE-WSPLIT-02-survey-1785842528970"
+      },
+      {
+        "text": "site-demo-1-survey-1785916130924site-demo-1",
+        "href": "/assets?missionId=site-demo-1-survey-1785916130924"
+      },
+      {
+        "text": "site-progress-demo-epoch1site-progress-demo",
+        "href": "/assets?missionId=site-progress-demo-epoch1"
+      },
+      {
+        "text": "site-progress-demo-epoch2site-progress-demo",
+        "href": "/assets?missionId=site-progress-demo-epoch2"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "2D·3D World",
+    "screenshot": "22-world-desktop.png",
+    "url": "http://100.116.163.1:3020/world",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 497,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n2D·3D World\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n장비·작업자 상태는 현장 단위로 쌓입니다. 현장을 고르세요.\n\n상태코드 확인SITE-STATUSCHECK\n권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01\n카운트 갱신 확인 현장SITE-WSPLIT-02\nAOI 잠금 검증용site-aoi-lock-verify\n부산신항 배후단지 A블록site-busan-port-a\n데모 현장 1site-demo-1\n김해 산업단지 3공구 신축공사site-gimhae-3gonggu\n진척 계산 실증 현장site-progress-demo\n양산 물류센터 증축 현장site-yangsan-logistics",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "2D·3D World"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "상태코드 확인SITE-STATUSCHECK",
+        "href": "/world?siteId=SITE-STATUSCHECK"
+      },
+      {
+        "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01",
+        "href": "/world?siteId=SITE-WSPLIT-01"
+      },
+      {
+        "text": "카운트 갱신 확인 현장SITE-WSPLIT-02",
+        "href": "/world?siteId=SITE-WSPLIT-02"
+      },
+      {
+        "text": "AOI 잠금 검증용site-aoi-lock-verify",
+        "href": "/world?siteId=site-aoi-lock-verify"
+      },
+      {
+        "text": "부산신항 배후단지 A블록site-busan-port-a",
+        "href": "/world?siteId=site-busan-port-a"
+      },
+      {
+        "text": "데모 현장 1site-demo-1",
+        "href": "/world?siteId=site-demo-1"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu",
+        "href": "/world?siteId=site-gimhae-3gonggu"
+      },
+      {
+        "text": "진척 계산 실증 현장site-progress-demo",
+        "href": "/world?siteId=site-progress-demo"
+      },
+      {
+        "text": "양산 물류센터 증축 현장site-yangsan-logistics",
+        "href": "/world?siteId=site-yangsan-logistics"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "보고서",
+    "screenshot": "23-reports-desktop.png",
+    "url": "http://100.116.163.1:3020/reports",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 372,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n보고서\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n변화 탐지 결과는 임무 단위로 쌓입니다. 확인할 임무를 고르세요.\n\nSITE-WSPLIT-02-survey-1785842528970SITE-WSPLIT-02\nsite-demo-1-survey-1785916130924site-demo-1\nsite-progress-demo-epoch1site-progress-demo\nsite-progress-demo-epoch2site-progress-demo",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "보고서"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "SITE-WSPLIT-02-survey-1785842528970SITE-WSPLIT-02",
+        "href": "/reports?missionId=SITE-WSPLIT-02-survey-1785842528970"
+      },
+      {
+        "text": "site-demo-1-survey-1785916130924site-demo-1",
+        "href": "/reports?missionId=site-demo-1-survey-1785916130924"
+      },
+      {
+        "text": "site-progress-demo-epoch1site-progress-demo",
+        "href": "/reports?missionId=site-progress-demo-epoch1"
+      },
+      {
+        "text": "site-progress-demo-epoch2site-progress-demo",
+        "href": "/reports?missionId=site-progress-demo-epoch2"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "설정",
+    "screenshot": "24-settings-desktop.png",
+    "url": "http://100.116.163.1:3020/settings",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 244,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n설정\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n등록된 장비 클래스가 없습니다\n\n장비 지원단계는 관리자가 클래스를 등록한 뒤 검증 단계를 올리면서 쌓입니다. 데이터셋이 있다는 것만으로는 지원으로 표시하지 않습니다.",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "설정"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "Fleet·Edge 준비 중",
+    "screenshot": "25-fleet-coming-soon-desktop.png",
+    "url": "http://100.116.163.1:3020/coming-soon/fleet",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 204,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\nFleet·Edge\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n준비 중인 기능입니다\n\n기체·Edge 장비 상태를 관리하는 화면입니다.\n\n홈으로",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "Fleet·Edge"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "홈으로",
+        "href": "/"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "Data·AI 준비 중",
+    "screenshot": "26-data-coming-soon-desktop.png",
+    "url": "http://100.116.163.1:3020/coming-soon/data",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 201,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\nData·AI\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n준비 중인 기능입니다\n\n수집 데이터와 AI 모델을 관리하는 화면입니다.\n\n홈으로",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "Data·AI"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "홈으로",
+        "href": "/"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 1단계",
+    "screenshot": "11-site-register-step-1.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 546,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n1\n\n기본정보\n\n다음: 외곽 선택\n\n1 / 8\n현장 ID*\n\n영숫자로 시작, -/_/. 만 허용, 공백·/ 금지\n\n현장 이름*\n데이터 반출 허용\n\n이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로 내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려 3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더 필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게 \"반출 불가\"로 처리됩니다.\n\n지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)\n예 — 외부/벤더 클라우드 처리를 허용합니다\n아니오 — 사내 서버에서만 처리합니다\n8단계 중 1단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": true,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": true,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 ID*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 이름*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "예 — 외부/벤더 클라우드 처리를 허용합니다",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "아니오 — 사내 서버에서만 처리합니다",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 1단계 입력 완료",
+    "screenshot": "11-site-register-step-1-filled.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 546,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n1\n\n기본정보\n\n다음: 외곽 선택\n\n1 / 8\n현장 ID*\n\n영숫자로 시작, -/_/. 만 허용, 공백·/ 금지\n\n현장 이름*\n데이터 반출 허용\n\n이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로 내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려 3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더 필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게 \"반출 불가\"로 처리됩니다.\n\n지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)\n예 — 외부/벤더 클라우드 처리를 허용합니다\n아니오 — 사내 서버에서만 처리합니다\n8단계 중 1단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": true,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 ID*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "현장 이름*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "지금 정하지 않음 (기본값 — 반출 불가로 처리됩니다)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "예 — 외부/벤더 클라우드 처리를 허용합니다",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "아니오 — 사내 서버에서만 처리합니다",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 2단계",
+    "screenshot": "12-site-register-step-2.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 400,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n2\n\n외곽 선택\n\n다음: 좌표계·기준고도\n\n2 / 8\n\n지도에서 폴리곤을 그려 현장 외곽을 표시하세요. 최소 3개 꼭짓점이 필요하며, 이 Wizard는 매핑(격자) 경로만 발급하므로 오목한(L자 등) 외곽은 지원하지 않습니다.\n\n+\n−\nDraw a polygon\nEdit layers\nDelete layers\n Leaflet | © OpenStreetMap\n이전\n8단계 중 2단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "+",
+        "href": "#"
+      },
+      {
+        "text": "−",
+        "href": "#"
+      },
+      {
+        "text": "Draw a polygon",
+        "href": "#"
+      },
+      {
+        "text": "Edit layers",
+        "href": "#"
+      },
+      {
+        "text": "Delete layers",
+        "href": "#"
+      },
+      {
+        "text": "Leaflet",
+        "href": "https://leafletjs.com"
+      },
+      {
+        "text": "OpenStreetMap",
+        "href": "https://www.openstreetmap.org/copyright"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 3단계",
+    "screenshot": "13-site-register-step-3.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 385,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n3\n\n좌표계·기준고도\n\n다음: BIM·도면 가져오기\n\n3 / 8\n좌표계(CRS)*\n\n예: EPSG:5186\n\n수직 기준(Vertical Datum)*\n\n예: KNGeoid2018\n\n단위\n\n이 버전은 미터 고정입니다\n\n좌표 변환 버전(transformVersion)\n매핑 비행 고도 (m)\n\n이후 단계(경로 계획)에서도 사용됩니다\n\n이전\n8단계 중 3단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "좌표계(CRS)*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "수직 기준(Vertical Datum)*",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "단위",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "좌표 변환 버전(transformVersion)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "매핑 비행 고도 (m)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 4단계",
+    "screenshot": "14-site-register-step-4.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 298,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n4\n\nBIM·도면 가져오기\n\n다음: 비행 금지·민감 구역\n\n4 / 8\n\nBIM/도면·기존 모델 가져오기는 이 버전에서는 지원하지 않습니다. \"다음\"을 눌러 계속 진행하세요.\n\n이전\n8단계 중 4단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 5단계",
+    "screenshot": "15-site-register-step-5.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 345,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n5\n\n비행 금지·민감 구역\n\n다음: Baseline Mapping 계획\n\n5 / 8\n비행 금지·민감 구역\n\n이 버전은 회피 경로 생성을 지원하지 않습니다 — 값을 입력하면 다음으로 진행할 수 없습니다. 실제 회피가 필요하면 등록 후 별도로 처리하세요.\n\n추가\n이전\n8단계 중 5단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "추가",
+        "disabled": false,
+        "name": "추가"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "구역 이름을 입력 후 Enter (쉼표로 여러 개 추가 가능)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "추가",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 등록 6단계",
+    "screenshot": "16-site-register-step-6.png",
+    "url": "http://100.116.163.1:3020/sites/new?mode=full",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 432,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n현장 등록\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n현장 등록\n\n목록으로\n6\n\nBaseline Mapping 계획\n\n다음: 처리·검증\n\n6 / 8\n진행방향 겹침\n\n같은 지점이 앞뒤 사진에 겹치는 비율입니다. 격자 간격은 카메라와 고도로 서버가 계산합니다\n\n라인 간 겹침\n\n옆 비행 라인과 겹치는 비율입니다. 클수록 사진이 많아지고 지도 품질이 올라갑니다\n\n자동 비행 속도 (m/s)\n이륙 안전고도 (m)\n\n최소 1.2, 최대 1500\n\n전환 비행 속도 (m/s)\n\n최대 15\n\n고급 설정\n이전\n8단계 중 6단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 등록"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "추가",
+        "disabled": false,
+        "name": "추가"
+      },
+      {
+        "text": "×",
+        "disabled": false,
+        "name": "×"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": false,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "진행방향 겹침",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "라인 간 겹침",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "자동 비행 속도 (m/s)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "이륙 안전고도 (m)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "전환 비행 속도 (m/s)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "droneEnumValue",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "droneSubEnumValue",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "payloadEnumValue",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "viewpointPolicyId",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "riskPolicyPackId",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "fallbackPolicyId",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "capturePolicyId",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "name": "목적을 입력 후 Enter",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "추가",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "×",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "새 조사 1단계",
+    "screenshot": "27-survey-step-1-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/surveys/new",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 318,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n조사 계획\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n베이스라인 임무 발급 — 데모 현장 1\n\n목록으로\n1\n대상\n2\n목적\n3\n조사 수준\n4\n자동 계획 검토\n5\n전송 및 승인\n조사 대상을 선택하세요\n현장 전체\n구역\n준비 중\n건물\n준비 중\n외벽·옥상\n준비 중\n설비\n준비 중\n야적장·통로\n준비 중\n5단계 중 1단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "조사 계획"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": true,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": true,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "현장 전체",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "구역준비 중",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "건물준비 중",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "외벽·옥상준비 중",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "설비준비 중",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "야적장·통로준비 중",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "새 조사 2단계",
+    "screenshot": "28-survey-step-2-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/surveys/new",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 596,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n조사 계획\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n베이스라인 임무 발급 — 데모 현장 1\n\n목록으로\n1\n대상\n2\n목적\n3\n조사 수준\n4\n자동 계획 검토\n5\n전송 및 승인\n현장조사의 목적을 선택하세요\n초기 매핑(베이스라인)\n안전 위험\n현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중.\n공간 모델 갱신\n현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중 · 모델 최신도 낮음.\n공정 변화\n현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중 · 모델 최신도 낮음.\n사고조사\n전체 조사\n구조물 결함\n아직 지원하지 않는 조사 방식입니다.\n장비·자재 현황\n아직 지원하지 않는 조사 방식입니다.\n이전\n5단계 중 2단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "조사 계획"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": true,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "초기 매핑(베이스라인)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "안전 위험현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중.",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "공간 모델 갱신현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중 · 모델 최신도 낮음.",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "공정 변화현재 현장 상태(미매핑)에서는 발급할 수 없습니다. 발급 가능 상태: 임시 자율운영 · 순찰 준비 완료 · 순찰 중 · 모델 최신도 낮음.",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "사고조사",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "전체 조사",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "구조물 결함아직 지원하지 않는 조사 방식입니다.",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "name": "장비·자재 현황아직 지원하지 않는 조사 방식입니다.",
+        "disabled": true
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "새 조사 3단계",
+    "screenshot": "29-survey-step-3-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/surveys/new",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 270,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n조사 계획\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n베이스라인 임무 발급 — 데모 현장 1\n\n목록으로\n1\n대상\n2\n목적\n3\n조사 수준\n4\n자동 계획 검토\n5\n전송 및 승인\n빠른\n표준\n정밀\n고급 설정\n이전\n5단계 중 3단계 · 입력 내용은 자동 저장됩니다\n다음",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "조사 계획"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "빠른",
+        "disabled": false,
+        "name": "빠른"
+      },
+      {
+        "text": "표준",
+        "disabled": false,
+        "name": "표준"
+      },
+      {
+        "text": "정밀",
+        "disabled": false,
+        "name": "정밀"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "다음",
+        "disabled": true,
+        "name": "다음"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "빠른",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "표준",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "정밀",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "비행 고도(m)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "이륙 안전 고도(m)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "전이 구간 속도(m/s)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "드론 enum",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "서브 enum",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": "number",
+        "name": "페이로드 enum",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "시점 정책 ID (viewpointPolicyId)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "위험 정책팩 ID (riskPolicyPackId)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "대체 정책 ID (fallbackPolicyId)",
+        "disabled": false
+      },
+      {
+        "tag": "INPUT",
+        "type": null,
+        "name": "촬영 정책 ID (capturePolicyId)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "다음",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "새 조사 4단계",
+    "screenshot": "30-survey-step-4-desktop.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/surveys/new",
+    "status": null,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 538,
+    "bodyExcerpt": "KSI\n현장 지능\nSITE INTELLIGENCE\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n조사 계획\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n\n베이스라인 임무 발급 — 데모 현장 1\n\n목록으로\n1\n대상\n2\n목적\n3\n조사 수준\n4\n자동 계획 검토\n5\n전송 및 승인\n대상\n현장 전체\n목적\n초기 매핑(베이스라인) (BASELINE_MAPPING)\n조사 수준\n표준\nAOI 꼭짓점\n4개\n비행 고도\n40m\n진행방향 겹침\n80%\n라인 간 겹침\n70%\n비행 속도\n5m/s\n이륙 안전 고도\n20m\n전이 구간 속도\n10m/s\n드론/서브/페이로드 enum\n99/0/65534\n정책 ID\n시점 default-viewpoint-policy · 위험 default-risk-policy · 대체 default-fallback-policy · 촬영 default-capture-policy\n이전\n5단계 중 4단계 · 입력 내용은 자동 저장됩니다\n계약 발급",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "조사 계획"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "계약 발급",
+        "disabled": false,
+        "name": "계약 발급"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "계약 발급",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "document": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "홈 태블릿 가로",
+    "screenshot": "31-home-tablet-1024.png",
+    "url": "http://100.116.163.1:3020/",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 1711,
+    "bodyExcerpt": "KSI\n현장 지능\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n홈\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n!\n\n9일째 미조치 이벤트가 있습니다\n\n김해 산업단지 3공구 신축공사 사람 감지 · 담당자가 없는 이벤트가 모두 4건입니다\n\n지금 확인하기\n미조치 이벤트\n4\n전체 열린 이벤트 4건 중\n확인 SLA 초과\n4\n즉시 확인이 필요합니다\n순찰 가능 현장\n0/9\n등록 현장 중\n발급된 임무\n4\n누적 발급 건수\n현장\n9곳 · 8곳은 아직 순찰할 수 없습니다\n전체 보기\n권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사\nSITE-WSPLIT-01\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n김해 산업단지 3공구 신축공사\nsite-gimhae-3gonggu\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n2\n다음 할 일\n조사 비행 계획\n데모 현장 1\nsite-demo-1\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 5일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n부산신항 배후단지 A블록\nsite-busan-port-a\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n상태코드 확인\nSITE-STATUSCHECK\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n양산 물류센터 증축 현장\nsite-yangsan-logistics\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n진척 계산 실증 현장\nsite-progress-demo\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 13일\n발급 임무\n2\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n카운트 갱신 확인 현장\nSITE-WSPLIT-02\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\nAOI 잠금 검증용\nsite-aoi-lock-verify\n초기 매핑 중\n등록일\n8월 5일\n발급 임무\n0\n미조치 이벤트\n0\n최근 활동\n이벤트 이력\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:07\n진척 계산 실증 현장 현장 등록\n8월 5일\n초기 매핑 임무 발급 — 데모 현장 1\n8월 5일\nAOI 잠금 검증용 현장 등록\n8월 5일\n데모 현장 1 현장 등록\n8월 4일\n상태코드 확인 현장 등록\n8월 4일\n초기 매핑 임무 발급 — 카운트 갱신 확인 현장",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "홈"
+      },
+      {
+        "level": "H2",
+        "text": "현장"
+      },
+      {
+        "level": "H2",
+        "text": "최근 활동"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "지금 확인하기",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "전체 보기",
+        "href": "/sites"
+      },
+      {
+        "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-01"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트2다음 할 일조사 비행 계획",
+        "href": "/sites/site-gimhae-3gonggu"
+      },
+      {
+        "text": "데모 현장 1site-demo-1미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 5일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "부산신항 배후단지 A블록site-busan-port-a미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-busan-port-a"
+      },
+      {
+        "text": "상태코드 확인SITE-STATUSCHECK미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-STATUSCHECK"
+      },
+      {
+        "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-yangsan-logistics"
+      },
+      {
+        "text": "진척 계산 실증 현장site-progress-demo미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 13일발급 임무2미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-02"
+      },
+      {
+        "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록일8월 5일발급 임무0미조치 이벤트0",
+        "href": "/sites/site-aoi-lock-verify"
+      },
+      {
+        "text": "이벤트 이력",
+        "href": "/events"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1024,
+      "height": 768
+    },
+    "document": {
+      "width": 1024,
+      "height": 768
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "이벤트 태블릿 가로",
+    "screenshot": "32-events-tablet-1024.png",
+    "url": "http://100.116.163.1:3020/events",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 661,
+    "bodyExcerpt": "KSI\n현장 지능\n홈\n현장 운영\n현장\n9\n임무\n4\n이벤트\n4\n분석·기록\n자산·시설물\n2D·3D World\n보고서\n준비 중\nFleet·Edge\nData·AI\n설정\n이벤트\n2026년 8월 13일\n목요일\ndev-admin · 관리자\nD\n로그아웃\n미배정\n4\n조치 중\n0\n재점검\n0\n종결\n0\n상태\n전체\n관측됨\n후보\n증거 수집 중\n소견\n확정\n오탐 처리\n미해결\n심각도\n전체\n후보\n중간\n높음\n위험\n트리아지\n전체\n미배정\n배정됨\n조치 중\n재점검 요청\n해결됨\n종료\n\n총 4건 · 아직 아무도 보지 않은 건 4건\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 8:14\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 9:02\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n양산 물류센터 증축 현장\n\n사람 감지\n·\n26. 8. 4. AM 9:41\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n부산신항 배후단지 A블록\n\n사람 감지\n·\n26. 8. 4. AM 10:05\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n왼쪽에서 이벤트를 선택하세요\n\n목록에서 행을 클릭하면 여기에 상세 정보가 표시됩니다.",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "이벤트"
+      },
+      {
+        "level": "H2",
+        "text": "왼쪽에서 이벤트를 선택하세요"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "미배정4",
+        "href": "/events?triage=NONE"
+      },
+      {
+        "text": "조치 중0",
+        "href": "/events?triage=ACTION_IN_PROGRESS"
+      },
+      {
+        "text": "재점검0",
+        "href": "/events?triage=REINSPECTION_REQUESTED"
+      },
+      {
+        "text": "종결0",
+        "href": "/events?triage=CLOSED"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 8:149일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 9:029일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-002"
+      },
+      {
+        "text": "양산 물류센터 증축 현장사람 감지·26. 8. 4. AM 9:419일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-003"
+      },
+      {
+        "text": "부산신항 배후단지 A블록사람 감지·26. 8. 4. AM 10:059일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-004"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "상태전체관측됨후보증거 수집 중소견확정오탐 처리미해결",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "심각도전체후보중간높음위험",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "트리아지전체미배정배정됨조치 중재점검 요청해결됨종료",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 1024,
+      "height": 768
+    },
+    "document": {
+      "width": 1024,
+      "height": 768
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "홈 모바일",
+    "screenshot": "33-home-mobile-390.png",
+    "url": "http://100.116.163.1:3020/",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 1605,
+    "bodyExcerpt": "홈\nD\n로그아웃\n!\n\n9일째 미조치 이벤트가 있습니다\n\n김해 산업단지 3공구 신축공사 사람 감지 · 담당자가 없는 이벤트가 모두 4건입니다\n\n지금 확인하기\n미조치 이벤트\n4\n전체 열린 이벤트 4건 중\n확인 SLA 초과\n4\n즉시 확인이 필요합니다\n순찰 가능 현장\n0/9\n등록 현장 중\n발급된 임무\n4\n누적 발급 건수\n현장\n9곳 · 8곳은 아직 순찰할 수 없습니다\n전체 보기\n권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사\nSITE-WSPLIT-01\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n김해 산업단지 3공구 신축공사\nsite-gimhae-3gonggu\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n2\n다음 할 일\n조사 비행 계획\n데모 현장 1\nsite-demo-1\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 5일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n부산신항 배후단지 A블록\nsite-busan-port-a\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n상태코드 확인\nSITE-STATUSCHECK\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n양산 물류센터 증축 현장\nsite-yangsan-logistics\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n0\n미조치 이벤트\n1\n다음 할 일\n조사 비행 계획\n진척 계산 실증 현장\nsite-progress-demo\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 13일\n발급 임무\n2\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\n카운트 갱신 확인 현장\nSITE-WSPLIT-02\n미매핑\n\n기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.\n\n등록일\n8월 4일\n발급 임무\n1\n미조치 이벤트\n0\n다음 할 일\n조사 비행 계획\nAOI 잠금 검증용\nsite-aoi-lock-verify\n초기 매핑 중\n등록일\n8월 5일\n발급 임무\n0\n미조치 이벤트\n0\n최근 활동\n이벤트 이력\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:09\n초기 매핑 임무 발급 — 진척 계산 실증 현장\n22:07\n진척 계산 실증 현장 현장 등록\n8월 5일\n초기 매핑 임무 발급 — 데모 현장 1\n8월 5일\nAOI 잠금 검증용 현장 등록\n8월 5일\n데모 현장 1 현장 등록\n8월 4일\n상태코드 확인 현장 등록\n8월 4일\n초기 매핑 임무 발급 — 카운트 갱신 확인 현장\n오늘\n현장\n임무\n이벤트\n더보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "홈"
+      },
+      {
+        "level": "H2",
+        "text": "현장"
+      },
+      {
+        "level": "H2",
+        "text": "최근 활동"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "지금 확인하기",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "전체 보기",
+        "href": "/sites"
+      },
+      {
+        "text": "권한분리 검증 현장 — 아주 긴 한글 이름이 줄바꿈에서 어떻게 보이는지 확인하는 3공구 신축공사SITE-WSPLIT-01미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-01"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사site-gimhae-3gonggu미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트2다음 할 일조사 비행 계획",
+        "href": "/sites/site-gimhae-3gonggu"
+      },
+      {
+        "text": "데모 현장 1site-demo-1미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 5일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "부산신항 배후단지 A블록site-busan-port-a미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-busan-port-a"
+      },
+      {
+        "text": "상태코드 확인SITE-STATUSCHECK미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-STATUSCHECK"
+      },
+      {
+        "text": "양산 물류센터 증축 현장site-yangsan-logistics미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무0미조치 이벤트1다음 할 일조사 비행 계획",
+        "href": "/sites/site-yangsan-logistics"
+      },
+      {
+        "text": "진척 계산 실증 현장site-progress-demo미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 13일발급 임무2미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/site-progress-demo"
+      },
+      {
+        "text": "카운트 갱신 확인 현장SITE-WSPLIT-02미매핑기준 지도가 없어 순찰을 시작할 수 없습니다. 조사 비행을 하면 구역을 그릴 수 있습니다.등록일8월 4일발급 임무1미조치 이벤트0다음 할 일조사 비행 계획",
+        "href": "/sites/SITE-WSPLIT-02"
+      },
+      {
+        "text": "AOI 잠금 검증용site-aoi-lock-verify초기 매핑 중등록일8월 5일발급 임무0미조치 이벤트0",
+        "href": "/sites/site-aoi-lock-verify"
+      },
+      {
+        "text": "이벤트 이력",
+        "href": "/events"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "document": {
+      "width": 390,
+      "height": 2710
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "이벤트 모바일",
+    "screenshot": "34-events-mobile-390.png",
+    "url": "http://100.116.163.1:3020/events",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 507,
+    "bodyExcerpt": "이벤트\nD\n로그아웃\n미배정\n4\n조치 중\n0\n재점검\n0\n종결\n0\n상태\n전체\n관측됨\n후보\n증거 수집 중\n소견\n확정\n오탐 처리\n미해결\n심각도\n전체\n후보\n중간\n높음\n위험\n트리아지\n전체\n미배정\n배정됨\n조치 중\n재점검 요청\n해결됨\n종료\n\n총 4건 · 아직 아무도 보지 않은 건 4건\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 8:14\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n김해 산업단지 3공구 신축공사\n\n사람 감지\n·\n26. 8. 4. AM 9:02\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n양산 물류센터 증축 현장\n\n사람 감지\n·\n26. 8. 4. AM 9:41\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n\n부산신항 배후단지 A블록\n\n사람 감지\n·\n26. 8. 4. AM 10:05\n\n9일째 미조치\n목표 4시간\n확인 목표 초과\n심각도 미판정\n관측됨\n미배정\n오늘\n현장\n임무\n이벤트\n더보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "이벤트"
+      },
+      {
+        "level": "H2",
+        "text": "왼쪽에서 이벤트를 선택하세요"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "미배정4",
+        "href": "/events?triage=NONE"
+      },
+      {
+        "text": "조치 중0",
+        "href": "/events?triage=ACTION_IN_PROGRESS"
+      },
+      {
+        "text": "재점검0",
+        "href": "/events?triage=REINSPECTION_REQUESTED"
+      },
+      {
+        "text": "종결0",
+        "href": "/events?triage=CLOSED"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 8:149일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-001"
+      },
+      {
+        "text": "김해 산업단지 3공구 신축공사사람 감지·26. 8. 4. AM 9:029일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-002"
+      },
+      {
+        "text": "양산 물류센터 증축 현장사람 감지·26. 8. 4. AM 9:419일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-003"
+      },
+      {
+        "text": "부산신항 배후단지 A블록사람 감지·26. 8. 4. AM 10:059일째 미조치목표 4시간확인 목표 초과심각도 미판정관측됨미배정",
+        "href": "/events/edge-dev-001%3A%3Aevt-demo-004"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "상태전체관측됨후보증거 수집 중소견확정오탐 처리미해결",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "심각도전체후보중간높음위험",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "트리아지전체미배정배정됨조치 중재점검 요청해결됨종료",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "document": {
+      "width": 390,
+      "height": 936
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "현장 상세 모바일",
+    "screenshot": "35-site-detail-mobile-390.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 544,
+    "bodyExcerpt": "현장 상세\nD\n로그아웃\n\nSITE-DEMO-1\n\n데모 현장 1\n베이스라인 임무 발급\n미매핑\n현장 외곽(AOI)\n+\n−\n Leaflet | © OpenStreetMap\n설계 기준면\n관리\n\n완성된 지형의 계획고를 올려두면, 이후 촬영한 현재 지형과 견줘 구역별로 얼마나 더 깎고 더 쌓아야 하는지 계산할 수 있습니다.\n\n작업구역\n관리\n\n이름을 붙여 등록해두면 이후 잔량·진척을 낼 때마다 지도에 새로 그리는 대신 이 구역을 고르기만 하면 됩니다 — 지난번과 이번이 같은 범위라야 계획 대비 진척을 계산할 수 있습니다. 계획 대비 진척 보기 → 현장 보고서 내보내기 →\n\n이 현장의 임무\n전체보기\n초기 매핑\n2026. 8. 5.\n이 현장의 이벤트\n전체보기\n\n아직 없습니다.\n\n현장 좌표계\n좌표계(CRS)\nEPSG:5186\n수직 기준면\nKNGeoid2018\n단위\nmeter\n변환 버전\n1.0.0\n등록\n2026. 8. 5.\n최근 갱신\n2026. 8. 5.\n상태 전이\n다음 상태\n선택하세요\n초기 매핑 중\n운영 중단\n근거 (필수)\n사유 (필수)\n상태 전이\n오늘\n현장\n임무\n이벤트\n더보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "현장 상세"
+      },
+      {
+        "level": "H1",
+        "text": "데모 현장 1"
+      },
+      {
+        "level": "H2",
+        "text": "현장 외곽(AOI)"
+      },
+      {
+        "level": "H2",
+        "text": "설계 기준면"
+      },
+      {
+        "level": "H2",
+        "text": "작업구역"
+      },
+      {
+        "level": "H2",
+        "text": "이 현장의 임무"
+      },
+      {
+        "level": "H2",
+        "text": "이 현장의 이벤트"
+      },
+      {
+        "level": "H2",
+        "text": "현장 좌표계"
+      },
+      {
+        "level": "H2",
+        "text": "상태 전이"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "상태 전이",
+        "disabled": true,
+        "name": "상태 전이"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "베이스라인 임무 발급",
+        "href": "/sites/site-demo-1/surveys/new"
+      },
+      {
+        "text": "+",
+        "href": "#"
+      },
+      {
+        "text": "−",
+        "href": "#"
+      },
+      {
+        "text": "Leaflet",
+        "href": "https://leafletjs.com"
+      },
+      {
+        "text": "OpenStreetMap",
+        "href": "https://www.openstreetmap.org/copyright"
+      },
+      {
+        "text": "관리",
+        "href": "/sites/site-demo-1/design"
+      },
+      {
+        "text": "관리",
+        "href": "/sites/site-demo-1/work-areas"
+      },
+      {
+        "text": "계획 대비 진척 보기 →",
+        "href": "/sites/site-demo-1/progress"
+      },
+      {
+        "text": "현장 보고서 내보내기 →",
+        "href": "/sites/site-demo-1/report"
+      },
+      {
+        "text": "전체보기",
+        "href": "/missions?siteId=site-demo-1"
+      },
+      {
+        "text": "초기 매핑2026. 8. 5.",
+        "href": "/missions/site-demo-1-survey-1785916130924"
+      },
+      {
+        "text": "전체보기",
+        "href": "/events?siteId=site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "SELECT",
+        "type": null,
+        "name": "다음 상태선택하세요초기 매핑 중운영 중단",
+        "disabled": false
+      },
+      {
+        "tag": "TEXTAREA",
+        "type": null,
+        "name": "근거 (필수)",
+        "disabled": false
+      },
+      {
+        "tag": "TEXTAREA",
+        "type": null,
+        "name": "사유 (필수)",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "상태 전이",
+        "disabled": true
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "document": {
+      "width": 390,
+      "height": 1995
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "더보기 모바일",
+    "screenshot": "36-more-mobile-390.png",
+    "url": "http://100.116.163.1:3020/more",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 82,
+    "bodyExcerpt": "더보기\nD\n로그아웃\n자산·시설물\n2D·3D World\n보고서\nFleet·Edge\n준비 중\nData·AI\n준비 중\n설정\n오늘\n현장\n임무\n이벤트\n더보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "더보기"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge준비 중",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI준비 중",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "document": {
+      "width": 390,
+      "height": 844
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  },
+  {
+    "name": "새 조사 모바일",
+    "screenshot": "37-survey-mobile-390.png",
+    "url": "http://100.116.163.1:3020/sites/site-demo-1/surveys/new",
+    "status": 200,
+    "title": "KSI Site Intelligence",
+    "bodyLength": 385,
+    "bodyExcerpt": "조사 계획\nD\n로그아웃\n\n베이스라인 임무 발급 — 데모 현장 1\n\n목록으로\n1\n2\n3\n4\n5\n대상\n현장 전체\n목적\n초기 매핑(베이스라인) (BASELINE_MAPPING)\n조사 수준\n표준\nAOI 꼭짓점\n4개\n비행 고도\n40m\n진행방향 겹침\n80%\n라인 간 겹침\n70%\n비행 속도\n5m/s\n이륙 안전 고도\n20m\n전이 구간 속도\n10m/s\n드론/서브/페이로드 enum\n99/0/65534\n정책 ID\n시점 default-viewpoint-policy · 위험 default-risk-policy · 대체 default-fallback-policy · 촬영 default-capture-policy\n이전\n5단계 중 4단계 · 입력 내용은 자동 저장됩니다\n계약 발급\n오늘\n현장\n임무\n이벤트\n더보기",
+    "headings": [
+      {
+        "level": "H1",
+        "text": "조사 계획"
+      }
+    ],
+    "buttons": [
+      {
+        "text": "로그아웃",
+        "disabled": false,
+        "name": "로그아웃"
+      },
+      {
+        "text": "이전",
+        "disabled": false,
+        "name": "이전"
+      },
+      {
+        "text": "계약 발급",
+        "disabled": false,
+        "name": "계약 발급"
+      }
+    ],
+    "links": [
+      {
+        "text": "홈",
+        "href": "/"
+      },
+      {
+        "text": "현장9",
+        "href": "/sites"
+      },
+      {
+        "text": "임무4",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트4",
+        "href": "/events"
+      },
+      {
+        "text": "자산·시설물",
+        "href": "/assets"
+      },
+      {
+        "text": "2D·3D World",
+        "href": "/world"
+      },
+      {
+        "text": "보고서",
+        "href": "/reports"
+      },
+      {
+        "text": "Fleet·Edge",
+        "href": "/coming-soon/fleet"
+      },
+      {
+        "text": "Data·AI",
+        "href": "/coming-soon/data"
+      },
+      {
+        "text": "설정",
+        "href": "/settings"
+      },
+      {
+        "text": "목록으로",
+        "href": "/sites/site-demo-1"
+      },
+      {
+        "text": "오늘",
+        "href": "/"
+      },
+      {
+        "text": "현장",
+        "href": "/sites"
+      },
+      {
+        "text": "임무",
+        "href": "/missions"
+      },
+      {
+        "text": "이벤트",
+        "href": "/events"
+      },
+      {
+        "text": "더보기",
+        "href": "/more"
+      }
+    ],
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "type": "submit",
+        "name": "로그아웃",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "이전",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "type": "button",
+        "name": "계약 발급",
+        "disabled": false
+      }
+    ],
+    "unnamedControls": 0,
+    "imagesWithoutAlt": 0,
+    "horizontalOverflow": false,
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "document": {
+      "width": 390,
+      "height": 844
+    },
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "requestFailures": []
+  }
+]

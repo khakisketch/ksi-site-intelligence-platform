@@ -1552,12 +1552,6 @@ class ProcessingJobTransitionRequest(CamelModel):
     detail: str | None = None
 
 
-class ArtifactAccuracyRequest(CamelModel):
-    gcp_count: int = Field(ge=0)
-    rmse: float = Field(ge=0)
-    report_uri: str = Field(min_length=1)
-
-
 class ArtifactUploadUrlRequest(CamelModel):
     """산출물 바이트를 올릴 자리 요청 — **객체 키를 담을 자리가 없다**.
 
@@ -1622,7 +1616,16 @@ class ProcessingArtifactRequest(CamelModel):
     # nullable 필수 — 생략과 명시적 null 을 구분한다(processing_artifact.py).
     crs: str | None = None
     gsd: float | None = Field(default=None, gt=0)
-    accuracy: ArtifactAccuracyRequest | None = None
+    # 계약 모델을 그대로 쓴다 — 아래 ``vertical_reference`` 주석과 같은 이유다.
+    # 예전에는 ``ArtifactAccuracyRequest`` 라는 요청 전용 사본이 있었고, 그 사본이
+    # 정확히 예고된 대로 정본과 갈라졌다(2026-08-18 적대적 검증): ``checkpointRmseM``
+    # 에 ``ge=0`` 이 빠져 음수가 통과했고, 무엇보다 핸들러 본문에서 계약 모델을
+    # 만들다 ``ValueError`` 가 나 **422 가 아니라 500** 이 나갔다 — 워커의
+    # ``core_client`` 는 비-JSON 응답을 ``NON_JSON_RESPONSE`` 로 싸므로 운영자가
+    # "생산자의 영구 계약 위반"과 "Core 장애"를 구분할 수 없었다. 계약 모델을
+    # 요청 자리에 두면 FastAPI 가 요청 검증 단계에서 422 를 내고, 같은 validator 가
+    # journal 재생에서도 다시 돈다.
+    accuracy: ArtifactAccuracy | None = None
     # PATH_SAFE_IDENTIFIER_PATTERN 재사용(SSOT) — 등록 시점에 여기서 거부되지
     # 않으면 build_processing_artifact_object_key 가 다운로드 시점에만 거부해
     # "등록은 됐는데 영구히 다운로드 불가한 산출물"이 durable 하게 남는다
@@ -1631,10 +1634,9 @@ class ProcessingArtifactRequest(CamelModel):
     auxiliary_files: list[Annotated[str, Field(pattern=PATH_SAFE_IDENTIFIER_PATTERN.pattern)]] = (
         Field(default_factory=list)
     )
-    # 선택 입력(v1.2). ``ArtifactAccuracyRequest`` 처럼 요청 전용 사본을 두지
-    # 않고 계약 모델을 그대로 쓴다 — 이 값은 요청이 덜어낼 필드가 하나도 없는
-    # 순수 값 객체라, 사본을 두면 정본과 갈라질 자리만 생긴다(계약 패키지가
-    # VerticalReference 를 SSOT 로 세운 이유 그대로).
+    # 선택 입력(v1.2). 요청 전용 사본을 두지 않고 계약 모델을 그대로 쓴다 — 이 값은
+    # 요청이 덜어낼 필드가 하나도 없는 순수 값 객체라, 사본을 두면 정본과 갈라질
+    # 자리만 생긴다(계약 패키지가 VerticalReference 를 SSOT 로 세운 이유 그대로).
     #
     # 안 주면 None 이고, Core 는 그것을 어떤 기본값으로도 채우지 않는다.
     # "옛 워커가 안 실어 보냈다"와 "이 산출물은 타원체고다"는 다른 사실이고,
@@ -2269,15 +2271,7 @@ def build_processing_jobs_router(
             gsd=request.gsd,
             auxiliary_files=tuple(request.auxiliary_files),
             vertical_reference=request.vertical_reference,
-            accuracy=(
-                ArtifactAccuracy(
-                    gcp_count=request.accuracy.gcp_count,
-                    rmse=request.accuracy.rmse,
-                    report_uri=request.accuracy.report_uri,
-                )
-                if request.accuracy is not None
-                else None
-            ),
+            accuracy=request.accuracy,
         )
         result = store.register_artifact(
             job_id, spec, registered_by=principal.principal_id, now=datetime.now(UTC)

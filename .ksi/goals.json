@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T05:11:45+09:00",
+  "updated_at": "2026-08-18T07:05:31+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3329,14 +3329,14 @@
       "title": "Mission Contract v1.2 스키마에 발급 순서 필드(issuedAt/revision/supersedes)가 없다 — rollback 방어가 validity.notBefore 단조성 휴리스틱에 의존한다",
       "lens": "time-axis",
       "severity": "medium",
-      "status": "open",
+      "status": "regressed",
       "note": "2026-08-14. 서명이 유효한 이전 발급본으로 안전 정책을 되돌리는 rollback 이 실측 재현되어(예비량 40%→10%, 고도 60m→120m), consumer.py 에 validity.notBefore 단조성 기반 SUPERSEDED_CONTRACT 거부를 넣어 막았다. 다만 이는 스키마 변경 없이 쓸 수 있는 유일한 순서 근거를 쓴 것이라 한계가 있다: notBefore 가 동일한 두 발급본은 구분하지 못한다. 근본 해법은 계약 스키마에 발급 순서 필드를 넣고 소비자가 그것으로 판정하는 것이며, 이는 contracts/schemas/mission-contract.v1.2.json 변경이라 제품 결정이 필요하다.",
       "accept_reason": null,
-      "resolve_evidence": null,
-      "reopen_reason": null,
-      "previous_status": null,
+      "resolve_evidence": "consumer.py _superseded_detail: digest 판정을 순서 비교 앞으로 이동 + notBefore 비교 >= → > 엄격화. edge_activation.py _policy_rollback_detail: 두 축 < → <= 대칭 마감. 회귀 테스트 3건 추가(test_mission_contract_consumer.py 2건, test_edge_dispatch_contracts.py 1건) + 돌연변이 검증(부등호 되돌리면 정확히 실패) 확인. 계약 스키마 v1.3 신설 없이 닫음. 59 passed.",
+      "reopen_reason": "해소 선언을 철회한다(2026-08-18 적대적 검증). 엄격화는 했으나 리스크가 요구한 것을 닫지 못했다: (1) Core 는 같은 missionId·다른 내용 계약을 애초에 만들지 않는다(record_issuance 가 MISSION_ID_CONFLICT 409) — 실제 정책 조임은 새 missionId 로 나가고 그 경로는 mission_id 불일치 분기에서 가드가 실행조차 안 된다. 즉 정상 파이프라인에 걸리는 트래픽이 0이고 방어 효과도 그만큼이다. (2) fail-open 세 곳이 그대로다: 활성 계약 파일 부재·TTL 만료(consumer.py), 활성 스냅샷 부재(edge_activation.py). (3) 리스크 원문이 요구한 '발급 순서 필드'는 넣지 않았다. 남긴 것은 '순서 근거 없는 교체를 거부한다'는 부분 완화이며, 근본 해법은 여전히 계약 스키마 결정이다.",
+      "previous_status": "resolved",
       "created_at": "2026-08-14T02:53:39+09:00",
-      "updated_at": "2026-08-14T02:53:39+09:00"
+      "updated_at": "2026-08-18T06:37:51+09:00"
     },
     {
       "id": "evidence-artifact-content-not-bound-to-registration",
@@ -3603,6 +3603,62 @@
       "previous_status": "open",
       "created_at": "2026-08-16T00:47:07+09:00",
       "updated_at": "2026-08-18T05:11:45+09:00"
+    },
+    {
+      "id": "rollback-guard-fail-open-and-mission-id-laundering",
+      "title": "계약 rollback 가드가 세 경로로 무력화된다 — fail-open 2곳 + missionId 세탁",
+      "lens": "gaming",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-18 적대적 검증 실측. (1) consumer.py 는 활성 계약 파일 부재·TTL 만료 시 판정 없이 None 을 반환한다(fail-open 2곳) — 만료를 기다리거나 활성 파일을 지우면 이전 계약 재생이 통과한다. (2) edge_activation.py 는 활성 스냅샷 파일이 없으면 정책 순서 판정을 통째로 건너뛴다. (3) mission_id 가 다르면 비교 축이 없어 가드가 실행되지 않는데 실제 정책 조임은 새 missionId 로 나가므로, 이 가드의 사정거리는 'Core 밖에서 조립된 옛 계약 재생' 하나뿐이다. 근본 해법은 임무별 고수위 표식(최고 세대 기록) 또는 계약 스키마 발급 순서 필드(제품 결정 필요). 관련: mission-contract-no-issuance-ordering-field",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T06:41:35+09:00",
+      "updated_at": "2026-08-18T06:41:35+09:00"
+    },
+    {
+      "id": "perception-pipeline-production-status-undecided",
+      "title": "ksi_perception.pipeline 의 지위가 문서마다 다르다 — 승격된 제품 경로인가 배선용 placeholder 인가",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "pipeline.py 는 자신을 'PRODUCTION EDGE RUNTIME PROMOTION(2026-07-28 승격)' 이라 적고 recorded_pipeline.py 는 '배포 가능한 Runtime entry point' 라 적는데, INV-040 게이트는 같은 모듈을 금지 목록에 넣는다. 실체는 pipeline.py 가 EventBundle 에 무조건 reasoning.rule='vertical-slice-demo' 를 싣는 한 곳이다 — 그 필드만 고치고 모듈 금지를 풀 것인지, 모듈 자체가 운영 밖인지 제품 결정이 필요하다. 두 운영 진입점 closure 에는 실리지 않아 현재 위반은 없다(2026-08-18 실측).",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T06:41:35+09:00",
+      "updated_at": "2026-08-18T06:41:35+09:00"
+    },
+    {
+      "id": "core-handler-validationerror-leaks-500",
+      "title": "Core 핸들러 본문에서 계약 모델을 만드는 자리마다 ValidationError 가 500 으로 샌다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "open",
+      "note": "2026-08-18 적대적 검증. create_app 에 ValidationError 핸들러가 없어(확인), 요청 검증 단계를 지난 뒤 핸들러 본문에서 계약 모델을 생성하는 모든 자리가 같은 성질을 갖는다 — pydantic ValueError 가 그대로 올라가 500 + text/plain 이 나간다. 워커의 core_client._post 는 비-JSON 응답을 NON_JSON_RESPONSE 로 싸므로 운영자가 '생산자의 영구 계약 위반'과 'Core 장애'를 구분할 수 없다. processing_jobs 의 accuracy 자리는 요청 모델을 계약 모델로 교체해 닫았으나(422), 같은 패턴이 남은 다른 핸들러를 전수 조사해야 한다. rmse=Infinity 로 이 커밋 이전에도 재현되던 표면이다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T07:05:31+09:00",
+      "updated_at": "2026-08-18T07:05:31+09:00"
+    },
+    {
+      "id": "api-contract-sync-ignores-field-constraints",
+      "title": "계약 정합 게이트가 minimum·pattern 등 필드 제약을 대조하지 않아 드리프트가 영구 미탐이다",
+      "lens": "other",
+      "severity": "low",
+      "status": "open",
+      "note": "test_api_contract_sync.py 가 '타입까지는 보지 않는다'고 의도를 명시하며 이름·required 만 대조한다. 실제로 그 사각지대에서 드리프트가 발생했다(2026-08-18): openapi 는 checkpointRmseM 에 minimum:0 을 적었는데 요청 모델에는 ge=0 이 없어 음수가 통과했다. 해당 건은 요청 모델을 계약 모델로 교체해 해소했으나, 게이트 자체가 제약을 안 보는 성질은 그대로다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-18T07:05:31+09:00",
+      "updated_at": "2026-08-18T07:05:31+09:00"
     },
     {
       "id": "coverage-report-single-cell-fractional-ratio",

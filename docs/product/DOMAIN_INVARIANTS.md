@@ -77,7 +77,26 @@
   _강제: InterpolationResult/ProjectionResult 타입 + 골든 테스트 (P0-2/P0-4)._
 - **INV-024** RTK Fix는 정확도 신호이지 절대정확도 검증이 아니다. 독립 checkpoint 없이
   절대 RMSE를 표시하지 않는다.
-  _강제: Spatial Quality Report 로직 (Terra 정직성 계승, 미구현)._
+  _강제: ① `ArtifactAccuracy` 검사점 게이트(`packages/event-contracts/.../processing_artifact.py`
+  + 계약 문서 `processing-artifact.v1.3.json` 의 `allOf` 페어링 규칙) — `rmse` 는 GCP
+  피팅 잔차로 의미가 고정되고, 절대 RMSE 주장은 `checkpointCount`·`checkpointRmseM`
+  쌍으로만 표현된다. 한쪽만 실리거나 잔차가 0 이하이면 등록 표면 422·journal 재생
+  실패·스키마 검증 실패 **세 곳에서** 막힌다(요청 모델이 계약 모델을 그대로 쓴다 —
+  요청 전용 사본을 두면 정본과 갈라진다). ② 리포트 오차한계 정직성
+  (`dsm_diff._uncertainty_m3`, `VolumeChangeReport.uncertaintyM3/Note`) — 양쪽 epoch 모두
+  검증된 RMSE 가 있을 때만 값을 내고 없으면 null+사유.
+  **미완**: (a) 서버는 산출물 바이트를 읽지 않으므로 신고된 검사점 수·잔차의 진위는
+  확인 불가다(귀속이지 관측이 아니다) — 정확히는 "그 경로를 잇지 않았다"이지 원리적
+  불가가 아니다(설계면 검증은 워커가 바이트를 열어 재고 Core 가 각인하는 기성 패턴을
+  이미 쓴다). 현장 측량 검사점 대조는 실장비 작업이다. (b) 검사점 값을 비교 입력으로
+  전달해 `uncertaintyM3` 를 채우는 경로가 아직 없다(`comparison_worker.py` 가 None 을
+  넘긴다) — **잇는 사람 주의: 여기에 `accuracy.rmse` 를 꽂으면 INV-024 를 그대로
+  재도입한다.** 반드시 `checkpointRmseM` 만 흘려야 한다. (c) RTK fix 상태는 기체에서는
+  이미 구독·사용된다(`edge/psdk-app` 의 `OnRtkPositionInfo`, 이륙 게이트) — 없는 것은
+  그 상태를 사진·텔레메트리에 붙여 Core 까지 올리는 경로이고, 실기 사진 없이는 필드
+  확정이 불가하다. (d) 이 항목의 옛 이름이던 "Spatial Quality Report" 는 아직
+  `packages/geo-core/.../uncertainty.py` 가 위임 대상으로 지목한다 — 그 위임의 실제
+  소유자가 위 ①②라는 것을 코드 주석으로 잇는 작업이 남아 있다._
 - **INV-025** `WorldEntity.uncertainty.localization_state = CONFIRMED`는
   관측 집합 전체가 `CALIBRATED_POSE` 시점 증거를 가지며, 서로 다른 보정
   Camera Pose 참조가 2개 이상일 때만 허용한다.
@@ -119,7 +138,18 @@
 
 - **INV-040** Production에서 mock/placeholder/static always-go 금지. 외부 의존 실패는
   데모 데이터로 가리지 않고 fail-closed로 정직하게 드러낸다.
-  _강제: 코드리뷰 게이트 + production profile 테스트 (미구현)._
+  _강제: 코드리뷰 게이트 + `tests/contract/test_production_profile_gate.py` — 두 운영
+  진입점의 import closure 를 subprocess 로 떠서 ①mock/dev/placeholder 모듈 부재
+  ②references·scripts·tests 경로 모듈 유입 없음 ③closure 전체 소스에 dev 토큰 리터럴
+  없음을 고정한다(세 검사 모두 Core·워커 양쪽에 적용). Core 는 `build_production_app()`
+  을 실제 호출하고, 워커는 `runner` import 까지만 한다(`main()` 은 폴링 루프라 돌아오지
+  않는다).
+  **미완**: ①모듈 단위 검사라 정상 라이브러리 안의 가짜 클래스(예: `httpx.MockTransport`)는
+  잡지 못한다 — 그 축은 코드리뷰 게이트 몫이다. ②워커의 지연 import 서브트리
+  (`_load_dynamic_object_detector_from_env` 아래 torch/transformers)는 closure 에 들어오지
+  않는다 — 모듈 단위 게이트의 구조적 한계다. ③`packages/mission-contracts` 의 Edge console
+  script 3건은 이 게이트 밖이다(현재 위반 없음을 실측했으나 회귀 감시는 없다).
+  ④Edge C++ 의 static always-go 축은 별개다._
 - **INV-041** `CapabilityVerificationState`(VERIFIED/SPIKE_REQUIRED/BLOCKED — 장비기능 검증)와
   `EquipmentSupportLevel`(DATASET_AVAILABLE→…→PRODUCTION_SUPPORTED — 장비 지원단계)은 별개
   개념이며, PRODUCTION_SUPPORTED만 상용 안전지원으로 표시한다. 미검증 기능은 UX에 노출하지

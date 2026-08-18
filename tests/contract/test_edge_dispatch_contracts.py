@@ -248,6 +248,7 @@ def _envelope_with_pack(
     mission_key: Ed25519PrivateKey,
     dispatch_key: Ed25519PrivateKey,
     dispatch_id: str,
+    envelope_not_before: datetime | None = None,
 ) -> dict[str, Any]:
     """Same shape as :func:`_envelope`, but with caller-chosen keys/pack.
 
@@ -264,7 +265,12 @@ def _envelope_with_pack(
         risk_policy_pack=pack,
         edge_runtime_profile=_profile(),
         validity=DispatchValidity(
-            not_before=_NOW - timedelta(minutes=1), not_after=_NOW + timedelta(minutes=20)
+            not_before=(
+                envelope_not_before
+                if envelope_not_before is not None
+                else _NOW - timedelta(minutes=1)
+            ),
+            not_after=_NOW + timedelta(minutes=20),
         ),
         private_key=dispatch_key,
         key_id="dispatch-key",
@@ -1406,6 +1412,137 @@ def test_older_edge_runtime_profile_is_rejected_as_rollback(tmp_path: Path) -> N
 
     assert rollback_attempt.dispatch_verdict is DispatchVerdict.SUPERSEDED_EDGE_RUNTIME_PROFILE
     assert not rollback_attempt.activated
+
+
+def test_tightened_policy_pack_in_a_later_dispatch_still_activates(tmp_path: Path) -> None:
+    """[high-risk regression] 정책을 **조인** 재dispatch 는 반드시 통과해야 한다.
+
+    RiskPolicyPack 의 ``validity.notBefore`` 는 서버가 각인하는 값이 아니라 운영자가
+    설정(``KSI_CORE_RISK_POLICY_PACKS_JSON``)에 손으로 쓰는 **배포 창**이다. 그래서
+    pack 축에서 "같은 notBefore·다른 내용" 은 rollback 이 아니라 정상 편집이다.
+    이것을 거부하면 조인 정책이 실리지 못하고 **느슨한 옛 정책이 기체에 남는다** —
+    거부의 결과가 공격자가 원하는 상태와 같아지는 fail-unsafe 다.
+
+    순서 근거는 **봉투 자신의 validity.notBefore** 여야 한다(서버가 dispatch 발급
+    시각으로 각인한다 — edge_dispatch.py 의 DispatchValidity(not_before=now, ...)).
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    loose = _envelope_with_pack(
+        _older_pack(not_before="2026-08-14T00:00:00Z"),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-loose",
+        envelope_not_before=_NOW - timedelta(minutes=5),
+    )
+    loose_path = tmp_path / "loose.json"
+    loose_path.write_text(json.dumps(loose), encoding="utf-8")
+    first = activate_mission_dispatch_file(
+        loose_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.dispatch_verdict is DispatchVerdict.VALID and first.activated
+
+    # 운영자가 배포 창은 그대로 두고 severity 를 0.2 → 0.95 로 **조였다**.
+    tightened_raw = _older_pack(not_before="2026-08-14T00:00:00Z").model_dump(
+        by_alias=True, mode="json"
+    )
+    tightened_raw["equipmentPolicies"][0]["severity"] = 0.95
+    tightened = _envelope_with_pack(
+        RiskPolicyPackV1.model_validate(tightened_raw),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-tightened",
+        envelope_not_before=_NOW - timedelta(minutes=1),  # 더 뒤에 발급된 봉투
+    )
+    tightened_path = tmp_path / "tightened.json"
+    tightened_path.write_text(json.dumps(tightened), encoding="utf-8")
+    receipt = activate_mission_dispatch_file(
+        tightened_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert receipt.dispatch_verdict is DispatchVerdict.VALID, (
+        "조인 정책이 거부되면 기체에 느슨한 옛 정책이 남는다"
+    )
+    assert receipt.activated
+    assert receipt.active_snapshot_path is not None
+    snapshot = json.loads(receipt.active_snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["riskPolicyPack"]["equipmentPolicies"][0]["severity"] == 0.95
+
+
+def test_same_not_before_different_risk_policy_pack_is_rejected(tmp_path: Path) -> None:
+    """[high-risk regression] ``notBefore`` 가 **같은** 다른 pack 도 거부한다.
+
+    같은 notBefore 는 어느 쪽이 나중 발급본인지 가릴 근거가 못 된다. 통과시키면
+    정책 교체가 순서 판정을 우회한다 — MissionContractConsumer 쪽과 같은 규약으로
+    fail-closed 로 막는다(2026-08-18).
+    """
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    registry = _registry(mission_key, dispatch_key)
+    consumer = MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
+
+    current = _envelope_with_pack(
+        _older_pack(not_before="2026-08-14T00:00:00Z"),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-current",
+    )
+    current_path = tmp_path / "current.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    first = activate_mission_dispatch_file(
+        current_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+    assert first.dispatch_verdict is DispatchVerdict.VALID and first.activated
+
+    # notBefore 는 같고 정책 내용만 느슨해졌다 — digest 가 달라 재활성화가 아니다.
+    # pack id 는 그대로 둔다: 바꾸면 Mission Contract 의 정책 참조와 어긋나 봉투가
+    # 아예 만들어지지 않아(dispatch.py 검증) 이 축을 시험할 수 없다.
+    relaxed_raw = _older_pack(not_before="2026-08-14T00:00:00Z").model_dump(
+        by_alias=True, mode="json"
+    )
+    relaxed_raw["equipmentPolicies"][0]["severity"] = 0.05
+    sideways = _envelope_with_pack(
+        RiskPolicyPackV1.model_validate(relaxed_raw),
+        mission_key=mission_key,
+        dispatch_key=dispatch_key,
+        dispatch_id="dispatch-sideways",
+    )
+    sideways_path = tmp_path / "sideways.json"
+    sideways_path.write_text(json.dumps(sideways), encoding="utf-8")
+    attempt = activate_mission_dispatch_file(
+        sideways_path,
+        consumer=consumer,
+        registry=registry,
+        expected_edge_device_id="edge-001",
+        runtime_version="edge-runtime-0.1",
+        now=_NOW,
+    )
+
+    assert attempt.dispatch_verdict is DispatchVerdict.SUPERSEDED_RISK_POLICY_PACK
+    assert not attempt.activated
+    assert first.active_snapshot_path is not None
+    still_active = json.loads(first.active_snapshot_path.read_text(encoding="utf-8"))
+    assert still_active["riskPolicyPackDigest"] == json.loads(current_path.read_text())[
+        "riskPolicyPackDigest"
+    ]
 
 
 def test_reactivating_the_unchanged_risk_policy_pack_is_not_a_rollback(tmp_path: Path) -> None:

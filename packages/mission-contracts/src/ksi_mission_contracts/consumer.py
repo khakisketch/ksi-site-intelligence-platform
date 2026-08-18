@@ -265,7 +265,7 @@ class MissionContractConsumer:
         *,
         now: datetime | None,
     ) -> str | None:
-        """이미 활성인 계약보다 **오래된** 후보면 거부 사유를, 아니면 ``None``.
+        """이미 활성인 계약을 **순서 근거 없이 교체하려는** 후보면 거부 사유, 아니면 ``None``.
 
         서명이 유효하고 TTL 안이어도 그것만으로 "지금 실을 계약"이 되지는 않는다.
         Core 가 임무 중 정책을 조여 계약을 재발급하면 이전 계약은 자기 validity 창이
@@ -275,14 +275,37 @@ class MissionContractConsumer:
 
         계약 스키마(v1.2)에는 발급 순서를 담는 필드(``issuedAt``·``revision``·
         ``supersedes``)가 **없다**. 그래서 여기서는 스키마 변경 없이 쓸 수 있는 유일한
-        순서 근거인 ``validity.notBefore`` 의 단조성으로 막는다 — 같은 임무에 대해
-        더 이른 ``notBefore`` 를 들고 온 후보는 이전 발급본으로 보고 거부한다. 같은
-        계약의 재활성화(동일 digest)와 ``notBefore`` 가 같거나 더 뒤인 정상 재발급은
-        그대로 통과한다.
+        순서 근거인 ``validity.notBefore`` 의 단조성으로 막는다.
 
-        **한계를 분명히 한다**: ``notBefore`` 가 같은 두 계약은 이 규칙으로 못 가른다.
-        진짜 해법은 계약 스키마에 발급 순서 필드를 넣는 것이고, 그건 계약 변경이라
-        제품 결정이 필요하다(risk ``mission-contract-no-issuance-ordering-field``).
+        판정 순서가 중요하다 — **digest 동일성을 먼저** 본다. 같은 계약의 재활성화는
+        순서 판정 대상이 아니라 멱등 연산이므로, 순서 비교보다 앞에서 통과시킨다.
+        그 다음에야 ``notBefore`` 를 **엄격 부등호**로 비교한다: 후보가 활성 계약보다
+        확실히 더 뒤(``>``)일 때만 통과다.
+
+        즉 ``notBefore`` 가 **같은데 내용이 다른** 후보는 거부한다(2026-08-18).
+        같으면 어느 쪽이 나중 발급본인지 가릴 근거가 아예 없으니, 통과가 아니라
+        거부한다 — 이건 이 커밋의 판단이지 기존 ADR 이 정해 둔 규칙이 아니다.
+        이전에는 ``>=`` 라 그 경우가 무저항 통과였다.
+
+        **이 가드의 실제 사정거리(과대평가 금지)**: 현 Core 는 "같은 missionId·다른
+        내용" 계약을 애초에 만들지 않는다 — 두 발급 경로 모두 ``record_issuance`` 를
+        지나고 같은 ``missionId`` 재사용은 ``MISSION_ID_CONFLICT``(409)로 막힌다. 실제
+        정책 조임은 **새 missionId** 로 나가는데, 그 경우 위 ``mission_id`` 불일치
+        분기에서 이 함수가 아예 ``None`` 을 반환한다. 그래서 이 규칙이 지금 막는 것은
+        "Core 밖에서 조립된 옛 계약 재생"뿐이고, 정상 파이프라인에는 걸리는 트래픽이
+        없다. 게다가 활성 계약 파일이 없거나 TTL 이 만료됐으면 위에서 이미 ``None``
+        으로 빠져나간다(fail-open 세 곳) — 이 가드만으로 rollback 이 닫혔다고 말할 수
+        없다. risk ``mission-contract-no-issuance-ordering-field`` 는 계속 열려 있다.
+
+        **알아둘 것**: 서명키 로테이션은 이 규칙에 걸리지 **않는다** —
+        ``canonical_payload_bytes`` 가 ``signature`` 블록을 통째로 제외하므로
+        ``keyId`` 가 바뀌어도 digest 는 같고, 위 digest 단축에서 먼저 통과한다.
+        "같은 notBefore·다른 digest" 를 실제로 만드는 트리거는 따로 있다:
+        ``mission_plans.py`` 의 멱등 재발급(``_regenerate_pair_artifact``)이 원
+        ``issued_at`` 을 재사용해 재서명하는 상태에서 서버 고정 안전상수·경로
+        생성기가 드리프트하는 경우다(risk ``kmz-regeneration-determinism-timebomb``
+        와 같은 사고 클래스). 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
+        재생성본을 쓰지 않아 무해하다.
         """
         if self._active_path.is_symlink() or not self._active_path.exists():
             return None
@@ -305,19 +328,22 @@ class MissionContractConsumer:
             # 다른 임무의 계약이다 — 순서를 비교할 공통 축이 없다.
             return None
 
+        # 동일 계약 재활성화는 순서 판정 대상이 아니다 — 순서 비교보다 먼저 통과시킨다.
+        active_digest = sha256_digest(canonical_payload_bytes(active_data))
+        if active_digest == candidate_digest:
+            return None
+
         active_not_before = _parse_contract_instant(active.model.validity.not_before)
         candidate_not_before = _parse_contract_instant(candidate.validity.not_before)
         if active_not_before is None or candidate_not_before is None:
             return None
-        if candidate_not_before >= active_not_before:
+        # 엄격 부등호 — 확실히 더 뒤인 발급본만 통과한다. 같으면 순서 근거가 없다.
+        if candidate_not_before > active_not_before:
             return None
 
-        active_digest = sha256_digest(canonical_payload_bytes(active_data))
-        if active_digest == candidate_digest:
-            return None
         return (
-            "이미 활성인 계약보다 이른 validity.notBefore를 가진 후보다 — "
-            "이전 발급본으로 되돌리는 활성화를 거부한다"
+            "이미 활성인 계약과 같거나 이른 validity.notBefore를 가진 후보다 — "
+            "이전 발급본으로 되돌리거나 순서 근거 없이 교체하는 활성화를 거부한다"
         )
 
     def load_active(self, *, now: datetime | None = None) -> LoadedContract:
