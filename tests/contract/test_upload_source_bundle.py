@@ -500,6 +500,50 @@ def test_rerun_with_different_photo_count_stays_a_failure(tmp_path: Path) -> Non
     assert outcome.failures, "장수가 다른데도 수렴으로 접혔다"
 
 
+def test_rerun_with_the_same_count_but_different_photos_stays_a_failure(tmp_path: Path) -> None:
+    """[핵심] 장수가 같아도 **내용이 다르면** 수렴이 아니라 실패다.
+
+    장수만 대조하면 이 경우가 조용히 "이미 완료"로 성공 보고된다 — 그 임무의 재구성은
+    먼저 봉인된 다른 묶음으로 이미 돌았는데, 운용자는 방금 넣은 사진이 반영됐다고
+    믿는다. 수렴 판정 기준이 mediaCount 가 아니라 sourceBundleDigest 여야 하는 이유다.
+    """
+    storage = _RecordingStorage()
+    client = _client(tmp_path, storage)
+    photo_dir = tmp_path / "photos"
+    _photos(photo_dir, 3)
+    state_dir = tmp_path / "state"
+
+    first = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=photo_dir,
+        state_dir=state_dir,
+        seal=True,
+        put_object=_StorageUploads(storage),
+    )
+    assert first.sealed is True
+
+    # 같은 3장이 아니라 **다른 3장**으로 갈아끼운다(장수는 그대로 3).
+    for path in sorted(photo_dir.iterdir()):
+        path.unlink()
+    for index in range(3):
+        Image.new("RGB", (64, 48), color=(7, index * 30 % 256, 200)).save(
+            photo_dir / f"OTHER_{index:04d}.jpg", "JPEG"
+        )
+
+    outcome = run_sync(
+        client,
+        mission_id=_MISSION_ID,
+        source_dir=photo_dir,
+        state_dir=state_dir,
+        seal=True,
+        put_object=_StorageUploads(storage),
+    )
+
+    assert outcome.already_complete is False
+    assert outcome.failures, "장수가 같은 다른 묶음인데도 수렴으로 접혔다"
+
+
 def test_core_unreachable_is_a_reported_failure_not_a_crash(tmp_path: Path) -> None:
     """서버에 닿지 못해도 traceback 이 아니라 판정으로 낸다.
 

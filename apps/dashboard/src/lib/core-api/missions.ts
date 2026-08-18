@@ -3,6 +3,7 @@ import "server-only";
 import { coreFetch, coreFetchBinary, type CoreBinaryResponse } from "./client";
 import type {
   CoverageReportView,
+  CoverageRejectionListView,
   MissionExecutionStatus,
   MissionExecutionView,
   MissionRecordResponse,
@@ -33,6 +34,17 @@ export async function getMissionKmz(missionId: string): Promise<CoreBinaryRespon
 export async function getCoverageReport(missionId: string): Promise<CoverageReportView> {
   return coreFetch<CoverageReportView>(
     `/v1/missions/${encodeURIComponent(missionId)}/coverage-report`,
+  );
+}
+
+/**
+ * 서버가 이 임무에 대해 거부한 완료 주장 이력 — "서버가 근거 없는 완료를
+ * 막았다"는 사실 자체가 감사 입력이다(coverage_reports.py 모듈 docstring).
+ * 거부 0건은 빈 배열이지 404 가 아니다.
+ */
+export async function getCoverageRejections(missionId: string): Promise<CoverageRejectionListView> {
+  return coreFetch<CoverageRejectionListView>(
+    `/v1/missions/${encodeURIComponent(missionId)}/coverage-report/rejections`,
   );
 }
 

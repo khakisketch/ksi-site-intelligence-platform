@@ -62,11 +62,17 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from _digest import sha256_file
+from ksi_core.source_media import (
+    GroundControlRecord,
+    SourceMediaClaim,
+    compute_source_bundle_digest_from_claims,
+)
 
 _EXTENSION_CONTENT_TYPES: dict[str, str] = {
     ".jpg": "image/jpeg",
@@ -92,6 +98,10 @@ RECONSTRUCTION_SPEC: dict[str, Any] = {
 }
 
 _CONFIRMED_CACHE_NAME = "uploaded.json"
+
+#: 지문 계산에는 쓰이지 않는 자리를 채우기 위한 고정 시각 — 이 레코드는 서버에
+#: 보내지 않고 매니페스트 대조에만 쓴다(내용 필드만 지문에 들어간다).
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 #: presigned URL 에 바이트를 올리는 이음매 — ``(url, body, *, content_type, timeout) -> 상태코드``.
 PutObject = Callable[..., int]
@@ -230,14 +240,49 @@ def _is_bundle_sealed_response(response: httpx.Response) -> bool:
         return False
 
 
+def _local_bundle_digest(
+    mission_id: str,
+    claims: list[dict[str, Any]],
+    ground_control: GroundControlRecord | None = None,
+) -> str:
+    """이 디렉터리가 만들 번들의 지문 — 서버의 sourceBundleDigest 와 같은 규칙이다.
+
+    매니페스트 구성은 Core 함수 하나가 SSOT 다. 여기서 다시 짜면 한쪽만 바뀌는
+    순간 이 대조가 조용히 무의미해진다.
+
+    **기준점도 세어야 한다.** 서버는 봉인 지문에 기준점을 포함하므로, 여기서 빼면
+    기준점을 붙인 조사를 재실행할 때마다 "다른 묶음"으로 읽혀 재등록을 시도하고
+    BUNDLE_SEALED 로 실패한다(2026-08-18 병합에서 실제로 그렇게 깨졌다).
+    """
+    return compute_source_bundle_digest_from_claims(
+        mission_id,
+        [
+            SourceMediaClaim(
+                media_id=claim["mediaId"],
+                sha256=claim["sha256"],
+                size_bytes=claim["bytes"],
+                width=claim["width"],
+                height=claim["height"],
+                content_type=claim["contentType"],
+            )
+            for claim in claims
+        ],
+        ground_control,
+    )
+
+
 def _sealed_bundle_matches(
-    client: httpx.Client, *, mission_id: str, expected_count: int
+    client: httpx.Client, *, mission_id: str, expected_digest: str
 ) -> bool:
-    """서버의 봉인된 번들이 우리가 가진 장수와 같은가.
+    """서버의 봉인된 번들이 우리가 가진 **그 묶음**인가.
 
     같으면 "이미 다 올려서 봉인까지 끝난 상태"로 본다. 다르면 그건 수렴이 아니라
     **실제 불일치**다(다른 사진 묶음이 이미 그 임무에 봉인돼 있다) — 그때는 조용히
     넘어가지 않고 실패로 남긴다.
+
+    판정 근거는 ``sourceBundleDigest`` 다. 장수로는 부족하다 — 같은 장수의 다른
+    묶음을 올리려는 재실행이 조용히 성공으로 보고되고, 그 임무의 재구성은 이미 다른
+    입력으로 돌아 있다(risk source-media-sealed-bundle-identity-count-only).
     """
     try:
         response = client.get(f"/v1/missions/{mission_id}/source-media")
@@ -249,7 +294,10 @@ def _sealed_bundle_matches(
         bundle = response.json()
     except ValueError:
         return False
-    return bool(bundle.get("status") == "SEALED" and bundle.get("mediaCount") == expected_count)
+    return bool(
+        bundle.get("status") == "SEALED"
+        and bundle.get("sourceBundleDigest") == expected_digest
+    )
 
 
 def _register_and_upload(
@@ -262,19 +310,35 @@ def _register_and_upload(
     confirmed: dict[str, str],
     state_dir: Path | None,
     outcome: SyncOutcome,
+    # 봉인 지문 대조용 — 서버가 기준점을 지문에 포함하므로 여기서도 세야 한다.
+    ground_control_record: GroundControlRecord | None = None,
     put_object: PutObject,
 ) -> None:
     """등록 + 실제 PUT 업로드. 결과는 ``outcome`` 에 누적한다."""
+    # claim 을 **배치 루프 앞에서** 전부 만든다 — 첫 배치가 BUNDLE_SEALED 로 거부될 때
+    # "이 디렉터리가 그 봉인된 묶음인가"를 판정하려면 그 시점에 전체 지문이 있어야
+    # 한다. 예전에는 배치 안에서 만들어서, 판정에 쓸 수 있는 사실이 장수뿐이었다
+    # (risk source-media-sealed-bundle-identity-count-only).
+    #
+    # claim 생성 실패는 예전과 같이 그 파일만 건너뛴다. 그러면 그 파일이 지문
+    # 계산에서도 빠지고 서버 지문과 달라져 수렴하지 않는데, **그것이 옳은 동작이다**
+    # — 일부만 올라간 묶음을 "이미 완료"로 접으면 안 된다.
+    claim_by_path: dict[Path, dict[str, Any]] = {}
+    for path in files:
+        try:
+            claim_by_path[path] = _build_claim(path)
+        except Exception as exc:  # noqa: BLE001 -- 파일 하나의 실패로 전체를 죽이지 않는다
+            outcome.failures.append(f"{path.name}: claim 생성 실패 — {type(exc).__name__}: {exc}")
+    local_digest = _local_bundle_digest(
+        mission_id, list(claim_by_path.values()), ground_control_record
+    )
+
     for batch_index, batch in enumerate(_chunks(files, batch_size), start=1):
         claims: list[dict[str, Any]] = []
         path_by_media_id: dict[str, Path] = {}
         for path in batch:
-            try:
-                claim = _build_claim(path)
-            except Exception as exc:  # noqa: BLE001 -- 파일 하나의 실패로 배치 전체를 죽이지 않는다
-                outcome.failures.append(
-                    f"{path.name}: claim 생성 실패 — {type(exc).__name__}: {exc}"
-                )
+            claim = claim_by_path.get(path)
+            if claim is None:  # claim 생성이 위에서 실패한 파일
                 continue
             # 같은 mediaId 를 같은 내용으로 이미 올렸다면 바이트를 다시 올리지 않는다.
             # 등록 자체는 건너뛰지 않는다 — 서버 번들에 그 항목이 있다는 사실은
@@ -301,11 +365,10 @@ def _register_and_upload(
             # 이미 봉인된 번들에 다시 올리려 한 것은 **대개 재실행이 목표 상태에
             # 이미 도달했다는 뜻**이다 — 주기 실행이 첫 성공 이후 영원히 실패로
             # 뜨는 것을 막으려면 이것을 실패로 다루면 안 된다. 다만 "봉인돼 있다"만
-            # 으로는 내용이 같다고 말할 수 없어, 장수까지 대조해서 같을 때만 수렴으로
-            # 본다(서버가 mediaId 목록을 노출하지 않아 장수가 지금 얻을 수 있는
-            # 가장 강한 대조다 — 장수가 같아도 내용이 다를 가능성은 남는다).
+            # 으로는 내용이 같다고 말할 수 없어, **번들 지문까지 대조해서 같을 때만**
+            # 수렴으로 본다. 장수 대조로는 같은 장수의 다른 묶음을 걸러내지 못했다.
             if _is_bundle_sealed_response(response) and _sealed_bundle_matches(
-                client, mission_id=mission_id, expected_count=outcome.discovered
+                client, mission_id=mission_id, expected_digest=local_digest
             ):
                 outcome.already_complete = True
                 return
@@ -519,6 +582,19 @@ def run_sync(
         return outcome
 
     confirmed = load_confirmed(state_dir)
+    # 기준점을 붙일 예정이면 그 레코드를 미리 만들어 지문 대조에 함께 넣는다 —
+    # 서버의 봉인 지문이 기준점을 포함하기 때문이다(_local_bundle_digest).
+    ground_control_record: GroundControlRecord | None = None
+    if ground_control is not None and ground_control_crs is not None:
+        payload = ground_control.read_bytes()
+        ground_control_record = GroundControlRecord(
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size_bytes=len(payload),
+            crs=ground_control_crs,
+            object_key="",  # 지문에 안 들어간다(내용의 지문이지 저장소 배치의 지문이 아니다)
+            registered_at=_EPOCH,
+            registered_by="",
+        )
     _register_and_upload(
         client,
         mission_id=mission_id,
@@ -529,6 +605,7 @@ def run_sync(
         state_dir=state_dir,
         outcome=outcome,
         put_object=put_object,
+        ground_control_record=ground_control_record,
     )
 
     # 기준점은 **봉인 전**에 붙인다 — 봉인이 입력 확정이라 그 뒤에는 못 붙인다.

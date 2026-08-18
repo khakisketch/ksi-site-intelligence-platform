@@ -121,6 +121,12 @@ target_compile_options(ksi_edge_runtime PRIVATE
   -Wall -Wextra -Wpedantic -Werror
 )
 
+# 게이트 환경이 "SQLite 없이 조용히 통과"를 금지할 수 있게 하는 옵트인 스위치.
+# 기본값 OFF — 개발 호스트는 지금 그대로 빌드된다(아래 else 블록의 근거 참조).
+# 이 블록 바깥에 두는 이유: if(KSI_TARGET_MANIFOLD3) 안에 넣으면 Manifold 타깃
+# 빌드에서 옵션 자체가 정의되지 않는다.
+option(KSI_REQUIRE_SQLITE "SQLite 개발 헤더가 없으면 configure 단계에서 실패한다" OFF)
+
 # DPK는 glibc 이외의 동적 의존성을 허용하지 않는다. FindSQLite3는 일부 배포판에서
 # CMAKE_FIND_LIBRARY_SUFFIXES=.a 보다 pkg-config/공유 라이브러리를 우선할 수 있어,
 # Manifold target에서는 정확히 정적 archive를 찾고 없으면 fail-closed 한다. 그렇지
@@ -152,6 +158,11 @@ else()
     target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=1)
     target_link_libraries(ksi_edge_runtime PRIVATE SQLite::SQLite3)
   else()
+    if(KSI_REQUIRE_SQLITE)
+      message(FATAL_ERROR
+        "KSI_REQUIRE_SQLITE=ON 인데 SQLite3 개발 헤더를 찾지 못했다 — "
+        "이 빌드는 저장후전달 순서·WAL 복구 계약을 검증하지 못한다.")
+    endif()
     # 개발 호스트가 SQLite 개발 헤더를 갖지 않아도 순수 안전 루프 검증은 가능하다.
     # 이 경우 store-and-forward는 kBackendUnavailable로 fail-closed이며, Docker/HIL
     # gate에서 SQLite WAL backend를 반드시 다시 빌드·실행한다.

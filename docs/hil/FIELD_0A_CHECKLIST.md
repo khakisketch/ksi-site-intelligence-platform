@@ -18,31 +18,39 @@
 |---|---|
 | Matrice 4D + RC Plus 2 | 프로펠러 제거 |
 | USB 저장매체 또는 조종기 파일 전송 경로 | KMZ 2개를 옮긴다 |
-| `docs/hil/field0a-kit/KSI-FIELD0A-A-droneEnum-99.kmz` | **현재 제품이 실제로 발급하는 값** |
-| `docs/hil/field0a-kit/KSI-FIELD0A-B-droneEnum-1000.kmz` | M4D 로 추정되는 값 |
+| `docs/hil/field0a-kit/KSI-FIELD0A-A-droneEnum-100-payload-98.kmz` | **현재 제품이 실제로 발급하는 값**(공식 표 근거) |
+| `docs/hil/field0a-kit/KSI-FIELD0A-B-droneEnum-99-payload-65534.kmz` | 직전 제품값(2026-08-18 이전 발급분과 동일) |
 
-두 파일은 **기종값(`droneEnumValue`) 한 곳만 다르고 나머지는 완전히 같다**
+두 파일은 **기종값(`droneEnumValue` 100↔99)과 페이로드값(`payloadEnumValue`
+98↔65534)만 다르고** 나머지는 완전히 같다
 (경로 80 웨이포인트, 고도 40m, 격자 18m, 촬영 간격 8m, 촬영 액션 포함).
+재생성은 `uv run python tools/build_field0a_kit.py`(재현 가능 — 같은 입력이면 바이트 동일).
 
 ## 2. 절차 A — 우리 비행파일을 Pilot 2 가 받는가
 
 **이게 이 세션의 핵심이다.** 지금까지 우리 KMZ 를 실기가 읽어본 적이 0회다.
 
-1. A 파일(99)을 조종기로 옮겨 Pilot 2 항로 목록에서 임포트한다.
+1. A 파일(100)을 조종기로 옮겨 Pilot 2 항로 목록에서 임포트한다.
 2. 결과를 셋 중 하나로 기록한다.
    - **임포트 성공 + 지도에 항로 표시** → 화면 사진을 남긴다(웨이포인트 수·고도가
      맞는지 눈으로 대조).
    - **임포트 성공 + 표시 이상**(웨이포인트 수 다름·고도 다름·기체 프로파일이
      다른 기종으로 뜸) → 무엇이 어떻게 다른지 적는다.
    - **거부** → **오류 메시지를 그대로 옮겨 적는다.** 이 문장이 다음 작업을 정한다.
-3. B 파일(1000)로 같은 과정을 반복한다.
+3. B 파일(99)로 같은 과정을 반복한다.
 4. **두 파일의 결과가 갈리면 기종값 문제가 확정된다**(risk
    `mission-drone-enum-value-is-not-m4d`). 둘 다 거부면 기종값이 아니라 형식
    문제이므로 절차 B 가 답을 준다.
 
-> 참고: 저장소 참고표(60/89/67/77/91)와 PSDK `dji_typedef.h` 의 기종 enum 이
-> 5/5 일치한다. 그 매핑대로면 99=M4T(열화상), 1000=M4D 다 — 지금 제품은 다른
-> 기종값을 싣고 있을 가능성이 높다. 다만 일치한 5개가 모두 구형이라 확정은 아니다.
+> 참고: M4 시리즈의 WPML 값은 DJI Cloud API Product Support 표에서 확인됐다
+> (2026-08-18): M4D/M4TD=100(sub 0/1), M4E/M4T=99(sub 0/1), M4D 광각 카메라
+> payload=98. 과거 가설(PSDK `dji_typedef.h` 매핑 → M4D=1000)은 폐기했다 —
+> WPML enum 과 PSDK aircraft type 은 다른 체계다. 이 절차가 확정하는 것은 그
+> 공식 값이 **실기 Pilot 2 에서도 수용되는가**다. 같은 표는 M4D 의 Cloud API
+> 게이트웨이로 Dock 3 만 명시한다(M4E/T 는 "RC Plus 2 + Pilot 2" 로 별도 명시)
+> — Pilot-to-Cloud 경로 리스크(`dji-pilot-cloud-wayline-support-conflicting-docs`)
+> 와 정합적인 신호다. RC Plus 2 Enterprise 수동 비행 자체는 Dock 3 FAQ 가 명시
+> 지원한다.
 
 ## 3. 절차 B — Pilot 2 가 내보낸 비행파일을 회수한다 (역방향 대조)
 
@@ -86,15 +94,27 @@
 | 35mm 환산 초점거리 (`FocalLengthIn35mmFilm`) | 센서 크기 역산 |
 | 이미지 가로·세로 픽셀 | GSD·촬영 폭 |
 | 센서/렌즈 정보 (XMP `drone-dji:*`) | 대조 |
+| **촬영 시각 (`DateTimeOriginal`)** | 공간모델 최신도의 기준점 |
+| **타임존 (`OffsetTimeOriginal`)** | 위 값이 현지시각인지 UTC 인지 — 없으면 그 사실이 답이다 |
+| **GPS 시각 (`GPSDateStamp` + `GPSTimeStamp`)** | 타임존이 없을 때의 대체 기준(UTC 확정) |
 
-**왜 필요한가**: 지금 제품은 센서 13.2mm·초점거리 8.8mm·5472×3648 을 쓰는데,
-이건 M4D 값이 아니라 1인치 20MP 급 대체값이다(코드 주석이 그렇게 적어뒀다).
-이 값이 **모든 매핑 임무의 사진 밀도**를 정한다(risk
-`mapping-camera-constants-are-not-m4d`).
+**왜 필요한가**: 제품은 2026-08-18부터 공식 스펙 유도값(센서 17.3mm 공칭·초점
+12.0mm 유도·5280×3956)을 쓴다(`apps/dashboard/src/lib/aircraft.ts`). 유도값이므로
+실측 EXIF 로 초점거리·센서를 확정해야 한다 — 이 값이 **모든 매핑 임무의 사진
+밀도**를 정한다(risk `mapping-camera-constants-are-not-m4d`).
 
 > DJI 개발도구에는 촬영 카메라의 내부 수치를 읽는 기능이 없다 —
 > `dji_camera_manager.h` 는 초점·줌 조작뿐이고 내부파라미터는 장애물 인지용
 > 스테레오 카메라(`dji_perception.h`)에만 있다. 그래서 사진 EXIF 가 가장 확실한 경로다.
+
+**촬영 시각 세 줄을 왜 같이 읽는가**(2026-08-17 추가): 지금 공간모델의 "최신도"는
+재구성 작업이 **성공한 시각**으로 계산된다. 3일 전에 찍은 사진을 오늘 재처리하면
+그 모델이 "오늘 만든 최신 모델"로 보인다 — `spatial_model.py` 자신이 그 한계를
+docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이 아니다").
+그걸 고치려면 사진에서 촬영 시각을 읽어야 하는데, **M4D 가 그 필드를 어떤 형식으로
+쓰는지(타임존을 붙이는지, GPS 시각이 있는지)를 모르면 설계를 시작할 수 없다.**
+회수하는 사진에 이미 들어 있는 값이므로 **추가 세션도 추가 촬영도 필요 없다** —
+표에 세 줄이 없어서 아무도 안 읽던 것뿐이다.
 
 ## 5. 회수 목록 (이것만 가져오면 된다)
 
@@ -106,5 +126,9 @@
 
 - `hil_raw_logs/<session_id>/` 규약대로 남긴다(`RAW_LOG_CONVENTIONS.md`).
 - 결과를 목표 `field-0a-kmz-acceptance` 의 attempt 증거로 기록한다.
-- 확정된 값으로 `SurveyWizard.tsx`·`SiteRegistrationWizard.tsx` 의 카메라·기종
-  기본값을 교체하고, 기존 커버리지 계약 시험이 그대로 통과하는지 확인한다.
+- EXIF 실측값이 유도값과 다르면 `apps/dashboard/src/lib/aircraft.ts` 하나만 갱신하고,
+  기존 커버리지 계약 시험이 그대로 통과하는지 확인한다.
+- 촬영 시각 세 필드가 실제로 무엇이었는지 기록한다(있음/없음/형식). 그것이
+  `aol-1-spatial-model-lifecycle` 의 남은 완료기준("현장 조회 응답에 촬영시각이
+  실린다")을 어떻게 닫을지의 **설계 입력**이다 — 값이 없으면 그 사실 자체가
+  "판정불가(fail-closed)로 둔다"는 결론의 근거가 된다.

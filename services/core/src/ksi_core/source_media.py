@@ -444,44 +444,44 @@ class SourceMediaBundle:
         return self.verified_at is not None
 
 
-def compute_source_bundle_digest(
+def compute_source_bundle_digest_from_claims(
     mission_id: str,
-    media: Iterable[SourceMediaRecord],
+    claims: Iterable[SourceMediaClaim],
     ground_control: GroundControlRecord | None = None,
 ) -> str:
-    """정규 정렬된 매니페스트의 SHA-256 — 업로드 순서와 무관한 재현성 앵커.
+    """등록 **전** 단계에서도 부를 수 있는 digest — 매니페스트 구성의 SSOT.
 
-    ``mediaId`` 기준으로 먼저 정렬해 리스트 순서를 고정한 뒤(``canonical_
-    payload_bytes`` 는 dict 키만 정렬하고 리스트 순서는 건드리지 않는다),
-    ``ksi_mission_contracts.signing`` 의 정규화·digest 함수를 그대로 재사용한다
-    (``mission_plans._pair_digest`` 와 동일 구성 — 별도 정규화를 새로 만들지
-    않는다, ADR-KSI-002 §2/§3).
+    :func:`compute_source_bundle_digest` 가 이 함수에 위임한다. 진입점이 둘인 이유는
+    업로더(``tools/upload_source_bundle.py``)가 "내가 들고 있는 이 묶음이 이미 봉인된
+    그 묶음인가"를 판정해야 하는데, 그 시점에는 아직 :class:`SourceMediaRecord`
+    (객체 키·등록 시각)가 없기 때문이다. 업로더가 매니페스트를 자기 손으로 다시 짜면
+    한쪽만 바뀌는 순간 그 대조가 조용히 무의미해진다 — 그래서 **같은 함수**를 부르게
+    한다(``compare_measurements`` 를 live·재생 공용 판정으로 둔 것과 같은 이유).
 
-    객체 키는 매니페스트에 싣지 않는다 — digest 는 **내용**의 지문이지 저장소
-    레이아웃의 지문이 아니다(버킷 구조가 나중에 바뀌어도 과거 digest 가
-    흔들리지 않게).
+    ``ground_control`` 도 같은 이유로 여기서 받는다: 기준점이 붙은 조사와 안 붙은
+    조사는 서로 다른 입력이라, 두 진입점 중 한쪽만 그것을 세면 같은 묶음이 두 개의
+    지문을 갖게 된다.
     """
     manifest: dict[str, Any] = {
         "missionId": mission_id,
         "media": sorted(
             (
                 {
-                    "mediaId": record.media_id,
-                    "sha256": record.sha256,
-                    "bytes": record.size_bytes,
-                    "width": record.width,
-                    "height": record.height,
-                    "contentType": record.content_type,
+                    "mediaId": claim.media_id,
+                    "sha256": claim.sha256,
+                    "bytes": claim.size_bytes,
+                    "width": claim.width,
+                    "height": claim.height,
+                    "contentType": claim.content_type,
                 }
-                for record in media
+                for claim in claims
             ),
             key=lambda entry: entry["mediaId"],
         ),
     }
     # 기준점 파일은 **있을 때만** 매니페스트에 실린다. 없을 때 빈 키를 넣으면
     # 기존 번들의 digest 가 전부 바뀌어, 이미 봉인된 원장이 재생에서 불일치로
-    # 거부된다(_replay_seal 의 재계산 대조). 기준점이 붙은 조사와 안 붙은 조사는
-    # 서로 다른 입력이므로, 붙었을 때는 반드시 지문에 들어가야 한다.
+    # 거부된다(_replay_seal 의 재계산 대조).
     if ground_control is not None:
         manifest["groundControl"] = {
             "sha256": ground_control.sha256,
@@ -489,6 +489,16 @@ def compute_source_bundle_digest(
             "crs": ground_control.crs,
         }
     return sha256_digest(canonical_payload_bytes(manifest))
+
+
+def compute_source_bundle_digest(
+    mission_id: str,
+    media: Iterable[SourceMediaRecord],
+    ground_control: GroundControlRecord | None = None,
+) -> str:
+    return compute_source_bundle_digest_from_claims(
+        mission_id, (record.claim for record in media), ground_control
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1676,5 +1686,6 @@ __all__ = [
     "build_source_media_router",
     "compare_measurements",
     "compute_source_bundle_digest",
+    "compute_source_bundle_digest_from_claims",
     "mount_source_media",
 ]
