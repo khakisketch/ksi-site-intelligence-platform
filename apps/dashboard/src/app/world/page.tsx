@@ -10,6 +10,8 @@ import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatObservationAge, summarizeWorldFreshness } from "@/lib/world-status";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
+import { listSiteProcessingJobs } from "@/lib/core-api/comparison";
 
 import { SitePlanView } from "./SitePlanView";
 
@@ -38,6 +40,49 @@ function speedOf(velocity: readonly number[]): number {
   return Math.hypot(velocity[0], velocity[1], velocity[2]);
 }
 
+/** 정사영상이 없을 때의 **사유** — 없다는 사실과 왜 없는지를 같은 값으로 다룬다. */
+type OrthoLookup =
+  | { kind: "ready"; jobId: string; artifactId: string; issuedAt: string }
+  | { kind: "no-surface" }
+  | { kind: "no-job" }
+  | { kind: "no-ortho"; issuedAt: string };
+
+/**
+ * 그 현장의 **가장 최근 성공한 재구성**이 남긴 정사영상 — World 정적 뷰의 바닥 그림.
+ *
+ * 현장 단위 작업 목록에 산출물 배열이 이미 실려 오므로(`SiteProcessingJobSummary`)
+ * 산출물을 다시 조회하지 않는다. 없는 경우를 하나로 뭉개지 않는 이유는, 셋이 서로
+ * 다른 상황이기 때문이다: 이 서버에 재구성 표면이 아예 없는 것(404)·아직 성공한
+ * 재구성이 없는 것·재구성은 됐지만 정사영상을 만들지 않은 것(GSD 미지정 등).
+ */
+async function fetchLatestOrtho(siteId: string): Promise<OrthoLookup> {
+  const jobs = await listSiteProcessingJobs(siteId)
+    .then((response) => response.jobs)
+    .catch(() => null);
+  if (jobs === null) return { kind: "no-surface" };
+
+  const succeeded = jobs
+    .filter((job) => job.status === "SUCCEEDED")
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  const latest = succeeded[0];
+  if (!latest) return { kind: "no-job" };
+
+  const ortho = latest.artifacts.find((artifact) => artifact.kind === "ortho");
+  if (!ortho) return { kind: "no-ortho", issuedAt: latest.issuedAt };
+  return {
+    kind: "ready",
+    jobId: latest.jobId,
+    artifactId: ortho.artifactId,
+    issuedAt: latest.issuedAt,
+  };
+}
+
+const ORTHO_ABSENT_NOTE: Record<Exclude<OrthoLookup["kind"], "ready">, string> = {
+  "no-surface": "이 서버에는 사진 처리(재구성) 표면이 없어 정사영상을 확인할 수 없습니다.",
+  "no-job": "아직 성공한 재구성이 없습니다 — 매핑 비행과 사진 처리가 끝나면 여기에 나타납니다.",
+  "no-ortho": "가장 최근 재구성에는 정사영상이 없습니다(엔진이 만들지 않았거나 해상도 기준이 지정되지 않음).",
+};
+
 /**
  * 2D·3D World — Phase 3 장비·작업자 운동상태 (PRD RISK-002, §26.3).
  *
@@ -62,44 +107,60 @@ export default async function WorldPage({
   const { siteId } = await searchParams;
   const sites = await fetchSites();
 
+  // 현장 전환줄 — World 는 보는 화면이라 현장을 바꾸는 데 두 번 들르게 하지 않는다.
+  // 고른 뒤에도 같은 줄이 남아 한 번에 옆 현장으로 넘어간다(Console v2 §4).
+  const siteSwitcher =
+    sites.length === 0 ? null : (
+      <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+        <span className="flex-none text-[11px] font-bold break-keep text-ink-muted">현장</span>
+        {sites.map((site) => {
+          const active = site.siteId === siteId;
+          return (
+            <Link
+              key={site.siteId}
+              href={`/world?siteId=${encodeURIComponent(site.siteId)}`}
+              aria-current={active ? "true" : undefined}
+              className={`tap-target inline-flex flex-none items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] break-keep transition-colors ${
+                active
+                  ? "border-line-strong bg-sunk font-bold"
+                  : "border-line bg-surface hover:border-line-strong"
+              }`}
+            >
+              {site.name}
+              <span className="text-[10.5px] text-ink-muted">
+                {SITE_STATUS_LABEL[site.status].label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    );
+
   if (!siteId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
+        {siteSwitcher}
         <div className="flex flex-col gap-1">
-          <h2 className="text-[19px] font-bold tracking-tight break-keep">현장별 현황 보기</h2>
-          <p className="text-sm break-keep text-ink-2">
-            장비·작업자 상태는 현장 단위로 수신됩니다. 현장을 선택하면 가장 최근에 보고된
-            관측만 표시하며, 관측이 없으면 그 사실을 그대로 표시합니다.
+          <h2 className="text-[17px] font-bold tracking-tight break-keep">현장별 현황 보기</h2>
+          <p className="text-[12.5px] break-keep text-ink-2">
+            장비·작업자 상태는 현장 단위로 수신됩니다. 현장을 고르면 가장 최근에 보고된 관측과
+            그 현장의 최신 정사영상만 표시하며, 없으면 없다고 표시합니다.
           </p>
         </div>
-        {sites.length === 0 ? (
+        {sites.length === 0 && (
           <EmptyState
             title="등록된 현장이 없습니다"
             action={{ label: "현장 등록", href: "/sites/new" }}
           />
-        ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {sites.map((site) => (
-              <li key={site.siteId}>
-                <Link
-                  href={`/world?siteId=${encodeURIComponent(site.siteId)}`}
-                  className="tap-target flex h-full flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-sm transition-colors hover:bg-sunk"
-                >
-                  <span className="font-semibold break-keep">{site.name}</span>
-                  <span className="num text-[11.5px] break-token text-ink-muted">{site.siteId}</span>
-                  <span className="text-[12px] break-keep text-ink-2">
-                    {SITE_STATUS_LABEL[site.status].label} · 최신 운동상태 보기
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
         )}
       </div>
     );
   }
 
-  const { view, error } = await fetchStates(siteId);
+  const [{ view, error }, ortho] = await Promise.all([
+    fetchStates(siteId),
+    fetchLatestOrtho(siteId),
+  ]);
   const currentSite = sites.find((site) => site.siteId === siteId);
   if (error) {
     return (
@@ -125,15 +186,42 @@ export default async function WorldPage({
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-line p-4">
-        <h2 className="text-sm font-semibold break-keep">{currentSite?.name ?? view.siteId}</h2>
-        <p className="mt-1 text-sm text-ink-2">
+      {siteSwitcher}
+
+      <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line bg-surface px-4 py-3">
+        <h2 className="text-[15px] font-bold tracking-tight break-keep">
+          {currentSite?.name ?? view.siteId}
+        </h2>
+        <span className="num text-[11.5px] break-token text-ink-muted">{view.siteId}</span>
+        <span className="text-[12.5px] break-keep text-ink-2">
           추적 중인 개체 {view.entityCount}건 (개체별 최신 관측)
-        </p>
-        <Link href="/world" className="tap-target mt-2 inline-flex items-center text-sm text-accent-text hover:underline">
-          다른 현장 선택
+        </span>
+        <Link
+          href={`/sites/${encodeURIComponent(view.siteId)}`}
+          className="btn tap-target ml-auto"
+        >
+          현장 상세
         </Link>
       </section>
+
+      {/* 정적 뷰 — 이 현장의 최신 정사영상. 측정·주석 도구는 아직 없다(그 기능이
+          없는데 도구 막대를 그리면 화면이 없는 기능을 약속한다). */}
+      {ortho.kind === "ready" ? (
+        <div className="flex flex-col gap-1">
+          <OrthophotoOverlay jobId={ortho.jobId} artifactId={ortho.artifactId} />
+          <p className="num text-[11px] break-keep text-ink-muted">
+            {formatKoreanDateTime(ortho.issuedAt, { dateStyle: "medium", timeStyle: "short" })} 처리
+            요청분 · 측정·주석 도구는 준비 중입니다.
+          </p>
+        </div>
+      ) : (
+        <section className="rounded-lg border border-line bg-surface px-4 py-3">
+          <h3 className="text-[13.5px] font-bold break-keep">정사영상</h3>
+          <p className="mt-1 text-[12.5px] break-keep text-ink-2">
+            {ORTHO_ABSENT_NOTE[ortho.kind]}
+          </p>
+        </section>
+      )}
 
       <section aria-labelledby="world-layer-status" className="rounded-lg border border-line p-4">
         <h2 id="world-layer-status" className="text-sm font-semibold">

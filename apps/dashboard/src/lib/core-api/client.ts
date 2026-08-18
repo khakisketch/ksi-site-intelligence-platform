@@ -40,7 +40,14 @@ export class CoreApiError extends Error {
   /** 서버가 준 구체 설명 문장 — code 로 못 찾을 때의 최후 대체 표시용(§3.4). */
   readonly serverMessage: string | undefined;
 
-  constructor(status: number, body: unknown) {
+  /** 서버 Retry-After 헤더(초). 503 이 "언제 돌아오는지"를 말해줬다면 그 값이다.
+   *
+   *  ErrorState 는 이 값으로 카운트다운을 그리는 UI 를 이미 갖고 있었는데, 정작
+   *  이 에러가 헤더를 캡처하지 않아 **소스가 없는 죽은 prop** 이었다(2026-08-18
+   *  states 규격 정비에서 확인). 선택 필드라 기존 catch 경로는 그대로 동작한다. */
+  readonly retryAfterSeconds: number | undefined;
+
+  constructor(status: number, body: unknown, retryAfterSeconds?: number) {
     const parsed = (body ?? {}) as Record<string, unknown>;
     const bodyVerdict = typeof parsed.verdict === "string" ? parsed.verdict : undefined;
     const detailText = extractDetailText(parsed.detail);
@@ -59,7 +66,16 @@ export class CoreApiError extends Error {
     this.status = status;
     this.code = code;
     this.serverMessage = serverMessage;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** Retry-After 헤더 파싱 — 초 단위 정수만 받는다(HTTP-date 형태는 쓰지 않으므로 무시). */
+function parseRetryAfter(response: Response): number | undefined {
+  const raw = response.headers.get("retry-after");
+  if (!raw) return undefined;
+  const seconds = Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
 export interface CoreFetchOptions {
@@ -99,7 +115,7 @@ async function rawCoreRequest(
   if (!response.ok) {
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const body = isJson ? await response.json() : undefined;
-    throw new CoreApiError(response.status, body);
+    throw new CoreApiError(response.status, body, parseRetryAfter(response));
   }
   return response;
 }

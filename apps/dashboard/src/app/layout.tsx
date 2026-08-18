@@ -6,8 +6,11 @@ import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
 import { getNavCounts } from "@/components/nav/nav-counts";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
+import { SidebarUserBlock } from "@/components/nav/SidebarUserBlock";
 import { TopBar } from "@/components/nav/TopBar";
 import { resolvePageTitle } from "@/components/nav/page-title";
+import { CommandPalette } from "@/components/console/CommandPalette";
+import { buildPaletteItems } from "@/components/console/palette-source";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
 import "./globals.css";
@@ -38,7 +41,11 @@ export default async function RootLayout({
   // 세션조차 없어 401 왕복이 된다).
   const chromeless = isChromelessPath(headerStore.get(PATHNAME_HEADER));
   const currentPageTitle = resolvePageTitle(headerStore.get(PATHNAME_HEADER)) || "KSI Site Intelligence";
-  const navCounts = chromeless ? undefined : await getNavCounts();
+  // 셸을 벗는 화면에서는 팔레트도 없다 — /field 는 조종기 화면이라 ⌘K 가 의미 없고,
+  // /login 은 아직 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
+  const [navCounts, paletteItems] = chromeless
+    ? [undefined, []]
+    : await Promise.all([getNavCounts(), buildPaletteItems()]);
 
   return (
     <html
@@ -49,7 +56,7 @@ export default async function RootLayout({
           lg 이상에서 뷰포트 높이에 고정되고 **본문만 스크롤한다**. 이게 문서와 앱을
           가르는 가장 큰 한 가지다: 레일과 상단바가 스크롤에 딸려 올라가지 않으면
           화면은 "열어 둔 도구"로 읽히고, 같이 밀려 올라가면 "긴 페이지"로 읽힌다.
-          폭은 시안대로 1280+ 216px · 1024~1279 176px.
+          폭은 시안대로 1280+ 232px · 1024~1279 176px(Console v2 §0).
           lg 미만에서는 하단 탭 + 일반 문서 흐름으로 떨어진다(PRD §7.1).
 
           /login 과 /field/* 는 셸을 통째로 벗는다(isChromelessPath — 판정 근거는 그
@@ -68,7 +75,7 @@ export default async function RootLayout({
         className={
           chromeless
             ? "min-h-full"
-            : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[216px_1fr]"
+            : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]"
         }
       >
         {!chromeless && (
@@ -76,7 +83,7 @@ export default async function RootLayout({
             본문으로 건너뛰기
           </a>
         )}
-        <DesktopSidebar counts={navCounts} />
+        <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />
         <div className="flex min-h-full flex-col lg:min-h-0 lg:overflow-hidden">
           {!chromeless && <TopBar />}
           <main
@@ -89,6 +96,7 @@ export default async function RootLayout({
           </main>
         </div>
         <MobileBottomNav />
+        {!chromeless && <CommandPalette items={paletteItems} />}
       </body>
     </html>
   );

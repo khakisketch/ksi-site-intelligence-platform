@@ -443,6 +443,44 @@ body {
   }
 }
 
+/* ── 콘솔 셸 애니메이션 (디자인 `KSI Console v2.dc.html` §Interactions) ──────────
+   둘 다 위 `prefers-reduced-motion: reduce` 블록이 0.01ms 로 무력화한다 — 그 규칙이
+   `*` 선택자라 여기 이름을 다시 적을 필요가 없다.
+
+   `ksiPulse` — 라이브 수신 점. 점 자체는 정지해 있고 **복제된 겹**만 퍼진다
+   (LiveIndicator.tsx) — 점이 깜빡이면 "값이 바뀌었다"로 오독되기 때문이다.
+   `ksiRise` — 팔레트·모달 진입. 아래에서 살짝 올라오며 나타난다. */
+@keyframes ksiPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes ksiRise {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ksi-pulse {
+  animation: ksiPulse 2s ease-out infinite;
+}
+
+.ksi-rise {
+  animation: ksiRise 0.14s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

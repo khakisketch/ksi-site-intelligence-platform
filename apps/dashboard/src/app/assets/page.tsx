@@ -12,6 +12,8 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { TableRow, TableShell } from "@/components/ui/TableShell";
+import { listSitesCached } from "@/lib/core-api/cached";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 import { DefectOverlay } from "./DefectOverlay";
@@ -37,6 +39,20 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
     return [];
   }
 }
+
+/** 현장 이름도 진입 보조다 — 실패하면 목록을 막지 않고 ID 표시로 떨어진다. */
+async function fetchSiteNames(): Promise<Map<string, string>> {
+  try {
+    const sites = await listSitesCached();
+    return new Map(sites.map((site) => [site.siteId, site.name]));
+  } catch {
+    return new Map();
+  }
+}
+
+// 보고서 화면의 임무 선택 표와 같은 격자 — 두 화면이 같은 일을 같은 모양으로 한다.
+const PICK_COLUMNS = "146px minmax(160px,1fr) 122px 132px";
+const PICK_MIN_WIDTH = 622;
 
 /**
  * 사진 열람 URL — 실패해도 표는 보여야 하므로 null 로 내려간다.
@@ -77,17 +93,17 @@ export default async function AssetsPage({
   searchParams: Promise<{ missionId?: string; mediaId?: string }>;
 }) {
   const { missionId, mediaId } = await searchParams;
-  const missions = await fetchMissions();
+  const [missions, siteNames] = await Promise.all([fetchMissions(), fetchSiteNames()]);
 
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-col gap-1">
-          <h2 className="text-[19px] font-bold tracking-tight break-keep">결함 후보</h2>
-          {/* 라벨이 내용과 맞아졌으므로 "이건 자산대장이 아닙니다"라는 사과는 뺀다
-              (2026-08-17). 자산대장 자체가 아직 없다는 사실은 남긴다 — 없는 기능을
-              있는 것처럼 말하지 않는 것이 이 화면의 규율이다(INV-040 의 정신). */}
-          <p className="text-sm break-keep text-ink-2">
+          <h2 className="text-[17px] font-bold tracking-tight break-keep">결함 후보</h2>
+          {/* 문구는 main 쪽(2026-08-17)을 따른다 — "이건 자산대장이 아닙니다"라는
+              사과를 빼고, 자산대장이 **아직 없다**는 사실만 남긴 개선이다(INV-040 의
+              정신). 활자 크기는 이 화면이 콘솔 눈금으로 옮겨온 값을 유지한다. */}
+          <p className="text-[12.5px] break-keep text-ink-2">
             임무를 선택해 그 임무 사진에서 생성된 결함 후보와 근거를 확인하세요.
             자산·시설물 단위로 이력을 쌓는 대장은 아직 없습니다.
           </p>
@@ -99,24 +115,36 @@ export default async function AssetsPage({
             action={{ label: "임무 목록", href: "/missions" }}
           />
         ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          // 보고서 화면의 임무 선택과 **같은 표**다 — 고르는 일이 같은데 화면마다
+          // 다르게 생기면 두 번 학습한다. 현장은 원시 ID 가 아니라 이름으로 나온다
+          // (이름 조회가 실패했을 때만 ID 로 떨어진다).
+          <TableShell title="결함 후보를 볼 임무" meta={`${missions.length}건`}>
+            <TableRow columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH} head>
+              <span>계약 ID</span>
+              <span>현장</span>
+              <span>유형</span>
+              <span>발급</span>
+            </TableRow>
             {missions.map((mission) => (
-              <li key={mission.missionId}>
+              <TableRow key={mission.missionId} columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH}>
                 <Link
                   href={`/assets?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="tap-target flex h-full flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-sm transition-colors hover:bg-sunk"
+                  className="num truncate text-[12px] font-semibold hover:underline"
                 >
-                  <span className="font-semibold break-keep">
-                    {MISSION_TYPE_LABEL[mission.missionType]} · {mission.siteId}
-                  </span>
-                  <span className="num text-[11.5px] break-token text-ink-muted">{mission.missionId}</span>
-                  <span className="text-[12px] break-keep text-ink-2">
-                    발급 {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
-                  </span>
+                  {mission.missionId}
                 </Link>
-              </li>
+                <span className="truncate text-[12.5px] break-keep">
+                  {siteNames.get(mission.siteId) ?? mission.siteId}
+                </span>
+                <span className="truncate text-[12.5px] break-keep">
+                  {MISSION_TYPE_LABEL[mission.missionType]}
+                </span>
+                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
+                  {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+              </TableRow>
             ))}
-          </ul>
+          </TableShell>
         )}
       </div>
     );
