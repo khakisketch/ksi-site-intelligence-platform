@@ -15,6 +15,9 @@ import {
   humanizeEventType,
 } from "@/lib/core-api/labels";
 import { listRegionExtraction } from "@/lib/core-api/region-extraction";
+// 순찰 가능 화이트리스트는 현장 목록의 '순찰 가능' 칩과 **같은 집합**이어야 한다 —
+// 두 화면이 서로 다른 수를 말하면 어느 쪽도 못 믿는다(그쪽 모듈 docstring).
+import { PATROLLABLE_SITE_STATUSES } from "@/lib/core-api/site-progress";
 import { ackSlaState, formatElapsed, isSettled, isUnattended, sortForTriage } from "@/lib/core-api/triage";
 import type { MissionRecordResponse, SiteStatus, SiteView } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -63,21 +66,6 @@ function unavailableNote(result: { ok: false; forbidden: boolean }): string {
 // 이 두 상태는 '기준 지도가 없어 순찰을 시작할 수 없다'는 같은 뜻이다 — 헤드라인·지표·
 // 포트폴리오 표가 같은 정의를 공유하도록 한 곳에 둔다.
 const BLOCKED_SITE_STATUSES = new Set<SiteStatus>(["UNMAPPED", "REMAP_REQUIRED"]);
-
-// "순찰 가능"은 **화이트리스트로만** 정의한다.
-//
-// 이걸 `전체 − 순찰불가`로 빼서 구하면 10개 상태 중 나머지 7개가 전부 '가능'으로 넘어온다 —
-// 준비 단계(BASELINE_MAPPING·MODEL_PROCESSING·MODEL_VALIDATION)와 모델 노후(MODEL_STALE),
-// 심지어 **운영 중단(SUSPENDED)** 까지 순찰 가능으로 세어진다. 운영을 정식으로 멈춘 현장을
-// 현황판이 "순찰 가능"이라 말하는 건 그냥 거짓말이다.
-//
-// 뺄셈은 새 상태가 추가될 때도 조용히 '가능' 쪽으로 흡수한다. 안전 화면의 파생 지표는
-// 열거를 늘리는 쪽이 틀렸을 때 눈에 띈다.
-const PATROLLABLE_SITE_STATUSES = new Set<SiteStatus>([
-  "PATROL_READY",
-  "PATROL_ACTIVE",
-  "PROVISIONAL_AUTONOMY",
-]);
 
 /** 헤드라인 아래 '다음에 할 일' 칩 수 — 네 개를 넘기면 한 줄에서 훑히지 않는다. */
 const NEXT_PILL_LIMIT = 3;
