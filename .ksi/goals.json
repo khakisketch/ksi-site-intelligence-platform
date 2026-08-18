@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T11:04:19+09:00",
+  "updated_at": "2026-08-18T11:44:54+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3647,14 +3647,14 @@
       "title": "500 유출 전수 조사가 라우터 6개를 보지 않았다",
       "lens": "other",
       "severity": "low",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-18 조사는 장착된 라우터 26개 중 20개만 봤다. 미조사 6개: mission_issuance(종합 판정자가 별도로 실측해 Class A 해당 확인), change_detection, defect_candidates, design_progress, edge_sync, auth. 이 중 defect_candidates(list[DefectCandidate])와 design_progress(str min_length)는 구조상 Class A 해당으로 추정되나 실측하지 않았다. Class A 는 전역 렌더 핸들러로 닫혔으므로 잔여 위험은 Class B/C/D 형 자리별 결함이다 — 그 6개 모듈에 같은 기법(raise_server_exceptions=False 로 재감싸 실제 발사)으로 재조사가 필요하다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "미조사 라우터 6개 재조사 완료(각 모듈 실제 발사, 판정자 재확증). 확증 6건(F1~F6) 전부 수정: 렌더 핸들러 깊이 예산·결함후보 계약 베이스 상속·조회 영구 500 차단(키 검사 포함)·엣지 payload 깊이 상한·durable_journal 봉인 경계·설계 진척 typed 사유. 기각 2건(auth whoami 는 배포 설정 경유라 별건, 중복 보고 통합). 회귀 테스트 7건 + 전체 3514 passed.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-18T11:04:19+09:00",
-      "updated_at": "2026-08-18T11:04:19+09:00"
+      "updated_at": "2026-08-18T11:44:54+09:00"
     }
   ]
 }
