@@ -12,6 +12,15 @@ export interface StatStripItem {
   href?: string;
   /** 안전 상태색은 **주의가 필요할 때만** 쓴다 — 평상시 수치까지 색을 칠하면 색이 신호이길 그만둔다. */
   tone?: "crit";
+  /**
+   * 이 칸이 **지금 걸린 필터**인가(이벤트 대기열처럼 띠가 필터로도 쓰이는 자리).
+   *
+   * `aria-pressed` 가 아니라 `aria-current` 를 쓴다 — 이 칸은 누르면 URL 이 바뀌는
+   * 링크라 role 이 link 이고, `aria-pressed` 는 button 계열 전용이라 링크에서는
+   * 그냥 무시된다(axe-core aria-allowed-attr / WCAG 4.1.2). 시각 차이가 배경색뿐이라
+   * 이게 없으면 보조기술 사용자에게 선택 상태를 전할 경로가 아예 없다.
+   */
+  active?: boolean;
 }
 
 /**
@@ -57,7 +66,12 @@ export function StatStrip({ items }: { items: StatStripItem[] }) {
         const shell = `min-w-[150px] flex-1 px-4 py-2.5 ${index > 0 ? "border-l border-line" : ""}`;
 
         return item.href ? (
-          <Link key={item.key} href={item.href} className={`${shell} transition-colors hover:bg-sunk`}>
+          <Link
+            key={item.key}
+            href={item.href}
+            aria-current={item.active ? "true" : undefined}
+            className={`${shell} transition-colors ${item.active ? "bg-accent-tint" : "hover:bg-sunk"}`}
+          >
             {body}
           </Link>
         ) : (

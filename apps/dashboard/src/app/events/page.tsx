@@ -22,6 +22,7 @@ import { groupForTriage, isUnattended } from "@/lib/core-api/triage";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { StatStrip } from "@/components/ui/StatStrip";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { DwellBar } from "./DwellBar";
 import { EventDetailPanel } from "./EventDetailPanel";
@@ -295,34 +296,21 @@ export default async function EventsPage({
         </p>
       )}
 
-      {/* 대기열 4칸 — 트리아지 기준. 나머지 축은 아래 select 로 내린다. */}
-      {/* 이 타일들은 링크다(누르면 URL 이 바뀐다). 그래서 선택 상태를 `aria-pressed` 로
-          말할 수 없다 — 그건 role=button 계열 전용이라 role=link 에서는 **무시된다**
-          (axe-core aria-allowed-attr / WCAG 4.1.2). 링크가 "현재 위치"를 말하는 표준
-          수단은 `aria-current` 다. 시각적으로는 테두리·배경색 차이뿐이라, 이게 없으면
-          보조기술 사용자에게 선택 상태를 전달할 경로가 아예 없다. */}
-      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="대기열 필터">
-        {QUEUE_TILES.map((tile) => {
-          const active = filter.triage === tile.value;
-          const count = triageCounts.get(tile.value) ?? 0;
-          return (
-            <Link
-              key={tile.value}
-              href={buildFilterHref(sp, "triage", tile.value)}
-              aria-current={active ? "true" : undefined}
-              className={`tap-target flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 transition-colors ${
-                active
-                  ? "border-accent bg-accent-tint"
-                  : "border-line bg-surface hover:bg-sunk"
-              }`}
-            >
-              <span className="text-ink-2 text-[11.5px] font-semibold break-keep">
-                {tile.label}
-              </span>
-              <span className="num text-[22px] leading-none font-bold">{count}</span>
-            </Link>
-          );
-        })}
+      {/* 대기열 4칸 — 트리아지 기준. 나머지 축은 아래 select 로 내린다.
+          홈의 지표 띠와 **같은 컴포넌트**를 쓴다: 같은 자리에 같은 모양으로 수치가
+          놓이지 않으면 화면마다 다시 읽게 된다. 선택 상태(aria-current 포함)는 그
+          컴포넌트가 `active` 로 받는다 — 그 근거는 StatStrip 쪽 주석에 있다. */}
+      <nav aria-label="대기열 필터">
+        <StatStrip
+          items={QUEUE_TILES.map((tile) => ({
+            key: tile.value,
+            label: tile.label,
+            value: triageCounts.get(tile.value) ?? 0,
+            unit: "건",
+            href: buildFilterHref(sp, "triage", tile.value),
+            active: filter.triage === tile.value,
+          }))}
+        />
       </nav>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
