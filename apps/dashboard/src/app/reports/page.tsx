@@ -18,6 +18,8 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { TableRow, TableShell } from "@/components/ui/TableShell";
+import { listSitesCached } from "@/lib/core-api/cached";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -60,6 +62,20 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
     return [];
   }
 }
+
+/** 현장 이름은 부가 정보다 — 실패하면 목록을 막지 않고 ID 표시로 떨어진다. */
+async function fetchSiteNames(): Promise<Map<string, string>> {
+  try {
+    const sites = await listSitesCached();
+    return new Map(sites.map((site) => [site.siteId, site.name]));
+  } catch {
+    return new Map();
+  }
+}
+
+// 고정폭 합(400) + 간격(30) + 좌우 여백(32) + 현장 열 최소폭(160) = 622.
+const PICK_COLUMNS = "146px minmax(160px,1fr) 122px 132px";
+const PICK_MIN_WIDTH = 622;
 
 /**
  * 그 임무의 비교 요청 전부(최신 먼저) — 두 가지 서로 다른 질문에 답한다.
@@ -132,14 +148,14 @@ export default async function ReportsPage({
   searchParams: Promise<{ missionId?: string }>;
 }) {
   const { missionId } = await searchParams;
-  const missions = await fetchMissions();
+  const [missions, siteNames] = await Promise.all([fetchMissions(), fetchSiteNames()]);
 
   if (!missionId) {
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-col gap-1">
-          <h2 className="text-[19px] font-bold tracking-tight break-keep">임무별 비교 결과</h2>
-          <p className="text-sm break-keep text-ink-2">
+          <h2 className="text-[17px] font-bold tracking-tight break-keep">임무별 비교 결과</h2>
+          <p className="text-[12.5px] break-keep text-ink-2">
             변화 탐지와 체적 변화는 임무 단위로 따로 계산됩니다. 임무를 선택하면 결과가 없는
             이유도 함께 확인할 수 있습니다.
           </p>
@@ -150,24 +166,39 @@ export default async function ReportsPage({
             action={{ label: "임무 목록", href: "/missions" }}
           />
         ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <TableShell title="비교 결과를 볼 임무" meta={`${missions.length}건`}>
+            <TableRow columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH} head>
+              <span>계약 ID</span>
+              <span>현장</span>
+              <span>유형</span>
+              <span>발급</span>
+            </TableRow>
             {missions.map((mission) => (
-              <li key={mission.missionId}>
+              <TableRow key={mission.missionId} columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH}>
                 <Link
                   href={`/reports?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="tap-target flex h-full flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-sm transition-colors hover:bg-sunk"
+                  className="num truncate text-[12px] font-semibold hover:underline"
                 >
-                  <span className="font-semibold break-keep">
-                    {MISSION_TYPE_LABEL[mission.missionType]} · {mission.siteId}
-                  </span>
-                  <span className="num text-[11.5px] break-token text-ink-muted">{mission.missionId}</span>
-                  <span className="text-[12px] break-keep text-ink-2">
-                    발급 {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
-                  </span>
+                  {mission.missionId}
                 </Link>
-              </li>
+                {/* 예전에는 여기 원시 siteId 가 찍혔다 — 운영자가 현장을 ID 로 외우고
+                    있어야 고를 수 있는 목록이었다. 이름 조회가 실패하면 그때만 ID 로
+                    떨어진다(부가 정보 실패가 목록을 막지 않는다는 이 화면의 원칙). */}
+                <span className="truncate text-[12.5px] break-keep">
+                  {siteNames.get(mission.siteId) ?? mission.siteId}
+                </span>
+                <span className="truncate text-[12.5px] break-keep">
+                  {MISSION_TYPE_LABEL[mission.missionType]}
+                </span>
+                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
+                  {formatKoreanDateTime(mission.issuedAt, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </span>
+              </TableRow>
             ))}
-          </ul>
+          </TableShell>
         )}
       </div>
     );
@@ -262,19 +293,38 @@ export default async function ReportsPage({
   const currentMission = missions.find((mission) => mission.missionId === missionId) ?? null;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <section className="rounded-lg border border-line bg-surface p-4">
-        <h2 className="text-sm font-semibold break-keep text-ink-1">{missionId}</h2>
+      {/* 무엇에 대한 보고서인지가 맨 위에 있어야 한다 — 예전에는 계약 ID 하나만
+          찍혀서, 현장 이름은 아래 결과 어딘가에서 찾아야 했다. 내보내기는 현장 단위
+          화면이 소유하므로(설계 대비 진척과 같은 1회 응답에서 나온다) 여기서는 그
+          화면으로 보낸다 — 여기 버튼을 하나 더 두면 같은 이름의 산출물이 두 곳에서
+          서로 다른 값으로 나올 수 있다. */}
+      <section className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-surface px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-bold tracking-tight break-keep">
+            {currentMission
+              ? `${MISSION_TYPE_LABEL[currentMission.missionType]} · ${siteNames.get(currentMission.siteId) ?? currentMission.siteId}`
+              : "비교 결과"}
+          </h2>
+          <p className="num mt-0.5 text-[11.5px] break-token text-ink-muted">{missionId}</p>
+        </div>
         {!notFound && (
-          <p className="num mt-1 text-sm text-ink-2">
-            변화 탐지 {view.resultCount}건 중 최신 · 계산 시각 {formatKoreanDateTime(latest!.computedAt)}
+          <p className="num text-[12px] break-keep text-ink-2">
+            변화 탐지 {view.resultCount}건 중 최신 · 계산 {formatKoreanDateTime(latest!.computedAt)}
           </p>
         )}
-        <Link
-          href="/reports"
-          className="mt-2 inline-block text-sm font-medium text-accent-text hover:underline"
-        >
-          다른 임무 선택
-        </Link>
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {currentMission && (
+            <Link
+              href={`/sites/${encodeURIComponent(currentMission.siteId)}/report`}
+              className="btn tap-target"
+            >
+              현장 보고서 내보내기
+            </Link>
+          )}
+          <Link href="/reports" className="btn tap-target">
+            다른 임무 선택
+          </Link>
+        </span>
       </section>
 
       {notFound ? (
