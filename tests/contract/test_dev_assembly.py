@@ -37,7 +37,8 @@ from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_execution import MissionExecutionStore
-from ksi_core.mission_records import MissionStore
+from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -163,6 +164,12 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         DurableJournal(tmp_path / "work-areas.jsonl"),
         site_exists=lambda site_id: site_store.get(site_id) is not None,
     )
+    observation_work_order_store = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
         mission_store=mission_store,
@@ -204,6 +211,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "event_store": EventStore(DurableJournal(tmp_path / "events.jsonl")),
         "site_store": site_store,
         "mission_store": mission_store,
+        "mission_sequence_store": MissionIssuanceSequenceStore(
+            DurableJournal(tmp_path / "mission-sequences.jsonl")
+        ),
         "coverage_report_store": CoverageReportStore(
             DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
         ),
@@ -213,6 +223,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "source_media_store": source_media_store,
         "design_surface_store": design_surface_store,
         "work_area_store": work_area_store,
+        "observation_work_order_store": observation_work_order_store,
         "processing_job_store": processing_job_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),

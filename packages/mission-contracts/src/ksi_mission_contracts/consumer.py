@@ -223,6 +223,14 @@ class DispatchHighWaterMark:
     edge_runtime_profile_digest: str
 
 
+@dataclass(frozen=True, slots=True)
+class IssuanceHighWaterMark:
+    """v1.3 ``(issuerId, siteId)`` 축에서 이미 활성화한 가장 큰 순서."""
+
+    site_sequence: int
+    digest: str
+
+
 def _require_instant(raw: Any, *, field: str) -> datetime:
     parsed = _parse_contract_instant(raw)
     if parsed is None:
@@ -330,6 +338,36 @@ class ActivationHighWater:
             digest=_require_text(record.get("digest"), field="contracts[].digest"),
         )
 
+    def issuance_mark(self, *, issuer_id: str, site_id: str) -> IssuanceHighWaterMark | None:
+        issuers = self._load().get("issuance", {})
+        issuer = issuers.get(issuer_id)
+        if issuer is None:
+            return None
+        if not isinstance(issuer, dict):
+            raise ContractInputError("활성화 고수위 issuance issuer 항목이 object가 아니다")
+        record = issuer.get(site_id)
+        if record is None:
+            return None
+        if not isinstance(record, dict):
+            raise ContractInputError("활성화 고수위 issuance site 항목이 object가 아니다")
+        sequence = record.get("siteSequence")
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence <= 0:
+            raise ContractInputError("활성화 고수위 issuance.siteSequence가 양의 정수가 아니다")
+        return IssuanceHighWaterMark(
+            site_sequence=sequence,
+            digest=_require_text(record.get("digest"), field="issuance[].digest"),
+        )
+
+    def has_issuance_for_site(self, site_id: str) -> bool:
+        """issuer를 표현할 수 없는 v1.2 downgrade 판정용 보수적 site 조회."""
+        issuers = self._load().get("issuance", {})
+        for issuer in issuers.values():
+            if not isinstance(issuer, dict):
+                raise ContractInputError("활성화 고수위 issuance issuer 항목이 object가 아니다")
+            if site_id in issuer:
+                return True
+        return False
+
     def dispatch_mark(self) -> DispatchHighWaterMark | None:
         record = self._load().get("dispatch")
         if record is None:
@@ -360,6 +398,39 @@ class ActivationHighWater:
                 return
         contracts[mission_id] = {"notBefore": _instant_wire(not_before), "digest": digest}
         state["contracts"] = contracts
+        self._store(state)
+
+    def record_issuance(
+        self,
+        *,
+        issuer_id: str,
+        site_id: str,
+        site_sequence: int,
+        digest: str,
+    ) -> None:
+        """v1.3 순서 고수위를 올린다. 낮은 순서나 같은 순서의 변조는 쓰지 않는다."""
+        if site_sequence <= 0:
+            raise ContractInputError("siteSequence는 양의 정수여야 한다")
+        state = self._load()
+        issuers = dict(state.get("issuance", {}))
+        sites = dict(issuers.get(issuer_id, {}))
+        existing = sites.get(site_id)
+        if isinstance(existing, dict):
+            previous = existing.get("siteSequence")
+            previous_digest = existing.get("digest")
+            if not isinstance(previous, int) or isinstance(previous, bool) or previous <= 0:
+                raise ContractInputError("활성화 고수위 issuance.siteSequence가 양의 정수가 아니다")
+            if site_sequence < previous:
+                return
+            if site_sequence == previous:
+                if previous_digest != digest:
+                    raise ContractInputError(
+                        "같은 v1.3 siteSequence에 다른 계약 digest를 기록할 수 없다"
+                    )
+                return
+        sites[site_id] = {"siteSequence": site_sequence, "digest": digest}
+        issuers[issuer_id] = sites
+        state["issuance"] = issuers
         self._store(state)
 
     def record_dispatch(
@@ -398,6 +469,9 @@ class ActivationHighWater:
             raise ContractInputError("활성화 고수위 파일의 schemaVersion을 모른다")
         if not isinstance(state.get("contracts", {}), dict):
             raise ContractInputError("활성화 고수위 contracts가 object가 아니다")
+        issuance = state.get("issuance", {})
+        if not isinstance(issuance, dict):
+            raise ContractInputError("활성화 고수위 issuance가 object가 아니다")
         dispatch = state.get("dispatch")
         if dispatch is not None and not isinstance(dispatch, dict):
             raise ContractInputError("활성화 고수위 dispatch가 object가 아니다")
@@ -473,6 +547,13 @@ class MissionContractConsumer:
         # 다시 실으면 digest 가 같아 멱등 통과다 — 반대 순서(활성 파일 먼저)로
         # 죽으면 실은 적 있는 계약이 표식에 안 남아 되돌림에 다시 뚫린다.
         self._ensure_trusted_state_dir(create=True)
+        if model.schema_version == "1.3":
+            self._highwater.record_issuance(
+                issuer_id=model.issuance.issuer_id,
+                site_id=model.site_id,
+                site_sequence=model.issuance.site_sequence,
+                digest=digest,
+            )
         not_before = _parse_contract_instant(model.validity.not_before)
         if not_before is not None:
             self._highwater.record_contract(
@@ -540,6 +621,32 @@ class MissionContractConsumer:
         와 같은 사고 클래스). 현재 Edge 배포 경로는 저장된 계약을 그대로 싣고
         재생성본을 쓰지 않아 무해하다.
         """
+        if candidate.schema_version == "1.3":
+            mark = self._highwater.issuance_mark(
+                issuer_id=candidate.issuance.issuer_id,
+                site_id=candidate.site_id,
+            )
+            if mark is None:
+                # 첫 v1.3은 legacy notBefore 축보다 강한 순서 근거를 도입하는 upgrade다.
+                return None
+            sequence = candidate.issuance.site_sequence
+            if sequence == mark.site_sequence and candidate_digest == mark.digest:
+                return None
+            if sequence > mark.site_sequence:
+                return None
+            return (
+                "이 issuer/site에 이미 같거나 큰 v1.3 siteSequence를 활성화했다 — "
+                "낮은 순서 또는 같은 순서의 다른 계약 replay를 거부한다"
+            )
+
+        # v1.2에는 issuerId가 없어 어느 issuer의 후속인지 증명할 수 없다. 같은 site에
+        # v1.3 고수위가 하나라도 생겼다면 안전 상태를 낮출 수 없도록 보수적으로 막는다.
+        if self._highwater.has_issuance_for_site(candidate.site_id):
+            return (
+                "이 site에 v1.3 발급 순서 고수위가 이미 있다 — issuer 순서를 표현하지 "
+                "못하는 v1.2 downgrade 활성화를 거부한다"
+            )
+
         durable = self._durable_superseded_detail(candidate, candidate_digest)
         if durable is not None:
             return durable
@@ -743,6 +850,7 @@ __all__ = [
     "ContractHighWaterMark",
     "ContractInputError",
     "DispatchHighWaterMark",
+    "IssuanceHighWaterMark",
     "MissionContractConsumer",
     "VerificationKeyError",
     "load_verification_keys",

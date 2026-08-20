@@ -28,10 +28,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
+from ksi_event_contracts.work_area import WorkAreaStatus
 
 from ksi_core.app import create_app
 from ksi_core.change_detection import ChangeDetectionStore
@@ -53,8 +54,9 @@ from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
 from ksi_core.mission_execution import MissionExecutionStore
-from ksi_core.mission_records import MissionStore
+from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.observability import CorrelationIdMiddleware
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -69,6 +71,7 @@ if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from ksi_core.auth import AuthRegistry
+    from ksi_core.device_attestation import DeviceAttestationRegistry
     from ksi_core.evidence import EvidenceStorage
 
 
@@ -97,8 +100,11 @@ def assemble_app(
     evidence_storage: EvidenceStorage | None,
     mission_signing_key: Ed25519PrivateKey,
     mission_signing_key_id: str,
+    mission_contract_writer_version: Literal["1.2", "1.3"] = "1.2",
+    mission_contract_issuer_id: str | None = None,
     risk_policy_packs: tuple[dict[str, Any], ...] = (),
     edge_runtime_profiles: tuple[dict[str, Any], ...] = (),
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """모든 store 를 조립하고 ``create_app`` 을 호출한다 — dev/production 공용.
@@ -113,6 +119,7 @@ def assemble_app(
     # 한 파일이 무한히 커지면 재기동 재생이 선형으로 느려지고 백업 단위도 사라진다.
     site_journal = journal("sites.jsonl")
     mission_journal = journal("missions.jsonl")
+    mission_sequence_journal = journal("mission-sequences.jsonl")
     event_journal = journal("events.jsonl")
     # edge-sync 는 회전이 아니라 스냅샷으로 재기동 비용을 잡는다 — 이 원장의
     # 재기동 비용은 파일 크기가 아니라 항목당 payload 정규화+sha256 이기 때문이다.
@@ -123,6 +130,7 @@ def assemble_app(
     opened.append(edge_sync_store)
 
     mission_store = MissionStore(mission_journal)
+    mission_sequence_store = MissionIssuanceSequenceStore(mission_sequence_journal)
     # 임무 실행 생애주기(ADR-KSI-019 G2) — 발급 원장과 별도 원장이다. 발급 시점에
     # 이 원장에 쓰지 않으므로(레코드 부재 = ISSUED) 발급 경로의 201 계약을 건드리지
     # 않는다.
@@ -188,6 +196,19 @@ def assemble_app(
         work_area_journal,
         site_exists=lambda site_id: site_store.get(site_id) is not None,
     )
+    observation_work_order_journal = journal("observation-work-orders.jsonl")
+    observation_work_order_store = ObservationWorkOrderStore(
+        observation_work_order_journal,
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+        work_areas_exist=lambda site_id, work_area_ids: all(
+            (area := work_area_store.get(work_area_id)) is not None
+            and area.site_id == site_id
+            and area.status is WorkAreaStatus.ACTIVE
+            for work_area_id in work_area_ids
+        ),
+    )
     design_conformance_request_journal = journal("design-conformance-requests.jsonl")
     design_conformance_report_journal = journal("design-conformance.jsonl")
     design_conformance_request_store = (
@@ -218,10 +239,7 @@ def assemble_app(
     # 방향을 생성자 인자로 넣으면 순환이다. 그래서 조립이 끝난 뒤 술어 하나만
     # 뒤로 걸어준다 — 이게 없으면 요청 원장의 두 게이트(리포트 없는 SUCCEEDED ·
     # 리포트 기록 후 래스터 재작성)가 조용히 열린 채로 뜬다.
-    if (
-        design_conformance_request_store is not None
-        and design_conformance_report_store is not None
-    ):
+    if design_conformance_request_store is not None and design_conformance_report_store is not None:
         design_conformance_request_store.bind_report_existence(
             design_conformance_report_store.has_report_for
         )
@@ -258,14 +276,13 @@ def assemble_app(
     app = create_app(
         auth_registry=auth_registry,
         site_store=site_store,
+        observation_work_order_store=observation_work_order_store,
         mission_store=mission_store,
         event_store=EventStore(event_journal),
         edge_sync_store=edge_sync_store,
         edge_dispatch_store=edge_dispatch_store,
         evidence_storage=evidence_storage,
-        coverage_report_store=CoverageReportStore(
-            coverage_journal, mission_store=mission_store
-        ),
+        coverage_report_store=CoverageReportStore(coverage_journal, mission_store=mission_store),
         mission_execution_store=mission_execution_store,
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,
@@ -314,12 +331,14 @@ def assemble_app(
         design_conformance_report_store=design_conformance_report_store,
         region_extraction_request_store=region_extraction_request_store,
         region_extraction_report_store=region_extraction_report_store,
-        equipment_state_store=EquipmentStateStore(
-            equipment_state_journal, site_store=site_store
-        ),
+        equipment_state_store=EquipmentStateStore(equipment_state_journal, site_store=site_store),
         equipment_support_store=EquipmentSupportStore(equipment_support_journal),
+        device_attestation_registry=device_attestation_registry,
         mission_signing_key=mission_signing_key,
         mission_signing_key_id=mission_signing_key_id,
+        mission_contract_writer_version=mission_contract_writer_version,
+        mission_contract_issuer_id=mission_contract_issuer_id,
+        mission_sequence_store=mission_sequence_store,
         expose_docs=expose_docs,
     )
 
@@ -340,9 +359,7 @@ def assemble_app(
         ``tests/contract/test_api_contract_sync.py`` 의
         ``_ASSEMBLE_APP_UNAUTHENTICATED_ALLOWLIST`` 에 명시적으로 올라 있다.
         """
-        return PlainTextResponse(
-            render_prometheus_text(), media_type="text/plain; version=0.0.4"
-        )
+        return PlainTextResponse(render_prometheus_text(), media_type="text/plain; version=0.0.4")
 
     @app.get("/ready")
     def ready() -> JSONResponse:

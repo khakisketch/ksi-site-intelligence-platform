@@ -37,7 +37,9 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_issuance import mount_mission_issuance
 from ksi_core.mission_plans import mount_mission_plans
 from ksi_core.mission_records import (
+    MissionIssuanceSequenceStore,
     MissionRecord,
+    MissionSequenceRecoveryError,
     MissionStore,
     MissionStoreRecoveryError,
     SiteLookupResult,
@@ -1418,3 +1420,41 @@ def test_idempotent_reissue_keeps_the_same_derivation(tmp_path: Path) -> None:
         "/v1/missions/mission-derived-idem", headers=_auth_header(_VIEWER_TOKEN)
     ).json()
     assert detail["derivedFrom"]["regionId"] == "r-1"
+
+
+def test_v13_site_sequence_reservations_are_durable_and_allow_gaps(tmp_path: Path) -> None:
+    path = tmp_path / "mission-sequences.jsonl"
+    journal = DurableJournal(path)
+    store = MissionIssuanceSequenceStore(journal)
+    now = datetime.now(UTC)
+
+    assert store.reserve(issuer_id="core-1", site_id="site-001", reserved_at=now) == 1
+    # 이 번호로 서명/기록하지 않아도 예약은 이미 내구화됐다. 다음 발급이 재사용하면 안 된다.
+    assert store.reserve(issuer_id="core-1", site_id="site-001", reserved_at=now) == 2
+    assert store.reserve(issuer_id="core-1", site_id="site-002", reserved_at=now) == 1
+    assert store.reserve(issuer_id="core-2", site_id="site-001", reserved_at=now) == 1
+    journal.close()
+
+    reopened_journal = DurableJournal(path)
+    reopened = MissionIssuanceSequenceStore(reopened_journal)
+    assert reopened.reserve(issuer_id="core-1", site_id="site-001", reserved_at=now) == 3
+    reopened_journal.close()
+
+
+def test_v13_site_sequence_replay_rejects_duplicate_or_lower_values(tmp_path: Path) -> None:
+    path = tmp_path / "mission-sequences.jsonl"
+    journal = DurableJournal(path)
+    now = datetime.now(UTC)
+    record = {
+        "kind": "MISSION_SITE_SEQUENCE_RESERVED",
+        "issuerId": "core-1",
+        "siteId": "site-001",
+        "siteSequence": 2,
+        "reservedAt": now.isoformat(),
+    }
+    journal.append(record)
+    journal.append({**record, "siteSequence": 2})
+    journal.close()
+
+    with pytest.raises(MissionSequenceRecoveryError, match="단조 증가"):
+        MissionIssuanceSequenceStore(DurableJournal(path))

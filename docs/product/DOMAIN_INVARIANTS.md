@@ -229,3 +229,18 @@
   함께 비활성으로 미리 보여준다(서버 409를 마지막 단계에서 만나지 않게,
   ADR-KSI-011과 동일 원칙) — `apps/dashboard/src/lib/core-api/
   missionSiteGate.ts`._
+
+## 조직·Copilot 경계
+
+- **INV-060** 인증된 조직 밖의 Site·Mission·Artifact·WorkOrder·Conversation은
+  읽기·쓰기뿐 아니라 존재 여부도 노출하지 않는다. `organizationId`는 요청 body가
+  아니라 인증 Principal과 서버 원장에서 유도한다. Edge 장비는 등록 조직과 배정
+  Site/Mission 범위를 동시에 통과해야 한다.
+  _강제: Core authorization scope helper + 모든 신규 저장소 조회 + cross-organization
+  contract tests. 범위 불일치는 403이 아니라 동일한 404로 접는다._
+
+- **INV-061** Copilot은 allowlist된 typed query와 재관측 **초안** 도구만 사용할 수
+  있다. Raw SQL·임의 Object Storage key·Mission issue·승인·Flight Command는 도구
+  표면에 존재하지 않으며, 외부 LLM 반출은 현장 정책이 명시적으로 허용할 때만 한다.
+  _강제: tool registry 구조 테스트 + data-egress policy gate + approval endpoint의
+  사람 Principal/권한 검사. INV-002의 비행좌표 금지를 함께 적용한다._

@@ -709,8 +709,12 @@ def test_waylines_wpml_indices_continuous_and_coordinates_lon_lat_order() -> Non
         turn = placemark.find("wpml:waypointTurnParam", NS)
         assert turn is not None
         assert turn.findtext("wpml:waypointTurnDampingDist", namespaces=NS) is not None
-        # useStraightLine 은 Continuity 계열 turn mode 전용 — 여기서는 없어야 한다
-        assert placemark.find("wpml:useStraightLine", NS) is None
+        # useStraightLine: "Continuity 계열 turn mode 전용이라 여기서는 없어야
+        # 한다"고 고정해 뒀었다. 2026-08-18 공식 샘플 대조에서 그 전제가 깨졌다 —
+        # 샘플은 **같은 Discontinuity turn mode 에서도** 웨이포인트마다 쓴다
+        # (waypointTurnDampingDist 를 넣기로 한 것과 같은 이유). 값은 전역
+        # globalUseStraightLine 과 같아야 한다 — 두 파일이 다른 임무를 기술하면 안 된다.
+        assert placemark.findtext("wpml:useStraightLine", namespaces=NS) == "0"
 
 
 def test_drone_enum_flows_from_profile_not_hardcoded() -> None:

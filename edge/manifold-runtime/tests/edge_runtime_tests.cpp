@@ -55,6 +55,15 @@
 #include "ksi/edge/curl_https_executor.hpp"
 #endif
 
+#ifndef KSI_EDGE_HAVE_OPENSSL_ATTESTATION
+#define KSI_EDGE_HAVE_OPENSSL_ATTESTATION 0
+#endif
+
+#if KSI_EDGE_HAVE_OPENSSL_ATTESTATION
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#endif
+
 namespace {
 
 int g_failures = 0;
@@ -1838,6 +1847,85 @@ void TestCoreRestSyncWire() {
     std::filesystem::remove_all(directory, cleanup_error);
     std::filesystem::remove(database, cleanup_error);
 }
+
+#if KSI_EDGE_HAVE_OPENSSL_ATTESTATION
+void TestEvidenceAttestationSigner() {
+    const std::filesystem::path directory = UniqueTestDirectory("evidence-attestation");
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(directory, cleanup_error);
+    Check(std::filesystem::create_directories(directory) && chmod(directory.c_str(), 0700) == 0,
+          "attestation test directory is private");
+    const std::filesystem::path key_path = directory / "device-attestation.pem";
+
+    EVP_PKEY_CTX* key_context = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
+    EVP_PKEY* key = nullptr;
+    const bool generated = key_context != nullptr && EVP_PKEY_keygen_init(key_context) == 1 &&
+                           EVP_PKEY_keygen(key_context, &key) == 1;
+    if (key_context != nullptr) {
+        EVP_PKEY_CTX_free(key_context);
+    }
+    FILE* key_file = generated ? std::fopen(key_path.c_str(), "wb") : nullptr;
+    const bool written = key_file != nullptr && PEM_write_PrivateKey(
+                                                  key_file, key, nullptr, nullptr, 0, nullptr, nullptr) == 1;
+    if (key_file != nullptr) {
+        std::fclose(key_file);
+    }
+    Check(generated && written && chmod(key_path.c_str(), 0600) == 0,
+          "test creates an ephemeral owner-only Ed25519 key, not a repository fixture");
+
+    try {
+        ksi::edge::EvidenceAttestationSigner signer("edge-key-1", key_path.string());
+        const auto result = signer.Sign(
+            "edge-1", "site-1", "mission-1", "edge-1::evt-wire-1", "frame-wire.rgb",
+            "application/octet-stream", kWireArtifactDigest);
+        Check(result.verdict == ksi::edge::EvidenceAttestationVerdict::kSigned &&
+                  result.key_id == "edge-key-1" && result.signature_base64url.size() == 86U &&
+                  result.signature_base64url.find('=') == std::string::npos &&
+                  result.signature_base64url.find('+') == std::string::npos &&
+                  result.signature_base64url.find('/') == std::string::npos,
+              "Ed25519 evidence signature is unpadded base64url");
+
+        RecordingHttpsExecutor executor;
+        executor.verdicts = {ksi::edge::HttpsRequestVerdict::kCompleted};
+        executor.responses = {{201, EvidenceRegistrationJson()}};
+        ksi::edge::ArtifactVault vault((directory / "vault").string(), 1024U);
+        const std::string payload = CoreCandidatePayload();
+        const ksi::edge::CandidateEventRecord candidate = {
+            "journal-key-attested", 8, "edge-1", ksi::edge::Sha256Digest(payload), payload, 1U};
+        const ksi::edge::EvidenceRecord evidence = {
+            candidate.idempotency_key, "frame-wire.rgb", "application/octet-stream",
+            "unused-for-registration", kWireArtifactDigest};
+        ksi::edge::CoreRestSyncTransport transport(
+            {"https://core.example.test", "edgeToken_123", 4096U, 4096U, "edge-key-1",
+             key_path.string()},
+            &executor, &vault);
+        const auto registration = transport.RegisterEvidence(candidate, evidence);
+        const std::string request_body = executor.requests.empty()
+                                             ? std::string{}
+                                             : ToString(executor.requests.front().body);
+        Check(registration.verdict == ksi::edge::CoreSyncVerdict::kAcknowledged &&
+                  request_body.find("\"attestation\":{\"keyId\":\"edge-key-1\",") !=
+                      std::string::npos &&
+                  request_body.find("\"algorithm\":\"Ed25519\"") != std::string::npos,
+              "Core evidence registration carries device attestation without private key material");
+    } catch (const std::exception&) {
+        Check(false, "owner-only Ed25519 attestation key loads and signs");
+    }
+
+    Check(chmod(key_path.c_str(), 0644) == 0, "test loosens key permissions for negative gate");
+    bool loose_rejected = false;
+    try {
+        ksi::edge::EvidenceAttestationSigner rejected("edge-key-1", key_path.string());
+    } catch (const std::exception&) {
+        loose_rejected = true;
+    }
+    Check(loose_rejected, "group/world-readable attestation key is rejected");
+    if (key != nullptr) {
+        EVP_PKEY_free(key);
+    }
+    std::filesystem::remove_all(directory, cleanup_error);
+}
+#endif
 
 #if KSI_EDGE_HAVE_CURL_TRANSPORT
 void TestCurlExecutorGuards() {
@@ -3919,6 +4007,9 @@ int main(int argc, char** argv) {
     TestRiskAndShadow();
     TestArtifactVaultAndStoreForward();
     TestCoreRestSyncWire();
+#if KSI_EDGE_HAVE_OPENSSL_ATTESTATION
+    TestEvidenceAttestationSigner();
+#endif
 #if KSI_EDGE_HAVE_CURL_TRANSPORT
     TestCurlExecutorGuards();
 #endif

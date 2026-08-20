@@ -41,6 +41,7 @@ from fastapi.testclient import TestClient
 from ksi_change_detection.diff_raster import sha256_of_file
 from ksi_core.design_surfaces import build_design_surface_object_key
 from ksi_core.processing_jobs import build_processing_artifact_object_key
+from ksi_processing_controller.capture_time import extract_capture_time
 from ksi_processing_controller.core_client import HttpCoreClient
 from ksi_processing_controller.design_conformance_worker import run_design_conformance_request
 from ksi_processing_controller.design_surface_verifier import verify_design_surface
@@ -180,6 +181,9 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
         raw = fixture.storage.get_bytes(item["objectKey"])
         with Image.open(BytesIO(raw)) as image:
             width, height = image.size
+        capture_time = extract_capture_time(
+            fixture.captures_root / mission_id / item["mediaId"]
+        )
         measurements.append(
             {
                 "mediaId": item["mediaId"],
@@ -187,6 +191,15 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
                 "bytes": len(raw),
                 "width": width,
                 "height": height,
+                "captureTime": {
+                    "capturedAt": (
+                        capture_time.captured_at.isoformat()
+                        if capture_time.captured_at is not None
+                        else None
+                    ),
+                    "source": capture_time.source.value,
+                    "status": capture_time.status.value,
+                },
             }
         )
 

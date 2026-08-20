@@ -229,6 +229,7 @@ def test_verify_sends_measured_values_not_reissued_claims() -> None:
     measurement = captured["body"]["measurements"][0]
     assert measurement == {
         "mediaId": "a.jpg", "sha256": "f" * 64, "bytes": 999, "width": 10, "height": 20,
+        "captureTime": {"capturedAt": None, "source": "NONE", "status": "UNAVAILABLE"},
     }
 
 

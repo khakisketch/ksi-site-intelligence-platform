@@ -64,7 +64,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
-from ksi_mission_contracts.models import Ed25519Signature, MissionContractV1_2
+from ksi_mission_contracts.models import (
+    Ed25519Signature,
+    MissionContractV1_2,
+    MissionContractV1_3,
+    parse_mission_contract,
+)
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1, risk_policy_pack_digest
 from ksi_mission_contracts.runtime_profile import (
     EdgeRuntimeProfileV1,
@@ -142,7 +147,7 @@ class MissionDispatchEnvelopeV1(_CamelModel):
             raise ValueError("v1.1 봉투는 kmzSha256 을 반드시 선언해야 한다(null 도 선언이다)")
         if self.schema_version == "1.0" and declared:
             raise ValueError("v1.0 봉투에는 kmzSha256 자리가 없다 — schemaVersion 을 1.1 로 올려라")
-        contract = MissionContractV1_2.model_validate(self.mission_contract)
+        contract = _parse_executable_contract(self.mission_contract)
         pack = RiskPolicyPackV1.model_validate(self.risk_policy_pack)
         profile = EdgeRuntimeProfileV1.model_validate(self.edge_runtime_profile)
         if self.mission_id != contract.mission_id:
@@ -220,8 +225,17 @@ class DispatchVerificationResult:
 
 
 def mission_contract_digest(contract: Mapping[str, Any]) -> str:
-    """Mission Contract v1.2의 signature 제외 canonical digest."""
+    """Mission Contract v1.2/v1.3의 signature 제외 canonical digest."""
     return sha256_digest(canonical_payload_bytes(contract))
+
+
+def _parse_executable_contract(
+    contract: Mapping[str, Any],
+) -> MissionContractV1_2 | MissionContractV1_3:
+    parsed = parse_mission_contract(dict(contract))
+    if not isinstance(parsed, (MissionContractV1_2, MissionContractV1_3)):
+        raise ValueError("dispatch는 서명 검증 가능한 Mission Contract v1.2/v1.3만 받는다")
+    return parsed
 
 
 def _wire(model: BaseModel) -> dict[str, Any]:
@@ -237,7 +251,7 @@ def _contract_time(value: str) -> datetime:
 
 
 def _validate_runtime_bindings(
-    contract: MissionContractV1_2,
+    contract: MissionContractV1_2 | MissionContractV1_3,
     pack: RiskPolicyPackV1,
     profile: EdgeRuntimeProfileV1,
 ) -> None:
@@ -282,7 +296,7 @@ def build_mission_dispatch_envelope(
     확정 사실이고, 발행되는 봉투는 **언제나 v1.1** 이라 그 사실이 서명 안에 실린다
     (모듈 docstring "왜 두 버전을 함께 받는가").
     """
-    contract_model = MissionContractV1_2.model_validate(dict(mission_contract))
+    contract_model = _parse_executable_contract(mission_contract)
     pack_model = (
         risk_policy_pack
         if isinstance(risk_policy_pack, RiskPolicyPackV1)

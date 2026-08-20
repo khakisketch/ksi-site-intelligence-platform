@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/copilot-answer.v1.json",
+  "title": "CopilotAnswer v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "answer", "citations", "missingData", "reobservationDraftId"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "status": {"enum": ["ANSWERED", "BLOCKED"]},
+    "answer": {"type": "string", "minLength": 1, "maxLength": 10000},
+    "citations": {
+      "type": "array", "maxItems": 64,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["citationId", "objectType", "objectId", "label", "sourcePath", "capturedFrom", "capturedTo", "modelVersion", "geometryRef", "uncertaintySummary"],
+        "properties": {
+          "citationId": {"type": "string", "minLength": 1},
+          "objectType": {"type": "string", "minLength": 1},
+          "objectId": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1, "maxLength": 300},
+          "sourcePath": {"type": "string", "pattern": "^/v1/[^?]+$"},
+          "capturedFrom": {"type": ["string", "null"]},
+          "capturedTo": {"type": ["string", "null"]},
+          "modelVersion": {"type": ["string", "null"]},
+          "geometryRef": {"type": ["string", "null"]},
+          "uncertaintySummary": {"type": ["string", "null"], "maxLength": 500}
+        }
+      }
+    },
+    "missingData": {"type": "array", "maxItems": 32, "items": {"type": "string"}},
+    "reobservationDraftId": {"type": ["string", "null"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ANSWERED"}}},
+      "then": {"properties": {"citations": {"minItems": 1}}}
+    }
+  ]
+}

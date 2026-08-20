@@ -145,6 +145,9 @@ describe("현재 지형 후보", () => {
       detail: null,
       artifacts: [{ artifactId: "dsm.tif", kind: "dsm" }],
       ...overrides,
+      captureWindow: overrides.captureWindow ?? {
+        status: "INCOMPLETE", capturedFrom: null, capturedTo: null,
+      },
     };
   }
 

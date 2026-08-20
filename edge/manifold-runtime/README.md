@@ -4,6 +4,22 @@ Manifold 3 Edge shadow slice의 순수 C++17 runtime이다. PSDK callback은 이
 bounded queue/timeline에 바이트와 timestamp만 기록하고, inference·tracking·risk·증거
 계획·SQLite WAL store-and-forward는 worker 경계에서 수행한다.
 
+## SQLite/WAL 개발 컨테이너 게이트
+
+로컬 호스트에 SQLite 개발 헤더가 없더라도, 핀된 Manifold 3 arm64 Ubuntu 20.04
+컨테이너에는 `libsqlite3-dev`가 포함된다. 아래 명령은 읽기 전용 소스 마운트와
+컨테이너 임시 빌드를 사용해 `KSI_REQUIRE_SQLITE=ON` fresh configure 및
+store-forward/WAL 복구 CTest를 수행한다. 따라서 SQLite 없이 컴파일된 호스트 빌드를
+WAL 검증으로 오인하지 않는다.
+
+```bash
+tools/edge/verify_sqlite_store_forward.sh
+```
+
+Docker가 없거나 arm64 에뮬레이션이 준비되지 않은 호스트에서는 이 명령이 실패한다.
+그 경우 결과를 성공으로 대체하지 말고 CI 또는 arm64 Docker 환경에서 같은 명령을
+재실행한다.
+
 ## 안전 경계
 
 - `MissionDispatchEnvelope`의 서명·키 상태·TTL 검증은 기존 Python Mission Contract

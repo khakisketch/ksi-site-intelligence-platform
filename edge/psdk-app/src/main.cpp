@@ -325,7 +325,9 @@ public:
     void ConfigureCoreSync(std::string state_directory, std::string edge_device_id,
                            std::string core_base_url, std::string bearer_token_file,
                            std::string ca_bundle_path, std::string core_tls_pin,
-                           std::string evidence_tls_pin) {
+                           std::string evidence_tls_pin,
+                           std::string evidence_attestation_key_id,
+                           std::string evidence_attestation_private_key_file) {
         core_sync_setup_verdict_ = "UNCONFIGURED";
         core_sync_configured_.store(false, std::memory_order_release);
         core_sync_driver_.reset();
@@ -387,7 +389,9 @@ public:
                                                     std::move(evidence_tls_pin), std::move(ca_bundle_path)});
             auto transport = std::make_unique<ksi::edge::CoreRestSyncTransport>(
                 ksi::edge::CoreRestSyncConfig{configured_core_base_url, token.bearer_token,
-                                               256U * 1024U, 2U * 1024U * 1024U},
+                                               256U * 1024U, 2U * 1024U * 1024U,
+                                               std::move(evidence_attestation_key_id),
+                                               std::move(evidence_attestation_private_key_file)},
                 executor.get(), vault);
             auto driver = std::make_unique<ksi::edge::StoreForwardSyncDriver>(store);
             core_sync_vault_ = std::move(owned_vault);
@@ -1832,7 +1836,9 @@ int Run() {
     runtime.ConfigureCoreSync(KSI_PSDK_APP_SYNC_STATE_DIR, KSI_PSDK_APP_EDGE_DEVICE_ID,
                               KSI_PSDK_APP_CORE_BASE_URL, KSI_PSDK_APP_CORE_BEARER_TOKEN_FILE,
                               KSI_PSDK_APP_TLS_CA_BUNDLE, KSI_PSDK_APP_CORE_TLS_PIN,
-                              KSI_PSDK_APP_STORAGE_TLS_PIN);
+                              KSI_PSDK_APP_STORAGE_TLS_PIN,
+                              KSI_PSDK_APP_EVIDENCE_ATTESTATION_KEY_ID,
+                              KSI_PSDK_APP_EVIDENCE_ATTESTATION_PRIVATE_KEY_FILE);
 #elif KSI_PSDK_APP_CORE_SYNC_CONFIGURED
     std::fputs("[ksi-edge-shadow] Core sync provisioning was requested without the static TLS backend; "
                "capture-only mode\n",

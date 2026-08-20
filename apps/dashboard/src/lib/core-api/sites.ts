@@ -5,6 +5,7 @@ import type {
   AoiVertex,
   DataResidency,
   SiteFrame,
+  SiteDetailView,
   SiteStatus,
   SiteView,
   SpatialModelView,
@@ -15,8 +16,8 @@ export async function listSites(): Promise<SiteView[]> {
   return body.sites;
 }
 
-export async function getSite(siteId: string): Promise<SiteView> {
-  return coreFetch<SiteView>(`/v1/sites/${encodeURIComponent(siteId)}`);
+export async function getSite(siteId: string): Promise<SiteDetailView> {
+  return coreFetch<SiteDetailView>(`/v1/sites/${encodeURIComponent(siteId)}`);
 }
 
 /**

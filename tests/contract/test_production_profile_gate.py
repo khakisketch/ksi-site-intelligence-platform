@@ -146,7 +146,7 @@ def _write_signing_keys(keys_dir: Path) -> None:
 
 
 def _valid_env(tmp_path: Path) -> dict[str, str]:
-    """운영 조립이 요구하는 필수 환경변수 5개.
+    """운영 조립이 요구하는 필수 환경변수.
 
     ``production.py`` 가 필수 환경변수를 늘리면 이 함수와
     ``test_production_assembly.py:_valid_env`` **둘 다** 고쳐야 한다 — 복제는 격리
@@ -156,6 +156,8 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
     data_dir.mkdir(parents=True, exist_ok=True)
     signing_dir = tmp_path / "signing"
     _write_signing_keys(signing_dir)
+    attestation_manifest = tmp_path / "device-attestation-keys.json"
+    attestation_manifest.write_text(json.dumps({"keys": []}), encoding="utf-8")
     tokens = [
         {
             "tokenSha256": hashlib.sha256(b"prod-gate-token").hexdigest(),
@@ -171,6 +173,7 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
         "KSI_CORE_S3_ENDPOINT": "http://127.0.0.1:9000",
         "KSI_CORE_S3_BUCKET": "prod-evidence",
         "KSI_CORE_PRINCIPAL_TOKENS_JSON": json.dumps(tokens),
+        "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE": str(attestation_manifest),
     }
 
 

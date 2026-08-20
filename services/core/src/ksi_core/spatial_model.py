@@ -35,13 +35,13 @@ MASTER_PRD §6.3 은 ``MODEL_STALE`` 이라는 **상태만** 정의하고 며칠
 AGE_POLICY_UNDECLARED` 로 낸다 — "판정하지 않았다"와 "판정했더니 최신이다"는 다른
 사실이고, 전자를 후자로 표시하면 화면이 근거 없는 안심을 준다(INV-040 정신).
 
-## ``registered_at`` 은 "모델이 등록된 시각"이지 "세상을 관측한 시각"이 아니다
+## freshness는 검증된 촬영 시각만 쓴다
 
-나이의 기준점은 그 작업이 ``SUCCEEDED`` 로 전이한 시각(``updated_at``)이다.
-정확히는 촬영 시각이 더 옳지만, 촬영 시각을 임무 원장에서 끌어오려면 임무 실행
-생애주기(ADR-KSI-019 G2)가 먼저 있어야 한다. 필드 이름이 그 한계를 말하게 두고
-나중에 좁힐 여지를 남긴다 — 이름을 ``captured_at`` 으로 붙여놓고 등록 시각을 담는
-것이 더 나쁘다.
+``registered_at``은 재구성이 완료된 시각으로 provenance 표시에만 쓴다. 나이는 모델
+입력 사진의 검증된 ``captureWindow.capturedTo``에서만 계산한다. 촬영 시각이
+불완전하거나 충돌하면 ``registered_at``으로 대체하지 않고
+``CAPTURE_TIME_UNAVAILABLE``로 닫힌다. 그래야 늦게 올린 오래된 사진을 최신 모델로
+오해하지 않는다.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
 
 
 class SpatialModelState(StrEnum):
-    """현장의 공간모델 판정 결과 4종."""
+    """현장의 공간모델 판정 결과."""
 
     #: 원본 산출물을 가진 성공한 재구성이 하나도 없다.
     ABSENT = "ABSENT"
@@ -87,6 +87,15 @@ class SpatialModelState(StrEnum):
     STALE = "STALE"
     #: epoch 은 있는데 현장이 나이 기준을 선언하지 않아 노후를 **판정하지 않았다**.
     AGE_POLICY_UNDECLARED = "AGE_POLICY_UNDECLARED"
+    #: epoch은 있으나 검증된 촬영 창이 없어 freshness를 판정할 수 없다.
+    CAPTURE_TIME_UNAVAILABLE = "CAPTURE_TIME_UNAVAILABLE"
+    #: 단일 site 조회 조립에 processing store가 없어 판정 자체를 수행할 수 없다.
+    SYSTEM_UNAVAILABLE = "SYSTEM_UNAVAILABLE"
+
+
+class FreshnessBasis(StrEnum):
+    CAPTURED_TO = "CAPTURED_TO"
+    NONE = "NONE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +115,10 @@ class SpatialModelStatus:
     source_artifact_count: int
     #: 이 현장의 원본 뒷받침된 성공 epoch 총수(이력 깊이).
     succeeded_epoch_count: int
+    captured_from: datetime | None
+    captured_to: datetime | None
+    capture_time_status: str
+    freshness_basis: FreshnessBasis
 
 
 def has_source_artifact(record: ProcessingJobRecord) -> bool:
@@ -151,17 +164,32 @@ def evaluate_spatial_model(
             max_age_days=max_age_days,
             source_artifact_count=0,
             succeeded_epoch_count=0,
+            captured_from=None,
+            captured_to=None,
+            capture_time_status="INCOMPLETE",
+            freshness_basis=FreshnessBasis.NONE,
         )
 
     # 같은 시각이면 job_id 로 결정적으로 고른다 — 재생마다 다른 epoch 를 고르면
     # 같은 원장에서 다른 판정이 나온다.
     newest = max(epochs, key=lambda record: (record.updated_at, record.job_id))
-    # 시계 어긋남으로 미래 시각이 들어와도 음수 나이를 내지 않는다.
-    age_days = max(0.0, (now - newest.updated_at).total_seconds() / _SECONDS_PER_DAY)
+    captured_from = newest.capture_window.captured_from
+    captured_to = newest.capture_window.captured_to
+    if captured_to is None:
+        age_days = None
+        state = SpatialModelState.CAPTURE_TIME_UNAVAILABLE
+        freshness_basis = FreshnessBasis.NONE
+    else:
+        # 늦게 업로드된 오래된 사진을 최신으로 만들지 않는다. 등록/처리 시각은
+        # provenance 표시일 뿐 freshness 계산에는 절대 쓰지 않는다.
+        age_days = max(0.0, (now - captured_to).total_seconds() / _SECONDS_PER_DAY)
+        freshness_basis = FreshnessBasis.CAPTURED_TO
 
-    if max_age_days is None:
+    if captured_to is None:
+        pass
+    elif max_age_days is None:
         state = SpatialModelState.AGE_POLICY_UNDECLARED
-    elif age_days > max_age_days:
+    elif age_days is not None and age_days > max_age_days:
         state = SpatialModelState.STALE
     else:
         # 경계는 포함이다 — "30일 기준"이 30일째에 끊기면 사용자 기대와 어긋난다.
@@ -179,6 +207,10 @@ def evaluate_spatial_model(
             if artifact.lineage.authority is LineageAuthority.SOURCE
         ),
         succeeded_epoch_count=len(epochs),
+        captured_from=captured_from,
+        captured_to=captured_to,
+        capture_time_status=newest.capture_window.status.value,
+        freshness_basis=freshness_basis,
     )
 
 
@@ -470,6 +502,10 @@ class SpatialModelView(CamelModel):
     site_status: str
     #: 거짓이면 현장 상태가 실제 모델 유무와 어긋난다(위 함수 docstring).
     site_status_matches_model: bool
+    captured_from: str | None
+    captured_to: str | None
+    capture_time_status: str
+    freshness_basis: str
 
 
 class _SiteJobLister(Protocol):
@@ -524,6 +560,12 @@ def build_spatial_model_router(
             succeeded_epoch_count=status.succeeded_epoch_count,
             site_status=site.status.value,
             site_status_matches_model=site_status_matches_model(status.state, site.status),
+            captured_from=(
+                status.captured_from.isoformat() if status.captured_from is not None else None
+            ),
+            captured_to=status.captured_to.isoformat() if status.captured_to is not None else None,
+            capture_time_status=status.capture_time_status,
+            freshness_basis=status.freshness_basis.value,
         )
 
     if lifecycle is not None:

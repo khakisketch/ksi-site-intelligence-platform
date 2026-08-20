@@ -38,6 +38,7 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 
 _ADMIN_TOKEN = "test-admin-token"
@@ -66,6 +67,23 @@ def _client(tmp_path: Path) -> TestClient:
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=SiteStore(DurableJournal(tmp_path / "sites.jsonl")),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    return client
+
+
+def _work_order_client(tmp_path: Path) -> TestClient:
+    site_store = SiteStore(DurableJournal(tmp_path / "work-order-sites.jsonl"))
+    app = create_app(
+        auth_registry=_auth_registry(),
+        site_store=site_store,
+        observation_work_order_store=ObservationWorkOrderStore(
+            DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+            site_exists=lambda site_id, organization_id: (
+                site_store.get_scoped(site_id, organization_id) is not None
+            ),
+        ),
     )
     client = TestClient(app, raise_server_exceptions=False)
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
@@ -112,6 +130,32 @@ def test_hostile_json_body_error_is_machine_readable(
         f"{label}: content-type={response.headers.get('content-type')!r} body={response.text[:200]}"
     )
     json.loads(response.text)  # 파싱 자체가 되는지 — 워커의 _post 가 하는 일
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/sites/site-1/observation-schedules",
+        "/v1/sites/site-1/observation-work-orders",
+        "/v1/observation-work-orders/order-1/approve",
+        "/v1/observation-work-orders/order-1/reobservation-drafts",
+        "/v1/reobservation-drafts/draft-1/approve",
+    ],
+)
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_work_order_hostile_bodies_are_machine_readable_422(
+    path: str, label: str, raw: str, tmp_path: Path
+) -> None:
+    """신규 WorkOrder 쓰기 표면 5개를 적대적 본문 6종으로 직접 조사한다."""
+    client = _work_order_client(tmp_path)
+    response = client.post(
+        path,
+        content=raw.encode("utf-8", "surrogatepass"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
+    assert response.headers["content-type"].startswith("application/json")
+    json.loads(response.text)
 
 
 def test_render_safe_keeps_the_offending_value_visible() -> None:

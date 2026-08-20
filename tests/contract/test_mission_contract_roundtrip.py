@@ -13,7 +13,11 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
-from ksi_mission_contracts.models import MissionContractV1_1, MissionContractV1_2
+from ksi_mission_contracts.models import (
+    MissionContractV1_1,
+    MissionContractV1_2,
+    MissionContractV1_3,
+)
 from pydantic import BaseModel, ValidationError
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
@@ -88,6 +92,12 @@ def _valid_contract_dict(schema_version: str) -> dict[str, Any]:
     if schema_version == "1.1":
         base["signature"] = {"algorithm": "SHA256withECDSA", "digest": "sha256:" + "ab" * 32}
     else:
+        if schema_version == "1.3":
+            base["issuance"] = {
+                "issuerId": "core-seoul-1",
+                "siteSequence": 7,
+                "issuedAt": "2026-07-24T23:59:59Z",
+            }
         base["signature"] = {
             "algorithm": "Ed25519",
             "keyId": "key-001",
@@ -102,6 +112,7 @@ def _valid_contract_dict(schema_version: str) -> dict[str, Any]:
     [
         ("1.1", "mission-contract.v1.1.json", MissionContractV1_1),
         ("1.2", "mission-contract.v1.2.json", MissionContractV1_2),
+        ("1.3", "mission-contract.v1.3.json", MissionContractV1_3),
     ],
 )
 def test_valid_instance_matches_schema(
@@ -121,6 +132,7 @@ def test_valid_instance_matches_schema(
     [
         ("1.1", MissionContractV1_1),
         ("1.2", MissionContractV1_2),
+        ("1.3", MissionContractV1_3),
     ],
 )
 def test_extra_field_rejected(schema_version: str, model_cls: type[BaseModel]) -> None:
@@ -133,7 +145,12 @@ def test_extra_field_rejected(schema_version: str, model_cls: type[BaseModel]) -
 
 @pytest.mark.parametrize(
     "schema_file",
-    ["mission-contract.v1.1.json", "mission-contract.v1.2.json", "event-bundle.v1.1.json"],
+    [
+        "mission-contract.v1.1.json",
+        "mission-contract.v1.2.json",
+        "mission-contract.v1.3.json",
+        "event-bundle.v1.1.json",
+    ],
 )
 def test_schema_file_is_valid_draft202012(schema_file: str) -> None:
     schema = _load_schema(schema_file)

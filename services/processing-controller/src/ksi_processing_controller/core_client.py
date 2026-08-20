@@ -27,6 +27,8 @@ from ksi_event_contracts.region_extraction_policy import RegionExtractionPolicy
 from ksi_event_contracts.vertical_reference import VerticalReference
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 
+from ksi_processing_controller.capture_time import ImageCaptureTime
+
 
 class CoreClientError(RuntimeError):
     """Core 가 성공 아닌 verdict 를 돌려줬다 — 워커가 다음 행동을 정한다.
@@ -104,6 +106,7 @@ class MeasuredImage:
     size_bytes: int
     width: int
     height: int
+    capture_time: ImageCaptureTime = ImageCaptureTime.unavailable()
 
 
 @dataclass(frozen=True, slots=True)
@@ -657,6 +660,15 @@ class HttpCoreClient:
                         "bytes": m.size_bytes,
                         "width": m.width,
                         "height": m.height,
+                        "captureTime": {
+                            "capturedAt": (
+                                m.capture_time.captured_at.isoformat()
+                                if m.capture_time.captured_at is not None
+                                else None
+                            ),
+                            "source": m.capture_time.source.value,
+                            "status": m.capture_time.status.value,
+                        },
                     }
                     for m in measurements
                 ]

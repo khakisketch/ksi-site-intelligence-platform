@@ -92,7 +92,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_geo_spatial.crs import SUPPORTED_PROJECT_CRS, UnsupportedCrsError, normalise_crs
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import (
@@ -192,6 +192,169 @@ class SourceBundleVerifyVerdict(StrEnum):
     # 봉인 전에는 대조 대상 집합 자체가 아직 확정되지 않았다.
     BUNDLE_NOT_SEALED = "BUNDLE_NOT_SEALED"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
+
+
+class CaptureTimeSource(StrEnum):
+    """사진 바이트에서 얻은 촬영시각의 근거(우선순위 순)."""
+
+    EXIF_GPS_UTC = "EXIF_GPS_UTC"
+    EXIF_DATETIME_OFFSET = "EXIF_DATETIME_OFFSET"
+    DJI_XMP_EXPLICIT = "DJI_XMP_EXPLICIT"
+    NONE = "NONE"
+
+
+class CaptureTimeStatus(StrEnum):
+    VERIFIED = "VERIFIED"
+    UNAVAILABLE = "UNAVAILABLE"
+    CONFLICT = "CONFLICT"
+
+
+class CaptureWindowStatus(StrEnum):
+    COMPLETE = "COMPLETE"
+    INCOMPLETE = "INCOMPLETE"
+    CONFLICT = "CONFLICT"
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureTime:
+    """파일 1장의 촬영시각 판정 — 로컬시각을 UTC로 추정하지 않는다."""
+
+    captured_at: datetime | None
+    source: CaptureTimeSource
+    status: CaptureTimeStatus
+
+    @classmethod
+    def unavailable(cls) -> CaptureTime:
+        return cls(None, CaptureTimeSource.NONE, CaptureTimeStatus.UNAVAILABLE)
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureWindow:
+    """한 처리 epoch가 실제로 관측한 시간 범위."""
+
+    status: CaptureWindowStatus
+    captured_from: datetime | None = None
+    captured_to: datetime | None = None
+
+    @classmethod
+    def incomplete(cls) -> CaptureWindow:
+        return cls(CaptureWindowStatus.INCOMPLETE)
+
+
+def validate_capture_time(value: CaptureTime) -> CaptureTime:
+    """wire/journal에서 온 파일별 촬영시각의 조합을 fail-closed 검증한다."""
+    if value.status is CaptureTimeStatus.VERIFIED:
+        if value.captured_at is None or value.captured_at.tzinfo is None:
+            raise ValueError("VERIFIED captureTime은 tz-aware capturedAt이 필요하다")
+        if value.source is CaptureTimeSource.NONE:
+            raise ValueError("VERIFIED captureTime은 source=NONE일 수 없다")
+        return replace(value, captured_at=value.captured_at.astimezone(UTC))
+    if value.captured_at is not None or value.source is not CaptureTimeSource.NONE:
+        raise ValueError(
+            "UNAVAILABLE/CONFLICT captureTime은 capturedAt=null, source=NONE이어야 한다"
+        )
+    return value
+
+
+def compute_capture_window(capture_times: Iterable[CaptureTime]) -> CaptureWindow:
+    """파일별 판정 전량에서 번들 창을 계산한다 — 부분/충돌은 시각을 내지 않는다."""
+    values = tuple(validate_capture_time(value) for value in capture_times)
+    if any(value.status is CaptureTimeStatus.CONFLICT for value in values):
+        return CaptureWindow(CaptureWindowStatus.CONFLICT)
+    if not values or any(value.status is not CaptureTimeStatus.VERIFIED for value in values):
+        return CaptureWindow.incomplete()
+    captured = [value.captured_at for value in values]
+    if any(value is None for value in captured):  # pragma: no cover - validator의 사후조건
+        return CaptureWindow.incomplete()
+    verified = [value for value in captured if value is not None]
+    return CaptureWindow(
+        CaptureWindowStatus.COMPLETE,
+        captured_from=min(verified),
+        captured_to=max(verified),
+    )
+
+
+def capture_time_wire(value: CaptureTime) -> dict[str, Any]:
+    validated = validate_capture_time(value)
+    return {
+        "capturedAt": iso_utc(validated.captured_at) if validated.captured_at is not None else None,
+        "source": validated.source.value,
+        "status": validated.status.value,
+    }
+
+
+def capture_window_wire(value: CaptureWindow) -> dict[str, Any]:
+    value = validate_capture_window(value)
+    return {
+        "status": value.status.value,
+        "capturedFrom": iso_utc(value.captured_from) if value.captured_from is not None else None,
+        "capturedTo": iso_utc(value.captured_to) if value.captured_to is not None else None,
+    }
+
+
+def validate_capture_window(value: CaptureWindow) -> CaptureWindow:
+    if value.status is CaptureWindowStatus.COMPLETE:
+        if (
+            value.captured_from is None
+            or value.captured_to is None
+            or value.captured_from.tzinfo is None
+            or value.captured_to.tzinfo is None
+        ):
+            raise ValueError("COMPLETE captureWindow은 tz-aware start/end가 필요하다")
+        start = value.captured_from.astimezone(UTC)
+        end = value.captured_to.astimezone(UTC)
+        if end < start:
+            raise ValueError("captureWindow.capturedTo는 capturedFrom보다 빠를 수 없다")
+        return CaptureWindow(CaptureWindowStatus.COMPLETE, start, end)
+    if value.captured_from is not None or value.captured_to is not None:
+        raise ValueError("INCOMPLETE/CONFLICT captureWindow은 start/end가 null이어야 한다")
+    return value
+
+
+def capture_window_from_wire(raw: Any, *, context: str) -> CaptureWindow:
+    if raw is None:
+        return CaptureWindow.incomplete()
+    if not isinstance(raw, dict):
+        raise ValueError(f"{context}: captureWindow은 object여야 한다")
+
+    def _parse(value: Any) -> datetime | None:
+        if value is None:
+            return None
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+    status_raw = raw.get("status")
+    if not isinstance(status_raw, str):
+        raise ValueError(f"{context}: captureWindow.status가 필요하다")
+    return validate_capture_window(
+        CaptureWindow(
+            status=CaptureWindowStatus(status_raw),
+            captured_from=_parse(raw.get("capturedFrom")),
+            captured_to=_parse(raw.get("capturedTo")),
+        )
+    )
+
+
+def capture_time_from_wire(raw: Any, *, context: str) -> CaptureTime:
+    """새 wire 형식을 읽되, 필드가 통째로 없던 legacy는 UNAVAILABLE로 둔다."""
+    if raw is None:
+        return CaptureTime.unavailable()
+    if not isinstance(raw, dict):
+        raise ValueError(f"{context}: captureTime은 object여야 한다")
+    captured_raw = raw.get("capturedAt")
+    captured_at = None
+    if captured_raw is not None:
+        captured_at = datetime.fromisoformat(str(captured_raw).replace("Z", "+00:00"))
+    source_raw = raw.get("source")
+    status_raw = raw.get("status")
+    if not isinstance(source_raw, str) or not isinstance(status_raw, str):
+        raise ValueError(f"{context}: captureTime.source/status가 필요하다")
+    return validate_capture_time(
+        CaptureTime(
+            captured_at=captured_at,
+            source=CaptureTimeSource(source_raw),
+            status=CaptureTimeStatus(status_raw),
+        )
+    )
 
 
 _BATCH_STATUS: dict[SourceMediaBatchVerdict, int] = {
@@ -332,6 +495,11 @@ class SourceMediaRecord:
     object_key: str
     registered_at: datetime
     registered_by: str
+    # 등록 시점에는 아직 바이트를 읽지 않았으므로 UNAVAILABLE. 워커 검증 레코드가
+    # 성공적으로 재생된 뒤에만 실제 파일별 판정으로 교체된다.
+    capture_time: CaptureTime = CaptureTime(
+        None, CaptureTimeSource.NONE, CaptureTimeStatus.UNAVAILABLE
+    )
 
     @property
     def claim(self) -> SourceMediaClaim:
@@ -360,6 +528,9 @@ class SourceMediaMeasurement:
     size_bytes: int
     width: int
     height: int
+    capture_time: CaptureTime = CaptureTime(
+        None, CaptureTimeSource.NONE, CaptureTimeStatus.UNAVAILABLE
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -442,6 +613,11 @@ class SourceMediaBundle:
     @property
     def is_verified(self) -> bool:
         return self.verified_at is not None
+
+    @property
+    def capture_window(self) -> CaptureWindow:
+        """현재 projection의 파일별 판정에서 계산한 창 — 별도 그림자 상태가 아니다."""
+        return compute_capture_window(record.capture_time for record in self.media)
 
 
 def compute_source_bundle_digest_from_claims(
@@ -730,10 +906,14 @@ class SourceMediaStore:
                     size_bytes=item["bytes"],
                     width=item["width"],
                     height=item["height"],
+                    capture_time=capture_time_from_wire(
+                        item.get("captureTime"),
+                        context=f"missionId={mission_id}, mediaId={item.get('mediaId')}",
+                    ),
                 )
                 for item in raw["measurements"]
             ]
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise SourceMediaRecoveryError(
                 "재생: 검증 레코드의 측정값이 형식을 만족하지 않는다 — "
                 f"missionId={mission_id}: {exc}"
@@ -766,8 +946,27 @@ class SourceMediaStore:
             )
         ts = _require_aware_iso(raw["ts"], "ts", mission_id)
         if recomputed is SourceBundleVerifyVerdict.VERIFIED:
+            measured_by_id = {item.media_id: item for item in measurements}
+            updated_media = tuple(
+                replace(record, capture_time=measured_by_id[record.media_id].capture_time)
+                for record in bundle.media
+            )
+            capture_window = compute_capture_window(
+                record.capture_time for record in updated_media
+            )
+            recorded_window = raw.get("captureWindow")
+            if recorded_window is not None and recorded_window != capture_window_wire(
+                capture_window
+            ):
+                raise SourceMediaRecoveryError(
+                    "재생: 기록된 captureWindow가 파일별 captureTime 재계산과 불일치 — "
+                    f"missionId={mission_id}"
+                )
             self._bundles[mission_id] = replace(
-                bundle, verified_at=ts, verified_by=raw["verifiedBy"]
+                bundle,
+                media=updated_media,
+                verified_at=ts,
+                verified_by=raw["verifiedBy"],
             )
         else:
             self._bundles[mission_id] = replace(bundle, last_mismatch_at=ts)
@@ -1007,7 +1206,7 @@ class SourceMediaStore:
                     GroundControlVerdict.UNKNOWN_MISSION, detail=str(exc)
                 )
 
-            journal_record = {
+            journal_record: dict[str, Any] = {
                 "kind": "source-media-ground-control-registered",
                 "ts": iso_utc(now),
                 "missionId": bundle.mission_id,
@@ -1154,7 +1353,7 @@ class SourceMediaStore:
                     f"{list(comparison.mismatched[:5])}"
                 )
 
-            journal_record = {
+            journal_record: dict[str, Any] = {
                 "kind": "source-media-verified",
                 "ts": iso_utc(now),
                 "missionId": mission_id,
@@ -1168,6 +1367,7 @@ class SourceMediaStore:
                         "bytes": m.size_bytes,
                         "width": m.width,
                         "height": m.height,
+                        "captureTime": capture_time_wire(m.capture_time),
                     }
                     for m in measurements
                 ],
@@ -1176,6 +1376,10 @@ class SourceMediaStore:
                 "unexpected": list(comparison.unexpected),
                 "verifiedBy": verified_by,
             }
+            if verdict is SourceBundleVerifyVerdict.VERIFIED:
+                journal_record["captureWindow"] = capture_window_wire(
+                    compute_capture_window(m.capture_time for m in measurements)
+                )
             try:
                 self._journal.append(journal_record)
             except JournalSealedError:
@@ -1185,7 +1389,21 @@ class SourceMediaStore:
                 )
 
             if verdict is SourceBundleVerifyVerdict.VERIFIED:
-                updated = replace(bundle, verified_at=now, verified_by=verified_by)
+                measured_by_id = {item.media_id: item for item in measurements}
+                updated = replace(
+                    bundle,
+                    media=tuple(
+                        replace(
+                            record,
+                            capture_time=validate_capture_time(
+                                measured_by_id[record.media_id].capture_time
+                            ),
+                        )
+                        for record in bundle.media
+                    ),
+                    verified_at=now,
+                    verified_by=verified_by,
+                )
             else:
                 updated = replace(bundle, last_mismatch_at=now)
             self._bundles[mission_id] = updated
@@ -1252,6 +1470,40 @@ class SourceMediaBatchResponse(CamelModel):
     results: list[SourceMediaItemView]
 
 
+class CaptureTimeView(CamelModel):
+    captured_at: datetime | None = None
+    source: CaptureTimeSource = CaptureTimeSource.NONE
+    status: CaptureTimeStatus = CaptureTimeStatus.UNAVAILABLE
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> CaptureTimeView:
+        self.to_domain()
+        return self
+
+    def to_domain(self) -> CaptureTime:
+        return validate_capture_time(
+            CaptureTime(
+                captured_at=self.captured_at,
+                source=self.source,
+                status=self.status,
+            )
+        )
+
+
+class CaptureWindowView(CamelModel):
+    status: CaptureWindowStatus
+    captured_from: datetime | None = None
+    captured_to: datetime | None = None
+
+
+def _to_capture_window_view(value: CaptureWindow) -> CaptureWindowView:
+    return CaptureWindowView(
+        status=value.status,
+        captured_from=value.captured_from,
+        captured_to=value.captured_to,
+    )
+
+
 class SourceMediaBundleView(CamelModel):
     """번들 상태·장수·digest — 미검증 상태를 그대로 노출한다."""
 
@@ -1273,6 +1525,7 @@ class SourceMediaBundleView(CamelModel):
     # 같은 좌표계라도 성과가 다르면 다른 기준점이다 — 재실행하는 도구가 "이미
     # 붙인 그 파일인가"를 정확히 판단할 수 있게 지문도 함께 낸다.
     ground_control_sha256: str | None = None
+    capture_window: CaptureWindowView
 
 
 class GroundControlRequest(CamelModel):
@@ -1313,6 +1566,7 @@ class SourceMediaMeasurementItem(CamelModel):
     # 상한값은 runtime_profile.py 의 reference_width/height 관례를 그대로 쓴다.
     width: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
     height: int = Field(ge=1, le=_MAX_MEDIA_DIMENSION_PX)
+    capture_time: CaptureTimeView = Field(default_factory=CaptureTimeView)
 
 
 class SourceMediaVerifyRequest(CamelModel):
@@ -1352,6 +1606,7 @@ def _to_bundle_view(bundle: SourceMediaBundle) -> SourceMediaBundleView:
         ground_control_sha256=(
             bundle.ground_control.sha256 if bundle.ground_control is not None else None
         ),
+        capture_window=_to_capture_window_view(bundle.capture_window),
     )
 
 
@@ -1371,6 +1626,7 @@ class SourceMediaViewResponse(CamelModel):
     width: int
     height: int
     sha256: str
+    capture_time: CaptureTimeView
 
 
 # 모듈 수준 싱글턴 — B008(Depends 인자에서 함수 호출 금지) 회피 + 두 엔드포인트
@@ -1568,6 +1824,7 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
                     size_bytes=m.bytes,
                     width=m.width,
                     height=m.height,
+                    capture_time=m.capture_time.to_domain(),
                 )
                 for m in request.measurements
             ],
@@ -1641,6 +1898,11 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
             width=record.width,
             height=record.height,
             sha256=record.sha256,
+            capture_time=CaptureTimeView(
+                captured_at=record.capture_time.captured_at,
+                source=record.capture_time.source,
+                status=record.capture_time.status,
+            ),
         )
 
     return router
@@ -1655,6 +1917,13 @@ def mount_source_media(app: FastAPI, store: SourceMediaStore, storage: EvidenceS
 __all__ = [
     "MAX_BATCH_SIZE",
     "BatchRegistrationResult",
+    "CaptureTime",
+    "CaptureTimeSource",
+    "CaptureTimeStatus",
+    "CaptureTimeView",
+    "CaptureWindow",
+    "CaptureWindowStatus",
+    "CaptureWindowView",
     "MeasurementComparison",
     "SealResult",
     "SourceBundleSealVerdict",
@@ -1685,6 +1954,7 @@ __all__ = [
     "build_source_media_object_key",
     "build_source_media_router",
     "compare_measurements",
+    "compute_capture_window",
     "compute_source_bundle_digest",
     "compute_source_bundle_digest_from_claims",
     "mount_source_media",

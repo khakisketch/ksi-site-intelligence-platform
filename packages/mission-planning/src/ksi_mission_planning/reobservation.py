@@ -51,6 +51,7 @@ from ksi_mission_planning.camera import (
     MIN_FRONT_OVERLAP,
     MIN_SIDE_OVERLAP,
     CameraSpec,
+    compute_grid_spacing,
     compute_gsd_m,
 )
 
@@ -141,6 +142,10 @@ class ReobservationCapturePlan:
     altitude_m: float
     front_overlap: float
     side_overlap: float
+    #: 카메라·선택 고도·전방 중복도에서 계산한 진행방향 촬영 간격.
+    #: 최종 임무 발급 시 ``route.captureIntervalM`` 초안으로 바로 쓸 수 있지만,
+    #: 이 결과 자체는 여전히 운영자 검토 전의 제안이다.
+    capture_interval_m: float
     gsd_m: float
     baseline_gsd_m: float
     #: 평균 |Δz| / 노이즈 바닥. 바닥이 0 이면 ``None``.
@@ -243,12 +248,24 @@ def derive_reobservation_capture(
         rationale.append(f"측면 중복도를 하한 {MIN_SIDE_OVERLAP} 로 올렸다(INV-015)")
         side = MIN_SIDE_OVERLAP
 
+    # 선택된 고도와 최종 중복도를 다시 카메라 산식에 넣는다. 이전에는 고도·
+    # 중복도·GSD만 내려 주고 진행방향 간격을 생략해, UI가 임의의 간격을 만들거나
+    # 발급 요청에서 빠뜨릴 수 있었다. 같은 산식이 매핑 계획 발급에도 쓰이므로
+    # 이 값은 서버가 계산한 초안이지 추정 기본값이 아니다.
+    grid = compute_grid_spacing(
+        baseline.camera,
+        altitude_m=altitude,
+        front_overlap=front,
+        side_overlap=side,
+    )
+
     return ReobservationCapturePlan(
         grade=grade,
         altitude_m=altitude,
         front_overlap=front,
         side_overlap=side,
-        gsd_m=compute_gsd_m(baseline.camera, altitude),
+        capture_interval_m=grid.capture_interval_m,
+        gsd_m=grid.gsd_m,
         baseline_gsd_m=baseline_gsd,
         signal_to_noise=snr,
         rationale=tuple(rationale),

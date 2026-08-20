@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/mission-contract.v1.3.json",
+  "title": "MissionContract v1.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "missionId",
+    "siteId",
+    "missionType",
+    "validity",
+    "siteFrame",
+    "flightEnvelope",
+    "objectives",
+    "policies",
+    "artifacts",
+    "issuance",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.3"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "siteId": {
+      "type": "string"
+    },
+    "missionType": {
+      "enum": [
+        "UNIFIED_SITE_SURVEY",
+        "BASELINE_MAPPING",
+        "SPATIAL_REFRESH",
+        "AUTONOMOUS_PATROL",
+        "ASSET_INSPECTION",
+        "PROGRESS_CAPTURE",
+        "INCIDENT_SURVEY",
+        "SURVEY_GRADE_MAPPING"
+      ]
+    },
+    "validity": {
+      "type": "object",
+      "required": [
+        "notBefore",
+        "notAfter"
+      ],
+      "properties": {
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "siteFrame": {
+      "type": "object",
+      "required": [
+        "crs",
+        "verticalDatum",
+        "unit",
+        "transformVersion"
+      ],
+      "properties": {
+        "crs": {
+          "type": "string"
+        },
+        "verticalDatum": {
+          "type": "string"
+        },
+        "unit": {
+          "const": "meter"
+        },
+        "transformVersion": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "flightEnvelope": {
+      "type": "object",
+      "required": [
+        "allowedVolumes",
+        "excludedVolumes",
+        "minAltitudeM",
+        "maxAltitudeM"
+      ],
+      "properties": {
+        "allowedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludedVolumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minAltitudeM": {
+          "type": "number"
+        },
+        "maxAltitudeM": {
+          "type": "number",
+          "maximum": 150,
+          "description": "규제 상한 150m(항공안전법 일반 비행제한 고도, ADR-KSI-011 D1). 이 스키마로만 검증하는 소비자(Edge 로더 등)가 구현보다 느슨해지지 않도록 언어중립 계약에도 같은 상한을 둔다."
+        },
+        "minimumStructureStandoffM": {
+          "type": "number"
+        },
+        "minimumPersonStandoffM": {
+          "type": "number"
+        },
+        "altitudeReference": {
+          "const": "relativeToStartPoint"
+        }
+      },
+      "additionalProperties": false
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policies": {
+      "type": "object",
+      "required": [
+        "viewpointPolicyId",
+        "riskPolicyPackId",
+        "fallbackPolicyId",
+        "capturePolicyId",
+        "coveragePolicy",
+        "communicationLossPolicy",
+        "batteryPolicy",
+        "unknownObstaclePolicy",
+        "evidencePolicy"
+      ],
+      "properties": {
+        "viewpointPolicyId": {
+          "type": "string"
+        },
+        "riskPolicyPackId": {
+          "type": "string"
+        },
+        "fallbackPolicyId": {
+          "type": "string"
+        },
+        "capturePolicyId": {
+          "type": "string"
+        },
+        "coveragePolicy": {
+          "type": "object",
+          "required": [
+            "mandatoryHazardCoverage",
+            "mandatoryAssetCoverage",
+            "accessibleGeneralCoverage"
+          ],
+          "properties": {
+            "mandatoryHazardCoverage": {
+              "const": 1.0
+            },
+            "mandatoryAssetCoverage": {
+              "const": 1.0
+            },
+            "accessibleGeneralCoverage": {
+              "type": "number",
+              "minimum": 0.95,
+              "maximum": 1.0
+            }
+          },
+          "additionalProperties": false
+        },
+        "communicationLossPolicy": {
+          "type": "object",
+          "required": [
+            "serverLink",
+            "rcCommandLink"
+          ],
+          "properties": {
+            "serverLink": {
+              "const": "CONTINUE_WHILE_CONTRACT_AND_SAFETY_VALID"
+            },
+            "rcCommandLink": {
+              "const": "DELEGATE_TO_DJI_FLIGHT_CONTROLLER"
+            }
+          },
+          "additionalProperties": false
+        },
+        "batteryPolicy": {
+          "type": "object",
+          "required": [
+            "mode",
+            "defaultReservePercent"
+          ],
+          "properties": {
+            "mode": {
+              "const": "RETURN_ENERGY_PLUS_RESERVE"
+            },
+            "defaultReservePercent": {
+              "description": "INV-013: RTH 예비 배터리 비율. 15 미만은 DJI의 더 보수적인 저배터리 보호판단을 무시할 위험이 있어 허용하지 않는다 (바닥값은 대표자 확정 대기 — TODO 참고).",
+              "type": "number",
+              "default": 30,
+              "minimum": 15,
+              "maximum": 100
+            },
+            "siteOverrideAllowed": {
+              "description": "예약됨: 이 계약을 발급한 서버가 현장별로 defaultReservePercent를 조정했음을 나타내려는 의도였으나, 그 조정값을 담는 별도 필드가 아직 없다 — 조정 결과는 defaultReservePercent 자체에 담긴다. 이 필드는 현재 어떤 코드 경로에서도 true 외의 값을 내보내거나 읽지 않는다(reserved, unenforced).",
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "unknownObstaclePolicy": {
+          "type": "object",
+          "required": [
+            "initialAction",
+            "unresolvedAction"
+          ],
+          "properties": {
+            "initialAction": {
+              "enum": [
+                "SLOW",
+                "HOLD",
+                "STOP"
+              ]
+            },
+            "unresolvedAction": {
+              "enum": [
+                "RETREAT",
+                "DEFER_AREA",
+                "PARTIAL_RESCAN",
+                "RTH"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "evidencePolicy": {
+          "type": "object",
+          "required": [
+            "candidatePrePostSeconds",
+            "highPrePostSeconds",
+            "criticalPrePostSeconds"
+          ],
+          "properties": {
+            "candidatePrePostSeconds": {
+              "const": 3
+            },
+            "highPrePostSeconds": {
+              "const": 5
+            },
+            "criticalPrePostSeconds": {
+              "const": 10
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "worldModelManifestId": {
+          "type": "string"
+        },
+        "modelPackId": {
+          "type": "string"
+        },
+        "calibrationProfileId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "algorithm",
+        "keyId",
+        "digest",
+        "signature"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "issuance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuerId",
+        "siteSequence",
+        "issuedAt"
+      ],
+      "properties": {
+        "issuerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "siteSequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

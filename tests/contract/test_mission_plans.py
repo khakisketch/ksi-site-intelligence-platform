@@ -18,6 +18,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+from xml.etree import ElementTree as ET
 
 import pytest
 from _site_lifecycle import advance_site_status
@@ -291,6 +292,30 @@ def test_plan_issues_contract_and_kmz_pair(tmp_path: Path) -> None:
             "wpmz/res/",
             "wpmz/res/ksi-mission-pair.json",
         }
+
+
+def test_payload_sub_enum_value_reaches_wpml_profile(tmp_path: Path) -> None:
+    """Core must expose the WPML payload sub-profile instead of dropping it.
+
+    The generator already emits ``payloadSubEnumValue``.  This regression keeps
+    the HTTP/Core boundary honest so a device-specific sub-profile survives the
+    complete plan → KMZ path.
+    """
+    client, _registry = _client(tmp_path)
+    request = _plan_request()
+    request["drone"]["payloadSubEnumValue"] = 7
+
+    response = client.post("/v1/missions/plans", json=request)
+
+    assert response.status_code == 201, response.text
+    kmz = base64.b64decode(response.json()["kmzBase64"])
+    with zipfile.ZipFile(io.BytesIO(kmz)) as archive:
+        wpml = ET.fromstring(archive.read("wpmz/waylines.wpml"))
+
+    assert wpml.findtext(
+        ".//wpml:payloadSubEnumValue",
+        namespaces={"wpml": "http://www.dji.com/wpmz/1.0.2"},
+    ) == "7"
 
 
 def test_plan_route_altitude_gated_by_contract_envelope(tmp_path: Path) -> None:

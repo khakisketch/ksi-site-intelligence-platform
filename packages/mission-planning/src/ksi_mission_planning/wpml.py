@@ -34,12 +34,48 @@ import math
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from xml.etree import ElementTree as ET
+
+from ksi_geo_core.frames import great_circle_distance_m
 
 from ksi_mission_planning.coverage import RouteWaypoint
 
 KML_NS = "http://www.opengis.net/kml/2.2"
 WPML_NS = "http://www.dji.com/wpmz/1.0.2"
+
+# 공식 샘플과 대조해 **우리가 안 내던** 요소들을 채웠다(2026-08-18).
+#
+# 대조 대상: 핀된 PSDK 의 `waypoint_v3/waypoint_file/waypoint_v3_test_file.kmz`.
+# 이 저장소가 가진 유일한 "DJI 가 실제로 만든 웨이라인 파일"이라, 어떤 요소를
+# 빼도 되는지에 대한 근거로는 이것보다 나은 게 없다. 빠뜨린 요소는 전부 동전
+# 던지기였고, 샘플이 늘 쓰는 값으로 채운 요소는 동전 던지기가 아니다.
+#
+# 채운 것: createTime/updateTime · payloadSubEnumValue · positioningType ·
+# caliFlightEnable · per-point height/ellipsoidHeight · per-point useStraightLine ·
+# heading 하위 각도/POI 필드 · Folder payloadParam · waylines 의 distance/duration.
+# Folder·Placemark 하위 요소 **순서**도 샘플과 같게 맞췄다(순서가 유효한지 자체가
+# 미확정이므로, 알려진 수용 사례의 순서를 그대로 쓰는 쪽이 위험이 낮다).
+#
+# 남긴 차이(의도적):
+# - ``waypointHeadingPathMode``: 공식 표는 무조건 필수라고 하는데 샘플에는 없다.
+#   증거가 서로 어긋나므로 "표가 필수라 한 것"을 남긴다 — FIELD-0a 가 가른다.
+# - ``payloadLensIndex``: 샘플은 렌즈를 아예 지정하지 않는다. M4D 는 렌즈가 여럿
+#   이라 지정 없이는 어느 렌즈로 찍을지가 기체 기본값에 맡겨진다.
+# - ``gimbalHeadingYawBase``: 공식 표에 있고 샘플의 액션 구성이 우리와 다르다.
+# - 네임스페이스: 우리 1.0.2 vs 샘플 1.0.3. 제품 기본은 Cloud API WPML 문서를
+#   따라 1.0.2 로 두고, 임포트가 거부되면 바꿔볼 대상으로 FIELD-0a 킷에 1.0.3
+#   변형을 함께 넣는다(`tools/build_field0a_kit.py`).
+_OFFICIAL_SAMPLE = (
+    "edge/third_party/psdk/samples/sample_c/module_sample/waypoint_v3/"
+    "waypoint_file/waypoint_v3_test_file.kmz"
+)
+
+# 샘플이 heading 모드와 무관하게 늘 쓰는 값 — POI 를 안 쓴다는 뜻이다.
+_NO_POI_POINT = "0.000000,0.000000,0.000000"
+
+# positioningType 열거 — 공식 template-kml 문서. GPS 는 "RTK 없이 위성측위".
+SUPPORTED_POSITIONING_TYPES = ("GPS", "RTKBaseStation", "QianXun", "Custom")
 
 # droneEnumValue 참고표 — 정본은 DJI Cloud API Product Support 페이지의
 # "Enumeration Values of Aircraft, RC and Dock" 표다(WPML common-element 문서가
@@ -71,9 +107,17 @@ class DroneProfile:
     drone_sub_enum_value: int
     payload_enum_value: int
     payload_position_index: int = 0
+    # 공식 샘플은 payloadSubEnumValue 를 늘 쓴다(값 0). M4D 광각 카메라의 sub 값이
+    # 0 이 아니라는 근거는 아직 없다 — 다르면 FIELD-0a 임포트가 알려준다.
+    payload_sub_enum_value: int = 0
 
     def __post_init__(self) -> None:
-        for name in ("drone_enum_value", "drone_sub_enum_value", "payload_enum_value"):
+        for name in (
+            "drone_enum_value",
+            "drone_sub_enum_value",
+            "payload_enum_value",
+            "payload_sub_enum_value",
+        ):
             value = getattr(self, name)
             if value < 0:
                 raise KmzBuildError(f"{name} 는 음수일 수 없다 ({value!r})")
@@ -94,6 +138,9 @@ class WaylineMissionConfig:
     finish_action: str = "goHome"
     exit_on_rc_lost: str = "executeLostAction"
     execute_rc_lost_action: str = "goBack"
+    # 공식 샘플이 waylineCoordinateSysParam 에 늘 넣는 값. 기본 GPS 는 "RTK 없이
+    # 위성측위" — RTK 기준국을 실제로 쓸 때만 호출자가 바꾼다.
+    positioning_type: str = "GPS"
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.auto_flight_speed_ms) and self.auto_flight_speed_ms > 0):
@@ -128,6 +175,8 @@ class WaylineMissionConfig:
             raise KmzBuildError(
                 f"execute_rc_lost_action 미지원 값: {self.execute_rc_lost_action!r}"
             )
+        if self.positioning_type not in SUPPORTED_POSITIONING_TYPES:
+            raise KmzBuildError(f"positioning_type 미지원 값: {self.positioning_type!r}")
 
 
 def _wpml(tag: str) -> str:
@@ -164,6 +213,7 @@ def _mission_config(parent: ET.Element, config: WaylineMissionConfig, drone: Dro
     _sub(drone_info, _wpml("droneSubEnumValue"), str(drone.drone_sub_enum_value))
     payload_info = _sub(mc, _wpml("payloadInfo"))
     _sub(payload_info, _wpml("payloadEnumValue"), str(drone.payload_enum_value))
+    _sub(payload_info, _wpml("payloadSubEnumValue"), str(drone.payload_sub_enum_value))
     _sub(payload_info, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
 
 
@@ -171,6 +221,44 @@ def _document_root() -> tuple[ET.Element, ET.Element]:
     root = ET.Element(_kml("kml"))
     document = _sub(root, _kml("Document"))
     return root, document
+
+
+def _epoch_millis(value: datetime) -> str:
+    """WPML createTime/updateTime 은 epoch 밀리초 정수다(샘플 raw 확인)."""
+    if value.tzinfo is None:
+        raise KmzBuildError("created_at 는 tz-aware 여야 한다 — 로컬 시간대 추측 금지")
+    return str(int(value.timestamp() * 1000))
+
+
+def _route_distance_m(route: list[RouteWaypoint]) -> float:
+    """웨이포인트를 잇는 대권거리 합 — 수평 성분만.
+
+    샘플의 ``distance`` 가 무엇을 재는지 문서가 말하지 않아 고도 변화는 넣지
+    않는다. 이 생성기의 경로는 균일 고도라(:func:`_validate_route`) 어차피 같다.
+    """
+    return sum(
+        great_circle_distance_m(
+            route[i].lat_deg, route[i].lon_deg, route[i + 1].lat_deg, route[i + 1].lon_deg
+        )
+        for i in range(len(route) - 1)
+    )
+
+
+def _heading_param(parent: ET.Element, *, tag: str, with_angle_enable: bool) -> None:
+    """heading 파라미터 — 샘플의 요소 구성·순서를 그대로 따른다.
+
+    ``waypointHeadingPathMode`` 만 우리 것이다: 공식 표는 무조건 필수라 하는데
+    샘플에는 없다(모듈 상단 주석 참조). 샘플 요소들 **뒤에** 붙여 샘플이 쓰는
+    앞부분 순서를 흐트러뜨리지 않는다.
+    """
+    heading = _sub(parent, _wpml(tag))
+    _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
+    _sub(heading, _wpml("waypointHeadingAngle"), "0")
+    _sub(heading, _wpml("waypointPoiPoint"), _NO_POI_POINT)
+    if with_angle_enable:
+        _sub(heading, _wpml("waypointHeadingAngleEnable"), "0")
+    _sub(heading, _wpml("waypointHeadingPoiIndex"), "0")
+    _sub(heading, _wpml("waypointHeadingPathMode"), "followBadArc")
 
 
 def _serialize(root: ET.Element) -> bytes:
@@ -217,18 +305,19 @@ def build_template_kml(
     drone: DroneProfile,
     config: WaylineMissionConfig,
     capture_at_waypoints: bool = False,
+    created_at: datetime | None = None,
 ) -> bytes:
     """template.kml — 편집 가능한 waypoint 템플릿 (heightMode=relativeToStartPoint).
 
     스펙 필수 전역값(globalHeight·gimbalPitchMode·globalWaypointTurnMode·
     globalWaypointHeadingParam)을 모두 넣고, 웨이포인트는 전역값을 참조만 한다
     (useGlobal*=1) — 참조 대상 없는 useGlobal 플래그(자율 재검토 F2)를 만들지
-    않는다. 요소 순서: 공식 샘플과 대조해 **실제로 확인한 것은
-    waylineCoordinateSysParam → autoFlightSpeed 두 원소의 상대 순서뿐**이다(코드가
-    그 순서를 지킨다). Folder 하위 나머지 요소들의 전체 순서가 공식 샘플과
-    완전히 일치하는지는 미확인이다 — "전체 순서가 샘플과 같다"는 과잉 주장은
-    하지 않는다(자율 재검토 D-4 정정. XSD 가 순서 무관 스키마일 가능성도 있어
-    필수 여부 자체가 미확정 — H4 실기(Pilot 2 export 샘플 unzip)에서 확정).
+    않는다.
+
+    Folder·Placemark 하위 요소 **순서는 공식 샘플의 순서를 그대로 쓴다**
+    (2026-08-18 전수 대조). 순서가 유효성에 영향을 주는지는 여전히 미확인이지만,
+    영향을 준다면 알려진 수용 사례의 순서가 정답이고 영향을 안 준다면 손해가
+    없다. 확정은 FIELD-0a(Pilot 2 임포트) 몫이다.
 
     Args:
         capture_at_waypoints: True 면 :func:`build_waylines_wpml` 과 **동일한**
@@ -236,9 +325,19 @@ def build_template_kml(
             KMZ 의 template.kml·waylines.wpml 두 파일이 같은 임무를 기술하지
             않으면(예: waylines 만 촬영하고 template 은 안 하면) 편집기에서 연
             template.kml 이 실제 실행 내용과 어긋나 보인다.
+        created_at: 주어지면 ``createTime``/``updateTime`` 을 쓴다. **호출자가
+            명시할 때만** 쓰는 이유는 이 생성기의 바이트 재현성 때문이다 — 여기서
+            현재 시각을 읽으면 같은 임무를 다시 만들 때마다 KMZ digest 가 달라져
+            서명된 봉투의 ``kmzSha256`` 짝이 깨진다(ADR-KSI-007). Core 는 그
+            임무의 원 ``issued_at`` 을 넘긴다.
     """
     altitude_m = _validate_route(route)
     root, document = _document_root()
+    if created_at is not None:
+        stamp = _epoch_millis(created_at)
+        # 한 번 만들고 끝나는 파일이라 두 시각이 같다 — 편집 이력이 없다는 뜻이다.
+        _sub(document, _wpml("createTime"), stamp)
+        _sub(document, _wpml("updateTime"), stamp)
     _mission_config(document, config, drone)
 
     folder = _sub(document, _kml("Folder"))
@@ -247,29 +346,42 @@ def build_template_kml(
     coord_param = _sub(folder, _wpml("waylineCoordinateSysParam"))
     _sub(coord_param, _wpml("coordinateMode"), "WGS84")
     _sub(coord_param, _wpml("heightMode"), "relativeToStartPoint")
+    _sub(coord_param, _wpml("positioningType"), config.positioning_type)
     _sub(folder, _wpml("autoFlightSpeed"), _format_float(config.auto_flight_speed_ms))
     _sub(folder, _wpml("globalHeight"), _format_float(altitude_m))
+    # 캘리브레이션 비행 — 매핑 임무에서 켤 이유가 없고 샘플도 0 이다.
+    _sub(folder, _wpml("caliFlightEnable"), "0")
+    _sub(folder, _wpml("gimbalPitchMode"), "manual")
+    _heading_param(folder, tag="globalWaypointHeadingParam", with_angle_enable=False)
     _sub(folder, _wpml("globalWaypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
     # 스펙 조건부 필수는 Continuity 계열뿐이나, 공식 template 샘플(raw 확인)이
     # Discontinuity 모드에서도 0 을 동봉한다 — 샘플 정합 유지(H4 확정 항목).
     _sub(folder, _wpml("globalUseStraightLine"), "0")
-    _sub(folder, _wpml("gimbalPitchMode"), "manual")
-    heading = _sub(folder, _wpml("globalWaypointHeadingParam"))
-    _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
-    # waypointHeadingPathMode 는 무조건 필수(공식 표 raw 확인 — 재검토 blocker #1).
-    _sub(heading, _wpml("waypointHeadingPathMode"), "followBadArc")
 
     for index, wp in enumerate(route):
         placemark = _sub(folder, _kml("Placemark"))
         point = _sub(placemark, _kml("Point"))
         _sub(point, _kml("coordinates"), f"{_format_float(wp.lon_deg)},{_format_float(wp.lat_deg)}")
         _sub(placemark, _wpml("index"), str(index))
+        # useGlobalHeight=1 이라 이 둘은 실행에 쓰이지 않는다 — 그런데도 샘플은
+        # 늘 쓴다. 샘플이 heightMode=relativeToStartPoint 에서 두 값을 globalHeight
+        # 와 **같게** 두므로(실측: 100/100/100) 그 규칙을 그대로 따른다. 지오이드
+        # 없이 진짜 타원체고를 계산할 수 없다는 사실은 그대로이고, 그래서 여기서도
+        # 높이 전략은 여전히 전역값 하나다(:func:`_validate_route`).
+        _sub(placemark, _wpml("ellipsoidHeight"), _format_float(altitude_m))
+        _sub(placemark, _wpml("height"), _format_float(altitude_m))
         _sub(placemark, _wpml("useGlobalHeight"), "1")
         _sub(placemark, _wpml("useGlobalSpeed"), "1")
         _sub(placemark, _wpml("useGlobalHeadingParam"), "1")
         _sub(placemark, _wpml("useGlobalTurnParam"), "1")
+        _sub(placemark, _wpml("useStraightLine"), "0")
         if capture_at_waypoints:
             _append_capture_action_group(placemark, index=index, drone=drone)
+
+    # 샘플은 Placemark 들 **뒤에** 전역 payloadParam 을 둔다. 렌즈 지정은 담지
+    # 않으므로 액션의 useGlobalPayloadLensIndex=0 판단(아래)은 그대로다.
+    payload_param = _sub(folder, _wpml("payloadParam"))
+    _sub(payload_param, _wpml("payloadPositionIndex"), str(drone.payload_position_index))
 
     return _serialize(root)
 
@@ -335,11 +447,15 @@ def build_waylines_wpml(
 ) -> bytes:
     """waylines.wpml — 실행 확정 웨이라인 (executeHeightMode=relativeToStartPoint).
 
-    요소 순서는 공식 샘플(templateId → executeHeightMode → waylineId →
-    autoFlightSpeed)을 따르고, ``waypointTurnDampingDist`` 는 공식 샘플이 이 turn
-    mode 에서도 넣으므로 0 으로 동봉한다(H4 실기에서 수용 확인). ``useStraightLine``
-    은 넣지 않는다 — 스펙 조건부 필수 대상이 Continuity 계열 turn mode 뿐이고 공식
-    샘플에도 없다(자율 재검토 정정).
+    요소 순서·구성은 공식 샘플을 그대로 따른다(2026-08-18 전수 대조):
+    templateId → executeHeightMode → waylineId → distance → duration →
+    autoFlightSpeed, Placemark 안은 index → executeHeight → waypointSpeed →
+    waypointHeadingParam → waypointTurnParam → useStraightLine → actionGroup.
+
+    ``distance``·``duration`` 은 이 경로에서 계산한 값이다 — 수평 대권거리 합과
+    그것을 순항속도로 나눈 시간이다. 가감속·선회·촬영 정지 시간은 안 센다(샘플의
+    값이 무엇을 재는지 문서가 말하지 않아, 잴 수 있는 것만 잰다). 표시용 메타이지
+    실행을 정하는 값이 아니다.
 
     Args:
         capture_at_waypoints: True 면 각 웨이포인트 도달 시 nadir 촬영 actionGroup
@@ -353,6 +469,9 @@ def build_waylines_wpml(
     _sub(folder, _wpml("templateId"), "0")
     _sub(folder, _wpml("executeHeightMode"), "relativeToStartPoint")
     _sub(folder, _wpml("waylineId"), "0")
+    distance_m = _route_distance_m(route)
+    _sub(folder, _wpml("distance"), _format_float(distance_m))
+    _sub(folder, _wpml("duration"), _format_float(distance_m / config.auto_flight_speed_ms))
     _sub(folder, _wpml("autoFlightSpeed"), _format_float(config.auto_flight_speed_ms))
 
     for index, wp in enumerate(route):
@@ -362,13 +481,15 @@ def build_waylines_wpml(
         _sub(placemark, _wpml("index"), str(index))
         _sub(placemark, _wpml("executeHeight"), _format_float(wp.altitude_m))
         _sub(placemark, _wpml("waypointSpeed"), _format_float(config.auto_flight_speed_ms))
-        heading = _sub(placemark, _wpml("waypointHeadingParam"))
-        _sub(heading, _wpml("waypointHeadingMode"), "followWayline")
-        _sub(heading, _wpml("waypointHeadingPathMode"), "followBadArc")
+        _heading_param(placemark, tag="waypointHeadingParam", with_angle_enable=True)
         turn = _sub(placemark, _wpml("waypointTurnParam"))
         _sub(turn, _wpml("waypointTurnMode"), "toPointAndStopWithDiscontinuityCurvature")
         # 공식 waylines 샘플(raw 확인)이 Discontinuity 모드에서도 0 을 동봉한다.
         _sub(turn, _wpml("waypointTurnDampingDist"), "0")
+        # 샘플은 waylines 쪽 per-point 값을 1 로 두지만, 같은 파일쌍의 template 은
+        # 0 이다(샘플 자체가 어긋난다). 우리는 globalUseStraightLine 과 같은 값으로
+        # 맞춘다 — 두 파일이 다른 임무를 기술하게 두지 않는다.
+        _sub(placemark, _wpml("useStraightLine"), "0")
         if capture_at_waypoints:
             _append_capture_action_group(placemark, index=index, drone=drone)
 
@@ -382,6 +503,7 @@ def build_kmz(
     config: WaylineMissionConfig,
     capture_at_waypoints: bool = False,
     pair_manifest: Mapping[str, str] | None = None,
+    created_at: datetime | None = None,
 ) -> bytes:
     """template.kml + waylines.wpml 을 ``wpmz/`` 아래 담은 KMZ(zip) 바이트.
 
@@ -399,7 +521,11 @@ def build_kmz(
             응답 등)에서 전달하라).
     """
     template = build_template_kml(
-        route, drone=drone, config=config, capture_at_waypoints=capture_at_waypoints
+        route,
+        drone=drone,
+        config=config,
+        capture_at_waypoints=capture_at_waypoints,
+        created_at=created_at,
     )
     waylines = build_waylines_wpml(
         route, drone=drone, config=config, capture_at_waypoints=capture_at_waypoints

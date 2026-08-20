@@ -22,6 +22,7 @@ function draft(overrides: Partial<SpatialRefreshDraftResponse> = {}): SpatialRef
     captureAltitudeM: null,
     captureFrontOverlap: null,
     captureSideOverlap: null,
+    captureIntervalM: null,
     captureGsdM: null,
     baselineGsdM: null,
     captureSignalToNoise: null,
@@ -61,6 +62,7 @@ describe("resolveReobservationCapturePreset", () => {
         captureAltitudeM: 56,
         captureFrontOverlap: 0.8,
         captureSideOverlap: 0.7,
+        captureIntervalM: 8.4,
         captureRationale: ["평균 표고 변화가 노이즈 바닥의 1.2배"],
       }),
     );
@@ -70,6 +72,7 @@ describe("resolveReobservationCapturePreset", () => {
       altitudeM: 56,
       frontOverlap: 0.8,
       sideOverlap: 0.7,
+      captureIntervalM: 8.4,
     });
     expect(preset?.rationale).toHaveLength(1);
     expect(preset?.unavailableReason).toBeNull();

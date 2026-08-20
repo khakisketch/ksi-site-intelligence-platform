@@ -35,6 +35,9 @@ function bundle(overrides: Partial<SourceMediaBundleView> = {}): SourceMediaBund
     groundControlCrs: null,
     groundControlSha256: null,
     ...overrides,
+    captureWindow: overrides.captureWindow ?? {
+      status: "INCOMPLETE", capturedFrom: null, capturedTo: null,
+    },
   };
 }
 

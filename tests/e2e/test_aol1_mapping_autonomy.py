@@ -48,6 +48,7 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorageError
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
+from ksi_processing_controller.capture_time import extract_capture_time
 from PIL import Image
 
 _TOOLS = Path(__file__).resolve().parents[2] / "tools"
@@ -325,9 +326,13 @@ def aol1(tmp_path: Path) -> Any:
 def _photos(directory: Path, count: int) -> None:
     """실제 JPEG 바이트 — 도구가 화소수·해시를 진짜로 읽는다."""
     directory.mkdir(parents=True, exist_ok=True)
+    captured = datetime.now(UTC).replace(microsecond=0)
     for index in range(count):
+        exif = Image.Exif()
+        exif[36867] = captured.strftime("%Y:%m:%d %H:%M:%S")
+        exif[36881] = "+00:00"
         Image.new("RGB", (64, 48), color=(index * 37 % 256, 90, 160)).save(
-            directory / f"DJI_{index:04d}.jpg", "JPEG"
+            directory / f"DJI_{index:04d}.jpg", "JPEG", exif=exif
         )
 
 
@@ -453,6 +458,9 @@ def _run_worker(fixture: Aol1Fixture, job_id: str) -> None:
         raw = fixture.storage.get_bytes(item["objectKey"])
         with Image.open(io.BytesIO(raw)) as image:
             width, height = image.size
+        capture_time = extract_capture_time(
+            fixture.captures_root / _MISSION_ID / item["mediaId"]
+        )
         measurements.append(
             {
                 "mediaId": item["mediaId"],
@@ -460,6 +468,15 @@ def _run_worker(fixture: Aol1Fixture, job_id: str) -> None:
                 "bytes": len(raw),
                 "width": width,
                 "height": height,
+                "captureTime": {
+                    "capturedAt": (
+                        capture_time.captured_at.isoformat()
+                        if capture_time.captured_at is not None
+                        else None
+                    ),
+                    "source": capture_time.source.value,
+                    "status": capture_time.status.value,
+                },
             }
         )
 
@@ -667,14 +684,16 @@ def test_processing_success_did_not_open_autonomy(aol1: Any) -> None:
     assert "PATROL_READY" not in afters
 
 
-def test_spatial_model_age_is_measured_from_the_reconstruction(aol1: Any) -> None:
-    """나이는 재구성 성공 시각에서 잰다 — 갓 만든 모델은 0일에 가깝다."""
+def test_spatial_model_age_is_measured_from_capture_time(aol1: Any) -> None:
+    """나이는 처리 시각이 아니라 검증된 촬영 시각에서 잰다."""
     fixture, _data_dir = aol1
     _run_the_loop(fixture)
 
     model = fixture.spatial_model()
 
     assert model["registeredAt"] is not None
+    assert model["capturedTo"] is not None
+    assert model["freshnessBasis"] == "CAPTURED_TO"
     assert 0.0 <= model["ageDays"] < 1.0
-    registered = datetime.fromisoformat(model["registeredAt"])
-    assert datetime.now(UTC) - registered < timedelta(minutes=5)
+    captured = datetime.fromisoformat(model["capturedTo"])
+    assert datetime.now(UTC) - captured < timedelta(minutes=5)

@@ -192,9 +192,20 @@ DPK에 이 경계를 켜려면 `KSI_PSDK_APP_ENABLE_CORE_SYNC=ON`과 다음 depl
   `sha256//...` SPKI pin.
 - `KSI_PSDK_APP_CORE_BEARER_TOKEN_FILE` — 실제 token은 package/CMake/로그에 넣지 않는다.
   runtime은 owner-only `0600`, regular file, no-symlink만 읽는다.
+- `KSI_PSDK_APP_EVIDENCE_ATTESTATION_KEY_ID`와
+  `KSI_PSDK_APP_EVIDENCE_ATTESTATION_PRIVATE_KEY_FILE` — 운영자가 Core registry와
+  함께 provision한 Ed25519 키 식별자와 외부 절대경로다. private key 파일은
+  owner-only `0600`, regular file, no-symlink, single-link여야 하며 DPK·CMake 값·로그·
+  journal에 키 바이트를 넣지 않는다. 등록 요청은 정확히 7개 canonical 필드
+  (`deviceId`, `siteId`, `missionId`, `eventKey`, `artifactId`, `contentType`,
+  `contentDigest`)를 서명한 unpadded base64url만 보낸다.
 - `KSI_ENABLE_CURL_EDGE_TRANSPORT=ON`에 필요한 reviewed static libcurl와 모든 static
   transitive archive (`KSI_CURL_STATIC_EXTRA_LIBRARIES`). shared libcurl과 동적 보조
   라이브러리는 target ABI gate가 거부한다.
+- `KSI_ENABLE_OPENSSL_EVIDENCE_ATTESTATION=ON`은 OpenSSL EVP Ed25519를 사용하며
+  `libcrypto.a`만 허용한다. `libcrypto.so*`가 최종 ELF `NEEDED`에 남으면 ABI gate가
+  실패한다. Ubuntu 20.04의 OpenSSL 1.1.1은 OpenSSL/Original SSLeay notice 의무가
+  있으므로 DPK 배포 전 third-party notice와 SBOM 생성은 별도 release gate다.
 
 예시는 의도적으로 secret/pin 값을 비워 둔다.
 
@@ -210,6 +221,8 @@ cmake -S edge/psdk-app -B build-manifold3-app \
   -DKSI_PSDK_APP_TLS_CA_BUNDLE=<absolute_ca_bundle> \
   -DKSI_PSDK_APP_CORE_TLS_PIN=sha256//<core_spki> \
   -DKSI_PSDK_APP_STORAGE_TLS_PIN=sha256//<storage_spki> \
+  -DKSI_PSDK_APP_EVIDENCE_ATTESTATION_KEY_ID=<device_key_id> \
+  -DKSI_PSDK_APP_EVIDENCE_ATTESTATION_PRIVATE_KEY_FILE=<external_private_0600_ed25519_pem> \
   -DCURL_LIBRARY=<reviewed_static_libcurl.a> \
   -DKSI_CURL_STATIC_EXTRA_LIBRARIES='<absolute_static_dep_1.a;...>'
 ```

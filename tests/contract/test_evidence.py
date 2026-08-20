@@ -169,7 +169,7 @@ def _project_critical_finding(store: EventStore) -> None:
 
 def _risk_field_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1",
         "riskFieldId": "risk-1",
         "type": "DYNAMIC",
         "sourceEntityIds": ["ent-trk-001"],
@@ -178,8 +178,12 @@ def _risk_field_payload(**overrides: Any) -> dict[str, Any]:
             "to": "2026-08-04T00:00:01Z",
         },
         "geometry": {
-            "format": "PARAMETRIC_VOLUME",
-            "payload": {"shape": "capsule", "radiusM": 2.5},
+            "format": "EXTRUDED_POLYGON",
+            "payload": {
+                "vertices": [[100.0, 200.0], [101.0, 200.0], [101.0, 201.0]],
+                "zMinM": 20.0,
+                "zMaxM": 25.0,
+            },
         },
         "riskModel": {
             "policyId": "critical-person-proximity-v1",
@@ -187,6 +191,12 @@ def _risk_field_payload(**overrides: Any) -> dict[str, Any]:
             "predictionHorizonSeconds": 5.0,
         },
         "uncertainty": {"positionSigmaM": 0.2},
+        "lineage": {
+            "riskPolicyPackDigest": "sha256:" + "a" * 64,
+            "calibrationProfileId": "evidence-test-cal-1",
+            "sourceTimestamp": "2026-08-04T00:00:00Z",
+            "sensorTimestamp": "2026-08-04T00:00:00Z",
+        },
     }
     payload.update(overrides)
     return payload
@@ -208,7 +218,19 @@ def _register_critical_artifacts(
         ("trajectory-1", "application/octet-stream", device_bound),
         ("viewpoint-1", "application/octet-stream", device_bound),
     ):
-        result = _register(store, artifact_id, content_type=content_type, device_bound=bound)
+        result = _register(
+            store,
+            artifact_id,
+            content_type=content_type,
+            device_bound=bound,
+            device_attested=bound,
+            attestation_key_id="device-key-1" if bound else None,
+            attestation_signature="test-signature" if bound else None,
+            attested_dispatch_id="dispatch-1" if bound else None,
+            attested_risk_policy_pack_id="evidence-test-policy-1" if bound else None,
+            attested_risk_policy_pack_digest=("sha256:" + "a" * 64) if bound else None,
+            attested_calibration_profile_id="evidence-test-cal-1" if bound else None,
+        )
         assert result.verdict is EvidenceVerdict.REGISTERED
     raw = json.dumps(
         _risk_field_payload(),
@@ -300,6 +322,7 @@ def _register(store: EventStore, artifact_id: str = "clip-01", **kwargs: Any) ->
         registered_by=kwargs.pop("registered_by", "op-admin"),
         now=kwargs.pop("now", datetime.now(UTC)),
         device_bound=kwargs.pop("device_bound", False),
+        **kwargs,
     )
 
 
@@ -464,7 +487,7 @@ def test_critical_confirmation_verifies_risk_field_bytes_and_snapshots_digest(
     assert snapshot["contentLengthBytes"] == len(raw)
     assert snapshot["eventBundleDigest"] == payload_digest(before.bundle)
     assert snapshot["sourceEntityIds"] == ["ent-trk-001"]
-    assert snapshot["geometryFormat"] == "PARAMETRIC_VOLUME"
+    assert snapshot["geometryFormat"] == "EXTRUDED_POLYGON"
 
 
 def test_critical_confirmation_accepts_risk_field_v1_1_during_transition(
@@ -596,8 +619,8 @@ def test_critical_confirmation_reports_storage_outage_separately(
     [
         (lambda payload: payload.update({"riskFieldId": "other-risk"}), "riskFieldId"),
         (
-            lambda payload: payload.update(
-                {"geometry": {"format": "PARAMETRIC_VOLUME", "payload": {}}}
+                lambda payload: payload.update(
+                    {"geometry": {"format": "EXTRUDED_POLYGON", "payload": {}}}
             ),
             "geometry.payload",
         ),
@@ -618,9 +641,9 @@ def test_critical_confirmation_reports_storage_outage_separately(
         (
             lambda payload: payload.update(
                 {
-                    "geometry": {
-                        "format": "GEOJSON_2D",
-                        "payload": {"type": "Polygon", "coordinates": []},
+                        "geometry": {
+                            "format": "EXTRUDED_POLYGON",
+                            "payload": {"type": "Polygon", "coordinates": []},
                     }
                 }
             ),

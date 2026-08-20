@@ -562,6 +562,8 @@ def test_spatial_refresh_draft_carries_a_derived_capture_plan(tmp_path: Path) ->
     assert body["captureGrade"] in {"STANDARD", "DETAILED", "INTENSIVE"}
     assert body["captureAltitudeM"] is not None
     assert 20.0 <= body["captureAltitudeM"] <= 120.0  # 비행 봉투 안(INV-014)
+    assert body["captureIntervalM"] is not None
+    assert body["captureIntervalM"] > 0.0  # 카메라 산식에서 도출된 진행방향 간격
     assert body["baselineGsdM"] is not None
     assert body["captureRationale"], "근거 없는 자동 초안은 검토할 수 없다"
 

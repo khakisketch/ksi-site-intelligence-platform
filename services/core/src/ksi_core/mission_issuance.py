@@ -35,9 +35,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from ksi_domain.enums import MissionType
 from ksi_mission_contracts.models import (
     Artifacts,
@@ -46,6 +46,7 @@ from ksi_mission_contracts.models import (
     EvidencePolicy,
     FlightEnvelope,
     MissionContractV1_2,
+    MissionContractV1_3,
     SiteFrame,
     UnknownObstaclePolicy,
 )
@@ -54,7 +55,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.durable_journal import JournalSealedError
 from ksi_core.mission_records import (
+    MissionIssuanceSequenceStore,
     MissionRecord,
     MissionStore,
     SiteLookupResult,
@@ -122,15 +125,27 @@ def issue_mission_contract(
     private_key: Ed25519PrivateKey,
     key_id: str,
     issued_at: datetime | None = None,
-) -> MissionContractV1_2:
-    """서명된 MissionContract(v1.2)를 만든다 — 구조 검증까지 통과한 모델만 반환한다."""
+    schema_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    site_sequence: int | None = None,
+) -> MissionContractV1_2 | MissionContractV1_3:
+    """서명된 MissionContract v1.2/v1.3을 만든다.
+
+    v1.3의 issuer/sequence는 라우터가 Core 설정과 durable allocator에서만 공급한다.
+    """
     now = issued_at if issued_at is not None else datetime.now(UTC)
     if now.tzinfo is None:
         raise ValueError("issued_at 은 tz-aware 여야 한다")
     not_after = now + timedelta(hours=request.valid_for_hours)
 
+    if schema_version == "1.3":
+        if not issuer_id or site_sequence is None or site_sequence <= 0:
+            raise ValueError("v1.3은 Core issuer_id와 양의 durable site_sequence가 필요하다")
+    elif issuer_id is not None or site_sequence is not None:
+        raise ValueError("v1.2에는 issuance 설정을 실을 수 없다")
+
     unsigned: dict[str, Any] = {
-        "schemaVersion": "1.2",
+        "schemaVersion": schema_version,
         "missionId": request.mission_id,
         "siteId": request.site_id,
         "missionType": request.mission_type.value,
@@ -168,7 +183,15 @@ def issue_mission_contract(
         },
         "artifacts": request.artifacts.model_dump(by_alias=True, mode="json", exclude_none=True),
     }
+    if schema_version == "1.3":
+        unsigned["issuance"] = {
+            "issuerId": issuer_id,
+            "siteSequence": site_sequence,
+            "issuedAt": now.isoformat(),
+        }
     signed = sign_contract(unsigned, private_key, key_id)
+    if schema_version == "1.3":
+        return MissionContractV1_3.model_validate(signed)
     return MissionContractV1_2.model_validate(signed)
 
 
@@ -178,7 +201,12 @@ def build_mission_issuance_router(
     key_id: str,
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
+    writer_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    sequence_store: MissionIssuanceSequenceStore | None = None,
 ) -> APIRouter:
+    if writer_version == "1.3" and (not issuer_id or sequence_store is None):
+        raise ValueError("Mission Contract v1.3 writer는 issuer_id와 sequence_store가 필요하다")
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
 
     @router.post("/contracts", status_code=201)
@@ -210,7 +238,28 @@ def build_mission_issuance_router(
         if verdict is not None:
             raise_for_mission_record_verdict(verdict)
 
-        contract = issue_mission_contract(request, private_key=private_key, key_id=key_id)
+        issued_at = datetime.now(UTC)
+        site_sequence: int | None = None
+        if writer_version == "1.3":
+            assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
+            assert sequence_store is not None  # noqa: S101 -- 조립 시 검증
+            try:
+                site_sequence = sequence_store.reserve(
+                    issuer_id=issuer_id,
+                    site_id=request.site_id,
+                    reserved_at=issued_at,
+                )
+            except JournalSealedError as exc:
+                raise HTTPException(status_code=503, detail="STORE_UNAVAILABLE") from exc
+        contract = issue_mission_contract(
+            request,
+            private_key=private_key,
+            key_id=key_id,
+            issued_at=issued_at,
+            schema_version=writer_version,
+            issuer_id=issuer_id,
+            site_sequence=site_sequence,
+        )
         contract_payload = contract.model_dump(by_alias=True, mode="json", exclude_none=True)
 
         record = MissionRecord(
@@ -223,7 +272,7 @@ def build_mission_issuance_router(
             route_pattern=None,
             waypoint_count=None,
             planned_coverage_ratio=None,
-            issued_at=datetime.now(UTC),
+            issued_at=issued_at,
             issued_by=principal.principal_id,
             assigned_device_id=request.assigned_device_id,
         )
@@ -240,6 +289,9 @@ def mount_mission_issuance(
     key_id: str,
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
+    writer_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    sequence_store: MissionIssuanceSequenceStore | None = None,
 ) -> None:
     """앱에 Mission Contract 발급 라우터를 장착한다.
 
@@ -253,5 +305,8 @@ def mount_mission_issuance(
             key_id=key_id,
             mission_store=mission_store,
             site_lookup=site_lookup,
+            writer_version=writer_version,
+            issuer_id=issuer_id,
+            sequence_store=sequence_store,
         )
     )

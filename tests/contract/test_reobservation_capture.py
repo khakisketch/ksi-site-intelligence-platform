@@ -90,6 +90,7 @@ def test_large_change_keeps_the_baseline_capture(
     assert plan.grade is ReobservationGrade.STANDARD
     assert plan.altitude_m == baseline.altitude_m
     assert plan.front_overlap == baseline.front_overlap
+    assert plan.capture_interval_m > 0.0
 
 
 def test_change_near_the_noise_floor_escalates_resolution(
@@ -115,6 +116,17 @@ def test_change_near_the_noise_floor_escalates_resolution(
     assert plan.altitude_m == pytest.approx(baseline.altitude_m * DETAIL_ALTITUDE_FACTOR)
     assert plan.gsd_m < plan.baseline_gsd_m
     assert plan.front_overlap == baseline.front_overlap  # 해상도 문제이지 겹침 문제가 아니다
+    assert plan.capture_interval_m < derive_reobservation_capture(
+        baseline=baseline,
+        signals=ChangeSignals(
+            area_m2=1000.0,
+            cut_m3=0.0,
+            fill_m3=900.0,
+            volume_threshold_m=0.05,
+            unmeasurable_ratio=0.0,
+        ),
+        envelope=envelope,
+    ).capture_interval_m
 
 
 def test_high_unmeasurable_ratio_escalates_overlap(

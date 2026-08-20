@@ -188,7 +188,14 @@ from ksi_core.evidence import (
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
 from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
-from ksi_core.source_media import GroundControlRecord, SourceMediaRecord
+from ksi_core.source_media import (
+    CaptureWindow,
+    CaptureWindowView,
+    GroundControlRecord,
+    SourceMediaRecord,
+    capture_window_from_wire,
+    capture_window_wire,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -511,6 +518,10 @@ class ProcessingJobRecord:
     artifacts: tuple[ProcessingArtifact, ...] = ()
     # 마지막으로 발급된 lease. 만료 여부는 이 값이 아니라 ``now`` 가 정한다.
     lease: JobLease | None = None
+    # SUCCEEDED 전이 때 source-media projection에서 복사해 journal에 고정한 값.
+    # legacy journal과 아직 끝나지 않은 작업은 INCOMPLETE이며 registeredAt으로
+    # 추정하지 않는다(INV-020·040).
+    capture_window: CaptureWindow = CaptureWindow.incomplete()
 
     def to_contract(self) -> ProcessingJob:
         """계약 모델로 투영한다 — 어댑터로 나가는 payload 의 SSOT.
@@ -825,11 +836,31 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 f"재생: 근거 없는 SUCCEEDED 레코드 — jobId={job_id}: {exc}"
             ) from exc
+        capture_window = current.capture_window
+        if after is ProcessingJobStatus.SUCCEEDED:
+            try:
+                capture_window = capture_window_from_wire(
+                    raw.get("captureWindow"), context=f"jobId={job_id}"
+                )
+            except (TypeError, ValueError) as exc:
+                raise ProcessingJobRecoveryError(
+                    f"재생: captureWindow 형식이 잘못됐다 — jobId={job_id}: {exc}"
+                ) from exc
+            # 새 레코드는 source-media 파일별 판정과 정확히 같아야 한다. 필드가 없던
+            # legacy 레코드는 위에서 INCOMPLETE로 읽고 절대 현재 번들에서 추정하지 않는다.
+            if "captureWindow" in raw:
+                bundle = self._source_media.get(current.mission_id)
+                if bundle is None or capture_window != bundle.capture_window:
+                    raise ProcessingJobRecoveryError(
+                        "재생: processing job captureWindow가 source-media 계보와 불일치"
+                        f" — jobId={job_id}"
+                    )
         self._jobs[job_id] = replace(
             current,
             status=after,
             updated_at=_require_aware_iso(raw["ts"], "ts", job_id),
             terminal_detail=raw.get("detail"),
+            capture_window=capture_window,
         )
 
     def _replay_artifact(self, raw: dict[str, Any]) -> None:
@@ -1181,13 +1212,30 @@ class ProcessingJobStore:
                 "detail": detail,
                 "actor": actor,
             }
+            capture_window = current.capture_window
+            if target is ProcessingJobStatus.SUCCEEDED:
+                bundle = self._source_media.get(current.mission_id)
+                if bundle is None or not bundle.is_verified:
+                    # assert_succeeded_is_backed가 먼저 막아야 하며 이 분기는 방어적이다.
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.UNBACKED_SUCCESS,
+                        detail="검증된 source-media bundle이 없어 captureWindow를 고정할 수 없다",
+                    )
+                capture_window = bundle.capture_window
+                raw["captureWindow"] = capture_window_wire(capture_window)
             try:
                 self._journal.append(raw)
             except JournalSealedError:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
-            updated = replace(current, status=target, updated_at=now, terminal_detail=detail)
+            updated = replace(
+                current,
+                status=target,
+                updated_at=now,
+                terminal_detail=detail,
+                capture_window=capture_window,
+            )
             self._jobs[job_id] = updated
             # journal.append 가 성공한 뒤에만 센다 — 실패(STORE_UNAVAILABLE)까지
             # 세면 "일어난 전이 수"가 아니라 "시도 수"가 되어 이름이 거짓말한다.
@@ -1739,6 +1787,7 @@ class ProcessingJobView(CamelModel):
     # 시각을 받은 쪽이 자기 시계로 해야 한다(JobLease 와 같은 이유).
     lease_worker_id: str | None
     lease_expires_at: datetime | None
+    capture_window: CaptureWindowView
 
 
 class ProcessingJobListResponse(CamelModel):
@@ -1783,6 +1832,11 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
         artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
         lease_worker_id=record.lease.worker_id if record.lease is not None else None,
         lease_expires_at=record.lease.expires_at if record.lease is not None else None,
+        capture_window=CaptureWindowView(
+            status=record.capture_window.status,
+            captured_from=record.capture_window.captured_from,
+            captured_to=record.capture_window.captured_to,
+        ),
     )
 
 

@@ -780,6 +780,33 @@ bool ExtractCandidateEventId(const CandidateEventRecord& candidate, std::size_t 
     return true;
 }
 
+struct CandidateEvidenceContext {
+    std::string event_id;
+    std::string site_id;
+    std::string mission_id;
+};
+
+bool ExtractCandidateEvidenceContext(const CandidateEventRecord& candidate,
+                                     std::size_t maximum_payload_bytes,
+                                     CandidateEvidenceContext* context) {
+    if (context == nullptr || candidate.idempotency_key.empty() || candidate.device_sequence < 0 ||
+        !IsPathSafeIdentifier(candidate.edge_device_id) || !IsSha256Digest(candidate.payload_digest)) {
+        return false;
+    }
+    JsonValue payload;
+    if (!ParseJsonObject(candidate.payload_json, maximum_payload_bytes, &payload) ||
+        !IsNativeCanonicalPayload(candidate.payload_json, payload) ||
+        Sha256Digest(candidate.payload_json) != candidate.payload_digest ||
+        !RequiredString(payload, "eventId", &context->event_id) ||
+        !RequiredString(payload, "siteId", &context->site_id) ||
+        !RequiredString(payload, "missionId", &context->mission_id) ||
+        !IsPathSafeIdentifier(context->event_id) || !IsPathSafeIdentifier(context->site_id) ||
+        !IsPathSafeIdentifier(context->mission_id)) {
+        return false;
+    }
+    return true;
+}
+
 bool DecodeHexByte(char high, char low, std::uint8_t* output) {
     if (output == nullptr) {
         return false;
@@ -1196,6 +1223,16 @@ CoreRestSyncTransport::CoreRestSyncTransport(CoreRestSyncConfig config,
         config_.maximum_candidate_payload_bytes > 8U * 1024U * 1024U) {
         throw std::invalid_argument("invalid Core REST sync transport configuration");
     }
+    const bool attestation_key_id_present = !config_.evidence_attestation_key_id.empty();
+    const bool attestation_path_present = !config_.evidence_attestation_private_key_path.empty();
+    if (attestation_key_id_present != attestation_path_present) {
+        throw std::invalid_argument("incomplete evidence attestation configuration");
+    }
+    if (attestation_key_id_present) {
+        evidence_attestation_signer_ = std::make_unique<EvidenceAttestationSigner>(
+            config_.evidence_attestation_key_id,
+            config_.evidence_attestation_private_key_path);
+    }
     if (config_.core_base_url.back() == '/') {
         config_.core_base_url.pop_back();
     }
@@ -1229,17 +1266,30 @@ CoreSyncVerdict CoreRestSyncTransport::UploadCandidate(const CandidateEventRecor
 
 EvidenceRegistrationResult CoreRestSyncTransport::RegisterEvidence(
     const CandidateEventRecord& candidate, const EvidenceRecord& evidence) {
-    std::string event_id;
-    if (!ExtractCandidateEventId(candidate, config_.maximum_candidate_payload_bytes, &event_id) ||
+    CandidateEvidenceContext context;
+    if (!ExtractCandidateEvidenceContext(candidate, config_.maximum_candidate_payload_bytes,
+                                         &context) ||
         evidence.event_idempotency_key != candidate.idempotency_key ||
         !ArtifactVault::IsSafeArtifactId(evidence.artifact_id) || !IsSha256Digest(evidence.content_digest) ||
         !IsAllowedEvidenceContentType(evidence.content_type) || !IsValidHeaderValue(evidence.content_type)) {
         return {CoreSyncVerdict::kPermanentFailure, {}, {}};
     }
-    const std::string event_key = candidate.edge_device_id + "::" + event_id;
-    const std::string body = "{\"artifactId\":\"" + EscapeJson(evidence.artifact_id) +
-                             "\",\"contentType\":\"" + EscapeJson(evidence.content_type) +
-                             "\",\"contentDigest\":\"" + EscapeJson(evidence.content_digest) + "\"}";
+    const std::string event_key = candidate.edge_device_id + "::" + context.event_id;
+    std::string body = "{\"artifactId\":\"" + EscapeJson(evidence.artifact_id) +
+                       "\",\"contentType\":\"" + EscapeJson(evidence.content_type) +
+                       "\",\"contentDigest\":\"" + EscapeJson(evidence.content_digest) + "\"";
+    if (evidence_attestation_signer_ != nullptr) {
+        const EvidenceAttestationResult attestation = evidence_attestation_signer_->Sign(
+            candidate.edge_device_id, context.site_id, context.mission_id, event_key,
+            evidence.artifact_id, evidence.content_type, evidence.content_digest);
+        if (attestation.verdict != EvidenceAttestationVerdict::kSigned) {
+            return {CoreSyncVerdict::kPermanentFailure, {}, {}};
+        }
+        body += ",\"attestation\":{\"keyId\":\"" + EscapeJson(attestation.key_id) +
+                "\",\"algorithm\":\"Ed25519\",\"signature\":\"" +
+                EscapeJson(attestation.signature_base64url) + "\"}";
+    }
+    body += '}';
     HttpsRequest request;
     request.endpoint = HttpsEndpoint::kCore;
     request.method = "POST";

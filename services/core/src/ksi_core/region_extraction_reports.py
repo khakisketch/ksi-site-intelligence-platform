@@ -429,6 +429,7 @@ class SpatialRefreshDraftResponse(CamelModel):
     capture_altitude_m: float | None = None
     capture_front_overlap: float | None = None
     capture_side_overlap: float | None = None
+    capture_interval_m: float | None = None
     capture_gsd_m: float | None = None
     baseline_gsd_m: float | None = None
     capture_signal_to_noise: float | None = None
@@ -649,6 +650,7 @@ def build_region_extraction_router(store: RegionExtractionStore) -> APIRouter:
             capture_altitude_m=capture.altitude_m if capture is not None else None,
             capture_front_overlap=capture.front_overlap if capture is not None else None,
             capture_side_overlap=capture.side_overlap if capture is not None else None,
+            capture_interval_m=capture.capture_interval_m if capture is not None else None,
             capture_gsd_m=capture.gsd_m if capture is not None else None,
             baseline_gsd_m=capture.baseline_gsd_m if capture is not None else None,
             capture_signal_to_noise=capture.signal_to_noise if capture is not None else None,

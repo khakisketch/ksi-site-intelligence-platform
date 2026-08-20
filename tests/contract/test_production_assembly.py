@@ -46,6 +46,7 @@ _ALL_REQUIRED_ENV = (
     "KSI_CORE_S3_ENDPOINT",
     "KSI_CORE_S3_BUCKET",
     "KSI_CORE_PRINCIPAL_TOKENS_JSON",
+    "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE",
 )
 
 
@@ -102,6 +103,8 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
     data_dir.mkdir(parents=True, exist_ok=True)
     signing_dir = tmp_path / "signing"
     _write_signing_keys(signing_dir)
+    attestation_manifest = tmp_path / "device-attestation-keys.json"
+    attestation_manifest.write_text(json.dumps({"keys": []}), encoding="utf-8")
 
     tokens = [
         {
@@ -118,6 +121,7 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
         "KSI_CORE_S3_ENDPOINT": "http://127.0.0.1:9000",
         "KSI_CORE_S3_BUCKET": "prod-evidence",
         "KSI_CORE_PRINCIPAL_TOKENS_JSON": json.dumps(tokens),
+        "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE": str(attestation_manifest),
     }
 
 

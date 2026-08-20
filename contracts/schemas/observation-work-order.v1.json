@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/observation-work-order.v1.json",
+  "title": "ObservationWorkOrder v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workOrderId", "organizationId", "siteId", "purpose", "name", "workAreaIds", "status", "missionIds", "processingJobIds", "reportRefs", "version", "createdAt", "updatedAt", "createdBy"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "workOrderId": {"type": "string", "minLength": 1},
+    "organizationId": {"type": "string", "minLength": 1},
+    "siteId": {"type": "string", "minLength": 1},
+    "purpose": {"const": "PROGRESS_QUANTITY"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "workAreaIds": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "scheduleId": {"type": ["string", "null"]},
+    "cycleNumber": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["DRAFT", "AWAITING_APPROVAL", "APPROVED", "DISPATCHED", "START_REPORTED", "MEDIA_RECEIVING", "PROCESSING", "REVIEW_READY", "REOBSERVATION_PENDING", "COMPLETED", "BLOCKED", "CANCELLED"]},
+    "statusReason": {"type": ["string", "null"], "maxLength": 1000},
+    "missionIds": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string"}},
+    "processingJobIds": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string"}},
+    "reportRefs": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string"}},
+    "version": {"type": "integer", "minimum": 1},
+    "createdAt": {"type": "string", "minLength": 1},
+    "updatedAt": {"type": "string", "minLength": 1},
+    "createdBy": {"type": "string", "minLength": 1},
+    "approvedAt": {"type": ["string", "null"]},
+    "approvedBy": {"type": ["string", "null"]}
+  }
+}

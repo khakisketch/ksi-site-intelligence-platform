@@ -1904,3 +1904,11 @@ ksi-site-intelligence-platform/
 - `REQ-DATA-101`: 고객별 보존정책과 기본 보존기간을 지원한다.
 - `REQ-MODEL-101`: 장비지원은 Dataset부터 Production Supported까지 단계로 표시한다.
 - `REQ-PLAT-101`: 산업중립 공통플랫폼과 산업별 Solution Pack을 사용한다.
+- `REQ-WRK-101`: 반복 관측은 사용자에게 하나의 Observation Work Order로 보인다.
+- `REQ-ACQ-101`: 정상 경로에서 KMZ·사진 전달에 USB/SD가 필요하지 않다.
+- `REQ-ACQ-102`: Edge 재촬영은 서명된 Mission Contract와 Capture Policy 안에서만 가능하다.
+- `REQ-INT-101`: 변화·공정·물량은 capture-time·CRS·lineage·uncertainty와 함께 제공한다.
+- `REQ-COP-101`: Copilot 사실 응답은 검증 가능한 서버 객체 근거를 포함한다.
+- `REQ-COP-102`: Copilot은 재관측 초안만 만들며 승인·임무 발급 권한을 갖지 않는다.
+- `REQ-SEC-101`: 모든 사람·장비·워커 접근과 데이터 반출은 조직·현장 범위로 제한한다.
+- `REQ-UX-101`: 일반 작업은 5단계 이내·화면별 기본 행동 하나이며 파일 수동 경로는 복구 전용이다.

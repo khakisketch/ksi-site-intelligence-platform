@@ -183,6 +183,7 @@ _EVIDENCE_STATUS: dict[EvidenceVerdict, int] = {
     EvidenceVerdict.INVALID_ARTIFACT_ID: 422,
     EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
     EvidenceVerdict.INVALID_CONTENT_DIGEST: 422,
+    EvidenceVerdict.INVALID_ATTESTATION: 422,
     EvidenceVerdict.DUPLICATE_ARTIFACT: 409,
     EvidenceVerdict.CONTENT_DIGEST_MISMATCH: 409,
     EvidenceVerdict.ALREADY_TOMBSTONED: 410,
@@ -363,7 +364,7 @@ class _CriticalEvidenceVerification:
     """잠금 밖에서 검증한 CRITICAL 증거와 잠금 안 재검사용 상태."""
 
     bundle_digest: str
-    artifact_state: tuple[tuple[str, str, str, str | None], ...]
+    artifact_state: tuple[tuple[str, str, str, str | None, bool, str | None], ...]
     snapshot: dict[str, Any]
 
 
@@ -383,14 +384,14 @@ def _critical_artifact_ids(bundle: dict[str, Any]) -> tuple[str, ...]:
 
 def _referenced_artifact_state(
     record: EventRecord, artifact_ids: tuple[str, ...]
-) -> tuple[tuple[str, str, str, str | None], ...]:
+) -> tuple[tuple[str, str, str, str | None, bool, str | None], ...]:
     """참조 증거의 등록 상태를 결정적으로 직렬화한다(경합 재검사용)."""
     by_id = {artifact.artifact_id: artifact for artifact in record.evidence}
-    state: list[tuple[str, str, str, str | None]] = []
+    state: list[tuple[str, str, str, str | None, bool, str | None]] = []
     for artifact_id in artifact_ids:
         artifact = by_id.get(artifact_id)
         if artifact is None:
-            state.append((artifact_id, "", "", "MISSING"))
+            state.append((artifact_id, "", "", "MISSING", False, None))
             continue
         state.append(
             (
@@ -398,6 +399,8 @@ def _referenced_artifact_state(
                 artifact.object_key,
                 artifact.content_type,
                 iso_utc(artifact.tombstoned_at) if artifact.tombstoned_at is not None else None,
+                artifact.device_attested,
+                artifact.attestation_key_id,
             )
         )
     return tuple(state)
@@ -515,6 +518,14 @@ def _verify_critical_evidence(
                     "CRITICAL 확정 근거로 쓸 수 없다"
                 ),
             )
+        if referenced_artifact is not None and not referenced_artifact.device_attested:
+            return _CriticalEvidenceCheck(
+                EventVerdict.EVIDENCE_INCOMPLETE,
+                detail=(
+                    f"CRITICAL 증거 artifact {referenced_id!r}({field_name})는 artifact "
+                    "Ed25519 장비 증명이 검증되지 않았다"
+                ),
+            )
 
     risk_field_id = evidence.get("riskFieldArtifact")
     if not isinstance(risk_field_id, str) or not risk_field_id:
@@ -562,6 +573,33 @@ def _verify_critical_evidence(
         return _CriticalEvidenceCheck(
             EventVerdict.EVIDENCE_INCOMPLETE,
             detail="CRITICAL RiskField artifact가 유효한 RiskField v1 JSON이 아니다",
+        )
+
+    # CRITICAL confirmation never accepts the transition-only RiskField v1.0:
+    # without v1.1 lineage there is no dispatch policy/calibration digest to
+    # compare against the artifact attestation context.
+    if risk_field.schema_version != "1.1" or risk_field.lineage is None:
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail="CRITICAL RiskField는 dispatch 계보가 있는 v1.1이어야 한다",
+        )
+    event_lineage = record.bundle.get("lineage") or {}
+    if (
+        risk_artifact.attested_risk_policy_pack_digest
+        != risk_field.lineage.risk_policy_pack_digest
+        or risk_artifact.attested_calibration_profile_id
+        != risk_field.lineage.calibration_profile_id
+        or event_lineage.get("calibrationProfileId")
+        != risk_artifact.attested_calibration_profile_id
+        or event_lineage.get("policyVersion")
+        != risk_artifact.attested_risk_policy_pack_id
+    ):
+        return _CriticalEvidenceCheck(
+            EventVerdict.EVIDENCE_INCOMPLETE,
+            detail=(
+                "CRITICAL RiskField의 policy/calibration lineage가 attested active "
+                "dispatch 및 EventBundle 계보와 일치하지 않는다"
+            ),
         )
 
     if risk_field.risk_field_id != risk_field_id:
@@ -656,6 +694,11 @@ def _verify_critical_evidence(
         },
         "geometryFormat": risk_field.geometry.format,
         "verifiedAt": iso_utc(verified_at),
+        "deviceAttested": True,
+        "attestationKeyId": risk_artifact.attestation_key_id,
+        "dispatchId": risk_artifact.attested_dispatch_id,
+        "riskPolicyPackDigest": risk_artifact.attested_risk_policy_pack_digest,
+        "calibrationProfileId": risk_artifact.attested_calibration_profile_id,
     }
     return _CriticalEvidenceCheck(
         EventVerdict.TRANSITIONED,
@@ -979,6 +1022,13 @@ class EventStore:
                 # 이 필드가 없는 원장(이 수정 이전에 기록된 줄)은 미결속으로
                 # 취급한다 — 없는 사실을 있는 것으로 승격하지 않는다.
                 device_bound=bool(record.get("deviceBound", False)),
+                device_attested=bool(record.get("deviceAttested", False)),
+                attestation_key_id=record.get("attestationKeyId"),
+                attestation_signature=record.get("attestationSignature"),
+                attested_dispatch_id=record.get("attestedDispatchId"),
+                attested_risk_policy_pack_id=record.get("attestedRiskPolicyPackId"),
+                attested_risk_policy_pack_digest=record.get("attestedRiskPolicyPackDigest"),
+                attested_calibration_profile_id=record.get("attestedCalibrationProfileId"),
             )
             self._events[event_key] = replace(
                 existing,
@@ -1434,6 +1484,13 @@ class EventStore:
         now: datetime,
         content_digest: str | None = None,
         device_bound: bool = False,
+        device_attested: bool = False,
+        attestation_key_id: str | None = None,
+        attestation_signature: str | None = None,
+        attested_dispatch_id: str | None = None,
+        attested_risk_policy_pack_id: str | None = None,
+        attested_risk_policy_pack_digest: str | None = None,
+        attested_calibration_profile_id: str | None = None,
     ) -> EvidenceRegistration:
         """증거물 1건을 원장에 등록하고 그 객체 키를 돌려준다.
 
@@ -1479,7 +1536,29 @@ class EventStore:
                 "contentType": content_type,
                 "registeredBy": registered_by,
                 "deviceBound": device_bound,
+                "deviceAttested": device_attested,
             }
+            if device_attested:
+                attestation_values = (
+                    attestation_key_id,
+                    attestation_signature,
+                    attested_dispatch_id,
+                    attested_risk_policy_pack_id,
+                    attested_risk_policy_pack_digest,
+                    attested_calibration_profile_id,
+                )
+                if any(value is None or not str(value) for value in attestation_values):
+                    return EvidenceRegistration(EvidenceVerdict.INVALID_ATTESTATION)
+                record.update(
+                    {
+                        "attestationKeyId": attestation_key_id,
+                        "attestationSignature": attestation_signature,
+                        "attestedDispatchId": attested_dispatch_id,
+                        "attestedRiskPolicyPackId": attested_risk_policy_pack_id,
+                        "attestedRiskPolicyPackDigest": attested_risk_policy_pack_digest,
+                        "attestedCalibrationProfileId": attested_calibration_profile_id,
+                    }
+                )
             if content_digest is not None:
                 record["contentDigest"] = content_digest
             self._append_and_apply(record)
@@ -1680,6 +1759,8 @@ class EvidenceSummary(CamelModel):
     #: 장비 신원이 대조되는 경로로 등록됐는가 — 화면이 "사람이 올린 값"과
     #: "장비가 올린 값"을 구분해 보여줄 수 있게 노출한다.
     device_bound: bool
+    device_attested: bool
+    attestation_key_id: str | None
     tombstoned_at: datetime | None
     tombstone_reason: str | None
 
@@ -1711,6 +1792,8 @@ class EvidenceViewResponse(CamelModel):
     registered_at: datetime
     registered_by: str
     device_bound: bool
+    device_attested: bool
+    attestation_key_id: str | None
 
 
 def _to_summary(record: EventRecord) -> EventSummaryResponse:
@@ -1757,6 +1840,8 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
                 registered_at=a.registered_at,
                 registered_by=a.registered_by,
                 device_bound=a.device_bound,
+                device_attested=a.device_attested,
+                attestation_key_id=a.attestation_key_id,
                 tombstoned_at=a.tombstoned_at,
                 tombstone_reason=a.tombstone_reason,
             )
@@ -1947,6 +2032,8 @@ def _mount_evidence_routes(router: APIRouter, store: EventStore, storage: Eviden
             registered_at=artifact.registered_at,
             registered_by=artifact.registered_by,
             device_bound=artifact.device_bound,
+            device_attested=artifact.device_attested,
+            attestation_key_id=artifact.attestation_key_id,
         )
 
 

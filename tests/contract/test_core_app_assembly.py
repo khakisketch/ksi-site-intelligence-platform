@@ -258,9 +258,7 @@ def test_defect_candidate_store_alone_without_auth_registry_raises(tmp_path: Pat
 # ── 규칙 6: 변화 탐지 저장소는 비교 대상을 대조할 작업 원장 없이 조립되지 않는다 ──
 
 
-def _change_detection_store(
-    tmp_path: Path, mission_store: MissionStore
-) -> ChangeDetectionStore:
+def _change_detection_store(tmp_path: Path, mission_store: MissionStore) -> ChangeDetectionStore:
     media = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
     )
@@ -326,7 +324,11 @@ def test_assembly_requirements_table_keys_match_create_app_store_parameters() ->
     signature_params = set(inspect.signature(create_app).parameters)
     # mission_signing_key·evidence_storage 는 "*_store" 로 끝나지 않지만
     # protected_surface 에 참여하는 보호 표면이다(app.py 결합 규칙 표 주석 참조).
-    non_store_protected_params = {"mission_signing_key", "evidence_storage"}
+    non_store_protected_params = {
+        "mission_signing_key",
+        "evidence_storage",
+        "copilot_service",
+    }
     expected = {name for name in signature_params if name.endswith("_store")} | (
         signature_params & non_store_protected_params
     )

@@ -125,6 +125,87 @@ class MissionStoreRecoveryError(RuntimeError):
     """
 
 
+class MissionSequenceRecoveryError(RuntimeError):
+    """v1.3 site sequence journal 오염 — 순서를 추정하지 않고 기동을 거부한다."""
+
+
+class MissionIssuanceSequenceStore:
+    """``(issuerId, siteId)``별 v1.3 양의 단조 sequence를 먼저 내구화한다.
+
+    예약 append가 성공한 뒤 서명이나 MissionRecord 기록이 실패하면 gap이 남는다.
+    gap은 허용하지만 이미 예약한 숫자는 절대 재사용하지 않는다.
+    """
+
+    _KIND = "MISSION_SITE_SEQUENCE_RESERVED"
+
+    def __init__(self, journal: DurableJournal) -> None:
+        self._journal = journal
+        self._lock = threading.Lock()
+        self._high_water: dict[tuple[str, str], int] = {}
+        try:
+            self._replay(journal)
+        except BaseException:
+            journal.close()
+            raise
+
+    @property
+    def sealed_reason(self) -> str | None:
+        return self._journal.sealed_reason
+
+    def _replay(self, journal: DurableJournal) -> None:
+        for raw in journal.replay():
+            try:
+                if raw.get("kind") != self._KIND:
+                    raise ValueError(f"알 수 없는 sequence record kind: {raw.get('kind')!r}")
+                issuer_id = raw["issuerId"]
+                site_id = raw["siteId"]
+                sequence = raw["siteSequence"]
+                reserved_at = datetime.fromisoformat(raw["reservedAt"])
+                if not isinstance(issuer_id, str) or not is_path_safe_identifier(issuer_id):
+                    raise ValueError("issuerId가 경로-안전 식별자가 아니다")
+                if not isinstance(site_id, str) or not is_path_safe_identifier(site_id):
+                    raise ValueError("siteId가 경로-안전 식별자가 아니다")
+                if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence <= 0:
+                    raise ValueError("siteSequence가 양의 정수가 아니다")
+                if reserved_at.tzinfo is None:
+                    raise ValueError("reservedAt이 tz-aware가 아니다")
+                key = (issuer_id, site_id)
+                previous = self._high_water.get(key, 0)
+                if sequence <= previous:
+                    raise ValueError(
+                        f"sequence가 단조 증가하지 않는다: previous={previous}, got={sequence}"
+                    )
+                self._high_water[key] = sequence
+            except (KeyError, TypeError, ValueError) as exc:
+                raise MissionSequenceRecoveryError(
+                    f"mission sequence journal 재생 실패 — 오염된 레코드: {exc}"
+                ) from exc
+
+    def reserve(self, *, issuer_id: str, site_id: str, reserved_at: datetime) -> int:
+        if not is_path_safe_identifier(issuer_id) or not is_path_safe_identifier(site_id):
+            raise ValueError("issuerId/siteId는 경로-안전 식별자여야 한다")
+        if reserved_at.tzinfo is None:
+            raise ValueError("reserved_at은 tz-aware여야 한다")
+        key = (issuer_id, site_id)
+        with self._lock:
+            sequence = self._high_water.get(key, 0) + 1
+            self._journal.append(
+                {
+                    "kind": self._KIND,
+                    "issuerId": issuer_id,
+                    "siteId": site_id,
+                    "siteSequence": sequence,
+                    "reservedAt": reserved_at.isoformat(),
+                }
+            )
+            self._high_water[key] = sequence
+            return sequence
+
+    def high_water(self, *, issuer_id: str, site_id: str) -> int:
+        with self._lock:
+            return self._high_water.get((issuer_id, site_id), 0)
+
+
 def validate_mission_identifiers(*, mission_id: str, site_id: str) -> MissionRecordVerdict | None:
     """``mission_id``/``site_id`` 에 URL 경로 안전 문자만 허용한다(재검토 P2 item②).
 
@@ -617,6 +698,8 @@ __all__ = [
     "MissionRecord",
     "MissionRecordResponse",
     "MissionRecordVerdict",
+    "MissionIssuanceSequenceStore",
+    "MissionSequenceRecoveryError",
     "MissionStore",
     "MissionStoreRecoveryError",
     "SiteLookupResult",

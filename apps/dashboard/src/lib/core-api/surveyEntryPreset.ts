@@ -56,6 +56,7 @@ export function resolveReobservationCapturePreset(
   altitudeM: number | null;
   frontOverlap: number | null;
   sideOverlap: number | null;
+  captureIntervalM: number | null;
   grade: ReobservationGrade | null;
   rationale: string[];
   unavailableReason: string | null;
@@ -65,6 +66,7 @@ export function resolveReobservationCapturePreset(
     altitudeM: draft.captureAltitudeM,
     frontOverlap: draft.captureFrontOverlap,
     sideOverlap: draft.captureSideOverlap,
+    captureIntervalM: draft.captureIntervalM,
     grade: draft.captureGrade,
     rationale: draft.captureRationale,
     unavailableReason: draft.captureUnavailableReason,

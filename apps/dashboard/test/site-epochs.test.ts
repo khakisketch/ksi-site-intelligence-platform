@@ -28,6 +28,9 @@ function job(
     detail: null,
     artifacts: [],
     ...overrides,
+    captureWindow: overrides.captureWindow ?? {
+      status: "INCOMPLETE", capturedFrom: null, capturedTo: null,
+    },
   };
 }
 

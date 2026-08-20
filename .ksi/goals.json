@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-18T19:49:48+09:00",
+  "updated_at": "2026-08-20T18:39:02+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2166,15 +2166,15 @@
         "계획 커버리지 사전 게이트를 우회하지 않는다",
         "contract test 로 밀도 조정 규칙이 고정된다"
       ],
-      "status": "in_progress",
-      "attempt": 2,
-      "evidence": null,
+      "status": "completed",
+      "attempt": 3,
+      "evidence": "2026-08-20 소프트웨어 완료. `ReobservationCapturePlan.capture_interval_m`을 선택된 고도·전방/측면 중복도·카메라 산식(`compute_grid_spacing`)에서 도출하고 `SpatialRefreshDraftResponse.captureIntervalM`/OpenAPI/Dashboard preset·SurveyWizard 표시까지 보존했다. 변화 고도·중복도·간격의 상관 규칙은 test_reobservation_capture.py, region 응답은 test_region_extraction_end_to_end.py, Core→KMZ profile은 test_mission_plans.py로 고정. 신규 FIELD-0a 결정성 2건과 공식 샘플 대조도 포함해 전체 `3591 passed, 23 skipped, 3 xfailed`; Ruff, Mypy 341 source files, Dashboard 419 tests/lint/build, arm64 SQLite WAL native CTest 6/6, API/hygiene/reference gates pass. 이는 Software Complete이며 FIELD-2 실제 재관측 비행 증명은 아니다.",
       "verdict": {
-        "verdict": "refuted",
-        "note": "기준1 미충족 — '촬영 고도/중복도/촬영간격이 조정된 재관측 계획이 나온다'. 고도·중복도는 확실히 조정되지만(reobservation.py:212-244) **촬영간격이 산출물에 없다**: ReobservationCapturePlan(:136-150)에 필드 자체가 없고 SpatialRefreshDraftResponse 에도 없다. 발급 시점에 mission_plans.py 가 고도·중복도에서 간격을 암묵 재계산할 뿐이고(전 임무타입 공통 기존 기능, 재관측 전용 아님) 운영자에게 '간격이 조정됐다'를 보여주는 표면이 없다. 부기: 중복도 자동 채움이 3단계 프리셋 최근접값으로 근사된다(SurveyWizard.tsx:230-249). 남은 작업: capture interval 을 계획 산출물·응답·화면에 싣거나, 완료기준에서 그 항을 빼는 근거를 남긴다.",
-        "at": "2026-08-17T18:15:10+09:00",
-        "reviewer": "독립 reviewer 서브에이전트(read-only, 반증 지시)",
-        "evidence_ref": "2026-08-17 세션 reviewer 반증 보고 + 메인 직접 확인(reobservation.py:136-150 필드 목록, capture_interval grep 0건)"
+        "verdict": "pass",
+        "note": "이전 반증의 유효 결함(captureIntervalM 산출물·응답·화면 부재)을 모두 배선하고 contract/end-to-end/full-suite로 재검증했다. 완료는 소프트웨어 기준이며, FIELD-2 실제 비행은 이 목표의 증거가 아니다.",
+        "at": "2026-08-20T01:08:00+09:00",
+        "reviewer": "Main Codex direct verification",
+        "evidence_ref": "2026-08-20 full Python 3591 passed; Dashboard 419 tests; native SQLite WAL 6/6"
       },
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
@@ -2183,7 +2183,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:29+09:00",
-      "updated_at": "2026-08-17T18:15:10+09:00"
+      "updated_at": "2026-08-20T01:08:00+09:00"
     },
     {
       "id": "field-0-ground-integration",
@@ -3377,14 +3377,14 @@
       "title": "Mission Contract v1.2 스키마에 발급 순서 필드(issuedAt/revision/supersedes)가 없다 — rollback 방어가 validity.notBefore 단조성 휴리스틱에 의존한다",
       "lens": "time-axis",
       "severity": "medium",
-      "status": "regressed",
+      "status": "resolved",
       "note": "2026-08-14. 서명이 유효한 이전 발급본으로 안전 정책을 되돌리는 rollback 이 실측 재현되어(예비량 40%→10%, 고도 60m→120m), consumer.py 에 validity.notBefore 단조성 기반 SUPERSEDED_CONTRACT 거부를 넣어 막았다. 다만 이는 스키마 변경 없이 쓸 수 있는 유일한 순서 근거를 쓴 것이라 한계가 있다: notBefore 가 동일한 두 발급본은 구분하지 못한다. 근본 해법은 계약 스키마에 발급 순서 필드를 넣고 소비자가 그것으로 판정하는 것이며, 이는 contracts/schemas/mission-contract.v1.2.json 변경이라 제품 결정이 필요하다.",
       "accept_reason": null,
-      "resolve_evidence": "consumer.py _superseded_detail: digest 판정을 순서 비교 앞으로 이동 + notBefore 비교 >= → > 엄격화. edge_activation.py _policy_rollback_detail: 두 축 < → <= 대칭 마감. 회귀 테스트 3건 추가(test_mission_contract_consumer.py 2건, test_edge_dispatch_contracts.py 1건) + 돌연변이 검증(부등호 되돌리면 정확히 실패) 확인. 계약 스키마 v1.3 신설 없이 닫음. 59 passed.",
+      "resolve_evidence": "Mission Contract v1.3 issuance={issuerId,siteSequence,issuedAt}; Core MissionIssuanceSequenceStore durable positive per-(issuerId,siteId) allocation before signing; MissionContractConsumer durable v1.3 high-water rejects lower/equal-different sequence and v1.2 downgrade while preserving legacy v1.2 before high-water. Tests: test_mission_contract_consumer.py, test_mission_issuance.py, test_mission_records.py, test_mission_contract_roundtrip.py, test_edge_dispatch_contracts.py. Final gates 3635 passed, 23 skipped, 3 xfailed; independent acceptance review Approved 2026-08-20. Production writer remains default v1.2 pending HIL.",
       "reopen_reason": "해소 선언을 철회한다(2026-08-18 적대적 검증). 엄격화는 했으나 리스크가 요구한 것을 닫지 못했다: (1) Core 는 같은 missionId·다른 내용 계약을 애초에 만들지 않는다(record_issuance 가 MISSION_ID_CONFLICT 409) — 실제 정책 조임은 새 missionId 로 나가고 그 경로는 mission_id 불일치 분기에서 가드가 실행조차 안 된다. 즉 정상 파이프라인에 걸리는 트래픽이 0이고 방어 효과도 그만큼이다. (2) fail-open 세 곳이 그대로다: 활성 계약 파일 부재·TTL 만료(consumer.py), 활성 스냅샷 부재(edge_activation.py). (3) 리스크 원문이 요구한 '발급 순서 필드'는 넣지 않았다. 남긴 것은 '순서 근거 없는 교체를 거부한다'는 부분 완화이며, 근본 해법은 여전히 계약 스키마 결정이다.",
-      "previous_status": "resolved",
+      "previous_status": "regressed",
       "created_at": "2026-08-14T02:53:39+09:00",
-      "updated_at": "2026-08-18T06:37:51+09:00"
+      "updated_at": "2026-08-20T17:48:23+09:00"
     },
     {
       "id": "evidence-artifact-content-not-bound-to-registration",
@@ -3615,14 +3615,14 @@
       "title": "우리 KMZ 를 DJI 공식 샘플과 한 번도 대조한 적 없음 — 2026-08-15 첫 대조에서 차이 다수 발견",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "핀된 PSDK 에 DJI 공식 샘플 KMZ(waypoint_v3/waypoint_file/waypoint_v3_test_file.kmz)가 들어 있는데 지금까지 아무도 풀어보지 않았다. 첫 대조 결과 차이: ①네임스페이스 우리 wpmz/1.0.2 vs 샘플 1.0.3 ②payloadInfo 에 payloadSubEnumValue 없음 ③template.kml Placemark 에 per-point height/ellipsoidHeight 없음(샘플은 useGlobalHeight=1 이어도 항상 씀) ④waylineCoordinateSysParam 에 positioningType 없음 ⑤Document 에 createTime/updateTime 없음 ⑥waylines.wpml Folder 에 distance/duration 없음 ⑦heading 하위 waypointHeadingAngle/waypointPoiPoint/waypointHeadingPoiIndex/waypointHeadingAngleEnable 없음 ⑧useStraightLine 없음. 역방향: 우리만 있는 waypointHeadingPathMode 를 코드는 '무조건 필수(공식 표 raw 확인)'라 적었으나 DJI 공식 샘플에는 없다 — 서로 어긋난다. 이 항목들이 실제 거부 사유인지 무해한 선택 요소인지는 미확정이며, 결함 확정이 아니라 FIELD-0a 대조 목록이다. 지금까지는 이런 목록조차 없었다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "브랜치 fix/kmz-official-sample-fidelity. 8개 항목 중 6개(네임스페이스·waypointHeadingPathMode 제외)를 생성기에 채웠고 Folder·Placemark 하위 요소 순서도 공식 샘플에 맞췄다: createTime/updateTime(계약 validity.notBefore 에서 — 바이트 재현성 유지) · payloadSubEnumValue · positioningType · caliFlightEnable · per-point height/ellipsoidHeight · per-point useStraightLine · heading 하위 각도·POI 필드 · Folder payloadParam · waylines distance/duration. 대조 자체를 게이트로 고정: tests/contract/test_kmz_official_sample_fidelity.py 10건(샘플에만 있는 요소·우리에만 있는 요소 각각 근거 없으면 실패 · 공유 요소 상대순서 일치 · 근거 공백 금지 · 핀된 샘플 실존). 변형 검증: positioningType 을 빼면 요소 게이트 실패, caliFlightEnable 을 뒤로 옮기면 순서 게이트 실패. 남은 차이 3개는 의도적이며 문서에 근거를 적었다(네임스페이스 1.0.2 vs 1.0.3 · waypointHeadingPathMode 공식표 필수 vs 샘플 없음 · payloadLensIndex M4D 다중렌즈). FIELD-0a 킷을 A/B/C 3종으로 재구성해 거부 원인(기종값·형식버전·구조)을 한 세션에서 가른다 — 재실행 바이트 동일 확인. 전량 3530 passed · ruff · mypy 340파일.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-15T23:57:52+09:00",
-      "updated_at": "2026-08-15T23:57:52+09:00"
+      "updated_at": "2026-08-18T20:13:08+09:00"
     },
     {
       "id": "mapping-camera-constants-are-not-m4d",
@@ -3777,6 +3777,20 @@
       "previous_status": "open",
       "created_at": "2026-08-18T19:49:48+09:00",
       "updated_at": "2026-08-18T19:49:48+09:00"
+    },
+    {
+      "id": "kmz-real-device-acceptance-still-unverified",
+      "title": "우리 KMZ 를 실기가 받는지는 여전히 0회 확인 — 공식 샘플 정합은 수용의 증거가 아니다",
+      "lens": "other",
+      "severity": "medium",
+      "status": "accepted",
+      "note": "2026-08-18. kmz-format-never-diffed-against-dji-sample 을 닫으면서 남은 잔여. 공식 샘플(핀된 PSDK)과 요소·순서를 맞췄지만 그 샘플은 **다른 기종·다른 형식 버전(1.0.3)**에서 나온 파일이라 M4D Pilot 2 의 기준이 아니다. 의도적으로 남긴 차이도 셋 있다(네임스페이스 1.0.2 · waypointHeadingPathMode · payloadLensIndex). 확인 경로는 코드가 아니라 FIELD-0a 세션 하나뿐이고(docs/hil/FIELD_0A_CHECKLIST.md 절차 A/B), 그 세션이 A/B/C 3종으로 거부 원인까지 가르도록 킷을 구성해 뒀다. 목표 field-0a-kmz-acceptance 가 이 확인을 진다.",
+      "accept_reason": "2026-08-20 운영자 결정: Pilot 2가 KSI FIELD-0a A KMZ를 실제 import·map rendering한 증거와 원본 M4D WideCamera JPEG metadata(12.29mm, 5280x3956, explicit DJI XMP UTC)를 확보했다. Pilot-exported mapping KMZ의 태그 단위 대조는 formal FIELD-0a 완료 전제로 남기되, 현재 FIELD-0b HIL 준비를 막지 않는 잔여 수용 리스크로 둔다. 이 수용은 route execution, flight capability, camera calibration 완결, 또는 formal field acceptance를 주장하지 않으며, Pilot export를 얻으면 즉시 재검토한다.",
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-18T20:13:08+09:00",
+      "updated_at": "2026-08-20T18:39:02+09:00"
     }
   ]
 }

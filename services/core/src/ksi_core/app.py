@@ -27,7 +27,7 @@ Core는 지리공간·워크플로 control plane이다 — 비행 중 실시간 
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI
 
@@ -40,11 +40,13 @@ if TYPE_CHECKING:
     from ksi_core.auth import AuthRegistry
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.comparison_requests import ComparisonRequestStore
+    from ksi_core.copilot import CopilotService
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.design_conformance_reports import DesignConformanceStore
     from ksi_core.design_conformance_requests import DesignConformanceRequestStore
     from ksi_core.design_surfaces import DesignSurfaceStore
+    from ksi_core.device_attestation import DeviceAttestationRegistry
     from ksi_core.edge_dispatch import EdgeDispatchStore
     from ksi_core.edge_sync import EdgeSyncStore
     from ksi_core.equipment_states import EquipmentStateStore
@@ -52,7 +54,8 @@ if TYPE_CHECKING:
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.mission_records import MissionStore
+    from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
+    from ksi_core.observation_work_orders import ObservationWorkOrderStore
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -151,6 +154,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " 현장의 구역은 어느 비교에도 쓰이지 못한 채 원장에만 쌓인다"
         " (design_surface_store 와 동일 원칙)",
     ),
+    (
+        "observation_work_order_store",
+        (("site_store",),),
+        "observation_work_order_store 는 site_store 와 함께 주어져야 한다(INV-060)",
+    ),
+    ("copilot_service", (), ""),
     (
         "design_surface_store",
         (("site_store",),),
@@ -286,6 +295,7 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
     ("event_store", (), ""),
     ("site_store", (), ""),
     ("mission_store", (), ""),
+    ("mission_sequence_store", (), ""),
     ("equipment_support_store", (), ""),
 )
 
@@ -301,6 +311,9 @@ def create_app(
     mission_store: MissionStore | None = None,
     mission_signing_key: Ed25519PrivateKey | None = None,
     mission_signing_key_id: str | None = None,
+    mission_contract_writer_version: Literal["1.2", "1.3"] = "1.2",
+    mission_contract_issuer_id: str | None = None,
+    mission_sequence_store: MissionIssuanceSequenceStore | None = None,
     evidence_storage: EvidenceStorage | None = None,
     coverage_report_store: CoverageReportStore | None = None,
     mission_execution_store: MissionExecutionStore | None = None,
@@ -316,8 +329,11 @@ def create_app(
     region_extraction_request_store: RegionExtractionRequestStore | None = None,
     region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
+    observation_work_order_store: ObservationWorkOrderStore | None = None,
+    copilot_service: CopilotService | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
@@ -485,6 +501,17 @@ def create_app(
             "mission_signing_key와 mission_signing_key_id는 함께 주어져야 한다"
             " — 절반만 있는 서명 설정으로 조립하지 않는다"
         )
+    if mission_contract_writer_version not in ("1.2", "1.3"):
+        raise ValueError("mission_contract_writer_version은 '1.2' 또는 '1.3'이어야 한다")
+    if mission_contract_writer_version == "1.3" and (
+        mission_signing_key is None
+        or mission_contract_issuer_id is None
+        or mission_sequence_store is None
+    ):
+        raise ValueError(
+            "Mission Contract v1.3 writer는 서명키·Core issuerId·durable sequence store가 "
+            "모두 필요하다"
+        )
 
     # 표(_ASSEMBLY_REQUIREMENTS)에 있는 각 인자의 실제 값 — 결합 검증 루프와
     # protected_surface 판정이 여기서 이름으로 값을 찾는다.
@@ -504,6 +531,8 @@ def create_app(
         "comparison_request_store": comparison_request_store,
         "design_conformance_request_store": design_conformance_request_store,
         "work_area_store": work_area_store,
+        "observation_work_order_store": observation_work_order_store,
+        "copilot_service": copilot_service,
         "design_conformance_report_store": design_conformance_report_store,
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": region_extraction_report_store,
@@ -511,6 +540,7 @@ def create_app(
         "event_store": event_store,
         "site_store": site_store,
         "mission_store": mission_store,
+        "mission_sequence_store": mission_sequence_store,
         "equipment_support_store": equipment_support_store,
     }
 
@@ -527,7 +557,8 @@ def create_app(
         raise ValueError(
             "보호 표면(edge_sync_store·edge_dispatch_store·event_store·site_store·"
             "mission_store·서명키·"
-            "커버리지 보고)을 하나라도 주입하려면 auth_registry 가 필수다(ADR-KSI-008 §3)"
+            "커버리지 보고·Copilot)을 하나라도 주입하려면 auth_registry 가 필수다"
+            "(ADR-KSI-008 §3)"
             " — 인증 없는"
             " 보호 표면은 존재할 수 없다"
         )
@@ -542,7 +573,17 @@ def create_app(
     if site_store is not None:
         from ksi_core.sites import mount_sites
 
-        mount_sites(app, site_store)
+        mount_sites(app, site_store, processing_job_store)
+
+    if observation_work_order_store is not None:
+        from ksi_core.observation_work_orders import mount_observation_work_orders
+
+        mount_observation_work_orders(app, observation_work_order_store)
+
+    if copilot_service is not None:
+        from ksi_core.copilot import mount_copilot
+
+        mount_copilot(app, copilot_service)
 
     # 현장 상태 자동 전진(ADR-KSI-019 G1) — 재구성 신호·임무 배포·노후 스윕 세
     # 진입점이 같은 인스턴스를 공유한다. 두 저장소 중 하나라도 없으면 전진시킬
@@ -576,6 +617,7 @@ def create_app(
             # 장비의 임무 pull·activation 이 실행 상태를 옮긴다(ADR-KSI-019 G2).
             mission_execution_store=mission_execution_store,
             site_lifecycle=site_lifecycle,
+            device_attestation_registry=device_attestation_registry,
         )
 
     if event_store is not None:
@@ -623,6 +665,9 @@ def create_app(
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
             site_lookup=_site_lookup,
+            writer_version=mission_contract_writer_version,
+            issuer_id=mission_contract_issuer_id,
+            sequence_store=mission_sequence_store,
         )
         mount_mission_plans(
             app,
@@ -634,6 +679,9 @@ def create_app(
             # 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
             # kmz-regeneration-determinism-timebomb). 없으면 재생성에만 의존한다.
             kmz_storage=evidence_storage,
+            writer_version=mission_contract_writer_version,
+            issuer_id=mission_contract_issuer_id,
+            sequence_store=mission_sequence_store,
         )
 
     if mission_store is not None:
@@ -753,9 +801,7 @@ def create_app(
         assert evidence_storage is not None  # noqa: S101 -- 위 결합 검증의 사후조건
         from ksi_core.design_conformance_reports import mount_design_conformance_reports
 
-        mount_design_conformance_reports(
-            app, design_conformance_report_store, evidence_storage
-        )
+        mount_design_conformance_reports(app, design_conformance_report_store, evidence_storage)
         # 진척(M4-C)은 같은 원장을 읽는 파생 조회다 — 별도 store 를 만들지 않고
         # 리포트 저장소 위에 라우터만 얹는다. 작업구역 저장소는 구역 이름을 붙이는
         # 데만 쓰이므로 없어도 표는 나온다(zoneId 만 보인다).

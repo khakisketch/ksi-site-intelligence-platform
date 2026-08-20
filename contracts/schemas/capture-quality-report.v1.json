@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/capture-quality-report.v1.json",
+  "title": "CaptureQualityReport v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "reportId", "organizationId", "siteId", "workOrderId", "missionId", "deviceId", "capturePolicyId", "measurements", "startedAt", "completedAt"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "reportId": {"type": "string", "minLength": 1},
+    "organizationId": {"type": "string", "minLength": 1},
+    "siteId": {"type": "string", "minLength": 1},
+    "workOrderId": {"type": "string", "minLength": 1},
+    "missionId": {"type": "string", "minLength": 1},
+    "deviceId": {"type": "string", "minLength": 1},
+    "capturePolicyId": {"type": "string", "minLength": 1},
+    "measurements": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["artifactId", "capturedAt", "blurScore", "exposureOk", "gsdCmPerPx", "overlapRatio", "occlusionRatio", "status", "gapReasons", "attempt"],
+        "properties": {
+          "artifactId": {"type": "string", "minLength": 1}, "capturedAt": {"type": "string", "minLength": 1},
+          "blurScore": {"type": "number", "minimum": 0}, "exposureOk": {"type": "boolean"},
+          "gsdCmPerPx": {"type": "number", "exclusiveMinimum": 0}, "overlapRatio": {"type": "number", "minimum": 0, "maximum": 1},
+          "occlusionRatio": {"type": "number", "minimum": 0, "maximum": 1},
+          "status": {"enum": ["ACCEPTED", "GAP", "RECOVERED", "UNRECOVERABLE"]},
+          "gapReasons": {"type": "array", "maxItems": 16, "items": {"type": "string"}},
+          "action": {"type": ["string", "null"], "enum": ["RECAPTURE_SAME_POSE", "GIMBAL_ADJUST", "SELECT_PREAUTHORIZED_VIEWPOINT", null]},
+          "attempt": {"type": "integer", "minimum": 0, "maximum": 10}, "viewpointId": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "startedAt": {"type": "string", "minLength": 1}, "completedAt": {"type": "string", "minLength": 1}
+  }
+}

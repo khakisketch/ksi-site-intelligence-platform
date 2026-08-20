@@ -77,13 +77,13 @@ export function spatialModelSummary(input: {
     case "FRESH":
       return {
         label: "최신",
-        detail: `마지막 재구성이 ${age}일 전입니다(기준 ${input.maxAgeDays}일 이내).`,
+        detail: `마지막 촬영이 ${age}일 전입니다(기준 ${input.maxAgeDays}일 이내).`,
         tone: "positive",
       };
     case "STALE":
       return {
         label: "오래됨",
-        detail: `마지막 재구성이 ${age}일 전으로 기준 ${input.maxAgeDays}일을 넘겼습니다.`,
+        detail: `마지막 촬영이 ${age}일 전으로 기준 ${input.maxAgeDays}일을 넘겼습니다.`,
         tone: "warning",
       };
     case "AGE_POLICY_UNDECLARED":
@@ -91,6 +91,18 @@ export function spatialModelSummary(input: {
         label: "판정 안 함",
         detail: "며칠이면 오래된 것으로 볼지 기준이 정해지지 않아 최신도를 판정하지 않았습니다.",
         tone: "caution",
+      };
+    case "CAPTURE_TIME_UNAVAILABLE":
+      return {
+        label: "촬영시각 확인 불가",
+        detail: "사진의 명시적 촬영시각이 빠졌거나 서로 충돌해 모델 최신도를 판정하지 않았습니다.",
+        tone: "warning",
+      };
+    case "SYSTEM_UNAVAILABLE":
+      return {
+        label: "모델 상태 확인 불가",
+        detail: "이 Core 조립에는 사진 처리 원장이 없어 공간모델 상태를 확인할 수 없습니다.",
+        tone: "neutral",
       };
   }
 }

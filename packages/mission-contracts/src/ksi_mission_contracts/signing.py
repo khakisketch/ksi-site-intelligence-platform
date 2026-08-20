@@ -332,7 +332,7 @@ def load_verified_contract(
     *,
     now: datetime | None = None,
 ) -> LoadedContract:
-    """구조(Pydantic v1.2) + 서명·TTL(verify_contract)을 **한 번에** 검증하는 유일한
+    """구조(Pydantic v1.2/v1.3) + 서명·TTL을 **한 번에** 검증하는 유일한
     공개 진입점 (감사 #12, ADR-KSI-002 §7).
 
     verify_contract 는 서명·TTL 만 본다 — 소비 측이 그것만 호출하면(자연스러운
@@ -341,15 +341,21 @@ def load_verified_contract(
     mission-contract 왕복 테스트가 상시 고정)과 서명 검증을 묶어, fail-closed 가
     호출자의 기억이 아니라 진입점 자체에 있게 한다. 예외를 던지지 않는다.
     """
-    from ksi_mission_contracts.models import MissionContractV1_2
+    from ksi_mission_contracts.models import parse_mission_contract
 
     try:
-        model = MissionContractV1_2.model_validate(dict(data))
+        version = data.get("schemaVersion")
+        if version not in ("1.2", "1.3"):
+            return LoadedContract(
+                SignatureVerdict.SCHEMA_VERSION_MISMATCH,
+                detail=f"실행 가능한 Mission Contract 버전이 아니다: {version!r}",
+            )
+        model = parse_mission_contract(dict(data))
     except Exception as exc:  # noqa: BLE001 — 구조 위반은 typed 로 강등(fail-closed)
         return LoadedContract(
             SignatureVerdict.MALFORMED_CONTRACT, detail=f"구조 검증 실패: {exc}"
         )
-    verification = verify_contract(data, registry, "1.2", now=now)
+    verification = verify_contract(data, registry, version, now=now)
     if not verification.is_valid:
         return LoadedContract(verification.verdict, detail=verification.detail)
     return LoadedContract(SignatureVerdict.VALID, model=model)

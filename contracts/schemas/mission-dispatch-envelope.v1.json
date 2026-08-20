@@ -23,7 +23,12 @@
     "dispatchId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
     "edgeDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
     "missionId": { "type": "string", "minLength": 1 },
-    "missionContract": { "$ref": "mission-contract.v1.2.json" },
+    "missionContract": {
+      "oneOf": [
+        { "$ref": "mission-contract.v1.2.json" },
+        { "$ref": "mission-contract.v1.3.json" }
+      ]
+    },
     "missionContractDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "riskPolicyPack": { "$ref": "risk-policy-pack.v1.json" },
     "riskPolicyPackDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },

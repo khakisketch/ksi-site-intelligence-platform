@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,10 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.source_media import (
+    CaptureTime,
+    CaptureTimeSource,
+    CaptureTimeStatus,
+    CaptureWindowStatus,
     SourceBundleSealVerdict,
     SourceBundleVerifyVerdict,
     SourceMediaBatchVerdict,
@@ -511,7 +515,7 @@ def test_status_maps_cover_every_verdict() -> None:
 
 def _measure(
     media_id: str, *, seed: str | None = None, width: int = 4000, height: int = 3000,
-    size_bytes: int = 1_000_000,
+    size_bytes: int = 1_000_000, capture_time: CaptureTime | None = None,
 ) -> SourceMediaMeasurement:
     return SourceMediaMeasurement(
         media_id=media_id,
@@ -519,6 +523,7 @@ def _measure(
         size_bytes=size_bytes,
         width=width,
         height=height,
+        capture_time=capture_time or CaptureTime.unavailable(),
     )
 
 
@@ -550,6 +555,70 @@ def test_matching_measurements_verify_the_bundle(store: SourceMediaStore) -> Non
     assert bundle.is_verified
     assert bundle.verified_by == "worker-1"
     assert bundle.last_mismatch_at is None
+    assert bundle.capture_window.status is CaptureWindowStatus.INCOMPLETE
+
+
+def test_verified_file_times_make_a_complete_capture_window(store: SourceMediaStore) -> None:
+    _sealed(store)
+    start = _NOW - timedelta(minutes=2)
+    end = _NOW - timedelta(minutes=1)
+
+    result = store.verify(
+        _MISSION_ID,
+        [
+            _measure(
+                "img-1.jpg",
+                capture_time=CaptureTime(
+                    start, CaptureTimeSource.EXIF_GPS_UTC, CaptureTimeStatus.VERIFIED
+                ),
+            ),
+            _measure(
+                "img-2.jpg",
+                capture_time=CaptureTime(
+                    end,
+                    CaptureTimeSource.EXIF_DATETIME_OFFSET,
+                    CaptureTimeStatus.VERIFIED,
+                ),
+            ),
+        ],
+        verified_by="worker-1",
+        now=_NOW,
+    )
+
+    assert result.verdict is SourceBundleVerifyVerdict.VERIFIED
+    assert result.bundle is not None
+    assert result.bundle.capture_window.status is CaptureWindowStatus.COMPLETE
+    assert result.bundle.capture_window.captured_from == start
+    assert result.bundle.capture_window.captured_to == end
+
+
+def test_one_conflicting_file_marks_the_whole_window_conflict(store: SourceMediaStore) -> None:
+    _sealed(store)
+    result = store.verify(
+        _MISSION_ID,
+        [
+            _measure(
+                "img-1.jpg",
+                capture_time=CaptureTime(
+                    _NOW, CaptureTimeSource.EXIF_GPS_UTC, CaptureTimeStatus.VERIFIED
+                ),
+            ),
+            _measure(
+                "img-2.jpg",
+                capture_time=CaptureTime(
+                    None, CaptureTimeSource.NONE, CaptureTimeStatus.CONFLICT
+                ),
+            ),
+        ],
+        verified_by="worker-1",
+        now=_NOW,
+    )
+
+    assert result.verdict is SourceBundleVerifyVerdict.VERIFIED
+    assert result.bundle is not None
+    assert result.bundle.capture_window.status is CaptureWindowStatus.CONFLICT
+    assert result.bundle.capture_window.captured_from is None
+    assert result.bundle.capture_window.captured_to is None
 
 
 @pytest.mark.parametrize(
@@ -692,6 +761,28 @@ def test_replay_restores_verification(tmp_path: Path) -> None:
         assert bundle is not None
         assert bundle.is_verified
         assert bundle.verified_by == "worker-1"
+    finally:
+        journal.close()
+
+
+def test_legacy_verification_replays_capture_time_as_incomplete(tmp_path: Path) -> None:
+    """이전 저널의 등록/검증 시각으로 촬영시각을 추정하지 않는다."""
+    _verified_journal(tmp_path)
+
+    def remove_capture_lineage(records: list[dict[str, Any]]) -> None:
+        for record in records:
+            if record["kind"] == "source-media-verified":
+                record.pop("captureWindow", None)
+                for measurement in record["measurements"]:
+                    measurement.pop("captureTime", None)
+
+    _rewrite(tmp_path, remove_capture_lineage)
+    reborn, journal = _reborn(tmp_path)
+    try:
+        bundle = reborn.get(_MISSION_ID)
+        assert bundle is not None
+        assert bundle.is_verified
+        assert bundle.capture_window.status is CaptureWindowStatus.INCOMPLETE
     finally:
         journal.close()
 
@@ -1117,6 +1208,11 @@ def test_http_worker_verifies_and_bundle_reports_it(tmp_path: Path) -> None:
     bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
     assert bundle["verifiedAt"] is not None
     assert bundle["lastMismatchAt"] is None
+    assert bundle["captureWindow"] == {
+        "status": "INCOMPLETE",
+        "capturedFrom": None,
+        "capturedTo": None,
+    }
 
 
 def test_http_mismatch_is_422_and_shows_which_files(tmp_path: Path) -> None:
@@ -1220,6 +1316,11 @@ def test_view_url_carries_the_registered_pixel_size(tmp_path: Path) -> None:
     assert body["width"] == 4000
     assert body["height"] == 3000
     assert body["sha256"] == _sha("img-1.jpg")
+    assert body["captureTime"] == {
+        "capturedAt": None,
+        "source": "NONE",
+        "status": "UNAVAILABLE",
+    }
     assert body["viewUrl"].endswith("?download=1")
     assert storage.get_calls == [
         f"sites/{_SITE_ID}/missions/{_MISSION_ID}/source/img-1.jpg"

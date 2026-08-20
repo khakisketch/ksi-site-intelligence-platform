@@ -75,6 +75,7 @@ from ksi_event_contracts.vertical_reference import (
     VerticalReferenceSource,
 )
 
+from ksi_processing_controller.capture_time import extract_capture_time
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     CoreClient,
@@ -263,10 +264,12 @@ def run_job(
             downloaded_paths.append(local_path)
             _download(fetch, media.download_url, local_path)
             sha256, size, width, height = measure_image(local_path)
+            capture_time = extract_capture_time(local_path)
             measurements.append(
                 MeasuredImage(
                     media_id=media.media_id, sha256=sha256,
                     size_bytes=size, width=width, height=height,
+                    capture_time=capture_time,
                 )
             )
             if dynamic_object_detector is not None:

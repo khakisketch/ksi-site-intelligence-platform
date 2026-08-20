@@ -111,6 +111,97 @@ def _consumer(tmp_path: Path, key: Ed25519PrivateKey) -> MissionContractConsumer
     return MissionContractConsumer(registry=registry, state_dir=tmp_path / "state")
 
 
+def _signed_v13(
+    key: Ed25519PrivateKey,
+    *,
+    mission_id: str,
+    sequence: int,
+    issuer_id: str = "core-seoul-1",
+    site_id: str = "site-001",
+    reserve_percent: float = 30,
+) -> dict[str, Any]:
+    unsigned = _unsigned_contract(mission_id)
+    unsigned["schemaVersion"] = "1.3"
+    unsigned["siteId"] = site_id
+    unsigned["policies"]["batteryPolicy"]["defaultReservePercent"] = reserve_percent
+    unsigned["issuance"] = {
+        "issuerId": issuer_id,
+        "siteSequence": sequence,
+        "issuedAt": "2026-07-25T00:00:00Z",
+    }
+    return sign_contract(unsigned, key, "core-1")
+
+
+def test_v13_site_sequence_blocks_new_mission_id_rollback_and_downgrade(tmp_path: Path) -> None:
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+
+    _write_candidate(
+        candidate,
+        _signed_v13(key, mission_id="mission-new", sequence=2, reserve_percent=40),
+    )
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    # 새 missionId로 세탁해도 낮은 siteSequence는 같은 issuer/site 고수위에 걸린다.
+    _write_candidate(
+        candidate,
+        _signed_v13(key, mission_id="mission-old", sequence=1, reserve_percent=15),
+    )
+    rolled_back = consumer.activate_file(candidate, now=_IN_WINDOW)
+    assert not rolled_back.activated
+    assert rolled_back.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+
+    # v1.2는 issuer/sequence를 표현할 수 없으므로 v1.3 수용 뒤 안전 상태를 바꾸지 못한다.
+    _write_candidate(candidate, sign_contract(_unsigned_contract("mission-v12"), key, "core-1"))
+    downgraded = consumer.activate_file(candidate, now=_IN_WINDOW)
+    assert not downgraded.activated
+    assert downgraded.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+
+
+def test_v13_equal_sequence_only_allows_identical_replay(tmp_path: Path) -> None:
+    key = Ed25519PrivateKey.generate()
+    consumer = _consumer(tmp_path, key)
+    candidate = tmp_path / "candidate.json"
+    original = _signed_v13(key, mission_id="mission-001", sequence=3, reserve_percent=40)
+    _write_candidate(candidate, original)
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    _write_candidate(candidate, original)
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    _write_candidate(
+        candidate,
+        _signed_v13(key, mission_id="mission-tampered", sequence=3, reserve_percent=15),
+    )
+    collision = consumer.activate_file(candidate, now=_IN_WINDOW)
+    assert not collision.activated
+    assert collision.verdict is ActivationRefusal.SUPERSEDED_CONTRACT
+
+
+def test_v13_high_water_is_durable_and_scoped_by_site_and_issuer(tmp_path: Path) -> None:
+    key = Ed25519PrivateKey.generate()
+    candidate = tmp_path / "candidate.json"
+    consumer = _consumer(tmp_path, key)
+    _write_candidate(candidate, _signed_v13(key, mission_id="m-a", sequence=5))
+    assert consumer.activate_file(candidate, now=_IN_WINDOW).activated
+
+    restarted = _consumer(tmp_path, key)
+    _write_candidate(candidate, _signed_v13(key, mission_id="m-b", sequence=4))
+    assert not restarted.activate_file(candidate, now=_IN_WINDOW).activated
+
+    _write_candidate(
+        candidate,
+        _signed_v13(key, mission_id="m-other-site", sequence=1, site_id="site-002"),
+    )
+    assert restarted.activate_file(candidate, now=_IN_WINDOW).activated
+    _write_candidate(
+        candidate,
+        _signed_v13(key, mission_id="m-other-issuer", sequence=1, issuer_id="core-busan-1"),
+    )
+    assert restarted.activate_file(candidate, now=_IN_WINDOW).activated
+
+
 def test_valid_candidate_is_verified_then_activated_atomically(tmp_path: Path) -> None:
     key = Ed25519PrivateKey.generate()
     candidate = tmp_path / "candidate.json"

@@ -21,9 +21,9 @@ import { listMissions } from "@/lib/core-api/missions";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getVolumeChanges } from "@/lib/core-api/phase34";
 import { formatNetVolumeM3 } from "@/lib/core-api/phase34-labels";
-import { getSite, getSpatialModel } from "@/lib/core-api/sites";
+import { getSite } from "@/lib/core-api/sites";
 import { siteNextAction } from "@/lib/core-api/site-progress";
-import type { SiteView, VolumeChangeListView } from "@/lib/core-api/types";
+import type { SiteDetailView, SiteView, VolumeChangeListView } from "@/lib/core-api/types";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import {
   findEpoch,
@@ -186,7 +186,7 @@ export default async function SiteDetailPage({
 
   // 데이터 조회는 JSX 생성과 분리한다 — try/catch 안에서 JSX 를 만들면
   // eslint react-hooks/error-boundaries 가 걸린다(렌더는 즉시 실행되지 않아 실제로 못 잡는 에러다).
-  let site: SiteView | null = null;
+  let site: SiteDetailView | null = null;
   let errorMessage: string | null = null;
   try {
     site = await getSite(siteId);
@@ -215,7 +215,6 @@ export default async function SiteDetailPage({
     canIssueMission,
     canTransitionSite,
     canApproveAutonomySite,
-    spatialModelResult,
     jobsResult,
   ] = await Promise.allSettled([
     listMissions(site.siteId),
@@ -223,9 +222,6 @@ export default async function SiteDetailPage({
     hasAllPermissions("MISSIONS_ISSUE"),
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("SITES_AUTONOMY_APPROVE"),
-    // 재구성 원장이 없는 조립에서는 이 표면 자체가 없다(404) — 그때는 "모델 없음"이
-    // 아니라 **아무것도 표시하지 않는다**. 없는 것과 확인할 수 없는 것은 다르다.
-    getSpatialModel(site.siteId),
     // 조사 기록(시점) — 같은 이유로 표면이 없으면 줄 자체가 비고, 그 사실을 머리가 말한다.
     listSiteProcessingJobs(site.siteId),
   ]);
@@ -257,9 +253,7 @@ export default async function SiteDetailPage({
   const statusLabel = SITE_STATUS_LABEL[site.status];
   const nextAction = nextActionFor(site);
   const nextStep = siteNextAction(site.status);
-  const spatialModel =
-    spatialModelResult.status === "fulfilled" ? spatialModelResult.value : null;
-  const spatialSummary = spatialModel ? spatialModelSummary(spatialModel) : null;
+  const spatialSummary = spatialModelSummary(site.spatialModel);
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
 
   return (
@@ -309,17 +303,13 @@ export default async function SiteDetailPage({
             </div>
 
             <div className="flex min-w-0 flex-col gap-4">
-              {/* 공간모델 최신도(ADR-KSI-019 G1) — 서버가 매 조회 재계산한 파생 판정이다.
-                  조회에 실패했거나 표면이 없으면 아무것도 그리지 않는다: 확인할 수 없는
-                  것을 "없음"으로 그리면 화면이 서버가 하지 않은 판정을 대신한다. */}
-              {spatialSummary && (
-                <SectionCard title="공간모델">
-                  <div className="flex flex-col gap-1.5 px-4 py-3">
-                    <StatusBadge label={spatialSummary.label} tone={spatialSummary.tone} />
-                    <p className="text-[12.5px] break-keep text-ink-2">{spatialSummary.detail}</p>
-                  </div>
-                </SectionCard>
-              )}
+              {/* 단일 site detail 응답에 함께 온 파생 판정 — 화면이 두 요청을 합성하지 않는다. */}
+              <SectionCard title="공간모델">
+                <div className="flex flex-col gap-1.5 px-4 py-3">
+                  <StatusBadge label={spatialSummary.label} tone={spatialSummary.tone} />
+                  <p className="text-[12.5px] break-keep text-ink-2">{spatialSummary.detail}</p>
+                </div>
+              </SectionCard>
 
               <SectionCard title="고른 조사 시점">
                 {selectedEpoch ? (

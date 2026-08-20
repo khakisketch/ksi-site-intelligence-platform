@@ -398,6 +398,7 @@ def test_measurement_comes_from_the_actual_downloaded_bytes(tmp_path: Path) -> N
         assert measured.size_bytes == len(_TINY_PNG)
         assert measured.width == 1
         assert measured.height == 1
+        assert measured.capture_time.status.value == "UNAVAILABLE"
     verify_call = next(c for c in core.calls if c[0] == "verify")
     assert verify_call[2] == ("img-1.png", "img-2.png")
 

@@ -296,6 +296,7 @@ export function SurveyWizard({
     altitudeM: number | null;
     frontOverlap: number | null;
     sideOverlap: number | null;
+    captureIntervalM: number | null;
     grade: ReobservationGrade | null;
     rationale: string[];
     unavailableReason: string | null;
@@ -642,6 +643,11 @@ export function SurveyWizard({
               {REOBSERVATION_GRADE_LABEL[initialCapturePlan.grade].description} 아래 값을
               시작값으로 채웠습니다 — 그대로 쓰거나 직접 바꿀 수 있습니다.
             </p>
+            {initialCapturePlan.captureIntervalM != null && (
+              <p className="num text-[12px] text-ink-muted">
+                서버 계산 촬영 간격: {initialCapturePlan.captureIntervalM.toFixed(1)}m
+              </p>
+            )}
             {initialCapturePlan.rationale.length > 0 && (
               <ul className="ml-4 list-disc text-[12px] break-keep text-ink-muted">
                 {initialCapturePlan.rationale.map((line) => (

@@ -122,7 +122,16 @@ info:
   # 검증되지 않았다. 이제 Edge 가 받은 바이트의 sha256 이 서명된 값과 다르면 활성화
   # 전체를 거부한다. 기존 표면을 깨지 않는 확장이라 minor(구 v1.0 봉투는 계속
   # 검증된다 — dispatch journal 재생이 과거 레코드를 다시 통과시키기 때문이다).
-  version: 1.22.0
+  # 1.23.0 — CRITICAL evidence Ed25519 장비 증명과 응답 attestation 상태,
+  # Mission Contract v1.3 dual-reader/issuance ordering, AOL-1 촬영시각 계보를 추가한다.
+  # Core가 완료 epoch에 captureWindow를 불변 스냅샷으로 남기고 freshness는 capturedTo만
+  # 사용하며 미상/충돌은 등록시각으로 대체하지 않는다. 단일 site 상세에 공간모델
+  # 요약을 중첩하고 기존 /spatial-model은 호환 유지한다.
+  # 1.24.0 — 반복 관측 Observation Work Order·재관측 사람 승인·
+  # 근거 제약 Copilot 표면을 추가한다. 모든 새 표면은 organizationId
+  # 범위로 조회되며 Copilot은 읽기 tool allowlist와 재관측 초안만
+  # 허용하고 임무 발급·승인을 할 수 없다.
+  version: 1.24.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -154,6 +163,250 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WhoAmIResponse' }
         '401': { description: '인증 실패(부재/형식오류/미지 토큰) — WWW-Authenticate: Bearer' }
+  /v1/sites/{site_id}/observation-schedules:
+    post:
+      summary: Create a recurring observation schedule
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, workAreaIds, intervalDays, timezone]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                workAreaIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items: { type: string }
+                intervalDays: { type: integer, minimum: 1, maximum: 365 }
+                timezone: { type: string, minLength: 1, maxLength: 100 }
+                approvedPolicyVersion: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: Created schedule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationSchedule' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
+    get:
+      summary: List recurring observation schedules for a site
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped schedules
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
+  /v1/sites/{site_id}/observation-work-orders:
+    post:
+      summary: Create an observation work order draft
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, workAreaIds]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                workAreaIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items: { type: string }
+                scheduleId: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: Created draft work order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrder' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site or WorkArea not found in the principal organization }
+    get:
+      summary: List observation work orders for a site
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped work orders
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
+  /v1/observation-work-orders/{work_order_id}:
+    get:
+      summary: Get one organization-scoped observation work order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Work order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrder' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Work order not found in the principal organization }
+  /v1/observation-work-orders/{work_order_id}/approve:
+    post:
+      summary: Approve a work order with optimistic version checking
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Approved work order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrder' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Work order not found in the principal organization }
+        '409': { description: Version conflict or invalid transition }
+  /v1/observation-work-orders/{work_order_id}/reobservation-drafts:
+    post:
+      summary: Create a citation-backed reobservation draft
+      description: This endpoint only creates a draft; it never issues or executes a flight mission.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [reasonRefs, targetRegionRefs, proposedEffort, plannerVersion,
+                 policyVersion, expiresAt]
+              properties:
+                reasonRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items: { type: string }
+                targetRegionRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items: { type: string }
+                proposedEffort: { type: string, minLength: 1, maxLength: 500 }
+                plannerVersion: { type: string, minLength: 1 }
+                policyVersion: { type: string, minLength: 1 }
+                expiresAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Created reobservation draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReobservationDraft' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Work order not found in the principal organization }
+    get:
+      summary: List reobservation drafts for a work order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped reobservation drafts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReobservationDraftListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Work order not found in the principal organization }
+  /v1/reobservation-drafts/{draft_id}/approve:
+    post:
+      summary: Human-approve a reobservation draft
+      description: Approval records intent only; mission issuance remains a separate policy gate.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: draft_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Approved reobservation draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReobservationDraft' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Draft not found in the principal organization }
+        '409': { description: Version conflict, expiry, or invalid transition }
+  /v1/copilot/query:
+    post:
+      summary: Ask a grounded question about one organization-scoped site
+      description: >-
+        The model can call only the typed read allowlist and create a reobservation draft.
+        It cannot issue, approve, dispatch, or execute a mission. External model egress is
+        denied unless the site policy explicitly permits it.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [siteId, question]
+              properties:
+                siteId: { type: string, minLength: 1 }
+                workOrderId: { type: [string, 'null'] }
+                question: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '200':
+          description: Citation-backed answer or an explicit blocked result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CopilotAnswer' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied or AI egress blocked }
+        '404': { description: Site not found in the principal organization }
   /v1/sites:
     post:
       summary: Register a new Site (initial status always UNMAPPED)
@@ -257,7 +510,7 @@ paths:
           description: 현장 하나
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SiteView' }
+              schema: { $ref: '#/components/schemas/SiteDetailView' }
         '404': { description: 현장을 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
@@ -1549,6 +1802,8 @@ paths:
                       bytes: { type: integer, minimum: 1 }
                       width: { type: integer, minimum: 1 }
                       height: { type: integer, minimum: 1 }
+                      captureTime:
+                        $ref: '#/components/schemas/CaptureTimeView'
                       contentType: { type: string }
       responses:
         '201':
@@ -3525,7 +3780,7 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        '200': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
+        '200': { description: 저장된 서명 MissionContract(v1.2 또는 v1.3) }
         '404': { description: 해당 임무 레코드를 찾을 수 없다(일반 문구) }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
@@ -3690,7 +3945,7 @@ paths:
                     그 임무는 인증된 어느 EDGE_DEVICE 든 커버리지를 보고할 수
                     있다(하위호환).
       responses:
-        '201': { description: 서명된 MissionContract(mission-contract.v1.2.json) }
+        '201': { description: 설정된 writer 버전의 서명 MissionContract(v1.2 또는 v1.3) }
         '422':
           description: >-
             구조 위반(필드 누락·범위 밖·validForHours>168) / UNKNOWN_SITE /
@@ -3862,6 +4117,10 @@ paths:
                     droneEnumValue: { type: integer }
                     droneSubEnumValue: { type: integer }
                     payloadEnumValue: { type: integer }
+                    payloadSubEnumValue:
+                      type: integer
+                      default: 0
+                      description: WPML payload sub-profile. Omit to use the device profile default.
                     payloadPositionIndex: { type: integer, enum: [0, 1, 2] }
                 wayline:
                   type: object
@@ -3902,8 +4161,10 @@ paths:
                 type: object
                 properties:
                   contract:
-                    description: 서명된 MissionContract(mission-contract.v1.2.json)
-                    $ref: ../schemas/mission-contract.v1.2.json
+                    description: 설정된 writer 버전의 서명 MissionContract
+                    oneOf:
+                      - $ref: ../schemas/mission-contract.v1.2.json
+                      - $ref: ../schemas/mission-contract.v1.3.json
                   kmzBase64: { type: string, description: KMZ(zip) base64 }
                   kmzSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
                   routePattern: { type: string, enum: [lawnmower, perimeter] }
@@ -4012,6 +4273,23 @@ components:
         # null 은 "노후 기준 미선언"이고 그 뜻은 **판정하지 않음**이지 "최신"이
         # 아니다(ADR-KSI-019 G1). PUT /v1/sites/{site_id}/model-age-policy 로 선언·철회.
         modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
+    SiteDetailView:
+      type: object
+      required:
+        [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi,
+         dataResidency, spatialModel]
+      properties:
+        siteId: { type: string }
+        name: { type: string }
+        siteFrame: { type: object, additionalProperties: true }
+        status: { type: string }
+        resumeTarget: { type: [string, 'null'] }
+        registeredAt: { type: string }
+        updatedAt: { type: string }
+        aoi: { type: [object, 'null'], additionalProperties: true }
+        dataResidency: { type: [object, 'null'], additionalProperties: true }
+        modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
+        spatialModel: { $ref: '#/components/schemas/SpatialModelView' }
     MissionExecutionHistoryEntry:
       type: object
       required: [missionId, before, after, updatedAt, updatedBy, detail]
@@ -4052,7 +4330,8 @@ components:
       type: object
       required:
         [siteId, state, epochJobId, registeredAt, ageDays, maxAgeDays,
-         sourceArtifactCount, succeededEpochCount, siteStatus, siteStatusMatchesModel]
+         sourceArtifactCount, succeededEpochCount, siteStatus, siteStatusMatchesModel,
+         capturedFrom, capturedTo, captureTimeStatus, freshnessBasis]
       properties:
         siteId: { type: string }
         state:
@@ -4061,7 +4340,9 @@ components:
             경계 포함) / STALE(기준 초과) / AGE_POLICY_UNDECLARED(epoch 은 있으나
             현장이 기준을 선언하지 않아 노후를 판정하지 않았다).
           type: string
-          enum: [ABSENT, FRESH, STALE, AGE_POLICY_UNDECLARED]
+          enum:
+            [ABSENT, FRESH, STALE, AGE_POLICY_UNDECLARED, CAPTURE_TIME_UNAVAILABLE,
+             SYSTEM_UNAVAILABLE]
         # 판정 근거가 된 최신 epoch 의 작업 id. ABSENT 면 null.
         epochJobId: { type: [string, 'null'] }
         # 그 epoch 이 SUCCEEDED 로 전이한 시각. **촬영 시각이 아니라 등록 시각**이다.
@@ -4074,6 +4355,10 @@ components:
         # false 면 현장 상태가 실제 모델 유무와 어긋난다(자동 전진이 막혔거나
         # 사람이 근거 없이 상태를 올렸다). 조회는 판정만 하고 고치지 않는다.
         siteStatusMatchesModel: { type: boolean }
+        capturedFrom: { type: [string, 'null'], format: date-time }
+        capturedTo: { type: [string, 'null'], format: date-time }
+        captureTimeStatus: { type: string, enum: [COMPLETE, INCOMPLETE, CONFLICT] }
+        freshnessBasis: { type: string, enum: [CAPTURED_TO, NONE] }
     SiteListResponse:
       type: object
       required: [sites]
@@ -4089,14 +4374,133 @@ components:
         detail: { type: [string, 'null'] }
     WhoAmIResponse:
       type: object
-      required: [principalId, kind, role, deviceId, permissions]
+      required: [principalId, organizationId, kind, role, deviceId, permissions]
       properties:
         principalId: { type: string }
+        organizationId:
+          description: Principal이 속한 고객 조직. 조회·변경 범위의 첫 번째 경계다.
+          type: string
         kind: { type: string }
         # 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
         role: { type: [string, 'null'] }
         deviceId: { type: [string, 'null'] }
         permissions: { type: array, items: { type: string } }
+    ObservationSchedule:
+      type: object
+      required:
+        [scheduleId, organizationId, siteId, name, workAreaIds, intervalDays,
+         timezone, status, createdAt, createdBy]
+      properties:
+        schemaVersion: { type: string }
+        scheduleId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        purpose: { type: string }
+        name: { type: string }
+        workAreaIds: { type: array, items: { type: string } }
+        intervalDays: { type: integer }
+        timezone: { type: string }
+        approvedPolicyVersion: { type: [string, 'null'] }
+        status: { type: string }
+        createdAt: { type: string }
+        createdBy: { type: string }
+    ScheduleListResponse:
+      type: object
+      required: [schedules]
+      properties:
+        schedules:
+          type: array
+          items: { $ref: '#/components/schemas/ObservationSchedule' }
+    ObservationWorkOrder:
+      type: object
+      required:
+        [workOrderId, organizationId, siteId, name, workAreaIds, status, version,
+         createdAt, updatedAt, createdBy]
+      properties:
+        schemaVersion: { type: string }
+        workOrderId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        purpose: { type: string }
+        name: { type: string }
+        workAreaIds: { type: array, items: { type: string } }
+        scheduleId: { type: [string, 'null'] }
+        cycleNumber: { type: integer }
+        status: { type: string }
+        statusReason: { type: [string, 'null'] }
+        missionIds: { type: array, items: { type: string } }
+        processingJobIds: { type: array, items: { type: string } }
+        reportRefs: { type: array, items: { type: string } }
+        version: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        createdBy: { type: string }
+        approvedAt: { type: [string, 'null'] }
+        approvedBy: { type: [string, 'null'] }
+    WorkOrderListResponse:
+      type: object
+      required: [workOrders]
+      properties:
+        workOrders:
+          type: array
+          items: { $ref: '#/components/schemas/ObservationWorkOrder' }
+    ReobservationDraft:
+      type: object
+      required:
+        [draftId, organizationId, siteId, workOrderId, reasonRefs, targetRegionRefs,
+         proposedEffort, plannerVersion, policyVersion, expiresAt, status, version,
+         createdAt, createdBy]
+      properties:
+        schemaVersion: { type: string }
+        draftId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        workOrderId: { type: string }
+        reasonRefs: { type: array, items: { type: string } }
+        targetRegionRefs: { type: array, items: { type: string } }
+        proposedEffort: { type: string }
+        plannerVersion: { type: string }
+        policyVersion: { type: string }
+        expiresAt: { type: string, format: date-time }
+        status: { type: string }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        approvedBy: { type: [string, 'null'] }
+    ReobservationDraftListResponse:
+      type: object
+      required: [drafts]
+      properties:
+        drafts:
+          type: array
+          items: { $ref: '#/components/schemas/ReobservationDraft' }
+    CopilotCitation:
+      type: object
+      required: [citationId, objectType, objectId, label, sourcePath]
+      properties:
+        citationId: { type: string }
+        objectType: { type: string }
+        objectId: { type: string }
+        label: { type: string }
+        sourcePath: { type: string }
+        capturedFrom: { type: [string, 'null'] }
+        capturedTo: { type: [string, 'null'] }
+        modelVersion: { type: [string, 'null'] }
+        geometryRef: { type: [string, 'null'] }
+        uncertaintySummary: { type: [string, 'null'] }
+    CopilotAnswer:
+      type: object
+      required: [status, answer]
+      properties:
+        schemaVersion: { type: string }
+        status: { type: string, enum: [ANSWERED, BLOCKED] }
+        answer: { type: string }
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/CopilotCitation' }
+        missingData: { type: array, items: { type: string } }
+        reobservationDraftId: { type: [string, 'null'] }
     IngestResponse:
       type: object
       required: [verdict]
@@ -4234,9 +4638,28 @@ components:
         artifactId: { type: string }
         contentType: { type: string }
         contentDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        attestation:
+          oneOf:
+            - $ref: '#/components/schemas/DeviceEvidenceAttestation'
+            - type: 'null'
+          description: >-
+            CRITICAL 기계 증거에는 필수다. signature는 deviceId, siteId,
+            missionId, eventKey, artifactId, contentType, contentDigest만 포함한
+            canonical JSON의 Ed25519 서명이며 padding 없는 base64url이다.
+    DeviceEvidenceAttestation:
+      type: object
+      additionalProperties: false
+      required: [keyId, algorithm, signature]
+      properties:
+        keyId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' }
+        algorithm: { const: Ed25519 }
+        signature:
+          type: string
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: Padding 없는 base64url Ed25519 signature.
     EdgeEvidenceUploadResponse:
       type: object
-      required: [artifactId, objectKey, uploadUrl, expiresAt, reusedRegistration, contentDigest, requiredUploadHeaders]
+      required: [artifactId, objectKey, uploadUrl, expiresAt, reusedRegistration, contentDigest, requiredUploadHeaders, deviceAttested, attestationKeyId]
       properties:
         artifactId: { type: string }
         objectKey: { type: string }
@@ -4247,6 +4670,8 @@ components:
         requiredUploadHeaders:
           type: object
           additionalProperties: { type: string }
+        deviceAttested: { type: boolean }
+        attestationKeyId: { type: [string, 'null'] }
     EventSummaryResponse:
       description: >-
         트리아지 대기열의 한 줄. eventType 은 목록에서 "무슨 일인지"를 답하는
@@ -4397,7 +4822,7 @@ components:
     SourceMediaViewResponse:
       description: 사진 1장의 열람 URL + 원장이 아는 화소수·digest.
       type: object
-      required: [mediaId, contentType, viewUrl, expiresAt, width, height, sha256]
+      required: [mediaId, contentType, viewUrl, expiresAt, width, height, sha256, captureTime]
       properties:
         mediaId: { type: string }
         contentType: { type: string }
@@ -4411,6 +4836,7 @@ components:
             화면은 둘이 같다는 전제로 폴리곤 배율을 계산해도 된다.
         height: { type: integer }
         sha256: { type: string }
+        captureTime: { $ref: '#/components/schemas/CaptureTimeView' }
     EquipmentSupportView:
       description: >-
         장비 클래스 1건의 지원단계. 계약(contracts/schemas/equipment-support-state.v1.json)
@@ -4607,8 +5033,8 @@ components:
       description: 상세 응답에 실리는 증거 1건. tombstonedAt 이 있으면 폐기된 것이다.
       type: object
       required:
-        [artifactId, contentType, registeredAt, registeredBy, deviceBound, tombstonedAt,
-         tombstoneReason]
+        [artifactId, contentType, registeredAt, registeredBy, deviceBound, deviceAttested,
+         attestationKeyId, tombstonedAt, tombstoneReason]
       properties:
         artifactId: { type: string }
         contentType: { type: string }
@@ -4617,6 +5043,8 @@ components:
         # 장비 신원이 대조되는 경로(edge-sync)로 등록됐는가 — CRITICAL 확정의
         # riskField/trajectory/viewpointHistory 증거는 이게 참이어야 통과한다.
         deviceBound: { type: boolean }
+        deviceAttested: { type: boolean }
+        attestationKeyId: { type: [string, 'null'] }
         tombstonedAt: { type: [string, 'null'], format: date-time }
         tombstoneReason: { type: [string, 'null'] }
     EvidenceUploadResponse:
@@ -4635,7 +5063,8 @@ components:
     EvidenceViewResponse:
       type: object
       required:
-        [artifactId, contentType, viewUrl, expiresAt, registeredAt, registeredBy, deviceBound]
+        [artifactId, contentType, viewUrl, expiresAt, registeredAt, registeredBy,
+         deviceBound, deviceAttested, attestationKeyId]
       properties:
         artifactId: { type: string }
         contentType: { type: string }
@@ -4644,6 +5073,8 @@ components:
         registeredAt: { type: string, format: date-time }
         registeredBy: { type: string }
         deviceBound: { type: boolean }
+        deviceAttested: { type: boolean }
+        attestationKeyId: { type: [string, 'null'] }
     MissionRecordResponse:
       description: >-
         발급된 임무의 조회 표현. ADR-KSI-007 이원 산출물 중 이 레코드가 가리키는
@@ -4735,7 +5166,7 @@ components:
       type: object
       required:
         [missionId, status, mediaCount, sourceBundleDigest, sealedAt, verifiedAt,
-         lastMismatchAt]
+         lastMismatchAt, captureWindow]
       properties:
         missionId: { type: string }
         status: { type: string, enum: [OPEN, SEALED] }
@@ -4769,6 +5200,28 @@ components:
           description: >-
             기준점 파일의 지문. 같은 좌표계라도 성과가 다르면 다른 기준점이라,
             재실행하는 도구가 "이미 붙인 그 파일인가"를 이 값으로 판단한다.
+        captureWindow: { $ref: '#/components/schemas/CaptureWindowView' }
+    CaptureTimeView:
+      type: object
+      additionalProperties: false
+      properties:
+        capturedAt: { type: [string, 'null'], format: date-time, default: null }
+        source:
+          type: string
+          enum: [EXIF_GPS_UTC, EXIF_DATETIME_OFFSET, DJI_XMP_EXPLICIT, NONE]
+          default: NONE
+        status:
+          type: string
+          enum: [VERIFIED, UNAVAILABLE, CONFLICT]
+          default: UNAVAILABLE
+    CaptureWindowView:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [COMPLETE, INCOMPLETE, CONFLICT] }
+        capturedFrom: { type: [string, 'null'], format: date-time, default: null }
+        capturedTo: { type: [string, 'null'], format: date-time, default: null }
     GroundControlRequest:
       description: >-
         기준점 파일 등록 요청 — 내용이 아니라 **신고**다(Core 는 바이트를 읽지 않는다).
@@ -4890,7 +5343,7 @@ components:
       type: object
       required:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
-         inputVerified, contract, artifacts, leaseWorkerId, leaseExpiresAt]
+         inputVerified, contract, artifacts, leaseWorkerId, leaseExpiresAt, captureWindow]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -4928,6 +5381,7 @@ components:
             쪽이 자기 시계로 해야 한다.
           type: [string, 'null']
           format: date-time
+        captureWindow: { $ref: '#/components/schemas/CaptureWindowView' }
     ProcessingJobListResponse:
       type: object
       required: [jobs]

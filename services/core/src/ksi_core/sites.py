@@ -69,7 +69,7 @@ import threading
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.enums import (
@@ -90,6 +90,8 @@ from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from ksi_core.processing_jobs import ProcessingJobRecord
 
 
 class SiteVerdict(StrEnum):
@@ -157,6 +159,7 @@ class SiteRecord:
     # 자율운영 가능 여부를 가른다(ADR-KSI-019 G1). ``data_residency`` 와 같은
     # 이유로 구버전 journal 레코드는 전부 ``None`` 으로 재생된다.
     model_max_age_days: int | None = None
+    organization_id: str = "legacy"
 
     def __post_init__(self) -> None:
         if self.registered_at.tzinfo is None:
@@ -302,6 +305,11 @@ class SiteStore:
             if not isinstance(residency_payload, dict):
                 raise ValueError(f"재생: dataResidency 가 object 가 아니다: siteId={site_id}")
             DataResidency.model_validate(residency_payload)  # fail-closed 재검증
+        organization_id = raw.get("organizationId", "legacy")
+        if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
+            raise ValueError(
+                f"재생: organizationId 가 경로-안전 비공백 문자열이 아니다: {organization_id!r}"
+            )
         ts = _parse_ts(raw["ts"])
         self._sites[site_id] = SiteRecord(
             site_id=site_id,
@@ -313,6 +321,7 @@ class SiteStore:
             updated_at=ts,
             aoi=aoi_payload,
             data_residency=residency_payload,
+            organization_id=organization_id,
         )
 
     def _apply_transitioned(self, raw: dict[str, Any]) -> None:
@@ -416,6 +425,7 @@ class SiteStore:
         *,
         aoi: AreaOfInterest | None = None,
         data_residency: DataResidency | None = None,
+        organization_id: str = "legacy",
         actor: str,
         now: datetime,
     ) -> SiteResult:
@@ -445,6 +455,11 @@ class SiteStore:
                 )
             if not name.strip():
                 return SiteResult(SiteVerdict.INVALID_SITE, detail="name 은 비공백이어야 한다")
+            if not is_path_safe_identifier(organization_id):
+                return SiteResult(
+                    SiteVerdict.INVALID_SITE,
+                    detail="organizationId 는 경로-안전 비공백 식별자여야 한다",
+                )
             if _has_lone_surrogate(site_id) or _has_lone_surrogate(name):
                 # journal 자체 기록(ensure_ascii=True)은 통과하지만 이후 응답
                 # 렌더링(UTF-8 인코딩)이 500 으로 붕괴한다 — 등록 경계에서 거부.
@@ -477,6 +492,7 @@ class SiteStore:
                 "evidence": None,
                 "reason": None,
                 "siteId": site_id,
+                "organizationId": organization_id,
                 "name": name,
                 "siteFrame": site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
                 "aoi": (
@@ -496,6 +512,16 @@ class SiteStore:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
             self._apply_registered(raw)
             return SiteResult(SiteVerdict.REGISTERED, record=self._sites[site_id])
+
+    def get_scoped(self, site_id: str, organization_id: str) -> SiteRecord | None:
+        """조직 밖 site는 미지 site와 같은 ``None``으로 접는다(INV-060)."""
+        record = self.get(site_id)
+        if record is None or record.organization_id != organization_id:
+            return None
+        return record
+
+    def list_scoped(self, organization_id: str) -> list[SiteRecord]:
+        return [record for record in self.list() if record.organization_id == organization_id]
 
     def transition(
         self,
@@ -755,6 +781,35 @@ class SiteView(CamelModel):
     model_max_age_days: int | None = None
 
 
+class SiteSpatialModelSummaryView(CamelModel):
+    """단일 site 조회에 중첩되는 공간모델 요약."""
+
+    site_id: str
+    state: str
+    epoch_job_id: str | None
+    registered_at: str | None
+    age_days: float | None
+    max_age_days: int | None
+    source_artifact_count: int
+    succeeded_epoch_count: int
+    site_status: str
+    site_status_matches_model: bool
+    captured_from: str | None
+    captured_to: str | None
+    capture_time_status: str
+    freshness_basis: str
+
+
+class SiteDetailView(SiteView):
+    spatial_model: SiteSpatialModelSummaryView
+
+
+class _SiteJobLister(Protocol):
+    def list_for_site(
+        self, site_id: str, *, limit: int | None = ...
+    ) -> list[ProcessingJobRecord]: ...
+
+
 class SiteListResponse(CamelModel):
     sites: list[SiteView]
 
@@ -782,7 +837,9 @@ def _to_view(record: SiteRecord) -> SiteView:
     )
 
 
-def build_sites_router(store: SiteStore) -> APIRouter:
+def build_sites_router(
+    store: SiteStore, processing_job_store: _SiteJobLister | None = None
+) -> APIRouter:
     router = APIRouter(prefix="/v1/sites", tags=["sites"])
 
     # status_code 는 **실제 주 성공 경로**를 선언한다(런타임 실측 201).
@@ -800,6 +857,7 @@ def build_sites_router(store: SiteStore) -> APIRouter:
             request.site_frame,
             aoi=request.aoi,
             data_residency=request.data_residency,
+            organization_id=principal.organization_id,
             actor=principal.principal_id,
             now=datetime.now(UTC),
         )
@@ -814,17 +872,76 @@ def build_sites_router(store: SiteStore) -> APIRouter:
     def list_sites(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> SiteListResponse:
-        return SiteListResponse(sites=[_to_view(r) for r in store.list()])
+        return SiteListResponse(
+            sites=[_to_view(r) for r in store.list_scoped(principal.organization_id)]
+        )
 
-    @router.get("/{site_id}", response_model=SiteView)
+    @router.get("/{site_id}", response_model=SiteDetailView)
     def get_site(
         site_id: str,
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
-    ) -> SiteView:
-        record = store.get(site_id)
+    ) -> SiteDetailView:
+        record = store.get_scoped(site_id, principal.organization_id)
         if record is None:
             raise HTTPException(status_code=404, detail=_SITE_NOT_FOUND_DETAIL)
-        return _to_view(record)
+        site = _to_view(record)
+        if processing_job_store is None:
+            # 재구성 원장이 없는 최소 조립을 ABSENT로 가장하지 않는다. 객체는
+            # non-null로 유지하되 state가 조회 불가의 이유를 명시한다.
+            spatial_model = SiteSpatialModelSummaryView(
+                site_id=site_id,
+                state="SYSTEM_UNAVAILABLE",
+                epoch_job_id=None,
+                registered_at=None,
+                age_days=None,
+                max_age_days=record.model_max_age_days,
+                source_artifact_count=0,
+                succeeded_epoch_count=0,
+                site_status=record.status.value,
+                site_status_matches_model=True,
+                captured_from=None,
+                captured_to=None,
+                capture_time_status="INCOMPLETE",
+                freshness_basis="NONE",
+            )
+        else:
+            # local import로 sites↔spatial_model 모듈 초기화 순환을 피한다.
+            from ksi_core.spatial_model import evaluate_spatial_model, site_status_matches_model
+
+            status = evaluate_spatial_model(
+                processing_job_store.list_for_site(site_id),
+                now=datetime.now(UTC),
+                max_age_days=record.model_max_age_days,
+            )
+            spatial_model = SiteSpatialModelSummaryView(
+                site_id=site_id,
+                state=status.state.value,
+                epoch_job_id=status.epoch_job_id,
+                registered_at=(
+                    status.registered_at.isoformat()
+                    if status.registered_at is not None
+                    else None
+                ),
+                age_days=status.age_days,
+                max_age_days=status.max_age_days,
+                source_artifact_count=status.source_artifact_count,
+                succeeded_epoch_count=status.succeeded_epoch_count,
+                site_status=record.status.value,
+                site_status_matches_model=site_status_matches_model(
+                    status.state, record.status
+                ),
+                captured_from=(
+                    status.captured_from.isoformat()
+                    if status.captured_from is not None
+                    else None
+                ),
+                captured_to=(
+                    status.captured_to.isoformat() if status.captured_to is not None else None
+                ),
+                capture_time_status=status.capture_time_status,
+                freshness_basis=status.freshness_basis.value,
+            )
+        return SiteDetailView(**site.model_dump(), spatial_model=spatial_model)
 
     @router.post("/{site_id}/transitions", response_model=SiteMutationResponse)
     def transition_site(
@@ -839,7 +956,13 @@ def build_sites_router(store: SiteStore) -> APIRouter:
         # 기준 판정이다 — 대상 site 가 없으면(current is None) 판정할 "현재
         # 상태"가 없으므로 건너뛰고 아래 store.transition() 이 UNKNOWN_SITE 로
         # 응답한다.
-        current = store.get(site_id)
+        current = store.get_scoped(site_id, principal.organization_id)
+        if current is None:
+            response.status_code = _STATUS[SiteVerdict.UNKNOWN_SITE]
+            return SiteMutationResponse(
+                verdict=SiteVerdict.UNKNOWN_SITE.value,
+                detail=_SITE_NOT_FOUND_DETAIL,
+            )
         if (
             current is not None
             and requires_autonomy_approval(current.status, request.target_status)
@@ -874,6 +997,12 @@ def build_sites_router(store: SiteStore) -> APIRouter:
         response: Response,
         principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
     ) -> SiteMutationResponse:
+        if store.get_scoped(site_id, principal.organization_id) is None:
+            response.status_code = _STATUS[SiteVerdict.UNKNOWN_SITE]
+            return SiteMutationResponse(
+                verdict=SiteVerdict.UNKNOWN_SITE.value,
+                detail=_SITE_NOT_FOUND_DETAIL,
+            )
         result = store.set_aoi(
             site_id,
             request.aoi,
@@ -901,6 +1030,12 @@ def build_sites_router(store: SiteStore) -> APIRouter:
         않고 판정 입력일 뿐이며, 실제 ``MODEL_STALE`` 전이는 별도 스윕 표면이
         일으킨다(자율 개시·정식 순찰 승인만 2차 게이트 대상, ADR-KSI-015 D2).
         """
+        if store.get_scoped(site_id, principal.organization_id) is None:
+            response.status_code = _STATUS[SiteVerdict.UNKNOWN_SITE]
+            return SiteMutationResponse(
+                verdict=SiteVerdict.UNKNOWN_SITE.value,
+                detail=_SITE_NOT_FOUND_DETAIL,
+            )
         result = store.set_model_age_policy(
             site_id,
             max_age_days=request.max_age_days,
@@ -917,7 +1052,9 @@ def build_sites_router(store: SiteStore) -> APIRouter:
     return router
 
 
-def mount_sites(app: FastAPI, store: SiteStore) -> None:
+def mount_sites(
+    app: FastAPI, store: SiteStore, processing_job_store: _SiteJobLister | None = None
+) -> None:
     """앱에 Site 라우터를 장착한다 — store 없이는 엔드포인트가 존재하지 않는다."""
     app.state.site_store = store
-    app.include_router(build_sites_router(store))
+    app.include_router(build_sites_router(store, processing_job_store))

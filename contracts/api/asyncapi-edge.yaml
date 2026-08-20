@@ -15,7 +15,9 @@ channels:
     messages:
       contract:
         payload:
-          $ref: ../schemas/mission-contract.v1.2.json
+          oneOf:
+            - $ref: ../schemas/mission-contract.v1.2.json
+            - $ref: ../schemas/mission-contract.v1.3.json
   eventBundle:
     address: ksi/v1/edge/{edgeId}/event
     messages:

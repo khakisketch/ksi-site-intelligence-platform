@@ -61,6 +61,7 @@ class EvidenceVerdict(StrEnum):
     INVALID_ARTIFACT_ID = "INVALID_ARTIFACT_ID"
     UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
     INVALID_CONTENT_DIGEST = "INVALID_CONTENT_DIGEST"
+    INVALID_ATTESTATION = "INVALID_ATTESTATION"
     DUPLICATE_ARTIFACT = "DUPLICATE_ARTIFACT"
     UNKNOWN_ARTIFACT = "UNKNOWN_ARTIFACT"
     ALREADY_TOMBSTONED = "ALREADY_TOMBSTONED"
@@ -188,6 +189,18 @@ class EvidenceArtifact:
     # journal written before this field existed conservatively treats old
     # evidence as unbound, not as trusted.
     device_bound: bool = False
+    # Artifact attestation is distinct from channel binding.  Only the Edge
+    # route may set these fields, after verifying the canonical artifact
+    # identity with an operator-provisioned device key.  The signature itself
+    # is kept in the durable journal for audit/replay but is never exposed by
+    # EvidenceSummary or upload responses.
+    device_attested: bool = False
+    attestation_key_id: str | None = None
+    attestation_signature: str | None = None
+    attested_dispatch_id: str | None = None
+    attested_risk_policy_pack_id: str | None = None
+    attested_risk_policy_pack_digest: str | None = None
+    attested_calibration_profile_id: str | None = None
     tombstoned_at: datetime | None = None
     tombstone_reason: str | None = None
 

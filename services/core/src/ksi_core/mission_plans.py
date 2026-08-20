@@ -60,7 +60,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.enums import MissionType
@@ -91,11 +91,13 @@ from ksi_core.auth import (
     require_permission,
     require_permission_any,
 )
+from ksi_core.durable_journal import JournalSealedError
 from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.identifiers import is_path_safe_identifier
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
 from ksi_core.mission_records import (
     MISSION_NOT_FOUND_DETAIL,
+    MissionIssuanceSequenceStore,
     MissionRecord,
     MissionRecordVerdict,
     MissionStore,
@@ -184,6 +186,10 @@ class DroneProfileParams(CamelModel):
     drone_enum_value: int
     drone_sub_enum_value: int
     payload_enum_value: int
+    #: WPML payload sub-profile.  Keep it explicit at the Core boundary so the
+    #: generated KMZ cannot silently fall back to a library default when a
+    #: device-specific sub-profile is required.
+    payload_sub_enum_value: int = 0
     payload_position_index: int = 0
 
 
@@ -310,6 +316,9 @@ def build_mission_plan(
     private_key: Ed25519PrivateKey,
     key_id: str,
     issued_at: datetime | None = None,
+    contract_schema_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    site_sequence: int | None = None,
 ) -> dict[str, Any]:
     """경로 생성 → 서명 계약 → 짝 식별자 동봉 KMZ 발급. 실패는 typed 예외로 전파된다.
 
@@ -426,7 +435,13 @@ def build_mission_plan(
     # KMZ 는 그 계약의 canonical sha256 을 포함한 pair_manifest 를 동봉해, 두
     # 산출물이 사후에도(전송·저장 경로가 갈리더라도) 짝임을 검증 가능하게 한다.
     contract = issue_mission_contract(
-        request.contract, private_key=private_key, key_id=key_id, issued_at=issued_at
+        request.contract,
+        private_key=private_key,
+        key_id=key_id,
+        issued_at=issued_at,
+        schema_version=contract_schema_version,
+        issuer_id=issuer_id,
+        site_sequence=site_sequence,
     )
     contract_payload = contract.model_dump(by_alias=True, mode="json", exclude_none=True)
     site_frame_payload = request.contract.site_frame.model_dump(
@@ -450,6 +465,7 @@ def build_mission_plan(
             drone_enum_value=request.drone.drone_enum_value,
             drone_sub_enum_value=request.drone.drone_sub_enum_value,
             payload_enum_value=request.drone.payload_enum_value,
+            payload_sub_enum_value=request.drone.payload_sub_enum_value,
             payload_position_index=request.drone.payload_position_index,
         ),
         config=WaylineMissionConfig(
@@ -467,6 +483,11 @@ def build_mission_plan(
         # 촬영 웨이포인트는 생성되는데 KMZ 촬영 액션은 빠지는 어긋난 산출물이 된다.
         capture_at_waypoints=(pattern == "lawnmower" or capture_interval_m is not None),
         pair_manifest=pair_manifest,
+        # createTime/updateTime 은 **계약이 실제로 각인한 시각**에서 가져온다.
+        # 여기서 현재 시각을 읽으면 멱등 재발급이 매번 다른 KMZ 바이트를 내고,
+        # 그러면 서명된 봉투의 kmzSha256 짝이 깨진다(ADR-KSI-007). 계약의
+        # validity.notBefore 는 원 issued_at 에서 왔고 재발급 때 그대로 재사용된다.
+        created_at=datetime.fromisoformat(contract.validity.not_before.replace("Z", "+00:00")),
     )
 
     return {
@@ -518,8 +539,20 @@ def _regenerate_pair_artifact(
     """
     assert record.plan_request is not None  # noqa: S101 -- artifact_kind=="pair" 불변식이 보장
     stored_request = MissionPlanRequest.model_validate(record.plan_request)
+    schema_version = record.contract.get("schemaVersion", "1.2")
+    if schema_version not in ("1.2", "1.3"):
+        raise ValueError(f"재생성할 수 없는 Mission Contract 버전: {schema_version!r}")
+    issuance = record.contract.get("issuance")
+    issuer_id = issuance.get("issuerId") if isinstance(issuance, dict) else None
+    site_sequence = issuance.get("siteSequence") if isinstance(issuance, dict) else None
     result = build_mission_plan(
-        stored_request, private_key=private_key, key_id=key_id, issued_at=record.issued_at
+        stored_request,
+        private_key=private_key,
+        key_id=key_id,
+        issued_at=record.issued_at,
+        contract_schema_version=schema_version,
+        issuer_id=issuer_id,
+        site_sequence=site_sequence,
     )
     if result["kmzSha256"] != record.kmz_sha256:
         logger.warning(
@@ -619,7 +652,12 @@ def build_mission_plans_router(
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
     kmz_storage: EvidenceStorage | None = None,
+    writer_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    sequence_store: MissionIssuanceSequenceStore | None = None,
 ) -> APIRouter:
+    if writer_version == "1.3" and (not issuer_id or sequence_store is None):
+        raise ValueError("Mission Contract v1.3 writer는 issuer_id와 sequence_store가 필요하다")
     router = APIRouter(prefix="/v1/missions", tags=["missions"])
     # (kmzSha256, kmz_bytes, expires_at_monotonic) — mission_id 키, LRU 크기상한.
     kmz_cache: OrderedDict[str, tuple[str, bytes, float]] = OrderedDict()
@@ -704,9 +742,27 @@ def build_mission_plans_router(
         # 쓴다 — 둘이 별개 datetime.now() 호출이면 멱등 재발급(_regenerate_pair_artifact
         # 가 record.issued_at 을 재서명 시각으로 재사용)이 원본과 다른 바이트를 낸다.
         issued_at = datetime.now(UTC)
+        site_sequence: int | None = None
+        if writer_version == "1.3":
+            assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
+            assert sequence_store is not None  # noqa: S101 -- 조립 시 검증
+            try:
+                site_sequence = sequence_store.reserve(
+                    issuer_id=issuer_id,
+                    site_id=request.contract.site_id,
+                    reserved_at=issued_at,
+                )
+            except JournalSealedError as exc:
+                raise HTTPException(status_code=503, detail="STORE_UNAVAILABLE") from exc
         try:
             result = build_mission_plan(
-                request, private_key=private_key, key_id=key_id, issued_at=issued_at
+                request,
+                private_key=private_key,
+                key_id=key_id,
+                issued_at=issued_at,
+                contract_schema_version=writer_version,
+                issuer_id=issuer_id,
+                site_sequence=site_sequence,
             )
         except (RouteGenerationError, KmzBuildError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -896,6 +952,9 @@ def mount_mission_plans(
     mission_store: MissionStore,
     site_lookup: Callable[[str], SiteLookupResult | None],
     kmz_storage: EvidenceStorage | None = None,
+    writer_version: Literal["1.2", "1.3"] = "1.2",
+    issuer_id: str | None = None,
+    sequence_store: MissionIssuanceSequenceStore | None = None,
 ) -> None:
     """앱에 임무 계획(짝 발급) 라우터를 장착한다.
 
@@ -917,5 +976,8 @@ def mount_mission_plans(
             mission_store=mission_store,
             site_lookup=site_lookup,
             kmz_storage=kmz_storage,
+            writer_version=writer_version,
+            issuer_id=issuer_id,
+            sequence_store=sequence_store,
         )
     )

@@ -114,6 +114,17 @@ class TestEvaluateBinaryAllowedAndDisallowed:
         assert result.findings[0].code == "DISALLOWED_DYNAMIC_LINK"
         assert "libz.so.1" in result.findings[0].detail
 
+    def test_dynamic_libcrypto_is_rejected_for_device_attestation(self) -> None:
+        result = evaluate_binary(
+            binary_name="ksi_psdk_app",
+            needed=["libc.so.6", "libcrypto.so.1.1"],
+            rpaths=[],
+            max_glibc=(2, 31),
+        )
+        assert not result.ok
+        assert result.findings[0].code == "DISALLOWED_DYNAMIC_LINK"
+        assert "libcrypto.so.1.1" in result.findings[0].detail
+
     def test_unstatic_libstdcxx_is_rejected_matching_real_device_build(self) -> None:
         # 2026-08-03 실기 세션 실측: KSI_TARGET_MANIFOLD3 정적 링크 정책을 아직
         # 적용하지 않은 빌드는 libstdc++.so.6을 동적으로 가져온다 — 이게 잡혀야

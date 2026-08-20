@@ -14,6 +14,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.device_attestation import (
+    DeviceAttestationKeyRecord,
+    DeviceAttestationKeyStatus,
+    DeviceAttestationRegistry,
+    evidence_attestation_payload,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_dispatch import (
     EdgeDispatchRecoveryError,
@@ -328,6 +334,7 @@ def _client_with_site(
     evidence_storage: _LegacyStorage | None = None,
     with_site: bool = True,
     kmz_sha256: str | None = None,
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
 ) -> tuple[
     TestClient, KeyRegistry, EventStore, EdgeDispatchStore, MissionExecutionStore, SiteStore | None
 ]:
@@ -408,6 +415,7 @@ def _client_with_site(
         edge_dispatch_store=dispatch_store,
         mission_execution_store=execution_store,
         site_store=site_store,
+        device_attestation_registry=device_attestation_registry,
     )
     registry = KeyRegistry()
     registry.register("mission-key", mission_key.public_key())
@@ -420,16 +428,77 @@ def _client(
     *,
     evidence_storage: _LegacyStorage | None = None,
     kmz_sha256: str | None = None,
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
 ) -> tuple[TestClient, KeyRegistry, EventStore, EdgeDispatchStore, MissionExecutionStore]:
     """현장 원장 없이 조립 — 기존 dispatch 테스트들이 쓰는 좁은 형태."""
     client, registry, events, dispatch, execution, _site = _client_with_site(
-        tmp_path, evidence_storage=evidence_storage, with_site=False, kmz_sha256=kmz_sha256
+        tmp_path,
+        evidence_storage=evidence_storage,
+        with_site=False,
+        kmz_sha256=kmz_sha256,
+        device_attestation_registry=device_attestation_registry,
     )
     return client, registry, events, dispatch, execution
 
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _base64url_signature(key: Ed25519PrivateKey, payload: dict[str, str]) -> str:
+    from ksi_domain.canonical_json import canonical_json_bytes
+
+    return base64.urlsafe_b64encode(key.sign(canonical_json_bytes(payload))).decode().rstrip("=")
+
+
+def _activate_pending_dispatch(client: TestClient) -> dict[str, Any]:
+    envelope = client.get(
+        "/v1/edge-sync/missions/next", headers=_headers(_EDGE_TOKEN)
+    ).json()
+    receipt = {
+        "schemaVersion": "1.0",
+        "dispatchId": envelope["dispatchId"],
+        "edgeDeviceId": _EDGE_ID,
+        "missionId": envelope["missionId"],
+        "missionContractDigest": envelope["missionContractDigest"],
+        "riskPolicyPackDigest": envelope["riskPolicyPackDigest"],
+        "activatedAt": datetime.now(UTC).isoformat(),
+        "runtimeVersion": "manifold-runtime-test",
+    }
+    response = client.post(
+        f"/v1/edge-sync/missions/{envelope['dispatchId']}/activation-receipts",
+        json=receipt,
+        headers=_headers(_EDGE_TOKEN),
+    )
+    assert response.status_code == 201
+    return envelope
+
+
+def _promote_test_event_to_critical(event_store: EventStore) -> str:
+    event_key = make_event_key(_EDGE_ID, "evt-001")
+    original = event_store.get(event_key)
+    assert original is not None
+    for status in ("EVIDENCE_COLLECTION", "FINDING"):
+        payload = _bundle(original.occurred_at)
+        payload.update(
+            {
+                "status": status,
+                "severity": "CRITICAL",
+                "evidence": {
+                    "clips": ["clip-001.mp4"],
+                    "riskFieldArtifact": "risk-001.json",
+                    "trajectoryArtifact": "trajectory-001.json",
+                    "viewpointHistoryArtifact": "viewpoint-001.json",
+                },
+            }
+        )
+        assert (
+            event_store.project_bundle(
+                payload, edge_device_id=_EDGE_ID, received_at=datetime.now(UTC)
+            )
+            is EventVerdict.EVENT_UPDATED
+        )
+    return event_key
 
 
 def test_edge_receives_only_its_signed_dispatch_and_activation_is_idempotent(
@@ -665,6 +734,183 @@ def test_edge_evidence_requires_checksum_bound_storage_before_registration(tmp_p
     assert response.status_code == 503
     assert response.json()["detail"] == "EVIDENCE_DIGEST_BINDING_UNAVAILABLE"
     assert event_store.get_evidence(event_key, body["artifactId"]) is None
+
+
+def test_critical_edge_evidence_requires_valid_artifact_attestation(tmp_path: Path) -> None:
+    device_key = Ed25519PrivateKey.generate()
+    registry = DeviceAttestationRegistry(
+        [
+            DeviceAttestationKeyRecord(
+                device_id=_EDGE_ID,
+                key_id="edge-attestation-2026-08",
+                public_key=device_key.public_key(),
+            )
+        ]
+    )
+    client, _keys, event_store, _dispatch, _execution = _client(
+        tmp_path, device_attestation_registry=registry
+    )
+    envelope = _activate_pending_dispatch(client)
+    event_key = _promote_test_event_to_critical(event_store)
+    digest = "sha256:" + "c" * 64
+    body: dict[str, Any] = {
+        "artifactId": "risk-001.json",
+        "contentType": "application/json",
+        "contentDigest": digest,
+    }
+    path = f"/v1/edge-sync/events/{event_key}/evidence"
+
+    missing = client.post(path, json=body, headers=_headers(_EDGE_TOKEN))
+    assert missing.status_code == 422
+    assert missing.json()["detail"] == "ATTESTATION_REQUIRED"
+
+    payload = evidence_attestation_payload(
+        device_id=_EDGE_ID,
+        site_id="site-001",
+        mission_id="mission-edge-001",
+        event_key=event_key,
+        artifact_id=body["artifactId"],
+        content_type=body["contentType"],
+        content_digest=digest,
+    )
+    body["attestation"] = {
+        "keyId": "edge-attestation-2026-08",
+        "signature": _base64url_signature(device_key, payload),
+    }
+    missing_algorithm = client.post(path, json=body, headers=_headers(_EDGE_TOKEN))
+    assert missing_algorithm.status_code == 422
+
+    body["attestation"] = {
+        "keyId": "edge-attestation-2026-08",
+        "algorithm": "Ed25519",
+        "signature": _base64url_signature(device_key, payload),
+    }
+    accepted = client.post(path, json=body, headers=_headers(_EDGE_TOKEN))
+    assert accepted.status_code == 201
+    assert accepted.json()["deviceAttested"] is True
+    assert accepted.json()["attestationKeyId"] == "edge-attestation-2026-08"
+    assert "signature" not in accepted.json()
+    artifact = event_store.get_evidence(event_key, body["artifactId"])
+    assert artifact is not None
+    assert artifact.device_bound and artifact.device_attested
+    assert artifact.attested_dispatch_id == envelope["dispatchId"]
+    assert artifact.attested_risk_policy_pack_digest == envelope["riskPolicyPackDigest"]
+    assert artifact.attested_calibration_profile_id == "cal-001"
+
+
+def test_attested_evidence_requires_matching_activated_dispatch(tmp_path: Path) -> None:
+    device_key = Ed25519PrivateKey.generate()
+    registry = DeviceAttestationRegistry(
+        [
+            DeviceAttestationKeyRecord(
+                device_id=_EDGE_ID,
+                key_id="edge-key",
+                public_key=device_key.public_key(),
+            )
+        ]
+    )
+    client, _keys, event_store, _dispatch, _execution = _client(
+        tmp_path, device_attestation_registry=registry
+    )
+    event_key = _promote_test_event_to_critical(event_store)
+    digest = "sha256:" + "d" * 64
+    payload = evidence_attestation_payload(
+        device_id=_EDGE_ID,
+        site_id="site-001",
+        mission_id="mission-edge-001",
+        event_key=event_key,
+        artifact_id="risk-001.json",
+        content_type="application/json",
+        content_digest=digest,
+    )
+    response = client.post(
+        f"/v1/edge-sync/events/{event_key}/evidence",
+        json={
+            "artifactId": "risk-001.json",
+            "contentType": "application/json",
+            "contentDigest": digest,
+            "attestation": {
+                "keyId": "edge-key",
+                "algorithm": "Ed25519",
+                "signature": _base64url_signature(device_key, payload),
+            },
+        },
+        headers=_headers(_EDGE_TOKEN),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "ACTIVE_DISPATCH_LINEAGE_MISMATCH"
+    assert event_store.get_evidence(event_key, "risk-001.json") is None
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_detail"),
+    [
+        ("unknown", "ATTESTATION_UNKNOWN_KEY"),
+        ("cross-device", "ATTESTATION_CROSS_DEVICE_KEY"),
+        ("revoked", "ATTESTATION_REVOKED_KEY"),
+        ("expired", "ATTESTATION_KEY_EXPIRED"),
+    ],
+)
+def test_attestation_key_registry_negatives_fail_at_http_boundary(
+    tmp_path: Path, case: str, expected_detail: str
+) -> None:
+    key = Ed25519PrivateKey.generate()
+    now = datetime.now(UTC)
+    records: list[DeviceAttestationKeyRecord]
+    if case == "unknown":
+        records = []
+    elif case == "cross-device":
+        records = [DeviceAttestationKeyRecord("edge-other", "edge-key", key.public_key())]
+    elif case == "revoked":
+        records = [
+            DeviceAttestationKeyRecord(
+                _EDGE_ID,
+                "edge-key",
+                key.public_key(),
+                status=DeviceAttestationKeyStatus.REVOKED,
+            )
+        ]
+    else:
+        records = [
+            DeviceAttestationKeyRecord(
+                _EDGE_ID,
+                "edge-key",
+                key.public_key(),
+                not_after=now - timedelta(seconds=1),
+            )
+        ]
+    client, _keys, event_store, _dispatch, _execution = _client(
+        tmp_path, device_attestation_registry=DeviceAttestationRegistry(records)
+    )
+    _activate_pending_dispatch(client)
+    event_key = _promote_test_event_to_critical(event_store)
+    digest = "sha256:" + "e" * 64
+    payload = evidence_attestation_payload(
+        device_id=_EDGE_ID,
+        site_id="site-001",
+        mission_id="mission-edge-001",
+        event_key=event_key,
+        artifact_id="risk-key-negative.json",
+        content_type="application/json",
+        content_digest=digest,
+    )
+    response = client.post(
+        f"/v1/edge-sync/events/{event_key}/evidence",
+        json={
+            "artifactId": "risk-key-negative.json",
+            "contentType": "application/json",
+            "contentDigest": digest,
+            "attestation": {
+                "keyId": "edge-key",
+                "algorithm": "Ed25519",
+                "signature": _base64url_signature(key, payload),
+            },
+        },
+        headers=_headers(_EDGE_TOKEN),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == expected_detail
+    assert event_store.get_evidence(event_key, "risk-key-negative.json") is None
 
 
 # ── 임무 실행 생애주기 결선 (ADR-KSI-019 G2) ──────────────────────────

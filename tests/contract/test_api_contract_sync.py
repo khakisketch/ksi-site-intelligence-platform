@@ -26,6 +26,7 @@ from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
+from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.design_conformance_reports import DesignConformanceStore
@@ -44,6 +45,7 @@ from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
@@ -112,6 +114,27 @@ class _NullEvidenceStorage:
         raise NotImplementedError
 
 
+class _ContractSyncCopilotModel:
+    external = False
+
+    def complete(self, **_kwargs: Any) -> ModelTurn:
+        return ModelTurn(answer="contract-only")
+
+
+class _ContractSyncCopilotBackend:
+    def site_exists(self, _organization_id: str, _site_id: str) -> bool:
+        return False
+
+    def ai_egress_allowed(self, _organization_id: str, _site_id: str) -> bool:
+        return False
+
+    def query(self, **_kwargs: Any) -> ToolResult:
+        return ToolResult(data={}, citations=())
+
+    def create_reobservation_draft(self, **_kwargs: Any) -> ToolResult:
+        return ToolResult(data={}, citations=())
+
+
 def _max_assembly(tmp_path: Path) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
@@ -163,6 +186,17 @@ def _max_assembly(tmp_path: Path) -> Any:
     work_area_store = WorkAreaStore(
         DurableJournal(tmp_path / "work-areas.jsonl"),
         site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    observation_work_order_store = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
+    copilot_service = CopilotService(
+        model=_ContractSyncCopilotModel(),
+        backend=_ContractSyncCopilotBackend(),
+        planner_version="contract-sync",
     )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
@@ -217,6 +251,8 @@ def _max_assembly(tmp_path: Path) -> Any:
             storage=storage,
         ),
         work_area_store=work_area_store,
+        observation_work_order_store=observation_work_order_store,
+        copilot_service=copilot_service,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),
@@ -241,9 +277,7 @@ def _implemented_paths(tmp_path: Path) -> set[str]:
 def test_non_planned_openapi_paths_exist_in_implementation(tmp_path: Path) -> None:
     doc: dict[str, Any] = yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
     implemented = _implemented_paths(tmp_path)
-    documented = {
-        path for path, spec in doc["paths"].items() if spec.get("x-status") != "planned"
-    }
+    documented = {path for path, spec in doc["paths"].items() if spec.get("x-status") != "planned"}
     missing = documented - implemented
     assert not missing, (
         f"openapi-core.yaml 이 구현에 없는 경로를 '구현된 계약'으로 문서화한다: {missing} "
@@ -296,9 +330,7 @@ def test_documented_methods_exist_in_implementation(tmp_path: Path) -> None:
             f"{method.upper()} {path}" for method in doc_methods if method not in impl_methods
         )
 
-    assert not missing, (
-        f"openapi-core.yaml 이 실구현에 없는 메서드를 문서화한다: {missing}"
-    )
+    assert not missing, f"openapi-core.yaml 이 실구현에 없는 메서드를 문서화한다: {missing}"
 
 
 def test_implemented_v1_paths_are_documented(tmp_path: Path) -> None:
@@ -314,9 +346,7 @@ def test_implemented_v1_paths_are_documented(tmp_path: Path) -> None:
     undocumented = {
         path for path in implemented if path.startswith("/v1/") and path not in documented
     }
-    assert not undocumented, (
-        f"실구현에 있는 /v1/* 경로가 openapi-core.yaml 에 없다: {undocumented}"
-    )
+    assert not undocumented, f"실구현에 있는 /v1/* 경로가 openapi-core.yaml 에 없다: {undocumented}"
 
 
 def test_protected_paths_declare_security_in_doc() -> None:
@@ -415,13 +445,9 @@ def test_openapi_refs_resolve_to_defined_targets() -> None:
             if not (_OPENAPI.parent / ref).resolve().is_file():
                 dangling.append(f"{pointer_path} -> {ref} (파일이 없다)")
         else:
-            dangling.append(
-                f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)"
-            )
+            dangling.append(f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)")
 
-    assert not dangling, (
-        f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
-    )
+    assert not dangling, f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
 
 
 # ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────
@@ -960,46 +986,57 @@ def test_vertical_datum_enum_matches_the_python_ssot() -> None:
 # 코드가 다른 제약을 달면 여기서 걸린다.
 
 _CONSTRAINT_KEYS = (
-    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-    "minLength", "maxLength", "pattern", "minItems", "maxItems",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "minItems",
+    "maxItems",
 )
 
 #: 2026-08-18 전수 확인 — 전부 "문서와 코드의 표현 위치가 다를 뿐 약속은 지켜진다".
 #: 각 항목은 실제로 그 제약이 어디서 강제되는지 확인한 뒤 등재한 것이다.
 #: 새 항목을 넣으려면 **먼저 실제로 뚫리는지 확인**해야 한다 — 뚫리면 등재가 아니라 수정이다.
-_KNOWN_CONSTRAINT_DRIFT: frozenset[str] = frozenset({
-    # 계약 모델 validator 가 강제(FlightEnvelope._envelope_is_coherent 의 규제 상한).
-    "POST /v1/missions/contracts(body).flightEnvelope.maxAltitudeM.maximum",
-    "POST /v1/missions/plans(body).contract.flightEnvelope.maxAltitudeM.maximum",
-    # WaylineMissionConfig.__post_init__ 이 강제, 핸들러가 KmzBuildError → 422.
-    "POST /v1/missions/plans(body).wayline.autoFlightSpeedMs.exclusiveMinimum",
-    "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.exclusiveMinimum",
-    "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.maximum",
-    "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.maximum",
-    "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.minimum",
-    "POST /v1/missions/plans(body).route.captureIntervalM.minimum",
-    # 구현에만 있는 제약(문서가 덜 엄격) — 코드가 더 조이는 방향이라 약속 위반이 아니다.
-    "POST /v1/missions/plans(body).aoi.vertices.maxItems",
-    "PUT /v1/sites/{site_id}/aoi(body).aoi.vertices.maxItems",
-    "POST /v1/design-surfaces/{design_surface_id}/observations(body)"
-    ".verticalCrsEpsg.exclusiveMinimum",
-    "POST /v1/design-surfaces/{design_surface_id}/observations(body).verticalCrsEpsg.minimum",
-    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).dispatchId.pattern",
-    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).edgeDeviceId.pattern",
-    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).missionId.minLength",
-    "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).runtimeVersion.minLength",
-    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
-    ".actionReturnCode.minLength",
-    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).dispatchId.pattern",
-    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).edgeDeviceId.pattern",
-    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).missionId.minLength",
-    "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
-    ".runtimeVersion.minLength",
-    # 스토어·핸들러가 강제.
-    "POST /v1/events/{event_key}/evidence(body).artifactId.minLength",
-    "POST /v1/missions/{mission_id}/comparison-requests(body).zoneCrs.minLength",
-    "PUT /v1/sites/{site_id}/model-age-policy(body).maxAgeDays.minimum",
-})
+_KNOWN_CONSTRAINT_DRIFT: frozenset[str] = frozenset(
+    {
+        # 계약 모델 validator 가 강제(FlightEnvelope._envelope_is_coherent 의 규제 상한).
+        "POST /v1/missions/contracts(body).flightEnvelope.maxAltitudeM.maximum",
+        "POST /v1/missions/plans(body).contract.flightEnvelope.maxAltitudeM.maximum",
+        # WaylineMissionConfig.__post_init__ 이 강제, 핸들러가 KmzBuildError → 422.
+        "POST /v1/missions/plans(body).wayline.autoFlightSpeedMs.exclusiveMinimum",
+        "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.exclusiveMinimum",
+        "POST /v1/missions/plans(body).wayline.globalTransitionalSpeedMs.maximum",
+        "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.maximum",
+        "POST /v1/missions/plans(body).wayline.takeoffSecurityHeightM.minimum",
+        "POST /v1/missions/plans(body).route.captureIntervalM.minimum",
+        # 구현에만 있는 제약(문서가 덜 엄격) — 코드가 더 조이는 방향이라 약속 위반이 아니다.
+        "POST /v1/missions/plans(body).aoi.vertices.maxItems",
+        "PUT /v1/sites/{site_id}/aoi(body).aoi.vertices.maxItems",
+        "POST /v1/design-surfaces/{design_surface_id}/observations(body)"
+        ".verticalCrsEpsg.exclusiveMinimum",
+        "POST /v1/design-surfaces/{design_surface_id}/observations(body).verticalCrsEpsg.minimum",
+        "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).dispatchId.pattern",
+        "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).edgeDeviceId.pattern",
+        "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body).missionId.minLength",
+        "POST /v1/edge-sync/missions/{dispatch_id}/activation-receipts(body)"
+        ".runtimeVersion.minLength",
+        "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
+        ".actionReturnCode.minLength",
+        "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).dispatchId.pattern",
+        "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
+        ".edgeDeviceId.pattern",
+        "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body).missionId.minLength",
+        "POST /v1/edge-sync/missions/{dispatch_id}/flight-start-receipts(body)"
+        ".runtimeVersion.minLength",
+        # 스토어·핸들러가 강제.
+        "POST /v1/events/{event_key}/evidence(body).artifactId.minLength",
+        "POST /v1/missions/{mission_id}/comparison-requests(body).zoneCrs.minLength",
+        "PUT /v1/sites/{site_id}/model-age-policy(body).maxAgeDays.minimum",
+    }
+)
 
 
 def _unwrap_optional(spec: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
@@ -1034,8 +1071,13 @@ def _collect_constraint_drift(
                 resolved = _resolve_ref(impl_spec, branch)
                 if isinstance(resolved, dict) and "properties" in resolved:
                     _collect_constraint_drift(
-                        doc_spec=doc_spec, impl_spec=impl_spec, doc_node=doc_node,
-                        impl_node=resolved, trail=trail, drift=drift, seen=seen,
+                        doc_spec=doc_spec,
+                        impl_spec=impl_spec,
+                        doc_node=doc_node,
+                        impl_node=resolved,
+                        trail=trail,
+                        drift=drift,
+                        seen=seen,
                     )
             return
     doc_props = doc_node.get("properties") or {}
@@ -1051,8 +1093,13 @@ def _collect_constraint_drift(
             if doc_flat.get(key) != impl_flat.get(key):
                 drift.append(f"{trail}.{name}.{key}")
         _collect_constraint_drift(
-            doc_spec=doc_spec, impl_spec=impl_spec, doc_node=doc_field,
-            impl_node=impl_field, trail=f"{trail}.{name}", drift=drift, seen=seen,
+            doc_spec=doc_spec,
+            impl_spec=impl_spec,
+            doc_node=doc_field,
+            impl_node=impl_field,
+            trail=f"{trail}.{name}",
+            drift=drift,
+            seen=seen,
         )
 
 
@@ -1081,8 +1128,13 @@ def test_no_new_numeric_constraint_drift_between_doc_and_implementation(tmp_path
             if doc_body is None or impl_body is None:
                 continue
             _collect_constraint_drift(
-                doc_spec=doc, impl_spec=impl, doc_node=doc_body, impl_node=impl_body,
-                trail=f"{method.upper()} {path}(body)", drift=drift, seen=seen,
+                doc_spec=doc,
+                impl_spec=impl,
+                doc_node=doc_body,
+                impl_node=impl_body,
+                trail=f"{method.upper()} {path}(body)",
+                drift=drift,
+                seen=seen,
             )
 
     assert seen, "요청 본문을 하나도 순회하지 못했다면 이 게이트는 공허하다"
@@ -1115,8 +1167,13 @@ def test_the_constraint_drift_allowlist_is_not_stale(tmp_path: Path) -> None:
             if doc_body is None or impl_body is None:
                 continue
             _collect_constraint_drift(
-                doc_spec=doc, impl_spec=impl, doc_node=doc_body, impl_node=impl_body,
-                trail=f"{method.upper()} {path}(body)", drift=drift, seen=seen,
+                doc_spec=doc,
+                impl_spec=impl,
+                doc_node=doc_body,
+                impl_node=impl_body,
+                trail=f"{method.upper()} {path}(body)",
+                drift=drift,
+                seen=seen,
             )
     stale = sorted(_KNOWN_CONSTRAINT_DRIFT - set(drift))
     assert not stale, f"허용 목록에 이미 해소된 항목이 남아 있다 — 지워라: {stale}"

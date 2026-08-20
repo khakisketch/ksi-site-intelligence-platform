@@ -387,6 +387,9 @@ def test_new_contract_schemas_validate_wire() -> None:
         "https://ksi.example/schemas/mission-contract.v1.2.json": json.loads(
             (schemas / "mission-contract.v1.2.json").read_text(encoding="utf-8")
         ),
+        "https://ksi.example/schemas/mission-contract.v1.3.json": json.loads(
+            (schemas / "mission-contract.v1.3.json").read_text(encoding="utf-8")
+        ),
         "https://ksi.example/schemas/risk-policy-pack.v1.json": json.loads(
             (schemas / "risk-policy-pack.v1.json").read_text(encoding="utf-8")
         ),
@@ -405,6 +408,41 @@ def test_new_contract_schemas_validate_wire() -> None:
     Draft202012Validator(store["https://ksi.example/schemas/edge-runtime-profile.v1.json"]).validate(
         edge_runtime_profile_wire_dict(_profile())
     )
+
+
+def test_dispatch_dual_reader_accepts_signed_mission_contract_v13() -> None:
+    mission_key = Ed25519PrivateKey.generate()
+    dispatch_key = Ed25519PrivateKey.generate()
+    unsigned = _unsigned_contract()
+    unsigned["schemaVersion"] = "1.3"
+    unsigned["issuance"] = {
+        "issuerId": "core-seoul-1",
+        "siteSequence": 11,
+        "issuedAt": "2026-08-14T00:00:00Z",
+    }
+    signed = sign_contract(unsigned, mission_key, "mission-key")
+    envelope = build_mission_dispatch_envelope(
+        dispatch_id="dispatch-v13",
+        edge_device_id="edge-001",
+        mission_contract=signed,
+        risk_policy_pack=_pack(),
+        edge_runtime_profile=_profile(),
+        validity=DispatchValidity(
+            not_before=_NOW - timedelta(minutes=1),
+            not_after=_NOW + timedelta(minutes=20),
+        ),
+        private_key=dispatch_key,
+        key_id="dispatch-key",
+    )
+
+    verified = verify_mission_dispatch_envelope(
+        envelope.model_dump(by_alias=True, mode="json"),
+        _registry(mission_key, dispatch_key),
+        expected_edge_device_id="edge-001",
+        now=_NOW,
+    )
+
+    assert verified.verdict is DispatchVerdict.VALID
 
 
 def test_valid_dispatch_binds_device_contract_policy_and_ttl() -> None:

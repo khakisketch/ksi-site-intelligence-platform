@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from ksi_core.processing_jobs import JobSpec, ProcessingJobRecord
+from ksi_core.source_media import CaptureWindow, CaptureWindowStatus
 from ksi_core.spatial_model import (
     SpatialModelState,
     evaluate_spatial_model,
@@ -73,6 +74,7 @@ def _record(
     updated_at: datetime = _NOW,
     with_source: bool = False,
     with_derived: bool = False,
+    capture_window: CaptureWindow | None = None,
 ) -> ProcessingJobRecord:
     artifacts: list[ProcessingArtifact] = []
     if with_source:
@@ -102,6 +104,11 @@ def _record(
         issued_by="op-1",
         updated_at=updated_at,
         artifacts=tuple(artifacts),
+        capture_window=(
+            capture_window
+            if capture_window is not None
+            else CaptureWindow(CaptureWindowStatus.COMPLETE, updated_at, updated_at)
+        ),
     )
 
 
@@ -182,6 +189,44 @@ def test_old_source_backed_success_is_stale() -> None:
 
     assert status.state is SpatialModelState.STALE
     assert status.age_days == pytest.approx(45.0)
+
+
+def test_late_upload_uses_capture_time_not_registration_time() -> None:
+    """오래된 사진을 오늘 처리해도 최신 모델로 세탁되지 않는다."""
+    captured = _NOW - timedelta(days=45)
+    uploaded_today = _record(
+        updated_at=_NOW,
+        with_source=True,
+        capture_window=CaptureWindow(CaptureWindowStatus.COMPLETE, captured, captured),
+    )
+
+    status = evaluate_spatial_model([uploaded_today], now=_NOW, max_age_days=30)
+
+    assert status.state is SpatialModelState.STALE
+    assert status.age_days == pytest.approx(45.0)
+    assert status.registered_at == _NOW
+    assert status.captured_to == captured
+    assert status.freshness_basis.value == "CAPTURED_TO"
+
+
+@pytest.mark.parametrize(
+    "window_status", [CaptureWindowStatus.INCOMPLETE, CaptureWindowStatus.CONFLICT]
+)
+def test_missing_or_conflicting_capture_time_never_falls_back_to_registration(
+    window_status: CaptureWindowStatus,
+) -> None:
+    record = _record(
+        updated_at=_NOW,
+        with_source=True,
+        capture_window=CaptureWindow(window_status),
+    )
+
+    status = evaluate_spatial_model([record], now=_NOW, max_age_days=30)
+
+    assert status.state is SpatialModelState.CAPTURE_TIME_UNAVAILABLE
+    assert status.age_days is None
+    assert status.freshness_basis.value == "NONE"
+    assert status.capture_time_status == window_status.value
 
 
 def test_exactly_at_the_threshold_is_still_fresh() -> None:
@@ -379,9 +424,10 @@ def _spatial_model_client(
 
     app = FastAPI()
     mount_auth(app, registry)
-    mount_sites(app, site_store)
+    jobs = _JobsStub(records or [])
+    mount_sites(app, site_store, jobs)
     mount_spatial_model(
-        app, site_store=site_store, processing_job_store=_JobsStub(records or [])
+        app, site_store=site_store, processing_job_store=jobs
     )
     client = TestClient(app)
     client.headers.update({"Authorization": "Bearer sm-operator"})
@@ -422,7 +468,31 @@ def test_spatial_model_endpoint_reports_undeclared_policy(tmp_path: Any) -> None
     body = client.get("/v1/sites/site-a/spatial-model").json()
 
     assert body["state"] == "AGE_POLICY_UNDECLARED"
-    assert body["maxAgeDays"] is None
+
+
+def test_site_detail_nests_the_capture_time_spatial_summary(tmp_path: Any) -> None:
+    captured = _NOW - timedelta(days=2)
+    client, _ = _spatial_model_client(
+        tmp_path,
+        records=[
+            _record(
+                site_id="site-a",
+                with_source=True,
+                capture_window=CaptureWindow(
+                    CaptureWindowStatus.COMPLETE, captured, captured
+                ),
+            )
+        ],
+    )
+
+    body = client.get("/v1/sites/site-a").json()
+
+    assert body["siteId"] == "site-a"
+    assert body["spatialModel"]["capturedFrom"] == captured.isoformat()
+    assert body["spatialModel"]["capturedTo"] == captured.isoformat()
+    assert body["spatialModel"]["captureTimeStatus"] == "COMPLETE"
+    assert body["spatialModel"]["freshnessBasis"] == "CAPTURED_TO"
+    assert body["spatialModel"]["maxAgeDays"] is None
 
 
 def test_spatial_model_endpoint_flags_status_model_mismatch(tmp_path: Any) -> None:

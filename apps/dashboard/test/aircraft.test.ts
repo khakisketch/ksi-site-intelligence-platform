@@ -13,16 +13,19 @@ describe("M4D 기본값 단일 출처", () => {
     });
   });
 
-  it("카메라는 공식 스펙 유도값이고 GSD 는 교체 전 대비 0.5% 이내다", () => {
+  it("카메라는 FIELD-0a M4D WideCamera EXIF 실측값을 쓰고 GSD 교정을 반영한다", () => {
     expect(M4D_WIDE_CAMERA.imageWidthPx).toBe(5280);
     expect(M4D_WIDE_CAMERA.imageHeightPx).toBe(3956);
-    // 교체 전 대체값(1인치급 13.2/8.8/5472) 대비 픽셀 지상 크기 관성 확인 —
-    // 기본값 교체가 격자·촬영 간격을 급변시키지 않는다는 안전 성질.
+    expect(M4D_WIDE_CAMERA.focalLengthMm).toBe(12.29);
+    // 교체 전 유도값(1인치급 13.2/8.8/5472) 대비 변화는 약 2.74%다. 12.29mm
+    // 실측으로 초점거리가 길어졌으므로 픽셀 지상 크기는 작아져야 하며, 이 범위를
+    // 벗어나면 EXIF 근거가 아닌 매직넘버 교체를 의심한다.
     const before = 13.2 / (8.8 * 5472);
     const after =
       M4D_WIDE_CAMERA.sensorWidthMm /
       (M4D_WIDE_CAMERA.focalLengthMm * M4D_WIDE_CAMERA.imageWidthPx);
-    expect(Math.abs(after - before) / before).toBeLessThan(0.005);
+    expect(after).toBeLessThan(before);
+    expect(Math.abs(after - before) / before).toBeLessThan(0.03);
   });
 
   for (const wizard of [

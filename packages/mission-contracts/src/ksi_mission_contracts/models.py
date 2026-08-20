@@ -182,7 +182,7 @@ class SignatureV1(_CamelModel):
 
 
 class Ed25519Signature(_CamelModel):
-    """v1.2 signature 블록 — ADR-KSI-002 §4 Ed25519 실서명(``ksi_mission_contracts.signing``)."""
+    """v1.2+ signature 블록 — ADR-KSI-002 §4 Ed25519 실서명."""
 
     algorithm: Literal["Ed25519"]
     key_id: str
@@ -204,6 +204,22 @@ class _MissionContractBase(_CamelModel):
     artifacts: Artifacts
 
 
+class IssuanceV1_3(_CamelModel):  # noqa: N801 (스키마 버전 표기 유지)
+    """v1.3 발급 순서 근거 — ``(issuerId, siteId)`` durable 단조 수열."""
+
+    issuer_id: str = Field(min_length=1)
+    site_sequence: int = Field(gt=0)
+    issued_at: str
+
+    @field_validator("issued_at")
+    @classmethod
+    def _issued_at_must_be_tz_aware(cls, value: str) -> str:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("issuance.issuedAt 은 tz-aware RFC3339여야 한다")
+        return value
+
+
 class MissionContractV1_1(_MissionContractBase):  # noqa: N801 (스키마 버전 표기 유지)
     """mission-contract.v1.1.json — 서명 필드 존재만 표현(암호학적 검증 불가, 동결본)."""
 
@@ -218,18 +234,28 @@ class MissionContractV1_2(_MissionContractBase):  # noqa: N801 (스키마 버전
     signature: Ed25519Signature
 
 
-MissionContract = MissionContractV1_1 | MissionContractV1_2
+class MissionContractV1_3(_MissionContractBase):  # noqa: N801 (스키마 버전 표기 유지)
+    """mission-contract.v1.3.json — 서명된 발급자·현장별 단조 순서를 포함한다."""
+
+    schema_version: Literal["1.3"]
+    issuance: IssuanceV1_3
+    signature: Ed25519Signature
+
+
+MissionContract = MissionContractV1_1 | MissionContractV1_2 | MissionContractV1_3
 
 
 def parse_mission_contract(data: dict[str, Any]) -> MissionContract:
-    """``schemaVersion``에 따라 v1.1/v1.2 모델로 분기 파싱한다.
+    """``schemaVersion``에 따라 v1.1/v1.2/v1.3 모델로 분기 파싱한다.
 
     Raises:
-        ValueError: ``schemaVersion``이 "1.1"/"1.2"가 아니거나 필드가 없을 때.
+        ValueError: 지원하지 않는 ``schemaVersion``이거나 필드가 없을 때.
     """
     version = data.get("schemaVersion")
     if version == "1.1":
         return MissionContractV1_1.model_validate(data)
     if version == "1.2":
         return MissionContractV1_2.model_validate(data)
+    if version == "1.3":
+        return MissionContractV1_3.model_validate(data)
     raise ValueError(f"지원하지 않는 schemaVersion: {version!r}")

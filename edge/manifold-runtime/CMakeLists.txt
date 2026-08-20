@@ -62,6 +62,11 @@ option(KSI_ENABLE_CURL_EDGE_TRANSPORT
 set(KSI_CURL_STATIC_EXTRA_LIBRARIES "" CACHE STRING
     "semicolon-separated absolute .a dependencies for the reviewed libcurl bundle")
 
+option(KSI_ENABLE_OPENSSL_EVIDENCE_ATTESTATION
+       "sign Core evidence registration payloads with statically-linked OpenSSL Ed25519" OFF)
+set(KSI_OPENSSL_ROOT "" CACHE PATH
+    "OpenSSL development root containing include/openssl/evp.h and a static libcrypto.a")
+
 add_library(ksi_control_plane
   src/command.cpp
   src/supervisor.cpp
@@ -95,6 +100,8 @@ add_library(ksi_edge_runtime
   src/pipeline.cpp
   src/sync.cpp
   src/core_sync_http.cpp
+  src/evidence_attestation.cpp
+  src/capture_quality_policy.cpp
   # 활성화된 임무의 비행경로(KMZ) 판독. PSDK 심볼 0개 — 이 파일은 바이트가 서명된
   # 봉투의 digest 와 짝인지만 판정하고, 그 바이트를 기체에 올리는 어댑터는 실기
   # 확인 뒤에 별도로 붙는다.
@@ -120,6 +127,31 @@ target_link_libraries(ksi_edge_runtime PUBLIC ksi_control_plane)
 target_compile_options(ksi_edge_runtime PRIVATE
   -Wall -Wextra -Wpedantic -Werror
 )
+
+if(KSI_ENABLE_OPENSSL_EVIDENCE_ATTESTATION)
+  find_path(KSI_OPENSSL_INCLUDE_DIR openssl/evp.h
+    HINTS "${KSI_OPENSSL_ROOT}/include" /usr/include /usr/local/include)
+  find_file(KSI_OPENSSL_CRYPTO_STATIC_LIBRARY
+    NAMES libcrypto.a
+    HINTS
+      "${KSI_OPENSSL_ROOT}/lib/aarch64-linux-gnu"
+      "${KSI_OPENSSL_ROOT}/lib"
+      "${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu"
+      "${CMAKE_SYSROOT}/usr/lib"
+      /usr/lib/aarch64-linux-gnu
+      /usr/lib
+      /usr/local/lib)
+  if(NOT KSI_OPENSSL_INCLUDE_DIR OR NOT KSI_OPENSSL_CRYPTO_STATIC_LIBRARY OR
+     NOT KSI_OPENSSL_CRYPTO_STATIC_LIBRARY MATCHES "\\.a$")
+    message(FATAL_ERROR
+      "KSI_ENABLE_OPENSSL_EVIDENCE_ATTESTATION=ON requires OpenSSL headers and static libcrypto.a")
+  endif()
+  target_compile_definitions(ksi_edge_runtime PUBLIC KSI_EDGE_HAVE_OPENSSL_ATTESTATION=1)
+  target_include_directories(ksi_edge_runtime SYSTEM PRIVATE "${KSI_OPENSSL_INCLUDE_DIR}")
+  target_link_libraries(ksi_edge_runtime PRIVATE "${KSI_OPENSSL_CRYPTO_STATIC_LIBRARY}")
+else()
+  target_compile_definitions(ksi_edge_runtime PUBLIC KSI_EDGE_HAVE_OPENSSL_ATTESTATION=0)
+endif()
 
 # 게이트 환경이 "SQLite 없이 조용히 통과"를 금지할 수 있게 하는 옵트인 스위치.
 # 기본값 OFF — 개발 호스트는 지금 그대로 빌드된다(아래 else 블록의 근거 참조).
@@ -266,6 +298,10 @@ if(KSI_BUILD_TESTS)
   target_link_libraries(edge_runtime_tests PRIVATE ksi_edge_runtime)
   target_compile_options(edge_runtime_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME edge_runtime_contract COMMAND edge_runtime_tests)
+  add_executable(capture_quality_policy_tests tests/capture_quality_policy_tests.cpp)
+  target_link_libraries(capture_quality_policy_tests PRIVATE ksi_edge_runtime)
+  target_compile_options(capture_quality_policy_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME capture_quality_policy_contract COMMAND capture_quality_policy_tests)
 
   # This offline companion executes the same optional TensorRT adapter as the
   # DPK and writes semantic results for the Python ONNX oracle.  It is built

@@ -14,3 +14,11 @@ REQ-MAP-101,Map,Refresh,"Every-flight delta, partial on change, weekly full defa
 REQ-DATA-101,Data,Retention,Customer override plus approved defaults,Retention purge/export tests
 REQ-MODEL-101,Model,Support claims,Staged equipment support status,Only Production Supported shown as supported
 REQ-PLAT-101,Platform,Industry expansion,Common core plus solution packs,No construction-only dependency in core contracts
+REQ-WRK-101,Workflow,Observation work order,Repeated observation is one user-visible work order,Contract and replay tests preserve the full loop
+REQ-ACQ-101,Acquisition,Zero-touch transfer,Normal route and media flow requires no removable media,Real-device flow completes with zero file operations
+REQ-ACQ-102,Acquisition,Bounded active capture,Edge recapture stays inside signed policy and mission envelope,HIL accepts allowed actions and rejects every exceeded bound
+REQ-INT-101,Intelligence,Grounded relative metrics,Change progress and quantity include capture time lineage and uncertainty,End-to-end report exposes every required basis
+REQ-COP-101,Copilot,Grounded answers,Every factual metric cites a scoped server object,Tool and negative grounding tests
+REQ-COP-102,Copilot,Human approval,Copilot can draft but cannot approve or issue missions,Structural tool registry and authorization tests
+REQ-SEC-101,Security,Organization isolation,Every actor and object is organization scoped,Cross-organization tests return indistinguishable not-found responses
+REQ-UX-101,UX,One-job field flow,Five steps or fewer and one primary action per state,Responsive Chromium accessibility and task-flow tests

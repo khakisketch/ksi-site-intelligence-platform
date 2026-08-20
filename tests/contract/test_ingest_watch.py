@@ -152,6 +152,89 @@ def test_missing_root_is_not_an_error(tmp_path: Path) -> None:
     assert discover_pending(tmp_path / "nope") == []
 
 
+def test_explicit_mission_uses_root_itself_without_renaming(tmp_path: Path) -> None:
+    """현장에서 내려받은 폴더를 mission id 이름으로 다시 감싸지 않아도 된다."""
+    source = tmp_path / "drone pictures"
+    nested = source / "DCIM" / "100MEDIA"
+    nested.mkdir(parents=True)
+    (nested / "DJI_0001.JPG").write_bytes(b"fake-jpeg-bytes")
+    uploader = _FakeUploader()
+
+    report = run_once(
+        source,
+        uploader=uploader,
+        state_dir=tmp_path / "state",
+        mission_id="m-field-1",
+    )
+
+    assert report.succeeded == ["m-field-1"]
+    assert uploader.calls == ["m-field-1"]
+
+
+def test_explicit_mission_reports_missing_directory(tmp_path: Path) -> None:
+    report = run_once(
+        tmp_path / "not-connected",
+        uploader=_FakeUploader(),
+        mission_id="m-field-1",
+    )
+
+    assert report.succeeded == []
+    assert report.skipped == [SkippedCapture(mission_id="m-field-1", reason="MISSING_DIRECTORY")]
+
+
+def test_explicit_mission_reports_empty_folder(tmp_path: Path) -> None:
+    source = tmp_path / "empty"
+    source.mkdir()
+
+    report = run_once(source, uploader=_FakeUploader(), mission_id="m-field-1")
+
+    assert report.skipped == [SkippedCapture(mission_id="m-field-1", reason="NO_IMAGES")]
+
+
+def test_explicit_mission_keeps_quiet_period_guard(tmp_path: Path) -> None:
+    source = tmp_path / "copying"
+    source.mkdir()
+    image = source / "DJI_0001.JPG"
+    image.write_bytes(b"fake-jpeg-bytes")
+    written_at = image.stat().st_mtime
+
+    report = run_once(
+        source,
+        uploader=_FakeUploader(),
+        mission_id="m-field-1",
+        quiet_seconds=60,
+        now=written_at + 5,
+    )
+
+    assert report.skipped == [SkippedCapture(mission_id="m-field-1", reason="STILL_WRITING")]
+
+
+def test_explicit_mission_is_not_reingested_after_success(tmp_path: Path) -> None:
+    source = tmp_path / "drone pictures"
+    source.mkdir()
+    (source / "DJI_0001.JPG").write_bytes(b"fake-jpeg-bytes")
+    uploader = _FakeUploader()
+    state_dir = tmp_path / "state"
+
+    first = run_once(
+        source,
+        uploader=uploader,
+        state_dir=state_dir,
+        mission_id="m-field-1",
+    )
+    second = run_once(
+        source,
+        uploader=uploader,
+        state_dir=state_dir,
+        mission_id="m-field-1",
+    )
+
+    assert first.succeeded == ["m-field-1"]
+    assert second.succeeded == []
+    assert second.skipped == [SkippedCapture(mission_id="m-field-1", reason="ALREADY_INGESTED")]
+    assert uploader.calls == ["m-field-1"]
+
+
 # ── 트리거 ────────────────────────────────────────────────────────────
 
 

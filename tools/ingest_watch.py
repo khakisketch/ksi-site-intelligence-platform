@@ -12,12 +12,13 @@
 가 확정한 대로 실기 검증 전까지 SD카드 회수·수동 오프로드가 정상 경로이며, 이
 도구의 입력은 그 절차가 채운 디렉터리다.
 
-## 임무 id 는 디렉터리 이름이다
+## 기본 무인 모드에서는 임무 id 가 디렉터리 이름이다
 
-``<root>/<missionId>/`` 규약 하나만 둔다. 파일 EXIF 에서 임무를 추론하지 않는다 —
+주기 실행의 기본 규약은 ``<root>/<missionId>/`` 다. 단일 폴더 반입은 명시적
+``--mission-id`` 를 사용한다. 어느 모드에서도 파일 EXIF 에서 임무를 추론하지 않는다 —
 추론이 틀리면 다른 임무의 원본이 섞이고, 그건 계보(``jobId = f(missionId, seq)``)가
-조용히 거짓이 되는 사고다. 규약이 틀리면 그 디렉터리는 서버가 ``UNKNOWN_MISSION``
-으로 거부하고, 이 도구는 그 실패를 보고에 남긴다.
+조용히 거짓이 되는 사고다. ID가 틀리면 서버가 ``UNKNOWN_MISSION``으로 거부하고,
+이 도구는 그 실패를 보고에 남긴다.
 
 ## 복사 중인 디렉터리를 건드리지 않는다
 
@@ -50,6 +51,20 @@ Usage::
         --root /var/spool/ksi/captures \\
         --state-dir /var/lib/ksi/ingest-state \\
         --quiet-seconds 120
+
+이미 한 임무의 사진이 한 폴더에 모여 있다면 폴더명을 임무 ID로 바꾸거나 한 단계
+더 감쌀 필요가 없다. ``--mission-id`` 로 그 폴더 자체를 명시한다::
+
+    uv run python tools/ingest_watch.py \\
+        --core-url http://127.0.0.1:8010 \\
+        --token dev-admin-token \\
+        --root "/path/to/drone pictures" \\
+        --mission-id mission-123 \\
+        --state-dir /var/lib/ksi/ingest-state \\
+        --quiet-seconds 120
+
+이 모드에서도 하위 ``DCIM/100MEDIA`` 구조를 재귀적으로 찾으며 원본 파일을
+이동·수정·삭제하지 않는다.
 """
 
 from __future__ import annotations
@@ -171,6 +186,31 @@ def _skipped_reasons(
     return skipped
 
 
+def _discover_explicit_capture(
+    directory: Path,
+    *,
+    mission_id: str,
+    quiet_seconds: float,
+    now: float | None,
+) -> tuple[list[PendingCapture], list[SkippedCapture]]:
+    """사용자가 명시한 한 폴더를 한 임무의 촬영 원본으로 판정한다.
+
+    ``discover_pending`` 의 ``<root>/<missionId>`` 규약은 무인 주기 실행에 적합하지만,
+    현장에서 이미 내려받은 폴더 하나를 올릴 때는 불필요한 이름 변경과 디렉터리
+    생성을 강요한다. 이 경로는 추론 대신 사용자가 준 mission id 를 쓰므로 계보를
+    약화하지 않으면서 그 마찰만 없앤다.
+    """
+    if not directory.is_dir():
+        return [], [SkippedCapture(mission_id=mission_id, reason="MISSING_DIRECTORY")]
+    images = _image_files(directory)
+    if not images:
+        return [], [SkippedCapture(mission_id=mission_id, reason="NO_IMAGES")]
+    reference = time.time() if now is None else now
+    if reference - _latest_mtime(images) < quiet_seconds:
+        return [], [SkippedCapture(mission_id=mission_id, reason="STILL_WRITING")]
+    return [PendingCapture(mission_id=mission_id, directory=directory)], []
+
+
 def load_done(state_dir: Path | None) -> set[str]:
     """이미 성공한 임무 id 집합 — 없거나 깨졌으면 빈 집합(전량 재확인)."""
     if state_dir is None:
@@ -207,13 +247,27 @@ def run_once(
     state_dir: Path | None = None,
     quiet_seconds: float = 0.0,
     now: float | None = None,
+    mission_id: str | None = None,
 ) -> WatchReport:
-    """대상 임무를 하나씩 처리한다 — 하나가 실패해도 나머지를 계속한다."""
+    """대상 임무를 하나씩 처리한다 — 하나가 실패해도 나머지를 계속한다.
+
+    ``mission_id`` 가 있으면 ``root`` 자체를 그 임무의 촬영 폴더로 사용한다. 없으면
+    기존의 ``<root>/<missionId>`` 다중 임무 규약을 그대로 사용한다.
+    """
     report = WatchReport()
-    pending = discover_pending(root, quiet_seconds=quiet_seconds, now=now)
-    report.skipped.extend(
-        _skipped_reasons(root, pending=pending, quiet_seconds=quiet_seconds, now=now)
-    )
+    if mission_id is None:
+        pending = discover_pending(root, quiet_seconds=quiet_seconds, now=now)
+        report.skipped.extend(
+            _skipped_reasons(root, pending=pending, quiet_seconds=quiet_seconds, now=now)
+        )
+    else:
+        pending, skipped = _discover_explicit_capture(
+            root,
+            mission_id=mission_id,
+            quiet_seconds=quiet_seconds,
+            now=now,
+        )
+        report.skipped.extend(skipped)
 
     done = load_done(state_dir)
     changed = False
@@ -237,9 +291,7 @@ def run_once(
         else:
             # 실패는 완료로 기록하지 않는다 — 기록하면 재시도 경로가 사라진다.
             report.failed.append(
-                FailedCapture(
-                    mission_id=capture.mission_id, detail="; ".join(outcome.failures)
-                )
+                FailedCapture(mission_id=capture.mission_id, detail="; ".join(outcome.failures))
             )
     if changed:
         store_done(state_dir, done)
@@ -282,8 +334,7 @@ def _print_report(report: WatchReport) -> None:
     for failed in report.failed:
         print(f"FAIL {failed.mission_id}: {failed.detail}", file=sys.stderr)
     print(
-        f"— 성공 {len(report.succeeded)} · 실패 {len(report.failed)} · "
-        f"건너뜀 {len(report.skipped)}"
+        f"— 성공 {len(report.succeeded)} · 실패 {len(report.failed)} · 건너뜀 {len(report.skipped)}"
     )
 
 
@@ -292,11 +343,17 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--core-url", default="http://127.0.0.1:8000", help="Core API 베이스 URL")
-    parser.add_argument(
-        "--token", default=os.environ.get("KSI_CORE_TOKEN", ""), help="Bearer 토큰"
-    )
+    parser.add_argument("--token", default=os.environ.get("KSI_CORE_TOKEN", ""), help="Bearer 토큰")
     parser.add_argument(
         "--root", required=True, help="임무별 디렉터리(<root>/<missionId>/)를 담은 상위 경로"
+    )
+    parser.add_argument(
+        "--mission-id",
+        default=None,
+        help=(
+            "지정하면 --root 자체를 이 임무의 사진 폴더로 사용"
+            "(폴더명 변경 없이 단일 임무를 가져올 때)"
+        ),
     )
     parser.add_argument(
         "--state-dir", default=None, help="완료 표시·업로드 확인 캐시를 둘 경로(선택)"
@@ -327,7 +384,11 @@ def main() -> int:
         )
         while True:
             report = run_once(
-                root, uploader=uploader, state_dir=state_dir, quiet_seconds=args.quiet_seconds
+                root,
+                uploader=uploader,
+                state_dir=state_dir,
+                quiet_seconds=args.quiet_seconds,
+                mission_id=args.mission_id,
             )
             _print_report(report)
             if args.interval_seconds <= 0:

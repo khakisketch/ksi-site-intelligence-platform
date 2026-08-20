@@ -56,6 +56,10 @@ from ksi_core.processing_jobs import (
 )
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import (
+    CaptureTime,
+    CaptureTimeSource,
+    CaptureTimeStatus,
+    CaptureWindowStatus,
     SourceBundleVerifyVerdict,
     SourceMediaClaim,
     SourceMediaMeasurement,
@@ -597,6 +601,67 @@ def test_transition_records_terminal_detail(tmp_path: Path) -> None:
     assert done.record.status is ProcessingJobStatus.SUCCEEDED
     assert done.record.terminal_detail == "포인트클라우드 1.2억 점"
     assert done.record.updated_at == _NOW + timedelta(hours=3)
+
+
+def test_succeeded_snapshots_complete_capture_window(tmp_path: Path) -> None:
+    """작업 완료 후에도 freshness 근거가 source bundle의 현재값에 의존하지 않는다."""
+    bundles = _sealed_bundle_store(tmp_path, media_count=2, path="capture-source.jsonl")
+    source = bundles.get(_MISSION_ID)
+    assert source is not None
+    captured_from = _NOW - timedelta(minutes=3)
+    captured_to = _NOW - timedelta(minutes=1)
+    measured: list[SourceMediaMeasurement] = []
+    for index, media in enumerate(source.media):
+        captured_at = captured_from if index == 0 else captured_to
+        measured.append(
+            SourceMediaMeasurement(
+                media_id=media.media_id,
+                sha256=media.sha256,
+                size_bytes=media.size_bytes,
+                width=media.width,
+                height=media.height,
+                capture_time=CaptureTime(
+                    captured_at,
+                    CaptureTimeSource.EXIF_GPS_UTC,
+                    CaptureTimeStatus.VERIFIED,
+                ),
+            )
+        )
+    assert (
+        bundles.verify(_MISSION_ID, measured, verified_by="w-1", now=_NOW).verdict
+        is SourceBundleVerifyVerdict.VERIFIED
+    )
+    store = ProcessingJobStore(
+        DurableJournal(tmp_path / "capture-processing.jsonl"),
+        source_media_store=bundles,
+        site_store=_site_store(tmp_path, path="capture-sites.jsonl"),
+    )
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.register_artifact(
+            job_id, _artifact_spec(), registered_by="w-1", now=_NOW
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+
+    result = store.transition(
+        job_id, ProcessingJobStatus.SUCCEEDED, detail=None, actor="w-1", now=_NOW
+    )
+
+    assert result.record is not None
+    assert result.record.capture_window.status is CaptureWindowStatus.COMPLETE
+    assert result.record.capture_window.captured_from == captured_from
+    assert result.record.capture_window.captured_to == captured_to
+    transitions = [
+        item
+        for item in _journal_lines(tmp_path, path="capture-processing.jsonl")
+        if item["kind"] == "processing-job-transitioned"
+    ]
+    assert transitions[-1]["captureWindow"] == {
+        "status": "COMPLETE",
+        "capturedFrom": captured_from.isoformat(),
+        "capturedTo": captured_to.isoformat(),
+    }
 
 
 def test_illegal_transition_is_typed_not_raised(tmp_path: Path) -> None:

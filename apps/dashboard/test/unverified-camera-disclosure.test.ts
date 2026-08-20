@@ -4,9 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // 격자 간격·촬영 간격·지상 해상도는 전부 DEFAULT_CAMERA 에서 파생된다. 그 상수가
-// M4D 실측이 아니라는 사실이 코드 주석에만 있으면 사용자는 확정값으로 읽는다 —
-// 값을 고치는 것은 FIELD-0a 의 일이고, 여기서 할 수 있는 것은 무엇에 기대고 있는지
-// 밝히는 것이다(risk mapping-camera-constants-are-not-m4d, INV-040 의 정신).
+// 실측 전에는 유도값임을 숨기지 않고, 실측 후에는 그 근거가 코드에 남아야 한다.
 const SURVEY = readFileSync(
   join(process.cwd(), "src/app/sites/[siteId]/surveys/new/SurveyWizard.tsx"),
   "utf8",
@@ -35,11 +33,10 @@ describe("미검증 카메라 상수 고지", () => {
     }
   });
 
-  it("단일 출처가 무엇이 확정이고 무엇이 유도값인지 구분해 적어 둔다", () => {
-    // 초점거리는 공식 미기재라 환산에서 역산한 값이다 — 그 구분이 사라지면
-    // 화면의 지상 해상도가 실측 근거를 가진 숫자처럼 읽힌다.
+  it("단일 출처가 실초점거리의 FIELD-0a EXIF 근거를 남긴다", () => {
     const aircraft = readFileSync(join(process.cwd(), "src/lib/aircraft.ts"), "utf8");
-    expect(aircraft).toContain("유도");
+    expect(aircraft).toContain("12.29mm");
+    expect(aircraft).toContain("WideCamera EXIF");
     expect(aircraft).toContain("EXIF");
   });
 });

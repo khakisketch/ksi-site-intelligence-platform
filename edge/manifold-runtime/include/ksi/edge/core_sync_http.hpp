@@ -12,10 +12,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ksi/edge/artifact_vault.hpp"
+#include "ksi/edge/evidence_attestation.hpp"
 #include "ksi/edge/sync.hpp"
 
 namespace ksi::edge {
@@ -90,6 +93,18 @@ PrivateBearerTokenLoadResult LoadPrivateBearerTokenFile(const std::string& path,
 bool IsStrictHttpsUrl(const std::string& url);
 
 struct CoreRestSyncConfig {
+    CoreRestSyncConfig(std::string core_url, std::string token,
+                       std::size_t maximum_core_bytes = 256U * 1024U,
+                       std::size_t maximum_candidate_bytes = 2U * 1024U * 1024U,
+                       std::string attestation_key_id = {},
+                       std::string attestation_private_key_path = {})
+        : core_base_url(std::move(core_url)),
+          bearer_token(std::move(token)),
+          maximum_core_response_bytes(maximum_core_bytes),
+          maximum_candidate_payload_bytes(maximum_candidate_bytes),
+          evidence_attestation_key_id(std::move(attestation_key_id)),
+          evidence_attestation_private_key_path(std::move(attestation_private_key_path)) {}
+
     // Origin only, e.g. https://core.example.test or https://core.example.test:8443.
     // Route prefixes, query strings, userinfo, and fragments are rejected so
     // the adapter cannot be pointed at an ambiguous authorization target.
@@ -99,6 +114,10 @@ struct CoreRestSyncConfig {
     std::string bearer_token;
     std::size_t maximum_core_response_bytes = 256U * 1024U;
     std::size_t maximum_candidate_payload_bytes = 2U * 1024U * 1024U;
+    // Both empty keeps the transport compatible with non-critical legacy evidence.
+    // Production perception wiring requires both and loads only from an external 0600 file.
+    std::string evidence_attestation_key_id;
+    std::string evidence_attestation_private_key_path;
 };
 
 // Implements the existing durable sync port against the exact Core routes:
@@ -123,6 +142,7 @@ private:
     CoreRestSyncConfig config_;
     IHttpsRequestExecutor* executor_;
     ArtifactVault* artifact_vault_;
+    std::unique_ptr<EvidenceAttestationSigner> evidence_attestation_signer_;
 };
 
 // ── 원본 사진 번들(source media) ────────────────────────────────────────────

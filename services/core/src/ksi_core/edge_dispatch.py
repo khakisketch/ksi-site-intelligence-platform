@@ -21,14 +21,18 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
-from ksi_domain.enums import MissionExecutionStatus
+from ksi_domain.enums import MissionExecutionStatus, Severity
 from ksi_mission_contracts.dispatch import (
     ActivationReceiptV1,
     DispatchValidity,
     MissionDispatchEnvelopeV1,
     build_mission_dispatch_envelope,
 )
-from ksi_mission_contracts.models import MissionContractV1_2
+from ksi_mission_contracts.models import (
+    MissionContractV1_2,
+    MissionContractV1_3,
+    parse_mission_contract,
+)
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1, risk_policy_pack_wire_dict
 from ksi_mission_contracts.runtime_profile import (
     EdgeRuntimeProfileV1,
@@ -38,6 +42,12 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
+from ksi_core.device_attestation import (
+    DeviceAttestationRegistry,
+    DeviceEvidenceAttestation,
+    evidence_attestation_payload,
+    verify_device_evidence_attestation,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.events import EventStore
 from ksi_core.evidence import (
@@ -129,6 +139,16 @@ class FlightStartResult:
     detail: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ActivatedDispatchEvidenceContext:
+    """Signed dispatch lineage captured with a device-attested artifact."""
+
+    dispatch_id: str
+    risk_policy_pack_id: str
+    risk_policy_pack_digest: str
+    calibration_profile_id: str
+
+
 class FlightStartVerdict(StrEnum):
     """Edge가 ``Action(START)`` 시도 결과로 보고하는 원인(ADR-KSI-021 §5 [0]~[10]).
 
@@ -201,7 +221,9 @@ class EdgeRuntimeProfileRegistry:
                 )
             self._by_id[profile.edge_runtime_profile_id] = profile
 
-    def select_for_contract(self, contract: MissionContractV1_2) -> EdgeRuntimeProfileV1 | None:
+    def select_for_contract(
+        self, contract: MissionContractV1_2 | MissionContractV1_3
+    ) -> EdgeRuntimeProfileV1 | None:
         matches = [
             profile
             for profile in self._by_id.values()
@@ -413,7 +435,10 @@ class EdgeDispatchStore:
                 ):
                     continue
                 try:
-                    contract = MissionContractV1_2.model_validate(mission.contract)
+                    parsed = parse_mission_contract(mission.contract)
+                    if not isinstance(parsed, (MissionContractV1_2, MissionContractV1_3)):
+                        raise ValueError("dispatch 불가 Mission Contract 버전")
+                    contract = parsed
                     contract_not_before = self._aware_contract_time(contract.validity.not_before)
                     contract_not_after = self._aware_contract_time(contract.validity.not_after)
                 except (TypeError, ValueError):
@@ -546,6 +571,77 @@ class EdgeDispatchStore:
             stored = self._flight_start_receipts.get(dispatch_id)
             return copy.deepcopy(stored) if stored is not None else None
 
+    def activated_evidence_context(
+        self,
+        *,
+        device_id: str,
+        mission_id: str,
+        occurred_at: datetime,
+    ) -> ActivatedDispatchEvidenceContext | None:
+        """Return the activated dispatch that authorized an event occurrence.
+
+        Store-forward may upload after the five-minute dispatch TTL, and the
+        activated mission may legitimately run beyond that delivery window.
+        The event occurrence is therefore compared to the inner Mission
+        Contract validity, not the short dispatch transport validity.
+        """
+
+        if occurred_at.tzinfo is None:
+            return None
+        with self._lock:
+            for dispatch_id in reversed(self._dispatch_order):
+                if dispatch_id not in self._activations:
+                    continue
+                envelope = self._dispatches[dispatch_id]
+                if (
+                    envelope.get("edgeDeviceId") != device_id
+                    or envelope.get("missionId") != mission_id
+                ):
+                    continue
+                contract = envelope.get("missionContract")
+                contract_validity = (
+                    contract.get("validity") if isinstance(contract, Mapping) else None
+                )
+                if not isinstance(contract_validity, Mapping):
+                    return None
+                try:
+                    contract_not_before = self._aware_contract_time(
+                        str(contract_validity["notBefore"])
+                    )
+                    contract_not_after = self._aware_contract_time(
+                        str(contract_validity["notAfter"])
+                    )
+                except (KeyError, ValueError):
+                    return None
+                if not (contract_not_before <= occurred_at <= contract_not_after):
+                    continue
+                pack = envelope.get("riskPolicyPack")
+                profile = envelope.get("edgeRuntimeProfile")
+                if not isinstance(pack, Mapping) or not isinstance(profile, Mapping):
+                    return None
+                calibration = profile.get("calibration")
+                if not isinstance(calibration, Mapping):
+                    return None
+                pack_id = pack.get("riskPolicyPackId")
+                pack_digest = envelope.get("riskPolicyPackDigest")
+                calibration_id = calibration.get("calibrationProfileId")
+                if (
+                    not isinstance(pack_id, str)
+                    or not pack_id
+                    or not isinstance(pack_digest, str)
+                    or not pack_digest
+                    or not isinstance(calibration_id, str)
+                    or not calibration_id
+                ):
+                    return None
+                return ActivatedDispatchEvidenceContext(
+                    dispatch_id=dispatch_id,
+                    risk_policy_pack_id=pack_id,
+                    risk_policy_pack_digest=pack_digest,
+                    calibration_profile_id=calibration_id,
+                )
+        return None
+
     def record_flight_start(
         self, *, device_id: str, receipt: FlightStartReceiptV1, now: datetime
     ) -> FlightStartResult:
@@ -615,6 +711,7 @@ class EdgeEvidenceUploadRequest(CamelModel):
     artifact_id: str
     content_type: str
     content_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    attestation: DeviceEvidenceAttestation | None = None
 
 
 class EdgeEvidenceUploadResponse(CamelModel):
@@ -627,6 +724,8 @@ class EdgeEvidenceUploadResponse(CamelModel):
     # These headers are part of the short-lived capability, not optional client
     # metadata.  The Edge must pass them verbatim to its direct storage PUT.
     required_upload_headers: dict[str, str]
+    device_attested: bool
+    attestation_key_id: str | None
 
 
 class ActivationReceiptResponse(CamelModel):
@@ -690,6 +789,7 @@ def build_edge_dispatch_router(
     evidence_storage: EvidenceStorage | None = None,
     mission_execution_store: MissionExecutionStore | None = None,
     site_lifecycle: SpatialModelLifecycle | None = None,
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
 ) -> APIRouter:
     """별도 Edge sync router — 기존 operator evidence 권한을 약화하지 않는다.
 
@@ -814,12 +914,22 @@ def build_edge_dispatch_router(
         )
 
     if event_store is not None and evidence_storage is not None:
-        _mount_edge_evidence_route(router, event_store, evidence_storage)
+        _mount_edge_evidence_route(
+            router,
+            store,
+            event_store,
+            evidence_storage,
+            device_attestation_registry or DeviceAttestationRegistry(),
+        )
     return router
 
 
 def _mount_edge_evidence_route(
-    router: APIRouter, event_store: EventStore, storage: EvidenceStorage
+    router: APIRouter,
+    dispatch_store: EdgeDispatchStore,
+    event_store: EventStore,
+    storage: EvidenceStorage,
+    attestation_registry: DeviceAttestationRegistry,
 ) -> None:
     @router.post(
         "/events/{event_key}/evidence",
@@ -846,6 +956,42 @@ def _mount_edge_evidence_route(
             raise HTTPException(status_code=503, detail="EVIDENCE_DIGEST_BINDING_UNAVAILABLE")
 
         now = datetime.now(UTC)
+        attested = False
+        attestation_key_id: str | None = None
+        dispatch_context: ActivatedDispatchEvidenceContext | None = None
+        if event.severity is Severity.CRITICAL and request.attestation is None:
+            raise HTTPException(status_code=422, detail="ATTESTATION_REQUIRED")
+        if request.attestation is not None:
+            dispatch_context = dispatch_store.activated_evidence_context(
+                device_id=edge.device_id,
+                mission_id=event.mission_id,
+                occurred_at=event.occurred_at,
+            )
+            if dispatch_context is None:
+                raise HTTPException(status_code=409, detail="ACTIVE_DISPATCH_LINEAGE_MISMATCH")
+            signed_payload = evidence_attestation_payload(
+                device_id=edge.device_id,
+                site_id=event.site_id,
+                mission_id=event.mission_id,
+                event_key=event_key,
+                artifact_id=request.artifact_id,
+                content_type=request.content_type,
+                content_digest=request.content_digest,
+            )
+            verification = verify_device_evidence_attestation(
+                request.attestation,
+                attestation_registry,
+                payload=signed_payload,
+                device_id=edge.device_id,
+                now=now,
+            )
+            if not verification.is_valid:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"ATTESTATION_{verification.verdict.value}",
+                )
+            attested = True
+            attestation_key_id = verification.key_id
         reused = False
         try:
             registered = event_store.register_evidence(
@@ -858,6 +1004,27 @@ def _mount_edge_evidence_route(
                 # 이 라우트만 진입 시점에 이미 event.edge_device_id == edge.device_id
                 # 를 확인했다(위) — 그래서 여기서만 device_bound=True 다.
                 device_bound=True,
+                device_attested=attested,
+                attestation_key_id=attestation_key_id,
+                attestation_signature=(
+                    request.attestation.signature if request.attestation is not None else None
+                ),
+                attested_dispatch_id=(
+                    dispatch_context.dispatch_id if dispatch_context is not None else None
+                ),
+                attested_risk_policy_pack_id=(
+                    dispatch_context.risk_policy_pack_id if dispatch_context is not None else None
+                ),
+                attested_risk_policy_pack_digest=(
+                    dispatch_context.risk_policy_pack_digest
+                    if dispatch_context is not None
+                    else None
+                ),
+                attested_calibration_profile_id=(
+                    dispatch_context.calibration_profile_id
+                    if dispatch_context is not None
+                    else None
+                ),
             )
         except JournalSealedError as exc:
             raise HTTPException(status_code=503, detail="EVENT_STORE_UNAVAILABLE") from exc
@@ -868,6 +1035,10 @@ def _mount_edge_evidence_route(
                 or artifact.is_tombstoned
                 or artifact.content_type != request.content_type
                 or artifact.content_digest != request.content_digest
+                or artifact.device_attested != attested
+                or artifact.attestation_key_id != attestation_key_id
+                or artifact.attestation_signature
+                != (request.attestation.signature if request.attestation is not None else None)
             ):
                 raise HTTPException(
                     status_code=409, detail=EvidenceVerdict.DUPLICATE_ARTIFACT.value
@@ -905,6 +1076,8 @@ def _mount_edge_evidence_route(
             reused_registration=reused,
             content_digest=request.content_digest,
             required_upload_headers=capability.required_headers,
+            device_attested=artifact.device_attested,
+            attestation_key_id=artifact.attestation_key_id,
         )
 
 
@@ -916,6 +1089,7 @@ def mount_edge_dispatch(
     evidence_storage: EvidenceStorage | None = None,
     mission_execution_store: MissionExecutionStore | None = None,
     site_lifecycle: SpatialModelLifecycle | None = None,
+    device_attestation_registry: DeviceAttestationRegistry | None = None,
 ) -> None:
     app.state.edge_dispatch_store = store
     app.include_router(
@@ -923,6 +1097,7 @@ def mount_edge_dispatch(
             store,
             event_store=event_store,
             evidence_storage=evidence_storage,
+            device_attestation_registry=device_attestation_registry,
             mission_execution_store=mission_execution_store,
             site_lifecycle=site_lifecycle,
         )

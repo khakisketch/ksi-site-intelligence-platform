@@ -158,6 +158,9 @@ class Permission(StrEnum):
     # 필요하지만(같은 표면) 증거를 요구하지 않는다 — 재검증 실패에 즉시 대응해야
     # 하는 방향에 마찰을 넣지 않는다(capability.assert_support_level_transition).
     EQUIPMENT_SUPPORT_APPROVE = "EQUIPMENT_SUPPORT_APPROVE"
+    WORK_ORDERS_WRITE = "WORK_ORDERS_WRITE"
+    REOBSERVATION_APPROVE = "REOBSERVATION_APPROVE"
+    COPILOT_QUERY = "COPILOT_QUERY"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +171,9 @@ class Principal:
     kind: PrincipalKind
     role: Role | None
     device_id: str | None
+    # 기존 단일조직 journal/fixture는 ``legacy``로 replay한다. 신규 production
+    # provisioning은 명시적 organizationId를 공급해야 한다(INV-060).
+    organization_id: str = "legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +218,10 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
     principal = record.principal
     if not principal.principal_id:
         raise AuthRegistryError("principal_id 는 빈 문자열일 수 없다")
+    if not principal.organization_id or not is_path_safe_identifier(principal.organization_id):
+        raise AuthRegistryError(
+            f"{principal.principal_id}: organization_id 는 경로-안전 비공백 식별자여야 한다"
+        )
     # lone surrogate 를 조립 시점에 거부한다(2026-08-18). `principal_id` 는 요청으로
     # 조작할 수 없고 `KSI_CORE_PRINCIPAL_TOKENS_JSON` 으로만 들어오는데, `json.loads`
     # 는 `\ud800` 이스케이프를 그대로 살려 넘긴다. 그런 값이 들어오면 그 principal 로
@@ -328,6 +338,9 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
             Permission.EQUIPMENT_SUPPORT_APPROVE,
+            Permission.WORK_ORDERS_WRITE,
+            Permission.REOBSERVATION_APPROVE,
+            Permission.COPILOT_QUERY,
         }
     ),
     Role.FIELD_OPERATOR: frozenset(
@@ -338,10 +351,18 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
+            Permission.WORK_ORDERS_WRITE,
+            Permission.REOBSERVATION_APPROVE,
+            Permission.COPILOT_QUERY,
         }
     ),
     Role.VIEWER: frozenset(
-        {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.EVENTS_READ}
+        {
+            Permission.SITES_READ,
+            Permission.MISSIONS_READ,
+            Permission.EVENTS_READ,
+            Permission.COPILOT_QUERY,
+        }
     ),
 }
 
@@ -359,9 +380,7 @@ _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
 # PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무
 # 발급·사건 분류에 손댈 이유가 없고, 손댈 수 있으면 처리 파이프라인 하나가
 # 뚫렸을 때 blast radius 가 제품 전체가 된다.
-_PROCESSING_WORKER_PERMISSIONS: frozenset[Permission] = frozenset(
-    {Permission.PROCESSING_WORK}
-)
+_PROCESSING_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.PROCESSING_WORK})
 
 
 def principal_permissions(principal: Principal) -> frozenset[Permission]:
@@ -460,6 +479,7 @@ class WhoAmIResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     principal_id: str
+    organization_id: str
     kind: str
     role: str | None
     device_id: str | None
@@ -476,6 +496,7 @@ def build_auth_router() -> APIRouter:
         """현재 Principal 신원·권한을 반환한다(인증만 요구, 인가 없음)."""
         return WhoAmIResponse(
             principal_id=principal.principal_id,
+            organization_id=principal.organization_id,
             kind=principal.kind.value,
             role=principal.role.value if principal.role is not None else None,
             device_id=principal.device_id,

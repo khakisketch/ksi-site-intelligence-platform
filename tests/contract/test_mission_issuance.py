@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from _site_lifecycle import advance_site_status
@@ -25,7 +26,7 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.mission_records import MissionStore
+from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.sites import SiteStore
 from ksi_domain.enums import SiteStatus
 from ksi_mission_contracts.models import (
@@ -90,7 +91,9 @@ def _auth_registry() -> AuthRegistry:
     )
 
 
-def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
+def _client_with_signing(
+    tmp_path: Path, *, writer_version: Literal["1.2", "1.3"] = "1.2"
+) -> tuple[TestClient, KeyRegistry, str]:
     """서명키 + mission_store + site_store + auth_registry 최소 조립(ADR-KSI-008 §3).
 
     요청 site_id("site-001")는 발급 전 site_store 에 직접 등록한다 — precheck_issuance
@@ -116,6 +119,9 @@ def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
     )
     advance_site_status(site_store, "site-001", SiteStatus.PATROL_READY)
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    sequence_store = MissionIssuanceSequenceStore(
+        DurableJournal(tmp_path / "mission-sequences.jsonl")
+    )
 
     app = create_app(
         mission_signing_key=private_key,
@@ -123,6 +129,9 @@ def _client_with_signing(tmp_path: Path) -> tuple[TestClient, KeyRegistry, str]:
         mission_store=mission_store,
         site_store=site_store,
         auth_registry=_auth_registry(),
+        mission_contract_writer_version=writer_version,
+        mission_contract_issuer_id="core-seoul-1" if writer_version == "1.3" else None,
+        mission_sequence_store=sequence_store,
     )
     client = TestClient(app)
     client.headers.update({"Authorization": f"Bearer {_ISSUER_TOKEN}"})
@@ -164,6 +173,36 @@ def test_issued_contract_is_signature_valid(tmp_path: Path) -> None:
     contract = response.json()
     result = load_verified_contract(contract, registry, now=datetime.now(UTC))
     assert result.verdict is SignatureVerdict.VALID, result.detail
+
+
+def test_v13_writer_assigns_core_owned_durable_site_sequence(tmp_path: Path) -> None:
+    client, registry, _key_id = _client_with_signing(tmp_path, writer_version="1.3")
+
+    first = client.post("/v1/missions/contracts", json=_valid_request(missionId="mission-001"))
+    second = client.post("/v1/missions/contracts", json=_valid_request(missionId="mission-002"))
+
+    assert first.status_code == 201, first.json()
+    assert second.status_code == 201, second.json()
+    assert first.json()["schemaVersion"] == "1.3"
+    assert first.json()["issuance"]["issuerId"] == "core-seoul-1"
+    assert first.json()["issuance"]["siteSequence"] == 1
+    assert second.json()["issuance"]["siteSequence"] == 2
+    assert "issuance" not in _valid_request()
+    assert load_verified_contract(second.json(), registry, now=datetime.now(UTC)).is_valid
+
+
+def test_v13_issuance_cannot_be_supplied_by_requester(tmp_path: Path) -> None:
+    client, _registry, _key_id = _client_with_signing(tmp_path, writer_version="1.3")
+    payload = _valid_request()
+    payload["issuance"] = {
+        "issuerId": "attacker",
+        "siteSequence": 999,
+        "issuedAt": datetime.now(UTC).isoformat(),
+    }
+
+    response = client.post("/v1/missions/contracts", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_safety_policies_are_server_fixed_not_client_supplied(tmp_path: Path) -> None:

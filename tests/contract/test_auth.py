@@ -322,6 +322,9 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
             Permission.EQUIPMENT_SUPPORT_APPROVE,
+            Permission.WORK_ORDERS_WRITE,
+            Permission.REOBSERVATION_APPROVE,
+            Permission.COPILOT_QUERY,
         }
     )
     assert Permission.EDGE_SYNC_INGEST not in perms
@@ -339,6 +342,9 @@ def test_field_operator_permissions() -> None:
             Permission.MISSIONS_ISSUE,
             Permission.EVENTS_READ,
             Permission.EVENTS_TRIAGE,
+            Permission.WORK_ORDERS_WRITE,
+            Permission.REOBSERVATION_APPROVE,
+            Permission.COPILOT_QUERY,
         }
     )
     assert Permission.SITES_AUTONOMY_APPROVE not in perms
@@ -348,7 +354,12 @@ def test_field_operator_permissions() -> None:
 def test_viewer_permissions() -> None:
     perms = principal_permissions(_operator_principal(role=Role.VIEWER))
     assert perms == frozenset(
-        {Permission.SITES_READ, Permission.MISSIONS_READ, Permission.EVENTS_READ}
+        {
+            Permission.SITES_READ,
+            Permission.MISSIONS_READ,
+            Permission.EVENTS_READ,
+            Permission.COPILOT_QUERY,
+        }
     )
 
 
@@ -467,9 +478,7 @@ def test_processing_worker_rejects_foreign_identity_fields(
     overrides: dict[str, object], match: str
 ) -> None:
     with pytest.raises(AuthRegistryError, match=match):
-        AuthRegistry(
-            [PrincipalTokenRecord(token_sha256="a" * 64, principal=_worker(**overrides))]
-        )
+        AuthRegistry([PrincipalTokenRecord(token_sha256="a" * 64, principal=_worker(**overrides))])
 
 
 # ── HTTP 경계: 401 3분기 + WWW-Authenticate ──────────────────────────────
@@ -501,9 +510,7 @@ def test_401_when_token_unknown() -> None:
     app = _app_with_protected_route(_registry())
     client = TestClient(app)
 
-    response = client.get(
-        "/v1/sites/_protected", headers={"Authorization": "Bearer no-such-token"}
-    )
+    response = client.get("/v1/sites/_protected", headers={"Authorization": "Bearer no-such-token"})
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
@@ -525,9 +532,7 @@ def test_401_when_token_expired() -> None:
     app = _app_with_protected_route(registry)
     client = TestClient(app)
 
-    response = client.get(
-        "/v1/sites/_protected", headers={"Authorization": "Bearer expired-token"}
-    )
+    response = client.get("/v1/sites/_protected", headers={"Authorization": "Bearer expired-token"})
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
@@ -546,9 +551,7 @@ def test_401_when_token_revoked() -> None:
     app = _app_with_protected_route(registry)
     client = TestClient(app)
 
-    response = client.get(
-        "/v1/sites/_protected", headers={"Authorization": "Bearer revoked-token"}
-    )
+    response = client.get("/v1/sites/_protected", headers={"Authorization": "Bearer revoked-token"})
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
@@ -655,14 +658,13 @@ def test_whoami_operator() -> None:
     mount_auth(app, registry)
     client = TestClient(app)
 
-    response = client.get(
-        "/v1/auth/whoami", headers={"Authorization": f"Bearer {_OPERATOR_TOKEN}"}
-    )
+    response = client.get("/v1/auth/whoami", headers={"Authorization": f"Bearer {_OPERATOR_TOKEN}"})
 
     assert response.status_code == 200
     body = response.json()
     assert body == {
         "principalId": "fo-1",
+        "organizationId": "legacy",
         "kind": "OPERATOR",
         "role": "FIELD_OPERATOR",
         "deviceId": None,
@@ -674,6 +676,9 @@ def test_whoami_operator() -> None:
                 "MISSIONS_ISSUE",
                 "EVENTS_READ",
                 "EVENTS_TRIAGE",
+                "WORK_ORDERS_WRITE",
+                "REOBSERVATION_APPROVE",
+                "COPILOT_QUERY",
             ]
         ),
     }
@@ -692,14 +697,13 @@ def test_whoami_edge_device() -> None:
     mount_auth(app, registry)
     client = TestClient(app)
 
-    response = client.get(
-        "/v1/auth/whoami", headers={"Authorization": f"Bearer {_DEVICE_TOKEN}"}
-    )
+    response = client.get("/v1/auth/whoami", headers={"Authorization": f"Bearer {_DEVICE_TOKEN}"})
 
     assert response.status_code == 200
     body = response.json()
     assert body == {
         "principalId": "edge-rig-42",
+        "organizationId": "legacy",
         "kind": "EDGE_DEVICE",
         "role": None,
         "deviceId": "rig-42",

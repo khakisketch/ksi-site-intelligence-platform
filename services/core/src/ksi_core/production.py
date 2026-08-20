@@ -60,7 +60,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1, risk_policy_pack_wire_dict
 from ksi_mission_contracts.runtime_profile import (
@@ -77,6 +77,7 @@ from ksi_core.auth import (
     Role,
     TokenStatus,
 )
+from ksi_core.device_attestation import load_device_attestation_registry
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.observability import configure_structured_logging
 from ksi_core.signing_keys import load_signing_keys
@@ -94,6 +95,7 @@ _STATUS_VALUES = {status.value: status for status in TokenStatus}
 # 형식이 틀린 digest 를 여기서 먼저 거부해야 "무거운 부수효과 이전에 검증을
 # 전부 끝낸다"(모듈 docstring)는 약속이 이 필드에 대해서도 실제로 성립한다.
 _TOKEN_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ISSUER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _require_env(name: str) -> str:
@@ -143,6 +145,25 @@ def _expose_docs_env() -> bool:
     raise RuntimeError(f"KSI_CORE_EXPOSE_DOCS={raw!r} 는 'true' 또는 'false' 여야 한다")
 
 
+def _mission_contract_writer_config() -> tuple[Literal["1.2", "1.3"], str | None]:
+    """v1.3 writer는 HIL 뒤 명시적으로 켠다. 기본은 dual-reader + v1.2 writer다."""
+    raw = os.environ.get("KSI_CORE_MISSION_CONTRACT_WRITER_VERSION", "1.2")
+    if raw not in ("1.2", "1.3"):
+        raise RuntimeError(
+            "KSI_CORE_MISSION_CONTRACT_WRITER_VERSION은 '1.2' 또는 '1.3'이어야 한다"
+        )
+    issuer_id = os.environ.get("KSI_CORE_MISSION_CONTRACT_ISSUER_ID")
+    if raw == "1.3" and not issuer_id:
+        raise RuntimeError(
+            "v1.3 writer에는 KSI_CORE_MISSION_CONTRACT_ISSUER_ID가 필요하다"
+        )
+    if issuer_id is not None and _ISSUER_ID_RE.fullmatch(issuer_id) is None:
+        raise RuntimeError(
+            "KSI_CORE_MISSION_CONTRACT_ISSUER_ID는 경로-안전 식별자여야 한다"
+        )
+    return cast(Literal["1.2", "1.3"], raw), issuer_id
+
+
 def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
     """``KSI_CORE_PRINCIPAL_TOKENS_JSON`` 을 파싱한다 — 원문 토큰은 여기 없다(digest 만).
 
@@ -169,6 +190,7 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         kind_raw = entry.get("kind")
         role_raw = entry.get("role")
         device_id = entry.get("deviceId")
+        organization_id = entry.get("organizationId", "legacy")
         status_raw = entry.get("status", TokenStatus.ACTIVE.value)
         not_after_raw = entry.get("notAfter")
 
@@ -204,6 +226,11 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         if device_id is not None and not isinstance(device_id, str):
             raise RuntimeError(
                 f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].deviceId 는 문자열이거나 null 이어야 한다"
+            )
+        if not isinstance(organization_id, str) or not organization_id:
+            raise RuntimeError(
+                f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].organizationId 는 "
+                "비공백 문자열이어야 한다"
             )
         if status_raw not in _STATUS_VALUES:
             raise RuntimeError(
@@ -241,6 +268,7 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
                     kind=kind,
                     role=role,
                     device_id=device_id,
+                    organization_id=organization_id,
                 ),
             )
         )
@@ -328,6 +356,11 @@ def build_production_app() -> FastAPI:
     s3_endpoint = _require_env("KSI_CORE_S3_ENDPOINT")
     s3_bucket = _require_env("KSI_CORE_S3_BUCKET")
     principal_tokens_raw = _require_env("KSI_CORE_PRINCIPAL_TOKENS_JSON")
+    device_attestation_keys_file = Path(_require_env("KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE"))
+    if not device_attestation_keys_file.is_file():
+        raise RuntimeError(
+            "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE은 존재하는 파일이어야 한다"
+        )
 
     journal_segment_bytes = _optional_positive_env(
         "KSI_CORE_JOURNAL_SEGMENT_BYTES", default=_JOURNAL_SEGMENT_BYTES_DEFAULT
@@ -336,10 +369,16 @@ def build_production_app() -> FastAPI:
         "KSI_CORE_EDGE_SYNC_SNAPSHOT_EVERY", default=_EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT
     )
     expose_docs = _expose_docs_env()
+    mission_contract_writer_version, mission_contract_issuer_id = (
+        _mission_contract_writer_config()
+    )
 
     principal_records = _parse_principal_tokens(principal_tokens_raw)
     risk_policy_packs = _optional_risk_policy_packs()
     edge_runtime_profiles = _optional_edge_runtime_profiles()
+    device_attestation_registry = load_device_attestation_registry(
+        device_attestation_keys_file
+    )
 
     # ── 2단계: 무거운 조립 — 여기부터는 검증을 통과한 입력만 다룬다.
 
@@ -371,8 +410,11 @@ def build_production_app() -> FastAPI:
             evidence_storage=evidence_storage,
             mission_signing_key=key_set.active_private_key,
             mission_signing_key_id=key_set.active_key_id,
+            mission_contract_writer_version=mission_contract_writer_version,
+            mission_contract_issuer_id=mission_contract_issuer_id,
             risk_policy_packs=risk_policy_packs,
             edge_runtime_profiles=edge_runtime_profiles,
+            device_attestation_registry=device_attestation_registry,
             expose_docs=expose_docs,
         )
     except BaseException:

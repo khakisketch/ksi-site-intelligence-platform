@@ -45,6 +45,11 @@ export interface SiteView {
   modelMaxAgeDays: number | null;
 }
 
+export interface SiteDetailView extends SiteView {
+  /** 단일 현장 조회가 함께 내리는 파생 요약. 별도 요청 결과를 합성하지 않는다. */
+  spatialModel: SpatialModelView;
+}
+
 /**
  * 현장의 공간모델 판정(ADR-KSI-019 G1). `AGE_POLICY_UNDECLARED` 는 "판정하지 않았다"이지
  * "최신"이 아니다 — 화면이 그 둘을 같게 보여주면 근거 없는 안심을 준다.
@@ -54,6 +59,8 @@ export const SPATIAL_MODEL_STATES = [
   "FRESH",
   "STALE",
   "AGE_POLICY_UNDECLARED",
+  "CAPTURE_TIME_UNAVAILABLE",
+  "SYSTEM_UNAVAILABLE",
 ] as const;
 export type SpatialModelState = (typeof SPATIAL_MODEL_STATES)[number];
 
@@ -77,7 +84,7 @@ export interface SpatialModelView {
   state: SpatialModelState;
   /** 판정 근거가 된 최신 재구성 작업. `ABSENT` 면 null. */
   epochJobId: string | null;
-  /** 그 작업이 성공한 시각. **촬영 시각이 아니라 등록 시각**이다. */
+  /** 그 작업이 성공한 시각. provenance 표시용이며 freshness 계산에는 쓰지 않는다. */
   registeredAt: string | null;
   ageDays: number | null;
   maxAgeDays: number | null;
@@ -86,6 +93,30 @@ export interface SpatialModelView {
   siteStatus: SiteStatus;
   /** false 면 현장 상태가 실제 모델 유무와 어긋난다(예: 순찰 준비인데 모델 없음). */
   siteStatusMatchesModel: boolean;
+  capturedFrom: string | null;
+  capturedTo: string | null;
+  captureTimeStatus: CaptureWindowStatus;
+  freshnessBasis: "CAPTURED_TO" | "NONE";
+}
+
+export type CaptureTimeSource =
+  | "EXIF_GPS_UTC"
+  | "EXIF_DATETIME_OFFSET"
+  | "DJI_XMP_EXPLICIT"
+  | "NONE";
+export type CaptureTimeStatus = "VERIFIED" | "UNAVAILABLE" | "CONFLICT";
+export type CaptureWindowStatus = "COMPLETE" | "INCOMPLETE" | "CONFLICT";
+
+export interface CaptureTimeView {
+  capturedAt: string | null;
+  source: CaptureTimeSource;
+  status: CaptureTimeStatus;
+}
+
+export interface CaptureWindowView {
+  status: CaptureWindowStatus;
+  capturedFrom: string | null;
+  capturedTo: string | null;
 }
 
 export interface MissionExecutionHistoryEntry {
@@ -163,6 +194,10 @@ export interface EvidenceSummary {
   registeredBy: string;
   /** 장비 신원이 대조되는 경로로 등록됐는가 — CRITICAL 확정용 위험 증거는 이게 참이어야 한다. */
   deviceBound: boolean;
+  /** artifact bytes의 등록 장비 키 서명이 검증됐는가. 채널 바인딩과 별개다. */
+  deviceAttested: boolean;
+  /** 검증에 사용한 operator-provisioned key id. public key/signature는 응답하지 않는다. */
+  attestationKeyId: string | null;
   /** 값이 있으면 보관 정책으로 폐기된 것 — "없음"과 구분해서 보여준다. */
   tombstonedAt: string | null;
   tombstoneReason: string | null;
@@ -198,6 +233,8 @@ export interface EvidenceViewResponse {
   registeredAt: string;
   registeredBy: string;
   deviceBound: boolean;
+  deviceAttested: boolean;
+  attestationKeyId: string | null;
 }
 
 export interface EventTransitionInput {
@@ -361,16 +398,99 @@ export type Permission =
   | "EVENTS_READ"
   | "EVENTS_TRIAGE"
   | "EDGE_SYNC_INGEST"
+  | "WORK_ORDERS_WRITE"
+  | "REOBSERVATION_APPROVE"
+  | "COPILOT_QUERY"
   // blast radius 가 큰 site 전이(자율 시작 승인·정식 순찰 승인·SUSPENDED
   // 진입/복귀)만 가르는 관리자 전용 권한(ADR-KSI-015 D2).
   | "SITES_AUTONOMY_APPROVE";
 
 export interface WhoAmIResponse {
   principalId: string;
-  kind: "OPERATOR" | "EDGE_DEVICE";
+  organizationId: string;
+  kind: "OPERATOR" | "EDGE_DEVICE" | "PROCESSING_WORKER";
   role: Role | null;
   deviceId: string | null;
   permissions: Permission[];
+}
+
+export type ObservationWorkOrderStatus =
+  | "DRAFT"
+  | "AWAITING_APPROVAL"
+  | "APPROVED"
+  | "DISPATCHED"
+  | "START_REPORTED"
+  | "MEDIA_RECEIVING"
+  | "PROCESSING"
+  | "REVIEW_READY"
+  | "REOBSERVATION_PENDING"
+  | "COMPLETED"
+  | "BLOCKED"
+  | "CANCELLED";
+
+export interface ObservationWorkOrderView {
+  schemaVersion: "1.0";
+  workOrderId: string;
+  organizationId: string;
+  siteId: string;
+  purpose: "PROGRESS_QUANTITY";
+  name: string;
+  workAreaIds: string[];
+  scheduleId: string | null;
+  cycleNumber: number;
+  status: ObservationWorkOrderStatus;
+  statusReason: string | null;
+  missionIds: string[];
+  processingJobIds: string[];
+  reportRefs: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  approvedAt: string | null;
+  approvedBy: string | null;
+}
+
+export interface ReobservationDraftView {
+  schemaVersion: "1.0";
+  draftId: string;
+  organizationId: string;
+  siteId: string;
+  workOrderId: string;
+  reasonRefs: string[];
+  targetRegionRefs: string[];
+  proposedEffort: string;
+  plannerVersion: string;
+  policyVersion: string;
+  expiresAt: string;
+  status: "PENDING" | "APPROVED" | "EXPIRED" | "REJECTED";
+  version: number;
+  createdAt: string;
+  createdBy: string;
+  approvedAt: string | null;
+  approvedBy: string | null;
+}
+
+export interface CopilotCitationView {
+  citationId: string;
+  objectType: string;
+  objectId: string;
+  label: string;
+  sourcePath: string;
+  capturedFrom: string | null;
+  capturedTo: string | null;
+  modelVersion: string | null;
+  geometryRef: string | null;
+  uncertaintySummary: string | null;
+}
+
+export interface CopilotAnswerView {
+  schemaVersion: "1.0";
+  status: "ANSWERED" | "BLOCKED";
+  answer: string;
+  citations: CopilotCitationView[];
+  missingData: string[];
+  reobservationDraftId: string | null;
 }
 
 // POST /v1/missions/plans (ADR-KSI-007, S1) — AOI + 임무타입 한 요청이 KMZ/WPML + 서명계약
@@ -698,6 +818,7 @@ export interface SourceMediaViewResponse {
   width: number;
   height: number;
   sha256: string;
+  captureTime: CaptureTimeView;
 }
 
 // ── 원본 사진 업로드 · 재구성 발행 (M3, B1/B2) ──────────────────────────────
@@ -750,6 +871,7 @@ export interface SourceMediaBundleView {
   groundControlCrs: string | null;
   /** 기준점 파일의 지문 — 같은 좌표계의 다른 성과와 구분한다. */
   groundControlSha256: string | null;
+  captureWindow: CaptureWindowView;
 }
 
 export interface SourceMediaSealResponse {
@@ -774,6 +896,7 @@ export interface ProcessingJobSummary {
   status: string;
   issuedAt: string;
   detail: string | null;
+  captureWindow: CaptureWindowView;
 }
 
 export interface ProcessingJobMutationResponse {
@@ -803,6 +926,7 @@ export interface SiteProcessingJobSummary {
   issuedAt: string;
   detail: string | null;
   artifacts: ProcessingArtifactSummary[];
+  captureWindow: CaptureWindowView;
 }
 
 export interface SiteProcessingJobListResponse {
@@ -1310,6 +1434,8 @@ export interface SpatialRefreshDraftResponse {
   captureAltitudeM: number | null;
   captureFrontOverlap: number | null;
   captureSideOverlap: number | null;
+  /** 카메라 산식에서 도출한 진행방향 촬영 간격(m). 발급 전 제안이다. */
+  captureIntervalM: number | null;
   captureGsdM: number | null;
   baselineGsdM: number | null;
   captureSignalToNoise: number | null;

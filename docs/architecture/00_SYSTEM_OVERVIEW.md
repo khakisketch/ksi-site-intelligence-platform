@@ -59,14 +59,15 @@
 
 | 데이터 | 경로 | 방식 |
 |---|---|---|
-| 작은 실시간(상태·관측품질·AI 결과·재관측 신호) | Manifold → 기체 링크 → Pilot 2 → 서버 (PSDK Pilot Cloud WebSocket) | 비행 중 전송 |
-| 대용량 원본(사진·영상·raw·로그) | Manifold 로컬 저장 → 연결 여건이 좋을 때 Object Storage | **store-and-forward** — 네트워크 때문에 수집이 실패하지 않는다 |
+| 작은 실시간(상태·관측품질·AI 결과·재관측 신호) | Manifold → 검증된 PSDK/Cloud adapter → 서버 | 비행 중 멱등 전송 |
+| 대용량 원본(사진·영상·raw·로그) | 기체 camera media → Manifold/검증된 Cloud media adapter → Object Storage | **store-and-forward** — 사용자 파일 조작 없이 재개 |
 
 ## MSDK의 위치 (ADR-KSI-017)
 
-기본 제품 경로는 `M4D → Manifold 3 → Pilot 2 → KSI Server`이며 MSDK는 없다.
-MSDK는 **서버→Manifold 양방향 제어가 Pilot Cloud만으로 해결되지 않을 때 추가하는
-옵션 계층**(MOP 경유)이다 — 지우지도, 핵심 경로로 만들지도 않는다.
+기본 제품 경로는 `KSI Server → 검증된 Cloud adapter → Pilot 2`의 작업 전달과
+`M4D camera → Manifold PSDK → KSI Storage`의 자동 회수다. MSDK는 이 두 경로가
+M4D + RC Plus 2 실기에서 성립하지 않을 때만 도입하는 얇은 Field adapter다.
+USB·SD·수동 KMZ/사진 전달은 정상 제품 경로가 아니라 복구·검증 경로다.
 
 ## 책임 분담
 
