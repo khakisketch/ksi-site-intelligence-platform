@@ -190,6 +190,25 @@ if(KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY)
   # is import-tested on that interpreter, so requiring the developer host's
   # newer Python would make the deployment build impossible.
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  execute_process(
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/edge/check_psdk_waypoint_archive.py"
+            --lock "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/PSDK_LOCK.yaml"
+            --psdk-root "${KSI_PSDK_ROOT}"
+            --format json
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    RESULT_VARIABLE _waypoint_archive_gate_result
+    OUTPUT_VARIABLE _waypoint_archive_gate_output
+    ERROR_VARIABLE _waypoint_archive_gate_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT _waypoint_archive_gate_result EQUAL 0)
+    message(FATAL_ERROR
+      "Waypoint upload-only archive preflight failed closed "
+      "(exit=${_waypoint_archive_gate_result}).\n"
+      "${_waypoint_archive_gate_output}\n${_waypoint_archive_gate_error}")
+  endif()
   target_sources(ksi_psdk_app PRIVATE
     src/flight_execution/waypoint_v3_upload_only.cpp
   )

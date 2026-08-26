@@ -72,10 +72,18 @@ device IDs, DPK digest, `WAYLINE_UPLOAD_NO_START`, expiry가 모두 맞을 때�
 
 현재 핀된 PSDK 3.16 arm64 archive는 `UploadKmzFile`과 public
 `DjiWaypointV3_Action`을 동일한 `dji_waypoint_v3.c.o`에 포함한다. 따라서 위 option의
-링크 자체는 완료되지만 post-build strict gate가 `Action` 잔존을 탐지해 의도적으로
-실패한다. vendor 정의를 allowlist에 추가해 숨기지 않는다. 별도의 DJI 제공
+configure-time archive preflight가 member 단위 동거를 먼저 탐지해 의도적으로 실패한다.
+향후 안전한 archive가 제공되더라도 post-build strict gate를 다시 통과해야 한다.
+vendor 정의를 allowlist에 추가하거나 archive를 strip/rewrite해 숨기지 않는다. 별도의 DJI 제공
 upload-only artifact나 검토된 격리 방법이 확보되기 전 판정은
 `CODE_READY / SDK_BUILD_BLOCKED / NOT_VERIFIED`다.
+
+현재 blocker는 다음 read-only 명령으로 재현한다. JSON에는 핀 archive digest,
+선택되는 member와 초과 Waypoint 심볼이 기록되며 비행·camera write 값은 항상 false다.
+
+```bash
+uv run --locked python tools/edge/check_psdk_waypoint_archive.py --format json
+```
 
 ### Native activation handoff
 
