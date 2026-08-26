@@ -1,4 +1,4 @@
-# 배포 (Core · 처리 워커)
+# 배포 (로컬 최소 조합: Core · 처리 워커)
 
 > 이 문서가 있기 전에는 이 시스템을 띄우려면 `production.py` 를 읽어야만 무엇을
 > 채울지 알 수 있었다. 저장소에 compose·env 예제가 하나도 없었다.
@@ -6,6 +6,13 @@
 > 값의 정본은 항상 코드다 — Core 는 `services/core/src/ksi_core/production.py`,
 > 워커는 `services/processing-controller/src/ksi_processing_controller/runner.py`.
 > 이 문서는 그 코드가 요구하는 것을 사람이 읽는 순서로 옮긴 것이고, 어긋나면 코드가 맞다.
+> Dashboard+Caddy 외부 VM 조립은 `VM_DEPLOYMENT_READINESS.md`가 별도로 소유한다.
+>
+> **사람의 로컬 Console 로그인은 이 compose가 아니라 `apps/dashboard`의 `npm run dev`를
+> 사용한다.** 그 표준 경로는 loopback OIDC Authorization Code + PKCE를 실제로 거치며
+> Bearer 토큰을 붙여넣지 않는다. 이 문서의 opaque token은 Core 저수준 API 진단과
+> Gateway·Edge·worker 같은 비사람 principal을 위한 복구/운영 자격이다. 외부 VM의 사람
+> 로그인도 OIDC만 허용한다.
 
 ## 이 배포가 뜨지 않는 것은 정상이다
 
@@ -23,7 +30,7 @@ Core 는 필수 환경변수가 하나라도 없거나 형식이 틀리면 **기
 | Docker + Docker Compose | 아래 compose 가 Core·워커·MinIO·NodeODM 을 함께 띄운다 |
 | 영속 저장소 2곳 | 원장은 명명 볼륨 `ksi-data`, 서명키는 **호스트 디렉터리 `deploy/signing-keys/`**(볼륨이 아니다 — §2). **이 둘이 백업 대상이다**(§8) |
 | Mission Contract 서명키 | Core 는 키를 만들지 않는다 — 미리 만들어 둬야 한다(§2) |
-| 접근 토큰 | 사람·워커가 Core 를 부를 자격증명(§3) |
+| opaque 접근 토큰 | 저수준 Core 진단과 Gateway·Edge·worker가 Core 를 부를 자격증명(§3) |
 | (선택) 지오이드 격자 | 해발 기준 설계도면을 받으려면 필요(§4) |
 | (선택) 동적 객체 마스킹 모델 | 재구성 산출물에서 사람·차량을 지우려면 필요 — 기본은 꺼짐(`deploy/.env.example` 의 `KSI_WORKER_DYNAMIC_OBJECT_MODEL_DIR`, `tools/fetch_model.py` 로 받는다) |
 
@@ -111,13 +118,13 @@ docker compose up -d --force-recreate core
 **3) 을 빼먹으면 재기동한 Core 가 키를 못 읽고 기동을 거부한다** — 조용히 옛 키로 도는
 일은 없다(§7 표의 "권한 거부" 행).
 
-## 3. 접근 토큰 — 원문은 서버에 두지 않는다
+## 3. 장비·worker opaque 접근 토큰 — 원문은 서버에 두지 않는다
 
 Core 는 토큰 **원문을 모른다.** `sha256` digest 만 갖는다. 그래서 프로세스 메모리·로그·
 환경변수 어디에도 원문이 존재하지 않는다.
 
 ```bash
-# 사람(관리자)용
+# Core 저수준 관리자 진단용 — Operations Console 사람 로그인에는 쓰지 않는다.
 ADMIN_TOKEN=$(openssl rand -hex 32)
 printf '%s' "$ADMIN_TOKEN" | sha256sum | awk '{print $1}'   # ← 이 digest 를 Core 에 준다
 # 워커용
@@ -148,11 +155,13 @@ digest(`notAfter` 없음)를 **함께** 배포한다 — `docs/security/AUTH_TOK
 ```bash
 cd deploy
 cp .env.example .env
+cp device-attestation-keys.example.json device-attestation-keys.json
 $EDITOR .env                     # §2·§3 에서 만든 값을 채운다
 docker compose up -d --build
 ```
 
-`.env` 는 커밋되지 않는다(`.gitignore`).
+`.env`와 `device-attestation-keys.json`은 커밋되지 않는다(`.gitignore`). 후자는
+Manifold의 Ed25519 **공개키** manifest이며, 개인키는 장비 밖으로 복사하지 않는다.
 
 `init-volumes` 서비스가 먼저 한 번 돌아 볼륨 소유권을 맞춘다 — Core 는 uid 10001,
 워커는 uid 10002 로 도는 non-root 프로세스인데 Docker 명명 볼륨은 root 소유로 생성되므로,
@@ -200,7 +209,6 @@ curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8000/v1/sites
 
 ## 9. 이 문서가 다루지 않는 것
 
-- **TLS·역방향 프록시**: compose 는 평문 HTTP 8000 을 **localhost 에만** 연다.
-  공개망 노출은 배포 환경(로드밸런서·Ingress)이 담당한다 — 여기서 정하지 않는다.
-- **대시보드**(`apps/dashboard`): Next.js 앱은 별도 배포 경로다.
+- **TLS·대시보드 외부 VM profile**: 이 로컬 compose는 평문 HTTP를 localhost에만 연다.
+  additive `deploy/compose.vm.yaml`과 Caddy 조립은 `VM_DEPLOYMENT_READINESS.md`를 따른다.
 - **여러 대 운영·자동복귀 도크**: 첫 유료 현장 전까지 동결(ADR-KSI-016 D5).

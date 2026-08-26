@@ -1,10 +1,15 @@
 # ADR-KSI-017 — 현장 운용 UX 경계: MSDK 앱을 만들지 않는다
 
-- 상태: ACCEPTED (2026-08-14, 대표자 확정)
+- 상태: PARTIALLY SUPERSEDED (2026-08-21, ADR-KSI-024)
 - 관련: ADR-KSI-004(DJI 연동 이원화, 갱신), ADR-KSI-005(연결 아키텍처, 갱신),
   ADR-KSI-007(임무 이원 산출물), CLAUDE.md Control boundaries
 
 ## 맥락
+
+> **후속 결정:** 이 문서의 “Pilot 2 웹뷰·RC 브라우저에서 KSI 화면 사용” 결정은
+> ADR-KSI-024가 대체했다. 현재 정상 UX는 현장 노트북·컴퓨터의 하나의 반응형
+> KSI Operations Console이다. Pilot 2 비행 전용, MSDK 비행 앱 금지, 비행 중
+> KSI 판정 UI 금지와 조건부 preflight/postflight Bridge 경계는 계속 유효하다.
 
 현장에서 조종기(RC Plus 2)를 쥔 사람이 KSI 시스템과 상호작용할 방법이 필요하다.
 후보로 DJI Mobile SDK(MSDK) 기반 전용 앱을 검토했으나, 다음 이유로 채택하지

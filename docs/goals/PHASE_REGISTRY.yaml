@@ -4,7 +4,60 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-17"
+updated: "2026-08-26"
+
+# 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
+# capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
+operations_console_delivery:
+  authority: "docs/architecture/ADR-KSI-027-console-first-delivery-gates.md"
+  current_phase: phase-3-rc-first-hil
+  phases:
+    - id: phase-0-product-ux-baseline
+      status: DONE
+      evidence: "ADR-KSI-025/026/027 and Phase 1 UX standard/acceptance"
+    - id: phase-1-console
+      status: DONE
+      scope: "actual Core projections, responsive Console, accessibility and navigation"
+      excludes: "DJI capability verification, device write, flight, customer Cloud deployment"
+      software_evidence_2026_08_25: >-
+        Site workspace partial-failure semantics, open human-decision count, Event evidenceCount,
+        complete pagination beyond the 500-item request cap, explicit Event/ProcessingJob organization
+        scope outside HTTP requests, safe citation routing, deterministic work queues and customer-facing
+        terminology are implemented. A real-domain-store synthetic fixture covers populated, empty and
+        evidence-preview-failure states without inventing Mission, processing, report, spatial-model or
+        device evidence. Full Python 3848 passed, 23 skipped and 3 expected-failed; Ruff and Mypy passed
+        388 source files; Dashboard 58 files/527 tests, ESLint, TypeScript and production build passed. Chromium at
+        390/768/1024/1440 passed 54 scenarios with 2 intentional desktop coarse-pointer skips, including
+        OIDC organization isolation, keyboard/focus, overflow, reduced-motion, axe and visual snapshots.
+        Authenticated in-app Browser review of the durable Tailnet Home, Sites, Work, Items and Site detail
+        found no horizontal overflow or console warning/error and confirmed next-action-first ordering.
+      remaining_gate: "none within Phase 1 software UI/UX scope"
+    - id: phase-2-synthetic-cloud-ai-staging
+      status: DONE
+      scope: "isolated synthetic OIDC/TLS/S3/grounded-AI/backup staging on DGX Spark"
+      excludes: "customer Cloud/data, actual external AI/IdP, public release, DJI/device/HIL"
+      evidence: "docs/acceptance/SYNTHETIC_CLOUD_AI_STAGING_ACCEPTANCE.md"
+      software_evidence_2026_08_25: >-
+        Production Dashboard/Core profiles ran in an isolated Compose project behind Tailnet HTTPS.
+        Synthetic OIDC organization login, actual MinIO PNG bytes and public presigned GET, one-site
+        AI opt-in, grounded workspace citation, provider 503 and cross-site citation fail-closed paths,
+        owner-only secrets, and SHA-256 checked journal/object/signing-key isolated restore passed.
+        Chromium covered 390/768/1024/1440. No customer data, external AI, DJI service, device key,
+        flight action, commit, push, or release was used.
+    - id: phase-3-rc-first-hil
+      status: BLOCKED
+      gate: "physical RC Plus 2, M4D and Manifold 3 read-only session"
+      software_preflight_2026_08_26: >-
+        FIELD-0a A/B/C checksums and KMZ structure pass; existing Pilot 2 A-file map evidence and
+        original M4D WideCamera metadata were re-audited without device contact. Pilot-exported
+        mapping KMZ provenance and explicit physical-session approval are still absent. All five
+        Connected Edge capabilities remain NOT_VERIFIED.
+    - id: phase-4-verified-integration
+      status: PLANNED
+      gate: "capability-specific HIL evidence"
+    - id: phase-5-single-customer-pilot
+      status: PLANNED
+      gate: "FIELD-0a/0b/1/2 and Cloud legal/security approvals"
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이
