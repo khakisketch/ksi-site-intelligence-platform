@@ -35,6 +35,7 @@ from ksi_dji_gateway.errors import (
     CapabilityUnavailableError,
     GatewayError,
     GatewayJournalRecoveryError,
+    GatewayTransportError,
     IdempotencyConflictError,
 )
 from ksi_dji_gateway.persistence.journal import GatewayJournal
@@ -152,6 +153,7 @@ __all__ = [
     "GatewayError",
     "GatewayJournal",
     "GatewayJournalRecoveryError",
+    "GatewayTransportError",
     "GatewayTransport",
     "IdempotencyConflictError",
     "IntegrationPath",

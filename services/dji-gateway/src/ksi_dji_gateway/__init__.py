@@ -1,5 +1,14 @@
 """DJI Integration Gateway — Cloud API/MQTT/미디어 연동 격리 계층."""
 
+from ksi_dji_gateway.adapters import (
+    CANDIDATE_PATH_CAPABILITIES,
+    AdapterRuntimeConfig,
+    BridgeOperation,
+    HttpsJsonBridgeClient,
+    UnixJsonBridgeClient,
+    build_candidate_ports,
+)
+from ksi_dji_gateway.coordinator import CapabilityGateway, RoutingContext
 from ksi_dji_gateway.gateway import (
     Capability,
     CapabilityEvidence,
@@ -8,8 +17,11 @@ from ksi_dji_gateway.gateway import (
     CapabilityRouter,
     CapabilityStatus,
     CapabilityUnavailableError,
+    EdgeDispatchRequest,
+    EdgeUplinkRequest,
     GatewayJournal,
     GatewayTransport,
+    GatewayTransportError,
     IdempotencyConflictError,
     IntegrationPath,
     IntegrationReceipt,
@@ -24,20 +36,31 @@ __version__ = "0.0.1"
 
 __all__ = [
     "Capability",
+    "CapabilityGateway",
     "CapabilityEvidence",
     "CapabilityRegistry",
     "CapabilityRoute",
     "CapabilityRouter",
     "CapabilityStatus",
     "CapabilityUnavailableError",
+    "CANDIDATE_PATH_CAPABILITIES",
+    "AdapterRuntimeConfig",
+    "BridgeOperation",
+    "EdgeDispatchRequest",
+    "EdgeUplinkRequest",
     "GatewayJournal",
     "GatewayTransport",
+    "GatewayTransportError",
+    "HttpsJsonBridgeClient",
     "IdempotencyConflictError",
     "IntegrationPath",
     "IntegrationReceipt",
     "OperationKind",
     "MediaSyncRequest",
     "ProviderReceipt",
+    "RoutingContext",
+    "UnixJsonBridgeClient",
     "WaylineDispatchRequest",
     "ZeroTouchGateway",
+    "build_candidate_ports",
 ]

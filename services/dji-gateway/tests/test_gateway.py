@@ -193,6 +193,7 @@ class _RoutePort:
         self.integration_path = path
         self.transport = transport
         self.capabilities = capabilities
+        self.configuration_ready = True
 
 
 def test_capability_router_selects_per_feature_not_provider() -> None:

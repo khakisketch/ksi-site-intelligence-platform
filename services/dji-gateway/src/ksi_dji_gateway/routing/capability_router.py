@@ -59,6 +59,9 @@ class CapabilityRouter:
             port = route.port
             if capability not in port.capabilities or port.transport not in allowed_transports:
                 continue
+            if not port.configuration_ready:
+                rejected.append(f"{port.port_id} runtime configuration이 준비되지 않았다")
+                continue
             try:
                 evidence = self._registry.require_verified_for(
                     port.integration_path,

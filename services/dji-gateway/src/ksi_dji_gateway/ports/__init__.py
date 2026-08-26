@@ -27,6 +27,9 @@ class RoutablePort(Protocol):
     @property
     def capabilities(self) -> frozenset[Capability]: ...
 
+    @property
+    def configuration_ready(self) -> bool: ...
+
 
 class MissionDeliveryPort(RoutablePort, Protocol):
     def deliver_wayline(self, request: WaylineDispatchRequest) -> ProviderReceipt: ...

@@ -17,9 +17,14 @@ class GatewayJournalRecoveryError(GatewayError):
     pass
 
 
+class GatewayTransportError(GatewayError):
+    pass
+
+
 __all__ = [
     "CapabilityUnavailableError",
     "GatewayError",
     "GatewayJournalRecoveryError",
+    "GatewayTransportError",
     "IdempotencyConflictError",
 ]

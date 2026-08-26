@@ -90,7 +90,9 @@ flag는 기능별이며 누락 시 OFF다. 모든 경로는 동일 idempotency k
 ### D6 — Dock은 RC 제품 실증 뒤 공통 계약을 재사용한다
 
 - `DOCK_AUTOMATED` profile과 공통 Core coordinator 계약은 지금 정의한다.
-- 실제 Dock adapter는 RC 기본형 HIL·FIELD 이후 구현한다.
+- Dock candidate adapter는 공통 port·Cloud protocol 경계를 사전 구현할 수 있다.
+  실제 Dock account/hardware route 등록과 feature flag 활성화는 RC 기본형 HIL·FIELD
+  이후 별도 Dock evidence가 있을 때만 허용한다.
 - Dock 3 연결은 Ethernet 또는 공식 4G를 기본 transport로 취급하고, 현장 Wi-Fi는
   외부 Wi-Fi→Ethernet bridge 운용으로 분리한다.
 - Dock+Manifold 병용이 실기·공식 지원으로 확인되면 Edge Dock으로 확장한다.

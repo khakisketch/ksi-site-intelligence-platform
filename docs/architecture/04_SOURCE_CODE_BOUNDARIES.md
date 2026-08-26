@@ -85,8 +85,9 @@ Dashboard client       verified device adapters
 3. 비행 중 로컬 인지·추적·품질·위험 판단이면 Manifold runtime에 둔다.
 4. 비행 안정화·reactive avoidance·RTH는 DJI Flight Controller 소유로 남긴다.
 5. 운영자 상태 표시와 pre/postflight action만 Dashboard에 둔다.
-6. 실제 장비 구현이 없으면 빈 adapter를 만들지 않고 capability를 `NOT_VERIFIED`로
-   유지한다.
+6. 실제 장비 구현이 없어도 fail-closed candidate adapter는 만들 수 있지만 빈 성공
+   구현과 mock fallback은 금지한다. 코드·SDK build와 무관하게 capability는 실제
+   path/hardware/firmware evidence 전까지 `NOT_VERIFIED`로 유지한다.
 
 ## 변경 안전장치
 
@@ -94,5 +95,6 @@ Dashboard client       verified device adapters
 - 기존 facade는 v1.2 receipt로 rollback 호환성을 유지한다. 새 capability 경로는
   capability·transport가 모두 명시된 경우에만 v1.3 receipt를 쓴다.
 - capability별 feature flag는 누락 시 OFF다.
-- MSDK Bridge와 Dock은 HIL 결과 전에는 adapter 구현·flag를 열지 않는다.
+- MSDK Bridge와 Dock candidate adapter의 사전 구현은 허용하되 runtime route 등록과
+  flag 활성화는 해당 path의 HIL evidence 전에는 금지한다.
 - manual KMZ와 ground ingest recovery 경로는 제거하지 않는다.
