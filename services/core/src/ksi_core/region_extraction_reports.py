@@ -64,7 +64,12 @@ from ksi_core.api_base import (
     CamelModel,
     iso_utc,
 )
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.region_extraction_requests import RegionExtractionRequestRecord
 
@@ -171,6 +176,11 @@ class RegionExtractionStore:
             raise RegionExtractionRecoveryError(
                 f"region-extraction journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        """Mission 원장 scope 밖의 변화 영역 결과는 존재하지 않는 것으로 취급한다."""
+
+        return self._mission_store.get(mission_id) is not None
 
     # ── 재생 ─────────────────────────────────────────────────────────────
 
@@ -361,12 +371,22 @@ class RegionExtractionStore:
         self, mission_id: str
     ) -> list[RecordedRegionExtraction]:
         """최신이 먼저."""
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             return list(reversed(self._by_mission.get(mission_id, ())))
 
     def get(
         self, mission_id: str, change_region_set_id: str
     ) -> RecordedRegionExtraction | None:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             for entry in reversed(self._by_mission.get(mission_id, ())):
                 if entry.report.change_region_set_id == change_region_set_id:
@@ -535,6 +555,10 @@ def build_region_extraction_router(store: RegionExtractionStore) -> APIRouter:
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> RegionExtractionListView:
         """그 임무의 변화 영역 추출 이력(최신 우선). 없으면 404."""
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(
+                status_code=404, detail="해당 변화 영역 추출 리포트를 찾을 수 없다"
+            )
         entries = store.list_for_mission(mission_id)
         if not entries:
             raise HTTPException(

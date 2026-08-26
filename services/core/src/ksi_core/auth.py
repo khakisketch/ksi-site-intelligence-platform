@@ -1,15 +1,17 @@
-"""Bearer 토큰 인증·역할 권한 (ADR-KSI-008 §2).
+"""Bearer 인증·역할 권한 (ADR-KSI-008, ADR-KSI-024).
 
 ## 토큰 원문은 저장하지 않는다
 
 :class:`AuthRegistry` 는 ``sha256(token)`` digest → :class:`Principal` 매핑만
 보유한다(조립 시 digest 레코드 주입) — 서버 어디에도 토큰 원문이 남지 않는다.
-JWT/OAuth·사용자 관리 API 는 도입하지 않는다(외부 IdP 없는 파일럿 규모에 과잉).
+외부 Operations Console 사람은 OIDC JWT를, 장비·워커는 이 opaque registry를 사용한다.
 
-## Principal 3종 (2-enum 분리 관습)
+## Principal 4종 (2-enum 분리 관습)
 
 - ``OPERATOR``(사람): :class:`Role` 필수, ``device_id`` 는 가질 수 없다. 권한은
   모듈 상수 ``_ROLE_PERMISSIONS`` 표 하나로만 결정된다(엔드포인트 산재 금지).
+- ``GATEWAY_DEVICE``(RC/Dock): role 없음, ``device_id`` 필수. 짧은 TTL의 연결·
+  capability snapshot만 보고하며 Edge ingest 권한을 받지 않는다.
 - ``EDGE_DEVICE``(장비): role 없음, ``device_id`` 필수. 권한은 항상 Edge 전용
   최소 집합(ingest·자기 mission pull·자기 evidence write)으로 고정 — role 표와
   무관하다(edge-sync 장착부에서 이 Principal 을 소비한다).
@@ -60,13 +62,15 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -91,9 +95,10 @@ class Role(StrEnum):
 
 
 class PrincipalKind(StrEnum):
-    """Principal 종류 — 사람·비행 장비·처리 워커는 신원 모델이 서로 다르다."""
+    """Principal 종류 — 사람·gateway·Edge·처리 워커의 신원 모델은 서로 다르다."""
 
     OPERATOR = "OPERATOR"
+    GATEWAY_DEVICE = "GATEWAY_DEVICE"
     EDGE_DEVICE = "EDGE_DEVICE"
     PROCESSING_WORKER = "PROCESSING_WORKER"
 
@@ -107,6 +112,18 @@ class TokenStatus(StrEnum):
 
     ACTIVE = "ACTIVE"
     REVOKED = "REVOKED"
+
+
+class HumanAuthMode(StrEnum):
+    """사람 인증 migration 모드. 장비 opaque 자격에는 영향을 주지 않는다."""
+
+    OPAQUE = "OPAQUE"
+    DUAL = "DUAL"
+    OIDC = "OIDC"
+
+
+class OidcVerifier(Protocol):
+    def verify(self, token: str) -> Principal | None: ...
 
 
 class Permission(StrEnum):
@@ -140,6 +157,9 @@ class Permission(StrEnum):
     # 인가)는 이 권한이 아니라 라우터가 하고, 불일치는 403 이 아니라 404 로 접는다
     # — 403 은 "그 임무는 존재한다"를 알려주는 존재 오라클이다.
     EDGE_MISSION_KMZ_READ = "EDGE_MISSION_KMZ_READ"
+    # RC Plus 2 / Dock gateway 전용. Edge ingest 권한과 분리해 Gateway 자격이
+    # Manifold EventBundle·원본 미디어를 가장할 수 없게 한다(REQ-SEC-101).
+    GATEWAY_CONNECTIVITY_WRITE = "GATEWAY_CONNECTIVITY_WRITE"
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
@@ -165,7 +185,7 @@ class Permission(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Principal:
-    """인증된 신원 — OPERATOR 는 ``role`` 필수·``device_id`` 없음, 그 역."""
+    """인증 신원 — OPERATOR만 role, Gateway/Edge만 device_id를 가진다."""
 
     principal_id: str
     kind: PrincipalKind
@@ -243,13 +263,15 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
             raise AuthRegistryError(
                 f"{principal.principal_id}: OPERATOR 는 device_id 를 가질 수 없다"
             )
-    elif principal.kind is PrincipalKind.EDGE_DEVICE:
+    elif principal.kind in (PrincipalKind.GATEWAY_DEVICE, PrincipalKind.EDGE_DEVICE):
         if principal.role is not None:
             raise AuthRegistryError(
-                f"{principal.principal_id}: EDGE_DEVICE 는 role 을 가질 수 없다"
+                f"{principal.principal_id}: {principal.kind.value} 는 role 을 가질 수 없다"
             )
         if not principal.device_id:
-            raise AuthRegistryError(f"{principal.principal_id}: EDGE_DEVICE 는 device_id 가 필수다")
+            raise AuthRegistryError(
+                f"{principal.principal_id}: {principal.kind.value} 는 device_id 가 필수다"
+            )
         if not is_path_safe_identifier(principal.device_id):
             # device_id 는 그대로 event_key(="{deviceId}::{eventId}")의 절반이
             # 되어 /v1/events/{event_key} 경로 세그먼트로 쓰인다(3차 최종검토
@@ -377,6 +399,10 @@ _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
     }
 )
 
+_GATEWAY_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.GATEWAY_CONNECTIVITY_WRITE}
+)
+
 # PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무
 # 발급·사건 분류에 손댈 이유가 없고, 손댈 수 있으면 처리 파이프라인 하나가
 # 뚫렸을 때 blast radius 가 제품 전체가 된다.
@@ -385,6 +411,8 @@ _PROCESSING_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.PR
 
 def principal_permissions(principal: Principal) -> frozenset[Permission]:
     """Principal 의 유효 권한 집합. 장비·워커는 고정, OPERATOR 는 role 표 조회."""
+    if principal.kind is PrincipalKind.GATEWAY_DEVICE:
+        return _GATEWAY_DEVICE_PERMISSIONS
     if principal.kind is PrincipalKind.EDGE_DEVICE:
         return _EDGE_DEVICE_PERMISSIONS
     if principal.kind is PrincipalKind.PROCESSING_WORKER:
@@ -400,6 +428,39 @@ def principal_permissions(principal: Principal) -> frozenset[Permission]:
 # 인증 실패 사유(부재/형식오류/미지 토큰)를 가리지 않는 단일 문구 — 존재 여부
 # 힌트를 주지 않는다(edge_sync.py 감사 #8 열거 오라클 방지 관습과 동일 원칙).
 _UNAUTHENTICATED_DETAIL = "인증이 필요하다 — 유효한 Bearer 토큰을 제시하라"
+_BEARER_SCHEME = HTTPBearer(
+    auto_error=False,
+    scheme_name="KsiBearer",
+    bearerFormat="OIDC operator JWT 또는 opaque device credential",
+    description=(
+        "사람 OPERATOR는 배포 mode에 따라 OIDC JWT를 사용하고, "
+        "GATEWAY_DEVICE·EDGE_DEVICE·PROCESSING_WORKER는 별도 opaque 장비 자격을 사용한다."
+    ),
+)
+
+
+# API 요청 안에서만 살아 있는 조직 문맥이다. 오래된 분석/미디어 store 중 일부는
+# MissionStore만 주입받아 호출되므로, 각 라우터가 매번 같은 scope 검사를 잊지 않게
+# MissionStore가 이 문맥을 읽어 교차 조직 mission을 존재하지 않는 것처럼 취급한다.
+#
+# 이는 인가를 대체하지 않는다. 이 값은 ``require_principal``/``require_permission``
+# 가 인증한 Principal에서만 설정되고, 요청 밖의 원장 재생·배치 작업에는 설정되지
+# 않는다. 따라서 내부 조정 코드는 명시적 ``get_scoped``를 쓸 수 있고, 공개 API의
+# legacy mission consumer는 중앙 경계를 자동으로 상속한다(INV-060).
+_REQUEST_PRINCIPAL: ContextVar[Principal | None] = ContextVar(
+    "ksi_request_principal", default=None
+)
+
+
+def current_request_organization_id() -> str | None:
+    """현재 인증된 API 요청의 organizationId. 요청 밖이면 ``None``.
+
+    MissionStore의 read filter 전용 공개 함수다. 호출자가 이 값이 없다는 이유로
+    인가를 생략해서는 안 된다 — 그 경우는 HTTP 요청 밖의 trusted 내부 흐름이다.
+    """
+
+    principal = _REQUEST_PRINCIPAL.get()
+    return principal.organization_id if principal is not None else None
 
 
 def _unauthorized() -> HTTPException:
@@ -410,7 +471,10 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def _resolve_principal(request: Request) -> Principal:
+def _resolve_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(_BEARER_SCHEME),  # noqa: B008
+) -> Principal:
     """Authorization 헤더에서 Bearer 토큰을 파싱·해석한다.
 
     scheme 비교는 RFC 7235 대소문자 관용을 따른다("bearer"/"Bearer"/"BEARER" 모두
@@ -424,29 +488,55 @@ def _resolve_principal(request: Request) -> Principal:
             "mount_auth() 없이 보호 라우트를 장착한 조립 결함이다"
         )
 
-    header = request.headers.get("Authorization")
-    if header is None:
+    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise _unauthorized()
+    token = credentials.credentials
 
-    scheme, sep, token = header.partition(" ")
-    if not sep or scheme.lower() != "bearer" or not token:
-        raise _unauthorized()
+    mode = getattr(request.app.state, "human_auth_mode", HumanAuthMode.OPAQUE)
+    opaque_principal = registry.resolve(token, now=datetime.now(UTC))
 
-    principal = registry.resolve(token, now=datetime.now(UTC))
-    if principal is None:
-        raise _unauthorized()
-    return principal
+    # 장비·워커는 사람 migration mode와 무관하게 기존 자격을 유지한다.
+    if opaque_principal is not None and opaque_principal.kind is not PrincipalKind.OPERATOR:
+        return opaque_principal
+    if mode in (HumanAuthMode.OPAQUE, HumanAuthMode.DUAL) and opaque_principal is not None:
+        return opaque_principal
+    if mode in (HumanAuthMode.DUAL, HumanAuthMode.OIDC):
+        verifier: OidcVerifier | None = getattr(request.app.state, "oidc_verifier", None)
+        if verifier is None:
+            raise RuntimeError("OIDC/DUAL auth mode에 oidc_verifier가 없는 조립 결함이다")
+        principal = verifier.verify(token)
+        if principal is not None:
+            return principal
+    raise _unauthorized()
 
 
-def require_principal() -> Callable[[Request], Principal]:
+async def _principal_request_scope(
+    principal: Principal = Depends(_resolve_principal),  # noqa: B008
+) -> AsyncIterator[Principal]:
+    """인증된 Principal을 요청 수명 동안 ContextVar로 제공한다.
+
+    FastAPI의 generator dependency를 사용해 sync endpoint/threadpool에도 context가
+    복사되고, 응답 완료 후에는 반드시 reset된다. 단순히 ``_resolve_principal`` 안에서
+    ``set``하면 sync dependency thread의 context가 endpoint까지 전달되지 않을 수
+    있고, reset하지 않으면 요청 간 문맥 오염 위험이 생긴다.
+    """
+
+    token = _REQUEST_PRINCIPAL.set(principal)
+    try:
+        yield principal
+    finally:
+        _REQUEST_PRINCIPAL.reset(token)
+
+
+def require_principal() -> Callable[..., Any]:
     """인증만 확인하는 FastAPI 의존성 팩토리. 사용: ``Depends(require_principal())``."""
-    return _resolve_principal
+    return _principal_request_scope
 
 
 def require_permission(perm: Permission) -> Callable[[Principal], Principal]:
     """``perm`` 을 가진 Principal 만 통과시키는 의존성 팩토리(인증 401 + 인가 403)."""
 
-    def _check(principal: Principal = Depends(_resolve_principal)) -> Principal:  # noqa: B008
+    def _check(principal: Principal = Depends(_principal_request_scope)) -> Principal:  # noqa: B008
         if perm not in principal_permissions(principal):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
         return principal
@@ -466,7 +556,7 @@ def require_permission_any(*perms: Permission) -> Callable[[Principal], Principa
     if not perms:
         raise ValueError("require_permission_any 는 최소 1개의 Permission 이 필요하다")
 
-    def _check(principal: Principal = Depends(_resolve_principal)) -> Principal:  # noqa: B008
+    def _check(principal: Principal = Depends(_principal_request_scope)) -> Principal:  # noqa: B008
         granted = principal_permissions(principal)
         if not any(p in granted for p in perms):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
@@ -506,7 +596,17 @@ def build_auth_router() -> APIRouter:
     return router
 
 
-def mount_auth(app: FastAPI, registry: AuthRegistry) -> None:
-    """앱에 AuthRegistry 를 장착하고 ``/v1/auth/whoami`` 를 등록한다."""
+def mount_auth(
+    app: FastAPI,
+    registry: AuthRegistry,
+    *,
+    human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
+    oidc_verifier: OidcVerifier | None = None,
+) -> None:
+    """사람 OIDC와 장비 opaque registry를 한 Bearer 표면에 장착한다."""
+    if human_auth_mode in (HumanAuthMode.DUAL, HumanAuthMode.OIDC) and oidc_verifier is None:
+        raise AuthRegistryError("OIDC/DUAL auth mode에는 oidc_verifier가 필요하다")
     app.state.auth_registry = registry
+    app.state.human_auth_mode = human_auth_mode
+    app.state.oidc_verifier = oidc_verifier
     app.include_router(build_auth_router())

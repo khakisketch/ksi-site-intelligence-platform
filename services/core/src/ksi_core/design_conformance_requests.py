@@ -73,7 +73,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy, current_comparison_policy
 from ksi_event_contracts.design_surface import DesignSurfaceStatus
@@ -87,7 +87,12 @@ from ksi_event_contracts.vertical_reference import (
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.comparison_requests import assert_zones_are_usable, zone_fingerprint
 from ksi_core.design_surfaces import (
     DESIGN_SURFACE_CONTENT_TYPE,
@@ -451,6 +456,17 @@ class DesignConformanceRequestStore:
             raise DesignConformanceRequestRecoveryError(
                 f"design-conformance-requests journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def _visible_in_request(self, record: DesignConformanceRequestRecord) -> bool:
+        """Mission 원장 조직 범위를 설계 대비 요청의 유일한 공개 경계로 쓴다."""
+
+        return (
+            current_request_organization_id() is None
+            or self._mission_store.get(record.mission_id) is not None
+        )
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        return self._mission_store.get(mission_id) is not None
 
     # ── 재생 ─────────────────────────────────────────────────────────────
 
@@ -867,7 +883,8 @@ class DesignConformanceRequestStore:
 
     def get(self, request_id: str) -> DesignConformanceRequestRecord | None:
         with self._lock:
-            return self._requests.get(request_id)
+            record = self._requests.get(request_id)
+        return record if record is not None and self._visible_in_request(record) else None
 
     def bind_report_existence(self, report_exists: Callable[[str], bool]) -> None:
         """리포트 존재 술어를 조립 후에 걸어준다.
@@ -918,6 +935,11 @@ class DesignConformanceRequestStore:
         return artifact.vertical_reference if artifact is not None else None
 
     def list_for_mission(self, mission_id: str) -> list[DesignConformanceRequestRecord]:
+        if (
+            current_request_organization_id() is not None
+            and self._mission_store.get(mission_id) is None
+        ):
+            return []
         with self._lock:
             records = [r for r in self._requests.values() if r.mission_id == mission_id]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id), reverse=True)
@@ -932,6 +954,8 @@ class DesignConformanceRequestStore:
             records = [
                 r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
             ]
+        if current_request_organization_id() is not None:
+            records = [r for r in records if self._visible_in_request(r)]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id))[:limit]
 
     @staticmethod
@@ -970,7 +994,7 @@ class DesignConformanceRequestStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -1047,6 +1071,10 @@ class DesignConformanceRequestStore:
         # 그 워커는 다시 호출하면 되고(불필요한 1회 거부), "있다"를 본 뒤 사라지는
         # 일은 없다. designConformanceId 는 requestId 에서 순수 도출이라
         # (:func:`design_conformance_id_of`) 레코드를 읽지 않고도 구할 수 있다.
+        if current_request_organization_id() is not None and self.get(request_id) is None:
+            return DesignConformanceRequestResult(
+                DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
+            )
         report_missing_for_success = False
         if target is ProcessingJobStatus.SUCCEEDED and self._report_exists is not None:
             report_missing_for_success = not self._report_exists(
@@ -1059,7 +1087,7 @@ class DesignConformanceRequestStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -1143,7 +1171,7 @@ class DesignConformanceRequestStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -1434,6 +1462,8 @@ def build_design_conformance_requests_router(
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> DesignConformanceRequestListResponse:
         """그 임무의 설계 대비 요청 이력(최신 우선)."""
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return DesignConformanceRequestListResponse(
             requests=[_to_view(r) for r in store.list_for_mission(mission_id)]
         )

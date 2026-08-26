@@ -84,7 +84,13 @@ from ksi_mission_planning import AreaOfInterest
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, principal_permissions, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    principal_permissions,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
 
@@ -151,6 +157,9 @@ class SiteRecord:
     # None 은 "선언되지 않았다"이고 **반출 불가로 읽힌다**(fail-closed). 구버전
     # journal 레코드가 이 값을 가질 수 없으므로 기본을 허용 쪽에 둘 수 없다.
     data_residency: dict[str, Any] | None = None
+    # External AI is a narrower legal purpose than generic processing egress.
+    # Missing legacy values replay as False; generic egressAllowed never implies it.
+    ai_egress_allowed: bool = False
     # 이 현장의 공간모델 노후 판정 기준(일). ``None`` 은 **미선언**이고, 미선언은
     # "최신"이 아니라 "판정하지 않음"으로 읽힌다
     # (:mod:`ksi_core.spatial_model` 의 ``AGE_POLICY_UNDECLARED``).
@@ -305,6 +314,11 @@ class SiteStore:
             if not isinstance(residency_payload, dict):
                 raise ValueError(f"재생: dataResidency 가 object 가 아니다: siteId={site_id}")
             DataResidency.model_validate(residency_payload)  # fail-closed 재검증
+        ai_egress_allowed = raw.get("aiEgressAllowed", False)
+        if not isinstance(ai_egress_allowed, bool):
+            raise ValueError(
+                f"재생: aiEgressAllowed 가 boolean 이 아니다: siteId={site_id}"
+            )
         organization_id = raw.get("organizationId", "legacy")
         if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
             raise ValueError(
@@ -321,6 +335,7 @@ class SiteStore:
             updated_at=ts,
             aoi=aoi_payload,
             data_residency=residency_payload,
+            ai_egress_allowed=ai_egress_allowed,
             organization_id=organization_id,
         )
 
@@ -425,6 +440,7 @@ class SiteStore:
         *,
         aoi: AreaOfInterest | None = None,
         data_residency: DataResidency | None = None,
+        ai_egress_allowed: bool = False,
         organization_id: str = "legacy",
         actor: str,
         now: datetime,
@@ -505,6 +521,7 @@ class SiteStore:
                     if data_residency is None
                     else data_residency.model_dump(by_alias=True, mode="json")
                 ),
+                "aiEgressAllowed": ai_egress_allowed,
             }
             try:
                 self._journal.append(raw)
@@ -702,12 +719,22 @@ class SiteStore:
 
     def get(self, site_id: str) -> SiteRecord | None:
         with self._lock:
-            return self._sites.get(site_id)
+            record = self._sites.get(site_id)
+        organization_id = current_request_organization_id()
+        if organization_id is not None and (
+            record is None or record.organization_id != organization_id
+        ):
+            return None
+        return record
 
     def list(self) -> list[SiteRecord]:
-        """site_id 정렬 결정적 목록."""
+        """HTTP 조직 문맥이면 같은 조직만 보이는 site_id 정렬 목록."""
         with self._lock:
-            return [self._sites[key] for key in sorted(self._sites)]
+            records = [self._sites[key] for key in sorted(self._sites)]
+        organization_id = current_request_organization_id()
+        if organization_id is not None:
+            records = [record for record in records if record.organization_id == organization_id]
+        return records
 
 
 # ── FastAPI 장착부 ────────────────────────────────────────────────────
@@ -725,6 +752,8 @@ class SiteRegistrationRequest(CamelModel):
     # 토글은 법적 판단이라 SITES_WRITE 로 조용히 바꿀 수 있는 값이 아니다.
     # 변경이 필요해지면 그때 권한과 승인 절차를 별도로 정한다.
     data_residency: DataResidency | None = None
+    # 별도 명시 동의. generic dataResidency.egressAllowed와 결합하지 않는다(INV-050).
+    ai_egress_allowed: bool = False
 
 
 class SiteTransitionRequest(CamelModel):
@@ -776,6 +805,7 @@ class SiteView(CamelModel):
     # 미선언이면 null 을 그대로 노출한다 — 화면이 "반출 허용"을 기본값처럼
     # 보여주지 않게. null 의 뜻은 "반출 불가"다(SiteRecord.data_residency).
     data_residency: dict[str, Any] | None
+    ai_egress_allowed: bool
     # 미선언이면 null. null 의 뜻은 "노후를 판정하지 않는다"이지 "최신"이 아니다
     # (SiteRecord.model_max_age_days, ADR-KSI-019 G1).
     model_max_age_days: int | None = None
@@ -833,6 +863,7 @@ def _to_view(record: SiteRecord) -> SiteView:
         updated_at=record.updated_at.isoformat(),
         aoi=record.aoi,
         data_residency=record.data_residency,
+        ai_egress_allowed=record.ai_egress_allowed,
         model_max_age_days=record.model_max_age_days,
     )
 
@@ -857,6 +888,7 @@ def build_sites_router(
             request.site_frame,
             aoi=request.aoi,
             data_residency=request.data_residency,
+            ai_egress_allowed=request.ai_egress_allowed,
             organization_id=principal.organization_id,
             actor=principal.principal_id,
             now=datetime.now(UTC),

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/site-workspace.v1.json",
+  "title": "SiteWorkspaceView v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "siteId", "siteName", "siteStatus", "latestObservationAt",
+    "reviewItemCount", "activeWorkOrderCount", "latestWorkOrder", "latestAnalysis", "nextAction"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "siteId": { "type": "string", "minLength": 1 },
+    "siteName": { "type": "string", "minLength": 1 },
+    "siteStatus": { "type": "string", "minLength": 1 },
+    "latestObservationAt": { "type": ["string", "null"], "format": "date-time" },
+    "reviewItemCount": { "type": "integer", "minimum": 0 },
+    "activeWorkOrderCount": { "type": "integer", "minimum": 0 },
+    "latestWorkOrder": { "type": ["object", "null"], "additionalProperties": true },
+    "latestAnalysis": { "type": "object", "additionalProperties": true },
+    "nextAction": { "type": "object", "additionalProperties": true }
+  }
+}

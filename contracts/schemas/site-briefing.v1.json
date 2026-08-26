@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/site-briefing.v1.json",
+  "title": "SiteBriefing v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "briefingId", "organizationId", "siteId", "status",
+    "whatChanged", "whyItMatters", "decisionPrompt", "citations", "uncertainty",
+    "sourceWatermark", "missingData", "generatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "briefingId": { "type": "string", "minLength": 1 },
+    "organizationId": { "type": "string", "minLength": 1 },
+    "siteId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["READY", "BLOCKED"] },
+    "whatChanged": { "type": "string", "minLength": 1 },
+    "whyItMatters": { "type": "string", "minLength": 1 },
+    "decisionPrompt": { "type": "string", "minLength": 1 },
+    "citations": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "uncertainty": { "type": "string", "minLength": 1 },
+    "sourceWatermark": { "type": "string", "minLength": 1 },
+    "missingData": { "type": "array", "items": { "type": "string" } },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  }
+}

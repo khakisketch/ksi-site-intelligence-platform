@@ -93,6 +93,8 @@ _VIEWER_TOKEN = "processing-viewer"  # noqa: S105
 _WORKER_TOKEN = "processing-worker"  # noqa: S105
 _EDGE_TOKEN = "processing-edge"  # noqa: S105
 _OTHER_EDGE_TOKEN = "processing-edge-other"  # noqa: S105
+_OTHER_ORGANIZATION_VIEWER_TOKEN = "processing-other-org-viewer"  # noqa: S105
+_OTHER_ORGANIZATION_WORKER_TOKEN = "processing-other-org-worker"  # noqa: S105
 
 _SITE_FRAME = SiteFrame(
     crs="EPSG:5186", vertical_datum="KNG2018", transform_version="v1", unit="meter"
@@ -133,7 +135,11 @@ def _spec(
 
 
 def _mission_store(
-    tmp_path: Path, *, path: str = "missions.jsonl", assigned_device_id: str | None = None
+    tmp_path: Path,
+    *,
+    path: str = "missions.jsonl",
+    assigned_device_id: str | None = None,
+    organization_id: str = "legacy",
 ) -> MissionStore:
     store = MissionStore(DurableJournal(tmp_path / path))
     assert (
@@ -150,6 +156,7 @@ def _mission_store(
                 planned_coverage_ratio=None,
                 issued_at=_NOW,
                 issued_by="do-1",
+                organization_id=organization_id,
                 assigned_device_id=assigned_device_id,
             )
         ).value
@@ -180,11 +187,15 @@ def _sealed_bundle_store(
     path: str = "source-media.jsonl",
     seal: bool = True,
     assigned_device_id: str | None = None,
+    organization_id: str = "legacy",
 ) -> SourceMediaStore:
     store = SourceMediaStore(
         DurableJournal(tmp_path / path),
         mission_store=_mission_store(
-            tmp_path, path="m-" + path, assigned_device_id=assigned_device_id
+            tmp_path,
+            path="m-" + path,
+            assigned_device_id=assigned_device_id,
+            organization_id=organization_id,
         ),
     )
     claims = [_claim(f"img-{i:03d}.jpg") for i in range(media_count)]
@@ -206,6 +217,7 @@ def _job_store(
     verified: bool = True,
     path: str = "processing-jobs.jsonl",
     assigned_device_id: str | None = None,
+    organization_id: str = "legacy",
 ) -> ProcessingJobStore:
     """``journal`` 을 직접 주면 재생 테스트가 그 핸들을 닫을 수 있다(단일 writer 잠금).
 
@@ -217,7 +229,11 @@ def _job_store(
     return ProcessingJobStore(
         journal if journal is not None else DurableJournal(tmp_path / path),
         source_media_store=make_bundles(
-            tmp_path, media_count=media_count, seal=seal, assigned_device_id=assigned_device_id
+            tmp_path,
+            media_count=media_count,
+            seal=seal,
+            assigned_device_id=assigned_device_id,
+            organization_id=organization_id,
         ),
         site_store=_site_store(tmp_path, egress=egress),
     )
@@ -1332,6 +1348,26 @@ def _auth_registry() -> AuthRegistry:
                     device_id=_OTHER_EDGE_DEVICE_ID,
                 ),
             ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_OTHER_ORGANIZATION_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="op-other-org-viewer",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-other",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_OTHER_ORGANIZATION_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="worker-other-org-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
+                    organization_id="org-other",
+                ),
+            ),
         ]
     )
 
@@ -1670,6 +1706,62 @@ def test_http_viewer_cannot_issue_or_transition(tmp_path: Path) -> None:
     )
     # 조회는 열려 있다.
     assert client.get(f"/v1/processing-jobs/{job_id}").status_code == 200
+
+
+def test_other_organization_cannot_enumerate_or_mutate_foreign_processing_job(
+    tmp_path: Path,
+) -> None:
+    """ProcessingJob·Artifact는 Mission 조직 범위를 그대로 상속한다(INV-060)."""
+    client = _client(tmp_path)
+    issued = client.post(f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload())
+    assert issued.status_code == 201, issued.text
+    job_id = issued.json()["job"]["jobId"]
+
+    other_viewer_headers = {"Authorization": f"Bearer {_OTHER_ORGANIZATION_VIEWER_TOKEN}"}
+    foreign_job = client.get(f"/v1/processing-jobs/{job_id}", headers=other_viewer_headers)
+    missing_job = client.get(
+        "/v1/processing-jobs/unknown-processing-job", headers=other_viewer_headers
+    )
+    assert foreign_job.status_code == missing_job.status_code == 404
+    assert foreign_job.json() == missing_job.json()
+
+    # collection도 빈 목록으로 접는다. 다른 조직의 작업 수·시점은 노출하지 않는다.
+    assert client.get(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", headers=other_viewer_headers
+    ).json() == {"jobs": []}
+    assert client.get(
+        f"/v1/sites/{_SITE_ID}/processing-jobs", headers=other_viewer_headers
+    ).json() == {"jobs": []}
+
+    other_worker_headers = {"Authorization": f"Bearer {_OTHER_ORGANIZATION_WORKER_TOKEN}"}
+    pending = client.get("/v1/processing-jobs", headers=other_worker_headers)
+    assert pending.status_code == 200
+    assert pending.json() == {"jobs": []}
+
+    foreign_lease = client.post(f"/v1/processing-jobs/{job_id}/lease", headers=other_worker_headers)
+    missing_lease = client.post(
+        "/v1/processing-jobs/unknown-processing-job/lease", headers=other_worker_headers
+    )
+    assert foreign_lease.status_code == missing_lease.status_code == 404
+    assert foreign_lease.json() == missing_lease.json()
+
+    foreign_input = client.get(f"/v1/processing-jobs/{job_id}/input", headers=other_worker_headers)
+    missing_input = client.get(
+        "/v1/processing-jobs/unknown-processing-job/input", headers=other_worker_headers
+    )
+    assert foreign_input.status_code == missing_input.status_code == 404
+    assert foreign_input.json() == missing_input.json()
+
+    # 같은 job은 원래 조직 worker가 이어서 처리할 수 있다. foreign 요청은 lease나
+    # 상태를 바꾸지 않았음을 검증한다.
+    legacy_pending = client.get(
+        "/v1/processing-jobs", headers={"Authorization": f"Bearer {_WORKER_TOKEN}"}
+    )
+    assert [job["jobId"] for job in legacy_pending.json()["jobs"]] == [job_id]
+    legacy_lease = client.post(
+        f"/v1/processing-jobs/{job_id}/lease", headers={"Authorization": f"Bearer {_WORKER_TOKEN}"}
+    )
+    assert legacy_lease.status_code == 201
 
 
 def test_http_assigned_edge_device_can_issue(tmp_path: Path) -> None:
@@ -2733,6 +2825,18 @@ def test_store_lists_jobs_for_a_site(tmp_path: Path) -> None:
 
     listed = store.list_for_site(_SITE_ID)
     assert [job.job_id for job in listed] == [record.job_id]
+
+
+def test_store_list_for_site_applies_explicit_organization_without_request_scope(
+    tmp_path: Path,
+) -> None:
+    """내부 projection도 전달받은 조직 밖의 epoch를 선택하지 않는다(INV-060/061)."""
+    store = _job_store(tmp_path, organization_id="org-a")
+    record = store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).record
+    assert record is not None
+
+    assert store.list_for_site(_SITE_ID, organization_id="org-b") == []
+    assert store.list_for_site(_SITE_ID, organization_id="org-a") == [record]
 
 
 def test_store_list_for_site_respects_the_limit(tmp_path: Path) -> None:

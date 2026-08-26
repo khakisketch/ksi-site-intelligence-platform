@@ -66,7 +66,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.design_surface import (
     SHA256_HEX_PATTERN,
     DesignSurface,
@@ -536,6 +536,17 @@ class DesignSurfaceStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
+    def site_is_visible(self, site_id: str) -> bool:
+        """현재 요청이 이 설계면의 부모 현장을 볼 수 있는지 판정한다.
+
+        설계면은 별도 organizationId를 복제하지 않고 Site 원장을 권위로 삼는다.
+        ``SiteStore.get``은 인증된 요청 문맥에서 cross-organization site를 ``None``
+        으로 접으므로, 이 한 관문을 list·get·worker pull·mutation 모두가 재사용한다
+        (INV-060). 배치·재생에는 문맥이 없어 기존 trusted 동작을 유지한다.
+        """
+
+        return self._site_store.get(site_id) is not None
+
     def register(
         self,
         site_id: str,
@@ -659,7 +670,7 @@ class DesignSurfaceStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             surface = self._surfaces.get(design_surface_id)
-            if surface is None:
+            if surface is None or not self.site_is_visible(surface.site_id):
                 return SealResult(
                     verdict=DesignSurfaceSealVerdict.UNKNOWN_DESIGN_SURFACE,
                     detail=_NOT_FOUND_DETAIL,
@@ -715,7 +726,7 @@ class DesignSurfaceStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             surface = self._surfaces.get(design_surface_id)
-            if surface is None:
+            if surface is None or not self.site_is_visible(surface.site_id):
                 return ObservationResult(
                     verdict=DesignSurfaceObservationVerdict.UNKNOWN_DESIGN_SURFACE,
                     detail=_NOT_FOUND_DETAIL,
@@ -787,7 +798,7 @@ class DesignSurfaceStore:
                     detail=JOURNAL_SEALED_DETAIL,
                 )
             surface = self._surfaces.get(design_surface_id)
-            if surface is None:
+            if surface is None or not self.site_is_visible(surface.site_id):
                 return ObservationResult(
                     verdict=DesignSurfaceObservationVerdict.UNKNOWN_DESIGN_SURFACE,
                     detail=_NOT_FOUND_DETAIL,
@@ -847,15 +858,21 @@ class DesignSurfaceStore:
             pending = [
                 s for s in self._surfaces.values() if s.status is DesignSurfaceStatus.SEALED
             ]
+        pending = [surface for surface in pending if self.site_is_visible(surface.site_id)]
         pending.sort(key=lambda s: (s.sealed_at or s.registered_at, s.design_surface_id))
         return pending[:limit]
 
     def get(self, design_surface_id: str) -> DesignSurface | None:
         with self._lock:
-            return self._surfaces.get(design_surface_id)
+            surface = self._surfaces.get(design_surface_id)
+        if surface is None or not self.site_is_visible(surface.site_id):
+            return None
+        return surface
 
     def list_for_site(self, site_id: str) -> list[DesignSurface]:
         """현장 1곳의 설계면 전부 — 등록 순서 결정적 목록."""
+        if not self.site_is_visible(site_id):
+            return []
         with self._lock:
             surfaces = [s for s in self._surfaces.values() if s.site_id == site_id]
         surfaces.sort(key=lambda s: (s.registered_at, s.design_surface_id))
@@ -1121,6 +1138,8 @@ def build_design_surface_router(
         확인된 사실인가"를 그리려면 두 블록이 다 보여야 한다.
         """
         del principal
+        if not store.site_is_visible(site_id):
+            raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
         return DesignSurfaceListResponse(surfaces=store.list_for_site(site_id))
 
     @router.get("/v1/design-surfaces", response_model=PendingDesignSurfaceListResponse)

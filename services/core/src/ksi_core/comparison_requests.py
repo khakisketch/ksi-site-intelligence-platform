@@ -78,7 +78,12 @@ from ksi_event_contracts.work_area import assert_polygon_is_usable
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
@@ -400,6 +405,24 @@ class ComparisonRequestStore:
             raise ComparisonRequestRecoveryError(
                 f"comparison-requests journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def _visible_in_request(self, record: ComparisonRequestRecord) -> bool:
+        """HTTP 조직 문맥에서만 Mission lineage로 이 요청을 숨긴다.
+
+        비교 요청은 자체 organizationId를 복제하지 않는다. Mission 원장이 사실의
+        권위이므로, 기존 MissionStore의 request scope를 재사용한다(INV-060).
+        재생·신뢰된 내부 작업에는 문맥이 없어 기존 전체 원장 동작을 유지한다.
+        """
+
+        return (
+            current_request_organization_id() is None
+            or self._mission_store.get(record.mission_id) is not None
+        )
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        """라우터가 foreign/unknown mission을 같은 404로 다룰 공개 관문."""
+
+        return self._mission_store.get(mission_id) is not None
 
     # ── 재생 ─────────────────────────────────────────────────────────────
 
@@ -729,7 +752,8 @@ class ComparisonRequestStore:
 
     def get(self, request_id: str) -> ComparisonRequestRecord | None:
         with self._lock:
-            return self._requests.get(request_id)
+            record = self._requests.get(request_id)
+        return record if record is not None and self._visible_in_request(record) else None
 
     def vertical_reference_of(self, ref: ArtifactRef | None) -> VerticalReference | None:
         """그 산출물이 등록 시 선언한 수직기준 — 없으면 ``None``.
@@ -777,6 +801,11 @@ class ComparisonRequestStore:
         return artifact.accuracy.checkpoint_rmse_m
 
     def list_for_mission(self, mission_id: str) -> list[ComparisonRequestRecord]:
+        if (
+            current_request_organization_id() is not None
+            and self._mission_store.get(mission_id) is None
+        ):
+            return []
         with self._lock:
             records = [r for r in self._requests.values() if r.mission_id == mission_id]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id), reverse=True)
@@ -790,6 +819,8 @@ class ComparisonRequestStore:
             records = [
                 r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
             ]
+        if current_request_organization_id() is not None:
+            records = [r for r in records if self._visible_in_request(r)]
         ordered = sorted(records, key=lambda r: (r.requested_at, r.request_id))
         return ordered[:limit]
 
@@ -824,7 +855,7 @@ class ComparisonRequestStore:
                     ComparisonRequestVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -891,7 +922,7 @@ class ComparisonRequestStore:
                     ComparisonRequestVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -1154,6 +1185,8 @@ def build_comparison_requests_router(
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> ComparisonRequestListResponse:
         """그 임무의 비교 요청 이력(최신 우선)."""
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return ComparisonRequestListResponse(
             requests=[
                 r.to_contract().model_dump(by_alias=True, mode="json", exclude_none=False)

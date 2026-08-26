@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/copilot-message.v1.json",
+  "title": "CopilotMessage v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "messageId", "conversationId", "role", "content",
+    "clientMessageId", "answerStatus", "citations", "missingData",
+    "reobservationDraftId", "provider", "model", "plannerVersion", "createdBy", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "messageId": { "type": "string", "minLength": 1 },
+    "conversationId": { "type": "string", "minLength": 1 },
+    "role": { "enum": ["USER", "ASSISTANT"] },
+    "content": { "type": "string", "minLength": 1 },
+    "clientMessageId": { "type": ["string", "null"] },
+    "answerStatus": { "enum": ["ANSWERED", "BLOCKED", null] },
+    "citations": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "missingData": { "type": "array", "items": { "type": "string" } },
+    "reobservationDraftId": { "type": ["string", "null"] },
+    "provider": { "type": ["string", "null"] },
+    "model": { "type": ["string", "null"] },
+    "plannerVersion": { "type": ["string", "null"] },
+    "createdBy": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

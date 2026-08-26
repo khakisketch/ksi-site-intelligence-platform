@@ -61,7 +61,12 @@ from ksi_core.api_base import (
     iso_utc,
 )
 from ksi_core.artifact_refs import ArtifactRefIssue, verify_artifact_pair
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
 if TYPE_CHECKING:
@@ -157,6 +162,9 @@ class ChangeDetectionStore:
             raise ChangeDetectionRecoveryError(
                 f"change-detection journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        return self._mission_store.get(mission_id) is not None
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -332,11 +340,21 @@ class ChangeDetectionStore:
         return ChangeDetectionRecordResult(verdict, detail=detail)
 
     def latest(self, mission_id: str) -> RecordedChangeDetection | None:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             recorded = self._by_mission.get(mission_id)
             return recorded[-1] if recorded else None
 
     def history(self, mission_id: str) -> list[RecordedChangeDetection]:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             return list(self._by_mission.get(mission_id, ()))
 
@@ -406,6 +424,10 @@ def build_change_detection_router(store: ChangeDetectionStore) -> APIRouter:
         이 신호를 보고 원본 site AOI 로 SPATIAL_REFRESH 임무를
         ``POST /v1/missions/plans`` 에 발급한다.
         """
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(
+                status_code=404, detail="해당 임무의 변화 탐지 결과를 찾을 수 없다"
+            )
         recorded = store.latest(mission_id)
         if recorded is None:
             raise HTTPException(

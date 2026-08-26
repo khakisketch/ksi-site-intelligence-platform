@@ -257,7 +257,9 @@ def test_arbitrary_dict_payload_rejected(store: EdgeSyncStore) -> None:
 
 _EDGE_TOKEN = "edge-device-token"  # noqa: S105 — 테스트 고정 토큰
 _VIEWER_TOKEN = "viewer-token"  # noqa: S105 — EVENTS_READ 보유(사용자 조회 테스트)
+_SAME_ORG_VIEWER_TOKEN = "same-org-viewer-token"  # noqa: S105 — test fixed token
 _EDGE_DEVICE_ID = "edge-001"  # _entry() 기본 edge_device_id 와 일치해야 한다
+_EDGE_ORGANIZATION_ID = "org-edge"
 
 
 def _digest(token: str) -> str:
@@ -274,6 +276,7 @@ def _auth_registry() -> AuthRegistry:
                     kind=PrincipalKind.EDGE_DEVICE,
                     role=None,
                     device_id=_EDGE_DEVICE_ID,
+                    organization_id=_EDGE_ORGANIZATION_ID,
                 ),
             ),
             PrincipalTokenRecord(
@@ -283,6 +286,16 @@ def _auth_registry() -> AuthRegistry:
                     kind=PrincipalKind.OPERATOR,
                     role=Role.VIEWER,
                     device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_SAME_ORG_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="same-org-vw-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id=_EDGE_ORGANIZATION_ID,
                 ),
             ),
         ]
@@ -315,13 +328,16 @@ def _post(client: TestClient, entry: JournalEntry) -> Any:
 
 def test_http_status_mapping_and_real_store_effect(tmp_path: Path) -> None:
     """[공허 방지] 라우터가 실제 store 를 호출하고 상태코드가 verdict 를 따른다."""
-    client, store = _client(tmp_path)
+    client, store, event_store = _client_with_event_store(tmp_path)
     entry = _entry(sequence=0)
 
     created = _post(client, entry)
     assert created.status_code == 201
     assert created.json()["verdict"] == "ACCEPTED"
     assert store.accepted_count() == 1, "API 가 store 를 실제로 호출하지 않았다"
+    projected = event_store.get(make_event_key(_EDGE_DEVICE_ID, "evt-0"))
+    assert projected is not None
+    assert projected.organization_id == _EDGE_ORGANIZATION_ID
 
     duplicate = _post(client, entry)
     assert duplicate.status_code == 200
@@ -682,16 +698,29 @@ def test_device_sequence_cross_device_query_forbidden(tmp_path: Path) -> None:
     assert response.status_code == 403
 
 
-def test_device_sequence_operator_can_query_any_device(tmp_path: Path) -> None:
-    """OPERATOR 는 EVENTS_READ 로 임의 장비의 순번을 조회할 수 있다."""
+def test_device_sequence_operator_can_query_visible_same_organization_device(
+    tmp_path: Path,
+) -> None:
+    """OPERATOR는 자기 조직에서 projection된 장비의 순번만 읽는다."""
     client, _store = _client(tmp_path)
     assert _post(client, _entry(sequence=0)).status_code == 201
-    client.headers.update({"Authorization": f"Bearer {_VIEWER_TOKEN}"})
+    client.headers.update({"Authorization": f"Bearer {_SAME_ORG_VIEWER_TOKEN}"})
 
     response = client.get(f"/v1/edge-sync/devices/{_EDGE_DEVICE_ID}/sequence")
 
     assert response.status_code == 200
     assert response.json()["lastSequence"] == 0
+
+
+def test_device_sequence_hides_foreign_organization_state_as_unknown(tmp_path: Path) -> None:
+    """다른 조직 operator에게는 실제 장비와 미지 장비가 모두 null이다(INV-060)."""
+    client, _store = _client(tmp_path)
+    assert _post(client, _entry(sequence=0)).status_code == 201
+    client.headers.update({"Authorization": f"Bearer {_VIEWER_TOKEN}"})
+
+    response = client.get(f"/v1/edge-sync/devices/{_EDGE_DEVICE_ID}/sequence")
+    assert response.status_code == 200
+    assert response.json() == {"deviceId": _EDGE_DEVICE_ID, "lastSequence": None}
 
 
 # ── ADR-KSI-008 §3 핵심 주장 — event projection 실패가 ACK 를 뒤집는다 ──────────

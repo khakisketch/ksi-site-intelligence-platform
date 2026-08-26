@@ -55,6 +55,8 @@ _VIEWER_TOKEN = "source-media-viewer"  # noqa: S105
 _WORKER_TOKEN = "source-media-worker"  # noqa: S105
 _EDGE_TOKEN = "source-media-edge"  # noqa: S105
 _OTHER_EDGE_TOKEN = "source-media-edge-other"  # noqa: S105
+_OTHER_ORGANIZATION_VIEWER_TOKEN = "source-media-other-org-viewer"  # noqa: S105
+_OTHER_ORGANIZATION_WORKER_TOKEN = "source-media-other-org-worker"  # noqa: S105
 
 
 def _sha(seed: str) -> str:
@@ -926,6 +928,26 @@ def _auth_registry() -> AuthRegistry:
                     device_id=_OTHER_EDGE_DEVICE_ID,
                 ),
             ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_OTHER_ORGANIZATION_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="op-other-org-viewer",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-other",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest_token(_OTHER_ORGANIZATION_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="worker-other-org-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
+                    organization_id="org-other",
+                ),
+            ),
         ]
     )
 
@@ -1087,6 +1109,69 @@ def test_status_for_unknown_bundle_is_404(tmp_path: Path) -> None:
     client = _client(tmp_path, storage=FakeStorage())
     response = client.get(f"/v1/missions/{_MISSION_ID}/source-media")
     assert response.status_code == 404
+
+
+def test_other_organization_cannot_read_view_or_verify_foreign_source_media(tmp_path: Path) -> None:
+    """SourceMedia는 Mission scope 밖에서 존재 여부도 드러내지 않는다(INV-060).
+
+    목록/계약만 가린 뒤 Artifact read와 worker verify가 열려 있으면, 짧은
+    missionId를 아는 다른 조직이 원본 상태나 처리 시도를 관측할 수 있다. 세
+    경로 모두 실제 없는 mission과 동일한 404로 접히고, foreign worker의 요청은
+    원장 상태를 바꾸지 않아야 한다.
+    """
+    client = _client(tmp_path, storage=FakeStorage())
+    assert (
+        client.post(
+            f"/v1/missions/{_MISSION_ID}/source-media",
+            json={"files": [_file_payload("img-1.jpg")]},
+        ).status_code
+        == 201
+    )
+    assert client.post(f"/v1/missions/{_MISSION_ID}/source-media/seal").status_code == 201
+
+    other_viewer_headers = {"Authorization": f"Bearer {_OTHER_ORGANIZATION_VIEWER_TOKEN}"}
+    foreign_status = client.get(
+        f"/v1/missions/{_MISSION_ID}/source-media", headers=other_viewer_headers
+    )
+    missing_status = client.get(
+        "/v1/missions/mission-never-issued/source-media", headers=other_viewer_headers
+    )
+    assert foreign_status.status_code == missing_status.status_code == 404
+    assert foreign_status.json() == missing_status.json()
+
+    foreign_view = client.get(
+        f"/v1/missions/{_MISSION_ID}/source-media/img-1.jpg/view", headers=other_viewer_headers
+    )
+    missing_view = client.get(
+        "/v1/missions/mission-never-issued/source-media/img-1.jpg/view",
+        headers=other_viewer_headers,
+    )
+    assert foreign_view.status_code == missing_view.status_code == 404
+    assert foreign_view.json() == missing_view.json()
+
+    other_worker_headers = {"Authorization": f"Bearer {_OTHER_ORGANIZATION_WORKER_TOKEN}"}
+    foreign_verify = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={"measurements": [_measurement_payload("img-1.jpg")]},
+        headers=other_worker_headers,
+    )
+    missing_verify = client.post(
+        "/v1/missions/mission-never-issued/source-media/verify",
+        json={"measurements": [_measurement_payload("img-1.jpg")]},
+        headers=other_worker_headers,
+    )
+    assert foreign_verify.status_code == missing_verify.status_code == 404
+    assert foreign_verify.json() == missing_verify.json()
+
+    # legacy organization worker는 여전히 정상 검증할 수 있다. foreign request가
+    # ContextVar나 durable bundle 상태를 누수시키지 않았음을 함께 검증한다.
+    verified = client.post(
+        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        json={"measurements": [_measurement_payload("img-1.jpg")]},
+        headers={"Authorization": f"Bearer {_WORKER_TOKEN}"},
+    )
+    assert verified.status_code == 201
+    assert verified.json()["verdict"] == "VERIFIED"
 
 
 def test_storage_failure_degrades_item_but_keeps_registration(tmp_path: Path) -> None:

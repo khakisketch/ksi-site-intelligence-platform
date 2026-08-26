@@ -52,7 +52,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.defect_candidate import (
     DefectCandidate,
     defect_candidate_wire_dict,
@@ -65,7 +65,12 @@ from ksi_core.api_base import (
     CamelModel,
     iso_utc,
 )
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.mission_records import reject_lone_surrogates
 
@@ -199,6 +204,9 @@ class DefectCandidateStore:
             raise DefectCandidateRecoveryError(
                 f"defect candidate journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        return self._mission_store.get(mission_id) is not None
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -385,6 +393,11 @@ class DefectCandidateStore:
 
     def list_for_mission(self, mission_id: str) -> list[RecordedDefectCandidate]:
         """수신 순서를 보존한 그 임무의 전체 후보."""
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             return list(self._by_mission.get(mission_id, ()))
 
@@ -483,6 +496,8 @@ def build_defect_candidates_router(store: DefectCandidateStore) -> APIRouter:
         결함이 없다"를 이 엔드포인트는 구분하지 못하고, 구분하는 척하면 안 된다
         (그 구분은 처리 작업 상태가 답한다).
         """
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(status_code=404, detail="해당 임무의 결함 후보를 찾을 수 없다")
         recorded = store.list_for_mission(mission_id)
         if source_media_id is not None:
             recorded = [r for r in recorded if r.candidate.source_media_id == source_media_id]

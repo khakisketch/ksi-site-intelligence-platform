@@ -67,6 +67,9 @@ _MEASURED_AT = _NOW + timedelta(minutes=10)
 _ADMIN_TOKEN = "design-surface-admin"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "design-surface-viewer"  # noqa: S105
 _WORKER_TOKEN = "design-surface-worker"  # noqa: S105
+_OTHER_ORG_ADMIN_TOKEN = "design-surface-other-org-admin"  # noqa: S105
+_OTHER_ORG_VIEWER_TOKEN = "design-surface-other-org-viewer"  # noqa: S105
+_OTHER_ORG_WORKER_TOKEN = "design-surface-other-org-worker"  # noqa: S105
 
 _SHA = hashlib.sha256(b"design-surface-bytes").hexdigest()
 _OTHER_SHA = hashlib.sha256(b"other-bytes").hexdigest()
@@ -98,6 +101,36 @@ def _registry() -> AuthRegistry:
                 principal=Principal(
                     principal_id="worker-1", kind=PrincipalKind.PROCESSING_WORKER, role=None,
                     device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORG_ADMIN_TOKEN),
+                principal=Principal(
+                    principal_id="other-op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORG_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="other-vw-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORG_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="other-worker-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
+                    organization_id="org-2",
                 ),
             ),
         ]
@@ -946,6 +979,69 @@ def test_seal_through_a_foreign_site_path_is_404(tmp_path: Path) -> None:
         headers=_headers(_ADMIN_TOKEN),
     )
     assert response.status_code == 404
+
+
+def test_design_surfaces_are_isolated_by_parent_site_organization(tmp_path: Path) -> None:
+    """설계면·worker 대기열까지 부모 Site 조직 경계를 상속한다(INV-060)."""
+    site_store = SiteStore(DurableJournal(tmp_path / "org-sites.jsonl"))
+    assert (
+        site_store.register(
+            _SITE_ID,
+            "다른 조직 현장",
+            _SITE_FRAME,
+            data_residency=None,
+            organization_id="org-2",
+            actor="other-op-1",
+            now=_NOW,
+        ).verdict.value
+        == "REGISTERED"
+    )
+    app = create_app(
+        auth_registry=_registry(),
+        site_store=site_store,
+        design_surface_store=DesignSurfaceStore(
+            DurableJournal(tmp_path / "org-design-surfaces.jsonl"), site_store=site_store
+        ),
+        evidence_storage=_StubStorage(),
+    )
+    client = TestClient(app)
+    registered = client.post(
+        f"/v1/sites/{_SITE_ID}/design-surfaces",
+        headers=_headers(_OTHER_ORG_ADMIN_TOKEN),
+        json={"name": "A공구", "revision": "Rev.A", "declared": _declared_payload()},
+    )
+    assert registered.status_code == 201, registered.text
+    design_surface_id = registered.json()["designSurfaceId"]
+    assert client.post(
+        f"/v1/sites/{_SITE_ID}/design-surfaces/{design_surface_id}/seal",
+        headers=_headers(_OTHER_ORG_ADMIN_TOKEN),
+    ).status_code == 201
+
+    foreign_list = client.get(
+        f"/v1/sites/{_SITE_ID}/design-surfaces", headers=_headers(_VIEWER_TOKEN)
+    )
+    assert foreign_list.status_code == 404
+    foreign_seal = client.post(
+        f"/v1/sites/{_SITE_ID}/design-surfaces/{design_surface_id}/seal",
+        headers=_headers(_ADMIN_TOKEN),
+    )
+    assert foreign_seal.status_code == 404
+    foreign_pending = client.get("/v1/design-surfaces", headers=_headers(_WORKER_TOKEN))
+    assert foreign_pending.json()["surfaces"] == []
+
+    owner_pending = client.get(
+        "/v1/design-surfaces", headers=_headers(_OTHER_ORG_WORKER_TOKEN)
+    )
+    assert owner_pending.status_code == 200
+    assert [surface["designSurfaceId"] for surface in owner_pending.json()["surfaces"]] == [
+        design_surface_id
+    ]
+    foreign_observation = client.post(
+        f"/v1/design-surfaces/{design_surface_id}/observations",
+        headers=_headers(_WORKER_TOKEN),
+        json=_observation_payload(),
+    )
+    assert foreign_observation.status_code == 404
 
 
 def test_storage_failure_keeps_the_registration(tmp_path: Path) -> None:

@@ -64,6 +64,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.enums import MissionType
+from ksi_event_contracts.observation_work_order import (
+    ObservationWorkOrder,
+    ObservationWorkOrderStatus,
+)
 from ksi_mission_contracts.models import FlightEnvelope
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from ksi_mission_planning import (
@@ -83,6 +87,10 @@ from ksi_mission_planning import (
 from ksi_mission_planning.camera import DEFAULT_FRONT_OVERLAP, DEFAULT_SIDE_OVERLAP
 from pydantic import Field, ValidationError
 
+from ksi_core.acquisition.coordination import (
+    AcquisitionCoordinationConflictError,
+    AcquisitionCoordinationStore,
+)
 from ksi_core.api_base import CamelModel
 from ksi_core.auth import (
     Permission,
@@ -106,6 +114,7 @@ from ksi_core.mission_records import (
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
 )
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -233,6 +242,8 @@ class MissionPlanRequest(CamelModel):
     route: RouteParams
     drone: DroneProfileParams
     wayline: WaylineParams
+    #: 승인된 WorkOrder 회차와의 운영 계보. 서명 계약에는 포함되지 않는다.
+    work_order_id: str | None = Field(default=None, min_length=1, max_length=200)
     #: 재관측 임무의 계보(ADR-KSI-019 G5). 최초 매핑 임무는 없다 — 선택 필드다.
     derived_from: MissionDerivation | None = None
 
@@ -329,9 +340,7 @@ def build_mission_plan(
     mission_type = request.contract.mission_type
     envelope = request.contract.flight_envelope
 
-    _require_wayline_takeoff_height_compatible(
-        request.wayline.takeoff_security_height_m, envelope
-    )
+    _require_wayline_takeoff_height_compatible(request.wayline.takeoff_security_height_m, envelope)
 
     route: list[RouteWaypoint]
     planned_coverage_ratio: float | None = None
@@ -582,9 +591,7 @@ def _stored_kmz(storage: EvidenceStorage | None, record: MissionRecord) -> bytes
     if storage is None:
         return None
     try:
-        key = build_mission_kmz_object_key(
-            site_id=record.site_id, mission_id=record.mission_id
-        )
+        key = build_mission_kmz_object_key(site_id=record.site_id, mission_id=record.mission_id)
     except ValueError:
         return None
     try:
@@ -614,9 +621,7 @@ def _persist_kmz(
         return
     try:
         storage.put_bytes(
-            build_mission_kmz_object_key(
-                site_id=record.site_id, mission_id=record.mission_id
-            ),
+            build_mission_kmz_object_key(site_id=record.site_id, mission_id=record.mission_id),
             base64.b64decode(result["kmzBase64"]),
             content_type="application/vnd.google-earth.kmz",
         )
@@ -624,7 +629,8 @@ def _persist_kmz(
         logger.error(
             "mission_id=%s KMZ 바이트 보관 실패(%s) — 발급 자체는 유효하지만 이 임무의 "
             "다운로드는 앞으로 재생성에만 의존한다(서버 정책이 바뀌면 409 가 된다)",
-            record.mission_id, type(exc).__name__,
+            record.mission_id,
+            type(exc).__name__,
         )
 
 
@@ -650,11 +656,14 @@ def build_mission_plans_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None],
+    site_lookup: Callable[[str, str], SiteLookupResult | None],
     kmz_storage: EvidenceStorage | None = None,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
+    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
+    observation_work_order_store: ObservationWorkOrderStore | None = None,
+    acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
 ) -> APIRouter:
     if writer_version == "1.3" and (not issuer_id or sequence_store is None):
         raise ValueError("Mission Contract v1.3 writer는 issuer_id와 sequence_store가 필요하다")
@@ -662,6 +671,86 @@ def build_mission_plans_router(
     # (kmzSha256, kmz_bytes, expires_at_monotonic) — mission_id 키, LRU 크기상한.
     kmz_cache: OrderedDict[str, tuple[str, bytes, float]] = OrderedDict()
     kmz_cache_lock = threading.Lock()
+
+    def _resolve_work_order(
+        request: MissionPlanRequest,
+        principal: Principal,
+        *,
+        require_approved: bool,
+        ensure_run: bool = True,
+        now: datetime,
+    ) -> ObservationWorkOrder | None:
+        if request.work_order_id is None:
+            return None
+        if observation_work_order_store is None or acquisition_coordination_store is None:
+            raise HTTPException(
+                status_code=503,
+                detail="WorkOrder Mission lineage coordinator가 조립되지 않았다",
+            )
+        order = observation_work_order_store.get(
+            request.work_order_id, organization_id=principal.organization_id
+        )
+        if order is None:
+            raise HTTPException(status_code=404, detail="관측 작업을 찾을 수 없다")
+        if order.site_id != request.contract.site_id:
+            raise HTTPException(
+                status_code=422,
+                detail="WORK_ORDER_SITE_MISMATCH — WorkOrder와 Mission의 Site가 다르다",
+            )
+        if require_approved and order.status is not ObservationWorkOrderStatus.APPROVED:
+            raise HTTPException(
+                status_code=409,
+                detail="WORK_ORDER_NOT_APPROVED — 승인된 현재 회차에만 Mission을 발급한다",
+            )
+        if ensure_run:
+            try:
+                acquisition_coordination_store.ensure_run(
+                    order, actor=principal.principal_id, now=now
+                )
+            except JournalSealedError as exc:
+                raise HTTPException(status_code=503, detail="STORE_UNAVAILABLE") from exc
+        return order
+
+    def _link_work_order(
+        request: MissionPlanRequest,
+        principal: Principal,
+        order: ObservationWorkOrder | None,
+        *,
+        now: datetime,
+    ) -> None:
+        if order is None:
+            return
+        assert observation_work_order_store is not None  # noqa: S101 -- resolver checked
+        assert acquisition_coordination_store is not None  # noqa: S101 -- resolver checked
+        try:
+            existing_run = acquisition_coordination_store.run_for_mission(
+                request.contract.mission_id,
+                organization_id=principal.organization_id,
+            )
+            linked_run = existing_run or acquisition_coordination_store.link_mission(
+                order,
+                request.contract.mission_id,
+                actor=principal.principal_id,
+                now=now,
+            )
+            observation_work_order_store.link_mission(
+                order.work_order_id,
+                organization_id=principal.organization_id,
+                cycle_number=linked_run.cycle_number,
+                mission_id=request.contract.mission_id,
+                mission_site_id=request.contract.site_id,
+                actor=principal.principal_id,
+                now=now,
+                require_approved=False,
+            )
+        except JournalSealedError as exc:
+            # Mission issuance is already durable. A retry with the same request
+            # re-enters this reconciliation path instead of creating a new Mission.
+            raise HTTPException(status_code=503, detail="STORE_UNAVAILABLE") from exc
+        except AcquisitionCoordinationConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (LookupError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.post("/plans", status_code=201)
     def issue_mission_plan_recorded(
@@ -686,10 +775,12 @@ def build_mission_plans_router(
             by_alias=True, mode="json", exclude_none=True
         )
         request_digest = _request_digest(plan_request_payload)
+        request_now = datetime.now(UTC)
 
         verdict = precheck_issuance(
             mission_store=mission_store,
             site_lookup=site_lookup,
+            organization_id=principal.organization_id,
             site_id=request.contract.site_id,
             mission_id=request.contract.mission_id,
             mission_type=request.contract.mission_type,
@@ -702,6 +793,21 @@ def build_mission_plans_router(
                 and existing.artifact_kind == "pair"
                 and existing.plan_request_digest == request_digest
             ):
+                existing_run = (
+                    acquisition_coordination_store.run_for_mission(
+                        request.contract.mission_id,
+                        organization_id=principal.organization_id,
+                    )
+                    if acquisition_coordination_store is not None
+                    else None
+                )
+                order = _resolve_work_order(
+                    request,
+                    principal,
+                    require_approved=False,
+                    ensure_run=existing_run is None,
+                    now=request_now,
+                )
                 try:
                     regenerated = _regenerate_pair_artifact(
                         existing, private_key=private_key, key_id=key_id
@@ -723,7 +829,8 @@ def build_mission_plans_router(
                         "mission_id=%s 짝 재생성이 현재 정책에서 실패(%s) — 발급 당시 "
                         "이후 서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 "
                         "변경 전에 발급된 다른 레코드도 동시에 영향받을 수 있다",
-                        existing.mission_id, type(exc).__name__,
+                        existing.mission_id,
+                        type(exc).__name__,
                     )
                     raise HTTPException(
                         status_code=409,
@@ -733,6 +840,7 @@ def build_mission_plans_router(
                             "발급하라"
                         ),
                     ) from exc
+                _link_work_order(request, principal, order, now=request_now)
                 response.status_code = 200
                 return regenerated
         if verdict is not None:
@@ -741,7 +849,22 @@ def build_mission_plans_router(
         # issued_at 을 한 번만 뽑아 계약 서명(validity.notBefore)과 레코드에 동일하게
         # 쓴다 — 둘이 별개 datetime.now() 호출이면 멱등 재발급(_regenerate_pair_artifact
         # 가 record.issued_at 을 재서명 시각으로 재사용)이 원본과 다른 바이트를 낸다.
-        issued_at = datetime.now(UTC)
+        issued_at = request_now
+        order = _resolve_work_order(
+            request,
+            principal,
+            require_approved=True,
+            now=issued_at,
+        )
+        if acquisition_readiness is not None:
+            ready, detail = acquisition_readiness(
+                request.contract.site_id, principal.organization_id, issued_at
+            )
+            if not ready:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"ACQUISITION_NOT_READY — {detail}",
+                )
         site_sequence: int | None = None
         if writer_version == "1.3":
             assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
@@ -779,16 +902,18 @@ def build_mission_plans_router(
             planned_coverage_ratio=result["plannedCoverageRatio"],
             issued_at=issued_at,
             issued_by=principal.principal_id,
+            organization_id=principal.organization_id,
             plan_request=plan_request_payload,
             plan_request_digest=request_digest,
             assigned_device_id=request.contract.assigned_device_id,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
         _persist_kmz(kmz_storage, record, result)
+        _link_work_order(request, principal, order, now=issued_at)
         return result
 
     def _resolve_kmz_bytes(record: MissionRecord) -> bytes:
-        """"발급 당시 그 파일"을 얻는 **유일한** 해석 경로 — 4단 폴백 전부.
+        """ "발급 당시 그 파일"을 얻는 **유일한** 해석 경로 — 4단 폴백 전부.
 
         캐시 → 재생성 → 재생성 sha256 대조 → 발급 시 보관본. 이 순서와 그 안의
         판정들이 이 저장소에서 "KMZ 다운로드"의 정의다. 장비 경로(Edge companion)
@@ -810,9 +935,7 @@ def build_mission_plans_router(
                     return cached_bytes
                 del kmz_cache[cache_key]
         try:
-            regenerated = _regenerate_pair_artifact(
-                record, private_key=private_key, key_id=key_id
-            )
+            regenerated = _regenerate_pair_artifact(record, private_key=private_key, key_id=key_id)
         except (ValidationError, RouteGenerationError, KmzBuildError) as exc:
             # error 레벨(risk kmz-regeneration-determinism-timebomb) — 아래
             # sha256 불일치 분기와 같은 근본원인 클래스: 정책이 바뀐 뒤 이전
@@ -821,7 +944,8 @@ def build_mission_plans_router(
                 "mission_id=%s KMZ 재생성이 현재 정책에서 실패(%s) — 발급 당시 이후 "
                 "서버 상수·경로생성기 정책이 바뀌었을 가능성. 같은 정책 변경 전에 "
                 "발급된 다른 레코드도 동시에 영향받을 수 있다",
-                record.mission_id, type(exc).__name__,
+                record.mission_id,
+                type(exc).__name__,
             )
             stored = _stored_kmz(kmz_storage, record)
             if stored is not None:
@@ -860,7 +984,9 @@ def build_mission_plans_router(
                 logger.info(
                     "mission_id=%s 재생성 바이트가 원본과 다르지만(재생성 sha256=%s, "
                     "기록 %s) 발급 시 보관된 KMZ 로 응답한다",
-                    record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+                    record.mission_id,
+                    regenerated["kmzSha256"],
+                    record.kmz_sha256,
                 )
                 return stored
             logger.error(
@@ -869,7 +995,9 @@ def build_mission_plans_router(
                 "상수·경로생성기가 바뀌었을 가능성. 같은 정책 변경 전에 발급된 다른 "
                 "레코드도 동시에 영향받을 수 있다. 발급 시 바이트가 보관돼 있었다면 "
                 "이 거부는 일어나지 않았다(오브젝트 스토리지 없는 조립)",
-                record.mission_id, regenerated["kmzSha256"], record.kmz_sha256,
+                record.mission_id,
+                regenerated["kmzSha256"],
+                record.kmz_sha256,
             )
             raise HTTPException(
                 status_code=409,
@@ -927,8 +1055,7 @@ def build_mission_plans_router(
         if record is None:
             raise HTTPException(status_code=404, detail=MISSION_NOT_FOUND_DETAIL)
         if principal.kind is PrincipalKind.EDGE_DEVICE and (
-            principal.device_id is None
-            or record.assigned_device_id != principal.device_id
+            principal.device_id is None or record.assigned_device_id != principal.device_id
         ):
             # 미배정(assigned_device_id=None) 임무도 여기서 막힌다 — 배정 없는
             # 임무를 "아무 장비나 가져갈 수 있는 임무"로 읽지 않는 것은
@@ -950,11 +1077,14 @@ def mount_mission_plans(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None],
+    site_lookup: Callable[[str, str], SiteLookupResult | None],
     kmz_storage: EvidenceStorage | None = None,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
+    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
+    observation_work_order_store: ObservationWorkOrderStore | None = None,
+    acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
 ) -> None:
     """앱에 임무 계획(짝 발급) 라우터를 장착한다.
 
@@ -979,5 +1109,8 @@ def mount_mission_plans(
             writer_version=writer_version,
             issuer_id=issuer_id,
             sequence_store=sequence_store,
+            acquisition_readiness=acquisition_readiness,
+            observation_work_order_store=observation_work_order_store,
+            acquisition_coordination_store=acquisition_coordination_store,
         )
     )

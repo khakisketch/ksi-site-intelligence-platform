@@ -38,6 +38,8 @@ from ksi_event_contracts.offline_sync import payload_digest
 _FPR = "a" * 64
 _FIELD_OPERATOR_TOKEN = "field-operator-plaintext-token"  # noqa: S105 -- 테스트 고정값
 _VIEWER_TOKEN = "viewer-plaintext-token"  # noqa: S105
+_OTHER_ORG_FIELD_OPERATOR_TOKEN = "other-org-field-operator-plaintext-token"  # noqa: S105
+_OTHER_ORG_VIEWER_TOKEN = "other-org-viewer-plaintext-token"  # noqa: S105
 
 
 # ── 픽스처 빌더 ──────────────────────────────────────────────────────────
@@ -103,9 +105,13 @@ def _project(
     *,
     edge_device_id: str = "edge-001",
     received_at: datetime | None = None,
+    organization_id: str = "legacy",
 ) -> EventVerdict:
     return store.project_bundle(
-        payload, edge_device_id=edge_device_id, received_at=received_at or datetime.now(UTC)
+        payload,
+        edge_device_id=edge_device_id,
+        received_at=received_at or datetime.now(UTC),
+        organization_id=organization_id,
     )
 
 
@@ -512,6 +518,26 @@ def _registry() -> AuthRegistry:
                     device_id=None,
                 ),
             ),
+            PrincipalTokenRecord(
+                token_sha256=digest(_OTHER_ORG_FIELD_OPERATOR_TOKEN),
+                principal=Principal(
+                    principal_id="other-org-field-op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.FIELD_OPERATOR,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=digest(_OTHER_ORG_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="other-org-viewer-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
         ]
     )
 
@@ -561,6 +587,46 @@ def test_field_operator_can_triage(store: EventStore) -> None:
     body = response.json()
     assert body["verdict"] == "TRANSITIONED"
     assert body["event"]["status"] == "DISMISSED"
+
+
+def test_http_other_organization_cannot_read_or_mutate_foreign_event(store: EventStore) -> None:
+    """목록·상세·트리아지 모두 foreign event를 같은 404로 접는다(INV-060)."""
+    event_key = _key("evt-org-isolated")
+    assert (
+        _project(store, _bundle_payload("evt-org-isolated"), organization_id="org-2")
+        is EventVerdict.PROJECTED
+    )
+    client = TestClient(_app(store))
+
+    foreign_list = client.get("/v1/events", headers=_auth(_VIEWER_TOKEN))
+    assert foreign_list.status_code == 200
+    assert foreign_list.json()["events"] == []
+
+    foreign_detail = client.get(f"/v1/events/{event_key}", headers=_auth(_VIEWER_TOKEN))
+    assert foreign_detail.status_code == 404
+    assert foreign_detail.json()["detail"] == "이벤트를 찾을 수 없다"
+
+    foreign_transition = client.post(
+        f"/v1/events/{event_key}/transitions",
+        json={"reason": "다른 조직이면 안 된다", "targetStatus": "DISMISSED"},
+        headers=_auth(_FIELD_OPERATOR_TOKEN),
+    )
+    assert foreign_transition.status_code == 404
+    assert foreign_transition.json()["verdict"] == "UNKNOWN_EVENT"
+
+    owner_detail = client.get(f"/v1/events/{event_key}", headers=_auth(_OTHER_ORG_VIEWER_TOKEN))
+    assert owner_detail.status_code == 200
+    assert owner_detail.json()["eventKey"] == event_key
+
+
+def test_list_can_apply_explicit_organization_scope_without_request_context(
+    store: EventStore,
+) -> None:
+    _project(store, _bundle_payload("evt-org-1"), organization_id="org-1")
+    _project(store, _bundle_payload("evt-org-2"), organization_id="org-2")
+
+    assert [event.event_id for event in store.list(organization_id="org-1")] == ["evt-org-1"]
+    assert [event.event_id for event in store.list(organization_id="org-2")] == ["evt-org-2"]
 
 
 # ── HTTP 배선: 조회·검증 오류 ────────────────────────────────────────────
@@ -887,6 +953,7 @@ def test_event_type_is_exposed_in_list_and_detail(store: EventStore) -> None:
 
     listed = client.get("/v1/events", headers=_auth(_VIEWER_TOKEN)).json()["events"]
     assert [e["eventType"] for e in listed] == ["FALL_RISK"]
+    assert [e["evidenceCount"] for e in listed] == [0]
 
     key = make_event_key("edge-001", "evt-fall")
     detail = client.get(f"/v1/events/{key}", headers=_auth(_VIEWER_TOKEN)).json()

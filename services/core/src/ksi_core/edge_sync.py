@@ -762,7 +762,10 @@ def build_edge_sync_router(store: EdgeSyncStore, *, event_store: EventStore) -> 
 
         if verdict in (IngestVerdict.ACCEPTED, IngestVerdict.DUPLICATE_IGNORED):
             projection_verdict = event_store.project_bundle(
-                entry.payload, edge_device_id=entry.edge_device_id, received_at=datetime.now(UTC)
+                entry.payload,
+                edge_device_id=entry.edge_device_id,
+                received_at=datetime.now(UTC),
+                organization_id=principal.organization_id,
             )
             if projection_verdict is EventVerdict.STORE_UNAVAILABLE:
                 response.status_code = _EVENT_STATUS[EventVerdict.STORE_UNAVAILABLE]
@@ -805,6 +808,13 @@ def build_edge_sync_router(store: EdgeSyncStore, *, event_store: EventStore) -> 
         (존재 여부 힌트 금지 관습).
         """
         del principal
+        # EdgeSync journal은 아직 과거 형식의 JournalEntry만 저장하므로 자체적으로
+        # organizationId를 들지 않는다. 대신 ACK 전에 같은 인증 조직으로 projection된
+        # Event 원장을 visibility 관문으로 쓴다. 보이는 event가 하나도 없으면 미지
+        # 장비와 같은 ``null``을 돌려 다른 조직의 순번·활성 여부를 oracle로 만들지
+        # 않는다(INV-060). Edge가 아직 어떤 bundle도 수락하지 않았다면 원래도 null이다.
+        if not event_store.list(edge_device_id=device_id, limit=1):
+            return DeviceSequenceResponse(device_id=device_id, last_sequence=None)
         sequences = store.accepted_sequences(device_id)
         return DeviceSequenceResponse(
             device_id=device_id,

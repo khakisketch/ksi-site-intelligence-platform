@@ -170,6 +170,7 @@ from ksi_core.auth import (
     Permission,
     Principal,
     PrincipalKind,
+    current_request_organization_id,
     principal_permissions,
     require_permission,
     require_permission_any,
@@ -954,6 +955,30 @@ class ProcessingJobStore:
             and bundle.source_bundle_digest == record.input.source_bundle_digest
         )
 
+    def _record_is_visible_locked(
+        self,
+        record: ProcessingJobRecord,
+        *,
+        organization_id: str | None = None,
+    ) -> bool:
+        """종속 Artifact도 Mission 조직 범위를 물려받게 한다(INV-060).
+
+        ProcessingJob journal에는 organizationId를 중복 기록하지 않는다. Mission이
+        그 사실의 권위이고 SourceMediaStore가 같은 MissionStore를 소유하므로,
+        HTTP request scope와 호출자가 명시한 조직 범위를 모두 적용한다. replay와
+        trusted internal orchestration은 둘 다 없으면 기존 동작을 유지한다.
+        """
+        if (
+            current_request_organization_id() is not None
+            and not self._source_media.mission_is_visible(record.mission_id)
+        ):
+            return False
+        return organization_id is None or (
+            self._source_media.mission_is_visible_for_organization(
+                record.mission_id, organization_id=organization_id
+            )
+        )
+
     def artifact_upload_target(
         self,
         job_id: str,
@@ -977,6 +1002,10 @@ class ProcessingJobStore:
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if not self._record_is_visible_locked(record):
                 return ArtifactUploadTargetResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
@@ -1185,6 +1214,10 @@ class ProcessingJobStore:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
+            if not self._record_is_visible_locked(current):
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
             if requires_lease:
                 denied = self._check_lease_locked(current, worker_id=actor, now=now)
                 if denied is not None:
@@ -1260,6 +1293,10 @@ class ProcessingJobStore:
                 )
             job = self._jobs.get(job_id)
             if job is None:
+                return ArtifactResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if not self._record_is_visible_locked(job):
                 return ArtifactResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
@@ -1339,6 +1376,10 @@ class ProcessingJobStore:
                 )
             job = self._jobs.get(job_id)
             if job is None:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if not self._record_is_visible_locked(job):
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
@@ -1431,6 +1472,10 @@ class ProcessingJobStore:
                 return JobInputResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
+            if not self._record_is_visible_locked(record):
+                return JobInputResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
             if record.status not in _ACTIVE_STATUSES:
                 return JobInputResult(
                     ProcessingJobVerdict.JOB_NOT_ACTIVE,
@@ -1471,12 +1516,19 @@ class ProcessingJobStore:
 
     def get(self, job_id: str) -> ProcessingJobRecord | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            record = self._jobs.get(job_id)
+            if record is None or not self._record_is_visible_locked(record):
+                return None
+            return record
 
     def list_for_mission(self, mission_id: str) -> list[ProcessingJobRecord]:
         """``(issued_at, job_id)`` 결정적 정렬 — 목록 순서가 재기동마다 흔들리지 않는다."""
         with self._lock:
-            records = [r for r in self._jobs.values() if r.mission_id == mission_id]
+            records = [
+                r
+                for r in self._jobs.values()
+                if r.mission_id == mission_id and self._record_is_visible_locked(r)
+            ]
         return sorted(records, key=lambda r: (r.issued_at, r.job_id))
 
     def list_pending(self, *, now: datetime, limit: int = 50) -> list[ProcessingJobRecord]:
@@ -1512,12 +1564,20 @@ class ProcessingJobStore:
         if limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [r for r in self._jobs.values() if is_claimable(r.status, r.lease, now)]
+            records = [
+                r
+                for r in self._jobs.values()
+                if is_claimable(r.status, r.lease, now) and self._record_is_visible_locked(r)
+            ]
         ordered = sorted(records, key=lambda r: (r.issued_at, r.job_id))
         return ordered[:limit]
 
     def list_for_site(
-        self, site_id: str, *, limit: int | None = None
+        self,
+        site_id: str,
+        *,
+        organization_id: str | None = None,
+        limit: int | None = None,
     ) -> list[ProcessingJobRecord]:
         """이 현장의 재구성 epoch 목록 — **최신이 먼저**.
 
@@ -1537,7 +1597,12 @@ class ProcessingJobStore:
         if limit is not None and limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [r for r in self._jobs.values() if r.site_id == site_id]
+            records = [
+                r
+                for r in self._jobs.values()
+                if r.site_id == site_id
+                and self._record_is_visible_locked(r, organization_id=organization_id)
+            ]
         ordered = sorted(records, key=lambda r: (r.issued_at, r.job_id), reverse=True)
         return ordered if limit is None else ordered[:limit]
 
@@ -1552,7 +1617,7 @@ class ProcessingJobStore:
         """
         with self._lock:
             record = self._jobs.get(job_id)
-            if record is None:
+            if record is None or not self._record_is_visible_locked(record):
                 return None
             for artifact in record.artifacts:
                 if artifact.artifact_id == artifact_id:

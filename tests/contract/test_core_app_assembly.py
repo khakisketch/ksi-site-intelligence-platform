@@ -328,6 +328,9 @@ def test_assembly_requirements_table_keys_match_create_app_store_parameters() ->
         "mission_signing_key",
         "evidence_storage",
         "copilot_service",
+        "copilot_conversation_service",
+        "site_workspace_projector",
+        "site_briefing_service",
     }
     expected = {name for name in signature_params if name.endswith("_store")} | (
         signature_params & non_store_protected_params

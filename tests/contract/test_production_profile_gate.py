@@ -76,6 +76,7 @@ _DEV_TOKEN_LITERALS = (
     "dev-field-operator-token",
     "dev-viewer-token",
     "dev-edge-device-token",
+    "dev-gateway-device-token",
     "dev-processing-worker-token",
 )
 

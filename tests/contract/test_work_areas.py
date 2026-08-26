@@ -14,12 +14,24 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+    mount_auth,
+)
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.sites import SiteFrame, SiteStore
 from ksi_core.work_areas import (
     MAX_ACTIVE_WORK_AREAS,
     WorkAreaStore,
     WorkAreaStoreRecoveryError,
     WorkAreaVerdict,
+    mount_work_areas,
 )
 from ksi_event_contracts.work_area import WorkArea, WorkAreaStatus
 from pydantic import ValidationError
@@ -28,6 +40,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA = _REPO_ROOT / "contracts" / "schemas" / "work-area.v1.json"
 
 _NOW = datetime(2026, 8, 13, 4, 0, tzinfo=UTC)
+_LEGACY_ADMIN_TOKEN = "work-area-legacy-admin"  # noqa: S105 -- test fixed token
+_OTHER_ORG_ADMIN_TOKEN = "work-area-other-org-admin"  # noqa: S105 -- test fixed token
+_LEGACY_VIEWER_TOKEN = "work-area-legacy-viewer"  # noqa: S105 -- test fixed token
+_OTHER_ORG_VIEWER_TOKEN = "work-area-other-org-viewer"  # noqa: S105 -- test fixed token
 
 
 def _ring(x: float = 127.0, y: float = 37.0) -> list[list[float]]:
@@ -43,6 +59,35 @@ def _store(tmp_path: Path, *, known_sites: set[str] | None = None) -> WorkAreaSt
     return WorkAreaStore(
         DurableJournal(tmp_path / "work-areas.jsonl"),
         site_exists=None if sites is None else (lambda site_id: site_id in sites),
+    )
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _registry() -> AuthRegistry:
+    import hashlib
+
+    def record(token: str, *, role: Role, organization_id: str) -> PrincipalTokenRecord:
+        return PrincipalTokenRecord(
+            token_sha256=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            principal=Principal(
+                principal_id=f"{organization_id}-{role.value.lower()}",
+                kind=PrincipalKind.OPERATOR,
+                role=role,
+                device_id=None,
+                organization_id=organization_id,
+            ),
+        )
+
+    return AuthRegistry(
+        [
+            record(_LEGACY_ADMIN_TOKEN, role=Role.ADMIN, organization_id="legacy"),
+            record(_LEGACY_VIEWER_TOKEN, role=Role.VIEWER, organization_id="legacy"),
+            record(_OTHER_ORG_ADMIN_TOKEN, role=Role.ADMIN, organization_id="org-2"),
+            record(_OTHER_ORG_VIEWER_TOKEN, role=Role.VIEWER, organization_id="org-2"),
+        ]
     )
 
 
@@ -158,6 +203,62 @@ def test_registers_and_lists_active_areas(tmp_path: Path) -> None:
     assert result.work_area is not None
     assert result.work_area.work_area_id == "wa-site-1-0001"
     assert [a.work_area_id for a in store.list_for_site("site-1")] == ["wa-site-1-0001"]
+
+
+def test_work_areas_inherit_parent_site_organization_scope(tmp_path: Path) -> None:
+    """현장 하위 구역은 목록·보관 모두 cross-organization 404여야 한다(INV-060)."""
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    frame = SiteFrame(
+        crs="EPSG:5186", vertical_datum="KNG2018", transform_version="v1", unit="meter"
+    )
+    assert (
+        site_store.register(
+            "site-org-2",
+            "조직 2 현장",
+            frame,
+            data_residency=None,
+            organization_id="org-2",
+            actor="org-2-admin",
+            now=_NOW,
+        ).verdict.value
+        == "REGISTERED"
+    )
+    store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas-org.jsonl"),
+        site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    registered = store.register(
+        "site-org-2",
+        name="A공구",
+        polygon=_polygon(),
+        crs="EPSG:4326",
+        supersedes=None,
+        now=_NOW,
+        actor="org-2-admin",
+    )
+    assert registered.verdict is WorkAreaVerdict.REGISTERED
+    assert registered.work_area is not None
+
+    app = FastAPI()
+    mount_auth(app, _registry())
+    mount_work_areas(app, store)
+    client = TestClient(app)
+    foreign_list = client.get(
+        "/v1/sites/site-org-2/work-areas", headers=_auth(_LEGACY_VIEWER_TOKEN)
+    )
+    assert foreign_list.status_code == 404
+    foreign_archive = client.post(
+        f"/v1/sites/site-org-2/work-areas/{registered.work_area.work_area_id}/archive",
+        headers=_auth(_LEGACY_ADMIN_TOKEN),
+    )
+    assert foreign_archive.status_code == 404
+    owner_list = client.get(
+        "/v1/sites/site-org-2/work-areas", headers=_auth(_OTHER_ORG_VIEWER_TOKEN)
+    )
+    assert owner_list.status_code == 200
+    assert [area["workAreaId"] for area in owner_list.json()["workAreas"]] == [
+        registered.work_area.work_area_id
+    ]
 
 
 def test_fixing_geometry_makes_a_new_area_and_archives_the_old_one(tmp_path: Path) -> None:

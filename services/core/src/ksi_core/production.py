@@ -71,6 +71,7 @@ from ksi_mission_contracts.runtime_profile import (
 from ksi_core.app_assembly import assemble_app, cli_optional_positive
 from ksi_core.auth import (
     AuthRegistry,
+    HumanAuthMode,
     Principal,
     PrincipalKind,
     PrincipalTokenRecord,
@@ -80,10 +81,13 @@ from ksi_core.auth import (
 from ksi_core.device_attestation import load_device_attestation_registry
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.observability import configure_structured_logging
+from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 from ksi_core.signing_keys import load_signing_keys
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from ksi_core.copilot_openai import CopilotRuntimeConfig
 
 _JOURNAL_SEGMENT_BYTES_DEFAULT = 64 * 1024 * 1024
 _EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT = 500
@@ -96,6 +100,7 @@ _STATUS_VALUES = {status.value: status for status in TokenStatus}
 # 전부 끝낸다"(모듈 docstring)는 약속이 이 필드에 대해서도 실제로 성립한다.
 _TOKEN_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ISSUER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_OIDC_ALLOWED_ALGORITHMS = frozenset({"RS256", "ES256"})
 
 
 def _require_env(name: str) -> str:
@@ -143,6 +148,107 @@ def _expose_docs_env() -> bool:
     if raw in ("false", "0", "no"):
         return False
     raise RuntimeError(f"KSI_CORE_EXPOSE_DOCS={raw!r} 는 'true' 또는 'false' 여야 한다")
+
+
+def _acquisition_issue_gate_env() -> bool:
+    """실장비 receipt와 Site profile migration 뒤에만 명시적으로 활성화한다."""
+    raw = os.environ.get("KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED", "false").strip().lower()
+    if raw in ("true", "1", "yes"):
+        return True
+    if raw in ("false", "0", "no"):
+        return False
+    raise RuntimeError(
+        "KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED="
+        f"{raw!r} 는 'true' 또는 'false' 여야 한다"
+    )
+
+
+def _acquisition_coordination_env() -> bool:
+    """Acquisition coordinator의 독립 rollback flag — 기본은 활성화다."""
+    raw = os.environ.get("KSI_CORE_ACQUISITION_COORDINATION_ENABLED", "true").strip().lower()
+    if raw in ("true", "1", "yes"):
+        return True
+    if raw in ("false", "0", "no"):
+        return False
+    raise RuntimeError(
+        "KSI_CORE_ACQUISITION_COORDINATION_ENABLED="
+        f"{raw!r} 는 'true' 또는 'false' 여야 한다"
+    )
+
+
+def _copilot_runtime_config_env() -> CopilotRuntimeConfig | None:
+    """External Copilot is opt-in; an enabled but partial configuration is fatal."""
+    raw = os.environ.get("KSI_COPILOT_ENABLED", "false").strip().lower()
+    if raw in ("false", "0", "no"):
+        return None
+    if raw not in ("true", "1", "yes"):
+        raise RuntimeError("KSI_COPILOT_ENABLED는 true 또는 false여야 한다")
+    from ksi_core.copilot_openai import CopilotRuntimeConfig
+
+    api_key_file = Path(_require_env("KSI_COPILOT_API_KEY_FILE"))
+    if not api_key_file.is_file():
+        raise RuntimeError("KSI_COPILOT_API_KEY_FILE은 존재하는 파일이어야 한다")
+    timeout_raw = os.environ.get("KSI_COPILOT_REQUEST_TIMEOUT_SECONDS", "30")
+    try:
+        timeout = float(timeout_raw)
+    except ValueError as exc:
+        raise RuntimeError("KSI_COPILOT_REQUEST_TIMEOUT_SECONDS는 숫자여야 한다") from exc
+    if timeout <= 0 or timeout > 300:
+        raise RuntimeError("KSI_COPILOT_REQUEST_TIMEOUT_SECONDS는 0초 초과 300초 이하여야 한다")
+    base_url = _require_env("KSI_COPILOT_BASE_URL")
+    if not base_url.startswith(("http://", "https://")):
+        raise RuntimeError("KSI_COPILOT_BASE_URL은 http(s) URL이어야 한다")
+    provider_name = os.environ.get("KSI_COPILOT_PROVIDER_NAME", "openai-compatible")
+    if not provider_name.strip():
+        raise RuntimeError("KSI_COPILOT_PROVIDER_NAME은 비어 있을 수 없다")
+    return CopilotRuntimeConfig(
+        base_url=base_url,
+        model=_require_env("KSI_COPILOT_MODEL"),
+        api_key_file=api_key_file,
+        timeout_seconds=timeout,
+        planner_version=_require_env("KSI_COPILOT_PLANNER_VERSION"),
+        provider_name=provider_name,
+    )
+
+
+def _human_auth_config_env() -> tuple[HumanAuthMode, OidcVerifierConfig | None]:
+    """사람 인증 mode와 vendor-neutral OIDC 검증 입력을 fail-closed로 파싱한다."""
+    raw_mode = os.environ.get("KSI_CORE_HUMAN_AUTH_MODE", HumanAuthMode.OPAQUE.value)
+    try:
+        mode = HumanAuthMode(raw_mode)
+    except ValueError as exc:
+        raise RuntimeError(
+            "KSI_CORE_HUMAN_AUTH_MODE은 OPAQUE, DUAL, OIDC 중 하나여야 한다"
+        ) from exc
+    if mode is HumanAuthMode.OPAQUE:
+        return mode, None
+
+    issuer = _require_env("KSI_CORE_OIDC_ISSUER")
+    audience = _require_env("KSI_CORE_OIDC_AUDIENCE")
+    jwks_url = _require_env("KSI_CORE_OIDC_JWKS_URL")
+    algorithms = tuple(
+        item.strip()
+        for item in os.environ.get("KSI_CORE_OIDC_ALLOWED_ALGORITHMS", "RS256").split(",")
+        if item.strip()
+    )
+    if not algorithms or any(item not in _OIDC_ALLOWED_ALGORITHMS for item in algorithms):
+        raise RuntimeError(
+            "KSI_CORE_OIDC_ALLOWED_ALGORITHMS는 RS256, ES256만 허용한다"
+        )
+    ttl_raw = os.environ.get("KSI_CORE_OIDC_JWKS_TTL_SECONDS", "300")
+    try:
+        ttl = int(ttl_raw)
+    except ValueError as exc:
+        raise RuntimeError("KSI_CORE_OIDC_JWKS_TTL_SECONDS는 양수 정수여야 한다") from exc
+    if ttl <= 0:
+        raise RuntimeError("KSI_CORE_OIDC_JWKS_TTL_SECONDS는 양수 정수여야 한다")
+    return mode, OidcVerifierConfig(
+        issuer=issuer,
+        audience=audience,
+        jwks_url=jwks_url,
+        allowed_algorithms=algorithms,
+        jwks_ttl_seconds=ttl,
+    )
 
 
 def _mission_contract_writer_config() -> tuple[Literal["1.2", "1.3"], str | None]:
@@ -354,6 +460,7 @@ def build_production_app() -> FastAPI:
     data_dir = _require_dir("KSI_CORE_DATA_DIR")
     signing_keys_dir = _require_dir("KSI_CORE_SIGNING_KEYS_DIR")
     s3_endpoint = _require_env("KSI_CORE_S3_ENDPOINT")
+    s3_public_endpoint = os.environ.get("KSI_CORE_S3_PUBLIC_ENDPOINT", s3_endpoint)
     s3_bucket = _require_env("KSI_CORE_S3_BUCKET")
     principal_tokens_raw = _require_env("KSI_CORE_PRINCIPAL_TOKENS_JSON")
     device_attestation_keys_file = Path(_require_env("KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE"))
@@ -369,6 +476,10 @@ def build_production_app() -> FastAPI:
         "KSI_CORE_EDGE_SYNC_SNAPSHOT_EVERY", default=_EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT
     )
     expose_docs = _expose_docs_env()
+    acquisition_coordination_enabled = _acquisition_coordination_env()
+    acquisition_issue_gate_enabled = _acquisition_issue_gate_env()
+    copilot_runtime_config = _copilot_runtime_config_env()
+    human_auth_mode, oidc_config = _human_auth_config_env()
     mission_contract_writer_version, mission_contract_issuer_id = (
         _mission_contract_writer_config()
     )
@@ -389,9 +500,14 @@ def build_production_app() -> FastAPI:
     # endpoint_url·bucket 만 넘긴다(evidence_s3.py 어댑터가 이미 이 관습이다).
     from ksi_core.evidence_s3 import S3EvidenceStorage  # noqa: PLC0415 -- 지연 import(boto3)
 
-    evidence_storage = S3EvidenceStorage(bucket=s3_bucket, endpoint_url=s3_endpoint)
+    evidence_storage = S3EvidenceStorage(
+        bucket=s3_bucket,
+        endpoint_url=s3_endpoint,
+        public_endpoint_url=s3_public_endpoint,
+    )
 
     auth_registry = AuthRegistry(principal_records)
+    oidc_verifier = OidcJwtVerifier(oidc_config) if oidc_config is not None else None
 
     opened: list[Any] = []
 
@@ -407,6 +523,8 @@ def build_production_app() -> FastAPI:
             opened=opened,
             edge_sync_snapshot_every=edge_sync_snapshot_every,
             auth_registry=auth_registry,
+            human_auth_mode=human_auth_mode,
+            oidc_verifier=oidc_verifier,
             evidence_storage=evidence_storage,
             mission_signing_key=key_set.active_private_key,
             mission_signing_key_id=key_set.active_key_id,
@@ -415,6 +533,9 @@ def build_production_app() -> FastAPI:
             risk_policy_packs=risk_policy_packs,
             edge_runtime_profiles=edge_runtime_profiles,
             device_attestation_registry=device_attestation_registry,
+            acquisition_coordination_enabled=acquisition_coordination_enabled,
+            acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+            copilot_runtime_config=copilot_runtime_config,
             expose_docs=expose_docs,
         )
     except BaseException:

@@ -83,10 +83,15 @@ from ksi_domain.enums import (
 from ksi_equipment_intelligence.risk_field import RiskField
 from ksi_event_contracts.event_bundle import EventBundle
 from ksi_event_contracts.offline_sync import payload_digest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import JournalSealedError
 from ksi_core.evidence import (
     ALLOWED_CONTENT_TYPES,
@@ -212,6 +217,11 @@ class EventRecord:
     occurred_at: datetime
     received_at: datetime
     last_conflict_at: datetime | None
+    # EventBundle은 장비에서 오지만, 고객이 보는 "확인 항목" 원장은 장비가
+    # 인증된 조직에 귀속된다. 구 journal에는 이 필드가 없으므로 재생 시 legacy로
+    # 읽는다. 공개 API는 아래 request scope 게이트에서 다른 조직의 event를
+    # 존재하지 않는 것처럼 취급한다(INV-060).
+    organization_id: str = "legacy"
     transitions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     # 등록 순서 보존(ADR-KSI-010 §1) — 폐기된 것도 남는다. "증거가 없다"와
     # "정책대로 폐기했다"는 사고 조사에서 다른 사실이다.
@@ -837,6 +847,14 @@ class EventStore:
         event_key = record["eventKey"]
         if kind == "event-projected":
             after = record["after"]
+            organization_id = record.get("organizationId", "legacy")
+            if not isinstance(organization_id, str) or not is_path_safe_identifier(
+                organization_id
+            ):
+                raise EventStoreRecoveryError(
+                    "재생: organizationId 가 경로-안전 비공백 문자열이 아니다 "
+                    f"— eventKey={event_key}"
+                )
             projected_status = EventStatus(after["status"])
             # 재생 경로도 live 의 ② 권한 게이트를 태운다(독립 재검토 P1-1) —
             # 확정/기각은 Edge 가 주장할 수 없고(INV-021 우회 차단), 그 규칙이
@@ -870,6 +888,7 @@ class EventStore:
                 occurred_at=occurred_at,
                 received_at=_require_aware_iso(record["receivedAt"], "receivedAt", event_key),
                 last_conflict_at=None,
+                organization_id=organization_id,
                 transitions=(record,),
             )
             return
@@ -1064,7 +1083,12 @@ class EventStore:
     # ── projection (edge_sync 장착부 전용 진입점) ────────────────────────
 
     def project_bundle(
-        self, payload: Mapping[str, Any], *, edge_device_id: str, received_at: datetime
+        self,
+        payload: Mapping[str, Any],
+        *,
+        edge_device_id: str,
+        received_at: datetime,
+        organization_id: str = "legacy",
     ) -> EventVerdict:
         """EventBundle payload 1건을 projection 한다 — edge-sync ACK 전에 호출된다.
 
@@ -1074,9 +1098,14 @@ class EventStore:
         하지 않는다).
         """
         _require_tz_aware(received_at, param="received_at")
+        if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
+            logger.warning("event organization 신원 위반 거부(device=%s)", edge_device_id)
+            return EventVerdict.INVALID_EVENT_IDENTITY
         with self._lock:
             try:
-                return self._project_bundle_locked(dict(payload), edge_device_id, received_at)
+                return self._project_bundle_locked(
+                    dict(payload), edge_device_id, received_at, organization_id
+                )
             except JournalSealedError:
                 return EventVerdict.STORE_UNAVAILABLE
             except BaseException:
@@ -1085,7 +1114,11 @@ class EventStore:
                 return EventVerdict.STORE_UNAVAILABLE
 
     def _project_bundle_locked(
-        self, payload: dict[str, Any], edge_device_id: str, received_at: datetime
+        self,
+        payload: dict[str, Any],
+        edge_device_id: str,
+        received_at: datetime,
+        organization_id: str,
     ) -> EventVerdict:
         bundle = EventBundle.model_validate(payload)
 
@@ -1125,6 +1158,7 @@ class EventStore:
                 "actor": edge_device_id,
                 "eventKey": event_key,
                 "eventId": bundle.event_id,
+                "organizationId": organization_id,
                 "siteId": bundle.site_id,
                 "missionId": bundle.mission_id,
                 "edgeDeviceId": edge_device_id,
@@ -1142,6 +1176,13 @@ class EventStore:
             }
             self._append_and_apply(record)
             return EventVerdict.PROJECTED
+
+        # 장비 신원은 provisioning에서 조직과 함께 바인딩된다. 그래도 journal의
+        # 기존 event를 다른 조직으로 덮어쓰는 경로는 여기서 fail-closed한다.
+        # eventKey 형식은 기존 deep link와 호환되는 ``device::event``를 유지한다.
+        if existing.organization_id != organization_id:
+            logger.warning("다른 조직의 event update 거부(device=%s)", edge_device_id)
+            return EventVerdict.INVALID_EVENT_IDENTITY
 
         existing_digest = payload_digest(existing.bundle)
         if existing_digest == digest:
@@ -1225,6 +1266,8 @@ class EventStore:
         critical_candidate: EventRecord | None = None
         with self._lock:
             existing = self._events.get(event_key)
+            if existing is not None and existing.organization_id != actor.organization_id:
+                return TriageTransitionResult(EventVerdict.UNKNOWN_EVENT, detail=_NOT_FOUND_DETAIL)
             if (
                 target is EventStatus.CONFIRMED_EVENT
                 and existing is not None
@@ -1310,7 +1353,7 @@ class EventStore:
             )
 
         existing = self._events.get(event_key)
-        if existing is None:
+        if existing is None or existing.organization_id != actor.organization_id:
             return TriageTransitionResult(EventVerdict.UNKNOWN_EVENT, detail=_NOT_FOUND_DETAIL)
 
         # 낙관적 동시성 — 운영자가 본 bundle 이 그 사이 바뀌었으면 전이하지 않는다
@@ -1491,6 +1534,7 @@ class EventStore:
         attested_risk_policy_pack_id: str | None = None,
         attested_risk_policy_pack_digest: str | None = None,
         attested_calibration_profile_id: str | None = None,
+        organization_id: str | None = None,
     ) -> EvidenceRegistration:
         """증거물 1건을 원장에 등록하고 그 객체 키를 돌려준다.
 
@@ -1511,7 +1555,11 @@ class EventStore:
 
         with self._lock:
             existing = self._events.get(event_key)
-            if existing is None:
+            if (
+                existing is None
+                or not self._visible_in_request(existing)
+                or (organization_id is not None and existing.organization_id != organization_id)
+            ):
                 return EvidenceRegistration(EvidenceVerdict.UNKNOWN_EVENT)
             if any(a.artifact_id == artifact_id for a in existing.evidence):
                 # 같은 id 로 다시 등록하면 앞선 증거의 객체 키를 가리키게 되어
@@ -1605,7 +1653,7 @@ class EventStore:
     def get_evidence(self, event_key: str, artifact_id: str) -> EvidenceArtifact | None:
         with self._lock:
             record = self._events.get(event_key)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return None
             return next((a for a in record.evidence if a.artifact_id == artifact_id), None)
 
@@ -1615,7 +1663,7 @@ class EventStore:
         """확정이 못박은 바이트 신원 — 없으면 None(재검증 대상 아님)."""
         with self._lock:
             record = self._events.get(event_key)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return None
             return _pinned_evidence_content(record, artifact_id)
 
@@ -1624,11 +1672,13 @@ class EventStore:
     def get(self, event_key: str) -> EventRecord | None:
         """``event_key``(=``{edgeDeviceId}::{eventId}``)로 1건 조회."""
         with self._lock:
-            return self._events.get(event_key)
+            record = self._events.get(event_key)
+        return record if record is not None and self._visible_in_request(record) else None
 
     def list(  # noqa: A003 -- 저장소 공개 API 관습(edge_sync.py 대칭 이름)
         self,
         *,
+        organization_id: str | None = None,
         site_id: str | None = None,
         mission_id: str | None = None,
         edge_device_id: str | None = None,
@@ -1645,6 +1695,11 @@ class EventStore:
 
         with self._lock:
             records = list(self._events.values())
+
+        if current_request_organization_id() is not None:
+            records = [record for record in records if self._visible_in_request(record)]
+        if organization_id is not None:
+            records = [record for record in records if record.organization_id == organization_id]
 
         if site_id is not None:
             records = [r for r in records if r.site_id == site_id]
@@ -1667,6 +1722,18 @@ class EventStore:
 
         return records[offset : offset + limit]
 
+    @staticmethod
+    def _visible_in_request(record: EventRecord) -> bool:
+        """인증된 HTTP 요청이면 자기 조직 event만 보이게 한다.
+
+        신뢰된 배치·journal 재생에는 request 문맥이 없으므로 기존 전체 원장 동작을
+        유지한다. 공개 HTTP 경로는 ``require_permission``이 request principal을
+        먼저 설정하므로 이 필터를 우회할 수 없다.
+        """
+
+        organization_id = current_request_organization_id()
+        return organization_id is None or record.organization_id == organization_id
+
 
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
@@ -1684,6 +1751,9 @@ class EventSummaryResponse(CamelModel):
     severity: str | None
     triage: str
     assignee: str | None
+    # 목록에서 상세를 열기 전에 근거 존재 여부를 판단할 수 있어야 한다. 폐기된
+    # artifact는 열람 가능한 근거가 아니므로 count에서 제외한다.
+    evidence_count: int = Field(ge=0)
     edge_device_id: str
     occurred_at: datetime
     received_at: datetime
@@ -1701,6 +1771,7 @@ class EventDetailResponse(CamelModel):
     severity: str | None
     triage: str
     assignee: str | None
+    evidence_count: int = Field(ge=0)
     edge_device_id: str
     occurred_at: datetime
     received_at: datetime
@@ -1808,6 +1879,7 @@ def _to_summary(record: EventRecord) -> EventSummaryResponse:
         severity=severity.value if severity is not None else None,
         triage=record.triage.value,
         assignee=record.assignee,
+        evidence_count=sum(1 for item in record.evidence if not item.is_tombstoned),
         edge_device_id=record.edge_device_id,
         occurred_at=record.occurred_at,
         received_at=record.received_at,
@@ -1826,6 +1898,7 @@ def _to_detail(record: EventRecord) -> EventDetailResponse:
         severity=severity.value if severity is not None else None,
         triage=record.triage.value,
         assignee=record.assignee,
+        evidence_count=sum(1 for item in record.evidence if not item.is_tombstoned),
         edge_device_id=record.edge_device_id,
         occurred_at=record.occurred_at,
         received_at=record.received_at,
@@ -1955,6 +2028,7 @@ def _mount_evidence_routes(router: APIRouter, store: EventStore, storage: Eviden
             content_type=request.content_type,
             registered_by=principal.principal_id,
             now=now,
+            organization_id=principal.organization_id,
         )
         if result.verdict is not EvidenceVerdict.REGISTERED or result.artifact is None:
             raise HTTPException(

@@ -32,15 +32,18 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastapi import FastAPI
 
 from ksi_core.api_base import mount_validation_error_handler
+from ksi_core.auth import HumanAuthMode
 from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    from ksi_core.auth import AuthRegistry
+    from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
+    from ksi_core.auth import AuthRegistry, OidcVerifier
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.copilot import CopilotService
+    from ksi_core.copilot_conversations import CopilotConversationService
     from ksi_core.coverage_reports import CoverageReportStore
     from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.design_conformance_reports import DesignConformanceStore
@@ -59,6 +62,7 @@ if TYPE_CHECKING:
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
+    from ksi_core.site_workspace import SiteBriefingService, SiteWorkspaceProjector
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
@@ -159,7 +163,43 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         (("site_store",),),
         "observation_work_order_store 는 site_store 와 함께 주어져야 한다(INV-060)",
     ),
+    (
+        "acquisition_connectivity_store",
+        (("site_store",),),
+        "acquisition_connectivity_store 는 site_store 와 함께 주어져야 한다"
+        "(REQ-ACQ-101, INV-060) — profile과 heartbeat는 등록된 조직-scoped Site에만"
+        " 바인딩한다",
+    ),
+    (
+        "acquisition_coordination_store",
+        (
+            (
+                "acquisition_connectivity_store",
+                "observation_work_order_store",
+                "mission_store",
+            ),
+        ),
+        "acquisition_coordination_store는 connectivity, WorkOrder, Mission 원장과 함께 "
+        "주어져야 한다(REQ-WRK-101, REQ-MSN-101) — 조정 원장은 기존 사실 원장을 "
+        "복제하거나 미확인 장비 상태를 만들지 않는다",
+    ),
     ("copilot_service", (), ""),
+    (
+        "copilot_conversation_service",
+        (("copilot_service", "site_store"),),
+        "copilot_conversation_service는 Copilot과 조직-scoped Site 원장과 함께 "
+        "주어져야 한다(INV-060/061)",
+    ),
+    (
+        "site_workspace_projector",
+        (("site_store", "observation_work_order_store"),),
+        "site_workspace_projector는 Site·WorkOrder 사실 원장과 함께 주어져야 한다",
+    ),
+    (
+        "site_briefing_service",
+        (("copilot_service", "site_workspace_projector"),),
+        "site_briefing_service는 grounded Copilot과 SiteWorkspace projection이 필요하다",
+    ),
     (
         "design_surface_store",
         (("site_store",),),
@@ -304,6 +344,8 @@ def create_app(
     *,
     registry: CapabilityRegistry | None = None,
     auth_registry: AuthRegistry | None = None,
+    human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
+    oidc_verifier: OidcVerifier | None = None,
     edge_sync_store: EdgeSyncStore | None = None,
     edge_dispatch_store: EdgeDispatchStore | None = None,
     event_store: EventStore | None = None,
@@ -330,7 +372,13 @@ def create_app(
     region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
+    acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
+    acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
+    acquisition_issue_gate_enabled: bool = False,
     copilot_service: CopilotService | None = None,
+    copilot_conversation_service: CopilotConversationService | None = None,
+    site_workspace_projector: SiteWorkspaceProjector | None = None,
+    site_briefing_service: SiteBriefingService | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     device_attestation_registry: DeviceAttestationRegistry | None = None,
@@ -512,6 +560,10 @@ def create_app(
             "Mission Contract v1.3 writer는 서명키·Core issuerId·durable sequence store가 "
             "모두 필요하다"
         )
+    if acquisition_issue_gate_enabled and acquisition_connectivity_store is None:
+        raise ValueError(
+            "acquisition_issue_gate_enabled에는 acquisition_connectivity_store가 필요하다"
+        )
 
     # 표(_ASSEMBLY_REQUIREMENTS)에 있는 각 인자의 실제 값 — 결합 검증 루프와
     # protected_surface 판정이 여기서 이름으로 값을 찾는다.
@@ -532,7 +584,12 @@ def create_app(
         "design_conformance_request_store": design_conformance_request_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "acquisition_connectivity_store": acquisition_connectivity_store,
+        "acquisition_coordination_store": acquisition_coordination_store,
         "copilot_service": copilot_service,
+        "copilot_conversation_service": copilot_conversation_service,
+        "site_workspace_projector": site_workspace_projector,
+        "site_briefing_service": site_briefing_service,
         "design_conformance_report_store": design_conformance_report_store,
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": region_extraction_report_store,
@@ -568,7 +625,12 @@ def create_app(
     if auth_registry is not None:
         from ksi_core.auth import mount_auth
 
-        mount_auth(app, auth_registry)
+        mount_auth(
+            app,
+            auth_registry,
+            human_auth_mode=human_auth_mode,
+            oidc_verifier=oidc_verifier,
+        )
 
     if site_store is not None:
         from ksi_core.sites import mount_sites
@@ -578,12 +640,65 @@ def create_app(
     if observation_work_order_store is not None:
         from ksi_core.observation_work_orders import mount_observation_work_orders
 
-        mount_observation_work_orders(app, observation_work_order_store)
+        def _on_work_order_approved(order: Any, actor: str, now: Any) -> None:
+            if acquisition_coordination_store is not None:
+                acquisition_coordination_store.ensure_run(order, actor=actor, now=now)
+
+        mount_observation_work_orders(
+            app,
+            observation_work_order_store,
+            on_approved=(
+                _on_work_order_approved if acquisition_coordination_store is not None else None
+            ),
+        )
+
+    if acquisition_connectivity_store is not None:
+        from ksi_core.acquisition import mount_acquisition_connectivity
+
+        mount_acquisition_connectivity(app, acquisition_connectivity_store)
+
+    if acquisition_coordination_store is not None:
+        from ksi_core.acquisition import (
+            AcquisitionProgressProjector,
+            mount_acquisition_coordination,
+        )
+
+        assert acquisition_connectivity_store is not None  # noqa: S101 -- assembly table
+        assert observation_work_order_store is not None  # noqa: S101 -- assembly table
+        assert mission_store is not None  # noqa: S101 -- assembly table
+        mount_acquisition_coordination(
+            app,
+            coordination_store=acquisition_coordination_store,
+            connectivity_store=acquisition_connectivity_store,
+            work_order_store=observation_work_order_store,
+            mission_store=mission_store,
+            projector=AcquisitionProgressProjector(
+                coordination_store=acquisition_coordination_store,
+                connectivity_store=acquisition_connectivity_store,
+                mission_execution_store=mission_execution_store,
+                source_media_store=source_media_store,
+                processing_job_store=processing_job_store,
+            ),
+        )
 
     if copilot_service is not None:
         from ksi_core.copilot import mount_copilot
 
         mount_copilot(app, copilot_service)
+
+    if copilot_conversation_service is not None:
+        from ksi_core.copilot_conversations import mount_copilot_conversations
+
+        mount_copilot_conversations(app, copilot_conversation_service)
+
+    if site_workspace_projector is not None:
+        from ksi_core.site_workspace import mount_site_workspace
+
+        mount_site_workspace(
+            app,
+            projector=site_workspace_projector,
+            briefing_service=site_briefing_service,
+        )
 
     # 현장 상태 자동 전진(ADR-KSI-019 G1) — 재구성 신호·임무 배포·노후 스윕 세
     # 진입점이 같은 인스턴스를 공유한다. 두 저장소 중 하나라도 없으면 전진시킬
@@ -645,7 +760,7 @@ def create_app(
         _mission_store = mission_store
         _site_store = site_store
 
-        def _site_lookup(site_id: str) -> SiteLookupResult | None:
+        def _site_lookup(site_id: str, organization_id: str) -> SiteLookupResult | None:
             """등록된 site 의 canonical siteFrame + 현재 상태 — 미등록이면 None.
 
             siteFrame 은 발급 요청과의 정확 일치 대조(SITE_FRAME_MISMATCH)에
@@ -654,10 +769,23 @@ def create_app(
             사전지도 기반 자율")에 쓰인다 — 이 둘을 한 스냅샷으로 묶어 반환하는
             이유는 SiteLookupResult docstring 참조.
             """
-            record = _site_store.get(site_id)
+            # 발급 전 lookup도 조회 API와 같은 조직 경계를 가진다. 다른 조직의
+            # siteId를 넣어 서명·KMZ를 발급하는 우회는 UNKNOWN_SITE로 접는다(INV-060).
+            record = _site_store.get_scoped(site_id, organization_id)
             if record is None:
                 return None
             return SiteLookupResult(site_frame=dict(record.site_frame), status=record.status)
+
+        def _acquisition_readiness(
+            site_id: str, organization_id: str, now: Any
+        ) -> tuple[bool, str]:
+            if not acquisition_issue_gate_enabled or acquisition_connectivity_store is None:
+                return True, "acquisition issue gate feature flag disabled"
+            readiness = acquisition_connectivity_store.readiness(
+                site_id, organization_id=organization_id, now=now
+            )
+            detail = readiness.reasons[0] if readiness.reasons else readiness.status.value
+            return readiness.ready_for_mission_issue, detail
 
         mount_mission_issuance(
             app,
@@ -668,6 +796,7 @@ def create_app(
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
+            acquisition_readiness=_acquisition_readiness,
         )
         mount_mission_plans(
             app,
@@ -682,6 +811,9 @@ def create_app(
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
+            acquisition_readiness=_acquisition_readiness,
+            observation_work_order_store=observation_work_order_store,
+            acquisition_coordination_store=acquisition_coordination_store,
         )
 
     if mission_store is not None:

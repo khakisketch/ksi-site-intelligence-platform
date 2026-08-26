@@ -23,6 +23,8 @@ dependencies = [
     "ksi-geo-spatial",
     "fastapi>=0.115",
     "cryptography>=42",
+    "PyJWT>=2.10,<3",
+    "httpx>=0.27",
 ]
 
 # Evidence 미디어 스토리지(ADR-KSI-010 §1)는 **선택 의존**이다 — Core 는

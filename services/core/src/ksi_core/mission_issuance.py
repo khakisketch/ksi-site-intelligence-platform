@@ -200,10 +200,11 @@ def build_mission_issuance_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None],
+    site_lookup: Callable[[str, str], SiteLookupResult | None],
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
+    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
 ) -> APIRouter:
     if writer_version == "1.3" and (not issuer_id or sequence_store is None):
         raise ValueError("Mission Contract v1.3 writer는 issuer_id와 sequence_store가 필요하다")
@@ -228,6 +229,7 @@ def build_mission_issuance_router(
         verdict = precheck_issuance(
             mission_store=mission_store,
             site_lookup=site_lookup,
+            organization_id=principal.organization_id,
             site_id=request.site_id,
             mission_id=request.mission_id,
             mission_type=request.mission_type,
@@ -239,6 +241,15 @@ def build_mission_issuance_router(
             raise_for_mission_record_verdict(verdict)
 
         issued_at = datetime.now(UTC)
+        if acquisition_readiness is not None:
+            ready, detail = acquisition_readiness(
+                request.site_id, principal.organization_id, issued_at
+            )
+            if not ready:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"ACQUISITION_NOT_READY — {detail}",
+                )
         site_sequence: int | None = None
         if writer_version == "1.3":
             assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
@@ -274,6 +285,7 @@ def build_mission_issuance_router(
             planned_coverage_ratio=None,
             issued_at=issued_at,
             issued_by=principal.principal_id,
+            organization_id=principal.organization_id,
             assigned_device_id=request.assigned_device_id,
         )
         raise_for_mission_record_verdict(mission_store.record_issuance(record))
@@ -288,10 +300,11 @@ def mount_mission_issuance(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None],
+    site_lookup: Callable[[str, str], SiteLookupResult | None],
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
+    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
 ) -> None:
     """앱에 Mission Contract 발급 라우터를 장착한다.
 
@@ -308,5 +321,6 @@ def mount_mission_issuance(
             writer_version=writer_version,
             issuer_id=issuer_id,
             sequence_store=sequence_store,
+            acquisition_readiness=acquisition_readiness,
         )
     )

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from ksi_event_contracts.observation_work_order import (
     ObservationPurpose,
     ObservationSchedule,
@@ -23,6 +25,8 @@ from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
+
+logger = logging.getLogger(__name__)
 
 _STATUS_TRANSITIONS: dict[ObservationWorkOrderStatus, frozenset[ObservationWorkOrderStatus]] = {
     ObservationWorkOrderStatus.APPROVED: frozenset(
@@ -42,6 +46,37 @@ _STATUS_TRANSITIONS: dict[ObservationWorkOrderStatus, frozenset[ObservationWorkO
     ),
     ObservationWorkOrderStatus.REVIEW_READY: frozenset(
         {ObservationWorkOrderStatus.COMPLETED, ObservationWorkOrderStatus.BLOCKED}
+    ),
+}
+
+
+class WorkOrderActionGroup(StrEnum):
+    DECISION_REQUIRED = "DECISION_REQUIRED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+
+
+_ACTION_GROUP_STATUSES: dict[WorkOrderActionGroup, frozenset[ObservationWorkOrderStatus]] = {
+    WorkOrderActionGroup.DECISION_REQUIRED: frozenset(
+        {
+            ObservationWorkOrderStatus.DRAFT,
+            ObservationWorkOrderStatus.AWAITING_APPROVAL,
+            ObservationWorkOrderStatus.REVIEW_READY,
+            ObservationWorkOrderStatus.REOBSERVATION_PENDING,
+            ObservationWorkOrderStatus.BLOCKED,
+        }
+    ),
+    WorkOrderActionGroup.IN_PROGRESS: frozenset(
+        {
+            ObservationWorkOrderStatus.APPROVED,
+            ObservationWorkOrderStatus.DISPATCHED,
+            ObservationWorkOrderStatus.START_REPORTED,
+            ObservationWorkOrderStatus.MEDIA_RECEIVING,
+            ObservationWorkOrderStatus.PROCESSING,
+        }
+    ),
+    WorkOrderActionGroup.COMPLETED: frozenset(
+        {ObservationWorkOrderStatus.COMPLETED, ObservationWorkOrderStatus.CANCELLED}
     ),
 }
 
@@ -67,6 +102,7 @@ class ObservationWorkOrderStore:
         self._orders: dict[str, ObservationWorkOrder] = {}
         self._drafts: dict[str, ReobservationDraft] = {}
         self._lock = threading.Lock()
+        self._status_listeners: list[Callable[[ObservationWorkOrder], None]] = []
         try:
             for raw in journal.replay():
                 self._apply(raw)
@@ -263,6 +299,38 @@ class ObservationWorkOrderStore:
                 key=lambda item: item.work_order_id,
             )
 
+    def list_scoped(
+        self,
+        *,
+        organization_id: str,
+        site_id: str | None = None,
+        status: ObservationWorkOrderStatus | None = None,
+        action_group: WorkOrderActionGroup | None = None,
+    ) -> list[ObservationWorkOrder]:
+        """Global Work queue with organization scope applied before every filter."""
+        with self._lock:
+            records = [
+                item
+                for item in self._orders.values()
+                if item.organization_id == organization_id
+            ]
+        if site_id is not None:
+            # Preserve cross-organization 404 semantics for a requested Site scope.
+            if not self._site_exists(site_id, organization_id):
+                raise LookupError("현장을 찾을 수 없다")
+            records = [item for item in records if item.site_id == site_id]
+        if status is not None:
+            records = [item for item in records if item.status is status]
+        if action_group is not None:
+            records = [
+                item for item in records if item.status in _ACTION_GROUP_STATUSES[action_group]
+            ]
+        return sorted(
+            records,
+            key=lambda item: (item.updated_at, item.work_order_id),
+            reverse=True,
+        )
+
     def list_schedules(self, site_id: str, *, organization_id: str) -> list[ObservationSchedule]:
         if not self._site_exists(site_id, organization_id):
             raise LookupError("현장을 찾을 수 없다")
@@ -331,7 +399,83 @@ class ObservationWorkOrderStore:
                     "workOrder": updated.model_dump(by_alias=True, mode="json"),
                 }
             )
-            return updated
+        self._notify_status_listeners(updated)
+        return updated
+
+    def _notify_status_listeners(self, updated: ObservationWorkOrder) -> None:
+        """Run post-commit projections without changing the WorkOrder verdict."""
+        for listener in tuple(self._status_listeners):
+            try:
+                listener(updated)
+            except Exception:
+                logger.exception(
+                    "work order status listener failed",
+                    extra={
+                        "work_order_id": updated.work_order_id,
+                        "status": updated.status.value,
+                    },
+                )
+
+    def bind_status_listener(
+        self, listener: Callable[[ObservationWorkOrder], None]
+    ) -> None:
+        """Bind a post-commit projection listener; WorkOrder remains authoritative."""
+        with self._lock:
+            if listener not in self._status_listeners:
+                self._status_listeners.append(listener)
+
+    def link_mission(
+        self,
+        work_order_id: str,
+        *,
+        organization_id: str,
+        cycle_number: int,
+        mission_id: str,
+        mission_site_id: str,
+        actor: str,
+        now: datetime,
+        require_approved: bool,
+    ) -> ObservationWorkOrder:
+        """Idempotently preserve Mission lineage without changing human approval.
+
+        Mission issuance and this WorkOrder journal cannot be one filesystem
+        transaction. A retry therefore calls this method again; an existing
+        missionId is returned without a second append.
+        """
+
+        if now.tzinfo is None:
+            raise ValueError("now는 tz-aware여야 한다")
+        if not is_path_safe_identifier(mission_id):
+            raise ValueError("missionId는 경로-안전 식별자여야 한다")
+        with self._lock:
+            current = self._orders.get(work_order_id)
+            if current is None or current.organization_id != organization_id:
+                raise LookupError("관측 작업을 찾을 수 없다")
+            if current.site_id != mission_site_id:
+                raise ValueError("WorkOrder와 Mission의 Site가 다르다")
+            if require_approved and current.cycle_number != cycle_number:
+                raise RuntimeError("WORK_ORDER_CYCLE_MISMATCH")
+            if require_approved and current.status is not ObservationWorkOrderStatus.APPROVED:
+                raise RuntimeError("WORK_ORDER_NOT_APPROVED")
+            if mission_id in current.mission_ids:
+                return current
+            updated = current.model_copy(
+                update={
+                    "mission_ids": [*current.mission_ids, mission_id],
+                    "version": current.version + 1,
+                    "updated_at": iso_utc(now),
+                }
+            )
+            self._append(
+                {
+                    "kind": "observation-work-order-updated",
+                    "ts": iso_utc(now),
+                    "actor": actor,
+                    "workOrder": updated.model_dump(by_alias=True, mode="json"),
+                }
+            )
+        self._notify_status_listeners(updated)
+        return updated
 
     def record_status(
         self,
@@ -374,7 +518,8 @@ class ObservationWorkOrderStore:
                     "workOrder": updated.model_dump(by_alias=True, mode="json"),
                 }
             )
-            return updated
+        self._notify_status_listeners(updated)
+        return updated
 
     def create_reobservation_draft(
         self,
@@ -545,7 +690,11 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
-def build_observation_work_order_router(store: ObservationWorkOrderStore) -> APIRouter:
+def build_observation_work_order_router(
+    store: ObservationWorkOrderStore,
+    *,
+    on_approved: Callable[[ObservationWorkOrder, str, datetime], None] | None = None,
+) -> APIRouter:
     router = APIRouter(tags=["observation-work-orders"])
 
     @router.post(
@@ -580,9 +729,7 @@ def build_observation_work_order_router(store: ObservationWorkOrderStore) -> API
     ) -> ScheduleListResponse:
         try:
             return ScheduleListResponse(
-                schedules=store.list_schedules(
-                    site_id, organization_id=principal.organization_id
-                )
+                schedules=store.list_schedules(site_id, organization_id=principal.organization_id)
             )
         except LookupError as exc:
             raise _http_error(exc) from exc
@@ -617,8 +764,27 @@ def build_observation_work_order_router(store: ObservationWorkOrderStore) -> API
     ) -> WorkOrderListResponse:
         try:
             return WorkOrderListResponse(
-                work_orders=store.list_for_site(
-                    site_id, organization_id=principal.organization_id
+                work_orders=store.list_for_site(site_id, organization_id=principal.organization_id)
+            )
+        except LookupError as exc:
+            raise _http_error(exc) from exc
+
+    @router.get("/v1/observation-work-orders", response_model=WorkOrderListResponse)
+    def list_global_work_orders(
+        site_id: str | None = Query(default=None, alias="siteId"),  # noqa: B008
+        status: ObservationWorkOrderStatus | None = Query(default=None),  # noqa: B008
+        action_group: WorkOrderActionGroup | None = Query(  # noqa: B008
+            default=None, alias="actionGroup"
+        ),
+        principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
+    ) -> WorkOrderListResponse:
+        try:
+            return WorkOrderListResponse(
+                work_orders=store.list_scoped(
+                    organization_id=principal.organization_id,
+                    site_id=site_id,
+                    status=status,
+                    action_group=action_group,
                 )
             )
         except LookupError as exc:
@@ -642,16 +808,29 @@ def build_observation_work_order_router(store: ObservationWorkOrderStore) -> API
         request: VersionedApprovalRequest,
         principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
     ) -> ObservationWorkOrder:
+        now = datetime.now(UTC)
         try:
-            return store.approve(
+            approved = store.approve(
                 work_order_id,
                 organization_id=principal.organization_id,
                 expected_version=request.expected_version,
                 actor=principal.principal_id,
-                now=datetime.now(UTC),
+                now=now,
             )
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
+        if on_approved is not None:
+            try:
+                on_approved(approved, principal.principal_id, now)
+            except Exception:
+                # The approval was already durably recorded. Coordinator recovery
+                # happens on acquisition-progress GET; never ask a person to
+                # repeat a completed approval because a secondary journal failed.
+                logger.exception(
+                    "WorkOrder approval succeeded but AcquisitionRun creation failed: %s",
+                    approved.work_order_id,
+                )
+        return approved
 
     @router.post(
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
@@ -702,23 +881,41 @@ def build_observation_work_order_router(store: ObservationWorkOrderStore) -> API
         request: VersionedApprovalRequest,
         principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
     ) -> ReobservationDraft:
+        now = datetime.now(UTC)
         try:
-            return store.approve_reobservation(
+            approved_draft = store.approve_reobservation(
                 draft_id,
                 organization_id=principal.organization_id,
                 expected_version=request.expected_version,
                 actor=principal.principal_id,
-                now=datetime.now(UTC),
+                now=now,
             )
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
+        reopened = store.get(
+            approved_draft.work_order_id, organization_id=principal.organization_id
+        )
+        if on_approved is not None and reopened is not None:
+            try:
+                on_approved(reopened, principal.principal_id, now)
+            except Exception:
+                logger.exception(
+                    "Reobservation approval succeeded but AcquisitionRun creation failed: %s",
+                    reopened.work_order_id,
+                )
+        return approved_draft
 
     return router
 
 
-def mount_observation_work_orders(app: Any, store: ObservationWorkOrderStore) -> None:
+def mount_observation_work_orders(
+    app: Any,
+    store: ObservationWorkOrderStore,
+    *,
+    on_approved: Callable[[ObservationWorkOrder, str, datetime], None] | None = None,
+) -> None:
     app.state.observation_work_order_store = store
-    app.include_router(build_observation_work_order_router(store))
+    app.include_router(build_observation_work_order_router(store, on_approved=on_approved))
 
 
 __all__ = [

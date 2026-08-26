@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_event_contracts.work_area import WorkArea, WorkAreaStatus
 from pydantic import Field, ValidationError
 
@@ -195,14 +195,29 @@ class WorkAreaStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
+    def site_is_visible(self, site_id: str) -> bool:
+        """요청 문맥에서 부모 현장이 보이는지 확인한다(INV-060).
+
+        production 조립은 ``SiteStore.get``을 주입하므로 API 요청에서 교차 조직
+        현장은 존재하지 않는 것으로 접힌다. 독립 unit test나 trusted batch가
+        ``site_exists=None``으로 이 store를 만들 때만 기존 전체 원장 동작을 유지한다.
+        """
+
+        return self._site_exists is None or bool(self._site_exists(site_id))
+
     def get(self, work_area_id: str) -> WorkArea | None:
         with self._lock:
-            return self._areas.get(work_area_id)
+            area = self._areas.get(work_area_id)
+        if area is None or not self.site_is_visible(area.site_id):
+            return None
+        return area
 
     def list_for_site(
         self, site_id: str, *, include_archived: bool = False
     ) -> list[WorkArea]:
         """등록 순서대로. 기본은 ACTIVE 만 — 화면의 '고를 수 있는 것' 목록이다."""
+        if not self.site_is_visible(site_id):
+            return []
         with self._lock:
             ids = list(self._by_site.get(site_id, ()))
             areas = [self._areas[wid] for wid in ids]
@@ -231,22 +246,25 @@ class WorkAreaStore:
         zones: dict[str, dict[str, Any]] = {}
         crs_values: set[str] = set()
         with self._lock:
-            for work_area_id in work_area_ids:
-                area = self._areas.get(work_area_id)
-                if area is None:
-                    return f"등록된 적 없는 작업구역이다: {work_area_id!r}"
-                if site_id is not None and area.site_id != site_id:
-                    return (
-                        f"작업구역 {work_area_id!r} 은 현장 {area.site_id!r} 소속인데 "
-                        f"이 비교는 현장 {site_id!r} 다"
-                    )
-                if area.status is not WorkAreaStatus.ACTIVE:
-                    return (
-                        f"작업구역 {work_area_id!r} 은 보관됨(ARCHIVED) 상태다 — "
-                        "새 비교에는 고를 수 없다(이미 낸 리포트는 그대로 남는다)"
-                    )
-                zones[work_area_id] = area.polygon
-                crs_values.add(area.crs)
+            areas = [
+                (work_area_id, self._areas.get(work_area_id))
+                for work_area_id in work_area_ids
+            ]
+        for work_area_id, area in areas:
+            if area is None or not self.site_is_visible(area.site_id):
+                return f"등록된 적 없는 작업구역이다: {work_area_id!r}"
+            if site_id is not None and area.site_id != site_id:
+                return (
+                    f"작업구역 {work_area_id!r} 은 현장 {area.site_id!r} 소속인데 "
+                    f"이 비교는 현장 {site_id!r} 다"
+                )
+            if area.status is not WorkAreaStatus.ACTIVE:
+                return (
+                    f"작업구역 {work_area_id!r} 은 보관됨(ARCHIVED) 상태다 — "
+                    "새 비교에는 고를 수 없다(이미 낸 리포트는 그대로 남는다)"
+                )
+            zones[work_area_id] = area.polygon
+            crs_values.add(area.crs)
         if len(crs_values) > 1:
             return (
                 f"고른 작업구역들의 좌표계가 서로 다르다: {sorted(crs_values)} — "
@@ -257,16 +275,14 @@ class WorkAreaStore:
     def site_of(self, work_area_ids: list[str]) -> set[str]:
         """고른 구역들이 속한 현장 집합 — 둘 이상이면 호출자가 거부한다."""
         with self._lock:
-            return {
-                self._areas[wid].site_id for wid in work_area_ids if wid in self._areas
-            }
+            site_ids = {self._areas[wid].site_id for wid in work_area_ids if wid in self._areas}
+        return {site_id for site_id in site_ids if self.site_is_visible(site_id)}
 
     def names_of(self, work_area_ids: list[str]) -> dict[str, str]:
         """id → 이름. 진척 화면이 ``zoneId`` 옆에 사람 이름을 붙일 때 쓴다."""
         with self._lock:
-            return {
-                wid: self._areas[wid].name for wid in work_area_ids if wid in self._areas
-            }
+            areas = [(wid, self._areas[wid]) for wid in work_area_ids if wid in self._areas]
+        return {wid: area.name for wid, area in areas if self.site_is_visible(area.site_id)}
 
     # ── 쓰기 ────────────────────────────────────────────────────────────
     def register(
@@ -381,6 +397,11 @@ class WorkAreaStore:
     ) -> WorkAreaResult:
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
+        if not self.site_is_visible(site_id):
+            return WorkAreaResult(
+                WorkAreaVerdict.UNKNOWN_WORK_AREA,
+                detail=f"현장 {site_id!r} 에 작업구역 {work_area_id!r} 이 없다",
+            )
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return WorkAreaResult(
@@ -489,6 +510,8 @@ def build_work_area_router(store: WorkAreaStore) -> APIRouter:
     ) -> WorkAreaListResponse:
         """현장의 작업구역 목록. 기본은 고를 수 있는 것(ACTIVE)만."""
         del principal
+        if not store.site_is_visible(site_id):
+            raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
         return WorkAreaListResponse(
             work_areas=store.list_for_site(site_id, include_archived=include_archived)
         )

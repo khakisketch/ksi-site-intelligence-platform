@@ -29,6 +29,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.auth import (
     AuthRegistry,
@@ -38,10 +39,12 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 
 _ADMIN_TOKEN = "test-admin-token"
+_GATEWAY_TOKEN = "test-gateway-token"
 
 
 def _auth_registry() -> AuthRegistry:
@@ -56,7 +59,16 @@ def _auth_registry() -> AuthRegistry:
                     role=Role.ADMIN,
                     device_id=None,
                 ),
-            )
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(_GATEWAY_TOKEN.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="gateway-1",
+                    kind=PrincipalKind.GATEWAY_DEVICE,
+                    role=None,
+                    device_id="rc-plus-2-1",
+                ),
+            ),
         ]
     )
 
@@ -88,6 +100,28 @@ def _work_order_client(tmp_path: Path) -> TestClient:
     client = TestClient(app, raise_server_exceptions=False)
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     return client
+
+
+def _acquisition_client(tmp_path: Path) -> TestClient:
+    site_store = SiteStore(DurableJournal(tmp_path / "acquisition-sites.jsonl"))
+    work_order_store = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "acquisition-work-orders.jsonl"),
+        site_exists=lambda _site_id, _organization_id: True,
+    )
+    app = create_app(
+        auth_registry=_auth_registry(),
+        site_store=site_store,
+        mission_store=MissionStore(DurableJournal(tmp_path / "acquisition-missions.jsonl")),
+        observation_work_order_store=work_order_store,
+        acquisition_connectivity_store=AcquisitionConnectivityStore(
+            DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
+            site_exists=lambda _site_id, _organization_id: True,
+        ),
+        acquisition_coordination_store=AcquisitionCoordinationStore(
+            DurableJournal(tmp_path / "acquisition-runs.jsonl")
+        ),
+    )
+    return TestClient(app, raise_server_exceptions=False)
 
 
 # 문법상 합법이지만 그대로 되실으면 JSON 렌더가 깨지는 값들.
@@ -152,6 +186,33 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
         path,
         content=raw.encode("utf-8", "surrogatepass"),
         headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
+    assert response.headers["content-type"].startswith("application/json")
+    json.loads(response.text)
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "token"),
+    [
+        ("PUT", "/v1/sites/site-1/acquisition-profile", _ADMIN_TOKEN),
+        ("POST", "/v1/gateway-sync/heartbeats", _GATEWAY_TOKEN),
+        ("POST", "/v1/gateway-sync/operation-receipts", _GATEWAY_TOKEN),
+    ],
+)
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_acquisition_hostile_bodies_are_machine_readable_422(
+    method: str, path: str, token: str, label: str, raw: str, tmp_path: Path
+) -> None:
+    client = _acquisition_client(tmp_path)
+    response = client.request(
+        method,
+        path,
+        content=raw.encode("utf-8", "surrogatepass"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
     )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")

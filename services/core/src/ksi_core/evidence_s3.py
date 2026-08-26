@@ -39,6 +39,8 @@ class S3EvidenceStorage:
             버킷이 없으면 첫 발급에서 :class:`EvidenceStorageError` 로 드러난다.
         client: 주입된 boto3 S3 client. ``None`` 이면 ``endpoint_url`` 로 만든다.
         endpoint_url: MinIO 등 S3 호환 엔드포인트. 클라우드 S3 면 ``None``.
+        public_endpoint_url: 브라우저·현장 장비가 presigned URL로 접근할 공개 endpoint.
+            내부 API endpoint와 다를 때만 준다.
     """
 
     def __init__(
@@ -46,13 +48,16 @@ class S3EvidenceStorage:
         *,
         bucket: str,
         client: Any | None = None,
+        presign_client: Any | None = None,
         endpoint_url: str | None = None,
+        public_endpoint_url: str | None = None,
     ) -> None:
         if not bucket:
             raise ValueError("bucket 이름이 비어 있다")
         self._bucket = bucket
         if client is not None:
             self._client: S3Client = client
+            self._presign_client: S3Client = presign_client or client
         else:
             import boto3  # noqa: PLC0415 -- 지연 import(모듈 docstring 참조)
             from botocore.config import Config  # noqa: PLC0415 -- 위와 동일 사유
@@ -63,8 +68,12 @@ class S3EvidenceStorage:
             # (2026-08-08 실측: --s3-endpoint 로 실 MinIO 를 겨눈 최초 실기동에서
             # 재현·확인. AWS 자체 엔드포인트는 URL 로 자동 판별해 이미 SigV4 를
             # 쓰므로 이 명시가 그쪽 동작을 바꾸지 않는다).
-            self._client = boto3.client(
-                "s3", endpoint_url=endpoint_url, config=Config(signature_version="s3v4")
+            config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+            self._client = boto3.client("s3", endpoint_url=endpoint_url, config=config)
+            self._presign_client = (
+                boto3.client("s3", endpoint_url=public_endpoint_url, config=config)
+                if public_endpoint_url and public_endpoint_url != endpoint_url
+                else self._client
             )
 
     def _presign(self, operation: str, params: dict[str, Any], ttl: timedelta) -> str:
@@ -74,7 +83,7 @@ class S3EvidenceStorage:
             # 그 조합이 가장 진단하기 어렵다.
             raise ValueError(f"ttl 은 양수여야 한다: {ttl!r}")
         try:
-            url = self._client.generate_presigned_url(
+            url = self._presign_client.generate_presigned_url(
                 operation, Params=params, ExpiresIn=seconds
             )
         except Exception as exc:  # noqa: BLE001 -- botocore 예외 계층이 넓다(아래 주석)

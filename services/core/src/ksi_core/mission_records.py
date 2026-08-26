@@ -53,6 +53,7 @@ JSON escape 로만 존재 가능한 lone surrogate(예: ``\\ud800``)를 탐지�
 
 from __future__ import annotations
 
+import builtins
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -68,7 +69,12 @@ from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
 
@@ -303,6 +309,9 @@ class MissionRecord:
     planned_coverage_ratio: float | None
     issued_at: datetime
     issued_by: str
+    # 신규 발급은 인증 Principal의 조직에 귀속한다(INV-060). 기존 journal에는 이
+    # 필드가 없으므로 replay 시 ``legacy``로 읽어 하위 호환한다.
+    organization_id: str = "legacy"
     # 짝(pair) 발급 재현용 — KMZ 바이트 자체는 저장하지 않고(용량), 같은
     # missionId+동일 요청 digest 재요청을 멱등 재반환하기 위해 재생성 입력만
     # 영속한다(재검토 P2 item③). contract-only 발급은 항상 None.
@@ -335,6 +344,7 @@ def _record_to_dict(record: MissionRecord) -> dict[str, Any]:
         "plannedCoverageRatio": record.planned_coverage_ratio,
         "issuedAt": record.issued_at.isoformat(),
         "issuedBy": record.issued_by,
+        "organizationId": record.organization_id,
         "planRequest": record.plan_request,
         "planRequestDigest": record.plan_request_digest,
         "assignedDeviceId": record.assigned_device_id,
@@ -354,6 +364,11 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
     if not isinstance(contract, dict):
         raise ValueError(
             f"{raw.get('missionId')!r}: contract 가 dict 가 아니다({type(contract).__name__})"
+        )
+    organization_id = raw.get("organizationId", "legacy")
+    if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
+        raise ValueError(
+            f"{raw.get('missionId')!r}: organizationId 가 경로-안전 비공백 문자열이 아니다"
         )
     plan_request = raw.get("planRequest")
     if plan_request is not None and not isinstance(plan_request, dict):
@@ -400,6 +415,7 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         planned_coverage_ratio=raw.get("plannedCoverageRatio"),
         issued_at=issued_at,
         issued_by=raw["issuedBy"],
+        organization_id=organization_id,
         plan_request=plan_request,
         plan_request_digest=plan_request_digest,
         assigned_device_id=raw.get("assignedDeviceId"),
@@ -452,6 +468,8 @@ class MissionStore:
         mission_id 를 동시에 통과시키는 경합을 막는다(:func:`precheck_issuance`
         의 사전 체크는 낙관적 단축일 뿐 — 여기가 최종 권위다).
         """
+        if not is_path_safe_identifier(record.organization_id):
+            raise ValueError("MissionRecord.organization_id 는 경로-안전 비공백 식별자여야 한다")
         with self._lock:
             if record.mission_id in self._by_id:
                 return MissionRecordVerdict.MISSION_ID_CONFLICT
@@ -464,14 +482,56 @@ class MissionStore:
 
     def get(self, mission_id: str) -> MissionRecord | None:
         with self._lock:
-            return self._by_id.get(mission_id)
+            record = self._by_id.get(mission_id)
+        organization_id = current_request_organization_id()
+        if organization_id is not None and (
+            record is None or record.organization_id != organization_id
+        ):
+            return None
+        return record
+
+    def get_scoped(self, mission_id: str, *, organization_id: str) -> MissionRecord | None:
+        """명시적 조직 경계 조회. 부재·다른 조직은 같은 ``None``이다(INV-060)."""
+
+        if not is_path_safe_identifier(organization_id):
+            return None
+        with self._lock:
+            record = self._by_id.get(mission_id)
+        if record is None or record.organization_id != organization_id:
+            return None
+        return record
 
     def list(self, site_id: str | None = None) -> list[MissionRecord]:
-        """``(issued_at, mission_id)`` 결정적 정렬 목록(선택적 ``site_id`` 필터)."""
+        """조직 문맥과 선택적 ``site_id``로 좁힌 결정적 목록.
+
+        HTTP 요청 안에서는 인증 dependency가 제공한 organizationId만 보인다. 요청
+        밖의 신뢰된 내부 작업은 문맥이 없으므로 기존처럼 전체 projection을 읽고,
+        그런 호출이 조직 경계가 필요하면 :meth:`list_scoped`를 사용한다.
+        """
         with self._lock:
             records = list(self._by_id.values())
+        organization_id = current_request_organization_id()
+        if organization_id is not None:
+            records = [r for r in records if r.organization_id == organization_id]
         if site_id is not None:
             records = [r for r in records if r.site_id == site_id]
+        records.sort(key=lambda r: (r.issued_at, r.mission_id))
+        return records
+
+    def list_scoped(
+        self, *, organization_id: str, site_id: str | None = None
+    ) -> builtins.list[MissionRecord]:
+        """요청 문맥에 의존하지 않는 명시적 조직 범위 목록."""
+
+        if not is_path_safe_identifier(organization_id):
+            return []
+        with self._lock:
+            records = [
+                record
+                for record in self._by_id.values()
+                if record.organization_id == organization_id
+                and (site_id is None or record.site_id == site_id)
+            ]
         records.sort(key=lambda r: (r.issued_at, r.mission_id))
         return records
 
@@ -479,7 +539,8 @@ class MissionStore:
 def precheck_issuance(
     *,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None],
+    site_lookup: Callable[[str, str], SiteLookupResult | None],
+    organization_id: str,
     site_id: str,
     mission_id: str,
     mission_type: MissionType,
@@ -525,7 +586,9 @@ def precheck_issuance(
     identity_verdict = validate_mission_identifiers(mission_id=mission_id, site_id=site_id)
     if identity_verdict is not None:
         return identity_verdict
-    site = site_lookup(site_id)
+    if not is_path_safe_identifier(organization_id):
+        return MissionRecordVerdict.UNKNOWN_SITE
+    site = site_lookup(site_id, organization_id)
     if site is None:
         return MissionRecordVerdict.UNKNOWN_SITE
     if requested_site_frame != site.site_frame:
@@ -562,6 +625,7 @@ class MissionRecordResponse(BaseModel):
     planned_coverage_ratio: float | None
     issued_at: datetime
     issued_by: str
+    organization_id: str
     # None 이면 배정을 신고하지 않은 임무다(MissionRecord.assigned_device_id 문서 참조).
     assigned_device_id: str | None
     # 파생 필드다 — journal 에 적힌 상태가 아니라 조회 시점에 CoverageReportStore 를
@@ -608,6 +672,7 @@ def _to_response(
         planned_coverage_ratio=record.planned_coverage_ratio,
         issued_at=record.issued_at,
         issued_by=record.issued_by,
+        organization_id=record.organization_id,
         assigned_device_id=record.assigned_device_id,
         coverage_completion_state=(
             latest_report.summary.completion_state if latest_report is not None else None

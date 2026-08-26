@@ -56,6 +56,8 @@ _KEY_ID = "core-issuer-key-1"
 
 _FIELD_OPERATOR_TOKEN = "field-operator-token"  # noqa: S105 — 테스트 고정 토큰
 _VIEWER_TOKEN = "viewer-token"  # noqa: S105
+_OTHER_ORGANIZATION_VIEWER_TOKEN = "other-organization-viewer-token"  # noqa: S105
+_OTHER_ORGANIZATION_FIELD_OPERATOR_TOKEN = "other-organization-field-operator-token"  # noqa: S105
 
 # 등록된 site 의 canonical siteFrame + 상태 — _contract_request 의 siteFrame 과
 # frame 이 동일해야 발급이 SITE_FRAME_MISMATCH 없이 통과한다(짝 무결성 대조).
@@ -88,8 +90,8 @@ class _MutableSiteLookup:
         self._site_frame = site_frame
         self._status = status
 
-    def __call__(self, site_id: str) -> SiteLookupResult | None:
-        if site_id != "site-001":
+    def __call__(self, site_id: str, organization_id: str) -> SiteLookupResult | None:
+        if site_id != "site-001" or organization_id != "legacy":
             return None
         return SiteLookupResult(site_frame=self._site_frame, status=self._status)
 
@@ -111,6 +113,26 @@ def _auth_registry() -> AuthRegistry:
                     kind=PrincipalKind.OPERATOR,
                     role=Role.FIELD_OPERATOR,
                     device_id=None,
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORGANIZATION_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="vw-other-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-other",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORGANIZATION_FIELD_OPERATOR_TOKEN),
+                principal=Principal(
+                    principal_id="do-other-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.FIELD_OPERATOR,
+                    device_id=None,
+                    organization_id="org-other",
                 ),
             ),
             PrincipalTokenRecord(
@@ -217,11 +239,17 @@ def _build_app(
     *,
     private_key: Ed25519PrivateKey,
     mission_store: MissionStore,
-    site_lookup: Callable[[str], SiteLookupResult | None] | None = None,
+    site_lookup: Callable[[str, str], SiteLookupResult | None] | None = None,
     coverage_report_store: CoverageReportStore | None = None,
 ) -> FastAPI:
     resolved_lookup = (
-        site_lookup if site_lookup is not None else (lambda site_id: _REGISTERED_SITES.get(site_id))
+        site_lookup
+        if site_lookup is not None
+        else (
+            lambda site_id, organization_id: (
+                _REGISTERED_SITES.get(site_id) if organization_id == "legacy" else None
+            )
+        )
     )
     app = FastAPI()
     mount_auth(app, _auth_registry())
@@ -298,6 +326,67 @@ def test_pair_issuance_round_trips_through_query_endpoints(tmp_path: Path) -> No
     )
 
     journal.close()
+
+
+def test_mission_reads_hide_other_organization_and_keep_legacy_journal_compatible(
+    tmp_path: Path,
+) -> None:
+    """Mission 원장도 Site/WorkOrder와 같은 조직 경계를 가진다(INV-060).
+
+    이 테스트는 sync FastAPI endpoint까지 request scope ContextVar가 전달되는지까지
+    검증한다. 목록은 빈 배열이고 상세/계약은 실제 부재와 동일한 404여야 하므로,
+    다른 조직 사용자가 mission 존재를 열거할 수 없다.
+    """
+
+    client, store, journal = _client(tmp_path)
+    issued = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(),
+        headers=_auth_header(_FIELD_OPERATOR_TOKEN),
+    )
+    assert issued.status_code == 201
+
+    assert store.get_scoped("mission-001", organization_id="legacy") is not None
+    assert store.get_scoped("mission-001", organization_id="org-other") is None
+
+    other_headers = _auth_header(_OTHER_ORGANIZATION_VIEWER_TOKEN)
+    listing = client.get("/v1/missions", headers=other_headers)
+    assert listing.status_code == 200
+    assert listing.json() == []
+
+    foreign_detail = client.get("/v1/missions/mission-001", headers=other_headers)
+    missing_detail = client.get("/v1/missions/does-not-exist", headers=other_headers)
+    assert foreign_detail.status_code == missing_detail.status_code == 404
+    assert foreign_detail.json() == missing_detail.json()
+
+    foreign_contract = client.get("/v1/missions/mission-001/contract", headers=other_headers)
+    missing_contract = client.get(
+        "/v1/missions/does-not-exist/contract", headers=other_headers
+    )
+    assert foreign_contract.status_code == missing_contract.status_code == 404
+    assert foreign_contract.json() == missing_contract.json()
+
+    # generator dependency의 reset이 빠지면 다음 요청도 org-other 문맥을 물려받는다.
+    # 같은 TestClient에서 legacy viewer가 다시 정상 조회하는 것으로 요청 간 누수를 막는다.
+    legacy_again = client.get("/v1/missions/mission-001", headers=_auth_header(_VIEWER_TOKEN))
+    assert legacy_again.status_code == 200
+
+    # 발급 전 site lookup도 같은 경계를 쓴다. 다른 조직의 siteId에 대해 서명된
+    # contract/KMZ를 만들어 주는 우회는 UNKNOWN_SITE로 닫힌다.
+    foreign_issue = client.post(
+        "/v1/missions/plans",
+        json=_plan_request(mission_id="other-org-attempt"),
+        headers=_auth_header(_OTHER_ORGANIZATION_FIELD_OPERATOR_TOKEN),
+    )
+    assert foreign_issue.status_code == 422
+    assert foreign_issue.json()["detail"] == "UNKNOWN_SITE"
+
+    journal.close()
+    replayed_journal, replayed_store = _open_store(tmp_path / "missions.jsonl")
+    replayed = replayed_store.get_scoped("mission-001", organization_id="legacy")
+    assert replayed is not None
+    assert replayed.organization_id == "legacy"
+    replayed_journal.close()
 
 
 # ── ① contract-only 경로도 동일하게 왕복(두 artifact_kind 모두 커버) ────────
@@ -1176,6 +1265,7 @@ def test_replay_accepts_intact_pair_record(tmp_path: Path) -> None:
     try:
         loaded = store.get("mission-p")
         assert loaded is not None
+        assert loaded.organization_id == "legacy", "v1.2 journal은 legacy 조직으로 호환 replay한다"
         assert loaded.plan_request is not None
     finally:
         journal.close()

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/acquisition-deployment-profile.v1.json",
+  "title": "AcquisitionDeploymentProfile v1.0",
+  "description": "RC-first Connected Edge 또는 향후 Dock 배치의 정적 제품 프로필. 장치 신원과 허용 transport를 분리해 바인딩한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "siteId",
+    "operatingMode",
+    "gatewayKind",
+    "gatewayTransports",
+    "internetGate",
+    "manifoldDirectMode",
+    "routingPolicy",
+    "mediaPolicy",
+    "msdkBridgeMode",
+    "edgeDeviceId",
+    "gatewayDeviceId"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "siteId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "operatingMode": { "enum": ["RC_ATTENDED", "DOCK_AUTOMATED"] },
+    "gatewayKind": { "enum": ["RC_PLUS_2", "DOCK_3"] },
+    "gatewayTransports": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["WIFI", "CELLULAR", "ETHERNET"] }
+    },
+    "internetGate": { "const": "REQUIRED_FOR_MISSION_ISSUE" },
+    "manifoldDirectMode": { "enum": ["DISABLED", "CONNECTIVITY_ADD_ON"] },
+    "routingPolicy": { "enum": ["RC_STANDARD", "ROLE_SPLIT_DIRECT_EDGE"] },
+    "mediaPolicy": { "const": "RESULTS_IMMEDIATE_RAW_POSTFLIGHT" },
+    "msdkBridgeMode": { "enum": ["DISABLED", "CONDITIONAL_PREFLIGHT_POSTFLIGHT"] },
+    "edgeDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "gatewayDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  }
+}

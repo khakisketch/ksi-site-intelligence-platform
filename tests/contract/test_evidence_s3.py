@@ -162,6 +162,18 @@ def test_view_url_does_not_sign_content_type() -> None:
     assert expires == 300
 
 
+def test_public_presigner_is_separate_from_internal_storage_client() -> None:
+    """현장에 반환하는 URL이 Docker 내부 DNS를 포함하지 않도록 signer를 분리한다."""
+    internal = FakeS3Client()
+    public = FakeS3Client()
+    storage = S3EvidenceStorage(
+        bucket="ksi-evidence", client=internal, presign_client=public
+    )
+    storage.presigned_get("sites/s1/image.jpg", ttl=timedelta(minutes=5))
+    assert internal.presign_calls == []
+    assert public.presign_calls[0][0] == "get_object"
+
+
 @pytest.mark.parametrize("ttl", [timedelta(0), timedelta(seconds=-1), timedelta(milliseconds=500)])
 def test_non_positive_ttl_is_refused(ttl: timedelta) -> None:
     """발급은 성공하고 사용만 실패하는 조합이 가장 진단하기 어렵다."""
@@ -219,3 +231,18 @@ def test_default_constructed_client_signs_with_sigv4() -> None:
     storage = S3EvidenceStorage(bucket="ksi-evidence", endpoint_url="http://minio.invalid:9000")
     config = storage._client.meta.config  # noqa: SLF001
     assert config.signature_version == "s3v4"  # type: ignore[attr-defined]
+
+
+def test_default_constructed_public_presigner_uses_public_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+    storage = S3EvidenceStorage(
+        bucket="ksi-evidence",
+        endpoint_url="http://minio:9000",
+        public_endpoint_url="https://objects.example.test",
+    )
+    url = storage.presigned_get("sites/s1/image.jpg", ttl=timedelta(minutes=5))
+    assert url.startswith("https://objects.example.test/ksi-evidence/")
+    assert "minio:9000" not in url

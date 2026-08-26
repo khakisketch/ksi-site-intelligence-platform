@@ -99,6 +99,7 @@ from ksi_core.auth import (
     Permission,
     Principal,
     PrincipalKind,
+    current_request_organization_id,
     require_permission,
     require_permission_any,
 )
@@ -1317,6 +1318,18 @@ class SourceMediaStore:
                     SourceBundleVerifyVerdict.STORE_UNAVAILABLE,
                     detail=JOURNAL_SEALED_DETAIL,
                 )
+            # 원본 번들은 Mission 에 종속된 Artifact 다. request principal 의
+            # organization scope를 MissionStore가 이미 강제하므로, 여기서도
+            # 먼저 같은 권위에 물어야 한다. bundle dict만 바로 읽으면 다른
+            # 조직의 PROCESSING_WORKER가 존재 여부를 알아내거나 검증 결과를
+            # 기록할 수 있다(INV-060).
+            if (
+                current_request_organization_id() is not None
+                and self._mission_store.get(mission_id) is None
+            ):
+                return VerificationResult(
+                    SourceBundleVerifyVerdict.UNKNOWN_MISSION, detail=_NOT_FOUND_DETAIL
+                )
             bundle = self._bundles.get(mission_id)
             if bundle is None:
                 return VerificationResult(
@@ -1413,7 +1426,44 @@ class SourceMediaStore:
 
     def get(self, mission_id: str) -> SourceMediaBundle | None:
         with self._lock:
+            # HTTP 요청에서만 MissionStore의 request scope가 현재 조직 밖의
+            # mission을 None으로 접는다. replay/복구 진단처럼 request scope가
+            # 없는 내부 호출은 이 Artifact projection 자체를 검사할 수 있어야
+            # 하므로 기존 동작을 유지한다.
+            if (
+                current_request_organization_id() is not None
+                and self._mission_store.get(mission_id) is None
+            ):
+                return None
             return self._bundles.get(mission_id)
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        """현재 request scope에서 Mission이 읽을 수 있는가.
+
+        ProcessingJob 같은 종속 Artifact 저장소가 자체 journal만 보고 jobId를
+        조회하면 조직 경계를 잃는다. Mission 원장은 그 경계의 권위이므로, 좁은
+        boolean 포트만 노출해 같은 판정을 재사용한다. request scope가 없을 때는
+        internal replay/diagnostic 호출의 기존 동작을 보존한다.
+        """
+        with self._lock:
+            return self._mission_store.get(mission_id) is not None
+
+    def mission_is_visible_for_organization(
+        self, mission_id: str, *, organization_id: str
+    ) -> bool:
+        """명시한 조직에서 Mission이 읽을 수 있는가.
+
+        request scope가 없는 SiteWorkspace projection도 종속 Artifact를 조직
+        경계 안에서 고를 수 있어야 한다. ambient scope를 대신하지 않고 별도
+        포트로 둬, 호출자가 두 경계를 모두 적용하도록 한다(INV-060/061).
+        """
+        with self._lock:
+            return (
+                self._mission_store.get_scoped(
+                    mission_id, organization_id=organization_id
+                )
+                is not None
+            )
 
     def assigned_device_id(self, mission_id: str) -> str | None:
         """``mission_id`` 에 배정된 장비 ID(없거나 mission 부재면 None).

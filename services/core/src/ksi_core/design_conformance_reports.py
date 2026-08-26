@@ -69,7 +69,12 @@ from ksi_core.api_base import (
     iso_utc,
 )
 from ksi_core.artifact_refs import ArtifactRefIssue, verify_artifact_ref
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.design_conformance_requests import (
     DesignConformanceRequestRecord,
     build_design_conformance_raster_object_key,
@@ -208,6 +213,11 @@ class DesignConformanceStore:
             raise DesignConformanceRecoveryError(
                 f"design-conformance journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        """Mission 원장 scope를 설계 대비 결과에도 그대로 적용한다(INV-060)."""
+
+        return self._mission_store.get(mission_id) is not None
 
     # ── 재생 ─────────────────────────────────────────────────────────────
 
@@ -703,6 +713,11 @@ class DesignConformanceStore:
             )
 
     def latest(self, mission_id: str) -> RecordedDesignConformance | None:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             recorded = self._by_mission.get(mission_id)
             return recorded[-1] if recorded else None
@@ -713,6 +728,11 @@ class DesignConformanceStore:
         """최신이 먼저. ``limit`` 은 위쪽(최신)부터 센다."""
         if limit is not None and limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             recorded = list(reversed(self._by_mission.get(mission_id, ())))
         return recorded if limit is None else recorded[:limit]
@@ -720,6 +740,11 @@ class DesignConformanceStore:
     def get(
         self, mission_id: str, design_conformance_id: str
     ) -> RecordedDesignConformance | None:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             for entry in reversed(self._by_mission.get(mission_id, ())):
                 if entry.report.design_conformance_id == design_conformance_id:
@@ -823,6 +848,10 @@ def build_design_conformance_reports_router(
         결과가 없으면 404 다 — 빈 목록을 주면 "아직 계산 안 됨"과 "잔량이 0"을
         소비자가 구분할 수 없다(``volume_reports``·``change_detection`` 과 동일).
         """
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(
+                status_code=404, detail="해당 설계 대비 잔량 리포트를 찾을 수 없다"
+            )
         entries = store.history(mission_id, limit=limit)
         if not entries:
             raise HTTPException(

@@ -131,7 +131,15 @@ info:
   # 근거 제약 Copilot 표면을 추가한다. 모든 새 표면은 organizationId
   # 범위로 조회되며 Copilot은 읽기 tool allowlist와 재관측 초안만
   # 허용하고 임무 발급·승인을 할 수 없다.
-  version: 1.24.0
+  # 1.25.0 — RC-first AcquisitionDeploymentProfile, 만료되는 ConnectivitySnapshot,
+  # 조직-scoped readiness와 GATEWAY_DEVICE heartbeat를 추가한다. 명시적 production
+  # rollout flag가 켜지면 Mission 발급은 readiness=false에서 막지만, 이미 활성화된
+  # 계약은 인터넷 단절로 무효화하지 않는다.
+  # 1.26.0 — 승인 회차별 AcquisitionRun, WorkOrder→Mission lineage, capability별
+  # Gateway operation receipt와 통합 acquisition progress를 추가한다. 장비 사실은
+  # 기존 MissionExecution/SourceMedia/Processing 원장에서 읽고, heartbeat 만료는
+  # 활성 계약을 이전 단계로 회귀시키지 않는다.
+  version: 1.26.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -153,8 +161,9 @@ paths:
       summary: Resolve the authenticated Principal and its effective permissions
       description: >-
         인증만 요구한다(인가 없음, ADR-KSI-008 §2). OPERATOR 는
-        role·permissions 를, EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST·
-        EDGE_MISSION_PULL·EDGE_EVIDENCE_WRITE 고정 권한을 반환한다.
+        role·permissions 를, GATEWAY_DEVICE는 deviceId·GATEWAY_CONNECTIVITY_WRITE를,
+        EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST·EDGE_MISSION_PULL·
+        EDGE_EVIDENCE_WRITE 고정 권한을 반환한다.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -163,6 +172,137 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/WhoAmIResponse' }
         '401': { description: '인증 실패(부재/형식오류/미지 토큰) — WWW-Authenticate: Bearer' }
+  /v1/sites/{site_id}/acquisition-profile:
+    put:
+      summary: Create or replace the Site acquisition deployment profile
+      description: >-
+        조직-scoped Site에 RC Plus 2/Manifold 또는 향후 Dock 장치 신원과 허용
+        transport를 바인딩한다. binding 변경 시 이전 heartbeat는 즉시 폐기한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcquisitionDeploymentProfileV1' }
+      responses:
+        '200':
+          description: Stored profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcquisitionDeploymentProfileV1' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_WRITE permission required }
+        '404': { description: Site not found in the principal organization }
+        '422': { description: Invalid profile or path/body Site mismatch }
+        '503': { description: Durable journal unavailable }
+    get:
+      summary: Get the Site acquisition deployment profile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcquisitionDeploymentProfileV1' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Profile not found in the principal organization }
+  /v1/sites/{site_id}/acquisition-readiness:
+    get:
+      summary: Evaluate readiness for issuing a new KSI Mission
+      description: >-
+        만료되지 않은 Gateway heartbeat, RC 인터넷, 장치 binding, 허용 transport,
+        하드웨어·펌웨어별 VERIFIED capability를 fail-closed로 대조한다. 이 응답은
+        기존에 서명·활성화된 Mission Contract를 중단하거나 무효화하지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Readiness projection, including blocked states
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcquisitionReadinessView' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+  /v1/gateway-sync/heartbeats:
+    post:
+      summary: Record an expiring Gateway connectivity and capability snapshot
+      description: >-
+        GATEWAY_DEVICE만 자기 gatewayDeviceId로 보고할 수 있다. 조직·Site·Edge
+        binding은 저장된 profile에서 대조하고, snapshot TTL은 최대 5분이다.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectivitySnapshotV1' }
+      responses:
+        '201':
+          description: Durable heartbeat receipt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectivitySnapshotV1' }
+        '401': { description: Authentication failed }
+        '403': { description: GATEWAY_DEVICE permission required }
+        '404': { description: Device binding or profile not found }
+        '422': { description: Invalid or future-dated snapshot }
+        '503': { description: Durable journal unavailable }
+  /v1/gateway-sync/operation-receipts:
+    post:
+      summary: Record one capability-specific Gateway operation receipt
+      description: >-
+        GATEWAY_DEVICE만 호출한다. principal의 organization/device와 Site profile,
+        Mission, AcquisitionRun binding을 대조한다. 같은 receiptId 전문 재전송은
+        200 멱등이고, 같은 idempotencyKey와 digest는 WIFI↔CELLULAR fallback에서도
+        유지할 수 있다. 다른 digest 재사용은 409다.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GatewayOperationReceiptRequest' }
+      responses:
+        '200':
+          description: Identical receipt retry; no second journal append
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayOperationReceiptV1' }
+        '201':
+          description: Durable operation receipt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayOperationReceiptV1' }
+        '401': { description: Authentication failed }
+        '403': { description: GATEWAY_DEVICE permission required }
+        '404': { description: Device, Site, Mission, or AcquisitionRun binding not found }
+        '409': { description: receiptId or idempotencyKey conflict }
+        '422': { description: Invalid transport, digest, or future observedAt }
+        '503': { description: Durable journal unavailable }
+  /v1/observation-work-orders/{work_order_id}/acquisition-progress:
+    get:
+      summary: Get canonical acquisition progress for the current WorkOrder cycle
+      description: >-
+        AcquisitionRun 연결과 기존 MissionExecution, SourceMedia, Processing 원장을
+        조합한다. READY_FOR_FLIGHT는 서명 activation 사실 뒤에만 표시하며 이후
+        네트워크 단절은 경고일 뿐 계약 취소나 상태 회귀가 아니다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped current-cycle progress
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcquisitionProgressView' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+        '404': { description: WorkOrder not found in the principal organization }
+        '503': { description: AcquisitionRun journal unavailable during reconciliation }
   /v1/sites/{site_id}/observation-schedules:
     post:
       summary: Create a recurring observation schedule
@@ -255,6 +395,23 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied }
         '404': { description: Site not found in the principal organization }
+  /v1/observation-work-orders:
+    get:
+      summary: List the organization work queue with optional Site, status, and action filters
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: siteId, schema: { type: [string, 'null'] } }
+        - { in: query, name: status, schema: { type: [string, 'null'] } }
+        - { in: query, name: actionGroup, schema: { enum: [DECISION_REQUIRED, IN_PROGRESS, COMPLETED, null] } }
+      responses:
+        '200':
+          description: Organization-scoped work queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Requested Site not found in the principal organization }
   /v1/observation-work-orders/{work_order_id}:
     get:
       summary: Get one organization-scoped observation work order
@@ -407,6 +564,131 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied or AI egress blocked }
         '404': { description: Site not found in the principal organization }
+  /v1/sites/{site_id}/workspace:
+    get:
+      summary: Project the Site workspace from existing organization-scoped ledgers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Site workspace without invented device or analysis facts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteWorkspaceView' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
+  /v1/sites/{site_id}/briefings/latest:
+    get:
+      summary: Get the latest durable grounded Site briefing
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Latest ready or explicitly blocked briefing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteBriefing' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site or briefing not found in the principal organization }
+  /v1/sites/{site_id}/briefings/refresh:
+    post:
+      summary: Generate and durably record a grounded Site briefing
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Ready or explicitly blocked briefing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteBriefing' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied or AI egress not allowed }
+        '404': { description: Site not found in the principal organization }
+  /v1/sites/{site_id}/copilot/conversations:
+    get:
+      summary: List durable Copilot conversations for one Site
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped conversations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversationListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
+    post:
+      summary: Create a durable Site-scoped Copilot conversation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                workOrderId: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: Created conversation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CopilotConversation' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site or WorkOrder not found in the principal organization }
+  /v1/copilot/conversations/{conversation_id}:
+    get:
+      summary: Get one conversation and its final stored messages
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: conversation_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Conversation detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversationDetailView' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Conversation not found in the principal organization }
+  /v1/copilot/conversations/{conversation_id}/messages:
+    post:
+      summary: Submit one idempotent question and store only the validated final answer
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: conversation_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clientMessageId, question]
+              properties:
+                clientMessageId: { type: string, minLength: 1, maxLength: 200 }
+                question: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '200':
+          description: Stored user and validated assistant message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CopilotExchangeResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Conversation not found in the principal organization }
+        '409': { description: clientMessageId reused with a different question }
   /v1/sites:
     post:
       summary: Register a new Site (initial status always UNMAPPED)
@@ -467,6 +749,12 @@ paths:
                   properties:
                     egressAllowed: { type: boolean }
                     jurisdiction: { type: string, minLength: 1 }
+                aiEgressAllowed:
+                  type: boolean
+                  default: false
+                  description: >-
+                    외부 AI 구조화 데이터 반출에 대한 별도 명시 동의. 생략은 false이며
+                    dataResidency.egressAllowed=true가 이 값을 암묵적으로 켜지 않는다.
       responses:
         '201':
           description: REGISTERED — verdict + 등록된 SiteView
@@ -3978,6 +4266,14 @@ paths:
               additionalProperties: false
               required: [contract, aoi, route, drone, wayline]
               properties:
+                workOrderId:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: >-
+                    같은 organization·Site의 APPROVED WorkOrder 현재 회차. 선택이며
+                    Mission 발급 레코드와 AcquisitionRun에 운영 계보로 남고 서명
+                    Mission Contract payload에는 들어가지 않는다.
                 contract:
                   type: object
                   additionalProperties: false
@@ -4247,11 +4543,217 @@ components:
   # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
   # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
   schemas:
+    AcquisitionDeploymentProfileV1:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, siteId, operatingMode, gatewayKind, gatewayTransports,
+         internetGate, manifoldDirectMode, routingPolicy, mediaPolicy, msdkBridgeMode,
+         edgeDeviceId, gatewayDeviceId]
+      properties:
+        schemaVersion: { const: '1.0' }
+        siteId: { type: string, minLength: 1, maxLength: 200 }
+        operatingMode: { enum: [RC_ATTENDED, DOCK_AUTOMATED] }
+        gatewayKind: { enum: [RC_PLUS_2, DOCK_3] }
+        gatewayTransports:
+          type: array
+          items: { enum: [WIFI, CELLULAR, ETHERNET] }
+        internetGate: { const: REQUIRED_FOR_MISSION_ISSUE }
+        manifoldDirectMode: { enum: [DISABLED, CONNECTIVITY_ADD_ON] }
+        routingPolicy: { enum: [RC_STANDARD, ROLE_SPLIT_DIRECT_EDGE] }
+        mediaPolicy: { const: RESULTS_IMMEDIATE_RAW_POSTFLIGHT }
+        msdkBridgeMode: { enum: [DISABLED, CONDITIONAL_PREFLIGHT_POSTFLIGHT] }
+        edgeDeviceId: { type: string, minLength: 1, maxLength: 200 }
+        gatewayDeviceId: { type: string, minLength: 1, maxLength: 200 }
+    CapabilityReceiptV1:
+      type: object
+      additionalProperties: false
+      required: [capability, hardwareModel, firmwareVersion, status, checkedAt, evidenceRef]
+      properties:
+        capability:
+          enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+        hardwareModel: { type: string, minLength: 1, maxLength: 100 }
+        firmwareVersion: { type: string, minLength: 1, maxLength: 100 }
+        status: { enum: [NOT_VERIFIED, VERIFIED, BLOCKED] }
+        checkedAt: { type: string, format: date-time }
+        evidenceRef: { type: [string, 'null'], maxLength: 500 }
+    ConnectivitySnapshotV1:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, snapshotId, siteId, gatewayDeviceId, edgeDeviceId, observedAt,
+         expiresAt, transport, internetReachable, gatewayState, edgeState, directEdgeState,
+         queuedEventCount, queuedMediaCount, lastSuccessReceiptId, missionContractSync,
+         rawMediaSync, capabilities]
+      properties:
+        schemaVersion: { const: '1.0' }
+        snapshotId: { type: string, minLength: 1, maxLength: 200 }
+        siteId: { type: string, minLength: 1, maxLength: 200 }
+        gatewayDeviceId: { type: string, minLength: 1, maxLength: 200 }
+        edgeDeviceId: { type: string, minLength: 1, maxLength: 200 }
+        observedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        transport: { enum: [WIFI, CELLULAR, ETHERNET] }
+        internetReachable: { type: boolean }
+        gatewayState: { enum: [CONNECTED, DISCONNECTED, UNKNOWN] }
+        edgeState: { enum: [CONNECTED, DISCONNECTED, UNKNOWN] }
+        directEdgeState: { enum: [DISABLED, CONNECTED, DISCONNECTED, UNKNOWN] }
+        queuedEventCount: { type: integer, minimum: 0 }
+        queuedMediaCount: { type: integer, minimum: 0 }
+        lastSuccessReceiptId: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+        missionContractSync: { enum: [NOT_STARTED, PENDING, ACTIVATED, COMPLETE, FAILED] }
+        rawMediaSync: { enum: [NOT_STARTED, PENDING, ACTIVATED, COMPLETE, FAILED] }
+        capabilities:
+          type: array
+          items: { $ref: '#/components/schemas/CapabilityReceiptV1' }
+    AcquisitionReadinessView:
+      type: object
+      additionalProperties: false
+      required:
+        [siteId, status, readyForMissionIssue, reasons, evaluatedAt, profile,
+         connectivity, inFlightContractPolicy]
+      properties:
+        siteId: { type: string }
+        status:
+          enum: [READY, PROFILE_MISSING, DOCK_ADAPTER_NOT_IMPLEMENTED,
+                 CONNECTIVITY_MISSING, CONNECTIVITY_STALE, GATEWAY_OFFLINE,
+                 INTERNET_REQUIRED, DEVICE_MISMATCH, TRANSPORT_NOT_ALLOWED,
+                 CAPABILITY_NOT_VERIFIED]
+        readyForMissionIssue: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+        evaluatedAt: { type: string, format: date-time }
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/AcquisitionDeploymentProfileV1'
+            - { type: 'null' }
+        connectivity:
+          oneOf:
+            - $ref: '#/components/schemas/ConnectivitySnapshotV1'
+            - { type: 'null' }
+        inFlightContractPolicy: { const: REMAINS_VALID_UNTIL_CONTRACT_EXPIRY }
+    GatewayOperationReceiptRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [receiptId, idempotencyKey, siteId, missionId, capability, transport,
+         outcome, artifactDigest, observedAt]
+      properties:
+        schemaVersion: { const: '1.0', default: '1.0' }
+        receiptId: { type: string, minLength: 1, maxLength: 200 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 300 }
+        siteId: { type: string, minLength: 1, maxLength: 200 }
+        missionId: { type: string, minLength: 1, maxLength: 200 }
+        capability:
+          enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+        transport: { enum: [WIFI, CELLULAR, ETHERNET] }
+        outcome: { enum: [SUCCEEDED, FAILED] }
+        artifactDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        observedAt: { type: string, format: date-time }
+    GatewayOperationReceiptV1:
+      type: object
+      additionalProperties: false
+      required:
+        [receiptId, idempotencyKey, siteId, missionId, capability, transport,
+         outcome, artifactDigest, observedAt, organizationId, gatewayDeviceId,
+         receivedAt]
+      properties:
+        schemaVersion: { const: '1.0', default: '1.0' }
+        receiptId: { type: string, minLength: 1, maxLength: 200 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 300 }
+        siteId: { type: string, minLength: 1, maxLength: 200 }
+        missionId: { type: string, minLength: 1, maxLength: 200 }
+        capability:
+          enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+        transport: { enum: [WIFI, CELLULAR, ETHERNET] }
+        outcome: { enum: [SUCCEEDED, FAILED] }
+        artifactDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        observedAt: { type: string, format: date-time }
+        organizationId: { type: string, minLength: 1, maxLength: 200 }
+        gatewayDeviceId: { type: string, minLength: 1, maxLength: 200 }
+        receivedAt: { type: string, format: date-time }
+    AcquisitionMissionProgressView:
+      type: object
+      additionalProperties: false
+      required: [missionId, issued, executionStatus]
+      properties:
+        missionId: { type: [string, 'null'] }
+        issued: { type: boolean }
+        executionStatus: { type: [string, 'null'] }
+    AcquisitionGatewayProgressView:
+      type: object
+      additionalProperties: false
+      required: [latestReceipt, succeededCapabilities, failedCapabilities]
+      properties:
+        latestReceipt:
+          oneOf:
+            - $ref: '#/components/schemas/GatewayOperationReceiptV1'
+            - { type: 'null' }
+        succeededCapabilities:
+          type: array
+          items:
+            enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+        failedCapabilities:
+          type: array
+          items:
+            enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+    AcquisitionContractProgressView:
+      type: object
+      additionalProperties: false
+      required: [state, activatedAt]
+      properties:
+        state: { enum: [NOT_ISSUED, PENDING, ACTIVATED] }
+        activatedAt: { type: [string, 'null'], format: date-time }
+    AcquisitionMediaProgressView:
+      type: object
+      additionalProperties: false
+      required: [state, itemCount, sourceBundleDigest]
+      properties:
+        state: { enum: [NOT_STARTED, SYNCING, VERIFYING, VERIFIED] }
+        itemCount: { type: integer, minimum: 0 }
+        sourceBundleDigest: { type: [string, 'null'] }
+    AcquisitionProcessingProgressView:
+      type: object
+      additionalProperties: false
+      required: [state, jobIds]
+      properties:
+        state: { enum: [NOT_STARTED, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        jobIds: { type: array, items: { type: string } }
+    AcquisitionProgressView:
+      type: object
+      additionalProperties: false
+      required:
+        [runId, workOrderId, siteId, cycleNumber, stage, nextAction, detail,
+         readiness, mission, gateway, contractActivation, media, processing,
+         evaluatedAt, inFlightContractPolicy]
+      properties:
+        schemaVersion: { const: '1.0', default: '1.0' }
+        runId: { type: [string, 'null'] }
+        workOrderId: { type: string }
+        siteId: { type: string }
+        cycleNumber: { type: integer, minimum: 1 }
+        stage:
+          enum: [WAITING_READINESS, WAITING_PLAN, MISSION_ISSUED, WAYLINE_PENDING,
+                 CONTRACT_PENDING, READY_FOR_FLIGHT, MEDIA_SYNCING, MEDIA_VERIFYING,
+                 PROCESSING, REVIEW_READY, BLOCKED]
+        nextAction:
+          enum: [APPROVE_WORK_ORDER, CHECK_ACQUISITION_READINESS, OPEN_MISSION_WIZARD,
+                 WAIT_GATEWAY_DELIVERY, WAIT_CONTRACT_ACTIVATION, OPERATE_WITH_PILOT_2,
+                 WAIT_MEDIA_SYNC, VERIFY_SOURCE_MEDIA, WAIT_PROCESSING, REVIEW_RESULTS,
+                 RESOLVE_BLOCKER, NONE]
+        detail: { type: string }
+        readiness: { $ref: '#/components/schemas/AcquisitionReadinessView' }
+        mission: { $ref: '#/components/schemas/AcquisitionMissionProgressView' }
+        gateway: { $ref: '#/components/schemas/AcquisitionGatewayProgressView' }
+        contractActivation: { $ref: '#/components/schemas/AcquisitionContractProgressView' }
+        media: { $ref: '#/components/schemas/AcquisitionMediaProgressView' }
+        processing: { $ref: '#/components/schemas/AcquisitionProcessingProgressView' }
+        evaluatedAt: { type: string, format: date-time }
+        inFlightContractPolicy: { const: REMAINS_VALID_UNTIL_CONTRACT_EXPIRY }
     SiteView:
       type: object
       required:
         [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi,
-         dataResidency]
+         dataResidency, aiEgressAllowed]
       properties:
         siteId: { type: string }
         name: { type: string }
@@ -4270,6 +4772,7 @@ components:
         # null 은 "반출 미선언"이고 그 뜻은 **반출 불가**다(INV-050). 화면이
         # 허용을 기본값처럼 보여주지 않게 null 을 그대로 싣는다.
         dataResidency: { type: [object, 'null'], additionalProperties: true }
+        aiEgressAllowed: { type: boolean }
         # null 은 "노후 기준 미선언"이고 그 뜻은 **판정하지 않음**이지 "최신"이
         # 아니다(ADR-KSI-019 G1). PUT /v1/sites/{site_id}/model-age-policy 로 선언·철회.
         modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
@@ -4277,7 +4780,7 @@ components:
       type: object
       required:
         [siteId, name, siteFrame, status, resumeTarget, registeredAt, updatedAt, aoi,
-         dataResidency, spatialModel]
+         dataResidency, aiEgressAllowed, spatialModel]
       properties:
         siteId: { type: string }
         name: { type: string }
@@ -4288,6 +4791,7 @@ components:
         updatedAt: { type: string }
         aoi: { type: [object, 'null'], additionalProperties: true }
         dataResidency: { type: [object, 'null'], additionalProperties: true }
+        aiEgressAllowed: { type: boolean }
         modelMaxAgeDays: { type: [integer, 'null'], minimum: 1 }
         spatialModel: { $ref: '#/components/schemas/SpatialModelView' }
     MissionExecutionHistoryEntry:
@@ -4381,7 +4885,7 @@ components:
           description: Principal이 속한 고객 조직. 조회·변경 범위의 첫 번째 경계다.
           type: string
         kind: { type: string }
-        # 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
+        # Gateway/Edge 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
         role: { type: [string, 'null'] }
         deviceId: { type: [string, 'null'] }
         permissions: { type: array, items: { type: string } }
@@ -4501,6 +5005,132 @@ components:
           items: { $ref: '#/components/schemas/CopilotCitation' }
         missingData: { type: array, items: { type: string } }
         reobservationDraftId: { type: [string, 'null'] }
+    CopilotConversation:
+      type: object
+      required: [conversationId, organizationId, siteId, status, createdBy, createdAt, updatedAt]
+      properties:
+        schemaVersion: { type: string }
+        conversationId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        workOrderId: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, CLOSED] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CopilotMessage:
+      type: object
+      required:
+        [messageId, conversationId, role, content, clientMessageId, answerStatus,
+         citations, missingData, reobservationDraftId, provider, model, plannerVersion,
+         createdBy, createdAt]
+      properties:
+        schemaVersion: { type: string }
+        messageId: { type: string }
+        conversationId: { type: string }
+        role: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string }
+        clientMessageId: { type: [string, 'null'] }
+        answerStatus: { enum: [ANSWERED, BLOCKED, null] }
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/CopilotCitation' }
+        missingData: { type: array, items: { type: string } }
+        reobservationDraftId: { type: [string, 'null'] }
+        provider: { type: [string, 'null'] }
+        model: { type: [string, 'null'] }
+        plannerVersion: { type: [string, 'null'] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    ConversationListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items: { $ref: '#/components/schemas/CopilotConversation' }
+    ConversationDetailView:
+      type: object
+      required: [conversation, messages]
+      properties:
+        conversation: { $ref: '#/components/schemas/CopilotConversation' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/CopilotMessage' }
+    CopilotExchangeResponse:
+      type: object
+      required: [conversation, userMessage, assistantMessage]
+      properties:
+        conversation: { $ref: '#/components/schemas/CopilotConversation' }
+        userMessage: { $ref: '#/components/schemas/CopilotMessage' }
+        assistantMessage: { $ref: '#/components/schemas/CopilotMessage' }
+    WorkspaceNextAction:
+      type: object
+      required: [kind, label, href, reason]
+      properties:
+        kind: { type: string }
+        label: { type: string }
+        href: { type: [string, 'null'] }
+        reason: { type: string }
+    WorkspaceWorkOrderSummary:
+      type: object
+      required: [workOrderId, name, status, updatedAt, missionCount]
+      properties:
+        workOrderId: { type: string }
+        name: { type: string }
+        status: { type: string }
+        updatedAt: { type: string, format: date-time }
+        missionCount: { type: integer }
+    WorkspaceAnalysisSummary:
+      type: object
+      required:
+        [status, processingJobId, capturedFrom, capturedTo, availableResultKinds,
+         sourceWatermark]
+      properties:
+        status: { type: string }
+        processingJobId: { type: [string, 'null'] }
+        capturedFrom: { type: [string, 'null'], format: date-time }
+        capturedTo: { type: [string, 'null'], format: date-time }
+        availableResultKinds: { type: array, items: { type: string } }
+        sourceWatermark: { type: [string, 'null'] }
+    SiteWorkspaceView:
+      type: object
+      required:
+        [siteId, siteName, siteStatus, latestObservationAt, reviewItemCount,
+         activeWorkOrderCount, latestWorkOrder, latestAnalysis, nextAction]
+      properties:
+        schemaVersion: { type: string }
+        siteId: { type: string }
+        siteName: { type: string }
+        siteStatus: { type: string }
+        latestObservationAt: { type: [string, 'null'], format: date-time }
+        reviewItemCount: { type: integer }
+        activeWorkOrderCount: { type: integer }
+        latestWorkOrder:
+          oneOf: [{ $ref: '#/components/schemas/WorkspaceWorkOrderSummary' }, { type: 'null' }]
+        latestAnalysis: { $ref: '#/components/schemas/WorkspaceAnalysisSummary' }
+        nextAction: { $ref: '#/components/schemas/WorkspaceNextAction' }
+    SiteBriefing:
+      type: object
+      required:
+        [briefingId, organizationId, siteId, status, whatChanged, whyItMatters,
+         decisionPrompt, citations, uncertainty, sourceWatermark, missingData, generatedAt]
+      properties:
+        schemaVersion: { type: string }
+        briefingId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        status: { type: string, enum: [READY, BLOCKED] }
+        whatChanged: { type: string }
+        whyItMatters: { type: string }
+        decisionPrompt: { type: string }
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/CopilotCitation' }
+        uncertainty: { type: string }
+        sourceWatermark: { type: string }
+        missingData: { type: array, items: { type: string } }
+        generatedAt: { type: string, format: date-time }
     IngestResponse:
       type: object
       required: [verdict]
@@ -4679,7 +5309,7 @@ components:
       type: object
       required:
         [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
-         assignee, edgeDeviceId, occurredAt, receivedAt]
+         assignee, evidenceCount, edgeDeviceId, occurredAt, receivedAt]
       properties:
         # 서버 정본 신원 = {edgeDeviceId}::{eventId}. eventId 는 장비 로컬이라 단독으론 충돌한다.
         eventKey: { type: string }
@@ -4691,6 +5321,10 @@ components:
         severity: { type: [string, 'null'] }
         triage: { type: string }
         assignee: { type: [string, 'null'] }
+        evidenceCount:
+          type: integer
+          minimum: 0
+          description: 폐기되지 않아 현재 열람 가능한 근거 artifact 수
         edgeDeviceId: { type: string }
         occurredAt: { type: string, format: date-time }
         receivedAt: { type: string, format: date-time }
@@ -4995,7 +5629,7 @@ components:
       type: object
       required:
         [eventKey, eventId, siteId, missionId, eventType, status, severity, triage,
-         assignee, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle,
+         assignee, evidenceCount, edgeDeviceId, occurredAt, receivedAt, lastConflictAt, bundle,
          bundleDigest, transitions, evidence]
       properties:
         eventKey: { type: string }
@@ -5007,6 +5641,10 @@ components:
         severity: { type: [string, 'null'] }
         triage: { type: string }
         assignee: { type: [string, 'null'] }
+        evidenceCount:
+          type: integer
+          minimum: 0
+          description: 폐기되지 않아 현재 열람 가능한 근거 artifact 수
         edgeDeviceId: { type: string }
         occurredAt: { type: string, format: date-time }
         receivedAt: { type: string, format: date-time }
@@ -5082,12 +5720,18 @@ components:
         서버가 발급 시점에 강제한다).
       type: object
       required:
-        [missionId, siteId, missionType, artifactKind, kmzSha256, routePattern,
+        [missionId, siteId, organizationId, missionType, artifactKind, kmzSha256, routePattern,
          waypointCount, plannedCoverageRatio, issuedAt, issuedBy, assignedDeviceId,
          coverageCompletionState, derivedFrom]
       properties:
         missionId: { type: string }
         siteId: { type: string }
+        organizationId:
+          type: string
+          description: >-
+            이 발급 원장이 귀속된 조직. 모든 Mission 조회는 인증 Principal의
+            organizationId로 먼저 범위가 좁혀지며, 다른 조직의 레코드는 존재하지
+            않는 것과 같은 404로 처리된다(INV-060).
         missionType: { type: string }
         artifactKind: { type: string }
         # 경로 산출물이 없는 발급(계약만)은 이 넷이 전부 null 이다.
@@ -5942,9 +6586,13 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      bearerFormat: OIDC operator JWT or opaque device credential
       description: >-
-        Bearer 토큰 인증(ADR-KSI-008 §2) — 서버는 sha256(token) digest →
-        Principal 매핑만 보유하고 토큰 원문을 저장하지 않는다. 인증 실패는
+        Bearer 인증(ADR-KSI-008 §2, ADR-KSI-024) — 사람 OPERATOR는 배포 mode에
+        따라 OIDC JWT를 사용하며 signature, iss, aud, exp, nbf, kid, algorithm과
+        KSI principal/organization/role claim을 검증한다. GATEWAY_DEVICE,
+        EDGE_DEVICE, PROCESSING_WORKER는 별도 opaque 장비 자격을 사용하고 서버는
+        sha256(token) digest → Principal 매핑만 보유하며 원문을 저장하지 않는다. 인증 실패는
         사유(부재/형식오류/미지 토큰)를 가리지 않는 동일 401(WWW-Authenticate:
         Bearer) — detail 로 존재 여부 힌트를 주지 않는다. 공개 allowlist는
         /health·/capabilities 와 FastAPI 기본 문서 라우트(/openapi.json·

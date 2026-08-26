@@ -44,7 +44,12 @@ from ksi_core.api_base import (
     iso_utc,
 )
 from ksi_core.artifact_refs import ArtifactRefIssue, verify_artifact_pair
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
 if TYPE_CHECKING:
@@ -132,6 +137,9 @@ class VolumeChangeStore:
             raise VolumeChangeRecoveryError(
                 f"volume-change journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        return self._mission_store.get(mission_id) is not None
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -300,6 +308,11 @@ class VolumeChangeStore:
         return VolumeChangeRecordResult(verdict, detail=detail)
 
     def latest(self, mission_id: str) -> RecordedVolumeChange | None:
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             recorded = self._by_mission.get(mission_id)
             return recorded[-1] if recorded else None
@@ -310,6 +323,11 @@ class VolumeChangeStore:
         """최신이 먼저. ``limit`` 은 위쪽(최신)부터 센다."""
         if limit is not None and limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             recorded = list(reversed(self._by_mission.get(mission_id, ())))
         return recorded if limit is None else recorded[:limit]
@@ -377,6 +395,10 @@ def build_volume_reports_router(store: VolumeChangeStore) -> APIRouter:
         결과가 없으면 404 다 — 빈 목록을 주면 "아직 계산 안 됨"과 "변화가
         없음"을 소비자가 구분할 수 없다(``change_detection.py`` 와 동일).
         """
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(
+                status_code=404, detail="해당 임무의 체적 변화 리포트를 찾을 수 없다"
+            )
         entries = store.history(mission_id, limit=limit)
         if not entries:
             raise HTTPException(

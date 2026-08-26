@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/connectivity-snapshot.v1.json",
+  "title": "ConnectivitySnapshot v1.0",
+  "description": "Gateway가 관측한 유효기간 제한 연결·capability·동기화 상태. Core는 만료된 snapshot으로 새 Mission을 Ready 처리하지 않는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "siteId",
+    "gatewayDeviceId",
+    "edgeDeviceId",
+    "observedAt",
+    "expiresAt",
+    "transport",
+    "internetReachable",
+    "gatewayState",
+    "edgeState",
+    "directEdgeState",
+    "queuedEventCount",
+    "queuedMediaCount",
+    "lastSuccessReceiptId",
+    "missionContractSync",
+    "rawMediaSync",
+    "capabilities"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "snapshotId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "siteId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "gatewayDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "edgeDeviceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "transport": { "enum": ["WIFI", "CELLULAR", "ETHERNET"] },
+    "internetReachable": { "type": "boolean" },
+    "gatewayState": { "$ref": "#/$defs/connectionState" },
+    "edgeState": { "$ref": "#/$defs/connectionState" },
+    "directEdgeState": { "enum": ["DISABLED", "CONNECTED", "DISCONNECTED", "UNKNOWN"] },
+    "queuedEventCount": { "type": "integer", "minimum": 0 },
+    "queuedMediaCount": { "type": "integer", "minimum": 0 },
+    "lastSuccessReceiptId": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "missionContractSync": { "$ref": "#/$defs/syncState" },
+    "rawMediaSync": { "$ref": "#/$defs/syncState" },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/capabilityReceipt" }
+    }
+  },
+  "$defs": {
+    "connectionState": { "enum": ["CONNECTED", "DISCONNECTED", "UNKNOWN"] },
+    "syncState": { "enum": ["NOT_STARTED", "PENDING", "ACTIVATED", "COMPLETE", "FAILED"] },
+    "capabilityReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "hardwareModel",
+        "firmwareVersion",
+        "status",
+        "checkedAt",
+        "evidenceRef"
+      ],
+      "properties": {
+        "capability": {
+          "enum": ["WAYLINE_DELIVERY", "EDGE_DOWNLINK", "EDGE_UPLINK", "MEDIA_PULL", "MEDIA_UPLOAD"]
+        },
+        "hardwareModel": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "firmwareVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "status": { "enum": ["NOT_VERIFIED", "VERIFIED", "BLOCKED"] },
+        "checkedAt": { "type": "string", "format": "date-time" },
+        "evidenceRef": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    }
+  }
+}

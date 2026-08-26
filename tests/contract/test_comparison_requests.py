@@ -81,6 +81,8 @@ _SCHEMA = _REPO_ROOT / "contracts" / "schemas" / "comparison-request.v1.json"
 _ADMIN_TOKEN = "cmp-admin-token"  # noqa: S105 -- 테스트 고정값
 _WORKER_TOKEN = "cmp-worker-token"  # noqa: S105
 _VIEWER_TOKEN = "cmp-viewer-token"  # noqa: S105
+_OTHER_ORG_VIEWER_TOKEN = "cmp-other-org-viewer-token"  # noqa: S105 -- 조직 격리 회귀 고정값
+_OTHER_ORG_WORKER_TOKEN = "cmp-other-org-worker-token"  # noqa: S105 -- 조직 격리 회귀 고정값
 _SITE_ID = "site-cmp-001"
 _BASELINE_MISSION_ID = "mission-cmp-baseline"
 _CURRENT_MISSION_ID = "mission-cmp-current"
@@ -128,6 +130,26 @@ def _registry() -> AuthRegistry:
                     device_id=None,
                 ),
             ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORG_VIEWER_TOKEN),
+                principal=Principal(
+                    principal_id="other-org-viewer",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_OTHER_ORG_WORKER_TOKEN),
+                principal=Principal(
+                    principal_id="other-org-worker",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
+                    organization_id="org-2",
+                ),
+            ),
         ]
     )
 
@@ -165,6 +187,7 @@ def _mission_store(tmp_path: Path, *, path: str = "missions.jsonl") -> MissionSt
                     planned_coverage_ratio=None,
                     issued_at=_NOW,
                     issued_by="op-1",
+                    organization_id="org-2" if mission_id == _OTHER_MISSION_ID else "legacy",
                 )
             ).value
             == "RECORDED"
@@ -1097,6 +1120,27 @@ def test_http_worker_can_list_pending_minimal_fields(fx: _Fixture) -> None:
 def test_http_unknown_request_is_404(fx: _Fixture) -> None:
     client = _client(fx.store)
     assert client.get("/v1/comparison-requests/no-such-request").status_code == 404
+
+
+def test_http_other_organization_cannot_read_or_lease_foreign_comparison_request(
+    fx: _Fixture,
+) -> None:
+    """Request id, Mission path, worker queue 모두 Mission의 org scope를 상속한다."""
+
+    result = fx.create()
+    assert result.record is not None
+    request_id = result.record.request_id
+
+    viewer = _client(fx.store, token=_OTHER_ORG_VIEWER_TOKEN)
+    assert (
+        viewer.get(f"/v1/missions/{_CURRENT_MISSION_ID}/comparison-requests").status_code == 404
+    )
+    assert viewer.get(f"/v1/comparison-requests/{request_id}").status_code == 404
+
+    worker = _client(fx.store, token=_OTHER_ORG_WORKER_TOKEN)
+    assert worker.get("/v1/comparison-requests").json()["requests"] == []
+    assert worker.post(f"/v1/comparison-requests/{request_id}/lease").status_code == 404
+    assert worker.get(f"/v1/comparison-requests/{request_id}/input").status_code == 404
 
 
 # ── 종단 사슬: 접수 API → 실제 워커(HttpCoreClient) → 결과 조회 ─────────────

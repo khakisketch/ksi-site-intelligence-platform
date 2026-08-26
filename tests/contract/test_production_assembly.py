@@ -37,6 +37,7 @@ _DEV_TOKEN_LITERALS = [
     "dev-field-operator-token",
     "dev-viewer-token",
     "dev-edge-device-token",
+    "dev-gateway-device-token",
     "dev-processing-worker-token",
 ]
 
@@ -128,6 +129,53 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
 def _apply_env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
     for key, value in env.items():
         monkeypatch.setenv(key, value)
+
+
+def test_copilot_runtime_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ksi_core.production import _copilot_runtime_config_env
+
+    monkeypatch.delenv("KSI_COPILOT_ENABLED", raising=False)
+    assert _copilot_runtime_config_env() is None
+
+
+def test_enabled_copilot_requires_complete_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _copilot_runtime_config_env
+
+    key_file = tmp_path / "copilot-api-key"
+    key_file.write_text("test-only-key", encoding="utf-8")
+    monkeypatch.setenv("KSI_COPILOT_ENABLED", "true")
+    monkeypatch.setenv("KSI_COPILOT_API_KEY_FILE", str(key_file))
+    monkeypatch.setenv("KSI_COPILOT_BASE_URL", "https://provider.example")
+    monkeypatch.delenv("KSI_COPILOT_MODEL", raising=False)
+    monkeypatch.setenv("KSI_COPILOT_PLANNER_VERSION", "planner-1")
+
+    with pytest.raises(RuntimeError, match="KSI_COPILOT_MODEL"):
+        _copilot_runtime_config_env()
+
+
+def test_copilot_runtime_reads_secret_file_reference_without_reading_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _copilot_runtime_config_env
+
+    key_file = tmp_path / "copilot-api-key"
+    key_file.write_text("test-only-key", encoding="utf-8")
+    monkeypatch.setenv("KSI_COPILOT_ENABLED", "true")
+    monkeypatch.setenv("KSI_COPILOT_API_KEY_FILE", str(key_file))
+    monkeypatch.setenv("KSI_COPILOT_BASE_URL", "https://provider.example/v1")
+    monkeypatch.setenv("KSI_COPILOT_MODEL", "provider-model")
+    monkeypatch.setenv("KSI_COPILOT_PLANNER_VERSION", "planner-2")
+    monkeypatch.setenv("KSI_COPILOT_REQUEST_TIMEOUT_SECONDS", "12.5")
+
+    config = _copilot_runtime_config_env()
+
+    assert config is not None
+    assert config.api_key_file == key_file
+    assert config.model == "provider-model"
+    assert config.timeout_seconds == 12.5
+    assert "test-only-key" not in repr(config)
 
 
 @pytest.mark.parametrize("missing", _ALL_REQUIRED_ENV)
@@ -388,6 +436,123 @@ def test_expose_docs_defaults_closed_and_opens_when_true(
     open_app = build_production_app()
     open_client = TestClient(open_app)
     assert open_client.get("/docs").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, False), ("false", False), ("0", False), ("true", True), ("1", True)],
+)
+def test_acquisition_issue_gate_requires_explicit_rollout_flag(
+    value: str | None, expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _acquisition_issue_gate_env
+
+    if value is None:
+        monkeypatch.delenv("KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED", value)
+    assert _acquisition_issue_gate_env() is expected
+
+
+def test_acquisition_issue_gate_rejects_ambiguous_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import _acquisition_issue_gate_env
+
+    monkeypatch.setenv("KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED", "enabled")
+    with pytest.raises(RuntimeError, match="true.*false"):
+        _acquisition_issue_gate_env()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, True), ("false", False), ("0", False), ("true", True), ("1", True)],
+)
+def test_acquisition_coordination_has_independent_rollback_flag(
+    value: str | None, expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _acquisition_coordination_env
+
+    if value is None:
+        monkeypatch.delenv("KSI_CORE_ACQUISITION_COORDINATION_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("KSI_CORE_ACQUISITION_COORDINATION_ENABLED", value)
+    assert _acquisition_coordination_env() is expected
+
+
+def test_acquisition_coordination_rejects_ambiguous_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import _acquisition_coordination_env
+
+    monkeypatch.setenv("KSI_CORE_ACQUISITION_COORDINATION_ENABLED", "enabled")
+    with pytest.raises(RuntimeError, match="true.*false"):
+        _acquisition_coordination_env()
+
+
+def test_human_auth_mode_defaults_opaque_for_existing_local_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.auth import HumanAuthMode
+    from ksi_core.production import _human_auth_config_env
+
+    monkeypatch.delenv("KSI_CORE_HUMAN_AUTH_MODE", raising=False)
+    mode, config = _human_auth_config_env()
+    assert mode is HumanAuthMode.OPAQUE
+    assert config is None
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["KSI_CORE_OIDC_ISSUER", "KSI_CORE_OIDC_AUDIENCE", "KSI_CORE_OIDC_JWKS_URL"],
+)
+def test_oidc_human_auth_requires_all_verification_inputs(
+    missing: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _human_auth_config_env
+
+    monkeypatch.setenv("KSI_CORE_HUMAN_AUTH_MODE", "OIDC")
+    monkeypatch.setenv("KSI_CORE_OIDC_ISSUER", "https://issuer.example.test")
+    monkeypatch.setenv("KSI_CORE_OIDC_AUDIENCE", "ksi-core")
+    monkeypatch.setenv("KSI_CORE_OIDC_JWKS_URL", "https://issuer.example.test/jwks.json")
+    monkeypatch.delenv(missing, raising=False)
+    with pytest.raises(RuntimeError, match=missing):
+        _human_auth_config_env()
+
+
+def test_oidc_human_auth_rejects_unknown_mode_and_algorithm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import _human_auth_config_env
+
+    monkeypatch.setenv("KSI_CORE_HUMAN_AUTH_MODE", "MAYBE")
+    with pytest.raises(RuntimeError, match="OPAQUE, DUAL, OIDC"):
+        _human_auth_config_env()
+
+    monkeypatch.setenv("KSI_CORE_HUMAN_AUTH_MODE", "OIDC")
+    monkeypatch.setenv("KSI_CORE_OIDC_ISSUER", "https://issuer.example.test")
+    monkeypatch.setenv("KSI_CORE_OIDC_AUDIENCE", "ksi-core")
+    monkeypatch.setenv("KSI_CORE_OIDC_JWKS_URL", "https://issuer.example.test/jwks.json")
+    monkeypatch.setenv("KSI_CORE_OIDC_ALLOWED_ALGORITHMS", "none")
+    with pytest.raises(RuntimeError, match="RS256, ES256"):
+        _human_auth_config_env()
+
+
+def test_acquisition_coordination_rollback_keeps_legacy_mission_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    env["KSI_CORE_ACQUISITION_COORDINATION_ENABLED"] = "false"
+    _apply_env(monkeypatch, env)
+    app = build_production_app()
+    paths = set(app.openapi()["paths"])
+
+    assert "/v1/missions/plans" in paths
+    assert "/v1/observation-work-orders/{work_order_id}/acquisition-progress" not in paths
+    assert "/v1/gateway-sync/operation-receipts" not in paths
+    assert not (Path(env["KSI_CORE_DATA_DIR"]) / "acquisition-runs.jsonl").exists()
 
 
 # ── 4. assemble_app 이 create_app 의 모든 *_store 파라미터를 채운다 ─────────

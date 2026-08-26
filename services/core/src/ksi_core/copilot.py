@@ -278,6 +278,8 @@ class CopilotService:
                 "content": (
                     "KSI의 검증된 도구 결과만 사용한다. 수치를 직접 계산하지 않고, "
                     "비행 좌표·안전 명령·승인을 만들지 않는다. 근거가 부족하면 BLOCKED로 답한다."
+                    " 최종 답변은 answer 문자열과 citationIds 문자열 배열만 가진 JSON object로 "
+                    "반환한다. citationIds에는 이번 대화에서 도구가 반환한 ID만 사용한다."
                 ),
             },
             {"role": "user", "content": request.question},
@@ -290,6 +292,22 @@ class CopilotService:
         for _round in range(_MAX_TOOL_ROUNDS):
             turn = self._model.complete(messages=tuple(messages), tools=_TOOL_SPECS)
             if turn.tool_calls:
+                # OpenAI-compatible providers require the assistant tool-call frame
+                # immediately before the matching tool messages. Keeping this in the
+                # provider-neutral transcript also makes replay/debugging deterministic.
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "toolCalls": [
+                            {
+                                "id": call.call_id,
+                                "name": call.name,
+                                "arguments": call.arguments,
+                            }
+                            for call in turn.tool_calls
+                        ],
+                    }
+                )
                 for call in turn.tool_calls:
                     call_count += 1
                     if call_count > _MAX_TOOL_CALLS:

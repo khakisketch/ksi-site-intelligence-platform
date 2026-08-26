@@ -770,6 +770,8 @@ def test_upload_url_is_issued_after_permission_check(
     assert body["objectKey"] == "sites/site-1/events/dev-1/evt-1/clip-01"
     assert body["uploadUrl"].startswith("https://storage.invalid/")
     assert storage.put_calls[0][0] == body["objectKey"]
+    listed = client.get("/v1/events", headers=_auth(_VIEWER_TOKEN)).json()["events"]
+    assert listed[0]["evidenceCount"] == 1
 
 
 def test_upload_requires_triage_permission(
@@ -807,6 +809,8 @@ def test_tombstoned_evidence_reads_as_gone_not_missing(
     response = client.get("/v1/events/dev-1::evt-1/evidence/clip-01", headers=_auth())
     assert response.status_code == 410
     assert not storage.get_calls, "폐기된 객체에 URL 을 발급했다"
+    listed = client.get("/v1/events", headers=_auth(_VIEWER_TOKEN)).json()["events"]
+    assert listed[0]["evidenceCount"] == 0
 
 
 def test_storage_outage_is_not_reported_as_missing_evidence(

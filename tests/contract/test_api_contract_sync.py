@@ -21,12 +21,17 @@ from typing import Any
 import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
+from ksi_core.copilot_conversations import (
+    CopilotConversationService,
+    CopilotConversationStore,
+)
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.design_conformance_reports import DesignConformanceStore
@@ -47,6 +52,11 @@ from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
+from ksi_core.site_workspace import (
+    SiteBriefingService,
+    SiteBriefingStore,
+    SiteWorkspaceProjector,
+)
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -193,10 +203,52 @@ def _max_assembly(tmp_path: Path) -> Any:
             site_store.get_scoped(site_id, organization_id) is not None
         ),
     )
+    acquisition_connectivity_store = AcquisitionConnectivityStore(
+        DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
+    acquisition_coordination_store = AcquisitionCoordinationStore(
+        DurableJournal(tmp_path / "acquisition-runs.jsonl")
+    )
     copilot_service = CopilotService(
         model=_ContractSyncCopilotModel(),
         backend=_ContractSyncCopilotBackend(),
         planner_version="contract-sync",
+    )
+    event_store = EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl"))
+    site_workspace_projector = SiteWorkspaceProjector(
+        site_store=site_store,
+        work_order_store=observation_work_order_store,
+        processing_job_store=processing_job_store,
+        event_store=event_store,
+    )
+    conversation_service = CopilotConversationService(
+        store=CopilotConversationStore(
+            DurableJournal(tmp_path / "copilot-conversations.jsonl"),
+            site_exists=lambda site_id, organization_id: (
+                site_store.get_scoped(site_id, organization_id) is not None
+            ),
+            work_order_matches=lambda work_order_id, organization_id, site_id: (
+                (order := observation_work_order_store.get(
+                    work_order_id, organization_id=organization_id
+                ))
+                is not None
+                and order.site_id == site_id
+            ),
+        ),
+        copilot=copilot_service,
+        provider="contract-sync",
+        model="contract-sync",
+        planner_version="contract-sync",
+    )
+    briefing_service = SiteBriefingService(
+        store=SiteBriefingStore(
+            DurableJournal(tmp_path / "site-briefings.jsonl"), site_store=site_store
+        ),
+        copilot=copilot_service,
+        workspace=site_workspace_projector,
     )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
@@ -210,7 +262,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         edge_dispatch_store=edge_dispatch_store,
-        event_store=EventStore(DurableJournal(tmp_path / "events" / "journal.jsonl")),
+        event_store=event_store,
         site_store=site_store,
         mission_store=mission_store,
         coverage_report_store=CoverageReportStore(
@@ -252,7 +304,12 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         work_area_store=work_area_store,
         observation_work_order_store=observation_work_order_store,
+        acquisition_connectivity_store=acquisition_connectivity_store,
+        acquisition_coordination_store=acquisition_coordination_store,
         copilot_service=copilot_service,
+        copilot_conversation_service=conversation_service,
+        site_workspace_projector=site_workspace_projector,
+        site_briefing_service=briefing_service,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),

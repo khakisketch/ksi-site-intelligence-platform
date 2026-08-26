@@ -49,7 +49,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.design_conformance_report import DiffRasterRef
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 from ksi_event_contracts.region_extraction_policy import (
@@ -58,7 +58,12 @@ from ksi_event_contracts.region_extraction_policy import (
 )
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
@@ -239,6 +244,17 @@ class RegionExtractionRequestStore:
                 f"region-extraction-requests journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
 
+    def _visible_in_request(self, record: RegionExtractionRequestRecord) -> bool:
+        """변화 영역 추출 요청도 Mission의 조직 scope 밖에서는 존재하지 않는다."""
+
+        return (
+            current_request_organization_id() is None
+            or self._mission_store.get(record.mission_id) is not None
+        )
+
+    def mission_is_visible(self, mission_id: str) -> bool:
+        return self._mission_store.get(mission_id) is not None
+
     # ── 재생 ─────────────────────────────────────────────────────────────
 
     def _replay(self, journal: DurableJournal) -> None:
@@ -413,7 +429,8 @@ class RegionExtractionRequestStore:
 
     def get(self, request_id: str) -> RegionExtractionRequestRecord | None:
         with self._lock:
-            return self._requests.get(request_id)
+            record = self._requests.get(request_id)
+        return record if record is not None and self._visible_in_request(record) else None
 
     def get_by_change_region_set_id(
         self, change_region_set_id: str
@@ -423,6 +440,11 @@ class RegionExtractionRequestStore:
         return self.get(change_region_set_id)
 
     def list_for_mission(self, mission_id: str) -> list[RegionExtractionRequestRecord]:
+        if (
+            current_request_organization_id() is not None
+            and self._mission_store.get(mission_id) is None
+        ):
+            return []
         with self._lock:
             records = [r for r in self._requests.values() if r.mission_id == mission_id]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id), reverse=True)
@@ -437,6 +459,8 @@ class RegionExtractionRequestStore:
             records = [
                 r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
             ]
+        if current_request_organization_id() is not None:
+            records = [r for r in records if self._visible_in_request(r)]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id))[:limit]
 
     @staticmethod
@@ -474,7 +498,7 @@ class RegionExtractionRequestStore:
                     RegionExtractionRequestVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return RegionExtractionRequestResult(
                     RegionExtractionRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -541,7 +565,7 @@ class RegionExtractionRequestStore:
                     RegionExtractionRequestVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             record = self._requests.get(request_id)
-            if record is None:
+            if record is None or not self._visible_in_request(record):
                 return RegionExtractionRequestResult(
                     RegionExtractionRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
@@ -713,6 +737,8 @@ def build_region_extraction_requests_router(
         _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
     ) -> RegionExtractionRequestListResponse:
         """그 임무의 변화 영역 추출 요청 이력(최신 우선)."""
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return RegionExtractionRequestListResponse(
             requests=[_to_view(r) for r in store.list_for_mission(mission_id)]
         )

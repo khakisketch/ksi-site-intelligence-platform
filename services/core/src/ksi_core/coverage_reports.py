@@ -70,7 +70,13 @@ from ksi_core.api_base import (
     CamelModel,
     iso_utc,
 )
-from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
+from ksi_core.auth import (
+    Permission,
+    Principal,
+    PrincipalKind,
+    current_request_organization_id,
+    require_permission,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 
 if TYPE_CHECKING:
@@ -287,6 +293,11 @@ class CoverageReportStore:
                 f"coverage journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
 
+    def mission_is_visible(self, mission_id: str) -> bool:
+        """Mission 원장의 조직 scope를 coverage·거부 감사 이력에도 적용한다."""
+
+        return self._mission_store.get(mission_id) is not None
+
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
             kind = raw.get("kind")
@@ -485,6 +496,11 @@ class CoverageReportStore:
 
     def latest_recorded(self, mission_id: str) -> RecordedCoverageReport | None:
         """그 임무의 최신 보고 + 제출 주체 — 없으면 ``None``."""
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return None
         with self._lock:
             reports = self._by_mission.get(mission_id)
             return reports[-1] if reports else None
@@ -501,11 +517,21 @@ class CoverageReportStore:
         "서버가 근거 없는 완료 주장을 막았다"는 사실 자체가 감사 입력이다 —
         장비가 반복적으로 허위 완료를 주장해도 이 목록이 없으면 사람은 알 수 없다.
         """
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             return list(self._rejections_by_mission.get(mission_id, ()))
 
     def history(self, mission_id: str) -> list[CoverageReport]:
         """수신 순서를 보존한 전체 보고 이력(덮어쓰지 않는다)."""
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
         with self._lock:
             return [r.report for r in self._by_mission.get(mission_id, ())]
 
@@ -703,6 +729,8 @@ def build_coverage_reports_router(
         거부된 보고의 **본문은 싣지 않는다** — 거부된 주장의 숫자를 조회 표면에
         그대로 실으면 그게 화면에서 사실처럼 읽힐 자리가 생긴다.
         """
+        if not store.mission_is_visible(mission_id):
+            raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         rejections = store.rejections(mission_id)
         return CoverageRejectionListView(
             mission_id=mission_id,

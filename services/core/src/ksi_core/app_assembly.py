@@ -34,7 +34,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from ksi_event_contracts.work_area import WorkAreaStatus
 
+from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
+from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
@@ -70,7 +72,8 @@ if TYPE_CHECKING:
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    from ksi_core.auth import AuthRegistry
+    from ksi_core.auth import AuthRegistry, OidcVerifier
+    from ksi_core.copilot_openai import CopilotRuntimeConfig
     from ksi_core.device_attestation import DeviceAttestationRegistry
     from ksi_core.evidence import EvidenceStorage
 
@@ -97,6 +100,8 @@ def assemble_app(
     opened: list[Any],
     edge_sync_snapshot_every: int | None,
     auth_registry: AuthRegistry,
+    human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
+    oidc_verifier: OidcVerifier | None = None,
     evidence_storage: EvidenceStorage | None,
     mission_signing_key: Ed25519PrivateKey,
     mission_signing_key_id: str,
@@ -105,6 +110,9 @@ def assemble_app(
     risk_policy_packs: tuple[dict[str, Any], ...] = (),
     edge_runtime_profiles: tuple[dict[str, Any], ...] = (),
     device_attestation_registry: DeviceAttestationRegistry | None = None,
+    acquisition_coordination_enabled: bool = True,
+    acquisition_issue_gate_enabled: bool = False,
+    copilot_runtime_config: CopilotRuntimeConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """모든 store 를 조립하고 ``create_app`` 을 호출한다 — dev/production 공용.
@@ -209,6 +217,127 @@ def assemble_app(
             for work_area_id in work_area_ids
         ),
     )
+    acquisition_connectivity_store = AcquisitionConnectivityStore(
+        journal("acquisition-connectivity.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
+    acquisition_coordination_store = (
+        AcquisitionCoordinationStore(journal("acquisition-runs.jsonl"))
+        if acquisition_coordination_enabled
+        else None
+    )
+    # Site workspace reuses the exact EventStore instance mounted on the public API;
+    # opening a second writer for the same journal would violate DurableJournal locking.
+    event_store = EventStore(event_journal)
+    from ksi_core.site_workspace import (
+        SiteWorkspaceProjector,
+        build_workspace_copilot_handlers,
+    )
+
+    site_workspace_projector = SiteWorkspaceProjector(
+        site_store=site_store,
+        work_order_store=observation_work_order_store,
+        processing_job_store=processing_job_store,
+        event_store=event_store,
+    )
+    copilot_service = None
+    copilot_conversation_service = None
+    site_briefing_service = None
+    if copilot_runtime_config is not None:
+        from ksi_core.copilot import CopilotService, CoreCopilotToolBackend
+        from ksi_core.copilot_conversations import (
+            CopilotConversationService,
+            CopilotConversationStore,
+        )
+        from ksi_core.copilot_openai import OpenAiCompatibleModelAdapter
+        from ksi_core.site_workspace import SiteBriefingService, SiteBriefingStore
+
+        def _capture_policy_for_work_order(
+            organization_id: str, work_order_id: str
+        ) -> str | None:
+            order = observation_work_order_store.get(
+                work_order_id, organization_id=organization_id
+            )
+            if order is None or order.schedule_id is None:
+                return None
+            schedules = observation_work_order_store.list_schedules(
+                order.site_id, organization_id=organization_id
+            )
+            schedule = next(
+                (item for item in schedules if item.schedule_id == order.schedule_id),
+                None,
+            )
+            return schedule.approved_policy_version if schedule is not None else None
+
+        backend = CoreCopilotToolBackend(
+            site_store=site_store,
+            observation_work_order_store=observation_work_order_store,
+            query_handlers=build_workspace_copilot_handlers(
+                site_workspace_projector, observation_work_order_store
+            ),
+            ai_egress_policy=lambda organization_id, site_id: bool(
+                (site := site_store.get_scoped(site_id, organization_id)) is not None
+                and site.ai_egress_allowed
+            ),
+            capture_policy_for_work_order=_capture_policy_for_work_order,
+        )
+        copilot_service = CopilotService(
+            model=OpenAiCompatibleModelAdapter(
+                base_url=copilot_runtime_config.base_url,
+                model=copilot_runtime_config.model,
+                api_key_file=copilot_runtime_config.api_key_file,
+                timeout_seconds=copilot_runtime_config.timeout_seconds,
+            ),
+            backend=backend,
+            planner_version=copilot_runtime_config.planner_version,
+        )
+        conversation_store = CopilotConversationStore(
+            journal("copilot-conversations.jsonl"),
+            site_exists=lambda site_id, organization_id: (
+                site_store.get_scoped(site_id, organization_id) is not None
+            ),
+            work_order_matches=lambda work_order_id, organization_id, site_id: (
+                (order := observation_work_order_store.get(
+                    work_order_id, organization_id=organization_id
+                ))
+                is not None
+                and order.site_id == site_id
+            ),
+        )
+        copilot_conversation_service = CopilotConversationService(
+            store=conversation_store,
+            copilot=copilot_service,
+            provider=copilot_runtime_config.provider_name,
+            model=copilot_runtime_config.model,
+            planner_version=copilot_runtime_config.planner_version,
+        )
+        site_briefing_service = SiteBriefingService(
+            store=SiteBriefingStore(
+                journal("site-briefings.jsonl"), site_store=site_store
+            ),
+            copilot=copilot_service,
+            workspace=site_workspace_projector,
+        )
+
+        def _create_review_ready_briefing(order: Any) -> None:
+            from ksi_event_contracts.observation_work_order import ObservationWorkOrderStatus
+
+            if order.status is not ObservationWorkOrderStatus.REVIEW_READY:
+                return
+            site_briefing_service.refresh(
+                order.site_id,
+                principal=Principal(
+                    principal_id="system-site-briefing",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
+                    device_id=None,
+                    organization_id=order.organization_id,
+                ),
+            )
+
+        observation_work_order_store.bind_status_listener(_create_review_ready_briefing)
     design_conformance_request_journal = journal("design-conformance-requests.jsonl")
     design_conformance_report_journal = journal("design-conformance.jsonl")
     design_conformance_request_store = (
@@ -275,10 +404,19 @@ def assemble_app(
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
         auth_registry=auth_registry,
+        human_auth_mode=human_auth_mode,
+        oidc_verifier=oidc_verifier,
         site_store=site_store,
         observation_work_order_store=observation_work_order_store,
+        acquisition_connectivity_store=acquisition_connectivity_store,
+        acquisition_coordination_store=acquisition_coordination_store,
+        acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+        copilot_service=copilot_service,
+        copilot_conversation_service=copilot_conversation_service,
+        site_workspace_projector=site_workspace_projector,
+        site_briefing_service=site_briefing_service,
         mission_store=mission_store,
-        event_store=EventStore(event_journal),
+        event_store=event_store,
         edge_sync_store=edge_sync_store,
         edge_dispatch_store=edge_dispatch_store,
         evidence_storage=evidence_storage,

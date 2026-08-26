@@ -13,7 +13,10 @@ from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalToken
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
-from ksi_event_contracts.observation_work_order import ObservationWorkOrderStatus
+from ksi_event_contracts.observation_work_order import (
+    ObservationWorkOrder,
+    ObservationWorkOrderStatus,
+)
 from ksi_mission_contracts.models import SiteFrame
 
 _TOKEN_A = "observation-org-a-token"  # noqa: S105
@@ -146,6 +149,60 @@ def test_api_is_organization_scoped_and_approval_is_optimistic(tmp_path: Path) -
     assert approved.json()["approvedBy"] == "operator-a"
 
 
+def test_global_work_queue_scopes_before_filtering(tmp_path: Path) -> None:
+    client, _ = _api(tmp_path)
+    draft_a = client.post(
+        "/v1/sites/site-a/observation-work-orders",
+        headers=_headers(_TOKEN_A),
+        json={"name": "승인 대기 작업", "workAreaIds": ["wa-site-a-0001"]},
+    )
+    approved_a = client.post(
+        "/v1/sites/site-a/observation-work-orders",
+        headers=_headers(_TOKEN_A),
+        json={"name": "진행 작업", "workAreaIds": ["wa-site-a-0002"]},
+    )
+    draft_b = client.post(
+        "/v1/sites/site-b/observation-work-orders",
+        headers=_headers(_TOKEN_B),
+        json={"name": "다른 조직 작업", "workAreaIds": ["wa-site-b-0001"]},
+    )
+    assert draft_a.status_code == approved_a.status_code == draft_b.status_code == 201
+
+    approved = client.post(
+        f"/v1/observation-work-orders/{approved_a.json()['workOrderId']}/approve",
+        headers=_headers(_TOKEN_A),
+        json={"expectedVersion": 1},
+    )
+    assert approved.status_code == 200, approved.text
+
+    all_for_a = client.get("/v1/observation-work-orders", headers=_headers(_TOKEN_A))
+    assert all_for_a.status_code == 200, all_for_a.text
+    assert {item["name"] for item in all_for_a.json()["workOrders"]} == {
+        "승인 대기 작업",
+        "진행 작업",
+    }
+
+    awaiting_approval = client.get(
+        "/v1/observation-work-orders?status=AWAITING_APPROVAL",
+        headers=_headers(_TOKEN_A),
+    )
+    assert [item["name"] for item in awaiting_approval.json()["workOrders"]] == [
+        "승인 대기 작업"
+    ]
+
+    in_progress = client.get(
+        "/v1/observation-work-orders?actionGroup=IN_PROGRESS",
+        headers=_headers(_TOKEN_A),
+    )
+    assert [item["name"] for item in in_progress.json()["workOrders"]] == ["진행 작업"]
+
+    cross_organization_site = client.get(
+        "/v1/observation-work-orders?siteId=site-b",
+        headers=_headers(_TOKEN_A),
+    )
+    assert cross_organization_site.status_code == 404
+
+
 def test_reobservation_draft_requires_human_approval_and_replays_atomically(
     tmp_path: Path,
 ) -> None:
@@ -235,6 +292,64 @@ def test_reobservation_draft_requires_human_approval_and_replays_atomically(
     assert replayed_order.status is ObservationWorkOrderStatus.APPROVED
     assert replayed_order.cycle_number == 2
     replay_journal.close()
+
+
+def test_post_commit_status_listener_failure_does_not_rollback_work_order(
+    tmp_path: Path,
+) -> None:
+    store = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "listener-isolation.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_id == "site-a" and organization_id == "org-a"
+        ),
+    )
+    observed: list[ObservationWorkOrderStatus] = []
+
+    def listener(order: ObservationWorkOrder) -> None:
+        observed.append(order.status)
+        if order.status is ObservationWorkOrderStatus.REVIEW_READY:
+            raise RuntimeError("briefing provider unavailable")
+
+    store.bind_status_listener(listener)
+    order = store.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="원장 우선 작업",
+        work_area_ids=["wa-site-a-0001"],
+        schedule_id=None,
+        actor="operator-a",
+        now=_NOW,
+    )
+    order = store.approve(
+        order.work_order_id,
+        organization_id="org-a",
+        expected_version=order.version,
+        actor="operator-a",
+        now=_NOW + timedelta(minutes=1),
+    )
+    for status in (
+        ObservationWorkOrderStatus.DISPATCHED,
+        ObservationWorkOrderStatus.START_REPORTED,
+        ObservationWorkOrderStatus.MEDIA_RECEIVING,
+        ObservationWorkOrderStatus.PROCESSING,
+        ObservationWorkOrderStatus.REVIEW_READY,
+    ):
+        order = store.record_status(
+            order.work_order_id,
+            organization_id="org-a",
+            status=status,
+            status_reason=None,
+            mission_ids=[],
+            processing_job_ids=[],
+            report_refs=[],
+            actor="verified-adapter",
+            now=_NOW + timedelta(minutes=order.version),
+        )
+
+    committed = store.get(order.work_order_id, organization_id="org-a")
+    assert committed is not None
+    assert committed.status is ObservationWorkOrderStatus.REVIEW_READY
+    assert observed[-1] is ObservationWorkOrderStatus.REVIEW_READY
 
 
 def test_expired_reobservation_draft_cannot_change_safe_state(tmp_path: Path) -> None:

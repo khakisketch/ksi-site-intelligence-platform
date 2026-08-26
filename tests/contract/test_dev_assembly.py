@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.change_detection import ChangeDetectionStore
@@ -170,6 +171,12 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             site_store.get_scoped(site_id, organization_id) is not None
         ),
     )
+    acquisition_connectivity_store = AcquisitionConnectivityStore(
+        DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
         mission_store=mission_store,
@@ -224,6 +231,10 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "design_surface_store": design_surface_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "acquisition_connectivity_store": acquisition_connectivity_store,
+        "acquisition_coordination_store": AcquisitionCoordinationStore(
+            DurableJournal(tmp_path / "acquisition-runs.jsonl")
+        ),
         "processing_job_store": processing_job_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),
@@ -322,12 +333,8 @@ def test_dev_assembly_closes_every_journal_it_opened(tmp_path: Path) -> None:
     module = _load_dev_module()
     dev_dir = tmp_path / "dev"
     dev_dir.mkdir(parents=True)
-    first = module.build_dev_app(
-        dev_dir, segment_bytes=None, edge_sync_snapshot_every=None
-    )
+    first = module.build_dev_app(dev_dir, segment_bytes=None, edge_sync_snapshot_every=None)
     first.close()
     # 같은 디렉터리로 두 번째 조립이 되면 단일 writer 잠금이 전부 풀린 것이다.
-    second = module.build_dev_app(
-        dev_dir, segment_bytes=None, edge_sync_snapshot_every=None
-    )
+    second = module.build_dev_app(dev_dir, segment_bytes=None, edge_sync_snapshot_every=None)
     second.close()
