@@ -63,7 +63,7 @@ def _prepare_approved_build(tool: ModuleType, session: Path, manifest_path: Path
     tool.record_approval(
         manifest_path,
         approved_by="owner-1",
-        dpk_sha256=_SHA_B,
+        dpk_sha256=_SHA_A,
         expires_at_utc="2026-08-21T10:00:00Z",
         allowed_operations=["DPK_INSTALL", "WAYLINE_UPLOAD_NO_START"],
         evidence_ref="14_connected_edge_capabilities/approval.json",
@@ -128,6 +128,17 @@ def test_approval_is_bound_to_session_devices_digest_operations_and_expiry(tmp_p
     tool = _tool()
     session, manifest_path = _session(tool, tmp_path)
     _private_file(session, "14_connected_edge_capabilities/approval.json")
+    with pytest.raises(tool.ConnectedEdgeManifestError, match="session 시작"):
+        tool.record_approval(
+            manifest_path,
+            approved_by="owner-1",
+            dpk_sha256=_SHA_B,
+            expires_at_utc="2026-08-21T10:00:00Z",
+            allowed_operations=["DPK_INSTALL", "WAYLINE_UPLOAD_NO_START"],
+            evidence_ref="14_connected_edge_capabilities/approval.json",
+            approved_at=datetime(2026, 8, 21, 8, 59, tzinfo=UTC),
+        )
+    assert tool.load(manifest_path)["operation_approval"] is None
     tool.record_approval(
         manifest_path,
         approved_by="owner-1",
@@ -201,6 +212,68 @@ def test_verified_result_requires_approval_exact_build_and_keeps_flag_off(tmp_pa
     assert receipt["flight_action_started"] is False
     assert receipt["camera_write"] is False
     assert manifest["feature_flags"]["WAYLINE_DELIVERY"] is False
+
+
+def test_result_rejects_preapproval_timestamp_and_unapproved_psdk_digest(
+    tmp_path: Path,
+) -> None:
+    tool = _tool()
+    session, manifest_path = _session(tool, tmp_path)
+    _prepare_approved_build(tool, session, manifest_path)
+    _private_file(session, "14_connected_edge_capabilities/result.json")
+    kwargs = {
+        "capability": "WAYLINE_DELIVERY",
+        "integration_path": "PSDK_MANIFOLD",
+        "transport": "MOP",
+        "hardware_model": "M4D+MANIFOLD3+RC_PLUS_2",
+        "firmware_version": "PSDK-3.16.0",
+        "adapter_build_sha256": _SHA_A,
+        "provider_operation_id": "wayline-upload-1",
+        "artifact_sha256": _SHA_C,
+        "request_sha256": _SHA_D,
+        "evidence_refs": ["14_connected_edge_capabilities/result.json"],
+    }
+    with pytest.raises(tool.ConnectedEdgeManifestError, match="approval보다 이르다"):
+        tool.record_result(
+            manifest_path,
+            **kwargs,
+            checked_at=datetime(2026, 8, 21, 9, 0, 30, tzinfo=UTC),
+        )
+    assert tool.load(manifest_path)["capability_receipts"]["WAYLINE_DELIVERY"][
+        "status"
+    ] == "NOT_VERIFIED"
+
+    mismatched_session, mismatched_manifest = _session(tool, tmp_path / "mismatch")
+    _private_file(mismatched_session, "14_connected_edge_capabilities/psdk-build.json")
+    tool.record_adapter_build(
+        mismatched_manifest,
+        integration_path="PSDK_MANIFOLD",
+        status_value="SDK_BUILT",
+        code_commit="commit-1",
+        sdk_version="PSDK-3.16.0",
+        build_sha256=_SHA_A,
+        evidence_refs=["14_connected_edge_capabilities/psdk-build.json"],
+    )
+    _private_file(mismatched_session, "14_connected_edge_capabilities/approval.json")
+    tool.record_approval(
+        mismatched_manifest,
+        approved_by="owner-1",
+        dpk_sha256=_SHA_B,
+        expires_at_utc="2026-08-21T10:00:00Z",
+        allowed_operations=["DPK_INSTALL", "WAYLINE_UPLOAD_NO_START"],
+        evidence_ref="14_connected_edge_capabilities/approval.json",
+        approved_at=datetime(2026, 8, 21, 9, 1, tzinfo=UTC),
+    )
+    _private_file(mismatched_session, "14_connected_edge_capabilities/result.json")
+    with pytest.raises(tool.ConnectedEdgeManifestError, match="승인된 DPK digest"):
+        tool.record_result(
+            mismatched_manifest,
+            **kwargs,
+            checked_at=datetime(2026, 8, 21, 9, 10, tzinfo=UTC),
+        )
+    assert tool.load(mismatched_manifest)["capability_receipts"]["WAYLINE_DELIVERY"][
+        "status"
+    ] == "NOT_VERIFIED"
 
 
 def test_result_rejects_missing_operation_or_expired_approval(tmp_path: Path) -> None:
@@ -333,6 +406,9 @@ def test_finalize_seals_digest_and_rejects_later_mutation_or_tamper(tmp_path: Pa
         evidence_refs=["14_connected_edge_capabilities/blocker.json"],
         checked_at=datetime(2026, 8, 21, 9, 10, tzinfo=UTC),
     )
+    with pytest.raises(tool.ConnectedEdgeManifestError, match="verdict보다 이를 수 없다"):
+        tool.finalize(manifest_path, finalized_at=datetime(2026, 8, 21, 9, 5, tzinfo=UTC))
+    assert tool.load(manifest_path)["finalization"] is None
     tool.finalize(manifest_path, finalized_at=datetime(2026, 8, 21, 9, 20, tzinfo=UTC))
     sealed = tool.load(manifest_path)
     assert sealed["finalization"]["manifest_sha256"]

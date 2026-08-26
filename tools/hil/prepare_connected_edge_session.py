@@ -286,6 +286,15 @@ def validate_manifest(
             )
         all_evidence_refs.update(evidence_refs)
         checked = _parse_utc(receipt.get("checked_at_utc"), nullable=True)
+        if (
+            version == SCHEMA_VERSION
+            and checked is not None
+            and started is not None
+            and checked < started
+        ):
+            raise ConnectedEdgeManifestError(
+                f"{capability} 결과시각이 session 시작보다 이를 수 없다"
+            )
         if status_value == "VERIFIED":
             if path_value is None or checked is None or not evidence_refs:
                 raise ConnectedEdgeManifestError(
@@ -380,6 +389,9 @@ def _validate_verified_v14(
             f"VERIFIED {capability}에 필요한 승인 operation이 없다: {required_operation}"
         )
     expires = _parse_utc(approval.get("expires_at_utc"), nullable=False)
+    approved = _parse_utc(approval.get("approved_at_utc"), nullable=False)
+    if approved is not None and checked < approved:
+        raise ConnectedEdgeManifestError(f"{capability} 결과가 operation approval보다 이르다")
     if expires is not None and checked > expires:
         raise ConnectedEdgeManifestError(f"{capability} 결과가 approval 만료 뒤에 기록됐다")
     path = str(receipt["path"])
@@ -388,6 +400,12 @@ def _validate_verified_v14(
         raise ConnectedEdgeManifestError(f"VERIFIED {capability} path는 SDK_BUILT여야 한다")
     if build.get("build_sha256") != receipt.get("adapter_build_sha256"):
         raise ConnectedEdgeManifestError(f"{capability} adapter build digest가 원장과 다르다")
+    if path == "PSDK_MANIFOLD" and approval.get("dpk_sha256") != receipt.get(
+        "adapter_build_sha256"
+    ):
+        raise ConnectedEdgeManifestError(
+            f"{capability} PSDK build digest가 승인된 DPK digest와 다르다"
+        )
 
 
 def _validate_v14_control_fields(
@@ -472,6 +490,9 @@ def _validate_v14_control_fields(
             raise ConnectedEdgeManifestError("approval approved_by가 필요하다")
         approved = _parse_utc(approval.get("approved_at_utc"), nullable=False)
         expires = _parse_utc(approval.get("expires_at_utc"), nullable=False)
+        started = _parse_utc(manifest.get("started_at_utc"), nullable=False)
+        if approved is not None and started is not None and approved < started:
+            raise ConnectedEdgeManifestError("approval은 session 시작보다 이를 수 없다")
         if approved is not None and expires is not None and expires <= approved:
             raise ConnectedEdgeManifestError("approval 만료시각은 승인시각 뒤여야 한다")
         evidence_ref = approval.get("evidence_ref")
@@ -488,6 +509,19 @@ def _validate_v14_control_fields(
         finalized = _parse_utc(finalization.get("finalized_at_utc"), nullable=False)
         if ended != finalized:
             raise ConnectedEdgeManifestError("ended_at_utc와 finalized_at_utc가 다르다")
+        approval = manifest.get("operation_approval")
+        if isinstance(approval, Mapping):
+            approved = _parse_utc(approval.get("approved_at_utc"), nullable=False)
+            if approved is not None and finalized is not None and finalized < approved:
+                raise ConnectedEdgeManifestError(
+                    "finalization이 operation approval보다 이를 수 없다"
+                )
+        for capability, receipt in manifest["capability_receipts"].items():
+            checked = _parse_utc(receipt.get("checked_at_utc"), nullable=True)
+            if checked is not None and finalized is not None and finalized < checked:
+                raise ConnectedEdgeManifestError(
+                    f"finalization이 {capability} verdict보다 이를 수 없다"
+                )
         digest = finalization.get("manifest_sha256")
         if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
             raise ConnectedEdgeManifestError("finalization digest가 유효하지 않다")

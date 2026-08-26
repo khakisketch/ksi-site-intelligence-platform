@@ -91,6 +91,9 @@ uv run python tools/hil/prepare_connected_edge_session.py record-blocker \
 - Matrice 4D, RC Plus 2, Manifold 3의 실제 식별자와 소유·시험 승인을 기록한다.
 - `PENDING-AIRCRAFT/PENDING-EDGE-DEVICE/PENDING-GATEWAY-DEVICE` skeleton은 inventory에만
   사용한다. 이 placeholder가 하나라도 남은 v1.4 manifest에는 approval을 기록할 수 없다.
+- v1.4 capability verdict는 session 시작과 operation approval 이후에만 기록하며,
+  `PSDK_MANIFOLD`의 build SHA-256은 승인 envelope의 DPK SHA-256과 정확히 일치해야 한다.
+  finalize 시각도 approval과 모든 기록된 verdict 뒤여야 한다.
 - 기체는 지상 안전 상태, propeller/이륙 방지 절차, 충분한 배터리와 담당 안전 인력을 갖춘다.
 - RC Wi-Fi 기본 profile을 사용하고 SIM 없음 조건을 별도로 기록한다.
 - Manifold의 유선 interface, IP, ARP/ping 결과를 새 raw session에 저장한다.

@@ -77,11 +77,13 @@ operations_console_delivery:
             six-source DUSS/Liveview messages from the M4D, and found no KSI DPK installed. RC Plus 2 remained
             offline on Tailnet, USB bulk logical channel 2 remained ambiguous between bulk4/bulk5, and no
             device-bound approval or propeller-off write session existed, so Phase 3B remains blocked.
-            The live code review also closed pending-device approval and runtime organization/Site/device
-            binding gaps. Full Python regression then passed 3908 tests with 23 skipped and 3 expected
-            failures; Ruff passed; Mypy passed 403 source files; Dashboard passed 58 files/527 tests,
-            ESLint and production build; repository hygiene passed; the canonical arm64 default PSDK app
-            build and S0 strict symbol gate passed again.
+            The live code review also closed pending-device approval, runtime organization/Site/device
+            binding, approval-before-result chronology, finalization chronology and approved DPK/build
+            digest gaps. Full Python regression then passed 3909 tests with 23 skipped and 3 expected
+            failures; Ruff passed; Mypy passed 403 source files. Dashboard was unchanged in the final HIL
+            evidence patch; its preceding 58 files/527 tests, ESLint and production build remain the latest
+            UI evidence. Repository hygiene passed; the canonical arm64 default PSDK app build and S0 strict
+            symbol gate passed again.
         - id: phase-3b-approved-limited-hil
           status: BLOCKED
           gate: "physical RC Plus 2, M4D and Manifold 3 session with device-bound approval envelope"
