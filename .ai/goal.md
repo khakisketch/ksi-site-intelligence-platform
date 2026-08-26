@@ -1,4 +1,282 @@
-# Current goal (2026-08-20, closed-loop MVP)
+# Current goal (2026-08-26, local main integration complete)
+
+현재 dirty 변경을 제품 권위·안전 경계에 따라 검토하고 원본 증거·생성물·secret을 제외한 뒤,
+기능·배포·HIL·설계·문서 단위의 의미 있는 로컬 `main` 커밋으로 통합한다.
+
+완료 결과:
+
+- Core/계약, DJI Gateway, Dashboard, 배포/OIDC, HIL 증거 게이트, Sites 프로토타입,
+  제품 문서, 저장소 위생과 handoff를 각각 독립적으로 되돌릴 수 있게 정리했다.
+- `download/`의 DJI 비행 기록·M4D 원본과 `Testing/` 생성물, 실제 secret/key는 커밋하지 않았다.
+- 전체 Python, Ruff/Mypy, Dashboard 정적·단위·빌드·E2E, 프로토타입 runtime/Sites 검증을 통과했다.
+- FIELD-0a/Phase 3과 다섯 DJI capability는 계속 `BLOCKED`/`NOT_VERIFIED`다.
+- 원격 push, release, tag, 장비 접촉/write, 비행은 수행하지 않았다.
+
+---
+
+# Current goal (2026-08-26, Phase 3 read-only HIL software preflight)
+
+FIELD-0a 이전 신규 기능 동결을 유지하면서 장비 없이 가능한 Phase 3 사전검증과 증거 준비를
+닫는다. 기존 A/B/C KMZ kit, Pilot 2 import 화면과 M4D 원본을 다시 판정하고, Pilot-export
+KMZ·물리 세션 승인이 없으면 FIELD-0a와 Phase 3을 `BLOCKED`로 유지한다.
+
+완료 조건:
+
+- checksum·KMZ 구조·waypoint·촬영 action을 재현 가능하게 검사한다.
+- M4D 원본에서 GPS·serial을 유출하지 않고 카메라·촬영시각 metadata만 private manifest로 남긴다.
+- Pilot-export byte가 생겨도 출처 attestation 없이 자동 PASS하지 않는다.
+- 다섯 DJI capability와 비행·배터리·RTH·camera 기능은 `NOT_VERIFIED`를 유지한다.
+
+장비 접촉·device write·비행·외부 배포·고객 데이터·commit/push/release는 수행하지 않는다.
+
+---
+
+# Previous goal (2026-08-25, Phase 2 synthetic Cloud/AI staging accepted)
+
+DJI 장비 없이 production-equivalent Operations Console의 OIDC/TLS/S3/grounded-AI/backup
+경계를 격리된 DGX Spark 합성 Staging에서 종단 검증한다.
+
+완료 결과:
+
+- 별도 Compose project와 named volume에서 Dashboard `EXTERNAL_VM`, Core OIDC, Local Identity,
+  MinIO, outbound client가 없는 deterministic OpenAI-compatible provider를 기동했다.
+- 실제 PNG bytes와 digest를 presigned HTTPS로 열고, 한 Site의 명시적 AI opt-in만 정상 답변을
+  허용했다. provider 503, 다른 Site citation, opt-out은 모두 저장형 `BLOCKED`로 닫혔다.
+- journal/object/signing key backup의 SHA-256과 격리 restore를 실제 실행했고 4개 viewport
+  Chromium 및 전체 software 회귀를 통과했다.
+
+고객 Cloud/data, 실제 외부 AI/IdP, public release, DJI/device/HIL, commit/push/release는 수행하지
+않았다. 다음 단계는 승인된 물리 RC-first read-only HIL이며 다섯 DJI capability는 여전히
+`NOT_VERIFIED`다.
+
+---
+
+# Previous goal (2026-08-25, Phase 1 software UI/UX accepted)
+
+Operations Console Phase 1의 populated·empty·부분 실패 흐름, 다음 행동 우선 정보 구조,
+4개 뷰포트 접근성/OIDC E2E와 실제 Tailnet 제품 검토를 닫는다.
+
+완료 결과:
+
+- 실제 도메인 store와 전이를 쓰는 격리 합성 원장으로 Home·Sites·Work·Items·Site detail의
+  populated 상태를 검증하고, 별도 빈 조직 OIDC 계정으로 actionable empty state를 검증했다.
+- evidence metadata는 있지만 이미지 storage가 없는 상태를 실패로 숨기지 않고
+  `관측 이미지 열람 불가`로 표시한다. Mission·processing·report·spatial model·device evidence는
+  합성하지 않는다.
+- 390/768/1024/1440 Chromium, 접근성, OIDC 조직 격리, 실제 Tailnet browser 검토와 전체
+  repository 회귀가 통과했다. Phase 1 software UI/UX baseline은 PASS다.
+
+다음 delivery 단계는 `phase-2-synthetic-cloud-ai-staging`이며 별도 승인·범위 확정 전에는
+시작하지 않는다. 외부 고객 Cloud/실제 IdP, device write·DPK·credential·비행, DJI adapter/HIL,
+commit/push/release는 수행하지 않았고 다섯 DJI capability는 `NOT_VERIFIED`다.
+
+---
+
+# Previous goal (2026-08-24, Phase 1 truthfulness hardening)
+
+Operations Console의 현장·작업·확인 항목 흐름이 실제 Core 원장과 일치하도록 완성한다. 조회 실패를
+0건으로 바꾸지 않고, 확인 항목의 근거 유무와 현장 검토 건수를 서버 투영으로 제공하며, AI 근거는
+허용된 같은 현장 Console 경로로만 이동한다. 고객 화면에서는 내부 계약·장치 용어보다 현장·근거·
+결정·다음 조사를 우선한다.
+
+완료 조건:
+
+- SiteWorkspace의 검토 건수는 열린 사람 결정만 포함하고, Event 목록 근거 건수는 삭제되지 않은
+  evidence와 일치한다. Core의 요청당 500건 상한은 제품 수치·목록 상한이 아니며, 명시한
+  organization 범위 밖 Event나 최신 ProcessingJob이 request context 없는 projection에도
+  섞이지 않는다.
+- 브리핑·보고서·변화 화면은 실패를 빈 결과로 위장하지 않으며 임의 citation path를 링크하지 않는다.
+- 작업 큐와 고객 용어가 테스트로 고정되고 전체 Python/Ruff/Mypy/Dashboard 게이트가 통과한다.
+- 현재 변경 화면의 실제 브라우저 수용이 없으면 Phase 1을 완료로 올리지 않는다.
+
+외부 고객 Cloud/데이터, 실제 IdP, device write·DPK·credential·비행, DJI adapter/HIL,
+commit/push/release는 범위 밖이며 다섯 DJI capability는 `NOT_VERIFIED`다.
+
+---
+
+# Previous goal (2026-08-24, Operations Console Phase 0/1 completion)
+
+장비 실증보다 먼저 KSI 제품 정본과 Operations Console의 현장 중심 UX를 완성한다. 제품은
+현장 데이터를 AI가 읽어 변화·중요성·사용자 결정을 근거와 함께 제시하고 다음 조사와 업무로
+연결하는 AX 제품이다. Home은 다현장 책임자·경영진의 포트폴리오 입구, 현장 작업공간은 현장
+담당자의 근거·결정 공간, Pilot 2는 드론 운영 공간으로 분리한다.
+
+완료 조건:
+
+- ADR-KSI-027과 Phase 1 UX 표준/acceptance가 Console → 합성 Cloud/AI → HIL → 통합 →
+  Field Pilot 순서와 HIL 이전 `NOT_VERIFIED` 경계를 고정한다.
+- `/sites`는 390/768에서 가로 표를 강요하지 않고 현장명·상태·다음 확인·현장 열기 카드로,
+  1024~1279에서는 전체 권한을 유지한 비교 카드로, 1280 이상에서는 밀도 있는 비교표로 읽힌다.
+- `/field`는 시스템 설명보다 결정 필요·진행·완료 작업을 먼저 보여 주고, 모바일 안내는
+  불필요한 구현 세부 없이 다음 행동을 설명한다.
+- 390/768/1024/1440 Chromium, Dashboard test/lint/type/build와 URL·조직·권한 경계를 회귀한다.
+
+외부 고객 Cloud/데이터, 실제 IdP, device write·DPK·credential·비행, 실제 DJI adapter/HIL,
+commit/push/release는 이 목표의 범위 밖이다. 다섯 DJI capability는 `NOT_VERIFIED`다.
+
+---
+
+# Previous goal (2026-08-22, persistent Tailnet development access)
+
+원격 SSH 개발에서도 localhost 포워딩이나 Bearer 입력 없이 동일한 Operations Console을
+항상 열 수 있게 한다. 표준 `npm run dev`는 Tailscale을 필수로 확인하고 Dashboard와 합성
+Local Identity를 loopback에 둔 채 Tailnet 전용 Serve로만 노출한다. 사용자 systemd service는
+SSH 종료와 재부팅 뒤에도 stack을 자동 복구한다.
+
+완료 조건:
+
+- Tailnet MagicDNS URL에서 OIDC Authorization Code + PKCE 전체 왕복과 실제 Core DB 조회가 된다.
+- Next dev asset과 HMR WebSocket이 외부 origin에서 동작한다.
+- 기존 Serve port 80과 production VM/import closure는 변경하지 않는다.
+- 서비스는 LAN/public에 bind하지 않고 Tailscale이 없으면 fail-closed한다.
+- localhost 전용 rollback과 systemd/Tailscale endpoint 해제 명령이 문서화된다.
+
+장비/HIL, 외부 고객 Cloud, commit/push/release는 범위 밖이며 DJI capability는 `NOT_VERIFIED`다.
+
+---
+
+# Current goal (2026-08-22, Operations Console U0 next-action usability)
+
+FIELD-0a 이전 신규 기능 동결을 유지하면서, 로그인 뒤 사용자가 빈 화면이나 잘못된 Mission
+행동에서 막히지 않도록 기존 Site·Event·WorkOrder·Acquisition 사실만으로 다음 행동을
+결정한다. Home, 오늘 작업, Site 상세, 현장 목록과 Event 빈 상태가 같은 우선순위를 사용하고,
+1024px 미만에서는 기존 반응형 행동 경계를 그대로 지킨다.
+
+완료 조건:
+
+- 미조치 Event, BLOCKED/승인 대기/진행 중/결과 준비 WorkOrder, 현장 없음, AOI 없음,
+  베이스라인·재조사 순서가 하나의 결정기와 회귀 테스트로 고정된다.
+- AOI가 없는 Site는 Home·현장 목록·Site 상세 어디에서도 조사/Mission 발급으로 건너뛰지 않고
+  AOI 편집기로 이동한다.
+- `/field` 빈 상태가 실제 다음 행동을 제공하고 Event 0건 화면은 상충하는 선택 패널을 숨긴다.
+- 390/768/1024/1440 실제 브라우저에서 모바일 제한과 데스크톱 행동 경계가 성립한다.
+
+FIELD-0a 증거, 최종 6개 메뉴 IA, 외부 Staging, DJI adapter, FIELD-1/2는 후속 gate다.
+다섯 DJI capability는 계속 `NOT_VERIFIED`이며 장비/외부 배포/commit/push/release는 수행하지 않는다.
+
+---
+
+# Current goal (2026-08-21, production-equivalent local OIDC development)
+
+일반 로컬 Dashboard 개발도 상용과 같은 사람 OIDC 경로로 고정한다. `npm run dev`는
+loopback 전용 Local Identity issuer, OIDC 검증 Core, Operations Console을 함께 기동하고,
+사람은 Bearer 토큰을 붙여넣지 않는다. Core DB/journal과 local signer/client/session secret은
+`.dev-data/`에 내구적으로 남아 실제 개발 데이터 흐름을 재현한다.
+
+완료 조건:
+
+- 사람 로그인은 Authorization Code + PKCE → 서명 JWT/JWKS → Core OIDC claim 검증을 실제로 통과한다.
+- 개발 issuer는 loopback만 허용하며 합성 계정만 제공하고 production VM/image/import graph에는 없다.
+- 기본 Dashboard 실행에서 opaque 토큰 입력은 보이지 않으며, legacy 조사는 명시적 non-production flag에서만 가능하다.
+- 외부 VM은 기존처럼 HTTPS OIDC·file secret 누락 시 fail-closed하며 Gateway/Edge/worker opaque 자격은 분리된다.
+- login redirect와 `/field` Console 진입을 실제 browser로 확인한다.
+
+장비/DPK write, credential 입력, 비행, 고객 데이터 upload, 외부 배포,
+commit/push/tag/release는 이번 목표 범위가 아니다. 다섯 DJI capability와 FIELD/HIL은 계속
+`NOT_VERIFIED`다.
+
+---
+
+# Previous goal (2026-08-21, responsive Operations Console and external VM readiness)
+
+Pilot 2와 RC Plus 2를 비행·gateway 전용으로 유지하고, 현장 업무는 하나의 반응형
+`KSI Operations Console`에서 수행하도록 제품·코드 경계를 확정한다. `/field`는 기존 링크를
+유지한 일반 Console 작업 큐이며 1024px 미만에서는 조회·event triage·분석·Copilot만 허용하고
+승인·Mission·장비 전이·원본 복구는 안전한 안내로 노트북에 넘긴다.
+
+동시에 승인된 Cloud 사업자에 실제 배포하기 전 단계로 사람 OIDC와 장비 opaque 자격을 분리하고,
+Dashboard/Core/Caddy/MinIO/worker를 외부 VM에 조립할 수 있는 fail-closed profile을 만든다.
+완료 조건은 다음과 같다.
+
+- `/field`와 deep link가 일반 Dashboard shell에서 동작하고 모바일 행동 경계가 SSR-safe하다.
+- production 제품은 Pilot Bridge나 `window.djiBridge`에 의존하지 않으며 비활성 HIL 경로는 HTTP 404다.
+- Auth.js는 OIDC Authorization Code + PKCE, HttpOnly encrypted session을 사용하고 브라우저에
+  Core access/refresh token을 노출하지 않는다.
+- Core는 OIDC JWT의 signature/issuer/audience/time/algorithm/kid/KSI claims를 검증하고,
+  Gateway/Edge/worker opaque 자격은 별도로 유지한다.
+- additive VM profile은 Caddy 80/443만 외부 publish하고 secret·public object endpoint·백업 및
+  restore 검증을 제공한다.
+- 특정 Cloud 사업자 승인과 실제 고객 데이터 배포는 별도 적법성 gate로 남긴다.
+
+장비 write, DPK 설치, credential 입력, 비행, 고객 데이터 upload, 외부 배포,
+commit/push/tag/release는 이번 목표 범위가 아니다. 다섯 DJI capability와 FIELD/HIL은 계속
+`NOT_VERIFIED`다.
+
+---
+
+# Current goal (2026-08-21, KSI Cloud Coordination Foundation)
+
+RC-first Connected Edge 소프트웨어 기반 위에 WorkOrder 중심 acquisition 진행 원장을
+추가한다. 사람 승인 뒤에는 조직·Site·회차에 묶인 `AcquisitionRun`이 생기고,
+Mission·Gateway receipt·Edge activation·SourceMedia·Processing의 기존 사실 원장을
+한 진행상태로 투영한다. 장비 capability는 실제 HIL 전 `NOT_VERIFIED`로 유지하며
+비행 경로·adapter를 추측해 만들지 않는다.
+
+완료 조건:
+
+- KSI Cloud 경계와 production env 예제가 현재 Core 신원·rollout flag와 일치한다.
+- WorkOrder 승인 재시도는 같은 run을 반환하고 coordinator 실패가 승인을 되돌리지 않는다.
+- Mission Plan의 선택적 `workOrderId`가 조직·Site·APPROVED 상태를 검증하고 lineage를 보존한다.
+- Gateway operation receipt가 장치 binding·조직 scope·idempotency/digest를 fail-closed 검증한다.
+- WorkOrder 상세가 주 행동 하나와 acquisition 단계, 연결 상세, 전문가 복구 정보를 분리한다.
+- 전체 소프트웨어 회귀를 통과하고 실제 다섯 DJI capability는 계속 `NOT_VERIFIED`다.
+
+장비 write, DPK 설치, credential, 비행, 외부 upload, production 변경,
+commit/push/tag/release는 이번 마일스톤 범위가 아니다.
+
+---
+
+# Current goal (2026-08-21, RC-first Connected Edge foundation)
+
+확정된 `Matrice 4D + Manifold 3 + RC Plus 2` 기본 제품을 SIM 없는 고객에게도
+성립시키도록 제품 정본과 소프트웨어 경계를 재정렬한다. 제품 책임을 Core·DJI
+Gateway·Manifold·Processing·Dashboard로 나누고 RC/Dock/직접망/MSDK 차이는
+장비 adapter로 격리한다.
+
+이번 마일스톤의 완료 조건은 다음과 같다.
+
+- `AcquisitionDeploymentProfile v1`과 `ConnectivitySnapshot v1`을 additive 계약으로
+  제공하고, 사람/Gateway/Edge 신원을 분리한다.
+- 새 Mission 발급 gate는 유효한 RC heartbeat·인터넷·binding·기능별 VERIFIED receipt가
+  없으면 fail-closed로 막는다. production rollout flag는 HIL·profile migration 전 기본
+  OFF이고, 이미 활성화된 계약은 연결 단절만으로 취소하지 않는다.
+- DJI Gateway를 기능별 port/router/journal로 분리하고 모든 새 feature flag를 OFF로 둔다.
+- Dashboard가 RC 인터넷·Manifold·직접망·계약·원본 동기화를 별도 상태로 표시한다.
+- HIL v1.3이 기능별 evidence를 요구하고 v1.2 provider 판정에서 capability를 추론하지 않는다.
+- ADR-KSI-023과 소스 경계 문서를 정본에 반영하고 전체 회귀를 통과한다.
+
+실장비 Cloud 하향·Pilot 업링크·wayline·media 회수, MSDK Bridge, Dock adapter,
+WorkOrder부터 activation/media/Processing까지의 실제 coordinator는 이번 소프트웨어
+완료 주장 밖이다. 전 기능은 실제 M4D/RC Plus 2/Manifold 3 HIL 전 `NOT_VERIFIED`다.
+비행·장비 write·credential·외부 upload·commit/push/release는 수행하지 않는다.
+
+---
+
+# Current goal (2026-08-20, MVP Integration Milestone 1)
+
+DJI Cloud/Pilot-to-Cloud와 Manifold 3 PSDK camera-media 경로를 실제 증거로 평가하고,
+둘 중 HIL/FIELD acceptance를 통과한 한 경로만 `WorkOrder → Mission → ZeroTouchGateway →
+Media`의 concrete provider로 채택한다.
+
+현재 범위는 안전한 provider acceptance 준비와 read-only preflight다. 공식 문서상 API 또는
+제품 지원표를 KSI capability `VERIFIED`로 승격하지 않는다. 비행·route start·장비 write·
+credential 처리·외부 upload는 별도 사용자 승인과 장비 준비 전에는 수행하지 않는다.
+
+완료 조건:
+
+- Cloud 5항목 또는 PSDK camera-media 5항목이 동일 lineage의 실제 evidence로 모두 통과한다.
+- 선택 provider가 `VERIFIED`이고 evidence ref가 실제 세션 내부에 존재할 때만 채택한다.
+- 실패/접근 불가 경로는 원문 blocker와 환경 조합을 보존하고 추측으로 구현하지 않는다.
+- 기존 Pilot 2 수동 KMZ와 folder ingest는 rollback/복구 경로로 유지한다.
+
+현재 상태는 acceptance kit v1.2와 실제 private preflight session까지 준비됐다. Cloud는
+공식 지원표가 M4D/M4TD를 Dock 3에만 두고 RC Plus 2 + Pilot 2에는 M4E/M4T만 열거하므로
+`BLOCKED`; PSDK는 `MANIFOLD_UNREACHABLE`로 `BLOCKED`다. aircraft link는 `UNKNOWN`, 선택
+provider는 없다. host의 DJI USB 부재는 Manifold 내부 USB bulk 경로의 blocker로 쓰지 않는다.
+
+---
+
+# Previous goal (2026-08-20, closed-loop MVP)
 
 건설현장의 반복 관측을 `오늘 작업 → 사람 승인 → 무파일 수집 →
 결정적 변화·공정·상대 물량 계산 → 근거형 Copilot → 재관측 사람 승인`으로

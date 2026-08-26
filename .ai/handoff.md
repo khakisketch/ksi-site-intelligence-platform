@@ -1,4 +1,534 @@
-# Current Handoff (2026-08-20, closed-loop MVP)
+# Current Handoff
+
+## 2026-08-26 — Dirty change set integrated into local main; no push
+
+현재 변경분을 안전 경계와 추적성 기준으로 검토해 로컬 `main`에 기능별 커밋으로 통합했다.
+Core/계약, capability별 DJI Gateway routing, evidence-first Operations Console, OIDC·합성 staging,
+RC-first HIL 증거 도구, Sites 프로토타입, 제품/배포 문서, 저장소 위생과 이 handoff가 분리돼 있다.
+
+원본 증거와 생성물은 커밋하지 않았다. `download/`의 DJI 비행 기록·M4D JPEG/MPO·압축본,
+루트 `Testing/`, `.dev-data/`, raw HIL log, 실제 attestation/signing key와 secret은 ignored 상태다.
+저장소 또는 원격에서 삭제하지 않았으므로 로컬 원본은 그대로 보존된다.
+
+최종 검증:
+
+- Python: `3864 passed, 23 skipped, 3 xfailed`; Ruff; Mypy `391 source files`.
+- Dashboard: Vitest `58 files / 527 tests`, ESLint, TypeScript, production build, npm audit 0.
+- Browser E2E: 로컬 OIDC/합성 원장 Playwright `54 passed, 14 intentional skipped`.
+- Prototype: protected runtime 28-file integrity, production/Sites build, Sites `4 passed`,
+  Playwright `22 passed`. 약 501 kB minified chunk 경고만 남으며 실패는 아니다.
+- Integrity: `uv lock --check`, `git diff --check`, 비밀/대용량 후보 검토 통과.
+
+이 결과는 software-only다. FIELD-0a와 Phase 3은 Pilot-export KMZ provenance와 승인된 물리
+세션이 없어 계속 BLOCKED이며, DJI 다섯 capability는 모두 `NOT_VERIFIED`다. 원격 push,
+release, tag, 외부 배포 변경, 장비 접촉/write와 비행은 수행하지 않았다.
+
+---
+
+## 2026-08-26 — Phase 3 software preflight complete, physical gate remains
+
+장비 없이 가능한 FIELD-0a/Phase 3 사전검증을 자동화했다. 새 audit는 pinned A/B/C kit의
+checksum·KMZ member·80 waypoint·80 촬영 action·40m 높이를 검사하고, Pilot import 화면과
+M4D 원본의 digest/비민감 metadata를 private manifest에 기록한다. GPS와 serial은 출력하지 않으며
+raw JPEG/MPO를 복사하지 않는다.
+
+현재 로컬 증거를 적용한 결과 A-file map 표시와 M4D WideCamera 5280×3956, 12.29mm/24mm,
+capture-time metadata는 확인됐다. M4D `.jpg`는 정상적인 두-frame MPO이므로 재인코딩하면 안 된다.
+Pilot 2가 직접 export한 mapping KMZ와 회수 출처 증거는 없어서 `PILOT_EXPORT_KMZ_REQUIRED`다.
+
+검증은 관련 FIELD/KMZ/capture-time 계약 `37 passed`, 전체 Python `3864 passed, 23 skipped,
+3 xfailed`, Ruff, full Mypy `391 source files`, A/B/C 결정론적 byte 재생성 대조와
+SQLite-required Manifold container CTest `7/7`을 통과했다.
+
+따라서 FIELD-0a와 `phase-3-rc-first-hil`은 계속 BLOCKED다. byte 파일만 생겨도 출처 attestation
+없이 자동 PASS하지 않는다. 다섯 capability는 모두 `NOT_VERIFIED`이며 장비 접촉, device write,
+비행, 외부 배포, 고객 데이터, commit/push/release는 수행하지 않았다.
+
+---
+
+## 2026-08-25 — Phase 2 synthetic Cloud/AI staging accepted
+
+Phase 2 software staging은 격리된 DGX Spark에서 PASS다. Console은
+`https://dgx-spark-1.tailda9552.ts.net:10000`이며 Local Identity/Core/Object API는 각각
+`:10001/:10002/:10003`이다. production Dashboard/Core의 OIDC, secure session, S3 public
+presign, grounded Copilot 경계를 실제 실행했고 기존 Tailnet 개발 stack과 Serve route는 보존했다.
+
+합성 원장은 실제 domain store 전이를 쓰며 한 현장만 AI opt-in이다. MinIO에는 SHA-256 digest가
+연결된 PNG 실바이트가 있고 browser가 presigned GET으로 연다. 정상 답변은 `site_snapshot`의
+same-site citation을 표시한다. AI 미동의, provider 503, 허위 cross-site citation은 모두
+`BLOCKED`이며 AI가 Mission/승인/비행 명령을 만들 수 있는 도구는 없다.
+
+`deploy/bin/phase2-staging.sh verify`는 journal/object/signing key의 SHA-256과 격리 restore를
+통과했다. 최신 bundle은 ignored `.dev-data/phase2-synthetic-staging/backups/
+ksi-vm-20260825T124618Z`이다. 운용은 `start|status|verify|stop|reset`; `stop`은 volume을 보존하고
+`reset`만 Phase 2 전용 volume을 제거한다.
+
+Phase 2 Chromium은 4개 viewport 12/12, 전체 external suite는 46 passed/22 intentional skipped다.
+Dashboard 58 files/527 tests, lint/type/build/audit도 통과했다. 고객 Cloud/data, 실제 외부 AI/IdP,
+full Python `3858 passed, 23 skipped, 3 xfailed`, Ruff, full Mypy `389 source files`, lock/diff
+integrity도 통과했다. 고객 Cloud/data, 실제 외부 AI/IdP, public release, DJI/device/HIL,
+commit/push/release는 수행하지 않았다. Phase 3 준비 체크리스트만 작성했으며 다섯 DJI
+capability는 모두 `NOT_VERIFIED`다.
+
+---
+
+## 2026-08-25 — Phase 1 software UI/UX accepted
+
+Operations Console Phase 1 software UI/UX baseline is now `PASS`. The final gap was closed with an
+E2E-only realistic ledger seeded through the real Site, WorkArea, ObservationWorkOrder and Event stores
+and their legal transitions. Five sites exercise setup, approval review, observation progress, result
+review and completed states. A separate Local Identity account scopes an empty organization. The fixture
+does not invent a Mission, processing job/result, report, spatial model, actual evidence bytes or any
+DJI/HIL fact; evidence metadata with an unavailable preview is intentionally rendered as a recoverable
+partial failure.
+
+The visible refinements put Site `다음 행동` before `KSI 현장 브리핑`, remove repeated Home setup
+instructions, and make Work/Items empty states a single responsive next-action surface. Populated E2E is
+read-only after stack seeding and no longer mutates Core from browser tests.
+
+Verification:
+
+- Dashboard Vitest `58 files / 527 tests`; ESLint, TypeScript and Next production build pass.
+- Chromium/Playwright `54 passed, 2 skipped` at 390/768/1024/1440. The two skips are intentional
+  desktop exclusions for coarse-pointer-only touch targets. OIDC organization isolation, invalid-state
+  recovery, populated/empty/preview-failure paths, keyboard/focus, overflow, reduced motion, axe and
+  Home snapshots pass.
+- Full Python `3848 passed, 23 skipped, 3 xfailed`; Ruff; full Mypy `388 source files`.
+- Authenticated in-app Browser review of the durable Tailnet Home, Sites, Work, Items and Site detail
+  found no horizontal overflow or console warning/error. Site next action precedes AI briefing. The
+  durable ledger's three current sites are empty/setup states; populated visual acceptance is the
+  isolated E2E ledger above.
+
+No device action, customer/external deployment, actual IdP, commit, push or release was performed.
+`WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD`, HIL and FIELD evidence
+remain `NOT_VERIFIED`. `phase-2-synthetic-cloud-ai-staging` is the next planned delivery stage and was
+not started by this handoff.
+
+---
+
+## 2026-08-24 — Phase 1 projection and truthfulness hardening
+
+The current Console now distinguishes unknown/failed data from a real empty result. Core computes open
+human-decision count for Site workspace and non-tombstoned `evidenceCount` for Event list/detail. The
+Dashboard shows that evidence count in the review queue, presents briefing citations through an
+allowlisted same-site route mapper, and leaves unrecognized source paths as text rather than arbitrary
+links. Site briefing/report/change surfaces retain partial-failure recovery instead of inventing zeroes.
+
+A follow-up non-browser audit removed a silent scale boundary: Core requests remain capped at 500 items,
+but SiteWorkspace and the Home/Sites/Work/navigation/site-detail/review surfaces now paginate to the end
+before reporting counts or queues. A later-page failure rejects the whole projection instead of rendering
+the first page as complete. SiteWorkspace also forwards its explicit organization scope to EventStore,
+closing request-context-free cross-organization counting. It now forwards that scope to ProcessingJobStore
+as well; the store resolves each job through its authoritative Mission organization before selecting the
+latest analysis or observation, while retaining the existing HTTP request scope as a second boundary.
+
+Work queue grouping is now a tested pure projection and customer-facing acquisition copy consistently
+uses `비행 임무`, `확인 항목`, and `현장 범위`; device IDs, raw receipts and manual recovery remain in
+expert-only surfaces. Contracts/OpenAPI/Dashboard types and tests were updated together.
+
+The canonical Phase 1 acceptance now includes pagination completeness and request-context-free
+Event/ProcessingJob organization isolation. `PHASE_REGISTRY.yaml` was synchronized from its stale
+intermediate `3842` and `54/511` counts to the current full evidence below.
+
+The accessibility audit found that the acceptance text named keyboard/focus and coarse-pointer sizing,
+but the executable E2E covered only Home axe and bottom navigation height. `RouteFocusManager` now moves
+focus to `#main-content` after client pathname changes without moving scroll or stealing initial focus.
+The four-width suite now runs touch CSS at 390/768, checks marked 44px controls, skip-link/route focus,
+and axe on Home/Sites/Work/Review.
+
+Verification: full Python `3845 passed, 23 skipped, 3 xfailed`; Ruff; full Mypy `387 source files`;
+Dashboard `55 files / 514 tests`, ESLint, TypeScript, production build; `uv lock --check`, full and
+production-only Dashboard `npm audit` with `0 vulnerabilities`, and `git diff --check` pass. The active
+Codex browser controller had no browser attached and its available-browser list was empty on the final
+retry, so current-screen 390/768/1024/1440 visual/OIDC/axe evidence is still required and Phase 1 remains
+`IN_PROGRESS`. No standalone Playwright substitution, device action, external deployment, customer data,
+commit/push/release, or capability enablement occurred; all five DJI capabilities remain `NOT_VERIFIED`.
+
+---
+
+## 2026-08-24 — Operations Console Phase 0/1 baseline and responsive site/work UX
+
+The product and delivery boundary is now explicit in ADR-KSI-027: first finish the evidence-first
+Operations Console, then synthetic Cloud/AI staging, then RC-first HIL, verified integration and the
+single-customer Field Pilot. `05_OPERATIONS_CONSOLE_PHASE_1_STANDARD.md` and
+`OPERATIONS_CONSOLE_PHASE_1_ACCEPTANCE.md` turn that into an implementation/test checklist. They also
+corrected the generated design-system files, which had unsuitable marketing/3D/newsletter guidance;
+the active rule is the existing neutral, compact, evidence-first Console system.
+
+The visible UX fixes are in `apps/dashboard/src/app/sites/page.tsx`, `/field/page.tsx`, and
+`ResponsiveActionBoundary.tsx`. `/sites` now uses readable cards below 1280px (with actual 1024px
+desktop actions inside cards), removing compact-width table clipping, raw Site ID, and detached World
+CTA. The dense table remains at 1280px+. `/field` has a compact `작업 현황` summary and shorter
+notebook-only guidance rather than a system-internals hero. `operations-console.spec.ts` adds a
+four-width regression for the responsive list.
+
+Verification completed on the live Tailnet development Console:
+
+- Dashboard Vitest: `52 files / 505 tests`
+- ESLint, TypeScript, Next production build: pass
+- Playwright external Console: `20/20` at 390/768/1024/1440; navigation, compact/desktop site list,
+  workspace areas, overflow, reduced motion and axe critical/serious checks pass
+- `git diff --check`: pass
+
+No device action, Cloud/customer-data deployment, commit, push, release, or capability enablement was
+performed. All five DJI data-path capabilities remain `NOT_VERIFIED`; the next physical work is still
+the separately approved read-only RC-first HIL session, not a UI test continuation.
+
+---
+
+## 2026-08-23 — Tailnet Auth.js callback cookie isolation and recovery UX
+
+Tailnet Console의 `/api/auth/error?error=Configuration`은 Local Identity나 Core 인증 실패가 아니라
+Auth.js의 `InvalidCheck: state value could not be parsed`였다. 쿠키는 port를 scope에 포함하지 않으므로,
+같은 MagicDNS host의 다른 포트·이전 탭이 남긴 범용 `authjs.state`가 Console callback의 transient state를
+덮을 수 있었다. `apps/dashboard/src/lib/auth/auth-cookie.ts`가 session뿐 아니라 callback URL, CSRF,
+PKCE, state, nonce, WebAuthn challenge를 `ksi_auth_v1_*` namespace로 모두 분리한다. LOCAL은 HTTP
+Tailnet 개발 때문에 secure=false를 유지하고 EXTERNAL_VM은 secure=true를 사용한다.
+
+Auth.js error page도 `/login`으로 지정했다. 그래서 실제 KSI state가 만료·손상됐을 때는 generic
+framework `Server error` 대신 “이전 로그인 요청을 검증하지 못했습니다”라는 복구 화면과 새 시작
+동작을 보인다. 서비스는 21:59 KST에 재시작했고, 이미 열린 과거 `/authorize` 탭은 유효하지 않으므로
+`http://dgx-spark-1.tailda9552.ts.net:3210/login`에서 새로 시작해야 한다.
+
+검증: Dashboard unit `52 files / 505 tests`, ESLint, TypeScript, production build, local Chromium
+4 widths `8 passed`, 그리고 실제 Tailnet에서 default development login 및 foreign `authjs.state`
+주입 회귀 `2 passed`를 확인했다. deliberate invalid KSI state test는 로그에 `InvalidCheck`를 남기는
+것이 정상이며, 브라우저는 `/login?error=Configuration` recovery page로 이동한다. 이 검증은
+synthetic local identity/data만 사용했고 HIL/DJI capability에는 영향을 주지 않는다.
+
+---
+
+## 2026-08-23 — Local Identity restart recovery and daily-development login UX
+
+Local Identity의 refresh grant가 process memory에만 있어 stack restart 뒤 Dashboard가
+`/token 400 → /api/auth/refresh 401`을 내던 결함을 고쳤다. 새 grant는 bearer token 원문이
+아닌 SHA-256 verifier·principal·scope·expiry만 owner-only atomic state file에 저장하며,
+rotation·one-time replay 거부·재시작 뒤 refresh를 계약 테스트로 검증한다. short-lived
+authorization code는 의도적으로 메모리에만 남겨 restart 뒤 새 PKCE authorization을 요구한다.
+
+일상 개발 login은 LOCAL launcher가 명시한 `KSI_DASHBOARD_LOCAL_IDENTITY_ENABLED=1`일 때만
+allowlisted `local-admin` login hint로 바로 OIDC callback에 간다. Code+PKCE·state·HttpOnly
+Dashboard session은 그대로다. RBAC는 Console의 접힌 `권한별 화면 테스트`에서만
+`prompt=select_account`로 Local Identity selector를 연다. EXTERNAL_VM 또는 일반 local OIDC에
+이 hint/selector는 전달되지 않으며, Local Identity opt-in은 external profile에서 fail-closed다.
+
+만료 refresh가 발견되면 base 및 Auth.js chunk session cookie를 먼저 없애 재시도 loop를 막고,
+LOCAL fixture에는 “개발 인증 서비스가 다시 시작되었거나 이전 세션이 만료”됐다는 정확한
+복구 문구를 보인다. 21:20 KST에 Tailnet dev service를 재시작했으므로 그 이전 browser session은
+한 번 재로그인이 필요하다. 새로 발급되는 grant는 이후 restart recovery 대상이다.
+
+검증: issuer/OIDC/production-profile contract `32 passed`, targeted Ruff/Mypy, Dashboard
+auth tests, typecheck, build, full Python `3841 passed, 23 skipped, 3 xfailed`, full Mypy
+`387 source files`, Ruff, Dashboard `52 files / 503 tests`, ESLint와 `git diff --check` 통과.
+Tailnet login HTML은 `개발 Operations Console 시작`과 접힌 `권한별 화면 테스트`를 렌더했고,
+실제 Local Identity default request는 selector 없이 callback으로 `302`를 반환했다.
+
+---
+
+## 2026-08-23 — unblocked Console·AX·security work complete; physical acceptance remains gated
+
+장비·고객 데이터·외부 Cloud 승인이 없어도 끝낼 수 있는 이번 범위는 마무리했다. Operations
+Console의 현장 중심 IA·반응형 경계·저장형 현장 AI/브리핑 계약·OIDC 로컬 개발 흐름은 기존
+실제 구현과 함께 회귀 검증했고, 이번 마무리에서는 조직 격리를 Event와 현장 하위 데이터까지
+확장했다. 다른 조직의 Event·triage·evidence, 설계 기준면, 작업구역, worker pending queue,
+device sequence는 동일한 `UNKNOWN`/404 또는 빈 결과로 처리한다. 사람 OIDC와 장치 자격은
+계속 분리되어 있으며, 모델은 근거형 읽기 도구와 재관측 초안만 사용할 수 있고 Mission·승인·
+비행 명령을 만들 수 없다.
+
+Dashboard 지도는 보안 취약점이 있던 `georaster` 계열 대신 직접 `geotiff` overlay로 교체했다.
+지원 CRS·raster 크기를 명시적으로 제한하고, 알 수 없거나 회전된 GeoTIFF는 fail-closed 한다.
+현재 `npm audit`와 production-only audit은 모두 0 vulnerabilities다. 검증은 전체 Python
+`3839 passed, 23 skipped, 3 xfailed`, Ruff, full Mypy `387 source files`, Dashboard
+`52 files / 500 tests`·ESLint·TypeScript·production build, Chromium/Playwright `16 passed`,
+Manifold native CTest `4/4`, PSDK logic CTest `2/2`, `git diff --check`까지 통과했다.
+
+실증 시작 패키지도 만들었다. private ignored session
+`hil_raw_logs/SESS-20260823T103223Z-PENDING-SN`의 read-only preflight는 host `enP7s7`
+`172.30.1.43/24`에서 target `172.30.1.33`의 ARP neighbour 없음·ping 3/3 loss를 기록했다.
+따라서 Manifold는 `MANIFOLD_UNREACHABLE`이고 실제 adapter/feature flag는 켜지지 않았다.
+별도 RC-first capability session
+`hil_raw_logs/CONNECTED-20260823T103253Z-PENDING-AIRCRAFT`에는 Wi-Fi·SIM 없음 기본 profile과
+다섯 capability의 `NOT_VERIFIED` 상태만 들어 있다. 이 증거는 장비를 수정하거나 SSH·DPK·
+credential·camera·flight 호출을 하지 않았다.
+
+다음 실제 관문은 (1) Manifold를 물리적으로 reachable하게 만든 뒤 지상 read-only HIL,
+(2) Pilot 2 A/B/C import 및 Pilot-export mapping KMZ와 실제 M4D EXIF/XMP로 FIELD-0a 닫기,
+(3) 승인된 외부 IdP·Cloud provider·DNS/ACME·backup restore rehearsal이다. 이 전에는
+`WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD` 모두
+`NOT_VERIFIED`이며 고객 데이터, 외부 배포, commit/push/release는 수행하지 않았다.
+
+---
+
+# Current Handoff (2026-08-22, persistent Tailnet development access)
+
+원격 SSH와 무관하게 Operations Console이 계속 실행되도록 Tailnet 개발 경로를 기본값으로
+전환했다. 접속 주소는 `http://dgx-spark-1.tailda9552.ts.net:3210/login`이며, 로그인 버튼은
+같은 Tailnet node의 합성 Identity `:9010`으로 이동한다. 전체 Authorization Code + PKCE 왕복,
+Core whoami/Site 조회와 Home 복귀를 실제 Tailnet 경로로 확인했다. Next asset 18개와 HMR
+WebSocket도 통과해 HTML만 보이고 interaction이 깨지는 과거 external-origin 문제를 막았다.
+
+Dashboard·Identity·Core는 각각 `127.0.0.1:3210/9010/8012`에만 bind한다. Tailscale Serve가
+3210/9010만 Tailnet에 proxy하며 기존 port 80→3100 설정은 보존했다. `npm run dev`는 Tailscale
+Running/Online과 MagicDNS를 요구하고, `npm run dev:local`만 명시적인 localhost rollback이다.
+Tailnet HTTPS는 계정-level enablement가 필요해 현재는 WireGuard-encrypted Tailnet HTTP를 쓴다;
+production HTTPS/OIDC 정책에는 영향이 없다.
+
+`deploy/systemd/ksi-operations-console-dev.service`를 user systemd에 link·enable·start했다.
+`Linger=yes`, `Restart=on-failure`이므로 SSH 연결이 끊겨도 유지되고 재부팅 뒤 자동 시작한다.
+상태/로그는 `systemctl --user status ksi-operations-console-dev.service`와
+`journalctl --user -u ksi-operations-console-dev.service -f`로 본다. source는 hot reload되므로
+두 번째 `npm run dev`를 띄우지 않는다.
+
+검증은 local issuer `5 passed`, dev/VM/production closure `64 passed`, Dashboard
+`49 files / 484 tests`·TypeScript·ESLint·Next build, focused Mypy/Ruff, remote OIDC/assets/HMR,
+`git diff --check`를 통과했다. 합성 데이터만 사용했고 public Funnel, LAN bind, 장비, 고객 데이터,
+commit/push/release는 수행하지 않았다. DJI capability는 계속 `NOT_VERIFIED`다.
+
+---
+
+# Current Handoff (2026-08-22, Operations Console U0)
+
+FIELD-0a 이전에 허용된 P0 UX 결함을 닫았다. Dashboard의 새 `OperatorNextAction`은 기존
+Site·Event·WorkOrder·Acquisition 사실만 읽어 지금 해야 할 행동 하나를 정한다. Home 상단,
+portfolio, `/field` 빈 상태, 현장 목록과 Site 상세가 이 결정을 공유하므로, 현재 합성 Site처럼
+AOI가 없을 때 어느 화면에서도 조사나 Mission으로 건너뛰지 않고 `AOI 설정하기`로 이동한다.
+AOI section에는 hash deep link를 연결했고 저장 뒤에만 베이스라인 조사 계획이 다음 단계가 된다.
+
+Event가 0건이면 “이벤트를 선택하세요” 패널을 렌더하지 않고 `검토할 이벤트가 없습니다`라는
+단일 상태만 보인다. 390/768px에서는 write 행동 링크가 없고 `노트북에서 계속` 안내가 나오며,
+1024/1440px에서는 권한 있는 같은 CTA가 열린다. 기존 Core RBAC와 조직 검사는 바뀌지 않았다.
+
+검증은 Dashboard `49 files / 484 tests`, TypeScript, ESLint, Next build, 실제 Chromium
+390/768/1024/1440 및 가로 overflow 없음, full Python `3819 passed, 23 skipped, 3 xfailed`,
+Ruff, full Mypy `383 source files`, native non-SQLite CTest `7/7`을 통과했다. 실행 중 Local OIDC가
+만드는 `.next-local-oidc`는 생성물로 명시해 lint/Git 대상에서 제외했다. 호스트에 SQLite3 개발
+패키지가 없어 native WAL backend는 이번 CTest에서 비활성 상태였으며 별도 환경 개선 gate다.
+
+현재 로컬 Operations Console은 `http://localhost:3210/`에서 합성 OIDC 관리자 세션으로 열어
+두었다. 다음 제품 단계는 코드 추가가 아니라 FIELD-0a의 Pilot 2 A/B/C import와 export KMZ
+실증이다. 이를 닫기 전에는 최종 6개 메뉴 IA나 새 제품 기능을 구현하지 않는다. 이후에만
+작업 중심 IA → 합성 public Staging → RC 기본형 다섯 capability HIL → FIELD-1/2 순으로 간다.
+
+`WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD`은 모두
+`NOT_VERIFIED`다. 장비/DPK write, credential, 비행, 고객 데이터, 외부 배포, commit/push/release는
+수행하지 않았다.
+
+---
+
+# Current Handoff (2026-08-21, production-equivalent local OIDC development)
+
+기본 로컬 Dashboard 개발은 더 이상 Bearer 토큰을 붙여넣는 별도 UX가 아니다.
+`apps/dashboard`에서 `npm run dev`를 실행하면 loopback 전용 KSI Local Identity, OIDC 모드
+Core, Operations Console이 함께 뜬다. `http://localhost:3210/login`에서 “조직 계정으로 로그인”을
+누른 뒤 합성 개발 계정을 고르면 Auth.js Authorization Code + PKCE, 서명 JWT/JWKS, Core role/org
+claim 검증을 실제로 지나 `/field`로 돌아온다. 실제 browser에서도 `KSI 개발 관리자` 선택 뒤
+`local-admin` Console 진입을 확인했다.
+
+Core DB/journal은 `.dev-data/local-oidc-core`, local issuer RSA key와 Dashboard client/session secret은
+`.dev-data/local-identity`에 durable하게 남고 Git에서 제외된다. 따라서 재시작 후에도 같은 실제
+개발 데이터에서 Dashboard/Core 흐름을 점검할 수 있다. Local Identity는 loopback 밖 issuer/bind를
+거부하고 합성 계정만 제공한다. VM compose, Dashboard production image와 launcher에는 이를 넣지
+않았으며 external VM은 기존대로 HTTPS OIDC와 file secret 없이는 기동하지 않는다.
+
+Gateway·Edge·processing worker의 opaque 자격은 사람 로그인과 섞지 않는다. 구형 diagnostic만
+LOCAL에서 `KSI_DASHBOARD_LEGACY_OPAQUE_LOGIN_ENABLED=1`을 명시해야 열리며, 기본 개발과
+EXTERNAL_VM에는 Bearer 입력이 없다. `dev:dashboard`는 Core/OIDC 환경을 수동으로 준 특수 조사
+경로다.
+
+## 검증과 남은 경계
+
+Local issuer/Core/VM focused contract는 `79 passed`, 전체 Python은 `3819 passed, 23 skipped,
+3 xfailed`, full Mypy는 `383 source files`, Dashboard는 `47 files / 465 tests`·ESLint·production
+build, Node syntax와 `git diff --check`를 통과했다. 실장비/DPK write, credential 입력, 비행,
+customer data, public deployment, commit/push/release는 수행하지 않았다. 모든 DJI capability와
+FIELD/HIL은 `NOT_VERIFIED`다.
+
+---
+
+# Previous Handoff (2026-08-21, Operations Console + external VM readiness)
+
+KSI 업무 화면을 별도 모바일 제품으로 나누지 않고 하나의 반응형 `KSI Operations Console`로
+전환했다. `/field` bookmark는 유지되지만 일반 Dashboard shell의 오늘 작업 큐이며, RC Plus 2와
+Pilot 2에는 KSI 업무 UI나 `window.djiBridge` 의존 기능이 없다. 1024px 미만에서는 읽기·event
+triage·분석 검토·Copilot·보고서만 허용하고, 승인·Mission·장비 전이·원본/복구 행동은 이유와
+“노트북에서 계속” 안내를 보인다. 화면 폭은 보안 신원이 아니며 Core RBAC를 우회하지 않는다.
+
+사람 인증은 Auth.js custom OIDC Authorization Code + PKCE와 암호화 HttpOnly server session으로
+분리했다. 브라우저 session API는 404이고 access/refresh token은 서버 BFF만 사용한다. Core는
+signature, issuer, audience, exp/nbf, algorithm, kid와 KSI principal/org/role claims를 검증하며
+unknown kid 1회 갱신과 만료 cache+issuer 장애 fail-closed를 구현했다. 사람 OIDC와 Gateway/Edge/
+worker opaque 자격은 동일 Bearer 표면에서 신원 종류별로 분리된다.
+
+외부 배포는 기존 local compose를 건드리지 않는 `compose.vm.yaml`이다. non-root Dashboard,
+Caddy TLS ingress, file-mounted secrets와 public presigned object endpoint를 추가하고 외부 publish는
+80/443만 남긴다. production image는 외부 VM OIDC/TLS/secret 입력이 빠지면 Next 시작 전에 exit 1
+하며, 비활성 HIL 경로와 browser session 표면은 실제 HTTP 404다. 백업은 journal/object/signing
+key를 digest와 함께 봉인하고, 합성 전용 smoke가 격리 볼륨 restore까지 실제 통과했다.
+
+검증은 full Python `3812 passed, 23 skipped, 3 xfailed`, 마지막 변경 focused `66 passed`, Ruff,
+full Mypy `381 source files`, Dashboard `46 files / 463 tests`·ESLint·Next build, 390/768/1024/1440
+실제 Chromium action/overflow/console 검증, SQLite-required arm64 Manifold CTest `7/7`, compose port
+exposure, Caddy validation, Dashboard image build/startup failure와 synthetic backup/restore를 통과했다.
+
+## 다음 release 전 단계
+
+1. Cloud Provider Due Diligence와 기존 legacy Site/Mission/Artifact 조직 migration을 승인한다.
+2. 선택한 외부 IdP test tenant에서 실제 login/logout/refresh failure와 조직 404를 브라우저로 닫는다.
+3. 선택한 VM에서 DNS/ACME, 실제 secret manager, 백업 보관소와 새 VM restore rehearsal을 수행한다.
+4. 기존 npm production audit(critical 0/high 9/moderate 2/low 5)의 georaster/webpack 4 및 Next
+   dependency 계보를 호환성 검증과 함께 해소하거나 명시적으로 보안 승인한다.
+5. 그 뒤에만 개발·합성 배포에서 pilot 조직으로 전환한다. 고객 데이터는 법무·보안 승인 전 금지다.
+
+실제 IdP·공개 TLS/ACME·고객 데이터 배포와 장비/HIL은 완료로 주장하지 않는다.
+`WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD`은 모두
+`NOT_VERIFIED`다. 기존 Pilot 2 수동 KMZ, SD/USB, folder ingest와 local compose rollback은 남아
+있다. 장비/DPK write, credential 입력, 비행, production 변경, commit/push/tag/release는 수행하지
+않았고 `Testing/`, `download/`를 보존했다.
+
+---
+
+# Current Handoff (2026-08-21, KSI Cloud Coordination Foundation)
+
+장비가 없어도 개발할 수 있는 Cloud coordination 범위를 구현했다. `cloud/` 폴더를
+새로 만들지 않고 `apps + services + deploy`를 KSI Cloud로 문서화했으며, production
+환경변수와 `deploy/.env.example`의 drift를 계약 테스트로 막았다. 실제 adapter가 정해지기
+전에는 DJI Gateway container나 가짜 장비 runtime을 만들지 않는다.
+
+Core에는 WorkOrder 승인 회차별 내구성 있는 `AcquisitionRun`과 진행 projection을 추가했다.
+승인 재시도는 같은 run을 반환하고 coordinator 실패가 사람 승인을 되돌리지 않는다.
+Mission Plan의 선택적 `workOrderId`는 조직·Site·승인 상태를 검증하고 Mission record,
+WorkOrder `missionIds`, exact cycle run을 멱등 연결한다. `GATEWAY_DEVICE` 전용 operation
+receipt API는 다섯 capability를 독립 기록하며 device/profile/org/Site/Mission binding,
+receipt nonce, transport-neutral idempotency key와 digest 충돌을 fail-closed 검증한다.
+
+Dashboard WorkOrder 상세는 `지금 할 일 → Acquisition progress → 장비·연결 상세 → 전문가
+복구 정보` 순서다. Edge activation 전에는 “비행 준비 완료”를 쓰지 않으며, 활성 계약 뒤
+인터넷 단절은 경고로만 표시하고 자동 중단을 주장하지 않는다. readiness가 성립하면 기존
+Mission Wizard를 `workOrderId`와 함께 열고, Pilot 2 비행 화면을 대체하지 않는다.
+
+독립 rollback은 `KSI_CORE_ACQUISITION_COORDINATION_ENABLED`; 신규 Mission issue gate는
+여전히 `KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED=false`가 기본이고 Mission Contract writer는
+`1.2`다. 기존 Gateway facade/v1.2 reader, Pilot 2 수동 KMZ와 ground ingest는 유지했다.
+
+검증은 full Python `3782 passed, 23 skipped, 3 xfailed`, Ruff, full Mypy `378 source files`,
+Dashboard `44 files / 440 tests`·ESLint·Next build, 실제 Chromium WorkOrder/progress/Wizard
+렌더링과 빈 console, SQLite-required Manifold CTest `4/4`, PSDK logic CTest `2/2`,
+`git diff --check`를 통과했다. 첫 full run에서 새 receipt 라우트의 hostile-input 조사 누락
+1건을 찾았고 6종 적대적 JSON 직접 발사 회귀를 추가한 뒤 clean full run을 다시 통과했다.
+독립 acceptance review는 software-foundation 범위를 `Approved`(must-fix 0), 실제 DJI/HIL/
+provider adoption을 `Blocked`로 판정했다.
+
+## 다음 안전 단계
+
+장비가 연결되면 비행 없이 지상에서 `M4D + Manifold 3 + RC Plus 2 + RC Wi-Fi`, Manifold
+SIM 없음 조합으로 `WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`,
+`MEDIA_UPLOAD`을 각각 검증한다. 성공한 capability의 실제 adapter와 flag만 추가한다.
+Cloud 하향이 실패하면 preflight contract Bridge만, media 회수가 실패하면 postflight Bridge만
+검토하며 Virtual Stick·이륙·경로·짐벌 제어는 넣지 않는다.
+
+최신 read-only 재탐지도 `172.30.1.33` ARP `FAILED`, ping 100% 손실이다. 따라서 모든 DJI
+capability는 계속 `NOT_VERIFIED`이고 RC/Dock/MSDK/direct adapter는 구현·활성화하지 않았다.
+장비/DPK write, credential, 비행, 외부 upload, production 변경, commit/push/tag/release는
+수행하지 않았다. 사용자 소유 가능성이 있는 `Testing/`, `download/`와 concurrent 변경은
+보존했다.
+
+---
+
+# Previous Handoff (2026-08-21, RC-first Connected Edge foundation)
+
+KSI의 소스 구조를 장비별 복제가 아니라 **제품 책임별 context + 장비 adapter**로
+확정하고 실제 코드에 반영했다. 선택지는 `RC/Manifold/Dock` 최상위 분리, 단일 거대
+Integration 서비스, polyrepo, 책임별 context를 비교했다. 현재 팀과 계약 변경 빈도에는
+monorepo의 책임별 context가 가장 안전하며, 독립 배포 주기·팀·접근권한이 실제로 갈릴
+때만 polyrepo를 재검토한다. 정본은 `docs/architecture/04_SOURCE_CODE_BOUNDARIES.md`와
+`docs/architecture/ADR-KSI-023-rc-first-connected-edge.md`다.
+
+구현된 기반은 다음과 같다.
+
+- Core `acquisition/`: Site별 deployment profile, 짧은 TTL connectivity snapshot,
+  capability별 readiness, 조직/site/device scope와 replay 방어.
+- Core 발급 gate: rollout flag가 켜진 배포에서만 새 Mission 발급을 강제 차단한다.
+  flag는 HIL과 profile migration 전 기본 OFF이며 활성 계약 지속 정책은 별도다.
+- DJI Gateway: `domain/ports/routing/persistence` 분리, 다섯 capability의 독립 route,
+  journal v1.2 dual-reader와 v1.3 명시 receipt. `gateway.py`는 호환 facade다.
+- Dashboard: RC 인터넷, Manifold, 직접망 Add-on, 계약 동기화, 원본 동기화를 각각
+  보여 주며 “연결됨” 한 상태로 합치지 않는다.
+- HIL v1.3: 기능마다 독립 evidence를 요구하고 v1.2 provider 판정에서 capability를
+  추론하지 않는다. 모든 기능은 실제 증거 전 `NOT_VERIFIED`다.
+
+최종 검증은 full Python `3759 passed, 23 skipped, 3 xfailed`, Ruff, full Mypy
+`374 source files`, lock check, Dashboard `42 files / 433 tests`·ESLint·Next build,
+실제 Chromium production UI/console, SQLite-required Manifold CTest `4/4`, PSDK logic
+CTest `2/2`, diff check를 통과했다. 첫 전체 실행에서 드러난 assembly/hostile-input/
+기존 수동 Mission 회귀 13개는 rollout gate 분리와 fixture/contract mirror 보완 후
+최종 전체 실행에서 해소됐다.
+
+## 다음 마일스톤
+
+1. `M4D + Manifold 3 + RC Plus 2 + RC Wi-Fi`, Manifold SIM 없음으로 다섯 capability를
+   각각 HIL한다. 헤더나 문서만으로 `VERIFIED` 처리하지 않는다.
+2. Cloud 하향 전달이 실패하면 preflight Mission Contract용 MSDK/MOP Bridge만,
+   media 회수가 실패하면 postflight Bridge만 구현한다. 비행 API는 넣지 않는다.
+3. 통과한 adapter만 기능별 flag로 켠 뒤 WorkOrder 승인→wayline/contract→activation
+   receipt→media completeness→Processing coordinator를 연결한다.
+4. FIELD-0b/1/2를 닫은 다음 Connectivity Add-on과 Dock adapter를 순서대로 연다.
+
+현재 소프트웨어 구조 완료는 실장비 연결 완료가 아니다. `WAYLINE_DELIVERY`,
+`EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD`은 모두 실제 조합에서
+`NOT_VERIFIED`이며, Dock/MSDK/direct adapter도 아직 구현하지 않았다. 기존 Pilot 2 수동
+KMZ, SD/USB, folder ingest는 복구 경로로 남아 있다. 비행·장비 write·credential·외부
+upload·commit/push/tag/release는 수행하지 않았다. 사용자 소유일 수 있는 `Testing/`,
+`download/`와 기존 concurrent 변경은 건드리지 않았다.
+
+---
+
+# Current Handoff (2026-08-20, MVP Integration Milestone 1)
+
+이전 CLI의 다음 단계였던 provider 실증을 시작했다. 공식 DJI 문서와 vendored PSDK header를
+대조한 결과, Manifold 3 PSDK camera media list/download 표면은 문서화돼 있지만 KSI 장비에서
+아직 통과하지 않았다. 최신 Cloud API 공식 지원표는 M4D/M4TD를 Dock 3에만 두고 RC Plus 2 +
+Pilot 2에는 M4E/M4T만 열거하므로 standalone M4D Cloud track은 우회 실험하지 않고 공식 matrix
+blocker로 닫았다.
+
+acceptance schema를 v1.2로 강화했다. check별 필수 assertion/operator attestation과 raw artifact
+SHA-256/size를 가진 서로 다른 PASS envelope, 실제 aircraft SN, 종료시각, digest provider decision
+record 없이는 VERIFIED/selection이 불가능하다. `attest-check`, `record-check`, `record-blocker`,
+`select-provider`가 JSON 수동 편집을 없애며 stage/path/symlink/owner/mode/secret/동시 갱신을
+fail-closed 검증한다. CLI `preflight`는 RFC1918 read-only host 증거만 수집하고 이미
+READY/VERIFIED/채택된 세션은 변경하지 않으며 다른 구체 blocker도 덮어쓰지 않는다. 현재 M1
+`36 passed`, M1 + Gateway `40 passed`, full Python `3722 passed, 23 skipped, 3 xfailed`,
+Ruff/format, full Mypy `357 source files`, 실제 v1.1→v1.2 upgrade/verify가 PASS다. 독립 v1.2
+review는 acceptance-kit/security scope를 `Approved`(tracked must-fix 0), 실제 provider adoption을
+`Blocked`로 판정했다.
+
+## 현재 blocker와 다음 안전 단계
+
+- `hil_raw_logs/SESS-20260820T134204Z-PENDING-SN/`에 0700/0600 actual session을 만들었다.
+- 최신 2026-08-20T14:34:24Z `172.30.1.33` preflight도 ARP `FAILED`, ICMP 3/3 손실로 실패해
+  PSDK는 `MANIFOLD_UNREACHABLE`,
+  aircraft link는 `UNKNOWN`이다. host USB 부재는 Manifold 내부 USB bulk blocker가 아니다.
+- 장비가 다시 연결되면 먼저 read-only identity/app-framework/aircraft-link preflight를 수행한다.
+- 그 뒤 PSDK media list와 사용자가 지정한 지상 원본 JPEG 한 장의
+  download/hash/upload/lineage/rights-release를 검증한다. Cloud는 공식 지원 조합이 바뀌거나
+  DJI의 서면 확인을 받기 전까지 다시 열지 않는다.
+- 현장 capture/비행, downloader-rights 획득, DPK 설치, credential 입력, 외부 업로드는 각각
+  필요한 시점에 사용자 승인과 보안 경계를 확인한 뒤 수행한다.
+- 한 track의 모든 check와 실제 evidence가 통과하기 전에는 provider code를 조립하거나 feature
+  flag를 켜지 않는다. 수동 Pilot 2 KMZ/folder ingest는 복구 경로로 유지한다.
+
+Git은 기존 local `main` checkpoint `434b92b` 위에 이번 변경이 미커밋 상태다. 사용자 소유일 수
+있는 `.ai/audits/2026-08-19-codex-config-audit.md`, `Testing/`, `download/`는 건드리지 않았다.
+특히 untracked `Testing/`과 `download/`는 원본 사진·flight record·GPS 가능 raw 자료로 취급해
+이번 delivery와 향후 staging에서 명시적으로 제외해야 한다. commit/push/tag/release,
+production/device write는 수행하지 않았다.
+
+주의: 읽기 전용으로 지시한 보조 에이전트가 `apps/dashboard/src/app/page.tsx`와
+`apps/dashboard/src/app/field/page.tsx`를 수정했다. main Codex는 이를 되돌리거나 추가 수정하지
+않고 별도 concurrent UI 변경으로 보존했다. provider acceptance diff와 섞어 해석하지 말 것.
+
+---
+
+# Previous Handoff (2026-08-20, closed-loop MVP)
 
 KSI의 제품 축을 `DJI waypoint 자체 구현`에서 `반복 관측 데이터를
 변화·공정·상대 물량으로 바꾸고, 근거형 Copilot으로 설명하며, 사람이
