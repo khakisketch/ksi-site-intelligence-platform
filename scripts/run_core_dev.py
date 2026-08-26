@@ -2,9 +2,10 @@
 """KSI Core 로컬 개발 서버 — apps/dashboard 연동용.
 
 프로덕션 조립이 아니다. durable 저장소를 로컬 디스크(--data-dir)에 열고, 고정
-dev 토큰으로 AuthRegistry를 구성해 uvicorn으로 기동한다. 데이터는 재기동해도
-보존된다(--reset으로 초기화). 서명키는 최초 기동 시 생성해 data-dir에 저장하고
-이후 재사용한다.
+장비·워커 opaque 자격을 구성해 uvicorn으로 기동한다. 사람 인증은 기본 OPAQUE
+legacy 경로 또는 명시한 OIDC issuer를 쓸 수 있다. 일반 Dashboard 개발은
+``npm run dev``가 OIDC 모드를 선택한다. 데이터는 재기동해도 보존된다(--reset으로
+초기화). 서명키는 최초 기동 시 생성해 data-dir에 저장하고 이후 재사용한다.
 
 Usage:
     uv run python scripts/run_core_dev.py [--host 127.0.0.1] [--port 8000] [--reset]
@@ -24,9 +25,17 @@ import uvicorn
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.app_assembly import assemble_app, cli_optional_positive  # noqa: F401 -- re-export
-from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.auth import (
+    AuthRegistry,
+    HumanAuthMode,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.observability import configure_structured_logging
+from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 
 _DEV_TOKENS: dict[Role, str] = {
@@ -36,6 +45,8 @@ _DEV_TOKENS: dict[Role, str] = {
 }
 _DEV_EDGE_TOKEN = "dev-edge-device-token"  # noqa: S105 — 로컬 dev 전용 고정값
 _DEV_EDGE_DEVICE_ID = "edge-dev-001"
+_DEV_GATEWAY_TOKEN = "dev-gateway-device-token"  # noqa: S105 — 로컬 dev 전용 고정값
+_DEV_GATEWAY_DEVICE_ID = "gateway-dev-001"
 # 처리 워커 토큰이 따로 있는 이유 — 사람 토큰으로는 처리 작업의 RUNNING·
 # SUCCEEDED·FAILED 를 보고할 수 없다(PROCESSING_WORK 는 어느 Role 에도 없다).
 # 이 토큰 없이는 재구성 경로를 dev 에서 끝까지 돌려볼 수 없다.
@@ -59,6 +70,17 @@ def _auth_registry() -> AuthRegistry:
         )
         for role, token in _DEV_TOKENS.items()
     ]
+    records.append(
+        PrincipalTokenRecord(
+            token_sha256=_digest(_DEV_GATEWAY_TOKEN),
+            principal=Principal(
+                principal_id="dev-gateway-principal",
+                kind=PrincipalKind.GATEWAY_DEVICE,
+                role=None,
+                device_id=_DEV_GATEWAY_DEVICE_ID,
+            ),
+        )
+    )
     records.append(
         PrincipalTokenRecord(
             token_sha256=_digest(_DEV_EDGE_TOKEN),
@@ -149,6 +171,8 @@ def build_dev_app(
     edge_sync_snapshot_every: int | None,
     s3_endpoint: str | None = None,
     s3_bucket: str | None = None,
+    human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
+    oidc_verifier: OidcJwtVerifier | None = None,
 ) -> DevAssembly:
     """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다.
 
@@ -172,6 +196,8 @@ def build_dev_app(
             edge_sync_snapshot_every=edge_sync_snapshot_every,
             s3_endpoint=s3_endpoint,
             s3_bucket=s3_bucket,
+            human_auth_mode=human_auth_mode,
+            oidc_verifier=oidc_verifier,
         )
     except BaseException:
         for journal in opened:
@@ -187,6 +213,8 @@ def _build_dev_app_locked(
     edge_sync_snapshot_every: int | None,
     s3_endpoint: str | None,
     s3_bucket: str | None,
+    human_auth_mode: HumanAuthMode,
+    oidc_verifier: OidcJwtVerifier | None,
 ) -> DevAssembly:
     """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
@@ -210,6 +238,8 @@ def _build_dev_app_locked(
         opened=opened,
         edge_sync_snapshot_every=edge_sync_snapshot_every,
         auth_registry=_auth_registry(),
+        human_auth_mode=human_auth_mode,
+        oidc_verifier=oidc_verifier,
         evidence_storage=evidence_storage,
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
@@ -253,10 +283,51 @@ def main() -> None:
         help="S3 호환 엔드포인트(예: http://127.0.0.1:9000). --s3-bucket 과 함께 준다.",
     )
     parser.add_argument("--s3-bucket", default=None, help="증거 버킷 이름")
+    parser.add_argument(
+        "--human-auth-mode",
+        choices=[mode.value for mode in HumanAuthMode],
+        default=HumanAuthMode.OPAQUE.value,
+        help="사람 인증 방식. 일반 Dashboard 개발은 local stack이 OIDC로 설정한다.",
+    )
+    parser.add_argument("--oidc-issuer", default=None, help="OIDC issuer origin")
+    parser.add_argument(
+        "--oidc-audience",
+        default=None,
+        help="Core가 받는 OIDC access token audience",
+    )
+    parser.add_argument("--oidc-jwks-url", default=None, help="OIDC JWKS endpoint")
+    parser.add_argument(
+        "--oidc-jwks-ttl-seconds",
+        type=int,
+        default=60,
+        help="개발 OIDC JWKS cache TTL(초, 기본 60)",
+    )
     args = parser.parse_args()
 
     if bool(args.s3_endpoint) != bool(args.s3_bucket):
         parser.error("--s3-endpoint 와 --s3-bucket 은 함께 주어야 한다")
+
+    human_auth_mode = HumanAuthMode(args.human_auth_mode)
+    oidc_values = (args.oidc_issuer, args.oidc_audience, args.oidc_jwks_url)
+    if human_auth_mode is HumanAuthMode.OPAQUE:
+        if any(value is not None for value in oidc_values):
+            parser.error("--human-auth-mode OPAQUE에는 --oidc-* 설정을 함께 쓸 수 없다")
+        oidc_verifier = None
+    else:
+        if not all(oidc_values):
+            parser.error(
+                "--human-auth-mode OIDC/DUAL에는 issuer, audience, jwks URL이 모두 필요하다"
+            )
+        if args.oidc_jwks_ttl_seconds <= 0:
+            parser.error("--oidc-jwks-ttl-seconds는 양수여야 한다")
+        oidc_verifier = OidcJwtVerifier(
+            OidcVerifierConfig(
+                issuer=args.oidc_issuer,
+                audience=args.oidc_audience,
+                jwks_url=args.oidc_jwks_url,
+                jwks_ttl_seconds=args.oidc_jwks_ttl_seconds,
+            )
+        )
 
     data_dir = Path(args.data_dir)
     if args.reset and data_dir.exists():
@@ -273,15 +344,21 @@ def main() -> None:
         ),
         s3_endpoint=args.s3_endpoint,
         s3_bucket=args.s3_bucket,
+        human_auth_mode=human_auth_mode,
+        oidc_verifier=oidc_verifier,
     )
 
     print("=" * 72)
     print(f"KSI Core dev server — data: {data_dir.resolve()}")
-    print("Dev bearer tokens (Authorization: Bearer <token>):")
-    for role, token in _DEV_TOKENS.items():
-        print(f"  {role.value:16s} {token}")
-    print(f"  EDGE_DEVICE({_DEV_EDGE_DEVICE_ID}) {_DEV_EDGE_TOKEN}")
-    print(f"  {'PROCESSING_WORKER':16s} {_DEV_WORKER_TOKEN}")
+    if human_auth_mode is HumanAuthMode.OPAQUE:
+        print("Legacy local human authentication: opaque bearer tokens are enabled.")
+    else:
+        print(f"Human authentication: {human_auth_mode.value} via {args.oidc_issuer}")
+        print(
+            "Local Dashboard users must use the OIDC login redirect; "
+            "no bearer token entry is required."
+        )
+    print("Device/worker opaque credentials remain available only for adapter integration tests.")
     print("=" * 72)
 
     try:

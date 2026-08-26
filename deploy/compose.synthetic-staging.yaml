@@ -1,0 +1,245 @@
+# Phase 2 synthetic-only staging. No customer data, DJI service, device key, or flight action.
+name: ${KSI_STAGING_PROJECT_NAME:-ksi-phase2-staging}
+
+x-core-image: &core-image
+  image: ksi-phase2-core:local
+  build:
+    context: ..
+    dockerfile: Dockerfile
+
+services:
+  init-state:
+    <<: *core-image
+    user: root
+    command: ["/app/.venv/bin/python", "/app/deploy/synthetic-staging/prepare_state.py"]
+    volumes:
+      - staging-data:/state/data
+      - staging-identity:/state/identity
+      - staging-secrets:/state/secrets
+      - staging-signing:/state/signing
+    restart: "no"
+
+  identity:
+    <<: *core-image
+    network_mode: host
+    command:
+      - /app/.venv/bin/python
+      - /app/tools/run_local_oidc_issuer.py
+      - --host
+      - 127.0.0.1
+      - --port
+      - ${KSI_STAGING_IDENTITY_PORT:?set KSI_STAGING_IDENTITY_PORT}
+      - --issuer-origin
+      - https://${KSI_STAGING_HOST:?set KSI_STAGING_HOST}:${KSI_STAGING_IDENTITY_PORT}
+      - --dashboard-origin
+      - https://${KSI_STAGING_HOST}:${KSI_STAGING_APP_PORT:?set KSI_STAGING_APP_PORT}
+      - --client-id
+      - ksi-operations-console
+      - --client-secret-file
+      - /run/ksi-secrets/oidc-client.secret
+      - --state-dir
+      - /var/lib/ksi/local-identity
+      - --core-audience
+      - ksi-core
+      - --allow-tailnet-origin
+    volumes:
+      - staging-identity:/var/lib/ksi/local-identity
+      - staging-secrets:/run/ksi-secrets:ro
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${KSI_STAGING_IDENTITY_PORT}/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes:
+      - staging-objects:/data
+    ports:
+      - "127.0.0.1:${KSI_STAGING_OBJECTS_PORT:?set KSI_STAGING_OBJECTS_PORT}:9000"
+      - "127.0.0.1:${KSI_STAGING_MINIO_CONSOLE_PORT:?set KSI_STAGING_MINIO_CONSOLE_PORT}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [staging-private]
+
+  bucket-init:
+    image: minio/mc:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set staging http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing staging/ksi-phase2-evidence
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    networks: [staging-private]
+
+  synthetic-copilot:
+    <<: *core-image
+    command:
+      - /app/.venv/bin/python
+      - /app/deploy/synthetic-staging/provider.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --api-key-file
+      - /run/ksi-secrets/copilot-api-key.secret
+    volumes:
+      - staging-secrets:/run/ksi-secrets:ro
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [staging-private]
+
+  seed:
+    <<: *core-image
+    profiles: ["seed"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ -f /var/lib/ksi/data/.phase2-synthetic-seeded ]; then
+          echo 'synthetic staging already seeded';
+        else
+          /app/.venv/bin/python /app/apps/dashboard/e2e/fixtures/seed_operations_console.py \
+          --data-dir /var/lib/ksi/data \
+          --enable-synthetic-ai-egress \
+          --s3-endpoint http://minio:9000 \
+          --s3-bucket ksi-phase2-evidence &&
+          touch /var/lib/ksi/data/.phase2-synthetic-seeded;
+        fi
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - staging-data:/var/lib/ksi/data
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+      bucket-init:
+        condition: service_completed_successfully
+    networks: [staging-private]
+
+  core:
+    <<: *core-image
+    environment:
+      KSI_CORE_DATA_DIR: /var/lib/ksi/data
+      KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
+      KSI_CORE_S3_ENDPOINT: http://minio:9000
+      KSI_CORE_S3_PUBLIC_ENDPOINT: https://${KSI_STAGING_HOST}:${KSI_STAGING_OBJECTS_PORT}
+      KSI_CORE_S3_BUCKET: ksi-phase2-evidence
+      KSI_CORE_PRINCIPAL_TOKENS_JSON: ${KSI_STAGING_PRINCIPAL_TOKENS_JSON}
+      KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE: /var/lib/ksi/device-attestation-keys.json
+      KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED: "false"
+      KSI_CORE_HUMAN_AUTH_MODE: OIDC
+      KSI_CORE_OIDC_ISSUER: https://${KSI_STAGING_HOST}:${KSI_STAGING_IDENTITY_PORT}
+      KSI_CORE_OIDC_AUDIENCE: ksi-core
+      KSI_CORE_OIDC_JWKS_URL: https://${KSI_STAGING_HOST}:${KSI_STAGING_IDENTITY_PORT}/jwks.json
+      KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
+      KSI_CORE_OIDC_JWKS_TTL_SECONDS: "60"
+      KSI_COPILOT_ENABLED: "true"
+      KSI_COPILOT_BASE_URL: http://synthetic-copilot:8080
+      KSI_COPILOT_MODEL: ksi-phase2-synthetic-grounded-v1
+      KSI_COPILOT_API_KEY_FILE: /run/ksi-secrets/copilot-api-key.secret
+      KSI_COPILOT_REQUEST_TIMEOUT_SECONDS: "2"
+      KSI_COPILOT_PLANNER_VERSION: phase2-synthetic-planner-v1
+      KSI_COPILOT_PROVIDER_NAME: ksi-synthetic-openai-compatible
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - staging-data:/var/lib/ksi/data
+      - staging-signing:/var/lib/ksi/signing-keys:ro
+      - staging-secrets:/run/ksi-secrets:ro
+      - ./device-attestation-keys.example.json:/var/lib/ksi/device-attestation-keys.json:ro
+    ports:
+      - "127.0.0.1:${KSI_STAGING_API_PORT:?set KSI_STAGING_API_PORT}:8000"
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+      bucket-init:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      synthetic-copilot:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [staging-private]
+
+  dashboard:
+    image: ksi-phase2-dashboard:local
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    environment:
+      CORE_API_BASE_URL: http://core:8000
+      KSI_DASHBOARD_DEPLOYMENT_PROFILE: EXTERNAL_VM
+      KSI_DASHBOARD_HUMAN_AUTH_MODE: OIDC
+      KSI_DASHBOARD_PUBLIC_APP_ORIGIN: https://${KSI_STAGING_HOST}:${KSI_STAGING_APP_PORT}
+      KSI_DASHBOARD_PUBLIC_API_ORIGIN: https://${KSI_STAGING_HOST}:${KSI_STAGING_API_PORT}
+      KSI_DASHBOARD_OIDC_ISSUER: https://${KSI_STAGING_HOST}:${KSI_STAGING_IDENTITY_PORT}
+      KSI_DASHBOARD_OIDC_CLIENT_ID: ksi-operations-console
+      KSI_DASHBOARD_SESSION_SECRET_FILE: /run/ksi-secrets/dashboard-session.secret
+      KSI_DASHBOARD_OIDC_CLIENT_SECRET_FILE: /run/ksi-secrets/oidc-client.secret
+      AUTH_URL: https://${KSI_STAGING_HOST}:${KSI_STAGING_APP_PORT}
+      AUTH_TRUST_HOST: "true"
+    volumes:
+      - staging-secrets:/run/ksi-secrets:ro
+    ports:
+      - "127.0.0.1:${KSI_STAGING_APP_PORT}:3000"
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [staging-private]
+
+networks:
+  staging-private:
+    driver: bridge
+
+volumes:
+  staging-data:
+    name: ksi-phase2-staging-data
+  staging-identity:
+    name: ksi-phase2-staging-identity
+  staging-objects:
+    name: ksi-phase2-staging-objects
+  staging-secrets:
+    name: ksi-phase2-staging-secrets
+  staging-signing:
+    name: ksi-phase2-staging-signing

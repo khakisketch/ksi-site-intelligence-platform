@@ -16,6 +16,8 @@
 # - TLS 종단·역방향 프록시: 배포 환경(로드밸런서·Ingress)마다 달라 여기서 정하지 않는다.
 #   Core 는 평문 HTTP 로 8000 을 연다 — **공개망에 그대로 노출하지 않는다.**
 # - 대시보드(apps/dashboard): Next.js 앱은 별도 배포 경로다.
+# - DJI Gateway: 실제 HIL에서 선택된 adapter가 아직 없으므로 빈 컨테이너나 가짜
+#   runtime을 만들지 않는다. capability는 모두 NOT_VERIFIED 상태다.
 # - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)와
 #   **호스트 디렉터리 `deploy/signing-keys/`**(서명키) 둘이다. 서명키는 명명 볼륨이
 #   아니다(아래 core 의 volumes 주석 참조). 자세한 것은 docs/ops/DEPLOYMENT.md §8.
@@ -52,7 +54,7 @@ services:
       dockerfile: Dockerfile
     # 필수 환경변수가 하나라도 없으면 production.py 가 RuntimeError 로 즉시 죽는다.
     # 조용히 뜨지 않는 것이 의도된 동작이다 — 로그에 어느 변수가 왜 문제인지 나온다.
-    env_file: .env
+    env_file: ${KSI_DEPLOY_ENV_FILE:-.env}
     volumes:
       # 원장. 이게 사라지면 현장·임무·산출물 이력이 사라진다.
       - ksi-data:/var/lib/ksi/data
@@ -66,6 +68,8 @@ services:
       # "키는 컨테이너 밖에 살고 Core 는 읽기만 한다"는 이 파일의 원래 의도를
       # 바인드가 그대로 실현한다.
       - ./signing-keys:/var/lib/ksi/signing-keys:ro
+      # Edge 장비 공개키만 담는다. 개인키나 Core 비밀은 이 파일에 넣지 않는다.
+      - ./device-attestation-keys.json:/var/lib/ksi/device-attestation-keys.json:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -91,7 +95,7 @@ services:
       # CMD(ksi-processing-worker 콘솔 스크립트)를 갖는다. command 를 여기서 덮어쓰지
       # 않는다 — Dockerfile.worker 의 CMD 가 SSOT 다.
       dockerfile: Dockerfile.worker
-    env_file: .env
+    env_file: ${KSI_DEPLOY_ENV_FILE:-.env}
     volumes:
       # 사진을 내려받아 재구성하는 공간. 용량이 크고, 중단 후 재개를 위해 영속이 낫다.
       - ksi-worker-work:/var/lib/ksi/worker

@@ -1,0 +1,23 @@
+# Optional external-AI overlay. Use only after Cloud/legal approval and with
+# synthetic or approved data:
+#   docker compose -f compose.yaml -f compose.vm.yaml -f compose.copilot.yaml up -d
+# Removing this overlay disables the runtime without affecting Site/Work/Report data.
+
+services:
+  core:
+    environment:
+      KSI_COPILOT_ENABLED: "true"
+      KSI_COPILOT_BASE_URL: ${KSI_COPILOT_BASE_URL:?set KSI_COPILOT_BASE_URL}
+      KSI_COPILOT_MODEL: ${KSI_COPILOT_MODEL:?set KSI_COPILOT_MODEL}
+      KSI_COPILOT_API_KEY_FILE: /run/secrets/copilot-api-key
+      KSI_COPILOT_REQUEST_TIMEOUT_SECONDS: ${KSI_COPILOT_REQUEST_TIMEOUT_SECONDS:-30}
+      KSI_COPILOT_PLANNER_VERSION: ${KSI_COPILOT_PLANNER_VERSION:?set KSI_COPILOT_PLANNER_VERSION}
+      KSI_COPILOT_PROVIDER_NAME: ${KSI_COPILOT_PROVIDER_NAME:-openai-compatible}
+    secrets:
+      - source: copilot-api-key
+        target: copilot-api-key
+        mode: 0400
+
+secrets:
+  copilot-api-key:
+    file: ./secrets/copilot-api-key.secret

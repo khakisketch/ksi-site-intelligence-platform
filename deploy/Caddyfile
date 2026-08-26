@@ -1,0 +1,34 @@
+{
+	email {$KSI_CLOUD_ACME_EMAIL}
+	admin off
+}
+
+app.{$KSI_CLOUD_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy dashboard:3000
+}
+
+api.{$KSI_CLOUD_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	reverse_proxy core:8000
+}
+
+objects.{$KSI_CLOUD_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	reverse_proxy minio:9000
+}

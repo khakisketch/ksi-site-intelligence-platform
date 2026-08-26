@@ -1,0 +1,98 @@
+# Additive external VM assembly:
+#   docker compose -f compose.yaml -f compose.vm.yaml --env-file .env up -d --build
+# Existing compose.yaml remains the rollback/local minimum. No DJI Gateway service is added;
+# every real DJI capability remains NOT_VERIFIED until HIL selects an adapter.
+
+services:
+  core:
+    ports: !reset []
+    environment:
+      KSI_CORE_HUMAN_AUTH_MODE: OIDC
+      KSI_CORE_OIDC_ISSUER: ${KSI_CORE_OIDC_ISSUER:?set KSI_CORE_OIDC_ISSUER}
+      KSI_CORE_OIDC_AUDIENCE: ${KSI_CORE_OIDC_AUDIENCE:?set KSI_CORE_OIDC_AUDIENCE}
+      KSI_CORE_OIDC_JWKS_URL: ${KSI_CORE_OIDC_JWKS_URL:?set KSI_CORE_OIDC_JWKS_URL}
+      KSI_CORE_OIDC_ALLOWED_ALGORITHMS: ${KSI_CORE_OIDC_ALLOWED_ALGORITHMS:-RS256}
+      KSI_CORE_OIDC_JWKS_TTL_SECONDS: ${KSI_CORE_OIDC_JWKS_TTL_SECONDS:-300}
+      KSI_CORE_S3_PUBLIC_ENDPOINT: https://objects.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+    networks: [ksi-private]
+
+  worker:
+    networks: [ksi-private]
+
+  minio:
+    ports: !reset []
+    networks: [ksi-private]
+
+  nodeodm:
+    ports: !reset []
+    networks: [ksi-private]
+
+  dashboard:
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    environment:
+      CORE_API_BASE_URL: http://core:8000
+      KSI_DASHBOARD_DEPLOYMENT_PROFILE: EXTERNAL_VM
+      KSI_DASHBOARD_HUMAN_AUTH_MODE: OIDC
+      KSI_DASHBOARD_PUBLIC_APP_ORIGIN: https://app.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+      KSI_DASHBOARD_PUBLIC_API_ORIGIN: https://api.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+      KSI_DASHBOARD_OIDC_ISSUER: ${KSI_DASHBOARD_OIDC_ISSUER:?set KSI_DASHBOARD_OIDC_ISSUER}
+      KSI_DASHBOARD_OIDC_CLIENT_ID: ${KSI_DASHBOARD_OIDC_CLIENT_ID:?set KSI_DASHBOARD_OIDC_CLIENT_ID}
+      KSI_DASHBOARD_SESSION_SECRET_FILE: /run/secrets/dashboard-session
+      KSI_DASHBOARD_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client
+      AUTH_URL: https://app.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+    secrets:
+      - source: dashboard-session
+        target: dashboard-session
+        mode: 0400
+      - source: oidc-client
+        target: oidc-client
+        mode: 0400
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks: [ksi-private]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      KSI_CLOUD_DOMAIN: ${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
+      KSI_CLOUD_ACME_EMAIL: ${KSI_CLOUD_ACME_EMAIL:?set KSI_CLOUD_ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      dashboard:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [ksi-private]
+
+secrets:
+  dashboard-session:
+    file: ./secrets/dashboard-session.secret
+  oidc-client:
+    file: ./secrets/oidc-client.secret
+
+networks:
+  ksi-private:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

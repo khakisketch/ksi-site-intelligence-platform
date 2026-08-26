@@ -20,6 +20,19 @@ edge/
 apps/
 **/node_modules/
 
+# Phase 2 synthetic staging reuses exactly one deterministic fixture through
+# the production domain stores. Keep the rest of apps/ excluded; only this
+# device-free seed script crosses the Core image boundary.
+!apps/
+apps/*
+!apps/dashboard/
+apps/dashboard/*
+!apps/dashboard/e2e/
+apps/dashboard/e2e/*
+!apps/dashboard/e2e/fixtures/
+apps/dashboard/e2e/fixtures/*
+!apps/dashboard/e2e/fixtures/seed_operations_console.py
+
 # 모델 아티팩트 — Core 서버는 추론 모델을 직접 로드하지 않는다(추론은 별도
 # 워커/서비스). tools/fetch_model.py 로 명시적으로 받는 대상이라 이미지에
 # 구울 필요가 없다.
