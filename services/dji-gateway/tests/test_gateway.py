@@ -11,12 +11,17 @@ from ksi_dji_gateway import (
     Capability,
     CapabilityEvidence,
     CapabilityRegistry,
+    CapabilityRoute,
+    CapabilityRouter,
     CapabilityStatus,
     CapabilityUnavailableError,
     GatewayJournal,
+    GatewayTransport,
     IdempotencyConflictError,
     IntegrationPath,
+    IntegrationReceipt,
     MediaSyncRequest,
+    OperationKind,
     ProviderReceipt,
     WaylineDispatchRequest,
     ZeroTouchGateway,
@@ -174,3 +179,149 @@ def test_verified_capability_requires_evidence_and_object_refs_cannot_embed_quer
         )
     with pytest.raises(ValueError, match="query"):
         replace(_wayline(), wayline_object_ref="https://storage/item?token=secret")
+
+
+class _RoutePort:
+    def __init__(
+        self,
+        port_id: str,
+        path: IntegrationPath,
+        transport: GatewayTransport,
+        capabilities: frozenset[Capability],
+    ) -> None:
+        self.port_id = port_id
+        self.integration_path = path
+        self.transport = transport
+        self.capabilities = capabilities
+
+
+def test_capability_router_selects_per_feature_not_provider() -> None:
+    hardware = "M4D-RC-PLUS-2-M3"
+    firmware = "rc-psdk-hil-1"
+    rc = _RoutePort(
+        "rc-cloud",
+        IntegrationPath.DJI_CLOUD,
+        GatewayTransport.RC_WIFI,
+        frozenset({Capability.WAYLINE_DELIVERY, Capability.EDGE_UPLINK}),
+    )
+    direct = _RoutePort(
+        "manifold-direct",
+        IntegrationPath.MANIFOLD_DIRECT,
+        GatewayTransport.MANIFOLD_CELLULAR,
+        frozenset({Capability.EDGE_UPLINK, Capability.MEDIA_UPLOAD}),
+    )
+    registry = CapabilityRegistry(
+        [
+            CapabilityEvidence(
+                path=IntegrationPath.DJI_CLOUD,
+                capability=Capability.WAYLINE_DELIVERY,
+                status=CapabilityStatus.VERIFIED,
+                checked_at="2026-08-21T09:00:00+00:00",
+                evidence_ref="hil/wayline",
+                hardware_model=hardware,
+                firmware_version=firmware,
+            ),
+            CapabilityEvidence(
+                path=IntegrationPath.MANIFOLD_DIRECT,
+                capability=Capability.EDGE_UPLINK,
+                status=CapabilityStatus.VERIFIED,
+                checked_at="2026-08-21T09:00:00+00:00",
+                evidence_ref="hil/direct-uplink",
+                hardware_model=hardware,
+                firmware_version=firmware,
+            ),
+        ]
+    )
+    router = CapabilityRouter(
+        routes=(CapabilityRoute(direct, 0), CapabilityRoute(rc, 10)),
+        registry=registry,
+        feature_flags={
+            Capability.WAYLINE_DELIVERY: True,
+            Capability.EDGE_UPLINK: True,
+        },
+    )
+    allowed = frozenset({GatewayTransport.RC_WIFI, GatewayTransport.MANIFOLD_CELLULAR})
+
+    selected, _evidence = router.select(
+        Capability.WAYLINE_DELIVERY,
+        hardware_model=hardware,
+        firmware_version=firmware,
+        allowed_transports=allowed,
+    )
+    assert selected.port_id == "rc-cloud"
+    selected, _evidence = router.select(
+        Capability.EDGE_UPLINK,
+        hardware_model=hardware,
+        firmware_version=firmware,
+        allowed_transports=allowed,
+    )
+    assert selected.port_id == "manifold-direct"
+
+
+def test_capability_router_defaults_every_feature_flag_off() -> None:
+    port = _RoutePort(
+        "rc-cloud",
+        IntegrationPath.DJI_CLOUD,
+        GatewayTransport.RC_WIFI,
+        frozenset({Capability.WAYLINE_DELIVERY}),
+    )
+    router = CapabilityRouter(routes=(CapabilityRoute(port, 0),), registry=CapabilityRegistry([]))
+    with pytest.raises(CapabilityUnavailableError, match="feature flag"):
+        router.select(
+            Capability.WAYLINE_DELIVERY,
+            hardware_model="M4D",
+            firmware_version="unknown",
+            allowed_transports=frozenset({GatewayTransport.RC_WIFI}),
+        )
+
+
+def test_gateway_journal_reads_v12_receipts_without_guessing_v13_fields(tmp_path: Path) -> None:
+    path = tmp_path / "gateway.jsonl"
+    path.write_text(
+        '{"accepted_at":"2026-08-21T09:00:00+00:00","idempotency_key":"legacy-1",'
+        '"item_count":1,"manifest_ref":null,"operation":"WAYLINE_DISPATCH",'
+        '"path":"DJI_CLOUD","provider_operation_id":"provider-1",'
+        '"request_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n'
+    )
+    journal = GatewayJournal(path)
+    legacy = journal.find(OperationKind.WAYLINE_DISPATCH, "legacy-1")
+    assert legacy is not None and legacy.journal_schema_version == "1.2"
+    assert legacy.capability is None and legacy.transport is None
+    journal.close()
+
+
+def test_gateway_journal_v13_requires_and_preserves_exact_route_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "gateway.jsonl"
+    journal = GatewayJournal(path)
+    with pytest.raises(ValueError, match="capability와 transport"):
+        IntegrationReceipt(
+            operation=OperationKind.EDGE_UPLINK,
+            path=IntegrationPath.MANIFOLD_DIRECT,
+            idempotency_key="uplink-1",
+            request_sha256="b" * 64,
+            provider_operation_id="provider-1",
+            accepted_at=_NOW,
+            item_count=1,
+            manifest_ref=None,
+            journal_schema_version="1.3",
+        )
+
+    receipt = IntegrationReceipt(
+        operation=OperationKind.EDGE_UPLINK,
+        path=IntegrationPath.MANIFOLD_DIRECT,
+        idempotency_key="uplink-1",
+        request_sha256="b" * 64,
+        provider_operation_id="provider-1",
+        accepted_at=_NOW,
+        item_count=1,
+        manifest_ref=None,
+        capability=Capability.EDGE_UPLINK,
+        transport=GatewayTransport.MANIFOLD_CELLULAR,
+        journal_schema_version="1.3",
+    )
+    journal.append(receipt)
+    journal.close()
+
+    replay = GatewayJournal(path)
+    assert replay.find(OperationKind.EDGE_UPLINK, "uplink-1") == receipt
+    replay.close()
