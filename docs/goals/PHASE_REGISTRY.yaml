@@ -48,8 +48,23 @@ operations_console_delivery:
       status: BLOCKED
       stages:
         - id: phase-3a-code-sdk-readiness
-          status: IN_PROGRESS
+          status: BLOCKED
           gate: "five candidate paths build with fail-closed routing and HIL v1.4 evidence tooling"
+          software_evidence_2026_08_26: >-
+            Five-path capability catalog, narrow fail-closed Gateway ports, exact evidence/flag/config
+            routing, pinned HTTPS and Unix transports, idempotent v1.3 receipts, ConnectedEdgeManifest
+            v1.4 approval/result/blocker/finalize/verify tooling, an unlinked PSDK Init/Upload/DeInit
+            source boundary, and a pre/postflight-only MSDK contract boundary are implemented. Full
+            Python regression passed 3894 tests with 23 skipped and 3 expected failures; Ruff passed;
+            Mypy passed 399 source files; Dashboard passed 58 files/527 tests, ESLint and production
+            build. The canonical arm64 Ubuntu 20.04/gcc 9.4 build and S0 strict symbol gate passed for
+            the default PSDK app. The S1 link is correctly blocked because pinned PSDK 3.16 retains
+            public DjiWaypointV3_Action in the same archive object as UploadKmzFile. MSDK/Dock SDK
+            artifacts and account projects are absent, so no SDK or device support is inferred.
+          blockers: >-
+            Provide a DJI-supported upload-only PSDK artifact or a separately reviewed isolation that
+            removes the public Action surface without patching or hiding vendor code; provide licensed
+            MSDK/Dock SDK projects and build credentials. Re-run exact SDK gates before Phase 3B.
         - id: phase-3b-approved-limited-hil
           status: BLOCKED
           gate: "physical RC Plus 2, M4D and Manifold 3 session with device-bound approval envelope"

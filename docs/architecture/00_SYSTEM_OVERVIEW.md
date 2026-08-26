@@ -158,10 +158,11 @@ USB·SD·수동 KMZ/사진 전달은 정상 제품 경로가 아니라 복구·�
 | 드론→서버 자동 ingest | **가동(소프트웨어)** — `tools/ingest_watch.py` 가 촬영 회수를 자동 트리거. 기체→지상 회수 자체는 여전히 SD카드 수동 오프로드(P1 과제 중 남은 부분) |
 | 폐루프 종단 완주 | **소프트웨어 1회 완주(2026-08-15), 실기 0회** — 목표 원장 `autonomous-acquisition-closed-loop` (strict). 실기 완주는 Manifold HIL(P0)이 관문 |
 
-현재 실행 순서는 Operations Console·현장 AX 소프트웨어/UX 관문 → 외부 합성-data
-Staging → RC 기본형 HIL → FIELD-0a/0b/1/2다. 이 순서 변경은 장비 capability 완료
-등급을 올린다는 뜻이 아니다. 실제 DJI 다섯 capability와 폐루프 실증은 계속
-`NOT_VERIFIED`다. 상세는 ADR-KSI-018·023·026과 목표 원장 참조.
+Operations Console·현장 AX 소프트웨어/UX와 외부 합성-data Staging은 완료됐다.
+현재 실행 순서는 Phase 3A candidate code/SDK gate → 승인된 Phase 3B RC 기본형 HIL →
+FIELD-0a/0b/1/2다. 이 순서 변경은 장비 capability 완료 등급을 올린다는 뜻이 아니다.
+실제 DJI 다섯 capability와 폐루프 실증은 계속 `NOT_VERIFIED`다. 상세는
+ADR-KSI-018·023·027과 Phase Registry를 따른다.
 
 ## 관측 자율성 3단계 (ADR-KSI-019)
 
