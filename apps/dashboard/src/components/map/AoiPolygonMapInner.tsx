@@ -13,6 +13,31 @@ import type { AoiVertex } from "@/lib/core-api/types";
 
 const _MAX_AOI_VERTICES = 256;
 
+/** Leaflet.draw가 기본으로 주는 영문 title/tooltip을 Console 언어에 맞춘다. */
+function applyKoreanDrawLabels() {
+  L.drawLocal.draw.toolbar.actions = { title: "도형 그리기 취소", text: "취소" };
+  L.drawLocal.draw.toolbar.finish = { title: "현장 범위 그리기 완료", text: "완료" };
+  L.drawLocal.draw.toolbar.undo = { title: "마지막 점 삭제", text: "마지막 점 취소" };
+  L.drawLocal.draw.toolbar.buttons.polygon = "현장 범위 다각형 그리기";
+  L.drawLocal.draw.handlers.polygon.tooltip = {
+    start: "현장 범위의 첫 점을 선택하세요.",
+    cont: "다음 점을 선택하거나 첫 점을 눌러 완료하세요.",
+    end: "첫 점을 눌러 현장 범위를 완료하세요.",
+  };
+  L.drawLocal.edit.toolbar.actions.save = { title: "현장 범위 변경 저장", text: "저장" };
+  L.drawLocal.edit.toolbar.actions.cancel = { title: "현장 범위 변경 취소", text: "취소" };
+  L.drawLocal.edit.toolbar.actions.clearAll = { title: "현장 범위 전체 삭제", text: "전체 삭제" };
+  L.drawLocal.edit.toolbar.buttons.edit = "현장 범위 편집";
+  L.drawLocal.edit.toolbar.buttons.editDisabled = "편집할 현장 범위가 없습니다";
+  L.drawLocal.edit.toolbar.buttons.remove = "현장 범위 삭제";
+  L.drawLocal.edit.toolbar.buttons.removeDisabled = "삭제할 현장 범위가 없습니다";
+  L.drawLocal.edit.handlers.edit.tooltip = {
+    text: "점을 끌어 현장 범위를 수정하세요.",
+    subtext: "취소하려면 취소를 누르세요.",
+  };
+  L.drawLocal.edit.handlers.remove.tooltip = { text: "현장 범위를 눌러 삭제하세요." };
+}
+
 function toVertices(layer: L.Polygon): AoiVertex[] {
   const latlngs = layer.getLatLngs()[0] as L.LatLng[];
   return latlngs.map((p) => ({ latDeg: p.lat, lonDeg: p.lng }));
@@ -59,6 +84,7 @@ function DrawControl({
   useEffect(() => {
     const group = groupRef.current;
     map.addLayer(group);
+    applyKoreanDrawLabels();
 
     if (value.length >= 3) {
       const existing = L.polygon(value.map((v) => [v.latDeg, v.lonDeg]));
@@ -71,7 +97,7 @@ function DrawControl({
         polygon: {
           allowIntersection: false,
           showArea: true,
-          drawError: { message: "AOI는 자기교차 없는 단순 폴리곤이어야 합니다." },
+          drawError: { message: "현장 범위는 선이 서로 교차하지 않도록 그려야 합니다." },
         },
         // AOI 는 폴리곤 하나만 필요 — 나머지 도형 도구는 노출하지 않는다(스코프 축소).
         polyline: false,

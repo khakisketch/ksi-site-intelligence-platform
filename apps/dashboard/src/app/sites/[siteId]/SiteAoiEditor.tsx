@@ -43,8 +43,8 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] break-keep text-ink-muted">
-        지도에서 폴리곤을 그려 이 현장의 외곽을 설정하세요. 저장하면 이후 발급되는 임무의 기본
-        구역으로 쓰입니다.
+        지도에서 조사할 공사 구역의 경계를 그리세요. 저장한 범위는 이후 조사 계획의 기본
+        구역으로 사용됩니다.
       </p>
       <AoiPolygonMap value={vertices} onChange={setVertices} />
       <button
@@ -53,7 +53,7 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
         disabled={!canSubmit}
         onClick={submit}
       >
-        {pending ? "저장 중…" : "AOI 저장"}
+        {pending ? "저장 중…" : "현장 범위 저장"}
       </button>
       {errorMessage && (
         <p role="alert" className="break-keep text-[12.5px] text-crit-ink">

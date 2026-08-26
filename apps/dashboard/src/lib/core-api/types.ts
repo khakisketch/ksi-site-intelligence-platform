@@ -37,6 +37,8 @@ export interface SiteView {
    * 화면이 null 을 "아직 모름"으로 읽어 허용처럼 보여주면 안 된다.
    */
   dataResidency: DataResidency | null;
+  /** 외부 AI 반출에 대한 별도 명시 동의. 일반 egressAllowed와 독립이다. */
+  aiEgressAllowed: boolean;
   /**
    * 공간모델 노후 판정 기준(일). null 은 "미선언"이고 그 뜻은 **판정하지 않음**이지
    * "최신"이 아니다 — 화면이 null 을 최신으로 읽으면 근거 없는 안심을 준다
@@ -181,6 +183,8 @@ export interface EventSummaryResponse {
   severity: EventSeverity | null;
   triage: TriageStatus;
   assignee: string | null;
+  /** 폐기되지 않아 상세에서 열람 가능한 근거 artifact 수. */
+  evidenceCount: number;
   edgeDeviceId: string;
   occurredAt: string;
   receivedAt: string;
@@ -273,6 +277,8 @@ export type CompletionState = (typeof COMPLETION_STATES)[number];
 export interface MissionRecordResponse {
   missionId: string;
   siteId: string;
+  /** 인증된 조직 범위 안에서만 반환되는 원장 소유 조직(INV-060). */
+  organizationId: string;
   missionType: MissionType;
   artifactKind: "pair" | "contract";
   kmzSha256: string | null;
@@ -398,6 +404,7 @@ export type Permission =
   | "EVENTS_READ"
   | "EVENTS_TRIAGE"
   | "EDGE_SYNC_INGEST"
+  | "GATEWAY_CONNECTIVITY_WRITE"
   | "WORK_ORDERS_WRITE"
   | "REOBSERVATION_APPROVE"
   | "COPILOT_QUERY"
@@ -408,10 +415,163 @@ export type Permission =
 export interface WhoAmIResponse {
   principalId: string;
   organizationId: string;
-  kind: "OPERATOR" | "EDGE_DEVICE" | "PROCESSING_WORKER";
+  kind: "OPERATOR" | "GATEWAY_DEVICE" | "EDGE_DEVICE" | "PROCESSING_WORKER";
   role: Role | null;
   deviceId: string | null;
   permissions: Permission[];
+}
+
+export type AcquisitionCapability =
+  | "WAYLINE_DELIVERY"
+  | "EDGE_DOWNLINK"
+  | "EDGE_UPLINK"
+  | "MEDIA_PULL"
+  | "MEDIA_UPLOAD";
+
+export interface AcquisitionDeploymentProfileV1 {
+  schemaVersion: "1.0";
+  siteId: string;
+  operatingMode: "RC_ATTENDED" | "DOCK_AUTOMATED";
+  gatewayKind: "RC_PLUS_2" | "DOCK_3";
+  gatewayTransports: ("WIFI" | "CELLULAR" | "ETHERNET")[];
+  internetGate: "REQUIRED_FOR_MISSION_ISSUE";
+  manifoldDirectMode: "DISABLED" | "CONNECTIVITY_ADD_ON";
+  routingPolicy: "RC_STANDARD" | "ROLE_SPLIT_DIRECT_EDGE";
+  mediaPolicy: "RESULTS_IMMEDIATE_RAW_POSTFLIGHT";
+  msdkBridgeMode: "DISABLED" | "CONDITIONAL_PREFLIGHT_POSTFLIGHT";
+  edgeDeviceId: string;
+  gatewayDeviceId: string;
+}
+
+export interface CapabilityReceiptV1 {
+  capability: AcquisitionCapability;
+  hardwareModel: string;
+  firmwareVersion: string;
+  status: "NOT_VERIFIED" | "VERIFIED" | "BLOCKED";
+  checkedAt: string;
+  evidenceRef: string | null;
+}
+
+export interface ConnectivitySnapshotV1 {
+  schemaVersion: "1.0";
+  snapshotId: string;
+  siteId: string;
+  gatewayDeviceId: string;
+  edgeDeviceId: string;
+  observedAt: string;
+  expiresAt: string;
+  transport: "WIFI" | "CELLULAR" | "ETHERNET";
+  internetReachable: boolean;
+  gatewayState: "CONNECTED" | "DISCONNECTED" | "UNKNOWN";
+  edgeState: "CONNECTED" | "DISCONNECTED" | "UNKNOWN";
+  directEdgeState: "DISABLED" | "CONNECTED" | "DISCONNECTED" | "UNKNOWN";
+  queuedEventCount: number;
+  queuedMediaCount: number;
+  lastSuccessReceiptId: string | null;
+  missionContractSync: "NOT_STARTED" | "PENDING" | "ACTIVATED" | "COMPLETE" | "FAILED";
+  rawMediaSync: "NOT_STARTED" | "PENDING" | "ACTIVATED" | "COMPLETE" | "FAILED";
+  capabilities: CapabilityReceiptV1[];
+}
+
+export interface AcquisitionReadinessView {
+  siteId: string;
+  status:
+    | "READY"
+    | "PROFILE_MISSING"
+    | "DOCK_ADAPTER_NOT_IMPLEMENTED"
+    | "CONNECTIVITY_MISSING"
+    | "CONNECTIVITY_STALE"
+    | "GATEWAY_OFFLINE"
+    | "INTERNET_REQUIRED"
+    | "DEVICE_MISMATCH"
+    | "TRANSPORT_NOT_ALLOWED"
+    | "CAPABILITY_NOT_VERIFIED";
+  readyForMissionIssue: boolean;
+  reasons: string[];
+  evaluatedAt: string;
+  profile: AcquisitionDeploymentProfileV1 | null;
+  connectivity: ConnectivitySnapshotV1 | null;
+  inFlightContractPolicy: "REMAINS_VALID_UNTIL_CONTRACT_EXPIRY";
+}
+
+export type AcquisitionRunStage =
+  | "WAITING_READINESS"
+  | "WAITING_PLAN"
+  | "MISSION_ISSUED"
+  | "WAYLINE_PENDING"
+  | "CONTRACT_PENDING"
+  | "READY_FOR_FLIGHT"
+  | "MEDIA_SYNCING"
+  | "MEDIA_VERIFYING"
+  | "PROCESSING"
+  | "REVIEW_READY"
+  | "BLOCKED";
+
+export type AcquisitionNextAction =
+  | "APPROVE_WORK_ORDER"
+  | "CHECK_ACQUISITION_READINESS"
+  | "OPEN_MISSION_WIZARD"
+  | "WAIT_GATEWAY_DELIVERY"
+  | "WAIT_CONTRACT_ACTIVATION"
+  | "OPERATE_WITH_PILOT_2"
+  | "WAIT_MEDIA_SYNC"
+  | "VERIFY_SOURCE_MEDIA"
+  | "WAIT_PROCESSING"
+  | "REVIEW_RESULTS"
+  | "RESOLVE_BLOCKER"
+  | "NONE";
+
+export interface GatewayOperationReceiptV1 {
+  schemaVersion: "1.0";
+  receiptId: string;
+  idempotencyKey: string;
+  siteId: string;
+  missionId: string;
+  capability: AcquisitionCapability;
+  transport: "WIFI" | "CELLULAR" | "ETHERNET";
+  outcome: "SUCCEEDED" | "FAILED";
+  artifactDigest: string;
+  observedAt: string;
+  organizationId: string;
+  gatewayDeviceId: string;
+  receivedAt: string;
+}
+
+export interface AcquisitionProgressView {
+  schemaVersion: "1.0";
+  runId: string | null;
+  workOrderId: string;
+  siteId: string;
+  cycleNumber: number;
+  stage: AcquisitionRunStage;
+  nextAction: AcquisitionNextAction;
+  detail: string;
+  readiness: AcquisitionReadinessView;
+  mission: {
+    missionId: string | null;
+    issued: boolean;
+    executionStatus: string | null;
+  };
+  gateway: {
+    latestReceipt: GatewayOperationReceiptV1 | null;
+    succeededCapabilities: AcquisitionCapability[];
+    failedCapabilities: AcquisitionCapability[];
+  };
+  contractActivation: {
+    state: "NOT_ISSUED" | "PENDING" | "ACTIVATED";
+    activatedAt: string | null;
+  };
+  media: {
+    state: "NOT_STARTED" | "SYNCING" | "VERIFYING" | "VERIFIED";
+    itemCount: number;
+    sourceBundleDigest: string | null;
+  };
+  processing: {
+    state: "NOT_STARTED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+    jobIds: string[];
+  };
+  evaluatedAt: string;
+  inFlightContractPolicy: "REMAINS_VALID_UNTIL_CONTRACT_EXPIRY";
 }
 
 export type ObservationWorkOrderStatus =
@@ -491,6 +651,104 @@ export interface CopilotAnswerView {
   citations: CopilotCitationView[];
   missingData: string[];
   reobservationDraftId: string | null;
+}
+
+export interface CopilotConversation {
+  schemaVersion: "1.0";
+  conversationId: string;
+  organizationId: string;
+  siteId: string;
+  workOrderId: string | null;
+  status: "ACTIVE" | "CLOSED";
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CopilotMessage {
+  schemaVersion: "1.0";
+  messageId: string;
+  conversationId: string;
+  role: "USER" | "ASSISTANT";
+  content: string;
+  clientMessageId: string | null;
+  answerStatus: "ANSWERED" | "BLOCKED" | null;
+  citations: CopilotCitationView[];
+  missingData: string[];
+  reobservationDraftId: string | null;
+  provider: string | null;
+  model: string | null;
+  plannerVersion: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ConversationListResponse {
+  conversations: CopilotConversation[];
+}
+
+export interface ConversationDetailView {
+  conversation: CopilotConversation;
+  messages: CopilotMessage[];
+}
+
+export interface CopilotExchangeResponse {
+  conversation: CopilotConversation;
+  userMessage: CopilotMessage;
+  assistantMessage: CopilotMessage;
+}
+
+export interface WorkspaceNextAction {
+  kind: string;
+  label: string;
+  href: string | null;
+  reason: string;
+}
+
+export interface WorkspaceWorkOrderSummary {
+  workOrderId: string;
+  name: string;
+  status: string;
+  updatedAt: string;
+  missionCount: number;
+}
+
+export interface WorkspaceAnalysisSummary {
+  status: string;
+  processingJobId: string | null;
+  capturedFrom: string | null;
+  capturedTo: string | null;
+  availableResultKinds: string[];
+  sourceWatermark: string | null;
+}
+
+export interface SiteWorkspaceView {
+  schemaVersion: "1.0";
+  siteId: string;
+  siteName: string;
+  siteStatus: string;
+  latestObservationAt: string | null;
+  reviewItemCount: number;
+  activeWorkOrderCount: number;
+  latestWorkOrder: WorkspaceWorkOrderSummary | null;
+  latestAnalysis: WorkspaceAnalysisSummary;
+  nextAction: WorkspaceNextAction;
+}
+
+export interface SiteBriefing {
+  schemaVersion: "1.0";
+  briefingId: string;
+  organizationId: string;
+  siteId: string;
+  status: "READY" | "BLOCKED";
+  whatChanged: string;
+  whyItMatters: string;
+  decisionPrompt: string;
+  citations: CopilotCitationView[];
+  uncertainty: string;
+  sourceWatermark: string;
+  missingData: string[];
+  generatedAt: string;
 }
 
 // POST /v1/missions/plans (ADR-KSI-007, S1) — AOI + 임무타입 한 요청이 KMZ/WPML + 서명계약
@@ -583,6 +841,8 @@ export interface MissionPlanWaylineInput {
 }
 
 export interface MissionPlanRequest {
+  /** 승인된 WorkOrder 현재 회차 계보. 서명 계약 payload에는 포함되지 않는다. */
+  workOrderId?: string;
   contract: MissionPlanContractInput;
   aoi: { vertices: AoiVertex[] };
   route: MissionPlanRouteInput;

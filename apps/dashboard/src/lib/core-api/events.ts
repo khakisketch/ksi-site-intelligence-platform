@@ -32,6 +32,32 @@ export async function listEvents(
   });
 }
 
+const EVENT_PAGE_SIZE = 500;
+
+/**
+ * 확인 항목 대기열처럼 전체 집합과 정확한 상태별 건수가 필요한 화면에서 사용한다.
+ * Core의 단일 요청 상한(500)을 화면의 데이터 상한으로 오해하지 않고 끝까지 순회한다.
+ */
+export async function listAllEvents(
+  filter: Omit<ListEventsFilter, "limit" | "offset"> = {},
+): Promise<{ events: EventSummaryResponse[]; count: number }> {
+  const events: EventSummaryResponse[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await listEvents({
+      ...filter,
+      limit: EVENT_PAGE_SIZE,
+      offset,
+    });
+    events.push(...page.events);
+    if (page.events.length < EVENT_PAGE_SIZE) break;
+    offset += page.events.length;
+  }
+
+  return { events, count: events.length };
+}
+
 export async function getEvent(eventKey: string): Promise<EventDetailResponse> {
   return coreFetch<EventDetailResponse>(`/v1/events/${encodeURIComponent(eventKey)}`);
 }

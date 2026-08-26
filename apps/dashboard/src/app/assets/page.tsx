@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { CoreApiError } from "@/lib/core-api/client";
-import { MISSION_TYPE_LABEL, humanizeApiError } from "@/lib/core-api/labels";
+import { humanizeApiError } from "@/lib/core-api/labels";
 import { listMissions } from "@/lib/core-api/missions";
 import { getSourceMediaView, listDefectCandidates } from "@/lib/core-api/phase34";
 import { formatRatioPercent } from "@/lib/core-api/phase34-labels";
@@ -12,9 +12,8 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { TableRow, TableShell } from "@/components/ui/TableShell";
+import { SiteAreaPicker } from "@/components/site/SiteAreaPicker";
 import { listSitesCached } from "@/lib/core-api/cached";
-import { formatKoreanDateTime } from "@/lib/datetime";
 
 import { DefectOverlay } from "./DefectOverlay";
 
@@ -39,20 +38,6 @@ async function fetchMissions(): Promise<MissionRecordResponse[]> {
     return [];
   }
 }
-
-/** 현장 이름도 진입 보조다 — 실패하면 목록을 막지 않고 ID 표시로 떨어진다. */
-async function fetchSiteNames(): Promise<Map<string, string>> {
-  try {
-    const sites = await listSitesCached();
-    return new Map(sites.map((site) => [site.siteId, site.name]));
-  } catch {
-    return new Map();
-  }
-}
-
-// 보고서 화면의 임무 선택 표와 같은 격자 — 두 화면이 같은 일을 같은 모양으로 한다.
-const PICK_COLUMNS = "146px minmax(160px,1fr) 122px 132px";
-const PICK_MIN_WIDTH = 622;
 
 /**
  * 사진 열람 URL — 실패해도 표는 보여야 하므로 null 로 내려간다.
@@ -93,62 +78,26 @@ export default async function AssetsPage({
   searchParams: Promise<{ missionId?: string; mediaId?: string }>;
 }) {
   const { missionId, mediaId } = await searchParams;
-  const [missions, siteNames] = await Promise.all([fetchMissions(), fetchSiteNames()]);
+  const [missions, sites] = await Promise.all([
+    fetchMissions(),
+    listSitesCached().catch(() => []),
+  ]);
 
   if (!missionId) {
     return (
-      <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-[17px] font-bold tracking-tight break-keep">결함 후보</h2>
-          {/* 문구는 main 쪽(2026-08-17)을 따른다 — "이건 자산대장이 아닙니다"라는
-              사과를 빼고, 자산대장이 **아직 없다**는 사실만 남긴 개선이다(INV-040 의
-              정신). 활자 크기는 이 화면이 콘솔 눈금으로 옮겨온 값을 유지한다. */}
-          <p className="text-[12.5px] break-keep text-ink-2">
-            임무를 선택해 그 임무 사진에서 생성된 결함 후보와 근거를 확인하세요.
-            자산·시설물 단위로 이력을 쌓는 대장은 아직 없습니다.
-          </p>
-        </div>
-        {missions.length === 0 ? (
-          <EmptyState
-            title="발급된 임무가 없습니다"
-            description="임무를 발급하고 비행·처리가 끝나면 그 임무의 결함 후보를 여기서 볼 수 있습니다."
-            action={{ label: "임무 목록", href: "/missions" }}
-          />
-        ) : (
-          // 보고서 화면의 임무 선택과 **같은 표**다 — 고르는 일이 같은데 화면마다
-          // 다르게 생기면 두 번 학습한다. 현장은 원시 ID 가 아니라 이름으로 나온다
-          // (이름 조회가 실패했을 때만 ID 로 떨어진다).
-          <TableShell title="결함 후보를 볼 임무" meta={`${missions.length}건`}>
-            <TableRow columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH} head>
-              <span>계약 ID</span>
-              <span>현장</span>
-              <span>유형</span>
-              <span>발급</span>
-            </TableRow>
-            {missions.map((mission) => (
-              <TableRow key={mission.missionId} columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH}>
-                <Link
-                  href={`/assets?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="num truncate text-[12px] font-semibold hover:underline"
-                >
-                  {mission.missionId}
-                </Link>
-                <span className="truncate text-[12.5px] break-keep">
-                  {siteNames.get(mission.siteId) ?? mission.siteId}
-                </span>
-                <span className="truncate text-[12.5px] break-keep">
-                  {MISSION_TYPE_LABEL[mission.missionType]}
-                </span>
-                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
-                  {formatKoreanDateTime(mission.issuedAt, { dateStyle: "medium", timeStyle: "short" })}
-                </span>
-              </TableRow>
-            ))}
-          </TableShell>
-        )}
-      </div>
+      <SiteAreaPicker
+        sites={sites}
+        title="현장 확인 항목"
+        description="결함 후보와 관측 근거는 현장 맥락에서 검토합니다. 확인할 현장을 선택하세요."
+        section="review-items"
+      />
     );
   }
+
+  const currentMission = missions.find((mission) => mission.missionId === missionId) ?? null;
+  const currentSite = currentMission
+    ? sites.find((site) => site.siteId === currentMission.siteId) ?? null
+    : null;
 
   const { view, error } = await fetchDefects(missionId);
   if (error) {
@@ -173,13 +122,23 @@ export default async function AssetsPage({
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <section className="rounded-lg border border-line p-4">
-        <h2 className="text-sm font-semibold">{view.missionId}</h2>
+        <h2 className="text-sm font-semibold">{currentSite?.name ?? "임무 근거"}</h2>
         <p className="mt-1 text-sm text-ink-2">
           결함 후보 {view.candidateCount}건 · 사진 {view.sourceMediaIds.length}장
         </p>
-        <Link href="/assets" className="tap-target mt-2 inline-flex items-center text-sm text-accent-text hover:underline">
-          다른 임무 선택
-        </Link>
+        <div className="mt-2 flex flex-wrap gap-x-4">
+          {currentMission && (
+            <Link
+              href={`/sites/${encodeURIComponent(currentMission.siteId)}?section=review-items`}
+              className="tap-target inline-flex items-center text-sm text-accent-text hover:underline"
+            >
+              현장 확인 항목으로
+            </Link>
+          )}
+          <Link href="/assets" className="tap-target inline-flex items-center text-sm text-accent-text hover:underline">
+            다른 현장 선택
+          </Link>
+        </div>
       </section>
 
       {view.sourceMediaIds.length > 0 && (

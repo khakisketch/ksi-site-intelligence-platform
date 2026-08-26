@@ -100,15 +100,21 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
 
 export const SITE_TABS = [
-  { key: "overview", label: "개요" },
-  { key: "volume", label: "변화 · 물량" },
-  { key: "design", label: "설계 · 구역" },
-  { key: "records", label: "기록 · 관리" },
+  { key: "briefing", label: "브리핑" },
+  { key: "data", label: "현장 데이터" },
+  { key: "review-items", label: "확인 항목" },
+  { key: "work", label: "작업·조사" },
+  { key: "reports", label: "보고서" },
 ] as const;
 
 export type SiteTabKey = (typeof SITE_TABS)[number]["key"];
 
 export function normalizeSiteTab(raw: string | null | undefined): SiteTabKey {
   const hit = SITE_TABS.find((tab) => tab.key === raw);
-  return hit ? hit.key : "overview";
+  if (hit) return hit.key;
+  // 기존 bookmark/deep link를 새 현장 작업공간으로 안전하게 흡수한다.
+  if (raw === "overview") return "briefing";
+  if (raw === "volume" || raw === "design") return "data";
+  if (raw === "records") return "work";
+  return "briefing";
 }

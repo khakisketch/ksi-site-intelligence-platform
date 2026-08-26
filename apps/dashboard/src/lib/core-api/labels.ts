@@ -309,7 +309,7 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   INVALID_MISSION_IDENTITY: "임무 식별자 형식이 올바르지 않습니다.",
   INVALID_TEXT_ENCODING: "입력한 텍스트에 처리할 수 없는 문자가 포함되어 있습니다.",
   EMPTY_ALLOWED_VOLUMES: "허용 비행 구역이 비어 있어 경로를 만들 수 없습니다. 고급 설정에서 허용 구역을 지정하세요.",
-  NON_CONVEX_AOI: "이 조사 방식은 오목한(L자 등) 외곽을 지원하지 않습니다. AOI를 볼록 다각형으로 다시 그리세요.",
+  NON_CONVEX_AOI: "이 조사 방식은 오목한(L자 등) 범위를 지원하지 않습니다. 현장 범위를 볼록한 모양으로 다시 그리세요.",
   // COVERAGE_BELOW_MINIMUM(경로 생성기 하한 95%)과 COVERAGE_BELOW_CONTRACT_PROMISE(계약이
   // 약속한 값)는 서로 다른 임계값 — 별개 코드로 유지한다(§7 SSOT 정신).
   COVERAGE_BELOW_MINIMUM:

@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,14 +18,24 @@ import {
   SITE_STATUS_LABEL,
   spatialModelSummary,
 } from "@/lib/core-api/labels";
-import { listEvents } from "@/lib/core-api/events";
+import { listAllEvents } from "@/lib/core-api/events";
 import { listMissions } from "@/lib/core-api/missions";
+import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getVolumeChanges } from "@/lib/core-api/phase34";
 import { formatNetVolumeM3 } from "@/lib/core-api/phase34-labels";
 import { getSite } from "@/lib/core-api/sites";
+import { getLatestSiteBriefing, getSiteWorkspace } from "@/lib/core-api/site-workspace";
+import { copilotCitationHref } from "@/lib/copilot-citation";
+import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
 import { siteNextAction } from "@/lib/core-api/site-progress";
-import type { SiteDetailView, SiteView, VolumeChangeListView } from "@/lib/core-api/types";
+import type {
+  SiteBriefing,
+  SiteDetailView,
+  SiteView,
+  SiteWorkspaceView,
+  VolumeChangeListView,
+} from "@/lib/core-api/types";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import {
   findEpoch,
@@ -34,45 +46,136 @@ import {
 } from "@/lib/site-epochs";
 
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
+import { presentWorkOrder } from "@/app/field/work-order-stage";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteHeader } from "./SiteHeader";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 
 const MISSION_LIMIT = 8;
-const EVENT_LIMIT = 8;
+const getSiteForDetail = cache(getSite);
 
-function nextActionFor(site: SiteView): { title: string; description: string } {
-  switch (site.status) {
-    case "UNMAPPED":
-      return {
-        title: "현장 외곽을 확인한 뒤 초기 매핑을 계획하세요",
-        description: "기준 지도가 없어 순찰을 시작할 수 없습니다. 외곽(AOI)을 저장하고 베이스라인 임무를 검토하세요.",
-      };
-    case "REMAP_REQUIRED":
-    case "MODEL_STALE":
-      return {
-        title: "새 조사로 현장 모델을 최신 상태로 만드세요",
-        description: "이전 모델로는 현재 현장을 단정할 수 없습니다. 재조사 임무를 계획한 뒤 결과를 검토하세요.",
-      };
-    case "BASELINE_MAPPING":
-    case "MODEL_PROCESSING":
-    case "MODEL_VALIDATION":
-      return {
-        title: "처리·검증 결과를 기다리는 중입니다",
-        description: "자동으로 순찰 가능 상태가 되었다고 가정하지 않습니다. 완료된 임무의 CoverageReport와 현장 상태를 함께 확인하세요.",
-      };
-    case "SUSPENDED":
-      return {
-        title: "운영 중단 사유와 복귀 조건을 검토하세요",
-        description: "중단 상태에서는 새 자율운영을 시작하지 않습니다. 관리자가 상태 이력과 복귀 조건을 확인해야 합니다.",
-      };
-    default:
-      return {
-        title: "현장 상태를 확인하고 필요한 조사를 계획하세요",
-        description: "발급된 임무와 검토 대기 이벤트를 확인해 다음 행동을 결정하세요.",
-      };
+/**
+ * App Router metadata는 렌더와 같은 서버 경로에서 현장명을 읽는다. React cache로
+ * 본문 조회와 합쳐, 최신 원장을 위한 no-store 정책을 약화하지 않고 같은 요청의
+ * 중복 Core 왕복만 피한다.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ siteId: string }>;
+}): Promise<Metadata> {
+  const { siteId } = await params;
+  try {
+    const site = await getSiteForDetail(siteId);
+    return { title: siteDetailDocumentTitle(site.name) };
+  } catch {
+    // 404/권한 오류의 대상 이름을 title에 남기지 않는다. 본문은 기존의 notFound 또는
+    // ErrorState가 실제 상태를 정직하게 표현한다.
+    return { title: "현장 상세 · KSI" };
   }
+}
+
+function SiteBriefingCard({
+  site,
+  outcome,
+}: {
+  site: SiteView;
+  outcome: OptionalSectionOutcome<SiteBriefing>;
+}) {
+  const aiHref = `/sites/${encodeURIComponent(site.siteId)}/ai`;
+  if (outcome.kind === "error" || outcome.kind === "forbidden") {
+    return (
+      <SectionCard title="KSI 현장 브리핑" meta="확인 불가">
+        <div className="px-4 py-4">
+          <SectionFallback what="저장된 현장 브리핑" outcome={outcome.kind} />
+        </div>
+      </SectionCard>
+    );
+  }
+  if (outcome.kind === "empty") {
+    return (
+      <SectionCard
+        title="KSI 현장 브리핑"
+        meta={site.aiEgressAllowed ? "분석 결과 대기" : "AI 사용 전"}
+        action={site.aiEgressAllowed ? { label: "KSI AI 열기", href: aiHref } : undefined}
+      >
+        <EmptyState
+          compact
+          title={site.aiEgressAllowed ? "아직 저장된 브리핑이 없습니다" : "AI 브리핑은 아직 사용하지 않습니다"}
+          description={
+            site.aiEgressAllowed
+              ? "검증된 현장 결과가 준비되면 근거와 함께 변화·중요도·결정 질문을 만듭니다."
+              : "이 현장은 AI 데이터 활용에 동의하지 않았습니다. 기존 현장 결과와 작업은 그대로 사용할 수 있습니다."
+          }
+        />
+      </SectionCard>
+    );
+  }
+  const briefing = outcome.value;
+  return (
+    <SectionCard
+      title="KSI 현장 브리핑"
+      meta={formatKoreanDateTime(briefing.generatedAt, { dateStyle: "medium", timeStyle: "short" })}
+      action={{ label: "KSI AI에서 질문", href: aiHref }}
+    >
+      <div className="grid gap-px bg-line lg:grid-cols-3">
+        <div className="bg-surface px-4 py-4">
+          <p className="text-[11.5px] font-bold text-ink-muted">무엇이 달라졌나</p>
+          <p className="mt-2 text-[14px] leading-6 break-keep">{briefing.whatChanged}</p>
+        </div>
+        <div className="bg-surface px-4 py-4">
+          <p className="text-[11.5px] font-bold text-ink-muted">왜 중요한가</p>
+          <p className="mt-2 text-[14px] leading-6 break-keep">{briefing.whyItMatters}</p>
+        </div>
+        <div className="bg-surface px-4 py-4">
+          <p className="text-[11.5px] font-bold text-ink-muted">지금 검토할 결정</p>
+          <p className="mt-2 text-[14px] font-semibold leading-6 break-keep">
+            {briefing.decisionPrompt}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-4 py-2.5 text-[11.5px] text-ink-2">
+        <StateBadge
+          label={briefing.status === "READY" ? "근거 검증 완료" : "근거 부족"}
+          tone={briefing.status === "READY" ? "positive" : "caution"}
+        />
+        <span>근거 {briefing.citations.length}건</span>
+        <span>불확실성 · {briefing.uncertainty}</span>
+      </div>
+      {briefing.citations.length > 0 && (
+        <div className="border-t border-line px-4 py-3">
+          <p className="text-[11.5px] font-bold text-ink-muted">판단 근거</p>
+          <ul className="mt-1.5 flex flex-col divide-y divide-line">
+            {briefing.citations.map((citation) => {
+              const href = copilotCitationHref(citation);
+              return (
+                <li key={citation.citationId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-2 text-[12.5px]">
+                  {href ? (
+                    <Link href={href} className="tap-target inline-flex font-semibold text-accent-text underline">
+                      {citation.label}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{citation.label}</span>
+                  )}
+                  {citation.capturedTo && (
+                    <span className="num text-[11.5px] text-ink-muted">
+                      {formatKoreanDate(citation.capturedTo)} 관측
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {briefing.missingData.length > 0 && (
+        <p className="border-t border-line bg-sunk px-4 py-2.5 text-[12px] break-keep text-ink-2">
+          추가 확인이 필요한 데이터 {briefing.missingData.length}건이 있어, 표시된 내용만 근거로 판단해야 합니다.
+        </p>
+      )}
+    </SectionCard>
+  );
 }
 
 /**
@@ -85,9 +188,25 @@ function nextActionFor(site: SiteView): { title: string; description: string } {
  * 여전히 유효하다).
  */
 type SectionOutcome<T> = { kind: "ok"; value: T } | { kind: "forbidden" } | { kind: "error" };
+type OptionalSectionOutcome<T> =
+  | { kind: "ok"; value: T }
+  | { kind: "empty" }
+  | { kind: "forbidden" }
+  | { kind: "error" };
 
 function sectionOutcome<T>(result: PromiseSettledResult<T>): SectionOutcome<T> {
   if (result.status === "fulfilled") return { kind: "ok", value: result.value };
+  if (result.reason instanceof CoreApiError && result.reason.status === 403) {
+    return { kind: "forbidden" };
+  }
+  return { kind: "error" };
+}
+
+function optionalSectionOutcome<T>(result: PromiseSettledResult<T>): OptionalSectionOutcome<T> {
+  if (result.status === "fulfilled") return { kind: "ok", value: result.value };
+  if (result.reason instanceof CoreApiError && result.reason.status === 404) {
+    return { kind: "empty" };
+  }
   if (result.reason instanceof CoreApiError && result.reason.status === 403) {
     return { kind: "forbidden" };
   }
@@ -102,6 +221,11 @@ function SectionFallback({ what, outcome }: { what: string; outcome: "forbidden"
         : `${what} 정보를 불러오지 못했습니다.`}
     </p>
   );
+}
+
+function analysisStatusLabel(status: string): string {
+  if (status === "UNAVAILABLE") return "아직 분석 결과 없음";
+  return PROCESSING_JOB_STATUS_LABEL[status]?.label ?? "상태 확인 필요";
 }
 
 /** 시안 `.facts`/`.fact` — 고정폭 라벨열 + 행마다 하단 보더. 식별자 값은 break-token. */
@@ -178,18 +302,18 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ tab?: string; epoch?: string }>;
+  searchParams: Promise<{ section?: string; tab?: string; epoch?: string }>;
 }) {
   const { siteId } = await params;
-  const { tab: rawTab, epoch: rawEpoch } = await searchParams;
-  const tab = normalizeSiteTab(rawTab);
+  const { section: rawSection, tab: rawTab, epoch: rawEpoch } = await searchParams;
+  const tab = normalizeSiteTab(rawSection ?? rawTab);
 
   // 데이터 조회는 JSX 생성과 분리한다 — try/catch 안에서 JSX 를 만들면
   // eslint react-hooks/error-boundaries 가 걸린다(렌더는 즉시 실행되지 않아 실제로 못 잡는 에러다).
   let site: SiteDetailView | null = null;
   let errorMessage: string | null = null;
   try {
-    site = await getSite(siteId);
+    site = await getSiteForDetail(siteId);
   } catch (error) {
     if (error instanceof CoreApiError && error.status === 404) {
       notFound();
@@ -216,14 +340,20 @@ export default async function SiteDetailPage({
     canTransitionSite,
     canApproveAutonomySite,
     jobsResult,
+    workspaceResult,
+    briefingResult,
+    workOrdersResult,
   ] = await Promise.allSettled([
     listMissions(site.siteId),
-    listEvents({ siteId: site.siteId }),
+    listAllEvents({ siteId: site.siteId }),
     hasAllPermissions("MISSIONS_ISSUE"),
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("SITES_AUTONOMY_APPROVE"),
     // 조사 기록(시점) — 같은 이유로 표면이 없으면 줄 자체가 비고, 그 사실을 머리가 말한다.
     listSiteProcessingJobs(site.siteId),
+    getSiteWorkspace(site.siteId),
+    getLatestSiteBriefing(site.siteId),
+    listObservationWorkOrders(site.siteId),
   ]);
   const missions = sectionOutcome(missionsResult);
   const events = sectionOutcome(
@@ -235,6 +365,11 @@ export default async function SiteDetailPage({
   const canTransition = canTransitionSite.status === "fulfilled" && canTransitionSite.value;
   const canApproveAutonomy =
     canApproveAutonomySite.status === "fulfilled" && canApproveAutonomySite.value;
+  const workspaceOutcome = sectionOutcome(workspaceResult);
+  const workspace: SiteWorkspaceView | null =
+    workspaceOutcome.kind === "ok" ? workspaceOutcome.value : null;
+  const briefingOutcome = optionalSectionOutcome(briefingResult);
+  const workOrders = sectionOutcome(workOrdersResult);
 
   const epochs = jobsResult.status === "fulfilled" ? toSiteEpochs(jobsResult.value.jobs) : [];
   const selectedEpochId = resolveEpochId(epochs, rawEpoch);
@@ -243,7 +378,7 @@ export default async function SiteDetailPage({
   // 물량은 그 탭을 볼 때만 부른다 — 개요를 열 때마다 계산 결과를 두드릴 이유가 없다.
   // 404 는 "아직 계산되지 않음"이지 장애가 아니다(reports 화면과 같은 규약).
   let volume: VolumeChangeListView | null = null;
-  if (tab === "volume" && selectedEpoch) {
+  if (tab === "data" && selectedEpoch) {
     volume = await getVolumeChanges(selectedEpoch.missionId).catch(() => null);
   }
   // 최신 리포트 하나만 그린다. 전 구역 합은 **서버가 계산해 실어 보낸 값**을 쓴다
@@ -251,7 +386,6 @@ export default async function SiteDetailPage({
   const latestVolume = volume?.reports?.[0] ?? null;
 
   const statusLabel = SITE_STATUS_LABEL[site.status];
-  const nextAction = nextActionFor(site);
   const nextStep = siteNextAction(site.status);
   const spatialSummary = spatialModelSummary(site.spatialModel);
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
@@ -260,49 +394,54 @@ export default async function SiteDetailPage({
     <div className="flex flex-col">
       <SiteHeader
         site={site}
-        epochs={epochs}
         selectedEpochId={selectedEpochId}
         tab={tab}
+        latestObservationAt={workspace?.latestObservationAt ?? null}
+        latestObservationKnown={workspaceOutcome.kind === "ok"}
         canStartSurvey={canStartSurvey}
+        canEditAoi={canTransition}
       />
 
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        {tab === "overview" && (
-          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-            <div className="flex min-w-0 flex-col gap-4">
-              <section className="rounded-lg border border-line border-l-4 border-l-line-strong bg-surface px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-[13px] font-bold break-keep">다음 행동</h2>
+        {tab === "briefing" && (
+          <div className="flex flex-col gap-4">
+            <section className="rounded-lg border border-line border-l-4 border-l-line-strong bg-surface px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[13px] font-bold break-keep">다음 행동</h2>
+                {workspace !== null && (
                   <StateBadge label={nextStep.label} tone={nextStep.actionable ? "caution" : "neutral"} />
-                </div>
-                <p className="mt-1 text-[13.5px] font-semibold break-keep">{nextAction.title}</p>
-                <p className="mt-1 text-[12.5px] break-keep text-ink-2">{nextAction.description}</p>
-              </section>
+                )}
+              </div>
+              {workspace !== null ? (
+                <>
+                  <p className="mt-1 text-[14px] font-semibold break-keep">
+                    {workspace.nextAction.label}
+                  </p>
+                  <p className="mt-1 text-[12.5px] break-keep text-ink-2">
+                    {workspace.nextAction.reason}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-[12.5px] break-keep text-ink-2">
+                  작업과 확인 항목을 불러오지 못해 지금 할 일을 정할 수 없습니다. 잠시 후 다시 확인하세요.
+                </p>
+              )}
+              {workspace !== null && workspace.nextAction.href && (
+                <Link
+                  href={workspace.nextAction.href}
+                  className="tap-target mt-2 inline-flex items-center text-[12px] font-semibold text-accent-text hover:underline"
+                >
+                  {workspace.nextAction.label}
+                </Link>
+              )}
+            </section>
+            <SiteBriefingCard site={site} outcome={briefingOutcome} />
+          </div>
+        )}
 
-              <SectionCard title="현장 외곽(AOI)">
-                <div className="p-4">
-                  {site.aoi ? (
-                    <AoiPolygonMap value={site.aoi.vertices} readOnly />
-                  ) : site.status === "UNMAPPED" && canTransition ? (
-                    // AOI 는 UNMAPPED 상태에서만 설정할 수 있다(서버 게이트, SiteStore.set_aoi
-                    // 와 동일 조건) — 편집 권한도 그 게이트를 요구하는 SITES_WRITE 로 같다
-                    // (canTransition 이 이미 그 권한을 대변한다, 새 permission 조회 불필요).
-                    <SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} />
-                  ) : (
-                    <EmptyState
-                      title="아직 외곽이 등록되지 않았습니다"
-                      description={
-                        site.status === "UNMAPPED"
-                          ? "이 현장의 AOI를 설정하려면 현장 등록 권한이 필요합니다."
-                          : "이 현장의 AOI는 UNMAPPED 상태에서만 설정할 수 있습니다 — 매핑이 이미 시작돼 더는 이 화면에서 설정할 수 없습니다."
-                      }
-                    />
-                  )}
-                </div>
-              </SectionCard>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-4">
+        {tab === "data" && (
+          <div className="flex flex-col gap-4">
+            <div className="grid items-start gap-4 lg:grid-cols-3">
               {/* 단일 site detail 응답에 함께 온 파생 판정 — 화면이 두 요청을 합성하지 않는다. */}
               <SectionCard title="공간모델">
                 <div className="flex flex-col gap-1.5 px-4 py-3">
@@ -318,25 +457,26 @@ export default async function SiteDetailPage({
                   <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                     {jobsResult.status === "fulfilled"
                       ? "아직 처리된 조사 시점이 없습니다."
-                      : "이 서버에는 사진 처리(재구성) 표면이 없어 조사 시점을 확인할 수 없습니다."}
+                      : "사진 처리 원장이 연결되지 않아 조사 시점을 확인할 수 없습니다."}
                   </p>
                 )}
               </SectionCard>
 
-              <SectionCard title="현장 좌표계">
-                <dl className="px-4 py-1">
-                  <Fact label="좌표계(CRS)" value={site.siteFrame.crs} isToken />
-                  <Fact label="수직 기준면" value={site.siteFrame.verticalDatum} isToken />
-                  <Fact label="단위" value={site.siteFrame.unit} />
-                  <Fact label="변환 버전" value={site.siteFrame.transformVersion} isToken />
-                </dl>
+              <SectionCard title="공간 기준">
+                <details className="px-4 py-2">
+                  <summary className="tap-target cursor-pointer text-[12.5px] font-semibold">
+                    좌표계와 변환 정보
+                  </summary>
+                  <dl className="border-t border-line pt-1">
+                    <Fact label="좌표계(CRS)" value={site.siteFrame.crs} isToken />
+                    <Fact label="수직 기준면" value={site.siteFrame.verticalDatum} isToken />
+                    <Fact label="단위" value={site.siteFrame.unit} />
+                    <Fact label="변환 버전" value={site.siteFrame.transformVersion} isToken />
+                  </dl>
+                </details>
               </SectionCard>
             </div>
-          </div>
-        )}
 
-        {tab === "volume" && (
-          <div className="flex flex-col gap-4">
             <SectionCard
               title="구역별 순변화"
               meta={
@@ -391,7 +531,7 @@ export default async function SiteDetailPage({
           </div>
         )}
 
-        {tab === "design" && (
+        {tab === "data" && (
           <div className="grid gap-4 sm:grid-cols-2">
             {/* 설계 기준면은 현장 자산이지 임무 산출물이 아니다 — 한 번 올려 검증되면
                 이후 모든 임무가 같은 기준으로 잔량을 낸다. 그래서 임무가 아니라 현장
@@ -427,10 +567,120 @@ export default async function SiteDetailPage({
           </div>
         )}
 
-        {tab === "records" && (
-          <div className="grid items-start gap-4 xl:grid-cols-2">
+        {tab === "review-items" && (
+          <SectionCard
+            title="이 현장의 확인 항목"
+            meta={events.kind === "ok" ? `${events.value.length}건` : undefined}
+            action={{ label: "전체 화면으로 보기", href: `/events?siteId=${encodeURIComponent(site.siteId)}` }}
+          >
+            <div className="px-4 py-2">
+              {events.kind !== "ok" ? (
+                <SectionFallback what="확인 항목" outcome={events.kind} />
+              ) : events.value.length === 0 ? (
+                <EmptyState
+                  title="현재 확인할 항목이 없습니다"
+                  description="새 관측이 들어오면 근거와 사람의 판단 상태가 이곳에 표시됩니다."
+                />
+              ) : (
+                <ul className="flex flex-col divide-y divide-line">
+                  {events.value.map((event) => {
+                    const eventStatusLabel = EVENT_STATUS_LABEL[event.status];
+                    return (
+                      <li key={event.eventKey}>
+                        <Link
+                          href={`/events/${encodeURIComponent(event.eventKey)}`}
+                          className="tap-target -mx-2 grid gap-1 rounded-md px-2 py-3 hover:bg-sunk sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        >
+                          <span>
+                            <span className="block text-[14px] font-semibold break-keep">
+                              {humanizeEventType(event.eventType)}
+                            </span>
+                            <span className="mt-0.5 block text-[12px] text-ink-muted">
+                              {formatKoreanDateTime(event.occurredAt, { dateStyle: "medium", timeStyle: "short" })}
+                            </span>
+                          </span>
+                          <StatusBadge label={eventStatusLabel.label} tone={eventStatusLabel.tone} />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </SectionCard>
+        )}
+
+        {tab === "work" && (
+          <div className="flex flex-col gap-4">
+            <div id="site-aoi" className="scroll-mt-20">
+              <SectionCard title="현장 범위">
+                <div className="p-4">
+                  {site.aoi ? (
+                    <AoiPolygonMap value={site.aoi.vertices} readOnly />
+                  ) : site.status === "UNMAPPED" && canTransition ? (
+                    <>
+                      <div className="rounded-lg border border-line bg-sunk px-4 py-3 lg:hidden">
+                        <p className="text-[13px] font-semibold break-keep">현장 범위가 아직 설정되지 않았습니다</p>
+                        <p className="mt-1 text-[12.5px] break-keep text-ink-2">
+                          지도에서 조사할 공사 구역을 지정하는 작업은 노트북에서 시작할 수 있습니다.
+                        </p>
+                      </div>
+                      <div className="hidden lg:block">
+                        {/* AOI 는 UNMAPPED 상태에서만 설정할 수 있다(서버 게이트, SiteStore.set_aoi
+                            와 동일 조건). 모바일에서는 편집기를 숨기고 작업 맥락만 유지한다. */}
+                        <SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} />
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState
+                      compact
+                      title="아직 현장 범위가 등록되지 않았습니다"
+                      description={
+                        site.status === "UNMAPPED"
+                          ? "현장 범위를 설정하려면 현장 등록 권한이 필요합니다."
+                          : "현장 매핑이 시작된 뒤에는 이 화면에서 현장 범위를 바꿀 수 없습니다."
+                      }
+                    />
+                  )}
+                </div>
+              </SectionCard>
+            </div>
+
+            <div className="grid items-start gap-4 xl:grid-cols-2">
+            <SectionCard title="현장 작업" meta={workOrders.kind === "ok" ? `${workOrders.value.length}건` : undefined}>
+              <div className="px-4 py-2">
+                {workOrders.kind !== "ok" ? (
+                  <SectionFallback what="작업" outcome={workOrders.kind} />
+                ) : workOrders.value.length === 0 ? (
+                  <p className="py-2 text-[13px] break-keep text-ink-muted">아직 계획된 작업이 없습니다.</p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-line">
+                    {workOrders.value.map((workOrder) => {
+                      const presentation = presentWorkOrder(workOrder.status);
+                      return (
+                        <li key={workOrder.workOrderId}>
+                          <Link
+                            href={`/field/work-orders/${encodeURIComponent(workOrder.workOrderId)}`}
+                            className="tap-target -mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-3 hover:bg-sunk"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-[14px] font-semibold">{workOrder.name}</span>
+                              <span className="mt-0.5 block text-[12px] text-ink-muted">
+                                {formatKoreanDateTime(workOrder.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 업데이트
+                              </span>
+                            </span>
+                            <StateBadge label={presentation.label} tone={presentation.tone} />
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </SectionCard>
+
             <SectionCard
-              title="이 현장의 임무"
+              title="비행 임무 이력"
               action={{ label: "전체보기", href: `/missions?siteId=${encodeURIComponent(site.siteId)}` }}
             >
               <div className="px-4 py-2">
@@ -455,43 +705,6 @@ export default async function SiteDetailPage({
                         </Link>
                       </li>
                     ))}
-                  </ul>
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="이 현장의 이벤트"
-              action={{ label: "전체보기", href: `/events?siteId=${encodeURIComponent(site.siteId)}` }}
-            >
-              <div className="px-4 py-2">
-                {events.kind !== "ok" ? (
-                  <SectionFallback what="이벤트" outcome={events.kind} />
-                ) : events.value.length === 0 ? (
-                  <p className="py-2 text-[13px] break-keep text-ink-muted">아직 없습니다.</p>
-                ) : (
-                  <ul className="flex flex-col divide-y divide-line">
-                    {events.value.slice(0, EVENT_LIMIT).map((event) => {
-                      const eventStatusLabel = EVENT_STATUS_LABEL[event.status];
-                      return (
-                        <li key={event.eventKey}>
-                          <Link
-                            href={`/events/${encodeURIComponent(event.eventKey)}`}
-                            className="tap-target -mx-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-[13.5px] hover:bg-sunk"
-                          >
-                            {/* 배지와 날짜만 있으면 "무슨 일이 있었나"가 목록에서 빠진다 —
-                                종류를 함께 싣는다(라벨 없는 종류는 원문 그대로, labels.ts). */}
-                            <span className="min-w-0 flex-1 truncate break-keep font-medium">
-                              {humanizeEventType(event.eventType)}
-                            </span>
-                            <StatusBadge label={eventStatusLabel.label} tone={eventStatusLabel.tone} />
-                            <span className="num text-[12px] whitespace-nowrap text-ink-muted">
-                              {formatKoreanDate(event.occurredAt)}
-                            </span>
-                          </Link>
-                        </li>
-                      );
-                    })}
                   </ul>
                 )}
               </div>
@@ -531,6 +744,47 @@ export default async function SiteDetailPage({
                 <Fact label="최근 갱신" value={formatKoreanDate(site.updatedAt)} isToken />
                 <Fact label="좌표계(CRS)" value={site.siteFrame.crs} isToken />
                 <Fact label="변환 버전" value={site.siteFrame.transformVersion} isToken />
+              </dl>
+            </SectionCard>
+            </div>
+          </div>
+        )}
+
+        {tab === "reports" && (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+            <SectionCard
+              title="현장 보고서"
+              action={{ label: "보고서 열기", href: `${sitePath}/report` }}
+            >
+              <div className="px-4 py-4">
+                <p className="text-[15px] font-semibold break-keep">
+                  변화·공정·상대 물량·확인 항목·결정·다음 관측을 한 문서에서 봅니다.
+                </p>
+                <p className="mt-2 text-[12.5px] leading-6 break-keep text-ink-2">
+                  화면과 내보내기는 같은 서버 값을 사용합니다. 근거가 없는 값은 보고서에서도 채우지 않습니다.
+                </p>
+              </div>
+            </SectionCard>
+            <SectionCard title="최신 근거 상태">
+              <dl className="px-4 py-1">
+                <Fact
+                  label="관측 시점"
+                  value={
+                    workspace === null
+                      ? "알 수 없음"
+                      : workspace.latestObservationAt
+                        ? formatKoreanDate(workspace.latestObservationAt)
+                        : "아직 없음"
+                  }
+                />
+                <Fact
+                  label="확인 항목"
+                  value={workspace !== null ? `${workspace.reviewItemCount}건` : "알 수 없음"}
+                />
+                <Fact
+                  label="분석 상태"
+                  value={workspace !== null ? analysisStatusLabel(workspace.latestAnalysis.status) : "알 수 없음"}
+                />
               </dl>
             </SectionCard>
           </div>

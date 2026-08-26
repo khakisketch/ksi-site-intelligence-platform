@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { SITE_STATUS_LABEL, humanizeApiError } from "@/lib/core-api/labels";
@@ -105,6 +106,9 @@ export default async function WorldPage({
   searchParams: Promise<{ siteId?: string }>;
 }) {
   const { siteId } = await searchParams;
+  if (siteId) {
+    redirect(`/sites/${encodeURIComponent(siteId)}?section=data`);
+  }
   const sites = await fetchSites();
 
   // 현장 전환줄 — World 는 보는 화면이라 현장을 바꾸는 데 두 번 들르게 하지 않는다.

@@ -1,4 +1,5 @@
 import type { SiteStatus } from "@/lib/core-api/types";
+import type { OperatorNextAction } from "@/lib/operator-next-action";
 
 /**
  * 홈 포트폴리오 표의 한 행 — **서버에서 이미 확정된 값만** 담는다.
@@ -23,6 +24,8 @@ export interface PortfolioRow {
   unattendedCount: number | null;
   /** 기준 지도가 없어 순찰을 시작할 수 없는 상태(UNMAPPED·REMAP_REQUIRED). */
   blocked: boolean;
+  /** 현재 AOI·상태·권한으로 결정된 바로가기. 없으면 쓰기 행동을 만들지 않는다. */
+  primaryAction: OperatorNextAction | null;
 }
 
 export const PORTFOLIO_SORTS = [

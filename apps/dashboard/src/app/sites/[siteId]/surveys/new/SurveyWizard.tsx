@@ -278,6 +278,7 @@ export function SurveyWizard({
   initialAoi = null,
   initialCapturePlan = null,
   initialDerivation = null,
+  initialWorkOrderId = null,
 }: {
   site: SiteView;
   /** 변화탐지 재방문 권고 등 외부 신호가 목적을 이미 답한 경우의 초깃값(M2 폐루프).
@@ -303,6 +304,8 @@ export function SurveyWizard({
   } | null;
   /** 이 임무가 어느 변화 영역에서 나왔는가 — 그대로 발급 요청에 실려 간다. */
   initialDerivation?: MissionDerivation | null;
+  /** 승인된 WorkOrder 현재 회차 계보. Core가 organization·Site·승인 상태를 재검증한다. */
+  initialWorkOrderId?: string | null;
 }) {
   const router = useRouter();
   // 현장에 AOI 가 영속돼 있으면 그것을 기본값으로 채운다(risk site-aoi-not-persisted
@@ -372,6 +375,7 @@ export function SurveyWizard({
     if (!draft.missionId) setDraft({ ...draft, missionId });
     try {
       const payload: MissionPlanRequest = {
+        ...(initialWorkOrderId ? { workOrderId: initialWorkOrderId } : {}),
         contract: {
           missionId,
           siteId: site.siteId,
@@ -848,7 +852,7 @@ export function SurveyWizard({
           <dd className="text-right">{draft.level ? LEVEL_PRESETS[draft.level].label : "—"}</dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-ink-2">AOI 꼭짓점</dt>
+          <dt className="text-ink-2">촬영 범위 꼭짓점</dt>
           <dd className="num text-right">{draft.aoi.length}개</dd>
         </div>
         <div className="flex justify-between gap-4">
@@ -1031,7 +1035,7 @@ export function SurveyWizard({
 
   return (
     <WizardShell
-      title={`${site.status === "UNMAPPED" ? "베이스라인 임무 발급" : "새 현장조사"} — ${site.name}`}
+      title={`${site.status === "UNMAPPED" ? "베이스라인 조사 계획" : "새 조사 계획"} — ${site.name}`}
       stepLabels={STEP_LABELS}
       stepHints={STEP_HINTS}
       origin={originBadge}

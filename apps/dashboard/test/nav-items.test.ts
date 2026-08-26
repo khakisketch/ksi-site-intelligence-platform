@@ -33,22 +33,16 @@ describe("DESKTOP_NAV_GROUPS", () => {
     expect(grouped).toHaveLength(new Set(grouped).size);
   });
 
-  it("[핵심] PRD §7.1 이 못박은 데스크톱 10항목이 그대로 있다", () => {
-    // 자리와 순서 둘 다 PRD 고정값이다(docs/product/MASTER_PRD_v3.0.md §7.1).
-    // 주석의 PRD 이름과 실제 라벨이 다른 두 줄은 그 슬롯이 아직 PRD 범위대로 채워지지
-    // 않았다는 뜻이다 — 채워지면 라벨을 PRD 이름으로 되돌린다.
+  it("고객의 네 가지 전역 업무 뒤에 운영 지원만 온다", () => {
     const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
     expect(grouped).toEqual([
-      "home", // 홈
-      "sites", // 현장
-      "missions", // 임무
-      "events", // 이벤트
-      "assets", // PRD "자산·시설물" — 현재 화면은 임무 사진의 결함 후보뿐
-      "world", // 2D·3D World
-      "reports", // 보고서
-      "fleet", // Fleet·Edge
-      "data", // Data·AI
-      "settings", // PRD "설정" — 현재 화면은 장비 지원단계 표뿐
+      "home",
+      "sites",
+      "work",
+      "review",
+      "missions",
+      "settings",
+      "fleet",
     ]);
   });
 
@@ -73,12 +67,12 @@ describe("DESKTOP_NAV_GROUPS", () => {
 });
 
 describe("MOBILE_TAB_ITEMS", () => {
-  it("PRD §7.1 모바일 하단 5탭 그대로다", () => {
+  it("모바일은 고객 업무 네 가지와 더보기다", () => {
     expect(MOBILE_TAB_ITEMS.map((i) => i.label)).toEqual([
-      "오늘",
+      "홈",
       "현장",
-      "임무",
-      "이벤트",
+      "작업",
+      "확인",
       "더보기",
     ]);
   });
@@ -87,5 +81,13 @@ describe("MOBILE_TAB_ITEMS", () => {
     // /more 화면이 실제로 그 목록을 그린다(app/more/page.tsx). 여기서는 그 진입점이
     // 탭에 남아 있는지만 고정한다 — 진입점이 사라지면 모바일에서 절반이 사라진다.
     expect(MOBILE_TAB_ITEMS.some((i) => i.href === "/more")).toBe(true);
+  });
+
+  it("모바일 작업 탭은 기존 /field 작업 큐로 연결한다", () => {
+    expect(MOBILE_TAB_ITEMS.find((item) => item.key === "work")?.href).toBe("/field");
+  });
+
+  it("모든 하단 탭은 같은 아이콘 계약을 갖는다", () => {
+    expect(MOBILE_TAB_ITEMS.every((item) => item.icon.length > 0)).toBe(true);
   });
 });

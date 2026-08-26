@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
@@ -75,6 +76,7 @@ export default async function NewSurveyPage({
     missionId?: string;
     changeRegionSetId?: string;
     regionId?: string;
+    workOrderId?: string;
   }>;
 }) {
   const { siteId } = await params;
@@ -115,20 +117,27 @@ export default async function NewSurveyPage({
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-5">
         <EmptyState
-          title="조사 임무 발급 권한이 없습니다"
-          description="새 현장조사는 임무 발급 권한을 가진 계정만 시작할 수 있습니다. 관리자에게 문의하세요."
+          title="새 조사를 확정할 권한이 없습니다"
+          description="새 조사 계획은 운영 권한을 가진 계정만 확정할 수 있습니다. 관리자에게 문의하세요."
         />
       </div>
     );
   }
 
   return (
-    <SurveyWizard
-      site={site}
-      initialMissionType={initialMissionType}
-      initialAoi={initialAoi}
-      initialCapturePlan={initialCapturePlan}
-      initialDerivation={initialDerivation}
-    />
+    <ResponsiveActionBoundary
+      action="MISSIONS_ISSUE"
+      reason="조사 계획 검토와 확정은 현장 노트북의 전체 Operations Console에서 수행합니다."
+      className="m-4 lg:m-5"
+    >
+      <SurveyWizard
+        site={site}
+        initialMissionType={initialMissionType}
+        initialAoi={initialAoi}
+        initialCapturePlan={initialCapturePlan}
+        initialDerivation={initialDerivation}
+        initialWorkOrderId={resolvedSearchParams.workOrderId ?? null}
+      />
+    </ResponsiveActionBoundary>
   );
 }

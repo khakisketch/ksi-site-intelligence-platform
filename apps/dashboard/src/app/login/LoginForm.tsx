@@ -14,7 +14,7 @@ export function LoginForm({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
       <div className="flex flex-col gap-1.5">
         <label htmlFor="token" className="text-sm font-medium break-keep">
-          Bearer 토큰
+          개발용 Bearer 토큰
         </label>
         <input
           id="token"

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
 
@@ -52,14 +53,11 @@ export function PortfolioTable({
   rows,
   initialQuery,
   initialSort,
-  canPlanSurvey,
   meta,
 }: {
   rows: PortfolioRow[];
   initialQuery: string;
   initialSort: string;
-  /** 임무 발급 권한이 없으면 '조사' 버튼을 그리지 않는다 — 끝에서만 막히는 링크를 주지 않는다. */
-  canPlanSurvey: boolean;
   meta: string;
 }) {
   const [query, setQuery] = useState(initialQuery);
@@ -179,12 +177,17 @@ export function PortfolioTable({
               </span>
 
               <span className="flex justify-end gap-1.5">
-                {canPlanSurvey && (
-                  <TableAction
-                    href={`/sites/${encodeURIComponent(row.siteId)}/surveys/new`}
-                    label="조사"
-                    primary
-                  />
+                {row.primaryAction && (
+                  <ResponsiveActionBoundary
+                    action={row.primaryAction.responsiveAction}
+                    reason="현장 범위 설정과 조사 계획은 노트북의 전체 Operations Console에서 수행합니다."
+                  >
+                    <TableAction
+                      href={row.primaryAction.href}
+                      label={row.primaryAction.label}
+                      primary
+                    />
+                  </ResponsiveActionBoundary>
                 )}
                 <TableAction href={`/world?siteId=${encodeURIComponent(row.siteId)}`} label="World" />
               </span>

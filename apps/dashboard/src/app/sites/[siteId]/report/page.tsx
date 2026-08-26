@@ -293,18 +293,29 @@ export default async function SiteReportPage({
   );
 
   if (!designSurfaceId) {
-    const surfaces = await listDesignSurfaces(site.siteId)
-      .then((r) => r.surfaces)
-      .catch(() => [] as DesignSurface[]);
+    let surfaces: DesignSurface[] | null = null;
+    try {
+      surfaces = (await listDesignSurfaces(site.siteId)).surfaces;
+    } catch {
+      surfaces = null;
+    }
     return (
       <div className="flex flex-col gap-5 p-4 sm:p-5">
         {header}
-        <section className="print:hidden flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-          <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
-            어느 설계 기준면 보고서를 만들까요?
-          </h3>
-          <SurfacePicker siteId={site.siteId} surfaces={surfaces} />
-        </section>
+        {surfaces === null ? (
+          <ErrorState
+            message="설계 기준면 목록을 불러오지 못했습니다."
+            detail="등록된 기준면이 없는 것으로 처리하지 않았습니다. 잠시 후 다시 확인하세요."
+            retryable
+          />
+        ) : (
+          <section className="print:hidden flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+            <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
+              어느 설계 기준면 보고서를 만들까요?
+            </h3>
+            <SurfacePicker siteId={site.siteId} surfaces={surfaces} />
+          </section>
+        )}
       </div>
     );
   }

@@ -11,7 +11,7 @@ import { isChromelessPath } from "@/components/nav/chromeless-path";
 // 이 파일이 지키는 대상이다.
 
 describe("셸을 벗는 경로", () => {
-  it.each(["/login", "/login/", "/field", "/field/", "/field/mission-1", "/field/mission-1/"])(
+  it.each(["/login", "/login/"])(
     "%s 는 셸 없이 그린다",
     (pathname) => {
       expect(isChromelessPath(pathname)).toBe(true);
@@ -20,7 +20,7 @@ describe("셸을 벗는 경로", () => {
 });
 
 describe("셸을 유지하는 경로", () => {
-  it.each(["/", "/missions", "/missions/mission-1", "/sites", "/events"])(
+  it.each(["/", "/field", "/field/mission-1", "/missions", "/missions/mission-1", "/sites", "/events"])(
     "%s 는 앱 셸을 그대로 쓴다",
     (pathname) => {
       expect(isChromelessPath(pathname)).toBe(false);
@@ -28,8 +28,7 @@ describe("셸을 유지하는 경로", () => {
   );
 
   it("접두가 같기만 한 경로를 끌어들이지 않는다 — 세그먼트 경계까지 본다", () => {
-    // /fieldwork·/logins 같은 경로가 나중에 생겼을 때 "/field 로 시작한다"는
-    // 이유만으로 조용히 사이드바를 잃으면 안 된다.
+    // /field는 이제 일반 셸이고, /logins 같은 유사 경로도 로그인 예외에 들어가면 안 된다.
     expect(isChromelessPath("/fieldwork")).toBe(false);
     expect(isChromelessPath("/field-notes")).toBe(false);
     expect(isChromelessPath("/logins")).toBe(false);
@@ -60,61 +59,54 @@ describe("셸 벗기 판정이 실제로 배선돼 있다", () => {
     "src/app/layout.tsx",
     "src/components/nav/DesktopSidebar.tsx",
     "src/components/nav/MobileBottomNav.tsx",
+    "src/components/nav/ShellPathBoundary.tsx",
   ])("%s 가 isChromelessPath 를 호출해 조건부로 그린다", (relativePath) => {
     const source = readSource(relativePath);
     expect(source).toMatch(/isChromelessPath\(/);
   });
+
+  it("client redirect에서도 body grid와 서버 shell 조각을 현재 경로에 맞춘다", () => {
+    const layout = readSource("src/app/layout.tsx");
+    const boundary = readSource("src/components/nav/ShellPathBoundary.tsx");
+
+    expect(layout).toContain("<ShellLayoutMode />");
+    expect(layout).toContain("<ShellOnly>");
+    expect(boundary).toContain("document.body.classList.toggle");
+    expect(boundary).toContain('"lg:grid-cols-[176px_1fr]"');
+    expect(boundary).toContain('"xl:grid-cols-[232px_1fr]"');
+  });
 });
 
-describe("/field 는 리다이렉트가 아니라 인라인 로그인으로 막힌다", () => {
-  // field-session.ts 의 설계 이유(모듈 docstring): Pilot 2 웹뷰가 302 를 따라간다는
-  // 보장이 없다. 그래서 세션 없음을 리다이렉트가 아니라 화면 상태로 다룬다 — 이
-  // 성질이 조용히 redirect() 로 되돌아가면 그 보장이 깨진다.
-  it.each(["src/app/field/page.tsx", "src/app/field/[missionId]/page.tsx"])(
-    "%s 가 FieldInlineLogin 을 그리고 redirect() 를 쓰지 않는다",
+describe("/field 는 일반 Operations Console 화면이다", () => {
+  it.each([
+    "src/app/field/page.tsx",
+    "src/app/field/[missionId]/page.tsx",
+    "src/app/field/work-orders/[workOrderId]/page.tsx",
+  ])(
+    "%s 에 RC 전용 로그인·헤더·Bridge가 없다",
     (relativePath) => {
       const source = readSource(relativePath);
-      expect(source).toMatch(/FieldInlineLogin/);
-      expect(source).not.toMatch(/\bredirect\(/);
+      expect(source).not.toMatch(/FieldInlineLogin|FieldHeader|PilotBridgeProbe/);
+      expect(source).toMatch(/Operations/);
     },
   );
-});
 
-describe("현장 44px 터치 치수 — 정적 검사", () => {
-  const css = readSource("src/app/globals.css");
-
-  it(".btn-field 는 pointer 판별 없이 항상 44px 이다", () => {
-    const match = /\.btn-field\s*\{([^}]*)\}/.exec(css);
-    expect(match, ".btn-field 규칙을 찾지 못했다").not.toBeNull();
-    expect(match![1]).toMatch(/min-height:\s*44px/);
-    expect(match![1]).toMatch(/min-width:\s*44px/);
+  it("proxy는 /field를 공개 경로로 예외 처리하지 않는다", () => {
+    const source = readSource("src/proxy.ts");
+    expect(source).toContain('const PUBLIC_PATHS = ["/login"]');
   });
 
-  it(".field-controls .tap-target 는 @layer components 블록 밖에 있다 — 레이어 안에 두면 " +
-    "레이어 밖의 .tap-target(36px)에 특이도와 무관하게 져서 44px 규칙이 조용히 무효화된다 " +
-    "(파일 내 주석에 실측 회귀로 기록돼 있다)", () => {
-    const layerStart = css.indexOf("@layer components {");
-    expect(layerStart, "@layer components 블록을 찾지 못했다").toBeGreaterThan(-1);
+  it("Pilot Bridge 진단은 비-production 명시 flag에서만 열린다", () => {
+    const source = readSource("src/app/hil/pilot-bridge/page.tsx");
+    expect(source).toContain('process.env.NODE_ENV === "production"');
+    expect(source).toContain('KSI_DASHBOARD_HIL_TOOLS_ENABLED !== "1"');
+    expect(source).toContain("notFound()");
+  });
 
-    // layerStart 에서 시작해 중괄호 깊이로 이 @layer 블록의 끝을 찾는다.
-    let depth = 0;
-    let layerEnd = -1;
-    for (let i = layerStart; i < css.length; i += 1) {
-      if (css[i] === "{") depth += 1;
-      else if (css[i] === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          layerEnd = i;
-          break;
-        }
-      }
-    }
-    expect(layerEnd, "@layer components 블록의 닫는 중괄호를 찾지 못했다").toBeGreaterThan(-1);
-
-    const ruleIndex = css.indexOf(".field-controls .tap-target");
-    expect(ruleIndex, ".field-controls .tap-target 규칙을 찾지 못했다").toBeGreaterThan(-1);
-
-    const insideLayer = ruleIndex > layerStart && ruleIndex < layerEnd;
-    expect(insideLayer, ".field-controls .tap-target 가 @layer components 안으로 들어갔다").toBe(false);
+  it("비활성 HIL 경로는 로그인 redirect가 아니라 실제 404 route로 보낸다", () => {
+    const source = readSource("src/proxy.ts");
+    expect(source).toContain("function isUnavailableHilPath");
+    expect(source).toContain("if (isUnavailableHilPath(pathname))");
+    expect(source).toMatch(/isUnavailableHilPath[\s\S]*status: 404/);
   });
 });

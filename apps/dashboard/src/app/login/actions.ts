@@ -4,6 +4,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { verifyToken } from "@/lib/core-api/auth";
+import { oidcAuthorizationParams, oidcLoginIntent } from "@/lib/auth/local-identity-login";
+import { getDashboardAuthRuntime } from "@/lib/auth/runtime";
+import { safeNextPath } from "@/lib/auth/safe-next";
 import {
   checkLoginThrottle,
   recordLoginFailure,
@@ -13,25 +16,6 @@ import { clearSessionToken, setSessionToken } from "@/lib/core-api/session";
 
 export interface LoginState {
   error?: string;
-}
-
-// 오픈 리다이렉트 방지 — 문자열 startsWith("/") 검사는 "/\evil.com"·탭 삽입 등
-// WHATWG URL 파서가 별도로 정규화하는 트릭에 우회당한다(독립 재검토 1차 P1-B). 브라우저와
-// 동일한 파서로 정규화한 뒤 origin 을 대조해야 안전하다.
-function safeNextPath(raw: string): string {
-  try {
-    const parsed = new URL(raw, "http://ksi-dashboard.invalid");
-    if (parsed.origin !== "http://ksi-dashboard.invalid") return "/";
-    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    // origin 대조만으로는 부족하다 — "/.//evil.example"·"/..//evil.example" 류는 dot-segment
-    // 정규화로 parsed.pathname 자체가 "//evil.example"(scheme-relative)이 되어 origin 은
-    // base 그대로 통과한다(독립 재검토 2차 P1-B). "/"로 시작하되 "//"는 아닌 형태만 허용해
-    // pathname의 shape 자체를 명시적으로 검사한다(암묵적 불변식에 기대지 않는다).
-    if (!path.startsWith("/") || path.startsWith("//")) return "/";
-    return path;
-  } catch {
-    return "/";
-  }
 }
 
 /**
@@ -48,6 +32,9 @@ async function throttleKey(): Promise<string> {
 }
 
 export async function login(_prevState: LoginState, formData: FormData): Promise<LoginState> {
+  if (!getDashboardAuthRuntime().manualOpaqueLoginEnabled) {
+    return { error: "이 배포에서는 수동 Bearer 토큰 로그인을 허용하지 않습니다." };
+  }
   const key = await throttleKey();
   const throttle = checkLoginThrottle(key);
   if (throttle.blocked) {
@@ -85,7 +72,21 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   redirect(safeNextPath(nextParam));
 }
 
+export async function oidcLogin(formData: FormData): Promise<void> {
+  const runtime = getDashboardAuthRuntime();
+  if (!runtime.oidc) redirect("/login?notice=oidc-not-configured");
+  const { signIn } = await import("@/auth");
+  await signIn("ksi-oidc", {
+    redirectTo: safeNextPath(String(formData.get("next") ?? "/")),
+  }, oidcAuthorizationParams(runtime, oidcLoginIntent(formData.get("intent"))));
+}
+
 export async function logout(): Promise<void> {
   await clearSessionToken();
+  const runtime = getDashboardAuthRuntime();
+  if (runtime.mode === "OIDC" || runtime.mode === "DUAL") {
+    const { signOut } = await import("@/auth");
+    await signOut({ redirectTo: "/login" });
+  }
   redirect("/login");
 }

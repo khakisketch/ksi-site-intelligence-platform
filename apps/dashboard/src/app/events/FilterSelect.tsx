@@ -11,6 +11,8 @@ export interface FilterSelectParams {
   status?: string;
   severity?: string;
   triage?: string;
+  queue?: string;
+  selected?: string;
 }
 
 export function FilterSelect({

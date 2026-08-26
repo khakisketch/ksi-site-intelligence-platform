@@ -34,6 +34,7 @@ import { DesignConformancePanel } from "@/components/design/DesignConformancePan
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
 import { MissionLifecycle } from "@/components/missions/MissionLifecycle";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import {
   CoverageReportSection,
   type CoverageReportResult,
@@ -104,7 +105,6 @@ export default async function MissionDetailPage({
       if (error.status === 404) notFound();
       return (
         <div className="flex flex-col gap-4 p-4 sm:p-5">
-          <BackLink />
           <ErrorState message={humanizeApiError(error.code, error.status, error.serverMessage)} detail={error.serverMessage} />
         </div>
       );
@@ -178,8 +178,6 @@ export default async function MissionDetailPage({
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <BackLink />
-
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5">
         {/* 좌: 요약 + 계약 정보 */}
         <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -221,10 +219,15 @@ export default async function MissionDetailPage({
             />
           </dl>
           <div className="pt-1">
-            <KmzDownloadButton
-              missionId={mission.missionId}
-              hasKmz={mission.artifactKind === "pair"}
-            />
+            <ResponsiveActionBoundary
+              action="RECOVERY_ACTION"
+              reason="KMZ 다운로드는 노트북의 전문가 복구 작업에서 수행합니다."
+            >
+              <KmzDownloadButton
+                missionId={mission.missionId}
+                hasKmz={mission.artifactKind === "pair"}
+              />
+            </ResponsiveActionBoundary>
           </div>
         </section>
 
@@ -263,13 +266,18 @@ export default async function MissionDetailPage({
         <CoverageReportSection result={coverageResult} rejections={rejectionsResult} />
       </section>
 
-      <SourceUploadPanel
-        missionId={mission.missionId}
-        canIssue={canIssue}
-        initialBundle={sourceBundle}
-        initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
-        hasComparisonReport={hasComparison}
-      />
+      <ResponsiveActionBoundary
+        action="SOURCE_MEDIA_MUTATION"
+        reason="원본 업로드·봉인과 처리 시작은 노트북의 전체 Operations Console에서 수행합니다."
+      >
+        <SourceUploadPanel
+          missionId={mission.missionId}
+          canIssue={canIssue}
+          initialBundle={sourceBundle}
+          initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
+          hasComparisonReport={hasComparison}
+        />
+      </ResponsiveActionBoundary>
 
       <ComparisonSubmitPanel
         missionId={mission.missionId}
@@ -302,16 +310,5 @@ function FieldRow({ label, value }: { label: string; value: ReactNode }) {
       <dt className="shrink-0 text-sm break-keep text-ink-muted sm:w-32">{label}</dt>
       <dd className="min-w-0 text-sm break-keep">{value}</dd>
     </div>
-  );
-}
-
-function BackLink() {
-  return (
-    <Link
-      href="/missions"
-      className="tap-target inline-flex w-fit items-center text-sm break-keep text-ink-2 underline decoration-line-strong underline-offset-2 hover:text-ink-1"
-    >
-      ← 임무 목록으로
-    </Link>
   );
 }

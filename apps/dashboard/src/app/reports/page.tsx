@@ -18,12 +18,12 @@ import type {
 } from "@/lib/core-api/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { TableRow, TableShell } from "@/components/ui/TableShell";
 import { listSitesCached } from "@/lib/core-api/cached";
 import { describeComparisonFailure } from "@/lib/comparison-failure";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { VolumeChangeSummary } from "@/components/reports/VolumeChangeSummary";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { SiteAreaPicker } from "@/components/site/SiteAreaPicker";
 
 type Result =
   | { view: ChangeDetectionView; error: null; notFound: false }
@@ -74,9 +74,13 @@ async function fetchSiteNames(): Promise<Map<string, string>> {
   }
 }
 
-// 고정폭 합(400) + 간격(30) + 좌우 여백(32) + 현장 열 최소폭(160) = 622.
-const PICK_COLUMNS = "146px minmax(160px,1fr) 122px 132px";
-const PICK_MIN_WIDTH = 622;
+async function fetchSites() {
+  try {
+    return await listSitesCached();
+  } catch {
+    return [];
+  }
+}
 
 /**
  * 그 임무의 비교 요청 전부(최신 먼저) — 두 가지 서로 다른 질문에 답한다.
@@ -149,59 +153,20 @@ export default async function ReportsPage({
   searchParams: Promise<{ missionId?: string }>;
 }) {
   const { missionId } = await searchParams;
-  const [missions, siteNames] = await Promise.all([fetchMissions(), fetchSiteNames()]);
+  const [missions, siteNames, sites] = await Promise.all([
+    fetchMissions(),
+    fetchSiteNames(),
+    fetchSites(),
+  ]);
 
   if (!missionId) {
     return (
-      <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-[17px] font-bold tracking-tight break-keep">임무별 비교 결과</h2>
-          <p className="text-[12.5px] break-keep text-ink-2">
-            변화 탐지와 체적 변화는 임무 단위로 따로 계산됩니다. 임무를 선택하면 결과가 없는
-            이유도 함께 확인할 수 있습니다.
-          </p>
-        </div>
-        {missions.length === 0 ? (
-          <EmptyState
-            title="발급된 임무가 없습니다"
-            action={{ label: "임무 목록", href: "/missions" }}
-          />
-        ) : (
-          <TableShell title="비교 결과를 볼 임무" meta={`${missions.length}건`}>
-            <TableRow columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH} head>
-              <span>계약 ID</span>
-              <span>현장</span>
-              <span>유형</span>
-              <span>발급</span>
-            </TableRow>
-            {missions.map((mission) => (
-              <TableRow key={mission.missionId} columns={PICK_COLUMNS} minWidth={PICK_MIN_WIDTH}>
-                <Link
-                  href={`/reports?missionId=${encodeURIComponent(mission.missionId)}`}
-                  className="num truncate text-[12px] font-semibold hover:underline"
-                >
-                  {mission.missionId}
-                </Link>
-                {/* 예전에는 여기 원시 siteId 가 찍혔다 — 운영자가 현장을 ID 로 외우고
-                    있어야 고를 수 있는 목록이었다. 이름 조회가 실패하면 그때만 ID 로
-                    떨어진다(부가 정보 실패가 목록을 막지 않는다는 이 화면의 원칙). */}
-                <span className="truncate text-[12.5px] break-keep">
-                  {siteNames.get(mission.siteId) ?? mission.siteId}
-                </span>
-                <span className="truncate text-[12.5px] break-keep">
-                  {MISSION_TYPE_LABEL[mission.missionType]}
-                </span>
-                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
-                  {formatKoreanDateTime(mission.issuedAt, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
-                </span>
-              </TableRow>
-            ))}
-          </TableShell>
-        )}
-      </div>
+      <SiteAreaPicker
+        sites={sites}
+        title="현장 보고서"
+        description="보고서는 현장의 변화·공정·상대 물량·확인 항목과 결정 이력을 함께 설명합니다. 확인할 현장을 선택하세요."
+        section="reports"
+      />
     );
   }
 
@@ -324,7 +289,7 @@ export default async function ReportsPage({
             </Link>
           )}
           <Link href="/reports" className="btn tap-target">
-            다른 임무 선택
+            다른 현장 선택
           </Link>
         </span>
       </section>
@@ -365,8 +330,8 @@ export default async function ReportsPage({
             {view.revisitRecommended && (
               <>
                 <p className="mt-2 text-sm break-keep text-high-ink">
-                  자동으로 재비행이 잡히지는 않습니다 — 원본 현장 AOI 로 SPATIAL_REFRESH
-                  임무를 직접 발급하세요.
+                  자동으로 재비행이 잡히지는 않습니다 — 기존 현장 범위로 공간정보 갱신
+                  조사를 직접 계획하세요.
                 </p>
                 {currentMission && (
                   <Link

@@ -158,9 +158,6 @@ export default async function EventDetailPage({
         : "요청을 처리하지 못했습니다.";
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <Link href="/events" className="text-sm underline break-keep">
-          ← 목록으로
-        </Link>
         <ErrorState message={message} />
       </div>
     );
@@ -184,16 +181,10 @@ export default async function EventDetailPage({
   const severity = event.severity ? EVENT_SEVERITY_LABEL[event.severity] : SEVERITY_UNSET_LABEL;
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <Link href="/events" className="tap-target inline-flex w-fit items-center text-sm underline break-keep">
-        ← 목록으로
-      </Link>
-
       <div className="flex flex-col gap-2">
         {/* 시안 .eyebrow — eventKey 는 사람이 읽을 이름이 아니라 식별자다.
             h1 은 humanizeEventType 으로, eventKey 는 작은 눈썹글자로 내린다. */}
-        <p className="num text-ink-muted text-[10.5px] font-bold tracking-wide break-token uppercase">
-          {event.eventKey}
-        </p>
+        <p className="text-ink-muted text-[11.5px] font-bold break-keep">{siteName}</p>
         <h2 className="text-lg font-bold break-keep">{humanizeEventType(event.eventType)}</h2>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge label={severity.label} tone={severity.tone} />
@@ -215,7 +206,7 @@ export default async function EventDetailPage({
 
       {canTriage && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2.5 text-[12.5px] break-keep text-ink-2">
-          먼저 아래 증거와 전이 이력을 확인한 뒤, 현재 사실에 맞게 트리아지 상태를 변경하세요.
+          먼저 근거와 KSI 관측을 확인한 뒤, 현재 사실에 맞게 사람의 결정을 남기세요.
         </p>
       )}
 
@@ -229,6 +220,8 @@ export default async function EventDetailPage({
       {/* 1024+ 2열: 좌 전이 이력 / 우 사실 패널 + 액션(시안 .work 396px 상세 폭에 맞춤). */}
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,1fr)_396px]">
         <div className="flex flex-col gap-4 lg:col-start-2 lg:sticky lg:top-4">
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-bold">KSI 관측</h2>
           <dl className="flex flex-col rounded-lg border border-line bg-surface px-4">
             <Field
               label="현장"
@@ -241,40 +234,38 @@ export default async function EventDetailPage({
                 </Link>
               }
             />
-            <Field
-              label="임무"
-              value={
-                <Link
-                  href={`/missions/${encodeURIComponent(event.missionId)}`}
-                  className="break-token underline"
-                >
-                  {missionLabel}
-                </Link>
-              }
-            />
-            <Field label="엣지 장치" value={<span className="num break-token">{event.edgeDeviceId}</span>} />
             <Field label="담당자" value={event.assignee ?? "미배정"} />
             <Field label="발생 시각" value={<span className="num">{formatDate(event.occurredAt)}</span>} />
-            <Field label="수신 시각" value={<span className="num">{formatDate(event.receivedAt)}</span>} />
-            <Field
-              label="최근 충돌 시각"
-              value={<span className="num">{formatDate(event.lastConflictAt)}</span>}
-            />
           </dl>
+          </section>
 
           {canTriage && (
-            <EventActions
-              eventKey={event.eventKey}
-              status={event.status}
-              triage={event.triage}
-              bundleDigest={event.bundleDigest}
-            />
+            <section className="flex flex-col gap-2">
+              <h2 className="text-sm font-bold">사람의 결정</h2>
+              <EventActions
+                eventKey={event.eventKey}
+                status={event.status}
+                triage={event.triage}
+                bundleDigest={event.bundleDigest}
+              />
+            </section>
           )}
+
+          <details className="rounded-lg border border-line bg-surface px-4 py-2 text-[12px]">
+            <summary className="tap-target cursor-pointer font-semibold">전문가 정보</summary>
+            <dl className="mt-1 flex flex-col border-t border-line pt-1">
+              <Field label="항목 ID" value={<span className="num break-token">{event.eventKey}</span>} />
+              <Field label="비행 임무" value={<Link href={`/missions/${encodeURIComponent(event.missionId)}`} className="break-token underline">{missionLabel}</Link>} />
+              <Field label="Edge 장치" value={<span className="num break-token">{event.edgeDeviceId}</span>} />
+              <Field label="수신 시각" value={<span className="num">{formatDate(event.receivedAt)}</span>} />
+              <Field label="최근 충돌" value={<span className="num">{formatDate(event.lastConflictAt)}</span>} />
+            </dl>
+          </details>
         </div>
 
         <div className="flex flex-col gap-4 lg:col-start-1 lg:row-start-1">
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium break-keep">전이 이력</h2>
+          <h2 className="text-sm font-bold break-keep">이력</h2>
           {event.transitions.length === 0 ? (
             <p className="text-ink-2 text-sm break-keep">이력이 없습니다.</p>
           ) : (

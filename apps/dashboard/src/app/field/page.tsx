@@ -3,77 +3,121 @@ import Link from "next/link";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
-import { listSitesCached } from "@/lib/core-api/cached";
+import { listAllEventsCached, listSitesCached } from "@/lib/core-api/cached";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
-import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
-import type { ObservationWorkOrderView, SiteView } from "@/lib/core-api/types";
+import { listObservationWorkOrdersForOrganization } from "@/lib/core-api/observation-work-orders";
+import type {
+  EventSummaryResponse,
+  ObservationWorkOrderView,
+  SiteView,
+} from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { resolveOperatorNextAction } from "@/lib/operator-next-action";
 
-import { FieldBlocked, FieldHeader, FieldInlineLogin } from "./FieldShell";
-import { PilotBridgeProbe } from "./PilotBridgeProbe";
+import { OperationsSessionFailure } from "./OperationsSessionFailure";
 import { resolveFieldSession } from "./resolve-session";
 import { presentWorkOrder } from "./work-order-stage";
+import { summarizeWorkQueue, workOrderActionLabel } from "./work-queue";
 
-export const metadata = { title: "오늘 작업 · KSI" };
+export const metadata = { title: "작업 · KSI" };
 
 type WorkResult =
-  | { sites: SiteView[]; workOrders: ObservationWorkOrderView[]; error: null }
-  | { sites: SiteView[]; workOrders: null; error: CoreApiError };
+  | {
+      sites: SiteView[];
+      workOrders: ObservationWorkOrderView[];
+      events: EventSummaryResponse[];
+      error: null;
+    }
+  | { sites: SiteView[]; workOrders: null; events: null; error: CoreApiError };
+
+const WORK_GROUPS = [
+  { key: "decisionRequired", label: "결정 필요", description: "승인·결과 검토·막힘 해소가 필요한 작업" },
+  { key: "inFlight", label: "진행 중", description: "수집·전송·처리가 진행 중인 작업" },
+  { key: "completed", label: "완료", description: "완료되거나 취소되어 이력으로 남은 작업" },
+] as const;
 
 async function fetchTodayWork(): Promise<WorkResult> {
   let sites: SiteView[];
   try {
     sites = await listSitesCached();
   } catch (error) {
-    if (error instanceof CoreApiError) return { sites: [], workOrders: null, error };
+    if (error instanceof CoreApiError) {
+      return { sites: [], workOrders: null, events: null, error };
+    }
     throw error;
   }
-  const results = await Promise.allSettled(
-    sites.map((site) => listObservationWorkOrders(site.siteId)),
-  );
-  const workOrders = results.flatMap((result) =>
-    result.status === "fulfilled" ? result.value : [],
-  );
-  const firstError = results.find(
-    (result): result is PromiseRejectedResult => result.status === "rejected",
-  );
-  if (firstError?.reason instanceof CoreApiError && workOrders.length === 0) {
-    return { sites, workOrders: null, error: firstError.reason };
+  try {
+    const [workOrders, eventResponse] = await Promise.all([
+      listObservationWorkOrdersForOrganization(),
+      listAllEventsCached(),
+    ]);
+    return { sites, workOrders, events: eventResponse.events, error: null };
+  } catch (error) {
+    if (error instanceof CoreApiError) {
+      return { sites, workOrders: null, events: null, error };
+    }
+    throw error;
   }
-  return {
-    sites,
-    workOrders: workOrders.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    error: null,
-  };
 }
 
 export default async function FieldWorkListPage() {
   const session = await resolveFieldSession();
   if (session.kind === "blocked") {
-    return session.verdict.kind === "login" ? (
-      <FieldInlineLogin next="/field" notice={session.verdict.notice} />
-    ) : (
-      <FieldBlocked message={session.verdict.message} retryHref="/field" />
-    );
+    return <OperationsSessionFailure verdict={session.verdict} next="/field" />;
   }
 
   const result = await fetchTodayWork();
   const siteNames = new Map(result.sites.map((site) => [site.siteId, site.name]));
+  const queueSummary = result.workOrders ? summarizeWorkQueue(result.workOrders) : null;
+  const nextAction =
+    result.workOrders && result.events
+      ? resolveOperatorNextAction({
+          events: result.events,
+          workOrders: result.workOrders,
+          sites: result.sites,
+          permissions: session.principal.permissions,
+        })
+      : null;
 
   return (
-    <div className="field-controls flex flex-col">
-      <FieldHeader principal={session.principal}>
-        <div className="flex flex-col gap-1">
-          <h1 className="text-[19px] font-bold tracking-tight break-keep">오늘 작업</h1>
-          <p className="text-[12.5px] break-keep text-ink-2">
-            작업 하나를 열고 승인하면 수집·전송·분석까지 같은 화면에서 이어집니다.
-          </p>
-        </div>
-      </FieldHeader>
+    <div className="flex flex-col gap-4 p-4 sm:p-5">
+      <p className="text-[12.5px] break-keep text-ink-2">
+        현장별로 지금 검토할 일과 조사 진행을 이어갑니다.
+      </p>
 
-      <main className="flex flex-col gap-4 p-4">
-        {result.error ? (
+      {result.workOrders && result.workOrders.length > 0 && (
+        <section className="overflow-hidden rounded-lg border border-line bg-surface">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-4 py-3">
+            <h2 className="text-[15px] font-bold tracking-tight break-keep">작업 현황</h2>
+            <p className="text-[12.5px] break-keep text-ink-2">
+              결정이 필요한 작업부터 확인하세요.
+            </p>
+          </div>
+          <div className="grid gap-px bg-line sm:grid-cols-3">
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[12px] font-semibold text-ink-muted">결정 필요</p>
+              <p className="mt-1 text-[22px] font-bold tracking-tight num">
+                {queueSummary ? queueSummary.decisionRequired.length : "—"}
+              </p>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[12px] font-semibold text-ink-muted">진행 중</p>
+              <p className="mt-1 text-[22px] font-bold tracking-tight num">
+                {queueSummary ? queueSummary.inFlight.length : "—"}
+              </p>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <p className="text-[12px] font-semibold text-ink-muted">완료</p>
+              <p className="mt-1 text-[22px] font-bold tracking-tight num">
+                {queueSummary ? queueSummary.completed.length : "—"}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {result.error ? (
           <ErrorState
             message={humanizeApiError(
               result.error.code,
@@ -85,61 +129,65 @@ export default async function FieldWorkListPage() {
           />
         ) : result.workOrders.length === 0 ? (
           <EmptyState
-            title="준비된 현장 작업이 없습니다"
-            description="사무실에서 반복 관측 작업을 만들면 여기에 나타납니다. 현장에서는 KMZ나 사진 폴더를 준비할 필요가 없습니다."
+            compact
+            inline
+            title="현재 진행할 작업이 없습니다"
+            description="현재 작업 원장에는 진행 중인 항목이 없습니다. 새 조사나 검토가 필요해지면 현장명과 필요한 행동이 이곳에 표시됩니다."
+            action={
+              nextAction
+                ? {
+                    label: nextAction.siteId
+                      ? `${siteNames.get(nextAction.siteId) ?? "선택한 현장"} · ${nextAction.label}`
+                      : nextAction.label,
+                    href: nextAction.href,
+                    desktopOnly: true,
+                  }
+                : undefined
+            }
           />
         ) : (
-          <ul className="flex flex-col gap-3">
-            {result.workOrders.map((workOrder) => {
-              const presentation = presentWorkOrder(workOrder.status);
+          <div className="flex flex-col gap-5">
+            {WORK_GROUPS.map((group) => {
+              const orders = queueSummary?.[group.key] ?? [];
+              if (orders.length === 0) return null;
               return (
-                <li key={workOrder.workOrderId}>
-                  <Link
-                    href={
-                      "/field/work-orders/" + encodeURIComponent(workOrder.workOrderId)
-                    }
-                    className="flex min-h-[96px] flex-col justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-4 hover:border-line-strong hover:bg-sunk"
-                  >
-                    <span className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[16px] font-bold tracking-tight break-keep">
-                        {workOrder.name}
-                      </span>
-                      <StateBadge label={presentation.label} tone={presentation.tone} />
-                    </span>
-                    <span className="text-[13px] break-keep text-ink-2">
-                      {siteNames.get(workOrder.siteId) ?? "현장"} ·{" "}
-                      {workOrder.workAreaIds.length}개 구역 · {workOrder.cycleNumber}회차
-                    </span>
-                    <span className="text-[12px] text-ink-muted">
-                      {formatKoreanDateTime(workOrder.updatedAt, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}{" "}
-                      업데이트
-                    </span>
-                  </Link>
-                </li>
+                <section key={group.key} className="flex flex-col gap-2">
+                  <div className="flex items-baseline gap-2 px-1">
+                    <h2 className="text-[15px] font-bold">{group.label}</h2>
+                    <span className="num text-[12px] text-ink-muted">{orders.length}건</span>
+                    <span className="hidden text-[12px] text-ink-2 sm:inline">{group.description}</span>
+                  </div>
+                  <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface px-4">
+                    {orders.map((workOrder) => {
+                      const presentation = presentWorkOrder(workOrder.status);
+                      return (
+                        <li key={workOrder.workOrderId}>
+                          <Link
+                            href={`/field/work-orders/${encodeURIComponent(workOrder.workOrderId)}`}
+                            className="tap-target -mx-2 grid gap-1 rounded-lg px-2 py-3 hover:bg-sunk sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                          >
+                            <span className="min-w-0">
+                              <span className="block text-[14px] font-semibold break-keep">{workOrder.name}</span>
+                              <span className="mt-0.5 block text-[12.5px] break-keep text-ink-2">
+                                {siteNames.get(workOrder.siteId) ?? "현장 이름을 확인할 수 없음"} · {workOrderActionLabel(workOrder.status)}
+                              </span>
+                            </span>
+                            <span className="flex flex-wrap items-center gap-2 sm:justify-end">
+                              <StateBadge label={presentation.label} tone={presentation.tone} />
+                              <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
+                                {formatKoreanDateTime(workOrder.updatedAt, { dateStyle: "short", timeStyle: "short" })}
+                              </span>
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
               );
             })}
-          </ul>
-        )}
-
-        <details className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-          <summary className="min-h-11 cursor-pointer font-semibold break-keep">
-            연결 문제 시 복구 도구
-          </summary>
-          <div className="flex flex-col gap-3 border-t border-line pt-3 text-ink-2">
-            <p className="break-keep">
-              USB·SD·수동 임무 파일은 정상 작업이 아니라 자동 전달이 막혔을 때만
-              사용합니다.
-            </p>
-            <Link href="/missions" className="btn btn-field w-fit">
-              임무·파일 복구 열기
-            </Link>
-            <PilotBridgeProbe />
           </div>
-        </details>
-      </main>
+        )}
     </div>
   );
 }

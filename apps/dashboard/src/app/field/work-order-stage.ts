@@ -33,8 +33,11 @@ export function presentWorkOrder(status: ObservationWorkOrderStatus): WorkOrderP
     case "DISPATCHED":
       return {
         step: 2,
-        label: status === "APPROVED" ? "전송 준비" : "기체로 전달됨",
-        detail: "KSI가 경로와 정책을 전달하고 있습니다. 파일을 옮길 필요가 없습니다.",
+        label: status === "APPROVED" ? "비행 계획 준비" : "기체로 전달됨",
+        detail:
+          status === "APPROVED"
+            ? "장비 준비를 확인한 뒤 WorkOrder 정보가 채워진 비행 계획을 사람이 검토합니다."
+            : "경로와 서명 계약 전달 사실이 확인됐습니다. 파일을 직접 옮길 필요가 없습니다.",
         tone: status === "APPROVED" ? "progress" : "positive",
         action: "REFRESH",
         actionLabel: "상태 새로고침",

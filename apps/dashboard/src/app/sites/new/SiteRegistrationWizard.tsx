@@ -585,7 +585,7 @@ export function SiteRegistrationWizard() {
       {currentStep === 1 && (
         <div className="flex flex-col gap-3 sm:col-span-2">
           <p className="text-sm break-keep text-ink-2">
-            지도에서 폴리곤을 그려 현장 외곽을 표시하세요. 최소 3개 꼭짓점이 필요하며, 이
+            지도에서 조사할 공사 구역의 경계를 그리세요. 최소 3개 꼭짓점이 필요하며, 이
             Wizard는 매핑(격자) 경로만 발급하므로 오목한(L자 등) 외곽은 지원하지 않습니다.
           </p>
           <AoiPolygonMap value={form.aoi} onChange={(aoi) => update({ aoi })} />
@@ -649,7 +649,7 @@ export function SiteRegistrationWizard() {
         <section className="flex flex-col gap-2 rounded-lg border border-line bg-sunk p-4 text-sm sm:col-span-2">
           <h2 className="font-semibold break-keep text-ink-1">BIM·도면은 현재 연결되지 않습니다</h2>
           <p className="break-keep text-ink-2">
-            이 초기 등록은 현장 외곽과 기준 좌표계를 먼저 고정합니다. BIM·도면·기존 모델은
+            이 초기 등록은 현장 범위와 기준 좌표계를 먼저 고정합니다. BIM·도면·기존 모델은
             이 단계에서 업로드하거나 임무 계획에 반영할 수 없습니다.
           </p>
           <p className="text-[12.5px] break-keep text-ink-muted">

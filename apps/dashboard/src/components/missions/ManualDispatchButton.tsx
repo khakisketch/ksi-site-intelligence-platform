@@ -90,7 +90,7 @@ export function ManualDispatchButton({
         type="button"
         onClick={() => void handleClick()}
         disabled={pending}
-        className="btn btn-field"
+        className="btn"
       >
         {pending ? "신고 중…" : "수동 이관 신고"}
       </button>

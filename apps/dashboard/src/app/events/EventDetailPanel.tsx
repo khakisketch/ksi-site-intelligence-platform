@@ -52,7 +52,7 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
     <aside
-      aria-label="선택한 이벤트"
+      aria-label="선택한 확인 항목"
       className="flex max-h-[calc(100vh-2rem)] flex-col overflow-y-auto rounded-lg border border-line bg-surface"
     >
       {children}
@@ -85,7 +85,7 @@ export async function EventDetailPanel({
     return (
       <PanelShell>
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-16 text-center">
-          <h2 className="text-sm font-bold break-keep">왼쪽에서 이벤트를 선택하세요</h2>
+          <h2 className="text-sm font-bold break-keep">왼쪽에서 확인 항목을 선택하세요</h2>
           <p className="text-ink-muted text-[12.5px] break-keep">
             목록에서 행을 클릭하면 여기에 상세 정보가 표시됩니다.
           </p>
@@ -103,11 +103,11 @@ export async function EventDetailPanel({
         <PanelShell>
           <div className="flex flex-col gap-3 px-5 py-6">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-bold break-keep">이벤트를 찾을 수 없음</h2>
+              <h2 className="text-sm font-bold break-keep">확인 항목을 찾을 수 없음</h2>
               <CloseLink href={clearHref} />
             </div>
             <p className="text-ink-2 text-[12.5px] break-keep">
-              선택한 이벤트(<span className="num break-token">{eventKey}</span>)가 삭제되었거나
+              선택한 확인 항목이 삭제되었거나
               잘못된 링크일 수 있습니다.
             </p>
           </div>
@@ -122,7 +122,7 @@ export async function EventDetailPanel({
       <PanelShell>
         <div className="flex flex-col gap-3 px-5 py-6">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-bold break-keep">이벤트 상세</h2>
+            <h2 className="text-sm font-bold break-keep">확인 항목 상세</h2>
             <CloseLink href={clearHref} />
           </div>
           <ErrorState message={message} />
@@ -172,14 +172,12 @@ export async function EventDetailPanel({
 
       {!inCurrentFilter && (
         <p className="text-accent-text border-b border-line bg-accent-tint px-4 py-2 text-[12px] break-keep">
-          이 이벤트는 현재 필터 결과에는 없습니다 — 딥링크나 이전 선택으로 열람 중입니다.
+          이 확인 항목은 현재 필터 결과에는 없습니다 — 이전 링크로 열람 중입니다.
         </p>
       )}
 
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
-        <p className="num text-ink-muted text-[10.5px] font-bold tracking-wide break-token uppercase">
-          {event.eventKey}
-        </p>
+        <p className="text-ink-muted text-[11.5px] font-bold break-keep">{siteName}</p>
         <h2 className="text-[15px] font-bold break-keep">{humanizeEventType(event.eventType)}</h2>
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge label={severity.label} tone={severity.tone} />
@@ -211,30 +209,27 @@ export async function EventDetailPanel({
             </Link>
           }
         />
-        <Fact
-          label="임무"
-          value={
-            <Link
-              href={`/missions/${encodeURIComponent(event.missionId)}`}
-              className="break-token underline"
-            >
-              {missionLabel}
-            </Link>
-          }
-        />
-        <Fact label="엣지 장치" value={<span className="num break-token">{event.edgeDeviceId}</span>} />
         <Fact label="담당자" value={event.assignee ?? "미배정"} />
         <Fact label="발생 시각" value={<span className="num">{formatDate(event.occurredAt)}</span>} />
-        <Fact label="수신 시각" value={<span className="num">{formatDate(event.receivedAt)}</span>} />
-        <Fact
-          label="최근 충돌 시각"
-          value={<span className="num">{formatDate(event.lastConflictAt)}</span>}
-        />
         <Fact
           label="확인 경과"
           value={<AckElapsedFact event={event} initialElapsedMs={initialElapsedMs} />}
         />
       </dl>
+
+      <details className="mx-4 mt-3 rounded-lg border border-line px-3 py-2 text-[12px]">
+        <summary className="tap-target cursor-pointer font-semibold">전문가 정보</summary>
+        <dl className="mt-1 flex flex-col border-t border-line pt-1">
+          <Fact label="항목 ID" value={<span className="num break-token">{event.eventKey}</span>} />
+          <Fact
+            label="비행 임무"
+            value={<Link href={`/missions/${encodeURIComponent(event.missionId)}`} className="break-token underline">{missionLabel}</Link>}
+          />
+          <Fact label="Edge 장치" value={<span className="num break-token">{event.edgeDeviceId}</span>} />
+          <Fact label="수신 시각" value={<span className="num">{formatDate(event.receivedAt)}</span>} />
+          <Fact label="최근 충돌" value={<span className="num">{formatDate(event.lastConflictAt)}</span>} />
+        </dl>
+      </details>
 
       {canTriage && (
         <div className="mx-4 my-3">

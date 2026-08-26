@@ -1,16 +1,13 @@
 import "server-only";
 
 import {
-  listEventsCached,
+  listAllEventsCached,
   listMissionsCached,
   listSitesCached,
 } from "@/lib/core-api/cached";
 import { isUnattended } from "@/lib/core-api/triage";
 
 import type { NavCounts } from "./DesktopSidebar";
-
-/** 홈과 같은 축(limit)으로 부른다 — cached.ts 의 요청 단위 공유가 성립하려면 인자가 같아야 한다. */
-const EVENT_SCAN_LIMIT = 500;
 
 // "지금 사람이 봐야 하는" 이벤트의 정의는 **triage.ts 의 isUnattended 하나뿐이어야 한다.**
 //
@@ -28,7 +25,7 @@ const EVENT_SCAN_LIMIT = 500;
 export async function getNavCounts(): Promise<NavCounts> {
   const [sites, events, missions] = await Promise.all([
     listSitesCached().catch(() => null),
-    listEventsCached(EVENT_SCAN_LIMIT).catch(() => null),
+    listAllEventsCached().catch(() => null),
     listMissionsCached(undefined).catch(() => null),
   ]);
 
@@ -39,7 +36,7 @@ export async function getNavCounts(): Promise<NavCounts> {
     missions: badge(missions?.length),
     // 검토 대기가 하나라도 있으면 붉게 — 색을 쓰는 유일한 근거가 "안전 상태"라는
     // globals.css 의 규칙에 맞는 자리다(장식이 아니라 미조치 신호).
-    events: badge(reviewQueue ?? undefined, true),
+    review: badge(reviewQueue ?? undefined, true),
   };
 }
 

@@ -3,39 +3,17 @@ import Link from "next/link";
 
 import { whoAmI } from "@/lib/core-api/auth";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
-import { SEOUL_TIME_ZONE } from "@/lib/datetime";
-
-import { LiveIndicator } from "@/components/console/LiveIndicator";
 
 import { BackButton } from "./BackButton";
 import { PageTitle } from "./PageTitle";
 import { resolvePageTitle } from "./page-title";
 
-function todayLabel(): { date: string; weekday: string } {
-  const now = new Date();
-  return {
-    date: new Intl.DateTimeFormat("ko-KR", { dateStyle: "long", timeZone: SEOUL_TIME_ZONE }).format(
-      now,
-    ),
-    weekday: new Intl.DateTimeFormat("ko-KR", {
-      weekday: "long",
-      timeZone: SEOUL_TIME_ZONE,
-    }).format(now),
-  };
-}
-
 function TopBarFrame({ title, children }: { title: string; children?: React.ReactNode }) {
-  const { date, weekday } = todayLabel();
   return (
     <header className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
       <BackButton />
       <PageTitle fallback={title} />
       <span className="flex-1" />
-      <LiveIndicator />
-      <span className="hidden items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1 text-[13px] text-ink-2 lg:inline-flex">
-        <strong className="font-semibold text-ink-1">{date}</strong>
-        {weekday}
-      </span>
       {children}
     </header>
   );

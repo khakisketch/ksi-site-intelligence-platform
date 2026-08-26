@@ -11,6 +11,7 @@ export function SkeletonList({ rows = 4 }: { rows?: number }) {
 export function SkeletonBlock({ className = "h-32" }: { className?: string }) {
   return (
     <div
+      role="status"
       aria-busy="true"
       aria-label="불러오는 중"
       className={`animate-pulse rounded-lg bg-sunk ${className}`}

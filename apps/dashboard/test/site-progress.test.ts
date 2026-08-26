@@ -129,5 +129,6 @@ describe("상태 묶음", () => {
       "patrol",
       "suspended",
     ]);
+    expect(SITE_GROUPS.find((group) => group.key === "attention")?.label).toBe("조사 필요");
   });
 });

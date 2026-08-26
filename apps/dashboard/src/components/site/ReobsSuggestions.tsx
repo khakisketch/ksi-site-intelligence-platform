@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { formatNetVolumeM3 } from "@/lib/core-api/phase34-labels";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 
 /** 재관측 후보 한 건 — 서버가 계산한 변화 영역 하나를 그대로 옮긴 값이다. */
 export interface ReobsSuggestion {
@@ -72,12 +73,17 @@ export function ReobsSuggestions({
                     </span>
                   </Link>
                   {canIssueMissions && (
-                    <Link
-                      href={surveyHref}
-                      className="tap-target inline-flex flex-none items-center rounded-md border border-line-strong bg-surface px-2.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors hover:border-accent hover:bg-accent hover:text-accent-on"
+                    <ResponsiveActionBoundary
+                      action="MISSIONS_ISSUE"
+                      reason="재관측 조사 확정은 노트북에서 수행합니다."
                     >
-                      임무 만들기
-                    </Link>
+                      <Link
+                        href={surveyHref}
+                        className="tap-target inline-flex flex-none items-center rounded-md border border-line-strong bg-surface px-2.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors hover:border-accent hover:bg-accent hover:text-accent-on"
+                      >
+                        재관측 계획
+                      </Link>
+                    </ResponsiveActionBoundary>
                   )}
                 </li>
               );

@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { isBackVisible } from "../src/components/nav/BackButton";
+import { isBackVisible, resolveParentNavigation } from "../src/components/nav/BackButton";
 import {
   OFFLINE_AFTER_S,
   STALE_AFTER_S,
@@ -21,6 +21,7 @@ import {
   type PaletteItem,
 } from "../src/components/console/palette-items";
 import { isTypingTarget, resolveShortcut } from "../src/components/console/shortcuts";
+import { commandModifierLabel } from "../src/components/console/command-modifier";
 
 const ITEMS: PaletteItem[] = [
   { key: "screen:sites", label: "현장", group: "화면", href: "/sites" },
@@ -123,6 +124,15 @@ describe("전역 단축키", () => {
   });
 });
 
+describe("단축키 안내", () => {
+  it("Apple 계열은 Command, 나머지는 Ctrl로 표시한다", () => {
+    expect(commandModifierLabel("MacIntel")).toBe("⌘");
+    expect(commandModifierLabel("iPhone")).toBe("⌘");
+    expect(commandModifierLabel("Linux x86_64")).toBe("Ctrl");
+    expect(commandModifierLabel("Win32")).toBe("Ctrl");
+  });
+});
+
 describe("라이브 수신 표시", () => {
   it("최근 수신이면 초록 + 맥동", () => {
     const status = resolveLiveStatus(12);
@@ -167,21 +177,28 @@ describe("뒤로가기 노출 규칙", () => {
   it("최상위 화면에는 없다 — 갈 곳이 없는 버튼을 두지 않는다", () => {
     expect(isBackVisible("/")).toBe(false);
     expect(isBackVisible("/sites")).toBe(false);
+    expect(isBackVisible("/field")).toBe(false);
     expect(isBackVisible("/missions")).toBe(false);
   });
 
-  it("하위 화면에는 있다", () => {
+  it("하위 화면은 브라우저 이력이 아닌 결정적인 부모 화면으로 이동한다", () => {
     expect(isBackVisible("/sites/S-1")).toBe(true);
     expect(isBackVisible("/missions/M-1")).toBe(true);
     expect(isBackVisible("/coming-soon/fleet")).toBe(true);
+    expect(resolveParentNavigation("/sites/S-1")).toEqual({ href: "/sites/S-1", label: "현장" });
+    expect(resolveParentNavigation("/events/E-1")).toEqual({ href: "/events", label: "확인 항목" });
+    expect(resolveParentNavigation("/field/work-orders/WO-1")).toEqual({ href: "/field", label: "작업" });
+    expect(resolveParentNavigation("/missions/M-1")).toEqual({ href: "/missions", label: "비행 임무 이력" });
   });
 
-  it("셸을 벗는 화면에는 없다 — 그 화면들은 자체 헤더를 갖는다", () => {
+  it("로그인 화면에는 없고 Operations Console의 /field 상세에는 있다", () => {
     expect(isBackVisible("/login")).toBe(false);
-    expect(isBackVisible("/field/M-1")).toBe(false);
+    expect(isBackVisible("/field/M-1")).toBe(true);
   });
 
   it("경로를 모르면 그리지 않는다", () => {
     expect(isBackVisible(null)).toBe(false);
+    expect(resolveParentNavigation("/sites/new")).toBeNull();
+    expect(resolveParentNavigation("/sites/S-1/surveys/new")).toBeNull();
   });
 });

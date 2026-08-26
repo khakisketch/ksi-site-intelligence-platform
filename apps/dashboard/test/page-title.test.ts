@@ -12,8 +12,9 @@ describe("정적 경로", () => {
     ["/", "홈"],
     ["/sites", "현장"],
     ["/sites/new", "현장 등록"],
-    ["/events", "이벤트"],
-    ["/missions", "임무"],
+    ["/events", "확인 항목"],
+    ["/missions", "비행 임무 이력"],
+    ["/field", "작업"],
     ["/more", "더보기"],
   ])("%s → %s", (pathname, expected) => {
     expect(resolvePageTitle(pathname)).toBe(expected);
@@ -23,8 +24,14 @@ describe("정적 경로", () => {
 describe("동적 경로", () => {
   it("상세 화면은 대상 이름이 아니라 종류를 적는다 — 이름은 본문 h1 이 갖는다", () => {
     expect(resolvePageTitle("/sites/SITE-1")).toBe("현장 상세");
-    expect(resolvePageTitle("/events/dev-1::evt-1")).toBe("이벤트 상세");
-    expect(resolvePageTitle("/missions/mission-1")).toBe("임무 상세");
+    expect(resolvePageTitle("/events/dev-1::evt-1")).toBe("확인 항목 상세");
+    expect(resolvePageTitle("/missions/mission-1")).toBe("비행 임무 상세");
+    expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("현장 작업");
+    expect(resolvePageTitle("/field/M-1")).toBe("임무 복구");
+  });
+
+  it("현장 AI는 현장 작업공간 하위 화면이다", () => {
+    expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("KSI AI");
   });
 
   it("조사 계획은 현장 상세보다 먼저 매칭된다 — 순서가 뒤집히면 하위 화면이 상위 제목을 쓴다", () => {
@@ -47,7 +54,7 @@ describe("동적 경로", () => {
   });
 
   it("준비 중 섹션은 사이드바 라벨을 그대로 쓴다", () => {
-    expect(resolvePageTitle("/coming-soon/fleet")).toBe("Fleet·Edge");
+    expect(resolvePageTitle("/coming-soon/fleet")).toBe("Dock·Edge 지원 범위");
     expect(resolvePageTitle("/coming-soon/알수없는섹션")).toBe("준비 중");
   });
 });
@@ -59,9 +66,9 @@ describe("모르는 경로", () => {
   });
 });
 
-describe("Phase 3/4 섹션 (2026-08-08 실동작 전환)", () => {
-  it("사이드바 라벨과 topbar 제목이 같은 말을 쓴다 — 한 화면을 두 이름으로 부르지 않는다", () => {
-    for (const key of ["assets", "world", "reports", "settings"] as const) {
+describe("운영 지원 섹션", () => {
+  it("운영 지원 라벨과 topbar 제목이 같은 말을 쓴다", () => {
+    for (const key of ["missions", "settings"] as const) {
       const item = NAV_ITEMS.find((i) => i.key === key);
       expect(item, `${key} 항목이 없다`).toBeDefined();
       expect(item!.implemented).toBe(true);
@@ -77,7 +84,7 @@ describe("Phase 3/4 섹션 (2026-08-08 실동작 전환)", () => {
 
   it("준비 중 항목은 여전히 /coming-soon 이고 그 화면이 라벨을 안다", () => {
     const pending = NAV_ITEMS.filter((i) => !i.implemented);
-    expect(pending.map((i) => i.key)).toEqual(["fleet", "data"]);
+    expect(pending.map((i) => i.key)).toEqual(["fleet"]);
     for (const item of pending) {
       expect(item.href.startsWith("/coming-soon/")).toBe(true);
       expect(resolvePageTitle(item.href)).toBe(item.label);

@@ -317,6 +317,7 @@ describe("④ 결과", () => {
 function mission(missionId: string, issuedAt: string): MissionRecordResponse {
   return {
     missionId,
+    organizationId: "org-1",
     siteId: "site-1",
     missionType: "BASELINE_MAPPING",
     artifactKind: "pair",

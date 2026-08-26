@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
+import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
@@ -28,7 +29,7 @@ export function DesktopSidebar({
   userBlock?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  // 셸을 벗는 화면(/login · /field/*)에서는 레일 자체가 없다 — 판정은 layout.tsx 와
+  // 셸을 벗는 로그인 화면에는 레일 자체가 없다 — 판정은 layout.tsx 와
   // 같은 술어를 쓴다(둘이 갈리면 그리드 트랙만 남고 레일이 사라진다).
   if (isChromelessPath(pathname)) return null;
 
@@ -90,7 +91,10 @@ export function DesktopSidebar({
                     item.implemented || active ? "" : "text-sidebar-muted"
                   }`}
                 >
-                  <span className="min-w-0">{item.label}</span>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <NavIcon name={item.icon} className="size-[17px] flex-none" />
+                    <span>{item.label}</span>
+                  </span>
                   {count && (
                     <span
                       className={`tabular rounded-full px-1.5 py-px text-[11px] ${

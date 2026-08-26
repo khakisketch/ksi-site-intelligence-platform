@@ -62,6 +62,8 @@ export interface RegisterSiteInput {
    * 조용히 바꿀 값이 아니다(contracts/api/openapi-core.yaml dataResidency 설명).
    */
   dataResidency?: DataResidency;
+  /** 외부 AI provider 호출의 별도 명시 동의. 생략/false는 호출 거부다. */
+  aiEgressAllowed?: boolean;
 }
 
 export async function registerSite(input: RegisterSiteInput): Promise<SiteView> {

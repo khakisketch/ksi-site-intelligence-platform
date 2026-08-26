@@ -39,7 +39,7 @@ export function CopilotPanel({ siteId, workOrderId }: { siteId: string; workOrde
         <button
           type="submit"
           disabled={pending}
-          className="btn btn-field btn-primary w-full justify-center"
+          className="btn btn-primary w-full justify-center"
         >
           {pending ? "근거 확인 중…" : "근거에서 답 찾기"}
         </button>

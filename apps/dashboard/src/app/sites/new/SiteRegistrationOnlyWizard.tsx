@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { WizardShell } from "@/components/wizard/WizardShell";
+import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useDraftState } from "@/hooks/useDraftState";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
+import { isConvexPolygon } from "@/lib/geometry";
 import {
   EGRESS_CHOICE_OPTIONS,
   Field,
@@ -15,43 +17,51 @@ import {
   nextOwnPostSiteId,
   parseJsonSafe,
 } from "@/lib/site-registration/shared";
-import type { SiteFrame } from "@/lib/core-api/types";
+import type { AoiVertex, SiteFrame } from "@/lib/core-api/types";
 
-// ADR-KSI-015 이후 "등록만 하고 임무는 나중"은 권한 부족이 아니라 사용자 선택이다 —
-// /sites/new 가 SITES_WRITE·MISSIONS_ISSUE 를 둘 다 가진 사용자에게 "등록 + 임무
-// 발급"과 "등록만 먼저" 중 고르게 하고, 이 컴포넌트는 후자를 고른 흐름을 맡는다.
-// (원래는 SITES_WRITE 만 가진 구 역할(ADR-KSI-015 이전 5역할 중 하나)을 위한 권한
-// 기반 임시 분기였으나, 역할이 3개로 합쳐지며 SITES_WRITE 를 가진 역할은 항상
-// MISSIONS_ISSUE 도 갖게 돼 그 분기는 도달 불가가 됐다 — 지금 이 컴포넌트가 남는
-// 이유는 도메인이다:
-// UNMAPPED 이 정상 중간 상태이고, AOI·매핑 파라미터는 순수 임무 발급 소관이라 등록
-// 시점엔 저장할 곳이 없어 여기서는 아예 묻지 않는다.) baseline 임무는 이 흐름을
-// 고른 사용자 본인이 나중에 /sites/[siteId]/surveys/new 에서 "초기 매핑(베이스라인)"
-// 목적으로 발급한다(SurveyWizard.tsx buildPurposeOptions 참조). Site 상태머신은
-// UNMAPPED 를 정상 중간 상태로 이미 설계해 두었다(등록 즉시 baseline 발급을 강제하지
-// 않는다) — 대표자 확인 완료.
-const STEP_LABELS = ["기본정보", "좌표계", "완료"];
+// 현장 등록은 기본정보 → AOI/좌표계 → 확인의 3단계로 끝낸다. 베이스라인 조사는
+// 등록 성공 뒤 현장 작업공간에서 별도로 시작한다. 현장 등록과 Mission 발급을 한
+// Wizard에 묶지 않는 것은 ADR-KSI-026의 작업 경계다.
+const STEP_LABELS = ["기본정보", "현장 범위·좌표계", "확인·등록"];
 
 interface FormState {
   siteId: string;
   name: string;
+  aoi: AoiVertex[];
   crs: string;
   verticalDatum: string;
   transformVersion: string;
   /** 데이터 반출 선언(INV-050) — "unset" 은 미응답, 등록 후 다시 물을 경로가 없다. */
   egressChoice: EgressChoice;
   jurisdiction: string;
+  aiEgressAllowed: boolean;
 }
 
 const INITIAL_FORM: FormState = {
   siteId: "",
   name: "",
+  aoi: [],
   crs: "",
   verticalDatum: "",
   transformVersion: "1.0.0",
   egressChoice: "unset",
   jurisdiction: "",
+  aiEgressAllowed: false,
 };
+
+function migrateRegistrationDraft(stored: unknown): FormState {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return INITIAL_FORM;
+  const candidate = stored as Partial<FormState>;
+  return {
+    ...INITIAL_FORM,
+    ...candidate,
+    aoi: Array.isArray(candidate.aoi) ? candidate.aoi : INITIAL_FORM.aoi,
+    aiEgressAllowed:
+      typeof candidate.aiEgressAllowed === "boolean"
+        ? candidate.aiEgressAllowed
+        : INITIAL_FORM.aiEgressAllowed,
+  };
+}
 
 const inputClassName = "input";
 
@@ -62,6 +72,7 @@ export function SiteRegistrationOnlyWizard() {
   const [form, setForm, clearDraft] = useDraftState<FormState>(
     "ksi-wizard-site-registration-only",
     INITIAL_FORM,
+    migrateRegistrationDraft,
   );
   const [currentStep, setCurrentStep] = useState(0);
   // "이 실행에서 어떤 siteId 로 이미 POST 를 보냈나" — 409 를 재시도로 해석해도
@@ -100,7 +111,14 @@ export function SiteRegistrationOnlyWizard() {
         // dataResidency 를 답하지 않았으면(unset) buildDataResidencyInput 이
         // undefined 를 돌려주고, JSON.stringify 가 undefined 값 키를 생략한다 —
         // 그래야 서버가 미선언을 fail-closed(반출 불가)로 해석한다(INV-050).
-        body: JSON.stringify({ siteId, name: form.name.trim(), siteFrame, dataResidency }),
+        body: JSON.stringify({
+          siteId,
+          name: form.name.trim(),
+          siteFrame,
+          aoi: { vertices: form.aoi },
+          dataResidency,
+          aiEgressAllowed: form.aiEgressAllowed,
+        }),
       });
       if (!res.ok) {
         const body = await parseJsonSafe(res);
@@ -148,15 +166,6 @@ export function SiteRegistrationOnlyWizard() {
     }
   }
 
-  // "완료" 단계(2) 진입 시 자동으로 등록을 시작한다(다른 Wizard와 동일 관례 — spec §7).
-  useEffect(() => {
-    if (currentStep === 2 && submitPhase === "idle") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 외부 API 호출(fetch) 트리거, 순수 파생 state 아님
-      void runSubmission();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 최신 form 은 클로저로 캡처, currentStep 전이에만 반응
-  }, [currentStep]);
-
   const draftClearedForSuccess = currentStep === 2 && submitPhase === "success";
   useEffect(() => {
     if (draftClearedForSuccess) clearDraft();
@@ -172,6 +181,8 @@ export function SiteRegistrationOnlyWizard() {
       form.name.trim().length > 0 &&
       (!jurisdictionRequired || form.jurisdiction.trim().length > 0),
     1:
+      form.aoi.length >= 3 &&
+      isConvexPolygon(form.aoi) &&
       form.crs.trim().length > 0 &&
       form.verticalDatum.trim().length > 0 &&
       form.transformVersion.trim().length > 0,
@@ -180,7 +191,7 @@ export function SiteRegistrationOnlyWizard() {
 
   function handleBack() {
     setCurrentStep((step) => {
-      if (step === 1) {
+      if (step === 1 || step === 2) {
         setSubmitPhase("idle");
         setSubmitError(null);
       }
@@ -203,10 +214,13 @@ export function SiteRegistrationOnlyWizard() {
   const canGoBack = currentStep > 0 && !(currentStep === 2 && submitPhase === "pending");
 
   let nextLabel = "다음";
-  if (currentStep === 1) {
-    nextLabel = "등록";
-  } else if (currentStep === 2) {
-    nextLabel = submitPhase === "success" ? "현장 상세로 이동" : "다시 시도";
+  if (currentStep === 2) {
+    nextLabel =
+      submitPhase === "success"
+        ? "현장 브리핑으로 이동"
+        : submitPhase === "error"
+          ? "다시 시도"
+          : "현장 등록";
   }
 
   const siteIdError =
@@ -230,8 +244,8 @@ export function SiteRegistrationOnlyWizard() {
       {currentStep === 0 && (
         <>
           <p className="text-sm break-keep text-ink-2 sm:col-span-2">
-            등록만 먼저 진행합니다. 베이스라인 임무는 등록 후 현장 상세 화면에서 언제든
-            발급할 수 있습니다.
+            현장 정보와 조사할 공사 구역을 먼저 등록합니다. 첫 조사는 등록 후 현장
+            브리핑에서 별도로 계획합니다.
           </p>
           <Field
             label="현장 ID"
@@ -260,14 +274,11 @@ export function SiteRegistrationOnlyWizard() {
 
           <fieldset className="flex flex-col gap-2 sm:col-span-2">
             <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
-              데이터 반출 허용
+              외부 클라우드 처리
             </legend>
             <p className="text-[11.5px] break-keep text-ink-muted">
-              이 현장에서 만든 데이터를 회사 자체 서버가 아닌 외부(벤더) 클라우드 서비스로
-              내보내 처리해도 되는지 묻는 질문입니다(예: 상용 클라우드 서비스로 사진을 올려
-              3D 모델을 만드는 경우). 등록 후에는 이 값을 바꿀 수 없으므로, 확인이 더
-              필요하면 지금 정하지 않고 넘어가도 됩니다 — 미정 상태는 안전하게
-              &quot;반출 불가&quot;로 처리됩니다.
+              현장 데이터를 승인된 외부 클라우드에서 처리해도 되는지 선택합니다. 사내 정책
+              확인이 필요하면 지금 정하지 않아도 되며, 미정 상태에서는 외부로 보내지 않습니다.
             </p>
             {EGRESS_CHOICE_OPTIONS.map((opt) => (
               <label
@@ -292,8 +303,8 @@ export function SiteRegistrationOnlyWizard() {
 
           {jurisdictionRequired && (
             <Field
-              label="기준 법역"
-              helpText="어느 나라(지역)의 법을 기준으로 판단했는지 적어주세요. 예: KR"
+              label="데이터 처리 기준 지역"
+              helpText="대한민국을 기준으로 한다면 KR을 입력하세요."
               required
             >
               <input
@@ -305,12 +316,38 @@ export function SiteRegistrationOnlyWizard() {
               />
             </Field>
           )}
+
+          <label className="tap-target flex items-start gap-2 rounded-md border border-line-strong bg-surface px-3 py-3 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={form.aiEgressAllowed}
+              onChange={(event) => update({ aiEgressAllowed: event.target.checked })}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block font-semibold">KSI AI가 구조화된 현장 결과를 읽도록 허용</span>
+              <span className="mt-1 block text-[11.5px] leading-5 break-keep text-ink-muted">
+                원본 사진은 외부 AI로 보내지 않습니다. 선택하지 않으면 KSI AI 대화를 사용하지 않습니다.
+              </span>
+            </span>
+          </label>
         </>
       )}
 
       {currentStep === 1 && (
         <>
-          <Field label="좌표계(CRS)" helpText="예: EPSG:5186" required>
+          <div className="flex flex-col gap-3 sm:col-span-2">
+            <p className="text-sm break-keep text-ink-2">
+              지도에서 조사할 공사 구역을 그리세요. 최소 3개 꼭짓점의 볼록한 모양이어야 합니다.
+            </p>
+            <AoiPolygonMap value={form.aoi} onChange={(aoi) => update({ aoi })} />
+            {form.aoi.length >= 3 && !isConvexPolygon(form.aoi) && (
+              <p className="text-sm break-keep text-high-ink">
+                현재 조사 경로는 오목한 외곽을 지원하지 않습니다. 볼록한 외곽으로 다시 그려 주세요.
+              </p>
+            )}
+          </div>
+          <Field label="현장 좌표계" helpText="국내 중부 현장은 보통 EPSG:5186을 사용합니다." required>
             <input
               type="text"
               value={form.crs}
@@ -319,7 +356,7 @@ export function SiteRegistrationOnlyWizard() {
               className={inputClassName}
             />
           </Field>
-          <Field label="수직 기준(Vertical Datum)" helpText="예: KNGeoid2018" required>
+          <Field label="높이 기준" helpText="예: KNGeoid2018" required>
             <input
               type="text"
               value={form.verticalDatum}
@@ -328,10 +365,10 @@ export function SiteRegistrationOnlyWizard() {
               className={inputClassName}
             />
           </Field>
-          <Field label="단위" helpText="이 버전은 미터 고정입니다">
+          <Field label="거리 단위" helpText="현재는 미터로 고정됩니다.">
             <input type="text" value="meter" disabled className={inputClassName} />
           </Field>
-          <Field label="좌표 변환 버전(transformVersion)">
+          <Field label="좌표 설정 버전" helpText="기본값을 유지해도 됩니다.">
             <input
               type="text"
               value={form.transformVersion}
@@ -344,6 +381,21 @@ export function SiteRegistrationOnlyWizard() {
 
       {currentStep === 2 && (
         <>
+          {submitPhase === "idle" && (
+            <section className="flex flex-col gap-3 rounded-lg border border-line bg-sunk p-4 text-sm sm:col-span-2">
+              <h2 className="font-semibold break-keep">등록 내용을 확인하세요</h2>
+              <dl className="grid gap-2 sm:grid-cols-2">
+                <div><dt className="text-[11.5px] text-ink-muted">현장</dt><dd className="font-medium">{form.name.trim()}</dd></div>
+                <div><dt className="text-[11.5px] text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
+                <div><dt className="text-[11.5px] text-ink-muted">현장 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
+                <div><dt className="text-[11.5px] text-ink-muted">현장 좌표계</dt><dd className="num break-token">{form.crs.trim()}</dd></div>
+                <div><dt className="text-[11.5px] text-ink-muted">KSI AI</dt><dd>{form.aiEgressAllowed ? "구조화 결과 반출 허용" : "사용 안 함"}</dd></div>
+              </dl>
+              <p className="text-[12px] break-keep text-ink-2">
+                등록 뒤 현장 브리핑에서 첫 조사를 별도로 계획합니다. 이 단계에서는 비행을 시작하지 않습니다.
+              </p>
+            </section>
+          )}
           {submitPhase === "pending" && (
             <p className="text-sm break-keep text-ink-2 sm:col-span-2">현장을 등록하는 중입니다…</p>
           )}
@@ -355,10 +407,10 @@ export function SiteRegistrationOnlyWizard() {
               {/* 링크를 여기서 걸지 않는다 — 아래 "현장 상세로 이동" 버튼(다음 버튼)이
                   이미 같은 목적지로 보낸다. ADR-KSI-015 이후 이 흐름을 고른 사용자도
                   MISSIONS_ISSUE 를 갖고 있어(권한이 아니라 순서를 미룬 것뿐이다),
-                  상세 화면에서 "베이스라인 임무 발급" 버튼이 곧바로 보인다. */}
+                  상세 화면에서 "베이스라인 조사 계획" 버튼이 곧바로 보인다. */}
               <p className="break-keep text-safe-ink/90">
-                베이스라인 임무는 아직 발급되지 않았습니다 — 현장 상세 화면에서
-                &quot;베이스라인 임무 발급&quot;으로 이어서 진행할 수 있습니다.
+                첫 조사는 아직 만들어지지 않았습니다. 현장 브리핑에서
+                &quot;베이스라인 조사 계획&quot;으로 이어서 진행할 수 있습니다.
               </p>
             </div>
           )}

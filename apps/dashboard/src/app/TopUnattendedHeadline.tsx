@@ -27,6 +27,6 @@ export function TopUnattendedHeadline({
 
   const elapsedLabel = formatElapsed(now - new Date(occurredAt).getTime(), { unattended: true });
   return (
-    <>{elapsedLabel === "방금 들어옴" ? "방금 들어온 미조치 이벤트가 있습니다" : `${elapsedLabel} 이벤트가 있습니다`}</>
+    <>{elapsedLabel === "방금 들어옴" ? "방금 들어온 확인 항목이 있습니다" : `${elapsedLabel} 확인되지 않은 항목이 있습니다`}</>
   );
 }

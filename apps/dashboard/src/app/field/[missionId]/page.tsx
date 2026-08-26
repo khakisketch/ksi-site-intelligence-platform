@@ -17,14 +17,15 @@ import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { ManualDispatchButton } from "@/components/missions/ManualDispatchButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
 import type { CoverageReportView, SourceMediaBundleView } from "@/lib/core-api/types";
 
 import { formatRatio } from "../../missions/format";
-import { FieldBlocked, FieldHeader, FieldInlineLogin } from "../FieldShell";
-import { PilotBridgeProbe } from "../PilotBridgeProbe";
+import { OperationsSessionFailure } from "../OperationsSessionFailure";
+import { OperationsWorkHeader } from "../OperationsWorkHeader";
 import {
   deriveFieldStages,
   deriveFlightStart,
@@ -108,13 +109,8 @@ export default async function FieldMissionPage({
 
   const session = await resolveFieldSession();
   if (session.kind === "blocked") {
-    // 로그인 후·재시도 후 **이 임무 화면으로** 돌아온다 — 목록에서 다시 찾게 하지 않는다.
     const next = `/field/${encodeURIComponent(missionId)}`;
-    return session.verdict.kind === "login" ? (
-      <FieldInlineLogin next={next} notice={session.verdict.notice} />
-    ) : (
-      <FieldBlocked message={session.verdict.message} retryHref={next} />
-    );
+    return <OperationsSessionFailure verdict={session.verdict} next={next} />;
   }
 
   let mission;
@@ -124,10 +120,11 @@ export default async function FieldMissionPage({
     if (error instanceof CoreApiError) {
       if (error.status === 404) notFound();
       return (
-        <div className="field-controls flex flex-col">
-          <FieldHeader principal={session.principal} />
-          <div className="flex flex-col gap-4 p-4">
-            <BackToList />
+        <div className="flex flex-col">
+          <OperationsWorkHeader>
+            <h2 className="text-[19px] font-bold tracking-tight">임무 복구</h2>
+          </OperationsWorkHeader>
+          <div className="flex flex-col gap-4 p-4 lg:p-5">
             <ErrorState
               message={humanizeApiError(error.code, error.status, error.serverMessage)}
               detail={error.serverMessage}
@@ -166,11 +163,8 @@ export default async function FieldMissionPage({
     execution !== null && execution.status !== "ISSUED" && execution.status !== "CANCELLED";
 
   return (
-    // field-controls — 재사용 컴포넌트(KmzDownloadButton·SourceUploadPanel)의 버튼까지
-    // 현장 치수(44px)로 올린다. 그 컴포넌트들은 className 을 안에서 고정하므로 밖에서
-    // 붙일 수 없다(globals.css 의 같은 이름 규칙 주석).
-    <div className="field-controls flex flex-col">
-      <FieldHeader principal={session.principal}>
+    <div className="flex flex-col">
+      <OperationsWorkHeader>
         <div className="flex flex-col gap-1">
           <h1 className="text-[17px] font-bold tracking-tight break-keep">
             {MISSION_TYPE_LABEL[mission.missionType]} · {site ? site.name : mission.siteId}
@@ -180,27 +174,34 @@ export default async function FieldMissionPage({
             · {mission.missionId}
           </p>
         </div>
-      </FieldHeader>
+      </OperationsWorkHeader>
 
-      <div className="flex flex-col gap-4 p-4">
-        <BackToList />
-
+      <div className="flex flex-col gap-4 p-4 lg:p-5">
         <StageCard index={1} stage={stages[0]}>
           {/* KMZ 다운로드·수동 이관 신고는 자동 전달 여부와 무관하게 항상 여기 있다. */}
-          <div className={`flex flex-col gap-4 ${routeHandledAutomatically ? "opacity-60" : ""}`}>
-            <KmzDownloadButton
-              missionId={mission.missionId}
-              hasKmz={mission.artifactKind === "pair"}
-            />
-            <ManualDispatchButton
-              missionId={mission.missionId}
-              canDeclare={canIssue}
-              executionStatus={execution?.status ?? null}
-            />
-          </div>
+          <ResponsiveActionBoundary
+            action="RECOVERY_ACTION"
+            reason="KMZ 다운로드와 수동 전달 신고는 노트북의 전문가 복구 작업입니다."
+          >
+            <div className={`flex flex-col gap-4 ${routeHandledAutomatically ? "opacity-60" : ""}`}>
+              <KmzDownloadButton
+                missionId={mission.missionId}
+                hasKmz={mission.artifactKind === "pair"}
+              />
+              <ManualDispatchButton
+                missionId={mission.missionId}
+                canDeclare={canIssue}
+                executionStatus={execution?.status ?? null}
+              />
+            </div>
+          </ResponsiveActionBoundary>
         </StageCard>
 
         <StageCard index={2} stage={stages[1]}>
+          <ResponsiveActionBoundary
+            action="MISSION_EXECUTION"
+            reason="비행 실행은 Pilot 2가 소유하며 Operations Console 모바일 화면에서 시작하지 않습니다."
+          >
           <div className="flex flex-col items-start gap-1.5">
             {/* disabled 는 `!flightStart.enabled` 로 읽는다 — `deriveFlightStart` 가
                 항상 false 를 내는 지금은 하드코딩과 같은 결과지만, 이 버튼이 그
@@ -209,7 +210,7 @@ export default async function FieldMissionPage({
             <button
               type="button"
               disabled={!flightStart.enabled}
-              className="btn btn-field btn-primary"
+              className="btn btn-primary"
             >
               임무 시작
             </button>
@@ -217,6 +218,7 @@ export default async function FieldMissionPage({
                 기기에는 hover 가 없어 툴팁은 아무에게도 보이지 않는다. */}
             <p className="text-[12.5px] break-keep text-ink-2">{flightStart.reason}</p>
           </div>
+          </ResponsiveActionBoundary>
         </StageCard>
 
         <StageCard index={3} stage={stages[2]}>
@@ -228,16 +230,21 @@ export default async function FieldMissionPage({
             자동 회수 상태(장수·잔여 스풀 용량)는 아직 표시되지 않습니다 — 다음
             단계에서 추가할 예정입니다.
           </p>
-          <SourceUploadPanel
-            missionId={mission.missionId}
-            canIssue={canIssue}
-            initialBundle={media.bundle}
-            initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
-            // 비교 리포트 유무는 현장에서 할 일이 아니다(사무실 화면의 판단이다).
-            // false 로 두면 재구성 완료 직후 "아직 비교 리포트가 없다"는 안내가 뜨는데,
-            // 현장에서는 그게 맞는 안내다 — 재구성은 방금 끝났고 비교는 아직이다.
-            hasComparisonReport={false}
-          />
+          <ResponsiveActionBoundary
+            action="SOURCE_MEDIA_MUTATION"
+            reason="원본 업로드·봉인과 처리 시작은 노트북의 전체 Operations Console에서 수행합니다."
+          >
+            <SourceUploadPanel
+              missionId={mission.missionId}
+              canIssue={canIssue}
+              initialBundle={media.bundle}
+              initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
+              // 비교 리포트 유무는 현장에서 할 일이 아니다(사무실 화면의 판단이다).
+              // false 로 두면 재구성 완료 직후 "아직 비교 리포트가 없다"는 안내가 뜨는데,
+              // 현장에서는 그게 맞는 안내다 — 재구성은 방금 끝났고 비교는 아직이다.
+              hasComparisonReport={false}
+            />
+          </ResponsiveActionBoundary>
         </StageCard>
 
         <StageCard index={4} stage={stages[3]}>
@@ -250,13 +257,11 @@ export default async function FieldMissionPage({
           )}
           <Link
             href={`/missions/${encodeURIComponent(mission.missionId)}`}
-            className="btn btn-field w-fit"
+            className="btn w-fit"
           >
             자세한 결과 보기
           </Link>
         </StageCard>
-
-        <PilotBridgeProbe />
       </div>
     </div>
   );
@@ -311,13 +316,5 @@ function ResultTile({ label, value }: { label: string; value: number }) {
           자릿수로 보이면 운영자는 둘이 다른 값이라고 읽는다. */}
       <dd className="num text-[19px] leading-tight font-bold tracking-tight">{formatRatio(value)}</dd>
     </div>
-  );
-}
-
-function BackToList() {
-  return (
-    <Link href="/field" className="btn btn-field w-fit">
-      ← 오늘 임무
-    </Link>
   );
 }

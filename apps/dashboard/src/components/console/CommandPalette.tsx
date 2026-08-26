@@ -8,20 +8,13 @@ import {
   moveActiveIndex,
   type PaletteItem,
 } from "./palette-items";
+import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
 
 /** 사이드바의 검색 버튼이 팔레트를 여는 신호. 컨텍스트 대신 이벤트를 쓰는 이유는
  *  셸의 절반이 서버 컴포넌트라, 프로바이더로 감싸면 그 경계가 통째로 클라이언트가
  *  되기 때문이다(레일·상단바가 서버에서 세션·집계를 읽는 구조를 깨뜨린다). */
 export const PALETTE_OPEN_EVENT = "ksi:palette-open";
-
-const SHORTCUT_ROWS: Array<{ keys: string[]; desc: string }> = [
-  { keys: ["⌘", "K"], desc: "검색 · 이동 팔레트 열기" },
-  { keys: ["?"], desc: "이 도움말 열기" },
-  { keys: ["Esc"], desc: "팔레트 · 도움말 닫기" },
-  { keys: ["↑", "↓"], desc: "팔레트 항목 이동" },
-  { keys: ["Enter"], desc: "선택한 항목으로 이동" },
-];
 
 function KeyCap({ children }: { children: React.ReactNode }) {
   return (
@@ -33,6 +26,7 @@ function KeyCap({ children }: { children: React.ReactNode }) {
 
 export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const router = useRouter();
+  const commandModifier = useCommandModifierLabel();
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -41,6 +35,13 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const listRef = useRef<HTMLUListElement>(null);
 
   const results = useMemo(() => filterPaletteItems(items, query), [items, query]);
+  const shortcutRows: Array<{ keys: string[]; desc: string }> = [
+    { keys: [commandModifier, "K"], desc: "검색 · 이동 팔레트 열기" },
+    { keys: ["?"], desc: "이 도움말 열기" },
+    { keys: ["Esc"], desc: "팔레트 · 도움말 닫기" },
+    { keys: ["↑", "↓"], desc: "팔레트 항목 이동" },
+    { keys: ["Enter"], desc: "선택한 항목으로 이동" },
+  ];
 
   const close = useCallback(() => {
     setOpen(false);
@@ -137,7 +138,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
           <div className="p-4">
             <h2 className="mb-3 text-[14px] font-bold">단축키</h2>
             <ul className="flex flex-col gap-2">
-              {SHORTCUT_ROWS.map((row) => (
+              {shortcutRows.map((row) => (
                 <li key={row.desc} className="flex items-center gap-3 text-[13px]">
                   <span className="flex flex-none gap-1">
                     {row.keys.map((key) => (

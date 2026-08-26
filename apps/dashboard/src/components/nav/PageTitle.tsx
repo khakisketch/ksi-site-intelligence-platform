@@ -9,8 +9,8 @@ import { resolvePageTitle } from "./page-title";
 // 서버 헤더로 제목을 받으면 링크를 눌러 이동했을 때 topbar 가 이전 화면 이름에 머문다
 // (2026-08-04 렌더 확인에서 실제 재현: 현장 등록 → 현장 상세 이동 후에도 "현장 등록").
 //
-// TopBar 의 나머지(세션·역할·날짜)는 서버 컴포넌트로 남는다 — 저 데이터는 화면 전환마다
-// 바뀌지 않고, 클라이언트로 내리면 principal 을 브라우저 번들에 실어야 한다.
+// TopBar 의 세션 검사는 서버 컴포넌트로 남는다 — principal 을 브라우저 번들에
+// 싣지 않으면서 만료 복구만 제공한다.
 export function PageTitle({ fallback }: { fallback: string }) {
   const pathname = usePathname();
   // usePathname 은 SSR 에서도 값을 준다 — fallback 은 그 값이 아직 없는 극히 초기 렌더용이다.
@@ -22,4 +22,16 @@ export function PageTitle({ fallback }: { fallback: string }) {
       {pathname ? resolvePageTitle(pathname) : fallback}
     </p>
   );
+}
+
+/**
+ * The App Router preserves the root layout during client navigation. Keep the
+ * document's canonical h1 client-aware too; a server-only heading would retain
+ * the route that first loaded the shell even after the visible top bar changed.
+ */
+export function MainPageTitle({ fallback }: { fallback: string }) {
+  const pathname = usePathname();
+  const title = pathname ? resolvePageTitle(pathname) : fallback;
+
+  return title ? <h1 className="sr-only">{title}</h1> : null;
 }

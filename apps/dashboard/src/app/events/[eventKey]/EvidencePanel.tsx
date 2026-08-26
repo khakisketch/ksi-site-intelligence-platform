@@ -46,10 +46,12 @@ export function EvidencePanel({
   eventKey,
   evidence,
   canUpload,
+  title = "근거",
 }: {
   eventKey: string;
   evidence: EvidenceSummary[];
   canUpload: boolean;
+  title?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -115,7 +117,7 @@ export function EvidencePanel({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-medium break-keep">증거</h2>
+        <h2 className="text-sm font-medium break-keep">{title}</h2>
         {canUpload && (
           <label className="tap-target flex cursor-pointer items-center rounded-md border border-line-strong px-3 text-[13px] font-semibold break-keep hover:bg-sunk">
             {busy ? "올리는 중…" : "증거 추가"}

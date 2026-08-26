@@ -5,11 +5,10 @@ import { usePathname } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
 import { MOBILE_TAB_ITEMS } from "./nav-items";
+import { NavIcon } from "./NavIcon";
 
 export function MobileBottomNav() {
   const pathname = usePathname();
-  // /login 과 같은 사유로 /field/* 에서도 숨긴다 — 현장 화면은 하단 탭이 아니라
-  // 화면 안의 큰 버튼으로 이동한다(layout.tsx 의 isChromelessPath 와 같은 술어).
   if (isChromelessPath(pathname)) return null;
 
   return (
@@ -28,8 +27,9 @@ export function MobileBottomNav() {
             key={item.key}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-xs break-keep ${ active ? "text-ink-1 font-medium" : "text-ink-2" }`}
+            className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] break-keep ${ active ? "text-accent-text font-semibold" : "text-ink-2" }`}
           >
+            <NavIcon name={item.icon} className="size-5" />
             {item.label}
           </Link>
         );

@@ -47,7 +47,7 @@ export const CELL_STATE_LABEL: Record<CoverageCellState, string> = {
   OBSERVED_HIGH_CONFIDENCE: "고신뢰 관찰",
   OBSERVED_PARTIAL: "부분 관찰",
   RECONSTRUCTION_READY: "재구성 가능",
-  EVENT_INSPECTED: "이벤트 확인됨",
+  EVENT_INSPECTED: "확인 항목 검토됨",
   OCCLUDED: "가려짐",
   UNREACHABLE: "접근 불가",
   NOT_OBSERVED: "미관찰(사유 없음)",

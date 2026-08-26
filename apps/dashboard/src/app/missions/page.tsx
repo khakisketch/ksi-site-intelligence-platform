@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TableRow, TableShell } from "@/components/ui/TableShell";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 import { formatCoverageRatio, formatNullable } from "./format";
@@ -115,22 +116,28 @@ export default async function MissionsPage({
         )}
 
         {canPlanSurvey && siteId && (
-          <Link
-            href={`/sites/${encodeURIComponent(siteId)}/surveys/new`}
-            className="btn btn-primary tap-target ml-auto"
+          <ResponsiveActionBoundary
+            action="MISSIONS_ISSUE"
+            reason="새 조사 계획 확정은 노트북에서 수행합니다."
+            className="ml-auto"
           >
-            새 조사 계획
-          </Link>
+            <Link
+              href={`/sites/${encodeURIComponent(siteId)}/surveys/new`}
+              className="btn btn-primary tap-target"
+            >
+              새 조사 계획
+            </Link>
+          </ResponsiveActionBoundary>
         )}
       </div>
 
       {missions.length === 0 ? (
         <EmptyState
-          title="발급된 임무가 없습니다"
+          title="비행 임무 이력이 없습니다"
           description={
             siteId
-              ? "이 현장에는 아직 발급된 임무가 없습니다."
-              : "현장에서 조사를 계획하면 발급된 계약이 여기에 쌓입니다."
+              ? "이 현장에는 아직 실행할 비행 임무가 없습니다."
+              : "현장에서 조사를 확정하면 비행 임무 이력이 여기에 쌓입니다."
           }
         />
       ) : (

@@ -4,11 +4,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
+import { SiteThumbnail, type SiteThumbnailImage } from "@/components/site/SiteThumbnail";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
-import { listEventsCached, listMissionsCached, listSitesCached } from "@/lib/core-api/cached";
+import { listAllEventsCached, listMissionsCached, listSitesCached } from "@/lib/core-api/cached";
 import {
   SITE_GROUPS,
   normalizeSiteGroup,
@@ -17,9 +19,13 @@ import {
 } from "@/lib/core-api/site-progress";
 import { isUnattended } from "@/lib/core-api/triage";
 import { formatKoreanDate } from "@/lib/datetime";
+import { getHomeEventEvidencePreview } from "@/lib/home-evidence";
+import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { SITE_STATUSES, type SiteStatus, type SiteView } from "@/lib/core-api/types";
 
 import { SiteOnboarding } from "./SiteOnboarding";
+
+export const metadata = { title: "현장 · KSI" };
 
 type SortKey = "attention" | "updated" | "name";
 
@@ -98,12 +104,11 @@ function RegisterSiteAction({ canRegisterSite }: { canRegisterSite: boolean }) {
 }
 
 /**
- * 현장 목록 — 카드 격자에서 표로(Console v2 §2).
+ * 현장 목록 — 데스크톱 비교표와 모바일 현장 카드의 같은 projection.
  *
- * 카드는 현장 하나를 보여주는 데는 좋지만 **여러 현장을 비교하는 데는 나쁘다**: 값이
- * 카드마다 다른 자리에 있어서 "어디가 제일 밀렸나"를 눈으로 훑을 수 없다. 이 화면의
- * 질문이 정확히 그것이라 표로 바꾼다(홈 포트폴리오와 같은 뼈대를 쓴다 — 두 화면에서
- * 같은 대상이 다르게 생기면 운영자가 두 번 학습한다).
+ * 넓은 화면에서는 여러 현장을 같은 열에서 비교하는 표가 맞다. 그러나 그 표를 폰에
+ * 가로 스크롤로 남기면 이름·다음 행동이 서로 떨어져 실제 일을 시작하기 어렵다. 모바일은
+ * 같은 사실을 `현장명 → 상태 → 확인할 내용 → 현장 열기` 순서의 카드로 다시 읽는다.
  *
  * 필터는 **링크**다(JS 없이 동작하고, 그대로 공유되며, 뒤로가기가 필터를 되감는다).
  * 시안의 상태 칩 4개는 10개 상태를 낱개로 고르는 대신 운영자가 실제로 묻는 묶음으로
@@ -140,7 +145,7 @@ export default async function SitesPage({
   // (홈이 이미 이 패턴을 쓴다. *Cached 라 셸 배지와 같은 스냅샷을 본다).
   const [missionsResult, eventsResult, canRegisterSiteResult] = await Promise.allSettled([
     listMissionsCached(undefined),
-    listEventsCached(500),
+    listAllEventsCached(),
     hasAllPermissions("SITES_WRITE"),
   ]);
   // rejected 를 빈 배열로 삼키면 "0건"과 "모름"이 같은 화면이 된다 — 조회가 죽었는데
@@ -176,7 +181,55 @@ export default async function SitesPage({
         sort,
       )
     : [];
+
+  // Site 자체에는 아직 대표 이미지 계약이 없다. 대신 각 현장의 가장 최근 확인 항목에
+  // 실제 image evidence가 있을 때만 목록 썸네일로 낮춰 쓴다. 열람 실패나 근거 부재를
+  // 임의 이미지로 채우지 않는다(INV-040). 현장당 최대 1건만 조회한다.
+  const latestEventBySite = new Map<string, { eventKey: string; occurredAt: string }>();
+  for (const event of events ?? []) {
+    const previous = latestEventBySite.get(event.siteId);
+    if (!previous || event.occurredAt > previous.occurredAt) {
+      latestEventBySite.set(event.siteId, { eventKey: event.eventKey, occurredAt: event.occurredAt });
+    }
+  }
+  const thumbnailEntries = await Promise.all(
+    visibleSites.map(async (site): Promise<readonly [string, SiteThumbnailImage | null]> => {
+      const event = latestEventBySite.get(site.siteId);
+      if (!event) return [site.siteId, null] as const;
+      try {
+        const preview = await getHomeEventEvidencePreview(event.eventKey);
+        return [
+          site.siteId,
+          preview
+            ? { src: preview.src, alt: `${site.name} 최근 확인 항목의 등록 근거` }
+            : null,
+        ] as const;
+      } catch {
+        return [site.siteId, null] as const;
+      }
+    }),
+  );
+  const thumbnailBySite = new Map(thumbnailEntries);
   const hasFilter = query.length > 0 || status !== undefined || group !== "all" || sort !== "attention";
+  const siteRows = visibleSites.map((site) => {
+    const next = siteNextAction(site.status);
+    const primaryAction = resolveSiteOperatorNextAction(
+      site,
+      {
+        canRegisterSite,
+        canEditSite: canRegisterSite,
+        canIssueMission: canPlanSurvey,
+      },
+      { includeRoutineSurvey: next.survey },
+    );
+    return {
+      site,
+      next,
+      primaryAction,
+      unattended: events === null ? null : (unattendedBySite.get(site.siteId) ?? 0),
+      lastMission: lastMissionBySite.get(site.siteId) ?? null,
+    };
+  });
 
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
@@ -185,76 +238,111 @@ export default async function SitesPage({
       <div className="flex flex-wrap items-center gap-2">
         {sites !== null && sites.length > 0 && (
           <>
-            {SITE_GROUPS.map((option) => {
-              const active = option.key === group;
-              const count =
-                option.statuses === null
-                  ? sites.length
-                  : sites.filter((site) => option.statuses.has(site.status)).length;
-              return (
-                <Link
-                  key={option.key}
-                  href={hrefWith(params, { group: option.key === "all" ? undefined : option.key })}
-                  aria-current={active ? "true" : undefined}
-                  className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] break-keep transition-colors ${
-                    active
-                      ? "border-line-strong bg-sunk font-bold"
-                      : "border-line bg-surface hover:border-line-strong"
-                  }`}
-                >
-                  {option.label}
-                  <span className="num text-[11px] text-ink-muted">{count}</span>
-                </Link>
-              );
-            })}
-
-            {status && (
-              <Link
-                href={hrefWith(params, { status: undefined })}
-                className="tap-target inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-sunk px-2.5 text-[12.5px] break-keep"
-              >
-                지정 상태 · {SITE_STATUS_LABEL[status].label}
-                <span aria-hidden="true" className="text-ink-muted">
-                  ✕
+            <details className="w-full rounded-lg border border-line bg-surface lg:hidden">
+              <summary className="tap-target flex cursor-pointer items-center justify-between px-3 text-[13px] font-semibold">
+                <span>필터·정렬</span>
+                <span className="text-[11.5px] font-normal text-ink-muted">
+                  {SITE_GROUPS.find((option) => option.key === group)?.label ?? "전체"}
+                  {hasFilter ? " · 적용 중" : ""}
                 </span>
-                <span className="sr-only">이 상태 필터 해제</span>
-              </Link>
-            )}
+              </summary>
+              <form action="/sites" className="grid gap-2 border-t border-line p-3">
+                {status && <input type="hidden" name="status" value={status} />}
+                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
+                  현장 상태
+                  <select name="group" defaultValue={group} className="input h-11 w-full text-[13px]">
+                    {SITE_GROUPS.map((option) => (
+                      <option key={option.key} value={option.key}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
+                  현장명
+                  <input
+                    name="q"
+                    type="search"
+                    defaultValue={params.q ?? ""}
+                    placeholder="현장명 검색"
+                    className="input h-11 w-full min-w-0 text-[13px]"
+                  />
+                </label>
+                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
+                  정렬
+                  <select name="sort" defaultValue={sort} className="input h-11 w-full text-[13px]">
+                    <option value="attention">조사 필요 순</option>
+                    <option value="updated">최근 갱신 순</option>
+                    <option value="name">이름 순</option>
+                  </select>
+                </label>
+                <div className="flex gap-2">
+                  <button type="submit" className="btn btn-primary tap-target flex-1">적용</button>
+                  {hasFilter && <Link href="/sites" className="btn tap-target flex-1 justify-center">초기화</Link>}
+                </div>
+              </form>
+            </details>
 
-            <form action="/sites" className="flex items-center gap-2">
-              {/* 칩·정렬은 hidden 으로 실어 보낸다 — 검색이 다른 조건을 지우지 않는다. */}
-              {group !== "all" && <input type="hidden" name="group" value={group} />}
-              {status && <input type="hidden" name="status" value={status} />}
-              <input
-                name="q"
-                type="search"
-                defaultValue={params.q ?? ""}
-                aria-label="현장 찾기"
-                placeholder="현장명 · 현장 ID"
-                className="input h-9 w-44 text-[12.5px]"
-              />
-              <select
-                name="sort"
-                defaultValue={sort}
-                aria-label="정렬 기준"
-                className="input h-9 w-32 text-[12.5px]"
-              >
-                <option value="attention">확인 필요 순</option>
-                <option value="updated">최근 갱신 순</option>
-                <option value="name">이름 순</option>
-              </select>
-              <button type="submit" className="btn tap-target">
-                적용
-              </button>
-              {hasFilter && (
-                <Link href="/sites" className="btn tap-target">
-                  초기화
+            <div className="hidden flex-wrap items-center gap-2 lg:flex">
+              {SITE_GROUPS.map((option) => {
+                const active = option.key === group;
+                const count =
+                  option.statuses === null
+                    ? sites.length
+                    : sites.filter((site) => option.statuses.has(site.status)).length;
+                if (!active && count === 0) return null;
+                return (
+                  <Link
+                    key={option.key}
+                    href={hrefWith(params, { group: option.key === "all" ? undefined : option.key })}
+                    aria-current={active ? "true" : undefined}
+                    className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] break-keep transition-colors ${
+                      active
+                        ? "border-line-strong bg-sunk font-bold"
+                        : "border-line bg-surface hover:border-line-strong"
+                    }`}
+                  >
+                    {option.label}
+                    <span className="num text-[11px] text-ink-muted">{count}</span>
+                  </Link>
+                );
+              })}
+
+              {status && (
+                <Link
+                  href={hrefWith(params, { status: undefined })}
+                  className="tap-target inline-flex items-center rounded-md border border-line-strong bg-sunk px-2.5 text-[12.5px] break-keep"
+                >
+                  {SITE_STATUS_LABEL[status].label} 필터 해제
                 </Link>
               )}
-            </form>
+
+              <form action="/sites" className="flex items-center gap-2">
+                {group !== "all" && <input type="hidden" name="group" value={group} />}
+                {status && <input type="hidden" name="status" value={status} />}
+                <input
+                  name="q"
+                  type="search"
+                  defaultValue={params.q ?? ""}
+                  aria-label="현장 찾기"
+                  placeholder="현장명 검색"
+                  className="input h-9 w-44 min-w-0 text-[12.5px]"
+                />
+                <select
+                  name="sort"
+                  defaultValue={sort}
+                  aria-label="정렬 기준"
+                  className="input h-9 w-32 min-w-0 text-[12.5px]"
+                >
+                  <option value="attention">조사 필요 순</option>
+                  <option value="updated">최근 갱신 순</option>
+                  <option value="name">이름 순</option>
+                </select>
+                <button type="submit" className="btn tap-target">적용</button>
+                {hasFilter && <Link href="/sites" className="btn tap-target">초기화</Link>}
+              </form>
+            </div>
           </>
         )}
-        <span className="ml-auto flex items-center gap-2">
+        <span className="ml-auto hidden items-center gap-2 lg:flex">
           <RegisterSiteAction canRegisterSite={canRegisterSite} />
         </span>
       </div>
@@ -270,41 +358,131 @@ export default async function SitesPage({
           action={hasFilter ? { label: "필터 초기화", href: "/sites" } : undefined}
         />
       ) : (
-        <TableShell
-          title="현장 상태"
-          meta={
-            sites !== null
-              ? `${visibleSites.length} / ${sites.length}곳 표시`
-              : undefined
-          }
-        >
-          <TableRow columns={COLUMNS} minWidth={MIN_WIDTH} head>
-            <span>현장</span>
-            <span>상태</span>
-            <span>진행 단계</span>
-            <span className="text-right">미조치</span>
-            <span>마지막 임무 발급</span>
-            <span>갱신</span>
-            <span>다음 할 일</span>
-            <span className="text-right">바로가기</span>
-          </TableRow>
+        <>
+          <section className="flex flex-col gap-2 xl:hidden" aria-label="현장 목록">
+            <div className="flex items-baseline gap-2 px-1">
+              <h2 className="text-[14px] font-bold">현장</h2>
+              <span className="text-[11.5px] text-ink-muted">
+                {sites !== null ? `${siteRows.length} / ${sites.length}곳 표시` : undefined}
+              </span>
+            </div>
+            <ul className="overflow-hidden rounded-lg border border-line bg-surface divide-y divide-line lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent lg:divide-y-0">
+              {siteRows.map(({ site, next, primaryAction, unattended, lastMission }) => {
+                const statusLabel = SITE_STATUS_LABEL[site.status];
+                const nextLabel = primaryAction?.label ?? next.label;
+                return (
+                  <li key={site.siteId} className="flex gap-3 px-3 py-3.5 sm:px-4 lg:flex-col lg:gap-0 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-0 lg:only:col-span-2">
+                    <Link
+                      href={`/sites/${encodeURIComponent(site.siteId)}`}
+                      aria-label={`${site.name} 현장 열기`}
+                      className="block w-28 shrink-0 self-stretch overflow-hidden rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-36 lg:aspect-[16/9] lg:w-full lg:rounded-none"
+                    >
+                      <SiteThumbnail
+                        siteId={site.siteId}
+                        siteName={site.name}
+                        image={thumbnailBySite.get(site.siteId) ?? null}
+                        className="h-full min-h-24 w-full lg:min-h-0"
+                      />
+                    </Link>
+                    <div className="flex min-w-0 flex-1 flex-col gap-3 lg:p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/sites/${encodeURIComponent(site.siteId)}`}
+                            className="block text-[14px] font-semibold break-keep hover:underline"
+                          >
+                            {site.name}
+                          </Link>
+                          <p className="mt-1 text-[12px] break-keep text-ink-2">
+                            최근 갱신 {formatKoreanDate(site.updatedAt)}
+                            {lastMission && ` · 최근 비행 임무 ${formatKoreanDate(lastMission)}`}
+                          </p>
+                        </div>
+                        <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
+                        <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
+                        <span
+                          className={`shrink-0 num text-[11.5px] font-bold ${(unattended ?? 0) > 0 ? "text-crit" : "text-ink-muted"}`}
+                        >
+                          확인 {unattended ?? "—"}건
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/sites/${encodeURIComponent(site.siteId)}`}
+                          className="btn tap-target flex-1 justify-center"
+                        >
+                          현장 열기
+                        </Link>
+                        {primaryAction && (
+                          <div className="hidden flex-1 lg:block">
+                            <ResponsiveActionBoundary
+                              action={primaryAction.responsiveAction}
+                              reason="현장 범위 설정과 조사 계획은 노트북의 전체 Operations Console에서 수행합니다."
+                            >
+                              <TableAction
+                                href={primaryAction.href}
+                                label={primaryAction.label}
+                                primary
+                              />
+                            </ResponsiveActionBoundary>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
 
-          {visibleSites.map((site) => {
-            const statusLabel = SITE_STATUS_LABEL[site.status];
-            const next = siteNextAction(site.status);
-            const unattended = events === null ? null : (unattendedBySite.get(site.siteId) ?? 0);
-            const lastMission = lastMissionBySite.get(site.siteId) ?? null;
+          <div className="hidden xl:block">
+            <TableShell
+              title="현장 상태"
+              meta={
+                sites !== null
+                  ? `${visibleSites.length} / ${sites.length}곳 표시`
+                  : undefined
+              }
+            >
+              <TableRow columns={COLUMNS} minWidth={MIN_WIDTH} head>
+                <span>현장</span>
+                <span>상태</span>
+                <span>진행 단계</span>
+                <span className="text-right">미조치</span>
+                <span>마지막 임무 발급</span>
+                <span>갱신</span>
+                <span>다음 할 일</span>
+                <span className="text-right">바로가기</span>
+              </TableRow>
 
-            return (
-              <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
-                <span className="min-w-0">
+              {siteRows.map(({ site, next, primaryAction, unattended, lastMission }) => {
+                const statusLabel = SITE_STATUS_LABEL[site.status];
+                return (
+                  <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
+                <span className="flex min-w-0 items-center gap-3">
+                  <Link
+                    href={`/sites/${encodeURIComponent(site.siteId)}`}
+                    aria-label={`${site.name} 현장 열기`}
+                    className="block h-11 w-16 shrink-0 overflow-hidden rounded-md border border-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <SiteThumbnail
+                      siteId={site.siteId}
+                      siteName={site.name}
+                      image={thumbnailBySite.get(site.siteId) ?? null}
+                      compact
+                      className="size-full"
+                    />
+                  </Link>
+                  <span className="min-w-0">
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}`}
                     className="block truncate text-[13.5px] font-semibold hover:underline"
                   >
                     {site.name}
                   </Link>
-                  <span className="num block truncate text-[11px] text-ink-muted">{site.siteId}</span>
+                  </span>
                 </span>
 
                 <span>
@@ -342,26 +520,33 @@ export default async function SitesPage({
                     next.actionable ? "font-semibold" : "text-ink-muted"
                   }`}
                 >
-                  {next.label}
+                  {primaryAction?.label ?? next.label}
                 </span>
 
                 <span className="flex justify-end gap-1.5">
-                  {next.survey && canPlanSurvey && (
-                    <TableAction
-                      href={`/sites/${encodeURIComponent(site.siteId)}/surveys/new`}
-                      label="조사"
-                      primary
-                    />
+                  {primaryAction && (
+                    <ResponsiveActionBoundary
+                      action={primaryAction.responsiveAction}
+                      reason="현장 범위 설정과 조사 계획은 노트북의 전체 Operations Console에서 수행합니다."
+                    >
+                      <TableAction
+                        href={primaryAction.href}
+                        label={primaryAction.label}
+                        primary
+                      />
+                    </ResponsiveActionBoundary>
                   )}
                   <TableAction
-                    href={`/world?siteId=${encodeURIComponent(site.siteId)}`}
-                    label="World"
+                    href={`/sites/${encodeURIComponent(site.siteId)}`}
+                    label="현장 열기"
                   />
                 </span>
               </TableRow>
-            );
-          })}
-        </TableShell>
+                );
+              })}
+            </TableShell>
+          </div>
+        </>
       )}
     </div>
   );

@@ -1,30 +1,22 @@
 "use client";
 
 import type * as L from "leaflet";
-import GeoRasterLayer from "georaster-layer-for-leaflet";
 import { useEffect } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 
-import { registerKoreaProjections, proj4 } from "@/lib/geo/proj4-defs";
+import {
+  createOrthophotoOverlay,
+  revokeRasterObjectUrl,
+} from "@/lib/geo/geotiff-overlay";
 import { usePrintMapResize } from "@/hooks/usePrintMapResize";
-
-registerKoreaProjections();
 
 type LoadState =
   | { phase: "loading" }
   | { phase: "unavailable"; detail: string }
   | { phase: "ready" };
 
-// georaster-layer-for-leaflet 의 타입 선언은 생성자를 `(new (...) => any) &
-// typeof L.Class` 로 내보내 `InstanceType` 이 실제 인스턴스가 아니라 베이스
-// `L.Class` 로 좁혀진다 — 라이브러리가 실제로 추가하는 `addTo`/`getBounds`
-// (Leaflet GridLayer 상속 + 커스텀 메서드)를 여기서 다시 밝힌다.
-type GeoRasterLayerInstance = L.Layer & {
-  getBounds: () => L.LatLngBounds;
-};
-
 /**
- * GeoTIFF 정사영상을 실제로 파싱해 Leaflet 위에 얹는다. 이 파일이 하는 일은
+ * GeoTIFF 정사영상을 실제로 파싱해 Leaflet ImageOverlay 위에 얹는다. 이 파일이 하는 일은
  * "산출물이 실제로 저장·재다운로드된다"(Task C) 다음의 마지막 겹이다 — 바이트가
  * 있어도 화면에 안 그려지면 사람이 볼 수 있는 것은 여전히 없다.
  *
@@ -47,7 +39,8 @@ function RasterLayer({
 
   useEffect(() => {
     let cancelled = false;
-    let layer: GeoRasterLayerInstance | null = null;
+    let layer: L.ImageOverlay | null = null;
+    let imageUrl: string | null = null;
 
     async function load() {
       try {
@@ -70,15 +63,21 @@ function RasterLayer({
         const arrayBuffer = await response.arrayBuffer();
         if (cancelled) return;
 
-        const parseGeoraster = (await import("georaster")).default;
-        const georaster = await parseGeoraster(arrayBuffer);
-        if (cancelled) return;
-
-        layer = new GeoRasterLayer({
-          georaster,
-          resolution: 256,
-          proj4,
-        }) as unknown as GeoRasterLayerInstance;
+        const overlay = await createOrthophotoOverlay(arrayBuffer);
+        if (cancelled) {
+          revokeRasterObjectUrl(overlay.imageUrl);
+          return;
+        }
+        imageUrl = overlay.imageUrl;
+        const leaflet = await import("leaflet");
+        if (cancelled) {
+          revokeRasterObjectUrl(imageUrl);
+          imageUrl = null;
+          return;
+        }
+        layer = leaflet.imageOverlay(imageUrl, overlay.bounds, {
+          interactive: false,
+        });
         layer.addTo(map);
         const bounds = layer.getBounds();
         if (bounds.isValid()) {
@@ -98,6 +97,7 @@ function RasterLayer({
     return () => {
       cancelled = true;
       if (layer) map.removeLayer(layer);
+      revokeRasterObjectUrl(imageUrl);
     };
   }, [map, jobId, artifactId, onState]);
 

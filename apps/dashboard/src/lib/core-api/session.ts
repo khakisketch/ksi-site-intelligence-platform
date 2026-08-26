@@ -2,6 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { getDashboardAuthRuntime } from "@/lib/auth/runtime";
+
 import { SESSION_COOKIE_NAME } from "./session-cookie";
 
 // 로그인한 운영자의 Core bearer 토큰 원문을 httpOnly 쿠키에 그대로 담는다 — 대시보드
@@ -16,6 +18,16 @@ export class MissingSessionError extends Error {
 }
 
 export async function getSessionToken(): Promise<string> {
+  const runtime = getDashboardAuthRuntime();
+  if (runtime.mode === "OIDC" || runtime.mode === "DUAL") {
+    const { auth } = await import("@/auth");
+    const session = (await auth()) as
+      | { ksiAccessToken?: string; ksiAuthError?: string }
+      | null;
+    if (session?.ksiAccessToken && !session.ksiAuthError) return session.ksiAccessToken;
+    if (runtime.mode === "OIDC") throw new MissingSessionError();
+  }
+
   const store = await cookies();
   const token = store.get(SESSION_COOKIE_NAME)?.value;
   if (!token) throw new MissingSessionError();

@@ -30,6 +30,7 @@ function event(overrides: Partial<EventSummaryResponse> = {}): EventSummaryRespo
     severity: null,
     triage: "NONE" as TriageStatus,
     assignee: null,
+    evidenceCount: 0,
     edgeDeviceId: "dev-1",
     occurredAt: "2026-08-04T00:00:00Z",
     receivedAt: "2026-08-04T00:00:01Z",

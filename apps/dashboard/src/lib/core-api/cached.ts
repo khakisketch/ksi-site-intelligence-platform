@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { listEvents } from "./events";
+import { listAllEvents } from "./events";
 import { listMissions } from "./missions";
 import { listSites } from "./sites";
 
@@ -16,6 +16,6 @@ import { listSites } from "./sites";
 export const listSitesCached = cache(listSites);
 export const listMissionsCached = cache(listMissions);
 
-// cache() 는 인자를 참조 동일성으로 비교하므로 객체 리터럴을 그대로 넘기면 매번 빗나간다.
-// 호출부가 공유하는 축(limit)만 원시값으로 받는다.
-export const listEventsCached = cache(async (limit: number) => listEvents({ limit }));
+// 확인 항목 수를 말하는 Home·현장·작업·셸은 Core의 500건 요청 상한을 제품 상한으로
+// 오해하면 안 된다. 요청 하나에서 전체 pagination 결과를 공유한다.
+export const listAllEventsCached = cache(listAllEvents);

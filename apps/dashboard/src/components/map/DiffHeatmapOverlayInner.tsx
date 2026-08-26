@@ -1,44 +1,33 @@
 "use client";
 
 import type * as L from "leaflet";
-import GeoRasterLayer from "georaster-layer-for-leaflet";
 import { useEffect } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 
-import { registerKoreaProjections, proj4 } from "@/lib/geo/proj4-defs";
 import { DIFF_CELL_COLOR, classifyDiffCell, diffIntensity } from "@/lib/design-conformance";
+import {
+  createDiffRasterOverlay,
+  revokeRasterObjectUrl,
+} from "@/lib/geo/geotiff-overlay";
 import { usePrintMapResize } from "@/hooks/usePrintMapResize";
-
-registerKoreaProjections();
 
 type DiffLoadState =
   | { phase: "loading" }
   | { phase: "unavailable"; detail: string }
   | { phase: "ready"; maxAbsM: number };
 
-type GeoRasterLayerInstance = L.Layer & {
-  getBounds: () => L.LatLngBounds;
-};
+const HEX_COLOR = /^#([0-9a-f]{6})$/i;
 
-/**
- * 격자 전체를 훑어 **집계에 실제로 들어간 값**의 최대 절대값을 찾는다.
- *
- * 발산형 팔레트의 세기를 나누는 기준이다. 문턱 미만 값까지 포함해 최대를 잡으면
- * 지도가 "거의 다 됐다"처럼 흐려지고, NaN(모름)을 0 으로 세면 아예 틀린다.
- * 값이 하나도 없으면(전부 모름이거나 전부 문턱 미만) 0 을 돌려주고, 그때는
- * 세기를 나누지 않는다(`diffIntensity` 가 최댓값으로 고정한다).
- */
-function maxAggregatedAbs(values: number[][][] | undefined, thresholdM: number): number {
-  if (!values || values.length === 0) return 0;
-  let max = 0;
-  for (const row of values[0]) {
-    for (const value of row) {
-      if (!Number.isFinite(value)) continue;
-      const magnitude = Math.abs(value);
-      if (magnitude >= thresholdM && magnitude > max) max = magnitude;
-    }
-  }
-  return max;
+function colorTuple(hex: string, alpha = 1): readonly [number, number, number, number] {
+  const match = HEX_COLOR.exec(hex);
+  if (!match) throw new Error(`지원하지 않는 차분 지도 색상: ${hex}`);
+  const value = Number.parseInt(match[1], 16);
+  return [
+    (value >> 16) & 0xff,
+    (value >> 8) & 0xff,
+    value & 0xff,
+    Math.round(Math.max(0, Math.min(1, alpha)) * 255),
+  ];
 }
 
 /**
@@ -64,7 +53,8 @@ function DiffRasterLayer({
 
   useEffect(() => {
     let cancelled = false;
-    let layer: GeoRasterLayerInstance | null = null;
+    let layer: L.ImageOverlay | null = null;
+    let imageUrl: string | null = null;
 
     async function load() {
       try {
@@ -84,38 +74,40 @@ function DiffRasterLayer({
         const arrayBuffer = await response.arrayBuffer();
         if (cancelled) return;
 
-        const parseGeoraster = (await import("georaster")).default;
-        const georaster = await parseGeoraster(arrayBuffer);
-        if (cancelled) return;
-
-        const maxAbsM = maxAggregatedAbs(georaster.values, thresholdM);
-
-        layer = new GeoRasterLayer({
-          georaster,
-          resolution: 256,
-          proj4,
-          opacity: 0.75,
-          pixelValuesToColorFn: (values: number[]) => {
-            const value = values[0];
-            const cell = classifyDiffCell(
-              value === undefined || value === null ? null : value,
-              thresholdM,
-            );
-            const color = DIFF_CELL_COLOR[cell];
-            if (cell === "unknown" || cell === "below-threshold") return color;
+        const overlay = await createDiffRasterOverlay(
+          arrayBuffer,
+          thresholdM,
+          (value, maxAbsM) => {
+            const cell = classifyDiffCell(value, thresholdM);
+            if (cell === "unknown" || cell === "below-threshold") {
+              return colorTuple(DIFF_CELL_COLOR[cell]);
+            }
             // 같은 색의 세기로 크기를 말한다 — 색상(파랑/주황)이 방향을,
             // 진하기가 양을 담당한다(색만으로 방향을 읽지 않아도 되게 범례에
             // 글자를 병기한다).
-            const alpha = 0.35 + 0.65 * diffIntensity(value, maxAbsM);
-            return `${color}${Math.round(alpha * 255)
-              .toString(16)
-              .padStart(2, "0")}`;
+            const alpha = 0.35 + 0.65 * diffIntensity(value ?? 0, maxAbsM);
+            return colorTuple(DIFF_CELL_COLOR[cell], alpha);
           },
-        }) as unknown as GeoRasterLayerInstance;
+        );
+        if (cancelled) {
+          revokeRasterObjectUrl(overlay.imageUrl);
+          return;
+        }
+        imageUrl = overlay.imageUrl;
+        const leaflet = await import("leaflet");
+        if (cancelled) {
+          revokeRasterObjectUrl(imageUrl);
+          imageUrl = null;
+          return;
+        }
+        layer = leaflet.imageOverlay(imageUrl, overlay.bounds, {
+          opacity: 0.75,
+          interactive: false,
+        });
         layer.addTo(map);
         const bounds = layer.getBounds();
         if (bounds.isValid()) map.fitBounds(bounds, { maxZoom: 20 });
-        onState({ phase: "ready", maxAbsM });
+        onState({ phase: "ready", maxAbsM: overlay.maxAbsM });
       } catch (error) {
         if (cancelled) return;
         onState({
@@ -129,6 +121,7 @@ function DiffRasterLayer({
     return () => {
       cancelled = true;
       if (layer) map.removeLayer(layer);
+      revokeRasterObjectUrl(imageUrl);
     };
   }, [map, missionId, designConformanceId, thresholdM, onState]);
 

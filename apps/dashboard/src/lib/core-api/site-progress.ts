@@ -162,7 +162,7 @@ export const PREPARING_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStat
 
 export const SITE_GROUPS = [
   { key: "all", label: "전체", statuses: null },
-  { key: "attention", label: "확인 필요", statuses: ATTENTION_SITE_STATUSES },
+  { key: "attention", label: "조사 필요", statuses: ATTENTION_SITE_STATUSES },
   { key: "preparing", label: "준비 중", statuses: PREPARING_SITE_STATUSES },
   { key: "patrol", label: "순찰 가능", statuses: PATROLLABLE_SITE_STATUSES },
   { key: "suspended", label: "운영 중단", statuses: new Set<SiteStatus>(["SUSPENDED"]) },

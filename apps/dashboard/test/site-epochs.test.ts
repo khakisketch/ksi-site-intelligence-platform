@@ -117,13 +117,21 @@ describe("같은 날 겹치는 시점", () => {
 });
 
 describe("탭", () => {
-  it("네 갈래다", () => {
-    expect(SITE_TABS.map((t) => t.key)).toEqual(["overview", "volume", "design", "records"]);
+  it("현장 업무 다섯 갈래다", () => {
+    expect(SITE_TABS.map((t) => t.key)).toEqual([
+      "briefing",
+      "data",
+      "review-items",
+      "work",
+      "reports",
+    ]);
   });
 
-  it("모르는 탭 값은 개요로 되돌린다", () => {
-    expect(normalizeSiteTab("volume")).toBe("volume");
-    expect(normalizeSiteTab("없는탭")).toBe("overview");
-    expect(normalizeSiteTab(undefined)).toBe("overview");
+  it("모르는 값은 브리핑으로, 기존 탭은 대응 영역으로 되돌린다", () => {
+    expect(normalizeSiteTab("data")).toBe("data");
+    expect(normalizeSiteTab("volume")).toBe("data");
+    expect(normalizeSiteTab("records")).toBe("work");
+    expect(normalizeSiteTab("없는탭")).toBe("briefing");
+    expect(normalizeSiteTab(undefined)).toBe("briefing");
   });
 });

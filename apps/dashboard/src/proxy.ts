@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/core-api/session-cookie";
+import { AUTH_SESSION_COOKIE_NAME } from "@/lib/auth/auth-cookie";
 
 // Next.js 16: middleware.ts → proxy.ts 로 개명(node_modules/next/dist/docs 확인).
 //
@@ -9,23 +10,32 @@ import { PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/core-api/session-coo
 // Route Handler·Server Component 는 이 proxy 를 신뢰하지 않고 각자 세션을 다시
 // 확인한다(Next 공식 문서: "Always verify authentication ... rather than relying
 // on Proxy alone" — matcher 변경이 조용히 보호를 없앨 수 있어서다).
-// ── /field 가 여기 있는 이유 ────────────────────────────────────────────────
-// Pilot 2 서드파티 클라우드 웹뷰가 302 를 그대로 따라가 준다는 보장이 우리에겐 없다
-// (FIELD-0b U9 에서 실측하기 전까지 **모른다**). 리다이렉트를 삼키는 웹뷰에서는
-// 세션이 없을 때 화면이 그냥 빈 채로 멈추고, 현장에서 그건 "앱이 죽었다"로 읽힌다.
-// 그래서 /field 는 리다이렉트 대상에서 빼고, 화면이 직접 인라인 로그인 폼을 그린다.
-//
-// 이건 화면을 여는 것이지 데이터를 여는 게 아니다 — /field 의 서버 컴포넌트는
-// 다른 화면과 똑같이 세션을 다시 확인하고, 세션이 없으면 Core 를 아예 부르지 않는다.
-const PUBLIC_PATHS = ["/login", "/field"];
+// `/field`도 일반 Operations Console 보호 경로다. Pilot 2 웹뷰 진입점은 없다.
+const PUBLIC_PATHS = ["/login"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
+function isUnavailableHilPath(pathname: string): boolean {
+  const isHilPath = pathname === "/hil" || pathname.startsWith("/hil/");
+  return (
+    isHilPath &&
+    (process.env.NODE_ENV === "production" ||
+      process.env.KSI_DASHBOARD_HIL_TOOLS_ENABLED !== "1")
+  );
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasSession = request.cookies.has(SESSION_COOKIE_NAME);
+  const hasSession = request.cookies
+    .getAll()
+    .some(
+      (cookie) =>
+        cookie.name === SESSION_COOKIE_NAME ||
+        cookie.name === AUTH_SESSION_COOKIE_NAME ||
+        cookie.name.startsWith(`${AUTH_SESSION_COOKIE_NAME}.`),
+    );
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(PATHNAME_HEADER, pathname);
@@ -36,6 +46,15 @@ export function proxy(request: NextRequest) {
   // "성공"으로 오인될 수 있다. Route Handler 가 세션을 직접 검증해 401 JSON을 낸다.
   if (pathname.startsWith("/api/")) {
     return withPathnameHeader();
+  }
+
+  // 비활성 HIL 경로는 인증 화면으로 존재를 암시하지 않고 실제 route의 404로 보낸다.
+  // 개발에서 명시 flag를 켠 경우에만 아래 일반 세션 보호를 그대로 받는다.
+  if (isUnavailableHilPath(pathname)) {
+    return new NextResponse(null, {
+      status: 404,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   }
 
   if (!hasSession && !isPublicPath(pathname)) {

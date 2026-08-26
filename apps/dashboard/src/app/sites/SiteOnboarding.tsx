@@ -59,9 +59,14 @@ export function SiteOnboarding({ canRegisterSite }: { canRegisterSite: boolean }
       </ol>
 
       {canRegisterSite ? (
-        <Link href="/sites/new" className="btn btn-primary tap-target">
-          첫 현장 등록하기
-        </Link>
+        <>
+          <Link href="/sites/new" className="btn btn-primary tap-target hidden lg:inline-flex">
+            첫 현장 등록하기
+          </Link>
+          <p className="text-[12.5px] break-keep text-ink-muted lg:hidden">
+            현장 등록은 전체 Operations Console에서 시작할 수 있습니다.
+          </p>
+        </>
       ) : (
         <p className="text-[12.5px] break-keep text-ink-muted">
           현장 등록은 현장 등록 권한을 가진 계정만 할 수 있습니다.

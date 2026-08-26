@@ -9,14 +9,15 @@ const STATIC_TITLES: Record<string, string> = {
   "/": "홈",
   "/sites": "현장",
   "/sites/new": "현장 등록",
-  "/events": "이벤트",
-  "/missions": "임무",
+  "/events": "확인 항목",
+  "/missions": "비행 임무 이력",
   // Phase 3/4 섹션(2026-08-08) — 사이드바 라벨과 같은 말을 쓴다(NAV_ITEMS 참고).
   "/assets": "결함 후보",
   "/world": "2D·3D World",
   "/reports": "보고서",
-  "/settings": "장비 지원단계",
+  "/settings": "장비 연결·지원 상태",
   "/more": "더보기",
+  "/field": "작업",
 };
 
 export function resolvePageTitle(pathname: string | null): string {
@@ -37,9 +38,12 @@ export function resolvePageTitle(pathname: string | null): string {
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/progress\/?$/.test(pathname)) return "계획 대비 진척";
   if (/^\/sites\/[^/]+\/report\/?$/.test(pathname)) return "현장 보고서";
+  if (/^\/sites\/[^/]+\/ai\/?$/.test(pathname)) return "KSI AI";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
-  if (/^\/events\/[^/]+\/?$/.test(pathname)) return "이벤트 상세";
-  if (/^\/missions\/[^/]+\/?$/.test(pathname)) return "임무 상세";
+  if (/^\/events\/[^/]+\/?$/.test(pathname)) return "확인 항목 상세";
+  if (/^\/missions\/[^/]+\/?$/.test(pathname)) return "비행 임무 상세";
+  if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "현장 작업";
+  if (/^\/field\/[^/]+\/?$/.test(pathname)) return "임무 복구";
 
   return "";
 }

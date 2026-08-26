@@ -72,22 +72,34 @@ export default async function SiteChangesPage({
   );
 
   if (!missionId) {
-    const missions = await listMissions(site.siteId).catch(() => [] as MissionRecordResponse[]);
+    let missions: MissionRecordResponse[] | null = null;
+    try {
+      missions = await listMissions(site.siteId);
+    } catch {
+      missions = null;
+    }
     return (
       <div className="flex flex-col gap-5 p-4 sm:p-5">
         {header}
-        <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-          <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
-            어느 임무의 변화 영역을 볼까요?
-          </h3>
-          {missions.length === 0 ? (
-            <EmptyState
-              title="발급된 임무가 없습니다"
-              description="변화 영역은 설계 대비 잔량이 계산된 임무에서만 볼 수 있습니다."
-            />
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {missions.map((mission) => (
+        {missions === null ? (
+          <ErrorState
+            message="조사 이력을 불러오지 못했습니다."
+            detail="조사가 없는 것으로 처리하지 않았습니다. 잠시 후 다시 확인하세요."
+            retryable
+          />
+        ) : (
+          <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+            <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
+              어느 조사의 변화 영역을 볼까요?
+            </h3>
+            {missions.length === 0 ? (
+              <EmptyState
+                title="완료된 조사가 없습니다"
+                description="변화 영역은 설계 대비 잔량이 계산된 조사에서만 볼 수 있습니다."
+              />
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {missions.map((mission) => (
                 <li key={mission.missionId}>
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}/changes?missionId=${encodeURIComponent(mission.missionId)}`}
@@ -97,7 +109,7 @@ export default async function SiteChangesPage({
                       {MISSION_TYPE_LABEL[mission.missionType]}
                     </span>
                     <span className="text-[11.5px] break-keep text-ink-2">
-                      발급{" "}
+                      조사 시작{" "}
                       {formatKoreanDateTime(mission.issuedAt, {
                         dateStyle: "medium",
                         timeStyle: "short",
@@ -105,10 +117,11 @@ export default async function SiteChangesPage({
                     </span>
                   </Link>
                 </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
       </div>
     );
   }

@@ -23,6 +23,7 @@ function row(overrides: Partial<PortfolioRow> & Pick<PortfolioRow, "siteId" | "n
     lastMissionAt: null,
     unattendedCount: 0,
     blocked: false,
+    primaryAction: null,
     ...overrides,
   };
 }

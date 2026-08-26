@@ -11,7 +11,8 @@ describe("presentWorkOrder", () => {
   it("does not expose file transfer as the normal approved action", () => {
     const view = presentWorkOrder("APPROVED");
     expect(view.action).toBe("REFRESH");
-    expect(view.detail).toContain("파일을 옮길 필요가 없습니다");
+    expect(view.label).toBe("비행 계획 준비");
+    expect(view.detail).toContain("WorkOrder 정보");
   });
 
   it("keeps reobservation behind a distinct human approval", () => {

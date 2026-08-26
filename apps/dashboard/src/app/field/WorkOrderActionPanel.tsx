@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 
-import type { ReobservationDraftView } from "@/lib/core-api/types";
+import type { AcquisitionProgressView, ReobservationDraftView } from "@/lib/core-api/types";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 
 import { INITIAL_FIELD_ACTION_STATE } from "./action-state";
 import { approveReobservationAction, approveWorkOrderAction } from "./actions";
@@ -10,14 +12,18 @@ import type { WorkOrderPresentation } from "./work-order-stage";
 
 export function WorkOrderActionPanel({
   workOrderId,
+  siteId,
   version,
   presentation,
   pendingDraft,
+  acquisitionProgress,
 }: {
   workOrderId: string;
+  siteId: string;
   version: number;
   presentation: WorkOrderPresentation;
   pendingDraft: ReobservationDraftView | null;
+  acquisitionProgress: AcquisitionProgressView | null;
 }) {
   const [approveState, approveAction, approvePending] = useActionState(
     approveWorkOrderAction,
@@ -28,10 +34,25 @@ export function WorkOrderActionPanel({
     INITIAL_FIELD_ACTION_STATE,
   );
 
+  if (acquisitionProgress?.nextAction === "OPEN_MISSION_WIZARD") {
+    const href = `/sites/${encodeURIComponent(siteId)}/surveys/new?workOrderId=${encodeURIComponent(
+      workOrderId,
+    )}`;
+    return (
+      <ResponsiveActionBoundary
+        action="MISSIONS_ISSUE"
+        reason="비행 준비는 현장 노트북에서 장비 상태를 함께 확인한 뒤 진행합니다."
+      >
+        <Link href={href} className="btn btn-primary min-h-11 w-full justify-center">
+          비행 준비
+        </Link>
+      </ResponsiveActionBoundary>
+    );
+  }
   if (presentation.action === "NONE") return null;
   if (presentation.action === "OPEN_RESULTS") {
     return (
-      <a href="#copilot" className="btn btn-field btn-primary w-full justify-center">
+      <a href="#copilot" className="btn btn-primary w-full justify-center">
         {presentation.actionLabel}
       </a>
     );
@@ -40,7 +61,7 @@ export function WorkOrderActionPanel({
     return (
       <button
         type="button"
-        className="btn btn-field btn-primary w-full justify-center"
+        className="btn btn-primary w-full justify-center"
         onClick={() => window.location.reload()}
       >
         {presentation.actionLabel}
@@ -56,34 +77,44 @@ export function WorkOrderActionPanel({
       );
     }
     return (
-      <form action={reobserveAction} className="flex flex-col gap-2">
-        <input type="hidden" name="workOrderId" value={workOrderId} />
-        <input type="hidden" name="draftId" value={pendingDraft.draftId} />
-        <input type="hidden" name="expectedVersion" value={pendingDraft.version} />
-        <button
-          type="submit"
-          disabled={reobservePending}
-          className="btn btn-field btn-primary w-full justify-center"
-        >
-          {reobservePending ? "승인 중…" : presentation.actionLabel}
-        </button>
-        <ActionMessage state={reobserveState} />
-      </form>
+      <ResponsiveActionBoundary
+        action="REOBSERVATION_APPROVE"
+        reason="Copilot 초안은 모바일에서 검토할 수 있지만 재관측 승인은 노트북에서 수행합니다."
+      >
+        <form action={reobserveAction} className="flex flex-col gap-2">
+          <input type="hidden" name="workOrderId" value={workOrderId} />
+          <input type="hidden" name="draftId" value={pendingDraft.draftId} />
+          <input type="hidden" name="expectedVersion" value={pendingDraft.version} />
+          <button
+            type="submit"
+            disabled={reobservePending}
+            className="btn btn-primary w-full justify-center"
+          >
+            {reobservePending ? "승인 중…" : presentation.actionLabel}
+          </button>
+          <ActionMessage state={reobserveState} />
+        </form>
+      </ResponsiveActionBoundary>
     );
   }
   return (
-    <form action={approveAction} className="flex flex-col gap-2">
-      <input type="hidden" name="workOrderId" value={workOrderId} />
-      <input type="hidden" name="expectedVersion" value={version} />
-      <button
-        type="submit"
-        disabled={approvePending}
-        className="btn btn-field btn-primary w-full justify-center"
-      >
-        {approvePending ? "승인 중…" : presentation.actionLabel}
-      </button>
-      <ActionMessage state={approveState} />
-    </form>
+    <ResponsiveActionBoundary
+      action="WORK_ORDERS_WRITE"
+      reason="작업 승인은 현장 노트북에서 작업 범위와 장비 준비 상태를 함께 확인한 뒤 진행합니다."
+    >
+      <form action={approveAction} className="flex flex-col gap-2">
+        <input type="hidden" name="workOrderId" value={workOrderId} />
+        <input type="hidden" name="expectedVersion" value={version} />
+        <button
+          type="submit"
+          disabled={approvePending}
+          className="btn btn-primary w-full justify-center"
+        >
+          {approvePending ? "승인 중…" : presentation.actionLabel}
+        </button>
+        <ActionMessage state={approveState} />
+      </form>
+    </ResponsiveActionBoundary>
   );
 }
 

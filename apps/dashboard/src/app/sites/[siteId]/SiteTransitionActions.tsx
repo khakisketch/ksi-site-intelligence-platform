@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useMutation } from "@/hooks/useMutation";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { requiresAutonomyApproval } from "@/lib/core-api/siteAutonomyGate";
 import type { SiteStatus } from "@/lib/core-api/types";
@@ -101,6 +102,10 @@ export function SiteTransitionActions({
     Boolean(targetStatus) && evidence.trim().length > 0 && reason.trim().length > 0 && !pending;
 
   return (
+    <ResponsiveActionBoundary
+      action="SITE_DEVICE_TRANSITION"
+      reason="Site 상태 전이는 영향 범위와 근거를 함께 확인할 수 있는 노트북에서 수행합니다."
+    >
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <h2 className="text-[13.5px] font-bold break-keep">상태 전이</h2>
       <label className="flex flex-col gap-1 text-[12.5px]">
@@ -158,5 +163,6 @@ export function SiteTransitionActions({
         </p>
       )}
     </div>
+    </ResponsiveActionBoundary>
   );
 }
