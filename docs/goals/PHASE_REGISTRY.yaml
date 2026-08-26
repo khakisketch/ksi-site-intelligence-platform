@@ -46,7 +46,13 @@ operations_console_delivery:
         flight action, commit, push, or release was used.
     - id: phase-3-rc-first-hil
       status: BLOCKED
-      gate: "physical RC Plus 2, M4D and Manifold 3 read-only session"
+      stages:
+        - id: phase-3a-code-sdk-readiness
+          status: IN_PROGRESS
+          gate: "five candidate paths build with fail-closed routing and HIL v1.4 evidence tooling"
+        - id: phase-3b-approved-limited-hil
+          status: BLOCKED
+          gate: "physical RC Plus 2, M4D and Manifold 3 session with device-bound approval envelope"
       software_preflight_2026_08_26: >-
         FIELD-0a A/B/C checksums and KMZ structure pass; existing Pilot 2 A-file map evidence and
         original M4D WideCamera metadata were re-audited without device contact. Pilot-exported
@@ -153,13 +159,13 @@ phases:
       - "다중 시점 세계좌표 융합 기준 구현 + replay 재현"
       - "Event Bundle/Offline Sync 계약 검증"
 
-    # HIL 이전에 처리할 비차단 보완사항 (독립 검토 2026-07-27 지정)
+    # HIL 이전 비차단 보완사항. 2026-08-26 실제 코드·회귀 근거를 재대조했다.
     pre_hil_followups:
-      - "max_normalized_residual 을 assemble_world_entity()까지 전달 + Versioned Geo Safety Profile 관리"
+      - "부분 완료 — max_normalized_residual 을 assemble_world_entity()까지 전달하고 replay 회귀 추가; Versioned Geo Safety Profile 관리는 별도 후속"
       - "viewpoint_id 를 임의 프레임 ID가 아니라 Calibration된 Camera Pose 또는 Viewpoint bin 참조로 정의 (완료 5cc7c9b — ViewpointEvidenceKind 등급 도입, INV-025로 정본화)"
-      - "C++ Edge와 Python Core가 Offline Sync digest를 직접 계산하기 전 cross-language canonicalization vector 추가"
-      - "observation_id·track_id·viewpoint_id 의 공백·whitespace-only 값 거부"
-      - "동적 객체 융합 전 최대 관측 시간창 명시적 제한"
+      - "완료 — Offline Sync shared payload-canonicalization v1 vector와 Python consumer 회귀 추가; C++ 직접 계산 도입 시 같은 vector를 소비"
+      - "완료 — observation_id·track_id·viewpoint_id 공백·whitespace-only 값 거부"
+      - "완료 — assemble_world_entity 최대 관측 시간창과 invalid/초과 회귀 추가"
 
     # 수용(33a669a) 이후의 안전 경계 강화 — Phase 1 재수용이 아니라 후속 hardening 기록.
     # independent_review_commit 은 그대로 둔다(교체하면 전체를 새 SHA에서 재수용했다는 다른 의미가 된다).

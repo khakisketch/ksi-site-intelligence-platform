@@ -1,6 +1,10 @@
 # ADR-KSI-020 — 온보드 임무 실행 능력의 실재 확인, 그리고 그것을 쓰지 않기로 하는 결정
 
 - 상태: ACCEPTED (2026-08-15, 대표자 지시)
+- 2026-08-26 대표자 개정: FIELD-0a 이전 전면 신규 기능 동결은 해제한다. 다만
+  비행 실행 단계와 장비 capability 검증 게이트는 해제하지 않는다. 사전 구현된
+  adapter나 SDK 빌드는 지원 증거가 아니며, HIL 전에는 `NOT_VERIFIED`와 feature
+  flag OFF를 유지한다(ADR-KSI-023/027 개정 참조).
 - 관련: ADR-KSI-019(관측 자율성 3단계 — 본 ADR이 그 §4 G3·D4를 정정한다),
   ADR-KSI-004(DJI 연동 이원화), ADR-KSI-006(온보드 기동), ADR-KSI-016 D6(정확도 등급),
   `docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md`(범위 한정됨, §2),
@@ -203,9 +207,13 @@ ADR-KSI-019 §5의 남은 항목(7번 실제 현장 검증, 8번 G6)을 다음�
 | **FIELD-2** | 그 모델의 설계 대비·변화 분석 → 재관측 영역 → KSI 계획 → 2회차 비행 → 모델 갱신 = **AOL 현장 실증** | 1회 |
 | **FIELD-3** | 실제 DTM 기반 웨이포인트별 고도(지형추종) — `terrain.py` 를 KMZ 발급 경로에 배선 | 1회 | — |
 
-**FIELD-0a 이전에 새 기능을 만들지 않는다.** FIELD-1까지의 실행 방식은 기존
-경로(사람이 Pilot 2로 시작)로 닫는다. FIELD-0b는 FIELD-1과 **병렬**이며 서로의
-전제가 아니다.
+> **[2026-08-26 대표자 개정]** FIELD-0a 이전 전면 신규 기능 동결은 폐기한다.
+> Console·Synthetic Staging 이후 RC-first HIL을 먼저 준비하는 ADR-KSI-027 순서를
+> 따른다. candidate adapter, HIL evidence 도구와 관련 결함 수정은 FIELD-0a 전에
+> 구현할 수 있다. 이 개정은 비행 실행 권한을 넓히지 않는다. FIELD-1까지 실제
+> 실행은 사람이 Pilot 2에서 승인·시작하는 기존 경로로 닫고, Waypoint `Action/START`,
+> Virtual Stick, 이륙·경로·짐벌·카메라 제어는 별도 단계 게이트 없이는 금지한다.
+> FIELD-0b는 FIELD-1과 **병렬**이며 서로의 전제가 아니다.
 
 ### 5.1 FIELD-3이 생각보다 가깝다 (2026-08-15 실측)
 

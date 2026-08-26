@@ -1,6 +1,9 @@
 # ADR-KSI-023 — RC-first Connected Edge 제품과 기능별 연결 경계
 
 - 상태: ACCEPTED (2026-08-21, 대표자 확정)
+- 2026-08-26 대표자 개정: 다섯 integration path의 candidate adapter를 HIL 전에
+  구현할 수 있다. 코드 존재와 운영 지원은 분리하며, 정확한 capability evidence와
+  별도 feature flag 없이는 production route에 등록하거나 활성화하지 않는다.
 - 관련 요구사항: REQ-ACQ-101/102, REQ-WRK-101, REQ-MSN-101,
   REQ-EDGE-101/102, REQ-INT-101, REQ-SEC-101
 - 관련 불변식: INV-001/002, INV-010~013, INV-040~042, INV-050/051, INV-060
@@ -106,8 +109,11 @@ flag는 기능별이며 누락 시 OFF다. 모든 경로는 동일 idempotency k
 - Dashboard: 노트북 중심의 반응형 Operations Console, 사람의 preflight/postflight
   상태·복구 행동과 제한된 모바일 이벤트·분석 UX
 
-실제 SDK 연결이 없는 RC/Dock/MSDK adapter 파일은 미리 만들지 않는다. 빈 구현이
-존재한다는 이유로 기능이 지원된 것처럼 해석되는 일을 막기 위해서다.
+`DJI_CLOUD`, `PSDK_MANIFOLD`, `MANIFOLD_DIRECT`, `MSDK_FIELD`, `DJI_DOCK`의
+candidate adapter는 HIL 전에 구현할 수 있다. 단, 빈 성공 구현이나 mock fallback은
+금지하고 공식 SDK·프로토콜이 확인한 port만 광고한다. SDK·계정·하드웨어가 없거나
+지원 근거가 없는 조합은 명시적으로 `NOT_VERIFIED` 또는 `BLOCKED`로 남긴다. 코드
+존재는 capability evidence가 아니며 production route 등록 조건으로 사용할 수 없다.
 
 ## 현재 구현·검증 경계
 
@@ -122,7 +128,8 @@ HIL과 기존 Site profile migration이 끝난 뒤에만
 
 - `WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`, `MEDIA_UPLOAD`은
   실제 M4D + Manifold 3 + RC Plus 2 조합에서 모두 `NOT_VERIFIED`다.
-- Dock 및 MSDK adapter는 구현하지 않았다.
+- Dock 및 MSDK adapter의 code-ready 여부와 HIL support 여부는 독립 상태로 기록한다.
+  code-ready adapter도 실제 SDK build와 장비 evidence 전에는 `NOT_VERIFIED`다.
 - WorkOrder 승인부터 activation receipt, 착륙 후 media completeness와 Processing
   시작까지 잇는 실제 장비 coordinator는 후속 구현·HIL 대상이다.
 - FIELD-0a/0b/1/2 완료 주장은 기존 acceptance 증거가 닫힐 때까지 금지한다.

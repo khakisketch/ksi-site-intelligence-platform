@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-08-24
+- Amended: 2026-08-26 — 대표자 결정으로 candidate adapter 선구현과 승인된 제한적
+  장비 write를 Phase 3에 허용한다. 운영 활성화와 비행 제어 금지는 유지한다.
 - Requirements: REQ-UX-101, REQ-WRK-101, REQ-COP-101/102, REQ-SEC-101
 - Invariants: INV-002, INV-040/041, INV-050/051, INV-060/061
 - Supersedes: Dashboard 구현 순서에 관한 이전 S3 MVP 가정
@@ -26,7 +28,8 @@ KSI는 드론 조종 화면이나 단순 지도·물량 조회 제품이 아니�
 | Phase 0 | 제품·UX 정본 고정 | ADR, 용어, 상태·권한 matrix, acceptance | 정본 간 충돌 없음 | capability를 문서만으로 VERIFIED 처리 |
 | Phase 1 | Operations Console 완성 | 실제 Core 읽기 projection, 현장·작업·확인 항목 UX, 반응형/접근성 회귀 | 390/768/1024/1440 Chromium + 계약 테스트 | 가짜 DJI·AI 결과·운영 write 우회 |
 | Phase 2 | 합성 Cloud/AI Staging | 승인된 합성 데이터, OIDC/TLS/backup restore, 근거형 Copilot adapter | 조직 scope, egress, citation, restore 증거 | 고객 데이터·외부 production 배포 |
-| Phase 3 | RC-first HIL | read-only capability 검증, 증거가 있는 adapter/receipt | 기체·RC·Manifold·펌웨어·transport·원본 log/digest | device write, DPK, credential, flight 무승인 실행 |
+| Phase 3A | RC-first code/SDK 준비 | 다섯 path candidate adapter, fail-closed routing, HIL approval/evidence 도구 | 공식 SDK build·금지 API gate·기본 OFF·`NOT_VERIFIED` | 코드 존재를 장비 지원으로 해석 |
+| Phase 3B | 승인된 제한적 HIL | read-only 관찰 후 승인 envelope에 고정된 DPK 설치·재시작과 합성 artifact 전송 | 기체·RC·Manifold·펌웨어·transport·원본 log/digest | 승인 범위 밖 device write, flight, camera/gimbal write |
 | Phase 4 | 검증 기능 통합 | HIL 통과 capability만 사용한 계약·미디어·처리 흐름 | 경로별 idempotency·recovery·운영 UX | 미검증 adapter 기본 활성화 |
 | Phase 5 | 단일 고객 유료 Pilot | FIELD-0a/0b/1/2, 두 epoch의 사람 승인 폐루프 | Mission→Media→Processing→Result lineage와 실증 | 다중 tenant 일반 출시 |
 
@@ -63,7 +66,8 @@ Phase는 기능 목록이 아니라 증거 등급이다. 앞 단계의 테스트
 - HIL 이전의 DJI capability는 모두 `NOT_VERIFIED`이며, 제품 UI에서 지원 또는 자동 실행처럼
   보이면 안 된다.
 - 실제 외부 Cloud, IdP, 고객 데이터, 장비 write/DPK/credential/flight, commit/push/release는
-  해당 별도 승인과 게이트 없이는 수행하지 않는다.
+  해당 별도 승인과 게이트 없이는 수행하지 않는다. Phase 3B의 장비 write 승인은
+  session·device·DPK digest·허용 operation·만료시각을 묶은 envelope로 제한한다.
 
 ## Rollback
 
