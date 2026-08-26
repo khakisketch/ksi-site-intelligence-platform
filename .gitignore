@@ -26,21 +26,28 @@ __pycache__/
 # 세션 종료 후 durable 저장소로 옮기고 SpikeEvidence.raw_log_ref 는 그 URI 를 가리킨다.
 /hil_raw_logs/
 
+# 현장 장비·매핑 원본 로컬 인입함 — DJI 비행 기록과 M4D 원본 사진은 증거 보관소로
+# 옮긴 뒤 URI/hash만 문서화하며, 저장소에는 원본·압축본을 직접 커밋하지 않는다.
+/download/
+
 # scripts/run_core_dev.py 로컬 개발 서버 durable 저장소 + 서명키 — dev 전용, 커밋하지 않는다.
 /.dev-data/
 
 # apps/dashboard (Next.js) 빌드 산출물·의존성
 apps/dashboard/node_modules/
 apps/dashboard/.next/
+apps/dashboard/.next-*/
 apps/dashboard/.env.local
 
 # 운영 환경변수 실물 — 토큰 digest·객체저장소 자격증명이 들어간다. 예제만 커밋한다
 # (deploy/.env.example). scripts/manifold/manifold.env 와 같은 관례.
 deploy/.env
+deploy/device-attestation-keys.json
 
 # Mission Contract 서명 개인키. compose 가 이 디렉터리를 컨테이너로 읽기전용
 # 바인드한다(DEPLOYMENT.md §2) — 커밋되면 발급 계약 전체의 신뢰가 무너진다.
 deploy/signing-keys/
+deploy/secrets/*.secret
 
 # Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
 # 계보는 edge/third_party/PSDK_LOCK.yaml(커밋)이 SSOT, 실물은 tools/edge/fetch_psdk.py로 fetch.
@@ -70,3 +77,6 @@ scripts/manifold/manifold.env
 # 정상 종료 시 teardown 이 지우지만, 프로세스가 죽으면 uuid4 접미사 디렉터리가
 # 추적되지 않은 채 남을 수 있다(2026-08-06 독립 재검토 권고).
 tests/contract/_hygiene_mutation_scratch_*/
+
+# 루트 CTest가 만드는 일회성 실행 로그(Testing/Temporary/*).
+/Testing/
