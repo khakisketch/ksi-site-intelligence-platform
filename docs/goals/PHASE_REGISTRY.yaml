@@ -65,6 +65,17 @@ operations_console_delivery:
             Provide a DJI-supported upload-only PSDK artifact or a separately reviewed isolation that
             removes the public Action surface without patching or hiding vendor code; provide licensed
             MSDK/Dock SDK projects and build credentials. Re-run exact SDK gates before Phase 3B.
+          machine_preflight_2026_08_26: >-
+            check_psdk_waypoint_archive.py verifies the pinned archive SHA-256 and linker member closure;
+            current PSDK 3.16 deterministically returns BLOCKED/ACTION_COLOCATED_WITH_UPLOAD before
+            candidate compilation, while the independent post-build gate remains in place for a future
+            safe artifact. check_dji_sdk_readiness.py reports MSDK and Dock as NOT_CONFIGURED, requires
+            external-or-ignored licensed inputs, rejects dynamic MSDK versions, and checks credential
+            files only for owner-only permissions without recording values, paths or digests. Tailnet
+            reprobe found RC Plus 2 offline for five days and no Manifold peer, so Phase 3B remains blocked.
+            After adding these gates, full Python regression passed 3907 tests with 23 skipped and 3
+            expected failures; Ruff passed; Mypy passed 403 source files; repository hygiene passed;
+            the canonical arm64 default PSDK app build and S0 strict symbol gate passed again.
         - id: phase-3b-approved-limited-hil
           status: BLOCKED
           gate: "physical RC Plus 2, M4D and Manifold 3 session with device-bound approval envelope"

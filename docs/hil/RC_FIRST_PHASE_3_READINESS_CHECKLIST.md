@@ -14,9 +14,15 @@ Phase 2 synthetic staging PASS는 장비 연결을 요구하지 않았다. 아�
 - 기존 M4D WideCamera 원본은 `.jpg` 확장자의 2-frame MPO이며 5280×3956, 12.29mm,
   35mm 환산 24mm와 검증 가능한 촬영시각을 보존한다. MPO를 평탄화하거나 재인코딩하지 않는다.
 - Pilot 2가 직접 export한 mapping KMZ와 회수 출처 증거는 현재 파일에서 찾지 못했다.
-  따라서 formal FIELD-0a와 Phase 3은 계속 `BLOCKED`다.
+  따라서 formal FIELD-0a는 계속 `BLOCKED`다. FIELD-0a는 Phase 3B HIL 이후의 별도
+  gate이며, 이 결손을 Phase 3A candidate 구현 금지로 다시 해석하지 않는다.
 - private audit manifest는 ignored `.dev-data/phase3-readiness/field0a-readiness-20260826.json`
   에 0700/0600으로 저장했다. GPS와 장치 serial은 manifest에 쓰지 않았다.
+- 2026-08-26 재접속 확인에서 Tailnet의 RC Plus 2는 5일째 offline이고 Manifold peer는
+  관찰되지 않았다. 따라서 새 물리 세션과 device-bound approval 없이 Phase 3B로 넘어가지 않는다.
+- 핀된 PSDK 3.16 arm64 archive는 `Init/UploadKmzFile/DeInit`과 public `Action`을 같은
+  `dji_waypoint_v3.c.o`에 보존한다. member 단위 preflight가 이를
+  `ACTION_COLOCATED_WITH_UPLOAD`으로 차단한다. archive strip/rewrite는 증거가 아니다.
 
 재검증 명령은 장비·네트워크를 호출하지 않는다.
 
@@ -30,6 +36,51 @@ uv run --locked python tools/hil/audit_phase3_readiness.py \
 
 나중에 Pilot-export KMZ가 확보돼도 `--pilot-export-kmz`의 byte 검사만으로 FIELD-0a를
 자동 PASS시키지 않는다. Pilot 2 export 동작·회수 경로·UTC·운영자 attestation이 별도로 필요하다.
+
+## SDK 입력 사전검증
+
+PSDK archive 검사는 핀 SHA-256과 정적 linker가 실제 선택할 member의 전체 Waypoint
+심볼을 기록한다. 현재 정상 결과는 exit 2와 `BLOCKED`이며 이를 억지로 0으로 만들지 않는다.
+
+```bash
+umask 077
+set +e
+uv run --locked python tools/edge/check_psdk_waypoint_archive.py --format json \
+  > <private-session>/02_sample_build/psdk-waypoint-archive.json
+status=$?
+set -e
+test "$status" -eq 2
+```
+
+MSDK Android project와 Dock OpenAPI는 외부 또는 gitignored 입력으로만 검사한다.
+license/EULA 파일과 고정 버전 build input의 digest만 기록하며 credential 값·경로·digest는
+출력하지 않는다. credential file은 현재 사용자 소유 0600 일반 파일이어야 한다.
+
+```bash
+uv run --locked python tools/hil/check_dji_sdk_readiness.py \
+  --msdk-root <external-or-ignored-android-project> \
+  --msdk-license <external-or-ignored-license> \
+  --msdk-credential-file <owner-0600-secret> \
+  --dock-openapi <external-or-ignored-openapi-v3> \
+  --dock-license <external-or-ignored-license> \
+  --dock-credential-file <owner-0600-secret>
+```
+
+입력이 없는 현재 판정은 MSDK/Dock 모두 `NOT_CONFIGURED`다. 이 결과는 manifest에
+`SDK_BUILT`로 기록할 수 없다. PSDK blocker를 현재 세션에 기록할 때는 다음처럼 build와
+capability를 각각 차단하고 raw JSON evidence를 참조한다.
+
+```bash
+uv run python tools/hil/prepare_connected_edge_session.py record-build \
+  <manifest-v1.4> --path PSDK_MANIFOLD --status BLOCKED \
+  --code-commit <git-sha> --sdk-version PSDK-3.16.0 \
+  --evidence-ref 02_sample_build/psdk-waypoint-archive.json
+uv run python tools/hil/prepare_connected_edge_session.py record-blocker \
+  <manifest-v1.4> --capability WAYLINE_DELIVERY --path PSDK_MANIFOLD \
+  --hardware-model <exact-models> --firmware-version <exact-versions> \
+  --blocker-code ACTION_COLOCATED_WITH_UPLOAD \
+  --evidence-ref 02_sample_build/psdk-waypoint-archive.json
+```
 
 ## 세션 전 준비
 
