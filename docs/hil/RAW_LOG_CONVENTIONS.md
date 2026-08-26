@@ -81,6 +81,22 @@ hil_raw_logs/
                                            # summarize_event_candidate_timing.py 산출물
     08_dpk_deploy/
       <UTC_ts>__dpk_deploy.log
+    09_mvp_provider_preflight/
+      <UTC_ts>__host_preflight.json
+      <UTC_ts>__manifold_and_aircraft_link_verified_evidence.json
+    10_cloud_pilot/
+      provider_support_matrix.json         # init 시 생성하는 공식 지원표 decision record
+      <UTC_ts>__cloud_acceptance.json
+      <UTC_ts>__<cloud_check>_evidence.json
+    11_psdk_camera_media/
+      <UTC_ts>__media_download_manifest.json
+      <UTC_ts>__<psdk_media_check>_raw.{log,jpg,json}
+      <UTC_ts>__<psdk_media_check>_evidence.json
+    12_gateway_lineage/
+      <UTC_ts>__gateway_lineage.json
+      <UTC_ts>__<lineage_check>_evidence.json
+    13_provider_decision/
+      <UTC_ts>__provider_decision.json
 ```
 
 ### 3.1 `session_manifest.json`
