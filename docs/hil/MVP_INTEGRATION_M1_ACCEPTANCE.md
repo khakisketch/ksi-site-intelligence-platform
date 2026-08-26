@@ -5,9 +5,10 @@
 > 아니라 `WAYLINE_DELIVERY`, `EDGE_DOWNLINK`, `EDGE_UPLINK`, `MEDIA_PULL`,
 > `MEDIA_UPLOAD` 각각의 정확한 하드웨어·펌웨어·경로 capability다. 아래 §6의
 > provider 선택은 runtime feature flag를 켜는 근거로 더 이상 충분하지 않다.
-> RC-first 정본 acceptance는 v1.3 manifest를 사용하며 현재 전 항목 `NOT_VERIFIED`다.
+> RC-first 정본 acceptance는 v1.4 manifest를 사용하며 현재 전 항목 `NOT_VERIFIED`다.
+> v1.3은 읽기 호환만 유지한다.
 
-## 0. RC-first Connected Edge v1.3 시작점
+## 0. RC-first Connected Edge v1.4 시작점
 
 첫 세션은 `M4D + Manifold 3 + RC Plus 2 + RC Wi-Fi`, Manifold SIM 없음으로 고정한다.
 장비나 네트워크를 변경하지 않는 private skeleton 생성·검증 명령은 다음과 같다.
@@ -20,21 +21,51 @@ uv run python tools/hil/prepare_connected_edge_session.py init \
   --gateway-device-id <rc-device-id>
 
 uv run python tools/hil/prepare_connected_edge_session.py verify \
-  hil_raw_logs/<session-id>/integration_manifest.v1.3.json
+  hil_raw_logs/<session-id>/integration_manifest.v1.4.json
 ```
 
 기존 v1.2 manifest를 감사용으로 연결해야 하면 새 출력 파일에 fail-closed migration한다.
-기존 provider 판정의 digest는 보존하지만 어떤 v1.3 capability도 자동 승격하지 않는다.
+기존 provider 판정의 digest는 보존하지만 어떤 semantic capability도 자동 승격하지 않는다.
 
 ```bash
 uv run python tools/hil/prepare_connected_edge_session.py migrate-v12 \
   hil_raw_logs/<legacy-session>/integration_manifest.json \
-  hil_raw_logs/<legacy-session>/integration_manifest.v1.3.json
+  hil_raw_logs/<legacy-session>/integration_manifest.v1.4.json
 ```
 
 다섯 capability는 서로 독립적인 evidence ref를 가져야 하고, `VERIFIED` 전에는 대응
 feature flag를 켤 수 없다. Cloud 업링크 성공은 하향 전달이나 media pull 성공의
 증거가 아니며, PSDK header/API 존재도 실장비 receipt를 대체하지 않는다.
+
+v1.4 manifest는 직접 편집하지 않는다. 먼저 SDK build를 기록하고 device/DPK/operation에
+묶인 승인을 기록한 뒤에만 capability result를 넣는다. 모든 evidence는 session 내부의
+현재 사용자 소유 0600 일반 파일이어야 하며 credential value와 private key를 포함할 수 없다.
+
+```bash
+uv run python tools/hil/prepare_connected_edge_session.py record-build \
+  <manifest-v1.4> --path PSDK_MANIFOLD --status SDK_BUILT \
+  --code-commit <git-sha> --sdk-version PSDK-3.16.0 \
+  --build-sha256 <sha256> --evidence-ref 14_connected_edge_capabilities/psdk-build.json
+
+uv run python tools/hil/prepare_connected_edge_session.py record-approval \
+  <manifest-v1.4> --approved-by <approver-id> --dpk-sha256 <sha256> \
+  --expires-at-utc <UTC-Z> --allow-operation DPK_INSTALL \
+  --allow-operation DPK_RESTART --allow-operation WAYLINE_UPLOAD_NO_START \
+  --evidence-ref 14_connected_edge_capabilities/approval.json
+
+uv run python tools/hil/prepare_connected_edge_session.py record-result \
+  <manifest-v1.4> --capability WAYLINE_DELIVERY --path PSDK_MANIFOLD \
+  --transport MOP --hardware-model <exact-models> --firmware-version <exact-versions> \
+  --adapter-build-sha256 <sha256> --provider-operation-id <operation-id> \
+  --artifact-sha256 <sha256> --request-sha256 <sha256> \
+  --evidence-ref 14_connected_edge_capabilities/wayline-result.json
+
+uv run python tools/hil/prepare_connected_edge_session.py finalize <manifest-v1.4>
+uv run python tools/hil/prepare_connected_edge_session.py verify <manifest-v1.4>
+```
+
+`finalize`는 종료시각과 manifest digest를 봉인하며 이후 모든 변경 command를 거부한다.
+부분 실패는 `record-blocker`로 별도 evidence와 blocker code를 기록한 뒤 finalize한다.
 
 - 상태: `READY / HIL BLOCKED` (2026-08-20 host preflight)
 - 대상: Matrice 4D + RC Plus 2 + Manifold 3
@@ -231,7 +262,7 @@ release하지 못하면 결과가 있어도 PASS가 아니다. raw JPEG는 `11_p
 ## 6. Provider 채택 규칙
 
 > 아래 규칙은 v1.2 역사적 provider 비교에만 적용한다. ADR-KSI-023 이후 runtime은
-> `prepare_connected_edge_session.py` v1.3의 기능별 receipt와 flag만 따른다.
+> `prepare_connected_edge_session.py` v1.4의 기능별 receipt와 flag만 따른다.
 
 1. Cloud가 공식 지원 조합에서 PASS면 `DJI_CLOUD`를 기본으로 채택하고 PSDK는 capture quality/offline 보조로 제한한다.
 2. 현재처럼 Cloud가 BLOCKED이고 PSDK가 PASS면 `PSDK_MANIFOLD`를 media 기본 경로로 채택한다.

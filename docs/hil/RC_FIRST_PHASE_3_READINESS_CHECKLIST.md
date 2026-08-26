@@ -1,4 +1,4 @@
-# Phase 3 RC-first read-only HIL 준비 체크리스트
+# Phase 3 RC-first 승인 제한형 HIL 준비 체크리스트
 
 Status: `BLOCKED` — 물리 장비 세션과 명시적 승인 전 실행 금지.
 
@@ -37,17 +37,20 @@ uv run --locked python tools/hil/audit_phase3_readiness.py \
 - 기체는 지상 안전 상태, propeller/이륙 방지 절차, 충분한 배터리와 담당 안전 인력을 갖춘다.
 - RC Wi-Fi 기본 profile을 사용하고 SIM 없음 조건을 별도로 기록한다.
 - Manifold의 유선 interface, IP, ARP/ping 결과를 새 raw session에 저장한다.
-- DJI/PSDK/DPK credential이나 write가 필요하면 read-only 세션을 중단하고 별도 승인을 받는다.
+- read-only inventory를 먼저 끝낸다. DPK install/restart나 제한적 전송은 v1.4 approval
+  envelope의 session/device/DPK digest/operation/expiry가 정확히 일치할 때만 시작한다.
+- credential은 0600 secret file로만 주입하고 manifest·명령행·로그·스크린샷에 값을 남기지 않는다.
+- 기존 DPK 상태와 rollback 담당자를 기록하고, 승인되지 않은 operation이 필요하면 즉시 중단한다.
 - 기존 `NOT_VERIFIED` capability registry와 rollback/stop 담당자를 확인한다.
 
 ## capability별 최소 증거
 
-| Capability | read-only 관찰 목표 | 금지된 추론 |
+| Capability | 승인된 관찰·제한 전송 목표 | 금지된 추론 |
 |---|---|---|
-| `WAYLINE_DELIVERY` | 실제 전송 표면·응답·식별자 존재 확인 | upload 성공을 비행 가능으로 해석 |
+| `WAYLINE_DELIVERY` | `Init → UploadKmzFile → DeInit` 응답·식별자 확인 | upload 성공을 비행 가능으로 해석 |
 | `EDGE_DOWNLINK` | RC/Core→Manifold 메시지 수신과 lineage | 좌표·명령 실행 |
 | `EDGE_UPLINK` | Manifold→RC/Core 상태 수신과 재연결 | telemetry만으로 제어 지원 주장 |
-| `MEDIA_PULL` | 실제 M4D 원본 목록/metadata 읽기 | 카메라 제어·삭제·촬영 |
+| `MEDIA_PULL` | 승인된 기존 시험 이미지 1건 목록·download·digest 확인 | 카메라 제어·삭제·촬영 |
 | `MEDIA_UPLOAD` | 승인된 합성 파일의 경로·digest 관찰 | 고객 media 또는 외부 Cloud 전송 |
 
 각 capability는 서로 독립적으로 PASS/BLOCKED/NOT_VERIFIED를 기록한다. 하나의 성공으로 나머지를
@@ -60,5 +63,6 @@ uv run --locked python tools/hil/audit_phase3_readiness.py \
 - raw log의 시간, 요청/응답, digest 또는 담당자 기록이 누락됨.
 - Manifold unreachable, 네트워크 경로 불명, 배터리/RTH 동작을 확인해야 하는 상황.
 - 실제 고객 데이터나 승인되지 않은 외부 endpoint가 필요함.
+- approval의 device/DPK digest/operation/expiry가 현재 실행과 다름.
 
 이 체크리스트만으로 배터리, RTH, avoidance, camera, flight capability는 검증되지 않는다.

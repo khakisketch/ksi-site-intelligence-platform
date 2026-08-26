@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Create and verify RC-first Connected Edge capability manifest v1.3.
+"""Create and verify RC-first Connected Edge capability manifest v1.4.
 
-Unlike integration_manifest v1.2, this manifest never selects one provider for every
-operation. WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, and MEDIA_UPLOAD
-are accepted independently for an exact hardware/firmware/path tuple. Reading a v1.2
-manifest is supported only through a fail-closed migration: provider-level evidence is
-preserved by digest, but no v1.3 capability becomes VERIFIED by inference.
+The v1.4 writer binds a device-specific operation approval, adapter build identity and
+private raw evidence to each capability verdict. v1.3 remains readable. A v1.2
+provider-level manifest can only be migrated fail-closed: no semantic capability becomes
+VERIFIED by inference.
 """
 
 from __future__ import annotations
@@ -16,12 +15,14 @@ import json
 import os
 import re
 import stat
+import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"
+LEGACY_SCHEMA_VERSION = "1.3"
 CAPABILITIES = (
     "WAYLINE_DELIVERY",
     "EDGE_DOWNLINK",
@@ -31,9 +32,34 @@ CAPABILITIES = (
 )
 STATUSES = {"NOT_VERIFIED", "VERIFIED", "BLOCKED"}
 PATHS = {"DJI_CLOUD", "PSDK_MANIFOLD", "MANIFOLD_DIRECT", "MSDK_FIELD", "DJI_DOCK"}
+TRANSPORTS = {
+    "RC_WIFI",
+    "RC_CELLULAR",
+    "MANIFOLD_CELLULAR",
+    "DOCK_ETHERNET",
+    "DOCK_CELLULAR",
+    "MOP",
+}
+BUILD_STATUSES = {"NOT_BUILT", "CODE_READY", "SDK_BUILT", "BLOCKED"}
+ALLOWED_OPERATIONS = {
+    "DPK_INSTALL",
+    "DPK_RESTART",
+    "WAYLINE_UPLOAD_NO_START",
+    "EDGE_CONTRACT_TRANSFER",
+    "EDGE_BUNDLE_TRANSFER",
+    "MEDIA_READ_ONE",
+    "MEDIA_UPLOAD_SYNTHETIC",
+}
+CAPABILITY_OPERATIONS = {
+    "WAYLINE_DELIVERY": "WAYLINE_UPLOAD_NO_START",
+    "EDGE_DOWNLINK": "EDGE_CONTRACT_TRANSFER",
+    "EDGE_UPLINK": "EDGE_BUNDLE_TRANSFER",
+    "MEDIA_PULL": "MEDIA_READ_ONE",
+    "MEDIA_UPLOAD": "MEDIA_UPLOAD_SYNTHETIC",
+}
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_TOP_FIELDS = {
+_V13_TOP_FIELDS = {
     "schema_version",
     "session_id",
     "operator",
@@ -45,6 +71,11 @@ _TOP_FIELDS = {
     "feature_flags",
     "legacy_source_sha256",
 }
+_V14_TOP_FIELDS = _V13_TOP_FIELDS | {
+    "adapter_builds",
+    "operation_approval",
+    "finalization",
+}
 _PROFILE_FIELDS = {
     "operating_mode",
     "gateway_kind",
@@ -53,7 +84,7 @@ _PROFILE_FIELDS = {
     "edge_device_id",
     "gateway_device_id",
 }
-_RECEIPT_FIELDS = {
+_V13_RECEIPT_FIELDS = {
     "status",
     "path",
     "hardware_model",
@@ -62,6 +93,29 @@ _RECEIPT_FIELDS = {
     "evidence_refs",
     "blocker_code",
 }
+_V14_RECEIPT_FIELDS = _V13_RECEIPT_FIELDS | {
+    "transport",
+    "adapter_build_sha256",
+    "provider_operation_id",
+    "artifact_sha256",
+    "request_sha256",
+    "flight_action_started",
+    "camera_write",
+}
+_BUILD_FIELDS = {"status", "sdk_version", "code_commit", "build_sha256", "evidence_refs"}
+_APPROVAL_FIELDS = {
+    "session_id",
+    "aircraft_sn",
+    "edge_device_id",
+    "gateway_device_id",
+    "dpk_sha256",
+    "allowed_operations",
+    "approved_by",
+    "approved_at_utc",
+    "expires_at_utc",
+    "evidence_ref",
+}
+_FINALIZATION_FIELDS = {"finalized_at_utc", "manifest_sha256"}
 
 
 class ConnectedEdgeManifestError(ValueError):
@@ -117,25 +171,53 @@ def build_manifest(
             capability: {
                 "status": "NOT_VERIFIED",
                 "path": None,
+                "transport": None,
                 "hardware_model": "M4D+MANIFOLD3+RC_PLUS_2",
                 "firmware_version": "PENDING-HIL",
                 "checked_at_utc": None,
                 "evidence_refs": [],
                 "blocker_code": "HIL_REQUIRED",
+                "adapter_build_sha256": None,
+                "provider_operation_id": None,
+                "artifact_sha256": None,
+                "request_sha256": None,
+                "flight_action_started": False,
+                "camera_write": False,
             }
             for capability in CAPABILITIES
         },
         # Missing means OFF would be ambiguous in JSON review, so every capability is explicit.
         "feature_flags": {capability: False for capability in CAPABILITIES},
         "legacy_source_sha256": None,
+        "adapter_builds": {
+            path: {
+                "status": "NOT_BUILT",
+                "sdk_version": None,
+                "code_commit": None,
+                "build_sha256": None,
+                "evidence_refs": [],
+            }
+            for path in sorted(PATHS)
+        },
+        "operation_approval": None,
+        "finalization": None,
     }
 
 
 def validate_manifest(
     manifest: Mapping[str, Any], *, evidence_root: Path | None = None
 ) -> None:
-    if set(manifest) != _TOP_FIELDS or manifest.get("schema_version") != SCHEMA_VERSION:
-        raise ConnectedEdgeManifestError("manifest가 v1.3 필드 집합과 다르다")
+    version = manifest.get("schema_version")
+    if version == LEGACY_SCHEMA_VERSION:
+        top_fields = _V13_TOP_FIELDS
+        receipt_fields = _V13_RECEIPT_FIELDS
+    elif version == SCHEMA_VERSION:
+        top_fields = _V14_TOP_FIELDS
+        receipt_fields = _V14_RECEIPT_FIELDS
+    else:
+        raise ConnectedEdgeManifestError("manifest schema_version은 1.3 또는 1.4여야 한다")
+    if set(manifest) != top_fields:
+        raise ConnectedEdgeManifestError(f"manifest가 v{version} 필드 집합과 다르다")
     for field in ("session_id", "aircraft_sn"):
         value = manifest.get(field)
         if not isinstance(value, str) or _ID.fullmatch(value) is None:
@@ -173,7 +255,7 @@ def validate_manifest(
     all_evidence_refs: set[str] = set()
     for capability in CAPABILITIES:
         receipt = receipts[capability]
-        if not isinstance(receipt, Mapping) or set(receipt) != _RECEIPT_FIELDS:
+        if not isinstance(receipt, Mapping) or set(receipt) != receipt_fields:
             raise ConnectedEdgeManifestError(f"{capability} receipt 필드가 다르다")
         status_value = receipt.get("status")
         if status_value not in STATUSES:
@@ -206,6 +288,13 @@ def validate_manifest(
                 )
             if receipt.get("blocker_code") is not None:
                 raise ConnectedEdgeManifestError(f"VERIFIED {capability}에 blocker가 남아 있다")
+            if version == SCHEMA_VERSION:
+                _validate_verified_v14(
+                    manifest,
+                    capability=capability,
+                    receipt=receipt,
+                    checked=checked,
+                )
         elif status_value == "BLOCKED" and (
             not receipt.get("blocker_code") or not evidence_refs
         ):
@@ -218,6 +307,32 @@ def validate_manifest(
             )
         if not isinstance(flags[capability], bool):
             raise ConnectedEdgeManifestError(f"{capability} feature flag는 boolean이어야 한다")
+        if version == SCHEMA_VERSION:
+            if receipt.get("transport") is not None and receipt["transport"] not in TRANSPORTS:
+                raise ConnectedEdgeManifestError(f"{capability} transport가 유효하지 않다")
+            for digest_field in (
+                "adapter_build_sha256",
+                "artifact_sha256",
+                "request_sha256",
+            ):
+                digest = receipt.get(digest_field)
+                if digest is not None and (
+                    not isinstance(digest, str) or _SHA256.fullmatch(digest) is None
+                ):
+                    raise ConnectedEdgeManifestError(
+                        f"{capability} {digest_field}가 유효하지 않다"
+                    )
+            provider_operation_id = receipt.get("provider_operation_id")
+            if provider_operation_id is not None and (
+                not isinstance(provider_operation_id, str) or not provider_operation_id.strip()
+            ):
+                raise ConnectedEdgeManifestError(
+                    f"{capability} provider_operation_id가 유효하지 않다"
+                )
+            if receipt.get("flight_action_started") is not False:
+                raise ConnectedEdgeManifestError(f"{capability} flight action은 금지된다")
+            if receipt.get("camera_write") is not False:
+                raise ConnectedEdgeManifestError(f"{capability} camera write는 금지된다")
         if evidence_root is not None:
             for ref in evidence_refs:
                 _validate_evidence(evidence_root, ref)
@@ -228,6 +343,148 @@ def validate_manifest(
     ):
         raise ConnectedEdgeManifestError("legacy_source_sha256이 유효하지 않다")
 
+    if version == SCHEMA_VERSION:
+        _validate_v14_control_fields(manifest, evidence_root=evidence_root)
+
+
+def _validate_verified_v14(
+    manifest: Mapping[str, Any],
+    *,
+    capability: str,
+    receipt: Mapping[str, Any],
+    checked: datetime,
+) -> None:
+    required = (
+        "transport",
+        "adapter_build_sha256",
+        "provider_operation_id",
+        "artifact_sha256",
+        "request_sha256",
+    )
+    if any(receipt.get(field) is None for field in required):
+        raise ConnectedEdgeManifestError(
+            f"VERIFIED {capability}에는 transport, build, operation, "
+            "artifact/request digest가 필요하다"
+        )
+    approval = manifest.get("operation_approval")
+    if not isinstance(approval, Mapping):
+        raise ConnectedEdgeManifestError(f"VERIFIED {capability}에는 operation approval이 필요하다")
+    required_operation = CAPABILITY_OPERATIONS[capability]
+    if required_operation not in approval.get("allowed_operations", []):
+        raise ConnectedEdgeManifestError(
+            f"VERIFIED {capability}에 필요한 승인 operation이 없다: {required_operation}"
+        )
+    expires = _parse_utc(approval.get("expires_at_utc"), nullable=False)
+    if expires is not None and checked > expires:
+        raise ConnectedEdgeManifestError(f"{capability} 결과가 approval 만료 뒤에 기록됐다")
+    path = str(receipt["path"])
+    build = manifest.get("adapter_builds", {}).get(path)
+    if not isinstance(build, Mapping) or build.get("status") != "SDK_BUILT":
+        raise ConnectedEdgeManifestError(f"VERIFIED {capability} path는 SDK_BUILT여야 한다")
+    if build.get("build_sha256") != receipt.get("adapter_build_sha256"):
+        raise ConnectedEdgeManifestError(f"{capability} adapter build digest가 원장과 다르다")
+
+
+def _validate_v14_control_fields(
+    manifest: Mapping[str, Any], *, evidence_root: Path | None
+) -> None:
+    builds = manifest.get("adapter_builds")
+    if not isinstance(builds, Mapping) or set(builds) != PATHS:
+        raise ConnectedEdgeManifestError("adapter_builds는 다섯 integration path를 가져야 한다")
+    for path, build in builds.items():
+        if not isinstance(build, Mapping) or set(build) != _BUILD_FIELDS:
+            raise ConnectedEdgeManifestError(f"{path} adapter build 필드가 다르다")
+        status_value = build.get("status")
+        if status_value not in BUILD_STATUSES:
+            raise ConnectedEdgeManifestError(f"{path} adapter build status가 유효하지 않다")
+        refs = build.get("evidence_refs")
+        if not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
+            raise ConnectedEdgeManifestError(f"{path} adapter build evidence가 유효하지 않다")
+        if len(refs) != len(set(refs)):
+            raise ConnectedEdgeManifestError(f"{path} adapter build evidence가 중복됐다")
+        digest = build.get("build_sha256")
+        if digest is not None and (
+            not isinstance(digest, str) or _SHA256.fullmatch(digest) is None
+        ):
+            raise ConnectedEdgeManifestError(f"{path} build_sha256이 유효하지 않다")
+        code_commit = build.get("code_commit")
+        if code_commit is not None and (
+            not isinstance(code_commit, str) or not code_commit.strip()
+        ):
+            raise ConnectedEdgeManifestError(f"{path} code_commit이 유효하지 않다")
+        sdk_version = build.get("sdk_version")
+        if sdk_version is not None and (
+            not isinstance(sdk_version, str) or not sdk_version.strip()
+        ):
+            raise ConnectedEdgeManifestError(f"{path} sdk_version이 유효하지 않다")
+        if status_value == "CODE_READY" and code_commit is None:
+            raise ConnectedEdgeManifestError(f"{path} CODE_READY에는 code_commit이 필요하다")
+        if status_value == "SDK_BUILT" and (
+            code_commit is None or sdk_version is None or digest is None or not refs
+        ):
+            raise ConnectedEdgeManifestError(
+                f"{path} SDK_BUILT에는 code_commit, sdk_version, digest, evidence가 필요하다"
+            )
+        if status_value == "BLOCKED" and not refs:
+            raise ConnectedEdgeManifestError(f"{path} BLOCKED에는 evidence가 필요하다")
+        if evidence_root is not None:
+            for ref in refs:
+                _validate_evidence(evidence_root, ref)
+
+    approval = manifest.get("operation_approval")
+    if approval is not None:
+        if not isinstance(approval, Mapping) or set(approval) != _APPROVAL_FIELDS:
+            raise ConnectedEdgeManifestError("operation_approval 필드가 다르다")
+        if approval.get("session_id") != manifest["session_id"]:
+            raise ConnectedEdgeManifestError("approval session_id가 manifest와 다르다")
+        profile = manifest["deployment_profile"]
+        expected = {
+            "aircraft_sn": manifest["aircraft_sn"],
+            "edge_device_id": profile["edge_device_id"],
+            "gateway_device_id": profile["gateway_device_id"],
+        }
+        for field, value in expected.items():
+            if approval.get(field) != value:
+                raise ConnectedEdgeManifestError(f"approval {field}가 manifest와 다르다")
+        if not isinstance(approval.get("dpk_sha256"), str) or _SHA256.fullmatch(
+            approval["dpk_sha256"]
+        ) is None:
+            raise ConnectedEdgeManifestError("approval dpk_sha256이 유효하지 않다")
+        operations = approval.get("allowed_operations")
+        if (
+            not isinstance(operations, list)
+            or not operations
+            or len(operations) != len(set(operations))
+            or not set(operations) <= ALLOWED_OPERATIONS
+        ):
+            raise ConnectedEdgeManifestError("approval allowed_operations가 유효하지 않다")
+        approved_by = approval.get("approved_by")
+        if not isinstance(approved_by, str) or not approved_by.strip():
+            raise ConnectedEdgeManifestError("approval approved_by가 필요하다")
+        approved = _parse_utc(approval.get("approved_at_utc"), nullable=False)
+        expires = _parse_utc(approval.get("expires_at_utc"), nullable=False)
+        if approved is not None and expires is not None and expires <= approved:
+            raise ConnectedEdgeManifestError("approval 만료시각은 승인시각 뒤여야 한다")
+        evidence_ref = approval.get("evidence_ref")
+        if not isinstance(evidence_ref, str) or not evidence_ref:
+            raise ConnectedEdgeManifestError("approval evidence_ref가 필요하다")
+        if evidence_root is not None:
+            _validate_evidence(evidence_root, evidence_ref)
+
+    finalization = manifest.get("finalization")
+    if finalization is not None:
+        if not isinstance(finalization, Mapping) or set(finalization) != _FINALIZATION_FIELDS:
+            raise ConnectedEdgeManifestError("finalization 필드가 다르다")
+        ended = _parse_utc(manifest.get("ended_at_utc"), nullable=False)
+        finalized = _parse_utc(finalization.get("finalized_at_utc"), nullable=False)
+        if ended != finalized:
+            raise ConnectedEdgeManifestError("ended_at_utc와 finalized_at_utc가 다르다")
+        digest = finalization.get("manifest_sha256")
+        if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
+            raise ConnectedEdgeManifestError("finalization digest가 유효하지 않다")
+        if digest != _manifest_digest(manifest):
+            raise ConnectedEdgeManifestError("finalized manifest digest가 일치하지 않는다")
+
 
 def _validate_evidence(root: Path, ref: str) -> None:
     pure = PurePosixPath(ref)
@@ -236,13 +493,44 @@ def _validate_evidence(root: Path, ref: str) -> None:
     candidate = root / ref
     try:
         candidate.resolve().relative_to(root.resolve())
+        relative = candidate.relative_to(root)
+        cursor = root
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise ConnectedEdgeManifestError("evidence symlink는 허용하지 않는다")
         info = candidate.stat()
+    except ConnectedEdgeManifestError:
+        raise
     except (ValueError, OSError) as exc:
         raise ConnectedEdgeManifestError(f"evidence를 확인할 수 없다: {ref}") from exc
     if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
         raise ConnectedEdgeManifestError(
             "evidence는 현재 사용자 소유의 private 일반 파일이어야 한다"
         )
+    _reject_secret_material(candidate)
+
+
+def _reject_secret_material(path: Path) -> None:
+    data = path.read_bytes()
+    if b"-----BEGIN PRIVATE KEY-----" in data or b"-----BEGIN OPENSSH PRIVATE KEY-----" in data:
+        raise ConnectedEdgeManifestError("evidence에 private key material을 기록할 수 없다")
+    if len(data) > 16 * 1024 * 1024:
+        raise ConnectedEdgeManifestError("evidence 단일 파일은 16 MiB를 넘을 수 없다")
+    text = data.decode("utf-8", errors="ignore")
+    secret_value = re.compile(
+        r'(?i)["\'](?:api[_-]?key|app[_-]?key|secret|password|access[_-]?token|refresh[_-]?token)["\']'
+        r"\s*[:=]\s*[\"'](?!REDACTED|<redacted>|\*{3,})[^\"']{4,}[\"']"
+    )
+    if secret_value.search(text):
+        raise ConnectedEdgeManifestError("evidence에 credential value를 기록할 수 없다")
+
+
+def _manifest_digest(manifest: Mapping[str, Any]) -> str:
+    payload = json.loads(json.dumps(manifest))
+    payload["finalization"] = None
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def acceptance_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
@@ -254,11 +542,18 @@ def acceptance_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
         if receipts[capability]["status"] != "VERIFIED"
     ]
     return {
+        "schema_version": manifest["schema_version"],
         "rc_base_ready_for_feature_enable": not missing,
+        "verified_capabilities": [
+            capability
+            for capability in CAPABILITIES
+            if receipts[capability]["status"] == "VERIFIED"
+        ],
         "missing_capabilities": missing,
         "feature_flags_enabled": [
             capability for capability in CAPABILITIES if manifest["feature_flags"][capability]
         ],
+        "finalized": manifest.get("finalization") is not None,
     }
 
 
@@ -278,7 +573,7 @@ def migrate_v12(legacy: Mapping[str, Any]) -> dict[str, Any]:
     )
     migrated["session_id"] = str(legacy["session_id"]).replace("SESS-", "CONNECTED-", 1)
     migrated["legacy_source_sha256"] = hashlib.sha256(canonical).hexdigest()
-    # Provider-level v1.2 success is not evidence for any independent v1.3 capability.
+    # Provider-level v1.2 success is not evidence for any independent semantic capability.
     for receipt in migrated["capability_receipts"].values():
         receipt["blocker_code"] = "V12_PROVIDER_EVIDENCE_REQUIRES_CAPABILITY_RETEST"
     validate_manifest(migrated)
@@ -300,6 +595,29 @@ def _write_private(path: Path, payload: Mapping[str, Any], *, exclusive: bool) -
         raise
 
 
+def _replace_private(path: Path, payload: Mapping[str, Any]) -> None:
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ConnectedEdgeManifestError("manifest/session symlink는 허용하지 않는다")
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def initialise(root: Path, manifest: Mapping[str, Any]) -> Path:
     validate_manifest(manifest)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -307,7 +625,11 @@ def initialise(root: Path, manifest: Mapping[str, Any]) -> Path:
     session = root / str(manifest["session_id"])
     session.mkdir(mode=0o700)
     (session / "14_connected_edge_capabilities").mkdir(mode=0o700)
-    _write_private(session / "integration_manifest.v1.3.json", manifest, exclusive=True)
+    _write_private(
+        session / f"integration_manifest.v{manifest['schema_version']}.json",
+        manifest,
+        exclusive=True,
+    )
     return session
 
 
@@ -324,6 +646,159 @@ def load(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _load_mutable_v14(path: Path) -> dict[str, Any]:
+    manifest = load(path)
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        raise ConnectedEdgeManifestError("변경 command는 v1.4 manifest만 지원한다")
+    if manifest.get("finalization") is not None:
+        raise ConnectedEdgeManifestError("finalized manifest는 변경할 수 없다")
+    return manifest
+
+
+def _persist_mutation(path: Path, manifest: dict[str, Any]) -> None:
+    validate_manifest(manifest, evidence_root=path.parent)
+    _replace_private(path, manifest)
+
+
+def record_adapter_build(
+    path: Path,
+    *,
+    integration_path: str,
+    status_value: str,
+    code_commit: str | None,
+    sdk_version: str | None,
+    build_sha256: str | None,
+    evidence_refs: Sequence[str],
+) -> None:
+    manifest = _load_mutable_v14(path)
+    if integration_path not in PATHS:
+        raise ConnectedEdgeManifestError("integration path가 유효하지 않다")
+    manifest["adapter_builds"][integration_path] = {
+        "status": status_value,
+        "sdk_version": sdk_version,
+        "code_commit": code_commit,
+        "build_sha256": build_sha256,
+        "evidence_refs": list(evidence_refs),
+    }
+    _persist_mutation(path, manifest)
+
+
+def record_approval(
+    path: Path,
+    *,
+    approved_by: str,
+    dpk_sha256: str,
+    expires_at_utc: str,
+    allowed_operations: Sequence[str],
+    evidence_ref: str,
+    approved_at: datetime | None = None,
+) -> None:
+    manifest = _load_mutable_v14(path)
+    if manifest.get("operation_approval") is not None:
+        raise ConnectedEdgeManifestError("operation approval은 교체할 수 없다")
+    profile = manifest["deployment_profile"]
+    manifest["operation_approval"] = {
+        "session_id": manifest["session_id"],
+        "aircraft_sn": manifest["aircraft_sn"],
+        "edge_device_id": profile["edge_device_id"],
+        "gateway_device_id": profile["gateway_device_id"],
+        "dpk_sha256": dpk_sha256,
+        "allowed_operations": list(allowed_operations),
+        "approved_by": approved_by,
+        "approved_at_utc": _utc(approved_at or datetime.now(UTC)),
+        "expires_at_utc": expires_at_utc,
+        "evidence_ref": evidence_ref,
+    }
+    _persist_mutation(path, manifest)
+
+
+def record_result(
+    path: Path,
+    *,
+    capability: str,
+    integration_path: str,
+    transport: str,
+    hardware_model: str,
+    firmware_version: str,
+    adapter_build_sha256: str,
+    provider_operation_id: str,
+    artifact_sha256: str,
+    request_sha256: str,
+    evidence_refs: Sequence[str],
+    checked_at: datetime | None = None,
+) -> None:
+    manifest = _load_mutable_v14(path)
+    if capability not in CAPABILITIES:
+        raise ConnectedEdgeManifestError("capability가 유효하지 않다")
+    current = manifest["capability_receipts"][capability]
+    if current["status"] != "NOT_VERIFIED":
+        raise ConnectedEdgeManifestError(f"{capability} verdict는 교체할 수 없다")
+    manifest["capability_receipts"][capability] = {
+        "status": "VERIFIED",
+        "path": integration_path,
+        "transport": transport,
+        "hardware_model": hardware_model,
+        "firmware_version": firmware_version,
+        "checked_at_utc": _utc(checked_at or datetime.now(UTC)),
+        "evidence_refs": list(evidence_refs),
+        "blocker_code": None,
+        "adapter_build_sha256": adapter_build_sha256,
+        "provider_operation_id": provider_operation_id,
+        "artifact_sha256": artifact_sha256,
+        "request_sha256": request_sha256,
+        "flight_action_started": False,
+        "camera_write": False,
+    }
+    _persist_mutation(path, manifest)
+
+
+def record_blocker(
+    path: Path,
+    *,
+    capability: str,
+    integration_path: str | None,
+    hardware_model: str,
+    firmware_version: str,
+    blocker_code: str,
+    evidence_refs: Sequence[str],
+    checked_at: datetime | None = None,
+) -> None:
+    manifest = _load_mutable_v14(path)
+    if capability not in CAPABILITIES:
+        raise ConnectedEdgeManifestError("capability가 유효하지 않다")
+    current = manifest["capability_receipts"][capability]
+    if current["status"] != "NOT_VERIFIED":
+        raise ConnectedEdgeManifestError(f"{capability} verdict는 교체할 수 없다")
+    manifest["capability_receipts"][capability] = {
+        "status": "BLOCKED",
+        "path": integration_path,
+        "transport": None,
+        "hardware_model": hardware_model,
+        "firmware_version": firmware_version,
+        "checked_at_utc": _utc(checked_at or datetime.now(UTC)),
+        "evidence_refs": list(evidence_refs),
+        "blocker_code": blocker_code,
+        "adapter_build_sha256": None,
+        "provider_operation_id": None,
+        "artifact_sha256": None,
+        "request_sha256": None,
+        "flight_action_started": False,
+        "camera_write": False,
+    }
+    _persist_mutation(path, manifest)
+
+
+def finalize(path: Path, *, finalized_at: datetime | None = None) -> None:
+    manifest = _load_mutable_v14(path)
+    finalized = _utc(finalized_at or datetime.now(UTC))
+    manifest["ended_at_utc"] = finalized
+    manifest["finalization"] = {
+        "finalized_at_utc": finalized,
+        "manifest_sha256": _manifest_digest(manifest),
+    }
+    _persist_mutation(path, manifest)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -335,6 +810,48 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--gateway-device-id", default="PENDING-GATEWAY-DEVICE")
     verify = sub.add_parser("verify")
     verify.add_argument("manifest", type=Path)
+    build = sub.add_parser("record-build")
+    build.add_argument("manifest", type=Path)
+    build.add_argument("--path", required=True, choices=sorted(PATHS))
+    build.add_argument("--status", required=True, choices=sorted(BUILD_STATUSES - {"NOT_BUILT"}))
+    build.add_argument("--code-commit")
+    build.add_argument("--sdk-version")
+    build.add_argument("--build-sha256")
+    build.add_argument("--evidence-ref", action="append", default=[])
+    approval = sub.add_parser("record-approval")
+    approval.add_argument("manifest", type=Path)
+    approval.add_argument("--approved-by", required=True)
+    approval.add_argument("--dpk-sha256", required=True)
+    approval.add_argument("--expires-at-utc", required=True)
+    approval.add_argument(
+        "--allow-operation",
+        action="append",
+        required=True,
+        choices=sorted(ALLOWED_OPERATIONS),
+    )
+    approval.add_argument("--evidence-ref", required=True)
+    result = sub.add_parser("record-result")
+    result.add_argument("manifest", type=Path)
+    result.add_argument("--capability", required=True, choices=CAPABILITIES)
+    result.add_argument("--path", required=True, choices=sorted(PATHS))
+    result.add_argument("--transport", required=True, choices=sorted(TRANSPORTS))
+    result.add_argument("--hardware-model", required=True)
+    result.add_argument("--firmware-version", required=True)
+    result.add_argument("--adapter-build-sha256", required=True)
+    result.add_argument("--provider-operation-id", required=True)
+    result.add_argument("--artifact-sha256", required=True)
+    result.add_argument("--request-sha256", required=True)
+    result.add_argument("--evidence-ref", action="append", required=True)
+    blocker = sub.add_parser("record-blocker")
+    blocker.add_argument("manifest", type=Path)
+    blocker.add_argument("--capability", required=True, choices=CAPABILITIES)
+    blocker.add_argument("--path", choices=sorted(PATHS))
+    blocker.add_argument("--hardware-model", required=True)
+    blocker.add_argument("--firmware-version", required=True)
+    blocker.add_argument("--blocker-code", required=True)
+    blocker.add_argument("--evidence-ref", action="append", required=True)
+    finalize_parser = sub.add_parser("finalize")
+    finalize_parser.add_argument("manifest", type=Path)
     migrate = sub.add_parser("migrate-v12")
     migrate.add_argument("legacy_manifest", type=Path)
     migrate.add_argument("output", type=Path)
@@ -356,6 +873,58 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "verify":
         print(json.dumps(acceptance_summary(load(args.manifest)), sort_keys=True))
         return 0
+    if args.command == "record-build":
+        record_adapter_build(
+            args.manifest,
+            integration_path=args.path,
+            status_value=args.status,
+            code_commit=args.code_commit,
+            sdk_version=args.sdk_version,
+            build_sha256=args.build_sha256,
+            evidence_refs=args.evidence_ref,
+        )
+        return 0
+    if args.command == "record-approval":
+        record_approval(
+            args.manifest,
+            approved_by=args.approved_by,
+            dpk_sha256=args.dpk_sha256,
+            expires_at_utc=args.expires_at_utc,
+            allowed_operations=args.allow_operation,
+            evidence_ref=args.evidence_ref,
+        )
+        return 0
+    if args.command == "record-result":
+        record_result(
+            args.manifest,
+            capability=args.capability,
+            integration_path=args.path,
+            transport=args.transport,
+            hardware_model=args.hardware_model,
+            firmware_version=args.firmware_version,
+            adapter_build_sha256=args.adapter_build_sha256,
+            provider_operation_id=args.provider_operation_id,
+            artifact_sha256=args.artifact_sha256,
+            request_sha256=args.request_sha256,
+            evidence_refs=args.evidence_ref,
+        )
+        return 0
+    if args.command == "record-blocker":
+        record_blocker(
+            args.manifest,
+            capability=args.capability,
+            integration_path=args.path,
+            hardware_model=args.hardware_model,
+            firmware_version=args.firmware_version,
+            blocker_code=args.blocker_code,
+            evidence_refs=args.evidence_ref,
+        )
+        return 0
+    if args.command == "finalize":
+        finalize(args.manifest)
+        return 0
+    if args.command != "migrate-v12":
+        raise AssertionError(f"처리하지 않은 command: {args.command}")
     if args.legacy_manifest.is_symlink() or args.legacy_manifest.parent.is_symlink():
         raise ConnectedEdgeManifestError("legacy manifest symlink는 허용하지 않는다")
     legacy_info = args.legacy_manifest.stat()
