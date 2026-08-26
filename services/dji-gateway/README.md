@@ -24,4 +24,6 @@ capability와 transport가 모두 있어야만 기록된다.
 2026-08-26 대표자 개정에 따라 다섯 `IntegrationPath`의 candidate adapter를 미리
 구현한다. 각 adapter는 정본 capability catalog에 있는 좁은 port만 광고한다. 실제 호출은
 runtime configuration, exact hardware/firmware HIL evidence, capability feature flag가
-모두 있어야 가능하다. candidate code와 SDK build는 production 지원 증거가 아니다.
+모두 있어야 가능하다. Runtime configuration과 trusted routing context의 organization,
+Site, Gateway device, Edge device binding도 정확히 일치해야 하며 request body의 scope는
+이 context를 바꿀 수 없다(INV-060). candidate code와 SDK build는 production 지원 증거가 아니다.

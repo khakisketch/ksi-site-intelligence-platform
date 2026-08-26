@@ -6,6 +6,7 @@ import json
 import socket
 import threading
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,10 @@ def _config(path: IntegrationPath) -> AdapterRuntimeConfig:
         adapter_id=f"candidate-{path.value.lower()}",
         integration_path=path,
         transport=transports[path],
+        organization_id="org-a",
+        site_id="site-a",
+        gateway_device_id="gateway-a",
+        edge_device_id="edge-a",
         endpoint=endpoint,
         tls_certificate_sha256=pin,
     )
@@ -108,11 +113,27 @@ def test_every_path_builds_only_single_capability_ports(path: IntegrationPath) -
 
 
 def test_runtime_config_rejects_unpinned_http_query_and_open_secret(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="장치 신원"):
+        AdapterRuntimeConfig(
+            adapter_id="same-device",
+            integration_path=IntegrationPath.MANIFOLD_DIRECT,
+            transport=GatewayTransport.MANIFOLD_CELLULAR,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="device-a",
+            edge_device_id="device-a",
+            endpoint="https://bridge.invalid",
+            tls_certificate_sha256="a" * 64,
+        )
     with pytest.raises(ValueError, match="https 또는 unix"):
         AdapterRuntimeConfig(
             adapter_id="bad-http",
             integration_path=IntegrationPath.MANIFOLD_DIRECT,
             transport=GatewayTransport.MANIFOLD_CELLULAR,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             endpoint="http://bridge.invalid",
         )
     with pytest.raises(ValueError, match="query"):
@@ -120,6 +141,10 @@ def test_runtime_config_rejects_unpinned_http_query_and_open_secret(tmp_path: Pa
             adapter_id="bad-query",
             integration_path=IntegrationPath.DJI_CLOUD,
             transport=GatewayTransport.RC_WIFI,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             endpoint="https://bridge.invalid/api?token=secret",
             tls_certificate_sha256="a" * 64,
         )
@@ -128,6 +153,10 @@ def test_runtime_config_rejects_unpinned_http_query_and_open_secret(tmp_path: Pa
             adapter_id="bad-pin",
             integration_path=IntegrationPath.DJI_DOCK,
             transport=GatewayTransport.DOCK_ETHERNET,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             endpoint="https://bridge.invalid",
         )
     secret = tmp_path / "token"
@@ -138,6 +167,10 @@ def test_runtime_config_rejects_unpinned_http_query_and_open_secret(tmp_path: Pa
             adapter_id="bad-secret",
             integration_path=IntegrationPath.DJI_CLOUD,
             transport=GatewayTransport.RC_WIFI,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             endpoint="https://bridge.invalid",
             tls_certificate_sha256="a" * 64,
             credential_file=secret,
@@ -151,6 +184,10 @@ def test_router_rejects_unconfigured_port_even_with_evidence_and_flag() -> None:
         transport = GatewayTransport.MANIFOLD_CELLULAR
         capabilities = frozenset({Capability.EDGE_UPLINK})
         configuration_ready = False
+        organization_id = "org-a"
+        site_id = "site-a"
+        gateway_device_id = "gateway-a"
+        edge_device_id = "edge-a"
 
     router = CapabilityRouter(
         routes=(CapabilityRoute(_UnconfiguredPort(), 0),),
@@ -172,6 +209,10 @@ def test_router_rejects_unconfigured_port_even_with_evidence_and_flag() -> None:
     with pytest.raises(CapabilityUnavailableError, match="configuration"):
         router.select(
             Capability.EDGE_UPLINK,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             hardware_model="M4D+M3+RC2",
             firmware_version="firmware-1",
             allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
@@ -204,11 +245,26 @@ def test_capability_gateway_routes_exact_evidence_and_replays_receipt(tmp_path: 
         router=router,
         journal=journal,
         context=RoutingContext(
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             hardware_model="M4D+M3+RC2",
             firmware_version="firmware-1",
             allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
         ),
     )
+    with pytest.raises(CapabilityUnavailableError, match="binding"):
+        router.select(
+            Capability.EDGE_UPLINK,
+            organization_id="org-a",
+            site_id="site-b",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
+            hardware_model="M4D+M3+RC2",
+            firmware_version="firmware-1",
+            allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
+        )
     request = EdgeUplinkRequest(
         organization_id="org-a",
         site_id="site-a",
@@ -218,6 +274,11 @@ def test_capability_gateway_routes_exact_evidence_and_replays_receipt(tmp_path: 
         bundle_sha256="b" * 64,
         idempotency_key="edge-uplink-1",
     )
+    with pytest.raises(CapabilityUnavailableError, match="scope"):
+        gateway.upload_edge_bundle(replace(request, organization_id="org-b"))
+    with pytest.raises(CapabilityUnavailableError, match="scope"):
+        gateway.upload_edge_bundle(replace(request, edge_device_id="edge-b"))
+    assert bridge.calls == []
     first = gateway.upload_edge_bundle(request)
     second = gateway.upload_edge_bundle(request)
     assert first == second
@@ -264,6 +325,10 @@ def test_unix_bridge_exchanges_bounded_typed_json(tmp_path: Path) -> None:
         adapter_id="psdk-local",
         integration_path=IntegrationPath.PSDK_MANIFOLD,
         transport=GatewayTransport.MOP,
+        organization_id="org-a",
+        site_id="site-a",
+        gateway_device_id="gateway-a",
+        edge_device_id="edge-a",
         endpoint=f"unix://{socket_path}",
     )
     receipt = UnixJsonBridgeClient(config).invoke(

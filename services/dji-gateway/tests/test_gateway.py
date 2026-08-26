@@ -194,6 +194,10 @@ class _RoutePort:
         self.transport = transport
         self.capabilities = capabilities
         self.configuration_ready = True
+        self.organization_id = "org-a"
+        self.site_id = "site-a"
+        self.gateway_device_id = "gateway-a"
+        self.edge_device_id = "edge-a"
 
 
 def test_capability_router_selects_per_feature_not_provider() -> None:
@@ -245,6 +249,10 @@ def test_capability_router_selects_per_feature_not_provider() -> None:
 
     selected, _evidence = router.select(
         Capability.WAYLINE_DELIVERY,
+        organization_id="org-a",
+        site_id="site-a",
+        gateway_device_id="gateway-a",
+        edge_device_id="edge-a",
         hardware_model=hardware,
         firmware_version=firmware,
         allowed_transports=allowed,
@@ -252,6 +260,10 @@ def test_capability_router_selects_per_feature_not_provider() -> None:
     assert selected.port_id == "rc-cloud"
     selected, _evidence = router.select(
         Capability.EDGE_UPLINK,
+        organization_id="org-a",
+        site_id="site-a",
+        gateway_device_id="gateway-a",
+        edge_device_id="edge-a",
         hardware_model=hardware,
         firmware_version=firmware,
         allowed_transports=allowed,
@@ -270,6 +282,10 @@ def test_capability_router_defaults_every_feature_flag_off() -> None:
     with pytest.raises(CapabilityUnavailableError, match="feature flag"):
         router.select(
             Capability.WAYLINE_DELIVERY,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
             hardware_model="M4D",
             firmware_version="unknown",
             allowed_transports=frozenset({GatewayTransport.RC_WIFI}),

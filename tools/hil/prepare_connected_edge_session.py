@@ -59,6 +59,11 @@ CAPABILITY_OPERATIONS = {
 }
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PENDING_DEVICE_IDENTITIES = {
+    "PENDING-AIRCRAFT",
+    "PENDING-EDGE-DEVICE",
+    "PENDING-GATEWAY-DEVICE",
+}
 _V13_TOP_FIELDS = {
     "schema_version",
     "session_id",
@@ -443,6 +448,10 @@ def _validate_v14_control_fields(
             "edge_device_id": profile["edge_device_id"],
             "gateway_device_id": profile["gateway_device_id"],
         }
+        if any(value in _PENDING_DEVICE_IDENTITIES for value in expected.values()):
+            raise ConnectedEdgeManifestError(
+                "operation approval에는 실제 aircraft/edge/gateway 장치 신원이 필요하다"
+            )
         for field, value in expected.items():
             if approval.get(field) != value:
                 raise ConnectedEdgeManifestError(f"approval {field}가 manifest와 다르다")

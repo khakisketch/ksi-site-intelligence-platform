@@ -17,6 +17,7 @@ from ksi_dji_gateway.domain.models import (
     ProviderReceipt,
     WaylineDispatchRequest,
 )
+from ksi_dji_gateway.domain.validation import validate_identifiers
 from ksi_dji_gateway.errors import CapabilityUnavailableError, IdempotencyConflictError
 from ksi_dji_gateway.gateway import request_digest
 from ksi_dji_gateway.persistence.journal import GatewayJournal
@@ -25,11 +26,23 @@ from ksi_dji_gateway.routing.capability_router import CapabilityRouter
 
 @dataclass(frozen=True, slots=True)
 class RoutingContext:
+    organization_id: str
+    site_id: str
+    gateway_device_id: str
+    edge_device_id: str
     hardware_model: str
     firmware_version: str
     allowed_transports: frozenset[GatewayTransport]
 
     def __post_init__(self) -> None:
+        validate_identifiers(
+            self.organization_id,
+            self.site_id,
+            self.gateway_device_id,
+            self.edge_device_id,
+        )
+        if self.gateway_device_id == self.edge_device_id:
+            raise ValueError("Gateway와 Edge 장치 신원은 달라야 한다")
         if not self.hardware_model.strip() or not self.firmware_version.strip():
             raise ValueError("routing context에는 exact hardware/firmware가 필요하다")
         if not self.allowed_transports:
@@ -97,6 +110,7 @@ class CapabilityGateway:
         request: GatewayRequest,
         method_name: str,
     ) -> IntegrationReceipt:
+        self._require_bound_request(request)
         request_sha256 = request_digest(request)
         with self._operation_lock:
             existing = self._journal.find(operation, request.idempotency_key)
@@ -112,6 +126,10 @@ class CapabilityGateway:
                 return existing
             port, _evidence = self._router.select(
                 capability,
+                organization_id=self._context.organization_id,
+                site_id=self._context.site_id,
+                gateway_device_id=self._context.gateway_device_id,
+                edge_device_id=self._context.edge_device_id,
                 hardware_model=self._context.hardware_model,
                 firmware_version=self._context.firmware_version,
                 allowed_transports=self._context.allowed_transports,
@@ -141,6 +159,19 @@ class CapabilityGateway:
             )
             self._journal.append(receipt)
             return receipt
+
+    def _require_bound_request(self, request: GatewayRequest) -> None:
+        if (
+            request.organization_id != self._context.organization_id
+            or request.site_id != self._context.site_id
+        ):
+            raise CapabilityUnavailableError("요청 scope가 routing context와 일치하지 않는다")
+        request_edge_device_id = getattr(request, "edge_device_id", None)
+        if (
+            request_edge_device_id is not None
+            and request_edge_device_id != self._context.edge_device_id
+        ):
+            raise CapabilityUnavailableError("요청 scope가 routing context와 일치하지 않는다")
 
 
 __all__ = ["CapabilityGateway", "RoutingContext"]

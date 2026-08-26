@@ -151,6 +151,31 @@ def test_approval_is_bound_to_session_devices_digest_operations_and_expiry(tmp_p
         tool.validate_manifest(tampered, evidence_root=session)
 
 
+def test_approval_rejects_pending_device_identities(tmp_path: Path) -> None:
+    tool = _tool()
+    pending = tool.build_manifest(
+        operator="operator-1",
+        aircraft_sn="PENDING-AIRCRAFT",
+        edge_device_id="PENDING-EDGE-DEVICE",
+        gateway_device_id="PENDING-GATEWAY-DEVICE",
+        started_at=datetime(2026, 8, 21, 9, 0, tzinfo=UTC),
+    )
+    session = tool.initialise(tmp_path / "hil", pending)
+    manifest_path = session / "integration_manifest.v1.4.json"
+    _private_file(session, "14_connected_edge_capabilities/approval.json")
+    with pytest.raises(tool.ConnectedEdgeManifestError, match="실제.*장치 신원"):
+        tool.record_approval(
+            manifest_path,
+            approved_by="owner-1",
+            dpk_sha256=_SHA_B,
+            expires_at_utc="2026-08-21T10:00:00Z",
+            allowed_operations=["DPK_INSTALL"],
+            evidence_ref="14_connected_edge_capabilities/approval.json",
+            approved_at=datetime(2026, 8, 21, 9, 1, tzinfo=UTC),
+        )
+    assert tool.load(manifest_path)["operation_approval"] is None
+
+
 def test_verified_result_requires_approval_exact_build_and_keeps_flag_off(tmp_path: Path) -> None:
     tool = _tool()
     session, manifest_path = _session(tool, tmp_path)

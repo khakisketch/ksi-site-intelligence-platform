@@ -47,6 +47,10 @@ class CapabilityRouter:
         self,
         capability: Capability,
         *,
+        organization_id: str,
+        site_id: str,
+        gateway_device_id: str,
+        edge_device_id: str,
         hardware_model: str,
         firmware_version: str,
         allowed_transports: frozenset[GatewayTransport],
@@ -61,6 +65,14 @@ class CapabilityRouter:
                 continue
             if not port.configuration_ready:
                 rejected.append(f"{port.port_id} runtime configuration이 준비되지 않았다")
+                continue
+            if (
+                port.organization_id != organization_id
+                or port.site_id != site_id
+                or port.gateway_device_id != gateway_device_id
+                or port.edge_device_id != edge_device_id
+            ):
+                rejected.append(f"{port.port_id} organization/site/device binding이 다르다")
                 continue
             try:
                 evidence = self._registry.require_verified_for(

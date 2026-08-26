@@ -51,6 +51,22 @@ class _CandidatePort:
     def configuration_ready(self) -> bool:
         return self._config.configuration_ready
 
+    @property
+    def organization_id(self) -> str:
+        return self._config.organization_id
+
+    @property
+    def site_id(self) -> str:
+        return self._config.site_id
+
+    @property
+    def gateway_device_id(self) -> str:
+        return self._config.gateway_device_id
+
+    @property
+    def edge_device_id(self) -> str:
+        return self._config.edge_device_id
+
 
 class CandidateMissionDeliveryPort(_CandidatePort):
     def __init__(self, *, config: AdapterRuntimeConfig, client: BridgeClient) -> None:

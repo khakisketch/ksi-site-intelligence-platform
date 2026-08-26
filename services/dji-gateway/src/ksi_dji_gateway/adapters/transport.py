@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 
 from ksi_dji_gateway.domain.capabilities import GatewayTransport, IntegrationPath
 from ksi_dji_gateway.domain.models import ProviderReceipt
-from ksi_dji_gateway.domain.validation import IDENTIFIER, SHA256
+from ksi_dji_gateway.domain.validation import IDENTIFIER, SHA256, validate_identifiers
 from ksi_dji_gateway.errors import GatewayTransportError
 
 _MAX_RESPONSE_BYTES = 1024 * 1024
@@ -41,6 +41,10 @@ class AdapterRuntimeConfig:
     adapter_id: str
     integration_path: IntegrationPath
     transport: GatewayTransport
+    organization_id: str
+    site_id: str
+    gateway_device_id: str
+    edge_device_id: str
     endpoint: str
     tls_certificate_sha256: str | None = None
     credential_file: Path | None = None
@@ -49,6 +53,14 @@ class AdapterRuntimeConfig:
     def __post_init__(self) -> None:
         if IDENTIFIER.fullmatch(self.adapter_id) is None:
             raise ValueError("adapter_id는 경로-안전 식별자여야 한다")
+        validate_identifiers(
+            self.organization_id,
+            self.site_id,
+            self.gateway_device_id,
+            self.edge_device_id,
+        )
+        if self.gateway_device_id == self.edge_device_id:
+            raise ValueError("Gateway와 Edge 장치 신원은 달라야 한다")
         if not (0 < self.timeout_s <= 60):
             raise ValueError("adapter timeout은 0초 초과 60초 이하여야 한다")
         parsed = urlsplit(self.endpoint)
