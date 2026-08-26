@@ -71,11 +71,17 @@ operations_console_delivery:
             candidate compilation, while the independent post-build gate remains in place for a future
             safe artifact. check_dji_sdk_readiness.py reports MSDK and Dock as NOT_CONFIGURED, requires
             external-or-ignored licensed inputs, rejects dynamic MSDK versions, and checks credential
-            files only for owner-only permissions without recording values, paths or digests. Tailnet
-            reprobe found RC Plus 2 offline for five days and no Manifold peer, so Phase 3B remains blocked.
-            After adding these gates, full Python regression passed 3907 tests with 23 skipped and 3
-            expected failures; Ruff passed; Mypy passed 403 source files; repository hygiene passed;
-            the canonical arm64 default PSDK app build and S0 strict symbol gate passed again.
+            files only for owner-only permissions without recording values, paths or digests. An initial
+            Tailnet-only reprobe found RC Plus 2 offline for five days and no Manifold peer. A later wired-LAN
+            read-only reprobe on the same date reached Manifold 3, confirmed its DJI app framework and recurring
+            six-source DUSS/Liveview messages from the M4D, and found no KSI DPK installed. RC Plus 2 remained
+            offline on Tailnet, USB bulk logical channel 2 remained ambiguous between bulk4/bulk5, and no
+            device-bound approval or propeller-off write session existed, so Phase 3B remains blocked.
+            The live code review also closed pending-device approval and runtime organization/Site/device
+            binding gaps. Full Python regression then passed 3908 tests with 23 skipped and 3 expected
+            failures; Ruff passed; Mypy passed 403 source files; Dashboard passed 58 files/527 tests,
+            ESLint and production build; repository hygiene passed; the canonical arm64 default PSDK app
+            build and S0 strict symbol gate passed again.
         - id: phase-3b-approved-limited-hil
           status: BLOCKED
           gate: "physical RC Plus 2, M4D and Manifold 3 session with device-bound approval envelope"
@@ -109,9 +115,11 @@ axes:
       **우선순위가 낮아서가 아니라 차단돼 있다.** [2026-08-17 갱신] 이전 서술
       ("H1~H4 가 전부 장비 조달·PSDK 개발자 승인 대기")은 낡았다 — 2026-08-13
       실측으로 **장비도 자격도 확보됐고**(REMAINING_WORK_PLAN.md §하드웨어 트랙),
-      남은 조달은 H2(셀룰러 동글+유심) 하나뿐이다. 실제 관문은 조달도 디버깅도
-      아니고 **매니폴드가 네트워크에 없다는 것**, 즉 장비 세션 부재다
-      (원장 track-a 사유 2026-08-14 재정정). 현재
+      남은 조달은 H2(셀룰러 동글+유심) 하나뿐이다. 2026-08-14의 실제 관문은
+      **매니폴드가 네트워크에 없다는 것**이었으나, 2026-08-26 유선 read-only
+      재검증에서 Manifold SSH와 M4D DUSS/Liveview 링크는 다시 확인됐다. 현재 관문은
+      RC Plus 2 세션, 정확한 device-bound approval, propeller-off 장비 write 조건,
+      upload-only PSDK archive 격리와 MSDK/Dock 입력이다. 현재
       edge/ 에 있는 것은 명령 유효성 판정·안전 상태기·PSDK 탭이며 perception·
       tracking·next-best-view 는 미착수 — 목표 아키텍처(03_EDGE_AUTONOMY.md)가
       곧 현재 능력이 아니다. 게이트가 열리는 즉시 착수한다.

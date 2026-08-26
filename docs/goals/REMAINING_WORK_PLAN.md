@@ -106,17 +106,18 @@ AOL 6 + FIELD 5 + C2 4 = 15건 + 부모 1.)
 > not_verified 가 "우리 .dpk 실제 패키징/설치/기동(§8) — app.json 미작성, 실기 설치
 > 미시도"라 명시). 이전 서술은 2026-08-04 호스트의 SIGSEGV(이미 방어선으로 처리됨)와
 > 2026-08-12 실기의 정상 오류 반환 0x000000EC 를 뒤섞은 것으로 보인다.
-> **실제 관문은 하나다 — 매니폴드가 네트워크에 없다**(172.30.1.33 ARP FAILED,
-> 2026-08-14 재확인). 디버깅 대상이 남은 게 아니라 **장비 세션이 없다.** 세션이 열리면
-> 남은 미확정은 USB bulk 채널 번호뿐이고 `scripts/manifold/probe_usb_bulk.sh` 읽기 전용
-> 프로브 1회로 확정된다. 위 문단을 지우지 않고 남기는 이유는, 같은 오독이 두 번
-> 일어났다는 사실 자체가 기록이기 때문이다.
+> **2026-08-14 당시 실제 관문은 매니폴드가 네트워크에 없다는 것**이었다
+> (172.30.1.33 ARP FAILED). 2026-08-26 유선 read-only 재검증에서는 Manifold SSH와
+> M4D DUSS/Liveview 링크가 다시 확인됐다. 그러나 KSI DPK·RC Plus 2 세션·device-bound
+> approval·propeller-off write 조건은 없고, USB bulk 두 번째 논리 채널은 bulk4/bulk5
+> 목록만으로 확정되지 않았다. 즉 현재는 네트워크 부재가 아니라 **승인된 안전 장비
+> 세션과 SDK 경계**가 관문이다. 위 정정 이력을 남기는 이유는 같은 오독을 반복하지 않기 위해서다.
 
 | ID | 내용 | 게이트 (2026-08-13 실측) |
 |---|---|---|
 | H1 | 벤치 SSH 인계 → 환경 인벤토리 → B2 TensorRT 온타깃 검증 | **열림** — USB-C 이더넷 어댑터 확보, 매니폴드 온보드 셸 접속 성공 |
 | H2 | Cellular Dongle 2 + 국내 유심 실측 (`ip addr`/`ping`/`curl` — ADR-KSI-005 정정 검증) | **동글+유심 구매 — 남은 유일한 조달 항목** |
-| H3 | Track A PSDK 스파이크: 9항목 SpikeEvidence + 비행상태 topic(ADR-KSI-006) + Frame-Telemetry p95≤50ms | 기체·PSDK 자격 **확보됨**. **[2026-08-14 정정]** 이전에 적혀 있던 "`psdk_tap` 이 `.dpk` 설치 후 크래시"는 저장소 근거가 없다(설치 시도 세션 자체가 없다). **실제 관문은 매니폴드가 네트워크에 없다는 것 하나** — 조달도 디버깅도 아니고 **장비 세션 부재**다. 세션이 열리면 USB bulk 채널 번호만 프로브 1회로 확정 |
+| H3 | Track A PSDK 스파이크: 9항목 SpikeEvidence + 비행상태 topic(ADR-KSI-006) + Frame-Telemetry p95≤50ms | 기체·PSDK 자격 **확보됨**. **[2026-08-26 갱신]** Manifold SSH와 M4D DUSS/Liveview 링크는 회복됐고 KSI DPK는 미설치다. 현재 관문은 RC Plus 2·device-bound approval·propeller-off write session, upload-only PSDK archive 격리이며 USB bulk 논리채널도 아직 미확정이다. |
 | H4 | KMZ 실기 임포트 검증 (Pilot 2 — WPML 스펙 caveats 해소: wpmz/ 폴더명·M4D droneEnumValue) | RC Plus 2 **확보됨** — 실기 세션 일정만 필요 |
 
 하드웨어 트랙은 마일스톤 트랙과 **경합하지 않는다**. 실기 사진이 확보되면 M1이 만든
@@ -136,7 +137,7 @@ AOL 6 + FIELD 5 + C2 4 = 15건 + 부모 1.)
 | 축 | 지금 | 왜 |
 |---|---|---|
 | Site Intelligence Core | **진행** | 막힌 것 없음 — M1~M4-A가 이 축이다 |
-| Autonomous Acquisition | **차단(성격 재정정 2026-08-14)** | 더 이상 조달 대기가 아니다(H1·H3·H4 장비·자격 확보). **실제 관문은 매니폴드가 네트워크에 없다는 것 하나다** — 2026-08-13 에 적었던 "`psdk_tap` 크래시 해소 = 디버깅 과제"는 다음 날 근거 없음으로 정정됐다. 지금 필요한 것은 작업이 아니라 **장비 세션**이다 |
+| Autonomous Acquisition | **차단(2026-08-26 재검증)** | 더 이상 조달 대기가 아니다(H1·H3·H4 장비·자격 확보). Manifold/M4D read-only 링크는 회복됐지만 RC Plus 2·device-bound approval·propeller-off write session과 안전한 upload-only SDK artifact가 없어 Phase 3B capability는 계속 `NOT_VERIFIED`다. |
 
 **차단과 강등을 구분한다.** Acquisition 축은 뒤로 미룬 것이 아니라 막혀 있고,
 게이트가 열리는 즉시 착수한다. 이 구분을 흐리면 하드웨어 도착 시 "그건 낮은

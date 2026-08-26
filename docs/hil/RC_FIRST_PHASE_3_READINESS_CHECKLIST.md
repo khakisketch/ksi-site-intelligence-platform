@@ -18,8 +18,12 @@ Phase 2 synthetic staging PASS는 장비 연결을 요구하지 않았다. 아�
   gate이며, 이 결손을 Phase 3A candidate 구현 금지로 다시 해석하지 않는다.
 - private audit manifest는 ignored `.dev-data/phase3-readiness/field0a-readiness-20260826.json`
   에 0700/0600으로 저장했다. GPS와 장치 serial은 manifest에 쓰지 않았다.
-- 2026-08-26 재접속 확인에서 Tailnet의 RC Plus 2는 5일째 offline이고 Manifold peer는
-  관찰되지 않았다. 따라서 새 물리 세션과 device-bound approval 없이 Phase 3B로 넘어가지 않는다.
+- 2026-08-26 최초 Tailnet 재접속 확인에서는 RC Plus 2가 5일째 offline이고 Manifold peer가
+  관찰되지 않았다. 같은 날 유선 LAN을 다시 연결한 뒤에는 Manifold 3 SSH/noVNC, DJI app
+  framework와 M4D가 보내는 6-source DUSS/Liveview 메시지를 read-only로 확인했다. KSI DPK는
+  설치돼 있지 않고 RC Plus 2는 Tailnet에서 계속 offline이며, bulk4/bulk5 중 두 번째 논리
+  USB channel도 확정되지 않았다. 이 host/link 관찰은 capability evidence가 아니므로 새
+  device-bound approval과 propeller-off write session 없이 Phase 3B로 넘어가지 않는다.
 - 핀된 PSDK 3.16 arm64 archive는 `Init/UploadKmzFile/DeInit`과 public `Action`을 같은
   `dji_waypoint_v3.c.o`에 보존한다. member 단위 preflight가 이를
   `ACTION_COLOCATED_WITH_UPLOAD`으로 차단한다. archive strip/rewrite는 증거가 아니다.
@@ -85,6 +89,8 @@ uv run python tools/hil/prepare_connected_edge_session.py record-blocker \
 ## 세션 전 준비
 
 - Matrice 4D, RC Plus 2, Manifold 3의 실제 식별자와 소유·시험 승인을 기록한다.
+- `PENDING-AIRCRAFT/PENDING-EDGE-DEVICE/PENDING-GATEWAY-DEVICE` skeleton은 inventory에만
+  사용한다. 이 placeholder가 하나라도 남은 v1.4 manifest에는 approval을 기록할 수 없다.
 - 기체는 지상 안전 상태, propeller/이륙 방지 절차, 충분한 배터리와 담당 안전 인력을 갖춘다.
 - RC Wi-Fi 기본 profile을 사용하고 SIM 없음 조건을 별도로 기록한다.
 - Manifold의 유선 interface, IP, ARP/ping 결과를 새 raw session에 저장한다.
