@@ -22,11 +22,10 @@
 #   를 이 순서로 찾는다 — 실기 툴체인(gcc 9.x)으로 만든 빌드만 대상이다.)
 #
 # ADR-KSI-021(2026-08-16) — flight-execution allowlist manifest 가 환경변수로
-# 지정돼 있으면 **두 번** 돌린다: allowlist 미적용(항상)과 적용(있을 때만).
-# 두 출력의 차이가 곧 "이 빌드가 실제로 연 것"이다 — 그 차이를 항상 인쇄한다.
-# 기본 빌드(FLIGHT_EXECUTION 옵션 OFF)는 allowlist 를 줘도 어차피 소스에
-# flight_execution/ 이 없으므로 차이가 없어야 정상이다. 이 변수는 명시 지정
-# 시에만 전달된다 — 이 스크립트를 그냥 실행하면 지금까지와 동일하게 동작한다.
+# 지정되면 기본 S0 결과는 진단용으로 먼저 인쇄하고, 같은 매니페스트를 적용한
+# non-strict/strict 두 결과를 실제 판정으로 사용한다. 승인된 S1 심볼이 들어간
+# 바이너리는 S0에서 실패하는 것이 정상이라 그 진단 결과를 전체 실패로 세면 안
+# 된다. allowlist가 없으면 지금까지와 동일하게 S0 두 게이트가 판정한다.
 #   KSI_FLIGHT_EXECUTION_ALLOWLIST=edge/flight-execution-allowlist.v1.json \
 #     tools/edge/verify_flight_boundary_on_built_target.sh
 
@@ -85,28 +84,41 @@ for build_dir in "${BUILD_DIRS[@]}"; do
   while IFS= read -r -d '' candidate; do
     found_any=1
     echo "=== $candidate ==="
-    if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}"; then
-      echo "  (기본 게이트 통과 — 직접 호출/헤더 경계 확인됨, allowlist 미적용)"
-    else
-      failures=1
-    fi
-    # strict 게이트: 알려진 벤더 잡음(위 KNOWN_VENDOR_NOISE_MANIFEST)만 걸러내고
-    # 돌린다 — 그래도 비영으로 끝나면 그 벤더 잡음 밖의 새 정의/직접호출이 있다는
-    # 뜻이므로 진짜 실패로 잡는다(더 이상 결과를 버리지 않는다).
-    if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" --require-zero-defined-symbols \
-      --allow-mission-execution "$KNOWN_VENDOR_NOISE_MANIFEST"; then
-      echo "  (strict 게이트 통과 — 알려진 벤더 잡음 외 정의된/직접호출된 Flight Control 심볼 없음)"
-    else
-      echo "  ✗ strict 안전경계 게이트 실패 — 알려진 벤더 잡음 밖의 Flight Control 심볼이 ELF 에 있다(위 출력 참조)" >&2
-      failures=1
-    fi
-
     if [ -n "${KSI_FLIGHT_EXECUTION_ALLOWLIST:-}" ]; then
-      echo "  --- allowlist 적용 재실행 (${KSI_FLIGHT_EXECUTION_ALLOWLIST}) ---"
+      echo "  --- 기본 S0 진단(판정 제외) ---"
+      python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" || true
+      python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" \
+        --require-zero-defined-symbols \
+        --allow-mission-execution "$KNOWN_VENDOR_NOISE_MANIFEST" || true
+      echo "  --- allowlist 적용 판정 (${KSI_FLIGHT_EXECUTION_ALLOWLIST}) ---"
       if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" \
         --allow-mission-execution "$KSI_FLIGHT_EXECUTION_ALLOWLIST"; then
-        echo "  (allowlist 적용 게이트 통과 — 위 미적용 출력과의 차이가 '이 빌드가 연 것'이다)"
+        echo "  (allowlist 적용 게이트 통과)"
       else
+        failures=1
+      fi
+      if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" \
+        --require-zero-defined-symbols \
+        --allow-mission-execution "$KSI_FLIGHT_EXECUTION_ALLOWLIST"; then
+        echo "  (allowlist strict 게이트 통과 — 허가·벤더 잡음 외 motion 심볼 없음)"
+      else
+        echo "  ✗ allowlist strict 안전경계 게이트 실패" >&2
+        failures=1
+      fi
+    else
+      if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}"; then
+        echo "  (기본 게이트 통과 — 직접 호출/헤더 경계 확인됨, allowlist 미적용)"
+      else
+        failures=1
+      fi
+      # strict 게이트: 알려진 벤더 잡음만 걸러낸다. 그래도 비영이면 새
+      # 정의/직접호출이 있다는 뜻이므로 진짜 실패로 잡는다.
+      if python3 "$CHECKER" "$candidate" "${SOURCE_ROOTS[@]}" \
+        --require-zero-defined-symbols \
+        --allow-mission-execution "$KNOWN_VENDOR_NOISE_MANIFEST"; then
+        echo "  (strict 게이트 통과 — 알려진 벤더 잡음 외 정의된/직접호출된 Flight Control 심볼 없음)"
+      else
+        echo "  ✗ strict 안전경계 게이트 실패 — 알려진 벤더 잡음 밖의 Flight Control 심볼이 ELF 에 있다(위 출력 참조)" >&2
         failures=1
       fi
     fi
@@ -128,4 +140,8 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "✓ 검사한 모든 바이너리가 기본·strict 안전경계 게이트를 통과했다"
+if [ -n "${KSI_FLIGHT_EXECUTION_ALLOWLIST:-}" ]; then
+  echo "✓ 검사한 모든 바이너리가 allowlist non-strict·strict 안전경계 게이트를 통과했다"
+else
+  echo "✓ 검사한 모든 바이너리가 기본·strict 안전경계 게이트를 통과했다"
+fi

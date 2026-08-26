@@ -169,6 +169,51 @@ target_include_directories(ksi_psdk_app SYSTEM PRIVATE
 )
 target_compile_options(ksi_psdk_app PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(ksi_psdk_app PRIVATE ksi_edge_runtime ksi_psdk_static Threads::Threads m dl)
+
+# Candidate S1 is compiled only for an approval-bound HIL build. Merely placing
+# the source in the repository does not add it to the default DPK. The committed
+# allowlist cannot permit DjiWaypointV3_Action or any FlightController API.
+option(KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY
+       "compile the HIL-only WaypointV3 Init/Upload/DeInit surface" OFF)
+set(KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST
+    "${CMAKE_CURRENT_SOURCE_DIR}/../flight-execution-upload-only-allowlist.v1.json"
+    CACHE FILEPATH "reviewed C2-S1 flight-boundary allowlist")
+if(KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY)
+  if(NOT KSI_TARGET_MANIFOLD3)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY=ON requires KSI_TARGET_MANIFOLD3=ON")
+  endif()
+  if(NOT EXISTS "${KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST}")
+    message(FATAL_ERROR "reviewed Waypoint upload-only allowlist is missing")
+  endif()
+  # The canonical Manifold 3 builder is Ubuntu 20.04/Python 3.8. The checker
+  # is import-tested on that interpreter, so requiring the developer host's
+  # newer Python would make the deployment build impossible.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  target_sources(ksi_psdk_app PRIVATE
+    src/flight_execution/waypoint_v3_upload_only.cpp
+  )
+  add_custom_command(TARGET ksi_psdk_app POST_BUILD
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/edge/check_shadow_flight_boundary.py"
+            "$<TARGET_FILE:ksi_psdk_app>"
+            edge/psdk-app/src
+            edge/manifold-runtime/src
+            edge/manifold-runtime/include
+            --allow-mission-execution "${KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST}"
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/edge/check_shadow_flight_boundary.py"
+            "$<TARGET_FILE:ksi_psdk_app>"
+            edge/psdk-app/src
+            edge/manifold-runtime/src
+            edge/manifold-runtime/include
+            --require-zero-defined-symbols
+            --allow-mission-execution "${KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    COMMENT "Verifying the C2-S1 upload-only source and ELF boundary"
+    VERBATIM
+  )
+endif()
 if(KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION)
   if(NOT KSI_PSDK_APP_EDGE_DEVICE_ID OR NOT KSI_PSDK_APP_ACTIVATION_STATE_DIR OR
      NOT KSI_PSDK_APP_RUNTIME_VERSION)

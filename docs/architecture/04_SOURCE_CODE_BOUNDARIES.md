@@ -39,6 +39,7 @@ services/dji-gateway/              RC/Dock/Edge 연결·전송 adapter 경계
 edge/manifold-runtime/             로컬 지능·계약 activation·outbox
 edge/psdk-app/                     실제 PSDK application composition
 edge/psdk-tap/                     HIL 관측·증거 수집 도구
+edge/msdk-field-bridge/            pre/postflight-only MSDK native contract candidate
 apps/dashboard/                    사람의 업무·readiness·복구 UI
 processing/ 및 services/processing 분석 pipeline
 deploy/                            KSI Cloud 환경·영속 볼륨·runtime 조립

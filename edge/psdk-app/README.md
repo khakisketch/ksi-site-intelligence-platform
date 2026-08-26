@@ -53,6 +53,30 @@ uv run python tools/edge/check_shadow_flight_boundary.py \
 따라서 이 디렉터리의 소프트웨어 빌드 성공은 **PSDK ingress 배선**만 뜻한다. Hardware
 verified나 production supported를 뜻하지 않는다.
 
+### Phase 3B WaypointV3 upload-only candidate
+
+`src/flight_execution/waypoint_v3_upload_only.cpp`는 기본 DPK에 링크되지 않는 S1
+candidate다. 승인된 HIL build에서만 다음 옵션과 committed exact allowlist를 사용한다.
+이 표면은 `Init → UploadKmzFile → DeInit`만 호출하며 `Action/START`나 callback을 갖지 않는다.
+
+```bash
+cmake -S edge/psdk-app -B <manifold3-build-dir> \
+  -DKSI_TARGET_MANIFOLD3=ON \
+  -DKSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY=ON \
+  -DKSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST="$PWD/edge/flight-execution-upload-only-allowlist.v1.json"
+```
+
+빌드 후 source/ELF gate가 자동 실행된다. 실제 호출은 HIL v1.4 approval의 session,
+device IDs, DPK digest, `WAYLINE_UPLOAD_NO_START`, expiry가 모두 맞을 때만 수행한다.
+업로드 성공은 비행 가능, FIELD-0a, camera, battery/RTH capability 증거가 아니다.
+
+현재 핀된 PSDK 3.16 arm64 archive는 `UploadKmzFile`과 public
+`DjiWaypointV3_Action`을 동일한 `dji_waypoint_v3.c.o`에 포함한다. 따라서 위 option의
+링크 자체는 완료되지만 post-build strict gate가 `Action` 잔존을 탐지해 의도적으로
+실패한다. vendor 정의를 allowlist에 추가해 숨기지 않는다. 별도의 DJI 제공
+upload-only artifact나 검토된 격리 방법이 확보되기 전 판정은
+`CODE_READY / SDK_BUILD_BLOCKED / NOT_VERIFIED`다.
+
 ### Native activation handoff
 
 `ksi_mission_contracts.edge_activation`가 Mission Dispatch와 내부 Mission Contract를

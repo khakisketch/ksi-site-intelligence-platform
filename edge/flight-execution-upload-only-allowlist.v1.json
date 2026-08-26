@@ -1,0 +1,39 @@
+{
+  "adrRef": "docs/architecture/ADR-KSI-021-staged-flight-execution-opening.md",
+  "approvedAt": "2026-08-26T00:00:00Z",
+  "approvedBy": "product-owner",
+  "decisionRef": "ADR-KSI-027-amendment-2026-08-26",
+  "entries": [
+    {
+      "allowedIn": [
+        "edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp"
+      ],
+      "evidenceRef": "docs/hil/RC_FIRST_PHASE_3_READINESS_CHECKLIST.md",
+      "header": "dji_waypoint_v3.h",
+      "rationale": "Phase 3B HIL may initialize the upload-only surface; no mission action.",
+      "symbol": "DjiWaypointV3_Init"
+    },
+    {
+      "allowedIn": [
+        "edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp"
+      ],
+      "evidenceRef": "docs/hil/RC_FIRST_PHASE_3_READINESS_CHECKLIST.md",
+      "header": "dji_waypoint_v3.h",
+      "rationale": "Upload one approval-bound KMZ without invoking any action.",
+      "symbol": "DjiWaypointV3_UploadKmzFile"
+    },
+    {
+      "allowedIn": [
+        "edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp"
+      ],
+      "evidenceRef": "docs/hil/RC_FIRST_PHASE_3_READINESS_CHECKLIST.md",
+      "header": "dji_waypoint_v3.h",
+      "rationale": "Always deinitialize the upload-only module after the attempt.",
+      "symbol": "DjiWaypointV3_DeInit"
+    }
+  ],
+  "knownVendorDefinitions": [
+    "DjiFlightController_GetDjiErrorCode"
+  ],
+  "stage": "C2-S1"
+}

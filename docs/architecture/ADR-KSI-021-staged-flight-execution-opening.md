@@ -1,6 +1,12 @@
 # ADR-KSI-021 — 온보드 임무 실행의 단계적 개방(C2-S0~S4), 그리고 자물쇠를 둘로 나눈다
 
 - 상태: ACCEPTED (2026-08-16, 대표자 지시)
+- 2026-08-26 대표자 개정: S1 upload-only candidate source는 HIL 전에 작성할 수
+  있다. 기본 DPK에는 링크하지 않으며, 승인된 Phase 3B 빌드에서만 exact S1 allowlist로
+  `Init/UploadKmzFile/DeInit`을 연다. `Action`과 FlightController 계열은 계속 금지한다.
+- 2026-08-26 빌드 판정: 핀된 PSDK 3.16 arm64 archive가 허용된 upload 함수와
+  public `DjiWaypointV3_Action` 정의를 동일 object에 보존한다. strict built-target
+  gate는 이를 예외 처리하지 않으며 S1을 `SDK_BUILD_BLOCKED`로 유지한다.
 - 관련: ADR-KSI-020(온보드 임무 실행 능력 — 본 ADR이 그 D2·D3를 대체한다),
   ADR-KSI-019 D4(자율성 경계 — 유지, 사유만 갱신), ADR-KSI-007(임무 이원 산출물),
   ADR-KSI-011 D1(FlightEnvelope 이륙점 상대 기준), 목표 원장
@@ -148,7 +154,7 @@ ADR-KSI-020이 이미 지적한 `DjiFlightController_GetDjiErrorCode` 류의 벤
 | 단계 | 여는 심볼 | 진입 조건 | 증거 요구 |
 |---|---|---|---|
 | **S0** 현재 | 없음 | — | allowlist 파일 부재 = 오늘의 보증 |
-| **S1** 업로드만 | `Init`/`DeInit`/`UploadKmzFile`/`Reg*Callback` — **`Action` 없음** | FIELD-0b U1 `Init()` 반환값, FIELD-0a KMZ 수용(H4) | Init·Upload **반환코드 원문**, 빌드 산출물 심볼 집합이 allowlist와 **정확히 일치**(초과 0, 잉여 0) |
+| **S1** 업로드만 | `Init`/`DeInit`/`UploadKmzFile` — **`Action` 없음** | Phase 3B device/DPK/operation approval + propeller 제거·지상 상태 + 안전 검사된 KMZ digest | Init·Upload·DeInit **반환코드 원문**, 빌드 산출물 심볼 집합이 allowlist와 **정확히 일치**(초과 0, 잉여 0). 성공은 FIELD-0a나 비행 가능 증거가 아님 |
 | **S2** 프로펠러 없는 START | + `Action` | S1 증거 + §5 런타임 사전조건 전량 구현·호스트 CI 통과 + abort 지연 측정 + 기체 물리 고정(테스트 스탠드/스트랩) + **대표자 서면 승인** | START/STOP **반환코드 원문**, mission-state 콜백 로그 전체, **abort→STOP 발행 지연 p95 실측**, **고의 거부 실증 ≥3건**(만료 계약·digest 불일치 KMZ·arming 없음 각 1건) |
 | **S3** 사람 감시 실비행 | **없음**(S2와 동일 — 빌드 자물쇠는 안 늘어난다) | S2 증거 + **ADR-KSI-022(수직기준 분리) 완료** + `SPIKE-DJI-06`(조종기 우선권) VERIFIED + FIELD-1 성공 + §6.1 평탄 현장 가드 + 대표자 서면 승인 | 완주 1회 + **의도적 중단 1회 raw**. 중단을 실증하지 않고 S4로 가지 않는다 |
 | **S4** 일상 운용 | **없음** | 서로 다른 현장 ≥3, 서로 다른 날 ≥5회 무사고 + 거부 경로가 실운용 중 발화한 사례 ≥1 | — |

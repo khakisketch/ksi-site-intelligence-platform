@@ -488,6 +488,15 @@ def scan_source_roots(
         for path in sorted(path for path in root.rglob("*") if path.suffix in _SOURCE_SUFFIXES):
             if not path.is_file():
                 continue
+            normalized = str(path).replace("\\", "/")
+            candidate_marker = _FLIGHT_EXECUTION_MODULE_DIR.rstrip("/")
+            if allowlist.stage == "C2-S0" and (
+                normalized.startswith(candidate_marker)
+                or f"/{candidate_marker}/" in f"/{normalized}"
+            ):
+                # Candidate S1 source is not linked into the default DPK. The default
+                # binary nm/objdump layers still fail if it is accidentally compiled.
+                continue
             try:
                 source = path.read_text(encoding="utf-8")
             except OSError as exc:
@@ -626,9 +635,12 @@ def check_flight_boundary(
 
     undefined_symbols = tuple(s for s in undefined_all if not allowlist.permits_link(s))
     direct_call_symbols = tuple(s for s in direct_calls_all if not allowlist.permits_link(s))
-    # strict 층: known vendor definition과의 차집합만 보고한다.
+    # strict 층: reviewed stage symbols and known vendor definitions are expected;
+    # any other motion definition remains a failure.
     defined_symbols = tuple(
-        s for s in defined_all if s not in allowlist.known_vendor_definitions
+        s
+        for s in defined_all
+        if s not in allowlist.symbols and s not in allowlist.known_vendor_definitions
     )
 
     return FlightBoundaryResult(

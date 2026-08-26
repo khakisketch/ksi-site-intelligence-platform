@@ -452,19 +452,32 @@ def test_stale_allowlist_entry_is_reported_when_symbol_is_never_called(tmp_path:
 
 
 def test_default_build_still_passes_without_the_allow_flag() -> None:
-    """8. 기본 빌드(플래그 없음)는 flight-execution 코드가 트리에 없는 한 그대로 통과한다.
-
-    이 저장소에는 아직 flight_execution/ 디렉터리 자체가 없다 — 있다면 소스
-    스캔이 무조건 위반을 낸다(allowlist가 없으므로). 이 시험은 "코드가 없으면
-    깨끗하다"는 지금 상태를 고정하고, 나중에 그 디렉터리가 생기는 순간 이
-    assert 가 깨지는 것으로 알린다(그 파일에 대응하는 manifest가 필요해졌다는
-    신호).
-    """
+    """8. 기본 빌드는 candidate S1 source를 링크하지 않고 계속 S0로 남는다."""
     target = _ROOT / "edge" / "psdk-app" / "src" / "flight_execution"
-    assert not target.exists(), (
-        "flight_execution/ 디렉터리가 생겼다 — allow_mission_execution manifest 없이 "
-        "기본 게이트가 이를 차단하는지 CI 로 재확인하라"
+    assert target.is_dir()
+    assert scan_source_roots((_ROOT / "edge" / "psdk-app" / "src",)) == ()
+
+
+def test_committed_upload_only_source_exactly_matches_s1_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(_ROOT)
+    manifest = _ROOT / "edge" / "flight-execution-upload-only-allowlist.v1.json"
+    allowlist = load_flight_execution_allowlist(manifest)
+    assert allowlist.stage == "C2-S1"
+    assert allowlist.symbols == {
+        "DjiWaypointV3_Init",
+        "DjiWaypointV3_UploadKmzFile",
+        "DjiWaypointV3_DeInit",
+    }
+    assert "DjiWaypointV3_Action" not in allowlist.symbols
+    violations = scan_source_roots(
+        (Path("edge/psdk-app/src"),),
+        allowlist=allowlist,
     )
+    assert violations == ()
+    called = scan_called_symbols((Path("edge/psdk-app/src"),))
+    assert allowlist.unused_entries(called_symbols=called) == ()
 
 
 def test_check_flight_boundary_wires_allowlist_through_to_scan(tmp_path: Path) -> None:
@@ -541,6 +554,7 @@ def _run_wrapper(
     defined_symbols_output: str,
     undefined_symbols_output: str = "",
     objdump_output: str = "",
+    allowlist: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if shutil.which("bash") is None:
         pytest.skip("bash unavailable in this environment")
@@ -566,8 +580,10 @@ def _run_wrapper(
     env["KSI_TEST_NM_DEFINED"] = str(defined_file)
     env["KSI_TEST_NM_UNDEFINED"] = str(undefined_file)
     env["KSI_TEST_OBJDUMP"] = str(objdump_file)
-    # 실제 배포용 allowlist를 명시 지정하지 않는 기본 경로를 시험한다.
-    env.pop("KSI_FLIGHT_EXECUTION_ALLOWLIST", None)
+    if allowlist is None:
+        env.pop("KSI_FLIGHT_EXECUTION_ALLOWLIST", None)
+    else:
+        env["KSI_FLIGHT_EXECUTION_ALLOWLIST"] = str(allowlist)
 
     return subprocess.run(
         ["bash", str(_WRAPPER), str(build_dir)],
@@ -614,3 +630,43 @@ def test_wrapper_fails_when_a_new_flight_control_symbol_is_defined(tmp_path: Pat
     assert "strict 안전경계 게이트 실패" in combined
     assert "strict zero-symbol gate failed" in combined
     assert "DjiFlightController_StartGoHome" in combined
+
+
+def test_wrapper_accepts_only_committed_s1_symbols_with_exact_allowlist(
+    tmp_path: Path,
+) -> None:
+    manifest = _ROOT / "edge" / "flight-execution-upload-only-allowlist.v1.json"
+    completed = _run_wrapper(
+        tmp_path,
+        defined_symbols_output=(
+            "0000000000000000 T DjiFlightController_GetDjiErrorCode\n"
+            "0000000000000010 T DjiWaypointV3_Init\n"
+            "0000000000000020 T DjiWaypointV3_UploadKmzFile\n"
+            "0000000000000030 T DjiWaypointV3_DeInit\n"
+        ),
+        allowlist=manifest,
+    )
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 0, combined
+    assert "기본 S0 진단(판정 제외)" in completed.stdout
+    assert "allowlist strict 게이트 통과" in completed.stdout
+    assert "allowlist non-strict·strict 안전경계 게이트를 통과했다" in completed.stdout
+
+
+def test_wrapper_rejects_waypoint_action_even_with_s1_allowlist(tmp_path: Path) -> None:
+    manifest = _ROOT / "edge" / "flight-execution-upload-only-allowlist.v1.json"
+    completed = _run_wrapper(
+        tmp_path,
+        defined_symbols_output=(
+            "0000000000000000 T DjiFlightController_GetDjiErrorCode\n"
+            "0000000000000010 T DjiWaypointV3_Init\n"
+            "0000000000000020 T DjiWaypointV3_UploadKmzFile\n"
+            "0000000000000030 T DjiWaypointV3_DeInit\n"
+            "0000000000000040 T DjiWaypointV3_Action\n"
+        ),
+        allowlist=manifest,
+    )
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1, combined
+    assert "allowlist strict 안전경계 게이트 실패" in combined
+    assert "DjiWaypointV3_Action" in combined

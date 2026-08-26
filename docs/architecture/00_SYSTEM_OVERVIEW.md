@@ -150,11 +150,11 @@ USB·SD·수동 KMZ/사진 전달은 정상 제품 경로가 아니라 복구·�
 | Manifold 3 Edge SW | **소프트웨어 검증 완료, 실기 0회** — DPK 설치·기동을 실기에서 시도한 적 없음 (P0 과제) |
 | Acquisition profile/readiness | **소프트웨어 구현·rollout OFF** — 현장별 RC/Dock profile, 만료 heartbeat, 장치 binding, 기능별 capability gate. 실장비 receipt와 기존 Site migration 전에는 production 발급 강제 flag를 켜지 않음 |
 | WorkOrder Acquisition coordinator | **소프트웨어 구현** — 승인 회차별 내구성 있는 AcquisitionRun, Mission lineage, capability별 Gateway operation receipt, 미디어·Processing 사실 원장을 합친 진행상태 API. 자동 Mission 생성은 HIL 전 비활성이고 비행 계획값을 추측하지 않음 |
-| RC 게이트웨이 (dji-gateway) | **소프트웨어 기반 구현** — 기능별 port/router, v1.2/v1.3 receipt journal과 flag-OFF gate. 실제 Cloud/PSDK/direct adapter와 장비 coordinator는 미구현 |
+| RC 게이트웨이 (dji-gateway) | **candidate software 구현** — 다섯 path capability catalog, 좁은 port, pinned HTTPS/Unix bridge, v1.3 idempotent coordinator와 flag-OFF gate. 실제 장비 HIL은 전 항목 `NOT_VERIFIED` |
 | Operations Console 현장 작업공간 | **소프트웨어 구현** — 전역 4개 메뉴, 현장 5개 영역, 조직 범위 Workspace projection, 작업·확인 항목, 저장형 AI 대화·근거 브리핑을 연결. 390/768/1024/1440 실제 브라우저 시각 승인과 외부 provider 실연동은 별도 관문 |
 | Operations Console readiness UI | **소프트웨어 구현** — RC 인터넷·Manifold·직접망·계약·원본 동기화와 Console 접속을 분리 표시. 실제 heartbeat 연결은 HIL 전 `NOT_VERIFIED` |
 | Grounded Site AI | **기본 OFF·소프트웨어 구현** — OpenAI 호환 tool-call adapter, 저장형 대화, citation 검증, `aiEgressAllowed` gate, durable `BLOCKED` 복구 상태. 승인된 외부 AI 계정·고객 데이터 사용은 아직 없음 |
-| 온보드 임무 실행 (PSDK WaypointV3) | **능력 존재 · KSI 미사용(정책)** — KMZ 업로드+START 로 시동·이륙까지 가는 API가 핀된 PSDK 3.16.0에 있다. 기종 지원은 호출 1회로 판별(FIELD-0). 안전 게이트가 사용을 차단하며, 허용 여부는 FIELD-1 이후 별도 결정(ADR-KSI-020 D2·D3) |
+| 온보드 임무 실행 (PSDK WaypointV3) | **S1 candidate, SDK build blocked** — 기본 DPK에는 링크되지 않는 `Init/UploadKmzFile/DeInit` 전용 source와 exact allowlist가 있다. 핀된 PSDK 3.16 archive가 public `Action`을 같은 object에 보존해 strict built-target gate가 candidate 링크를 거부한다. 이를 지원으로 표시하지 않으며 실제 M4D 지원과 KMZ 수용은 `NOT_VERIFIED` |
 | 드론→서버 자동 ingest | **가동(소프트웨어)** — `tools/ingest_watch.py` 가 촬영 회수를 자동 트리거. 기체→지상 회수 자체는 여전히 SD카드 수동 오프로드(P1 과제 중 남은 부분) |
 | 폐루프 종단 완주 | **소프트웨어 1회 완주(2026-08-15), 실기 0회** — 목표 원장 `autonomous-acquisition-closed-loop` (strict). 실기 완주는 Manifold HIL(P0)이 관문 |
 
