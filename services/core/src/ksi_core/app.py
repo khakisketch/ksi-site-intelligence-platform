@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
     from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
     from ksi_core.auth import AuthRegistry, OidcVerifier
+    from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.copilot import CopilotService
@@ -191,6 +192,13 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "acquisition_coordination_store는 connectivity, WorkOrder, Mission 원장과 함께 "
         "주어져야 한다(REQ-WRK-101, REQ-MSN-101) — 조정 원장은 기존 사실 원장을 "
         "복제하거나 미확인 장비 상태를 만들지 않는다",
+    ),
+    (
+        "capture_quality_report_store",
+        (("mission_store", "observation_work_order_store", "acquisition_coordination_store"),),
+        "capture_quality_report_store는 Mission·WorkOrder·AcquisitionRun 원장과 함께 "
+        "주어져야 한다(REQ-ACQ-102, INV-017) — Edge의 품질 측정을 어느 회차/임무에 "
+        "귀속하는지 대조하지 못하는 조립은 허용하지 않는다",
     ),
     ("copilot_service", (), ""),
     (
@@ -384,6 +392,7 @@ def create_app(
     observation_work_order_store: ObservationWorkOrderStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
+    capture_quality_report_store: CaptureQualityReportStore | None = None,
     acquisition_issue_gate_enabled: bool = False,
     copilot_service: CopilotService | None = None,
     copilot_conversation_service: CopilotConversationService | None = None,
@@ -597,6 +606,7 @@ def create_app(
         "observation_work_order_store": observation_work_order_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
+        "capture_quality_report_store": capture_quality_report_store,
         "copilot_service": copilot_service,
         "copilot_conversation_service": copilot_conversation_service,
         "site_workspace_projector": site_workspace_projector,
@@ -671,12 +681,26 @@ def create_app(
     if acquisition_coordination_store is not None:
         from ksi_core.acquisition import (
             AcquisitionProgressProjector,
+            AnalysisReadinessProjector,
             mount_acquisition_coordination,
         )
 
         assert acquisition_connectivity_store is not None  # noqa: S101 -- assembly table
         assert observation_work_order_store is not None  # noqa: S101 -- assembly table
         assert mission_store is not None  # noqa: S101 -- assembly table
+        analysis_readiness_projector = None
+        if (
+            coverage_report_store is not None
+            and capture_quality_report_store is not None
+            and source_media_store is not None
+            and processing_job_store is not None
+        ):
+            analysis_readiness_projector = AnalysisReadinessProjector(
+                coverage_report_store=coverage_report_store,
+                capture_quality_report_store=capture_quality_report_store,
+                source_media_store=source_media_store,
+                processing_job_store=processing_job_store,
+            )
         mount_acquisition_coordination(
             app,
             coordination_store=acquisition_coordination_store,
@@ -689,8 +713,14 @@ def create_app(
                 mission_execution_store=mission_execution_store,
                 source_media_store=source_media_store,
                 processing_job_store=processing_job_store,
+                analysis_readiness_projector=analysis_readiness_projector,
             ),
         )
+
+    if capture_quality_report_store is not None:
+        from ksi_core.capture_quality_reports import mount_capture_quality_reports
+
+        mount_capture_quality_reports(app, capture_quality_report_store)
 
     if copilot_service is not None:
         from ksi_core.copilot import mount_copilot

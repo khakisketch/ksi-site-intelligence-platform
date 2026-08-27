@@ -39,6 +39,9 @@ export interface AcquisitionProgressPresentation {
   groups: readonly string[];
   gatewayReceiptSummary: string;
   activeContractOfflineWarning: string | null;
+  analysisLabel: string;
+  analysisDetail: string;
+  analysisTone: Tone;
 }
 
 export function presentAcquisitionProgress(
@@ -53,11 +56,15 @@ export function presentAcquisitionProgress(
       groups: GROUPS,
       gatewayReceiptSummary: "이번 비행 임무의 전달 기록을 확인할 수 없음",
       activeContractOfflineWarning: null,
+      analysisLabel: "분석 준비 확인 불가",
+      analysisDetail: "분석 단계의 진행 여부를 확인하지 못했습니다.",
+      analysisTone: "warning",
     };
   }
   const succeeded = progress.gateway.succeededCapabilities.length;
   const activeContractOffline =
     progress.contractActivation.state === "ACTIVATED" && !progress.readiness.readyForMissionIssue;
+  const analysis = analysisSummary(progress);
   return {
     label: STAGE_LABEL[progress.stage],
     detail: progress.detail,
@@ -68,6 +75,7 @@ export function presentAcquisitionProgress(
     activeContractOfflineWarning: activeContractOffline
       ? "RC 연결 경고가 있지만 이미 활성화된 계약은 유효합니다. 인터넷 단절만으로 비행을 자동 중단하지 않습니다."
       : null,
+    ...analysis,
   };
 }
 
@@ -77,3 +85,43 @@ function stageTone(stage: AcquisitionRunStage): Tone {
   if (stage === "WAITING_PLAN") return "caution";
   return "progress";
 }
+
+function analysisSummary(
+  progress: AcquisitionProgressView,
+): Pick<AcquisitionProgressPresentation, "analysisLabel" | "analysisDetail" | "analysisTone"> {
+  const readiness = progress.analysisReadiness;
+  if (!readiness) {
+    return {
+      analysisLabel: "분석 준비 확인 불가",
+      analysisDetail: "Core의 evidence-derived Analysis Readiness를 읽지 못했습니다.",
+      analysisTone: "warning",
+    };
+  }
+
+  const summary = ANALYSIS_READINESS_PRESENTATION[readiness.status];
+  return {
+    analysisLabel: summary.label,
+    analysisDetail: readiness.detail,
+    analysisTone: summary.tone,
+  };
+}
+
+const ANALYSIS_READINESS_PRESENTATION: Record<
+  NonNullable<AcquisitionProgressView["analysisReadiness"]>["status"],
+  { label: string; tone: Tone }
+> = {
+  EVIDENCE_NOT_ASSEMBLED: { label: "분석 준비 확인 불가", tone: "warning" },
+  WAITING_MISSION: { label: "비행 임무 대기", tone: "caution" },
+  WAITING_COVERAGE: { label: "범위 증거 대기", tone: "caution" },
+  COVERAGE_GAP: { label: "범위 충족 필요", tone: "warning" },
+  WAITING_CAPTURE_QUALITY: { label: "촬영 품질 보고 대기", tone: "caution" },
+  CAPTURE_QUALITY_GAP: { label: "촬영 품질 보완 필요", tone: "warning" },
+  WAITING_MEDIA: { label: "원본 증거 대기", tone: "caution" },
+  INTEGRITY_GAP: { label: "원본 무결성 확인 필요", tone: "warning" },
+  CAPTURE_TIME_INCOMPLETE: { label: "촬영시각 확인 필요", tone: "warning" },
+  TEMPORAL_POLICY_UNDECLARED: { label: "촬영 시간 기준 미선언", tone: "warning" },
+  TEMPORAL_COHERENCE_GAP: { label: "촬영 시간 범위 초과", tone: "warning" },
+  WAITING_PROCESSING: { label: "분석 처리 대기", tone: "caution" },
+  PROCESSING_FAILED: { label: "분석 처리 실패", tone: "warning" },
+  READY: { label: "분석 준비 완료", tone: "positive" },
+};

@@ -21,6 +21,7 @@ from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrderStatus,
 )
 
+from ksi_core.acquisition.analysis_readiness import AnalysisReadinessProjector
 from ksi_core.acquisition.models import (
     AcquisitionCapability,
     AcquisitionContractProgressView,
@@ -343,12 +344,14 @@ class AcquisitionProgressProjector:
         mission_execution_store: MissionExecutionStore | None = None,
         source_media_store: SourceMediaStore | None = None,
         processing_job_store: ProcessingJobStore | None = None,
+        analysis_readiness_projector: AnalysisReadinessProjector | None = None,
     ) -> None:
         self._coordination = coordination_store
         self._connectivity = connectivity_store
         self._execution = mission_execution_store
         self._source_media = source_media_store
         self._processing = processing_job_store
+        self._analysis_readiness = analysis_readiness_projector
 
     def project(
         self, work_order: ObservationWorkOrder, *, now: datetime
@@ -364,6 +367,13 @@ class AcquisitionProgressProjector:
             cycle_number=work_order.cycle_number,
         )
         mission_id = run.mission_id if run is not None else None
+        analysis_readiness = (
+            self._analysis_readiness.project(work_order, mission_id=mission_id, now=now)
+            if self._analysis_readiness is not None
+            else AnalysisReadinessProjector.not_assembled(
+                work_order, mission_id=mission_id, now=now
+            )
+        )
         receipts = (
             self._coordination.receipts_for_mission(
                 mission_id, organization_id=work_order.organization_id
@@ -472,6 +482,7 @@ class AcquisitionProgressProjector:
                 state=processing_state,
                 job_ids=tuple(job.job_id for job in jobs),
             ),
+            analysis_readiness=analysis_readiness,
             evaluated_at=now,
             in_flight_contract_policy="REMAINS_VALID_UNTIL_CONTRACT_EXPIRY",
         )

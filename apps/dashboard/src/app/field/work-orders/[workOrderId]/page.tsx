@@ -53,7 +53,12 @@ export default async function FieldWorkOrderPage({
   const acquisitionReadiness = acquisitionProgress?.readiness ?? readinessFallback;
   const pendingDraft = latestPendingDraft(drafts);
   const presentation = presentWorkOrder(workOrder.status);
-  const showCopilot = workOrder.status === "REVIEW_READY" || workOrder.status === "COMPLETED";
+  // WorkOrder status and a successful ProcessingJob alone do not establish
+  // evidence completeness. Copilot is available only after Core's derived
+  // Analysis Readiness gate explicitly says ready.
+  const showCopilot =
+    (workOrder.status === "REVIEW_READY" || workOrder.status === "COMPLETED") &&
+    acquisitionProgress?.analysisReadiness?.ready === true;
 
   return (
     <div className="flex flex-col">

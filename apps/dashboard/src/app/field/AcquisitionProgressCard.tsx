@@ -44,6 +44,13 @@ export function AcquisitionProgressCard({
 
       <p className="text-[14px] leading-6 break-keep text-ink-2">{view.detail}</p>
       <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
+        <span className="text-[12px] text-ink-2">분석 준비</span>
+        <span className="flex max-w-[75%] items-end gap-2 text-right">
+          <span className="min-w-0 text-[11px] leading-4 text-ink-muted">{view.analysisDetail}</span>
+          <StateBadge label={view.analysisLabel} tone={view.analysisTone} />
+        </span>
+      </div>
+      <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
         <span className="text-[12px] text-ink-2">전송 확인</span>
         <span className="text-right text-[12px] font-semibold text-ink">
           {view.gatewayReceiptSummary}

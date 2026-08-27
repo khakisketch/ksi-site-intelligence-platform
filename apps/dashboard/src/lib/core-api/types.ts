@@ -537,6 +537,50 @@ export interface GatewayOperationReceiptV1 {
   receivedAt: string;
 }
 
+/**
+ * Observation Epoch의 분석 가능 여부는 사람이 설정하는 진행 상태가 아니라,
+ * Coverage·촬영 품질·원본 무결성·capture-time·처리 원장에서 Core가 파생한 값이다.
+ * `READY` 외의 어느 값도 분석 또는 Copilot 사용 가능으로 해석하면 안 된다.
+ */
+export type AnalysisReadinessStatus =
+  | "EVIDENCE_NOT_ASSEMBLED"
+  | "WAITING_MISSION"
+  | "WAITING_COVERAGE"
+  | "COVERAGE_GAP"
+  | "WAITING_CAPTURE_QUALITY"
+  | "CAPTURE_QUALITY_GAP"
+  | "WAITING_MEDIA"
+  | "INTEGRITY_GAP"
+  | "CAPTURE_TIME_INCOMPLETE"
+  | "TEMPORAL_POLICY_UNDECLARED"
+  | "TEMPORAL_COHERENCE_GAP"
+  | "WAITING_PROCESSING"
+  | "PROCESSING_FAILED"
+  | "READY";
+
+export interface ObservationEpochView {
+  epochId: string;
+  workOrderId: string;
+  cycleNumber: number;
+  missionId: string | null;
+  sortieCount: 1;
+  maxCaptureSpanSeconds: number | null;
+  temporalPolicySchemaVersion: string | null;
+  captureWindowStatus: CaptureWindowStatus;
+  capturedFrom: string | null;
+  capturedTo: string | null;
+}
+
+export interface AnalysisReadinessView {
+  status: AnalysisReadinessStatus;
+  /** `true` is emitted by Core only when every required evidence gate is satisfied. */
+  ready: boolean;
+  detail: string;
+  epoch: ObservationEpochView;
+  evidenceRefs: string[];
+  evaluatedAt: string;
+}
+
 export interface AcquisitionProgressView {
   schemaVersion: "1.0";
   runId: string | null;
@@ -570,6 +614,12 @@ export interface AcquisitionProgressView {
     state: "NOT_STARTED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
     jobIds: string[];
   };
+  /**
+   * Evidence-derived analysis gate. null means this Core assembly cannot make
+   * the decision; the Dashboard must fail closed rather than infer it from a
+   * workflow stage or ProcessingJob state.
+   */
+  analysisReadiness: AnalysisReadinessView | null;
   evaluatedAt: string;
   inFlightContractPolicy: "REMAINS_VALID_UNTIL_CONTRACT_EXPIRY";
 }
@@ -588,6 +638,11 @@ export type ObservationWorkOrderStatus =
   | "BLOCKED"
   | "CANCELLED";
 
+export interface TemporalCoherencePolicy {
+  schemaVersion: "1.0";
+  maxCaptureSpanSeconds: number;
+}
+
 export interface ObservationWorkOrderView {
   schemaVersion: "1.0";
   workOrderId: string;
@@ -597,6 +652,7 @@ export interface ObservationWorkOrderView {
   name: string;
   workAreaIds: string[];
   scheduleId: string | null;
+  temporalPolicy?: TemporalCoherencePolicy | null;
   cycleNumber: number;
   status: ObservationWorkOrderStatus;
   statusReason: string | null;

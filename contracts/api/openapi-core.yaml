@@ -139,7 +139,13 @@ info:
   # Gateway operation receipt와 통합 acquisition progress를 추가한다. 장비 사실은
   # 기존 MissionExecution/SourceMedia/Processing 원장에서 읽고, heartbeat 만료는
   # 활성 계약을 이전 단계로 회귀시키지 않는다.
-  version: 1.26.0
+  # 1.27.0 — Edge final CaptureQualityReport와 evidence-derived Analysis Readiness를
+  # WorkOrder progress에 추가한다. temporal policy와 coverage/media/capture-time/
+  # processing lineage가 모두 있어야 READY이며, 처리 성공이나 비행 종료만으로는
+  # 준비됨이 아니다. Pilot 2 export KMZ는 별도 immutable FlightArtifact candidate로만
+  # ingest/list/download할 수 있고, 항상 unbound/non-executable이다. 새 읽기·입력
+  # 표면 추가라 minor이며 실제 Pilot 2/PSDK 실행 검증을 뜻하지 않는다.
+  version: 1.27.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -289,7 +295,10 @@ paths:
       description: >-
         AcquisitionRun 연결과 기존 MissionExecution, SourceMedia, Processing 원장을
         조합한다. READY_FOR_FLIGHT는 서명 activation 사실 뒤에만 표시하며 이후
-        네트워크 단절은 경고일 뿐 계약 취소나 상태 회귀가 아니다.
+        네트워크 단절은 경고일 뿐 계약 취소나 상태 회귀가 아니다. 분석 결과를
+        검토할 수 있는지는 stage 또는 ProcessingJob 성공만으로 판단하지 않고,
+        별도의 evidence-derived analysisReadiness가 Coverage·촬영 품질·원본
+        무결성·capture-time·temporal policy·처리 계보를 함께 대조해 결정한다.
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: work_order_id, required: true, schema: { type: string } }
@@ -372,6 +381,13 @@ paths:
                   maxItems: 64
                   items: { type: string }
                 scheduleId: { type: [string, 'null'] }
+                temporalPolicy:
+                  type: [object, 'null']
+                  additionalProperties: false
+                  properties:
+                    schemaVersion: { const: '1.0', default: '1.0' }
+                    maxCaptureSpanSeconds: { type: integer, minimum: 1, maximum: 86400 }
+                  required: [maxCaptureSpanSeconds]
       responses:
         '201':
           description: Created draft work order
@@ -1868,6 +1884,155 @@ paths:
         '404': { description: 이 임무의 보고가 아직 없다 }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/capture-quality-report:
+    post:
+      summary: Submit the immutable final CaptureQualityReport for a Mission
+      description: >-
+        EDGE_SYNC_INGEST 권한과 EDGE_DEVICE 신원이 필요하다. 보고의 organization,
+        Mission, Site, WorkOrder 회차, 그리고 deviceId를 현재 authoritative binding과
+        대조한다. 같은 reportId의 동일 본문 재전송은 200이고, 한 Mission에는
+        변경 불가능한 최종 보고 하나만 기록한다. 이 보고만으로 분석 준비 완료가
+        되지는 않으며, Analysis Readiness projection이 Coverage·원본·시간·처리를
+        별도로 대조한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: ../schemas/capture-quality-report.v1.json }
+      responses:
+        '200':
+          description: Identical report retry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptureQualityReportResponse' }
+        '201':
+          description: Durable final capture-quality evidence recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptureQualityReportResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: EDGE_DEVICE identity and EDGE_SYNC_INGEST permission required }
+        '404': { description: Mission, WorkOrder cycle, Site, or device binding not found }
+        '409': { description: reportId conflict or a final report already exists for the Mission }
+        '422': { description: Path/body Mission mismatch or invalid CaptureQualityReport }
+        '503': { description: Durable journal unavailable }
+    get:
+      summary: Read the immutable final CaptureQualityReport for a Mission
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped final capture-quality evidence
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptureQualityReportResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: MISSIONS_READ permission required }
+        '404': { description: No final CaptureQualityReport for this Mission in the principal organization }
+  /v1/missions/{mission_id}/flight-artifacts/pilot-export:
+    post:
+      summary: Retain a DJI Pilot-export KMZ as an immutable, unbound FlightArtifact candidate
+      description: >-
+        MISSIONS_ISSUE 권한 필요. Core는 요청 바이트를 엄격한 base64 및 안전한 WPML/KMZ
+        구조로만 검사하고, Mission Contract의 flight envelope와 비교 가능한 범위만
+        기록한다. 성공 후보는 항상 source=DJI_PILOT_EXPORT,
+        status=VALIDATED_CANDIDATE_UNBOUND, executable=false 이며 MissionRecord,
+        서명 Mission Contract, dispatch, 활성 KMZ 다운로드 경로에 편입되지 않는다.
+
+        이는 DJI Pilot 2 import·표시·비행 안전성 또는 현장 실행을 증명하지 않는다.
+        동일 KMZ digest 재전송은 기존 불변 후보를 DUPLICATE(200)로 반환하고,
+        다른 바이트만 다음 revision 후보가 될 수 있다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kmzBase64, provenanceRef]
+              properties:
+                kmzBase64:
+                  type: string
+                  minLength: 4
+                  maxLength: 13981029
+                  description: Strict base64-encoded KMZ; decoded archive is bounded to 10 MiB.
+                provenanceRef:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+                  description: Pilot export run/source reference retained with the candidate.
+      responses:
+        '200':
+          description: DUPLICATE — same KMZ digest was already retained; existing immutable candidate returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FlightArtifactIngestResponse' }
+        '201':
+          description: RECORDED — exact KMZ bytes stored, then immutable candidate journaled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FlightArtifactIngestResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: MISSIONS_ISSUE permission required }
+        '404': { description: UNKNOWN_MISSION in the principal organization }
+        '422': { description: Invalid strict base64, unsafe/invalid KMZ, or invalid provenanceRef }
+        '503': { description: Candidate journal or exact-byte storage unavailable; Retry-After 30 }
+  /v1/missions/{mission_id}/flight-artifacts:
+    get:
+      summary: List immutable unbound FlightArtifact candidates for a Mission
+      description: >-
+        MISSIONS_READ 권한 필요. 같은 organization의 Mission 후보만 반환한다. 빈 목록은
+        후보가 없다는 뜻이며, 후보 하나도 executable하지 않다. 이 조회는 Pilot 2
+        import 또는 실기 실행이 검증되었다는 주장이 아니다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Candidate revisions in recording order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FlightArtifactCandidateResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: MISSIONS_READ permission required }
+        '404': { description: Mission not found in the principal organization }
+  /v1/missions/{mission_id}/flight-artifacts/{candidate_id}/download:
+    get:
+      summary: Download exact retained bytes for an immutable unbound FlightArtifact candidate
+      description: >-
+        MISSIONS_READ 권한 필요. Core는 반환 직전에 stored bytes를 다시 SHA-256 해시해
+        후보 원장 digest와 일치할 때만 내려준다. 응답 헤더
+        X-KSI-FlightArtifact-Status=VALIDATED_CANDIDATE_UNBOUND 및
+        X-KSI-Executable=false은 이 파일이 실행 권한이 없음을 명시한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { in: path, name: candidate_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Exact recorded KMZ bytes; non-executable candidate only
+          headers:
+            X-KSI-FlightArtifact-Status:
+              schema: { const: VALIDATED_CANDIDATE_UNBOUND }
+            X-KSI-Executable:
+              schema: { const: 'false' }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { description: Authentication failed }
+        '403': { description: MISSIONS_READ permission required }
+        '404': { description: Candidate not found in the principal organization }
+        '409': { description: Stored bytes no longer match the immutable candidate digest }
+        '503': { description: Exact-byte storage unavailable }
   /v1/missions/{mission_id}/coverage-report/rejections:
     get:
       summary: List coverage reports the server refused (INV-010 강제의 증거)
@@ -4718,6 +4883,45 @@ components:
       properties:
         state: { enum: [NOT_STARTED, QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
         jobIds: { type: array, items: { type: string } }
+    ObservationEpochView:
+      description: >-
+        WorkOrder 회차에서 결정적으로 파생한 v1 Observation Epoch. v1은
+        한 회차=한 sortie=한 Mission이고, 새 mutable 원장이 아니다.
+      type: object
+      additionalProperties: false
+      required:
+        [epochId, workOrderId, cycleNumber, missionId, maxCaptureSpanSeconds,
+         temporalPolicySchemaVersion, captureWindowStatus, capturedFrom, capturedTo]
+      properties:
+        epochId: { type: string }
+        workOrderId: { type: string }
+        cycleNumber: { type: integer, minimum: 1 }
+        missionId: { type: [string, 'null'] }
+        sortieCount: { const: 1, default: 1 }
+        maxCaptureSpanSeconds: { type: [integer, 'null'], minimum: 1, maximum: 86400 }
+        temporalPolicySchemaVersion: { type: [string, 'null'], pattern: '^1\.0$' }
+        captureWindowStatus: { type: string, enum: [COMPLETE, INCOMPLETE, CONFLICT] }
+        capturedFrom: { type: [string, 'null'], format: date-time }
+        capturedTo: { type: [string, 'null'], format: date-time }
+    AnalysisReadinessView:
+      description: >-
+        Coverage·촬영 품질·원본 무결성·capture-time·temporal policy·처리 계보에서
+        파생한 분석 준비 판정이다. 비행 상태도, Edge가 직접 확정할 수 있는 상태도 아니다.
+      type: object
+      additionalProperties: false
+      required: [status, ready, detail, epoch, evidenceRefs, evaluatedAt]
+      properties:
+        status:
+          enum:
+            [EVIDENCE_NOT_ASSEMBLED, WAITING_MISSION, WAITING_COVERAGE, COVERAGE_GAP,
+             WAITING_CAPTURE_QUALITY, CAPTURE_QUALITY_GAP, WAITING_MEDIA,
+             INTEGRITY_GAP, CAPTURE_TIME_INCOMPLETE, TEMPORAL_POLICY_UNDECLARED,
+             TEMPORAL_COHERENCE_GAP, WAITING_PROCESSING, PROCESSING_FAILED, READY]
+        ready: { type: boolean }
+        detail: { type: string }
+        epoch: { $ref: '#/components/schemas/ObservationEpochView' }
+        evidenceRefs: { type: array, items: { type: string } }
+        evaluatedAt: { type: string, format: date-time }
     AcquisitionProgressView:
       type: object
       additionalProperties: false
@@ -4747,6 +4951,13 @@ components:
         contractActivation: { $ref: '#/components/schemas/AcquisitionContractProgressView' }
         media: { $ref: '#/components/schemas/AcquisitionMediaProgressView' }
         processing: { $ref: '#/components/schemas/AcquisitionProcessingProgressView' }
+        analysisReadiness:
+          oneOf:
+            - $ref: '#/components/schemas/AnalysisReadinessView'
+            - { type: 'null' }
+          description: >-
+            Core 조립에 해당 evidence projection이 없는 경우 null이다. null은
+            READY가 아니며, UI는 분석 준비 완료를 표시하면 안 된다.
         evaluatedAt: { type: string, format: date-time }
         inFlightContractPolicy: { const: REMAINS_VALID_UNTIL_CONTRACT_EXPIRY }
     SiteView:
@@ -4929,6 +5140,13 @@ components:
         name: { type: string }
         workAreaIds: { type: array, items: { type: string } }
         scheduleId: { type: [string, 'null'] }
+        temporalPolicy:
+          type: [object, 'null']
+          additionalProperties: false
+          properties:
+            schemaVersion: { const: '1.0', default: '1.0' }
+            maxCaptureSpanSeconds: { type: integer, minimum: 1, maximum: 86400 }
+          required: [maxCaptureSpanSeconds]
         cycleNumber: { type: integer }
         status: { type: string }
         statusReason: { type: [string, 'null'] }
@@ -5357,6 +5575,81 @@ components:
               detail: { type: [string, 'null'] }
               reportedBy: { type: [string, 'null'] }
               rejectedAt: { type: string }
+    CaptureQualityReportResponse:
+      description: >-
+        immutable CaptureQualityReport 기록/조회 결과. report는 성공 또는 동일 재시도에만
+        있고, cycleNumber·receivedAt·receivedBy는 durable 수신 사실이다.
+      type: object
+      additionalProperties: false
+      required: [verdict]
+      properties:
+        verdict:
+          enum:
+            [RECORDED, DUPLICATE, REPORT_ID_CONFLICT, MISSION_ALREADY_REPORTED,
+             UNKNOWN_MISSION, WORK_ORDER_MISMATCH, DEVICE_MISMATCH, STORE_UNAVAILABLE]
+        detail: { type: [string, 'null'] }
+        report:
+          oneOf:
+            - $ref: ../schemas/capture-quality-report.v1.json
+            - { type: 'null' }
+        cycleNumber: { type: [integer, 'null'] }
+        receivedAt: { type: [string, 'null'], format: date-time }
+        receivedBy: { type: [string, 'null'] }
+    FlightArtifactCandidateResponse:
+      description: >-
+        Core가 exact KMZ bytes를 보관한 뒤 기록한 후보 메타데이터. 이것은 실행 명령도,
+        Mission Contract의 일부도 아니다. status와 executable은 후보가 unbound이며
+        비실행성임을 응답마다 명시한다.
+      type: object
+      additionalProperties: false
+      required:
+        [candidateId, revision, source, status, validatorVersion, provenanceRef,
+         kmzSha256, sizeBytes, placemarkCount, minExecuteHeightM, maxExecuteHeightM,
+         envelopeCheck, validationLimitation, validatedAt, validatedBy]
+      properties:
+        candidateId:
+          type: string
+          description: Server-derived full content-digest identity; never client supplied.
+        revision:
+          type: integer
+          minimum: 1
+          description: Recording order for distinct immutable candidate bytes within the Mission.
+        source: { const: DJI_PILOT_EXPORT }
+        status: { const: VALIDATED_CANDIDATE_UNBOUND }
+        validatorVersion:
+          const: '1.0'
+          description: Structural KMZ validator contract version, not DJI firmware compatibility.
+        provenanceRef: { type: string }
+        kmzSha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        sizeBytes: { type: integer, minimum: 1 }
+        placemarkCount: { type: integer, minimum: 1 }
+        minExecuteHeightM: { type: number }
+        maxExecuteHeightM: { type: number }
+        envelopeCheck:
+          enum: [COMPATIBLE, NOT_COMPARABLE]
+          description: Structural comparison only; never a route-safety or Pilot import assertion.
+        validationLimitation: { type: [string, 'null'] }
+        validatedAt: { type: string, format: date-time }
+        validatedBy: { type: string }
+        executable:
+          const: false
+          default: false
+          description: Always false. No candidate route binds this object to flight execution.
+    FlightArtifactIngestResponse:
+      description: >-
+        Pilot-export candidate retention verdict. candidate is present only for RECORDED or
+        DUPLICATE, and remains unbound/non-executable in either case.
+      type: object
+      additionalProperties: false
+      required: [verdict]
+      properties:
+        verdict:
+          enum: [RECORDED, DUPLICATE, UNKNOWN_MISSION, STORE_UNAVAILABLE]
+        detail: { type: [string, 'null'] }
+        candidate:
+          oneOf:
+            - $ref: '#/components/schemas/FlightArtifactCandidateResponse'
+            - { type: 'null' }
     CoverageReportResponse:
       description: 보고 수신 판정 + 기록된 보고 본문(거부 시 report 는 null).
       type: object

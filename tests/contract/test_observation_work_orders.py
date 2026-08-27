@@ -93,10 +93,18 @@ def test_api_is_organization_scoped_and_approval_is_optimistic(tmp_path: Path) -
     created = client.post(
         "/v1/sites/site-a/observation-work-orders",
         headers=_headers(_TOKEN_A),
-        json={"name": "주간 토공 관측", "workAreaIds": ["wa-site-a-0001"]},
+        json={
+            "name": "주간 토공 관측",
+            "workAreaIds": ["wa-site-a-0001"],
+            "temporalPolicy": {"maxCaptureSpanSeconds": 600},
+        },
     )
     assert created.status_code == 201, created.text
     work_order_id = created.json()["workOrderId"]
+    assert created.json()["temporalPolicy"] == {
+        "schemaVersion": "1.0",
+        "maxCaptureSpanSeconds": 600,
+    }
 
     assert (
         client.get(

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { presentAcquisitionProgress } from "@/app/field/acquisition-progress";
-import type { AcquisitionProgressView, AcquisitionRunStage } from "@/lib/core-api/types";
+import type {
+  AcquisitionProgressView,
+  AcquisitionRunStage,
+  AnalysisReadinessStatus,
+} from "@/lib/core-api/types";
 
-function progress(stage: AcquisitionRunStage): AcquisitionProgressView {
+function progress(
+  stage: AcquisitionRunStage,
+  analysisStatus: AnalysisReadinessStatus | null = "WAITING_PROCESSING",
+): AcquisitionProgressView {
   return {
     schemaVersion: "1.0",
     runId: "acq-run-1",
@@ -35,6 +42,28 @@ function progress(stage: AcquisitionRunStage): AcquisitionProgressView {
     },
     media: { state: "NOT_STARTED", itemCount: 0, sourceBundleDigest: null },
     processing: { state: "NOT_STARTED", jobIds: [] },
+    analysisReadiness:
+      analysisStatus === null
+        ? null
+        : {
+            status: analysisStatus,
+            ready: analysisStatus === "READY",
+            detail: `Core evidence detail: ${analysisStatus}`,
+            epoch: {
+              epochId: "obs-epoch-1",
+              workOrderId: "obs-work-1",
+              cycleNumber: 1,
+              missionId: "mission-1",
+              sortieCount: 1,
+              maxCaptureSpanSeconds: 600,
+              temporalPolicySchemaVersion: "1.0",
+              captureWindowStatus: "COMPLETE",
+              capturedFrom: "2026-08-21T09:00:00Z",
+              capturedTo: "2026-08-21T09:10:00Z",
+            },
+            evidenceRefs: ["coverage-report:mission-1"],
+            evaluatedAt: "2026-08-21T10:00:00Z",
+          },
     evaluatedAt: "2026-08-21T10:00:00Z",
     inFlightContractPolicy: "REMAINS_VALID_UNTIL_CONTRACT_EXPIRY",
   };
@@ -61,5 +90,25 @@ describe("presentAcquisitionProgress", () => {
     const view = presentAcquisitionProgress(null);
     expect(view.label).toBe("진행상태 확인 불가");
     expect(view.tone).toBe("warning");
+    expect(view.analysisLabel).toBe("분석 준비 확인 불가");
+  });
+
+  it("uses only Core's evidence-derived analysis readiness, never the workflow stage", () => {
+    const blockedReview = presentAcquisitionProgress(
+      progress("REVIEW_READY", "TEMPORAL_POLICY_UNDECLARED"),
+    );
+    expect(blockedReview.analysisLabel).toBe("촬영 시간 기준 미선언");
+    expect(blockedReview.analysisTone).toBe("warning");
+    expect(blockedReview.analysisDetail).toContain("TEMPORAL_POLICY_UNDECLARED");
+
+    const ready = presentAcquisitionProgress(progress("PROCESSING", "READY"));
+    expect(ready.analysisLabel).toBe("분석 준비 완료");
+    expect(ready.analysisTone).toBe("positive");
+  });
+
+  it("fails closed when Core has not assembled analysis readiness evidence", () => {
+    const view = presentAcquisitionProgress(progress("REVIEW_READY", null));
+    expect(view.analysisLabel).toBe("분석 준비 확인 불가");
+    expect(view.analysisTone).toBe("warning");
   });
 });

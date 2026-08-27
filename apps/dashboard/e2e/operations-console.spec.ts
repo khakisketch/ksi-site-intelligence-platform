@@ -298,6 +298,39 @@ test("전역 작업 화면은 결정·진행·완료 원장을 구분하고 모�
   }
 });
 
+test("작업 상세는 근거가 없을 때 분석 준비를 fail-closed로 표현한다", async ({ page }) => {
+  test.skip(
+    Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL),
+    "외부 원장은 읽기 전용이며 로컬 합성 evidence gap을 전제하지 않습니다.",
+  );
+
+  const browserFailures: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserFailures.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => browserFailures.push(`pageerror: ${error.message}`));
+
+  await page.goto("/field");
+  const workOrderLink = page.locator('main a[href^="/field/work-orders/"]').first();
+  await expect(workOrderLink).toBeVisible();
+  const workOrderHref = await workOrderLink.getAttribute("href");
+  expect(workOrderHref).toMatch(/^\/field\/work-orders\/[^/]+$/);
+
+  await page.goto(workOrderHref!);
+  const progressCard = page
+    .getByText("Acquisition progress", { exact: true })
+    .locator("xpath=ancestor::section");
+  await expect(progressCard.getByText("분석 준비", { exact: true })).toBeVisible();
+  await expect(progressCard.getByText("분석 준비 확인 불가", { exact: true })).toBeVisible();
+  await expect(
+    progressCard.getByText("Analysis Readiness 증거 projection이 이 Core 조립에 장착되지 않았습니다.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(browserFailures).toEqual([]);
+});
+
 test("확인 항목은 등록 근거 수와 상세 진입을 보존한다", async ({ page }) => {
   await page.goto("/events");
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {

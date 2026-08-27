@@ -1,5 +1,6 @@
 """RC-first acquisition deployment, connectivity, and readiness boundary."""
 
+from ksi_core.acquisition.analysis_readiness import AnalysisReadinessProjector, observation_epoch_id
 from ksi_core.acquisition.api import (
     build_acquisition_connectivity_router,
     mount_acquisition_connectivity,
@@ -29,6 +30,8 @@ from ksi_core.acquisition.models import (
     AcquisitionReadinessView,
     AcquisitionRunStage,
     AcquisitionRunV1,
+    AnalysisReadinessStatus,
+    AnalysisReadinessView,
     CapabilityReceiptV1,
     CapabilityStatus,
     ConnectionState,
@@ -43,6 +46,7 @@ from ksi_core.acquisition.models import (
     ManifoldDirectMode,
     MediaPolicy,
     MsdkBridgeMode,
+    ObservationEpochView,
     OperatingMode,
     ReadinessStatus,
     RoutingPolicy,
@@ -55,6 +59,9 @@ from ksi_core.acquisition.store import (
 
 __all__ = [
     "AcquisitionCapability",
+    "AnalysisReadinessProjector",
+    "AnalysisReadinessStatus",
+    "AnalysisReadinessView",
     "AcquisitionConnectivityStore",
     "AcquisitionConnectivityStoreRecoveryError",
     "AcquisitionContractProgressView",
@@ -89,6 +96,7 @@ __all__ = [
     "MediaPolicy",
     "MsdkBridgeMode",
     "OperatingMode",
+    "ObservationEpochView",
     "ReadinessStatus",
     "RoutingPolicy",
     "SyncState",
@@ -96,4 +104,5 @@ __all__ = [
     "build_acquisition_coordination_router",
     "mount_acquisition_connectivity",
     "mount_acquisition_coordination",
+    "observation_epoch_id",
 ]

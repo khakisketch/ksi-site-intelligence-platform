@@ -19,6 +19,18 @@ class ObservationScheduleStatus(StrEnum):
     ARCHIVED = "ARCHIVED"
 
 
+class TemporalCoherencePolicy(_CamelModel):
+    """한 ObservationEpoch 안에서 허용할 촬영 시각 범위.
+
+    정책이 없는 과거 WorkOrder도 읽을 수 있게 이 타입 자체는 optional 필드로
+    붙인다. 다만 Analysis Readiness는 정책이 없으면 READY를 주장하지 않는다
+    (REQ-INT-103, INV-018).
+    """
+
+    schema_version: str = Field(default="1.0", pattern=r"^1\.0$")
+    max_capture_span_seconds: int = Field(ge=1, le=86_400)
+
+
 class ObservationWorkOrderStatus(StrEnum):
     DRAFT = "DRAFT"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
@@ -72,6 +84,7 @@ class ObservationWorkOrder(_CamelModel):
     name: str = Field(min_length=1, max_length=200)
     work_area_ids: list[str] = Field(min_length=1, max_length=64)
     schedule_id: str | None = None
+    temporal_policy: TemporalCoherencePolicy | None = None
     cycle_number: int = Field(default=1, ge=1)
     status: ObservationWorkOrderStatus
     status_reason: str | None = Field(default=None, max_length=1000)
@@ -122,4 +135,5 @@ __all__ = [
     "ObservationWorkOrderStatus",
     "ReobservationDraft",
     "ReobservationDraftStatus",
+    "TemporalCoherencePolicy",
 ]

@@ -37,6 +37,7 @@ from ksi_event_contracts.work_area import WorkAreaStatus
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role
+from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
@@ -242,6 +243,19 @@ def assemble_app(
         if acquisition_coordination_enabled
         else None
     )
+    # Edge 품질 측정은 새로운 완료 상태가 아니라, WorkOrder 회차와 Mission에
+    # 결속된 evidence다. coordinator가 없는 축소 조립에서는 이 원장도 열지 않아
+    # "어느 회차의 품질인가"를 추측하는 표면을 만들지 않는다.
+    capture_quality_report_store = (
+        CaptureQualityReportStore(
+            journal("capture-quality-reports.jsonl"),
+            mission_store=mission_store,
+            work_order_store=observation_work_order_store,
+            coordination_store=acquisition_coordination_store,
+        )
+        if acquisition_coordination_store is not None
+        else None
+    )
     # Site workspace reuses the exact EventStore instance mounted on the public API;
     # opening a second writer for the same journal would violate DurableJournal locking.
     event_store = EventStore(event_journal)
@@ -268,12 +282,8 @@ def assemble_app(
         from ksi_core.copilot_openai import OpenAiCompatibleModelAdapter
         from ksi_core.site_workspace import SiteBriefingService, SiteBriefingStore
 
-        def _capture_policy_for_work_order(
-            organization_id: str, work_order_id: str
-        ) -> str | None:
-            order = observation_work_order_store.get(
-                work_order_id, organization_id=organization_id
-            )
+        def _capture_policy_for_work_order(organization_id: str, work_order_id: str) -> str | None:
+            order = observation_work_order_store.get(work_order_id, organization_id=organization_id)
             if order is None or order.schedule_id is None:
                 return None
             schedules = observation_work_order_store.list_schedules(
@@ -313,9 +323,11 @@ def assemble_app(
                 site_store.get_scoped(site_id, organization_id) is not None
             ),
             work_order_matches=lambda work_order_id, organization_id, site_id: (
-                (order := observation_work_order_store.get(
-                    work_order_id, organization_id=organization_id
-                ))
+                (
+                    order := observation_work_order_store.get(
+                        work_order_id, organization_id=organization_id
+                    )
+                )
                 is not None
                 and order.site_id == site_id
             ),
@@ -328,9 +340,7 @@ def assemble_app(
             planner_version=copilot_runtime_config.planner_version,
         )
         site_briefing_service = SiteBriefingService(
-            store=SiteBriefingStore(
-                journal("site-briefings.jsonl"), site_store=site_store
-            ),
+            store=SiteBriefingStore(journal("site-briefings.jsonl"), site_store=site_store),
             copilot=copilot_service,
             workspace=site_workspace_projector,
         )
@@ -424,6 +434,7 @@ def assemble_app(
         observation_work_order_store=observation_work_order_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
+        capture_quality_report_store=capture_quality_report_store,
         acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
         copilot_service=copilot_service,
         copilot_conversation_service=copilot_conversation_service,

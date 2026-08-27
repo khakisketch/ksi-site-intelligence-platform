@@ -4,12 +4,14 @@ import { coreFetch } from "./client";
 import type {
   ObservationWorkOrderView,
   ReobservationDraftView,
+  TemporalCoherencePolicy,
 } from "./types";
 
 export interface CreateObservationWorkOrderInput {
   name: string;
   workAreaIds: string[];
   scheduleId?: string | null;
+  temporalPolicy?: TemporalCoherencePolicy | null;
 }
 
 /**

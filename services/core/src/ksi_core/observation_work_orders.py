@@ -18,6 +18,7 @@ from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrderStatus,
     ReobservationDraft,
     ReobservationDraftStatus,
+    TemporalCoherencePolicy,
 )
 from pydantic import Field, ValidationError
 
@@ -237,6 +238,7 @@ class ObservationWorkOrderStore:
         name: str,
         work_area_ids: list[str],
         schedule_id: str | None,
+        temporal_policy: TemporalCoherencePolicy | None = None,
         actor: str,
         now: datetime,
     ) -> ObservationWorkOrder:
@@ -263,6 +265,7 @@ class ObservationWorkOrderStore:
                 name=name,
                 work_area_ids=work_area_ids,
                 schedule_id=schedule_id,
+                temporal_policy=temporal_policy,
                 status=ObservationWorkOrderStatus.AWAITING_APPROVAL,
                 version=1,
                 created_at=iso_utc(now),
@@ -647,6 +650,7 @@ class WorkOrderCreateRequest(CamelModel):
     name: str = Field(min_length=1, max_length=200)
     work_area_ids: list[str] = Field(min_length=1, max_length=64)
     schedule_id: str | None = None
+    temporal_policy: TemporalCoherencePolicy | None = None
 
 
 class VersionedApprovalRequest(CamelModel):
@@ -751,6 +755,7 @@ def build_observation_work_order_router(
                 name=request.name,
                 work_area_ids=request.work_area_ids,
                 schedule_id=request.schedule_id,
+                temporal_policy=request.temporal_policy,
                 actor=principal.principal_id,
                 now=datetime.now(UTC),
             )

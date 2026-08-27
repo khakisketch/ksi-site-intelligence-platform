@@ -155,6 +155,59 @@ class AcquisitionProcessingState(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class AnalysisReadinessStatus(StrEnum):
+    """분석 가능 여부의 **파생** 판정(비행 상태가 아니다).
+
+    상태를 사람이 쓰거나 Edge가 확정할 수 없게, Coverage·품질·원본·시간·처리
+    원장에서 읽어 projector가 매번 계산한다(REQ-INT-102, INV-017).
+    """
+
+    EVIDENCE_NOT_ASSEMBLED = "EVIDENCE_NOT_ASSEMBLED"
+    WAITING_MISSION = "WAITING_MISSION"
+    WAITING_COVERAGE = "WAITING_COVERAGE"
+    COVERAGE_GAP = "COVERAGE_GAP"
+    WAITING_CAPTURE_QUALITY = "WAITING_CAPTURE_QUALITY"
+    CAPTURE_QUALITY_GAP = "CAPTURE_QUALITY_GAP"
+    WAITING_MEDIA = "WAITING_MEDIA"
+    INTEGRITY_GAP = "INTEGRITY_GAP"
+    CAPTURE_TIME_INCOMPLETE = "CAPTURE_TIME_INCOMPLETE"
+    TEMPORAL_POLICY_UNDECLARED = "TEMPORAL_POLICY_UNDECLARED"
+    TEMPORAL_COHERENCE_GAP = "TEMPORAL_COHERENCE_GAP"
+    WAITING_PROCESSING = "WAITING_PROCESSING"
+    PROCESSING_FAILED = "PROCESSING_FAILED"
+    READY = "READY"
+
+
+class ObservationEpochView(CamelModel):
+    """WorkOrder 회차에서 결정적으로 파생한 v1 Observation Epoch.
+
+    v1은 한 회차=한 sortie=한 Mission만 허용한다. 이 객체는 새 mutable 원장이
+    아니라 기존 WorkOrder/AcquisitionRun/SourceMedia 사실의 읽기 모델이다.
+    """
+
+    epoch_id: str
+    work_order_id: str
+    cycle_number: Annotated[int, Field(ge=1)]
+    mission_id: str | None
+    sortie_count: Literal[1] = 1
+    max_capture_span_seconds: Annotated[int, Field(ge=1, le=86_400)] | None
+    temporal_policy_schema_version: str | None
+    capture_window_status: str
+    captured_from: datetime | None
+    captured_to: datetime | None
+
+
+class AnalysisReadinessView(CamelModel):
+    """분석 시작/검토 가능 여부의 evidence-derived view (INV-017)."""
+
+    status: AnalysisReadinessStatus
+    ready: bool
+    detail: str
+    epoch: ObservationEpochView
+    evidence_refs: tuple[str, ...]
+    evaluated_at: datetime
+
+
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 
 
@@ -405,6 +458,9 @@ class AcquisitionProgressView(CamelModel):
     contract_activation: AcquisitionContractProgressView
     media: AcquisitionMediaProgressView
     processing: AcquisitionProcessingProgressView
+    # 모든 조립이 Coverage/CaptureQuality/Media/Processing 원장을 갖는 것은 아니다.
+    # None은 READY가 아니라 "증거 projection이 장착되지 않음"을 뜻한다.
+    analysis_readiness: AnalysisReadinessView | None = None
     evaluated_at: datetime
     in_flight_contract_policy: Literal["REMAINS_VALID_UNTIL_CONTRACT_EXPIRY"]
 
@@ -414,6 +470,8 @@ RC_REQUIRED_CAPABILITIES = frozenset(AcquisitionCapability)
 
 __all__ = [
     "AcquisitionCapability",
+    "AnalysisReadinessStatus",
+    "AnalysisReadinessView",
     "AcquisitionDeploymentProfileV1",
     "AcquisitionContractProgressView",
     "AcquisitionGatewayProgressView",
@@ -442,6 +500,7 @@ __all__ = [
     "MediaPolicy",
     "MsdkBridgeMode",
     "OperatingMode",
+    "ObservationEpochView",
     "RC_REQUIRED_CAPABILITIES",
     "ReadinessStatus",
     "RoutingPolicy",

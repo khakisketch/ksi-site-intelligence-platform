@@ -25,6 +25,7 @@ from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordi
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
@@ -48,6 +49,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -193,6 +195,11 @@ def _max_assembly(tmp_path: Path) -> Any:
         DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
     )
     storage = _NullEvidenceStorage()
+    flight_artifact_store = FlightArtifactStore(
+        DurableJournal(tmp_path / "flight-artifacts.jsonl"),
+        mission_store=mission_store,
+        storage=storage,
+    )
     work_area_store = WorkAreaStore(
         DurableJournal(tmp_path / "work-areas.jsonl"),
         site_exists=lambda site_id: site_store.get(site_id) is not None,
@@ -211,6 +218,15 @@ def _max_assembly(tmp_path: Path) -> Any:
     )
     acquisition_coordination_store = AcquisitionCoordinationStore(
         DurableJournal(tmp_path / "acquisition-runs.jsonl")
+    )
+    coverage_report_store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
+    capture_quality_report_store = CaptureQualityReportStore(
+        DurableJournal(tmp_path / "capture-quality-reports.jsonl"),
+        mission_store=mission_store,
+        work_order_store=observation_work_order_store,
+        coordination_store=acquisition_coordination_store,
     )
     copilot_service = CopilotService(
         model=_ContractSyncCopilotModel(),
@@ -259,15 +275,14 @@ def _max_assembly(tmp_path: Path) -> Any:
     )
     return create_app(
         evidence_storage=storage,
+        flight_artifact_store=flight_artifact_store,
         auth_registry=_auth_registry(),
         edge_sync_store=EdgeSyncStore(tmp_path / "journal.jsonl"),
         edge_dispatch_store=edge_dispatch_store,
         event_store=event_store,
         site_store=site_store,
         mission_store=mission_store,
-        coverage_report_store=CoverageReportStore(
-            DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
-        ),
+        coverage_report_store=coverage_report_store,
         mission_execution_store=MissionExecutionStore(
             DurableJournal(tmp_path / "mission-execution.jsonl"), mission_store=mission_store
         ),
@@ -306,6 +321,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         observation_work_order_store=observation_work_order_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
+        capture_quality_report_store=capture_quality_report_store,
         copilot_service=copilot_service,
         copilot_conversation_service=conversation_service,
         site_workspace_projector=site_workspace_projector,
@@ -639,6 +655,44 @@ def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:
         "실구현이 반환하는 응답 모델을 문서가 $ref 로 묶지 않았다 — 자유 문자열 "
         f"description 은 대조되지 않는다: {violations}"
     )
+
+
+def test_flight_artifact_candidate_contract_stays_unbound() -> None:
+    """Pilot export 후보가 실행 계약으로 오인될 여지를 명세에서 차단한다.
+
+    일반 경로·응답 모델 대조는 "필드가 존재한다"까지만 보장한다. 이 경계에서는
+    값의 의미가 더 중요하다: candidate 보관 API가 상태를 EXECUTABLE로 바꾸거나
+    validator 세대를 누락해도 앱은 여전히 경로 검사만 통과할 수 있다. ADR-KSI-028의
+    후보-권한 분리를 계약 레벨에서 고정한다.
+    """
+    doc = _doc()
+    paths = doc["paths"]
+    ingest = paths["/v1/missions/{mission_id}/flight-artifacts/pilot-export"]["post"]
+    assert {
+        code
+        for code in ingest["responses"]
+        if code in {"200", "201", "404", "422", "503"}
+    } == {"200", "201", "404", "422", "503"}
+    for code in ("200", "201"):
+        assert _ref_name(_json_schema(ingest["responses"][code])) == "FlightArtifactIngestResponse"
+
+    candidate = doc["components"]["schemas"]["FlightArtifactCandidateResponse"]
+    properties = candidate["properties"]
+    assert properties["source"] == {"const": "DJI_PILOT_EXPORT"}
+    assert properties["status"] == {"const": "VALIDATED_CANDIDATE_UNBOUND"}
+    assert properties["validatorVersion"]["const"] == "1.0"
+    assert properties["executable"]["const"] is False
+    assert properties["envelopeCheck"]["enum"] == ["COMPATIBLE", "NOT_COMPARABLE"]
+    assert "executable" not in set(candidate.get("required") or [])
+
+    download = paths[
+        "/v1/missions/{mission_id}/flight-artifacts/{candidate_id}/download"
+    ]["get"]
+    headers = download["responses"]["200"]["headers"]
+    assert headers["X-KSI-FlightArtifact-Status"]["schema"]["const"] == (
+        "VALIDATED_CANDIDATE_UNBOUND"
+    )
+    assert headers["X-KSI-Executable"]["schema"]["const"] == "false"
 
 
 # ── ⑥ 소비자(대시보드) 대조 ────────────────────────────────────────────────
