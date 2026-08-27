@@ -54,6 +54,7 @@ from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
+from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
@@ -139,6 +140,18 @@ def assemble_app(
 
     mission_store = MissionStore(mission_journal)
     mission_sequence_store = MissionIssuanceSequenceStore(mission_sequence_journal)
+    # Pilot export는 발급 산출물/실행 경로에 편입하지 않는 별도 후보 원장이다.
+    # exact-byte 보관소가 없는 축소 조립에서는 원장도 열지 않아 "후보가 있지만
+    # 바이트는 없다"는 거짓 표면을 만들지 않는다.
+    flight_artifact_store = (
+        FlightArtifactStore(
+            journal("flight-artifacts.jsonl"),
+            mission_store=mission_store,
+            storage=evidence_storage,
+        )
+        if evidence_storage is not None
+        else None
+    )
     # 임무 실행 생애주기(ADR-KSI-019 G2) — 발급 원장과 별도 원장이다. 발급 시점에
     # 이 원장에 쓰지 않으므로(레코드 부재 = ISSUED) 발급 경로의 201 계약을 건드리지
     # 않는다.
@@ -159,6 +172,7 @@ def assemble_app(
     # 커버리지 보고는 임무 발급 기록과 대조해서만 받는다(INV-010) — 발급된 적
     # 없는 임무의 관찰 결과는 "무슨 근거로 날았나"에 답할 수 없다.
     coverage_journal = journal("coverage-reports.jsonl")
+    coverage_report_store = CoverageReportStore(coverage_journal, mission_store=mission_store)
     # 원본 사진 번들(3D 파이프라인 입구) — evidence_storage 없이는 store 는 구성돼도
     # 라우트가 장착되지 않는다(evidence 라우트와 같은 관습, create_app 참조).
     source_media_journal = journal("source-media.jsonl")
@@ -420,7 +434,8 @@ def assemble_app(
         edge_sync_store=edge_sync_store,
         edge_dispatch_store=edge_dispatch_store,
         evidence_storage=evidence_storage,
-        coverage_report_store=CoverageReportStore(coverage_journal, mission_store=mission_store),
+        flight_artifact_store=flight_artifact_store,
+        coverage_report_store=coverage_report_store,
         mission_execution_store=mission_execution_store,
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,

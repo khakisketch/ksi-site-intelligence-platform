@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
+    from ksi_core.flight_artifacts import FlightArtifactStore
     from ksi_core.mission_execution import MissionExecutionStore
     from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -99,9 +100,10 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
             ("source_media_store",),
             ("mission_signing_key",),
             ("design_surface_store",),
+            ("flight_artifact_store",),
         ),
         "evidence_storage 는 소비자 저장소(event_store·source_media_store·"
-        "design_surface_store 또는"
+        "design_surface_store·flight_artifact_store 또는"
         " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
         " 오브젝트 스토리지를 매단 채 기동하지 않는다."
         "\n"
@@ -149,6 +151,13 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " — 발급된 적 없는 임무의 원본 미디어 번들은 '어느 site 소속인지'조차"
         " 알 수 없다(객체 키가 siteId 를 필요로 한다). coverage_report_store 와"
         " 동일 원칙",
+    ),
+    (
+        "flight_artifact_store",
+        (("mission_store", "evidence_storage"),),
+        "flight_artifact_store는 Mission 원장·EvidenceStorage와 함께 주어져야 한다"
+        "(REQ-MSN-104, INV-011/012) — Pilot export 후보는 기존 계약/실행 경로와"
+        "분리된 원장과 exact-byte 보관소가 모두 있어야만 받는다",
     ),
     (
         "work_area_store",
@@ -357,6 +366,7 @@ def create_app(
     mission_contract_issuer_id: str | None = None,
     mission_sequence_store: MissionIssuanceSequenceStore | None = None,
     evidence_storage: EvidenceStorage | None = None,
+    flight_artifact_store: FlightArtifactStore | None = None,
     coverage_report_store: CoverageReportStore | None = None,
     mission_execution_store: MissionExecutionStore | None = None,
     source_media_store: SourceMediaStore | None = None,
@@ -570,6 +580,7 @@ def create_app(
     _provided: dict[str, Any] = {
         "mission_signing_key": mission_signing_key,
         "evidence_storage": evidence_storage,
+        "flight_artifact_store": flight_artifact_store,
         "edge_sync_store": edge_sync_store,
         "edge_dispatch_store": edge_dispatch_store,
         "coverage_report_store": coverage_report_store,
@@ -825,6 +836,11 @@ def create_app(
         mount_mission_records(
             app, mission_store=mission_store, coverage_report_store=coverage_report_store
         )
+
+    if flight_artifact_store is not None:
+        from ksi_core.flight_artifacts import mount_flight_artifacts
+
+        mount_flight_artifacts(app, flight_artifact_store)
 
     if coverage_report_store is not None:
         from ksi_core.coverage_reports import mount_coverage_reports
