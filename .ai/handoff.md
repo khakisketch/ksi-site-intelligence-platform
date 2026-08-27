@@ -1,5 +1,32 @@
 # Current Handoff
 
+## 2026-08-27 — Software closure ready; FIELD-0a physical evidence not started
+
+Five local commits close the approved software scope: product authority/invariants (`2c7aee7`),
+unbound Pilot-export FlightArtifact retention (`fd78d11`), Edge CaptureQuality plus derived
+AnalysisReadiness and Dashboard (`2808c4e`), DJI documentation-vs-field capability evidence
+(`9bd610d`), and assembly/hostile-input/FIELD attestation gates (`3bb55df`). The candidate API
+never changes Mission Contract or dispatch, and `X-KSI-Executable: false` remains mandatory.
+Analysis readiness only becomes `READY` from coverage, final quality, sealed/verified media,
+capture time, temporal policy and processing lineage; it does not replace WorkOrder status.
+
+The exact software gates passed: Python `3948 passed, 23 skipped, 3 xfailed`; Ruff; Mypy
+`409 source files`; Dashboard Vitest `58 files / 529 tests`, ESLint, TypeScript, production build;
+Playwright `58 passed, 14 skipped` across 390/768/1024/1440. Repository hygiene, lock and diff
+checks pass. Raw FIELD evidence, M4D media, Pilot KMZ, screenshots, serial/GPS and secrets remain
+untracked.
+
+FIELD-0a is not a PASS and no device was touched: the required `/mnt/ksi-field-evidence` mount is
+missing and `/mnt` is `ext4`. The no-evidence audit is correctly `BLOCKED` with Pilot import,
+Pilot-native export, M4D original and attestation blockers. Do not create a local substitute. Once
+the actual `nfs`/`nfs4`/`cifs`/`smb3` share is mounted, use the updated checklist to create a 0700
+session directory and a 0600 attestation; use the then-current `git rev-parse HEAD` as
+`build_commit`. Until the audit binds real human-attested artifacts, FIELD-0a and Phase 3 remain
+`BLOCKED`, and all five DJI capabilities remain `NOT_VERIFIED`; Phase 3B/DPK writes, motor/flight,
+waypoint action, camera/gimbal automation and any capability promotion remain out of scope.
+
+---
+
 ## 2026-08-26 — Dirty change set integrated into local main; no push
 
 현재 변경분을 안전 경계와 추적성 기준으로 검토해 로컬 `main`에 기능별 커밋으로 통합했다.

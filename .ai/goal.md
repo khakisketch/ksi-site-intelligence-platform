@@ -1,4 +1,28 @@
-# Current goal (2026-08-26, local main integration complete)
+# Current goal (2026-08-27, software closure and FIELD-0a durable-share gate)
+
+`REQ-MSN-104`, `REQ-WRK-101`, `REQ-ACQ-102/103`, `REQ-INT-102/103`, `REQ-SEC-101`의
+소프트웨어 개선을 기능별 local `main` 커밋으로 닫고, FIELD-0a는 Pilot 2/M4D의
+무비행 물리 증거가 **실제 사내 durable share**에 있을 때만 판정한다. `INV-011/012/016/017/018/
+040/041/050/060/061`은 조직·Mission·WorkOrder·device binding, immutable journal, exact
+digest, evidence-derived fail-closed projection으로 강제한다.
+
+현재 software build는 `3bb55df`까지의 5개 기능 커밋이며, 전체 Python `3948 passed, 23
+skipped, 3 xfailed`, Ruff, Mypy `409 source files`, Dashboard Vitest `58 files / 529 tests`,
+ESLint, TypeScript, production build, Playwright `58 passed, 14 skipped`를 통과했다.
+
+FIELD-0a physical session은 아직 시작하지 않았다. canonical `/mnt/ksi-field-evidence`가
+존재하지 않고 `/mnt`가 local `ext4`임을 재확인했으므로, 로컬 대체 디렉터리를 만들지 않고
+audit을 `BLOCKED`로 유지한다. 현재 blocker는 `PILOT_IMPORT_EVIDENCE_REQUIRED`,
+`M4D_ORIGINAL_METADATA_REQUIRED`, `PILOT_EXPORT_KMZ_REQUIRED`,
+`FIELD0A_ATTESTATION_REQUIRED`다. mount가 준비되면 owner-only direct-child session에서
+propeller-removed/no-flight 절차와 human attestation을 수행한다.
+
+Phase 3B DPK write/restart, flight/motor/waypoint action, camera/gimbal automation, capability
+`VERIFIED` 승격은 범위 밖이며 다섯 capability는 `NOT_VERIFIED`를 유지한다.
+
+---
+
+# Previous goal (2026-08-26, local main integration complete)
 
 현재 dirty 변경을 제품 권위·안전 경계에 따라 검토하고 원본 증거·생성물·secret을 제외한 뒤,
 기능·배포·HIL·설계·문서 단위의 의미 있는 로컬 `main` 커밋으로 통합한다.

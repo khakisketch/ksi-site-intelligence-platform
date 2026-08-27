@@ -1,5 +1,30 @@
 # Current Task State
 
+## 2026-08-27 — `software_closure_complete_field0a_durable_share_blocked`
+
+- Local feature commits: `2c7aee7` product authority/traceability, `fd78d11` Pilot-export
+  FlightArtifact candidate, `2808c4e` CaptureQuality/AnalysisReadiness plus Dashboard,
+  `9bd610d` DJI documentation-vs-field evidence, `3bb55df` assembly/hostile-input/FIELD
+  attestation gates. No raw KMZ/photo/screenshot, serial, GPS, secret or device data is tracked.
+- Requirements/invariants: `REQ-MSN-104`, `REQ-WRK-101`, `REQ-ACQ-102/103`, `REQ-INT-102/103`,
+  `REQ-SEC-101`; `INV-011/012/016/017/018/040/041/050/060/061`. Pilot export remains
+  `VALIDATED_CANDIDATE_UNBOUND`/non-executable, CaptureQuality is Edge-only immutable evidence,
+  and AnalysisReadiness is additive fail-closed projection rather than a WorkOrder transition.
+- Verification: Python `3948 passed, 23 skipped, 3 xfailed`; Ruff; Mypy `409 source files`; Dashboard
+  Vitest `58 files / 529 tests`, ESLint, TypeScript, production build; local OIDC Playwright
+  `58 passed, 14 skipped`, including WorkOrder readiness/evidence-gap at 390/768/1024/1440;
+  `uv lock --check`, diff and repository hygiene pass.
+- FIELD-0a preflight: all pinned A/B/C checksums pass. No physical session began because
+  `/mnt/ksi-field-evidence` is absent and `/mnt` is local `ext4`, not approved `nfs`/`nfs4`/`cifs`/
+  `smb3`. The private software audit is correctly `BLOCKED` for missing Pilot import, Pilot-native
+  export, M4D original and human attestation; it does not represent device contact or device write.
+- Next physical action: mount the actual internal share, create one 0700 direct-child session, then
+  collect the propeller-removed/no-flight Pilot 2 and M4D evidence exactly as
+  `docs/hil/FIELD_0A_CHECKLIST.md` requires. Phase 3 and all five DJI capabilities remain
+  `BLOCKED`/`NOT_VERIFIED`.
+
+---
+
 ## 2026-08-26 — `local_main_dirty_integration_complete`
 
 - Local commits: `35e73ef` Core/contract, `8674e86` DJI capability routing, `13f4a16`
