@@ -13,6 +13,10 @@
 > - 2026-08-21 — 기본 제품을 **RC-first Connected Edge**로 확정했다. RC 인터넷은
 >   새 임무 발급 전 필수, Manifold SIM은 선택 Add-on이며 활성 계약은 인터넷
 >   단절만으로 무효화하지 않는다(ADR-KSI-023).
+> - 2026-08-27 — Core의 권위를 Mission Intent·정책·검증된 최종 Flight Artifact의
+>   revision/digest 결속으로 명확히 하고, 경로 compiler 독점은 요구하지 않기로 했다.
+>   Observation Epoch와 증거 기반 Analysis Readiness를 별도 파생 계약으로 추가했다
+>   (ADR-KSI-028/029).
 > - 2026-08-20 — 첫 유료 제품을 **공정·상대 물량 폐루프**로 고정하고,
 >   정상 현장 경로의 무파일 UX·LLM/사람 결정권 경계를 명시(ADR-KSI-022).
 > - 2026-08-08 (2차) — **선형 핵심가치 목록을 폐기하고 2축 폐루프 구조로 교체**
@@ -115,7 +119,10 @@ Re-observe)를 닫는 것 자체가 이 제품의 핵심 기술이며, 어느 �
 
 - DJI Flight Controller는 비행 안정화, 저수준 기체 제어, 반응형 충돌회피와 RTH를 담당한다.
 - Manifold KSI Edge는 센서 동기화, 인지, 추적, 4D World Model, 위험판단, 재관찰, 로컬 경로·관측점 결정을 담당한다.
-- KSI Core는 Mission Contract, 정책, 지도·모델 버전, 이벤트·증거·검토와 운영을 담당한다.
+- KSI Core는 Mission Intent, 서명된 Mission Contract, 정책, 지도·모델 버전,
+  검증된 최종 Flight Artifact의 revision/digest 결속, 이벤트·증거·검토와 운영을 담당한다.
+  Core는 경로 compiler를 독점하지 않지만, 어느 artifact가 정책을 통과해 계약에
+  결속됐는지의 권위는 유지한다.
 - 서버가 프레임별 조종 명령을 보내지 않는다.
 - LLM은 비행 좌표와 안전 제어 명령을 직접 생성하지 않는다.
 - LLM은 검증된 서버 결과를 설명하고 재관측 초안을 요청할 수 있으나, 임무 승인·

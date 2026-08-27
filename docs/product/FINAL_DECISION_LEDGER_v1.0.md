@@ -8,7 +8,8 @@
   zero-touch/Copilot 결정(ADR-KSI-022) · 2026-08-21 RC-first Connected Edge와
   선택형 Manifold 직접망 결정(ADR-KSI-023) · 하나의 반응형 Operations Console과
   Pilot 2 비행 전용 화면 경계(ADR-KSI-024) · 근거 중심 다현장 Home과 최근 업데이트
-  구조(ADR-KSI-025) · 현장 작업공간과 근거형 AX 계약(ADR-KSI-026) — 동결 문서의 개정이므로 근거 ADR 없이
+  구조(ADR-KSI-025) · 현장 작업공간과 근거형 AX 계약(ADR-KSI-026) · 2026-08-27 Mission
+  Intent/Flight Artifact 권한 및 Observation Epoch/Analysis Readiness 계약(ADR-KSI-028/029) — 동결 문서의 개정이므로 근거 ADR 없이
   이 줄을 바꾸지 않는다
 
 ## 명칭·시장
@@ -43,6 +44,10 @@
   사람의 KSI 업무는 Operations Console이 담당한다.
   RC 인터넷은 새 임무 발급 전 필수이고 Manifold SIM은 선택 Add-on이다. USB·SD·
   수동 KMZ는 복구 전용이다(ADR-KSI-023).
+- 비행 산출물: Core는 Mission Intent와 검증된 최종 Flight Artifact의
+  source·revision·digest·Mission Contract 결속을 소유한다. Core KMZ compiler는 현재
+  candidate/fallback이며, Pilot 2 import/export FIELD 증거 전에는 제거하거나 자동 기본
+  경로로 바꾸지 않는다(ADR-KSI-028).
 - 배치: 정책형 하이브리드(KSI Cloud 제어면 + 현장별 데이터 실행 위치)
 - Copilot: 외부 LLM 공급자 중립 adapter, 근거 조회·설명·재관측 초안 전용
 

@@ -3,6 +3,7 @@ REQ-PROD-001,Product,Platform name,KSI Site Intelligence Platform,UI/docs/reposi
 REQ-MSN-101,Mission,Approval,Mission Contract one-time approval,Invalid/unsigned contract rejected
 REQ-MSN-102,Mission,Automation,Scheduled missions after site policy approval,Scheduled run uses approved policy version
 REQ-MSN-103,Mission,Coverage,"100% hazard, 100% mandatory assets, 95% accessible general",CoverageReport completion gate
+REQ-MSN-104,Mission,Flight artifact authority,"Core binds the validated final Flight Artifact source revision and digest; changed bytes require revalidation and rebinding","Contract and ingest/replay tests reject an unbound stale or altered artifact"
 REQ-EDGE-101,Edge,Server loss,Continue while contract and safety valid,HIL server link loss sortie
 REQ-EDGE-102,Edge,RC link loss,DJI FC lost-link policy,HIL verifies KSI does not override
 REQ-SAFE-101,Safety,Battery,"Site override, default 30% return reserve",Return starts before reserve violation
@@ -17,7 +18,10 @@ REQ-PLAT-101,Platform,Industry expansion,Common core plus solution packs,No cons
 REQ-WRK-101,Workflow,Observation work order,Repeated observation is one user-visible work order,Contract and replay tests preserve the full loop
 REQ-ACQ-101,Acquisition,Zero-touch transfer,Normal route and media flow requires no removable media,Real-device flow completes with zero file operations
 REQ-ACQ-102,Acquisition,Bounded active capture,Edge recapture stays inside signed policy and mission envelope,HIL accepts allowed actions and rejects every exceeded bound
+REQ-ACQ-103,Acquisition,Capability evidence,"Vendor documentation and exact hardware/path field verification are independent; only field VERIFIED enables a production route","Capability registry/UI/HIL evidence tests keep documentation-only paths OFF"
 REQ-INT-101,Intelligence,Grounded relative metrics,Change progress and quantity include capture time lineage and uncertainty,End-to-end report exposes every required basis
+REQ-INT-102,Intelligence,Analysis readiness,"Analysis readiness derives from coverage capture quality media integrity capture-time and processing lineage; processing success alone is insufficient","Contract/replay tests exercise every missing-evidence reason and reject direct READY mutation"
+REQ-INT-103,Intelligence,Temporal coherence,"An Observation Epoch satisfies its declared temporal policy or exposes a typed temporal gap","Policy and SourceMedia capture-window replay tests cover complete incomplete conflict and excessive-span cases"
 REQ-COP-101,Copilot,Grounded answers,Every factual metric cites a scoped server object,Tool and negative grounding tests
 REQ-COP-102,Copilot,Human approval,Copilot can draft but cannot approve or issue missions,Structural tool registry and authorization tests
 REQ-SEC-101,Security,Organization isolation,Every actor and object is organization scoped,Cross-organization tests return indistinguishable not-found responses

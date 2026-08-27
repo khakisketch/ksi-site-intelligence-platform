@@ -1922,6 +1922,8 @@ ksi-site-intelligence-platform/
 - `REQ-MSN-101`: Mission Contract는 임무 전 한 번 승인한다.
 - `REQ-MSN-102`: 현장정책 승인 후 정기임무 자동실행을 지원한다.
 - `REQ-MSN-103`: 위험구역 100%, 필수자산 100%, 일반 접근영역 95%를 완료기준으로 한다.
+- `REQ-MSN-104`: Core는 검증된 최종 Flight Artifact의 source·revision·digest를
+  Mission Contract에 결속하며, 변경된 산출물은 재검증·재결속한다.
 - `REQ-EDGE-101`: 서버통신 단절 중 유효계약과 안전조건이 유지되면 임무를 계속한다.
 - `REQ-EDGE-102`: RC Link Lost는 DJI Flight Controller 정책을 따른다.
 - `REQ-SAFE-101`: 배터리 Reserve는 현장별 설정, 기본 30%다.
@@ -1936,7 +1938,13 @@ ksi-site-intelligence-platform/
 - `REQ-WRK-101`: 반복 관측은 사용자에게 하나의 Observation Work Order로 보인다.
 - `REQ-ACQ-101`: 정상 경로에서 KMZ·사진 전달에 USB/SD가 필요하지 않다.
 - `REQ-ACQ-102`: Edge 재촬영은 서명된 Mission Contract와 Capture Policy 안에서만 가능하다.
+- `REQ-ACQ-103`: 벤더 문서상 지원과 exact hardware/path의 field verification은 독립
+  evidence이며, field `VERIFIED` 전에는 capability를 production route로 활성화하지 않는다.
 - `REQ-INT-101`: 변화·공정·물량은 capture-time·CRS·lineage·uncertainty와 함께 제공한다.
+- `REQ-INT-102`: Analysis Readiness는 coverage·capture quality·media integrity·
+  capture-time·processing lineage 증거에서 파생되며 processing 성공만으로 성립하지 않는다.
+- `REQ-INT-103`: Observation Epoch는 선언된 temporal policy를 만족하거나, 부족한
+  시간 증거·일관성 gap을 명시한다.
 - `REQ-COP-101`: Copilot 사실 응답은 검증 가능한 서버 객체 근거를 포함한다.
 - `REQ-COP-102`: Copilot은 재관측 초안만 만들며 승인·임무 발급 권한을 갖지 않는다.
 - `REQ-SEC-101`: 모든 사람·장비·워커 접근과 데이터 반출은 조직·현장 범위로 제한한다.
