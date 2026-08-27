@@ -1,5 +1,27 @@
 # Current Task State
 
+## 2026-08-27 — `no_usb_field0a_receiver_software_ready`
+
+- Commit: `7d1aa88` implements a separate temporary HIL receiver; the Pilot JSBridge probe remains
+  GET/HEAD-only and calls no DJI function.
+- Receiver boundary: existing owner 0700 canonical root/direct-child session, in-memory capability
+  URL, fixed A/B/C/export/M4D slots, 64 MiB cap, safe KMZ checks, exclusive no-follow 0600 writes,
+  no overwrite/log/download/list/egress.
+- Verification now: Python `3976 passed, 23 skipped, 3 xfailed`; Ruff; Mypy `413 source files`;
+  Dashboard `58 files / 529 tests`, ESLint, TypeScript, production build; canonical A/B/C checksums,
+  lock/diff/hygiene/reference gates pass.
+- Ledger correction: the M4D camera replacement risk is resolved from the existing original EXIF
+  evidence (12.29mm, 5280×3956); 17.3mm sensor width remains a 4/3 nominal value and survey-grade
+  accuracy is not claimed. Exact M4D + RC Plus 2 Wayline/Media field support remains an open risk.
+- Formal gate: `field-0a-kmz-acceptance` stays `in_progress/BLOCKED`. A fresh same-session Pilot
+  import, Pilot-native KMZ, M4D original and human attestation are still required. Android/Pilot 2
+  file selection is `NOT_VERIFIED` until the user opens the temporary URL.
+- Next user-safe action: reconfirm propellers removed and stable ground setup, then attempt only the
+  local evidence upload. Do not press mission execution, takeoff, motor, gimbal or automated camera
+  controls. DJI developer license bootstrap follows FIELD-0a as a separate gate.
+
+---
+
 ## 2026-08-27 — `pilot_open_platform_jsbridge_surface_observed`
 
 - Real-device scope: RC Plus 2/Pilot 2 loaded the read-only KSI probe while M4D propellers were

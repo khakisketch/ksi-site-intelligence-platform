@@ -1,5 +1,29 @@
 # Current Handoff
 
+## 2026-08-27 — No-USB FIELD evidence receiver ready; physical upload still gated
+
+Commit `7d1aa88` adds a temporary, stdlib-only Tailnet receiver for owner-private FIELD-0a evidence.
+It accepts only fixed Pilot import A/B/C, Pilot-export KMZ and M4D-original slots through an in-memory
+capability URL. It rejects unsafe root/session ownership or modes, symlinks, unknown/oversized/chunked
+input, path traversal, ambiguous/unsafe KMZ, duplicate slots and overwrites; accepted bytes are written
+once with server-fixed names, no-follow semantics and mode 0600. It provides no log, download, listing,
+external egress or DJI call and leaves the read-only JSBridge probe unchanged.
+
+Current validation is green: Python `3976 passed, 23 skipped, 3 xfailed`; Ruff; Mypy `413 source
+files`; Dashboard `58 files / 529 tests`, ESLint, TypeScript and production build; A/B/C SHA-256,
+lock, diff, repository hygiene and reference-import gates. The Dashboard now accurately says focal
+length/resolution use M4D WideCamera original EXIF while sensor width is a 4/3 nominal value; the stale
+camera risk is resolved without claiming calibrated intrinsics or survey-grade accuracy.
+
+Formal FIELD-0a is still `BLOCKED`: historical A import/map and M4D EXIF are partial evidence, but
+the canonical same-session Pilot import, Pilot-native export, M4D original and operator attestation
+are not bound. The next physical gate is a fresh 0700 session, renewed propeller-removal confirmation,
+and a real Pilot 2 file-picker upload attempt. File-picker success is not yet verified. Phase 3 and all
+five DJI capabilities remain `BLOCKED`/`NOT_VERIFIED`/OFF; no license, component, Wayline/Media path,
+flight, motor, mission execution, DPK or camera automation was performed.
+
+---
+
 ## 2026-08-27 — Pilot 2 read-only JSBridge surface observed; capability unchanged
 
 On real RC Plus 2/Pilot 2, with M4D propellers removed and no flight or motor action, the operator

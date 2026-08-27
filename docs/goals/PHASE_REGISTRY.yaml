@@ -106,6 +106,21 @@ operations_console_delivery:
         9619c95404d10f19063ab3b8cc53b02d71bbc2402f6a637f75de4d4be1386010; no raw screen was captured.
         This is JSBRIDGE_SURFACE_OBSERVED only, not license, component, Wayline, Media or Cloud API
         verification. Phase 3 remains BLOCKED and all five capabilities remain NOT_VERIFIED/OFF.
+      no_usb_field0a_receiver_2026_08_27: >-
+        Commit 7d1aa88 adds a temporary Tailnet capability-URL receiver for owner-private FIELD-0a
+        Pilot import A/B/C screens, Pilot-native KMZ and M4D original bytes. It enforces owner 0700
+        root/session directories, no symlinks, fixed slots, safe archive bounds, exclusive no-follow
+        0600 writes and no overwrite/log/download/list/egress. Full Python passed 3976 tests with 23
+        skipped and 3 expected failures; Ruff and Mypy passed 413 source files; Dashboard passed 58
+        files/529 tests, ESLint, TypeScript and production build. The real Pilot 2 Android file picker
+        is not yet tested, so this software evidence does not close FIELD-0a or verify a DJI capability.
+      field0a_current_gate_2026_08_27: >-
+        Historical A import/map and M4D WideCamera EXIF are partial evidence and the camera SSOT uses
+        the measured 12.29mm and 5280x3956 values, while the 17.3mm sensor width remains nominal. The
+        canonical same-session Pilot import, Pilot-native export, M4D original and human attestation
+        are still absent. FIELD-0a and Phase 3 remain BLOCKED; all five capabilities remain
+        NOT_VERIFIED/OFF. License, component, Wayline/Media, flight, motor, DPK and camera automation
+        have not been performed by this work.
     - id: phase-4-verified-integration
       status: PLANNED
       gate: "capability-specific HIL evidence"

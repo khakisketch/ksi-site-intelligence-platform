@@ -1,7 +1,7 @@
 # Current goal (2026-08-27, no-USB FIELD-0a evidence completion)
 
-완료된 소프트웨어와 `origin/main`의 `b0c3c8b` 기준선을 유지하면서, USB 재시험 없이
-Pilot 2/M4D의 formal FIELD-0a 증거를 owner-private local store에 같은 세션으로 결속한다.
+완료된 소프트웨어 기준선 위의 no-USB evidence commit `7d1aa88`을 유지하면서, USB 재시험
+없이 Pilot 2/M4D의 formal FIELD-0a 증거를 owner-private local store에 같은 세션으로 결속한다.
 `REQ-ACQ-101/103`, `REQ-INT-101`, `REQ-SEC-101`과 `INV-040/041/060`을 적용한다.
 
 현재 사실:
@@ -14,7 +14,7 @@ Pilot 2/M4D의 formal FIELD-0a 증거를 owner-private local store에 같은 세
   mapping KMZ도 없다. 무입력 audit의 4개 typed blocker 때문에 formal FIELD-0a와 Phase 3은
   `BLOCKED`, 다섯 capability는 `NOT_VERIFIED`/OFF다.
 - USB 없는 회수를 위해 Tailnet capability URL로 고정 슬롯만 0600 저장하는 임시 HIL
-  수신기를 준비한다. Pilot 2 Android file picker 동작은 실기에서 아직 미검증이다.
+  수신기를 구현·검증했다. Pilot 2 Android file picker 동작은 실기에서 아직 미검증이다.
 
 완료 조건:
 

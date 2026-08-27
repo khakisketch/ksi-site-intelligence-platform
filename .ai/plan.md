@@ -47,8 +47,8 @@ Rollback:
 Execution:
 1. [완료] Current SSOT/Git/goal/FIELD audit and A/B/C checksum rerun.
 2. [완료] Camera disclosure and stale goal/risk state correction.
-3. [진행] Tailnet evidence receiver implementation, hostile-input validation and documentation.
-4. [대기] Commit/push software evidence tool; create a fresh 0700 FIELD session from that build.
+3. [완료] Tailnet evidence receiver implementation, hostile-input validation and documentation.
+4. [완료] Feature commit `7d1aa88`; verified phase/task/handoff metadata is recorded separately.
 5. [사용자 협업] Reconfirm propellers removed; upload A screen, Pilot-native KMZ and M4D original.
 6. [대기] Generate 0600 attestation, run audit, compare decompressed XML/EXIF and record PASS/BLOCKED.
 7. [후속 독립 게이트] DJI Cloud API license bootstrap, then read-only Wayline/Media evidence.
