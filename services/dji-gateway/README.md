@@ -12,6 +12,7 @@ src/ksi_dji_gateway/
 ├─ persistence/   idempotency journal. v1.2/v1.3 reader, 명시적 receipt-version writer.
 ├─ adapters/      다섯 path candidate port + pinned HTTPS/Unix bridge transport.
 ├─ coordinator.py capability route를 v1.3 receipt로 실행하는 idempotent coordinator.
+├─ open_platform_probe.py Pilot 2 WebView의 JSBridge 이름만 확인하는 무상태 HIL probe.
 └─ gateway.py     기존 ZeroTouchGateway 공개 API를 보존하는 compatibility facade.
 ```
 
@@ -27,3 +28,17 @@ runtime configuration, exact hardware/firmware HIL evidence, capability feature 
 모두 있어야 가능하다. Runtime configuration과 trusted routing context의 organization,
 Site, Gateway device, Edge device binding도 정확히 일치해야 하며 request body의 scope는
 이 context를 바꿀 수 없다(INV-060). candidate code와 SDK build는 production 지원 증거가 아니다.
+
+## Pilot 2 Open Platform read-only probe
+
+개방형 플랫폼의 최초 실기 확인은 전체 Cloud API를 구성하지 않고 아래 probe만 띄운다.
+
+```bash
+uv run --locked python -m ksi_dji_gateway.open_platform_probe --bind 0.0.0.0 --port 8080
+```
+
+Pilot 2에는 같은 LAN에서 접근 가능한 `http://<workstation-ip>:8080/pilot-connect`를
+입력한다. 이 페이지는 `window.djiBridge`와 공식 bootstrap 함수 이름의 존재 여부만
+읽으며 어떤 DJI 함수도 호출하지 않는다. 토큰·RC/기체 SN을 읽지 않고, 결과를 서버에
+전송하지 않으며, Mission/Media/MQTT/WS/MOP 모듈도 로드하지 않는다. 이 probe 성공은
+Cloud API license 인증이나 exact M4D + RC Plus 2 capability의 `VERIFIED` 근거가 아니다.

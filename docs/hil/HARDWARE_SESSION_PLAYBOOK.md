@@ -725,43 +725,39 @@ PSDK ingress/telemetry/RGB/timing HIL을 대체하지 않으며, 실제 비행 c
 
 ### 9단계 — Pilot 2 웹뷰 JSBridge 접속점 확인 (`09_pilot_cloud_jsbridge/`, 신설 2026-08-15)
 
-**왜:** ADR-KSI-019 G3(임무를 기체까지 자동으로 보내는 공식 경로)의 관문이다.
-2026-08-15 문서 조사(`docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md`)에서
-DJI Cloud API의 Wayline Management(사전 계획 임무 업로드·실행)가 문서 구조상
-`dock-to-cloud` 경로에만 있고 `pilot-to-cloud`(이 저장소의 실제 구성 — Dock
-없이 M4D + RC Plus 2 + Pilot 2)에는 없는 것으로 보인다는 근거를 GitHub 원문
-직접 인용으로 확보했다. **다만 이 조사가 `docs/architecture/ADR-KSI-004`
-2026-08-14 갱신의 기존 서술("Wayline Management를 포함해... Pilot 2/RC Plus
-조합으로... 경로가 DJI 문서에 명시돼 있다")과 정면으로 어긋난다 — 그 서술은
-직접 인용 URL이 남아있지 않아 어느 쪽이 맞는지 문서 대조만으로 결론 낼 수
-없다.** 이 단계는 그 상충을 실기로 좁히는 게 목적이지, 이미 답이 정해진 걸
-확인하는 절차가 아니다.
+**왜:** ADR-KSI-019 G3의 최소 접속 관문이다. 2026-08-27 현재 DJI 라이브 공식
+문서에는 Pilot 2 Wayline Management와 JSBridge mission module이 명시돼 있다.
+그러나 Product Supported 표에 exact `M4D + RC Plus 2 + Pilot 2` 조합은 없으므로
+문서상 기능 존재를 실기 지원으로 승격하지 않는다(REQ-ACQ-103).
 
 **이 단계에서 하는 것 — read-only, wayline 발급 없이 확인 가능한 것만:**
 
-1. RC Plus 2 내장 브라우저(이미 실기로 접속 확인됨, ADR-KSI-004)에서 우리
-   대시보드 페이지를 열고, 브라우저 콘솔(또는 페이지에 심어둔 진단 스크립트)로
-   `typeof window.djiBridge` 를 찍는다 — `undefined` 면 이 경로 자체가 이
-   RC/Pilot 2 버전에 없다는 뜻이고, 그 자체가 결론이다(지어내지 않는다).
-2. 있으면 `window.djiBridge.platformVerifyLicense`/`window.djiBridge.apiGetToken`
-   (또는 실제 SDK가 노출하는 대응 함수 — **정확한 함수명·인자는 이 세션이
-   developer.dji.com 라이브 문서를 못 읽어 확정하지 못했다**, HIL 담당자가
-   실기 세션 전에 그 문서를 직접 열어 확정할 것) 호출이 우리 App
-   Key/License로 통과하는지만 본다 — wayline 업로드·발급은 이 단계에서
-   **절대 시도하지 않는다**(그 경로가 실제로 있는지조차 미확인인 상태에서
-   실행을 걸면 무엇을 확인한 것인지 불분명해진다).
-3. `window.djiBridge`가 노출하는 함수 전체 목록(`Object.keys(window.djiBridge)`
-   또는 동등한 열거)을 raw log로 남긴다 — wayline 관련 함수명이 실제로
-   존재하는지가 이번 상충을 가장 직접적으로 좁히는 증거다.
+0. KSI workstation과 RC Plus 2를 같은 신뢰 LAN에 두고 probe를 실행한다.
 
-**PASS 증거**: `window.djiBridge` 존재 여부, 노출 함수 목록(raw), 인증
-호출 성공/실패 여부를 redacted 없이(민감정보 아님) 로그로 남긴다. 이 결과로
-`docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md`와 ADR-KSI-004 §2026-08-14
-갱신 중 어느 쪽이 맞는지 확정하고, 두 문서를 상충 없이 갱신한다.
+   ```bash
+   uv run --locked python -m ksi_dji_gateway.open_platform_probe \
+     --bind 0.0.0.0 --port 8080
+   ```
 
-**이 단계가 절대 하지 않는 것**: wayline 실제 업로드·발급·실행. 인증
+   Pilot 2 → Cloud Services → Open Platforms에
+   `http://<workstation-ip>:8080/pilot-connect`를 입력한다. probe는 GET/HEAD만 제공하고
+   access log를 남기지 않으며 CSP `connect-src 'none'`으로 결과 송신도 막는다.
+1. 화면의 `window.djiBridge` 판정을 본다. `BRIDGE ABSENT`면 이 RC/Pilot 2 환경에서
+   접속점이 노출되지 않은 것이고, 그 자체가 결론이다(지어내지 않는다).
+2. `platformGetVersion`, `platformIsVerified`, `platformVerifyLicense`,
+   `platformLoadComponent`, `platformIsComponentLoaded`, `apiGetToken`의 존재 여부를
+   화면에서 확인한다. probe는 이름을 읽을 뿐 **어느 함수도 호출하지 않는다.**
+3. 화면 사진을 owner-private HIL session에 원본으로 보관하고 digest를 기록한다.
+   RC/기체 SN, token, App Key, license 값은 기록하지 않는다.
+
+**PASS 증거**: `window.djiBridge`와 위 allowlist 함수 이름 존재 여부가 표시된 원본
+화면 및 digest. 이것은 접속점 PASS일 뿐 license 인증·module load·wayline/file transfer
+capability PASS가 아니다. 그 단계는 별도 승인 세션에서 독립적으로 검증한다.
+
+**이 단계가 절대 하지 않는 것**: license 함수 호출, token/SN 조회, DJI component load.
+라이선스 인증
 성공만으로 "Wayline Management 가 된다"고 결론 내지 않는다(부트스트랩 인증과
-실제 임무 배포 기능은 별개 사실이다 — 조사 문서 §3/§미확인 참조).
+실제 임무 배포 기능은 별개 사실이다. 이번 단계에서는 DJI 함수 자체를 호출하지 않는다.)
 
 ### 10단계 — 온보드 임무 실행 API 기종 지원 판별 (`10_waypoint_support_probe/`, 신설 2026-08-15)
 

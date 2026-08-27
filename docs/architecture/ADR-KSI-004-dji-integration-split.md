@@ -79,6 +79,34 @@ Wayline 클라이언트 코드를 지금 작성하지는 않는다** — 확인 
 구현하면, 실기에서 그 경로가 없는 것으로 밝혀졌을 때 버릴 코드를 만드는
 것이고, 있는 것으로 밝혀져도 추측으로 짠 구현이 맞는다는 보장이 없다.
 
+## 2026-08-27 갱신 — 현재 Pilot Wayline 문서 확인, exact M4D/RC 경로는 실기 유지
+
+DJI 라이브 공식 문서에서 Pilot 2 Wayline Management 페이지와 JSBridge mission
+module을 직접 확인했다. Pilot 2가 서드파티 서버의 wayline 목록을 표시하고, object
+storage를 통해 다운로드·업로드하는 기능은 문서화돼 있다. 따라서 §2026-08-15의
+“Pilot-to-Cloud에 해당 기능 문서가 없다”는 문서 수준의 상충은 해소됐다.
+
+그러나 현재 Product Supported 표는 M4D/4TD의 gateway를 Dock 3로만 적고,
+RC Plus 2 + Pilot 2 조합은 M4E/M4T에만 적는다. 그러므로 이 갱신은
+`Matrice 4D + RC Plus 2 + Pilot 2`를 지원한다고 판정하지 않는다. 결정 4의 최소
+접속점 구현을 `services/dji-gateway`의 read-only H5 probe로 구체화한다. probe는
+JSBridge와 bootstrap 함수 이름의 존재만 읽고 함수 호출·식별자 수집·결과 업로드를
+하지 않는다. 이후 단계는 다음 독립 게이트를 순서대로 통과해야 한다.
+
+1. Pilot 2 WebView에서 JSBridge 존재 확인
+2. 별도 secure configuration의 DJI Cloud API license 인증 확인
+3. API/mission module load와 wayline list read 확인
+4. Pilot-native upload/download round trip 확인
+
+각 단계는 exact hardware/firmware field evidence가 없으면 `NOT_VERIFIED`이고 production
+route flag는 OFF다. 1단계 성공은 2~4단계를 암시하지 않는다.
+
+공식 근거:
+
+- https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-wayline-management.html
+- https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/jsbridge.html
+- https://developer.dji.com/doc/cloud-api-tutorial/en/overview/product-support.html
+
 ---
 
 ## 맥락

@@ -1,5 +1,23 @@
 # DJI Cloud API — Wayline(임무) 원격 배포 경로 조사 (G3용)
 
+> **[2026-08-27 현재 공식 문서 정정]** 2025 라이브 공식 문서에는 Pilot 2 전용
+> **Wayline Management**가 명시돼 있다. H5에서 workspace와 API module을 설정한 뒤
+> mission module을 로드하면 Pilot 2가 HTTPS로 cloud wayline 목록·다운로드 주소·중복명
+> 검사·임시 업로드 credential·업로드 결과 보고를 사용한다. 따라서 아래 2026-08-15의
+> “Pilot-to-Cloud에 Wayline Management 자체가 없다”는 결론은 갱신이 멈춘 GitHub mirror
+> 문서 트리에 의존한 **낡은 결론이며 현재 설계 근거로 사용하지 않는다.**
+>
+> 다만 현재 Product Supported 표는 `Matrice 4D/4TD + Dock 3`와
+> `Matrice 4E/4T + RC Plus 2 + Pilot 2`를 각각 적고, **Matrice 4D + RC Plus 2 +
+> Pilot 2 조합은 적지 않는다.** 기능 문서의 존재와 exact hardware/path field support는
+> 별개다(REQ-ACQ-103). KSI는 read-only JSBridge probe부터 수행하고, license·module·wayline
+> 단계는 각각 별도 증거가 생길 때까지 `NOT_VERIFIED`, feature flag OFF를 유지한다.
+>
+> 현재 공식 근거:
+> - https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-wayline-management.html
+> - https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/jsbridge.html
+> - https://developer.dji.com/doc/cloud-api-tutorial/en/overview/product-support.html
+
 > **[2026-08-15 범위 한정 — ADR-KSI-020]** 이 조사는 **Cloud API 축만** 다뤘다.
 > 아래 §핵심 결론의 "Dock을 사지 않는 한 DJI 쪽에 그런 경로 자체가 없다"는 문장을
 > **온보드(PSDK) 축까지 일반화해 읽으면 안 된다** — 그 축은 이 조사의 대상이
@@ -19,7 +37,7 @@
 
 ## 핵심 결론 — G3 설계에 가장 중요한 것
 
-**"Wayline Management"(사전 계획된 임무 파일을 업로드해 발급·실행·취소하는 기능,
+**[역사적 결론 — 2026-08-27에 위 정정으로 대체됨]** "Wayline Management"(사전 계획된 임무 파일을 업로드해 발급·실행·취소하는 기능,
 G3가 필요로 하는 바로 그 기능)는 DJI Cloud API 안에서 지금까지 확인된 모든 문서
 경로가 예외 없이 `Dock-to-Cloud` 쪽에만 있다. `Pilot-to-Cloud`(Dock 없이 Pilot 2 +
 RC 만 쓰는 경로 — 이 저장소의 Profile A 구성과 동일) 쪽에는 Wayline Management 파일
@@ -100,7 +118,7 @@ Controls(DRC)"뿐인데, 이건 사전 계획 임무 업로드가 아니라 **�
 - RC Plus 2 자체의 독립 프로그래밍 인터페이스(웹뷰/JSBridge 말고 다른 것) —
   못 찾음.
 
-## M4D/Pilot Cloud 지원 여부 — 최종 결론
+## M4D/Pilot Cloud 지원 여부 — 2026-08-15 당시 결론(현재 정정됨)
 
 **기종별로 다르고, 기능별로도 다르다.** Matrice 4D/4TD 는:
 - Dock-to-Cloud(Dock 3 경유): Wayline Management **포함** 폭넓게 지원(2025-02-27~).
