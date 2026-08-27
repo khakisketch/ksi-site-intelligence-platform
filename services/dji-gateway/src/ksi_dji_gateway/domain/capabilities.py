@@ -40,9 +40,27 @@ class Capability(StrEnum):
 
 
 class CapabilityStatus(StrEnum):
+    """Field/HIL verification status for a capability route.
+
+    This status is deliberately the only evidence axis that may enable a
+    runtime route. The legacy name is retained for reader and constructor
+    compatibility.
+    """
+
     NOT_VERIFIED = "NOT_VERIFIED"
     VERIFIED = "VERIFIED"
     BLOCKED = "BLOCKED"
+
+
+class VendorDocumentationStatus(StrEnum):
+    """What vendor documentation says, independently of field evidence."""
+
+    UNKNOWN = "UNKNOWN"
+    DOCUMENTED_SUPPORTED = "DOCUMENTED_SUPPORTED"
+    DOCUMENTED_PARTIAL = "DOCUMENTED_PARTIAL"
+    NOT_LISTED = "NOT_LISTED"
+    CONFLICTING = "CONFLICTING"
+    DOCUMENTED_UNSUPPORTED = "DOCUMENTED_UNSUPPORTED"
 
 
 _LEGACY_SCOPE = "LEGACY_UNSCOPED"
@@ -58,6 +76,8 @@ class CapabilityEvidence:
     reason: str | None = None
     hardware_model: str = _LEGACY_SCOPE
     firmware_version: str = _LEGACY_SCOPE
+    vendor_documentation_status: VendorDocumentationStatus = VendorDocumentationStatus.UNKNOWN
+    vendor_documentation_ref: str | None = None
 
     def __post_init__(self) -> None:
         aware_datetime(self.checked_at, field="checked_at")
@@ -65,6 +85,26 @@ class CapabilityEvidence:
             raise ValueError("hardware_model/firmware_version은 비어 있을 수 없다")
         if self.status is CapabilityStatus.VERIFIED and not self.evidence_ref:
             raise ValueError("VERIFIED capability에는 evidence_ref가 필수다")
+        if (
+            self.vendor_documentation_status is not VendorDocumentationStatus.UNKNOWN
+            and not self.vendor_documentation_ref
+        ):
+            raise ValueError(
+                "UNKNOWN이 아닌 vendor_documentation_status에는 "
+                "vendor_documentation_ref가 필수다"
+            )
+
+    @property
+    def field_status(self) -> CapabilityStatus:
+        """Explicit name for the legacy ``status`` field's field-evidence role."""
+
+        return self.status
+
+    @property
+    def field_evidence_ref(self) -> str | None:
+        """Explicit name for the legacy ``evidence_ref`` field's field-evidence role."""
+
+        return self.evidence_ref
 
 
 class CapabilityRegistry:
@@ -89,8 +129,8 @@ class CapabilityRegistry:
                 ), item in self._evidence.items()
                 if candidate_path is path and candidate_capability is capability
             ]
-            if not any(item.status is CapabilityStatus.VERIFIED for item in matches):
-                status = matches[0].status if matches else CapabilityStatus.NOT_VERIFIED
+            if not any(item.field_status is CapabilityStatus.VERIFIED for item in matches):
+                status = matches[0].field_status if matches else CapabilityStatus.NOT_VERIFIED
                 raise CapabilityUnavailableError(
                     f"{path.value}/{capability.value} capability는 {status.value}다"
                 )
@@ -104,8 +144,8 @@ class CapabilityRegistry:
         firmware_version: str,
     ) -> CapabilityEvidence:
         item = self._evidence.get((path, capability, hardware_model, firmware_version))
-        if item is None or item.status is not CapabilityStatus.VERIFIED:
-            status = item.status if item is not None else CapabilityStatus.NOT_VERIFIED
+        if item is None or item.field_status is not CapabilityStatus.VERIFIED:
+            status = item.field_status if item is not None else CapabilityStatus.NOT_VERIFIED
             raise CapabilityUnavailableError(
                 f"{path.value}/{hardware_model}/{firmware_version}/{capability.value} "
                 f"capability는 {status.value}다"
@@ -120,4 +160,5 @@ __all__ = [
     "CapabilityStatus",
     "GatewayTransport",
     "IntegrationPath",
+    "VendorDocumentationStatus",
 ]

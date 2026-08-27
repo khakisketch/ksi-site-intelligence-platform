@@ -20,6 +20,7 @@ from ksi_dji_gateway.domain.capabilities import (
     CapabilityStatus,
     GatewayTransport,
     IntegrationPath,
+    VendorDocumentationStatus,
 )
 from ksi_dji_gateway.domain.models import (
     EdgeDispatchRequest,
@@ -165,6 +166,7 @@ __all__ = [
     "ProviderReceipt",
     "RoutablePort",
     "WaylineDispatchRequest",
+    "VendorDocumentationStatus",
     "ZeroTouchGateway",
     "request_digest",
 ]

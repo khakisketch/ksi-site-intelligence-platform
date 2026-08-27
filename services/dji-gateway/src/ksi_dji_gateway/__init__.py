@@ -28,6 +28,7 @@ from ksi_dji_gateway.gateway import (
     MediaSyncRequest,
     OperationKind,
     ProviderReceipt,
+    VendorDocumentationStatus,
     WaylineDispatchRequest,
     ZeroTouchGateway,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "RoutingContext",
     "UnixJsonBridgeClient",
     "WaylineDispatchRequest",
+    "VendorDocumentationStatus",
     "ZeroTouchGateway",
     "build_candidate_ports",
 ]

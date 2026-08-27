@@ -23,6 +23,7 @@ from ksi_dji_gateway import (
     MediaSyncRequest,
     OperationKind,
     ProviderReceipt,
+    VendorDocumentationStatus,
     WaylineDispatchRequest,
     ZeroTouchGateway,
 )
@@ -181,6 +182,31 @@ def test_verified_capability_requires_evidence_and_object_refs_cannot_embed_quer
         replace(_wayline(), wayline_object_ref="https://storage/item?token=secret")
 
 
+def test_vendor_documentation_is_a_separate_evidence_axis() -> None:
+    evidence = CapabilityEvidence(
+        path=IntegrationPath.DJI_CLOUD,
+        capability=Capability.WAYLINE_DELIVERY,
+        status=CapabilityStatus.NOT_VERIFIED,
+        checked_at=_NOW,
+        vendor_documentation_status=VendorDocumentationStatus.DOCUMENTED_PARTIAL,
+        vendor_documentation_ref="dji/cloud-api/release-notes#wayline",
+    )
+
+    assert evidence.field_status is CapabilityStatus.NOT_VERIFIED
+    assert evidence.field_evidence_ref is None
+    assert evidence.vendor_documentation_status is VendorDocumentationStatus.DOCUMENTED_PARTIAL
+    assert evidence.vendor_documentation_ref == "dji/cloud-api/release-notes#wayline"
+
+    with pytest.raises(ValueError, match="vendor_documentation_ref"):
+        CapabilityEvidence(
+            path=IntegrationPath.DJI_CLOUD,
+            capability=Capability.WAYLINE_DELIVERY,
+            status=CapabilityStatus.NOT_VERIFIED,
+            checked_at=_NOW,
+            vendor_documentation_status=VendorDocumentationStatus.DOCUMENTED_SUPPORTED,
+        )
+
+
 class _RoutePort:
     def __init__(
         self,
@@ -288,6 +314,47 @@ def test_capability_router_defaults_every_feature_flag_off() -> None:
             edge_device_id="edge-a",
             hardware_model="M4D",
             firmware_version="unknown",
+            allowed_transports=frozenset({GatewayTransport.RC_WIFI}),
+        )
+
+
+def test_capability_router_rejects_documented_but_field_unverified_capability() -> None:
+    hardware = "M4D-RC-PLUS-2-M3"
+    firmware = "rc-cloud-1"
+    port = _RoutePort(
+        "rc-cloud",
+        IntegrationPath.DJI_CLOUD,
+        GatewayTransport.RC_WIFI,
+        frozenset({Capability.WAYLINE_DELIVERY}),
+    )
+    router = CapabilityRouter(
+        routes=(CapabilityRoute(port, 0),),
+        registry=CapabilityRegistry(
+            [
+                CapabilityEvidence(
+                    path=IntegrationPath.DJI_CLOUD,
+                    capability=Capability.WAYLINE_DELIVERY,
+                    status=CapabilityStatus.NOT_VERIFIED,
+                    checked_at=_NOW,
+                    hardware_model=hardware,
+                    firmware_version=firmware,
+                    vendor_documentation_status=VendorDocumentationStatus.DOCUMENTED_SUPPORTED,
+                    vendor_documentation_ref="dji/cloud-api/support-matrix#m4d",
+                )
+            ]
+        ),
+        feature_flags={Capability.WAYLINE_DELIVERY: True},
+    )
+
+    with pytest.raises(CapabilityUnavailableError, match="NOT_VERIFIED"):
+        router.select(
+            Capability.WAYLINE_DELIVERY,
+            organization_id="org-a",
+            site_id="site-a",
+            gateway_device_id="gateway-a",
+            edge_device_id="edge-a",
+            hardware_model=hardware,
+            firmware_version=firmware,
             allowed_transports=frozenset({GatewayTransport.RC_WIFI}),
         )
 
