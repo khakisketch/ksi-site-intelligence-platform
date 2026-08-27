@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
@@ -37,6 +38,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -177,6 +179,20 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             site_store.get_scoped(site_id, organization_id) is not None
         ),
     )
+    acquisition_coordination_store = AcquisitionCoordinationStore(
+        DurableJournal(tmp_path / "acquisition-runs.jsonl")
+    )
+    flight_artifact_store = FlightArtifactStore(
+        DurableJournal(tmp_path / "flight-artifacts.jsonl"),
+        mission_store=mission_store,
+        storage=storage,
+    )
+    capture_quality_report_store = CaptureQualityReportStore(
+        DurableJournal(tmp_path / "capture-quality-reports.jsonl"),
+        mission_store=mission_store,
+        work_order_store=observation_work_order_store,
+        coordination_store=acquisition_coordination_store,
+    )
     design_conformance_request_store = DesignConformanceRequestStore(
         DurableJournal(tmp_path / "design-conformance-requests.jsonl"),
         mission_store=mission_store,
@@ -232,9 +248,8 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
-        "acquisition_coordination_store": AcquisitionCoordinationStore(
-            DurableJournal(tmp_path / "acquisition-runs.jsonl")
-        ),
+        "acquisition_coordination_store": acquisition_coordination_store,
+        "capture_quality_report_store": capture_quality_report_store,
         "processing_job_store": processing_job_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),
@@ -273,6 +288,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         ),
         "mission_signing_key": signing_key,
         "mission_signing_key_id": signing_key_id,
+        "flight_artifact_store": flight_artifact_store,
     }
 
 

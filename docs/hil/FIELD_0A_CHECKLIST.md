@@ -4,6 +4,10 @@
 >
 > **비행하지 않는다. 매니폴드도 필요 없다.** 기체·조종기 전원만 있으면 된다.
 > 이 세션이 FIELD-1(첫 실제 매핑 비행)의 **유일한 전제**다.
+>
+> **PASS 증거는 `/mnt/ksi-field-evidence`의 사내 network share에만 둔다.** 로컬
+> 디스크, symlink, world/group-readable 디렉터리, 재인코딩된 사진만으로는 FIELD-0a를
+> 시작하거나 PASS로 기록하지 않는다.
 
 ## 0. 이 세션에서 절대 하지 않는 것
 
@@ -18,6 +22,7 @@
 |---|---|
 | Matrice 4D + RC Plus 2 | 프로펠러 제거 |
 | USB 저장매체 또는 조종기 파일 전송 경로 | KMZ 3개를 옮긴다 |
+| `/mnt/ksi-field-evidence` 사내 share | 실제 `nfs`/`nfs4`/`cifs`/`smb3` mount, 세션 전용 0700 디렉터리 |
 | `docs/hil/field0a-kit/KSI-FIELD0A-A-droneEnum-100-payload-98.kmz` | **현재 제품이 실제로 발급하는 값**(공식 표 근거) |
 | `docs/hil/field0a-kit/KSI-FIELD0A-B-droneEnum-99-payload-65534.kmz` | 직전 제품값(2026-08-18 이전 발급분과 동일) |
 | `docs/hil/field0a-kit/KSI-FIELD0A-C-droneEnum-100-wpml-1.0.3.kmz` | A 와 같고 **형식 버전만** 1.0.3(DJI 공식 샘플의 버전) |
@@ -35,6 +40,29 @@
 생성 직후 `field0a-kit/SHA256SUMS`에 세 파일의 SHA-256이 기록된다. 조종기로 옮기기
 전에 `cd docs/hil/field0a-kit && sha256sum -c SHA256SUMS`로 전송 대상이 이
 체크리스트의 정확한 실험 파일인지 확인한다.
+
+### Durable evidence preflight
+
+세션을 시작하기 전에 다음을 읽기 전용으로 확인한다. mount가 없거나 FSTYPE가
+`nfs`, `nfs4`, `cifs`, `smb3` 중 하나가 아니면 **기체를 조작하지 않고 중단**한다.
+로컬 ext4 디렉터리를 같은 경로로 만들어 우회하지 않는다.
+
+```bash
+findmnt -T /mnt/ksi-field-evidence -o TARGET,SOURCE,FSTYPE,OPTIONS
+```
+
+확인 뒤 share 바로 아래에 세션 하나만 만들고 owner-only로 둔다. 이 경로가 후속
+attestation의 `raw_evidence_root`다. 파일명에는 serial·GPS·고객 현장명을 넣지 않는다.
+
+```text
+/mnt/ksi-field-evidence/
+  field0a-<UTC-session-id>/          # mode 0700
+    pilot-import-A.png               # 또는 A/B/C의 실제 화면 증거
+    pilot-native-mapping.kmz         # Pilot 2가 직접 export한 원본 bytes
+    m4d-wide-original.jpg|mpo        # 재인코딩하지 않은 원본
+    field0a-session-attestation.json # mode 0600
+    field0a-readiness.json           # mode 0600
+```
 
 ## 2. 절차 A — 우리 비행파일을 Pilot 2 가 받는가
 
@@ -143,7 +171,84 @@ docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이
 
 ## 6. 세션 후
 
-- `hil_raw_logs/<session_id>/` 규약대로 남긴다(`RAW_LOG_CONVENTIONS.md`).
+- 원본 화면·Pilot-native KMZ·M4D 사진을 위 owner-only session directory에 먼저 둔다.
+  다른 임시 저장소에서 복사했다면 원본과 share 복사본의 SHA-256을 다시 대조하고,
+  audit에는 **share 복사본 경로만** 준다. raw KMZ·사진·화면·serial·GPS를 Git에 넣지
+  않는다.
+- `hil_raw_logs/<session_id>/` 규약의 durable 저장소 원칙을 따른다
+  (`RAW_LOG_CONVENTIONS.md`). FIELD-0a의 durable 경로는 이 실행에서는
+  `/mnt/ksi-field-evidence/<session-id>/`다.
+- `field0a-session-attestation.json`은 현재 사용자가 소유한 0600 일반 JSON 파일이어야
+  한다. `build_commit`은 **software gate를 통과한 기능 커밋**으로 고정하고, 모든
+  artifact에는 같은 `session_id`, `operator_id`, UTC 관찰 시각, share 아래 상대 경로와
+  SHA-256을 쓴다. safety scope는 `device_contact=true`, `device_write=true`,
+  `propellers_removed=true`, `flight_or_motor_action=false`만 허용한다.
+
+  ```json
+  {
+    "schema_version": "1.0",
+    "session_id": "field0a-<UTC-session-id>",
+    "operator_id": "<operator-alias>",
+    "operator_attested": true,
+    "build_commit": "<git-rev-parse-HEAD>",
+    "started_at_utc": "<UTC>",
+    "ended_at_utc": "<UTC>",
+    "safety_scope": {
+      "device_contact": true,
+      "device_write": true,
+      "propellers_removed": true,
+      "flight_or_motor_action": false
+    },
+    "raw_evidence_root": "/mnt/ksi-field-evidence/field0a-<UTC-session-id>",
+    "pilot_imports": [
+      {
+        "variant": "A",
+        "result": "IMPORTED_AND_MAPPED",
+        "session_id": "field0a-<UTC-session-id>",
+        "operator_id": "<operator-alias>",
+        "observed_at_utc": "<UTC>",
+        "raw_evidence_path": "pilot-import-A.png",
+        "sha256": "<sha256>"
+      }
+    ],
+    "pilot_export": {
+      "session_id": "field0a-<UTC-session-id>",
+      "operator_id": "<operator-alias>",
+      "observed_at_utc": "<UTC>",
+      "raw_evidence_path": "pilot-native-mapping.kmz",
+      "sha256": "<sha256>"
+    },
+    "m4d_original": {
+      "session_id": "field0a-<UTC-session-id>",
+      "operator_id": "<operator-alias>",
+      "observed_at_utc": "<UTC>",
+      "raw_evidence_path": "m4d-wide-original.jpg",
+      "sha256": "<sha256>"
+    }
+  }
+  ```
+
+  A가 거부돼 B/C도 시험했다면 실제 순서대로 각 화면 증거를 `pilot_imports`에 추가한다.
+  아래 audit 명령에도 각 증거 파일마다 `--pilot-import-evidence <share-path>`를 한 번씩
+  추가해야 한다. attestation 배열 순서와 명령 인자 순서는 동일해야 한다.
+  A/B/C 모두 거부 또는 표시 이상이면 `result: "REJECTED"`와 원문 오류 문구를 raw
+  evidence에 보존하고, audit 결과를 억지로 PASS로 바꾸지 않는다.
+- 다음 명령이 `FIELD-0a PASS`인지 typed blocker인지 판정한다. 이는 실제 Pilot 2
+  import/export provenance와 M4D 원본을 확인하는 도구이지, 비행·모터·Phase 3
+  capability를 승인하는 도구가 아니다.
+
+  ```bash
+  uv run --locked python tools/hil/audit_phase3_readiness.py \
+    --pilot-import-evidence /mnt/ksi-field-evidence/<session-id>/pilot-import-A.png \
+    --pilot-export-kmz /mnt/ksi-field-evidence/<session-id>/pilot-native-mapping.kmz \
+    --m4d-jpeg /mnt/ksi-field-evidence/<session-id>/m4d-wide-original.jpg \
+    --field0a-session-attestation /mnt/ksi-field-evidence/<session-id>/field0a-session-attestation.json \
+    --output /mnt/ksi-field-evidence/<session-id>/field0a-readiness.json
+  ```
+
+- Git에는 session ID, raw file name, raw bytes, serial, GPS를 기록하지 않는다. 비민감
+  digest·판정·필요한 WPML/XML 비교 결과와 승인된 durable evidence URI만 목표 원장,
+  Phase Registry, `.ai` handoff에 남긴다.
 - 결과를 목표 `field-0a-kmz-acceptance` 의 attempt 증거로 기록한다.
 - EXIF 실측값이 유도값과 다르면 `apps/dashboard/src/lib/aircraft.ts` 하나만 갱신하고,
   기존 커버리지 계약 시험이 그대로 통과하는지 확인한다.

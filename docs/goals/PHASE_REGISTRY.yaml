@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-26"
+updated: "2026-08-27"
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -98,6 +98,44 @@ operations_console_delivery:
     - id: phase-5-single-customer-pilot
       status: PLANNED
       gate: "FIELD-0a/0b/1/2 and Cloud legal/security approvals"
+
+# 이 workstream은 software contract/projection의 개선 계획이다. Phase 3B 장비 write,
+# FIELD-0a/0b/1/2, capability VERIFIED 또는 비행 실행 단계가 진전됐다는 뜻이 아니다.
+confirmed_next_improvements:
+  authority: "docs/architecture/ADR-KSI-028-mission-intent-flight-artifact-authority.md; docs/architecture/ADR-KSI-029-observation-epoch-analysis-readiness.md"
+  status: IN_PROGRESS
+  guard: >-
+    Pilot 2 import/export 및 exact hardware evidence 전에는 KSI_WPML을 candidate/fallback으로
+    유지하고, 모든 DJI path와 capability flag는 NOT_VERIFIED/OFF를 유지한다.
+  workstreams:
+    - id: flight-artifact-authority
+      status: IN_PROGRESS
+      scope: >-
+        DJI_PILOT_EXPORT의 구조 검증·exact-byte 보관·source/revision/digest candidate journal;
+        Mission Contract final binding은 의도적으로 아직 열지 않음
+      gate: "FIELD-0a Pilot 2 import/export provenance comparison before default compiler selection"
+      software_evidence_2026_08_27: >-
+        Core는 안전한 ZIP/WPML 구조·범위 대조를 거친 Pilot export를
+        VALIDATED_CANDIDATE_UNBOUND로만 immutable 보관한다. 동일 digest 재시도,
+        변경 bytes의 revision, 조직 격리, 다운로드 재-hash와 기존 Mission Contract/dispatch
+        불변성을 계약 테스트로 확인했다. Pilot 2 import/export/실행 또는 final binding은
+        이 증거로 주장하지 않는다.
+    - id: analysis-readiness-v1
+      status: GATED
+      scope: "single-sortie ObservationEpoch temporal policy and derived AnalysisReadiness projection"
+      gate: "contract/replay/UI evidence; no change to real-device or field acceptance status"
+      software_evidence_2026_08_27: >-
+        WorkOrder temporal policy, immutable Edge CaptureQualityReport intake, coverage/media/capture-time/
+        processing lineage를 조인하는 fail-closed AnalysisReadiness projection과 Dashboard 표현을
+        계약·API·UI 테스트로 확인했다. READY는 real-device data quality, Pilot 2 execution,
+        PSDK producer 또는 multi-sortie acceptance를 증명하지 않는다.
+    - id: capability-evidence-two-axis
+      status: GATED
+      scope: "separate vendor-documentation evidence from field verification evidence"
+      gate: "documentation-only evidence must not activate a production route"
+      software_evidence_2026_08_27: >-
+        DJI gateway capability evidence가 vendor-documentation 축과 field-verification 축을
+        분리하며, route selection은 field VERIFIED만 사용함을 테스트로 확인했다.
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이

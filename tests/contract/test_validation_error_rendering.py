@@ -38,13 +38,38 @@ from ksi_core.auth import (
     PrincipalTokenRecord,
     Role,
 )
+from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 
 _ADMIN_TOKEN = "test-admin-token"
 _GATEWAY_TOKEN = "test-gateway-token"
+_EDGE_TOKEN = "test-edge-token"
+
+
+class _ValidationEvidenceStorage:
+    """본문 검증 게이트가 신규 후보 원장을 실제로 장착하기 위한 최소 저장소."""
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+        del content_type, ttl
+        return f"https://test.invalid/{object_key}"
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        del ttl
+        return f"https://test.invalid/{object_key}"
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        del object_key, data, content_type
+
+    def get_bytes(self, object_key: str) -> bytes:
+        del object_key
+        return b""
+
+    def delete(self, object_key: str) -> None:
+        del object_key
 
 
 def _auth_registry() -> AuthRegistry:
@@ -67,6 +92,15 @@ def _auth_registry() -> AuthRegistry:
                     kind=PrincipalKind.GATEWAY_DEVICE,
                     role=None,
                     device_id="rc-plus-2-1",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(_EDGE_TOKEN.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="edge-1",
+                    kind=PrincipalKind.EDGE_DEVICE,
+                    role=None,
+                    device_id="manifold-3-1",
                 ),
             ),
         ]
@@ -104,21 +138,36 @@ def _work_order_client(tmp_path: Path) -> TestClient:
 
 def _acquisition_client(tmp_path: Path) -> TestClient:
     site_store = SiteStore(DurableJournal(tmp_path / "acquisition-sites.jsonl"))
+    mission_store = MissionStore(DurableJournal(tmp_path / "acquisition-missions.jsonl"))
     work_order_store = ObservationWorkOrderStore(
         DurableJournal(tmp_path / "acquisition-work-orders.jsonl"),
         site_exists=lambda _site_id, _organization_id: True,
     )
+    coordination_store = AcquisitionCoordinationStore(
+        DurableJournal(tmp_path / "acquisition-runs.jsonl")
+    )
+    evidence_storage = _ValidationEvidenceStorage()
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=site_store,
-        mission_store=MissionStore(DurableJournal(tmp_path / "acquisition-missions.jsonl")),
+        mission_store=mission_store,
         observation_work_order_store=work_order_store,
         acquisition_connectivity_store=AcquisitionConnectivityStore(
             DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
             site_exists=lambda _site_id, _organization_id: True,
         ),
-        acquisition_coordination_store=AcquisitionCoordinationStore(
-            DurableJournal(tmp_path / "acquisition-runs.jsonl")
+        acquisition_coordination_store=coordination_store,
+        evidence_storage=evidence_storage,
+        flight_artifact_store=FlightArtifactStore(
+            DurableJournal(tmp_path / "flight-artifacts.jsonl"),
+            mission_store=mission_store,
+            storage=evidence_storage,
+        ),
+        capture_quality_report_store=CaptureQualityReportStore(
+            DurableJournal(tmp_path / "capture-quality-reports.jsonl"),
+            mission_store=mission_store,
+            work_order_store=work_order_store,
+            coordination_store=coordination_store,
         ),
     )
     return TestClient(app, raise_server_exceptions=False)
@@ -198,10 +247,12 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
         ("PUT", "/v1/sites/site-1/acquisition-profile", _ADMIN_TOKEN),
         ("POST", "/v1/gateway-sync/heartbeats", _GATEWAY_TOKEN),
         ("POST", "/v1/gateway-sync/operation-receipts", _GATEWAY_TOKEN),
+        ("POST", "/v1/missions/mission-1/capture-quality-report", _EDGE_TOKEN),
+        ("POST", "/v1/missions/mission-1/flight-artifacts/pilot-export", _ADMIN_TOKEN),
     ],
 )
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
-def test_acquisition_hostile_bodies_are_machine_readable_422(
+def test_acquisition_and_artifact_hostile_bodies_are_machine_readable_422(
     method: str, path: str, token: str, label: str, raw: str, tmp_path: Path
 ) -> None:
     client = _acquisition_client(tmp_path)
