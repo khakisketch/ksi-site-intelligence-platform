@@ -33,8 +33,7 @@ from PIL import ExifTags, Image
 
 SCHEMA_VERSION = "1.0"
 FIELD0A_SESSION_ATTESTATION_SCHEMA_VERSION = "1.0"
-CANONICAL_FIELD0A_EVIDENCE_ROOT = Path("/mnt/ksi-field-evidence")
-_DURABLE_SHARE_FILESYSTEMS = frozenset({"nfs", "nfs4", "cifs", "smb3"})
+CANONICAL_FIELD0A_EVIDENCE_ROOT = Path.home() / ".local" / "share" / "ksi-field-evidence"
 EXPECTED_KIT_FILES = (
     "KSI-FIELD0A-A-droneEnum-100-payload-98.kmz",
     "KSI-FIELD0A-B-droneEnum-99-payload-65534.kmz",
@@ -418,54 +417,51 @@ def _owner_private_json(path: Path) -> Mapping[str, Any]:
 
 
 def _canonical_field0a_evidence_root() -> Path:
-    """Return the operator-provisioned network-share mount for FIELD-0a raw evidence."""
+    """Return the operator-owned local root for private FIELD-0a raw evidence."""
 
     return CANONICAL_FIELD0A_EVIDENCE_ROOT
 
 
-def _mount_filesystem_type(path: Path) -> str | None:
-    """Return the filesystem type of the longest Linux mount containing ``path``."""
-
-    try:
-        target = path.resolve(strict=True)
-        lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return None
-    matches: list[tuple[int, str]] = []
-    for line in lines:
-        fields = line.split()
-        with suppress(ValueError):
-            separator = fields.index("-")
-            mount_point = Path(fields[4].replace(r"\040", " ").replace(r"\011", "\t"))
-            try:
-                target.relative_to(mount_point)
-            except ValueError:
-                continue
-            matches.append((len(mount_point.parts), fields[separator + 1]))
-    return max(matches, default=(0, None))[1]
-
-
-def _validate_durable_evidence_root(raw_evidence_root: Path) -> Path:
-    """Fail closed unless evidence lives in a private session directory on the share."""
+def _validate_private_evidence_root(raw_evidence_root: Path) -> Path:
+    """Fail closed unless evidence lives in the operator's private local store."""
 
     try:
         resolved_root = raw_evidence_root.resolve(strict=True)
-        canonical_root = _canonical_field0a_evidence_root().resolve(strict=True)
+        configured_root = _canonical_field0a_evidence_root()
+        if configured_root.is_symlink():
+            _attestation_error(
+                "FIELD0A_ATTESTATION_SYMLINK_REJECTED",
+                "canonical FIELD-0a evidence root symlink is not allowed",
+            )
+        canonical_root = configured_root.resolve(strict=True)
         relative = resolved_root.relative_to(canonical_root)
+    except Field0aAttestationError:
+        raise
     except (OSError, ValueError) as exc:
         raise Field0aAttestationError(
-            "FIELD0A_ATTESTATION_DURABLE_SHARE_REQUIRED",
-            "raw_evidence_root must be beneath the canonical FIELD-0a durable share",
+            "FIELD0A_ATTESTATION_PRIVATE_STORE_REQUIRED",
+            "raw_evidence_root must be beneath the canonical private FIELD-0a store",
         ) from exc
     if len(relative.parts) != 1:
         _attestation_error(
-            "FIELD0A_ATTESTATION_DURABLE_SHARE_REQUIRED",
-            "raw_evidence_root must be a durable-share session directory",
+            "FIELD0A_ATTESTATION_PRIVATE_STORE_REQUIRED",
+            "raw_evidence_root must be a direct child session directory",
         )
-    if _mount_filesystem_type(resolved_root) not in _DURABLE_SHARE_FILESYSTEMS:
+    try:
+        canonical_info = canonical_root.stat()
+    except OSError as exc:
+        raise Field0aAttestationError(
+            "FIELD0A_ATTESTATION_PRIVATE_STORE_REQUIRED",
+            "canonical private FIELD-0a store is unavailable",
+        ) from exc
+    if (
+        not stat.S_ISDIR(canonical_info.st_mode)
+        or canonical_info.st_uid != os.geteuid()
+        or canonical_info.st_mode & 0o077
+    ):
         _attestation_error(
-            "FIELD0A_ATTESTATION_DURABLE_SHARE_REQUIRED",
-            "raw_evidence_root must be mounted from an approved network share",
+            "FIELD0A_ATTESTATION_PERMISSION_DENIED",
+            "canonical FIELD-0a evidence root must be an owner-only directory",
         )
     return resolved_root
 
@@ -523,6 +519,11 @@ def _attested_artifact(
         _attestation_error(
             "FIELD0A_ATTESTATION_PERMISSION_DENIED",
             f"{field} evidence must be an owner-held regular file",
+        )
+    if expected_info.st_mode & 0o077 or supplied_info.st_mode & 0o077:
+        _attestation_error(
+            "FIELD0A_ATTESTATION_PERMISSION_DENIED",
+            f"{field} evidence must be owner-only",
         )
     try:
         same_file = os.path.samefile(expected_path, supplied_path)
@@ -624,7 +625,7 @@ def validate_field0a_session_attestation(
             "FIELD0A_ATTESTATION_PERMISSION_DENIED",
             "raw_evidence_root must be an owner-only directory",
         )
-    raw_evidence_root = _validate_durable_evidence_root(raw_evidence_root)
+    raw_evidence_root = _validate_private_evidence_root(raw_evidence_root)
 
     imports = payload.get("pilot_imports")
     if not isinstance(imports, list) or len(imports) != len(pilot_import_evidence):

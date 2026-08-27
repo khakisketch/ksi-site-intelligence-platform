@@ -91,6 +91,8 @@ def _field0a_evidence(tool: ModuleType, tmp_path: Path) -> tuple[Path, Path, Pat
     )
     m4d = raw / "m4d-original.jpg"
     _jpeg(m4d)
+    for artifact in (screenshot, export, m4d):
+        artifact.chmod(0o600)
     return raw, screenshot, export, m4d
 
 
@@ -139,9 +141,8 @@ def _write_attestation(path: Path, payload: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
-def _mock_durable_share(tool: ModuleType, monkeypatch: pytest.MonkeyPatch, raw: Path) -> None:
+def _mock_private_store(tool: ModuleType, monkeypatch: pytest.MonkeyPatch, raw: Path) -> None:
     monkeypatch.setattr(tool, "_canonical_field0a_evidence_root", lambda: raw.parent)
-    monkeypatch.setattr(tool, "_mount_filesystem_type", lambda _path: "nfs4")
 
 
 def _attested_report(
@@ -155,7 +156,7 @@ def _attested_report(
     _repo(repo)
     commit, _dirty = tool._commit(repo)
     raw, screenshot, export, m4d = _field0a_evidence(tool, tmp_path)
-    _mock_durable_share(tool, monkeypatch, raw)
+    _mock_private_store(tool, monkeypatch, raw)
     attestation = tmp_path / "field0a-session-attestation.json"
     payload = _attestation_payload(
         commit=commit, raw=raw, screenshot=screenshot, export=export, m4d=m4d
@@ -317,7 +318,7 @@ def test_valid_private_attestation_closes_field0a_but_not_phase3(
     assert set(report["phase3"]["capabilities"].values()) == {"NOT_VERIFIED"}
 
 
-def test_attestation_rejects_a_local_or_wrong_durable_share_root(tmp_path: Path) -> None:
+def test_attestation_rejects_a_path_outside_the_private_store(tmp_path: Path) -> None:
     tool = _tool()
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -344,13 +345,12 @@ def test_attestation_rejects_a_local_or_wrong_durable_share_root(tmp_path: Path)
 
     assert (
         report["field0a"]["session_attestation"]["blocker_code"]
-        == "FIELD0A_ATTESTATION_DURABLE_SHARE_REQUIRED"
+        == "FIELD0A_ATTESTATION_PRIVATE_STORE_REQUIRED"
     )
 
 
-@pytest.mark.parametrize("filesystem", [None, "ext4"])
-def test_attestation_requires_a_network_filesystem_at_the_canonical_mount(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filesystem: str | None
+def test_attestation_requires_an_owner_private_canonical_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tool = _tool()
     repo = tmp_path / "repo"
@@ -359,7 +359,7 @@ def test_attestation_requires_a_network_filesystem_at_the_canonical_mount(
     commit, _dirty = tool._commit(repo)
     raw, screenshot, export, m4d = _field0a_evidence(tool, tmp_path)
     monkeypatch.setattr(tool, "_canonical_field0a_evidence_root", lambda: raw.parent)
-    monkeypatch.setattr(tool, "_mount_filesystem_type", lambda _path: filesystem)
+    raw.parent.chmod(0o755)
     attestation = tmp_path / "attestation.json"
     _write_attestation(
         attestation,
@@ -380,7 +380,48 @@ def test_attestation_requires_a_network_filesystem_at_the_canonical_mount(
 
     assert (
         report["field0a"]["session_attestation"]["blocker_code"]
-        == "FIELD0A_ATTESTATION_DURABLE_SHARE_REQUIRED"
+        == "FIELD0A_ATTESTATION_PERMISSION_DENIED"
+    )
+
+
+def test_attestation_rejects_a_canonical_store_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = _tool()
+    target = tmp_path / "private-store-target"
+    target.mkdir(mode=0o700)
+    raw = target / "field0a-session"
+    raw.mkdir(mode=0o700)
+    configured = tmp_path / "private-store"
+    configured.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(tool, "_canonical_field0a_evidence_root", lambda: configured)
+
+    with pytest.raises(tool.Field0aAttestationError) as captured:
+        tool._validate_private_evidence_root(raw)
+
+    assert captured.value.blocker_code == "FIELD0A_ATTESTATION_SYMLINK_REJECTED"
+
+
+def test_attestation_rejects_group_readable_raw_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = _tool()
+
+    def make_import_group_readable(payload: dict[str, Any]) -> None:
+        raw = Path(payload["raw_evidence_root"])
+        screenshot = raw / payload["pilot_imports"][0]["raw_evidence_path"]
+        screenshot.chmod(0o640)
+
+    report = _attested_report(
+        tool,
+        tmp_path,
+        monkeypatch,
+        mutate=make_import_group_readable,
+    )
+
+    assert (
+        report["field0a"]["session_attestation"]["blocker_code"]
+        == "FIELD0A_ATTESTATION_PERMISSION_DENIED"
     )
 
 
@@ -462,7 +503,7 @@ def test_attestation_digest_mismatch_is_a_typed_blocker(
     _repo(repo)
     commit, _dirty = tool._commit(repo)
     raw, screenshot, export, m4d = _field0a_evidence(tool, tmp_path)
-    _mock_durable_share(tool, monkeypatch, raw)
+    _mock_private_store(tool, monkeypatch, raw)
     payload = _attestation_payload(
         commit=commit, raw=raw, screenshot=screenshot, export=export, m4d=m4d
     )
@@ -527,7 +568,7 @@ def test_unsafe_field0a_session_is_a_typed_blocker(
     _repo(repo)
     commit, _dirty = tool._commit(repo)
     raw, screenshot, export, m4d = _field0a_evidence(tool, tmp_path)
-    _mock_durable_share(tool, monkeypatch, raw)
+    _mock_private_store(tool, monkeypatch, raw)
     payload = _attestation_payload(
         commit=commit, raw=raw, screenshot=screenshot, export=export, m4d=m4d
     )

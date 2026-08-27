@@ -1,6 +1,6 @@
 # Current Task State
 
-## 2026-08-27 — `software_closure_complete_field0a_durable_share_blocked`
+## 2026-08-27 — `software_closure_complete_field0a_private_store_ready`
 
 - Local feature commits: `2c7aee7` product authority/traceability, `fd78d11` Pilot-export
   FlightArtifact candidate, `2808c4e` CaptureQuality/AnalysisReadiness plus Dashboard,
@@ -14,11 +14,12 @@
   Vitest `58 files / 529 tests`, ESLint, TypeScript, production build; local OIDC Playwright
   `58 passed, 14 skipped`, including WorkOrder readiness/evidence-gap at 390/768/1024/1440;
   `uv lock --check`, diff and repository hygiene pass.
-- FIELD-0a preflight: all pinned A/B/C checksums pass. No physical session began because
-  `/mnt/ksi-field-evidence` is absent and `/mnt` is local `ext4`, not approved `nfs`/`nfs4`/`cifs`/
-  `smb3`. The private software audit is correctly `BLOCKED` for missing Pilot import, Pilot-native
-  export, M4D original and human attestation; it does not represent device contact or device write.
-- Next physical action: mount the actual internal share, create one 0700 direct-child session, then
+- FIELD-0a preflight: all pinned A/B/C checksums pass. No physical session has begun. The user chose
+  `$HOME/.local/share/ksi-field-evidence` as the canonical owner-private local store; root/session
+  must be 0700 and raw/attestation files 0600 with symlinks rejected. The software audit is correctly
+  `BLOCKED` for missing Pilot import, Pilot-native export, M4D original and human attestation; it does
+  not represent device contact or device write.
+- Next physical action: create one 0700 direct-child session in the private local store, then
   collect the propeller-removed/no-flight Pilot 2 and M4D evidence exactly as
   `docs/hil/FIELD_0A_CHECKLIST.md` requires. Phase 3 and all five DJI capabilities remain
   `BLOCKED`/`NOT_VERIFIED`.

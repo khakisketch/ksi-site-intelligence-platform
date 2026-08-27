@@ -1,6 +1,6 @@
 # Current Handoff
 
-## 2026-08-27 — Software closure ready; FIELD-0a physical evidence not started
+## 2026-08-27 — Software closure ready; private FIELD-0a store prepared
 
 Five local commits close the approved software scope: product authority/invariants (`2c7aee7`),
 unbound Pilot-export FlightArtifact retention (`fd78d11`), Edge CaptureQuality plus derived
@@ -16,11 +16,10 @@ Playwright `58 passed, 14 skipped` across 390/768/1024/1440. Repository hygiene,
 checks pass. Raw FIELD evidence, M4D media, Pilot KMZ, screenshots, serial/GPS and secrets remain
 untracked.
 
-FIELD-0a is not a PASS and no device was touched: the required `/mnt/ksi-field-evidence` mount is
-missing and `/mnt` is `ext4`. The no-evidence audit is correctly `BLOCKED` with Pilot import,
-Pilot-native export, M4D original and attestation blockers. Do not create a local substitute. Once
-the actual `nfs`/`nfs4`/`cifs`/`smb3` share is mounted, use the updated checklist to create a 0700
-session directory and a 0600 attestation; use the then-current `git rev-parse HEAD` as
+FIELD-0a is not a PASS and no device was touched. The user selected a simple owner-private local
+store at `$HOME/.local/share/ksi-field-evidence`; the audit requires a 0700 canonical root and
+direct-child session, 0600 raw files/attestation, current-user ownership and no symlinks. Use the
+updated checklist to create the session and use the then-current `git rev-parse HEAD` as
 `build_commit`. Until the audit binds real human-attested artifacts, FIELD-0a and Phase 3 remain
 `BLOCKED`, and all five DJI capabilities remain `NOT_VERIFIED`; Phase 3B/DPK writes, motor/flight,
 waypoint action, camera/gimbal automation and any capability promotion remain out of scope.

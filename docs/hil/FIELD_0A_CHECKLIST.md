@@ -5,9 +5,10 @@
 > **비행하지 않는다. 매니폴드도 필요 없다.** 기체·조종기 전원만 있으면 된다.
 > 이 세션이 FIELD-1(첫 실제 매핑 비행)의 **유일한 전제**다.
 >
-> **PASS 증거는 `/mnt/ksi-field-evidence`의 사내 network share에만 둔다.** 로컬
-> 디스크, symlink, world/group-readable 디렉터리, 재인코딩된 사진만으로는 FIELD-0a를
-> 시작하거나 PASS로 기록하지 않는다.
+> **PASS 증거는 `$HOME/.local/share/ksi-field-evidence`의 사용자 전용 로컬 저장소에
+> 둔다.** canonical root와 세션 디렉터리는 0700, 원본과 attestation은 0600이어야 한다.
+> symlink, 다른 사용자 소유, world/group-readable 경로, 재인코딩된 사진만으로는
+> FIELD-0a를 시작하거나 PASS로 기록하지 않는다.
 
 ## 0. 이 세션에서 절대 하지 않는 것
 
@@ -22,7 +23,7 @@
 |---|---|
 | Matrice 4D + RC Plus 2 | 프로펠러 제거 |
 | USB 저장매체 또는 조종기 파일 전송 경로 | KMZ 3개를 옮긴다 |
-| `/mnt/ksi-field-evidence` 사내 share | 실제 `nfs`/`nfs4`/`cifs`/`smb3` mount, 세션 전용 0700 디렉터리 |
+| `$HOME/.local/share/ksi-field-evidence` | 사용자 소유 로컬 root 0700, 세션 전용 0700 디렉터리 |
 | `docs/hil/field0a-kit/KSI-FIELD0A-A-droneEnum-100-payload-98.kmz` | **현재 제품이 실제로 발급하는 값**(공식 표 근거) |
 | `docs/hil/field0a-kit/KSI-FIELD0A-B-droneEnum-99-payload-65534.kmz` | 직전 제품값(2026-08-18 이전 발급분과 동일) |
 | `docs/hil/field0a-kit/KSI-FIELD0A-C-droneEnum-100-wpml-1.0.3.kmz` | A 와 같고 **형식 버전만** 1.0.3(DJI 공식 샘플의 버전) |
@@ -41,25 +42,31 @@
 전에 `cd docs/hil/field0a-kit && sha256sum -c SHA256SUMS`로 전송 대상이 이
 체크리스트의 정확한 실험 파일인지 확인한다.
 
-### Durable evidence preflight
+### Private evidence preflight
 
-세션을 시작하기 전에 다음을 읽기 전용으로 확인한다. mount가 없거나 FSTYPE가
-`nfs`, `nfs4`, `cifs`, `smb3` 중 하나가 아니면 **기체를 조작하지 않고 중단**한다.
-로컬 ext4 디렉터리를 같은 경로로 만들어 우회하지 않는다.
+세션을 시작하기 전에 canonical local root를 만들고 소유권·권한·symlink 여부를 확인한다.
+어느 하나라도 다르면 **기체를 조작하지 않고 중단**한다. 이 단순 로컬 정책은 별도 NAS가
+없는 단일 운영자 FIELD-0a를 위한 것이며, 디스크 고장 시 증거가 함께 사라질 수 있다는
+운영 위험을 수용한다.
 
 ```bash
-findmnt -T /mnt/ksi-field-evidence -o TARGET,SOURCE,FSTYPE,OPTIONS
+ksi_field_root="${HOME}/.local/share/ksi-field-evidence"
+install -d -m 700 "$ksi_field_root"
+test ! -L "$ksi_field_root"
+test "$(stat -c '%U' "$ksi_field_root")" = "$(id -un)"
+test "$(stat -c '%a' "$ksi_field_root")" = "700"
 ```
 
-확인 뒤 share 바로 아래에 세션 하나만 만들고 owner-only로 둔다. 이 경로가 후속
-attestation의 `raw_evidence_root`다. 파일명에는 serial·GPS·고객 현장명을 넣지 않는다.
+확인 뒤 root 바로 아래에 세션 하나만 만들고 owner-only로 둔다. 이 경로가 후속
+attestation의 `raw_evidence_root`다. `umask 077`을 먼저 적용하고, 파일명에는
+serial·GPS·고객 현장명을 넣지 않는다.
 
 ```text
-/mnt/ksi-field-evidence/
+$HOME/.local/share/ksi-field-evidence/
   field0a-<UTC-session-id>/          # mode 0700
-    pilot-import-A.png               # 또는 A/B/C의 실제 화면 증거
-    pilot-native-mapping.kmz         # Pilot 2가 직접 export한 원본 bytes
-    m4d-wide-original.jpg|mpo        # 재인코딩하지 않은 원본
+    pilot-import-A.png               # mode 0600, 또는 A/B/C의 실제 화면 증거
+    pilot-native-mapping.kmz         # mode 0600, Pilot 2가 직접 export한 원본 bytes
+    m4d-wide-original.jpg|mpo        # mode 0600, 재인코딩하지 않은 원본
     field0a-session-attestation.json # mode 0600
     field0a-readiness.json           # mode 0600
 ```
@@ -172,15 +179,15 @@ docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이
 ## 6. 세션 후
 
 - 원본 화면·Pilot-native KMZ·M4D 사진을 위 owner-only session directory에 먼저 둔다.
-  다른 임시 저장소에서 복사했다면 원본과 share 복사본의 SHA-256을 다시 대조하고,
-  audit에는 **share 복사본 경로만** 준다. raw KMZ·사진·화면·serial·GPS를 Git에 넣지
+  다른 임시 저장소에서 복사했다면 원본과 private-store 복사본의 SHA-256을 다시 대조하고,
+  audit에는 **private-store 복사본 경로만** 준다. raw KMZ·사진·화면·serial·GPS를 Git에 넣지
   않는다.
-- `hil_raw_logs/<session_id>/` 규약의 durable 저장소 원칙을 따른다
-  (`RAW_LOG_CONVENTIONS.md`). FIELD-0a의 durable 경로는 이 실행에서는
-  `/mnt/ksi-field-evidence/<session-id>/`다.
+- `hil_raw_logs/<session_id>/` 규약의 무결성·비공개 원칙을 따른다
+  (`RAW_LOG_CONVENTIONS.md`). FIELD-0a의 private 경로는 이 실행에서는
+  `$HOME/.local/share/ksi-field-evidence/<session-id>/`다.
 - `field0a-session-attestation.json`은 현재 사용자가 소유한 0600 일반 JSON 파일이어야
   한다. `build_commit`은 **software gate를 통과한 기능 커밋**으로 고정하고, 모든
-  artifact에는 같은 `session_id`, `operator_id`, UTC 관찰 시각, share 아래 상대 경로와
+  artifact에는 같은 `session_id`, `operator_id`, UTC 관찰 시각, private root 아래 상대 경로와
   SHA-256을 쓴다. safety scope는 `device_contact=true`, `device_write=true`,
   `propellers_removed=true`, `flight_or_motor_action=false`만 허용한다.
 
@@ -199,7 +206,7 @@ docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이
       "propellers_removed": true,
       "flight_or_motor_action": false
     },
-    "raw_evidence_root": "/mnt/ksi-field-evidence/field0a-<UTC-session-id>",
+    "raw_evidence_root": "/home/ksi/.local/share/ksi-field-evidence/field0a-<UTC-session-id>",
     "pilot_imports": [
       {
         "variant": "A",
@@ -229,7 +236,7 @@ docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이
   ```
 
   A가 거부돼 B/C도 시험했다면 실제 순서대로 각 화면 증거를 `pilot_imports`에 추가한다.
-  아래 audit 명령에도 각 증거 파일마다 `--pilot-import-evidence <share-path>`를 한 번씩
+  아래 audit 명령에도 각 증거 파일마다 `--pilot-import-evidence <private-path>`를 한 번씩
   추가해야 한다. attestation 배열 순서와 명령 인자 순서는 동일해야 한다.
   A/B/C 모두 거부 또는 표시 이상이면 `result: "REJECTED"`와 원문 오류 문구를 raw
   evidence에 보존하고, audit 결과를 억지로 PASS로 바꾸지 않는다.
@@ -238,16 +245,17 @@ docstring 에 적어뒀다("등록된 시각이지 세상을 관측한 시각이
   capability를 승인하는 도구가 아니다.
 
   ```bash
+  ksi_field_session="${HOME}/.local/share/ksi-field-evidence/<session-id>"
   uv run --locked python tools/hil/audit_phase3_readiness.py \
-    --pilot-import-evidence /mnt/ksi-field-evidence/<session-id>/pilot-import-A.png \
-    --pilot-export-kmz /mnt/ksi-field-evidence/<session-id>/pilot-native-mapping.kmz \
-    --m4d-jpeg /mnt/ksi-field-evidence/<session-id>/m4d-wide-original.jpg \
-    --field0a-session-attestation /mnt/ksi-field-evidence/<session-id>/field0a-session-attestation.json \
-    --output /mnt/ksi-field-evidence/<session-id>/field0a-readiness.json
+    --pilot-import-evidence "$ksi_field_session/pilot-import-A.png" \
+    --pilot-export-kmz "$ksi_field_session/pilot-native-mapping.kmz" \
+    --m4d-jpeg "$ksi_field_session/m4d-wide-original.jpg" \
+    --field0a-session-attestation "$ksi_field_session/field0a-session-attestation.json" \
+    --output "$ksi_field_session/field0a-readiness.json"
   ```
 
-- Git에는 session ID, raw file name, raw bytes, serial, GPS를 기록하지 않는다. 비민감
-  digest·판정·필요한 WPML/XML 비교 결과와 승인된 durable evidence URI만 목표 원장,
+- Git에는 session ID, local absolute path, raw file name, raw bytes, serial, GPS를 기록하지 않는다. 비민감
+  digest·판정·필요한 WPML/XML 비교 결과만 목표 원장,
   Phase Registry, `.ai` handoff에 남긴다.
 - 결과를 목표 `field-0a-kmz-acceptance` 의 attempt 증거로 기록한다.
 - EXIF 실측값이 유도값과 다르면 `apps/dashboard/src/lib/aircraft.ts` 하나만 갱신하고,

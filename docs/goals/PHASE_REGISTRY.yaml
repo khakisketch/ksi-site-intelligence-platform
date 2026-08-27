@@ -92,12 +92,11 @@ operations_console_delivery:
         original M4D WideCamera metadata were re-audited without device contact. Pilot-exported
         mapping KMZ provenance and explicit physical-session approval are still absent. All five
         Connected Edge capabilities remain NOT_VERIFIED.
-      durable_share_preflight_2026_08_27: >-
-        The approved /mnt/ksi-field-evidence durable share was not mounted: the path was absent and
-        /mnt resolved to local ext4, not nfs/nfs4/cifs/smb3. No FIELD-0a device session began and the
-        private software audit stayed BLOCKED for Pilot import, Pilot-native export, M4D original and
-        human attestation evidence. Do not create a local substitute; all five capabilities remain
-        NOT_VERIFIED.
+      private_evidence_store_policy_2026_08_27: >-
+        The user selected the simplest no-NAS FIELD-0a policy: an owner-private canonical local root at
+        $HOME/.local/share/ksi-field-evidence, with 0700 root/session directories, 0600 raw/attestation
+        files, current-user ownership, no symlinks and exact SHA-256/session binding. No FIELD-0a device
+        session has begun; all five capabilities remain NOT_VERIFIED.
     - id: phase-4-verified-integration
       status: PLANNED
       gate: "capability-specific HIL evidence"

@@ -2,7 +2,7 @@
 
 `REQ-MSN-104`, `REQ-WRK-101`, `REQ-ACQ-102/103`, `REQ-INT-102/103`, `REQ-SEC-101`의
 소프트웨어 개선을 기능별 local `main` 커밋으로 닫고, FIELD-0a는 Pilot 2/M4D의
-무비행 물리 증거가 **실제 사내 durable share**에 있을 때만 판정한다. `INV-011/012/016/017/018/
+무비행 물리 증거가 **사용자 전용 private evidence store**에 있을 때만 판정한다. `INV-011/012/016/017/018/
 040/041/050/060/061`은 조직·Mission·WorkOrder·device binding, immutable journal, exact
 digest, evidence-derived fail-closed projection으로 강제한다.
 
@@ -10,11 +10,12 @@ digest, evidence-derived fail-closed projection으로 강제한다.
 skipped, 3 xfailed`, Ruff, Mypy `409 source files`, Dashboard Vitest `58 files / 529 tests`,
 ESLint, TypeScript, production build, Playwright `58 passed, 14 skipped`를 통과했다.
 
-FIELD-0a physical session은 아직 시작하지 않았다. canonical `/mnt/ksi-field-evidence`가
-존재하지 않고 `/mnt`가 local `ext4`임을 재확인했으므로, 로컬 대체 디렉터리를 만들지 않고
-audit을 `BLOCKED`로 유지한다. 현재 blocker는 `PILOT_IMPORT_EVIDENCE_REQUIRED`,
+FIELD-0a physical session은 아직 시작하지 않았다. 사용자가 NAS 없는 단순 로컬 운영을
+선택했으므로 canonical root는 `$HOME/.local/share/ksi-field-evidence`이며 root/session 0700,
+raw/attestation 0600, owner-only, no-symlink로 fail closed한다. 현재 blocker는
+`PILOT_IMPORT_EVIDENCE_REQUIRED`,
 `M4D_ORIGINAL_METADATA_REQUIRED`, `PILOT_EXPORT_KMZ_REQUIRED`,
-`FIELD0A_ATTESTATION_REQUIRED`다. mount가 준비되면 owner-only direct-child session에서
+`FIELD0A_ATTESTATION_REQUIRED`다. owner-only direct-child session에서
 propeller-removed/no-flight 절차와 human attestation을 수행한다.
 
 Phase 3B DPK write/restart, flight/motor/waypoint action, camera/gimbal automation, capability
