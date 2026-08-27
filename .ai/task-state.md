@@ -1,5 +1,24 @@
 # Current Task State
 
+## 2026-08-27 — `pilot_open_platform_jsbridge_surface_observed`
+
+- Real-device scope: RC Plus 2/Pilot 2 loaded the read-only KSI probe while M4D propellers were
+  removed. No flight, motor, camera/gimbal, mission execution or DJI function call occurred.
+- Observation: `window.djiBridge` and six bootstrap method names were shown present:
+  `platformGetVersion`, `platformIsVerified`, `platformVerifyLicense`, `platformLoadComponent`,
+  `platformIsComponentLoaded`, `apiGetToken`.
+- Evidence: owner-attested private 0600 JSON, SHA-256
+  `9619c95404d10f19063ab3b8cc53b02d71bbc2402f6a637f75de4d4be1386010`. No raw screen was
+  captured, and no IP, serial, GPS, credential or token is tracked in Git.
+- Verdict: `JSBRIDGE_SURFACE_OBSERVED`. This does not verify license authentication, component
+  loading, Wayline/Media/MQTT/WS/MOP paths or the exact M4D + RC Plus 2 support combination.
+  Phase 3 remains `BLOCKED`; all five capabilities remain `NOT_VERIFIED`/OFF.
+- Next gate: obtain DJI developer application credentials through an owner-private secret path and
+  perform separately authorized Cloud API license authentication. Never paste App Key/License into
+  chat, shell history, logs or Git.
+
+---
+
 ## 2026-08-27 — `software_closure_complete_field0a_private_store_ready`
 
 - Local feature commits: `2c7aee7` product authority/traceability, `fd78d11` Pilot-export

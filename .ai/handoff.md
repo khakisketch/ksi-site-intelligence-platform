@@ -1,5 +1,21 @@
 # Current Handoff
 
+## 2026-08-27 — Pilot 2 read-only JSBridge surface observed; capability unchanged
+
+On real RC Plus 2/Pilot 2, with M4D propellers removed and no flight or motor action, the operator
+opened the KSI read-only Open Platform probe from local commit `301c722`. Pilot 2 displayed the
+JSBridge contact message and reported all six inspected bootstrap method names present:
+`platformGetVersion`, `platformIsVerified`, `platformVerifyLicense`, `platformLoadComponent`,
+`platformIsComponentLoaded` and `apiGetToken`.
+
+The probe called no DJI function, read no identifier/token and sent no result. Its owner-private 0600
+operator attestation digest is `9619c95404d10f19063ab3b8cc53b02d71bbc2402f6a637f75de4d4be1386010`;
+raw screen evidence was not captured. The durable verdict is therefore `JSBRIDGE_SURFACE_OBSERVED`,
+not Cloud API license or data-path verification. Phase 3 remains `BLOCKED`, every DJI capability
+remains `NOT_VERIFIED`/OFF, and the next separate gate is DJI Cloud API license authentication.
+
+---
+
 ## 2026-08-27 — Software closure ready; private FIELD-0a store prepared
 
 Five local commits close the approved software scope: product authority/invariants (`2c7aee7`),

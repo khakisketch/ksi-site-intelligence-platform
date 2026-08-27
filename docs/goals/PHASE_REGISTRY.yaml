@@ -95,8 +95,17 @@ operations_console_delivery:
       private_evidence_store_policy_2026_08_27: >-
         The user selected the simplest no-NAS FIELD-0a policy: an owner-private canonical local root at
         $HOME/.local/share/ksi-field-evidence, with 0700 root/session directories, 0600 raw/attestation
-        files, current-user ownership, no symlinks and exact SHA-256/session binding. No FIELD-0a device
-        session has begun; all five capabilities remain NOT_VERIFIED.
+        files, current-user ownership, no symlinks and exact SHA-256/session binding. This storage policy
+        by itself verifies no device capability; all five capabilities remain NOT_VERIFIED.
+      pilot_open_platform_observation_2026_08_27: >-
+        In a propeller-removed, no-flight/no-motor Pilot 2 session, the operator observed the read-only
+        KSI probe page, window.djiBridge, and the presence of platformGetVersion, platformIsVerified,
+        platformVerifyLicense, platformLoadComponent, platformIsComponentLoaded and apiGetToken. The
+        probe invoked none of them, read no identifier or token, and transmitted no result. The private
+        0600 operator attestation has SHA-256
+        9619c95404d10f19063ab3b8cc53b02d71bbc2402f6a637f75de4d4be1386010; no raw screen was captured.
+        This is JSBRIDGE_SURFACE_OBSERVED only, not license, component, Wayline, Media or Cloud API
+        verification. Phase 3 remains BLOCKED and all five capabilities remain NOT_VERIFIED/OFF.
     - id: phase-4-verified-integration
       status: PLANNED
       gate: "capability-specific HIL evidence"
