@@ -1,4 +1,61 @@
-# Current implementation plan (2026-08-26, local main integration)
+# Current implementation plan (2026-08-27, no-USB FIELD-0a evidence completion)
+
+Requirement IDs:
+- `REQ-ACQ-101/103`, `REQ-INT-101`, `REQ-SEC-101`; `INV-040/041/060`.
+
+Owner module:
+- `tools/hil/` private evidence preparation and `docs/hil/` procedure. Product runtime and DJI
+  Gateway read-only probe remain unchanged.
+
+Acceptance criteria:
+- Existing owner-private root and direct-child session are current-user 0700 directories, never symlinks.
+- Temporary Tailnet receiver uses an in-memory capability URL, fixed A/B/C/export/M4D slots,
+  64 MiB cap, safe KMZ/archive checks, exclusive no-follow 0600 writes and no log/download/list/egress.
+- Current M4D EXIF-derived camera constants and Dashboard wording agree; goal/risk ledger is current.
+- Formal FIELD-0a remains BLOCKED until same-session import/export/M4D/attestation passes the audit.
+
+Contracts affected:
+- None. No Mission Contract, FlightArtifact binding, dispatch, capability registry or production API changes.
+
+Reference assets:
+- `FIELD_0A_CHECKLIST.md`, existing A/B/C kit, `audit_phase3_readiness.py`, historical A import/M4D
+  evidence only as partial context.
+
+Adoption decisions:
+- REUSE Tailscale encrypted transport and owner-private local evidence policy; ADD a temporary HIL
+  receiver; PRESERVE the read-only JSBridge probe; REJECT USB re-testing and external Cloud storage.
+
+Files to change:
+- HIL receiver/test/checklist, truthful camera disclosure/test, goal/risk and handoff/phase ledgers.
+
+Tests:
+- Receiver hostile-input/permissions/archive suite, FIELD readiness/probe contracts, Dashboard targeted
+  Vitest/ESLint/TypeScript/build, Ruff/Mypy, lock/diff/hygiene and canonical kit checksums.
+
+HIL or real-device assumptions:
+- Pilot 2 Android file chooser/multipart upload is `NOT_VERIFIED` until the operator opens the URL.
+  No flight, motor, mission execution, camera automation or DJI function call is assumed.
+
+License/data implications:
+- No dependency or external Cloud. Raw evidence stays outside Git in a 0700/0600 local session.
+  The ephemeral capability URL is not a durable credential and is discarded when the process stops.
+
+Rollback:
+- Stop the receiver and revert its code/docs commit. Never delete existing Mission Contracts,
+  FlightArtifacts or raw evidence as rollback.
+
+Execution:
+1. [완료] Current SSOT/Git/goal/FIELD audit and A/B/C checksum rerun.
+2. [완료] Camera disclosure and stale goal/risk state correction.
+3. [진행] Tailnet evidence receiver implementation, hostile-input validation and documentation.
+4. [대기] Commit/push software evidence tool; create a fresh 0700 FIELD session from that build.
+5. [사용자 협업] Reconfirm propellers removed; upload A screen, Pilot-native KMZ and M4D original.
+6. [대기] Generate 0600 attestation, run audit, compare decompressed XML/EXIF and record PASS/BLOCKED.
+7. [후속 독립 게이트] DJI Cloud API license bootstrap, then read-only Wayline/Media evidence.
+
+---
+
+# Previous implementation plan (2026-08-26, local main integration)
 
 Requirement IDs:
 - 기존 변경의 추적성 유지. 통합 자체는 신규 제품 요구사항을 추가하지 않는다.

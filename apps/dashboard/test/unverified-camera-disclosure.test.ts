@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-// 격자 간격·촬영 간격·지상 해상도는 전부 DEFAULT_CAMERA 에서 파생된다. 그 상수가
-// 실측 전에는 유도값임을 숨기지 않고, 실측 후에는 그 근거가 코드에 남아야 한다.
+// 격자 간격·촬영 간격·지상 해상도는 전부 DEFAULT_CAMERA 에서 파생된다. 실측된 값과
+// 공칭값의 경계를 숨기지 않고, 측량급 정확도로 오해할 표현을 막는다.
 const SURVEY = readFileSync(
   join(process.cwd(), "src/app/sites/[siteId]/surveys/new/SurveyWizard.tsx"),
   "utf8",
@@ -14,10 +14,13 @@ const SITE_REGISTRATION = readFileSync(
   "utf8",
 );
 
-describe("미검증 카메라 상수 고지", () => {
-  it("[핵심] 파생 수치를 보여주는 자리에 근거가 미검증이라는 고지가 함께 있다", () => {
+describe("M4D 카메라 상수 근거 고지", () => {
+  it("[핵심] 파생 수치를 보여주는 자리에 실측·공칭값 경계가 함께 있다", () => {
     expect(SURVEY).toContain("지상 해상도");
-    expect(SURVEY).toContain("M4D 실측 전");
+    expect(SURVEY).toContain("원본 EXIF 실측값");
+    expect(SURVEY).toContain("센서 폭은 4/3형");
+    expect(SURVEY).toContain("측량급 정확도를 의미하지 않습니다");
+    expect(SURVEY).not.toContain("M4D 실측 전");
   });
 
   it("기체 값은 한 곳에서만 온다 — 위저드에 매직넘버를 다시 심지 않는다", () => {

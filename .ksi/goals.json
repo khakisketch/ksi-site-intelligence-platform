@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-20T18:39:02+09:00",
+  "updated_at": "2026-08-27T19:22:06+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2311,7 +2311,7 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": null,
+      "evidence": "부분 증거만 확보됨. 2026-08-20 운영자 관찰로 KSI A KMZ의 Pilot 2 import/map 표시와 원본 M4D WideCamera EXIF(12.29mm, 5280x3956, 35mm 환산 24mm)가 확인돼 카메라 SSOT와 테스트에 반영됐다. 그러나 현재 owner-private FIELD-0a 세션에는 이 증거가 같은 session attestation으로 결속돼 있지 않고 Pilot 2가 직접 export한 mapping KMZ도 없다. 2026-08-27 무입력 readiness audit는 PILOT_IMPORT_EVIDENCE_REQUIRED, M4D_ORIGINAL_METADATA_REQUIRED, PILOT_EXPORT_KMZ_REQUIRED, FIELD0A_ATTESTATION_REQUIRED를 반환했다. 따라서 formal FIELD-0a는 in_progress/BLOCKED이며 PASS가 아니다.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
@@ -2320,7 +2320,7 @@
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T23:58:13+09:00",
-      "updated_at": "2026-08-16T00:49:18+09:00"
+      "updated_at": "2026-08-27T19:22:06+09:00"
     },
     {
       "id": "decision-flight-ceiling-reference-split",
@@ -3570,17 +3570,17 @@
     },
     {
       "id": "dji-pilot-cloud-wayline-support-conflicting-docs",
-      "title": "M4D Pilot-to-Cloud Wayline Management 지원 여부 — 두 조사가 상충",
+      "title": "M4D + RC Plus 2 + Pilot 2 Wayline/Media exact 경로는 아직 field 미검증",
       "lens": "other",
       "severity": "medium",
       "status": "open",
-      "note": "ADR-KSI-004 §2026-08-14 갱신은 'Wayline Management가 Pilot 2/RC Plus 경로에도 있다'고 서술했으나 직접 인용 URL이 남아있지 않다. 2026-08-15 재조사(docs/dji/12_CLOUD_API_WAYLINE_DISPATCH_RESEARCH.md)는 DJI 공식 GitHub 미러(dji-sdk/Cloud-API-Doc) 원문을 직접 인용해 정반대 결론을 냈다 — Wayline 관련 문서 파일은 전부 dock-to-cloud 경로에만 있고 pilot-to-cloud 에는 없다(있는 것은 Live Flight Controls/DRC 실시간 조종뿐). docs/dji/11_DJI_CAPABILITY_VERIFICATION.md(기존 조사)에도 'Wayline' 단어가 아예 없어 8/14 서술의 출처를 이 저장소 안에서 재추적할 수 없다. G3(임무를 기체까지 자동 전달)의 설계 방향 전체가 이 사실에 달려 있다 — 틀린 방향으로 MQTT Wayline 클라이언트를 구현하면 버릴 코드가 된다. 해소 조건: docs/hil/HARDWARE_SESSION_PLAYBOOK.md §9단계(신설, 2026-08-15)를 실기 세션에서 실행해 window.djiBridge 존재 여부·노출 함수 목록을 직접 확인.",
+      "note": "2026-08-27 현재 DJI 라이브 공식 문서에는 Pilot 2 Wayline Management가 존재한다. 다만 Product Supported 표는 M4D/4TD + Dock 3와 M4E/M4T + RC Plus 2 + Pilot 2를 명시할 뿐, exact M4D + RC Plus 2 + Pilot 2 조합은 명시하지 않는다. 실기 Pilot 2에서 window.djiBridge와 6개 bootstrap 함수 이름은 관찰했지만 어떤 함수도 호출하지 않았고 license, component, Wayline, Media 데이터 경로는 검증하지 않았다. 해소 조건: owner-private credential로 license bootstrap을 별도 승인·관찰한 뒤, exact 조합에서 read-only Wayline/Media 목록 경로를 각자 검증한다. 그 전까지 production route와 모든 capability flag는 OFF다.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
       "created_at": "2026-08-15T21:05:12+09:00",
-      "updated_at": "2026-08-15T21:05:12+09:00"
+      "updated_at": "2026-08-27T19:22:06+09:00"
     },
     {
       "id": "shadow-flight-gate-missed-mission-execution-apis",
@@ -3629,14 +3629,14 @@
       "title": "매핑 카메라 상수가 M4D 값이 아니다 — 1인치 20MP 급 대체값이 모든 임무의 사진 밀도를 정하고 있다",
       "lens": "other",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "대시보드 두 위저드가 sensorWidthMm=13.2·focalLengthMm=8.8·5472x3648 을 기본값으로 넣는다(SiteRegistrationWizard.tsx:64, SurveyWizard.tsx:166). 코드 주석이 'M4D 실측 스펙은 미확정(H4)이라 매핑용 기체 카메라 급 값을 쓴다'고 정직하게 적어뒀다. 이 값이 GSD·footprint·격자 간격·촬영 간격·커버리지 판정 전부를 정하므로 실질적으로 **모든 매핑 임무의 사진 밀도**가 미검증 상수 위에 서 있다. PSDK 에는 페이로드 카메라 내부파라미터 조회 API 가 없다(dji_camera_manager.h 는 focus/zoom 조작뿐, 내부파라미터는 스테레오 인지 카메라용 dji_perception.h 에만 있다). 해소 경로: 기체로 지상에서 사진 1장 찍어 EXIF/XMP 를 읽는다 — 비행 불필요, FIELD-0a 에서 가능. references/repos/ksi-terra 에 DJI 사진 XMP 분석 구현이 이미 있다.",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "2026-08-20 원본 M4D WideCamera 사진의 EXIF에서 focalLength 12.29mm, 5280x3956, 35mm 환산 24mm를 확인했고 apps/dashboard/src/lib/aircraft.ts의 단일 SSOT로 반영했다. 두 위저드는 공유 상수를 import하며 이전 13.2/8.8/5472 대체값을 갖지 않는다. apps/dashboard/test/aircraft.test.ts와 unverified-camera-disclosure.test.ts가 수치·근거 고지를 고정한다. 센서 폭 17.3mm는 4/3형 공칭값이며, 이 해소는 카메라 내부표정/측량급 정확도나 FIELD-0a 전체 PASS를 주장하지 않는다.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-15T23:57:52+09:00",
-      "updated_at": "2026-08-15T23:57:52+09:00"
+      "updated_at": "2026-08-27T19:22:06+09:00"
     },
     {
       "id": "mission-drone-enum-value-is-not-m4d",

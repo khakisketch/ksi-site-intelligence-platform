@@ -1,4 +1,33 @@
-# Current goal (2026-08-27, software closure and FIELD-0a durable-share gate)
+# Current goal (2026-08-27, no-USB FIELD-0a evidence completion)
+
+완료된 소프트웨어와 `origin/main`의 `b0c3c8b` 기준선을 유지하면서, USB 재시험 없이
+Pilot 2/M4D의 formal FIELD-0a 증거를 owner-private local store에 같은 세션으로 결속한다.
+`REQ-ACQ-101/103`, `REQ-INT-101`, `REQ-SEC-101`과 `INV-040/041/060`을 적용한다.
+
+현재 사실:
+
+- Pilot 2에서 `window.djiBridge`와 6개 bootstrap 함수 이름이 보인 것은
+  `JSBRIDGE_SURFACE_OBSERVED`다. 함수 호출·license·component·Wayline/Media는 미검증이다.
+- 2026-08-20 A KMZ import/map 표시와 M4D WideCamera 원본 EXIF(12.29mm, 5280×3956)는
+  부분 증거이며 카메라 SSOT에는 반영됐다.
+- canonical FIELD-0a 세션에는 같은-session 원본/attestation이 아직 없고 Pilot-native
+  mapping KMZ도 없다. 무입력 audit의 4개 typed blocker 때문에 formal FIELD-0a와 Phase 3은
+  `BLOCKED`, 다섯 capability는 `NOT_VERIFIED`/OFF다.
+- USB 없는 회수를 위해 Tailnet capability URL로 고정 슬롯만 0600 저장하는 임시 HIL
+  수신기를 준비한다. Pilot 2 Android file picker 동작은 실기에서 아직 미검증이다.
+
+완료 조건:
+
+- 새 0700 session에서 A import 화면, Pilot-native KMZ, M4D 원본과 0600 attestation을 결속한다.
+- `audit_phase3_readiness.py`가 `FIELD-0a PASS` 또는 정확한 typed blocker를 반환한다.
+- raw 파일·session ID·local path·serial/GPS/token은 Git에 넣지 않는다.
+- 비행·motor·waypoint 실행, DPK write, camera/gimbal automation과 capability 승격은 하지 않는다.
+
+FIELD-0a가 닫힌 뒤에만 별도 DJI developer app/license bootstrap을 다음 독립 게이트로 연다.
+
+---
+
+# Previous goal (2026-08-27, software closure and FIELD-0a durable-share gate)
 
 `REQ-MSN-104`, `REQ-WRK-101`, `REQ-ACQ-102/103`, `REQ-INT-102/103`, `REQ-SEC-101`의
 소프트웨어 개선을 기능별 local `main` 커밋으로 닫고, FIELD-0a는 Pilot 2/M4D의

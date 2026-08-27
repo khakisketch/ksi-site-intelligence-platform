@@ -71,6 +71,42 @@ $HOME/.local/share/ksi-field-evidence/
     field0a-readiness.json           # mode 0600
 ```
 
+### USB가 없을 때: 임시 Tailnet 증거 수신기
+
+USB 동작을 다시 증명할 필요는 없다. RC Plus 2/Pilot 2의 파일 선택기가 허용하면,
+원본을 외부 Cloud가 아닌 이 워크스테이션의 owner-private session으로 직접 보낼 수 있다.
+이 수신기는 제품의 정상 파일 전달 경로나 DJI Cloud API가 아니라 FIELD-0a 증거 회수를
+위한 임시 전문가 도구다. 기존 read-only JSBridge probe와 별도 프로세스로 실행하며 DJI
+함수를 호출하거나 기체·조종기에 쓰지 않는다.
+
+먼저 위 규칙대로 새 session 디렉터리를 0700으로 만든다. 그다음 워크스테이션의 Tailnet
+주소에만 bind한다. 실행할 때마다 메모리에만 존재하는 새 capability URL이 출력된다.
+
+```bash
+ksi_field_session_name="field0a-<UTC-session-id>"
+ksi_tailnet_ip="$(tailscale ip -4 | head -n 1)"
+uv run --locked python tools/hil/field0a_evidence_receiver.py \
+  --session "$ksi_field_session_name" \
+  --bind "$ksi_tailnet_ip" \
+  --port 8081
+```
+
+출력된 URL은 해당 RC에서만 열고 채팅·Git·스크린샷에 남기지 않는다. 업로드 화면은 다음
+고정 슬롯만 한 번씩 받으며 원래 파일명은 저장하지 않는다.
+
+- `pilot-import-a/b/c` → 실제 시도한 A/B/C 화면. A가 성공하면 A만 올린다.
+- `pilot-export` → Pilot 2가 직접 내보낸 원본 KMZ.
+- `m4d-original` → 재인코딩하지 않은 M4D JPEG/MPO.
+
+각 파일은 server-fixed 이름과 0600 권한으로 저장되고 SHA-256·byte 수만 화면에 반환된다.
+다운로드·목록·외부 전송·덮어쓰기는 제공하지 않는다. 잘못된 파일을 올렸으면 기존 파일을
+지우거나 덮어쓰지 말고 새 session에서 다시 시작한다. 수집이 끝나면 `Ctrl-C`로 프로세스를
+종료해 capability URL을 폐기한다.
+
+Pilot 2 WebView에서 파일 선택기가 열리지 않으면 이를
+`PILOT_WEBVIEW_FILE_PICKER_NOT_AVAILABLE`로 기록하고 중단한다. 그 결과는 Cloud API나
+Wayline/Media 미지원 증거가 아니며, 다른 로컬 전송 경로를 선택해야 한다.
+
 ## 2. 절차 A — 우리 비행파일을 Pilot 2 가 받는가
 
 **이게 이 세션의 핵심이다.** 지금까지 우리 KMZ 를 실기가 읽어본 적이 0회다.
