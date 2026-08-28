@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -46,6 +46,7 @@ from ksi_processing_controller.core_client import (
     DesignSurfaceCoreClient,
     DesignSurfaceMeasurement,
 )
+from ksi_processing_controller.landxml import LandXmlError, normalise_landxml_to_geotiff
 
 if TYPE_CHECKING:
     from rasterio.io import DatasetReader
@@ -197,6 +198,19 @@ def download_design_surface(
             handle.write(chunk)
 
 
+def upload_normalized_design_surface(
+    upload_url: str, *, source: Path, http_client: httpx.Client
+) -> None:
+    """Upload a derived canonical GeoTIFF only to Core's pre-authorised key."""
+    with source.open("rb") as handle:
+        response = http_client.put(
+            upload_url,
+            content=handle,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+    response.raise_for_status()
+
+
 def verify_design_surface(
     design_surface_id: str,
     *,
@@ -204,6 +218,10 @@ def verify_design_surface(
     core: DesignSurfaceCoreClient,
     http_client: httpx.Client,
     work_dir: Path,
+    source_format: str = "geotiff",
+    surface_selector: str | None = None,
+    declared_crs: str | None = None,
+    normalization_upload_url: str | None = None,
 ) -> str:
     """설계면 1건을 내려받아 재고 보고한다. 반환값은 **Core 의 판정**이다.
 
@@ -215,9 +233,45 @@ def verify_design_surface(
     반환값은 ``VERIFIED``/``REJECTED``/``ALREADY_JUDGED`` 중 하나다 — 거부도
     이 함수에게는 정상 완주다(모듈 docstring §3).
     """
-    local_path = work_dir / f"{design_surface_id}.tif"
+    local_path = work_dir / f"{design_surface_id}.source"
+    canonical_path = work_dir / f"{design_surface_id}.canonical.tif"
     try:
         download_design_surface(download_url, destination=local_path, http_client=http_client)
+        if source_format == "landxml":
+            if not (surface_selector and declared_crs and normalization_upload_url):
+                core.report_design_surface_normalization_failure(
+                    design_surface_id,
+                    detail="LandXML pending input lacks selector, declared CRS, or upload target",
+                )
+                return "REJECTED"
+            try:
+                lineage = normalise_landxml_to_geotiff(
+                    local_path.read_bytes(),
+                    surface_selector=surface_selector,
+                    crs=declared_crs,
+                    output_path=canonical_path,
+                )
+            except LandXmlError as exc:
+                core.report_design_surface_normalization_failure(
+                    design_surface_id, detail=f"{exc.code}: {exc}"
+                )
+                return "REJECTED"
+            upload_normalized_design_surface(
+                normalization_upload_url, source=canonical_path, http_client=http_client
+            )
+            try:
+                measurement = measure_design_surface(canonical_path)
+            except DesignSurfaceMeasurementError as exc:
+                core.report_design_surface_normalization_failure(design_surface_id, detail=str(exc))
+                return "REJECTED"
+            measurement = replace(measurement, source_lineage=lineage.source_lineage())
+            verdict = core.report_design_surface_observation(design_surface_id, measurement)
+            logger.info(
+                "LandXML design surface normalisation verified: designSurfaceId=%s verdict=%s",
+                design_surface_id,
+                verdict,
+            )
+            return verdict
         try:
             measurement = measure_design_surface(local_path)
         except DesignSurfaceMeasurementError as exc:
@@ -239,11 +293,13 @@ def verify_design_surface(
         # 그 수정을 검증하며 함께 찾았다). 다운로드가 실패해 부분 파일만 있어도
         # ``missing_ok=True`` 로 안전하다.
         local_path.unlink(missing_ok=True)
+        canonical_path.unlink(missing_ok=True)
 
 
 __all__ = [
     "DesignSurfaceMeasurementError",
     "download_design_surface",
     "measure_design_surface",
+    "upload_normalized_design_surface",
     "verify_design_surface",
 ]

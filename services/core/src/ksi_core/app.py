@@ -394,6 +394,7 @@ def create_app(
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
     capture_quality_report_store: CaptureQualityReportStore | None = None,
     acquisition_issue_gate_enabled: bool = False,
+    landxml_ingress_enabled: bool = False,
     copilot_service: CopilotService | None = None,
     copilot_conversation_service: CopilotConversationService | None = None,
     site_workspace_projector: SiteWorkspaceProjector | None = None,
@@ -906,7 +907,12 @@ def create_app(
         # 않는다). store 자체는 evidence_storage 없이도 구성될 수 있다.
         from ksi_core.design_surfaces import mount_design_surfaces
 
-        mount_design_surfaces(app, design_surface_store, evidence_storage)
+        mount_design_surfaces(
+            app,
+            design_surface_store,
+            evidence_storage,
+            landxml_ingress_enabled=landxml_ingress_enabled,
+        )
 
     if processing_job_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈

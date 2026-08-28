@@ -37,6 +37,7 @@ from ksi_core.design_surfaces import (
     DesignSurfaceRejectionReason,
     DesignSurfaceSealVerdict,
     DesignSurfaceStore,
+    build_design_surface_canonical_object_key,
     build_design_surface_object_key,
     evaluate_observation,
 )
@@ -44,6 +45,7 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorageError
 from ksi_core.sites import SiteFrame, SiteStore
 from ksi_event_contracts.design_surface import (
+    KSI_LANDXML_TIN_PARSER_VERSION,
     DesignSurface,
     DesignSurfaceDeclared,
     DesignSurfaceObserved,
@@ -54,6 +56,7 @@ from ksi_event_contracts.vertical_reference import (
     VerticalReference,
     VerticalReferenceSource,
 )
+from ksi_geo_spatial.tin_surface import CANONICAL_TIN_NORMALIZATION_PROFILE
 
 _SITE_ID = "site-001"
 _OTHER_SITE_ID = "site-002"
@@ -477,7 +480,11 @@ def test_rejection_cases_cover_every_comparison_verdict() -> None:
     """새 사유를 추가하고 케이스를 안 만들면 여기서 드러난다."""
     covered = {reason for reason, _, _ in _REJECTION_CASES}
     assert covered == set(DesignSurfaceRejectionReason) - {
-        DesignSurfaceRejectionReason.UNREADABLE_RASTER
+        DesignSurfaceRejectionReason.UNREADABLE_RASTER,
+        # 이 둘은 GeoTIFF 선언/관측 비교가 아니라 LandXML 정규화 경로가 Core에
+        # 고정 사유로 기록한다. 별도 LandXML 계약 테스트가 그 경로를 덮는다.
+        DesignSurfaceRejectionReason.SOURCE_LINEAGE_INVALID,
+        DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED,
     }
 
 
@@ -752,7 +759,12 @@ class _StubStorage:
         raise NotImplementedError
 
 
-def _app(tmp_path: Path, *, storage: Any | None = None) -> TestClient:
+def _app(
+    tmp_path: Path,
+    *,
+    storage: Any | None = None,
+    landxml_ingress_enabled: bool = False,
+) -> TestClient:
     site_store = _site_store(tmp_path)
     app = create_app(
         auth_registry=_registry(),
@@ -761,6 +773,7 @@ def _app(tmp_path: Path, *, storage: Any | None = None) -> TestClient:
             DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
         ),
         evidence_storage=storage if storage is not None else _StubStorage(),
+        landxml_ingress_enabled=landxml_ingress_enabled,
     )
     return TestClient(app)
 
@@ -806,14 +819,16 @@ def _observation_payload(**overrides: Any) -> dict[str, Any]:
 
 
 def _register_over_http(client: TestClient, **kwargs: Any) -> Any:
+    payload = {
+        "name": kwargs.pop("name", "A공구 계획고"),
+        "revision": kwargs.pop("revision", "Rev.C"),
+        "declared": kwargs.pop("declared", _declared_payload()),
+        **kwargs,
+    }
     return client.post(
         f"/v1/sites/{_SITE_ID}/design-surfaces",
         headers=_headers(_ADMIN_TOKEN),
-        json={
-            "name": kwargs.pop("name", "A공구 계획고"),
-            "revision": kwargs.pop("revision", "Rev.C"),
-            "declared": kwargs.pop("declared", _declared_payload()),
-        },
+        json=payload,
     )
 
 
@@ -855,6 +870,109 @@ def test_full_journey_over_http(tmp_path: Path) -> None:
     assert surface["status"] == "VERIFIED"
     # measuredBy 는 워커가 주장한 값이 아니라 인증된 principal 이다.
     assert surface["observed"]["measuredBy"] == "worker-1"
+
+
+def test_landxml_ingress_is_flagged_and_preserves_raw_to_canonical_lineage(
+    tmp_path: Path,
+) -> None:
+    disabled_path = tmp_path / "disabled"
+    disabled_path.mkdir()
+    disabled = _app(disabled_path)
+    blocked = _register_over_http(
+        disabled, sourceFormat="landxml", surfaceSelector="Plan"
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["verdict"] == "LANDXML_INGRESS_DISABLED"
+
+    storage = _StubStorage()
+    enabled_path = tmp_path / "enabled"
+    enabled_path.mkdir()
+    client = _app(
+        enabled_path,
+        storage=storage,
+        landxml_ingress_enabled=True,
+    )
+    registered = _register_over_http(
+        client, sourceFormat="landxml", surfaceSelector="Plan"
+    )
+    assert registered.status_code == 201, registered.text
+    body = registered.json()
+    design_surface_id = body["designSurfaceId"]
+    raw_key = build_design_surface_object_key(
+        site_id=_SITE_ID, design_surface_id=design_surface_id
+    )
+    canonical_key = build_design_surface_canonical_object_key(
+        site_id=_SITE_ID, design_surface_id=design_surface_id
+    )
+    assert body["objectKey"] == raw_key
+    assert body["canonicalObjectKey"] == canonical_key
+    assert raw_key != canonical_key
+
+    sealed = client.post(
+        f"/v1/sites/{_SITE_ID}/design-surfaces/{design_surface_id}/seal",
+        headers=_headers(_ADMIN_TOKEN),
+    )
+    assert sealed.status_code == 201
+    pending = client.get("/v1/design-surfaces", headers=_headers(_WORKER_TOKEN))
+    candidate = pending.json()["surfaces"][0]
+    assert candidate["sourceFormat"] == "landxml"
+    assert candidate["surfaceSelector"] == "Plan"
+    assert candidate["declaredCrs"] == "EPSG:5186"
+    assert candidate["downloadUrl"].endswith(raw_key)
+    assert candidate["normalizationUploadUrl"].endswith(canonical_key)
+
+    observed = client.post(
+        f"/v1/design-surfaces/{design_surface_id}/observations",
+        headers=_headers(_WORKER_TOKEN),
+        json=_observation_payload(
+            sha256=_OTHER_SHA,
+            sourceLineage={
+                "sourceFormat": "landxml",
+                "sourceSha256": _SHA,
+                "surfaceSelector": "Plan",
+                "parserVersion": KSI_LANDXML_TIN_PARSER_VERSION,
+                "normalizationProfile": CANONICAL_TIN_NORMALIZATION_PROFILE,
+                "canonicalSha256": _OTHER_SHA,
+            },
+        ),
+    )
+    assert observed.status_code == 201, observed.text
+    surface = observed.json()["surface"]
+    assert surface["status"] == "VERIFIED"
+    assert surface["declared"]["sha256"] == _SHA
+    assert surface["observed"]["sha256"] == _OTHER_SHA
+    assert surface["sourceLineage"]["canonicalSha256"] == _OTHER_SHA
+
+
+def test_landxml_observation_rejects_noncanonical_parser_lineage(tmp_path: Path) -> None:
+    client = _app(tmp_path, landxml_ingress_enabled=True)
+    registered = _register_over_http(
+        client, sourceFormat="landxml", surfaceSelector="Plan"
+    )
+    design_surface_id = registered.json()["designSurfaceId"]
+    client.post(
+        f"/v1/sites/{_SITE_ID}/design-surfaces/{design_surface_id}/seal",
+        headers=_headers(_ADMIN_TOKEN),
+    )
+
+    response = client.post(
+        f"/v1/design-surfaces/{design_surface_id}/observations",
+        headers=_headers(_WORKER_TOKEN),
+        json=_observation_payload(
+            sha256=_OTHER_SHA,
+            sourceLineage={
+                "sourceFormat": "landxml",
+                "sourceSha256": _SHA,
+                "surfaceSelector": "Plan",
+                "parserVersion": "ksi-landxml-tin-v0",
+                "normalizationProfile": CANONICAL_TIN_NORMALIZATION_PROFILE,
+                "canonicalSha256": _OTHER_SHA,
+            },
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["rejectionReason"] == "SOURCE_LINEAGE_INVALID"
 
 
 def test_mismatched_observation_is_422_with_typed_reason(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ from ksi_event_contracts.design_surface import (
     DesignSurface,
     DesignSurfaceDeclared,
     DesignSurfaceObserved,
+    DesignSurfaceSourceLineage,
     DesignSurfaceStatus,
     can_transition,
     is_terminal,
@@ -143,6 +144,31 @@ def test_sealed_surface_cannot_be_used_for_conformance() -> None:
     """[핵심] 클라이언트가 '업로드했다'고 말한 것만으로는 비교 입력이 되지 않는다."""
     assert _sealed().is_usable_for_conformance is False
     assert _registered().is_usable_for_conformance is False
+
+
+def test_landxml_verified_surface_binds_raw_and_canonical_digests() -> None:
+    canonical = "c" * 64
+    lineage = DesignSurfaceSourceLineage(
+        source_sha256=_SHA,
+        surface_selector="Plan",
+        parser_version="ksi-landxml-tin-v1",
+        normalization_profile="ksi-tin-raster-v1-cell-0.5m",
+        canonical_sha256=canonical,
+    )
+    surface = _surface(
+        format="landxml",
+        surface_selector="Plan",
+        observed=_observed(sha256=canonical),
+        source_lineage=lineage,
+    )
+    assert surface.is_usable_for_conformance is True
+    with pytest.raises(ValueError, match="canonicalSha256"):
+        _surface(
+            format="landxml",
+            surface_selector="Plan",
+            observed=_observed(sha256=canonical),
+            source_lineage=lineage.model_copy(update={"canonical_sha256": _SHA}),
+        )
     assert _rejected().is_usable_for_conformance is False
     assert _surface().is_usable_for_conformance is True
 

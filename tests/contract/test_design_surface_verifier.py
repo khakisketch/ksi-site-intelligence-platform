@@ -85,6 +85,7 @@ class _FakeCore:
         self.verdict = verdict
         self.observations: list[tuple[str, DesignSurfaceMeasurement]] = []
         self.failures: list[tuple[str, str | None]] = []
+        self.normalization_failures: list[tuple[str, str | None]] = []
 
     def list_pending_design_surfaces(self, *, limit: int = 50) -> list[PendingDesignSurface]:
         del limit
@@ -100,6 +101,11 @@ class _FakeCore:
         self, design_surface_id: str, *, detail: str | None = None
     ) -> None:
         self.failures.append((design_surface_id, detail))
+
+    def report_design_surface_normalization_failure(
+        self, design_surface_id: str, *, detail: str | None = None
+    ) -> None:
+        self.normalization_failures.append((design_surface_id, detail))
 
 
 def _client_serving(path: Path | None, *, status: int = 200) -> httpx.Client:

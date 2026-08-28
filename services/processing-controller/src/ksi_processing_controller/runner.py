@@ -248,6 +248,10 @@ def run_pending_batch(
                 core=core,
                 http_client=client,
                 work_dir=work_dir,
+                source_format=candidate.source_format,
+                surface_selector=candidate.surface_selector,
+                declared_crs=candidate.declared_crs,
+                normalization_upload_url=candidate.normalization_upload_url,
             )
         finally:
             if http_client is None:

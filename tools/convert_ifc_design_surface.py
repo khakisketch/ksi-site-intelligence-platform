@@ -90,8 +90,27 @@ from ksi_bim_integration.ifc_reference_model import (
     read_georeference,
     sample_mesh_from_ifc,
 )
+from ksi_geo_spatial.tin_surface import (
+    DEFAULT_CELL_SIZE_M,
+    TinSurface,
+    TinSurfaceError,
+)
+from ksi_geo_spatial.tin_surface import (
+    DESIGN_SURFACE_RASTER_PROFILE as DESIGN_SURFACE_PROFILE,
+)
+from ksi_geo_spatial.tin_surface import (
+    _bake_faces as _shared_bake_faces,
+)
+from ksi_geo_spatial.tin_surface import (
+    _grid_definition as _shared_grid_definition,
+)
+from ksi_geo_spatial.tin_surface import (
+    _splat_vertices as _shared_splat_vertices,
+)
+from ksi_geo_spatial.tin_surface import (
+    rasterize_top_surface as _rasterize_tin_surface,
+)
 from numpy.typing import NDArray
-from rasterio.transform import from_origin
 
 #: 기본 셀 크기(m). 근거: 잔량 계산(``run_design_conformance``)은 설계면을 현재
 #: DSM 격자로 bilinear 재표본하므로(``align_and_diff`` 는 baseline=현재 DSM 격자를
@@ -99,37 +118,9 @@ from rasterio.transform import from_origin
 #: 구간별 평면이라 재표본 오차는 경사 변화선 부근에만 생기고, 0.5m 는 토공 관리
 #: 단위보다 충분히 촘촘하다. 파일 크기로도 1km² 현장이 4×10⁶ 셀(float32 deflate)로
 #: 부담이 없다. 경사 변화가 조밀한 설계는 ``--cell-size`` 로 줄인다.
-DEFAULT_CELL_SIZE_M: Final = 0.5
-
-#: GeoTIFF 쓰기 프로파일 — 호출부가 고를 수 없는 고정값(결정성, diff_raster 전례).
-#: float32 로 좁히는 근거도 동일: 계획고의 유효 자릿수(cm)에 상대정밀도 ~1e-7 은
-#: 과분하고, nodata=NaN 이 "모름"의 유일한 표현이다.
-DESIGN_SURFACE_PROFILE: Final[dict[str, Any]] = {
-    "driver": "GTiff",
-    "dtype": "float32",
-    "count": 1,
-    "nodata": float("nan"),
-    "tiled": True,
-    "blockxsize": 256,
-    "blockysize": 256,
-    "compress": "deflate",
-    "zlevel": 6,
-    "predictor": 3,
-}
-
-#: 셀 중심 포함 판정 허용오차 — 삼각형 변 위에 정확히 놓인 중심(무게중심 좌표 0)이
-#: 부동소수 반올림으로 빠지지 않게 한다. 변을 공유하는 두 삼각형이 같은 셀을 잡아도
-#: 같은 평면 위 z 라 max 가 같은 값을 고른다.
-_BARYCENTRIC_EPS: Final = 1e-9
-
-#: XY 투영 퇴화 판정(수직 벽 등) — denom 은 삼각형 XY 면적의 2배(m²)다. 이보다
-#: 작으면 무게중심 좌표가 수치적으로 무의미해(0 나눗셈에 가까움) 면으로 굽지 않고
-#: 정점 찍기에만 맡긴다.
-_DEGENERATE_XY_AREA_EPS: Final = 1e-9
-
-#: 산출 격자 셀 수 상한 — float64 축적 배열이 메모리에 통째로 올라간다(5×10⁷ 셀
-#: ≈ 400MB). 넘어가면 셀 크기를 키우라고 typed 거부한다 — 조용한 OOM 이 아니라.
-_MAX_GRID_CELLS: Final = 50_000_000
+# ``DEFAULT_CELL_SIZE_M`` 와 GeoTIFF profile 은 LandXML 경로와 반드시 같아야
+# 한다. 정본은 ``ksi_geo_spatial.tin_surface`` 이며 여기서는 CLI 호환 이름만
+# 재수출한다.
 
 _EPSG_PATTERN: Final = re.compile(r"EPSG:(\d{1,6})", flags=re.IGNORECASE)
 
@@ -208,69 +199,13 @@ def resolve_epsg_crs(
     return crs
 
 
+# Backward-compatible test seams.  The implementation is owned by the shared
+# normaliser; keeping these thin aliases lets the established IFC evidence
+# continue to prove the same sampling semantics after the extraction.
 def _grid_definition(
     vertices: NDArray[np.float64], cell_size: float
 ) -> tuple[float, float, int, int]:
-    """(west, north, rows, cols) — 원점을 셀 크기의 배수로 스냅한다.
-
-    스냅의 근거: 원점이 입력 점군의 최소값 그대로면 같은 설계의 재내보내기(정점
-    순서·미세 좌표 차이)마다 격자가 밀린다. 배수 스냅이면 격자선이 좌표계에
-    고정되어, 같은 현장의 설계면들이 셀 경계를 공유한다.
-    """
-    min_x = float(vertices[:, 0].min())
-    max_x = float(vertices[:, 0].max())
-    min_y = float(vertices[:, 1].min())
-    max_y = float(vertices[:, 1].max())
-    west = math.floor(min_x / cell_size) * cell_size
-    north = math.ceil(max_y / cell_size) * cell_size
-    # -1e-9: 폭이 정확히 셀 크기의 배수일 때 부동소수 잡음이 빈 열/행 하나를
-    # 덧붙이지 않게 한다(결정성 자체는 어느 쪽이든 성립 — 모양의 문제).
-    cols = max(1, math.ceil((max_x - west) / cell_size - 1e-9))
-    rows = max(1, math.ceil((north - min_y) / cell_size - 1e-9))
-    if rows * cols > _MAX_GRID_CELLS:
-        raise IfcDesignSurfaceConversionError(
-            f"산출 격자 {rows}x{cols}={rows * cols}셀이 상한({_MAX_GRID_CELLS})을 넘는다 "
-            f"— --cell-size 를 키워라(현재 {cell_size}m). 범위 x=[{min_x:.1f},{max_x:.1f}] "
-            f"y=[{min_y:.1f},{max_y:.1f}]"
-        )
-    return west, north, rows, cols
-
-
-def _bake_faces(
-    acc: NDArray[np.float64],
-    mesh: IfcSurfaceMesh,
-    west: float,
-    north: float,
-    cell_size: float,
-) -> None:
-    """삼각형 면을 셀 중심에 굽는다 — 셀값 후보는 면 위 z(무게중심 보간), max 축적."""
-    rows, cols = acc.shape
-    xs = west + (np.arange(cols) + 0.5) * cell_size
-    ys = north - (np.arange(rows) + 0.5) * cell_size
-    for tri in mesh.faces:
-        (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = (mesh.vertices[int(i)] for i in tri)
-        denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-        if abs(denom) < _DEGENERATE_XY_AREA_EPS:
-            continue  # XY 퇴화(수직 벽 등) — 정점 찍기(_splat_vertices)가 표본을 남긴다
-        j0 = max(0, math.ceil((min(x0, x1, x2) - west) / cell_size - 0.5))
-        j1 = min(cols - 1, math.floor((max(x0, x1, x2) - west) / cell_size - 0.5))
-        i0 = max(0, math.ceil((north - max(y0, y1, y2)) / cell_size - 0.5))
-        i1 = min(rows - 1, math.floor((north - min(y0, y1, y2)) / cell_size - 0.5))
-        if j1 < j0 or i1 < i0:
-            continue  # 셀 중심을 하나도 덮지 않는 조각 — 역시 정점 찍기 몫
-        cx = xs[j0 : j1 + 1][None, :]
-        cy = ys[i0 : i1 + 1][:, None]
-        lam0 = ((y1 - y2) * (cx - x2) + (x2 - x1) * (cy - y2)) / denom
-        lam1 = ((y2 - y0) * (cx - x2) + (x0 - x2) * (cy - y2)) / denom
-        lam2 = 1.0 - lam0 - lam1
-        inside = (
-            (lam0 >= -_BARYCENTRIC_EPS)
-            & (lam1 >= -_BARYCENTRIC_EPS)
-            & (lam2 >= -_BARYCENTRIC_EPS)
-        )
-        z = lam0 * z0 + lam1 * z1 + lam2 * z2
-        block = acc[i0 : i1 + 1, j0 : j1 + 1]
-        np.copyto(block, np.maximum(block, z), where=inside)
+    return _shared_grid_definition(vertices, cell_size)
 
 
 def _splat_vertices(
@@ -280,32 +215,35 @@ def _splat_vertices(
     north: float,
     cell_size: float,
 ) -> None:
-    """정점을 담는 셀에 그 z 를 찍는다 — 면이 덮지 못한 표본을 버리지 않는다.
+    _shared_splat_vertices(acc, vertices, west, north, cell_size)
 
-    격자는 정점 범위에서 유도되므로 모든 정점이 격자 안이다 — clip 은 동쪽/남쪽
-    경계에 정확히 놓인 정점을 마지막 셀로 넣는 결정적 규약이다. ``np.maximum.at``
-    은 중복 인덱스에 max 를 적용하므로 순서 무관이다.
-    """
-    rows, cols = acc.shape
-    col_idx = np.clip(
-        np.floor((vertices[:, 0] - west) / cell_size).astype(np.int64), 0, cols - 1
+
+def _bake_faces(
+    acc: NDArray[np.float64],
+    mesh: IfcSurfaceMesh,
+    west: float,
+    north: float,
+    cell_size: float,
+) -> None:
+    _shared_bake_faces(
+        acc,
+        TinSurface(vertices=mesh.vertices, faces=mesh.faces),
+        west,
+        north,
+        cell_size,
     )
-    row_idx = np.clip(
-        np.floor((north - vertices[:, 1]) / cell_size).astype(np.int64), 0, rows - 1
-    )
-    np.maximum.at(acc, (row_idx, col_idx), vertices[:, 2])
 
 
 def rasterize_top_surface(
     mesh: IfcSurfaceMesh, cell_size: float
 ) -> tuple[NDArray[np.float32], Any]:
-    """메쉬 → (상단 표면 float32 격자(NaN=값 없음), affine transform)."""
-    west, north, rows, cols = _grid_definition(mesh.vertices, cell_size)
-    acc = np.full((rows, cols), -np.inf, dtype=np.float64)
-    _bake_faces(acc, mesh, west, north, cell_size)
-    _splat_vertices(acc, mesh.vertices, west, north, cell_size)
-    values = np.where(np.isfinite(acc), acc, np.nan).astype(np.float32)
-    return values, from_origin(west, north, cell_size, cell_size)
+    """IFC 메쉬를 공용 deterministic TIN 규칙으로 정규화한다."""
+    try:
+        return _rasterize_tin_surface(
+            TinSurface(vertices=mesh.vertices, faces=mesh.faces), cell_size_m=cell_size
+        )
+    except TinSurfaceError as exc:
+        raise IfcDesignSurfaceConversionError(str(exc)) from exc
 
 
 def convert(

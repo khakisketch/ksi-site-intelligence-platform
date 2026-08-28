@@ -64,14 +64,16 @@ import logging
 import threading
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_event_contracts.design_surface import (
+    KSI_LANDXML_TIN_PARSER_VERSION,
     SHA256_HEX_PATTERN,
     DesignSurface,
     DesignSurfaceDeclared,
     DesignSurfaceObserved,
+    DesignSurfaceSourceLineage,
     DesignSurfaceStatus,
     can_transition,
 )
@@ -81,6 +83,7 @@ from ksi_event_contracts.vertical_reference import (
     vertical_datum_from_epsg,
 )
 from ksi_geo_spatial.crs import SUPPORTED_PROJECT_CRS, UnsupportedCrsError, normalise_crs
+from ksi_geo_spatial.tin_surface import CANONICAL_TIN_NORMALIZATION_PROFILE
 from pydantic import Field, ValidationError
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
@@ -140,6 +143,10 @@ class DesignSurfaceRejectionReason(StrEnum):
     #: **모르는 수직 CRS 를 조용히 넘기지 않는다** — 타원체고와 정표고가 섞이면
     #: 한국에서 20~30m 가 결과에 그대로 들어간다.
     VERTICAL_DECLARATION_CONTRADICTED = "VERTICAL_DECLARATION_CONTRADICTED"
+    #: LandXML 원본·선택 Surface·정규화 결과의 결속이 빠졌거나 서로 맞지 않는다.
+    SOURCE_LINEAGE_INVALID = "SOURCE_LINEAGE_INVALID"
+    #: 제한된 LandXML TIN 정규화가 거부됐다. 원본 bytes 는 그대로 보존된다.
+    LANDXML_NORMALIZATION_FAILED = "LANDXML_NORMALIZATION_FAILED"
     #: 워커가 파일을 열지 못했다 — 관측 자체가 없다(Core 의 대조 판정이 아니다).
     UNREADABLE_RASTER = "UNREADABLE_RASTER"
 
@@ -224,6 +231,29 @@ def build_design_surface_object_key(*, site_id: str, design_surface_id: str) -> 
     return f"sites/{site_id}/design-surfaces/{design_surface_id}"
 
 
+def build_design_surface_canonical_object_key(*, site_id: str, design_surface_id: str) -> str:
+    """Immutable derived GeoTIFF location for a LandXML source.
+
+    ``build_design_surface_object_key`` remains the original upload location;
+    suffixing a separate key prevents a normalizer from overwriting evidence.
+    """
+    raw_key = build_design_surface_object_key(
+        site_id=site_id, design_surface_id=design_surface_id
+    )
+    return f"{raw_key}/canonical.tif"
+
+
+def object_key_for_surface(surface: DesignSurface) -> str:
+    """Return the verified bytes consumers must read for this source type."""
+    if surface.format == "landxml":
+        return build_design_surface_canonical_object_key(
+            site_id=surface.site_id, design_surface_id=surface.design_surface_id
+        )
+    return build_design_surface_object_key(
+        site_id=surface.site_id, design_surface_id=surface.design_surface_id
+    )
+
+
 def build_design_surface_id(site_id: str, sequence: int) -> str:
     """``{siteId}-ds{n}`` — ``comparison_requests.build_request_id`` 와 동형.
 
@@ -233,7 +263,12 @@ def build_design_surface_id(site_id: str, sequence: int) -> str:
 
 
 def evaluate_observation(
-    declared: DesignSurfaceDeclared, observed: DesignSurfaceObserved
+    declared: DesignSurfaceDeclared,
+    observed: DesignSurfaceObserved,
+    *,
+    source_format: str = "geotiff",
+    surface_selector: str | None = None,
+    source_lineage: DesignSurfaceSourceLineage | None = None,
 ) -> DesignSurfaceRejectionReason | None:
     """선언과 관측을 대조한다 — **판정의 SSOT**. 통과면 ``None``.
 
@@ -251,8 +286,22 @@ def evaluate_observation(
     아니라 "관측 자체가 없다"는 워커의 보고이고, 별도 경로로 들어온다
     (:meth:`DesignSurfaceStore.report_verification_failure`).
     """
-    if observed.sha256 != declared.sha256:
-        return DesignSurfaceRejectionReason.DIGEST_MISMATCH
+    if source_format == "geotiff":
+        if observed.sha256 != declared.sha256:
+            return DesignSurfaceRejectionReason.DIGEST_MISMATCH
+    elif source_format == "landxml":
+        if (
+            source_lineage is None
+            or source_lineage.source_sha256 != declared.sha256
+            or source_lineage.surface_selector != surface_selector
+            or source_lineage.parser_version != KSI_LANDXML_TIN_PARSER_VERSION
+            or source_lineage.normalization_profile
+            != CANONICAL_TIN_NORMALIZATION_PROFILE
+            or source_lineage.canonical_sha256 != observed.sha256
+        ):
+            return DesignSurfaceRejectionReason.SOURCE_LINEAGE_INVALID
+    else:
+        return DesignSurfaceRejectionReason.SOURCE_LINEAGE_INVALID
     if declared.length_unit != "meter":
         return DesignSurfaceRejectionReason.UNSUPPORTED_UNIT
     if observed.band_count != 1:
@@ -300,6 +349,7 @@ class RegistrationResult(CamelModel):
     detail: str | None = None
     surface: DesignSurface | None = None
     object_key: str | None = None
+    canonical_object_key: str | None = None
 
 
 class SealResult(CamelModel):
@@ -389,6 +439,8 @@ class DesignSurfaceStore:
                 self._replay_observation(design_surface_id, raw)
             elif kind == "design-surface-verification-failed":
                 self._replay_verification_failure(design_surface_id, raw)
+            elif kind == "design-surface-normalization-failed":
+                self._replay_normalization_failure(design_surface_id, raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
                 raise DesignSurfaceRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
 
@@ -415,6 +467,8 @@ class DesignSurfaceStore:
             site_id=raw["siteId"],
             name=raw["name"],
             revision=raw["revision"],
+            format=raw.get("sourceFormat", "geotiff"),
+            surface_selector=raw.get("surfaceSelector"),
             declared=declared,
             status=DesignSurfaceStatus.REGISTERED,
             registered_at=_require_aware_iso(raw["ts"], "ts", design_surface_id),
@@ -445,7 +499,24 @@ class DesignSurfaceStore:
                 f"재생: 관측 블록이 계약을 만족하지 않는다 — "
                 f"designSurfaceId={design_surface_id}: {exc}"
             ) from exc
-        reason = evaluate_observation(surface.declared, observed)
+        try:
+            source_lineage = (
+                DesignSurfaceSourceLineage.model_validate(raw["sourceLineage"])
+                if raw.get("sourceLineage") is not None
+                else None
+            )
+        except ValidationError as exc:
+            raise DesignSurfaceRecoveryError(
+                "재생: sourceLineage 가 계약을 만족하지 않는다 — "
+                f"designSurfaceId={design_surface_id}: {exc}"
+            ) from exc
+        reason = evaluate_observation(
+            surface.declared,
+            observed,
+            source_format=surface.format,
+            surface_selector=surface.surface_selector,
+            source_lineage=source_lineage,
+        )
         recomputed = (
             DesignSurfaceStatus.VERIFIED if reason is None else DesignSurfaceStatus.REJECTED
         )
@@ -468,6 +539,7 @@ class DesignSurfaceStore:
             observed=observed,
             reason=reason,
             at=_require_aware_iso(raw["ts"], "ts", design_surface_id),
+            source_lineage=source_lineage,
         )
 
     def _replay_verification_failure(self, design_surface_id: str, raw: dict[str, Any]) -> None:
@@ -484,6 +556,25 @@ class DesignSurfaceStore:
             surface,
             observed=None,
             reason=DesignSurfaceRejectionReason.UNREADABLE_RASTER,
+            at=_require_aware_iso(raw["ts"], "ts", design_surface_id),
+        )
+
+    def _replay_normalization_failure(self, design_surface_id: str, raw: dict[str, Any]) -> None:
+        surface = self._require_replayed(design_surface_id)
+        self._require_transition(surface, DesignSurfaceStatus.REJECTED)
+        if (
+            surface.format != "landxml"
+            or raw.get("reason")
+            != DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED.value
+        ):
+            raise DesignSurfaceRecoveryError(
+                "재생: LandXML 정규화 실패 레코드가 아닌데 기록됐다 — "
+                f"designSurfaceId={design_surface_id}"
+            )
+        self._surfaces[design_surface_id] = self._judged(
+            surface,
+            observed=None,
+            reason=DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED,
             at=_require_aware_iso(raw["ts"], "ts", design_surface_id),
         )
 
@@ -514,6 +605,7 @@ class DesignSurfaceStore:
         observed: DesignSurfaceObserved | None,
         reason: DesignSurfaceRejectionReason | None,
         at: datetime,
+        source_lineage: DesignSurfaceSourceLineage | None = None,
     ) -> DesignSurface:
         """판정 결과를 얹은 새 레코드 — live 와 재생이 같은 조립을 쓴다."""
         if reason is None:
@@ -522,12 +614,14 @@ class DesignSurfaceStore:
                 status=DesignSurfaceStatus.VERIFIED,
                 observed=observed,
                 verified_at=at,
+                source_lineage=source_lineage,
             )
         return _advanced(
             surface,
             status=DesignSurfaceStatus.REJECTED,
             observed=observed,
             rejection_reason=reason.value,
+            source_lineage=source_lineage,
         )
 
     # ── live 경로 ───────────────────────────────────────────────────────
@@ -554,6 +648,8 @@ class DesignSurfaceStore:
         revision: str,
         declared: DesignSurfaceDeclared,
         *,
+        source_format: str = "geotiff",
+        surface_selector: str | None = None,
         registered_by: str,
         now: datetime,
     ) -> RegistrationResult:
@@ -577,6 +673,21 @@ class DesignSurfaceStore:
                     verdict=DesignSurfaceRegisterVerdict.UNKNOWN_SITE,
                     detail="등록된 적 없는 현장이다",
                 )
+            if source_format not in {"geotiff", "landxml"}:
+                return RegistrationResult(
+                    verdict=DesignSurfaceRegisterVerdict.INVALID_SITE_ID,
+                    detail=f"unsupported sourceFormat: {source_format!r}",
+                )
+            if source_format == "landxml" and not (surface_selector or "").strip():
+                return RegistrationResult(
+                    verdict=DesignSurfaceRegisterVerdict.INVALID_SITE_ID,
+                    detail="LandXML requires surfaceSelector",
+                )
+            if source_format == "geotiff" and surface_selector is not None:
+                return RegistrationResult(
+                    verdict=DesignSurfaceRegisterVerdict.INVALID_SITE_ID,
+                    detail="GeoTIFF must not include surfaceSelector",
+                )
             existing = next(
                 (
                     s
@@ -586,12 +697,24 @@ class DesignSurfaceStore:
                 None,
             )
             if existing is not None:
-                if existing.declared == declared:
+                if (
+                    existing.declared == declared
+                    and existing.format == source_format
+                    and existing.surface_selector == surface_selector
+                ):
+                    raw_key = build_design_surface_object_key(
+                        site_id=site_id, design_surface_id=existing.design_surface_id
+                    )
                     return RegistrationResult(
                         verdict=DesignSurfaceRegisterVerdict.REGISTERED,
                         surface=existing,
-                        object_key=build_design_surface_object_key(
-                            site_id=site_id, design_surface_id=existing.design_surface_id
+                        object_key=raw_key,
+                        canonical_object_key=(
+                            build_design_surface_canonical_object_key(
+                                site_id=site_id, design_surface_id=existing.design_surface_id
+                            )
+                            if source_format == "landxml"
+                            else None
                         ),
                     )
                 return RegistrationResult(
@@ -622,6 +745,8 @@ class DesignSurfaceStore:
                 "name": name,
                 "revision": revision,
                 "objectKey": object_key,
+                "sourceFormat": source_format,
+                "surfaceSelector": surface_selector,
                 "declared": declared.model_dump(by_alias=True, mode="json"),
                 "registeredBy": registered_by,
             }
@@ -637,6 +762,8 @@ class DesignSurfaceStore:
                 site_id=site_id,
                 name=name,
                 revision=revision,
+                format=cast(Literal["geotiff", "landxml"], source_format),
+                surface_selector=surface_selector,
                 declared=declared,
                 status=DesignSurfaceStatus.REGISTERED,
                 registered_at=now,
@@ -647,6 +774,13 @@ class DesignSurfaceStore:
                 verdict=DesignSurfaceRegisterVerdict.REGISTERED,
                 surface=surface,
                 object_key=object_key,
+                canonical_object_key=(
+                    build_design_surface_canonical_object_key(
+                        site_id=site_id, design_surface_id=design_surface_id
+                    )
+                    if source_format == "landxml"
+                    else None
+                ),
             )
 
     def seal(
@@ -706,7 +840,12 @@ class DesignSurfaceStore:
             return SealResult(verdict=DesignSurfaceSealVerdict.SEALED, surface=sealed)
 
     def record_observation(
-        self, design_surface_id: str, observed: DesignSurfaceObserved, *, now: datetime
+        self,
+        design_surface_id: str,
+        observed: DesignSurfaceObserved,
+        *,
+        source_lineage: DesignSurfaceSourceLineage | None = None,
+        now: datetime,
     ) -> ObservationResult:
         """워커의 실측을 선언과 대조한다 — **여기가 실제 신뢰 경계다.**
 
@@ -747,7 +886,13 @@ class DesignSurfaceStore:
                     rejection_reason=_reason_of(surface),
                 )
 
-            reason = evaluate_observation(surface.declared, observed)
+            reason = evaluate_observation(
+                surface.declared,
+                observed,
+                source_format=surface.format,
+                surface_selector=surface.surface_selector,
+                source_lineage=source_lineage,
+            )
             status = (
                 DesignSurfaceStatus.VERIFIED if reason is None else DesignSurfaceStatus.REJECTED
             )
@@ -758,6 +903,11 @@ class DesignSurfaceStore:
                 # 판정이 아니라 **측정값**이 원장의 사실이다 — 재생이 이걸로 다시
                 # 대조하므로, status 만 고쳐 넣은 원장은 기동에서 걸린다.
                 "observed": observed.model_dump(by_alias=True, mode="json"),
+                "sourceLineage": (
+                    source_lineage.model_dump(by_alias=True, mode="json")
+                    if source_lineage is not None
+                    else None
+                ),
                 "status": status.value,
                 "rejectionReason": reason.value if reason is not None else None,
             }
@@ -768,7 +918,13 @@ class DesignSurfaceStore:
                     verdict=DesignSurfaceObservationVerdict.STORE_UNAVAILABLE,
                     detail=JOURNAL_SEALED_DETAIL,
                 )
-            judged = self._judged(surface, observed=observed, reason=reason, at=now)
+            judged = self._judged(
+                surface,
+                observed=observed,
+                reason=reason,
+                at=now,
+                source_lineage=source_lineage,
+            )
             self._surfaces[design_surface_id] = judged
             return ObservationResult(
                 verdict=(
@@ -845,6 +1001,74 @@ class DesignSurfaceStore:
                 or _REJECTION_DETAIL[DesignSurfaceRejectionReason.UNREADABLE_RASTER],
             )
 
+    def report_normalization_failure(
+        self, design_surface_id: str, *, detail: str | None, reported_by: str, now: datetime
+    ) -> ObservationResult:
+        """Record a trusted worker's LandXML parse/normalisation rejection."""
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.STORE_UNAVAILABLE,
+                    detail=JOURNAL_SEALED_DETAIL,
+                )
+            surface = self._surfaces.get(design_surface_id)
+            if surface is None or not self.site_is_visible(surface.site_id):
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.UNKNOWN_DESIGN_SURFACE,
+                    detail=_NOT_FOUND_DETAIL,
+                )
+            if surface.status is DesignSurfaceStatus.REGISTERED:
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.NOT_SEALED,
+                    detail="아직 봉인되지 않은 설계면이다",
+                    surface=surface,
+                )
+            if surface.status is not DesignSurfaceStatus.SEALED:
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.ALREADY_JUDGED,
+                    surface=surface,
+                    rejection_reason=_reason_of(surface),
+                )
+            if surface.format != "landxml":
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.INVALID_MEASUREMENT,
+                    detail="LandXML 정규화 실패 보고는 LandXML source 에만 허용된다",
+                )
+            record = {
+                "kind": "design-surface-normalization-failed",
+                "ts": iso_utc(now),
+                "designSurfaceId": design_surface_id,
+                "reason": DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED.value,
+                "detail": detail,
+                "reportedBy": reported_by,
+            }
+            try:
+                self._journal.append(record)
+            except JournalSealedError:
+                return ObservationResult(
+                    verdict=DesignSurfaceObservationVerdict.STORE_UNAVAILABLE,
+                    detail=JOURNAL_SEALED_DETAIL,
+                )
+            judged = self._judged(
+                surface,
+                observed=None,
+                reason=DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED,
+                at=now,
+            )
+            self._surfaces[design_surface_id] = judged
+            return ObservationResult(
+                verdict=DesignSurfaceObservationVerdict.REJECTED,
+                detail=(
+                    detail
+                    or _REJECTION_DETAIL[
+                        DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED
+                    ]
+                ),
+                rejection_reason=DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED,
+                surface=judged,
+            )
+
     def list_pending_verification(self, *, limit: int = 50) -> list[DesignSurface]:
         """검증 대기(``SEALED``) 목록 — 봉인 순서(FIFO)로 준다.
 
@@ -917,6 +1141,13 @@ _REJECTION_DETAIL: dict[DesignSurfaceRejectionReason, str] = {
     DesignSurfaceRejectionReason.UNREADABLE_RASTER: (
         "파일을 열지 못했다 — GeoTIFF 가 아니거나 손상됐다"
     ),
+    DesignSurfaceRejectionReason.SOURCE_LINEAGE_INVALID: (
+        "LandXML 원본·선택 Surface·정규화 GeoTIFF의 계보가 없거나 해시가 맞지 않는다"
+    ),
+    DesignSurfaceRejectionReason.LANDXML_NORMALIZATION_FAILED: (
+        "LandXML TIN을 안전한 KSI 표준 GeoTIFF로 정규화하지 못했다 — "
+        "원본을 수정해 새 revision으로 다시 등록한다"
+    ),
 }
 
 if set(_REJECTION_DETAIL) != set(DesignSurfaceRejectionReason):  # pragma: no cover - import 가드
@@ -936,6 +1167,8 @@ class DesignSurfaceRegisterRequest(CamelModel):
 
     name: str = Field(min_length=1)
     revision: str = Field(min_length=1)
+    source_format: str = Field(default="geotiff", pattern="^(geotiff|landxml)$")
+    surface_selector: str | None = Field(default=None, min_length=1)
     declared: DesignSurfaceDeclared
 
 
@@ -945,6 +1178,7 @@ class DesignSurfaceRegisterResponse(CamelModel):
     design_surface_id: str | None = None
     object_key: str | None = None
     upload_url: str | None = None
+    canonical_object_key: str | None = None
     expires_at: datetime | None = None
     surface: DesignSurface | None = None
 
@@ -971,6 +1205,10 @@ class PendingDesignSurfaceView(CamelModel):
     site_id: str
     sealed_at: datetime | None
     download_url: str
+    source_format: str = "geotiff"
+    surface_selector: str | None = None
+    declared_crs: str | None = None
+    normalization_upload_url: str | None = None
     expires_at: datetime
 
 
@@ -1003,10 +1241,17 @@ class DesignSurfaceObservationRequest(CamelModel):
     bounds_max_x: float
     bounds_max_y: float
     finite_cell_count: int = Field(ge=0)
+    source_lineage: DesignSurfaceSourceLineage | None = None
 
 
 class DesignSurfaceVerificationFailureRequest(CamelModel):
     """"열지 못했다"는 보고 — 사유는 고를 수 없고 상세만 남긴다(모듈 docstring)."""
+
+    detail: str | None = Field(default=None, max_length=2000)
+
+
+class DesignSurfaceNormalizationFailureRequest(CamelModel):
+    """Trusted worker's LandXML normalisation failure; Core fixes the reason."""
 
     detail: str | None = Field(default=None, max_length=2000)
 
@@ -1019,7 +1264,7 @@ class DesignSurfaceObservationResponse(CamelModel):
 
 
 def build_design_surface_router(
-    store: DesignSurfaceStore, storage: EvidenceStorage
+    store: DesignSurfaceStore, storage: EvidenceStorage, *, landxml_ingress_enabled: bool = False
 ) -> APIRouter:
     router = APIRouter(tags=["design-surfaces"])
 
@@ -1040,11 +1285,19 @@ def build_design_surface_router(
         "어디에 올리면 되는지 정해졌다"는 뜻이다.
         """
         now = datetime.now(UTC)
+        if request.source_format == "landxml" and not landxml_ingress_enabled:
+            response.status_code = 403
+            return DesignSurfaceRegisterResponse(
+                verdict="LANDXML_INGRESS_DISABLED",
+                detail="LandXML ingress is disabled until the feature flag is enabled",
+            )
         result = store.register(
             site_id,
             request.name,
             request.revision,
             request.declared,
+            source_format=request.source_format,
+            surface_selector=request.surface_selector,
             registered_by=principal.principal_id,
             now=now,
         )
@@ -1083,12 +1336,14 @@ def build_design_surface_router(
                 ),
                 design_surface_id=result.surface.design_surface_id,
                 object_key=result.object_key,
+                canonical_object_key=result.canonical_object_key,
                 surface=result.surface,
             )
         return DesignSurfaceRegisterResponse(
             verdict=result.verdict.value,
             design_surface_id=result.surface.design_surface_id,
             object_key=result.object_key,
+            canonical_object_key=result.canonical_object_key,
             upload_url=upload_url,
             expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
             surface=result.surface,
@@ -1167,6 +1422,17 @@ def build_design_surface_router(
             )
             try:
                 download_url = storage.presigned_get(object_key, ttl=DEFAULT_VIEW_TTL)
+                normalization_upload_url = (
+                    storage.presigned_put(
+                        build_design_surface_canonical_object_key(
+                            site_id=surface.site_id, design_surface_id=surface.design_surface_id
+                        ),
+                        content_type=DESIGN_SURFACE_CONTENT_TYPE,
+                        ttl=DEFAULT_UPLOAD_TTL,
+                    )
+                    if surface.format == "landxml"
+                    else None
+                )
             except EvidenceStorageError:
                 # 이 1건만 목록에서 빠진다 — 스토리지가 회복되면 다음 조회에
                 # 다시 나온다. 전체를 503 으로 만들면 멀쩡한 후보들까지 멈춘다.
@@ -1180,6 +1446,10 @@ def build_design_surface_router(
                     site_id=surface.site_id,
                     sealed_at=surface.sealed_at,
                     download_url=download_url,
+                    source_format=surface.format,
+                    surface_selector=surface.surface_selector,
+                    declared_crs=surface.declared.crs if surface.format == "landxml" else None,
+                    normalization_upload_url=normalization_upload_url,
                     expires_at=expires_at(now, DEFAULT_VIEW_TTL),
                 )
             )
@@ -1204,7 +1474,7 @@ def build_design_surface_router(
         now = datetime.now(UTC)
         try:
             observed = DesignSurfaceObserved(
-                **request.model_dump(),
+                **request.model_dump(exclude={"source_lineage"}),
                 measured_at=now,
                 measured_by=principal.principal_id,
             )
@@ -1218,7 +1488,12 @@ def build_design_surface_router(
                 verdict=DesignSurfaceObservationVerdict.INVALID_MEASUREMENT.value,
                 detail=f"측정치가 성립하지 않는다: {exc.errors()[0]['msg']}",
             )
-        result = store.record_observation(design_surface_id, observed, now=now)
+        result = store.record_observation(
+            design_surface_id,
+            observed,
+            source_lineage=request.source_lineage,
+            now=now,
+        )
         response.status_code = _OBSERVATION_STATUS[result.verdict]
         if result.verdict is DesignSurfaceObservationVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
@@ -1269,21 +1544,59 @@ def build_design_surface_router(
             surface=result.surface,
         )
 
+    @router.post(
+        "/v1/design-surfaces/{design_surface_id}/normalization-failure",
+        response_model=DesignSurfaceObservationResponse,
+        status_code=201,
+    )
+    def report_design_surface_normalization_failure(
+        design_surface_id: str,
+        request: DesignSurfaceNormalizationFailureRequest,
+        response: Response,
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008,E501
+    ) -> DesignSurfaceObservationResponse:
+        result = store.report_normalization_failure(
+            design_surface_id,
+            detail=request.detail,
+            reported_by=principal.principal_id,
+            now=datetime.now(UTC),
+        )
+        response.status_code = (
+            201
+            if result.verdict is DesignSurfaceObservationVerdict.REJECTED
+            else _OBSERVATION_STATUS[result.verdict]
+        )
+        return DesignSurfaceObservationResponse(
+            verdict=result.verdict.value,
+            detail=result.detail,
+            rejection_reason=(result.rejection_reason.value if result.rejection_reason else None),
+            surface=result.surface,
+        )
+
     return router
 
 
 def mount_design_surfaces(
-    app: FastAPI, store: DesignSurfaceStore, storage: EvidenceStorage
+    app: FastAPI,
+    store: DesignSurfaceStore,
+    storage: EvidenceStorage,
+    *,
+    landxml_ingress_enabled: bool = False,
 ) -> None:
     """앱에 설계 기준면 라우터를 장착한다."""
     app.state.design_surface_store = store
-    app.include_router(build_design_surface_router(store, storage))
+    app.include_router(
+        build_design_surface_router(
+            store, storage, landxml_ingress_enabled=landxml_ingress_enabled
+        )
+    )
 
 
 __all__ = [
     "DESIGN_SURFACE_CONTENT_TYPE",
     "MAX_PENDING_LIMIT",
     "DesignSurfaceListResponse",
+    "DesignSurfaceNormalizationFailureRequest",
     "DesignSurfaceObservationRequest",
     "DesignSurfaceObservationResponse",
     "DesignSurfaceObservationVerdict",
@@ -1302,7 +1615,9 @@ __all__ = [
     "RegistrationResult",
     "SealResult",
     "build_design_surface_id",
+    "build_design_surface_canonical_object_key",
     "build_design_surface_object_key",
+    "object_key_for_surface",
     "build_design_surface_router",
     "evaluate_observation",
     "mount_design_surfaces",
