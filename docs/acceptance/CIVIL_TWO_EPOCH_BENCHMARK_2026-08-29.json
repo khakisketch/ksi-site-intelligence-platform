@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "1.0",
+  "recordedAtUtc": "2026-08-28T15:48:55Z",
+  "verdict": "BENCHMARK_PASS",
+  "scope": "NON_PRODUCTION_FOREIGN_CRS_BENCHMARK_ONLY",
+  "fieldAcceptance": "NOT_EVALUATED",
+  "productQuantitativeComparisonExecutable": false,
+  "dataset": {
+    "title": "USGS Madeira Beach UAS imagery time series",
+    "landingPage": "https://coastal.er.usgs.gov/data-release/doi-P91TH157/",
+    "license": "USGS public domain with source attribution",
+    "sourceRepresentation": "USGS-distributed preservation JPEG converted from DNG; not camera-original evidence",
+    "imageryMetadataSha256": "b9b6f8f9e4a8f221c38a7920af81fe7f6a70a89717c096bd7aa62333171a1fd8",
+    "groundControlMetadataSha256": "9f2accdb022ec21a5b48807a11735d1ad4b6ab81c33dfe66acdcc45642dddaa3",
+    "groundControlArchiveSha256": "5a1517c4348a13db80722ca4781d2d8f3226c00970b344be91abdd96880e9a32"
+  },
+  "inputs": {
+    "processingCrs": "EPSG:32617",
+    "georeferencingMode": "EXIF_GNSS",
+    "selectionRule": "For each acquisition, select the 24 JPEG EXIF positions with the lowest squared EPSG:32617 distance to the midpoint of the axis-aligned intersection of both full-acquisition EXIF-position bounds; break ties by basename.",
+    "selectionManifestSha256": "c50fa3610d989495a9a352e32803b792ec627f5918e0249f4e93f58898132854",
+    "baseline": {
+      "sourceUrl": "https://coastal.er.usgs.gov/data-release/doi-P91TH157/data/20170712_MadeiraBeachFL_UAS_Imagery.zip",
+      "archiveBytes": 3065408633,
+      "archiveSha256": "2c9e3091892dde09a15bd04b488ed60b2662aef9d30f5ae65ee5ef8bdb5075c4",
+      "fullJpegCount": 300,
+      "selectedImageCount": 24,
+      "selectedExtentM": [81.249, 77.453],
+      "sourceBundleSha256": "695fa49ea13e2772347f3df980d0471c4df1f065b9a8086e4ec380ccb98c13d9"
+    },
+    "current": {
+      "sourceUrl": "https://coastal.er.usgs.gov/data-release/doi-P91TH157/data/20180124_MadeiraBeachFL_UAS_Imagery.zip",
+      "archiveBytes": 4936086194,
+      "archiveSha256": "b00057eb2628bcdc0cca7e7b1388165ce6a194cfef73fb41dcda189ff83e6f29",
+      "fullJpegCount": 348,
+      "selectedImageCount": 24,
+      "selectedExtentM": [79.051, 72.54],
+      "sourceBundleSha256": "3d55ea2dc2b1ff8ab78e39ef0c0f9b74886f0b746a16ac65f1419e22dd718d58"
+    }
+  },
+  "runtime": {
+    "processingProfileId": "ksi-odm-civil-v1",
+    "processingProfileDigest": "sha256:d19e3ce42e9cfd34cc504c651a8cc78d781a94f36040a58d525a5cfbd7586dc1",
+    "ociImage": "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2",
+    "nodeOdmVersion": "2.2.4",
+    "odmVersion": "3.5.6",
+    "options": {
+      "dsm": true,
+      "dtm": true,
+      "pc-quality": "medium",
+      "dynamicObjectMasking": false
+    }
+  },
+  "outputs": {
+    "baseline": {
+      "archiveSha256": "99313c21f3c3a667b603831dcc416602461ba1e09b1a47a53737645c86d1ec23",
+      "artifactCount": 7,
+      "artifacts": {
+        "camera-poses": "sha256:893d9a6bf414df2cb1a54ec275c0edc2d4bc8ee2723d35c43e3ea15488b1fb80",
+        "dsm": "sha256:998afe157c29036268b9a845834672ae8e1ad209dd465f361dad25d97168ee7d",
+        "dtm": "sha256:5c1bfc0ecb918aeb0ea117c59b37b44d8fe5c9c88e976c6402948827373ab565",
+        "mesh": "sha256:4db297d5c9ec432768827195a3427dc43534da50e4221a3d7faf4b85af722402",
+        "orthophoto": "sha256:1df38ecdc949ec63d7dab0dfcdb16efece3e73b8a194c62fc4f2ad0cdae0b814",
+        "point-cloud": "sha256:6c4f0a0dcfc656a95744d0ea07f4dd9f7f7c5972b9d436ab94f0f8587c6ac265",
+        "report": "sha256:66f72c69a7571583f6876c1e1f0c19165a93548be3a059813ea4151a3f7b6f5a"
+      }
+    },
+    "current": {
+      "archiveSha256": "bac69c8e0c166cab1ad6f6ee115f0e2e0c3d1ac4249ec91c666855629ecc7582",
+      "artifactCount": 7,
+      "artifacts": {
+        "camera-poses": "sha256:0ad3761060ba98532e00fc5016951f04c7db0f8e76753af4c40ceca539b89390",
+        "dsm": "sha256:571f004621d9f3a8b4abcc30b09210f5daaa3c28b71d4af471a395349d36c3ee",
+        "dtm": "sha256:5774260e2ddf9162c4a790e18462ca28401e43ded63aa52796bfd1c9af9fc373",
+        "mesh": "sha256:d49827de6162a18f4e07a3c452507e1decc69bf41c82b5ff012532b2ef19705b",
+        "orthophoto": "sha256:a74f6d94d8d05a572cd500db6e5386f24c8581a559ae6bc718b6e4f348200369",
+        "point-cloud": "sha256:273ee556204f80c9ed1a3d795d39195f760f6af675e9b56190ba42fb7184c502",
+        "report": "sha256:8b893715499e14f90891935002f8d37cf53d8186208bcb774a819c3b903fcb20"
+      }
+    },
+    "overlap": {
+      "commonValidCellCount": 4290788,
+      "meanAbsoluteDeltaM": 1.99291,
+      "interpretation": "Finite technical overlap signal only; not an accuracy, cut/fill, progress, survey or settlement result."
+    }
+  },
+  "limitations": [
+    "EPSG:32617 is intentionally rejected by the Korean product CRS policy.",
+    "The distributed JPEGs are preservation derivatives rather than camera-original field evidence.",
+    "Both epochs used approximate EXIF GNSS; the metadata allows substantial horizontal geotag error and AGL vertical uncertainty.",
+    "The two epochs were not bound to a common independent checkpoint/control solution or vertical reference for product comparison.",
+    "No Korean LandXML design surface, revision-bound normalization, independent volume or field attestation is present."
+  ],
+  "priorCandidate": {
+    "dataset": "HovoPhoto40",
+    "sourceUrl": "https://zenodo.org/records/16631844",
+    "license": "CC-BY-4.0",
+    "verdict": "INCOMPATIBLE_WITH_CIVIL_2_5D_PROFILE",
+    "pointCloudReached": true,
+    "densePointCount": 841293,
+    "failedStage": "odm_meshing_2_5d_dsm",
+    "reason": "The close-range vertical rock-face scene is not compatible with the civil profile's 2.5D DSM path.",
+    "nodeOdmOutputSha256": "cd364718a0744fefab209da3f57e34608aa268d3781aaa43d4481c1e85815a8c",
+    "fieldAcceptance": "NOT_EVALUATED"
+  }
+}

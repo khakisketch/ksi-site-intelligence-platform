@@ -170,15 +170,25 @@ confirmed_next_improvements:
       software_evidence_2026_08_28: >-
         Immutable profile/legacy replay, exact NodeODM identity, secure LandXML lineage/shared TIN,
         all eight compatibility blockers, organization isolation and additive Console behavior passed.
-        Python: 4033 passed, 23 skipped, 3 xfailed; Ruff; Mypy 421 files. Dashboard: 58 files/541 tests,
+        The private civil field-input manifest/auditor additionally binds rights, two original-image
+        epochs, per-epoch control, LandXML and independent reference while returning INPUT_READY rather
+        than field acceptance. Python: 4051 passed, 24 skipped, 3 xfailed; Ruff; Mypy 424 files.
+        Dashboard: 58 files/541 tests,
         ESLint, TypeScript, build. Playwright: 62 passed/14 intentional skips at four viewports. Exact
         pinned NodeODM completed a public 12-image reconstruction and a sealed Core-to-worker-to-real-
         MinIO artifact digest round-trip. Lock/diff/hygiene/reference-import gates passed.
+      technical_benchmark_2026_08_29: >-
+        E2E-B01 PASS: two lawful USGS same-area acquisitions, 24 preservation JPEGs each, ran with
+        ksi-odm-civil-v1 in 529.02 s. Each produced seven mapped artifacts including DSM/DTM/point
+        cloud; distinct DSMs had 4,290,788 common finite cells. The digest record is
+        CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json. This foreign EPSG:32617/EXIF-GNSS result is
+        non-production, field acceptance NOT_EVALUATED and product quantitative comparison false.
       acceptance_gate: >-
-        CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/HY pass. E2E-01 remains PARTIAL because no
-        valid public same-site second epoch in a supported Korean project CRS was available; foreign
-        CRS data must not be relabeled. Field acceptance separately requires anonymous Korean LandXML,
-        same-site two-epoch originals and independent reference volume/checkpoints.
+        CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/FI/HY and foreign benchmark E2E-B01 pass.
+        Product E2E-01 remains PARTIAL because no valid same-site second epoch in a supported Korean
+        project CRS was available through the sealed product path; foreign CRS data must not be
+        relabeled. Field acceptance separately requires anonymous Korean LandXML, same-site two-epoch
+        originals and independent reference volume/checkpoints.
       rollback: >-
         Independently disable profile issuance, LandXML conversion or civil comparison creation;
         retain existing originals/results and never loosen the comparison preflight.

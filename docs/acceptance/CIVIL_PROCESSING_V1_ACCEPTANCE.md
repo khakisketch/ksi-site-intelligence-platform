@@ -1,7 +1,8 @@
 # Civil Processing v1 — Acceptance
 
-- Status: PARTIAL — the implementation, full software regression and live single-epoch persistence
-  path pass; the public same-site two-epoch portion of E2E-01 and civil field acceptance remain gated.
+- Status: PARTIAL — the implementation, full software regression, live single-epoch persistence and
+  separate foreign-CRS two-acquisition engine benchmark pass; sealed product E2E in a supported Korean
+  project CRS and civil field acceptance remain gated.
 - Authority: ADR-KSI-030; PRODUCT_CONSTITUTION; FINAL_DECISION_LEDGER v1.0;
   MASTER_PRD v3.0; DOMAIN_INVARIANTS.
 - Requirements: REQ-WRK-101, REQ-INT-101/102/103/104, REQ-SEC-101, REQ-UX-101.
@@ -36,13 +37,15 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
 | SEC-01 | The code-owned profile recipe is globally readable and immutable; every profile-bound job, source byte, design surface and report remains organization-isolated. | Cross-organization 404-equivalence tests for each tenant-owned route/store. | PASS |
 | UX-01 | Existing Home/Sites/Work/Items/site-detail information architecture remains intact while the existing upload, design and comparison panels gain v1 state. | Full Vitest, ESLint, TypeScript, production build, and browser evidence at 390/768/1024/1440 for overflow, keyboard/focus and console errors. | PASS |
 | FI-01 | A private Korean civil field package is accepted for later evaluation only when rights, two original-image epochs, per-epoch ground control, LandXML design lineage, CRS/vertical basis and an independent reference are exact-digest bound. | Strict manifest schema, owner-only/no-symlink auditor, typed negative tests and [`CIVIL_FIELD_DATA_INTAKE.md`](CIVIL_FIELD_DATA_INTAKE.md). The successful result is `INPUT_READY`, never field acceptance. | PASS |
+| E2E-B01 | The exact profile reconstructs two lawful public acquisitions of the same real area, emits DSM/DTM/point cloud for both and finds finite overlapping DSM cells without weakening the Korean CRS gate. | Opt-in live test plus [`CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json`](CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json), source/archive/artifact digests and private retained bytes. | PASS — foreign-CRS technical benchmark only; product comparison remains non-executable. |
 | E2E-01 | A public small photogrammetry fixture completes sealed ingest → pinned NodeODM → DSM/DTM/point cloud → two-epoch comparison. | Reproducible job log, artifact digests, identity check and comparison result. | PARTIAL — live sealed single-epoch reconstruction and object-store digest round-trip pass; no valid public same-site second epoch in a supported Korean project CRS was available. |
 | HY-01 | No raw customer imagery, LandXML, GeoTIFF, credentials or large generated artifacts are committed. | `uv lock --check`, `git diff --check`, secret/large-file/reference-import hygiene checks. | PASS |
 
 ## Executed evidence — 2026-08-28
 
-- Python full regression: `4033 passed, 23 skipped, 3 xfailed`; the civil/API-focused set passed
-  `549` tests. Ruff passed, and Mypy reported no issues in `421` source files.
+- Python full regression: `4051 passed, 24 skipped, 3 xfailed`. The new private field-input audit
+  passed `18` typed positive/negative tests and its opt-in live benchmark remained the one new skip.
+  Ruff passed, and Mypy reported no issues in `424` source files.
 - Dashboard: Vitest passed `58` files / `541` tests; ESLint, TypeScript `--noEmit` and the Next.js
   production build passed.
 - Browser regression: Playwright passed `62` tests with `14` intentional environment/device skips.
@@ -54,14 +57,30 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
   point-cloud artifacts (`1 passed` in 181.07 s). A second run exercised Core source registration and
   sealing, profile expansion, worker execution, artifact upload to a temporary real MinIO instance,
   download and digest verification (`1 passed` in 182.57 s). All temporary containers were removed.
+- Two-acquisition benchmark (2026-08-29 KST): two official USGS Madeira Beach distributions passed
+  exact byte-length and ZIP CRC checks. A deterministic common-area subset of 24 preservation JPEGs
+  per date ran through the exact profile in `529.02 s`; both runs emitted seven mapped artifacts,
+  including DSM/DTM/point cloud, and distinct DSMs overlapped on `4,290,788` finite cells. The complete
+  non-sensitive digest record is `CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json`; original distributions,
+  selection manifest and output archives remain owner-private outside Git. The temporary benchmark
+  container was removed after its task list returned zero.
+- Harness correction: the first completed baseline exposed a roughly micrometre-scale X/Y pixel-size
+  difference that an overly strict square-pixel assertion rejected. The live test now uses the same
+  `resolve_gsd()` geometric-mean rule as the production worker; the clean two-epoch rerun passed.
+- Dataset compatibility negative: the lawful HovoPhoto40 close-range rock-face candidate reached an
+  `841,293`-point dense cloud but was rejected at the 2.5D DSM meshing stage. Its vertical scene is not
+  a civil terrain-profile fixture; the exact failure output is retained privately by digest rather
+  than hiding the result or changing the fixed profile.
 - Repository gates: `uv lock --check`, `git diff --check`, repository hygiene, secret/large-file
   checks, no-reference-runtime-import checks and the repository-hygiene contract tests passed.
 
-The Pacifica fixture is a real foreign-CRS processing check, not a Korean civil quantity fixture.
-Relabelling its UTM CRS as a supported Korean project CRS would invalidate lineage and `INV-053`, so
-the missing same-site second epoch is recorded as a gate rather than manufactured evidence. Existing
-real-byte Korean-CRS fixtures still verify deterministic two-DSM cut/fill/report calculation and the
-preflight contracts verify two-job compatibility.
+The Pacifica and Madeira fixtures are real foreign-CRS processing checks, not Korean civil quantity
+fixtures. The Madeira mean absolute DSM delta (`1.99291 m`) is only a finite technical overlap signal:
+its preservation JPEGs use approximate EXIF GNSS and lack a common independent control/vertical/design
+contract, so it is not accuracy, change, cut/fill or progress evidence. Relabelling either UTM CRS as a
+supported Korean project CRS would invalidate lineage and `INV-053`; `E2E-01` therefore remains
+`PARTIAL`. Existing real-byte Korean-CRS fixtures still verify deterministic two-DSM cut/fill/report
+calculation and the preflight contracts verify two-job compatibility.
 
 ## Deployment and license gate
 
