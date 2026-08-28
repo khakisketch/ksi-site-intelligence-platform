@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/civil-field-acceptance-manifest.v1.json",
+  "title": "Civil Field Acceptance Manifest v1",
+  "description": "Private owner-held input-evidence index for a civil field-acceptance evaluation. A valid manifest only makes inputs ready for a later independent evaluation; it never proves processing or field acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "operatorAttested", "site", "rights", "processingProfileId", "processingProfileDigest", "crs", "verticalReference", "epochs", "designSurface", "groundControlFiles", "independentReference"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "sessionId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "operatorAttested": { "type": "boolean" },
+    "site": {
+      "type": "object", "additionalProperties": false,
+      "required": ["anonymized", "sameSiteAttested"],
+      "properties": { "anonymized": { "type": "boolean" }, "sameSiteAttested": { "type": "boolean" } }
+    },
+    "rights": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commercialProcessing", "derivativeOutputs"],
+      "properties": { "commercialProcessing": { "$ref": "#/$defs/rightAttestation" }, "derivativeOutputs": { "$ref": "#/$defs/rightAttestation" } }
+    },
+    "processingProfileId": { "type": "string", "minLength": 1 },
+    "processingProfileDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "crs": { "type": "string", "minLength": 1 },
+    "verticalReference": { "$ref": "#/$defs/verticalReference" },
+    "epochs": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/epoch" } },
+    "designSurface": { "$ref": "#/$defs/designSurface" },
+    "groundControlFiles": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/groundControlFile" }, "uniqueItems": true },
+    "independentReference": { "$ref": "#/$defs/independentReference" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "evidenceFile": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": { "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" } }
+    },
+    "groundControlFile": {
+      "type": "object", "additionalProperties": false, "required": ["epochId", "path", "sha256"],
+      "properties": {
+        "epochId": { "enum": ["baseline", "current"] },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "rightAttestation": {
+      "type": "object", "additionalProperties": false, "required": ["attested", "basis", "evidence"],
+      "properties": { "attested": { "type": "boolean" }, "basis": { "type": "string", "minLength": 1 }, "evidence": { "$ref": "#/$defs/evidenceFile" } }
+    },
+    "originalJpeg": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "originalCameraFileAttested"],
+      "properties": { "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" }, "originalCameraFileAttested": { "type": "boolean" } }
+    },
+    "verticalReference": {
+      "type": "object", "additionalProperties": false, "required": ["datum", "basis"],
+      "properties": { "datum": { "type": "string", "minLength": 1 }, "basis": { "type": "string", "minLength": 1 } }
+    },
+    "georeferencing": {
+      "type": "object", "additionalProperties": false, "required": ["method", "crs", "verticalReference", "evidence"],
+      "properties": { "method": { "type": "string", "minLength": 1 }, "crs": { "type": "string", "minLength": 1 }, "verticalReference": { "$ref": "#/$defs/verticalReference" }, "evidence": { "$ref": "#/$defs/evidenceFile" } }
+    },
+    "epoch": {
+      "type": "object", "additionalProperties": false, "required": ["epochId", "captureStartedAtUtc", "captureEndedAtUtc", "images", "georeferencing"],
+      "properties": {
+        "epochId": { "enum": ["baseline", "current"] },
+        "captureStartedAtUtc": { "type": "string", "format": "date-time" },
+        "captureEndedAtUtc": { "type": "string", "format": "date-time" },
+        "images": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/originalJpeg" } },
+        "georeferencing": { "$ref": "#/$defs/georeferencing" }
+      }
+    },
+    "designSurface": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "format", "surfaceSelector", "revision", "crs", "verticalReference"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" }, "format": { "const": "landxml" }, "surfaceSelector": { "type": "string", "minLength": 1 }, "revision": { "type": "string", "minLength": 1 }, "crs": { "type": "string", "minLength": 1 }, "verticalReference": { "$ref": "#/$defs/verticalReference" }
+      }
+    },
+    "accuracy": {
+      "type": "object", "additionalProperties": false, "required": ["horizontalM", "verticalM", "basis"],
+      "properties": { "horizontalM": { "type": "number", "minimum": 0 }, "verticalM": { "type": "number", "minimum": 0 }, "basis": { "type": "string", "minLength": 1 } }
+    },
+    "uncertainty": {
+      "type": "object", "additionalProperties": false, "required": ["valueCubicM", "basis"],
+      "properties": { "valueCubicM": { "type": "number", "minimum": 0 }, "basis": { "type": "string", "minLength": 1 } }
+    },
+    "independentReference": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "kind", "method", "crs", "verticalReference"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" }, "kind": { "enum": ["independent_checkpoint", "reference_volume"] }, "method": { "type": "string", "minLength": 1 }, "crs": { "type": "string", "minLength": 1 }, "verticalReference": { "$ref": "#/$defs/verticalReference" }, "checkpointCount": { "type": "integer", "minimum": 1 }, "accuracy": { "$ref": "#/$defs/accuracy" }, "referenceVolumeCubicM": { "type": "number" }, "uncertainty": { "$ref": "#/$defs/uncertainty" }
+      },
+      "oneOf": [
+        { "properties": { "kind": { "const": "independent_checkpoint" } }, "required": ["checkpointCount", "accuracy"] },
+        { "properties": { "kind": { "const": "reference_volume" } }, "required": ["referenceVolumeCubicM", "uncertainty"] }
+      ]
+    }
+  }
+}

@@ -35,6 +35,7 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
 | CC-03 | Cut, fill, net, zone progress, nodata and uncertainty reporting are deterministic and honest. | Hand-calculated fixtures; repeated runs; no independent checkpoint yields `null` uncertainty plus reason, never survey/settlement/RMSE wording. | PASS |
 | SEC-01 | The code-owned profile recipe is globally readable and immutable; every profile-bound job, source byte, design surface and report remains organization-isolated. | Cross-organization 404-equivalence tests for each tenant-owned route/store. | PASS |
 | UX-01 | Existing Home/Sites/Work/Items/site-detail information architecture remains intact while the existing upload, design and comparison panels gain v1 state. | Full Vitest, ESLint, TypeScript, production build, and browser evidence at 390/768/1024/1440 for overflow, keyboard/focus and console errors. | PASS |
+| FI-01 | A private Korean civil field package is accepted for later evaluation only when rights, two original-image epochs, per-epoch ground control, LandXML design lineage, CRS/vertical basis and an independent reference are exact-digest bound. | Strict manifest schema, owner-only/no-symlink auditor, typed negative tests and [`CIVIL_FIELD_DATA_INTAKE.md`](CIVIL_FIELD_DATA_INTAKE.md). The successful result is `INPUT_READY`, never field acceptance. | PASS |
 | E2E-01 | A public small photogrammetry fixture completes sealed ingest → pinned NodeODM → DSM/DTM/point cloud → two-epoch comparison. | Reproducible job log, artifact digests, identity check and comparison result. | PARTIAL — live sealed single-epoch reconstruction and object-store digest round-trip pass; no valid public same-site second epoch in a supported Korean project CRS was available. |
 | HY-01 | No raw customer imagery, LandXML, GeoTIFF, credentials or large generated artifacts are committed. | `uv lock --check`, `git diff --check`, secret/large-file/reference-import hygiene checks. | PASS |
 
@@ -78,6 +79,11 @@ of the following are available under the approved data-governance path:
 2. two original-image epochs from the same site using the accepted processing profile;
 3. an independent reference volume or checkpoints sufficient to compare the reported uncertainty;
 4. recorded CRS, vertical reference, source lineage and result limitations.
+
+The owner prepares that package with [`CIVIL_FIELD_DATA_INTAKE.md`](CIVIL_FIELD_DATA_INTAKE.md) and
+the `civil-field-acceptance-manifest.v1.json` contract. The read-only audit reports only
+`INPUT_READY` or typed `BLOCKED` and always leaves `fieldAcceptance=NOT_EVALUATED`; processing and
+independent result review are later, separate gates.
 
 Until then, every result is labelled operational relative quantity and must not be used as a contract
 settlement, survey-grade or absolute-accuracy claim.
