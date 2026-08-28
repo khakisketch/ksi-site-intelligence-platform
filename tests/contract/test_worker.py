@@ -23,13 +23,14 @@ import base64
 import hashlib
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 import httpx
 import numpy as np
 import pytest
+from ksi_core.processing_profiles import ksi_odm_civil_v1
 from ksi_domain.detection import BoundingBox, Detection
 from ksi_domain.detection_adapter import AdapterResult
 from ksi_event_contracts.vertical_reference import VerticalDatum, VerticalReferenceSource
@@ -98,6 +99,7 @@ class FakeCoreClient:
     lease_calls: int = 0
     fail_on: str | None = None  # "verify" | "artifact:<id>" | "transition:<target>"
     _job_status: str = "QUEUED"
+    input_override: JobInput | None = None
 
     def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
         """이 파일의 시험 대상은 ``run_job(job_id, ...)`` 직접 호출이라 대기
@@ -112,6 +114,8 @@ class FakeCoreClient:
 
     def get_input(self, job_id: str) -> JobInput:
         self.calls.append(("get_input", job_id))
+        if self.input_override is not None:
+            return self.input_override
         return JobInput(
             mission_id="mission-1",
             site_id="site-1",
@@ -824,6 +828,37 @@ def test_no_detector_means_no_masking_by_default(tmp_path: Path) -> None:
     odm = FakeNodeOdm()
     _run(FakeCoreClient(), odm, _server_with_two_images(), tmp_path)
     assert odm.submitted_masks == []
+
+
+def test_standard_v1_rejects_a_configured_dynamic_masker(tmp_path: Path) -> None:
+    """The v1 profile fixes pixels as well as engine parameters (INV-053)."""
+    base = FakeCoreClient().get_input("seed")
+    profile = ksi_odm_civil_v1()
+    core = FakeCoreClient(
+        input_override=replace(
+            base,
+            engine_digest=profile.oci_image_digest,
+            processing_params=profile.processing_params,
+            processing_profile_id=profile.processing_profile_id,
+            processing_profile_digest=profile.profile_digest,
+            processing_profile_classification="VERSIONED",
+        )
+    )
+    odm = FakeNodeOdm()
+
+    with pytest.raises(WorkerRunError, match="dynamic object masking=OFF"):
+        run_job(
+            "job-1",
+            core=core,
+            odm=odm,
+            work_dir=tmp_path,
+            poll_interval_seconds=0,
+            http_client=_worker_http_client(_server_with_two_images()),
+            dynamic_object_detector=_FakeDetector([_person_result(), _person_result()]),
+        )
+
+    assert odm.info_calls == 0
+    assert any(call[0:2] == ("transition", "FAILED") for call in core.calls)
 
 
 def test_detector_generates_a_mask_per_photo_with_a_detection(tmp_path: Path) -> None:

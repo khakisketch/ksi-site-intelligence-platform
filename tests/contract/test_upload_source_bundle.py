@@ -627,11 +627,9 @@ def test_reconstruction_spec_matches_the_dashboard(tmp_path: Path) -> None:
         / "apps/dashboard/src/components/missions/SourceUploadPanel.tsx"
     ).read_text(encoding="utf-8")
 
-    assert RECONSTRUCTION_SPEC["provider"] == "odm"
-    assert f'provider: "{RECONSTRUCTION_SPEC["provider"]}"' in dashboard_source
-    assert f'engineVersion: "{RECONSTRUCTION_SPEC["engineVersion"]}"' in dashboard_source
-    assert f'engineDigest: "{RECONSTRUCTION_SPEC["engineDigest"]}"' in dashboard_source
-    assert f'executionLocus: "{RECONSTRUCTION_SPEC["executionLocus"]}"' in dashboard_source
+    assert RECONSTRUCTION_SPEC == {"processingProfileId": "ksi-odm-civil-v1"}
+    assert 'KSI_STANDARD_PROCESSING_PROFILE_ID = "ksi-odm-civil-v1"' in dashboard_source
+    assert "processingProfileId: KSI_STANDARD_PROCESSING_PROFILE_ID" in dashboard_source
 
 
 @pytest.mark.parametrize("seal", [False, True])

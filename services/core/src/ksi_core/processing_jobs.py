@@ -136,6 +136,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -189,6 +190,10 @@ from ksi_core.evidence import (
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
 from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
+from ksi_core.processing_profiles import (
+    ProcessingProfileRegistry,
+    UnknownProcessingProfileError,
+)
 from ksi_core.source_media import (
     CaptureWindow,
     CaptureWindowView,
@@ -377,6 +382,8 @@ class ProcessingJobVerdict(StrEnum):
     BUNDLE_NOT_SEALED = "BUNDLE_NOT_SEALED"
     # INV-050 — 반출 미허용 현장의 벤더 클라우드 실행.
     EGRESS_NOT_ALLOWED = "EGRESS_NOT_ALLOWED"
+    UNKNOWN_PROCESSING_PROFILE = "UNKNOWN_PROCESSING_PROFILE"
+    PROCESSING_PROFILE_ISSUANCE_DISABLED = "PROCESSING_PROFILE_ISSUANCE_DISABLED"
     ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
     # 워커 입력 수신 — 끝난 작업의 원본을 다시 내주지 않는다.
@@ -426,6 +433,8 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.UNKNOWN_JOB: 404,
     ProcessingJobVerdict.BUNDLE_NOT_SEALED: 422,
     ProcessingJobVerdict.EGRESS_NOT_ALLOWED: 422,
+    ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE: 422,
+    ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED: 409,
     ProcessingJobVerdict.ACTIVE_JOB_EXISTS: 409,
     ProcessingJobVerdict.ILLEGAL_TRANSITION: 409,
     # 409 지 422 가 아니다 — 요청 자체는 올바르고, 지금 원장 상태가 그 주장을
@@ -477,6 +486,18 @@ class JobSpec:
     execution_locus: ExecutionLocus
     license_basis: LicenseBasis
     processing_params: dict[str, Any]
+    processing_profile_id: str | None = None
+    processing_profile_digest: str | None = None
+
+    @property
+    def processing_profile_classification(self) -> str:
+        """Never infer a v1 profile for a pre-profile journal record."""
+        return (
+            "VERSIONED"
+            if self.processing_profile_id is not None
+            and self.processing_profile_digest is not None
+            else "LEGACY_UNMANAGED"
+        )
 
     def fingerprint(self) -> str:
         """멱등 재요청 판정용 지문 — 같은 사양이면 같은 값.
@@ -493,6 +514,8 @@ class JobSpec:
             "executionLocus": self.execution_locus.value,
             "licenseBasis": self.license_basis.model_dump(by_alias=True, mode="json"),
             "processingParams": self.processing_params,
+            "processingProfileId": self.processing_profile_id,
+            "processingProfileDigest": self.processing_profile_digest,
         }
         return sha256_digest(canonical_payload_bytes(payload))
 
@@ -524,6 +547,18 @@ class ProcessingJobRecord:
     # 추정하지 않는다(INV-020·040).
     capture_window: CaptureWindow = CaptureWindow.incomplete()
 
+    @property
+    def processing_profile_id(self) -> str | None:
+        return self.spec.processing_profile_id
+
+    @property
+    def processing_profile_digest(self) -> str | None:
+        return self.spec.processing_profile_digest
+
+    @property
+    def processing_profile_classification(self) -> str:
+        return self.spec.processing_profile_classification
+
     def to_contract(self) -> ProcessingJob:
         """계약 모델로 투영한다 — 어댑터로 나가는 payload 의 SSOT.
 
@@ -542,6 +577,8 @@ class ProcessingJobRecord:
             license_basis=self.spec.license_basis,
             input=self.input,
             processing_params=self.spec.processing_params,
+            processing_profile_id=self.spec.processing_profile_id,
+            processing_profile_digest=self.spec.processing_profile_digest,
             billing=(
                 self.billing
                 if self.billing is not None
@@ -729,10 +766,14 @@ class ProcessingJobStore:
         *,
         source_media_store: SourceMediaStore,
         site_store: SiteStore,
+        processing_profile_registry: ProcessingProfileRegistry | None = None,
+        processing_profile_issuance_enabled: bool = True,
     ) -> None:
         self._journal = journal
         self._source_media = source_media_store
         self._sites = site_store
+        self._processing_profiles = processing_profile_registry or ProcessingProfileRegistry()
+        self._processing_profile_issuance_enabled = processing_profile_issuance_enabled
         self._lock = threading.Lock()
         self._jobs: dict[str, ProcessingJobRecord] = {}
         # missionId → 발급된 작업 수(다음 jobId 순번의 근거)
@@ -778,6 +819,10 @@ class ProcessingJobStore:
                 execution_locus=ExecutionLocus(raw["executionLocus"]),
                 license_basis=license_basis,
                 processing_params=raw["processingParams"],
+                # Absence is a durable historical fact.  Do not retroactively
+                # label a prior job with today's default profile.
+                processing_profile_id=raw.get("processingProfileId"),
+                processing_profile_digest=raw.get("processingProfileDigest"),
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise ProcessingJobRecoveryError(
@@ -791,6 +836,10 @@ class ProcessingJobStore:
             # 발급 게이트가 깨진 것이다(source_media._replay_seal 과 같은 원칙).
             raise ProcessingJobRecoveryError(
                 f"재생: INV-050 위반 레코드 — 반출 미허용 현장의 vendor_cloud 작업: jobId={job_id}"
+            )
+        if (spec.processing_profile_id is None) != (spec.processing_profile_digest is None):
+            raise ProcessingJobRecoveryError(
+                "재생: processing profile binding이 반쪽이다 — jobId=" + job_id
             )
         record = ProcessingJobRecord(
             job_id=job_id,
@@ -1089,6 +1138,44 @@ class ProcessingJobStore:
         ``UNKNOWN_MISSION`` 과 같은 판정으로 접는다(열거 오라클 방지).
         """
         _require_tz_aware(now, param="now")
+        if (spec.processing_profile_id is None) != (
+            spec.processing_profile_digest is None
+        ):
+            return ProcessingJobResult(
+                ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE,
+                detail="processing profile binding은 id와 digest가 함께 있어야 한다",
+            )
+        if spec.processing_profile_id is not None:
+            try:
+                canonical_spec = self.resolve_processing_profile(
+                    spec.processing_profile_id
+                )
+            except UnknownProcessingProfileError:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE,
+                    detail="Core registry에서 발급되지 않은 processing profile이다",
+                )
+            if spec.fingerprint() != canonical_spec.fingerprint():
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE,
+                    detail=(
+                        "processing profile id와 실제 snapshot이 다르다 — "
+                        "Core registry 사양만 발급할 수 있다"
+                    ),
+                )
+            spec = canonical_spec
+        else:
+            # Legacy internal callers remain readable/issuable for the
+            # migration boundary, but the record must not retain a mutable
+            # dictionary owned by its caller.
+            spec = JobSpec(
+                provider=spec.provider,
+                engine_version=spec.engine_version,
+                engine_digest=spec.engine_digest,
+                execution_locus=spec.execution_locus,
+                license_basis=spec.license_basis.model_copy(deep=True),
+                processing_params=deepcopy(spec.processing_params),
+            )
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return ProcessingJobResult(
@@ -1164,6 +1251,11 @@ class ProcessingJobStore:
                 "processingParams": spec.processing_params,
                 "issuedBy": issued_by,
             }
+            if spec.processing_profile_id is not None:
+                # Both fields are guaranteed together by profile resolution;
+                # omitting both preserves exact legacy journal replay.
+                raw["processingProfileId"] = spec.processing_profile_id
+                raw["processingProfileDigest"] = spec.processing_profile_digest
             try:
                 self._journal.append(raw)
             except JournalSealedError:
@@ -1185,6 +1277,34 @@ class ProcessingJobStore:
             self._jobs[job_id] = record
             self._sequence[mission_id] = sequence
             return ProcessingJobResult(ProcessingJobVerdict.ISSUED, record=record)
+
+    @property
+    def processing_profiles(self) -> ProcessingProfileRegistry:
+        """The issued recipes available to authenticated callers (read-only)."""
+        return self._processing_profiles
+
+    @property
+    def processing_profile_issuance_enabled(self) -> bool:
+        return self._processing_profile_issuance_enabled
+
+    def resolve_processing_profile(self, processing_profile_id: str) -> JobSpec:
+        """Expand a public id to an immutable Core-owned JobSpec.
+
+        No client controlled parameter survives this boundary.  A disabled flag
+        is intentionally handled by the router so legacy replay/read paths
+        retain their normal behaviour.
+        """
+        profile = self._processing_profiles.get(processing_profile_id)
+        return JobSpec(
+            provider=profile.provider,
+            engine_version=profile.engine_version,
+            engine_digest=profile.oci_image_digest,
+            execution_locus=profile.execution_locus,
+            license_basis=profile.license_basis.model_copy(deep=True),
+            processing_params=profile.model_copy(deep=True).processing_params,
+            processing_profile_id=profile.processing_profile_id,
+            processing_profile_digest=profile.profile_digest,
+        )
 
     def transition(
         self,
@@ -1640,27 +1760,20 @@ def _residency_of(site: Any) -> DataResidency:
 # ── HTTP 배선 ────────────────────────────────────────────────────────────
 
 
-class LicenseBasisRequest(CamelModel):
-    license_id: str = Field(min_length=1)
-    tier: str = Field(min_length=1)
-    attribution_required: bool
-
-
 class ProcessingJobRequest(CamelModel):
-    """발급 요청 — **무엇으로 어디서** 돌릴지만 담는다.
+    """새 발급 요청 — Core가 소유한 처리 프로필 ID만 담는다.
 
     ``input``·``dataResidency``·``billing``·``status`` 필드가 의도적으로 없다.
     입력은 봉인된 번들이, 반출 허용은 현장이, 과금은 종료 보고가 정한다 —
     ``extra="forbid"`` 가 body 에 실어 보낸 위조를 거부한다(``sites.py``
     ``SiteTransitionRequest`` 의 ``actor`` 와 같은 관용구).
+
+    과거 raw provider/engine 원장은 Store가 ``LEGACY_UNMANAGED``로 계속 재생한다.
+    하지만 HTTP에서 새 unmanaged 작업을 만드는 것은 그 마이그레이션 경계가
+    아니다. 새 작업은 반드시 versioned profile snapshot과 digest를 갖는다.
     """
 
-    provider: ProcessingProvider
-    engine_version: str = Field(min_length=1)
-    engine_digest: str = Field(min_length=1)
-    execution_locus: ExecutionLocus
-    license_basis: LicenseBasisRequest
-    processing_params: dict[str, Any] = Field(default_factory=dict)
+    processing_profile_id: str = Field(min_length=1)
 
 
 class ProcessingJobTransitionRequest(CamelModel):
@@ -1803,6 +1916,9 @@ class JobInputView(CamelModel):
     engine_digest: str
     execution_locus: str
     processing_params: dict[str, Any]
+    processing_profile_id: str | None
+    processing_profile_digest: str | None
+    processing_profile_classification: str
     source_bundle_digest: str
     image_count: int
     media: list[JobInputMediaView]
@@ -1843,6 +1959,9 @@ class ProcessingJobView(CamelModel):
     # digest 에 대한** 검증이어야 참이다(ProcessingJobStore.is_input_verified).
     # false 면 input.totalMegapixels 는 업로더 신고값의 합이고 과금 근거가 아니다.
     input_verified: bool
+    processing_profile_id: str | None
+    processing_profile_digest: str | None
+    processing_profile_classification: str
     contract: dict[str, Any]
     # 등록된 산출물의 계약 payload 그대로(등록 순). SUCCEEDED 를 받쳐주는 근거가
     # 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수 있게 한다(INV-051).
@@ -1882,6 +2001,12 @@ class ProcessingJobMutationResponse(CamelModel):
     detail: str | None = None
 
 
+class ProcessingProfileListResponse(CamelModel):
+    """Issued profiles, never an editable configuration surface."""
+
+    profiles: list[dict[str, Any]]
+
+
 def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> ProcessingJobView:
     return ProcessingJobView(
         job_id=record.job_id,
@@ -1893,6 +2018,9 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
         updated_at=record.updated_at,
         detail=record.terminal_detail,
         input_verified=input_verified,
+        processing_profile_id=record.processing_profile_id,
+        processing_profile_digest=record.processing_profile_digest,
+        processing_profile_classification=record.processing_profile_classification,
         contract=processing_job_wire_dict(record.to_contract()),
         artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
         lease_worker_id=record.lease.worker_id if record.lease is not None else None,
@@ -1936,18 +2064,22 @@ def build_processing_jobs_router(
         response: Response,
         principal: Principal = Depends(_require_processing_job_issue),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
-        spec = JobSpec(
-            provider=request.provider,
-            engine_version=request.engine_version,
-            engine_digest=request.engine_digest,
-            execution_locus=request.execution_locus,
-            license_basis=LicenseBasis(
-                license_id=request.license_basis.license_id,
-                tier=request.license_basis.tier,
-                attribution_required=request.license_basis.attribution_required,
-            ),
-            processing_params=request.processing_params,
-        )
+        if not store.processing_profile_issuance_enabled:
+            response.status_code = _STATUS[
+                ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED
+            ]
+            return ProcessingJobMutationResponse(
+                verdict=ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED.value,
+                detail="KSI 표준 처리 프로필 발급은 현재 read-only rollback 상태다",
+            )
+        try:
+            spec = store.resolve_processing_profile(request.processing_profile_id)
+        except UnknownProcessingProfileError:
+            response.status_code = _STATUS[ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE]
+            return ProcessingJobMutationResponse(
+                verdict=ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE.value,
+                detail="알 수 없는 processingProfileId다 — Core registry에서 발급된 값만 쓴다",
+            )
         result = store.issue(
             mission_id,
             spec,
@@ -2221,6 +2353,9 @@ def build_processing_jobs_router(
                 engine_digest=record.spec.engine_digest,
                 execution_locus=record.spec.execution_locus.value,
                 processing_params=record.spec.processing_params,
+                processing_profile_id=record.processing_profile_id,
+                processing_profile_digest=record.processing_profile_digest,
+                processing_profile_classification=record.processing_profile_classification,
                 source_bundle_digest=record.input.source_bundle_digest,
                 image_count=record.input.image_count,
                 media=media,
@@ -2444,6 +2579,20 @@ def build_processing_jobs_router(
     return router
 
 
+def build_processing_profiles_router(store: ProcessingJobStore) -> APIRouter:
+    """Expose Core-owned profile snapshots for UI and local uploader discovery."""
+    router = APIRouter(tags=["processing-profiles"])
+
+    @router.get("/v1/processing-profiles", response_model=ProcessingProfileListResponse)
+    def list_processing_profiles(
+        principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> ProcessingProfileListResponse:
+        del principal
+        return ProcessingProfileListResponse(profiles=store.processing_profiles.wire_list())
+
+    return router
+
+
 def mount_processing_jobs(
     app: FastAPI,
     store: ProcessingJobStore,
@@ -2461,6 +2610,7 @@ def mount_processing_jobs(
     """
     app.state.processing_job_store = store
     app.include_router(build_processing_jobs_router(store, storage, site_lifecycle))
+    app.include_router(build_processing_profiles_router(store))
 
 
 __all__ = [
@@ -2477,6 +2627,7 @@ __all__ = [
     "ProcessingArtifactRequest",
     "ProcessingJobListResponse",
     "ProcessingJobMutationResponse",
+    "ProcessingProfileListResponse",
     "ProcessingJobRecord",
     "ProcessingJobRecoveryError",
     "ProcessingJobRequest",
@@ -2490,5 +2641,6 @@ __all__ = [
     "assert_succeeded_is_backed",
     "build_job_id",
     "build_processing_jobs_router",
+    "build_processing_profiles_router",
     "mount_processing_jobs",
 ]

@@ -129,8 +129,22 @@ class ProcessingJob(_CamelModel):
     license_basis: LicenseBasis
     input: ProcessingInput
     processing_params: dict[str, Any] = Field(default_factory=dict)
+    # ADR-KSI-030 / INV-053: a versioned profile is the only reproducible
+    # quantitative-processing path.  Both remain optional so historical
+    # journal records can replay truthfully as LEGACY_UNMANAGED rather than
+    # receiving an invented profile after the fact.
+    processing_profile_id: str | None = Field(default=None, min_length=1)
+    processing_profile_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     billing: Billing
     status: ProcessingJobStatus | None = None
+
+    @model_validator(mode="after")
+    def _profile_binding_is_complete(self) -> ProcessingJob:
+        if (self.processing_profile_id is None) != (self.processing_profile_digest is None):
+            raise ValueError(
+                "processingProfileId와 processingProfileDigest는 함께 있어야 한다"
+            )
+        return self
 
     @model_validator(mode="after")
     def _vendor_cloud_requires_egress_allowed(self) -> ProcessingJob:

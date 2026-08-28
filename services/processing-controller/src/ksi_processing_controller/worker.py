@@ -69,6 +69,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+from ksi_event_contracts.processing_job import ExecutionLocus, LicenseBasis, ProcessingProvider
+from ksi_event_contracts.processing_profile import (
+    ProcessingPreprocessingPolicy,
+    ProcessingProfileV1,
+)
 from ksi_event_contracts.vertical_reference import (
     VerticalDatum,
     VerticalReference,
@@ -80,6 +85,7 @@ from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     CoreClient,
     CoreClientError,
+    JobInput,
     MeasuredImage,
 )
 from ksi_processing_controller.gsd import resolve_gsd
@@ -104,6 +110,78 @@ logger = logging.getLogger(__name__)
 
 class WorkerRunError(RuntimeError):
     """작업 실행이 실패했다 — Core 에는 이미 FAILED 로 보고를 시도했다."""
+
+
+class ProcessingProfileIdentityMismatch(WorkerRunError):
+    """Core-issued v1 profile and the worker/runtime facts diverged."""
+
+
+_KSI_ODM_CIVIL_V1_ID = "ksi-odm-civil-v1"
+_KSI_NODEODM_IMAGE_DIGEST = (
+    "sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+)
+
+
+def _ksi_odm_civil_v1_profile() -> ProcessingProfileV1:
+    """Local verifier copy of the issued profile, not a worker configuration.
+
+    It is built from the public contract so the worker can reject a forged
+    Core response before any input bytes are sent to NodeODM.  The Core remains
+    the sole issuer; this function only verifies its immutable snapshot.
+    """
+    return ProcessingProfileV1(
+        processing_profile_id=_KSI_ODM_CIVIL_V1_ID,
+        provider=ProcessingProvider.ODM,
+        engine_version="3.5.6",
+        node_odm_version="2.2.4",
+        oci_image="opendronemap/nodeodm",
+        oci_image_digest=_KSI_NODEODM_IMAGE_DIGEST,
+        execution_locus=ExecutionLocus.KSI_SERVER_GPU,
+        processing_params={"dsm": True, "dtm": True, "pc-quality": "medium"},
+        preprocessing=ProcessingPreprocessingPolicy(
+            dynamic_object_masking=False, policy_version="none-v1"
+        ),
+        required_artifacts=("point_cloud", "dsm", "dtm"),
+        license_basis=LicenseBasis(
+            license_id="AGPL-3.0",
+            tier="self_hosted_unmodified_container",
+            attribution_required=False,
+        ),
+        agpl_boundary=(
+            "Unmodified NodeODM container is isolated behind its REST API; any customer "
+            "on-prem image distribution requires source-offer notice and legal review."
+        ),
+    ).sealed()
+
+
+def _assert_processing_profile(
+    job_input: JobInput, *, dynamic_object_detector: ImageDetector | None
+) -> None:
+    """Fail closed for v1; unmanaged historical jobs keep their recorded behaviour."""
+    profile_id = job_input.processing_profile_id
+    classification = job_input.processing_profile_classification
+    if classification == "LEGACY_UNMANAGED":
+        return
+    if classification != "VERSIONED" or profile_id != _KSI_ODM_CIVIL_V1_ID:
+        raise ProcessingProfileIdentityMismatch(
+            "알 수 없거나 불완전한 versioned processing profile"
+        )
+    expected = _ksi_odm_civil_v1_profile()
+    if (
+        job_input.processing_profile_digest != expected.profile_digest
+        or job_input.provider != expected.provider.value
+        or job_input.engine_version != expected.engine_version
+        or job_input.engine_digest != expected.oci_image_digest
+        or job_input.execution_locus != expected.execution_locus.value
+        or job_input.processing_params != expected.processing_params
+    ):
+        raise ProcessingProfileIdentityMismatch(
+            "KSI 표준 처리 v1 profile snapshot과 worker input이 일치하지 않는다"
+        )
+    if dynamic_object_detector is not None:
+        raise ProcessingProfileIdentityMismatch(
+            "ksi-odm-civil-v1은 dynamic object masking=OFF인데 detector가 주입됐다"
+        )
 
 
 # 산출물 업로드의 Content-Type. 종류별로 나누지 않는다 — 이 값은 스토리지가
@@ -243,6 +321,9 @@ def run_job(
     # 가득·네트워크 오류) 부분 파일이 남을 수 있고, 그것도 청소 대상이다.
     downloaded_paths: list[Path] = []
     try:
+        _assert_processing_profile(
+            job_input, dynamic_object_detector=dynamic_object_detector
+        )
         if job_input.site_crs is None:
             # 현장 원장 이상 상태 — 여기서 계속하면 crs 없는 산출물을 만들게 된다.
             # try 안에서 던져야 아래 except 가 FAILED 를 Core 에 보고한다 —
@@ -311,7 +392,16 @@ def run_job(
             now_message(f"[{job_id}] 기준점 파일 확인 — 좌표계 {declared}")
 
         # ── 5. 엔진 신원 대조 + 제출 + 완주 대기 ────────────────────────
-        assert_engine_matches(odm.info(), expected_version=job_input.engine_version)
+        engine_info = odm.info()
+        assert_engine_matches(engine_info, expected_version=job_input.engine_version)
+        if (
+            job_input.processing_profile_id == _KSI_ODM_CIVIL_V1_ID
+            and engine_info.node_version != "2.2.4"
+        ):
+            raise ProcessingProfileIdentityMismatch(
+                "ksi-odm-civil-v1은 NodeODM 2.2.4가 필요하지만 /info가 "
+                f"{engine_info.node_version!r}를 보고했다"
+            )
         images = [
             SourceImage(media_id=m.media_id, download_url=m.download_url)
             for m in job_input.media
@@ -430,4 +520,4 @@ def run_job(
             fetch.close()
 
 
-__all__ = ["WorkerRunError", "run_job"]
+__all__ = ["ProcessingProfileIdentityMismatch", "WorkerRunError", "run_job"]

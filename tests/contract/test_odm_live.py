@@ -430,17 +430,13 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
     from ksi_core.evidence import DEFAULT_UPLOAD_TTL
     from ksi_core.evidence_s3 import S3EvidenceStorage
     from ksi_core.mission_records import MissionRecord, MissionStore
-    from ksi_core.processing_jobs import JobSpec, ProcessingJobStore
+    from ksi_core.processing_jobs import ProcessingJobStore
+    from ksi_core.processing_profiles import KSI_ODM_CIVIL_V1_ID
     from ksi_core.sites import SiteFrame, SiteStore
     from ksi_core.source_media import (
         SourceMediaClaim,
         SourceMediaStore,
         build_source_media_object_key,
-    )
-    from ksi_event_contracts.processing_job import (
-        ExecutionLocus,
-        LicenseBasis,
-        ProcessingProvider,
     )
     from ksi_processing_controller.core_client import HttpCoreClient
     from ksi_processing_controller.worker import run_job
@@ -539,18 +535,11 @@ def test_completed_reconstruction_artifacts_persist_and_redownload_with_matching
         source_media_store=source_media_store,
         site_store=site_store,
     )
-    spec = JobSpec(
-        provider=ProcessingProvider.ODM,
-        engine_version="3.5.6",
-        engine_digest="sha256:" + "a" * 64,
-        execution_locus=ExecutionLocus.KSI_SERVER_GPU,
-        license_basis=LicenseBasis(
-            license_id="AGPL-3.0", tier="self-hosted", attribution_required=False
-        ),
-        processing_params={"dsm": True, "dtm": True, "pc-quality": "medium"},
-    )
+    spec = processing_job_store.resolve_processing_profile(KSI_ODM_CIVIL_V1_ID)
     issued_job = processing_job_store.issue(mission_id, spec, issued_by="op-1", now=now)
     assert issued_job.record is not None, issued_job
+    assert issued_job.record.spec.processing_profile_id == KSI_ODM_CIVIL_V1_ID
+    assert issued_job.record.spec.processing_profile_digest == spec.processing_profile_digest
     job_id = issued_job.record.job_id
 
     worker_token = "odm-live-persist-worker"  # noqa: S105

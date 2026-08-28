@@ -1196,15 +1196,13 @@ export interface SourceMediaSealResponse {
   bundle: SourceMediaBundleView | null;
 }
 
-/** POST /v1/missions/{missionId}/processing-jobs 요청 — 무엇으로 어디서 돌릴지만. */
-export interface ProcessingJobIssueInput {
-  provider: "odm";
-  engineVersion: string;
-  engineDigest: string;
-  executionLocus: string;
-  licenseBasis: { licenseId: string; tier: string; attributionRequired: boolean };
-  processingParams: Record<string, unknown>;
-}
+/**
+ * POST /v1/missions/{missionId}/processing-jobs 요청.
+ *
+ * 새 작업은 registry가 발급한 profile ID 하나만 받는다. 과거 raw provider/engine
+ * 원장의 `LEGACY_UNMANAGED` 재생은 Core 내부 호환 경계이며 새 HTTP 입력이 아니다.
+ */
+export type ProcessingJobIssueInput = { processingProfileId: string };
 
 /** 발급/조회 응답의 job 필드 — 화면이 쓰는 필드만 좁혀 선언한다(ProcessingJobView 전체 아님). */
 export interface ProcessingJobSummary {
@@ -1213,6 +1211,9 @@ export interface ProcessingJobSummary {
   issuedAt: string;
   detail: string | null;
   captureWindow: CaptureWindowView;
+  processingProfileId?: string | null;
+  processingProfileDigest?: string | null;
+  processingProfileClassification?: "VERSIONED" | "LEGACY_UNMANAGED" | string;
 }
 
 export interface ProcessingJobMutationResponse {
@@ -1243,6 +1244,9 @@ export interface SiteProcessingJobSummary {
   detail: string | null;
   artifacts: ProcessingArtifactSummary[];
   captureWindow: CaptureWindowView;
+  processingProfileId?: string | null;
+  processingProfileDigest?: string | null;
+  processingProfileClassification?: "VERSIONED" | "LEGACY_UNMANAGED" | string;
 }
 
 export interface SiteProcessingJobListResponse {
@@ -1322,6 +1326,18 @@ export interface ComparisonRequestCreateInput {
   zoneCrs?: string | null;
 }
 
+/**
+ * POST /v1/missions/{missionId}/comparison-preflight.
+ *
+ * `reason`은 INV-053의 typed blocker를 그대로 보존한다. UI는 사람 말 안내를
+ * 덧붙일 수 있지만 이 코드를 일반 오류 문장으로 뭉개면 안 된다.
+ */
+export interface CivilComparisonPreflightResponse {
+  compatible: boolean;
+  reason: string | null;
+  detail: string | null;
+}
+
 // ── 설계 기준면 · 설계 대비 잔량 (M4-A) ─────────────────────────────────────
 //
 // 이 블록의 규율 하나: **선언(declared)과 관측(observed)을 절대 한 평면에 섞지
@@ -1338,7 +1354,7 @@ export const DESIGN_SURFACE_STATUSES = [
 export type DesignSurfaceStatus = (typeof DESIGN_SURFACE_STATUSES)[number];
 
 /**
- * 설계면이 비교 입력이 되지 못하는 typed 사유 8종
+ * 설계면이 비교 입력이 되지 못하는 typed 사유 10종
  * (`ksi_core.design_surfaces.DesignSurfaceRejectionReason`).
  *
  * 서버가 코드를 주고 화면이 한국어로 옮긴다(labels.ts) — 서버의 `detail` 문장을
@@ -1353,6 +1369,8 @@ export const DESIGN_SURFACE_REJECTION_REASONS = [
   "NO_FINITE_CELLS",
   "VERTICAL_DECLARATION_CONTRADICTED",
   "UNREADABLE_RASTER",
+  "LANDXML_NORMALIZATION_FAILED",
+  "SOURCE_LINEAGE_INVALID",
 ] as const;
 export type DesignSurfaceRejectionReason = (typeof DESIGN_SURFACE_REJECTION_REASONS)[number];
 
@@ -1408,10 +1426,22 @@ export interface DesignSurface {
   siteId: string;
   name: string;
   revision: string;
-  format: "geotiff";
+  /** Raw ingress format; LandXML is normalized to a canonical GeoTIFF server-side. */
+  format: "geotiff" | "landxml";
+  /** Explicit TIN Surface name for a LandXML ingress; null for direct GeoTIFF. */
+  surfaceSelector?: string | null;
   declared: DesignSurfaceDeclared;
   /** 아직 아무도 재지 않았으면 null. REJECTED 인데 null 인 경우도 정상이다. */
   observed: DesignSurfaceObserved | null;
+  /** Original LandXML → selector → canonical GeoTIFF provenance. */
+  sourceLineage?: {
+    sourceFormat: "landxml";
+    sourceSha256: string;
+    surfaceSelector: string;
+    parserVersion: string;
+    normalizationProfile: string;
+    canonicalSha256: string;
+  } | null;
   status: DesignSurfaceStatus;
   /** REJECTED 일 때의 typed verdict — 그 외 상태에서는 null. */
   rejectionReason: string | null;
@@ -1426,6 +1456,8 @@ export interface DesignSurface {
 export interface DesignSurfaceRegisterInput {
   name: string;
   revision: string;
+  sourceFormat?: "geotiff" | "landxml";
+  surfaceSelector?: string | null;
   declared: DesignSurfaceDeclared;
 }
 
@@ -1434,6 +1466,8 @@ export interface DesignSurfaceRegisterResponse {
   detail: string | null;
   designSurfaceId: string | null;
   objectKey: string | null;
+  /** LandXML 원본과 분리된 canonical GeoTIFF의 서버 유도 저장 키; 직접 GeoTIFF면 null. */
+  canonicalObjectKey: string | null;
   /** REGISTERED 일 때만 채워진다 — 발급 실패는 STORE_UNAVAILABLE 로 격하된다. */
   uploadUrl: string | null;
   expiresAt: string | null;
@@ -1460,6 +1494,14 @@ export interface DesignConformanceRequestView {
   designSurfaceId: string;
   /** 요청 시점 VERIFIED 설계면의 **관측된** 해시(접두사 없는 16진). */
   designSurfaceSha256: string;
+  /** 정량 비교가 재현 가능한 처리 프로필에서 나왔는지 판정하는 원장 앵커. */
+  processingProfileDigest: string | null;
+  /** 현재 지형 산출물을 만든 봉인 원본 번들의 digest 앵커. */
+  sourceBundleDigest: string | null;
+  /** 설계면 revision과 정규화 계보 — 진척 시계열은 이 셋이 같을 때만 잇는다. */
+  designSurfaceRevision: string | null;
+  designNormalizationProfile: string | null;
+  designNormalizationDigest: string | null;
   current: ArtifactRefView;
   zones: Record<string, Record<string, unknown>>;
   zoneCrs: string;
@@ -1575,6 +1617,8 @@ export interface DesignProgress {
 /** `progress` 와 `detail` 중 하나는 항상 채워진다 — 빈 표를 내지 않는다. */
 export interface DesignProgressResponse {
   progress: DesignProgress | null;
+  /** INV-053 typed blocker; narrative detail과 달리 UI/자동화가 안전하게 분기한다. */
+  reason: string | null;
   unmatchedZoneIds: string[];
   /** 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 표에서 뺀 구역 — unmatched 와 다른 사유. */
   areaMismatchZoneIds: string[];

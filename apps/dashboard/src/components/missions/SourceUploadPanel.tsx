@@ -30,15 +30,14 @@ import type {
 // 범위를 줄인다(source_media.py 모듈 docstring: "한 요청당 상한").
 const BATCH_SIZE = 50;
 
-// 재구성 발행 스펙 — 사용자 설정 UI는 이번 스코프 밖(docs/goals/HANDOFF_2026-08-09.md
-// §3-1). 실기동 예시(tests/contract/test_odm_live.py:473-480)와 같은 값을 쓴다.
+/**
+ * 사용자는 엔진 이미지·파라미터를 고르지 않는다. Core registry가 이 불변 ID를
+ * canonical profile snapshot으로 확장한다(REQ-INT-104). Dashboard와 로컬
+ * 업로더가 각자 ODM 값을 복제하면 같은 현장의 두 epoch가 조용히 달라질 수 있다.
+ */
+const KSI_STANDARD_PROCESSING_PROFILE_ID = "ksi-odm-civil-v1";
 const RECONSTRUCTION_SPEC: ProcessingJobIssueInput = {
-  provider: "odm",
-  engineVersion: "3.5.6",
-  engineDigest: "ksi-dashboard-default",
-  executionLocus: "ksi_server_gpu",
-  licenseBasis: { licenseId: "AGPL-3.0", tier: "self-hosted", attributionRequired: false },
-  processingParams: { dsm: true, dtm: true, "pc-quality": "medium" },
+  processingProfileId: KSI_STANDARD_PROCESSING_PROFILE_ID,
 };
 
 type FileStatus = "pending" | "registering" | "uploading" | "done" | "error";
@@ -303,6 +302,8 @@ export function SourceUploadPanel({
   }
 
   const busy = phase === "uploading" || phase === "sealing" || phase === "issuing";
+  const completedItemCount = items.filter((item) => item.status === "done").length;
+  const failedItems = items.filter((item) => item.status === "error");
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -316,6 +317,12 @@ export function SourceUploadPanel({
           </span>
         )}
       </div>
+
+      <p className="text-[12.5px] break-keep text-ink-muted">
+        <strong className="font-bold text-ink-2">KSI 표준 처리 v1</strong> · DSM·DTM과
+        중간 품질 점군을 같은 고정 프로필로 처리합니다. 처리값은 이 화면에서 바꿀 수
+        없으며, 시계열·물량 비교의 일관성을 위해 Core 원장에 함께 고정됩니다.
+      </p>
 
       {error && (
         <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] font-semibold break-keep text-crit-ink">
@@ -351,27 +358,42 @@ export function SourceUploadPanel({
           </label>
 
           {items.length > 0 && (
-            <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-sunk p-2">
-              {items.map((it) => (
-                <li
-                  key={it.mediaId}
-                  className="flex items-center justify-between gap-2 text-[11.5px] break-keep"
-                >
-                  <span className="num truncate text-ink-2">{it.mediaId}</span>
-                  <span
-                    className={
-                      it.status === "error"
-                        ? "text-crit-ink"
-                        : it.status === "done"
-                          ? "text-safe-ink"
-                          : "text-ink-muted"
-                    }
+            <div className="flex flex-col gap-2">
+              <p className="text-[11.5px] break-keep text-ink-muted">
+                이번 선택 {items.length}개 · 완료 {completedItemCount}개 · 실패 {failedItems.length}개
+              </p>
+              <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-sunk p-2">
+                {items.map((it) => (
+                  <li
+                    key={it.mediaId}
+                    className="flex items-center justify-between gap-2 text-[11.5px] break-keep"
                   >
-                    {it.message ?? FILE_STATUS_LABEL[it.status]}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    <span className="num truncate text-ink-2">{it.mediaId}</span>
+                    <span
+                      className={
+                        it.status === "error"
+                          ? "text-crit-ink"
+                          : it.status === "done"
+                            ? "text-safe-ink"
+                            : "text-ink-muted"
+                      }
+                    >
+                      {it.message ?? FILE_STATUS_LABEL[it.status]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {failedItems.length > 0 && (
+                <button
+                  type="button"
+                  className="btn w-fit"
+                  disabled={busy}
+                  onClick={() => void handleFiles(failedItems.map((item) => item.file))}
+                >
+                  실패 파일 다시 시도 ({failedItems.length})
+                </button>
+              )}
+            </div>
           )}
 
           {(phase === "ready-to-seal" || phase === "sealing") && (

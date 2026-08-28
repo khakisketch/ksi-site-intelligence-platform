@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/processing-profile.v1.json",
+  "title": "ProcessingProfile v1",
+  "description": "Immutable processing recipe. Its profileDigest is the SHA-256 of this canonical snapshot excluding profileDigest itself. A profile is issued, never edited in place (ADR-KSI-030).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["processingProfileId", "profileVersion", "provider", "engineVersion", "ociImage", "ociImageDigest", "executionLocus", "processingParams", "preprocessing", "requiredArtifacts", "licenseBasis", "agplBoundary", "profileDigest"],
+  "properties": {
+    "processingProfileId": {"type": "string", "minLength": 1},
+    "profileVersion": {"type": "string", "minLength": 1},
+    "provider": {"enum": ["odm", "pix4d_engine", "dji_flighthub", "metashape_spl", "customer_workstation"]},
+    "engineVersion": {"type": "string", "minLength": 1},
+    "nodeOdmVersion": {"type": "string", "minLength": 1},
+    "ociImage": {"type": "string", "minLength": 1},
+    "ociImageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "executionLocus": {"enum": ["site_onprem", "ksi_server_gpu", "customer_workstation", "vendor_cloud"]},
+    "processingParams": {"type": "object", "additionalProperties": true},
+    "preprocessing": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dynamicObjectMasking", "policyVersion"],
+      "properties": {"dynamicObjectMasking": {"type": "boolean"}, "policyVersion": {"type": "string", "minLength": 1}}
+    },
+    "requiredArtifacts": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "licenseBasis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["licenseId", "tier", "attributionRequired"],
+      "properties": {"licenseId": {"type": "string", "minLength": 1}, "tier": {"type": "string", "minLength": 1}, "attributionRequired": {"type": "boolean"}}
+    },
+    "agplBoundary": {"type": "string", "minLength": 1},
+    "profileDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

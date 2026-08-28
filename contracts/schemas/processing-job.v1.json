@@ -125,6 +125,16 @@
       "description": "엔진별 자유 처리 파라미터. provider 마다 파라미터 형태가 달라 이 계약은 형태를 고정하지 않는다(자유 객체 — additionalProperties 제한 없음).",
       "additionalProperties": true
     },
+    "processingProfileId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ADR-KSI-030 immutable processing profile identifier. Missing only for historical LEGACY_UNMANAGED records; Core never infers it during replay."
+    },
+    "processingProfileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Canonical SHA-256 digest of the immutable processing profile snapshot."
+    },
     "billing": {
       "type": "object",
       "additionalProperties": false,
@@ -154,6 +164,14 @@
     }
   },
   "allOf": [
+    {
+      "if": {"required": ["processingProfileId"]},
+      "then": {"required": ["processingProfileDigest"]}
+    },
+    {
+      "if": {"required": ["processingProfileDigest"]},
+      "then": {"required": ["processingProfileId"]}
+    },
     {
       "if": {
         "properties": {

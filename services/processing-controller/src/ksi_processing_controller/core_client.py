@@ -92,6 +92,11 @@ class JobInput:
     # 현장 등록 시점의 CRS — Core 가 site_store 에서 읽어 준다(워커·발급자가
     # 자기 신고하지 않는다). None 이면 현장 원장 이상 상태다.
     site_crs: str | None
+    # Missing fields are historical fact, not a reason to prevent an old job
+    # from being failed/reported by a newer worker.
+    processing_profile_id: str | None = None
+    processing_profile_digest: str | None = None
+    processing_profile_classification: str = "LEGACY_UNMANAGED"
     # 기준점 파일(있으면). None 이면 이 조사는 기준점 없이 찍혔고, 엔진은 EXIF 로
     # 좌표계를 고른다 — 그 성과는 두 시점 비교에서 거부된다.
     ground_control: JobInputGroundControl | None = None
@@ -210,6 +215,10 @@ class PendingDesignSurface:
     design_surface_id: str
     site_id: str
     download_url: str
+    source_format: str = "geotiff"
+    surface_selector: str | None = None
+    declared_crs: str | None = None
+    normalization_upload_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +247,7 @@ class DesignSurfaceMeasurement:
     vertical_crs_epsg: int | None = None
     nodata: float | None = None
     nodata_is_nan: bool = False
+    source_lineage: dict[str, str] | None = None
 
 
 class DesignSurfaceCoreClient(Protocol):
@@ -268,6 +278,12 @@ class DesignSurfaceCoreClient(Protocol):
         self, design_surface_id: str, *, detail: str | None = None
     ) -> None:
         """``POST /verification-failure``. 사유는 Core 가 UNREADABLE_RASTER 로 고정한다."""
+        ...
+
+    def report_design_surface_normalization_failure(
+        self, design_surface_id: str, *, detail: str | None = None
+    ) -> None:
+        """Record a typed LandXML normalisation rejection without reclassifying it as raster I/O."""
         ...
 
 
@@ -619,6 +635,11 @@ class HttpCoreClient:
             engine_digest=data["engineDigest"],
             execution_locus=data["executionLocus"],
             processing_params=data["processingParams"],
+            processing_profile_id=data.get("processingProfileId"),
+            processing_profile_digest=data.get("processingProfileDigest"),
+            processing_profile_classification=data.get(
+                "processingProfileClassification", "LEGACY_UNMANAGED"
+            ),
             source_bundle_digest=data["sourceBundleDigest"],
             site_crs=data.get("siteCrs"),
             media=tuple(
@@ -833,6 +854,10 @@ class HttpCoreClient:
                 design_surface_id=item["designSurfaceId"],
                 site_id=item["siteId"],
                 download_url=item["downloadUrl"],
+                source_format=str(item.get("sourceFormat", "geotiff")),
+                surface_selector=item.get("surfaceSelector"),
+                declared_crs=item.get("declaredCrs"),
+                normalization_upload_url=item.get("normalizationUploadUrl"),
             )
             for item in payload["surfaces"]
         ]
@@ -864,6 +889,7 @@ class HttpCoreClient:
                 "boundsMaxX": measurement.bounds_max_x,
                 "boundsMaxY": measurement.bounds_max_y,
                 "finiteCellCount": measurement.finite_cell_count,
+                "sourceLineage": measurement.source_lineage,
             },
         )
         return str(payload["verdict"])
@@ -874,6 +900,16 @@ class HttpCoreClient:
         self._post(
             f"/v1/design-surfaces/{design_surface_id}/verification-failure",
             what=f"design-surface-verification-failure:{design_surface_id}",
+            ok=frozenset({"REJECTED", "ALREADY_JUDGED"}),
+            json={"detail": detail},
+        )
+
+    def report_design_surface_normalization_failure(
+        self, design_surface_id: str, *, detail: str | None = None
+    ) -> None:
+        self._post(
+            f"/v1/design-surfaces/{design_surface_id}/normalization-failure",
+            what=f"design-surface-normalization-failure:{design_surface_id}",
             ok=frozenset({"REJECTED", "ALREADY_JUDGED"}),
             json={"detail": detail},
         )

@@ -81,21 +81,9 @@ _EXTENSION_CONTENT_TYPES: dict[str, str] = {
     ".webp": "image/webp",
 }
 
-# 재구성 발행 스펙 — 대시보드(SourceUploadPanel.tsx RECONSTRUCTION_SPEC)와 **같은
-# 값**을 쓴다. 사람이 누르든 이 도구가 부르든 같은 사양으로 재구성돼야, 두 경로가
-# 만든 산출물을 나중에 같은 기준으로 비교할 수 있다.
-RECONSTRUCTION_SPEC: dict[str, Any] = {
-    "provider": "odm",
-    "engineVersion": "3.5.6",
-    "engineDigest": "ksi-dashboard-default",
-    "executionLocus": "ksi_server_gpu",
-    "licenseBasis": {
-        "licenseId": "AGPL-3.0",
-        "tier": "self-hosted",
-        "attributionRequired": False,
-    },
-    "processingParams": {"dsm": True, "dtm": True, "pc-quality": "medium"},
-}
+# Core expands this id to the immutable profile snapshot. Keeping engine knobs
+# out of the local uploader prevents it from drifting from the Console path.
+RECONSTRUCTION_SPEC: dict[str, Any] = {"processingProfileId": "ksi-odm-civil-v1"}
 
 _CONFIRMED_CACHE_NAME = "uploaded.json"
 

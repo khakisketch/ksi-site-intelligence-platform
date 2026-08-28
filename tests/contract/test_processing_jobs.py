@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -291,6 +292,30 @@ def _running_job(store: ProcessingJobStore, tmp_path: Path) -> str:
         is ProcessingJobVerdict.TRANSITIONED
     )
     return record.job_id
+
+
+def test_issue_rejects_a_tampered_versioned_profile_snapshot(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    canonical = store.resolve_processing_profile("ksi-odm-civil-v1")
+    tampered = replace(canonical, processing_params={"pc-quality": "ultra"})
+
+    result = store.issue(_MISSION_ID, tampered, issued_by="op-1", now=_NOW)
+
+    assert result.verdict is ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE
+    assert store.list_for_mission(_MISSION_ID) == []
+
+
+def test_issue_detaches_legacy_processing_params_from_the_caller(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    spec = _spec(params={"nested": {"quality": "high"}})
+
+    result = store.issue(_MISSION_ID, spec, issued_by="op-1", now=_NOW)
+    assert result.record is not None
+    spec.processing_params["nested"]["quality"] = "tampered"
+
+    stored = store.get(result.record.job_id)
+    assert stored is not None
+    assert stored.spec.processing_params == {"nested": {"quality": "high"}}
 
 
 def _measurements_matching(bundles: SourceMediaStore) -> list[SourceMediaMeasurement]:
@@ -1497,20 +1522,49 @@ def _client_with_assigned_edge_device(
 
 
 def _issue_payload(**overrides: Any) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "provider": "odm",
-        "engineVersion": "3.5.4",
-        "engineDigest": "sha256:" + "a" * 64,
-        "executionLocus": "ksi_server_gpu",
-        "licenseBasis": {
-            "licenseId": "AGPL-3.0",
-            "tier": "self-hosted",
-            "attributionRequired": False,
-        },
-        "processingParams": {"quality": "high"},
-    }
+    payload: dict[str, Any] = {"processingProfileId": "ksi-odm-civil-v1"}
     payload.update(overrides)
     return payload
+
+
+def test_http_profile_issue_expands_core_owned_snapshot(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs",
+        json={"processingProfileId": "ksi-odm-civil-v1"},
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()["job"]
+    assert job["processingProfileId"] == "ksi-odm-civil-v1"
+    assert job["processingProfileClassification"] == "VERSIONED"
+    assert job["contract"]["engineDigest"] == (
+        "sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+    )
+    assert job["contract"]["processingParams"] == {
+        "dsm": True,
+        "dtm": True,
+        "pc-quality": "medium",
+    }
+
+
+def test_http_profile_issue_rejects_client_engine_override(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs",
+        json={"processingProfileId": "ksi-odm-civil-v1", "engineVersion": "9.9.9"},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_http_lists_issued_processing_profiles(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.get("/v1/processing-profiles")
+    assert response.status_code == 200
+    profile = response.json()["profiles"]
+    assert len(profile) == 1
+    assert profile[0]["processingProfileId"] == "ksi-odm-civil-v1"
+    assert profile[0]["preprocessing"]["dynamicObjectMasking"] is False
 
 
 def test_http_issue_returns_contract_payload(tmp_path: Path) -> None:
@@ -1552,14 +1606,25 @@ def test_http_refuses_client_supplied_authority_fields(
     assert response.status_code == 422, response.text
 
 
-def test_http_vendor_cloud_refused_for_undeclared_site(tmp_path: Path) -> None:
+def test_http_rejects_new_legacy_unmanaged_processing_spec(tmp_path: Path) -> None:
     client = _client(tmp_path, egress=None)
     response = client.post(
         f"/v1/missions/{_MISSION_ID}/processing-jobs",
-        json=_issue_payload(executionLocus="vendor_cloud", provider="dji_flighthub"),
+        json={
+            "provider": "dji_flighthub",
+            "engineVersion": "legacy",
+            "engineDigest": "sha256:" + "a" * 64,
+            "executionLocus": "vendor_cloud",
+            "licenseBasis": {
+                "licenseId": "commercial",
+                "tier": "legacy",
+                "attributionRequired": False,
+            },
+            "processingParams": {},
+        },
     )
     assert response.status_code == 422
-    assert response.json()["verdict"] == "EGRESS_NOT_ALLOWED"
+    assert response.headers["content-type"].startswith("application/json")
 
 
 def _as_worker(client: TestClient) -> TestClient:

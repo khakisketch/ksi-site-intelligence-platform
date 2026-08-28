@@ -103,6 +103,11 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
     ) -> None:
         self.calls.append(("ds-verification-failure", design_surface_id, detail))
 
+    def report_design_surface_normalization_failure(
+        self, design_surface_id: str, *, detail: str | None = None
+    ) -> None:
+        self.calls.append(("ds-normalization-failure", design_surface_id, detail))
+
     def list_pending_design_conformances(
         self, *, limit: int = 50
     ) -> list[PendingDesignConformanceRequest]:

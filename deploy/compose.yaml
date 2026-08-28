@@ -132,13 +132,9 @@ services:
   nodeodm:
     # 무수정 상류 이미지 — 빌드하지 않는다(AGPL 프로세스 경계, 위 주석 참조).
     #
-    # 태그를 latest 로 둔 이유: 이 저장소가 실기동으로 확인한 조합이
-    # NodeODM 2.2.4 / ODM 3.5.6(2026-08-06·08-12 실측)인데, 상류가 그 조합에
-    # 대응하는 불변 태그를 게시하지 않는다. **Core 는 이 값을 믿지 않는다** —
-    # ProcessingJob.engineVersion 과 /info 의 engineVersion 을 제출 전에 대조하고
-    # 다르면 EngineIdentityMismatch 로 거부한다(odm.py). 즉 이미지가 조용히
-    # 바뀌면 작업이 실패하지 계보가 거짓이 되지는 않는다.
-    image: opendronemap/nodeodm:latest
+    # NodeODM 2.2.4 / ODM 3.5.6 실측 조합을 OCI digest로 고정한다. Core/worker는
+    # image digest를 profile snapshot에, 실제 버전을 /info에 각각 대조한다.
+    image: opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2
     volumes:
       - ksi-odm:/var/www/data
     ports:
