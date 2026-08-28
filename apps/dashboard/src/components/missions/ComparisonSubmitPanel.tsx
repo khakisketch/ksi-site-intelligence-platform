@@ -1,19 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
 import { readableApiError } from "@/lib/core-api/labels";
 import {
-  canSubmitComparison,
+  canSubmitCivilComparison,
+  civilBlockerGuidance,
   comparisonEligibility,
+  comparisonRequestInput,
   currentMissionEpochs,
   isTerminalComparisonStatus,
   selectableEpochs,
-  toZonesPayload,
   type ComparisonEpoch,
 } from "@/lib/comparison-submit";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -21,12 +22,18 @@ import { parseJsonSafe } from "@/lib/http";
 import { usePolling } from "@/hooks/usePolling";
 import type {
   AoiVertex,
+  CivilComparisonPreflightResponse,
   ComparisonPolicyView,
   ComparisonRequestContract,
   ComparisonRequestDetailView,
   ComparisonRequestMutationResponse,
   SiteProcessingJobSummary,
 } from "@/lib/core-api/types";
+
+// Release rollback: the safety gate stays in Core, while this flag makes the
+// civil submit surface read-only without changing existing Operations Console
+// navigation or hiding historical requests. Default is deliberately enabled.
+const CIVIL_COMPARISON_ENABLED = process.env.NEXT_PUBLIC_KSI_CIVIL_COMPARISON_ENABLED !== "0";
 
 function formatEpoch(epoch: ComparisonEpoch): string {
   const stamp = formatKoreanDateTime(epoch.issuedAt, { dateStyle: "medium", timeStyle: "short" });
@@ -114,10 +121,90 @@ export function ComparisonSubmitPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [request, setRequest] = useState<ComparisonRequestContract | null>(initialRequest);
+  const [preflightResult, setPreflightResult] = useState<{
+    selectionKey: string;
+    result: CivilComparisonPreflightResponse;
+  } | null>(null);
 
   const baseline = epochs.find((e) => e.jobId === baselineJobId) ?? null;
   const current = epochs.find((e) => e.jobId === currentJobId) ?? null;
   const eligibility = comparisonEligibility(baseline, current, zonesConfirmed);
+  const requestInput = useMemo(
+    () => comparisonRequestInput(baselineJobId, currentJobId, vertices, zonesConfirmed),
+    [baselineJobId, currentJobId, vertices, zonesConfirmed],
+  );
+  const preflightSelectionKey = JSON.stringify(requestInput);
+  const canPreflight =
+    CIVIL_COMPARISON_ENABLED &&
+    Boolean(requestInput.baselineJobId) &&
+    Boolean(requestInput.currentJobId) &&
+    requestInput.baselineJobId !== requestInput.currentJobId;
+  // A result for a previous pair must never temporarily authorize the newly
+  // selected pair. Deriving pending state from the request key avoids a
+  // synchronous setState inside the effect and remains fail-closed.
+  const preflight =
+    preflightResult?.selectionKey === preflightSelectionKey ? preflightResult.result : null;
+  const preflightLoading = canPreflight && preflight === null;
+
+  // A comparison selection is never "probably compatible". Until Core has
+  // checked the exact payload we will submit, this surface remains blocked.
+  useEffect(() => {
+    if (!canPreflight) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/missions/${encodeURIComponent(missionId)}/comparison-preflight`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestInput),
+            signal: controller.signal,
+          },
+        );
+        const body = await parseJsonSafe<CivilComparisonPreflightResponse>(response);
+        if (!response.ok || typeof body.compatible !== "boolean") {
+          if (!controller.signal.aborted) {
+            setPreflightResult({
+              selectionKey: preflightSelectionKey,
+              result: {
+                compatible: false,
+                reason: "PREFLIGHT_UNAVAILABLE",
+                detail: readableApiError(body, "비교 가능성 확인에 실패했습니다"),
+              },
+            });
+          }
+          return;
+        }
+        if (!controller.signal.aborted) {
+          setPreflightResult({
+            selectionKey: preflightSelectionKey,
+            // A malformed blocked response is also a blocker. Do not let an
+            // absent reason turn into an unexplained disabled submit button.
+            result: body.compatible
+              ? { compatible: true, reason: null, detail: null }
+              : {
+                  compatible: false,
+                  reason: typeof body.reason === "string" ? body.reason : "PREFLIGHT_UNAVAILABLE",
+                  detail: typeof body.detail === "string" ? body.detail : null,
+                },
+          });
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setPreflightResult({
+            selectionKey: preflightSelectionKey,
+            result: {
+              compatible: false,
+              reason: "PREFLIGHT_UNAVAILABLE",
+              detail: "네트워크 오류로 비교 가능성을 확인하지 못했습니다",
+            },
+          });
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [canPreflight, missionId, preflightSelectionKey, requestInput]);
 
   // 진행 중인 요청이 있을 때만 폴링한다. requestId 가 바뀌는 것 자체가 재시작
   // 경로다(usePolling 모듈 docstring).
@@ -137,21 +224,16 @@ export function ComparisonSubmitPanel({
   );
 
   async function handleSubmit() {
+    if (!canSubmitCivilComparison(eligibility, preflight, CIVIL_COMPARISON_ENABLED)) return;
     setSubmitting(true);
     setError(null);
     try {
-      const zonePayload = zonesConfirmed ? toZonesPayload(vertices) : null;
       const response = await fetch(
         `/api/missions/${encodeURIComponent(missionId)}/comparison-requests`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            baselineJobId,
-            currentJobId,
-            zones: zonePayload?.zones ?? null,
-            zoneCrs: zonePayload?.zoneCrs ?? null,
-          }),
+          body: JSON.stringify(requestInput),
         },
       );
       const body = await parseJsonSafe<ComparisonRequestMutationResponse>(response);
@@ -184,6 +266,7 @@ export function ComparisonSubmitPanel({
 
   const status = request?.status ?? null;
   const inProgress = status !== null && !isTerminalComparisonStatus(status);
+  const preflightBlocker = preflight && !preflight.compatible ? civilBlockerGuidance(preflight) : null;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -195,6 +278,13 @@ export function ComparisonSubmitPanel({
           비교 가능한 결과 {epochs.length}건
         </span>
       </div>
+
+      {!CIVIL_COMPARISON_ENABLED && (
+        <p className="rounded-md bg-sunk px-3 py-2 text-[12.5px] break-keep text-ink-2">
+          토목 정량 비교 발급은 현재 읽기 전용입니다. 기존 비교 결과와 후보는 계속 볼 수
+          있지만 새 요청은 만들 수 없습니다.
+        </p>
+      )}
 
       {error && (
         <p
@@ -228,7 +318,7 @@ export function ComparisonSubmitPanel({
               <select
                 className="input"
                 value={baselineJobId}
-                disabled={inProgress}
+                disabled={inProgress || !CIVIL_COMPARISON_ENABLED}
                 onChange={(e) => {
                   setBaselineJobId(e.target.value);
                   setError(null);
@@ -251,7 +341,7 @@ export function ComparisonSubmitPanel({
               <select
                 className="input"
                 value={currentJobId}
-                disabled={inProgress}
+                disabled={inProgress || !CIVIL_COMPARISON_ENABLED}
                 onChange={(e) => {
                   setCurrentJobId(e.target.value);
                   setError(null);
@@ -291,13 +381,18 @@ export function ComparisonSubmitPanel({
                 // 제출되는 일이 없게 한다.
                 setZonesConfirmed(false);
               }}
-              readOnly={inProgress}
+              readOnly={inProgress || !CIVIL_COMPARISON_ENABLED}
             />
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 className="btn w-fit"
-                disabled={vertices.length < 3 || zonesConfirmed || inProgress}
+                disabled={
+                  vertices.length < 3 ||
+                  zonesConfirmed ||
+                  inProgress ||
+                  !CIVIL_COMPARISON_ENABLED
+                }
                 onClick={() => setZonesConfirmed(true)}
               >
                 이 구역으로 확정
@@ -361,10 +456,35 @@ export function ComparisonSubmitPanel({
                   {eligibility.volumeChange ? "부피(높이자료)" : null}
                 </p>
               )}
+              {!eligibility.blockedReason && preflightLoading && (
+                <p className="text-[12.5px] break-keep text-ink-muted">
+                  선택한 두 회차의 처리 프로필·원본 계보·좌표 및 높이 기준을 확인하는 중입니다.
+                </p>
+              )}
+              {!eligibility.blockedReason && preflightBlocker && (
+                <div
+                  role="alert"
+                  className="flex flex-col gap-1 rounded-md bg-crit-bg px-3 py-2 text-[12.5px] break-keep text-crit-ink"
+                >
+                  <span className="font-bold">{preflightBlocker.code}</span>
+                  <span>{preflightBlocker.message}</span>
+                  {preflight?.detail && <span className="text-[11.5px]">근거: {preflight.detail}</span>}
+                  <span className="text-[11.5px] font-semibold">다음 행동: {preflightBlocker.nextAction}</span>
+                </div>
+              )}
+              {!eligibility.blockedReason && preflight?.compatible && (
+                <p className="text-[12.5px] break-keep text-safe-ink">
+                  처리 프로필·원본 계보·좌표 및 높이 기준을 확인했습니다. 운영관리용 상대 물량으로만 계산됩니다.
+                </p>
+              )}
               <button
                 type="button"
                 className="btn btn-primary w-fit"
-                disabled={!canSubmitComparison(eligibility) || submitting}
+                disabled={
+                  !canSubmitCivilComparison(eligibility, preflight, CIVIL_COMPARISON_ENABLED) ||
+                  preflightLoading ||
+                  submitting
+                }
                 onClick={() => void handleSubmit()}
               >
                 {submitting ? "제출하는 중…" : "비교 요청 제출"}

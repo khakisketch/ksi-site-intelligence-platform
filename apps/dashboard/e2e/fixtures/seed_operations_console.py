@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Seed deterministic Operations Console E2E ledgers through domain stores.
 
-The records below are browser-regression fixtures only. They do not create a
-Mission, dispatch receipt, processing result, spatial model, or DJI/device
-capability evidence. In particular, no fixture is valid HIL or field evidence.
+The records below are browser-regression fixtures only. One synthetic,
+contract-only Mission exists solely to render post-processing panels; it has
+no executable route or KMZ. The fixture does not create a dispatch receipt,
+processing result, spatial model, or DJI/device capability evidence. In
+particular, no fixture is valid HIL or field evidence.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.events import EventStore, EventVerdict, make_event_key
 from ksi_core.evidence import EvidenceVerdict
+from ksi_core.mission_records import MissionRecord, MissionRecordVerdict, MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore, SiteVerdict
 from ksi_core.work_areas import WorkAreaStore, WorkAreaVerdict
@@ -29,6 +32,7 @@ ORGANIZATION_ID = "org-local-pilot"
 ACTOR = "operations-console-e2e-fixture"
 EDGE_DEVICE_ID = "e2e-edge-fixture"
 EVENT_ID = "event-open-with-evidence"
+MISSION_ID = "e2e-civil-postprocessing-fixture"
 SITE_IDS = (
     "e2e-site-workspace",
     "e2e-site-review",
@@ -101,6 +105,7 @@ def seed(
         "work_areas": data_dir / "work-areas.jsonl",
         "work_orders": data_dir / "observation-work-orders.jsonl",
         "events": data_dir / "events.jsonl",
+        "missions": data_dir / "missions.jsonl",
     }
     occupied = [
         str(path)
@@ -130,6 +135,7 @@ def seed(
             ),
         )
         event_store = EventStore(journals["events"])
+        mission_store = MissionStore(journals["missions"])
 
         started_at = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
         frame = SiteFrame(
@@ -199,6 +205,29 @@ def seed(
                     now=now + timedelta(seconds=10),
                 )
                 assert transition.verdict is SiteVerdict.TRANSITIONED
+
+        # UI-only post-processing fixture. It deliberately has no route, KMZ,
+        # dispatch, or device assignment and therefore cannot be executed.
+        assert (
+            mission_store.record_issuance(
+                MissionRecord(
+                    mission_id=MISSION_ID,
+                    site_id="e2e-site-workspace",
+                    mission_type="BASELINE_MAPPING",
+                    artifact_kind="contract",
+                    contract={"schemaVersion": "1.2", "missionId": MISSION_ID},
+                    kmz_sha256=None,
+                    route_pattern=None,
+                    waypoint_count=None,
+                    planned_coverage_ratio=None,
+                    issued_at=started_at + timedelta(minutes=9),
+                    issued_by=ACTOR,
+                    organization_id=ORGANIZATION_ID,
+                    assigned_device_id=None,
+                )
+            )
+            is MissionRecordVerdict.RECORDED
+        )
 
         order_statuses = (
             ("e2e-site-review", "E2E 작업 범위 승인", ObservationWorkOrderStatus.AWAITING_APPROVAL),

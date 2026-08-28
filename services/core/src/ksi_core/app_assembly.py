@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -34,7 +35,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from ksi_event_contracts.work_area import WorkAreaStatus
 
-from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
+from ksi_core.acquisition import (
+    AcquisitionConnectivityStore,
+    AcquisitionCoordinationStore,
+    AnalysisReadinessProjector,
+)
 from ksi_core.app import create_app
 from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
@@ -114,6 +119,8 @@ def assemble_app(
     device_attestation_registry: DeviceAttestationRegistry | None = None,
     acquisition_coordination_enabled: bool = True,
     acquisition_issue_gate_enabled: bool = False,
+    processing_profile_issuance_enabled: bool = True,
+    landxml_ingress_enabled: bool = False,
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
@@ -188,7 +195,10 @@ def assemble_app(
     # 않는 편이 정직하다 — source_media 라우트가 같은 이유로 이미 그렇게 동작한다.
     processing_job_store = (
         ProcessingJobStore(
-            processing_job_journal, source_media_store=source_media_store, site_store=site_store
+            processing_job_journal,
+            source_media_store=source_media_store,
+            site_store=site_store,
+            processing_profile_issuance_enabled=processing_profile_issuance_enabled,
         )
         if evidence_storage is not None
         else None
@@ -256,6 +266,44 @@ def assemble_app(
         if acquisition_coordination_store is not None
         else None
     )
+    # Quantitative work consumes the same derived readiness used by the
+    # acquisition view.  The callback keeps comparison stores independent of
+    # WorkOrder/Coverage/Quality journal internals while still failing closed.
+    analysis_readiness_check = None
+    if (
+        acquisition_coordination_store is not None
+        and capture_quality_report_store is not None
+        and processing_job_store is not None
+    ):
+        analysis_readiness_projector = AnalysisReadinessProjector(
+            coverage_report_store=coverage_report_store,
+            capture_quality_report_store=capture_quality_report_store,
+            source_media_store=source_media_store,
+            processing_job_store=processing_job_store,
+        )
+
+        def _analysis_readiness_check(mission_id: str) -> tuple[bool, str | None]:
+            mission = mission_store.get(mission_id)
+            if mission is None:
+                return False, "Mission 원장으로 Analysis Readiness 범위를 확인할 수 없다"
+            run = acquisition_coordination_store.run_for_mission(
+                mission_id, organization_id=mission.organization_id
+            )
+            if run is None:
+                return False, "Mission에 연결된 AcquisitionRun이 없다"
+            work_order = observation_work_order_store.get(
+                run.work_order_id, organization_id=mission.organization_id
+            )
+            if work_order is None:
+                return False, "AcquisitionRun의 WorkOrder를 찾을 수 없다"
+            readiness = analysis_readiness_projector.project(
+                work_order,
+                mission_id=mission_id,
+                now=datetime.now(UTC),
+            )
+            return readiness.ready, readiness.detail
+
+        analysis_readiness_check = _analysis_readiness_check
     # Site workspace reuses the exact EventStore instance mounted on the public API;
     # opening a second writer for the same journal would violate DurableJournal locking.
     event_store = EventStore(event_journal)
@@ -371,6 +419,7 @@ def assemble_app(
             processing_job_store=processing_job_store,
             design_surface_store=design_surface_store,
             work_area_store=work_area_store,
+            analysis_readiness=analysis_readiness_check,
         )
         if processing_job_store is not None and evidence_storage is not None
         else None
@@ -436,6 +485,7 @@ def assemble_app(
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
         acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+        landxml_ingress_enabled=landxml_ingress_enabled,
         copilot_service=copilot_service,
         copilot_conversation_service=copilot_conversation_service,
         site_workspace_projector=site_workspace_projector,
@@ -487,6 +537,7 @@ def assemble_app(
                 comparison_request_journal,
                 mission_store=mission_store,
                 processing_job_store=processing_job_store,
+                analysis_readiness=analysis_readiness_check,
             )
             if processing_job_store is not None and evidence_storage is not None
             else None

@@ -55,11 +55,11 @@ from ksi_core.evidence import EvidenceStorageError
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     ArtifactSpec,
-    JobSpec,
     ProcessingJobStatus,
     ProcessingJobStore,
     ProcessingJobVerdict,
 )
+from ksi_core.processing_profiles import KSI_ODM_CIVIL_V1_ID
 from ksi_core.sites import SiteFrame, SiteStore
 from ksi_core.source_media import SourceMediaClaim, SourceMediaMeasurement, SourceMediaStore
 from ksi_event_contracts.comparison_request import ComparisonRequest
@@ -68,7 +68,6 @@ from ksi_event_contracts.processing_artifact import (
     LineageAuthority,
     ProcessingArtifactKind,
 )
-from ksi_event_contracts.processing_job import ExecutionLocus, LicenseBasis, ProcessingProvider
 from ksi_event_contracts.vertical_reference import (
     VerticalDatum,
     VerticalReference,
@@ -92,6 +91,11 @@ _SITE_FRAME = SiteFrame(
     crs="EPSG:5186", vertical_datum="KNG2018", transform_version="v1", unit="meter"
 )
 _NOW = datetime(2026, 8, 10, 3, 0, tzinfo=UTC)
+_DSM_VERTICAL = VerticalReference(
+    datum=VerticalDatum.ELLIPSOIDAL_NATIVE,
+    basis="ODM fixed-profile output uses the source ellipsoidal height",
+    source=VerticalReferenceSource.PIPELINE_DECLARED,
+)
 
 _ZONES = {
     "zone-0": {
@@ -232,19 +236,6 @@ def _job_store_impl(
     return jobs, source_media
 
 
-def _job_spec() -> JobSpec:
-    return JobSpec(
-        provider=ProcessingProvider.ODM,
-        engine_version="3.5.6",
-        engine_digest="sha256:" + "a" * 64,
-        execution_locus=ExecutionLocus.KSI_SERVER_GPU,
-        license_basis=LicenseBasis(
-            license_id="AGPL-3.0", tier="self-hosted", attribution_required=False
-        ),
-        processing_params={"quality": "high"},
-    )
-
-
 _RASTER_KINDS = frozenset(
     {ProcessingArtifactKind.ORTHO, ProcessingArtifactKind.DSM, ProcessingArtifactKind.DTM}
 )
@@ -311,7 +302,12 @@ def _succeeded_job(
     비교 가능성)을 바꾸지 않는다. CAMERA_POSES 는 change_detection_eligible(point_cloud
     존재 여부)·volume_change_eligible(dsm 존재 여부) 어느 쪽도 건드리지 않아 중립적이다
     (test_nothing_to_compare_is_rejected 가 이미 같은 패턴을 쓰고 있었다)."""
-    record = jobs.issue(mission_id, _job_spec(), issued_by="op-1", now=_NOW).record
+    record = jobs.issue(
+        mission_id,
+        jobs.resolve_processing_profile(KSI_ODM_CIVIL_V1_ID),
+        issued_by="op-1",
+        now=_NOW,
+    ).record
     assert record is not None
     assert jobs.acquire_lease(record.job_id, worker_id="w-1", now=_NOW).verdict in {
         ProcessingJobVerdict.LEASED,
@@ -347,7 +343,12 @@ def _succeeded_job(
 
 def _running_job(jobs: ProcessingJobStore, mission_id: str) -> str:
     """SUCCEEDED 로 끝나지 않은(RUNNING) 작업 — JOB_NOT_SUCCEEDED 시험용."""
-    record = jobs.issue(mission_id, _job_spec(), issued_by="op-1", now=_NOW).record
+    record = jobs.issue(
+        mission_id,
+        jobs.resolve_processing_profile(KSI_ODM_CIVIL_V1_ID),
+        issued_by="op-1",
+        now=_NOW,
+    ).record
     assert record is not None
     jobs.acquire_lease(record.job_id, worker_id="w-1", now=_NOW)
     jobs.transition(record.job_id, ProcessingJobStatus.RUNNING, detail=None, actor="w-1", now=_NOW)
@@ -361,7 +362,7 @@ class _Fixture:
         self,
         tmp_path: Path,
         *,
-        dsm_vertical_reference: VerticalReference | None = None,
+        dsm_vertical_reference: VerticalReference | None = _DSM_VERTICAL,
         dsm_accuracy: ArtifactAccuracy | None = None,
     ) -> None:
         self.missions = _mission_store(tmp_path)
@@ -395,6 +396,7 @@ class _Fixture:
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=self.missions,
             processing_job_store=self.jobs,
+            analysis_readiness=lambda _mission_id: (True, None),
         )
 
     def create(self, **overrides: Any) -> Any:
@@ -506,7 +508,11 @@ def test_missing_point_cloud_still_allows_volume_change_only(fx: _Fixture) -> No
         fx.jobs,
         fx.source_media,
         _BASELINE_MISSION_ID,
-        _artifact_spec("dsm", kind=ProcessingArtifactKind.DSM),
+        _artifact_spec(
+            "dsm",
+            kind=ProcessingArtifactKind.DSM,
+            vertical_reference=_DSM_VERTICAL,
+        ),
     )
     result = fx.create(baseline_job_id=baseline_no_pc)
     assert result.verdict is ComparisonRequestVerdict.CREATED
@@ -654,6 +660,7 @@ def test_idempotency_key_survives_a_restart(tmp_path: Path) -> None:
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=missions,
             processing_job_store=jobs,
+            analysis_readiness=lambda _mission_id: (True, None),
         )
 
     def _submit(store: ComparisonRequestStore) -> Any:
@@ -744,6 +751,7 @@ def test_existing_request_keeps_its_policy_when_system_thresholds_change(
         DurableJournal(journal_path),
         mission_store=fx.missions,
         processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
     )
     restored = replayed.get(before.record.request_id)
     assert restored is not None
@@ -925,13 +933,12 @@ def test_input_carries_the_vertical_reference_the_dsms_declared(tmp_path: Path) 
     assert body["dsmCurrentVerticalReference"] == expected
 
 
-def test_input_leaves_the_vertical_reference_null_for_older_artifacts(fx: _Fixture) -> None:
-    """[회귀] 수직기준이 기록되기 전에 등록된 산출물은 ``null`` 로 온다 — Core 가
-    "아마 타원체고겠지"를 대신 주장하지 않는다. 워커가 그 null 을 보고 레거시
-    상수로 대체하는 것이 이 milestone 의 M1/M2 무효화 금지 경로다."""
-    body = _leased_input(fx)
-    assert body["dsmBaselineVerticalReference"] is None
-    assert body["dsmCurrentVerticalReference"] is None
+def test_new_quantitative_request_rejects_unknown_vertical_reference(tmp_path: Path) -> None:
+    """INV-053: historical null remains readable, but cannot seed a new number."""
+
+    fx = _Fixture(tmp_path, dsm_vertical_reference=None)
+    result = fx.create()
+    assert result.verdict is ComparisonRequestVerdict.VERTICAL_REFERENCE_MISMATCH
 
 
 def test_input_carries_the_checkpoint_rmse_the_dsms_declared(tmp_path: Path) -> None:
@@ -1080,6 +1087,53 @@ def test_http_worker_cannot_create_request(fx: _Fixture) -> None:
         },
     )
     assert response.status_code == 403
+
+
+def test_http_preflight_reuses_create_gate_without_mutating_the_journal(
+    fx: _Fixture,
+) -> None:
+    client = _client(fx.store, token=_VIEWER_TOKEN)
+    response = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/comparison-preflight",
+        json={
+            "baselineJobId": fx.baseline_job_id,
+            "currentJobId": fx.current_job_id,
+            "zones": _ZONES,
+            "zoneCrs": _ZONE_CRS,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"compatible": True, "reason": None, "detail": None}
+    assert fx.store.list_for_mission(_CURRENT_MISSION_ID) == []
+
+
+def test_http_preflight_returns_typed_analysis_readiness_blocker(tmp_path: Path) -> None:
+    fx = _Fixture(tmp_path)
+    blocked_store = ComparisonRequestStore(
+        DurableJournal(tmp_path / "blocked-comparison-requests.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (False, "capture quality gap"),
+    )
+    client = _client(blocked_store, token=_VIEWER_TOKEN)
+
+    response = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/comparison-preflight",
+        json={
+            "baselineJobId": fx.baseline_job_id,
+            "currentJobId": fx.current_job_id,
+            "zones": _ZONES,
+            "zoneCrs": _ZONE_CRS,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "compatible": False,
+        "reason": "ANALYSIS_NOT_READY",
+        "detail": "baseline epoch: capture quality gap",
+    }
+    assert blocked_store.list_for_mission(_CURRENT_MISSION_ID) == []
 
 
 def test_http_create_succeeds_and_lists(fx: _Fixture) -> None:
@@ -1344,12 +1398,22 @@ def test_replay_reproduces_created_leased_and_transitioned_state(tmp_path: Path)
         DurableJournal(tmp_path / "comparison-requests.jsonl"),
         mission_store=fx.missions,
         processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
     )
     record = reopened.get(request_id)
     assert record is not None
     assert record.status is ProcessingJobStatus.SUCCEEDED
     assert record.change_detection_eligible is True
     assert record.volume_change_eligible is True
+    assert record.processing_profile_digest == result.record.processing_profile_digest
+    assert (
+        record.baseline_source_bundle_digest
+        == result.record.baseline_source_bundle_digest
+    )
+    assert (
+        record.current_source_bundle_digest
+        == result.record.current_source_bundle_digest
+    )
 
 
 def test_replay_refuses_request_whose_reference_no_longer_validates(tmp_path: Path) -> None:
@@ -1373,4 +1437,5 @@ def test_replay_refuses_request_whose_reference_no_longer_validates(tmp_path: Pa
             DurableJournal(journal_path),
             mission_store=fx.missions,
             processing_job_store=fx.jobs,
+            analysis_readiness=lambda _mission_id: (True, None),
         )

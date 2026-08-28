@@ -132,6 +132,16 @@ function SurfaceCard({ surface }: { surface: DesignSurface }) {
 
       <p className="text-[12px] break-keep text-ink-2">{status.description}</p>
 
+      <p className="text-[11.5px] break-keep text-ink-muted">
+        입력: {surface.format === "landxml" ? "LandXML TIN" : "GeoTIFF"}
+        {surface.format === "landxml" && surface.surfaceSelector
+          ? ` · Surface: ${surface.surfaceSelector}`
+          : ""}
+        {surface.sourceLineage
+          ? ` · 정규화: ${surface.sourceLineage.normalizationProfile}`
+          : ""}
+      </p>
+
       {surface.status === "REJECTED" && (
         <p
           role="alert"
@@ -183,6 +193,8 @@ export function DesignSurfacePanel({
   const [crs, setCrs] = useState(siteCrs);
   const [basis, setBasis] = useState("");
   const [heightKind, setHeightKind] = useState<"ellipsoidal" | "orthometric">("ellipsoidal");
+  const [sourceFormat, setSourceFormat] = useState<"geotiff" | "landxml">("geotiff");
+  const [surfaceSelector, setSurfaceSelector] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<LocalPhase>({ kind: "idle" });
 
@@ -219,7 +231,8 @@ export function DesignSurfacePanel({
     name.trim() !== "" &&
     revision.trim() !== "" &&
     crs.trim() !== "" &&
-    basis.trim() !== "";
+    basis.trim() !== "" &&
+    (sourceFormat === "geotiff" || surfaceSelector.trim() !== "");
 
   async function handleSubmit() {
     if (file === null) return;
@@ -236,6 +249,10 @@ export function DesignSurfacePanel({
           body: JSON.stringify({
             name: name.trim(),
             revision: revision.trim(),
+            sourceFormat,
+            // LandXML 안에 여러 TIN Surface가 있어도 서버가 추측하지 않는다.
+            // 직접 GeoTIFF에는 selector 자체를 보내지 않는다.
+            surfaceSelector: sourceFormat === "landxml" ? surfaceSelector.trim() : null,
             declared: {
               crs: crs.trim(),
               lengthUnit: "meter",
@@ -356,6 +373,58 @@ export function DesignSurfacePanel({
             </label>
           </div>
 
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-[11.5px] break-keep text-ink-muted">설계면 입력 형식</legend>
+            <label className="flex items-start gap-2 text-[12.5px] break-keep">
+              <input
+                type="radio"
+                name="design-surface-format"
+                className="mt-1"
+                checked={sourceFormat === "geotiff"}
+                disabled={busy}
+                onChange={() => {
+                  setSourceFormat("geotiff");
+                  setFile(null);
+                  setPhase({ kind: "idle" });
+                }}
+              />
+              <span>GeoTIFF 높이자료 — 이미 정규화된 계획고 래스터를 올립니다.</span>
+            </label>
+            <label className="flex items-start gap-2 text-[12.5px] break-keep">
+              <input
+                type="radio"
+                name="design-surface-format"
+                className="mt-1"
+                checked={sourceFormat === "landxml"}
+                disabled={busy}
+                onChange={() => {
+                  setSourceFormat("landxml");
+                  setFile(null);
+                  setPhase({ kind: "idle" });
+                }}
+              />
+              <span>LandXML TIN Surface — 원본 XML은 보존하고 서버가 0.5 m GeoTIFF로 정규화합니다.</span>
+            </label>
+          </fieldset>
+
+          {sourceFormat === "landxml" && (
+            <label className="flex flex-col gap-1">
+              <span className="text-[11.5px] break-keep text-ink-muted">
+                사용할 TIN Surface 이름 — LandXML에 적힌 이름을 정확히 입력하세요
+              </span>
+              <input
+                className="input"
+                value={surfaceSelector}
+                disabled={busy}
+                placeholder="Finished Grade"
+                onChange={(event) => setSurfaceSelector(event.target.value)}
+              />
+              <span className="text-[11.5px] break-keep text-ink-muted">
+                여러 Surface가 있어도 서버는 임의로 고르지 않습니다. 선택한 이름·원본 digest·정규화 결과가 함께 기록됩니다.
+              </span>
+            </label>
+          )}
+
           <label className="flex flex-col gap-1">
             <span className="text-[11.5px] break-keep text-ink-muted">
               도면의 좌표계 — 현장 등록값을 기본으로 채웠습니다. 도면이 다르면 고치세요.
@@ -432,11 +501,17 @@ export function DesignSurfacePanel({
 
           <label className="flex flex-col gap-1">
             <span className="text-[11.5px] break-keep text-ink-muted">
-              계획고 파일(GeoTIFF · 높이 자료 1밴드)
+              {sourceFormat === "landxml"
+                ? "LandXML 파일(TIN Surface · XML 1.0~1.2)"
+                : "계획고 파일(GeoTIFF · 높이 자료 1밴드)"}
             </span>
             <input
               type="file"
-              accept=".tif,.tiff,image/tiff,application/octet-stream"
+              accept={
+                sourceFormat === "landxml"
+                  ? ".xml,.landxml,application/xml,text/xml"
+                  : ".tif,.tiff,image/tiff,application/octet-stream"
+              }
               disabled={busy}
               className="text-[12.5px]"
               onChange={(event) => {
@@ -444,6 +519,8 @@ export function DesignSurfacePanel({
                 setPhase({ kind: "idle" });
               }}
             />
+            {sourceFormat === "geotiff" && (
+              <>
             {/* IFC 를 여기서 직접 받도록 확장하지 않는다 — 서버가 IFC 를 받는 순간
                 검증·잔량 계산 전체(래스터 전제)를 이원화해야 한다. IFC 는 CLI 변환
                 도구로 GeoTIFF 를 만들어 이 경로에 태운다(도구가 좌표 기준 없는
@@ -454,6 +531,13 @@ export function DesignSurfacePanel({
               GeoTIFF 를 만든 뒤 올리세요. 파일 안에 좌표 기준이 없으면 변환 단계에서
               거부됩니다.
             </span>
+              </>
+            )}
+            {sourceFormat === "landxml" && (
+              <span className="text-[11.5px] break-keep text-ink-muted">
+                DTD·외부 entity·비미터 단위·깨진 삼각면은 서버가 거부합니다. DWG/DXF는 직접 받지 않으므로 LandXML 또는 GeoTIFF로 내보내세요.
+              </span>
+            )}
           </label>
 
           <button

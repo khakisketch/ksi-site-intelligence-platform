@@ -12,6 +12,7 @@ import boto3
 import pytest
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.events import EventStore
+from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 
@@ -40,6 +41,7 @@ def test_fixture_uses_real_store_transitions_and_local_oidc_scope(tmp_path: Path
     site_journal = DurableJournal(tmp_path / "sites.jsonl")
     event_journal = DurableJournal(tmp_path / "events.jsonl")
     work_order_journal = DurableJournal(tmp_path / "observation-work-orders.jsonl")
+    mission_journal = DurableJournal(tmp_path / "missions.jsonl")
     try:
         sites = SiteStore(site_journal)
         events = EventStore(event_journal)
@@ -49,6 +51,7 @@ def test_fixture_uses_real_store_transitions_and_local_oidc_scope(tmp_path: Path
                 sites.get_scoped(site_id, organization_id) is not None
             ),
         )
+        missions = MissionStore(mission_journal)
 
         scoped_sites = sites.list_scoped(fixture.ORGANIZATION_ID)
         assert len(scoped_sites) == 5
@@ -67,12 +70,24 @@ def test_fixture_uses_real_store_transitions_and_local_oidc_scope(tmp_path: Path
         assert all(order.processing_job_ids == [] for order in scoped_orders)
         assert all(order.report_refs == [] for order in scoped_orders)
 
+        mission = missions.get_scoped(
+            fixture.MISSION_ID, organization_id=fixture.ORGANIZATION_ID
+        )
+        assert mission is not None
+        assert mission.site_id == "e2e-site-workspace"
+        assert mission.artifact_kind == "contract"
+        assert mission.kmz_sha256 is None
+        assert mission.route_pattern is None
+        assert mission.assigned_device_id is None
+        assert missions.get_scoped(fixture.MISSION_ID, organization_id="legacy") is None
+
         scoped_events = events.list(organization_id=fixture.ORGANIZATION_ID)
         assert len(scoped_events) == 1
         assert scoped_events[0].status.value == "FINDING"
         assert len(scoped_events[0].evidence) == 1
         assert events.list(organization_id="legacy") == []
     finally:
+        mission_journal.close()
         work_order_journal.close()
         event_journal.close()
         site_journal.close()

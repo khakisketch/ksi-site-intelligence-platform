@@ -29,7 +29,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -257,6 +257,81 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
     assert succeeded.status_code == 200, succeeded.text
 
 
+def _prepare_analysis_work_order(fixture: Aol1Fixture) -> str:
+    """Create the approved, temporal-policy-bound WorkOrder used by epoch one."""
+
+    vertices = _rect_aoi()["vertices"]
+    ring = [[point["lonDeg"], point["latDeg"]] for point in vertices]
+    ring.append(ring[0])
+    area = fixture.client.post(
+        f"/v1/sites/{_SITE_ID}/work-areas",
+        json={
+            "name": "AOL-2 전체 토공 구역",
+            "polygon": {"type": "Polygon", "coordinates": [ring]},
+            "crs": "EPSG:4326",
+        },
+        headers=fixture.as_operator(),
+    )
+    assert area.status_code == 201, area.text
+    work_area_id = str(area.json()["workArea"]["workAreaId"])
+
+    created = fixture.client.post(
+        f"/v1/sites/{_SITE_ID}/observation-work-orders",
+        json={
+            "name": "AOL-2 1차 토공 관측",
+            "workAreaIds": [work_area_id],
+            "scheduleId": None,
+            "temporalPolicy": {"maxCaptureSpanSeconds": 600},
+        },
+        headers=fixture.as_operator(),
+    )
+    assert created.status_code == 201, created.text
+    work_order_id = str(created.json()["workOrderId"])
+    approved = fixture.client.post(
+        f"/v1/observation-work-orders/{work_order_id}/approve",
+        json={"expectedVersion": created.json()["version"]},
+        headers=fixture.as_operator(),
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "APPROVED"
+    return work_order_id
+
+
+def _record_capture_quality(fixture: Aol1Fixture, *, work_order_id: str) -> None:
+    """Record final Edge quality evidence instead of bypassing Analysis Readiness."""
+
+    captured_at = datetime.now(UTC).replace(microsecond=0)
+    response = fixture.client.post(
+        f"/v1/missions/{_MISSION_ID}/capture-quality-report",
+        json={
+            "schemaVersion": "1.0",
+            "reportId": "capture-quality-aol2-epoch-1",
+            "organizationId": "legacy",
+            "siteId": _SITE_ID,
+            "workOrderId": work_order_id,
+            "missionId": _MISSION_ID,
+            "deviceId": _DEVICE_ID,
+            "capturePolicyId": "cap-1",
+            "measurements": [
+                {
+                    "artifactId": "DJI_0000.jpg",
+                    "capturedAt": captured_at.isoformat(),
+                    "blurScore": 0.1,
+                    "exposureOk": True,
+                    "gsdCmPerPx": 1.5,
+                    "overlapRatio": 0.8,
+                    "occlusionRatio": 0.1,
+                    "status": "ACCEPTED",
+                }
+            ],
+            "startedAt": captured_at.isoformat(),
+            "completedAt": (captured_at + timedelta(seconds=30)).isoformat(),
+        },
+        headers=fixture.as_device(),
+    )
+    assert response.status_code == 201, response.text
+
+
 def _run_first_epoch(fixture: Aol1Fixture) -> str:
     """1세대 매핑 루프 — ``_run_the_loop`` 와 같되 카메라 계약(route.camera) 을
     실어 재관측 초안이 직전 촬영 조건을 읽을 수 있게 하고, DSM 도 함께 낸다.
@@ -287,6 +362,7 @@ def _run_first_epoch(fixture: Aol1Fixture) -> str:
         ).status_code
         == 200
     )
+    work_order_id = _prepare_analysis_work_order(fixture)
 
     plan_request = _mapping_plan_request()
     # spacingM/captureIntervalM 직접 지정 대신 camera 를 실어 서버가 간격을
@@ -300,6 +376,7 @@ def _run_first_epoch(fixture: Aol1Fixture) -> str:
             "sideOverlap": _BASELINE_SIDE_OVERLAP,
         },
     }
+    plan_request["workOrderId"] = work_order_id
     plan = client.post("/v1/missions/plans", json=plan_request, headers=fixture.as_operator())
     assert plan.status_code == 201, plan.text
     assert plan.json()["waypointCount"] > 0
@@ -330,6 +407,7 @@ def _run_first_epoch(fixture: Aol1Fixture) -> str:
     job_id = str(jobs.json()["jobs"][0]["jobId"])
 
     _run_worker(fixture, job_id, _MISSION_ID, with_dsm=True)
+    _record_capture_quality(fixture, work_order_id=work_order_id)
     return job_id
 
 

@@ -398,6 +398,17 @@ class DesignConformanceStore:
         request = self._request_store.get_by_design_conformance_id(design_conformance_id)
         return None if request is None else request.mission_id
 
+    def request_of(
+        self, design_conformance_id: str
+    ) -> DesignConformanceRequestRecord | None:
+        """Return the immutable request snapshot behind a recorded result.
+
+        Civil progress uses this to compare processing/design lineage anchors;
+        it must not reconstruct those facts from the report payload.
+        """
+
+        return self._request_store.get_by_design_conformance_id(design_conformance_id)
+
     # ── 판정 (live·재생 공유, 스토리지 없이) ─────────────────────────────
 
     def _judge(

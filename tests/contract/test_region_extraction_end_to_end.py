@@ -34,6 +34,7 @@ from ksi_core.design_surfaces import build_design_surface_object_key
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_records import MissionRecord, MissionRecordVerdict
 from ksi_core.processing_jobs import ProcessingJobStatus, build_processing_artifact_object_key
+from ksi_core.processing_profiles import KSI_ODM_CIVIL_V1_ID
 from ksi_core.region_extraction_reports import RegionExtractionStore, mount_region_extraction
 from ksi_core.region_extraction_requests import (
     RegionExtractionRequestStore,
@@ -50,7 +51,6 @@ from test_comparison_requests import (  # noqa: E402
     _SITE_ID,
     _WORKER_TOKEN,
     _artifact_spec,
-    _job_spec,
     _registry,
     _verify_bundle,
 )
@@ -155,7 +155,12 @@ def _register_pair_mission_with_capture(
         == "SEALED"
     )
 
-    record = base.jobs.issue(mission_id, _job_spec(), issued_by="op-1", now=_PAIR_NOW).record
+    record = base.jobs.issue(
+        mission_id,
+        base.jobs.resolve_processing_profile(KSI_ODM_CIVIL_V1_ID),
+        issued_by="op-1",
+        now=_PAIR_NOW,
+    ).record
     assert record is not None
     assert base.jobs.acquire_lease(record.job_id, worker_id="w-1", now=_PAIR_NOW).verdict.value in {
         "LEASED",

@@ -67,6 +67,7 @@ class WorkAreaFixture(Fixture):
             processing_job_store=self.jobs,
             design_surface_store=self.surfaces,
             work_area_store=self.work_areas,
+            analysis_readiness=lambda _mission_id: (True, None),
         )
 
     def register_work_area(self, *, site_id: str = _SITE_ID, x: float = 0.0) -> str:

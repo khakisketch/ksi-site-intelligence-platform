@@ -84,6 +84,7 @@ from ksi_event_contracts.vertical_reference import (
     VerticalReference,
     assert_bridgeable_vertical,
 )
+from ksi_geo_spatial.crs import UnsupportedCrsError, normalise_crs
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
@@ -93,10 +94,16 @@ from ksi_core.auth import (
     current_request_organization_id,
     require_permission,
 )
+from ksi_core.civil_preflight import (
+    AnalysisReadinessCheck,
+    design_normalization_anchor,
+    preflight_design_surface,
+    preflight_single_epoch,
+)
 from ksi_core.comparison_requests import assert_zones_are_usable, zone_fingerprint
 from ksi_core.design_surfaces import (
     DESIGN_SURFACE_CONTENT_TYPE,
-    build_design_surface_object_key,
+    object_key_for_surface,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
@@ -178,6 +185,12 @@ class DesignConformanceRequestVerdict(StrEnum):
     UNKNOWN_DESIGN_SURFACE = "UNKNOWN_DESIGN_SURFACE"
     #: 설계면이 아직 검증되지 않았거나 거부됐다 — VERIFIED 만 입력 자격이다.
     DESIGN_SURFACE_NOT_VERIFIED = "DESIGN_SURFACE_NOT_VERIFIED"
+    DESIGN_NORMALIZATION_MISMATCH = "DESIGN_NORMALIZATION_MISMATCH"
+    ANALYSIS_NOT_READY = "ANALYSIS_NOT_READY"
+    PROCESSING_PROFILE_UNKNOWN = "PROCESSING_PROFILE_UNKNOWN"
+    SOURCE_LINEAGE_GAP = "SOURCE_LINEAGE_GAP"
+    CRS_MISMATCH = "CRS_MISMATCH"
+    VERTICAL_REFERENCE_MISMATCH = "VERTICAL_REFERENCE_MISMATCH"
     #: 설계면과 현재 작업이 다른 현장이다 — 다른 현장의 계획고와 비교할 수 없다.
     SITE_MISMATCH = "SITE_MISMATCH"
     #: 현재 작업에 dsm 산출물이 없다 — 표면 함수가 없으면 적분할 것이 없다.
@@ -239,6 +252,12 @@ _STATUS: dict[DesignConformanceRequestVerdict, int] = {
     DesignConformanceRequestVerdict.MISSION_MISMATCH: 422,
     DesignConformanceRequestVerdict.UNKNOWN_DESIGN_SURFACE: 404,
     DesignConformanceRequestVerdict.DESIGN_SURFACE_NOT_VERIFIED: 409,
+    DesignConformanceRequestVerdict.DESIGN_NORMALIZATION_MISMATCH: 422,
+    DesignConformanceRequestVerdict.ANALYSIS_NOT_READY: 422,
+    DesignConformanceRequestVerdict.PROCESSING_PROFILE_UNKNOWN: 422,
+    DesignConformanceRequestVerdict.SOURCE_LINEAGE_GAP: 422,
+    DesignConformanceRequestVerdict.CRS_MISMATCH: 422,
+    DesignConformanceRequestVerdict.VERTICAL_REFERENCE_MISMATCH: 422,
     DesignConformanceRequestVerdict.SITE_MISMATCH: 422,
     DesignConformanceRequestVerdict.NO_DSM_ARTIFACT: 422,
     DesignConformanceRequestVerdict.ZONES_REQUIRED: 422,
@@ -367,6 +386,14 @@ class DesignConformanceRequestRecord:
     requested_at: datetime
     requested_by: str
     updated_at: datetime
+    # REQ-INT-104 / INV-053 compatibility anchors.  ``None`` appears only on
+    # historical journal records created before ADR-KSI-030; those records stay
+    # readable but cannot become a new progress-comparison basis.
+    processing_profile_digest: str | None = None
+    source_bundle_digest: str | None = None
+    design_surface_revision: str | None = None
+    design_normalization_profile: str | None = None
+    design_normalization_digest: str | None = None
     detail: str | None = None
     lease: JobLease | None = None
     diff_raster: DiffRasterVerification | None = None
@@ -414,6 +441,11 @@ class _Resolved:
     design_vertical_reference: VerticalReference
     current: ArtifactRef
     current_vertical_reference: VerticalReference
+    processing_profile_digest: str | None
+    source_bundle_digest: str | None
+    design_surface_revision: str | None
+    design_normalization_profile: str | None
+    design_normalization_digest: str | None
 
 
 class DesignConformanceRequestStore:
@@ -428,11 +460,13 @@ class DesignConformanceRequestStore:
         design_surface_store: DesignSurfaceStore,
         work_area_store: WorkAreaStore | None = None,
         report_exists: Callable[[str], bool] | None = None,
+        analysis_readiness: AnalysisReadinessCheck | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
         self._design_surface_store = design_surface_store
+        self._analysis_readiness = analysis_readiness
         # "이 designConformanceId 로 리포트가 이미 기록됐나" — 리포트 원장에 직접
         # 의존하지 않고 술어만 주입받는다. 리포트 저장소가 이미 **이쪽**을 참조하므로
         # (``DesignConformanceStore._request_store``) 반대 방향 참조를 들이면 순환이
@@ -495,16 +529,38 @@ class DesignConformanceRequestStore:
         """
         request_id = raw["requestId"]
         zones = raw["zones"]
+        anchor_keys = (
+            "processingProfileDigest",
+            "sourceBundleDigest",
+            "designSurfaceRevision",
+            "designNormalizationProfile",
+            "designNormalizationDigest",
+        )
+        enforce_civil_preflight = any(key in raw for key in anchor_keys)
         verdict, detail, resolved = self._resolve(
             mission_id=raw["missionId"],
             design_surface_id=raw["designSurfaceId"],
             current_job_id=raw["currentJobId"],
             zones=zones,
             zone_crs=raw["zoneCrs"],
+            enforce_civil_preflight=enforce_civil_preflight,
         )
         if verdict is not DesignConformanceRequestVerdict.CREATED or resolved is None:
             raise DesignConformanceRequestRecoveryError(
                 f"재생: 기록될 수 없는 요청({verdict.value}: {detail}) — requestId={request_id}"
+            )
+        if enforce_civil_preflight and (
+            raw.get("processingProfileDigest") != resolved.processing_profile_digest
+            or raw.get("sourceBundleDigest") != resolved.source_bundle_digest
+            or raw.get("designSurfaceRevision") != resolved.design_surface_revision
+            or raw.get("designNormalizationProfile")
+            != resolved.design_normalization_profile
+            or raw.get("designNormalizationDigest")
+            != resolved.design_normalization_digest
+        ):
+            raise DesignConformanceRequestRecoveryError(
+                "재생: civil compatibility anchor가 현재 immutable 입력 원장과 다르다 — "
+                f"requestId={request_id}"
             )
         requested_at = _require_aware_iso(raw["ts"], "ts", request_id)
         record = DesignConformanceRequestRecord(
@@ -526,6 +582,11 @@ class DesignConformanceRequestStore:
             requested_at=requested_at,
             requested_by=raw["requestedBy"],
             updated_at=requested_at,
+            processing_profile_digest=raw.get("processingProfileDigest"),
+            source_bundle_digest=raw.get("sourceBundleDigest"),
+            design_surface_revision=raw.get("designSurfaceRevision"),
+            design_normalization_profile=raw.get("designNormalizationProfile"),
+            design_normalization_digest=raw.get("designNormalizationDigest"),
         )
         self._project(record)
         sequence = int(request_id.rsplit("-dcf", 1)[-1])
@@ -608,6 +669,7 @@ class DesignConformanceRequestStore:
         current_job_id: str,
         zones: dict[str, dict[str, Any]] | None,
         zone_crs: str | None,
+        enforce_civil_preflight: bool = True,
     ) -> tuple[DesignConformanceRequestVerdict, str | None, _Resolved | None]:
         """"이 지시가 계산 가능한가" — 순서에 뜻이 있다(값싼 것부터, 수직기준이 마지막).
 
@@ -651,6 +713,15 @@ class DesignConformanceRequestStore:
                 "입력이 된다. 봉인만으로는 그 파일이 무엇인지 아무도 확인하지 않았다",
                 None,
             )
+        if enforce_civil_preflight:
+            surface_compatibility = preflight_design_surface(surface)
+            if not surface_compatibility.compatible:
+                assert surface_compatibility.reason is not None  # noqa: S101
+                return (
+                    DesignConformanceRequestVerdict(surface_compatibility.reason.value),
+                    surface_compatibility.detail,
+                    None,
+                )
         job = self._processing_job_store.get(current_job_id)
         if job is None:
             return (
@@ -686,9 +757,47 @@ class DesignConformanceRequestStore:
                 "함수 z=f(x,y) 의 적분이다",
                 None,
             )
+        if enforce_civil_preflight:
+            epoch_compatibility = preflight_single_epoch(
+                job,
+                analysis_readiness=self._analysis_readiness,
+                artifacts=(dsm,),
+            )
+            if not epoch_compatibility.compatible:
+                assert epoch_compatibility.reason is not None  # noqa: S101
+                return (
+                    DesignConformanceRequestVerdict(epoch_compatibility.reason.value),
+                    epoch_compatibility.detail,
+                    None,
+                )
+            if dsm.crs is None:
+                return (
+                    DesignConformanceRequestVerdict.CRS_MISMATCH,
+                    "DSM 산출물의 CRS가 미상이다",
+                    None,
+                )
+            try:
+                dsm_crs = normalise_crs(dsm.crs)
+                surface_crs = normalise_crs(surface.observed.crs)
+            except UnsupportedCrsError as exc:
+                return (
+                    DesignConformanceRequestVerdict.CRS_MISMATCH,
+                    f"DSM 또는 설계면 CRS를 해석할 수 없다: {exc}",
+                    None,
+                )
+            if dsm_crs != surface_crs:
+                return (
+                    DesignConformanceRequestVerdict.CRS_MISMATCH,
+                    f"DSM과 설계면 CRS가 다르다(current={dsm_crs}, design={surface_crs})",
+                    None,
+                )
         if dsm.vertical_reference is None:
             return (
-                DesignConformanceRequestVerdict.VERTICAL_REFERENCE_UNKNOWN,
+                (
+                    DesignConformanceRequestVerdict.VERTICAL_REFERENCE_MISMATCH
+                    if enforce_civil_preflight
+                    else DesignConformanceRequestVerdict.VERTICAL_REFERENCE_UNKNOWN
+                ),
                 "이 산출물은 수직기준이 기록되기 전에 등록됐다 — 설계면과의 비교는 "
                 "'어느 기준의 높이인가'를 모른 채로는 숫자를 낼 수 없다. 재처리하면 "
                 "비교할 수 있다",
@@ -702,10 +811,27 @@ class DesignConformanceRequestStore:
             )
         except VerticalDatumIncompatibleError as exc:
             return (
-                DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE,
+                (
+                    DesignConformanceRequestVerdict.VERTICAL_REFERENCE_MISMATCH
+                    if enforce_civil_preflight
+                    else DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE
+                ),
                 str(exc),
                 None,
             )
+        profile_digest: str | None = None
+        source_digest: str | None = None
+        design_revision: str | None = None
+        normalization_profile: str | None = None
+        normalization_digest: str | None = None
+        if enforce_civil_preflight:
+            profile_digest = job.processing_profile_digest
+            source_digest = job.input.source_bundle_digest
+            (
+                design_revision,
+                normalization_profile,
+                normalization_digest,
+            ) = design_normalization_anchor(surface)
         return (
             DesignConformanceRequestVerdict.CREATED,
             None,
@@ -721,6 +847,11 @@ class DesignConformanceRequestStore:
                 design_vertical_reference=surface.declared.vertical_reference,
                 current=ArtifactRef(job_id=current_job_id, artifact_id=dsm.artifact_id),
                 current_vertical_reference=dsm.vertical_reference,
+                processing_profile_digest=profile_digest,
+                source_bundle_digest=source_digest,
+                design_surface_revision=design_revision,
+                design_normalization_profile=normalization_profile,
+                design_normalization_digest=normalization_digest,
             ),
         )
 
@@ -855,6 +986,11 @@ class DesignConformanceRequestStore:
                 requested_at=now,
                 requested_by=requested_by,
                 updated_at=now,
+                processing_profile_digest=resolved.processing_profile_digest,
+                source_bundle_digest=resolved.source_bundle_digest,
+                design_surface_revision=resolved.design_surface_revision,
+                design_normalization_profile=resolved.design_normalization_profile,
+                design_normalization_digest=resolved.design_normalization_digest,
             )
             raw = {
                 "kind": "design-conformance-request-created",
@@ -867,6 +1003,11 @@ class DesignConformanceRequestStore:
                 "zoneCrs": zone_crs,
                 "policy": record.policy.model_dump(by_alias=True, mode="json"),
                 "requestedBy": requested_by,
+                "processingProfileDigest": record.processing_profile_digest,
+                "sourceBundleDigest": record.source_bundle_digest,
+                "designSurfaceRevision": record.design_surface_revision,
+                "designNormalizationProfile": record.design_normalization_profile,
+                "designNormalizationDigest": record.design_normalization_digest,
             }
             try:
                 self._journal.append(raw)
@@ -1261,6 +1402,11 @@ class DesignConformanceRequestView(CamelModel):
     site_id: str
     design_surface_id: str
     design_surface_sha256: str
+    processing_profile_digest: str | None
+    source_bundle_digest: str | None
+    design_surface_revision: str | None
+    design_normalization_profile: str | None
+    design_normalization_digest: str | None
     current: ArtifactRef
     zones: dict[str, dict[str, Any]]
     zone_crs: str
@@ -1374,6 +1520,11 @@ def _to_view(record: DesignConformanceRequestRecord) -> DesignConformanceRequest
         site_id=record.site_id,
         design_surface_id=record.design_surface_id,
         design_surface_sha256=record.design_surface_sha256,
+        processing_profile_digest=record.processing_profile_digest,
+        source_bundle_digest=record.source_bundle_digest,
+        design_surface_revision=record.design_surface_revision,
+        design_normalization_profile=record.design_normalization_profile,
+        design_normalization_digest=record.design_normalization_digest,
         current=record.current,
         zones=record.zones,
         zone_crs=record.zone_crs,
@@ -1545,10 +1696,15 @@ def build_design_conformance_requests_router(
                 detail="현재 DSM 산출물의 수직기준을 더 이상 읽을 수 없다",
             )
         try:
+            design_surface = store._design_surface_store.get(record.design_surface_id)
+            if design_surface is None:
+                response.status_code = 404
+                return DesignConformanceInputResponse(
+                    verdict=DesignConformanceRequestVerdict.UNKNOWN_DESIGN_SURFACE.value,
+                    detail="설계 기준면을 더 이상 읽을 수 없다",
+                )
             design_url = storage.presigned_get(
-                build_design_surface_object_key(
-                    site_id=record.site_id, design_surface_id=record.design_surface_id
-                ),
+                object_key_for_surface(design_surface),
                 ttl=DEFAULT_VIEW_TTL,
             )
             current_url = storage.presigned_get(

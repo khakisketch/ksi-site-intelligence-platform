@@ -145,7 +145,12 @@ info:
   # 준비됨이 아니다. Pilot 2 export KMZ는 별도 immutable FlightArtifact candidate로만
   # ingest/list/download할 수 있고, 항상 unbound/non-executable이다. 새 읽기·입력
   # 표면 추가라 minor이며 실제 Pilot 2/PSDK 실행 검증을 뜻하지 않는다.
-  version: 1.27.0
+  # 1.28.0 — ADR-KSI-030 civil processing consistency v1. 새 ProcessingJob은
+  # processingProfileId 하나로만 발급하고 Core가 immutable recipe를 확장한다.
+  # LandXML 원본 보존형 ingress와 comparison preflight를 추가하며 과거 raw spec
+  # 원장은 LEGACY_UNMANAGED로만 재생한다. 배포 전 계약 축소와 새 표면을 함께
+  # 확정한 minor 버전이며 실제 토목 현장 정확도 수용을 뜻하지 않는다.
+  version: 1.28.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -2655,6 +2660,21 @@ paths:
               properties:
                 name: { type: string, minLength: 1 }
                 revision: { type: string, minLength: 1 }
+                sourceFormat:
+                  type: string
+                  enum: [geotiff, landxml]
+                  pattern: '^(geotiff|landxml)$'
+                  default: geotiff
+                  description: >-
+                    원본 입구. landxml은 원본 XML을 보존하고 trusted worker가 선택한
+                    TIN Surface를 canonical GeoTIFF로 정규화한다. 기능 flag가 꺼진
+                    배포에서는 LANDXML_INGRESS_DISABLED로 거부된다.
+                surfaceSelector:
+                  type: [string, 'null']
+                  minLength: 1
+                  description: >-
+                    sourceFormat=landxml일 때 필수인 정확한 TIN Surface 이름. 다중
+                    Surface에서 서버가 기존지반/계획지반을 추측하지 않는다.
                 declared:
                   type: object
                   additionalProperties: false
@@ -2839,6 +2859,14 @@ paths:
                 boundsMaxX: { type: number }
                 boundsMaxY: { type: number }
                 finiteCellCount: { type: integer, minimum: 0 }
+                sourceLineage:
+                  oneOf:
+                    - $ref: '#/components/schemas/DesignSurfaceSourceLineage'
+                    - type: 'null'
+                  description: >-
+                    LandXML 원본 SHA-256 → 선택 Surface → 파서/정규화 프로필 →
+                    canonical GeoTIFF SHA-256의 trusted-worker 계보다. 직접 GeoTIFF
+                    관측에서는 null이다.
       responses:
         '201':
           description: VERIFIED — 관측이 선언과 전부 일치했다(이제 비교 입력 자격이 있다)
@@ -2898,6 +2926,45 @@ paths:
         '404': { description: UNKNOWN_DESIGN_SURFACE }
         '409': { description: NOT_SEALED — 봉인되지 않은 설계면은 검증 대상이 아니다 }
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/design-surfaces/{design_surface_id}/normalization-failure:
+    post:
+      summary: Report a LandXML normalization failure
+      description: >-
+        PROCESSING_WORK 권한 필요. trusted worker가 LandXML TIN을 KSI 표준
+        GeoTIFF로 정규화할 수 없었음을 기록한다. 호출자가 거부 사유를 고르지
+        않으며 Core가 LANDXML_NORMALIZATION_FAILED로 봉인한다. 원본 LandXML
+        bytes는 보존되고, 복구는 새 revision 등록이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: design_surface_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                detail: { type: [string, 'null'], maxLength: 2000 }
+      responses:
+        '201':
+          description: REJECTED — rejectionReason=LANDXML_NORMALIZATION_FAILED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '200':
+          description: ALREADY_JUDGED — already terminal, no new durable record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignSurfaceObservationResponse' }
+        '404': { description: UNKNOWN_DESIGN_SURFACE }
+        '409': { description: NOT_SEALED }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/missions/{mission_id}/design-conformance-requests:
@@ -3268,9 +3335,15 @@ paths:
     post:
       summary: Issue a 3D reconstruction processing job on the sealed source bundle
       description: >-
-        MISSIONS_ISSUE 권한 필요. 요청은 **무엇으로 어디서** 돌릴지만 정한다 —
+        MISSIONS_ISSUE 권한 필요. 일반 제품 호출자는 Core registry에서 발급된
+        `processingProfileId` 하나만 보낸다. Core가 immutable snapshot을 확장하고,
+        작업 원장에는 profile id와 canonical digest를 함께 고정한다. raw provider,
+        engine, image 또는 parameter는 새 발급 계약에 존재하지 않아 422다. 과거
+        원장에 이미 있는 raw spec만 `LEGACY_UNMANAGED`로 재생되며 새 정량 비교에는
+        쓸 수 없다.
+
         `input`(장수·총 화소·sourceBundleDigest)·`dataResidency`·`billing`·
-        `status`·`jobId` 는 요청 스키마에 자리가 없고, 실어 보내면 422 다.
+        `status`·`jobId`도 요청 스키마에 자리가 없고, 실어 보내면 422 다.
         입력은 봉인된 번들에서 Core 가 집계하고(봉인 전이면 BUNDLE_NOT_SEALED),
         반출 허용 여부는 그 임무의 **현장**이 정하며(POST /v1/sites 의
         dataResidency), 과금은 종료 보고 시점의 몫이다. 발급 시점 billing 은
@@ -3293,29 +3366,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [provider, engineVersion, engineDigest, executionLocus, licenseBasis]
+              required: [processingProfileId]
               properties:
-                provider:
-                  description: ADR-KSI-012 D1 — 기본값은 odm(자체 호스팅 오픈소스).
+                processingProfileId:
                   type: string
-                  enum:
-                    [odm, pix4d_engine, dji_flighthub, metashape_spl, customer_workstation]
-                engineVersion: { type: string, minLength: 1 }
-                engineDigest: { type: string, minLength: 1 }
-                executionLocus:
+                  minLength: 1
                   description: >-
-                    vendor_cloud 는 현장이 반출을 허용한 경우에만 발급된다(INV-050).
-                  type: string
-                  enum: [site_onprem, ksi_server_gpu, customer_workstation, vendor_cloud]
-                licenseBasis:
-                  type: object
-                  additionalProperties: false
-                  required: [licenseId, tier, attributionRequired]
-                  properties:
-                    licenseId: { type: string, minLength: 1 }
-                    tier: { type: string, minLength: 1 }
-                    attributionRequired: { type: boolean }
-                processingParams: { type: object, additionalProperties: true }
+                    KSI가 발급한 읽기 전용 profile id. `ksi-odm-civil-v1`은
+                    NodeODM 2.2.4/ODM 3.5.6과 고정 OCI digest를 뜻한다.
       responses:
         '201':
           description: ISSUED — verdict + 발급된 작업(status=QUEUED)
@@ -3332,7 +3390,8 @@ paths:
         '422':
           description: >-
             BUNDLE_NOT_SEALED(봉인 전 — 장수·digest 미확정) /
-            EGRESS_NOT_ALLOWED(INV-050 — 현장이 반출을 허용하지 않았다, 미선언 포함)
+            UNKNOWN_PROCESSING_PROFILE / PROCESSING_PROFILE_ISSUANCE_DISABLED /
+            INVALID_REQUEST_SHAPE
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
@@ -3449,6 +3508,23 @@ paths:
         '404': { description: 등록되지 않은 현장 }
         '401': { description: 인증 실패 }
         '403': { description: SITES_WRITE 권한 없음 }
+  /v1/processing-profiles:
+    get:
+      summary: List immutable KSI processing profiles
+      description: >-
+        MISSIONS_READ 권한 필요. 이 표면은 profile 발급/편집 API가 아니라 Core가
+        현재 발급 가능한 immutable snapshot을 UI와 local uploader에 알리는 읽기
+        전용 discovery 표면이다. 프로필 변경은 기존 id 수정이 아니라 새 id와
+        새 digest 발급이다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Core-issued immutable processing profile snapshots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingProfileListResponse' }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/processing-jobs:
     get:
       summary: List processing jobs a worker may (re)claim — QUEUED + orphaned RUNNING (FIFO)
@@ -3922,6 +3998,46 @@ paths:
               schema: { $ref: '#/components/schemas/ComparisonPolicy' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/missions/{mission_id}/comparison-preflight:
+    post:
+      summary: Explain whether two epochs are quantitatively comparable
+      description: >-
+        MISSIONS_READ 권한 필요. 비교 생성과 **같은 서버 측 fail-closed 판정**을
+        실행하지만 원장을 쓰지 않는다. 도메인상 비교 불가(예: ANALYSIS_NOT_READY,
+        PROCESSING_PROFILE_MISMATCH, CRS_MISMATCH)는 HTTP 오류가 아니라
+        `compatible=false`와 typed `reason`으로 반환한다. 존재하지 않거나 조직 밖인
+        mission은 정보 비노출을 위해 404다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: mission_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baselineJobId, currentJobId]
+              properties:
+                baselineJobId: { type: string, minLength: 1 }
+                currentJobId: { type: string, minLength: 1 }
+                zones:
+                  type: [object, 'null']
+                  additionalProperties: { type: object }
+                zoneCrs: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: compatible=true or a typed incompatibility reason
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComparisonPreflightResponse' }
+        '404': { description: UNKNOWN_MISSION }
+        '422': { description: request shape validation failed }
+        '401': { description: 인증 실패 }
+        '403': { description: MISSIONS_READ 권한 없음 }
   /v1/missions/{mission_id}/comparison-requests:
     post:
       summary: Request that two completed processing-jobs be compared (W2)
@@ -3978,7 +4094,9 @@ paths:
         '422':
           description: >-
             UNKNOWN_JOB / JOB_NOT_SUCCEEDED / SELF_COMPARISON / SITE_MISMATCH /
-            MISSION_MISMATCH / NOTHING_TO_COMPARE
+            MISSION_MISMATCH / NOTHING_TO_COMPARE / ANALYSIS_NOT_READY /
+            PROCESSING_PROFILE_UNKNOWN / PROCESSING_PROFILE_MISMATCH /
+            SOURCE_LINEAGE_GAP / CRS_MISMATCH / VERTICAL_REFERENCE_MISMATCH
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
@@ -6220,7 +6338,8 @@ components:
       type: object
       required:
         [jobId, missionId, siteId, status, provider, engineVersion, engineDigest,
-         executionLocus, processingParams, sourceBundleDigest, imageCount, media, siteCrs]
+         executionLocus, processingParams, processingProfileId, processingProfileDigest,
+         processingProfileClassification, sourceBundleDigest, imageCount, media, siteCrs]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -6231,6 +6350,23 @@ components:
         engineDigest: { type: string }
         executionLocus: { type: string }
         processingParams: { type: object, additionalProperties: true }
+        processingProfileId:
+          description: >-
+            Core가 job 발급 시 확장해 고정한 immutable profile id. legacy job이면
+            null이며 이 상태는 정량 비교 후보가 아니다.
+          type: [string, 'null']
+        processingProfileDigest:
+          description: >-
+            profile snapshot의 canonical SHA-256. legacy job이면 null이며 Core가
+            과거 provider 값으로 추정해 채우지 않는다.
+          type: [string, 'null']
+          pattern: '^sha256:[0-9a-f]{64}$'
+        processingProfileClassification:
+          type: string
+          enum: [VERSIONED, LEGACY_UNMANAGED]
+          description: >-
+            VERSIONED만 REQ-INT-104 정량 비교 후보가 될 수 있다. LEGACY_UNMANAGED는
+            조회/재생은 가능하지만 새 비교에는 쓰지 않는다.
         sourceBundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         imageCount: { type: integer }
         media:
@@ -6280,7 +6416,9 @@ components:
       type: object
       required:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
-         inputVerified, contract, artifacts, leaseWorkerId, leaseExpiresAt, captureWindow]
+         inputVerified, processingProfileId, processingProfileDigest,
+         processingProfileClassification, contract, artifacts, leaseWorkerId,
+         leaseExpiresAt, captureWindow]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -6299,6 +6437,13 @@ components:
             아직 없다(산출물이 존재한다는 것과 입력이 신고대로였다는 것은 다른
             사실이라, INV-051 게이트가 이 필드를 대신하지 않는다).
             "검증된 척"하는 기본값을 쓰지 않는다.
+        processingProfileId: { type: [string, 'null'] }
+        processingProfileDigest:
+          type: [string, 'null']
+          pattern: '^sha256:[0-9a-f]{64}$'
+        processingProfileClassification:
+          type: string
+          enum: [VERSIONED, LEGACY_UNMANAGED]
         contract: { type: object, additionalProperties: true }
         artifacts:
           description: >-
@@ -6347,6 +6492,53 @@ components:
         verdict: { type: string }
         job: { oneOf: [{ $ref: '#/components/schemas/ProcessingJobView' }, { type: 'null' }] }
         detail: { type: [string, 'null'] }
+    ProcessingProfileListResponse:
+      description: >-
+        Core-issued immutable snapshots. API는 id만 입력받고 이 전체 recipe를 Core가
+        확장한다; 이 응답은 편집 surface가 아니다.
+      type: object
+      required: [profiles]
+      properties:
+        profiles:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [processingProfileId, profileVersion, provider, engineVersion, ociImage,
+               ociImageDigest, executionLocus, processingParams, preprocessing,
+               requiredArtifacts, licenseBasis, agplBoundary, profileDigest]
+            properties:
+              processingProfileId: { type: string, minLength: 1 }
+              profileVersion: { type: string, minLength: 1 }
+              provider: { type: string, enum: [odm, pix4d_engine, dji_flighthub, metashape_spl, customer_workstation] }
+              engineVersion: { type: string, minLength: 1 }
+              nodeOdmVersion: { type: [string, 'null'] }
+              ociImage: { type: string, minLength: 1 }
+              ociImageDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+              executionLocus: { type: string, enum: [site_onprem, ksi_server_gpu, customer_workstation, vendor_cloud] }
+              processingParams: { type: object, additionalProperties: true }
+              preprocessing:
+                type: object
+                additionalProperties: false
+                required: [dynamicObjectMasking, policyVersion]
+                properties:
+                  dynamicObjectMasking: { type: boolean }
+                  policyVersion: { type: string, minLength: 1 }
+              requiredArtifacts:
+                type: array
+                minItems: 1
+                items: { type: string }
+              licenseBasis:
+                type: object
+                additionalProperties: false
+                required: [licenseId, tier, attributionRequired]
+                properties:
+                  licenseId: { type: string, minLength: 1 }
+                  tier: { type: string, minLength: 1 }
+                  attributionRequired: { type: boolean }
+              agplBoundary: { type: string, minLength: 1 }
+              profileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
     ProcessingArtifactMutationResponse:
       description: >-
         산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은
@@ -6400,6 +6592,35 @@ components:
           oneOf: [{ type: object, additionalProperties: true }, { type: 'null' }]
         detail: { type: [string, 'null'] }
 
+    ComparisonPreflightResponse:
+      description: >-
+        원장을 만들지 않는 정량 비교 사전 판정. `reason`은 compatible=false일 때
+        INV-053 typed blocker이고, true일 때 null이다.
+      type: object
+      required: [compatible]
+      properties:
+        compatible: { type: boolean }
+        reason:
+          type: [string, 'null']
+          enum:
+            - ANALYSIS_NOT_READY
+            - PROCESSING_PROFILE_UNKNOWN
+            - PROCESSING_PROFILE_MISMATCH
+            - SOURCE_LINEAGE_GAP
+            - CRS_MISMATCH
+            - VERTICAL_REFERENCE_MISMATCH
+            - DESIGN_SURFACE_NOT_VERIFIED
+            - DESIGN_NORMALIZATION_MISMATCH
+            - UNKNOWN_MISSION
+            - UNKNOWN_JOB
+            - JOB_NOT_SUCCEEDED
+            - SELF_COMPARISON
+            - SITE_MISMATCH
+            - MISSION_MISMATCH
+            - NOTHING_TO_COMPARE
+            - null
+        detail: { type: [string, 'null'] }
+
     ComparisonRequestListResponse:
       description: >-
         각 항목의 구조 정본은 contracts/schemas/comparison-request.v1.json 이다.
@@ -6436,7 +6657,20 @@ components:
       type: object
       required: [request, leaseWorkerId, leaseExpiresAt]
       properties:
-        request: { type: object, additionalProperties: true }
+        request:
+          type: object
+          additionalProperties: true
+          description: >-
+            `contracts/schemas/comparison-request.v1.json` payload. schemaVersion=1.1
+            request에는 Core가 판정해 고정한 `processingProfileDigest`,
+            `baselineSourceBundleDigest`, `currentSourceBundleDigest`가 모두 있다.
+            historical 1.0 request에는 세 anchor가 없으며 조회는 가능하지만 새
+            정량 비교의 근거로 재사용할 수 없다.
+          properties:
+            schemaVersion: { type: string, enum: ['1.0', '1.1'] }
+            processingProfileDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+            baselineSourceBundleDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+            currentSourceBundleDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
         leaseWorkerId: { type: [string, 'null'] }
         leaseExpiresAt: { type: [string, 'null'], format: date-time }
 
@@ -6617,6 +6851,11 @@ components:
         # REGISTERED 일 때만 채워진다 — 발급 실패는 STORE_UNAVAILABLE 로 격하되고
         # 원장 등록은 이미 durable 하다(같은 선언 재전송으로 재발급된다).
         uploadUrl: { type: [string, 'null'] }
+        canonicalObjectKey:
+          type: [string, 'null']
+          description: >-
+            LandXML에서 trusted worker가 올릴 canonical GeoTIFF의 서버 유도 키.
+            원본 objectKey와 다르며 원본 XML을 덮어쓰지 않는다.
         expiresAt: { type: [string, 'null'] }
         surface: { type: [object, 'null'], additionalProperties: true }
     DesignSurfaceSealResponse:
@@ -6681,6 +6920,13 @@ components:
             쟀다"고 볼 수 없어 표에서 뺀 구역 — unmatched 와는 다른 사유다.
           type: array
           items: { type: string }
+        reason:
+          description: >-
+            progress가 null일 때의 typed fail-closed blocker. 예:
+            PROCESSING_PROFILE_UNKNOWN / PROCESSING_PROFILE_MISMATCH /
+            DESIGN_NORMALIZATION_MISMATCH. detail은 사람용 설명이고 reason은 UI
+            행동(재처리·같은 설계 개정 선택 등)을 고르는 안정된 코드다.
+          type: [string, 'null']
         detail: { type: [string, 'null'] }
         latestMissionId:
           description: >-
@@ -6697,6 +6943,18 @@ components:
         siteId: { type: string }
         sealedAt: { type: [string, 'null'] }
         downloadUrl: { type: string }
+        sourceFormat: { type: string, enum: [geotiff, landxml], default: geotiff }
+        surfaceSelector: { type: [string, 'null'] }
+        declaredCrs:
+          type: [string, 'null']
+          description: >-
+            LandXML TIN rasterization이 canonical GeoTIFF를 만들 때 쓸 declared CRS.
+            GeoTIFF 직접 검증은 파일 관측값을 계속 사용한다.
+        normalizationUploadUrl:
+          type: [string, 'null']
+          description: >-
+            LandXML일 때만 canonical GeoTIFF bytes를 trusted worker가 올릴
+            presigned URL. 원본 upload URL과 분리돼 있다.
         expiresAt: { type: string }
     PendingDesignSurfaceListResponse:
       type: object
@@ -6718,6 +6976,23 @@ components:
         # typed verdict — 화면이 한국어 문구로 번역한다(8종).
         rejectionReason: { type: [string, 'null'] }
         surface: { type: [object, 'null'], additionalProperties: true }
+    DesignSurfaceSourceLineage:
+      description: >-
+        LandXML 원본을 canonical GeoTIFF로 바꾸는 불변 계보. 원본 XML bytes와
+        정규화 결과 bytes는 다른 evidence object이고 각각의 digest가 여기에
+        결속된다.
+      type: object
+      additionalProperties: false
+      required:
+        [sourceSha256, surfaceSelector, parserVersion,
+         normalizationProfile, canonicalSha256]
+      properties:
+        sourceFormat: { type: string, enum: [landxml], default: landxml }
+        sourceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        surfaceSelector: { type: string, minLength: 1 }
+        parserVersion: { type: string, minLength: 1 }
+        normalizationProfile: { type: string, minLength: 1 }
+        canonicalSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
     DesignConformanceRequestView:
       type: object
       description: >-
@@ -6727,7 +7002,9 @@ components:
       # "키가 없다"와 "값이 null 이다"를 가르지 않아도 되게 한다.
       required:
         [requestId, designConformanceId, missionId, siteId, designSurfaceId,
-         designSurfaceSha256, current, zones, zoneCrs, policy, status,
+         designSurfaceSha256, processingProfileDigest, sourceBundleDigest,
+         designSurfaceRevision, designNormalizationProfile, designNormalizationDigest,
+         current, zones, zoneCrs, policy, status,
          requestedAt, requestedBy, updatedAt, detail, leaseWorkerId,
          leaseExpiresAt, diffRasterDigest, diffRasterVerifiedAt]
       properties:
@@ -6740,6 +7017,29 @@ components:
         designSurfaceId: { type: string }
         # 요청 시점 VERIFIED 설계면의 **관측된** 해시(접두사 없는 16진).
         designSurfaceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        processingProfileDigest:
+          description: >-
+            current epoch의 immutable processing profile snapshot digest. legacy
+            request에는 null일 수 있지만 새 정량 설계 대비 요청은 null을 허용하지
+            않는다(INV-053).
+          type: [string, 'null']
+          pattern: '^sha256:[0-9a-f]{64}$'
+        sourceBundleDigest:
+          description: current epoch이 결속한 sealed source bundle digest.
+          type: [string, 'null']
+          pattern: '^sha256:[0-9a-f]{64}$'
+        designSurfaceRevision:
+          description: 요청 시점에 고정한 설계면 revision label.
+          type: [string, 'null']
+        designNormalizationProfile:
+          description: >-
+            설계면을 비교 가능한 canonical raster로 만든 정규화 profile. 직접
+            GeoTIFF와 LandXML 변환을 서로 다른 규칙으로 조용히 섞지 않는다.
+          type: [string, 'null']
+        designNormalizationDigest:
+          description: canonical normalized design raster digest.
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
         current: { type: object, additionalProperties: true }
         zones: { type: object, additionalProperties: { type: object } }
         zoneCrs: { type: string }

@@ -229,7 +229,7 @@ export const DESIGN_SURFACE_STATUS_LABEL: Record<
   },
 };
 
-/** 거부 사유 8종 → 사람 말 + 무엇을 고쳐야 하는지. */
+/** 거부 사유 10종 → 사람 말 + 무엇을 고쳐야 하는지. */
 export const DESIGN_SURFACE_REJECTION_LABEL: Record<DesignSurfaceRejectionReason, string> = {
   DIGEST_MISMATCH:
     "올라온 파일이 적어 낸 파일과 다릅니다 — 다른 파일을 올렸거나 전송 중 손상됐습니다. 같은 파일을 새 개정판으로 다시 올리세요.",
@@ -247,6 +247,10 @@ export const DESIGN_SURFACE_REJECTION_LABEL: Record<DesignSurfaceRejectionReason
     "파일이 들고 있는 높이 기준이 적어 낸 기준과 맞지 않거나 해석할 수 없습니다 — 타원체 기준 높이와 해발 높이를 섞으면 20~30 m 가 조용히 틀립니다.",
   UNREADABLE_RASTER:
     "파일을 열지 못했습니다 — GeoTIFF 가 아니거나 손상됐습니다.",
+  LANDXML_NORMALIZATION_FAILED:
+    "LandXML TIN을 KSI 표준 높이자료로 변환하지 못했습니다 — 미터 단위의 유효한 TIN Surface로 다시 내보내 새 개정판으로 올리세요.",
+  SOURCE_LINEAGE_INVALID:
+    "원본 파일·선택한 Surface·정규화 결과의 처리 계보가 서로 맞지 않습니다 — 기존 결과를 덮어쓰지 말고 원본을 새 개정판으로 다시 올리세요.",
 };
 
 /**

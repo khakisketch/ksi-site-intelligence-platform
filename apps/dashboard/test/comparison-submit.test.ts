@@ -4,7 +4,10 @@ import {
   COMPARISON_ZONE_CRS,
   COMPARISON_ZONE_ID,
   canSubmitComparison,
+  canSubmitCivilComparison,
+  civilBlockerGuidance,
   comparisonEligibility,
+  comparisonRequestInput,
   currentMissionEpochs,
   isTerminalComparisonStatus,
   selectableEpochs,
@@ -193,6 +196,61 @@ describe("comparisonEligibility", () => {
     );
     expect(canSubmitComparison(result)).toBe(false);
     expect(result.blockedReason).toContain("모두 없음");
+  });
+});
+
+describe("civil quantitative preflight", () => {
+  const vertices = [
+    { latDeg: 37.5, lonDeg: 127.0 },
+    { latDeg: 37.5, lonDeg: 127.1 },
+    { latDeg: 37.6, lonDeg: 127.1 },
+  ];
+
+  it("preflight와 제출이 같은 선택 payload를 공유한다", () => {
+    expect(comparisonRequestInput("baseline", "current", vertices, true)).toEqual({
+      baselineJobId: "baseline",
+      currentJobId: "current",
+      zones: {
+        [COMPARISON_ZONE_ID]: {
+          type: "Polygon",
+          coordinates: [[[127, 37.5], [127.1, 37.5], [127.1, 37.6], [127, 37.5]]],
+        },
+      },
+      zoneCrs: COMPARISON_ZONE_CRS,
+    });
+  });
+
+  it("Core가 허용했다고 해도 로컬 산출물 조건이 아니면 제출하지 않는다", () => {
+    const blocked = comparisonEligibility(null, epoch({ jobId: "current" }), false);
+    expect(canSubmitCivilComparison(blocked, { compatible: true }, true)).toBe(false);
+  });
+
+  it("Core preflight가 실패하거나 feature flag가 꺼지면 제출하지 않는다", () => {
+    const eligible = comparisonEligibility(epoch({ jobId: "a" }), epoch({ jobId: "b" }), true);
+    expect(canSubmitCivilComparison(eligible, { compatible: false }, true)).toBe(false);
+    expect(canSubmitCivilComparison(eligible, { compatible: true }, false)).toBe(false);
+    expect(canSubmitCivilComparison(eligible, { compatible: true }, true)).toBe(true);
+  });
+
+  it.each([
+    "ANALYSIS_NOT_READY",
+    "PROCESSING_PROFILE_UNKNOWN",
+    "PROCESSING_PROFILE_MISMATCH",
+    "SOURCE_LINEAGE_GAP",
+    "CRS_MISMATCH",
+    "VERTICAL_REFERENCE_MISMATCH",
+    "DESIGN_SURFACE_NOT_VERIFIED",
+    "DESIGN_NORMALIZATION_MISMATCH",
+  ])("typed blocker %s 를 코드와 다음 행동으로 유지한다", (reason) => {
+    const guidance = civilBlockerGuidance({ reason, detail: null });
+    expect(guidance?.code).toBe(reason);
+    expect(guidance?.nextAction).toBeTruthy();
+  });
+
+  it("알 수 없는 typed blocker도 조용히 허용하지 않는다", () => {
+    const guidance = civilBlockerGuidance({ reason: "FUTURE_SERVER_REASON", detail: null });
+    expect(guidance?.code).toBe("FUTURE_SERVER_REASON");
+    expect(guidance?.nextAction).toContain("관리자");
   });
 });
 

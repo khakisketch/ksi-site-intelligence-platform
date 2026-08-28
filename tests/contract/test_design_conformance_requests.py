@@ -230,6 +230,7 @@ class Fixture:
             mission_store=self.missions,
             processing_job_store=self.jobs,
             design_surface_store=self.surfaces,
+            analysis_readiness=lambda _mission_id: (True, None),
         )
 
     def _design_surface(self, vertical: VerticalReference, *, seal_only: bool) -> str:
@@ -375,7 +376,7 @@ def test_incompatible_vertical_datum_is_refused_before_any_computation(tmp_path:
     """
     fixture = Fixture(tmp_path, design_vertical=_ORTHOMETRIC_DESIGN_VERTICAL)
     result = fixture.create()
-    assert result.verdict is DesignConformanceRequestVerdict.VERTICAL_DATUM_INCOMPATIBLE
+    assert result.verdict is DesignConformanceRequestVerdict.VERTICAL_REFERENCE_MISMATCH
     assert result.detail is not None and "20~30m" in result.detail
     # 원장에 아무것도 남지 않는다 — 워커가 집어갈 요청 자체가 없다.
     assert fixture.requests.list_pending(now=_NOW) == []
@@ -385,7 +386,7 @@ def test_dsm_without_vertical_reference_is_refused(tmp_path: Path) -> None:
     """수직기준이 기록되기 전에 등록된 산출물 — 설계 대비는 fail-closed 다."""
     fixture = Fixture(tmp_path, dsm_vertical=None)
     result = fixture.create()
-    assert result.verdict is DesignConformanceRequestVerdict.VERTICAL_REFERENCE_UNKNOWN
+    assert result.verdict is DesignConformanceRequestVerdict.VERTICAL_REFERENCE_MISMATCH
     assert result.detail is not None and "재처리" in result.detail
 
 
@@ -821,6 +822,7 @@ def _reopen(fixture: Fixture) -> DesignConformanceRequestStore:
         mission_store=fixture.missions,
         processing_job_store=fixture.jobs,
         design_surface_store=fixture.surfaces,
+        analysis_readiness=lambda _mission_id: (True, None),
     )
 
 

@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const axePath = join(process.cwd(), "node_modules", "axe-core", "axe.min.js");
 const syntheticSiteId = "e2e-site-workspace";
+const syntheticCivilMissionId = "e2e-civil-postprocessing-fixture";
 
 declare global {
   interface Window {
@@ -327,6 +328,55 @@ test("작업 상세는 근거가 없을 때 분석 준비를 fail-closed로 표�
       exact: true,
     }),
   ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(browserFailures).toEqual([]);
+});
+
+test("토목 후처리 패널은 기존 흐름 안에서 일관된 프로필과 다음 행동을 보여 준다", async ({ page }, testInfo) => {
+  test.skip(
+    Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL),
+    "외부 원장은 읽기 전용이며 로컬 합성 Mission을 전제하지 않습니다.",
+  );
+
+  const browserFailures: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserFailures.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => browserFailures.push(`pageerror: ${error.message}`));
+
+  await page.goto(`/missions/${syntheticCivilMissionId}`);
+  if (testInfo.project.name.startsWith("desktop")) {
+    await expect(page.getByRole("heading", { name: "사진 업로드 · 재구성" })).toBeVisible();
+    await expect(page.getByText("KSI 표준 처리 v1", { exact: true })).toBeVisible();
+  } else {
+    const laptopBoundary = page
+      .getByText("원본 업로드·봉인과 처리 시작은 노트북의 전체 Operations Console에서 수행합니다.", {
+        exact: true,
+      })
+      .locator("xpath=ancestor::aside");
+    await expect(laptopBoundary.getByText("노트북에서 계속", { exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("heading", { name: "두 시점 비교" })).toBeVisible();
+  await expect(page.getByText("비교 가능한 결과 0건", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("비교하려면 이 현장에서 완료된 재구성이 두 개 이상 있어야 합니다", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.goto(`/sites/${syntheticSiteId}/design`);
+  await expect(
+    page.getByRole("heading", { level: 2, name: "설계 기준면", exact: true }),
+  ).toBeVisible();
+  const landxml = page.getByRole("radio", { name: /LandXML TIN Surface/ });
+  await landxml.focus();
+  await expect(landxml).toBeFocused();
+  await landxml.check();
+  await expect(
+    page.getByLabel(/사용할 TIN Surface 이름/),
+  ).toBeVisible();
+  await expect(page.getByText(/DWG\/DXF는 직접 받지 않으므로/)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   expect(browserFailures).toEqual([]);
 });

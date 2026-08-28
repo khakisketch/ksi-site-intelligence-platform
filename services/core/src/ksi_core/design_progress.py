@@ -64,6 +64,7 @@ from pydantic import Field, ValidationError
 
 from ksi_core.api_base import CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.civil_preflight import CivilPreflightReason
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -315,6 +316,9 @@ class DesignProgressResponse(CamelModel):
     """
 
     progress: DesignProgress | None = None
+    #: INV-053 stable blocker.  Narrative ``detail`` remains for operators;
+    #: clients branch only on this code.
+    reason: str | None = None
     #: 한쪽 시점에만 있던 구역. 표에서 빠진 이유를 화면이 밝힌다.
     unmatched_zone_ids: list[str] = Field(default_factory=list)
     #: 양쪽에 다 있었지만(zoneId 일치) 측정 면적이 크게 달라 "같은 곳을 쟀다"고
@@ -438,6 +442,72 @@ def build_design_progress_router(
                     "기준 이후 시점에 대해서만 말이 된다. 기준 이후 지형으로 다시 계산하거나 "
                     "기준 지정을 다시 확인한다"
                 )
+            )
+        baseline_request = store.request_of(baseline.design_conformance_id)
+        latest_request = store.request_of(latest.design_conformance_id)
+        if baseline_request is None or latest_request is None:
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.SOURCE_LINEAGE_GAP.value,
+                detail="두 리포트 중 요청 원장으로 되짚을 수 없는 항목이 있다",
+            )
+        if (
+            baseline_request.processing_profile_digest is None
+            or latest_request.processing_profile_digest is None
+        ):
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.PROCESSING_PROFILE_UNKNOWN.value,
+                detail=(
+                    "처리 프로필이 고정되기 전의 결과가 포함됐다. 과거 결과는 조회할 수 "
+                    "있지만 새 정량 진척 비교에는 사용할 수 없다"
+                ),
+            )
+        if (
+            baseline_request.processing_profile_digest
+            != latest_request.processing_profile_digest
+        ):
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.PROCESSING_PROFILE_MISMATCH.value,
+                detail="두 시점의 processingProfileDigest가 달라 자동 진척 비교를 막았다",
+            )
+        if (
+            baseline_request.source_bundle_digest is None
+            or latest_request.source_bundle_digest is None
+        ):
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.SOURCE_LINEAGE_GAP.value,
+                detail="두 시점 중 봉인된 원본 번들 계보가 없는 항목이 있다",
+            )
+        design_anchors = (
+            baseline_request.design_surface_revision,
+            baseline_request.design_normalization_profile,
+            baseline_request.design_normalization_digest,
+            latest_request.design_surface_revision,
+            latest_request.design_normalization_profile,
+            latest_request.design_normalization_digest,
+        )
+        if (
+            any(value is None for value in design_anchors)
+            or design_anchors[:3] != design_anchors[3:]
+        ):
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.DESIGN_NORMALIZATION_MISMATCH.value,
+                detail=(
+                    "두 시점의 설계 revision 또는 정규화 profile/digest가 다르거나 미상이다"
+                ),
+            )
+        if baseline.crs != latest.crs:
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.CRS_MISMATCH.value,
+                detail=f"좌표계가 다르다(기준 {baseline.crs}, 최신 {latest.crs})",
+            )
+        if baseline.vertical_reference.datum != latest.vertical_reference.datum:
+            return DesignProgressResponse(
+                reason=CivilPreflightReason.VERTICAL_REFERENCE_MISMATCH.value,
+                detail=(
+                    "수직기준이 다르다(기준 "
+                    f"{baseline.vertical_reference.datum.value}, 최신 "
+                    f"{latest.vertical_reference.datum.value})"
+                ),
             )
         names = (
             work_area_store.names_of([zone.zone_id for zone in latest.zones])

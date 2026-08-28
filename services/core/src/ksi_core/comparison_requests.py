@@ -84,6 +84,11 @@ from ksi_core.auth import (
     current_request_organization_id,
     require_permission,
 )
+from ksi_core.civil_preflight import (
+    AnalysisReadinessCheck,
+    CivilPreflightReason,
+    preflight_epoch_pair,
+)
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
@@ -155,6 +160,14 @@ class ComparisonRequestVerdict(StrEnum):
     #: 즉석 구역(zones)의 폴리곤을 쓸 수 없다 — 타입·닫힘·좌표·개수 상한 중 하나를
     #: 어겼다. 워커까지 보내지 않고 여기서 사람 말로 거부한다.
     ZONES_INVALID = "ZONES_INVALID"
+    # REQ-INT-104 / INV-053 — quantitative-comparison preflight.  These names
+    # are shared with the Dashboard; never collapse them into a generic 422.
+    ANALYSIS_NOT_READY = CivilPreflightReason.ANALYSIS_NOT_READY.value
+    PROCESSING_PROFILE_UNKNOWN = CivilPreflightReason.PROCESSING_PROFILE_UNKNOWN.value
+    PROCESSING_PROFILE_MISMATCH = CivilPreflightReason.PROCESSING_PROFILE_MISMATCH.value
+    SOURCE_LINEAGE_GAP = CivilPreflightReason.SOURCE_LINEAGE_GAP.value
+    CRS_MISMATCH = CivilPreflightReason.CRS_MISMATCH.value
+    VERTICAL_REFERENCE_MISMATCH = CivilPreflightReason.VERTICAL_REFERENCE_MISMATCH.value
     UNKNOWN_REQUEST = "UNKNOWN_REQUEST"
     REQUEST_NOT_ACTIVE = "REQUEST_NOT_ACTIVE"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -185,6 +198,12 @@ _STATUS: dict[ComparisonRequestVerdict, int] = {
     ComparisonRequestVerdict.MISSION_MISMATCH: 422,
     ComparisonRequestVerdict.NOTHING_TO_COMPARE: 422,
     ComparisonRequestVerdict.ZONES_INVALID: 422,
+    ComparisonRequestVerdict.ANALYSIS_NOT_READY: 422,
+    ComparisonRequestVerdict.PROCESSING_PROFILE_UNKNOWN: 422,
+    ComparisonRequestVerdict.PROCESSING_PROFILE_MISMATCH: 422,
+    ComparisonRequestVerdict.SOURCE_LINEAGE_GAP: 422,
+    ComparisonRequestVerdict.CRS_MISMATCH: 422,
+    ComparisonRequestVerdict.VERTICAL_REFERENCE_MISMATCH: 422,
     ComparisonRequestVerdict.UNKNOWN_REQUEST: 404,
     ComparisonRequestVerdict.REQUEST_NOT_ACTIVE: 409,
     ComparisonRequestVerdict.STORE_UNAVAILABLE: 503,
@@ -288,6 +307,11 @@ class ComparisonRequestRecord:
     site_id: str
     baseline_job_id: str
     current_job_id: str
+    # v1.1 compatibility anchors.  ``None`` is reserved for replayed v1.0
+    # requests; new requests cannot be created without all three.
+    processing_profile_digest: str | None
+    baseline_source_bundle_digest: str | None
+    current_source_bundle_digest: str | None
     point_cloud_baseline: ArtifactRef | None
     point_cloud_current: ArtifactRef | None
     change_detection_eligible: bool
@@ -311,11 +335,15 @@ class ComparisonRequestRecord:
 
     def to_contract(self) -> ComparisonRequest:
         return ComparisonRequest(
+            schema_version=("1.1" if self.processing_profile_digest is not None else "1.0"),
             request_id=self.request_id,
             mission_id=self.mission_id,
             site_id=self.site_id,
             baseline_job_id=self.baseline_job_id,
             current_job_id=self.current_job_id,
+            processing_profile_digest=self.processing_profile_digest,
+            baseline_source_bundle_digest=self.baseline_source_bundle_digest,
+            current_source_bundle_digest=self.current_source_bundle_digest,
             point_cloud_baseline=self.point_cloud_baseline,
             point_cloud_current=self.point_cloud_current,
             change_detection_eligible=self.change_detection_eligible,
@@ -366,6 +394,9 @@ class _Resolved:
     """검증을 통과한 요청의 파생값 — live 생성과 재생이 공유한다."""
 
     site_id: str
+    processing_profile_digest: str | None
+    baseline_source_bundle_digest: str | None
+    current_source_bundle_digest: str | None
     point_cloud_baseline: ArtifactRef | None
     point_cloud_current: ArtifactRef | None
     change_detection_eligible: bool
@@ -387,10 +418,12 @@ class ComparisonRequestStore:
         *,
         mission_store: MissionStore,
         processing_job_store: ProcessingJobStore,
+        analysis_readiness: AnalysisReadinessCheck | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
+        self._analysis_readiness = analysis_readiness
         self._lock = threading.Lock()
         self._requests: dict[str, ComparisonRequestRecord] = {}
         self._by_request_shape: dict[tuple[str, str, str], str] = {}
@@ -440,18 +473,32 @@ class ComparisonRequestStore:
 
     def _replay_created(self, raw: dict[str, Any]) -> None:
         contract = ComparisonRequest.model_validate(raw["request"])
-        # 재생도 live 와 같은 게이트를 태운다 — journal 조작으로 해석 불가능한
-        # 요청이 되살아나는 경로를 막는다(change_detection.py 와 동일 원칙).
+        # v1.1 재생은 live 와 같은 compatibility gate를 다시 탄다.  v1.0은 그
+        # anchor가 생기기 전의 historical request이므로 기존 구조 게이트만 태운다:
+        # 결과 조회를 보존하되 그 요청을 새 정량 비교의 근거로 승격하지 않는다.
+        enforce_civil_preflight = contract.schema_version == "1.1"
         verdict, detail, resolved = self._resolve(
             mission_id=contract.mission_id,
             baseline_job_id=contract.baseline_job_id,
             current_job_id=contract.current_job_id,
             zones=contract.zones,
             zone_crs=contract.zone_crs,
+            enforce_civil_preflight=enforce_civil_preflight,
         )
         if verdict is not ComparisonRequestVerdict.CREATED or resolved is None:
             raise ComparisonRequestRecoveryError(
                 f"재생: 기록될 수 없는 요청({verdict.value}: {detail}) — "
+                f"requestId={contract.request_id}"
+            )
+        if enforce_civil_preflight and (
+            contract.processing_profile_digest != resolved.processing_profile_digest
+            or contract.baseline_source_bundle_digest
+            != resolved.baseline_source_bundle_digest
+            or contract.current_source_bundle_digest
+            != resolved.current_source_bundle_digest
+        ):
+            raise ComparisonRequestRecoveryError(
+                "재생: v1.1 compatibility anchor가 현재 immutable job 원장과 다르다 — "
                 f"requestId={contract.request_id}"
             )
         record = ComparisonRequestRecord(
@@ -460,6 +507,9 @@ class ComparisonRequestStore:
             site_id=resolved.site_id,
             baseline_job_id=contract.baseline_job_id,
             current_job_id=contract.current_job_id,
+            processing_profile_digest=contract.processing_profile_digest,
+            baseline_source_bundle_digest=contract.baseline_source_bundle_digest,
+            current_source_bundle_digest=contract.current_source_bundle_digest,
             point_cloud_baseline=resolved.point_cloud_baseline,
             point_cloud_current=resolved.point_cloud_current,
             change_detection_eligible=resolved.change_detection_eligible,
@@ -538,6 +588,7 @@ class ComparisonRequestStore:
         current_job_id: str,
         zones: dict[str, dict[str, Any]] | None,
         zone_crs: str | None,
+        enforce_civil_preflight: bool = True,
     ) -> tuple[ComparisonRequestVerdict, str | None, _Resolved | None]:
         if self._mission_store.get(mission_id) is None:
             return (
@@ -595,6 +646,31 @@ class ComparisonRequestStore:
                 None,
             )
 
+        if zones and zone_crs is not None:
+            zones_error = assert_zones_are_usable(zones, zone_crs=zone_crs)
+            if zones_error is not None:
+                return (ComparisonRequestVerdict.ZONES_INVALID, zones_error, None)
+
+        profile_digest: str | None = None
+        baseline_source_digest: str | None = None
+        current_source_digest: str | None = None
+        if enforce_civil_preflight:
+            compatibility = preflight_epoch_pair(
+                baseline_job,
+                current_job,
+                analysis_readiness=self._analysis_readiness,
+            )
+            if not compatibility.compatible:
+                assert compatibility.reason is not None  # noqa: S101 -- result invariant
+                return (
+                    ComparisonRequestVerdict(compatibility.reason.value),
+                    compatibility.detail,
+                    None,
+                )
+            profile_digest = getattr(current_job, "processing_profile_digest", None)
+            baseline_source_digest = baseline_job.input.source_bundle_digest
+            current_source_digest = current_job.input.source_bundle_digest
+
         pc_baseline = _find_artifact(baseline_job, ProcessingArtifactKind.POINT_CLOUD)
         pc_current = _find_artifact(current_job, ProcessingArtifactKind.POINT_CLOUD)
         cd_eligible = pc_baseline is not None and pc_current is not None
@@ -606,11 +682,6 @@ class ComparisonRequestStore:
                 if artifact is None
             ]
             cd_reason = f"{'·'.join(missing)} 작업에 point_cloud 산출물이 없다"
-
-        if zones and zone_crs is not None:
-            zones_error = assert_zones_are_usable(zones, zone_crs=zone_crs)
-            if zones_error is not None:
-                return (ComparisonRequestVerdict.ZONES_INVALID, zones_error, None)
 
         dsm_baseline = _find_artifact(baseline_job, ProcessingArtifactKind.DSM)
         dsm_current = _find_artifact(current_job, ProcessingArtifactKind.DSM)
@@ -640,6 +711,9 @@ class ComparisonRequestStore:
             None,
             _Resolved(
                 site_id=baseline_job.site_id,
+                processing_profile_digest=profile_digest,
+                baseline_source_bundle_digest=baseline_source_digest,
+                current_source_bundle_digest=current_source_digest,
                 point_cloud_baseline=_ref_or_none(baseline_job_id, pc_baseline),
                 point_cloud_current=_ref_or_none(current_job_id, pc_current),
                 change_detection_eligible=cd_eligible,
@@ -656,6 +730,27 @@ class ComparisonRequestStore:
     @property
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
+
+    def preflight(
+        self,
+        mission_id: str,
+        *,
+        baseline_job_id: str,
+        current_job_id: str,
+        zones: dict[str, dict[str, Any]] | None,
+        zone_crs: str | None,
+    ) -> ComparisonRequestResult:
+        """Read-only creation verdict using the exact live creation gate."""
+
+        with self._lock:
+            verdict, detail, _resolved = self._resolve(
+                mission_id=mission_id,
+                baseline_job_id=baseline_job_id,
+                current_job_id=current_job_id,
+                zones=zones,
+                zone_crs=zone_crs,
+            )
+        return ComparisonRequestResult(verdict=verdict, detail=detail)
 
     def create(
         self,
@@ -715,6 +810,9 @@ class ComparisonRequestStore:
                 site_id=resolved.site_id,
                 baseline_job_id=baseline_job_id,
                 current_job_id=current_job_id,
+                processing_profile_digest=resolved.processing_profile_digest,
+                baseline_source_bundle_digest=resolved.baseline_source_bundle_digest,
+                current_source_bundle_digest=resolved.current_source_bundle_digest,
                 point_cloud_baseline=resolved.point_cloud_baseline,
                 point_cloud_current=resolved.point_cloud_current,
                 change_detection_eligible=resolved.change_detection_eligible,
@@ -997,6 +1095,12 @@ class ComparisonRequestMutationResponse(CamelModel):
     detail: str | None = None
 
 
+class ComparisonPreflightResponse(CamelModel):
+    compatible: bool
+    reason: str | None = None
+    detail: str | None = None
+
+
 class ComparisonRequestListResponse(CamelModel):
     requests: list[dict[str, Any]]
 
@@ -1134,6 +1238,38 @@ def build_comparison_requests_router(
         올리는 배포가 필요하다.
         """
         return current_comparison_policy()
+
+    @router.post(
+        "/v1/missions/{mission_id}/comparison-preflight",
+        response_model=ComparisonPreflightResponse,
+    )
+    def preflight_comparison_request(
+        mission_id: str,
+        request: ComparisonRequestCreateInput,
+        response: Response,
+        _principal: Principal = Depends(require_permission(Permission.MISSIONS_READ)),  # noqa: B008
+    ) -> ComparisonPreflightResponse:
+        """Explain whether the same payload can create a quantitative request."""
+
+        result = store.preflight(
+            mission_id,
+            baseline_job_id=request.baseline_job_id,
+            current_job_id=request.current_job_id,
+            zones=request.zones,
+            zone_crs=request.zone_crs,
+        )
+        compatible = result.verdict is ComparisonRequestVerdict.CREATED
+        # A preflight is itself a successful read.  Domain incompatibility is
+        # represented by `compatible=false`, not by forcing the browser to
+        # parse an HTTP error body.  Unknown/foreign mission remains 404 to
+        # preserve organization non-disclosure.
+        if result.verdict is ComparisonRequestVerdict.UNKNOWN_MISSION:
+            response.status_code = 404
+        return ComparisonPreflightResponse(
+            compatible=compatible,
+            reason=None if compatible else result.verdict.value,
+            detail=result.detail,
+        )
 
     @router.post(
         "/v1/missions/{mission_id}/comparison-requests",

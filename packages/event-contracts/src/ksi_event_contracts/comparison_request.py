@@ -46,12 +46,28 @@ class ComparisonRequest(_CamelModel):
     남기지 않는다.
     """
 
-    schema_version: Literal["1.0"] = "1.0"
+    # v1.1 binds the compatibility facts that permitted a *new* quantitative
+    # request.  v1.0 remains readable so historical reports do not disappear;
+    # callers must opt into v1.1 explicitly when constructing a request.
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     request_id: str = Field(min_length=1)
     mission_id: str = Field(min_length=1)
     site_id: str = Field(min_length=1)
     baseline_job_id: str = Field(min_length=1)
     current_job_id: str = Field(min_length=1)
+
+    # REQ-INT-104 / INV-053 — Core-derived immutable compatibility anchors.
+    # These are absent on historical v1.0 requests and required together on
+    # v1.1.  No replay path infers them from legacy engine fields.
+    processing_profile_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    baseline_source_bundle_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    current_source_bundle_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
 
     point_cloud_baseline: ArtifactRef | None = None
     point_cloud_current: ArtifactRef | None = None
@@ -93,6 +109,20 @@ class ComparisonRequest(_CamelModel):
             raise ValueError(
                 "baselineJobId 와 currentJobId 가 같다 — 자기 자신과의 비교는 "
                 "언제나 '변화 없음'으로 읽히지만 아무것도 비교하지 않은 것이다"
+            )
+        compatibility = (
+            self.processing_profile_digest,
+            self.baseline_source_bundle_digest,
+            self.current_source_bundle_digest,
+        )
+        if self.schema_version == "1.1" and any(value is None for value in compatibility):
+            raise ValueError(
+                "comparison-request v1.1 은 processingProfileDigest와 baseline/current "
+                "sourceBundleDigest를 모두 포함해야 한다"
+            )
+        if self.schema_version == "1.0" and any(value is not None for value in compatibility):
+            raise ValueError(
+                "comparison-request v1.0 에는 v1.1 compatibility anchor를 실을 수 없다"
             )
         if not self.change_detection_eligible and not self.volume_change_eligible:
             raise ValueError(

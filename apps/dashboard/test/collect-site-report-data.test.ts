@@ -52,6 +52,7 @@ function progressResponse(
 ): DesignProgressResponse {
   return {
     progress: progress(),
+    reason: null,
     unmatchedZoneIds: [],
     areaMismatchZoneIds: [],
     detail: null,

@@ -2,6 +2,7 @@ import "server-only";
 
 import { coreFetch } from "./client";
 import type {
+  CivilComparisonPreflightResponse,
   ComparisonPolicyView,
   ComparisonRequestCreateInput,
   ComparisonRequestDetailView,
@@ -58,6 +59,21 @@ export async function createComparisonRequest(
 ): Promise<ComparisonRequestMutationResponse> {
   return coreFetch<ComparisonRequestMutationResponse>(
     `/v1/missions/${encodeURIComponent(missionId)}/comparison-requests`,
+    { method: "POST", body: input },
+  );
+}
+
+/**
+ * Ask Core whether the selected epochs are safe for a quantitative comparison.
+ * This is intentionally a separate read-like command: it creates no request
+ * and returns INV-053's typed blocker verbatim for the Console to explain.
+ */
+export async function preflightComparisonRequest(
+  missionId: string,
+  input: ComparisonRequestCreateInput,
+): Promise<CivilComparisonPreflightResponse> {
+  return coreFetch<CivilComparisonPreflightResponse>(
+    `/v1/missions/${encodeURIComponent(missionId)}/comparison-preflight`,
     { method: "POST", body: input },
   );
 }

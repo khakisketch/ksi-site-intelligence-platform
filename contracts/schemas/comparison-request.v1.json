@@ -22,7 +22,10 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0"
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
     },
     "requestId": {
       "type": "string",
@@ -46,6 +49,30 @@
     "currentJobId": {
       "type": "string",
       "minLength": 1
+    },
+    "processingProfileDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "v1.1: 두 epoch에 공통으로 확인된 immutable ProcessingProfile digest. v1.0 historical request에는 없다."
+    },
+    "baselineSourceBundleDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "v1.1: baseline ProcessingJob이 결속한 sealed source bundle digest."
+    },
+    "currentSourceBundleDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "v1.1: current ProcessingJob이 결속한 sealed source bundle digest."
     },
     "pointCloudBaseline": {
       "oneOf": [
@@ -162,6 +189,51 @@
       "description": "종료 상태에서만 채워진다 — FAILED 로 끝난 이유."
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": "1.1"
+          }
+        },
+        "required": [
+          "schemaVersion"
+        ]
+      },
+      "then": {
+        "required": [
+          "processingProfileDigest",
+          "baselineSourceBundleDigest",
+          "currentSourceBundleDigest"
+        ],
+        "properties": {
+          "processingProfileDigest": {
+            "type": "string"
+          },
+          "baselineSourceBundleDigest": {
+            "type": "string"
+          },
+          "currentSourceBundleDigest": {
+            "type": "string"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "processingProfileDigest": {
+            "type": "null"
+          },
+          "baselineSourceBundleDigest": {
+            "type": "null"
+          },
+          "currentSourceBundleDigest": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "artifactRef": {
       "type": "object",

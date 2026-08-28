@@ -1,5 +1,7 @@
 import type {
   AoiVertex,
+  CivilComparisonPreflightResponse,
+  ComparisonRequestCreateInput,
   ProcessingArtifactSummary,
   SiteProcessingJobSummary,
 } from "@/lib/core-api/types";
@@ -141,6 +143,91 @@ export function comparisonEligibility(
 /** 제출 가능한가 — 두 시점이 유효하고 잴 수 있는 것이 하나라도 있어야 한다. */
 export function canSubmitComparison(eligibility: ComparisonEligibility): boolean {
   return eligibility.blockedReason === null;
+}
+
+/** Build once, then use the exact same payload for Core preflight and submit. */
+export function comparisonRequestInput(
+  baselineJobId: string,
+  currentJobId: string,
+  vertices: readonly AoiVertex[],
+  zonesConfirmed: boolean,
+): ComparisonRequestCreateInput {
+  const zonePayload = zonesConfirmed ? toZonesPayload(vertices) : null;
+  return {
+    baselineJobId,
+    currentJobId,
+    zones: zonePayload?.zones ?? null,
+    zoneCrs: zonePayload?.zoneCrs ?? null,
+  };
+}
+
+export interface CivilBlockerGuidance {
+  code: string;
+  message: string;
+  nextAction: string;
+}
+
+/**
+ * INV-053 blocker → operator action.  The code is preserved separately so a
+ * new server reason cannot become a misleading generic green state.
+ */
+export function civilBlockerGuidance(
+  result: Pick<CivilComparisonPreflightResponse, "reason" | "detail">,
+): CivilBlockerGuidance | null {
+  if (!result.reason) return null;
+  const map: Record<string, Omit<CivilBlockerGuidance, "code">> = {
+    ANALYSIS_NOT_READY: {
+      message: "선택한 회차의 분석 준비 상태가 READY가 아닙니다.",
+      nextAction: "원본·품질·처리 계보를 완성한 뒤 분석 준비 상태를 다시 확인하세요.",
+    },
+    PROCESSING_PROFILE_UNKNOWN: {
+      message: "처리 프로필이 원장에 고정되지 않은 과거 결과가 포함되어 있습니다.",
+      nextAction: "KSI 표준 처리 v1로 두 회차를 새로 처리하세요.",
+    },
+    PROCESSING_PROFILE_MISMATCH: {
+      message: "두 회차의 고정 처리 프로필이 다릅니다.",
+      nextAction: "동일한 KSI 표준 처리 프로필로 재구성한 회차만 비교하세요.",
+    },
+    SOURCE_LINEAGE_GAP: {
+      message: "원본 번들과 산출물의 digest 계보가 완전하게 결속되지 않았습니다.",
+      nextAction: "봉인·처리 완료 기록을 확인하고, 계보가 남는 새 처리 회차를 만드세요.",
+    },
+    CRS_MISMATCH: {
+      message: "두 회차 산출물의 좌표계가 다르거나 확인할 수 없습니다.",
+      nextAction: "같은 현장 좌표계로 정규화된 회차를 선택하세요.",
+    },
+    VERTICAL_REFERENCE_MISMATCH: {
+      message: "두 DSM의 높이 기준이 다르거나 확인할 수 없습니다.",
+      nextAction: "같은 수직기준으로 처리된 회차를 사용하세요.",
+    },
+    DESIGN_SURFACE_NOT_VERIFIED: {
+      message: "선택한 설계 기준면이 아직 검증 완료 상태가 아닙니다.",
+      nextAction: "설계면 검증이 VERIFIED가 된 뒤 다시 비교하세요.",
+    },
+    DESIGN_NORMALIZATION_MISMATCH: {
+      message: "설계면 개정 또는 정규화 결과가 서로 다릅니다.",
+      nextAction: "같은 설계면 revision과 정규화 digest를 기준으로 회차를 맞추세요.",
+    },
+    PREFLIGHT_UNAVAILABLE: {
+      message: "비교 가능성 확인을 지금 수행할 수 없습니다.",
+      nextAction: "연결을 확인한 뒤 다시 시도하세요. 확인 전에는 정량 비교를 제출할 수 없습니다.",
+    },
+  };
+  const known = map[result.reason];
+  return {
+    code: result.reason,
+    message: known?.message ?? "서버가 알 수 없는 비교 차단 사유를 반환했습니다.",
+    nextAction: known?.nextAction ?? "이 차단 코드와 함께 관리자에게 문의하세요.",
+  };
+}
+
+/** Local artifact eligibility and Core's durable preflight must both permit submit. */
+export function canSubmitCivilComparison(
+  eligibility: ComparisonEligibility,
+  preflight: Pick<CivilComparisonPreflightResponse, "compatible"> | null,
+  enabled: boolean,
+): boolean {
+  return enabled && canSubmitComparison(eligibility) && preflight?.compatible === true;
 }
 
 /**

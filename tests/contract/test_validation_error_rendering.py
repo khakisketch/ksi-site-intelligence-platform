@@ -39,15 +39,20 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
+from ksi_core.comparison_requests import ComparisonRequestStore
+from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.sites import SiteStore
+from ksi_core.source_media import SourceMediaStore
 
 _ADMIN_TOKEN = "test-admin-token"
 _GATEWAY_TOKEN = "test-gateway-token"
 _EDGE_TOKEN = "test-edge-token"
+_PROCESSING_TOKEN = "test-processing-token"
 
 
 class _ValidationEvidenceStorage:
@@ -101,6 +106,15 @@ def _auth_registry() -> AuthRegistry:
                     kind=PrincipalKind.EDGE_DEVICE,
                     role=None,
                     device_id="manifold-3-1",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(_PROCESSING_TOKEN.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="processing-worker-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
+                    device_id=None,
                 ),
             ),
         ]
@@ -169,6 +183,42 @@ def _acquisition_client(tmp_path: Path) -> TestClient:
             work_order_store=work_order_store,
             coordination_store=coordination_store,
         ),
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _civil_client(tmp_path: Path) -> TestClient:
+    """두 신규 civil POST를 실제 Core 조립·정확한 principal로 직접 두드린다."""
+
+    site_store = SiteStore(DurableJournal(tmp_path / "civil-sites.jsonl"))
+    mission_store = MissionStore(DurableJournal(tmp_path / "civil-missions.jsonl"))
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "civil-source-media.jsonl"),
+        mission_store=mission_store,
+    )
+    processing_job_store = ProcessingJobStore(
+        DurableJournal(tmp_path / "civil-processing-jobs.jsonl"),
+        source_media_store=source_media_store,
+        site_store=site_store,
+    )
+    app = create_app(
+        auth_registry=_auth_registry(),
+        site_store=site_store,
+        mission_store=mission_store,
+        evidence_storage=_ValidationEvidenceStorage(),
+        source_media_store=source_media_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=DesignSurfaceStore(
+            DurableJournal(tmp_path / "civil-design-surfaces.jsonl"),
+            site_store=site_store,
+        ),
+        comparison_request_store=ComparisonRequestStore(
+            DurableJournal(tmp_path / "civil-comparison-requests.jsonl"),
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            analysis_readiness=lambda _mission_id: (False, "fixture has no evidence"),
+        ),
+        landxml_ingress_enabled=True,
     )
     return TestClient(app, raise_server_exceptions=False)
 
@@ -258,6 +308,33 @@ def test_acquisition_and_artifact_hostile_bodies_are_machine_readable_422(
     client = _acquisition_client(tmp_path)
     response = client.request(
         method,
+        path,
+        content=raw.encode("utf-8", "surrogatepass"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
+    assert response.headers["content-type"].startswith("application/json")
+    json.loads(response.text)
+
+
+@pytest.mark.parametrize(
+    ("path", "token"),
+    [
+        ("/v1/design-surfaces/design-1/normalization-failure", _PROCESSING_TOKEN),
+        ("/v1/missions/mission-1/comparison-preflight", _ADMIN_TOKEN),
+    ],
+)
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_civil_hostile_bodies_are_machine_readable_422(
+    path: str, token: str, label: str, raw: str, tmp_path: Path
+) -> None:
+    """신규 civil POST 2개를 각 최소권한 신원으로 적대적 본문 6종 직접 조사한다."""
+
+    client = _civil_client(tmp_path)
+    response = client.post(
         path,
         content=raw.encode("utf-8", "surrogatepass"),
         headers={

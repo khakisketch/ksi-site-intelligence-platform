@@ -9,6 +9,7 @@ Core 재해싱→리포트 기록** 전 구간을 거친 두 리포트에도 그
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -253,6 +254,52 @@ def test_setting_the_baseline_then_reading_progress_matches_hand_calculation(
     assert zone["cutProgressRatio"] == pytest.approx(0.752)
     assert body["latestMissionId"] == _CURRENT_MISSION_ID
     assert body["progress"]["latestDesignConformanceId"] == latest.design_conformance_id
+
+
+def test_design_revision_mismatch_blocks_quantitative_progress(
+    progress: ProgressFixture,
+) -> None:
+    baseline = progress.submit(
+        current_job_id=progress.base.current_job_id,
+        cut_m3=5000.0,
+        fill_m3=0.0,
+        raster=b"baseline",
+    )
+    latest = progress.submit(
+        current_job_id=progress.latest_job_id,
+        cut_m3=1240.0,
+        fill_m3=0.0,
+        raster=b"latest",
+    )
+    latest_request = progress.base.requests.get_by_design_conformance_id(
+        latest.design_conformance_id
+    )
+    assert latest_request is not None
+    # Deliberate in-memory corruption of the projection: the route must still
+    # refuse to derive a number when the two immutable design anchors differ.
+    progress.base.requests._requests[latest_request.request_id] = replace(  # noqa: SLF001
+        latest_request,
+        design_surface_revision="Rev.changed",
+    )
+
+    client = TestClient(progress.app())
+    baseline_set = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/design-conformance/"
+        f"{baseline.design_conformance_id}/progress-baseline",
+        json={"designSurfaceId": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+    assert baseline_set.status_code == 201
+
+    response = client.get(
+        f"/v1/sites/{_SITE_ID}/design-progress",
+        params={"design_surface_id": progress.base.design_surface_id},
+        headers=_auth(_ADMIN_TOKEN),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["progress"] is None
+    assert response.json()["reason"] == "DESIGN_NORMALIZATION_MISMATCH"
 
 
 def test_area_mismatch_is_serialized_over_http_not_just_the_pure_function(

@@ -176,6 +176,32 @@ def _acquisition_coordination_env() -> bool:
     )
 
 
+def _processing_profile_issuance_env() -> bool:
+    """Independent rollback gate; reads/replay remain available when false."""
+    raw = os.environ.get("KSI_CORE_PROCESSING_PROFILE_ISSUANCE_ENABLED", "true").strip().lower()
+    if raw in ("true", "1", "yes"):
+        return True
+    if raw in ("false", "0", "no"):
+        return False
+    raise RuntimeError(
+        "KSI_CORE_PROCESSING_PROFILE_ISSUANCE_ENABLED="
+        f"{raw!r} 는 'true' 또는 'false' 여야 한다"
+    )
+
+
+def _landxml_ingress_env() -> bool:
+    """Independent LandXML conversion rollout gate; existing assets stay readable."""
+    raw = os.environ.get("KSI_CORE_LANDXML_INGRESS_ENABLED", "false").strip().lower()
+    if raw in ("true", "1", "yes"):
+        return True
+    if raw in ("false", "0", "no"):
+        return False
+    raise RuntimeError(
+        "KSI_CORE_LANDXML_INGRESS_ENABLED="
+        f"{raw!r} 는 'true' 또는 'false' 여야 한다"
+    )
+
+
 def _copilot_runtime_config_env() -> CopilotRuntimeConfig | None:
     """External Copilot is opt-in; an enabled but partial configuration is fatal."""
     raw = os.environ.get("KSI_COPILOT_ENABLED", "false").strip().lower()
@@ -478,6 +504,8 @@ def build_production_app() -> FastAPI:
     expose_docs = _expose_docs_env()
     acquisition_coordination_enabled = _acquisition_coordination_env()
     acquisition_issue_gate_enabled = _acquisition_issue_gate_env()
+    processing_profile_issuance_enabled = _processing_profile_issuance_env()
+    landxml_ingress_enabled = _landxml_ingress_env()
     copilot_runtime_config = _copilot_runtime_config_env()
     human_auth_mode, oidc_config = _human_auth_config_env()
     mission_contract_writer_version, mission_contract_issuer_id = (
@@ -535,6 +563,8 @@ def build_production_app() -> FastAPI:
             device_attestation_registry=device_attestation_registry,
             acquisition_coordination_enabled=acquisition_coordination_enabled,
             acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+            processing_profile_issuance_enabled=processing_profile_issuance_enabled,
+            landxml_ingress_enabled=landxml_ingress_enabled,
             copilot_runtime_config=copilot_runtime_config,
             expose_docs=expose_docs,
         )
