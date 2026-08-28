@@ -6,8 +6,9 @@ owner-only FIELD-0a session.  It has no discovery, download, listing, or
 outbound network functionality.  It is separate from the read-only Pilot 2
 JSBridge probe because this process performs a narrowly scoped evidence-store
 write.  It never calls a DJI function or writes to the aircraft/controller.
-A short menu can be enabled for explicit Tailnet client IPs so an operator
-never needs to type or copy the capability token.
+A short menu can be enabled on the private bind address so an operator never
+needs to type or copy the capability token.  Exact client IPs remain an
+optional additional restriction when the WebView source address is stable.
 """
 
 from __future__ import annotations
@@ -327,11 +328,13 @@ class Field0aEvidenceReceiver(ThreadingHTTPServer):
         *,
         session_fd: int,
         capability_token: str,
+        short_entry_enabled: bool,
         short_entry_clients: frozenset[str],
     ) -> None:
         super().__init__(server_address, Field0aEvidenceReceiverHandler)
         self.session_fd = session_fd
         self.capability_token = capability_token
+        self.short_entry_enabled = short_entry_enabled
         self.short_entry_clients = short_entry_clients
 
     def server_close(self) -> None:
@@ -380,6 +383,10 @@ class Field0aEvidenceReceiverHandler(BaseHTTPRequestHandler):
         )
 
     def _short_entry_allowed(self) -> bool:
+        if not self.evidence_server.short_entry_enabled:
+            return False
+        if not self.evidence_server.short_entry_clients:
+            return True
         try:
             client_ip = str(ipaddress.ip_address(self.client_address[0]))
         except ValueError:
@@ -614,6 +621,7 @@ def build_evidence_receiver_server(
     session_name: str,
     evidence_root: Path | None = None,
     capability_token: str | None = None,
+    short_entry_enabled: bool = False,
     short_entry_clients: frozenset[str] | None = None,
 ) -> Field0aEvidenceReceiver:
     """Build one temporary receiver; ``evidence_root`` exists only for contract tests."""
@@ -637,6 +645,7 @@ def build_evidence_receiver_server(
             (bind, port),
             session_fd=session_fd,
             capability_token=capability_token or secrets.token_urlsafe(32),
+            short_entry_enabled=short_entry_enabled or bool(normalized_short_entry_clients),
             short_entry_clients=normalized_short_entry_clients,
         )
     except Exception:
@@ -656,6 +665,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8081)
     parser.add_argument(
+        "--short-menu",
+        action="store_true",
+        help="bind된 private network에서 짧은 / 메뉴를 활성화한다",
+    )
+    parser.add_argument(
         "--short-client",
         action="append",
         default=[],
@@ -666,12 +680,13 @@ def main(argv: list[str] | None = None) -> int:
         bind=args.bind,
         port=args.port,
         session_name=args.session,
+        short_entry_enabled=args.short_menu,
         short_entry_clients=frozenset(args.short_client),
     )
     bound_host = server.server_address[0]
     host = bound_host.decode() if isinstance(bound_host, bytes) else bound_host
     port = int(server.server_address[1])
-    if server.short_entry_clients:
+    if server.short_entry_enabled:
         print(f"KSI FIELD-0a private menu URL: http://{host}:{port}/", flush=True)
     else:
         print(

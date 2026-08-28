@@ -53,7 +53,8 @@ def _make_private_session(tmp_path: Path) -> tuple[Path, str, Path]:
 def _receiver_url(
     tmp_path: Path,
     *,
-    short_entry_clients: frozenset[str] = frozenset({"127.0.0.1"}),
+    short_entry_enabled: bool = True,
+    short_entry_clients: frozenset[str] = frozenset(),
 ) -> Iterator[tuple[str, Path]]:
     root, session_name, session = _make_private_session(tmp_path)
     server = _tool().build_evidence_receiver_server(
@@ -62,6 +63,7 @@ def _receiver_url(
         session_name=session_name,
         evidence_root=root,
         capability_token=_TOKEN,
+        short_entry_enabled=short_entry_enabled,
         short_entry_clients=short_entry_clients,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -193,6 +195,16 @@ def test_receiver_short_menu_requires_explicit_client_allowlist(tmp_path: Path) 
     with _receiver_url(
         tmp_path, short_entry_clients=frozenset({"192.0.2.10"})
     ) as (base_url, _):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _open(urllib.request.Request(base_url))
+        assert caught.value.code == 404
+
+        with _open(urllib.request.Request(_upload_url(base_url))) as response:
+            assert response.status == 200
+
+
+def test_receiver_short_menu_is_opt_in(tmp_path: Path) -> None:
+    with _receiver_url(tmp_path, short_entry_enabled=False) as (base_url, _):
         with pytest.raises(urllib.error.HTTPError) as caught:
             _open(urllib.request.Request(base_url))
         assert caught.value.code == 404
