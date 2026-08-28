@@ -50,7 +50,11 @@ def _make_private_session(tmp_path: Path) -> tuple[Path, str, Path]:
 
 
 @contextmanager
-def _receiver_url(tmp_path: Path) -> Iterator[tuple[str, Path]]:
+def _receiver_url(
+    tmp_path: Path,
+    *,
+    short_entry_clients: frozenset[str] = frozenset({"127.0.0.1"}),
+) -> Iterator[tuple[str, Path]]:
     root, session_name, session = _make_private_session(tmp_path)
     server = _tool().build_evidence_receiver_server(
         bind="127.0.0.1",
@@ -58,16 +62,21 @@ def _receiver_url(tmp_path: Path) -> Iterator[tuple[str, Path]]:
         session_name=session_name,
         evidence_root=root,
         capability_token=_TOKEN,
+        short_entry_clients=short_entry_clients,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         port = int(server.server_address[1])
-        yield f"http://127.0.0.1:{port}/field-evidence/upload?token={_TOKEN}", session
+        yield f"http://127.0.0.1:{port}/", session
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def _upload_url(root_url: str) -> str:
+    return root_url.rstrip("/") + f"/field-evidence/upload?token={_TOKEN}"
 
 
 def _multipart(slot: str, data: bytes, *, filename: str = "evidence.bin") -> tuple[bytes, str]:
@@ -120,7 +129,7 @@ def test_receiver_accepts_each_fixed_slot_once_and_returns_digest(
 ) -> None:
     with (
         _receiver_url(tmp_path) as (base_url, session),
-        _post(base_url, slot, payload, filename="../../not-used.jpg") as response,
+        _post(_upload_url(base_url), slot, payload, filename="../../not-used.jpg") as response,
     ):
         result = response.read().decode()
         assert response.status == 201
@@ -135,16 +144,33 @@ def test_receiver_accepts_each_fixed_slot_once_and_returns_digest(
     assert not (session / "not-used.jpg").exists()
 
 
-def test_receiver_rejects_wrong_token_and_exposes_only_authenticated_form(tmp_path: Path) -> None:
+def test_receiver_exposes_short_fixed_menu_and_rejects_wrong_token(tmp_path: Path) -> None:
     with _receiver_url(tmp_path) as (base_url, _):
         with _open(urllib.request.Request(base_url)) as response:
-            html = response.read().decode()
+            menu_html = response.read().decode()
             assert response.status == 200
-            assert "FIELD-0a 증거 업로드" in html
-            assert "pilot-export" in html
-            assert "download" not in html.casefold()
+            assert "FIELD-0a 증거 수집" in menu_html
+            assert "프로펠러 제거 상태" in menu_html
+            for label in (
+                "Pilot import A 화면",
+                "Pilot import B 화면",
+                "Pilot import C 화면",
+                "Pilot export KMZ",
+                "M4D 원본 JPEG/MPO",
+            ):
+                assert label in menu_html
+            assert menu_html.count('class="menu-button"') == 5
+            assert "download" not in menu_html.casefold()
 
-        bad_url = base_url.replace(_TOKEN, "wrong")
+        with _open(
+            urllib.request.Request(f"{_upload_url(base_url)}&slot=pilot-export")
+        ) as response:
+            form_html = response.read().decode()
+            assert response.status == 200
+            assert '<option value="pilot-export" selected>' in form_html
+            assert "증거 메뉴로 돌아가기" in form_html
+
+        bad_url = _upload_url(base_url).replace(_TOKEN, "wrong")
         with pytest.raises(urllib.error.HTTPError) as caught:
             _open(urllib.request.Request(bad_url))
         assert caught.value.code == 401
@@ -153,10 +179,26 @@ def test_receiver_rejects_wrong_token_and_exposes_only_authenticated_form(tmp_pa
             _post(bad_url, "pilot-import-a", b"\x89PNG\r\n\x1a\nx")
         assert caught.value.code == 401
 
-        excessive_query = f"{base_url}&a=1&b=2"
+        excessive_query = f"{_upload_url(base_url)}&a=1&b=2"
         with pytest.raises(urllib.error.HTTPError) as caught:
             _open(urllib.request.Request(excessive_query))
         assert caught.value.code == 401
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _open(urllib.request.Request(f"{_upload_url(base_url)}&slot=unknown"))
+        assert caught.value.code == 400
+
+
+def test_receiver_short_menu_requires_explicit_client_allowlist(tmp_path: Path) -> None:
+    with _receiver_url(
+        tmp_path, short_entry_clients=frozenset({"192.0.2.10"})
+    ) as (base_url, _):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _open(urllib.request.Request(base_url))
+        assert caught.value.code == 404
+
+        with _open(urllib.request.Request(_upload_url(base_url))) as response:
+            assert response.status == 200
 
 
 @pytest.mark.parametrize(
@@ -170,7 +212,7 @@ def test_receiver_rejects_wrong_token_and_exposes_only_authenticated_form(tmp_pa
 def test_receiver_rejects_bad_magic(tmp_path: Path, slot: str, payload: bytes) -> None:
     with _receiver_url(tmp_path) as (base_url, _):
         with pytest.raises(urllib.error.HTTPError) as caught:
-            _post(base_url, slot, payload)
+            _post(_upload_url(base_url), slot, payload)
         assert caught.value.code == 422
 
 
@@ -181,7 +223,7 @@ def test_receiver_rejects_unsafe_kmz_member(tmp_path: Path) -> None:
         archive.writestr("wpmz/waylines.wpml", "<wpml/>")
     with _receiver_url(tmp_path) as (base_url, _):
         with pytest.raises(urllib.error.HTTPError) as caught:
-            _post(base_url, "pilot-export", stream.getvalue())
+            _post(_upload_url(base_url), "pilot-export", stream.getvalue())
         assert caught.value.code == 422
 
 
@@ -193,17 +235,17 @@ def test_receiver_rejects_ambiguous_duplicate_kmz_leaf(tmp_path: Path) -> None:
         archive.writestr("wpmz/waylines.wpml", "<wpml/>")
     with _receiver_url(tmp_path) as (base_url, _):
         with pytest.raises(urllib.error.HTTPError) as caught:
-            _post(base_url, "pilot-export", stream.getvalue())
+            _post(_upload_url(base_url), "pilot-export", stream.getvalue())
         assert caught.value.code == 422
 
 
 def test_receiver_rejects_duplicate_slot_without_overwrite(tmp_path: Path) -> None:
     first = b"\x89PNG\r\n\x1a\nfirst"
     with _receiver_url(tmp_path) as (base_url, session):
-        with _post(base_url, "pilot-import-a", first) as response:
+        with _post(_upload_url(base_url), "pilot-import-a", first) as response:
             assert response.status == 201
         with pytest.raises(urllib.error.HTTPError) as caught:
-            _post(base_url, "pilot-import-a", b"\x89PNG\r\n\x1a\nsecond")
+            _post(_upload_url(base_url), "pilot-import-a", b"\x89PNG\r\n\x1a\nsecond")
         assert caught.value.code == 409
         assert (session / "pilot-import-A.raw").read_bytes() == first
 
@@ -212,7 +254,7 @@ def test_receiver_rejects_missing_or_chunked_content_length(tmp_path: Path) -> N
     with _receiver_url(tmp_path) as (base_url, _):
         body, content_type = _multipart("pilot-import-a", b"\x89PNG\r\n\x1a\nx")
         request = urllib.request.Request(
-            base_url,
+            _upload_url(base_url),
             data=body,
             method="POST",
             headers={"Content-Type": content_type},
@@ -228,7 +270,7 @@ def test_receiver_rejects_declared_oversize_before_reading(tmp_path: Path) -> No
     tool = _tool()
     with _receiver_url(tmp_path) as (base_url, _):
         request = urllib.request.Request(
-            base_url,
+            _upload_url(base_url),
             data=b"x",
             method="POST",
             headers={
@@ -285,15 +327,11 @@ def test_receiver_has_no_access_log_or_download_listing_surface(
 ) -> None:
     with _receiver_url(tmp_path) as (base_url, _):
         with pytest.raises(urllib.error.HTTPError) as caught:
-            _open(
-                urllib.request.Request(
-                    base_url.replace("/field-evidence/upload", "/pilot-import.raw")
-                )
-            )
+            _open(urllib.request.Request(base_url.rstrip("/") + "/pilot-import.raw"))
         assert caught.value.code == 404
         for method in ("HEAD", "PUT", "PATCH", "DELETE", "OPTIONS"):
             request = urllib.request.Request(
-                base_url,
+                _upload_url(base_url),
                 data=b"" if method != "HEAD" else None,
                 method=method,
             )

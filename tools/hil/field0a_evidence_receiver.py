@@ -6,6 +6,8 @@ owner-only FIELD-0a session.  It has no discovery, download, listing, or
 outbound network functionality.  It is separate from the read-only Pilot 2
 JSBridge probe because this process performs a narrowly scoped evidence-store
 write.  It never calls a DJI function or writes to the aircraft/controller.
+A short menu can be enabled for explicit Tailnet client IPs so an operator
+never needs to type or copy the capability token.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import argparse
 import hashlib
 import html
 import io
+import ipaddress
 import json
 import os
 import re
@@ -27,8 +30,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Final, cast
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
+_ROOT_PATH: Final = "/"
 _UPLOAD_PATH: Final = "/field-evidence/upload"
 _MAX_UPLOAD_BYTES: Final = 64 * 1024 * 1024
 _MAX_PART_HEADER_BYTES: Final = 8 * 1024
@@ -41,6 +45,13 @@ _SLOT_FILENAMES: Final = {
     "pilot-import-c": "pilot-import-C.raw",
     "pilot-export": "pilot-export.kmz",
     "m4d-original": "m4d-original.raw",
+}
+_SLOT_LABELS: Final = {
+    "pilot-import-a": "Pilot import A 화면",
+    "pilot-import-b": "Pilot import B 화면",
+    "pilot-import-c": "Pilot import C 화면",
+    "pilot-export": "Pilot export KMZ",
+    "m4d-original": "M4D 원본 JPEG/MPO",
 }
 
 
@@ -316,10 +327,12 @@ class Field0aEvidenceReceiver(ThreadingHTTPServer):
         *,
         session_fd: int,
         capability_token: str,
+        short_entry_clients: frozenset[str],
     ) -> None:
         super().__init__(server_address, Field0aEvidenceReceiverHandler)
         self.session_fd = session_fd
         self.capability_token = capability_token
+        self.short_entry_clients = short_entry_clients
 
     def server_close(self) -> None:
         try:
@@ -331,9 +344,9 @@ class Field0aEvidenceReceiver(ThreadingHTTPServer):
 
 
 class Field0aEvidenceReceiverHandler(BaseHTTPRequestHandler):
-    """Serve one authenticated upload form and reject every other surface."""
+    """Serve one IP-limited menu and one capability-authenticated upload form."""
 
-    server_version = "KSI-FIELD0A-Evidence/1.0"
+    server_version = "KSI-FIELD0A-Evidence/1.1"
     sys_version = ""
 
     @property
@@ -343,20 +356,46 @@ class Field0aEvidenceReceiverHandler(BaseHTTPRequestHandler):
     def _is_upload_path(self) -> bool:
         return urlsplit(self.path).path == _UPLOAD_PATH
 
-    def _authenticated(self) -> bool:
+    def _is_root_path(self) -> bool:
+        return urlsplit(self.path).path == _ROOT_PATH
+
+    def _query_parameters(self) -> Mapping[str, list[str]] | None:
         try:
-            query = parse_qs(
+            return parse_qs(
                 urlsplit(self.path).query,
                 keep_blank_values=True,
                 strict_parsing=False,
                 max_num_fields=2,
             )
         except ValueError:
+            return None
+
+    def _authenticated(self) -> bool:
+        query = self._query_parameters()
+        if query is None:
             return False
         tokens = query.get("token")
         return tokens is not None and len(tokens) == 1 and secrets.compare_digest(
             tokens[0], self.evidence_server.capability_token
         )
+
+    def _short_entry_allowed(self) -> bool:
+        try:
+            client_ip = str(ipaddress.ip_address(self.client_address[0]))
+        except ValueError:
+            return False
+        return client_ip in self.evidence_server.short_entry_clients
+
+    def _requested_slot(self) -> str | None:
+        query = self._query_parameters()
+        if query is None:
+            return None
+        slots = query.get("slot")
+        if slots is None:
+            return next(iter(_SLOT_LABELS))
+        if len(slots) != 1 or slots[0] not in _SLOT_LABELS:
+            return None
+        return slots[0]
 
     def _send(
         self,
@@ -385,9 +424,17 @@ class Field0aEvidenceReceiverHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _form(self) -> bytes:
+    def _upload_form(self, selected_slot: str) -> bytes:
         token = html.escape(self.evidence_server.capability_token, quote=True)
         action = f"{_UPLOAD_PATH}?token={token}"
+        options = "".join(
+            (
+                f'<option value="{html.escape(slot, quote=True)}"'
+                + (" selected" if slot == selected_slot else "")
+                + f">{html.escape(label)}</option>"
+            )
+            for slot, label in _SLOT_LABELS.items()
+        )
         return (
             f"""<!doctype html>
 <html lang=\"ko\"><head><meta charset=\"utf-8\">
@@ -397,25 +444,73 @@ class Field0aEvidenceReceiverHandler(BaseHTTPRequestHandler):
 <p>이 임시 URL은 비공개입니다. 슬롯마다 원본 하나만 업로드합니다.</p>
 <form method=\"post\" enctype=\"multipart/form-data\" action=\"{action}\">
 <label>증거 종류 <select name=\"slot\" required>
-<option value=\"pilot-import-a\">Pilot import A 화면</option>
-<option value=\"pilot-import-b\">Pilot import B 화면</option>
-<option value=\"pilot-import-c\">Pilot import C 화면</option>
-<option value=\"pilot-export\">Pilot export KMZ</option>
-<option value=\"m4d-original\">M4D 원본 JPEG/MPO</option>
+{options}
 </select></label>
 <label>파일 <input type=\"file\" name=\"evidence\" required></label>
 <button type=\"submit\">업로드</button></form>
+<p><a href=\"/\">증거 메뉴로 돌아가기</a></p>
 <p>업로드 뒤에는 SHA-256과 byte 수만 표시됩니다. 다운로드·목록·외부 전송은 제공하지 않습니다.</p>
 </main></body></html>"""
         ).encode()
 
+    def _root_menu(self) -> bytes:
+        token = self.evidence_server.capability_token
+        buttons = "".join(
+            (
+                '<a class="menu-button" href="'
+                + html.escape(
+                    f"{_UPLOAD_PATH}?{urlencode({'token': token, 'slot': slot})}",
+                    quote=True,
+                )
+                + '">'
+                + html.escape(label)
+                + "</a>"
+            )
+            for slot, label in _SLOT_LABELS.items()
+        )
+        return (
+            f"""<!doctype html>
+<html lang=\"ko\"><head><meta charset=\"utf-8\">
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+<title>KSI FIELD-0a 메뉴</title>
+<style>
+body{{font-family:sans-serif;margin:0;background:#f4f6f8;color:#17202a}}
+main{{max-width:42rem;margin:0 auto;padding:1.25rem}}
+.notice{{padding:1rem;border-radius:.75rem;background:#fff4d6;margin-bottom:1rem}}
+.menu{{display:grid;gap:.75rem}}
+.menu-button{{display:block;padding:1rem;border-radius:.75rem;background:#123b5d;color:white;
+text-decoration:none;font-weight:700;font-size:1.05rem}}
+</style></head>
+<body><main><h1>FIELD-0a 증거 수집</h1>
+<p class=\"notice\">프로펠러 제거 상태를 유지하고 비행·임무 실행·모터 동작을 하지 마세요.</p>
+<p>올릴 증거 종류를 선택하세요.</p>
+<nav class=\"menu\" aria-label=\"증거 종류\">{buttons}</nav>
+<p>각 항목은 이 세션에서 한 번만 저장됩니다.</p>
+</main></body></html>"""
+        ).encode()
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API.
-        if not self._is_upload_path():
+        if self._is_root_path():
+            if not self._short_entry_allowed():
+                self._send(HTTPStatus.NOT_FOUND)
+            else:
+                self._send(
+                    HTTPStatus.OK, self._root_menu(), content_type="text/html; charset=utf-8"
+                )
+        elif not self._is_upload_path():
             self._send(HTTPStatus.NOT_FOUND)
         elif not self._authenticated():
             self._send(HTTPStatus.UNAUTHORIZED)
         else:
-            self._send(HTTPStatus.OK, self._form(), content_type="text/html; charset=utf-8")
+            selected_slot = self._requested_slot()
+            if selected_slot is None:
+                self._send(HTTPStatus.BAD_REQUEST)
+            else:
+                self._send(
+                    HTTPStatus.OK,
+                    self._upload_form(selected_slot),
+                    content_type="text/html; charset=utf-8",
+                )
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API.
         if not self._is_upload_path():
@@ -519,6 +614,7 @@ def build_evidence_receiver_server(
     session_name: str,
     evidence_root: Path | None = None,
     capability_token: str | None = None,
+    short_entry_clients: frozenset[str] | None = None,
 ) -> Field0aEvidenceReceiver:
     """Build one temporary receiver; ``evidence_root`` exists only for contract tests."""
 
@@ -528,6 +624,12 @@ def build_evidence_receiver_server(
         raise ValueError("port는 0..65535 범위여야 한다")
     if capability_token is not None and not capability_token:
         raise ValueError("capability token은 비어 있을 수 없다")
+    try:
+        normalized_short_entry_clients = frozenset(
+            str(ipaddress.ip_address(client)) for client in (short_entry_clients or ())
+        )
+    except ValueError as error:
+        raise ValueError("short-entry client는 유효한 IP 주소여야 한다") from error
     root = canonical_evidence_root() if evidence_root is None else evidence_root
     session_fd = _open_validated_session(root, session_name)
     try:
@@ -535,6 +637,7 @@ def build_evidence_receiver_server(
             (bind, port),
             session_fd=session_fd,
             capability_token=capability_token or secrets.token_urlsafe(32),
+            short_entry_clients=normalized_short_entry_clients,
         )
     except Exception:
         os.close(session_fd)
@@ -552,19 +655,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8081)
+    parser.add_argument(
+        "--short-client",
+        action="append",
+        default=[],
+        help="짧은 / 메뉴 진입을 허용할 Tailnet client IP; 반복 지정 가능",
+    )
     args = parser.parse_args(argv)
     server = build_evidence_receiver_server(
         bind=args.bind,
         port=args.port,
         session_name=args.session,
+        short_entry_clients=frozenset(args.short_client),
     )
     bound_host = server.server_address[0]
     host = bound_host.decode() if isinstance(bound_host, bytes) else bound_host
     port = int(server.server_address[1])
-    print(
-        f"KSI FIELD-0a private upload URL: http://{host}:{port}{_UPLOAD_PATH}?token={server.capability_token}",
-        flush=True,
-    )
+    if server.short_entry_clients:
+        print(f"KSI FIELD-0a private menu URL: http://{host}:{port}/", flush=True)
+    else:
+        print(
+            f"KSI FIELD-0a private upload URL: http://{host}:{port}{_UPLOAD_PATH}?token={server.capability_token}",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
