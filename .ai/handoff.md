@@ -1,5 +1,40 @@
 # Current Handoff
 
+## 2026-08-28 — Civil processing consistency v1 implemented; live two-epoch gate remains
+
+ADR-KSI-030 fixes the product direction for the first civil flow: KSI-managed immutable
+`ksi-odm-civil-v1` (NodeODM 2.2.4 / ODM 3.5.6; digest-pinned image; DSM/DTM; medium point-cloud
+quality; masking OFF), original-preserving LandXML TIN design surfaces, and a server-owned
+fail-closed comparison compatibility decision. `REQ-INT-104` and `INV-053` prohibit a quantitative
+comparison when Analysis Readiness, profile, source lineage, CRS, vertical reference or the required
+design revision/normalization evidence is unknown or mismatched.
+
+The normal v1 media entrance is intentionally simple: `SD/저장매체 → 현장 PC → KSI 웹 업로드`.
+The existing local uploader must use the same profile. GeoTIFF upload and IFC→GeoTIFF remain; DWG/DXF
+direct parsing is out of scope. Existing Operations Console Home·Sites·Work·Items structure and visual
+language remain; the existing upload/design/comparison panels receive only additive status/actions.
+
+The implementation and software regression are complete. Python passed `4033` tests with `23` skips
+and `3` expected failures; Ruff and Mypy (`421` source files) passed. Dashboard Vitest passed `58`
+files / `541` tests, followed by ESLint, TypeScript and production build. Playwright passed `62` tests
+with `14` intentional skips across 390/768/1024/1440. Lock, diff, repository hygiene and reference-
+import gates passed. The exact pinned NodeODM `/info` reported 2.2.4 / ODM 3.5.6; a 12-image public
+reconstruction and a separate sealed Core→worker→real MinIO artifact digest round-trip both passed.
+
+`CIVIL_PROCESSING_V1_ACCEPTANCE.md` remains `PARTIAL`, not a fabricated full PASS: there was no valid
+public same-site second epoch in a supported Korean project CRS. The foreign-CRS public fixture was not
+relabeled. The remaining gate is an anonymized Korean LandXML, two same-site original-image epochs and
+an independent reference volume or checkpoints; until then results are operational relative quantities,
+not survey/settlement evidence.
+
+This work does not change physical-device facts. FIELD-0a remains `BLOCKED`; all five DJI capability
+paths remain `NOT_VERIFIED`/OFF. It neither performs nor authorizes flight, motor/waypoint, camera/gimbal,
+DPK, Pilot 2/Manifold automatic egress, remote deployment, release or remote push. On failure, disable
+new profile issuance, LandXML conversion or comparison creation independently, preserve existing evidence
+and never relax the compatibility gate.
+
+---
+
 ## 2026-08-27 — No-USB FIELD evidence receiver ready; physical upload still gated
 
 Commit `7d1aa88` adds a temporary, stdlib-only Tailnet receiver for owner-private FIELD-0a evidence.

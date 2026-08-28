@@ -1,5 +1,31 @@
 # Current Task State
 
+## 2026-08-28 — `civil_processing_consistency_v1_software_complete_live_gate_open`
+
+- Authority: ADR-KSI-030, `CIVIL_PROCESSING_V1_ACCEPTANCE.md`, `REQ-INT-104` and `INV-053`
+  establish the immutable NodeODM profile, LandXML ingress and fail-closed civil comparison scope.
+- Implemented: Core profile snapshot/digest and compatibility preflight; Processing Controller
+  pinned NodeODM identity and secure LandXML→canonical GeoTIFF lineage; additive Source Upload,
+  Design Surface and Comparison panel states. Existing Home/Sites/Work/Items IA is protected.
+- Software evidence: Python `4033 passed, 23 skipped, 3 xfailed`; focused civil/API `549 passed`;
+  Ruff; Mypy `421 source files`; Dashboard `58 files / 541 tests`, ESLint, TypeScript and production
+  build; Playwright `62 passed, 14 intentional skips` across 390/768/1024/1440; lock/diff/hygiene/
+  reference-import gates. The exact pinned NodeODM reported 2.2.4 / ODM 3.5.6 and completed both a
+  public 12-image reconstruction and a sealed Core→worker→real MinIO artifact digest round-trip.
+- Formal status: implementation and software regression are complete, while E2E-01 remains
+  `PARTIAL` because no valid public same-site second epoch in a supported Korean project CRS was
+  available. Do not relabel foreign CRS data to manufacture a quantitative comparison.
+- Boundary: v1 media ingress is `SD/저장매체 → 현장 PC → KSI 웹 업로드`; raw imagery/LandXML/
+  GeoTIFF and generated artifacts stay outside Git. NodeODM stays an unmodified AGPL container over
+  REST, and customer on-prem distribution requires a separate source-offer/legal gate.
+- Independent physical state is unchanged: FIELD-0a remains `BLOCKED`; every DJI capability remains
+  `NOT_VERIFIED`/OFF. No flight, motor, waypoint, camera/gimbal, DPK, automatic media egress,
+  remote deployment, release or remote push occurred in this task. Civil field acceptance still
+  requires anonymized Korean LandXML, two same-site original-image epochs and independent reference
+  volume/checkpoints.
+
+---
+
 ## 2026-08-27 — `no_usb_field0a_receiver_software_ready`
 
 - Commit: `7d1aa88` implements a separate temporary HIL receiver; the Pilot JSBridge probe remains

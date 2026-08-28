@@ -1,4 +1,81 @@
-# Current implementation plan (2026-08-27, no-USB FIELD-0a evidence completion)
+# Current implementation plan (2026-08-28, civil temporal/quantity processing consistency v1)
+
+Requirement IDs:
+- `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-017/018/020/023/024/040/050/051/053/060`.
+
+Owner module:
+- Core: immutable processing profile registry/snapshot, ProcessingJob profile journal and fail-closed
+  comparison compatibility preflight.
+- Processing Controller: exact NodeODM image identity, standard-profile worker policy, secure LandXML
+  parser and deterministic TIN→GeoTIFF normalization.
+- Dashboard: existing Source Upload, Design Surface and Comparison cards only; no global IA/design reset.
+
+Acceptance criteria:
+- `ksi-odm-civil-v1` resolves deterministically to NodeODM 2.2.4 / ODM 3.5.6 and
+  `opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2`,
+  with `dsm=true`, `dtm=true`, `pc-quality=medium`, dynamic-object masking OFF.
+- GeoTIFF direct/IFC conversion survives; LandXML 1.0–1.2 meter TIN source is preserved separately
+  from a 0.5m canonical GeoTIFF with complete source lineage and hostile input rejection.
+- A server preflight returns the exact civil blocker rather than creating a quantity result when
+  Analysis Readiness, profile, lineage, CRS, vertical reference, design verification or normalization
+  conditions do not match.
+- The full matrix in `docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md` is executed before any
+  software PASS claim; real civil field acceptance remains a separate evidence gate.
+
+Contracts affected:
+- Processing Profile v1/ProcessingJob profile ID+digest; Design Surface source format/selector/lineage;
+  comparison compatibility verdict and existing API/Dashboard mirrors.
+
+Reference assets:
+- `services/processing-controller` ODM adapter; `tools/convert_ifc_design_surface.py` deterministic
+  TIN rasterizer; SourceMedia sealing; DSM comparison and existing Console panels.
+- NodeODM unmodified REST container boundary (ADR-KSI-012) and ADR-KSI-030.
+
+Adoption decisions:
+- ADOPT existing NodeODM adapter, sealed SourceMedia, DSM comparison, design-surface verification and
+  Console UI.
+- EXTRACT the deterministic IFC TIN rasterizer for LandXML.
+- REPLACE Dashboard/local-uploader reconstruction constants with the Core profile registry.
+- REFERENCE_ONLY external Pix4D, Metashape and DJI processing paths; do not remove historical records.
+
+Files to change:
+- Versioned contracts/Core/Processing Controller/Compose/CLI, existing Console panels and tests;
+  ADR-KSI-030, product SSOT, acceptance/traceability, phase registry and this durable state.
+
+Tests:
+- Contract/replay/organization isolation, LandXML hostile-input/TIN golden, volume hand fixture,
+  pinned NodeODM `/info` integration, Python/Ruff/Mypy, Dashboard Vitest/lint/type/build and
+  responsive 390/768/1024/1440 evidence, lock/diff/secret/large-file hygiene.
+
+HIL or real-device assumptions:
+- None. No flight/device/control or media automation is included. FIELD-0a and DJI capabilities retain
+  their existing `BLOCKED`/`NOT_VERIFIED` state.
+
+License/data implications:
+- NodeODM remains an unmodified AGPL-3.0 container behind REST. Customer on-prem image delivery needs
+  a source-offer notice and legal deployment review. Do not commit raw imagery, LandXML or GeoTIFF.
+
+Rollback:
+- Independently disable new profile issuance, LandXML conversion and civil comparison creation to
+  read-only; retain originals/results and do not relax the compatibility gate.
+
+Execution:
+1. [완료] Add ADR/product/invariant/acceptance authority.
+2. [완료] Implement profile registry and pinned runtime identity.
+3. [완료] Implement secure LandXML lineage and shared rasterizer.
+4. [완료] Bind comparison preflight and additive Console states.
+5. [완료] Run Python/Dashboard/browser/runtime/hygiene gates and record executed evidence.
+6. [완료] Make feature-local commits and verify a clean local worktree; do not push.
+
+Acceptance boundary:
+- Public single-epoch pinned reconstruction and real object-store persistence passed.
+- E2E-01 remains `PARTIAL` until a valid same-site second epoch in a supported Korean project CRS is
+  available. Civil field acceptance additionally needs Korean LandXML and independent references.
+
+---
+
+# Previous implementation plan (2026-08-27, no-USB FIELD-0a evidence completion)
 
 Requirement IDs:
 - `REQ-ACQ-101/103`, `REQ-INT-101`, `REQ-SEC-101`; `INV-040/041/060`.

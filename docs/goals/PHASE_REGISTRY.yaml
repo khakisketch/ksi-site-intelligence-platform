@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-27"
+updated: "2026-08-28"
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -158,6 +158,30 @@ confirmed_next_improvements:
         processing lineage를 조인하는 fail-closed AnalysisReadiness projection과 Dashboard 표현을
         계약·API·UI 테스트로 확인했다. READY는 real-device data quality, Pilot 2 execution,
         PSDK producer 또는 multi-sortie acceptance를 증명하지 않는다.
+    - id: civil-processing-consistency-v1
+      status: GATED
+      authority: "docs/architecture/ADR-KSI-030-civil-processing-consistency-v1.md"
+      scope: >-
+        KSI-managed NodeODM fixed profile, original-preserving LandXML TIN design surface ingress,
+        fail-closed civil comparison compatibility, and additive existing Console panels.
+      excludes: >-
+        FIELD-0a/0b/1/2, DJI capability promotion, flight/motor/waypoint/camera/gimbal actions,
+        DPK, Pilot 2/Manifold automatic media egress, remote deployment and release.
+      software_evidence_2026_08_28: >-
+        Immutable profile/legacy replay, exact NodeODM identity, secure LandXML lineage/shared TIN,
+        all eight compatibility blockers, organization isolation and additive Console behavior passed.
+        Python: 4033 passed, 23 skipped, 3 xfailed; Ruff; Mypy 421 files. Dashboard: 58 files/541 tests,
+        ESLint, TypeScript, build. Playwright: 62 passed/14 intentional skips at four viewports. Exact
+        pinned NodeODM completed a public 12-image reconstruction and a sealed Core-to-worker-to-real-
+        MinIO artifact digest round-trip. Lock/diff/hygiene/reference-import gates passed.
+      acceptance_gate: >-
+        CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/HY pass. E2E-01 remains PARTIAL because no
+        valid public same-site second epoch in a supported Korean project CRS was available; foreign
+        CRS data must not be relabeled. Field acceptance separately requires anonymous Korean LandXML,
+        same-site two-epoch originals and independent reference volume/checkpoints.
+      rollback: >-
+        Independently disable profile issuance, LandXML conversion or civil comparison creation;
+        retain existing originals/results and never loosen the comparison preflight.
     - id: capability-evidence-two-axis
       status: GATED
       scope: "separate vendor-documentation evidence from field verification evidence"
@@ -175,8 +199,9 @@ axes:
     title: "Site Intelligence Core — 공간·시간 이해, 변화·공정·물량, 설계 대비, Mission Planning"
     state: ACTIVE
     note: >-
-      막힌 것 없음. M1(epoch 파이프라인 종단) 진행 중이며 M2(폐루프 실물)·
-      M3(상용 기반)가 뒤따른다. 하드웨어 도착과 무관하게 진행된다.
+      M1(epoch 파이프라인 종단)과 ADR-KSI-030 civil processing consistency v1이 진행 중이며
+      M2(폐루프 실물)·M3(상용 기반)가 뒤따른다. 이 software workstream은 FIELD-0a 또는
+      DJI capability 상태를 바꾸지 않고 하드웨어 도착과 무관하게 진행된다.
   autonomous_acquisition:
     title: "Autonomous Acquisition — Manifold Runtime, Perception, Local World Model, Viewpoint/Path, Mission Execution"
     state: BLOCKED

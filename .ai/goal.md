@@ -1,4 +1,36 @@
-# Current goal (2026-08-27, no-USB FIELD-0a evidence completion)
+# Current goal (2026-08-28, civil temporal/quantity processing consistency v1)
+
+`REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`과
+`INV-017/018/020/023/024/040/050/051/053/060`을 적용해 토목 시계열·물량의 기본
+처리 계약을 일관되게 만든다. Core는 immutable `ksi-odm-civil-v1` NodeODM profile과
+comparison compatibility 원장을, Processing Controller는 LandXML→canonical GeoTIFF와
+NodeODM identity를, Dashboard는 기존 Console 패널의 additive 상태 표현을 소유한다.
+
+완료 조건:
+
+- profile ID→snapshot/digest 확장, legacy `LEGACY_UNMANAGED` 재생, pinned OCI `/info`
+  identity와 masking OFF fail-closed 검증.
+- GeoTIFF/IFC 유지와 LandXML TIN Surface 원본·selector·normalization lineage, 안전한
+  parser/rasterizer 및 typed rejection 검증.
+- readiness/profile/lineage/CRS/vertical/design revision·normalization 중 하나라도
+  불일치하면 정량 비교를 거부하는 typed blocker와 기존 Console 패널 표현 검증.
+- `CIVIL_PROCESSING_V1_ACCEPTANCE.md`의 Python/Console/NodeODM/hygiene evidence를 실제
+  실행해 기록한다. software 결과는 실제 토목 측량·정산 수용이 아니다.
+
+현재 상태: implementation과 전체 software regression은 완료됐다. 공개 단일 회차 사진의
+실제 pinned NodeODM 처리와 real MinIO digest round-trip까지 통과했으나, 지원되는 국내
+project CRS의 동일 현장 공개 2회차가 없어 E2E-01과 실제 토목 현장 수용은 `PARTIAL/GATED`다.
+외국 CRS를 국내 CRS로 바꿔 표시해 증거를 만들지 않는다. 새 기본 media ingress는
+`SD/저장매체 → 현장 PC → KSI 웹 업로드`이고, 향후 자동 반출은 이 ingress adapter만
+교체한다. remote push, deploy, release는 수행하지 않았다.
+
+FIELD-0a는 별도 physical evidence gate로 계속 `BLOCKED`, DJI capability는 모두
+`NOT_VERIFIED`/OFF다. 이 작업은 비행·motor·waypoint 실행, camera/gimbal·DPK, Pilot 2/
+Manifold 자동 미디어 반출 또는 capability 승격을 열지 않는다.
+
+---
+
+# Previous goal (2026-08-27, no-USB FIELD-0a evidence completion)
 
 완료된 소프트웨어 기준선 위의 no-USB evidence commit `7d1aa88`을 유지하면서, USB 재시험
 없이 Pilot 2/M4D의 formal FIELD-0a 증거를 owner-private local store에 같은 세션으로 결속한다.
