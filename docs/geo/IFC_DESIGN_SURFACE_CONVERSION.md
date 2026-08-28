@@ -1,10 +1,10 @@
 # IFC 설계모델 → 설계 기준면 GeoTIFF 변환
 
-> 실무 토목 설계는 대부분 BIM/CAD(IFC)로 온다. 설계면 등록 경로는 GeoTIFF 만
-> 받으므로(`contracts/schemas/design-surface.v1.json` — `format: geotiff`), IFC 는
-> `tools/convert_ifc_design_surface.py` 로 높이 GeoTIFF 를 만들어 기존 경로(업로드
-> → 선언 vs 관측 대조 → 잔량 계산)에 태운다. 계약을 확장하지 않는 이유·래스터화
-> 방식의 실측 근거는 도구 모듈 docstring 이 정본이다 — 여기는 사용법만 적는다.
+> IFC는 계속 `tools/convert_ifc_design_surface.py` 로 높이 GeoTIFF를 만들어 설계면
+> 등록 경로에 올릴 수 있다. ADR-KSI-030의 v1 확장으로 GeoTIFF 직접 등록과 LandXML
+> TIN Surface ingress가 함께 지원되며, LandXML은 원본 bytes·selector·정규화 계보를
+> 보존한다. 이 IFC 경로도 같은 결정론적 TIN rasterization 규칙을 사용한다. 계약과
+> 실제 파서의 지원범위가 이 안내보다 우선한다.
 
 ## 사용법
 

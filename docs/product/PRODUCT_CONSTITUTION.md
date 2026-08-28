@@ -1,6 +1,10 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-08-28 — 첫 토목 시계열·물량의 처리 일관성을 immutable KSI-managed
+>   NodeODM profile, LandXML 설계면 ingress, fail-closed 비교 적합성으로 확정했다.
+>   결과는 운영관리용 상대 물량이며, Console 정보구조와 FIELD/DJI capability 상태는
+>   바꾸지 않는다(ADR-KSI-030).
 > - 2026-08-23 (2차) — 현장 작업공간과 근거형 AX 계약을 확정했다. 전역 메뉴를
 >   홈·현장·작업·확인 항목으로 줄이고 공간 결과·보고서·조사 이력을 현장에 귀속하며,
 >   외부 AI는 근거 검증·별도 반출 동의·사람 결정권 경계를 따른다(ADR-KSI-026).
@@ -66,6 +70,14 @@ Console Home은 다현장 포트폴리오의 입구다. KSI가 실제 원장에�
 근거형 질의 → 사람 승인 재관측**을 하나의 작업으로 닫는다. 계약 정산·측량급
 정확도는 독립 checkpoint 검증 없이는 주장하지 않는다. USB·SD·KMZ 파일 조작은
 정상 사용자 흐름이 아니라 장애 복구와 검증을 위한 전문가 경로다.
+
+첫 토목 처리의 기본 경로는 현장 PC가 SD/저장매체의 원본을 KSI 웹에 올리고,
+고정된 `ksi-odm-civil-v1` profile로 재구성한 뒤, 검증된 설계면과 시점 간 상대
+물량을 비교하는 것이다. profile, 원본 계보, CRS, 수직기준, Analysis Readiness,
+설계면 revision/정규화 규칙 중 하나라도 미상 또는 불일치이면 수치를 추정하지 않고
+비교를 막아 사유를 표시한다. LandXML TIN Surface와 GeoTIFF는 설계면 입력이고,
+IFC→GeoTIFF 변환도 유지한다. DWG/DXF 직접 해석, 엔진·버전 혼합 비교, 독립
+checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다(ADR-KSI-030).
 
 ## 두 축과 폐루프
 

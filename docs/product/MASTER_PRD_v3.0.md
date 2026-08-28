@@ -1105,6 +1105,32 @@ KSI는 DJI의 더 보수적인 보호판단을 무시할 수 없다.
 
 DJI Terra는 Windows/NVIDIA 기반 별도 재구성 소프트웨어로 사용할 수 있으나 KSI Processing은 Provider Adapter를 통해 Terra, ODM/Pix4D 또는 자체 파이프라인을 교체 가능하게 설계한다. [R11][R12]
 
+### 15.4.1 토목 시계열·물량 처리 일관성 v1
+
+기본 KSI 재구성은 immutable `ksi-odm-civil-v1` profile이다: NodeODM 2.2.4 / ODM
+3.5.6, `opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2`,
+`dsm=true`, `dtm=true`, `pc-quality=medium`, dynamic-object masking OFF. Core는 사용자가
+제출한 profile ID를 canonical snapshot/digest로 확장하며, provider/image/parameter를
+임의로 바꾼 요청과 profile이 없는 과거 결과의 새 정량 비교를 거부한다. 실행 image
+digest와 `/info`의 ODM version은 배포 검증에서 함께 대조한다.
+
+토목 설계면 입력은 GeoTIFF 직접 등록, 기존 IFC→GeoTIFF, LandXML 1.0~1.2의 meter-unit
+TIN Surface다. LandXML 원본 bytes를 보존하고 선택 surface, parser version, 0.5m
+deterministic TIN normalization, canonical GeoTIFF digest를 source lineage로 결속한다.
+DTD/entity, 과도한 구조, 모호한 face, 비수치·퇴화 triangle, 비미터 단위는 typed하게
+거부한다. DWG/DXF는 v1에서 직접 해석하지 않으며 LandXML 또는 GeoTIFF 내보내기로
+안내한다.
+
+시계열·설계 대비 비교는 Analysis Readiness, 동일 processing profile digest, source
+lineage, CRS, vertical reference를 요구한다. 설계 진척에는 같은 설계면 revision과
+normalization digest도 필요하다. 어느 항목이 미상·불일치이면 결과를 추정하지 않고
+정확한 blocker를 반환한다. 기본 결과는 운영관리용 상대 물량이며, 독립 checkpoint
+대조 전에는 계약 정산·측량급·절대 정확도 또는 RMSE로 표현하지 않는다(ADR-KSI-030).
+
+사진 ingress의 v1 기본은 `SD/저장매체 → 현장 PC → KSI 웹 업로드`이고 대량 입력은
+기존 local uploader가 같은 profile을 사용한다. 향후 Pilot 2/Manifold 자동 반출은 이
+ingress adapter만 대체하며 이후 processing/comparison 계약을 바꾸지 않는다.
+
 ## 15.5 커버리지 상태와 임무 완료
 
 Coverage Cell 상태:
@@ -1945,6 +1971,10 @@ ksi-site-intelligence-platform/
   capture-time·processing lineage 증거에서 파생되며 processing 성공만으로 성립하지 않는다.
 - `REQ-INT-103`: Observation Epoch는 선언된 temporal policy를 만족하거나, 부족한
   시간 증거·일관성 gap을 명시한다.
+- `REQ-INT-104`: 시계열·물량 계산은 versioned processing profile과 comparison
+  compatibility 판정을 통과한 Observation Epoch만 사용한다. profile·source lineage·CRS·
+  vertical reference·설계면 revision/normalization 중 하나라도 미상·불일치이면 typed
+  blocker를 반환하고 정량 결과를 만들지 않는다.
 - `REQ-COP-101`: Copilot 사실 응답은 검증 가능한 서버 객체 근거를 포함한다.
 - `REQ-COP-102`: Copilot은 재관측 초안만 만들며 승인·임무 발급 권한을 갖지 않는다.
 - `REQ-SEC-101`: 모든 사람·장비·워커 접근과 데이터 반출은 조직·현장 범위로 제한한다.

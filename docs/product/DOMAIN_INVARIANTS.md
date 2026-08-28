@@ -231,6 +231,27 @@
   `::test_replay_refuses_artifact_with_forged_lineage_anchor`
   (ADR-KSI-003, ADR-KSI-012 D1)._
 
+- **INV-053** 시계열·토공·적치량·설계 대비 같은 정량 비교는 각 Observation
+  Epoch의 Analysis Readiness, versioned processing profile, CRS, 수직기준, 원본
+  source lineage가 모두 알려지고 서로 호환될 때만 수행한다. 설계 진척 비교에는
+  같은 설계면 revision과 deterministic normalization digest도 추가로 요구한다.
+  어느 항목이 미상·불일치이면 수치·0·낙관적 fallback을 만들지 않고 typed blocker를
+  반환한다. v1에서 자동 호환은 같은 `processingProfileDigest`뿐이며, 엔진·버전·
+  전처리·dynamic masking 변경은 benchmark로 검증된 명시적 compatibility mapping
+  없이는 비교 근거가 아니다.
+
+  _강제: Core civil comparison preflight와 comparison-create route가
+  `ANALYSIS_NOT_READY`, `PROCESSING_PROFILE_UNKNOWN`, `PROCESSING_PROFILE_MISMATCH`,
+  `SOURCE_LINEAGE_GAP`, `CRS_MISMATCH`, `VERTICAL_REFERENCE_MISMATCH`,
+  `DESIGN_SURFACE_NOT_VERIFIED`, `DESIGN_NORMALIZATION_MISMATCH`를 typed하게 반환한다.
+  ProcessingJob은 immutable profile ID/digest 또는 `LEGACY_UNMANAGED`를 원장에
+  보존하고 값을 추정하지 않는다. DesignSurface source lineage는 원본 digest,
+  selector, parser/normalization profile과 canonical GeoTIFF digest를 결속한다.
+  계약·replay·조직격리·Dashboard blocker tests 및
+  `CIVIL_PROCESSING_V1_ACCEPTANCE.md`가 이 불변식의 수용 증거다(ADR-KSI-030).
+  구현 또는 검증이 끝나기 전에는 UI/API가 정량 비교 가능 또는 현장 정확도라고
+  표시하지 않는다._
+
 ## 임무 발급·현장 생애주기
 
 - **INV-052** "먼저 매핑, 그 다음 사전지도 기반 자율"은 임무 발급 자체가

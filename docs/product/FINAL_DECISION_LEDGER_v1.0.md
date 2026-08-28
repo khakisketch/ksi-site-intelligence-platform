@@ -10,7 +10,9 @@
   Pilot 2 비행 전용 화면 경계(ADR-KSI-024) · 근거 중심 다현장 Home과 최근 업데이트
   구조(ADR-KSI-025) · 현장 작업공간과 근거형 AX 계약(ADR-KSI-026) · 2026-08-27 Mission
   Intent/Flight Artifact 권한 및 Observation Epoch/Analysis Readiness 계약(ADR-KSI-028/029) — 동결 문서의 개정이므로 근거 ADR 없이
-  이 줄을 바꾸지 않는다
+  이 줄을 바꾸지 않는다 · 2026-08-28 토목 시계열·물량의 immutable KSI-managed
+  NodeODM profile, LandXML 설계면 ingress 및 fail-closed comparison compatibility
+  (ADR-KSI-030)
 
 ## 명칭·시장
 
@@ -40,6 +42,13 @@
   이력은 현장 작업공간이 소유한다. 현장 AI는 저장형 대화와 검증된 citation으로만 답하고,
   외부 반출은 Site별 별도 동의가 없으면 fail-closed한다(ADR-KSI-026).
 - 첫 유료 업무: 반복 관측 기반 공정·상대 물량 관리
+- 토목 처리 기본값: `ksi-odm-civil-v1` (NodeODM 2.2.4 / ODM 3.5.6, digest-pinned
+  image, DSM·DTM, `pc-quality=medium`, dynamic-object masking OFF). profile을 고쳐
+  과거 결과의 의미를 바꾸지 않으며, 새 엔진·전처리·마스킹은 새 profile과 별도
+  적합성 검증을 거친다.
+- 설계면: GeoTIFF 직접 등록과 IFC→GeoTIFF를 유지하고, meter-unit LandXML TIN Surface를
+  원본 digest·selector·정규화 계보와 함께 받는다. DWG/DXF 직접 해석은 하지 않고
+  LandXML 또는 GeoTIFF 내보내기를 안내한다.
 - 정상 전달: RC Plus 2/Pilot 2가 비행·인터넷 gateway, Manifold 3가 로컬 Edge다.
   사람의 KSI 업무는 Operations Console이 담당한다.
   RC 인터넷은 새 임무 발급 전 필수이고 Manifold SIM은 선택 Add-on이다. USB·SD·
@@ -105,3 +114,7 @@
 - 범위·비용이 증가하는 재관측은 사용자가 승인
 - LLM은 비행 좌표·안전 명령·승인을 생성하지 않음
 - MVP 물량은 운영관리용 시점 간 상대값이며 계약 정산·측량급으로 표시하지 않음
+- 정량 비교는 Analysis Readiness, processing profile digest, 원본/설계면 lineage, CRS,
+  수직기준 및 설계면 revision/정규화 digest가 모두 알려지고 일치할 때만 허용한다.
+  하나라도 미상·불일치이면 서버가 typed blocker를 반환하며 Console은 이를 숨기지
+  않는다. 독립 checkpoint 없이는 절대 정확도·RMSE를 주장하지 않는다.
