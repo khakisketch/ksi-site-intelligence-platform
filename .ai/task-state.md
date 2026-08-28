@@ -1,20 +1,29 @@
 # Current Task State
 
-## 2026-08-28 — `civil_processing_consistency_v1_software_complete_live_gate_open`
+## 2026-08-29 — `civil_processing_v1_software_and_foreign_benchmark_complete_field_gate_open`
 
 - Authority: ADR-KSI-030, `CIVIL_PROCESSING_V1_ACCEPTANCE.md`, `REQ-INT-104` and `INV-053`
   establish the immutable NodeODM profile, LandXML ingress and fail-closed civil comparison scope.
+- Local commits: `a215fbf` adds strict private field-input readiness; `7fe2593` adds the lawful
+  two-acquisition live benchmark and non-sensitive digest evidence. Neither commit was pushed.
 - Implemented: Core profile snapshot/digest and compatibility preflight; Processing Controller
   pinned NodeODM identity and secure LandXML→canonical GeoTIFF lineage; additive Source Upload,
-  Design Surface and Comparison panel states. Existing Home/Sites/Work/Items IA is protected.
-- Software evidence: Python `4033 passed, 23 skipped, 3 xfailed`; focused civil/API `549 passed`;
-  Ruff; Mypy `421 source files`; Dashboard `58 files / 541 tests`, ESLint, TypeScript and production
+  Design Surface and Comparison panel states; strict owner-private civil field-input manifest/auditor.
+  Existing Home/Sites/Work/Items IA is protected.
+- Software evidence: Python `4051 passed, 24 skipped, 3 xfailed`; private input audit `18 passed`;
+  Ruff; Mypy `424 source files`; Dashboard `58 files / 541 tests`, ESLint, TypeScript and production
   build; Playwright `62 passed, 14 intentional skips` across 390/768/1024/1440; lock/diff/hygiene/
   reference-import gates. The exact pinned NodeODM reported 2.2.4 / ODM 3.5.6 and completed both a
   public 12-image reconstruction and a sealed Core→worker→real MinIO artifact digest round-trip.
-- Formal status: implementation and software regression are complete, while E2E-01 remains
-  `PARTIAL` because no valid public same-site second epoch in a supported Korean project CRS was
-  available. Do not relabel foreign CRS data to manufacture a quantitative comparison.
+- Real-data benchmark: `E2E-B01 BENCHMARK_PASS`. Two official USGS same-area acquisitions were exact-
+  size/ZIP-CRC checked and 24 public preservation JPEGs per date ran through `ksi-odm-civil-v1` in
+  `529.02 s`. Each produced seven mapped artifacts including DSM/DTM/point cloud; distinct DSMs had
+  `4,290,788` common finite cells. The non-sensitive digest record is
+  `CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json`; raw inputs/selection/output archives remain private.
+- Formal status: product E2E-01 remains `PARTIAL`. EPSG:32617, approximate EXIF GNSS, non-original
+  preservation JPEGs and missing common independent control/vertical/design evidence make product
+  quantitative comparison false and field acceptance `NOT_EVALUATED`. Do not relabel foreign CRS or
+  interpret the `1.99291 m` technical mean delta as accuracy/change/quantity evidence.
 - Boundary: v1 media ingress is `SD/저장매체 → 현장 PC → KSI 웹 업로드`; raw imagery/LandXML/
   GeoTIFF and generated artifacts stay outside Git. NodeODM stays an unmodified AGPL container over
   REST, and customer on-prem distribution requires a separate source-offer/legal gate.

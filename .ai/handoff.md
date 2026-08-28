@@ -1,6 +1,6 @@
 # Current Handoff
 
-## 2026-08-28 — Civil processing consistency v1 implemented; live two-epoch gate remains
+## 2026-08-29 — Civil processing v1 software and foreign benchmark complete; field gate remains
 
 ADR-KSI-030 fixes the product direction for the first civil flow: KSI-managed immutable
 `ksi-odm-civil-v1` (NodeODM 2.2.4 / ODM 3.5.6; digest-pinned image; DSM/DTM; medium point-cloud
@@ -14,18 +14,29 @@ The existing local uploader must use the same profile. GeoTIFF upload and IFC→
 direct parsing is out of scope. Existing Operations Console Home·Sites·Work·Items structure and visual
 language remain; the existing upload/design/comparison panels receive only additive status/actions.
 
-The implementation and software regression are complete. Python passed `4033` tests with `23` skips
-and `3` expected failures; Ruff and Mypy (`421` source files) passed. Dashboard Vitest passed `58`
+The implementation and software regression are complete. Python passed `4051` tests with `24` skips
+and `3` expected failures; Ruff and Mypy (`424` source files) passed. Dashboard Vitest passed `58`
 files / `541` tests, followed by ESLint, TypeScript and production build. Playwright passed `62` tests
 with `14` intentional skips across 390/768/1024/1440. Lock, diff, repository hygiene and reference-
 import gates passed. The exact pinned NodeODM `/info` reported 2.2.4 / ODM 3.5.6; a 12-image public
 reconstruction and a separate sealed Core→worker→real MinIO artifact digest round-trip both passed.
+Commit `a215fbf` adds a strict private field-input manifest/auditor; its success is only `INPUT_READY`
+and always leaves field acceptance `NOT_EVALUATED`. Commit `7fe2593` adds the opt-in live benchmark,
+non-sensitive digest ledger and acceptance/phase synchronization. Neither commit was pushed.
 
-`CIVIL_PROCESSING_V1_ACCEPTANCE.md` remains `PARTIAL`, not a fabricated full PASS: there was no valid
-public same-site second epoch in a supported Korean project CRS. The foreign-CRS public fixture was not
-relabeled. The remaining gate is an anonymized Korean LandXML, two same-site original-image epochs and
-an independent reference volume or checkpoints; until then results are operational relative quantities,
-not survey/settlement evidence.
+Foreign technical benchmark `E2E-B01` is `BENCHMARK_PASS`: two official USGS same-area acquisitions,
+24 preservation JPEGs each, ran with the exact profile in `529.02 s`; each produced seven mapped
+artifacts including DSM/DTM/point cloud, and the distinct DSMs had `4,290,788` common finite cells.
+The digest record is `CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json`; owner-private storage retains the
+source distributions, selection manifest and output archives. The `1.99291 m` mean delta is not an
+accuracy/change/quantity result because this is foreign EPSG:32617 with approximate EXIF GNSS,
+preservation derivatives and no common independent control/vertical/design contract.
+
+`CIVIL_PROCESSING_V1_ACCEPTANCE.md` therefore remains `PARTIAL`, not a fabricated product PASS. The
+foreign CRS was not relabeled and product quantitative comparison stays false. The remaining field
+gate is an anonymized Korean LandXML, two same-site camera-original epochs and an independent reference
+volume or checkpoints; until then results are operational relative quantities, not survey/settlement
+evidence.
 
 This work does not change physical-device facts. FIELD-0a remains `BLOCKED`; all five DJI capability
 paths remain `NOT_VERIFIED`/OFF. It neither performs nor authorizes flight, motor/waypoint, camera/gimbal,

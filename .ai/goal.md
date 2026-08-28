@@ -1,4 +1,4 @@
-# Current goal (2026-08-28, civil temporal/quantity processing consistency v1)
+# Current goal (2026-08-29, civil temporal/quantity processing consistency v1 closure)
 
 `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`과
 `INV-017/018/020/023/024/040/050/051/053/060`을 적용해 토목 시계열·물량의 기본
@@ -17,12 +17,14 @@ NodeODM identity를, Dashboard는 기존 Console 패널의 additive 상태 표�
 - `CIVIL_PROCESSING_V1_ACCEPTANCE.md`의 Python/Console/NodeODM/hygiene evidence를 실제
   실행해 기록한다. software 결과는 실제 토목 측량·정산 수용이 아니다.
 
-현재 상태: implementation과 전체 software regression은 완료됐다. 공개 단일 회차 사진의
-실제 pinned NodeODM 처리와 real MinIO digest round-trip까지 통과했으나, 지원되는 국내
-project CRS의 동일 현장 공개 2회차가 없어 E2E-01과 실제 토목 현장 수용은 `PARTIAL/GATED`다.
-외국 CRS를 국내 CRS로 바꿔 표시해 증거를 만들지 않는다. 새 기본 media ingress는
-`SD/저장매체 → 현장 PC → KSI 웹 업로드`이고, 향후 자동 반출은 이 ingress adapter만
-교체한다. remote push, deploy, release는 수행하지 않았다.
+현재 상태: implementation, 전체 software regression, private field-input fail-closed audit와
+공개 실데이터 E2E-B01 기술 benchmark를 완료했다. exact profile은 USGS 동일 영역 두 취득분
+24장씩에서 각각 DSM/DTM/점군을 만들고 두 DSM의 유한 중첩을 확인했다. 이 자료는
+EPSG:32617·EXIF GNSS·보존용 JPEG이므로 product quantitative comparison은 계속 false이며,
+E2E-01과 실제 국내 토목 현장 수용은 `PARTIAL/GATED`다. 외국 CRS를 국내 CRS로 바꿔 표시해
+증거를 만들지 않는다. 새 기본 media ingress는 `SD/저장매체 → 현장 PC → KSI 웹 업로드`이고,
+향후 자동 반출은 이 ingress adapter만 교체한다. raw 원본/좌표는 owner-private 외부 경로에
+남기고 Git에는 digest·판정만 기록한다. remote push, deploy, release는 수행하지 않았다.
 
 FIELD-0a는 별도 physical evidence gate로 계속 `BLOCKED`, DJI capability는 모두
 `NOT_VERIFIED`/OFF다. 이 작업은 비행·motor·waypoint 실행, camera/gimbal·DPK, Pilot 2/

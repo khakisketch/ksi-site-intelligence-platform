@@ -1,4 +1,4 @@
-# Current implementation plan (2026-08-28, civil temporal/quantity processing consistency v1)
+# Current implementation plan (2026-08-29, civil temporal/quantity processing consistency v1 closure)
 
 Requirement IDs:
 - `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
@@ -22,6 +22,8 @@ Acceptance criteria:
   conditions do not match.
 - The full matrix in `docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md` is executed before any
   software PASS claim; real civil field acceptance remains a separate evidence gate.
+- A private input audit can return only `INPUT_READY`/typed `BLOCKED`, never field PASS, and a lawful
+  foreign-CRS two-acquisition benchmark must preserve the Korean product CRS gate.
 
 Contracts affected:
 - Processing Profile v1/ProcessingJob profile ID+digest; Design Surface source format/selector/lineage;
@@ -46,7 +48,8 @@ Files to change:
 Tests:
 - Contract/replay/organization isolation, LandXML hostile-input/TIN golden, volume hand fixture,
   pinned NodeODM `/info` integration, Python/Ruff/Mypy, Dashboard Vitest/lint/type/build and
-  responsive 390/768/1024/1440 evidence, lock/diff/secret/large-file hygiene.
+  responsive 390/768/1024/1440 evidence, private-input hostile evidence, opt-in two-acquisition live
+  processing, lock/diff/secret/large-file hygiene.
 
 HIL or real-device assumptions:
 - None. No flight/device/control or media automation is included. FIELD-0a and DJI capabilities retain
@@ -54,7 +57,8 @@ HIL or real-device assumptions:
 
 License/data implications:
 - NodeODM remains an unmodified AGPL-3.0 container behind REST. Customer on-prem image delivery needs
-  a source-offer notice and legal deployment review. Do not commit raw imagery, LandXML or GeoTIFF.
+  a source-offer notice and legal deployment review. Public benchmark and field originals remain in
+  owner-only storage. Do not commit raw imagery, LandXML, GeoTIFF, filename lists or coordinates.
 
 Rollback:
 - Independently disable new profile issuance, LandXML conversion and civil comparison creation to
@@ -66,12 +70,17 @@ Execution:
 3. [완료] Implement secure LandXML lineage and shared rasterizer.
 4. [완료] Bind comparison preflight and additive Console states.
 5. [완료] Run Python/Dashboard/browser/runtime/hygiene gates and record executed evidence.
-6. [완료] Make feature-local commits and verify a clean local worktree; do not push.
+6. [완료] Add strict private field-input manifest/auditor and commit it independently (`a215fbf`).
+7. [완료] Preserve the fixed profile through a lawful USGS two-acquisition foreign-CRS benchmark;
+   retain raw/result bytes privately and commit only non-sensitive digest evidence.
+8. [완료] Synchronize acceptance/phase/task/handoff, rerun final gates, make local commits and verify
+   a clean local worktree; do not push.
 
 Acceptance boundary:
 - Public single-epoch pinned reconstruction and real object-store persistence passed.
-- E2E-01 remains `PARTIAL` until a valid same-site second epoch in a supported Korean project CRS is
-  available. Civil field acceptance additionally needs Korean LandXML and independent references.
+- Foreign E2E-B01 passed with two real same-area acquisitions, but product E2E-01 remains `PARTIAL`
+  until a sealed same-site second epoch in a supported Korean project CRS is available. Civil field
+  acceptance additionally needs original epochs, Korean LandXML and independent references.
 
 ---
 
