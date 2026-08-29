@@ -60,6 +60,15 @@ _REGRESSION_POLYGON_DEPTH = "폴리곤 중첩 깊이 상한 회귀 있음"
 _REGRESSION_CRS_WHITELIST = "좌표계 화이트리스트 거부 회귀 있음"
 
 REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
+    (
+        "POST",
+        "/v1/checkpoint-validations/{validation_id}/observations",
+    ): _FIRED_DIRECTLY,
+    ("POST", "/v1/checkpoint-validations/{validation_id}/seal"): _NO_BODY,
+    (
+        "POST",
+        "/v1/checkpoint-validations/{validation_id}/verification-failure",
+    ): _FIRED_DIRECTLY,
     ("POST", "/v1/comparison-requests/{request_id}/lease"): _NO_BODY,
     ("POST", "/v1/comparison-requests/{request_id}/transitions"): _BASE,
     ("POST", "/v1/design-conformance-requests/{request_id}/diff-raster-upload-url"): _NO_BODY,
@@ -112,6 +121,10 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
     ): _FIRED_DIRECTLY,
     ("POST", "/v1/processing-jobs/{job_id}/artifacts"): _BASE,
+    (
+        "POST",
+        "/v1/processing-jobs/{job_id}/artifacts/{artifact_id}/checkpoint-validations",
+    ): _FIRED_DIRECTLY,
     ("POST", "/v1/processing-jobs/{job_id}/artifacts/upload-url"): _BASE,
     ("POST", "/v1/processing-jobs/{job_id}/lease"): _NO_BODY,
     ("POST", "/v1/processing-jobs/{job_id}/transitions"): _BASE,

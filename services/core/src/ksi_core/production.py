@@ -202,6 +202,19 @@ def _landxml_ingress_env() -> bool:
     )
 
 
+def _checkpoint_validation_registration_env() -> bool:
+    """Independent rollout gate; completed validation evidence remains readable."""
+    raw = os.environ.get("KSI_CORE_CHECKPOINT_VALIDATION_ENABLED", "false").strip().lower()
+    if raw in ("true", "1", "yes"):
+        return True
+    if raw in ("false", "0", "no"):
+        return False
+    raise RuntimeError(
+        "KSI_CORE_CHECKPOINT_VALIDATION_ENABLED="
+        f"{raw!r} 는 'true' 또는 'false' 여야 한다"
+    )
+
+
 def _copilot_runtime_config_env() -> CopilotRuntimeConfig | None:
     """External Copilot is opt-in; an enabled but partial configuration is fatal."""
     raw = os.environ.get("KSI_COPILOT_ENABLED", "false").strip().lower()
@@ -506,6 +519,7 @@ def build_production_app() -> FastAPI:
     acquisition_issue_gate_enabled = _acquisition_issue_gate_env()
     processing_profile_issuance_enabled = _processing_profile_issuance_env()
     landxml_ingress_enabled = _landxml_ingress_env()
+    checkpoint_validation_registration_enabled = _checkpoint_validation_registration_env()
     copilot_runtime_config = _copilot_runtime_config_env()
     human_auth_mode, oidc_config = _human_auth_config_env()
     mission_contract_writer_version, mission_contract_issuer_id = (
@@ -565,6 +579,7 @@ def build_production_app() -> FastAPI:
             acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
             processing_profile_issuance_enabled=processing_profile_issuance_enabled,
             landxml_ingress_enabled=landxml_ingress_enabled,
+            checkpoint_validation_registration_enabled=checkpoint_validation_registration_enabled,
             copilot_runtime_config=copilot_runtime_config,
             expose_docs=expose_docs,
         )

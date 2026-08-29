@@ -44,6 +44,7 @@ from ksi_core.app import create_app
 from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
@@ -121,6 +122,7 @@ def assemble_app(
     acquisition_issue_gate_enabled: bool = False,
     processing_profile_issuance_enabled: bool = True,
     landxml_ingress_enabled: bool = False,
+    checkpoint_validation_registration_enabled: bool = False,
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
@@ -201,6 +203,18 @@ def assemble_app(
             processing_profile_issuance_enabled=processing_profile_issuance_enabled,
         )
         if evidence_storage is not None
+        else None
+    )
+    # 독립 checkpoint 정확도 검증은 사용자가 제출한 RMSE를 받지 않는다. sealed CSV와
+    # immutable DSM을 worker가 실제로 읽어 측정하므로, 두 사실 원장과 evidence storage가
+    # 동시에 있는 조립에서만 만든다(INV-024/053).
+    checkpoint_validation_store = (
+        CheckpointValidationStore(
+            journal("checkpoint-validations.jsonl"),
+            processing_jobs=processing_job_store,
+            mission_store=mission_store,
+        )
+        if processing_job_store is not None and evidence_storage is not None
         else None
     )
     # Phase 3/4 + M1 표면 — 이 다섯을 여기서 조립하지 않으면 create_app 배선이 정확해도
@@ -473,6 +487,21 @@ def assemble_app(
         and design_conformance_report_store is not None
         else None
     )
+    # W2 비교 요청은 KSI가 검증한 checkpoint RMSE를 우선 사용한다. 과거 artifact
+    # producer-claim fallback은 ComparisonRequestStore 안에만 남긴다.
+    comparison_request_store = (
+        ComparisonRequestStore(
+            comparison_request_journal,
+            mission_store=mission_store,
+            processing_job_store=processing_job_store,
+            analysis_readiness=analysis_readiness_check,
+            checkpoint_rmse_lookup=checkpoint_validation_store.validated_rmse_for,
+        )
+        if processing_job_store is not None
+        and evidence_storage is not None
+        and checkpoint_validation_store is not None
+        else None
+    )
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
     app = create_app(
@@ -486,6 +515,7 @@ def assemble_app(
         capture_quality_report_store=capture_quality_report_store,
         acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
         landxml_ingress_enabled=landxml_ingress_enabled,
+        checkpoint_validation_registration_enabled=checkpoint_validation_registration_enabled,
         copilot_service=copilot_service,
         copilot_conversation_service=copilot_conversation_service,
         site_workspace_projector=site_workspace_projector,
@@ -502,6 +532,7 @@ def assemble_app(
         design_surface_store=design_surface_store,
         work_area_store=work_area_store,
         processing_job_store=processing_job_store,
+        checkpoint_validation_store=checkpoint_validation_store,
         defect_candidate_store=DefectCandidateStore(
             defect_candidate_journal,
             mission_store=mission_store,
@@ -532,16 +563,7 @@ def assemble_app(
         # W2 비교 요청(comparison_requests.py) — evidence_storage 까지 필요한
         # 것은 워커가 baseline/current 원본을 읽어갈 presigned URL 을 이 표면이
         # 직접 발급하기 때문이다(processing_job_store 와 동일 근거).
-        comparison_request_store=(
-            ComparisonRequestStore(
-                comparison_request_journal,
-                mission_store=mission_store,
-                processing_job_store=processing_job_store,
-                analysis_readiness=analysis_readiness_check,
-            )
-            if processing_job_store is not None and evidence_storage is not None
-            else None
-        ),
+        comparison_request_store=comparison_request_store,
         design_conformance_request_store=design_conformance_request_store,
         design_conformance_report_store=design_conformance_report_store,
         region_extraction_request_store=region_extraction_request_store,

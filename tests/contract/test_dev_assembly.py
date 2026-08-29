@@ -21,6 +21,7 @@ from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
@@ -157,6 +158,11 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         source_media_store=source_media_store,
         site_store=site_store,
     )
+    checkpoint_validation_store = CheckpointValidationStore(
+        DurableJournal(tmp_path / "checkpoint-validations.jsonl"),
+        processing_jobs=processing_job_store,
+        mission_store=mission_store,
+    )
     design_surface_store = DesignSurfaceStore(
         DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
     )
@@ -251,6 +257,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
         "processing_job_store": processing_job_store,
+        "checkpoint_validation_store": checkpoint_validation_store,
         "defect_candidate_store": DefectCandidateStore(
             DurableJournal(tmp_path / "defects.jsonl"),
             mission_store=mission_store,
@@ -270,6 +277,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             DurableJournal(tmp_path / "comparison-requests.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
+            checkpoint_rmse_lookup=checkpoint_validation_store.validated_rmse_for,
         ),
         "design_conformance_request_store": design_conformance_request_store,
         "design_conformance_report_store": design_conformance_report_store,

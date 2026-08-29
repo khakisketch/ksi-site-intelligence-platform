@@ -490,6 +490,32 @@ def test_acquisition_coordination_rejects_ambiguous_flag(
         _acquisition_coordination_env()
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, False), ("false", False), ("0", False), ("true", True), ("1", True)],
+)
+def test_checkpoint_validation_registration_requires_explicit_rollout_flag(
+    value: str | None, expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import _checkpoint_validation_registration_env
+
+    if value is None:
+        monkeypatch.delenv("KSI_CORE_CHECKPOINT_VALIDATION_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("KSI_CORE_CHECKPOINT_VALIDATION_ENABLED", value)
+    assert _checkpoint_validation_registration_env() is expected
+
+
+def test_checkpoint_validation_registration_rejects_ambiguous_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import _checkpoint_validation_registration_env
+
+    monkeypatch.setenv("KSI_CORE_CHECKPOINT_VALIDATION_ENABLED", "enabled")
+    with pytest.raises(RuntimeError, match="true.*false"):
+        _checkpoint_validation_registration_env()
+
+
 def test_human_auth_mode_defaults_opaque_for_existing_local_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

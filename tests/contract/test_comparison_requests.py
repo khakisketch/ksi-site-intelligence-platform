@@ -962,6 +962,35 @@ def test_input_carries_the_checkpoint_rmse_the_dsms_declared(tmp_path: Path) -> 
     assert body["dsmCurrentCheckpointRmseM"] == 0.042
 
 
+def test_input_prefers_ksi_verified_checkpoint_rmse_over_adapter_claim(tmp_path: Path) -> None:
+    adapter_claim = ArtifactAccuracy(
+        gcp_count=12,
+        rmse=0.03,
+        report_uri="s3://r/1.pdf",
+        checkpoint_count=8,
+        checkpoint_rmse_m=0.042,
+    )
+    fx = _Fixture(tmp_path, dsm_accuracy=adapter_claim)
+    seen: list[tuple[str, str]] = []
+
+    def verified_lookup(ref: Any) -> float:
+        seen.append((ref.job_id, ref.artifact_id))
+        return 0.017
+
+    fx.store = ComparisonRequestStore(
+        DurableJournal(tmp_path / "comparison-requests-verified.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
+        checkpoint_rmse_lookup=verified_lookup,
+    )
+    body = _leased_input(fx)
+
+    assert body["dsmBaselineCheckpointRmseM"] == 0.017
+    assert body["dsmCurrentCheckpointRmseM"] == 0.017
+    assert seen == [(fx.baseline_job_id, "dsm"), (fx.current_job_id, "dsm")]
+
+
 def test_input_leaves_checkpoint_rmse_null_when_only_fit_rmse_exists(tmp_path: Path) -> None:
     """[회귀] 검사점 없는 정확도(GCP 피팅 잔차만)는 ``null`` 로 온다.
 

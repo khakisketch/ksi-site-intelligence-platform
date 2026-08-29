@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -419,11 +420,17 @@ class ComparisonRequestStore:
         mission_store: MissionStore,
         processing_job_store: ProcessingJobStore,
         analysis_readiness: AnalysisReadinessCheck | None = None,
+        checkpoint_rmse_lookup: Callable[[ArtifactRef], float | None] | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
         self._analysis_readiness = analysis_readiness
+        # Optional trusted producer for KSI-managed NodeODM artifacts.  Older
+        # adapters may still carry producer-declared checkpoint accuracy on the
+        # immutable ProcessingArtifact; the callback is checked first and does
+        # not mutate that historical contract.
+        self._checkpoint_rmse_lookup = checkpoint_rmse_lookup
         self._lock = threading.Lock()
         self._requests: dict[str, ComparisonRequestRecord] = {}
         self._by_request_shape: dict[tuple[str, str, str], str] = {}
@@ -877,11 +884,14 @@ class ComparisonRequestStore:
         return artifact.vertical_reference if artifact is not None else None
 
     def checkpoint_rmse_of(self, ref: ArtifactRef | None) -> float | None:
-        """그 산출물이 등록 시 신고한 **독립 검사점 잔차**(m) — 없으면 ``None``.
+        """그 산출물의 **독립 검사점 잔차**(m) — 없으면 ``None``.
 
         ``vertical_reference_of`` 와 같은 관례(요청 레코드에 복사하지 않고 입력
         발급 시점에 조회, 기본값을 채우지 않음)다.
 
+        KSI-managed 경로에서는 별도 검사점 원장이 봉인된 CSV와 DSM을 직접 읽어
+        계산한 값을 우선한다. 그 값이 없으면 과거 외부 adapter 호환 경계로
+        ``ProcessingArtifact.accuracy.checkpointRmseM``을 읽는다. 어느 경로든
         **``accuracy.rmse`` 는 절대 반환하지 않는다** — 그것은 GCP 피팅 잔차이지
         절대정확도가 아니다(INV-024). 여기서 그 값을 흘리면 "검증 없는 수치가
         진짜 오차한계처럼 실리는" 위반을 이 배선이 그대로 재도입한다. 워커의
@@ -890,6 +900,10 @@ class ComparisonRequestStore:
         """
         if ref is None:
             return None
+        if self._checkpoint_rmse_lookup is not None:
+            verified = self._checkpoint_rmse_lookup(ref)
+            if verified is not None:
+                return verified
         job = self._processing_job_store.get(ref.job_id)
         if job is None:
             return None
@@ -1177,7 +1191,8 @@ class ComparisonRequestInputView(CamelModel):
     #: 응답 경로가 생겼을 때 "안 채우면 조용히 null" 이 되지 않게 한다.
     dsm_baseline_vertical_reference: VerticalReference | None
     dsm_current_vertical_reference: VerticalReference | None
-    #: 각 DSM 이 등록 시 신고한 독립 검사점 잔차(m) — ``checkpoint_rmse_of`` 참조.
+    #: 각 DSM 의 독립 검사점 잔차(m) — KSI 서버 검증을 우선하고 과거 adapter의
+    #: immutable producer claim만 fallback으로 쓰는 ``checkpoint_rmse_of`` 참조.
     #: ``None`` 이면 그 epoch 은 검증되지 않았고, 워커의 오차한계도 ``None`` 이
     #: 된다(INV-024 — 한쪽만 알면 차분의 오차를 말할 수 없다).
     dsm_baseline_checkpoint_rmse_m: float | None

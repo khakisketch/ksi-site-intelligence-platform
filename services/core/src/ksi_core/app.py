@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from ksi_core.auth import AuthRegistry, OidcVerifier
     from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
+    from ksi_core.checkpoint_validations import CheckpointValidationStore
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.copilot import CopilotService
     from ksi_core.copilot_conversations import CopilotConversationService
@@ -102,9 +103,10 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
             ("mission_signing_key",),
             ("design_surface_store",),
             ("flight_artifact_store",),
+            ("checkpoint_validation_store",),
         ),
         "evidence_storage 는 소비자 저장소(event_store·source_media_store·"
-        "design_surface_store·flight_artifact_store 또는"
+        "design_surface_store·flight_artifact_store·checkpoint_validation_store 또는"
         " 임무 서명키)와 함께 주어져야 한다(ADR-KSI-010 §1) — 아무도 쓰지 않는"
         " 오브젝트 스토리지를 매단 채 기동하지 않는다."
         "\n"
@@ -236,6 +238,13 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " evidence_storage 는 워커가 원본을 받아갈 다운로드 URL 발급에 필요하다"
         " — 없으면 워커가 바이트를 읽을 수 없어 실측 대조가 성립하지 않고,"
         " 그러면 SUCCEEDED 게이트가 영구히 닫힌 조립이 된다",
+    ),
+    (
+        "checkpoint_validation_store",
+        (("mission_store", "processing_job_store", "evidence_storage"),),
+        "checkpoint_validation_store 는 mission_store·processing_job_store·"
+        "evidence_storage 와 함께 주어져야 한다(INV-024/053) — 봉인 checkpoint와 "
+        "immutable DSM 산출물을 대조할 원장·객체 저장소 없이 검증 표면을 열지 않는다",
     ),
     (
         "defect_candidate_store",
@@ -380,6 +389,7 @@ def create_app(
     source_media_store: SourceMediaStore | None = None,
     design_surface_store: DesignSurfaceStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
+    checkpoint_validation_store: CheckpointValidationStore | None = None,
     defect_candidate_store: DefectCandidateStore | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
     volume_change_store: VolumeChangeStore | None = None,
@@ -395,6 +405,7 @@ def create_app(
     capture_quality_report_store: CaptureQualityReportStore | None = None,
     acquisition_issue_gate_enabled: bool = False,
     landxml_ingress_enabled: bool = False,
+    checkpoint_validation_registration_enabled: bool = False,
     copilot_service: CopilotService | None = None,
     copilot_conversation_service: CopilotConversationService | None = None,
     site_workspace_projector: SiteWorkspaceProjector | None = None,
@@ -463,6 +474,13 @@ def create_app(
             입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
             둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
             조립에서 거부한다.
+        checkpoint_validation_store: 독립 checkpoint CSV와 immutable DSM의 서버 측
+            측정 원장. ``mission_store``·``processing_job_store``·``evidence_storage``가
+            모두 필요하다(INV-024/053). 이를 통해 검증된 RMSE만 비교 불확실성에
+            쓸 수 있고, 작업자 RMSE 자기신고는 이 표면으로 들어오지 않는다.
+        checkpoint_validation_registration_enabled: 신규 checkpoint 등록 rollout gate.
+            기본 ``False``다. 꺼도 기존 검증 결과 조회·worker 처리 표면은 유지하며,
+            신규 운영자 등록만 403으로 닫는다.
         defect_candidate_store: Phase 4 결함 후보(균열) 수신·조회 저장소.
             ``mission_store`` 와 ``source_media_store`` 가 모두 필수다 — 후보는
             "어느 임무의 어느 사진 위 픽셀 좌표인가"로만 의미를 가지므로, 그
@@ -598,6 +616,7 @@ def create_app(
         "source_media_store": source_media_store,
         "design_surface_store": design_surface_store,
         "processing_job_store": processing_job_store,
+        "checkpoint_validation_store": checkpoint_validation_store,
         "defect_candidate_store": defect_candidate_store,
         "change_detection_store": change_detection_store,
         "volume_change_store": volume_change_store,
@@ -921,6 +940,19 @@ def create_app(
         from ksi_core.processing_jobs import mount_processing_jobs
 
         mount_processing_jobs(app, processing_job_store, evidence_storage, site_lifecycle)
+
+    if checkpoint_validation_store is not None:
+        # evidence_storage 는 위 결합 검증이 보장한다. 등록 flag가 false여도 sealed
+        # 증거의 조회·worker 검증 표면은 유지한다; 신규 operator 등록만 닫는다.
+        assert evidence_storage is not None  # noqa: S101 -- assembly postcondition
+        from ksi_core.checkpoint_validations import mount_checkpoint_validations
+
+        mount_checkpoint_validations(
+            app,
+            checkpoint_validation_store,
+            evidence_storage,
+            registration_enabled=checkpoint_validation_registration_enabled,
+        )
 
     if site_store is not None and processing_job_store is not None:
         # 공간모델 조회(ADR-KSI-019 G1)는 **두 저장소가 모두 있을 때만** 장착한다 —

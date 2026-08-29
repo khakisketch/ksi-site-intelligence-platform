@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +41,7 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
+from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
@@ -121,44 +124,76 @@ def _auth_registry() -> AuthRegistry:
     )
 
 
-def _client(tmp_path: Path) -> TestClient:
+class _JournalSet:
+    """Own every journal opened by one hostile-input app and close it promptly."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._opened: list[DurableJournal] = []
+
+    def open(self, filename: str) -> DurableJournal:
+        journal = DurableJournal(self._root / filename)
+        self._opened.append(journal)
+        return journal
+
+    def close(self) -> None:
+        for journal in reversed(self._opened):
+            journal.close()
+
+
+@contextmanager
+def _managed_client(app: Any, journals: _JournalSet) -> Iterator[TestClient]:
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield client
+    finally:
+        journals.close()
+
+
+@contextmanager
+def _client(tmp_path: Path) -> Iterator[TestClient]:
     """``/v1/sites`` 가 **실제로 장착된** 앱 — 조립에 라우트가 없으면 본문 검증 층에
     닿지 못해 이 게이트가 통째로 공허해진다(초록불이 거짓말이 된다)."""
+    journals = _JournalSet(tmp_path)
     app = create_app(
         auth_registry=_auth_registry(),
-        site_store=SiteStore(DurableJournal(tmp_path / "sites.jsonl")),
+        site_store=SiteStore(journals.open("sites.jsonl")),
     )
-    client = TestClient(app, raise_server_exceptions=False)
-    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
-    return client
+    with _managed_client(app, journals) as client:
+        client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+        yield client
 
 
-def _work_order_client(tmp_path: Path) -> TestClient:
-    site_store = SiteStore(DurableJournal(tmp_path / "work-order-sites.jsonl"))
+@contextmanager
+def _work_order_client(tmp_path: Path) -> Iterator[TestClient]:
+    journals = _JournalSet(tmp_path)
+    site_store = SiteStore(journals.open("work-order-sites.jsonl"))
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=site_store,
         observation_work_order_store=ObservationWorkOrderStore(
-            DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+            journals.open("observation-work-orders.jsonl"),
             site_exists=lambda site_id, organization_id: (
                 site_store.get_scoped(site_id, organization_id) is not None
             ),
         ),
     )
-    client = TestClient(app, raise_server_exceptions=False)
-    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
-    return client
+    with _managed_client(app, journals) as client:
+        client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+        yield client
 
 
-def _acquisition_client(tmp_path: Path) -> TestClient:
-    site_store = SiteStore(DurableJournal(tmp_path / "acquisition-sites.jsonl"))
-    mission_store = MissionStore(DurableJournal(tmp_path / "acquisition-missions.jsonl"))
+@contextmanager
+def _acquisition_client(tmp_path: Path) -> Iterator[TestClient]:
+    journals = _JournalSet(tmp_path)
+    site_store = SiteStore(journals.open("acquisition-sites.jsonl"))
+    mission_store = MissionStore(journals.open("acquisition-missions.jsonl"))
     work_order_store = ObservationWorkOrderStore(
-        DurableJournal(tmp_path / "acquisition-work-orders.jsonl"),
+        journals.open("acquisition-work-orders.jsonl"),
         site_exists=lambda _site_id, _organization_id: True,
     )
     coordination_store = AcquisitionCoordinationStore(
-        DurableJournal(tmp_path / "acquisition-runs.jsonl")
+        journals.open("acquisition-runs.jsonl")
     )
     evidence_storage = _ValidationEvidenceStorage()
     app = create_app(
@@ -167,39 +202,47 @@ def _acquisition_client(tmp_path: Path) -> TestClient:
         mission_store=mission_store,
         observation_work_order_store=work_order_store,
         acquisition_connectivity_store=AcquisitionConnectivityStore(
-            DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
+            journals.open("acquisition-connectivity.jsonl"),
             site_exists=lambda _site_id, _organization_id: True,
         ),
         acquisition_coordination_store=coordination_store,
         evidence_storage=evidence_storage,
         flight_artifact_store=FlightArtifactStore(
-            DurableJournal(tmp_path / "flight-artifacts.jsonl"),
+            journals.open("flight-artifacts.jsonl"),
             mission_store=mission_store,
             storage=evidence_storage,
         ),
         capture_quality_report_store=CaptureQualityReportStore(
-            DurableJournal(tmp_path / "capture-quality-reports.jsonl"),
+            journals.open("capture-quality-reports.jsonl"),
             mission_store=mission_store,
             work_order_store=work_order_store,
             coordination_store=coordination_store,
         ),
     )
-    return TestClient(app, raise_server_exceptions=False)
+    with _managed_client(app, journals) as client:
+        yield client
 
 
-def _civil_client(tmp_path: Path) -> TestClient:
+@contextmanager
+def _civil_client(tmp_path: Path) -> Iterator[TestClient]:
     """두 신규 civil POST를 실제 Core 조립·정확한 principal로 직접 두드린다."""
 
-    site_store = SiteStore(DurableJournal(tmp_path / "civil-sites.jsonl"))
-    mission_store = MissionStore(DurableJournal(tmp_path / "civil-missions.jsonl"))
+    journals = _JournalSet(tmp_path)
+    site_store = SiteStore(journals.open("civil-sites.jsonl"))
+    mission_store = MissionStore(journals.open("civil-missions.jsonl"))
     source_media_store = SourceMediaStore(
-        DurableJournal(tmp_path / "civil-source-media.jsonl"),
+        journals.open("civil-source-media.jsonl"),
         mission_store=mission_store,
     )
     processing_job_store = ProcessingJobStore(
-        DurableJournal(tmp_path / "civil-processing-jobs.jsonl"),
+        journals.open("civil-processing-jobs.jsonl"),
         source_media_store=source_media_store,
         site_store=site_store,
+    )
+    checkpoint_validation_store = CheckpointValidationStore(
+        journals.open("civil-checkpoint-validations.jsonl"),
+        mission_store=mission_store,
+        processing_jobs=processing_job_store,
     )
     app = create_app(
         auth_registry=_auth_registry(),
@@ -208,19 +251,22 @@ def _civil_client(tmp_path: Path) -> TestClient:
         evidence_storage=_ValidationEvidenceStorage(),
         source_media_store=source_media_store,
         processing_job_store=processing_job_store,
+        checkpoint_validation_store=checkpoint_validation_store,
         design_surface_store=DesignSurfaceStore(
-            DurableJournal(tmp_path / "civil-design-surfaces.jsonl"),
+            journals.open("civil-design-surfaces.jsonl"),
             site_store=site_store,
         ),
         comparison_request_store=ComparisonRequestStore(
-            DurableJournal(tmp_path / "civil-comparison-requests.jsonl"),
+            journals.open("civil-comparison-requests.jsonl"),
             mission_store=mission_store,
             processing_job_store=processing_job_store,
             analysis_readiness=lambda _mission_id: (False, "fixture has no evidence"),
         ),
         landxml_ingress_enabled=True,
+        checkpoint_validation_registration_enabled=True,
     )
-    return TestClient(app, raise_server_exceptions=False)
+    with _managed_client(app, journals) as client:
+        yield client
 
 
 # 문법상 합법이지만 그대로 되실으면 JSON 렌더가 깨지는 값들.
@@ -237,11 +283,11 @@ _HOSTILE_BODIES: list[tuple[str, str]] = [
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
 def test_hostile_json_body_never_renders_as_a_500(label: str, raw: str, tmp_path: Path) -> None:
     """장착된 표면에 쏴도 500 + text/plain 이 나오지 않는다."""
-    client = _client(tmp_path)
-    response = client.post(
-        "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
-        headers={"Content-Type": "application/json"},
-    )
+    with _client(tmp_path) as client:
+        response = client.post(
+            "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
+            headers={"Content-Type": "application/json"},
+        )
     assert response.status_code != 500, f"{label}: {response.status_code} {response.text[:200]}"
 
 
@@ -253,11 +299,11 @@ def test_hostile_json_body_error_is_machine_readable(
 
     404(라우트 미장착)면 본문 검증까지 가지 않으므로 이 단언의 대상이 아니다.
     """
-    client = _client(tmp_path)
-    response = client.post(
-        "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
-        headers={"Content-Type": "application/json"},
-    )
+    with _client(tmp_path) as client:
+        response = client.post(
+            "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
+            headers={"Content-Type": "application/json"},
+        )
     assert response.status_code != 404, "라우트가 장착되지 않으면 이 게이트는 공허하다"
     assert response.headers["content-type"].startswith("application/json"), (
         f"{label}: content-type={response.headers.get('content-type')!r} body={response.text[:200]}"
@@ -280,12 +326,12 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
     path: str, label: str, raw: str, tmp_path: Path
 ) -> None:
     """신규 WorkOrder 쓰기 표면 5개를 적대적 본문 6종으로 직접 조사한다."""
-    client = _work_order_client(tmp_path)
-    response = client.post(
-        path,
-        content=raw.encode("utf-8", "surrogatepass"),
-        headers={"Content-Type": "application/json"},
-    )
+    with _work_order_client(tmp_path) as client:
+        response = client.post(
+            path,
+            content=raw.encode("utf-8", "surrogatepass"),
+            headers={"Content-Type": "application/json"},
+        )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
@@ -305,16 +351,16 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
 def test_acquisition_and_artifact_hostile_bodies_are_machine_readable_422(
     method: str, path: str, token: str, label: str, raw: str, tmp_path: Path
 ) -> None:
-    client = _acquisition_client(tmp_path)
-    response = client.request(
-        method,
-        path,
-        content=raw.encode("utf-8", "surrogatepass"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-    )
+    with _acquisition_client(tmp_path) as client:
+        response = client.request(
+            method,
+            path,
+            content=raw.encode("utf-8", "surrogatepass"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
@@ -325,23 +371,32 @@ def test_acquisition_and_artifact_hostile_bodies_are_machine_readable_422(
     [
         ("/v1/design-surfaces/design-1/normalization-failure", _PROCESSING_TOKEN),
         ("/v1/missions/mission-1/comparison-preflight", _ADMIN_TOKEN),
+        (
+            "/v1/processing-jobs/job-1/artifacts/artifact-1/checkpoint-validations",
+            _ADMIN_TOKEN,
+        ),
+        ("/v1/checkpoint-validations/validation-1/observations", _PROCESSING_TOKEN),
+        (
+            "/v1/checkpoint-validations/validation-1/verification-failure",
+            _PROCESSING_TOKEN,
+        ),
     ],
 )
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
 def test_civil_hostile_bodies_are_machine_readable_422(
     path: str, token: str, label: str, raw: str, tmp_path: Path
 ) -> None:
-    """신규 civil POST 2개를 각 최소권한 신원으로 적대적 본문 6종 직접 조사한다."""
+    """Civil·checkpoint 쓰기 표면을 최소권한 신원으로 hostile JSON 6종 직접 조사한다."""
 
-    client = _civil_client(tmp_path)
-    response = client.post(
-        path,
-        content=raw.encode("utf-8", "surrogatepass"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-    )
+    with _civil_client(tmp_path) as client:
+        response = client.post(
+            path,
+            content=raw.encode("utf-8", "surrogatepass"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
@@ -363,8 +418,8 @@ def test_render_safe_keeps_the_offending_value_visible() -> None:
 
 def test_normal_body_is_unaffected(tmp_path: Path) -> None:
     """[비공허 대조] 정상 요청은 이 핸들러를 타지 않는다 — 422 를 남발하지 않는다."""
-    client = _client(tmp_path)
-    response = client.post("/v1/sites", json={"siteId": "site-1"})
+    with _client(tmp_path) as client:
+        response = client.post("/v1/sites", json={"siteId": "site-1"})
     # 필드가 모자라 422 인 것은 정상이다 — 이 게이트가 막는 것은 500 하나다.
     assert response.status_code != 500, response.text
     assert response.status_code != 404, "라우트가 장착되지 않으면 이 게이트는 공허하다"
@@ -489,13 +544,13 @@ def test_deeply_nested_legal_json_renders_as_422_json(depth: int, tmp_path: Path
     시점 스택 잔량에 따라 968~1000 사이에서 흔들리므로 회귀 테스트는 여유 있는
     깊이를 쓴다(재조사 판정의 테스트 주의사항).
     """
-    client = _client(tmp_path)
-    nested = "[" * depth + "1" + "]" * depth
-    response = client.post(
-        "/v1/sites",
-        content=('{"siteId": ' + nested + "}").encode(),
-        headers={"Content-Type": "application/json"},
-    )
+    with _client(tmp_path) as client:
+        nested = "[" * depth + "1" + "]" * depth
+        response = client.post(
+            "/v1/sites",
+            content=('{"siteId": ' + nested + "}").encode(),
+            headers={"Content-Type": "application/json"},
+        )
     assert response.status_code != 500, response.text[:200]
     assert response.headers["content-type"].startswith("application/json")
 

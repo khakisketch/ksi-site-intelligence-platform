@@ -27,6 +27,7 @@ from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
+from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.copilot_conversations import (
@@ -191,6 +192,11 @@ def _max_assembly(tmp_path: Path) -> Any:
         source_media_store=source_media_store,
         site_store=site_store,
     )
+    checkpoint_validation_store = CheckpointValidationStore(
+        DurableJournal(tmp_path / "checkpoint-validations.jsonl"),
+        mission_store=mission_store,
+        processing_jobs=processing_job_store,
+    )
     design_surface_store = DesignSurfaceStore(
         DurableJournal(tmp_path / "design-surfaces.jsonl"), site_store=site_store
     )
@@ -289,6 +295,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         source_media_store=source_media_store,
         design_surface_store=design_surface_store,
         processing_job_store=processing_job_store,
+        checkpoint_validation_store=checkpoint_validation_store,
         defect_candidate_store=DefectCandidateStore(
             DurableJournal(tmp_path / "defect-candidates.jsonl"),
             mission_store=mission_store,

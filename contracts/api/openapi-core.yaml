@@ -150,7 +150,11 @@ info:
   # LandXML 원본 보존형 ingress와 comparison preflight를 추가하며 과거 raw spec
   # 원장은 LEGACY_UNMANAGED로만 재생한다. 배포 전 계약 축소와 새 표면을 함께
   # 확정한 minor 버전이며 실제 토목 현장 정확도 수용을 뜻하지 않는다.
-  version: 1.28.0
+  # 1.29.0 — ADR-KSI-031 independent checkpoint validation v1. 업로더가 RMSE를
+  # 신고하지 못하게 하고, sealed CSV와 immutable DSM을 trusted worker가 각각
+  # 재해싱·전수 샘플한 관측만 Core가 VALIDATED/REJECTED 원장으로 굳힌다. 비교의
+  # uncertainty producer를 추가하지만 물리적 독립성/측량급 수용을 주장하지 않는다.
+  version: 1.29.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -4811,6 +4815,194 @@ paths:
                   enum: [FAST, STANDARD, PRECISE]
       responses:
         '202': { description: Mission planning accepted }
+  /v1/processing-jobs/{job_id}/artifacts/{artifact_id}/checkpoint-validations:
+    post:
+      summary: Register an independently acquired checkpoint CSV for one immutable DSM
+      description: >-
+        SITES_WRITE 권한 필요. 등록은 업로더의 선언과 서버가 정한 업로드 위치를
+        원장에 결속할 뿐, RMSE를 받지 않고 CSV 바이트도 읽지 않는다. `declared`는
+        파일 hash·크기·CRS·수직기준과 **처리와 독립적으로 취득했다는 true attestation**
+        을 포함해야 한다. 검증은 SEALED 뒤 PROCESSING_WORK worker가 원본 DSM과 CSV
+        bytes를 각각 재해싱하고 전 검사점을 nearest-pixel-center로 샘플한 뒤에만
+        Core가 기록한다. registration feature flag가 꺼진 배포는 403
+        REGISTRATION_DISABLED로 새 등록만 막고, 기존 검증 조회/worker 표면은 보존한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: job_id, required: true, schema: { type: string } }
+        - { in: path, name: artifact_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointValidationRegisterRequest' }
+      responses:
+        '201':
+          description: REGISTERED — server-selected CSV object key and presigned PUT issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '200':
+          description: ALREADY_REGISTERED may issue a fresh upload URL before seal; ALREADY_SEALED never reissues PUT access
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '403': { description: SITES_WRITE permission required or REGISTRATION_DISABLED }
+        '404': { description: Job or artifact is absent or outside the principal organization }
+        '409': { description: Job is not SUCCEEDED, another validation is active, or a VALIDATED result already exists }
+        '422': { description: Invalid declaration, non-DSM artifact, or immutable DSM CRS/vertical reference mismatch }
+        '503': { description: Journal or presigned-upload issuance unavailable; Retry-After }
+  /v1/checkpoint-validations/{validation_id}/seal:
+    post:
+      summary: Seal the checkpoint CSV declaration after direct object upload
+      description: >-
+        SITES_WRITE 권한 필요. 이 호출도 CSV bytes를 읽지 않는다. SEALED는 파일이
+        존재하거나 선언과 일치한다는 뜻이 아니라 trusted worker가 검증할 수 있도록
+        선언을 더 이상 바꾸지 않는다는 원장 상태다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: SEALED — worker validation queue admission
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '200':
+          description: ALREADY_SEALED or ALREADY_JUDGED (idempotent terminal response)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '404': { description: Validation absent or outside the principal organization }
+        '503': { description: Durable journal unavailable; Retry-After }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_WRITE permission required }
+  /v1/processing-jobs/{job_id}/checkpoint-validations:
+    get:
+      summary: List checkpoint validation records visible for one processing job
+      description: >-
+        SITES_READ 권한 필요. REGISTERED·SEALED·VALIDATED·REJECTED를 숨기지 않으며,
+        VALIDATED가 현장 독립성의 물리적 수용을 증명한다는 의미는 아니다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: job_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped validation records in deterministic registration order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+  /v1/checkpoint-validations/{validation_id}:
+    get:
+      summary: Read one organization-scoped checkpoint validation record
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Checkpoint validation record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Validation absent or outside the principal organization }
+  /v1/checkpoint-validations:
+    get:
+      summary: List SEALED checkpoint validations for trusted processing workers
+      description: >-
+        PROCESSING_WORK 권한 필요. `status=SEALED`만 허용하며, worker는 다운로드
+        URL과 immutable DSM CRS/snapshot만 받고 업로더의 checksum이나 RMSE를
+        되읊어 통과할 수 있는 선언값은 받지 않는다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, default: SEALED }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: FIFO SEALED candidates; entries whose presigned URL cannot be issued are omitted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingCheckpointValidationListResponse' }
+        '422': { description: status is not SEALED }
+        '401': { description: Authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/checkpoint-validations/{validation_id}/observations:
+    post:
+      summary: Submit trusted worker measurements; Core compares them to immutable CSV/DSM declarations
+      description: >-
+        PROCESSING_WORK 권한 필요. Worker는 실측 digest·DSM CRS·잔차 통계만 보낸다.
+        `measuredAt`와 `measuredBy`는 요청자가 정하지 못하고 Core가 server time과
+        authenticated worker identity로 채운다. Core는 mismatch를 REJECTED로 기록하고
+        worker가 VALIDATED 판정을 직접 선언할 수 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointValidationObservationRequest' }
+      responses:
+        '201':
+          description: VALIDATED after Core immutable-snapshot comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '200':
+          description: ALREADY_JUDGED (idempotent terminal response)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '404': { description: Validation absent or outside the worker organization }
+        '409': { description: NOT_SEALED or a VALIDATED result already exists for the DSM }
+        '422':
+          description: REJECTED after immutable digest/CRS mismatch, or INVALID_MEASUREMENT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '503': { description: Durable journal unavailable; Retry-After }
+        '401': { description: Authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/checkpoint-validations/{validation_id}/verification-failure:
+    post:
+      summary: Record a typed trusted-worker failure before residual measurement is possible
+      description: >-
+        PROCESSING_WORK 권한 필요. 허용되는 failure reason은 strict CSV parsing,
+        missing sealed object, byte-size, point-count, CRS, outside/nodata, DSM
+        readability/support에 한정된다. 임의의
+        "정확도 부족" 또는 client RMSE는 이 표면으로 기록할 수 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointValidationFailureRequest' }
+      responses:
+        '200':
+          description: ALREADY_JUDGED (idempotent terminal response)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '404': { description: Validation absent or outside the worker organization }
+        '409': { description: NOT_SEALED }
+        '422':
+          description: REJECTED with a permitted typed worker failure, or invalid request/reason
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointValidationResponse' }
+        '503': { description: Durable journal unavailable; Retry-After }
+        '401': { description: Authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
 components:
   # ── 응답 본문 스키마 ───────────────────────────────────────────────────────
   #
@@ -6735,6 +6927,141 @@ components:
             (귀속이지 관측이 아니다).
           type: [number, 'null']
           minimum: 0
+
+    # ── ADR-KSI-031 independent checkpoint validation ─────────────────────
+    CheckpointFileDeclared:
+      type: object
+      additionalProperties: false
+      required: [filename, sha256, sizeBytes, crs, verticalReference, independentFromProcessingAttested, independenceBasis]
+      properties:
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        sizeBytes: { type: integer, minimum: 1, maximum: 5242880 }
+        crs: { type: string, minLength: 1 }
+        verticalReference:
+          allOf: [{ $ref: '#/components/schemas/VerticalReference' }]
+          description: source must be user_declared; pipeline_declared is rejected by the live contract
+        independentFromProcessingAttested: { const: true }
+        independenceBasis: { type: string, minLength: 1, maxLength: 1000 }
+    CheckpointValidationStatus:
+      type: string
+      enum: [REGISTERED, SEALED, VALIDATED, REJECTED]
+    CheckpointValidationRejectionReason:
+      type: string
+      enum: [CHECKPOINT_DIGEST_MISMATCH, CHECKPOINT_SIZE_MISMATCH, CHECKPOINT_OBJECT_MISSING, DSM_DIGEST_MISMATCH, DSM_OBJECT_MISSING, DSM_CRS_MISMATCH, INVALID_CHECKPOINT_CSV, CHECKPOINT_COUNT_OUT_OF_RANGE, CHECKPOINT_OUTSIDE_DSM, DSM_NODATA_AT_CHECKPOINT, UNREADABLE_DSM, UNSUPPORTED_DSM, INVALID_MEASUREMENT]
+    CheckpointValidationObserved:
+      type: object
+      additionalProperties: false
+      required: [checkpointSha256, checkpointSizeBytes, dsmDigest, dsmCrs, pointCount, meanErrorM, maeM, rmseM, maxAbsErrorM, measuredAt, measuredBy]
+      properties:
+        checkpointSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        checkpointSizeBytes: { type: integer, minimum: 1, maximum: 5242880 }
+        dsmDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        dsmCrs: { type: string, minLength: 1 }
+        pointCount: { type: integer, minimum: 3, maximum: 10000 }
+        meanErrorM: { type: number }
+        maeM: { type: number, minimum: 0 }
+        rmseM: { type: number, minimum: 0 }
+        maxAbsErrorM: { type: number, minimum: 0 }
+        measuredAt: { type: string, format: date-time }
+        measuredBy: { type: string, minLength: 1 }
+    CheckpointValidation:
+      type: object
+      additionalProperties: false
+      required: [validationId, organizationId, missionId, siteId, dsm, dsmDigest, dsmCrs, dsmVerticalReference, declared, status, registeredAt, registeredBy]
+      properties:
+        schemaVersion: { const: '1.0', default: '1.0' }
+        validationId: { type: string, minLength: 1 }
+        organizationId: { type: string, minLength: 1 }
+        missionId: { type: string, minLength: 1 }
+        siteId: { type: string, minLength: 1 }
+        dsm: { $ref: '#/components/schemas/ArtifactRef' }
+        dsmDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        dsmCrs: { type: string, minLength: 1 }
+        dsmVerticalReference: { $ref: '#/components/schemas/VerticalReference' }
+        declared: { $ref: '#/components/schemas/CheckpointFileDeclared' }
+        validationProfileId: { const: ksi-dsm-checkpoint-nearest-v1, default: ksi-dsm-checkpoint-nearest-v1 }
+        validationProfileDigest: { const: 'sha256:be58e685bc92e5aa82003a03da1eb489b44db983b0838c4117afb538879b9b6c', default: 'sha256:be58e685bc92e5aa82003a03da1eb489b44db983b0838c4117afb538879b9b6c' }
+        status: { $ref: '#/components/schemas/CheckpointValidationStatus' }
+        registeredAt: { type: string, format: date-time }
+        registeredBy: { type: string, minLength: 1 }
+        sealedAt: { type: [string, 'null'], format: date-time }
+        observed:
+          oneOf: [{ $ref: '#/components/schemas/CheckpointValidationObserved' }, { type: 'null' }]
+        rejectionReason:
+          oneOf: [{ $ref: '#/components/schemas/CheckpointValidationRejectionReason' }, { type: 'null' }]
+        rejectionDetail: { type: [string, 'null'], maxLength: 500 }
+    CheckpointValidationRegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [declared]
+      properties:
+        declared: { $ref: '#/components/schemas/CheckpointFileDeclared' }
+    CheckpointValidationObservationRequest:
+      type: object
+      additionalProperties: false
+      required: [checkpointSha256, checkpointSizeBytes, dsmDigest, dsmCrs, pointCount, meanErrorM, maeM, rmseM, maxAbsErrorM]
+      properties:
+        checkpointSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        checkpointSizeBytes: { type: integer, minimum: 1, maximum: 5242880 }
+        dsmDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        dsmCrs: { type: string, minLength: 1 }
+        pointCount: { type: integer, minimum: 3, maximum: 10000 }
+        meanErrorM: { type: number }
+        maeM: { type: number, minimum: 0 }
+        rmseM: { type: number, minimum: 0 }
+        maxAbsErrorM: { type: number, minimum: 0 }
+    CheckpointValidationFailureRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { $ref: '#/components/schemas/CheckpointValidationRejectionReason' }
+        detail: { type: [string, 'null'], maxLength: 500 }
+    CheckpointValidationResponse:
+      type: object
+      additionalProperties: false
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        validation:
+          oneOf: [{ $ref: '#/components/schemas/CheckpointValidation' }, { type: 'null' }]
+        validationId: { type: [string, 'null'] }
+        objectKey: { type: [string, 'null'] }
+        uploadUrl: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+    CheckpointValidationListResponse:
+      type: object
+      additionalProperties: false
+      required: [validations]
+      properties:
+        validations:
+          type: array
+          items: { $ref: '#/components/schemas/CheckpointValidation' }
+    PendingCheckpointValidation:
+      type: object
+      additionalProperties: false
+      required: [validationId, checkpointDownloadUrl, dsmDownloadUrl, checkpointCrs, checkpointVerticalReference, dsmCrs, dsmVerticalReference, expiresAt]
+      properties:
+        validationId: { type: string }
+        checkpointDownloadUrl: { type: string }
+        dsmDownloadUrl: { type: string }
+        checkpointCrs: { type: string }
+        checkpointVerticalReference:
+          allOf: [{ $ref: '#/components/schemas/VerticalReference' }]
+          description: source is always user_declared
+        dsmCrs: { type: string }
+        dsmVerticalReference: { $ref: '#/components/schemas/VerticalReference' }
+        expiresAt: { type: string, format: date-time }
+    PendingCheckpointValidationListResponse:
+      type: object
+      additionalProperties: false
+      required: [validations]
+      properties:
+        validations:
+          type: array
+          items: { $ref: '#/components/schemas/PendingCheckpointValidation' }
 
     VerticalReference:
       description: >-
