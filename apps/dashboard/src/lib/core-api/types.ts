@@ -1226,6 +1226,109 @@ export interface ProcessingJobListSummary {
   jobs: ProcessingJobSummary[];
 }
 
+// ── 독립 검사점 검증 (M4-F) ────────────────────────────────────────────────
+//
+// 검사점 CSV는 입력 근거이고, RMSE는 입력 필드가 아니다. 브라우저는 파일 bytes의
+// SHA-256만 신고하고, 봉인 뒤 Processing Controller가 DSM과 함께 읽어 측정값을
+// 원장에 쓴다(INV-024/053). 아래 타입은 checkpoint-validation.v1 계약의
+// camelCase wire 형식을 그대로 좁혀 표현한다.
+
+export type CheckpointValidationStatus = "REGISTERED" | "SEALED" | "VALIDATED" | "REJECTED";
+
+export type CheckpointValidationRejectionReason =
+  | "CHECKPOINT_DIGEST_MISMATCH"
+  | "CHECKPOINT_SIZE_MISMATCH"
+  | "CHECKPOINT_OBJECT_MISSING"
+  | "DSM_DIGEST_MISMATCH"
+  | "DSM_OBJECT_MISSING"
+  | "DSM_CRS_MISMATCH"
+  | "INVALID_CHECKPOINT_CSV"
+  | "CHECKPOINT_COUNT_OUT_OF_RANGE"
+  | "CHECKPOINT_OUTSIDE_DSM"
+  | "DSM_NODATA_AT_CHECKPOINT"
+  | "UNREADABLE_DSM"
+  | "UNSUPPORTED_DSM"
+  | "INVALID_MEASUREMENT";
+
+export interface CheckpointVerticalReference {
+  datum:
+    | "ellipsoidal"
+    | "ellipsoidal_native"
+    | "orthometric_kngeoid2018"
+    | "orthometric_kngeoid2024";
+  basis: string;
+  /** CSV는 사용자/측량자가 명시한 수직 기준만 받는다. */
+  source: "user_declared";
+}
+
+export interface CheckpointValidationDeclared {
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  crs: string;
+  verticalReference: CheckpointVerticalReference;
+  independentFromProcessingAttested: true;
+  independenceBasis: string;
+}
+
+export interface CheckpointValidationObserved {
+  checkpointSha256: string;
+  checkpointSizeBytes: number;
+  dsmDigest: string;
+  dsmCrs: string;
+  pointCount: number;
+  meanErrorM: number;
+  maeM: number;
+  rmseM: number;
+  maxAbsErrorM: number;
+  measuredAt: string;
+  measuredBy: string;
+}
+
+export interface CheckpointValidationView {
+  schemaVersion: "1.0";
+  validationId: string;
+  organizationId: string;
+  missionId: string;
+  siteId: string;
+  dsm: ArtifactRefView;
+  dsmDigest: string;
+  dsmCrs: string;
+  dsmVerticalReference: VerticalReference;
+  declared: CheckpointValidationDeclared;
+  validationProfileId: string;
+  validationProfileDigest: string;
+  status: CheckpointValidationStatus;
+  registeredAt: string;
+  registeredBy: string;
+  sealedAt: string | null;
+  observed: CheckpointValidationObserved | null;
+  rejectionReason: CheckpointValidationRejectionReason | null;
+  rejectionDetail: string | null;
+}
+
+/** 등록 요청에는 사람이 산출한 정확도 수치가 절대 들어가지 않는다. */
+export type CheckpointValidationRegisterInput = CheckpointValidationDeclared;
+
+export interface CheckpointValidationRegisterResponse {
+  verdict: string;
+  validation: CheckpointValidationView | null;
+  objectKey: string | null;
+  uploadUrl: string | null;
+  expiresAt: string | null;
+  detail: string | null;
+}
+
+export interface CheckpointValidationMutationResponse {
+  verdict: string;
+  validation: CheckpointValidationView | null;
+  detail: string | null;
+}
+
+export interface CheckpointValidationListResponse {
+  validations: CheckpointValidationView[];
+}
+
 // ── 두 시점 비교(W2) ────────────────────────────────────────────────────────
 
 /**

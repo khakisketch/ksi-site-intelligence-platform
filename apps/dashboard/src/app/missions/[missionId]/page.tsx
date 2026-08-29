@@ -21,9 +21,10 @@ import {
   getMission,
   getMissionExecution,
 } from "@/lib/core-api/missions";
-import type { CoverageRejectionListView } from "@/lib/core-api/types";
+import type { CoverageRejectionListView, Permission } from "@/lib/core-api/types";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
+import { listCheckpointValidations } from "@/lib/core-api/checkpoint-validations";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
@@ -33,6 +34,7 @@ import { ComparisonSubmitPanel } from "@/components/missions/ComparisonSubmitPan
 import { DesignConformancePanel } from "@/components/design/DesignConformancePanel";
 import { KmzDownloadButton } from "@/components/missions/KmzDownloadButton";
 import { SourceUploadPanel } from "@/components/missions/SourceUploadPanel";
+import { CheckpointValidationPanel } from "@/components/missions/CheckpointValidationPanel";
 import { MissionLifecycle } from "@/components/missions/MissionLifecycle";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import {
@@ -119,7 +121,7 @@ export default async function MissionDetailPage({
     execution,
     coverageResult,
     rejectionsResult,
-    canIssue,
+    permissions,
     sourceBundle,
     jobs,
     hasComparison,
@@ -138,8 +140,8 @@ export default async function MissionDetailPage({
     fetchCoverageResult(mission.missionId),
     fetchCoverageRejections(mission.missionId),
     whoAmI()
-      .then((who) => who.permissions.includes("MISSIONS_ISSUE"))
-      .catch(() => false),
+      .then((who) => who.permissions)
+      .catch((): Permission[] => []),
     // 404(등록된 적 없음)와 그 외 조회 실패를 동일하게 "아직 없음"으로 다룬다 —
     // 이 패널의 시작 상태는 어차피 업로드 UI를 그대로 보여주므로 구분할 필요가 없다.
     getSourceMediaBundle(mission.missionId).catch(() => null),
@@ -173,8 +175,21 @@ export default async function MissionDetailPage({
       .then((r) => r.workAreas)
       .catch(() => []),
   ]);
+  const canIssue = permissions.includes("MISSIONS_ISSUE");
+  const canWriteCheckpoints = permissions.includes("SITES_WRITE");
   // 최신 발급분 — 발급 순서가 곧 배열 순서라는 서버 계약은 없으므로 issuedAt 로 정렬한다.
   const latestJob = [...jobs].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0] ?? null;
+  // 검사점 검증은 epoch별 immutable 이력이다. 구형 Core 조립(아직 이 API가 없는
+  // 경우 포함)에서 조회가 실패해도 임무 상세와 새 카드의 입력 경로를 막지 않는다.
+  const checkpointValidations = (
+    await Promise.all(
+      siteJobs.map((job) =>
+        listCheckpointValidations(job.jobId)
+          .then((result) => result.validations)
+          .catch(() => []),
+      ),
+    )
+  ).flat();
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
@@ -278,6 +293,12 @@ export default async function MissionDetailPage({
           hasComparisonReport={hasComparison}
         />
       </ResponsiveActionBoundary>
+
+      <CheckpointValidationPanel
+        canWrite={canWriteCheckpoints}
+        siteJobs={siteJobs}
+        initialValidations={checkpointValidations}
+      />
 
       <ComparisonSubmitPanel
         missionId={mission.missionId}
