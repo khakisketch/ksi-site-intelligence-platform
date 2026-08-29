@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-28"
+updated: "2026-08-29"
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -159,8 +159,10 @@ confirmed_next_improvements:
         계약·API·UI 테스트로 확인했다. READY는 real-device data quality, Pilot 2 execution,
         PSDK producer 또는 multi-sortie acceptance를 증명하지 않는다.
     - id: civil-processing-consistency-v1
-      status: GATED
-      authority: "docs/architecture/ADR-KSI-030-civil-processing-consistency-v1.md"
+      status: IN_PROGRESS
+      authority: >-
+        docs/architecture/ADR-KSI-030-civil-processing-consistency-v1.md;
+        docs/architecture/ADR-KSI-031-independent-checkpoint-validation-v1.md
       scope: >-
         KSI-managed NodeODM fixed profile, original-preserving LandXML TIN design surface ingress,
         fail-closed civil comparison compatibility, and additive existing Console panels.
@@ -183,6 +185,16 @@ confirmed_next_improvements:
         cloud; distinct DSMs had 4,290,788 common finite cells. The digest record is
         CIVIL_TWO_EPOCH_BENCHMARK_2026-08-29.json. This foreign EPSG:32617/EXIF-GNSS result is
         non-production, field acceptance NOT_EVALUATED and product quantitative comparison false.
+      checkpoint_validation_increment_2026_08_29: >-
+        ADR-KSI-031 adds an optional sealed independent-checkpoint CSV producer. The user may declare
+        file provenance, CRS/vertical basis and an explicit independence attestation, but never a
+        client RMSE. Core owns the immutable register/seal/observed-or-rejected journal and Processing
+        Controller owns strict byte/digest/CSV/DSM verification and server-computed statistics. The
+        software increment passed Python 4122/24 skipped/3 xfailed, Ruff, Mypy 431 files, Dashboard
+        59 files/545 tests, ESLint, TypeScript, production build and Playwright 62/14 intentional skips
+        across 390/768/1024/1440. Lock/diff/hygiene/reference-import/pin gates passed. A VALIDATED
+        technical result remains insufficient to prove physical independence, survey accuracy or
+        field acceptance; commit and remote-delivery evidence are tracked separately.
       acceptance_gate: >-
         CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/FI/HY and foreign benchmark E2E-B01 pass.
         Product E2E-01 remains PARTIAL because no valid same-site second epoch in a supported Korean

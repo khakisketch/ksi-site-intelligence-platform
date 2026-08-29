@@ -1,5 +1,34 @@
 # Current Handoff
 
+## 2026-08-29 — Independent checkpoint-validation software is green; delivery is pending
+
+ADR-KSI-031 adds an optional independent-checkpoint producer to the existing civil processing flow.
+The user declares a sealed CSV's provenance, hash/size, CRS, vertical reference and explicit
+independence attestation; the client cannot supply RMSE. Core retains an organization-scoped immutable
+register → seal → `VALIDATED`/`REJECTED` journal. Processing Controller must re-hash both the sealed
+CSV and immutable DSM, parse the strict CSV and compute all statistics server-side. Any invalid input,
+CRS/vertical mismatch, point outside the DSM or nodata point rejects the complete validation. A verified
+metric can document an operational uncertainty source, but never proves physical independence,
+survey-grade accuracy, settlement suitability or field acceptance.
+
+Implementation and full software verification are complete. Python passed `4122` tests with `24`
+skips and `3` expected failures; Ruff and Mypy (`431` source files) passed. Dashboard Vitest passed
+`59` files / `545` tests, followed by ESLint, TypeScript, production build and Playwright `62 passed /
+14 intentional skips` at 390/768/1024/1440. Lock, diff, repository hygiene, reference-import and pin
+gates passed. Local commits are split as `32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
+`19c1819` and the current acceptance-ledger commit. The final `origin/main` fetch/ancestry check and
+push remain; no remote CI/release/deployment is claimed until remote SHA evidence exists.
+
+The existing UI is protected: this adds an optional card to the civil flow rather than a new navigation
+area or a visual-system redesign. Existing NodeODM/LandXML/foreign benchmark evidence remains historical
+baseline context, not acceptance for the new producer.
+
+FIELD-0a remains `BLOCKED`, and all DJI capabilities remain `NOT_VERIFIED`/OFF. This increment does
+not perform or authorize flight, motor, waypoint, camera/gimbal, DPK, Pilot 2/Manifold automatic
+egress, device write or capability promotion.
+
+---
+
 ## 2026-08-29 — Civil processing v1 software and foreign benchmark complete; field gate remains
 
 ADR-KSI-030 fixes the product direction for the first civil flow: KSI-managed immutable

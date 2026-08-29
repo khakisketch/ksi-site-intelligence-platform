@@ -1,4 +1,74 @@
-# Current implementation plan (2026-08-29, civil temporal/quantity processing consistency v1 closure)
+# Current implementation plan (2026-08-29, independent checkpoint-validation producer v1)
+
+Requirement IDs:
+- `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-020/023/024/040/050/053/060`.
+
+Owner module:
+- Core: immutable checkpoint validation register/seal/result journal, organization scope and verified
+  RMSE lookup for comparison.
+- Processing Controller: sealed CSV/DSM fetch and digest verification, strict parsing, deterministic
+  sampling/statistics and typed rejection.
+- Dashboard: optional checkpoint card inside the existing civil processing flow; no information-
+  architecture or visual-system redesign.
+
+Acceptance criteria:
+- Checkpoint declarations bind identity, digest, byte size, CRS, vertical basis and independence
+  attestation; client-entered accuracy metrics are not accepted.
+- All downloaded bytes are re-hashed and all points are evaluated against the immutable DSM; malformed,
+  out-of-extent or nodata data rejects the complete validation rather than producing partial certainty.
+- A validated value may make the operational uncertainty provenance explicit, but cannot promote a
+  result to a survey-grade/settlement claim or field acceptance.
+- Full contract/API/replay/org-isolation/controller/Dashboard/hygiene evidence is recorded before
+  changing the acceptance status from `IN_PROGRESS`.
+
+Contracts affected:
+- `checkpoint-validation.v1`, Core HTTP/OpenAPI surfaces, Processing Controller Core-client protocol,
+  comparison verified-checkpoint lookup and existing Dashboard API presentation.
+
+Reference assets:
+- ADR-KSI-031, existing sealed SourceMedia/artifact patterns, `ProcessingJob`/`ArtifactRef` journal,
+  existing comparison preflight and civil Console panels.
+
+Adoption decisions:
+- ADOPT immutable object/digest evidence and fail-closed server projections.
+- ADD an optional checkpoint producer; retain legacy artifact checkpoint values only as explicit legacy
+  fallback.
+- PRESERVE existing v1 NodeODM, LandXML and Console work; do not open DJI/device/field controls.
+
+Files to change:
+- Event contracts, Core/Processing Controller/Comparison, existing Dashboard civil panel, API/docs/
+  acceptance/phase/task state and targeted/full tests. Implementation and verification are complete;
+  only delivery bookkeeping remains.
+
+Tests:
+- Targeted contract, Core API/replay/org isolation, Controller parser/hash/sampling and comparison tests;
+  then full Python/Ruff/Mypy, Dashboard Vitest/lint/type/build, four-viewport browser and hygiene.
+
+HIL or real-device assumptions:
+- None. FIELD-0a stays `BLOCKED`; all DJI paths stay `NOT_VERIFIED`/OFF.
+
+License/data implications:
+- No raw checkpoint/DSM/customer data in Git. A technical result is not independent physical proof;
+  retain actual source evidence under the existing owner-private policy.
+
+Rollback:
+- Disable checkpoint registration/worker dispatch/read the feature flag to keep existing results
+  read-only. Preserve journals and objects; never weaken comparison or provenance checks.
+
+Execution:
+1. [완료] Add ADR-KSI-031 and contract shape.
+2. [완료] Implement and review Core register/seal/observation routes and assembly.
+3. [완료] Implement and review strict Processing Controller producer and comparison lookup.
+4. [완료] Add optional Dashboard panel without changing existing IA.
+5. [완료] Run full regression/static/Dashboard/browser/hygiene gates and record actual counts.
+6. [진행 중] Local commits are split (`32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
+   `19c1819`, plus this acceptance-ledger commit). Fetch and ancestry-check `origin/main`, then push if
+   the remote has not diverged; record the local/remote SHAs or the exact external blocker.
+
+---
+
+# Previous implementation plan (2026-08-29, civil temporal/quantity processing consistency v1 closure)
 
 Requirement IDs:
 - `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.

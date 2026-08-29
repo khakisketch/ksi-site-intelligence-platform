@@ -1,5 +1,28 @@
 # Current Task State
 
+## 2026-08-29 — `independent_checkpoint_validation_software_green_delivery_pending`
+
+- Authority: ADR-KSI-031, `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101`, `REQ-UX-101` and
+  `INV-020/023/024/040/050/053/060`.
+- Scope: an optional sealed CSV checkpoint producer. The client declares source provenance, CRS,
+  vertical basis and an explicit independence attestation; only the Processing Controller computes
+  checkpoint statistics against the immutable DSM. No client RMSE is accepted.
+- Current evidence: implementation is complete. Python passed `4122` tests with `24` skips and `3`
+  expected failures; Ruff and Mypy (`431` source files) passed. Dashboard Vitest passed `59` files /
+  `545` tests, followed by ESLint, TypeScript, production build and Playwright `62 passed / 14`
+  intentional skips at 390/768/1024/1440. Lock, diff, repository hygiene, reference-import and pin
+  gates passed.
+- Delivery state: local commits are split as `32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
+  `19c1819` and the current acceptance-ledger commit. `origin/main` fetch/ancestry validation and push
+  are pending. No remote CI, release or deployment is claimed until local and remote SHAs are verified.
+- Boundary: a `VALIDATED` technical result is not proof of physical checkpoint independence, survey
+  accuracy, contract settlement suitability or civil field acceptance.
+- Physical status is unchanged: FIELD-0a remains `BLOCKED`; every DJI capability remains
+  `NOT_VERIFIED`/OFF. No flight, motor, waypoint, camera/gimbal, DPK, automatic media egress or
+  device write is in scope.
+
+---
+
 ## 2026-08-29 — `civil_processing_v1_software_and_foreign_benchmark_complete_field_gate_open`
 
 - Authority: ADR-KSI-030, `CIVIL_PROCESSING_V1_ACCEPTANCE.md`, `REQ-INT-104` and `INV-053`

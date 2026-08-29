@@ -1,4 +1,36 @@
-# Current goal (2026-08-29, civil temporal/quantity processing consistency v1 closure)
+# Current goal (2026-08-29, independent checkpoint-validation producer v1)
+
+Extend the existing civil temporal/quantity processing path with the optional, fail-closed
+ADR-KSI-031 independent-checkpoint producer. `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101` and
+`REQ-UX-101`; `INV-020/023/024/040/050/053/060` apply. Core owns the immutable checkpoint
+register/seal/result journal and comparison lookup; Processing Controller owns strict sealed-byte and
+DSM sampling verification; Dashboard adds an optional existing-panel card only.
+
+Completion conditions:
+
+- The client can declare only checkpoint provenance, CRS/vertical basis and explicit independence;
+  it cannot submit RMSE or turn a value into a survey/settlement claim.
+- The Controller re-hashes sealed checkpoint and DSM bytes, rejects an entire invalid dataset and
+  reports server-computed metrics through an immutable Core observation.
+- Comparison uses a verified server result where present, preserves `null + reason` when absent and
+  never treats technical validation as physical field acceptance.
+- Contract/replay/organization-isolation/hostile-input/controller tests, full regression, Dashboard
+  and hygiene runs are recorded before a software-pass claim.
+
+Current state: implementation and the complete software verification matrix are green. Python passed
+`4122` tests with `24` skips and `3` expected failures; Ruff and Mypy (`431` source files) passed.
+Dashboard Vitest passed `59` files / `545` tests, followed by ESLint, TypeScript, production build and
+Playwright `62 passed / 14 intentional skips` at 390/768/1024/1440. Lock, diff, repository hygiene,
+reference-import and pin gates passed. The local functional commit series is complete; only the
+`origin/main` fetch/ancestry check and remote delivery remain. No push/release/deployment is claimed
+until remote SHA evidence is recorded.
+
+FIELD-0a remains `BLOCKED`; every DJI capability remains `NOT_VERIFIED`/OFF. This work excludes flight,
+motor, waypoint execution, camera/gimbal, DPK and Pilot 2/Manifold automatic egress.
+
+---
+
+# Previous goal (2026-08-29, civil temporal/quantity processing consistency v1 closure)
 
 `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`과
 `INV-017/018/020/023/024/040/050/051/053/060`을 적용해 토목 시계열·물량의 기본

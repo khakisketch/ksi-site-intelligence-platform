@@ -1,9 +1,9 @@
 # Civil Processing v1 — Acceptance
 
-- Status: PARTIAL — the implementation, full software regression, live single-epoch persistence and
-  separate foreign-CRS two-acquisition engine benchmark pass; sealed product E2E in a supported Korean
-  project CRS and civil field acceptance remain gated.
-- Authority: ADR-KSI-030; PRODUCT_CONSTITUTION; FINAL_DECISION_LEDGER v1.0;
+- Status: SOFTWARE_PASS / PRODUCT_E2E_PARTIAL / FIELD_NOT_EVALUATED — the ADR-KSI-031
+  independent-checkpoint producer and the civil v1 software matrix are green. Sealed product E2E in
+  a supported Korean project CRS and civil field acceptance remain separate gated work.
+- Authority: ADR-KSI-030; ADR-KSI-031; PRODUCT_CONSTITUTION; FINAL_DECISION_LEDGER v1.0;
   MASTER_PRD v3.0; DOMAIN_INVARIANTS.
 - Requirements: REQ-WRK-101, REQ-INT-101/102/103/104, REQ-SEC-101, REQ-UX-101.
 - Invariants: INV-017/018/020/023/024/040/050/051/053/060.
@@ -28,12 +28,14 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
 | CP-02 | Historical ProcessingJob records replay as `LEGACY_UNMANAGED` without inferred profile values and cannot seed a new quantified comparison. | Legacy journal fixture/replay and preflight rejection tests. | PASS |
 | CP-03 | NodeODM runtime is the exact pinned OCI image and reports the expected NodeODM/ODM identity. | Compose inspection plus `/info` identity integration test. | PASS |
 | CP-04 | v1 standard processing runs with dynamic masking off; a future masking change requires a different profile with model/preprocessing lineage. | Worker fail-closed tests and profile snapshot inspection. | PASS |
+| CP-05 | An optional independent-checkpoint CSV is registered and sealed as immutable evidence; the client supplies provenance declarations only, never an RMSE or a survey-grade claim. | Contract/schema, replay, API hostile-input and organization-isolation tests for exact schema, digest, size, CRS/vertical basis and explicit independence attestation. | PASS |
 | LX-01 | GeoTIFF direct registration, existing IFC→GeoTIFF conversion and LandXML 1.0–1.2 meter TIN ingress preserve source/derived distinction. | Single/multi-surface fixtures, selector contract tests, source SHA-256 → selector → parser/normalization → GeoTIFF digest lineage. | PASS |
 | LX-02 | LandXML parser rejects unsafe or ambiguous inputs before normalization. | DTD/XXE, malformed namespace, depth/size, duplicate/unknown ID, NaN/Inf, degenerate triangle, non-meter and grid-limit negative tests. | PASS |
 | LX-03 | IFC and LandXML use the same deterministic 0.5m TIN rasterizer and canonical GeoTIFF rule. | Hand-checkable TIN cell/height/digest golden tests. | PASS |
 | CC-01 | A shared server preflight blocks every incomplete comparison with the exact typed reason. | Contract/replay tests for `ANALYSIS_NOT_READY`, `PROCESSING_PROFILE_UNKNOWN`, `PROCESSING_PROFILE_MISMATCH`, `SOURCE_LINEAGE_GAP`, `CRS_MISMATCH`, `VERTICAL_REFERENCE_MISMATCH`, `DESIGN_SURFACE_NOT_VERIFIED`, `DESIGN_NORMALIZATION_MISMATCH`. | PASS |
 | CC-02 | Temporal comparison requires equal processing profile digest; design progress also requires identical design-surface revision and normalization digest. | Same/different profile, CRS, vertical datum, source lineage and design revision fixtures. | PASS |
 | CC-03 | Cut, fill, net, zone progress, nodata and uncertainty reporting are deterministic and honest. | Hand-calculated fixtures; repeated runs; no independent checkpoint yields `null` uncertainty plus reason, never survey/settlement/RMSE wording. | PASS |
+| CC-04 | The Processing Controller verifies the sealed checkpoint bytes against the immutable DSM, computes all checkpoint statistics server-side and fails the whole validation for parser, digest, CRS, vertical-basis, extent or nodata defects. A validated result may inform an operational uncertainty note but does not prove physical independence or survey/settlement accuracy. | Controller download/hash/strict-CSV/raster sampling tests; Core observed-result/replay tests; comparison selection tests. | PASS |
 | SEC-01 | The code-owned profile recipe is globally readable and immutable; every profile-bound job, source byte, design surface and report remains organization-isolated. | Cross-organization 404-equivalence tests for each tenant-owned route/store. | PASS |
 | UX-01 | Existing Home/Sites/Work/Items/site-detail information architecture remains intact while the existing upload, design and comparison panels gain v1 state. | Full Vitest, ESLint, TypeScript, production build, and browser evidence at 390/768/1024/1440 for overflow, keyboard/focus and console errors. | PASS |
 | FI-01 | A private Korean civil field package is accepted for later evaluation only when rights, two original-image epochs, per-epoch ground control, LandXML design lineage, CRS/vertical basis and an independent reference are exact-digest bound. | Strict manifest schema, owner-only/no-symlink auditor, typed negative tests and [`CIVIL_FIELD_DATA_INTAKE.md`](CIVIL_FIELD_DATA_INTAKE.md). The successful result is `INPUT_READY`, never field acceptance. | PASS |
@@ -41,7 +43,7 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
 | E2E-01 | A public small photogrammetry fixture completes sealed ingest → pinned NodeODM → DSM/DTM/point cloud → two-epoch comparison. | Reproducible job log, artifact digests, identity check and comparison result. | PARTIAL — live sealed single-epoch reconstruction and object-store digest round-trip pass; no valid public same-site second epoch in a supported Korean project CRS was available. |
 | HY-01 | No raw customer imagery, LandXML, GeoTIFF, credentials or large generated artifacts are committed. | `uv lock --check`, `git diff --check`, secret/large-file/reference-import hygiene checks. | PASS |
 
-## Executed evidence — 2026-08-28
+## Historical baseline evidence — 2026-08-28
 
 - Python full regression: `4051 passed, 24 skipped, 3 xfailed`. The new private field-input audit
   passed `18` typed positive/negative tests and its opt-in live benchmark remained the one new skip.
@@ -81,6 +83,31 @@ contract, so it is not accuracy, change, cut/fill or progress evidence. Relabell
 supported Korean project CRS would invalidate lineage and `INV-053`; `E2E-01` therefore remains
 `PARTIAL`. Existing real-byte Korean-CRS fixtures still verify deterministic two-DSM cut/fill/report
 calculation and the preflight contracts verify two-job compatibility.
+
+## Current ADR-KSI-031 increment — 2026-08-29
+
+The independent-checkpoint producer is implemented and software-accepted. Its boundary is a sealed,
+owner-declared independent-checkpoint CSV and a Processing Controller computation against an immutable
+DSM. It never accepts a client-provided RMSE, never changes a Mission Contract or DJI capability, and
+does not convert a computed result into civil field acceptance.
+
+Final evidence for this increment:
+
+- Python full regression: `4122 passed, 24 skipped, 3 xfailed`.
+- Ruff passed; Mypy reported no issues in `431` source files.
+- Dashboard Vitest passed `59` files / `545` tests; ESLint, TypeScript `--noEmit` and the Next.js
+  production build passed.
+- Playwright passed `62` tests with `14` intentional environment/device skips across
+  390/768/1024/1440, including the optional checkpoint flow, overflow, keyboard/focus and
+  console/page-error assertions.
+- `uv lock --check`, `git diff --check`, repository hygiene, no-reference-runtime-import and pinned
+  third-party/reference checks passed.
+- A forced low file-descriptor regression (`ulimit -n 64`) passed the validation-error suite after
+  abandoned journal writers were made releasable; the full suite no longer reports file-descriptor
+  exhaustion.
+
+These are software results. No Korean civil checkpoint dataset or independent field survey was used,
+so physical accuracy and field acceptance remain `NOT_EVALUATED`.
 
 ## Deployment and license gate
 
