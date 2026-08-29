@@ -18,6 +18,12 @@
   shows all six jobs failed at zero steps with GitHub's account-payment/spending-limit annotation.
   Owner billing restoration, fast-forward push and executed new-HEAD CI evidence remain required; no
   remote CI, release or deployment is claimed.
+- Supplemental local CI evidence after identifying that account gate: MixERC-Seg import and contract
+  tests passed `22/22`; PSDK-independent tap logic passed `2/2` and missing-PSDK default configuration
+  remained fail-closed. The exact arm64 Ubuntu 20.04 target image reported gcc 9.4.0/CMake 3.16.3/glibc
+  2.31; control-plane native, ASan/UBSan and Manifold-target builds each passed `7/7`, followed by the
+  target ABI check. This does not replace GitHub's clean x86 extra install, QEMU/buildx/cache or remote
+  runner evidence.
 - Boundary: a `VALIDATED` technical result is not proof of physical checkpoint independence, survey
   accuracy, contract settlement suitability or civil field acceptance.
 - Physical status is unchanged: FIELD-0a remains `BLOCKED`; every DJI capability remains

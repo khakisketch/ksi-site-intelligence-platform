@@ -22,6 +22,13 @@ all six jobs at zero steps with the same account-payment/spending-limit failure 
 owner account's Actions billing, run the fast-forward push, and verify that the new HEAD's jobs actually
 execute; no remote CI/release/deployment is claimed before those two external gates close.
 
+Additional local CI-parity checks passed while the remote account was blocked: MixERC-Seg import plus
+contracts `22/22`; PSDK-independent logic `2/2` plus default missing-PSDK fail-closed; and an exact arm64
+Ubuntu 20.04 target container (gcc 9.4.0/CMake 3.16.3/glibc 2.31) with native, ASan/UBSan and Manifold
+target control-plane tests each `7/7` plus ABI verification. The temporary image was removed. These
+checks increase confidence but do not stand in for GitHub's clean x86 installation, QEMU/buildx/cache
+or an actually executed remote run.
+
 The existing UI is protected: this adds an optional card to the civil flow rather than a new navigation
 area or a visual-system redesign. Existing NodeODM/LandXML/foreign benchmark evidence remains historical
 baseline context, not acceptance for the new producer.
