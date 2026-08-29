@@ -62,9 +62,11 @@ Execution:
 3. [완료] Implement and review strict Processing Controller producer and comparison lookup.
 4. [완료] Add optional Dashboard panel without changing existing IA.
 5. [완료] Run full regression/static/Dashboard/browser/hygiene gates and record actual counts.
-6. [진행 중] Local commits are split (`32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
-   `19c1819`, plus this acceptance-ledger commit). Fetch and ancestry-check `origin/main`, then push if
-   the remote has not diverged; record the local/remote SHAs or the exact external blocker.
+6. [진행 중 — 외부 게이트] Local commits are split (`32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`,
+   `30399ba`, `19c1819`, plus the acceptance-ledger commit), and `origin/main` is a verified ancestor.
+   This environment rejects `git push` before launch. GitHub Actions run 33139495105 also proves all
+   six jobs are account-billing/spending-limit blocked before runner assignment. The owner must restore
+   Actions billing and perform the fast-forward push; then verify the new HEAD's executed jobs.
 
 ---
 

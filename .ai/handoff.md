@@ -16,8 +16,11 @@ skips and `3` expected failures; Ruff and Mypy (`431` source files) passed. Dash
 `59` files / `545` tests, followed by ESLint, TypeScript, production build and Playwright `62 passed /
 14 intentional skips` at 390/768/1024/1440. Lock, diff, repository hygiene, reference-import and pin
 gates passed. Local commits are split as `32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
-`19c1819` and the current acceptance-ledger commit. The final `origin/main` fetch/ancestry check and
-push remain; no remote CI/release/deployment is claimed until remote SHA evidence exists.
+`19c1819` and the acceptance-ledger commit. The 2026-08-30 fetch proved `origin/main` is a safe ancestor,
+but this execution environment rejects `git push` before launch. GitHub Actions run 33139495105 shows
+all six jobs at zero steps with the same account-payment/spending-limit failure annotation. Restore the
+owner account's Actions billing, run the fast-forward push, and verify that the new HEAD's jobs actually
+execute; no remote CI/release/deployment is claimed before those two external gates close.
 
 The existing UI is protected: this adds an optional card to the civil flow rather than a new navigation
 area or a visual-system redesign. Existing NodeODM/LandXML/foreign benchmark evidence remains historical

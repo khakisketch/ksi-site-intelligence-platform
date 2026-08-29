@@ -13,8 +13,11 @@
   intentional skips at 390/768/1024/1440. Lock, diff, repository hygiene, reference-import and pin
   gates passed.
 - Delivery state: local commits are split as `32e52b4`, `79bc5fe`, `95c72e8`, `cf6c9f9`, `30399ba`,
-  `19c1819` and the current acceptance-ledger commit. `origin/main` fetch/ancestry validation and push
-  are pending. No remote CI, release or deployment is claimed until local and remote SHAs are verified.
+  `19c1819` and the acceptance-ledger commit. The 2026-08-30 fetch proves `origin/main` is an ancestor,
+  but this execution environment rejects `git push` before launch. Remote run 33139495105 independently
+  shows all six jobs failed at zero steps with GitHub's account-payment/spending-limit annotation.
+  Owner billing restoration, fast-forward push and executed new-HEAD CI evidence remain required; no
+  remote CI, release or deployment is claimed.
 - Boundary: a `VALIDATED` technical result is not proof of physical checkpoint independence, survey
   accuracy, contract settlement suitability or civil field acceptance.
 - Physical status is unchanged: FIELD-0a remains `BLOCKED`; every DJI capability remains
