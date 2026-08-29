@@ -8,6 +8,7 @@ torn-tail 격리, 예외 시 봉인, 기동 시 fail-closed 재생 — 가 도�
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import stat
@@ -25,6 +26,19 @@ from ksi_core.durable_journal import (
 @pytest.fixture
 def journal_path(tmp_path: Path) -> Path:
     return tmp_path / "journal.jsonl"
+
+
+def test_abandoned_writer_releases_its_lock_when_collected(journal_path: Path) -> None:
+    """누락된 명시 close가 프로세스 수명 전체의 FD·flock 누수가 되면 안 된다."""
+
+    abandoned = DurableJournal(journal_path)
+    abandoned.append({"kind": "created"})
+    del abandoned
+    gc.collect()
+
+    replacement = DurableJournal(journal_path)
+    assert replacement.replay() == [{"kind": "created"}]
+    replacement.close()
 
 
 # ── 정상 append → 재기동 replay ────────────────────────────────────────────

@@ -425,8 +425,16 @@ class DurableJournal:
         재생(``_recover``) 실패로 인스턴스가 살아남지 못하는 경우에도 호출돼,
         flock·fd 가 실패한 인스턴스와 함께 프로세스 수명 내내 남는 것을 막는다.
         """
-        fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
-        os.close(self._lock_fd)
+        lock_fd = self._lock_fd
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            try:
+                os.close(lock_fd)
+            finally:
+                # A failed constructor and the GC fallback must never close a
+                # descriptor number that the process has since reused.
+                self._lock_fd = -1
 
     def close(self) -> None:
         """수신 봉인 + 잠금 해제 — 멱등.
@@ -443,3 +451,20 @@ class DurableJournal:
             self._sealed_reason = "closed"
             if not was_read_only:
                 self._release_writer_lock()
+
+    def __del__(self) -> None:
+        """Best-effort lock release when an owner abandons the journal.
+
+        Application assembly still owns deterministic ``close()``.  This is a
+        last-resort resource-safety boundary for failed assembly and short-lived
+        tooling/tests: an integer file descriptor is otherwise left open even
+        after the Python object becomes unreachable.
+        """
+
+        try:
+            if getattr(self, "_lock", None) is not None:
+                self.close()
+        except Exception:
+            # Destructors run during partial construction and interpreter
+            # shutdown; they must never turn cleanup into an unraisable error.
+            pass
