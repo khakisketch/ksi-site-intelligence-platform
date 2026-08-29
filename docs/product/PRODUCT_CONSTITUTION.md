@@ -1,6 +1,9 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-08-29 — 독립 검사점은 DSM별 봉인 CSV와 서버 직접 대조로만 오차한계 근거가
+>   되며 사용자가 RMSE를 입력하지 않는 경계를 확정했다. 기존 Console·상대 물량·현장
+>   수용 경계는 유지한다(ADR-KSI-031).
 > - 2026-08-28 — 첫 토목 시계열·물량의 처리 일관성을 immutable KSI-managed
 >   NodeODM profile, LandXML 설계면 ingress, fail-closed 비교 적합성으로 확정했다.
 >   결과는 운영관리용 상대 물량이며, Console 정보구조와 FIELD/DJI capability 상태는
@@ -78,6 +81,12 @@ Console Home은 다현장 포트폴리오의 입구다. KSI가 실제 원장에�
 비교를 막아 사유를 표시한다. LandXML TIN Surface와 GeoTIFF는 설계면 입력이고,
 IFC→GeoTIFF 변환도 유지한다. DWG/DXF 직접 해석, 엔진·버전 혼합 비교, 독립
 checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다(ADR-KSI-030).
+
+독립 checkpoint가 있으면 사용자는 좌표계·수직기준·재구성 입력과 분리된 근거를
+명시하고 원본 CSV를 봉인한다. KSI 처리 워커가 그 bytes와 대상 DSM bytes를 직접 읽어
+전점을 대조하며, 사용자가 RMSE를 입력하는 표면은 두지 않는다. 이 software 검증은
+운영 물량의 오차한계 근거이지 측량급·계약 정산 수용을 자동 승인하는 경로가 아니다
+(ADR-KSI-031).
 
 ## 두 축과 폐루프
 

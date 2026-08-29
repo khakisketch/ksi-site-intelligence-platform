@@ -118,17 +118,20 @@
   ②의 계산 경로가 **존재하면서도 한 번도 실행된 적이 없었다**. 돌연변이 검증으로
   양방향 고정: 배선을 끊으면 오차한계가 사라지고, 피팅 잔차를 흘리면 계약 테스트가
   잡는다.
-  **미완**: (a) 서버는 산출물 바이트를 읽지 않으므로 신고된 검사점 수·잔차의 진위는
-  확인 불가다(귀속이지 관측이 아니다) — 정확히는 "그 경로를 잇지 않았다"이지 원리적
-  불가가 아니다(설계면 검증은 워커가 바이트를 열어 재고 Core 가 각인하는 기성 패턴을
-  이미 쓴다). 현장 측량 검사점 대조는 실장비 작업이다. (b) 배선은 이어졌으나(위 ③)
-  **실제로 검사점을 신고하는 생산자가 아직 없다** — ODM 워커는 `accuracy` 키 자체를
-  보내지 않으므로 현 파이프라인의 `uncertaintyM3` 는 여전히 전부 null 이다. 값이
-  생기려면 검사점 리포트를 내는 엔진(Pix4D 등)이 붙거나 현장 측량 검사점이 등록돼야
-  한다. (c) RTK fix 상태는 기체에서는
+  ④ KSI-managed 생산 경로(ADR-KSI-031) — 사용자는 DSM별 검사점 CSV digest·CRS·
+  수직기준과 처리 입력으로부터의 독립 근거만 선언하고 RMSE를 제출하지 못한다. Core는
+  server-derived object key와 artifact/profile/organization snapshot으로 등록·봉인을
+  append-only 기록한다. Processing Controller가 봉인 CSV와 DSM bytes를 직접 읽어 두
+  digest와 CRS를 재고 전점 잔차의 mean/MAE/RMSE/max를 계산한다. 범위 밖/nodata 한 점도
+  부분 통계로 넘기지 않고 typed rejection이며, Core가 관측 digest·크기·CRS·산술
+  일관성을 다시 대조한 `VALIDATED`만 ③의 입력 자격을 얻는다. 외부 adapter의 기존
+  `checkpointRmseM` 의미는 호환 경계로 보존하되 KSI 검증값을 우선한다.
+  **미완**: (a) 독립성은 운영자 attestation이다. 실제 측량이 GCP/조정에서 독립됐는지와
+  국내 현장 정확도는 software가 물리적으로 증명하지 못하므로 현장 측량 수용은 별도다.
+  (b) RTK fix 상태는 기체에서는
   이미 구독·사용된다(`edge/psdk-app` 의 `OnRtkPositionInfo`, 이륙 게이트) — 없는 것은
   그 상태를 사진·텔레메트리에 붙여 Core 까지 올리는 경로이고, 실기 사진 없이는 필드
-  확정이 불가하다. (d) 이 항목의 옛 이름이던 "Spatial Quality Report" 는 아직
+  확정이 불가하다. (c) 이 항목의 옛 이름이던 "Spatial Quality Report" 는 아직
   `packages/geo-core/.../uncertainty.py` 가 위임 대상으로 지목한다 — 그 위임의 실제
   소유자가 위 ①②라는 것을 코드 주석으로 잇는 작업이 남아 있다._
 - **INV-025** `WorldEntity.uncertainty.localization_state = CONFIRMED`는

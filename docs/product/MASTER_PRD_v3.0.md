@@ -1127,6 +1127,14 @@ normalization digest도 필요하다. 어느 항목이 미상·불일치이면 �
 정확한 blocker를 반환한다. 기본 결과는 운영관리용 상대 물량이며, 독립 checkpoint
 대조 전에는 계약 정산·측량급·절대 정확도 또는 RMSE로 표현하지 않는다(ADR-KSI-030).
 
+독립 checkpoint v1은 DSM별 UTF-8 CSV(`checkpoint_id,easting_m,northing_m,elevation_m`)다.
+사용자는 파일 digest·CRS·수직기준과 재구성 조정점/GCP와의 독립 근거를 명시하지만
+RMSE를 입력하지 않는다. Core가 artifact·profile·organization 계보를 불변 결속하고,
+Processing Controller가 봉인 CSV와 DSM bytes를 직접 읽어 전점을 샘플링한다. digest,
+CRS, point 범위 또는 nodata가 하나라도 맞지 않으면 부분 숫자 없이 typed rejection이다.
+양쪽 epoch가 통과할 때만 기존 체적 오차한계를 채우며, 이는 운영 근거이지 측량급·정산
+승인이 아니다(ADR-KSI-031).
+
 사진 ingress의 v1 기본은 `SD/저장매체 → 현장 PC → KSI 웹 업로드`이고 대량 입력은
 기존 local uploader가 같은 profile을 사용한다. 향후 Pilot 2/Manifold 자동 반출은 이
 ingress adapter만 대체하며 이후 processing/comparison 계약을 바꾸지 않는다.

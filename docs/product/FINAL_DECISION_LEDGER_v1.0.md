@@ -12,7 +12,8 @@
   Intent/Flight Artifact 권한 및 Observation Epoch/Analysis Readiness 계약(ADR-KSI-028/029) — 동결 문서의 개정이므로 근거 ADR 없이
   이 줄을 바꾸지 않는다 · 2026-08-28 토목 시계열·물량의 immutable KSI-managed
   NodeODM profile, LandXML 설계면 ingress 및 fail-closed comparison compatibility
-  (ADR-KSI-030)
+  (ADR-KSI-030) · 2026-08-29 봉인된 독립 검사점 CSV를 DSM과 서버에서 직접 대조해
+  오차한계 근거를 생산하되 상대 물량·현장 수용 경계를 유지하는 결정(ADR-KSI-031)
 
 ## 명칭·시장
 
@@ -118,3 +119,6 @@
   수직기준 및 설계면 revision/정규화 digest가 모두 알려지고 일치할 때만 허용한다.
   하나라도 미상·불일치이면 서버가 typed blocker를 반환하며 Console은 이를 숨기지
   않는다. 독립 checkpoint 없이는 절대 정확도·RMSE를 주장하지 않는다.
+- 독립 checkpoint는 DSM별 봉인 CSV로 등록하고 서버 워커가 원본 DSM과 전점을 직접
+  대조한다. 사용자는 독립성 근거를 증언하지만 RMSE를 입력하지 않으며, software
+  검증 결과만으로 측량급·계약 정산 정확도를 주장하지 않는다.
