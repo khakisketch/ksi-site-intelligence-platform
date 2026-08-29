@@ -82,6 +82,7 @@ import httpx
 # 돌릴 때뿐이고, 그마저도 로드 시점에 typed RUNTIME_MISSING 으로 갈린다.
 from ksi_perception.dfine import load_dfine_detector
 
+from ksi_processing_controller.checkpoint_validator import validate_checkpoint_validation
 from ksi_processing_controller.comparison_worker import (
     ComparisonWorkerRunError,
     run_comparison_request,
@@ -89,6 +90,7 @@ from ksi_processing_controller.comparison_worker import (
 from ksi_processing_controller.core_client import (
     CoreClientError,
     HttpCoreClient,
+    PendingCheckpointValidation,
     PendingComparisonRequest,
     PendingDesignConformanceRequest,
     PendingDesignSurface,
@@ -129,12 +131,12 @@ def _try_candidates[Candidate](
     ran_but_failed: tuple[type[Exception], ...],
     now_message: Callable[[str], None],
 ) -> bool:
-    """한 종류의 대기 후보를 순서대로 시도한다 — 네 종류가 공유하는 골격.
+    """한 종류의 대기 후보를 순서대로 시도한다 — 모든 worker queue가 공유하는 골격.
 
     원래 재구성·비교 두 벌이 같은 모양으로 반복하고 있었고, 여기에 설계면 검증과
-    설계 대비 잔량이 더해지며 넷이 됐다. 네 벌이 각자 들고 있으면 "lease 경합은
+    설계 대비 잔량과 후속 queue가 더해졌다. 각자 들고 있으면 "lease 경합은
     실패가 아니다"·"예기치 못한 버그가 워커를 죽이지 않는다" 같은 **판단**이 네
-    곳에 복제된다 — 골격만 여기 두고, 종류마다 다른 것(무엇을 조회하고 무엇을
+    모든 곳에 복제된다 — 골격만 여기 두고, 종류마다 다른 것(무엇을 조회하고 무엇을
     돌리는가)은 인자로 받는다.
 
     ``ran_but_failed`` 는 "**돌리기는 했고 워커가 스스로 실패로 끝냈다**"는
@@ -193,9 +195,11 @@ def run_pending_batch(
     (``None``, 기본값) :func:`~ksi_processing_controller.worker.run_job` 도
     같은 기본값으로 마스킹 없이 돈다 — 회귀 없음.
 
-    ## 폴링 우선순위 — 재구성 → 설계면 검증 → 두 시점 비교 → 설계 대비 잔량 → 변화 영역 추출
+    ## 폴링 우선순위
 
-    한 라운드에 하나만 돌리므로 순서가 곧 지연 배분이다. 근거는 넷:
+    재구성 → 설계면 검증 → 검사점 검증 → 두 시점 비교 → 설계 대비 잔량 → 변화 영역 추출
+
+    한 라운드에 하나만 돌리므로 순서가 곧 지연 배분이다. 근거는 다섯:
 
     1. **재구성이 먼저다.** 나머지의 입력(DSM·점군)을 만드는 것이 재구성이고,
        밀려 있으면 그 뒤 전부가 굶는다(기존 판단 유지 — 이 순서를 바꾸면 M1/M2
@@ -204,18 +208,22 @@ def run_pending_batch(
        그 결과가 없으면 사용자는 설계 대비 요청을 **만들 수조차 없다**(Core 가
        VERIFIED 설계면만 받는다). 값싸면서 사람을 막고 있는 일을 분 단위 계산
        뒤로 미루면, 업로드 직후 피드백이라는 검증 단계의 존재 이유가 사라진다.
-    3. **비교가 설계 대비보다 앞이다.** 둘 다 분 단위 계산이라 어느 쪽을 먼저
+    3. **검사점 검증은 비교보다 앞이다.** 두 파일을 읽는 짧은 작업이고, 서버가
+       계산한 RMSE가 먼저 있어야 뒤 비교의 불확실성 값이 근거를 갖는다. 읽기
+       장애는 SEALED로 남겨 재시도하고, CSV/DSM의 결정적 결함만 typed rejection
+       으로 끝낸다.
+    4. **비교가 설계 대비보다 앞이다.** 둘 다 분 단위 계산이라 어느 쪽을 먼저
        둬도 처리량은 같지만, 기존 경로(M1/M2)의 지연 특성을 새 기능이 밀어내지
        않게 둔다 — 새로 들어온 쪽이 기다리는 편이 회귀가 아니다.
-    4. **변화 영역 추출이 가장 뒤다(M4-E).** 이 요청은 설계 대비 잔량 리포트가
+    5. **변화 영역 추출이 가장 뒤다(M4-E).** 이 요청은 설계 대비 잔량 리포트가
        이미 기록된 뒤에만 만들어질 수 있고(생성 게이트 ``UNKNOWN_DESIGN_
        CONFORMANCE``), 계산 자체도 이미 있는 diffRaster 를 다시 읽는 값싼
-       후처리다 — 새 기능이 기존 넷의 지연 특성을 밀어내지 않게 가장 뒤에 둔다.
+       후처리다 — 새 기능이 기존 경로의 지연 특성을 밀어내지 않게 가장 뒤에 둔다.
 
     반환값은 "이번 라운드에 실제로 무언가를 하나 돌렸는가"다 — 성공이든 워커가
     스스로 실패로 끝냈든(이미 Core 에 ``FAILED`` 보고를 시도했다) ``True`` 다.
     **다른 워커에게 lease 를 뺏겼거나 Core 가 후보 하나에 대해 오류를 낸 것은 이
-    워커가 아무 일도 안 한 것과 같으므로** 다음 후보로 넘어간다 — 다섯 목록을
+    워커가 아무 일도 안 한 것과 같으므로** 다음 후보로 넘어간다 — 여섯 목록을
     전부 소진해도 아무것도 못 돌렸으면 ``False``(호출자가 대기할 시간이다).
 
     ``http_client`` 는 시험 주입용이다(각 워커가 이미 받는 자리를 그대로
@@ -252,6 +260,21 @@ def run_pending_batch(
                 surface_selector=candidate.surface_selector,
                 declared_crs=candidate.declared_crs,
                 normalization_upload_url=candidate.normalization_upload_url,
+            )
+        finally:
+            if http_client is None:
+                client.close()
+
+    def _run_checkpoint_validation(candidate: PendingCheckpointValidation) -> None:
+        client = http_client or httpx.Client(
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
+        )
+        try:
+            validate_checkpoint_validation(
+                candidate,
+                core=core,
+                http_client=client,
+                work_dir=work_dir,
             )
         finally:
             if http_client is None:
@@ -301,6 +324,18 @@ def run_pending_batch(
         # 이 워커에는 "돌렸지만 실패"가 없다 — 파일을 열지 못한 것은 Core 에
         # 정상 보고되는 결말이고(REJECTED), 그 밖의 실패는 네트워크·Core 오류라
         # 아무 일도 안 한 것이다(다음 후보로).
+        ran_but_failed=(),
+        now_message=now_message,
+    ):
+        return True
+    if _try_candidates(
+        "독립 검사점 검증",
+        list_fn=core.list_pending_checkpoint_validations,
+        id_of=lambda c: c.validation_id,
+        run_fn=_run_checkpoint_validation,
+        # 결정적 CSV/DSM 결함은 validator 가 Core 에 직접 typed rejection 으로
+        # 기록하고 정상 종료한다. 네트워크/스토리지 오류는 예외로 남겨 SEALED
+        # 상태에서 재시도하므로 여기서 '실행 실패'로 분류하지 않는다.
         ran_but_failed=(),
         now_message=now_message,
     ):

@@ -772,6 +772,7 @@ def test_uncertainty_is_computed_when_both_epochs_are_checkpoint_verified(
     for zone in report.zones:
         assert zone.uncertainty_m3 is not None, "검증된 두 epoch 인데 오차한계가 비었다"
         assert zone.uncertainty_m3 > 0
+    assert "서버 워커" in report.zones[0].uncertainty_note
 
 
 @pytest.mark.parametrize(
@@ -801,6 +802,7 @@ def test_uncertainty_stays_null_unless_both_epochs_are_verified(
     assert report.zones
     for zone in report.zones:
         assert zone.uncertainty_m3 is None
+        assert "ODM" in zone.uncertainty_note
 
 
 def test_incompatible_datum_families_fail_instead_of_producing_numbers(tmp_path: Path) -> None:

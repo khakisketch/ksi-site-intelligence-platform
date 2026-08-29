@@ -24,8 +24,14 @@ from ksi_event_contracts.change_region_report import ChangeRegionSetReport
 from ksi_event_contracts.comparison_policy import ComparisonPolicy
 from ksi_event_contracts.design_conformance_report import DesignConformanceReport, DiffRasterRef
 from ksi_event_contracts.region_extraction_policy import RegionExtractionPolicy
-from ksi_event_contracts.vertical_reference import VerticalReference
+from ksi_event_contracts.vertical_reference import (
+    VerticalBridge,
+    VerticalReference,
+    VerticalReferenceSource,
+    bridge_between,
+)
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
+from ksi_geo_spatial.crs import UnsupportedCrsError, assert_supported_project_crs
 
 from ksi_processing_controller.capture_time import ImageCaptureTime
 
@@ -219,6 +225,68 @@ class PendingDesignSurface:
     surface_selector: str | None = None
     declared_crs: str | None = None
     normalization_upload_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PendingCheckpointValidation:
+    """One sealed independent-checkpoint CSV ready for DSM sampling.
+
+    Core deliberately gives the worker only the two presigned reads and the
+    checkpoint coordinate declaration.  In particular it does *not* repeat a
+    client-provided RMSE or a mutable artifact URL: the worker has to read the
+    bytes and measure the residuals itself.
+    """
+
+    validation_id: str
+    checkpoint_download_url: str
+    dsm_download_url: str
+    checkpoint_crs: str
+    checkpoint_vertical_reference: VerticalReference
+    dsm_crs: str
+    dsm_vertical_reference: VerticalReference
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointValidationMeasurement:
+    """Facts measured from one sealed checkpoint CSV and one DSM raster."""
+
+    checkpoint_sha256: str
+    checkpoint_size_bytes: int
+    dsm_digest: str
+    dsm_crs: str
+    point_count: int
+    mean_error_m: float
+    mae_m: float
+    rmse_m: float
+    max_abs_error_m: float
+
+
+class CheckpointValidationCoreClient(Protocol):
+    """The small Core port used by the DSM checkpoint validator.
+
+    A sealed validation is immutable and does not have a worker lease/state
+    transition.  A deterministic observation or a typed rejection is its
+    terminal fact; an I/O failure is intentionally raised so it remains
+    SEALED for a later retry.
+    """
+
+    def list_pending_checkpoint_validations(
+        self, *, limit: int = 50
+    ) -> list[PendingCheckpointValidation]:
+        """``GET /v1/checkpoint-validations?status=SEALED`` in seal order."""
+        ...
+
+    def report_checkpoint_validation_observation(
+        self, validation_id: str, measurement: CheckpointValidationMeasurement
+    ) -> str:
+        """Submit a server-computed residual observation (VALIDATED/REJECTED)."""
+        ...
+
+    def report_checkpoint_validation_failure(
+        self, validation_id: str, *, reason: str, detail: str | None = None
+    ) -> str:
+        """Record a terminal typed rejection for readable but unsuitable input."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,16 +588,17 @@ class CoreClient(Protocol):
 
 class WorkerCoreClient(
     CoreClient,
+    CheckpointValidationCoreClient,
     DesignSurfaceCoreClient,
     DesignConformanceCoreClient,
     RegionExtractionCoreClient,
     Protocol,
 ):
-    """폴링 루프(:mod:`runner`) 하나가 요구하는 표면 전부 — 다섯 종류 후보의 합집합.
+    """폴링 루프(:mod:`runner`) 하나가 요구하는 표면 전부 — 여섯 종류 후보의 합집합.
 
     Protocol 을 나눠 두고 여기서만 합치는 이유: 각 워커 함수는 자기가 쓰는
     것만 요구해야 가짜 구현이 작아지고(``run_comparison_request`` 는 설계면 표면을
-    모른다), 반대로 **한 프로세스가 다섯 종류를 다 도는 것**은 runner 의 사실이라
+    모른다), 반대로 **한 프로세스가 여섯 종류를 다 도는 것**은 runner 의 사실이라
     그 자리에서만 합집합을 요구한다.
     """
 
@@ -580,10 +649,10 @@ class HttpCoreClient:
     def _get_json(
         self, path: str, *, what: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """대기 목록 4종이 공유하는 GET — 봉투를 벗기고 status 를 verdict 로 옮긴다.
+        """대기 목록 여섯 종류가 공유하는 GET — 봉투를 벗기고 status 를 verdict 로 옮긴다.
 
         ``_post`` 와 달리 verdict 필드가 없는 표면이라(목록 응답은 성공 하나뿐)
-        HTTP 상태가 곧 판정이다. 네 곳이 같은 다섯 줄을 반복하고 있었다.
+        HTTP 상태가 곧 판정이다. 각 목록 호출이 같은 다섯 줄을 반복하고 있었다.
         """
         response = self._client.get(f"{self._base_url}{path}", params=params)
         try:
@@ -840,6 +909,113 @@ class HttpCoreClient:
             ok="RECORDED",
             json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
         )
+
+    # ── Independent DSM checkpoint validation (checkpoint_validations.py) ──
+
+    def list_pending_checkpoint_validations(
+        self, *, limit: int = 50
+    ) -> list[PendingCheckpointValidation]:
+        payload = self._get_json(
+            "/v1/checkpoint-validations",
+            what="list-pending-checkpoint-validations",
+            params={"status": "SEALED", "limit": limit},
+        )
+        validations: list[PendingCheckpointValidation] = []
+        for item in payload["validations"]:
+            raw_checkpoint_vertical = item.get("checkpointVerticalReference")
+            raw_dsm_vertical = item.get("dsmVerticalReference")
+            checkpoint_crs = item.get("checkpointCrs")
+            dsm_crs = item.get("dsmCrs")
+            if raw_checkpoint_vertical is None or raw_dsm_vertical is None:
+                raise CoreClientError(
+                    what="list-pending-checkpoint-validations",
+                    verdict="MALFORMED_PENDING_VALIDATION",
+                    detail="checkpoint/DSM vertical reference 가 없다",
+                )
+            if (
+                not isinstance(checkpoint_crs, str)
+                or not checkpoint_crs
+                or not isinstance(dsm_crs, str)
+                or not dsm_crs
+            ):
+                raise CoreClientError(
+                    what="list-pending-checkpoint-validations",
+                    verdict="MALFORMED_PENDING_VALIDATION",
+                    detail="checkpoint/DSM CRS가 없다",
+                )
+            try:
+                checkpoint_vertical = VerticalReference.model_validate(raw_checkpoint_vertical)
+                dsm_vertical = VerticalReference.model_validate(raw_dsm_vertical)
+            except ValueError as exc:
+                raise CoreClientError(
+                    what="list-pending-checkpoint-validations",
+                    verdict="MALFORMED_PENDING_VALIDATION",
+                    detail=f"checkpoint/DSM vertical reference 가 계약과 다르다: {exc}",
+                ) from exc
+            try:
+                crs_match = assert_supported_project_crs(
+                    checkpoint_crs
+                ) == assert_supported_project_crs(dsm_crs)
+            except UnsupportedCrsError as exc:
+                raise CoreClientError(
+                    what="list-pending-checkpoint-validations",
+                    verdict="MALFORMED_PENDING_VALIDATION",
+                    detail=f"checkpoint/DSM CRS가 지원되지 않는다: {exc}",
+                ) from exc
+            if (
+                not crs_match
+                or checkpoint_vertical.source is not VerticalReferenceSource.USER_DECLARED
+                or bridge_between(checkpoint_vertical, dsm_vertical) is not VerticalBridge.DIRECT
+            ):
+                raise CoreClientError(
+                    what="list-pending-checkpoint-validations",
+                    verdict="MALFORMED_PENDING_VALIDATION",
+                    detail="checkpoint와 DSM의 CRS/수직기준 snapshot이 직접 비교 가능하지 않다",
+                )
+            validations.append(
+                PendingCheckpointValidation(
+                    validation_id=item["validationId"],
+                    checkpoint_download_url=item["checkpointDownloadUrl"],
+                    dsm_download_url=item["dsmDownloadUrl"],
+                    checkpoint_crs=checkpoint_crs,
+                    checkpoint_vertical_reference=checkpoint_vertical,
+                    dsm_crs=dsm_crs,
+                    dsm_vertical_reference=dsm_vertical,
+                )
+            )
+        return validations
+
+    def report_checkpoint_validation_observation(
+        self, validation_id: str, measurement: CheckpointValidationMeasurement
+    ) -> str:
+        payload = self._post(
+            f"/v1/checkpoint-validations/{validation_id}/observations",
+            what=f"checkpoint-validation-observation:{validation_id}",
+            ok=frozenset({"VALIDATED", "REJECTED", "ALREADY_JUDGED"}),
+            json={
+                "checkpointSha256": measurement.checkpoint_sha256,
+                "checkpointSizeBytes": measurement.checkpoint_size_bytes,
+                "dsmDigest": measurement.dsm_digest,
+                "dsmCrs": measurement.dsm_crs,
+                "pointCount": measurement.point_count,
+                "meanErrorM": measurement.mean_error_m,
+                "maeM": measurement.mae_m,
+                "rmseM": measurement.rmse_m,
+                "maxAbsErrorM": measurement.max_abs_error_m,
+            },
+        )
+        return str(payload["verdict"])
+
+    def report_checkpoint_validation_failure(
+        self, validation_id: str, *, reason: str, detail: str | None = None
+    ) -> str:
+        payload = self._post(
+            f"/v1/checkpoint-validations/{validation_id}/verification-failure",
+            what=f"checkpoint-validation-failure:{validation_id}",
+            ok=frozenset({"REJECTED", "ALREADY_JUDGED"}),
+            json={"reason": reason, "detail": detail},
+        )
+        return str(payload["verdict"])
 
     # ── M4-A 설계 기준면 검증 (design_surfaces.py) ─────────────────────────
 
@@ -1124,6 +1300,8 @@ class HttpCoreClient:
 __all__ = [
     "ArtifactSubmission",
     "ArtifactUploadTarget",
+    "CheckpointValidationCoreClient",
+    "CheckpointValidationMeasurement",
     "ComparisonInput",
     "CoreClient",
     "CoreClientError",
@@ -1138,6 +1316,7 @@ __all__ = [
     "JobInputMedia",
     "MeasuredImage",
     "PendingComparisonRequest",
+    "PendingCheckpointValidation",
     "PendingDesignConformanceRequest",
     "PendingDesignSurface",
     "PendingJob",

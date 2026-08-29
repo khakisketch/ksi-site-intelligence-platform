@@ -30,12 +30,18 @@ import pytest
 from ksi_change_detection.diff_raster import sha256_of_file
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import current_comparison_policy
+from ksi_event_contracts.vertical_reference import (
+    VerticalDatum,
+    VerticalReference,
+    VerticalReferenceSource,
+)
 from ksi_processing_controller.core_client import (
     ComparisonInput,
     CoreClientError,
     DesignConformanceInput,
     DesignSurfaceMeasurement,
     DiffRasterUploadTarget,
+    PendingCheckpointValidation,
     PendingComparisonRequest,
     PendingDesignConformanceRequest,
     PendingDesignSurface,
@@ -76,6 +82,12 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
     # (``test_design_conformance_worker.FakeCore``)에 그대로 위임한다: 이 파일의
     # 관심사는 "어떤 순서로 무엇을 폴링하는가"이지 그 워커의 내부가 아니다.
     pending_design_surfaces: list[PendingDesignSurface] = field(default_factory=list)
+    # Independent checkpoint validation is a short, terminal worker stage
+    # between design-surface verification and comparison.  This pull-loop fake
+    # keeps it empty unless a queue-order test explicitly supplies a candidate.
+    pending_checkpoint_validations: list[PendingCheckpointValidation] = field(
+        default_factory=list
+    )
     pending_design_conformances: list[PendingDesignConformanceRequest] = field(
         default_factory=list
     )
@@ -107,6 +119,23 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
         self, design_surface_id: str, *, detail: str | None = None
     ) -> None:
         self.calls.append(("ds-normalization-failure", design_surface_id, detail))
+
+    def list_pending_checkpoint_validations(
+        self, *, limit: int = 50
+    ) -> list[PendingCheckpointValidation]:
+        return self.pending_checkpoint_validations[:limit]
+
+    def report_checkpoint_validation_observation(
+        self, validation_id: str, measurement: Any
+    ) -> str:  # pragma: no cover - exercised by dedicated validator tests
+        self.calls.append(("checkpoint-observation", validation_id, measurement.rmse_m))
+        return "VALIDATED"
+
+    def report_checkpoint_validation_failure(
+        self, validation_id: str, *, reason: str, detail: str | None = None
+    ) -> str:  # pragma: no cover - exercised by dedicated validator tests
+        self.calls.append(("checkpoint-failure", validation_id, reason, detail))
+        return "REJECTED"
 
     def list_pending_design_conformances(
         self, *, limit: int = 50
@@ -479,6 +508,46 @@ def test_design_surface_verification_runs_before_comparison(tmp_path: Path) -> N
     assert not any(str(c[0]).startswith("cmp-") for c in core.calls)
 
 
+def test_checkpoint_validation_runs_before_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server-computed checkpoint RMSE is available before any comparison runs."""
+    import ksi_processing_controller.runner as runner_module
+
+    candidate = PendingCheckpointValidation(
+        validation_id="checkpoint-1",
+        checkpoint_download_url="https://storage.test/checkpoints.csv",
+        dsm_download_url="https://storage.test/dsm.tif",
+        checkpoint_crs="EPSG:5186",
+        checkpoint_vertical_reference=VerticalReference(
+            datum=VerticalDatum.ELLIPSOIDAL,
+            basis="independent survey",
+            source=VerticalReferenceSource.USER_DECLARED,
+        ),
+        dsm_crs="EPSG:5186",
+        dsm_vertical_reference=VerticalReference(
+            datum=VerticalDatum.ELLIPSOIDAL,
+            basis="ODM pipeline output",
+            source=VerticalReferenceSource.PIPELINE_DECLARED,
+        ),
+    )
+    core = _core(
+        pending=[],
+        pending_checkpoint_validations=[candidate],
+        pending_comparisons=[PendingComparisonRequest(request_id="mission-1-cmp1")],
+    )
+    called: list[str] = []
+
+    def _validate(candidate: PendingCheckpointValidation, **_kwargs: Any) -> str:
+        called.append(candidate.validation_id)
+        return "VALIDATED"
+
+    monkeypatch.setattr(runner_module, "validate_checkpoint_validation", _validate)
+    assert run_pending_batch(core=core, odm=FakeNodeOdm(), work_dir=tmp_path) is True
+    assert called == ["checkpoint-1"]
+    assert not any(str(call[0]).startswith("cmp-") for call in core.calls)
+
+
 def test_design_conformance_is_polled_last_and_runs_to_succeeded(tmp_path: Path) -> None:
     """[우선순위] 앞의 셋이 비어야 설계 대비 후보를 본다 — 그리고 끝까지 돈다."""
     conformance, client = _conformance_scene(tmp_path)
@@ -550,7 +619,7 @@ def test_design_conformance_run_error_counts_as_ran(tmp_path: Path) -> None:
     assert conformance.submitted == []
 
 
-def test_all_four_lists_empty_returns_false(tmp_path: Path) -> None:
+def test_all_six_lists_empty_returns_false(tmp_path: Path) -> None:
     core = _core(
         pending=[],
         pending_design_surfaces=[],

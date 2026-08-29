@@ -48,6 +48,8 @@ from ksi_change_detection.run_change_detection import (
     compute_and_submit_change_detection,
 )
 from ksi_change_detection.run_volume_change import (
+    ODM_NO_CHECKPOINT_NOTE,
+    VERIFIED_CHECKPOINT_NOTE,
     ArtifactSource,
     VolumeChangeRunError,
     compute_and_submit,
@@ -326,6 +328,10 @@ def run_comparison_request(
             assert comparison_input.dsm_current_url is not None  # noqa: S101
             assert comparison_input.zones is not None  # noqa: S101
             assert comparison_input.zone_crs is not None  # noqa: S101
+            checkpoint_uncertainty_ready = (
+                comparison_input.dsm_baseline_checkpoint_rmse_m is not None
+                and comparison_input.dsm_current_checkpoint_rmse_m is not None
+            )
             try:
                 vol_report = compute_and_submit(
                     sink=core,
@@ -354,6 +360,11 @@ def run_comparison_request(
                     http_client=fetch,
                     # 위 변화탐지와 같은 이유 — 스냅샷된 기준값으로 잰다.
                     threshold_m=comparison_input.policy.volume_threshold_m,
+                    uncertainty_note=(
+                        VERIFIED_CHECKPOINT_NOTE
+                        if checkpoint_uncertainty_ready
+                        else ODM_NO_CHECKPOINT_NOTE
+                    ),
                     work_dir=work_dir,
                 )
                 summaries.append(f"체적 순변화 {vol_report.total_net_m3:.2f}m³")

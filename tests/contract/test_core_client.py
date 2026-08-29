@@ -25,6 +25,7 @@ from ksi_event_contracts.vertical_reference import (
 )
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
+    CheckpointValidationMeasurement,
     CoreClientError,
     HttpCoreClient,
     JobInputMedia,
@@ -87,6 +88,120 @@ def test_list_pending_forbidden_is_typed() -> None:
     with pytest.raises(CoreClientError) as excinfo:
         client.list_pending()
     assert excinfo.value.verdict == "HTTP_403"
+
+
+def test_checkpoint_validation_queue_and_measurement_wire_shape() -> None:
+    """The worker gets only presigned inputs and sends only measured metrics."""
+    captured: dict[str, object] = {}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        import json
+
+        if request.method == "GET":
+            captured["params"] = dict(request.url.params)
+            return httpx.Response(
+                200,
+                json={
+                    "validations": [
+                        {
+                            "validationId": "cv-1",
+                            "checkpointDownloadUrl": "https://storage/checkpoints.csv",
+                            "dsmDownloadUrl": "https://storage/dsm.tif",
+                            "checkpointCrs": "EPSG:5186",
+                            "checkpointVerticalReference": {
+                                "datum": "ellipsoidal",
+                                "basis": "independent survey",
+                                "source": "user_declared",
+                            },
+                            "dsmCrs": "EPSG:5186",
+                            "dsmVerticalReference": {
+                                "datum": "ellipsoidal",
+                                "basis": "ODM pipeline output",
+                                "source": "pipeline_declared",
+                            },
+                        }
+                    ]
+                },
+            )
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"verdict": "VALIDATED"})
+
+    client = _client(httpx.MockTransport(handle))
+    queued = client.list_pending_checkpoint_validations(limit=7)
+    assert queued[0].validation_id == "cv-1"
+    assert queued[0].checkpoint_crs == "EPSG:5186"
+    assert captured["params"] == {"status": "SEALED", "limit": "7"}
+    verdict = client.report_checkpoint_validation_observation(
+        "cv-1",
+        CheckpointValidationMeasurement(
+            checkpoint_sha256="a" * 64,
+            checkpoint_size_bytes=42,
+            dsm_digest="sha256:" + "b" * 64,
+            dsm_crs="EPSG:5186",
+            point_count=3,
+            mean_error_m=0.1,
+            mae_m=0.2,
+            rmse_m=0.3,
+            max_abs_error_m=0.4,
+        ),
+    )
+    assert verdict == "VALIDATED"
+    assert captured["path"] == "/v1/checkpoint-validations/cv-1/observations"
+    assert captured["body"] == {
+        "checkpointSha256": "a" * 64,
+        "checkpointSizeBytes": 42,
+        "dsmDigest": "sha256:" + "b" * 64,
+        "dsmCrs": "EPSG:5186",
+        "pointCount": 3,
+        "meanErrorM": 0.1,
+        "maeM": 0.2,
+        "rmseM": 0.3,
+        "maxAbsErrorM": 0.4,
+    }
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_crs", "dsm_crs", "checkpoint_source"),
+    [
+        ("EPSG:5186", "EPSG:5187", "user_declared"),
+        ("EPSG:4326", "EPSG:4326", "user_declared"),
+        ("EPSG:5186", "EPSG:5186", "pipeline_declared"),
+    ],
+)
+def test_checkpoint_queue_rejects_non_comparable_server_snapshots(
+    checkpoint_crs: str, dsm_crs: str, checkpoint_source: str
+) -> None:
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "validations": [
+                    {
+                        "validationId": "cv-1",
+                        "checkpointDownloadUrl": "https://storage/checkpoints.csv",
+                        "dsmDownloadUrl": "https://storage/dsm.tif",
+                        "checkpointCrs": checkpoint_crs,
+                        "checkpointVerticalReference": {
+                            "datum": "ellipsoidal",
+                            "basis": "survey",
+                            "source": checkpoint_source,
+                        },
+                        "dsmCrs": dsm_crs,
+                        "dsmVerticalReference": {
+                            "datum": "ellipsoidal",
+                            "basis": "pipeline",
+                            "source": "pipeline_declared",
+                        },
+                    }
+                ]
+            },
+        )
+
+    client = _client(httpx.MockTransport(handle))
+    with pytest.raises(CoreClientError) as excinfo:
+        client.list_pending_checkpoint_validations()
+    assert excinfo.value.verdict == "MALFORMED_PENDING_VALIDATION"
 
 
 # ── lease — LEASED 와 LEASE_RENEWED 둘 다 성공이다 ───────────────────────────

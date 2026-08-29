@@ -47,10 +47,20 @@ logger = logging.getLogger(__name__)
 #: DEFAULT_DISTANCE_THRESHOLD_M`` 과 같다(기존 import 유지 + 단일 정본).
 DEFAULT_THRESHOLD_M = _POLICY_VOLUME_THRESHOLD_M
 
-#: ODM 경로에서 오차한계를 못 내는 이유 — 리포트에 그대로 실린다(INV-024).
+#: 검사점 검증이 없는 경로에서 오차한계를 못 내는 이유 — 리포트에 그대로
+#: 실린다(INV-024). ODM 자체 리포트가 없더라도 별도 KSI 검사점 검증이 끝난
+#: epoch은 아래 ``VERIFIED_CHECKPOINT_NOTE``를 쓴다.
 ODM_NO_CHECKPOINT_NOTE = (
     "기본 엔진(ODM)이 구조화된 GCP/검사점 RMSE 리포트를 내지 않아 절대 오차한계를 "
     "산출할 수 없다 — 같은 파이프라인·같은 좌표계의 두 시점을 비교한 상대값이다"
+)
+
+#: 양쪽 DSM을 봉인된 독립 검사점으로 직접 대조한 경우의 근거 문장. 실제 수치는
+#: Core가 내려준 두 RMSE를 제곱합근으로 합성한 뒤 구역 면적을 곱한다
+#: (``dsm_diff._uncertainty_m3``). 사용자가 이 값을 입력하는 표면은 없다.
+VERIFIED_CHECKPOINT_NOTE = (
+    "양쪽 시점의 봉인된 독립 검사점 CSV를 서버 워커가 각 DSM과 직접 대조한 "
+    "수직 RMSE를 제곱합근으로 합성하고 구역 면적을 곱한 보수적 운영 오차한계다"
 )
 
 
@@ -62,8 +72,9 @@ class VolumeChangeRunError(RuntimeError):
 class ArtifactSource:
     """비교 대상 산출물 하나 — 참조 + 그 바이트를 받을 URL.
 
-    ``rmse_m`` 은 그 epoch 이 독립 검사점으로 검증됐을 때만 값이다. ODM 경로는
-    항상 ``None`` 이고, 그러면 오차한계도 ``None`` 이 된다(INV-024).
+    ``rmse_m`` 은 그 epoch 이 독립 검사점으로 검증됐을 때만 값이다. ODM이 자체
+    리포트를 내지 않아도 KSI 검사점 검증이 끝나면 값이며, 아무 근거도 없으면
+    ``None``이고 오차한계도 ``None``이다(INV-024).
     """
 
     ref: ArtifactRef
@@ -208,6 +219,7 @@ def _download(client: httpx.Client, url: str, dest: Path) -> None:
 __all__ = [
     "DEFAULT_THRESHOLD_M",
     "ODM_NO_CHECKPOINT_NOTE",
+    "VERIFIED_CHECKPOINT_NOTE",
     "ArtifactSource",
     "VolumeChangeRunError",
     "VolumeChangeSink",
