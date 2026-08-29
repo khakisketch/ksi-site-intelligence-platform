@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/checkpoint-validation.v1.json",
+  "title": "CheckpointValidation",
+  "description": "Immutable server-side validation of a sealed independent-checkpoint CSV against one DSM artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "validationId",
+    "organizationId",
+    "missionId",
+    "siteId",
+    "dsm",
+    "dsmDigest",
+    "dsmCrs",
+    "dsmVerticalReference",
+    "declared",
+    "validationProfileId",
+    "validationProfileDigest",
+    "status",
+    "registeredAt",
+    "registeredBy",
+    "sealedAt",
+    "observed",
+    "rejectionReason",
+    "rejectionDetail"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "validationId": { "$ref": "#/$defs/nonBlank" },
+    "organizationId": { "$ref": "#/$defs/nonBlank" },
+    "missionId": { "$ref": "#/$defs/nonBlank" },
+    "siteId": { "$ref": "#/$defs/nonBlank" },
+    "dsm": { "$ref": "#/$defs/artifactRef" },
+    "dsmDigest": { "$ref": "#/$defs/artifactDigest" },
+    "dsmCrs": { "$ref": "#/$defs/nonBlank" },
+    "dsmVerticalReference": { "$ref": "#/$defs/verticalReference" },
+    "declared": { "$ref": "#/$defs/declared" },
+    "validationProfileId": { "const": "ksi-dsm-checkpoint-nearest-v1" },
+    "validationProfileDigest": {
+      "const": "sha256:be58e685bc92e5aa82003a03da1eb489b44db983b0838c4117afb538879b9b6c"
+    },
+    "status": {
+      "enum": ["REGISTERED", "SEALED", "VALIDATED", "REJECTED"]
+    },
+    "registeredAt": { "$ref": "#/$defs/dateTime" },
+    "registeredBy": { "$ref": "#/$defs/nonBlank" },
+    "sealedAt": {
+      "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+    },
+    "observed": {
+      "oneOf": [{ "$ref": "#/$defs/observed" }, { "type": "null" }]
+    },
+    "rejectionReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "CHECKPOINT_DIGEST_MISMATCH",
+            "CHECKPOINT_SIZE_MISMATCH",
+            "CHECKPOINT_OBJECT_MISSING",
+            "DSM_DIGEST_MISMATCH",
+            "DSM_OBJECT_MISSING",
+            "DSM_CRS_MISMATCH",
+            "INVALID_CHECKPOINT_CSV",
+            "CHECKPOINT_COUNT_OUT_OF_RANGE",
+            "CHECKPOINT_OUTSIDE_DSM",
+            "DSM_NODATA_AT_CHECKPOINT",
+            "UNREADABLE_DSM",
+            "UNSUPPORTED_DSM",
+            "INVALID_MEASUREMENT"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "rejectionDetail": {
+      "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }]
+    }
+  },
+  "$defs": {
+    "nonBlank": { "type": "string", "minLength": 1 },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "artifactDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId", "artifactId"],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/nonBlank" },
+        "artifactId": { "$ref": "#/$defs/nonBlank" }
+      }
+    },
+    "verticalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datum", "basis", "source"],
+      "properties": {
+        "datum": {
+          "enum": [
+            "ellipsoidal",
+            "ellipsoidal_native",
+            "orthometric_kngeoid2018",
+            "orthometric_kngeoid2024"
+          ]
+        },
+        "basis": { "$ref": "#/$defs/nonBlank" },
+        "source": { "enum": ["pipeline_declared", "user_declared"] }
+      }
+    },
+    "userDeclaredVerticalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datum", "basis", "source"],
+      "properties": {
+        "datum": {
+          "enum": [
+            "ellipsoidal",
+            "ellipsoidal_native",
+            "orthometric_kngeoid2018",
+            "orthometric_kngeoid2024"
+          ]
+        },
+        "basis": { "$ref": "#/$defs/nonBlank" },
+        "source": { "const": "user_declared" }
+      }
+    },
+    "declared": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "sha256",
+        "sizeBytes",
+        "crs",
+        "verticalReference",
+        "independentFromProcessingAttested",
+        "independenceBasis"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\]+\\.[cC][sS][vV]$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 5242880 },
+        "crs": { "$ref": "#/$defs/nonBlank" },
+        "verticalReference": { "$ref": "#/$defs/userDeclaredVerticalReference" },
+        "independentFromProcessingAttested": { "const": true },
+        "independenceBasis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    },
+    "observed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkpointSha256",
+        "checkpointSizeBytes",
+        "dsmDigest",
+        "dsmCrs",
+        "pointCount",
+        "meanErrorM",
+        "maeM",
+        "rmseM",
+        "maxAbsErrorM",
+        "measuredAt",
+        "measuredBy"
+      ],
+      "properties": {
+        "checkpointSha256": { "$ref": "#/$defs/sha256" },
+        "checkpointSizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "dsmDigest": { "$ref": "#/$defs/artifactDigest" },
+        "dsmCrs": { "$ref": "#/$defs/nonBlank" },
+        "pointCount": { "type": "integer", "minimum": 3, "maximum": 10000 },
+        "meanErrorM": { "type": "number" },
+        "maeM": { "type": "number", "minimum": 0 },
+        "rmseM": { "type": "number", "minimum": 0 },
+        "maxAbsErrorM": { "type": "number", "minimum": 0 },
+        "measuredAt": { "$ref": "#/$defs/dateTime" },
+        "measuredBy": { "$ref": "#/$defs/nonBlank" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "REGISTERED" } } },
+      "then": {
+        "properties": {
+          "sealedAt": { "type": "null" },
+          "observed": { "type": "null" },
+          "rejectionReason": { "type": "null" },
+          "rejectionDetail": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "SEALED" } } },
+      "then": {
+        "properties": {
+          "sealedAt": { "$ref": "#/$defs/dateTime" },
+          "observed": { "type": "null" },
+          "rejectionReason": { "type": "null" },
+          "rejectionDetail": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "VALIDATED" } } },
+      "then": {
+        "properties": {
+          "sealedAt": { "$ref": "#/$defs/dateTime" },
+          "observed": { "$ref": "#/$defs/observed" },
+          "rejectionReason": { "type": "null" },
+          "rejectionDetail": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "REJECTED" } } },
+      "then": {
+        "properties": {
+          "sealedAt": { "$ref": "#/$defs/dateTime" },
+          "rejectionReason": {
+            "enum": [
+              "CHECKPOINT_DIGEST_MISMATCH",
+              "CHECKPOINT_SIZE_MISMATCH",
+              "CHECKPOINT_OBJECT_MISSING",
+              "DSM_DIGEST_MISMATCH",
+              "DSM_OBJECT_MISSING",
+              "DSM_CRS_MISMATCH",
+              "INVALID_CHECKPOINT_CSV",
+              "CHECKPOINT_COUNT_OUT_OF_RANGE",
+              "CHECKPOINT_OUTSIDE_DSM",
+              "DSM_NODATA_AT_CHECKPOINT",
+              "UNREADABLE_DSM",
+              "UNSUPPORTED_DSM",
+              "INVALID_MEASUREMENT"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
