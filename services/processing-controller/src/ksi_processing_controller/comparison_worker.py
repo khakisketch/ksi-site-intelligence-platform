@@ -61,6 +61,7 @@ from ksi_event_contracts.vertical_reference import (
 from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
 
 from ksi_processing_controller.core_client import ComparisonInput, CoreClient, CoreClientError
+from ksi_processing_controller.observability import bind_correlation_id, current_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +140,21 @@ class LeaseHeartbeat:
         self._interval_seconds = interval_seconds
         self._now_message = now_message
         self._thread_name_prefix = thread_name_prefix
+        # contextvars do not follow a newly-created thread.  Capture the runner
+        # binding now and restore it around every renewal so the heartbeat's
+        # Core request has the same X-Request-Id as foreground work.
+        self._correlation_id = current_correlation_id()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def _beat(self) -> None:
         while not self._stop.wait(self._interval_seconds):
             try:
-                self._renew()
+                if self._correlation_id is None:
+                    self._renew()
+                else:
+                    with bind_correlation_id(self._correlation_id):
+                        self._renew()
             except Exception as exc:  # noqa: BLE001 -- 클래스 docstring: 갱신 실패로 계산을 죽이지 않는다
                 self._now_message(f"[{self._label}] lease 갱신 실패(계산은 계속) — {exc}")
 

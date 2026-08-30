@@ -15,6 +15,8 @@ heartbeat 가 처음 도는 순간 곧바로 죽어서 드러났다.
 
 from __future__ import annotations
 
+import threading
+
 import httpx
 import pytest
 from ksi_event_contracts.comparison_policy import current_comparison_policy
@@ -23,6 +25,7 @@ from ksi_event_contracts.vertical_reference import (
     VerticalReference,
     VerticalReferenceSource,
 )
+from ksi_processing_controller.comparison_worker import LeaseHeartbeat
 from ksi_processing_controller.core_client import (
     ArtifactSubmission,
     CheckpointValidationMeasurement,
@@ -32,6 +35,7 @@ from ksi_processing_controller.core_client import (
     MeasuredImage,
     PendingJob,
 )
+from ksi_processing_controller.observability import bind_correlation_id
 
 _BASE = "http://fake-core"
 
@@ -80,6 +84,70 @@ def test_list_pending_sends_limit_as_query_param() -> None:
     client = _client(httpx.MockTransport(handle))
     client.list_pending(limit=7)
     assert captured["limit"] == "7"
+
+
+def test_bound_work_correlation_is_sent_on_every_core_http_method() -> None:
+    """Foreground GET/POST calls carry the runner's validated work id to Core."""
+    observed: list[tuple[str, str | None]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        observed.append((request.method, request.headers.get("X-Request-Id")))
+        if request.method == "GET":
+            return httpx.Response(200, json={"jobs": []})
+        return httpx.Response(201, json={"verdict": "LEASED", "job": {}})
+
+    client = _client(httpx.MockTransport(handle))
+    with bind_correlation_id("mission-1-proc1"):
+        assert client.list_pending() == []
+        client.acquire_lease("mission-1-proc1")
+
+    assert observed == [
+        ("GET", "mission-1-proc1"),
+        ("POST", "mission-1-proc1"),
+    ]
+
+
+def test_unbound_client_does_not_invent_a_work_correlation_header() -> None:
+    observed: list[str | None] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        observed.append(request.headers.get("X-Request-Id"))
+        return httpx.Response(200, json={"jobs": []})
+
+    client = _client(httpx.MockTransport(handle))
+    assert client.list_pending() == []
+    assert observed == [None]
+
+
+def test_heartbeat_rebinds_correlation_before_renewing_core_lease() -> None:
+    """New threads do not inherit contextvars, so renewals must bind explicitly."""
+    seen = threading.Event()
+    headers: list[str | None] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        headers.append(request.headers.get("X-Request-Id"))
+        seen.set()
+        return httpx.Response(200, json={"verdict": "LEASE_RENEWED", "job": {}})
+
+    client = _client(httpx.MockTransport(handle))
+    with bind_correlation_id("mission-1-cmp1"):
+        heartbeat = LeaseHeartbeat(
+            lambda: client.acquire_lease("mission-1-cmp1"),
+            "mission-1-cmp1",
+            interval_seconds=0.01,
+            now_message=lambda _message: None,
+        )
+        heartbeat.start()
+        assert seen.wait(timeout=1.0), "heartbeat did not make its Core lease call"
+        heartbeat.stop()
+
+    assert headers == ["mission-1-cmp1"]
+
+
+@pytest.mark.parametrize("malformed", ["", "contains space", "bad\nheader", "x" * 129])
+def test_correlation_binding_rejects_unsafe_header_values(malformed: str) -> None:
+    with pytest.raises(ValueError, match="correlation id"), bind_correlation_id(malformed):
+        pass
 
 
 def test_list_pending_forbidden_is_typed() -> None:

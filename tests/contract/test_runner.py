@@ -279,6 +279,23 @@ def test_returns_false_when_nothing_is_pending(tmp_path: Path) -> None:
     assert core.calls == []
 
 
+def test_pending_candidate_with_unsafe_correlation_id_is_not_leased(tmp_path: Path) -> None:
+    """A malformed Core work id must not become an outbound HTTP header."""
+    core = _core(pending=[PendingJob(job_id="bad\nwork-id")])
+    messages: list[str] = []
+
+    ran = run_pending_batch(
+        core=core,
+        odm=FakeNodeOdm(),
+        work_dir=tmp_path,
+        now_message=messages.append,
+    )
+
+    assert ran is False
+    assert core.calls == []
+    assert any("invalid-correlation-id" in message for message in messages)
+
+
 def test_lease_conflict_moves_to_the_next_candidate(tmp_path: Path) -> None:
     """[핵심] 앞선 후보가 다른 워커에게 lease 를 뺏겨도 다음 후보를 시도한다."""
     core = _core(

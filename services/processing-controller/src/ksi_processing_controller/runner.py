@@ -107,6 +107,7 @@ from ksi_processing_controller.http_node_odm import HttpNodeOdmClient
 from ksi_processing_controller.observability import (
     bind_correlation_id,
     configure_structured_logging,
+    validate_correlation_id,
 )
 from ksi_processing_controller.odm import NodeOdmClient
 from ksi_processing_controller.odm_masking import ImageDetector
@@ -154,6 +155,14 @@ def _try_candidates[Candidate](
 
     for candidate in pending:
         candidate_id = id_of(candidate)
+        try:
+            validate_correlation_id(candidate_id)
+        except ValueError as exc:
+            # A pending-list value crosses into an HTTP header.  It must never
+            # be leased, transitioned, or echoed to Core until the malformed
+            # journal record is repaired.
+            now_message(f"[invalid-correlation-id] {kind_label} 후보를 건너뜀: {exc}")
+            continue
         # 이 후보를 처리하는 동안의 모든 로그 줄(아래 now_message 호출은 물론
         # 워커 내부의 logger.* 호출까지)에 id 가 correlation id 로 실린다 —
         # now_message 문자열 접두사 ``f"[{id}] ..."`` 는 사람이 읽을 땐 같은

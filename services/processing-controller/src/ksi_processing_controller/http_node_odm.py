@@ -36,9 +36,10 @@ presigned URL 이 엔진 컨테이너로 새서 **KSI 가 통제하지 못하는
 
 ``/info``·``/task/new``·``/task/{uuid}/info``·``/task/remove`` 와 에러 봉투는
 실물 대상으로 확인했다(``tests/contract/test_odm_live.py``, NodeODM 이 없으면
-skip). **완주한 재구성의 ``all.zip`` 다운로드는 아직 확인하지 못했다** — 실제
-드론 사진 수백 장이 있어야 ODM 이 완주하고, 합성 이미지로는 데이터셋 단계에서
-실패한다.
+skip). 2026-08-28에는 고정 digest 이미지와 공개 12장 fixture로 완주한 ``all.zip``
+다운로드·산출물 매핑을 확인했고, 별도 실행에서 Core 봉인 입력부터 실제 MinIO
+업로드·재다운로드 digest 대조까지 통과했다. 이 live 증거는 소프트웨어 경로 검증이며
+국내 토목 현장 정확도나 FIELD 수용을 뜻하지 않는다.
 """
 
 from __future__ import annotations

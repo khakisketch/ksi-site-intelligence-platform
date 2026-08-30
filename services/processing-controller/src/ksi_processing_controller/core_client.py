@@ -34,6 +34,7 @@ from ksi_event_contracts.volume_change_report import VolumeChangeReport
 from ksi_geo_spatial.crs import UnsupportedCrsError, assert_supported_project_crs
 
 from ksi_processing_controller.capture_time import ImageCaptureTime
+from ksi_processing_controller.observability import REQUEST_ID_HEADER, current_correlation_id
 
 
 class CoreClientError(RuntimeError):
@@ -615,6 +616,27 @@ class HttpCoreClient:
         # 거꾸로였다: 주입된 클라이언트는 인증 헤더 없이 나갔다.
         self._client.headers["Authorization"] = f"Bearer {token}"
 
+    @staticmethod
+    def _correlation_headers() -> dict[str, str]:
+        """Build request-local headers without mutating the shared httpx client.
+
+        Lease heartbeats use another thread while the worker reuses this
+        client.  Changing ``client.headers`` for one work item could therefore
+        leak its correlation id into another request.  The context-local value
+        was validated by the runner before it was bound.
+        """
+        correlation_id = current_correlation_id()
+        return {REQUEST_ID_HEADER: correlation_id} if correlation_id is not None else {}
+
+    def _get(
+        self, path: str, *, params: dict[str, Any] | None = None
+    ) -> httpx.Response:
+        return self._client.get(
+            f"{self._base_url}{path}",
+            params=params,
+            headers=self._correlation_headers(),
+        )
+
     def _post(
         self,
         path: str,
@@ -633,7 +655,11 @@ class HttpCoreClient:
         일어나는 순간 곧바로 죽었다(``lease: LEASE_RENEWED`` 예외). 그래서
         판정 집합은 호출부가 아니라 이 함수가 한 번에 본다.
         """
-        response = self._client.post(f"{self._base_url}{path}", json=json)
+        response = self._client.post(
+            f"{self._base_url}{path}",
+            json=json,
+            headers=self._correlation_headers(),
+        )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -654,7 +680,7 @@ class HttpCoreClient:
         ``_post`` 와 달리 verdict 필드가 없는 표면이라(목록 응답은 성공 하나뿐)
         HTTP 상태가 곧 판정이다. 각 목록 호출이 같은 다섯 줄을 반복하고 있었다.
         """
-        response = self._client.get(f"{self._base_url}{path}", params=params)
+        response = self._get(path, params=params)
         try:
             payload = response.json()
         except ValueError as exc:
@@ -683,7 +709,7 @@ class HttpCoreClient:
         )
 
     def get_input(self, job_id: str) -> JobInput:
-        response = self._client.get(f"{self._base_url}/v1/processing-jobs/{job_id}/input")
+        response = self._get(f"/v1/processing-jobs/{job_id}/input")
         try:
             payload = response.json()
         except ValueError as exc:
@@ -836,7 +862,7 @@ class HttpCoreClient:
         )
 
     def get_comparison_input(self, request_id: str) -> ComparisonInput:
-        response = self._client.get(f"{self._base_url}/v1/comparison-requests/{request_id}/input")
+        response = self._get(f"/v1/comparison-requests/{request_id}/input")
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1113,9 +1139,7 @@ class HttpCoreClient:
         )
 
     def get_design_conformance_input(self, request_id: str) -> DesignConformanceInput:
-        response = self._client.get(
-            f"{self._base_url}/v1/design-conformance-requests/{request_id}/input"
-        )
+        response = self._get(f"/v1/design-conformance-requests/{request_id}/input")
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1243,9 +1267,7 @@ class HttpCoreClient:
         )
 
     def get_region_extraction_input(self, request_id: str) -> RegionExtractionInput:
-        response = self._client.get(
-            f"{self._base_url}/v1/region-extraction-requests/{request_id}/input"
-        )
+        response = self._get(f"/v1/region-extraction-requests/{request_id}/input")
         try:
             payload = response.json()
         except ValueError as exc:

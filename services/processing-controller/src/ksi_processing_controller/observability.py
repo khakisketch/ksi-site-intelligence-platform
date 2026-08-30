@@ -8,17 +8,15 @@
 조각(contextvar 바인딩 + JSON 포매터)만 다시 쓴다 — Starlette 미들웨어·
 ``/metrics`` 라우트는 이 서비스에 없다(HTTP 서버가 아니다, 폴링 루프다).
 
-## 여기서는 워커가 이미 아는 id 를 그대로 묶는다
+## 여기서는 워커가 이미 아는 id 를 검증해 그대로 묶는다
 
 Core 쪽은 HTTP 헤더에서 correlation id 를 받거나 새로 만들지만, 이 워커는
 이미 ``jobId``/``requestId`` 를 안다(``runner.py`` 가 폴링으로 골라온 값) —
 그 값을 그대로 correlation id 로 쓴다. Core 의 로그와 워커의 로그를 같은 id
 로 엮으려면(예: 처리 작업 하나의 전 과정을 한 id 로 검색), 워커가 Core 를
-호출할 때 이 id 를 ``X-Request-Id`` 헤더로 실어 보내는 배선이 추가로
-필요하다 — 지금은 아직 없다(``core_client.py`` 가 그 헤더를 넣지 않는다).
-이 한계는 정직하게 남겨 둔다: 지금 닫는 것은 "이 워커 프로세스 안에서 한
-작업의 로그 줄들이 서로 엮이는가"이지 "Core 로그까지 같은 id 로 엮이는가"가
-아니다.
+호출할 때 이 id 를 ``X-Request-Id`` 헤더로 실어 보내므로, Core 로그와 워커
+로그를 같은 id 로 조회할 수 있다. 헤더/로그 경계를 넘는 값이므로, runner는
+ASCII token 형태·길이를 확인하지 못한 후보를 lease 하기 전에 건너뛴다.
 """
 
 from __future__ import annotations
@@ -26,19 +24,42 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
+
+REQUEST_ID_HEADER = "X-Request-Id"
+
+# HTTP header·응답 echo·구조화 로그 query key 경계를 함께 넘는 값이다. 임의의
+# journal 값이나 줄바꿈을 헤더로 전달하지 않도록, Core가 발행하는 work id의
+# 허용 문자 집합보다 넓히지 않는다.
+_CORRELATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 _correlation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "correlation_id", default=None
 )
 
 
+def validate_correlation_id(correlation_id: str) -> str:
+    """Return a header-safe work id or raise before a Core call is attempted."""
+    if not isinstance(correlation_id, str) or not _CORRELATION_ID_RE.fullmatch(correlation_id):
+        raise ValueError(
+            "correlation id must be 1-128 ASCII characters from "
+            "[A-Za-z0-9][A-Za-z0-9._:-]*"
+        )
+    return correlation_id
+
+
+def current_correlation_id() -> str | None:
+    """Return the current validated work correlation id, if this is a work context."""
+    return _correlation_id.get()
+
+
 @contextmanager
 def bind_correlation_id(correlation_id: str) -> Iterator[None]:
-    """이 블록 안의 모든 로그 줄에 ``correlation_id`` 를 싣는다."""
-    token = _correlation_id.set(correlation_id)
+    """Bind one validated id to logs and outbound Core calls in this context."""
+    token = _correlation_id.set(validate_correlation_id(correlation_id))
     try:
         yield
     finally:
@@ -88,4 +109,10 @@ def configure_structured_logging(*, level: str = "INFO", json_format: bool = Tru
     root.addHandler(handler)
 
 
-__all__ = ["bind_correlation_id", "configure_structured_logging"]
+__all__ = [
+    "REQUEST_ID_HEADER",
+    "bind_correlation_id",
+    "configure_structured_logging",
+    "current_correlation_id",
+    "validate_correlation_id",
+]

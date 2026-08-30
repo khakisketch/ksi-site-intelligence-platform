@@ -1,0 +1,194 @@
+name: civil-live-contracts
+
+# This is deliberately not part of push/PR CI.  A complete reconstruction needs
+# owner-approved imagery; the bytes stay in the ephemeral runner workspace and
+# are never a repository fixture.  The fixture URL is a repository/environment
+# secret so private/presigned query credentials never enter workflow metadata.
+# There is no schedule because the owner must intentionally supply a digest for
+# each run.
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_archive_sha256:
+        description: Exact SHA-256 (64 lowercase hex) of the owner-approved fixture archive
+        required: false
+        type: string
+      fixture_images_subdir:
+        description: Relative image directory inside the archive (for example images)
+        required: false
+        default: images
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-gate:
+    name: owner fixture gate
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - id: gate
+        name: verify dispatch inputs
+        env:
+          # Never make a private/presigned URL a workflow_dispatch input: those
+          # inputs are retained in GitHub run metadata.  Configure this secret
+          # per repository or protected environment before dispatching.
+          FIXTURE_URL: ${{ secrets.KSI_CIVIL_LIVE_FIXTURE_URL }}
+          FIXTURE_SHA256: ${{ inputs.fixture_archive_sha256 }}
+          IMAGE_SUBDIR: ${{ inputs.fixture_images_subdir }}
+        run: |
+          if [[ -z "$FIXTURE_URL" || -z "$FIXTURE_SHA256" || -z "$IMAGE_SUBDIR" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### LIVE_CONTRACTS_SKIPPED"
+              echo "KSI_CIVIL_LIVE_FIXTURE_URL secret, fixture digest, or image subdirectory is absent."
+              echo "No NodeODM or MinIO container was started; this run proves nothing about live processing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ ! "$FIXTURE_URL" =~ ^https:// ]] || [[ ! "$FIXTURE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error title=INVALID_LIVE_FIXTURE_INPUT::fixture URL must use HTTPS and SHA-256 must be 64 lowercase hex characters"
+            exit 1
+          fi
+          case "$IMAGE_SUBDIR" in
+            /*|*".."*)
+              echo "::error title=INVALID_LIVE_FIXTURE_INPUT::image subdirectory must be relative and must not contain .."
+              exit 1
+              ;;
+          esac
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  live-contracts:
+    name: pinned NodeODM and MinIO live contracts
+    needs: fixture-gate
+    if: needs.fixture-gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      # Local, disposable MinIO credentials only. They are not production
+      # credentials or GitHub secrets, and the container is removed on exit.
+      KSI_S3_KEY: ksi-live-worker
+      KSI_S3_SECRET: ksi-live-worker-not-a-production-secret
+      KSI_S3_ENDPOINT: http://127.0.0.1:9190
+      KSI_NODEODM_URL: http://127.0.0.1:3971
+      FIXTURE_URL: ${{ secrets.KSI_CIVIL_LIVE_FIXTURE_URL }}
+      FIXTURE_SHA256: ${{ inputs.fixture_archive_sha256 }}
+      IMAGE_SUBDIR: ${{ inputs.fixture_images_subdir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: install locked test dependencies
+        run: uv sync --locked --all-packages
+
+      - name: download and safely unpack owner fixture outside Git
+        id: fixture
+        run: |
+          fixture_root="$RUNNER_TEMP/ksi-civil-live-fixture"
+          archive="$RUNNER_TEMP/ksi-civil-live-fixture.tar.gz"
+          mkdir -p "$fixture_root"
+          # Capture curl diagnostics outside the job log: a presigned URL must
+          # not be accidentally echoed if an upstream server rejects it.
+          if ! curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+              --retry 3 --max-filesize 5368709120 --output "$archive" "$FIXTURE_URL" \
+              2>"$RUNNER_TEMP/ksi-civil-live-fixture-curl.err"; then
+            echo "::error title=LIVE_FIXTURE_DOWNLOAD_FAILED::owner-held fixture could not be downloaded"
+            exit 1
+          fi
+          actual="$(sha256sum "$archive" | awk '{print $1}')"
+          if [[ "$actual" != "$FIXTURE_SHA256" ]]; then
+            echo "::error title=LIVE_FIXTURE_DIGEST_MISMATCH::downloaded fixture does not match the supplied SHA-256"
+            exit 1
+          fi
+          # Do not use tar -x directly.  A valid-looking relative member can
+          # still escape through a symlink/hardlink, and archive bombs can fill
+          # the hosted runner.  The extractor accepts only unique regular files
+          # and directories under a bounded, normalized relative path.
+          uv run --locked python - "$archive" "$fixture_root" <<'PY'
+          from __future__ import annotations
+
+          import sys
+          import tarfile
+          from pathlib import PurePosixPath
+
+          archive, target = sys.argv[1:]
+          max_members = 20_000
+          max_total_bytes = 5 * 1024 * 1024 * 1024
+          total_bytes = 0
+          seen: set[str] = set()
+
+          with tarfile.open(archive, mode="r:gz") as source:
+              members = source.getmembers()
+              if len(members) > max_members:
+                  raise SystemExit("LIVE_FIXTURE_TOO_MANY_MEMBERS")
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  normalized = path.as_posix()
+                  if (
+                      not member.name
+                      or path.is_absolute()
+                      or ".." in path.parts
+                      or normalized in {"", "."}
+                      or normalized in seen
+                  ):
+                      raise SystemExit("UNSAFE_LIVE_FIXTURE_PATH")
+                  seen.add(normalized)
+                  if member.issym() or member.islnk() or not (member.isdir() or member.isreg()):
+                      raise SystemExit("UNSAFE_LIVE_FIXTURE_MEMBER_TYPE")
+                  if member.isreg():
+                      if member.size < 0:
+                          raise SystemExit("UNSAFE_LIVE_FIXTURE_MEMBER_SIZE")
+                      total_bytes += member.size
+                      if total_bytes > max_total_bytes:
+                          raise SystemExit("LIVE_FIXTURE_UNCOMPRESSED_SIZE_EXCEEDED")
+              source.extractall(target, members=members, filter="data")
+          PY
+          image_dir="$fixture_root/$IMAGE_SUBDIR"
+          if [[ ! -d "$image_dir" ]]; then
+            echo "::error title=LIVE_FIXTURE_IMAGES_MISSING::configured image directory was not found after extraction"
+            exit 1
+          fi
+          image_count="$(find "$image_dir" -type f \( -iname '*.jpg' -o -iname '*.jpeg' \) | wc -l)"
+          if [[ "$image_count" -lt 5 ]]; then
+            echo "::error title=LIVE_FIXTURE_IMAGES_INSUFFICIENT::NodeODM live reconstruction needs at least five JPEG images"
+            exit 1
+          fi
+          echo "KSI_ODM_IMAGES=$image_dir" >> "$GITHUB_ENV"
+          echo "fixture-sha256=$actual" >> "$GITHUB_STEP_SUMMARY"
+          echo "image-count=$image_count" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: start exact NodeODM and disposable MinIO
+        run: |
+          docker run --detach --rm --name ksi-live-nodeodm --publish 127.0.0.1:3971:3000 \
+            opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2
+          docker run --detach --rm --name ksi-live-minio --publish 127.0.0.1:9190:9000 \
+            --env MINIO_ROOT_USER="$KSI_S3_KEY" --env MINIO_ROOT_PASSWORD="$KSI_S3_SECRET" \
+            minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e server /data
+          for _ in {1..60}; do
+            if curl --fail --silent "$KSI_NODEODM_URL/info" >/dev/null && \
+              curl --fail --silent "$KSI_S3_ENDPOINT/minio/health/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error title=LIVE_RUNTIME_NOT_READY::pinned NodeODM or disposable MinIO did not become ready"
+          exit 1
+
+      - name: run sealed processing and object-store persistence contracts
+        run: >-
+          uv run --locked pytest -q -s tests/contract/test_odm_live.py
+          -k 'test_info_reports_engine_and_node_versions_separately or
+          test_engine_identity_gate_uses_the_live_engine_version or
+          test_completed_reconstruction_artifacts_persist_and_redownload_with_matching_digest'
+
+      - name: remove disposable runtime and fixture bytes
+        if: always()
+        run: |
+          docker rm --force ksi-live-nodeodm ksi-live-minio >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP/ksi-civil-live-fixture" "$RUNNER_TEMP/ksi-civil-live-fixture.tar.gz" \
+            "$RUNNER_TEMP/ksi-civil-live-fixture-curl.err"
