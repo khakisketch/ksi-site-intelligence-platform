@@ -1,6 +1,6 @@
 # Current Task State
 
-## 2026-08-30 — `civil_runtime_resource_policy_software_green_delivery_pending`
+## 2026-08-30 — `civil_runtime_resource_policy_software_green_push_environment_blocked`
 
 - Authority: ADR-KSI-032; `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101`,
   `REQ-UX-101`; `INV-040/050/053/054/055/060`.
@@ -17,8 +17,11 @@
 - Release truth: the envelope tool is software-ready, but no actual KSI product image, SBOM/scanner
   package, signature, WORM/remote anchor, vulnerability approval, registry promotion, production deploy
   or customer-data approval was created or inferred. Those remain external release gates.
-- Delivery is pending the final clean-worktree fetch/ancestor/push/remote-SHA check. Executed remote CI
-  remains independent; the known GitHub billing/spending-limit condition must not be labeled remote green.
+- Delivery check: the final fetch proved `origin/main` `0ff5f94` is an ancestor of local `fc711e0`, which
+  was 14 commits ahead with a clean worktree. `git push origin main` was rejected by this Codex execution
+  policy before process launch because approval is unavailable. No remote mutation occurred; owner-terminal
+  fast-forward push and then new-HEAD SHA/CI inspection remain. Executed remote CI is independent, and the
+  known GitHub billing/spending-limit condition must not be labeled remote green.
 - FIELD-0a remains `BLOCKED`; all DJI capabilities remain `NOT_VERIFIED`/OFF. No device, DPK, flight,
   motor, waypoint or camera/gimbal action occurred.
 

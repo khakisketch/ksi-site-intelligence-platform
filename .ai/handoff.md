@@ -23,9 +23,11 @@ external-staging skips` at 390/768/1024/1440; lock, hygiene, reference, third-pa
 and diff gates. Functional commits are `89c2fea`, `273ab64`, `ddd1c8c`, `427dec8`, `5f22f5e` and
 `04cb68a`, followed by the state-ledger commit.
 
-The next automated step is the final clean-worktree `fetch` → ancestor check → fast-forward `main` push →
-remote SHA comparison. Remote CI must actually execute; the historical GitHub account billing/spending
-limit failure is not application failure and not green evidence. A real release still requires actual
+The final fetch and clean-worktree check passed: `origin/main` `0ff5f94` is an ancestor and local
+`fc711e0` was 14 commits ahead. This Codex environment rejected `git push origin main` before process
+launch because approval is unavailable, so no remote mutation occurred. The owner terminal must perform
+the fast-forward push and compare the resulting remote SHA. Remote CI must actually execute; the historical
+GitHub account billing/spending-limit failure is not application failure and not green evidence. A real release still requires actual
 product-image builds, SBOM/scanner review, registry promotion, signature/WORM/remote anchoring, Cloud/data
 approval and restore evidence. Korean same-site civil acceptance is separate. FIELD-0a stays `BLOCKED`,
 all DJI capabilities stay `NOT_VERIFIED`/OFF, and no device or flight-control action is authorized.

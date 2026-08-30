@@ -62,8 +62,10 @@ Execution:
 4. [완료] Add and independently audit the release-evidence schema/tool and exact-source-tree boundary.
 5. [완료] Run local gates: Python `4215/24 skipped`; Mypy `441`; Dashboard `62/566`; Playwright
    `62/14 intentional skips`; Ruff, lock, build and repository gates green.
-6. [진행 중] Commit the final state ledger, fetch, require `origin/main` to be an ancestor, push `main`
-   and verify local/remote SHA. Inspect remote jobs without treating zero-step account failures as green.
+6. [차단 — 실행 환경] The final fetch/ancestor/clean-worktree checks passed: remote `0ff5f94` was an
+   ancestor and local `fc711e0` was 14 commits ahead. This Codex environment rejected `git push origin
+   main` before process launch because approval is unavailable; no remote mutation occurred. Owner-terminal
+   fast-forward push and new-HEAD remote-job inspection remain.
 7. [외부 게이트] Build/promote actual images, review SBOM/scans, sign/anchor release evidence and complete
    Cloud/customer/field approvals. FIELD/DJI work remains separate.
 

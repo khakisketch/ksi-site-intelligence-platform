@@ -22,8 +22,9 @@ Repository-owned software is green: Python `4215 passed / 24 skipped`; Ruff; Myp
 Dashboard `62 files / 566 tests`, ESLint, TypeScript and production build; Playwright `62 passed / 14`
 intentional external-staging skips at 390/768/1024/1440; lock, hygiene, reference, third-party checksum,
 runtime-pin and diff gates. Functional commits through `04cb68a` are split by authority/runtime/Core/UI/
-release evidence/test typing. Delivery and remote-CI evidence are recorded only after the final fetch and
-push verification.
+release evidence/test typing. The final fetch proved `origin/main` (`0ff5f94`) is an ancestor and local
+`main` was 14 commits ahead at `fc711e0`, but this Codex environment rejected `git push origin main`
+before launch because approval is unavailable. Delivery and remote-CI evidence therefore remain pending.
 
 Actual product-image build/promotion, SBOM/scanner review, release signing/WORM/remote anchoring, public
 Cloud/customer-data approval and Korean civil field acceptance remain external gates. FIELD-0a remains
