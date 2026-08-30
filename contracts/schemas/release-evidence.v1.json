@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/release-evidence.v1.json",
+  "title": "KSI Release Evidence v1",
+  "description": "Create-once, owner-only local provenance envelope. It records a clean Git source commit, locally built KSI product-image identities, hashes of locally supplied SBOM/scanner evidence structurally associated with each image, and exact pinned external runtime references from that same Git tree. Its SHA-256 sidecar is not an authenticity signature or tamper-proof/WORM storage; it does not prove artifacts were generated from the image and is not vulnerability approval, deployment approval, or proof that an image was pushed or run. Signature, WORM retention, and remote anchoring are separate release gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAtUtc",
+    "source",
+    "productImages",
+    "externalRuntimeImages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitCommitSha"],
+      "properties": {
+        "gitCommitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "productImages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference", "sbom", "scanner"],
+        "properties": {
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$"
+          },
+          "sbom": {"$ref": "#/$defs/cycloneDxArtifact"},
+          "scanner": {"$ref": "#/$defs/scannerArtifact"}
+        }
+      }
+    },
+    "externalRuntimeImages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "anyOf": [
+          {
+            "pattern": "^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$"
+          },
+          {
+            "const": "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
+          }
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "evidenceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "bytes", "sha256"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "type": {"type": "string"},
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "cycloneDxArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceArtifact"},
+        {"properties": {"type": {"const": "cyclonedx-json"}}}
+      ]
+    },
+    "scannerArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceArtifact"},
+        {"properties": {"type": {"const": "scanner-json"}}}
+      ]
+    }
+  }
+}
