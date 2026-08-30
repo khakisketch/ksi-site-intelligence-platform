@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignUniqueMediaIds,
+  canReissueProcessingJob,
   chunk,
   deriveMediaId,
   isTerminalJobStatus,
@@ -223,5 +224,16 @@ describe("isTerminalJobStatus", () => {
     expect(isTerminalJobStatus("SUCCEEDED")).toBe(true);
     expect(isTerminalJobStatus("FAILED")).toBe(true);
     expect(isTerminalJobStatus("CANCELLED")).toBe(true);
+  });
+});
+
+describe("canReissueProcessingJob", () => {
+  it("FAILED/CANCELLED 종료 작업만 발행 권한으로 새 작업을 만들 수 있다", () => {
+    expect(canReissueProcessingJob("FAILED", true)).toBe(true);
+    expect(canReissueProcessingJob("CANCELLED", true)).toBe(true);
+    expect(canReissueProcessingJob("SUCCEEDED", true)).toBe(false);
+    expect(canReissueProcessingJob("RUNNING", true)).toBe(false);
+    expect(canReissueProcessingJob("FAILED", false)).toBe(false);
+    expect(canReissueProcessingJob(null, true)).toBe(false);
   });
 });

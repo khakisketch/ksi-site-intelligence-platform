@@ -289,7 +289,11 @@ export default async function MissionDetailPage({
           missionId={mission.missionId}
           canIssue={canIssue}
           initialBundle={sourceBundle}
-          initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
+          initialJob={
+            latestJob
+              ? { jobId: latestJob.jobId, status: latestJob.status, detail: latestJob.detail }
+              : null
+          }
           hasComparisonReport={hasComparison}
         />
       </ResponsiveActionBoundary>

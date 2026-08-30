@@ -169,10 +169,20 @@ export function summarizeUploadBatch(results: readonly SourceMediaItemResultView
 }
 
 const TERMINAL_JOB_STATUSES = new Set(["SUCCEEDED", "FAILED", "CANCELLED"]);
+const REISSUABLE_JOB_STATUSES = new Set(["FAILED", "CANCELLED"]);
 
 /** QUEUED/RUNNING 이면 false — 폴링을 계속해야 한다는 뜻. */
 export function isTerminalJobStatus(status: string): boolean {
   return TERMINAL_JOB_STATUSES.has(status);
+}
+
+/**
+ * A terminal failure may be followed by a new immutable ProcessingJob over the
+ * same sealed source bundle. Successful jobs are evidence and are never
+ * "retried" in place; QUEUED/RUNNING jobs must keep polling instead.
+ */
+export function canReissueProcessingJob(status: string | null, canIssue: boolean): boolean {
+  return canIssue && status !== null && REISSUABLE_JOB_STATUSES.has(status);
 }
 
 // ── 브라우저 API 호출(순수 로직 아님 — vitest 대상 아님) ────────────────────

@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   assignUniqueMediaIds,
   buildSourceMediaClaim,
+  canReissueProcessingJob,
   chunk,
   isTerminalJobStatus,
   summarizeUploadBatch,
@@ -89,7 +90,7 @@ export function SourceUploadPanel({
   missionId: string;
   canIssue: boolean;
   initialBundle: SourceMediaBundleView | null;
-  initialJob: { jobId: string; status: string } | null;
+  initialJob: { jobId: string; status: string; detail?: string | null } | null;
   /** change-detection·volume-change 둘 다 없으면 /reports 는 빈 화면이다 — 그
    * 경우 링크 대신 왜 아직 못 보는지 안내한다(missions/[missionId]/page.tsx 가
    * reports/page.tsx 와 같은 판정을 재사용해 계산). */
@@ -110,6 +111,7 @@ export function SourceUploadPanel({
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(initialJob?.jobId ?? null);
   const [jobStatus, setJobStatus] = useState<string | null>(initialJob?.status ?? null);
+  const [jobDetail, setJobDetail] = useState<string | null>(initialJob?.detail ?? null);
   const [artifacts, setArtifacts] = useState<ProcessingArtifactSummary[]>([]);
 
   // jobId 가 생기거나 바뀔 때마다(마운트 시 복원 · handleIssue 발급 직후 둘 다)
@@ -123,12 +125,17 @@ export function SourceUploadPanel({
     async (id) => {
       const response = await fetch(`/api/processing-jobs/${encodeURIComponent(id)}`);
       if (!response.ok) return null;
-      const body = await parseJsonSafe<Pick<ProcessingJobArtifactsView, "status" | "artifacts">>(response);
-      return body.status ? { status: body.status, artifacts: body.artifacts ?? [] } : null;
+      const body = await parseJsonSafe<
+        Pick<ProcessingJobArtifactsView, "status" | "artifacts"> & { detail?: string | null }
+      >(response);
+      return body.status
+        ? { status: body.status, artifacts: body.artifacts ?? [], detail: body.detail ?? null }
+        : null;
     },
     (result) => isTerminalJobStatus(result.status),
     (result) => {
       setJobStatus(result.status);
+      setJobDetail(result.detail);
       setArtifacts(result.artifacts);
       if (isTerminalJobStatus(result.status)) {
         setPhase(result.status === "SUCCEEDED" ? "job-done" : "job-failed");
@@ -290,6 +297,7 @@ export function SourceUploadPanel({
         return;
       }
       setJobStatus(body.job.status);
+      setJobDetail(body.job.detail);
       setArtifacts([]);
       setPhase(isTerminalJobStatus(body.job.status) ? (body.job.status === "SUCCEEDED" ? "job-done" : "job-failed") : "job-running");
       // jobId 를 마지막에 설정한다 — 이 값이 바뀌는 것 자체가 폴링 effect 를
@@ -468,9 +476,21 @@ export function SourceUploadPanel({
           )}
 
           {phase === "job-failed" && (
-            <p className="text-[12.5px] break-keep text-crit-ink">
-              재구성 작업이 {jobStatus === "CANCELLED" ? "취소되었습니다" : "실패했습니다"}.
-            </p>
+            <div className="flex flex-col gap-2">
+              <p className="text-[12.5px] break-keep text-crit-ink">
+                재구성 작업이 {jobStatus === "CANCELLED" ? "취소되었습니다" : "실패했습니다"}.
+                {jobDetail ? ` ${jobDetail}` : " 서버 상세 사유를 확인할 수 없습니다."}
+              </p>
+              {canReissueProcessingJob(jobStatus, canIssue) && (
+                <button
+                  type="button"
+                  onClick={() => void handleIssue()}
+                  className="btn btn-primary w-fit"
+                >
+                  같은 봉인 사진으로 재구성 다시 시도
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

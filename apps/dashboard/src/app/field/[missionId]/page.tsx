@@ -238,7 +238,11 @@ export default async function FieldMissionPage({
               missionId={mission.missionId}
               canIssue={canIssue}
               initialBundle={media.bundle}
-              initialJob={latestJob ? { jobId: latestJob.jobId, status: latestJob.status } : null}
+              initialJob={
+                latestJob
+                  ? { jobId: latestJob.jobId, status: latestJob.status, detail: latestJob.detail }
+                  : null
+              }
               // 비교 리포트 유무는 현장에서 할 일이 아니다(사무실 화면의 판단이다).
               // false 로 두면 재구성 완료 직후 "아직 비교 리포트가 없다"는 안내가 뜨는데,
               // 현장에서는 그게 맞는 안내다 — 재구성은 방금 끝났고 비교는 아직이다.
