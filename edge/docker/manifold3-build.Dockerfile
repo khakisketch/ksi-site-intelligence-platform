@@ -6,8 +6,9 @@
 #
 # 실기 실측(2026-08-03 HIL 세션, SESS-20260803T125616Z-PENDING-SN):
 #   gcc 9.4.0 / cmake 3.16.3 / glibc 2.31 / Ubuntu 20.04.6 LTS / Python 3.8.10
-# 이 Dockerfile은 그 값을 apt로 그대로 재현한다(버전 고정이 아니라 20.04 태그가
-# 곧 버전 앵커 — 20.04 apt 저장소가 유지되는 한 이 조합은 안정적으로 재현된다).
+# 이 Dockerfile은 그 값을 apt로 그대로 재현한다. Ubuntu release tag와 multi-arch
+# OCI manifest digest를 함께 고정한다. apt archive 자체의 package update는 별도 ABI
+# 재검증의 대상이며, image tag만으로 재현성을 주장하지 않는다.
 #
 # 개발 PC가 이미 aarch64이므로 이 이미지를 네이티브로 돌리면 QEMU가 필요 없다.
 # CI(x86-64 러너)에서는 QEMU 등록 후 --platform=linux/arm64로 실행한다
@@ -18,14 +19,14 @@
 # linux/arm64`(빌드 시)와 `docker run --platform linux/arm64`(CI 실행 시)로 외부에서
 # 지정한다. FROM에 상수를 박으면 buildx가 경고하고, CI에서 QEMU 등록 순서 문제와도
 # 얽힌다(§ CI job 주석 참조).
-FROM ubuntu:20.04
+FROM ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# 실기와 동일한 빌드 도구 체인. 버전을 고정하지 않는다 — 20.04 apt가 곧 앵커이고,
-# 실기 자체도 20.04.6 apt로 설치된 9.4.0/3.16.3이다(고정 버전 지정은 오히려
-# "실기가 그 사이 업데이트되면 컨테이너와 다시 벌어진다"는 새 드리프트를 만든다).
+# 실기와 동일한 빌드 도구 체인. 실기 자체도 20.04.6 apt로 설치된 9.4.0/3.16.3이다.
+# OS image pin과 apt package identity는 서로 다른 재현성 축이므로, package 변경은
+# target ABI gate에서 다시 검증한다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \

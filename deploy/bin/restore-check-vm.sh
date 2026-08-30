@@ -29,16 +29,16 @@ trap cleanup EXIT
 docker volume create "$data_volume" >/dev/null
 docker volume create "$objects_volume" >/dev/null
 docker run --rm -v "$data_volume":/restore -v "$bundle_dir":/backup:ro \
-  alpine:3.22 tar -C /restore -xzf /backup/core-data.tgz
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce tar -C /restore -xzf /backup/core-data.tgz
 docker run --rm -v "$objects_volume":/restore -v "$bundle_dir":/backup:ro \
-  alpine:3.22 tar -C /restore -xzf /backup/objects.tgz
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce tar -C /restore -xzf /backup/objects.tgz
 docker run --rm -v "$keys_dir":/restore -v "$bundle_dir":/backup:ro \
-  alpine:3.22 sh -c \
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -c \
   "tar -C /restore -xzf /backup/signing-keys.tgz && chown -R $(id -u):$(id -g) /restore"
 
-docker run --rm -v "$data_volume":/restore:ro alpine:3.22 \
+docker run --rm -v "$data_volume":/restore:ro alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce \
   sh -c 'test -n "$(find /restore -type f -print -quit)"'
-docker run --rm -v "$objects_volume":/restore:ro alpine:3.22 \
+docker run --rm -v "$objects_volume":/restore:ro alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce \
   sh -c 'test -n "$(find /restore -type f -print -quit)"'
 test -f "$keys_dir/keys.json"
 

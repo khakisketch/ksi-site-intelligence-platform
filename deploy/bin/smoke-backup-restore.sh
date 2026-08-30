@@ -19,9 +19,9 @@ trap cleanup EXIT
 
 docker volume create "$data_volume" >/dev/null
 docker volume create "$objects_volume" >/dev/null
-docker run --rm -v "$data_volume":/target alpine:3.22 \
+docker run --rm -v "$data_volume":/target alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce \
   sh -c 'mkdir -p /target/journals && printf "%s\n" synthetic-journal > /target/journals/sample.jsonl'
-docker run --rm -v "$objects_volume":/target alpine:3.22 \
+docker run --rm -v "$objects_volume":/target alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce \
   sh -c 'mkdir -p /target/objects && printf "%s\n" synthetic-object > /target/objects/sample.bin'
 printf '%s\n' '{"active":"smoke-key","keys":[{"keyId":"smoke-key","status":"ACTIVE"}]}' \
   > "$signing_dir/keys.json"

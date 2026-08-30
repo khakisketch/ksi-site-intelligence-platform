@@ -37,6 +37,9 @@ jobs:
       - name: 의존성 동기화 (locked)
         run: uv sync --locked --all-packages
 
+      - name: production runtime image digest gate
+        run: uv run --locked python tools/check_runtime_image_pins.py
+
       - name: ruff
         run: uv run --locked ruff check .
 

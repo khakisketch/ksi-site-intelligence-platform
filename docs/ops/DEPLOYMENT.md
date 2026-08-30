@@ -77,7 +77,7 @@ Core 는 기동 시 이 매니페스트를 검증한다 — 활성 키가 REVOKE
 
 ```bash
 cd ..                                     # deploy/
-docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt
+docker run --rm -v "$PWD/signing-keys":/mnt busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 chown -R 10001:10001 /mnt
 ```
 
 `sudo chown -R 10001:10001 signing-keys` 도 같은 결과다. 위 형태를 기본으로 두는 이유는
@@ -100,20 +100,20 @@ cd deploy
 UID_ME=$(id -u); GID_ME=$(id -g)
 
 # 1) 작업 전 — 내 계정으로 되돌린다
-docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R "$UID_ME:$GID_ME" /mnt
+docker run --rm -v "$PWD/signing-keys":/mnt busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 chown -R "$UID_ME:$GID_ME" /mnt
 
 # 2) SIGNING_KEY_LIFECYCLE.md §회전 1~3 을 signing-keys/ 안에서 그대로 실행
 #    (새 키쌍 생성 · chmod 600 · keys.json 의 active 교체 · 이전 키 notAfter 부여)
 
 # 3) 작업 후 — 다시 컨테이너 uid 로 넘긴다
-docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt
+docker run --rm -v "$PWD/signing-keys":/mnt busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 chown -R 10001:10001 /mnt
 
 # 4) Core 재기동 — 기동 시 매니페스트가 재검증된다
 docker compose up -d --force-recreate core
 ```
 
 백업도 같은 이유로 1) 을 먼저 하거나, 되돌리지 않고 `docker run --rm -v
-"$PWD/signing-keys":/mnt busybox tar -cf - -C /mnt .` 로 컨테이너를 통해 읽는다.
+"$PWD/signing-keys":/mnt busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 tar -cf - -C /mnt .` 로 컨테이너를 통해 읽는다.
 
 **3) 을 빼먹으면 재기동한 Core 가 키를 못 읽고 기동을 거부한다** — 조용히 옛 키로 도는
 일은 없다(§7 표의 "권한 거부" 행).
@@ -192,7 +192,7 @@ curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8000/v1/sites
 | `tokenSha256 은 소문자 64자리 hex 여야 한다` | 원문 토큰을 그대로 넣었거나, `sha256sum` 출력의 뒤쪽 `  -` 까지 붙여넣었거나, 대문자 | `sha256sum \| awk '{print $1}'` 출력을 넣는다(§3) |
 | `키 매니페스트를 읽을 수 없다` | `keys.json` 이 없거나 형식 오류거나, **`deploy/signing-keys/` 가 아닌 다른 곳에 만들었다**(compose 가 바인드하는 경로는 이 하나뿐이다) | §2 — 경로부터 확인한다 |
 | `개인키 권한이 너무 열려 있다` | `chmod 600` 누락 | §2 |
-| 키는 있는데 Core 가 `keys.json` 을 못 읽는다(권한 거부) | 파일 소유자가 uid 10001 이 아니다 — Core 는 non-root 라 `0600` 파일을 소유자가 아니면 못 읽는다 | §2 마지막 단계(`docker run --rm -v "$PWD/signing-keys":/mnt busybox chown -R 10001:10001 /mnt`) |
+| 키는 있는데 Core 가 `keys.json` 을 못 읽는다(권한 거부) | 파일 소유자가 uid 10001 이 아니다 — Core 는 non-root 라 `0600` 파일을 소유자가 아니면 못 읽는다 | §2 마지막 단계(`docker run --rm -v "$PWD/signing-keys":/mnt busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 chown -R 10001:10001 /mnt`) |
 | 기동은 됐는데 `/ready` 가 503 | 원장이 봉인됨 | 응답의 `sealedCount` 확인 후 원장 상태 조사 — 쓰기를 계속하면 안 된다 |
 | 워커가 붙지 못함(401) | `KSI_WORKER_CORE_TOKEN` 원문과 Core 의 digest 불일치 | §3 을 다시 한다(원문↔digest 쌍) |
 | 재구성이 `EngineIdentityMismatch` 로 거부 | NodeODM 이미지가 바뀌어 엔진 버전이 작업 지시와 다름 | 의도된 거부다 — 작업의 `engineVersion` 과 실제 엔진을 맞춘다 |

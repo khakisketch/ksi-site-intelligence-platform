@@ -26,12 +26,12 @@ done
 docker run --rm \
   -v "$data_volume":/source:ro \
   -v "$bundle_dir":/backup \
-  alpine:3.22 tar -C /source -czf /backup/core-data.tgz .
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce tar -C /source -czf /backup/core-data.tgz .
 
 docker run --rm \
   -v "$objects_volume":/source:ro \
   -v "$bundle_dir":/backup \
-  alpine:3.22 tar -C /source -czf /backup/objects.tgz .
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce tar -C /source -czf /backup/objects.tgz .
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 deploy_dir="$(cd -- "$script_dir/.." && pwd)"
@@ -43,7 +43,7 @@ fi
 docker run --rm \
   -v "$signing_keys_dir":/source:ro \
   -v "$bundle_dir":/backup \
-  alpine:3.22 tar -C /source -czf /backup/signing-keys.tgz .
+  alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce tar -C /source -czf /backup/signing-keys.tgz .
 
 (
   cd "$bundle_dir"

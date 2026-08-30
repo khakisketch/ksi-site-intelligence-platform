@@ -107,7 +107,7 @@ verify() {
     }
     trap cleanup_verify EXIT
     docker run --rm -v ksi-phase2-staging-signing:/source:ro -v "$keys_dir":/target \
-      alpine:3.22 sh -c \
+      alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -c \
       "cp -a /source/. /target/ && chown -R $(id -u):$(id -g) /target"
     compose stop dashboard core >/dev/null
     bundle="$(

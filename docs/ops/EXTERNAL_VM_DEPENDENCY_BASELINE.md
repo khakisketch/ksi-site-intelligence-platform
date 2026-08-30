@@ -9,14 +9,37 @@
 |---|---|---:|---|---|
 | Auth.js (`next-auth`) | `apps/dashboard/package.json`, `package-lock.json` | `5.0.0-beta.32` | ISC | OIDC Authorization Code + PKCE, 암호화 서버 세션 |
 | PyJWT | `services/core/pyproject.toml`, `uv.lock` | `2.13.0` | MIT | Core OIDC JWT/JWKS 검증 |
-| Caddy image | `deploy/compose.vm.yaml` | `2.10.2-alpine` | Apache-2.0 | TLS ingress |
-| Node image | `apps/dashboard/Dockerfile` | `22.18-alpine` | MIT | Dashboard build/runtime |
+| Caddy image | `deploy/compose.vm.yaml` | `2.10.2-alpine` + OCI digest | Apache-2.0 | TLS ingress |
+| Node image | `apps/dashboard/Dockerfile` | `22.18-alpine` + OCI digest | MIT | Dashboard build/runtime |
 | Playwright Test | `apps/dashboard/package.json`, `package-lock.json` | `1.62.1` | Apache-2.0 | 4개 기준 폭 OIDC·반응형 브라우저 회귀 |
 | axe-core | `apps/dashboard/package.json`, `package-lock.json` | `4.13.0` | MPL-2.0 | serious·critical 접근성 자동 검사 |
 
-Caddy의 현재 로컬 pull digest는
-`sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d`다.
-태그와 digest는 release 후보 생성 시 다시 대조하고, 승인된 digest로 배포 manifest를 고정한다.
+## Runtime image provenance
+
+운영과 synthetic staging에서 외부 registry로부터 받는 이미지는 모두 **명시 버전 태그와
+multi-arch OCI manifest digest**를 함께 적는다. 태그는 사람이 읽는 의도된 릴리스이고,
+digest는 실제 pull 대상이다. `:latest`와 tag-only 참조는 허용하지 않는다.
+`tools/check_runtime_image_pins.py`가 product-owned root·apps·services·workers Dockerfile,
+Manifold build Dockerfile의 `FROM`/외부 `COPY --from`, 모든 `deploy/compose*.yaml|yml`,
+그리고 모든 `deploy/bin/*.sh`의 `docker run`을 검사한다. 로컬 Compose build 이름
+(`ksi-phase2-*:local`)은 registry pull이 아니므로 예외다. NodeODM은 승인된 multi-arch
+manifest digest에 대응하는 upstream release tag가 없으므로, 정적 gate의 유일한
+digest-only 예외다. 그 NodeODM/ODM 버전은 처리 프로필과 live `/info` 대조로 별도 검증한다.
+
+| Image | Pinned reference |
+|---|---|
+| Python | `python:3.12.14-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217` |
+| uv | `ghcr.io/astral-sh/uv:0.11.15@sha256:e590846f4776907b254ac0f44b5b380347af5d90d668138ca7938d1b0c2f98d3` |
+| Node | `node:22.18-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b` |
+| BusyBox | `busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662` |
+| Alpine (backup/restore) | `alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce` |
+| MinIO | `minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` |
+| MinIO client | `minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727` |
+| NodeODM | `opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2` |
+| Caddy | `caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d` |
+
+태그와 digest를 바꿀 때는 image manifest가 multi-architecture인지, SBOM·취약점 결과와
+실제 기동 검증이 새 digest에 대응하는지를 release review에서 대조한다.
 
 ## SBOM 및 취약점 release gate
 
@@ -32,7 +55,7 @@ cd ../..
 uv export --locked --all-packages --all-extras > python-requirements.lock.txt
 docker build -t ksi-dashboard:<release-id> apps/dashboard
 syft ksi-dashboard:<release-id> -o cyclonedx-json=dashboard-image.cdx.json
-syft caddy:2.10.2-alpine -o cyclonedx-json=caddy-image.cdx.json
+syft caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d -o cyclonedx-json=caddy-image.cdx.json
 ```
 
 생성한 SBOM에는 최소한 이미지 digest, 생성 시각, lockfile commit, scanner 버전을 기록한다.
@@ -49,5 +72,7 @@ upgrade를 별도 검증하고, 승인되지 않은 high 취약점이 남으면 
 
 - Auth.js beta 변경은 login/logout/refresh failure와 서버 세션 비노출 회귀 검증 후 수행한다.
 - JWT algorithm allow-list를 넓히려면 별도 보안 검토가 필요하다.
+- 외부 runtime image를 바꾸면 tag와 multi-arch digest를 함께 갱신하고
+  `uv run --locked python tools/check_runtime_image_pins.py` 및 실제 기동 검증을 다시 수행한다.
 - Caddy에 비공식 plugin을 추가하면 해당 module license와 SBOM을 다시 승인한다.
 - `npm audit fix --force`나 호환성 미검증 major upgrade를 release 준비 근거로 사용하지 않는다.
