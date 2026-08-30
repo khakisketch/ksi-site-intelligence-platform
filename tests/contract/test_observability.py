@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.metrics import PROCESSING_JOB_ADMISSIONS, record_processing_job_admission
 from ksi_core.observability import (
     REQUEST_ID_HEADER,
     JsonLogFormatter,
@@ -175,6 +176,20 @@ def test_http_request_is_reflected_in_metrics(tmp_path: Path) -> None:
     assert 'method="GET"' in body
     assert 'route="/health"' in body
     assert 'status="200"' in body
+
+
+def test_processing_admission_metric_has_only_bounded_non_sensitive_labels() -> None:
+    """OP-01: admission telemetry must not create an org/job/site/media series."""
+    record_processing_job_admission(
+        outcome="rejected", reason="SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED"
+    )
+    rendered = "\n".join(PROCESSING_JOB_ADMISSIONS.render())
+    assert 'outcome="rejected"' in rendered
+    assert 'reason="SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED"' in rendered
+    for forbidden in ("organization", "mission", "job", "site", "media", "filename"):
+        assert f'{forbidden}="' not in rendered
+    with pytest.raises(ValueError, match="admission reason"):
+        record_processing_job_admission(outcome="rejected", reason="org-secret")
 
 
 def test_correlation_id_header_is_echoed_back(tmp_path: Path) -> None:

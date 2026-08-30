@@ -3402,6 +3402,10 @@ paths:
 
         `input`(장수·총 화소·sourceBundleDigest)·`dataResidency`·`billing`·
         `status`·`jobId`도 요청 스키마에 자리가 없고, 실어 보내면 422 다.
+        Core가 고정한 `resourcePolicy`와 한도 수치·override도 요청 표면에 없다.
+        봉인 번들의 파일 수·개별/합계 byte·총 MP·같은 조직의 활성 작업 수를
+        `ksi-civil-pilot-r1` immutable snapshot으로 서버가 판정한다. 초과하면
+        `RESOURCE_LIMIT_EXCEEDED`와 bounded reasonCode를 반환한다.
         입력은 봉인된 번들에서 Core 가 집계하고(봉인 전이면 BUNDLE_NOT_SEALED),
         반출 허용 여부는 그 임무의 **현장**이 정하며(POST /v1/sites 의
         dataResidency), 과금은 종료 보고 시점의 몫이다. 발급 시점 billing 은
@@ -3448,7 +3452,8 @@ paths:
         '422':
           description: >-
             BUNDLE_NOT_SEALED(봉인 전 — 장수·digest 미확정) /
-            UNKNOWN_PROCESSING_PROFILE / PROCESSING_PROFILE_ISSUANCE_DISABLED /
+            UNKNOWN_PROCESSING_PROFILE / RESOURCE_LIMIT_EXCEEDED /
+            PROCESSING_PROFILE_ISSUANCE_DISABLED /
             INVALID_REQUEST_SHAPE
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
@@ -3583,6 +3588,22 @@ paths:
               schema: { $ref: '#/components/schemas/ProcessingProfileListResponse' }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_READ 권한 없음 }
+  /v1/processing-resource-policies:
+    get:
+      summary: List immutable Core processing resource policies
+      description: >-
+        인증된 모든 주체가 읽을 수 있는 global read-only discovery 표면이다.
+        편집·선택·override API가 아니며 정책은 조직별 price/accuracy/quota가 아니라
+        single-customer Civil Pilot의 처리 자원 보호 envelope다. Core만 신규 snapshot을
+        발급하며 이미 발급된 job은 journal에 고정된 snapshot과 digest를 유지한다.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Core-issued immutable resource-policy snapshots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcessingResourcePolicyListResponse' }
+        '401': { description: 인증 실패 }
   /v1/processing-jobs:
     get:
       summary: List processing jobs a worker may (re)claim — QUEUED + orphaned RUNNING (FIFO)
@@ -6665,7 +6686,8 @@ components:
       required:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
          inputVerified, processingProfileId, processingProfileDigest,
-         processingProfileClassification, contract, artifacts, leaseWorkerId,
+         processingProfileClassification, resourcePolicyId, resourcePolicyDigest,
+         contract, artifacts, leaseWorkerId,
          leaseExpiresAt, captureWindow]
       properties:
         jobId: { type: string }
@@ -6692,6 +6714,17 @@ components:
         processingProfileClassification:
           type: string
           enum: [VERSIONED, LEGACY_UNMANAGED]
+        resourcePolicyId:
+          description: >-
+            Core-owned immutable admission policy id. null only for a journal
+            record that predates the resource-policy gate; Core does not infer it.
+          type: [string, 'null']
+        resourcePolicyDigest:
+          description: >-
+            Canonical digest of the full resource-policy snapshot recorded at
+            issuance. null only for a pre-policy historical record.
+          type: [string, 'null']
+          pattern: '^sha256:[0-9a-f]{64}$'
         contract: { type: object, additionalProperties: true }
         artifacts:
           description: >-
@@ -6740,6 +6773,18 @@ components:
         verdict: { type: string }
         job: { oneOf: [{ $ref: '#/components/schemas/ProcessingJobView' }, { type: 'null' }] }
         detail: { type: [string, 'null'] }
+        reasonCode:
+          description: >-
+            Bounded typed reason under RESOURCE_LIMIT_EXCEEDED; null for
+            admission outcomes without a more specific reason.
+          type: [string, 'null']
+          enum:
+            - SOURCE_MEDIA_FILES_LIMIT_EXCEEDED
+            - SOURCE_MEDIA_FILE_BYTES_LIMIT_EXCEEDED
+            - SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED
+            - TOTAL_MEGAPIXELS_LIMIT_EXCEEDED
+            - ACTIVE_PROCESSING_JOBS_PER_ORGANIZATION_LIMIT_EXCEEDED
+            - null
     ProcessingProfileListResponse:
       description: >-
         Core-issued immutable snapshots. API는 id만 입력받고 이 전체 recipe를 Core가
@@ -6787,6 +6832,37 @@ components:
                   attributionRequired: { type: boolean }
               agplBoundary: { type: string, minLength: 1 }
               profileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    ProcessingResourcePolicyListResponse:
+      description: >-
+        Core-issued immutable resource-policy snapshots. This is read-only
+        discovery; callers cannot select, alter, or override the policy.
+      type: object
+      required: [currentPolicyId, policies]
+      properties:
+        currentPolicyId:
+          description: >-
+            Server-owned id of exactly one policy in policies. Clients must use
+            this field rather than inferring a default from array ordering.
+          type: string
+          minLength: 1
+        policies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [resourcePolicyId, policyVersion, maxSourceMediaFiles,
+               maxSourceMediaFileBytes, maxSourceBundleBytes, maxTotalMegapixels,
+               maxActiveProcessingJobsPerOrganization, resourcePolicyDigest]
+            properties:
+              resourcePolicyId: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' }
+              policyVersion: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' }
+              maxSourceMediaFiles: { type: integer, minimum: 1 }
+              maxSourceMediaFileBytes: { type: integer, minimum: 1 }
+              maxSourceBundleBytes: { type: integer, minimum: 1 }
+              maxTotalMegapixels: { type: number, exclusiveMinimum: 0 }
+              maxActiveProcessingJobsPerOrganization: { type: integer, minimum: 1 }
+              resourcePolicyDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
     ProcessingArtifactMutationResponse:
       description: >-
         산출물 등록 응답. artifact 는 성공 시에만 실리고, 구조 정본은

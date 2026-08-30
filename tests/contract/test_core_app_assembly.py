@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi.testclient import TestClient
 from ksi_core import app as app_module
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
@@ -195,6 +196,27 @@ def test_expose_docs_false_removes_doc_routes() -> None:
     app = create_app(expose_docs=False)
     route_paths = {getattr(route, "path", None) for route in app.routes}
     assert not (_DOC_ROUTES & route_paths)
+
+
+def test_authenticated_minimal_assembly_exposes_read_only_resource_policy() -> None:
+    """Evidence storage가 없는 축소 조립도 전역 정책을 인증 후 조회할 수 있다.
+
+    처리 작업 발급 라우트까지 함께 열어서는 안 된다. 이 구분이 Dashboard에서
+    정책 미상과 실행 인프라 미조립을 서로 다른 상태로 보여주게 한다.
+    """
+    app = create_app(auth_registry=_auth_registry())
+    paths = set(app.openapi()["paths"])
+    assert "/v1/processing-resource-policies" in paths
+    assert "/v1/missions/{mission_id}/processing-jobs" not in paths
+
+    client = TestClient(app)
+    assert client.get("/v1/processing-resource-policies").status_code == 401
+    response = client.get(
+        "/v1/processing-resource-policies",
+        headers={"Authorization": "Bearer assembly-test-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["currentPolicyId"] == "ksi-civil-pilot-r1"
 
 
 def test_documented_public_allowlist_matches_actual_unauthenticated_surface() -> None:

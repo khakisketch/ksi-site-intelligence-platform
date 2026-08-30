@@ -955,6 +955,18 @@ def create_app(
         from ksi_core.processing_jobs import mount_processing_jobs
 
         mount_processing_jobs(app, processing_job_store, evidence_storage, site_lifecycle)
+    elif auth_registry is not None:
+        # 처리 실행 표면은 evidence storage 없이는 계속 404다. 다만 Resource Policy는
+        # tenant 데이터나 실행 상태가 아닌 Core 전역의 고정 admission envelope다.
+        # 인증된 축소 조립(dev/E2E 포함)에서도 이를 조회할 수 있어야 Dashboard가
+        # "정책을 모름"과 "실행 인프라가 없음"을 혼동하지 않는다. 수정 API는 없고,
+        # processing_job_store가 있는 조립은 위에서 같은 store registry를 노출한다.
+        from ksi_core.processing_jobs import build_processing_resource_policies_router
+        from ksi_core.processing_resource_policy import ProcessingResourcePolicyRegistry
+
+        app.include_router(
+            build_processing_resource_policies_router(ProcessingResourcePolicyRegistry())
+        )
 
     if checkpoint_validation_store is not None:
         # evidence_storage 는 위 결합 검증이 보장한다. 등록 flag가 false여도 sealed

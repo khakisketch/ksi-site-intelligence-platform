@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/processing-resource-policy.v1.json",
+  "title": "Processing Resource Policy v1",
+  "description": "Core-owned immutable admission envelope for a single-customer Civil Pilot. It protects processing resources; it is not an accuracy, pricing, or customer-entitlement statement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resourcePolicyId",
+    "policyVersion",
+    "maxSourceMediaFiles",
+    "maxSourceMediaFileBytes",
+    "maxSourceBundleBytes",
+    "maxTotalMegapixels",
+    "maxActiveProcessingJobsPerOrganization",
+    "resourcePolicyDigest"
+  ],
+  "properties": {
+    "resourcePolicyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "maxSourceMediaFiles": { "type": "integer", "minimum": 1 },
+    "maxSourceMediaFileBytes": { "type": "integer", "minimum": 1 },
+    "maxSourceBundleBytes": { "type": "integer", "minimum": 1 },
+    "maxTotalMegapixels": { "type": "number", "exclusiveMinimum": 0 },
+    "maxActiveProcessingJobsPerOrganization": { "type": "integer", "minimum": 1 },
+    "resourcePolicyDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "maxSourceMediaFileBytes": { "minimum": 1 }
+        },
+        "required": ["maxSourceMediaFileBytes"]
+      },
+      "then": {
+        "properties": {
+          "maxSourceBundleBytes": { "minimum": 1 }
+        },
+        "required": ["maxSourceBundleBytes"]
+      }
+    }
+  ]
+}

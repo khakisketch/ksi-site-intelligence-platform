@@ -145,6 +145,42 @@ MISSION_EXECUTION_TRANSITIONS = Counter(
 PROCESSING_JOB_TRANSITIONS = Counter(
     "ksi_core_processing_job_transitions_total", "재구성 작업 상태 전이 수(도착 상태별)"
 )
+PROCESSING_JOB_ADMISSIONS = Counter(
+    "ksi_core_processing_job_admissions_total",
+    "처리 작업 발급 admission 결과(고정 outcome·reason code별; 조직·작업·현장 라벨 없음)",
+)
+
+_PROCESSING_JOB_ADMISSION_OUTCOMES = frozenset({"issued", "idempotent", "rejected"})
+_PROCESSING_JOB_ADMISSION_REASONS = frozenset(
+    {
+        "ISSUED",
+        "ALREADY_ISSUED",
+        "UNKNOWN_MISSION",
+        "BUNDLE_NOT_SEALED",
+        "EGRESS_NOT_ALLOWED",
+        "UNKNOWN_PROCESSING_PROFILE",
+        "PROCESSING_PROFILE_ISSUANCE_DISABLED",
+        "ACTIVE_JOB_EXISTS",
+        "RESOURCE_LIMIT_EXCEEDED",
+        "STORE_UNAVAILABLE",
+        "SOURCE_MEDIA_FILES_LIMIT_EXCEEDED",
+        "SOURCE_MEDIA_FILE_BYTES_LIMIT_EXCEEDED",
+        "SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED",
+        "TOTAL_MEGAPIXELS_LIMIT_EXCEEDED",
+        "ACTIVE_PROCESSING_JOBS_PER_ORGANIZATION_LIMIT_EXCEEDED",
+    }
+)
+
+
+def record_processing_job_admission(*, outcome: str, reason: str) -> None:
+    """Record only bounded admission labels; identifiers cannot enter this metric."""
+    if outcome not in _PROCESSING_JOB_ADMISSION_OUTCOMES:
+        raise ValueError(f"허용되지 않는 processing job admission outcome: {outcome!r}")
+    if reason not in _PROCESSING_JOB_ADMISSION_REASONS:
+        raise ValueError(f"허용되지 않는 processing job admission reason: {reason!r}")
+    PROCESSING_JOB_ADMISSIONS.inc(outcome=outcome, reason=reason)
+
+
 COMPARISON_REQUEST_TRANSITIONS = Counter(
     "ksi_core_comparison_request_transitions_total", "두 시점 비교 요청 상태 전이 수(도착 상태별)"
 )
@@ -159,6 +195,7 @@ _ALL_METRICS: tuple[Counter | Histogram, ...] = (
     SITE_AUTO_ADVANCES,
     MISSION_EXECUTION_TRANSITIONS,
     PROCESSING_JOB_TRANSITIONS,
+    PROCESSING_JOB_ADMISSIONS,
     COMPARISON_REQUEST_TRANSITIONS,
     DESIGN_CONFORMANCE_REQUEST_TRANSITIONS,
 )
@@ -245,10 +282,12 @@ __all__ = [
     "DESIGN_CONFORMANCE_REQUEST_TRANSITIONS",
     "HTTP_REQUESTS",
     "HTTP_REQUEST_DURATION",
+    "PROCESSING_JOB_ADMISSIONS",
     "PROCESSING_JOB_TRANSITIONS",
     "SITE_AUTO_ADVANCES",
     "Counter",
     "Histogram",
     "HttpMetricsMiddleware",
     "render_prometheus_text",
+    "record_processing_job_admission",
 ]

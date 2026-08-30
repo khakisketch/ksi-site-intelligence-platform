@@ -162,6 +162,10 @@ from ksi_event_contracts.processing_job import (
     ProcessingProvider,
     processing_job_wire_dict,
 )
+from ksi_event_contracts.processing_resource_policy import (
+    ProcessingResourcePolicyV1,
+    processing_resource_policy_wire_dict,
+)
 from ksi_event_contracts.vertical_reference import VerticalReference
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field
@@ -189,11 +193,12 @@ from ksi_core.evidence import (
 )
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
 from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
-from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS
+from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS, record_processing_job_admission
 from ksi_core.processing_profiles import (
     ProcessingProfileRegistry,
     UnknownProcessingProfileError,
 )
+from ksi_core.processing_resource_policy import ProcessingResourcePolicyRegistry
 from ksi_core.source_media import (
     CaptureWindow,
     CaptureWindowView,
@@ -224,6 +229,22 @@ _STORE_UNAVAILABLE_DETAIL = JOURNAL_SEALED_DETAIL
 UNMETERED_AT_ISSUE = "unmetered-at-issue"
 
 _ACTIVE_STATUSES = frozenset({ProcessingJobStatus.QUEUED, ProcessingJobStatus.RUNNING})
+
+
+def _record_processing_job_admission(result: ProcessingJobResult) -> None:
+    """Emit a bounded operational admission metric without tenant identifiers."""
+    if result.verdict is ProcessingJobVerdict.ISSUED:
+        outcome = "issued"
+    elif result.verdict is ProcessingJobVerdict.ALREADY_ISSUED:
+        outcome = "idempotent"
+    else:
+        outcome = "rejected"
+    # ``reason_code`` is a fixed StrEnum value; ordinary verdict names are
+    # also a closed enum.  Never label by job/site/organization/media/request.
+    record_processing_job_admission(
+        outcome=outcome,
+        reason=result.reason_code or result.verdict.value,
+    )
 
 # lease 수명. ODM 재구성은 몇 시간이 걸리므로(ADR-KSI-012 D1 실측 3시간 27분)
 # 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라 **"워커가 죽었다고 판정하기까지
@@ -384,6 +405,9 @@ class ProcessingJobVerdict(StrEnum):
     EGRESS_NOT_ALLOWED = "EGRESS_NOT_ALLOWED"
     UNKNOWN_PROCESSING_PROFILE = "UNKNOWN_PROCESSING_PROFILE"
     PROCESSING_PROFILE_ISSUANCE_DISABLED = "PROCESSING_PROFILE_ISSUANCE_DISABLED"
+    # Core-owned resource envelope rejected this otherwise well-formed new job.
+    # ``ProcessingJobResult.reason_code`` says which immutable limit applied.
+    RESOURCE_LIMIT_EXCEEDED = "RESOURCE_LIMIT_EXCEEDED"
     ACTIVE_JOB_EXISTS = "ACTIVE_JOB_EXISTS"
     ILLEGAL_TRANSITION = "ILLEGAL_TRANSITION"
     # 워커 입력 수신 — 끝난 작업의 원본을 다시 내주지 않는다.
@@ -425,6 +449,18 @@ class ProcessingJobVerdict(StrEnum):
     ARTIFACT_CONTRACT_VIOLATION = "ARTIFACT_CONTRACT_VIOLATION"
 
 
+class ProcessingResourceLimitReason(StrEnum):
+    """Specific fail-closed reason under ``RESOURCE_LIMIT_EXCEEDED``."""
+
+    SOURCE_MEDIA_FILES_LIMIT_EXCEEDED = "SOURCE_MEDIA_FILES_LIMIT_EXCEEDED"
+    SOURCE_MEDIA_FILE_BYTES_LIMIT_EXCEEDED = "SOURCE_MEDIA_FILE_BYTES_LIMIT_EXCEEDED"
+    SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED = "SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED"
+    TOTAL_MEGAPIXELS_LIMIT_EXCEEDED = "TOTAL_MEGAPIXELS_LIMIT_EXCEEDED"
+    ACTIVE_PROCESSING_JOBS_PER_ORGANIZATION_LIMIT_EXCEEDED = (
+        "ACTIVE_PROCESSING_JOBS_PER_ORGANIZATION_LIMIT_EXCEEDED"
+    )
+
+
 _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.ISSUED: 201,
     ProcessingJobVerdict.ALREADY_ISSUED: 200,
@@ -435,6 +471,7 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     ProcessingJobVerdict.EGRESS_NOT_ALLOWED: 422,
     ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE: 422,
     ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED: 409,
+    ProcessingJobVerdict.RESOURCE_LIMIT_EXCEEDED: 422,
     ProcessingJobVerdict.ACTIVE_JOB_EXISTS: 409,
     ProcessingJobVerdict.ILLEGAL_TRANSITION: 409,
     # 409 지 422 가 아니다 — 요청 자체는 올바르고, 지금 원장 상태가 그 주장을
@@ -546,6 +583,10 @@ class ProcessingJobRecord:
     # legacy journal과 아직 끝나지 않은 작업은 INCOMPLETE이며 registeredAt으로
     # 추정하지 않는다(INV-020·040).
     capture_window: CaptureWindow = CaptureWindow.incomplete()
+    # Current policy jobs bind the full sealed snapshot, while pre-policy
+    # records remain honestly absent.  The policy is operational admission
+    # evidence, not a mutable organization quota setting.
+    resource_policy: ProcessingResourcePolicyV1 | None = None
 
     @property
     def processing_profile_id(self) -> str | None:
@@ -558,6 +599,22 @@ class ProcessingJobRecord:
     @property
     def processing_profile_classification(self) -> str:
         return self.spec.processing_profile_classification
+
+    @property
+    def resource_policy_id(self) -> str | None:
+        return (
+            self.resource_policy.resource_policy_id
+            if self.resource_policy is not None
+            else None
+        )
+
+    @property
+    def resource_policy_digest(self) -> str | None:
+        return (
+            self.resource_policy.resource_policy_digest
+            if self.resource_policy is not None
+            else None
+        )
 
     def to_contract(self) -> ProcessingJob:
         """계약 모델로 투영한다 — 어댑터로 나가는 payload 의 SSOT.
@@ -579,6 +636,8 @@ class ProcessingJobRecord:
             processing_params=self.spec.processing_params,
             processing_profile_id=self.spec.processing_profile_id,
             processing_profile_digest=self.spec.processing_profile_digest,
+            resource_policy_id=self.resource_policy_id,
+            resource_policy_digest=self.resource_policy_digest,
             billing=(
                 self.billing
                 if self.billing is not None
@@ -597,6 +656,7 @@ class ProcessingJobResult:
     verdict: ProcessingJobVerdict
     record: ProcessingJobRecord | None = None
     detail: str | None = None
+    reason_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -753,6 +813,54 @@ def _compute_input(*, media: tuple[Any, ...], source_bundle_digest: str) -> Proc
     )
 
 
+def _resource_policy_violation(
+    *,
+    media: tuple[SourceMediaRecord, ...],
+    policy: ProcessingResourcePolicyV1,
+    active_jobs_for_organization: int,
+) -> tuple[ProcessingResourceLimitReason, str] | None:
+    """Return the first deterministic admission violation, otherwise ``None``.
+
+    All values come from sealed SourceMedia claims or Core projections.  This
+    is deliberately not a client-facing quota calculator: it is the shared
+    live/replay fail-closed policy gate.
+    """
+    if len(media) > policy.max_source_media_files:
+        return (
+            ProcessingResourceLimitReason.SOURCE_MEDIA_FILES_LIMIT_EXCEEDED,
+            f"source media files={len(media)} exceeds policy maximum "
+            f"{policy.max_source_media_files}",
+        )
+    largest_file = max((record.size_bytes for record in media), default=0)
+    if largest_file > policy.max_source_media_file_bytes:
+        return (
+            ProcessingResourceLimitReason.SOURCE_MEDIA_FILE_BYTES_LIMIT_EXCEEDED,
+            f"largest source media bytes={largest_file} exceeds policy maximum "
+            f"{policy.max_source_media_file_bytes}",
+        )
+    bundle_bytes = sum(record.size_bytes for record in media)
+    if bundle_bytes > policy.max_source_bundle_bytes:
+        return (
+            ProcessingResourceLimitReason.SOURCE_BUNDLE_BYTES_LIMIT_EXCEEDED,
+            f"source bundle bytes={bundle_bytes} exceeds policy maximum "
+            f"{policy.max_source_bundle_bytes}",
+        )
+    total_megapixels = sum(record.width * record.height for record in media) / 1_000_000
+    if total_megapixels > policy.max_total_megapixels:
+        return (
+            ProcessingResourceLimitReason.TOTAL_MEGAPIXELS_LIMIT_EXCEEDED,
+            f"source total megapixels={total_megapixels} exceeds policy maximum "
+            f"{policy.max_total_megapixels}",
+        )
+    if active_jobs_for_organization >= policy.max_active_processing_jobs_per_organization:
+        return (
+            ProcessingResourceLimitReason.ACTIVE_PROCESSING_JOBS_PER_ORGANIZATION_LIMIT_EXCEEDED,
+            f"active processing jobs for organization={active_jobs_for_organization} "
+            f"reaches policy maximum {policy.max_active_processing_jobs_per_organization}",
+        )
+    return None
+
+
 class ProcessingJobStore:
     """``DurableJournal`` 위의 처리 작업 저장소(``source_media.py`` 형태 대칭).
 
@@ -767,12 +875,16 @@ class ProcessingJobStore:
         source_media_store: SourceMediaStore,
         site_store: SiteStore,
         processing_profile_registry: ProcessingProfileRegistry | None = None,
+        processing_resource_policy_registry: ProcessingResourcePolicyRegistry | None = None,
         processing_profile_issuance_enabled: bool = True,
     ) -> None:
         self._journal = journal
         self._source_media = source_media_store
         self._sites = site_store
         self._processing_profiles = processing_profile_registry or ProcessingProfileRegistry()
+        self._resource_policies = (
+            processing_resource_policy_registry or ProcessingResourcePolicyRegistry()
+        )
         self._processing_profile_issuance_enabled = processing_profile_issuance_enabled
         self._lock = threading.Lock()
         self._jobs: dict[str, ProcessingJobRecord] = {}
@@ -808,6 +920,12 @@ class ProcessingJobStore:
         job_id = raw["jobId"]
         if job_id in self._jobs:
             raise ProcessingJobRecoveryError(f"재생: jobId 중복 발급 레코드 — jobId={job_id}")
+        policy_raw = raw.get("resourcePolicy")
+        policy_digest_raw = raw.get("resourcePolicyDigest")
+        if (policy_raw is None) != (policy_digest_raw is None):
+            raise ProcessingJobRecoveryError(
+                "재생: resource policy binding이 반쪽이다 — jobId=" + job_id
+            )
         try:
             residency = DataResidency.model_validate(raw["dataResidency"])
             license_basis = LicenseBasis.model_validate(raw["licenseBasis"])
@@ -823,6 +941,11 @@ class ProcessingJobStore:
                 # label a prior job with today's default profile.
                 processing_profile_id=raw.get("processingProfileId"),
                 processing_profile_digest=raw.get("processingProfileDigest"),
+            )
+            resource_policy = (
+                ProcessingResourcePolicyV1.model_validate(policy_raw)
+                if policy_raw is not None
+                else None
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise ProcessingJobRecoveryError(
@@ -841,6 +964,41 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 "재생: processing profile binding이 반쪽이다 — jobId=" + job_id
             )
+        if resource_policy is not None and (
+            resource_policy.resource_policy_digest != policy_digest_raw
+        ):
+            raise ProcessingJobRecoveryError(
+                "재생: resource policy snapshot digest가 journal binding과 다르다 — jobId="
+                + job_id
+            )
+        if resource_policy is not None:
+            bundle = self._source_media.get(raw["missionId"])
+            organization_id = self._organization_id_for_mission(raw["missionId"])
+            if bundle is None or organization_id is None:
+                raise ProcessingJobRecoveryError(
+                    "재생: resource policy가 있는 작업의 mission/source bundle 권위를 찾을 수 없다 "
+                    f"— jobId={job_id}"
+                )
+            if (
+                not bundle.is_sealed
+                or bundle.source_bundle_digest != job_input.source_bundle_digest
+            ):
+                raise ProcessingJobRecoveryError(
+                    "재생: resource policy가 있는 작업의 sealed source bundle이 발급 입력과 다르다 "
+                    f"— jobId={job_id}"
+                )
+            violation = _resource_policy_violation(
+                media=bundle.media,
+                policy=resource_policy,
+                active_jobs_for_organization=self._active_job_count_for_organization_locked(
+                    organization_id
+                ),
+            )
+            if violation is not None:
+                raise ProcessingJobRecoveryError(
+                    "재생: resource policy 위반 발급 레코드 — "
+                    f"jobId={job_id} reason={violation[0].value}: {violation[1]}"
+                )
         record = ProcessingJobRecord(
             job_id=job_id,
             mission_id=raw["missionId"],
@@ -852,6 +1010,7 @@ class ProcessingJobStore:
             issued_at=_require_aware_iso(raw["ts"], "ts", job_id),
             issued_by=raw["issuedBy"],
             updated_at=_require_aware_iso(raw["ts"], "ts", job_id),
+            resource_policy=resource_policy,
         )
         self._jobs[job_id] = record
         self._sequence[record.mission_id] = max(
@@ -1216,8 +1375,9 @@ class ProcessingJobStore:
             active = self._active_job_locked(mission_id)
             if active is not None:
                 if active.spec.fingerprint() == spec.fingerprint():
-                    # 같은 사양 재요청 — 네트워크 재시도가 작업을 복제하지 않는다.
-                    # journal 에 다시 쓰지 않는다(새로 기록할 사실이 없다).
+                    # All identity, sealed-bundle, and INV-050 checks above
+                    # still apply.  Only today's resource policy must not
+                    # reinterpret a pre-existing idempotent active job.
                     return ProcessingJobResult(
                         ProcessingJobVerdict.ALREADY_ISSUED, record=active
                     )
@@ -1232,6 +1392,29 @@ class ProcessingJobStore:
             job_input = _compute_input(
                 media=bundle.media, source_bundle_digest=bundle.source_bundle_digest
             )
+            resource_policy = self._resource_policies.current()
+            organization_id = self._organization_id_for_mission(mission_id)
+            if organization_id is None:
+                # A sealed source bundle without the mission ownership
+                # authority is an inconsistent projection, not an opportunity
+                # to count it as a global/anonymous customer.
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_MISSION,
+                    detail="해당 임무의 조직 소유권을 확인할 수 없다",
+                )
+            violation = _resource_policy_violation(
+                media=bundle.media,
+                policy=resource_policy,
+                active_jobs_for_organization=self._active_job_count_for_organization_locked(
+                    organization_id
+                ),
+            )
+            if violation is not None:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.RESOURCE_LIMIT_EXCEEDED,
+                    detail=violation[1],
+                    reason_code=violation[0].value,
+                )
             sequence = self._sequence.get(mission_id, 0) + 1
             job_id = build_job_id(mission_id, sequence)
             raw: dict[str, Any] = {
@@ -1249,6 +1432,8 @@ class ProcessingJobStore:
                 "licenseBasis": spec.license_basis.model_dump(by_alias=True, mode="json"),
                 "input": job_input.model_dump(by_alias=True, mode="json"),
                 "processingParams": spec.processing_params,
+                "resourcePolicy": processing_resource_policy_wire_dict(resource_policy),
+                "resourcePolicyDigest": resource_policy.resource_policy_digest,
                 "issuedBy": issued_by,
             }
             if spec.processing_profile_id is not None:
@@ -1273,6 +1458,7 @@ class ProcessingJobStore:
                 issued_at=now,
                 issued_by=issued_by,
                 updated_at=now,
+                resource_policy=resource_policy,
             )
             self._jobs[job_id] = record
             self._sequence[mission_id] = sequence
@@ -1282,6 +1468,11 @@ class ProcessingJobStore:
     def processing_profiles(self) -> ProcessingProfileRegistry:
         """The issued recipes available to authenticated callers (read-only)."""
         return self._processing_profiles
+
+    @property
+    def processing_resource_policies(self) -> ProcessingResourcePolicyRegistry:
+        """Core-issued admission-policy snapshots, exposed read-only."""
+        return self._resource_policies
 
     @property
     def processing_profile_issuance_enabled(self) -> bool:
@@ -1634,6 +1825,26 @@ class ProcessingJobStore:
                 return record
         return None
 
+    def _organization_id_for_mission(self, mission_id: str) -> str | None:
+        """Read organization ownership from the Mission authority, never a job claim.
+
+        ProcessingJob intentionally does not duplicate ``organizationId`` in
+        its journal (INV-060).  SourceMediaStore owns the MissionStore through
+        which every source bundle was admitted; this narrow read keeps that
+        existing authority boundary while the resource gate needs a same-org
+        count.
+        """
+        mission = self._source_media._mission_store.get(mission_id)  # noqa: SLF001
+        return mission.organization_id if mission is not None else None
+
+    def _active_job_count_for_organization_locked(self, organization_id: str) -> int:
+        return sum(
+            1
+            for record in self._jobs.values()
+            if record.status in _ACTIVE_STATUSES
+            and self._organization_id_for_mission(record.mission_id) == organization_id
+        )
+
     def get(self, job_id: str) -> ProcessingJobRecord | None:
         with self._lock:
             record = self._jobs.get(job_id)
@@ -1962,6 +2173,8 @@ class ProcessingJobView(CamelModel):
     processing_profile_id: str | None
     processing_profile_digest: str | None
     processing_profile_classification: str
+    resource_policy_id: str | None
+    resource_policy_digest: str | None
     contract: dict[str, Any]
     # 등록된 산출물의 계약 payload 그대로(등록 순). SUCCEEDED 를 받쳐주는 근거가
     # 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수 있게 한다(INV-051).
@@ -1999,12 +2212,20 @@ class ProcessingJobMutationResponse(CamelModel):
     verdict: str
     job: ProcessingJobView | None = None
     detail: str | None = None
+    reason_code: str | None = None
 
 
 class ProcessingProfileListResponse(CamelModel):
     """Issued profiles, never an editable configuration surface."""
 
     profiles: list[dict[str, Any]]
+
+
+class ProcessingResourcePolicyListResponse(CamelModel):
+    """Global Core policy discovery; authentication is required, not site access."""
+
+    current_policy_id: str
+    policies: list[dict[str, Any]]
 
 
 def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> ProcessingJobView:
@@ -2021,6 +2242,8 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
         processing_profile_id=record.processing_profile_id,
         processing_profile_digest=record.processing_profile_digest,
         processing_profile_classification=record.processing_profile_classification,
+        resource_policy_id=record.resource_policy_id,
+        resource_policy_digest=record.resource_policy_digest,
         contract=processing_job_wire_dict(record.to_contract()),
         artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
         lease_worker_id=record.lease.worker_id if record.lease is not None else None,
@@ -2065,6 +2288,9 @@ def build_processing_jobs_router(
         principal: Principal = Depends(_require_processing_job_issue),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
         if not store.processing_profile_issuance_enabled:
+            _record_processing_job_admission(
+                ProcessingJobResult(ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED)
+            )
             response.status_code = _STATUS[
                 ProcessingJobVerdict.PROCESSING_PROFILE_ISSUANCE_DISABLED
             ]
@@ -2075,6 +2301,9 @@ def build_processing_jobs_router(
         try:
             spec = store.resolve_processing_profile(request.processing_profile_id)
         except UnknownProcessingProfileError:
+            _record_processing_job_admission(
+                ProcessingJobResult(ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE)
+            )
             response.status_code = _STATUS[ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE]
             return ProcessingJobMutationResponse(
                 verdict=ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE.value,
@@ -2089,6 +2318,7 @@ def build_processing_jobs_router(
                 principal.device_id if principal.kind is PrincipalKind.EDGE_DEVICE else None
             ),
         )
+        _record_processing_job_admission(result)
         if (
             site_lifecycle is not None
             and result.verdict is ProcessingJobVerdict.ISSUED
@@ -2112,6 +2342,7 @@ def build_processing_jobs_router(
             if result.record is not None
             else None,
             detail=result.detail,
+            reason_code=result.reason_code,
         )
 
     @router.get(
@@ -2593,6 +2824,29 @@ def build_processing_profiles_router(store: ProcessingJobStore) -> APIRouter:
     return router
 
 
+def build_processing_resource_policies_router(
+    registry: ProcessingResourcePolicyRegistry,
+) -> APIRouter:
+    """Expose global Core-owned admission policies without an edit surface."""
+    router = APIRouter(tags=["processing-resource-policies"])
+
+    @router.get(
+        "/v1/processing-resource-policies",
+        response_model=ProcessingResourcePolicyListResponse,
+    )
+    def list_processing_resource_policies(
+        _principal: Principal = Depends(require_principal()),  # noqa: B008
+    ) -> ProcessingResourcePolicyListResponse:
+        # Policies contain no tenant-owned input, job, site, media, or location
+        # data. Any authenticated principal may discover the fixed envelope.
+        return ProcessingResourcePolicyListResponse(
+            current_policy_id=registry.current_policy_id,
+            policies=registry.wire_list(),
+        )
+
+    return router
+
+
 def mount_processing_jobs(
     app: FastAPI,
     store: ProcessingJobStore,
@@ -2611,6 +2865,9 @@ def mount_processing_jobs(
     app.state.processing_job_store = store
     app.include_router(build_processing_jobs_router(store, storage, site_lifecycle))
     app.include_router(build_processing_profiles_router(store))
+    app.include_router(
+        build_processing_resource_policies_router(store.processing_resource_policies)
+    )
 
 
 __all__ = [
@@ -2628,6 +2885,8 @@ __all__ = [
     "ProcessingJobListResponse",
     "ProcessingJobMutationResponse",
     "ProcessingProfileListResponse",
+    "ProcessingResourceLimitReason",
+    "ProcessingResourcePolicyListResponse",
     "ProcessingJobRecord",
     "ProcessingJobRecoveryError",
     "ProcessingJobRequest",
@@ -2642,5 +2901,6 @@ __all__ = [
     "build_job_id",
     "build_processing_jobs_router",
     "build_processing_profiles_router",
+    "build_processing_resource_policies_router",
     "mount_processing_jobs",
 ]

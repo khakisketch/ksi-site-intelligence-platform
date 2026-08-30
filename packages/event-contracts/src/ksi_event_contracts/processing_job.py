@@ -135,6 +135,12 @@ class ProcessingJob(_CamelModel):
     # receiving an invented profile after the fact.
     processing_profile_id: str | None = Field(default=None, min_length=1)
     processing_profile_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
+    # The resource policy is an operational admission fact, deliberately
+    # separate from the reproducibility profile.  Both are optional only for
+    # historical journal records that predate the policy; Core never fills a
+    # guessed value during replay.
+    resource_policy_id: str | None = Field(default=None, min_length=1)
+    resource_policy_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     billing: Billing
     status: ProcessingJobStatus | None = None
 
@@ -143,6 +149,14 @@ class ProcessingJob(_CamelModel):
         if (self.processing_profile_id is None) != (self.processing_profile_digest is None):
             raise ValueError(
                 "processingProfileId와 processingProfileDigest는 함께 있어야 한다"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _resource_policy_binding_is_complete(self) -> ProcessingJob:
+        if (self.resource_policy_id is None) != (self.resource_policy_digest is None):
+            raise ValueError(
+                "resourcePolicyId와 resourcePolicyDigest는 함께 있어야 한다"
             )
         return self
 

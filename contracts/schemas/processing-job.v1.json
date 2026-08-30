@@ -135,6 +135,16 @@
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Canonical SHA-256 digest of the immutable processing profile snapshot."
     },
+    "resourcePolicyId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Core-owned immutable Processing Resource Policy identifier. Missing only for historical LEGACY_UNMANAGED records; Core never infers it during replay."
+    },
+    "resourcePolicyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Canonical SHA-256 digest of the immutable resource-policy snapshot used to admit this job."
+    },
     "billing": {
       "type": "object",
       "additionalProperties": false,
@@ -171,6 +181,14 @@
     {
       "if": {"required": ["processingProfileDigest"]},
       "then": {"required": ["processingProfileId"]}
+    },
+    {
+      "if": {"required": ["resourcePolicyId"]},
+      "then": {"required": ["resourcePolicyDigest"]}
+    },
+    {
+      "if": {"required": ["resourcePolicyDigest"]},
+      "then": {"required": ["resourcePolicyId"]}
     },
     {
       "if": {

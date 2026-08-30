@@ -485,6 +485,46 @@ def test_issue_rejects_a_different_edge_device_as_unknown_mission(tmp_path: Path
     assert result.verdict is ProcessingJobVerdict.UNKNOWN_MISSION
 
 
+def test_active_job_does_not_bypass_assigned_edge_device_boundary(tmp_path: Path) -> None:
+    """Active job existence must not become an Edge mission-enumeration oracle."""
+    store = _job_store(tmp_path, assigned_device_id=_EDGE_DEVICE_ID)
+    assert (
+        store.issue(
+            _MISSION_ID,
+            _spec(),
+            issued_by=_EDGE_DEVICE_ID,
+            now=_NOW,
+            caller_device_id=_EDGE_DEVICE_ID,
+        ).verdict
+        is ProcessingJobVerdict.ISSUED
+    )
+    denied = store.issue(
+        _MISSION_ID,
+        _spec(),
+        issued_by=_OTHER_EDGE_DEVICE_ID,
+        now=_NOW,
+        caller_device_id=_OTHER_EDGE_DEVICE_ID,
+    )
+    assert denied.verdict is ProcessingJobVerdict.UNKNOWN_MISSION
+    assert denied.record is None
+
+
+def test_active_job_does_not_bypass_vendor_egress_gate(tmp_path: Path) -> None:
+    """INV-050 remains authoritative even when the mission already has an active job."""
+    store = _job_store(tmp_path, egress=False)
+    assert (
+        store.issue(_MISSION_ID, _spec(), issued_by="op-1", now=_NOW).verdict
+        is ProcessingJobVerdict.ISSUED
+    )
+    denied = store.issue(
+        _MISSION_ID,
+        _spec(locus=ExecutionLocus.VENDOR_CLOUD),
+        issued_by="op-1",
+        now=_NOW,
+    )
+    assert denied.verdict is ProcessingJobVerdict.EGRESS_NOT_ALLOWED
+
+
 def test_issue_human_caller_is_not_scoped_to_the_assigned_device(tmp_path: Path) -> None:
     """``caller_device_id=None``(사람 호출)은 mission 의 assigned_device_id 와 무관하다."""
     store = _job_store(tmp_path, assigned_device_id=_EDGE_DEVICE_ID)
