@@ -1,4 +1,38 @@
-# Current goal (2026-08-30, civil operational closure and trust hardening)
+# Current goal (2026-08-30, civil runtime and resource-policy software closure)
+
+Complete the repository-owned portion of ADR-KSI-032 without changing the approved Operations Console
+information architecture. `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101` and
+`REQ-UX-101` apply with `INV-040/050/053/054/055/060`.
+
+Completion conditions:
+
+- every production-owned external runtime reference is an exact approved version/digest and floating
+  references fail the repository gate;
+- Core alone expands and journals the immutable `ksi-civil-pilot-r1` admission policy from authoritative
+  Mission, sealed SourceMedia and organization-active-job records;
+- the existing Mission processing card shows the server policy and typed next action without a new menu,
+  hardcoded client limits or hidden history;
+- a clean-source release candidate can create an owner-only local provenance envelope that binds exact
+  product image identities and hashes of separately supplied SBOM/scanner bytes, without claiming the
+  envelope is a signature, WORM storage or proof of artifact-to-image generation;
+- full Python/Dashboard/browser/hygiene gates pass, changes are split into reversible commits and the
+  remote fast-forward/push result is verified independently from remote CI execution.
+
+Repository-owned software is green: Python `4215 passed / 24 skipped`; Ruff; Mypy `441` source files;
+Dashboard `62 files / 566 tests`, ESLint, TypeScript and production build; Playwright `62 passed / 14`
+intentional external-staging skips at 390/768/1024/1440; lock, hygiene, reference, third-party checksum,
+runtime-pin and diff gates. Functional commits through `04cb68a` are split by authority/runtime/Core/UI/
+release evidence/test typing. Delivery and remote-CI evidence are recorded only after the final fetch and
+push verification.
+
+Actual product-image build/promotion, SBOM/scanner review, release signing/WORM/remote anchoring, public
+Cloud/customer-data approval and Korean civil field acceptance remain external gates. FIELD-0a remains
+`BLOCKED`; every DJI capability remains `NOT_VERIFIED`/OFF. This goal performs no device, DPK, flight,
+motor, waypoint or camera/gimbal action.
+
+---
+
+# Previous goal (2026-08-30, civil operational closure and trust hardening)
 
 Close the next repository-owned product gaps without changing the approved Operations Console
 information architecture: immutable report-export audit, Core-to-Processing correlation, an opt-in

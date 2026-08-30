@@ -1,5 +1,37 @@
 # Current Handoff
 
+## 2026-08-30 — Civil runtime/resource software is green; external release gates remain
+
+ADR-KSI-032 is implemented without changing the Operations Console information architecture. Every
+production-owned external runtime reference is exact-digest pinned and statically scanned. Core owns an
+immutable `ksi-civil-pilot-r1` policy and derives file count, per-file/bundle size, megapixels and active
+same-organization jobs from authoritative records; callers cannot submit limits or policy overrides.
+New jobs retain the exact snapshot/digest, replay rejects forged or internally violating records, and an
+identical active-job retry returns its existing immutable record rather than being reinterpreted by a new
+policy. The existing Mission card shows the Core policy and typed next action while preserving upload and
+history behavior.
+
+`tools/build_release_evidence.py` adds a create-once owner-only local provenance envelope. It refuses a
+dirty source, evaluates runtime refs from the exact committed Git tree, requires exact KSI image tag+digest
+and paired external CycloneDX/scanner JSON, and rejects symlink/path-swap, malformed/oversized input and
+partial-output hazards. Its SHA sidecar is not a signature or WORM proof, and structural artifact/image
+association is not proof that the artifacts were generated from that image.
+
+Local verification is green: Python `4215 passed / 24 skipped`; Ruff; Mypy `441` files; Dashboard
+`62 files / 566 tests`, ESLint, TypeScript and production build; Playwright `62 passed / 14 intentional
+external-staging skips` at 390/768/1024/1440; lock, hygiene, reference, third-party checksum, runtime-pin
+and diff gates. Functional commits are `89c2fea`, `273ab64`, `ddd1c8c`, `427dec8`, `5f22f5e` and
+`04cb68a`, followed by the state-ledger commit.
+
+The next automated step is the final clean-worktree `fetch` → ancestor check → fast-forward `main` push →
+remote SHA comparison. Remote CI must actually execute; the historical GitHub account billing/spending
+limit failure is not application failure and not green evidence. A real release still requires actual
+product-image builds, SBOM/scanner review, registry promotion, signature/WORM/remote anchoring, Cloud/data
+approval and restore evidence. Korean same-site civil acceptance is separate. FIELD-0a stays `BLOCKED`,
+all DJI capabilities stay `NOT_VERIFIED`/OFF, and no device or flight-control action is authorized.
+
+---
+
 ## 2026-08-30 — Civil operational closure is locally green; push environment is blocked
 
 The owner pushed `0ff5f94afad458527e71e7229fa015dc1d6136e0`; local and remote `main` match and the

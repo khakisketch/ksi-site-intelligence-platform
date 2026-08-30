@@ -229,7 +229,7 @@ confirmed_next_improvements:
         DJI gateway capability evidence가 vendor-documentation 축과 field-verification 축을
         분리하며, route selection은 field VERIFIED만 사용함을 테스트로 확인했다.
     - id: civil-operations-runtime-resource-v1
-      status: IN_PROGRESS
+      status: GATED
       authority: >-
         docs/architecture/ADR-KSI-032-civil-operations-runtime-and-resource-policy.md;
         docs/acceptance/CIVIL_OPERATIONS_R1_ACCEPTANCE.md
@@ -242,6 +242,21 @@ confirmed_next_improvements:
       gate: >-
         RT/RP/UX/OP/HY acceptance matrix, full local regression, successful remote execution on the
         delivered HEAD, and separate external approvals where required.
+      software_evidence_2026_08_30: >-
+        Repository-owned implementation is complete: all production-owned external runtime images are
+        exact digest pins; Core publishes and journals the immutable ksi-civil-pilot-r1 policy and derives
+        every admission input server-side; the existing Console shows that policy and typed recovery; and
+        the create-once release-evidence tool binds a clean Git tree, exact product-image references and
+        hashes of separately supplied SBOM/scanner artifacts without claiming signature or authenticity.
+        Python passed 4215 tests with 24 explicit skips; Ruff and Mypy passed 441 source files; Dashboard
+        passed 62 files/566 tests, ESLint, TypeScript and production build; four-viewport Playwright passed
+        62 with 14 intentional external-staging skips. Lock, hygiene, reference, third-party checksum,
+        runtime-pin and diff gates passed.
+      remaining_gate: >-
+        Deliver the exact HEAD and obtain actually executed remote CI; build and promote real KSI images,
+        review their SBOM/scanner evidence, create and externally sign/anchor the release envelope, and
+        complete Cloud/customer-data approvals. Korean field acceptance, FIELD-0a and DJI/Manifold
+        capability verification remain independent blocked gates.
       rollback: >-
         Stop new policy-bound issuance and retain read-only records; roll runtime only to an earlier
         verified digest and never weaken civil comparison/evidence gates.

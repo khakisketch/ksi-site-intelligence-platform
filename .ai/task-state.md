@@ -1,5 +1,29 @@
 # Current Task State
 
+## 2026-08-30 — `civil_runtime_resource_policy_software_green_delivery_pending`
+
+- Authority: ADR-KSI-032; `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101`,
+  `REQ-UX-101`; `INV-040/050/053/054/055/060`.
+- Implemented: exact external runtime image digest pins and scanner; immutable
+  `ksi-civil-pilot-r1` Core registry/admission snapshot; authoritative Mission/SourceMedia/
+  organization-active-job derivation; fail-closed replay/idempotency and bounded metrics; existing
+  Mission-card policy visibility and typed recovery; clean-source release-evidence schema/tool.
+- Commits: authority `89c2fea`, runtime `273ab64`, Core `ddd1c8c`, Dashboard `427dec8`, release evidence
+  `5f22f5e`, typed maximal-assembly fixture `04cb68a`; final ledger commit follows this entry.
+- Current local evidence: Python `4215 passed / 24 skipped`; Ruff lint; Mypy `441` files; lock; Dashboard
+  `62 files / 566 tests`, ESLint, TypeScript and production build; Playwright `62 passed / 14`
+  intentional external-staging skips across 390/768/1024/1440; repository hygiene, reference import/
+  pin, DJI third-party checksum, runtime image pin and diff gates.
+- Release truth: the envelope tool is software-ready, but no actual KSI product image, SBOM/scanner
+  package, signature, WORM/remote anchor, vulnerability approval, registry promotion, production deploy
+  or customer-data approval was created or inferred. Those remain external release gates.
+- Delivery is pending the final clean-worktree fetch/ancestor/push/remote-SHA check. Executed remote CI
+  remains independent; the known GitHub billing/spending-limit condition must not be labeled remote green.
+- FIELD-0a remains `BLOCKED`; all DJI capabilities remain `NOT_VERIFIED`/OFF. No device, DPK, flight,
+  motor, waypoint or camera/gimbal action occurred.
+
+---
+
 ## 2026-08-30 — `civil_operational_closure_software_green_push_environment_blocked`
 
 - The owner push completed: local `main` and `origin/main` both resolve to

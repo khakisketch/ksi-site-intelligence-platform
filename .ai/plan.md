@@ -1,4 +1,75 @@
-# Current implementation plan (2026-08-30, civil operational closure and trust hardening)
+# Current implementation plan (2026-08-30, civil runtime and resource-policy closure)
+
+Requirement IDs:
+- `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-040/050/053/054/055/060`.
+
+Owner module:
+- Deploy/runtime: exact external image identities and static repository gate.
+- Core: immutable Processing Resource Policy registry, admission derivation, replay and bounded metrics.
+- Dashboard: additive policy status and typed recovery in the existing Mission processing card.
+- Release operations: clean-source provenance envelope and explicit external trust gates.
+
+Acceptance criteria:
+- Floating/tag-only runtime images are refused across product Dockerfiles, deploy Compose and scripts.
+- `ksi-civil-pilot-r1` limits are canonical, authenticated and server-derived; clients cannot override
+  policy identity or values, and replay/idempotency remain fail-closed.
+- Existing Console history/upload remains available when policy discovery fails; only new issuance is
+  disabled with an actionable reason.
+- Release evidence uses one exact committed source tree and create-once owner-only output, rejects unsafe
+  paths/input and never upgrades a hash sidecar into a signature or deployment approval.
+- Full local regression and repository hygiene pass before a fast-forward-only push attempt.
+
+Contracts affected:
+- Processing Resource Policy v1 schema/API/OpenAPI; additive ProcessingJob policy snapshot/digest;
+  release-evidence v1 schema/tool. Existing Mission Contract, comparison safety and device meanings remain.
+
+Reference assets:
+- ADR-KSI-030/031 civil lineage and comparison boundaries, ADR-KSI-032 runtime/resource decision,
+  existing DurableJournal/SourceMedia/ProcessingJob/BFF patterns. `references/repos` stay read-only.
+
+Adoption decisions:
+- ADOPT existing exact NodeODM profile, journal and Console panel patterns.
+- REPLACE floating external runtime references and duplicated client admission assumptions.
+- ADD a local provenance envelope whose limitations are explicit.
+- REMOVE no original, job, artifact, report, route, menu or approved visual contract.
+
+Files to change:
+- Runtime Dockerfiles/Compose/scripts/checker/tests/docs; event/Core policy contracts/store/router/metrics/
+  assembly/OpenAPI/tests; existing Dashboard Mission panels/BFF/types/tests; release schema/tool/tests/docs;
+  acceptance, phase and `.ai` ledgers.
+
+Tests:
+- Runtime/release negative contracts; policy canonical digest, API/auth, hostile input, limits, replay,
+  idempotency and organization isolation; Dashboard Vitest/lint/type/build and four-viewport Playwright;
+  full pytest/Ruff/Mypy/lock/diff/hygiene/reference/third-party-pin gates.
+
+HIL or real-device assumptions:
+- None. FIELD-0a remains `BLOCKED`; DJI/Manifold paths remain `NOT_VERIFIED`/OFF.
+
+License/data implications:
+- NodeODM stays an unmodified AGPL REST process. No raw imagery, LandXML, GeoTIFF, checkpoint coordinates,
+  actual SBOM/scanner output, built image archive, credential or customer data enters Git.
+
+Rollback:
+- Stop new policy-bound issuance and leave existing records read-only; restore only a previously verified
+  runtime digest. Preserve originals/results and never loosen `INV-053` or evidence gates.
+
+Execution:
+1. [완료] Add ADR/requirements/invariants/acceptance and exact runtime digest pins.
+2. [완료] Implement and review the immutable Core resource policy and server-derived admission.
+3. [완료] Add policy visibility/recovery to the existing Console card without redesign.
+4. [완료] Add and independently audit the release-evidence schema/tool and exact-source-tree boundary.
+5. [완료] Run local gates: Python `4215/24 skipped`; Mypy `441`; Dashboard `62/566`; Playwright
+   `62/14 intentional skips`; Ruff, lock, build and repository gates green.
+6. [진행 중] Commit the final state ledger, fetch, require `origin/main` to be an ancestor, push `main`
+   and verify local/remote SHA. Inspect remote jobs without treating zero-step account failures as green.
+7. [외부 게이트] Build/promote actual images, review SBOM/scans, sign/anchor release evidence and complete
+   Cloud/customer/field approvals. FIELD/DJI work remains separate.
+
+---
+
+# Previous implementation plan (2026-08-30, civil operational closure and trust hardening)
 
 Requirement IDs:
 - `REQ-WRK-101`, `REQ-MSN-103/104`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
