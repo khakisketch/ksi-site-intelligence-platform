@@ -266,6 +266,25 @@
   구현 또는 검증이 끝나기 전에는 UI/API가 정량 비교 가능 또는 현장 정확도라고
   표시하지 않는다._
 
+- **INV-054** 제품 소유 production/runtime manifest의 외부 container image는 exact
+  version과 OCI digest를 함께 가져야 한다. `latest`, floating tag 또는 digest 없는
+  외부 runtime으로 availability를 복구하지 않는다. 로컬 build output은 소스 SHA와
+  최종 image digest를 release manifest에서 결속한다.
+  _강제: production Dockerfile·`deploy/compose*.yaml` 정적 image-pin gate,
+  `tests/contract/test_runtime_image_pins.py`, release SBOM/provenance 절차. `references/`와
+  테스트가 만드는 로컬 `ksi-*:*local`은 외부 runtime으로 오인하지 않는다
+  (ADR-KSI-032 D1)._
+
+- **INV-055** 새 ProcessingJob은 Core-owned versioned Processing Resource Policy가
+  봉인 원본과 Mission/Site 조직 원장에서 직접 계산한 admission을 통과해야 한다.
+  클라이언트 입력으로 policy·상한·override·조직을 바꿀 수 없고, 초과·미상은 typed
+  blocker다. 발급 당시 full policy snapshot과 digest를 journal에 보존하며 replay가
+  위조·반쪽 binding·당시 snapshot 위반을 거부한다. 도입 전 기록은 현재 policy를
+  추정하지 않고 `LEGACY_UNMANAGED`다.
+  _강제: `ksi_core.processing_resource_policy`, `ProcessingJobStore.issue()`와 replay,
+  authenticated read-only policy API, hostile-input·limit·idempotency·organization-isolation
+  계약 테스트(ADR-KSI-032 D2/D3)._
+
 ## 임무 발급·현장 생애주기
 
 - **INV-052** "먼저 매핑, 그 다음 사전지도 기반 자율"은 임무 발급 자체가

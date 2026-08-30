@@ -228,6 +228,23 @@ confirmed_next_improvements:
       software_evidence_2026_08_27: >-
         DJI gateway capability evidence가 vendor-documentation 축과 field-verification 축을
         분리하며, route selection은 field VERIFIED만 사용함을 테스트로 확인했다.
+    - id: civil-operations-runtime-resource-v1
+      status: IN_PROGRESS
+      authority: >-
+        docs/architecture/ADR-KSI-032-civil-operations-runtime-and-resource-policy.md;
+        docs/acceptance/CIVIL_OPERATIONS_R1_ACCEPTANCE.md
+      scope: >-
+        Product-owned runtime OCI digest pinning, release provenance inputs, Core-owned immutable
+        Processing Resource Policy, server-derived admission and additive existing-Console status.
+      excludes: >-
+        Customer Cloud/data approval, GitHub billing changes, Korean field acceptance, FIELD-0a,
+        DJI/Manifold capability promotion, flight/motor/waypoint/camera/gimbal/DPK actions.
+      gate: >-
+        RT/RP/UX/OP/HY acceptance matrix, full local regression, successful remote execution on the
+        delivered HEAD, and separate external approvals where required.
+      rollback: >-
+        Stop new policy-bound issuance and retain read-only records; roll runtime only to an earlier
+        verified digest and never weaken civil comparison/evidence gates.
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이

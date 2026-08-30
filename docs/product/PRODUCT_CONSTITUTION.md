@@ -1,6 +1,10 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-08-30 — 판매 가능한 Civil Operations pilot의 실행 재현성과 자원 보호를
+>   위해 제품 소유 runtime image의 OCI digest pin, Core 소유 versioned processing
+>   resource policy와 발급 snapshot 결속을 확정했다. 이는 비용·정확도·외부 Cloud
+>   승인이 아니라 운영 admission 경계다(ADR-KSI-032).
 > - 2026-08-29 — 독립 검사점은 DSM별 봉인 CSV와 서버 직접 대조로만 오차한계 근거가
 >   되며 사용자가 RMSE를 입력하지 않는 경계를 확정했다. 기존 Console·상대 물량·현장
 >   수용 경계는 유지한다(ADR-KSI-031).
@@ -87,6 +91,13 @@ checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다(ADR-KSI-
 전점을 대조하며, 사용자가 RMSE를 입력하는 표면은 두지 않는다. 이 software 검증은
 운영 물량의 오차한계 근거이지 측량급·계약 정산 수용을 자동 승인하는 경로가 아니다
 (ADR-KSI-031).
+
+Civil Operations runtime은 애플리케이션 lockfile뿐 아니라 모든 제품 소유 외부
+container image의 정확한 version과 OCI digest를 고정한다. 새 처리 작업은 Core가
+봉인 원본의 파일 수·신고 byte·megapixel과 조직별 활성 작업 수를 versioned resource
+policy로 판정한 뒤에만 발급한다. 클라이언트가 상한이나 override를 제출하지 않으며,
+발급 당시 snapshot/digest를 journal에 결속한다. 이 admission은 처리 성공·비용 확정·
+현장 정확도 또는 고객 데이터 배포 승인이 아니다(ADR-KSI-032).
 
 ## 두 축과 폐루프
 

@@ -1139,6 +1139,27 @@ CRS, point 범위 또는 nodata가 하나라도 맞지 않으면 부분 숫자 �
 기존 local uploader가 같은 profile을 사용한다. 향후 Pilot 2/Manifold 자동 반출은 이
 ingress adapter만 대체하며 이후 processing/comparison 계약을 바꾸지 않는다.
 
+### 15.4.2 Civil Operations runtime과 처리 admission v1
+
+제품 소유 runtime은 Dockerfile의 외부 `FROM`/`COPY --from`과 배포 Compose의 외부
+image를 exact version tag와 multi-architecture OCI digest로 함께 고정한다. `latest`,
+floating tag와 digest 없는 외부 runtime은 release gate가 거부한다. 로컬 build output은
+release manifest에서 소스 SHA와 최종 image digest를 별도로 결속한다. digest pin은 보안
+승인이 아니므로 SBOM·취약점 결과·승인 기록은 release마다 별도 보존한다.
+
+Core는 immutable `ksi-civil-pilot-r1` Processing Resource Policy를 소유한다. 새
+ProcessingJob 발급 시 봉인 SourceMedia의 파일 수, 개별·총 신고 byte, 총 megapixel과
+Mission/Site에서 유도한 조직의 활성 job 수를 서버에서 계산한다. 요청 body는 policy ID,
+상한 또는 override를 받지 않는다. 초과는 typed blocker이며 잘라서 실행하거나 더 싼
+profile로 fallback하지 않는다. 발급 당시 full snapshot과 canonical digest를 journal에
+남기고 replay가 다시 검증한다. 도입 전 기록은 현재 값을 추정하지 않고
+`LEGACY_UNMANAGED`다. 값 변경은 새 policy ID와 별도 부하·비용 검증으로 처리한다.
+
+이 policy는 single-customer pilot의 runaway queue/storage/compute를 막는 admission
+envelope다. claim byte와 실제 object byte가 같다는 최종 판정은 기존 worker 전량
+SHA-256·길이·해상도 측정이 소유한다. policy 통과는 처리 성공, 과금 확정, 현장 정확도,
+외부 Cloud 또는 고객 데이터 승인이 아니다(ADR-KSI-032).
+
 ## 15.5 커버리지 상태와 임무 완료
 
 Coverage Cell 상태:
@@ -1983,6 +2004,11 @@ ksi-site-intelligence-platform/
   compatibility 판정을 통과한 Observation Epoch만 사용한다. profile·source lineage·CRS·
   vertical reference·설계면 revision/normalization 중 하나라도 미상·불일치이면 typed
   blocker를 반환하고 정량 결과를 만들지 않는다.
+- `REQ-OPS-101`: 제품 소유 외부 runtime image는 exact version과 OCI digest로 고정하고,
+  release는 소스 SHA·image digest·SBOM·scanner 결과를 분리해 증거로 남긴다.
+- `REQ-OPS-102`: 새 ProcessingJob은 Core-owned versioned resource policy의 server-derived
+  admission을 통과해야 하며, 발급 당시 policy snapshot/digest를 보존한다. 클라이언트는
+  policy·상한·override를 제출할 수 없다.
 - `REQ-COP-101`: Copilot 사실 응답은 검증 가능한 서버 객체 근거를 포함한다.
 - `REQ-COP-102`: Copilot은 재관측 초안만 만들며 승인·임무 발급 권한을 갖지 않는다.
 - `REQ-SEC-101`: 모든 사람·장비·워커 접근과 데이터 반출은 조직·현장 범위로 제한한다.

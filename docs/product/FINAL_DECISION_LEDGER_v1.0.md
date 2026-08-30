@@ -13,7 +13,9 @@
   이 줄을 바꾸지 않는다 · 2026-08-28 토목 시계열·물량의 immutable KSI-managed
   NodeODM profile, LandXML 설계면 ingress 및 fail-closed comparison compatibility
   (ADR-KSI-030) · 2026-08-29 봉인된 독립 검사점 CSV를 DSM과 서버에서 직접 대조해
-  오차한계 근거를 생산하되 상대 물량·현장 수용 경계를 유지하는 결정(ADR-KSI-031)
+  오차한계 근거를 생산하되 상대 물량·현장 수용 경계를 유지하는 결정(ADR-KSI-031) ·
+  2026-08-30 제품 소유 runtime image digest pin과 Core-owned versioned processing
+  resource admission snapshot 결정(ADR-KSI-032)
 
 ## 명칭·시장
 
@@ -50,6 +52,10 @@
 - 설계면: GeoTIFF 직접 등록과 IFC→GeoTIFF를 유지하고, meter-unit LandXML TIN Surface를
   원본 digest·selector·정규화 계보와 함께 받는다. DWG/DXF 직접 해석은 하지 않고
   LandXML 또는 GeoTIFF 내보내기를 안내한다.
+- 운영 처리 경계: 제품 소유 외부 runtime image는 exact version+OCI digest로 고정한다.
+  ProcessingJob은 Core registry의 `ksi-civil-pilot-r1` resource policy로 봉인 원본과
+  조직별 활성 작업을 판정하고 발급 당시 snapshot/digest를 보존한다. 상한 변경은 같은
+  ID 수정이 아니라 새 policy 발급이다. 통과는 정확도·과금·Cloud 승인이 아니다.
 - 정상 전달: RC Plus 2/Pilot 2가 비행·인터넷 gateway, Manifold 3가 로컬 Edge다.
   사람의 KSI 업무는 Operations Console이 담당한다.
   RC 인터넷은 새 임무 발급 전 필수이고 Manifold SIM은 선택 Add-on이다. USB·SD·
