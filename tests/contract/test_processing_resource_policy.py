@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from ksi_core.metrics import PROCESSING_JOB_ADMISSIONS
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     ProcessingJobRecoveryError,
+    ProcessingJobResult,
     ProcessingJobStore,
     ProcessingJobVerdict,
 )
@@ -41,6 +42,25 @@ _FRAME = SiteFrame(crs="EPSG:5186", vertical_datum="KNG2018", transform_version=
 _TOKEN = "resource-policy-admin"  # noqa: S105 -- test-only bearer token
 
 
+class _UnusedEvidenceStorage:
+    """Mount the maximal router set without permitting accidental evidence I/O."""
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: timedelta) -> str:
+        raise AssertionError((object_key, content_type, ttl))
+
+    def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:
+        raise AssertionError((object_key, ttl))
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        raise AssertionError((object_key, data, content_type))
+
+    def get_bytes(self, object_key: str) -> bytes:
+        raise AssertionError(object_key)
+
+    def delete(self, object_key: str) -> None:
+        raise AssertionError(object_key)
+
+
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -63,22 +83,25 @@ def _claim(
 
 
 def _register_mission(missions: MissionStore, mission_id: str, *, organization_id: str) -> None:
-    assert missions.record_issuance(
-        MissionRecord(
-            mission_id=mission_id,
-            site_id="site-policy",
-            mission_type="BASELINE_MAPPING",
-            artifact_kind="contract",
-            contract={"schemaVersion": "1.2", "missionId": mission_id},
-            kmz_sha256=None,
-            route_pattern=None,
-            waypoint_count=None,
-            planned_coverage_ratio=None,
-            issued_at=_NOW,
-            issued_by="operator-1",
-            organization_id=organization_id,
-        )
-    ).value == "RECORDED"
+    assert (
+        missions.record_issuance(
+            MissionRecord(
+                mission_id=mission_id,
+                site_id="site-policy",
+                mission_type="BASELINE_MAPPING",
+                artifact_kind="contract",
+                contract={"schemaVersion": "1.2", "missionId": mission_id},
+                kmz_sha256=None,
+                route_pattern=None,
+                waypoint_count=None,
+                planned_coverage_ratio=None,
+                issued_at=_NOW,
+                issued_by="operator-1",
+                organization_id=organization_id,
+            )
+        ).value
+        == "RECORDED"
+    )
 
 
 def _store(
@@ -94,14 +117,17 @@ def _store(
         DurableJournal(tmp_path / "source.jsonl"), mission_store=mission_store
     )
     sites = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
-    assert sites.register(
-        "site-policy",
-        "Policy test site",
-        _FRAME,
-        data_residency=DataResidency(egress_allowed=False, jurisdiction="KR"),
-        actor="operator-1",
-        now=_NOW,
-    ).verdict.value == "REGISTERED"
+    assert (
+        sites.register(
+            "site-policy",
+            "Policy test site",
+            _FRAME,
+            data_residency=DataResidency(egress_allowed=False, jurisdiction="KR"),
+            actor="operator-1",
+            now=_NOW,
+        ).verdict.value
+        == "REGISTERED"
+    )
     for mission_id, organization_id, claims in missions:
         _register_mission(mission_store, mission_id, organization_id=organization_id)
         assert (
@@ -123,7 +149,7 @@ def _store(
     )
 
 
-def _issue(store: ProcessingJobStore, mission_id: str):
+def _issue(store: ProcessingJobStore, mission_id: str) -> ProcessingJobResult:
     return store.issue(
         mission_id,
         store.resolve_processing_profile("ksi-odm-civil-v1"),
@@ -149,8 +175,7 @@ def test_civil_pilot_policy_is_canonical_and_matches_schema() -> None:
     policy = ksi_civil_pilot_r1()
     wire = processing_resource_policy_wire_dict(policy)
     schema_path = (
-        Path(__file__).resolve().parents[2]
-        / "contracts/schemas/processing-resource-policy.v1.json"
+        Path(__file__).resolve().parents[2] / "contracts/schemas/processing-resource-policy.v1.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
@@ -386,7 +411,7 @@ def test_http_discovery_is_authenticated_and_issue_refuses_policy_overrides(tmp_
     )
     app = create_app(
         auth_registry=auth,
-        evidence_storage=object(),
+        evidence_storage=_UnusedEvidenceStorage(),
         mission_store=store._source_media._mission_store,  # noqa: SLF001
         source_media_store=store._source_media,  # noqa: SLF001
         site_store=store._sites,  # noqa: SLF001
