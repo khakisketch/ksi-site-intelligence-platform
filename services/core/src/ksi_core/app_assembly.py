@@ -70,6 +70,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
+from ksi_core.report_exports import ReportExportStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -451,6 +452,17 @@ def assemble_app(
         and evidence_storage is not None
         else None
     )
+    # Browser PDF/CSV bytes remain local to the Console.  Core records only the
+    # organization/site-scoped, re-verified report identity used for that export.
+    report_export_store = (
+        ReportExportStore(
+            journal("report-exports.jsonl"),
+            site_store=site_store,
+            design_conformance_store=design_conformance_report_store,
+        )
+        if design_conformance_report_store is not None
+        else None
+    )
     # 리포트 원장은 요청 원장을 **참조해서** 만들어지므로(request_store=...) 반대
     # 방향을 생성자 인자로 넣으면 순환이다. 그래서 조립이 끝난 뒤 술어 하나만
     # 뒤로 걸어준다 — 이게 없으면 요청 원장의 두 게이트(리포트 없는 SUCCEEDED ·
@@ -566,6 +578,7 @@ def assemble_app(
         comparison_request_store=comparison_request_store,
         design_conformance_request_store=design_conformance_request_store,
         design_conformance_report_store=design_conformance_report_store,
+        report_export_store=report_export_store,
         region_extraction_request_store=region_extraction_request_store,
         region_extraction_report_store=region_extraction_report_store,
         equipment_state_store=EquipmentStateStore(equipment_state_journal, site_store=site_store),

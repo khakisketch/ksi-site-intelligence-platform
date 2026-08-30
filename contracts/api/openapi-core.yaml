@@ -154,7 +154,11 @@ info:
   # 신고하지 못하게 하고, sealed CSV와 immutable DSM을 trusted worker가 각각
   # 재해싱·전수 샘플한 관측만 Core가 VALIDATED/REJECTED 원장으로 굳힌다. 비교의
   # uncertainty producer를 추가하지만 물리적 독립성/측량급 수용을 주장하지 않는다.
-  version: 1.29.0
+  # 1.30.0 — Browser-print PDF와 browser-built CSV의 내보내기 감사 원장. Core는
+  # 파일 bytes를 받거나 생성했다고 주장하지 않고, 인증 Principal·조직-scoped Site·
+  # immutable design-conformance report 전체 canonical digest와 processing/design
+  # lineage를 다시 대조한 snapshot만 append-only로 기록한다.
+  version: 1.30.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -2587,6 +2591,56 @@ paths:
               schema: { $ref: '#/components/schemas/DesignProgressResponse' }
         '401': { description: 인증 실패 }
         '403': { description: SITES_READ 권한 없음 }
+  /v1/sites/{site_id}/report-exports:
+    post:
+      summary: Record a browser PDF/CSV report-export audit event
+      description: >-
+        SITES_READ 권한 필요. Core는 PDF/CSV bytes를 받거나 만들지 않는다.
+        인증 Principal의 organizationId와 경로 siteId만 scope로 쓰고, 요청의
+        기준/최신 designConformanceId 두 개를 Core 원장에서 다시 찾아 설계면
+        revision·정규화·processing profile·원본 lineage·complete report digest를
+        immutable snapshot으로 기록한다. organizationId, 숫자, 보고서 원문, 파일
+        bytes는 요청에 받을 수 없다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportExportCreateRequest' }
+      responses:
+        '201':
+          description: RECORDED — audit fact only; contentProducedByServer is always false
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportExportCreateResponse' }
+        '200':
+          description: ALREADY_RECORDED idempotent replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportExportCreateResponse' }
+        '404': { description: UNKNOWN_SITE | UNKNOWN_REPORT | REPORT_SITE_MISMATCH }
+        '409': { description: DUPLICATE_EXPORT_ID with a different actor, format, or snapshot }
+        '422': { description: SNAPSHOT_NOT_COMPARABLE or invalid request JSON }
+        '503': { description: STORE_UNAVAILABLE — durable journal sealed, Retry-After }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+    get:
+      summary: List report-export audit events for one organization-scoped site
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: Newest first; a known site with no exports returns an empty list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportExportListView' }
+        '404': { description: Site not found in the principal organization }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
   /v1/missions/{mission_id}/design-conformance/{design_conformance_id}/progress-baseline:
     post:
       summary: Mark this report as the pre-construction baseline (M4-C)
@@ -4755,8 +4809,9 @@ paths:
                   plannedCoverageRatio:
                     type: [number, 'null']
                     description: >-
-                      **비행 전 계획 추정치**(lawnmower 만, perimeter 는 null).
-                      각 스캔선이 ±spacing/2 를 덮는다는 **가정** 하의 스와스∩AOI
+                      **비행 전 계획 추정치**(CameraSpec에서 서버가 계산한 lawnmower만,
+                      perimeter와 직접 spacing lawnmower는 null). 각 스캔선이
+                      camera-derived footprint/overlap으로 뒷받침될 때의 스와스∩AOI
                       정확값이다 — 실제로 무엇을 관찰했는지는 날아본 기체만 안다.
                       **완료 판정의 권위가 아니다**: 그건 비행 후 CoverageReport
                       (POST /v1/missions/{mission_id}/coverage-report)가 소유하며
@@ -6344,9 +6399,10 @@ components:
         plannedCoverageRatio:
           type: [number, 'null']
           description: >-
-            **비행 전 계획 추정치**(lawnmower 계열만, 순찰은 null). 각 스캔선이
-            ±spacing/2 를 덮는다는 가정 하의 기하 계산이며 그 spacing 은 요청자가
-            준 값이다 — **완료 판정의 권위가 아니다.** 실제 커버는 비행 후 기체가
+            **비행 전 계획 추정치**(CameraSpec에서 서버가 계산한 lawnmower만,
+            순찰과 직접 spacing lawnmower는 null). CameraSpec 근거 없이 요청자가
+            준 spacing의 기하값은 coverage claim이 아니다. **완료 판정의 권위가
+            아니다.** 실제 커버는 비행 후 기체가
             올리는 CoverageReport(Cell 상태·미관찰 원인코드)가 판정한다
             (MASTER_PRD §15.5, INV-010). 이 값은 "계획이 애초에 요구를 겨냥하는가"의
             사전 점검 결과다.
@@ -7222,6 +7278,92 @@ components:
         workAreas:
           type: array
           items: { type: object, additionalProperties: true }
+    ReportExportCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [exportId, exportFormat, baselineDesignConformanceId, latestDesignConformanceId]
+      properties:
+        exportId: { type: string, minLength: 1, maxLength: 128 }
+        exportFormat: { type: string, enum: [PDF, CSV] }
+        baselineDesignConformanceId: { type: string, minLength: 1, maxLength: 128 }
+        latestDesignConformanceId: { type: string, minLength: 1, maxLength: 128 }
+    ReportExportSource:
+      type: object
+      additionalProperties: false
+      required:
+        [designConformanceId, reportDigest, missionId, requestId, computedAt,
+         currentJobId, currentArtifactId, diffRasterId, diffRasterDigest,
+         coreRecomputedDiffRasterDigest, processingProfileDigest, sourceBundleDigest]
+      properties:
+        designConformanceId: { type: string }
+        reportDigest:
+          description: Core canonical digest of the complete immutable design-conformance report.
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        missionId: { type: string }
+        requestId: { type: string }
+        computedAt: { type: string, format: date-time }
+        currentJobId: { type: string }
+        currentArtifactId: { type: string }
+        diffRasterId: { type: string }
+        diffRasterDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        coreRecomputedDiffRasterDigest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        processingProfileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        sourceBundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    ReportExportSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        [siteId, designSurfaceId, designSurfaceRevision,
+         designSurfaceSha256, designNormalizationProfile, designNormalizationDigest,
+         baseline, latest]
+      properties:
+        schemaVersion: { const: '1.0' }
+        siteId: { type: string }
+        designSurfaceId: { type: string }
+        designSurfaceRevision: { type: string }
+        designSurfaceSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        designNormalizationProfile: { type: string }
+        designNormalizationDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        baseline: { $ref: '#/components/schemas/ReportExportSource' }
+        latest: { $ref: '#/components/schemas/ReportExportSource' }
+    ReportExportCreateResponse:
+      type: object
+      required: [verdict]
+      properties:
+        verdict: { type: string }
+        exportId: { type: [string, 'null'] }
+        recordedAt: { type: [string, 'null'], format: date-time }
+        snapshotDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+        contentProducedByServer:
+          description: Always false. PDF/CSV bytes remain browser-produced and are never claimed by Core.
+          const: false
+        detail: { type: [string, 'null'] }
+    ReportExportEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [exportId, exportFormat, actor, recordedAt, snapshot, snapshotDigest]
+      properties:
+        exportId: { type: string }
+        exportFormat: { type: string, enum: [PDF, CSV] }
+        actor: { type: string }
+        recordedAt: { type: string, format: date-time }
+        snapshot: { $ref: '#/components/schemas/ReportExportSnapshot' }
+        snapshotDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        contentProducedByServer: { const: false }
+    ReportExportListView:
+      type: object
+      additionalProperties: false
+      required: [siteId, exportCount, exports]
+      properties:
+        siteId: { type: string }
+        exportCount: { type: integer, minimum: 0 }
+        exports:
+          type: array
+          items: { $ref: '#/components/schemas/ReportExportEntry' }
     ProgressBaselineResponse:
       type: object
       required: [verdict]

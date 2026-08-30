@@ -55,6 +55,7 @@ from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
+from ksi_core.report_exports import ReportExportStore
 from ksi_core.site_workspace import (
     SiteBriefingService,
     SiteBriefingStore,
@@ -279,6 +280,13 @@ def _max_assembly(tmp_path: Path) -> Any:
         design_surface_store=design_surface_store,
         work_area_store=work_area_store,
     )
+    design_conformance_report_store = DesignConformanceStore(
+        DurableJournal(tmp_path / "design-conformance.jsonl"),
+        mission_store=mission_store,
+        processing_job_store=processing_job_store,
+        request_store=design_conformance_request_store,
+        storage=storage,
+    )
     return create_app(
         evidence_storage=storage,
         flight_artifact_store=flight_artifact_store,
@@ -317,12 +325,11 @@ def _max_assembly(tmp_path: Path) -> Any:
             processing_job_store=processing_job_store,
         ),
         design_conformance_request_store=design_conformance_request_store,
-        design_conformance_report_store=DesignConformanceStore(
-            DurableJournal(tmp_path / "design-conformance.jsonl"),
-            mission_store=mission_store,
-            processing_job_store=processing_job_store,
-            request_store=design_conformance_request_store,
-            storage=storage,
+        design_conformance_report_store=design_conformance_report_store,
+        report_export_store=ReportExportStore(
+            DurableJournal(tmp_path / "report-exports.jsonl"),
+            site_store=site_store,
+            design_conformance_store=design_conformance_report_store,
         ),
         work_area_store=work_area_store,
         observation_work_order_store=observation_work_order_store,

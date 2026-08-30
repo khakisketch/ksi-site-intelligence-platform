@@ -46,6 +46,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
+from ksi_core.report_exports import ReportExportStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -281,6 +282,11 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         ),
         "design_conformance_request_store": design_conformance_request_store,
         "design_conformance_report_store": design_conformance_report_store,
+        "report_export_store": ReportExportStore(
+            DurableJournal(tmp_path / "report-exports.jsonl"),
+            site_store=site_store,
+            design_conformance_store=design_conformance_report_store,
+        ),
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": RegionExtractionStore(
             DurableJournal(tmp_path / "region-extraction.jsonl"),

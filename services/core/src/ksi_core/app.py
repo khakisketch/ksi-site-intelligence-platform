@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
+    from ksi_core.report_exports import ReportExportStore
     from ksi_core.site_workspace import SiteBriefingService, SiteWorkspaceProjector
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
@@ -318,6 +319,14 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         " 그러면 '유효한 리포트가 있는데 그 지도는 다른 파일'이 성립한다",
     ),
     (
+        "report_export_store",
+        (("site_store", "design_conformance_report_store"),),
+        "report_export_store 는 site_store·design_conformance_report_store 와 함께 "
+        "주어져야 한다(INV-053/060, ADR-KSI-008) — export audit 는 인증 조직의 "
+        "현장과 Core가 확인한 설계 대비 report snapshot을 다시 대조해야 하며, "
+        "둘 중 하나가 없으면 브라우저의 자기신고를 durable 원장에 적게 된다",
+    ),
+    (
         "region_extraction_request_store",
         (
             (
@@ -396,6 +405,7 @@ def create_app(
     comparison_request_store: ComparisonRequestStore | None = None,
     design_conformance_request_store: DesignConformanceRequestStore | None = None,
     design_conformance_report_store: DesignConformanceStore | None = None,
+    report_export_store: ReportExportStore | None = None,
     region_extraction_request_store: RegionExtractionRequestStore | None = None,
     region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
@@ -508,6 +518,10 @@ def create_app(
             대조하고, 다르면 리포트를 기록하지 않고 요청을 FAILED 로 보낸다.
             그 대조 없이 조립하면 "유효한 리포트가 있는데 지도는 다른 파일"이
             성립한다(design_conformance_reports.py 모듈 docstring).
+        report_export_store: 브라우저 PDF/CSV 내보내기 감사 원장. ``site_store``와
+            ``design_conformance_report_store``가 모두 있어야 한다. 파일 bytes를
+            받거나 서버 생성 산출물로 표시하지 않고, 인증 Principal·조직-scoped
+            Site·Core-verified report snapshot만 durable하게 남긴다.
         region_extraction_request_store: M4-E "이 설계 대비 잔량 리포트에서 변화
             영역을 뽑아라"는 요청의 수신·발견·lease·전이 저장소.
             ``mission_store``·``design_conformance_report_store``·
@@ -622,6 +636,7 @@ def create_app(
         "volume_change_store": volume_change_store,
         "comparison_request_store": comparison_request_store,
         "design_conformance_request_store": design_conformance_request_store,
+        "report_export_store": report_export_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
@@ -1024,6 +1039,11 @@ def create_app(
         from ksi_core.design_progress import mount_design_progress
 
         mount_design_progress(app, design_conformance_report_store, work_area_store)
+
+    if report_export_store is not None:
+        from ksi_core.report_exports import mount_report_exports
+
+        mount_report_exports(app, report_export_store)
 
     if region_extraction_request_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 diffRaster 를

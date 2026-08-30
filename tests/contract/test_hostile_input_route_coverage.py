@@ -139,6 +139,7 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/sites/{site_id}/equipment-states"): _REGRESSION_NON_FINITE,
     ("POST", "/v1/sites/{site_id}/observation-schedules"): _FIRED_DIRECTLY,
     ("POST", "/v1/sites/{site_id}/observation-work-orders"): _FIRED_DIRECTLY,
+    ("POST", "/v1/sites/{site_id}/report-exports"): _FIRED_DIRECTLY,
     ("PUT", "/v1/sites/{site_id}/model-age-policy"): _BASE,
     ("POST", "/v1/sites/{site_id}/spatial-model/staleness-sweep"): _NO_BODY,
     ("POST", "/v1/sites/{site_id}/transitions"): _BASE,
