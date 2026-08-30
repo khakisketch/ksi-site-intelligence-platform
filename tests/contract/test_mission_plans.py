@@ -600,7 +600,8 @@ def test_coverage_promise_above_measured_ratio_rejected(tmp_path: Path) -> None:
     같은 요청의 실측 커버가 1.0 미만이면, 그 어긋난 쌍은 발급되지 않는다(이륙고도
     게이트와 동일 클래스 — 이전엔 조용히 201 이었다)."""
     client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
-    request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
+    request = _plan_request(mission_type="BASELINE_MAPPING")
+    request["route"] = {"altitudeM": 40.0, "camera": _camera_params()}
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
     request["contract"]["accessibleGeneralCoverage"] = 1.0
 
@@ -613,7 +614,8 @@ def test_coverage_promise_above_measured_ratio_rejected(tmp_path: Path) -> None:
 def test_coverage_promise_at_default_accepts_imperfect_ratio(tmp_path: Path) -> None:
     """대조 — 같은 도형이라도 약속(기본 0.95)이 실측 이하면 정상 발급된다."""
     client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
-    request = _plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0)
+    request = _plan_request(mission_type="BASELINE_MAPPING")
+    request["route"] = {"altitudeM": 40.0, "camera": _camera_params()}
     request["aoi"] = {"vertices": _shear_aoi_vertices()}
 
     response = client.post("/v1/missions/plans", json=request)
@@ -640,7 +642,10 @@ def test_lawnmower_plan_reports_planned_coverage_ratio(tmp_path: Path) -> None:
 
     response = client.post(
         "/v1/missions/plans",
-        json=_plan_request(mission_type="BASELINE_MAPPING", spacingM=20.0),
+        json={
+            **_plan_request(mission_type="BASELINE_MAPPING"),
+            "route": {"altitudeM": 40.0, "camera": _camera_params()},
+        },
     )
 
     assert response.status_code == 201
@@ -865,6 +870,7 @@ def test_camera_lets_server_compute_spacing(tmp_path: Path) -> None:
     assert basis["captureIntervalM"] == pytest.approx(8.0, rel=0.02)
     assert basis["footprintAcrossM"] == pytest.approx(60.0, rel=0.02)
     assert body["waypointCount"] > 0
+    assert body["plannedCoverageRatio"] is not None
 
 
 def test_camera_and_explicit_spacing_together_is_rejected(tmp_path: Path) -> None:
@@ -895,7 +901,7 @@ def test_insufficient_overlap_is_rejected_at_api(tmp_path: Path) -> None:
 
 
 def test_explicit_spacing_still_works_without_camera(tmp_path: Path) -> None:
-    """[비회귀] 카메라 없이 간격을 직접 주는 기존 경로는 그대로 동작한다."""
+    """[비회귀] 직접 spacing은 실행 호환 경로로 남되 coverage claim은 만들지 않는다."""
     client, _registry = _client(tmp_path, site_status=SiteStatus.UNMAPPED)
     response = client.post(
         "/v1/missions/plans",
@@ -903,6 +909,7 @@ def test_explicit_spacing_still_works_without_camera(tmp_path: Path) -> None:
     )
     assert response.status_code == 201, response.text
     assert response.json()["gridBasis"] is None, "직접 지정인데 계산 근거가 실렸다"
+    assert response.json()["plannedCoverageRatio"] is None
 
 
 # ── G. KMZ 다운로드 (GET /v1/missions/{mission_id}/kmz) ─────────────────────

@@ -109,6 +109,27 @@ PROGRESS_CAPTURE·UNIFIED_SITE_SURVEY)은 `route.captureIntervalM` 없이 발급
 장비 동작을 상용지원으로 표시하지 않는다"에 어긋난다. **H4(실기 Pilot 2 export 대조)
 에서 확정한 뒤 최적화한다.**
 
+### D4 — 직접 spacing 경로는 저수준 복구 경로이며 coverage claim을 만들지 않는다 (2026-08-30 추가)
+
+D3 뒤에도 저수준 `spacingM`·`captureIntervalM` 입력을 유지하면, 기하 생성기는
+요청된 스와스가 AOI를 덮는 비율을 계산할 수 있다. 그러나 그 spacing은 카메라
+footprint·초점거리·해상도·중복도에서 검증된 값이 아니므로, 그 기하값을
+`plannedCoverageRatio`로 발급·원장화하면 요청자가 자기 사진측량 근거를 스스로
+작성하는 문제가 남는다.
+
+- 정상 lawnmower 매핑의 정본은 `route.camera`다. Core만 CameraSpec에서 격자를
+  계산하고, 이 경우에만 기하 결과를 `plannedCoverageRatio`와 계약 약속의 사전
+  대조에 사용한다.
+- 카메라가 아직 확정되지 않은 기존 `spacingM`·`captureIntervalM` 입력은 복구·진단
+  용도의 저수준 호환 경로로 남긴다. 이는 실행 지점/KMZ를 만드는 전문가 경로일 뿐
+  `plannedCoverageRatio`는 항상 `null`이며, 계약의 coverage policy를 충족한다고
+  발급 전에 주장하지 않는다. 실제 완료는 여전히 CoverageReport가 판정한다.
+
+이 변화는 기존 직접-spacing 요청의 실행 호환성을 유지한다. 다만 기존·새 레코드
+모두 `plannedCoverageRatio=null`로 표현되므로, 그 값에 의존하던 소비자는
+"계획 커버리지 대사 불가: CameraSpec 근거 없음"으로 처리해야 한다. 저장된 KMZ
+바이트와 재발급 결정성은 바꾸지 않는다.
+
 ## 결과 — 알려진 대가
 
 - **비행 시간**: D2 는 촬영 지점마다 웨이포인트를 두므로 현재 turn mode

@@ -384,14 +384,21 @@ def build_mission_plan(
             spacing_is_camera_derived=grid is not None,
         )
         route = lawnmower_result.waypoints
-        planned_coverage_ratio = lawnmower_result.coverage_ratio
+        # ``grid`` exists only after this Core process derives spacing from
+        # CameraSpec.  Direct spacing remains a backward-compatible low-level
+        # recovery route, but it has no camera-backed photogrammetric coverage
+        # claim and therefore cannot become plannedCoverageRatio.
+        planned_coverage_ratio = lawnmower_result.coverage_ratio if grid is not None else None
         pattern = "lawnmower"
         # 계약이 요구하는 커버(accessibleGeneralCoverage)를 **계획이 애초에
         # 겨냥하고 있는가**를 발급 전에 본다. 이건 사전 점검이지 커버 보증이
         # 아니다 — 실제 달성 여부는 비행 후 CoverageReport 가 판정한다
         # (MASTER_PRD §15.5, INV-010). 계획조차 목표 미만이면 그 임무는 성공할
         # 수 없으므로 여기서 끊는다. 1e-9 는 정확 계산의 부동소수 잔차 허용치다.
-        if planned_coverage_ratio + 1e-9 < request.contract.accessible_general_coverage:
+        if (
+            planned_coverage_ratio is not None
+            and planned_coverage_ratio + 1e-9 < request.contract.accessible_general_coverage
+        ):
             raise RouteGenerationError(
                 "COVERAGE_BELOW_CONTRACT_PROMISE — 계획 커버 추정치 "
                 f"{planned_coverage_ratio:.4f} 가 계약이 요구하는 accessibleGeneralCoverage "

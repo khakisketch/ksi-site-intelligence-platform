@@ -2,7 +2,7 @@
 REQ-PROD-001,Product,Platform name,KSI Site Intelligence Platform,UI/docs/repository use approved name
 REQ-MSN-101,Mission,Approval,Mission Contract one-time approval,Invalid/unsigned contract rejected
 REQ-MSN-102,Mission,Automation,Scheduled missions after site policy approval,Scheduled run uses approved policy version
-REQ-MSN-103,Mission,Coverage,"100% hazard, 100% mandatory assets, 95% accessible general",CoverageReport completion gate
+REQ-MSN-103,Mission,Coverage,"100% hazard, 100% mandatory assets, 95% accessible general","CoverageReport completion gate; CameraSpec-derived planned coverage preflight only (direct spacing has no planned coverage claim)"
 REQ-MSN-104,Mission,Flight artifact authority,"Core binds the validated final Flight Artifact source revision and digest; changed bytes require revalidation and rebinding","Contract and ingest/replay tests reject an unbound stale or altered artifact"
 REQ-EDGE-101,Edge,Server loss,Continue while contract and safety valid,HIL server link loss sortie
 REQ-EDGE-102,Edge,RC link loss,DJI FC lost-link policy,HIL verifies KSI does not override
