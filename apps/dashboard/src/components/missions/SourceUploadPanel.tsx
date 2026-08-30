@@ -11,8 +11,15 @@ import {
   isTerminalJobStatus,
   summarizeUploadBatch,
 } from "@/lib/source-upload";
-import { API_ERROR_MESSAGE, readableApiError } from "@/lib/core-api/labels";
+import { API_ERROR_MESSAGE, readableApiError, type ApiErrorBodyShape } from "@/lib/core-api/labels";
 import { parseJsonSafe } from "@/lib/http";
+import {
+  formatProcessingResourceBytes,
+  formatProcessingResourceMegapixels,
+  PROCESSING_RESOURCE_POLICY_UNAVAILABLE_MESSAGE,
+  processingResourceLimitNextAction,
+  type ProcessingResourcePolicyState,
+} from "@/lib/processing-resource-policy";
 import { usePolling } from "@/hooks/usePolling";
 import { PROCESSING_JOB_STATUS_LABEL } from "@/app/missions/mission-labels";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -86,6 +93,7 @@ export function SourceUploadPanel({
   initialBundle,
   initialJob,
   hasComparisonReport,
+  processingResourcePolicy,
 }: {
   missionId: string;
   canIssue: boolean;
@@ -95,6 +103,8 @@ export function SourceUploadPanel({
    * 경우 링크 대신 왜 아직 못 보는지 안내한다(missions/[missionId]/page.tsx 가
    * reports/page.tsx 와 같은 판정을 재사용해 계산). */
   hasComparisonReport: boolean;
+  /** 페이지가 Core에서 읽은 표시 전용 정책. 없으면 새 발급만 fail-closed 한다. */
+  processingResourcePolicy: ProcessingResourcePolicyState;
 }) {
   const [bundle, setBundle] = useState(initialBundle);
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -290,9 +300,17 @@ export function SourceUploadPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(RECONSTRUCTION_SPEC),
       });
-      const body = await parseJsonSafe<ProcessingJobMutationResponse>(response);
+      // 성공은 Core 계약, 실패는 Dashboard BFF의 `{code,message,detail,reasonCode}`
+      // 계약이다. `code`를 Core 처리 작업 응답 타입에 섞지 않아야 OpenAPI/Core와
+      // Dashboard 프록시의 책임 경계가 보존된다.
+      const body = await parseJsonSafe<ProcessingJobMutationResponse & ApiErrorBodyShape>(response);
       if (!response.ok || !body.job) {
-        setError(readableApiError(body, "재구성 작업 발행에 실패했습니다"));
+        const base = readableApiError(body, "재구성 작업 발행에 실패했습니다");
+        setError(
+          body.code === "RESOURCE_LIMIT_EXCEEDED" || body.verdict === "RESOURCE_LIMIT_EXCEEDED"
+            ? `${base} ${processingResourceLimitNextAction(body.reasonCode)}`
+            : base,
+        );
         setPhase("sealed");
         return;
       }
@@ -312,6 +330,8 @@ export function SourceUploadPanel({
   const busy = phase === "uploading" || phase === "sealing" || phase === "issuing";
   const completedItemCount = items.filter((item) => item.status === "done").length;
   const failedItems = items.filter((item) => item.status === "error");
+  const policyReady = processingResourcePolicy.kind === "ready";
+  const policy = policyReady ? processingResourcePolicy.policy : null;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -331,6 +351,31 @@ export function SourceUploadPanel({
         중간 품질 점군을 같은 고정 프로필로 처리합니다. 처리값은 이 화면에서 바꿀 수
         없으며, 시계열·물량 비교의 일관성을 위해 Core 원장에 함께 고정됩니다.
       </p>
+
+      {policy ? (
+        <div className="rounded-md border border-line bg-sunk px-3 py-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <p className="text-[12.5px] font-semibold break-keep text-ink-2">
+              처리 자원 정책 · {policy.resourcePolicyId}
+            </p>
+            <span className="num text-[11px] break-token text-ink-muted">{policy.resourcePolicyDigest}</span>
+          </div>
+          <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-[11.5px] text-ink-muted sm:grid-cols-2">
+            <div className="flex min-w-0 justify-between gap-2"><dt>사진 수</dt><dd className="num text-ink-2">{policy.maxSourceMediaFiles.toLocaleString("ko-KR")}장</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt>사진 1장</dt><dd className="num text-ink-2">{formatProcessingResourceBytes(policy.maxSourceMediaFileBytes)}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt>총 원본 용량</dt><dd className="num text-ink-2">{formatProcessingResourceBytes(policy.maxSourceBundleBytes)}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2"><dt>총 촬영 화소</dt><dd className="num text-ink-2">{formatProcessingResourceMegapixels(policy.maxTotalMegapixels)}</dd></div>
+            <div className="flex min-w-0 justify-between gap-2 sm:col-span-2"><dt>조직 동시 처리</dt><dd className="num text-ink-2">{policy.maxActiveProcessingJobsPerOrganization.toLocaleString("ko-KR")}건</dd></div>
+          </dl>
+          <p className="mt-1 text-[11.5px] break-keep text-ink-muted">
+            이 값은 서버 자원 입장 보호 기준입니다. 처리 성공, 비용, 정확도를 보장하지 않습니다.
+          </p>
+        </div>
+      ) : (
+        <p role="status" className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] font-semibold break-keep text-crit-ink">
+          {PROCESSING_RESOURCE_POLICY_UNAVAILABLE_MESSAGE}
+        </p>
+      )}
 
       {error && (
         <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] font-semibold break-keep text-crit-ink">
@@ -425,7 +470,7 @@ export function SourceUploadPanel({
           <button
             type="button"
             onClick={() => void handleIssue()}
-            disabled={phase === "issuing"}
+            disabled={phase === "issuing" || !policyReady}
             className="btn btn-primary w-fit"
           >
             {phase === "issuing" ? "발행하는 중…" : "재구성 작업 발행"}
@@ -485,6 +530,7 @@ export function SourceUploadPanel({
                 <button
                   type="button"
                   onClick={() => void handleIssue()}
+                  disabled={!policyReady}
                   className="btn btn-primary w-fit"
                 >
                   같은 봉인 사진으로 재구성 다시 시도

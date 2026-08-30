@@ -12,9 +12,11 @@ import {
   getMissionExecution,
 } from "@/lib/core-api/missions";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
+import { listProcessingResourcePolicies } from "@/lib/core-api/processing-resource-policies";
 import { getSite } from "@/lib/core-api/sites";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { resolveCurrentProcessingResourcePolicy } from "@/lib/processing-resource-policy";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -44,7 +46,9 @@ import { resolveFieldSession } from "../resolve-session";
 // 자동이 정상 진행 중일 때는 흐리게(opacity) 물러나되 누를 수는 있게 둔다 —
 // pointer-events 를 끄면 그건 숨긴 것과 같다.
 //
-// 신규 서버 API 0건(ADR-KSI-017). 조회는 전부 임무 상세 화면이 쓰던 것 그대로다.
+// 처리 자원 정책만 임무 상세와 같은 읽기 API를 병렬 조회한다. 그 외 조회는 기존
+// 임무 상세와 같은 표면을 그대로 쓴다. 정책을 못 읽으면 사진 회수 이력은 보되
+// 새 재구성 발급은 fail-closed 한다(ADR-KSI-032 D5).
 
 export const metadata = { title: "현장 임무 · KSI" };
 
@@ -139,7 +143,7 @@ export default async function FieldMissionPage({
 
   // 나머지는 전부 부가 정보다 — 하나가 실패해도 화면과 수동 경로는 살아 있어야 한다
   // (현장에서 화면이 통째로 죽는 것이 이 제품에서 가장 나쁜 실패다).
-  const [site, execution, coverage, media, jobs] = await Promise.all([
+  const [site, execution, coverage, media, jobs, processingResourcePolicy] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
     getMissionExecution(mission.missionId).catch(() => null),
     fetchCoverage(mission.missionId),
@@ -147,6 +151,9 @@ export default async function FieldMissionPage({
     listProcessingJobs(mission.missionId)
       .then((r) => r.jobs)
       .catch(() => []),
+    listProcessingResourcePolicies()
+      .then(resolveCurrentProcessingResourcePolicy)
+      .catch(() => ({ kind: "unavailable" as const, reason: "POLICY_READ_FAILED" as const })),
   ]);
 
   const stages = deriveFieldStages({
@@ -247,6 +254,7 @@ export default async function FieldMissionPage({
               // false 로 두면 재구성 완료 직후 "아직 비교 리포트가 없다"는 안내가 뜨는데,
               // 현장에서는 그게 맞는 안내다 — 재구성은 방금 끝났고 비교는 아직이다.
               hasComparisonReport={false}
+              processingResourcePolicy={processingResourcePolicy}
             />
           </ResponsiveActionBoundary>
         </StageCard>

@@ -348,6 +348,15 @@ test("토목 후처리 패널은 기존 흐름 안에서 일관된 프로필과 
   if (testInfo.project.name.startsWith("desktop")) {
     await expect(page.getByRole("heading", { name: "사진 업로드 · 재구성" })).toBeVisible();
     await expect(page.getByText("KSI 표준 처리 v1", { exact: true })).toBeVisible();
+    const resourcePolicy = page
+      .getByText(/처리 자원 정책 · ksi-civil-pilot-r1/)
+      .locator("xpath=../..");
+    await expect(resourcePolicy).toContainText("5,000장");
+    await expect(resourcePolicy).toContainText("1 GiB");
+    await expect(resourcePolicy).toContainText("1 TiB");
+    await expect(resourcePolicy).toContainText("150,000 MP");
+    await expect(resourcePolicy).toContainText("20건");
+    await expect(resourcePolicy).toContainText("처리 성공, 비용, 정확도를 보장하지 않습니다.");
   } else {
     const laptopBoundary = page
       .getByText("원본 업로드·봉인과 처리 시작은 노트북의 전체 Operations Console에서 수행합니다.", {

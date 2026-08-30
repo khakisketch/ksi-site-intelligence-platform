@@ -325,6 +325,8 @@ export const API_ERROR_MESSAGE: Record<string, string> = {
   EMPTY_BUNDLE: "등록된 사진이 없어 봉인할 수 없습니다. 먼저 사진을 올리세요.",
   BUNDLE_NOT_SEALED: "번들이 아직 봉인되지 않았습니다 — 업로드를 마치고 봉인한 뒤 다시 시도하세요.",
   ACTIVE_JOB_EXISTS: "이미 처리 중인 작업이 있습니다. 완료 후 다시 시도하세요.",
+  RESOURCE_LIMIT_EXCEEDED:
+    "이 봉인 사진 묶음은 현재 처리 자원 입장 기준을 넘었습니다.",
   EGRESS_NOT_ALLOWED: "이 현장은 데이터 반출이 허용되지 않아 벤더 클라우드 처리를 만들 수 없습니다.",
   // 두 시점 비교 제출(W2) — comparison_requests.ComparisonRequestVerdict. 정상 동선에서는
   // ComparisonSubmitPanel 이 대부분 미리 막지만(selectableEpochs·currentMissionEpochs·
@@ -394,6 +396,8 @@ export interface ApiErrorBodyShape {
   message?: string;
   /** Core 원문 — 내부 어휘가 섞여 있어 **마지막 수단**이다. 성공 응답에서는 null 이 온다. */
   detail?: string | null;
+  /** `RESOURCE_LIMIT_EXCEEDED`의 stable 하위 사유. BFF가 Core 오류를 옮길 때만 쓴다. */
+  reasonCode?: string | null;
 }
 
 /**

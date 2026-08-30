@@ -24,6 +24,7 @@ import {
 import type { CoverageRejectionListView, Permission } from "@/lib/core-api/types";
 import { getChangeDetection, getVolumeChanges } from "@/lib/core-api/phase34";
 import { listProcessingJobs } from "@/lib/core-api/processing-jobs";
+import { listProcessingResourcePolicies } from "@/lib/core-api/processing-resource-policies";
 import { listCheckpointValidations } from "@/lib/core-api/checkpoint-validations";
 import { getSourceMediaBundle } from "@/lib/core-api/source-media";
 import { getSite } from "@/lib/core-api/sites";
@@ -42,6 +43,7 @@ import {
   type CoverageReportResult,
 } from "@/components/missions/CoverageReportSection";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { resolveCurrentProcessingResourcePolicy } from "@/lib/processing-resource-policy";
 
 import { formatCoverageRatio, formatNullable } from "../format";
 import { ARTIFACT_KIND_LABEL, MISSION_TYPE_LABEL, ROUTE_PATTERN_LABEL } from "../mission-labels";
@@ -132,6 +134,7 @@ export default async function MissionDetailPage({
     latestDesignRequest,
     designConformance,
     workAreas,
+    processingResourcePolicy,
   ] = await Promise.all([
     getSite(mission.siteId).catch(() => null),
     // 실행 상태 표면이 없는 조립이거나 조회에 실패하면 null 로 둔다 — 화면은 그때
@@ -174,6 +177,12 @@ export default async function MissionDetailPage({
     listWorkAreas(mission.siteId)
       .then((r) => r.workAreas)
       .catch(() => []),
+    // 정책은 재구성 발급의 전제다. 다른 화면 데이터와 병렬로 시작하되, 읽기에
+    // 실패하거나 Core가 currentPolicyId를 명시하지 않으면 이 패널만 새 발급을
+    // fail-closed 한다. 기존 업로드·봉인·작업 이력은 그대로 읽을 수 있다.
+    listProcessingResourcePolicies()
+      .then(resolveCurrentProcessingResourcePolicy)
+      .catch(() => ({ kind: "unavailable" as const, reason: "POLICY_READ_FAILED" as const })),
   ]);
   const canIssue = permissions.includes("MISSIONS_ISSUE");
   const canWriteCheckpoints = permissions.includes("SITES_WRITE");
@@ -295,6 +304,7 @@ export default async function MissionDetailPage({
               : null
           }
           hasComparisonReport={hasComparison}
+          processingResourcePolicy={processingResourcePolicy}
         />
       </ResponsiveActionBoundary>
 

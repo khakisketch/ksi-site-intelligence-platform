@@ -1214,16 +1214,42 @@ export interface ProcessingJobSummary {
   processingProfileId?: string | null;
   processingProfileDigest?: string | null;
   processingProfileClassification?: "VERSIONED" | "LEGACY_UNMANAGED" | string;
+  /** Core가 발급 시점에 봉인한 자원 입장 정책. 없는 구형 원장은 추정하지 않는다. */
+  resourcePolicyId?: string | null;
+  resourcePolicyDigest?: string | null;
 }
 
 export interface ProcessingJobMutationResponse {
   verdict: string;
   detail: string | null;
+  /** `RESOURCE_LIMIT_EXCEEDED`의 안정된 하위 사유. 파일명·원본 경로는 절대 싣지 않는다. */
+  reasonCode?: string | null;
   job: ProcessingJobSummary | null;
 }
 
 export interface ProcessingJobListSummary {
   jobs: ProcessingJobSummary[];
+}
+
+/**
+ * Core 소유 처리 자원 입장 정책의 표시 전용 스냅샷. Dashboard는 이 수치를
+ * 계산·저장·수정하지 않고, 새 재구성 요청에도 정책 ID나 한도를 보내지 않는다.
+ */
+export interface ProcessingResourcePolicyView {
+  resourcePolicyId: string;
+  policyVersion: string;
+  maxSourceMediaFiles: number;
+  maxSourceMediaFileBytes: number;
+  maxSourceBundleBytes: number;
+  maxTotalMegapixels: number;
+  maxActiveProcessingJobsPerOrganization: number;
+  resourcePolicyDigest: string;
+}
+
+/** GET /v1/processing-resource-policies — 현재 정책을 Core가 명시한다. */
+export interface ProcessingResourcePolicyListView {
+  currentPolicyId: string;
+  policies: ProcessingResourcePolicyView[];
 }
 
 // ── 독립 검사점 검증 (M4-F) ────────────────────────────────────────────────

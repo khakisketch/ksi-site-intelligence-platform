@@ -22,6 +22,7 @@ export function coreApiErrorResponse(error: unknown): NextResponse {
         message: humanizeApiError(error.code, error.status, error.serverMessage),
         code: error.code,
         detail: error.serverMessage,
+        reasonCode: error.reasonCode,
       },
       { status: error.status },
     );

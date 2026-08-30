@@ -39,6 +39,8 @@ export class CoreApiError extends Error {
   readonly code: string | undefined;
   /** 서버가 준 구체 설명 문장 — code 로 못 찾을 때의 최후 대체 표시용(§3.4). */
   readonly serverMessage: string | undefined;
+  /** `RESOURCE_LIMIT_EXCEEDED` 아래의 안정된 하위 사유. 화면은 이 값으로만 다음 행동을 고른다. */
+  readonly reasonCode: string | undefined;
 
   /** 서버 Retry-After 헤더(초). 503 이 "언제 돌아오는지"를 말해줬다면 그 값이다.
    *
@@ -50,6 +52,7 @@ export class CoreApiError extends Error {
   constructor(status: number, body: unknown, retryAfterSeconds?: number) {
     const parsed = (body ?? {}) as Record<string, unknown>;
     const bodyVerdict = typeof parsed.verdict === "string" ? parsed.verdict : undefined;
+    const bodyReasonCode = typeof parsed.reasonCode === "string" ? parsed.reasonCode : undefined;
     const detailText = extractDetailText(parsed.detail);
 
     let code = bodyVerdict;
@@ -66,6 +69,7 @@ export class CoreApiError extends Error {
     this.status = status;
     this.code = code;
     this.serverMessage = serverMessage;
+    this.reasonCode = bodyReasonCode;
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }

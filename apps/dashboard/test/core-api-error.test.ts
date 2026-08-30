@@ -16,6 +16,22 @@ describe("verdict 필드가 있는 응답(Site/Event API)", () => {
   });
 });
 
+describe("처리 자원 한도 하위 사유", () => {
+  it("Core가 준 stable reasonCode를 보존해 Dashboard route handler로 넘긴다", () => {
+    const error = new CoreApiError(422, {
+      verdict: "RESOURCE_LIMIT_EXCEEDED",
+      reasonCode: "TOTAL_MEGAPIXELS_LIMIT_EXCEEDED",
+      detail: "총 촬영 화소량이 정책 상한을 넘었다",
+    });
+    expect(error.code).toBe("RESOURCE_LIMIT_EXCEEDED");
+    expect(error.reasonCode).toBe("TOTAL_MEGAPIXELS_LIMIT_EXCEEDED");
+  });
+
+  it("reasonCode가 문자열이 아니면 화면 행동 선택에 쓰지 않는다", () => {
+    expect(new CoreApiError(422, { verdict: "RESOURCE_LIMIT_EXCEEDED", reasonCode: 42 }).reasonCode).toBeUndefined();
+  });
+});
+
 describe("detail 하나에만 코드를 싣는 응답(Mission Records/Plans API)", () => {
   it("코드 단독", () => {
     const error = new CoreApiError(404, { detail: "UNKNOWN_SITE" });
