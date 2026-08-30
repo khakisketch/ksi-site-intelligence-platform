@@ -1796,6 +1796,29 @@ export interface DesignConformanceListView {
   reports: DesignConformanceEntry[];
 }
 
+// ── Browser report-export audit ────────────────────────────────────────────
+
+/** PDF/CSV 바이트가 아닌, Core가 다시 확인할 보고서 식별자만 보낸다. */
+export interface ReportExportCreateInput {
+  exportId: string;
+  exportFormat: "PDF" | "CSV";
+  baselineDesignConformanceId: string;
+  latestDesignConformanceId: string;
+}
+
+/**
+ * `contentProducedByServer=false`는 감사 사실만 남았다는 뜻이다. 파일은 여전히
+ * 브라우저의 print/Blob 경로에서 만들어진다.
+ */
+export interface ReportExportCreateResponse {
+  verdict: "RECORDED" | "ALREADY_RECORDED" | string;
+  exportId: string | null;
+  recordedAt: string | null;
+  snapshotDigest: string | null;
+  contentProducedByServer: boolean;
+  detail: string | null;
+}
+
 /** 지도가 차분 래스터를 얻는 **유일한** 경로의 응답. */
 export interface DiffRasterViewResponse {
   designConformanceId: string;

@@ -1,7 +1,71 @@
 "use client";
 
+import { useRef, useState } from "react";
+
+import type {
+  DesignProgress,
+  ReportExportCreateInput,
+  ReportExportCreateResponse,
+} from "@/lib/core-api/types";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { designProgressToCsv } from "@/lib/report-csv";
-import type { DesignProgress } from "@/lib/core-api/types";
+
+type ExportFormat = ReportExportCreateInput["exportFormat"];
+type ExportStatus = "idle" | "pending" | "error";
+
+function newExportId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `report-export-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** 같은 형식에서 응답 유실 뒤 재시도하면 기존 action id를 재사용한다. */
+export function exportIdForAttempt(retainedId: string | undefined): string {
+  return retainedId ?? newExportId();
+}
+
+async function errorMessage(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => ({}))) as { message?: string; detail?: string };
+  return body.detail ?? body.message ?? "감사 기록을 만들지 못했습니다. 네트워크 상태를 확인하세요.";
+}
+
+/** 브라우저의 same-origin BFF를 통해 불변 보고서 snapshot 기록만 요청한다. */
+export async function requestReportExportAudit(
+  siteId: string,
+  input: ReportExportCreateInput,
+): Promise<ReportExportCreateResponse> {
+  const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/report-exports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return (await response.json()) as ReportExportCreateResponse;
+}
+
+/**
+ * 감사 기록이 확정되기 전에는 브라우저 출력도 시작하지 않는다.
+ *
+ * 함수 자체를 작게 분리해 인쇄/Blob 구현을 시험에서 실행하지 않고도 순서를
+ * 고정한다. `produce`에는 실제 PDF 생성이나 업로드 같은 서버 작업이 없다.
+ */
+export async function recordBeforeBrowserExport(
+  requestAudit: () => Promise<ReportExportCreateResponse>,
+  produce: () => void,
+): Promise<ReportExportCreateResponse> {
+  const record = await requestAudit();
+  if (
+    (record.verdict !== "RECORDED" && record.verdict !== "ALREADY_RECORDED") ||
+    !record.exportId ||
+    !record.recordedAt ||
+    !record.snapshotDigest ||
+    record.contentProducedByServer !== false
+  ) {
+    throw new Error(record.detail ?? "감사 스냅샷을 확인하지 못해 내보내기를 시작하지 않았습니다.");
+  }
+  produce();
+  return record;
+}
 
 /**
  * 현장 보고서(M4-D) 내보내기 — "PDF로 저장"(브라우저 인쇄)과 "CSV로 내보내기".
@@ -18,11 +82,19 @@ import type { DesignProgress } from "@/lib/core-api/types";
 export function ReportExportControls({
   progress,
   fileNameBase,
+  siteId,
 }: {
   progress: DesignProgress;
   fileNameBase: string;
+  /** 서버 렌더 시 신뢰한 현장 식별자 — 브라우저 입력에서 다시 만들지 않는다. */
+  siteId: string;
 }) {
-  function handleDownloadCsv() {
+  const retainedExportIds = useRef<Partial<Record<ExportFormat, string>>>({});
+  const [status, setStatus] = useState<ExportStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [record, setRecord] = useState<ReportExportCreateResponse | null>(null);
+
+  function produceCsv() {
     const csv = designProgressToCsv(progress);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const objectUrl = URL.createObjectURL(blob);
@@ -37,14 +109,68 @@ export function ReportExportControls({
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
+  async function handleExport(exportFormat: ExportFormat) {
+    if (status === "pending") return;
+    const exportId = exportIdForAttempt(retainedExportIds.current[exportFormat]);
+    retainedExportIds.current[exportFormat] = exportId;
+    setStatus("pending");
+    setError(null);
+
+    try {
+      const auditInput: ReportExportCreateInput = {
+        exportId,
+        exportFormat,
+        // 이 두 ID는 보고서를 만들 때 Core가 반환한 `progress`에서만 온다. 클라이언트가
+        // 부른 "최신" 결과를 새로 찾아 감사 대상과 현재 화면을 어긋나게 하지 않는다.
+        baselineDesignConformanceId: progress.baselineDesignConformanceId,
+        latestDesignConformanceId: progress.latestDesignConformanceId,
+      };
+      const audited = await recordBeforeBrowserExport(
+        () => requestReportExportAudit(siteId, auditInput),
+        exportFormat === "PDF" ? () => window.print() : produceCsv,
+      );
+      delete retainedExportIds.current[exportFormat];
+      setRecord(audited);
+      setStatus("idle");
+    } catch (cause) {
+      // 응답이 도중에 유실됐을 수 있다. retained exportId는 다음 같은 형식 클릭에서
+      // 그대로 보내지고, Core가 이미 기록했다면 ALREADY_RECORDED로 안전하게 응답한다.
+      setError(cause instanceof Error ? cause.message : "내보내기를 시작하지 못했습니다.");
+      setStatus("error");
+    }
+  }
+
   return (
-    <div className="print:hidden flex flex-wrap gap-2">
-      <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-        PDF로 저장(인쇄)
-      </button>
-      <button type="button" className="btn" onClick={handleDownloadCsv}>
-        CSV로 내보내기
-      </button>
+    <div className="print:hidden flex flex-col items-start gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => void handleExport("PDF")}
+          disabled={status === "pending"}
+        >
+          {status === "pending" ? "감사 기록 중…" : "PDF로 저장(인쇄)"}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void handleExport("CSV")}
+          disabled={status === "pending"}
+        >
+          CSV로 내보내기
+        </button>
+      </div>
+      {error && <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>}
+      {record?.recordedAt && record.snapshotDigest && (
+        <p className="text-[11px] break-keep text-ink-muted">
+          감사 스냅샷 기록 {formatKoreanDateTime(record.recordedAt, { dateStyle: "medium", timeStyle: "short" })}
+          <span className="num break-token"> · {record.snapshotDigest}</span>
+        </p>
+      )}
+      <p className="text-[11px] break-keep text-ink-muted">
+        PDF·CSV 바이트는 이 브라우저에서 생성합니다. 서버에는 파일이 아니라 같은 보고서의 감사
+        스냅샷만 기록됩니다.
+      </p>
     </div>
   );
 }

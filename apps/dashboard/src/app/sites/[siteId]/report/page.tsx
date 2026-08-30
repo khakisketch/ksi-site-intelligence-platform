@@ -38,11 +38,9 @@ import type {
  * `lib/reports/collect-site-report-data.ts` 의 순수 함수가 하고, 이 파일은 그
  * 결과를 문서 레이아웃으로 옮기기만 한다.
  *
- * **감사 추적성 — 확인 필요**: 이 화면의 PDF(브라우저 인쇄)·CSV 내보내기는 Core 를
- * 거치지 않는다 — "누가 언제 어떤 보고서를 내보냈는지"에 대한 서버 감사로그가
- * 없다는 뜻이다. 이번 작업에서는 그걸 위한 새 Core 서브시스템(스토어·저널·라우터)을
- * 세우지 않는다 — 필요 여부는 제품 담당자가 판단할 몫이라 여기 명시적으로만
- * 남긴다.
+ * PDF/CSV를 시작하기 전에 ReportExportControls가 같은 서버 렌더에서 얻은 두
+ * DesignConformance ID를 Core에 보낸다. Core가 그 순간의 불변 report snapshot을
+ * 다시 검증·기록하며, 실제 PDF/CSV bytes는 여전히 브라우저에서만 만든다.
  */
 
 async function fetchConformanceList(missionId: string): Promise<DesignConformanceListView | null> {
@@ -480,6 +478,7 @@ export default async function SiteReportPage({
           <ReportExportControls
             progress={data.progress}
             fileNameBase={`report-${site.siteId}-${designSurfaceId}`}
+            siteId={site.siteId}
           />
         </>
       )}
