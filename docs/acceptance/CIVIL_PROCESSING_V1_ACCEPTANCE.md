@@ -109,6 +109,47 @@ Final evidence for this increment:
 These are software results. No Korean civil checkpoint dataset or independent field survey was used,
 so physical accuracy and field acceptance remain `NOT_EVALUATED`.
 
+## Operational hardening increment — 2026-08-30
+
+The following implementation evidence hardens the existing civil workflow boundary. It is not a new
+live-processing execution, a remote-CI pass, or Korean civil field acceptance; the matrix status above
+therefore remains `SOFTWARE_PASS / PRODUCT_E2E_PARTIAL / FIELD_NOT_EVALUATED`.
+
+- **Report-export audit:** Core records an append-only, organization/site-scoped PDF/CSV export audit
+  snapshot derived again from immutable DesignConformance records. The snapshot binds the report,
+  design revision/normalization, processing profile, source bundle and diff-raster digests; it records
+  neither browser-produced PDF/CSV bytes nor a server-content claim. Contract, replay, assembly,
+  hostile-input and organization-isolation coverage is in `tests/contract/test_report_exports.py`.
+- **Processing correlation:** a validated `X-Request-Id` is request-local on Worker-to-Core GET/POST
+  calls, including the heartbeat thread; malformed IDs are rejected before a job lease is taken. The
+  Core client/runner contract tests cover propagation, thread rebinding and fail-closed malformed input.
+- **Owner-triggered live route:** `.github/workflows/civil-live-contracts.yml` is manual-only. It needs
+  an owner-held HTTPS fixture URL secret plus a supplied SHA-256, pins NodeODM and disposable MinIO,
+  bounds archive extraction, and emits `LIVE_CONTRACTS_SKIPPED` without starting containers when inputs
+  are absent. `tests/contract/test_civil_live_workflow.py` statically verifies YAML and shell gates.
+  It has **not** executed an owner fixture. GitHub Actions also produced no remote test steps because of
+  the repository spending-limit/payment gate, so it is not remote-CI evidence.
+- **Coverage-claim boundary:** a direct `spacingM`/`captureIntervalM` compatibility route may still
+  issue a plan, but its `plannedCoverageRatio` is always `null`. Only a CameraSpec-derived grid may
+  issue the planned claim and preflight it; property tests cover both paths. This prevents arbitrary
+  spacing from becoming a photogrammetric coverage assertion.
+
+Local closure evidence for this increment:
+
+- Python: `4147 passed / 24 skipped`; Ruff, `uv lock --check` and Mypy (`434` source files) passed.
+- Dashboard: `60` Vitest files / `552` tests, ESLint, TypeScript and production build passed.
+- Browser: Playwright `62 passed / 14 intentional external-staging skips` across
+  390/768/1024/1440, including overflow, keyboard, readiness-gap and accessibility assertions.
+- Repository: diff, hygiene, changed-file size, credential-pattern, reference-import and reference/
+  PSDK pin gates passed.
+- Native trust boundary: fresh release and ASan/UBSan builds each passed `7/7` with the SQLite/WAL
+  backend explicitly unavailable on this host; PSDK-independent logic passed `2/2` and missing-PSDK
+  default configuration stayed fail-closed. This is not Manifold/aircraft HIL.
+
+The owner-triggered live workflow itself still has not run a fixture, and GitHub's account gate still
+prevents an actually executed remote CI result. Those facts do not lower the local software result and
+must not be hidden by calling the workflow or a zero-step run `PASS`.
+
 ## Deployment and license gate
 
 NodeODM is consumed as an unmodified AGPL-3.0 container across a REST process boundary. Customer

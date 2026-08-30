@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-29"
+updated: "2026-08-30"
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -195,6 +195,21 @@ confirmed_next_improvements:
         across 390/768/1024/1440. Lock/diff/hygiene/reference-import/pin gates passed. A VALIDATED
         technical result remains insufficient to prove physical independence, survey accuracy or
         field acceptance; commit and remote-delivery evidence are tracked separately.
+      operational_hardening_increment_2026_08_30: >-
+        Core now records append-only, organization/site-scoped browser PDF/CSV export audit snapshots
+        that are re-derived from immutable DesignConformance records and bind report, design
+        revision/normalization, processing-profile, source-bundle and diff-raster digests. Browser bytes
+        are not stored or claimed as server-produced. Processing Controller requests now carry a
+        validated request-local X-Request-Id through Core GET/POST calls and the heartbeat thread;
+        malformed values fail before lease. Direct spacing/capture-interval mission compatibility plans
+        retain plannedCoverageRatio=null, while only CameraSpec-derived grids can claim/preflight planned
+        coverage. The owner-triggered civil-live-contracts workflow is manual-only, requires an
+        owner-held HTTPS fixture secret plus supplied SHA-256, uses digest-pinned NodeODM/MinIO and
+        safely bounds temporary archive extraction; static YAML/shell contract tests pass. It has not
+        run an owner fixture. GitHub Actions remote jobs reached zero test steps because of the
+        repository spending-limit/payment gate, so neither remote CI nor live processing is asserted.
+        This software increment does not change E2E-01 PARTIAL, Korean fieldAcceptance NOT_EVALUATED,
+        FIELD-0a BLOCKED, or DJI capability NOT_VERIFIED/OFF.
       acceptance_gate: >-
         CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/FI/HY and foreign benchmark E2E-B01 pass.
         Product E2E-01 remains PARTIAL because no valid same-site second epoch in a supported Korean

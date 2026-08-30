@@ -194,7 +194,18 @@
   _강제: Capability Registry 노출 규칙 테스트 (P0-5)._
 - **INV-042** 서명되지 않았거나 버전이 불일치하는 Model Pack·Edge Map Package를 실행하지
   않는다. 모든 결과는 Mission/Model/Policy/Calibration Version 계보를 가진다.
-  _강제: event-bundle lineage 필수 필드 (P0-1) + Edge 로더 (미구현)._
+  _강제: event-bundle lineage 필수 필드(P0-1) + activation/recovery 시점의 Python
+  `ksi_mission_contracts.edge_activation.activate_mission_dispatch_file()` — 서명된 dispatch,
+  Mission Contract·KMZ digest, RiskPolicyPack·EdgeRuntimeProfile digest와 device/runtime
+  binding을 검증한 뒤에만 owner-private native snapshot을 원자적으로 발행한다.
+  `edge_dispatch_sync`도 이 단일 activation 경계를 재사용한다. Manifold C++의
+  `LoadNativeActivationSnapshot()`은 state/snapshot 권한·소유자·symlink·크기·형식,
+  device/runtime, 유효 시작·만료를 다시 fail-closed로 검사하며, PSDK app은 `LOADED`가
+  아닐 때 native activation을 비운다. Python dispatch contract와
+  `edge/manifold-runtime/tests/edge_runtime_tests.cpp`는 누락·device/runtime 불일치,
+  만료, malformed, unsafe-permission snapshot을 거부한다. **HIL/실기 배포 검증은
+  별도이며 NOT_VERIFIED다** — 이 software enforcement는 장비 capability나 실제
+  Model/Map Pack 운용 수용을 승격하지 않는다._
 - **INV-043** NC·권리불명 데이터는 상용 학습에서 제외한다. Dataset/Model은 라이선스·출처
   계보를 Registry에 고정한다.
   _강제: `docs/models/MODEL_REGISTRY.yaml`(revision·sha256 계보 SSOT) +

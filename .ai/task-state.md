@@ -1,5 +1,32 @@
 # Current Task State
 
+## 2026-08-30 — `civil_operational_closure_software_green_delivery_in_progress`
+
+- The owner push completed: local `main` and `origin/main` both resolve to
+  `0ff5f94afad458527e71e7229fa015dc1d6136e0`, and the worktree was clean at the start of this
+  increment.
+- GitHub Actions run `33260008688` targets that exact SHA. All six jobs have an empty step list and
+  the account annotation says recent payments failed or the Actions spending limit must be increased.
+  This is an external account gate, not an application test failure, and it is not remote green.
+- Implemented: immutable Core report-export audit plus Dashboard fail-closed export ordering;
+  request-local Processing Controller/Core correlation including heartbeat threads; a manual,
+  secret+digest-gated pinned NodeODM/MinIO live workflow; direct-spacing
+  `plannedCoverageRatio=null`; and failed/cancelled reconstruction re-issue over the same sealed input.
+- Feature commits: coverage truth `1e1c8d6`, Processing correlation/live gate `c55e58d`, Core export
+  audit `9f5ae15`, Dashboard export audit `4446a5d`, and reconstruction recovery `3dcbee8`.
+- Local evidence: Python `4147 passed / 24 skipped`; Ruff, lock and Mypy (`434` files); Dashboard
+  `60 files / 552 tests`, lint, TypeScript and production build; Playwright `62 passed / 14 intentional
+  skips` across 390/768/1024/1440; repository/credential/large-file/reference/pin gates. Native runtime
+  and ASan/UBSan each passed `7/7` without the unavailable SQLite backend; PSDK-independent logic
+  passed `2/2` and missing-PSDK default configuration remained fail-closed.
+- Delivery is not yet claimed for this increment until the documentation commit, fetch/ancestor check
+  and push complete. The new live workflow has not run owner imagery and the existing GitHub account
+  gate means a zero-step run is not remote CI evidence.
+- FIELD-0a remains `BLOCKED`; all DJI capabilities remain `NOT_VERIFIED`/OFF. No device, DPK,
+  credential, flight, motor, waypoint or camera/gimbal action is authorized by this work.
+
+---
+
 ## 2026-08-29 — `independent_checkpoint_validation_software_green_delivery_pending`
 
 - Authority: ADR-KSI-031, `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101`, `REQ-UX-101` and

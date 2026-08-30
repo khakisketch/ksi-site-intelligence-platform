@@ -1,6 +1,29 @@
 # Current Handoff
 
-## 2026-08-29 — Independent checkpoint-validation software is green; delivery is pending
+## 2026-08-30 — Civil operational closure is locally green; delivery is in progress
+
+The owner pushed `0ff5f94afad458527e71e7229fa015dc1d6136e0`; local and remote `main` match and the
+starting worktree is clean. GitHub Actions run `33260008688` targets that SHA, but all six jobs stopped
+before any step because the account has a failed payment or insufficient Actions spending limit. The
+delivery record must therefore say **push complete / remote execution blocked**, not push pending and
+not remote green.
+
+The implementation preserves the approved Console and civil contracts while adding immutable
+report-export audit, Core/Processing correlation, safe opt-in pinned NodeODM+MinIO live CI,
+direct-spacing `plannedCoverageRatio=null`, failed/cancelled reconstruction recovery and corrected
+Python/C++ activation-enforcement documentation. Local verification passed: Python `4147/24 skipped`,
+Ruff/Mypy/lock; Dashboard `60 files / 552 tests`, lint/type/build; four-viewport Playwright
+`62 passed / 14 intentional skips`; hygiene/reference/pin gates; native runtime+sanitizer `7/7` each
+(SQLite backend unavailable on this host); and PSDK logic `2/2` plus default fail-closed.
+
+Feature commits are `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d` and `3dcbee8`. The owner-triggered
+live workflow has not run owner imagery. Documentation commit, fetch/ancestor check and push remain
+before this increment is delivered. Korean field data, FIELD-0a, DJI SDK artifacts and physical HIL
+remain external gates. No device action or capability promotion is part of this work.
+
+---
+
+## 2026-08-29 — Independent checkpoint-validation software is green; historical delivery record
 
 ADR-KSI-031 adds an optional independent-checkpoint producer to the existing civil processing flow.
 The user declares a sealed CSV's provenance, hash/size, CRS, vertical reference and explicit

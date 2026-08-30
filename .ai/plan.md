@@ -1,4 +1,71 @@
-# Current implementation plan (2026-08-29, independent checkpoint-validation producer v1)
+# Current implementation plan (2026-08-30, civil operational closure and trust hardening)
+
+Requirement IDs:
+- `REQ-WRK-101`, `REQ-MSN-103/104`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-010/015/016/017/018/020/024/040/050/051/053/060`.
+
+Owner module:
+- Core: immutable report-export audit and organization/Site scope.
+- Processing Controller: HTTP correlation and opt-in live processing evidence.
+- Mission Planning/Core: honest coverage claim on the legacy direct-spacing recovery boundary.
+- Dashboard: additive export recording inside the existing report surface only.
+
+Acceptance criteria:
+- Report export is append-only, replayable, idempotent and cross-organization opaque.
+- Processing HTTP calls carry a validated correlation ID and never expose secrets in logs.
+- Live CI uses the pinned NodeODM digest and real MinIO, requires lawful owner-held imagery for a
+  completed reconstruction and reports absence as a gate rather than fabricated PASS.
+- CameraSpec remains canonical; every issued direct-spacing route has `plannedCoverageRatio=null`
+  and therefore cannot turn client-entered spacing into a photogrammetric coverage claim.
+- Full Python/Dashboard/browser/hygiene gates pass before delivery; remote CI must actually execute.
+
+Contracts affected:
+- Additive Core report-export audit HTTP/OpenAPI contract. Existing report calculation,
+  ProcessingJob, comparison, Mission Contract and device capability meanings stay unchanged.
+
+Reference assets:
+- ADR-KSI-008 domain journal, ADR-KSI-030/031 civil boundaries, existing live NodeODM/MinIO tests.
+  `references/repos` remain read-only and outside runtime.
+
+Adoption decisions:
+- ADOPT existing DurableJournal, BFF and live-test patterns.
+- REPLACE stale delivery records and disconnected request correlation.
+- RESTRICT the direct-spacing recovery claim; preserve the canonical CameraSpec path.
+- REMOVE no original, job, artifact, report, menu or approved visual contract.
+
+Files to change:
+- Core report-export store/router/assembly/OpenAPI/tests; Dashboard export control/BFF/tests;
+  Processing Controller client/observability/tests; opt-in CI workflow; coverage planning/tests;
+  acceptance/phase/task-state/handoff truth.
+
+Tests:
+- Targeted contract/replay/org-isolation/hostile-input/assembly/correlation/coverage/UI tests, then
+  full pytest, Ruff, Mypy, Dashboard Vitest/ESLint/TypeScript/build/Playwright, lock/diff/hygiene and
+  remote CI.
+
+HIL or real-device assumptions:
+- None. FIELD-0a and every DJI capability stay `BLOCKED`/`NOT_VERIFIED`/OFF.
+
+License/data implications:
+- NodeODM remains an unmodified AGPL process over REST. No raw imagery, LandXML, checkpoint
+  coordinates, generated archive or credential enters Git or ordinary logs.
+
+Rollback:
+- Disable new mutation/workflow entry points independently while preserving all existing records and
+  results. Never loosen civil comparison or evidence gates to restore availability.
+
+Execution:
+1. [완료] Confirm clean local/remote SHA and record the zero-step GitHub billing gate.
+2. [완료] Implement report-export audit, correlation/live E2E and coverage truth as independent
+   increments with narrow tests.
+3. [완료] Add Dashboard audit/reconstruction recovery and preserve four-viewport visual behavior.
+4. [완료] Reconcile acceptance/phase/goal records and run the complete local matrix.
+5. [진행 중] Feature commits are split; fetch, fast-forward push and remote-job inspection remain.
+6. [외부 게이트] Korean same-site civil evidence, FIELD-0a and DJI SDK/HIL remain separate.
+
+---
+
+# Previous implementation plan (2026-08-29, independent checkpoint-validation producer v1)
 
 Requirement IDs:
 - `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101`, `REQ-UX-101`.

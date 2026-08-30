@@ -1,4 +1,45 @@
-# Current goal (2026-08-29, independent checkpoint-validation producer v1)
+# Current goal (2026-08-30, civil operational closure and trust hardening)
+
+Close the next repository-owned product gaps without changing the approved Operations Console
+information architecture: immutable report-export audit, Core-to-Processing correlation, an opt-in
+live civil E2E workflow, honest direct-spacing coverage claims, and the production trust-chain gates
+that can be proven without DJI device actions. `REQ-WRK-101`, `REQ-MSN-103/104`,
+`REQ-INT-101/102/103/104`, `REQ-SEC-101` and `REQ-UX-101` apply with
+`INV-010/015/016/017/018/020/024/040/050/051/053/060`.
+
+Completion conditions:
+
+- report PDF/CSV actions create organization- and Site-scoped append-only audit records bound to the
+  exact server-side report inputs; the client cannot assert an organization or fabricated result;
+- one correlation identifier follows a processing operation across Processing Controller and Core
+  HTTP calls without logging credentials or raw civil data;
+- the pinned NodeODM/MinIO live path has a safe opt-in CI entry that never commits or invents input
+  imagery and distinguishes missing owner input from an executed failure;
+- direct-spacing recovery always emits `plannedCoverageRatio=null`, while only the canonical
+  CameraSpec route may issue and preflight a planned photogrammetric coverage claim;
+- targeted and full regression, Dashboard/browser, hygiene, commit, push and actually executed remote
+  CI evidence are recorded separately from civil field and DJI acceptance.
+
+Local completion evidence for this increment: Python `4147 passed / 24 skipped`; Ruff, lock and Mypy
+(`434` source files); Dashboard `60 files / 552 tests`, ESLint, TypeScript and production build;
+Playwright `62 passed / 14 intentional external-staging skips` at 390/768/1024/1440; repository,
+credential-pattern, large-file, reference and third-party-pin gates. Fresh native runtime and
+sanitizer builds passed `7/7` each with the SQLite/WAL backend explicitly unavailable on this host;
+PSDK-independent logic passed `2/2` and the missing-PSDK default stayed fail-closed.
+
+Starting delivery fact: the owner pushed `0ff5f94afad458527e71e7229fa015dc1d6136e0`, and local
+`main` initially matched `origin/main`. GitHub Actions run `33260008688` targets that SHA but all six
+jobs ended before runner steps because the account payment failed or its Actions spending limit must
+be increased. That prior push is complete; remote code execution is not. The current increment is
+split into `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d` and `3dcbee8`; fetch/fast-forward check and push
+remain before delivery can be claimed.
+
+FIELD-0a remains `BLOCKED`; every DJI capability remains `NOT_VERIFIED`/OFF. This goal performs no
+flight, motor, waypoint, camera/gimbal, DPK, credential or device write.
+
+---
+
+# Previous goal (2026-08-29, independent checkpoint-validation producer v1)
 
 Extend the existing civil temporal/quantity processing path with the optional, fail-closed
 ADR-KSI-031 independent-checkpoint producer. `REQ-INT-104`, `REQ-INT-101`, `REQ-SEC-101` and
