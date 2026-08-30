@@ -150,6 +150,10 @@ The owner-triggered live workflow itself still has not run a fixture, and GitHub
 prevents an actually executed remote CI result. Those facts do not lower the local software result and
 must not be hidden by calling the workflow or a zero-step run `PASS`.
 
+Local feature/evidence commits through `bd67fe7` are fast-forward safe over remote `0ff5f94`. The
+2026-08-30 push attempt was blocked by the Codex command policy before `git` launched, not rejected by
+the repository; remote delivery is therefore pending and no partial push is claimed.
+
 ## Deployment and license gate
 
 NodeODM is consumed as an unmodified AGPL-3.0 container across a REST process boundary. Customer

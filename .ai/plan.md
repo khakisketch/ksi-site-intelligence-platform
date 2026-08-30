@@ -60,7 +60,8 @@ Execution:
    increments with narrow tests.
 3. [완료] Add Dashboard audit/reconstruction recovery and preserve four-viewport visual behavior.
 4. [완료] Reconcile acceptance/phase/goal records and run the complete local matrix.
-5. [진행 중] Feature commits are split; fetch, fast-forward push and remote-job inspection remain.
+5. [외부 게이트] Feature commits and fetch/ancestor check are complete. This environment rejected
+   `git push` before launch; owner terminal push and new-HEAD remote-job inspection remain.
 6. [외부 게이트] Korean same-site civil evidence, FIELD-0a and DJI SDK/HIL remain separate.
 
 ---

@@ -31,8 +31,9 @@ Starting delivery fact: the owner pushed `0ff5f94afad458527e71e7229fa015dc1d6136
 `main` initially matched `origin/main`. GitHub Actions run `33260008688` targets that SHA but all six
 jobs ended before runner steps because the account payment failed or its Actions spending limit must
 be increased. That prior push is complete; remote code execution is not. The current increment is
-split into `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d` and `3dcbee8`; fetch/fast-forward check and push
-remain before delivery can be claimed.
+split into `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d`, `3dcbee8` and documentation commit `bd67fe7`.
+The 2026-08-30 fetch/ancestor check passed, but this Codex environment rejected `git push` before the
+process launched because approval is unavailable. Remote delivery therefore remains pending.
 
 FIELD-0a remains `BLOCKED`; every DJI capability remains `NOT_VERIFIED`/OFF. This goal performs no
 flight, motor, waypoint, camera/gimbal, DPK, credential or device write.

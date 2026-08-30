@@ -1,6 +1,6 @@
 # Current Task State
 
-## 2026-08-30 — `civil_operational_closure_software_green_delivery_in_progress`
+## 2026-08-30 — `civil_operational_closure_software_green_push_environment_blocked`
 
 - The owner push completed: local `main` and `origin/main` both resolve to
   `0ff5f94afad458527e71e7229fa015dc1d6136e0`, and the worktree was clean at the start of this
@@ -13,15 +13,18 @@
   secret+digest-gated pinned NodeODM/MinIO live workflow; direct-spacing
   `plannedCoverageRatio=null`; and failed/cancelled reconstruction re-issue over the same sealed input.
 - Feature commits: coverage truth `1e1c8d6`, Processing correlation/live gate `c55e58d`, Core export
-  audit `9f5ae15`, Dashboard export audit `4446a5d`, and reconstruction recovery `3dcbee8`.
+  audit `9f5ae15`, Dashboard export audit `4446a5d`, reconstruction recovery `3dcbee8`, and evidence
+  ledger `bd67fe7`.
 - Local evidence: Python `4147 passed / 24 skipped`; Ruff, lock and Mypy (`434` files); Dashboard
   `60 files / 552 tests`, lint, TypeScript and production build; Playwright `62 passed / 14 intentional
   skips` across 390/768/1024/1440; repository/credential/large-file/reference/pin gates. Native runtime
   and ASan/UBSan each passed `7/7` without the unavailable SQLite backend; PSDK-independent logic
   passed `2/2` and missing-PSDK default configuration remained fail-closed.
-- Delivery is not yet claimed for this increment until the documentation commit, fetch/ancestor check
-  and push complete. The new live workflow has not run owner imagery and the existing GitHub account
-  gate means a zero-step run is not remote CI evidence.
+- Fetch confirmed `origin/main` (`0ff5f94`) is an ancestor of local `main`; the worktree was clean.
+  The subsequent `git push origin main` was rejected by the Codex command policy before a process
+  launched because approval is unavailable. Remote `main` therefore remains `0ff5f94`; no partial
+  remote mutation occurred. The new live workflow has not run owner imagery, and a zero-step run is
+  not remote CI evidence.
 - FIELD-0a remains `BLOCKED`; all DJI capabilities remain `NOT_VERIFIED`/OFF. No device, DPK,
   credential, flight, motor, waypoint or camera/gimbal action is authorized by this work.
 

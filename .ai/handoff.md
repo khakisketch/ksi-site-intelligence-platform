@@ -1,6 +1,6 @@
 # Current Handoff
 
-## 2026-08-30 — Civil operational closure is locally green; delivery is in progress
+## 2026-08-30 — Civil operational closure is locally green; push environment is blocked
 
 The owner pushed `0ff5f94afad458527e71e7229fa015dc1d6136e0`; local and remote `main` match and the
 starting worktree is clean. GitHub Actions run `33260008688` targets that SHA, but all six jobs stopped
@@ -16,10 +16,12 @@ Ruff/Mypy/lock; Dashboard `60 files / 552 tests`, lint/type/build; four-viewport
 `62 passed / 14 intentional skips`; hygiene/reference/pin gates; native runtime+sanitizer `7/7` each
 (SQLite backend unavailable on this host); and PSDK logic `2/2` plus default fail-closed.
 
-Feature commits are `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d` and `3dcbee8`. The owner-triggered
-live workflow has not run owner imagery. Documentation commit, fetch/ancestor check and push remain
-before this increment is delivered. Korean field data, FIELD-0a, DJI SDK artifacts and physical HIL
-remain external gates. No device action or capability promotion is part of this work.
+Feature commits are `1e1c8d6`, `c55e58d`, `9f5ae15`, `4446a5d`, `3dcbee8` and `bd67fe7`. Fetch proved
+remote `0ff5f94` is a safe ancestor. The Codex command policy then rejected `git push origin main`
+before launch because approval is unavailable, so remote `main` is unchanged and the owner terminal
+must perform the fast-forward push. The owner-triggered live workflow has not run owner imagery.
+Korean field data, FIELD-0a, DJI SDK artifacts and physical HIL remain external gates. No device
+action or capability promotion is part of this work.
 
 ---
 

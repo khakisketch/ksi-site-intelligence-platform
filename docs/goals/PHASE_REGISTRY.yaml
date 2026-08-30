@@ -208,6 +208,8 @@ confirmed_next_improvements:
         safely bounds temporary archive extraction; static YAML/shell contract tests pass. It has not
         run an owner fixture. GitHub Actions remote jobs reached zero test steps because of the
         repository spending-limit/payment gate, so neither remote CI nor live processing is asserted.
+        Local commits through bd67fe7 are fast-forward safe over origin/main 0ff5f94, but the Codex
+        command policy rejected git push before process launch; no partial remote delivery is claimed.
         This software increment does not change E2E-01 PARTIAL, Korean fieldAcceptance NOT_EVALUATED,
         FIELD-0a BLOCKED, or DJI capability NOT_VERIFIED/OFF.
       acceptance_gate: >-
