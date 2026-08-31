@@ -1,12 +1,13 @@
-"""Perception 제품 파이프라인 — Detection→Tracking→Geo→Observation→Entity→Event.
+"""Perception offline replay 파이프라인 — Detection→Tracking→Geo→Observation→Entity→Event.
 
-## 승격 이력 (PRODUCTION EDGE RUNTIME PROMOTION, 2026-07-28)
+## 경계 결정 (2026-08-31)
 
 이 orchestration 은 ``tests/replay/vertical_slice.py`` 에서 검증된 뒤 여기로
-**승격**됐다 — 독립 재검토가 확인했듯 검증된 배선이 테스트 하네스에만 있으면
-PSDK Live View 를 붙일 자리가 "테스트 모듈"이 되기 때문이다. tests/replay 는
-이 모듈을 import 해 재생 검증을 계속하며, **별도 orchestration 복사본을 두지
-않는다**(복사본 존재 = 실패 — test_vertical_slice 의 identity 테스트가 고정).
+이관됐다. 제품 package 안에 있는 이유는 replay와 모델 평가가 테스트 트리의 복사본이
+아니라 같은 계약 코드를 재사용하게 하기 위해서다. 이것은 **온보드 production Edge
+Runtime 승격이 아니다**. 실제 Manifold runtime은 ``edge/psdk-app``의 native
+``ksi_psdk_app``이며 이 모듈은 Core/worker/DPK production entrypoint에 포함되지 않는다.
+``tests/replay``는 이 모듈을 import하되 별도 orchestration 복사본을 두지 않는다.
 
 파이프라인 전 구간::
 
@@ -25,9 +26,10 @@ PSDK Live View 를 붙일 자리가 "테스트 모듈"이 되기 때문이다. t
 **증명한다:** 배선이 실제로 이어져 있고, 각 단계의 실패가 조용히 삼켜지지 않으며,
 같은 입력이 같은 산출물을 낸다.
 
-**증명하지 않는다:** 실기 타이밍(합성/녹화 텔레메트리다), 연관 정확도(IoU 최소
-구현이다), Manifold 성능(B2). 각각은 별개 검증 대상이며 여기서 통과했다고
-주장하지 않는다.
+**증명하지 않는다:** production event evidence, 실기 타이밍(합성/녹화
+텔레메트리다), 연관 정확도(IoU 최소 구현이다), Manifold 성능(B2). 생성 bundle은
+``productionEvidence=false``와 ``vertical-slice-demo``를 담으며 Core production
+edge-sync가 원장 반영 전에 거부한다.
 """
 
 from __future__ import annotations
@@ -473,6 +475,8 @@ def _event_bundle_from_entity(
         },
         reasoning={
             "rule": "vertical-slice-demo",
+            "executionClass": "OFFLINE_REPLAY_EVALUATION",
+            "productionEvidence": False,
             "observationCount": len(entity.lineage.observation_ids or []),
             "note": "배선 검증용 — 실제 위험 판정 규칙이 아니다",
         },

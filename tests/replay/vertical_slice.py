@@ -1,22 +1,22 @@
-"""Replay 테스트 픽스처 — 제품 orchestration 은 :mod:`ksi_perception.pipeline` 소유.
+"""Replay 테스트 픽스처 — shared offline orchestration은 :mod:`ksi_perception.pipeline` 소유.
 
-## 승격 이후의 역할 (PRODUCTION EDGE RUNTIME PROMOTION, 2026-07-28)
+## 테스트 트리 밖 이관 이후의 역할
 
 독립 검토로 다듬어진 vertical slice orchestration(run_vertical_slice·
 MinimalTracker·SliceFrame/Result/Stage·event 정책 게이트)은
 ``packages/perception/src/ksi_perception/pipeline.py`` 로 **승격**됐다 — 검증된
-배선이 테스트 하네스에만 있으면 PSDK Live View 를 붙일 자리가 테스트 모듈이
-되기 때문이다.
+배선이 테스트 하네스에만 있으면 실제 모델 replay/evaluation CLI가 테스트 모듈을
+runtime dependency로 삼게 되기 때문이다. 이 이관은 production Edge 승격이 아니다.
 
 이 파일에는 두 가지만 남는다:
 
 1. **하위 호환 re-export** — 기존 replay 테스트의 ``from vertical_slice import
-   run_vertical_slice`` 가 production 모듈의 **같은 객체**를 받는다. 별도
+   run_vertical_slice`` 가 shared offline 모듈의 **같은 객체**를 받는다. 별도
    orchestration 복사본은 두지 않는다(복사본 존재 = 실패 —
    test_vertical_slice 의 identity 테스트가 고정).
 2. **테스트 전용 픽스처** — 결정적 stub Detector·합성 텔레메트리·탐지 생성기.
-   합성 입력 생성은 제품 코드가 아니다(production 은 실 텔레메트리·실 프레임을
-   받는다).
+   합성 입력 생성은 제품 코드가 아니다. 온보드 production runtime은 native
+   ``ksi_psdk_app``이다.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from ksi_domain.detection_adapter import FrameDetectionResult, FrameDetectionSta
 from ksi_geo_core.sync import SourceQuality, TelemetrySample
 from ksi_geo_core.timestamps import TimestampSet
 
-# 제품 orchestration re-export — 복사본이 아니라 동일 객체다.
+# Offline replay orchestration re-export — 복사본이 아니라 동일 객체다.
 from ksi_perception.pipeline import (  # noqa: F401
     DEFAULT_EVENT_POLICY,
     EVENT_TYPE_COMPATIBLE_CLASSES,
@@ -45,7 +45,7 @@ from ksi_perception.pipeline import (  # noqa: F401
 
 
 def make_run_context(*, model_version: str = "scripted-stub-0") -> RunContext:
-    """테스트 실행용 계보 — production 기본값이 아니라 **명시적 테스트 식별자**다.
+    """테스트 실행용 계보 — runtime 기본값이 아니라 **명시적 테스트 식별자**다.
 
     파이프라인은 이제 계보 기본값을 갖지 않는다(감사 #23, INV-040/042) — 합성
     테스트의 계보는 이 헬퍼가 명시한다. 값에 test- 접두사를 붙여 production

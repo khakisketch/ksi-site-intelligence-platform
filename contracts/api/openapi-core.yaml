@@ -158,7 +158,10 @@ info:
   # 파일 bytes를 받거나 생성했다고 주장하지 않고, 인증 Principal·조직-scoped Site·
   # immutable design-conformance report 전체 canonical digest와 processing/design
   # lineage를 다시 대조한 snapshot만 append-only로 기록한다.
-  version: 1.30.0
+  # 1.31.0 — Python recorded perception은 offline replay/model evaluation으로
+  # 자기식별하고, production Edge ingest는 NON_PRODUCTION_EVIDENCE로 원장 반영 전에
+  # 거부한다. native ksi_psdk_app만 production Edge runtime이다(ADR-KSI-009 D8).
+  version: 1.31.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -1266,7 +1269,7 @@ paths:
         edgeDeviceId 와 다르면 원장 반영 전에 403 DEVICE_MISMATCH 로 거부한다
         (ADR-KSI-008 §2 — 위조 순번 주입이 장비 신원 뒤로 차단된다).
 
-        수신 전 세 정책 게이트(멱등 원장·순번축 선점 전에 판정 — events.py
+        수신 전 네 정책 게이트(멱등 원장·순번축 선점 전에 판정 — events.py
         ``classify_edge_bundle``)를 통과해야 event projection 이 이뤄진다.
         ① payload.eventId·인증 edgeDeviceId 중 하나라도 경로-안전 문자
         (``ksi_core.identifiers``, 영숫자 시작 + 영숫자/``_``/``.``/``-``)
@@ -1276,7 +1279,11 @@ paths:
         수락하면 상세·전이 라우트에 영구히 도달 못 하는 사건이 만들어진다).
         ② payload.occurredAt 이 tz-aware(offset 포함)가 아니면 422
         INVALID_EVENT_TIMESTAMP 로 거부(ACK 없음) — naive 값은 서버 로컬
-        타임존으로 조용히 재해석돼 감사 시간축이 어긋난다. ③ payload.status 가
+        타임존으로 조용히 재해석돼 감사 시간축이 어긋난다. ③ payload.reasoning이
+        ``productionEvidence=false``·``executionClass=OFFLINE_REPLAY_EVALUATION`` 또는
+        legacy ``rule=vertical-slice-demo``를 포함하면 422 NON_PRODUCTION_EVIDENCE로
+        거부(ACK 없음)한다. 계약 모양을 공유하는 offline replay가 운영 원장·순번을
+        선점할 수 없다. ④ payload.status 가
         CONFIRMED_EVENT/DISMISSED(종단 상태)면 422 STATUS_NOT_EDGE_ASSERTABLE
         로 거부(ACK 없음) — 확정/기각은 서버 트리아지(``POST
         /v1/events/{event_key}/transitions``)의 업무 판정 전용이며 Edge 가
@@ -1316,7 +1323,8 @@ paths:
             DIGEST_MISMATCH / MALFORMED_PAYLOAD / INVALID_EVENT_BUNDLE /
             INVALID_EVENT_IDENTITY(eventId·edgeDeviceId 가 경로-안전 문자
             밖 — '/'·공백·`::` 등) / INVALID_EVENT_TIMESTAMP(occurredAt 이
-            tz-aware 아님) / STATUS_NOT_EDGE_ASSERTABLE(status 가
+            tz-aware 아님) / NON_PRODUCTION_EVIDENCE(offline replay/model-evaluation
+            표식이 있는 bundle) / STATUS_NOT_EDGE_ASSERTABLE(status 가
             CONFIRMED_EVENT/DISMISSED — 확정/기각은 서버 트리아지 전용)
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After 후 재전송 }
         '401': { description: 인증 실패 }

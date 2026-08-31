@@ -1155,6 +1155,32 @@ def test_replay_rejects_edge_asserted_finalized_projection(tmp_path: Path) -> No
         EventStore(DurableJournal(path))
 
 
+def test_replay_rejects_non_production_projection(tmp_path: Path) -> None:
+    """Legacy offline output already in a journal must not revive as production evidence."""
+
+    path = tmp_path / "events" / "journal.jsonl"
+    record = _projected_record()
+    record["after"]["bundle"]["reasoning"] = {"rule": "vertical-slice-demo"}
+    _seed(path, [record])
+
+    with pytest.raises(EventStoreRecoveryError, match="offline replay/model-evaluation"):
+        EventStore(DurableJournal(path))
+
+
+def test_replay_rejects_non_production_update(tmp_path: Path) -> None:
+    """A legacy update cannot replace a valid native projection with replay evidence."""
+
+    path = tmp_path / "events" / "journal.jsonl"
+    update = _updated_record(status="EVIDENCE_COLLECTION")
+    update["after"]["bundle"]["reasoning"] = {
+        "executionClass": "OFFLINE_REPLAY_EVALUATION"
+    }
+    _seed(path, [_projected_record(), update])
+
+    with pytest.raises(EventStoreRecoveryError, match="offline replay/model-evaluation"):
+        EventStore(DurableJournal(path))
+
+
 def test_replay_rejects_illegal_update_transition(tmp_path: Path) -> None:
     """전이표에 없는 update 는 거부한다 — CANDIDATE→FINDING 직행(둘 다 Edge 주장 가능).
 

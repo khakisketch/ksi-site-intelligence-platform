@@ -678,6 +678,9 @@ _POLICY_REJECTION_DETAIL: dict[EventVerdict, str] = {
         "eventId·edgeDeviceId 는 경로-안전 문자만 허용한다(예약 구분자·'/' 등 금지)"
     ),
     EventVerdict.INVALID_EVENT_TIMESTAMP: "occurredAt 은 tz-aware(offset 포함) 여야 한다",
+    EventVerdict.NON_PRODUCTION_EVIDENCE: (
+        "offline replay/model-evaluation bundle은 production evidence로 등록할 수 없다"
+    ),
 }
 
 

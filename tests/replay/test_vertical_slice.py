@@ -1009,14 +1009,14 @@ def test_empty_raw_classification_lineage_does_not_kill_batch() -> None:
     assert any("missing_classification_lineage" in r for r in reasons), reasons
 
 
-# ── PRODUCTION EDGE RUNTIME PROMOTION — 복사본 부재 앵커 ─────────────────────
+# ── OFFLINE REPLAY MODULE — 복사본 부재 앵커 ────────────────────────────────
 
 
-def test_orchestration_is_production_module_not_a_copy() -> None:
-    """[승격 앵커] replay 하네스는 production pipeline 의 **동일 객체**를 쓴다.
+def test_orchestration_is_shared_offline_module_not_a_copy() -> None:
+    """Replay 하네스는 package의 offline pipeline **동일 객체**를 쓴다.
 
-    tests/replay 에 orchestration 복사본이 다시 생기면(승격 취지 붕괴 — production
-    과 test 가 서로 다른 배선을 검증) identity 비교가 즉시 깨진다.
+    tests/replay에 orchestration 복사본이 다시 생기면 CLI와 test가 서로 다른 배선을
+    검증하므로 identity 비교가 즉시 깨진다. 이는 production 승격 주장이 아니다.
     """
     import vertical_slice
     from ksi_perception import pipeline

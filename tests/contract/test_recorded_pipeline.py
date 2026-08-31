@@ -1,8 +1,8 @@
-"""Recorded production entry point 계약 (PRODUCTION EDGE RUNTIME PROMOTION).
+"""Recorded offline replay/evaluation CLI 계약.
 
 고정하는 것:
 
-1. **entry point 가 production pipeline 을 실제로 호출한다** — CLI ``main`` 이
+1. **CLI가 shared replay pipeline을 실제로 호출한다** — CLI ``main`` 이
    :func:`ksi_perception.pipeline.run_vertical_slice` 를 경유해 산출물을 만든다.
    파이프라인 호출을 제거하면 이 파일의 통합 테스트가 실패한다(공허 방지 앵커).
 2. **구성 실패는 fail-closed exit 1** — Registry 거부·파일 불량·텔레메트리 계약
@@ -475,7 +475,7 @@ def test_cli_registry_flag_resolves_absolute_path_from_any_cwd(
     assert "model.onnx" in err
 
 
-# ── entry point 가 production pipeline 을 실제로 호출한다 ─────────────────────
+# ── entry point 가 shared offline pipeline 을 실제로 호출한다 ─────────────────
 
 
 def _stub_loader(**_kwargs: object) -> tuple[ScriptedDetector, str, int, int, int]:
@@ -492,13 +492,13 @@ def _stub_loader(**_kwargs: object) -> tuple[ScriptedDetector, str, int, int, in
     return detector, "scripted-stub-0", 3, 1920, 1080
 
 
-def test_cli_runs_production_pipeline_end_to_end(
+def test_cli_runs_offline_replay_pipeline_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """[공허 방지 앵커] main → run_vertical_slice → Event JSON 이 실제로 이어진다.
 
     stub 은 **detector 로드 단계만** 대체한다 — orchestration(tracking·보간·투영·
-    조립·event 정책)은 production 코드가 그대로 돈다. main 에서 파이프라인 호출을
+    조립·event 정책)은 shared replay 코드가 그대로 돈다. main 에서 파이프라인 호출을
     제거하면 entities/event_bundles 가 비어 이 테스트가 실패한다.
     """
     monkeypatch.setattr(
@@ -534,6 +534,11 @@ def test_cli_runs_production_pipeline_end_to_end(
     assert len(payload["entities"]) == 1
     assert len(payload["event_bundles"]) == 1
     assert payload["event_bundles"][0]["eventType"] == "PERSON_PRESENT"
+    assert payload["event_bundles"][0]["reasoning"]["executionClass"] == (
+        "OFFLINE_REPLAY_EVALUATION"
+    )
+    assert payload["event_bundles"][0]["reasoning"]["productionEvidence"] is False
+    assert payload["event_bundles"][0]["reasoning"]["rule"] == "vertical-slice-demo"
     assert payload["entity_fingerprints"], "지문 없는 산출물은 재현성 비교 불가"
 
 
@@ -733,14 +738,14 @@ def test_serialized_result_is_deterministic() -> None:
     assert run() == run()
 
 
-# ── Edge→Core 이음매 E2E (감사 #27) — 양쪽 픽스처가 아니라 실산출물이 흐른다 ──
+# ── Offline replay → production Core 금지 경계 ───────────────────────────────
 
 
-def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> None:
-    """run_vertical_slice 가 만든 EventBundle 이 Core edge-sync 에 실제로 수락된다.
+def test_offline_pipeline_output_is_rejected_by_core_production_ingest(tmp_path: Path) -> None:
+    """run_vertical_slice의 contract-shaped bundle은 production 원장을 선점하지 않는다.
 
-    파이프라인이 필드를 바꾸거나 v1.3 으로 올라가면 여기서 깨진다 — 각자 손으로
-    만든 픽스처만 쓰면 양쪽이 각자 green 인 채 통합 시점에야 어긋난다.
+    replay와 production이 같은 EventBundle wire를 쓰는 것은 conformance를 위한 것이지
+    replay 결과를 현장 evidence로 승격하는 권한이 아니다.
     """
     import hashlib
 
@@ -810,20 +815,15 @@ def test_pipeline_output_flows_into_core_ingest_end_to_end(tmp_path: Path) -> No
         "Content-Type": "application/json",
         "Authorization": f"Bearer {edge_token}",
     }
-    created = client.post(
+    rejected = client.post(
         "/v1/edge-sync/event-bundles",
         content=entry.model_dump_json(by_alias=True),
         headers=request_headers,
     )
-    assert created.status_code == 201, created.text
-    retransmit = client.post(
-        "/v1/edge-sync/event-bundles",
-        content=entry.model_dump_json(by_alias=True),
-        headers=request_headers,
-    )
-    assert retransmit.status_code == 200
-    assert retransmit.json()["verdict"] == "DUPLICATE_IGNORED"
-    assert store.accepted_count() == 1
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["verdict"] == "NON_PRODUCTION_EVIDENCE"
+    assert store.accepted_count() == 0
+    assert event_store.get(f"{edge_device_id}::{bundle.event_id}") is None
 
 
 def test_cli_disjoint_time_axis_is_config_error(

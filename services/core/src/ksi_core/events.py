@@ -126,6 +126,7 @@ class EventVerdict(StrEnum):
     DUPLICATE_PROJECTION = "DUPLICATE_PROJECTION"
     INVALID_EVENT_IDENTITY = "INVALID_EVENT_IDENTITY"
     INVALID_EVENT_TIMESTAMP = "INVALID_EVENT_TIMESTAMP"
+    NON_PRODUCTION_EVIDENCE = "NON_PRODUCTION_EVIDENCE"
     STATUS_NOT_EDGE_ASSERTABLE = "STATUS_NOT_EDGE_ASSERTABLE"
     UPDATE_DIVERGED = "UPDATE_DIVERGED"
     TRANSITIONED = "TRANSITIONED"
@@ -139,8 +140,8 @@ class EventVerdict(StrEnum):
 
 # verdict → HTTP status (edge_sync.py:321 관습 — 모듈 상수 하나가 SSOT).
 # PROJECTED/EVENT_UPDATED/DUPLICATE_PROJECTION/UPDATE_DIVERGED/INVALID_EVENT_IDENTITY/
-# STATUS_NOT_EDGE_ASSERTABLE 는 project_bundle 전용 결과라 이 라우터에서 직접
-# 반환되지 않지만(edge_sync 장착부가 소비), 완전성을 위해 전 멤버를 채운다
+# NON_PRODUCTION_EVIDENCE/STATUS_NOT_EDGE_ASSERTABLE 는 project_bundle 전용 결과라
+# 이 라우터에서 직접 반환되지 않지만(edge_sync 장착부가 소비), 완전성을 위해 전 멤버를 채운다
 # (test_status_map_covers_every_verdict 관습).
 _STATUS: dict[EventVerdict, int] = {
     EventVerdict.PROJECTED: 201,
@@ -148,6 +149,7 @@ _STATUS: dict[EventVerdict, int] = {
     EventVerdict.DUPLICATE_PROJECTION: 200,
     EventVerdict.INVALID_EVENT_IDENTITY: 422,
     EventVerdict.INVALID_EVENT_TIMESTAMP: 422,
+    EventVerdict.NON_PRODUCTION_EVIDENCE: 422,
     EventVerdict.STATUS_NOT_EDGE_ASSERTABLE: 422,
     EventVerdict.UPDATE_DIVERGED: 200,
     EventVerdict.TRANSITIONED: 200,
@@ -163,6 +165,13 @@ _FINALIZED_STATUSES = frozenset({EventStatus.CONFIRMED_EVENT, EventStatus.DISMIS
 # Edge 가 bundle 로 주장할 수 있는 상태 — 종단(확정/기각)은 서버 트리아지 전용
 # (모듈 docstring "확정/기각은 Edge 가 주장할 수 없다" 절, MASTER_PRD §8.1/§7.6).
 _EDGE_ASSERTABLE_STATUSES = frozenset(EventStatus) - _FINALIZED_STATUSES
+# Offline replay/model-evaluation artifacts intentionally keep the same
+# EventBundle wire so conformance can catch drift. They are not production
+# evidence and must not reserve an Edge journal key/sequence. The rule check
+# preserves fail-closed behavior for legacy outputs written before the explicit
+# productionEvidence flag was added.
+_NON_PRODUCTION_EXECUTION_CLASSES = frozenset({"OFFLINE_REPLAY_EVALUATION"})
+_NON_PRODUCTION_RULES = frozenset({"vertical-slice-demo"})
 # event_key 구분자 — 식별자에 포함되면 키가 모호해지므로 typed 거부한다.
 _EVENT_KEY_SEPARATOR = "::"
 _REASON_REQUIRED_STATUSES = frozenset({EventStatus.CONFIRMED_EVENT, EventStatus.DISMISSED})
@@ -344,9 +353,20 @@ def classify_edge_bundle(payload: Mapping[str, Any], *, edge_device_id: str) -> 
         return EventVerdict.INVALID_EVENT_IDENTITY
     if bundle.occurred_at.tzinfo is None:
         return EventVerdict.INVALID_EVENT_TIMESTAMP
+    if _is_non_production_evidence(bundle):
+        return EventVerdict.NON_PRODUCTION_EVIDENCE
     if bundle.status not in _EDGE_ASSERTABLE_STATUSES:
         return EventVerdict.STATUS_NOT_EDGE_ASSERTABLE
     return None
+
+
+def _is_non_production_evidence(bundle: EventBundle) -> bool:
+    reasoning = bundle.reasoning
+    return (
+        reasoning.get("productionEvidence") is False
+        or reasoning.get("executionClass") in _NON_PRODUCTION_EXECUTION_CLASSES
+        or reasoning.get("rule") in _NON_PRODUCTION_RULES
+    )
 
 
 def _evidence_gate_violation(bundle: dict[str, Any]) -> str | None:
@@ -847,6 +867,12 @@ class EventStore:
         event_key = record["eventKey"]
         if kind == "event-projected":
             after = record["after"]
+            projected_bundle = EventBundle.model_validate(after["bundle"])
+            if _is_non_production_evidence(projected_bundle):
+                raise EventStoreRecoveryError(
+                    "재생: offline replay/model-evaluation bundle이 production projection을 "
+                    f"선점했다 — eventKey={event_key}"
+                )
             organization_id = record.get("organizationId", "legacy")
             if not isinstance(organization_id, str) or not is_path_safe_identifier(
                 organization_id
@@ -896,6 +922,12 @@ class EventStore:
         existing = self._events[event_key]
         if kind == "event-updated":
             after = record["after"]
+            updated_bundle = EventBundle.model_validate(after["bundle"])
+            if _is_non_production_evidence(updated_bundle):
+                raise EventStoreRecoveryError(
+                    "재생: offline replay/model-evaluation bundle이 production update를 "
+                    f"선점했다 — eventKey={event_key}"
+                )
             updated_status = EventStatus(after["status"])
             # 재생에서도 live 와 같은 전이 규칙을 태운다(독립 재검토 P1-1). live
             # (_project_bundle_locked)는 종단 상태의 후행 update 를 diverge 로
@@ -1137,6 +1169,13 @@ class EventStore:
         if bundle.occurred_at.tzinfo is None:
             logger.warning("naive occurredAt 거부(device=%s)", edge_device_id)
             return EventVerdict.INVALID_EVENT_TIMESTAMP
+
+        # ①c offline replay/evaluation 산출물은 contract-shaped fixture이지 production
+        # evidence가 아니다. edge-sync 사전 게이트를 우회한 direct store 호출도
+        # 여기서 같은 typed verdict로 막는다.
+        if _is_non_production_evidence(bundle):
+            logger.warning("non-production EventBundle 거부(device=%s)", edge_device_id)
+            return EventVerdict.NON_PRODUCTION_EVIDENCE
 
         # ② 권한 게이트 — 확정/기각은 서버 트리아지 전용(INV-021 게이트 우회 차단).
         if bundle.status not in _EDGE_ASSERTABLE_STATUSES:

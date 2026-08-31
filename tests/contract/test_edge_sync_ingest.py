@@ -11,6 +11,7 @@ offline_sync 의 SyncLedger 규칙이 서버 배선(EdgeSyncStore + FastAPI 라�
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore, ServerVerdict, StoreRecoveryError
-from ksi_core.events import EventStore, make_event_key
+from ksi_core.events import EventStore, EventVerdict, make_event_key
 from ksi_event_contracts.offline_sync import (
     IngestVerdict,
     JournalEntry,
@@ -815,3 +816,43 @@ def test_invalid_event_identity_rejection_does_not_block_device_queue(
     assert reborn.accepted_count() == 1
     assert reborn.accepted_sequences(_EDGE_DEVICE_ID) == [0]
     reborn.close()
+
+
+@pytest.mark.parametrize(
+    "reasoning",
+    [
+        {"productionEvidence": False},
+        {"executionClass": "OFFLINE_REPLAY_EVALUATION"},
+        {"rule": "vertical-slice-demo"},
+    ],
+)
+def test_non_production_evidence_does_not_reserve_journal_or_projection(
+    tmp_path: Path, reasoning: dict[str, Any]
+) -> None:
+    """Explicit and legacy replay markers fail before the durable sequence boundary."""
+
+    client, store, event_store = _client_with_event_store(tmp_path)
+    replay_payload = _bundle_payload("evt-offline-replay")
+    replay_payload["reasoning"] = reasoning
+
+    blocked = _post(client, _entry(sequence=0, payload=replay_payload))
+    assert blocked.status_code == 422
+    assert blocked.json()["verdict"] == "NON_PRODUCTION_EVIDENCE"
+    assert store.accepted_count() == 0
+    assert event_store.get(make_event_key(_EDGE_DEVICE_ID, "evt-offline-replay")) is None
+
+    # EventStore의 direct projection 방어도 같은 판정을 낸다. 라우터 사전 게이트만
+    # 믿으면 내부 호출자가 우회할 수 있다.
+    direct = event_store.project_bundle(
+        replay_payload,
+        edge_device_id=_EDGE_DEVICE_ID,
+        received_at=datetime.now(UTC),
+        organization_id=_EDGE_ORGANIZATION_ID,
+    )
+    assert direct is EventVerdict.NON_PRODUCTION_EVIDENCE
+
+    # 정책 거부가 순번 0을 선점하지 않았으므로 정상 native-style bundle은 진행한다.
+    good = _post(client, _entry(sequence=0))
+    assert good.status_code == 201
+    assert good.json()["verdict"] == "ACCEPTED"
+    assert store.accepted_sequences(_EDGE_DEVICE_ID) == [0]

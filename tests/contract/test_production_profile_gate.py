@@ -65,9 +65,9 @@ _FORBIDDEN_MODULE_PREFIXES = (
     # packages/test-vectors 아래라 경로 검사(references/scripts/tests)에도 안 걸린다 —
     # 이름으로 막지 않으면 어느 검사에도 안 잡힌다.
     "ksi_test_vectors",
-    # 이 목록의 실질 — 배선 검증용 placeholder 파이프라인. EventBundle 에
-    # {"rule": "vertical-slice-demo"} 를 실어 "실제 위험 판정 규칙이 아니다"라고
-    # 스스로 밝히는 모듈이라, 운영 조립에 실리면 INV-040 위반 그 자체다.
+    # Offline replay/model-evaluation plane. EventBundle에 productionEvidence=false와
+    # vertical-slice-demo를 싣고 Core도 typed 거부한다. 운영 closure에 들어오면
+    # native Edge runtime 경계와 INV-040을 동시에 깨므로 계속 금지한다.
     "ksi_perception.pipeline",
 )
 

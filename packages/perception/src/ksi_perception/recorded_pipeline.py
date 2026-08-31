@@ -1,9 +1,11 @@
-"""Recorded 입력 production entry point — ``python -m ksi_perception.recorded_pipeline``.
+"""Recorded 입력 offline replay/evaluation CLI — ``python -m ksi_perception.recorded_pipeline``.
 
 녹화 이미지 시퀀스 + 텔레메트리 JSONL 을 받아 :mod:`ksi_perception.pipeline` 의
-제품 orchestration 을 실행하고 Event/Evidence JSON 을 출력한다. 배포 가능한
-Runtime entry point 이며 테스트 하네스가 아니다 — replay 테스트가 검증한 그
-파이프라인 코드를 **동일 객체로** 호출한다(별도 orchestration 없음).
+결정적 orchestration을 실행하고 contract-shaped Event/Evidence JSON을 출력한다.
+replay 테스트가 검증한 그 코드를 **동일 객체로** 호출하지만, Manifold production
+runtime이나 Core ingest producer가 아니다. 출력 bundle은
+``executionClass=OFFLINE_REPLAY_EVALUATION``·``productionEvidence=false``로 자기식별하며
+Core production edge-sync가 typed 거부한다.
 
 ## 경계 정책 (fail-closed)
 

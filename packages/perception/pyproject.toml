@@ -7,8 +7,9 @@ requires-python = ">=3.12,<3.13"
 # CI 는 extra 없이 계약 테스트만 돌고, 모델 추론 테스트는 extra+모델파일 존재 시에만 실행된다.
 dependencies = [
     "ksi-domain",
-    # pipeline(제품 orchestration 승격 — tests/replay 에서 이관)이 보간·투영·
-    # Observation/Entity/Event 조립을 엮는다.
+    # pipeline(offline replay/evaluation — tests/replay 에서 이관)이 보간·투영·
+    # Observation/Entity/Event contract conformance를 엮는다. 온보드 production
+    # runtime은 edge/psdk-app의 native ksi_psdk_app이다(ADR-KSI-009 D8).
     "ksi-geo-core",
     "ksi-event-contracts",
     "pydantic>=2.7",
