@@ -14,6 +14,10 @@
 #include <dji_liveview.h>
 #include <dji_typedef.h>
 
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+#include <dji_camera_manager.h>
+#endif
+
 #include "dji_sdk_app_info.h"
 
 #include <atomic>
@@ -55,6 +59,7 @@ extern "C" {
 #include "ksi/edge/evidence_builder.hpp"
 #include "ksi/edge/frame_queue.hpp"
 #include "ksi/edge/mission_kmz.hpp"
+#include "ksi/edge/media_control.hpp"
 #include "ksi/edge/pipeline.hpp"
 #include "ksi/edge/runtime_profile.hpp"
 #include "ksi/edge/shadow.hpp"
@@ -62,6 +67,11 @@ extern "C" {
 #include "ksi/edge/sync.hpp"
 #include "ksi/edge/telemetry.hpp"
 #include "ksi/edge/tensorrt.hpp"
+
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+#include "media/dji_camera_media_source.hpp"
+#include "ksi/edge/media_offload.hpp"
+#endif
 
 #ifndef KSI_EDGE_HAVE_CURL_TRANSPORT
 #define KSI_EDGE_HAVE_CURL_TRANSPORT 0
@@ -97,6 +107,10 @@ constexpr double kRadiansPerDegree = 0.017453292519943295769;
 
 #ifndef KSI_PSDK_APP_PERCEPTION_CONFIGURED
 #define KSI_PSDK_APP_PERCEPTION_CONFIGURED 0
+#endif
+
+#ifndef KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+#define KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED 0
 #endif
 
 volatile sig_atomic_t g_termination_requested = 0;
@@ -329,6 +343,7 @@ public:
         core_sync_executor_.reset();
         core_sync_store_.reset();
         core_sync_vault_.reset();
+        core_sync_active_store_ = nullptr;
         if (!EnsurePrivateStateDirectory(state_directory) || edge_device_id.empty()) {
             core_sync_setup_verdict_ = "UNSAFE_STATE_DIRECTORY";
             return;
@@ -391,6 +406,11 @@ public:
             core_sync_executor_ = std::move(executor);
             core_sync_transport_ = std::move(transport);
             core_sync_driver_ = std::move(driver);
+            // A source-media conveyor shares the durable SQLite journal but
+            // receives a distinct short-lived spool directory. Keep its raw
+            // journal pointer only after every owning object above has been adopted;
+            // the AppRuntime owns their lifetime and stops workers first.
+            core_sync_active_store_ = store;
             core_sync_setup_verdict_ = "READY";
             last_core_sync_verdict_.store(
                 static_cast<int>(ksi::edge::CoreSyncVerdict::kAcknowledged), std::memory_order_release);
@@ -404,6 +424,97 @@ public:
     }
 
 #endif
+
+    // The media tier is provisioned only after DjiCameraManager_Init succeeded.
+    // It does not perform a list/download here; the worker needs both a
+    // pre-activation request and a later operator trigger before touching the
+    // camera.  Failure leaves RGB ingress and Core sync intact.
+    void ConfigureMediaOffload(std::string control_state_directory, std::string sync_state_directory,
+                               E_DjiMountPosition camera_mount_position,
+                               std::uint64_t maximum_download_bytes,
+                               std::string core_base_url, std::string bearer_token_file,
+                               std::string ca_bundle_path, std::string core_tls_pin,
+                               std::string storage_tls_pin) {
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        ShutdownMediaOffload();
+        media_control_state_directory_ = std::move(control_state_directory);
+        media_offload_setup_verdict_ = "UNCONFIGURED";
+        media_control_verdict_ = "AWAITING_PRE_ACTIVATION_BASELINE";
+        if (!EnsurePrivateStateDirectory(media_control_state_directory_) ||
+            !EnsurePrivateStateDirectory(sync_state_directory) || maximum_download_bytes == 0U ||
+            core_sync_active_store_ == nullptr) {
+            media_offload_setup_verdict_ = "UNSAFE_OR_INCOMPLETE_PROVISIONING";
+            return;
+        }
+        const ksi::edge::PrivateBearerTokenLoadResult token =
+            ksi::edge::LoadPrivateBearerTokenFile(bearer_token_file);
+        if (token.verdict != ksi::edge::PrivateBearerTokenVerdict::kLoaded) {
+            media_offload_setup_verdict_ = ksi::edge::ToString(token.verdict);
+            return;
+        }
+        try {
+            const std::filesystem::path sync_path(sync_state_directory);
+            auto spool = std::make_unique<ksi::edge::ArtifactVault>(
+                (sync_path / "source-media-spool").string(),
+                static_cast<std::size_t>(maximum_download_bytes));
+            const std::string configured_core_base_url = core_base_url;
+            auto executor = std::make_unique<ksi::edge::CurlHttpsRequestExecutor>(
+                ksi::edge::CurlHttpsExecutorConfig{std::move(core_base_url), std::move(core_tls_pin),
+                                                    std::move(storage_tls_pin), std::move(ca_bundle_path)});
+            auto transport = std::make_unique<ksi::edge::CoreRestSourceMediaTransport>(
+                ksi::edge::CoreRestSourceMediaConfig{configured_core_base_url, token.bearer_token},
+                executor.get(), spool.get());
+            auto source = std::make_unique<ksi::psdk::DjiCameraManagerMediaSourcePort>(
+                camera_mount_position, ksi::psdk::DjiCameraManagerApi::FromSdk(),
+                maximum_download_bytes);
+            ksi::edge::MediaOffloadPolicy policy;
+            if (maximum_download_bytes > policy.spool_high_water_bytes) {
+                media_offload_setup_verdict_ = "MAXIMUM_DOWNLOAD_EXCEEDS_SPOOL_POLICY";
+                return;
+            }
+            policy.state_directory = media_control_state_directory_;
+            auto worker = std::make_unique<ksi::edge::MediaOffloadWorker>(
+                std::move(policy), core_sync_active_store_, spool.get(), source.get(), transport.get());
+            media_spool_ = std::move(spool);
+            media_executor_ = std::move(executor);
+            media_transport_ = std::move(transport);
+            media_source_ = std::move(source);
+            media_worker_ = std::move(worker);
+            media_offload_setup_verdict_ = "READY";
+            media_offload_configured_.store(true, std::memory_order_release);
+        } catch (...) {
+            ShutdownMediaOffload();
+            media_offload_setup_verdict_ = "MEDIA_TRANSPORT_CONFIGURATION_REJECTED";
+        }
+#else
+        (void)control_state_directory;
+        (void)sync_state_directory;
+        (void)camera_mount_position;
+        (void)maximum_download_bytes;
+        (void)core_base_url;
+        (void)bearer_token_file;
+        (void)ca_bundle_path;
+        (void)core_tls_pin;
+        (void)storage_tls_pin;
+        media_offload_setup_verdict_ = "NOT_COMPILED";
+#endif
+    }
+
+    // Called after DrainWorker has stopped and before DjiCameraManager_DeInit.
+    // It clears the single callback owner while the SDK module is still alive.
+    void ShutdownMediaOffload() {
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        media_offload_configured_.store(false, std::memory_order_release);
+        active_media_selection_.reset();
+        active_media_trigger_digest_.clear();
+        completed_media_trigger_digest_.clear();
+        media_worker_.reset();
+        media_source_.reset();
+        media_transport_.reset();
+        media_executor_.reset();
+        media_spool_.reset();
+#endif
+    }
 
     void StartWorker() {
         worker_running_.store(true, std::memory_order_release);
@@ -801,6 +912,15 @@ public:
             last_core_sync_verdict_.load(std::memory_order_acquire));
         std::fprintf(stderr, "[ksi-edge-shadow] coreSync=%s lastCoreSync=%s\n",
                      core_sync_setup_verdict_.c_str(), ksi::edge::ToString(last_sync));
+#endif
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        const auto last_media = static_cast<ksi::edge::MediaOffloadVerdict>(
+            last_media_offload_verdict_.load(std::memory_order_acquire));
+        std::fprintf(stderr,
+                     "[ksi-edge-shadow] mediaOffloadSetup=%s mediaControl=%s runs=%llu lastMedia=%s\n",
+                     media_offload_setup_verdict_.c_str(), media_control_verdict_.c_str(),
+                     static_cast<unsigned long long>(media_offload_runs_.load()),
+                     ksi::edge::ToString(last_media));
 #endif
     }
 
@@ -1200,6 +1320,13 @@ private:
     void ClearNativeActivation(const char* verdict) {
         shadow_supervisor_.Deactivate();
         active_native_snapshot_.reset();
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        // A one-shot approval is only meaningful for the exact active
+        // dispatch.  Never let it survive a missing, expired, or replaced
+        // activation receipt.
+        active_media_selection_.reset();
+        active_media_trigger_digest_.clear();
+#endif
         ClearPerceptionPipeline();
         native_activation_verdict_ = verdict;
         if (perception_provisioned_) {
@@ -1271,6 +1398,16 @@ private:
             return;
         }
         active_native_snapshot_ = loaded.snapshot;
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        if (active_media_selection_.has_value() &&
+            (active_media_selection_->mission_id != loaded.snapshot.mission_id ||
+             active_media_selection_->dispatch_id != loaded.snapshot.dispatch_id ||
+             active_media_selection_->mission_contract_digest !=
+                 loaded.snapshot.context.mission_contract_digest)) {
+            active_media_selection_.reset();
+            active_media_trigger_digest_.clear();
+        }
+#endif
         native_activation_verdict_ = "LOADED";
         RefreshMissionKmz();
         if (!perception_provisioned_) {
@@ -1302,6 +1439,157 @@ private:
         }
     }
 
+    // A successful baseline is deliberately recorded only while no activation
+    // is present.  If the DPK starts too late, the operator must prepare the
+    // next Mission rather than treating already-current SD files as history.
+    void CapturePreActivationMediaBaseline(const ksi::edge::MediaBaselineRequest& request) {
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        if (media_source_ == nullptr) {
+            media_control_verdict_ = "SOURCE_UNAVAILABLE";
+            return;
+        }
+        const std::string request_digest = ksi::edge::ComputeMediaBaselineRequestDigest(request);
+        if (request_digest.empty()) {
+            media_control_verdict_ = "BASELINE_REQUEST_INVALID";
+            return;
+        }
+        const ksi::edge::MediaBaselineRecordLoadResult existing =
+            ksi::edge::LoadMediaBaselineRecord(media_control_state_directory_);
+        if (existing.verdict == ksi::edge::MediaControlLoadVerdict::kLoaded) {
+            if (existing.record.request_digest == request_digest) {
+                media_control_verdict_ = "BASELINE_CAPTURED";
+                return;
+            }
+        }
+        if (existing.verdict != ksi::edge::MediaControlLoadVerdict::kMissing) {
+            media_control_verdict_ = std::string("BASELINE_") + ksi::edge::ToString(existing.verdict);
+            return;
+        }
+        std::vector<ksi::edge::SourceMediaFileHandle> files;
+        ksi::edge::MediaSourceVerdict listed = ksi::edge::MediaSourceVerdict::kPermanentFailure;
+        ksi::edge::MediaRightsVerdict released = ksi::edge::MediaRightsVerdict::kNotHeld;
+        {
+            ksi::edge::MediaSourceRightsGuard rights(media_control_state_directory_, media_source_.get());
+            const ksi::edge::MediaRightsVerdict acquired = rights.Acquire();
+            if (acquired != ksi::edge::MediaRightsVerdict::kHeld) {
+                media_control_verdict_ = std::string("BASELINE_RIGHTS_") + ksi::edge::ToString(acquired);
+                return;
+            }
+            listed = media_source_->ListFiles(&files);
+            released = rights.Release();
+        }
+        if (released != ksi::edge::MediaRightsVerdict::kReleased) {
+            media_control_verdict_ = std::string("BASELINE_RELEASE_") + ksi::edge::ToString(released);
+            return;
+        }
+        if (listed != ksi::edge::MediaSourceVerdict::kCompleted) {
+            media_control_verdict_ = std::string("BASELINE_LIST_") + ksi::edge::ToString(listed);
+            return;
+        }
+        const std::int64_t observed_at_utc_ms = RealtimeNowUtcMs();
+        if (observed_at_utc_ms <= 0) {
+            media_control_verdict_ = "BASELINE_CLOCK_UNAVAILABLE";
+            return;
+        }
+        ksi::edge::MediaBaselineRecord baseline;
+        baseline.request = request;
+        baseline.observed_at_utc_ms = observed_at_utc_ms;
+        baseline.request_digest = request_digest;
+        baseline.files = std::move(files);
+        const ksi::edge::MediaControlWriteVerdict written =
+            ksi::edge::WriteMediaBaselineRecord(media_control_state_directory_, baseline);
+        media_control_verdict_ = std::string("BASELINE_") + ksi::edge::ToString(written);
+#else
+        (void)request;
+#endif
+    }
+
+    void RunActiveMediaSelection() {
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        if (!active_media_selection_.has_value() || active_native_snapshot_.has_value() == false ||
+            media_worker_ == nullptr) {
+            return;
+        }
+        const ksi::edge::MediaOffloadReport report =
+            media_worker_->RunOnce(*active_media_selection_, active_native_snapshot_->edge_device_id);
+        last_media_offload_verdict_.store(static_cast<int>(report.verdict), std::memory_order_release);
+        ++media_offload_runs_;
+        if (report.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && report.sealed) {
+            completed_media_trigger_digest_ = active_media_trigger_digest_;
+            active_media_selection_.reset();
+            media_control_verdict_ = "SEALED";
+            return;
+        }
+        media_control_verdict_ = std::string("RUN_") + ksi::edge::ToString(report.verdict);
+#endif
+    }
+
+    // Called on the activation refresh cadence from the non-callback worker.
+    // A valid trigger is required only to start a run.  Once the worker has
+    // durably begun its exact selection, it may finish/retry in this process
+    // after the short approval TTL; a process restart requires a fresh trigger.
+    void RefreshMediaOffload() {
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+        if (!media_offload_configured_.load(std::memory_order_acquire)) {
+            return;
+        }
+        const std::int64_t now_utc_ms = RealtimeNowUtcMs();
+        if (now_utc_ms <= 0) {
+            media_control_verdict_ = "CLOCK_UNAVAILABLE";
+            return;
+        }
+        if (!active_native_snapshot_.has_value()) {
+            const ksi::edge::MediaBaselineRequestLoadResult request =
+                ksi::edge::LoadMediaBaselineRequest(media_control_state_directory_, now_utc_ms);
+            if (request.verdict == ksi::edge::MediaControlLoadVerdict::kLoaded) {
+                CapturePreActivationMediaBaseline(request.request);
+            } else {
+                media_control_verdict_ = std::string("BASELINE_REQUEST_") +
+                                         ksi::edge::ToString(request.verdict);
+            }
+            return;
+        }
+        if (active_media_selection_.has_value()) {
+            RunActiveMediaSelection();
+            return;
+        }
+        const ksi::edge::MediaBaselineRecordLoadResult baseline =
+            ksi::edge::LoadMediaBaselineRecord(media_control_state_directory_);
+        if (baseline.verdict != ksi::edge::MediaControlLoadVerdict::kLoaded) {
+            media_control_verdict_ = baseline.verdict == ksi::edge::MediaControlLoadVerdict::kMissing
+                                        ? "BASELINE_REQUIRED_BEFORE_ACTIVATION"
+                                        : std::string("BASELINE_") + ksi::edge::ToString(baseline.verdict);
+            return;
+        }
+        const ksi::edge::OperatorMediaOffloadTriggerLoadResult trigger =
+            ksi::edge::LoadOperatorMediaOffloadTrigger(media_control_state_directory_, now_utc_ms);
+        if (trigger.verdict != ksi::edge::MediaControlLoadVerdict::kLoaded) {
+            media_control_verdict_ = std::string("TRIGGER_") + ksi::edge::ToString(trigger.verdict);
+            return;
+        }
+        const ksi::edge::MediaControlSelectionResult selection =
+            ksi::edge::BuildOperatorMediaSelectionContext(*active_native_snapshot_, baseline.record,
+                                                           trigger.trigger, now_utc_ms);
+        if (selection.verdict != ksi::edge::MediaControlSelectionVerdict::kReady) {
+            media_control_verdict_ = std::string("SELECTION_") + ksi::edge::ToString(selection.verdict);
+            return;
+        }
+        const std::string trigger_digest =
+            ksi::edge::ComputeOperatorMediaOffloadTriggerDigest(trigger.trigger);
+        if (trigger_digest.empty()) {
+            media_control_verdict_ = "TRIGGER_DIGEST_INVALID";
+            return;
+        }
+        if (trigger_digest == completed_media_trigger_digest_) {
+            media_control_verdict_ = "SEALED";
+            return;
+        }
+        active_media_selection_ = selection.selection_context;
+        active_media_trigger_digest_ = trigger_digest;
+        RunActiveMediaSelection();
+#endif
+    }
+
     void DrainWorker() noexcept {
         // This is a worker-thread operation; PSDK callbacks only copy into
         // bounded rings.  A missing/incomplete signed runtime profile remains
@@ -1313,6 +1601,7 @@ private:
                 const std::int64_t monotonic_now_ns = MonotonicNowNs();
                 if (monotonic_now_ns > 0 && monotonic_now_ns >= next_activation_refresh_ns) {
                     RefreshNativeActivation();
+                    RefreshMediaOffload();
                     next_activation_refresh_ns =
                         monotonic_now_ns > std::numeric_limits<std::int64_t>::max() -
                                                kActivationRefreshPeriodNs
@@ -1502,6 +1791,29 @@ private:
     std::atomic<int> last_core_sync_verdict_{
         static_cast<int>(ksi::edge::CoreSyncVerdict::kRetryableFailure)};
     std::thread core_sync_worker_;
+    // May point into the owned core-sync objects above or into the
+    // perception-owned shared journal. It is set only after successful
+    // provisioning and outlives the media worker, which is stopped first.
+    ksi::edge::SqliteStoreForward* core_sync_active_store_ = nullptr;
+#endif
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
+    std::string media_control_state_directory_;
+    std::unique_ptr<ksi::edge::ArtifactVault> media_spool_;
+    std::unique_ptr<ksi::edge::CurlHttpsRequestExecutor> media_executor_;
+    std::unique_ptr<ksi::edge::CoreRestSourceMediaTransport> media_transport_;
+    std::unique_ptr<ksi::psdk::DjiCameraManagerMediaSourcePort> media_source_;
+    std::unique_ptr<ksi::edge::MediaOffloadWorker> media_worker_;
+    std::optional<ksi::edge::MissionMediaSelectionContext> active_media_selection_;
+    std::string active_media_trigger_digest_;
+    std::string completed_media_trigger_digest_;
+    std::string media_offload_setup_verdict_ = "UNCONFIGURED";
+    std::string media_control_verdict_ = "UNCONFIGURED";
+    std::atomic<bool> media_offload_configured_{false};
+    std::atomic<std::uint64_t> media_offload_runs_{0U};
+    std::atomic<int> last_media_offload_verdict_{
+        static_cast<int>(ksi::edge::MediaOffloadVerdict::kSelectionRejected)};
+#else
+    std::string media_offload_setup_verdict_ = "NOT_COMPILED";
 #endif
 };
 
@@ -1664,9 +1976,11 @@ int Run() {
                "capture-only mode\n",
                stderr);
 #endif
+#if !KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
     std::fputs("[ksi-edge-shadow] media offload is not provisioned in this DPK; source-media stays "
                "on the aircraft SD card\n",
                stderr);
+#endif
     g_runtime.store(&runtime, std::memory_order_release);
     bool core_initialized = false;
     bool liveview_initialized = false;
@@ -1684,6 +1998,9 @@ int Run() {
     bool flight_anomaly_subscribed = false;
     bool display_mode_subscribed = false;
     bool image_started = false;
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+    bool camera_manager_initialized = false;
+#endif
 
     const auto cleanup = [&] {
         runtime.CloseIngress();
@@ -1692,6 +2009,12 @@ int Run() {
                                                DJI_LIVEVIEW_CAMERA_SOURCE_M4D_VIS);
         }
         runtime.StopWorker();
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+        runtime.ShutdownMediaOffload();
+        if (camera_manager_initialized) {
+            (void)DjiCameraManager_DeInit();
+        }
+#endif
         // PSDK requires FIFO unsubscribe order.
         if (position_subscribed) {
             (void)DjiFcSubscription_UnSubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_POSITION_VO);
@@ -1785,6 +2108,30 @@ int Run() {
         cleanup();
         return 1;
     }
+
+#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
+    // Camera Manager is initialized only for the explicitly provisioned media
+    // tier. A failed optional module leaves the shadow/RGB process alive but
+    // no media-control record can result in a download.
+    result = DjiCameraManager_Init();
+    if (result != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        LogPsdError("DjiCameraManager_Init", result);
+    } else {
+        camera_manager_initialized = true;
+#if KSI_EDGE_HAVE_CURL_TRANSPORT
+        runtime.ConfigureMediaOffload(
+            KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR, KSI_PSDK_APP_SYNC_STATE_DIR,
+            KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION,
+            static_cast<std::uint64_t>(KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES),
+            KSI_PSDK_APP_CORE_BASE_URL, KSI_PSDK_APP_CORE_BEARER_TOKEN_FILE,
+            KSI_PSDK_APP_TLS_CA_BUNDLE, KSI_PSDK_APP_CORE_TLS_PIN,
+            KSI_PSDK_APP_STORAGE_TLS_PIN);
+#else
+        std::fputs("[ksi-edge-shadow] media offload requested without static TLS backend; disabled\n",
+                   stderr);
+#endif
+    }
+#endif
 
     result = DjiFcSubscription_Init();
     if (result != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {

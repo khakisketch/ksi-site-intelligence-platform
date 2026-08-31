@@ -77,18 +77,21 @@ if(KSI_PSDK_APP_ENABLE_CORE_SYNC)
       "build the statically-linked Ed25519 evidence signer" FORCE)
 endif()
 
-# Automatic media offload is deliberately unavailable in the production host.
-# The PSDK-independent conveyor remains fully tested in manifold-runtime, but
-# the product still lacks two pieces that cannot be guessed from a file list:
-# a real DjiCameraManager_* adapter and a device-wired completion/baseline
-# provider.  The PSDK-independent exact-identity boundary now exists in
-# manifold-runtime, but no packaged code supplies its trigger/baseline from a
-# verified DJI source. Keep the historical cache
-# option so old build invocations fail with an actionable message instead of
-# silently ignoring a requested capability.
+# Automatic media offload is a fourth, stricter deployment tier.  It stays OFF
+# in every ordinary DPK: the runtime needs a dedicated owner-only control
+# directory, native activation, Core transport, an explicit camera mount, and
+# a measured per-file bound.  The code never promotes Camera Manager support
+# merely because this option compiles; that remains an M4D propeller-off HIL
+# gate recorded outside this CMake file.
 option(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD
-       "request mission-scoped PSDK media offload (currently blocked pending adapter + HIL)"
+       "enable operator-approved, mission-scoped PSDK source-media offload"
        OFF)
+set(KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR "" CACHE PATH
+    "Dedicated private on-device directory for baseline and operator-trigger records")
+set(KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION "" CACHE STRING
+    "Explicit verified camera mount: PAYLOAD_PORT_NO1, PAYLOAD_PORT_NO2, or PAYLOAD_PORT_NO3")
+set(KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES "" CACHE STRING
+    "Measured maximum original JPEG bytes accepted by the PSDK media adapter")
 
 if(COMMAND ksi_check_manifold3_toolchain_drift)
   ksi_check_manifold3_toolchain_drift()
@@ -162,7 +165,6 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../manifold-runtime"
 include("${CMAKE_CURRENT_SOURCE_DIR}/../psdk-platform/psdk_platform.cmake")
 
 add_executable(ksi_psdk_app src/main.cpp)
-target_sources(ksi_psdk_app PRIVATE src/media/dji_camera_media_source.cpp)
 ksi_add_psdk_platform_glue(ksi_psdk_app)
 target_include_directories(ksi_psdk_app PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -382,10 +384,58 @@ else()
   target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_CORE_SYNC_CONFIGURED=0)
 endif()
 if(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD)
-  message(FATAL_ERROR
-    "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD is blocked: the production host has no real "
-    "DjiCameraManager adapter or verified device-side trigger/baseline provider. Keep it OFF and use "
-    "SD/PC/Web intake until the one-JPEG M4D HIL and cross-mission attribution gate pass.")
+  if(NOT KSI_TARGET_MANIFOLD3)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires KSI_TARGET_MANIFOLD3=ON")
+  endif()
+  if(NOT KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION OR NOT KSI_PSDK_APP_ENABLE_CORE_SYNC)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires verified NATIVE_ACTIVATION and CORE_SYNC")
+  endif()
+  if(NOT KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR OR NOT KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION OR
+     NOT KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires MEDIA_CONTROL_STATE_DIR, MEDIA_CAMERA_MOUNT_POSITION, and measured MEDIA_MAXIMUM_DOWNLOAD_BYTES")
+  endif()
+  if(NOT IS_ABSOLUTE "${KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR}")
+    message(FATAL_ERROR "MEDIA_CONTROL_STATE_DIR must be an absolute private on-device path")
+  endif()
+  if("${KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR}" STREQUAL "${KSI_PSDK_APP_ACTIVATION_STATE_DIR}" OR
+     "${KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR}" STREQUAL "${KSI_PSDK_APP_SYNC_STATE_DIR}")
+    message(FATAL_ERROR
+      "MEDIA_CONTROL_STATE_DIR must differ from ACTIVATION_STATE_DIR and SYNC_STATE_DIR")
+  endif()
+  if("${KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION}" STREQUAL "PAYLOAD_PORT_NO1")
+    set(_ksi_media_mount_position "DJI_MOUNT_POSITION_PAYLOAD_PORT_NO1")
+  elseif("${KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION}" STREQUAL "PAYLOAD_PORT_NO2")
+    set(_ksi_media_mount_position "DJI_MOUNT_POSITION_PAYLOAD_PORT_NO2")
+  elseif("${KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION}" STREQUAL "PAYLOAD_PORT_NO3")
+    set(_ksi_media_mount_position "DJI_MOUNT_POSITION_PAYLOAD_PORT_NO3")
+  else()
+    message(FATAL_ERROR
+      "MEDIA_CAMERA_MOUNT_POSITION must be one of PAYLOAD_PORT_NO1, PAYLOAD_PORT_NO2, PAYLOAD_PORT_NO3")
+  endif()
+  if(NOT "${KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES}" MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "MEDIA_MAXIMUM_DOWNLOAD_BYTES must be a positive decimal integer")
+  endif()
+  if(KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES GREATER 536870912)
+    message(FATAL_ERROR
+      "MEDIA_MAXIMUM_DOWNLOAD_BYTES exceeds the v1 512MiB spool high-water; choose a measured JPEG bound that fits the fail-closed conveyor")
+  endif()
+  foreach(_media_value IN ITEMS KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR)
+    if("${${_media_value}}" MATCHES "[\"\n\r;]")
+      message(FATAL_ERROR "${_media_value} contains an unsafe C++ string literal character")
+    endif()
+  endforeach()
+  target_sources(ksi_psdk_app PRIVATE src/media/dji_camera_media_source.cpp)
+  target_compile_definitions(ksi_psdk_app PRIVATE
+    KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=1
+    "KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR=\"${KSI_PSDK_APP_MEDIA_CONTROL_STATE_DIR}\""
+    "KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION=${_ksi_media_mount_position}"
+    "KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES=${KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES}ULL"
+  )
+else()
+  target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=0)
 endif()
 if(KSI_PSDK_APP_HAVE_LIBUSB)
   target_compile_definitions(ksi_psdk_app PRIVATE LIBUSB_INSTALLED)

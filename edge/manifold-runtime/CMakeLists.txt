@@ -110,6 +110,9 @@ add_library(ksi_edge_runtime
   # 전량 격리돼 있어 호스트 CI 에서 그대로 검증된다.
   src/jpeg_dimensions.cpp
   src/media_offload.cpp
+  # Operator-mediated baseline/trigger records.  This is a private on-device
+  # control protocol only; it contains no PSDK or flight-control symbols.
+  src/media_control.cpp
   # ADR-KSI-021 §5 — 임무 실행 START 전 안전 판단 + §2/§8 arming/abort 파일
   # 프로토콜. PSDK 심볼 0개(파일 상단 주석 참조) — 어댑터는 실기 확인 후
   # edge/psdk-app/src/flight_execution/ 에서 별도로 붙는다.
@@ -279,6 +282,17 @@ add_executable(ksi_edge_flight_abort tools/ksi_edge_flight_abort.cpp)
 target_link_libraries(ksi_edge_flight_abort PRIVATE ksi_edge_runtime)
 target_compile_options(ksi_edge_flight_abort PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
+# These two companions only create private local control records for source
+# media.  They do not link PSDK and cannot issue a camera, gimbal, motor, or
+# flight command; the DPK remains the sole reader/download worker.
+add_executable(ksi_edge_media_prepare tools/ksi_edge_media_prepare.cpp)
+target_link_libraries(ksi_edge_media_prepare PRIVATE ksi_edge_runtime)
+target_compile_options(ksi_edge_media_prepare PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_executable(ksi_edge_media_trigger tools/ksi_edge_media_trigger.cpp)
+target_link_libraries(ksi_edge_media_trigger PRIVATE ksi_edge_runtime)
+target_compile_options(ksi_edge_media_trigger PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
 option(KSI_BUILD_TESTS "control plane 계약 테스트를 빌드한다" ON)
 if(KSI_BUILD_TESTS)
   enable_testing()
@@ -315,6 +329,11 @@ if(KSI_BUILD_TESTS)
   target_compile_options(capture_quality_policy_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME capture_quality_policy_contract COMMAND capture_quality_policy_tests)
 
+  add_executable(media_control_tests tests/media_control_tests.cpp)
+  target_link_libraries(media_control_tests PRIVATE ksi_edge_runtime)
+  target_compile_options(media_control_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME media_control_contract COMMAND media_control_tests)
+
   # This offline companion executes the same optional TensorRT adapter as the
   # DPK and writes semantic results for the Python ONNX oracle.  It is built
   # with contract tests, never installed into the production DPK.
@@ -326,4 +345,6 @@ if(KSI_BUILD_TESTS)
 
   add_test(NAME ksi_edge_flight_arm_contract COMMAND ksi_edge_flight_arm --version)
   add_test(NAME ksi_edge_flight_abort_contract COMMAND ksi_edge_flight_abort --version)
+  add_test(NAME ksi_edge_media_prepare_contract COMMAND ksi_edge_media_prepare --version)
+  add_test(NAME ksi_edge_media_trigger_contract COMMAND ksi_edge_media_trigger --version)
 endif()
