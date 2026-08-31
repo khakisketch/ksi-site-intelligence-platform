@@ -1,4 +1,34 @@
-# Current goal (2026-08-31, perception runtime boundary closure)
+# Current goal (2026-08-31, PSDK media attribution fail-closed boundary)
+
+Prevent the unverified PSDK media conveyor from appearing as a production automatic-ingest path while
+preserving the simple civil intake and all reusable store-and-forward software. `REQ-ACQ-103`,
+`REQ-INT-101`, `REQ-SEC-101` and `INV-018/040/041/060` apply.
+
+Completion conditions:
+
+- packaged `ksi_psdk_app` contains no `FakeMediaSourcePort` or automatic media worker;
+- `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON` fails at configure time until a real DJI adapter and
+  mission-scoped completion/capture boundary both exist;
+- the PSDK-independent rights marker, bounded spool, digest, journal and Core upload conveyor remain
+  testable rather than being discarded;
+- spatial-model lifecycle receives current executable evidence but remains `in_progress` until an
+  independent reviewer issues a new gate verdict;
+- automatic ingest, FIELD-0a and DJI capability remain `NOT_VERIFIED`/OFF, with SD/PC/Web as the normal
+  pre-verification product path.
+
+The source/build guard and regression are green at `32e4a71`: focused `322 passed`; full Python
+`4228 passed / 24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene, reference and runtime/PSDK pin
+gates; native Ubuntu 20.04/gcc 9.4 CTest `7/7`. A clean host CMake configure/build succeeds with the
+option OFF, while an ON configure fails with the intended mission-attribution blocker.
+
+Canonical risk `psdk-media-offload-mission-attribution-unbound` is open. Its resolution requires a real
+mission completion/one-shot trigger, baseline or verified capture window, exact list/download identity,
+one-ground-JPEG M4D HIL with rights release/album recovery, and a cross-mission negative test. No raw
+media, credential, device write, camera command, flight or capability promotion occurred.
+
+---
+
+# Previous goal (2026-08-31, perception runtime boundary closure)
 
 Close the contradictory status of the Python perception pipeline without promoting offline replay into
 field evidence. `REQ-EVT-101`, `REQ-MODEL-101`, `REQ-SEC-101` and

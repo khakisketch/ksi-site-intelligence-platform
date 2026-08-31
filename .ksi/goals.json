@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-31T15:00:07+09:00",
+  "updated_at": "2026-08-31T15:09:14+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2044,7 +2044,7 @@
       ],
       "status": "in_progress",
       "attempt": 2,
-      "evidence": null,
+      "evidence": "2026-08-31 최신 재검증: 후속 commit 434b92b가 과거 독립 reviewer 반려 2건을 해소했다. ProcessingJobRecord.capture_window는 sealed/verified SourceMedia capture window를 보존하고 spatial_model.evaluate_spatial_model은 registration time이 아닌 captureWindow.capturedTo만 freshness 기준으로 사용한다. GET /v1/sites/{siteId}의 SiteDetailView가 spatialModel을 중첩하며 capturedFrom/capturedTo/captureTimeStatus/freshnessBasis/maxAgeDays를 반환한다. 테스트 직접 실행: uv run --locked pytest -q tests/contract/test_spatial_model.py tests/contract/test_processing_jobs.py tests/contract/test_sites_api.py tests/contract/test_api_contract_sync.py -> 315 passed, 1 warning. 자동 전진·INV-052 전이·FRESH/STALE/CAPTURE_TIME_UNAVAILABLE/AGE_POLICY_UNDECLARED 계약 포함. 이번 기록은 구현 증거 갱신이며 독립 gate verdict가 아니므로 in_progress 유지.",
       "verdict": {
         "verdict": "refuted",
         "note": "기준2 미충족 — '현장 조회 응답에 ... 촬영시각 ... 이 실린다'. (a) 촬영시각 필드가 아예 없다: SpatialModelView 는 registeredAt(등록 시각)만 갖고, 모듈 docstring:38-44 이 스스로 '등록된 시각이지 세상을 관측한 시각이 아니다 … 촬영 시각을 끌어오려면 임무 실행 생애주기(G2)가 먼저 있어야 한다'고 명시한다. 그 G2 는 같은 라운드에 구현됐는데 배선하지 않았다. (b) 기본 현장 조회(GET /v1/sites/{id})가 아니라 별도 엔드포인트(/spatial-model)에만 있다 — 대시보드가 두 호출을 페이지에서 합칠 뿐이라 API 계약 차원에서는 '현장 조회 응답'이 아니다. 남은 작업: mission_execution 의 실행 시각을 촬영시각으로 배선하거나, 완료기준을 실제 범위에 맞게 정정(amend-criteria)한다.",
@@ -2055,11 +2055,11 @@
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 0,
+      "ungated_attempts": 1,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-17T18:15:10+09:00"
+      "updated_at": "2026-08-31T15:09:14+09:00"
     },
     {
       "id": "aol-1-mission-execution-lifecycle",
@@ -3805,6 +3805,20 @@
       "previous_status": null,
       "created_at": "2026-08-31T14:22:51+09:00",
       "updated_at": "2026-08-31T14:22:51+09:00"
+    },
+    {
+      "id": "psdk-media-offload-mission-attribution-unbound",
+      "title": "PSDK SD카드 전체 목록을 활성 임무에 자동 귀속할 경계가 없음",
+      "lens": "db",
+      "severity": "high",
+      "status": "open",
+      "note": "2026-08-31 production wiring audit: MediaOffloadWorker는 active_native_snapshot의 mission_id만 받고, 임무 완료 신호·촬영 capture window·사전 file-index baseline 없이 ListFiles 결과 전량을 그 임무에 DISCOVERED로 기록한다. 현재 psdk-app은 FakeMediaSourcePort라 실제 bytes는 0장이지만, 이를 DjiCameraManager_DownloadFileList에 단순 교체하면 이전 임무/다른 현장 JPEG가 현재 SourceMediaBundle로 잘못 봉인될 수 있다(INV-018/040/060). 해소 조건: (1) 실제 mission completion 또는 승인된 one-shot trigger (2) baseline 이후 새 파일 또는 검증된 capture window로 exact selection (3) list/download 사이 index+name+size 재대조 (4) M4D 지상 JPEG 한 장 HIL에서 rights obtain/release와 Pilot album 복구 (5) cross-mission negative test. 그 전까지 KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD는 production에서 OFF/fail-closed이며 SD→PC→Web이 정상 경로다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-31T15:09:14+09:00",
+      "updated_at": "2026-08-31T15:09:14+09:00"
     }
   ]
 }

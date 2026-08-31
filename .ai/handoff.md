@@ -1,5 +1,37 @@
 # Current Handoff
 
+## 2026-08-31 — Automatic PSDK media ingest now fails closed instead of using a production fake
+
+The immediate operator workflow stays simple: remove the aircraft SD/storage media, copy photos to the
+field PC, and upload them through the existing KSI source-media flow. This is the accepted pre-HIL product
+path, not an embarrassment or a temporary hidden workaround.
+
+The audit found that the packaged PSDK app previously could opt into a `FakeMediaSourcePort` with zero
+photos and call it a production media worker. Replacing that fake with `DownloadFileList` would still be
+unsafe: the active dispatch supplies only a `missionId`; there is no completed-sortie signal, verified
+capture window or pre-mission SD-card baseline. Old photos could therefore be sealed into the wrong
+mission. `ksi_psdk_app` now contains no fake camera source or automatic media worker, and the historical
+`KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON` request fails at CMake configure with that exact reason.
+
+Reusable software was preserved. The PSDK-independent rights marker, bounded spool, SQLite lifecycle,
+digest checking and Core upload conveyor remain in `edge/manifold-runtime` with their test double. The
+production option can reopen only after exact list/download identity, mission-scoped selection, one M4D
+ground JPEG HIL, rights release/Pilot album recovery and a cross-mission negative test.
+
+Current local evidence at `32e4a71`: focused combined suite `322 passed`; full Python `4228 passed /
+24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene, reference and runtime/PSDK pin gates; native
+Ubuntu 20.04/gcc 9.4 CTest `7/7`. Default host CMake configure and full `ksi_psdk_app` build pass;
+media option ON fails intentionally at the new blocker. Canonical risk
+`psdk-media-offload-mission-attribution-unbound` is open. Spatial-model lifecycle has new `315 passed`
+evidence for the old capture-time gap, but remains `in_progress` pending independent review.
+
+Nothing physical was inferred. FIELD-0a and actual camera-media capability remain `BLOCKED`/
+`NOT_VERIFIED`; no DPK install, camera/gimbal action, flight, motor, waypoint, customer data, raw JPEG,
+credential, release or deployment occurred. After full local gates and commit, delivery still requires
+the owner-terminal fast-forward push and separately scheduled no-flight HIL.
+
+---
+
 ## 2026-08-31 — Perception runtime boundary is closed; field acceptance remains separate
 
 The repository no longer gives two contradictory answers about Python perception. The recorded

@@ -1,4 +1,63 @@
-# Current implementation plan (2026-08-31, perception runtime boundary closure)
+# Current implementation plan (2026-08-31, PSDK media attribution fail-closed boundary)
+
+Requirement IDs:
+- `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`.
+- `INV-018/040/041/060`.
+
+Owner module:
+- Core goal ledger owns current evidence and independent-review state.
+- `edge/psdk-app` owns packaged production assembly and build-time capability gates.
+- `edge/manifold-runtime` retains the PSDK-independent media conveyor and test double.
+
+Acceptance criteria:
+- Spatial-model lifecycle current evidence is recorded without fabricating an independent PASS.
+- Production main contains no fake camera source or automatic media thread.
+- The historical media option defaults OFF and an ON configure fails with an actionable attribution/HIL reason.
+- Default PSDK app configure/build and existing RiskField assembly remain green.
+
+Contracts affected:
+- No Core wire/schema change. ADR-KSI-013 D3 and the PSDK build contract become stricter.
+
+Reference assets:
+- Pinned DJI PSDK 3.16 camera-manager header/sample, ADR-KSI-013 and
+  `MVP_INTEGRATION_M1_ACCEPTANCE.md`. Reference repositories remain read-only.
+
+Adoption decisions:
+- RETAIN the durable rights-marker/spool/journal/upload conveyor and its host tests.
+- REMOVE `FakeMediaSourcePort` from packaged production assembly.
+- DEFER a real camera adapter until mission-scoped selection and one-JPEG HIL exist.
+
+Files to change:
+- Canonical goal/risk ledger, PSDK CMake/main/README, ADR-KSI-013, build-contract tests and `.ai` state.
+
+Tests:
+- Spatial-model/API contracts, media production gate, RiskField assembly, default/negative CMake,
+  PSDK app build, full Python, Ruff, Mypy, lock, diff, hygiene and pin gates.
+
+HIL or real-device assumptions:
+- None executed. M4D list/download, rights release, Pilot album recovery and cross-mission selection are
+  `NOT_VERIFIED`.
+
+License/data implications:
+- No new dependency. No DJI credential, raw JPEG, serial, GPS or customer data enters Git.
+
+Rollback:
+- Revert this increment only. Keep `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD` OFF and continue SD/PC/Web intake;
+  never restore the fake production path as an availability workaround.
+
+Execution:
+1. [완료] Reconcile the stale spatial-model goal with commit `434b92b` and focused `315 passed` evidence.
+2. [완료] Trace DJI camera APIs and identify the missing mission-attribution boundary.
+3. [완료] Remove fake production assembly and add an explicit configure-time blocker.
+4. [완료] Add ADR/README and three-case regression contract; focused `322 passed`.
+5. [완료] Prove default host configure/build and intended ON configure failure.
+6. [완료] Commit `32e4a71`; pass full Python `4228/24 skipped`, Ruff, Mypy `443`, native `7/7`,
+   lock, diff, hygiene, references, pins and the default/negative PSDK configure/build checks.
+7. [외부] Owner fast-forward push; then one-ground-JPEG no-flight HIL before any real adapter activation.
+
+---
+
+# Previous implementation plan (2026-08-31, perception runtime boundary closure)
 
 Requirement IDs:
 - `REQ-EVT-101`, `REQ-MODEL-101`, `REQ-SEC-101`.
