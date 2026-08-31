@@ -116,6 +116,35 @@ EULA §3.2(c)의 재배포 금지가 적용되지 않는다. 이 근거로 vendo
 `SpikeEvidence.build_commit`이 실제 시험 코드와 다른 SHA를 가리키는 사고를
 원천 차단한다(이 저장소가 가장 싫어하는 실패 클래스).
 
+### D7 — `ksi_psdk_app`이 단일 production service host다
+
+별도 `riskfield-daemon` sidecar를 추가하지 않는다. 공식 DPK가 실행하는
+`edge/psdk-app`의 `ksi_psdk_app` 자체가 PSDK ingress와 native Edge runtime을 함께
+소유하는 상시 프로세스다. 이 프로세스 안에서 다음 한 체인이 조립된다.
+
+```text
+PSDK callbacks → bounded frame/telemetry queues → DrainWorker
+  → EdgePipeline → shared SQLite WAL + ArtifactVault
+  → DrainCoreSync → StoreForwardSyncDriver → CoreRestSyncTransport
+  → Core edge-sync evidence endpoint
+```
+
+perception과 Core sync를 함께 켜면 CMake가
+`PERCEPTION_STATE_DIR == SYNC_STATE_DIR`을 강제한다. 따라서 producer와 sender가 서로
+다른 sequence/journal을 조용히 만들 수 없다. Core sync는 reviewed static
+curl/OpenSSL, Core·storage SPKI pin, owner-only bearer file, 장비 Ed25519 key ID와 외부
+private-key file이 전부 있어야만 컴파일 시 활성화된다. 기본 build의 activation,
+perception, Core sync option은 모두 OFF이며 부분 설정은 capture-only 또는 configure
+failure로 닫힌다.
+
+`tests/contract/test_edge_riskfield_production_wiring.py`는 executable link, 실제 adapter
+construction, worker drive·shutdown, shared journal과 fail-closed deployment input을
+정적으로 고정한다. `edge/manifold-runtime/tests/edge_runtime_tests.cpp`는 그 구성요소의
+WAL 복구·순서·HTTP wire를 동적으로 검증한다. 두 검사는 "라이브러리만 있고 제품
+호출부가 없는" 회귀를 막지만, 실제 Manifold의 DPK install/start, owner-provisioned key,
+bearer/TLS 채널, Core·object-storage 전송 성공 또는 `REQ-EVT-101` 지연을 증명하지는
+않는다. 그 주장은 별도 HIL evidence가 생길 때까지 `NOT_VERIFIED`다.
+
 **비밀 관리**: `dji_sdk_app_info.h`(App ID/Key/License)는 커밋하지 않는다 —
 `.gitignore`(`**/dji_sdk_app_info.h`, `/.secrets/`, `/dist/`)와
 `scripts/check_repo_hygiene.sh`(생성 헤더·`.secrets/`·리터럴 키·`*.dpk` 추적
@@ -157,3 +186,6 @@ EULA §3.2(c)의 재배포 금지가 적용되지 않는다. 이 근거로 vendo
 - `edge/psdk-tap`(C, 시간동기 tap)과 `edge/psdk-app`(향후, DPK 배포 대상)의
   경계가 명확해짐 — `edge/manifold-runtime`은 "의존성 없는 순수 C++17 계약
   골격" 계약을 계속 유지한다.
+- `ksi_psdk_app`을 별도 sidecar가 아닌 RiskField 생성·store-forward·Core sync의 단일
+  production service host로 확정했다(D7). 소프트웨어 조립과 실기 HIL 수용은 서로
+  다른 게이트로 유지한다.

@@ -205,6 +205,14 @@ rollback/부재는 `NOT_MEASURED`로 남는다. 이 record는 EventBundle eviden
 
 ## Edge evidence sync capability
 
+별도 `riskfield-daemon`을 설치하는 구조가 아니다. 이 DPK의 `ksi_psdk_app`이 유일한
+production service host이며, RGB/telemetry callback을 받는 프로세스 안에서
+`EdgePipeline` worker와 `StoreForwardSyncDriver`/`CoreRestSyncTransport` worker를 함께
+구동한다. perception과 sync는 같은 SQLite WAL과 artifact vault를 공유한다. 앱 종료 시
+두 worker를 모두 정지·join한 뒤 상태를 읽으므로, 백그라운드 write가 남은 채 DPK가
+종료되지 않는다. 이 조립은
+`tests/contract/test_edge_riskfield_production_wiring.py`가 회귀 방지한다.
+
 Core의 `POST /v1/edge-sync/events/{eventKey}/evidence` 응답은 `uploadUrl`과
 `requiredUploadHeaders`를 하나의 짧은 수명 capability로 준다. native
 `CoreRestSyncTransport`는 candidate `JournalEntry` ACK 뒤에만 durable payload의
@@ -261,7 +269,9 @@ cmake -S edge/psdk-app -B build-manifold3-app \
 
 이 옵션은 pending journal을 별도 worker에서 sync할 뿐, TensorRT engine과 calibrated
 projector가 없는 현재 DPK를 event producer로 승격하지 않는다. 정적 bundle·Core/storage
-integration·실기 HIL을 통과하기 전까지 앱은 capture-only다.
+integration·실기 HIL을 통과하기 전까지 실제 장비 업로드 capability는 `NOT_VERIFIED`다.
+위 production-host 조립 테스트의 PASS도 DPK 설치, 장비 key provisioning, bearer/TLS
+연결 또는 object-storage PUT 성공을 대신하지 않는다.
 
 ## 공용 PSDK platform glue
 
