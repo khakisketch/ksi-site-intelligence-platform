@@ -105,6 +105,9 @@ bool ParseSourceMediaState(const std::string& text, SourceMediaState* state);
 struct SourceMediaItemRecord {
     std::string mission_id;
     std::string media_id;
+    // Camera Manager의 exact file identity 일부. -1인 legacy 행은 새 자동 선택
+    // 경로에서 다운로드할 수 없다.
+    std::int64_t source_file_index = -1;
     // 카메라가 준 원본 파일명(확장자 포함). mediaId 규약의 입력이자, 수동 경로와
     // 같은 사진을 가리키는지 사람이 대조할 수 있는 유일한 값이다.
     std::string camera_file_name;
@@ -125,6 +128,12 @@ struct SourceMediaItemRecord {
 struct SourceMediaMissionState {
     std::string mission_id;
     std::string edge_device_id;
+    // Mission/dispatch/contract/trigger/baseline을 묶은 digest. legacy 빈 값은 새
+    // worker가 이어받지 않고 kConflict로 닫는다.
+    std::string selection_context_digest;
+    // 선택된 exact identity 집합. discovery 도중 죽었다 재시작해도 다른 목록으로
+    // 조용히 넓어지지 않게 첫 선택 때 고정한다.
+    std::string selected_files_digest;
     bool discovery_complete = false;
     std::uint32_t discovered_count = 0;
     bool sealed = false;
@@ -198,9 +207,13 @@ public:
 
     // ── source media ────────────────────────────────────────────────────────
     SourceMediaJournalVerdict BeginSourceMediaMission(const std::string& mission_id,
-                                                      const std::string& edge_device_id);
+                                                      const std::string& edge_device_id,
+                                                      const std::string& selection_context_digest);
+    SourceMediaJournalVerdict BindSourceMediaSelection(
+        const std::string& mission_id, const std::string& selected_files_digest);
     SourceMediaJournalVerdict RecordSourceMediaDiscovered(const std::string& mission_id,
                                                           const std::string& media_id,
+                                                          std::int64_t source_file_index,
                                                           const std::string& camera_file_name,
                                                           std::uint64_t announced_bytes);
     // 발견 목록을 닫는다. ``expected_count`` 는 호출부가 센 값이고, 저널이 가진

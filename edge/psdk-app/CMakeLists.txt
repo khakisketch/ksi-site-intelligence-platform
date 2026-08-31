@@ -80,9 +80,10 @@ endif()
 # Automatic media offload is deliberately unavailable in the production host.
 # The PSDK-independent conveyor remains fully tested in manifold-runtime, but
 # the product still lacks two pieces that cannot be guessed from a file list:
-# a real DjiCameraManager_* adapter and a mission-scoped completion/capture
-# boundary.  Enabling the former alone would assign every JPEG already on the
-# aircraft SD card to the currently active mission.  Keep the historical cache
+# a real DjiCameraManager_* adapter and a device-wired completion/baseline
+# provider.  The PSDK-independent exact-identity boundary now exists in
+# manifold-runtime, but no packaged code supplies its trigger/baseline from a
+# verified DJI source. Keep the historical cache
 # option so old build invocations fail with an actionable message instead of
 # silently ignoring a requested capability.
 option(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD
@@ -356,7 +357,7 @@ endif()
 if(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD)
   message(FATAL_ERROR
     "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD is blocked: the production host has no real "
-    "DjiCameraManager adapter or verified mission-scoped capture boundary. Keep it OFF and use "
+    "DjiCameraManager adapter or verified device-side trigger/baseline provider. Keep it OFF and use "
     "SD/PC/Web intake until the one-JPEG M4D HIL and cross-mission attribution gate pass.")
 endif()
 if(KSI_PSDK_APP_HAVE_LIBUSB)

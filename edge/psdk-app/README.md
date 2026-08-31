@@ -278,18 +278,20 @@ integration·실기 HIL을 통과하기 전까지 실제 장비 업로드 capabi
 `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON`은 configure 단계에서 의도적으로 실패한다. 기존
 `edge/manifold-runtime`에는 권한 marker, SQLite 원장, bounded spool, digest 검증과 Core
 upload conveyor가 있고 호스트 테스트용 `FakeMediaSourcePort`도 남아 있다. 그러나 packaged
-`ksi_psdk_app`에는 아직 실제 `DjiCameraManager_*` adapter가 없으며, 더 중요하게는 SD 카드의
-어느 파일이 방금 끝난 임무에서 생긴 것인지 증명하는 mission-scoped capture boundary가 없다.
+`ksi_psdk_app`에는 아직 실제 `DjiCameraManager_*` adapter와 검증된 DJI 완료 신호/baseline
+provider가 없다. PSDK-independent 계층에는 이제 완료 또는 운영자 one-shot 증거, 임무 전
+SD 목록 baseline, exact `fileIndex + fileName + fileSize`, 결정적 selection digest가 구현돼 있다.
+다만 이를 실기 DJI source에 배선하지 않은 상태이므로 production capability는 그대로 차단한다.
 
 활성 dispatch의 `missionId`만 보고 `DownloadFileList` 결과를 전량 결속하면 이전 임무나 다른
 현장의 사진까지 현재 `SourceMediaBundle`로 잘못 봉인할 수 있다. 따라서 Fake source를 production
 main loop에 배선하지 않으며, 다음 항목을 모두 통과하기 전에는 option을 열지 않는다.
 
-- 실제 임무 완료 또는 운영자 승인 one-shot trigger
-- 임무 시작 전 file-index baseline 이후의 신규 JPEG, 또는 검증된 capture window로 exact selection
-- list/download 사이 `fileIndex + fileName + fileSize` 재대조와 크기 상한
+- 실제 DJI 임무 완료 또는 운영자 승인 one-shot trigger provider 배선
+- 임무 시작 전 Camera Manager baseline snapshot의 durable 획득
+- 실제 adapter의 list/download 및 크기 상한 배선
 - M4D 지상 JPEG 한 장의 list/download/SHA-256, downloader rights release, Pilot 2 album 복구 HIL
-- 두 임무의 파일이 서로 섞이지 않는 cross-mission negative test
+- M4D에서 두 임무의 파일이 서로 섞이지 않는 cross-mission HIL negative test
 
 그 전의 정상 제품 경로는 ADR-KSI-013과 civil v1 결정대로
 `기체 SD/저장매체 → 현장 PC → KSI 웹 업로드`다. 이 경로는 임시 실패가 아니라 검증 전 공식

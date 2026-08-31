@@ -84,6 +84,25 @@ production option을 열려면 다음을 모두 충족해야 한다.
 `SD/저장매체 → 현장 PC → KSI 웹 업로드`를 검증 전 정상 경로로 유지한다. 소프트웨어 조립
 테스트는 이 HIL 또는 DJI capability `VERIFIED`를 대신하지 않는다.
 
+### D4 — 임무 귀속의 PSDK-independent 소프트웨어 경계를 고정한다
+
+2026-08-31 D3의 1~3과 host cross-mission negative를 구현했다. `MissionMediaSelectionContext`는
+Mission/dispatch/Mission Contract digest, 완료 또는 운영자 one-shot 증거 digest,
+`baseline <= activation <= trigger` 시간 순서와 임무 전 SD exact 목록을 결속한다. selector는
+목록 순서와 무관한 canonical digest를 만들고 baseline 이후 신규
+`fileIndex + fileName + fileSize`만 선택한다. baseline 누락·index 재사용·중복 index/name·0 byte·
+신규 사진 0장은 typed blocker로 전체를 거부한다.
+
+선택 context digest와 selected-files digest는 같은 SQLite/WAL journal에 저장한다. discovery
+중 재기동한 뒤 목록이 달라지면 기존 digest를 바꾸지 못하며, 다운로드 직전 같은 exact identity를
+다시 조회해 다르면 바이트를 읽기 전에 `SOURCE_IDENTITY_DRIFT`로 중단한다. legacy journal은
+빈 digest와 `source_file_index=-1`로 migration되며 값을 추정하지 않아 새 worker가 이어받지 않는다.
+
+D4는 **host software boundary만 PASS**다. packaged `ksi_psdk_app`에는 실제
+`DjiCameraManager_*` adapter, DJI 완료/one-shot trigger provider, 임무 전 baseline snapshot
+provider를 아직 조립하지 않는다. 따라서 D3 production gate, SD/PC/Web 정상 경로,
+DJI capability `NOT_VERIFIED`는 그대로다.
+
 ## 결과 — 알려진 대가
 
 - 매핑 임무의 "원본이 서버에 다 도착했다"는 사실을, 검증 전에는 조종기 경유·
@@ -93,5 +112,5 @@ production option을 열려면 다음을 모두 충족해야 한다.
   "원본이 누락 없이 도착했다"고 완료 판정을 내리면 INV-051(원본/파생 계보)이
   전제하는 "원본"의 무결성이 흔들린다 — 반출 경로 검증과 재구성 완료 판정은
   분리해서 다뤄야 한다.
-- D3의 임무 귀속 경계가 생길 때까지 zero-touch 자동 ingest 목표는 software-complete가
-  아니다. 한 장 다운로드 성공만으로 대량 임무의 완전성·귀속·처리량을 추정하지 않는다.
+- D4로 임무 귀속 host software 경계는 생겼지만 zero-touch 자동 ingest는 device-complete가
+  아니다. 실제 adapter/HIL 없이 한 장 다운로드 성공이나 대량 임무 완전성·처리량을 추정하지 않는다.

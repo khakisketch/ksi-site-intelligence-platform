@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -109,6 +110,80 @@ std::string MediaIdSuffix(const std::string& camera_file_name) {
     return IsSha256Digest(digest) ? digest.substr(7U, kMediaIdSuffixHexDigits) : std::string{};
 }
 
+bool IsValidSourceFileHandle(const SourceMediaFileHandle& file) {
+    if (file.source_file_index < 0 || file.camera_file_name.empty() ||
+        file.camera_file_name.size() > 255U || file.announced_bytes == 0U ||
+        file.announced_bytes > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return false;
+    }
+    // DJI 카메라 파일명은 ASCII다. 제어문자나 경로 구분자를 허용하면 원문 표시와
+    // 감사 로그를 교란할 수 있고, 이 값은 경로로 해석할 이유도 없다.
+    for (const unsigned char character : file.camera_file_name) {
+        if (character < 0x20U || character > 0x7eU || character == '/' || character == '\\') {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool SameSourceFile(const SourceMediaFileHandle& left, const SourceMediaFileHandle& right) {
+    return left.source_file_index == right.source_file_index &&
+           left.camera_file_name == right.camera_file_name &&
+           left.announced_bytes == right.announced_bytes;
+}
+
+bool SourceFileLess(const SourceMediaFileHandle& left, const SourceMediaFileHandle& right) {
+    if (left.source_file_index != right.source_file_index) {
+        return left.source_file_index < right.source_file_index;
+    }
+    if (left.camera_file_name != right.camera_file_name) {
+        return left.camera_file_name < right.camera_file_name;
+    }
+    return left.announced_bytes < right.announced_bytes;
+}
+
+bool ValidateAndSortSourceFiles(const std::vector<SourceMediaFileHandle>& input,
+                                std::vector<SourceMediaFileHandle>* sorted) {
+    if (sorted == nullptr) {
+        return false;
+    }
+    *sorted = input;
+    std::sort(sorted->begin(), sorted->end(), SourceFileLess);
+    std::set<std::int64_t> indices;
+    std::set<std::string> names;
+    for (const SourceMediaFileHandle& file : *sorted) {
+        if (!IsValidSourceFileHandle(file) || !indices.insert(file.source_file_index).second ||
+            !names.insert(file.camera_file_name).second) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void AppendCanonicalField(const std::string& name, const std::string& value,
+                          std::string* canonical) {
+    canonical->append(name);
+    canonical->push_back('=');
+    canonical->append(std::to_string(value.size()));
+    canonical->push_back(':');
+    canonical->append(value);
+    canonical->push_back('\n');
+}
+
+void AppendCanonicalSourceFiles(const std::vector<SourceMediaFileHandle>& files,
+                                std::string* canonical) {
+    AppendCanonicalField("fileCount", std::to_string(files.size()), canonical);
+    for (const SourceMediaFileHandle& file : files) {
+        AppendCanonicalField("fileIndex", std::to_string(file.source_file_index), canonical);
+        AppendCanonicalField("fileName", file.camera_file_name, canonical);
+        AppendCanonicalField("fileSize", std::to_string(file.announced_bytes), canonical);
+    }
+}
+
+std::string DigestCanonical(const std::string& canonical) {
+    return Sha256Digest(reinterpret_cast<const std::uint8_t*>(canonical.data()), canonical.size());
+}
+
 }  // namespace
 
 const char* ToString(MediaSourceVerdict verdict) {
@@ -123,6 +198,133 @@ const char* ToString(MediaSourceVerdict verdict) {
             return "PERMANENT_FAILURE";
     }
     return "UNKNOWN";
+}
+
+const char* ToString(MediaOffloadTriggerKind kind) {
+    switch (kind) {
+        case MediaOffloadTriggerKind::kMissionCompleted:
+            return "MISSION_COMPLETED";
+        case MediaOffloadTriggerKind::kOperatorApprovedOneShot:
+            return "OPERATOR_APPROVED_ONE_SHOT";
+    }
+    return "UNKNOWN";
+}
+
+const char* ToString(MissionMediaSelectionVerdict verdict) {
+    switch (verdict) {
+        case MissionMediaSelectionVerdict::kSelected:
+            return "SELECTED";
+        case MissionMediaSelectionVerdict::kInvalidContext:
+            return "INVALID_CONTEXT";
+        case MissionMediaSelectionVerdict::kInvalidBaseline:
+            return "INVALID_BASELINE";
+        case MissionMediaSelectionVerdict::kInvalidCurrentList:
+            return "INVALID_CURRENT_LIST";
+        case MissionMediaSelectionVerdict::kBaselineDrift:
+            return "BASELINE_DRIFT";
+        case MissionMediaSelectionVerdict::kNoNewMedia:
+            return "NO_NEW_MEDIA";
+    }
+    return "UNKNOWN";
+}
+
+MissionMediaSelectionResult SelectMissionSourceMedia(
+    const MissionMediaSelectionContext& context,
+    const std::vector<SourceMediaFileHandle>& current_files) {
+    MissionMediaSelectionResult result;
+    const bool known_trigger = context.trigger_kind == MediaOffloadTriggerKind::kMissionCompleted ||
+                               context.trigger_kind ==
+                                   MediaOffloadTriggerKind::kOperatorApprovedOneShot;
+    if (!ArtifactVault::IsSafeArtifactId(context.mission_id) ||
+        !ArtifactVault::IsSafeArtifactId(context.dispatch_id) ||
+        !IsSha256Digest(context.mission_contract_digest) ||
+        !IsSha256Digest(context.trigger_evidence_digest) || !known_trigger ||
+        context.baseline_observed_at_utc_ms <= 0 ||
+        context.activated_at_utc_ms < context.baseline_observed_at_utc_ms ||
+        context.triggered_at_utc_ms < context.activated_at_utc_ms) {
+        result.verdict = MissionMediaSelectionVerdict::kInvalidContext;
+        return result;
+    }
+
+    std::vector<SourceMediaFileHandle> baseline;
+    if (!ValidateAndSortSourceFiles(context.baseline_files, &baseline)) {
+        result.verdict = MissionMediaSelectionVerdict::kInvalidBaseline;
+        return result;
+    }
+
+    std::string context_canonical;
+    AppendCanonicalField("schema", "KSI_MISSION_MEDIA_SELECTION_CONTEXT_V1", &context_canonical);
+    AppendCanonicalField("missionId", context.mission_id, &context_canonical);
+    AppendCanonicalField("dispatchId", context.dispatch_id, &context_canonical);
+    AppendCanonicalField("missionContractDigest", context.mission_contract_digest,
+                         &context_canonical);
+    AppendCanonicalField("triggerKind", ToString(context.trigger_kind), &context_canonical);
+    AppendCanonicalField("triggerEvidenceDigest", context.trigger_evidence_digest,
+                         &context_canonical);
+    AppendCanonicalField("baselineObservedAtUtcMs",
+                         std::to_string(context.baseline_observed_at_utc_ms), &context_canonical);
+    AppendCanonicalField("activatedAtUtcMs", std::to_string(context.activated_at_utc_ms),
+                         &context_canonical);
+    AppendCanonicalField("triggeredAtUtcMs", std::to_string(context.triggered_at_utc_ms),
+                         &context_canonical);
+    AppendCanonicalSourceFiles(baseline, &context_canonical);
+    result.selection_context_digest = DigestCanonical(context_canonical);
+    if (!IsSha256Digest(result.selection_context_digest)) {
+        result.verdict = MissionMediaSelectionVerdict::kInvalidContext;
+        return result;
+    }
+
+    std::vector<SourceMediaFileHandle> current;
+    if (!ValidateAndSortSourceFiles(current_files, &current)) {
+        result.verdict = MissionMediaSelectionVerdict::kInvalidCurrentList;
+        return result;
+    }
+    std::map<std::int64_t, SourceMediaFileHandle> current_by_index;
+    for (const SourceMediaFileHandle& file : current) {
+        current_by_index.emplace(file.source_file_index, file);
+    }
+    std::set<std::int64_t> baseline_indices;
+    for (const SourceMediaFileHandle& file : baseline) {
+        baseline_indices.insert(file.source_file_index);
+        const auto found = current_by_index.find(file.source_file_index);
+        if (found == current_by_index.end() || !SameSourceFile(file, found->second)) {
+            result.verdict = MissionMediaSelectionVerdict::kBaselineDrift;
+            return result;
+        }
+    }
+    for (const SourceMediaFileHandle& file : current) {
+        if (baseline_indices.count(file.source_file_index) == 0U) {
+            result.selected_files.push_back(file);
+        }
+    }
+    if (result.selected_files.empty()) {
+        result.verdict = MissionMediaSelectionVerdict::kNoNewMedia;
+        return result;
+    }
+
+    std::string selection_canonical;
+    AppendCanonicalField("schema", "KSI_MISSION_MEDIA_SELECTION_V1", &selection_canonical);
+    AppendCanonicalField("selectionContextDigest", result.selection_context_digest,
+                         &selection_canonical);
+    AppendCanonicalSourceFiles(result.selected_files, &selection_canonical);
+    result.selected_files_digest = DigestCanonical(selection_canonical);
+    if (!IsSha256Digest(result.selected_files_digest)) {
+        result.verdict = MissionMediaSelectionVerdict::kInvalidCurrentList;
+        result.selected_files.clear();
+        return result;
+    }
+    result.verdict = MissionMediaSelectionVerdict::kSelected;
+    return result;
+}
+
+std::string ComputeMissionMediaSelectionContextDigest(
+    const MissionMediaSelectionContext& context) {
+    // baseline 자체를 current list로 넣으면 유효한 context는 정확히 NO_NEW_MEDIA가
+    // 되고, selector가 이미 만든 context digest를 재사용할 수 있다. 이 함수가
+    // 별도 canonicalizer를 복제하지 않으므로 두 digest 규칙이 갈라질 수 없다.
+    const MissionMediaSelectionResult probe =
+        SelectMissionSourceMedia(context, context.baseline_files);
+    return probe.selection_context_digest;
 }
 
 const char* ToString(MediaRightsVerdict verdict) {
@@ -161,6 +363,10 @@ const char* ToString(MediaOffloadVerdict verdict) {
             return "JOURNAL_FAILURE";
         case MediaOffloadVerdict::kSpoolFailure:
             return "SPOOL_FAILURE";
+        case MediaOffloadVerdict::kSelectionRejected:
+            return "SELECTION_REJECTED";
+        case MediaOffloadVerdict::kSourceIdentityDrift:
+            return "SOURCE_IDENTITY_DRIFT";
         case MediaOffloadVerdict::kMediaIdCollision:
             return "MEDIA_ID_COLLISION";
         case MediaOffloadVerdict::kQuarantineBlocked:
@@ -373,8 +579,9 @@ void MediaOffloadWorker::Quarantine(const SourceMediaItemRecord& item, const std
     }
 }
 
-bool MediaOffloadWorker::Discover(const std::string& mission_id, MediaOffloadReport* report) {
-    std::vector<SourceMediaFileHandle> files;
+bool MediaOffloadWorker::Discover(const MissionMediaSelectionContext& selection_context,
+                                  MediaOffloadReport* report) {
+    std::vector<SourceMediaFileHandle> current_files;
     {
         MediaSourceRightsGuard guard(policy_.state_directory, source_);
         const MediaRightsVerdict rights = guard.Acquire();
@@ -384,11 +591,26 @@ bool MediaOffloadWorker::Discover(const std::string& mission_id, MediaOffloadRep
                                   : MediaOffloadVerdict::kSourceFailure;
             return false;
         }
-        if (source_->ListFiles(&files) != MediaSourceVerdict::kCompleted) {
+        if (source_->ListFiles(&current_files) != MediaSourceVerdict::kCompleted) {
             report->verdict = MediaOffloadVerdict::kSourceFailure;
             return false;
         }
     }
+    const MissionMediaSelectionResult selection =
+        SelectMissionSourceMedia(selection_context, current_files);
+    report->selection_verdict = selection.verdict;
+    if (selection.verdict != MissionMediaSelectionVerdict::kSelected) {
+        report->verdict = MediaOffloadVerdict::kSelectionRejected;
+        return false;
+    }
+    const SourceMediaJournalVerdict bound = journal_->BindSourceMediaSelection(
+        selection_context.mission_id, selection.selected_files_digest);
+    if (bound != SourceMediaJournalVerdict::kAccepted &&
+        bound != SourceMediaJournalVerdict::kDuplicate) {
+        report->verdict = MediaOffloadVerdict::kJournalFailure;
+        return false;
+    }
+    const std::vector<SourceMediaFileHandle>& files = selection.selected_files;
     std::vector<std::string> names;
     names.reserve(files.size());
     for (const SourceMediaFileHandle& file : files) {
@@ -401,7 +623,8 @@ bool MediaOffloadWorker::Discover(const std::string& mission_id, MediaOffloadRep
     }
     for (std::size_t index = 0U; index < files.size(); ++index) {
         const SourceMediaJournalVerdict recorded = journal_->RecordSourceMediaDiscovered(
-            mission_id, media_ids[index], files[index].camera_file_name, files[index].announced_bytes);
+            selection_context.mission_id, media_ids[index], files[index].source_file_index,
+            files[index].camera_file_name, files[index].announced_bytes);
         if (recorded == SourceMediaJournalVerdict::kAccepted) {
             report->discovered += 1U;
             continue;
@@ -412,7 +635,7 @@ bool MediaOffloadWorker::Discover(const std::string& mission_id, MediaOffloadRep
         }
     }
     const SourceMediaJournalVerdict complete = journal_->MarkSourceMediaDiscoveryComplete(
-        mission_id, static_cast<std::uint32_t>(files.size()));
+        selection_context.mission_id, static_cast<std::uint32_t>(files.size()));
     if (complete != SourceMediaJournalVerdict::kAccepted &&
         complete != SourceMediaJournalVerdict::kDuplicate) {
         report->verdict = MediaOffloadVerdict::kJournalFailure;
@@ -462,9 +685,34 @@ std::size_t MediaOffloadWorker::Fill(const std::string& mission_id, MediaOffload
                 break;
             }
         }
+        // Camera Manager는 index로 다운로드한다. discovery 때 본 name/size와 같은
+        // index인지 바로 직전 목록에서 다시 확인한다. index가 다른 파일에 재사용된
+        // 경우 "비슷한 이름"으로 진행하지 않는다.
+        std::vector<SourceMediaFileHandle> current_files;
+        if (source_->ListFiles(&current_files) != MediaSourceVerdict::kCompleted) {
+            *fatal = true;
+            report->verdict = MediaOffloadVerdict::kSourceFailure;
+            break;
+        }
+        std::vector<SourceMediaFileHandle> sorted_current;
+        if (!ValidateAndSortSourceFiles(current_files, &sorted_current)) {
+            *fatal = true;
+            report->verdict = MediaOffloadVerdict::kSourceIdentityDrift;
+            break;
+        }
         SourceMediaFileHandle handle;
+        handle.source_file_index = item.source_file_index;
         handle.camera_file_name = item.camera_file_name;
         handle.announced_bytes = item.announced_bytes;
+        const auto exact = std::find_if(
+            sorted_current.begin(), sorted_current.end(), [&handle](const SourceMediaFileHandle& file) {
+                return file.source_file_index == handle.source_file_index;
+            });
+        if (exact == sorted_current.end() || !SameSourceFile(*exact, handle)) {
+            *fatal = true;
+            report->verdict = MediaOffloadVerdict::kSourceIdentityDrift;
+            break;
+        }
         std::vector<std::uint8_t> bytes;
         const MediaSourceVerdict downloaded = source_->DownloadFile(handle, &bytes);
         if (downloaded == MediaSourceVerdict::kPermanentFailure) {
@@ -634,9 +882,18 @@ std::size_t MediaOffloadWorker::Drain(const std::string& mission_id, MediaOffloa
     return progressed;
 }
 
-MediaOffloadReport MediaOffloadWorker::RunOnce(const std::string& mission_id,
-                                               const std::string& edge_device_id) {
+MediaOffloadReport MediaOffloadWorker::RunOnce(
+    const MissionMediaSelectionContext& selection_context, const std::string& edge_device_id) {
     MediaOffloadReport report;
+    const MissionMediaSelectionResult context_probe =
+        SelectMissionSourceMedia(selection_context, selection_context.baseline_files);
+    const std::string& selection_context_digest = context_probe.selection_context_digest;
+    if (!IsSha256Digest(selection_context_digest)) {
+        report.verdict = MediaOffloadVerdict::kSelectionRejected;
+        report.selection_verdict = context_probe.verdict;
+        return report;
+    }
+    const std::string& mission_id = selection_context.mission_id;
     // 워커 수명당 정확히 한 번, 카메라를 건드리기(Discover/Fill 의 Obtain) 전에
     // 먼저 낸다. 이전 프로세스가 권한을 쥔 채 죽었으면 marker 가 남아 있고,
     // 그걸 정리하지 못하면 여기서 멈춘다 — 정리 안 된 채로 Obtain 을 또 내면
@@ -653,7 +910,7 @@ MediaOffloadReport MediaOffloadWorker::RunOnce(const std::string& mission_id,
         startup_rights_reconciled_ = true;
     }
     const SourceMediaJournalVerdict begun =
-        journal_->BeginSourceMediaMission(mission_id, edge_device_id);
+        journal_->BeginSourceMediaMission(mission_id, edge_device_id, selection_context_digest);
     if (begun != SourceMediaJournalVerdict::kAccepted &&
         begun != SourceMediaJournalVerdict::kDuplicate) {
         report.verdict = MediaOffloadVerdict::kJournalFailure;
@@ -667,10 +924,14 @@ MediaOffloadReport MediaOffloadWorker::RunOnce(const std::string& mission_id,
     }
     if (mission.sealed) {
         report.verdict = MediaOffloadVerdict::kCompleted;
+        report.selection_verdict = MissionMediaSelectionVerdict::kSelected;
         report.sealed = true;
         return report;
     }
-    if (!mission.discovery_complete && !Discover(mission_id, &report)) {
+    if (mission.discovery_complete) {
+        report.selection_verdict = MissionMediaSelectionVerdict::kSelected;
+    }
+    if (!mission.discovery_complete && !Discover(selection_context, &report)) {
         return report;
     }
 
@@ -784,6 +1045,11 @@ MediaSourceVerdict FakeMediaSourcePort::ListFiles(std::vector<SourceMediaFileHan
     if (files == nullptr) {
         return MediaSourceVerdict::kPermanentFailure;
     }
+    if (!list_snapshots.empty()) {
+        *files = list_snapshots.front();
+        list_snapshots.pop_front();
+        return MediaSourceVerdict::kCompleted;
+    }
     files->clear();
     for (const Entry& entry : entries) {
         files->push_back(entry.handle);
@@ -808,7 +1074,7 @@ MediaSourceVerdict FakeMediaSourcePort::DownloadFile(const SourceMediaFileHandle
         return MediaSourceVerdict::kPermanentFailure;
     }
     for (const Entry& entry : entries) {
-        if (entry.handle.camera_file_name == file.camera_file_name) {
+        if (SameSourceFile(entry.handle, file)) {
             *bytes = entry.bytes;
             return MediaSourceVerdict::kCompleted;
         }

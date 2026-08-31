@@ -1,9 +1,9 @@
 """Fail-closed assembly contract for unverified PSDK media offload.
 
 The PSDK-independent conveyor is useful software, but it is not a production
-camera source.  Until a real DJI adapter and a mission-scoped capture boundary
-exist, ``ksi_psdk_app`` must not turn a test fake into an apparent zero-touch
-ingress path (INV-018/040/041/060, REQ-ACQ-103).
+camera source.  Until a real DJI adapter and a verified device-side
+trigger/baseline provider exist, ``ksi_psdk_app`` must not turn a test fake into
+an apparent zero-touch ingress path (INV-018/040/041/060, REQ-ACQ-103).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def test_media_offload_request_defaults_off_and_fails_configuration() -> None:
     gate = _cmake_if_block("KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD")
     assert "message(FATAL_ERROR" in gate
     assert "no real" in gate
-    assert "mission-scoped capture boundary" in gate
+    assert "device-side trigger/baseline provider" in gate
     assert "SD/PC/Web intake" in gate
     assert "KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=1" not in _CMAKE
 
@@ -54,4 +54,6 @@ def test_test_double_remains_confined_to_psdk_independent_port() -> None:
 
     assert "class IMediaSourcePort" in _PORT
     assert "class FakeMediaSourcePort" in _PORT
+    assert "MissionMediaSelectionContext" in _PORT
+    assert "source_file_index" in _PORT
     assert "실기 미확인" in _PORT

@@ -102,11 +102,74 @@ bool AssignMediaIds(const std::vector<std::string>& camera_file_names,
 // ── 미디어 소스 포트 (실기 미확인 격리 경계) ────────────────────────────────
 
 struct SourceMediaFileHandle {
+    // DJI Camera Manager fileIndex. 다운로드 API도 이 값을 받으므로 파일명만으로
+    // 동일성을 추정하지 않는다. -1은 legacy/unbound이며 자동 경로에서 거부한다.
+    std::int64_t source_file_index = -1;
     // 카메라가 준 원본 파일명(확장자 포함).
     std::string camera_file_name;
     // 목록이 주장하는 크기. 다운로드 전 예산 계산에만 쓴다 — 실측은 받은 뒤에 한다.
     std::uint64_t announced_bytes = 0;
 };
+
+// 자동 반출을 시작할 수 있는 두 가지 증거. 단순히 "목록을 볼 수 있다"는 사실은
+// 시작 신호가 아니다 — 이전 임무 사진까지 현재 Mission으로 귀속시키게 된다.
+enum class MediaOffloadTriggerKind {
+    kMissionCompleted,
+    kOperatorApprovedOneShot,
+};
+
+const char* ToString(MediaOffloadTriggerKind kind);
+
+struct MissionMediaSelectionContext {
+    std::string mission_id;
+    std::string dispatch_id;
+    std::string mission_contract_digest;
+    MediaOffloadTriggerKind trigger_kind = MediaOffloadTriggerKind::kMissionCompleted;
+    // 완료 event 또는 one-shot 승인 record의 canonical SHA-256.
+    std::string trigger_evidence_digest;
+    // baseline <= activation <= trigger를 강제한다. 임무가 시작된 뒤 찍은 baseline은
+    // 이미 현재 임무 사진을 과거 파일로 오분류할 수 있으므로 받지 않는다.
+    std::int64_t baseline_observed_at_utc_ms = 0;
+    std::int64_t activated_at_utc_ms = 0;
+    std::int64_t triggered_at_utc_ms = 0;
+    // 임무 활성화 전에 동일 카메라에서 읽어 durable하게 보관한 정확한 목록.
+    // 비어 있어도 된다(SD 카드가 실제로 비어 있던 snapshot).
+    std::vector<SourceMediaFileHandle> baseline_files;
+};
+
+enum class MissionMediaSelectionVerdict {
+    kSelected,
+    kInvalidContext,
+    kInvalidBaseline,
+    kInvalidCurrentList,
+    // baseline의 index/name/size가 사라지거나 변했다. index 재사용을 포함한다.
+    kBaselineDrift,
+    // 완료/승인 뒤 생긴 파일이 한 장도 없다. 과거 사진을 대신 가져오지 않는다.
+    kNoNewMedia,
+};
+
+const char* ToString(MissionMediaSelectionVerdict verdict);
+
+struct MissionMediaSelectionResult {
+    MissionMediaSelectionVerdict verdict = MissionMediaSelectionVerdict::kInvalidContext;
+    // trigger/baseline/Mission binding의 canonical digest.
+    std::string selection_context_digest;
+    // context digest와 선택된 exact identity 전체의 canonical digest.
+    std::string selected_files_digest;
+    std::vector<SourceMediaFileHandle> selected_files;
+};
+
+// 목록 순서와 무관한 결정적 selector. baseline에 없던 exact identity만 반환한다.
+// 어느 목록이든 duplicate index/name, 0 byte, 제어문자 filename, unbound index를
+// 포함하면 전체를 거부한다. "가능한 것만" 골라 부분 bundle을 만들지 않는다.
+MissionMediaSelectionResult SelectMissionSourceMedia(
+    const MissionMediaSelectionContext& context,
+    const std::vector<SourceMediaFileHandle>& current_files);
+
+// 카메라 현재 목록을 읽지 않고도 journal replay key를 계산한다. context 또는
+// baseline이 유효하지 않으면 빈 문자열을 반환한다.
+std::string ComputeMissionMediaSelectionContextDigest(
+    const MissionMediaSelectionContext& context);
 
 enum class MediaSourceVerdict {
     kCompleted,
@@ -220,6 +283,10 @@ enum class MediaOffloadVerdict {
     kTransportFailure,
     kJournalFailure,
     kSpoolFailure,
+    // 완료/승인·baseline·현재 목록의 결속이 성립하지 않는다.
+    kSelectionRejected,
+    // 저널에 고정한 fileIndex+name+size가 다운로드 직전 목록과 달라졌다.
+    kSourceIdentityDrift,
     // 목록 안에서 mediaId 가 갈라지지 않는다 — 회수를 시작하지 않는다.
     kMediaIdCollision,
     // 격리된 장이 남아 봉인할 수 없다. **부분 집합 봉인은 하지 않는다.**
@@ -238,6 +305,8 @@ struct MediaOffloadReport {
     std::size_t quarantined = 0;
     bool download_paused_for_spool = false;
     bool sealed = false;
+    MissionMediaSelectionVerdict selection_verdict =
+        MissionMediaSelectionVerdict::kInvalidContext;
     // 실행이 끝난 시점에 매니폴드 디스크를 실제로 점유하고 있는 양.
     std::uint64_t spool_bytes_in_use = 0;
     std::uint32_t spool_items_in_use = 0;
@@ -251,7 +320,8 @@ public:
 
     // 한 배치를 진행한다. 끝날 때까지 반복 호출하는 것이 정상 사용이다 —
     // 한 번에 다 하지 않는 이유가 곧 이 설계의 요점이다(고수위에서 멈춘다).
-    MediaOffloadReport RunOnce(const std::string& mission_id, const std::string& edge_device_id);
+    MediaOffloadReport RunOnce(const MissionMediaSelectionContext& selection_context,
+                               const std::string& edge_device_id);
 
     // 스풀 산출물 이름. 임무와 사진을 모두 담아 임무 간 충돌을 막는다.
     static std::string SpoolArtifactId(const std::string& mission_id, const std::string& media_id);
@@ -267,7 +337,8 @@ public:
     std::function<void(const SourceMediaItemRecord&)> test_only_after_uploaded_before_purge_hook;
 
 private:
-    bool Discover(const std::string& mission_id, MediaOffloadReport* report);
+    bool Discover(const MissionMediaSelectionContext& selection_context,
+                  MediaOffloadReport* report);
     std::size_t Fill(const std::string& mission_id, MediaOffloadReport* report, bool* paused,
                      bool* fatal);
     std::size_t Drain(const std::string& mission_id, MediaOffloadReport* report, bool* fatal);
@@ -314,6 +385,9 @@ public:
     bool rights_held = false;
     // 권한을 안 잡은 채 카메라를 만진 적이 있는가 — 시험이 이걸 단언한다.
     bool touched_without_rights = false;
+    // 비어 있지 않으면 ListFiles 호출마다 맨 앞 snapshot을 반환하고 제거한다.
+    // discovery와 download 직전 사이의 identity drift를 재현하는 시험용 대본이다.
+    std::deque<std::vector<SourceMediaFileHandle>> list_snapshots;
 
     MediaSourceVerdict ObtainRights() override;
     MediaSourceVerdict ReleaseRights() override;

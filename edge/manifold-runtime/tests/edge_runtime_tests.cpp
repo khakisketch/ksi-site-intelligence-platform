@@ -2722,6 +2722,84 @@ void TestCoreRestSourceMediaWire() {
     std::filesystem::remove_all(directory, cleanup_error);
 }
 
+ksi::edge::MissionMediaSelectionContext MakeMissionMediaSelectionContext(
+    const std::string& mission_id,
+    std::vector<ksi::edge::SourceMediaFileHandle> baseline_files = {}) {
+    ksi::edge::MissionMediaSelectionContext context;
+    context.mission_id = mission_id;
+    context.dispatch_id = "dispatch-" + mission_id;
+    context.mission_contract_digest = kDigest;
+    context.trigger_kind = ksi::edge::MediaOffloadTriggerKind::kMissionCompleted;
+    const std::string trigger = "completed:" + mission_id;
+    context.trigger_evidence_digest = ksi::edge::Sha256Digest(
+        reinterpret_cast<const std::uint8_t*>(trigger.data()), trigger.size());
+    context.baseline_observed_at_utc_ms = 1'000;
+    context.activated_at_utc_ms = 2'000;
+    context.triggered_at_utc_ms = 3'000;
+    context.baseline_files = std::move(baseline_files);
+    return context;
+}
+
+void TestMissionMediaSelector() {
+    using Handle = ksi::edge::SourceMediaFileHandle;
+    const std::vector<Handle> baseline = {
+        {2, "DJI_0002.JPG", 200U},
+        {1, "DJI_0001.JPG", 100U},
+    };
+    const auto context = MakeMissionMediaSelectionContext("missionselector", baseline);
+    const std::vector<Handle> current = {
+        {3, "DJI_0003.JPG", 300U},
+        {1, "DJI_0001.JPG", 100U},
+        {2, "DJI_0002.JPG", 200U},
+    };
+    const auto selected = ksi::edge::SelectMissionSourceMedia(context, current);
+    Check(selected.verdict == ksi::edge::MissionMediaSelectionVerdict::kSelected &&
+              selected.selected_files.size() == 1U &&
+              selected.selected_files.front().source_file_index == 3 &&
+              ksi::edge::IsSha256Digest(selected.selection_context_digest) &&
+              ksi::edge::IsSha256Digest(selected.selected_files_digest),
+          "mission selector takes only exact identities absent from the pre-activation baseline");
+
+    auto reordered_context = context;
+    std::reverse(reordered_context.baseline_files.begin(), reordered_context.baseline_files.end());
+    auto reordered_current = current;
+    std::reverse(reordered_current.begin(), reordered_current.end());
+    const auto reordered =
+        ksi::edge::SelectMissionSourceMedia(reordered_context, reordered_current);
+    Check(reordered.verdict == ksi::edge::MissionMediaSelectionVerdict::kSelected &&
+              reordered.selection_context_digest == selected.selection_context_digest &&
+              reordered.selected_files_digest == selected.selected_files_digest,
+          "baseline/current list ordering cannot change either durable selection digest");
+
+    auto size_drift = current;
+    size_drift[1].announced_bytes += 1U;
+    Check(ksi::edge::SelectMissionSourceMedia(context, size_drift).verdict ==
+              ksi::edge::MissionMediaSelectionVerdict::kBaselineDrift,
+          "a reused baseline index whose size changed blocks the whole mission selection");
+
+    auto duplicate_index = current;
+    duplicate_index.push_back({3, "DJI_DUPLICATE.JPG", 400U});
+    Check(ksi::edge::SelectMissionSourceMedia(context, duplicate_index).verdict ==
+              ksi::edge::MissionMediaSelectionVerdict::kInvalidCurrentList,
+          "duplicate Camera Manager fileIndex values are rejected instead of guessed apart");
+
+    Check(ksi::edge::SelectMissionSourceMedia(context, baseline).verdict ==
+              ksi::edge::MissionMediaSelectionVerdict::kNoNewMedia,
+          "an empty post-trigger delta never falls back to uploading old baseline photos");
+
+    auto invalid_context = context;
+    invalid_context.trigger_evidence_digest.clear();
+    Check(ksi::edge::SelectMissionSourceMedia(invalid_context, current).verdict ==
+              ksi::edge::MissionMediaSelectionVerdict::kInvalidContext,
+          "a mission completion/one-shot trigger without durable evidence cannot start selection");
+
+    auto invalid_baseline = context;
+    invalid_baseline.baseline_files.push_back({2, "DJI_OTHER.JPG", 999U});
+    Check(ksi::edge::SelectMissionSourceMedia(invalid_baseline, current).verdict ==
+              ksi::edge::MissionMediaSelectionVerdict::kInvalidBaseline,
+          "a baseline with duplicate exact identity keys is a typed blocker");
+}
+
 void TestSourceMediaJournalGuards() {
     if (!SqliteBackendReady("source media journal 가드 계약")) {
         return;
@@ -2736,34 +2814,49 @@ void TestSourceMediaJournalGuards() {
 
     // (b) BeginSourceMediaMission — 같은 임무를 다른 장비가 이어받으면 발견 목록이
     // 어느 기체의 SD 카드인지 알 수 없게 된다. 거부돼야 한다.
-    Check(journal->BeginSourceMediaMission("missiong", "edge-a") ==
+    Check(journal->BeginSourceMediaMission("missiong", "edge-a", kDigest) ==
               ksi::edge::SourceMediaJournalVerdict::kAccepted,
           "guard(b) fixture opens a mission under edge-a");
-    Check(journal->BeginSourceMediaMission("missiong", "edge-a") ==
+    Check(journal->BeginSourceMediaMission("missiong", "edge-a", kDigest) ==
               ksi::edge::SourceMediaJournalVerdict::kDuplicate,
           "guard(b) re-beginning under the same device is idempotent, not an error");
-    Check(journal->BeginSourceMediaMission("missiong", "edge-b") ==
+    Check(journal->BeginSourceMediaMission("missiong", "edge-b", kDigest) ==
               ksi::edge::SourceMediaJournalVerdict::kConflict,
           "guard(b) a different device may not take over an in-flight mission");
+    Check(journal->BeginSourceMediaMission(
+              "missiong", "edge-a",
+              "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") ==
+              ksi::edge::SourceMediaJournalVerdict::kConflict,
+          "guard(b) the same device cannot replay a mission under a different selection context");
+    Check(journal->BindSourceMediaSelection("missiong", kDigest) ==
+              ksi::edge::SourceMediaJournalVerdict::kAccepted,
+          "guard(b) binds the selected exact-identity set before any item row is written");
+    Check(journal->BindSourceMediaSelection(
+              "missiong",
+              "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") ==
+              ksi::edge::SourceMediaJournalVerdict::kConflict,
+          "guard(b) a restarted discovery cannot widen or replace its selected file set");
 
     // (d) RecordSourceMediaDiscovered — 목록이 닫힌 뒤에 나타난 장은 예산·봉인
     // 판정의 근거인 discovered_count 를 조용히 어긋나게 만든다. 거부돼야 한다.
     // guard(c) 의 깨진-실측값 사례 4 개도 여기서 같이 discover 해 둔다 — 저마다
     // 별도 media_id 를 써서, 어느 한 사례가 (진짜 결함으로) 잘못 통과하더라도
     // 다른 사례의 판정과 서로 물들지 않게 한다.
-    Check(journal->RecordSourceMediaDiscovered("missiong", "DJI_0001", "DJI_0001.JPG", 100U) ==
+    Check(journal->RecordSourceMediaDiscovered("missiong", "DJI_0001", 1, "DJI_0001.JPG", 100U) ==
               ksi::edge::SourceMediaJournalVerdict::kAccepted,
           "guard(d) fixture discovers the photo used by guard(a)/guard(c)'s clean path");
+    std::int64_t source_file_index = 2;
     for (const char* broken_media_id : {"DJI_c1", "DJI_c2", "DJI_c3", "DJI_c4"}) {
-        Check(journal->RecordSourceMediaDiscovered("missiong", broken_media_id,
-                                                    std::string(broken_media_id) + ".JPG", 100U) ==
+        Check(journal->RecordSourceMediaDiscovered(
+                  "missiong", broken_media_id, source_file_index++,
+                  std::string(broken_media_id) + ".JPG", 100U) ==
                   ksi::edge::SourceMediaJournalVerdict::kAccepted,
               "guard(d) fixture discovers a standalone photo for one guard(c) broken-field case");
     }
     Check(journal->MarkSourceMediaDiscoveryComplete("missiong", 5U) ==
               ksi::edge::SourceMediaJournalVerdict::kAccepted,
           "guard(d) fixture closes the discovery list at five photos");
-    Check(journal->RecordSourceMediaDiscovered("missiong", "DJI_0002", "DJI_0002.JPG", 100U) ==
+    Check(journal->RecordSourceMediaDiscovered("missiong", "DJI_0002", 6, "DJI_0002.JPG", 100U) ==
               ksi::edge::SourceMediaJournalVerdict::kConflict,
           "guard(d) a photo that appears after the list closes is rejected, not silently added");
 
@@ -2784,6 +2877,9 @@ void TestSourceMediaJournalGuards() {
     ksi::edge::SourceMediaItemRecord measured;
     measured.mission_id = "missiong";
     measured.media_id = "DJI_0001";
+    measured.source_file_index = 1;
+    measured.camera_file_name = "DJI_0001.JPG";
+    measured.announced_bytes = 100U;
     measured.artifact_id = "srcmedia-8.missiong-DJI_0001";
     measured.local_path = "/tmp/does-not-need-to-exist-for-this-check";
     measured.content_digest = kDigest;
@@ -2794,6 +2890,8 @@ void TestSourceMediaJournalGuards() {
     {
         ksi::edge::SourceMediaItemRecord broken = measured;
         broken.media_id = "DJI_c1";
+        broken.source_file_index = 2;
+        broken.camera_file_name = "DJI_c1.JPG";
         broken.artifact_id = "srcmedia-8.missiong-DJI_c1";
         broken.width = 0U;
         Check(journal->MarkSourceMediaSpooled(broken) == ksi::edge::SourceMediaJournalVerdict::kConflict,
@@ -2802,6 +2900,8 @@ void TestSourceMediaJournalGuards() {
     {
         ksi::edge::SourceMediaItemRecord broken = measured;
         broken.media_id = "DJI_c2";
+        broken.source_file_index = 3;
+        broken.camera_file_name = "DJI_c2.JPG";
         broken.artifact_id = "srcmedia-8.missiong-DJI_c2";
         broken.height = 0U;
         Check(journal->MarkSourceMediaSpooled(broken) == ksi::edge::SourceMediaJournalVerdict::kConflict,
@@ -2810,6 +2910,8 @@ void TestSourceMediaJournalGuards() {
     {
         ksi::edge::SourceMediaItemRecord broken = measured;
         broken.media_id = "DJI_c3";
+        broken.source_file_index = 4;
+        broken.camera_file_name = "DJI_c3.JPG";
         broken.artifact_id = "srcmedia-8.missiong-DJI_c3";
         broken.byte_count = 0U;
         Check(journal->MarkSourceMediaSpooled(broken) == ksi::edge::SourceMediaJournalVerdict::kConflict,
@@ -2818,6 +2920,8 @@ void TestSourceMediaJournalGuards() {
     {
         ksi::edge::SourceMediaItemRecord broken = measured;
         broken.media_id = "DJI_c4";
+        broken.source_file_index = 5;
+        broken.camera_file_name = "DJI_c4.JPG";
         broken.artifact_id = "srcmedia-8.missiong-DJI_c4";
         broken.content_digest = "not-a-sha256-digest";
         Check(journal->MarkSourceMediaSpooled(broken) == ksi::edge::SourceMediaJournalVerdict::kConflict,
@@ -2858,6 +2962,8 @@ void FillFakeSource(ksi::edge::FakeMediaSourcePort* source, const std::vector<st
     std::uint32_t width = base_width;
     for (const std::string& name : names) {
         ksi::edge::FakeMediaSourcePort::Entry entry;
+        entry.handle.source_file_index =
+            static_cast<std::int64_t>(source->entries.size()) + 1;
         entry.handle.camera_file_name = name;
         entry.bytes = MakeJpeg(0xC0U, width, 3000U);
         entry.handle.announced_bytes = entry.bytes.size();
@@ -2901,7 +3007,8 @@ void TestMediaOffloadConveyor() {
         FakeSourceMediaTransport transport;
         transport.register_verdict = ksi::edge::CoreSyncVerdict::kRetryableFailure;
         ksi::edge::MediaOffloadWorker worker(policy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionhw", "edge1");
+        const auto report =
+            worker.RunOnce(MakeMissionMediaSelectionContext("missionhw"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kSpoolHighWater &&
                   report.download_paused_for_spool && report.spooled == 2U &&
                   report.pending_download == 2U,
@@ -2914,7 +3021,8 @@ void TestMediaOffloadConveyor() {
               "download rights are obtained for the camera phase and handed back before it returns");
 
         transport.register_verdict = ksi::edge::CoreSyncVerdict::kAcknowledged;
-        const auto drained = worker.RunOnce("missionhw", "edge1");
+        const auto drained =
+            worker.RunOnce(MakeMissionMediaSelectionContext("missionhw"), "edge1");
         Check(drained.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && drained.sealed &&
                   transport.uploaded.size() == 4U && drained.spool_bytes_in_use == 0U,
               "once the drain works the same conveyor finishes every discovered photo and seals");
@@ -2935,7 +3043,7 @@ void TestMediaOffloadConveyor() {
         source.download_script = {ksi::edge::MediaSourceVerdict::kTransientFailure};
         FakeSourceMediaTransport transport;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kSourceFailure &&
                   report.discovered == 3U && report.spooled == 0U &&
                   journal->SourceMediaItemsInState("missionr",
@@ -2950,7 +3058,7 @@ void TestMediaOffloadConveyor() {
         FakeSourceMediaTransport transport;
         transport.register_verdict = ksi::edge::CoreSyncVerdict::kRetryableFailure;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kTransportFailure &&
                   report.spooled == 3U && report.discovered == 0U &&
                   journal->SourceMediaItemsInState("missionr", ksi::edge::SourceMediaState::kSpooled)
@@ -2965,7 +3073,7 @@ void TestMediaOffloadConveyor() {
         FakeSourceMediaTransport transport;
         transport.put_verdict = ksi::edge::CoreSyncVerdict::kRetryableFailure;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         const auto registered =
             journal->SourceMediaItemsInState("missionr", ksi::edge::SourceMediaState::kRegistered);
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kTransportFailure &&
@@ -2988,7 +3096,7 @@ void TestMediaOffloadConveyor() {
         FakeSourceMediaTransport transport;
         transport.seal_verdict = ksi::edge::CoreSyncVerdict::kRetryableFailure;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.purged == 3U && CountSpoolFiles(spool_directory) == 0U &&
                   report.spool_bytes_in_use == 0U &&
                   std::find(transport.registered.begin(), transport.registered.end(),
@@ -3004,7 +3112,7 @@ void TestMediaOffloadConveyor() {
         FakeSourceMediaTransport transport;
         transport.seal_verdict = ksi::edge::CoreSyncVerdict::kRetryableFailure;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kTransportFailure &&
                   transport.seal_calls == 1 && transport.register_calls == 0 &&
                   source.download_calls == 0,
@@ -3015,7 +3123,7 @@ void TestMediaOffloadConveyor() {
         ksi::edge::FakeMediaSourcePort source;
         FakeSourceMediaTransport transport;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && report.sealed &&
                   transport.seal_calls == 1,
               "Core seals the bundle before the journal marks it sealed");
@@ -3025,7 +3133,7 @@ void TestMediaOffloadConveyor() {
         ksi::edge::FakeMediaSourcePort source;
         FakeSourceMediaTransport transport;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionr", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionr"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && report.sealed &&
                   transport.seal_calls == 0 && source.list_calls == 0 && source.obtain_calls == 0,
               "restart case 6: a sealed bundle touches neither the camera nor Core again");
@@ -3037,13 +3145,14 @@ void TestMediaOffloadConveyor() {
         ksi::edge::FakeMediaSourcePort source;
         FillFakeSource(&source, {"DJI_2001.JPG", "DJI_2002.JPG"}, 6000U);
         ksi::edge::FakeMediaSourcePort::Entry broken;
+        broken.handle.source_file_index = 3;
         broken.handle.camera_file_name = "DJI_2003.JPG";
         broken.bytes = {'n', 'o', 't', ' ', 'a', ' ', 'j', 'p', 'e', 'g'};
         broken.handle.announced_bytes = broken.bytes.size();
         source.entries.push_back(broken);
         FakeSourceMediaTransport transport;
         ksi::edge::MediaOffloadWorker worker(roomy, journal.get(), &spool, &source, &transport);
-        const auto report = worker.RunOnce("missionq", "edge1");
+        const auto report = worker.RunOnce(MakeMissionMediaSelectionContext("missionq"), "edge1");
         Check(report.verdict == ksi::edge::MediaOffloadVerdict::kQuarantineBlocked &&
                   report.quarantined == 1U && report.purged == 2U && !report.sealed &&
                   transport.seal_calls == 0,
@@ -3106,7 +3215,8 @@ void TestMediaOffloadUploadDurableBeforePurge() {
                 stored.state == ksi::edge::SourceMediaState::kUploaded;
         };
 
-    const auto report = worker.RunOnce("missionorder", "edge1");
+    const auto report =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missionorder"), "edge1");
 
     Check(hook_calls == 1, "the durable-before-purge hook fires exactly once for the one photo in this "
                           "mission");
@@ -3156,7 +3266,8 @@ void TestMediaOffloadRightsReleasedDuringOffload() {
     FakeSourceMediaTransport transport;
     transport.rights_observer = &source;
     ksi::edge::MediaOffloadWorker worker(policy, journal.get(), &spool, &source, &transport);
-    const auto report = worker.RunOnce("missionrights", "edge1");
+    const auto report =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missionrights"), "edge1");
 
     Check(report.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && report.sealed,
           "rights-during-offload fixture completes the mission normally");
@@ -3212,7 +3323,8 @@ void TestMediaOffloadReconcilesRightsAtStartup() {
     FakeSourceMediaTransport transport;
     ksi::edge::MediaOffloadWorker worker(policy, journal.get(), &spool, &source, &transport);
 
-    const auto report = worker.RunOnce("missionstartup1", "edge1");
+    const auto report =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missionstartup1"), "edge1");
     // 정상적으로 짝지어지는 Acquire/Release 말고 정확히 하나 더 많은 Release —
     // 그 하나가 기동 시 정리한 남은 marker 다. MediaOffloadWorker 가 이 함수를
     // 부르지 않으면(배선 누락) 이 여분이 생기지 않는다.
@@ -3227,13 +3339,134 @@ void TestMediaOffloadReconcilesRightsAtStartup() {
 
     const int release_calls_after_first = source.release_calls;
     const int obtain_calls_after_first = source.obtain_calls;
+    std::vector<ksi::edge::SourceMediaFileHandle> second_mission_baseline;
+    for (const auto& entry : source.entries) {
+        second_mission_baseline.push_back(entry.handle);
+    }
     FillFakeSource(&source, {"DJI_7002.JPG"}, 7100U);
-    const auto second_report = worker.RunOnce("missionstartup2", "edge1");
+    const auto second_report = worker.RunOnce(
+        MakeMissionMediaSelectionContext("missionstartup2", second_mission_baseline), "edge1");
     Check(second_report.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && second_report.sealed,
           "a second mission on the same worker still completes normally");
     Check(source.release_calls - release_calls_after_first == source.obtain_calls - obtain_calls_after_first,
           "a second RunOnce on the same worker does not reconcile again — startup reconciliation runs "
           "exactly once per worker lifetime, not once per mission");
+
+    std::filesystem::remove_all(spool_directory, cleanup_error);
+    std::filesystem::remove_all(state_directory, cleanup_error);
+    std::filesystem::remove(database, cleanup_error);
+}
+
+void TestMediaOffloadMissionAttribution() {
+    if (!SqliteBackendReady("mission-scoped media attribution contract")) {
+        return;
+    }
+    const std::filesystem::path spool_directory =
+        UniqueTestDirectory("media-attribution-spool");
+    const std::filesystem::path state_directory =
+        UniqueTestDirectory("media-attribution-state");
+    const std::filesystem::path database =
+        UniqueTestDirectory("media-attribution-store").string() + ".sqlite";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(spool_directory, cleanup_error);
+    std::filesystem::remove_all(state_directory, cleanup_error);
+    std::filesystem::remove(database, cleanup_error);
+
+    ksi::edge::ArtifactVault spool(spool_directory.string(), 1U * 1024U * 1024U);
+    auto journal = std::make_unique<ksi::edge::SqliteStoreForward>(database.string());
+    Check(journal->Open() == ksi::edge::StoreForwardVerdict::kAccepted,
+          "mission attribution fixture opens the durable journal");
+    ksi::edge::MediaOffloadPolicy policy;
+    policy.state_directory = state_directory.string();
+    policy.spool_high_water_bytes = 512U * 1024U * 1024U;
+    policy.spool_high_water_items = 8U;
+
+    ksi::edge::FakeMediaSourcePort source;
+    FillFakeSource(&source, {"DJI_OLD.JPG"}, 4000U);
+    const std::vector<ksi::edge::SourceMediaFileHandle> baseline_a = {
+        source.entries.front().handle};
+    FillFakeSource(&source, {"DJI_MISSION_A.JPG"}, 4100U);
+    FakeSourceMediaTransport transport;
+    ksi::edge::MediaOffloadWorker worker(policy, journal.get(), &spool, &source, &transport);
+
+    const auto mission_a =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missiona", baseline_a), "edge1");
+    Check(mission_a.verdict == ksi::edge::MediaOffloadVerdict::kCompleted &&
+              transport.registered == std::vector<std::string>{"DJI_MISSION_A"},
+          "mission A uploads only the post-baseline photo and never the old SD-card photo");
+    const auto mission_a_items = journal->SourceMediaItemsInState(
+        "missiona", ksi::edge::SourceMediaState::kPurged);
+    Check(mission_a_items.size() == 1U && mission_a_items.front().source_file_index == 2,
+          "mission A journal preserves the Camera Manager index of its one selected photo");
+
+    std::vector<ksi::edge::SourceMediaFileHandle> baseline_b;
+    for (const auto& entry : source.entries) {
+        baseline_b.push_back(entry.handle);
+    }
+    FillFakeSource(&source, {"DJI_MISSION_B.JPG"}, 4200U);
+    const auto mission_b =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missionb", baseline_b), "edge1");
+    Check(mission_b.verdict == ksi::edge::MediaOffloadVerdict::kCompleted &&
+              transport.registered ==
+                  std::vector<std::string>{"DJI_MISSION_A", "DJI_MISSION_B"},
+          "mission B excludes both the old photo and mission A photo, preventing cross-mission mix");
+
+    auto conflicting_context = MakeMissionMediaSelectionContext("missiona", baseline_a);
+    conflicting_context.trigger_kind =
+        ksi::edge::MediaOffloadTriggerKind::kOperatorApprovedOneShot;
+    const auto conflicting = worker.RunOnce(conflicting_context, "edge1");
+    Check(conflicting.verdict == ksi::edge::MediaOffloadVerdict::kJournalFailure,
+          "even a sealed mission cannot be replayed under a different trigger/context digest");
+
+    std::filesystem::remove_all(spool_directory, cleanup_error);
+    std::filesystem::remove_all(state_directory, cleanup_error);
+    std::filesystem::remove(database, cleanup_error);
+}
+
+void TestMediaOffloadIdentityDrift() {
+    if (!SqliteBackendReady("download identity drift contract")) {
+        return;
+    }
+    const std::filesystem::path spool_directory = UniqueTestDirectory("media-drift-spool");
+    const std::filesystem::path state_directory = UniqueTestDirectory("media-drift-state");
+    const std::filesystem::path database =
+        UniqueTestDirectory("media-drift-store").string() + ".sqlite";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(spool_directory, cleanup_error);
+    std::filesystem::remove_all(state_directory, cleanup_error);
+    std::filesystem::remove(database, cleanup_error);
+
+    ksi::edge::ArtifactVault spool(spool_directory.string(), 1U * 1024U * 1024U);
+    auto journal = std::make_unique<ksi::edge::SqliteStoreForward>(database.string());
+    Check(journal->Open() == ksi::edge::StoreForwardVerdict::kAccepted,
+          "identity drift fixture opens the durable journal");
+    ksi::edge::MediaOffloadPolicy policy;
+    policy.state_directory = state_directory.string();
+    policy.spool_high_water_bytes = 512U * 1024U * 1024U;
+    policy.spool_high_water_items = 8U;
+
+    ksi::edge::FakeMediaSourcePort source;
+    FillFakeSource(&source, {"DJI_DRIFT.JPG"}, 5000U);
+    const auto original = source.entries.front().handle;
+    auto changed = original;
+    changed.announced_bytes += 1U;
+    source.list_snapshots.push_back({original});
+    source.list_snapshots.push_back({changed});
+    FakeSourceMediaTransport transport;
+    ksi::edge::MediaOffloadWorker worker(policy, journal.get(), &spool, &source, &transport);
+    const auto blocked =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missiondrift"), "edge1");
+    Check(blocked.verdict == ksi::edge::MediaOffloadVerdict::kSourceIdentityDrift &&
+              source.download_calls == 0 && transport.register_calls == 0 &&
+              journal->SourceMediaItemsInState("missiondrift",
+                                                ksi::edge::SourceMediaState::kDiscovered)
+                      .size() == 1U,
+          "list/download identity drift blocks before bytes are read or attributed to Core");
+
+    const auto recovered =
+        worker.RunOnce(MakeMissionMediaSelectionContext("missiondrift"), "edge1");
+    Check(recovered.verdict == ksi::edge::MediaOffloadVerdict::kCompleted && recovered.sealed,
+          "the fixed exact identity can resume from the durable selected set without rediscovery");
 
     std::filesystem::remove_all(spool_directory, cleanup_error);
     std::filesystem::remove_all(state_directory, cleanup_error);
@@ -3988,9 +4221,35 @@ int main(int argc, char** argv) {
         std::printf("%s\n", payload.c_str());
         return 0;
     }
+    if (argc == 3 && std::string(argv[1]) == "--inspect-legacy-source-media") {
+        ksi::edge::SqliteStoreForward journal(argv[2]);
+        if (journal.Open() != ksi::edge::StoreForwardVerdict::kAccepted) {
+            std::fprintf(stderr, "legacy source-media journal did not open\n");
+            return 2;
+        }
+        ksi::edge::SourceMediaMissionState mission;
+        ksi::edge::SourceMediaItemRecord item;
+        const auto found_mission = journal.FindSourceMediaMission("legacy-mission", &mission);
+        const auto found_item =
+            journal.FindSourceMediaItem("legacy-mission", "DJI_OLD", &item);
+        const auto replay = journal.BeginSourceMediaMission(
+            "legacy-mission", "legacy-edge", kDigest);
+        const bool preserved =
+            found_mission == ksi::edge::SourceMediaJournalVerdict::kAccepted &&
+            found_item == ksi::edge::SourceMediaJournalVerdict::kAccepted &&
+            mission.selection_context_digest.empty() && mission.selected_files_digest.empty() &&
+            item.source_file_index == -1 &&
+            replay == ksi::edge::SourceMediaJournalVerdict::kConflict;
+        std::printf("context=%s selection=%s index=%lld replay=%s\n",
+                    mission.selection_context_digest.empty() ? "LEGACY_EMPTY" : "BOUND",
+                    mission.selected_files_digest.empty() ? "LEGACY_EMPTY" : "BOUND",
+                    static_cast<long long>(item.source_file_index), ksi::edge::ToString(replay));
+        return preserved ? 0 : 1;
+    }
     if (argc != 1) {
         std::fprintf(stderr,
                      "usage: %s [--emit-native-event|--emit-native-artifacts|"
+                     "--inspect-legacy-source-media <sqlite-path>|"
                      "--inspect-native-activation <dir> <device> <runtime> <utc-ms>|"
                      "--inspect-native-runtime-profile <dir> <device> <dispatch> <mission> "
                      "<contract-digest> <policy-digest>]\n",
@@ -4023,11 +4282,14 @@ int main(int argc, char** argv) {
     TestArtifactVaultRemoval();
     TestSourceMediaRightsMarker();
     TestCoreRestSourceMediaWire();
+    TestMissionMediaSelector();
     TestSourceMediaJournalGuards();
     TestMediaOffloadConveyor();
     TestMediaOffloadUploadDurableBeforePurge();
     TestMediaOffloadRightsReleasedDuringOffload();
     TestMediaOffloadReconcilesRightsAtStartup();
+    TestMediaOffloadMissionAttribution();
+    TestMediaOffloadIdentityDrift();
     TestSpoolArtifactIdUnambiguous();
     TestFlightExecutionKmzEnvelopeRederivation();
     TestFlightExecutionCeilingGuardDirect();

@@ -158,6 +158,7 @@ endif()
 # 이 블록 바깥에 두는 이유: if(KSI_TARGET_MANIFOLD3) 안에 넣으면 Manifold 타깃
 # 빌드에서 옵션 자체가 정의되지 않는다.
 option(KSI_REQUIRE_SQLITE "SQLite 개발 헤더가 없으면 configure 단계에서 실패한다" OFF)
+set(KSI_EDGE_SQLITE_COMPILED OFF)
 
 # DPK는 glibc 이외의 동적 의존성을 허용하지 않는다. FindSQLite3는 일부 배포판에서
 # CMAKE_FIND_LIBRARY_SUFFIXES=.a 보다 pkg-config/공유 라이브러리를 우선할 수 있어,
@@ -180,6 +181,7 @@ if(KSI_TARGET_MANIFOLD3)
       "a DPK must not dynamically depend on libsqlite3.so")
   endif()
   target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=1)
+  set(KSI_EDGE_SQLITE_COMPILED ON)
   target_include_directories(ksi_edge_runtime SYSTEM PRIVATE "${KSI_EDGE_SQLITE_INCLUDE_DIR}")
   # PUBLIC은 static runtime library의 최종 소비자에게 archive를 전파한다. 아래의
   # pthread/dl은 이 call 뒤에 넣어 GNU ld의 단일 패스 해석 순서도 보장한다.
@@ -189,6 +191,7 @@ else()
   if(SQLite3_FOUND)
     target_compile_definitions(ksi_edge_runtime PRIVATE KSI_EDGE_HAVE_SQLITE=1)
     target_link_libraries(ksi_edge_runtime PRIVATE SQLite::SQLite3)
+    set(KSI_EDGE_SQLITE_COMPILED ON)
   else()
     if(KSI_REQUIRE_SQLITE)
       message(FATAL_ERROR
@@ -298,6 +301,15 @@ if(KSI_BUILD_TESTS)
   target_link_libraries(edge_runtime_tests PRIVATE ksi_edge_runtime)
   target_compile_options(edge_runtime_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME edge_runtime_contract COMMAND edge_runtime_tests)
+  # 실제 legacy SQLite 파일을 만든 뒤 native Open()으로 migration하고, 빈 digest/-1
+  # 값을 추정 없이 보존해 새 worker replay가 거부되는지 확인한다.
+  if(KSI_EDGE_SQLITE_COMPILED)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME source_media_legacy_schema_migration
+             COMMAND "${Python3_EXECUTABLE}"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/source_media_schema_migration_test.py"
+                     "$<TARGET_FILE:edge_runtime_tests>")
+  endif()
   add_executable(capture_quality_policy_tests tests/capture_quality_policy_tests.cpp)
   target_link_libraries(capture_quality_policy_tests PRIVATE ksi_edge_runtime)
   target_compile_options(capture_quality_policy_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
