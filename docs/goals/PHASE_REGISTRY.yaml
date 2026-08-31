@@ -158,6 +158,23 @@ confirmed_next_improvements:
         processing lineage를 조인하는 fail-closed AnalysisReadiness projection과 Dashboard 표현을
         계약·API·UI 테스트로 확인했다. READY는 real-device data quality, Pilot 2 execution,
         PSDK producer 또는 multi-sortie acceptance를 증명하지 않는다.
+    - id: automatic-source-media-attribution
+      status: GATED
+      authority: "docs/architecture/ADR-KSI-013-source-media-egress.md D3/D4"
+      scope: >-
+        Mission/dispatch/contract/trigger와 임무 전 SD baseline을 결속하고 baseline 이후의
+        exact fileIndex+fileName+fileSize만 결정적으로 선택하는 PSDK-independent 자동 미디어
+        귀속 경계, durable SQLite/WAL replay 및 list/download identity 재대조.
+      software_evidence_2026_08_31: >-
+        Commit ae7448b는 selection context/selected-files digest를 journal에 고정하고,
+        legacy 행을 빈 digest와 source_file_index=-1로 추정 없이 migration해 새 worker replay를
+        거부한다. Host selector, restart, identity-drift와 두 임무 cross-mission negative를
+        고정 Ubuntu 20.04/gcc 9.4 실제 SQLite CTest 8/8 및 ASan/UBSan 8/8로 검증했다.
+        전체 Python은 4228 passed/24 skipped, Ruff와 Mypy 443 files가 통과했다.
+      gate: >-
+        실제 DjiCameraManager adapter, 검증된 DJI 완료/운영자 one-shot provider, 임무 전
+        baseline snapshot provider와 무비행 M4D HIL이 필요하다. 그 전에는 packaged app option은
+        OFF/fail-closed, capability는 NOT_VERIFIED, SD/PC/Web은 정상 제품 경로다.
     - id: civil-processing-consistency-v1
       status: IN_PROGRESS
       authority: >-

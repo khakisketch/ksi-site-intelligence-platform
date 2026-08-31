@@ -1,59 +1,62 @@
-# Current implementation plan (2026-08-31, PSDK media attribution fail-closed boundary)
+# Current implementation plan (2026-08-31, automatic media mission attribution)
 
 Requirement IDs:
 - `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`.
-- `INV-018/040/041/060`.
+- `INV-018/040/041/051/060`.
 
 Owner module:
-- Core goal ledger owns current evidence and independent-review state.
-- `edge/psdk-app` owns packaged production assembly and build-time capability gates.
-- `edge/manifold-runtime` retains the PSDK-independent media conveyor and test double.
+- `edge/manifold-runtime` owns exact source identity, selector and durable journal replay.
+- `edge/psdk-app` owns packaged production assembly and capability gates.
+- Goal ledger/Phase Registry own the software-versus-device status split.
 
 Acceptance criteria:
-- Spatial-model lifecycle current evidence is recorded without fabricating an independent PASS.
-- Production main contains no fake camera source or automatic media thread.
-- The historical media option defaults OFF and an ON configure fails with an actionable attribution/HIL reason.
-- Default PSDK app configure/build and existing RiskField assembly remain green.
+- Mission/dispatch/contract/trigger and pre-activation baseline produce an order-independent digest.
+- Only exact post-baseline identities are journaled; identity drift and cross-mission reuse are blocked.
+- Restart cannot widen a selection, and legacy journals migrate without inferred identity/digests.
+- Production option stays OFF until a real adapter/device provider and M4D HIL exist.
 
 Contracts affected:
-- No Core wire/schema change. ADR-KSI-013 D3 and the PSDK build contract become stricter.
+- `SourceMediaFileHandle`, `MissionMediaSelectionContext`, `MediaOffloadWorker` and SourceMedia SQLite
+  journal schema. Core HTTP wire remains unchanged.
 
 Reference assets:
-- Pinned DJI PSDK 3.16 camera-manager header/sample, ADR-KSI-013 and
-  `MVP_INTEGRATION_M1_ACCEPTANCE.md`. Reference repositories remain read-only.
+- Pinned DJI PSDK 3.16 `T_DjiCameraManagerFileListInfo` and official downloader sample.
+- ADR-KSI-013. Reference repositories remain read-only.
 
 Adoption decisions:
-- RETAIN the durable rights-marker/spool/journal/upload conveyor and its host tests.
-- REMOVE `FakeMediaSourcePort` from packaged production assembly.
-- DEFER a real camera adapter until mission-scoped selection and one-JPEG HIL exist.
+- ADOPT `fileIndex + fileName + fileSize` exact identity and immutable baseline delta.
+- RETAIN rights marker, bounded spool, checksum and Core upload conveyor.
+- DEFER real DJI adapter/device providers and capability promotion to no-flight HIL.
 
-Files to change:
-- Canonical goal/risk ledger, PSDK CMake/main/README, ADR-KSI-013, build-contract tests and `.ai` state.
+Files changed:
+- `edge/manifold-runtime` media/journal contracts, implementation and native/migration tests;
+  PSDK production gate/README; ADR-KSI-013; phase/risk/AI ledgers.
 
 Tests:
-- Spatial-model/API contracts, media production gate, RiskField assembly, default/negative CMake,
-  PSDK app build, full Python, Ruff, Mypy, lock, diff, hygiene and pin gates.
+- Pure selector, trigger/baseline hostile cases, restart digest conflict, cross-mission negative,
+  list/download drift, legacy schema replay, SQLite native/sanitizer, full Python and repository gates.
 
 HIL or real-device assumptions:
-- None executed. M4D list/download, rights release, Pilot album recovery and cross-mission selection are
+- None executed. M4D downloader rights, album recovery, trigger/baseline provider and throughput remain
   `NOT_VERIFIED`.
 
 License/data implications:
-- No new dependency. No DJI credential, raw JPEG, serial, GPS or customer data enters Git.
+- No new runtime dependency or raw data. No DJI credential, JPEG, serial, GPS or customer data enters Git.
 
 Rollback:
-- Revert this increment only. Keep `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD` OFF and continue SD/PC/Web intake;
-  never restore the fake production path as an availability workaround.
+- Revert `ae7448b` and this ledger commit only; keep production media option OFF and SD/PC/Web intake.
+  Never loosen exact-selection safety to restore availability.
 
 Execution:
-1. [완료] Reconcile the stale spatial-model goal with commit `434b92b` and focused `315 passed` evidence.
-2. [완료] Trace DJI camera APIs and identify the missing mission-attribution boundary.
-3. [완료] Remove fake production assembly and add an explicit configure-time blocker.
-4. [완료] Add ADR/README and three-case regression contract; focused `322 passed`.
-5. [완료] Prove default host configure/build and intended ON configure failure.
-6. [완료] Commit `32e4a71`; pass full Python `4228/24 skipped`, Ruff, Mypy `443`, native `7/7`,
-   lock, diff, hygiene, references, pins and the default/negative PSDK configure/build checks.
-7. [외부] Owner fast-forward push; then one-ground-JPEG no-flight HIL before any real adapter activation.
+1. [완료] Audit authority, current risks and pinned DJI Camera Manager identity fields.
+2. [완료] Implement deterministic trigger/baseline selector and typed fail-closed verdicts.
+3. [완료] Bind context/selection digests and exact index into SQLite/WAL with legacy migration.
+4. [완료] Recheck identity immediately before download and add restart/cross-mission/drift tests.
+5. [완료] Commit `ae7448b`; native SQLite and sanitizer CTest each `8/8`.
+6. [완료] Full Python `4228/24 skipped`, Ruff, Mypy `443`, lock/diff/hygiene/reference/pin gates,
+   default PSDK app build and intentional ON blocker.
+7. [완료] Resolve the stale unbound-software risk and open the exact adapter/HIL residual.
+8. [외부] Optional owner push; separately schedule no-flight M4D HIL before adapter activation.
 
 ---
 

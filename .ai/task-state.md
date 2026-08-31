@@ -1,24 +1,29 @@
 # Current Task State
 
-## 2026-08-31 — `psdk_media_auto_ingest_fail_closed_hil_not_verified`
+## 2026-08-31 — `media_mission_attribution_software_green_adapter_hil_gated`
 
-- Authority: `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`; `INV-018/040/041/060`.
-- Spatial-model truth: commit `434b92b` already closes the old capture-time/nested-site-response gap;
-  current focused evidence is `315 passed`. A new completion attempt is recorded, but status remains
-  `in_progress` until a genuinely independent gate verdict exists.
-- Media truth: the existing `MediaOffloadWorker` is a reusable PSDK-independent conveyor, not a proven
-  production camera ingress. It has no mission completion, verified capture window or pre-mission file
-  baseline, so a real SD-card list could cross-bind old photos to the active mission.
-- Implemented: packaged `ksi_psdk_app` no longer constructs `FakeMediaSourcePort`, media worker/thread or
-  misleading READY status. `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON` fails CMake with the exact missing
-  adapter/mission-boundary/HIL reason; default OFF remains buildable.
-- Commit/evidence: `32e4a71`; focused contracts `322 passed`; full Python `4228 passed / 24 skipped`;
-  Ruff; Mypy `443` files; lock, diff, hygiene, reference and runtime/PSDK pin gates; native Ubuntu
-  20.04/gcc 9.4 CTest `7/7`; host default configure/build succeeds and ON configure fails intentionally.
-- Canonical risk: `psdk-media-offload-mission-attribution-unbound` is open/high. SD/PC/Web remains the
-  normal v1 path. M4D media, FIELD-0a and all DJI/Manifold capability remain `NOT_VERIFIED`/OFF.
-- Delivery truth: local work is unpublished. No device, DPK, camera/gimbal, flight/motor/waypoint,
-  customer data, raw media, credential, release or deployment action occurred.
+- Authority: `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`;
+  `INV-018/040/041/051/060`.
+- Implemented: `MissionMediaSelectionContext` binds Mission, dispatch, Mission Contract digest,
+  completion/operator-one-shot evidence, pre-activation baseline and UTC ordering. Only baseline-delta
+  exact `fileIndex + fileName + fileSize` identities are selected.
+- Durable truth: context and selected-file digests plus source index live in the shared SQLite/WAL
+  journal. Restart cannot replace the selected set. Pre-change rows migrate as empty digest/-1 and the
+  new worker refuses to infer or resume them.
+- Download truth: the camera list is re-read immediately before each download. Missing/reused/mutated
+  identity returns `SOURCE_IDENTITY_DRIFT` before bytes or Core registration. Duplicate identity,
+  baseline drift and no-new-media are typed full-selection blockers.
+- Commit/evidence: `ae7448b`; real-SQLite Ubuntu 20.04/gcc 9.4 CTest `8/8`; ASan/UBSan `8/8`;
+  full Python `4228 passed / 24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene, reference,
+  PSDK and runtime-image pins; default PSDK app build passes and enabled media configure fails as designed.
+- Canonical risks: `psdk-media-offload-mission-attribution-unbound` is resolved. New residual
+  `psdk-media-offload-adapter-hil-not-verified` is open/medium because packaged code still has no real
+  adapter or verified device trigger/baseline provider.
+- Product goal `aol-1-capture-auto-ingest` has this software evidence recorded but remains
+  `in_progress`; its actual-aircraft and zero-manual-upload criteria were not met.
+- Delivery/physical truth: the feature commit is local and unpublished. SD/PC/Web remains normal;
+  automatic capability is `NOT_VERIFIED`/OFF. No raw media, credential, device/DPK write, camera/gimbal,
+  flight/motor/waypoint, release or deployment action occurred.
 
 ---
 

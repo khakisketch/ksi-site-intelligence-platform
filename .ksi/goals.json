@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-31T15:09:14+09:00",
+  "updated_at": "2026-08-31T18:17:38+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2101,16 +2101,16 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "원래 목표 서술 정정: upload_source_bundle.py 가 이미 브라우저 없는 등록·업로드·봉인·재구성 발행을 수행 중이었고 실제 구멍은 트리거였다. tools/ingest_watch.py 가 <root>/<missionId>/ 규약으로 임무별 1회 트리거(정지 유예로 복사 중 디렉터리 배제, 실패는 완료로 기록하지 않아 재시도, 건너뜀 사유 보고). tests/contract/test_ingest_watch.py 25 passed + CLI --help 실행 확인. 기체→지상 회수 경로 자체는 여전히 SD카드 수동 오프로드(ADR-KSI-013, 실기 관문).",
+      "evidence": "Combined partial evidence: existing tools/ingest_watch.py and upload_source_bundle.py already provide stable-directory mission trigger, register/upload/seal and ProcessingJob issuance on the SD/PC path. Commit ae7448b adds the future aircraft path's fail-closed attribution boundary: verified completion/one-shot context plus pre-activation baseline selects only exact post-baseline fileIndex+fileName+fileSize; durable context/selection digests prevent restart widening; list/download drift and host cross-mission mixing fail closed; real-SQLite and sanitizer CTest 8/8, full Python 4228/24 skipped. Goal remains in_progress because no real DjiCameraManager adapter/device provider, M4D HIL or actual zero-manual aircraft-to-server ingest occurred.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 3,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-15T15:59:28+09:00"
+      "updated_at": "2026-08-31T18:17:38+09:00"
     },
     {
       "id": "aol-1-mission-to-aircraft-delivery",
@@ -3811,14 +3811,28 @@
       "title": "PSDK SD카드 전체 목록을 활성 임무에 자동 귀속할 경계가 없음",
       "lens": "db",
       "severity": "high",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-31 production wiring audit: MediaOffloadWorker는 active_native_snapshot의 mission_id만 받고, 임무 완료 신호·촬영 capture window·사전 file-index baseline 없이 ListFiles 결과 전량을 그 임무에 DISCOVERED로 기록한다. 현재 psdk-app은 FakeMediaSourcePort라 실제 bytes는 0장이지만, 이를 DjiCameraManager_DownloadFileList에 단순 교체하면 이전 임무/다른 현장 JPEG가 현재 SourceMediaBundle로 잘못 봉인될 수 있다(INV-018/040/060). 해소 조건: (1) 실제 mission completion 또는 승인된 one-shot trigger (2) baseline 이후 새 파일 또는 검증된 capture window로 exact selection (3) list/download 사이 index+name+size 재대조 (4) M4D 지상 JPEG 한 장 HIL에서 rights obtain/release와 Pilot album 복구 (5) cross-mission negative test. 그 전까지 KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD는 production에서 OFF/fail-closed이며 SD→PC→Web이 정상 경로다.",
+      "accept_reason": null,
+      "resolve_evidence": "ae7448b: Mission/dispatch/contract/trigger/baseline exact selector, list-download identity recheck, durable context+selection digests, legacy fail-closed migration and host cross-mission negative; pinned Ubuntu 20.04 SQLite CTest 8/8 plus ASan/UBSan 8/8; full Python 4228 passed/24 skipped",
+      "reopen_reason": null,
+      "previous_status": "open",
+      "created_at": "2026-08-31T15:09:14+09:00",
+      "updated_at": "2026-08-31T18:14:31+09:00"
+    },
+    {
+      "id": "psdk-media-offload-adapter-hil-not-verified",
+      "title": "자동 미디어 임무 귀속 소프트웨어 경계는 있으나 실제 M4D Camera Manager adapter와 device trigger/baseline 경로가 HIL 검증되지 않음",
+      "lens": "db",
+      "severity": "medium",
+      "status": "open",
+      "note": "ae7448b에서 PSDK-independent selector와 durable journal은 baseline 이후 exact fileIndex+fileName+fileSize만 선택하고 identity drift/cross-mission을 fail-closed로 차단한다. packaged ksi_psdk_app에는 실제 DjiCameraManager adapter, 검증된 DJI mission-completion 또는 operator one-shot provider, pre-activation baseline snapshot provider가 아직 없다. 해소 조건: 무비행 M4D HIL에서 exact build/DPK digest를 결속하고 지상 JPEG list/download/SHA-256, downloader rights obtain/release, Pilot 2 album 복구, 두 연속 임무의 실제 cross-mission negative, 처리량/오류 복구를 확인한다. 그 전까지 KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD는 OFF/fail-closed, capability NOT_VERIFIED이며 SD/PC/Web이 정상 경로다.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
-      "created_at": "2026-08-31T15:09:14+09:00",
-      "updated_at": "2026-08-31T15:09:14+09:00"
+      "created_at": "2026-08-31T18:14:41+09:00",
+      "updated_at": "2026-08-31T18:14:41+09:00"
     }
   ]
 }

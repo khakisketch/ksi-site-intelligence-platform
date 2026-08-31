@@ -1,30 +1,31 @@
-# Current goal (2026-08-31, PSDK media attribution fail-closed boundary)
+# Current goal (2026-08-31, automatic media mission-attribution software boundary)
 
-Prevent the unverified PSDK media conveyor from appearing as a production automatic-ingest path while
-preserving the simple civil intake and all reusable store-and-forward software. `REQ-ACQ-103`,
-`REQ-INT-101`, `REQ-SEC-101` and `INV-018/040/041/060` apply.
+Complete the repository-owned mission-attribution boundary for future automatic media ingest without
+pretending that host software is a working DJI adapter. `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`
+and `INV-018/040/041/051/060` apply.
 
 Completion conditions:
 
-- packaged `ksi_psdk_app` contains no `FakeMediaSourcePort` or automatic media worker;
-- `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON` fails at configure time until a real DJI adapter and
-  mission-scoped completion/capture boundary both exist;
-- the PSDK-independent rights marker, bounded spool, digest, journal and Core upload conveyor remain
-  testable rather than being discarded;
-- spatial-model lifecycle receives current executable evidence but remains `in_progress` until an
-  independent reviewer issues a new gate verdict;
-- automatic ingest, FIELD-0a and DJI capability remain `NOT_VERIFIED`/OFF, with SD/PC/Web as the normal
-  pre-verification product path.
+- a verified mission-completion or operator one-shot context binds Mission, dispatch, Mission Contract,
+  trigger evidence and a pre-activation SD baseline;
+- only post-baseline exact `fileIndex + fileName + fileSize` identities enter the SourceMedia journal;
+- list/download drift, baseline mutation, duplicate identity, no-new-media and cross-mission reuse fail
+  closed with typed verdicts;
+- context and selected-file digests survive restart in the SQLite/WAL journal, while legacy rows replay
+  without invented values and cannot be resumed by the new worker;
+- packaged `ksi_psdk_app` remains OFF until a real adapter/device provider and no-flight M4D HIL pass.
 
-The source/build guard and regression are green at `32e4a71`: focused `322 passed`; full Python
-`4228 passed / 24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene, reference and runtime/PSDK pin
-gates; native Ubuntu 20.04/gcc 9.4 CTest `7/7`. A clean host CMake configure/build succeeds with the
-option OFF, while an ON configure fails with the intended mission-attribution blocker.
+Repository-owned implementation is green at `ae7448b`. Pinned Ubuntu 20.04/gcc 9.4 with real SQLite
+passes native CTest `8/8`, including legacy migration and cross-mission/identity-drift cases; ASan/UBSan
+also passes `8/8`. Full Python is `4228 passed / 24 skipped`; Ruff, Mypy `443` files, lock, diff,
+hygiene, reference, PSDK and runtime-image pin gates pass. Default `ksi_psdk_app` configure/build passes;
+requesting media offload still fails at the explicit device-provider/HIL blocker.
 
-Canonical risk `psdk-media-offload-mission-attribution-unbound` is open. Its resolution requires a real
-mission completion/one-shot trigger, baseline or verified capture window, exact list/download identity,
-one-ground-JPEG M4D HIL with rights release/album recovery, and a cross-mission negative test. No raw
-media, credential, device write, camera command, flight or capability promotion occurred.
+Risk `psdk-media-offload-mission-attribution-unbound` is resolved by the host evidence. Its replacement
+`psdk-media-offload-adapter-hil-not-verified` remains open: no real `DjiCameraManager` adapter, DJI
+completion/baseline provider, DPK/device write or M4D HIL was performed. SD/PC/Web remains the normal
+product path, automatic media capability remains `NOT_VERIFIED`/OFF, and no raw media, credential,
+camera/gimbal, motor, waypoint or flight action occurred. Commit/push/deployment remain separate.
 
 ---
 
