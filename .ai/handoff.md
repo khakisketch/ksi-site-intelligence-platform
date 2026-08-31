@@ -1,32 +1,42 @@
 # Current Handoff
 
-## 2026-08-31 — Automatic media can now be attributed safely in host software; DJI adapter remains OFF
+## 2026-08-31 — Automatic source-media offload v1 is software-assembled; M4D HIL remains required
 
-The repository-owned attribution gap is closed at `ae7448b`. A future adapter must supply a
-`MissionMediaSelectionContext` containing Mission/dispatch/Mission Contract, verified completion or
-operator one-shot evidence, a pre-activation SD snapshot and ordered UTC timestamps. The selector sorts
-inputs canonically and admits only exact `fileIndex + fileName + fileSize` identities absent from the
-baseline. It refuses baseline mutation, index/name duplication, identity reuse and a zero-photo delta.
+The host attribution boundary from `ae7448b` is now connected to a real bounded Camera Manager adapter
+(`c65596c`) and an optional DPK media tier (`38d60d0`). The tier is still OFF by default. It can configure
+only with an explicit Manifold target, native activation, Core sync, separate private control state,
+verified camera mount and measured per-file JPEG limit. Nothing in that build flag is a capability
+promotion.
 
-The shared SQLite/WAL journal now records selection-context digest, selected-files digest and source
-file index before bytes move. A crash cannot cause rediscovery to widen that set. Old databases gain
-empty digest and index -1 fields without guessed backfill, and the new worker refuses their replay.
-Immediately before each download the list is read again; drift stops with `SOURCE_IDENTITY_DRIFT` before
-download or Core registration. Host tests prove two consecutive missions do not ingest each other's
-photos and that the correct identity can recover after a transient mismatch.
+The local protocol is deliberately narrow:
 
-Executed evidence: pinned Ubuntu 20.04/gcc 9.4 with real SQLite CTest `8/8`, including legacy migration;
-ASan/UBSan `8/8`; full Python `4228 passed / 24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene,
-reference, PSDK and runtime pins. The default PSDK app still builds, while explicit media enablement
-fails at the remaining real-adapter/device-provider/HIL gate. No Dashboard file changed.
+```text
+operator prepare -> DPK pre-activation rights/list/release baseline
+-> verified native activation -> operator one-shot trigger -> exact delta worker
+```
 
-The risk ledger now resolves `psdk-media-offload-mission-attribution-unbound` and opens the narrower
-`psdk-media-offload-adapter-hil-not-verified`. The packaged app still contains no real
-`DjiCameraManager` adapter or verified DJI completion/baseline provider. SD/PC/Web therefore remains the
-normal product route and automatic media stays `NOT_VERIFIED`/OFF. FIELD-0a remains `BLOCKED`; no raw
-JPEG, credential, DPK/device write, camera/gimbal, flight, motor, waypoint, push, release or deployment
-occurred. Goal `aol-1-capture-auto-ingest` remains `in_progress`; the next physical step is a separately
-approved no-flight M4D HIL, not more host inference.
+Control records must be owner-only regular files in a dedicated private directory. They bind operator,
+nonce, device, Mission, dispatch, Mission Contract and baseline digest, reject symlink/open mode/expiry/
+ordering/binding mismatch, and expire within 15 minutes. A fresh pre-activation request may supersede old
+control metadata, but an old trigger cannot authorize it because the baseline digest changes. Once an
+exact selection has started in the durable journal, the same process can finish bounded retries; a restart
+needs a fresh trigger. Local operator identity is not Core RBAC or a signed-contract substitute.
+
+The adapter only obtains/releases downloader rights, lists files and downloads bounded original JPEGs after
+exact identity recheck. It contains no capture/delete/format/gimbal/motor/waypoint/flight call. SD/PC/Web
+remains normal and `c703012` aligns `ingest_watch.py` with the uploader's suffix set.
+
+Local evidence: control CTest `3/3`; default PSDK build + adapter contract; expected ON/no-Manifold
+configure failure; configured-path syntax; full Python `4232 passed / 24 skipped`; Ruff; Mypy `443`;
+lock/runtime/hygiene/reference/PSDK pin gates; Dashboard `62/572`, TypeScript, ESLint and production build.
+The host lacked SQLite development headers, so `KSI_REQUIRE_SQLITE=ON` correctly failed before WAL tests.
+
+Do not install/restart a DPK or contact the M4D merely because this code is merged. The next physical step
+requires a fresh propeller-off, device-bound approval and private HIL session following
+`docs/hil/MVP_INTEGRATION_M1_ACCEPTANCE.md` §3.1 and `HARDWARE_SESSION_PLAYBOOK.md` §8.3. It must record
+exact build/DPK digest, measured mount/limit, baseline/list/download/SHA-256, Core lineage, rights/album
+recovery, two-Mission negative, network/restart/throughput outcome. Until then the risk remains open,
+capability remains `NOT_VERIFIED`, FIELD-0a remains `BLOCKED`, and there is no zero-manual-upload claim.
 
 ---
 

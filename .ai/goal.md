@@ -1,31 +1,33 @@
-# Current goal (2026-08-31, automatic media mission-attribution software boundary)
+# Current goal (2026-08-31, automatic source-media offload v1 software assembly)
 
-Complete the repository-owned mission-attribution boundary for future automatic media ingest without
-pretending that host software is a working DJI adapter. `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`
-and `INV-018/040/041/051/060` apply.
+Complete the safe repository implementation for future automatic source-media egress without turning a
+locally green build into a DJI capability claim. `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101` and
+`INV-018/040/041/051/060` apply.
 
-Completion conditions:
+Completion conditions for this software increment:
 
-- a verified mission-completion or operator one-shot context binds Mission, dispatch, Mission Contract,
-  trigger evidence and a pre-activation SD baseline;
-- only post-baseline exact `fileIndex + fileName + fileSize` identities enter the SourceMedia journal;
-- list/download drift, baseline mutation, duplicate identity, no-new-media and cross-mission reuse fail
-  closed with typed verdicts;
-- context and selected-file digests survive restart in the SQLite/WAL journal, while legacy rows replay
-  without invented values and cannot be resumed by the new worker;
-- packaged `ksi_psdk_app` remains OFF until a real adapter/device provider and no-flight M4D HIL pass.
+- `DjiCameraManager` is represented by a bounded JPEG-only adapter that never exposes capture, delete,
+  format, gimbal, motor, waypoint or flight actions;
+- an owner-only pre-activation baseline and one-shot operator trigger bind one exact Mission, dispatch,
+  Mission Contract digest and baseline digest before the existing SourceMedia conveyor can read bytes;
+- malformed/expired/unsafe records, binding/order/digest mismatch and identity drift fail closed;
+- ordinary DPKs remain media-OFF; an ON build requires Manifold target, native activation, Core sync,
+  distinct private control state, verified mount and measured per-file byte limit;
+- manual SD/PC/Web intake stays coherent with the same uploader-supported file types.
 
-Repository-owned implementation is green at `ae7448b`. Pinned Ubuntu 20.04/gcc 9.4 with real SQLite
-passes native CTest `8/8`, including legacy migration and cross-mission/identity-drift cases; ASan/UBSan
-also passes `8/8`. Full Python is `4228 passed / 24 skipped`; Ruff, Mypy `443` files, lock, diff,
-hygiene, reference, PSDK and runtime-image pin gates pass. Default `ksi_psdk_app` configure/build passes;
-requesting media offload still fails at the explicit device-provider/HIL blocker.
+Implemented commits: `c65596c` (DJI Camera Manager adapter), `38d60d0` (private control protocol and
+production-only assembly), `c703012` (manual watcher suffix alignment). Local evidence: media-control
+CTest `3/3`; default PSDK build and adapter contract; media-ON-without-Manifold configure rejection;
+configured-path C++ syntax gate; full Python `4232 passed / 24 skipped`; Ruff; Mypy `443` files; lock,
+runtime-image, hygiene, reference and PSDK pin gates; Dashboard `62` files / `572` tests, TypeScript,
+ESLint and production build. This host lacks SQLite development headers, so the stricter
+`KSI_REQUIRE_SQLITE=ON` native WAL build correctly stopped at its environment prerequisite.
 
-Risk `psdk-media-offload-mission-attribution-unbound` is resolved by the host evidence. Its replacement
-`psdk-media-offload-adapter-hil-not-verified` remains open: no real `DjiCameraManager` adapter, DJI
-completion/baseline provider, DPK/device write or M4D HIL was performed. SD/PC/Web remains the normal
-product path, automatic media capability remains `NOT_VERIFIED`/OFF, and no raw media, credential,
-camera/gimbal, motor, waypoint or flight action occurred. Commit/push/deployment remain separate.
+The product goal `aol-1-capture-auto-ingest` remains `in_progress`. No M4D HIL, DPK install/restart,
+measured mount/byte limit, actual aircraft-to-server ingest, Pilot 2 album recovery, or device
+cross-mission evidence exists. Capability is `NOT_VERIFIED`; ordinary DPKs remain OFF and SD/PC/Web is
+the normal route. No raw media, credential, device write, camera/gimbal, motor, waypoint or flight action
+occurred in this increment. Commit/push/deployment remain separate.
 
 ---
 

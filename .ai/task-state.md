@@ -1,29 +1,32 @@
 # Current Task State
 
-## 2026-08-31 — `media_mission_attribution_software_green_adapter_hil_gated`
+## 2026-08-31 — `automatic_source_media_offload_v1_software_green_hil_gated`
 
 - Authority: `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`;
   `INV-018/040/041/051/060`.
-- Implemented: `MissionMediaSelectionContext` binds Mission, dispatch, Mission Contract digest,
-  completion/operator-one-shot evidence, pre-activation baseline and UTC ordering. Only baseline-delta
-  exact `fileIndex + fileName + fileSize` identities are selected.
-- Durable truth: context and selected-file digests plus source index live in the shared SQLite/WAL
-  journal. Restart cannot replace the selected set. Pre-change rows migrate as empty digest/-1 and the
-  new worker refuses to infer or resume them.
-- Download truth: the camera list is re-read immediately before each download. Missing/reused/mutated
-  identity returns `SOURCE_IDENTITY_DRIFT` before bytes or Core registration. Duplicate identity,
-  baseline drift and no-new-media are typed full-selection blockers.
-- Commit/evidence: `ae7448b`; real-SQLite Ubuntu 20.04/gcc 9.4 CTest `8/8`; ASan/UBSan `8/8`;
-  full Python `4228 passed / 24 skipped`; Ruff; Mypy `443` files; lock, diff, hygiene, reference,
-  PSDK and runtime-image pins; default PSDK app build passes and enabled media configure fails as designed.
-- Canonical risks: `psdk-media-offload-mission-attribution-unbound` is resolved. New residual
-  `psdk-media-offload-adapter-hil-not-verified` is open/medium because packaged code still has no real
-  adapter or verified device trigger/baseline provider.
-- Product goal `aol-1-capture-auto-ingest` has this software evidence recorded but remains
-  `in_progress`; its actual-aircraft and zero-manual-upload criteria were not met.
-- Delivery/physical truth: the feature commit is local and unpublished. SD/PC/Web remains normal;
-  automatic capability is `NOT_VERIFIED`/OFF. No raw media, credential, device/DPK write, camera/gimbal,
-  flight/motor/waypoint, release or deployment action occurred.
+- Implemented: existing exact `MissionMediaSelectionContext` attribution (`ae7448b`) is now fed only by
+  owner-only `prepare -> pre-activation baseline -> verified native activation -> one-shot trigger`
+  records (`38d60d0`). Digests, Mission/dispatch/contract/device binding, UTC order, 15-minute TTL,
+  private mode/no-symlink checks and typed rejection prevent stale/local-control replay.
+- Adapter/assembly: `c65596c` adds a single-callback `DjiCameraManager` port for rights/list/bounded
+  original-JPEG download only. `38d60d0` adds it to `ksi_psdk_app` only under an explicit media tier
+  requiring Manifold, native activation, Core sync, distinct control state, verified mount and measured
+  byte limit. No capture/delete/format/gimbal/motor/waypoint/flight call is introduced; default DPK stays OFF.
+- Manual truth: `c703012` makes `ingest_watch.py` use the uploader's exact supported suffix set, so a
+  watched `.dng` no longer becomes a late Core rejection while JPG/JPEG/PNG/WebP stay case-insensitive.
+- Evidence: control CTest `3/3`; default PSDK build + adapter contract; expected media-ON/no-Manifold
+  configure rejection; configured-path syntax; focused `89` Python and full Python `4232 passed / 24
+  skipped`; Ruff; Mypy `443`; lock/runtime-image/hygiene/reference/PSDK pins; Dashboard 62 files/572
+  tests, TypeScript, ESLint and production build. This host lacks SQLite dev headers, so
+  `KSI_REQUIRE_SQLITE=ON` correctly refused configuration instead of producing a false WAL claim.
+- Canonical risk: `psdk-media-offload-adapter-hil-not-verified` remains open/medium. It now describes
+  the actual residual: M4D HIL, exact DPK/provisioning, measured mount/limit, real list/download/upload,
+  rights/album recovery, cross-mission negative, throughput and restart recovery.
+- Product goal `aol-1-capture-auto-ingest` remains `in_progress`; no actual aircraft-to-server ingest or
+  zero-manual-upload acceptance exists.
+- Delivery/physical truth: these commits are local until the final fetch/fast-forward/push check.
+  `NOT_VERIFIED` remains; no raw media, credential, DPK/device write, camera/gimbal, flight/motor/waypoint,
+  release or deployment action occurred.
 
 ---
 

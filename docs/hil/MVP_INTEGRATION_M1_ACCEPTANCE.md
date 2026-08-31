@@ -218,6 +218,54 @@ PSDK 필수 assertion:
 | upload/lineage | object upload, source digest, WorkOrder→Mission→Media lineage, egress policy 확인 |
 | rights release | downloader rights 획득·해제, Pilot 2 album 접근 복구 |
 
+### 3.1 M4D source-media automatic offload v1 — 별도 무비행 보충 HIL
+
+이 절은 `edge/psdk-app`의 optional `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON` assembly를 위한
+보충 절차다. code compile, local companion 실행, 또는 PSDK header/API 존재는 capability PASS가
+아니다. ordinary DPK는 계속 OFF이고, 이 세션이 완주하기 전 `NOT_VERIFIED`/SD·PC·Web 정상 경로가
+유지된다.
+
+사전 조건은 다음과 같다.
+
+- device-bound approval envelope에 exact commit/build/DPK SHA-256, DPK install/restart, media
+  list/read/download scope, private evidence URI와 만료시각을 명시한다. 이 문서는 그러한 권한을
+  새로 부여하지 않는다.
+- 프로펠러를 제거하고 안정된 지상에 둔다. KSI는 flight, motor, route start, capture,
+  delete, format 또는 gimbal command를 호출하지 않는다.
+- DPK가 Manifold 3 target, native activation, Core sync, 서로 다른 0700 activation/sync/control
+  directories, verified mount, measured JPEG per-file limit으로 build됐는지 먼저 기록한다. token,
+  key, CA/SPKI pin, raw JPEG, serial/GPS는 evidence ref에 넣지 않는다.
+- upload까지 시험하려면 baseline 뒤에 생긴 JPEG 한 장이 필요하다. 그 JPEG를 Pilot 2에서 사람이
+  수동으로 만들 권한이 별도로 없다면, baseline/list/rights 단계까지만 하고 `BLOCKED`로 finalize한다.
+  KSI source-media code가 shutter를 누르는 것으로 대체하지 않는다.
+
+승인된 무비행 세션에서만 다음 순서를 따른다.
+
+1. 아직 native activation receipt가 없을 때, private control directory에 `ksi_edge_media_prepare`로
+   exact `edge-device-id`, Mission, dispatch, Mission Contract digest와 최대 15분 TTL request를
+   만든다. 이 companion은 PSDK를 link하지 않고 local control record만 쓴다.
+2. DPK가 temporary downloader rights → `DownloadFileList` → rights release를 수행해 pre-activation
+   baseline을 기록했는지 raw private evidence로 확인한다. baseline capture가 activation 뒤이거나
+   rights release가 실패하면 멈춘다.
+3. 별도 signed native activation 절차를 완료한다. 이후에만 `ksi_edge_media_trigger`가 active receipt와
+   baseline digest에 결속된 one-shot trigger를 쓸 수 있다. trigger가 만료·digest 불일치·다른
+   mission/dispatch/contract/device이면 worker가 아무 bytes도 읽지 않아야 한다.
+4. 별도 승인된 사람이 만든 ground JPEG가 baseline 이후 정확히 하나 이상 존재할 때만 trigger를
+   만든다. DPK의 exact delta selection, list/download identity recheck, JPEG byte limit, source
+   digest와 Core SourceMedia lineage를 확인한다. non-JPEG, stale index/name/size, zero-delta 또는
+   trigger 이전/다른 mission 파일은 typed blocker여야 한다.
+5. five PSDK checks를 각각 별도 raw evidence로 `attest-check`한다: list read, original JPEG
+   download+SHA-256, object upload+lineage, rights release+Pilot 2 album recovery, Manifold/aircraft
+   link. raw evidence는 session 0600 stage 안에만 두고 Git에는 digest/판정만 남긴다.
+6. second Mission에는 fresh pre-activation request/baseline/activation/trigger를 다시 요구한다.
+   첫 Mission의 trigger 또는 baseline으로 두 번째 Mission의 JPEG를 선택할 수 없음을 실제
+   cross-mission negative로 기록한다. throughput·network error·restart recovery도 실제 조건으로
+   기록하며, 한 장 성공으로 대량 완전성을 추정하지 않는다.
+
+어느 단계든 실패하면 exact typed blocker와 private evidence digest를 기록하고 `BLOCKED`로 finalize한다.
+`select-provider`는 위 다섯 checks와 cross-mission negative, deployment inputs가 모두 실제 evidence로
+완료될 때만 고려할 수 있다. 이 절은 FIELD-0a import/export 또는 flight capability를 바꾸지 않는다.
+
 ## 4. Track C — DJI Cloud / Pilot-to-Cloud (`BLOCKED`)
 
 현재 조합은 `UNSUPPORTED_COMBINATION_IN_OFFICIAL_MATRIX`로 차단한다. 아래 다섯 항목은 공식

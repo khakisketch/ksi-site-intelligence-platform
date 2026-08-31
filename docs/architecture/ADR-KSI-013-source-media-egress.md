@@ -58,7 +58,7 @@
 아직 등록돼 있지 않다 — 이 ADR은 그 필요성만 확정하고, 실제 세션 항목화(어느
 SPIKE-DJI 번호에 속할지, PRD §20.3 목록과의 정합)는 별도 편집으로 남긴다.
 
-### D3 — 실제 camera adapter와 임무 귀속 경계가 모두 생기기 전 production 자동 반출 금지
+### D3 — 자동 반출은 기본 OFF이며, 정확한 production provision과 HIL 전에는 capability가 아니다
 
 2026-08-31 production wiring 감사에서 `MediaOffloadWorker`가 활성 dispatch의
 `missionId`만 받고, 실제 임무 완료 신호·검증된 capture window·임무 시작 전 SD 카드
@@ -67,10 +67,20 @@ file-index baseline을 받지 않는다는 점을 확인했다. 호스트 시험
 현장 JPEG까지 현재 임무의 `SourceMediaBundle`로 기록·봉인할 수 있다. 이는 자동화 누락이
 아니라 잘못된 계보를 만드는 더 큰 결함이다.
 
-따라서 packaged `ksi_psdk_app`은 `FakeMediaSourcePort`와 자동 media worker를 조립하지 않는다.
-과거 build option `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON`은 조용히 무시하지 않고 configure
-단계에서 fail-closed 한다. `edge/manifold-runtime`의 PSDK-independent conveyor, durable rights
-marker와 가짜 포트 테스트는 보존한다.
+따라서 자동 반출은 ordinary DPK의 기능이 아니다. `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD`의 기본값은
+계속 `OFF`이고, ON은 capability 승격이 아니라 아래 조건이 정확히 들어온 별도 production build의
+**배포 요청**일 뿐이다. 하나라도 없으면 configure 단계에서 fail-closed 한다.
+
+1. `KSI_TARGET_MANIFOLD3=ON`, native activation과 Core sync가 모두 ON
+2. activation/sync state와 다른 전용 owner-only control directory
+3. HIL에서 확인한 camera mount와 원본 JPEG의 measured per-file byte 상한(512 MiB spool 상한 이하)
+4. exact device/DPK digest, private bearer/CA/SPKI/attestation provisioning
+
+이 tier에는 실제 `DjiCameraManager_*` adapter를 조립한다. adapter는 downloader rights,
+`DownloadFileList`, `DownloadFileByIndex`와 download callback만 사용하며, JPEG original·정확한
+`fileIndex + fileName + fileSize`·명시 상한만 허용한다. capture, delete, format, gimbal, motor,
+waypoint 또는 flight API는 이 경로에 없다. `FakeMediaSourcePort`는 host contract test에만 남고
+packaged app에 연결하지 않는다.
 
 production option을 열려면 다음을 모두 충족해야 한다.
 
@@ -98,10 +108,41 @@ Mission/dispatch/Mission Contract digest, 완료 또는 운영자 one-shot 증�
 다시 조회해 다르면 바이트를 읽기 전에 `SOURCE_IDENTITY_DRIFT`로 중단한다. legacy journal은
 빈 digest와 `source_file_index=-1`로 migration되며 값을 추정하지 않아 새 worker가 이어받지 않는다.
 
-D4는 **host software boundary만 PASS**다. packaged `ksi_psdk_app`에는 실제
-`DjiCameraManager_*` adapter, DJI 완료/one-shot trigger provider, 임무 전 baseline snapshot
-provider를 아직 조립하지 않는다. 따라서 D3 production gate, SD/PC/Web 정상 경로,
-DJI capability `NOT_VERIFIED`는 그대로다.
+D4는 exact selection과 journal replay의 **host software boundary만 PASS**다. 실제 camera file list가
+이 boundary를 거치더라도, 실기 receipt는 아래 D5의 HIL에서만 얻을 수 있다. 따라서 SD/PC/Web
+정상 경로와 DJI capability `NOT_VERIFIED`는 그대로다.
+
+### D5 — local operator prepare/baseline/trigger protocol을 real adapter에만 연결한다
+
+2026-08-31에 D3/D4의 software assembly를 `edge/manifold-runtime`와 packaged
+`ksi_psdk_app`에 추가했다. 이 경로는 다음 네 record/binding을 요구한다.
+
+```text
+local operator prepare request
+  -> DPK pre-activation list + rights release baseline
+  -> verified native activation
+  -> local operator one-shot trigger (baseline digest bound)
+  -> exact delta selection -> bounded JPEG download -> existing Core SourceMedia conveyor
+```
+
+`ksi_edge_media_prepare`는 pre-activation request만 만들고 PSDK를 link하지 않는다.
+`ksi_edge_media_trigger`는 verified native activation과 already-written baseline digest를 읽어 one-shot
+control record만 만든다. 둘 다 camera, gimbal, motor, waypoint 또는 flight command를 낼 수 없다.
+control record는 dedicated 0700 directory의 owner-only 0600 regular file이어야 하고 symlink, open
+permission, malformed/digest mismatch, expiry(최대 15분), activation과의 binding/time-order mismatch는
+typed blocker다. 새 pre-activation request가 이전 baseline을 replace할 수 있는 것은 stale control
+metadata를 재사용하지 않기 위해서이며, 이전 trigger는 새 baseline digest에 결속되지 않으므로 새
+selection을 승인할 수 없다.
+
+trigger는 run 시작에만 필요하다. exact selection이 SQLite journal에 durable하게 시작된 뒤에는 같은
+process가 bounded retry를 끝낼 수 있지만, restart는 fresh trigger를 다시 요구한다. local operator ID는
+owner-only device control boundary이며, Core RBAC·signed Mission Contract·remote authorization을 대체하지
+않는다.
+
+이 구현은 M4D HIL, DPK install/restart, measured mount/maximum byte, actual output/upload, downloader
+rights release, Pilot 2 album recovery, cross-mission negative 또는 throughput/recovery를 증명하지
+않는다. HIL 전에는 D3 option을 ordinary DPK에 넣지 않고 capability는 `NOT_VERIFIED`, SD/PC/Web은
+정상 제품 경로로 유지한다.
 
 ## 결과 — 알려진 대가
 
@@ -112,5 +153,6 @@ DJI capability `NOT_VERIFIED`는 그대로다.
   "원본이 누락 없이 도착했다"고 완료 판정을 내리면 INV-051(원본/파생 계보)이
   전제하는 "원본"의 무결성이 흔들린다 — 반출 경로 검증과 재구성 완료 판정은
   분리해서 다뤄야 한다.
-- D4로 임무 귀속 host software 경계는 생겼지만 zero-touch 자동 ingest는 device-complete가
-  아니다. 실제 adapter/HIL 없이 한 장 다운로드 성공이나 대량 임무 완전성·처리량을 추정하지 않는다.
+- D5로 real adapter와 local control assembly는 생겼지만 zero-touch 자동 ingest는 device-complete가
+  아니다. 실제 HIL 없이 한 장 다운로드 성공, uploader acceptance, 대량 임무 완전성·처리량 또는
+  Pilot album recovery를 추정하지 않는다.

@@ -111,6 +111,22 @@
       "at_sha": "d5231f2",
       "at_module_sha": "4d23549",
       "at": "2026-08-07T13:10:54+09:00"
+    },
+    "edge/psdk-app/source-media-offload": {
+      "status": "risk",
+      "note": "Software assembly green; M4D HIL and explicit device provisioning remain NOT_VERIFIED.",
+      "audit_ref": "38d60d0",
+      "at_sha": "c703012",
+      "at_module_sha": null,
+      "at": "2026-08-31T22:29:49+09:00"
+    },
+    "tools/ingest-watch": {
+      "status": "green",
+      "note": "Watcher uses the exact uploader-supported media suffix set.",
+      "audit_ref": "c703012",
+      "at_sha": "c703012",
+      "at_module_sha": null,
+      "at": "2026-08-31T22:29:49+09:00"
     }
   }
 }

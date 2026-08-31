@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-31T18:17:38+09:00",
+  "updated_at": "2026-08-31T22:29:48+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2101,16 +2101,16 @@
       ],
       "status": "in_progress",
       "attempt": 1,
-      "evidence": "Combined partial evidence: existing tools/ingest_watch.py and upload_source_bundle.py already provide stable-directory mission trigger, register/upload/seal and ProcessingJob issuance on the SD/PC path. Commit ae7448b adds the future aircraft path's fail-closed attribution boundary: verified completion/one-shot context plus pre-activation baseline selects only exact post-baseline fileIndex+fileName+fileSize; durable context/selection digests prevent restart widening; list/download drift and host cross-mission mixing fail closed; real-SQLite and sanitizer CTest 8/8, full Python 4228/24 skipped. Goal remains in_progress because no real DjiCameraManager adapter/device provider, M4D HIL or actual zero-manual aircraft-to-server ingest occurred.",
+      "evidence": "c65596c adds bounded JPEG-only DJI Camera Manager adapter; 38d60d0 adds private prepare/baseline/one-shot-trigger production assembly; c703012 aligns manual watcher input types. Full Python 4232 passed/24 skipped; host media-control CTest 3/3; default PSDK build and adapter contract pass; configured C++ syntax gate pass. Goal remains in_progress: no M4D HIL, DPK install/restart, measured mount/byte limit, actual zero-manual aircraft-to-server ingest, album recovery or cross-mission device evidence.",
       "verdict": null,
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 3,
+      "ungated_attempts": 4,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-31T18:17:38+09:00"
+      "updated_at": "2026-08-31T22:29:48+09:00"
     },
     {
       "id": "aol-1-mission-to-aircraft-delivery",
@@ -3822,17 +3822,17 @@
     },
     {
       "id": "psdk-media-offload-adapter-hil-not-verified",
-      "title": "자동 미디어 임무 귀속 소프트웨어 경계는 있으나 실제 M4D Camera Manager adapter와 device trigger/baseline 경로가 HIL 검증되지 않음",
+      "title": "자동 미디어 adapter·operator control assembly는 있으나 실제 M4D HIL이 검증되지 않음",
       "lens": "db",
       "severity": "medium",
       "status": "open",
-      "note": "ae7448b에서 PSDK-independent selector와 durable journal은 baseline 이후 exact fileIndex+fileName+fileSize만 선택하고 identity drift/cross-mission을 fail-closed로 차단한다. packaged ksi_psdk_app에는 실제 DjiCameraManager adapter, 검증된 DJI mission-completion 또는 operator one-shot provider, pre-activation baseline snapshot provider가 아직 없다. 해소 조건: 무비행 M4D HIL에서 exact build/DPK digest를 결속하고 지상 JPEG list/download/SHA-256, downloader rights obtain/release, Pilot 2 album 복구, 두 연속 임무의 실제 cross-mission negative, 처리량/오류 복구를 확인한다. 그 전까지 KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD는 OFF/fail-closed, capability NOT_VERIFIED이며 SD/PC/Web이 정상 경로다.",
+      "note": "ae7448b의 deterministic selector/journal 위에 c65596c의 bounded JPEG-only DjiCameraManager adapter와 38d60d0의 private prepare -> pre-activation baseline -> verified activation -> one-shot trigger assembly가 추가됐다. ordinary DPK는 여전히 OFF이며 media ON은 explicit Manifold/native activation/Core sync/private control directory/verified mount/measured byte bound가 모두 필요하다. host control CTest 3/3, default PSDK build, adapter contract, configured-path syntax and full Python 4232 passed/24 skipped are software evidence일 뿐이다. 해소 조건: 무비행 M4D HIL에서 exact build/DPK digest를 결속하고 measured mount/byte limit, JPEG list/download/SHA-256, Core source-media lineage, downloader rights obtain/release, Pilot 2 album 복구, two-Mission cross-mission negative, throughput/network/restart recovery를 확인한다. 그 전까지 capability는 NOT_VERIFIED이며 SD/PC/Web이 정상 경로다.",
       "accept_reason": null,
       "resolve_evidence": null,
       "reopen_reason": null,
       "previous_status": null,
       "created_at": "2026-08-31T18:14:41+09:00",
-      "updated_at": "2026-08-31T18:14:41+09:00"
+      "updated_at": "2026-08-31T22:29:57+09:00"
     }
   ]
 }

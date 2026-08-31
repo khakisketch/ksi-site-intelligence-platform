@@ -17,7 +17,10 @@
   2026-08-30 제품 소유 runtime image digest pin과 Core-owned versioned processing
   resource admission snapshot 결정(ADR-KSI-032) · 2026-08-31 native `ksi_psdk_app`을
   유일한 production Edge runtime으로 두고 Python perception을 offline replay/model
-  evaluation으로 격리한 결정(ADR-KSI-009 D8)
+  evaluation으로 격리한 결정(ADR-KSI-009 D8) · 2026-08-31 source-media automatic
+  offload를 ordinary DPK의 기본 경로로 삼지 않고, explicit Manifold/activation/Core-sync/
+  private-control/mount/byte-bound build와 one-shot operator approval로만 조립하며 HIL 전
+  capability는 `NOT_VERIFIED`로 유지하는 결정(ADR-KSI-013 D3/D5)
 
 ## 명칭·시장
 
@@ -62,6 +65,13 @@
   사람의 KSI 업무는 Operations Console이 담당한다.
   RC 인터넷은 새 임무 발급 전 필수이고 Manifold SIM은 선택 Add-on이다. USB·SD·
   수동 KMZ는 복구 전용이다(ADR-KSI-023).
+- 원본 반출: `SD/저장매체 → 현장 PC → KSI 웹 업로드`가 현재 정상 제품 경로다.
+  `ksi_psdk_app`의 source-media automatic offload는 기본 OFF이며, explicit Manifold/native
+  activation/Core sync/private control directory/verified camera mount/measured byte bound가
+  모두 있는 별도 DPK에서만 operator prepare → baseline → activation → one-shot trigger의
+  exact delta를 시도한다. 이는 HIL 전 `NOT_VERIFIED` capability이고 signed Mission Contract,
+  Core RBAC, SD/PC/Web fallback 또는 어떤 flight/camera/gimbal command도 대체하지 않는다
+  (ADR-KSI-013 D3/D5).
 - 비행 산출물: Core는 Mission Intent와 검증된 최종 Flight Artifact의
   source·revision·digest·Mission Contract 결속을 소유한다. Core KMZ compiler는 현재
   candidate/fallback이며, Pilot 2 import/export FIELD 증거 전에는 제거하거나 자동 기본

@@ -1,62 +1,67 @@
-# Current implementation plan (2026-08-31, automatic media mission attribution)
+# Current implementation plan (2026-08-31, automatic source-media offload v1)
 
 Requirement IDs:
 - `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`.
 - `INV-018/040/041/051/060`.
 
 Owner module:
-- `edge/manifold-runtime` owns exact source identity, selector and durable journal replay.
-- `edge/psdk-app` owns packaged production assembly and capability gates.
-- Goal ledger/Phase Registry own the software-versus-device status split.
+- `edge/manifold-runtime` owns local control records, exact selection and durable journal replay.
+- `edge/psdk-app` owns the Camera Manager adapter and opt-in production assembly.
+- Core retains SourceMedia/processing contracts; goal ledger/Phase Registry retain software-versus-device truth.
 
 Acceptance criteria:
-- Mission/dispatch/contract/trigger and pre-activation baseline produce an order-independent digest.
-- Only exact post-baseline identities are journaled; identity drift and cross-mission reuse are blocked.
-- Restart cannot widen a selection, and legacy journals migrate without inferred identity/digests.
-- Production option stays OFF until a real adapter/device provider and M4D HIL exist.
+- An ordinary DPK is media-OFF and an enabled build rejects incomplete Manifold/activation/Core/private-state/
+  mount/byte-bound provisioning.
+- Only a verified native activation plus a pre-activation baseline and fresh local one-shot trigger can
+  form `MissionMediaSelectionContext`; stale or unsafe records produce typed blockers.
+- The adapter permits only bounded original JPEG list/download with exact identity recheck and rights
+  release; no executable camera/gimbal/flight surface enters the path.
+- SD/PC/Web remains a tested normal route with the uploader and watcher sharing one supported suffix set.
 
 Contracts affected:
-- `SourceMediaFileHandle`, `MissionMediaSelectionContext`, `MediaOffloadWorker` and SourceMedia SQLite
-  journal schema. Core HTTP wire remains unchanged.
+- `MediaBaselineRequest`, `MediaBaselineRecord`, `OperatorMediaOffloadTrigger` and
+  `BuildOperatorMediaSelectionContext`; Core HTTP wire is unchanged.
 
 Reference assets:
-- Pinned DJI PSDK 3.16 `T_DjiCameraManagerFileListInfo` and official downloader sample.
-- ADR-KSI-013. Reference repositories remain read-only.
+- Pinned DJI PSDK 3.16 Camera Manager headers/API and the existing `MediaOffloadWorker` contract.
+- ADR-KSI-013 D3/D4/D5. Reference repositories remain read-only.
 
 Adoption decisions:
-- ADOPT `fileIndex + fileName + fileSize` exact identity and immutable baseline delta.
-- RETAIN rights marker, bounded spool, checksum and Core upload conveyor.
-- DEFER real DJI adapter/device providers and capability promotion to no-flight HIL.
+- ADOPT exact `fileIndex + fileName + fileSize`, durable baseline delta, rights marker and bounded spool.
+- ADOPT local owner-only prepare/baseline/one-shot trigger as v1 control evidence, not as Core RBAC or
+  Mission Contract replacement.
+- RETAIN SD/PC/Web manual ingress; DEFER HIL capability promotion, DPK operation and zero-touch product claim.
 
 Files changed:
-- `edge/manifold-runtime` media/journal contracts, implementation and native/migration tests;
-  PSDK production gate/README; ADR-KSI-013; phase/risk/AI ledgers.
+- `edge/manifold-runtime` control records/tools/tests; `edge/psdk-app` optional assembly; watcher/uploader
+  suffix contract; ADR, decision, HIL, phase and canonical-goal handoff records.
 
 Tests:
-- Pure selector, trigger/baseline hostile cases, restart digest conflict, cross-mission negative,
-  list/download drift, legacy schema replay, SQLite native/sanitizer, full Python and repository gates.
+- control record roundtrip/hostile permissions/symlink/TTL/binding/digest cases; adapter contract; default
+  PSDK build; enabled-config rejection and configured C++ syntax; manual watcher contract; full Python,
+  static/repository checks and Dashboard suite.
 
 HIL or real-device assumptions:
-- None executed. M4D downloader rights, album recovery, trigger/baseline provider and throughput remain
-  `NOT_VERIFIED`.
+- None executed. Exact M4D build/DPK, measured mount/limit, list/download/upload, album recovery,
+  cross-mission negative, throughput and restart recovery remain `NOT_VERIFIED`.
 
 License/data implications:
-- No new runtime dependency or raw data. No DJI credential, JPEG, serial, GPS or customer data enters Git.
+- No new dependency or raw data. No DJI credential, JPEG, serial, GPS or customer data enters Git.
 
 Rollback:
-- Revert `ae7448b` and this ledger commit only; keep production media option OFF and SD/PC/Web intake.
-  Never loosen exact-selection safety to restore availability.
+- Revert `38d60d0` to restore strict ordinary-DPK OFF behavior, or revert `c65596c`/`38d60d0` together to
+  remove the adapter. Keep SourceMedia contracts, historical evidence and SD/PC/Web intake; never loosen
+  selection safety as a rollback shortcut.
 
 Execution:
-1. [완료] Audit authority, current risks and pinned DJI Camera Manager identity fields.
-2. [완료] Implement deterministic trigger/baseline selector and typed fail-closed verdicts.
-3. [완료] Bind context/selection digests and exact index into SQLite/WAL with legacy migration.
-4. [완료] Recheck identity immediately before download and add restart/cross-mission/drift tests.
-5. [완료] Commit `ae7448b`; native SQLite and sanitizer CTest each `8/8`.
-6. [완료] Full Python `4228/24 skipped`, Ruff, Mypy `443`, lock/diff/hygiene/reference/pin gates,
-   default PSDK app build and intentional ON blocker.
-7. [완료] Resolve the stale unbound-software risk and open the exact adapter/HIL residual.
-8. [외부] Optional owner push; separately schedule no-flight M4D HIL before adapter activation.
+1. [완료] Audit authority, current risks and pinned Camera Manager identity fields.
+2. [완료] Implement bounded real adapter, private prepare/baseline/trigger protocol and typed blockers.
+3. [완료] Wire opt-in production assembly with explicit deployment prerequisites; keep default OFF.
+4. [완료] Align watcher/uploader file-type policy and update ADR/decision/HIL/phase records.
+5. [완료] Run CTest/default PSDK/adapter/configured syntax, full Python `4232/24 skipped`, Ruff, Mypy,
+   lock/hygiene/pin gates, Dashboard tests/lint/type/build.
+6. [다음 외부 단계] Fetch/push only after clean worktree and fast-forward check; separately obtain a
+   fresh propeller-off M4D HIL approval before any DPK or device action.
 
 ---
 

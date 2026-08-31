@@ -761,6 +761,57 @@ PUT→ACK 및 offline/restart recovery가 같은 sequence로 확인된 경우다
 `VERIFIED`로 올리지 않는다. 이 단계는 `REQ-EVT-101`의 1/2/5초 전체 SLO, 비행 안전 또는 실제
 위험 인식 정확도를 증명하지 않는다.
 
+### 8.3단계 — source-media automatic offload v1 (무비행, 별도 승인)
+
+이 단계는 `psdk-media-offload-adapter-hil-not-verified`의 실기 evidence만 다룬다. automatic
+media option이 CMake에서 ON으로 configure되는 것, Camera Manager header/API가 link되는 것, 또는
+host adapter test가 통과하는 것은 PASS가 아니다. exact criteria와 manifest evidence stage는
+`docs/hil/MVP_INTEGRATION_M1_ACCEPTANCE.md` §3.1을 정본으로 따른다.
+
+**절대 조건**:
+
+- ordinary DPK는 `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=OFF`다. 별도 device-bound approval에 exact
+  DPK digest, activation/Core sync, private 0700 control path, verified mount, measured JPEG byte
+  limit과 read/download scope가 명시될 때만 ON build를 설치·재시작한다.
+- 프로펠러 제거, `flight_or_motor_action=false`; KSI는 shutter/capture, delete, format, gimbal,
+  waypoint 또는 flight command를 호출하지 않는다.
+- raw JPEG, Camera list, serial, GPS, token, key와 topology는 `hil_raw_logs/<session>/` 0600 private
+  evidence에만 둔다. Git에는 digest/typed verdict/private URI만 기록한다.
+
+**관찰 순서**:
+
+1. activation 전 operator가 local control record만 쓰는 companion을 실행한다. 이는 PSDK를 link하지
+   않으며 camera action을 할 수 없다.
+
+   ```bash
+   ksi_edge_media_prepare \
+     --state-dir <private_0700_control_dir> --operator <operator_id> \
+     --edge-device-id <device_id> --mission-id <mission_id> --dispatch-id <dispatch_id> \
+     --mission-contract-digest sha256:<contract_hex> --ttl-ms <at_most_900000>
+   ```
+
+2. DPK가 rights obtain → list → release의 baseline을 activation 전에 기록한 것을 확인한다.
+   baseline/rights 실패면 trigger를 만들지 않는다.
+3. signed native activation 후, exact receipt+baseline에 결속된 one-shot trigger만 만든다.
+
+   ```bash
+   ksi_edge_media_trigger \
+     --activation-state-dir <private_0700_activation_dir> \
+     --control-state-dir <private_0700_control_dir> --operator <operator_id> \
+     --edge-device-id <device_id> --runtime-version <exact_runtime_version> \
+     --ttl-ms <at_most_900000>
+   ```
+
+4. 별도로 승인된 사람이 만든 baseline-after ground JPEG가 있을 때만 exact delta list/download,
+   SHA-256, Core lineage, downloader rights release 및 Pilot 2 album recovery를 실제 확인한다.
+   카메라 수동 조작 권한이 없으면 이 단계는 `BLOCKED`; KSI code가 대신 촬영하지 않는다.
+5. 두 번째 Mission에는 fresh request/baseline/activation/trigger를 반복해 첫 Mission의 record로
+   두 번째 JPEG가 선택되지 않는 cross-mission negative를 남긴다. network/DPK restart와 throughput은
+   실제 결과를 별도로 기록한다.
+
+모든 실패는 typed blocker와 private evidence digest를 남기고 종료한다. 이 단계는 FIELD-0a,
+waypoint execution, flight capability나 production release를 바꾸지 않는다.
+
 ### 9단계 — Pilot 2 웹뷰 JSBridge 접속점 확인 (`09_pilot_cloud_jsbridge/`, 신설 2026-08-15)
 
 **왜:** ADR-KSI-019 G3의 최소 접속 관문이다. 2026-08-27 현재 DJI 라이브 공식

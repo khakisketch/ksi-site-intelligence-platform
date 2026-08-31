@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-30"
+updated: "2026-08-31"
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -166,15 +166,25 @@ confirmed_next_improvements:
         exact fileIndex+fileName+fileSize만 결정적으로 선택하는 PSDK-independent 자동 미디어
         귀속 경계, durable SQLite/WAL replay 및 list/download identity 재대조.
       software_evidence_2026_08_31: >-
-        Commit ae7448b는 selection context/selected-files digest를 journal에 고정하고,
-        legacy 행을 빈 digest와 source_file_index=-1로 추정 없이 migration해 새 worker replay를
-        거부한다. Host selector, restart, identity-drift와 두 임무 cross-mission negative를
-        고정 Ubuntu 20.04/gcc 9.4 실제 SQLite CTest 8/8 및 ASan/UBSan 8/8로 검증했다.
-        전체 Python은 4228 passed/24 skipped, Ruff와 Mypy 443 files가 통과했다.
+        ae7448b는 selection context/selected-files digest를 journal에 고정하고, legacy 행을 빈
+        digest와 source_file_index=-1로 추정 없이 migration해 새 worker replay를 거부한다.
+        c65596c는 bounded JPEG-only DjiCameraManager adapter를, 38d60d0는 owner-only
+        prepare -> pre-activation baseline -> verified activation -> one-shot trigger protocol과
+        optional packaged-app assembly를 추가했다. ordinary DPK는 OFF이고 media ON은 Manifold,
+        native activation, Core sync, independent private control path, verified mount와 measured
+        per-file byte bound를 모두 require한다. Host control CTest 3/3, default PSDK build,
+        adapter contract, ON-without-Manifold configure rejection과 configured-path C++ syntax gate,
+        Python 4232 passed/24 skipped, Ruff, Mypy 443 files, Dashboard 62 files/572 tests plus
+        TypeScript/ESLint/production build가 통과했지만 이는 device capability나 production
+        deployment evidence가 아니다. This host lacks SQLite development headers, so the
+        `KSI_REQUIRE_SQLITE=ON` native WAL build correctly refused configuration rather than claiming
+        that runtime gate passed.
       gate: >-
-        실제 DjiCameraManager adapter, 검증된 DJI 완료/운영자 one-shot provider, 임무 전
-        baseline snapshot provider와 무비행 M4D HIL이 필요하다. 그 전에는 packaged app option은
-        OFF/fail-closed, capability는 NOT_VERIFIED, SD/PC/Web은 정상 제품 경로다.
+        무비행 M4D HIL에서 exact build/DPK digest와 private evidence URI를 결속하고, measured
+        mount/byte bound, pre-activation list/baseline, downloader rights obtain/release, Pilot 2
+        album recovery, original JPEG SHA-256, Core source-media lineage, two-Mission cross-mission
+        negative, retry/restart/throughput을 실제로 확인해야 한다. 그 전에는 capability는
+        NOT_VERIFIED이며 ordinary DPK는 OFF, SD/PC/Web은 정상 제품 경로다.
     - id: civil-processing-consistency-v1
       status: IN_PROGRESS
       authority: >-
