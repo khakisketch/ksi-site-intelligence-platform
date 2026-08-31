@@ -150,9 +150,42 @@ The owner-triggered live workflow itself still has not run a fixture, and GitHub
 prevents an actually executed remote CI result. Those facts do not lower the local software result and
 must not be hidden by calling the workflow or a zero-step run `PASS`.
 
-Local feature/evidence commits through `bd67fe7` are fast-forward safe over remote `0ff5f94`. The
-2026-08-30 push attempt was blocked by the Codex command policy before `git` launched, not rejected by
-the repository; remote delivery is therefore pending and no partial push is claimed.
+The owner later delivered the operational-hardening series, and this increment started with local
+`main` and `origin/main` both at `899c6c875be4b33e5e44a5b8b52a58f49322614b`. Remote CI remains
+independent: run `33317220883` had six jobs with zero executed steps under the same account
+payment/spending-limit gate, so it is not application failure and not remote-green evidence.
+
+## Coverage evidence export closure — 2026-08-31
+
+The civil report no longer omits the evidence needed to interpret its coverage values:
+
+- Core `ReportExportSnapshot 1.1` binds the latest design-conformance mission's accepted
+  CoverageReport history prefix and rejected-claim history prefix. A later partial/final report or
+  rejection does not rewrite an earlier export, while replay refuses a missing or changed prefix.
+  Pre-coverage snapshot `1.0` remains replayable without invented values.
+- The existing report page renders the same server report status, submitting principal, termination
+  state, three reported ratios, unobserved-cell count, recovery recommendation, attribution warning,
+  plan reconciliation and rejection details that are written to CSV and visible in browser print.
+- A missing report is represented as `NOT_REPORTED`, not zero coverage. A failed evidence lookup is
+  `UNAVAILABLE` and disables both PDF/print and CSV. Before either browser output begins, the client
+  requires Core's returned snapshot to match the rendered Site, design/result identities, timestamps,
+  mission and every coverage/rejection fact.
+- This closes ledger risk `coverage-reconciliation-not-in-print-or-csv`; it does not close INV-010's
+  separate limitation that Core cannot yet recompute aircraft-reported zone ratios from raw cell
+  classifications.
+
+Local evidence at feature commit `e576217`:
+
+- Python: `4216 passed / 24 skipped`; Ruff and Mypy (`441` source files) passed; `uv lock --check`
+  passed. Focused report-export contracts passed `12/12` after the final idempotency/mission-binding
+  assertions.
+- Dashboard: `62` Vitest files / `572` tests, ESLint, TypeScript and Next.js production build passed.
+- Browser: Playwright `62 passed / 14 intentional external-staging skips` at
+  390/768/1024/1440, including existing navigation, overflow, keyboard/focus and accessibility
+  regression. New evidence states are covered by component/CSV/audit contract tests; this run does not
+  claim a live customer report fixture.
+- Repository: diff, lock, hygiene, reference-import, reference/PSDK pin and runtime-image-pin gates
+  passed. No raw imagery, report file, customer identifier or credential entered Git.
 
 ## Deployment and license gate
 
