@@ -273,6 +273,28 @@ integration·실기 HIL을 통과하기 전까지 실제 장비 업로드 capabi
 위 production-host 조립 테스트의 PASS도 DPK 설치, 장비 key provisioning, bearer/TLS
 연결 또는 object-storage PUT 성공을 대신하지 않는다.
 
+## 매핑 원본 자동 반출은 현재 production에서 차단
+
+`KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON`은 configure 단계에서 의도적으로 실패한다. 기존
+`edge/manifold-runtime`에는 권한 marker, SQLite 원장, bounded spool, digest 검증과 Core
+upload conveyor가 있고 호스트 테스트용 `FakeMediaSourcePort`도 남아 있다. 그러나 packaged
+`ksi_psdk_app`에는 아직 실제 `DjiCameraManager_*` adapter가 없으며, 더 중요하게는 SD 카드의
+어느 파일이 방금 끝난 임무에서 생긴 것인지 증명하는 mission-scoped capture boundary가 없다.
+
+활성 dispatch의 `missionId`만 보고 `DownloadFileList` 결과를 전량 결속하면 이전 임무나 다른
+현장의 사진까지 현재 `SourceMediaBundle`로 잘못 봉인할 수 있다. 따라서 Fake source를 production
+main loop에 배선하지 않으며, 다음 항목을 모두 통과하기 전에는 option을 열지 않는다.
+
+- 실제 임무 완료 또는 운영자 승인 one-shot trigger
+- 임무 시작 전 file-index baseline 이후의 신규 JPEG, 또는 검증된 capture window로 exact selection
+- list/download 사이 `fileIndex + fileName + fileSize` 재대조와 크기 상한
+- M4D 지상 JPEG 한 장의 list/download/SHA-256, downloader rights release, Pilot 2 album 복구 HIL
+- 두 임무의 파일이 서로 섞이지 않는 cross-mission negative test
+
+그 전의 정상 제품 경로는 ADR-KSI-013과 civil v1 결정대로
+`기체 SD/저장매체 → 현장 PC → KSI 웹 업로드`다. 이 경로는 임시 실패가 아니라 검증 전 공식
+fallback이며, 자동 반출 관련 소프트웨어 테스트는 DJI capability를 `VERIFIED`로 승격하지 않는다.
+
 ## 공용 PSDK platform glue
 
 `edge/psdk-platform/psdk_platform.cmake`가 `edge/psdk-tap/src/platform`의 OSAL, socket,

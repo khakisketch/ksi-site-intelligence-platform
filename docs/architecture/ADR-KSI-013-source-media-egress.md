@@ -4,7 +4,8 @@
 - 관련: ADR-KSI-005(연결 아키텍처 — LTE 상시 링크, EventBundle push 채택·텔레메트리
   스트림 제외), ADR-KSI-012(3D 재구성 파이프라인 — 이 ADR이 정하는 경로의 입구),
   `docs/hil/HARDWARE_SESSION_PLAYBOOK.md`(HIL 세션 항목 추가 대상), INV-023(신뢰
-  불가 조건에서 fail-closed 원칙과 같은 정직성 태도)
+  불가 조건에서 fail-closed 원칙과 같은 정직성 태도), REQ-ACQ-103,
+  INV-018/040/041/060
 
 ## 맥락
 
@@ -57,6 +58,32 @@
 아직 등록돼 있지 않다 — 이 ADR은 그 필요성만 확정하고, 실제 세션 항목화(어느
 SPIKE-DJI 번호에 속할지, PRD §20.3 목록과의 정합)는 별도 편집으로 남긴다.
 
+### D3 — 실제 camera adapter와 임무 귀속 경계가 모두 생기기 전 production 자동 반출 금지
+
+2026-08-31 production wiring 감사에서 `MediaOffloadWorker`가 활성 dispatch의
+`missionId`만 받고, 실제 임무 완료 신호·검증된 capture window·임무 시작 전 SD 카드
+file-index baseline을 받지 않는다는 점을 확인했다. 호스트 시험용 `FakeMediaSourcePort`를
+`DjiCameraManager_DownloadFileList`로 단순 교체하면 SD 카드에 남아 있던 이전 임무나 다른
+현장 JPEG까지 현재 임무의 `SourceMediaBundle`로 기록·봉인할 수 있다. 이는 자동화 누락이
+아니라 잘못된 계보를 만드는 더 큰 결함이다.
+
+따라서 packaged `ksi_psdk_app`은 `FakeMediaSourcePort`와 자동 media worker를 조립하지 않는다.
+과거 build option `KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON`은 조용히 무시하지 않고 configure
+단계에서 fail-closed 한다. `edge/manifold-runtime`의 PSDK-independent conveyor, durable rights
+marker와 가짜 포트 테스트는 보존한다.
+
+production option을 열려면 다음을 모두 충족해야 한다.
+
+1. 실제 임무 완료 또는 운영자가 승인한 one-shot 반출 trigger
+2. 임무 전 baseline 이후 신규 파일 또는 검증된 capture window에 의한 exact selection
+3. list/download 사이 `fileIndex + fileName + fileSize` 재대조와 bounded JPEG download
+4. M4D 지상 JPEG 한 장의 원본 digest, rights release와 Pilot 2 album 복구 HIL
+5. 두 임무/현장의 파일이 섞이지 않는 cross-mission negative test
+
+이 결정은 자동 반출을 포기하는 것이 아니다. false production path를 제거하고, D2의
+`SD/저장매체 → 현장 PC → KSI 웹 업로드`를 검증 전 정상 경로로 유지한다. 소프트웨어 조립
+테스트는 이 HIL 또는 DJI capability `VERIFIED`를 대신하지 않는다.
+
 ## 결과 — 알려진 대가
 
 - 매핑 임무의 "원본이 서버에 다 도착했다"는 사실을, 검증 전에는 조종기 경유·
@@ -66,3 +93,5 @@ SPIKE-DJI 번호에 속할지, PRD §20.3 목록과의 정합)는 별도 편집�
   "원본이 누락 없이 도착했다"고 완료 판정을 내리면 INV-051(원본/파생 계보)이
   전제하는 "원본"의 무결성이 흔들린다 — 반출 경로 검증과 재구성 완료 판정은
   분리해서 다뤄야 한다.
+- D3의 임무 귀속 경계가 생길 때까지 zero-touch 자동 ingest 목표는 software-complete가
+  아니다. 한 장 다운로드 성공만으로 대량 임무의 완전성·귀속·처리량을 추정하지 않는다.

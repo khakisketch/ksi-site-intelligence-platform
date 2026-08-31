@@ -77,15 +77,16 @@ if(KSI_PSDK_APP_ENABLE_CORE_SYNC)
       "build the statically-linked Ed25519 evidence signer" FORCE)
 endif()
 
-# Media offload proves MediaOffloadWorker::RunOnce is actually driven by a
-# production main loop (previously only called from edge_runtime_tests.cpp).
-# No PSDK DjiCameraManager_* adapter exists anywhere in this repository yet,
-# so the camera-facing IMediaSourcePort stays FakeMediaSourcePort until a real
-# adapter lands -- enabling this option verifies the worker's periodic drive
-# loop, its Core-facing HTTPS transport, and its recoverable-failure handling
-# inside the packaged binary.  It does not recover a single real photo.
+# Automatic media offload is deliberately unavailable in the production host.
+# The PSDK-independent conveyor remains fully tested in manifold-runtime, but
+# the product still lacks two pieces that cannot be guessed from a file list:
+# a real DjiCameraManager_* adapter and a mission-scoped completion/capture
+# boundary.  Enabling the former alone would assign every JPEG already on the
+# aircraft SD card to the currently active mission.  Keep the historical cache
+# option so old build invocations fail with an actionable message instead of
+# silently ignoring a requested capability.
 option(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD
-       "enable the FakeMediaSourcePort-backed source-media offload worker (no PSDK camera adapter yet)"
+       "request mission-scoped PSDK media offload (currently blocked pending adapter + HIL)"
        OFF)
 
 if(COMMAND ksi_check_manifold3_toolchain_drift)
@@ -353,17 +354,10 @@ else()
   target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_CORE_SYNC_CONFIGURED=0)
 endif()
 if(KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD)
-  if(NOT KSI_PSDK_APP_ENABLE_CORE_SYNC)
-    message(FATAL_ERROR
-      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires KSI_PSDK_APP_ENABLE_CORE_SYNC=ON; it reuses that HTTPS executor and bearer token rather than opening a second one")
-  endif()
-  if(NOT KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION)
-    message(FATAL_ERROR
-      "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD=ON requires KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION=ON; the rights marker lives beside the activation snapshot")
-  endif()
-  target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=1)
-else()
-  target_compile_definitions(ksi_psdk_app PRIVATE KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED=0)
+  message(FATAL_ERROR
+    "KSI_PSDK_APP_ENABLE_MEDIA_OFFLOAD is blocked: the production host has no real "
+    "DjiCameraManager adapter or verified mission-scoped capture boundary. Keep it OFF and use "
+    "SD/PC/Web intake until the one-JPEG M4D HIL and cross-mission attribution gate pass.")
 endif()
 if(KSI_PSDK_APP_HAVE_LIBUSB)
   target_compile_definitions(ksi_psdk_app PRIVATE LIBUSB_INSTALLED)

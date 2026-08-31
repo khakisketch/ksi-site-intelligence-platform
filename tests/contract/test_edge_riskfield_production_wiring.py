@@ -43,7 +43,7 @@ def test_product_host_assembles_one_durable_riskfield_delivery_chain() -> None:
     """Perception and Core sync share the same vault/journal and real adapters."""
 
     perception = _section("void ConfigurePerceptionPipeline", "void ClearNativeActivation")
-    core_sync = _section("void ConfigureCoreSync", "// Media offload proves")
+    core_sync = _section("void ConfigureCoreSync", "void StartWorker()")
 
     for constructor in (
         "ConservativeRiskEngine",
@@ -76,7 +76,7 @@ def test_product_host_assembles_one_durable_riskfield_delivery_chain() -> None:
 
 def test_product_workers_drive_and_shutdown_the_pipeline_and_sync_transport() -> None:
     worker = _section("void DrainWorker() noexcept", "void DrainCoreSync() noexcept")
-    sync = _section("void DrainCoreSync() noexcept", "// Exactly one of these")
+    sync = _section("void DrainCoreSync() noexcept", "ksi::edge::BoundedFrameQueue frames_")
     start = _section("void StartWorker()", "void StopWorker()")
     stop = _section("void StopWorker()", "void OpenIngress()")
 

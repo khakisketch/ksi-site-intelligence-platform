@@ -54,7 +54,6 @@ extern "C" {
 #include "ksi/edge/event_timing.hpp"
 #include "ksi/edge/evidence_builder.hpp"
 #include "ksi/edge/frame_queue.hpp"
-#include "ksi/edge/media_offload.hpp"
 #include "ksi/edge/mission_kmz.hpp"
 #include "ksi/edge/pipeline.hpp"
 #include "ksi/edge/runtime_profile.hpp"
@@ -84,7 +83,6 @@ constexpr std::int64_t kMicrosecondsPerMillisecond = 1'000LL;
 constexpr std::int64_t kMillisecondsPerSecond = 1'000LL;
 constexpr std::int64_t kActivationRefreshPeriodNs = 1'000'000'000LL;
 constexpr std::int64_t kCoreSyncPeriodMs = 1'000LL;
-constexpr std::int64_t kMediaOffloadPeriodMs = 1'000LL;
 constexpr std::int64_t kShadowIntentTtlMs = 1'000LL;
 constexpr std::size_t kMaximumArtifactBytes = 32U * 1024U * 1024U;
 constexpr double kRadiansPerDegree = 0.017453292519943295769;
@@ -99,10 +97,6 @@ constexpr double kRadiansPerDegree = 0.017453292519943295769;
 
 #ifndef KSI_PSDK_APP_PERCEPTION_CONFIGURED
 #define KSI_PSDK_APP_PERCEPTION_CONFIGURED 0
-#endif
-
-#ifndef KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
-#define KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED 0
 #endif
 
 volatile sig_atomic_t g_termination_requested = 0;
@@ -335,8 +329,6 @@ public:
         core_sync_executor_.reset();
         core_sync_store_.reset();
         core_sync_vault_.reset();
-        core_sync_base_url_.clear();
-        core_sync_bearer_token_.clear();
         if (!EnsurePrivateStateDirectory(state_directory) || edge_device_id.empty()) {
             core_sync_setup_verdict_ = "UNSAFE_STATE_DIRECTORY";
             return;
@@ -399,11 +391,6 @@ public:
             core_sync_executor_ = std::move(executor);
             core_sync_transport_ = std::move(transport);
             core_sync_driver_ = std::move(driver);
-            // Media offload (below) reuses this exact origin/bearer pair for
-            // its own Core-facing transport rather than re-deriving them from
-            // the CMake strings a second time.  Neither value is logged.
-            core_sync_base_url_ = configured_core_base_url;
-            core_sync_bearer_token_ = token.bearer_token;
             core_sync_setup_verdict_ = "READY";
             last_core_sync_verdict_.store(
                 static_cast<int>(ksi::edge::CoreSyncVerdict::kAcknowledged), std::memory_order_release);
@@ -416,75 +403,6 @@ public:
         }
     }
 
-    // Media offload proves ``MediaOffloadWorker::RunOnce`` is actually driven
-    // by a production main loop — an independent reviewer confirmed zero
-    // caller before this method (only edge_runtime_tests.cpp exercised it).
-    // No PSDK ``DjiCameraManager_*`` adapter exists anywhere in this
-    // repository yet (media_offload.hpp's own header comment: "실기 미확인을
-    // IMediaSourcePort 하나로 격리한다"), so ``source_`` is pinned to
-    // FakeMediaSourcePort with zero seeded entries.  That means this wiring
-    // proves the worker's periodic drive loop, its Core-facing transport, and
-    // its recoverable-failure handling run inside the packaged binary — it
-    // recovers zero real photos.  Requires ConfigureCoreSync to have already
-    // succeeded: it reuses that HTTPS executor and bearer token rather than
-    // opening a second one, and it assumes CORE_BEARER_TOKEN_FILE also carries
-    // EDGE_SOURCE_MEDIA_WRITE (a separate scope needs its own CMake input,
-    // which this slice does not add).
-    void ConfigureMediaOffload() {
-        media_offload_setup_verdict_ = "UNCONFIGURED";
-        media_offload_worker_.reset();
-        media_offload_transport_.reset();
-        media_offload_source_.reset();
-        {
-            std::lock_guard<std::mutex> lock(media_offload_mission_mutex_);
-            media_offload_mission_id_.clear();
-        }
-        if (!core_sync_configured_.load(std::memory_order_acquire) || core_sync_executor_ == nullptr ||
-            core_sync_base_url_.empty() || core_sync_bearer_token_.empty()) {
-            media_offload_setup_verdict_ = "CORE_SYNC_REQUIRED";
-            return;
-        }
-        // The journal (SqliteStoreForward) and spool (ArtifactVault) are the
-        // same multi-domain durable store already open for perception/core
-        // sync — SourceMedia* methods live on SqliteStoreForward itself, and
-        // ArtifactVault is a generic artifact_id-keyed blob store (mediaId
-        // prefixed "srcmedia-", so it cannot collide with an evidence
-        // artifact id).  A third SQLite connection to the same purpose is not
-        // opened.  The rights marker lives beside the activation snapshot,
-        // per MediaOffloadPolicy::state_directory's own doc comment.
-        ksi::edge::ArtifactVault* const vault = OperationalVault();
-        ksi::edge::SqliteStoreForward* const store = OperationalStore();
-        if (vault == nullptr || store == nullptr || activation_state_directory_.empty()) {
-            media_offload_setup_verdict_ = "JOURNAL_UNAVAILABLE";
-            return;
-        }
-        try {
-            ksi::edge::MediaOffloadPolicy policy;
-            policy.state_directory = activation_state_directory_;
-            auto source = std::make_unique<ksi::edge::FakeMediaSourcePort>();
-            auto transport = std::make_unique<ksi::edge::CoreRestSourceMediaTransport>(
-                ksi::edge::CoreRestSourceMediaConfig{core_sync_base_url_, core_sync_bearer_token_},
-                core_sync_executor_.get(), vault);
-            auto worker = std::make_unique<ksi::edge::MediaOffloadWorker>(
-                std::move(policy), store, vault, source.get(), transport.get());
-            media_offload_source_ = std::move(source);
-            media_offload_transport_ = std::move(transport);
-            media_offload_worker_ = std::move(worker);
-            media_offload_setup_verdict_ = "READY";
-            // ConfigureNativeActivation may have already run once (Run() calls
-            // it first); seed the current mission now instead of waiting up to
-            // kActivationRefreshPeriodNs for the next periodic refresh.
-            if (active_native_snapshot_.has_value()) {
-                std::lock_guard<std::mutex> lock(media_offload_mission_mutex_);
-                media_offload_mission_id_ = active_native_snapshot_->mission_id;
-            }
-        } catch (const std::exception&) {
-            media_offload_worker_.reset();
-            media_offload_transport_.reset();
-            media_offload_source_.reset();
-            media_offload_setup_verdict_ = "MEDIA_OFFLOAD_CONFIGURATION_REJECTED";
-        }
-    }
 #endif
 
     void StartWorker() {
@@ -496,10 +414,6 @@ public:
             core_sync_worker_running_.store(true, std::memory_order_release);
             core_sync_worker_ = std::thread([this] { DrainCoreSync(); });
         }
-        if (media_offload_worker_ != nullptr) {
-            media_offload_worker_running_.store(true, std::memory_order_release);
-            media_offload_thread_ = std::thread([this] { DrainMediaOffload(); });
-        }
 #endif
     }
 
@@ -507,7 +421,6 @@ public:
         worker_running_.store(false, std::memory_order_release);
 #if KSI_EDGE_HAVE_CURL_TRANSPORT
         core_sync_worker_running_.store(false, std::memory_order_release);
-        media_offload_worker_running_.store(false, std::memory_order_release);
 #endif
         if (worker_.joinable()) {
             worker_.join();
@@ -515,9 +428,6 @@ public:
 #if KSI_EDGE_HAVE_CURL_TRANSPORT
         if (core_sync_worker_.joinable()) {
             core_sync_worker_.join();
-        }
-        if (media_offload_thread_.joinable()) {
-            media_offload_thread_.join();
         }
 #endif
     }
@@ -891,10 +801,6 @@ public:
             last_core_sync_verdict_.load(std::memory_order_acquire));
         std::fprintf(stderr, "[ksi-edge-shadow] coreSync=%s lastCoreSync=%s\n",
                      core_sync_setup_verdict_.c_str(), ksi::edge::ToString(last_sync));
-        const auto last_media_offload = static_cast<ksi::edge::MediaOffloadVerdict>(
-            last_media_offload_verdict_.load(std::memory_order_acquire));
-        std::fprintf(stderr, "[ksi-edge-shadow] mediaOffload=%s lastMediaOffload=%s\n",
-                     media_offload_setup_verdict_.c_str(), ksi::edge::ToString(last_media_offload));
 #endif
     }
 
@@ -1303,12 +1209,6 @@ private:
             active_mission_kmz_.reset();
             mission_kmz_verdict_ = verdict;
         }
-#if KSI_EDGE_HAVE_CURL_TRANSPORT
-        if (media_offload_worker_ != nullptr) {
-            std::lock_guard<std::mutex> lock(media_offload_mission_mutex_);
-            media_offload_mission_id_.clear();
-        }
-#endif
     }
 
     // Called only from RefreshNativeActivation, right after a valid snapshot
@@ -1373,12 +1273,6 @@ private:
         active_native_snapshot_ = loaded.snapshot;
         native_activation_verdict_ = "LOADED";
         RefreshMissionKmz();
-#if KSI_EDGE_HAVE_CURL_TRANSPORT
-        if (media_offload_worker_ != nullptr) {
-            std::lock_guard<std::mutex> lock(media_offload_mission_mutex_);
-            media_offload_mission_id_ = loaded.snapshot.mission_id;
-        }
-#endif
         if (!perception_provisioned_) {
             return;
         }
@@ -1486,59 +1380,6 @@ private:
         }
     }
 
-    // Exactly one of these is non-null whenever core_sync_configured_ is true:
-    // perception owns it when perception is provisioned (CMake forces
-    // PERCEPTION_STATE_DIR == SYNC_STATE_DIR in that case, and ConfigureCoreSync
-    // then borrows perception's pointers instead of opening a second SQLite
-    // connection — see share_perception_journal above); otherwise core_sync
-    // owns its own.  Either way this is the one durable vault/store this DPK
-    // already trusts, never a new one media offload invents.
-    ksi::edge::ArtifactVault* OperationalVault() const noexcept {
-        if (perception_vault_ != nullptr) {
-            return perception_vault_.get();
-        }
-        return core_sync_vault_.get();
-    }
-
-    ksi::edge::SqliteStoreForward* OperationalStore() const noexcept {
-        if (perception_store_ != nullptr) {
-            return perception_store_.get();
-        }
-        return core_sync_store_.get();
-    }
-
-    void DrainMediaOffload() noexcept {
-        try {
-            while (media_offload_worker_running_.load(std::memory_order_acquire)) {
-                std::string mission_id;
-                {
-                    std::lock_guard<std::mutex> lock(media_offload_mission_mutex_);
-                    mission_id = media_offload_mission_id_;
-                }
-                // No active mission is a routine, recoverable state (before
-                // the first dispatch, or between missions) — not a setup
-                // failure — so this cycle is skipped rather than the thread
-                // exiting or a verdict being fabricated.
-                if (media_offload_worker_ != nullptr && !mission_id.empty() &&
-                    !activation_edge_device_id_.empty()) {
-                    const ksi::edge::MediaOffloadReport report =
-                        media_offload_worker_->RunOnce(mission_id, activation_edge_device_id_);
-                    last_media_offload_verdict_.store(static_cast<int>(report.verdict),
-                                                       std::memory_order_release);
-                }
-                for (std::int64_t elapsed_ms = 0;
-                     elapsed_ms < kMediaOffloadPeriodMs &&
-                     media_offload_worker_running_.load(std::memory_order_acquire);
-                     elapsed_ms += 100LL) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-            }
-        } catch (...) {
-            last_media_offload_verdict_.store(
-                static_cast<int>(ksi::edge::MediaOffloadVerdict::kSourceFailure),
-                std::memory_order_release);
-        }
-    }
 #endif
 
     ksi::edge::BoundedFrameQueue frames_;
@@ -1661,27 +1502,6 @@ private:
     std::atomic<int> last_core_sync_verdict_{
         static_cast<int>(ksi::edge::CoreSyncVerdict::kRetryableFailure)};
     std::thread core_sync_worker_;
-    // Persisted only so ConfigureMediaOffload can reuse the same origin/bearer
-    // pair without re-deriving it from the CMake strings a second time.
-    std::string core_sync_base_url_;
-    std::string core_sync_bearer_token_;
-    // Declare in reverse dependency order, same discipline as the perception
-    // block above: the worker references source_/transport_ by raw pointer.
-    std::unique_ptr<ksi::edge::FakeMediaSourcePort> media_offload_source_;
-    std::unique_ptr<ksi::edge::CoreRestSourceMediaTransport> media_offload_transport_;
-    std::unique_ptr<ksi::edge::MediaOffloadWorker> media_offload_worker_;
-    std::string media_offload_setup_verdict_ = "UNCONFIGURED";
-    // The active mission_id changes with every RefreshNativeActivation call on
-    // the DrainWorker thread, but DrainMediaOffload runs on its own thread —
-    // unlike the other AppRuntime snapshot fields (which only one thread ever
-    // touches), this one genuinely needs a lock rather than reusing the
-    // seqlock pattern above, which is sized for trivially-copyable telemetry.
-    std::mutex media_offload_mission_mutex_;
-    std::string media_offload_mission_id_;
-    std::atomic<bool> media_offload_worker_running_{false};
-    std::atomic<int> last_media_offload_verdict_{
-        static_cast<int>(ksi::edge::MediaOffloadVerdict::kProgressed)};
-    std::thread media_offload_thread_;
 #endif
 };
 
@@ -1844,17 +1664,9 @@ int Run() {
                "capture-only mode\n",
                stderr);
 #endif
-#if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED && KSI_EDGE_HAVE_CURL_TRANSPORT
-    runtime.ConfigureMediaOffload();
-#elif KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
-    std::fputs("[ksi-edge-shadow] media offload provisioning was requested without the static TLS "
-               "backend; source-media stays on the aircraft SD card\n",
-               stderr);
-#else
     std::fputs("[ksi-edge-shadow] media offload is not provisioned in this DPK; source-media stays "
                "on the aircraft SD card\n",
                stderr);
-#endif
     g_runtime.store(&runtime, std::memory_order_release);
     bool core_initialized = false;
     bool liveview_initialized = false;
