@@ -1,4 +1,39 @@
-# Current goal (2026-08-30, civil runtime and resource-policy software closure)
+# Current goal (2026-08-31, civil report coverage-evidence closure)
+
+Close `coverage-reconciliation-not-in-print-or-csv` without changing the approved Operations Console
+information architecture. `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101` and `REQ-UX-101`
+apply with `INV-010/040/053/060`.
+
+Completion conditions:
+
+- the existing civil report, browser print and CSV expose the same accepted CoverageReport attribution,
+  plan reconciliation and rejected-claim history rather than presenting progress numbers without their
+  observation basis;
+- Core derives and journals those facts from immutable organization-scoped records, preserves legacy
+  export replay, and does not let later coverage suffixes rewrite an earlier document;
+- unavailable or mismatched screen/Core evidence blocks browser output before print or Blob creation;
+- full local Python, Dashboard, browser and repository gates pass, and remote delivery/CI are reported
+  independently from local evidence and physical-device acceptance.
+
+Repository-owned software is green at feature commit `e576217`; authority/risk closure is `164c2c2`.
+Python passed `4216` tests with `24` skips; Ruff and Mypy (`441` files) passed. Dashboard passed
+`62 files / 572 tests`, ESLint, TypeScript, production build and Playwright `62 passed / 14 intentional
+external-staging skips` at 390/768/1024/1440. Lock, diff, hygiene, reference, PSDK and runtime-image-pin
+gates passed. The canonical risk is `resolved` with evidence, while the separate INV-010 inability to
+recompute aircraft-reported zone ratios remains explicit.
+
+Delivery remains environment-blocked: at the push attempt, the final fetch showed `origin/main` at
+`899c6c8` as an ancestor and local `164c2c2` two commits ahead with a clean worktree. This Codex environment rejected
+`git push origin main` before process launch because approval is unavailable; no remote mutation
+occurred; the state metadata commit follows locally. Remote Actions execution is also independent, and historical run `33317220883` stopped all
+six jobs before their first step under the account payment/spending-limit gate.
+
+FIELD-0a remains `BLOCKED`; every DJI capability remains `NOT_VERIFIED`/OFF. No device, DPK, flight,
+motor, waypoint, camera/gimbal, customer data, release or deployment action is claimed.
+
+---
+
+# Previous goal (2026-08-30, civil runtime and resource-policy software closure)
 
 Complete the repository-owned portion of ADR-KSI-032 without changing the approved Operations Console
 information architecture. `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101` and

@@ -1,5 +1,31 @@
 # Current Task State
 
+## 2026-08-31 — `civil_report_coverage_evidence_green_push_environment_blocked`
+
+- Authority: `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`;
+  `INV-010/040/053/060`.
+- Implemented: Core `ReportExportSnapshot 1.1` binds the latest design-result mission's accepted and
+  rejected CoverageReport history prefix; replay retains earlier prefixes and legacy `1.0`; idempotent
+  retry is stable after later coverage suffixes. The existing report, print and CSV share attribution,
+  plan reconciliation and rejection facts, and mismatched/unavailable evidence prevents output.
+- Commits: feature `e576217`, authority/risk closure `164c2c2`; this task-state commit follows.
+- Local evidence: Python `4216 passed / 24 skipped`; Ruff; Mypy `441` files; lock; Dashboard
+  `62 files / 572 tests`, ESLint, TypeScript and production build; Playwright `62 passed / 14`
+  intentional external-staging skips at 390/768/1024/1440; diff, hygiene, reference, PSDK and
+  runtime-image-pin gates.
+- Product truth: risk `coverage-reconciliation-not-in-print-or-csv` is resolved. Core still cannot
+  recompute aircraft-reported zone ratios from raw classified cells, so INV-010's remaining limitation
+  and report attribution warning remain.
+- Delivery check: fetch showed `origin/main` `899c6c8` is an ancestor of local `164c2c2`, two commits
+  ahead, with a clean worktree. `git push origin main` was rejected by the Codex execution policy before
+  process launch; no remote mutation occurred. Owner-terminal fast-forward push and remote SHA comparison
+  remain. GitHub run `33317220883` had six zero-step jobs under the account payment/spending-limit gate,
+  so no remote-green claim is made.
+- FIELD-0a stays `BLOCKED`; DJI capabilities stay `NOT_VERIFIED`/OFF. No device, DPK, flight, motor,
+  waypoint, camera/gimbal, customer data, release or deployment action occurred.
+
+---
+
 ## 2026-08-30 — `civil_runtime_resource_policy_software_green_push_environment_blocked`
 
 - Authority: ADR-KSI-032; `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101`,

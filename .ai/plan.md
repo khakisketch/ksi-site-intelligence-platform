@@ -1,4 +1,70 @@
-# Current implementation plan (2026-08-30, civil runtime and resource-policy closure)
+# Current implementation plan (2026-08-31, civil report coverage-evidence closure)
+
+Requirement IDs:
+- `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-010/040/053/060`.
+
+Owner module:
+- Core owns accepted/rejected coverage history and the immutable report-export snapshot.
+- Dashboard owns additive evidence rendering and fail-closed browser output inside the existing report.
+
+Acceptance criteria:
+- Report snapshot `1.1` binds the latest result mission's accepted and rejected coverage history prefix;
+  replay preserves both that prefix and legacy `1.0` without inferred values.
+- PDF/print and CSV use the same Site/progress/coverage inputs rendered on screen and start only after
+  exact semantic comparison with Core's returned audit snapshot.
+- `NOT_REPORTED` remains distinct from zero; partial lookup failure is `UNAVAILABLE` and disables export.
+- Existing Console IA, progress/design tables, historical records and physical capability meanings remain.
+
+Contracts affected:
+- Additive `ReportExportSnapshot 1.1` coverage snapshot and create-response body; existing `1.0` replay.
+- Existing CoverageReport read models and Dashboard report/CSV projection; no Mission Contract mutation.
+
+Reference assets:
+- Existing CoverageReport journal/router, report-export audit, DesignProgress report page and BFF patterns.
+- `references/repos` remain read-only and are not runtime dependencies.
+
+Adoption decisions:
+- ADOPT existing append-only coverage/report journals and report information architecture.
+- EXTEND the server export snapshot and existing report/CSV only.
+- PRESERVE legacy export records and direct-spacing attribution limitations.
+- REMOVE no original, report, route, menu or approved visual contract.
+
+Files to change:
+- Core coverage/report-export store, assembly, OpenAPI and contract tests.
+- Existing Dashboard report/export/CSV/types/tests plus invariant, acceptance, goal and handoff ledgers.
+
+Tests:
+- Snapshot canonical/replay/idempotency, organization scope, hostile JSON, assembly and API sync.
+- Dashboard coverage/CSV/audit tests, full Vitest/ESLint/TypeScript/build and four-viewport Playwright.
+- Full pytest/Ruff/Mypy/lock/diff/hygiene/reference/PSDK/runtime-pin gates.
+
+HIL or real-device assumptions:
+- None. FIELD-0a stays `BLOCKED`; DJI/Manifold capabilities stay `NOT_VERIFIED`/OFF.
+
+License/data implications:
+- No new engine or dependency. No raw imagery, generated PDF/CSV, customer identifier or credential enters
+  Git. Rejected raw coverage bodies are not copied into the export snapshot.
+
+Rollback:
+- Stop new report-export issuance or disable the additive Dashboard controls; preserve all journals and
+  read-only historical reports. Never remove evidence or loosen INV-010/053 gates to restore availability.
+
+Execution:
+1. [완료] Reconcile authority, local/remote SHA, open risk and zero-step GitHub account gate.
+2. [완료] Implement Core snapshot `1.1`, prefix replay/idempotency and shared coverage dependency.
+3. [완료] Add report/CSV evidence rendering and semantic pre-output gate without changing Console IA.
+4. [완료] Run full local gates: Python `4216/24 skipped`; Dashboard `62/572`; Playwright
+   `62/14 intentional skips`; static/build/repository gates green.
+5. [완료] Resolve the canonical risk and synchronize invariant, acceptance and remaining-work records.
+6. [차단 — 실행 환경] Fetch/ancestor/clean checks passed, but `git push origin main` was rejected before
+   launch by this Codex approval policy. Owner terminal fast-forward push and new-HEAD SHA check remain.
+7. [외부 게이트] GitHub Actions must execute real steps after account billing/spending is restored;
+   Korean civil field evidence, FIELD-0a and DJI SDK/HIL remain separate.
+
+---
+
+# Previous implementation plan (2026-08-30, civil runtime and resource-policy closure)
 
 Requirement IDs:
 - `REQ-OPS-101/102`, `REQ-WRK-101`, `REQ-INT-104`, `REQ-SEC-101`, `REQ-UX-101`.

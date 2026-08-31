@@ -1,5 +1,39 @@
 # Current Handoff
 
+## 2026-08-31 — Civil report coverage evidence is locally green; push environment is blocked
+
+The civil report no longer presents progress/quantity numbers without their observation basis. Core
+`ReportExportSnapshot 1.1` derives the latest design-result mission's accepted CoverageReport prefix and
+server rejection prefix from organization-scoped immutable journals. Later reports do not rewrite an
+earlier export, idempotent retries remain stable, and pre-coverage `1.0` records replay without inferred
+facts. Rejected raw claims are not copied into the snapshot.
+
+The existing report page now shows the same report status, principal, termination state, three
+aircraft-reported ratios, unobserved-cell count, recovery recommendation, attribution warning, plan
+reconciliation and rejection details that its CSV and browser print use. `NOT_REPORTED` is not rendered
+as zero. If either coverage read fails, or the returned Core audit snapshot differs from the rendered
+Site/progress/mission/evidence facts, print/Blob creation never starts. Existing Home/Sites/Work/Items IA
+and visual language are unchanged.
+
+Local verification is green at feature commit `e576217`: Python `4216 passed / 24 skipped`; Ruff;
+Mypy `441` files; Dashboard `62 files / 572 tests`, ESLint, TypeScript and production build; Playwright
+`62 passed / 14 intentional external-staging skips` across 390/768/1024/1440; lock, diff, hygiene,
+reference-import, reference/PSDK pin and runtime-image-pin gates. Risk
+`coverage-reconciliation-not-in-print-or-csv` is resolved in `164c2c2`. This does not claim that Core
+recomputes aircraft-reported ratios from raw classified cells; that INV-010 limitation remains explicit.
+
+Delivery is not complete. At the push attempt, the final fetch showed remote `899c6c8` is a safe
+ancestor and local `164c2c2` is two commits ahead with a clean worktree; this handoff entry follows
+locally. This environment rejected `git push origin main` before process launch because approval is unavailable, so no remote mutation occurred. Run the owner
+terminal fast-forward push, then compare local and remote SHA. Remote CI remains separate: historical
+run `33317220883` had six jobs and zero executed steps under the account payment/spending-limit gate.
+
+Korean same-site civil evidence, FIELD-0a, DJI SDK artifacts and physical HIL remain external gates.
+FIELD-0a is `BLOCKED`, all DJI capabilities are `NOT_VERIFIED`/OFF, and no device or flight-control
+action is authorized by this increment.
+
+---
+
 ## 2026-08-30 — Civil runtime/resource software is green; external release gates remain
 
 ADR-KSI-032 is implemented without changing the Operations Console information architecture. Every
