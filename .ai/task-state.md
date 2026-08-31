@@ -1,5 +1,30 @@
 # Current Task State
 
+## 2026-08-31 — `perception_runtime_boundary_green_hil_not_verified`
+
+- Authority: `REQ-EVT-101`, `REQ-MODEL-101`, `REQ-SEC-101`;
+  `INV-021/040/041/042/060`.
+- Implemented: Python recorded perception is now explicitly offline replay/model evaluation and emits
+  `OFFLINE_REPLAY_EVALUATION` plus `productionEvidence=false`. Core returns typed
+  `NON_PRODUCTION_EVIDENCE` before Edge journal/device-sequence reservation, independently guards direct
+  EventStore projection, and rejects explicit or legacy offline artifacts during journal replay.
+- Runtime truth: native `ksi_psdk_app` is the only production Edge runtime. Sharing an EventBundle wire
+  proves contract conformance only; it does not turn replay output into field evidence.
+- Commits: implementation/API/tests `ad8d899`; ADR/final-decision authority `6530989`; canonical
+  risk/handoff commit follows this entry.
+- Local evidence: focused `217 passed`; full Python `4225 passed / 24 skipped`; Ruff; Mypy `442` files;
+  lock, diff, repository hygiene, no-reference-import, reference pins, PSDK pins and runtime-image pins.
+- Canonical truth: `perception-pipeline-production-status-undecided` is resolved. Five open risks remain
+  and each is an HIL/device or deployment-runtime decision, not a locally green software claim.
+- UI truth: no Dashboard file changed. The preceding same-turn UI evidence remains `62 files / 572
+  tests`, lint, type, build and Playwright `62/14`; no new UI claim is made.
+- Delivery truth: `origin/main` remains `899c6c8`; local commits are unpublished and remote Actions have
+  not run them. The known account payment/spending gate remains independent.
+- FIELD-0a stays `BLOCKED`; DJI/Manifold hardware capability stays `NOT_VERIFIED`/OFF. No device, DPK,
+  flight, motor, waypoint, camera/gimbal, customer data, release or deployment action occurred.
+
+---
+
 ## 2026-08-31 — `edge_riskfield_software_assembly_green_hil_not_verified`
 
 - Authority: `REQ-EDGE-101`, `REQ-EVT-101`, `REQ-GEO-101`, `REQ-SEC-101`;

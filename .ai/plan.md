@@ -1,4 +1,64 @@
-# Current implementation plan (2026-08-31, Edge RiskField assembly truth)
+# Current implementation plan (2026-08-31, perception runtime boundary closure)
+
+Requirement IDs:
+- `REQ-EVT-101`, `REQ-MODEL-101`, `REQ-SEC-101`.
+- `INV-021/040/041/042/060`.
+
+Owner module:
+- `packages/perception` owns offline replay/model-evaluation orchestration.
+- Core owns production EventBundle admission, durable projection and replay recovery.
+- `edge/psdk-app` owns the only production Edge runtime.
+
+Acceptance criteria:
+- Offline output self-identifies and receives typed HTTP 422 before journal or projection.
+- Legacy `vertical-slice-demo`, direct-store calls and pre-existing replay records fail closed.
+- A normal native-style bundle can still use the same sequence immediately after policy rejection.
+- Product authority and API descriptions match executable behavior.
+
+Contracts affected:
+- Core OpenAPI `1.31.0`; new `EventVerdict.NON_PRODUCTION_EVIDENCE`.
+- EventBundle schema is unchanged; optional reasoning markers carry execution provenance.
+
+Reference assets:
+- Existing native `ksi_psdk_app`, EventBundle v1.2 and recorded replay fixtures.
+- `references/repos` remain read-only and are not runtime dependencies.
+
+Adoption decisions:
+- ADOPT native `ksi_psdk_app` as the sole production Edge runtime.
+- RETAIN Python orchestration for offline replay/model evaluation and contract conformance.
+- REJECT renaming a demo rule as a substitute for production ingress, lifecycle and HIL evidence.
+
+Files to change:
+- Perception runtime identity, Core admission/replay, OpenAPI, contract/replay tests, ADR/decision ledger,
+  canonical risk ledger and `.ai` state.
+
+Tests:
+- Focused admission/direct/replay/API/production-profile suites; full Python; Ruff; Mypy; lock, diff,
+  hygiene, reference and runtime/third-party pin gates.
+
+HIL or real-device assumptions:
+- None executed. DPK install/start, real model timing and device evidence chain remain `NOT_VERIFIED`.
+
+License/data implications:
+- No new dependency, model, customer data, credential or raw device evidence.
+
+Rollback:
+- Revert `ad8d899` and `6530989` together. Do not weaken journal/replay gates independently or relabel
+  offline output as production evidence.
+
+Execution:
+1. [완료] Trace Python callers and native product entrypoints.
+2. [완료] Add explicit offline markers and pre-journal/direct/replay typed rejection (`ad8d899`).
+3. [완료] Synchronize OpenAPI 1.31.0, ADR-KSI-009 D8 and Final Decision Ledger (`6530989`).
+4. [완료] Pass focused `217`, full Python `4225/24 skipped`, Ruff, Mypy `442`, lock and repository gates.
+5. [완료] Resolve `perception-pipeline-production-status-undecided` with executable evidence.
+6. [차단 — 실행 환경] Owner-terminal fast-forward push and real remote CI execution remain external.
+7. [외부 게이트] Decide and HIL-verify the Python 3.12 activation companion runtime before automation;
+   execute no-flight device gates before any capability promotion.
+
+---
+
+# Previous implementation plan (2026-08-31, Edge RiskField assembly truth)
 
 Requirement IDs:
 - `REQ-EDGE-101`, `REQ-EVT-101`, `REQ-GEO-101`, `REQ-SEC-101`.

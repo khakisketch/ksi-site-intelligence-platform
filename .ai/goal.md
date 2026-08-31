@@ -1,4 +1,32 @@
-# Current goal (2026-08-31, Edge RiskField production assembly truth)
+# Current goal (2026-08-31, perception runtime boundary closure)
+
+Close the contradictory status of the Python perception pipeline without promoting offline replay into
+field evidence. `REQ-EVT-101`, `REQ-MODEL-101`, `REQ-SEC-101` and
+`INV-021/040/041/042/060` apply.
+
+Completion conditions:
+
+- native `edge/psdk-app/ksi_psdk_app` remains the sole production Edge runtime;
+- Python `pipeline.py` and `recorded_pipeline.py` explicitly identify as offline replay/model evaluation
+  while continuing to share the EventBundle contract for conformance;
+- Core rejects explicit and legacy offline markers before durable Edge journal/device-sequence
+  reservation, rejects direct EventStore projection, and refuses a polluted legacy replay journal;
+- ADR, API contract, final decision ledger, canonical risk and handoff state all state the same boundary;
+- no software result is presented as DPK, device, model-support or HIL acceptance.
+
+Repository-owned software is green at `ad8d899`; the authority decision is `6530989`. Focused runtime
+boundary/API/replay tests pass `217`; full Python passes `4225` with `24` skips. Ruff and Mypy (`442`
+source files), lock, diff, hygiene, reference and runtime/third-party pin gates pass. Risk
+`perception-pipeline-production-status-undecided` is resolved with executable evidence.
+
+The remaining five open risks all require device/HIL or an explicit deployment-runtime decision.
+FIELD-0a stays `BLOCKED`, DJI and physical Edge capabilities stay `NOT_VERIFIED`/OFF. Remote delivery is
+separate: `origin/main` remains `899c6c8`, the local branch contains unpublished commits, and remote CI
+has not executed them under the known Actions account payment/spending gate.
+
+---
+
+# Previous goal (2026-08-31, Edge RiskField production assembly truth)
 
 Make the existing native RiskField evidence path non-regressible and reconcile the canonical risk
 ledger without converting software evidence into device acceptance. `REQ-EDGE-101`, `REQ-EVT-101`,

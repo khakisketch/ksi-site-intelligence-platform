@@ -1,5 +1,37 @@
 # Current Handoff
 
+## 2026-08-31 — Perception runtime boundary is closed; field acceptance remains separate
+
+The repository no longer gives two contradictory answers about Python perception. The recorded
+`ksi_perception.pipeline` path is offline replay/model evaluation. It keeps the production EventBundle
+shape so contract drift remains detectable, but every generated bundle self-identifies with
+`executionClass=OFFLINE_REPLAY_EVALUATION`, `productionEvidence=false` and the legacy
+`vertical-slice-demo` rule. Native `ksi_psdk_app` remains the only production Edge runtime.
+
+Core now returns `NON_PRODUCTION_EVIDENCE` (HTTP 422) before an offline bundle can reserve the durable
+Edge journal or device sequence. The same policy is enforced when internal code calls EventStore
+directly, and startup fails closed if an old projected/updated journal contains replay evidence. Policy
+rejection does not consume sequence zero, so the next normal native-style bundle proceeds. OpenAPI
+`1.31.0`, ADR-KSI-009 D8 and the Final Decision Ledger record that exact behavior.
+
+Local evidence: implementation `ad8d899`, authority `6530989`; focused boundary/API/replay suite
+`217 passed`; full Python `4225 passed / 24 skipped`; Ruff; Mypy `442` files; lock, diff, hygiene,
+reference-import, reference/PSDK and runtime-image pin gates. Canonical risk
+`perception-pipeline-production-status-undecided` is resolved.
+
+What remains is not silently green. The five open risks require real Manifold/Pilot/HIL evidence or an
+explicit Python 3.12 activation-runtime deployment decision. `riskfield-evidence-chain-not-hil-verified`
+and mission-contract rejection remain device gates; DJI Pilot Cloud and patrol cadence remain field
+gates. FIELD-0a stays `BLOCKED`, every physical capability stays `NOT_VERIFIED`/OFF, and no DPK,
+device write, flight, motor, waypoint, camera/gimbal, customer-data, release or deployment action was
+performed.
+
+Delivery is pending. `origin/main` remains `899c6c8`; these local commits have not been pushed and
+remote Actions have not executed them. After an owner-terminal fast-forward push, compare remote SHA
+and restore the GitHub Actions account payment/spending gate before making any remote-green claim.
+
+---
+
 ## 2026-08-31 — Edge RiskField software assembly is green; real-device chain is not verified
 
 The native RiskField chain was already present but the risk ledger still described it as libraries with
