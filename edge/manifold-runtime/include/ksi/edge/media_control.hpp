@@ -142,6 +142,7 @@ enum class MediaControlSelectionVerdict {
     kInvalidBaseline,
     kInvalidTrigger,
     kBaselineAfterActivation,
+    kBaselineExpiredBeforeActivation,
     kTriggerBeforeActivation,
     kBindingMismatch,
     kBaselineDigestMismatch,

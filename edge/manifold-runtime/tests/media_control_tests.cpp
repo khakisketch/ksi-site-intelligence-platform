@@ -165,6 +165,13 @@ void TestControlFailureBoundaries() {
               ksi::edge::MediaControlSelectionVerdict::kBaselineAfterActivation,
           "baseline taken after activation is rejected even with matching IDs");
     baseline = Baseline();
+    baseline.request.expires_at_utc_ms = 199;
+    baseline.request_digest = ksi::edge::ComputeMediaBaselineRequestDigest(baseline.request);
+    trigger = Trigger(baseline);
+    Check(ksi::edge::BuildOperatorMediaSelectionContext(activation, baseline, trigger, 300).verdict ==
+              ksi::edge::MediaControlSelectionVerdict::kBaselineExpiredBeforeActivation,
+          "expired preparation baseline cannot be reused for a later activation");
+    baseline = Baseline();
     trigger = Trigger(baseline);
     trigger.issued_at_utc_ms = 199;
     Check(ksi::edge::BuildOperatorMediaSelectionContext(activation, baseline, trigger, 300).verdict ==

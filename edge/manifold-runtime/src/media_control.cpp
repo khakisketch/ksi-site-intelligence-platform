@@ -884,6 +884,8 @@ const char* ToString(MediaControlSelectionVerdict verdict) {
             return "INVALID_TRIGGER";
         case MediaControlSelectionVerdict::kBaselineAfterActivation:
             return "BASELINE_AFTER_ACTIVATION";
+        case MediaControlSelectionVerdict::kBaselineExpiredBeforeActivation:
+            return "BASELINE_EXPIRED_BEFORE_ACTIVATION";
         case MediaControlSelectionVerdict::kTriggerBeforeActivation:
             return "TRIGGER_BEFORE_ACTIVATION";
         case MediaControlSelectionVerdict::kBindingMismatch:
@@ -917,6 +919,13 @@ MediaControlSelectionResult BuildOperatorMediaSelectionContext(
     }
     if (baseline.observed_at_utc_ms > activation.activated_at_utc_ms) {
         result.verdict = MediaControlSelectionVerdict::kBaselineAfterActivation;
+        return result;
+    }
+    // A baseline request is deliberately short lived. It proves that the local
+    // operator prepared this exact card state for this activation, not merely
+    // that a matching list existed at some remote earlier time.
+    if (activation.activated_at_utc_ms > baseline.request.expires_at_utc_ms) {
+        result.verdict = MediaControlSelectionVerdict::kBaselineExpiredBeforeActivation;
         return result;
     }
     if (trigger.issued_at_utc_ms < activation.activated_at_utc_ms) {
