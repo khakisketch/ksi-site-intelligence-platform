@@ -153,6 +153,28 @@ bearer/TLS 채널, Core·object-storage 전송 성공 또는 `REQ-EVT-101` 지�
 아직 저장소에 없다, 별도 과제). CI는 실키 없이 더미 자격증명으로 컴파일·링크·ABI
 검증만 한다.
 
+### D8 — Python perception은 offline replay/model evaluation이며 운영 Edge가 아니다
+
+`packages/perception/src/ksi_perception/pipeline.py`와 `recorded_pipeline.py`는 녹화 입력,
+모델 평가와 Observation→Entity→Event 계약 재생을 위한 도구로 유지한다. 제품 package에
+있는 것은 replay가 테스트 디렉터리의 복사본이 아니라 같은 계약 코드를 재사용하도록 하기
+위함이지, Manifold 운영 runtime으로 승격했다는 뜻이 아니다. 운영 Edge는 D7의 native
+`ksi_psdk_app` 하나뿐이며 Python pipeline은 Core·worker·DPK production entrypoint에
+포함하지 않는다.
+
+offline pipeline은 계약 drift를 잡기 위해 production과 같은 EventBundle wire를
+생성하되 `reasoning.executionClass=OFFLINE_REPLAY_EVALUATION`,
+`reasoning.productionEvidence=false`, legacy 식별자인
+`reasoning.rule=vertical-slice-demo`를 함께 기록한다. Core edge-sync는 이 중 하나라도
+발견하면 `NON_PRODUCTION_EVIDENCE`(HTTP 422)로 durable journal·device sequence·event
+projection 전에 거부한다. 내부에서 `EventStore`를 직접 호출해도 같은 typed verdict로
+막아 라우터 우회를 허용하지 않는다.
+
+향후 이 Python 경로를 운영 후보로 다시 검토하려면 기존 모듈의 이름이나 문구만 바꾸지
+않고 별도 ADR과 production ingress/lifecycle, 실제 위험 판정 규칙, per-frame pose/time
+계보, 장비 성능 및 HIL evidence를 먼저 갖춰야 한다. 이 결정은 native runtime의 실제
+DPK/HIL 검증을 대신하지 않으며 그 상태는 계속 `NOT_VERIFIED`다.
+
 ## 기각한 대안
 
 - **완전 `-static` 링크**: glibc NSS·dlopen이 깨지고 PSDK 내부 동작을 모른다.
@@ -189,3 +211,6 @@ bearer/TLS 채널, Core·object-storage 전송 성공 또는 `REQ-EVT-101` 지�
 - `ksi_psdk_app`을 별도 sidecar가 아닌 RiskField 생성·store-forward·Core sync의 단일
   production service host로 확정했다(D7). 소프트웨어 조립과 실기 HIL 수용은 서로
   다른 게이트로 유지한다.
+- Python recorded perception을 offline replay/model-evaluation plane으로 고정하고,
+  자기식별 bundle을 Core가 원장 반영 전에 typed 거부하도록 했다(D8). 이는 native
+  production Edge의 HIL 수용이나 모델의 상용 지원 등급을 올리지 않는다.

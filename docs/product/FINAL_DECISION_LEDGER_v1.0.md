@@ -15,7 +15,9 @@
   (ADR-KSI-030) · 2026-08-29 봉인된 독립 검사점 CSV를 DSM과 서버에서 직접 대조해
   오차한계 근거를 생산하되 상대 물량·현장 수용 경계를 유지하는 결정(ADR-KSI-031) ·
   2026-08-30 제품 소유 runtime image digest pin과 Core-owned versioned processing
-  resource admission snapshot 결정(ADR-KSI-032)
+  resource admission snapshot 결정(ADR-KSI-032) · 2026-08-31 native `ksi_psdk_app`을
+  유일한 production Edge runtime으로 두고 Python perception을 offline replay/model
+  evaluation으로 격리한 결정(ADR-KSI-009 D8)
 
 ## 명칭·시장
 
@@ -112,6 +114,9 @@
 ## 장비·모델
 
 - 공개데이터와 자체데이터로 범용지원 확대
+- Manifold production Edge runtime은 native `ksi_psdk_app` 하나다. Python recorded
+  perception은 offline replay/model evaluation 전용이며, 그 EventBundle은 Core가
+  `NON_PRODUCTION_EVIDENCE`로 원장 반영 전에 거부한다(ADR-KSI-009 D8).
 - 지원단계: DATASET_AVAILABLE → BASELINE_DETECTION → FIELD_VALIDATED → GEO_VALIDATED → RISK_VALIDATED → PRODUCTION_SUPPORTED
 - Production Supported만 공식 상용지원
 
