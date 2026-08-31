@@ -162,8 +162,10 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../manifold-runtime"
 include("${CMAKE_CURRENT_SOURCE_DIR}/../psdk-platform/psdk_platform.cmake")
 
 add_executable(ksi_psdk_app src/main.cpp)
+target_sources(ksi_psdk_app PRIVATE src/media/dji_camera_media_source.cpp)
 ksi_add_psdk_platform_glue(ksi_psdk_app)
 target_include_directories(ksi_psdk_app PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${KSI_PSDK_APP_INFO_DIR}"
 )
 target_include_directories(ksi_psdk_app SYSTEM PRIVATE
@@ -171,6 +173,31 @@ target_include_directories(ksi_psdk_app SYSTEM PRIVATE
 )
 target_compile_options(ksi_psdk_app PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(ksi_psdk_app PRIVATE ksi_edge_runtime ksi_psdk_static Threads::Threads m dl)
+
+# The Camera Manager adapter has an injected DJI function table, so this test
+# exercises list/callback/rights contracts without a physical aircraft.  It is
+# intentionally opt-in: the packaged application remains an executable-only
+# deployment target, while host/target validation enables this explicit test.
+option(KSI_PSDK_APP_BUILD_TESTS "build PSDK app adapter contract tests" OFF)
+if(KSI_PSDK_APP_BUILD_TESTS)
+  enable_testing()
+  add_executable(ksi_psdk_camera_media_source_tests
+    tests/dji_camera_media_source_tests.cpp
+    src/media/dji_camera_media_source.cpp
+  )
+  target_include_directories(ksi_psdk_camera_media_source_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  target_include_directories(ksi_psdk_camera_media_source_tests SYSTEM PRIVATE
+    "${KSI_PSDK_ROOT}/psdk_lib/include"
+  )
+  target_compile_options(ksi_psdk_camera_media_source_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(ksi_psdk_camera_media_source_tests PRIVATE
+    ksi_edge_runtime ksi_psdk_static Threads::Threads m dl
+  )
+  add_test(NAME ksi_psdk_camera_media_source_contract
+           COMMAND ksi_psdk_camera_media_source_tests)
+endif()
 
 # Candidate S1 is compiled only for an approval-bound HIL build. Merely placing
 # the source in the repository does not add it to the default DPK. The committed
