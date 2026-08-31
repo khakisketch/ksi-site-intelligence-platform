@@ -79,12 +79,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
-from upload_source_bundle import SyncOutcome, run_sync
+from upload_source_bundle import SUPPORTED_SOURCE_MEDIA_SUFFIXES, SyncOutcome, run_sync
 
 #: 사진으로 셀 확장자 — ``upload_source_bundle`` 이 실제로 업로드하는 집합과 같아야
 #: 한다. 여기가 더 넓으면 "사진이 있다"고 판단해 놓고 업로더가 0장을 올리는 어긋난
 #: 상태가 생긴다.
-_IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".dng"})
+_IMAGE_SUFFIXES = SUPPORTED_SOURCE_MEDIA_SUFFIXES
 
 #: 완료 표시 파일 이름 — ``--state-dir`` 안에 둔다.
 _DONE_FILE = "ingested-missions.json"

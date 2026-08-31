@@ -81,6 +81,12 @@ _EXTENSION_CONTENT_TYPES: dict[str, str] = {
     ".webp": "image/webp",
 }
 
+# Ground-side watch/automation must use this exact set.  Keeping a second
+# handwritten suffix list let the watcher announce DNG-only directories even
+# though the upload/API contract rejects them; that produces a misleading
+# "capture found" state with zero sealable SourceMedia records.
+SUPPORTED_SOURCE_MEDIA_SUFFIXES = frozenset(_EXTENSION_CONTENT_TYPES)
+
 # Core expands this id to the immutable profile snapshot. Keeping engine knobs
 # out of the local uploader prevents it from drifting from the Console path.
 RECONSTRUCTION_SPEC: dict[str, Any] = {"processingProfileId": "ksi-odm-civil-v1"}

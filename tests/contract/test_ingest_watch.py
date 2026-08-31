@@ -475,10 +475,21 @@ def test_upload_cache_is_partitioned_per_mission(tmp_path: Path) -> None:
     assert captured["state_dir"] == tmp_path / "state" / "uploads" / "m-alpha"
 
 
-@pytest.mark.parametrize("suffix", [".JPG", ".jpg", ".jpeg", ".DNG", ".dng"])
+@pytest.mark.parametrize("suffix", [".JPG", ".jpg", ".jpeg", ".PNG", ".webp"])
 def test_image_suffixes_are_case_insensitive(tmp_path: Path, suffix: str) -> None:
     directory = tmp_path / "m-alpha"
     directory.mkdir()
     (directory / f"DJI_0001{suffix}").write_bytes(b"x")
 
     assert [p.mission_id for p in discover_pending(tmp_path)] == ["m-alpha"]
+
+
+@pytest.mark.parametrize("suffix", [".DNG", ".dng", ".mp4"])
+def test_watcher_does_not_claim_media_the_uploader_cannot_register(
+    tmp_path: Path, suffix: str
+) -> None:
+    directory = tmp_path / "m-alpha"
+    directory.mkdir()
+    (directory / f"DJI_0001{suffix}").write_bytes(b"x")
+
+    assert discover_pending(tmp_path) == []
