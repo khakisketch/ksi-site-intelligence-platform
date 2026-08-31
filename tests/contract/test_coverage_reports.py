@@ -467,6 +467,7 @@ def test_latest_recorded_exposes_reported_by(store: CoverageReportStore) -> None
     recorded = store.latest_recorded(_MISSION_ID)
     assert recorded is not None
     assert recorded.reported_by == "edge-77"
+    assert store.recorded_history(_MISSION_ID) == [recorded]
     assert recorded.report.summary.completion_state.value == "COMPLETED"
 
 

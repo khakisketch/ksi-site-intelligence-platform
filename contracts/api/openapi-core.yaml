@@ -7388,6 +7388,39 @@ components:
           pattern: '^sha256:[0-9a-f]{64}$'
         processingProfileDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         sourceBundleDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    ReportExportCoverageRejection:
+      type: object
+      additionalProperties: false
+      required: [verdict, detail, reportedBy, rejectedAt]
+      properties:
+        verdict: { type: string }
+        detail: { type: [string, 'null'] }
+        reportedBy: { type: [string, 'null'] }
+        rejectedAt: { type: string, format: date-time }
+    ReportExportCoverageSnapshot:
+      type: object
+      additionalProperties: false
+      required: [missionId, availability, reportCount, rejectionCount, rejections]
+      properties:
+        missionId: { type: string }
+        availability: { type: string, enum: [REPORTED, NOT_REPORTED] }
+        reportCount: { type: integer, minimum: 0 }
+        reportDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+        reportedBy: { type: [string, 'null'] }
+        reportTimestamp: { type: [string, 'null'], format: date-time }
+        completionState: { type: [string, 'null'] }
+        mandatoryHazardRatio: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        mandatoryAssetRatio: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        accessibleGeneralRatio: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        unobservedCellCount: { type: [integer, 'null'], minimum: 0 }
+        recoveryRecommended: { type: [boolean, 'null'] }
+        ratioAttributionNote: { type: [string, 'null'] }
+        plannedGeneralCoverageRatio: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        plannedGeneralCoverageUnavailableReason: { type: [string, 'null'] }
+        rejectionCount: { type: integer, minimum: 0 }
+        rejections:
+          type: array
+          items: { $ref: '#/components/schemas/ReportExportCoverageRejection' }
     ReportExportSnapshot:
       type: object
       additionalProperties: false
@@ -7396,7 +7429,7 @@ components:
          designSurfaceSha256, designNormalizationProfile, designNormalizationDigest,
          baseline, latest]
       properties:
-        schemaVersion: { const: '1.0' }
+        schemaVersion: { type: string, enum: ['1.0', '1.1'] }
         siteId: { type: string }
         designSurfaceId: { type: string }
         designSurfaceRevision: { type: string }
@@ -7405,6 +7438,10 @@ components:
         designNormalizationDigest: { type: string, pattern: '^[0-9a-f]{64}$' }
         baseline: { $ref: '#/components/schemas/ReportExportSource' }
         latest: { $ref: '#/components/schemas/ReportExportSource' }
+        coverage:
+          oneOf:
+            - { $ref: '#/components/schemas/ReportExportCoverageSnapshot' }
+            - { type: 'null' }
     ReportExportCreateResponse:
       type: object
       required: [verdict]
@@ -7413,6 +7450,10 @@ components:
         exportId: { type: [string, 'null'] }
         recordedAt: { type: [string, 'null'], format: date-time }
         snapshotDigest: { type: [string, 'null'], pattern: '^sha256:[0-9a-f]{64}$' }
+        snapshot:
+          oneOf:
+            - { $ref: '#/components/schemas/ReportExportSnapshot' }
+            - { type: 'null' }
         contentProducedByServer:
           description: Always false. PDF/CSV bytes remain browser-produced and are never claimed by Core.
           const: false

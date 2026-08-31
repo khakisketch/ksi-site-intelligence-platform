@@ -135,7 +135,9 @@ export function CoverageReportSection({
         <p className="text-[11.5px] break-keep text-ink-2">{ratioAttributionNote}</p>
         <p className="mt-1 text-[11.5px] break-keep text-ink-muted">
           {plannedGeneralCoverageRatio !== null
-            ? "계획 대비 초과 여부를 서버가 확인했습니다 — 이상 없음."
+            ? latest.summary.completionState === "COMPLETED"
+              ? "계획 대비 초과 여부를 서버가 수신 시 확인했습니다 — 이상 없음."
+              : "미완료 종료 보고이므로 완료 판정용 계획 상한 대사는 보류합니다."
             : `대사 불가 — ${plannedGeneralCoverageUnavailableReason}`}
         </p>
       </div>

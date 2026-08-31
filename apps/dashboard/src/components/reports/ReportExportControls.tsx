@@ -6,9 +6,16 @@ import type {
   DesignProgress,
   ReportExportCreateInput,
   ReportExportCreateResponse,
+  ReportExportSnapshot,
 } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
-import { designProgressToCsv } from "@/lib/report-csv";
+import { siteReportToCsv } from "@/lib/report-csv";
+import {
+  coverageSnapshotMatchesEvidence,
+  isCompleteCoverageEvidence,
+  type CompleteReportCoverageEvidence,
+  type ReportCoverageEvidence,
+} from "@/lib/reports/coverage-evidence";
 
 type ExportFormat = ReportExportCreateInput["exportFormat"];
 type ExportStatus = "idle" | "pending" | "error";
@@ -52,6 +59,11 @@ export async function requestReportExportAudit(
 export async function recordBeforeBrowserExport(
   requestAudit: () => Promise<ReportExportCreateResponse>,
   produce: () => void,
+  expectation: {
+    siteId: string;
+    progress: DesignProgress;
+    coverage: CompleteReportCoverageEvidence;
+  },
 ): Promise<ReportExportCreateResponse> {
   const record = await requestAudit();
   if (
@@ -59,7 +71,9 @@ export async function recordBeforeBrowserExport(
     !record.exportId ||
     !record.recordedAt ||
     !record.snapshotDigest ||
-    record.contentProducedByServer !== false
+    record.contentProducedByServer !== false ||
+    !record.snapshot ||
+    !reportExportSnapshotMatches(expectation, record.snapshot)
   ) {
     throw new Error(record.detail ?? "감사 스냅샷을 확인하지 못해 내보내기를 시작하지 않았습니다.");
   }
@@ -67,12 +81,38 @@ export async function recordBeforeBrowserExport(
   return record;
 }
 
+/** The audit response must describe exactly the server-rendered document inputs. */
+export function reportExportSnapshotMatches(
+  expectation: {
+    siteId: string;
+    progress: DesignProgress;
+    coverage: CompleteReportCoverageEvidence;
+  },
+  snapshot: ReportExportSnapshot,
+): boolean {
+  const { progress, coverage, siteId } = expectation;
+  return (
+    snapshot.schemaVersion === "1.1" &&
+    snapshot.siteId === siteId &&
+    progress.siteId === siteId &&
+    snapshot.designSurfaceId === progress.designSurfaceId &&
+    snapshot.designSurfaceSha256 === progress.designSurfaceSha256 &&
+    snapshot.baseline.designConformanceId === progress.baselineDesignConformanceId &&
+    snapshot.baseline.computedAt === progress.baselineComputedAt &&
+    snapshot.latest.designConformanceId === progress.latestDesignConformanceId &&
+    snapshot.latest.computedAt === progress.latestComputedAt &&
+    snapshot.coverage !== null &&
+    snapshot.coverage.missionId === snapshot.latest.missionId &&
+    coverageSnapshotMatchesEvidence(coverage, snapshot.coverage)
+  );
+}
+
 /**
  * 현장 보고서(M4-D) 내보내기 — "PDF로 저장"(브라우저 인쇄)과 "CSV로 내보내기".
  *
- * 둘 다 화면이 이미 렌더한 것과 **같은 1회 서버 응답**(`progress`)에서만 나온다 —
- * 인쇄는 지금 그려진 DOM 을 그대로 종이로 옮기고(`window.print()`), CSV 는 그
- * DOM 을 만든 바로 그 `DesignProgress` 를 `designProgressToCsv` 로 문자열화한다.
+ * 둘 다 화면이 이미 렌더한 것과 **같은 서버 렌더 입력**(`progress` + `coverage`)에서
+ * 나온다 — 인쇄는 지금 그려진 DOM 을 그대로 종이로 옮기고(`window.print()`), CSV 는
+ * 그 DOM 을 만든 바로 그 입력을 `siteReportToCsv` 로 문자열화한다.
  * 그래서 "화면과 종이가 다른 숫자"가 구조적으로 생기지 않는다 — 별도 API 를
  * 다시 불러 값을 새로 계산하지 않는다.
  *
@@ -83,19 +123,21 @@ export function ReportExportControls({
   progress,
   fileNameBase,
   siteId,
+  coverage,
 }: {
   progress: DesignProgress;
   fileNameBase: string;
   /** 서버 렌더 시 신뢰한 현장 식별자 — 브라우저 입력에서 다시 만들지 않는다. */
   siteId: string;
+  coverage: ReportCoverageEvidence;
 }) {
   const retainedExportIds = useRef<Partial<Record<ExportFormat, string>>>({});
   const [status, setStatus] = useState<ExportStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [record, setRecord] = useState<ReportExportCreateResponse | null>(null);
 
-  function produceCsv() {
-    const csv = designProgressToCsv(progress);
+  function produceCsv(completeCoverage: CompleteReportCoverageEvidence) {
+    const csv = siteReportToCsv(progress, completeCoverage);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -111,6 +153,11 @@ export function ReportExportControls({
 
   async function handleExport(exportFormat: ExportFormat) {
     if (status === "pending") return;
+    if (!isCompleteCoverageEvidence(coverage)) {
+      setError("커버리지 근거가 불완전해 내보내지 않았습니다. 문서를 새로고침하세요.");
+      setStatus("error");
+      return;
+    }
     const exportId = exportIdForAttempt(retainedExportIds.current[exportFormat]);
     retainedExportIds.current[exportFormat] = exportId;
     setStatus("pending");
@@ -127,7 +174,8 @@ export function ReportExportControls({
       };
       const audited = await recordBeforeBrowserExport(
         () => requestReportExportAudit(siteId, auditInput),
-        exportFormat === "PDF" ? () => window.print() : produceCsv,
+        exportFormat === "PDF" ? () => window.print() : () => produceCsv(coverage),
+        { siteId, progress, coverage },
       );
       delete retainedExportIds.current[exportFormat];
       setRecord(audited);
@@ -147,7 +195,7 @@ export function ReportExportControls({
           type="button"
           className="btn btn-primary"
           onClick={() => void handleExport("PDF")}
-          disabled={status === "pending"}
+          disabled={status === "pending" || !isCompleteCoverageEvidence(coverage)}
         >
           {status === "pending" ? "감사 기록 중…" : "PDF로 저장(인쇄)"}
         </button>
@@ -155,12 +203,18 @@ export function ReportExportControls({
           type="button"
           className="btn"
           onClick={() => void handleExport("CSV")}
-          disabled={status === "pending"}
+          disabled={status === "pending" || !isCompleteCoverageEvidence(coverage)}
         >
           CSV로 내보내기
         </button>
       </div>
       {error && <p className="text-[11.5px] font-semibold break-keep text-crit-ink">{error}</p>}
+      {!isCompleteCoverageEvidence(coverage) && (
+        <p className="text-[11.5px] font-semibold break-keep text-crit-ink">
+          커버리지 보고와 서버 거부 이력을 모두 확인할 때까지 PDF·CSV 내보내기를 사용할 수
+          없습니다.
+        </p>
+      )}
       {record?.recordedAt && record.snapshotDigest && (
         <p className="text-[11px] break-keep text-ink-muted">
           감사 스냅샷 기록 {formatKoreanDateTime(record.recordedAt, { dateStyle: "medium", timeStyle: "short" })}

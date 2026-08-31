@@ -330,6 +330,7 @@ def _max_assembly(tmp_path: Path) -> Any:
             DurableJournal(tmp_path / "report-exports.jsonl"),
             site_store=site_store,
             design_conformance_store=design_conformance_report_store,
+            coverage_report_store=coverage_report_store,
         ),
         work_area_store=work_area_store,
         observation_work_order_store=observation_work_order_store,

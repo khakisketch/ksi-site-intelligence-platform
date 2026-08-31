@@ -1,4 +1,6 @@
 import type { DesignProgress } from "@/lib/core-api/types";
+import { summarizeCoverageCells } from "@/lib/core-api/coverage";
+import type { CompleteReportCoverageEvidence } from "@/lib/reports/coverage-evidence";
 
 /**
  * 계획 대비 진척(M4-C) 표를 CSV 로 — 화면 표와 **같은 배열**(`DesignProgress`)에서
@@ -64,6 +66,91 @@ export function designProgressToCsv(progress: DesignProgress): string {
   csv += csvRow(["기준(원지형) 계산 시각(UTC)", progress.baselineComputedAt]);
   csv += csvRow(["최신 계산 시각(UTC)", progress.latestComputedAt]);
   csv += csvRow(["집계 제외 문턱(m)", progress.thresholdM]);
+  csv += "\r\n";
+  csv += csvRow(ZONE_HEADER);
+  for (const zone of progress.zones) {
+    csv += csvRow([
+      zone.zoneId,
+      zone.zoneName ?? "",
+      zone.plannedCutM3,
+      zone.doneCutM3,
+      zone.remainingCutM3,
+      formatRatioForCsv(zone.cutProgressRatio),
+      zone.plannedFillM3,
+      zone.doneFillM3,
+      zone.remainingFillM3,
+      formatRatioForCsv(zone.fillProgressRatio),
+      zone.basis,
+    ]);
+  }
+  return csv;
+}
+
+/**
+ * Civil report CSV. The existing progress table stays unchanged, but the document now
+ * carries the same coverage attribution, plan reconciliation and rejection evidence as
+ * the printed report. An unavailable evidence state is not accepted by this function.
+ */
+export function siteReportToCsv(
+  progress: DesignProgress,
+  coverage: CompleteReportCoverageEvidence,
+): string {
+  let csv = CSV_BOM;
+  csv += csvRow(["현장 ID", progress.siteId]);
+  csv += csvRow(["설계 기준면 ID", progress.designSurfaceId]);
+  csv += csvRow(["기준(원지형) 계산 시각(UTC)", progress.baselineComputedAt]);
+  csv += csvRow(["최신 계산 시각(UTC)", progress.latestComputedAt]);
+  csv += csvRow(["집계 제외 문턱(m)", progress.thresholdM]);
+  csv += "\r\n";
+
+  csv += csvRow(["커버리지 근거 임무 ID", coverage.missionId]);
+  csv += csvRow([
+    "커버리지 보고 상태",
+    coverage.status === "REPORTED"
+      ? "접수됨 — 최신 서버 수용 보고 기준"
+      : "접수 없음 — 비행 전/미전송 여부는 구분 불가",
+  ]);
+  if (coverage.status === "REPORTED") {
+    const { report } = coverage;
+    const cells = summarizeCoverageCells(report.latest.cells);
+    csv += csvRow(["접수된 커버리지 보고 수", report.reportCount]);
+    csv += csvRow(["최신 커버리지 보고 시각(UTC)", report.latest.timestamp]);
+    csv += csvRow(["커버리지 보고 주체", report.reportedBy ?? "확인 불가"]);
+    csv += csvRow(["임무 종료 상태", report.latest.summary.completionState]);
+    csv += csvRow([
+      "필수 위험구역 커버리지(%)",
+      formatRatioForCsv(report.latest.summary.mandatoryHazardRatio),
+    ]);
+    csv += csvRow([
+      "필수 자산 커버리지(%)",
+      formatRatioForCsv(report.latest.summary.mandatoryAssetRatio),
+    ]);
+    csv += csvRow([
+      "접근가능 일반영역 커버리지(%)",
+      formatRatioForCsv(report.latest.summary.accessibleGeneralRatio),
+    ]);
+    csv += csvRow(["미관찰 Cell 수", cells.explainedGap + cells.unexplainedGap]);
+    csv += csvRow(["재커버 권고", report.recoveryRecommended ? "예" : "아니오"]);
+    csv += csvRow(["커버리지 비율 귀속", report.ratioAttributionNote]);
+    csv += csvRow([
+      "계획 대비 대사",
+      report.plannedGeneralCoverageRatio === null
+        ? `대사 불가 — ${report.plannedGeneralCoverageUnavailableReason}`
+        : report.latest.summary.completionState === "COMPLETED"
+          ? "서버 확인: 발급 시점 계획 추정 상한 이내"
+          : "대사 보류 — 미완료 종료 보고는 완료 판정의 계획 상한 검사 대상이 아님",
+    ]);
+  } else {
+    csv += csvRow(["접수된 커버리지 보고 수", 0]);
+    csv += csvRow(["계획 대비 대사", "수행하지 않음 — 수용된 커버리지 보고 없음"]);
+  }
+  csv += csvRow(["서버가 거부한 커버리지 주장 수", coverage.rejections.rejectionCount]);
+  coverage.rejections.rejections.forEach((rejection, index) => {
+    csv += csvRow([
+      `거부 이력 ${index + 1}`,
+      `${rejection.rejectedAt} | ${rejection.verdict} | ${rejection.detail ?? "상세 없음"} | ${rejection.reportedBy ?? "주체 확인 불가"}`,
+    ]);
+  });
   csv += "\r\n";
   csv += csvRow(ZONE_HEADER);
   for (const zone of progress.zones) {

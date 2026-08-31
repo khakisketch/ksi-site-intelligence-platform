@@ -221,6 +221,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         mission_store=mission_store,
         design_conformance_report_store=design_conformance_report_store,
     )
+    coverage_report_store = CoverageReportStore(
+        DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
+    )
     return {
         "evidence_storage": storage,
         "auth_registry": AuthRegistry(
@@ -244,9 +247,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "mission_sequence_store": MissionIssuanceSequenceStore(
             DurableJournal(tmp_path / "mission-sequences.jsonl")
         ),
-        "coverage_report_store": CoverageReportStore(
-            DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
-        ),
+        "coverage_report_store": coverage_report_store,
         "mission_execution_store": MissionExecutionStore(
             DurableJournal(tmp_path / "mission-execution.jsonl"), mission_store=mission_store
         ),
@@ -286,6 +287,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
             DurableJournal(tmp_path / "report-exports.jsonl"),
             site_store=site_store,
             design_conformance_store=design_conformance_report_store,
+            coverage_report_store=coverage_report_store,
         ),
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": RegionExtractionStore(

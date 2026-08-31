@@ -459,6 +459,7 @@ def assemble_app(
             journal("report-exports.jsonl"),
             site_store=site_store,
             design_conformance_store=design_conformance_report_store,
+            coverage_report_store=coverage_report_store,
         )
         if design_conformance_report_store is not None
         else None

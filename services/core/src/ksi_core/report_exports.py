@@ -8,10 +8,10 @@ append-only journal에 남긴다.
 
 클라이언트가 보내는 것은 export ID, 형식, 기준/최신 design-conformance ID뿐이다.
 조직은 인증 Principal에서만, 현장은 경로에서만 얻는다. 설계면 revision·정규화
-계보·처리 profile·source lineage·Core 재해싱 diff-raster digest는 요청 몸체가
-아니라 기존 immutable 원장에서 다시 읽어 snapshot으로 만든다. 이 경계가 없으면
-화면에 보지 않은 다른 수치나 타 조직 report ID를 ``내보냈다``고 감사 기록에 섞을
-수 있다.
+계보·처리 profile·source lineage·Core 재해싱 diff-raster digest와 최신 임무의
+커버리지 수용/거부 이력 prefix는 요청 몸체가 아니라 기존 원장에서 다시 읽어
+snapshot으로 만든다. 이 경계가 없으면 화면에 보지 않은 다른 수치나 타 조직 report
+ID를 ``내보냈다``고 감사 기록에 섞을 수 있다.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ksi_core.api_base import (
     JOURNAL_APPEND_FAILED_DETAIL,
@@ -33,11 +33,16 @@ from ksi_core.api_base import (
     iso_utc,
 )
 from ksi_core.auth import Permission, Principal, require_permission
+from ksi_core.coverage_reports import (
+    PLANNED_GENERAL_COVERAGE_UNAVAILABLE_REASON,
+    RATIO_ATTRIBUTION_NOTE,
+)
 from ksi_core.design_progress import derive_progress
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
+    from ksi_core.coverage_reports import RecordedCoverageReport, RejectedCoverageReport
     from ksi_core.design_conformance_reports import RecordedDesignConformance
     from ksi_core.design_conformance_requests import DesignConformanceRequestRecord
     from ksi_core.sites import SiteStore
@@ -56,6 +61,16 @@ class ReportExportCatalog(Protocol):
     def get(
         self, mission_id: str, design_conformance_id: str
     ) -> RecordedDesignConformance | None: ...
+
+
+class ReportExportCoverageCatalog(Protocol):
+    """Append-only coverage facts used by a browser-export audit snapshot."""
+
+    def recorded_history(self, mission_id: str) -> list[RecordedCoverageReport]: ...
+
+    def rejections(self, mission_id: str) -> list[RejectedCoverageReport]: ...
+
+    def mission_planned_general_ratio(self, mission_id: str) -> float | None: ...
 
 
 class ReportExportFormat(StrEnum):
@@ -121,10 +136,74 @@ class ReportExportSource(CamelModel):
     source_bundle_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
+class ReportExportCoverageRejection(CamelModel):
+    """One server rejection; rejected coverage numbers are deliberately absent."""
+
+    verdict: str
+    detail: str | None
+    reported_by: str | None
+    rejected_at: datetime
+
+
+class ReportExportCoverageSnapshot(CamelModel):
+    """Coverage evidence rendered into the report, derived only from Core journals."""
+
+    mission_id: str
+    availability: Literal["REPORTED", "NOT_REPORTED"]
+    report_count: int = Field(ge=0)
+    report_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    reported_by: str | None = None
+    report_timestamp: datetime | None = None
+    completion_state: str | None = None
+    mandatory_hazard_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    mandatory_asset_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    accessible_general_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    unobserved_cell_count: int | None = Field(default=None, ge=0)
+    recovery_recommended: bool | None = None
+    ratio_attribution_note: str | None = None
+    planned_general_coverage_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    planned_general_coverage_unavailable_reason: str | None = None
+    rejection_count: int = Field(ge=0)
+    rejections: list[ReportExportCoverageRejection]
+
+    @model_validator(mode="after")
+    def _validate_evidence_shape(self) -> ReportExportCoverageSnapshot:
+        if self.rejection_count != len(self.rejections):
+            raise ValueError("rejectionCount가 rejections 길이와 다르다")
+        report_fields = (
+            self.report_digest,
+            self.report_timestamp,
+            self.completion_state,
+            self.mandatory_hazard_ratio,
+            self.mandatory_asset_ratio,
+            self.accessible_general_ratio,
+            self.unobserved_cell_count,
+            self.recovery_recommended,
+            self.ratio_attribution_note,
+        )
+        if self.availability == "REPORTED":
+            if self.report_count < 1 or any(value is None for value in report_fields):
+                raise ValueError("REPORTED coverage snapshot의 보고 근거가 불완전하다")
+            if (self.planned_general_coverage_ratio is None) == (
+                self.planned_general_coverage_unavailable_reason is None
+            ):
+                raise ValueError("계획 커버리지 값과 unavailable reason 중 하나만 있어야 한다")
+        else:
+            if self.report_count != 0 or any(value is not None for value in report_fields):
+                raise ValueError("NOT_REPORTED coverage snapshot에 보고 수치가 들어갈 수 없다")
+            if self.reported_by is not None:
+                raise ValueError("NOT_REPORTED coverage snapshot에 보고 주체가 들어갈 수 없다")
+            if self.planned_general_coverage_ratio is not None:
+                raise ValueError("보고가 없으면 계획 대비 대사를 주장할 수 없다")
+            if self.planned_general_coverage_unavailable_reason is None:
+                raise ValueError("보고가 없을 때 대사 불가 사유가 필요하다")
+        return self
+
+
 class ReportExportSnapshot(CamelModel):
     """Core-derived report identity; it is not a representation of browser file bytes."""
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     site_id: str
     design_surface_id: str
     design_surface_revision: str
@@ -133,6 +212,15 @@ class ReportExportSnapshot(CamelModel):
     design_normalization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     baseline: ReportExportSource
     latest: ReportExportSource
+    coverage: ReportExportCoverageSnapshot | None = None
+
+    @model_validator(mode="after")
+    def _validate_schema_generation(self) -> ReportExportSnapshot:
+        if self.schema_version == "1.0" and self.coverage is not None:
+            raise ValueError("report export snapshot 1.0에는 coverage가 없다")
+        if self.schema_version == "1.1" and self.coverage is None:
+            raise ValueError("report export snapshot 1.1에는 coverage가 필요하다")
+        return self
 
 
 class ReportExportCreateResponse(CamelModel):
@@ -140,6 +228,7 @@ class ReportExportCreateResponse(CamelModel):
     export_id: str | None = None
     recorded_at: datetime | None = None
     snapshot_digest: str | None = None
+    snapshot: ReportExportSnapshot | None = None
     #: Explicitly prevents clients from interpreting the audit entry as a server-generated PDF/CSV.
     content_produced_by_server: bool = False
     detail: str | None = None
@@ -193,7 +282,12 @@ def _parse_aware_utc(value: object, *, field_name: str) -> datetime:
 
 
 def _snapshot_digest(snapshot: ReportExportSnapshot) -> str:
-    return sha256_digest(canonical_payload_bytes(snapshot.model_dump(by_alias=True, mode="json")))
+    payload = snapshot.model_dump(by_alias=True, mode="json")
+    # Schema 1.0 predates the coverage field entirely. Including the new model's
+    # default ``coverage: null`` would change every historical digest on replay.
+    if snapshot.schema_version == "1.0":
+        payload.pop("coverage", None)
+    return sha256_digest(canonical_payload_bytes(payload))
 
 
 def _is_valid_actor(value: object) -> bool:
@@ -215,10 +309,10 @@ def _is_valid_actor(value: object) -> bool:
 class ReportExportStore:
     """Organization/site-scoped immutable audit ledger for browser report exports.
 
-    The report data itself continues to live in design-conformance records. This
-    store owns only the export audit fact and re-derives its snapshot from those
-    records every time (live and replay), so a manually edited journal cannot
-    assert a different report revision or digest.
+    The report data itself continues to live in design-conformance and coverage
+    records. This store owns only the export audit fact and re-derives its
+    immutable inputs (or their recorded append-only prefix) on replay, so a
+    manually edited journal cannot assert a different revision or evidence set.
     """
 
     def __init__(
@@ -227,10 +321,12 @@ class ReportExportStore:
         *,
         site_store: SiteStore,
         design_conformance_store: ReportExportCatalog,
+        coverage_report_store: ReportExportCoverageCatalog,
     ) -> None:
         self._journal = journal
         self._site_store = site_store
         self._design_conformance_store = design_conformance_store
+        self._coverage_report_store = coverage_report_store
         self._lock = threading.Lock()
         self._by_site: dict[tuple[str, str], list[RecordedReportExport]] = {}
         # Idempotency belongs to the site-scoped endpoint.  The same caller may
@@ -287,6 +383,83 @@ class ReportExportStore:
             source_bundle_digest=request.source_bundle_digest,
         )
 
+    def _coverage_snapshot(
+        self,
+        mission_id: str,
+        *,
+        report_count: int | None,
+        rejection_count: int | None,
+    ) -> ReportExportCoverageSnapshot | None:
+        """Build or replay one append-only coverage-history prefix.
+
+        A later partial/final report or rejection must not invalidate a document
+        exported earlier. New records bind the full current prefix; replay binds
+        exactly the counts stored in that snapshot and ignores later suffixes.
+        """
+
+        reports = self._coverage_report_store.recorded_history(mission_id)
+        rejected = self._coverage_report_store.rejections(mission_id)
+        selected_report_count = len(reports) if report_count is None else report_count
+        selected_rejection_count = len(rejected) if rejection_count is None else rejection_count
+        if (
+            selected_report_count < 0
+            or selected_report_count > len(reports)
+            or selected_rejection_count < 0
+            or selected_rejection_count > len(rejected)
+        ):
+            return None
+        reports = reports[:selected_report_count]
+        rejected = rejected[:selected_rejection_count]
+        rejection_views = [
+            ReportExportCoverageRejection(
+                verdict=item.verdict.value,
+                detail=item.detail,
+                reported_by=item.reported_by,
+                rejected_at=item.rejected_at,
+            )
+            for item in rejected
+        ]
+        if not reports:
+            return ReportExportCoverageSnapshot(
+                mission_id=mission_id,
+                availability="NOT_REPORTED",
+                report_count=0,
+                planned_general_coverage_unavailable_reason=(
+                    "커버리지 보고가 없어 계획 대비 대사를 수행하지 않았습니다"
+                ),
+                rejection_count=len(rejection_views),
+                rejections=rejection_views,
+            )
+
+        recorded = reports[-1]
+        report = recorded.report
+        planned_ratio = self._coverage_report_store.mission_planned_general_ratio(mission_id)
+        return ReportExportCoverageSnapshot(
+            mission_id=mission_id,
+            availability="REPORTED",
+            report_count=len(reports),
+            report_digest=sha256_digest(
+                canonical_payload_bytes(
+                    report.model_dump(by_alias=True, mode="json", exclude_none=True)
+                )
+            ),
+            reported_by=recorded.reported_by,
+            report_timestamp=report.timestamp,
+            completion_state=report.summary.completion_state.value,
+            mandatory_hazard_ratio=report.summary.mandatory_hazard_ratio,
+            mandatory_asset_ratio=report.summary.mandatory_asset_ratio,
+            accessible_general_ratio=report.summary.accessible_general_ratio,
+            unobserved_cell_count=len(report.unobserved_cells()),
+            recovery_recommended=report.needs_coverage_recovery(),
+            ratio_attribution_note=RATIO_ATTRIBUTION_NOTE,
+            planned_general_coverage_ratio=planned_ratio,
+            planned_general_coverage_unavailable_reason=(
+                None if planned_ratio is not None else PLANNED_GENERAL_COVERAGE_UNAVAILABLE_REASON
+            ),
+            rejection_count=len(rejection_views),
+            rejections=rejection_views,
+        )
+
     def _resolve_snapshot(
         self,
         *,
@@ -294,6 +467,9 @@ class ReportExportStore:
         site_id: str,
         baseline_design_conformance_id: str,
         latest_design_conformance_id: str,
+        schema_version: Literal["1.0", "1.1"] = "1.1",
+        coverage_report_count: int | None = None,
+        coverage_rejection_count: int | None = None,
     ) -> tuple[ReportExportVerdict, ReportExportSnapshot | None, str | None]:
         if self._site_store.get_scoped(site_id, organization_id) is None:
             return ReportExportVerdict.UNKNOWN_SITE, None, "해당 조직의 현장을 찾을 수 없다"
@@ -366,9 +542,24 @@ class ReportExportStore:
         assert baseline_request.design_normalization_profile is not None  # noqa: S101
         assert baseline_request.design_normalization_digest is not None  # noqa: S101
 
+        coverage: ReportExportCoverageSnapshot | None = None
+        if schema_version == "1.1":
+            coverage = self._coverage_snapshot(
+                latest_source.mission_id,
+                report_count=coverage_report_count,
+                rejection_count=coverage_rejection_count,
+            )
+            if coverage is None:
+                return (
+                    ReportExportVerdict.SNAPSHOT_NOT_COMPARABLE,
+                    None,
+                    "기록 당시 커버리지 이력 prefix를 Core 원장에서 다시 확인할 수 없다",
+                )
+
         return (
             ReportExportVerdict.RECORDED,
             ReportExportSnapshot(
+                schema_version=schema_version,
                 site_id=site_id,
                 design_surface_id=baseline_request.design_surface_id,
                 design_surface_revision=baseline_request.design_surface_revision,
@@ -377,6 +568,7 @@ class ReportExportStore:
                 design_normalization_digest=baseline_request.design_normalization_digest,
                 baseline=baseline_source,
                 latest=latest_source,
+                coverage=coverage,
             ),
             None,
         )
@@ -420,6 +612,13 @@ class ReportExportStore:
                     site_id=site_id,
                     baseline_design_conformance_id=snapshot.baseline.design_conformance_id,
                     latest_design_conformance_id=snapshot.latest.design_conformance_id,
+                    schema_version=snapshot.schema_version,
+                    coverage_report_count=(
+                        None if snapshot.coverage is None else snapshot.coverage.report_count
+                    ),
+                    coverage_rejection_count=(
+                        None if snapshot.coverage is None else snapshot.coverage.rejection_count
+                    ),
                 )
                 if verdict is not ReportExportVerdict.RECORDED or resolved != snapshot:
                     raise ReportExportRecoveryError(
@@ -466,6 +665,21 @@ class ReportExportStore:
                 return ReportExportResult(
                     ReportExportVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
+            existing = self._by_id.get((organization_id, site_id, request.export_id))
+            if existing is not None:
+                if (
+                    existing.export_format is request.export_format
+                    and existing.actor == actor
+                    and existing.snapshot.baseline.design_conformance_id
+                    == request.baseline_design_conformance_id
+                    and existing.snapshot.latest.design_conformance_id
+                    == request.latest_design_conformance_id
+                ):
+                    return ReportExportResult(ReportExportVerdict.ALREADY_RECORDED, existing)
+                return ReportExportResult(
+                    ReportExportVerdict.DUPLICATE_EXPORT_ID,
+                    detail="같은 현장의 exportId로 다른 사용자·형식·스냅샷을 덮어쓸 수 없다",
+                )
             verdict, snapshot, detail = self._resolve_snapshot(
                 organization_id=organization_id,
                 site_id=site_id,
@@ -476,18 +690,6 @@ class ReportExportStore:
                 return ReportExportResult(verdict, detail=detail)
             assert snapshot is not None  # noqa: S101 -- verdict postcondition
             digest = _snapshot_digest(snapshot)
-            existing = self._by_id.get((organization_id, site_id, request.export_id))
-            if existing is not None:
-                if (
-                    existing.export_format is request.export_format
-                    and existing.actor == actor
-                    and existing.snapshot_digest == digest
-                ):
-                    return ReportExportResult(ReportExportVerdict.ALREADY_RECORDED, existing)
-                return ReportExportResult(
-                    ReportExportVerdict.DUPLICATE_EXPORT_ID,
-                    detail="같은 현장의 exportId로 다른 사용자·형식·스냅샷을 덮어쓸 수 없다",
-                )
             record = RecordedReportExport(
                 organization_id=organization_id,
                 site_id=site_id,
@@ -578,6 +780,7 @@ def build_report_exports_router(store: ReportExportStore) -> APIRouter:
             export_id=None if record is None else record.export_id,
             recorded_at=None if record is None else record.recorded_at,
             snapshot_digest=None if record is None else record.snapshot_digest,
+            snapshot=None if record is None else record.snapshot,
             detail=outcome.detail,
         )
 
@@ -615,6 +818,8 @@ __all__ = [
     "RecordedReportExport",
     "ReportExportCreateRequest",
     "ReportExportCatalog",
+    "ReportExportCoverageCatalog",
+    "ReportExportCoverageSnapshot",
     "ReportExportFormat",
     "ReportExportRecoveryError",
     "ReportExportResult",

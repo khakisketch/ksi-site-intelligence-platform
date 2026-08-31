@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { CSV_BOM, designProgressToCsv } from "@/lib/report-csv";
+import { CSV_BOM, designProgressToCsv, siteReportToCsv } from "@/lib/report-csv";
 import type { DesignProgress } from "@/lib/core-api/types";
+import type { CompleteReportCoverageEvidence } from "@/lib/reports/coverage-evidence";
 
 // 골든 텍스트 비교 — 이 파일이 렌더링과 분리된 순수 함수라는 것 자체가 테스트
 // 대상이다(design-conformance.test.ts 와 같은 규율, jsdom 없이 문자열만 본다).
@@ -33,6 +34,49 @@ function progress(overrides: Partial<DesignProgress> = {}): DesignProgress {
       },
     ],
     ...overrides,
+  };
+}
+
+function coverage(): CompleteReportCoverageEvidence {
+  return {
+    status: "REPORTED",
+    missionId: "mission-1",
+    report: {
+      missionId: "mission-1",
+      reportCount: 2,
+      latest: {
+        missionId: "mission-1",
+        siteId: "SITE-1",
+        timestamp: "2026-08-12T01:00:00Z",
+        cells: [
+          { cellId: "cell-1", state: "OBSERVED_HIGH_CONFIDENCE" },
+          { cellId: "cell-2", state: "TIME_LIMITED" },
+        ],
+        summary: {
+          mandatoryHazardRatio: 1,
+          mandatoryAssetRatio: 1,
+          accessibleGeneralRatio: 0.96,
+          completionState: "COMPLETED_WITH_GAPS",
+        },
+      },
+      reportedBy: "edge-1",
+      recoveryRecommended: true,
+      ratioAttributionNote: "이 세 비율은 기체가 계산해 신고한 값입니다.",
+      plannedGeneralCoverageRatio: 0.98,
+      plannedGeneralCoverageUnavailableReason: null,
+    },
+    rejections: {
+      missionId: "mission-1",
+      rejectionCount: 1,
+      rejections: [
+        {
+          verdict: "UNSUPPORTED_COMPLETION",
+          detail: "완료 임계 미달",
+          reportedBy: "edge-1",
+          rejectedAt: "2026-08-12T00:30:00Z",
+        },
+      ],
+    },
   };
 }
 
@@ -112,5 +156,41 @@ describe("designProgressToCsv", () => {
   it("구역이 0개면 헤더까지만 낸다 — 빈 표를 숨기지 않는다", () => {
     const csv = designProgressToCsv(progress({ zones: [] }));
     expect(csv.endsWith("산정 근거\r\n")).toBe(true);
+  });
+});
+
+describe("siteReportToCsv", () => {
+  it("기체 신고 귀속·계획 대사·거부 이력을 진척 표 앞에 함께 기록한다", () => {
+    const csv = siteReportToCsv(progress(), coverage());
+    expect(csv).toContain("커버리지 근거 임무 ID,mission-1\r\n");
+    expect(csv).toContain("커버리지 보고 상태,접수됨 — 최신 서버 수용 보고 기준\r\n");
+    expect(csv).toContain("커버리지 비율 귀속,이 세 비율은 기체가 계산해 신고한 값입니다.\r\n");
+    expect(csv).toContain(
+      "계획 대비 대사,대사 보류 — 미완료 종료 보고는 완료 판정의 계획 상한 검사 대상이 아님\r\n",
+    );
+    expect(csv).toContain("서버가 거부한 커버리지 주장 수,1\r\n");
+    expect(csv).toContain("UNSUPPORTED_COMPLETION | 완료 임계 미달 | edge-1");
+    expect(csv.indexOf("커버리지 근거 임무 ID")).toBeLessThan(csv.indexOf("구역ID,구역명"));
+  });
+
+  it("수용 보고가 없으면 0이나 완료로 꾸미지 않고 미보고 상태를 기록한다", () => {
+    const noReport: CompleteReportCoverageEvidence = {
+      status: "NOT_REPORTED",
+      missionId: "mission-2",
+      report: null,
+      rejections: { missionId: "mission-2", rejectionCount: 0, rejections: [] },
+    };
+    const csv = siteReportToCsv(progress(), noReport);
+    expect(csv).toContain("접수 없음 — 비행 전/미전송 여부는 구분 불가");
+    expect(csv).toContain("계획 대비 대사,수행하지 않음 — 수용된 커버리지 보고 없음");
+  });
+
+  it("COMPLETED 수용 보고만 계획 상한 검사 완료라고 기록한다", () => {
+    const completed = coverage();
+    if (completed.status !== "REPORTED") throw new Error("fixture must be reported");
+    completed.report.latest.summary.completionState = "COMPLETED";
+    expect(siteReportToCsv(progress(), completed)).toContain(
+      "계획 대비 대사,서버 확인: 발급 시점 계획 추정 상한 이내\r\n",
+    );
   });
 });

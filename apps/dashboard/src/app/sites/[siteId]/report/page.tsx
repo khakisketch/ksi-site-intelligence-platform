@@ -13,14 +13,17 @@ import { getSite } from "@/lib/core-api/sites";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DiffHeatmapOverlay } from "@/components/map/DiffHeatmapOverlay";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
+import { CoverageReportSection } from "@/components/missions/CoverageReportSection";
 import { ReportExportControls } from "@/components/reports/ReportExportControls";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatNetVolumeM3, formatVolumeM3 } from "@/lib/core-api/phase34-labels";
+import { getCoverageRejections, getCoverageReport } from "@/lib/core-api/missions";
 import {
   collectSiteReportData,
   matchLatestConformanceReport,
   type ConformanceMatch,
 } from "@/lib/reports/collect-site-report-data";
+import type { ReportCoverageEvidence } from "@/lib/reports/coverage-evidence";
 import type {
   DesignConformanceListView,
   DesignSurface,
@@ -32,7 +35,7 @@ import type {
  * 현장 보고서 — 인쇄 전용 화면(M4-D, 확정안 browser-print).
  *
  * 새 산출물 파이프라인을 만들지 않는다. 화면 DOM 과 CSV 를 **같은 1회 서버 렌더**
- * (`getDesignProgress` → `getDesignConformance` → `getProcessingJobArtifacts`)에서
+ * (`getDesignProgress` → design/coverage 근거 → `getProcessingJobArtifacts`)에서
  * 뽑아 `ReportExportControls` 에 그대로 넘긴다 — "화면과 종이가 다른 숫자"가
  * 구조적으로 생길 수 없다. 데이터 조립(id 매칭·degrade 판정)은
  * `lib/reports/collect-site-report-data.ts` 의 순수 함수가 하고, 이 파일은 그
@@ -60,6 +63,34 @@ async function fetchJobArtifacts(jobId: string): Promise<ProcessingJobArtifactsV
   } catch {
     return null;
   }
+}
+
+async function fetchCoverageEvidence(missionId: string): Promise<ReportCoverageEvidence> {
+  const [reportResult, rejectionResult] = await Promise.allSettled([
+    getCoverageReport(missionId),
+    getCoverageRejections(missionId),
+  ]);
+  const report = reportResult.status === "fulfilled" ? reportResult.value : null;
+  const rejections = rejectionResult.status === "fulfilled" ? rejectionResult.value : null;
+  const reportIsAbsent =
+    reportResult.status === "rejected" &&
+    reportResult.reason instanceof CoreApiError &&
+    reportResult.reason.status === 404;
+
+  if (rejections === null || (report === null && !reportIsAbsent)) {
+    return {
+      status: "UNAVAILABLE",
+      missionId,
+      report,
+      rejections,
+      detail:
+        "커버리지 보고 또는 서버 거부 이력을 모두 확인하지 못했습니다. 문서를 새로고침한 뒤 다시 시도하세요.",
+    };
+  }
+  if (report === null) {
+    return { status: "NOT_REPORTED", missionId, report: null, rejections };
+  }
+  return { status: "REPORTED", missionId, report, rejections };
 }
 
 function ratioLabel(ratio: number | null): string {
@@ -342,9 +373,19 @@ export default async function SiteReportPage({
   // 리포트 안에만 있어(entry.report.current.jobId) 매칭 전에는 무엇을 조회할지
   // 알 수 없다. 매칭 자체는 순수 함수라 두 번 불러도(여기 한 번, 아래
   // collectSiteReportData 안에서 한 번) 비용이 없고 결과도 항상 같다.
+  const latestMissionId = progressResponse.latestMissionId;
+  const coveragePromise = progressResponse.progress && latestMissionId
+    ? fetchCoverageEvidence(latestMissionId)
+    : Promise.resolve<ReportCoverageEvidence>({
+        status: "UNAVAILABLE",
+        missionId: "",
+        report: null,
+        rejections: null,
+        detail: "최신 임무 식별자가 없어 커버리지 근거를 결속할 수 없습니다.",
+      });
   const conformanceList =
-    progressResponse.progress && progressResponse.latestMissionId
-      ? await fetchConformanceList(progressResponse.latestMissionId)
+    progressResponse.progress && latestMissionId
+      ? await fetchConformanceList(latestMissionId)
       : null;
   const preMatch = progressResponse.progress
     ? matchLatestConformanceReport(
@@ -353,10 +394,12 @@ export default async function SiteReportPage({
         conformanceList,
       )
     : null;
-  const jobArtifacts =
+  const [jobArtifacts, coverage] = await Promise.all([
     preMatch?.kind === "matched"
-      ? await fetchJobArtifacts(preMatch.entry.report.current.jobId)
-      : null;
+      ? fetchJobArtifacts(preMatch.entry.report.current.jobId)
+      : Promise.resolve(null),
+    coveragePromise,
+  ]);
 
   const data = collectSiteReportData(progressResponse, conformanceList, jobArtifacts);
 
@@ -436,6 +479,42 @@ export default async function SiteReportPage({
             <ZoneProgressTable zones={data.progress.zones} />
           </section>
 
+          <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+            <div>
+              <h3 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
+                관측 커버리지 근거
+              </h3>
+              <p className="mt-1 text-[11.5px] break-keep text-ink-muted">
+                아래 비율은 기체 신고값이며, 서버 수용 여부·계획 대사·거부 이력을 함께
+                표시합니다. 경로 완료만으로 현장 관측 완료를 주장하지 않습니다.
+              </p>
+            </div>
+            {coverage.status === "UNAVAILABLE" ? (
+              <>
+                {coverage.report && (
+                  <CoverageReportSection
+                    result={{ kind: "reported", report: coverage.report }}
+                    rejections={coverage.rejections}
+                  />
+                )}
+                <ErrorState
+                  message="커버리지 근거를 완전히 불러오지 못했습니다."
+                  detail={coverage.detail}
+                  retryable
+                />
+              </>
+            ) : (
+              <CoverageReportSection
+                result={
+                  coverage.status === "REPORTED"
+                    ? { kind: "reported", report: coverage.report }
+                    : { kind: "not-reported" }
+                }
+                rejections={coverage.rejections}
+              />
+            )}
+          </section>
+
           {data.conformance.kind === "matched" ? (
             <ConformanceTable conformance={data.conformance} />
           ) : data.conformance.kind !== "no-progress" ? (
@@ -479,6 +558,7 @@ export default async function SiteReportPage({
             progress={data.progress}
             fileNameBase={`report-${site.siteId}-${designSurfaceId}`}
             siteId={site.siteId}
+            coverage={coverage}
           />
         </>
       )}

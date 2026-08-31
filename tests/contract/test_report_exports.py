@@ -20,6 +20,11 @@ import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.coverage_reports import (
+    CoverageReportVerdict,
+    RecordedCoverageReport,
+    RejectedCoverageReport,
+)
 from ksi_core.design_conformance_reports import DesignConformanceStore, RecordedDesignConformance
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
@@ -36,6 +41,13 @@ from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import current_comparison_policy
+from ksi_event_contracts.coverage_report import (
+    CompletionState,
+    CoverageCell,
+    CoverageCellState,
+    CoverageReport,
+    CoverageSummary,
+)
 from ksi_event_contracts.design_conformance_report import (
     DesignConformanceReport,
     DesignSurfaceRef,
@@ -48,6 +60,7 @@ from ksi_event_contracts.vertical_reference import (
 )
 from ksi_event_contracts.volume_change_report import ZoneVolumeDelta
 from ksi_mission_contracts.models import SiteFrame
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
 _NOW = datetime(2026, 8, 30, 4, 0, tzinfo=UTC)
 _ADMIN_TOKEN = "report-export-admin"  # noqa: S105 -- test fixture
@@ -130,6 +143,58 @@ class _Catalog:
         if request is None or request.mission_id != mission_id:
             return None
         return self.entries.get(design_conformance_id)
+
+
+@dataclass
+class _CoverageCatalog:
+    records: dict[str, list[RecordedCoverageReport]]
+    rejected: dict[str, list[RejectedCoverageReport]]
+    planned_ratios: dict[str, float | None]
+
+    def recorded_history(self, mission_id: str) -> list[RecordedCoverageReport]:
+        return list(self.records.get(mission_id, ()))
+
+    def rejections(self, mission_id: str) -> list[RejectedCoverageReport]:
+        return list(self.rejected.get(mission_id, ()))
+
+    def mission_planned_general_ratio(self, mission_id: str) -> float | None:
+        return self.planned_ratios.get(mission_id)
+
+
+def _coverage_catalog(mission_id: str = "mission-dcf-latest") -> _CoverageCatalog:
+    report = CoverageReport(
+        mission_id=mission_id,
+        site_id="site-1",
+        timestamp=_NOW + timedelta(days=7),
+        cells=[
+            CoverageCell(cell_id="cell-1", state=CoverageCellState.OBSERVED_HIGH_CONFIDENCE),
+            CoverageCell(cell_id="cell-2", state=CoverageCellState.OBSERVED_PARTIAL),
+        ],
+        summary=CoverageSummary(
+            mandatory_hazard_ratio=1.0,
+            mandatory_asset_ratio=1.0,
+            accessible_general_ratio=0.96,
+            completion_state=CompletionState.COMPLETED,
+        ),
+    )
+    return _CoverageCatalog(
+        records={
+            mission_id: [RecordedCoverageReport(report=report, reported_by="edge-device-1")]
+        },
+        rejected={
+            mission_id: [
+                RejectedCoverageReport(
+                    mission_id=mission_id,
+                    site_id="site-1",
+                    verdict=CoverageReportVerdict.UNSUPPORTED_COMPLETION,
+                    detail="COMPLETED 주장의 비율이 임계 미만이다",
+                    reported_by="edge-device-1",
+                    rejected_at=_NOW + timedelta(days=6),
+                )
+            ]
+        },
+        planned_ratios={mission_id: 0.98},
+    )
 
 
 def _vertical() -> VerticalReference:
@@ -242,6 +307,7 @@ class _Fixture:
     client: TestClient
     store: ReportExportStore
     catalog: _Catalog
+    coverage: _CoverageCatalog
     journals: list[DurableJournal]
 
     def close(self) -> None:
@@ -290,10 +356,12 @@ def fixture(tmp_path: Path) -> Iterator[_Fixture]:
         storage=storage,
     )
     catalog = _catalog()
+    coverage = _coverage_catalog()
     export_store = ReportExportStore(
         open_journal("report-exports.jsonl"),
         site_store=sites,
         design_conformance_store=catalog,
+        coverage_report_store=coverage,
     )
     app = create_app(
         auth_registry=_registry(),
@@ -307,7 +375,7 @@ def fixture(tmp_path: Path) -> Iterator[_Fixture]:
         design_conformance_report_store=report_store,
         report_export_store=export_store,
     )
-    value = _Fixture(TestClient(app), export_store, catalog, journals)
+    value = _Fixture(TestClient(app), export_store, catalog, coverage, journals)
     try:
         yield value
     finally:
@@ -371,6 +439,10 @@ def test_export_audit_is_core_derived_idempotent_and_never_claims_file_bytes(
     assert body["verdict"] == "RECORDED"
     assert body["contentProducedByServer"] is False
     assert body["snapshotDigest"].startswith("sha256:")
+    assert body["snapshot"]["schemaVersion"] == "1.1"
+    assert body["snapshot"]["coverage"]["availability"] == "REPORTED"
+    assert body["snapshot"]["coverage"]["reportCount"] == 1
+    assert body["snapshot"]["coverage"]["rejectionCount"] == 1
 
     # A network retry with the same immutable export identity does not write a
     # second audit fact.
@@ -386,6 +458,7 @@ def test_export_audit_is_core_derived_idempotent_and_never_claims_file_bytes(
     assert exports[0]["contentProducedByServer"] is False
     assert exports[0]["snapshot"]["baseline"]["reportDigest"].startswith("sha256:")
     assert exports[0]["snapshot"]["latest"]["processingProfileDigest"] == _PREFIXED_DIGEST
+    assert exports[0]["snapshot"]["coverage"]["reportedBy"] == "edge-device-1"
     assert "organizationId" not in exports[0]
 
 
@@ -455,6 +528,7 @@ def test_export_audit_fails_closed_when_report_anchors_are_not_comparable(tmp_pa
         export_journal,
         site_store=sites,
         design_conformance_store=_catalog(latest_profile=f"sha256:{'d' * 64}"),
+        coverage_report_store=_coverage_catalog(),
     )
     try:
         result = store.record(
@@ -478,10 +552,14 @@ def test_replay_revalidates_the_complete_server_snapshot(tmp_path: Path) -> None
         "site-1", "Site 1", _FRAME, organization_id="org-1", actor="fixture", now=_NOW
     ).record is not None
     catalog = _catalog()
+    coverage = _coverage_catalog()
     export_path = tmp_path / "exports.jsonl"
     writer_journal = DurableJournal(export_path)
     writer = ReportExportStore(
-        writer_journal, site_store=sites, design_conformance_store=catalog
+        writer_journal,
+        site_store=sites,
+        design_conformance_store=catalog,
+        coverage_report_store=coverage,
     )
     request = ReportExportCreateRequest.model_validate(_payload())
     assert writer.record(
@@ -491,15 +569,34 @@ def test_replay_revalidates_the_complete_server_snapshot(tmp_path: Path) -> None
         actor="alice@example.com",
         now=_NOW,
     ).verdict is ReportExportVerdict.RECORDED
+
+    # Same mission may receive a later partial/final report or another rejected
+    # claim. That append-only suffix must not invalidate the earlier export.
+    mission_id = "mission-dcf-latest"
+    coverage.records[mission_id].append(coverage.records[mission_id][0])
+    coverage.rejected[mission_id].append(coverage.rejected[mission_id][0])
+    assert writer.record(
+        request,
+        organization_id="org-1",
+        site_id="site-1",
+        actor="alice@example.com",
+        now=_NOW,
+    ).verdict is ReportExportVerdict.ALREADY_RECORDED
     writer_journal.close()
 
     revived = ReportExportStore(
-        DurableJournal(export_path), site_store=sites, design_conformance_store=catalog
+        DurableJournal(export_path),
+        site_store=sites,
+        design_conformance_store=catalog,
+        coverage_report_store=coverage,
     )
     try:
         rows = revived.history(organization_id="org-1", site_id="site-1")
         assert len(rows) == 1
         assert rows[0].snapshot.baseline.report_digest.startswith("sha256:")
+        assert rows[0].snapshot.coverage is not None
+        assert rows[0].snapshot.coverage.report_count == 1
+        assert rows[0].snapshot.coverage.rejection_count == 1
     finally:
         revived._journal.close()  # noqa: SLF001 -- this test owns the journal instance
 
@@ -508,6 +605,55 @@ def test_replay_revalidates_the_complete_server_snapshot(tmp_path: Path) -> None
     export_path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
     with pytest.raises(ReportExportRecoveryError, match="snapshot 또는 digest"):
         ReportExportStore(
-            DurableJournal(export_path), site_store=sites, design_conformance_store=catalog
+            DurableJournal(export_path),
+            site_store=sites,
+            design_conformance_store=catalog,
+            coverage_report_store=coverage,
         )
     sites_journal.close()
+
+
+def test_replay_preserves_pre_coverage_schema_v1_snapshot(tmp_path: Path) -> None:
+    sites_journal = DurableJournal(tmp_path / "sites.jsonl")
+    sites = SiteStore(sites_journal)
+    assert sites.register(
+        "site-1", "Site 1", _FRAME, organization_id="org-1", actor="fixture", now=_NOW
+    ).record is not None
+    catalog = _catalog()
+    coverage = _coverage_catalog()
+    export_path = tmp_path / "exports.jsonl"
+    journal = DurableJournal(export_path)
+    writer = ReportExportStore(
+        journal,
+        site_store=sites,
+        design_conformance_store=catalog,
+        coverage_report_store=coverage,
+    )
+    assert writer.record(
+        ReportExportCreateRequest.model_validate(_payload()),
+        organization_id="org-1",
+        site_id="site-1",
+        actor="alice@example.com",
+        now=_NOW,
+    ).verdict is ReportExportVerdict.RECORDED
+    journal.close()
+
+    raw = json.loads(export_path.read_text(encoding="utf-8"))
+    raw["snapshot"]["schemaVersion"] = "1.0"
+    raw["snapshot"].pop("coverage")
+    raw["snapshotDigest"] = sha256_digest(canonical_payload_bytes(raw["snapshot"]))
+    export_path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
+
+    revived = ReportExportStore(
+        DurableJournal(export_path),
+        site_store=sites,
+        design_conformance_store=catalog,
+        coverage_report_store=coverage,
+    )
+    try:
+        record = revived.history(organization_id="org-1", site_id="site-1")[0]
+        assert record.snapshot.schema_version == "1.0"
+        assert record.snapshot.coverage is None
+    finally:
+        revived._journal.close()  # noqa: SLF001 -- test owns journal
+        sites_journal.close()

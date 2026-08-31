@@ -535,6 +535,22 @@ class CoverageReportStore:
         with self._lock:
             return [r.report for r in self._by_mission.get(mission_id, ())]
 
+    def recorded_history(self, mission_id: str) -> list[RecordedCoverageReport]:
+        """보고 본문과 제출 주체를 함께 보존한 append-only 이력 사본.
+
+        보고서 내보내기 감사는 ``latest``만 다시 읽으면 안 된다. 내보낸 뒤 같은
+        임무에 부분→최종 보고가 추가돼도 과거 문서의 근거가 사라진 것이 아니기
+        때문이다. 호출자는 이 수신 순서 prefix를 snapshot으로 묶고 replay 때 같은
+        prefix가 남아 있는지 검증한다.
+        """
+        if (
+            current_request_organization_id() is not None
+            and not self.mission_is_visible(mission_id)
+        ):
+            return []
+        with self._lock:
+            return list(self._by_mission.get(mission_id, ()))
+
 
 class CoverageReportResponse(CamelModel):
     verdict: str
@@ -542,9 +558,14 @@ class CoverageReportResponse(CamelModel):
     report: dict[str, Any] | None = None
 
 
-_RATIO_ATTRIBUTION_NOTE = (
+RATIO_ATTRIBUTION_NOTE = (
     "이 세 비율은 기체가 계산해 신고한 값입니다. 서버는 구역 분류(위험구역/자산/"
     "일반)를 갖고 있지 않아 재계산하지 못합니다(INV-010)."
+)
+
+PLANNED_GENERAL_COVERAGE_UNAVAILABLE_REASON = (
+    "이 임무의 발급 경로에 계획 커버 추정치가 없습니다"
+    " (perimeter 경로이거나 계약 단독 발급일 수 있습니다)"
 )
 
 
@@ -701,13 +722,12 @@ def build_coverage_reports_router(
             latest=recorded.report.model_dump(by_alias=True, mode="json", exclude_none=True),
             reported_by=recorded.reported_by,
             recovery_recommended=recorded.report.needs_coverage_recovery(),
-            ratio_attribution_note=_RATIO_ATTRIBUTION_NOTE,
+            ratio_attribution_note=RATIO_ATTRIBUTION_NOTE,
             planned_general_coverage_ratio=planned_ratio,
             planned_general_coverage_unavailable_reason=(
                 None
                 if planned_ratio is not None
-                else "이 임무의 발급 경로에 계획 커버 추정치가 없습니다"
-                " (perimeter 경로이거나 계약 단독 발급일 수 있습니다)"
+                else PLANNED_GENERAL_COVERAGE_UNAVAILABLE_REASON
             ),
         )
 

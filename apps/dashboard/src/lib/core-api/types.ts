@@ -1832,6 +1832,62 @@ export interface ReportExportCreateInput {
   latestDesignConformanceId: string;
 }
 
+export interface ReportExportSource {
+  designConformanceId: string;
+  reportDigest: string;
+  missionId: string;
+  requestId: string;
+  computedAt: string;
+  currentJobId: string;
+  currentArtifactId: string;
+  diffRasterId: string;
+  diffRasterDigest: string;
+  coreRecomputedDiffRasterDigest: string;
+  processingProfileDigest: string;
+  sourceBundleDigest: string;
+}
+
+export interface ReportExportCoverageRejection {
+  verdict: string;
+  detail: string | null;
+  reportedBy: string | null;
+  rejectedAt: string;
+}
+
+export interface ReportExportCoverageSnapshot {
+  missionId: string;
+  availability: "REPORTED" | "NOT_REPORTED";
+  reportCount: number;
+  reportDigest: string | null;
+  reportedBy: string | null;
+  reportTimestamp: string | null;
+  completionState: string | null;
+  mandatoryHazardRatio: number | null;
+  mandatoryAssetRatio: number | null;
+  accessibleGeneralRatio: number | null;
+  unobservedCellCount: number | null;
+  recoveryRecommended: boolean | null;
+  ratioAttributionNote: string | null;
+  plannedGeneralCoverageRatio: number | null;
+  plannedGeneralCoverageUnavailableReason: string | null;
+  rejectionCount: number;
+  rejections: ReportExportCoverageRejection[];
+}
+
+export interface ReportExportSnapshot {
+  schemaVersion: "1.0" | "1.1";
+  siteId: string;
+  designSurfaceId: string;
+  designSurfaceRevision: string;
+  designSurfaceSha256: string;
+  designNormalizationProfile: string;
+  designNormalizationDigest: string;
+  baseline: ReportExportSource;
+  latest: ReportExportSource;
+  /** null is only valid for replayed schemaVersion 1.0 audit records. */
+  coverage: ReportExportCoverageSnapshot | null;
+}
+
 /**
  * `contentProducedByServer=false`는 감사 사실만 남았다는 뜻이다. 파일은 여전히
  * 브라우저의 print/Blob 경로에서 만들어진다.
@@ -1841,6 +1897,7 @@ export interface ReportExportCreateResponse {
   exportId: string | null;
   recordedAt: string | null;
   snapshotDigest: string | null;
+  snapshot: ReportExportSnapshot | null;
   contentProducedByServer: boolean;
   detail: string | null;
 }

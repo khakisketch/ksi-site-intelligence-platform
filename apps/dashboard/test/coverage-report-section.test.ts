@@ -20,6 +20,11 @@ describe("커버리지 귀속·대사 표시", () => {
     expect(SECTION).not.toMatch(/plannedGeneralCoverageRatio\}/);
   });
 
+  it("미완료 종료 보고를 계획 상한 검사 완료로 표현하지 않는다", () => {
+    expect(SECTION).toContain('latest.summary.completionState === "COMPLETED"');
+    expect(SECTION).toContain("미완료 종료 보고이므로 완료 판정용 계획 상한 대사는 보류합니다.");
+  });
+
   it("거부 이력이 있으면 비율 타일보다 먼저 렌더한다", () => {
     expect(SECTION).toContain("rejections");
     const tilesIndex = SECTION.indexOf("필수 위험구역");
