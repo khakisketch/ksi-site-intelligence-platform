@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-31T14:08:42+09:00",
+  "updated_at": "2026-08-31T14:22:51+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -3279,14 +3279,14 @@
       "title": "INV-021 CRITICAL 확정게이트가 evidence.riskFieldArtifact의 실존 여부만 확인 — 진짜 위험장 계산 없이도 통과",
       "lens": "other",
       "severity": "medium",
-      "status": "regressed",
+      "status": "resolved",
       "note": "services/core/src/ksi_core/events.py:339-343(_evidence_gate_violation)의 CRITICAL 확정 게이트는 evidence.riskFieldArtifact/trajectoryArtifact/viewpointHistoryArtifact 값이 비어있지 않은지만 본다(모듈 docstring 명시: '서버는 기하학적 위험중첩을 재계산하지 않는다 — 근거 보존과 fail-closed 거부만 소유한다', 의도된 설계). 실제 RiskField를 조립하는 packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py의 build_dynamic_risk_field(RISK-004)는 프로덕션 호출부 0건(테스트만 호출, 2026-08-13 grep 실측) — 그런데 이 함수 자신의 docstring이 '위험장 지오메트리 합성(스윕볼륨·가려짐 반영)은 이 모듈 범위 밖 — 별도 제품 결정 필요'라고 명시해 캐스팅 준비만 있고 지오메트리를 만들 방법이 없다. 형제 함수 cpa_ttc/reobservation_signal은 services/core/src/ksi_core/equipment_states.py의 /risk-assessment 엔드포인트(장비-대상 쌍 온디맨드 CPA/TTC 조회, 커밋 a495e7e)로 배선됐지만 이는 evidence.riskFieldArtifact와 무관한 별개 기능이라 이 게이트를 채우지 못한다. 실제 리스크장 아티팩트 생성 주체는 CLAUDE.md 통제경계상 Manifold(전술 인지·위험·능동인지 소유)일 가능성이 높은데 그 앱 자체가 아직 없다(mission-contract-verification-unwired와 동일 계열, Track A/B 하드웨어 종속). 오늘 지오이드/IFC/마스킹/dataResidency처럼 '한 줄 배선'으로 못 고친다 — 지오메트리 합성 방식 자체가 미결정 제품 문제. 해소 조건: RISK-003 지오메트리 합성 방식이 대표자 결정으로 확정되고, 그 산출물을 build_dynamic_risk_field에 실어 evidence.riskFieldArtifact를 실제로 채우는 프로덕션 경로(Manifold 또는 Core)가 생긴다.",
       "accept_reason": null,
-      "resolve_evidence": "services/core/src/ksi_core/events.py _verify_critical_evidence + tests/contract/test_evidence.py CRITICAL RiskField suite (registered/non-tombstoned, storage bytes, model/geometry/validity/entities, digest snapshot, storage outage, race); focused 158 passed and full 3026 passed (2026-08-14). Production generator residual transferred to riskfield-production-generator-unwired.",
+      "resolve_evidence": "09fe5a7, 447b521, 434b92b. Core CRITICAL transition은 더 이상 artifact 문자열 존재만 보지 않는다: 장비-bound+Ed25519-attested 등록, active dispatch/policy/calibration lineage, storage bytes·content digest, RiskField v1.1 schema, nondegenerate geometry, bounded validity, exact event entity coverage, non-empty uncertainty, positive horizon, transition race 및 post-confirmation digest를 fail-closed 검증한다. tests/contract/test_evidence.py의 원 공격/semantic mutation/storage replacement tests와 edge dispatch attestation tests 포함 targeted 90 passed. native producer assembly는 3afeb73으로 고정했고 실제 HIL은 별도 riskfield-evidence-chain-not-hil-verified에 남겼다.",
       "reopen_reason": "독립 검증(2026-08-14, 반증 목적 병렬 에이전트, 실제 HTTP PoC)에서 'resolve_evidence'가 주장한 수정이 이 리스크의 실질(진짜 위험판정 증거 없이 CRITICAL 확정 통과)을 막지 못함을 재현: (1) CRITICAL — 위험판정 파일을 올리는 권한과 사건을 확정하는 권한이 분리돼있지 않아, 승인하는 사람과 동일한 FIELD_OPERATOR 계정이 직접 손으로 만든 가짜 RiskField를 올리고 그대로 확정까지 통과시킴(EDGE_DEVICE/Manifold 경유 없이 end-to-end 재현). (2) HIGH — 유효기간 폭 상한 없음(50년 폭도 통과). (3) HIGH — 대상 장비(entity) 커버리지가 무제한 상위집합 대비 subset 검사라 5000개 무관 entity를 끼워도 통과. (4) MEDIUM — geometry '비어있지 않음' 검사가 구조적 존재만 보고 퇴화된(면적 0, 점 하나, 임의 문자열) 형상을 못 거름. (5) MEDIUM — INV-021이 명시하는 'uncertainty'(위치 불확실성) 필드를 아예 검사하지 않음, 빈 {}도 통과. (6) MEDIUM — 확정 시점에 못박은 content digest가 write-only라 이후 아무도 재검증하지 않아 lock 안/밖 read 사이 바이트 치환에 취약. 형식 검사(등록·비폐기·JSON 스키마·시각/entity subset 검사)는 실제로 개선됐으나 위 항목들 때문에 이 리스크의 원래 취지(진짜 위험장 계산 없이 통과하는 것을 막는다)는 아직 미해결. 재현 PoC 및 상세는 세션 기록 참조.",
-      "previous_status": "resolved",
+      "previous_status": "regressed",
       "created_at": "2026-08-13T09:59:12+09:00",
-      "updated_at": "2026-08-14T02:44:51+09:00"
+      "updated_at": "2026-08-31T14:22:51+09:00"
     },
     {
       "id": "processing-controller-work-dir-unbounded-retry",
@@ -3475,28 +3475,28 @@
       "title": "RiskField 증거 업로드 체인(EdgePipeline→StoreForwardSyncDriver→CoreRestSyncTransport)을 실제로 상시 구동하는 프로덕션 서비스 바이너리가 없음 — 라이브러리·테스트로만 존재",
       "lens": "other",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 12-agent 코드감사 확인: 체인 자체는 실재하고 통합테스트로 검증됨(risk.cpp SerializeRiskFieldV11 → evidence_builder.cpp → pipeline.cpp → sync.cpp → core_sync_http.cpp → services/core edge_dispatch.py register_edge_evidence). 그러나 edge/manifold-runtime/CMakeLists.txt는 라이브러리와 테스트/툴 실행파일만 빌드하고, 실 PSDK 콜백+실 Core 엔드포인트를 상대로 이 체인을 계속 구동하는 데몬 타깃이 없다. 참고: 기존 riskfield-production-generator-unwired 리스크(resolved)가 인용한 파일(edge_dispatch_sync.py)은 오기 — 실제 경로는 core_sync_http.cpp/sync.cpp(C++)이며 그 파이썬 모듈과 무관. 해소 조건: EdgePipeline+StoreForwardSyncDriver+CoreRestSyncTransport를 묶는 데몬 조립(소프트웨어, 하드웨어 불요) + 실 장비 bearer-token 채널로 실제 업로드 확인(HIL).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "e1118d1 및 3afeb73. edge/psdk-app의 ksi_psdk_app이 별도 sidecar가 아닌 production service host로 EdgePipeline, shared SQLite WAL/ArtifactVault, StoreForwardSyncDriver, CoreRestSyncTransport를 실제 construction하고 DrainWorker/DrainCoreSync에서 상시 구동하며 shutdown 시 join한다. tests/contract/test_edge_riskfield_production_wiring.py 4 passed, tools/edge/verify_sqlite_store_forward.sh의 Ubuntu 20.04/gcc9.4 native CTest 7/7 passed. 실제 장비 업로드 축은 riskfield-evidence-chain-not-hil-verified로 분리해 NOT_VERIFIED 유지.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T15:05:03+09:00",
-      "updated_at": "2026-08-14T15:05:03+09:00"
+      "updated_at": "2026-08-31T14:22:51+09:00"
     },
     {
       "id": "riskfield-provenance-no-device-signature",
       "title": "RiskField 증거가 채널 수준 bearer-token 인증만 있고 장비별 암호서명이 없음 — 토큰 파일 보유자는 누구나 자기완결적으로 조작된 RiskField를 제출 가능",
       "lens": "secret",
       "severity": "medium",
-      "status": "open",
+      "status": "resolved",
       "note": "2026-08-14 12-agent 코드감사 확인: register_edge_evidence(EDGE_EVIDENCE_WRITE 권한+장비ID 일치+digest-bound presigned PUT)와 CRITICAL 확정 시 자기정합성 검증(events.py:456-598)은 실재하나, 전부 '내용이 내적으로 일관됐는가'만 검증하고 '이 바이트를 실제로 그 장비가 만들었는가'는 검증하지 않는다. riskPolicyPackDigest·calibrationProfileId도 형식(정규식)만 검사되고 신뢰 레지스트리 대조가 없다(grep 0건). 해소 조건: 장비별 비대칭키로 RiskField digest 서명 + Core의 등록된 공개키 대조(소프트웨어 설계·구현은 가능, 실 장비 키 프로비저닝 확인은 HIL 필요).",
       "accept_reason": null,
-      "resolve_evidence": null,
+      "resolve_evidence": "434b92b이 Edge Ed25519 signer와 Core DeviceAttestationRegistry를 구현했다. CRITICAL evidence 등록은 canonical 7-field payload 서명, registered active key, device binding, content digest, active dispatch/policy/calibration lineage를 검증하며 missing/unknown/cross-device/revoked/expired/forged signature를 fail-closed 거부한다. tests/contract/test_device_attestation.py + test_edge_dispatch_api.py + test_evidence.py 포함 targeted 90 passed. 실장비 키 provisioning과 전송은 riskfield-evidence-chain-not-hil-verified로 분리해 NOT_VERIFIED 유지.",
       "reopen_reason": null,
-      "previous_status": null,
+      "previous_status": "open",
       "created_at": "2026-08-14T15:05:03+09:00",
-      "updated_at": "2026-08-14T15:05:03+09:00"
+      "updated_at": "2026-08-31T14:22:51+09:00"
     },
     {
       "id": "edge-device-cannot-call-source-media-ingest",
@@ -3791,6 +3791,20 @@
       "previous_status": "open",
       "created_at": "2026-08-18T20:13:08+09:00",
       "updated_at": "2026-08-20T18:39:02+09:00"
+    },
+    {
+      "id": "riskfield-evidence-chain-not-hil-verified",
+      "title": "RiskField 생성→장비 Ed25519 서명→Core·object-storage 업로드 체인은 소프트웨어로 조립됐으나 실제 Manifold 3 DPK에서 end-to-end HIL 검증되지 않음",
+      "lens": "secret",
+      "severity": "medium",
+      "status": "open",
+      "note": "소프트웨어 경로는 ksi_psdk_app의 EdgePipeline→shared SQLite WAL/ArtifactVault→StoreForwardSyncDriver→CoreRestSyncTransport로 조립되고 Core는 등록된 장비 공개키·active dispatch lineage·digest를 fail-closed 검증한다. 아직 실제 장비에서 DPK install/start, owner-only private key 및 Core public-key registry provisioning, bearer/CA/SPKI pin, Core 등록→presigned object PUT→ACK/restart recovery, REQ-EVT-101 latency를 한 세션으로 검증하지 않았다. 해소 조건: 무비행 HIL 세션에서 exact build SHA/DPK digest와 private evidence URI를 결속하고 위 체인 및 재시작 복구를 확인한다. 그 전까지 hardware capability는 NOT_VERIFIED다.",
+      "accept_reason": null,
+      "resolve_evidence": null,
+      "reopen_reason": null,
+      "previous_status": null,
+      "created_at": "2026-08-31T14:22:51+09:00",
+      "updated_at": "2026-08-31T14:22:51+09:00"
     }
   ]
 }

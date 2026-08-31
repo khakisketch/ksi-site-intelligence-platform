@@ -1,4 +1,37 @@
-# Current goal (2026-08-31, civil report coverage-evidence closure)
+# Current goal (2026-08-31, Edge RiskField production assembly truth)
+
+Make the existing native RiskField evidence path non-regressible and reconcile the canonical risk
+ledger without converting software evidence into device acceptance. `REQ-EDGE-101`, `REQ-EVT-101`,
+`REQ-GEO-101`, `REQ-SEC-101` and `INV-001/012/021/040/041/042/060` apply.
+
+Completion conditions:
+
+- the packaged `ksi_psdk_app`, rather than only a library/test target, is proven by contract to assemble
+  `EdgePipeline → shared SQLite WAL/ArtifactVault → StoreForwardSyncDriver → CoreRestSyncTransport`;
+- activation, perception, Core sync, TLS pins, bearer file and Ed25519 key remain explicit fail-closed
+  deployment inputs, and producer/sender cannot silently use separate journals;
+- Core CRITICAL confirmation continues to reject unsigned, wrong-device, stale-key, wrong-lineage,
+  digest-mismatched or semantically invalid RiskField evidence;
+- stale software risks are resolved only with executable evidence, while the real Manifold DPK/key/TLS/
+  storage path remains a precise `NOT_VERIFIED` HIL risk.
+
+Repository-owned software is green at `3afeb73`: the new production-wiring guard passes `4` tests;
+targeted assembly/device-attestation/CRITICAL suites pass `90`; the pinned Ubuntu 20.04/gcc 9.4
+Manifold container builds and passes native CTest `7/7`; full Python passes `4220` with `24` skips.
+Ruff, Mypy (`442` source files), lock, diff, hygiene, reference, PSDK and runtime-image-pin gates pass.
+Risks `riskfield-evidence-daemon-not-assembled`, `riskfield-provenance-no-device-signature` and
+`critical-event-riskfield-evidence-gate-presence-only` are resolved. The replacement
+`riskfield-evidence-chain-not-hil-verified` is open and has an explicit no-flight HIL procedure.
+
+Remote delivery is still separate: `origin/main` remains `899c6c8` because this environment cannot
+launch `git push`; GitHub Actions account payment/spending remains an external zero-step execution gate.
+FIELD-0a stays `BLOCKED`, DJI and physical Edge capabilities stay `NOT_VERIFIED`/OFF, and no DPK,
+device write, flight, motor, waypoint, camera/gimbal, customer-data, release or deployment action is
+claimed.
+
+---
+
+# Previous goal (2026-08-31, civil report coverage-evidence closure)
 
 Close `coverage-reconciliation-not-in-print-or-csv` without changing the approved Operations Console
 information architecture. `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101` and `REQ-UX-101`

@@ -723,6 +723,44 @@ ksi-edge-dispatch-sync \
 같은 pending dispatch를 idempotently receipt 처리하는 redacted log가 필요하다. 이 결과는
 PSDK ingress/telemetry/RGB/timing HIL을 대체하지 않으며, 실제 비행 command를 수행하지 않는다.
 
+### 8.2단계 — RiskField device-attested store-forward HIL (무비행)
+
+이 단계는 `riskfield-evidence-chain-not-hil-verified`만 해소한다. `ksi_psdk_app`의 software
+assembly, Core의 Ed25519 검증과 native WAL/HTTP 계약은 이미 자동 테스트 대상이지만, 실제
+Manifold DPK의 private key·bearer·TLS 환경에서 object storage ACK까지 도달한 증거는 아니다.
+
+**사전조건**:
+
+- 프로펠러 제거, `flight_or_motor_action=false`, camera/gimbal/waypoint write 없음.
+- clean `build_commit`, DPK SHA-256, runtime version, device ID, Core 배포 revision을 session
+  manifest에 기록한다. serial/token/private key/GPS는 기록하지 않는다.
+- DPK 사용자 소유 `0700` state directory, 별도 `0600` bearer file과 single-link `0600`
+  Ed25519 PEM, reviewed CA와 Core/storage SPKI pin을 사용한다. Core public-key registry에는
+  같은 device/key ID의 active 공개키만 둔다.
+- active dispatch·policy·calibration과 sensor-aligned signed perception profile이 없으면 실제
+  producer E2E는 `BLOCKED`다. 현재 RGB callback의 sensor timestamp가 0인 상태를 host clock으로
+  대체하거나 수동 RiskField를 실제 producer PASS로 포장하지 않는다.
+
+**관찰 순서**:
+
+1. `KSI_PSDK_APP_ENABLE_NATIVE_ACTIVATION/PERCEPTION/CORE_SYNC=ON`인 exact DPK를 설치·재시작한다.
+2. non-secret startup verdict가 activation/perception/Core sync 각각 어떤 상태인지 기록한다.
+   하나라도 `READY/LOADED`가 아니면 해당 typed verdict로 중단한다.
+3. 실제 pipeline이 durable candidate를 만들 때 SQLite sequence, evidence artifact digest,
+   attestation key ID, Core registration HTTP status, storage checksum ACK, candidate/evidence ACK
+   순서를 redacted log로 보존한다. signature·bearer·presigned URL 원문은 남기지 않는다.
+4. 네트워크를 끊은 동안 candidate가 durable pending으로 남는지 확인하고, 재연결 뒤 같은
+   sequence가 중복 CRITICAL evidence 없이 ACK되는지 확인한다. DPK 재시작 후에도 같은 시험을
+   한 번 반복한다.
+5. Core에서 artifact가 `deviceAttested=true`이고 active dispatch/policy/calibration lineage와
+   content digest가 일치하는지만 읽는다. 사건을 `CONFIRMED_EVENT`로 승격하지 않는다.
+
+**PASS**는 위 한 세션의 원본 log/digest와 private durable URI가 모두 있고, Core 등록→storage
+PUT→ACK 및 offline/restart recovery가 같은 sequence로 확인된 경우다. transport만 fixture로
+확인했거나 producer가 `SENSOR_ALIGNMENT_REQUIRED`이면 `PARTIAL/BLOCKED`이며 hardware capability를
+`VERIFIED`로 올리지 않는다. 이 단계는 `REQ-EVT-101`의 1/2/5초 전체 SLO, 비행 안전 또는 실제
+위험 인식 정확도를 증명하지 않는다.
+
 ### 9단계 — Pilot 2 웹뷰 JSBridge 접속점 확인 (`09_pilot_cloud_jsbridge/`, 신설 2026-08-15)
 
 **왜:** ADR-KSI-019 G3의 최소 접속 관문이다. 2026-08-27 현재 DJI 라이브 공식

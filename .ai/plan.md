@@ -1,4 +1,65 @@
-# Current implementation plan (2026-08-31, civil report coverage-evidence closure)
+# Current implementation plan (2026-08-31, Edge RiskField assembly truth)
+
+Requirement IDs:
+- `REQ-EDGE-101`, `REQ-EVT-101`, `REQ-GEO-101`, `REQ-SEC-101`.
+- `INV-001/012/021/040/041/042/060`.
+
+Owner module:
+- `edge/psdk-app` owns the packaged service host and worker lifecycle.
+- `edge/manifold-runtime` owns perception, RiskField evidence, durable WAL and sync adapters.
+- Core owns device attestation, active lineage binding and CRITICAL confirmation.
+
+Acceptance criteria:
+- A contract test fails if the product executable stops linking, constructing or driving any chain
+  component, splits the producer/sender journal, loses attestation inputs or leaks a worker at shutdown.
+- Existing hostile signature and CRITICAL semantic attacks remain fail-closed.
+- Software-complete and HIL/device-complete states are separate canonical risks.
+
+Contracts affected:
+- No external wire/schema change; stronger source/build assembly regression contract only.
+
+Reference assets:
+- Existing native runtime, `ksi_psdk_app`, Core device-attestation/event implementation and tests.
+- `references/repos` remain read-only and unused at runtime.
+
+Adoption decisions:
+- ADOPT `ksi_psdk_app` as the single production service host.
+- PRESERVE the shared WAL, Core wire and Ed25519 contracts.
+- REJECT a redundant daemon and any HIL claim from static/unit evidence.
+
+Files to change:
+- Edge production-wiring contract, ADR/README, HIL playbook, canonical risk ledger and `.ai` state.
+
+Tests:
+- Focused Python assembly/security/CRITICAL contracts; pinned Manifold native CTest; full Python,
+  Ruff, Mypy, lock, diff, hygiene and pin gates.
+
+HIL or real-device assumptions:
+- None executed. Exact DPK/key/bearer/TLS/storage chain remains `NOT_VERIFIED` under playbook §8.2.
+
+License/data implications:
+- Existing static curl/OpenSSL notices remain release gates. No private key, bearer, URL capability,
+  raw device data or customer evidence enters Git.
+
+Rollback:
+- Revert the guard/docs/ledger commit only. Do not remove WAL/evidence, weaken CRITICAL verification or
+  replace one shared journal with two stores.
+
+Execution:
+1. [완료] Trace the product executable, native chain, Core attestation and CRITICAL gates.
+2. [완료] Add and pass the four-case production assembly regression contract (`3afeb73`).
+3. [완료] Document the single-host decision and add a no-flight HIL §8.2 procedure.
+4. [완료] Re-run focused `90`, native CTest `7/7`, full Python `4220/24 skipped`, Ruff, Mypy `442`,
+   lock, diff, hygiene and pin gates.
+5. [완료] Resolve three stale software risks and preserve one precise device-chain HIL risk.
+6. [차단 — 실행 환경] Commit the state ledger locally; owner-terminal fast-forward push remains because
+   this environment cannot launch push.
+7. [외부 게이트] Restore Actions billing/spending and require real remote steps; execute playbook §8.2
+   only with owner-private device credentials and no flight/motor/camera/waypoint action.
+
+---
+
+# Previous implementation plan (2026-08-31, civil report coverage-evidence closure)
 
 Requirement IDs:
 - `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.

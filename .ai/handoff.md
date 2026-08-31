@@ -1,5 +1,40 @@
 # Current Handoff
 
+## 2026-08-31 — Edge RiskField software assembly is green; real-device chain is not verified
+
+The native RiskField chain was already present but the risk ledger still described it as libraries with
+no production host. `ksi_psdk_app` is now explicitly documented and regression-tested as the one DPK
+service process that receives PSDK ingress, drives `EdgePipeline`, writes a shared SQLite WAL/artifact
+vault, and continuously calls `StoreForwardSyncDriver` through `CoreRestSyncTransport`. Perception and
+sync state must be identical when both are enabled; partial activation/TLS/bearer/Ed25519 configuration
+fails closed. A second daemon was deliberately not added.
+
+The existing security path was re-proven rather than assumed. Edge signs the canonical seven-field
+artifact payload with an external owner-only Ed25519 key. Core checks the registered active key, device,
+content digest and active dispatch/policy/calibration lineage. CRITICAL confirmation then verifies stored
+bytes, v1.1 schema, geometry, bounded validity, exact entities, uncertainty, horizon, race state and the
+post-confirmation digest. Missing/forged/cross-device/revoked/expired signatures and semantic mutations
+remain rejected.
+
+Local evidence: commit `3afeb73`; new guard `4 passed`; focused assembly/security/CRITICAL suites
+`90 passed`; pinned Manifold Ubuntu 20.04/gcc 9.4 CTest `7/7`; full Python `4220 passed / 24 skipped`;
+Ruff; Mypy `442` files; lock, diff, hygiene, reference, PSDK and runtime-image pins. No Dashboard file
+changed; the immediately preceding same-turn full UI evidence remains `62 files / 572 tests`, lint,
+type, build and four-viewport Playwright `62 passed / 14 intentional skips`.
+
+Canonical risks now distinguish facts: three stale software risks are resolved, while
+`riskfield-evidence-chain-not-hil-verified` remains open. The new playbook §8.2 requires an exact DPK SHA,
+private key/public registry binding, bearer/CA/SPKI configuration, Core registration→storage PUT→ACK,
+offline/restart recovery and a private evidence URI. It forbids treating a fixture transport test or
+`SENSOR_ALIGNMENT_REQUIRED` producer as end-to-end PASS and performs no CRITICAL confirmation.
+
+Delivery is pending. `origin/main` is still `899c6c8`; this environment cannot launch `git push`, and
+remote Actions must actually execute after the account payment/spending gate is restored. FIELD-0a stays
+`BLOCKED`; all DJI/physical Edge capabilities stay `NOT_VERIFIED`/OFF. No device, DPK, flight-control,
+camera/gimbal, customer-data, release or deployment action is part of this increment.
+
+---
+
 ## 2026-08-31 — Civil report coverage evidence is locally green; push environment is blocked
 
 The civil report no longer presents progress/quantity numbers without their observation basis. Core

@@ -1,5 +1,30 @@
 # Current Task State
 
+## 2026-08-31 — `edge_riskfield_software_assembly_green_hil_not_verified`
+
+- Authority: `REQ-EDGE-101`, `REQ-EVT-101`, `REQ-GEO-101`, `REQ-SEC-101`;
+  `INV-001/012/021/040/041/042/060`.
+- Implemented: `tests/contract/test_edge_riskfield_production_wiring.py` locks the packaged
+  `ksi_psdk_app` link, native perception/attestation/HTTPS adapter construction, shared producer/sender
+  journal, continuous worker drive and joined shutdown. ADR-KSI-009 D7 declares this executable the
+  single production service host instead of inventing a duplicate daemon.
+- Security truth: existing Ed25519 canonical-payload verification, active dispatch/policy/calibration
+  binding and full CRITICAL RiskField byte/semantic/digest checks were re-executed. Three stale risks are
+  resolved; one exact real-device residual, `riskfield-evidence-chain-not-hil-verified`, remains open.
+- Commits: production contract/docs `3afeb73`; canonical risk/HIL/handoff commit follows this entry.
+- Local evidence: full Python `4220 passed / 24 skipped`; focused security/assembly `90 passed`; pinned
+  Manifold Ubuntu 20.04/gcc 9.4 CTest `7/7`; Ruff; Mypy `442` files; lock, diff, repository hygiene,
+  no-reference-import, reference pins, PSDK pins and runtime-image pins.
+- UI truth: no Dashboard/UI file changed. The same-turn civil report suite remains the latest full UI
+  evidence (`62 files / 572 tests`, ESLint, TypeScript, production build, Playwright `62/14`), and no UI
+  claim is derived from the native change.
+- Delivery truth: origin is still `899c6c8`; this environment cannot launch push. Remote CI has not
+  executed the new commits and the known account payment/spending gate remains independent.
+- FIELD-0a stays `BLOCKED`; DJI/Manifold hardware capability stays `NOT_VERIFIED`/OFF. No device, DPK,
+  flight, motor, waypoint, camera/gimbal, customer data, release or deployment action occurred.
+
+---
+
 ## 2026-08-31 — `civil_report_coverage_evidence_green_push_environment_blocked`
 
 - Authority: `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`;
