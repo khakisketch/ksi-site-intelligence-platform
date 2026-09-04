@@ -17,6 +17,7 @@ sha256을 락 파일과 대조해 핀 이탈(브랜치 강제 push, 태그 리�
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,10 +27,23 @@ import yaml
 # tools/_digest.py 를 가져오려면 tools/(이 파일의 부모의 부모)가 sys.path 에 있어야
 # 한다 — 스크립트를 직접 실행하면 파이썬이 자기 디렉터리(tools/edge/)만 넣는다.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _digest import sha256_file  # noqa: E402 -- 위 sys.path 조작 뒤에만 해석 가능
+from _digest import sha256_file  # noqa: E402 -- sys.path is extended above
 
 DEFAULT_LOCK_PATH = Path(__file__).resolve().parents[2] / "edge" / "third_party" / "PSDK_LOCK.yaml"
 DEFAULT_DEST = Path(__file__).resolve().parents[2] / "edge" / "third_party" / "psdk"
+
+
+def _observed_header_version(header: Path) -> str:
+    """Return the exact semantic version encoded by the pinned DJI header."""
+
+    text = header.read_text(encoding="utf-8")
+    values: list[str] = []
+    for name in ("MAJOR", "MINOR", "MODIFY"):
+        matches = re.findall(rf"^#define\s+DJI_VERSION_{name}\s+(\d+)\b", text, re.MULTILINE)
+        if len(matches) != 1:
+            raise ValueError(f"dji_version.h의 DJI_VERSION_{name}가 정확히 하나가 아니다")
+        values.append(matches[0])
+    return ".".join(values)
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -99,13 +113,28 @@ def fetch(lock_path: Path, dest: Path) -> int:
             print(f"    {m}", file=sys.stderr)
         return 1
 
+    expected_version = lock["source"].get("observed_version")
+    if not isinstance(expected_version, str) or not expected_version:
+        print("✗ source.observed_version이 없어 PSDK 버전을 검증할 수 없다.", file=sys.stderr)
+        return 1
+    try:
+        actual_version = _observed_header_version(dest / "psdk_lib/include/dji_version.h")
+    except (OSError, UnicodeError, ValueError) as exc:
+        print(f"✗ PSDK 버전 헤더 검증 실패: {exc}", file=sys.stderr)
+        return 1
+    if actual_version != expected_version:
+        print(
+            f"✗ PSDK 버전 불일치: lock={expected_version}, header={actual_version}",
+            file=sys.stderr,
+        )
+        return 1
+
     target_lib = dest / target_lib_rel
     if not target_lib.is_file():
         print(f"✗ 타깃 라이브러리 없음: {target_lib}", file=sys.stderr)
         return 1
 
-    version = lock["source"].get("observed_version", "?")
-    print(f"✓ PSDK {version} @ {pinned_commit[:12]} 확보 완료: {dest}")
+    print(f"✓ PSDK {actual_version} @ {pinned_commit[:12]} 확보 완료: {dest}")
     print(f"  라이선스: {lock['license']['spdx']}")
     return 0
 

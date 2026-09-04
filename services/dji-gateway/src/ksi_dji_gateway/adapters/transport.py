@@ -10,11 +10,13 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import socket
 import ssl
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -25,7 +27,21 @@ from ksi_dji_gateway.domain.models import ProviderReceipt
 from ksi_dji_gateway.domain.validation import IDENTIFIER, SHA256, validate_identifiers
 from ksi_dji_gateway.errors import GatewayTransportError
 
-_MAX_RESPONSE_BYTES = 1024 * 1024
+_MAX_HTTPS_RESPONSE_BYTES = 1024 * 1024
+_MAX_UNIX_MESSAGE_BYTES = 64 * 1024
+_SIGNAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$")
+_ROUTE_STATUS_FIELDS = {
+    "schemaVersion",
+    "signalId",
+    "observedAt",
+    "integrationPath",
+    "canonicalCapabilityId",
+    "subjectPortId",
+    "edgeDeviceId",
+    "psdkInitialized",
+    "mopConnected",
+    "handlerRegistered",
+}
 
 
 class BridgeOperation(StrEnum):
@@ -34,6 +50,48 @@ class BridgeOperation(StrEnum):
     EDGE_BUNDLE_UPLOAD = "EDGE_BUNDLE_UPLOAD"
     MEDIA_READ_ONE = "MEDIA_READ_ONE"
     MEDIA_UPLOAD_SYNTHETIC = "MEDIA_UPLOAD_SYNTHETIC"
+
+
+@dataclass(frozen=True, slots=True)
+class PsdkRouteStatus:
+    """Exact status facts returned by the local PSDK companion.
+
+    This type intentionally has no final availability field.  Callers must
+    derive availability from all three facts.
+    """
+
+    signal_id: str
+    observed_at: str
+    psdk_initialized: bool
+    mop_connected: bool
+    handler_registered: bool
+
+
+def _reject_duplicate_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON field: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_non_finite_json(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _exact_json_object(payload: bytes) -> Mapping[str, Any]:
+    try:
+        raw = json.loads(
+            payload,
+            object_pairs_hook=_reject_duplicate_json_fields,
+            parse_constant=_reject_non_finite_json,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        raise GatewayTransportError("PSDK unix bridge response가 exact JSON이 아니다") from exc
+    if not isinstance(raw, Mapping):
+        raise GatewayTransportError("PSDK unix bridge response 최상위는 object여야 한다")
+    return raw
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,8 +248,8 @@ class HttpsJsonBridgeClient:
                 raise GatewayTransportError("HTTPS bridge certificate pin이 다르다")
             connection.request("POST", path, body=body, headers=headers)
             response = connection.getresponse()
-            response_body = response.read(_MAX_RESPONSE_BYTES + 1)
-            if len(response_body) > _MAX_RESPONSE_BYTES:
+            response_body = response.read(_MAX_HTTPS_RESPONSE_BYTES + 1)
+            if len(response_body) > _MAX_HTTPS_RESPONSE_BYTES:
                 raise GatewayTransportError("HTTPS bridge response가 1 MiB를 넘었다")
             if not 200 <= response.status < 300:
                 raise GatewayTransportError(f"HTTPS bridge가 HTTP {response.status}를 반환했다")
@@ -219,18 +277,69 @@ class UnixJsonBridgeClient:
         idempotency_key: str,
         payload: Mapping[str, Any],
     ) -> ProviderReceipt:
-        request = (
-            json.dumps(
+        return _receipt_from_payload(
+            self._exchange(
                 {
                     "operation": operation.value,
                     "idempotency_key": idempotency_key,
                     "payload": payload,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
+                }
             )
-            + "\n"
-        ).encode()
+        )
+
+    def route_status(
+        self,
+        *,
+        subject_port_id: str,
+        edge_device_id: str,
+    ) -> PsdkRouteStatus:
+        """Read and validate one exact PSDK_MANIFOLD/EDGE_UPLINK status."""
+
+        raw = self._exchange(
+            {
+                "operation": "ROUTE_STATUS_V1",
+                "integrationPath": "PSDK_MANIFOLD",
+                "canonicalCapabilityId": "EDGE_UPLINK",
+                "subjectPortId": subject_port_id,
+                "edgeDeviceId": edge_device_id,
+                "requiredHandler": "EDGE_BUNDLE_UPLOAD",
+            }
+        )
+        if set(raw) != _ROUTE_STATUS_FIELDS:
+            raise GatewayTransportError("PSDK route-status response schema가 exact하지 않다")
+        bool_names = ("psdkInitialized", "mopConnected", "handlerRegistered")
+        if (
+            raw["schemaVersion"] != "1.0"
+            or raw["integrationPath"] != "PSDK_MANIFOLD"
+            or raw["canonicalCapabilityId"] != "EDGE_UPLINK"
+            or raw["subjectPortId"] != subject_port_id
+            or raw["edgeDeviceId"] != edge_device_id
+            or not isinstance(raw["signalId"], str)
+            or _SIGNAL_ID.fullmatch(raw["signalId"]) is None
+            or not isinstance(raw["observedAt"], str)
+            or not all(type(raw[name]) is bool for name in bool_names)
+        ):
+            raise GatewayTransportError("PSDK route-status identity/state가 일치하지 않는다")
+        try:
+            observed_at = datetime.fromisoformat(raw["observedAt"].replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise GatewayTransportError("PSDK route-status observedAt이 RFC3339가 아니다") from exc
+        if observed_at.tzinfo is None or observed_at.utcoffset() != timedelta(0):
+            raise GatewayTransportError("PSDK route-status observedAt이 UTC가 아니다")
+        return PsdkRouteStatus(
+            signal_id=raw["signalId"],
+            observed_at=raw["observedAt"],
+            psdk_initialized=raw["psdkInitialized"],
+            mop_connected=raw["mopConnected"],
+            handler_registered=raw["handlerRegistered"],
+        )
+
+    def _exchange(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Own all production Unix socket, framing, bounds and JSON parsing."""
+
+        request = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        if len(request) > _MAX_UNIX_MESSAGE_BYTES:
+            raise GatewayTransportError("PSDK unix bridge request가 64 KiB를 넘었다")
         response = bytearray()
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -238,19 +347,18 @@ class UnixJsonBridgeClient:
                 client.connect(self._socket_path)
                 client.sendall(request)
                 client.shutdown(socket.SHUT_WR)
-                while len(response) <= _MAX_RESPONSE_BYTES:
-                    chunk = client.recv(min(65536, _MAX_RESPONSE_BYTES + 1 - len(response)))
+                while len(response) <= _MAX_UNIX_MESSAGE_BYTES:
+                    chunk = client.recv(min(65536, _MAX_UNIX_MESSAGE_BYTES + 1 - len(response)))
                     if not chunk:
                         break
                     response.extend(chunk)
         except OSError as exc:
             raise GatewayTransportError(f"PSDK unix bridge 호출 실패: {exc}") from exc
-        if len(response) > _MAX_RESPONSE_BYTES:
-            raise GatewayTransportError("PSDK unix bridge response가 1 MiB를 넘었다")
-        try:
-            return _receipt_from_payload(json.loads(response))
-        except json.JSONDecodeError as exc:
-            raise GatewayTransportError("PSDK unix bridge response가 JSON이 아니다") from exc
+        if len(response) > _MAX_UNIX_MESSAGE_BYTES:
+            raise GatewayTransportError("PSDK unix bridge response가 64 KiB를 넘었다")
+        if not response:
+            raise GatewayTransportError("PSDK unix bridge response가 비어 있다")
+        return _exact_json_object(bytes(response))
 
 
 __all__ = [
@@ -258,5 +366,6 @@ __all__ = [
     "BridgeClient",
     "BridgeOperation",
     "HttpsJsonBridgeClient",
+    "PsdkRouteStatus",
     "UnixJsonBridgeClient",
 ]

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "listenHost": "127.0.0.1",
+  "listenPort": 8080,
+  "controlTokenFile": "/run/secrets/ksi-gateway-control-token",
+  "journalPath": "/var/lib/ksi-gateway/gateway.jsonl",
+  "core": {
+    "url": "https://core.example.invalid",
+    "preflightTokenFile": "/run/secrets/ksi-gateway-preflight-token",
+    "observationTokenFile": "/run/secrets/ksi-edge-observation-token",
+    "tlsCertificateSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "timeoutSeconds": 5,
+    "allowLoopbackHttp": false
+  },
+  "deployment": {
+    "organizationId": "replace-with-trusted-organization",
+    "siteId": "replace-with-trusted-site",
+    "gatewayDeviceId": "replace-with-gateway-device",
+    "edgeDeviceId": "replace-with-edge-device",
+    "hardwareModel": "replace-with-exact-gateway-model",
+    "firmwareVersion": "replace-with-exact-gateway-firmware"
+  },
+  "provider": {
+    "adapterId": "psdk",
+    "unixEndpoint": "unix:///run/ksi/psdk.sock",
+    "timeoutSeconds": 2
+  },
+  "route": {
+    "featureEnabled": false,
+    "activationAuthorizationId": "replace-with-cap4-activation-id",
+    "evidenceStatus": "BLOCKED",
+    "evidenceRef": null,
+    "evidenceCheckedAt": "1970-01-01T00:00:00Z"
+  },
+  "observation": {
+    "subjectPortId": "psdk.edge_uplink",
+    "configuredDeploymentDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "equipmentScopeDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "runtimeBuildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "freshnessPolicyId": "replace-with-cap4-pinned-policy-id",
+    "freshnessPolicyDigest": "sha256:6bcc0a41cf695816fe9e2dc50ac39c922119484aaaea1699050165da05d00865",
+    "producerPrincipalId": "replace-with-edge-observation-principal",
+    "freshnessTtlSeconds": 10,
+    "minimumRefreshMarginSeconds": 2,
+    "pollIntervalSeconds": 2
+  }
+}

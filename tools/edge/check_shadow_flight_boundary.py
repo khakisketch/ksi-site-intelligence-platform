@@ -3,7 +3,7 @@
 이 도구는 세 사실을 의도적으로 분리한다.
 
 1. KSI C/C++ source에 금지 header(``_FLIGHT_HEADERS``) include 또는
-   금지 API(``_MOTION_SYMBOL_PREFIXES``) 직접 호출이 없는가.
+   금지 비행/카메라/짐벌 action API 직접 호출이 없는가.
 2. 최종 ELF가 해결하지 못한 그 API의 외부 참조를 갖지 않는가.
 3. 공식 PSDK static archive가 같은 object file에 남기는 *정의*까지 0개인가.
 
@@ -46,7 +46,10 @@ KMZ 임무를 기체에 올려 시동·이륙·비행·착륙까지 시킬 수 �
 그대로 이를 고정한다.
 
 1·2는 KSI가 직접 보장할 수 있는 shadow-only 경계라 기본 실행에서 실패 사유다.
-3은 ``--require-zero-defined-symbols``일 때만 실패로 승격한다. PSDK 3.16.0의
+3은 비행 심볼에 대해서만 ``--require-zero-defined-symbols``일 때 실패로 승격한다.
+카메라/짐벌은 공식 archive가 많은 action 정의를 포함하므로 정의 자체를 KSI 호출로
+오인하지 않고, source·undefined reference·objdump direct-call 세 층만 적용한다.
+PSDK 3.16.0의
 ``dji_error.c.o``는 generic error mapping과
 ``DjiFlightController_GetDjiErrorCode``를 한 section에 함께 넣어, KSI가 해당 함수를
 호출하지 않아도 정의 하나가 ELF에 남는다. 이를 strip/rename해 검사만 통과시키지 않고
@@ -92,17 +95,37 @@ _MOTION_SYMBOL_PREFIXES = (
     "DjiFts",
 )
 
+# HIL-1은 업링크 검증 중 카메라 촬영/설정/저장소 변경이나 짐벌 운동을 일으키면
+# non-actuating이 아니다. 다만 Camera Manager의 Get/Download/rights와 Init/DeInit은
+# 기존 read-only media 경로에 필요하므로 차단하지 않는다. 아래 동사 집합은 핀된
+# PSDK 3.16 헤더의 직접 상태변경/action API만 포괄한다.
+_CAMERA_GIMBAL_ACTION_PATTERNS = (
+    r"DjiCameraManager_(?:Set|Start|Stop|Reset|Format|Delete|Enable|Disable|Unlock|Change|Tap|Trigger)[A-Za-z0-9_]*",
+    r"DjiGimbalManager_(?:Set|Reset|Rotate|Restore)[A-Za-z0-9_]*",
+)
+
 _HEADER_ALTERNATION = "|".join(re.escape(header) for header in _FLIGHT_HEADERS)
 _SYMBOL_ALTERNATION = "|".join(_MOTION_SYMBOL_PREFIXES)
+_DIRECT_SYMBOL_PATTERN = (
+    rf"(?:(?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*|"
+    + "|".join(_CAMERA_GIMBAL_ACTION_PATTERNS)
+    + ")"
+)
 
 _FLIGHT_HEADER_RE = re.compile(
     rf'^[^\S\r\n]*#\s*include\s*[<"](?:{_HEADER_ALTERNATION})[>"]', re.MULTILINE
 )
-_FLIGHT_CALL_RE = re.compile(rf"\b((?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)\s*\(")
+_FLIGHT_CALL_RE = re.compile(rf"\b({_DIRECT_SYMBOL_PATTERN})\s*\(")
 _FLIGHT_SYMBOL_RE = re.compile(rf"\b((?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)\b")
+_DIRECT_SYMBOL_RE = re.compile(rf"\b({_DIRECT_SYMBOL_PATTERN})\b")
+_OBJDUMP_FUNCTION_RE = re.compile(r"^[0-9a-fA-F]+ <(?P<symbol>[^>]+)>:")
 _OBJDUMP_DIRECT_CALL_RE = re.compile(
-    rf"\b(?:bl|blx|callq?|jal)\b[^\n<]*<(?P<symbol>(?:{_SYMBOL_ALTERNATION})_[A-Za-z0-9_]*)>",
+    rf"\b(?:bl|blx|callq?|jal)\b[^\n<]*<(?P<symbol>{_DIRECT_SYMBOL_PATTERN})>",
     re.IGNORECASE,
+)
+_VENDOR_CAMERA_GIMBAL_CALLER_RE = re.compile(r"^Dji(?:CameraManager|GimbalManager)_")
+_CAMERA_GIMBAL_ACTION_RE = re.compile(
+    rf"^(?:{'|'.join(_CAMERA_GIMBAL_ACTION_PATTERNS)})$"
 )
 
 # --- ADR-KSI-021: 단계별 심볼 유니버스 (코드 고정, 매니페스트가 못 넓힌다) --------
@@ -518,7 +541,10 @@ def scan_called_symbols(
 ) -> frozenset[str]:
     """실제로 호출된(선언이 아니라 call 형태로 등장한) 심볼 집합 — 잉여 allowlist 검출용."""
     called: set[str] = set()
-    call_re = re.compile(rf"\b((?:{'|'.join(re.escape(p) for p in prefixes)})_[A-Za-z0-9_]*)\s*\(")
+    prefix_pattern = rf"(?:{'|'.join(re.escape(p) for p in prefixes)})_[A-Za-z0-9_]*"
+    call_re = re.compile(
+        rf"\b((?:{prefix_pattern}|{'|'.join(_CAMERA_GIMBAL_ACTION_PATTERNS)}))\s*\("
+    )
     for root in source_roots:
         if not root.is_dir():
             continue
@@ -540,13 +566,55 @@ def parse_flight_symbols(text: str) -> tuple[str, ...]:
     return tuple(sorted(set(_FLIGHT_SYMBOL_RE.findall(text))))
 
 
-def parse_objdump_direct_calls(text: str) -> tuple[str, ...]:
+def parse_prohibited_direct_symbols(text: str) -> tuple[str, ...]:
+    """Return flight plus camera/gimbal action references, excluding mere vendor definitions."""
+
+    return tuple(sorted(set(_DIRECT_SYMBOL_RE.findall(text))))
+
+
+def _parse_objdump_direct_call_edges(text: str) -> frozenset[tuple[str, str]]:
+    """Return named caller/target edges from one objdump disassembly."""
+
+    edges: set[tuple[str, str]] = set()
+    caller = ""
+    for line in text.splitlines():
+        function = _OBJDUMP_FUNCTION_RE.match(line)
+        if function is not None:
+            caller = function.group("symbol").split("+", 1)[0]
+            continue
+        match = _OBJDUMP_DIRECT_CALL_RE.search(line)
+        if match is not None:
+            edges.add((caller, match.group("symbol")))
+    return frozenset(edges)
+
+
+def parse_objdump_direct_calls(
+    text: str, *, vendor_archive_text: str = ""
+) -> tuple[str, ...]:
     """disassembly의 named direct branch/call target만 추출한다.
 
     ``DjiFlightController_*`` 함수의 label 자체는 call이 아니다. ``bl``/``call``/``jal``
     mnemonic와 함께 나온 target만 direct invocation 증거로 취급한다.
     """
-    symbols = {match.group("symbol") for match in _OBJDUMP_DIRECT_CALL_RE.finditer(text)}
+    symbols: set[str] = set()
+    vendor_edges = _parse_objdump_direct_call_edges(vendor_archive_text)
+    for caller, target in _parse_objdump_direct_call_edges(text):
+        # Static libpayloadsdk.a contains Camera/Gimbal action implementations
+        # that call other vendor action implementations.  A final-ELF target
+        # match alone cannot turn that vendor-internal edge into a KSI call. An
+        # exact caller/target edge also present in the pinned archive is vendor
+        # provenance, including lower-case internal helper callers.
+        # Source and undefined-reference layers still catch KSI direct use; an
+        # actual KSI call edge in this disassembly is retained here.
+        if (
+            _CAMERA_GIMBAL_ACTION_RE.fullmatch(target) is not None
+            and (
+                (caller, target) in vendor_edges
+                or _VENDOR_CAMERA_GIMBAL_CALLER_RE.match(caller) is not None
+            )
+        ):
+            continue
+        symbols.add(target)
     return tuple(sorted(symbols))
 
 
@@ -588,6 +656,7 @@ def check_flight_boundary(
     source_roots: Sequence[Path],
     nm_tool: str = "nm",
     objdump_tool: str | None = None,
+    vendor_archive: Path | None = None,
     allowlist: FlightExecutionAllowlist = _EMPTY_ALLOWLIST,
 ) -> FlightBoundaryResult:
     """실제 source와 ELF 양쪽을 검사한다. 도구/ELF 불능은 fail-closed다."""
@@ -625,12 +694,23 @@ def check_flight_boundary(
     undefined_output, undefined_error = _run_tool((nm_tool, "-u", str(binary)))
     defined_output, defined_error = _run_tool((nm_tool, "--defined-only", str(binary)))
     disassembly, objdump_error = _objdump_output(binary, objdump_tool)
-    for error in (undefined_error, defined_error, objdump_error):
+    vendor_disassembly: str | None = ""
+    vendor_error: str | None = None
+    if vendor_archive is not None:
+        if not vendor_archive.is_file():
+            vendor_error = f"{vendor_archive}: vendor archive does not exist"
+        else:
+            vendor_disassembly, vendor_error = _objdump_output(
+                vendor_archive, objdump_tool
+            )
+    for error in (undefined_error, defined_error, objdump_error, vendor_error):
         if error:
             tool_errors.append(error)
 
-    undefined_all = parse_flight_symbols(undefined_output or "")
-    direct_calls_all = parse_objdump_direct_calls(disassembly or "")
+    undefined_all = parse_prohibited_direct_symbols(undefined_output or "")
+    direct_calls_all = parse_objdump_direct_calls(
+        disassembly or "", vendor_archive_text=vendor_disassembly or ""
+    )
     defined_all = parse_flight_symbols(defined_output or "")
 
     undefined_symbols = tuple(s for s in undefined_all if not allowlist.permits_link(s))
@@ -703,6 +783,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--nm", default="nm", help="nm executable (기본: nm)")
     parser.add_argument("--objdump", help="objdump executable (기본: aarch64 우선 자동 탐색)")
     parser.add_argument(
+        "--vendor-archive",
+        type=Path,
+        help=(
+            "pinned libpayloadsdk.a used to subtract exact vendor-internal "
+            "camera/gimbal call edges"
+        ),
+    )
+    parser.add_argument(
         "--require-zero-defined-symbols",
         action="store_true",
         help="vendor archive의 defined FlightController symbol도 0개가 아니면 실패한다",
@@ -728,6 +816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_roots=args.source_roots,
         nm_tool=args.nm,
         objdump_tool=args.objdump,
+        vendor_archive=args.vendor_archive,
         allowlist=allowlist,
     )
     return _print_result(result, strict=args.require_zero_defined_symbols)

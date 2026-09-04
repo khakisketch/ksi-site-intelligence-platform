@@ -10,6 +10,11 @@
 - 대체 범위: ADR-KSI-004/005/013/017/022의 연결 기본값·provider 단일선택 가정
   (비행 제어·안전·사람 승인 경계는 대체하지 않는다)
 
+> **2026-09-04 경로 정규화(ADR-KSI-033):** D2의 직접 이벤트·미디어와 D5의 Bridge는
+> 목표/candidate topology다. 현재 정상 원본 ingress는 SD/저장매체→현장 PC→KSI 웹
+> 업로드이며, `EDGE_UPLINK` bounded metadata와 `MEDIA_PULL`/`MEDIA_UPLOAD` 원본
+> capability를 서로 추론하지 않는다. 중앙 지속 Liveview 수신은 핵심 제품 경로가 아니다.
+
 ## 맥락
 
 Manifold 3를 모든 고객에게 제공하는 이유는 단순 촬영·매핑이 아니라 비행 중

@@ -161,7 +161,20 @@ info:
   # 1.31.0 — Python recorded perception은 offline replay/model evaluation으로
   # 자기식별하고, production Edge ingest는 NON_PRODUCTION_EVIDENCE로 원장 반영 전에
   # 거부한다. native ksi_psdk_app만 production Edge runtime이다(ADR-KSI-009 D8).
-  version: 1.31.0
+  # 1.32.0 — Worker Correctness TASK-1. 인증 principal과 lease owner를 분리하고
+  # UUIDv4 worker instance/acquisition + Core generation fence를 모든 worker mutation에
+  # 결속한다. 처리 산출물 업로드는 generation-scoped digest-bound PUT이며, 등록은
+  # primary/auxiliary object binding을 요구한다. 성공 원장은
+  # AuthoritativeArtifactManifestV1을 내장하고 신규 reader는 conventional key를
+  # 재유도하지 않는다. 기존 generation-0 원장 reader만 legacy fallback을 유지한다.
+  # 1.33.0 — CAP-5 RuntimeRouteObservation ingress와 organization/site/activation-
+  # scoped 진단 projection을 추가한다. 진단 GET은 Mission policy를 DENY로 평가해
+  # operational authorization token이 될 수 없고, 기존 public /capabilities는
+  # scope 없는 product catalog 의미만 유지한다.
+  # 1.34.0 — HIL-0 Gateway 전용 CAP-5 preflight. 인증된 Gateway의 조직/장비,
+  # exact route/port/deployment 및 Mission scope를 Core가 대조한 뒤 기존 CAP-5
+  # 3항 conjunction을 반환한다. 진단 catalog나 durable authority를 만들지 않는다.
+  version: 1.34.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과

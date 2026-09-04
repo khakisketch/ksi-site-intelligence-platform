@@ -198,6 +198,60 @@ jobs:
       - name: ctest (ASan+UBSan)
         run: ctest --test-dir edge/manifold-runtime/build-asan --output-on-failure
 
+  # HIL-1 Route-1의 host-testable 부분. 실제 DJI transport는 사용하지 않지만
+  # companion/peer lifecycle과 Gateway Unix framing을 매 변경마다 함께 검증한다.
+  # 이 job의 초록은 physical MOP 또는 원본 미디어 반출 증거가 아니다.
+  edge-psdk-app-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 동기화와 PSDK 3.16 핀 확보
+        run: |
+          uv sync --locked --all-packages
+          uv run --locked python tools/edge/fetch_psdk.py
+          uv run --locked bash scripts/check_third_party_pins.sh
+          cp edge/psdk-app/config/dji_sdk_app_info.h.example "${RUNNER_TEMP}/dji_sdk_app_info.h"
+
+      - name: configure (host HIL-1 tests)
+        run: |
+          cmake -S edge/psdk-app -B edge/psdk-app/build-hil1-host \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DKSI_PSDK_APP_INFO_HEADER="${RUNNER_TEMP}/dji_sdk_app_info.h" \
+            -DKSI_PSDK_APP_BUILD_TESTS=ON
+
+      - name: build companion and peer host tests
+        run: |
+          cmake --build edge/psdk-app/build-hil1-host -j \
+            --target ksi_psdk_route_companion_tests ksi_psdk_mop_peer_receiver_tests
+
+      - name: CTest companion, peer and Gateway Unix interoperability
+        run: |
+          ctest --test-dir edge/psdk-app/build-hil1-host --output-on-failure \
+            -R 'ksi_psdk_route_companion_contract|ksi_psdk_mop_peer_receiver_contract|ksi_gateway_psdk_companion_unix_interop'
+
+      - name: configure and build (ASan+UBSan diagnostic)
+        run: |
+          cmake -S edge/psdk-app -B edge/psdk-app/build-hil1-asan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DKSI_PSDK_APP_INFO_HEADER="${RUNNER_TEMP}/dji_sdk_app_info.h" \
+            -DKSI_PSDK_APP_BUILD_TESTS=ON \
+            -DKSI_PSDK_APP_ENABLE_SANITIZERS=ON
+          cmake --build edge/psdk-app/build-hil1-asan -j \
+            --target ksi_psdk_route_companion_tests ksi_psdk_mop_peer_receiver_tests
+
+      - name: CTest (ASan+UBSan HIL-1 diagnostic)
+        run: |
+          ctest --test-dir edge/psdk-app/build-hil1-asan --output-on-failure \
+            -R 'ksi_psdk_route_companion_contract|ksi_psdk_mop_peer_receiver_contract|ksi_gateway_psdk_companion_unix_interop'
+
+      # TSan은 CMake opt-in으로 유지하지만 일반 GitHub runner에서는 ASLR shadow-map
+      # 충돌을 피하기 위한 non-PIE/setarch 전제가 있어 표준 필수 job으로 승격하지 않는다.
+
   # edge/psdk-tap 은 PSDK 실물과 App Key 가 있어야 configure 되므로(둘 다 기체와
   # 함께 오는 물건이라 CI 에 없다) 2179줄이 통째로 게이트 밖에 있었다 —
   # PSDK 를 전혀 건드리지 않는 pairing 로직조차 회귀 검증이 없었다.
@@ -246,6 +300,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: PSDK 3.16 source, version header and libpayloadsdk.a digest gate
+        run: |
+          uv run --locked python tools/edge/fetch_psdk.py
+          uv run --locked bash scripts/check_third_party_pins.sh
+          cp edge/psdk-app/config/dji_sdk_app_info.h.example "${RUNNER_TEMP}/dji_sdk_app_info.h"
 
       # 러너가 x86-64라 arm64 컨테이너를 실행하려면 QEMU 에뮬레이션 등록이 먼저
       # 필요하다. job 레벨 `container:` 키는 쓰지 않는다 — 그 경우 컨테이너가
@@ -301,6 +365,70 @@ jobs:
               cd build && ctest --output-on-failure
             '
 
+      # 두 Route-1 역할을 실제 aarch64 libpayloadsdk.a와 링크한다. 같은 binary에서
+      # 두 역할을 동시에 켜는 구성은 반드시 fail-closed여야 한다. 여기서 만드는
+      # binary는 비배포 CI 산출물이며 실제 DJI App credential/DPK user_app_id가 없다.
+      - name: HIL-1 companion + peer ARM64 build and mutual-exclusion gate
+        run: |
+          mkdir -p edge/psdk-app/build-hil1-companion-ci
+          mkdir -p edge/psdk-app/build-hil1-peer-ci
+          mkdir -p edge/psdk-app/build-hil1-invalid-ci
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}:/workspace/src:ro" \
+            -v "${{ runner.temp }}/dji_sdk_app_info.h:/workspace/ci-input/dji_sdk_app_info.h:ro" \
+            -v "${{ github.workspace }}/edge/psdk-app/build-hil1-companion-ci:/workspace/build-companion" \
+            -v "${{ github.workspace }}/edge/psdk-app/build-hil1-peer-ci:/workspace/build-peer" \
+            -v "${{ github.workspace }}/edge/psdk-app/build-hil1-invalid-ci:/workspace/build-invalid" \
+            -w /workspace \
+            ksi-manifold3-build:ci bash -c '
+              set -e
+              common="-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE=/workspace/src/cmake/toolchain-manifold3.cmake -DKSI_TARGET_MANIFOLD3=ON -DKSI_PSDK_ROOT=/workspace/src/edge/third_party/psdk -DKSI_PSDK_APP_INFO_HEADER=/workspace/ci-input/dji_sdk_app_info.h"
+              cmake -S src/edge/psdk-app -B build-companion $common \
+                -DKSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON \
+                -DKSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID=ci-org \
+                -DKSI_PSDK_APP_EDGE_UPLINK_SITE_ID=ci-site \
+                -DKSI_PSDK_APP_EDGE_DEVICE_ID=ci-edge \
+                -DKSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID=ci.edge_uplink \
+                -DKSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID=49152
+              cmake --build build-companion --target ksi_psdk_app -j
+              cmake -S src/edge/psdk-app -B build-peer $common \
+                -DKSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON \
+                -DKSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID=ci-org \
+                -DKSI_PSDK_APP_MOP_PEER_SITE_ID=ci-site \
+                -DKSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID=ci-edge \
+                -DKSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID=ci.edge_uplink \
+                -DKSI_PSDK_APP_MOP_PEER_CHANNEL_ID=49152 \
+                -DKSI_PSDK_APP_MOP_PEER_ADDRESS=PAYLOAD_PORT_NO1
+              cmake --build build-peer --target ksi_psdk_app -j
+              if cmake -S src/edge/psdk-app -B build-invalid $common \
+                   -DKSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON \
+                   -DKSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON >/tmp/mutual-exclusion.log 2>&1; then
+                echo "both HIL-1 PSDK roles configured in one binary"
+                exit 1
+              fi
+              grep -F "mutually exclusive" /tmp/mutual-exclusion.log
+            '
+
+      - name: HIL-1 ARM64 ABI and required MOP symbol resolution
+        run: |
+          companion=edge/psdk-app/build-hil1-companion-ci/ksi_psdk_app
+          peer=edge/psdk-app/build-hil1-peer-ci/ksi_psdk_app
+          uv run --no-project python tools/edge/check_target_abi.py "$companion" "$peer"
+          nm --defined-only "$companion" > "${RUNNER_TEMP}/hil1-companion.nm"
+          nm --defined-only "$peer" > "${RUNNER_TEMP}/hil1-peer.nm"
+          nm -u "$companion" > "${RUNNER_TEMP}/hil1-companion-undefined.nm"
+          nm -u "$peer" > "${RUNNER_TEMP}/hil1-peer-undefined.nm"
+          if grep -Eq 'DjiMopChannel_' "${RUNNER_TEMP}/hil1-companion-undefined.nm" "${RUNNER_TEMP}/hil1-peer-undefined.nm"; then
+            echo "::error::unresolved DjiMopChannel symbol remains"
+            exit 1
+          fi
+          for symbol in Init Create Bind Accept SendData RecvData Close Destroy; do
+            grep -Eq "[[:space:]]DjiMopChannel_${symbol}$" "${RUNNER_TEMP}/hil1-companion.nm"
+          done
+          for symbol in Init Create Connect RecvData Close Destroy; do
+            grep -Eq "[[:space:]]DjiMopChannel_${symbol}$" "${RUNNER_TEMP}/hil1-peer.nm"
+          done
+
       # 컨테이너가 실기 userland를 실제로 재현했는지 산출물이 아니라 툴체인 자체로
       # 확인한다 — Dockerfile은 20.04 apt를 앵커로 쓸 뿐 버전을 핀하지 않으므로,
       # 베이스 이미지가 갱신돼 gcc/cmake/glibc가 드리프트하면 여기서 잡힌다.
@@ -317,10 +445,6 @@ jobs:
             [ "$cmake_mm" = "3.16" ]    || { echo "cmake 드리프트: $cmake_mm != 3.16"; exit 1; }
             [ "$glibc" = "2.31" ]       || { echo "glibc 드리프트: $glibc != 2.31"; exit 1; }
           '
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
 
       # readelf는 대상 아키텍처와 무관하게 ELF 바이트 포맷을 정적으로 파싱하므로
       # x86-64 러너에서 arm64 바이너리를 그대로 검사할 수 있다(실행 불필요).

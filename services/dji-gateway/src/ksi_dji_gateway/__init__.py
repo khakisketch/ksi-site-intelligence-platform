@@ -8,7 +8,16 @@ from ksi_dji_gateway.adapters import (
     UnixJsonBridgeClient,
     build_candidate_ports,
 )
-from ksi_dji_gateway.coordinator import CapabilityGateway, RoutingContext
+from ksi_dji_gateway.coordinator import (
+    CapabilityGateway,
+    RouteActivationAuthorization,
+    RoutingContext,
+)
+from ksi_dji_gateway.core_runtime import (
+    CoreRuntimeTransportConfig,
+    HttpCoreRuntimeObservationPublisher,
+    HttpCoreRuntimeRoutePreflight,
+)
 from ksi_dji_gateway.gateway import (
     Capability,
     CapabilityEvidence,
@@ -32,6 +41,16 @@ from ksi_dji_gateway.gateway import (
     WaylineDispatchRequest,
     ZeroTouchGateway,
 )
+from ksi_dji_gateway.routing import (
+    RuntimeRoutePreflight,
+    RuntimeRoutePreflightDecision,
+    RuntimeRoutePreflightRequest,
+)
+from ksi_dji_gateway.runtime_observation import (
+    PsdkMopObservationConfig,
+    PsdkMopRuntimeObservationProducer,
+    RuntimeObservationPublisher,
+)
 
 __version__ = "0.0.1"
 
@@ -45,6 +64,7 @@ __all__ = [
     "CapabilityStatus",
     "CapabilityUnavailableError",
     "CANDIDATE_PATH_CAPABILITIES",
+    "CoreRuntimeTransportConfig",
     "AdapterRuntimeConfig",
     "BridgeOperation",
     "EdgeDispatchRequest",
@@ -53,13 +73,22 @@ __all__ = [
     "GatewayTransport",
     "GatewayTransportError",
     "HttpsJsonBridgeClient",
+    "HttpCoreRuntimeObservationPublisher",
+    "HttpCoreRuntimeRoutePreflight",
     "IdempotencyConflictError",
     "IntegrationPath",
     "IntegrationReceipt",
     "OperationKind",
     "MediaSyncRequest",
     "ProviderReceipt",
+    "PsdkMopObservationConfig",
+    "PsdkMopRuntimeObservationProducer",
     "RoutingContext",
+    "RouteActivationAuthorization",
+    "RuntimeRoutePreflight",
+    "RuntimeRoutePreflightDecision",
+    "RuntimeRoutePreflightRequest",
+    "RuntimeObservationPublisher",
     "UnixJsonBridgeClient",
     "WaylineDispatchRequest",
     "VendorDocumentationStatus",

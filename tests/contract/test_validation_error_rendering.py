@@ -40,6 +40,12 @@ from ksi_core.auth import (
     PrincipalTokenRecord,
     Role,
 )
+from ksi_core.capability.authority_store import CapabilityAuthorityStore
+from ksi_core.capability.runtime_projection import (
+    RuntimeCapabilityProjector,
+    RuntimeRouteObservationStore,
+    TrustedRuntimeRouteConfigurationRegistry,
+)
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
@@ -196,6 +202,17 @@ def _acquisition_client(tmp_path: Path) -> Iterator[TestClient]:
         journals.open("acquisition-runs.jsonl")
     )
     evidence_storage = _ValidationEvidenceStorage()
+    runtime_projector = RuntimeCapabilityProjector(
+        authority_store=CapabilityAuthorityStore(
+            journals.open("hostile-capability-authority.jsonl"),
+            supported_freshness_policies={},
+        ),
+        configuration_registry=TrustedRuntimeRouteConfigurationRegistry(),
+        observation_store=RuntimeRouteObservationStore(
+            journals.open("hostile-runtime-observations.jsonl")
+        ),
+        supported_freshness_policies={},
+    )
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=site_store,
@@ -218,6 +235,7 @@ def _acquisition_client(tmp_path: Path) -> Iterator[TestClient]:
             work_order_store=work_order_store,
             coordination_store=coordination_store,
         ),
+        runtime_capability_projector=runtime_projector,
     )
     with _managed_client(app, journals) as client:
         yield client
@@ -345,6 +363,8 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
         ("POST", "/v1/gateway-sync/operation-receipts", _GATEWAY_TOKEN),
         ("POST", "/v1/missions/mission-1/capture-quality-report", _EDGE_TOKEN),
         ("POST", "/v1/missions/mission-1/flight-artifacts/pilot-export", _ADMIN_TOKEN),
+        ("POST", "/v1/capability-runtime/observations", _EDGE_TOKEN),
+        ("POST", "/v1/capability-runtime/preflight", _GATEWAY_TOKEN),
     ],
 )
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
@@ -375,6 +395,7 @@ def test_acquisition_and_artifact_hostile_bodies_are_machine_readable_422(
             "/v1/processing-jobs/job-1/artifacts/artifact-1/checkpoint-validations",
             _ADMIN_TOKEN,
         ),
+        ("/v1/processing-jobs/job-1/verify-input", _PROCESSING_TOKEN),
         ("/v1/checkpoint-validations/validation-1/observations", _PROCESSING_TOKEN),
         (
             "/v1/checkpoint-validations/validation-1/verification-failure",
@@ -389,13 +410,20 @@ def test_civil_hostile_bodies_are_machine_readable_422(
     """Civil·checkpoint 쓰기 표면을 최소권한 신원으로 hostile JSON 6종 직접 조사한다."""
 
     with _civil_client(tmp_path) as client:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        if path.endswith("/verify-input"):
+            headers |= {
+                "X-KSI-Worker-Instance-Id": "11111111-1111-4111-8111-111111111111",
+                "X-KSI-Lease-Acquisition-Id": "22222222-2222-4222-8222-222222222222",
+                "X-KSI-Lease-Generation": "1",
+            }
         response = client.post(
             path,
             content=raw.encode("utf-8", "surrogatepass"),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")

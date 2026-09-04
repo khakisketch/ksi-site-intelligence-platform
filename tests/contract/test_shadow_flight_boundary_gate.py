@@ -40,6 +40,7 @@ from check_shadow_flight_boundary import (  # noqa: E402
     load_flight_execution_allowlist,
     parse_flight_symbols,
     parse_objdump_direct_calls,
+    parse_prohibited_direct_symbols,
     scan_called_symbols,
     scan_source_roots,
     scan_source_text,
@@ -123,6 +124,57 @@ def test_other_motion_and_termination_families_are_rejected(header: str, call: s
         "fixture.cpp:1: forbidden header",
         f"fixture.cpp:2: forbidden direct call {call}",
     )
+
+
+def test_camera_and_gimbal_actions_are_directly_blocked_but_read_calls_are_not() -> None:
+    violations = scan_source_text(
+        """
+        void unsafe() {
+            DjiCameraManager_StartShootPhoto(position, mode);
+            DjiCameraManager_FormatStorage(position);
+            DjiGimbalManager_Rotate(position, rotation);
+        }
+        void read_only() {
+            DjiCameraManager_DownloadFileList(position, &files);
+            DjiCameraManager_GetCameraType(position, &type);
+        }
+        """,
+        display_path="fixture.cpp",
+    )
+    assert violations == (
+        "fixture.cpp:3: forbidden direct call DjiCameraManager_StartShootPhoto",
+        "fixture.cpp:4: forbidden direct call DjiCameraManager_FormatStorage",
+        "fixture.cpp:5: forbidden direct call DjiGimbalManager_Rotate",
+    )
+
+
+def test_camera_gimbal_link_parser_preserves_vendor_definition_distinction() -> None:
+    symbols = parse_prohibited_direct_symbols(
+        "                 U DjiCameraManager_StartShootPhoto\n"
+        "                 U DjiGimbalManager_Rotate\n"
+    )
+    assert symbols == (
+        "DjiCameraManager_StartShootPhoto",
+        "DjiGimbalManager_Rotate",
+    )
+    assert parse_objdump_direct_calls(
+        "0000000000000100 <KsiHilRoute>:\n"
+        "   12345: 97ff0000 bl 5da38 <DjiGimbalManager_Rotate>\n"
+    ) == ("DjiGimbalManager_Rotate",)
+    assert parse_objdump_direct_calls(
+        "0000000000000200 <DjiGimbalManager_Reset>:\n"
+        "   22345: 97ff0000 bl 6da38 <DjiGimbalManager_Rotate>\n"
+    ) == ()
+    vendor_internal = (
+        "0000000000000300 <djiCameraManagerIrManagerInit>:\n"
+        "   32345: 97ff0000 bl 7da38 <DjiCameraManager_ResetCameraSettings>\n"
+    )
+    assert parse_objdump_direct_calls(
+        vendor_internal, vendor_archive_text=vendor_internal
+    ) == ()
+    assert parse_flight_symbols(
+        "000000000005da38 T DjiCameraManager_StartShootPhoto\n"
+    ) == ()
 
 
 def test_nm_and_objdump_parsers_do_not_treat_definition_as_a_call() -> None:

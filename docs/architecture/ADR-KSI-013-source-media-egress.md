@@ -1,11 +1,17 @@
 # ADR-KSI-013 — 매핑 원본 미디어 반출 경로
 
-- 상태: ACCEPTED (2026-08-05, 대표자 확정)
+- 상태: ACCEPTED / D1-D2 TARGET CLARIFIED (2026-09-04, ADR-KSI-033)
 - 관련: ADR-KSI-005(연결 아키텍처 — LTE 상시 링크, EventBundle push 채택·텔레메트리
   스트림 제외), ADR-KSI-012(3D 재구성 파이프라인 — 이 ADR이 정하는 경로의 입구),
   `docs/hil/HARDWARE_SESSION_PLAYBOOK.md`(HIL 세션 항목 추가 대상), INV-023(신뢰
   불가 조건에서 fail-closed 원칙과 같은 정직성 태도), REQ-ACQ-103,
   INV-018/040/041/060
+
+> **현재/목표 경로 정규화.** D1-D2의 RC/4G 자동 반출은 검증 대상 목표 경로이지
+> 현재 정상 ingress가 아니다. 현재 정상 원본은
+> `SD/저장매체 → 현장 PC → KSI 웹 업로드`다. D3-D5 자동화는 별도
+> `MEDIA_PULL`/`MEDIA_UPLOAD` capability이며 HIL 전 `NOT_VERIFIED`/OFF다.
+> PSDK Liveview와 bounded `EDGE_UPLINK`는 원본 반출 경로가 아니다(ADR-KSI-033).
 
 ## 맥락
 

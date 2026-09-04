@@ -21,6 +21,12 @@ ACTIVE/HISTORICAL/SUPERSEDED 라우팅은 `docs/DOCUMENT_STATUS.md`가 소유한
 제품 결정보다 아래의 repository-governance 정본이며 제품 의미나 현재 capability 상태를
 독자적으로 바꾸지 않는다.
 
+미디어 경로는 ADR-KSI-033에 따라 분리한다. 현재 정상 원본 ingress는
+`SD/저장매체 → 현장 PC → KSI 웹 업로드`, PSDK Liveview는 Manifold 로컬
+acquisition/perception 입력, `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata다.
+중앙 지속 영상 수신은 핵심 제품 경로가 아니며 자동 원본 반출은 별도
+`MEDIA_PULL`/`MEDIA_UPLOAD` HIL 전까지 목표 경로일 뿐이다.
+
 `KSI Safety`는 별도 제품 구상이다. 드론 밖 센서까지 포함하는 다중센서 실시간 안전
 운영 제품이며, 이 저장소의 Site Intelligence의 안전순찰 Mission을 흡수하거나 대체하지
 않는다. 겹치는 현장 관측이 있다는 이유만으로 제품 책임이나 코드 모듈을 합치지 않는다.
