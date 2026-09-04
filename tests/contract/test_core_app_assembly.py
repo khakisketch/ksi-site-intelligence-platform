@@ -353,6 +353,7 @@ def test_assembly_requirements_table_keys_match_create_app_store_parameters() ->
         "copilot_conversation_service",
         "site_workspace_projector",
         "site_briefing_service",
+        "runtime_capability_projector",
     }
     expected = {name for name in signature_params if name.endswith("_store")} | (
         signature_params & non_store_protected_params

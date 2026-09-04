@@ -42,6 +42,7 @@ class AcquisitionConnectivityStore:
         self._lock = threading.RLock()
         self._profiles: dict[tuple[str, str], AcquisitionDeploymentProfileV1] = {}
         self._snapshots: dict[tuple[str, str], ConnectivitySnapshotV1] = {}
+        self._snapshot_actors: dict[tuple[str, str], str] = {}
         self._snapshot_ids: set[tuple[str, str]] = set()
         self._replay(journal.replay())
 
@@ -61,8 +62,12 @@ class AcquisitionConnectivityStore:
                     self._profiles[(organization_id, profile.site_id)] = profile
                     # Live upsert와 같은 projection: binding을 바꾸면 heartbeat도 초기화한다.
                     self._snapshots.pop((organization_id, profile.site_id), None)
+                    self._snapshot_actors.pop((organization_id, profile.site_id), None)
                 elif kind == "connectivity-observed":
                     snapshot = ConnectivitySnapshotV1.model_validate(raw["snapshot"])
+                    actor = str(raw["actor"])
+                    if not is_path_safe_identifier(actor):
+                        raise ValueError("invalid snapshot actor")
                     snapshot_key = (organization_id, snapshot.snapshot_id)
                     if snapshot_key in self._snapshot_ids:
                         raise ValueError("reused snapshotId")
@@ -74,6 +79,7 @@ class AcquisitionConnectivityStore:
                     if current is not None and snapshot.observed_at < current.observed_at:
                         raise ValueError("out-of-order snapshot")
                     self._snapshots[(organization_id, snapshot.site_id)] = snapshot
+                    self._snapshot_actors[(organization_id, snapshot.site_id)] = actor
                     self._snapshot_ids.add(snapshot_key)
                 else:
                     raise ValueError(f"unknown kind={kind!r}")
@@ -112,6 +118,7 @@ class AcquisitionConnectivityStore:
             self._journal.append(record)
             self._profiles[(organization_id, profile.site_id)] = profile
             self._snapshots.pop((organization_id, profile.site_id), None)
+            self._snapshot_actors.pop((organization_id, profile.site_id), None)
         return profile
 
     def get_profile(
@@ -119,6 +126,27 @@ class AcquisitionConnectivityStore:
     ) -> AcquisitionDeploymentProfileV1 | None:
         with self._lock:
             return self._profiles.get((organization_id, site_id))
+
+    def current_trusted_context(
+        self, site_id: str, *, organization_id: str
+    ) -> tuple[
+        AcquisitionDeploymentProfileV1 | None,
+        ConnectivitySnapshotV1 | None,
+        str | None,
+    ]:
+        """Return the exact current profile/snapshot plus authenticated ingest actor.
+
+        CAP-5 uses this as a read-only legacy adapter input.  Keeping the actor
+        projected from the original journal record preserves producer
+        provenance across restart instead of inventing it during adaptation.
+        """
+
+        with self._lock:
+            key = (organization_id, site_id)
+            profile = self._profiles.get(key)
+            snapshot = self._snapshots.get(key)
+            actor = self._snapshot_actors.get(key)
+            return profile, snapshot, actor
 
     def observe(
         self,
@@ -151,6 +179,7 @@ class AcquisitionConnectivityStore:
                 }
             )
             self._snapshots[(organization_id, snapshot.site_id)] = snapshot
+            self._snapshot_actors[(organization_id, snapshot.site_id)] = actor
             self._snapshot_ids.add(snapshot_key)
         return snapshot
 

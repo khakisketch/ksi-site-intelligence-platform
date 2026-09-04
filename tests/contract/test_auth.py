@@ -322,6 +322,8 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
             Permission.EQUIPMENT_SUPPORT_APPROVE,
+            Permission.CAPABILITY_PRODUCT_APPROVE,
+            Permission.CAPABILITY_ACTIVATE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
@@ -372,6 +374,7 @@ def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_ta
             Permission.EDGE_EVIDENCE_WRITE,
             Permission.EDGE_SOURCE_MEDIA_WRITE,
             Permission.EDGE_MISSION_KMZ_READ,
+            Permission.CAPABILITY_RUNTIME_OBSERVE,
         }
     )
 
@@ -433,6 +436,7 @@ def test_every_write_permission_has_a_role_without_it(perm: Permission) -> None:
         Permission.EDGE_EVIDENCE_WRITE,
         Permission.EDGE_SOURCE_MEDIA_WRITE,
         Permission.EDGE_MISSION_KMZ_READ,
+        Permission.CAPABILITY_RUNTIME_OBSERVE,
     ),
 )
 def test_no_role_has_edge_only_permission(permission: Permission) -> None:
@@ -708,6 +712,7 @@ def test_whoami_edge_device() -> None:
         "role": None,
         "deviceId": "rig-42",
         "permissions": [
+            "CAPABILITY_RUNTIME_OBSERVE",
             "EDGE_EVIDENCE_WRITE",
             "EDGE_MISSION_KMZ_READ",
             "EDGE_MISSION_PULL",

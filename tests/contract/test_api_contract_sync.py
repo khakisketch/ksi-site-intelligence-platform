@@ -25,6 +25,12 @@ from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordi
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.capability.authority_store import CapabilityAuthorityStore
+from ksi_core.capability.runtime_projection import (
+    RuntimeCapabilityProjector,
+    RuntimeRouteObservationStore,
+    TrustedRuntimeRouteConfigurationRegistry,
+)
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
@@ -287,6 +293,16 @@ def _max_assembly(tmp_path: Path) -> Any:
         request_store=design_conformance_request_store,
         storage=storage,
     )
+    runtime_projector = RuntimeCapabilityProjector(
+        authority_store=CapabilityAuthorityStore(
+            DurableJournal(tmp_path / "capability-authority.jsonl")
+        ),
+        configuration_registry=TrustedRuntimeRouteConfigurationRegistry(),
+        observation_store=RuntimeRouteObservationStore(
+            DurableJournal(tmp_path / "capability-runtime-observations.jsonl")
+        ),
+        supported_freshness_policies={},
+    )
     return create_app(
         evidence_storage=storage,
         flight_artifact_store=flight_artifact_store,
@@ -347,6 +363,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         equipment_support_store=EquipmentSupportStore(
             DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
+        runtime_capability_projector=runtime_projector,
         mission_signing_key=signing_key,
         mission_signing_key_id="contract-sync-test-key",
     )

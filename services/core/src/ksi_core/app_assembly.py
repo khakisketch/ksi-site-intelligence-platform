@@ -42,6 +42,19 @@ from ksi_core.acquisition import (
 )
 from ksi_core.app import create_app
 from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role
+from ksi_core.capability.authority_store import (
+    CAPABILITY_AUTHORITY_JOURNAL_NAME,
+    CapabilityAuthorityStore,
+)
+from ksi_core.capability.runtime_projection import (
+    RUNTIME_ROUTE_OBSERVATION_JOURNAL_NAME,
+    LegacyConnectivitySnapshotAdapter,
+    RuntimeCapabilityProjector,
+    RuntimeRouteFreshnessPolicyV1,
+    RuntimeRouteObservationStore,
+    TrustedRuntimeRouteConfigurationRegistry,
+    TrustedRuntimeRouteConfigurationV1,
+)
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
@@ -77,7 +90,7 @@ from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -124,6 +137,9 @@ def assemble_app(
     processing_profile_issuance_enabled: bool = True,
     landxml_ingress_enabled: bool = False,
     checkpoint_validation_registration_enabled: bool = False,
+    capability_freshness_policies: Mapping[str, RuntimeRouteFreshnessPolicyV1]
+    | None = None,
+    runtime_route_configurations: tuple[TrustedRuntimeRouteConfigurationV1, ...] = (),
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
@@ -517,6 +533,34 @@ def assemble_app(
     )
     equipment_state_journal = journal("equipment-states.jsonl")
     equipment_support_journal = journal("equipment-support.jsonl")
+    # CAP-2/3/4 durable authority and CAP-5 current runtime state remain
+    # separate stores.  Both replay during normal startup; observations never
+    # enter the authority journal and their original expiry is never rebased.
+    freshness_policies = dict(capability_freshness_policies or {})
+    capability_authority_store = CapabilityAuthorityStore(
+        journal(CAPABILITY_AUTHORITY_JOURNAL_NAME),
+        supported_freshness_policies={
+            policy_id: policy.freshness_policy_digest
+            for policy_id, policy in freshness_policies.items()
+        },
+    )
+    runtime_configuration_registry = TrustedRuntimeRouteConfigurationRegistry(
+        runtime_route_configurations
+    )
+    runtime_observation_store = RuntimeRouteObservationStore(
+        journal(RUNTIME_ROUTE_OBSERVATION_JOURNAL_NAME)
+    )
+    legacy_connectivity_adapter = LegacyConnectivitySnapshotAdapter(
+        connectivity_store=acquisition_connectivity_store,
+        configuration_registry=runtime_configuration_registry,
+    )
+    runtime_capability_projector = RuntimeCapabilityProjector(
+        authority_store=capability_authority_store,
+        configuration_registry=runtime_configuration_registry,
+        observation_store=runtime_observation_store,
+        supported_freshness_policies=freshness_policies,
+        legacy_connectivity_adapter=legacy_connectivity_adapter,
+    )
     app = create_app(
         auth_registry=auth_registry,
         human_auth_mode=human_auth_mode,
@@ -584,6 +628,7 @@ def assemble_app(
         region_extraction_report_store=region_extraction_report_store,
         equipment_state_store=EquipmentStateStore(equipment_state_journal, site_store=site_store),
         equipment_support_store=EquipmentSupportStore(equipment_support_journal),
+        runtime_capability_projector=runtime_capability_projector,
         device_attestation_registry=device_attestation_registry,
         mission_signing_key=mission_signing_key,
         mission_signing_key_id=mission_signing_key_id,
@@ -592,6 +637,9 @@ def assemble_app(
         mission_sequence_store=mission_sequence_store,
         expose_docs=expose_docs,
     )
+    app.state.capability_authority_store = capability_authority_store
+    app.state.runtime_route_configuration_registry = runtime_configuration_registry
+    app.state.runtime_route_observation_store = runtime_observation_store
 
     # 미들웨어는 마지막 등록이 가장 바깥이다(Starlette 관례) — CorrelationId 를
     # 가장 바깥에 두어 그 안의 HttpMetrics·라우팅·인증 전부의 로그가 같은

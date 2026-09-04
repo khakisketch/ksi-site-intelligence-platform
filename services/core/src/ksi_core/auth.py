@@ -160,6 +160,15 @@ class Permission(StrEnum):
     # RC Plus 2 / Dock gateway 전용. Edge ingest 권한과 분리해 Gateway 자격이
     # Manifold EventBundle·원본 미디어를 가장할 수 없게 한다(REQ-SEC-101).
     GATEWAY_CONNECTIVITY_WRITE = "GATEWAY_CONNECTIVITY_WRITE"
+    # CAP-5 exact route-port liveness report. Gateway와 Edge 장비에만 주며,
+    # evidence/approval/activation을 만들 권한은 전혀 포함하지 않는다. 실제
+    # organization/site/device/route/port 범위는 runtime ingress가 trusted Core
+    # configuration과 다시 exact-match한다(REQ-ACQ-103, INV-060).
+    CAPABILITY_RUNTIME_OBSERVE = "CAPABILITY_RUNTIME_OBSERVE"
+    # Gateway 전용: 새 route invocation 직전 CAP-5 projection을 질의한다. 관찰
+    # 쓰기와 분리해 observation producer credential이 실행 preflight까지 호출하는
+    # 권한 확장을 막는다. 최종 허용은 Core의 Mission scope 대조를 다시 통과한다.
+    CAPABILITY_RUNTIME_PREFLIGHT = "CAPABILITY_RUNTIME_PREFLIGHT"
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
@@ -178,6 +187,15 @@ class Permission(StrEnum):
     # 필요하지만(같은 표면) 증거를 요구하지 않는다 — 재검증 실패에 즉시 대응해야
     # 하는 방향에 마찰을 넣지 않는다(capability.assert_support_level_transition).
     EQUIPMENT_SUPPORT_APPROVE = "EQUIPMENT_SUPPORT_APPROVE"
+    # Product/HIL capability approval is a durable product authority decision,
+    # not evidence verification and not operational activation.  Only ADMIN
+    # operators receive it; device/gateway/worker fixed permission sets remain
+    # unchanged (REQ-ACQ-103, REQ-SEC-101).
+    CAPABILITY_PRODUCT_APPROVE = "CAPABILITY_PRODUCT_APPROVE"
+    # Exact deployment activation/suspension/revocation is a separate CAP-4
+    # operations authority.  It is intentionally distinct from product/HIL
+    # approval even though ADMIN currently receives both permissions.
+    CAPABILITY_ACTIVATE = "CAPABILITY_ACTIVATE"
     WORK_ORDERS_WRITE = "WORK_ORDERS_WRITE"
     REOBSERVATION_APPROVE = "REOBSERVATION_APPROVE"
     COPILOT_QUERY = "COPILOT_QUERY"
@@ -360,6 +378,8 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
             Permission.EQUIPMENT_SUPPORT_APPROVE,
+            Permission.CAPABILITY_PRODUCT_APPROVE,
+            Permission.CAPABILITY_ACTIVATE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
@@ -396,11 +416,16 @@ _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.EDGE_EVIDENCE_WRITE,
         Permission.EDGE_SOURCE_MEDIA_WRITE,
         Permission.EDGE_MISSION_KMZ_READ,
+        Permission.CAPABILITY_RUNTIME_OBSERVE,
     }
 )
 
 _GATEWAY_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
-    {Permission.GATEWAY_CONNECTIVITY_WRITE}
+    {
+        Permission.GATEWAY_CONNECTIVITY_WRITE,
+        Permission.CAPABILITY_RUNTIME_OBSERVE,
+        Permission.CAPABILITY_RUNTIME_PREFLIGHT,
+    }
 )
 
 # PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무

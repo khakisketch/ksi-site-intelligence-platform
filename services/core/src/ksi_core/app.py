@@ -6,9 +6,10 @@ Core는 지리공간·워크플로 control plane이다 — 비행 중 실시간 
 
 - **프레임별 비행제어 엔드포인트를 두지 않는다.** Core가 노출하는 것은 계약·정책·
   상태 조회이지 조종 명령이 아니다(INV-001, 00_READ_FIRST "구현 금지").
-- **Capability는 VERIFIED만 노출한다.** ``/capabilities``는
+- **Capability catalog는 VERIFIED만 노출한다.** ``/capabilities``는
   :meth:`~ksi_core.capability.registry.CapabilityRegistry.list_operational` 만
-  호출한다 — SPIKE_REQUIRED/BLOCKED가 운영 API로 새어나가지 않는다(INV-041).
+  호출하는 legacy compatibility projection이다. 조직/현장 scope가 없으므로
+  CAP-5 runtime 또는 Mission 실행 권한을 표현하지 않는다(INV-041).
 
 ## fail-closed 조립 (ADR-KSI-008 §3) — "인증 없는 보호 표면은 존재할 수 없다"
 
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 
     from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
     from ksi_core.auth import AuthRegistry, OidcVerifier
+    from ksi_core.capability.runtime_projection import RuntimeCapabilityProjector
     from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.checkpoint_validations import CheckpointValidationStore
@@ -372,6 +374,7 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
     ("mission_store", (), ""),
     ("mission_sequence_store", (), ""),
     ("equipment_support_store", (), ""),
+    ("runtime_capability_projector", (), ""),
 )
 
 
@@ -422,6 +425,7 @@ def create_app(
     site_briefing_service: SiteBriefingService | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
+    runtime_capability_projector: RuntimeCapabilityProjector | None = None,
     device_attestation_registry: DeviceAttestationRegistry | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
@@ -571,13 +575,14 @@ def create_app(
 
     @app.get("/capabilities")
     def list_capabilities() -> dict[str, Any]:
-        """**운영 가능한(VERIFIED) capability만** 반환한다 (INV-041).
+        """Product catalog에서 승인된 VERIFIED compatibility 항목만 반환한다.
 
         SPIKE_REQUIRED/BLOCKED 항목은 이 응답에 절대 포함되지 않는다 — 미검증 기능이
-        운영 UI·Mission Contract 정책 선택지에 노출되는 것을 막는 게이트다. 감사용
-        전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
+        제품 catalog에 노출되는 것을 막는 게이트다. 다만 scope 없는 public 응답이므로
+        CurrentRuntimeReady, Mission permission 또는 OperationallyUsable을 뜻하지 않는다.
+        감사용 전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
         """
-        operational = capability_registry.list_operational()
+        catalog_visible = capability_registry.list_operational()
         # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK 버전은 배치 기체의
         # 취약점 표적화에 쓰이는 정보라 인증된 내부·감사 경로에서만 제공한다.
         return {
@@ -587,9 +592,9 @@ def create_app(
                     "title": record.title,
                     "state": record.state.value,
                 }
-                for record in operational
+                for record in catalog_visible
             ],
-            "count": len(operational),
+            "count": len(catalog_visible),
         }
 
     # ── fail-closed 결합 검증(장착 전에 전부 확인 — 절반 조립으로 기동하지 않는다) ──
@@ -655,6 +660,7 @@ def create_app(
         "mission_store": mission_store,
         "mission_sequence_store": mission_sequence_store,
         "equipment_support_store": equipment_support_store,
+        "runtime_capability_projector": runtime_capability_projector,
     }
 
     for _store_name, _requirement_groups, _reason in _ASSEMBLY_REQUIREMENTS:
@@ -686,6 +692,16 @@ def create_app(
             auth_registry,
             human_auth_mode=human_auth_mode,
             oidc_verifier=oidc_verifier,
+        )
+
+    if runtime_capability_projector is not None:
+        from ksi_core.capability.runtime_api import mount_runtime_capability
+
+        mount_runtime_capability(
+            app,
+            runtime_capability_projector,
+            mission_store=mission_store,
+            mission_execution_store=mission_execution_store,
         )
 
     if site_store is not None:

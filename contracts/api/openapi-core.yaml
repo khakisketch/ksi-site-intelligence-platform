@@ -174,18 +174,22 @@ paths:
         '200': { description: Process alive }
   /capabilities:
     get:
-      summary: List operational (VERIFIED-only) capabilities
-      description: SPIKE_REQUIRED/BLOCKED 항목은 절대 포함되지 않는다(INV-041).
+      summary: List product catalog-approved (VERIFIED compatibility) capabilities
+      description: >-
+        조직·현장·배포 scope가 없는 public catalog다. SPIKE_REQUIRED/BLOCKED는
+        포함하지 않지만, VERIFIED 표시는 CurrentRuntimeReady, Mission permission,
+        OperationallyUsable을 뜻하지 않는다(INV-041, CAP-5 §13.1).
       responses:
-        '200': { description: Operational capabilities }
+        '200': { description: Product catalog capabilities; never runtime authorization }
   /v1/auth/whoami:
     get:
       summary: Resolve the authenticated Principal and its effective permissions
       description: >-
         인증만 요구한다(인가 없음, ADR-KSI-008 §2). OPERATOR 는
-        role·permissions 를, GATEWAY_DEVICE는 deviceId·GATEWAY_CONNECTIVITY_WRITE를,
+        role·permissions 를, GATEWAY_DEVICE는 deviceId·GATEWAY_CONNECTIVITY_WRITE·
+        CAPABILITY_RUNTIME_OBSERVE를,
         EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST·EDGE_MISSION_PULL·
-        EDGE_EVIDENCE_WRITE 고정 권한을 반환한다.
+        EDGE_EVIDENCE_WRITE·CAPABILITY_RUNTIME_OBSERVE 고정 권한을 반환한다.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -274,6 +278,76 @@ paths:
         '404': { description: Device binding or profile not found }
         '422': { description: Invalid or future-dated snapshot }
         '503': { description: Durable journal unavailable }
+  /v1/capability-runtime/observations:
+    post:
+      summary: Record one exact current runtime route-port observation
+      description: >-
+        CAPABILITY_RUNTIME_OBSERVE 권한을 가진 authenticated Gateway/Edge device만
+        보고한다. organization/site/device/path/subjectPortId/deployment/policy는
+        Core-owned trusted configuration과 exact-match해야 한다. 이 관측은 evidence,
+        product approval 또는 durable activation을 만들거나 변경하지 않는다.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeRouteObservationV1' }
+      responses:
+        '201':
+          description: Durable observation audit record or deterministic exact retry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuntimeObservationIngestResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: CAPABILITY_RUNTIME_OBSERVE permission required }
+        '409': { description: Immutable observation ID or causal ordering conflict }
+        '422': { description: Unmapped, future-dated, untrusted, or binding mismatch }
+        '503': { description: Observation journal unavailable }
+  /v1/capability-runtime/preflight:
+    post:
+      summary: Evaluate one authenticated new runtime route invocation
+      description: >-
+        GATEWAY_DEVICE 전용. 인증 principal의 organizationId/gatewayDeviceId와
+        요청 scope를 exact-match하고, Core Mission 원장의 organization/site/assigned
+        Edge/validity/cancellation을 독립적으로 확인한 뒤 CAP-5 projector를 호출한다.
+        응답은 이 1회 신규 route invocation의 preflight이며 capability approval,
+        activation, observation 또는 기존 signed Mission Contract를 변경하지 않는다.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeRoutePreflightRequestV1' }
+      responses:
+        '200':
+          description: Typed fail-closed CAP-5 and Mission conjunction
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuntimeRoutePreflightResponseV1' }
+        '401': { description: Authentication failed }
+        '403': { description: CAPABILITY_RUNTIME_PREFLIGHT permission required }
+        '422': { description: Malformed or unmapped exact route request }
+  /v1/sites/{site_id}/capability-runtime/activations/{activation_id}:
+    get:
+      summary: Read a scoped diagnostic CAP-5 runtime projection
+      description: >-
+        SITES_READ 권한과 exact organization/site ownership이 필요하다. 이 HTTP
+        view는 Mission policy를 항상 DENY로 평가하므로 operationallyUsable 및
+        newRouteInvocationAllowed는 false다. 실행 consumer의 Mission policy 판정이나
+        signed Mission Contract를 대체하지 않는 진단 전용 응답이다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: path, name: activation_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Diagnostic-only scoped projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScopedRuntimeCapabilityView' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Activation absent or outside principal organization/site }
   /v1/gateway-sync/operation-receipts:
     post:
       summary: Record one capability-specific Gateway operation receipt
@@ -5102,6 +5176,119 @@ components:
   # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
   # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
   schemas:
+    RuntimeRouteObservationV1:
+      type: object
+      additionalProperties: false
+      required:
+        [observationId, organizationId, siteId, configuredDeploymentDigest,
+         subjectKind, subjectDeviceIds, subjectPortId, integrationPath,
+         canonicalCapabilityId, equipmentScopeDigest, runtimeBuildDigest,
+         availability, observedAt, expiresAt, freshnessPolicyId,
+         freshnessPolicyDigest, producerPrincipalId, producerPrincipalKind,
+         sourceObservationRef]
+      properties:
+        observationId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        organizationId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        siteId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        configuredDeploymentDigest:
+          { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        subjectKind:
+          enum: [GATEWAY_ROUTE_PORT, DOCK_ROUTE_PORT, EDGE_ROUTE_PORT,
+                 GATEWAY_EDGE_ROUTE_PORT]
+        subjectDeviceIds:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        subjectPortId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        integrationPath:
+          enum: [DJI_CLOUD, PSDK_MANIFOLD, MANIFOLD_DIRECT, MSDK_FIELD, DJI_DOCK]
+        canonicalCapabilityId:
+          enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD]
+        equipmentScopeDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        runtimeBuildDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        availability:
+          enum: [REPORTED_AVAILABLE, REPORTED_UNAVAILABLE, UNKNOWN]
+        observedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        freshnessPolicyId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        freshnessPolicyDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        producerPrincipalId:
+          { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        producerPrincipalKind: { enum: [GATEWAY_DEVICE, EDGE_DEVICE] }
+        sourceObservationRef: { type: string, minLength: 1, maxLength: 500 }
+    RuntimeObservationIngestResponse:
+      type: object
+      additionalProperties: false
+      required: [disposition, observation]
+      properties:
+        disposition: { enum: [RECORDED, EXACT_RETRY] }
+        observation: { $ref: '#/components/schemas/RuntimeRouteObservationV1' }
+    RuntimeRoutePreflightRequestV1:
+      type: object
+      additionalProperties: false
+      required:
+        [organizationId, siteId, gatewayDeviceId, edgeDeviceId,
+         canonicalCapability, integrationPath, subjectPortId, transport,
+         hardwareModel, firmwareVersion, missionId, operation, idempotencyKey,
+         activationAuthorizationId]
+      properties:
+        organizationId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        siteId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        gatewayDeviceId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        edgeDeviceId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        canonicalCapability:
+          { enum: [WAYLINE_DELIVERY, EDGE_DOWNLINK, EDGE_UPLINK, MEDIA_PULL, MEDIA_UPLOAD] }
+        integrationPath:
+          { enum: [DJI_CLOUD, PSDK_MANIFOLD, MANIFOLD_DIRECT, MSDK_FIELD, DJI_DOCK] }
+        subjectPortId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        transport: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        hardwareModel: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        firmwareVersion: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        missionId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        operation: { enum: [WAYLINE_DISPATCH, EDGE_DISPATCH, EDGE_UPLINK, MEDIA_SYNC] }
+        idempotencyKey: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+        activationAuthorizationId: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
+    RuntimeRoutePreflightResponseV1:
+      type: object
+      additionalProperties: false
+      required:
+        [durableAuthorityValid, currentRuntimeReady, currentMissionPolicyAllows,
+         operationallyUsable, newRouteInvocationAllowed, reason,
+         existingSignedMissionContractEffect]
+      properties:
+        durableAuthorityValid: { type: boolean }
+        currentRuntimeReady: { type: boolean }
+        currentMissionPolicyAllows: { type: boolean }
+        operationallyUsable: { type: boolean }
+        newRouteInvocationAllowed: { type: boolean }
+        reason: { type: string }
+        existingSignedMissionContractEffect: { type: string, const: UNCHANGED }
+    ScopedRuntimeCapabilityView:
+      type: object
+      additionalProperties: false
+      required:
+        [activationAuthorizationId, organizationId, siteId, durableAuthorityValid,
+         currentRuntimeReady, currentMissionPolicyAllows, operationallyUsable,
+         reason, classification, activationLifecycleStatus, observationId,
+         newRouteInvocationAllowed, existingSignedMissionContractEffect]
+      properties:
+        authorizationPurpose: { type: string, const: DIAGNOSTIC_ONLY }
+        activationAuthorizationId: { type: string }
+        organizationId: { type: string }
+        siteId: { type: string }
+        durableAuthorityValid: { type: boolean }
+        currentRuntimeReady: { type: boolean }
+        currentMissionPolicyAllows: { type: boolean }
+        operationallyUsable: { type: boolean }
+        reason: { type: string }
+        classification: { type: string }
+        activationLifecycleStatus: { type: [string, 'null'] }
+        observationId: { type: [string, 'null'] }
+        newRouteInvocationAllowed: { type: boolean }
+        existingSignedMissionContractEffect: { type: string, const: UNCHANGED }
+        warning: { type: string, minLength: 1 }
     AcquisitionDeploymentProfileV1:
       type: object
       additionalProperties: false
