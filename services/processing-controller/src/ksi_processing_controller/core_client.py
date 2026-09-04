@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from threading import RLock
 from typing import Any, Protocol
+from uuid import UUID, uuid4
 
 import httpx
 from ksi_event_contracts.change_detection_result import ArtifactRef, ChangeDetectionResult
@@ -49,6 +51,35 @@ class CoreClientError(RuntimeError):
         self.verdict = verdict
         self.detail = detail
         super().__init__(f"{what}: {verdict}" + (f" — {detail}" if detail else ""))
+
+
+@dataclass(frozen=True, slots=True)
+class LeaseHandle:
+    """The server-fenced ownership of one worker attempt.
+
+    The bearer token authenticates this process; it is deliberately absent
+    here.  A new controller process creates a new ``worker_instance_id`` and
+    a CLAIM keeps its ``lease_acquisition_id`` across a lost HTTP response.
+    ``lease_generation`` is assigned only by Core and must accompany every
+    mutation for this attempt.
+    """
+
+    work_kind: str
+    resource_id: str
+    worker_instance_id: str
+    lease_acquisition_id: str
+    lease_generation: int
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactObjectBinding:
+    """One uploaded object as reported back to Core's authoritative manifest."""
+
+    name: str
+    object_key: str
+    sha256: str
+    size_bytes: int
+    content_type: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +171,11 @@ class ArtifactSubmission:
     # (worker._ODM_VERTICAL_REFERENCE). None 이면 payload 에서 키째 빠져,
     # 그 등록은 수직기준을 밝히지 않은 v1.1 산출물로 남는다.
     vertical_reference: VerticalReference | None = None
+    # New-format processing results bind every uploaded byte to the candidate
+    # generation.  ``None`` remains only for historical Core compatibility;
+    # the new Core endpoint rejects missing bindings.
+    primary_object: ArtifactObjectBinding | None = None
+    auxiliary_objects: tuple[ArtifactObjectBinding, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +189,7 @@ class ArtifactUploadTarget:
 
     object_key: str
     upload_url: str
+    required_headers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,6 +438,7 @@ class DiffRasterUploadTarget:
     object_key: str
     upload_url: str
     content_type: str
+    required_headers: tuple[tuple[str, str], ...] = ()
 
 
 class DesignConformanceCoreClient(Protocol):
@@ -417,7 +455,7 @@ class DesignConformanceCoreClient(Protocol):
         """``GET /v1/design-conformance-requests``. QUEUED + lease 만료된 RUNNING."""
         ...
 
-    def acquire_design_conformance_lease(self, request_id: str) -> None:
+    def acquire_design_conformance_lease(self, request_id: str) -> LeaseHandle | None:
         """``POST /{id}/lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
         ...
 
@@ -431,7 +469,9 @@ class DesignConformanceCoreClient(Protocol):
         """``POST /{id}/transitions``. TRANSITIONED 외엔 :class:`CoreClientError`."""
         ...
 
-    def presign_diff_raster_upload(self, request_id: str) -> DiffRasterUploadTarget:
+    def presign_diff_raster_upload(
+        self, request_id: str, *, digest: str, size_bytes: int
+    ) -> DiffRasterUploadTarget:
         """``POST /{id}/diff-raster-upload-url``. UPLOAD_READY 외엔 예외."""
         ...
 
@@ -499,7 +539,7 @@ class RegionExtractionCoreClient(Protocol):
         """``GET /v1/region-extraction-requests``. QUEUED + lease 만료된 RUNNING."""
         ...
 
-    def acquire_region_extraction_lease(self, request_id: str) -> None:
+    def acquire_region_extraction_lease(self, request_id: str) -> LeaseHandle | None:
         """``POST /{id}/lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
         ...
 
@@ -526,7 +566,7 @@ class CoreClient(Protocol):
         쥐고 있던 작업), 오래된 것부터(FIFO)."""
         ...
 
-    def acquire_lease(self, job_id: str) -> None:
+    def acquire_lease(self, job_id: str) -> LeaseHandle | None:
         """``POST /lease``. LEASED·LEASE_RENEWED 외엔 :class:`CoreClientError`."""
         ...
 
@@ -538,14 +578,19 @@ class CoreClient(Protocol):
         """``POST /transitions``. TRANSITIONED 외엔 :class:`CoreClientError`."""
         ...
 
-    def verify_source_media(
-        self, mission_id: str, measurements: list[MeasuredImage]
-    ) -> None:
-        """``POST /source-media/verify``. VERIFIED·ALREADY_VERIFIED 외엔 예외."""
+    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
+        """Fenced ``POST /processing-jobs/{id}/verify-input`` worker mutation."""
         ...
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
+        self,
+        job_id: str,
+        *,
+        artifact_id: str,
+        content_type: str,
+        filename: str | None = None,
+        sha256: str | None = None,
+        size_bytes: int | None = None,
     ) -> ArtifactUploadTarget:
         """``POST /artifacts/upload-url``. UPLOAD_READY 외엔 :class:`CoreClientError`.
 
@@ -564,7 +609,7 @@ class CoreClient(Protocol):
         """``GET /v1/comparison-requests``. QUEUED + lease 만료된 RUNNING, 오래된 것부터."""
         ...
 
-    def acquire_comparison_lease(self, request_id: str) -> None:
+    def acquire_comparison_lease(self, request_id: str) -> LeaseHandle | None:
         """``POST /comparison-requests/{id}/lease``. LEASED·LEASE_RENEWED 외엔 예외."""
         ...
 
@@ -607,17 +652,40 @@ class WorkerCoreClient(
 class HttpCoreClient:
     """httpx 로 Core 표면을 말한다. 판단은 하지 않는다(모듈 docstring)."""
 
-    def __init__(self, base_url: str, *, token: str, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        token: str,
+        client: httpx.Client | None = None,
+        worker_instance_id: str | None = None,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.Client(timeout=30.0)
+        # Identity is process-lifetime, not a deployment credential.  Keeping
+        # it injectable makes the wire contract deterministic in tests while
+        # production naturally gets a fresh UUID after every restart.
+        if worker_instance_id is not None:
+            try:
+                parsed_instance_id = UUID(worker_instance_id)
+            except ValueError as exc:
+                raise ValueError("worker_instance_id must be a UUIDv4") from exc
+            if parsed_instance_id.version != 4:
+                raise ValueError("worker_instance_id must be a UUIDv4")
+            self._worker_instance_id = worker_instance_id
+        else:
+            self._worker_instance_id = str(uuid4())
+        self._lease_lock = RLock()
+        self._leases: dict[tuple[str, str], LeaseHandle] = {}
+        self._claim_ids: dict[tuple[str, str], str] = {}
+        self._active_lease_key: tuple[str, str] | None = None
         # ``client`` 를 주입해도(테스트 등) ``token`` 이 조용히 무시되지 않는다 —
         # 둘 다 준 호출자는 "이 토큰으로 이 클라이언트를 써라"를 뜻하지 "클라이언트가
         # 있으니 토큰은 버려라"를 뜻하지 않는다. 실기동 전까지 이 자리가 정확히
         # 거꾸로였다: 주입된 클라이언트는 인증 헤더 없이 나갔다.
         self._client.headers["Authorization"] = f"Bearer {token}"
 
-    @staticmethod
-    def _correlation_headers() -> dict[str, str]:
+    def _correlation_headers(self) -> dict[str, str]:
         """Build request-local headers without mutating the shared httpx client.
 
         Lease heartbeats use another thread while the worker reuses this
@@ -626,7 +694,124 @@ class HttpCoreClient:
         was validated by the runner before it was bound.
         """
         correlation_id = current_correlation_id()
-        return {REQUEST_ID_HEADER: correlation_id} if correlation_id is not None else {}
+        headers = {"X-KSI-Worker-Instance-Id": self._worker_instance_id}
+        if correlation_id is not None:
+            headers[REQUEST_ID_HEADER] = correlation_id
+        with self._lease_lock:
+            if self._active_lease_key is not None:
+                handle = self._leases.get(self._active_lease_key)
+                if handle is not None:
+                    headers.update(self._fence_headers(handle))
+        return headers
+
+    @staticmethod
+    def _fence_headers(handle: LeaseHandle) -> dict[str, str]:
+        return {
+            "X-KSI-Worker-Instance-Id": handle.worker_instance_id,
+            "X-KSI-Lease-Acquisition-Id": handle.lease_acquisition_id,
+            "X-KSI-Lease-Generation": str(handle.lease_generation),
+        }
+
+    def _required_fence_headers(self, *, work_kind: str, resource_id: str) -> dict[str, str]:
+        """Return the exact authoritative handle for a result finalization.
+
+        Result routes are not allowed to inherit whichever lease happened to
+        be active most recently on this client: a multi-request process must
+        propagate the handle for the result's own request id.
+        """
+
+        with self._lease_lock:
+            handle = self._leases.get((work_kind, resource_id))
+        if handle is None:
+            raise CoreClientError(
+                what=f"{work_kind}-result-fence",
+                verdict="LEASE_REQUIRED",
+                detail=f"no active {work_kind} lease handle for {resource_id}",
+            )
+        return self._fence_headers(handle)
+
+    def _lease_request_headers(
+        self,
+        *,
+        work_kind: str,
+        resource_id: str,
+        mode: str,
+        handle: LeaseHandle | None,
+    ) -> dict[str, str]:
+        headers = self._correlation_headers()
+        headers["X-KSI-Lease-Mode"] = mode
+        if handle is None:
+            # Keep this id stable until Core answers the original CLAIM.  A
+            # transport failure therefore retries the same acquisition rather
+            # than self-fencing by allocating another generation.
+            key = (work_kind, resource_id)
+            with self._lease_lock:
+                acquisition_id = self._claim_ids.setdefault(key, str(uuid4()))
+            headers["X-KSI-Lease-Acquisition-Id"] = acquisition_id
+        else:
+            headers.update(self._fence_headers(handle))
+        return headers
+
+    def _lease_from_response(
+        self,
+        *,
+        work_kind: str,
+        resource_id: str,
+        payload: dict[str, Any],
+        headers: httpx.Headers,
+        expected_acquisition_id: str,
+    ) -> LeaseHandle:
+        """Read the Core-assigned fence from response headers.
+
+        The JSON fallbacks are transitional only, so a rolling deployment can
+        return the same fact while the explicit response-header contract is
+        being enabled.  Production Core is required to send the headers.
+        """
+        acquisition_id = headers.get("X-KSI-Lease-Acquisition-Id") or payload.get(
+            "leaseAcquisitionId", expected_acquisition_id
+        )
+        raw_generation = headers.get("X-KSI-Lease-Generation") or payload.get(
+            "leaseGeneration"
+        )
+        worker_instance_id = headers.get("X-KSI-Worker-Instance-Id") or payload.get(
+            "workerInstanceId", self._worker_instance_id
+        )
+        if (
+            not isinstance(acquisition_id, str)
+            or acquisition_id != expected_acquisition_id
+            or not isinstance(worker_instance_id, str)
+            or worker_instance_id != self._worker_instance_id
+        ):
+            raise CoreClientError(
+                what=f"{work_kind}-lease",
+                verdict="MALFORMED_LEASE_RESPONSE",
+                detail="Core lease identity does not echo this CLAIM/worker instance",
+            )
+        try:
+            generation = int(str(raw_generation))
+        except (TypeError, ValueError) as exc:
+            raise CoreClientError(
+                what=f"{work_kind}-lease",
+                verdict="MALFORMED_LEASE_RESPONSE",
+                detail="Core response lacks lease generation",
+            ) from exc
+        if generation < 1:
+            raise CoreClientError(
+                what=f"{work_kind}-lease",
+                verdict="MALFORMED_LEASE_RESPONSE",
+                detail="lease generation must be positive",
+            )
+        handle = LeaseHandle(
+            work_kind=work_kind,
+            resource_id=resource_id,
+            worker_instance_id=worker_instance_id,
+            lease_acquisition_id=acquisition_id,
+            lease_generation=generation,
+        )
+        with self._lease_lock:
+            self._leases[(work_kind, resource_id)] = handle
+            self._active_lease_key = (work_kind, resource_id)
+        return handle
 
     def _get(
         self, path: str, *, params: dict[str, Any] | None = None
@@ -644,7 +829,22 @@ class HttpCoreClient:
         what: str,
         ok: str | frozenset[str],
         json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        payload, _response_headers = self._post_with_headers(
+            path, what=what, ok=ok, json=json, headers=headers
+        )
+        return payload
+
+    def _post_with_headers(
+        self,
+        path: str,
+        *,
+        what: str,
+        ok: str | frozenset[str],
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[dict[str, Any], httpx.Headers]:
         """``ok`` 는 문자열 하나 또는 성공으로 볼 verdict 집합이다.
 
         **집합을 받는 이유가 실기동에서 드러났다.** ``acquire_lease`` 가 처음엔
@@ -655,10 +855,13 @@ class HttpCoreClient:
         일어나는 순간 곧바로 죽었다(``lease: LEASE_RENEWED`` 예외). 그래서
         판정 집합은 호출부가 아니라 이 함수가 한 번에 본다.
         """
+        request_headers = self._correlation_headers()
+        if headers is not None:
+            request_headers.update(headers)
         response = self._client.post(
             f"{self._base_url}{path}",
             json=json,
-            headers=self._correlation_headers(),
+            headers=request_headers,
         )
         try:
             payload = response.json()
@@ -670,7 +873,7 @@ class HttpCoreClient:
         accepted = {ok} if isinstance(ok, str) else ok
         if verdict not in accepted:
             raise CoreClientError(what=what, verdict=str(verdict), detail=payload.get("detail"))
-        return payload
+        return payload, response.headers
 
     def _get_json(
         self, path: str, *, what: str, params: dict[str, Any] | None = None
@@ -701,12 +904,64 @@ class HttpCoreClient:
         )
         return [PendingJob(job_id=item["jobId"]) for item in payload["jobs"]]
 
-    def acquire_lease(self, job_id: str) -> None:
-        self._post(
-            f"/v1/processing-jobs/{job_id}/lease",
-            what="lease",
-            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
+    def _claim_or_renew(
+        self, *, work_kind: str, resource_id: str, path: str, what: str
+    ) -> LeaseHandle:
+        key = (work_kind, resource_id)
+        with self._lease_lock:
+            existing = self._leases.get(key)
+            expected_acquisition_id = (
+                existing.lease_acquisition_id
+                if existing is not None
+                else self._claim_ids.setdefault(key, str(uuid4()))
+            )
+        mode = "RENEW" if existing is not None else "CLAIM"
+        try:
+            payload, response_headers = self._post_with_headers(
+                path,
+                what=what,
+                ok="LEASE_RENEWED" if mode == "RENEW" else "LEASED",
+                headers=self._lease_request_headers(
+                    work_kind=work_kind,
+                    resource_id=resource_id,
+                    mode=mode,
+                    handle=existing,
+                ),
+            )
+        except CoreClientError as exc:
+            if mode == "RENEW" and exc.verdict in {
+                "STALE_ACQUISITION",
+                "STALE_LEASE_ACQUISITION",
+                "STALE_LEASE_GENERATION",
+                "LEASE_REQUIRED",
+                "REQUEST_NOT_ACTIVE",
+                "JOB_NOT_ACTIVE",
+            }:
+                # A RENEW denial closes this local handle.  The next polling
+                # round performs a fresh CLAIM with a new acquisition UUID;
+                # it is never silently reinterpreted inside this request.
+                with self._lease_lock:
+                    self._leases.pop(key, None)
+                    self._claim_ids.pop(key, None)
+                    if self._active_lease_key == key:
+                        self._active_lease_key = None
+            raise
+        return self._lease_from_response(
+            work_kind=work_kind,
+            resource_id=resource_id,
+            payload=payload,
+            headers=response_headers,
+            expected_acquisition_id=expected_acquisition_id,
         )
+
+    def acquire_lease(self, job_id: str) -> LeaseHandle:
+        return self._claim_or_renew(
+            work_kind="processing", resource_id=job_id,
+            path=f"/v1/processing-jobs/{job_id}/lease", what="lease",
+        )
+
+    def renew_lease(self, job_id: str) -> LeaseHandle:
+        return self.acquire_lease(job_id)
 
     def get_input(self, job_id: str) -> JobInput:
         response = self._get(f"/v1/processing-jobs/{job_id}/input")
@@ -758,14 +1013,12 @@ class HttpCoreClient:
             json={"targetStatus": target, "detail": detail},
         )
 
-    def verify_source_media(
-        self, mission_id: str, measurements: list[MeasuredImage]
-    ) -> None:
+    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
         # ALREADY_VERIFIED 도 성공이다 — 재시도 작업(이전 시도가 실패한 뒤
         # 새로 발급된 작업)이 같은 미션의 이미 검증된 번들에 다시 보고하면
         # 정확히 이 verdict 가 나온다(실기동에서 실제로 발생, 2026-08-06).
         self._post(
-            f"/v1/missions/{mission_id}/source-media/verify",
+            f"/v1/processing-jobs/{job_id}/verify-input",
             what="verify",
             ok=frozenset({"VERIFIED", "ALREADY_VERIFIED"}),
             json={
@@ -792,7 +1045,14 @@ class HttpCoreClient:
         )
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
+        self,
+        job_id: str,
+        *,
+        artifact_id: str,
+        content_type: str,
+        filename: str | None = None,
+        sha256: str | None = None,
+        size_bytes: int | None = None,
     ) -> ArtifactUploadTarget:
         payload = self._post(
             f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
@@ -802,6 +1062,8 @@ class HttpCoreClient:
                 "artifactId": artifact_id,
                 "contentType": content_type,
                 "filename": filename,
+                "sha256": sha256,
+                "sizeBytes": size_bytes,
             },
         )
         object_key = payload.get("objectKey")
@@ -814,7 +1076,20 @@ class HttpCoreClient:
                 verdict="UPLOAD_READY",
                 detail="응답에 objectKey/uploadUrl 이 없다",
             )
-        return ArtifactUploadTarget(object_key=object_key, upload_url=upload_url)
+        raw_headers = payload.get("requiredHeaders", {})
+        if not isinstance(raw_headers, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in raw_headers.items()
+        ):
+            raise CoreClientError(
+                what=f"upload-url:{artifact_id}", verdict="UPLOAD_READY",
+                detail="requiredHeaders must be a string map",
+            )
+        return ArtifactUploadTarget(
+            object_key=object_key,
+            upload_url=upload_url,
+            required_headers=tuple(sorted(raw_headers.items())),
+        )
 
     def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
         payload: dict[str, Any] = {
@@ -828,6 +1103,24 @@ class HttpCoreClient:
             "gsd": submission.gsd,
             "auxiliaryFiles": list(submission.auxiliary_files),
         }
+        if submission.primary_object is not None:
+            payload["primaryObject"] = {
+                "name": submission.primary_object.name,
+                "objectKey": submission.primary_object.object_key,
+                "sha256": submission.primary_object.sha256,
+                "sizeBytes": submission.primary_object.size_bytes,
+                "contentType": submission.primary_object.content_type,
+            }
+            payload["auxiliaryObjects"] = [
+                {
+                    "name": artifact.name,
+                    "objectKey": artifact.object_key,
+                    "sha256": artifact.sha256,
+                    "sizeBytes": artifact.size_bytes,
+                    "contentType": artifact.content_type,
+                }
+                for artifact in submission.auxiliary_objects
+            ]
         if submission.vertical_reference is not None:
             # 모를 때 명시적 null 을 보내지 않는다 — 키가 없는 것과 null 은
             # Core 에서 같은 None 이지만, 보내지 않으면 옛 워커의 payload 와
@@ -854,12 +1147,14 @@ class HttpCoreClient:
             PendingComparisonRequest(request_id=item["requestId"]) for item in payload["requests"]
         ]
 
-    def acquire_comparison_lease(self, request_id: str) -> None:
-        self._post(
-            f"/v1/comparison-requests/{request_id}/lease",
-            what="comparison-lease",
-            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
+    def acquire_comparison_lease(self, request_id: str) -> LeaseHandle:
+        return self._claim_or_renew(
+            work_kind="comparison", resource_id=request_id,
+            path=f"/v1/comparison-requests/{request_id}/lease", what="comparison-lease",
         )
+
+    def renew_comparison_lease(self, request_id: str) -> LeaseHandle:
+        return self.acquire_comparison_lease(request_id)
 
     def get_comparison_input(self, request_id: str) -> ComparisonInput:
         response = self._get(f"/v1/comparison-requests/{request_id}/input")
@@ -926,6 +1221,9 @@ class HttpCoreClient:
             what=f"change-detection:{result.change_detection_id}",
             ok="RECORDED",
             json=result.model_dump(by_alias=True, mode="json", exclude_none=False),
+            headers=self._required_fence_headers(
+                work_kind="comparison", resource_id=result.change_detection_id
+            ),
         )
 
     def submit_volume_change(self, mission_id: str, report: VolumeChangeReport) -> None:
@@ -934,6 +1232,9 @@ class HttpCoreClient:
             what=f"volume-change:{report.volume_change_id}",
             ok="RECORDED",
             json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
+            headers=self._required_fence_headers(
+                work_kind="comparison", resource_id=report.volume_change_id
+            ),
         )
 
     # ── Independent DSM checkpoint validation (checkpoint_validations.py) ──
@@ -1131,12 +1432,15 @@ class HttpCoreClient:
             for item in payload["requests"]
         ]
 
-    def acquire_design_conformance_lease(self, request_id: str) -> None:
-        self._post(
-            f"/v1/design-conformance-requests/{request_id}/lease",
+    def acquire_design_conformance_lease(self, request_id: str) -> LeaseHandle:
+        return self._claim_or_renew(
+            work_kind="design-conformance", resource_id=request_id,
+            path=f"/v1/design-conformance-requests/{request_id}/lease",
             what="design-conformance-lease",
-            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
         )
+
+    def renew_design_conformance_lease(self, request_id: str) -> LeaseHandle:
+        return self.acquire_design_conformance_lease(request_id)
 
     def get_design_conformance_input(self, request_id: str) -> DesignConformanceInput:
         response = self._get(f"/v1/design-conformance-requests/{request_id}/input")
@@ -1187,13 +1491,22 @@ class HttpCoreClient:
             what=f"design-conformance-transition→{target}",
             ok="TRANSITIONED",
             json={"targetStatus": target, "detail": detail},
+            headers=self._required_fence_headers(
+                work_kind="design-conformance", resource_id=request_id
+            ),
         )
 
-    def presign_diff_raster_upload(self, request_id: str) -> DiffRasterUploadTarget:
+    def presign_diff_raster_upload(
+        self, request_id: str, *, digest: str, size_bytes: int
+    ) -> DiffRasterUploadTarget:
         payload = self._post(
             f"/v1/design-conformance-requests/{request_id}/diff-raster-upload-url",
             what=f"diff-raster-upload-url:{request_id}",
             ok="UPLOAD_READY",
+            json={"digest": digest, "sizeBytes": size_bytes},
+            headers=self._required_fence_headers(
+                work_kind="design-conformance", resource_id=request_id
+            ),
         )
         object_key = payload.get("objectKey")
         upload_url = payload.get("uploadUrl")
@@ -1210,8 +1523,21 @@ class HttpCoreClient:
                 verdict="UPLOAD_READY",
                 detail="응답에 objectKey/uploadUrl/contentType 이 없다",
             )
+        required_headers = payload.get("requiredHeaders", {})
+        if not isinstance(required_headers, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in required_headers.items()
+        ):
+            raise CoreClientError(
+                what=f"diff-raster-upload-url:{request_id}",
+                verdict="UPLOAD_READY",
+                detail="응답의 requiredHeaders가 문자열 map이 아니다",
+            )
         return DiffRasterUploadTarget(
-            object_key=object_key, upload_url=upload_url, content_type=content_type
+            object_key=object_key,
+            upload_url=upload_url,
+            content_type=content_type,
+            required_headers=tuple(sorted(required_headers.items())),
         )
 
     def verify_diff_raster(
@@ -1222,6 +1548,9 @@ class HttpCoreClient:
             what=f"diff-raster-verification:{request_id}",
             ok="DIFF_RASTER_VERIFIED",
             json={"digest": digest, "sizeBytes": size_bytes},
+            headers=self._required_fence_headers(
+                work_kind="design-conformance", resource_id=request_id
+            ),
         )
         verified_at = payload.get("verifiedAt")
         if not isinstance(verified_at, str):
@@ -1242,6 +1571,10 @@ class HttpCoreClient:
             what=f"design-conformance:{report.design_conformance_id}",
             ok="RECORDED",
             json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
+            headers=self._required_fence_headers(
+                work_kind="design-conformance",
+                resource_id=report.design_conformance_id,
+            ),
         )
 
     # ── M4-E 변화 영역 자동 추출 (region_extraction_requests.py) ────────────
@@ -1259,12 +1592,15 @@ class HttpCoreClient:
             for item in payload["requests"]
         ]
 
-    def acquire_region_extraction_lease(self, request_id: str) -> None:
-        self._post(
-            f"/v1/region-extraction-requests/{request_id}/lease",
+    def acquire_region_extraction_lease(self, request_id: str) -> LeaseHandle:
+        return self._claim_or_renew(
+            work_kind="region-extraction", resource_id=request_id,
+            path=f"/v1/region-extraction-requests/{request_id}/lease",
             what="region-extraction-lease",
-            ok=frozenset({"LEASED", "LEASE_RENEWED"}),
         )
+
+    def renew_region_extraction_lease(self, request_id: str) -> LeaseHandle:
+        return self.acquire_region_extraction_lease(request_id)
 
     def get_region_extraction_input(self, request_id: str) -> RegionExtractionInput:
         response = self._get(f"/v1/region-extraction-requests/{request_id}/input")
@@ -1313,6 +1649,9 @@ class HttpCoreClient:
             what=f"region-extraction:{report.change_region_set_id}",
             ok="RECORDED",
             json=report.model_dump(by_alias=True, mode="json", exclude_none=False),
+            headers=self._required_fence_headers(
+                work_kind="region-extraction", resource_id=report.change_region_set_id
+            ),
         )
 
     def close(self) -> None:
@@ -1320,6 +1659,7 @@ class HttpCoreClient:
 
 
 __all__ = [
+    "ArtifactObjectBinding",
     "ArtifactSubmission",
     "ArtifactUploadTarget",
     "CheckpointValidationCoreClient",
@@ -1336,6 +1676,7 @@ __all__ = [
     "JobInput",
     "JobInputGroundControl",
     "JobInputMedia",
+    "LeaseHandle",
     "MeasuredImage",
     "PendingComparisonRequest",
     "PendingCheckpointValidation",

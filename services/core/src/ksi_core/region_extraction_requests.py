@@ -44,12 +44,14 @@ requests.py`` 의 ``/input`` 과 같은 자리).
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.design_conformance_report import DiffRasterRef
 from ksi_event_contracts.processing_job import ProcessingJobStatus
 from ksi_event_contracts.region_extraction_policy import (
@@ -66,7 +68,16 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
-from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
+from ksi_core.leasing import (
+    JobLease,
+    LeaseDenialReason,
+    LeaseFence,
+    LeaseMode,
+    check_lease,
+    is_claimable,
+    lease_raw_fields,
+    next_lease,
+)
 from ksi_core.processing_jobs import DEFAULT_LEASE_TTL
 
 if TYPE_CHECKING:
@@ -127,6 +138,10 @@ class RegionExtractionRequestVerdict(StrEnum):
     LEASE_RENEWED = "LEASE_RENEWED"
     LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
     LEASE_REQUIRED = "LEASE_REQUIRED"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
 
     # ── 전이 ─────────────────────────────────────────────────────────────
     TRANSITIONED = "TRANSITIONED"
@@ -149,6 +164,10 @@ _STATUS: dict[RegionExtractionRequestVerdict, int] = {
     RegionExtractionRequestVerdict.LEASE_RENEWED: 200,
     RegionExtractionRequestVerdict.LEASE_HELD_BY_ANOTHER: 409,
     RegionExtractionRequestVerdict.LEASE_REQUIRED: 409,
+    RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION: 409,
+    RegionExtractionRequestVerdict.STALE_LEASE_GENERATION: 409,
+    RegionExtractionRequestVerdict.INVALID_LEASE_FENCE: 422,
+    RegionExtractionRequestVerdict.IDEMPOTENCY_CONFLICT: 409,
     RegionExtractionRequestVerdict.TRANSITIONED: 200,
     RegionExtractionRequestVerdict.ILLEGAL_TRANSITION: 409,
     RegionExtractionRequestVerdict.INPUT_READY: 200,
@@ -202,6 +221,19 @@ class RegionExtractionRequestResult:
     record: RegionExtractionRequestRecord | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class RegionExtractionResultCommitAuthorization:
+    """Current request fence held through a downstream report append."""
+
+    record: RegionExtractionRequestRecord | None
+    verdict: RegionExtractionRequestVerdict | None = None
+    detail: str | None = None
+
+    @property
+    def authorized(self) -> bool:
+        return self.record is not None and self.verdict is None
+
+
 def _require_tz_aware(value: datetime, *, param: str) -> None:
     if value.tzinfo is None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
@@ -231,6 +263,9 @@ class RegionExtractionRequestStore:
         self._design_conformance_report_store = design_conformance_report_store
         self._lock = threading.Lock()
         self._requests: dict[str, RegionExtractionRequestRecord] = {}
+        self._lease_acquisitions: dict[str, dict[str, JobLease]] = {}
+        self._lease_acquisition_bindings: dict[str, tuple[str, JobLease]] = {}
+        self._lease_generation_high_water: dict[str, int] = {}
         self._by_design_conformance_id: dict[str, str] = {}
         self._sequence: dict[str, int] = {}
         try:
@@ -314,13 +349,64 @@ class RegionExtractionRequestStore:
             raise RegionExtractionRequestRecoveryError(
                 f"재생: 종료된 요청({record.status.value})에 lease 레코드가 있다 — {request_id}"
             )
+        lease = JobLease(
+            worker_id=raw.get("workerInstanceId", raw["workerId"]),
+            granted_at=_require_aware_iso(raw.get("grantedAt", raw["ts"]), "grantedAt", request_id),
+            expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
+            lease_acquisition_id=raw.get("leaseAcquisitionId"),
+            lease_generation=int(raw.get("leaseGeneration", 0)),
+            authenticated_actor_id=raw.get("authenticatedActorId"),
+        )
+        if "leaseGeneration" in raw:
+            mode, renewal = raw.get("leaseMode"), raw.get("renewal")
+            if (
+                not isinstance(renewal, bool)
+                or mode not in {LeaseMode.CLAIM.value, LeaseMode.RENEW.value}
+                or renewal != (mode == LeaseMode.RENEW.value)
+                or lease.fence is None
+                or not lease.fence.is_well_formed()
+                or lease.expires_at <= lease.granted_at
+            ):
+                raise RegionExtractionRequestRecoveryError("재생: malformed fenced lease")
+            high_water, current = self._lease_generation_high_water.get(request_id, 0), record.lease
+            if mode == LeaseMode.CLAIM.value:
+                if (
+                    lease.lease_generation != high_water + 1
+                    or lease.lease_acquisition_id in self._lease_acquisition_bindings
+                ):
+                    raise RegionExtractionRequestRecoveryError(
+                        "재생: CLAIM generation/acquisition 불일치"
+                    )
+            elif (
+                current is None
+                or current.fence != lease.fence
+                or high_water != lease.lease_generation
+                or current.granted_at != lease.granted_at
+                or current.authenticated_actor_id != lease.authenticated_actor_id
+            ):
+                raise RegionExtractionRequestRecoveryError(
+                    "재생: RENEW current fence/principal 불일치"
+                )
+        if lease.lease_acquisition_id is not None:
+            global_prior = self._lease_acquisition_bindings.get(lease.lease_acquisition_id)
+            if global_prior is not None and (
+                global_prior[0] != request_id or global_prior[1].fence != lease.fence
+            ):
+                raise RegionExtractionRequestRecoveryError(
+                    "재생: 전역 CLAIM acquisition binding 충돌"
+                )
+            self._lease_acquisition_bindings[lease.lease_acquisition_id] = (request_id, lease)
+            bindings = self._lease_acquisitions.setdefault(request_id, {})
+            prior = bindings.get(lease.lease_acquisition_id)
+            if prior is not None and prior.fence != lease.fence:
+                raise RegionExtractionRequestRecoveryError("재생: CLAIM acquisition binding 충돌")
+            bindings[lease.lease_acquisition_id] = lease
+        self._lease_generation_high_water[request_id] = max(
+            self._lease_generation_high_water.get(request_id, 0), lease.lease_generation
+        )
         self._requests[request_id] = replace(
             record,
-            lease=JobLease(
-                worker_id=raw["workerId"],
-                granted_at=_require_aware_iso(raw["ts"], "ts", request_id),
-                expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
-            ),
+            lease=lease,
         )
 
     def _replay_transition(self, raw: dict[str, Any]) -> None:
@@ -330,13 +416,32 @@ class RegionExtractionRequestStore:
             raise RegionExtractionRequestRecoveryError(
                 f"재생: 미지 requestId 전이 레코드 — {request_id}"
             )
+        transitioned_at = _require_aware_iso(raw["ts"], "ts", request_id)
+        if record.lease is not None and record.lease.lease_generation > 0:
+            fence_raw = raw.get("leaseFence")
+            if not isinstance(fence_raw, dict):
+                raise RegionExtractionRequestRecoveryError("재생: fenced 전이에 leaseFence가 없다")
+            fence = LeaseFence(
+                str(fence_raw["workerInstanceId"]),
+                str(fence_raw["leaseAcquisitionId"]),
+                int(fence_raw["leaseGeneration"]),
+            )
+            if check_lease(
+                record.lease,
+                fence=fence,
+                authenticated_actor_id=raw.get("actor"),
+                now=transitioned_at,
+            ) is not None:
+                raise RegionExtractionRequestRecoveryError(
+                    "재생: fenced 전이가 당시 lease와 다르다"
+                )
         after = ProcessingJobStatus(raw["targetStatus"])
         assert_region_extraction_transition(record.status, after)
         self._requests[request_id] = replace(
             record,
             status=after,
             detail=raw.get("detail"),
-            updated_at=_require_aware_iso(raw["ts"], "ts", request_id),
+            updated_at=transitioned_at,
         )
 
     def _project(self, record: RegionExtractionRequestRecord) -> None:
@@ -456,18 +561,24 @@ class RegionExtractionRequestStore:
         if limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [
-                r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
-            ]
+            records = [r for r in self._requests.values() if is_claimable(r.status, r.lease, now)]
         if current_request_organization_id() is not None:
             records = [r for r in records if self._visible_in_request(r)]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id))[:limit]
 
     @staticmethod
     def _check_lease_locked(
-        record: RegionExtractionRequestRecord, *, worker_id: str, now: datetime
+        record: RegionExtractionRequestRecord,
+        *,
+        now: datetime,
+        fence: LeaseFence | None = None,
+        worker_id: str | None = None,
+        authenticated_actor_id: str | None = None,
     ) -> tuple[RegionExtractionRequestVerdict, str] | None:
-        denial = check_lease(record.lease, worker_id=worker_id, now=now)
+        denial = check_lease(
+            record.lease, fence=fence, worker_id=worker_id,
+            authenticated_actor_id=authenticated_actor_id, now=now,
+        )
         if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
             return (
                 RegionExtractionRequestVerdict.LEASE_REQUIRED,
@@ -480,15 +591,36 @@ class RegionExtractionRequestStore:
                 f"다른 워커({record.lease.worker_id})가 {iso_utc(record.lease.expires_at)} 까지 "
                 "이 요청을 쥐고 있다 — 만료 후 다시 시도한다",
             )
+        if denial is LeaseDenialReason.STALE_ACQUISITION:
+            return (
+                RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION,
+                "이전 CLAIM acquisition 은 현재 lease 소유자가 아니다",
+            )
+        if denial is LeaseDenialReason.STALE_GENERATION:
+            return (
+                RegionExtractionRequestVerdict.STALE_LEASE_GENERATION,
+                "이전 lease generation 은 현재 lease 를 변경할 수 없다",
+            )
+        if denial is LeaseDenialReason.INVALID_FENCE:
+            return (
+                RegionExtractionRequestVerdict.INVALID_LEASE_FENCE,
+                "worker lease fence 가 유효하지 않다",
+            )
         return None
 
     def acquire_lease(
         self,
         request_id: str,
         *,
-        worker_id: str,
         now: datetime,
         ttl: timedelta = DEFAULT_LEASE_TTL,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        worker_instance_id: str | None = None,
+        lease_acquisition_id: str | None = None,
+        lease_generation: int | None = None,
+        lease_mode: LeaseMode = LeaseMode.CLAIM,
+        authenticated_actor_id: str | None = None,
     ) -> RegionExtractionRequestResult:
         """요청 하나를 쥔다. 같은 워커의 재호출은 갱신(heartbeat)."""
         _require_tz_aware(now, param="now")
@@ -507,32 +639,165 @@ class RegionExtractionRequestStore:
                     RegionExtractionRequestVerdict.REQUEST_NOT_ACTIVE,
                     detail=f"요청이 {record.status.value} 상태다 — 끝난 요청은 잡을 수 없다",
                 )
-            current = record.lease
-            denial = check_lease(current, worker_id=worker_id, now=now)
-            renewing = current is not None and denial is None
-            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
-                assert current is not None  # noqa: S101
+            if (
+                lease_fence is None
+                and worker_instance_id is not None
+                and lease_acquisition_id is not None
+            ):
+                lease_fence = LeaseFence(
+                    worker_instance_id, lease_acquisition_id, lease_generation or 0
+                )
+            if lease_fence is None:
+                if worker_id is None:
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.INVALID_LEASE_FENCE, record=record
+                    )
+                current_for_legacy = record.lease
+                if current_for_legacy is not None and current_for_legacy.is_active(now):
+                    if current_for_legacy.worker_instance_id != worker_id:
+                        return RegionExtractionRequestResult(
+                            RegionExtractionRequestVerdict.LEASE_HELD_BY_ANOTHER, record=record
+                        )
+                    lease_fence = LeaseFence(
+                        worker_id,
+                        current_for_legacy.lease_acquisition_id or worker_id,
+                        current_for_legacy.lease_generation,
+                    )
+                    lease_mode = LeaseMode.RENEW
+                else:
+                    lease_fence = LeaseFence(worker_id, worker_id, 0)
+            if worker_id is None and (
+                not lease_fence.has_valid_ids()
+                or (lease_mode is LeaseMode.RENEW and lease_fence.lease_generation < 1)
+            ):
                 return RegionExtractionRequestResult(
-                    RegionExtractionRequestVerdict.LEASE_HELD_BY_ANOTHER,
-                    detail=(
-                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
-                        "이 요청을 쥐고 있다 — 만료 후 다시 시도한다"
+                    RegionExtractionRequestVerdict.INVALID_LEASE_FENCE, record=record
+                )
+            current = record.lease
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                global_prior = self._lease_acquisition_bindings.get(
+                    lease_fence.lease_acquisition_id
+                )
+                if global_prior is not None and global_prior[0] != request_id:
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.IDEMPOTENCY_CONFLICT, record=record
+                    )
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                prior = self._lease_acquisitions.get(request_id, {}).get(
+                    lease_fence.lease_acquisition_id
+                )
+                if prior is not None:
+                    if (
+                        prior.worker_instance_id != lease_fence.worker_instance_id
+                        or prior.authenticated_actor_id != authenticated_actor_id
+                    ):
+                        return RegionExtractionRequestResult(
+                            RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                        )
+                    if (
+                        current is not None
+                        and current.lease_acquisition_id == prior.lease_acquisition_id
+                        and current.is_active(now)
+                    ):
+                        return RegionExtractionRequestResult(
+                            RegionExtractionRequestVerdict.LEASED, record=record
+                        )
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+            if (
+                lease_mode is LeaseMode.CLAIM
+                and current is not None
+                and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+            ):
+                if (
+                    current.worker_instance_id != lease_fence.worker_instance_id
+                    or current.authenticated_actor_id != authenticated_actor_id
+                    or not current.is_active(now)
+                ):
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                return RegionExtractionRequestResult(
+                    RegionExtractionRequestVerdict.LEASED, record=record
+                )
+            if lease_mode is LeaseMode.RENEW:
+                denied = self._check_lease_locked(
+                    record,
+                    fence=None if worker_id is not None else lease_fence,
+                    worker_id=worker_id,
+                    authenticated_actor_id=authenticated_actor_id,
+                    now=now,
+                )
+                if denied is not None:
+                    verdict, detail = denied
+                    return RegionExtractionRequestResult(verdict, detail=detail, record=record)
+                assert current is not None
+                generation, granted_at = current.lease_generation, current.granted_at
+            else:
+                denial = (
+                    check_lease(current, fence=lease_fence, now=now)
+                    if current is not None
+                    else LeaseDenialReason.MISSING_OR_EXPIRED
+                )
+                if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                    assert current is not None
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.LEASE_HELD_BY_ANOTHER,
+                        detail=(
+                            f"다른 워커({current.worker_id})가 "
+                            f"{iso_utc(current.expires_at)} 까지 이 요청을 쥐고 있다 "
+                            "— 만료 후 다시 시도한다"
+                        ),
+                        record=record,
+                    )
+                if current is not None and current.is_active(now):
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION,
+                        detail="활성 lease 중에는 다른 acquisition 으로 다시 CLAIM 할 수 없다",
+                        record=record,
+                    )
+                if (
+                    current is not None
+                    and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+                ):
+                    return RegionExtractionRequestResult(
+                        RegionExtractionRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                generation, granted_at = (
+                    (
+                        0
+                        if worker_id is not None
+                        else self._lease_generation_high_water.get(request_id, 0) + 1
                     ),
-                    record=record,
+                    None,
                 )
             new_lease = next_lease(
-                worker_id=worker_id,
+                worker_instance_id=lease_fence.worker_instance_id,
+                lease_acquisition_id=None
+                if worker_id is not None
+                else lease_fence.lease_acquisition_id,
+                lease_generation=generation,
+                authenticated_actor_id=(
+                    current.authenticated_actor_id
+                    if lease_mode is LeaseMode.RENEW and current is not None
+                    else authenticated_actor_id
+                ),
                 now=now,
                 ttl=ttl,
-                granted_at=current.granted_at if renewing and current else None,
+                granted_at=granted_at,
             )
             raw = {
                 "kind": "region-extraction-request-leased",
                 "ts": iso_utc(now),
                 "requestId": request_id,
-                "workerId": worker_id,
+                "grantedAt": iso_utc(new_lease.granted_at),
                 "expiresAt": iso_utc(new_lease.expires_at),
-                "renewal": renewing,
+                **(
+                    lease_raw_fields(lease=new_lease, mode=lease_mode)
+                    if worker_id is None
+                    else {"workerId": worker_id, "renewal": lease_mode is LeaseMode.RENEW}
+                ),
             }
             try:
                 self._journal.append(raw)
@@ -542,9 +807,20 @@ class RegionExtractionRequestStore:
                 )
             updated = replace(record, lease=new_lease)
             self._requests[request_id] = updated
+            if new_lease.lease_acquisition_id is not None:
+                self._lease_acquisitions.setdefault(request_id, {})[
+                    new_lease.lease_acquisition_id
+                ] = new_lease
+                self._lease_acquisition_bindings[new_lease.lease_acquisition_id] = (
+                    request_id,
+                    new_lease,
+                )
+            self._lease_generation_high_water[request_id] = max(
+                self._lease_generation_high_water.get(request_id, 0), new_lease.lease_generation
+            )
             return RegionExtractionRequestResult(
                 RegionExtractionRequestVerdict.LEASE_RENEWED
-                if renewing
+                if lease_mode is LeaseMode.RENEW
                 else RegionExtractionRequestVerdict.LEASED,
                 record=updated,
             )
@@ -557,6 +833,7 @@ class RegionExtractionRequestStore:
         detail: str | None,
         actor: str,
         now: datetime,
+        lease_fence: LeaseFence | None = None,
     ) -> RegionExtractionRequestResult:
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -569,7 +846,10 @@ class RegionExtractionRequestStore:
                 return RegionExtractionRequestResult(
                     RegionExtractionRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
-            denied = self._check_lease_locked(record, worker_id=actor, now=now)
+            denied = self._check_lease_locked(
+                record, fence=lease_fence, worker_id=actor if lease_fence is None else None,
+                authenticated_actor_id=actor if lease_fence is not None else None, now=now
+            )
             if denied is not None:
                 verdict, detail_msg = denied
                 return RegionExtractionRequestResult(verdict, detail=detail_msg, record=record)
@@ -581,7 +861,7 @@ class RegionExtractionRequestStore:
                     detail=str(exc),
                     record=record,
                 )
-            raw = {
+            raw: dict[str, Any] = {
                 "kind": "region-extraction-request-transitioned",
                 "ts": iso_utc(now),
                 "requestId": request_id,
@@ -589,6 +869,12 @@ class RegionExtractionRequestStore:
                 "detail": detail,
                 "actor": actor,
             }
+            if lease_fence is not None:
+                raw["leaseFence"] = {
+                    "workerInstanceId": lease_fence.worker_instance_id,
+                    "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                    "leaseGeneration": lease_fence.lease_generation,
+                }
             try:
                 self._journal.append(raw)
             except JournalSealedError:
@@ -599,6 +885,67 @@ class RegionExtractionRequestStore:
             self._requests[request_id] = updated
             return RegionExtractionRequestResult(
                 RegionExtractionRequestVerdict.TRANSITIONED, record=updated
+            )
+
+    @contextmanager
+    def result_commit_guard(
+        self, request_id: str, *, lease_fence: LeaseFence | None, now: datetime,
+        authenticated_actor_id: str | None = None,
+    ) -> Iterator[RegionExtractionResultCommitAuthorization]:
+        """Serialize authoritative result finalization with lease ownership.
+
+        Result stores acquire their own lock only inside this context.  The
+        fixed order is request-store -> report-store; report code must use the
+        yielded record instead of calling back into this store.
+        """
+
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                yield RegionExtractionResultCommitAuthorization(
+                    None,
+                    RegionExtractionRequestVerdict.STORE_UNAVAILABLE,
+                    JOURNAL_SEALED_DETAIL,
+                )
+                return
+            record = self._requests.get(request_id)
+            if record is None or not self._visible_in_request(record):
+                yield RegionExtractionResultCommitAuthorization(
+                    None, RegionExtractionRequestVerdict.UNKNOWN_REQUEST, _NOT_FOUND_DETAIL
+                )
+                return
+            denied = self._check_lease_locked(
+                record,
+                fence=lease_fence,
+                authenticated_actor_id=authenticated_actor_id,
+                now=now,
+            )
+            if denied is not None:
+                verdict, detail = denied
+                yield RegionExtractionResultCommitAuthorization(record, verdict, detail)
+                return
+            yield RegionExtractionResultCommitAuthorization(record)
+
+    def has_recorded_lease_fence(
+        self,
+        request_id: str,
+        fence: LeaseFence,
+        *,
+        authenticated_actor_id: str | None = None,
+    ) -> bool:
+        """Return whether durable lease history binds ``fence`` to this request."""
+
+        with self._lock:
+            lease = self._lease_acquisitions.get(request_id, {}).get(
+                fence.lease_acquisition_id
+            )
+            return (
+                lease is not None
+                and lease.fence == fence
+                and (
+                    lease.authenticated_actor_id is None
+                    or lease.authenticated_actor_id == authenticated_actor_id
+                )
             )
 
 
@@ -711,7 +1058,7 @@ def build_region_extraction_requests_router(
         response: Response,
         principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
     ) -> RegionExtractionRequestMutationResponse:
-        """"이 설계 대비 잔량 리포트에서 변화 영역을 뽑아라"는 지시 접수 —
+        """ "이 설계 대비 잔량 리포트에서 변화 영역을 뽑아라"는 지시 접수 —
         **사람이 발급**한다(자동 트리거 없음, 모듈 docstring)."""
         result = store.create(
             mission_id,
@@ -769,12 +1116,37 @@ def build_region_extraction_requests_router(
     def acquire_region_extraction_lease(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
+        lease_mode_header: str | None = Header(default=None, alias="X-KSI-Lease-Mode"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> RegionExtractionRequestMutationResponse:
+        try:
+            mode = LeaseMode(lease_mode_header or "CLAIM")
+            fence = (
+                LeaseFence(
+                    worker_instance_id or "", lease_acquisition_id or "", int(lease_generation or 0)
+                )
+                if worker_instance_id is not None and lease_acquisition_id is not None
+                else None
+            )
+        except ValueError:
+            mode, fence = LeaseMode.CLAIM, None
         result = store.acquire_lease(
-            request_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+            request_id,
+            lease_fence=fence,
+            lease_mode=mode,
+            authenticated_actor_id=principal.principal_id,
+            now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]
+        if result.record is not None and result.record.lease is not None:
+            lease = result.record.lease
+            response.headers["X-KSI-Worker-Instance-Id"] = lease.worker_instance_id
+            if lease.lease_acquisition_id is not None:
+                response.headers["X-KSI-Lease-Acquisition-Id"] = lease.lease_acquisition_id
+            response.headers["X-KSI-Lease-Generation"] = str(lease.lease_generation)
         if result.verdict is RegionExtractionRequestVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
         return RegionExtractionRequestMutationResponse(
@@ -790,6 +1162,9 @@ def build_region_extraction_requests_router(
     def get_region_extraction_input(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> RegionExtractionInputResponse:
         """워커가 diffRaster 바이트를 읽는 유일한 경로 — lease 를 쥔 워커만 통과한다."""
@@ -800,17 +1175,33 @@ def build_region_extraction_requests_router(
                 verdict=RegionExtractionRequestVerdict.UNKNOWN_REQUEST.value,
                 detail=_NOT_FOUND_DETAIL,
             )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         denied = RegionExtractionRequestStore._check_lease_locked(
-            record, worker_id=principal.principal_id, now=datetime.now(UTC)
+            record,
+            fence=fence,
+            authenticated_actor_id=principal.principal_id,
+            worker_id=(
+                principal.principal_id
+                if fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            ),
+            now=datetime.now(UTC),
         )
         if denied is not None:
             verdict, detail = denied
             response.status_code = _STATUS[verdict]
             return RegionExtractionInputResponse(verdict=verdict.value, detail=detail)
 
-        entry = design_conformance_report_store.get(
-            record.mission_id, record.design_conformance_id
-        )
+        entry = design_conformance_report_store.get(record.mission_id, record.design_conformance_id)
         if entry is None:  # pragma: no cover -- 생성 게이트가 이미 존재를 보장했다(불변 원장)
             response.status_code = _STATUS[
                 RegionExtractionRequestVerdict.UNKNOWN_DESIGN_CONFORMANCE
@@ -861,15 +1252,29 @@ def build_region_extraction_requests_router(
         request_id: str,
         request: RegionExtractionTransitionRequest,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> RegionExtractionRequestMutationResponse:
         """워커만 전이한다 — RUNNING/SUCCEEDED/FAILED 는 계산을 돌린 주체만 아는 사실이다."""
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         result = store.transition(
             request_id,
             request.target_status,
             detail=request.detail,
             actor=principal.principal_id,
             now=datetime.now(UTC),
+            lease_fence=fence,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is RegionExtractionRequestVerdict.STORE_UNAVAILABLE:

@@ -40,6 +40,7 @@ from ksi_processing_controller.core_client import (
     CoreClientError,
     JobInput,
     JobInputMedia,
+    LeaseHandle,
     MeasuredImage,
     PendingJob,
 )
@@ -52,6 +53,11 @@ from ksi_processing_controller.odm import (
 from ksi_processing_controller.odm_assets import ODM_ASSETS
 from ksi_processing_controller.odm_masking import odm_mask_filename
 from ksi_processing_controller.worker import WorkerRunError, run_job
+from ksi_processing_controller.workspace import (
+    UnsafeWorkspaceError,
+    attempt_workspace,
+    cleanup_attempt_workspace,
+)
 
 # 1x1 PNG — Pillow 가 실제로 열어 width=height=1 을 읽는다(mock 아님).
 _TINY_PNG = base64.b64decode(
@@ -147,9 +153,16 @@ class FakeCoreClient:
             raise CoreClientError(what="verify", verdict="MISMATCH", detail="테스트 강제 실패")
 
     def presign_artifact_upload(
-        self, job_id: str, *, artifact_id: str, content_type: str, filename: str | None = None
+        self,
+        job_id: str,
+        *,
+        artifact_id: str,
+        content_type: str,
+        filename: str | None = None,
+        sha256: str | None = None,
+        size_bytes: int | None = None,
     ) -> ArtifactUploadTarget:
-        del content_type
+        del content_type, sha256, size_bytes
         self.calls.append(("presign", artifact_id, filename))
         if self.fail_on == f"presign:{artifact_id}":
             raise CoreClientError(
@@ -914,3 +927,114 @@ def test_detector_failure_on_one_photo_does_not_fail_the_job(tmp_path: Path) -> 
 
     assert odm.submitted_masks == []
     assert ("transition", "SUCCEEDED", "산출물 7건") in core.calls
+# ── fenced local workspace ─────────────────────────────────────────────────
+
+
+def test_attempt_workspaces_never_share_fixed_all_zip_path(tmp_path: Path) -> None:
+    """Same job on two generations/processes gets two exclusive writable paths."""
+    first = LeaseHandle(
+        work_kind="processing", resource_id="job-1",
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        lease_generation=1,
+    )
+    second = LeaseHandle(
+        work_kind="processing", resource_id="job-1",
+        worker_instance_id="22222222-2222-4222-8222-222222222222",
+        lease_acquisition_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        lease_generation=2,
+    )
+    one = attempt_workspace(tmp_path, first)
+    two = attempt_workspace(tmp_path, second)
+    assert one / "all.zip" != two / "all.zip"
+    (one / "all.zip").write_bytes(b"one")
+    (two / "all.zip").write_bytes(b"two")
+    with pytest.raises(UnsafeWorkspaceError):
+        attempt_workspace(tmp_path, first)
+    cleanup_attempt_workspace(tmp_path, one)
+    cleanup_attempt_workspace(tmp_path, two)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_attempt_workspace_namespace_separates_jobs_instances_and_generations(
+    tmp_path: Path,
+) -> None:
+    handles = [
+        LeaseHandle(
+            work_kind="processing",
+            resource_id="job-1",
+            worker_instance_id="11111111-1111-4111-8111-111111111111",
+            lease_acquisition_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            lease_generation=1,
+        ),
+        LeaseHandle(
+            work_kind="processing",
+            resource_id="job-2",
+            worker_instance_id="11111111-1111-4111-8111-111111111111",
+            lease_acquisition_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            lease_generation=1,
+        ),
+        LeaseHandle(
+            work_kind="processing",
+            resource_id="job-1",
+            worker_instance_id="11111111-1111-4111-8111-111111111111",
+            lease_acquisition_id="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            lease_generation=2,
+        ),
+        LeaseHandle(
+            work_kind="processing",
+            resource_id="job-1",
+            worker_instance_id="22222222-2222-4222-8222-222222222222",
+            lease_acquisition_id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            lease_generation=1,
+        ),
+    ]
+    paths = [attempt_workspace(tmp_path, handle) for handle in handles]
+    assert len(set(paths)) == len(paths)
+    assert paths[0].relative_to(tmp_path).parts == (
+        "processing",
+        "job-1",
+        handles[0].worker_instance_id,
+        "1",
+    )
+    for index, path in enumerate(paths):
+        (path / "all.zip").write_bytes(str(index).encode())
+    assert len({(path / "all.zip").read_bytes() for path in paths}) == len(paths)
+
+
+def test_cleanup_of_generation_n_cannot_remove_generation_n_plus_one(
+    tmp_path: Path,
+) -> None:
+    instance = "11111111-1111-4111-8111-111111111111"
+    first = LeaseHandle(
+        "processing", "job-1", instance,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 1,
+    )
+    second = LeaseHandle(
+        "processing", "job-1", instance,
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 2,
+    )
+    first_path = attempt_workspace(tmp_path, first)
+    second_path = attempt_workspace(tmp_path, second)
+    survivor = second_path / "all.zip"
+    survivor.write_bytes(b"generation-2")
+
+    cleanup_attempt_workspace(tmp_path, first_path)
+
+    assert not first_path.exists()
+    assert survivor.read_bytes() == b"generation-2"
+
+
+def test_crash_leftover_is_never_reused_as_a_new_attempt(tmp_path: Path) -> None:
+    handle = LeaseHandle(
+        "processing",
+        "job-1",
+        "11111111-1111-4111-8111-111111111111",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        1,
+    )
+    leftover = attempt_workspace(tmp_path, handle)
+    (leftover / "partial.bin").write_bytes(b"orphan")
+
+    with pytest.raises(UnsafeWorkspaceError, match="already exists"):
+        attempt_workspace(tmp_path, handle)

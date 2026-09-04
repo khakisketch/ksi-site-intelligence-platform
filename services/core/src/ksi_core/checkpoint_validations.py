@@ -868,16 +868,18 @@ def build_checkpoint_validations_router(
                     ),
                     ttl=DEFAULT_VIEW_TTL,
                 )
-                # Artifact URL comes from the immutable DSM snapshot, never from client input.
-                from ksi_core.processing_jobs import build_processing_artifact_object_key
-
+                # New records resolve bytes exclusively through the accepted
+                # manifest.  ``resolve_artifact`` alone owns the genuine legacy
+                # conventional-key adapter.
+                resolved_dsm = store._processing_jobs.resolve_artifact(  # noqa: SLF001
+                    record.dsm.job_id, record.dsm.artifact_id
+                )
+                if resolved_dsm is None:
+                    raise EvidenceStorageError(
+                        "checkpoint DSM has no accepted artifact authority"
+                    )
                 dsm_url = storage.presigned_get(
-                    build_processing_artifact_object_key(
-                        site_id=record.site_id,
-                        job_id=record.dsm.job_id,
-                        artifact_id=record.dsm.artifact_id,
-                    ),
-                    ttl=DEFAULT_VIEW_TTL,
+                    resolved_dsm.object_key, ttl=DEFAULT_VIEW_TTL
                 )
             except EvidenceStorageError:
                 logger.warning(

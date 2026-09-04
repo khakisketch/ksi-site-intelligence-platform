@@ -3226,6 +3226,10 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseMode' }
+        - { in: header, name: X-KSI-Lease-Generation, required: false, schema: { type: integer, minimum: 1 }, description: 'RENEW에 필수; CLAIM에는 생략한다.' }
       responses:
         '201':
           description: LEASED
@@ -3259,6 +3263,9 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       responses:
         '200':
           description: INPUT_READY
@@ -3282,6 +3289,9 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -3311,9 +3321,11 @@ paths:
       summary: Issue a presigned PUT for the diff raster (the server chooses the object key)
       description: >-
         PROCESSING_WORK 권한 필요 + lease 보유 필수. **워커가 객체 키를 고르지
-        않는다** — 키는 요청에서 결정적으로 유도되므로
-        (`sites/{siteId}/design-conformance/{designConformanceId}`) 재시도가 같은
-        자리를 덮어써 orphan 이 쌓이지 않는다.
+        않는다** — 키는 current lease generation의 candidate namespace
+        (`.../{designConformanceId}/attempts/{generation}/{worker}/{acquisition}/diff-raster`)
+        에서 Core가 만든다. 이전 generation의 아직 유효한 URL은 자기 candidate만
+        쓸 수 있고 현재 authoritative bytes를 덮지 못한다. 요청의 digest는 signed
+        PUT header에 결속된다.
 
 
         종료된(SUCCEEDED·FAILED) 요청에는 발급하지 않는다(409 REQUEST_NOT_ACTIVE)
@@ -3322,6 +3334,19 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [digest, sizeBytes]
+              properties:
+                digest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+                sizeBytes: { type: integer, minimum: 1 }
       responses:
         '201':
           description: UPLOAD_READY — presigned PUT + 서버가 정한 objectKey
@@ -3352,6 +3377,9 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -3398,6 +3426,9 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: mission_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -3748,17 +3779,21 @@ paths:
         QUEUED|RUNNING→CANCELLED 뿐이다 — 종료 상태(SUCCEEDED·FAILED·CANCELLED)
         에서 나가는 전이는 없다(끝난 작업의 결론을 고쳐 쓰지 않는다). QUEUED 에서
         RUNNING 을 건너뛴 성공 주장도 거부된다.
-        SUCCEEDED 에는 두 번째 게이트가 더 있다(INV-051): 그 작업에
-        `lineage.authority=source` 산출물이 최소 1건 등록돼 있어야 하고, 없으면
-        409 UNBACKED_SUCCESS 다. `actor` 는 body 가 아니라 인증 Principal 에서만
-        취득한다. lease·heartbeat 는 아직 없다 — RUNNING 전이가 한 번만
-        성공한다는 것이 유일한 상호배제다.
+        SUCCEEDED 에는 두 번째 게이트가 더 있다(INV-051): 현재 lease generation이
+        생산한 `lineage.authority=source` candidate와 완전한 객체 binding이 최소
+        1건 있어야 한다. 성공 시 그 generation의 candidate만
+        AuthoritativeArtifactManifestV1으로 고정한다. `actor` 는 body가 아니라 인증
+        Principal에서 취득하지만, lease authority는 별도의 worker instance,
+        acquisition id, generation fence로 검증한다.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
           name: job_id
           required: true
           schema: { type: string }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: false, schema: { type: string, format: uuid }, description: 'RUNNING/SUCCEEDED/FAILED에 필수; CANCELLED에는 사용하지 않는다.' }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: false, schema: { type: string, format: uuid }, description: 'RUNNING/SUCCEEDED/FAILED에 필수.' }
+        - { in: header, name: X-KSI-Lease-Generation, required: false, schema: { type: integer, minimum: 1 }, description: 'RUNNING/SUCCEEDED/FAILED에 필수.' }
       requestBody:
         required: true
         content:
@@ -3813,10 +3848,11 @@ paths:
         반납하지 않으므로 명시적 반납에만 의존하면 그 작업이 영구히 묶인다.
 
 
-        같은 워커의 재호출은 갱신(heartbeat)이고 200 LEASE_RENEWED 다. 만료를
-        밀되 최초 취득 시각(grantedAt)은 유지한다 — 얼마나 오래 쥐고 있었는지가
-        남아야 "이 워커가 계속 못 끝내고 있다"를 볼 수 있다. 만료 **후** 같은
-        워커가 다시 잡으면 그건 갱신이 아니라 새 취득(201 LEASED)이다.
+        CLAIM과 RENEW는 명시적으로 구분한다. 같은 job/worker/acquisition의 정확한
+        CLAIM 재전송은 최초 응답 유실을 위한 멱등 재시도이며 기존 generation을
+        반환하고 원장을 다시 쓰지 않는다. heartbeat는 RENEW와 현재 generation을
+        함께 보내야 한다. 만료 후 재취득은 새 acquisition UUID를 요구하고 서버가
+        다음 generation을 발급한다.
 
 
         기본 수명은 15분이다. 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라
@@ -3828,6 +3864,10 @@ paths:
           name: job_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseMode' }
+        - { in: header, name: X-KSI-Lease-Generation, required: false, schema: { type: integer, minimum: 1 }, description: 'RENEW에는 현재 generation이 필수이고 CLAIM에는 생략한다.' }
       responses:
         '201':
           description: LEASED — 새로 잡았다(비어 있었거나 이전 lease 가 만료됐다)
@@ -3877,6 +3917,9 @@ paths:
           name: job_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       responses:
         '200':
           description: INPUT_READY — 사양 + 원본 다운로드 URL(짧은 수명)
@@ -3929,6 +3972,9 @@ paths:
           name: job_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -3936,7 +3982,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [artifactId, kind, authority, digest, format]
+              required: [artifactId, kind, authority, digest, format, primaryObject]
               properties:
                 artifactId:
                   description: 경로-안전 식별자. 같은 작업 안에서 유일해야 한다.
@@ -4035,6 +4081,15 @@ paths:
                         귀속. user_declared = 업로더의 주장. 둘 다 관측이 아니다.
                       type: string
                       enum: [pipeline_declared, user_declared]
+                primaryObject:
+                  $ref: '#/components/schemas/ArtifactObjectBindingRequest'
+                auxiliaryObjects:
+                  description: >-
+                    auxiliaryFiles의 각 이름에 대한 정확한 object identity와 무결성
+                    binding. 키 집합은 auxiliaryFiles와 정확히 일치해야 한다.
+                  type: object
+                  additionalProperties: { $ref: '#/components/schemas/ArtifactObjectBindingRequest' }
+                  default: {}
       responses:
         '201':
           description: ARTIFACT_REGISTERED — verdict + 등록된 산출물의 계약 payload
@@ -4332,6 +4387,10 @@ paths:
           name: request_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseMode' }
+        - { in: header, name: X-KSI-Lease-Generation, required: false, schema: { type: integer, minimum: 1 }, description: 'RENEW에 필수; CLAIM에는 생략한다.' }
       responses:
         '201':
           description: LEASED
@@ -4365,6 +4424,9 @@ paths:
           name: request_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       responses:
         '200':
           description: INPUT_READY
@@ -4389,6 +4451,9 @@ paths:
           name: request_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -4411,6 +4476,60 @@ paths:
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: PROCESSING_WORK 권한 없음 }
+  /v1/processing-jobs/{job_id}/verify-input:
+    post:
+      summary: Verify the sealed source bundle using measurements from the current worker attempt
+      description: >-
+        PROCESSING_WORK 권한과 현재 lease fence가 모두 필요하다. 검증 결과는 인증
+        principal에 귀속되지만 현재 worker instance/acquisition/generation만 기록을
+        만들 수 있다. 이전 generation의 지연 보고는 STALE_LEASE_GENERATION으로
+        거부한다.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: job_id, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [measurements]
+              properties:
+                measurements:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [mediaId, sha256, bytes, width, height]
+                    properties:
+                      mediaId: { type: string, minLength: 1 }
+                      sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                      bytes: { type: integer, minimum: 1 }
+                      width: { type: integer, minimum: 1 }
+                      height: { type: integer, minimum: 1 }
+                      captureTime: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: VERIFIED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '200':
+          description: ALREADY_VERIFIED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceMediaVerifyResponse' }
+        '404': { description: UNKNOWN_JOB }
+        '409': { description: LEASE_FENCE_REQUIRED · STALE_LEASE_GENERATION · JOB_NOT_ACTIVE }
+        '422': { description: MISMATCH · COVERAGE_INCOMPLETE · invalid request }
+        '503': { description: STORE_UNAVAILABLE — Retry-After }
+        '401': { description: 인증 실패 }
+        '403': { description: PROCESSING_WORK 권한 없음 }
   /v1/processing-jobs/{job_id}/artifacts/upload-url:
     post:
       summary: Issue a presigned PUT target for a reconstruction artifact's bytes
@@ -4419,23 +4538,34 @@ paths:
         발급한다 — 끝난 작업에 바이트를 더 쓰면 종료가 쓰기 종료를 뜻하지 않게 된다.
 
 
-        **객체 키를 요청이 정하지 않는다.** 요청 스키마에 자리가 없고 Core 가
-        `sites/{siteId}/processing-jobs/{jobId}/artifacts/{artifactId}` 로 유도한다 —
-        워커가 고를 수 있으면 워커 토큰 하나로 버킷의 임의 경로에 쓸 수 있다.
-        키가 저장되지 않고 유도되므로 같은 (작업, 산출물)은 항상 같은 자리이고,
-        재시도가 두 번째 사본을 만들지 않는다.
+        **객체 키는 요청이 임의로 정하지 않는다.** Core는 현재 `leaseGeneration`에 대해
+        `sites/{siteId}/processing-jobs/{jobId}/attempts/{leaseGeneration}/artifacts/{artifactId}`
+        바인딩을 먼저 journal append 후 발급한다.
+
+        동일 generation에서 같은 바인딩의 재요청만 동일 위치를 재사용한다(동일 요청의
+        재시도/연결 끊김 복구에 해당). 과거 generation에서 만들어진 바이트·URL은 새
+        generation의 후보나 권한이 될 수 없다.
+
+        `uploadUrl`은 durable 바인딩의 한 부속으로 저장되지 않는 만료성 capability이며,
+        같은 바인딩 재요청으로 갱신될 수 있다. presign 실패가 나와도 바인딩 자체가
+        durable하게 남을 수 있다. 따라서 동일 바인딩의 추적된 상태는 재시도에서
+        바인딩 충돌 없이 이어지며, `uploadUrl`만 새로 발급할 수 있다.
 
 
         **바이트는 Core 를 통과하지 않는다** — 포인트 클라우드는 GB 단위라 워커가
         presigned PUT 으로 스토리지에 직접 쓴다. 등록(POST .../artifacts)과 분리한
-        이유는 등록이 계보를 원장에 박는 durable 행위이고 이건 아니기 때문이다:
-        합치면 "올리다 실패한" 상태가 원장에 남는다.
+        이유는 등록(POST .../artifacts)이 metadata 교차 검증으로 계보를 원장에 박는
+        durable 인정(artifact/lineage acceptance) 동작이기 때문이다. Core는 업로드 본문을
+        재해시하거나 직접 읽지 않는다.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: path
           name: job_id
           required: true
           schema: { type: string }
+        - { $ref: '#/components/parameters/WorkerInstanceId' }
+        - { $ref: '#/components/parameters/LeaseAcquisitionId' }
+        - { $ref: '#/components/parameters/LeaseGeneration' }
       requestBody:
         required: true
         content:
@@ -4443,10 +4573,12 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [artifactId, contentType]
+              required: [artifactId, contentType, sha256, sizeBytes]
               properties:
                 artifactId: { type: string, minLength: 1 }
                 contentType: { type: string, minLength: 1 }
+                sha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+                sizeBytes: { type: integer, minimum: 0 }
                 filename:
                   description: >-
                     다중 파일 산출물(mesh 등)의 부속 파일 자리를 받을 때만
@@ -5197,6 +5329,30 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: PROCESSING_WORK permission required }
 components:
+  parameters:
+    WorkerInstanceId:
+      in: header
+      name: X-KSI-Worker-Instance-Id
+      required: true
+      description: Process-lifetime UUIDv4; bearer principal과 다른 lease owner identity.
+      schema: { type: string, format: uuid }
+    LeaseAcquisitionId:
+      in: header
+      name: X-KSI-Lease-Acquisition-Id
+      required: true
+      description: CLAIM operation UUIDv4; lost response의 exact retry에서 그대로 재사용한다.
+      schema: { type: string, format: uuid }
+    LeaseGeneration:
+      in: header
+      name: X-KSI-Lease-Generation
+      required: true
+      description: Core가 발급한 현재 authoritative fencing generation.
+      schema: { type: integer, minimum: 1 }
+    LeaseMode:
+      in: header
+      name: X-KSI-Lease-Mode
+      required: true
+      schema: { type: string, enum: [CLAIM, RENEW] }
   # ── 응답 본문 스키마 ───────────────────────────────────────────────────────
   #
   # 여기 적힌 **필드 집합**은 test_api_contract_sync.py 가 실구현(FastAPI 가
@@ -6917,8 +7073,7 @@ components:
         [jobId, missionId, siteId, status, issuedAt, issuedBy, updatedAt, detail,
          inputVerified, processingProfileId, processingProfileDigest,
          processingProfileClassification, resourcePolicyId, resourcePolicyDigest,
-         contract, artifacts, leaseWorkerId,
-         leaseExpiresAt, captureWindow]
+         contract, artifacts, leaseWorkerId, captureWindow]
       properties:
         jobId: { type: string }
         missionId: { type: string }
@@ -6958,15 +7113,23 @@ components:
         contract: { type: object, additionalProperties: true }
         artifacts:
           description: >-
-            이 작업에 등록된 산출물의 계약 payload(등록 순). 구조 정본은
-            contracts/schemas/processing-artifact.v1.2.json(검사점을 실으면 v1.3.json) 이다. SUCCEEDED 를
-            받쳐주는 근거가 무엇인지 화면이 상태값 하나가 아니라 계보로 볼 수
-            있게 싣는다(INV-051).
+            SUCCEEDED 작업은 AuthoritativeArtifactManifestV1이 수락한 산출물만
+            투영한다. RUNNING 신규 작업의 generation-scoped candidate는 authority가
+            아니므로 일반 조회에 노출하지 않는다. 진짜 legacy 원장만 기존 등록
+            산출물 투영을 유지한다.
           type: array
           items: { type: object, additionalProperties: true }
         leaseWorkerId:
-          description: 지금 이 작업을 쥔 워커의 principalId. null 이면 아무도 안 쥐고 있다.
+          description: 지금 이 작업을 쥔 process-lifetime worker instance UUID. 인증 principal과 별개다.
           type: [string, 'null']
+        leaseAcquisitionId:
+          description: 현재 CLAIM operation UUID. exact lost-response retry는 이 값을 재사용한다.
+          type: [string, 'null']
+          format: uuid
+        leaseGeneration:
+          description: Core가 발급한 현재 fencing generation. legacy generation-0은 null로 투영한다.
+          type: [integer, 'null']
+          minimum: 1
         leaseExpiresAt:
           description: >-
             lease 만료 시각. **만료 여부를 불리언으로 싣지 않는다** — 응답을 만든
@@ -7479,6 +7642,20 @@ components:
         detail: { type: [string, 'null'] }
 
 
+    ArtifactObjectBindingRequest:
+      description: >-
+        Core가 발급하고 worker가 digest/size/content type과 함께 되돌려 주는 exact
+        storage object identity. manifest-aware authority는 이 binding을 기록하며
+        conventional path를 재유도하지 않는다.
+      type: object
+      additionalProperties: false
+      required: [objectKey, sha256, sizeBytes, contentType]
+      properties:
+        objectKey: { type: string, minLength: 1 }
+        sha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        sizeBytes: { type: integer, minimum: 0 }
+        contentType: { type: string, minLength: 1 }
+
     ArtifactUploadUrlResponse:
       description: >-
         산출물 바이트를 올릴 자리. objectKey 는 Core 가 식별자에서 유도한 값이라
@@ -7491,6 +7668,9 @@ components:
         objectKey: { type: [string, 'null'] }
         uploadUrl: { type: [string, 'null'] }
         expiresAt: { type: [string, 'null'], format: date-time }
+        requiredHeaders:
+          type: [object, 'null']
+          additionalProperties: { type: string }
         detail: { type: [string, 'null'] }
 
     ArtifactDownloadResponse:
@@ -7940,6 +8120,9 @@ components:
         uploadUrl: { type: [string, 'null'] }
         contentType: { type: [string, 'null'] }
         expiresAt: { type: [string, 'null'], format: date-time }
+        requiredHeaders:
+          type: object
+          additionalProperties: { type: string }
         detail: { type: [string, 'null'] }
     DiffRasterVerificationResponse:
       type: object

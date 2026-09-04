@@ -26,10 +26,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import threading
 from dataclasses import replace as dataclass_replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -52,6 +55,7 @@ from ksi_core.design_conformance_requests import (
 )
 from ksi_core.design_surfaces import build_design_surface_object_key
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.leasing import LeaseFence, LeaseMode
 from ksi_core.processing_jobs import (
     ProcessingJobStatus,
     build_processing_artifact_object_key,
@@ -835,3 +839,376 @@ def test_replay_keeps_a_report_whose_request_later_failed(
     entry = replayed.get(_CURRENT_MISSION_ID, record.design_conformance_id)
     assert entry is not None
     assert entry.core_recomputed_digest == _RASTER_DIGEST
+
+
+# ── TASK-1B generation-scoped downstream authority ──────────────────────
+
+
+def _claim_fenced(
+    fixture: ReportFixture,
+    request_id: str,
+    *,
+    now: datetime,
+    ttl: timedelta = timedelta(seconds=1),
+    authenticated_actor_id: str = "shared-worker-token",
+) -> LeaseFence:
+    requested = LeaseFence(str(uuid4()), str(uuid4()), 0)
+    result = fixture.base.requests.acquire_lease(
+        request_id,
+        now=now,
+        ttl=ttl,
+        lease_fence=requested,
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id=authenticated_actor_id,
+    )
+    assert result.verdict is DesignConformanceRequestVerdict.LEASED, result
+    assert result.record is not None and result.record.lease is not None
+    fence = result.record.lease.fence
+    assert fence is not None
+    return fence
+
+
+def _candidate_key(record: DesignConformanceRequestRecord, fence: LeaseFence) -> str:
+    return build_design_conformance_raster_object_key(
+        site_id=record.site_id,
+        design_conformance_id=record.design_conformance_id,
+        worker_instance_id=fence.worker_instance_id,
+        lease_acquisition_id=fence.lease_acquisition_id,
+        lease_generation=fence.lease_generation,
+    )
+
+
+def _verify_fenced_candidate(
+    fixture: ReportFixture,
+    record: DesignConformanceRequestRecord,
+    fence: LeaseFence,
+    *,
+    now: datetime,
+    data: bytes = _RASTER_BYTES,
+) -> DesignConformanceRequestRecord:
+    key = _candidate_key(record, fence)
+    fixture.base.storage.put_bytes(key, data, content_type="application/octet-stream")
+    digest, size = recompute_diff_raster_digest(fixture.base.storage, key)
+    result = fixture.base.requests.record_diff_raster_verification(
+        record.request_id,
+        digest=digest,
+        size_bytes=size,
+        object_key=key,
+        content_type="application/octet-stream",
+        worker_id="shared-worker-token",
+        now=now,
+        lease_fence=fence,
+    )
+    assert result.verdict is DesignConformanceRequestVerdict.DIFF_RASTER_VERIFIED, result
+    assert result.record is not None and result.record.diff_raster is not None
+    return result.record
+
+
+def test_takeover_fences_stale_report_and_old_put_key_cannot_mutate_authority(
+    fixture: ReportFixture,
+) -> None:
+    """N의 stale-first 제출과 이미 발급된 PUT capability가 N+1 권한을 못 건드린다."""
+    request = fixture.base.created()
+    t0 = datetime.now(UTC)
+    fence_n = _claim_fenced(fixture, request.request_id, now=t0)
+    running = fixture.base.requests.transition(
+        request.request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="shared-worker-token",
+        now=t0,
+        lease_fence=fence_n,
+    )
+    assert running.verdict is DesignConformanceRequestVerdict.TRANSITIONED
+    verified_n = _verify_fenced_candidate(
+        fixture, request, fence_n, now=t0 + timedelta(milliseconds=100)
+    )
+
+    fence_n1 = _claim_fenced(
+        fixture, request.request_id, now=t0 + timedelta(seconds=2)
+    )
+    key_n = _candidate_key(request, fence_n)
+    key_n1 = _candidate_key(request, fence_n1)
+    assert key_n != key_n1
+
+    stale_report = _report(verified_n, verified_n.diff_raster.verified_at)  # type: ignore[union-attr]
+    stale = fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        stale_report,
+        now=t0 + timedelta(seconds=2, milliseconds=100),
+        reported_by="shared-worker-token",
+        lease_fence=fence_n,
+    )
+    assert stale.verdict in {
+        DesignConformanceVerdict.LEASE_HELD_BY_ANOTHER,
+        DesignConformanceVerdict.STALE_LEASE_GENERATION,
+    }
+    assert fixture.reports.get(_CURRENT_MISSION_ID, request.design_conformance_id) is None
+
+    verified_n1 = _verify_fenced_candidate(
+        fixture,
+        request,
+        fence_n1,
+        now=t0 + timedelta(seconds=2, milliseconds=200),
+    )
+    current_report = _report(
+        verified_n1,
+        verified_n1.diff_raster.verified_at,  # type: ignore[union-attr]
+    )
+    accepted = fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        current_report,
+        now=t0 + timedelta(seconds=2, milliseconds=300),
+        reported_by="shared-worker-token",
+        lease_fence=fence_n1,
+    )
+    assert accepted.verdict is DesignConformanceVerdict.RECORDED, accepted
+
+    # This models an old presigned URL being used after takeover.  It can
+    # mutate only generation N's candidate key, never N+1's durable authority.
+    fixture.base.storage.put_bytes(
+        key_n,
+        b"late-stale-write",
+        content_type="application/octet-stream",
+    )
+    entry = fixture.reports.get(_CURRENT_MISSION_ID, request.design_conformance_id)
+    assert entry is not None
+    assert entry.accepted_lease_fence == fence_n1
+    assert entry.diff_raster_object_key == key_n1
+    assert fixture.reports.diff_raster_object_key(entry) == key_n1
+    assert fixture.base.storage.get_bytes(key_n1) == _RASTER_BYTES
+
+
+def test_generation_scoped_presigned_urls_and_digest_binding_are_distinct(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    t0 = datetime.now(UTC)
+    fence_n = _claim_fenced(
+        fixture,
+        request.request_id,
+        now=t0,
+        authenticated_actor_id="worker-1",
+    )
+    client = TestClient(fixture.base.app())
+
+    def headers(fence: LeaseFence) -> dict[str, str]:
+        return {
+            **_auth(_WORKER_TOKEN),
+            "X-KSI-Worker-Instance-Id": fence.worker_instance_id,
+            "X-KSI-Lease-Acquisition-Id": fence.lease_acquisition_id,
+            "X-KSI-Lease-Generation": str(fence.lease_generation),
+        }
+
+    first = client.post(
+        f"/v1/design-conformance-requests/{request.request_id}/diff-raster-upload-url",
+        json={"digest": _RASTER_DIGEST, "sizeBytes": len(_RASTER_BYTES)},
+        headers=headers(fence_n),
+    )
+    assert first.status_code == 201, first.json()
+    fence_n1 = _claim_fenced(
+        fixture,
+        request.request_id,
+        now=t0 + timedelta(seconds=2),
+        authenticated_actor_id="worker-1",
+    )
+    second = client.post(
+        f"/v1/design-conformance-requests/{request.request_id}/diff-raster-upload-url",
+        json={"digest": _RASTER_DIGEST, "sizeBytes": len(_RASTER_BYTES)},
+        headers=headers(fence_n1),
+    )
+    assert second.status_code == 201, second.json()
+    assert first.json()["objectKey"] != second.json()["objectKey"]
+    assert first.json()["uploadUrl"] != second.json()["uploadUrl"]
+    assert first.json()["requiredHeaders"]["X-Test-SHA256"] == _RASTER_DIGEST
+
+
+def test_current_generation_retry_is_idempotent_and_changed_payload_conflicts(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    now = datetime.now(UTC)
+    fence = _claim_fenced(fixture, request.request_id, now=now, ttl=timedelta(minutes=1))
+    verified = _verify_fenced_candidate(fixture, request, fence, now=now)
+    report = _report(verified, verified.diff_raster.verified_at)  # type: ignore[union-attr]
+    first = fixture.reports.record(
+        _CURRENT_MISSION_ID, report, now=now, reported_by="shared-worker-token", lease_fence=fence
+    )
+    retry = fixture.reports.record(
+        _CURRENT_MISSION_ID, report, now=now, reported_by="shared-worker-token", lease_fence=fence
+    )
+    changed = fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report.model_copy(update={"computed_at": report.computed_at + timedelta(seconds=1)}),
+        now=now,
+        reported_by="shared-worker-token",
+        lease_fence=fence,
+    )
+    assert first.verdict is DesignConformanceVerdict.RECORDED
+    assert retry.verdict is DesignConformanceVerdict.RECORDED
+    assert changed.verdict is DesignConformanceVerdict.DUPLICATE_REPORT_ID
+    records = [
+        json.loads(line)
+        for line in (fixture.tmp_path / "design-conformance.jsonl").read_text().splitlines()
+        if line
+    ]
+    assert sum(item.get("kind") == "design-conformance-recorded" for item in records) == 1
+
+
+def test_concurrent_exact_publication_commits_one_authoritative_record(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    now = datetime.now(UTC)
+    fence = _claim_fenced(fixture, request.request_id, now=now, ttl=timedelta(minutes=1))
+    verified = _verify_fenced_candidate(fixture, request, fence, now=now)
+    report = _report(verified, verified.diff_raster.verified_at)  # type: ignore[union-attr]
+    barrier = threading.Barrier(3)
+    outcomes: list[DesignConformanceVerdict] = []
+
+    def publish() -> None:
+        barrier.wait()
+        outcomes.append(
+            fixture.reports.record(
+                _CURRENT_MISSION_ID,
+                report,
+                now=now,
+                reported_by="shared-worker-token",
+                lease_fence=fence,
+            ).verdict
+        )
+
+    threads = [threading.Thread(target=publish) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+    assert outcomes == [DesignConformanceVerdict.RECORDED] * 2
+    records = [
+        json.loads(line)
+        for line in (fixture.tmp_path / "design-conformance.jsonl").read_text().splitlines()
+        if line
+    ]
+    assert sum(item.get("kind") == "design-conformance-recorded" for item in records) == 1
+
+
+def test_generation_authority_and_exact_object_reference_survive_replay(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    now = datetime.now(UTC)
+    fence = _claim_fenced(fixture, request.request_id, now=now, ttl=timedelta(minutes=1))
+    verified = _verify_fenced_candidate(fixture, request, fence, now=now)
+    report = _report(verified, verified.diff_raster.verified_at)  # type: ignore[union-attr]
+    assert fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="shared-worker-token",
+        lease_fence=fence,
+    ).verdict is DesignConformanceVerdict.RECORDED
+
+    fixture.report_journal.close()
+    fixture.base.journal.close()
+    reopened_requests = type(fixture.base.requests)(
+        DurableJournal(fixture.tmp_path / "design-conformance-requests.jsonl"),
+        mission_store=fixture.base.missions,
+        processing_job_store=fixture.base.jobs,
+        design_surface_store=fixture.base.surfaces,
+        analysis_readiness=lambda _mission_id: (True, None),
+    )
+    reopened = DesignConformanceStore(
+        DurableJournal(fixture.tmp_path / "design-conformance.jsonl"),
+        mission_store=fixture.base.missions,
+        processing_job_store=fixture.base.jobs,
+        request_store=reopened_requests,
+        storage=fixture.base.storage,
+    )
+    entry = reopened.get(_CURRENT_MISSION_ID, request.design_conformance_id)
+    assert entry is not None
+    assert entry.accepted_lease_fence == fence
+    assert reopened.diff_raster_object_key(entry) == _candidate_key(request, fence)
+    stale = LeaseFence(
+        fence.worker_instance_id,
+        fence.lease_acquisition_id,
+        fence.lease_generation + 1,
+    )
+    assert reopened.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="shared-worker-token",
+        lease_fence=stale,
+    ).verdict is DesignConformanceVerdict.STALE_LEASE_GENERATION
+
+
+def test_fenced_report_rejects_actor_drift_live_and_on_replay(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    now = datetime.now(UTC)
+    fence = _claim_fenced(fixture, request.request_id, now=now, ttl=timedelta(minutes=1))
+    verified = _verify_fenced_candidate(fixture, request, fence, now=now)
+    report = _report(verified, verified.diff_raster.verified_at)  # type: ignore[union-attr]
+
+    denied = fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="different-principal",
+        lease_fence=fence,
+    )
+    assert denied.verdict is DesignConformanceVerdict.LEASE_HELD_BY_ANOTHER
+    assert fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="shared-worker-token",
+        lease_fence=fence,
+    ).verdict is DesignConformanceVerdict.RECORDED
+
+    fixture.report_journal.close()
+    path = fixture.tmp_path / "design-conformance.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line]
+    rows[-1]["reportedBy"] = "different-principal"
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    with pytest.raises(DesignConformanceRecoveryError, match="provenance"):
+        DesignConformanceStore(
+            DurableJournal(path),
+            mission_store=fixture.base.missions,
+            processing_job_store=fixture.base.jobs,
+            request_store=fixture.base.requests,
+            storage=fixture.base.storage,
+        )
+
+
+def test_new_format_missing_durable_object_reference_fails_closed_on_replay(
+    fixture: ReportFixture,
+) -> None:
+    request = fixture.base.created()
+    now = datetime.now(UTC)
+    fence = _claim_fenced(fixture, request.request_id, now=now, ttl=timedelta(minutes=1))
+    verified = _verify_fenced_candidate(fixture, request, fence, now=now)
+    report = _report(verified, verified.diff_raster.verified_at)  # type: ignore[union-attr]
+    assert fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="shared-worker-token",
+        lease_fence=fence,
+    ).verdict is DesignConformanceVerdict.RECORDED
+    fixture.report_journal.close()
+    path = fixture.tmp_path / "design-conformance.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line]
+    rows[-1].pop("diffRasterObject")
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    with pytest.raises(DesignConformanceRecoveryError, match="binding이 불완전"):
+        DesignConformanceStore(
+            DurableJournal(path),
+            mission_store=fixture.base.missions,
+            processing_job_store=fixture.base.jobs,
+            request_store=fixture.base.requests,
+            storage=fixture.base.storage,
+        )

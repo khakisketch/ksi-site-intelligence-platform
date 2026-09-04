@@ -31,6 +31,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -52,6 +53,7 @@ from ksi_core.comparison_requests import (
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.leasing import LeaseMode
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     ArtifactSpec,
@@ -116,21 +118,27 @@ def _registry() -> AuthRegistry:
             PrincipalTokenRecord(
                 token_sha256=_digest(_ADMIN_TOKEN),
                 principal=Principal(
-                    principal_id="admin-1", kind=PrincipalKind.OPERATOR, role=Role.ADMIN,
+                    principal_id="admin-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
                     device_id=None,
                 ),
             ),
             PrincipalTokenRecord(
                 token_sha256=_digest(_WORKER_TOKEN),
                 principal=Principal(
-                    principal_id="worker-1", kind=PrincipalKind.PROCESSING_WORKER, role=None,
+                    principal_id="worker-1",
+                    kind=PrincipalKind.PROCESSING_WORKER,
+                    role=None,
                     device_id=None,
                 ),
             ),
             PrincipalTokenRecord(
                 token_sha256=_digest(_VIEWER_TOKEN),
                 principal=Principal(
-                    principal_id="vw-1", kind=PrincipalKind.OPERATOR, role=Role.VIEWER,
+                    principal_id="vw-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.VIEWER,
                     device_id=None,
                 ),
             ),
@@ -225,9 +233,7 @@ def _job_store_impl(
             ).verdict.value
             == "PROCESSED"
         )
-        assert (
-            source_media.seal(mission_id, sealed_by="op-1", now=_NOW).verdict.value == "SEALED"
-        )
+        assert source_media.seal(mission_id, sealed_by="op-1", now=_NOW).verdict.value == "SEALED"
     jobs = ProcessingJobStore(
         DurableJournal(tmp_path / "processing-jobs.jsonl"),
         source_media_store=source_media,
@@ -272,8 +278,11 @@ def _verify_bundle(source_media: SourceMediaStore, mission_id: str) -> None:
     assert bundle is not None
     measurements = [
         SourceMediaMeasurement(
-            media_id=m.media_id, sha256=m.sha256, size_bytes=m.size_bytes,
-            width=m.width, height=m.height,
+            media_id=m.media_id,
+            sha256=m.sha256,
+            size_bytes=m.size_bytes,
+            width=m.width,
+            height=m.height,
         )
         for m in bundle.media
     ]
@@ -333,8 +342,11 @@ def _succeeded_job(
     _verify_bundle(source_media, mission_id)
     assert (
         jobs.transition(
-            record.job_id, ProcessingJobStatus.SUCCEEDED, detail="산출물 등록됨",
-            actor="w-1", now=_NOW,
+            record.job_id,
+            ProcessingJobStatus.SUCCEEDED,
+            detail="산출물 등록됨",
+            actor="w-1",
+            now=_NOW,
         ).verdict
         is ProcessingJobVerdict.TRANSITIONED
     )
@@ -651,9 +663,7 @@ def test_idempotency_key_survives_a_restart(tmp_path: Path) -> None:
     baseline = _succeeded_job(
         jobs, source_media, _BASELINE_MISSION_ID, _artifact_spec("point-cloud")
     )
-    current = _succeeded_job(
-        jobs, source_media, _CURRENT_MISSION_ID, _artifact_spec("point-cloud")
-    )
+    current = _succeeded_job(jobs, source_media, _CURRENT_MISSION_ID, _artifact_spec("point-cloud"))
 
     def _new_store() -> ComparisonRequestStore:
         return ComparisonRequestStore(
@@ -791,9 +801,7 @@ def test_model_output_satisfies_contract_schema(fx: _Fixture) -> None:
 def test_list_pending_only_shows_queued(fx: _Fixture) -> None:
     result = fx.create()
     assert result.record is not None
-    assert [
-        r.request_id for r in fx.store.list_pending(now=_NOW)
-    ] == [result.record.request_id]
+    assert [r.request_id for r in fx.store.list_pending(now=_NOW)] == [result.record.request_id]
 
 
 def test_lease_is_atomic_second_worker_gets_held_by_another(fx: _Fixture) -> None:
@@ -813,6 +821,212 @@ def test_lease_renewal_by_same_worker(fx: _Fixture) -> None:
         request_id, worker_id="worker-a", now=_NOW + timedelta(minutes=5)
     )
     assert renewed.verdict is ComparisonRequestVerdict.LEASE_RENEWED
+
+
+def test_fenced_claim_is_durable_idempotent_and_old_claim_stays_stale_after_restart(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    request_id = fx.create().record.request_id
+    instance_a = "11111111-1111-4111-8111-111111111111"
+    claim_a = "22222222-2222-4222-8222-222222222222"
+    first = fx.store.acquire_lease(
+        request_id,
+        worker_instance_id=instance_a,
+        lease_acquisition_id=claim_a,
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW,
+    )
+    duplicate = fx.store.acquire_lease(
+        request_id,
+        worker_instance_id=instance_a,
+        lease_acquisition_id=claim_a,
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW + timedelta(seconds=1),
+    )
+    assert first.record is not None and first.record.lease is not None
+    assert duplicate.record is not None and duplicate.record.lease is not None
+    assert first.record.lease.lease_generation == duplicate.record.lease.lease_generation == 1
+    fx.store._journal.close()  # simulate process exit before replay/restart
+    restarted = ComparisonRequestStore(
+        DurableJournal(tmp_path / "comparison-requests.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
+    )
+    newer = restarted.acquire_lease(
+        request_id,
+        worker_instance_id="33333333-3333-4333-8333-333333333333",
+        lease_acquisition_id="44444444-4444-4444-8444-444444444444",
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW + timedelta(minutes=16),
+    )
+    assert newer.record is not None and newer.record.lease is not None
+    assert newer.record.lease.lease_generation == 2
+    old = restarted.acquire_lease(
+        request_id,
+        worker_instance_id=instance_a,
+        lease_acquisition_id=claim_a,
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW + timedelta(minutes=17),
+    )
+    assert old.verdict is ComparisonRequestVerdict.STALE_LEASE_ACQUISITION
+
+
+def test_fenced_renewal_replays_without_conflicting_with_its_claim(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    request_id = fx.create().record.request_id
+    claimed = fx.store.acquire_lease(
+        request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    renewed = fx.store.acquire_lease(
+        request_id,
+        lease_fence=claimed.record.lease.fence,
+        lease_mode=LeaseMode.RENEW,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is ComparisonRequestVerdict.LEASE_RENEWED
+    assert renewed.record is not None and renewed.record.lease is not None
+    expected_expiry = renewed.record.lease.expires_at
+
+    fx.store._journal.close()
+    restarted = ComparisonRequestStore(
+        DurableJournal(tmp_path / "comparison-requests.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
+    )
+    restored = restarted.get(request_id)
+    assert restored is not None and restored.lease is not None
+    assert restored.lease.fence == claimed.record.lease.fence
+    assert restored.lease.expires_at == expected_expiry
+
+
+def test_replay_rejects_renewal_that_changes_claim_principal(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    request_id = fx.create().record.request_id
+    claimed = fx.store.acquire_lease(
+        request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id="principal-a",
+        now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    renewed = fx.store.acquire_lease(
+        request_id,
+        lease_fence=claimed.record.lease.fence,
+        lease_mode=LeaseMode.RENEW,
+        authenticated_actor_id="principal-a",
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is ComparisonRequestVerdict.LEASE_RENEWED
+    fx.store._journal.close()  # noqa: SLF001 -- tamper durable replay boundary
+    journal_path = tmp_path / "comparison-requests.jsonl"
+    records = [json.loads(line) for line in journal_path.read_text().splitlines()]
+    renewal = next(
+        item
+        for item in records
+        if item["kind"] == "comparison-request-leased" and item["leaseMode"] == "RENEW"
+    )
+    renewal["authenticatedActorId"] = "principal-b"
+    journal_path.write_text("\n".join(json.dumps(item) for item in records) + "\n")
+
+    with pytest.raises(ComparisonRequestRecoveryError, match="principal"):
+        ComparisonRequestStore(
+            DurableJournal(journal_path),
+            mission_store=fx.missions,
+            processing_job_store=fx.jobs,
+            analysis_readiness=lambda _mission_id: (True, None),
+        )
+
+
+def test_fenced_renewal_rejects_different_principal_and_replays_claim_actor(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    request_id = fx.create().record.request_id
+    claimed = fx.store.acquire_lease(
+        request_id, worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM, authenticated_actor_id="principal-a", now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    duplicate_claim = fx.store.acquire_lease(
+        request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id="principal-b",
+        now=_NOW + timedelta(seconds=30),
+    )
+    assert duplicate_claim.verdict is ComparisonRequestVerdict.STALE_LEASE_ACQUISITION
+    denied = fx.store.acquire_lease(
+        request_id, lease_fence=claimed.record.lease.fence, lease_mode=LeaseMode.RENEW,
+        authenticated_actor_id="principal-b", now=_NOW + timedelta(minutes=1),
+    )
+    assert denied.verdict is ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER
+    hijacked = fx.store.transition(
+        request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-b",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert hijacked.verdict is ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER
+    accepted = fx.store.transition(
+        request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-a",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert accepted.verdict is ComparisonRequestVerdict.TRANSITIONED
+    fx.store._journal.close()  # noqa: SLF001
+    restored = ComparisonRequestStore(
+        DurableJournal(tmp_path / "comparison-requests.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        analysis_readiness=lambda _mission_id: (True, None),
+    ).get(request_id)
+    assert restored is not None and restored.lease is not None
+    assert restored.lease.authenticated_actor_id == "principal-a"
+    assert restored.status is ProcessingJobStatus.RUNNING
+
+
+def test_claim_acquisition_id_cannot_be_reused_for_another_request(fx: _Fixture) -> None:
+    first_id = fx.create().record.request_id
+    second_id = fx.create(zones={"other": _ZONES["zone-0"]}).record.request_id
+    instance = "11111111-1111-4111-8111-111111111111"
+    acquisition = "22222222-2222-4222-8222-222222222222"
+    assert (
+        fx.store.acquire_lease(
+            first_id,
+            worker_instance_id=instance,
+            lease_acquisition_id=acquisition,
+            lease_mode=LeaseMode.CLAIM,
+            now=_NOW,
+        ).verdict
+        is ComparisonRequestVerdict.LEASED
+    )
+    assert (
+        fx.store.acquire_lease(
+            second_id,
+            worker_instance_id=instance,
+            lease_acquisition_id=acquisition,
+            lease_mode=LeaseMode.CLAIM,
+            now=_NOW,
+        ).verdict
+        is ComparisonRequestVerdict.IDEMPOTENCY_CONFLICT
+    )
 
 
 def test_list_pending_includes_running_with_expired_lease(fx: _Fixture) -> None:
@@ -881,8 +1095,7 @@ def test_input_returns_urls_only_for_this_requests_artifacts(fx: _Fixture) -> No
     # presign 됐다 — 다른 산출물(camera-poses 등)이나 다른 작업은 등장하지 않는다.
     assert len(storage.presigned_get_calls) == 4
     assert all(
-        fx.baseline_job_id in key or fx.current_job_id in key
-        for key in storage.presigned_get_calls
+        fx.baseline_job_id in key or fx.current_job_id in key for key in storage.presigned_get_calls
     )
     # missionId·jobId+artifactId 참조도 함께 온다 — 워커가 ChangeDetectionResult/
     # VolumeChangeReport 를 제출하려면 URL 뿐 아니라 "어느 (작업, 산출물)" 인지도
@@ -890,10 +1103,12 @@ def test_input_returns_urls_only_for_this_requests_artifacts(fx: _Fixture) -> No
     assert body["input"]["missionId"] == _CURRENT_MISSION_ID
     assert body["input"]["status"] == "QUEUED"
     assert body["input"]["pointCloudBaseline"] == {
-        "jobId": fx.baseline_job_id, "artifactId": "point-cloud"
+        "jobId": fx.baseline_job_id,
+        "artifactId": "point-cloud",
     }
     assert body["input"]["pointCloudCurrent"] == {
-        "jobId": fx.current_job_id, "artifactId": "point-cloud"
+        "jobId": fx.current_job_id,
+        "artifactId": "point-cloud",
     }
     assert body["input"]["dsmBaseline"] == {"jobId": fx.baseline_job_id, "artifactId": "dsm"}
     assert body["input"]["dsmCurrent"] == {"jobId": fx.current_job_id, "artifactId": "dsm"}
@@ -1215,9 +1430,7 @@ def test_http_other_organization_cannot_read_or_lease_foreign_comparison_request
     request_id = result.record.request_id
 
     viewer = _client(fx.store, token=_OTHER_ORG_VIEWER_TOKEN)
-    assert (
-        viewer.get(f"/v1/missions/{_CURRENT_MISSION_ID}/comparison-requests").status_code == 404
-    )
+    assert viewer.get(f"/v1/missions/{_CURRENT_MISSION_ID}/comparison-requests").status_code == 404
     assert viewer.get(f"/v1/comparison-requests/{request_id}").status_code == 404
 
     worker = _client(fx.store, token=_OTHER_ORG_WORKER_TOKEN)
@@ -1235,6 +1448,224 @@ def test_http_other_organization_cannot_read_or_lease_foreign_comparison_request
 # 돌려 SUCCEEDED 까지 가고, 결과 조회 API 로 되짚는다. 어느 단계도 최종 상태를
 # 손으로 넣지 않는다 — QUEUED 는 접수 API가, RUNNING/SUCCEEDED 는 워커가 실제
 # HTTP 전이 호출로 만든다.
+
+
+def test_stale_comparison_generation_cannot_reserve_change_detection_result(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    """Result append is fenced with the request lock, not merely its worker token."""
+
+    from ksi_core.change_detection import (
+        ChangeDetectionRecoveryError,
+        ChangeDetectionStore,
+        ChangeDetectionVerdict,
+    )
+    from ksi_core.leasing import LeaseFence
+    from ksi_event_contracts.change_detection_result import ChangeDetectionResult
+
+    created = fx.create()
+    assert created.record is not None
+    request_id = created.record.request_id
+    requested_fence = LeaseFence(str(uuid4()), str(uuid4()), 0)
+    first = fx.store.acquire_lease(
+        request_id,
+        lease_fence=requested_fence,
+        authenticated_actor_id="worker-a",
+        now=_NOW,
+    )
+    assert first.record is not None and first.record.lease is not None
+    first_fence = first.record.lease.fence
+    assert first_fence is not None
+
+    results = ChangeDetectionStore(
+        DurableJournal(tmp_path / "fenced-change-detection.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        comparison_request_store=fx.store,
+    )
+    result = ChangeDetectionResult.model_validate(
+        {
+            "changeDetectionId": request_id,
+            "baseline": {"jobId": fx.baseline_job_id, "artifactId": "point-cloud"},
+            "current": {"jobId": fx.current_job_id, "artifactId": "point-cloud"},
+            "distanceThresholdM": 0.05,
+            "pointCount": 10,
+            "candidateCount": 1,
+            "candidateRatio": 0.1,
+            "maxDistanceM": 0.2,
+            "computedAt": _NOW.isoformat(),
+        }
+    )
+
+    successor = fx.store.acquire_lease(
+        request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        authenticated_actor_id="worker-b",
+        now=_NOW + timedelta(minutes=16),
+    )
+    assert successor.record is not None and successor.record.lease is not None
+    successor_fence = successor.record.lease.fence
+    assert successor_fence is not None and successor_fence.lease_generation == 2
+
+    stale = results.record(
+        _CURRENT_MISSION_ID,
+        result,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="worker-a",
+        lease_fence=first_fence,
+    )
+    assert stale.verdict in {
+        ChangeDetectionVerdict.LEASE_HELD_BY_ANOTHER,
+        ChangeDetectionVerdict.STALE_LEASE_ACQUISITION,
+        ChangeDetectionVerdict.STALE_LEASE_GENERATION,
+    }
+    assert results.history(_CURRENT_MISSION_ID) == []
+
+    wrong_actor = results.record(
+        _CURRENT_MISSION_ID,
+        result,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="worker-a",
+        lease_fence=successor_fence,
+    )
+    assert wrong_actor.verdict is ChangeDetectionVerdict.LEASE_HELD_BY_ANOTHER
+
+    accepted = results.record(
+        _CURRENT_MISSION_ID,
+        result,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="worker-b",
+        lease_fence=successor_fence,
+    )
+    assert accepted.verdict is ChangeDetectionVerdict.RECORDED
+    retry = results.record(
+        _CURRENT_MISSION_ID,
+        result,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="worker-b",
+        lease_fence=successor_fence,
+    )
+    assert retry.verdict is ChangeDetectionVerdict.RECORDED
+    raw = list(results._journal.replay())  # noqa: SLF001 -- verify exact durable authority fields
+    assert raw[-1]["authorityVersion"] == 1
+    assert raw[-1]["requestId"] == request_id
+    assert raw[-1]["acceptedLeaseFence"]["leaseGeneration"] == 2
+    results._journal.close()  # noqa: SLF001 -- tamper durable replay boundary
+    path = tmp_path / "fenced-change-detection.jsonl"
+    raw[-1]["reportedBy"] = "worker-a"
+    path.write_text("\n".join(json.dumps(item) for item in raw) + "\n")
+    with pytest.raises(ChangeDetectionRecoveryError, match="lease history"):
+        ChangeDetectionStore(
+            DurableJournal(path),
+            mission_store=fx.missions,
+            processing_job_store=fx.jobs,
+            comparison_request_store=fx.store,
+        )
+
+
+def test_stale_comparison_generation_cannot_reserve_volume_result(
+    fx: _Fixture, tmp_path: Path
+) -> None:
+    from ksi_core.leasing import LeaseFence
+    from ksi_core.volume_reports import (
+        VolumeChangeRecoveryError,
+        VolumeChangeStore,
+        VolumeChangeVerdict,
+    )
+    from ksi_event_contracts.volume_change_report import VolumeChangeReport
+
+    created = fx.create()
+    assert created.record is not None
+    request_id = created.record.request_id
+    first = fx.store.acquire_lease(
+        request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        authenticated_actor_id="worker-a",
+        now=_NOW,
+    )
+    assert first.record is not None and first.record.lease is not None
+    first_fence = first.record.lease.fence
+    assert first_fence is not None
+    successor = fx.store.acquire_lease(
+        request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        authenticated_actor_id="shared-worker-token",
+        now=_NOW + timedelta(minutes=16),
+    )
+    assert successor.record is not None and successor.record.lease is not None
+    successor_fence = successor.record.lease.fence
+    assert successor_fence is not None
+
+    reports = VolumeChangeStore(
+        DurableJournal(tmp_path / "fenced-volume-change.jsonl"),
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        comparison_request_store=fx.store,
+    )
+    report = VolumeChangeReport.model_validate(
+        {
+            "schemaVersion": "1.0",
+            "volumeChangeId": request_id,
+            "baseline": {"jobId": fx.baseline_job_id, "artifactId": "dsm"},
+            "current": {"jobId": fx.current_job_id, "artifactId": "dsm"},
+            "crs": "EPSG:5186",
+            "verticalDatum": "ellipsoidal_native",
+            "zones": [
+                {
+                    "zoneId": "zone-0",
+                    "cutM3": 1.0,
+                    "fillM3": 2.0,
+                    "netM3": 1.0,
+                    "areaM2": 10.0,
+                    "thresholdM": 0.05,
+                    "uncertaintyM3": None,
+                    "uncertaintyNote": "fixture",
+                }
+            ],
+            "computedAt": _NOW.isoformat(),
+        }
+    )
+    stale = reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="shared-worker-token",
+        lease_fence=first_fence,
+    )
+    assert stale.verdict in {
+        VolumeChangeVerdict.LEASE_HELD_BY_ANOTHER,
+        VolumeChangeVerdict.STALE_LEASE_ACQUISITION,
+        VolumeChangeVerdict.STALE_LEASE_GENERATION,
+    }
+    wrong_actor = reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="worker-a",
+        lease_fence=successor_fence,
+    )
+    assert wrong_actor.verdict is VolumeChangeVerdict.LEASE_HELD_BY_ANOTHER
+    accepted = reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=_NOW + timedelta(minutes=16),
+        reported_by="shared-worker-token",
+        lease_fence=successor_fence,
+    )
+    assert accepted.verdict is VolumeChangeVerdict.RECORDED
+    assert len(reports.history(_CURRENT_MISSION_ID)) == 1
+    raw = list(reports._journal.replay())  # noqa: SLF001 -- verify durable replay authority
+    reports._journal.close()  # noqa: SLF001 -- tamper durable replay boundary
+    path = tmp_path / "fenced-volume-change.jsonl"
+    raw[-1]["reportedBy"] = "worker-a"
+    path.write_text("\n".join(json.dumps(item) for item in raw) + "\n")
+    with pytest.raises(VolumeChangeRecoveryError, match="lease history"):
+        VolumeChangeStore(
+            DurableJournal(path),
+            mission_store=fx.missions,
+            processing_job_store=fx.jobs,
+            comparison_request_store=fx.store,
+        )
 
 
 def test_full_chain_from_submission_api_through_worker_to_result(
@@ -1270,16 +1701,25 @@ def test_full_chain_from_submission_api_through_worker_to_result(
 
     def _write_dsm(path: Path, value: float) -> Path:
         with rasterio.open(
-            path, "w", driver="GTiff", height=10, width=10, count=1, dtype="float64",
-            crs="EPSG:5186", transform=from_origin(origin_x, origin_y, 1.0, 1.0),
+            path,
+            "w",
+            driver="GTiff",
+            height=10,
+            width=10,
+            count=1,
+            dtype="float64",
+            crs="EPSG:5186",
+            transform=from_origin(origin_x, origin_y, 1.0, 1.0),
         ) as dataset:
             dataset.write(np.full((10, 10), value, dtype=np.float64), 1)
         return path
 
     def _wgs84_square(size_m: float) -> dict[str, Any]:
         corners_xy = [
-            (origin_x, origin_y), (origin_x + size_m, origin_y),
-            (origin_x + size_m, origin_y - size_m), (origin_x, origin_y - size_m),
+            (origin_x, origin_y),
+            (origin_x + size_m, origin_y),
+            (origin_x + size_m, origin_y - size_m),
+            (origin_x, origin_y - size_m),
             (origin_x, origin_y),
         ]
         ring = [
@@ -1338,11 +1778,15 @@ def test_full_chain_from_submission_api_through_worker_to_result(
     # ── 실제 Core 앱: 비교 요청 + 변화탐지 + 체적 표면을 전부 장착 ──
     change_detection_store = ChangeDetectionStore(
         DurableJournal(tmp_path / "change-detection.jsonl"),
-        mission_store=fx.missions, processing_job_store=fx.jobs,
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        comparison_request_store=fx.store,
     )
     volume_change_store = VolumeChangeStore(
         DurableJournal(tmp_path / "volume-changes.jsonl"),
-        mission_store=fx.missions, processing_job_store=fx.jobs,
+        mission_store=fx.missions,
+        processing_job_store=fx.jobs,
+        comparison_request_store=fx.store,
     )
     app = FastAPI()
     mount_auth(app, _registry())
@@ -1373,13 +1817,14 @@ def test_full_chain_from_submission_api_through_worker_to_result(
     # 붙는다 — TestClient 자체가 httpx.Client 서브클래스이자 동기↔ASGI 브리지라
     # 그대로 주입한다(진짜 소켓은 없지만 진짜 ASGI 앱을 실제로 부른다).
     worker_http = TestClient(app)
-    core_client = HttpCoreClient(
-        "http://core.test", token=_WORKER_TOKEN, client=worker_http
-    )
+    core_client = HttpCoreClient("http://core.test", token=_WORKER_TOKEN, client=worker_http)
     storage_http = httpx.Client(transport=httpx.MockTransport(_storage_handler))
     try:
         run_comparison_request(
-            request_id, core=core_client, work_dir=tmp_path, http_client=storage_http,
+            request_id,
+            core=core_client,
+            work_dir=tmp_path,
+            http_client=storage_http,
             now_message=lambda _msg: None,
         )
     finally:
@@ -1435,14 +1880,8 @@ def test_replay_reproduces_created_leased_and_transitioned_state(tmp_path: Path)
     assert record.change_detection_eligible is True
     assert record.volume_change_eligible is True
     assert record.processing_profile_digest == result.record.processing_profile_digest
-    assert (
-        record.baseline_source_bundle_digest
-        == result.record.baseline_source_bundle_digest
-    )
-    assert (
-        record.current_source_bundle_digest
-        == result.record.current_source_bundle_digest
-    )
+    assert record.baseline_source_bundle_digest == result.record.baseline_source_bundle_digest
+    assert record.current_source_bundle_digest == result.record.current_source_bundle_digest
 
 
 def test_replay_refuses_request_whose_reference_no_longer_validates(tmp_path: Path) -> None:

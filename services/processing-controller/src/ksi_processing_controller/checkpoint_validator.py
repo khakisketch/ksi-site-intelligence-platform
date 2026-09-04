@@ -39,6 +39,7 @@ from ksi_processing_controller.core_client import (
     CheckpointValidationMeasurement,
     PendingCheckpointValidation,
 )
+from ksi_processing_controller.workspace import cleanup_attempt_workspace, unleased_workspace
 
 _CHUNK_BYTES = 1024 * 1024
 
@@ -339,8 +340,11 @@ def validate_checkpoint_validation(
 ) -> str:
     """Complete one SEALED validation, or leave it SEALED when storage is unavailable."""
 
-    checkpoint_path = work_dir / f"{candidate.validation_id}.checkpoints.csv"
-    dsm_path = work_dir / f"{candidate.validation_id}.dsm.tif"
+    attempt_dir = unleased_workspace(
+        work_dir, work_kind="checkpoint-validation", resource_id=candidate.validation_id
+    )
+    checkpoint_path = attempt_dir / f"{candidate.validation_id}.checkpoints.csv"
+    dsm_path = attempt_dir / f"{candidate.validation_id}.dsm.tif"
     try:
         checkpoint_sha256, checkpoint_size_bytes = _download(
             candidate.checkpoint_download_url,
@@ -372,6 +376,7 @@ def validate_checkpoint_validation(
     finally:
         checkpoint_path.unlink(missing_ok=True)
         dsm_path.unlink(missing_ok=True)
+        cleanup_attempt_workspace(work_dir, attempt_dir)
     return core.report_checkpoint_validation_observation(candidate.validation_id, measurement)
 
 

@@ -142,7 +142,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.processing_artifact import (
     ArtifactAccuracy,
     ArtifactLineage,
@@ -171,6 +171,12 @@ from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field
 
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
+from ksi_core.artifact_manifest import (
+    ArtifactManifestError,
+    ArtifactObjectBinding,
+    AuthoritativeArtifactManifestV1,
+    CandidateArtifact,
+)
 from ksi_core.auth import (
     Permission,
     Principal,
@@ -186,13 +192,24 @@ from ksi_core.evidence import (
     ALLOWED_CONTENT_TYPES,
     DEFAULT_UPLOAD_TTL,
     DEFAULT_VIEW_TTL,
+    DigestBoundEvidenceStorage,
     EvidenceStorage,
     EvidenceStorageError,
+    ObjectStorageObservationPort,
     expires_at,
     is_valid_artifact_id,
 )
 from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
-from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
+from ksi_core.leasing import (
+    JobLease,
+    LeaseDenialReason,
+    LeaseFence,
+    LeaseMode,
+    check_lease,
+    is_claimable,
+    lease_raw_fields,
+    next_lease,
+)
 from ksi_core.metrics import PROCESSING_JOB_TRANSITIONS, record_processing_job_admission
 from ksi_core.processing_profiles import (
     ProcessingProfileRegistry,
@@ -203,7 +220,13 @@ from ksi_core.source_media import (
     CaptureWindow,
     CaptureWindowView,
     GroundControlRecord,
+    SourceBundleVerifyVerdict,
+    SourceMediaMeasurement,
     SourceMediaRecord,
+    SourceMediaVerifyRequest,
+    SourceMediaVerifyResponse,
+    VerificationResult,
+    _to_bundle_view,
     capture_window_from_wire,
     capture_window_wire,
 )
@@ -245,6 +268,7 @@ def _record_processing_job_admission(result: ProcessingJobResult) -> None:
         outcome=outcome,
         reason=result.reason_code or result.verdict.value,
     )
+
 
 # lease 수명. ODM 재구성은 몇 시간이 걸리므로(ADR-KSI-012 D1 실측 3시간 27분)
 # 이 값은 "작업이 끝나는 데 걸리는 시간"이 아니라 **"워커가 죽었다고 판정하기까지
@@ -350,8 +374,7 @@ def assert_succeeded_is_backed(
     if target is not ProcessingJobStatus.SUCCEEDED:
         return
     if not any(
-        a.lineage.authority is LineageAuthority.SOURCE
-        and a.kind in SOURCE_ELIGIBLE_ARTIFACT_KINDS
+        a.lineage.authority is LineageAuthority.SOURCE and a.kind in SOURCE_ELIGIBLE_ARTIFACT_KINDS
         for a in artifacts
     ):
         raise UnbackedSuccessError(
@@ -370,9 +393,7 @@ def assert_succeeded_is_backed(
         )
 
 
-def assert_job_transition(
-    before: ProcessingJobStatus, after: ProcessingJobStatus
-) -> None:
+def assert_job_transition(before: ProcessingJobStatus, after: ProcessingJobStatus) -> None:
     """전이 적법성 — live 경로와 재생 경로가 **같은 함수**를 쓴다.
 
     ``sites.assert_site_transition`` 과 같은 역할이다. 두 경로가 각자 조건문을
@@ -422,6 +443,10 @@ class ProcessingJobVerdict(StrEnum):
     LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
     # lease 없이(또는 만료된 lease 로) 이 작업에 손대려 했다.
     LEASE_REQUIRED = "LEASE_REQUIRED"
+    LEASE_FENCE_REQUIRED = "LEASE_FENCE_REQUIRED"
+    STALE_ACQUISITION = "STALE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
     # INV-051 — 원본 산출물 없이 SUCCEEDED 를 주장했다.
     UNBACKED_SUCCESS = "UNBACKED_SUCCESS"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
@@ -447,6 +472,13 @@ class ProcessingJobVerdict(StrEnum):
     UNKNOWN_PARENT_ARTIFACT = "UNKNOWN_PARENT_ARTIFACT"
     # kind 별 crs/gsd 필수 · derived 의 부모 필수 등 계약 위반.
     ARTIFACT_CONTRACT_VIOLATION = "ARTIFACT_CONTRACT_VIOLATION"
+    ARTIFACT_MANIFEST_REQUIRED = "ARTIFACT_MANIFEST_REQUIRED"
+    ARTIFACT_UPLOAD_GRANT_REQUIRED = "ARTIFACT_UPLOAD_GRANT_REQUIRED"
+    ARTIFACT_STORAGE_OBJECT_MISSING = "ARTIFACT_STORAGE_OBJECT_MISSING"
+    ARTIFACT_STORAGE_UNVERIFIABLE = "ARTIFACT_STORAGE_UNVERIFIABLE"
+    ARTIFACT_STORAGE_SIZE_MISMATCH = "ARTIFACT_STORAGE_SIZE_MISMATCH"
+    ARTIFACT_STORAGE_DIGEST_MISMATCH = "ARTIFACT_STORAGE_DIGEST_MISMATCH"
+    ARTIFACT_STORAGE_CONTENT_TYPE_MISMATCH = "ARTIFACT_STORAGE_CONTENT_TYPE_MISMATCH"
 
 
 class ProcessingResourceLimitReason(StrEnum):
@@ -494,12 +526,23 @@ _STATUS: dict[ProcessingJobVerdict, int] = {
     # 자격증명을 의심하게 된다. 409 는 "기다렸다가 다시 잡아라"를 뜻한다.
     ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER: 409,
     ProcessingJobVerdict.LEASE_REQUIRED: 409,
+    ProcessingJobVerdict.LEASE_FENCE_REQUIRED: 409,
+    ProcessingJobVerdict.STALE_ACQUISITION: 409,
+    ProcessingJobVerdict.STALE_LEASE_GENERATION: 409,
+    ProcessingJobVerdict.IDEMPOTENCY_CONFLICT: 409,
     # 201 이다 — 아직 바이트는 없지만 "이 자리를 이 산출물이 쓴다"는 배정이
     # 이 응답으로 생긴다(발급 계열과 같은 의미).
     ProcessingJobVerdict.UPLOAD_READY: 201,
     ProcessingJobVerdict.ARTIFACT_NOT_FOUND: 404,
     # events.py 의 EvidenceVerdict.UNSUPPORTED_CONTENT_TYPE 과 같은 415.
     ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE: 415,
+    ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED: 409,
+    ProcessingJobVerdict.ARTIFACT_UPLOAD_GRANT_REQUIRED: 409,
+    ProcessingJobVerdict.ARTIFACT_STORAGE_OBJECT_MISSING: 409,
+    ProcessingJobVerdict.ARTIFACT_STORAGE_UNVERIFIABLE: 409,
+    ProcessingJobVerdict.ARTIFACT_STORAGE_SIZE_MISMATCH: 409,
+    ProcessingJobVerdict.ARTIFACT_STORAGE_DIGEST_MISMATCH: 409,
+    ProcessingJobVerdict.ARTIFACT_STORAGE_CONTENT_TYPE_MISMATCH: 409,
 }
 
 
@@ -531,8 +574,7 @@ class JobSpec:
         """Never infer a v1 profile for a pre-profile journal record."""
         return (
             "VERSIONED"
-            if self.processing_profile_id is not None
-            and self.processing_profile_digest is not None
+            if self.processing_profile_id is not None and self.processing_profile_digest is not None
             else "LEGACY_UNMANAGED"
         )
 
@@ -577,8 +619,21 @@ class ProcessingJobRecord:
     billing: Billing | None = None
     # 등록 순서대로. SUCCEEDED 게이트가 읽는 근거다(INV-051).
     artifacts: tuple[ProcessingArtifact, ...] = ()
+    # New-format registrations are generation-owned candidates until the
+    # SUCCEEDED record durably accepts their manifest.  ``artifacts`` remains
+    # the accepted projection (or the honest legacy projection).
+    artifact_candidates: tuple[CandidateArtifact, ...] = ()
+    artifact_manifest: AuthoritativeArtifactManifestV1 | None = None
+    # True only when this job has emitted generation-aware candidate/result
+    # records.  It prevents a malformed new record from falling back to legacy
+    # conventional key reconstruction.
+    manifest_aware: bool = False
     # 마지막으로 발급된 lease. 만료 여부는 이 값이 아니라 ``now`` 가 정한다.
     lease: JobLease | None = None
+    # New-format terminal mutations retain the exact fence that committed the
+    # result.  This is both replay evidence and the idempotency identity for a
+    # lost SUCCEEDED/FAILED response; authentication principal is not owner.
+    terminal_lease_fence: LeaseFence | None = None
     # SUCCEEDED 전이 때 source-media projection에서 복사해 journal에 고정한 값.
     # legacy journal과 아직 끝나지 않은 작업은 INCOMPLETE이며 registeredAt으로
     # 추정하지 않는다(INV-020·040).
@@ -602,11 +657,7 @@ class ProcessingJobRecord:
 
     @property
     def resource_policy_id(self) -> str | None:
-        return (
-            self.resource_policy.resource_policy_id
-            if self.resource_policy is not None
-            else None
-        )
+        return self.resource_policy.resource_policy_id if self.resource_policy is not None else None
 
     @property
     def resource_policy_digest(self) -> str | None:
@@ -683,6 +734,8 @@ class ArtifactSpec:
     # 방법이 없고, 확인할 수 없는 값을 기본값으로 채우지도 않는다: None 이면
     # "수직기준이 기록되지 않은 산출물"로 그대로 남는다(processing_artifact.py).
     vertical_reference: VerticalReference | None = None
+    primary: ArtifactObjectBinding | None = None
+    auxiliary_objects: tuple[tuple[str, ArtifactObjectBinding], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -690,6 +743,7 @@ class ArtifactResult:
     verdict: ProcessingJobVerdict
     artifact: ProcessingArtifact | None = None
     detail: str | None = None
+    candidate: CandidateArtifact | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -715,7 +769,12 @@ class JobInputResult:
 
 
 def build_processing_artifact_object_key(
-    *, site_id: str, job_id: str, artifact_id: str, filename: str | None = None
+    *,
+    site_id: str,
+    job_id: str,
+    artifact_id: str,
+    filename: str | None = None,
+    lease_generation: int | None = None,
 ) -> str:
     """산출물 바이트가 놓이는 자리 — **저장하지 않고 유도한다**.
 
@@ -743,7 +802,10 @@ def build_processing_artifact_object_key(
         raise ValueError(f"경로-안전하지 않은 jobId: {job_id!r}")
     if not is_valid_artifact_id(artifact_id):
         raise ValueError(f"경로-안전하지 않은 artifactId: {artifact_id!r}")
-    base = f"sites/{site_id}/processing-jobs/{job_id}/artifacts/{artifact_id}"
+    if lease_generation is not None and lease_generation < 1:
+        raise ValueError("leaseGeneration must be >= 1 for a fenced artifact key")
+    generation_segment = f"/attempts/{lease_generation}" if lease_generation is not None else ""
+    base = f"sites/{site_id}/processing-jobs/{job_id}{generation_segment}/artifacts/{artifact_id}"
     if filename is None:
         return base
     if not is_path_safe_identifier(filename):
@@ -764,6 +826,117 @@ class ArtifactUploadTargetResult:
     verdict: ProcessingJobVerdict
     object_key: str | None = None
     detail: str | None = None
+    lease_generation: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactUploadGrant:
+    """Durable authorization to publish one exact generation-owned object."""
+
+    job_id: str
+    artifact_id: str
+    filename: str | None
+    lease_fence: LeaseFence
+    granted_by: str | None
+    binding: ArtifactObjectBinding
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "jobId": self.job_id,
+            "artifactId": self.artifact_id,
+            "filename": self.filename,
+            "leaseGeneration": self.lease_fence.lease_generation,
+            "leaseFence": {
+                "workerInstanceId": self.lease_fence.worker_instance_id,
+                "leaseAcquisitionId": self.lease_fence.lease_acquisition_id,
+                "leaseGeneration": self.lease_fence.lease_generation,
+            },
+            "grantedBy": self.granted_by,
+            "binding": self.binding.to_wire(),
+        }
+
+    @classmethod
+    def from_wire(cls, raw: dict[str, Any]) -> ArtifactUploadGrant:
+        return cls(
+            job_id=str(raw["jobId"]),
+            artifact_id=str(raw["artifactId"]),
+            filename=raw.get("filename"),
+            lease_fence=LeaseFence(
+                worker_instance_id=str(raw["leaseFence"]["workerInstanceId"]),
+                lease_acquisition_id=str(raw["leaseFence"]["leaseAcquisitionId"]),
+                lease_generation=int(raw["leaseFence"]["leaseGeneration"]),
+            ),
+            granted_by=raw.get("grantedBy"),
+            binding=ArtifactObjectBinding.from_wire(raw["binding"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptedArtifactObjectObservation:
+    """Bounded HEAD facts accepted before one fenced object was published."""
+
+    filename: str | None
+    binding: ArtifactObjectBinding
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"filename": self.filename, "binding": self.binding.to_wire()}
+
+    @classmethod
+    def from_wire(cls, raw: dict[str, Any]) -> AcceptedArtifactObjectObservation:
+        return cls(
+            filename=raw.get("filename"),
+            binding=ArtifactObjectBinding.from_wire(raw["binding"]),
+        )
+
+@dataclass(frozen=True, slots=True)
+class ResolvedProcessingArtifact:
+    """Accepted artifact metadata plus its authoritative byte bindings.
+
+    ``legacy=True`` is the only state allowed to derive conventional keys.  A
+    manifest-aware record with a missing/incomplete manifest is never returned.
+    """
+
+    record: ProcessingJobRecord
+    artifact: ProcessingArtifact
+    primary: ArtifactObjectBinding | None
+    auxiliary_files: tuple[tuple[str, ArtifactObjectBinding], ...]
+    legacy: bool
+
+    @property
+    def object_key(self) -> str:
+        if self.primary is not None:
+            return self.primary.object_key
+        if not self.legacy:
+            raise ArtifactManifestError("new-format artifact has no primary object binding")
+        return build_processing_artifact_object_key(
+            site_id=self.record.site_id,
+            job_id=self.record.job_id,
+            artifact_id=self.artifact.artifact_id,
+        )
+
+    def auxiliary_object_keys(self) -> dict[str, str]:
+        if self.primary is not None:
+            return {name: binding.object_key for name, binding in self.auxiliary_files}
+        if not self.legacy:
+            raise ArtifactManifestError("new-format artifact has no auxiliary bindings")
+        return {
+            name: build_processing_artifact_object_key(
+                site_id=self.record.site_id,
+                job_id=self.record.job_id,
+                artifact_id=self.artifact.artifact_id,
+                filename=name,
+            )
+            for name in self.artifact.auxiliary_files
+        }
+
+
+def authoritative_artifacts(record: ProcessingJobRecord) -> tuple[ProcessingArtifact, ...]:
+    """Return the only artifact set allowed to influence product projections."""
+    if record.artifact_manifest is not None:
+        return tuple(entry.artifact for entry in record.artifact_manifest.entries)
+    if record.manifest_aware:
+        return ()
+    return record.artifacts
 
 
 def build_job_id(mission_id: str, sequence: int) -> str:
@@ -792,9 +965,7 @@ def _require_aware_iso(raw: Any, field_name: str, job_id: str) -> datetime:
             f"재생: {field_name} 가 ISO 시각이 아니다({raw!r}) — jobId={job_id}"
         ) from exc
     if parsed.tzinfo is None:
-        raise ProcessingJobRecoveryError(
-            f"재생: {field_name} 가 naive datetime — jobId={job_id}"
-        )
+        raise ProcessingJobRecoveryError(f"재생: {field_name} 가 naive datetime — jobId={job_id}")
     return parsed
 
 
@@ -877,6 +1048,7 @@ class ProcessingJobStore:
         processing_profile_registry: ProcessingProfileRegistry | None = None,
         processing_resource_policy_registry: ProcessingResourcePolicyRegistry | None = None,
         processing_profile_issuance_enabled: bool = True,
+        artifact_storage_observer: ObjectStorageObservationPort | None = None,
     ) -> None:
         self._journal = journal
         self._source_media = source_media_store
@@ -886,8 +1058,14 @@ class ProcessingJobStore:
             processing_resource_policy_registry or ProcessingResourcePolicyRegistry()
         )
         self._processing_profile_issuance_enabled = processing_profile_issuance_enabled
+        self._artifact_storage_observer = artifact_storage_observer
         self._lock = threading.Lock()
         self._jobs: dict[str, ProcessingJobRecord] = {}
+        self._lease_generation_highwater: dict[str, int] = {}
+        self._lease_acquisitions: dict[str, tuple[str, str, str | None, JobLease]] = {}
+        self._artifact_upload_grants: dict[
+            tuple[str, int, str, str | None], ArtifactUploadGrant
+        ] = {}
         # missionId → 발급된 작업 수(다음 jobId 순번의 근거)
         self._sequence: dict[str, int] = {}
         try:
@@ -901,6 +1079,10 @@ class ProcessingJobStore:
                 f"processing-job journal 재생 실패 — 오염된 레코드: {exc}"
             ) from exc
 
+    def set_artifact_storage_observer(self, observer: ObjectStorageObservationPort) -> None:
+        """Bind the assembled runtime's metadata-only observer before serving writes."""
+        self._artifact_storage_observer = observer
+
     # ── 재생 ────────────────────────────────────────────────────────────
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -911,10 +1093,42 @@ class ProcessingJobStore:
                 self._replay_transition(raw)
             elif kind == "processing-artifact-registered":
                 self._replay_artifact(raw)
+            elif kind == "processing-artifact-upload-granted":
+                self._replay_upload_grant(raw)
             elif kind == "processing-job-leased":
                 self._replay_lease(raw)
             else:  # pragma: no cover - 방어적, journal 오염이 아닌 이상 도달 불가
                 raise ProcessingJobRecoveryError(f"알 수 없는 journal 레코드 kind: {kind!r}")
+
+    def _replay_upload_grant(self, raw: dict[str, Any]) -> None:
+        try:
+            grant = ArtifactUploadGrant.from_wire(raw)
+        except (KeyError, TypeError, ValueError, ArtifactManifestError) as exc:
+            raise ProcessingJobRecoveryError(f"재생: upload grant가 잘못됐다: {exc}") from exc
+        job = self._jobs.get(grant.job_id)
+        if job is None or grant.lease_fence.lease_generation < 1:
+            raise ProcessingJobRecoveryError(
+                "재생: upload grant가 미지 job 또는 generation을 가리킨다"
+            )
+        granted_at = _require_aware_iso(raw["ts"], "ts", grant.job_id)
+        if (
+            job.lease is None
+            or check_lease(
+                job.lease,
+                fence=grant.lease_fence,
+                authenticated_actor_id=grant.granted_by,
+                now=granted_at,
+            )
+            is not None
+        ):
+            raise ProcessingJobRecoveryError(
+                "재생: upload grant가 당시 authoritative lease fence에 속하지 않는다"
+            )
+        key = (grant.job_id, grant.lease_fence.lease_generation, grant.artifact_id, grant.filename)
+        existing = self._artifact_upload_grants.get(key)
+        if existing is not None and existing != grant:
+            raise ProcessingJobRecoveryError("재생: 동일 artifact upload grant가 충돌한다")
+        self._artifact_upload_grants[key] = grant
 
     def _replay_issued(self, raw: dict[str, Any]) -> None:
         job_id = raw["jobId"]
@@ -951,10 +1165,7 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 f"재생: 발급 레코드가 계약을 만족하지 않는다 — jobId={job_id}: {exc}"
             ) from exc
-        if (
-            spec.execution_locus is ExecutionLocus.VENDOR_CLOUD
-            and not residency.egress_allowed
-        ):
+        if spec.execution_locus is ExecutionLocus.VENDOR_CLOUD and not residency.egress_allowed:
             # live 는 이 조합을 절대 발급하지 않는다 — 있다면 journal 조작이거나
             # 발급 게이트가 깨진 것이다(source_media._replay_seal 과 같은 원칙).
             raise ProcessingJobRecoveryError(
@@ -968,8 +1179,7 @@ class ProcessingJobStore:
             resource_policy.resource_policy_digest != policy_digest_raw
         ):
             raise ProcessingJobRecoveryError(
-                "재생: resource policy snapshot digest가 journal binding과 다르다 — jobId="
-                + job_id
+                "재생: resource policy snapshot digest가 journal binding과 다르다 — jobId=" + job_id
             )
         if resource_policy is not None:
             bundle = self._source_media.get(raw["missionId"])
@@ -1035,13 +1245,106 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 f"재생: 불법 전이 레코드 — jobId={job_id}: {exc}"
             ) from exc
+        terminal_fence = current.terminal_lease_fence
+        transition_fence: LeaseFence | None = None
+        if current.manifest_aware and after is not ProcessingJobStatus.CANCELLED:
+            fence_raw = raw.get("leaseFence")
+            if not isinstance(fence_raw, dict):
+                raise ProcessingJobRecoveryError(
+                    f"재생: generation-aware worker 전이에 leaseFence가 없다 — jobId={job_id}"
+                )
+            try:
+                transition_fence = LeaseFence(
+                    worker_instance_id=str(fence_raw["workerInstanceId"]),
+                    lease_acquisition_id=str(fence_raw["leaseAcquisitionId"]),
+                    lease_generation=int(fence_raw["leaseGeneration"]),
+                )
+                transitioned_at = _require_aware_iso(raw["ts"], "ts", job_id)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ProcessingJobRecoveryError(
+                    f"재생: worker 전이 leaseFence가 잘못됐다 — jobId={job_id}: {exc}"
+                ) from exc
+            if (
+                current.lease is None
+                or check_lease(
+                    current.lease,
+                    fence=transition_fence,
+                    authenticated_actor_id=raw.get("actor"),
+                    now=transitioned_at,
+                )
+                is not None
+            ):
+                raise ProcessingJobRecoveryError(
+                    f"재생: worker 전이가 당시 authoritative lease fence와 다르다 — jobId={job_id}"
+                )
+            if (
+                current.lease.authenticated_actor_id is not None
+                and raw.get("actor") != current.lease.authenticated_actor_id
+            ):
+                raise ProcessingJobRecoveryError(
+                    f"재생: worker 전이 actor가 lease audit principal과 다르다 — jobId={job_id}"
+                )
+            if after in {ProcessingJobStatus.SUCCEEDED, ProcessingJobStatus.FAILED}:
+                terminal_fence = transition_fence
+        accepted_artifacts = current.artifacts
+        accepted_manifest = current.artifact_manifest
         try:
+            if after is ProcessingJobStatus.SUCCEEDED and current.manifest_aware:
+                manifest_raw = raw.get("artifactManifest")
+                if not isinstance(manifest_raw, dict):
+                    raise ArtifactManifestError(
+                        "manifest-aware success record is missing artifactManifest"
+                    )
+                accepted_manifest = AuthoritativeArtifactManifestV1.from_wire(manifest_raw)
+                if accepted_manifest.job_id != job_id:
+                    raise ArtifactManifestError("artifact manifest jobId mismatch")
+                if (
+                    transition_fence is None
+                    or accepted_manifest.producing_worker_instance_id
+                    != transition_fence.worker_instance_id
+                    or accepted_manifest.lease_acquisition_id
+                    != transition_fence.lease_acquisition_id
+                    or accepted_manifest.lease_generation
+                    != transition_fence.lease_generation
+                    or raw.get("acceptedLeaseGeneration")
+                    != transition_fence.lease_generation
+                ):
+                    raise ArtifactManifestError(
+                        "success manifest does not belong to the committing lease fence"
+                    )
+                if raw.get("artifactManifestDigest") != accepted_manifest.manifest_digest:
+                    raise ArtifactManifestError("success record manifest digest mismatch")
+                candidates = tuple(
+                    sorted(
+                        (
+                            candidate
+                            for candidate in current.artifact_candidates
+                            if candidate.lease_generation == accepted_manifest.lease_generation
+                        ),
+                        key=lambda item: item.artifact.artifact_id,
+                    )
+                )
+                if tuple(candidate.to_wire() for candidate in candidates) != tuple(
+                    candidate.to_wire() for candidate in accepted_manifest.entries
+                ):
+                    raise ArtifactManifestError(
+                        "success manifest does not exactly bind its generation candidates"
+                    )
+                accepted_artifacts = tuple(
+                    candidate.artifact for candidate in accepted_manifest.entries
+                )
+            elif after is ProcessingJobStatus.SUCCEEDED and "artifactManifest" in raw:
+                raise ArtifactManifestError(
+                    "legacy success cannot contain an unclassified artifact manifest"
+                )
             # 재생이 live 와 같은 게이트를 다시 태운다 — 산출물 레코드를 지우고
             # SUCCEEDED 전이만 남겨 근거 없는 성공을 되살릴 수 없다.
             assert_succeeded_is_backed(
-                after, current.artifacts, input_verified=self.is_input_verified(current)
+                after, accepted_artifacts, input_verified=self.is_input_verified(current)
             )
-        except UnbackedSuccessError as exc:
+            if after is ProcessingJobStatus.SUCCEEDED and current.manifest_aware:
+                self._assert_profile_required_artifacts(current, accepted_artifacts)
+        except (UnbackedSuccessError, ArtifactManifestError) as exc:
             raise ProcessingJobRecoveryError(
                 f"재생: 근거 없는 SUCCEEDED 레코드 — jobId={job_id}: {exc}"
             ) from exc
@@ -1070,6 +1373,9 @@ class ProcessingJobStore:
             updated_at=_require_aware_iso(raw["ts"], "ts", job_id),
             terminal_detail=raw.get("detail"),
             capture_window=capture_window,
+            artifacts=accepted_artifacts,
+            artifact_manifest=accepted_manifest,
+            terminal_lease_fence=terminal_fence,
         )
 
     def _replay_artifact(self, raw: dict[str, Any]) -> None:
@@ -1083,8 +1389,18 @@ class ProcessingJobStore:
         job = self._jobs.get(job_id)
         if job is None:
             raise ProcessingJobRecoveryError(f"재생: 미지 jobId 산출물 레코드 — jobId={job_id}")
+        candidate_raw = raw.get("candidate")
         try:
-            artifact = ProcessingArtifact.model_validate(raw["artifact"])
+            candidate = (
+                CandidateArtifact.from_wire(candidate_raw)
+                if isinstance(candidate_raw, dict)
+                else None
+            )
+            artifact = (
+                candidate.artifact
+                if candidate is not None
+                else ProcessingArtifact.model_validate(raw["artifact"])
+            )
         except (ValueError, KeyError, TypeError) as exc:
             raise ProcessingJobRecoveryError(
                 f"재생: 산출물 레코드가 계약을 만족하지 않는다 — jobId={job_id}: {exc}"
@@ -1104,13 +1420,98 @@ class ProcessingJobStore:
                 f"재생: 실행 중이 아닌 작업({job.status.value})에 산출물 레코드가 있다 "
                 f"— jobId={job_id} artifactId={artifact.artifact_id}"
             )
-        verdict, detail = self._check_artifact_identity_locked(job, artifact)
+        if candidate is not None:
+            if candidate.lease_generation < 1:
+                raise ProcessingJobRecoveryError(
+                    f"재생: candidate generation이 유효하지 않다 — jobId={job_id}"
+                )
+            candidate_fence = LeaseFence(
+                candidate.worker_instance_id,
+                candidate.lease_acquisition_id,
+                candidate.lease_generation,
+            )
+            registered_at = _require_aware_iso(raw["ts"], "ts", job_id)
+            if (
+                job.lease is None
+                or check_lease(
+                    job.lease,
+                    fence=candidate_fence,
+                    authenticated_actor_id=raw.get("registeredBy"),
+                    now=registered_at,
+                )
+                is not None
+            ):
+                raise ProcessingJobRecoveryError(
+                    "재생: candidate가 당시 authoritative lease fence에 속하지 않는다 "
+                    f"— jobId={job_id}"
+                )
+            if (
+                job.lease.authenticated_actor_id is not None
+                and raw.get("registeredBy") != job.lease.authenticated_actor_id
+            ):
+                raise ProcessingJobRecoveryError(
+                    f"재생: candidate 등록 actor가 lease audit principal과 다르다 — jobId={job_id}"
+                )
+            if raw.get("artifact") is not None:
+                try:
+                    legacy_copy = ProcessingArtifact.model_validate(raw["artifact"])
+                except ValueError as exc:
+                    raise ProcessingJobRecoveryError(
+                        f"재생: candidate artifact 사본이 잘못됐다 — jobId={job_id}: {exc}"
+                    ) from exc
+                if legacy_copy != artifact:
+                    raise ProcessingJobRecoveryError(
+                        f"재생: candidate와 artifact 사본이 다르다 — jobId={job_id}"
+                    )
+            observations_raw = raw.get("acceptedObjectObservations")
+            if not isinstance(observations_raw, list):
+                raise ProcessingJobRecoveryError(
+                    f"재생: fenced candidate observation evidence가 없다 — jobId={job_id}"
+                )
+            try:
+                observations = tuple(
+                    AcceptedArtifactObjectObservation.from_wire(item)
+                    for item in observations_raw
+                    if isinstance(item, dict)
+                )
+            except (KeyError, TypeError, ValueError, ArtifactManifestError) as exc:
+                raise ProcessingJobRecoveryError(
+                    f"재생: fenced candidate observation evidence가 잘못됐다: {exc}"
+                ) from exc
+            expected_bindings = ((None, candidate.primary), *candidate.auxiliary_files)
+            if len(observations) != len(observations_raw) or tuple(
+                (item.filename, item.binding) for item in observations
+            ) != expected_bindings:
+                raise ProcessingJobRecoveryError(
+                    "재생: candidate observation evidence가 exact binding과 다르다 "
+                    f"— jobId={job_id}"
+                )
+            for filename, binding in expected_bindings:
+                grant = self._artifact_upload_grants.get(
+                    (job_id, candidate.lease_generation, artifact.artifact_id, filename)
+                )
+                if grant is None or grant.binding != binding:
+                    raise ProcessingJobRecoveryError(
+                        f"재생: candidate에 exact durable upload grant가 없다 — jobId={job_id}"
+                    )
+        verdict, detail = self._check_artifact_identity_locked(
+            job, artifact, lease_generation=(candidate.lease_generation if candidate else None)
+        )
         if verdict is not None:
             raise ProcessingJobRecoveryError(
                 f"재생: 산출물 레코드가 등록 게이트를 통과하지 못한다 "
                 f"({verdict.value}) — jobId={job_id}: {detail}"
             )
-        self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact))
+        if candidate is None:
+            # Genuine pre-manifest record: retain the legacy projection and its
+            # explicitly limited conventional-key compatibility.
+            self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact))
+        else:
+            self._jobs[job_id] = replace(
+                job,
+                artifact_candidates=(*job.artifact_candidates, candidate),
+                manifest_aware=True,
+            )
 
     def _replay_lease(self, raw: dict[str, Any]) -> None:
         """lease 레코드 재생 — **만료 재판정을 하지 않는다.**
@@ -1133,14 +1534,81 @@ class ProcessingJobStore:
             raise ProcessingJobRecoveryError(
                 f"재생: 종료된 작업({job.status.value})에 lease 레코드가 있다 — jobId={job_id}"
             )
-        self._jobs[job_id] = replace(
-            job,
-            lease=JobLease(
-                worker_id=raw["workerId"],
-                granted_at=_require_aware_iso(raw["ts"], "ts", job_id),
-                expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", job_id),
-            ),
-        )
+        generation_raw = raw.get("leaseGeneration")
+        if generation_raw is None:
+            # Genuine historical lease.  It remains readable as generation 0
+            # but cannot satisfy a new fenced mutation.
+            self._jobs[job_id] = replace(
+                job,
+                lease=JobLease(
+                    worker_id=raw["workerId"],
+                    granted_at=_require_aware_iso(raw["ts"], "ts", job_id),
+                    expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", job_id),
+                ),
+            )
+            return
+        try:
+            generation = int(generation_raw)
+            acquisition_id = str(raw["leaseAcquisitionId"])
+            instance_id = str(raw["workerInstanceId"])
+            actor_id = raw.get("authenticatedActorId")
+            mode = LeaseMode(str(raw["leaseMode"]))
+            leased_at = _require_aware_iso(raw["ts"], "ts", job_id)
+            expires_at = _require_aware_iso(raw["expiresAt"], "expiresAt", job_id)
+            if raw.get("workerId") != instance_id:
+                raise ValueError("workerId alias differs from workerInstanceId")
+            if raw.get("renewal") is not (mode is LeaseMode.RENEW):
+                raise ValueError("renewal flag differs from leaseMode")
+            if expires_at <= leased_at:
+                raise ValueError("expiresAt must be after lease event time")
+            lease = next_lease(
+                worker_instance_id=instance_id,
+                lease_acquisition_id=acquisition_id,
+                lease_generation=generation,
+                authenticated_actor_id=(str(actor_id) if actor_id is not None else None),
+                now=leased_at,
+                ttl=expires_at - leased_at,
+                granted_at=(
+                    job.lease.granted_at if mode is LeaseMode.RENEW and job.lease else None
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProcessingJobRecoveryError(
+                f"재생: generation-aware lease가 잘못됐다 — jobId={job_id}: {exc}"
+            ) from exc
+        fence = lease.fence
+        if fence is None or not fence.is_well_formed():
+            raise ProcessingJobRecoveryError(f"재생: lease fence가 유효하지 않다 — jobId={job_id}")
+        highwater = self._lease_generation_highwater.get(job_id, 0)
+        existing_binding = self._lease_acquisitions.get(acquisition_id)
+        binding = (job_id, instance_id, lease.authenticated_actor_id, lease)
+        if mode is LeaseMode.CLAIM:
+            if generation != highwater + 1:
+                raise ProcessingJobRecoveryError(
+                    f"재생: CLAIM generation이 단조 증가하지 않는다 — jobId={job_id}"
+                )
+            if existing_binding is not None:
+                raise ProcessingJobRecoveryError(
+                    f"재생: leaseAcquisitionId가 재사용됐다 — jobId={job_id}"
+                )
+            self._lease_generation_highwater[job_id] = generation
+            self._lease_acquisitions[acquisition_id] = binding
+        else:
+            current = job.lease
+            if (
+                current is None
+                or current.worker_instance_id != instance_id
+                or current.lease_acquisition_id != acquisition_id
+                or current.lease_generation != generation
+                or highwater != generation
+                or existing_binding is None
+                or current.authenticated_actor_id != lease.authenticated_actor_id
+                or existing_binding[2] != lease.authenticated_actor_id
+            ):
+                raise ProcessingJobRecoveryError(
+                    f"재생: RENEW가 현재 CLAIM fence/principal과 일치하지 않는다 — jobId={job_id}"
+                )
+        self._jobs[job_id] = replace(job, lease=lease, manifest_aware=True)
 
     def is_input_verified(self, record: ProcessingJobRecord) -> bool:
         """이 작업의 입력 번들이 실측 대조를 통과했는가.
@@ -1192,9 +1660,14 @@ class ProcessingJobStore:
         job_id: str,
         *,
         artifact_id: str,
-        worker_id: str,
         now: datetime,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        authenticated_actor_id: str | None = None,
         filename: str | None = None,
+        sha256: str | None = None,
+        size_bytes: int | None = None,
+        content_type: str | None = None,
     ) -> ArtifactUploadTargetResult:
         """산출물 바이트를 올릴 자리를 정한다 — ``input_for`` 와 같은 관문을 통과한다.
 
@@ -1225,26 +1698,84 @@ class ProcessingJobStore:
                         "바이트를 더 쓰지 않는다"
                     ),
                 )
-            denied = self._check_lease_locked(record, worker_id=worker_id, now=now)
+            denied = self._check_lease_locked(
+                record, worker_id=worker_id, lease_fence=lease_fence,
+                authenticated_actor_id=authenticated_actor_id, now=now
+            )
             if denied is not None:
                 return ArtifactUploadTargetResult(denied[0], detail=denied[1])
-            site_id = record.site_id
-
-        try:
-            object_key = build_processing_artifact_object_key(
-                site_id=site_id, job_id=job_id, artifact_id=artifact_id, filename=filename
+            lease_generation = lease_fence.lease_generation if lease_fence is not None else None
+            try:
+                object_key = build_processing_artifact_object_key(
+                    site_id=record.site_id,
+                    job_id=job_id,
+                    artifact_id=artifact_id,
+                    filename=filename,
+                    lease_generation=lease_generation,
+                )
+            except ValueError as exc:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.INVALID_ARTIFACT_ID, detail=str(exc)
+                )
+            if lease_generation is None:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.UPLOAD_READY,
+                    object_key=object_key,
+                    lease_generation=None,
+                )
+            if sha256 is None or size_bytes is None or content_type is None:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED,
+                    detail="fenced upload grant requires sha256, sizeBytes, and contentType",
+                )
+            try:
+                binding = ArtifactObjectBinding(
+                    object_key=object_key,
+                    sha256=sha256,
+                    size_bytes=size_bytes,
+                    content_type=content_type,
+                )
+            except ArtifactManifestError as exc:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION, detail=str(exc)
+                )
+            assert lease_fence is not None
+            grant = ArtifactUploadGrant(
+                job_id, artifact_id, filename, lease_fence, authenticated_actor_id, binding
             )
-        except ValueError as exc:
-            return ArtifactUploadTargetResult(
-                ProcessingJobVerdict.INVALID_ARTIFACT_ID, detail=str(exc)
-            )
+            key = (job_id, lease_generation, artifact_id, filename)
+            existing = self._artifact_upload_grants.get(key)
+            if existing is not None:
+                if existing != grant:
+                    return ArtifactUploadTargetResult(
+                        ProcessingJobVerdict.IDEMPOTENCY_CONFLICT,
+                        detail="conflicting upload grant reissue for the same artifact identity",
+                    )
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.UPLOAD_READY, object_key=object_key,
+                    lease_generation=lease_generation,
+                )
+            try:
+                self._journal.append({
+                    "kind": "processing-artifact-upload-granted", "ts": iso_utc(now),
+                    **grant.to_wire(),
+                })
+            except JournalSealedError:
+                return ArtifactUploadTargetResult(
+                    ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
+                )
+            self._artifact_upload_grants[key] = grant
         return ArtifactUploadTargetResult(
-            ProcessingJobVerdict.UPLOAD_READY, object_key=object_key
+            ProcessingJobVerdict.UPLOAD_READY, object_key=object_key,
+            lease_generation=lease_generation,
         )
 
     @staticmethod
     def _check_artifact_identity_locked(
-        job: ProcessingJobRecord, artifact: ProcessingArtifact
+        job: ProcessingJobRecord,
+        artifact: ProcessingArtifact,
+        *,
+        lease_generation: int | None = None,
     ) -> tuple[ProcessingJobVerdict | None, str | None]:
         """artifactId 유효성·중복·부모 실재 — live 와 재생이 공유하는 판정.
 
@@ -1256,7 +1787,14 @@ class ProcessingJobStore:
                 ProcessingJobVerdict.INVALID_ARTIFACT_ID,
                 f"artifactId 가 경로-안전하지 않다: {artifact.artifact_id!r}",
             )
-        known = {a.artifact_id for a in job.artifacts}
+        if lease_generation is None:
+            known = {a.artifact_id for a in job.artifacts}
+        else:
+            known = {
+                candidate.artifact.artifact_id
+                for candidate in job.artifact_candidates
+                if candidate.lease_generation == lease_generation
+            }
         if artifact.artifact_id in known:
             return (
                 ProcessingJobVerdict.DUPLICATE_ARTIFACT,
@@ -1297,18 +1835,14 @@ class ProcessingJobStore:
         ``UNKNOWN_MISSION`` 과 같은 판정으로 접는다(열거 오라클 방지).
         """
         _require_tz_aware(now, param="now")
-        if (spec.processing_profile_id is None) != (
-            spec.processing_profile_digest is None
-        ):
+        if (spec.processing_profile_id is None) != (spec.processing_profile_digest is None):
             return ProcessingJobResult(
                 ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE,
                 detail="processing profile binding은 id와 digest가 함께 있어야 한다",
             )
         if spec.processing_profile_id is not None:
             try:
-                canonical_spec = self.resolve_processing_profile(
-                    spec.processing_profile_id
-                )
+                canonical_spec = self.resolve_processing_profile(spec.processing_profile_id)
             except UnknownProcessingProfileError:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_PROCESSING_PROFILE,
@@ -1360,10 +1894,7 @@ class ProcessingJobStore:
 
             site = self._sites.get(bundle.site_id)
             residency = _residency_of(site)
-            if (
-                spec.execution_locus is ExecutionLocus.VENDOR_CLOUD
-                and not residency.egress_allowed
-            ):
+            if spec.execution_locus is ExecutionLocus.VENDOR_CLOUD and not residency.egress_allowed:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.EGRESS_NOT_ALLOWED,
                     detail=(
@@ -1378,9 +1909,7 @@ class ProcessingJobStore:
                     # All identity, sealed-bundle, and INV-050 checks above
                     # still apply.  Only today's resource policy must not
                     # reinterpret a pre-existing idempotent active job.
-                    return ProcessingJobResult(
-                        ProcessingJobVerdict.ALREADY_ISSUED, record=active
-                    )
+                    return ProcessingJobResult(ProcessingJobVerdict.ALREADY_ISSUED, record=active)
                 return ProcessingJobResult(
                     ProcessingJobVerdict.ACTIVE_JOB_EXISTS,
                     detail=(
@@ -1497,6 +2026,33 @@ class ProcessingJobStore:
             processing_profile_digest=profile.profile_digest,
         )
 
+    def _assert_profile_required_artifacts(
+        self,
+        job: ProcessingJobRecord,
+        artifacts: Sequence[ProcessingArtifact],
+    ) -> None:
+        """Require the exact immutable profile outputs for versioned success."""
+
+        if job.processing_profile_id is None:
+            return
+        try:
+            profile = self._processing_profiles.get(job.processing_profile_id)
+        except UnknownProcessingProfileError as exc:
+            raise ArtifactManifestError(
+                "versioned success references a processing profile unavailable to Core"
+            ) from exc
+        if profile.profile_digest != job.processing_profile_digest:
+            raise ArtifactManifestError(
+                "versioned success processing profile digest differs from the Core registry"
+            )
+        present = {artifact.kind.value for artifact in artifacts}
+        missing = sorted(set(profile.required_artifacts) - present)
+        if missing:
+            raise ArtifactManifestError(
+                "authoritative artifact manifest is missing profile-required artifacts: "
+                + ", ".join(missing)
+            )
+
     def transition(
         self,
         job_id: str,
@@ -1506,6 +2062,7 @@ class ProcessingJobStore:
         actor: str,
         now: datetime,
         requires_lease: bool = True,
+        lease_fence: LeaseFence | None = None,
     ) -> ProcessingJobResult:
         """작업 상태를 전이한다 — 전이표는 :func:`assert_job_transition` SSOT.
 
@@ -1529,24 +2086,89 @@ class ProcessingJobStore:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
                 )
+            if (
+                requires_lease
+                and target in {ProcessingJobStatus.SUCCEEDED, ProcessingJobStatus.FAILED}
+                and current.status is target
+                and current.terminal_lease_fence is not None
+            ):
+                # A terminal response can be lost after the append.  The exact
+                # generation/payload retry returns the already durable result
+                # without requiring the now-terminal lease to remain active.
+                if lease_fence != current.terminal_lease_fence:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                        record=current,
+                        detail="terminal mutation belongs to another lease generation",
+                    )
+                if (
+                    current.lease is not None
+                    and current.lease.authenticated_actor_id is not None
+                    and actor != current.lease.authenticated_actor_id
+                ):
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                        record=current,
+                        detail="terminal mutation belongs to another authenticated principal",
+                    )
+                if detail != current.terminal_detail:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.IDEMPOTENCY_CONFLICT,
+                        record=current,
+                        detail="terminal mutation retry changed its payload",
+                    )
+                return ProcessingJobResult(ProcessingJobVerdict.TRANSITIONED, record=current)
             if requires_lease:
-                denied = self._check_lease_locked(current, worker_id=actor, now=now)
+                denied = self._check_lease_locked(
+                    current,
+                    worker_id=(actor if lease_fence is None else None),
+                    lease_fence=lease_fence,
+                    authenticated_actor_id=actor if lease_fence is not None else None,
+                    now=now,
+                )
                 if denied is not None:
                     return ProcessingJobResult(denied[0], record=current, detail=denied[1])
             try:
                 assert_job_transition(current.status, target)
             except IllegalJobTransitionError as exc:
-                return ProcessingJobResult(
-                    ProcessingJobVerdict.ILLEGAL_TRANSITION, detail=str(exc)
+                return ProcessingJobResult(ProcessingJobVerdict.ILLEGAL_TRANSITION, detail=str(exc))
+            manifest: AuthoritativeArtifactManifestV1 | None = None
+            completion_artifacts = current.artifacts
+            if target is ProcessingJobStatus.SUCCEEDED and lease_fence is not None:
+                candidates = tuple(
+                    candidate
+                    for candidate in current.artifact_candidates
+                    if candidate.lease_generation == lease_fence.lease_generation
                 )
+                completion_artifacts = tuple(candidate.artifact for candidate in candidates)
+                try:
+                    manifest = AuthoritativeArtifactManifestV1.create(
+                        job_id=job_id,
+                        producing_worker_instance_id=lease_fence.worker_instance_id,
+                        lease_acquisition_id=lease_fence.lease_acquisition_id,
+                        lease_generation=lease_fence.lease_generation,
+                        entries=candidates,
+                    )
+                except ArtifactManifestError as exc:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED, detail=str(exc)
+                    )
             try:
                 assert_succeeded_is_backed(
-                    target, current.artifacts, input_verified=self.is_input_verified(current)
+                    target,
+                    completion_artifacts,
+                    input_verified=self.is_input_verified(current),
                 )
             except UnbackedSuccessError as exc:
-                return ProcessingJobResult(
-                    ProcessingJobVerdict.UNBACKED_SUCCESS, detail=str(exc)
-                )
+                return ProcessingJobResult(ProcessingJobVerdict.UNBACKED_SUCCESS, detail=str(exc))
+            if target is ProcessingJobStatus.SUCCEEDED and lease_fence is not None:
+                try:
+                    self._assert_profile_required_artifacts(current, completion_artifacts)
+                except ArtifactManifestError as exc:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED,
+                        detail=str(exc),
+                    )
             raw: dict[str, Any] = {
                 "kind": "processing-job-transitioned",
                 "ts": iso_utc(now),
@@ -1556,6 +2178,12 @@ class ProcessingJobStore:
                 "detail": detail,
                 "actor": actor,
             }
+            if requires_lease and lease_fence is not None:
+                raw["leaseFence"] = {
+                    "workerInstanceId": lease_fence.worker_instance_id,
+                    "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                    "leaseGeneration": lease_fence.lease_generation,
+                }
             capture_window = current.capture_window
             if target is ProcessingJobStatus.SUCCEEDED:
                 bundle = self._source_media.get(current.mission_id)
@@ -1567,6 +2195,15 @@ class ProcessingJobStore:
                     )
                 capture_window = bundle.capture_window
                 raw["captureWindow"] = capture_window_wire(capture_window)
+                if lease_fence is not None:
+                    if manifest is None:
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED,
+                            detail="new-format success requires an authoritative artifact manifest",
+                        )
+                    raw["acceptedLeaseGeneration"] = lease_fence.lease_generation
+                    raw["artifactManifestDigest"] = manifest.manifest_digest
+                    raw["artifactManifest"] = manifest.to_wire()
             try:
                 self._journal.append(raw)
             except JournalSealedError:
@@ -1579,6 +2216,22 @@ class ProcessingJobStore:
                 updated_at=now,
                 terminal_detail=detail,
                 capture_window=capture_window,
+                artifacts=(
+                    completion_artifacts
+                    if target is ProcessingJobStatus.SUCCEEDED
+                    else current.artifacts
+                ),
+                artifact_manifest=(
+                    manifest
+                    if target is ProcessingJobStatus.SUCCEEDED
+                    else current.artifact_manifest
+                ),
+                manifest_aware=current.manifest_aware or lease_fence is not None,
+                terminal_lease_fence=(
+                    lease_fence
+                    if target in {ProcessingJobStatus.SUCCEEDED, ProcessingJobStatus.FAILED}
+                    else current.terminal_lease_fence
+                ),
             )
             self._jobs[job_id] = updated
             # journal.append 가 성공한 뒤에만 센다 — 실패(STORE_UNAVAILABLE)까지
@@ -1587,7 +2240,13 @@ class ProcessingJobStore:
             return ProcessingJobResult(ProcessingJobVerdict.TRANSITIONED, record=updated)
 
     def register_artifact(
-        self, job_id: str, spec: ArtifactSpec, *, registered_by: str, now: datetime
+        self,
+        job_id: str,
+        spec: ArtifactSpec,
+        *,
+        registered_by: str,
+        now: datetime,
+        lease_fence: LeaseFence | None = None,
     ) -> ArtifactResult:
         """실행 중인 작업에 산출물 1건을 등록한다.
 
@@ -1604,13 +2263,9 @@ class ProcessingJobStore:
                 )
             job = self._jobs.get(job_id)
             if job is None:
-                return ArtifactResult(
-                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
-                )
+                return ArtifactResult(ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL)
             if not self._record_is_visible_locked(job):
-                return ArtifactResult(
-                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
-                )
+                return ArtifactResult(ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL)
             if job.status is not ProcessingJobStatus.RUNNING:
                 return ArtifactResult(
                     ProcessingJobVerdict.JOB_NOT_RUNNING,
@@ -1619,7 +2274,13 @@ class ProcessingJobStore:
                         "작업에만 등록된다(끝난 작업에 근거를 소급하지 않는다)"
                     ),
                 )
-            denied = self._check_lease_locked(job, worker_id=registered_by, now=now)
+            denied = self._check_lease_locked(
+                job,
+                worker_id=(registered_by if lease_fence is None else None),
+                lease_fence=lease_fence,
+                authenticated_actor_id=registered_by if lease_fence is not None else None,
+                now=now,
+            )
             if denied is not None:
                 return ArtifactResult(denied[0], detail=denied[1])
             try:
@@ -1645,7 +2306,140 @@ class ProcessingJobStore:
                 return ArtifactResult(
                     ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION, detail=str(exc)
                 )
-            verdict, detail = self._check_artifact_identity_locked(job, artifact)
+            verdict, detail = self._check_artifact_identity_locked(
+                job,
+                artifact,
+                lease_generation=(
+                    lease_fence.lease_generation if lease_fence is not None else None
+                ),
+            )
+            candidate: CandidateArtifact | None = None
+            if lease_fence is not None:
+                if spec.primary is None:
+                    return ArtifactResult(
+                        ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED,
+                        detail="primary object binding is required for fenced artifacts",
+                    )
+                expected_primary = build_processing_artifact_object_key(
+                    site_id=job.site_id,
+                    job_id=job_id,
+                    artifact_id=artifact.artifact_id,
+                    lease_generation=lease_fence.lease_generation,
+                )
+                if spec.primary.object_key != expected_primary:
+                    return ArtifactResult(
+                        ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION,
+                        detail="primary objectKey is not the current generation upload target",
+                    )
+                if spec.primary.content_type not in ALLOWED_CONTENT_TYPES:
+                    return ArtifactResult(
+                        ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE,
+                        detail=f"허용되지 않는 contentType: {spec.primary.content_type!r}",
+                    )
+                auxiliary_objects = tuple(sorted(spec.auxiliary_objects))
+                if tuple(name for name, _ in auxiliary_objects) != tuple(
+                    sorted(artifact.auxiliary_files)
+                ):
+                    return ArtifactResult(
+                        ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED,
+                        detail="auxiliary object bindings must exactly match auxiliaryFiles",
+                    )
+                for name, binding in auxiliary_objects:
+                    expected = build_processing_artifact_object_key(
+                        site_id=job.site_id,
+                        job_id=job_id,
+                        artifact_id=artifact.artifact_id,
+                        filename=name,
+                        lease_generation=lease_fence.lease_generation,
+                    )
+                    if binding.object_key != expected:
+                        return ArtifactResult(
+                            ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION,
+                            detail=(
+                                f"auxiliary objectKey for {name!r} is not the current "
+                                "generation upload target"
+                            ),
+                        )
+                    if binding.content_type not in ALLOWED_CONTENT_TYPES:
+                        return ArtifactResult(
+                            ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE,
+                            detail=f"허용되지 않는 contentType: {binding.content_type!r}",
+                        )
+                try:
+                    candidate = CandidateArtifact(
+                        artifact=artifact,
+                        worker_instance_id=lease_fence.worker_instance_id,
+                        lease_acquisition_id=lease_fence.lease_acquisition_id,
+                        lease_generation=lease_fence.lease_generation,
+                        primary=spec.primary,
+                        auxiliary_files=auxiliary_objects,
+                    )
+                except ArtifactManifestError as exc:
+                    return ArtifactResult(
+                        ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION, detail=str(exc)
+                    )
+                existing = next(
+                    (
+                        item
+                        for item in job.artifact_candidates
+                        if item.lease_generation == lease_fence.lease_generation
+                        and item.artifact.artifact_id == artifact.artifact_id
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    if existing == candidate:
+                        return ArtifactResult(
+                            ProcessingJobVerdict.ARTIFACT_REGISTERED,
+                            artifact=artifact,
+                            candidate=existing,
+                        )
+                    return ArtifactResult(
+                        ProcessingJobVerdict.DUPLICATE_ARTIFACT,
+                        detail=(
+                            "같은 generation/artifactId가 다른 provenance 또는 digest로 재등록됐다"
+                        ),
+                    )
+                if verdict is not None:
+                    return ArtifactResult(verdict, detail=detail)
+                if self._artifact_storage_observer is None:
+                    return ArtifactResult(ProcessingJobVerdict.STORAGE_UNAVAILABLE)
+                accepted_observations = []
+                for filename, binding in ((None, spec.primary), *auxiliary_objects):
+                    grant = self._artifact_upload_grants.get(
+                        (job_id, lease_fence.lease_generation, artifact.artifact_id, filename)
+                    )
+                    if grant is None or grant.binding != binding:
+                        return ArtifactResult(
+                            ProcessingJobVerdict.ARTIFACT_UPLOAD_GRANT_REQUIRED,
+                            detail="object has no exact durable upload grant",
+                        )
+                    try:
+                        observed = self._artifact_storage_observer.observe_object(
+                            binding.object_key
+                        )
+                    except EvidenceStorageError:
+                        return ArtifactResult(ProcessingJobVerdict.STORAGE_UNAVAILABLE)
+                    if not observed.exists:
+                        return ArtifactResult(ProcessingJobVerdict.ARTIFACT_STORAGE_OBJECT_MISSING)
+                    if (
+                        observed.object_key != binding.object_key
+                        or observed.sha256 is None
+                        or observed.size_bytes is None
+                        or observed.content_type is None
+                    ):
+                        return ArtifactResult(ProcessingJobVerdict.ARTIFACT_STORAGE_UNVERIFIABLE)
+                    if observed.sha256 != binding.sha256:
+                        return ArtifactResult(ProcessingJobVerdict.ARTIFACT_STORAGE_DIGEST_MISMATCH)
+                    if observed.size_bytes != binding.size_bytes:
+                        return ArtifactResult(ProcessingJobVerdict.ARTIFACT_STORAGE_SIZE_MISMATCH)
+                    if observed.content_type != binding.content_type:
+                        return ArtifactResult(
+                            ProcessingJobVerdict.ARTIFACT_STORAGE_CONTENT_TYPE_MISMATCH
+                        )
+                    accepted_observations.append(
+                        AcceptedArtifactObjectObservation(filename=filename, binding=binding)
+                    )
             if verdict is not None:
                 return ArtifactResult(verdict, detail=detail)
 
@@ -1657,27 +2451,51 @@ class ProcessingJobStore:
                 "artifact": processing_artifact_wire_dict(artifact),
                 "registeredBy": registered_by,
             }
+            if candidate is not None:
+                raw["candidate"] = candidate.to_wire()
+                raw["acceptedObjectObservations"] = [
+                    observation.to_wire() for observation in accepted_observations
+                ]
             try:
                 self._journal.append(raw)
             except JournalSealedError:
                 return ArtifactResult(
                     ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
-            self._jobs[job_id] = replace(job, artifacts=(*job.artifacts, artifact), updated_at=now)
-            return ArtifactResult(ProcessingJobVerdict.ARTIFACT_REGISTERED, artifact=artifact)
+            if candidate is None:
+                updated = replace(job, artifacts=(*job.artifacts, artifact), updated_at=now)
+            else:
+                updated = replace(
+                    job,
+                    artifact_candidates=(*job.artifact_candidates, candidate),
+                    manifest_aware=True,
+                    updated_at=now,
+                )
+            self._jobs[job_id] = updated
+            return ArtifactResult(
+                ProcessingJobVerdict.ARTIFACT_REGISTERED,
+                artifact=artifact,
+                candidate=candidate,
+            )
 
     def acquire_lease(
-        self, job_id: str, *, worker_id: str, now: datetime, ttl: timedelta = DEFAULT_LEASE_TTL
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        worker_instance_id: str | None = None,
+        lease_acquisition_id: str | None = None,
+        mode: LeaseMode = LeaseMode.CLAIM,
+        lease_generation: int | None = None,
+        authenticated_actor_id: str | None = None,
+        worker_id: str | None = None,
+        ttl: timedelta = DEFAULT_LEASE_TTL,
     ) -> ProcessingJobResult:
-        """작업 하나를 쥔다. 같은 워커의 재호출은 갱신(heartbeat)이다.
+        """CLAIM idempotently or RENEW the exact current generation.
 
-        게이트: 활성(QUEUED·RUNNING) 작업만, 그리고 **다른 워커의 유효한 lease 가
-        없을 때만**. 만료된 lease 는 없는 것과 같다 — 죽은 워커가 쥔 작업을 회수
-        하는 경로가 이것 하나뿐이라, 만료를 별도 명령으로 풀게 하면 아무도 안
-        푼 채 작업이 영구히 묶인다.
-
-        갱신도 journal 에 적는다. 다른 append 와 달리 "새로 기록할 사실이 없는
-        멱등 재호출"이 아니기 때문이다 — 만료 시각이 실제로 옮겨간다.
+        ``worker_id`` is a temporary in-process compatibility path for legacy
+        generation-zero tests/readers.  HTTP and all production workers use the
+        explicit instance/acquisition/mode fields.
         """
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -1700,56 +2518,215 @@ class ProcessingJobStore:
                     detail=f"작업이 {job.status.value} 상태다 — 끝난 작업은 잡을 수 없다",
                 )
             current = job.lease
-            denial = check_lease(current, worker_id=worker_id, now=now)
-            renewing = current is not None and denial is None
-            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
-                assert current is not None  # HELD_BY_ANOTHER only when a lease exists
-                return ProcessingJobResult(
-                    ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
-                    record=job,
-                    detail=(
-                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
-                        "이 작업을 쥐고 있다 — 만료 후 다시 시도한다"
-                    ),
+            if worker_instance_id is None:
+                if worker_id is None:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.LEASE_FENCE_REQUIRED,
+                        record=job,
+                        detail="worker instance/acquisition identity is required",
+                    )
+                denial = check_lease(current, worker_id=worker_id, now=now)
+                renewing = current is not None and denial is None
+                if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                    assert current is not None
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
+                        record=job,
+                        detail=f"다른 legacy 워커({current.worker_id})가 이 작업을 쥐고 있다",
+                    )
+                new_lease = next_lease(
+                    worker_id=worker_id,
+                    now=now,
+                    ttl=ttl,
+                    granted_at=current.granted_at if renewing and current else None,
                 )
-            new_lease = next_lease(
-                worker_id=worker_id,
-                now=now,
-                ttl=ttl,
-                granted_at=current.granted_at if renewing and current else None,
-            )
-            raw: dict[str, Any] = {
-                "kind": "processing-job-leased",
-                "ts": iso_utc(now),
-                "jobId": job_id,
-                "workerId": worker_id,
-                "expiresAt": iso_utc(new_lease.expires_at),
-                "renewal": renewing,
-            }
+                raw: dict[str, Any] = {
+                    "kind": "processing-job-leased",
+                    "ts": iso_utc(now),
+                    "jobId": job_id,
+                    "workerId": worker_id,
+                    "expiresAt": iso_utc(new_lease.expires_at),
+                    "renewal": renewing,
+                }
+                verdict = (
+                    ProcessingJobVerdict.LEASE_RENEWED if renewing else ProcessingJobVerdict.LEASED
+                )
+            else:
+                if lease_acquisition_id is None:
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.LEASE_FENCE_REQUIRED,
+                        record=job,
+                        detail="leaseAcquisitionId is required",
+                    )
+                requested_generation = lease_generation if lease_generation is not None else 1
+                requested_fence = LeaseFence(
+                    worker_instance_id,
+                    lease_acquisition_id,
+                    requested_generation,
+                )
+                if not requested_fence.is_well_formed():
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.LEASE_FENCE_REQUIRED,
+                        record=job,
+                        detail="worker/acquisition IDs must be UUIDv4 and generation positive",
+                    )
+                binding = self._lease_acquisitions.get(lease_acquisition_id)
+                if binding is not None and binding[:3] != (
+                    job_id,
+                    worker_instance_id,
+                    authenticated_actor_id,
+                ):
+                    if mode is LeaseMode.RENEW and binding[0:2] == (
+                        job_id,
+                        worker_instance_id,
+                    ):
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
+                            record=job,
+                            detail="lease fence is bound to another authenticated principal",
+                        )
+                    return ProcessingJobResult(
+                        ProcessingJobVerdict.IDEMPOTENCY_CONFLICT,
+                        record=job,
+                        detail="leaseAcquisitionId is already bound to another operation",
+                    )
+                if mode is LeaseMode.CLAIM:
+                    if lease_generation is not None:
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.LEASE_FENCE_REQUIRED,
+                            record=job,
+                            detail="CLAIM must not submit a server lease generation",
+                        )
+                    if binding is not None:
+                        claimed = binding[3]
+                        if (
+                            current is not None
+                            and current.lease_acquisition_id == lease_acquisition_id
+                            and current.worker_instance_id == worker_instance_id
+                            and current.lease_generation == claimed.lease_generation
+                            and current.is_active(now)
+                        ):
+                            # Lost response / concurrent duplicate: exact durable
+                            # acquisition result, no append and no self-fence.
+                            return ProcessingJobResult(ProcessingJobVerdict.LEASED, record=job)
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.STALE_ACQUISITION,
+                            record=job,
+                            detail="이 acquisition은 만료됐거나 더 높은 generation으로 대체됐다",
+                        )
+                    if current is not None and current.is_active(now):
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
+                            record=job,
+                            detail=(
+                                f"다른 worker instance가 {iso_utc(current.expires_at)}까지 "
+                                "이 작업을 쥐고 있다"
+                            ),
+                        )
+                    generation = self._lease_generation_highwater.get(job_id, 0) + 1
+                    new_lease = next_lease(
+                        worker_instance_id=worker_instance_id,
+                        lease_acquisition_id=lease_acquisition_id,
+                        lease_generation=generation,
+                        authenticated_actor_id=authenticated_actor_id,
+                        now=now,
+                        ttl=ttl,
+                    )
+                    raw = {
+                        "kind": "processing-job-leased",
+                        "ts": iso_utc(now),
+                        "jobId": job_id,
+                        "expiresAt": iso_utc(new_lease.expires_at),
+                        **lease_raw_fields(lease=new_lease, mode=LeaseMode.CLAIM),
+                    }
+                    verdict = ProcessingJobVerdict.LEASED
+                else:
+                    if lease_generation is None:
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.LEASE_FENCE_REQUIRED,
+                            record=job,
+                            detail="RENEW requires leaseGeneration",
+                        )
+                    denial = check_lease(
+                        current,
+                        fence=requested_fence,
+                        authenticated_actor_id=authenticated_actor_id,
+                        now=now,
+                    )
+                    if denial is not None:
+                        return ProcessingJobResult(
+                            ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                            record=job,
+                            detail="RENEW fence is stale, expired, or not current",
+                        )
+                    assert current is not None
+                    new_lease = next_lease(
+                        worker_instance_id=current.worker_instance_id,
+                        lease_acquisition_id=current.lease_acquisition_id,
+                        lease_generation=current.lease_generation,
+                        authenticated_actor_id=current.authenticated_actor_id,
+                        now=now,
+                        ttl=ttl,
+                        granted_at=current.granted_at,
+                    )
+                    raw = {
+                        "kind": "processing-job-leased",
+                        "ts": iso_utc(now),
+                        "jobId": job_id,
+                        "expiresAt": iso_utc(new_lease.expires_at),
+                        **lease_raw_fields(lease=new_lease, mode=LeaseMode.RENEW),
+                    }
+                    verdict = ProcessingJobVerdict.LEASE_RENEWED
             try:
                 self._journal.append(raw)
             except JournalSealedError:
                 return ProcessingJobResult(
                     ProcessingJobVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL
                 )
-            updated = replace(job, lease=new_lease)
-            self._jobs[job_id] = updated
-            return ProcessingJobResult(
-                ProcessingJobVerdict.LEASE_RENEWED if renewing else ProcessingJobVerdict.LEASED,
-                record=updated,
+            if new_lease.lease_generation > 0 and mode is LeaseMode.CLAIM:
+                self._lease_generation_highwater[job_id] = new_lease.lease_generation
+                assert new_lease.lease_acquisition_id is not None
+                self._lease_acquisitions[new_lease.lease_acquisition_id] = (
+                    job_id,
+                    new_lease.worker_instance_id,
+                    new_lease.authenticated_actor_id,
+                    new_lease,
+                )
+            updated = replace(
+                job,
+                lease=new_lease,
+                manifest_aware=job.manifest_aware or new_lease.lease_generation > 0,
             )
+            self._jobs[job_id] = updated
+            return ProcessingJobResult(verdict, record=updated)
 
     @staticmethod
     def _check_lease_locked(
-        job: ProcessingJobRecord, *, worker_id: str, now: datetime
+        job: ProcessingJobRecord,
+        *,
+        now: datetime,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        authenticated_actor_id: str | None = None,
     ) -> tuple[ProcessingJobVerdict, str] | None:
         """이 워커가 지금 이 작업을 쥐고 있는가 — 워커 행위의 공통 관문.
 
         ``/input``·실행 상태 보고·산출물 등록이 전부 이 함수를 지난다. 각 경로가
         자기 조건문을 갖고 있으면 새 경로가 생길 때 빠뜨리기 쉽다.
         """
-        denial = check_lease(job.lease, worker_id=worker_id, now=now)
+        denial = check_lease(
+            job.lease,
+            worker_id=worker_id,
+            fence=lease_fence,
+            authenticated_actor_id=authenticated_actor_id,
+            now=now,
+        )
         if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
+            if lease_fence is not None and job.lease is not None:
+                return (
+                    ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                    "lease generation이 만료되어 더 이상 authoritative하지 않다",
+                )
             return (
                 ProcessingJobVerdict.LEASE_REQUIRED,
                 "이 작업을 쥐고 있지 않다 — POST /v1/processing-jobs/{jobId}/lease 로 "
@@ -1757,13 +2734,39 @@ class ProcessingJobStore:
             )
         if denial is LeaseDenialReason.HELD_BY_ANOTHER:
             assert job.lease is not None  # HELD_BY_ANOTHER only when a lease exists
+            if lease_fence is not None:
+                return (
+                    ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                    "lease fence가 현재 authoritative owner와 다르다",
+                )
             return (
                 ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER,
                 f"다른 워커({job.lease.worker_id})가 이 작업을 쥐고 있다",
             )
+        if denial is LeaseDenialReason.STALE_ACQUISITION:
+            return (
+                ProcessingJobVerdict.STALE_ACQUISITION,
+                "lease acquisition identity가 현재 owner와 다르다",
+            )
+        if denial in {
+            LeaseDenialReason.STALE_GENERATION,
+            LeaseDenialReason.INVALID_FENCE,
+        }:
+            return (
+                ProcessingJobVerdict.STALE_LEASE_GENERATION,
+                "lease generation이 현재 owner와 다르거나 fence가 유효하지 않다",
+            )
         return None
 
-    def input_for(self, job_id: str, *, worker_id: str, now: datetime) -> JobInputResult:
+    def input_for(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        authenticated_actor_id: str | None = None,
+    ) -> JobInputResult:
         """워커가 실행에 필요한 것 — 사양 + 읽어야 할 파일 목록.
 
         **활성(QUEUED·RUNNING) 작업만** 내준다. 끝난 작업의 원본 다운로드 URL 을
@@ -1780,13 +2783,9 @@ class ProcessingJobStore:
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None:
-                return JobInputResult(
-                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
-                )
+                return JobInputResult(ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL)
             if not self._record_is_visible_locked(record):
-                return JobInputResult(
-                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
-                )
+                return JobInputResult(ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL)
             if record.status not in _ACTIVE_STATUSES:
                 return JobInputResult(
                     ProcessingJobVerdict.JOB_NOT_ACTIVE,
@@ -1795,7 +2794,10 @@ class ProcessingJobStore:
                         "다시 내주지 않는다"
                     ),
                 )
-            denied = self._check_lease_locked(record, worker_id=worker_id, now=now)
+            denied = self._check_lease_locked(
+                record, worker_id=worker_id, lease_fence=lease_fence,
+                authenticated_actor_id=authenticated_actor_id, now=now
+            )
             if denied is not None:
                 return JobInputResult(denied[0], detail=denied[1])
             bundle = self._source_media.get(record.mission_id)
@@ -1808,9 +2810,7 @@ class ProcessingJobStore:
         # 않는다 — 현장 등록 시점에 이미 확정된 값을 Core 가 읽어 준다(발급
         # 시점 반출 판정이 site_store 를 읽는 것과 같은 원칙, _residency_of).
         site = self._sites.get(record.site_id)
-        site_crs = (
-            str(site.site_frame.get("crs")) if site is not None and site.site_frame else None
-        )
+        site_crs = str(site.site_frame.get("crs")) if site is not None and site.site_frame else None
         return JobInputResult(
             ProcessingJobVerdict.INPUT_READY,
             record=record,
@@ -1818,6 +2818,48 @@ class ProcessingJobStore:
             site_crs=site_crs,
             ground_control=bundle.ground_control,
         )
+
+    def verify_input(
+        self,
+        job_id: str,
+        measurements: Sequence[SourceMediaMeasurement],
+        *,
+        verified_by: str,
+        lease_fence: LeaseFence,
+        now: datetime,
+    ) -> VerificationResult | ProcessingJobResult:
+        """Verify this job's sealed input under its current lease fence.
+
+        The processing-store lock remains held through the source journal
+        append, so an expiry claimant cannot install generation N+1 between
+        fence validation and the durable measurement record.
+        """
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or not self._record_is_visible_locked(job):
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.UNKNOWN_JOB, detail=_NOT_FOUND_DETAIL
+                )
+            if job.status not in _ACTIVE_STATUSES:
+                return ProcessingJobResult(
+                    ProcessingJobVerdict.JOB_NOT_ACTIVE,
+                    detail=f"작업이 {job.status.value} 상태다",
+                )
+            denied = self._check_lease_locked(
+                job,
+                lease_fence=lease_fence,
+                authenticated_actor_id=verified_by,
+                now=now,
+            )
+            if denied is not None:
+                return ProcessingJobResult(denied[0], record=job, detail=denied[1])
+            return self._source_media.verify(
+                job.mission_id,
+                measurements,
+                verified_by=verified_by,
+                now=now,
+            )
 
     def _active_job_locked(self, mission_id: str) -> ProcessingJobRecord | None:
         for record in self._jobs.values():
@@ -1940,20 +2982,65 @@ class ProcessingJobStore:
     def artifact_of(
         self, job_id: str, artifact_id: str
     ) -> tuple[ProcessingJobRecord, ProcessingArtifact] | None:
-        """등록된 산출물과 그 작업 — 없으면 ``None``.
+        """Accepted artifact metadata compatibility view.
 
-        객체 키는 식별자에서 유도되므로 **등록 여부와 무관하게 계산은 된다**.
-        그래서 원장 대조 없이 URL 을 발급하면 존재하지 않는 자리의 링크가
-        나가고, 소비자는 스토리지에서 404 를 받는다 — 원인이 한 단계 멀어진다.
+        New-format authority is resolved by :meth:`resolve_artifact`; this
+        method deliberately drops only the byte binding for metadata-only
+        consumers.  It never exposes a candidate from an unaccepted generation.
+        """
+        resolved = self.resolve_artifact(job_id, artifact_id)
+        if resolved is None:
+            return None
+        return resolved.record, resolved.artifact
+
+    def resolve_artifact(self, job_id: str, artifact_id: str) -> ResolvedProcessingArtifact | None:
+        """Resolve accepted metadata and bytes through the durable authority.
+
+        Conventional path derivation is restricted to genuine historical jobs
+        that never emitted a manifest-aware record.  A malformed new-format
+        job fails closed rather than impersonating a legacy record.
         """
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None or not self._record_is_visible_locked(record):
                 return None
+            if record.artifact_manifest is not None:
+                entry = record.artifact_manifest.entry(artifact_id)
+                if entry is None:
+                    return None
+                return ResolvedProcessingArtifact(
+                    record=record,
+                    artifact=entry.artifact,
+                    primary=entry.primary,
+                    auxiliary_files=entry.auxiliary_files,
+                    legacy=False,
+                )
+            if record.manifest_aware:
+                # Candidate/new success records without their durable manifest
+                # are not legacy and therefore have no readable authority.
+                return None
             for artifact in record.artifacts:
                 if artifact.artifact_id == artifact_id:
-                    return (record, artifact)
+                    return ResolvedProcessingArtifact(
+                        record=record,
+                        artifact=artifact,
+                        primary=None,
+                        auxiliary_files=(),
+                        legacy=True,
+                    )
         return None
+
+    def accepted_artifacts(self, job_id: str) -> tuple[ProcessingArtifact, ...]:
+        """Return only the accepted set used by authoritative projections."""
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None or not self._record_is_visible_locked(record):
+                return ()
+            if record.artifact_manifest is not None:
+                return tuple(entry.artifact for entry in record.artifact_manifest.entries)
+            if record.manifest_aware:
+                return ()
+            return record.artifacts
 
 
 def _residency_of(site: Any) -> DataResidency:
@@ -2005,6 +3092,8 @@ class ArtifactUploadUrlRequest(CamelModel):
 
     artifact_id: str = Field(min_length=1)
     content_type: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
     # 다중 파일 산출물(mesh 등)의 부속 파일 자리를 받을 때만 채운다 — None 이면
     # 주 파일 자리(기존 동작과 동일, mesh-multi-file-artifact-persistence).
     filename: str | None = None
@@ -2015,7 +3104,25 @@ class ArtifactUploadUrlResponse(CamelModel):
     object_key: str | None = None
     upload_url: str | None = None
     expires_at: datetime | None = None
+    required_headers: dict[str, str] | None = None
     detail: str | None = None
+
+
+class ArtifactObjectBindingRequest(CamelModel):
+    """Exact object identity returned by Core's fenced upload authority."""
+
+    object_key: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
+    content_type: str = Field(min_length=1)
+
+    def to_domain(self) -> ArtifactObjectBinding:
+        return ArtifactObjectBinding(
+            object_key=self.object_key,
+            sha256=self.sha256,
+            size_bytes=self.size_bytes,
+            content_type=self.content_type,
+        )
 
 
 class ArtifactFileView(CamelModel):
@@ -2084,6 +3191,11 @@ class ProcessingArtifactRequest(CamelModel):
     # "옛 워커가 안 실어 보냈다"와 "이 산출물은 타원체고다"는 다른 사실이고,
     # 후자를 Core 가 대신 주장하면 설계 대비 비교가 그 가정 위에서 숫자를 낸다.
     vertical_reference: VerticalReference | None = None
+    primary_object: ArtifactObjectBindingRequest
+    auxiliary_objects: dict[
+        Annotated[str, Field(pattern=PATH_SAFE_IDENTIFIER_PATTERN.pattern)],
+        ArtifactObjectBindingRequest,
+    ] = Field(default_factory=dict)
 
 
 class ProcessingArtifactMutationResponse(CamelModel):
@@ -2183,7 +3295,9 @@ class ProcessingJobView(CamelModel):
     # 응답을 만든 순간과 화면이 읽는 순간 사이에 만료될 수 있어서, 그 판정은
     # 시각을 받은 쪽이 자기 시계로 해야 한다(JobLease 와 같은 이유).
     lease_worker_id: str | None
-    lease_expires_at: datetime | None
+    lease_acquisition_id: str | None = None
+    lease_generation: int | None = None
+    lease_expires_at: datetime | None = None
     capture_window: CaptureWindowView
 
 
@@ -2228,6 +3342,58 @@ class ProcessingResourcePolicyListResponse(CamelModel):
     policies: list[dict[str, Any]]
 
 
+def _required_worker_fence(
+    worker_instance_id: Annotated[
+        str | None, Header(alias="X-KSI-Worker-Instance-Id")
+    ] = None,
+    lease_acquisition_id: Annotated[
+        str | None, Header(alias="X-KSI-Lease-Acquisition-Id")
+    ] = None,
+    lease_generation: Annotated[
+        int | None, Header(alias="X-KSI-Lease-Generation", ge=1)
+    ] = None,
+) -> LeaseFence:
+    if (
+        worker_instance_id is None
+        or lease_acquisition_id is None
+        or lease_generation is None
+    ):
+        raise HTTPException(status_code=409, detail="LEASE_FENCE_REQUIRED")
+    fence = LeaseFence(worker_instance_id, lease_acquisition_id, lease_generation)
+    if not fence.is_well_formed():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "LEASE_FENCE_REQUIRED: UUIDv4 worker/acquisition and positive generation required"
+            ),
+        )
+    return fence
+
+
+def _optional_worker_fence(
+    worker_instance_id: str | None,
+    lease_acquisition_id: str | None,
+    lease_generation: int | None,
+) -> LeaseFence | None:
+    if worker_instance_id is None and lease_acquisition_id is None and lease_generation is None:
+        return None
+    if worker_instance_id is None or lease_acquisition_id is None or lease_generation is None:
+        raise HTTPException(status_code=409, detail="LEASE_FENCE_REQUIRED")
+    fence = LeaseFence(worker_instance_id, lease_acquisition_id, lease_generation)
+    if not fence.is_well_formed():
+        raise HTTPException(status_code=409, detail="LEASE_FENCE_REQUIRED")
+    return fence
+
+
+def _set_lease_response_headers(response: Response, lease: JobLease | None) -> None:
+    if lease is None or lease.fence is None:
+        return
+    response.headers["X-KSI-Worker-Instance-Id"] = lease.worker_instance_id
+    response.headers["X-KSI-Lease-Acquisition-Id"] = lease.lease_acquisition_id or ""
+    response.headers["X-KSI-Lease-Generation"] = str(lease.lease_generation)
+    response.headers["X-KSI-Lease-Expires-At"] = iso_utc(lease.expires_at)
+
+
 def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> ProcessingJobView:
     return ProcessingJobView(
         job_id=record.job_id,
@@ -2245,8 +3411,16 @@ def _to_view(record: ProcessingJobRecord, *, input_verified: bool) -> Processing
         resource_policy_id=record.resource_policy_id,
         resource_policy_digest=record.resource_policy_digest,
         contract=processing_job_wire_dict(record.to_contract()),
-        artifacts=[processing_artifact_wire_dict(a) for a in record.artifacts],
-        lease_worker_id=record.lease.worker_id if record.lease is not None else None,
+        artifacts=[processing_artifact_wire_dict(a) for a in authoritative_artifacts(record)],
+        lease_worker_id=(record.lease.worker_instance_id if record.lease is not None else None),
+        lease_acquisition_id=(
+            record.lease.lease_acquisition_id if record.lease is not None else None
+        ),
+        lease_generation=(
+            record.lease.lease_generation
+            if record.lease is not None and record.lease.lease_generation > 0
+            else None
+        ),
         lease_expires_at=record.lease.expires_at if record.lease is not None else None,
         capture_window=CaptureWindowView(
             status=record.capture_window.status,
@@ -2274,6 +3448,8 @@ def build_processing_jobs_router(
     절대 바꾸지 않는다**: 현장 상태가 어긋났다는 이유로 워커의 재구성 성공 보고가
     실패하면 되돌릴 수 없는 계산 결과가 유실된다(``SpatialModelLifecycle`` docstring).
     """
+    if isinstance(storage, ObjectStorageObservationPort):
+        store.set_artifact_storage_observer(storage)
     router = APIRouter(tags=["processing-jobs"])
 
     @router.post(
@@ -2434,6 +3610,13 @@ def build_processing_jobs_router(
         job_id: str,
         request: ProcessingJobTransitionRequest,
         response: Response,
+        worker_instance_id: Annotated[str | None, Header(alias="X-KSI-Worker-Instance-Id")] = None,
+        lease_acquisition_id: Annotated[
+            str | None, Header(alias="X-KSI-Lease-Acquisition-Id")
+        ] = None,
+        lease_generation: Annotated[
+            int | None, Header(alias="X-KSI-Lease-Generation", ge=1)
+        ] = None,
         principal: Principal = Depends(require_principal()),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
         # 요구 권한이 **대상 상태마다 다르다**(모듈 docstring) — 문 앞의
@@ -2444,6 +3627,12 @@ def build_processing_jobs_router(
                 status_code=403,
                 detail=f"{request.target_status.value} 로의 전이 권한이 없다",
             )
+        requires_lease = request.target_status is not ProcessingJobStatus.CANCELLED
+        lease_fence = _optional_worker_fence(
+            worker_instance_id, lease_acquisition_id, lease_generation
+        )
+        if requires_lease and lease_fence is None:
+            raise HTTPException(status_code=409, detail="LEASE_FENCE_REQUIRED")
         result = store.transition(
             job_id,
             request.target_status,
@@ -2452,7 +3641,8 @@ def build_processing_jobs_router(
             now=datetime.now(UTC),
             # 사람의 취소만 lease 를 요구하지 않는다 — 워커가 죽어 lease 가 살아
             # 있는 동안 취소가 막히면, 정확히 취소가 필요한 상황에서 막힌다.
-            requires_lease=request.target_status is not ProcessingJobStatus.CANCELLED,
+            requires_lease=requires_lease,
+            lease_fence=lease_fence,
         )
         if (
             site_lifecycle is not None
@@ -2486,6 +3676,12 @@ def build_processing_jobs_router(
     def acquire_processing_job_lease(
         job_id: str,
         response: Response,
+        worker_instance_id: Annotated[str, Header(alias="X-KSI-Worker-Instance-Id")],
+        lease_acquisition_id: Annotated[str, Header(alias="X-KSI-Lease-Acquisition-Id")],
+        lease_mode: Annotated[LeaseMode, Header(alias="X-KSI-Lease-Mode")] = LeaseMode.CLAIM,
+        lease_generation: Annotated[
+            int | None, Header(alias="X-KSI-Lease-Generation", ge=1)
+        ] = None,
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ProcessingJobMutationResponse:
         """작업 하나를 잡는다(같은 워커의 재호출은 갱신 = heartbeat).
@@ -2494,11 +3690,19 @@ def build_processing_jobs_router(
         전부 lease 를 쥔 워커만 할 수 있다.
         """
         result = store.acquire_lease(
-            job_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+            job_id,
+            worker_instance_id=worker_instance_id,
+            lease_acquisition_id=lease_acquisition_id,
+            mode=lease_mode,
+            lease_generation=lease_generation,
+            authenticated_actor_id=principal.principal_id,
+            now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
+        if result.record is not None:
+            _set_lease_response_headers(response, result.record.lease)
         return ProcessingJobMutationResponse(
             verdict=result.verdict.value,
             job=(
@@ -2513,6 +3717,7 @@ def build_processing_jobs_router(
     def get_processing_job_input(
         job_id: str,
         response: Response,
+        lease_fence: LeaseFence = Depends(_required_worker_fence),  # noqa: B008
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> JobInputResponse:
         """워커가 자기 작업의 사양과 원본 다운로드 URL 을 받아간다.
@@ -2528,7 +3733,8 @@ def build_processing_jobs_router(
         의미가 없다).
         """
         result = store.input_for(
-            job_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+            job_id, lease_fence=lease_fence,
+            authenticated_actor_id=principal.principal_id, now=datetime.now(UTC)
         )
         if result.verdict is not ProcessingJobVerdict.INPUT_READY or result.record is None:
             response.status_code = _STATUS[result.verdict]
@@ -2541,9 +3747,7 @@ def build_processing_jobs_router(
                 JobInputMediaView(
                     media_id=item.media_id,
                     object_key=item.object_key,
-                    download_url=storage.presigned_get(
-                        item.object_key, ttl=DEFAULT_VIEW_TTL
-                    ),
+                    download_url=storage.presigned_get(item.object_key, ttl=DEFAULT_VIEW_TTL),
                     expires_at=expires_at(now, DEFAULT_VIEW_TTL),
                 )
                 for item in result.media
@@ -2596,6 +3800,60 @@ def build_processing_jobs_router(
         )
 
     @router.post(
+        "/v1/processing-jobs/{job_id}/verify-input",
+        response_model=SourceMediaVerifyResponse,
+        status_code=201,
+    )
+    def verify_processing_job_input(
+        job_id: str,
+        request: SourceMediaVerifyRequest,
+        response: Response,
+        lease_fence: LeaseFence = Depends(_required_worker_fence),  # noqa: B008
+        principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> SourceMediaVerifyResponse:
+        result = store.verify_input(
+            job_id,
+            [
+                SourceMediaMeasurement(
+                    media_id=item.media_id,
+                    sha256=item.sha256,
+                    size_bytes=item.bytes,
+                    width=item.width,
+                    height=item.height,
+                    capture_time=item.capture_time.to_domain(),
+                )
+                for item in request.measurements
+            ],
+            verified_by=principal.principal_id,
+            lease_fence=lease_fence,
+            now=datetime.now(UTC),
+        )
+        if isinstance(result, ProcessingJobResult):
+            response.status_code = _STATUS[result.verdict]
+            return SourceMediaVerifyResponse(verdict=result.verdict.value, detail=result.detail)
+        verify_status = {
+            SourceBundleVerifyVerdict.VERIFIED: 201,
+            SourceBundleVerifyVerdict.ALREADY_VERIFIED: 200,
+            SourceBundleVerifyVerdict.MISMATCH: 422,
+            SourceBundleVerifyVerdict.COVERAGE_INCOMPLETE: 422,
+            SourceBundleVerifyVerdict.UNKNOWN_MISSION: 404,
+            SourceBundleVerifyVerdict.BUNDLE_NOT_SEALED: 409,
+            SourceBundleVerifyVerdict.STORE_UNAVAILABLE: 503,
+        }
+        response.status_code = verify_status[result.verdict]
+        if result.verdict is SourceBundleVerifyVerdict.STORE_UNAVAILABLE:
+            response.headers["Retry-After"] = "30"
+        comparison = result.comparison
+        return SourceMediaVerifyResponse(
+            verdict=result.verdict.value,
+            detail=result.detail,
+            bundle=_to_bundle_view(result.bundle) if result.bundle is not None else None,
+            mismatched=list(comparison.mismatched) if comparison else [],
+            missing=list(comparison.missing) if comparison else [],
+            unexpected=list(comparison.unexpected) if comparison else [],
+        )
+
+    @router.post(
         "/v1/processing-jobs/{job_id}/artifacts/upload-url",
         response_model=ArtifactUploadUrlResponse,
         status_code=201,
@@ -2604,20 +3862,28 @@ def build_processing_jobs_router(
         job_id: str,
         request: ArtifactUploadUrlRequest,
         response: Response,
+        lease_fence: LeaseFence = Depends(_required_worker_fence),  # noqa: B008
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ArtifactUploadUrlResponse:
-        """워커가 산출물 바이트를 올릴 자리를 받아간다.
+        """워커가 산출물 바이트 업로드를 위한 자격을 받는다.
 
-        **바이트가 Core 를 통과하지 않는다.** 워커가 presigned PUT 으로 스토리지에
-        직접 쓴다 — point cloud 는 GB 단위라 ``put_bytes``(서버가 전량을 메모리에
-        올리는 KMZ 용 경로)로는 감당이 안 된다. ``source_media`` 의 업로드가 같은
-        모양이다(Core 는 자리를 정하고 URL 만 발급).
+        **바이트는 Core 를 통과하지 않는다.** 워커가 presigned PUT 으로 스토리지에
+        직접 쓴다. 이 API는 업로드할 바이트를 검사하거나 재해시하지 않으며,
+        ``source_media`` 업로드처럼 바이트 위치·권한만 정한다.
 
-        **등록(``POST .../artifacts``)과 분리한 이유**: 등록은 계보를 원장에
-        박는 durable 행위이고 이건 그렇지 않다. 합치면 "바이트를 올리다 실패한"
-        상태가 원장에 남거나, 반대로 원장 기록을 롤백해야 한다. 나눠 두면
-        워커가 올리기를 마친 뒤에만 등록하고, 실패는 재시도로 끝난다(같은 키가
-        나오므로 재시도가 사본을 만들지 않는다).
+        **grant의 영속 경계**: 1) journal append 실패면 durable grant는 만들지 못하고
+        ``STORE_UNAVAILABLE`` 를 돌려준다. 2) journal append는 됐으나 presign URL
+        생성이 실패하면 결과는 ``STORAGE_UNAVAILABLE`` 이며, 동일 바인딩은 후속 재요청에서
+        다시 쓰면 재사용되고 바인딩 충돌은 거부된다. 3) 이후 업로드 직후의 직접 PUT
+        실패/끊김은 Core 가 모니터링하지 않으며, 등록 단계에서만 신뢰할 수 있는
+        객체 메타데이터(객체키·sha256·크기·content-type) 대조로 누락/불일치를 거부한다.
+        반환되는 ``uploadUrl`` 자체는 원장에 저장되지 않는 만료성 capability이며,
+        만료 뒤 동일 바인딩으로 재요청하면 기존 durable grant에 새 URL을 발급한다.
+
+        **등록(``POST .../artifacts``)과 분리한 이유**: 등록은 계보/lineage를 durable로
+        수락하는 단계다. 업로드는 원장에 바이트를 쓰지 않고, 실제 수락 시에는
+        스토리지 HEAD/메타데이터를 통해 grant 바인딩(객체키·sha256·크기·content-type)을
+        대조해 맞는지 확인한다. Core는 바이트를 읽거나 재해시하지 않는다.
         """
         if request.content_type not in ALLOWED_CONTENT_TYPES:
             response.status_code = _STATUS[ProcessingJobVerdict.UNSUPPORTED_CONTENT_TYPE]
@@ -2629,21 +3895,28 @@ def build_processing_jobs_router(
         result = store.artifact_upload_target(
             job_id,
             artifact_id=request.artifact_id,
-            worker_id=principal.principal_id,
+            lease_fence=lease_fence,
+            authenticated_actor_id=principal.principal_id,
             now=datetime.now(UTC),
             filename=request.filename,
+            sha256=request.sha256,
+            size_bytes=request.size_bytes,
+            content_type=request.content_type,
         )
         if result.verdict is not ProcessingJobVerdict.UPLOAD_READY or result.object_key is None:
             response.status_code = _STATUS[result.verdict]
-            return ArtifactUploadUrlResponse(
-                verdict=result.verdict.value, detail=result.detail
-            )
+            return ArtifactUploadUrlResponse(verdict=result.verdict.value, detail=result.detail)
 
         now = datetime.now(UTC)
         try:
-            upload_url = storage.presigned_put(
+            if not isinstance(storage, DigestBoundEvidenceStorage):
+                raise EvidenceStorageError(
+                    "processing artifact storage lacks digest-bound PUT support"
+                )
+            capability = storage.presigned_put_bound_digest(
                 result.object_key,
                 content_type=request.content_type,
+                content_digest=request.sha256,
                 ttl=DEFAULT_UPLOAD_TTL,
             )
         except EvidenceStorageError:
@@ -2662,8 +3935,9 @@ def build_processing_jobs_router(
         return ArtifactUploadUrlResponse(
             verdict=result.verdict.value,
             object_key=result.object_key,
-            upload_url=upload_url,
+            upload_url=capability.upload_url,
             expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
+            required_headers=capability.required_headers,
         )
 
     @router.get(
@@ -2687,30 +3961,19 @@ def build_processing_jobs_router(
         올릴 자리만 받고, 남의(또는 자기) 산출물을 다시 읽을 이유가 없다.
         """
         del principal
-        found = store.artifact_of(job_id, artifact_id)
-        if found is None:
+        resolved = store.resolve_artifact(job_id, artifact_id)
+        if resolved is None:
             response.status_code = _STATUS[ProcessingJobVerdict.ARTIFACT_NOT_FOUND]
             return ArtifactDownloadResponse(
                 verdict=ProcessingJobVerdict.ARTIFACT_NOT_FOUND.value,
                 detail="이 작업에 그 산출물이 등록돼 있지 않다",
             )
 
-        record, artifact = found
+        artifact = resolved.artifact
         try:
-            object_key = build_processing_artifact_object_key(
-                site_id=record.site_id, job_id=job_id, artifact_id=artifact_id
-            )
-            # 부속 파일 키도 여기서 전부 미리 유도한다 — 실패하면(원장에 있는
-            # filename 이 경로-안전하지 않다) 등록 시점 검증이 뚫렸다는 뜻이라
-            # URL 을 하나도 안 만들고 통째로 거부한다(주 파일만 내주고 부속을
-            # 조용히 빠뜨리면 mesh 뷰어가 텍스처 없는 반쪽 결과를 받는다).
-            auxiliary_keys = {
-                name: build_processing_artifact_object_key(
-                    site_id=record.site_id, job_id=job_id, artifact_id=artifact_id, filename=name
-                )
-                for name in artifact.auxiliary_files
-            }
-        except ValueError as exc:
+            object_key = resolved.object_key
+            auxiliary_keys = resolved.auxiliary_object_keys()
+        except (ValueError, ArtifactManifestError) as exc:
             # 등록 시점에 이미 검증된 값이라 도달하지 않아야 한다 — 도달하면
             # 원장이 이상한 것이므로 조용히 URL 을 만들지 않는다.
             response.status_code = _STATUS[ProcessingJobVerdict.INVALID_ARTIFACT_ID]
@@ -2776,6 +4039,7 @@ def build_processing_jobs_router(
         job_id: str,
         request: ProcessingArtifactRequest,
         response: Response,
+        lease_fence: LeaseFence = Depends(_required_worker_fence),  # noqa: B008
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ProcessingArtifactMutationResponse:
         spec = ArtifactSpec(
@@ -2790,9 +4054,18 @@ def build_processing_jobs_router(
             auxiliary_files=tuple(request.auxiliary_files),
             vertical_reference=request.vertical_reference,
             accuracy=request.accuracy,
+            primary=request.primary_object.to_domain(),
+            auxiliary_objects=tuple(
+                (name, binding.to_domain())
+                for name, binding in sorted(request.auxiliary_objects.items())
+            ),
         )
         result = store.register_artifact(
-            job_id, spec, registered_by=principal.principal_id, now=datetime.now(UTC)
+            job_id,
+            spec,
+            registered_by=principal.principal_id,
+            lease_fence=lease_fence,
+            now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is ProcessingJobVerdict.STORE_UNAVAILABLE:

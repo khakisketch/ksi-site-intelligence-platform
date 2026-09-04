@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.volume_change_report import VolumeChangeReport
 
@@ -51,6 +51,7 @@ from ksi_core.auth import (
     require_permission,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.leasing import LeaseFence
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -73,6 +74,14 @@ class VolumeChangeVerdict(StrEnum):
     UNKNOWN_MISSION = "UNKNOWN_MISSION"
     UNKNOWN_ARTIFACT = "UNKNOWN_ARTIFACT"
     ARTIFACT_KIND_MISMATCH = "ARTIFACT_KIND_MISMATCH"
+    UNKNOWN_REQUEST = "UNKNOWN_REQUEST"
+    REQUEST_MISMATCH = "REQUEST_MISMATCH"
+    REQUEST_INELIGIBLE = "REQUEST_INELIGIBLE"
+    LEASE_REQUIRED = "LEASE_REQUIRED"
+    LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
     DUPLICATE_REPORT_ID = "DUPLICATE_REPORT_ID"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -82,6 +91,14 @@ _STATUS: dict[VolumeChangeVerdict, int] = {
     VolumeChangeVerdict.UNKNOWN_MISSION: 404,
     VolumeChangeVerdict.UNKNOWN_ARTIFACT: 422,
     VolumeChangeVerdict.ARTIFACT_KIND_MISMATCH: 422,
+    VolumeChangeVerdict.UNKNOWN_REQUEST: 422,
+    VolumeChangeVerdict.REQUEST_MISMATCH: 422,
+    VolumeChangeVerdict.REQUEST_INELIGIBLE: 422,
+    VolumeChangeVerdict.LEASE_REQUIRED: 409,
+    VolumeChangeVerdict.LEASE_HELD_BY_ANOTHER: 409,
+    VolumeChangeVerdict.STALE_LEASE_ACQUISITION: 409,
+    VolumeChangeVerdict.STALE_LEASE_GENERATION: 409,
+    VolumeChangeVerdict.INVALID_LEASE_FENCE: 422,
     VolumeChangeVerdict.DUPLICATE_REPORT_ID: 409,
     VolumeChangeVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -105,6 +122,8 @@ class RecordedVolumeChange:
     report: VolumeChangeReport
     reported_by: str | None
     recorded_at: datetime
+    request_id: str | None = None
+    accepted_lease_fence: LeaseFence | None = None
 
 
 class VolumeChangeStore:
@@ -120,10 +139,12 @@ class VolumeChangeStore:
         *,
         mission_store: MissionStore,
         processing_job_store: ProcessingJobStore,
+        comparison_request_store: Any | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
+        self._comparison_request_store = comparison_request_store
         self._lock = threading.Lock()
         self._by_mission: dict[str, list[RecordedVolumeChange]] = {}
         self._ids_by_mission: dict[str, dict[str, VolumeChangeReport]] = {}
@@ -165,9 +186,52 @@ class VolumeChangeStore:
                     f"재생: 기록될 수 없는 리포트({verdict.value}: {detail}) — "
                     f"missionId={mission_id} volumeChangeId={report.volume_change_id}"
                 )
+            request_id, fence = self._replay_authority(raw, report)
+            if (
+                fence is not None
+                and (
+                    self._comparison_request_store is None
+                    or not self._comparison_request_store.has_recorded_lease_fence(
+                        report.volume_change_id,
+                        fence,
+                        authenticated_actor_id=raw.get("reportedBy"),
+                    )
+                )
+            ):
+                raise VolumeChangeRecoveryError(
+                    "재생: result authority가 durable request lease history에 없다"
+                )
             self._project(
-                mission_id, report, raw.get("reportedBy"), datetime.fromisoformat(raw["ts"])
+                mission_id,
+                report,
+                raw.get("reportedBy"),
+                datetime.fromisoformat(raw["ts"]),
+                request_id=request_id,
+                accepted_lease_fence=fence,
             )
+
+    @staticmethod
+    def _replay_authority(
+        raw: dict[str, Any], report: VolumeChangeReport
+    ) -> tuple[str | None, LeaseFence | None]:
+        if raw.get("authorityVersion") is None:
+            return None, None
+        if raw.get("authorityVersion") != 1 or raw.get("requestId") != report.volume_change_id:
+            raise VolumeChangeRecoveryError("재생: malformed result authority")
+        fields = raw.get("acceptedLeaseFence")
+        if not isinstance(fields, dict):
+            raise VolumeChangeRecoveryError("재생: missing accepted lease fence")
+        try:
+            fence = LeaseFence(
+                str(fields["workerInstanceId"]),
+                str(fields["leaseAcquisitionId"]),
+                int(fields["leaseGeneration"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise VolumeChangeRecoveryError("재생: malformed accepted lease fence") from exc
+        if not fence.is_well_formed():
+            raise VolumeChangeRecoveryError("재생: invalid accepted lease fence")
+        return report.volume_change_id, fence
 
     def _project(
         self,
@@ -175,10 +239,17 @@ class VolumeChangeStore:
         report: VolumeChangeReport,
         reported_by: str | None,
         recorded_at: datetime,
+        *,
+        request_id: str | None = None,
+        accepted_lease_fence: LeaseFence | None = None,
     ) -> None:
         self._by_mission.setdefault(mission_id, []).append(
             RecordedVolumeChange(
-                report=report, reported_by=reported_by, recorded_at=recorded_at
+                report=report,
+                reported_by=reported_by,
+                recorded_at=recorded_at,
+                request_id=request_id,
+                accepted_lease_fence=accepted_lease_fence,
             )
         )
         self._ids_by_mission.setdefault(mission_id, {})[report.volume_change_id] = report
@@ -227,7 +298,12 @@ class VolumeChangeStore:
         *,
         now: datetime,
         reported_by: str | None = None,
+        lease_fence: LeaseFence | None = None,
     ) -> VolumeChangeRecordResult:
+        if self._comparison_request_store is not None:
+            return self._record_fenced(
+                mission_id, report, now=now, reported_by=reported_by, lease_fence=lease_fence
+            )
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return VolumeChangeRecordResult(
@@ -279,6 +355,102 @@ class VolumeChangeStore:
                 )
             self._project(mission_id, report, reported_by, now)
             return VolumeChangeRecordResult(VolumeChangeVerdict.RECORDED)
+
+    def _record_fenced(
+        self,
+        mission_id: str,
+        report: VolumeChangeReport,
+        *,
+        now: datetime,
+        reported_by: str | None,
+        lease_fence: LeaseFence | None,
+    ) -> VolumeChangeRecordResult:
+        request_id = report.volume_change_id
+        request_store = self._comparison_request_store
+        assert request_store is not None  # noqa: S101 -- selected by record() branch
+        with request_store.result_commit_guard(
+            request_id, lease_fence=lease_fence, authenticated_actor_id=reported_by, now=now
+        ) as authorization:
+            if not authorization.authorized:
+                return self._lease_denial(authorization.verdict, authorization.detail)
+            request = authorization.record
+            assert request is not None  # noqa: S101 -- guard invariant
+            if request.mission_id != mission_id:
+                return VolumeChangeRecordResult(
+                    VolumeChangeVerdict.REQUEST_MISMATCH,
+                    "comparison request missionId 가 결과 경로와 다르다",
+                )
+            if not request.volume_change_eligible:
+                return VolumeChangeRecordResult(
+                    VolumeChangeVerdict.REQUEST_INELIGIBLE,
+                    request.volume_change_ineligible_reason,
+                )
+            with self._lock:
+                if self._journal.sealed_reason is not None:
+                    return VolumeChangeRecordResult(
+                        VolumeChangeVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
+                    )
+                existing = self._ids_by_mission.get(mission_id, {}).get(report.volume_change_id)
+                if existing is not None:
+                    if existing == report:
+                        return VolumeChangeRecordResult(
+                            VolumeChangeVerdict.RECORDED,
+                            detail="이미 같은 내용으로 기록돼 있다(멱등 재전송)",
+                        )
+                    return VolumeChangeRecordResult(
+                        VolumeChangeVerdict.DUPLICATE_REPORT_ID,
+                        f"volumeChangeId={report.volume_change_id!r} 는 이미 다른 내용으로 "
+                        "기록됐다",
+                    )
+                verdict, detail = self._judge_references(report)
+                if verdict is not VolumeChangeVerdict.RECORDED:
+                    return VolumeChangeRecordResult(verdict, detail=detail)
+                assert lease_fence is not None  # noqa: S101 -- guard authorized only for full fence
+                raw = {
+                    "kind": "volume-change-recorded",
+                    "authorityVersion": 1,
+                    "ts": iso_utc(now),
+                    "missionId": mission_id,
+                    "requestId": request_id,
+                    "acceptedLeaseFence": {
+                        "workerInstanceId": lease_fence.worker_instance_id,
+                        "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                        "leaseGeneration": lease_fence.lease_generation,
+                    },
+                    "reportedBy": reported_by,
+                    "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
+                }
+                try:
+                    self._journal.append(raw)
+                except JournalSealedError:
+                    return VolumeChangeRecordResult(
+                        VolumeChangeVerdict.STORE_UNAVAILABLE,
+                        detail=JOURNAL_APPEND_FAILED_DETAIL,
+                    )
+                self._project(
+                    mission_id,
+                    report,
+                    reported_by,
+                    now,
+                    request_id=request_id,
+                    accepted_lease_fence=lease_fence,
+                )
+                return VolumeChangeRecordResult(VolumeChangeVerdict.RECORDED)
+
+    @staticmethod
+    def _lease_denial(verdict: Any, detail: str | None) -> VolumeChangeRecordResult:
+        mapping = {
+            "UNKNOWN_REQUEST": VolumeChangeVerdict.UNKNOWN_REQUEST,
+            "LEASE_REQUIRED": VolumeChangeVerdict.LEASE_REQUIRED,
+            "LEASE_HELD_BY_ANOTHER": VolumeChangeVerdict.LEASE_HELD_BY_ANOTHER,
+            "STALE_LEASE_ACQUISITION": VolumeChangeVerdict.STALE_LEASE_ACQUISITION,
+            "STALE_LEASE_GENERATION": VolumeChangeVerdict.STALE_LEASE_GENERATION,
+            "INVALID_LEASE_FENCE": VolumeChangeVerdict.INVALID_LEASE_FENCE,
+            "STORE_UNAVAILABLE": VolumeChangeVerdict.STORE_UNAVAILABLE,
+        }
+        return VolumeChangeRecordResult(
+            mapping.get(str(verdict), VolumeChangeVerdict.LEASE_REQUIRED), detail
+        )
 
     def _reject(
         self,
@@ -369,6 +541,9 @@ def build_volume_reports_router(store: VolumeChangeStore) -> APIRouter:
         mission_id: str,
         report: VolumeChangeReport,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> VolumeChangeResponse:
         """체적 리포트 접수 — **처리 워커만** 올린다.
@@ -376,8 +551,22 @@ def build_volume_reports_router(store: VolumeChangeStore) -> APIRouter:
         사람이 손으로 "이 구역이 이만큼 깎였다"를 원장에 주장할 수 없다. 이
         숫자는 정산·분쟁의 근거가 될 수 있고, 그럴수록 계산된 것이어야 한다.
         """
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         outcome = store.record(
-            mission_id, report, now=datetime.now(UTC), reported_by=principal.principal_id
+            mission_id,
+            report,
+            now=datetime.now(UTC),
+            reported_by=principal.principal_id,
+            lease_fence=fence,
         )
         response.status_code = _STATUS[outcome.verdict]
         if outcome.verdict is VolumeChangeVerdict.STORE_UNAVAILABLE:

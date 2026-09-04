@@ -38,6 +38,11 @@ from ksi_change_detection.run_region_extraction import run_region_extraction
 
 from ksi_processing_controller.comparison_worker import LeaseHeartbeat
 from ksi_processing_controller.core_client import CoreClientError, RegionExtractionCoreClient
+from ksi_processing_controller.workspace import (
+    attempt_workspace,
+    cleanup_attempt_workspace,
+    lease_or_compat_handle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +88,12 @@ def run_region_extraction_request(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
     )
     own_client = http_client is None
-    work_dir.mkdir(parents=True, exist_ok=True)
-
     now_message(f"[{request_id}] lease 취득")
-    core.acquire_region_extraction_lease(request_id)
+    lease = lease_or_compat_handle(
+        core.acquire_region_extraction_lease(request_id),
+        work_kind="region-extraction", resource_id=request_id,
+    )
+    attempt_dir = attempt_workspace(work_dir, lease)
     extraction_input = core.get_region_extraction_input(request_id)
 
     if extraction_input.status == "QUEUED":
@@ -94,7 +101,9 @@ def run_region_extraction_request(
         now_message(f"[{request_id}] RUNNING")
 
     heartbeat = LeaseHeartbeat(
-        lambda: core.acquire_region_extraction_lease(request_id),
+        lambda: getattr(
+            core, "renew_region_extraction_lease", core.acquire_region_extraction_lease
+        )(request_id),
         request_id,
         interval_seconds=heartbeat_interval_seconds,
         now_message=now_message,
@@ -104,7 +113,7 @@ def run_region_extraction_request(
 
     # 다운로드를 시도하기 *전에* 경로를 목록에 넣는다 — 부분 파일도 청소 대상이다
     # (모듈 docstring, worker.py 와 같은 관용구).
-    raster_path = work_dir / f"{extraction_input.diff_raster_id}.tif"
+    raster_path = attempt_dir / f"{extraction_input.diff_raster_id}.tif"
     downloaded_paths: list[Path] = [raster_path]
     try:
         report = run_region_extraction(
@@ -149,6 +158,10 @@ def run_region_extraction_request(
         _cleanup_downloaded_paths(downloaded_paths, request_id, now_message)
         if own_client:
             fetch.close()
+        try:
+            cleanup_attempt_workspace(work_dir, attempt_dir)
+        except OSError as exc:
+            now_message(f"[{request_id}] attempt workspace 정리 실패(무시하고 계속): {exc}")
 
 
 __all__ = ["RegionExtractionWorkerRunError", "run_region_extraction_request"]

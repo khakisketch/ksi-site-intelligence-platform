@@ -99,8 +99,10 @@ class FakeCore:
             )
         self.status = target
 
-    def presign_diff_raster_upload(self, request_id: str) -> DiffRasterUploadTarget:
-        self.calls.append(("upload-url", request_id))
+    def presign_diff_raster_upload(
+        self, request_id: str, *, digest: str, size_bytes: int
+    ) -> DiffRasterUploadTarget:
+        self.calls.append(("upload-url", request_id, digest, size_bytes))
         return DiffRasterUploadTarget(
             object_key=f"sites/site-1/design-conformance/{request_id}",
             upload_url=_UPLOAD_URL,
@@ -292,7 +294,7 @@ def test_incompatible_vertical_datum_fails_before_uploading_anything(
             now_message=lambda _msg: None,
         )
     assert core.uploaded is None
-    assert ("upload-url", _REQUEST_ID) not in core.calls
+    assert not any(call[0] == "upload-url" for call in core.calls)
     assert core.status == "FAILED"
 
 

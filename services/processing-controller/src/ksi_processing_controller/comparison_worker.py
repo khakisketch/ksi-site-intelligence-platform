@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -62,6 +63,11 @@ from ksi_geo_spatial.crs import CrsMismatchError, UnsupportedCrsError
 
 from ksi_processing_controller.core_client import ComparisonInput, CoreClient, CoreClientError
 from ksi_processing_controller.observability import bind_correlation_id, current_correlation_id
+from ksi_processing_controller.workspace import (
+    attempt_workspace,
+    cleanup_attempt_workspace,
+    lease_or_compat_handle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +134,7 @@ class LeaseHeartbeat:
 
     def __init__(
         self,
-        renew: Callable[[], None],
+        renew: Callable[[], object],
         label: str,
         *,
         interval_seconds: float,
@@ -264,12 +270,23 @@ def run_comparison_request(
     fetch = http_client
     own_client = http_client is None
     now_message(f"[{request_id}] lease 취득")
-    core.acquire_comparison_lease(request_id)
+    lease = lease_or_compat_handle(
+        core.acquire_comparison_lease(request_id),
+        work_kind="comparison", resource_id=request_id,
+    )
     comparison_input = core.get_comparison_input(request_id)
 
     if comparison_input.status == "QUEUED":
         core.transition_comparison(request_id, "RUNNING")
         now_message(f"[{request_id}] RUNNING")
+
+    try:
+        attempt_dir = attempt_workspace(work_dir, lease)
+    except OSError as exc:
+        detail = str(exc)[:500]
+        with suppress(CoreClientError):
+            core.transition_comparison(request_id, "FAILED", detail=detail)
+        raise ComparisonWorkerRunError(f"[{request_id}] 실행 실패: {exc}") from exc
 
     # lease 갱신은 여기서부터다 — 위(입력 조회·RUNNING 전이)는 왕복 몇 번이라
     # TTL 을 위협하지 않고, 아래가 몇 분~수십 분짜리다. 정지는 finally 에서 한다.
@@ -281,7 +298,9 @@ def run_comparison_request(
                 timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
             )
         heartbeat = LeaseHeartbeat(
-            lambda: core.acquire_comparison_lease(request_id),
+            lambda: getattr(
+                core, "renew_comparison_lease", core.acquire_comparison_lease
+            )(request_id),
             request_id,
             interval_seconds=heartbeat_interval_seconds,
             now_message=now_message,
@@ -291,7 +310,6 @@ def run_comparison_request(
         heartbeat_started = True
         # 실행 소유권(RUNNING)을 확립한 뒤부터의 파일 I/O는 모두 아래 except로
         # 수렴한다. mkdir을 try 밖에 두면 디스크 오류 하나로 요청이 영구 RUNNING이다.
-        work_dir.mkdir(parents=True, exist_ok=True)
         computed_at = datetime.now(UTC)
         summaries: list[str] = []
 
@@ -314,7 +332,7 @@ def run_comparison_request(
                     # 함수 기본값이 아니라 **이 요청의 스냅샷**을 쓴다 — 그래야
                     # 원장에 적힌 기준값이 실제로 쓴 값이 된다(모듈 docstring).
                     distance_threshold_m=comparison_input.policy.distance_threshold_m,
-                    work_dir=work_dir,
+                    work_dir=attempt_dir,
                 )
                 summaries.append(
                     f"변화탐지 후보 {cd_result.candidate_count}/{cd_result.point_count}"
@@ -374,7 +392,7 @@ def run_comparison_request(
                         if checkpoint_uncertainty_ready
                         else ODM_NO_CHECKPOINT_NOTE
                     ),
-                    work_dir=work_dir,
+                    work_dir=attempt_dir,
                 )
                 summaries.append(f"체적 순변화 {vol_report.total_net_m3:.2f}m³")
             except CoreClientError as exc:
@@ -435,6 +453,10 @@ def run_comparison_request(
             heartbeat.stop()
         if own_client and fetch is not None:
             fetch.close()
+        try:
+            cleanup_attempt_workspace(work_dir, attempt_dir)
+        except OSError as exc:
+            now_message(f"[{request_id}] attempt workspace 정리 실패(무시하고 계속): {exc}")
 
 
 __all__ = ["ComparisonWorkerRunError", "LeaseHeartbeat", "run_comparison_request"]

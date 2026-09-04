@@ -62,12 +62,12 @@ from ksi_event_contracts.processing_job import ProcessingJobStatus
 from ksi_core.api_base import CamelModel
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.metrics import SITE_AUTO_ADVANCES
+from ksi_core.processing_jobs import ProcessingJobRecord, authoritative_artifacts
 from ksi_core.sites import SiteVerdict
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from ksi_core.processing_jobs import ProcessingJobRecord
     from ksi_core.sites import SiteStore
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,8 @@ class SpatialModelStatus:
 def has_source_artifact(record: ProcessingJobRecord) -> bool:
     """이 작업이 원본(SSOT) 산출물을 가졌는가 — 파생만으로는 거짓."""
     return any(
-        artifact.lineage.authority is LineageAuthority.SOURCE for artifact in record.artifacts
+        artifact.lineage.authority is LineageAuthority.SOURCE
+        for artifact in authoritative_artifacts(record)
     )
 
 
@@ -203,7 +204,7 @@ def evaluate_spatial_model(
         max_age_days=max_age_days,
         source_artifact_count=sum(
             1
-            for artifact in newest.artifacts
+            for artifact in authoritative_artifacts(newest)
             if artifact.lineage.authority is LineageAuthority.SOURCE
         ),
         succeeded_epoch_count=len(epochs),
@@ -401,15 +402,11 @@ class SpatialModelLifecycle:
         if self._processing_job_store is None:
             # 판정 근거(재구성 epoch 목록)가 없는 조립이다. 조용히 넘기지 않고
             # 로그로 드러낸다 — 이 조립에서는 노후가 영원히 판정되지 않는다.
-            logger.warning(
-                "노후 스윕 건너뜀 — site=%s: 재구성 원장이 이 조립에 없다", site_id
-            )
+            logger.warning("노후 스윕 건너뜀 — site=%s: 재구성 원장이 이 조립에 없다", site_id)
             return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
         site = self._site_store.get(site_id)
         if site is None:
-            return _record_outcome(
-                SiteAdvanceOutcome.UNKNOWN_SITE, target=SiteStatus.MODEL_STALE
-            )
+            return _record_outcome(SiteAdvanceOutcome.UNKNOWN_SITE, target=SiteStatus.MODEL_STALE)
         if site.status not in (SiteStatus.PATROL_READY, SiteStatus.PATROL_ACTIVE):
             return _record_outcome(SiteAdvanceOutcome.NO_RULE, target=None)
         status = evaluate_spatial_model(
@@ -570,9 +567,7 @@ def build_spatial_model_router(
 
     if lifecycle is not None:
 
-        @router.post(
-            "/{site_id}/spatial-model/staleness-sweep", response_model=SpatialModelView
-        )
+        @router.post("/{site_id}/spatial-model/staleness-sweep", response_model=SpatialModelView)
         def sweep_site_staleness(
             site_id: str,
             _principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008

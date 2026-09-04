@@ -51,6 +51,16 @@ def _json_handler(status: int, body: dict) -> httpx.MockTransport:
     return httpx.MockTransport(handle)
 
 
+def test_injected_worker_instance_identity_must_be_uuidv4() -> None:
+    with pytest.raises(ValueError, match="UUIDv4"):
+        HttpCoreClient(
+            _BASE,
+            token="worker-token",
+            client=httpx.Client(transport=_json_handler(200, {})),
+            worker_instance_id="11111111-1111-1111-8111-111111111111",
+        )
+
+
 # ── list_pending ─────────────────────────────────────────────────────────
 
 
@@ -94,7 +104,15 @@ def test_bound_work_correlation_is_sent_on_every_core_http_method() -> None:
         observed.append((request.method, request.headers.get("X-Request-Id")))
         if request.method == "GET":
             return httpx.Response(200, json={"jobs": []})
-        return httpx.Response(201, json={"verdict": "LEASED", "job": {}})
+        return httpx.Response(
+            201,
+            json={"verdict": "LEASED", "job": {}},
+            headers={
+                "X-KSI-Worker-Instance-Id": request.headers["X-KSI-Worker-Instance-Id"],
+                "X-KSI-Lease-Acquisition-Id": request.headers["X-KSI-Lease-Acquisition-Id"],
+                "X-KSI-Lease-Generation": "1",
+            },
+        )
 
     client = _client(httpx.MockTransport(handle))
     with bind_correlation_id("mission-1-proc1"):
@@ -276,14 +294,104 @@ def test_checkpoint_queue_rejects_non_comparable_server_snapshots(
 
 
 def test_acquire_lease_accepts_leased() -> None:
-    client = _client(_json_handler(201, {"verdict": "LEASED", "job": {}}))
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"verdict": "LEASED", "job": {}}, headers={
+            "X-KSI-Worker-Instance-Id": request.headers["X-KSI-Worker-Instance-Id"],
+            "X-KSI-Lease-Acquisition-Id": request.headers["X-KSI-Lease-Acquisition-Id"],
+            "X-KSI-Lease-Generation": "1",
+        })
+    client = _client(httpx.MockTransport(handle))
     client.acquire_lease("job-1")  # 예외 없이 통과해야 한다
 
 
 def test_acquire_lease_accepts_renewed() -> None:
     """[회귀] 실물에서 잡힌 버그 — heartbeat 갱신마다 예외가 났었다."""
-    client = _client(_json_handler(200, {"verdict": "LEASE_RENEWED", "job": {}}))
-    client.acquire_lease("job-1")  # 예외 없이 통과해야 한다
+    calls = 0
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            201 if calls == 1 else 200,
+            json={"verdict": "LEASED" if calls == 1 else "LEASE_RENEWED", "job": {}},
+            headers={
+                "X-KSI-Worker-Instance-Id": request.headers["X-KSI-Worker-Instance-Id"],
+                "X-KSI-Lease-Acquisition-Id": request.headers["X-KSI-Lease-Acquisition-Id"],
+                "X-KSI-Lease-Generation": "1",
+            },
+        )
+    client = _client(httpx.MockTransport(handle))
+    client.acquire_lease("job-1")
+    client.acquire_lease("job-1")
+
+
+def test_lost_claim_response_reuses_acquisition_identity_without_self_fencing() -> None:
+    """A transport retry repeats CLAIM R; it never manufactures generation N+1."""
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            raise httpx.ReadTimeout("response lost", request=request)
+        return httpx.Response(
+            201,
+            json={"verdict": "LEASED"},
+            headers={
+                "X-KSI-Worker-Instance-Id": request.headers["X-KSI-Worker-Instance-Id"],
+                "X-KSI-Lease-Acquisition-Id": request.headers["X-KSI-Lease-Acquisition-Id"],
+                "X-KSI-Lease-Generation": "7",
+            },
+        )
+
+    client = _client(httpx.MockTransport(handle))
+    with pytest.raises(httpx.ReadTimeout):
+        client.acquire_lease("job-1")
+    handle_result = client.acquire_lease("job-1")
+
+    assert handle_result.lease_generation == 7
+    assert [request.headers["X-KSI-Lease-Mode"] for request in requests] == ["CLAIM", "CLAIM"]
+    assert (
+        requests[0].headers["X-KSI-Lease-Acquisition-Id"]
+        == requests[1].headers["X-KSI-Lease-Acquisition-Id"]
+    )
+
+
+def test_stale_renew_closes_local_handle_and_next_poll_uses_a_new_claim() -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 2:
+            return httpx.Response(
+                409,
+                json={"verdict": "STALE_LEASE_GENERATION", "detail": "superseded"},
+            )
+        return httpx.Response(
+            201,
+            json={"verdict": "LEASED"},
+            headers={
+                "X-KSI-Worker-Instance-Id": request.headers[
+                    "X-KSI-Worker-Instance-Id"
+                ],
+                "X-KSI-Lease-Acquisition-Id": request.headers[
+                    "X-KSI-Lease-Acquisition-Id"
+                ],
+                "X-KSI-Lease-Generation": "1" if len(requests) == 1 else "3",
+            },
+        )
+
+    client = _client(httpx.MockTransport(handle))
+    first = client.acquire_lease("job-1")
+    with pytest.raises(CoreClientError, match="STALE_LEASE_GENERATION"):
+        client.renew_lease("job-1")
+    recovered = client.acquire_lease("job-1")
+
+    assert [request.headers["X-KSI-Lease-Mode"] for request in requests] == [
+        "CLAIM",
+        "RENEW",
+        "CLAIM",
+    ]
+    assert recovered.lease_generation == 3
+    assert recovered.lease_acquisition_id != first.lease_acquisition_id
 
 
 def test_acquire_lease_rejects_held_by_another() -> None:

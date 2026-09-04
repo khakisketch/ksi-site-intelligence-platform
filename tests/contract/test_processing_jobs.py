@@ -16,19 +16,23 @@
 7. **사람은 성공을 찍을 수 없다** — RUNNING/SUCCEEDED/FAILED 는 워커 권한이고
    CANCELLED 는 사람 권한이다.
 """
+# ruff: noqa: E501
 
 from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from threading import Barrier
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
+from ksi_core.artifact_manifest import ArtifactObjectBinding
 from ksi_core.auth import (
     AuthRegistry,
     Permission,
@@ -38,7 +42,12 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.evidence import EvidenceStorageError
+from ksi_core.evidence import (
+    DigestBoundUploadCapability,
+    EvidenceStorageError,
+    ObjectStorageObservation,
+)
+from ksi_core.leasing import LeaseFence, LeaseMode
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     _TRANSITION_PERMISSION,
@@ -54,6 +63,7 @@ from ksi_core.processing_jobs import (
     assert_job_transition,
     assert_succeeded_is_backed,
     build_job_id,
+    build_processing_artifact_object_key,
 )
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import (
@@ -96,6 +106,10 @@ _EDGE_TOKEN = "processing-edge"  # noqa: S105
 _OTHER_EDGE_TOKEN = "processing-edge-other"  # noqa: S105
 _OTHER_ORGANIZATION_VIEWER_TOKEN = "processing-other-org-viewer"  # noqa: S105
 _OTHER_ORGANIZATION_WORKER_TOKEN = "processing-other-org-worker"  # noqa: S105
+_WORKER_INSTANCE_ID = "11111111-1111-4111-8111-111111111111"
+_WORKER_ACQUISITION_ID = "22222222-2222-4222-8222-222222222222"
+_OTHER_WORKER_INSTANCE_ID = "33333333-3333-4333-8333-333333333333"
+_OTHER_WORKER_ACQUISITION_ID = "44444444-4444-4444-8444-444444444444"
 
 _SITE_FRAME = SiteFrame(
     crs="EPSG:5186", vertical_datum="KNG2018", transform_version="v1", unit="meter"
@@ -1442,11 +1456,46 @@ class _FakeStorage:
 
     def __init__(self) -> None:
         self._blobs: dict[str, bytes] = {}
+        self._observations: dict[str, ObjectStorageObservation] = {}
         self.fail_get_with: Exception | None = None
+
+    def record_observation(
+        self, *, object_key: str, sha256: str, size_bytes: int, content_type: str
+    ) -> None:
+        """Model a completed direct PUT; presigning alone never creates an object."""
+        self._observations[object_key] = ObjectStorageObservation(
+            object_key=object_key,
+            exists=True,
+            sha256=sha256,
+            size_bytes=size_bytes,
+            content_type=content_type,
+        )
+
+    def observe_object(self, object_key: str) -> ObjectStorageObservation:
+        return self._observations.get(
+            object_key, ObjectStorageObservation(object_key=object_key, exists=False)
+        )
 
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
         del content_type, ttl
         return f"https://storage.invalid/{object_key}?upload=1"
+
+    def presigned_put_bound_digest(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        content_digest: str,
+        ttl: Any,
+    ) -> DigestBoundUploadCapability:
+        del ttl
+        return DigestBoundUploadCapability(
+            upload_url=f"https://storage.invalid/{object_key}?upload=1",
+            required_headers={
+                "Content-Type": content_type,
+                "x-test-sha256": content_digest,
+            },
+        )
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         del ttl
@@ -1503,11 +1552,12 @@ def _client(
             is SourceBundleVerifyVerdict.VERIFIED
         )
     site_store = _site_store(tmp_path, egress=egress, path="http-sites.jsonl")
+    test_storage = storage if storage is not None else _FakeStorage()
     app = create_app(
         auth_registry=_auth_registry(),
         mission_store=mission_store,
         site_store=site_store,
-        evidence_storage=storage if storage is not None else _FakeStorage(),
+        evidence_storage=test_storage,
         source_media_store=source_media_store,
         processing_job_store=ProcessingJobStore(
             DurableJournal(tmp_path / "http-processing-jobs.jsonl"),
@@ -1517,6 +1567,7 @@ def _client(
         mission_signing_key=None,
     )
     client = TestClient(app)
+    cast(Any, client.app).state.test_storage = test_storage
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     return client
 
@@ -1568,7 +1619,7 @@ def _issue_payload(**overrides: Any) -> dict[str, Any]:
 
 
 def test_http_profile_issue_expands_core_owned_snapshot(tmp_path: Path) -> None:
-    client = _client(tmp_path)
+    client = _client(tmp_path, verify_bundle=True)
     response = client.post(
         f"/v1/missions/{_MISSION_ID}/processing-jobs",
         json={"processingProfileId": "ksi-odm-civil-v1"},
@@ -1668,8 +1719,26 @@ def test_http_rejects_new_legacy_unmanaged_processing_spec(tmp_path: Path) -> No
 
 
 def _as_worker(client: TestClient) -> TestClient:
-    client.headers.update({"Authorization": f"Bearer {_WORKER_TOKEN}"})
+    client.headers.update(
+        {
+            "Authorization": f"Bearer {_WORKER_TOKEN}",
+            "X-KSI-Worker-Instance-Id": _WORKER_INSTANCE_ID,
+            "X-KSI-Lease-Acquisition-Id": _WORKER_ACQUISITION_ID,
+            "X-KSI-Lease-Mode": "CLAIM",
+        }
+    )
+    client.headers.pop("X-KSI-Lease-Generation", None)
     return client
+
+
+def _lease_http(client: TestClient, job_id: str) -> Any:
+    response = client.post(f"/v1/processing-jobs/{job_id}/lease")
+    if response.status_code in {200, 201}:
+        client.headers["X-KSI-Lease-Generation"] = response.headers[
+            "X-KSI-Lease-Generation"
+        ]
+        client.headers["X-KSI-Lease-Mode"] = "RENEW"
+    return response
 
 
 def test_http_transition_and_get(tmp_path: Path) -> None:
@@ -1679,7 +1748,7 @@ def test_http_transition_and_get(tmp_path: Path) -> None:
     ).json()["job"]["jobId"]
 
     _as_worker(client)
-    assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 201
+    assert _lease_http(client, job_id).status_code == 201
     running = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"}
     )
@@ -1778,7 +1847,7 @@ def test_http_list_pending_excludes_running_jobs(tmp_path: Path) -> None:
     ).json()["job"]["jobId"]
 
     _as_worker(client)
-    assert client.post(f"/v1/processing-jobs/{job_id}/lease").status_code == 201
+    assert _lease_http(client, job_id).status_code == 201
     client.post(f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "RUNNING"})
 
     assert client.get("/v1/processing-jobs").json()["jobs"] == []
@@ -1838,7 +1907,12 @@ def test_other_organization_cannot_enumerate_or_mutate_foreign_processing_job(
         f"/v1/sites/{_SITE_ID}/processing-jobs", headers=other_viewer_headers
     ).json() == {"jobs": []}
 
-    other_worker_headers = {"Authorization": f"Bearer {_OTHER_ORGANIZATION_WORKER_TOKEN}"}
+    other_worker_headers = {
+        "Authorization": f"Bearer {_OTHER_ORGANIZATION_WORKER_TOKEN}",
+        "X-KSI-Worker-Instance-Id": _OTHER_WORKER_INSTANCE_ID,
+        "X-KSI-Lease-Acquisition-Id": _OTHER_WORKER_ACQUISITION_ID,
+        "X-KSI-Lease-Mode": "CLAIM",
+    }
     pending = client.get("/v1/processing-jobs", headers=other_worker_headers)
     assert pending.status_code == 200
     assert pending.json() == {"jobs": []}
@@ -1850,12 +1924,42 @@ def test_other_organization_cannot_enumerate_or_mutate_foreign_processing_job(
     assert foreign_lease.status_code == missing_lease.status_code == 404
     assert foreign_lease.json() == missing_lease.json()
 
-    foreign_input = client.get(f"/v1/processing-jobs/{job_id}/input", headers=other_worker_headers)
+    other_fenced_headers = {
+        **other_worker_headers,
+        "X-KSI-Lease-Generation": "1",
+    }
+    foreign_input = client.get(
+        f"/v1/processing-jobs/{job_id}/input", headers=other_fenced_headers
+    )
     missing_input = client.get(
-        "/v1/processing-jobs/unknown-processing-job/input", headers=other_worker_headers
+        "/v1/processing-jobs/unknown-processing-job/input", headers=other_fenced_headers
     )
     assert foreign_input.status_code == missing_input.status_code == 404
     assert foreign_input.json() == missing_input.json()
+
+    measurements = {
+        "measurements": [
+            {
+                "mediaId": "img-000.jpg",
+                "sha256": _sha("img-000.jpg"),
+                "bytes": 1_000_000,
+                "width": 4000,
+                "height": 3000,
+            }
+        ]
+    }
+    foreign_verify = client.post(
+        f"/v1/processing-jobs/{job_id}/verify-input",
+        headers=other_fenced_headers,
+        json=measurements,
+    )
+    missing_verify = client.post(
+        "/v1/processing-jobs/unknown-processing-job/verify-input",
+        headers=other_fenced_headers,
+        json=measurements,
+    )
+    assert foreign_verify.status_code == missing_verify.status_code == 404
+    assert foreign_verify.json() == missing_verify.json()
 
     # 같은 job은 원래 조직 worker가 이어서 처리할 수 있다. foreign 요청은 lease나
     # 상태를 바꾸지 않았음을 검증한다.
@@ -1863,9 +1967,8 @@ def test_other_organization_cannot_enumerate_or_mutate_foreign_processing_job(
         "/v1/processing-jobs", headers={"Authorization": f"Bearer {_WORKER_TOKEN}"}
     )
     assert [job["jobId"] for job in legacy_pending.json()["jobs"]] == [job_id]
-    legacy_lease = client.post(
-        f"/v1/processing-jobs/{job_id}/lease", headers={"Authorization": f"Bearer {_WORKER_TOKEN}"}
-    )
+    _as_worker(client)
+    legacy_lease = _lease_http(client, job_id)
     assert legacy_lease.status_code == 201
 
 
@@ -1974,6 +2077,8 @@ def test_processing_jobs_route_present_when_store_given(tmp_path: Path) -> None:
 
 
 def _artifact_payload(**overrides: Any) -> dict[str, Any]:
+    job_id = str(overrides.pop("_job_id", f"{_MISSION_ID}-pj1"))
+    lease_generation = int(overrides.pop("_lease_generation", 1))
     payload: dict[str, Any] = {
         "artifactId": "pointcloud",
         "kind": "point_cloud",
@@ -1984,9 +2089,93 @@ def _artifact_payload(**overrides: Any) -> dict[str, Any]:
         "crs": "EPSG:5186",
         "gsd": None,
         "accuracy": None,
+        "auxiliaryFiles": [],
     }
     payload.update(overrides)
+    artifact_id = str(payload["artifactId"])
+    digest = str(payload["digest"])
+    payload.setdefault(
+        "primaryObject",
+        {
+            "objectKey": build_processing_artifact_object_key(
+                site_id=_SITE_ID,
+                job_id=job_id,
+                artifact_id=artifact_id,
+                lease_generation=lease_generation,
+            ),
+            "sha256": digest,
+            "sizeBytes": 123,
+            "contentType": "application/octet-stream",
+        },
+    )
+    if "auxiliaryObjects" not in payload:
+        payload["auxiliaryObjects"] = {
+            name: {
+                "objectKey": build_processing_artifact_object_key(
+                    site_id=_SITE_ID,
+                    job_id=job_id,
+                    artifact_id=artifact_id,
+                    filename=name,
+                    lease_generation=lease_generation,
+                ),
+                "sha256": "sha256:" + _sha(name),
+                "sizeBytes": 123,
+                "contentType": "application/octet-stream",
+            }
+            for name in payload["auxiliaryFiles"]
+        }
     return payload
+
+
+
+def _upload_and_observe_http_artifact(
+    client: TestClient, job_id: str, payload: dict[str, Any]
+) -> None:
+    """Issue every fenced PUT capability, then explicitly model successful PUTs."""
+    storage: _FakeStorage = cast(Any, client.app).state.test_storage
+    bindings = [(None, payload["primaryObject"])] + list(payload["auxiliaryObjects"].items())
+    for filename, binding in bindings:
+        granted = client.post(
+            f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+            json={
+                "artifactId": payload["artifactId"],
+                "filename": filename,
+                "sha256": binding["sha256"],
+                "sizeBytes": binding["sizeBytes"],
+                "contentType": binding["contentType"],
+            },
+        )
+        assert granted.status_code == 201, granted.text
+        assert granted.json()["objectKey"] == binding["objectKey"]
+        storage.record_observation(
+            object_key=binding["objectKey"],
+            sha256=binding["sha256"],
+            size_bytes=binding["sizeBytes"],
+            content_type=binding["contentType"],
+        )
+
+
+def _register_http_artifact(
+    client: TestClient, job_id: str, payload: dict[str, Any]
+) -> Any:
+    _upload_and_observe_http_artifact(client, job_id, payload)
+    return client.post(f"/v1/processing-jobs/{job_id}/artifacts", json=payload)
+
+
+def _register_remaining_profile_artifacts(client: TestClient, job_id: str) -> None:
+    for artifact_id in ("dsm", "dtm"):
+        payload = _artifact_payload(
+            _job_id=job_id,
+            artifactId=artifact_id,
+            kind=artifact_id,
+            authority="derived",
+            derivedFrom=["pointcloud"],
+            digest="sha256:" + _sha(artifact_id),
+            format="tif",
+            gsd=0.05,
+        )
+        registered = _register_http_artifact(client, job_id, payload)
+        assert registered.status_code == 201, registered.text
 
 
 def _issued_and_leased(client: TestClient) -> str:
@@ -1995,7 +2184,7 @@ def _issued_and_leased(client: TestClient) -> str:
         f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
     ).json()["job"]["jobId"]
     _as_worker(client)
-    leased = client.post(f"/v1/processing-jobs/{job_id}/lease")
+    leased = _lease_http(client, job_id)
     assert leased.status_code == 201, leased.text
     return job_id
 
@@ -2069,9 +2258,8 @@ def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
         assert set(item) == {"mediaId", "objectKey", "downloadUrl", "expiresAt"}
 
     # ② 아직 실측 보고 전 — 산출물이 있어도 성공하지 못한다.
-    early_artifact = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
-    )
+    early_payload = _artifact_payload()
+    early_artifact = _register_http_artifact(client, job_id, early_payload)
     assert early_artifact.status_code == 201, early_artifact.text
     unverified = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "SUCCEEDED"}
@@ -2082,7 +2270,7 @@ def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
 
     # ③ 워커가 바이트에서 잰 값을 보고하고 Core 가 대조한다.
     verified = client.post(
-        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        f"/v1/processing-jobs/{job_id}/verify-input",
         json={
             "measurements": [
                 {
@@ -2100,15 +2288,15 @@ def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
     assert verified.json()["verdict"] == "VERIFIED"
     assert verified.json()["bundle"]["verifiedAt"] is not None
 
-    registered = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload(artifactId="mesh-1")
-    )
+    mesh_payload = _artifact_payload(artifactId="mesh-1")
+    registered = _register_http_artifact(client, job_id, mesh_payload)
     assert registered.status_code == 201, registered.text
     artifact = registered.json()["artifact"]
     # nullable 필수 필드는 생략되지 않고 명시적 null 로 실린다.
     assert artifact["accuracy"] is None
     assert artifact["gsd"] is None
     assert artifact["crs"] == "EPSG:5186"
+    _register_remaining_profile_artifacts(client, job_id)
 
     done = client.post(
         f"/v1/processing-jobs/{job_id}/transitions", json={"targetStatus": "SUCCEEDED"}
@@ -2118,9 +2306,41 @@ def test_http_worker_registers_artifact_then_succeeds(tmp_path: Path) -> None:
 
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     view = client.get(f"/v1/processing-jobs/{job_id}").json()
-    assert [a["artifactId"] for a in view["artifacts"]] == ["pointcloud", "mesh-1"]
+    assert [a["artifactId"] for a in view["artifacts"]] == [
+        "dsm",
+        "dtm",
+        "mesh-1",
+        "pointcloud",
+    ]
     # 실측 대조를 통과했으므로 이제 참이다 — 하드코딩된 false 가 아니다.
     assert view["inputVerified"] is True
+
+
+def test_http_fenced_verify_reports_mismatch_without_marking_input_verified(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, verify_bundle=False)
+    job_id = _issued_and_running(client)
+    response = client.post(
+        f"/v1/processing-jobs/{job_id}/verify-input",
+        json={
+            "measurements": [
+                {
+                    "mediaId": f"img-{i:03d}.jpg",
+                    "sha256": _sha(f"img-{i:03d}.jpg"),
+                    "bytes": 1_000_000,
+                    "width": 9999 if i == 1 else 4000,
+                    "height": 3000,
+                }
+                for i in range(3)
+            ]
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["verdict"] == "MISMATCH"
+    assert response.json()["mismatched"] == ["img-001.jpg"]
+    client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+    assert client.get(f"/v1/processing-jobs/{job_id}").json()["inputVerified"] is False
 
 
 @pytest.mark.parametrize(
@@ -2161,10 +2381,8 @@ def test_http_artifact_carries_vertical_reference_through_to_the_contract(
         "basis": "ODM 이 RTK 타원체고를 변환 없이 그대로 출력",
         "source": "pipeline_declared",
     }
-    response = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts",
-        json=_artifact_payload(verticalReference=declared),
-    )
+    payload = _artifact_payload(verticalReference=declared)
+    response = _register_http_artifact(client, job_id, payload)
     assert response.status_code == 201, response.text
     assert response.json()["artifact"]["verticalReference"] == declared
 
@@ -2174,7 +2392,7 @@ def test_http_artifact_without_vertical_reference_omits_the_key(tmp_path: Path) 
     그대로다. Core 가 기본값(예: 타원체고)을 채워 넣으면 여기서 드러난다."""
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
-    response = client.post(f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload())
+    response = _register_http_artifact(client, job_id, _artifact_payload())
     assert response.status_code == 201, response.text
     assert "verticalReference" not in response.json()["artifact"]
 
@@ -2243,18 +2461,16 @@ def test_http_checkpoint_backed_accuracy_is_accepted(tmp_path: Path) -> None:
     """[비공허 대조] 검사점과 잔차가 함께 실리면 등록된다 — 과잉 거부가 아니다."""
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
-    response = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts",
-        json=_artifact_payload(
-            accuracy={
-                "gcpCount": 12,
-                "rmse": 0.03,
-                "reportUri": "s3://r/1.pdf",
-                "checkpointCount": 8,
-                "checkpointRmseM": 0.042,
-            }
-        ),
+    payload = _artifact_payload(
+        accuracy={
+            "gcpCount": 12,
+            "rmse": 0.03,
+            "reportUri": "s3://r/1.pdf",
+            "checkpointCount": 8,
+            "checkpointRmseM": 0.042,
+        }
     )
+    response = _register_http_artifact(client, job_id, payload)
     assert response.status_code == 201, response.text
 
 
@@ -2573,12 +2789,1015 @@ def test_replay_refuses_a_lease_on_a_terminal_job(tmp_path: Path) -> None:
 def test_http_lease_then_renew(tmp_path: Path) -> None:
     client = _client(tmp_path)
     job_id = _issued_and_leased(client)
-    renewed = client.post(f"/v1/processing-jobs/{job_id}/lease")
+    renewed = _lease_http(client, job_id)
     assert renewed.status_code == 200
     assert renewed.json()["verdict"] == "LEASE_RENEWED"
-    assert renewed.json()["job"]["leaseWorkerId"] == "worker-odm-1"
+    assert renewed.json()["job"]["leaseWorkerId"] == _WORKER_INSTANCE_ID
+    assert renewed.json()["job"]["leaseAcquisitionId"] == _WORKER_ACQUISITION_ID
+    assert renewed.json()["job"]["leaseGeneration"] == 1
     # 만료 여부를 불리언으로 싣지 않는다 — 읽는 쪽이 자기 시계로 판정한다.
     assert renewed.json()["job"]["leaseExpiresAt"] is not None
+
+
+def _fence(
+    *,
+    instance_id: str = _WORKER_INSTANCE_ID,
+    acquisition_id: str = _WORKER_ACQUISITION_ID,
+    generation: int = 1,
+) -> LeaseFence:
+    return LeaseFence(instance_id, acquisition_id, generation)
+
+
+def _claim_fenced(
+    store: ProcessingJobStore,
+    job_id: str,
+    *,
+    instance_id: str = _WORKER_INSTANCE_ID,
+    acquisition_id: str = _WORKER_ACQUISITION_ID,
+    now: datetime = _NOW,
+) -> Any:
+    return store.acquire_lease(
+        job_id,
+        worker_instance_id=instance_id,
+        lease_acquisition_id=acquisition_id,
+        authenticated_actor_id="worker-odm-1",
+        mode=LeaseMode.CLAIM,
+        now=now,
+    )
+
+
+def _candidate_spec(
+    job_id: str,
+    fence: LeaseFence,
+    *,
+    artifact_id: str = "pointcloud",
+    kind: ProcessingArtifactKind = ProcessingArtifactKind.POINT_CLOUD,
+    authority: LineageAuthority = LineageAuthority.SOURCE,
+    derived_from: tuple[str, ...] = (),
+    auxiliary_files: tuple[str, ...] = (),
+) -> ArtifactSpec:
+    artifact = _artifact_spec(
+        artifact_id,
+        kind=kind,
+        authority=authority,
+        derived_from=derived_from,
+    )
+    primary = ArtifactObjectBinding(
+        object_key=build_processing_artifact_object_key(
+            site_id=_SITE_ID,
+            job_id=job_id,
+            artifact_id=artifact_id,
+            lease_generation=fence.lease_generation,
+        ),
+        sha256=artifact.digest,
+        size_bytes=123,
+        content_type="application/octet-stream",
+    )
+    auxiliary = tuple(
+        (
+            name,
+            ArtifactObjectBinding(
+                object_key=build_processing_artifact_object_key(
+                    site_id=_SITE_ID,
+                    job_id=job_id,
+                    artifact_id=artifact_id,
+                    filename=name,
+                    lease_generation=fence.lease_generation,
+                ),
+                sha256="sha256:" + _sha(name),
+                size_bytes=45,
+                content_type="application/octet-stream",
+            ),
+        )
+        for name in sorted(auxiliary_files)
+    )
+    return replace(
+        artifact,
+        auxiliary_files=auxiliary_files,
+        primary=primary,
+        auxiliary_objects=auxiliary,
+    )
+
+
+def test_same_token_distinct_instances_compete_as_distinct_http_owners(
+    tmp_path: Path,
+) -> None:
+    """Original defect closure: one credential no longer aliases two processes."""
+    setup = _client(tmp_path)
+    job_id = setup.post(
+        f"/v1/missions/{_MISSION_ID}/processing-jobs", json=_issue_payload()
+    ).json()["job"]["jobId"]
+    barrier = Barrier(2)
+
+    def claim(instance_id: str, acquisition_id: str) -> tuple[int, str]:
+        with TestClient(setup.app) as contender:
+            barrier.wait()
+            response = contender.post(
+                f"/v1/processing-jobs/{job_id}/lease",
+                headers={
+                    "Authorization": f"Bearer {_WORKER_TOKEN}",
+                    "X-KSI-Worker-Instance-Id": instance_id,
+                    "X-KSI-Lease-Acquisition-Id": acquisition_id,
+                    "X-KSI-Lease-Mode": "CLAIM",
+                },
+            )
+            return response.status_code, response.json()["verdict"]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda ids: claim(*ids),
+                [
+                    (_WORKER_INSTANCE_ID, _WORKER_ACQUISITION_ID),
+                    (_OTHER_WORKER_INSTANCE_ID, _OTHER_WORKER_ACQUISITION_ID),
+                ],
+            )
+        )
+
+    assert sorted(status for status, _ in results) == [201, 409]
+    assert sorted(verdict for _, verdict in results) == ["LEASED", "LEASE_HELD_BY_ANOTHER"]
+
+def _grant_observe_and_register(
+    store: ProcessingJobStore,
+    job_id: str,
+    spec: ArtifactSpec,
+    fence: LeaseFence,
+    *,
+    storage: _FakeStorage | None = None,
+    now: datetime = _NOW,
+) -> Any:
+    """Direct-store fenced success path: grant every exact binding then observe PUTs."""
+    observed = storage or _FakeStorage()
+    store.set_artifact_storage_observer(observed)
+    assert spec.primary is not None
+    for filename, binding in ((None, spec.primary), *spec.auxiliary_objects):
+        grant = store.artifact_upload_target(
+            job_id,
+            artifact_id=spec.artifact_id,
+            filename=filename,
+            lease_fence=fence,
+            authenticated_actor_id="worker-odm-1",
+            sha256=binding.sha256,
+            size_bytes=binding.size_bytes,
+            content_type=binding.content_type,
+            now=now,
+        )
+        assert grant.verdict is ProcessingJobVerdict.UPLOAD_READY
+        assert grant.object_key == binding.object_key
+        observed.record_observation(
+            object_key=binding.object_key,
+            sha256=binding.sha256,
+            size_bytes=binding.size_bytes,
+            content_type=binding.content_type,
+        )
+    return store.register_artifact(
+        job_id, spec, registered_by="worker-odm-1", lease_fence=fence, now=now
+    )
+
+
+def test_claim_exact_retry_concurrency_and_restart_preserve_one_generation(
+    tmp_path: Path,
+) -> None:
+    """First CLAIM, lost response retry, duplicate race, and replay share N=1."""
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    barrier = Barrier(2)
+
+    def duplicate_claim() -> Any:
+        barrier.wait()
+        return _claim_fenced(store, job_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, duplicate = list(pool.map(lambda _: duplicate_claim(), range(2)))
+    for result in (first, duplicate):
+        assert result.verdict is ProcessingJobVerdict.LEASED
+        assert result.record is not None and result.record.lease is not None
+        assert result.record.lease.lease_generation == 1
+    lease_events = [
+        item
+        for item in _journal_lines(tmp_path)
+        if item["kind"] == "processing-job-leased"
+    ]
+    assert len(lease_events) == 1
+
+    journal.close()
+    restored = _rebuild(tmp_path)
+    replay_retry = _claim_fenced(restored, job_id, now=_NOW + timedelta(seconds=1))
+    assert replay_retry.verdict is ProcessingJobVerdict.LEASED
+    assert replay_retry.record is not None and replay_retry.record.lease is not None
+    assert replay_retry.record.lease.lease_generation == 1
+    assert len(
+        [item for item in _journal_lines(tmp_path) if item["kind"] == "processing-job-leased"]
+    ) == 1
+
+
+def test_replay_rejects_claim_generation_jump(tmp_path: Path) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    _claim_fenced(store, job_id)
+    journal.close()
+    records = _journal_lines(tmp_path)
+    claim = next(item for item in records if item["kind"] == "processing-job-leased")
+    claim["leaseGeneration"] = 2
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="단조 증가"):
+        _rebuild(tmp_path)
+
+
+def test_replay_rejects_orphan_renewal(tmp_path: Path) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    _claim_fenced(store, job_id)
+    journal.close()
+    records = _journal_lines(tmp_path)
+    claim = next(item for item in records if item["kind"] == "processing-job-leased")
+    claim["leaseMode"] = "RENEW"
+    claim["renewal"] = True
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="현재 CLAIM fence"):
+        _rebuild(tmp_path)
+
+
+def test_fenced_renewal_rejects_different_principal_and_replays_claim_actor(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    claimed = _claim_fenced(store, job_id)
+    assert claimed.record is not None and claimed.record.lease is not None
+    denied = store.acquire_lease(
+        job_id, worker_instance_id=_WORKER_INSTANCE_ID,
+        lease_acquisition_id=_WORKER_ACQUISITION_ID, lease_generation=1,
+        authenticated_actor_id="principal-b", mode=LeaseMode.RENEW,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert denied.verdict is ProcessingJobVerdict.LEASE_HELD_BY_ANOTHER
+    hijacked = store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-b",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert hijacked.verdict is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    accepted = store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert accepted.verdict is ProcessingJobVerdict.TRANSITIONED
+    store._journal.close()  # noqa: SLF001
+    restored = _rebuild(tmp_path).get(job_id)
+    assert restored is not None and restored.lease is not None
+    assert restored.lease.authenticated_actor_id == "worker-odm-1"
+    assert restored.status is ProcessingJobStatus.RUNNING
+
+
+def test_replay_rejects_renewal_that_changes_claim_principal(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    claimed = _claim_fenced(store, job_id)
+    assert claimed.record is not None and claimed.record.lease is not None
+    renewed = store.acquire_lease(
+        job_id,
+        worker_instance_id=_WORKER_INSTANCE_ID,
+        lease_acquisition_id=_WORKER_ACQUISITION_ID,
+        lease_generation=1,
+        authenticated_actor_id="worker-odm-1",
+        mode=LeaseMode.RENEW,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is ProcessingJobVerdict.LEASE_RENEWED
+    store._journal.close()  # noqa: SLF001 -- tamper durable replay boundary
+    records = _journal_lines(tmp_path)
+    renewal = next(
+        item
+        for item in records
+        if item["kind"] == "processing-job-leased" and item["leaseMode"] == "RENEW"
+    )
+    renewal["authenticatedActorId"] = "principal-b"
+    _write_journal(tmp_path, records)
+
+    with pytest.raises(ProcessingJobRecoveryError, match="principal"):
+        _rebuild(tmp_path)
+
+
+def test_expiry_requires_new_acquisition_and_old_claim_cannot_resurrect(
+    tmp_path: Path,
+) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    first = _claim_fenced(store, job_id)
+    assert first.record is not None and first.record.lease is not None
+    after_expiry = _NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    second = _claim_fenced(
+        store,
+        job_id,
+        instance_id=_OTHER_WORKER_INSTANCE_ID,
+        acquisition_id=_OTHER_WORKER_ACQUISITION_ID,
+        now=after_expiry,
+    )
+    assert second.record is not None and second.record.lease is not None
+    assert second.record.lease.lease_generation == 2
+
+    old_retry = _claim_fenced(store, job_id, now=after_expiry + timedelta(seconds=1))
+    assert old_retry.verdict is ProcessingJobVerdict.STALE_ACQUISITION
+    assert old_retry.record is not None and old_retry.record.lease is not None
+    assert old_retry.record.lease.lease_generation == 2
+
+
+def test_current_renew_succeeds_but_stale_renew_and_mutations_fail_closed(
+    tmp_path: Path,
+) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    fence_one = _fence()
+    _claim_fenced(store, job_id)
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.RUNNING,
+            detail=None,
+            actor="worker-odm-1",
+            lease_fence=fence_one,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    renewed = store.acquire_lease(
+        job_id,
+        worker_instance_id=fence_one.worker_instance_id,
+        lease_acquisition_id=fence_one.lease_acquisition_id,
+        lease_generation=1,
+        authenticated_actor_id="worker-odm-1",
+        mode=LeaseMode.RENEW,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is ProcessingJobVerdict.LEASE_RENEWED
+    takeover_at = _NOW + timedelta(minutes=1) + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    fence_two = _fence(
+        instance_id=_OTHER_WORKER_INSTANCE_ID,
+        acquisition_id=_OTHER_WORKER_ACQUISITION_ID,
+        generation=2,
+    )
+    _claim_fenced(
+        store,
+        job_id,
+        instance_id=fence_two.worker_instance_id,
+        acquisition_id=fence_two.lease_acquisition_id,
+        now=takeover_at,
+    )
+    stale_renew = store.acquire_lease(
+        job_id,
+        worker_instance_id=fence_one.worker_instance_id,
+        lease_acquisition_id=fence_one.lease_acquisition_id,
+        lease_generation=1,
+        authenticated_actor_id="worker-odm-1",
+        mode=LeaseMode.RENEW,
+        now=takeover_at,
+    )
+    assert stale_renew.verdict is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.FAILED,
+            detail="late",
+            actor="worker-odm-1",
+            lease_fence=fence_one,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    )
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.SUCCEEDED,
+            detail="late completion",
+            actor="worker-odm-1",
+            lease_fence=fence_one,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    )
+    assert (
+        store.artifact_upload_target(
+            job_id,
+            artifact_id="late",
+            lease_fence=fence_one,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    )
+    assert (
+        store.register_artifact(
+            job_id,
+            _candidate_spec(job_id, fence_one),
+            registered_by="worker-odm-1",
+            lease_fence=fence_one,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    )
+
+
+def test_generation_n_artifacts_cannot_satisfy_or_parent_generation_n_plus_one(
+    tmp_path: Path,
+) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    fence_one = _fence()
+    _claim_fenced(store, job_id)
+    store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=fence_one,
+        now=_NOW,
+    )
+    assert (
+        _grant_observe_and_register(
+            store, job_id, _candidate_spec(job_id, fence_one), fence_one
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    takeover_at = _NOW + DEFAULT_LEASE_TTL + timedelta(seconds=1)
+    fence_two = _fence(
+        instance_id=_OTHER_WORKER_INSTANCE_ID,
+        acquisition_id=_OTHER_WORKER_ACQUISITION_ID,
+        generation=2,
+    )
+    _claim_fenced(
+        store,
+        job_id,
+        instance_id=fence_two.worker_instance_id,
+        acquisition_id=fence_two.lease_acquisition_id,
+        now=takeover_at,
+    )
+    no_reuse = store.transition(
+        job_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail="must not reuse N",
+        actor="worker-odm-1",
+        lease_fence=fence_two,
+        now=takeover_at,
+    )
+    assert no_reuse.verdict is ProcessingJobVerdict.UNBACKED_SUCCESS
+    child = _candidate_spec(
+        job_id,
+        fence_two,
+        artifact_id="mesh",
+        kind=ProcessingArtifactKind.MESH,
+        authority=LineageAuthority.DERIVED,
+        derived_from=("pointcloud",),
+    )
+    assert (
+        store.register_artifact(
+            job_id,
+            child,
+            registered_by="worker-odm-1",
+            lease_fence=fence_two,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.UNKNOWN_PARENT_ARTIFACT
+    )
+    assert (
+        _grant_observe_and_register(
+            store,
+            job_id,
+            _candidate_spec(job_id, fence_two),
+            fence_two,
+            now=takeover_at,
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    succeeded = store.transition(
+        job_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail="generation two reproduced",
+        actor="worker-odm-1",
+        lease_fence=fence_two,
+        now=takeover_at,
+    )
+    assert succeeded.verdict is ProcessingJobVerdict.TRANSITIONED
+    assert succeeded.record is not None and succeeded.record.artifact_manifest is not None
+    assert succeeded.record.artifact_manifest.lease_generation == 2
+    assert {entry.lease_generation for entry in succeeded.record.artifact_manifest.entries} == {2}
+
+
+def test_terminal_retry_is_idempotent_only_for_same_fence_and_payload(
+    tmp_path: Path,
+) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.FAILED,
+            detail="engine failed",
+            actor="worker-odm-1",
+            lease_fence=fence,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    before = len(_journal_lines(tmp_path))
+    exact = store.transition(
+        job_id,
+        ProcessingJobStatus.FAILED,
+        detail="engine failed",
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW + DEFAULT_LEASE_TTL + timedelta(hours=1),
+    )
+    assert exact.verdict is ProcessingJobVerdict.TRANSITIONED
+    assert len(_journal_lines(tmp_path)) == before
+    hijacked = store.transition(
+        job_id,
+        ProcessingJobStatus.FAILED,
+        detail="engine failed",
+        actor="principal-b",
+        lease_fence=fence,
+        now=_NOW + DEFAULT_LEASE_TTL + timedelta(hours=1),
+    )
+    assert hijacked.verdict is ProcessingJobVerdict.STALE_LEASE_GENERATION
+    changed = store.transition(
+        job_id,
+        ProcessingJobStatus.FAILED,
+        detail="different",
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+    assert changed.verdict is ProcessingJobVerdict.IDEMPOTENCY_CONFLICT
+
+
+def _seed_manifest_success(tmp_path: Path) -> tuple[DurableJournal, ProcessingJobStore, str]:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.RUNNING,
+            detail=None,
+            actor="worker-odm-1",
+            lease_fence=fence,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    storage = _FakeStorage()
+    assert (
+        _grant_observe_and_register(
+            store, job_id, _candidate_spec(job_id, fence), fence, storage=storage
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    mesh = _candidate_spec(
+        job_id,
+        fence,
+        artifact_id="mesh",
+        kind=ProcessingArtifactKind.MESH,
+        authority=LineageAuthority.DERIVED,
+        derived_from=("pointcloud",),
+        auxiliary_files=("mesh.mtl", "mesh.png"),
+    )
+    assert (
+        _grant_observe_and_register(store, job_id, mesh, fence, storage=storage).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.SUCCEEDED,
+            detail="complete",
+            actor="worker-odm-1",
+            lease_fence=fence,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    return journal, store, job_id
+
+
+def test_current_generation_success_requires_every_profile_artifact(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    issued = store.issue(
+        _MISSION_ID,
+        store.resolve_processing_profile("ksi-odm-civil-v1"),
+        issued_by="op-1",
+        now=_NOW,
+    )
+    assert issued.record is not None
+    job_id = issued.record.job_id
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    assert store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    ).verdict is ProcessingJobVerdict.TRANSITIONED
+    assert _grant_observe_and_register(
+        store,
+        job_id,
+        _candidate_spec(job_id, fence),
+        fence,
+        storage=_FakeStorage(),
+    ).verdict is ProcessingJobVerdict.ARTIFACT_REGISTERED
+
+    result = store.transition(
+        job_id,
+        ProcessingJobStatus.SUCCEEDED,
+        detail="incomplete profile outputs",
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+
+    assert result.verdict is ProcessingJobVerdict.ARTIFACT_MANIFEST_REQUIRED
+    assert result.detail is not None
+    assert "dsm" in result.detail and "dtm" in result.detail
+    assert store.get(job_id).status is ProcessingJobStatus.RUNNING  # type: ignore[union-attr]
+
+
+def test_manifest_primary_auxiliary_and_artifact_of_round_trip_through_replay(
+    tmp_path: Path,
+) -> None:
+    journal, store, job_id = _seed_manifest_success(tmp_path)
+    resolved = store.resolve_artifact(job_id, "mesh")
+    assert resolved is not None and not resolved.legacy
+    assert resolved.object_key.endswith("/attempts/1/artifacts/mesh")
+    assert resolved.auxiliary_object_keys() == {
+        "mesh.mtl": resolved.object_key + "/mesh.mtl",
+        "mesh.png": resolved.object_key + "/mesh.png",
+    }
+    artifact_view = store.artifact_of(job_id, "mesh")
+    assert artifact_view is not None and artifact_view[1] == resolved.artifact
+    journal.close()
+
+    replayed = _rebuild(tmp_path)
+    replayed_resolved = replayed.resolve_artifact(job_id, "mesh")
+    assert replayed_resolved is not None
+    assert replayed_resolved.artifact == resolved.artifact
+    assert replayed_resolved.primary == resolved.primary
+    assert replayed_resolved.auxiliary_files == resolved.auxiliary_files
+    assert replayed_resolved.legacy is False
+    replayed_record = replayed.get(job_id)
+    assert replayed_record is not None and replayed_record.artifact_manifest is not None
+    assert replayed_record.artifact_manifest.manifest_digest.startswith("sha256:")
+
+
+def test_candidate_primary_binding_digest_must_match_artifact_digest(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+    candidate = _candidate_spec(job_id, fence)
+    assert candidate.primary is not None
+    mismatched = replace(
+        candidate,
+        primary=replace(candidate.primary, sha256="sha256:" + "f" * 64),
+    )
+    result = store.register_artifact(
+        job_id,
+        mismatched,
+        registered_by="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.ARTIFACT_CONTRACT_VIOLATION
+    assert result.detail == "primary object sha256 must equal the artifact digest"
+
+
+def test_fenced_candidate_registration_requires_a_durable_upload_grant(tmp_path: Path) -> None:
+    class _Observer:
+        def observe_object(self, object_key: str) -> Any:
+            raise AssertionError(f"no-grant registration must not observe: {object_key}")
+
+    store = _job_store(tmp_path)
+    store.set_artifact_storage_observer(_Observer())
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.RUNNING,
+            detail=None,
+            actor="worker-odm-1",
+            lease_fence=fence,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+
+    result = store.register_artifact(
+        job_id,
+        _candidate_spec(job_id, fence),
+        registered_by="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+
+    assert result.verdict.value == "ARTIFACT_UPLOAD_GRANT_REQUIRED"
+    assert store.get(job_id).artifact_candidates == ()  # type: ignore[union-attr]
+
+
+def test_replay_rejects_upload_grant_not_bound_to_the_claim_attempt(tmp_path: Path) -> None:
+    """A grant must be inseparable from the full CLAIM fence and audit actor.
+
+    Generation alone is insufficient: a forged journal grant for the same
+    generation but a different acquisition or actor would otherwise authorize
+    a candidate that the live path would never issue.
+    """
+    journal, _store, _job_id = _seed_manifest_success(tmp_path)
+    journal.close()
+    records = _journal_lines(tmp_path)
+    grant = next(item for item in records if item["kind"] == "processing-artifact-upload-granted")
+    assert grant["leaseFence"] == {
+        "workerInstanceId": _WORKER_INSTANCE_ID,
+        "leaseAcquisitionId": _WORKER_ACQUISITION_ID,
+        "leaseGeneration": 1,
+    }
+    assert grant["grantedBy"] == "worker-odm-1"
+    grant["leaseFence"]["leaseAcquisitionId"] = _OTHER_WORKER_ACQUISITION_ID
+    _write_journal(tmp_path, records)
+
+    with pytest.raises(ProcessingJobRecoveryError, match="upload grant.*lease fence"):
+        _rebuild(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("fault", "expected"),
+    [
+        ("missing", ProcessingJobVerdict.ARTIFACT_STORAGE_OBJECT_MISSING),
+        ("key", ProcessingJobVerdict.ARTIFACT_STORAGE_UNVERIFIABLE),
+        ("sha", ProcessingJobVerdict.ARTIFACT_STORAGE_DIGEST_MISMATCH),
+        ("size", ProcessingJobVerdict.ARTIFACT_STORAGE_SIZE_MISMATCH),
+        ("type", ProcessingJobVerdict.ARTIFACT_STORAGE_CONTENT_TYPE_MISMATCH),
+        ("none", ProcessingJobVerdict.ARTIFACT_STORAGE_UNVERIFIABLE),
+    ],
+)
+def test_fenced_registration_rejects_untrusted_primary_head_facts(
+    tmp_path: Path, fault: str, expected: ProcessingJobVerdict
+) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id, fence = _issued_job(store), _fence()
+    _claim_fenced(store, job_id)
+    store.transition(job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-odm-1", lease_fence=fence, now=_NOW)
+    spec = _candidate_spec(job_id, fence)
+    assert spec.primary is not None
+    storage = _FakeStorage()
+    store.set_artifact_storage_observer(storage)
+    assert store.artifact_upload_target(job_id, artifact_id=spec.artifact_id, lease_fence=fence, authenticated_actor_id="worker-odm-1", sha256=spec.primary.sha256, size_bytes=spec.primary.size_bytes, content_type=spec.primary.content_type, now=_NOW).verdict is ProcessingJobVerdict.UPLOAD_READY
+    if fault != "missing":
+        observed = spec.primary
+        if fault == "key":
+            storage._observations[observed.object_key] = ObjectStorageObservation("other", True, observed.size_bytes, observed.sha256, observed.content_type)
+        elif fault == "sha":
+            storage.record_observation(object_key=observed.object_key, sha256="sha256:" + "f" * 64, size_bytes=observed.size_bytes, content_type=observed.content_type)
+        elif fault == "size":
+            storage.record_observation(object_key=observed.object_key, sha256=observed.sha256, size_bytes=observed.size_bytes + 1, content_type=observed.content_type)
+        elif fault == "type":
+            storage.record_observation(object_key=observed.object_key, sha256=observed.sha256, size_bytes=observed.size_bytes, content_type="image/png")
+        else:
+            storage._observations[observed.object_key] = ObjectStorageObservation(observed.object_key, True, None, None, None)
+    result = store.register_artifact(job_id, spec, registered_by="worker-odm-1", lease_fence=fence, now=_NOW)
+    assert result.verdict is expected
+    assert store.get(job_id).artifact_candidates == ()  # type: ignore[union-attr]
+    assert not [r for r in _journal_lines(tmp_path) if r["kind"] == "processing-artifact-registered"]
+
+
+def test_fenced_registration_checks_each_auxiliary_head_fact(tmp_path: Path) -> None:
+    store = _job_store(tmp_path)
+    job_id, fence = _issued_job(store), _fence()
+    _claim_fenced(store, job_id)
+    store.transition(job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-odm-1", lease_fence=fence, now=_NOW)
+    spec = _candidate_spec(job_id, fence, auxiliary_files=("mesh.mtl",))
+    storage = _FakeStorage()
+    store.set_artifact_storage_observer(storage)
+    assert spec.primary is not None
+    for filename, binding in ((None, spec.primary), *spec.auxiliary_objects):
+        assert store.artifact_upload_target(job_id, artifact_id=spec.artifact_id, filename=filename, lease_fence=fence, authenticated_actor_id="worker-odm-1", sha256=binding.sha256, size_bytes=binding.size_bytes, content_type=binding.content_type, now=_NOW).verdict is ProcessingJobVerdict.UPLOAD_READY
+        storage.record_observation(object_key=binding.object_key, sha256=binding.sha256, size_bytes=binding.size_bytes + (1 if filename else 0), content_type=binding.content_type)
+    assert store.register_artifact(job_id, spec, registered_by="worker-odm-1", lease_fence=fence, now=_NOW).verdict is ProcessingJobVerdict.ARTIFACT_STORAGE_SIZE_MISMATCH
+    assert store.get(job_id).artifact_candidates == ()  # type: ignore[union-attr]
+
+
+def test_exact_upload_grant_retry_is_journal_idempotent_and_conflicts_fail(tmp_path: Path) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id, fence = _issued_job(store), _fence()
+    _claim_fenced(store, job_id)
+    spec = _candidate_spec(job_id, fence)
+    assert spec.primary is not None
+    assert store.artifact_upload_target(job_id, artifact_id=spec.artifact_id, lease_fence=fence, authenticated_actor_id="worker-odm-1", sha256=spec.primary.sha256, size_bytes=spec.primary.size_bytes, content_type=spec.primary.content_type, now=_NOW).verdict is ProcessingJobVerdict.UPLOAD_READY
+    assert store.artifact_upload_target(job_id, artifact_id=spec.artifact_id, lease_fence=fence, authenticated_actor_id="worker-odm-1", sha256=spec.primary.sha256, size_bytes=spec.primary.size_bytes, content_type=spec.primary.content_type, now=_NOW).verdict is ProcessingJobVerdict.UPLOAD_READY
+    assert len([r for r in _journal_lines(tmp_path) if r["kind"] == "processing-artifact-upload-granted"]) == 1
+    assert store.artifact_upload_target(job_id, artifact_id=spec.artifact_id, lease_fence=fence, authenticated_actor_id="worker-odm-1", sha256="sha256:" + "f" * 64, size_bytes=spec.primary.size_bytes, content_type=spec.primary.content_type, now=_NOW).verdict is ProcessingJobVerdict.IDEMPOTENCY_CONFLICT
+
+
+@pytest.mark.parametrize("tamper", ["remove-grant", "alter-grant", "remove-observation", "alter-observation", "reorder-observation"])
+def test_replay_rejects_tampered_upload_grant_or_accepted_observation(tmp_path: Path, tamper: str) -> None:
+    journal, _store, _job_id = _seed_manifest_success(tmp_path)
+    journal.close()
+    records = _journal_lines(tmp_path)
+    grants = [r for r in records if r["kind"] == "processing-artifact-upload-granted"]
+    candidates = [r for r in records if r["kind"] == "processing-artifact-registered" and "candidate" in r]
+    target = next(r for r in candidates if r["artifactId"] == "mesh")
+    if tamper == "remove-grant":
+        records.remove(grants[0])
+    elif tamper == "alter-grant":
+        grants[0]["binding"]["sha256"] = "sha256:" + "f" * 64
+    elif tamper == "remove-observation":
+        target.pop("acceptedObjectObservations")
+    elif tamper == "alter-observation":
+        target["acceptedObjectObservations"][0]["binding"]["sha256"] = "sha256:" + "f" * 64
+    else:
+        target["acceptedObjectObservations"].reverse()
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError):
+        _rebuild(tmp_path)
+
+
+def test_valid_fenced_registration_replays_without_live_storage_observer(tmp_path: Path) -> None:
+    journal, _store, job_id = _seed_manifest_success(tmp_path)
+    journal.close()
+    replayed = _rebuild(tmp_path)
+    assert replayed.resolve_artifact(job_id, "mesh") is not None
+
+
+def test_fenced_candidate_registration_fails_closed_without_storage_observer(
+    tmp_path: Path,
+) -> None:
+    """A fenced candidate cannot become authoritative when HEAD is unavailable."""
+    store = _job_store(tmp_path)
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    assert store.transition(
+        job_id, ProcessingJobStatus.RUNNING, detail=None, actor="worker-odm-1",
+        lease_fence=fence, now=_NOW,
+    ).verdict is ProcessingJobVerdict.TRANSITIONED
+    result = store.register_artifact(
+        job_id, _candidate_spec(job_id, fence), registered_by="worker-odm-1",
+        lease_fence=fence, now=_NOW,
+    )
+    assert result.verdict is ProcessingJobVerdict.STORAGE_UNAVAILABLE
+    assert store.get(job_id).artifact_candidates == ()  # type: ignore[union-attr]
+
+
+def test_new_format_candidate_or_missing_manifest_never_falls_back_to_legacy_key(
+    tmp_path: Path,
+) -> None:
+    journal = DurableJournal(tmp_path / "processing-jobs.jsonl")
+    store = _job_store(tmp_path, journal=journal)
+    job_id = _issued_job(store)
+    fence = _fence()
+    _claim_fenced(store, job_id)
+    store.transition(
+        job_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="worker-odm-1",
+        lease_fence=fence,
+        now=_NOW,
+    )
+    assert (
+        _grant_observe_and_register(
+            store, job_id, _candidate_spec(job_id, fence), fence
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    assert store.resolve_artifact(job_id, "pointcloud") is None
+    assert store.artifact_of(job_id, "pointcloud") is None
+
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.SUCCEEDED,
+            detail="complete",
+            actor="worker-odm-1",
+            lease_fence=fence,
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    journal.close()
+    records = _journal_lines(tmp_path)
+    success = next(
+        item
+        for item in records
+        if item["kind"] == "processing-job-transitioned"
+        and item["after"] == "SUCCEEDED"
+    )
+    success.pop("artifactManifest")
+    success.pop("artifactManifestDigest")
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="artifactManifest"):
+        _rebuild(tmp_path)
+
+
+def test_replay_rejects_manifest_integrity_tampering(tmp_path: Path) -> None:
+    journal, _store, _job_id = _seed_manifest_success(tmp_path)
+    journal.close()
+    records = _journal_lines(tmp_path)
+    success = next(
+        item
+        for item in records
+        if item["kind"] == "processing-job-transitioned"
+        and item["after"] == "SUCCEEDED"
+    )
+    success["artifactManifest"]["entries"][0]["primary"]["sha256"] = (
+        "sha256:" + "f" * 64
+    )
+    _write_journal(tmp_path, records)
+    with pytest.raises(ProcessingJobRecoveryError, match="primary object sha256"):
+        _rebuild(tmp_path)
+
+
+def test_genuine_legacy_artifact_keeps_only_the_approved_conventional_fallback(
+    tmp_path: Path,
+) -> None:
+    store = _job_store(tmp_path)
+    job_id = _running_job(store, tmp_path)
+    assert (
+        store.register_artifact(
+            job_id,
+            _artifact_spec(),
+            registered_by="w-1",
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.ARTIFACT_REGISTERED
+    )
+    assert (
+        store.transition(
+            job_id,
+            ProcessingJobStatus.SUCCEEDED,
+            detail=None,
+            actor="w-1",
+            now=_NOW,
+        ).verdict
+        is ProcessingJobVerdict.TRANSITIONED
+    )
+    resolved = store.resolve_artifact(job_id, "pointcloud")
+    assert resolved is not None and resolved.legacy
+    assert resolved.object_key == (
+        f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/pointcloud"
+    )
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "authority_call"),
+    [
+        ("artifact_refs.py", "resolve_artifact"),
+        ("checkpoint_validations.py", "resolve_artifact"),
+        ("civil_preflight.py", "authoritative_artifacts"),
+        ("comparison_requests.py", "resolve_artifact"),
+        ("design_conformance_requests.py", "resolve_artifact"),
+        ("spatial_model.py", "authoritative_artifacts"),
+        ("site_workspace.py", "authoritative_artifacts"),
+    ],
+)
+def test_every_known_artifact_reader_uses_the_central_authority_resolver(
+    relative_path: str,
+    authority_call: str,
+) -> None:
+    """Inventory guard for download/report/comparison/checkpoint/workspace readers."""
+    source_root = Path(__file__).parents[2] / "services/core/src/ksi_core"
+    source = (source_root / relative_path).read_text(encoding="utf-8")
+    assert authority_call in source
+    assert "build_processing_artifact_object_key" not in source
 
 
 def test_http_worker_without_lease_gets_409_not_403(tmp_path: Path) -> None:
@@ -2590,7 +3809,7 @@ def test_http_worker_without_lease_gets_409_not_403(tmp_path: Path) -> None:
     _as_worker(client)
     response = client.get(f"/v1/processing-jobs/{job_id}/input")
     assert response.status_code == 409
-    assert response.json()["verdict"] == "LEASE_REQUIRED"
+    assert response.json()["detail"] == "LEASE_FENCE_REQUIRED"
 
 
 def test_http_humans_cannot_lease(tmp_path: Path) -> None:
@@ -2611,6 +3830,23 @@ def test_http_humans_cannot_lease(tmp_path: Path) -> None:
 # digest 만 남고 파일이 버려지면 사람이 볼 수 있는 것이 아무것도 없다.
 
 
+def _upload_payload(
+    artifact_id: str,
+    *,
+    content_type: str = "application/octet-stream",
+    filename: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "artifactId": artifact_id,
+        "contentType": content_type,
+        "sha256": "sha256:" + _sha(f"{artifact_id}:{filename or 'primary'}"),
+        "sizeBytes": 123,
+    }
+    if filename is not None:
+        payload["filename"] = filename
+    return payload
+
+
 def test_http_upload_url_is_issued_to_the_leaseholder(tmp_path: Path) -> None:
     """워커가 산출물을 올릴 자리를 받는다 — 키는 서버가 정한다."""
     client = _client(tmp_path)
@@ -2618,13 +3854,13 @@ def test_http_upload_url_is_issued_to_the_leaseholder(tmp_path: Path) -> None:
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "point-cloud", "contentType": "application/octet-stream"},
+        json=_upload_payload("point-cloud"),
     )
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["verdict"] == "UPLOAD_READY"
     assert body["objectKey"] == (
-        f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/point-cloud"
+        f"sites/{_SITE_ID}/processing-jobs/{job_id}/attempts/1/artifacts/point-cloud"
     )
     assert body["uploadUrl"].startswith("https://storage.invalid/")
 
@@ -2640,7 +3876,7 @@ def test_http_upload_url_refuses_an_unsupported_content_type(tmp_path: Path) -> 
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "point-cloud", "contentType": "text/html"},
+        json=_upload_payload("point-cloud", content_type="text/html"),
     )
     assert response.status_code == 415, response.text
     assert response.json()["verdict"] == "UNSUPPORTED_CONTENT_TYPE"
@@ -2655,7 +3891,7 @@ def test_http_upload_url_is_deterministic_for_the_same_artifact(tmp_path: Path) 
     """
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
-    payload = {"artifactId": "dsm", "contentType": "application/octet-stream"}
+    payload = _upload_payload("dsm")
 
     first = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
     second = client.post(f"/v1/processing-jobs/{job_id}/artifacts/upload-url", json=payload)
@@ -2672,15 +3908,11 @@ def test_http_upload_url_with_filename_is_a_sub_key(tmp_path: Path) -> None:
 
     primary = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "mesh", "contentType": "application/octet-stream"},
+        json=_upload_payload("mesh"),
     )
     aux = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={
-            "artifactId": "mesh",
-            "contentType": "application/octet-stream",
-            "filename": "odm_textured_model_geo.mtl",
-        },
+        json=_upload_payload("mesh", filename="odm_textured_model_geo.mtl"),
     )
     assert primary.status_code == 201 and aux.status_code == 201
     assert aux.json()["objectKey"] == f"{primary.json()['objectKey']}/odm_textured_model_geo.mtl"
@@ -2694,11 +3926,7 @@ def test_http_upload_url_refuses_path_escaping_filenames(
     job_id = _issued_and_running(client)
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={
-            "artifactId": "mesh",
-            "contentType": "application/octet-stream",
-            "filename": bad_filename,
-        },
+        json=_upload_payload("mesh", filename=bad_filename),
     )
     assert response.status_code == 422, response.text
     assert response.json()["verdict"] == "INVALID_ARTIFACT_ID"
@@ -2714,10 +3942,10 @@ def test_http_upload_url_refuses_a_worker_without_the_lease(tmp_path: Path) -> N
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "dsm", "contentType": "application/octet-stream"},
+        json=_upload_payload("dsm"),
     )
     assert response.status_code == 409
-    assert response.json()["verdict"] == "LEASE_REQUIRED"
+    assert response.json()["detail"] == "LEASE_FENCE_REQUIRED"
 
 
 def test_http_upload_url_refuses_humans(tmp_path: Path) -> None:
@@ -2729,7 +3957,7 @@ def test_http_upload_url_refuses_humans(tmp_path: Path) -> None:
         assert (
             client.post(
                 f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-                json={"artifactId": "dsm", "contentType": "image/tiff"},
+                json=_upload_payload("dsm", content_type="image/png"),
             ).status_code
             == 403
         )
@@ -2751,7 +3979,7 @@ def test_http_upload_url_refuses_path_escaping_artifact_ids(
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": artifact_id, "contentType": "application/octet-stream"},
+        json=_upload_payload(artifact_id),
     )
     assert response.status_code == 422, response.text
 
@@ -2775,7 +4003,7 @@ def test_http_upload_url_refuses_a_finished_job(tmp_path: Path) -> None:
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
-        json={"artifactId": "late", "contentType": "application/octet-stream"},
+        json=_upload_payload("late"),
     )
     assert response.status_code == 409
     assert response.json()["verdict"] == "JOB_NOT_ACTIVE"
@@ -2783,14 +4011,14 @@ def test_http_upload_url_refuses_a_finished_job(tmp_path: Path) -> None:
 
 def test_http_artifact_download_returns_a_presigned_url(tmp_path: Path) -> None:
     """등록된 산출물의 바이트를 다시 꺼낼 수 있다 — 이게 M1 의 핵심 주장이다."""
-    client = _client(tmp_path)
+    client = _client(tmp_path, verify_bundle=True)
     job_id = _issued_and_running(client)
-    assert (
-        client.post(
-            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
-        ).status_code
-        == 201
-    )
+    assert _register_http_artifact(client, job_id, _artifact_payload()).status_code == 201
+    _register_remaining_profile_artifacts(client, job_id)
+    assert client.post(
+        f"/v1/processing-jobs/{job_id}/transitions",
+        json={"targetStatus": "SUCCEEDED"},
+    ).status_code == 200
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
 
     response = client.get(
@@ -2800,7 +4028,7 @@ def test_http_artifact_download_returns_a_presigned_url(tmp_path: Path) -> None:
     body = response.json()
     assert body["verdict"] == "ARTIFACT_READY"
     assert body["objectKey"] == (
-        f"sites/{_SITE_ID}/processing-jobs/{job_id}/artifacts/pointcloud"
+        f"sites/{_SITE_ID}/processing-jobs/{job_id}/attempts/1/artifacts/pointcloud"
     )
     assert body["downloadUrl"].startswith("https://storage.invalid/")
 
@@ -2811,21 +4039,23 @@ def test_http_artifact_download_with_auxiliary_files_lists_every_file(
     """[mesh-multi-file-artifact-persistence] auxiliaryFiles 로 등록된 산출물은
     다운로드 응답의 ``files`` 에 주 파일까지 포함해 전부 나열된다 — 소비자가
     object_key/download_url(주 파일)과 files 를 겹쳐 특수 케이스하지 않도록."""
-    client = _client(tmp_path)
+    client = _client(tmp_path, verify_bundle=True)
     job_id = _issued_and_running(client)
     aux_names = ["odm_textured_model_geo.mtl", "odm_textured_model_geo_map_Kd.png"]
-    assert (
-        client.post(
-            f"/v1/processing-jobs/{job_id}/artifacts",
-            json=_artifact_payload(
-                artifactId="mesh",
-                kind="mesh",
-                format="obj",
-                auxiliaryFiles=aux_names,
-            ),
-        ).status_code
-        == 201
+    mesh_payload = _artifact_payload(
+        artifactId="mesh",
+        kind="mesh",
+        format="obj",
+        auxiliaryFiles=aux_names,
     )
+    assert _register_http_artifact(client, job_id, mesh_payload).status_code == 201
+    # 메시 자체는 파생 산출물이므로 source-authoritative 성공 근거가 아니다.
+    assert _register_http_artifact(client, job_id, _artifact_payload()).status_code == 201
+    _register_remaining_profile_artifacts(client, job_id)
+    assert client.post(
+        f"/v1/processing-jobs/{job_id}/transitions",
+        json={"targetStatus": "SUCCEEDED"},
+    ).status_code == 200
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
 
     response = client.get(f"/v1/processing-jobs/{job_id}/artifacts/mesh/download")
@@ -2851,13 +4081,17 @@ def test_http_register_refuses_path_unsafe_auxiliary_file_names(
     basename 패턴으로 거부된다 — 여기서 안 막으면(reviewer 지적, 2026-08-08)
     등록은 성공하고 다운로드 시점(build_processing_artifact_object_key)에서만
     거부돼, 영구히 다운로드 불가능한 산출물이 원장에 남는다."""
-    client = _client(tmp_path)
+    client = _client(tmp_path, verify_bundle=True)
     job_id = _issued_and_running(client)
 
     response = client.post(
         f"/v1/processing-jobs/{job_id}/artifacts",
         json=_artifact_payload(
-            artifactId="mesh", kind="mesh", format="obj", auxiliaryFiles=[bad_name]
+            artifactId="mesh",
+            kind="mesh",
+            format="obj",
+            auxiliaryFiles=[bad_name],
+            auxiliaryObjects={},
         ),
     )
     assert response.status_code == 422, response.text
@@ -2868,14 +4102,14 @@ def test_http_artifact_download_without_auxiliary_files_omits_files_list(
 ) -> None:
     """[하위호환] 파일 하나짜리 산출물은 files 가 None 이다 — 기존 소비자가
     object_key/download_url 만 보는 경로를 그대로 쓸 수 있다."""
-    client = _client(tmp_path)
+    client = _client(tmp_path, verify_bundle=True)
     job_id = _issued_and_running(client)
-    assert (
-        client.post(
-            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
-        ).status_code
-        == 201
-    )
+    assert _register_http_artifact(client, job_id, _artifact_payload()).status_code == 201
+    _register_remaining_profile_artifacts(client, job_id)
+    assert client.post(
+        f"/v1/processing-jobs/{job_id}/transitions",
+        json={"targetStatus": "SUCCEEDED"},
+    ).status_code == 200
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
 
     response = client.get(f"/v1/processing-jobs/{job_id}/artifacts/pointcloud/download")
@@ -2905,12 +4139,7 @@ def test_http_artifact_download_refuses_a_viewer_without_missions_read(
     """산출물 열람은 임무 열람 권한을 요구한다."""
     client = _client(tmp_path)
     job_id = _issued_and_running(client)
-    assert (
-        client.post(
-            f"/v1/processing-jobs/{job_id}/artifacts", json=_artifact_payload()
-        ).status_code
-        == 201
-    )
+    assert _register_http_artifact(client, job_id, _artifact_payload()).status_code == 201
     # 워커 신원 그대로 — PROCESSING_WORK 는 MISSIONS_READ 를 포함하지 않는다.
     response = client.get(
         f"/v1/processing-jobs/{job_id}/artifacts/pointcloud/download"

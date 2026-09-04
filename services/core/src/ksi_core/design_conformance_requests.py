@@ -43,14 +43,14 @@
 하고, 저기 확인은 **원장에 리포트가 굳는 그 순간** 스토리지 바이트가 여전히 그
 digest 임을 보장한다(그 사이에 다른 바이트로 덮어썼을 수 있다).
 
-## 객체 키는 결정적이다 — 재시도가 orphan 을 쌓지 않는다
+## 객체 키는 lease generation에 귀속된다
 
 ``build_design_conformance_raster_object_key(site_id, design_conformance_id)`` 이고
-``design_conformance_id`` 는 ``request_id`` 에서 결정적으로 도출된다
-(:func:`design_conformance_id_of` — 지금은 같은 문자열이다). 그래서 같은 요청의
-재시도는 **같은 자리를 덮어쓴다**. 입력이 불변이고 래스터 쓰기가 결정적이므로
-(``diff_raster.write_diff_geotiff`` + 그 결정성 테스트) 덮어쓴 바이트는 이전과
-동일하다 — 이미 기록된 리포트의 digest 가 무효해지지 않는다.
+``design_conformance_id`` 는 ``request_id`` 에서 결정적으로 도출되지만, mutable
+candidate 객체 키는 ``lease_generation``과 acquisition까지 포함한다. 같은 시도의
+exact retry만 같은 자리를 쓰고, takeover된 다음 generation은 다른 자리를 쓴다.
+PUT은 신고 digest에 결속되며 authoritative report가 정확한 candidate key를 원장에
+고정한다. 따라서 이전 generation의 아직 유효한 URL은 현재 결과를 덮지 못한다.
 
 종료된(``SUCCEEDED``/``FAILED``) 요청에는 업로드 URL 도 검증도 내주지 않는다.
 그래야 "리포트가 굳은 뒤 그 래스터가 다른 바이트로 바뀌는" 창이 영구히 닫힌다.
@@ -68,12 +68,14 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy, current_comparison_policy
 from ksi_event_contracts.design_surface import DesignSurfaceStatus
@@ -109,17 +111,27 @@ from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     DEFAULT_UPLOAD_TTL,
     DEFAULT_VIEW_TTL,
+    DigestBoundEvidenceStorage,
     EvidenceStorage,
     EvidenceStorageError,
     expires_at,
 )
 from ksi_core.identifiers import is_path_safe_identifier
-from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
+from ksi_core.leasing import (
+    JobLease,
+    LeaseDenialReason,
+    LeaseFence,
+    LeaseMode,
+    check_lease,
+    is_claimable,
+    lease_raw_fields,
+    next_lease,
+)
 from ksi_core.metrics import DESIGN_CONFORMANCE_REQUEST_TRANSITIONS
 from ksi_core.processing_jobs import (
     DEFAULT_LEASE_TTL,
     ProcessingJobStore,
-    build_processing_artifact_object_key,
+    authoritative_artifacts,
 )
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 
@@ -218,6 +230,10 @@ class DesignConformanceRequestVerdict(StrEnum):
     LEASE_RENEWED = "LEASE_RENEWED"
     LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
     LEASE_REQUIRED = "LEASE_REQUIRED"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
 
     # ── 전이 ─────────────────────────────────────────────────────────────
     TRANSITIONED = "TRANSITIONED"
@@ -272,6 +288,10 @@ _STATUS: dict[DesignConformanceRequestVerdict, int] = {
     DesignConformanceRequestVerdict.LEASE_RENEWED: 200,
     DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER: 409,
     DesignConformanceRequestVerdict.LEASE_REQUIRED: 409,
+    DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION: 409,
+    DesignConformanceRequestVerdict.STALE_LEASE_GENERATION: 409,
+    DesignConformanceRequestVerdict.INVALID_LEASE_FENCE: 422,
+    DesignConformanceRequestVerdict.IDEMPOTENCY_CONFLICT: 409,
     DesignConformanceRequestVerdict.TRANSITIONED: 200,
     DesignConformanceRequestVerdict.ILLEGAL_TRANSITION: 409,
     DesignConformanceRequestVerdict.INPUT_READY: 200,
@@ -318,24 +338,39 @@ def diff_raster_id_of(request_id: str) -> str:
 
 
 def build_design_conformance_raster_object_key(
-    *, site_id: str, design_conformance_id: str
+    *,
+    site_id: str,
+    design_conformance_id: str,
+    worker_instance_id: str | None = None,
+    lease_acquisition_id: str | None = None,
+    lease_generation: int | None = None,
 ) -> str:
-    """차분 래스터가 놓이는 자리 — **서버가 만든다**(``build_design_surface_object_key`` 대칭).
+    """차분 래스터가 놓이는 자리 — **서버가 만든다**.
 
     구성요소를 전부 재검증한다: 호출부가 이미 검증했더라도 이 함수가 경로 탈출을
-    막는 마지막 지점이다. 결정적이라 **재시도가 같은 자리를 덮어쓴다**(모듈
-    docstring §객체 키) — orphan 이 쌓이지 않는다.
+    막는 마지막 지점이다. 새 fenced 시도는 generation/acquisition 별 candidate
+    namespace를 쓴다. 인자가 전부 없는 호출만 과거 journal을 읽기 위한 legacy
+    conventional key를 돌려준다.
     """
     if not is_path_safe_identifier(site_id):
         raise ValueError(f"경로-안전하지 않은 siteId: {site_id!r}")
     if not is_path_safe_identifier(design_conformance_id):
         raise ValueError(f"경로-안전하지 않은 designConformanceId: {design_conformance_id!r}")
-    return f"sites/{site_id}/design-conformance/{design_conformance_id}"
+    identity = (worker_instance_id, lease_acquisition_id, lease_generation)
+    if identity == (None, None, None):
+        return f"sites/{site_id}/design-conformance/{design_conformance_id}"
+    if worker_instance_id is None or lease_acquisition_id is None or lease_generation is None:
+        raise ValueError("generation-scoped diff raster key requires the complete lease fence")
+    fence = LeaseFence(worker_instance_id, lease_acquisition_id, lease_generation)
+    if not fence.is_well_formed():
+        raise ValueError("generation-scoped diff raster key requires a valid lease fence")
+    return (
+        f"sites/{site_id}/design-conformance/{design_conformance_id}/attempts/"
+        f"{lease_generation}/{worker_instance_id}/{lease_acquisition_id}/diff-raster"
+    )
 
 
-def recompute_diff_raster_digest(
-    storage: EvidenceStorage, object_key: str
-) -> tuple[str, int]:
+def recompute_diff_raster_digest(storage: EvidenceStorage, object_key: str) -> tuple[str, int]:
     """**Core 가 그 객체의 바이트를 직접 읽어 자기 hashlib 으로** digest·크기를 낸다.
 
     ``mission_plans`` 가 자기가 만든 KMZ 바이트를 ``hashlib.sha256(kmz).hexdigest()``
@@ -356,6 +391,23 @@ def recompute_diff_raster_digest(
     return f"sha256:{hashlib.sha256(data).hexdigest()}", len(data)
 
 
+def _diff_raster_key_for(
+    record: DesignConformanceRequestRecord, fence: LeaseFence | None
+) -> str:
+    if fence is None:
+        return build_design_conformance_raster_object_key(
+            site_id=record.site_id,
+            design_conformance_id=record.design_conformance_id,
+        )
+    return build_design_conformance_raster_object_key(
+        site_id=record.site_id,
+        design_conformance_id=record.design_conformance_id,
+        worker_instance_id=fence.worker_instance_id,
+        lease_acquisition_id=fence.lease_acquisition_id,
+        lease_generation=fence.lease_generation,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class DiffRasterVerification:
     """Core 가 재해싱해 확인한 사실 — 워커의 자기보고가 아니다."""
@@ -364,6 +416,27 @@ class DiffRasterVerification:
     size_bytes: int
     verified_at: datetime
     verified_by: str
+    # ``None`` only for historical pre-TASK-1B records.  New records bind the
+    # exact candidate object and the lease generation that produced it.
+    object_key: str | None = None
+    content_type: str | None = None
+    worker_instance_id: str | None = None
+    lease_acquisition_id: str | None = None
+    lease_generation: int | None = None
+
+    @property
+    def fence(self) -> LeaseFence | None:
+        if (
+            self.worker_instance_id is None
+            or self.lease_acquisition_id is None
+            or self.lease_generation is None
+        ):
+            return None
+        return LeaseFence(
+            self.worker_instance_id,
+            self.lease_acquisition_id,
+            self.lease_generation,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,8 +549,14 @@ class DesignConformanceRequestStore:
         # 작업구역 저장소가 없으면 ``workAreaIds`` 경로가 닫힌다(즉석 폴리곤은
         # 그대로 된다) — 조립 표가 동반을 강제하므로 프로덕션에서는 항상 있다.
         self._work_area_store = work_area_store
-        self._lock = threading.Lock()
+        # Result finalization holds this lock while the report journal appends.
+        # RLock lets same-thread validation helpers reuse getters without
+        # weakening the cross-thread authority boundary.
+        self._lock = threading.RLock()
         self._requests: dict[str, DesignConformanceRequestRecord] = {}
+        self._lease_acquisitions: dict[str, dict[str, JobLease]] = {}
+        self._lease_acquisition_bindings: dict[str, tuple[str, JobLease]] = {}
+        self._lease_generation_high_water: dict[str, int] = {}
         self._by_request_shape: dict[tuple[str, str, str], str] = {}
         self._sequence: dict[str, int] = {}
         try:
@@ -553,10 +632,8 @@ class DesignConformanceRequestStore:
             raw.get("processingProfileDigest") != resolved.processing_profile_digest
             or raw.get("sourceBundleDigest") != resolved.source_bundle_digest
             or raw.get("designSurfaceRevision") != resolved.design_surface_revision
-            or raw.get("designNormalizationProfile")
-            != resolved.design_normalization_profile
-            or raw.get("designNormalizationDigest")
-            != resolved.design_normalization_digest
+            or raw.get("designNormalizationProfile") != resolved.design_normalization_profile
+            or raw.get("designNormalizationDigest") != resolved.design_normalization_digest
         ):
             raise DesignConformanceRequestRecoveryError(
                 "재생: civil compatibility anchor가 현재 immutable 입력 원장과 다르다 — "
@@ -590,9 +667,7 @@ class DesignConformanceRequestStore:
         )
         self._project(record)
         sequence = int(request_id.rsplit("-dcf", 1)[-1])
-        self._sequence[record.mission_id] = max(
-            self._sequence.get(record.mission_id, 0), sequence
-        )
+        self._sequence[record.mission_id] = max(self._sequence.get(record.mission_id, 0), sequence)
 
     def _replay_lease(self, raw: dict[str, Any]) -> None:
         request_id = raw["requestId"]
@@ -605,13 +680,64 @@ class DesignConformanceRequestStore:
             raise DesignConformanceRequestRecoveryError(
                 f"재생: 종료된 요청({record.status.value})에 lease 레코드가 있다 — {request_id}"
             )
+        lease = JobLease(
+            worker_id=raw.get("workerInstanceId", raw["workerId"]),
+            granted_at=_require_aware_iso(raw.get("grantedAt", raw["ts"]), "grantedAt", request_id),
+            expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
+            lease_acquisition_id=raw.get("leaseAcquisitionId"),
+            lease_generation=int(raw.get("leaseGeneration", 0)),
+            authenticated_actor_id=raw.get("authenticatedActorId"),
+        )
+        if "leaseGeneration" in raw:
+            mode, renewal = raw.get("leaseMode"), raw.get("renewal")
+            if (
+                not isinstance(renewal, bool)
+                or mode not in {LeaseMode.CLAIM.value, LeaseMode.RENEW.value}
+                or renewal != (mode == LeaseMode.RENEW.value)
+                or lease.fence is None
+                or not lease.fence.is_well_formed()
+                or lease.expires_at <= lease.granted_at
+            ):
+                raise DesignConformanceRequestRecoveryError("재생: malformed fenced lease")
+            high_water, current = self._lease_generation_high_water.get(request_id, 0), record.lease
+            if mode == LeaseMode.CLAIM.value:
+                if (
+                    lease.lease_generation != high_water + 1
+                    or lease.lease_acquisition_id in self._lease_acquisition_bindings
+                ):
+                    raise DesignConformanceRequestRecoveryError(
+                        "재생: CLAIM generation/acquisition 불일치"
+                    )
+            elif (
+                current is None
+                or current.fence != lease.fence
+                or high_water != lease.lease_generation
+                or current.granted_at != lease.granted_at
+                or current.authenticated_actor_id != lease.authenticated_actor_id
+            ):
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: RENEW current fence/principal 불일치"
+                )
+        if lease.lease_acquisition_id is not None:
+            global_prior = self._lease_acquisition_bindings.get(lease.lease_acquisition_id)
+            if global_prior is not None and (
+                global_prior[0] != request_id or global_prior[1].fence != lease.fence
+            ):
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: 전역 CLAIM acquisition binding 충돌"
+                )
+            self._lease_acquisition_bindings[lease.lease_acquisition_id] = (request_id, lease)
+            bindings = self._lease_acquisitions.setdefault(request_id, {})
+            prior = bindings.get(lease.lease_acquisition_id)
+            if prior is not None and prior.fence != lease.fence:
+                raise DesignConformanceRequestRecoveryError("재생: CLAIM acquisition binding 충돌")
+            bindings[lease.lease_acquisition_id] = lease
+        self._lease_generation_high_water[request_id] = max(
+            self._lease_generation_high_water.get(request_id, 0), lease.lease_generation
+        )
         self._requests[request_id] = replace(
             record,
-            lease=JobLease(
-                worker_id=raw["workerId"],
-                granted_at=_require_aware_iso(raw["ts"], "ts", request_id),
-                expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
-            ),
+            lease=lease,
         )
 
     def _replay_transition(self, raw: dict[str, Any]) -> None:
@@ -621,13 +747,32 @@ class DesignConformanceRequestStore:
             raise DesignConformanceRequestRecoveryError(
                 f"재생: 미지 requestId 전이 레코드 — {request_id}"
             )
+        transitioned_at = _require_aware_iso(raw["ts"], "ts", request_id)
+        if record.lease is not None and record.lease.lease_generation > 0:
+            fence_raw = raw.get("leaseFence")
+            if not isinstance(fence_raw, dict):
+                raise DesignConformanceRequestRecoveryError("재생: fenced 전이에 leaseFence가 없다")
+            fence = LeaseFence(
+                str(fence_raw["workerInstanceId"]),
+                str(fence_raw["leaseAcquisitionId"]),
+                int(fence_raw["leaseGeneration"]),
+            )
+            if check_lease(
+                record.lease,
+                fence=fence,
+                authenticated_actor_id=raw.get("actor"),
+                now=transitioned_at,
+            ) is not None:
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: fenced 전이가 당시 lease와 다르다"
+                )
         after = ProcessingJobStatus(raw["targetStatus"])
         assert_design_conformance_transition(record.status, after)
         self._requests[request_id] = replace(
             record,
             status=after,
             detail=raw.get("detail"),
-            updated_at=_require_aware_iso(raw["ts"], "ts", request_id),
+            updated_at=transitioned_at,
         )
 
     def _replay_diff_raster(self, raw: dict[str, Any]) -> None:
@@ -645,6 +790,55 @@ class DesignConformanceRequestStore:
             raise DesignConformanceRequestRecoveryError(
                 f"재생: 미지 requestId 래스터 확인 레코드 — {request_id}"
             )
+        authority_version = raw.get("authorityVersion")
+        fence: LeaseFence | None = None
+        object_key: str | None = None
+        content_type: str | None = None
+        if authority_version is not None:
+            if authority_version != 1:
+                raise DesignConformanceRequestRecoveryError(
+                    f"재생: 지원하지 않는 diff raster authorityVersion — {authority_version!r}"
+                )
+            try:
+                fence = LeaseFence(
+                    raw["workerInstanceId"],
+                    raw["leaseAcquisitionId"],
+                    int(raw["leaseGeneration"]),
+                )
+                object_key = raw["objectKey"]
+                content_type = raw["contentType"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: generation-aware diff raster authority가 불완전하다"
+                ) from exc
+            if not fence.is_well_formed() or record.lease is None or record.lease.fence != fence:
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: diff raster verification fence가 당시 current lease와 다르다"
+                )
+            expected_key = build_design_conformance_raster_object_key(
+                site_id=record.site_id,
+                design_conformance_id=record.design_conformance_id,
+                worker_instance_id=fence.worker_instance_id,
+                lease_acquisition_id=fence.lease_acquisition_id,
+                lease_generation=fence.lease_generation,
+            )
+            if object_key != expected_key or content_type != DIFF_RASTER_CONTENT_TYPE:
+                raise DesignConformanceRequestRecoveryError(
+                    "재생: diff raster object authority가 canonical candidate와 다르다"
+                )
+        elif any(
+            key in raw
+            for key in (
+                "objectKey",
+                "contentType",
+                "workerInstanceId",
+                "leaseAcquisitionId",
+                "leaseGeneration",
+            )
+        ):
+            raise DesignConformanceRequestRecoveryError(
+                "재생: authorityVersion 없는 부분적 diff raster authority"
+            )
         self._requests[request_id] = replace(
             record,
             diff_raster=DiffRasterVerification(
@@ -652,6 +846,11 @@ class DesignConformanceRequestStore:
                 size_bytes=int(raw["sizeBytes"]),
                 verified_at=_require_aware_iso(raw["ts"], "ts", request_id),
                 verified_by=raw["verifiedBy"],
+                object_key=object_key,
+                content_type=content_type,
+                worker_instance_id=fence.worker_instance_id if fence is not None else None,
+                lease_acquisition_id=fence.lease_acquisition_id if fence is not None else None,
+                lease_generation=fence.lease_generation if fence is not None else None,
             ),
         )
 
@@ -671,7 +870,7 @@ class DesignConformanceRequestStore:
         zone_crs: str | None,
         enforce_civil_preflight: bool = True,
     ) -> tuple[DesignConformanceRequestVerdict, str | None, _Resolved | None]:
-        """"이 지시가 계산 가능한가" — 순서에 뜻이 있다(값싼 것부터, 수직기준이 마지막).
+        """ "이 지시가 계산 가능한가" — 순서에 뜻이 있다(값싼 것부터, 수직기준이 마지막).
 
         수직기준을 마지막에 보는 이유: 그 판정은 두 입력이 **둘 다 확정된 뒤에만**
         성립한다. 앞의 게이트를 통과하지 못한 요청에 "수직기준이 다르다"고
@@ -749,7 +948,7 @@ class DesignConformanceRequestStore:
                 "다른 현장의 계획고와는 비교할 수 없다",
                 None,
             )
-        dsm = _find_dsm(job.artifacts)
+        dsm = _find_dsm(authoritative_artifacts(job))
         if dsm is None:
             return (
                 DesignConformanceRequestVerdict.NO_DSM_ARTIFACT,
@@ -806,9 +1005,7 @@ class DesignConformanceRequestStore:
         try:
             # "계열이 같은가"가 아니라 "이을 수 있는가" 다 — 격자로 이을 수 있는
             # 조합은 여기서 통과시키고, 격자 유무는 워커가 답한다(모듈 docstring).
-            assert_bridgeable_vertical(
-                dsm.vertical_reference, surface.declared.vertical_reference
-            )
+            assert_bridgeable_vertical(dsm.vertical_reference, surface.declared.vertical_reference)
         except VerticalDatumIncompatibleError as exc:
             return (
                 (
@@ -890,9 +1087,7 @@ class DesignConformanceRequestStore:
             )
         return self._work_area_store.resolve_zones(work_area_ids, site_id=None)
 
-    def _assert_work_areas_of_site(
-        self, work_area_ids: list[str], *, site_id: str
-    ) -> str | None:
+    def _assert_work_areas_of_site(self, work_area_ids: list[str], *, site_id: str) -> str | None:
         """고른 구역이 전부 이 현장 것인가 — 아니면 사람이 읽는 사유."""
         if self._work_area_store is None:  # pragma: no cover -- 호출부가 이미 걸렀다
             return None
@@ -948,9 +1143,7 @@ class DesignConformanceRequestStore:
             if work_area_ids is not None:
                 # 현장은 이제 확정됐다(``_resolve`` 가 설계면·작업의 현장 일치까지
                 # 이미 봤다) — 여기서 고른 구역의 소속을 대조한다.
-                mismatch = self._assert_work_areas_of_site(
-                    work_area_ids, site_id=resolved.site_id
-                )
+                mismatch = self._assert_work_areas_of_site(work_area_ids, site_id=resolved.site_id)
                 if mismatch is not None:
                     return DesignConformanceRequestResult(
                         DesignConformanceRequestVerdict.WORK_AREA_UNUSABLE, detail=mismatch
@@ -1057,6 +1250,89 @@ class DesignConformanceRequestStore:
         """
         return self.get(design_conformance_id)
 
+    @contextmanager
+    def authoritative_result_guard(
+        self,
+        design_conformance_id: str,
+        *,
+        now: datetime,
+        lease_fence: LeaseFence | None,
+        legacy_worker_id: str | None = None,
+        authenticated_actor_id: str | None = None,
+    ) -> Iterator[DesignConformanceRequestResult]:
+        """Hold the request authority boundary through a report journal append.
+
+        The caller may acquire its report-store lock and append only while this
+        context is open.  Therefore a takeover cannot occur between the final
+        fence check and durable report creation.  ``legacy_worker_id`` is only
+        accepted when the replayed lease itself predates fenced generations.
+        """
+
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                yield DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.STORE_UNAVAILABLE,
+                    detail=JOURNAL_SEALED_DETAIL,
+                )
+                return
+            record = self._requests.get(design_conformance_id)
+            if record is None or not self._visible_in_request(record):
+                yield DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.UNKNOWN_REQUEST,
+                    detail=_NOT_FOUND_DETAIL,
+                )
+                return
+            if record.status not in _ACTIVE_STATUSES:
+                yield DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.REQUEST_NOT_ACTIVE,
+                    detail=f"요청이 {record.status.value} 상태다 — 결과를 확정할 수 없다",
+                    record=record,
+                )
+                return
+            worker_id = (
+                (legacy_worker_id or record.lease.worker_id)
+                if lease_fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            )
+            denied = self._check_lease_locked(
+                record,
+                fence=lease_fence,
+                worker_id=worker_id,
+                authenticated_actor_id=authenticated_actor_id,
+                now=now,
+            )
+            if denied is not None:
+                verdict, detail = denied
+                yield DesignConformanceRequestResult(verdict, detail=detail, record=record)
+                return
+            yield DesignConformanceRequestResult(
+                DesignConformanceRequestVerdict.INPUT_READY,
+                record=record,
+            )
+
+    def has_recorded_lease_fence(
+        self,
+        design_conformance_id: str,
+        fence: LeaseFence,
+        *,
+        authenticated_actor_id: str | None = None,
+    ) -> bool:
+        """Return whether durable lease history binds ``fence`` to this request."""
+
+        with self._lock:
+            lease = self._lease_acquisitions.get(design_conformance_id, {}).get(
+                fence.lease_acquisition_id
+            )
+            return (
+                lease is not None
+                and lease.fence == fence
+                and (
+                    lease.authenticated_actor_id is None
+                    or lease.authenticated_actor_id == authenticated_actor_id
+                )
+            )
+
     def vertical_reference_of_current(
         self, record: DesignConformanceRequestRecord
     ) -> VerticalReference | None:
@@ -1071,7 +1347,12 @@ class DesignConformanceRequestStore:
         if job is None:
             return None
         artifact = next(
-            (a for a in job.artifacts if a.artifact_id == record.current.artifact_id), None
+            (
+                a
+                for a in authoritative_artifacts(job)
+                if a.artifact_id == record.current.artifact_id
+            ),
+            None,
         )
         return artifact.vertical_reference if artifact is not None else None
 
@@ -1092,18 +1373,24 @@ class DesignConformanceRequestStore:
         if limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [
-                r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
-            ]
+            records = [r for r in self._requests.values() if is_claimable(r.status, r.lease, now)]
         if current_request_organization_id() is not None:
             records = [r for r in records if self._visible_in_request(r)]
         return sorted(records, key=lambda r: (r.requested_at, r.request_id))[:limit]
 
     @staticmethod
     def _check_lease_locked(
-        record: DesignConformanceRequestRecord, *, worker_id: str, now: datetime
+        record: DesignConformanceRequestRecord,
+        *,
+        now: datetime,
+        fence: LeaseFence | None = None,
+        worker_id: str | None = None,
+        authenticated_actor_id: str | None = None,
     ) -> tuple[DesignConformanceRequestVerdict, str] | None:
-        denial = check_lease(record.lease, worker_id=worker_id, now=now)
+        denial = check_lease(
+            record.lease, fence=fence, worker_id=worker_id,
+            authenticated_actor_id=authenticated_actor_id, now=now,
+        )
         if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
             return (
                 DesignConformanceRequestVerdict.LEASE_REQUIRED,
@@ -1116,15 +1403,36 @@ class DesignConformanceRequestStore:
                 f"다른 워커({record.lease.worker_id})가 {iso_utc(record.lease.expires_at)} 까지 "
                 "이 요청을 쥐고 있다 — 만료 후 다시 시도한다",
             )
+        if denial is LeaseDenialReason.STALE_ACQUISITION:
+            return (
+                DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION,
+                "이전 CLAIM acquisition 은 현재 lease 소유자가 아니다",
+            )
+        if denial is LeaseDenialReason.STALE_GENERATION:
+            return (
+                DesignConformanceRequestVerdict.STALE_LEASE_GENERATION,
+                "이전 lease generation 은 현재 lease 를 변경할 수 없다",
+            )
+        if denial is LeaseDenialReason.INVALID_FENCE:
+            return (
+                DesignConformanceRequestVerdict.INVALID_LEASE_FENCE,
+                "worker lease fence 가 유효하지 않다",
+            )
         return None
 
     def acquire_lease(
         self,
         request_id: str,
         *,
-        worker_id: str,
         now: datetime,
         ttl: timedelta = DEFAULT_LEASE_TTL,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        worker_instance_id: str | None = None,
+        lease_acquisition_id: str | None = None,
+        lease_generation: int | None = None,
+        lease_mode: LeaseMode = LeaseMode.CLAIM,
+        authenticated_actor_id: str | None = None,
     ) -> DesignConformanceRequestResult:
         """요청 하나를 쥔다. 같은 워커의 재호출은 갱신(heartbeat)."""
         _require_tz_aware(now, param="now")
@@ -1144,32 +1452,165 @@ class DesignConformanceRequestStore:
                     DesignConformanceRequestVerdict.REQUEST_NOT_ACTIVE,
                     detail=f"요청이 {record.status.value} 상태다 — 끝난 요청은 잡을 수 없다",
                 )
-            current = record.lease
-            denial = check_lease(current, worker_id=worker_id, now=now)
-            renewing = current is not None and denial is None
-            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
-                assert current is not None  # noqa: S101
+            if (
+                lease_fence is None
+                and worker_instance_id is not None
+                and lease_acquisition_id is not None
+            ):
+                lease_fence = LeaseFence(
+                    worker_instance_id, lease_acquisition_id, lease_generation or 0
+                )
+            if lease_fence is None:
+                if worker_id is None:
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.INVALID_LEASE_FENCE, record=record
+                    )
+                current_for_legacy = record.lease
+                if current_for_legacy is not None and current_for_legacy.is_active(now):
+                    if current_for_legacy.worker_instance_id != worker_id:
+                        return DesignConformanceRequestResult(
+                            DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER, record=record
+                        )
+                    lease_fence = LeaseFence(
+                        worker_id,
+                        current_for_legacy.lease_acquisition_id or worker_id,
+                        current_for_legacy.lease_generation,
+                    )
+                    lease_mode = LeaseMode.RENEW
+                else:
+                    lease_fence = LeaseFence(worker_id, worker_id, 0)
+            if worker_id is None and (
+                not lease_fence.has_valid_ids()
+                or (lease_mode is LeaseMode.RENEW and lease_fence.lease_generation < 1)
+            ):
                 return DesignConformanceRequestResult(
-                    DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER,
-                    detail=(
-                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
-                        "이 요청을 쥐고 있다 — 만료 후 다시 시도한다"
+                    DesignConformanceRequestVerdict.INVALID_LEASE_FENCE, record=record
+                )
+            current = record.lease
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                global_prior = self._lease_acquisition_bindings.get(
+                    lease_fence.lease_acquisition_id
+                )
+                if global_prior is not None and global_prior[0] != request_id:
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.IDEMPOTENCY_CONFLICT, record=record
+                    )
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                prior = self._lease_acquisitions.get(request_id, {}).get(
+                    lease_fence.lease_acquisition_id
+                )
+                if prior is not None:
+                    if (
+                        prior.worker_instance_id != lease_fence.worker_instance_id
+                        or prior.authenticated_actor_id != authenticated_actor_id
+                    ):
+                        return DesignConformanceRequestResult(
+                            DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                        )
+                    if (
+                        current is not None
+                        and current.lease_acquisition_id == prior.lease_acquisition_id
+                        and current.is_active(now)
+                    ):
+                        return DesignConformanceRequestResult(
+                            DesignConformanceRequestVerdict.LEASED, record=record
+                        )
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+            if (
+                lease_mode is LeaseMode.CLAIM
+                and current is not None
+                and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+            ):
+                if (
+                    current.worker_instance_id != lease_fence.worker_instance_id
+                    or current.authenticated_actor_id != authenticated_actor_id
+                    or not current.is_active(now)
+                ):
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                return DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.LEASED, record=record
+                )
+            if lease_mode is LeaseMode.RENEW:
+                denied = self._check_lease_locked(
+                    record,
+                    fence=None if worker_id is not None else lease_fence,
+                    worker_id=worker_id,
+                    authenticated_actor_id=authenticated_actor_id,
+                    now=now,
+                )
+                if denied is not None:
+                    verdict, detail = denied
+                    return DesignConformanceRequestResult(verdict, detail=detail, record=record)
+                assert current is not None
+                generation, granted_at = current.lease_generation, current.granted_at
+            else:
+                denial = (
+                    check_lease(current, fence=lease_fence, now=now)
+                    if current is not None
+                    else LeaseDenialReason.MISSING_OR_EXPIRED
+                )
+                if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                    assert current is not None
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER,
+                        detail=(
+                            f"다른 워커({current.worker_id})가 "
+                            f"{iso_utc(current.expires_at)} 까지 이 요청을 쥐고 있다 "
+                            "— 만료 후 다시 시도한다"
+                        ),
+                        record=record,
+                    )
+                if current is not None and current.is_active(now):
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION,
+                        detail="활성 lease 중에는 다른 acquisition 으로 다시 CLAIM 할 수 없다",
+                        record=record,
+                    )
+                if (
+                    current is not None
+                    and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+                ):
+                    return DesignConformanceRequestResult(
+                        DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                generation, granted_at = (
+                    (
+                        0
+                        if worker_id is not None
+                        else self._lease_generation_high_water.get(request_id, 0) + 1
                     ),
-                    record=record,
+                    None,
                 )
             new_lease = next_lease(
-                worker_id=worker_id,
+                worker_instance_id=lease_fence.worker_instance_id,
+                lease_acquisition_id=None
+                if worker_id is not None
+                else lease_fence.lease_acquisition_id,
+                lease_generation=generation,
+                authenticated_actor_id=(
+                    current.authenticated_actor_id
+                    if lease_mode is LeaseMode.RENEW and current is not None
+                    else authenticated_actor_id
+                ),
                 now=now,
                 ttl=ttl,
-                granted_at=current.granted_at if renewing and current else None,
+                granted_at=granted_at,
             )
             raw = {
                 "kind": "design-conformance-request-leased",
                 "ts": iso_utc(now),
                 "requestId": request_id,
-                "workerId": worker_id,
+                "grantedAt": iso_utc(new_lease.granted_at),
                 "expiresAt": iso_utc(new_lease.expires_at),
-                "renewal": renewing,
+                **(
+                    lease_raw_fields(lease=new_lease, mode=lease_mode)
+                    if worker_id is None
+                    else {"workerId": worker_id, "renewal": lease_mode is LeaseMode.RENEW}
+                ),
             }
             try:
                 self._journal.append(raw)
@@ -1180,9 +1621,20 @@ class DesignConformanceRequestStore:
                 )
             updated = replace(record, lease=new_lease)
             self._requests[request_id] = updated
+            if new_lease.lease_acquisition_id is not None:
+                self._lease_acquisitions.setdefault(request_id, {})[
+                    new_lease.lease_acquisition_id
+                ] = new_lease
+                self._lease_acquisition_bindings[new_lease.lease_acquisition_id] = (
+                    request_id,
+                    new_lease,
+                )
+            self._lease_generation_high_water[request_id] = max(
+                self._lease_generation_high_water.get(request_id, 0), new_lease.lease_generation
+            )
             return DesignConformanceRequestResult(
                 DesignConformanceRequestVerdict.LEASE_RENEWED
-                if renewing
+                if lease_mode is LeaseMode.RENEW
                 else DesignConformanceRequestVerdict.LEASED,
                 record=updated,
             )
@@ -1195,6 +1647,7 @@ class DesignConformanceRequestStore:
         detail: str | None,
         actor: str,
         now: datetime,
+        lease_fence: LeaseFence | None = None,
     ) -> DesignConformanceRequestResult:
         _require_tz_aware(now, param="now")
         # **리포트 존재 확인은 우리 락 밖에서 한다 — 교착 방지.**
@@ -1232,12 +1685,13 @@ class DesignConformanceRequestStore:
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
-            denied = self._check_lease_locked(record, worker_id=actor, now=now)
+            denied = self._check_lease_locked(
+                record, fence=lease_fence, worker_id=actor if lease_fence is None else None,
+                authenticated_actor_id=actor if lease_fence is not None else None, now=now
+            )
             if denied is not None:
                 verdict, detail_msg = denied
-                return DesignConformanceRequestResult(
-                    verdict, detail=detail_msg, record=record
-                )
+                return DesignConformanceRequestResult(verdict, detail=detail_msg, record=record)
             try:
                 assert_design_conformance_transition(record.status, target)
             except IllegalDesignConformanceTransitionError as exc:
@@ -1262,7 +1716,7 @@ class DesignConformanceRequestStore:
                     ),
                     record=record,
                 )
-            raw = {
+            raw: dict[str, Any] = {
                 "kind": "design-conformance-request-transitioned",
                 "ts": iso_utc(now),
                 "requestId": request_id,
@@ -1270,6 +1724,12 @@ class DesignConformanceRequestStore:
                 "detail": detail,
                 "actor": actor,
             }
+            if lease_fence is not None:
+                raw["leaseFence"] = {
+                    "workerInstanceId": lease_fence.worker_instance_id,
+                    "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                    "leaseGeneration": lease_fence.lease_generation,
+                }
             try:
                 self._journal.append(raw)
             except JournalSealedError:
@@ -1292,6 +1752,9 @@ class DesignConformanceRequestStore:
         size_bytes: int,
         worker_id: str,
         now: datetime,
+        object_key: str | None = None,
+        content_type: str = DIFF_RASTER_CONTENT_TYPE,
+        lease_fence: LeaseFence | None = None,
     ) -> DesignConformanceRequestResult:
         """**Core 가 확인한** 래스터 사실을 원장에 남긴다 — 대조는 호출자가 이미 했다.
 
@@ -1316,7 +1779,62 @@ class DesignConformanceRequestStore:
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
-            if record.diff_raster is not None and record.diff_raster.digest == digest:
+            denied = self._check_lease_locked(
+                record,
+                fence=lease_fence,
+                worker_id=worker_id if lease_fence is None else None,
+                authenticated_actor_id=worker_id,
+                now=now,
+            )
+            if denied is not None:
+                verdict, detail = denied
+                return DesignConformanceRequestResult(verdict, detail=detail, record=record)
+            expected_key = (
+                build_design_conformance_raster_object_key(
+                    site_id=record.site_id,
+                    design_conformance_id=record.design_conformance_id,
+                    worker_instance_id=lease_fence.worker_instance_id,
+                    lease_acquisition_id=lease_fence.lease_acquisition_id,
+                    lease_generation=lease_fence.lease_generation,
+                )
+                if lease_fence is not None
+                else build_design_conformance_raster_object_key(
+                    site_id=record.site_id,
+                    design_conformance_id=record.design_conformance_id,
+                )
+            )
+            if object_key is None and lease_fence is None:
+                object_key = expected_key
+            if object_key != expected_key or content_type != DIFF_RASTER_CONTENT_TYPE:
+                return DesignConformanceRequestResult(
+                    DesignConformanceRequestVerdict.INVALID_LEASE_FENCE,
+                    detail="diff raster candidate identity가 current lease namespace와 다르다",
+                    record=record,
+                )
+            candidate = DiffRasterVerification(
+                digest=digest,
+                size_bytes=size_bytes,
+                verified_at=now,
+                verified_by=worker_id,
+                object_key=object_key if lease_fence is not None else None,
+                content_type=content_type if lease_fence is not None else None,
+                worker_instance_id=(
+                    lease_fence.worker_instance_id if lease_fence is not None else None
+                ),
+                lease_acquisition_id=(
+                    lease_fence.lease_acquisition_id if lease_fence is not None else None
+                ),
+                lease_generation=(
+                    lease_fence.lease_generation if lease_fence is not None else None
+                ),
+            )
+            if record.diff_raster is not None and (
+                record.diff_raster.digest == candidate.digest
+                and record.diff_raster.size_bytes == candidate.size_bytes
+                and record.diff_raster.object_key == candidate.object_key
+                and record.diff_raster.content_type == candidate.content_type
+                and record.diff_raster.fence == candidate.fence
+            ):
                 return DesignConformanceRequestResult(
                     DesignConformanceRequestVerdict.DIFF_RASTER_VERIFIED, record=record
                 )
@@ -1327,6 +1845,18 @@ class DesignConformanceRequestStore:
                 "digest": digest,
                 "sizeBytes": size_bytes,
                 "verifiedBy": worker_id,
+                **(
+                    {
+                        "authorityVersion": 1,
+                        "objectKey": object_key,
+                        "contentType": content_type,
+                        "workerInstanceId": lease_fence.worker_instance_id,
+                        "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                        "leaseGeneration": lease_fence.lease_generation,
+                    }
+                    if lease_fence is not None
+                    else {}
+                ),
             }
             try:
                 self._journal.append(raw)
@@ -1337,12 +1867,7 @@ class DesignConformanceRequestStore:
                 )
             updated = replace(
                 record,
-                diff_raster=DiffRasterVerification(
-                    digest=digest,
-                    size_bytes=size_bytes,
-                    verified_at=now,
-                    verified_by=worker_id,
-                ),
+                diff_raster=candidate,
             )
             self._requests[request_id] = updated
             return DesignConformanceRequestResult(
@@ -1492,7 +2017,15 @@ class DiffRasterUploadUrlResponse(CamelModel):
     upload_url: str | None = None
     content_type: str | None = None
     expires_at: datetime | None = None
+    required_headers: dict[str, str] = Field(default_factory=dict)
     detail: str | None = None
+
+
+class DiffRasterUploadUrlRequest(CamelModel):
+    """Candidate bytes known before presigning, so PUT itself can bind digest."""
+
+    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
 
 
 class DiffRasterVerificationRequest(CamelModel):
@@ -1536,9 +2069,7 @@ def _to_view(record: DesignConformanceRequestRecord) -> DesignConformanceRequest
         detail=record.detail,
         lease_worker_id=record.lease.worker_id if record.lease is not None else None,
         lease_expires_at=record.lease.expires_at if record.lease is not None else None,
-        diff_raster_digest=(
-            record.diff_raster.digest if record.diff_raster is not None else None
-        ),
+        diff_raster_digest=(record.diff_raster.digest if record.diff_raster is not None else None),
         diff_raster_verified_at=(
             record.diff_raster.verified_at if record.diff_raster is not None else None
         ),
@@ -1579,7 +2110,7 @@ def build_design_conformance_requests_router(
         response: Response,
         principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
     ) -> DesignConformanceRequestMutationResponse:
-        """"이 설계면과 이 지형을 비교하라"는 지시 접수 — **사람이 발급**한다.
+        """ "이 설계면과 이 지형을 비교하라"는 지시 접수 — **사람이 발급**한다.
 
         권한이 ``MISSIONS_ISSUE`` 인 것은 비교 요청 생성과 같은 자리다 — 계산해
         제출하는 것은 워커의 일이지만 "무엇을 무엇과 비교할지" 지목하는 것은
@@ -1645,12 +2176,37 @@ def build_design_conformance_requests_router(
     def acquire_design_conformance_lease(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
+        lease_mode_header: str | None = Header(default=None, alias="X-KSI-Lease-Mode"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DesignConformanceRequestMutationResponse:
+        try:
+            mode = LeaseMode(lease_mode_header or "CLAIM")
+            fence = (
+                LeaseFence(
+                    worker_instance_id or "", lease_acquisition_id or "", int(lease_generation or 0)
+                )
+                if worker_instance_id is not None and lease_acquisition_id is not None
+                else None
+            )
+        except ValueError:
+            mode, fence = LeaseMode.CLAIM, None
         result = store.acquire_lease(
-            request_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+            request_id,
+            lease_fence=fence,
+            lease_mode=mode,
+            authenticated_actor_id=principal.principal_id,
+            now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]
+        if result.record is not None and result.record.lease is not None:
+            lease = result.record.lease
+            response.headers["X-KSI-Worker-Instance-Id"] = lease.worker_instance_id
+            if lease.lease_acquisition_id is not None:
+                response.headers["X-KSI-Lease-Acquisition-Id"] = lease.lease_acquisition_id
+            response.headers["X-KSI-Lease-Generation"] = str(lease.lease_generation)
         if result.verdict is DesignConformanceRequestVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
         return DesignConformanceRequestMutationResponse(
@@ -1666,6 +2222,9 @@ def build_design_conformance_requests_router(
     def get_design_conformance_input(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DesignConformanceInputResponse:
         """워커가 설계면·현재 DSM 바이트를 읽는 유일한 경로 — lease 를 쥔 워커만 통과한다."""
@@ -1676,8 +2235,26 @@ def build_design_conformance_requests_router(
                 verdict=DesignConformanceRequestVerdict.UNKNOWN_REQUEST.value,
                 detail=_NOT_FOUND_DETAIL,
             )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         denied = DesignConformanceRequestStore._check_lease_locked(
-            record, worker_id=principal.principal_id, now=datetime.now(UTC)
+            record,
+            fence=fence,
+            authenticated_actor_id=principal.principal_id,
+            worker_id=(
+                principal.principal_id
+                if fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            ),
+            now=datetime.now(UTC),
         )
         if denied is not None:
             verdict, detail = denied
@@ -1708,7 +2285,7 @@ def build_design_conformance_requests_router(
                 ttl=DEFAULT_VIEW_TTL,
             )
             current_url = storage.presigned_get(
-                _artifact_object_key(record), ttl=DEFAULT_VIEW_TTL
+                _artifact_object_key(store, record), ttl=DEFAULT_VIEW_TTL
             )
         except EvidenceStorageError:
             logger.warning("설계 대비 입력 URL 발급 실패: requestId=%s", request_id)
@@ -1748,16 +2325,30 @@ def build_design_conformance_requests_router(
         request_id: str,
         request: DesignConformanceTransitionRequest,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DesignConformanceRequestMutationResponse:
         """워커만 전이한다 — RUNNING/SUCCEEDED/FAILED 는 계산을 돌린 주체만 아는 사실이다."""
         now = datetime.now(UTC)
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         result = store.transition(
             request_id,
             request.target_status,
             detail=request.detail,
             actor=principal.principal_id,
             now=now,
+            lease_fence=fence,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is DesignConformanceRequestVerdict.STORE_UNAVAILABLE:
@@ -1800,12 +2391,17 @@ def build_design_conformance_requests_router(
     def issue_diff_raster_upload_url(
         request_id: str,
         response: Response,
+        request: DiffRasterUploadUrlRequest | None = None,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DiffRasterUploadUrlResponse:
         """차분 래스터를 올릴 자리 — **워커가 객체 키를 고르지 않는다.**
 
-        키는 요청에서 결정적으로 유도된다(모듈 docstring §객체 키) — 재시도가 같은
-        자리를 덮어써 orphan 이 쌓이지 않는다. 종료된 요청에는 발급하지 않는다:
+        키는 요청과 current lease generation에서 유도된다(모듈 docstring §객체 키).
+        같은 attempt의 exact retry만 같은 candidate를 쓰고 takeover는 다른 키를 쓴다.
+        종료된 요청에는 발급하지 않는다:
         이미 굳은 리포트의 래스터가 나중에 다른 바이트로 바뀌는 창을 닫는다.
         """
         record = store.get(request_id)
@@ -1823,18 +2419,14 @@ def build_design_conformance_requests_router(
             return DiffRasterUploadUrlResponse(
                 verdict=DesignConformanceRequestVerdict.REQUEST_NOT_ACTIVE.value,
                 detail=(
-                    f"요청이 {record.status.value} 상태다 — 끝난 요청의 래스터는 "
-                    "다시 쓰지 않는다"
+                    f"요청이 {record.status.value} 상태다 — 끝난 요청의 래스터는 다시 쓰지 않는다"
                 ),
             )
         # 요청이 아직 RUNNING 이어도 **리포트가 이미 기록됐으면** 래스터를 다시 쓸 수
-        # 없다. 객체 키가 결정적이라(같은 id = 같은 자리) 재업로드는 기록된 리포트가
-        # 가리키는 digest 의 바이트를 덮어쓴다 — 리포트의 숫자와 내려받는 지도가 서로
-        # 다른 바이트를 가리키게 되고, 조회 경로는 읽을 때 다시 해싱하지 않는다.
+        # 없다. 같은 generation의 candidate URL도 report 확정 뒤 재발급하지 않는다;
+        # 이미 발급된 URL은 digest-bound라 다른 바이트로 바꿀 수 없다.
         if store.report_already_recorded(record.design_conformance_id):
-            response.status_code = _STATUS[
-                DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED
-            ]
+            response.status_code = _STATUS[DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED]
             return DiffRasterUploadUrlResponse(
                 verdict=DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED.value,
                 detail=(
@@ -1842,20 +2434,47 @@ def build_design_conformance_requests_router(
                     "래스터를 덮어쓸 수 없다"
                 ),
             )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         denied = DesignConformanceRequestStore._check_lease_locked(
-            record, worker_id=principal.principal_id, now=datetime.now(UTC)
+            record,
+            fence=fence,
+            authenticated_actor_id=principal.principal_id,
+            worker_id=(
+                principal.principal_id
+                if fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            ),
+            now=datetime.now(UTC),
         )
         if denied is not None:
             verdict, detail = denied
             response.status_code = _STATUS[verdict]
             return DiffRasterUploadUrlResponse(verdict=verdict.value, detail=detail)
+        if request is None:
+            response.status_code = 422
+            return DiffRasterUploadUrlResponse(
+                verdict=DesignConformanceRequestVerdict.INVALID_LEASE_FENCE.value,
+                detail="digest와 sizeBytes가 있어야 digest-bound 업로드 URL을 발급한다",
+            )
         now = datetime.now(UTC)
-        object_key = build_design_conformance_raster_object_key(
-            site_id=record.site_id, design_conformance_id=record.design_conformance_id
-        )
+        object_key = _diff_raster_key_for(record, fence)
         try:
-            upload_url = storage.presigned_put(
-                object_key, content_type=DIFF_RASTER_CONTENT_TYPE, ttl=DEFAULT_UPLOAD_TTL
+            if not isinstance(storage, DigestBoundEvidenceStorage):
+                raise EvidenceStorageError("diff raster storage lacks digest-bound PUT support")
+            capability = storage.presigned_put_bound_digest(
+                object_key,
+                content_type=DIFF_RASTER_CONTENT_TYPE,
+                content_digest=request.digest,
+                ttl=DEFAULT_UPLOAD_TTL,
             )
         except EvidenceStorageError:
             logger.warning("차분 래스터 업로드 URL 발급 실패: requestId=%s", request_id)
@@ -1868,9 +2487,10 @@ def build_design_conformance_requests_router(
         return DiffRasterUploadUrlResponse(
             verdict=DesignConformanceRequestVerdict.UPLOAD_READY.value,
             object_key=object_key,
-            upload_url=upload_url,
+            upload_url=capability.upload_url,
             content_type=DIFF_RASTER_CONTENT_TYPE,
             expires_at=expires_at(now, DEFAULT_UPLOAD_TTL),
+            required_headers=capability.required_headers,
         )
 
     @router.post(
@@ -1882,6 +2502,9 @@ def build_design_conformance_requests_router(
         request_id: str,
         request: DiffRasterVerificationRequest,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DiffRasterVerificationResponse:
         """**Core 가 방금 올라온 객체를 직접 읽어 해시를 다시 계산한다.**
@@ -1908,9 +2531,7 @@ def build_design_conformance_requests_router(
         # 업로드 URL 발급과 같은 이유다(그 라우트 주석 참조) — 리포트가 이미 특정
         # digest 를 가리키고 있으면 재확인으로 그 값을 갈아끼울 수 없다.
         if store.report_already_recorded(record.design_conformance_id):
-            response.status_code = _STATUS[
-                DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED
-            ]
+            response.status_code = _STATUS[DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED]
             return DiffRasterVerificationResponse(
                 verdict=DesignConformanceRequestVerdict.REPORT_ALREADY_RECORDED.value,
                 detail=(
@@ -1918,16 +2539,32 @@ def build_design_conformance_requests_router(
                     "바이트로 다시 확인할 수 없다"
                 ),
             )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         denied = DesignConformanceRequestStore._check_lease_locked(
-            record, worker_id=principal.principal_id, now=now
+            record,
+            fence=fence,
+            authenticated_actor_id=principal.principal_id,
+            worker_id=(
+                principal.principal_id
+                if fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            ),
+            now=now,
         )
         if denied is not None:
             verdict, detail = denied
             response.status_code = _STATUS[verdict]
             return DiffRasterVerificationResponse(verdict=verdict.value, detail=detail)
-        object_key = build_design_conformance_raster_object_key(
-            site_id=record.site_id, design_conformance_id=record.design_conformance_id
-        )
+        object_key = _diff_raster_key_for(record, fence)
         try:
             digest, size_bytes = recompute_diff_raster_digest(storage, object_key)
         except EvidenceStorageError:
@@ -1938,9 +2575,7 @@ def build_design_conformance_requests_router(
             response.headers["Retry-After"] = "30"
             return DiffRasterVerificationResponse(
                 verdict=DesignConformanceRequestVerdict.DIFF_RASTER_UNREADABLE.value,
-                detail=(
-                    "올렸다는 자리의 객체를 읽지 못했다 — 확인 없이 리포트를 받지 않는다"
-                ),
+                detail=("올렸다는 자리의 객체를 읽지 못했다 — 확인 없이 리포트를 받지 않는다"),
             )
         if digest != request.digest or size_bytes != request.size_bytes:
             response.status_code = _STATUS[
@@ -1961,6 +2596,9 @@ def build_design_conformance_requests_router(
             size_bytes=size_bytes,
             worker_id=principal.principal_id,
             now=now,
+            object_key=object_key,
+            content_type=DIFF_RASTER_CONTENT_TYPE,
+            lease_fence=fence,
         )
         response.status_code = _STATUS[result.verdict]
         if result.verdict is DesignConformanceRequestVerdict.STORE_UNAVAILABLE:
@@ -1981,13 +2619,16 @@ def build_design_conformance_requests_router(
     return router
 
 
-def _artifact_object_key(record: DesignConformanceRequestRecord) -> str:
-    """현재 DSM 산출물이 놓인 자리 — ``processing_jobs`` 의 유도 함수를 그대로 쓴다."""
-    return build_processing_artifact_object_key(
-        site_id=record.site_id,
-        job_id=record.current.job_id,
-        artifact_id=record.current.artifact_id,
+def _artifact_object_key(
+    store: DesignConformanceRequestStore, record: DesignConformanceRequestRecord
+) -> str:
+    """Resolve accepted bytes from the durable manifest, never a guessed key."""
+    resolved = store._processing_job_store.resolve_artifact(
+        record.current.job_id, record.current.artifact_id
     )
+    if resolved is None:
+        raise EvidenceStorageError("accepted authoritative DSM 을 찾을 수 없다")
+    return resolved.object_key
 
 
 def mount_design_conformance_requests(

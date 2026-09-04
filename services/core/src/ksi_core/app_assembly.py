@@ -602,6 +602,7 @@ def assemble_app(
                 change_detection_journal,
                 mission_store=mission_store,
                 processing_job_store=processing_job_store,
+                comparison_request_store=comparison_request_store,
             )
             if processing_job_store is not None
             else None
@@ -613,6 +614,7 @@ def assemble_app(
                 volume_change_journal,
                 mission_store=mission_store,
                 processing_job_store=processing_job_store,
+                comparison_request_store=comparison_request_store,
             )
             if processing_job_store is not None
             else None

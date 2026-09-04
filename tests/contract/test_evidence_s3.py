@@ -51,6 +51,21 @@ class FakeS3Client:
         self.deleted.append({"bucket": Bucket, "key": Key})
 
 
+class HeadS3Client(FakeS3Client):
+    def __init__(
+        self, response: dict[str, Any] | None = None, *, fail: Exception | None = None
+    ) -> None:
+        super().__init__(fail=fail)
+        self.response = response or {}
+        self.head_calls: list[dict[str, Any]] = []
+
+    def head_object(self, **kwargs: Any) -> dict[str, Any]:
+        self.head_calls.append(kwargs)
+        if self._fail is not None:
+            raise self._fail
+        return self.response
+
+
 def _storage(client: FakeS3Client) -> S3EvidenceStorage:
     return S3EvidenceStorage(bucket="ksi-evidence", client=client)
 
@@ -200,6 +215,50 @@ def test_delete_failure_becomes_storage_error() -> None:
     client = FakeS3Client(fail=RuntimeError("EndpointConnectionError"))
     with pytest.raises(EvidenceStorageError, match="객체 삭제 실패"):
         _storage(client).delete("k")
+
+
+def test_observe_object_uses_checksum_head_and_never_trusts_etag() -> None:
+    checksum = base64.b64encode(bytes.fromhex("a" * 64)).decode("ascii")
+    client = HeadS3Client(
+        {
+            "ChecksumSHA256": checksum,
+            "ContentLength": 123,
+            "ContentType": "image/png",
+            "ETag": "forged",
+        }
+    )
+    observed = _storage(client).observe_object("sites/s1/artifact")
+    assert client.head_calls == [
+        {"Bucket": "ksi-evidence", "Key": "sites/s1/artifact", "ChecksumMode": "ENABLED"}
+    ]
+    assert observed.exists and observed.sha256 == "sha256:" + "a" * 64
+    assert (observed.size_bytes, observed.content_type) == (123, "image/png")
+
+
+@pytest.mark.parametrize(
+    "checksum", [None, "not-base64", base64.b64encode(b"short").decode("ascii")]
+)
+def test_observe_object_fails_closed_on_unknown_or_malformed_checksum(checksum: str | None) -> None:
+    observed = _storage(
+        HeadS3Client({"ChecksumSHA256": checksum, "ContentLength": 1})
+    ).observe_object("k")
+    assert observed.exists and observed.sha256 is None
+
+
+class _ClientError(Exception):
+    def __init__(self, code: str) -> None:
+        self.response = {"Error": {"Code": code}}
+
+
+@pytest.mark.parametrize("code", ["404", "NoSuchKey", "NotFound"])
+def test_observe_object_maps_explicit_not_found_to_absent(code: str) -> None:
+    assert not _storage(HeadS3Client(fail=_ClientError(code))).observe_object("k").exists
+
+
+@pytest.mark.parametrize("code", ["403", "AccessDenied", "500", "InternalError"])
+def test_observe_object_raises_on_non_not_found_client_errors(code: str) -> None:
+    with pytest.raises(EvidenceStorageError, match="metadata"):
+        _storage(HeadS3Client(fail=_ClientError(code))).observe_object("k")
 
 
 def test_empty_bucket_is_refused() -> None:

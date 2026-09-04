@@ -57,7 +57,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.design_conformance_report import DesignConformanceReport
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.processing_job import ProcessingJobStatus
@@ -76,12 +76,15 @@ from ksi_core.auth import (
     require_permission,
 )
 from ksi_core.design_conformance_requests import (
+    DIFF_RASTER_CONTENT_TYPE,
     DesignConformanceRequestRecord,
+    DesignConformanceRequestVerdict,
     build_design_conformance_raster_object_key,
     recompute_diff_raster_digest,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
+from ksi_core.leasing import LeaseFence
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -124,6 +127,11 @@ class DesignConformanceVerdict(StrEnum):
     #: 요청이 이미 종결(FAILED)됐다 — 실패로 닫힌 요청 위에 성공 리포트를 남기면
     #: 요청 생애주기와 리포트 원장이 완료 여부를 서로 다르게 말한다.
     REQUEST_ALREADY_TERMINAL = "REQUEST_ALREADY_TERMINAL"
+    LEASE_REQUIRED = "LEASE_REQUIRED"
+    LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
 
@@ -142,6 +150,11 @@ _STATUS: dict[DesignConformanceVerdict, int] = {
     DesignConformanceVerdict.DIFF_RASTER_UNREADABLE: 503,
     DesignConformanceVerdict.DUPLICATE_REPORT_ID: 409,
     DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL: 409,
+    DesignConformanceVerdict.LEASE_REQUIRED: 409,
+    DesignConformanceVerdict.LEASE_HELD_BY_ANOTHER: 409,
+    DesignConformanceVerdict.STALE_LEASE_ACQUISITION: 409,
+    DesignConformanceVerdict.STALE_LEASE_GENERATION: 409,
+    DesignConformanceVerdict.INVALID_LEASE_FENCE: 422,
     DesignConformanceVerdict.STORE_UNAVAILABLE: 503,
 }
 
@@ -165,6 +178,11 @@ class RecordedDesignConformance:
     #: ``report.diff_raster.digest`` 와 항상 같다(같지 않으면 기록되지 않았다) —
     #: 그 사실을 별도 필드로 남겨야 재생이 "확인이 있었는가"를 볼 수 있다.
     core_recomputed_digest: str
+    request_id: str | None = None
+    accepted_lease_fence: LeaseFence | None = None
+    diff_raster_object_key: str | None = None
+    diff_raster_content_type: str | None = None
+    authority_version: int | None = None
 
 
 class DesignConformanceStore:
@@ -193,7 +211,7 @@ class DesignConformanceStore:
         self._storage = storage
         self._lock = threading.Lock()
         self._by_mission: dict[str, list[RecordedDesignConformance]] = {}
-        self._ids_by_mission: dict[str, dict[str, DesignConformanceReport]] = {}
+        self._ids_by_mission: dict[str, dict[str, RecordedDesignConformance]] = {}
         # 진척(M4-C)은 **현장 단위**로 읽는다 — 리포트는 임무에 매달려 기록되지만,
         # "A공구가 계획 대비 얼마나 됐나"는 임무 경계를 넘는 질문이다(기준 시점과
         # 최신 시점은 서로 다른 임무다). site 는 요청 레코드가 이미 알고 있으므로
@@ -249,12 +267,69 @@ class DesignConformanceStore:
                     f"재생: 기록될 수 없는 리포트({verdict.value}: {detail}) — "
                     f"missionId={mission_id} designConformanceId={report.design_conformance_id}"
                 )
+            authority_version = raw.get("authorityVersion")
+            accepted_fence: LeaseFence | None = None
+            object_key: str | None = None
+            content_type: str | None = None
+            request_id: str | None = raw.get("requestId")
+            if authority_version is not None:
+                if authority_version != 1:
+                    raise DesignConformanceRecoveryError(
+                        f"재생: 지원하지 않는 authorityVersion — {authority_version!r}"
+                    )
+                try:
+                    fence_raw = raw["acceptedLeaseFence"]
+                    accepted_fence = LeaseFence(
+                        fence_raw["workerInstanceId"],
+                        fence_raw["leaseAcquisitionId"],
+                        int(fence_raw["leaseGeneration"]),
+                    )
+                    object_raw = raw["diffRasterObject"]
+                    object_key = object_raw["objectKey"]
+                    content_type = object_raw["contentType"]
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise DesignConformanceRecoveryError(
+                        "재생: generation-aware authoritative report binding이 불완전하다"
+                    ) from exc
+                request = self._request_store.get_by_design_conformance_id(
+                    report.design_conformance_id
+                )
+                if (
+                    request is None
+                    or request_id != request.request_id
+                    or not accepted_fence.is_well_formed()
+                    or not self._request_store.has_recorded_lease_fence(
+                        report.design_conformance_id,
+                        accepted_fence,
+                        authenticated_actor_id=raw.get("reportedBy"),
+                    )
+                    or request.diff_raster is None
+                    or request.diff_raster.fence != accepted_fence
+                    or request.diff_raster.object_key != object_key
+                    or object_raw.get("sha256") != report.diff_raster.digest
+                    or int(object_raw.get("sizeBytes", -1)) != report.diff_raster.size_bytes
+                    or content_type != DIFF_RASTER_CONTENT_TYPE
+                ):
+                    raise DesignConformanceRecoveryError(
+                        "재생: authoritative diff raster provenance가 request/report와 다르다"
+                    )
+            elif any(
+                key in raw for key in ("acceptedLeaseFence", "diffRasterObject")
+            ):
+                raise DesignConformanceRecoveryError(
+                    "재생: authorityVersion 없는 부분적 authoritative report binding"
+                )
             self._project(
                 mission_id,
                 report,
                 raw.get("reportedBy"),
                 datetime.fromisoformat(raw["ts"]),
                 str(recomputed),
+                request_id=request_id,
+                accepted_lease_fence=accepted_fence,
+                diff_raster_object_key=object_key,
+                diff_raster_content_type=content_type,
+                authority_version=authority_version,
             )
 
     def _project(
@@ -264,15 +339,28 @@ class DesignConformanceStore:
         reported_by: str | None,
         recorded_at: datetime,
         core_recomputed_digest: str,
+        *,
+        request_id: str | None = None,
+        accepted_lease_fence: LeaseFence | None = None,
+        diff_raster_object_key: str | None = None,
+        diff_raster_content_type: str | None = None,
+        authority_version: int | None = None,
     ) -> None:
         recorded = RecordedDesignConformance(
             report=report,
             reported_by=reported_by,
             recorded_at=recorded_at,
             core_recomputed_digest=core_recomputed_digest,
+            request_id=request_id,
+            accepted_lease_fence=accepted_lease_fence,
+            diff_raster_object_key=diff_raster_object_key,
+            diff_raster_content_type=diff_raster_content_type,
+            authority_version=authority_version,
         )
         self._by_mission.setdefault(mission_id, []).append(recorded)
-        self._ids_by_mission.setdefault(mission_id, {})[report.design_conformance_id] = report
+        self._ids_by_mission.setdefault(mission_id, {})[
+            report.design_conformance_id
+        ] = recorded
         request = self._request_store.get_by_design_conformance_id(
             report.design_conformance_id
         )
@@ -412,7 +500,10 @@ class DesignConformanceStore:
     # ── 판정 (live·재생 공유, 스토리지 없이) ─────────────────────────────
 
     def _judge(
-        self, report: DesignConformanceReport, mission_id: str
+        self,
+        report: DesignConformanceReport,
+        mission_id: str,
+        request: DesignConformanceRequestRecord | None = None,
     ) -> tuple[DesignConformanceVerdict, str | None]:
         """리포트가 **그 요청의 결과로 성립하는가** — 바이트를 읽지 않는 대조 전부.
 
@@ -421,9 +512,10 @@ class DesignConformanceStore:
         _judge_references`` 와 같은 원칙). 바이트 재해싱만 live 전용이다(모듈
         docstring §재생).
         """
-        request = self._request_store.get_by_design_conformance_id(
-            report.design_conformance_id
-        )
+        if request is None:
+            request = self._request_store.get_by_design_conformance_id(
+                report.design_conformance_id
+            )
         if request is None:
             return (
                 DesignConformanceVerdict.UNKNOWN_REQUEST,
@@ -521,134 +613,210 @@ class DesignConformanceStore:
         *,
         now: datetime,
         reported_by: str | None = None,
+        lease_fence: LeaseFence | None = None,
     ) -> DesignConformanceRecordResult:
-        """리포트를 받는다 — **바이트를 직접 다시 해싱한 뒤에만** 원장에 굳힌다."""
-        with self._lock:
-            if self._journal.sealed_reason is not None:
-                return DesignConformanceRecordResult(
-                    DesignConformanceVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
-                )
-            if self._mission_store.get(mission_id) is None:
-                return self._reject(
+        """Finalize one report under the owning request's current lease fence."""
+        with self._request_store.authoritative_result_guard(
+            report.design_conformance_id,
+            now=now,
+            lease_fence=lease_fence,
+            legacy_worker_id=reported_by,
+            authenticated_actor_id=reported_by,
+        ) as authority:
+            if authority.verdict is not DesignConformanceRequestVerdict.INPUT_READY:
+                mapped = {
+                    DesignConformanceRequestVerdict.UNKNOWN_REQUEST: (
+                        DesignConformanceVerdict.UNKNOWN_REQUEST
+                    ),
+                    DesignConformanceRequestVerdict.REQUEST_NOT_ACTIVE: (
+                        DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL
+                    ),
+                    DesignConformanceRequestVerdict.STORE_UNAVAILABLE: (
+                        DesignConformanceVerdict.STORE_UNAVAILABLE
+                    ),
+                    DesignConformanceRequestVerdict.LEASE_REQUIRED: (
+                        DesignConformanceVerdict.LEASE_REQUIRED
+                    ),
+                    DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER: (
+                        DesignConformanceVerdict.LEASE_HELD_BY_ANOTHER
+                    ),
+                    DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION: (
+                        DesignConformanceVerdict.STALE_LEASE_ACQUISITION
+                    ),
+                    DesignConformanceRequestVerdict.STALE_LEASE_GENERATION: (
+                        DesignConformanceVerdict.STALE_LEASE_GENERATION
+                    ),
+                    DesignConformanceRequestVerdict.INVALID_LEASE_FENCE: (
+                        DesignConformanceVerdict.INVALID_LEASE_FENCE
+                    ),
+                }.get(authority.verdict, DesignConformanceVerdict.INVALID_LEASE_FENCE)
+                return DesignConformanceRecordResult(mapped, detail=authority.detail)
+            request = authority.record
+            assert request is not None  # noqa: S101 -- INPUT_READY always includes it
+            with self._lock:
+                return self._record_authoritative_locked(
                     mission_id,
                     report,
-                    now,
-                    reported_by,
-                    DesignConformanceVerdict.UNKNOWN_MISSION,
-                    "발급된 적 없는 임무의 설계 대비 리포트는 받지 않는다",
+                    request=request,
+                    now=now,
+                    reported_by=reported_by,
+                    lease_fence=lease_fence,
                 )
-            existing = self._ids_by_mission.get(mission_id, {}).get(
-                report.design_conformance_id
-            )
-            if existing is not None:
-                if existing == report:
-                    return DesignConformanceRecordResult(
-                        DesignConformanceVerdict.RECORDED,
-                        detail="이미 같은 내용으로 기록돼 있다(멱등 재전송)",
-                    )
-                return self._reject(
-                    mission_id,
-                    report,
-                    now,
-                    reported_by,
-                    DesignConformanceVerdict.DUPLICATE_REPORT_ID,
-                    f"designConformanceId={report.design_conformance_id!r} 는 이미 다른"
-                    " 내용으로 기록됐다 — 같은 id 로 다른 결과를 덮어쓸 수 없다",
-                )
-            verdict, detail = self._judge(report, mission_id)
-            if verdict is not DesignConformanceVerdict.RECORDED:
-                return self._reject(mission_id, report, now, reported_by, verdict, detail)
-            # **종결(FAILED)된 요청 위에는 리포트를 받지 않는다 — 수신 시점 전용 게이트다.**
-            # ``_judge`` 의 대조들(설계면·산출물·기준값)은 "요청이 지목한 것과 같은가"만
-            # 보므로 이미 FAILED 로 닫힌 요청도 스냅샷이 남아 있어 전부 통과한다. 그러면
-            # 요청 이력은 실패인데 리포트 원장에는 성공 리포트가 있는 모순이 남는다.
-            #
-            # 이 검사를 ``_judge`` 안에 두면 안 된다 — ``_judge`` 는 재생도 태우는데,
-            # 재생 시점의 요청 상태는 "그때 받았을 때"가 아니라 "지금까지 전이한 결과"다.
-            # 리포트를 정상 기록한 뒤 요청이 FAILED 로 닫히는 순서는 합법이므로(전이
-            # 게이트는 SUCCEEDED 에만 리포트를 요구한다), 재생에서 이걸 보면 그 정상
-            # 이력이 기동 거부(``DesignConformanceRecoveryError``)로 바뀐다. 이미 받은
-            # 기록을 나중에 부정하지 않는다 — coverage_reports 의 임무 대조와 같은 원칙.
-            receipt_request = self._request_store.get_by_design_conformance_id(
-                report.design_conformance_id
-            )
-            if (
-                receipt_request is not None
-                and receipt_request.status is ProcessingJobStatus.FAILED
-            ):
-                return self._reject(
-                    mission_id,
-                    report,
-                    now,
-                    reported_by,
-                    DesignConformanceVerdict.REQUEST_ALREADY_TERMINAL,
-                    f"요청이 이미 {receipt_request.status.value} 로 닫혔다 — 실패로 "
-                    "종결된 요청에 리포트를 기록하면 요청 이력과 리포트 원장이 완료 "
-                    "여부를 서로 다르게 말하게 된다",
-                )
-            # ``_judge`` 는 원장끼리의 대조까지다. 이 아래가 **바이트를 읽는** 유일한
-            # 자리이고, 이 모듈이 존재하는 이유다.
 
-            # ── 여기가 신뢰 경계다 — 워커가 뭐라 했든 Core 가 직접 읽어 잰다 ──
-            request = self._request_store.get_by_design_conformance_id(
-                report.design_conformance_id
+    def _record_authoritative_locked(
+        self,
+        mission_id: str,
+        report: DesignConformanceReport,
+        *,
+        request: DesignConformanceRequestRecord,
+        now: datetime,
+        reported_by: str | None,
+        lease_fence: LeaseFence | None,
+    ) -> DesignConformanceRecordResult:
+        """Report lock is held; request-store authority lock is held by caller."""
+        if self._journal.sealed_reason is not None:
+            return DesignConformanceRecordResult(
+                DesignConformanceVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
             )
-            assert request is not None  # noqa: S101 -- _judge 가 이미 확인했다
+        if self._mission_store.get(mission_id) is None:
+            return self._reject(
+                mission_id,
+                report,
+                now,
+                reported_by,
+                DesignConformanceVerdict.UNKNOWN_MISSION,
+                "발급된 적 없는 임무의 설계 대비 리포트는 받지 않는다",
+            )
+        existing = self._ids_by_mission.get(mission_id, {}).get(
+            report.design_conformance_id
+        )
+        if existing is not None:
+            same_authority = (
+                existing.authority_version is None
+                or existing.accepted_lease_fence == lease_fence
+            )
+            if existing.report == report and same_authority:
+                return DesignConformanceRecordResult(
+                    DesignConformanceVerdict.RECORDED,
+                    detail="이미 같은 내용과 lease generation으로 기록돼 있다(멱등 재전송)",
+                )
+            return self._reject(
+                mission_id,
+                report,
+                now,
+                reported_by,
+                DesignConformanceVerdict.DUPLICATE_REPORT_ID,
+                f"designConformanceId={report.design_conformance_id!r} 는 이미 다른"
+                " 내용 또는 generation으로 기록됐다 — 같은 id를 덮어쓸 수 없다",
+            )
+        verdict, detail = self._judge(report, mission_id, request=request)
+        if verdict is not DesignConformanceVerdict.RECORDED:
+            return self._reject(mission_id, report, now, reported_by, verdict, detail)
+
+        verification = request.diff_raster
+        assert verification is not None  # noqa: S101 -- _judge checked it
+        if lease_fence is not None:
+            if verification.fence != lease_fence or verification.object_key is None:
+                return self._reject(
+                    mission_id,
+                    report,
+                    now,
+                    reported_by,
+                    DesignConformanceVerdict.DIFF_RASTER_NOT_VERIFIED,
+                    "current lease generation이 확인한 diff raster candidate가 아니다",
+                )
+            object_key = verification.object_key
+            content_type = verification.content_type
+        else:
+            # Historical generation-zero workers retain only the conventional
+            # key.  New fenced records never enter this branch.
             object_key = build_design_conformance_raster_object_key(
-                site_id=request.site_id, design_conformance_id=request.design_conformance_id
+                site_id=request.site_id,
+                design_conformance_id=request.design_conformance_id,
             )
-            try:
-                recomputed_digest, recomputed_size = recompute_diff_raster_digest(
-                    self._storage, object_key
-                )
-            except EvidenceStorageError:
-                logger.warning(
-                    "차분 래스터를 읽지 못해 리포트를 기록하지 않는다: objectKey=%s", object_key
-                )
-                return self._reject(
-                    mission_id,
-                    report,
-                    now,
-                    reported_by,
-                    DesignConformanceVerdict.DIFF_RASTER_UNREADABLE,
-                    "리포트가 가리키는 차분 래스터를 읽지 못했다 — 지도가 없는 잔량"
-                    " 리포트를 원장에 남기지 않는다",
-                )
-            if (
-                recomputed_digest != report.diff_raster.digest
-                or recomputed_size != report.diff_raster.size_bytes
-            ):
-                return self._reject(
-                    mission_id,
-                    report,
-                    now,
-                    reported_by,
-                    DesignConformanceVerdict.DIFF_RASTER_DIGEST_MISMATCH,
-                    "워커가 신고한 차분 래스터 digest 와 Core 가 그 객체를 직접 다시 "
-                    f"해싱한 결과가 다르다 — 리포트 {report.diff_raster.digest}"
-                    f"({report.diff_raster.size_bytes}B), 실제 {recomputed_digest}"
-                    f"({recomputed_size}B). 지도와 숫자가 갈라진 리포트는 기록하지 않는다",
-                )
+            content_type = DIFF_RASTER_CONTENT_TYPE
 
-            record = {
-                "kind": "design-conformance-recorded",
-                "ts": iso_utc(now),
-                "missionId": mission_id,
-                "requestId": request.request_id,
-                "reportedBy": reported_by,
-                "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
-                "coreRecomputedDigest": recomputed_digest,
-                "coreRecomputedSizeBytes": recomputed_size,
-            }
-            try:
-                self._journal.append(record)
-            except JournalSealedError:
-                return DesignConformanceRecordResult(
-                    DesignConformanceVerdict.STORE_UNAVAILABLE,
-                    detail=JOURNAL_APPEND_FAILED_DETAIL,
-                )
-            self._project(mission_id, report, reported_by, now, recomputed_digest)
-            return DesignConformanceRecordResult(DesignConformanceVerdict.RECORDED)
+        try:
+            recomputed_digest, recomputed_size = recompute_diff_raster_digest(
+                self._storage, object_key
+            )
+        except EvidenceStorageError:
+            logger.warning(
+                "차분 래스터를 읽지 못해 리포트를 기록하지 않는다: objectKey=%s", object_key
+            )
+            return self._reject(
+                mission_id,
+                report,
+                now,
+                reported_by,
+                DesignConformanceVerdict.DIFF_RASTER_UNREADABLE,
+                "리포트가 가리키는 차분 래스터를 읽지 못했다 — 지도가 없는 잔량"
+                " 리포트를 원장에 남기지 않는다",
+            )
+        if (
+            recomputed_digest != report.diff_raster.digest
+            or recomputed_size != report.diff_raster.size_bytes
+        ):
+            return self._reject(
+                mission_id,
+                report,
+                now,
+                reported_by,
+                DesignConformanceVerdict.DIFF_RASTER_DIGEST_MISMATCH,
+                "워커가 신고한 차분 래스터 digest와 Core가 직접 다시 해싱한 결과가 다르다 — "
+                f"리포트 {report.diff_raster.digest}({report.diff_raster.size_bytes}B), "
+                f"실제 {recomputed_digest}({recomputed_size}B)",
+                lease_fence=lease_fence,
+            )
+
+        record = {
+            "kind": "design-conformance-recorded",
+            "ts": iso_utc(now),
+            "missionId": mission_id,
+            "requestId": request.request_id,
+            "reportedBy": reported_by,
+            "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
+            "coreRecomputedDigest": recomputed_digest,
+            "coreRecomputedSizeBytes": recomputed_size,
+            **(
+                {
+                    "authorityVersion": 1,
+                    "acceptedLeaseFence": {
+                        "workerInstanceId": lease_fence.worker_instance_id,
+                        "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                        "leaseGeneration": lease_fence.lease_generation,
+                    },
+                    "diffRasterObject": {
+                        "objectKey": object_key,
+                        "sha256": recomputed_digest,
+                        "sizeBytes": recomputed_size,
+                        "contentType": content_type,
+                    },
+                }
+                if lease_fence is not None
+                else {}
+            ),
+        }
+        try:
+            self._journal.append(record)
+        except JournalSealedError:
+            return DesignConformanceRecordResult(
+                DesignConformanceVerdict.STORE_UNAVAILABLE,
+                detail=JOURNAL_APPEND_FAILED_DETAIL,
+            )
+        self._project(
+            mission_id,
+            report,
+            reported_by,
+            now,
+            recomputed_digest,
+            request_id=request.request_id,
+            accepted_lease_fence=lease_fence,
+            diff_raster_object_key=(object_key if lease_fence is not None else None),
+            diff_raster_content_type=(content_type if lease_fence is not None else None),
+            authority_version=(1 if lease_fence is not None else None),
+        )
+        return DesignConformanceRecordResult(DesignConformanceVerdict.RECORDED)
 
     def _reject(
         self,
@@ -658,6 +826,8 @@ class DesignConformanceStore:
         reported_by: str | None,
         verdict: DesignConformanceVerdict,
         detail: str | None,
+        *,
+        lease_fence: LeaseFence | None = None,
     ) -> DesignConformanceRecordResult:
         """거부도 원장에 남긴다 — 신뢰 경계에서 튕겨 나간 제출은 특히 남아야 한다.
 
@@ -681,7 +851,7 @@ class DesignConformanceStore:
                 DesignConformanceVerdict.STORE_UNAVAILABLE, detail=JOURNAL_APPEND_FAILED_DETAIL
             )
         if verdict is DesignConformanceVerdict.DIFF_RASTER_DIGEST_MISMATCH:
-            self._fail_request(report, now, reported_by, detail)
+            self._fail_request(report, now, reported_by, detail, lease_fence=lease_fence)
         return DesignConformanceRecordResult(verdict, detail=detail)
 
     def _fail_request(
@@ -690,6 +860,8 @@ class DesignConformanceStore:
         now: datetime,
         reported_by: str | None,
         detail: str | None,
+        *,
+        lease_fence: LeaseFence | None = None,
     ) -> None:
         """digest 불일치 요청을 ``FAILED`` 로 보낸다 — 리포트는 기록되지 않았다.
 
@@ -714,6 +886,7 @@ class DesignConformanceStore:
             )[:500],
             actor=reported_by or "core",
             now=now,
+            lease_fence=lease_fence,
         )
         if transition.verdict.value != "TRANSITIONED":
             logger.warning(
@@ -763,7 +936,11 @@ class DesignConformanceStore:
         return None
 
     def diff_raster_object_key(self, entry: RecordedDesignConformance) -> str | None:
-        """그 리포트의 래스터가 놓인 자리 — 요청에서 유도한다(저장하지 않는다)."""
+        """Return the exact durable authority; derive only true legacy keys."""
+        if entry.authority_version is not None:
+            # New-format replay rejects a missing binding, so None here is a
+            # fail-closed signal rather than permission to guess a path.
+            return entry.diff_raster_object_key
         request = self._request_store.get_by_design_conformance_id(
             entry.report.design_conformance_id
         )
@@ -834,11 +1011,28 @@ def build_design_conformance_reports_router(
         mission_id: str,
         report: DesignConformanceReport,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> DesignConformanceResponse:
         """설계 대비 잔량 리포트 접수 — **처리 워커만** 올리고, Core 가 래스터를 재해싱한다."""
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         outcome = store.record(
-            mission_id, report, now=datetime.now(UTC), reported_by=principal.principal_id
+            mission_id,
+            report,
+            now=datetime.now(UTC),
+            reported_by=principal.principal_id,
+            lease_fence=fence,
         )
         response.status_code = _STATUS[outcome.verdict]
         if outcome.verdict in (

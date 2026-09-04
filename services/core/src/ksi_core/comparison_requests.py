@@ -62,13 +62,14 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ArtifactRef
 from ksi_event_contracts.comparison_policy import ComparisonPolicy, current_comparison_policy
 from ksi_event_contracts.comparison_request import ComparisonRequest
@@ -92,13 +93,22 @@ from ksi_core.civil_preflight import (
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
-from ksi_core.leasing import JobLease, LeaseDenialReason, check_lease, is_claimable, next_lease
+from ksi_core.leasing import (
+    JobLease,
+    LeaseDenialReason,
+    LeaseFence,
+    LeaseMode,
+    check_lease,
+    is_claimable,
+    lease_raw_fields,
+    next_lease,
+)
 from ksi_core.metrics import COMPARISON_REQUEST_TRANSITIONS
 from ksi_core.processing_jobs import (
     DEFAULT_LEASE_TTL,
     ProcessingJobRecord,
     ProcessingJobStore,
-    build_processing_artifact_object_key,
+    authoritative_artifacts,
 )
 from ksi_core.work_areas import MAX_ACTIVE_WORK_AREAS
 
@@ -178,6 +188,10 @@ class ComparisonRequestVerdict(StrEnum):
     LEASE_RENEWED = "LEASE_RENEWED"
     LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
     LEASE_REQUIRED = "LEASE_REQUIRED"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
 
     # ── 전이 ─────────────────────────────────────────────────────────────
     TRANSITIONED = "TRANSITIONED"
@@ -212,6 +226,10 @@ _STATUS: dict[ComparisonRequestVerdict, int] = {
     ComparisonRequestVerdict.LEASE_RENEWED: 200,
     ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER: 409,
     ComparisonRequestVerdict.LEASE_REQUIRED: 409,
+    ComparisonRequestVerdict.STALE_LEASE_ACQUISITION: 409,
+    ComparisonRequestVerdict.STALE_LEASE_GENERATION: 409,
+    ComparisonRequestVerdict.INVALID_LEASE_FENCE: 422,
+    ComparisonRequestVerdict.IDEMPOTENCY_CONFLICT: 409,
     ComparisonRequestVerdict.TRANSITIONED: 200,
     ComparisonRequestVerdict.ILLEGAL_TRANSITION: 409,
     ComparisonRequestVerdict.INPUT_READY: 200,
@@ -228,9 +246,7 @@ def build_comparison_request_id(mission_id: str, sequence: int) -> str:
     return f"{mission_id}-cmp{sequence}"
 
 
-def zone_fingerprint(
-    zones: dict[str, dict[str, Any]] | None, zone_crs: str | None
-) -> str:
+def zone_fingerprint(zones: dict[str, dict[str, Any]] | None, zone_crs: str | None) -> str:
     """구역 한 벌을 멱등 판정용 문자열 하나로 — 같은 구역이면 같은 값이 나온다.
 
     ``design_conformance_requests`` 도 같은 멱등 규칙을 쓴다(구역이 지시의
@@ -371,6 +387,25 @@ class ComparisonRequestResult:
     record: ComparisonRequestRecord | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ComparisonResultCommitAuthorization:
+    """A request-store lock held across one downstream result append.
+
+    The caller MUST acquire its own result-journal lock only while this guard
+    is open.  This makes the current lease-fence check and result duplicate/
+    append decision one serialization boundary (request-store -> result-store),
+    without teaching the request journal about each result type.
+    """
+
+    record: ComparisonRequestRecord | None
+    verdict: ComparisonRequestVerdict | None = None
+    detail: str | None = None
+
+    @property
+    def authorized(self) -> bool:
+        return self.record is not None and self.verdict is None
+
+
 def _require_tz_aware(value: datetime, *, param: str) -> None:
     if value.tzinfo is None:
         raise ValueError(f"{param} 은 tz-aware 여야 한다")
@@ -382,7 +417,7 @@ _iso = iso_utc
 def _find_artifact(
     job: ProcessingJobRecord, kind: ProcessingArtifactKind
 ) -> ProcessingArtifact | None:
-    return next((a for a in job.artifacts if a.kind is kind), None)
+    return next((a for a in authoritative_artifacts(job) if a.kind is kind), None)
 
 
 def _ref_or_none(job_id: str, artifact: ProcessingArtifact | None) -> ArtifactRef | None:
@@ -433,6 +468,12 @@ class ComparisonRequestStore:
         self._checkpoint_rmse_lookup = checkpoint_rmse_lookup
         self._lock = threading.Lock()
         self._requests: dict[str, ComparisonRequestRecord] = {}
+        # Replayed durable CLAIM bindings.  Do not infer these from only the
+        # current lease: an old lost-response retry must remain stale after a
+        # later acquisition has replaced it.
+        self._lease_acquisitions: dict[str, dict[str, JobLease]] = {}
+        self._lease_acquisition_bindings: dict[str, tuple[str, JobLease]] = {}
+        self._lease_generation_high_water: dict[str, int] = {}
         self._by_request_shape: dict[tuple[str, str, str], str] = {}
         self._sequence: dict[str, int] = {}
         try:
@@ -499,10 +540,8 @@ class ComparisonRequestStore:
             )
         if enforce_civil_preflight and (
             contract.processing_profile_digest != resolved.processing_profile_digest
-            or contract.baseline_source_bundle_digest
-            != resolved.baseline_source_bundle_digest
-            or contract.current_source_bundle_digest
-            != resolved.current_source_bundle_digest
+            or contract.baseline_source_bundle_digest != resolved.baseline_source_bundle_digest
+            or contract.current_source_bundle_digest != resolved.current_source_bundle_digest
         ):
             raise ComparisonRequestRecoveryError(
                 "재생: v1.1 compatibility anchor가 현재 immutable job 원장과 다르다 — "
@@ -555,30 +594,94 @@ class ComparisonRequestStore:
             raise ComparisonRequestRecoveryError(
                 f"재생: 종료된 요청({record.status.value})에 lease 레코드가 있다 — {request_id}"
             )
+        lease = JobLease(
+            worker_id=raw.get("workerInstanceId", raw["workerId"]),
+            granted_at=_require_aware_iso(raw.get("grantedAt", raw["ts"]), "grantedAt", request_id),
+            expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
+            lease_acquisition_id=raw.get("leaseAcquisitionId"),
+            lease_generation=int(raw.get("leaseGeneration", 0)),
+            authenticated_actor_id=raw.get("authenticatedActorId"),
+        )
+        if "leaseGeneration" in raw:
+            mode = raw.get("leaseMode")
+            renewal = raw.get("renewal")
+            if (
+                not isinstance(renewal, bool)
+                or mode not in {LeaseMode.CLAIM.value, LeaseMode.RENEW.value}
+                or renewal != (mode == LeaseMode.RENEW.value)
+                or lease.fence is None
+                or not lease.fence.is_well_formed()
+                or lease.expires_at <= lease.granted_at
+            ):
+                raise ComparisonRequestRecoveryError("재생: malformed fenced lease")
+            high_water = self._lease_generation_high_water.get(request_id, 0)
+            current = record.lease
+            if mode == LeaseMode.CLAIM.value:
+                if lease.lease_generation != high_water + 1:
+                    raise ComparisonRequestRecoveryError("재생: CLAIM generation jump/regression")
+                if lease.lease_acquisition_id in self._lease_acquisition_bindings:
+                    raise ComparisonRequestRecoveryError("재생: CLAIM acquisition 재사용")
+            else:
+                if (
+                    current is None
+                    or current.fence != lease.fence
+                    or high_water != lease.lease_generation
+                    or current.granted_at != lease.granted_at
+                    or current.authenticated_actor_id != lease.authenticated_actor_id
+                ):
+                    raise ComparisonRequestRecoveryError(
+                        "재생: RENEW current fence/principal 불일치"
+                    )
+        if lease.lease_acquisition_id is not None:
+            global_prior = self._lease_acquisition_bindings.get(lease.lease_acquisition_id)
+            if global_prior is not None and (
+                global_prior[0] != request_id or global_prior[1].fence != lease.fence
+            ):
+                raise ComparisonRequestRecoveryError("재생: 전역 CLAIM acquisition binding 충돌")
+            self._lease_acquisition_bindings[lease.lease_acquisition_id] = (request_id, lease)
+            bindings = self._lease_acquisitions.setdefault(request_id, {})
+            prior = bindings.get(lease.lease_acquisition_id)
+            if prior is not None and prior.fence != lease.fence:
+                raise ComparisonRequestRecoveryError("재생: CLAIM acquisition binding 충돌")
+            bindings[lease.lease_acquisition_id] = lease
+        self._lease_generation_high_water[request_id] = max(
+            self._lease_generation_high_water.get(request_id, 0), lease.lease_generation
+        )
         self._requests[request_id] = replace(
             record,
-            lease=JobLease(
-                worker_id=raw["workerId"],
-                granted_at=_require_aware_iso(raw["ts"], "ts", request_id),
-                expires_at=_require_aware_iso(raw["expiresAt"], "expiresAt", request_id),
-            ),
+            lease=lease,
         )
 
     def _replay_transition(self, raw: dict[str, Any]) -> None:
         request_id = raw["requestId"]
         record = self._requests.get(request_id)
         if record is None:
-            raise ComparisonRequestRecoveryError(
-                f"재생: 미지 requestId 전이 레코드 — {request_id}"
-            )
+            raise ComparisonRequestRecoveryError(f"재생: 미지 requestId 전이 레코드 — {request_id}")
         before = record.status
+        transitioned_at = _require_aware_iso(raw["ts"], "ts", request_id)
+        if record.lease is not None and record.lease.lease_generation > 0:
+            fence_raw = raw.get("leaseFence")
+            if not isinstance(fence_raw, dict):
+                raise ComparisonRequestRecoveryError("재생: fenced 전이에 leaseFence가 없다")
+            fence = LeaseFence(
+                str(fence_raw["workerInstanceId"]),
+                str(fence_raw["leaseAcquisitionId"]),
+                int(fence_raw["leaseGeneration"]),
+            )
+            if check_lease(
+                record.lease,
+                fence=fence,
+                authenticated_actor_id=raw.get("actor"),
+                now=transitioned_at,
+            ) is not None:
+                raise ComparisonRequestRecoveryError("재생: fenced 전이가 당시 lease와 다르다")
         after = ProcessingJobStatus(raw["targetStatus"])
         assert_comparison_transition(before, after)
         self._requests[request_id] = replace(
             record,
             status=after,
             detail=raw.get("detail"),
-            updated_at=_require_aware_iso(raw["ts"], "ts", request_id),
+            updated_at=transitioned_at,
         )
 
     def _project(self, record: ComparisonRequestRecord) -> None:
@@ -627,15 +730,13 @@ class ComparisonRequestStore:
         if baseline_job.status is not ProcessingJobStatus.SUCCEEDED:
             return (
                 ComparisonRequestVerdict.JOB_NOT_SUCCEEDED,
-                f"baseline 작업이 {baseline_job.status.value} 다 — SUCCEEDED 작업만 "
-                "비교 후보다",
+                f"baseline 작업이 {baseline_job.status.value} 다 — SUCCEEDED 작업만 비교 후보다",
                 None,
             )
         if current_job.status is not ProcessingJobStatus.SUCCEEDED:
             return (
                 ComparisonRequestVerdict.JOB_NOT_SUCCEEDED,
-                f"current 작업이 {current_job.status.value} 다 — SUCCEEDED 작업만 "
-                "비교 후보다",
+                f"current 작업이 {current_job.status.value} 다 — SUCCEEDED 작업만 비교 후보다",
                 None,
             )
         if baseline_job.site_id != current_job.site_id:
@@ -880,7 +981,9 @@ class ComparisonRequestStore:
         job = self._processing_job_store.get(ref.job_id)
         if job is None:
             return None
-        artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
+        artifact = next(
+            (a for a in authoritative_artifacts(job) if a.artifact_id == ref.artifact_id), None
+        )
         return artifact.vertical_reference if artifact is not None else None
 
     def checkpoint_rmse_of(self, ref: ArtifactRef | None) -> float | None:
@@ -907,7 +1010,9 @@ class ComparisonRequestStore:
         job = self._processing_job_store.get(ref.job_id)
         if job is None:
             return None
-        artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
+        artifact = next(
+            (a for a in authoritative_artifacts(job) if a.artifact_id == ref.artifact_id), None
+        )
         if artifact is None or artifact.accuracy is None:
             return None
         return artifact.accuracy.checkpoint_rmse_m
@@ -928,9 +1033,7 @@ class ComparisonRequestStore:
         if limit < 0:
             raise ValueError(f"limit 은 음수일 수 없다: {limit}")
         with self._lock:
-            records = [
-                r for r in self._requests.values() if is_claimable(r.status, r.lease, now)
-            ]
+            records = [r for r in self._requests.values() if is_claimable(r.status, r.lease, now)]
         if current_request_organization_id() is not None:
             records = [r for r in records if self._visible_in_request(r)]
         ordered = sorted(records, key=lambda r: (r.requested_at, r.request_id))
@@ -938,9 +1041,17 @@ class ComparisonRequestStore:
 
     @staticmethod
     def _check_lease_locked(
-        record: ComparisonRequestRecord, *, worker_id: str, now: datetime
+        record: ComparisonRequestRecord,
+        *,
+        now: datetime,
+        fence: LeaseFence | None = None,
+        worker_id: str | None = None,
+        authenticated_actor_id: str | None = None,
     ) -> tuple[ComparisonRequestVerdict, str] | None:
-        denial = check_lease(record.lease, worker_id=worker_id, now=now)
+        denial = check_lease(
+            record.lease, fence=fence, worker_id=worker_id,
+            authenticated_actor_id=authenticated_actor_id, now=now,
+        )
         if denial is LeaseDenialReason.MISSING_OR_EXPIRED:
             return (
                 ComparisonRequestVerdict.LEASE_REQUIRED,
@@ -953,13 +1064,43 @@ class ComparisonRequestStore:
                 f"다른 워커({record.lease.worker_id})가 {iso_utc(record.lease.expires_at)} 까지 "
                 "이 요청을 쥐고 있다 — 만료 후 다시 시도한다",
             )
+        if denial is LeaseDenialReason.STALE_ACQUISITION:
+            return (
+                ComparisonRequestVerdict.STALE_LEASE_ACQUISITION,
+                "이전 CLAIM acquisition 은 현재 lease 소유자가 아니다",
+            )
+        if denial is LeaseDenialReason.STALE_GENERATION:
+            return (
+                ComparisonRequestVerdict.STALE_LEASE_GENERATION,
+                "이전 lease generation 은 현재 lease 를 변경할 수 없다",
+            )
+        if denial is LeaseDenialReason.INVALID_FENCE:
+            return (
+                ComparisonRequestVerdict.INVALID_LEASE_FENCE,
+                "worker instance, acquisition id, generation 이 유효한 lease fence 가 아니다",
+            )
         return None
 
     def acquire_lease(
-        self, request_id: str, *, worker_id: str, now: datetime, ttl: timedelta = DEFAULT_LEASE_TTL
+        self,
+        request_id: str,
+        *,
+        now: datetime,
+        ttl: timedelta = DEFAULT_LEASE_TTL,
+        worker_id: str | None = None,
+        lease_fence: LeaseFence | None = None,
+        worker_instance_id: str | None = None,
+        lease_acquisition_id: str | None = None,
+        lease_generation: int | None = None,
+        lease_mode: LeaseMode = LeaseMode.CLAIM,
+        authenticated_actor_id: str | None = None,
     ) -> ComparisonRequestResult:
-        """요청 하나를 쥔다. 같은 워커의 재호출은 갱신(heartbeat) —
-        ``ProcessingJobStore.acquire_lease`` 와 동형(모듈 docstring)."""
+        """Claim/renew a fenced lease under the ledger lock.
+
+        A duplicate CLAIM carrying the same acquisition id returns the durable
+        handle without an append.  It therefore cannot self-fence after the
+        successful response was lost.
+        """
         _require_tz_aware(now, param="now")
         with self._lock:
             if self._journal.sealed_reason is not None:
@@ -976,32 +1117,180 @@ class ComparisonRequestStore:
                     ComparisonRequestVerdict.REQUEST_NOT_ACTIVE,
                     detail=f"요청이 {record.status.value} 상태다 — 끝난 요청은 잡을 수 없다",
                 )
-            current = record.lease
-            denial = check_lease(current, worker_id=worker_id, now=now)
-            renewing = current is not None and denial is None
-            if denial is LeaseDenialReason.HELD_BY_ANOTHER:
-                assert current is not None  # HELD_BY_ANOTHER only when a lease exists
-                return ComparisonRequestResult(
-                    ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER,
-                    detail=(
-                        f"다른 워커({current.worker_id})가 {iso_utc(current.expires_at)} 까지 "
-                        "이 요청을 쥐고 있다 — 만료 후 다시 시도한다"
-                    ),
-                    record=record,
+            if (
+                lease_fence is None
+                and worker_instance_id is not None
+                and lease_acquisition_id is not None
+            ):
+                lease_fence = LeaseFence(
+                    worker_instance_id, lease_acquisition_id, lease_generation or 0
                 )
+            if lease_fence is None:
+                # Direct legacy store callers are intentionally retained for
+                # old tests/replay tooling; HTTP worker routes always supply a
+                # full fence and never use the authenticated principal here.
+                if worker_id is None:
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.INVALID_LEASE_FENCE,
+                        detail="worker lease fence 가 필요하다",
+                        record=record,
+                    )
+                current_for_legacy = record.lease
+                if current_for_legacy is not None and current_for_legacy.is_active(now):
+                    if current_for_legacy.worker_instance_id != worker_id:
+                        return ComparisonRequestResult(
+                            ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER, record=record
+                        )
+                    lease_fence = LeaseFence(
+                        worker_id,
+                        current_for_legacy.lease_acquisition_id or worker_id,
+                        current_for_legacy.lease_generation,
+                    )
+                    lease_mode = LeaseMode.RENEW
+                else:
+                    lease_fence = LeaseFence(worker_id, worker_id, 0)
+            if lease_fence.lease_generation < 0:
+                return ComparisonRequestResult(
+                    ComparisonRequestVerdict.INVALID_LEASE_FENCE, record=record
+                )
+            if worker_id is None and (
+                not lease_fence.has_valid_ids()
+                or (lease_mode is LeaseMode.RENEW and lease_fence.lease_generation < 1)
+            ):
+                return ComparisonRequestResult(
+                    ComparisonRequestVerdict.INVALID_LEASE_FENCE, record=record
+                )
+            current = record.lease
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                global_prior = self._lease_acquisition_bindings.get(
+                    lease_fence.lease_acquisition_id
+                )
+                if global_prior is not None and global_prior[0] != request_id:
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.IDEMPOTENCY_CONFLICT, record=record
+                    )
+            if lease_mode is LeaseMode.CLAIM and worker_id is None:
+                prior = self._lease_acquisitions.get(request_id, {}).get(
+                    lease_fence.lease_acquisition_id
+                )
+                if prior is not None:
+                    if (
+                        prior.worker_instance_id != lease_fence.worker_instance_id
+                        or prior.authenticated_actor_id != authenticated_actor_id
+                    ):
+                        return ComparisonRequestResult(
+                            ComparisonRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                        )
+                    if (
+                        current is not None
+                        and current.lease_acquisition_id == prior.lease_acquisition_id
+                        and current.is_active(now)
+                    ):
+                        return ComparisonRequestResult(
+                            ComparisonRequestVerdict.LEASED, record=record
+                        )
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+            if (
+                lease_mode is LeaseMode.CLAIM
+                and current is not None
+                and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+            ):
+                if (
+                    current.worker_instance_id != lease_fence.worker_instance_id
+                    or current.authenticated_actor_id != authenticated_actor_id
+                    or not current.is_active(now)
+                ):
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                return ComparisonRequestResult(ComparisonRequestVerdict.LEASED, record=record)
+            if lease_mode is LeaseMode.RENEW:
+                denied = check_lease(
+                    current,
+                    fence=None if worker_id is not None else lease_fence,
+                    worker_id=worker_id,
+                    authenticated_actor_id=authenticated_actor_id,
+                    now=now,
+                )
+                if denied is not None:
+                    verdict, detail = self._check_lease_locked(
+                        record, fence=lease_fence, now=now
+                    ) or (
+                        ComparisonRequestVerdict.LEASE_REQUIRED,
+                        "lease 를 먼저 잡아야 한다",
+                    )
+                    return ComparisonRequestResult(verdict, detail=detail, record=record)
+                assert current is not None
+                generation = current.lease_generation
+                granted_at = current.granted_at
+            else:
+                denial = (
+                    check_lease(current, fence=lease_fence, now=now)
+                    if current is not None
+                    else LeaseDenialReason.MISSING_OR_EXPIRED
+                )
+                if denial is LeaseDenialReason.HELD_BY_ANOTHER:
+                    assert current is not None
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.LEASE_HELD_BY_ANOTHER,
+                        detail=(
+                            f"다른 워커({current.worker_id})가 "
+                            f"{iso_utc(current.expires_at)} 까지 이 요청을 쥐고 있다 "
+                            "— 만료 후 다시 시도한다"
+                        ),
+                        record=record,
+                    )
+                if current is not None and current.is_active(now):
+                    # A different acquisition from the same process is not a
+                    # takeover channel; only expiry followed by a *new*
+                    # acquisition may advance the generation.
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.STALE_LEASE_ACQUISITION,
+                        detail="활성 lease 중에는 다른 acquisition 으로 다시 CLAIM 할 수 없다",
+                        record=record,
+                    )
+                # An old retry must not become a new owner after a successor.
+                if (
+                    current is not None
+                    and current.lease_acquisition_id == lease_fence.lease_acquisition_id
+                ):
+                    return ComparisonRequestResult(
+                        ComparisonRequestVerdict.STALE_LEASE_ACQUISITION, record=record
+                    )
+                generation = (
+                    0
+                    if worker_id is not None
+                    else self._lease_generation_high_water.get(request_id, 0) + 1
+                )
+                granted_at = None
             new_lease = next_lease(
-                worker_id=worker_id,
+                worker_instance_id=lease_fence.worker_instance_id,
+                lease_acquisition_id=None
+                if worker_id is not None
+                else lease_fence.lease_acquisition_id,
+                lease_generation=generation,
+                authenticated_actor_id=(
+                    current.authenticated_actor_id
+                    if lease_mode is LeaseMode.RENEW and current is not None
+                    else authenticated_actor_id
+                ),
                 now=now,
                 ttl=ttl,
-                granted_at=current.granted_at if renewing and current else None,
+                granted_at=granted_at,
             )
             raw = {
                 "kind": "comparison-request-leased",
                 "ts": iso_utc(now),
                 "requestId": request_id,
-                "workerId": worker_id,
+                "grantedAt": iso_utc(new_lease.granted_at),
                 "expiresAt": iso_utc(new_lease.expires_at),
-                "renewal": renewing,
+                **(
+                    lease_raw_fields(lease=new_lease, mode=lease_mode)
+                    if worker_id is None
+                    else {"workerId": worker_id, "renewal": lease_mode is LeaseMode.RENEW}
+                ),
             }
             try:
                 self._journal.append(raw)
@@ -1011,9 +1300,20 @@ class ComparisonRequestStore:
                 )
             updated = replace(record, lease=new_lease)
             self._requests[request_id] = updated
+            if new_lease.lease_acquisition_id is not None:
+                self._lease_acquisitions.setdefault(request_id, {})[
+                    new_lease.lease_acquisition_id
+                ] = new_lease
+                self._lease_acquisition_bindings[new_lease.lease_acquisition_id] = (
+                    request_id,
+                    new_lease,
+                )
+            self._lease_generation_high_water[request_id] = max(
+                self._lease_generation_high_water.get(request_id, 0), new_lease.lease_generation
+            )
             return ComparisonRequestResult(
                 ComparisonRequestVerdict.LEASE_RENEWED
-                if renewing
+                if lease_mode is LeaseMode.RENEW
                 else ComparisonRequestVerdict.LEASED,
                 record=updated,
             )
@@ -1026,6 +1326,7 @@ class ComparisonRequestStore:
         detail: str | None,
         actor: str,
         now: datetime,
+        lease_fence: LeaseFence | None = None,
     ) -> ComparisonRequestResult:
         _require_tz_aware(now, param="now")
         with self._lock:
@@ -1038,7 +1339,10 @@ class ComparisonRequestStore:
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.UNKNOWN_REQUEST, detail=_NOT_FOUND_DETAIL
                 )
-            denied = self._check_lease_locked(record, worker_id=actor, now=now)
+            denied = self._check_lease_locked(
+                record, fence=lease_fence, worker_id=actor if lease_fence is None else None,
+                authenticated_actor_id=actor if lease_fence is not None else None, now=now
+            )
             if denied is not None:
                 verdict, detail_msg = denied
                 return ComparisonRequestResult(verdict, detail=detail_msg, record=record)
@@ -1048,7 +1352,7 @@ class ComparisonRequestStore:
                 return ComparisonRequestResult(
                     ComparisonRequestVerdict.ILLEGAL_TRANSITION, detail=str(exc), record=record
                 )
-            raw = {
+            raw: dict[str, Any] = {
                 "kind": "comparison-request-transitioned",
                 "ts": iso_utc(now),
                 "requestId": request_id,
@@ -1056,6 +1360,12 @@ class ComparisonRequestStore:
                 "detail": detail,
                 "actor": actor,
             }
+            if lease_fence is not None:
+                raw["leaseFence"] = {
+                    "workerInstanceId": lease_fence.worker_instance_id,
+                    "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                    "leaseGeneration": lease_fence.lease_generation,
+                }
             try:
                 self._journal.append(raw)
             except JournalSealedError:
@@ -1067,6 +1377,68 @@ class ComparisonRequestStore:
             # processing_jobs.py 의 같은 위치와 동일 근거 — 성공한 전이만 센다.
             COMPARISON_REQUEST_TRANSITIONS.inc(target_status=target.value)
             return ComparisonRequestResult(ComparisonRequestVerdict.TRANSITIONED, record=updated)
+
+    @contextmanager
+    def result_commit_guard(
+        self, request_id: str, *, lease_fence: LeaseFence | None, now: datetime,
+        authenticated_actor_id: str | None = None,
+    ) -> Iterator[ComparisonResultCommitAuthorization]:
+        """Hold authoritative comparison ownership through a result append.
+
+        This is deliberately a context manager rather than a preflight: a
+        worker takeover cannot occur between ``check_lease`` and a downstream
+        result store's duplicate decision / durable append.  Callers must not
+        call back into this store while the guard is open.
+        """
+
+        _require_tz_aware(now, param="now")
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                yield ComparisonResultCommitAuthorization(
+                    None,
+                    ComparisonRequestVerdict.STORE_UNAVAILABLE,
+                    _STORE_UNAVAILABLE_DETAIL,
+                )
+                return
+            record = self._requests.get(request_id)
+            if record is None or not self._visible_in_request(record):
+                yield ComparisonResultCommitAuthorization(
+                    None, ComparisonRequestVerdict.UNKNOWN_REQUEST, _NOT_FOUND_DETAIL
+                )
+                return
+            denied = self._check_lease_locked(
+                record,
+                fence=lease_fence,
+                authenticated_actor_id=authenticated_actor_id,
+                now=now,
+            )
+            if denied is not None:
+                verdict, detail = denied
+                yield ComparisonResultCommitAuthorization(record, verdict, detail)
+                return
+            yield ComparisonResultCommitAuthorization(record)
+
+    def has_recorded_lease_fence(
+        self,
+        request_id: str,
+        fence: LeaseFence,
+        *,
+        authenticated_actor_id: str | None = None,
+    ) -> bool:
+        """Return whether durable lease history binds ``fence`` to this request."""
+
+        with self._lock:
+            lease = self._lease_acquisitions.get(request_id, {}).get(
+                fence.lease_acquisition_id
+            )
+            return (
+                lease is not None
+                and lease.fence == fence
+                and (
+                    lease.authenticated_actor_id is None
+                    or lease.authenticated_actor_id == authenticated_actor_id
+                )
+            )
 
 
 def _require_aware_iso(raw: Any, field_name: str, request_id: str) -> datetime:
@@ -1214,21 +1586,30 @@ def _to_view(record: ComparisonRequestRecord) -> ComparisonRequestView:
 
 
 def _presigned_url(
-    storage: EvidenceStorage, *, site_id: str, job_id: str, artifact_id: str
+    storage: EvidenceStorage,
+    *,
+    processing_job_store: ProcessingJobStore,
+    job_id: str,
+    artifact_id: str,
 ) -> str:
-    object_key = build_processing_artifact_object_key(
-        site_id=site_id, job_id=job_id, artifact_id=artifact_id
-    )
-    return storage.presigned_get(object_key, ttl=DEFAULT_VIEW_TTL)
+    resolved = processing_job_store.resolve_artifact(job_id, artifact_id)
+    if resolved is None:
+        raise EvidenceStorageError("accepted authoritative artifact 을 찾을 수 없다")
+    return storage.presigned_get(resolved.object_key, ttl=DEFAULT_VIEW_TTL)
 
 
 def _presigned_url_or_none(
-    storage: EvidenceStorage, *, site_id: str, ref: ArtifactRef | None
+    storage: EvidenceStorage, *, processing_job_store: ProcessingJobStore, ref: ArtifactRef | None
 ) -> str | None:
     """참조가 있으면 그 산출물의 열람 URL을, 없으면 None을 만든다."""
     if ref is None:
         return None
-    return _presigned_url(storage, site_id=site_id, job_id=ref.job_id, artifact_id=ref.artifact_id)
+    return _presigned_url(
+        storage,
+        processing_job_store=processing_job_store,
+        job_id=ref.job_id,
+        artifact_id=ref.artifact_id,
+    )
 
 
 def build_comparison_requests_router(
@@ -1297,7 +1678,7 @@ def build_comparison_requests_router(
         response: Response,
         principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
     ) -> ComparisonRequestMutationResponse:
-        """"이 두 작업을 비교하라"는 지시 접수 — **사람이 발급**한다.
+        """ "이 두 작업을 비교하라"는 지시 접수 — **사람이 발급**한다.
 
         결과(변화탐지·체적)를 계산해 제출하는 것은 워커(``PROCESSING_WORK``)의
         일이지만, "무엇과 무엇을 비교할지"를 지목하는 것은 재구성 발급과 같은
@@ -1358,9 +1739,7 @@ def build_comparison_requests_router(
         이 표면을 쓰지 않는다)."""
         return PendingComparisonRequestListResponse(
             requests=[
-                PendingComparisonRequestView(
-                    request_id=r.request_id, requested_at=r.requested_at
-                )
+                PendingComparisonRequestView(request_id=r.request_id, requested_at=r.requested_at)
                 for r in store.list_pending(now=datetime.now(UTC), limit=limit)
             ]
         )
@@ -1386,12 +1765,37 @@ def build_comparison_requests_router(
     def acquire_comparison_request_lease(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
+        lease_mode_header: str | None = Header(default=None, alias="X-KSI-Lease-Mode"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ComparisonRequestMutationResponse:
+        try:
+            mode = LeaseMode(lease_mode_header or "CLAIM")
+            fence = (
+                LeaseFence(
+                    worker_instance_id or "", lease_acquisition_id or "", int(lease_generation or 0)
+                )
+                if worker_instance_id is not None and lease_acquisition_id is not None
+                else None
+            )
+        except ValueError:
+            mode, fence = LeaseMode.CLAIM, None
         result = store.acquire_lease(
-            request_id, worker_id=principal.principal_id, now=datetime.now(UTC)
+            request_id,
+            lease_fence=fence,
+            lease_mode=mode,
+            authenticated_actor_id=principal.principal_id,
+            now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]
+        if result.record is not None and result.record.lease is not None:
+            lease = result.record.lease
+            response.headers["X-KSI-Worker-Instance-Id"] = lease.worker_instance_id
+            if lease.lease_acquisition_id is not None:
+                response.headers["X-KSI-Lease-Acquisition-Id"] = lease.lease_acquisition_id
+            response.headers["X-KSI-Lease-Generation"] = str(lease.lease_generation)
         if result.verdict is ComparisonRequestVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"
         return ComparisonRequestMutationResponse(
@@ -1413,6 +1817,9 @@ def build_comparison_requests_router(
     def get_comparison_request_input(
         request_id: str,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ComparisonRequestInputResponse:
         """워커가 baseline/current 산출물을 읽는 유일한 경로(모듈 docstring).
@@ -1426,8 +1833,26 @@ def build_comparison_requests_router(
             return ComparisonRequestInputResponse(
                 verdict=ComparisonRequestVerdict.UNKNOWN_REQUEST.value, detail=_NOT_FOUND_DETAIL
             )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         denied = ComparisonRequestStore._check_lease_locked(
-            record, worker_id=principal.principal_id, now=datetime.now(UTC)
+            record,
+            fence=fence,
+            authenticated_actor_id=principal.principal_id,
+            worker_id=(
+                principal.principal_id
+                if fence is None and record.lease is not None and record.lease.fence is None
+                else None
+            ),
+            now=datetime.now(UTC),
         )
         if denied is not None:
             verdict, detail = denied
@@ -1436,16 +1861,20 @@ def build_comparison_requests_router(
 
         try:
             pc_baseline_url = _presigned_url_or_none(
-                storage, site_id=record.site_id, ref=record.point_cloud_baseline
+                storage,
+                processing_job_store=store._processing_job_store,
+                ref=record.point_cloud_baseline,
             )
             pc_current_url = _presigned_url_or_none(
-                storage, site_id=record.site_id, ref=record.point_cloud_current
+                storage,
+                processing_job_store=store._processing_job_store,
+                ref=record.point_cloud_current,
             )
             dsm_baseline_url = _presigned_url_or_none(
-                storage, site_id=record.site_id, ref=record.dsm_baseline
+                storage, processing_job_store=store._processing_job_store, ref=record.dsm_baseline
             )
             dsm_current_url = _presigned_url_or_none(
-                storage, site_id=record.site_id, ref=record.dsm_current
+                storage, processing_job_store=store._processing_job_store, ref=record.dsm_current
             )
         except EvidenceStorageError:
             logger.warning("비교 입력 URL 발급 실패: requestId=%s", request_id)
@@ -1488,16 +1917,30 @@ def build_comparison_requests_router(
         request_id: str,
         request: ComparisonRequestTransitionRequest,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ComparisonRequestMutationResponse:
         """워커만 전이한다 — RUNNING/SUCCEEDED/FAILED 는 계산을 실제로 돌린 주체만
         아는 사실이다(사람이 손으로 결과를 주장할 수 없다는 것과 같은 원칙,
         모듈 docstring). W2 는 CANCELLED 를 다루지 않는다."""
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         result = store.transition(
             request_id,
             request.target_status,
             detail=request.detail,
             actor=principal.principal_id,
+            lease_fence=fence,
             now=datetime.now(UTC),
         )
         response.status_code = _STATUS[result.verdict]

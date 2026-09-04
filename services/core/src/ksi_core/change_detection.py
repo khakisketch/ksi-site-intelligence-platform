@@ -47,7 +47,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_event_contracts.change_detection_result import ChangeDetectionResult
 from ksi_event_contracts.comparison_policy import (
     DEFAULT_REVISIT_RATIO_THRESHOLD as _POLICY_REVISIT_RATIO_THRESHOLD,
@@ -68,6 +68,7 @@ from ksi_core.auth import (
     require_permission,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.leasing import LeaseFence
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -97,6 +98,14 @@ class ChangeDetectionVerdict(StrEnum):
     UNKNOWN_ARTIFACT = "UNKNOWN_ARTIFACT"
     ARTIFACT_KIND_MISMATCH = "ARTIFACT_KIND_MISMATCH"
     SELF_COMPARISON = "SELF_COMPARISON"
+    UNKNOWN_REQUEST = "UNKNOWN_REQUEST"
+    REQUEST_MISMATCH = "REQUEST_MISMATCH"
+    REQUEST_INELIGIBLE = "REQUEST_INELIGIBLE"
+    LEASE_REQUIRED = "LEASE_REQUIRED"
+    LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
     DUPLICATE_RESULT_ID = "DUPLICATE_RESULT_ID"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -107,6 +116,14 @@ _STATUS: dict[ChangeDetectionVerdict, int] = {
     ChangeDetectionVerdict.UNKNOWN_ARTIFACT: 422,
     ChangeDetectionVerdict.ARTIFACT_KIND_MISMATCH: 422,
     ChangeDetectionVerdict.SELF_COMPARISON: 422,
+    ChangeDetectionVerdict.UNKNOWN_REQUEST: 422,
+    ChangeDetectionVerdict.REQUEST_MISMATCH: 422,
+    ChangeDetectionVerdict.REQUEST_INELIGIBLE: 422,
+    ChangeDetectionVerdict.LEASE_REQUIRED: 409,
+    ChangeDetectionVerdict.LEASE_HELD_BY_ANOTHER: 409,
+    ChangeDetectionVerdict.STALE_LEASE_ACQUISITION: 409,
+    ChangeDetectionVerdict.STALE_LEASE_GENERATION: 409,
+    ChangeDetectionVerdict.INVALID_LEASE_FENCE: 422,
     ChangeDetectionVerdict.DUPLICATE_RESULT_ID: 409,
     ChangeDetectionVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -130,6 +147,8 @@ class RecordedChangeDetection:
     result: ChangeDetectionResult
     reported_by: str | None
     recorded_at: datetime
+    request_id: str | None = None
+    accepted_lease_fence: LeaseFence | None = None
 
 
 class ChangeDetectionStore:
@@ -145,10 +164,14 @@ class ChangeDetectionStore:
         *,
         mission_store: MissionStore,
         processing_job_store: ProcessingJobStore,
+        comparison_request_store: Any | None = None,
     ) -> None:
         self._journal = journal
         self._mission_store = mission_store
         self._processing_job_store = processing_job_store
+        # Optional only for direct legacy unit fixtures.  Every assembled Core
+        # app supplies it; fence-bearing result submissions require it.
+        self._comparison_request_store = comparison_request_store
         self._lock = threading.Lock()
         self._by_mission: dict[str, list[RecordedChangeDetection]] = {}
         self._ids_by_mission: dict[str, dict[str, ChangeDetectionResult]] = {}
@@ -190,9 +213,52 @@ class ChangeDetectionStore:
                     f"재생: 기록될 수 없는 결과({verdict.value}: {detail}) — "
                     f"missionId={mission_id} changeDetectionId={result.change_detection_id}"
                 )
+            request_id, fence = self._replay_authority(raw, result)
+            if (
+                fence is not None
+                and (
+                    self._comparison_request_store is None
+                    or not self._comparison_request_store.has_recorded_lease_fence(
+                        result.change_detection_id,
+                        fence,
+                        authenticated_actor_id=raw.get("reportedBy"),
+                    )
+                )
+            ):
+                raise ChangeDetectionRecoveryError(
+                    "재생: result authority가 durable request lease history에 없다"
+                )
             self._project(
-                mission_id, result, raw.get("reportedBy"), datetime.fromisoformat(raw["ts"])
+                mission_id,
+                result,
+                raw.get("reportedBy"),
+                datetime.fromisoformat(raw["ts"]),
+                request_id=request_id,
+                accepted_lease_fence=fence,
             )
+
+    @staticmethod
+    def _replay_authority(
+        raw: dict[str, Any], result: ChangeDetectionResult
+    ) -> tuple[str | None, LeaseFence | None]:
+        if raw.get("authorityVersion") is None:
+            return None, None
+        if raw.get("authorityVersion") != 1 or raw.get("requestId") != result.change_detection_id:
+            raise ChangeDetectionRecoveryError("재생: malformed result authority")
+        fields = raw.get("acceptedLeaseFence")
+        if not isinstance(fields, dict):
+            raise ChangeDetectionRecoveryError("재생: missing accepted lease fence")
+        try:
+            fence = LeaseFence(
+                str(fields["workerInstanceId"]),
+                str(fields["leaseAcquisitionId"]),
+                int(fields["leaseGeneration"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ChangeDetectionRecoveryError("재생: malformed accepted lease fence") from exc
+        if not fence.is_well_formed():
+            raise ChangeDetectionRecoveryError("재생: invalid accepted lease fence")
+        return result.change_detection_id, fence
 
     def _project(
         self,
@@ -200,10 +266,17 @@ class ChangeDetectionStore:
         result: ChangeDetectionResult,
         reported_by: str | None,
         recorded_at: datetime,
+        *,
+        request_id: str | None = None,
+        accepted_lease_fence: LeaseFence | None = None,
     ) -> None:
         self._by_mission.setdefault(mission_id, []).append(
             RecordedChangeDetection(
-                result=result, reported_by=reported_by, recorded_at=recorded_at
+                result=result,
+                reported_by=reported_by,
+                recorded_at=recorded_at,
+                request_id=request_id,
+                accepted_lease_fence=accepted_lease_fence,
             )
         )
         self._ids_by_mission.setdefault(mission_id, {})[result.change_detection_id] = result
@@ -259,7 +332,15 @@ class ChangeDetectionStore:
         *,
         now: datetime,
         reported_by: str | None = None,
+        lease_fence: LeaseFence | None = None,
     ) -> ChangeDetectionRecordResult:
+        # Legacy direct-store callers remain readable/testable, but any
+        # fence-bearing (therefore new worker) publication must be bound to a
+        # comparison request and its current authoritative fence.
+        if self._comparison_request_store is not None:
+            return self._record_fenced(
+                mission_id, result, now=now, reported_by=reported_by, lease_fence=lease_fence
+            )
         with self._lock:
             if self._journal.sealed_reason is not None:
                 return ChangeDetectionRecordResult(
@@ -311,6 +392,98 @@ class ChangeDetectionStore:
                 )
             self._project(mission_id, result, reported_by, now)
             return ChangeDetectionRecordResult(ChangeDetectionVerdict.RECORDED)
+
+    def _record_fenced(
+        self,
+        mission_id: str,
+        result: ChangeDetectionResult,
+        *,
+        now: datetime,
+        reported_by: str | None,
+        lease_fence: LeaseFence | None,
+    ) -> ChangeDetectionRecordResult:
+        request_id = result.change_detection_id
+        request_store = self._comparison_request_store
+        assert request_store is not None  # noqa: S101 -- selected by record() branch
+        with request_store.result_commit_guard(
+            request_id, lease_fence=lease_fence, authenticated_actor_id=reported_by, now=now
+        ) as authorization:
+            if not authorization.authorized:
+                return self._lease_denial(authorization.verdict, authorization.detail)
+            request = authorization.record
+            assert request is not None  # noqa: S101 -- authorization invariant
+            if request.mission_id != mission_id:
+                return ChangeDetectionRecordResult(
+                    ChangeDetectionVerdict.REQUEST_MISMATCH,
+                    "comparison request missionId 가 결과 경로와 다르다",
+                )
+            if not request.change_detection_eligible:
+                return ChangeDetectionRecordResult(
+                    ChangeDetectionVerdict.REQUEST_INELIGIBLE,
+                    request.change_detection_ineligible_reason,
+                )
+            with self._lock:
+                if self._journal.sealed_reason is not None:
+                    return ChangeDetectionRecordResult(
+                        ChangeDetectionVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
+                    )
+                existing = self._ids_by_mission.get(mission_id, {}).get(result.change_detection_id)
+                if existing is not None:
+                    if existing == result:
+                        return ChangeDetectionRecordResult(
+                            ChangeDetectionVerdict.RECORDED,
+                            detail="이미 같은 내용으로 기록돼 있다(멱등 재전송)",
+                        )
+                    return ChangeDetectionRecordResult(
+                        ChangeDetectionVerdict.DUPLICATE_RESULT_ID,
+                        f"changeDetectionId={result.change_detection_id!r} 는 이미 다른 "
+                        "내용으로 기록됐다",
+                    )
+                verdict, detail = self._judge_references(result)
+                if verdict is not ChangeDetectionVerdict.RECORDED:
+                    return ChangeDetectionRecordResult(verdict, detail=detail)
+                assert lease_fence is not None  # noqa: S101 -- guard authorized only for a fence
+                raw = {
+                    "kind": "change-detection-recorded",
+                    "authorityVersion": 1,
+                    "ts": iso_utc(now),
+                    "missionId": mission_id,
+                    "requestId": request_id,
+                    "acceptedLeaseFence": {
+                        "workerInstanceId": lease_fence.worker_instance_id,
+                        "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                        "leaseGeneration": lease_fence.lease_generation,
+                    },
+                    "reportedBy": reported_by,
+                    "result": result.model_dump(by_alias=True, mode="json", exclude_none=False),
+                }
+                try:
+                    self._journal.append(raw)
+                except JournalSealedError:
+                    return ChangeDetectionRecordResult(
+                        ChangeDetectionVerdict.STORE_UNAVAILABLE,
+                        detail=JOURNAL_APPEND_FAILED_DETAIL,
+                    )
+                self._project(
+                    mission_id, result, reported_by, now,
+                    request_id=request_id, accepted_lease_fence=lease_fence,
+                )
+                return ChangeDetectionRecordResult(ChangeDetectionVerdict.RECORDED)
+
+    @staticmethod
+    def _lease_denial(verdict: Any, detail: str | None) -> ChangeDetectionRecordResult:
+        mapping = {
+            "UNKNOWN_REQUEST": ChangeDetectionVerdict.UNKNOWN_REQUEST,
+            "LEASE_REQUIRED": ChangeDetectionVerdict.LEASE_REQUIRED,
+            "LEASE_HELD_BY_ANOTHER": ChangeDetectionVerdict.LEASE_HELD_BY_ANOTHER,
+            "STALE_LEASE_ACQUISITION": ChangeDetectionVerdict.STALE_LEASE_ACQUISITION,
+            "STALE_LEASE_GENERATION": ChangeDetectionVerdict.STALE_LEASE_GENERATION,
+            "INVALID_LEASE_FENCE": ChangeDetectionVerdict.INVALID_LEASE_FENCE,
+            "STORE_UNAVAILABLE": ChangeDetectionVerdict.STORE_UNAVAILABLE,
+        }
+        return ChangeDetectionRecordResult(
+            mapping.get(str(verdict), ChangeDetectionVerdict.LEASE_REQUIRED), detail
+        )
 
     def _reject(
         self,
@@ -391,6 +564,9 @@ def build_change_detection_router(store: ChangeDetectionStore) -> APIRouter:
         mission_id: str,
         result: ChangeDetectionResult,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> ChangeDetectionResponse:
         """변화 탐지 결과 접수 — **처리 워커만** 올린다.
@@ -399,8 +575,22 @@ def build_change_detection_router(store: ChangeDetectionStore) -> APIRouter:
         (``defect_candidates.py`` 와 동일 원칙, PROCESSING_WORK 는 어느 Role 에도
         매핑되지 않는다).
         """
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
         outcome = store.record(
-            mission_id, result, now=datetime.now(UTC), reported_by=principal.principal_id
+            mission_id,
+            result,
+            now=datetime.now(UTC),
+            reported_by=principal.principal_id,
+            lease_fence=fence,
         )
         response.status_code = _STATUS[outcome.verdict]
         if outcome.verdict is ChangeDetectionVerdict.STORE_UNAVAILABLE:

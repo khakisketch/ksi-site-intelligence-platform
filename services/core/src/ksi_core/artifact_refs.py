@@ -81,17 +81,17 @@ def verify_artifact_ref(
             ArtifactRefIssue.UNKNOWN_ARTIFACT,
             f"{label}.jobId={ref.job_id!r} 인 처리 작업이 없다",
         )
-    artifact = next((a for a in job.artifacts if a.artifact_id == ref.artifact_id), None)
-    if artifact is None:
+    resolved = processing_job_store.resolve_artifact(ref.job_id, ref.artifact_id)
+    if resolved is None:
         return (
             ArtifactRefIssue.UNKNOWN_ARTIFACT,
             f"{label}.artifactId={ref.artifact_id!r} 가 작업 {ref.job_id!r} 에"
             " 등록된 적이 없다",
         )
-    if artifact.kind is not required_kind:
+    if resolved.artifact.kind is not required_kind:
         return (
             ArtifactRefIssue.KIND_MISMATCH,
-            kind_mismatch_detail(label, artifact.kind),
+            kind_mismatch_detail(label, resolved.artifact.kind),
         )
     return None
 

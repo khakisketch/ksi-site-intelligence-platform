@@ -29,13 +29,17 @@ from ksi_core.api_base import CamelModel
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.copilot import CopilotQueryRequest, CopilotService, ToolResult
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.processing_jobs import (
+    ProcessingJobRecord,
+    ProcessingJobStore,
+    authoritative_artifacts,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.events import EventStore
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
-    from ksi_core.processing_jobs import ProcessingJobRecord, ProcessingJobStore
     from ksi_core.sites import SiteRecord, SiteStore
 
 _FINAL_TRIAGE_STATES = frozenset({TriageStatus.RESOLVED, TriageStatus.CLOSED})
@@ -126,9 +130,7 @@ class SiteWorkspaceProjector:
             default=None,
         )
         jobs = (
-            self._processing_jobs.list_for_site(
-                site_id, organization_id=organization_id
-            )
+            self._processing_jobs.list_for_site(site_id, organization_id=organization_id)
             if self._processing_jobs
             else []
         )
@@ -199,7 +201,7 @@ class SiteWorkspaceProjector:
                 source_watermark=None,
             )
         available = (
-            sorted({item.kind.value for item in job.artifacts})
+            sorted({item.kind.value for item in authoritative_artifacts(job)})
             if job.status is ProcessingJobStatus.SUCCEEDED
             else []
         )
@@ -299,9 +301,7 @@ def build_workspace_copilot_handlers(
             source_path=f"/v1/sites/{quote(site_id, safe='')}/workspace",
             captured_to=workspace.latest_observation_at,
             uncertainty_summary=(
-                "최신 검증 결과 없음"
-                if workspace.latest_analysis.status == "UNAVAILABLE"
-                else None
+                "최신 검증 결과 없음" if workspace.latest_analysis.status == "UNAVAILABLE" else None
             ),
         )
         return ToolResult(
@@ -366,9 +366,7 @@ def build_workspace_copilot_handlers(
                 object_type="OBSERVATION_WORK_ORDER",
                 object_id=order.work_order_id,
                 label=order.name,
-                source_path=(
-                    f"/v1/observation-work-orders/{quote(order.work_order_id, safe='')}"
-                ),
+                source_path=(f"/v1/observation-work-orders/{quote(order.work_order_id, safe='')}"),
             )
         job_id = workspace.latest_analysis.processing_job_id
         if job_id is not None:
@@ -385,9 +383,7 @@ def build_workspace_copilot_handlers(
         selected = tuple(allowed[item] for item in requested if item in allowed)
         return ToolResult(
             data={
-                "evidence": [
-                    item.model_dump(by_alias=True, mode="json") for item in selected
-                ],
+                "evidence": [item.model_dump(by_alias=True, mode="json") for item in selected],
                 "missingObjectIds": [item for item in requested if item not in allowed],
             },
             citations=selected,
@@ -413,17 +409,13 @@ class SiteBriefingStore:
                 if raw.get("kind") != "site-briefing-recorded":
                     raise ValueError(f"알 수 없는 briefing journal kind: {raw.get('kind')!r}")
                 briefing = SiteBriefing.model_validate(raw["briefing"])
-                if self._sites.get_scoped(
-                    briefing.site_id, briefing.organization_id
-                ) is None:
+                if self._sites.get_scoped(briefing.site_id, briefing.organization_id) is None:
                     raise ValueError("존재하지 않는 조직-scoped Site briefing")
                 if briefing.briefing_id in self._briefings:
                     raise ValueError("중복 briefingId")
                 self._briefings[briefing.briefing_id] = briefing
                 self._latest[(briefing.organization_id, briefing.site_id)] = briefing.briefing_id
-                self._sequence = max(
-                    self._sequence, int(briefing.briefing_id.rsplit("-", 1)[-1])
-                )
+                self._sequence = max(self._sequence, int(briefing.briefing_id.rsplit("-", 1)[-1]))
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             journal.close()
             raise RuntimeError(f"site briefing journal 재생 실패: {exc}") from exc
@@ -500,17 +492,18 @@ class SiteBriefingService:
         return self._store
 
     def refresh(self, site_id: str, *, principal: Principal) -> SiteBriefing:
-        workspace = self._workspace.project(
-            site_id, organization_id=principal.organization_id
+        workspace = self._workspace.project(site_id, organization_id=principal.organization_id)
+        source_watermark = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    workspace.model_dump(by_alias=True, mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("ascii")
+            ).hexdigest()
         )
-        source_watermark = "sha256:" + hashlib.sha256(
-            json.dumps(
-                workspace.model_dump(by_alias=True, mode="json"),
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=True,
-            ).encode("ascii")
-        ).hexdigest()
         latest = self._store.latest(site_id, organization_id=principal.organization_id)
         if (
             latest is not None
@@ -544,9 +537,13 @@ class SiteBriefingService:
             try:
                 candidate = json.loads(answer.answer)
                 required = {"whatChanged", "whyItMatters", "decisionPrompt", "uncertainty"}
-                if isinstance(candidate, dict) and set(candidate) == required and all(
-                    isinstance(candidate[key], str) and candidate[key].strip()
-                    for key in required
+                if (
+                    isinstance(candidate, dict)
+                    and set(candidate) == required
+                    and all(
+                        isinstance(candidate[key], str) and candidate[key].strip()
+                        for key in required
+                    )
                 ):
                     parsed = candidate
             except (TypeError, ValueError, json.JSONDecodeError):
