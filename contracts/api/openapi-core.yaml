@@ -685,6 +685,25 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied }
         '404': { description: Site not found in the principal organization }
+  /v1/sites/{site_id}/civil-readiness:
+    get:
+      summary: Explain the current civil temporal-comparison prerequisites for one Site
+      description: >-
+        Read-only projection of the two latest succeeded ProcessingJob epochs and design-surface
+        inventory. It reuses the quantitative preflight but cannot create a comparison, alter a
+        WorkOrder, report field acceptance, assert survey accuracy, or expose a device/flight fact.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: site_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Evidence-derived civil workflow posture with typed blockers and one next action
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CivilReadinessView' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found in the principal organization }
   /v1/sites/{site_id}/briefings/latest:
     get:
       summary: Get the latest durable grounded Site briefing
@@ -4220,7 +4239,7 @@ paths:
       description: >-
         MISSIONS_READ 권한 필요. 비교 생성과 **같은 서버 측 fail-closed 판정**을
         실행하지만 원장을 쓰지 않는다. 도메인상 비교 불가(예: ANALYSIS_NOT_READY,
-        PROCESSING_PROFILE_MISMATCH, CRS_MISMATCH)는 HTTP 오류가 아니라
+        PROCESSING_PROFILE_MISMATCH, NO_COMMON_ARTIFACT_FAMILY, CRS_MISMATCH)는 HTTP 오류가 아니라
         `compatible=false`와 typed `reason`으로 반환한다. 존재하지 않거나 조직 밖인
         mission은 정보 비노출을 위해 404다.
       security: [{ bearerAuth: [] }]
@@ -4312,7 +4331,8 @@ paths:
             UNKNOWN_JOB / JOB_NOT_SUCCEEDED / SELF_COMPARISON / SITE_MISMATCH /
             MISSION_MISMATCH / NOTHING_TO_COMPARE / ANALYSIS_NOT_READY /
             PROCESSING_PROFILE_UNKNOWN / PROCESSING_PROFILE_MISMATCH /
-            SOURCE_LINEAGE_GAP / CRS_MISMATCH / VERTICAL_REFERENCE_MISMATCH
+            NO_COMMON_ARTIFACT_FAMILY / SOURCE_LINEAGE_GAP / CRS_MISMATCH /
+            VERTICAL_REFERENCE_MISMATCH
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
@@ -6100,6 +6120,65 @@ components:
           oneOf: [{ $ref: '#/components/schemas/WorkspaceWorkOrderSummary' }, { type: 'null' }]
         latestAnalysis: { $ref: '#/components/schemas/WorkspaceAnalysisSummary' }
         nextAction: { $ref: '#/components/schemas/WorkspaceNextAction' }
+    CivilEpochPairReadinessView:
+      type: object
+      additionalProperties: false
+      required: [baselineJobId, currentJobId, compatible, reason, detail]
+      properties:
+        baselineJobId: { type: [string, 'null'] }
+        currentJobId: { type: [string, 'null'] }
+        compatible: { type: boolean }
+        reason:
+          type: [string, 'null']
+          enum:
+            [SYSTEM_UNAVAILABLE, FIRST_EPOCH_REQUIRED, SECOND_EPOCH_REQUIRED,
+             ANALYSIS_NOT_READY, PROCESSING_PROFILE_UNKNOWN, PROCESSING_PROFILE_MISMATCH,
+             NO_COMMON_ARTIFACT_FAMILY, SOURCE_LINEAGE_GAP, CRS_MISMATCH,
+             VERTICAL_REFERENCE_MISMATCH,
+             DESIGN_SURFACE_NOT_VERIFIED, DESIGN_NORMALIZATION_MISMATCH, null]
+        detail: { type: string }
+    CivilDesignSurfaceReadinessView:
+      type: object
+      additionalProperties: false
+      required: [status, totalSurfaceCount, verifiedSurfaceCount, detail]
+      properties:
+        status:
+          enum: [SYSTEM_UNAVAILABLE, NOT_REGISTERED, VERIFICATION_REQUIRED, VERIFIED_AVAILABLE]
+        totalSurfaceCount: { type: integer, minimum: 0 }
+        verifiedSurfaceCount: { type: integer, minimum: 0 }
+        detail: { type: string }
+    CivilReadinessNextAction:
+      type: object
+      additionalProperties: false
+      required: [label, href, reason]
+      properties:
+        label: { type: string }
+        href: { type: [string, 'null'] }
+        reason: { type: string }
+    CivilReadinessView:
+      description: >-
+        Site-scoped read-only civil readiness. PAIR_COMPATIBLE means only that the two latest
+        succeeded epochs passed the existing compatibility preflight; it is not field acceptance,
+        survey accuracy, a processing result, or authorization to bypass the exact request gate.
+      type: object
+      additionalProperties: false
+      required: [siteId, status, succeededEpochCount, pair, designSurface, nextAction, limitations]
+      properties:
+        schemaVersion: { const: '1.0', default: '1.0' }
+        siteId: { type: string }
+        status:
+          enum: [SYSTEM_UNAVAILABLE, FIRST_EPOCH_REQUIRED, SECOND_EPOCH_REQUIRED,
+                 PAIR_BLOCKED, PAIR_COMPATIBLE]
+        succeededEpochCount: { type: integer, minimum: 0 }
+        pair: { $ref: '#/components/schemas/CivilEpochPairReadinessView' }
+        designSurface: { $ref: '#/components/schemas/CivilDesignSurfaceReadinessView' }
+        nextAction: { $ref: '#/components/schemas/CivilReadinessNextAction' }
+        limitations:
+          type: array
+          items:
+            enum: [OPERATIONAL_RELATIVE_QUANTITY_ONLY, FIELD_ACCEPTANCE_NOT_INCLUDED]
+          minItems: 2
+          maxItems: 2
     SiteBriefing:
       type: object
       required:
@@ -7323,6 +7402,7 @@ components:
             - ANALYSIS_NOT_READY
             - PROCESSING_PROFILE_UNKNOWN
             - PROCESSING_PROFILE_MISMATCH
+            - NO_COMMON_ARTIFACT_FAMILY
             - SOURCE_LINEAGE_GAP
             - CRS_MISMATCH
             - VERTICAL_REFERENCE_MISMATCH
@@ -7920,7 +8000,7 @@ components:
           description: >-
             progress가 null일 때의 typed fail-closed blocker. 예:
             PROCESSING_PROFILE_UNKNOWN / PROCESSING_PROFILE_MISMATCH /
-            DESIGN_NORMALIZATION_MISMATCH. detail은 사람용 설명이고 reason은 UI
+            NO_COMMON_ARTIFACT_FAMILY / DESIGN_NORMALIZATION_MISMATCH. detail은 사람용 설명이고 reason은 UI
             행동(재처리·같은 설계 개정 선택 등)을 고르는 안정된 코드다.
           type: [string, 'null']
         detail: { type: [string, 'null'] }

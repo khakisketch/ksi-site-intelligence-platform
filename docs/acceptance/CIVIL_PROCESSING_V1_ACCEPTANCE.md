@@ -20,6 +20,36 @@ This acceptance does not authorize flight, motor, waypoint execution, camera/gim
 DPK, Pilot 2/Manifold automatic media egress, DJI capability promotion, remote deployment or
 release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / `NOT_VERIFIED`.
 
+## Site civil-readiness increment — 2026-09-01
+
+`GET /v1/sites/{siteId}/civil-readiness` now provides an additive, read-only answer to the operational
+question “can this site begin a civil comparison, and what is missing?” It reads only the organization-
+scoped Site, the newest two `SUCCEEDED` ProcessingJobs and the registered design-surface inventory. For
+two epochs it calls the existing `preflight_epoch_pair` rule; it does not duplicate or relax compatibility
+logic. A later comparison or design-conformance request still supplies its exact inputs and runs that
+preflight again.
+
+The projection intentionally stops short of choosing a design revision or making a result. Its statuses
+separate first/second epoch setup, typed pair blockers, compatible candidate, verified-design availability
+and dependency unavailability. The Console renders the same answer as one card in the existing Site Data
+surface, including a next action and an explicit limitation that it is not field acceptance, survey
+accuracy, settlement quantity, flight or device state. There is no new global navigation, no mutation
+route, and no Mission Contract, dispatch or DJI/Manifold path.
+
+Local software evidence for this increment:
+
+- Core/API/assembly regression: `4238 passed, 24 skipped`; Ruff passed; Mypy passed `445` source files.
+- Dashboard: Vitest `63` files / `578` tests, ESLint, TypeScript `--noEmit`, and the production build
+  passed.
+- Browser: the full Playwright suite passed `66` with `14` intentional external-staging skips; the
+  readiness card's fail-closed/unavailable path was additionally checked at 390/768/1024/1440 px.
+- `uv lock --check`, `git diff --check` and repository hygiene gates passed for this worktree's final
+  verification.
+
+This is repository-local evidence only. It does not advance `PRODUCT_E2E_PARTIAL` or
+`FIELD_NOT_EVALUATED`, and it does not replace the required Korean same-site two-epoch input,
+independent reference/checkpoint or real-device/HIL evidence.
+
 ## Software acceptance matrix
 
 | ID | Acceptance | Required evidence | Status |
@@ -36,6 +66,8 @@ release. FIELD-0a and DJI field capability status remain separately `BLOCKED` / 
 | CC-02 | Temporal comparison requires equal processing profile digest; design progress also requires identical design-surface revision and normalization digest. | Same/different profile, CRS, vertical datum, source lineage and design revision fixtures. | PASS |
 | CC-03 | Cut, fill, net, zone progress, nodata and uncertainty reporting are deterministic and honest. | Hand-calculated fixtures; repeated runs; no independent checkpoint yields `null` uncertainty plus reason, never survey/settlement/RMSE wording. | PASS |
 | CC-04 | The Processing Controller verifies the sealed checkpoint bytes against the immutable DSM, computes all checkpoint statistics server-side and fails the whole validation for parser, digest, CRS, vertical-basis, extent or nodata defects. A validated result may inform an operational uncertainty note but does not prove physical independence or survey/settlement accuracy. | Controller download/hash/strict-CSV/raster sampling tests; Core observed-result/replay tests; comparison selection tests. | PASS |
+| CR-01 | Site civil readiness is a read-only projection of the newest two `SUCCEEDED` epochs and registered design-surface inventory. It reuses the canonical server preflight and cannot create a comparison, select a design revision or change any Mission/dispatch/device state. | Core projection/API/assembly tests for first/second epoch, every typed preflight blocker, unavailable dependencies and tenant-scoped 404 equivalence. | PASS |
+| CR-02 | A `PAIR_COMPATIBLE` readiness result is only a candidate for a later quantitative request; each actual comparison or design-conformance request repeats the exact Core preflight with its submitted inputs. Readiness never represents field acceptance, survey accuracy, settlement suitability, flight or device status. | Contract tests plus Dashboard presentation tests for explicit limitations and fail-closed unavailable state. | PASS |
 | SEC-01 | The code-owned profile recipe is globally readable and immutable; every profile-bound job, source byte, design surface and report remains organization-isolated. | Cross-organization 404-equivalence tests for each tenant-owned route/store. | PASS |
 | UX-01 | Existing Home/Sites/Work/Items/site-detail information architecture remains intact while the existing upload, design and comparison panels gain v1 state. | Full Vitest, ESLint, TypeScript, production build, and browser evidence at 390/768/1024/1440 for overflow, keyboard/focus and console errors. | PASS |
 | FI-01 | A private Korean civil field package is accepted for later evaluation only when rights, two original-image epochs, per-epoch ground control, LandXML design lineage, CRS/vertical basis and an independent reference are exact-digest bound. | Strict manifest schema, owner-only/no-symlink auditor, typed negative tests and [`CIVIL_FIELD_DATA_INTAKE.md`](CIVIL_FIELD_DATA_INTAKE.md). The successful result is `INPUT_READY`, never field acceptance. | PASS |

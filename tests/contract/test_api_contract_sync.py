@@ -34,6 +34,7 @@ from ksi_core.capability.runtime_projection import (
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
+from ksi_core.civil_readiness import CivilReadinessProjector
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.copilot_conversations import (
@@ -253,6 +254,12 @@ def _max_assembly(tmp_path: Path) -> Any:
         processing_job_store=processing_job_store,
         event_store=event_store,
     )
+    civil_readiness_projector = CivilReadinessProjector(
+        site_store=site_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=design_surface_store,
+        analysis_readiness=None,
+    )
     conversation_service = CopilotConversationService(
         store=CopilotConversationStore(
             DurableJournal(tmp_path / "copilot-conversations.jsonl"),
@@ -357,6 +364,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         copilot_conversation_service=conversation_service,
         site_workspace_projector=site_workspace_projector,
         site_briefing_service=briefing_service,
+        civil_readiness_projector=civil_readiness_projector,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),

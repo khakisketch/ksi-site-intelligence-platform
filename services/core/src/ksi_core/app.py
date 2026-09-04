@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.checkpoint_validations import CheckpointValidationStore
+    from ksi_core.civil_readiness import CivilReadinessProjector
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.copilot import CopilotService
     from ksi_core.copilot_conversations import CopilotConversationService
@@ -216,6 +217,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "site_workspace_projector",
         (("site_store", "observation_work_order_store"),),
         "site_workspace_projector는 Site·WorkOrder 사실 원장과 함께 주어져야 한다",
+    ),
+    (
+        "civil_readiness_projector",
+        (("site_store", "processing_job_store", "design_surface_store"),),
+        "civil_readiness_projector는 Site·ProcessingJob·DesignSurface 원장과 함께 주어져야 한다"
+        "(REQ-INT-104, INV-053) — 읽기 모델이 임의의 비교 가능 상태를 만들면 안 된다",
     ),
     (
         "site_briefing_service",
@@ -423,6 +430,7 @@ def create_app(
     copilot_conversation_service: CopilotConversationService | None = None,
     site_workspace_projector: SiteWorkspaceProjector | None = None,
     site_briefing_service: SiteBriefingService | None = None,
+    civil_readiness_projector: CivilReadinessProjector | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
     runtime_capability_projector: RuntimeCapabilityProjector | None = None,
@@ -488,6 +496,12 @@ def create_app(
             입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
             둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
             조립에서 거부한다.
+        civil_readiness_projector: 현장별 토목 준비도 읽기 모델. ``site_store``·
+            ``processing_job_store``·``design_surface_store`` 가 모두 있어야
+            장착된다. 이 모델은 기존 ``preflight_epoch_pair`` 결과와 설계면
+            inventory를 읽기만 하며, 실제 비교 요청은 각 입력으로 다시 preflight를
+            수행한다(INV-053). 현장 수용·측량 정확도·비행·장비 상태를 판정하지
+            않는다.
         checkpoint_validation_store: 독립 checkpoint CSV와 immutable DSM의 서버 측
             측정 원장. ``mission_store``·``processing_job_store``·``evidence_storage``가
             모두 필요하다(INV-024/053). 이를 통해 검증된 RMSE만 비교 불확실성에
@@ -651,6 +665,7 @@ def create_app(
         "copilot_conversation_service": copilot_conversation_service,
         "site_workspace_projector": site_workspace_projector,
         "site_briefing_service": site_briefing_service,
+        "civil_readiness_projector": civil_readiness_projector,
         "design_conformance_report_store": design_conformance_report_store,
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": region_extraction_report_store,
@@ -791,6 +806,11 @@ def create_app(
             projector=site_workspace_projector,
             briefing_service=site_briefing_service,
         )
+
+    if civil_readiness_projector is not None:
+        from ksi_core.civil_readiness import mount_civil_readiness
+
+        mount_civil_readiness(app, civil_readiness_projector)
 
     # 현장 상태 자동 전진(ADR-KSI-019 G1) — 재구성 신호·임무 배포·노후 스윕 세
     # 진입점이 같은 인스턴스를 공유한다. 두 저장소 중 하나라도 없으면 전진시킬

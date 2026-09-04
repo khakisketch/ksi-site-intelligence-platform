@@ -284,6 +284,40 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   await expectNoHorizontalOverflow(page);
 });
 
+test("현장 데이터는 토목 준비도를 현장 수용과 분리해 네 화면 폭에서 보여 준다", async ({ page }) => {
+  test.skip(
+    Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL),
+    "외부 원장은 읽기 전용이며 로컬의 첫-epoch fixture를 전제하지 않습니다.",
+  );
+
+  const browserFailures: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserFailures.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => browserFailures.push(`pageerror: ${error.message}`));
+
+  await page.goto(`/sites/${syntheticSiteId}?section=data`);
+  const readinessCard = page
+    .getByRole("heading", { level: 2, name: "토목 시계열 준비" })
+    .locator("xpath=ancestor::section");
+  await expect(readinessCard).toBeVisible();
+  // 이 브라우저 fixture는 ProcessingJob/DesignSurface 원장을 의도적으로 조립하지
+  // 않는다. 따라서 404를 첫 조사 시점으로 추정하지 않고, Dashboard가 불가 상태를
+  // 보이는지를 네 화면 폭에서 확인한다. 첫 epoch의 실제 projection은 Core/API와
+  // presentCivilReadiness 단위 테스트가 따로 고정한다.
+  await expect(readinessCard.getByText("토목 준비 상태 확인 불가", { exact: true })).toBeVisible();
+  await expect(readinessCard.getByText("두 시점 판정 확인 불가", { exact: true })).toBeVisible();
+  await expect(
+    readinessCard.getByText(
+      "이 상태는 현장 수용·측량 정확도·정산 수량·비행 또는 장비 상태를 뜻하지 않습니다.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(readinessCard.getByRole("link")).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+  expect(browserFailures).toEqual([]);
+});
+
 test("전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다", async ({ page }) => {
   await page.goto("/field");
   await expect(page.getByRole("link", { name: "작업으로 이동" })).toHaveCount(0);

@@ -58,6 +58,7 @@ from ksi_core.capability.runtime_projection import (
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
+from ksi_core.civil_readiness import CivilReadinessProjector
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.defect_candidates import DefectCandidateStore
@@ -349,6 +350,19 @@ def assemble_app(
         processing_job_store=processing_job_store,
         event_store=event_store,
     )
+    # This is a read-only navigation projection.  It reuses the exact
+    # AnalysisReadiness callback wired into comparison/design request stores;
+    # it must not invent a second policy or make missing evidence look ready.
+    civil_readiness_projector = (
+        CivilReadinessProjector(
+            site_store=site_store,
+            processing_job_store=processing_job_store,
+            design_surface_store=design_surface_store,
+            analysis_readiness=analysis_readiness_check,
+        )
+        if processing_job_store is not None
+        else None
+    )
     copilot_service = None
     copilot_conversation_service = None
     site_briefing_service = None
@@ -577,6 +591,7 @@ def assemble_app(
         copilot_conversation_service=copilot_conversation_service,
         site_workspace_projector=site_workspace_projector,
         site_briefing_service=site_briefing_service,
+        civil_readiness_projector=civil_readiness_projector,
         mission_store=mission_store,
         event_store=event_store,
         edge_sync_store=edge_sync_store,

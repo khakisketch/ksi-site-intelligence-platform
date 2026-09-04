@@ -573,7 +573,7 @@ def test_nothing_to_compare_is_rejected(fx: _Fixture) -> None:
         _artifact_spec("camera-poses", kind=ProcessingArtifactKind.CAMERA_POSES),
     )
     result = fx.create(baseline_job_id=bare_baseline, current_job_id=bare_current)
-    assert result.verdict is ComparisonRequestVerdict.NOTHING_TO_COMPARE
+    assert result.verdict is ComparisonRequestVerdict.NO_COMMON_ARTIFACT_FAMILY
 
 
 @pytest.mark.parametrize(

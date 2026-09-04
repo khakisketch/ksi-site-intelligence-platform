@@ -43,6 +43,7 @@ class CivilPreflightReason(StrEnum):
     ANALYSIS_NOT_READY = "ANALYSIS_NOT_READY"
     PROCESSING_PROFILE_UNKNOWN = "PROCESSING_PROFILE_UNKNOWN"
     PROCESSING_PROFILE_MISMATCH = "PROCESSING_PROFILE_MISMATCH"
+    NO_COMMON_ARTIFACT_FAMILY = "NO_COMMON_ARTIFACT_FAMILY"
     SOURCE_LINEAGE_GAP = "SOURCE_LINEAGE_GAP"
     CRS_MISMATCH = "CRS_MISMATCH"
     VERTICAL_REFERENCE_MISMATCH = "VERTICAL_REFERENCE_MISMATCH"
@@ -114,6 +115,21 @@ def _lineage_is_complete(job: ProcessingJobRecord, artifacts: Iterable[Processin
 
 def _artifact(job: ProcessingJobRecord, kind: ProcessingArtifactKind) -> ProcessingArtifact | None:
     return next((item for item in authoritative_artifacts(job) if item.kind is kind), None)
+
+
+def common_comparable_artifact_families(
+    baseline: ProcessingJobRecord,
+    current: ProcessingJobRecord,
+) -> frozenset[ProcessingArtifactKind]:
+    """Return quantitative families with authoritative artifacts in both epochs."""
+
+    comparable = {
+        ProcessingArtifactKind.POINT_CLOUD,
+        ProcessingArtifactKind.DSM,
+    }
+    baseline_kinds = {artifact.kind for artifact in authoritative_artifacts(baseline)}
+    current_kinds = {artifact.kind for artifact in authoritative_artifacts(current)}
+    return frozenset(comparable & baseline_kinds & current_kinds)
 
 
 def _same_crs(left: str | None, right: str | None) -> bool:
@@ -194,6 +210,12 @@ def preflight_epoch_pair(
         return CivilPreflightResult.blocked(
             CivilPreflightReason.PROCESSING_PROFILE_MISMATCH,
             "두 epoch의 processingProfileDigest가 다르다. v1은 동일 digest만 자동 비교한다",
+        )
+
+    if not common_comparable_artifact_families(baseline, current):
+        return CivilPreflightResult.blocked(
+            CivilPreflightReason.NO_COMMON_ARTIFACT_FAMILY,
+            "두 epoch에 공통으로 존재하는 point_cloud 또는 dsm 산출물 계열이 없다",
         )
 
     for kind, label in (
@@ -280,6 +302,7 @@ __all__ = [
     "CivilPreflightReason",
     "CivilPreflightResult",
     "DIRECT_GEOTIFF_NORMALIZATION_PROFILE",
+    "common_comparable_artifact_families",
     "design_normalization_anchor",
     "preflight_epoch_pair",
     "preflight_design_surface",

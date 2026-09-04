@@ -89,6 +89,7 @@ from ksi_core.auth import (
 from ksi_core.civil_preflight import (
     AnalysisReadinessCheck,
     CivilPreflightReason,
+    common_comparable_artifact_families,
     preflight_epoch_pair,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
@@ -176,6 +177,7 @@ class ComparisonRequestVerdict(StrEnum):
     ANALYSIS_NOT_READY = CivilPreflightReason.ANALYSIS_NOT_READY.value
     PROCESSING_PROFILE_UNKNOWN = CivilPreflightReason.PROCESSING_PROFILE_UNKNOWN.value
     PROCESSING_PROFILE_MISMATCH = CivilPreflightReason.PROCESSING_PROFILE_MISMATCH.value
+    NO_COMMON_ARTIFACT_FAMILY = CivilPreflightReason.NO_COMMON_ARTIFACT_FAMILY.value
     SOURCE_LINEAGE_GAP = CivilPreflightReason.SOURCE_LINEAGE_GAP.value
     CRS_MISMATCH = CivilPreflightReason.CRS_MISMATCH.value
     VERTICAL_REFERENCE_MISMATCH = CivilPreflightReason.VERTICAL_REFERENCE_MISMATCH.value
@@ -216,6 +218,7 @@ _STATUS: dict[ComparisonRequestVerdict, int] = {
     ComparisonRequestVerdict.ANALYSIS_NOT_READY: 422,
     ComparisonRequestVerdict.PROCESSING_PROFILE_UNKNOWN: 422,
     ComparisonRequestVerdict.PROCESSING_PROFILE_MISMATCH: 422,
+    ComparisonRequestVerdict.NO_COMMON_ARTIFACT_FAMILY: 422,
     ComparisonRequestVerdict.SOURCE_LINEAGE_GAP: 422,
     ComparisonRequestVerdict.CRS_MISMATCH: 422,
     ComparisonRequestVerdict.VERTICAL_REFERENCE_MISMATCH: 422,
@@ -779,9 +782,10 @@ class ComparisonRequestStore:
             baseline_source_digest = baseline_job.input.source_bundle_digest
             current_source_digest = current_job.input.source_bundle_digest
 
+        common_families = common_comparable_artifact_families(baseline_job, current_job)
         pc_baseline = _find_artifact(baseline_job, ProcessingArtifactKind.POINT_CLOUD)
         pc_current = _find_artifact(current_job, ProcessingArtifactKind.POINT_CLOUD)
-        cd_eligible = pc_baseline is not None and pc_current is not None
+        cd_eligible = ProcessingArtifactKind.POINT_CLOUD in common_families
         cd_reason = None
         if not cd_eligible:
             missing = [
@@ -794,7 +798,7 @@ class ComparisonRequestStore:
         dsm_baseline = _find_artifact(baseline_job, ProcessingArtifactKind.DSM)
         dsm_current = _find_artifact(current_job, ProcessingArtifactKind.DSM)
         has_zones = bool(zones) and zone_crs is not None
-        vol_eligible = dsm_baseline is not None and dsm_current is not None and has_zones
+        vol_eligible = ProcessingArtifactKind.DSM in common_families and has_zones
         vol_reason = None
         if not vol_eligible:
             missing = [
