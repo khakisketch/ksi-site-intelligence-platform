@@ -16,6 +16,15 @@
 
 참고 저장소 코드가 Master PRD와 다르면 참고 코드를 따르지 않는다.
 
+저장소의 현재 owner/purpose/runtime 구조는 `REPOSITORY_STRUCTURE.md`, 문서의
+ACTIVE/HISTORICAL/SUPERSEDED 라우팅은 `docs/DOCUMENT_STATUS.md`가 소유한다. 두 문서는
+제품 결정보다 아래의 repository-governance 정본이며 제품 의미나 현재 capability 상태를
+독자적으로 바꾸지 않는다.
+
+`KSI Safety`는 별도 제품 구상이다. 드론 밖 센서까지 포함하는 다중센서 실시간 안전
+운영 제품이며, 이 저장소의 Site Intelligence의 안전순찰 Mission을 흡수하거나 대체하지
+않는다. 겹치는 현장 관측이 있다는 이유만으로 제품 책임이나 코드 모듈을 합치지 않는다.
+
 ## 작업 전 질문
 
 - Requirement ID가 무엇인가?

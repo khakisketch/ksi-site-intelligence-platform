@@ -3,6 +3,10 @@
 Status: ACCEPTED — 2026-08-21
 Scope: RC-first Connected Edge 및 향후 Dock adapter 확장
 
+> **2026-09-04 repository routing:** 전체 저장소 owner/purpose/runtime 표의 정본은
+> [`../../REPOSITORY_STRUCTURE.md`](../../REPOSITORY_STRUCTURE.md)다. 이 문서는 Connected Edge
+> 소스 의존 방향을 상세화하며, 이름이 비슷한 runtime module을 합치거나 지울 권한이 아니다.
+
 ## 선택
 
 KSI는 장비별 최상위 복제도, 기술 계층만으로 된 전역 분리도 사용하지 않는다.
@@ -41,7 +45,11 @@ edge/psdk-app/                     실제 PSDK application composition
 edge/psdk-tap/                     HIL 관측·증거 수집 도구
 edge/msdk-field-bridge/            pre/postflight-only MSDK native contract candidate
 apps/dashboard/                    사람의 업무·readiness·복구 UI
-processing/ 및 services/processing 분석 pipeline
+services/processing-controller/    분석 job orchestration·artifact worker
+services/change-detection/         변화·체적 계산 leaf service/library
+services/bim-integration/          IFC 변환·참조모델 leaf service/library
+services/defect-detection/         결함 model adapter·후처리 leaf service/library
+packages/perception/               recorded/offline model evaluation·공유 perception logic
 deploy/                            KSI Cloud 환경·영속 볼륨·runtime 조립
 ```
 

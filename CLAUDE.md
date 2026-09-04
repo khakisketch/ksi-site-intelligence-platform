@@ -13,6 +13,33 @@ Read in this order:
 7. Reference adoption matrix
 8. Reference code
 
+## Repository routing
+
+After reading product authority, use these two routing documents before locating or changing code:
+
+1. `REPOSITORY_STRUCTURE.md` — responsibility, canonical path, runtime boundary and R0-R2 decision
+2. `docs/DOCUMENT_STATUS.md` — active authority/current-state documents versus historical evidence
+
+These files route work; they do not override product authority or contracts. Route by responsibility:
+
+| Responsibility | Canonical path | Boundary |
+|---|---|---|
+| Operator UX | `apps/dashboard/` | Displays and requests intent; owns no device authority |
+| Durable product authority and workflow | `services/core/` | Owns identity, policy, Mission, evidence and journals |
+| DJI capability and transport adapters | `services/dji-gateway/` | Exposes verified ports/receipts; owns no product intelligence |
+| Local acquisition, perception and tactical safety | `edge/psdk-app/`, `edge/manifold-runtime/` | Manifold/local only; Flight Controller keeps low-level authority |
+| Measurement workers | `services/processing-controller/` and its leaf services | Measures artifacts; Core adjudicates durable state |
+| Reusable domain and algorithm code | `packages/` | Imported through explicit package/contract boundaries |
+| Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
+| Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `.ksi/` | Current status; update `.ksi/` only through its helper |
+
+Do not consolidate similarly named runtime modules from names alone. Dependency, build, CI and replay
+reachability must be proven in a separately approved R3 task.
+
+After selecting an owner path, read its nearest `README.md` and any nested `AGENTS.md`/`CLAUDE.md`, then
+inspect its actual entrypoint and dependency manifest (`pyproject.toml`, `package.json`, `CMakeLists.txt`,
+Dockerfile/Compose) plus owner tests. A directory name or architecture diagram alone is not runtime proof.
+
 ## 도메인 불변식
 
 정본은 `docs/product/DOMAIN_INVARIANTS.md` (INV-xxx)다. 여기 복제하지 않는다.

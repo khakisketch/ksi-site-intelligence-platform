@@ -40,6 +40,9 @@ jobs:
       - name: production runtime image digest gate
         run: uv run --locked python tools/check_runtime_image_pins.py
 
+      - name: repository normalization contract
+        run: uv run --locked python tools/validate_repository_normalization.py
+
       - name: ruff
         run: uv run --locked ruff check .
 
@@ -49,6 +52,14 @@ jobs:
       # 설계라 pyproject의 mypy exclude로 제외돼 있다.
       - name: mypy
         run: uv run --locked mypy packages services tests tools
+
+      # PSDK는 공개 고정 소스이며 KMZ fidelity 계약이 공식 샘플을 읽는다. fetch 뒤
+      # 핀 검증을 같은 단계에서 수행해, 전체 pytest가 검증된 vendor fixture만 본다.
+      # `uv run`은 fetch와 pin 검사 모두가 잠긴 Python 환경을 사용하게 한다.
+      - name: PSDK fixture provisioning and pin verification
+        run: |
+          uv run --locked python tools/edge/fetch_psdk.py
+          uv run --locked bash scripts/check_third_party_pins.sh
 
       - name: pytest
         run: uv run --locked pytest -q
@@ -67,14 +78,6 @@ jobs:
 
       - name: reference 핀 검증 (gitlink)
         run: bash scripts/verify_reference_pins.sh
-
-      # PSDK는 서브모듈이 아니라 tools/edge/fetch_psdk.py로 명시적으로 받는 선택적
-      # 대상(gitignored) — CI에는 아직 fetch하지 않으므로 트리 검증은 SKIP된다.
-      # 락 파일 자체의 존재·스키마·파싱 가능성은 fetch 여부와 무관하게 상시 검증한다.
-      # `uv run`으로 감싸는 이유: 스크립트가 PyYAML을 쓰는데 bare python3는 uv가
-      # 만든 venv를 타지 않아 러너 시스템 python 의존이 된다(2026-08-04 감사 지적).
-      - name: PSDK 핀 검증 (edge/third_party/PSDK_LOCK.yaml)
-        run: uv run --locked bash scripts/check_third_party_pins.sh
 
   # [mixercseg] extra 이식성 게이트 (risk defect-detection-uv-lock-mmcv-portability).
   #

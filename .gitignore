@@ -21,6 +21,9 @@ edge/*/build*/
 __pycache__/
 *.pyc
 .venv/
+/.mypy_cache/
+/.pytest_cache/
+/.ruff_cache/
 
 # HIL 세션 raw 로그 로컬 스테이징 — 커밋하지 않는다(docs/hil/RAW_LOG_CONVENTIONS.md §1·§5).
 # 세션 종료 후 durable 저장소로 옮기고 SpikeEvidence.raw_log_ref 는 그 URI 를 가리킨다.
@@ -34,6 +37,8 @@ __pycache__/
 /.dev-data/
 
 # apps/dashboard (Next.js) 빌드 산출물·의존성
+apps/dashboard/.mypy_cache/
+apps/dashboard/.next*/
 apps/dashboard/node_modules/
 apps/dashboard/.next/
 apps/dashboard/.next-*/
@@ -58,6 +63,9 @@ edge/third_party/psdk/
 
 # 디자인 시안 생성물 — design/**/_build.py 가 SSOT 다(HTML 은 전부 그 출력).
 # 채택 결과의 정본은 apps/dashboard/src/app/globals.css 의 토큰이다.
+design/**/dist/
+design/**/node_modules/
+design/**/test-results/
 design/**/screens/
 design/**/studies/
 design/**/index.html

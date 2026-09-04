@@ -148,7 +148,7 @@ KSI Site Intelligence Platform
 ├─ KSI Site Intelligence                 # 고객 통합 제품
 ├─ KSI Edge Autonomy                     # Manifold Runtime
 ├─ KSI Spatial Intelligence              # 3D/4D World Model
-├─ KSI Safety & Event Intelligence       # Event/Evidence/Action
+├─ KSI Event & Evidence Intelligence      # Site Intelligence 관측 증거/업무
 ├─ KSI Spatial Processing Fabric         # Reconstruction/Change/Map Compiler
 ├─ KSI Data & ML Platform                # Dataset/Model Governance
 └─ Industry Solution Packs
@@ -1619,6 +1619,10 @@ PRODUCTION_SUPPORTED
 
 공식 저장소명은 **`ksi-site-intelligence-platform`**이다.
 
+아래 트리는 제품 runtime의 최소 논리 구조다. 실제 top-level/주요 모듈 owner,
+runtime 여부와 non-runtime canonical 위치는 루트 `REPOSITORY_STRUCTURE.md`가 소유한다.
+두 문서가 다르게 보이면 이 PRD는 제품 책임 경계를, 구조 정본은 현재 물리 경로를 말한다.
+
 ```text
 ksi-site-intelligence-platform/
 ├─ AGENTS.md
@@ -1632,12 +1636,19 @@ ksi-site-intelligence-platform/
 │  ├─ dji-gateway/
 │  └─ processing-controller/
 ├─ edge/
-│  └─ manifold-runtime/
+│  ├─ psdk-app/            # production native Edge entry
+│  ├─ manifold-runtime/    # native local intelligence/control-plane library
+│  └─ diagnostic/gated adapters
 ├─ packages/
 │  ├─ domain/
 │  ├─ geo-core/
+│  ├─ geo-spatial/
 │  ├─ event-contracts/
 │  ├─ mission-contracts/
+│  ├─ mission-planning/
+│  ├─ change-detection/
+│  ├─ bim-integration/
+│  ├─ defect-detection/
 │  └─ test-vectors/
 ├─ tests/
 │  ├─ contract/
