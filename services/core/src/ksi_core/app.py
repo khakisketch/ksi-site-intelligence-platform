@@ -845,57 +845,35 @@ def create_app(
         assert mission_store is not None  # noqa: S101
         assert site_store is not None  # noqa: S101
 
+        from ksi_core.mission_atomicity import MissionIssuanceCommitter
         from ksi_core.mission_issuance import mount_mission_issuance
         from ksi_core.mission_plans import mount_mission_plans
-        from ksi_core.mission_records import SiteLookupResult
 
         _mission_store = mission_store
-        _site_store = site_store
-
-        def _site_lookup(site_id: str, organization_id: str) -> SiteLookupResult | None:
-            """등록된 site 의 canonical siteFrame + 현재 상태 — 미등록이면 None.
-
-            siteFrame 은 발급 요청과의 정확 일치 대조(SITE_FRAME_MISMATCH)에
-            쓰인다 — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
-            status 는 임무타입×현장상태 게이트(INV-052, "먼저 매핑, 그 다음
-            사전지도 기반 자율")에 쓰인다 — 이 둘을 한 스냅샷으로 묶어 반환하는
-            이유는 SiteLookupResult docstring 참조.
-            """
-            # 발급 전 lookup도 조회 API와 같은 조직 경계를 가진다. 다른 조직의
-            # siteId를 넣어 서명·KMZ를 발급하는 우회는 UNKNOWN_SITE로 접는다(INV-060).
-            record = _site_store.get_scoped(site_id, organization_id)
-            if record is None:
-                return None
-            return SiteLookupResult(site_frame=dict(record.site_frame), status=record.status)
-
-        def _acquisition_readiness(
-            site_id: str, organization_id: str, now: Any
-        ) -> tuple[bool, str]:
-            if not acquisition_issue_gate_enabled or acquisition_connectivity_store is None:
-                return True, "acquisition issue gate feature flag disabled"
-            readiness = acquisition_connectivity_store.readiness(
-                site_id, organization_id=organization_id, now=now
-            )
-            detail = readiness.reasons[0] if readiness.reasons else readiness.status.value
-            return readiness.ready_for_mission_issue, detail
+        issuance_committer = MissionIssuanceCommitter(
+            site_store=site_store,
+            mission_store=_mission_store,
+            work_order_store=observation_work_order_store,
+            acquisition_store=acquisition_connectivity_store,
+            acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+        )
 
         mount_mission_issuance(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_lookup=_site_lookup,
+            issuance_committer=issuance_committer,
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
-            acquisition_readiness=_acquisition_readiness,
         )
         mount_mission_plans(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_lookup=_site_lookup,
+            issuance_committer=issuance_committer,
             # 스토리지가 있으면 발급 KMZ 바이트를 보관한다 — 서버 안전상수 한 줄이
             # 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
             # kmz-regeneration-determinism-timebomb). 없으면 재생성에만 의존한다.
@@ -903,7 +881,6 @@ def create_app(
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
-            acquisition_readiness=_acquisition_readiness,
             observation_work_order_store=observation_work_order_store,
             acquisition_coordination_store=acquisition_coordination_store,
         )

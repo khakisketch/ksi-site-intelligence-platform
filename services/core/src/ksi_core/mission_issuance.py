@@ -24,8 +24,9 @@ unknownObstaclePolicy·evidencePolicy는 FINAL_DECISION_LEDGER_v1.0(§안전·�
 
 이 라우터는 인증(``MISSIONS_ISSUE``)·site 등록 대조(존재+siteFrame 일치+
 임무타입×현장상태 게이트, INV-052)·mission_id 충돌 검사·durable 기록 성공
-후에만 201 을 내는 경로 **하나만** 갖는다 — ``mission_store``/``site_lookup``
-은 필수 인자라 인증·미기록 발급이 가능한 조립 자체가 성립하지 않는다(원장 risk
+후에만 201 을 내는 경로 **하나만** 갖는다 — ``mission_store``와 공통
+``issuance_committer``는 필수 인자라 인증·미기록 발급이나 prerequisite witness
+검증 없는 조립 자체가 성립하지 않는다(원장 risk
 mission-issuance-unauthenticated-signing-oracle 해소, "인증 없는 보호 표면은
 존재할 수 없다"). ``ksi_core.app.create_app`` 은 서명키가 주어지면
 ``mission_store``·``site_store``·``auth_registry`` 를 함께 강제한다.
@@ -33,11 +34,10 @@ mission-issuance-unauthenticated-signing-oracle 해소, "인증 없는 보호 �
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from ksi_domain.enums import MissionType
 from ksi_mission_contracts.models import (
     Artifacts,
@@ -50,18 +50,20 @@ from ksi_mission_contracts.models import (
     SiteFrame,
     UnknownObstaclePolicy,
 )
-from ksi_mission_contracts.signing import sign_contract
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest, sign_contract
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import JournalSealedError
+from ksi_core.mission_atomicity import MissionIssuanceCommitter, MissionIssuanceRejected
 from ksi_core.mission_records import (
+    IssuanceAuthorizationWitness,
+    IssuancePreconditionChangedError,
     MissionIssuanceSequenceStore,
     MissionRecord,
+    MissionRecordVerdict,
     MissionStore,
-    SiteLookupResult,
-    precheck_issuance,
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
 )
@@ -200,11 +202,10 @@ def build_mission_issuance_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str, str], SiteLookupResult | None],
+    issuance_committer: MissionIssuanceCommitter,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
-    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
 ) -> APIRouter:
     if writer_version == "1.3" and (not issuer_id or sequence_store is None):
         raise ValueError("Mission Contract v1.3 writer는 issuer_id와 sequence_store가 필요하다")
@@ -213,6 +214,7 @@ def build_mission_issuance_router(
     @router.post("/contracts", status_code=201)
     def issue_contract_recorded(
         request: MissionIssuanceRequest,
+        response: Response,
         principal: Principal = Depends(require_permission(Permission.MISSIONS_ISSUE)),  # noqa: B008
     ) -> dict[str, Any]:
         """구역+임무타입으로부터 서명된 MissionContract(v1.2)를 발급·durable 기록한다.
@@ -224,11 +226,11 @@ def build_mission_issuance_router(
         문자열은 서명 정규화를 500 으로 깨뜨리므로 서명 전에 422 로 거부한다
         (재검토 P2 item④).
         """
-        reject_lone_surrogates(request.model_dump(by_alias=True, mode="json", exclude_none=True))
-
-        verdict = precheck_issuance(
-            mission_store=mission_store,
-            site_lookup=site_lookup,
+        request_payload = request.model_dump(by_alias=True, mode="json", exclude_none=True)
+        reject_lone_surrogates(request_payload)
+        request_digest = sha256_digest(canonical_payload_bytes(request_payload))
+        issued_at = datetime.now(UTC)
+        precheck = issuance_committer.capture_site_authorization(
             organization_id=principal.organization_id,
             site_id=request.site_id,
             mission_id=request.mission_id,
@@ -236,20 +238,28 @@ def build_mission_issuance_router(
             requested_site_frame=request.site_frame.model_dump(
                 by_alias=True, mode="json", exclude_none=True
             ),
+            request_digest=request_digest,
+            captured_at=issued_at,
         )
-        if verdict is not None:
-            raise_for_mission_record_verdict(verdict)
-
-        issued_at = datetime.now(UTC)
-        if acquisition_readiness is not None:
-            ready, detail = acquisition_readiness(
-                request.site_id, principal.organization_id, issued_at
-            )
-            if not ready:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"ACQUISITION_NOT_READY — {detail}",
+        if isinstance(precheck, MissionRecordVerdict):
+            if precheck is MissionRecordVerdict.MISSION_ID_CONFLICT:
+                existing = mission_store.get_scoped(
+                    request.mission_id, organization_id=principal.organization_id
                 )
+                if (
+                    existing is not None
+                    and existing.artifact_kind == "contract"
+                    and existing.issuance_request_digest == request_digest
+                ):
+                    response.status_code = 200
+                    return existing.contract
+            raise_for_mission_record_verdict(precheck)
+        assert isinstance(precheck, IssuanceAuthorizationWitness)  # noqa: S101
+        witness = precheck
+        try:
+            witness = issuance_committer.attach_acquisition(witness, evaluated_at=issued_at)
+        except MissionIssuanceRejected as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         site_sequence: int | None = None
         if writer_version == "1.3":
             assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
@@ -287,8 +297,36 @@ def build_mission_issuance_router(
             issued_by=principal.principal_id,
             organization_id=principal.organization_id,
             assigned_device_id=request.assigned_device_id,
+            issuance_schema_version="1.0",
+            issuance_request_digest=request_digest,
+            authorization_witness=witness,
         )
-        raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        try:
+            verdict = issuance_committer.commit(record, witness)
+        except IssuancePreconditionChangedError as exc:
+            existing = mission_store.get_scoped(
+                request.mission_id, organization_id=principal.organization_id
+            )
+            if (
+                existing is not None
+                and existing.artifact_kind == "contract"
+                and existing.issuance_request_digest == request_digest
+            ):
+                response.status_code = 200
+                return existing.contract
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
+            existing = mission_store.get_scoped(
+                request.mission_id, organization_id=principal.organization_id
+            )
+            if (
+                existing is not None
+                and existing.artifact_kind == "contract"
+                and existing.issuance_request_digest == request_digest
+            ):
+                response.status_code = 200
+                return existing.contract
+        raise_for_mission_record_verdict(verdict)
         return contract_payload
 
     return router
@@ -300,11 +338,10 @@ def mount_mission_issuance(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str, str], SiteLookupResult | None],
+    issuance_committer: MissionIssuanceCommitter,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
-    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
 ) -> None:
     """앱에 Mission Contract 발급 라우터를 장착한다.
 
@@ -317,10 +354,9 @@ def mount_mission_issuance(
             private_key=private_key,
             key_id=key_id,
             mission_store=mission_store,
-            site_lookup=site_lookup,
+            issuance_committer=issuance_committer,
             writer_version=writer_version,
             issuer_id=issuer_id,
             sequence_store=sequence_store,
-            acquisition_readiness=acquisition_readiness,
         )
     )

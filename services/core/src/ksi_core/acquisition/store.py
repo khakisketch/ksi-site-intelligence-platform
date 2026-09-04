@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -147,6 +149,23 @@ class AcquisitionConnectivityStore:
             snapshot = self._snapshots.get(key)
             actor = self._snapshot_actors.get(key)
             return profile, snapshot, actor
+
+    @contextmanager
+    def issuance_commit_guard(
+        self, site_id: str, *, organization_id: str
+    ) -> Iterator[
+        tuple[AcquisitionDeploymentProfileV1 | None, ConnectivitySnapshotV1 | None]
+    ]:
+        """Mission OCC의 Acquisition witness를 보호하는 store-owned guard.
+
+        Profile upsert와 heartbeat observation이 쓰는 동일 ``RLock``을 유지한 채
+        현재 profile/snapshot을 돌려준다. Coordinator는 이 guard를 Site와 선택적
+        WorkOrder guard 뒤, Mission append 앞에서 획득한다.
+        """
+
+        with self._lock:
+            key = (organization_id, site_id)
+            yield self._profiles.get(key), self._snapshots.get(key)
 
     def observe(
         self,

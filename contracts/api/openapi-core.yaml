@@ -4678,11 +4678,23 @@ paths:
                     있다(하위호환).
       responses:
         '201': { description: 설정된 writer 버전의 서명 MissionContract(v1.2 또는 v1.3) }
+        '200':
+          description: Same canonical contract-only request retried after its durable record exists
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: ../schemas/mission-contract.v1.2.json
+                  - $ref: ../schemas/mission-contract.v1.3.json
         '422':
           description: >-
             구조 위반(필드 누락·범위 밖·validForHours>168) / UNKNOWN_SITE /
             SITE_FRAME_MISMATCH
-        '409': { description: MISSION_ID_CONFLICT }
+        '409':
+          description: >-
+            MISSION_ID_CONFLICT or ISSUANCE_PRECONDITION_CHANGED:
+            SITE_ISSUANCE_REVISION_CONFLICT, WORK_ORDER_REVISION_CONFLICT,
+            ACQUISITION_WITNESS_STALE.
         '503': { description: STORE_UNAVAILABLE — durable 기록 실패, 산출물 미반환 }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }
@@ -4899,6 +4911,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [contract, kmzBase64, kmzSha256, routePattern, waypointCount, plannedCoverageRatio, gridBasis]
                 properties:
                   contract:
                     description: 설정된 writer 버전의 서명 MissionContract
@@ -4935,12 +4948,34 @@ paths:
                       gsdM: { type: number, description: 지상표본거리(m/px) }
                       footprintAcrossM: { type: number }
                       footprintAlongM: { type: number }
+        '200':
+          description: Exact durable retry of the same paired issuance request
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract, kmzBase64, kmzSha256, routePattern, waypointCount, plannedCoverageRatio, gridBasis]
+                properties:
+                  contract:
+                    oneOf:
+                      - $ref: ../schemas/mission-contract.v1.2.json
+                      - $ref: ../schemas/mission-contract.v1.3.json
+                  kmzBase64: { type: string }
+                  kmzSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                  routePattern: { type: string, enum: [lawnmower, perimeter] }
+                  waypointCount: { type: integer, minimum: 2 }
+                  plannedCoverageRatio: { type: [number, 'null'] }
+                  gridBasis: { type: [object, 'null'] }
         '422':
           description: >-
             경로 생성 불가(봉투 밖 고도·이륙안전고도·spacing/camera 누락·
             camera 와 spacingM 동시 지정·중복도 하한 미달·미지원 타입) /
             UNKNOWN_SITE / SITE_FRAME_MISMATCH / COVERAGE_BELOW_CONTRACT_PROMISE
-        '409': { description: MISSION_ID_CONFLICT }
+        '409':
+          description: >-
+            MISSION_ID_CONFLICT or ISSUANCE_PRECONDITION_CHANGED:
+            SITE_ISSUANCE_REVISION_CONFLICT, WORK_ORDER_REVISION_CONFLICT,
+            ACQUISITION_WITNESS_STALE.
         '503': { description: STORE_UNAVAILABLE — durable 기록 실패, 산출물 미반환 }
         '401': { description: 인증 실패 }
         '403': { description: MISSIONS_ISSUE 권한 없음 }

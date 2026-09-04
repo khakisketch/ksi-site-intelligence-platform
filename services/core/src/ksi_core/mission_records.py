@@ -10,10 +10,12 @@
 
 :func:`precheck_issuance` 는 서명(및 짝 발급의 경우 KMZ 생성)을 하기 **전에**
 호출한다 — 이미 실패가 확정된 요청에 서명 비용을 치르지 않기 위해서다. 다만
-이 사전 체크는 낙관적이다: 사전 체크 통과 후 실제 :meth:`~MissionStore.
-record_issuance` 호출 사이에 경쟁 요청이 같은 mission_id 를 선점할 수 있으므로,
-최종 판정은 항상 ``record_issuance`` 내부의 잠금 보호 구간이 한다(사전 체크는
-비용 절감용 낙관적 단축 경로일 뿐, 정합성의 근원이 아니다).
+이 사전 체크는 낙관적이다: 사전 체크 통과 후 실제 conditional commit 사이에
+prerequisite가 바뀌거나 경쟁 요청이 같은 mission_id 를 선점할 수 있다. 최종
+인가 판정은 :class:`~ksi_core.mission_atomicity.MissionIssuanceCommitter`가
+prerequisite store guard를 정해진 순서로 보유한 채 witness를 다시 대조하고,
+마지막에 이 store의 :meth:`MissionStore.record_issuance`를 호출해 durable append할
+때 내려진다. 사전 체크는 비용 절감용 낙관적 단축 경로일 뿐 정합성의 근원이 아니다.
 
 mission_id 충돌 검사가 임무타입×현장상태 게이트보다 **먼저**인 이유(독립
 재검토 D1): 인가 결정은 이미 발급 시점에 내려져 원장에 기록됐다 — 그 재반환
@@ -104,6 +106,22 @@ class MissionRecordVerdict(StrEnum):
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
     INVALID_MISSION_IDENTITY = "INVALID_MISSION_IDENTITY"
     INVALID_TEXT_ENCODING = "INVALID_TEXT_ENCODING"
+
+
+class IssuanceConflictSubreason(StrEnum):
+    """원자 commit에서 stale authorization witness를 설명하는 typed 사유."""
+
+    SITE_ISSUANCE_REVISION_CONFLICT = "SITE_ISSUANCE_REVISION_CONFLICT"
+    WORK_ORDER_REVISION_CONFLICT = "WORK_ORDER_REVISION_CONFLICT"
+    ACQUISITION_WITNESS_STALE = "ACQUISITION_WITNESS_STALE"
+
+
+class IssuancePreconditionChangedError(RuntimeError):
+    """서명 후 prerequisite witness가 더 이상 current가 아닐 때의 fail-closed 충돌."""
+
+    def __init__(self, subreason: IssuanceConflictSubreason) -> None:
+        self.subreason = subreason
+        super().__init__(f"ISSUANCE_PRECONDITION_CHANGED — {subreason.value}")
 
 
 # verdict → HTTP status (edge_sync.py:321 관습). RECORDED 는 라우터가 201 로 직접
@@ -292,6 +310,169 @@ class SiteLookupResult:
 
     site_frame: dict[str, Any]
     status: SiteStatus
+    issuance_revision: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class WorkOrderAuthorizationWitness:
+    work_order_id: str
+    version: int
+    cycle_number: int
+    status: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workOrderId": self.work_order_id,
+            "version": self.version,
+            "cycleNumber": self.cycle_number,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: object) -> WorkOrderAuthorizationWitness:
+        if not isinstance(raw, dict):
+            raise ValueError("authorizationWitness.workOrder가 object가 아니다")
+        work_order_id = raw.get("workOrderId")
+        version = raw.get("version")
+        cycle_number = raw.get("cycleNumber")
+        status = raw.get("status")
+        if not isinstance(work_order_id, str) or not is_path_safe_identifier(work_order_id):
+            raise ValueError("authorizationWitness.workOrderId가 유효하지 않다")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ValueError("authorizationWitness.workOrder.version이 양의 정수가 아니다")
+        if not isinstance(cycle_number, int) or isinstance(cycle_number, bool) or cycle_number < 1:
+            raise ValueError("authorizationWitness.workOrder.cycleNumber가 양의 정수가 아니다")
+        if status != "APPROVED":
+            raise ValueError("authorizationWitness.workOrder.status는 APPROVED여야 한다")
+        return cls(work_order_id, version, cycle_number, status)
+
+
+@dataclass(frozen=True, slots=True)
+class AcquisitionAuthorizationWitness:
+    profile_digest: str
+    snapshot_id: str
+    expires_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "profileDigest": self.profile_digest,
+            "snapshotId": self.snapshot_id,
+            "expiresAt": self.expires_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: object) -> AcquisitionAuthorizationWitness:
+        if not isinstance(raw, dict):
+            raise ValueError("authorizationWitness.acquisition이 object가 아니다")
+        profile_digest = raw.get("profileDigest")
+        snapshot_id = raw.get("snapshotId")
+        expires_raw = raw.get("expiresAt")
+        if not _is_sha256_digest(profile_digest):
+            raise ValueError("authorizationWitness.acquisition.profileDigest가 유효하지 않다")
+        if not isinstance(snapshot_id, str) or not is_path_safe_identifier(snapshot_id):
+            raise ValueError("authorizationWitness.acquisition.snapshotId가 유효하지 않다")
+        if not isinstance(expires_raw, str):
+            raise ValueError("authorizationWitness.acquisition.expiresAt이 문자열이 아니다")
+        expires_at = datetime.fromisoformat(expires_raw)
+        if expires_at.tzinfo is None:
+            raise ValueError("authorizationWitness.acquisition.expiresAt이 tz-aware가 아니다")
+        return cls(str(profile_digest), snapshot_id, expires_at)
+
+
+def _is_sha256_digest(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:") or len(value) != 71:
+        return False
+    return all(char in "0123456789abcdef" for char in value[7:])
+
+
+def _is_bare_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class IssuanceAuthorizationWitness:
+    """Core projection에서만 만든 Mission 발급 OCC witness."""
+
+    organization_id: str
+    site_id: str
+    site_issuance_revision: int
+    site_status: SiteStatus
+    site_frame_digest: str
+    request_digest: str
+    captured_at: datetime
+    work_order: WorkOrderAuthorizationWitness | None = None
+    acquisition: AcquisitionAuthorizationWitness | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "organizationId": self.organization_id,
+            "siteId": self.site_id,
+            "siteIssuanceRevision": self.site_issuance_revision,
+            "siteStatus": self.site_status.value,
+            "siteFrameDigest": self.site_frame_digest,
+            "requestDigest": self.request_digest,
+            "capturedAt": self.captured_at.isoformat(),
+            "workOrder": None if self.work_order is None else self.work_order.to_dict(),
+            "acquisition": None if self.acquisition is None else self.acquisition.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: object) -> IssuanceAuthorizationWitness:
+        if not isinstance(raw, dict):
+            raise ValueError("authorizationWitness가 object가 아니다")
+        organization_id = raw.get("organizationId")
+        site_id = raw.get("siteId")
+        revision = raw.get("siteIssuanceRevision")
+        site_status_raw = raw.get("siteStatus")
+        site_frame_digest = raw.get("siteFrameDigest")
+        request_digest = raw.get("requestDigest")
+        captured_at_raw = raw.get("capturedAt")
+        if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
+            raise ValueError("authorizationWitness.organizationId가 유효하지 않다")
+        if not isinstance(site_id, str) or not is_path_safe_identifier(site_id):
+            raise ValueError("authorizationWitness.siteId가 유효하지 않다")
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            raise ValueError("authorizationWitness.siteIssuanceRevision이 양의 정수가 아니다")
+        if not isinstance(site_status_raw, str):
+            raise ValueError("authorizationWitness.siteStatus가 문자열이 아니다")
+        try:
+            site_status = SiteStatus(site_status_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("authorizationWitness.siteStatus가 유효하지 않다") from exc
+        if not _is_sha256_digest(site_frame_digest):
+            raise ValueError("authorizationWitness.siteFrameDigest가 유효하지 않다")
+        if not _is_sha256_digest(request_digest):
+            raise ValueError("authorizationWitness.requestDigest가 유효하지 않다")
+        if not isinstance(captured_at_raw, str):
+            raise ValueError("authorizationWitness.capturedAt이 문자열이 아니다")
+        captured_at = datetime.fromisoformat(captured_at_raw)
+        if captured_at.tzinfo is None:
+            raise ValueError("authorizationWitness.capturedAt이 tz-aware가 아니다")
+        work_order_raw = raw.get("workOrder")
+        acquisition_raw = raw.get("acquisition")
+        return cls(
+            organization_id=organization_id,
+            site_id=site_id,
+            site_issuance_revision=revision,
+            site_status=site_status,
+            site_frame_digest=str(site_frame_digest),
+            request_digest=str(request_digest),
+            captured_at=captured_at,
+            work_order=(
+                None
+                if work_order_raw is None
+                else WorkOrderAuthorizationWitness.from_dict(work_order_raw)
+            ),
+            acquisition=(
+                None
+                if acquisition_raw is None
+                else AcquisitionAuthorizationWitness.from_dict(acquisition_raw)
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,13 +507,18 @@ class MissionRecord:
     # "아무나 허용"을 다른 정직으로 구분하지 않는다: 배정 개념 자체가 아직
     # 선택적이라(1:1 대일 배치 전제, Fleet·Edge 이전) 강제할 근거가 없다.
     assigned_device_id: str | None = None
+    # ``None``은 OCC 도입 이전의 genuine legacy record다. Production 발급 writer는
+    # 항상 "1.0" + request digest + authorization witness를 함께 기록한다.
+    issuance_schema_version: Literal["1.0"] | None = None
+    issuance_request_digest: str | None = None
+    authorization_witness: IssuanceAuthorizationWitness | None = None
 
 
 _VALID_ARTIFACT_KINDS = frozenset({"pair", "contract"})
 
 
 def _record_to_dict(record: MissionRecord) -> dict[str, Any]:
-    return {
+    raw: dict[str, Any] = {
         "missionId": record.mission_id,
         "siteId": record.site_id,
         "missionType": record.mission_type,
@@ -349,6 +535,19 @@ def _record_to_dict(record: MissionRecord) -> dict[str, Any]:
         "planRequestDigest": record.plan_request_digest,
         "assignedDeviceId": record.assigned_device_id,
     }
+    if record.issuance_schema_version is not None:
+        raw.update(
+            {
+                "issuanceSchemaVersion": record.issuance_schema_version,
+                "issuanceRequestDigest": record.issuance_request_digest,
+                "authorizationWitness": (
+                    None
+                    if record.authorization_witness is None
+                    else record.authorization_witness.to_dict()
+                ),
+            }
+        )
+    return raw
 
 
 def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
@@ -403,6 +602,108 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         raise ValueError(
             f"{raw.get('missionId')!r}: artifactKind=pair 인데 planRequest 가 없다"
         )
+    issuance_schema_version = raw.get("issuanceSchemaVersion")
+    issuance_request_digest_raw = raw.get("issuanceRequestDigest")
+    authorization_witness_raw = raw.get("authorizationWitness")
+    if issuance_schema_version is None:
+        if "issuanceRequestDigest" in raw or "authorizationWitness" in raw:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: issuance schema discriminator 없이 OCC 필드가 있다"
+            )
+        issuance_request_digest = None
+        authorization_witness = None
+    else:
+        if issuance_schema_version != "1.0":
+            raise ValueError(
+                f"{raw.get('missionId')!r}: 미지원 issuanceSchemaVersion="
+                f"{issuance_schema_version!r}"
+            )
+        if not _is_sha256_digest(issuance_request_digest_raw):
+            raise ValueError(
+                f"{raw.get('missionId')!r}: issuanceRequestDigest가 유효하지 않다"
+            )
+        issuance_request_digest = str(issuance_request_digest_raw)
+        authorization_witness = IssuanceAuthorizationWitness.from_dict(
+            authorization_witness_raw
+        )
+        if authorization_witness.request_digest != issuance_request_digest:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: witness requestDigest가 issuanceRequestDigest와 다르다"
+            )
+        if authorization_witness.captured_at != issued_at:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: witness capturedAt이 Mission issuedAt과 다르다"
+            )
+        if authorization_witness.organization_id != organization_id:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: witness organizationId가 Mission과 다르다"
+            )
+        if authorization_witness.site_id != raw.get("siteId"):
+            raise ValueError(f"{raw.get('missionId')!r}: witness siteId가 Mission과 다르다")
+        if contract.get("missionId") != raw.get("missionId"):
+            raise ValueError(f"{raw.get('missionId')!r}: contract missionId가 record와 다르다")
+        if contract.get("siteId") != raw.get("siteId"):
+            raise ValueError(f"{raw.get('missionId')!r}: contract siteId가 record와 다르다")
+        if contract.get("missionType") != raw.get("missionType"):
+            raise ValueError(f"{raw.get('missionId')!r}: contract missionType이 record와 다르다")
+        mission_type_raw = raw.get("missionType")
+        if not isinstance(mission_type_raw, str):
+            raise ValueError(f"{raw.get('missionId')!r}: missionType이 문자열이 아니다")
+        try:
+            recorded_mission_type = MissionType(mission_type_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{raw.get('missionId')!r}: missionType이 유효하지 않다") from exc
+        if not is_mission_type_allowed_at_site_status(
+            recorded_mission_type, authorization_witness.site_status
+        ):
+            raise ValueError(
+                f"{raw.get('missionId')!r}: witness Site 상태가 Mission type을 인가하지 않는다"
+            )
+        contract_site_frame = contract.get("siteFrame")
+        if not isinstance(contract_site_frame, dict):
+            raise ValueError(f"{raw.get('missionId')!r}: 신규 Mission contract에 siteFrame이 없다")
+        actual_frame_digest = sha256_digest(canonical_payload_bytes(contract_site_frame))
+        if authorization_witness.site_frame_digest != actual_frame_digest:
+            raise ValueError(
+                f"{raw.get('missionId')!r}: witness siteFrameDigest가 contract와 다르다"
+            )
+        if artifact_kind == "pair":
+            if not _is_bare_sha256(raw.get("kmzSha256")):
+                raise ValueError(
+                    f"{raw.get('missionId')!r}: 신규 pair Mission의 kmzSha256이 유효하지 않다"
+                )
+            if plan_request_digest != issuance_request_digest:
+                raise ValueError(
+                    f"{raw.get('missionId')!r}: pair request digest 두 필드가 다르다"
+                )
+            requested_work_order = (
+                plan_request.get("workOrderId") if plan_request is not None else None
+            )
+            witnessed_work_order = (
+                None
+                if authorization_witness.work_order is None
+                else authorization_witness.work_order.work_order_id
+            )
+            if requested_work_order != witnessed_work_order:
+                raise ValueError(
+                    f"{raw.get('missionId')!r}: WorkOrder request/witness 계보가 다르다"
+                )
+        else:
+            if raw.get("kmzSha256") is not None:
+                raise ValueError(
+                    f"{raw.get('missionId')!r}: contract-only Mission에 kmzSha256이 있다"
+                )
+            if authorization_witness.work_order is not None:
+                raise ValueError(
+                    f"{raw.get('missionId')!r}: contract-only Mission에 WorkOrder witness가 있다"
+                )
+        if (
+            authorization_witness.acquisition is not None
+            and authorization_witness.acquisition.expires_at <= authorization_witness.captured_at
+        ):
+            raise ValueError(
+                f"{raw.get('missionId')!r}: acquisition witness가 capture 시점에 이미 만료됐다"
+            )
     return MissionRecord(
         mission_id=raw["missionId"],
         site_id=raw["siteId"],
@@ -419,6 +720,9 @@ def _record_from_dict(raw: dict[str, Any]) -> MissionRecord:
         plan_request=plan_request,
         plan_request_digest=plan_request_digest,
         assigned_device_id=raw.get("assignedDeviceId"),
+        issuance_schema_version=issuance_schema_version,
+        issuance_request_digest=issuance_request_digest,
+        authorization_witness=authorization_witness,
     )
 
 
@@ -466,13 +770,20 @@ class MissionStore:
 
         체크(중복 여부)와 append 를 한 잠금 구간에 묶어, 동시 요청이 같은
         mission_id 를 동시에 통과시키는 경합을 막는다(:func:`precheck_issuance`
-        의 사전 체크는 낙관적 단축일 뿐 — 여기가 최종 권위다).
+        의 사전 체크는 낙관적 단축일 뿐이다). 신규 writer에서는 prerequisite
+        witness 비교와 이 append를 한 critical section으로 묶는
+        :class:`~ksi_core.mission_atomicity.MissionIssuanceCommitter`가 발급 권위다.
         """
         if not is_path_safe_identifier(record.organization_id):
             raise ValueError("MissionRecord.organization_id 는 경로-안전 비공백 식별자여야 한다")
         with self._lock:
             if record.mission_id in self._by_id:
                 return MissionRecordVerdict.MISSION_ID_CONFLICT
+            # 신규 OCC writer는 live에서도 replay와 같은 schema/witness 검증을
+            # 통과한다. legacy fixture/import path는 과거와 같이 기록할 수 있지만
+            # 거기에 존재하지 않았던 provenance를 추정하지 않는다.
+            if record.issuance_schema_version is not None:
+                _record_from_dict(_record_to_dict(record))
             try:
                 self._journal.append(_record_to_dict(record))
             except JournalSealedError:
@@ -545,8 +856,10 @@ def precheck_issuance(
     mission_id: str,
     mission_type: MissionType,
     requested_site_frame: dict[str, Any],
-) -> MissionRecordVerdict | None:
-    """서명 전 게이트 — 통과하면 ``None``, 거부면 typed verdict.
+    request_digest: str,
+    captured_at: datetime,
+) -> MissionRecordVerdict | IssuanceAuthorizationWitness:
+    """서명 전 게이트 — 통과하면 immutable Site authorization witness를 반환한다.
 
     검사 순서(비용이 싼 순): journal 봉인 여부(재검토 P2 item⑤ — 서명·KMZ 비용을
     치르기 전에 조기 반환) → mission_id/site_id 문자 제약(item②) → site 등록 대조
@@ -578,8 +891,10 @@ def precheck_issuance(
       :mod:`ksi_domain.mission_gating` SSOT). 예: ``UNMAPPED`` 현장에
       ``AUTONOMOUS_PATROL`` 발급 시도.
 
-    낙관적 사전 체크다(모듈 docstring 참조) — 최종 권위는
-    :meth:`MissionStore.record_issuance`.
+    낙관적 사전 체크다(모듈 docstring 참조). 통과 시 반환한 witness는 route/KMZ
+    생성과 서명 뒤 :class:`~ksi_core.mission_atomicity.MissionIssuanceCommitter`의
+    짧은 conditional commit에서 다시 검증되며, 그 검증과 Mission durable append가
+    한 잠금 경계에 있을 때만 신규 발급 권위가 생긴다.
     """
     if mission_store.sealed_reason is not None:
         return MissionRecordVerdict.STORE_UNAVAILABLE
@@ -596,11 +911,25 @@ def precheck_issuance(
     # mission_id 충돌을 게이트보다 먼저 본다(독립 재검토 D1) — 이미 기록된
     # mission_id 의 재반환(멱등이든 진짜 충돌이든)은 발급 시점에 이미 내려진
     # 인가 결정에 속하고, 그 사이 바뀐 현재 site 상태로 다시 심사하면 안 된다.
-    if mission_store.get(mission_id) is not None:
+    if mission_store.get_scoped(mission_id, organization_id=organization_id) is not None:
         return MissionRecordVerdict.MISSION_ID_CONFLICT
     if not is_mission_type_allowed_at_site_status(mission_type, site.status):
         return MissionRecordVerdict.MISSION_TYPE_SITE_STATUS_MISMATCH
-    return None
+    if site.issuance_revision < 1:
+        raise RuntimeError("Site issuance revision은 양의 정수여야 한다")
+    if not _is_sha256_digest(request_digest):
+        raise ValueError("request_digest는 sha256 digest여야 한다")
+    if captured_at.tzinfo is None:
+        raise ValueError("captured_at은 tz-aware여야 한다")
+    return IssuanceAuthorizationWitness(
+        organization_id=organization_id,
+        site_id=site_id,
+        site_issuance_revision=site.issuance_revision,
+        site_status=site.status,
+        site_frame_digest=sha256_digest(canonical_payload_bytes(requested_site_frame)),
+        request_digest=request_digest,
+        captured_at=captured_at,
+    )
 
 
 def raise_for_mission_record_verdict(verdict: MissionRecordVerdict) -> None:
