@@ -20,7 +20,7 @@ Every implementation task must state which invariants it touches and how they ar
 
 After reading product authority, use these two routing documents before locating or changing code:
 
-1. `REPOSITORY_STRUCTURE.md` — responsibility, canonical path, runtime boundary and R0-R2 decision
+1. `REPOSITORY_STRUCTURE.md` — responsibility, canonical path, runtime boundary and R0-R3 decision
 2. `docs/DOCUMENT_STATUS.md` — active authority/current-state documents versus historical evidence
 
 These files route work; they do not override product authority or contracts. Route by responsibility:
@@ -31,13 +31,23 @@ These files route work; they do not override product authority or contracts. Rou
 | Durable product authority and workflow | `services/core/` | Owns identity, policy, Mission, evidence and journals |
 | DJI capability and transport adapters | `services/dji-gateway/` | Exposes verified ports/receipts; owns no product intelligence |
 | Local acquisition, perception and tactical safety | `edge/psdk-app/`, `edge/manifold-runtime/` | Manifold/local only; Flight Controller keeps low-level authority |
-| Measurement workers | `services/processing-controller/` and its leaf services | Measures artifacts; Core adjudicates durable state |
-| Reusable domain and algorithm code | `packages/` | Imported through explicit package/contract boundaries |
+| Measurement worker | `services/processing-controller/` | Independently operated worker; measures artifacts while Core adjudicates durable state |
+| Reusable domain and algorithm code | `packages/` | Import-only code, including change/BIM/defect processing libraries, through explicit package/contract boundaries |
 | Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
 | Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `.ksi/` | Current status; update `.ksi/` only through its helper |
 
-Do not consolidate similarly named runtime modules from names alone. Dependency, build, CI and replay
-reachability must be proven in a separately approved R3 task.
+### Runtime placement test
+
+Place a module in `services/` only when it has an independently operated lifecycle: an HTTP listener,
+daemon/polling loop, health/readiness boundary, deployment configuration, or separately started worker
+entrypoint. Place code in `packages/` when another KSI module imports it and it has no independent
+operational lifecycle, even when it performs substantial processing.
+
+The approved R3 mapping is recorded in
+`docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`; its current destinations are canonical. Do not
+recreate `services/change-detection`, `services/bim-integration`, or `services/defect-detection`.
+Do not consolidate any other similarly named runtime modules from names alone. A new move requires an
+approved scope plus dependency, build, CI, replay, deployment, and rollback evidence.
 
 After selecting an owner path, read its nearest `README.md` and any nested `AGENTS.md`/`CLAUDE.md`, then
 inspect its actual entrypoint and dependency manifest (`pyproject.toml`, `package.json`, `CMakeLists.txt`,

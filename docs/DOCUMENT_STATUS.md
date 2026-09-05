@@ -15,6 +15,7 @@ it does not change product decisions or current capability state.
 | Current phase state | ACTIVE | [`goals/PHASE_REGISTRY.yaml`](goals/PHASE_REGISTRY.yaml) |
 | Durable goal/risk state | ACTIVE | `../.ksi/goals.json` through `ksi-goals.py` |
 | Repository structure | ACTIVE | [`../REPOSITORY_STRUCTURE.md`](../REPOSITORY_STRUCTURE.md) |
+| Service/package placement decision | ACTIVE | [`architecture/ADR-KSI-034-service-package-runtime-boundary.md`](architecture/ADR-KSI-034-service-package-runtime-boundary.md) and [`audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`](audit/REPOSITORY_MIGRATION_MANIFEST_R3.json) |
 | HIL route index | ACTIVE | [`hil/README.md`](hil/README.md) |
 
 ## Superseded or historical families
@@ -34,7 +35,9 @@ it does not change product decisions or current capability state.
 
 The current repository naming/ownership assessment is
 [`audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`](audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md).
-Its `PARTIAL` verdict and proposed R3 paths are audit guidance, not runtime rename authority.
+Its `PARTIAL` verdict and proposed R3 paths are historical audit guidance. The executed
+service/package slice is current only through `REPOSITORY_STRUCTURE.md`, ADR-KSI-034, and the R3
+migration manifest; other proposed renames remain unapproved.
 
 An active document may link a historical artifact to explain provenance, but it must label the link
 as historical/evidence and name the active replacement. Product Constitution, Final Decision Ledger,

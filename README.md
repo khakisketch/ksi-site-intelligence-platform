@@ -17,7 +17,7 @@ KSI는 건설 현장을 반복 관측해 **시공간 상태·변화·진척·물
 | DJI Capability Gateway | `services/dji-gateway/` | 장비·provider별 capability/transport adapter와 receipt |
 | Artifact Processing Worker | `services/processing-controller/` | 원본 처리 job lease와 계측 orchestration |
 | Manifold Edge | `edge/psdk-app/`, `edge/manifold-runtime/` | 로컬 수집·인지·world model·위험·전술 판단 |
-| Shared product libraries | `packages/` | domain, contract binding, planning, geo, perception 알고리즘 |
+| Shared product libraries | `packages/` | domain, contract binding, planning, geo, perception, change/BIM/defect 알고리즘 |
 
 DJI Flight Controller는 안정화·모터·검증된 reactive avoidance·RTH를 계속 소유한다. Core나
 LLM은 저수준 비행 좌표/명령을 만들거나 안전정책을 우회하지 않는다.
@@ -32,11 +32,13 @@ metadata다. 현재 원본은 SD/storage -> field PC -> KSI web upload로 들어
 
 ## Repository navigation
 
-코드 책임·실행 경계·현재 경로는 [`REPOSITORY_STRUCTURE.md`](REPOSITORY_STRUCTURE.md), 사람이
-헷갈릴 수 있는 이름과 제안된 R3 구조는
-[`docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`](docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md),
-현재 문서와 역사적 증거의 구분은 [`docs/DOCUMENT_STATUS.md`](docs/DOCUMENT_STATUS.md)를 따른다.
-각 상위 코드 디렉터리의 `README.md`가 제품명, 책임, 비책임을 설명한다.
+코드 책임·실행 경계·현재 경로는 [`REPOSITORY_STRUCTURE.md`](REPOSITORY_STRUCTURE.md), 현재
+문서와 역사적 증거의 구분은 [`docs/DOCUMENT_STATUS.md`](docs/DOCUMENT_STATUS.md)를 따른다.
+서비스/패키지 판정과 R3 이동은
+[`ADR-KSI-034`](docs/architecture/ADR-KSI-034-service-package-runtime-boundary.md)와
+[`R3 migration manifest`](docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json)에 기록돼 있다.
+각 상위 코드 디렉터리와 이동된 패키지의 `README.md`가 제품명, 책임, 비책임, 소비자와
+검증 명령을 설명한다.
 
 ## Authoritative Documents
 

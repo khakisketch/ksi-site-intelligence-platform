@@ -136,7 +136,7 @@ Physical site
                               개념의 실체이며 별도 aggregate를 만들지 않는다
 → Serving layer               COG 타일·COPC — 원본에서 재생성 가능한 캐시
 → Semantic layer              구역·구조물·결함 후보
-→ Design layer                IFC/도면 → site frame 정합(services/bim-integration)
+→ Design layer                IFC/도면 → site frame 정합(packages/bim-integration)
 → Temporal state              epoch 간 diff: 변화 후보·구역 체적·진척
 → Intelligence                재촬영 권고 → 임무 초안(폐루프)
    ↘ 실시간 축                 Edge 프레임 → 이벤트 → 증거 (자율 안전순찰)

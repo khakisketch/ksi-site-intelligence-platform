@@ -1,0 +1,236 @@
+{
+  "$schema": "../../contracts/schemas/repository-migration-manifest.v1.json",
+  "schemaVersion": "1.0",
+  "migrationId": "REPO-NORM-R3-SERVICE-PACKAGE-BOUNDARY",
+  "decisionDate": "2026-09-04",
+  "status": "COMPLETE",
+  "authority": [
+    "AGENTS.md",
+    "REPOSITORY_STRUCTURE.md",
+    "docs/superpowers/specs/2026-09-04-r3-service-package-boundary-design.md",
+    "Human approval: A staged normalization"
+  ],
+  "requirements": [
+    "R3-STR-001",
+    "R3-DOC-001",
+    "R3-REACH-001",
+    "R3-LINEAGE-001",
+    "R3-CLN-001",
+    "R3-WIP-001",
+    "REQ-PROD-001",
+    "REQ-OPS-101"
+  ],
+  "baseline": {
+    "head": "41d9f55270581d9660664f6c23c65ab0d7af0a4a",
+    "branch": "main",
+    "trackedChanges": 101,
+    "untrackedPorcelainEntries": 59,
+    "worktreeDiffSha256": "b72b78f3865877987d3031061fcea688d119ad6ae38f5a7cb1b5148747815dce",
+    "indexDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "porcelainStatusSha256": "c759c2d083ea49039e56eacde920944fc9d5940b10dbc032c5085f7654598d94",
+    "ownership": "PRE_EXISTING_HUMAN_WIP"
+  },
+  "moves": [
+    {
+      "source": "services/change-detection",
+      "destination": "packages/change-detection",
+      "distribution": "ksi-change-detection",
+      "importName": "ksi_change_detection",
+      "runtimeKind": "IMPORT_ONLY_PACKAGE",
+      "owner": "Processing algorithms",
+      "consumers": [
+        "services/processing-controller",
+        "services/core contract projection",
+        "tests"
+      ],
+      "references": [
+        "packages/change-detection/pyproject.toml",
+        "services/processing-controller/pyproject.toml",
+        "tests/contract/test_change_detection.py"
+      ],
+      "rollback": "Move packages/change-detection back to services/change-detection and regenerate uv.lock."
+    },
+    {
+      "source": "services/bim-integration",
+      "destination": "packages/bim-integration",
+      "distribution": "ksi-bim-integration",
+      "importName": "ksi_bim_integration",
+      "runtimeKind": "IMPORT_ONLY_PACKAGE",
+      "owner": "IFC and design-reference geometry",
+      "consumers": [
+        "tools/convert_ifc_design_surface.py",
+        "tests"
+      ],
+      "references": [
+        "packages/bim-integration/pyproject.toml",
+        "tools/convert_ifc_design_surface.py",
+        "tests/contract/test_ifc_reference_model.py"
+      ],
+      "rollback": "Move packages/bim-integration back to services/bim-integration and regenerate uv.lock."
+    },
+    {
+      "source": "services/defect-detection",
+      "destination": "packages/defect-detection",
+      "distribution": "ksi-defect-detection",
+      "importName": "ksi_defect_detection",
+      "runtimeKind": "IMPORT_ONLY_PACKAGE",
+      "owner": "Defect model adapter and post-processing",
+      "consumers": [
+        "tools/fetch_defect_model.py",
+        "optional model CI",
+        "tests"
+      ],
+      "references": [
+        "packages/defect-detection/pyproject.toml",
+        "tools/fetch_defect_model.py",
+        "tests/contract/test_defect_postprocess.py"
+      ],
+      "rollback": "Move packages/defect-detection back to services/defect-detection and regenerate uv.lock."
+    }
+  ],
+  "cleanup": [
+    {
+      "id": "dashboard-generated-state",
+      "classification": "REMOVE",
+      "state": "EXECUTED",
+      "sources": [
+        "apps/dashboard/.next",
+        "apps/dashboard/.next-codex-final",
+        "apps/dashboard/.next-e2e",
+        "apps/dashboard/.next-local-oidc",
+        "apps/dashboard/node_modules",
+        "apps/dashboard/test-results",
+        "apps/dashboard/.mypy_cache",
+        "apps/dashboard/tsconfig.tsbuildinfo",
+        "apps/dashboard/next-env.d.ts"
+      ],
+      "sourcePatterns": [],
+      "evidence": [
+        "All paths are ignored/generated; the repository-local Dashboard process group 84202 was stopped with SIGTERM before removal.",
+        "The listed paths were moved to the system Trash with gio trash; the unrelated /app process was not touched."
+      ],
+      "replacement": "Regenerate from apps/dashboard/package-lock.json and Next/TypeScript commands.",
+      "rollback": "Run npm ci and the relevant Dashboard build/test command."
+    },
+    {
+      "id": "edge-generated-build-state",
+      "classification": "REMOVE",
+      "state": "EXECUTED",
+      "sources": [
+        "edge/manifold-runtime/build"
+      ],
+      "sourcePatterns": [],
+      "evidence": [
+        "The directory is ignored CMake output and no CMake/CTest process owned it.",
+        "edge/manifold-runtime/build was moved to the system Trash with gio trash."
+      ],
+      "replacement": "Regenerate with the owning CMake preset/build command.",
+      "rollback": "Reconfigure and rebuild edge/manifold-runtime."
+    },
+    {
+      "id": "design-generated-state",
+      "classification": "REMOVE",
+      "state": "EXECUTED",
+      "sources": [
+        "design/ksi-operations-console-a-prototype/dist",
+        "design/ksi-operations-console-a-prototype/node_modules",
+        "design/ksi-operations-console-a-prototype/test-results",
+        "design/ksi-site-intelligence/index.html",
+        "design/ksi-site-intelligence/screens",
+        "design/ksi-site-intelligence/studies"
+      ],
+      "sourcePatterns": [],
+      "evidence": [
+        "All paths are ignored outputs; tracked package manifests and design generator source remain.",
+        "The listed generated outputs were moved to the system Trash with gio trash."
+      ],
+      "replacement": "Regenerate from the prototype lockfile or design/ksi-site-intelligence/_build.py.",
+      "rollback": "Run the owning prototype build/test or design generator."
+    },
+    {
+      "id": "python-bytecode-caches",
+      "classification": "REMOVE",
+      "state": "EXECUTED",
+      "sources": [],
+      "sourcePatterns": [
+        "apps/**/__pycache__",
+        "design/**/__pycache__",
+        "edge/**/__pycache__",
+        "packages/**/__pycache__",
+        "scripts/**/__pycache__",
+        "services/**/__pycache__",
+        "tests/**/__pycache__",
+        "tools/**/__pycache__"
+      ],
+      "evidence": [
+        "Patterns are limited to product source/test/tool roots and exclude .venv, references, data, models, downloads, and HIL originals.",
+        "An initial sweep moved 47 cache directories to Trash; the post-verification sweep moved 38 regenerated cache directories and left zero matches."
+      ],
+      "replacement": "Python recreates bytecode caches on demand.",
+      "rollback": "Re-run the relevant Python imports or tests."
+    },
+    {
+      "id": "stale-registered-worktrees",
+      "classification": "REMOVE",
+      "state": "EXECUTED",
+      "sources": [
+        ".claude/worktrees/wf_5416fafa-d7d-1",
+        ".claude/worktrees/wf_5416fafa-d7d-2",
+        ".claude/worktrees/wf_5416fafa-d7d-4",
+        ".claude/worktrees/wf_5416fafa-d7d-5"
+      ],
+      "sourcePatterns": [],
+      "evidence": [
+        "All four were registered, clean, process-free, and pointed to commits reachable from main.",
+        "Recorded commits were dbe4f46f85d6e6dace1dc49c7e00eaa1e28ee2b4, 2aeefeb8723d958ef3a4ef4c74c7fd2d3c186f0d, and 370458df7ebdca5d3f458061fba9031d318f7219.",
+        "The exact worktree directories were moved to Trash and their stale registrations were removed with git worktree prune; the probe branch remains."
+      ],
+      "replacement": "No standing worktree is required.",
+      "rollback": "Recreate the exact worktree with git worktree add and its recorded commit SHA; keep the probe branch."
+    }
+  ],
+  "protectedPaths": [
+    ".ai",
+    ".dev-data",
+    ".ksi",
+    ".venv",
+    "data/geoid/raw",
+    "download",
+    "edge/third_party/psdk",
+    "hil_raw_logs",
+    "models",
+    "references"
+  ],
+  "verification": [
+    {
+      "command": "uv run --locked pytest -q tests/contract/test_repository_normalization.py",
+      "status": "PASS",
+      "claim": "9 tests passed; current package placement, cleanup-state enforcement, and R0-R3 migration lineage are enforced."
+    },
+    {
+      "command": "uv run --locked pytest -q packages/change-detection/tests tests/contract/test_change_detection.py tests/contract/test_ifc_reference_model.py tests/contract/test_convert_ifc_design_surface.py tests/contract/test_defect_model_registry.py tests/contract/test_defect_postprocess.py tests/contract/test_mixercseg_detector.py tests/contract/test_comparison_worker.py tests/contract/test_volume_change_end_to_end.py tests/contract/test_design_conformance_compute.py tests/contract/test_repository_normalization.py",
+      "status": "PASS",
+      "claim": "171 tests passed, 12 optional heavy-model tests skipped, and 2 warnings were reported; moved package imports and primary consumers remain reachable."
+    },
+    {
+      "command": "uv run --locked ruff check . && uv run --locked mypy packages services tests tools && uv run --locked pytest -q",
+      "status": "PASS",
+      "claim": "Recorded against audited R3 snapshot b23ee10185740897ec94557cd95e3e4e5f5a8dd1 (the isolated R3 candidate tree): Ruff passed, mypy passed across 472 source files, and the final full suite passed with 4587 passed, 119 skipped, and 8 warnings. This is historical snapshot evidence, not a claim of current full-suite execution."
+    },
+    {
+      "command": "docker build --check -f Dockerfile . && docker build --check -f Dockerfile.gateway . && docker build --check -f Dockerfile.worker . && (cd deploy && KSI_DEPLOY_ENV_FILE=.env.example docker compose -f compose.yaml --env-file .env.example config --quiet)",
+      "status": "PASS",
+      "claim": "Three Dockerfile static checks and Compose resolution with the tracked example environment passed; no image build or deployment was performed."
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 uv run --locked python tools/validate_repository_normalization.py --check-local-cleanup --check-r3-migration",
+      "status": "PASS",
+      "claim": "The final local gate requires every R3 cleanup entry to be executed, every listed target and cache pattern to be absent, and every protected path to remain present."
+    },
+    {
+      "command": "Physical HIL, field, deployment, or remote CI",
+      "status": "NOT_APPLICABLE",
+      "claim": "R3 changes no physical capability or deployed state."
+    }
+  ]
+}

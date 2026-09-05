@@ -1,19 +1,24 @@
 # KSI Site Intelligence repository structure
 
-Status: canonical repository owner/purpose/runtime map for R0-R2. Product authority remains
+Status: canonical repository owner/purpose/runtime map for R0-R3. Product authority remains
 [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md); current execution status remains
 [`docs/goals/PHASE_REGISTRY.yaml`](docs/goals/PHASE_REGISTRY.yaml) and the goal ledger.
 
-The top-level engineering split is accepted, but human-facing naming/placement consistency is currently
-`PARTIAL`. The evidence, confusing names, product aliases, and proposed R3 target are explicit in the
-[`naming and ownership audit`](docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md). Parent
-directory README files explain each child in product language; runtime path renames are not part of R0-R2.
+The service-versus-package placement is normalized: independently operated processes live in
+`services/`, while import-only algorithms and adapters live in `packages/`. The earlier `PARTIAL`
+finding and proposed target remain historical evidence in the
+[`naming and ownership audit`](docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md); the executed
+path lineage is the [`R3 migration manifest`](docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json).
+Product-facing aliases such as the physical `apps/dashboard/` path for KSI Operations Console are
+intentionally retained because they do not blur the runtime boundary.
 
 The classification vocabulary is fixed: `RETAIN`, `CONSOLIDATE`, `ARCHIVE`, `REMOVE`. A runtime
 directory is never removed or merged by R0-R2. Exact cleanup actions and rollback are in the
 [`R0-R2 cleanup manifest`](docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json).
 For `RETAIN`, `REQUIRED_REPOSITORY_PATHS` means a clean checkout must contain the source, while
 `OPTIONAL_LOCAL_PATHS` means the path is protected if present but its absence in a clean clone is valid.
+R3 path moves never rewrite that historical record; the migration manifest resolves its old paths to
+the current destinations and records cleanup/rollback evidence.
 
 ## How an agent enters the repository
 
@@ -51,7 +56,7 @@ Operator
       -> Core: durable authority, policy, Mission and journals
           -> DJI Gateway: exact external capability/transport ports
           -> Processing Controller: artifact measurement orchestration
-              -> leaf algorithm/model services and reusable packages
+              -> import-only algorithm/model packages
 
 DJI Flight Controller: stabilization, verified reactive avoidance and RTH
 Manifold Edge: local acquisition, perception, world model, risk and tactical decisions
@@ -108,10 +113,10 @@ trash.
 | `edge/` | Manifold/Edge | Native acquisition, perception, local mission and transport seams | Yes | RETAIN; R3 audit only |
 | `hil_raw_logs/` | HIL evidence owner | Ignored raw HIL originals | Private evidence | RETAIN in place; immutable for R0-R2 |
 | `models/` | Model operator | Ignored fetched model/runtime artifacts | Runtime input | RETAIN local; registry stays in `docs/models/` |
-| `packages/` | Domain/library owners | Reusable typed domain, geometry, contracts and algorithms | Yes | RETAIN; R3 audit only |
+| `packages/` | Domain/library owners | Reusable typed domain, geometry, contracts and algorithms | Yes | RETAIN; R3 package boundary current |
 | `references/` | Reference governance | Pinned read-only reference repositories | No product runtime | RETAIN read-only; direct import forbidden |
 | `scripts/` | Developer/operations tooling | Repository and device workflow entry scripts | Build/ops | RETAIN |
-| `services/` | Core/Gateway/Processing owners | Deployable or worker services | Yes | RETAIN; R3 audit only |
+| `services/` | Core/Gateway/Processing owners | Independently deployed or operated services/workers | Yes | RETAIN; deployable units only |
 | `templates/` | Repository governance | Agent/task templates | No | RETAIN |
 | `tests/` | Quality owners | Contract, golden, replay, HIL-software and E2E verification | No | RETAIN |
 | `tools/` | Domain/quality owners | Offline conversion, validation, HIL and audit tools | No direct product runtime | RETAIN |
@@ -129,9 +134,10 @@ their owner until an explicit cleanup task removes them.
 | `services/core/` | Core — identity, site, Mission, policy, evidence and durable journals | Yes | Owns authority/state; imports reusable packages, never DJI SDK | RETAIN |
 | `services/dji-gateway/` | Gateway — exact capability ports, route selection and receipts | Yes | Owns transport adapters, not product intelligence or flight control | RETAIN |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
-| `services/change-detection/` | Processing algorithm service/library — raster/point-cloud differences | Yes, worker dependency | Used by processing-controller and tests | RETAIN; R3 boundary candidate |
-| `services/bim-integration/` | IFC georeferencing/conversion support | Yes, processing dependency | Leaf library used by tools/tests; not a Core authority | RETAIN; R3 reachability review |
-| `services/defect-detection/` | Defect model adapter and post-processing | Yes, optional worker dependency | Model/extra-gated; no automatic production fallback | RETAIN; R3 reachability review |
+
+A new `services/` child must have its own independently managed listener, daemon/polling loop,
+health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import
+cost or algorithm complexity alone is not a service boundary.
 
 ## Edge modules
 
@@ -157,6 +163,9 @@ their owner until an explicit cleanup task removes them.
 | `packages/geo-spatial/` | CRS, raster and vertical-reference operations | Yes | Core/change/processing | RETAIN; not merged with geo-core in R0-R2 |
 | `packages/perception/` | Recorded/offline model evaluation and reusable perception logic | Evaluation/worker | Processing tests/workers; not production Edge runtime | RETAIN isolated |
 | `packages/equipment-intelligence/` | Kinematic state, CPA/TTC and RiskField algorithms | Yes | Core evaluation | RETAIN |
+| `packages/change-detection/` | Raster/point-cloud change, conformance, region and volume algorithms | Import-only | Processing worker and tests | RETAIN; moved by R3 |
+| `packages/bim-integration/` | IFC georeferencing and reference-model geometry | Import-only | Conversion tool and tests | RETAIN; moved by R3 |
+| `packages/defect-detection/` | Extra-gated model adapter and deterministic defect post-processing | Import-only/optional model | Model tool, optional CI and tests | RETAIN; moved by R3 |
 | `packages/test-vectors/` | Shared golden/conformance vectors | Test input | Contract/replay/native tests | RETAIN |
 
 ## Non-runtime assets and generated output
@@ -184,16 +193,26 @@ their owner until an explicit cleanup task removes them.
 Tests inherit the same owner boundaries as runtime code. A unit, contract, replay, or browser pass
 cannot promote `NOT_VERIFIED` device behavior; physical HIL/field evidence remains a separate gate.
 
-## R3 boundary
+## R3 status and remaining boundary
 
-R0-R2 found naming/role overlap but authorizes no runtime consolidation. The cleanup manifest records
-the observed dependency, build, test, and CI reachability for these R3 candidates:
+The Human-approved R3 service/package slice moved these three clean import-only projects without
+renaming their distributions or Python imports:
+
+- `services/change-detection/` -> `packages/change-detection/`;
+- `services/bim-integration/` -> `packages/bim-integration/`;
+- `services/defect-detection/` -> `packages/defect-detection/`.
+
+ADR-KSI-034 and the migration manifest own the decision and historical path mapping. No compatibility
+directory or symlink remains under `services/`.
+
+Other similarly named or adjacent modules are still separate and are not authorized for consolidation:
 
 - `edge/psdk-app` ↔ `edge/manifold-runtime` ↔ `edge/psdk-tap`;
 - `packages/geo-core` ↔ `packages/geo-spatial`;
-- `services/core/ksi_core/change_detection.py` ↔ `services/change-detection`;
+- `services/core/ksi_core/change_detection.py` ↔ `packages/change-detection`;
 - `services/core/ksi_core/mission_plans.py` ↔ `packages/mission-planning`;
 - `services/processing-controller` ↔ change/BIM/defect/perception leaf packages.
 
-Deletion or merger requires a new R3 scope with an exact import graph and before/after build/test
-evidence. Current separate ownership is retained until that proof exists.
+Any later deletion, merger, or rename requires a new approved scope with an exact import graph and
+before/after build, test, CI, deployment and rollback evidence. Current separate ownership is retained
+until that proof exists.

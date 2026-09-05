@@ -13,7 +13,21 @@ do not own product requirement authority or independently claim a deployed capab
 | `geo-spatial/` | CRS, raster, terrain, and vertical-reference operations |
 | `equipment-intelligence/` | Kinematic state, CPA/TTC, and RiskField algorithms |
 | `perception/` | Recorded/offline evaluation plus reusable perception logic |
+| `change-detection/` | Raster/point-cloud change, conformance, region, and volume algorithms |
+| `bim-integration/` | IFC georeferencing and reference-model geometry support |
+| `defect-detection/` | Extra-gated defect model adapter and deterministic post-processing |
 | `test-vectors/` | Shared golden/conformance vectors; never runtime authority |
 
 Language-neutral API/JSON/HIL schemas live in `../contracts/`. A `*-contracts` package is executable
 language binding/verification code, not a second requirements source.
+
+## Placement gate
+
+An import-only KSI module belongs here when it has no independently operated listener, daemon,
+polling loop, health/readiness boundary, or deployment unit. Processing cost does not make a library a
+service. Independently operated processes belong in `../services/` and may depend on these packages;
+packages do not depend on service implementations or acquire Core/device authority.
+
+The R3 service/package mapping is machine-readable in
+`../docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json` and enforced by the repository normalization
+contract test.

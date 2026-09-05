@@ -1,15 +1,17 @@
 # Current Handoff
 
-## 2026-09-05 — Audited pre-R3 governance evidence committed; R3 is next and final
+## 2026-09-05 — Audited R3 final triplet locally present; validation and delivery gates remain
 
-Current evidence is base `41d9f55`, pre-R3 commits `6f4b768..7f9801f`, exact final pre-R3 tree
-`2cc35c2`, and Task 6 document/history reviews PASS. Snapshots `ca723d41` and `b23ee101` are local-only
-recovery evidence. The source main WIP and empty index remain preserved.
+The final local triplet is `refactor(repo): move import-only processing libraries`,
+`docs(repo): record service-package migration lineage`, and
+`test(repo): enforce service-package boundary`. The exact three import-only libraries now have canonical
+`packages/` destinations; the migration manifest, ADR-KSI-034, and `REPOSITORY_STRUCTURE.md` route their
+current location while preserving historical `services/` lineage. Snapshots `ca723d41` and `b23ee101`
+remain local-only recovery evidence. The source main WIP and empty index remain preserved.
 
-Next operator sequence: apply the R3 move, lineage, and enforcement triplet; run full local gates plus
-independent integration/evidence review; push one integration ref without force; create a Draft PR; wait
-for required remote CI; then convert to Ready. R3 destinations are not current here. Final authority will
-be the migration manifest and `REPOSITORY_STRUCTURE.md` after the next three commits.
+Next operator sequence: run targeted and full local gates plus independent integration/evidence review;
+push one integration ref without force; create a Draft PR; wait for required remote CI; then convert to
+Ready. No full-local or remote PASS is claimed by this state update.
 
 No merge, deployment, credential, device, physical HIL, or field action occurred. `HIL_ROUTE_1` remains
 `BLOCKED_HARDWARE_TOPOLOGY`; `PEER_TOPOLOGY` remains `UNRESOLVED`; remote/deploy/field evidence is not

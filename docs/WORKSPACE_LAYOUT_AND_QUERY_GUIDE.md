@@ -8,8 +8,10 @@
 ## 현행 책임 중심 진입점
 
 이 문서에는 디렉터리 트리를 복제하지 않는다. 복제된 트리는 실제 코드가 변할 때 조용히
-낡기 때문이다. 전체 현행 구조는 `REPOSITORY_STRUCTURE.md`, 현재 이름의 문제와 제안된 R3
-구조는 `docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`를 사용한다.
+낡기 때문이다. 전체 현행 구조는 `REPOSITORY_STRUCTURE.md`를 사용한다. R0-R2 당시 이름
+문제와 제안은 `docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`의 역사적
+증거이고, 실행된 service/package 이동은 `docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`
+이 옛 경로와 현재 경로를 연결한다.
 
 | 제품 책임 | 시작 경로 |
 |---|---|
@@ -21,6 +23,11 @@
 | 문서 authority/status | `docs/00_READ_FIRST.md`, `docs/DOCUMENT_STATUS.md` |
 | 검증 계층 | `REPOSITORY_STRUCTURE.md`의 Verification ownership |
 | 참고 구현 | `references/README.md` |
+
+`services/`에는 독립적으로 시작·감시·배포하는 process만 둔다. 다른 KSI process가
+import하며 독립 lifecycle이 없는 계산·geometry·model adapter는 `packages/`에서 찾는다.
+경로 이름만으로 판단하지 말고 해당 README, `pyproject.toml`, 실제 entrypoint/consumer와
+owner test를 대조한다.
 
 ## 왜 Submodule인가
 

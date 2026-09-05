@@ -1,7 +1,7 @@
 # Product services and workers
 
-This directory currently contains both deployable processes and three historical import-only leaf
-packages. That placement is explicitly `PARTIAL`, not a claim that every child is a service.
+This directory contains independently operated product processes only. Import-only domain,
+algorithm, geometry, model-adapter, and processing code belongs in `../packages/`.
 
 ## Deployable units
 
@@ -11,13 +11,13 @@ packages. That placement is explicitly `PARTIAL`, not a claim that every child i
 | `dji-gateway/` | DJI Capability Gateway | Exact provider/capability routing process |
 | `processing-controller/` | Artifact Processing Worker | Polling/lease-based measurement orchestration |
 
-## Import-only leaf packages
+## Placement gate
 
-| Path | Responsibility | Current consumers |
-|---|---|---|
-| `change-detection/` | Raster/point-cloud change and volume algorithms | Processing Worker and tests |
-| `bim-integration/` | IFC reference-model and geometry support | Tools/tests and processing flows |
-| `defect-detection/` | Extra-gated defect model adapter/post-processing | Processing/model tools and tests |
+A new child belongs here only if operators start, monitor, configure, and deploy it independently. A
+Python project that is only imported by another KSI process belongs in `../packages/`, regardless of
+how computationally substantial it is.
 
-The import-only leaves are R3 move candidates for `packages/`; they remain here until import, lock,
-Docker, CI, test, documentation, and rollback evidence is approved.
+The 2026-09-04 R3 migration moved change detection, BIM integration, and defect detection to
+`../packages/`. The exact lineage and rollback are recorded in
+`../docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`. Do not recreate compatibility directories or
+symlinks under `services/`; stable Python distribution/import names provide compatibility.

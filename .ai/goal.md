@@ -1,16 +1,19 @@
-# Current goal (2026-09-05, audited pre-R3 integration evidence)
+# Current goal (2026-09-05, audited R3 triplet locally present)
 
-Reassemble the audited WIP with R3 retained as the final three commits, then use one remote integration
-branch and convert its PR to Ready only after required remote CI passes. This pre-R3 governance commit
-records evidence only; it changes no product semantics. `INV-003` and `INV-054` remain explicit gates.
+The approved R3 service/package slice is now the final local triplet, with no product semantics changed:
 
-Current evidence: exact base `41d9f55`; completed pre-R3 commits `6f4b768..7f9801f`; final pre-R3 tree
-`2cc35c2`; Task 6 document and history reviews PASS; snapshots `ca723d41` and `b23ee101` are local-only.
+- `refactor(repo): move import-only processing libraries`
+- `docs(repo): record service-package migration lineage`
+- `test(repo): enforce service-package boundary`
 
-Next: apply R3 as move, lineage, and enforcement commits; run full local gates plus independent
-integration/evidence review; push a remote ref without force; create a Draft PR; wait for required CI;
-then mark Ready. R3 destinations are not current at this commit: final authority will be the migration
-manifest and `REPOSITORY_STRUCTURE.md` after the next three commits.
+The three exact import-only libraries now have canonical `packages/` destinations; the migration manifest,
+ADR-KSI-034, and `REPOSITORY_STRUCTURE.md` are the current lineage/routing authority. `INV-003` and
+`INV-054` remain explicit enforcement gates. Snapshots `ca723d41` and `b23ee101` remain local-only
+recovery evidence; reviewed pre-R3 corrections remain immediately before the triplet.
+
+Next: run targeted and full local gates plus independent integration/evidence review; push a remote ref
+without force; create a Draft PR; wait for required CI; then mark Ready. This state makes no full-local or
+remote PASS claim.
 
 The source `main` WIP/index remains preserved. No merge, deployment, credential, device, physical HIL,
 or field action occurred. `HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY` and `PEER_TOPOLOGY=UNRESOLVED`;

@@ -4,20 +4,23 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-09-04"
+updated: "2026-09-05"
 
 repository_normalization:
-  authority: "docs/architecture/ADR-KSI-033-repository-normalization-and-media-boundaries.md"
+  authority: >-
+    docs/architecture/ADR-KSI-033-repository-normalization-and-media-boundaries.md and
+    docs/architecture/ADR-KSI-034-service-package-runtime-boundary.md
   status: DONE
   scope: >-
     R0-R2 repository responsibility/document routing, current-versus-target media boundary,
-    non-runtime cleanup manifest, and read-only R3 reachability audit.
+    non-runtime cleanup manifest, and the approved R3 service/package slice only.
   baseline: >-
     HEAD 41d9f55270581d9660664f6c23c65ab0d7af0a4a with 85 modified and 42 untracked
     porcelain entries owned by pre-existing user WIP and preserved by fingerprint.
   excludes: >-
-    Runtime deletion/merger, reference/HIL-original modification, device write, flight, capability
-    activation, commit, push, deploy, release, customer data, credentials, and licensed SDK contents.
+    Any runtime deletion/merger beyond the exact three R3 package moves, reference/HIL-original
+    modification, device write, flight, capability activation, push, deploy, release, customer data,
+    credentials, and licensed SDK contents.
   product_path: >-
     PSDK Liveview is local Manifold acquisition/perception; EDGE_UPLINK is bounded metadata;
     current originals use SD/storage -> field PC -> KSI web upload; target automation is a separate
@@ -34,8 +37,12 @@ repository_normalization:
     validator, Ruff, Mypy 472 files, Python 4679 passed/24 skipped, Dashboard ESLint/TypeScript plus
     63 files/578 tests, Phase YAML, Git diff and repository/reference/pin guards. Independent reviewer
     /root/normalization_strict_review@2026-09-04-attempt-2 passed all eight attachment criteria after
-    first refuting and then verifying the clean-clone correction. Repository-local R0-R2 is DONE; naming
-    stays honestly PARTIAL pending R3, and no HIL/device/remote or deployment gate is closed.
+    first refuting and then verifying the clean-clone correction. Repository-local R0-R2 is DONE. The
+    approved R3 service/package slice is locally DONE: `packages/change-detection`,
+    `packages/bim-integration`, and `packages/defect-detection` are canonical; ADR-KSI-034 and
+    `docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json` preserve current routing and historical lineage.
+    Other similarly named runtime modules remain deferred. Full-local, remote CI, deployment, physical
+    HIL, and field acceptance gates remain open and are not claimed by this local repository status.
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -580,7 +587,10 @@ phases:
     independent_review: PASS
     independent_review_date: "2026-08-07"
     independent_review_note: >-
-      services/change-detection(scipy cKDTree 기반 point cloud C2C, Open3D/
+      아래 services/* 표기는 2026-08-07 검증 당시 경로다. 2026-09-04 승인된 R3 이후
+      현재 정본은 packages/change-detection, packages/bim-integration,
+      packages/defect-detection이며 정확한 lineage는 REPOSITORY_MIGRATION_MANIFEST_R3.json이
+      소유한다. services/change-detection(scipy cKDTree 기반 point cloud C2C, Open3D/
       CloudCompare 대비 라이선스·플랫폼 사유 문서화) + services/bim-integration
       (ifcopenshell 기반 IFC georeferencing 읽기, IfcCoordinateOperation 상위타입
       판정으로 IfcMapConversion/IfcRigidOperation 형제 서브타입 모두 커버) +

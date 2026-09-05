@@ -1,23 +1,26 @@
-# Current implementation plan (2026-09-05, audited pre-R3 evidence before final R3 triplet)
+# Current implementation plan (2026-09-05, final R3 triplet locally present)
 
 Requirement IDs: `WIP-STATE-META`, `WIP-AUDIT-META`, `WIP-REPO-R3`, `R3-STR-001`, `R3-DOC-001`,
 `R3-REACH-001`, `R3-LINEAGE-001`, `R3-WIP-001`, `REQ-OPS-101`; gates `INV-003` and `INV-054`.
 
-Owner module: repository governance for this evidence commit; future R3 move/lineage/enforcement remain
-responsibility-pure. Contracts affected: repository migration/conformance only; no product semantics.
+Owner module: repository governance and import-only processing packages. The final responsibility-pure R3
+triplet is present locally: `refactor(repo): move import-only processing libraries`,
+`docs(repo): record service-package migration lineage`, and
+`test(repo): enforce service-package boundary`. Contracts affected: repository migration/conformance only;
+no product semantics.
 Reference assets: `ca723d41`, `b23ee101`, `2cc35c2`, the copied WIP audit/plan, ADR-KSI-034 and manifest.
 
-Acceptance: current pre-R3 evidence is coherent and snapshots remain local-only; R3 is final three;
-full local gates and independent integration/evidence review precede a non-force remote push, Draft PR,
-required CI, and Ready transition. The R3 lineage commit owns final Phase Registry normalization truth.
+Acceptance: snapshots remain local-only; R3 is the final three; the lineage commit owns final Phase
+Registry normalization truth. Targeted/full local gates and independent integration/evidence review precede
+a non-force remote push, Draft PR, required CI, and Ready transition. No full-local or remote PASS is
+recorded here.
 
 Execution:
 
-1. [completed] Restore audited state evidence exactly from `ca723d41` where helper/Phase bytes require it.
-2. [completed] Record exact base `41d9f55`, pre-R3 commits `6f4b768..7f9801f`, tree `2cc35c2`, and PASS reviews.
-3. [next] Apply R3 move, lineage, and enforcement as the final three commits; final authority then moves
-   to the migration manifest and `REPOSITORY_STRUCTURE.md`.
-4. [next] Run full local gates and independent integration/evidence review; push without force, create
+1. [completed] Preserve audited state evidence and reviewed pre-R3 corrections from the local snapshots.
+2. [completed] Apply R3 as the final move, lineage, and enforcement triplet; current authority is the
+   migration manifest, ADR-KSI-034, and `REPOSITORY_STRUCTURE.md`.
+3. [next] Run targeted and full local gates plus independent integration/evidence review; push without force, create
    Draft PR, wait for required CI, and mark Ready only if it passes.
 
 No merge/deploy/credentials/device/physical HIL/field action is authorized. `HIL_ROUTE_1` remains

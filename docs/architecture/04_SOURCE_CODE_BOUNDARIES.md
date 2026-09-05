@@ -46,12 +46,16 @@ edge/psdk-tap/                     HIL 관측·증거 수집 도구
 edge/msdk-field-bridge/            pre/postflight-only MSDK native contract candidate
 apps/dashboard/                    사람의 업무·readiness·복구 UI
 services/processing-controller/    분석 job orchestration·artifact worker
-services/change-detection/         변화·체적 계산 leaf service/library
-services/bim-integration/          IFC 변환·참조모델 leaf service/library
-services/defect-detection/         결함 model adapter·후처리 leaf service/library
+packages/change-detection/         변화·체적 계산 import-only library
+packages/bim-integration/          IFC 변환·참조모델 import-only library
+packages/defect-detection/         결함 model adapter·후처리 import-only/extra-gated library
 packages/perception/               recorded/offline model evaluation·공유 perception logic
 deploy/                            KSI Cloud 환경·영속 볼륨·runtime 조립
 ```
+
+`services/`에는 독립적으로 시작·감시·배포하는 listener, daemon/polling worker만 둔다.
+다른 KSI process가 import하고 독립 운용 lifecycle이 없는 코드는 계산량과 무관하게
+`packages/`에 둔다(ADR-KSI-034).
 
 `edge/**/build*`는 로컬 빌드 산출물이며 source boundary가 아니다. `.gitignore`로
 신규 추적을 막되, 기존 로컬 산출물은 자동 삭제하지 않는다.

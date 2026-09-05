@@ -1,13 +1,16 @@
 # Current Task State
 
-## 2026-09-05 — `audited_pre_r3_governance_evidence_committed`
+## 2026-09-05 — `audited_r3_final_triplet_locally_present`
 
-- State: base `41d9f55`; completed pre-R3 commits `6f4b768..7f9801f`; final pre-R3 tree `2cc35c2`;
-  Task 6 document and history reviews PASS. Snapshots `ca723d41`/`b23ee101` are local-only.
-- Authority: R3 destinations are not current at this commit. The later lineage commit will establish
-  final migration-manifest and `REPOSITORY_STRUCTURE.md` authority after move/lineage/enforcement.
-- Next: apply final R3 triplet; run full local gates plus independent integration/evidence review; push
-  without force; create Draft PR; wait for required CI; mark Ready only on required-check success.
+- State: final local R3 triplet is `refactor(repo): move import-only processing libraries`,
+  `docs(repo): record service-package migration lineage`, and
+  `test(repo): enforce service-package boundary`; snapshots `ca723d41`/`b23ee101` remain local-only.
+- Authority: `packages/change-detection`, `packages/bim-integration`, and `packages/defect-detection`
+  are current canonical paths. The migration manifest, ADR-KSI-034, and `REPOSITORY_STRUCTURE.md` own
+  lineage/routing; other similarly named runtime modules remain deferred.
+- Next: run targeted and full local gates plus independent integration/evidence review; push without
+  force; create Draft PR; wait for required CI; mark Ready only on required-check success. No full-local
+  or remote PASS is recorded.
 - Boundaries: source main WIP/index preserved; no merge/deploy/credentials/device/physical HIL/field
   action. `HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY`; `PEER_TOPOLOGY=UNRESOLVED`; remote/deploy/field not
   verified. INV-003 and INV-054 remain later enforcement gates.
