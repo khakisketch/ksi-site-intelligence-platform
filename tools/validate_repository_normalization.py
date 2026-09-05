@@ -1,4 +1,4 @@
-"""Validate the R0-R2 repository-normalization contract without mutating the tree."""
+"""Validate the current R0-R3 repository-normalization contract without mutation."""
 
 from __future__ import annotations
 
@@ -15,6 +15,14 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json"
 SCHEMA_PATH = ROOT / "contracts/schemas/repository-cleanup-manifest.v1.json"
+R3_MANIFEST_PATH = ROOT / "docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json"
+R3_SCHEMA_PATH = ROOT / "contracts/schemas/repository-migration-manifest.v1.json"
+
+R3_EXPECTED_MOVES = {
+    "services/change-detection": "packages/change-detection",
+    "services/bim-integration": "packages/bim-integration",
+    "services/defect-detection": "packages/defect-detection",
+}
 
 SUPERSEDED_NAMES = (
     "02_SERVICE_BLUEPRINT_AND_UX.md",
@@ -44,18 +52,26 @@ LINKED_NORMALIZATION_DOCS = (
     "docs/DOCUMENT_STATUS.md",
     "docs/WORKSPACE_LAYOUT_AND_QUERY_GUIDE.md",
     "docs/architecture/ADR-KSI-033-repository-normalization-and-media-boundaries.md",
+    "docs/architecture/ADR-KSI-034-service-package-runtime-boundary.md",
     "docs/architecture/02_SERVICE_BLUEPRINT_AND_UX.md",
     "docs/architecture/04_SOURCE_CODE_BOUNDARIES.md",
     "docs/architecture/ARCHITECTURE_DECISIONS_BASELINE_v2.0.md",
     "docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md",
     "docs/design/README.md",
+    "docs/hil/README.md",
     "docs/archive/ui-audit/legacy-root-captures/README.md",
+    "packages/change-detection/README.md",
+    "packages/bim-integration/README.md",
+    "packages/defect-detection/README.md",
 )
 REQUIRED_STRUCTURE_PATHS = (
     "apps/dashboard/",
     "services/core/",
     "services/dji-gateway/",
     "services/processing-controller/",
+    "packages/change-detection/",
+    "packages/bim-integration/",
+    "packages/defect-detection/",
     "edge/psdk-app/",
     "edge/manifold-runtime/",
     "contracts/",
@@ -63,6 +79,7 @@ REQUIRED_STRUCTURE_PATHS = (
     "tests/contract/",
     "tests/replay/",
 )
+FORBIDDEN_R3_SERVICE_LIBRARY_PATHS = tuple(R3_EXPECTED_MOVES)
 ROOT_GENERATED_DIRS = (
     "Testing",
     ".mypy_cache",
@@ -210,13 +227,159 @@ def _check_schema(root: Path, failures: list[str]) -> dict[str, Any]:
         return {}
 
 
+def _check_r3_schema(root: Path, failures: list[str]) -> dict[str, Any]:
+    try:
+        schema = _load_json(root / R3_SCHEMA_PATH.relative_to(ROOT))
+        manifest = _load_json(root / R3_MANIFEST_PATH.relative_to(ROOT))
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        for error in sorted(validator.iter_errors(manifest), key=lambda item: list(item.path)):
+            location = ".".join(str(part) for part in error.path) or "<root>"
+            failures.append(f"R3 migration schema: {location}: {error.message}")
+        return manifest
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        failures.append(f"R3 migration manifest/schema load failed: {exc}")
+        return {}
+
+
+def _r3_migration_map(manifest: dict[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    moves = manifest.get("moves")
+    if not isinstance(moves, list):
+        return result
+    for entry in moves:
+        if not isinstance(entry, dict):
+            continue
+        source = entry.get("source")
+        destination = entry.get("destination")
+        if isinstance(source, str) and isinstance(destination, str):
+            result[source.rstrip("/")] = destination.rstrip("/")
+    return result
+
+
+def _existing_or_migrated_path(
+    root: Path,
+    value: str,
+    migrated_paths: dict[str, str],
+) -> Path | None:
+    direct = _repo_path(root, value)
+    if direct.exists():
+        return direct
+
+    normalized = value.rstrip("/")
+    for source, destination in migrated_paths.items():
+        if normalized == source:
+            candidate = _repo_path(root, destination)
+        elif normalized.startswith(f"{source}/"):
+            suffix = normalized[len(source) :]
+            candidate = _repo_path(root, f"{destination}{suffix}")
+        else:
+            continue
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _check_r3_migration_paths(
+    root: Path,
+    manifest: dict[str, Any],
+    failures: list[str],
+    *,
+    check_local_cleanup: bool,
+) -> dict[str, str]:
+    migrated_paths = _r3_migration_map(manifest)
+    if migrated_paths != R3_EXPECTED_MOVES:
+        failures.append(
+            "R3 move map must exactly match the approved service/package boundary: "
+            f"expected {R3_EXPECTED_MOVES}, got {migrated_paths}"
+        )
+
+    destinations: set[str] = set()
+    for source, destination in migrated_paths.items():
+        try:
+            source_path = _repo_path(root, source)
+            destination_path = _repo_path(root, destination)
+        except ValueError as exc:
+            failures.append(f"invalid R3 move path: {exc}")
+            continue
+        if destination in destinations:
+            failures.append(f"duplicate R3 destination: {destination}")
+        destinations.add(destination)
+        if source_path.exists():
+            failures.append(f"R3 source still exists: {source}")
+        if not (destination_path / "pyproject.toml").is_file():
+            failures.append(f"R3 package destination is missing pyproject.toml: {destination}")
+
+    cleanup = manifest.get("cleanup")
+    if isinstance(cleanup, list):
+        for entry in cleanup:
+            if not isinstance(entry, dict):
+                continue
+            cleanup_id = entry.get("id")
+            state = entry.get("state")
+            if state != "EXECUTED" and (
+                check_local_cleanup or manifest.get("status") == "COMPLETE"
+            ):
+                failures.append(f"R3 cleanup remains PENDING: {cleanup_id}")
+            for value in entry.get("sources", []):
+                if isinstance(value, str):
+                    try:
+                        path = _repo_path(root, value)
+                    except ValueError as exc:
+                        failures.append(f"invalid R3 cleanup path: {cleanup_id}: {exc}")
+                        continue
+                    if check_local_cleanup and state == "EXECUTED" and path.exists():
+                        failures.append(
+                            f"executed R3 cleanup path still exists: {cleanup_id}: {value}"
+                        )
+            for pattern in entry.get("sourcePatterns", []):
+                if not isinstance(pattern, str):
+                    continue
+                if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+                    failures.append(f"invalid R3 cleanup pattern: {cleanup_id}: {pattern}")
+                    continue
+                if check_local_cleanup and state == "EXECUTED":
+                    for match in root.glob(pattern):
+                        failures.append(
+                            f"executed R3 cleanup pattern still matches: {cleanup_id}: "
+                            f"{match.relative_to(root)}"
+                        )
+
+    if manifest.get("status") == "COMPLETE":
+        verification = manifest.get("verification")
+        if isinstance(verification, list):
+            for entry in verification:
+                if not isinstance(entry, dict):
+                    continue
+                status = entry.get("status")
+                if status not in {"PASS", "NOT_APPLICABLE"}:
+                    failures.append(
+                        "completed R3 migration has unresolved verification: "
+                        f"{entry.get('command')}: {status}"
+                    )
+
+    for value in manifest.get("protectedPaths", []):
+        if isinstance(value, str):
+            try:
+                protected_path = _repo_path(root, value)
+            except ValueError as exc:
+                failures.append(f"invalid protected path: {exc}")
+                continue
+            if check_local_cleanup and not protected_path.exists():
+                failures.append(f"protected local path is missing: {value}")
+
+    return migrated_paths
+
+
 def _check_manifest_paths(
     root: Path,
     manifest: dict[str, Any],
     failures: list[str],
     *,
     check_local_cleanup: bool,
+    migrated_paths: dict[str, str] | None = None,
 ) -> None:
+    migrations = migrated_paths or {}
     actions = manifest.get("actions")
     if not isinstance(actions, list):
         return
@@ -241,13 +404,13 @@ def _check_manifest_paths(
             if not isinstance(reference, str):
                 continue
             try:
-                reference_path = _repo_path(root, reference)
+                reference_path = _existing_or_migrated_path(root, reference, migrations)
             except ValueError as exc:
                 failures.append(f"invalid action reference: {action_id}: {exc}")
                 continue
             if (
                 reference not in DEFERRED_LATER_RESPONSIBILITY_PATHS
-                and not reference_path.exists()
+                and reference_path is None
             ):
                 failures.append(f"missing action reference: {action_id}: {reference}")
 
@@ -257,11 +420,11 @@ def _check_manifest_paths(
                 if not isinstance(source, str):
                     continue
                 try:
-                    source_path = _repo_path(root, source)
+                    source_path = _existing_or_migrated_path(root, source, migrations)
                 except ValueError as exc:
                     failures.append(f"invalid retained source: {action_id}: {exc}")
                     continue
-                if not source_path.exists():
+                if source_path is None:
                     failures.append(f"missing retained source: {action_id}: {source}")
 
         for artifact in raw_action.get("artifacts", []):
@@ -341,13 +504,13 @@ def _check_manifest_paths(
                     if not isinstance(value, str):
                         continue
                     try:
-                        evidence_path = _repo_path(root, value)
+                        evidence_path = _existing_or_migrated_path(root, value, migrations)
                     except ValueError as exc:
                         failures.append(
                             f"invalid reachability path: {audit_id}.{field}: {exc}"
                         )
                         continue
-                    if not evidence_path.exists():
+                    if evidence_path is None:
                         failures.append(f"reachability path missing: {audit_id}.{field}: {value}")
             after = entry.get("after")
             if not isinstance(after, str) or not after.startswith("UNCHANGED_R0_R2"):
@@ -363,6 +526,12 @@ def _check_structure_and_authority(root: Path, failures: list[str]) -> None:
     for required in REQUIRED_STRUCTURE_PATHS:
         if f"`{required}`" not in structure:
             failures.append(f"repository structure omits canonical path: {required}")
+        if not _repo_path(root, required).exists():
+            failures.append(f"canonical repository path is missing: {required}")
+
+    for forbidden in FORBIDDEN_R3_SERVICE_LIBRARY_PATHS:
+        if _repo_path(root, forbidden).exists():
+            failures.append(f"import-only package regressed into services: {forbidden}")
 
     for relative in ACTIVE_AUTHORITY_PATHS:
         try:
@@ -437,9 +606,18 @@ def _check_root_hygiene(
 def validate_repository_normalization(
     root: Path = ROOT, *, check_local_cleanup: bool = False
 ) -> list[str]:
-    """Return all R0-R2 contract failures; an empty list is success."""
+    """Return all current R0-R3 contract failures; an empty list is success."""
 
     failures: list[str] = []
+    r3_manifest = _check_r3_schema(root, failures)
+    migrated_paths: dict[str, str] = {}
+    if r3_manifest:
+        migrated_paths = _check_r3_migration_paths(
+            root,
+            r3_manifest,
+            failures,
+            check_local_cleanup=check_local_cleanup,
+        )
     manifest = _check_schema(root, failures)
     if manifest:
         _check_manifest_paths(
@@ -447,6 +625,7 @@ def validate_repository_normalization(
             manifest,
             failures,
             check_local_cleanup=check_local_cleanup,
+            migrated_paths=migrated_paths,
         )
     _check_structure_and_authority(root, failures)
     _check_markdown_links(root, failures)
@@ -461,13 +640,18 @@ def main() -> int:
         action="store_true",
         help="also require regenerable root cache directories to be absent",
     )
+    parser.add_argument(
+        "--check-r3-migration",
+        action="store_true",
+        help="require the approved R3 service/package migration contract (current default)",
+    )
     args = parser.parse_args()
     failures = validate_repository_normalization(check_local_cleanup=args.check_local_cleanup)
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")
         return 1
-    print("PASS: repository normalization R0-R2 contract")
+    print("PASS: repository normalization R0-R3 contract")
     return 0
 
 

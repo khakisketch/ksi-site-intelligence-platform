@@ -16,6 +16,15 @@ sys.path.insert(0, str(ROOT))
 _check_manifest_paths = import_module(
     "tools.validate_repository_normalization"
 )._check_manifest_paths
+_check_r3_migration_paths = import_module(
+    "tools.validate_repository_normalization"
+)._check_r3_migration_paths
+
+R3_IMPORT_ONLY_PACKAGE_MOVES = {
+    "services/change-detection": "packages/change-detection",
+    "services/bim-integration": "packages/bim-integration",
+    "services/defect-detection": "packages/defect-detection",
+}
 
 
 def _generated_pattern_manifest(
@@ -133,6 +142,67 @@ def test_repository_normalization_contract_passes_from_exact_git_index(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_r3_import_only_libraries_live_under_packages() -> None:
+    failures: list[str] = []
+    for old_relative, current_relative in R3_IMPORT_ONLY_PACKAGE_MOVES.items():
+        old_path = ROOT / old_relative
+        current_path = ROOT / current_relative
+        if old_path.exists():
+            failures.append(f"import-only library remains under services: {old_relative}")
+        if not (current_path / "pyproject.toml").is_file():
+            failures.append(f"canonical package project is missing: {current_relative}")
+
+    assert failures == [], "\n".join(failures)
+
+
+def test_r3_migration_manifest_is_enforced_by_validator() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools/validate_repository_normalization.py"),
+            "--check-r3-migration",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_r3_local_cleanup_gate_rejects_pending_entries(tmp_path: Path) -> None:
+    for destination in R3_IMPORT_ONLY_PACKAGE_MOVES.values():
+        package_path = tmp_path / destination
+        package_path.mkdir(parents=True)
+        (package_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    manifest = {
+        "moves": [
+            {"source": source, "destination": destination}
+            for source, destination in R3_IMPORT_ONLY_PACKAGE_MOVES.items()
+        ],
+        "cleanup": [
+            {
+                "id": "pending-generated-state",
+                "state": "PENDING",
+                "sources": [],
+                "sourcePatterns": [],
+            }
+        ],
+        "protectedPaths": [],
+    }
+    failures: list[str] = []
+
+    _check_r3_migration_paths(
+        tmp_path,
+        manifest,
+        failures,
+        check_local_cleanup=True,
+    )
+
+    assert "R3 cleanup remains PENDING: pending-generated-state" in failures
 
 
 def test_root_python_tool_caches_are_ignored_by_git() -> None:
