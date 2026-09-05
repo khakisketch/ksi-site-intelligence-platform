@@ -1,5 +1,63 @@
 # Current Task State
 
+## 2026-09-05 — `audited_pre_r3_governance_evidence_committed`
+
+- State: base `41d9f55`; completed pre-R3 commits `6f4b768..7f9801f`; final pre-R3 tree `2cc35c2`;
+  Task 6 document and history reviews PASS. Snapshots `ca723d41`/`b23ee101` are local-only.
+- Authority: R3 destinations are not current at this commit. The later lineage commit will establish
+  final migration-manifest and `REPOSITORY_STRUCTURE.md` authority after move/lineage/enforcement.
+- Next: apply final R3 triplet; run full local gates plus independent integration/evidence review; push
+  without force; create Draft PR; wait for required CI; mark Ready only on required-check success.
+- Boundaries: source main WIP/index preserved; no merge/deploy/credentials/device/physical HIL/field
+  action. `HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY`; `PEER_TOPOLOGY=UNRESOLVED`; remote/deploy/field not
+  verified. INV-003 and INV-054 remain later enforcement gates.
+---
+
+## 2026-09-03 — `hil1r_software_closed_physical_topology_blocked`
+
+- Product truth: `EDGE_UPLINK` is bounded EventBundle metadata, not live-video or original-media
+  streaming. PSDK Liveview is local Manifold acquisition/perception input; Site Intelligence remains
+  Mission-bound original photos, RTK/POS/metadata, processing and spatial/change/volume/design outputs.
+- Software: v2 field evidence schema/tool, shutdown cleanup, exact Core TTL, explicit refresh margin,
+  separate token secrets, peer lifecycle/idempotency, hostile Unix and expanded non-actuating gates are
+  implemented and locally verified.
+- Build evidence: host and ASan+UBSan CTest `3/3`; canonical aarch64 companion/peer builds passed ABI,
+  pinned PSDK 3.16/archive, MOP symbol and non-actuating checks. DPK packaging is `PARTIAL` because a
+  DJI-issued `user_app_id` was neither available nor invented.
+- Regression: HIL/CAP-5 `199 passed`; Mission/Worker `375 passed`; full Python `4673 passed / 24 skipped`;
+  Ruff; Mypy `470` files; uv lock, diff, FIELD-0a checks and PSDK five-digest pin verification.
+- Gate truth: pinned vendor docs/samples do not establish payload-to-payload PSDK MOP.
+  `PEER_TOPOLOGY=UNRESOLVED`, `HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY`, physical/activation gates blocked.
+  No hardware, DPK install, flag, real authority, commit, push, deploy or customer-data action occurred.
+
+---
+
+## 2026-09-01 — `civil_pilot_readiness_software_green_external_acceptance_gated`
+
+- Authority: `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`;
+  `INV-017/018/020/024/040/050/053/060`.
+- Implemented: `CivilReadinessProjector` is an organization/site-scoped read model over the newest two
+  `SUCCEEDED` ProcessingJobs, the registered design-surface inventory and the canonical
+  `preflight_epoch_pair` gate. It distinguishes first/second epoch setup, exact typed pair blockers,
+  compatible candidate, design verification gap and unavailable dependencies. It cannot choose a design
+  revision, create a comparison or mutate Mission/dispatch/device state.
+- Console: the existing Site Data tab now shows a single additive readiness card with the Core-derived
+  status, safe next action and explicit limitation. `PAIR_COMPATIBLE` is phrased as a candidate, and each
+  later comparison/design request still preflights its submitted inputs. No global menu, design-system,
+  flight or device UI changed.
+- Evidence: focused Core/API/assembly contracts `46 passed`; full Python `4238 passed / 24 skipped`;
+  Ruff; Mypy `445` source files; Dashboard Vitest `63` files / `578` tests, ESLint, TypeScript and
+  production build; full Playwright `66 passed / 14` intentional external-staging skips. The readiness
+  card's unavailable/fail-closed path passed at 390/768/1024/1440 with no test-observed overflow or
+  console/page error.
+- Acceptance truth: civil software is `GATED`, not field accepted. Product E2E still needs lawful Korean
+  same-site original epochs, verified design/CRS/vertical lineage and an independent reference/checkpoint.
+  FIELD-0a remains `BLOCKED`; DJI/Manifold capabilities remain `NOT_VERIFIED`/OFF. No raw customer data,
+  device/DPK write, flight/motor/waypoint/camera/gimbal action, commit, push, deployment or release
+  occurred.
+
+---
+
 ## 2026-08-31 — `automatic_source_media_offload_v1_software_green_hil_gated`
 
 - Authority: `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`;

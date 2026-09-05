@@ -4,7 +4,38 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-08-31"
+updated: "2026-09-04"
+
+repository_normalization:
+  authority: "docs/architecture/ADR-KSI-033-repository-normalization-and-media-boundaries.md"
+  status: DONE
+  scope: >-
+    R0-R2 repository responsibility/document routing, current-versus-target media boundary,
+    non-runtime cleanup manifest, and read-only R3 reachability audit.
+  baseline: >-
+    HEAD 41d9f55270581d9660664f6c23c65ab0d7af0a4a with 85 modified and 42 untracked
+    porcelain entries owned by pre-existing user WIP and preserved by fingerprint.
+  excludes: >-
+    Runtime deletion/merger, reference/HIL-original modification, device write, flight, capability
+    activation, commit, push, deploy, release, customer data, credentials, and licensed SDK contents.
+  product_path: >-
+    PSDK Liveview is local Manifold acquisition/perception; EDGE_UPLINK is bounded metadata;
+    current originals use SD/storage -> field PC -> KSI web upload; target automation is a separate
+    MEDIA_PULL -> MEDIA_UPLOAD capability that remains NOT_VERIFIED/OFF before physical evidence.
+  evidence: >-
+    REPOSITORY_STRUCTURE.md, docs/DOCUMENT_STATUS.md, and
+    docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json. The naming/ownership audit records a PARTIAL
+    human-readability verdict and proposed R3 corrections without runtime moves. A fresh audit found
+    eight observed local candidate classes missing from the original classification and incomplete root
+    Python-cache ignore coverage. A first independent correction review then refuted clean-clone
+    portability because optional local RETAIN sources were still required to exist. The schema/manifest/
+    validator now distinguish REQUIRED_REPOSITORY_PATHS from OPTIONAL_LOCAL_PATHS. Fresh correction
+    evidence passes: actual-manifest/normalization contract 6, strict schema/link/hash/root-hygiene
+    validator, Ruff, Mypy 472 files, Python 4679 passed/24 skipped, Dashboard ESLint/TypeScript plus
+    63 files/578 tests, Phase YAML, Git diff and repository/reference/pin guards. Independent reviewer
+    /root/normalization_strict_review@2026-09-04-attempt-2 passed all eight attachment criteria after
+    first refuting and then verifying the clean-clone correction. Repository-local R0-R2 is DONE; naming
+    stays honestly PARTIAL pending R3, and no HIL/device/remote or deployment gate is closed.
 
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
@@ -186,13 +217,14 @@ confirmed_next_improvements:
         negative, retry/restart/throughput을 실제로 확인해야 한다. 그 전에는 capability는
         NOT_VERIFIED이며 ordinary DPK는 OFF, SD/PC/Web은 정상 제품 경로다.
     - id: civil-processing-consistency-v1
-      status: IN_PROGRESS
+      status: GATED
       authority: >-
         docs/architecture/ADR-KSI-030-civil-processing-consistency-v1.md;
         docs/architecture/ADR-KSI-031-independent-checkpoint-validation-v1.md
       scope: >-
         KSI-managed NodeODM fixed profile, original-preserving LandXML TIN design surface ingress,
-        fail-closed civil comparison compatibility, and additive existing Console panels.
+        fail-closed civil comparison compatibility, a read-only site civil-readiness projection, and
+        additive existing Console panels.
       excludes: >-
         FIELD-0a/0b/1/2, DJI capability promotion, flight/motor/waypoint/camera/gimbal actions,
         DPK, Pilot 2/Manifold automatic media egress, remote deployment and release.
@@ -239,6 +271,17 @@ confirmed_next_improvements:
         command policy rejected git push before process launch; no partial remote delivery is claimed.
         This software increment does not change E2E-01 PARTIAL, Korean fieldAcceptance NOT_EVALUATED,
         FIELD-0a BLOCKED, or DJI capability NOT_VERIFIED/OFF.
+      site_civil_readiness_increment_2026_09_01: >-
+        The additive GET /v1/sites/{siteId}/civil-readiness projection reads only an organization-scoped
+        Site, newest two SUCCEEDED ProcessingJobs and design-surface inventory. It reuses the exact
+        preflight_epoch_pair gate, shows the typed blocker/next action or compatible candidate, and never
+        chooses a design revision or creates a comparison. Every later compare/design request repeats
+        preflight with its actual inputs. The existing Site Data surface renders the read-only result and
+        its explicit no-field-acceptance/no-survey-accuracy/no-flight-or-device limitation without a new
+        global IA. Local evidence: Python 4238 passed/24 skipped, Ruff, Mypy 445 files, Dashboard 63
+        files/578 tests plus ESLint/TypeScript/production build, Playwright 66 passed/14 intentional
+        external-staging skips and a four-viewport readiness check. This is not Korean same-site E2E,
+        independent reference evidence, remote CI, FIELD-0a or DJI/Manifold capability verification.
       acceptance_gate: >-
         CIVIL_PROCESSING_V1_ACCEPTANCE.md CP/LX/CC/SEC/UX/FI/HY and foreign benchmark E2E-B01 pass.
         Product E2E-01 remains PARTIAL because no valid same-site second epoch in a supported Korean
@@ -297,9 +340,10 @@ axes:
     title: "Site Intelligence Core — 공간·시간 이해, 변화·공정·물량, 설계 대비, Mission Planning"
     state: ACTIVE
     note: >-
-      M1(epoch 파이프라인 종단)과 ADR-KSI-030 civil processing consistency v1이 진행 중이며
-      M2(폐루프 실물)·M3(상용 기반)가 뒤따른다. 이 software workstream은 FIELD-0a 또는
-      DJI capability 상태를 바꾸지 않고 하드웨어 도착과 무관하게 진행된다.
+      M1(epoch 파이프라인 종단)과 ADR-KSI-030 civil processing consistency v1의 repository
+      software scope는 GATED 상태이며, Korean same-site two-epoch input과 independent reference가
+      있어야 product/field acceptance로 전진한다. M2(폐루프 실물)·M3(상용 기반)가 뒤따르며, 이
+      software workstream은 FIELD-0a 또는 DJI capability 상태를 바꾸지 않는다.
   autonomous_acquisition:
     title: "Autonomous Acquisition — Manifold Runtime, Perception, Local World Model, Viewpoint/Path, Mission Execution"
     state: BLOCKED

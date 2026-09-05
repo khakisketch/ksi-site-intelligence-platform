@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-08-31T22:29:48+09:00",
+  "updated_at": "2026-09-04T03:12:25+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2044,7 +2044,7 @@
       ],
       "status": "in_progress",
       "attempt": 2,
-      "evidence": "2026-08-31 최신 재검증: 후속 commit 434b92b가 과거 독립 reviewer 반려 2건을 해소했다. ProcessingJobRecord.capture_window는 sealed/verified SourceMedia capture window를 보존하고 spatial_model.evaluate_spatial_model은 registration time이 아닌 captureWindow.capturedTo만 freshness 기준으로 사용한다. GET /v1/sites/{siteId}의 SiteDetailView가 spatialModel을 중첩하며 capturedFrom/capturedTo/captureTimeStatus/freshnessBasis/maxAgeDays를 반환한다. 테스트 직접 실행: uv run --locked pytest -q tests/contract/test_spatial_model.py tests/contract/test_processing_jobs.py tests/contract/test_sites_api.py tests/contract/test_api_contract_sync.py -> 315 passed, 1 warning. 자동 전진·INV-052 전이·FRESH/STALE/CAPTURE_TIME_UNAVAILABLE/AGE_POLICY_UNDECLARED 계약 포함. 이번 기록은 구현 증거 갱신이며 독립 gate verdict가 아니므로 in_progress 유지.",
+      "evidence": "2026-09-01 direct reconciliation: the spatial-model lifecycle evidence remains the capture-window implementation recorded after 434b92b: ProcessingJobRecord preserves the sealed/verified SourceMedia capture window; spatial_model evaluates freshness from capturedTo rather than registration time; GET /v1/sites/{siteId} returns the nested spatial model with capturedFrom/capturedTo/captureTimeStatus/freshnessBasis/maxAgeDays. Direct regression tests test_spatial_model.py, test_processing_jobs.py, test_sites_api.py and test_api_contract_sync.py passed 315/315. The new site civil-readiness projection is separate read-only navigation over ProcessingJob/design inventory, reuses preflight_epoch_pair, and neither changes the spatial-model verdict nor proves Korean field/HIL acceptance. Independent reviewer gate remains required.",
       "verdict": {
         "verdict": "refuted",
         "note": "기준2 미충족 — '현장 조회 응답에 ... 촬영시각 ... 이 실린다'. (a) 촬영시각 필드가 아예 없다: SpatialModelView 는 registeredAt(등록 시각)만 갖고, 모듈 docstring:38-44 이 스스로 '등록된 시각이지 세상을 관측한 시각이 아니다 … 촬영 시각을 끌어오려면 임무 실행 생애주기(G2)가 먼저 있어야 한다'고 명시한다. 그 G2 는 같은 라운드에 구현됐는데 배선하지 않았다. (b) 기본 현장 조회(GET /v1/sites/{id})가 아니라 별도 엔드포인트(/spatial-model)에만 있다 — 대시보드가 두 호출을 페이지에서 합칠 뿐이라 API 계약 차원에서는 '현장 조회 응답'이 아니다. 남은 작업: mission_execution 의 실행 시각을 촬영시각으로 배선하거나, 완료기준을 실제 범위에 맞게 정정(amend-criteria)한다.",
@@ -2055,11 +2055,11 @@
       "invalidation_reason": null,
       "parent": "autonomous-acquisition-closed-loop",
       "blocked_by": null,
-      "ungated_attempts": 1,
+      "ungated_attempts": 3,
       "kind": "product",
       "verification_requested": null,
       "created_at": "2026-08-15T11:25:15+09:00",
-      "updated_at": "2026-08-31T15:09:14+09:00"
+      "updated_at": "2026-09-01T15:56:28+09:00"
     },
     {
       "id": "aol-1-mission-execution-lifecycle",
@@ -2515,6 +2515,69 @@
       "verification_requested": null,
       "created_at": "2026-08-18T16:57:19+09:00",
       "updated_at": "2026-08-18T16:57:19+09:00"
+    },
+    {
+      "id": "repository-normalization-r0-r2",
+      "title": "Repository Normalization R0-R2: SSOT, structure, non-runtime cleanup",
+      "completion_criteria": [
+        "WIP baseline and ownership fingerprint recorded",
+        "Top-level and major modules have owner purpose runtime classification",
+        "Human product names deployable units libraries contracts evidence tools and proposed R3 paths are understandable from directory indexes and naming audit",
+        "Product SSOT phase goal ADR and HIL media boundaries agree",
+        "Current and target paths plus superseded documents are explicit",
+        "Cleanup manifest records every decision reference replacement rollback",
+        "Only safe non-runtime artifacts are relocated archived or removed",
+        "edge services packages overlap has dependency build CI reachability audit only",
+        "Link schema contract Ruff Mypy Dashboard and Git reachability gates pass",
+        "No physical HIL device write authority commit push or deploy"
+      ],
+      "status": "false_positive_complete",
+      "attempt": 1,
+      "evidence": "2026-09-04 R0-R2 local evidence: REPOSITORY_STRUCTURE and parent indexes map human product responsibility/runtime boundaries; naming audit honestly rates current consistency PARTIAL and defers runtime moves to R3; DOCUMENT_STATUS and ADR-KSI-033 align current/target media and superseded authority; cleanup manifest preserves baseline WIP fingerprint, archives 26 root PNGs with SHA-256, removes five exact regenerable root caches, retains private/reference/runtime assets, and records unchanged reachability. Validator/schema/link/hash/root hygiene, Phase YAML, git diff, Ruff, Mypy 472 files, Python 4674 passed/24 skipped, Dashboard ESLint/TypeScript and Vitest 63 files/578 tests passed. No HIL/device/authority/commit/push/deploy. Independent strict review pending.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "Independent read-only review passed all ten criteria. Repository-local R0-R2 is complete; naming remains PARTIAL pending R3, and physical HIL/device/remote/deployment/field gates remain unchanged.",
+        "at": "2026-09-04T02:33:59+09:00",
+        "reviewer": "independent-strict-review:/root/normalization_strict_review@2026-09-04",
+        "evidence_ref": "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json"
+      },
+      "invalidation_reason": "Fresh R0-R2 audit found six observed local candidate classes absent from the cleanup manifest and root Python tool cache ignore coverage incomplete; reopen until classification and all validation evidence are refreshed.",
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": "strict",
+      "created_at": "2026-09-04T01:56:48+09:00",
+      "updated_at": "2026-09-04T02:41:49+09:00"
+    },
+    {
+      "id": "repository-normalization-r0-r2-audit-correction",
+      "title": "Repository Normalization R0-R2 fresh-audit correction and re-verification",
+      "completion_criteria": [
+        "Observed local toolchain/runtime/model/agent/SDK/geoid/secret-config/generated candidate classes are explicitly classified with rationale references replacement and rollback",
+        "Root Python tool caches are ignored and absent at final hygiene check",
+        "Manifest schema contract links SSOT media split naming audit reachability and active-document authority gates pass",
+        "Ruff Mypy full Python Dashboard and Git patch gates are freshly executed",
+        "Independent strict reviewer verifies the corrected R0-R2 evidence without promoting HIL device remote or deployment state"
+      ],
+      "status": "completed",
+      "attempt": 2,
+      "evidence": "Attempt 2 after independent refutation: schema requires sourcePresence for every RETAIN action; manifest marks repository-owned runtime/reference roots REQUIRED_REPOSITORY_PATHS and local .venv/.dev-data/models/geoid/HIL/download/agent/secret-config/fetched-PSDK paths OPTIONAL_LOCAL_PATHS; validator only requires the former. Actual-manifest clean-clone regression passes and targeted normalization suite 6 passed. Fresh post-fix evidence: strict normalization schema/link/hash/root-hygiene validator PASS; Ruff PASS; Mypy 472 source files PASS; full Python 4679 passed/24 skipped; Dashboard ESLint/TypeScript PASS and Vitest 63 files/578 tests PASS; Phase YAML and git diff PASS; repository hygiene/no-reference-import/reference pins/third-party pins/runtime-image pins PASS; root captures/caches absent; no tracked deletion; structure and naming remain product-readable PARTIAL with R3-only moves. No HIL/device/authority/remote/deploy state promoted.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "Attempt 2 strict review passed all eight criteria. Previous clean-clone blocker is closed by explicit retained-source presence policy and actual-manifest regression. Naming remains PARTIAL/R3; no external gate promoted.",
+        "at": "2026-09-04T03:12:25+09:00",
+        "reviewer": "/root/normalization_strict_review@2026-09-04-attempt-2",
+        "evidence_ref": "docs/audit/REPOSITORY_CLEANUP_MANIFEST_R0_R2.json;tests/contract/test_repository_normalization.py;REPOSITORY_STRUCTURE.md"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": "strict",
+      "created_at": "2026-09-04T02:42:13+09:00",
+      "updated_at": "2026-09-04T03:12:25+09:00"
     }
   ],
   "risks": [
