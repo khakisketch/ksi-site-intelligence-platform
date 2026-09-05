@@ -1,7 +1,7 @@
 [project]
 name = "ksi-change-detection"
 version = "0.0.1"
-description = "Phase 4 시계열 변화탐지 — point cloud C2C 최근접거리 비교 (PRD RISK-003 인접, workers/change-detection 스텁의 실구현 위치)"
+description = "Import-only change, conformance, region, and volume algorithms for the Processing Worker"
 requires-python = ">=3.12,<3.13"
 # Open3D(MIT)는 이 환경(Python 3.12, aarch64 linux)에 호환 wheel이 없어(2026-08-06
 # 실측: uv pip install --dry-run open3d — cp312/manylinux_aarch64 wheel 부재) 채택하지

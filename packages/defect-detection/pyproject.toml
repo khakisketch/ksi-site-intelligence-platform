@@ -1,7 +1,7 @@
 [project]
 name = "ksi-defect-detection"
 version = "0.0.1"
-description = "Phase 4 표면 결함(균열) 탐지 — DefectCandidate 계약 + 세그멘테이션 adapter (MODEL-P4-001)"
+description = "Import-only, optional-model defect adapter and deterministic candidate post-processing"
 requires-python = ">=3.12,<3.13"
 # base 는 계약(pydantic)·레지스트리 검증(pyyaml)·후처리(opencv)만 — torch/mmcv 등
 # 실모델 스택만 [mixercseg] extra 로 격리한다(D-FINE 의 [dfine] extra 와 동일

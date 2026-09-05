@@ -84,7 +84,7 @@ logger = logging.getLogger(__name__)
 # 그 값을 준다.
 #
 # **정본은 계약 패키지**다(``ksi_event_contracts.comparison_policy``) — 화면이
-# "이 값을 쓴다"고 표시하려면 계산 쪽(services/change-detection)과 이 조회 쪽이
+# "이 값을 쓴다"고 표시하려면 계산 쪽(packages/change-detection)과 이 조회 쪽이
 # 같은 자리를 읽어야 하고, 그 공통 자리는 양쪽이 이미 의존하는 계약 패키지뿐이다
 # (Core 가 계산 서비스를 import 하면 scipy 가 control plane 으로 딸려온다).
 DEFAULT_REVISIT_RATIO_THRESHOLD = _POLICY_REVISIT_RATIO_THRESHOLD

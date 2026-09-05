@@ -7710,7 +7710,7 @@ components:
       description: >-
         두 시점 비교가 실제로 쓰는 고정 기준값 한 벌. 정본은
         ksi_event_contracts.comparison_policy 이고, 조회 표면(/v1/comparison-policy)과
-        계산 코드(services/change-detection)가 같은 자리를 읽는다. 비교 요청은 생성
+        계산 코드(packages/change-detection)가 같은 자리를 읽는다. 비교 요청은 생성
         시점에 이 값을 불변 스냅샷으로 굳혀 둔다(comparison-request.v1.json 의 policy).
       type: object
       # schemaVersion 은 기본값이 있어 요청 본문에서 생략 가능하다 — FastAPI 가

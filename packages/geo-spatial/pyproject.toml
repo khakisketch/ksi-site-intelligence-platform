@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 #
 # **wheel 가용성 실측(2026-08-07).** 이 워크스페이스 환경은 Python 3.12 / aarch64
 # linux 이고, 같은 환경에서 Open3D 는 wheel 이 없어 채택하지 못한 선례가 있다
-# (services/change-detection/pyproject.toml). 그래서 채택 전에 확인했다:
+# (packages/change-detection/pyproject.toml). 그래서 채택 전에 확인했다:
 # `uv pip install --dry-run pyproj rasterio` → pyproj 3.7.2 · rasterio 1.5.0 ·
 # affine 2.4.0 · cligj 0.7.2 정상 해결. 라이선스는 pyproj MIT / rasterio BSD-3 /
 # PROJ·GDAL MIT 계열로 AGPL 경계(ADR-KSI-012 D2)와 무관하다.

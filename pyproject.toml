@@ -105,7 +105,7 @@ line-length = 100
 # 대상에서 통째로 빠져 있던 것을 2026-08-04 감사에서 실측 확인(명시 경로 지정 시에만
 # 검사돼 "All checks passed"가 검사 미수행을 가렸다 — 이 저장소가 경계하는 조용한 no-op).
 # 선행 슬래시("/edge")는 절대경로로 해석돼 제외가 아예 풀리므로 쓰지 않는다(실측).
-extend-exclude = ["references/**", "edge/**", "apps/**", "services/defect-detection/src/ksi_defect_detection/_vendor/**"]
+extend-exclude = ["references/**", "edge/**", "apps/**", "packages/defect-detection/src/ksi_defect_detection/_vendor/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -137,7 +137,7 @@ exclude = [
     # 답을 낸다 — 그 차이가 다음 세션에게 제품 회귀로 오인된다(2026-08-17).
     "^design/",
     "^tools/vector-extraction/",
-    "^services/defect-detection/src/ksi_defect_detection/_vendor/",
+    "^packages/defect-detection/src/ksi_defect_detection/_vendor/",
 ]
 # tests/hil, tests/contract 등이 `sys.path.insert(...) + from <module> import ...`
 # (flat import) 로 tools/*/*.py 를 참조한다. mypy_path 로 두 디렉터리를 모듈 검색

@@ -7,7 +7,7 @@
 아니라 "이 구역에서 몇 m³ 가 깎이고 쌓였나"다. 억지로 한 계약에 얹으면 두
 클래스의 조건분기가 섞이고, 소비자가 어느 필드가 언제 유효한지 알 수 없다.
 
-계산은 ``services/change-detection``(rasterio) 이 하고 수신·조회는
+계산은 ``packages/change-detection``(rasterio) 이 하고 수신·조회는
 ``services/core`` 가 한다 — 계약이 여기 사는 이유는 그쪽 모듈 docstring 과
 같다(Core 에 rasterio 가 딸려오지 않게).
 

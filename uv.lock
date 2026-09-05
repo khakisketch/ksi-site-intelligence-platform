@@ -657,7 +657,7 @@ wheels = [
 [[package]]
 name = "ksi-bim-integration"
 version = "0.0.1"
-source = { editable = "services/bim-integration" }
+source = { editable = "packages/bim-integration" }
 dependencies = [
     { name = "ifcopenshell" },
     { name = "numpy" },
@@ -672,7 +672,7 @@ requires-dist = [
 [[package]]
 name = "ksi-change-detection"
 version = "0.0.1"
-source = { editable = "services/change-detection" }
+source = { editable = "packages/change-detection" }
 dependencies = [
     { name = "ksi-event-contracts" },
     { name = "ksi-geo-spatial" },
@@ -735,7 +735,7 @@ provides-extras = ["s3"]
 [[package]]
 name = "ksi-defect-detection"
 version = "0.0.1"
-source = { editable = "services/defect-detection" }
+source = { editable = "packages/defect-detection" }
 dependencies = [
     { name = "ksi-event-contracts" },
     { name = "opencv-python-headless" },
@@ -948,7 +948,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "ksi-change-detection", editable = "services/change-detection" },
+    { name = "ksi-change-detection", editable = "packages/change-detection" },
     { name = "ksi-domain", editable = "packages/domain" },
     { name = "ksi-event-contracts", editable = "packages/event-contracts" },
     { name = "ksi-geo-spatial", editable = "packages/geo-spatial" },
@@ -997,9 +997,9 @@ dev = [
     { name = "gdown", specifier = ">=5.2" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonschema", specifier = ">=4.21" },
-    { name = "ksi-bim-integration", editable = "services/bim-integration" },
-    { name = "ksi-change-detection", editable = "services/change-detection" },
-    { name = "ksi-defect-detection", editable = "services/defect-detection" },
+    { name = "ksi-bim-integration", editable = "packages/bim-integration" },
+    { name = "ksi-change-detection", editable = "packages/change-detection" },
+    { name = "ksi-defect-detection", editable = "packages/defect-detection" },
     { name = "ksi-equipment-intelligence", editable = "packages/equipment-intelligence" },
     { name = "ksi-geo-spatial", editable = "packages/geo-spatial" },
     { name = "ksi-perception", editable = "packages/perception" },

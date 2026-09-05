@@ -1,7 +1,7 @@
 [project]
 name = "ksi-bim-integration"
 version = "0.0.1"
-description = "Phase 4 BIM 연계 — IFC as-designed 모델을 change-detection의 baseline point cloud로 (PRD §5.1.4 'BIM/as-designed 대비 as-built 변화')"
+description = "Import-only IFC georeferencing and reference-geometry support for design comparison"
 requires-python = ">=3.12,<3.13"
 # IfcOpenShell — LGPL-3.0. 이 프로젝트가 ODM(AGPL, ADR-KSI-012 D2)에 적용한 프로세스
 # 경계 원칙과 달리, LGPL은 **미수정 라이브러리를 그대로 링크(=pip 의존)**하는 것을

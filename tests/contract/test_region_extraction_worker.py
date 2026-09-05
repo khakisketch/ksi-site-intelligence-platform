@@ -1,7 +1,7 @@
 """변화 영역 추출 워커 오케스트레이션 계약 (M4-E).
 
 이 파일이 지키는 것은 오직 오케스트레이션 자체다 — 실제 추출 계산은
-services/change-detection/tests/test_region_extraction.py 가 이미 결정성까지
+packages/change-detection/tests/test_region_extraction.py 가 이미 결정성까지
 고정했으므로, 여기서는 ``run_region_extraction`` 을 가짜로 갈아 끼우고 워커
 골격만 본다:
 
