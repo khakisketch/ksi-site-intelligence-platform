@@ -678,14 +678,13 @@ class HttpCoreClient:
         self._lease_lock = RLock()
         self._leases: dict[tuple[str, str], LeaseHandle] = {}
         self._claim_ids: dict[tuple[str, str], str] = {}
-        self._active_lease_key: tuple[str, str] | None = None
         # ``client`` 를 주입해도(테스트 등) ``token`` 이 조용히 무시되지 않는다 —
         # 둘 다 준 호출자는 "이 토큰으로 이 클라이언트를 써라"를 뜻하지 "클라이언트가
         # 있으니 토큰은 버려라"를 뜻하지 않는다. 실기동 전까지 이 자리가 정확히
         # 거꾸로였다: 주입된 클라이언트는 인증 헤더 없이 나갔다.
         self._client.headers["Authorization"] = f"Bearer {token}"
 
-    def _correlation_headers(self) -> dict[str, str]:
+    def _correlation_headers(self, *, include_worker_identity: bool = True) -> dict[str, str]:
         """Build request-local headers without mutating the shared httpx client.
 
         Lease heartbeats use another thread while the worker reuses this
@@ -694,14 +693,13 @@ class HttpCoreClient:
         was validated by the runner before it was bound.
         """
         correlation_id = current_correlation_id()
-        headers = {"X-KSI-Worker-Instance-Id": self._worker_instance_id}
+        headers = (
+            {"X-KSI-Worker-Instance-Id": self._worker_instance_id}
+            if include_worker_identity
+            else {}
+        )
         if correlation_id is not None:
             headers[REQUEST_ID_HEADER] = correlation_id
-        with self._lease_lock:
-            if self._active_lease_key is not None:
-                handle = self._leases.get(self._active_lease_key)
-                if handle is not None:
-                    headers.update(self._fence_headers(handle))
         return headers
 
     @staticmethod
@@ -720,6 +718,13 @@ class HttpCoreClient:
         propagate the handle for the result's own request id.
         """
 
+        return self._fence_headers(
+            self._required_lease_handle(work_kind=work_kind, resource_id=resource_id)
+        )
+
+    def _required_lease_handle(self, *, work_kind: str, resource_id: str) -> LeaseHandle:
+        """Return the exact active handle for a resource-scoped mutation."""
+
         with self._lease_lock:
             handle = self._leases.get((work_kind, resource_id))
         if handle is None:
@@ -728,7 +733,16 @@ class HttpCoreClient:
                 verdict="LEASE_REQUIRED",
                 detail=f"no active {work_kind} lease handle for {resource_id}",
             )
-        return self._fence_headers(handle)
+        return handle
+
+    def _retire_lease(self, handle: LeaseHandle) -> None:
+        """Forget only the handle whose terminal mutation Core accepted."""
+
+        key = (handle.work_kind, handle.resource_id)
+        with self._lease_lock:
+            if self._leases.get(key) == handle:
+                self._leases.pop(key, None)
+                self._claim_ids.pop(key, None)
 
     def _lease_request_headers(
         self,
@@ -810,16 +824,22 @@ class HttpCoreClient:
         )
         with self._lease_lock:
             self._leases[(work_kind, resource_id)] = handle
-            self._active_lease_key = (work_kind, resource_id)
         return handle
 
     def _get(
-        self, path: str, *, params: dict[str, Any] | None = None
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
+        request_headers = self._correlation_headers()
+        if headers is not None:
+            request_headers.update(headers)
         return self._client.get(
             f"{self._base_url}{path}",
             params=params,
-            headers=self._correlation_headers(),
+            headers=request_headers,
         )
 
     def _post(
@@ -830,9 +850,15 @@ class HttpCoreClient:
         ok: str | frozenset[str],
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        include_worker_identity: bool = True,
     ) -> dict[str, Any]:
         payload, _response_headers = self._post_with_headers(
-            path, what=what, ok=ok, json=json, headers=headers
+            path,
+            what=what,
+            ok=ok,
+            json=json,
+            headers=headers,
+            include_worker_identity=include_worker_identity,
         )
         return payload
 
@@ -844,6 +870,7 @@ class HttpCoreClient:
         ok: str | frozenset[str],
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        include_worker_identity: bool = True,
     ) -> tuple[dict[str, Any], httpx.Headers]:
         """``ok`` 는 문자열 하나 또는 성공으로 볼 verdict 집합이다.
 
@@ -855,7 +882,9 @@ class HttpCoreClient:
         일어나는 순간 곧바로 죽었다(``lease: LEASE_RENEWED`` 예외). 그래서
         판정 집합은 호출부가 아니라 이 함수가 한 번에 본다.
         """
-        request_headers = self._correlation_headers()
+        request_headers = self._correlation_headers(
+            include_worker_identity=include_worker_identity
+        )
         if headers is not None:
             request_headers.update(headers)
         response = self._client.post(
@@ -943,8 +972,6 @@ class HttpCoreClient:
                 with self._lease_lock:
                     self._leases.pop(key, None)
                     self._claim_ids.pop(key, None)
-                    if self._active_lease_key == key:
-                        self._active_lease_key = None
             raise
         return self._lease_from_response(
             work_kind=work_kind,
@@ -964,7 +991,10 @@ class HttpCoreClient:
         return self.acquire_lease(job_id)
 
     def get_input(self, job_id: str) -> JobInput:
-        response = self._get(f"/v1/processing-jobs/{job_id}/input")
+        response = self._get(
+            f"/v1/processing-jobs/{job_id}/input",
+            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
+        )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1006,12 +1036,23 @@ class HttpCoreClient:
         )
 
     def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
+        # CANCELLED is an operator action and Core deliberately does not fence
+        # it; all worker-owned processing transitions require this job's handle.
+        handle = (
+            None
+            if target == "CANCELLED"
+            else self._required_lease_handle(work_kind="processing", resource_id=job_id)
+        )
         self._post(
             f"/v1/processing-jobs/{job_id}/transitions",
             what=f"transition→{target}",
             ok="TRANSITIONED",
             json={"targetStatus": target, "detail": detail},
+            headers=self._fence_headers(handle) if handle is not None else None,
+            include_worker_identity=handle is not None,
         )
+        if handle is not None and target in {"SUCCEEDED", "FAILED"}:
+            self._retire_lease(handle)
 
     def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
         # ALREADY_VERIFIED 도 성공이다 — 재시도 작업(이전 시도가 실패한 뒤
@@ -1021,6 +1062,7 @@ class HttpCoreClient:
             f"/v1/processing-jobs/{job_id}/verify-input",
             what="verify",
             ok=frozenset({"VERIFIED", "ALREADY_VERIFIED"}),
+            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
             json={
                 "measurements": [
                     {
@@ -1058,6 +1100,7 @@ class HttpCoreClient:
             f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
             what=f"upload-url:{artifact_id}:{filename or '(primary)'}",
             ok="UPLOAD_READY",
+            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
             json={
                 "artifactId": artifact_id,
                 "contentType": content_type,
@@ -1133,6 +1176,7 @@ class HttpCoreClient:
             what=f"artifact:{submission.artifact_id}",
             ok="ARTIFACT_REGISTERED",
             json=payload,
+            headers=self._required_fence_headers(work_kind="processing", resource_id=job_id),
         )
 
     # ── W2 비교 요청(comparison_requests.py) ────────────────────────────────
@@ -1157,7 +1201,10 @@ class HttpCoreClient:
         return self.acquire_comparison_lease(request_id)
 
     def get_comparison_input(self, request_id: str) -> ComparisonInput:
-        response = self._get(f"/v1/comparison-requests/{request_id}/input")
+        response = self._get(
+            f"/v1/comparison-requests/{request_id}/input",
+            headers=self._required_fence_headers(work_kind="comparison", resource_id=request_id),
+        )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1208,12 +1255,16 @@ class HttpCoreClient:
     def transition_comparison(
         self, request_id: str, target: str, *, detail: str | None = None
     ) -> None:
+        handle = self._required_lease_handle(work_kind="comparison", resource_id=request_id)
         self._post(
             f"/v1/comparison-requests/{request_id}/transitions",
             what=f"comparison-transition→{target}",
             ok="TRANSITIONED",
             json={"targetStatus": target, "detail": detail},
+            headers=self._fence_headers(handle),
         )
+        if target in {"SUCCEEDED", "FAILED"}:
+            self._retire_lease(handle)
 
     def submit_change_detection(self, mission_id: str, result: ChangeDetectionResult) -> None:
         self._post(
@@ -1443,7 +1494,12 @@ class HttpCoreClient:
         return self.acquire_design_conformance_lease(request_id)
 
     def get_design_conformance_input(self, request_id: str) -> DesignConformanceInput:
-        response = self._get(f"/v1/design-conformance-requests/{request_id}/input")
+        response = self._get(
+            f"/v1/design-conformance-requests/{request_id}/input",
+            headers=self._required_fence_headers(
+                work_kind="design-conformance", resource_id=request_id
+            ),
+        )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1486,15 +1542,18 @@ class HttpCoreClient:
     def transition_design_conformance(
         self, request_id: str, target: str, *, detail: str | None = None
     ) -> None:
+        handle = self._required_lease_handle(
+            work_kind="design-conformance", resource_id=request_id
+        )
         self._post(
             f"/v1/design-conformance-requests/{request_id}/transitions",
             what=f"design-conformance-transition→{target}",
             ok="TRANSITIONED",
             json={"targetStatus": target, "detail": detail},
-            headers=self._required_fence_headers(
-                work_kind="design-conformance", resource_id=request_id
-            ),
+            headers=self._fence_headers(handle),
         )
+        if target in {"SUCCEEDED", "FAILED"}:
+            self._retire_lease(handle)
 
     def presign_diff_raster_upload(
         self, request_id: str, *, digest: str, size_bytes: int
@@ -1603,7 +1662,12 @@ class HttpCoreClient:
         return self.acquire_region_extraction_lease(request_id)
 
     def get_region_extraction_input(self, request_id: str) -> RegionExtractionInput:
-        response = self._get(f"/v1/region-extraction-requests/{request_id}/input")
+        response = self._get(
+            f"/v1/region-extraction-requests/{request_id}/input",
+            headers=self._required_fence_headers(
+                work_kind="region-extraction", resource_id=request_id
+            ),
+        )
         try:
             payload = response.json()
         except ValueError as exc:
@@ -1636,12 +1700,18 @@ class HttpCoreClient:
     def transition_region_extraction(
         self, request_id: str, target: str, *, detail: str | None = None
     ) -> None:
+        handle = self._required_lease_handle(
+            work_kind="region-extraction", resource_id=request_id
+        )
         self._post(
             f"/v1/region-extraction-requests/{request_id}/transitions",
             what=f"region-extraction-transition→{target}",
             ok="TRANSITIONED",
             json={"targetStatus": target, "detail": detail},
+            headers=self._fence_headers(handle),
         )
+        if target in {"SUCCEEDED", "FAILED"}:
+            self._retire_lease(handle)
 
     def submit_region_extraction(self, mission_id: str, report: ChangeRegionSetReport) -> None:
         self._post(
