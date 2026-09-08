@@ -199,7 +199,13 @@ records are not a replacement Core journal or an external API contract. The
 immutable local protocol and security-profile digests must equal their existing
 execution-manifest fields, and the policy grammar digest must equal the local
 backend profile digest. Do not introduce capacity values, a new approval gate,
-or a zero-overrun timing assertion.
+or a zero-overrun timing assertion. The concrete runtime has one pinned Engine
+API 1.44 protocol and one operator-configured rootless socket; it has no Docker
+CLI, API-version negotiation, image pull/build/tag/list route, label search, or
+caller-selected daemon operation. A direct systemd D-Bus client is limited to
+the configured launcher identity's user manager and the one durably registered
+attempt slice. Raw cgroupfs directory creation and a dummy process scope are
+not alternate implementations.
 
 **Reference assets, data, and license:** Read the approved sandbox amendment,
 the external validation design, and
@@ -214,20 +220,42 @@ admission rather than claims made by this task.
   created by Task 3.
 - Create: `services/processing-controller/src/ksi_processing_controller/external_inspector_attempts.py`;
   `services/processing-controller/src/ksi_processing_controller/external_inspector_runtime.py`;
-  `services/processing-controller/src/ksi_processing_controller/external_inspector_container_protocol.py`.
-- Create only when the corresponding responsibility cannot remain narrow in the
-  launcher: `external_inspector_catalog.py` for read-only catalog/trust checks,
-  and `external_inspector_docker.py` for the exact container-runtime adapter.
-- Create: `tests/contract/test_external_inspector_runtime_controls.py` and
-  `tests/replay/test_external_inspector_attempt_replay.py`.
+  `services/processing-controller/src/ksi_processing_controller/external_inspector_container_protocol.py`;
+  `services/processing-controller/src/ksi_processing_controller/external_inspector_catalog.py` for
+  read-only signed catalog/trust/revocation and exact local OCI-pair proof;
+  `services/processing-controller/src/ksi_processing_controller/external_inspector_docker.py` for
+  the concrete AF_UNIX Engine API 1.44 adapter; and
+  `services/processing-controller/src/ksi_processing_controller/external_inspector_systemd.py` for
+  the narrow user-manager transient-slice and cgroup-v2 verifier.
+- Create `services/processing-controller/src/ksi_processing_controller/external_inspector_daemon.py`
+  only as the production assembly/entrypoint: it consumes explicit operator
+  configuration, validates the systemd-activated AF_UNIX listener exactly once,
+  and constructs the closed launcher. It does not provision a user, socket,
+  daemon, base slice, or policy.
+- Modify `services/processing-controller/pyproject.toml` and `uv.lock` when a
+  new direct signing or D-Bus import is required; declare it directly and lock
+  it, never rely on a transitive dependency. Add only the matching
+  `external-inspector` script entrypoint. Task 5b, not Task 4A, owns deploy
+  units and operator installation documentation.
+- Modify the existing byte-boundary and launcher tests where a concrete
+  descriptor/daemon seam is exercised; create
+  `tests/contract/test_external_inspector_docker.py`,
+  `tests/contract/test_external_inspector_container_protocol.py`,
+  `tests/contract/test_external_inspector_runtime_controls.py`, and
+  `tests/replay/test_external_inspector_attempt_replay.py`. Create a focused
+  daemon test only if the production assembly cannot be covered by those
+  contract tests. Host-backed cases remain named `test_host_*`.
 
 **Acceptance criteria:** A successful local attempt has one sealed input, one
-verified runtime ID, one current fence, one bounded cleanup disposition, and no
-result accepted before exact cleanup reaches `CLEANED`. Recovery may inspect
-only a durably recorded deterministic name, never a label search or a broad
-daemon inventory. Every measured resource fact is explicitly local test or host
-evidence; unavailable host resolution or kill latency remains an unavailable
-or incomplete result until Task 5c measures it.
+verified runtime-parent slice, one verified runtime ID, one current fence, one
+bounded cleanup disposition, and no result accepted before exact cleanup reaches
+`CLEANED`. The journal order is `INTENDED` → `STAGING_ALLOCATED` → `INPUT_BOUND`
+→ `RUNTIME_PARENT_BOUND` → `CONTAINER_BOUND` → `CLEANUP_REQUIRED` → `CLEANED`,
+with `STAGING_OWNERSHIP_UNCERTAIN` and `CLEANUP_FAILED` retaining active recovery
+evidence. Recovery may inspect only a durably recorded deterministic name,
+never a label search or a broad daemon inventory. Every measured resource fact
+is explicitly local test or host evidence; unavailable host resolution or kill
+latency remains an unavailable or incomplete result until Task 5c measures it.
 
 - [ ] **Step 1: Write RED attempt-state and replay tests.**
 
@@ -237,7 +265,14 @@ or incomplete result until Task 5c measures it.
   backend/security/resource/protocol digests, and the verified private staging
   root's device, inode, mode, UID and GID. It also binds the deterministic
   staging-directory name, fixed `artifact` leaf, provisional and committed
-  sibling marker names, and a fresh allocation nonce. Its canonical marker
+  sibling marker names, and a fresh allocation nonce. It additionally binds
+  the operator-configured base user-slice unit name and the deterministic,
+  attempt-derived child slice unit name; no recovery derives either from a
+  current default. After the existing binding digest is computed, `INTENDED`
+  derives and stores the exact systemd `Description`
+  `ksi-external-inspector-attempt.v1:<bindingDigest>`. The description is a
+  derived marker, not an input to the binding digest, so it cannot introduce a
+  digest cycle. Its canonical marker
   payload has a fixed v1 shape and exact recorded length and SHA-256 over the
   version, attempt nonce, binding digest, staging name, owner, and allocation
   nonce.
@@ -246,10 +281,21 @@ or incomplete result until Task 5c measures it.
   allocation receipt: marker, directory, and empty-artifact identities. Only
   `INPUT_BOUND` may add the sealed size, SHA-256, and reader-mapping witness,
   and it must prove the same staged inode recorded by `STAGING_ALLOCATED`.
-  `CONTAINER_BOUND` binds only the exact runtime-verified container ID.
-  `CLEANUP_REQUIRED` records the bounded disposition and output metadata;
+  `RUNTIME_PARENT_BOUND` is durable before Docker create. It binds the exact
+  transient slice unit `Id`, derived `Description`, configured `Slice`,
+  resolved `ControlGroup`, D-Bus object path and `InvocationID`, the verified
+  cgroup-v2 directory device/inode identity, the required `cpu`, `memory`, and
+  `pids` controllers, `populated=0`, and the real initial `cpu.stat`
+  `usage_usec` baseline in `CPU_USEC`. It never invents a zero baseline.
+  `CONTAINER_BOUND` binds only the exact runtime-verified container ID and its
+  recorded parent slice identity. `CLEANUP_REQUIRED` records only bounded
+  cleanup disposition and output metadata, never a response-owned descriptor
+  or an anonymous-spool recovery target;
   `CLEANUP_FAILED` stays active recovery evidence; `CLEANED` is written only
-  after exact container and staging-inode cleanup. Assert that a duplicate
+  after exact container removal, exact transient-slice disappearance, and
+  exact staging-inode cleanup. It may precede closure of a response-owned
+  anonymous output descriptor, which is not a sandbox resource or a durable
+  artifact. Assert that a duplicate
   closed nonce is retired and that an aborted deterministic staging name leaves
   an observable failure record.
 
@@ -259,13 +305,42 @@ or incomplete result until Task 5c measures it.
   after directory creation, after the empty artifact, after
   `STAGING_ALLOCATED`, during input write, after seal, and during cleanup.
   Include substitution attempts that must retain rather than delete, exact
-  absence, and retry behavior. Retain the existing crashes before create, after
-  create before returned ID, and after ID before cleanup; an absent recorded
+  absence, and retry behavior. Retain the existing crashes before parent-slice
+  create, after transient-slice creation before durable
+  `RUNTIME_PARENT_BOUND`, after parent binding before Docker create, after
+  Docker create before returned ID, and after ID before cleanup; an absent recorded
   container; mismatched owner/nonce/image/config/profile; stale trust or
   revocation; unknown profile; and malformed or reordered digest event. A
   recovery path may resolve only the recorded name, prove exact
   owner/nonce/image/config/profile, bind the returned ID, then kill/remove that
-  ID. It must never list or delete containers by label.
+  ID. It must never list or delete containers by label. Add a pre-parent
+  recovery matrix: name-only resolution never authorizes adoption or stop. Before
+  the first `RUNTIME_PARENT_BOUND` receipt, an `INPUT_BOUND` attempt may adopt
+  only after comparing current child observations with durable `INTENDED` facts:
+  the derived description marker, unit `Id`/name, and configured base `Slice`.
+  It must then observe a fresh strict-descendant `ControlGroup`, D-Bus object
+  path/`InvocationID`, cgroup-v2 directory device/inode/controller facts,
+  `populated=0`, and a real CPU baseline. It durably records those observed
+  `InvocationID`, cgroup device/inode, and CPU-baseline facts in the first
+  `RUNTIME_PARENT_BOUND` receipt exactly once. Only after that receipt exists
+  may later mutations match stored child identity. Tests distinguish a
+  same-name recreation or changed invocation that mismatches a recorded receipt
+  from an observed identity change during first-time validation; before a
+  receipt, recovery never assumes a historical `InvocationID`. A foreign
+  marker, missing base, non-cgroup directory, non-empty group, or any mismatch
+  stays retained, records `CLEANUP_FAILED`, and closes admission without
+  `StopUnit`.
+
+  Add output-spool tests for the `SANITIZE` path. Before `EXECUTE`, reserve the
+  manifest's full `maxOutputBytes` aggregate budget and allocate only an
+  anonymous descriptor-relative `O_TMPFILE|O_RDWR|O_CLOEXEC` file under the
+  verified private operator spool root. It must be a regular, owner/mode and
+  device-verified file with link count zero; it is never linked, inherited,
+  mounted, passed to the container, named, substituted by `memfd`, or buffered
+  in memory. Test the closed states `OPEN` → `SEALED` → `RESPONSE_OWNED` →
+  `CLOSED`/`ABORTED`, bounded count/hash/fsync/seal/rewind, full-budget release
+  exactly once, crash close/unlink behavior, and no replay recovery target.
+  `INSPECT` has no output candidate.
 
 - [ ] **Step 2: Run the RED selections.**
 
@@ -343,41 +418,182 @@ or incomplete result until Task 5c measures it.
   During execution kill when consumed CPU exceeds the bound; an exact-boundary
   final value is accepted only when every other terminal fence, deadline, and
   cleanup condition succeeds. After the whole process tree exits, but before
-  accepting output or removing the cgroup, read stable final usage. Test a
+  accepting output, Docker removal, or stopping the registered slice, read
+  stable final usage. Test a
   nonzero baseline, exact boundary, descendant CPU use, counter rollback, and
   monitor/final consistency. Wall deadline and CPU rate remain independent
   controls.
 
+  Add closed adapter tests for the only permitted runtime assembly. The signed
+  catalog must verify the Ed25519 trust/revocation decision and exact local OCI
+  configuration plus manifest pair before create; the selected local image must
+  expose the matching `RepoDigest` pair and no image-declared volumes. The
+  Engine transport sends only API 1.44 requests over the verified rootless
+  AF_UNIX socket. It attaches before start and bounds Docker multiplexed
+  stdout, inspector output, stderr, and private spool independently; it never
+  obtains results from `docker logs`.
+
+  Test the direct user-manager call
+  `StartTransientUnit(attemptSlice, "fail", properties, [])` with exactly the
+  recorded attempt slice. Its properties include `Description`,
+  `CPUAccounting=true`, `MemoryAccounting=true`, `TasksAccounting=true`,
+  `StopWhenUnneeded=false`, and `CollectMode=inactive-or-failed`. Resolve the
+  returned `ControlGroup`, require it to be a strict descendant of the base
+  slice's resolved `ControlGroup`, retain its D-Bus unit identity when exposed,
+  open and retain that exact cgroup directory, require cgroup v2 and the
+  `cpu`, `memory`, and `pids` controllers, and read the real initial `cpu.stat`
+  `usage_usec` as `CPU_USEC`. Reject reused unit names, a missing/foreign
+  manager, controller loss, inode mismatch, or any unknown child. Do not
+  approximate the signed CPU quota/period as a systemd property: Docker/runc
+  alone applies the exact per-container controls.
+
+  Test that Docker `HostConfig.CgroupParent` receives the exact slice *unit
+  name*, never a cgroup filesystem path. After start, the container remains
+  before `EXECUTE` until its exact returned ID, init PID `0::` cgroup, and sole
+  `docker-<full-ID>.scope` child are proven under that attempt slice. Verify the
+  exact `cpu.max`, `memory.max`, `memory.swap.max`, and `pids.max` facts in that
+  scope; no-swap requires both the Engine memory-swap request and
+  `memory.swap.max=0` proof. Test failures at every point as unavailable or
+  incomplete with registered cleanup, not as a best-effort continuation.
+
+  Test the private output spool as a response handoff, not an artifact sink.
+  `SANITIZE` reserves the entire signed `maxOutputBytes` before `EXECUTE` and
+  retains that reservation through the one close path. The launcher alone
+  creates the descriptor-relative anonymous `O_TMPFILE|O_RDWR|O_CLOEXEC` file
+  below its verified private spool root, verifies a regular file and configured
+  owner/mode/device plus `nlink=0`, and keeps its descriptor private. The
+  container cannot inherit, mount, link, name, reopen, or receive this
+  descriptor. Test aggregate reservation exhaustion, write/count/hash bounds,
+  `fsync`, seal, rewind, response ownership, abort, duplicate close, and close
+  failure. A close failure halts daemon admission; it does not retry the
+  descriptor or change a prior `CLEANED` record.
+
+  Add closed inner-protocol framing tests: each frame is a fixed big-endian
+  32-bit length followed by bounded canonical JSON. The handshake is complete
+  only through `PREPARE`, `MOUNT_VERIFIED`, `EXECUTE`, and either
+  `COMPLETED` with raw exact EOF or `FAILED` with a closed reason and no output.
+  `PREPARE` is exactly the canonical object
+  `{protocolVersion:"inspector-container.v1", frame:"PREPARE", attemptNonce,
+  outerCanonicalInputDigest, operation, sealedByteBinding:SealedByteBindingV1,
+  policy:ExternalValidationPolicyV1,
+  executionManifestBody:InspectorExecutionManifestBodyV1,
+  executionManifestDigest, prepareDigest}`. `prepareDigest` is canonical over
+  this body excluding itself. The container strictly recomputes nested active
+  policy/policy digest, resource envelope/resource-envelope digest, and manifest
+  body digest; requires the manifest digest to equal
+  `policy.parserBuildDigest` and the matching resource envelope; checks compiled
+  grammar, backend, security, and inner-protocol digests exactly; and applies
+  policy envelope parser limits, requires sealed bytes to fit both policy and
+  hard ceilings, and applies the same closed effective-overlap rule for the
+  sanitizer. The outer digest is opaque launcher correlation only: omitted
+  scope/fence/request facts prevent container recomputation. No caller content
+  type or artifact-kind field exists in this DTO.
+
+  `MOUNT_VERIFIED` echoes nonce, outer digest, prepare digest, artifact ID, and
+  measured size/hash. `EXECUTE` echoes nonce, outer digest, prepare digest, and
+  operation only after host/fence/trust checks. Every terminal frame echoes the
+  same bindings; `COMPLETED` supplies an exact output header followed by raw EOF,
+  while `FAILED` supplies a closed reason and no output. The 4A fixed
+  DTO/framing/state and fake-entrypoint tests are consumed by the future 4B
+  semantic entrypoint; 4B does not redefine framing. Add adversarial altered
+  digest, opaque-outer mismatch, automatic-kind ambiguity, server-kind mismatch,
+  and SANITIZE-DSM rejection cases at their owning task.
+
 - [ ] **Step 5: Implement fixed runtime admission, catalog rechecks, and exact
   cleanup.**
 
-  The launcher validates the signed catalog, signature, revocation state,
+  The launcher validates the signed catalog, Ed25519 signature, revocation
+  state, exact local OCI configuration/manifest and `RepoDigest` proof,
   manifest/profile/security/protocol bindings, and the sealed input before
   admission. Recheck the same catalog/trust and all binding facts after upload
   and immediately before create. Pass only the admitted manifest to the backend.
-  The runtime adapter fixes the OCI configuration described above and reports
-  only the bounded CPU budget, baseline, consumed and final counter values in
-  the proven shared unit, threshold, disposition, and measured kill latency. It
-  performs no caller-configured Docker operation. It consumes Task 3's live
-  borrowed input capability only: a daemon-visible candidate may be derived
-  from `/proc/<launcherPID>/fd/N` only after real daemon proof. It must never
-  use `/proc/self/fd` or the original staging path as a fallback. Before parse,
+  Missing OCI evidence, an image volume, or an unverified local image is an
+  unavailable attempt, never a pull or an inferred catalog fact.
+
+  After `INPUT_BOUND`, use the deterministic base/attempt slice names and
+  derived description marker already persisted in `INTENDED`, call the
+  user-manager D-Bus `StartTransientUnit` with mode `fail`, and resolve the
+  exact `Id`, `Description`, `Slice`, `ControlGroup`, object path, and
+  `InvocationID`. Verify the marker and base slice, a fresh strict-descendant
+  cgroup-v2 directory with exact device/inode/controllers and `populated=0`,
+  retain its descriptor, read its non-assumed CPU baseline, then append and
+  fsync `RUNTIME_PARENT_BOUND`. Only then may the AF_UNIX Engine API 1.44
+  adapter create the deterministic container. It verifies the returned ID
+  before appending `CONTAINER_BOUND`, attaches the bounded multiplexed streams
+  before start, starts it, and permits `EXECUTE` only after the exact child
+  scope and fixed controls are observed. All execution input comes from Task 3's live
+  borrowed input capability: a daemon-visible candidate may be derived from
+  `/proc/<launcherPID>/fd/N` only after real daemon proof. It must never use
+  `/proc/self/fd` or the original staging path as a fallback. Before parse,
   exact mounted read-only identity and digest must be verified; otherwise the
   attempt is unavailable. Task 5c supplies the host proof for proc access,
   canonicalization, user-namespace mapping, and the read-only mount.
 
-  On every terminal path, record `CLEANUP_REQUIRED`, then remove only the exact
-  verified container ID and exact staged inode. A failed removal writes
-  `CLEANUP_FAILED` and closes admission. A completed response is held until the
-  `CLEANED` record is durable. The code documents actual host timer/controller
+  The launcher serializes only the fixed `PREPARE` DTO and requires the
+  container's canonical `prepareDigest` recomputation. It carries
+  `outerCanonicalInputDigest` strictly as opaque correlation, rejects an altered
+  nested policy/envelope/manifest/profile digest, and accepts no caller kind or
+  content-type claim. `MOUNT_VERIFIED`, `EXECUTE`, `COMPLETED`, and `FAILED`
+  must echo the exact nonce/outer/prepare bindings before the outer launcher
+  accepts the fixed outcome mapping or raw exact EOF.
+
+  Before `SANITIZE` `EXECUTE`, the launcher reserves the full signed output
+  budget and creates its anonymous private spool under the configured root.
+  It bounds bytes while hashing, fsyncs, seals, and rewinds the descriptor; no
+  spool descriptor, inode, or path enters an attempt record or recovery input.
+  After sandbox cleanup reaches `CLEANED`, it may expose the descriptor only as
+  a one-shot UDS response stream. The response owner reads and rehashes it,
+  releases the aggregate reservation, and closes it exactly once. Crash or
+  abort closes the anonymous file; descriptor close failure closes daemon
+  admission without retrying it or rewriting `CLEANED`.
+
+  The runtime adapter reports only the bounded CPU budget, real baseline,
+  consumed and final counter values in `CPU_USEC`, threshold disposition, and
+  measured kill latency. On every normal, CPU-budget, cancellation, deadline,
+  or unavailable terminal path after a staging or runtime resource is
+  registered, it appends and fsyncs `CLEANUP_REQUIRED` before the first cleanup
+  mutation. On CPU budget, cancellation, or deadline it kills only the exact
+  registered ID. It waits for process exit, requires `populated=0`, then reads
+  a stable final aggregate CPU value and enforces the final budget before Docker
+  removal. It next removes only that exact ID, stops only the exact transient
+  slice, verifies the unit/cgroup disappearance, then performs exact
+  staged-inode cleanup and writes durable `CLEANED`. A reused name,
+  unknown descendant, remove/stop failure, cgroup path retention, controller
+  uncertainty, or failed staging cleanup writes `CLEANUP_FAILED`, retains the
+  recorded evidence, and closes admission. No path uses a broad scan, label
+  reconciliation, or a best-effort cleanup. A completed response is held until
+  `CLEANED` is durable. The code documents actual host timer/controller
   resolution and kill latency as Task 5c evidence rather than claiming an
   unmeasured tolerance.
 
+  Pre-`RUNTIME_PARENT_BOUND` recovery never stops a unit merely because its
+  name matches. It may adopt only an `INPUT_BOUND` attempt by validating current
+  child observations against `INTENDED`: exact derived description marker, unit
+  `Id`/name, configured base `Slice`, a fresh strict-descendant control group,
+  current D-Bus object path/`InvocationID`, cgroup-v2 directory
+  device/inode/controller facts, `populated=0`, and a real CPU baseline. It
+  durably writes the first `RUNTIME_PARENT_BOUND` receipt with the observed
+  invocation, cgroup device/inode, and baseline before exact registered cleanup.
+  Every later controller or cleanup mutation rechecks the marker, base
+  `ControlGroup`, cgroup device/inode, and `InvocationID` against that receipt;
+  a recreated/foreign unit is never stopped and instead remains evidence under
+  `CLEANUP_FAILED`.
+
+  The daemon factory accepts every host path, UID/GID, socket identity, base
+  slice, catalog/trust location, cgroup root, spool root, capacity value, and
+  monitor cadence as explicit operator configuration. Missing configuration,
+  an inherited environment default, a second listener, an unexpected PID/FD
+  type/owner/mode, or a mismatch with the fixed protocol/API literal prevents
+  production assembly. Task 4A development and its local tests use controlled
+  seams and perform no provisioning, container execution, or user-manager host
+  operation. The resulting factory performs its narrow I/O only after Task 5b
+  configuration and Task 5c host proof.
+
 - [ ] **Step 6: Run local validation and request independent review.**
 
-  Run: `uv run --locked pytest tests/contract/test_external_inspector_launcher.py tests/contract/test_external_inspector_byte_boundary.py tests/contract/test_external_inspector_runtime_controls.py tests/replay/test_external_inspector_attempt_replay.py -k 'not host_' -q`
+  Run: `uv run --locked pytest tests/contract/test_external_inspector_launcher.py tests/contract/test_external_inspector_byte_boundary.py tests/contract/test_external_inspector_docker.py tests/contract/test_external_inspector_container_protocol.py tests/contract/test_external_inspector_runtime_controls.py tests/replay/test_external_inspector_attempt_replay.py -k 'not host_' -q`
 
-  Run: `uv run --locked ruff check services/processing-controller/src/ksi_processing_controller/external_inspector_launcher.py services/processing-controller/src/ksi_processing_controller/external_inspector_attempts.py services/processing-controller/src/ksi_processing_controller/external_inspector_runtime.py services/processing-controller/src/ksi_processing_controller/external_inspector_container_protocol.py tests/contract/test_external_inspector_runtime_controls.py tests/replay/test_external_inspector_attempt_replay.py`
+  Run: `uv run --locked ruff check services/processing-controller/src/ksi_processing_controller/external_inspector_launcher.py services/processing-controller/src/ksi_processing_controller/external_inspector_attempts.py services/processing-controller/src/ksi_processing_controller/external_inspector_runtime.py services/processing-controller/src/ksi_processing_controller/external_inspector_container_protocol.py services/processing-controller/src/ksi_processing_controller/external_inspector_catalog.py services/processing-controller/src/ksi_processing_controller/external_inspector_docker.py services/processing-controller/src/ksi_processing_controller/external_inspector_systemd.py services/processing-controller/src/ksi_processing_controller/external_inspector_daemon.py tests/contract/test_external_inspector_docker.py tests/contract/test_external_inspector_container_protocol.py tests/contract/test_external_inspector_runtime_controls.py tests/replay/test_external_inspector_attempt_replay.py`
 
   Run: `git diff --check`
 
@@ -412,11 +628,18 @@ accuracy evidence from synthetic output.
 **Owner, contracts, and adoption decisions:** The processing-controller owns
 the deterministic local inspection/sanitization computation and attempt-scoped
 sink. The closed GeoTIFF profile is the source of scanner and sanitizer rules:
-only a measured ORTHO is eligible for SANITIZE; DSM is rejected for that
-operation. The scanner and sanitizer never publish bytes or a receipt on a
-failure. A pure report assembler has exactly one outcome for each sealed
-artifact and returns no partial report for cancellation, fence loss, or runtime
-failure.
+the 4B semantic entrypoint consumes the closed 4A frame and classifies only raw
+RGB/RGBA uint8 as ORTHO or one-band Float32/Float64 as DSM. Ambiguous or
+unsupported samples are rejected; only ORTHO is eligible for SANITIZE and DSM
+is rejected for that operation. The report assembler compares returned band
+count and dtype with the exact server-declared artifact kind. A mismatch is the
+existing `REJECTED` / `UNSUPPORTED_RASTER` result and discards measurements.
+The scanner and sanitizer never publish bytes or a receipt on a failure. A pure
+report assembler has exactly one outcome for each sealed artifact and returns
+no partial report for cancellation, fence loss, or runtime failure. Task 7
+independently repeats this consistency check before retaining a `MEASURED`
+outcome; this is a downstream requirement, not a new route, schema, reason, or
+approval gate.
 
 **Files:**
 - Modify: `services/processing-controller/src/ksi_processing_controller/external_geotiff_inspector.py`;
@@ -542,8 +765,16 @@ the Task 4 implementation/review prerequisites: create
   rootless socket/systemd units, a read-only signed catalog/trust-root/revocation
   source, and existing hard ceilings; document install, health, rollback, and
   the no-Docker worker/Core fence.
-- [ ] Verify socket ownership, startup catalog fail-closure, and delegation on
-  synthetic bytes. This activates neither policy nor customer-data processing.
+- [ ] Provision one fixed base user slice (for example `ksi-inspector.slice`)
+  in that dedicated UID's user manager. The rootless Docker service and launcher
+  run in the same manager; the base slice delegates the required CPU, memory,
+  and PID controllers. Record its configured unit name, resolved `ControlGroup`,
+  cgroup root, daemon socket identity, and operator-owned capacity/cadence
+  configuration without inventing defaults. Do not pre-create attempt slices or
+  alter their per-container quotas here.
+- [ ] Verify socket ownership, startup catalog fail-closure, base-slice
+  delegation, and the systemd-activated listener shape on synthetic bytes. This
+  activates neither policy nor customer-data processing.
 
 ### Task 5c: Authorized operational verification
 
@@ -551,9 +782,16 @@ the Task 4 implementation/review prerequisites: create
 only after Tasks 5b and the reviewed host-test scope; otherwise no change.
 
 - [ ] Record non-secret daemon/socket, UID mapping, delegated-controller, and
-  measured-enforcement evidence. Unavailable is failure. Run Task 4 and 5a
-  host-backed checks sequentially on the approved synthetic host.
-- [ ] Run the decisive host selection: `uv run --locked pytest tests/contract/test_external_inspector_runtime_controls.py tests/contract/test_external_inspector_byte_boundary.py tests/contract/test_external_geotiff_inspector.py tests/contract/test_external_artifact_inspection_worker.py tests/contract/test_external_sanitized_raster.py tests/contract/test_external_inspector_adversarial_inputs.py tests/replay/test_external_inspector_attempt_replay.py -k 'host_' -q`. Collection must include real controller enforcement, UID/RO bind, no-network, hostile-input, cancellation and orphan-recovery cases; no collected tests, unavailable runtime, skips or incomplete coverage do not pass. Only actual successful execution can close the host-enforcement gate.
+  measured-enforcement evidence. Specifically prove user-manager
+  `StartTransientUnit(..., "fail", ...)`, exact child `ControlGroup` descent,
+  retained cgroup identity/controllers/initial non-assumed `usage_usec`, exact
+  Engine API 1.44 `CgroupParent` slice-unit mapping, init-PID scope identity,
+  fixed scope controls, bounded attach plus anonymous-spool/response-close
+  behavior, `populated=0`, stable final CPU before exact Docker removal, exact
+  `StopUnit`, and unit/cgroup disappearance before staging cleanup. Unavailable
+  is failure. Run Task 4 and 5a host-backed checks sequentially on the approved
+  synthetic host.
+- [ ] Run the decisive host selection: `uv run --locked pytest tests/contract/test_external_inspector_docker.py tests/contract/test_external_inspector_runtime_controls.py tests/contract/test_external_inspector_byte_boundary.py tests/contract/test_external_geotiff_inspector.py tests/contract/test_external_artifact_inspection_worker.py tests/contract/test_external_sanitized_raster.py tests/contract/test_external_inspector_adversarial_inputs.py tests/replay/test_external_inspector_attempt_replay.py -k 'host_' -q`. Collection must include real controller enforcement, UID/RO bind, no-network, hostile-input, cancellation and orphan-recovery cases; no collected tests, unavailable runtime, skips or incomplete coverage do not pass. Only actual successful execution can close the host-enforcement gate.
 
 ### Task 6: Integration/release-boundary review
 
