@@ -7,6 +7,13 @@ x-core-image: &core-image
     context: ..
     dockerfile: Dockerfile
 
+x-app-hardening: &app-hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+
 services:
   init-state:
     <<: *core-image
@@ -20,7 +27,7 @@ services:
     restart: "no"
 
   identity:
-    <<: *core-image
+    <<: [*core-image, *app-hardening]
     network_mode: host
     command:
       - /app/.venv/bin/python
@@ -91,7 +98,7 @@ services:
     networks: [staging-private]
 
   synthetic-copilot:
-    <<: *core-image
+    <<: [*core-image, *app-hardening]
     command:
       - /app/.venv/bin/python
       - /app/deploy/synthetic-staging/provider.py
@@ -144,7 +151,7 @@ services:
     networks: [staging-private]
 
   core:
-    <<: *core-image
+    <<: [*core-image, *app-hardening]
     environment:
       KSI_CORE_DATA_DIR: /var/lib/ksi/data
       KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
@@ -196,6 +203,7 @@ services:
     networks: [staging-private]
 
   dashboard:
+    <<: *app-hardening
     image: ksi-phase2-dashboard:local
     build:
       context: ../apps/dashboard
@@ -214,6 +222,9 @@ services:
       AUTH_TRUST_HOST: "true"
     volumes:
       - staging-secrets:/run/ksi-secrets:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+      - /app/.next/cache:rw,noexec,nosuid,nodev,size=268435456,uid=10001,gid=10001,mode=0700
     ports:
       - "127.0.0.1:${KSI_STAGING_APP_PORT}:3000"
     depends_on:
