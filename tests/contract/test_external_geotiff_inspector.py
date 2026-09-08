@@ -1086,6 +1086,26 @@ def test_raw_subifd_routes_reject_before_rasterio_open(
     assert outcome.reason == "MALFORMED_TIFF"
 
 
+@pytest.mark.parametrize(
+    ("tag", "field_type"),
+    [(34665, 4), (34853, 4), (40965, 4), (34665, 13), (34665, 18),
+     (65000, 13), (65000, 18)],
+)
+@pytest.mark.parametrize("pointer_kind", ["valid", "out_of_range", "cyclic"])
+def test_secondary_metadata_ifd_routes_reject_before_decoder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tag: int, field_type: int, pointer_kind: str,
+) -> None:
+    """Lazy or unknown metadata pointers cannot bypass all-directory preflight."""
+    path = _write_raw_validation_rgb(tmp_path / "secondary-ifd.tif")
+    _append_classic_subifd(path, pointer_kind, tag=tag, field_type=field_type)
+
+    outcome = _inspect_without_decoder(monkeypatch, path, ProcessingArtifactKind.ORTHO)
+
+    assert outcome.outcome is ArtifactOutcome.REJECTED
+    assert outcome.reason == "MALFORMED_TIFF"
+
+
 def test_gdal_app_defined_error_during_colorinterp_becomes_artifact_rejection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1285,8 +1305,10 @@ def _append_classic_model_transformation(path: Path, matrix: tuple[float, ...]) 
     path.write_bytes(payload)
 
 
-def _append_classic_subifd(path: Path, pointer_kind: str) -> None:
-    """Add one raw tag-330 route without relying on a decoder to serialize it."""
+def _append_classic_subifd(
+    path: Path, pointer_kind: str, *, tag: int = 330, field_type: int = 4,
+) -> None:
+    """Add a raw secondary directory pointer without a decoder serializer."""
     payload = bytearray(path.read_bytes())
     original_offset = struct.unpack_from("<I", payload, 4)[0]
     entry_count = struct.unpack_from("<H", payload, original_offset)[0]
@@ -1306,8 +1328,11 @@ def _append_classic_subifd(path: Path, pointer_kind: str) -> None:
         raise AssertionError(f"unexpected SubIFD pointer case: {pointer_kind}")
     payload.extend(struct.pack("<H", entry_count + 1))
     payload.extend(payload[entries_start : entries_start + entry_count * 12])
-    payload.extend(struct.pack("<HHII", 330, 4, 1, target))
+    value = appended_offset + 2 + (entry_count + 1) * 12 + 4 if field_type == 18 else target
+    payload.extend(struct.pack("<HHII", tag, field_type, 1, value))
     payload.extend(struct.pack("<I", next_offset))
+    if field_type == 18:
+        payload.extend(struct.pack("<Q", target))
     struct.pack_into("<I", payload, 4, appended_offset)
     path.write_bytes(payload)
 
