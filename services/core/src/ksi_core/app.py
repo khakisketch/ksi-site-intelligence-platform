@@ -190,6 +190,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "managed job·source authority와 분리된 scoped declaration으로만 존재한다",
     ),
     (
+        "external_evidence_store",
+        (("external_reconstruction_store", "observation_work_order_store", "evidence_storage"),),
+        "external_evidence_store 는 external_reconstruction_store·"
+        "observation_work_order_store·evidence_storage 를 모두 요구한다",
+    ),
+    (
         "acquisition_connectivity_store",
         (("site_store",),),
         "acquisition_connectivity_store 는 site_store 와 함께 주어져야 한다"
@@ -710,16 +716,6 @@ def create_app(
                 "external_reconstruction_store 는 digest-bound PUT와 trusted object observation "
                 "storage ports를 모두 요구한다"
             )
-
-    if external_evidence_store is not None and (
-        external_reconstruction_store is None
-        or observation_work_order_store is None
-        or evidence_storage is None
-    ):
-        raise ValueError(
-            "external_evidence_store 는 external_reconstruction_store·"
-            "observation_work_order_store·evidence_storage 를 모두 요구한다"
-        )
 
     protected_surface = any(value is not None for value in _provided.values())
     if protected_surface and auth_registry is None:
