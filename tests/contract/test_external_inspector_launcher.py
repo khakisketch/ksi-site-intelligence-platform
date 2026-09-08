@@ -40,6 +40,7 @@ from ksi_event_contracts.inspector_execution_manifest import (
     SignatureVerificationVerdict,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
+from ksi_processing_controller.external_geotiff_profile import external_geotiff_profile_digest_v1
 from ksi_processing_controller.external_inspector_launcher import (
     CatalogStartupStatusV1,
     ExternalInspectorLauncher,
@@ -47,7 +48,6 @@ from ksi_processing_controller.external_inspector_launcher import (
     InspectorEffectiveLimitsV1,
     InspectorOperationProfileDecision,
     InspectorSandboxUnavailable,
-    InspectorStagedBytesPort,
 )
 from ksi_processing_controller.external_inspector_protocol import (
     InspectorLaunchRequestV1,
@@ -64,6 +64,11 @@ from ksi_processing_controller.external_inspector_protocol import (
     read_launch_request_header,
     read_launch_result,
     write_launch_request,
+)
+from ksi_processing_controller.external_inspector_staging import (
+    InspectorReadOnlyBindV1,
+    InspectorSealedInputPort,
+    MappedInspectorReaderV1,
 )
 from pydantic import ValidationError
 
@@ -126,7 +131,9 @@ def _envelope() -> ResourceEnvelopeV1:
     ).sealed()
 
 
-def _manifest(envelope: ResourceEnvelopeV1 | None = None) -> InspectorExecutionManifestV1:
+def _manifest(
+    envelope: ResourceEnvelopeV1 | None = None, *, backend_profile_digest: str | None = None
+) -> InspectorExecutionManifestV1:
     effective_envelope = envelope or _envelope()
     assert effective_envelope.resource_envelope_digest is not None
     body = InspectorExecutionManifestBodyV1(
@@ -137,7 +144,7 @@ def _manifest(envelope: ResourceEnvelopeV1 | None = None) -> InspectorExecutionM
         build_provenance_digest=_digest("f"),
         sbom_digest=_digest("1"),
         inspector_protocol_digest=_digest("2"),
-        backend_profile_digest=_digest("3"),
+        backend_profile_digest=backend_profile_digest or external_geotiff_profile_digest_v1(),
         security_profile_digest=_digest("4"),
         resource_envelope_digest=effective_envelope.resource_envelope_digest,
         backend="DEDICATED_ROOTLESS_DOCKER_V1",
@@ -174,7 +181,11 @@ def _manifest(envelope: ResourceEnvelopeV1 | None = None) -> InspectorExecutionM
     )
 
 
-def _policy(manifest: InspectorExecutionManifestV1 | None = None) -> ExternalValidationPolicyV1:
+def _policy(
+    manifest: InspectorExecutionManifestV1 | None = None,
+    *,
+    grammar_digest: str | None = None,
+) -> ExternalValidationPolicyV1:
     actual_manifest = manifest or _manifest()
     envelope = _envelope()
     assert envelope.resource_envelope_digest == actual_manifest.body.resource_envelope_digest
@@ -183,7 +194,7 @@ def _policy(manifest: InspectorExecutionManifestV1 | None = None) -> ExternalVal
         version=1,
         status=PolicyStatus.ACTIVE,
         parser_build_digest=actual_manifest.parser_build_digest,
-        grammar_digest=_digest("5"),
+        grammar_digest=grammar_digest or external_geotiff_profile_digest_v1(),
         resource_envelope=envelope,
         resource_envelope_digest=envelope.resource_envelope_digest,
         authority_record_digest=_digest("6"),
@@ -700,6 +711,112 @@ class _Staging:
         return staged
 
 
+class _InputSealed:
+    def __init__(self, payload: bytes, reader: MappedInspectorReaderV1) -> None:
+        self.payload = payload
+        self.reader = reader
+        self.prepared = False
+        self.aborted = False
+
+    def prepare_read_only_bind(self, *, deadline_monotonic: float) -> InspectorReadOnlyBindV1:
+        del deadline_monotonic
+        self.prepared = True
+        return InspectorReadOnlyBindV1(
+            source=_InputBorrowedSource(),
+            target_path="/input/artifact.tif",
+            read_only=True,
+            observed_sha256=_bytes_digest(self.payload),
+            observed_size_bytes=len(self.payload),
+            source_device=1,
+            source_inode=2,
+            source_owner_uid=os.geteuid(),
+            source_owner_gid=os.getegid(),
+            source_link_count=1,
+            reader_mapping_witness=self.reader.mapping_witness,
+        )
+
+    def abort(self) -> None:
+        self.aborted = True
+
+
+class _InputBorrowedSource:
+    def read_at(self, *, offset: int, maximum_bytes: int) -> bytes:
+        del offset, maximum_bytes
+        return b""
+
+    def consume_fd(self, consumer: Callable[[int], object]) -> object:
+        return consumer(42)
+
+
+class _InputMutable:
+    def __init__(self, maximum: int, staging: _InputStaging) -> None:
+        self.maximum = maximum
+        self.staging = staging
+        self.buffer = BytesIO()
+        self.aborted = False
+
+    def write(self, chunk: bytes) -> None:
+        if self.buffer.tell() + len(chunk) > self.maximum:
+            raise ValueError("test input staging cap exceeded")
+        self.buffer.write(chunk)
+
+    def seal_for_reader(
+        self,
+        *,
+        expected_sha256: str,
+        expected_size_bytes: int,
+        reader: MappedInspectorReaderV1,
+        supplementary_groups: tuple[int, ...],
+        deadline_monotonic: float,
+    ) -> _InputSealed:
+        del supplementary_groups, deadline_monotonic
+        payload = self.buffer.getvalue()
+        assert expected_size_bytes == len(payload)
+        assert expected_sha256 == _bytes_digest(payload)
+        sealed = _InputSealed(payload, reader)
+        self.staging.sealed.append(sealed)
+        return sealed
+
+    def abort(self) -> None:
+        self.aborted = True
+
+
+class _InputStaging:
+    def __init__(self) -> None:
+        self.mutable: list[_InputMutable] = []
+        self.sealed: list[_InputSealed] = []
+
+    def begin(self, *, maximum_bytes: int, deadline_monotonic: float) -> _InputMutable:
+        del deadline_monotonic
+        mutable = _InputMutable(maximum_bytes, self)
+        self.mutable.append(mutable)
+        return mutable
+
+
+class _ReaderMapping:
+    def __init__(self, reader: MappedInspectorReaderV1 | None = None) -> None:
+        self.reader = reader or MappedInspectorReaderV1(
+            container_uid=10001,
+            container_gid=10001,
+            host_uid=20001,
+            host_gid=20001,
+            mapping_witness="synthetic-mapping-v1",
+        )
+        self.calls: list[tuple[int, int, tuple[int, ...]]] = []
+
+    def resolve_exact(
+        self,
+        *,
+        runtime_uid: int,
+        runtime_gid: int,
+        supplementary_groups: tuple[int, ...],
+        deadline_monotonic: float,
+    ) -> MappedInspectorReaderV1 | None:
+        del deadline_monotonic
+        self.calls.append((runtime_uid, runtime_gid, supplementary_groups))
+        return self.reader
+
+
 class _Backend:
     def __init__(self, completed: InspectorBackendCompletedV1 | Exception) -> None:
         self.completed = completed
@@ -709,14 +826,17 @@ class _Backend:
         self,
         *,
         request: InspectorLaunchRequestV1,
-        staged_input: InspectorStagedBytesPort,
+        sealed_input: InspectorSealedInputPort,
         limits: InspectorEffectiveLimitsV1,
         deadline_monotonic: float,
         is_cancelled: Callable[[], bool],
     ) -> InspectorBackendCompletedV1:
-        del request, deadline_monotonic
+        del request
         assert is_cancelled() is False
-        self.calls.append((staged_input.read(), limits))
+        assert isinstance(sealed_input, _InputSealed)
+        bind = sealed_input.prepare_read_only_bind(deadline_monotonic=deadline_monotonic)
+        assert bind.target_path == "/input/artifact.tif"
+        self.calls.append((sealed_input.payload, limits))
         if isinstance(self.completed, Exception):
             raise self.completed
         return self.completed
@@ -745,6 +865,8 @@ def _launcher(
     profile: _Profile | None = None,
     accounting: _Accounting | None = None,
     staging: _Staging | None = None,
+    input_staging: _InputStaging | None = None,
+    reader_mapping: _ReaderMapping | None = None,
     backend: _Backend | None = None,
     worker_uid: int = _WORKER_UID,
     protocol_limits: ProtocolLimitsV1 | None = None,
@@ -753,6 +875,7 @@ def _launcher(
     actual_catalog = catalog or _Catalog(_manifest())
     actual_accounting = accounting or _Accounting()
     actual_staging = staging or _Staging()
+    actual_input_staging = input_staging or _InputStaging()
     actual_backend = backend or _Backend(_backend_result(request))
     return ExternalInspectorLauncher(
         required_worker_uid=worker_uid,
@@ -761,6 +884,8 @@ def _launcher(
         operation_profile=profile or _Profile(),
         accounting=actual_accounting,
         staging=actual_staging,
+        input_staging=actual_input_staging,
+        reader_mapping=reader_mapping or _ReaderMapping(),
         backend=actual_backend,
         protocol_limits=protocol_limits or _limits(),
         monotonic=monotonic,
@@ -804,8 +929,15 @@ def test_launcher_uses_os_peer_before_read_then_admits_exact_bound_input() -> No
     request = _request(_policy(), payload)
     accounting = _Accounting()
     staging = _Staging()
+    input_staging = _InputStaging()
     backend = _Backend(_backend_result(request))
-    launcher = _launcher(request, accounting=accounting, staging=staging, backend=backend)
+    launcher = _launcher(
+        request,
+        accounting=accounting,
+        staging=staging,
+        input_staging=input_staging,
+        backend=backend,
+    )
 
     accepted, terminal = _run_handler(launcher, request, payload)
 
@@ -814,8 +946,50 @@ def test_launcher_uses_os_peer_before_read_then_admits_exact_bound_input() -> No
     assert backend.calls == [(payload, backend.calls[0][1])]
     assert accounting.calls == [(1, 1, len(payload))]
     assert all(reservation.released for reservation in accounting.reservations)
-    assert staging.staged[0].max_bytes == len(payload)
-    assert staging.staged[0].aborted is True
+    assert input_staging.mutable[0].maximum == len(payload)
+    assert input_staging.sealed[0].prepared is True
+    assert input_staging.sealed[0].aborted is True
+    assert staging.staged == []
+
+
+def test_launcher_requires_a_typed_current_mapping_before_it_receives_input_bytes() -> None:
+    """A signed UID without a verified host mapping cannot be treated as a usable reader."""
+
+    class _UnavailableMapping:
+        def resolve_exact(
+            self,
+            *,
+            runtime_uid: int,
+            runtime_gid: int,
+            supplementary_groups: tuple[int, ...],
+            deadline_monotonic: float,
+        ) -> None:
+            del runtime_uid, runtime_gid, supplementary_groups, deadline_monotonic
+            return None
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    input_staging = _InputStaging()
+    backend = _Backend(_backend_result(request))
+    launcher = _launcher(
+        request,
+        input_staging=input_staging,
+        reader_mapping=_UnavailableMapping(),  # type: ignore[arg-type]
+        backend=backend,
+    )
+    client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        thread = threading.Thread(target=lambda: launcher.handle_connection(server))
+        thread.start()
+        write_launch_request(client, request, BytesIO(payload), _limits())
+        assert read_launch_result(client, _limits()).result == "FAILED"
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+    finally:
+        client.close()
+        server.close()
+    assert input_staging.mutable == []
+    assert backend.calls == []
 
 
 class _RecvTrackingSocket:
@@ -1029,14 +1203,42 @@ def test_admission_clamps_signed_and_policy_limits_before_staging_or_backend() -
     )
 
 
+def test_admission_requires_policy_grammar_to_match_signed_backend_profile() -> None:
+    """A signed parser image cannot be used for a different positive grammar."""
+    manifest = _manifest(backend_profile_digest=_digest("5"))
+    request = _request(_policy(manifest))
+    launcher = _launcher(request, catalog=_Catalog(manifest))
+
+    with pytest.raises(InspectorSandboxUnavailable, match="grammar"):
+        launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
+
+
+def test_admission_rejects_an_unknown_grammar_even_when_policy_and_manifest_match() -> None:
+    """The approved v1 parser cannot admit a mutually agreed but unimplemented grammar."""
+    unknown_profile = _digest("5")
+    manifest = _manifest(backend_profile_digest=unknown_profile)
+    request = _request(_policy(manifest, grammar_digest=unknown_profile))
+    launcher = _launcher(request, catalog=_Catalog(manifest))
+
+    with pytest.raises(InspectorSandboxUnavailable, match="profile"):
+        launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
+
+
 def test_reservation_and_staging_are_released_when_backend_fails() -> None:
     """A terminal backend error must not leak aggregate concurrency or spool capacity."""
     payload = b"bound-input"
     request = _request(_policy(), payload)
     accounting = _Accounting()
     staging = _Staging()
+    input_staging = _InputStaging()
     backend = _Backend(RuntimeError("synthetic backend error"))
-    launcher = _launcher(request, accounting=accounting, staging=staging, backend=backend)
+    launcher = _launcher(
+        request,
+        accounting=accounting,
+        staging=staging,
+        input_staging=input_staging,
+        backend=backend,
+    )
     client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         thread = threading.Thread(target=lambda: launcher.handle_connection(server))
@@ -1050,7 +1252,8 @@ def test_reservation_and_staging_are_released_when_backend_fails() -> None:
         client.close()
         server.close()
     assert all(item.released for item in accounting.reservations)
-    assert staging.staged[0].aborted is True
+    assert staging.staged == []
+    assert input_staging.sealed[0].aborted is True
 
 
 def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_bytes() -> None:
@@ -1060,6 +1263,7 @@ def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_
     request = _request(_policy(), payload, operation=InspectorOperation.SANITIZE)
     accounting = _Accounting()
     staging = _Staging()
+    input_staging = _InputStaging()
     backend = _Backend(
         InspectorBackendCompletedV1(
             inspector_build_digest=request.policy.parser_build_digest,
@@ -1069,7 +1273,13 @@ def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_
             output_sha256=_bytes_digest(sanitized),
         )
     )
-    launcher = _launcher(request, accounting=accounting, staging=staging, backend=backend)
+    launcher = _launcher(
+        request,
+        accounting=accounting,
+        staging=staging,
+        input_staging=input_staging,
+        backend=backend,
+    )
     client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         thread = threading.Thread(target=lambda: launcher.handle_connection(server))
@@ -1087,7 +1297,8 @@ def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_
         server.close()
     assert accounting.calls == [(1, 1, len(payload)), (0, 0, len(sanitized))]
     assert all(item.released for item in accounting.reservations)
-    assert [item.aborted for item in staging.staged] == [True, True]
+    assert [item.aborted for item in staging.staged] == [True]
+    assert input_staging.sealed[0].aborted is True
 
 
 def test_late_sanitize_output_reservation_is_released_before_staging_begins() -> None:
@@ -1176,12 +1387,12 @@ def test_client_full_close_cancels_backend_through_the_owned_uds_socket() -> Non
             self,
             *,
             request: InspectorLaunchRequestV1,
-            staged_input: InspectorStagedBytesPort,
+            sealed_input: InspectorSealedInputPort,
             limits: InspectorEffectiveLimitsV1,
             deadline_monotonic: float,
             is_cancelled: Callable[[], bool],
         ) -> InspectorBackendCompletedV1:
-            del request, staged_input, limits, deadline_monotonic
+            del request, sealed_input, limits, deadline_monotonic
             self.started.set()
             until = time.monotonic() + 0.5
             while time.monotonic() < until:

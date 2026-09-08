@@ -29,6 +29,7 @@ from ksi_event_contracts.inspector_execution_manifest import (
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
+from ksi_processing_controller.external_geotiff_profile import external_geotiff_profile_digest_v1
 from ksi_processing_controller.external_inspector_protocol import (
     InspectorFailureReason,
     InspectorLaunchRequestV1,
@@ -41,6 +42,12 @@ from ksi_processing_controller.external_inspector_protocol import (
     read_bound_bytes,
     read_launch_request_header,
     write_launch_result,
+)
+from ksi_processing_controller.external_inspector_staging import (
+    InputStagingPort,
+    InspectorSealedInputPort,
+    MappedInspectorReaderV1,
+    ReaderMappingPort,
 )
 
 
@@ -161,6 +168,10 @@ class InspectorStagedBytesPort(Protocol):
     def abort(self) -> None: ...
 
 
+class _InspectorAbortablePort(Protocol):
+    def abort(self) -> None: ...
+
+
 class InspectorStagingPort(Protocol):
     def begin(
         self, *, maximum_bytes: int, deadline_monotonic: float
@@ -168,13 +179,13 @@ class InspectorStagingPort(Protocol):
 
 
 class InspectorBackendPort(Protocol):
-    """A future backend receives only opaque staged bytes and fixed effective limits."""
+    """A future backend receives only the opaque sealed capability and fixed limits."""
 
     def execute(
         self,
         *,
         request: InspectorLaunchRequestV1,
-        staged_input: InspectorStagedBytesPort,
+        sealed_input: InspectorSealedInputPort,
         limits: InspectorEffectiveLimitsV1,
         deadline_monotonic: float,
         is_cancelled: Callable[[], bool],
@@ -255,6 +266,8 @@ class ExternalInspectorLauncher:
         operation_profile: InspectorOperationProfilePort,
         accounting: InspectorAdmissionAccountingPort,
         staging: InspectorStagingPort,
+        input_staging: InputStagingPort,
+        reader_mapping: ReaderMappingPort,
         backend: InspectorBackendPort,
         protocol_limits: ProtocolLimitsV1,
         monotonic: Callable[[], float] = time.monotonic,
@@ -267,6 +280,8 @@ class ExternalInspectorLauncher:
         self._operation_profile = operation_profile
         self._accounting = accounting
         self._staging = staging
+        self._input_staging = input_staging
+        self._reader_mapping = reader_mapping
         self._backend = backend
         self._protocol_limits = protocol_limits
         self._monotonic = monotonic
@@ -357,6 +372,14 @@ class ExternalInspectorLauncher:
             raise InspectorSandboxUnavailable(
                 "policy and manifest bindings are inconsistent"
             ) from exc
+        if request.policy.grammar_digest != manifest.body.backend_profile_digest:
+            raise InspectorSandboxUnavailable(
+                "policy grammar digest does not match signed backend profile"
+            )
+        if request.policy.grammar_digest != external_geotiff_profile_digest_v1():
+            raise InspectorSandboxUnavailable(
+                "signed backend profile is not external-geotiff-profile.v1"
+            )
         hard = manifest.body.hard_ceilings
         try:
             wall_from_policy = int(envelope.max_deadline_seconds * 1_000)
@@ -391,7 +414,8 @@ class ExternalInspectorLauncher:
         deadline = ProtocolDeadline(self._protocol_limits.max_wire_duration_millis, self._monotonic)
         request: InspectorLaunchRequestV1 | None = None
         input_reservation: InspectorAdmissionReservationPort | None = None
-        staged_input: InspectorStagedBytesPort | None = None
+        mutable_input = None
+        sealed_input: InspectorSealedInputPort | None = None
         cancellation = _SocketCancellation(connection)
         try:
             request = read_launch_request_header(
@@ -411,7 +435,8 @@ class ExternalInspectorLauncher:
                 raise InspectorSandboxUnavailable(
                     "aggregate request/concurrency/spool capacity unavailable"
                 )
-            staged_input = self._staging.begin(
+            reader = self._resolve_reader_mapping(admission, deadline)
+            mutable_input = self._input_staging.begin(
                 maximum_bytes=request.sealed_byte_binding.observed_size_bytes,
                 deadline_monotonic=deadline.expires_at,
             )
@@ -420,11 +445,18 @@ class ExternalInspectorLauncher:
                 connection,
                 request.sealed_byte_binding,
                 self._protocol_limits,
-                staged_input.write,
+                mutable_input.write,
                 maximum_bytes=admission.effective_limits.max_input_bytes,
                 deadline=deadline,
             )
-            staged_input.finish()
+            sealed_input = mutable_input.seal_for_reader(
+                expected_sha256=request.sealed_byte_binding.observed_sha256,
+                expected_size_bytes=request.sealed_byte_binding.observed_size_bytes,
+                reader=reader,
+                supplementary_groups=admission.manifest.body.supplementary_groups,
+                deadline_monotonic=deadline.expires_at,
+            )
+            mutable_input = None
             deadline.remaining()
             write_launch_result(
                 connection,
@@ -435,7 +467,7 @@ class ExternalInspectorLauncher:
             cancellation.start_monitor(deadline)
             backend_result = self._backend.execute(
                 request=request,
-                staged_input=staged_input,
+                sealed_input=sealed_input,
                 limits=admission.effective_limits,
                 deadline_monotonic=deadline.expires_at,
                 is_cancelled=cancellation.is_cancelled,
@@ -454,8 +486,10 @@ class ExternalInspectorLauncher:
             self._write_failure_if_identified(connection, request, deadline)
         finally:
             cancellation.stop_monitor()
-            if staged_input is not None:
-                self._abort_quietly(staged_input)
+            if sealed_input is not None:
+                self._abort_quietly(sealed_input)
+            elif mutable_input is not None:
+                self._abort_quietly(mutable_input)
             if input_reservation is not None:
                 self._release_quietly(input_reservation)
             self._close_quietly(connection)
@@ -549,6 +583,26 @@ class ExternalInspectorLauncher:
             if output_reservation is not None:
                 self._release_quietly(output_reservation)
 
+    def _resolve_reader_mapping(
+        self, admission: InspectorAdmissionV1, deadline: ProtocolDeadline
+    ) -> MappedInspectorReaderV1:
+        deadline.remaining()
+        try:
+            reader = self._reader_mapping.resolve_exact(
+                runtime_uid=admission.manifest.body.runtime_uid,
+                runtime_gid=admission.manifest.body.runtime_gid,
+                supplementary_groups=admission.manifest.body.supplementary_groups,
+                deadline_monotonic=deadline.expires_at,
+            )
+        except Exception as exc:
+            raise InspectorSandboxUnavailable(
+                "signed runtime reader mapping is unavailable"
+            ) from exc
+        deadline.remaining()
+        if not isinstance(reader, MappedInspectorReaderV1):
+            raise InspectorSandboxUnavailable("signed runtime reader mapping is unavailable")
+        return reader
+
     def _copy_exact_output(
         self,
         source: BinaryIO,
@@ -619,7 +673,7 @@ class ExternalInspectorLauncher:
         return uid == self._required_worker_uid
 
     @staticmethod
-    def _abort_quietly(staged: InspectorStagedBytesPort) -> None:
+    def _abort_quietly(staged: _InspectorAbortablePort) -> None:
         with suppress(Exception):
             staged.abort()
 
