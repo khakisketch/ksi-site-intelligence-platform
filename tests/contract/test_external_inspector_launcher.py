@@ -41,13 +41,26 @@ from ksi_event_contracts.inspector_execution_manifest import (
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_processing_controller.external_geotiff_profile import external_geotiff_profile_digest_v1
+from ksi_processing_controller.external_inspector_attempts import (
+    AttemptBindingV1,
+    PrivateStagingRootV1,
+    RuntimeParentReceiptV1,
+    StagingAllocationPlanV1,
+    StagingAllocationReceiptV1,
+    StagingFileIdentityV1,
+)
+from ksi_processing_controller.external_inspector_container_protocol import (
+    FixedContainerConfigurationV1,
+)
 from ksi_processing_controller.external_inspector_launcher import (
     CatalogStartupStatusV1,
     ExternalInspectorLauncher,
     InspectorBackendCompletedV1,
+    InspectorBackendCreatedV1,
     InspectorEffectiveLimitsV1,
     InspectorOperationProfileDecision,
     InspectorSandboxUnavailable,
+    _AttemptRuntimeCleanupCoordinator,
 )
 from ksi_processing_controller.external_inspector_protocol import (
     InspectorLaunchRequestV1,
@@ -64,6 +77,11 @@ from ksi_processing_controller.external_inspector_protocol import (
     read_launch_request_header,
     read_launch_result,
     write_launch_request,
+)
+from ksi_processing_controller.external_inspector_runtime import (
+    CpuCounterUnitV1,
+    FixedRuntimeMeasurementV1,
+    RuntimeControlDispositionV1,
 )
 from ksi_processing_controller.external_inspector_staging import (
     InspectorReadOnlyBindV1,
@@ -134,6 +152,11 @@ def _envelope() -> ResourceEnvelopeV1:
 def _manifest(
     envelope: ResourceEnvelopeV1 | None = None, *, backend_profile_digest: str | None = None
 ) -> InspectorExecutionManifestV1:
+    from ksi_processing_controller.external_inspector_container_protocol import (
+        compiled_inner_protocol_digest_v1,
+        compiled_security_profile_digest_v1,
+    )
+
     effective_envelope = envelope or _envelope()
     assert effective_envelope.resource_envelope_digest is not None
     body = InspectorExecutionManifestBodyV1(
@@ -143,9 +166,9 @@ def _manifest(
         source_tree_digest=_digest("e"),
         build_provenance_digest=_digest("f"),
         sbom_digest=_digest("1"),
-        inspector_protocol_digest=_digest("2"),
+        inspector_protocol_digest=compiled_inner_protocol_digest_v1(),
         backend_profile_digest=backend_profile_digest or external_geotiff_profile_digest_v1(),
-        security_profile_digest=_digest("4"),
+        security_profile_digest=compiled_security_profile_digest_v1(),
         resource_envelope_digest=effective_envelope.resource_envelope_digest,
         backend="DEDICATED_ROOTLESS_DOCKER_V1",
         runtime_uid=10001,
@@ -203,6 +226,41 @@ def _policy(
         compatibility_mapping_digests=(),
         synthetic_test_only=True,
     ).sealed()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("inspector_protocol_digest", _digest("e"), "protocol"),
+        ("security_profile_digest", _digest("f"), "security"),
+    ],
+)
+def test_admission_rejects_unknown_signed_inner_protocol_or_security_profile(
+    field: str, value: str, message: str
+) -> None:
+    """Signature validity cannot declare an uncompiled local runtime profile compatible."""
+    manifest = _manifest()
+    unknown = manifest.model_copy(
+        update={
+            "body": manifest.body.model_copy(
+                update={
+                    field: value,
+                }
+            )
+        }
+    )
+    unknown = unknown.model_copy(
+        update={
+            "signature": unknown.signature.model_copy(
+                update={"digest": unknown.body.canonical_body_digest()}
+            )
+        }
+    )
+    request = _request(_policy(unknown))
+    launcher = _launcher(request, catalog=_Catalog(unknown))
+
+    with pytest.raises(InspectorSandboxUnavailable, match=message):
+        launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
 
 
 def _request(
@@ -717,6 +775,7 @@ class _InputSealed:
         self.reader = reader
         self.prepared = False
         self.aborted = False
+        self.relinquished = False
 
     def prepare_read_only_bind(self, *, deadline_monotonic: float) -> InspectorReadOnlyBindV1:
         del deadline_monotonic
@@ -738,6 +797,10 @@ class _InputSealed:
     def abort(self) -> None:
         self.aborted = True
 
+    def relinquish_for_recovery(self) -> None:
+        """Synthetic equivalent of closing retained FDs without unlinking state."""
+        self.relinquished = True
+
 
 class _InputBorrowedSource:
     def read_at(self, *, offset: int, maximum_bytes: int) -> bytes:
@@ -754,6 +817,7 @@ class _InputMutable:
         self.staging = staging
         self.buffer = BytesIO()
         self.aborted = False
+        self.relinquished = False
 
     def write(self, chunk: bytes) -> None:
         if self.buffer.tell() + len(chunk) > self.maximum:
@@ -780,17 +844,195 @@ class _InputMutable:
     def abort(self) -> None:
         self.aborted = True
 
+    def relinquish_for_recovery(self) -> None:
+        self.relinquished = True
+
 
 class _InputStaging:
     def __init__(self) -> None:
         self.mutable: list[_InputMutable] = []
         self.sealed: list[_InputSealed] = []
+        self.finalized: list[tuple[StagingAllocationPlanV1, StagingAllocationReceiptV1]] = []
+
+    def private_root_identity(self) -> PrivateStagingRootV1:
+        return PrivateStagingRootV1(
+            device=1,
+            inode=10,
+            mode=0o700,
+            owner_uid=os.geteuid(),
+            owner_gid=os.getegid(),
+        )
 
     def begin(self, *, maximum_bytes: int, deadline_monotonic: float) -> _InputMutable:
         del deadline_monotonic
         mutable = _InputMutable(maximum_bytes, self)
         self.mutable.append(mutable)
         return mutable
+
+    def begin_registered(
+        self,
+        *,
+        plan: StagingAllocationPlanV1,
+        maximum_bytes: int,
+        deadline_monotonic: float,
+    ) -> tuple[_InputMutable, StagingAllocationReceiptV1]:
+        assert plan.root == self.private_root_identity()
+        mutable = self.begin(
+            maximum_bytes=maximum_bytes,
+            deadline_monotonic=deadline_monotonic,
+        )
+        receipt = StagingAllocationReceiptV1(
+            marker=StagingFileIdentityV1(1, 11, 0o600, os.geteuid(), os.getegid(), 1, 1),
+            directory=StagingFileIdentityV1(1, 12, 0o700, os.geteuid(), os.getegid(), 1, 0),
+            artifact=StagingFileIdentityV1(1, 2, 0o600, os.geteuid(), os.getegid(), 1, 0),
+        )
+        return mutable, receipt
+
+    def finalize_registered_cleanup(
+        self,
+        *,
+        plan: StagingAllocationPlanV1,
+        receipt: StagingAllocationReceiptV1,
+    ) -> None:
+        self.finalized.append((plan, receipt))
+
+
+class _Attempts:
+    """Explicit synthetic port; production receives the durable journal implementation."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def intend(self, binding: AttemptBindingV1) -> None:
+        self.events.append("INTENDED")
+
+    def staging_allocated(self, attempt_nonce: str, receipt: StagingAllocationReceiptV1) -> None:
+        del attempt_nonce, receipt
+        self.events.append("STAGING_ALLOCATED")
+
+    def input_bound(self, attempt_nonce: str, **kwargs: object) -> None:
+        del attempt_nonce, kwargs
+        self.events.append("INPUT_BOUND")
+
+    def runtime_parent_creating(self, attempt_nonce: str) -> None:
+        del attempt_nonce
+        self.events.append("RUNTIME_PARENT_CREATING")
+
+    def container_bound(self, attempt_nonce: str, runtime_id: str) -> None:
+        del attempt_nonce, runtime_id
+        self.events.append("CONTAINER_BOUND")
+
+    def runtime_parent_bound(self, attempt_nonce: str, receipt: RuntimeParentReceiptV1) -> None:
+        del attempt_nonce, receipt
+        self.events.append("RUNTIME_PARENT_BOUND")
+
+    def container_creating(self, attempt_nonce: str) -> None:
+        del attempt_nonce
+        self.events.append("CONTAINER_CREATING")
+
+    def cleanup_required(self, attempt_nonce: str, *, disposition: str) -> None:
+        del attempt_nonce, disposition
+        self.events.append("CLEANUP_REQUIRED")
+
+    def cleanup_failed(self, attempt_nonce: str, *, reason: str) -> None:
+        del attempt_nonce, reason
+        self.events.append("CLEANUP_FAILED")
+
+    def cleaned(self, attempt_nonce: str) -> None:
+        del attempt_nonce
+        self.events.append("CLEANED")
+
+
+class _AttemptRecovery:
+    """Explicit synthetic startup port; production uses the durable recovery coordinator."""
+
+    def __init__(self, unavailable: bool = False) -> None:
+        self.calls = 0
+        self._unavailable = unavailable
+
+    def recover_startup(self) -> None:
+        self.calls += 1
+        if self._unavailable:
+            raise RuntimeError("synthetic uncertain allocation")
+
+
+class _RuntimeParent:
+    """Synthetic parent receipt; production uses the transient user-systemd controller."""
+
+    def bind_before_create(
+        self,
+        *,
+        binding: AttemptBindingV1,
+        configuration: FixedContainerConfigurationV1,
+    ) -> RuntimeParentReceiptV1:
+        del configuration
+        return RuntimeParentReceiptV1(
+            unit_name=binding.systemd_slice_name,
+            object_path="/org/freedesktop/systemd1/unit/synthetic",
+            description="ksi-external-inspector-attempt.v1:" + binding.digest,
+            slice_name=binding.systemd_base_slice,
+            control_group="/synthetic/" + binding.systemd_slice_name,
+            invocation_id="a" * 32,
+            device=1,
+            inode=2,
+            controllers=("cpu", "memory", "pids"),
+            cpu_counter_unit="CPU_USEC",
+            baseline_cpu_counter=0,
+            cpu_budget_counter=1_000_000,
+        )
+
+    def stop_exact(self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1) -> bool:
+        del binding, receipt
+        return True
+
+    def adopt_if_prebound(self, *, binding: AttemptBindingV1) -> RuntimeParentReceiptV1 | None:
+        del binding
+        return None
+
+    def verify_before_quiesce(
+        self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+    ) -> bool:
+        del binding, receipt, runtime_id
+        return True
+
+    def verify_final_before_remove(
+        self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+    ) -> bool:
+        del binding, receipt, runtime_id
+        return True
+
+
+class _RuntimeCleanup:
+    """Explicit synthetic port; production must provide exact runtime-ID removal."""
+
+    def __init__(self, removed: bool = True) -> None:
+        self.runtime_ids: list[str] = []
+        self._removed = removed
+
+    def remove_exact(
+        self,
+        *,
+        attempt: AttemptBindingV1,
+        runtime_id: str,
+        deadline_monotonic: float,
+    ) -> bool:
+        del attempt, deadline_monotonic
+        self.runtime_ids.append(runtime_id)
+        return self._removed
+
+    def quiesce_exact(
+        self,
+        *,
+        attempt: AttemptBindingV1,
+        runtime_id: str,
+        deadline_monotonic: float,
+    ) -> bool:
+        del attempt, runtime_id, deadline_monotonic
+        return True
+
+    def resolve_exact(self, binding: AttemptBindingV1) -> str | None:
+        del binding
+        return None
 
 
 class _ReaderMapping:
@@ -821,25 +1063,53 @@ class _Backend:
     def __init__(self, completed: InspectorBackendCompletedV1 | Exception) -> None:
         self.completed = completed
         self.calls: list[tuple[bytes, InspectorEffectiveLimitsV1]] = []
+        self.configurations: list[FixedContainerConfigurationV1] = []
+        self.created: list[InspectorBackendCreatedV1] = []
+
+    def create(
+        self,
+        *,
+        attempt: AttemptBindingV1,
+        request: InspectorLaunchRequestV1,
+        sealed_input: InspectorSealedInputPort,
+        limits: InspectorEffectiveLimitsV1,
+        configuration: FixedContainerConfigurationV1,
+        deadline_monotonic: float,
+        is_cancelled: Callable[[], bool],
+    ) -> InspectorBackendCreatedV1:
+        del attempt, request, sealed_input, limits, configuration, deadline_monotonic
+        assert is_cancelled() is False
+        created = InspectorBackendCreatedV1(runtime_id="synthetic-runtime-1")
+        self.created.append(created)
+        return created
 
     def execute(
         self,
         *,
+        created: InspectorBackendCreatedV1,
+        attempt: AttemptBindingV1,
+        manifest: InspectorExecutionManifestV1,
+        runtime_parent: RuntimeParentReceiptV1,
+        output_staging: object | None,
         request: InspectorLaunchRequestV1,
         sealed_input: InspectorSealedInputPort,
         limits: InspectorEffectiveLimitsV1,
+        configuration: FixedContainerConfigurationV1,
         deadline_monotonic: float,
         is_cancelled: Callable[[], bool],
+        monitor_termination: Callable[[str], float],
     ) -> InspectorBackendCompletedV1:
-        del request
+        del attempt, manifest, runtime_parent, output_staging, request, monitor_termination
         assert is_cancelled() is False
+        assert created in self.created
         assert isinstance(sealed_input, _InputSealed)
         bind = sealed_input.prepare_read_only_bind(deadline_monotonic=deadline_monotonic)
         assert bind.target_path == "/input/artifact.tif"
         self.calls.append((sealed_input.payload, limits))
+        self.configurations.append(configuration)
         if isinstance(self.completed, Exception):
             raise self.completed
-        return self.completed
+        return self.completed.model_copy(update={"runtime_id": "synthetic-runtime-1"})
 
 
 def _backend_result(request: InspectorLaunchRequestV1) -> InspectorBackendCompletedV1:
@@ -854,6 +1124,21 @@ def _backend_result(request: InspectorLaunchRequestV1) -> InspectorBackendComple
         output=BytesIO(),
         output_size_bytes=0,
         output_sha256=None,
+        runtime_measurement=_runtime_measurement(),
+    )
+
+
+def _runtime_measurement(*, runtime_id: str = "synthetic-runtime-1") -> FixedRuntimeMeasurementV1:
+    return FixedRuntimeMeasurementV1(
+        runtime_id=runtime_id,
+        counter_unit=CpuCounterUnitV1.CPU_USEC,
+        baseline_counter=500,
+        final_counter=500,
+        consumed_counter=0,
+        budget_counter=2_000_000,
+        threshold_exceeded=False,
+        disposition=RuntimeControlDispositionV1.COMPLETED,
+        kill_latency_seconds=None,
     )
 
 
@@ -867,6 +1152,10 @@ def _launcher(
     staging: _Staging | None = None,
     input_staging: _InputStaging | None = None,
     reader_mapping: _ReaderMapping | None = None,
+    attempts: _Attempts | None = None,
+    attempt_recovery: _AttemptRecovery | None = None,
+    runtime_parent: _RuntimeParent | None = None,
+    runtime_cleanup: _RuntimeCleanup | None = None,
     backend: _Backend | None = None,
     worker_uid: int = _WORKER_UID,
     protocol_limits: ProtocolLimitsV1 | None = None,
@@ -886,8 +1175,13 @@ def _launcher(
         staging=actual_staging,
         input_staging=actual_input_staging,
         reader_mapping=reader_mapping or _ReaderMapping(),
+        attempt_journal=attempts or _Attempts(),
+        attempt_recovery=attempt_recovery or _AttemptRecovery(),
+        runtime_parent=runtime_parent or _RuntimeParent(),
+        runtime_cleanup=runtime_cleanup or _RuntimeCleanup(),
         backend=actual_backend,
         protocol_limits=protocol_limits or _limits(),
+        systemd_base_slice="ksi-inspector.slice",
         monotonic=monotonic,
     )
 
@@ -931,12 +1225,14 @@ def test_launcher_uses_os_peer_before_read_then_admits_exact_bound_input() -> No
     staging = _Staging()
     input_staging = _InputStaging()
     backend = _Backend(_backend_result(request))
+    launcher_runtime_cleanup = _RuntimeCleanup()
     launcher = _launcher(
         request,
         accounting=accounting,
         staging=staging,
         input_staging=input_staging,
         backend=backend,
+        runtime_cleanup=launcher_runtime_cleanup,
     )
 
     accepted, terminal = _run_handler(launcher, request, payload)
@@ -950,6 +1246,409 @@ def test_launcher_uses_os_peer_before_read_then_admits_exact_bound_input() -> No
     assert input_staging.sealed[0].prepared is True
     assert input_staging.sealed[0].aborted is True
     assert staging.staged == []
+    configuration = backend.configurations[0]
+    assert configuration.runtime_uid == 10_001
+    assert configuration.runtime_gid == 10_001
+    assert configuration.input_mount.target_path == "/input/artifact.tif"
+    assert configuration.input_mount.read_only is True
+    assert configuration.extra_mounts == ()
+    assert configuration.socket_mounts == ()
+    assert launcher_runtime_cleanup.runtime_ids == ["synthetic-runtime-1"]
+
+
+def test_launcher_durably_binds_the_exact_runtime_before_execute() -> None:
+    """A create-before-ID crash is recoverable because execution starts only after binding."""
+
+    class _OrderingBackend(_Backend):
+        def __init__(self, attempts: _Attempts, completed: InspectorBackendCompletedV1) -> None:
+            super().__init__(completed)
+            self._attempts = attempts
+            self.events_at_create: list[str] | None = None
+            self.events_at_execute: list[str] | None = None
+
+        def create(self, **kwargs: object) -> InspectorBackendCreatedV1:
+            self.events_at_create = list(self._attempts.events)
+            return super().create(**kwargs)  # type: ignore[arg-type]
+
+        def execute(self, **kwargs: object) -> InspectorBackendCompletedV1:
+            self.events_at_execute = list(self._attempts.events)
+            return super().execute(**kwargs)  # type: ignore[arg-type]
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    backend = _OrderingBackend(attempts, _backend_result(request))
+    launcher = _launcher(request, attempts=attempts, backend=backend)
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    terminal.validate_for(request)
+    assert backend.events_at_create == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+    ]
+    assert backend.events_at_execute == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CONTAINER_BOUND",
+    ]
+
+
+def test_launcher_records_created_runtime_before_a_post_create_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A late cancellation cannot discard a returned Engine identity before recovery owns it."""
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    cleanup = _RuntimeCleanup()
+    cancelled = iter((False, True))
+    monkeypatch.setattr(
+        "ksi_processing_controller.external_inspector_launcher._SocketCancellation.is_cancelled",
+        lambda _self: next(cancelled),
+    )
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        runtime_cleanup=cleanup,
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CONTAINER_BOUND",
+        "CLEANUP_REQUIRED",
+        "CLEANED",
+    ]
+    assert cleanup.runtime_ids == ["synthetic-runtime-1"]
+
+
+def test_launcher_runs_durable_recovery_before_accepting_any_connection() -> None:
+    """A startup uncertainty closes the launcher before an authenticated worker can stream bytes."""
+    request = _request(_policy())
+    recovery = _AttemptRecovery()
+
+    _launcher(request, attempt_recovery=recovery)
+
+    assert recovery.calls == 1
+    with pytest.raises(InspectorSandboxUnavailable, match="recovery"):
+        _launcher(request, attempt_recovery=_AttemptRecovery(unavailable=True))
+
+
+def test_launcher_holds_a_completed_result_until_registered_cleanup_is_durable() -> None:
+    """A backend result cannot cross the socket before its exact staging receipt reaches CLEANED."""
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    input_staging = _InputStaging()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        input_staging=input_staging,
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    terminal.validate_for(request)
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CONTAINER_BOUND",
+        "CLEANUP_REQUIRED",
+        "CLEANED",
+    ]
+    assert len(input_staging.finalized) == 1
+
+
+def test_launcher_records_one_cleanup_failure_without_restarting_cleanup() -> None:
+    """A failed exact cleanup records recovery evidence without duplicating its request."""
+
+    class _CleanupFailureInputStaging(_InputStaging):
+        def finalize_registered_cleanup(
+            self,
+            *,
+            plan: StagingAllocationPlanV1,
+            receipt: StagingAllocationReceiptV1,
+        ) -> None:
+            super().finalize_registered_cleanup(plan=plan, receipt=receipt)
+            raise RuntimeError("synthetic finalizer failure")
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        input_staging=_CleanupFailureInputStaging(),
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CONTAINER_BOUND",
+        "CLEANUP_REQUIRED",
+        "CLEANUP_FAILED",
+    ]
+
+
+def test_launcher_closes_admission_when_exact_runtime_removal_fails() -> None:
+    """A known runtime ID cannot be replaced with a broad cleanup after its exact removal fails."""
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    runtime_cleanup = _RuntimeCleanup(removed=False)
+    input_staging = _InputStaging()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        runtime_cleanup=runtime_cleanup,
+        input_staging=input_staging,
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert runtime_cleanup.runtime_ids == ["synthetic-runtime-1"]
+    assert len(input_staging.sealed) == 1
+    assert input_staging.sealed[0].relinquished is True
+    assert input_staging.sealed[0].aborted is False
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CONTAINER_BOUND",
+        "CLEANUP_REQUIRED",
+        "CLEANUP_FAILED",
+    ]
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
+
+    rejected_client, rejected_server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        rejected_thread = threading.Thread(
+            target=lambda: launcher.handle_connection(rejected_server)
+        )
+        rejected_thread.start()
+        rejected_thread.join(timeout=2)
+        assert not rejected_thread.is_alive()
+        with pytest.raises(BrokenPipeError):
+            write_launch_request(rejected_client, request, BytesIO(payload), _limits())
+    finally:
+        rejected_client.close()
+        rejected_server.close()
+
+
+def test_launcher_retains_parent_creation_ambiguity_before_staging_cleanup() -> None:
+    """A thrown parent create never treats an absent post-failure observation as no effect."""
+
+    class _ParentCreateAmbiguous(_RuntimeParent):
+        def bind_before_create(self, **kwargs: object) -> RuntimeParentReceiptV1:
+            del kwargs
+            raise RuntimeError("StartTransientUnit may have created the slice")
+
+        def adopt_if_prebound(self, *, binding: AttemptBindingV1) -> None:
+            del binding
+            return None
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    staging = _InputStaging()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        input_staging=staging,
+        runtime_parent=_ParentCreateAmbiguous(),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "CLEANUP_REQUIRED",
+        "CLEANUP_FAILED",
+    ]
+    assert staging.sealed[0].relinquished is True
+    assert staging.sealed[0].aborted is False
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
+
+
+def test_launcher_retains_container_creation_ambiguity_before_staging_cleanup() -> None:
+    """An Engine exception before ID cannot retire the attempt unless exact recovery resolves it."""
+
+    class _CreateAmbiguous(_Backend):
+        def create(self, **kwargs: object) -> InspectorBackendCreatedV1:
+            del kwargs
+            raise RuntimeError("Engine create may have completed before inspect failed")
+
+    class _UnresolvedCleanup(_RuntimeCleanup):
+        def resolve_exact(self, binding: AttemptBindingV1) -> None:
+            del binding
+            return None
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    staging = _InputStaging()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        input_staging=staging,
+        backend=_CreateAmbiguous(_backend_result(request)),
+        runtime_cleanup=_UnresolvedCleanup(),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert attempts.events == [
+        "INTENDED",
+        "STAGING_ALLOCATED",
+        "INPUT_BOUND",
+        "RUNTIME_PARENT_CREATING",
+        "RUNTIME_PARENT_BOUND",
+        "CONTAINER_CREATING",
+        "CLEANUP_REQUIRED",
+        "CLEANUP_FAILED",
+    ]
+    assert staging.sealed[0].relinquished is True
+    assert staging.sealed[0].aborted is False
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
+
+
+def test_launcher_proves_parent_before_first_runtime_cleanup_mutation() -> None:
+    """A replaced parent blocks kill/wait after CLEANUP_REQUIRED is durably appended."""
+
+    class _RejectedParent(_RuntimeParent):
+        def verify_before_quiesce(self, **kwargs: object) -> bool:
+            del kwargs
+            return False
+
+    class _NoMutationCleanup(_RuntimeCleanup):
+        def __init__(self) -> None:
+            super().__init__()
+            self.quiesce_calls = 0
+
+        def quiesce_exact(self, **kwargs: object) -> bool:
+            del kwargs
+            self.quiesce_calls += 1
+            return True
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    cleanup = _NoMutationCleanup()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        runtime_parent=_RejectedParent(),
+        runtime_cleanup=cleanup,
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert cleanup.quiesce_calls == 0
+    assert attempts.events[-2:] == ["CLEANUP_REQUIRED", "CLEANUP_FAILED"]
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
+
+
+def test_launcher_rejects_success_when_final_parent_cpu_proof_is_over_budget() -> None:
+    """A late aggregate overrun cannot publish the earlier backend-completed report."""
+
+    class _OverBudgetParent(_RuntimeParent):
+        def verify_final_before_remove(self, **kwargs: object) -> bool:
+            del kwargs
+            return False
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    attempts = _Attempts()
+    cleanup = _RuntimeCleanup()
+    launcher = _launcher(
+        request,
+        attempts=attempts,
+        runtime_parent=_OverBudgetParent(),
+        runtime_cleanup=cleanup,
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert cleanup.runtime_ids == []
+    assert attempts.events[-2:] == ["CLEANUP_REQUIRED", "CLEANUP_FAILED"]
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
+
+
+def test_launcher_closes_admission_when_recording_cleanup_failure_raises() -> None:
+    """An uncertain cleanup remains admission-fatal even if its failure event cannot append."""
+
+    class _FailureEventAttempts(_Attempts):
+        def cleanup_failed(self, attempt_nonce: str, *, reason: str) -> None:
+            super().cleanup_failed(attempt_nonce, reason=reason)
+            raise RuntimeError("synthetic failure event append error")
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    launcher = _launcher(
+        request,
+        attempts=_FailureEventAttempts(),
+        runtime_cleanup=_RuntimeCleanup(removed=False),
+        backend=_Backend(_backend_result(request)),
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert launcher._is_admission_closed() is True  # noqa: SLF001 - health boundary
 
 
 def test_launcher_requires_a_typed_current_mapping_before_it_receives_input_bytes() -> None:
@@ -1200,6 +1899,7 @@ def test_admission_clamps_signed_and_policy_limits_before_staging_or_backend() -
         cpu_period_micros=100_000,
         cpu_quota_micros=50_000,
         max_log_bytes=2_048,
+        max_cpu_seconds=2.0,
     )
 
 
@@ -1271,6 +1971,7 @@ def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_
             output=BytesIO(sanitized),
             output_size_bytes=len(sanitized),
             output_sha256=_bytes_digest(sanitized),
+            runtime_measurement=_runtime_measurement(),
         )
     )
     launcher = _launcher(
@@ -1295,14 +1996,89 @@ def test_sanitize_reserves_and_releases_bounded_output_spool_before_writing_raw_
     finally:
         client.close()
         server.close()
-    assert accounting.calls == [(1, 1, len(payload)), (0, 0, len(sanitized))]
+    assert accounting.calls == [(1, 1, len(payload)), (0, 0, 32)]
     assert all(item.released for item in accounting.reservations)
     assert [item.aborted for item in staging.staged] == [True]
     assert input_staging.sealed[0].aborted is True
 
 
-def test_late_sanitize_output_reservation_is_released_before_staging_begins() -> None:
-    """A late reserve return must release its spool token before any later output work."""
+def test_output_close_failure_latches_launcher_admission_after_cleaned_response() -> None:
+    """A response-owned spool close error never retries its FD or rewrites CLEANED."""
+
+    class _CloseFailingStaged(_Staged):
+        def __init__(self, buffer: BytesIO, max_bytes: int) -> None:
+            super().__init__(buffer, max_bytes)
+            self.abort_calls = 0
+
+        def abort(self) -> None:
+            self.abort_calls += 1
+            raise OSError("synthetic close failure")
+
+    class _CloseFailingStaging:
+        def __init__(self) -> None:
+            self.staged: list[_CloseFailingStaged] = []
+
+        def begin(self, *, maximum_bytes: int, deadline_monotonic: float) -> _CloseFailingStaged:
+            del deadline_monotonic
+            staged = _CloseFailingStaged(BytesIO(), maximum_bytes)
+            self.staged.append(staged)
+            return staged
+
+    payload = b"bound-input"
+    sanitized = b"sanitized-output"
+    request = _request(_policy(), payload, operation=InspectorOperation.SANITIZE)
+    staging = _CloseFailingStaging()
+    attempts = _Attempts()
+    backend = _Backend(
+        InspectorBackendCompletedV1(
+            inspector_build_digest=request.policy.parser_build_digest,
+            outcome="SANITIZED",
+            output=BytesIO(sanitized),
+            output_size_bytes=len(sanitized),
+            output_sha256=_bytes_digest(sanitized),
+            runtime_measurement=_runtime_measurement(),
+        )
+    )
+    launcher = _launcher(request, staging=staging, attempts=attempts, backend=backend)
+    client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        thread = threading.Thread(target=lambda: launcher.handle_connection(server))
+        thread.start()
+        write_launch_request(client, request, BytesIO(payload), _limits())
+        assert read_launch_result(client, _limits()).result == "ACCEPTED"
+        assert read_launch_result(client, _limits()).result == "COMPLETED"
+        assert client.recv(len(sanitized)) == sanitized
+        assert client.recv(1) == b""
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+    finally:
+        client.close()
+        server.close()
+
+    assert staging.staged[0].abort_calls == 1
+    assert attempts.events[-1] == "CLEANED"
+
+    rejected_client, rejected_server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        rejected_thread = threading.Thread(
+            target=lambda: launcher.handle_connection(rejected_server)
+        )
+        rejected_thread.start()
+        rejected_thread.join(timeout=2)
+        assert not rejected_thread.is_alive()
+        with pytest.raises(BrokenPipeError):
+            write_launch_request(rejected_client, request, BytesIO(payload), _limits())
+        assert rejected_client.recv(1) == b""
+    finally:
+        rejected_client.close()
+        rejected_server.close()
+    assert staging.staged[0].abort_calls == 1
+    assert len(staging.staged) == 1
+    assert attempts.events.count("CLEANED") == 1
+
+
+def test_sanitize_terminal_does_not_allocate_after_the_output_is_sealed() -> None:
+    """Only the pre-EXECUTE full-cap reservation can own derivative response bytes."""
 
     class _Clock:
         def __init__(self) -> None:
@@ -1311,33 +2087,11 @@ def test_late_sanitize_output_reservation_is_released_before_staging_begins() ->
         def __call__(self) -> float:
             return self.now
 
-    class _LateOutputAccounting(_Accounting):
-        def __init__(self, clock: _Clock) -> None:
-            super().__init__()
-            self._clock = clock
-
-        def reserve(
-            self,
-            *,
-            request_units: int,
-            concurrency_units: int,
-            spool_bytes: int,
-            deadline_monotonic: float,
-        ) -> _Reservation | None:
-            reservation = super().reserve(
-                request_units=request_units,
-                concurrency_units=concurrency_units,
-                spool_bytes=spool_bytes,
-                deadline_monotonic=deadline_monotonic,
-            )
-            self._clock.now = 100.03
-            return reservation
-
     payload = b"bound-input"
     sanitized = b"sanitized-output"
     request = _request(_policy(), payload, operation=InspectorOperation.SANITIZE)
     clock = _Clock()
-    accounting = _LateOutputAccounting(clock)
+    accounting = _Accounting()
     staging = _Staging()
     launcher = _launcher(request, accounting=accounting, staging=staging)
     completed = InspectorBackendCompletedV1(
@@ -1346,21 +2100,25 @@ def test_late_sanitize_output_reservation_is_released_before_staging_begins() ->
         output=BytesIO(sanitized),
         output_size_bytes=len(sanitized),
         output_sha256=_bytes_digest(sanitized),
+        runtime_measurement=_runtime_measurement(),
     )
-    admission = launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
+    staged = staging.begin(maximum_bytes=32, deadline_monotonic=100.02)
+    staged.write(sanitized)
+    staged.finish()
+    deadline = ProtocolDeadline(20, clock)
+    clock.now = 100.03
 
     with pytest.raises(ProtocolDeadlineExceeded, match="global wire deadline"):
-        launcher._write_completed_result(  # noqa: SLF001 - direct resource-ownership boundary
+        launcher._write_completed_result(  # noqa: SLF001 - direct handoff boundary
             object(),  # type: ignore[arg-type]
             request,
             completed,
-            admission.effective_limits,
-            ProtocolDeadline(20, clock),
+            launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff").effective_limits,
+            deadline,
+            staged_output=staged,
         )
 
-    assert len(accounting.reservations) == 1
-    assert accounting.reservations[0].released is True
-    assert staging.staged == []
+    assert accounting.calls == []
 
 
 def test_policy_wall_cap_can_only_shorten_the_already_started_global_deadline() -> None:
@@ -1386,13 +2144,32 @@ def test_client_full_close_cancels_backend_through_the_owned_uds_socket() -> Non
         def execute(
             self,
             *,
+            created: InspectorBackendCreatedV1,
+            attempt: AttemptBindingV1,
+            manifest: InspectorExecutionManifestV1,
+            runtime_parent: RuntimeParentReceiptV1,
+            output_staging: object | None,
             request: InspectorLaunchRequestV1,
             sealed_input: InspectorSealedInputPort,
             limits: InspectorEffectiveLimitsV1,
+            configuration: FixedContainerConfigurationV1,
             deadline_monotonic: float,
             is_cancelled: Callable[[], bool],
+            monitor_termination: Callable[[str], float],
         ) -> InspectorBackendCompletedV1:
-            del request, sealed_input, limits, deadline_monotonic
+            del (
+                created,
+                attempt,
+                manifest,
+                runtime_parent,
+                output_staging,
+                request,
+                sealed_input,
+                limits,
+                configuration,
+                deadline_monotonic,
+                monitor_termination,
+            )
             self.started.set()
             until = time.monotonic() + 0.5
             while time.monotonic() < until:
@@ -1458,3 +2235,214 @@ def test_bound_reader_enforces_one_global_deadline_instead_of_resetting_per_chun
             lambda _: None,
             monotonic=lambda: next(ticks),
         )
+
+
+def test_inner_prepare_mount_and_execute_frames_are_canonical_and_closed() -> None:
+    """The Docker entrypoint receives only admitted immutable authority and sealed bytes."""
+    from ksi_processing_controller.external_inspector_container_protocol import (
+        ContainerInnerFrameLimitsV1,
+        ContainerInnerProtocolViolation,
+        build_execute_frame,
+        build_prepare_frame,
+        decode_inner_frame,
+        encode_inner_frame,
+        validate_mount_verified_frame,
+        validate_prepare_frame,
+    )
+
+    manifest = _manifest()
+    policy = _policy(manifest)
+    request = _request(policy)
+    limits = ContainerInnerFrameLimitsV1(maximum_frame_bytes=32_768, maximum_stderr_bytes=512)
+    prepare = build_prepare_frame(
+        attempt_nonce=request.attempt_nonce,
+        outer_canonical_input_digest=request.canonical_input_digest,
+        operation=request.operation.value,
+        sealed_byte_binding=request.sealed_byte_binding.model_dump(by_alias=True, mode="json"),
+        policy=policy,
+        manifest=manifest,
+        admitted_backend_profile_digest=manifest.body.backend_profile_digest,
+        admitted_security_profile_digest=manifest.body.security_profile_digest,
+        admitted_inner_protocol_digest=manifest.body.inspector_protocol_digest,
+    )
+
+    encoded = encode_inner_frame(prepare, limits=limits)
+    assert decode_inner_frame(encoded, limits=limits) == prepare
+    validate_prepare_frame(prepare, expected=prepare, limits=limits)
+    validate_mount_verified_frame(
+        {
+            "protocolVersion": "inspector-container.v1",
+            "frame": "MOUNT_VERIFIED",
+            "attemptNonce": request.attempt_nonce,
+            "outerCanonicalInputDigest": request.canonical_input_digest,
+            "prepareDigest": prepare["prepareDigest"],
+            "artifactId": request.sealed_byte_binding.artifact_id,
+            "actualSizeBytes": request.sealed_byte_binding.observed_size_bytes,
+            "actualSha256": request.sealed_byte_binding.observed_sha256,
+        },
+        prepare=prepare,
+        artifact_id=request.sealed_byte_binding.artifact_id,
+        actual_size_bytes=request.sealed_byte_binding.observed_size_bytes,
+        actual_sha256=request.sealed_byte_binding.observed_sha256,
+    )
+    assert build_execute_frame(prepare=prepare)["frame"] == "EXECUTE"
+
+    altered = dict(prepare)
+    altered["operation"] = "SANITIZE"
+    with pytest.raises(ContainerInnerProtocolViolation, match="PREPARE"):
+        validate_prepare_frame(altered, expected=prepare, limits=limits)
+    with pytest.raises(ContainerInnerProtocolViolation, match="length"):
+        decode_inner_frame(encoded + b"trailing", limits=limits)
+
+
+@pytest.mark.parametrize("trigger", ["CPU_LIMIT_EXCEEDED", "DEADLINE_EXCEEDED", "CANCELLED"])
+def test_launcher_monitor_callback_journals_proves_then_quiesces_once_before_failure(
+    trigger: str,
+) -> None:
+    """The concrete monitor callback cannot kill a bound runtime outside launcher cleanup order."""
+
+    order: list[str] = []
+
+    class _OrderedAttempts(_Attempts):
+        def cleanup_required(self, attempt_nonce: str, *, disposition: str) -> None:
+            super().cleanup_required(attempt_nonce, disposition=disposition)
+            order.append("journal")
+
+    class _OrderedParent(_RuntimeParent):
+        def verify_before_quiesce(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("parent-before")
+            return True
+
+        def verify_final_before_remove(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("parent-final")
+            return True
+
+    class _OrderedCleanup(_RuntimeCleanup):
+        def quiesce_exact(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("kill-wait")
+            return True
+
+        def remove_exact(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("remove")
+            return True
+
+    class _MonitorBackend(_Backend):
+        def __init__(self, completed: InspectorBackendCompletedV1) -> None:
+            super().__init__(completed)
+            self.monitor_entered = False
+
+        def execute(
+            self, *, monitor_termination: Callable[[str], float], **kwargs: object
+        ) -> InspectorBackendCompletedV1:
+            self.monitor_entered = True
+            assert monitor_termination(trigger) >= 0.0
+            raise InspectorSandboxUnavailable("synthetic monitor termination")
+
+    payload = b"bound-input"
+    request = _request(_policy(), payload)
+    backend = _MonitorBackend(_backend_result(request))
+    launcher = _launcher(
+        request,
+        attempts=_OrderedAttempts(),
+        runtime_parent=_OrderedParent(),
+        runtime_cleanup=_OrderedCleanup(),
+        backend=backend,
+    )
+
+    accepted, terminal = _run_handler(launcher, request, payload)
+
+    assert accepted.result == "ACCEPTED"
+    assert terminal.result == "FAILED"
+    assert backend.monitor_entered is True
+    assert order == ["journal", "parent-before", "kill-wait", "parent-final", "remove"]
+
+
+def test_monitor_and_fast_normal_completion_share_one_exact_cleanup_sequence() -> None:
+    """A monitor callback racing normal completion cannot duplicate cleanup effects."""
+
+    order: list[str] = []
+    request = _request(_policy(), b"bound-input")
+    launcher = _launcher(request)
+    admission = launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
+    attempt = launcher._new_attempt_binding(  # type: ignore[attr-defined]
+        request,
+        _manifest(),
+        PrivateStagingRootV1(1, 2, 0o700, 1000, 1000),
+        admission.effective_limits,
+    )
+    receipt = _RuntimeParent().bind_before_create(
+        binding=attempt,
+        configuration=cast(FixedContainerConfigurationV1, object()),
+    )
+
+    class _OrderedAttempts(_Attempts):
+        def cleanup_required(self, attempt_nonce: str, *, disposition: str) -> None:
+            super().cleanup_required(attempt_nonce, disposition=disposition)
+            order.append("journal")
+
+    class _OrderedParent(_RuntimeParent):
+        def verify_before_quiesce(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("parent-before")
+            return True
+
+        def verify_final_before_remove(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("parent-final")
+            return True
+
+    class _OrderedCleanup(_RuntimeCleanup):
+        def quiesce_exact(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("kill-wait")
+            return True
+
+        def remove_exact(self, **kwargs: object) -> bool:
+            del kwargs
+            order.append("remove")
+            return True
+
+    coordinator = _AttemptRuntimeCleanupCoordinator(
+        journal=_OrderedAttempts(),
+        runtime_parent=_OrderedParent(),
+        runtime_cleanup=_OrderedCleanup(),
+        latch_admission_closed=lambda: order.append("admission-off"),
+        attempt=attempt,
+        receipt=receipt,
+        runtime_id="synthetic-runtime-1",
+        cleanup_deadline_monotonic=time.monotonic() + 1.0,
+    )
+    barrier = threading.Barrier(3)
+    failures: list[BaseException] = []
+
+    def monitor() -> None:
+        try:
+            barrier.wait(timeout=1.0)
+            coordinator.terminate_from_monitor("CPU_LIMIT_EXCEEDED")
+        except BaseException as exc:  # pragma: no cover - asserted after joining
+            failures.append(exc)
+
+    def normal_completion() -> None:
+        try:
+            barrier.wait(timeout=1.0)
+            coordinator.quiesce_and_remove(disposition="BACKEND_COMPLETED")
+        except BaseException as exc:  # pragma: no cover - asserted after joining
+            failures.append(exc)
+
+    monitor_thread = threading.Thread(target=monitor)
+    normal_thread = threading.Thread(target=normal_completion)
+    monitor_thread.start()
+    normal_thread.start()
+    barrier.wait(timeout=1.0)
+    monitor_thread.join(timeout=1.0)
+    normal_thread.join(timeout=1.0)
+
+    assert not monitor_thread.is_alive()
+    assert not normal_thread.is_alive()
+    assert failures == []
+    assert order == ["journal", "parent-before", "kill-wait", "parent-final", "remove"]
+    assert coordinator.cleanup_complete is True

@@ -47,6 +47,7 @@ class _Acl:
     def __init__(self, *, grant_result: bool = True, verify_result: bool = True) -> None:
         self.grants: list[tuple[int, tuple[int, int], _Reader]] = []
         self.verified: list[tuple[int, tuple[int, int], _Reader]] = []
+        self.revoked: list[tuple[int, tuple[int, int], _Reader]] = []
         self.grant_result = grant_result
         self.verify_result = verify_result
 
@@ -73,6 +74,38 @@ class _Acl:
         del deadline_monotonic
         self.verified.append((source_fd, traversal_fds, reader))
         return self.verify_result
+
+    def revoke_exact(
+        self,
+        *,
+        source_fd: int,
+        traversal_fds: tuple[int, int],
+        reader: _Reader,
+        deadline_monotonic: float,
+    ) -> bool:
+        del deadline_monotonic
+        self.revoked.append((source_fd, traversal_fds, reader))
+        return True
+
+    def grant_leaf_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        return self.grant_exact(
+            source_fd=kwargs["source_fd"],
+            traversal_fds=(kwargs["attempt_fd"], kwargs["attempt_fd"]),
+            reader=kwargs["reader"],
+            deadline_monotonic=kwargs["deadline_monotonic"],
+        )
+
+    def revoke_leaf_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def verifies_private_directory(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def retire_private_directory(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def retire_recovered_leaf_acl(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
 
 
 class _ModeChangingAcl(_Acl):
@@ -129,8 +162,7 @@ def test_seal_rechecks_exact_bytes_and_prepares_only_a_fixed_read_only_bind(tmp_
     assert bind.read_only is True
     assert bind.source.read_at(offset=0, maximum_bytes=len(payload)) == payload
     assert (
-        bind.source.consume_fd(lambda descriptor: os.pread(descriptor, len(payload), 0))
-        == payload
+        bind.source.consume_fd(lambda descriptor: os.pread(descriptor, len(payload), 0)) == payload
     )
     assert bind.observed_sha256 == "sha256:" + hashlib.sha256(payload).hexdigest()
     assert bind.observed_size_bytes == len(payload)

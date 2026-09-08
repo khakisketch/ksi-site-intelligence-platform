@@ -26,6 +26,7 @@ requires-python = ">=3.12,<3.13"
 # "직접 import 하는 패키지는 직접 선언한다" 규칙). laspy 는 이미
 # ksi-change-detection 을 통해 전이 의존으로 들어와 있었다.
 dependencies = [
+    "cryptography>=42",
     "ksi-change-detection",
     "ksi-domain",
     "ksi-event-contracts",
@@ -47,6 +48,7 @@ dependencies = [
 # 발행된(QUEUED) 재구성 작업을 사람 없이 집어서 끝까지 도는 워커 데몬
 # (runner.py 모듈 docstring). Dockerfile.worker 의 CMD 가 이 이름을 부른다.
 ksi-processing-worker = "ksi_processing_controller.runner:main"
+ksi-external-inspector-daemon = "ksi_processing_controller.external_inspector_daemon:main"
 
 [tool.uv.sources]
 ksi-change-detection = { workspace = true }
