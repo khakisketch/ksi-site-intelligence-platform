@@ -15,6 +15,7 @@ import type { ReobservationDraftView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 import { CopilotPanel } from "../../CopilotPanel";
+import { ExternalReconstructionPanel } from "../../ExternalReconstructionPanel";
 import { AcquisitionProgressCard } from "../../AcquisitionProgressCard";
 import { AcquisitionReadinessCard } from "../../AcquisitionReadinessCard";
 import { OperationsSessionFailure } from "../../OperationsSessionFailure";
@@ -117,6 +118,12 @@ export default async function FieldWorkOrderPage({
         <AcquisitionReadinessCard
           readiness={acquisitionReadiness}
           progress={acquisitionProgress}
+        />
+
+        <ExternalReconstructionPanel
+          workOrderId={workOrder.workOrderId}
+          expectedEpochId={acquisitionProgress?.analysisReadiness?.epoch.epochId ?? null}
+          canWrite={session.principal.permissions.includes("SITES_WRITE")}
         />
 
         {showCopilot && (

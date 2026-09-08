@@ -11,6 +11,7 @@ export const RESPONSIVE_ACTIONS = [
   "MISSION_EXECUTION",
   "SOURCE_MEDIA_MUTATION",
   "RECOVERY_ACTION",
+  "EXTERNAL_RECONSTRUCTION_MUTATION",
 ] as const;
 
 export type ResponsiveAction = (typeof RESPONSIVE_ACTIONS)[number];
