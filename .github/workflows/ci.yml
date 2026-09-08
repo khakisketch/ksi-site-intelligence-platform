@@ -40,6 +40,16 @@ jobs:
       - name: production runtime image digest gate
         run: uv run --locked python tools/check_runtime_image_pins.py
 
+      # Host Python tests cannot detect missing shared libraries in the slim image.
+      # This checks the packaged production import, not deployment or readiness.
+      - name: Core image production import smoke
+        timeout-minutes: 10
+        run: |
+          docker build --tag "ksi-core-ci:${GITHUB_SHA}" .
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges "ksi-core-ci:${GITHUB_SHA}" \
+            /app/.venv/bin/python -c "import ksi_core.production"
+
       - name: repository normalization contract
         run: uv run --locked python tools/validate_repository_normalization.py
 
