@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
+    from ksi_core.external_evidence import ExternalEvidenceStore
     from ksi_core.external_reconstruction import ExternalReconstructionStore
     from ksi_core.flight_artifacts import FlightArtifactStore
     from ksi_core.mission_execution import MissionExecutionStore
@@ -430,6 +431,7 @@ def create_app(
     work_area_store: WorkAreaStore | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
     external_reconstruction_store: ExternalReconstructionStore | None = None,
+    external_evidence_store: ExternalEvidenceStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
     capture_quality_report_store: CaptureQualityReportStore | None = None,
@@ -669,6 +671,7 @@ def create_app(
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
         "external_reconstruction_store": external_reconstruction_store,
+        "external_evidence_store": external_evidence_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
@@ -707,6 +710,16 @@ def create_app(
                 "external_reconstruction_store 는 digest-bound PUT와 trusted object observation "
                 "storage ports를 모두 요구한다"
             )
+
+    if external_evidence_store is not None and (
+        external_reconstruction_store is None
+        or observation_work_order_store is None
+        or evidence_storage is None
+    ):
+        raise ValueError(
+            "external_evidence_store 는 external_reconstruction_store·"
+            "observation_work_order_store·evidence_storage 를 모두 요구한다"
+        )
 
     protected_surface = any(value is not None for value in _provided.values())
     if protected_surface and auth_registry is None:
@@ -769,6 +782,20 @@ def create_app(
         mount_external_reconstruction(
             app,
             external_reconstruction_store,
+            work_orders=observation_work_order_store,
+            storage=evidence_storage,
+        )
+
+    if external_evidence_store is not None:
+        from ksi_core.external_evidence import mount_external_evidence
+
+        assert external_reconstruction_store is not None  # noqa: S101 -- assembly guard
+        assert observation_work_order_store is not None  # noqa: S101 -- assembly guard
+        assert evidence_storage is not None  # noqa: S101 -- assembly guard
+        mount_external_evidence(
+            app,
+            external_evidence_store,
+            reconstruction=external_reconstruction_store,
             work_orders=observation_work_order_store,
             storage=evidence_storage,
         )

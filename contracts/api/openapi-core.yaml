@@ -5369,6 +5369,64 @@ paths:
         '503': { description: Durable journal unavailable; Retry-After }
         '401': { description: Authentication failed }
         '403': { description: PROCESSING_WORK permission required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence:
+    post:
+      summary: Declare existing customer evidence for one sealed external DSM
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [targetDsmArtifactId, declaredContentDigest, declaredContentType, independenceBasis]
+              properties:
+                targetDsmArtifactId: { type: string, minLength: 1, maxLength: 255 }
+                declaredContentDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+                declaredContentType: { type: string, minLength: 1, maxLength: 255 }
+                independenceBasis: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '201': { description: server-derived opaque evidence declaration, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceView' } } } }
+        '404': { description: scoped revision absent or no sealed DSM }
+        '409': { description: idempotency conflict }
+        '422': { description: invalid declaration intent }
+        '503': { description: durable journal unavailable }
+    get:
+      summary: List occurred facts for scoped external evidence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { '200': { description: opaque evidence views, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceListResponse' } } } }, '404': { description: scoped revision absent } }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/upload-grant:
+    post:
+      summary: Issue a digest-bound upload capability for declared evidence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: evidence_ref, required: true, schema: { type: string, pattern: '^eev-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      responses: { '200': { description: fresh URL and required headers, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceUploadGrantResponse' } } } }, '404': { description: scoped evidence absent }, '409': { description: sealed or expired idempotent grant } }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/seal:
+    post:
+      summary: Seal Core-observed declared evidence bytes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: evidence_ref, required: true, schema: { type: string, pattern: '^eev-v1-[0-9a-f]{64}$' } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      responses: { '200': { description: occurred evidence observation, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceView' } } } }, '404': { description: scoped evidence absent }, '409': { description: already sealed or idempotency conflict }, '422': { description: observation missing or mismatched } }
   /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions:
     post:
       summary: Register a customer-owned external reconstruction declaration
@@ -5492,6 +5550,35 @@ components:
   # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
   # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
   schemas:
+    ExternalEvidenceView:
+      type: object
+      required: [evidenceRef, state, targetDsmArtifactId, targetDsmObservedSha256, declaredContentDigest, declaredContentType, independenceBasis, declaredAt]
+      properties:
+        evidenceRef: { type: string, pattern: '^eev-v1-[0-9a-f]{64}$' }
+        state: { type: string, enum: [DECLARED, SEALED_BYTE_OBSERVED] }
+        targetDsmArtifactId: { type: string, minLength: 1, maxLength: 255 }
+        targetDsmObservedSha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        declaredContentDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        declaredContentType: { type: string, minLength: 1, maxLength: 255 }
+        independenceBasis: { type: string, minLength: 1, maxLength: 1000 }
+        declaredAt: { type: string, format: date-time }
+        observedObjectDigest: { type: [string, 'null'] }
+        observedSizeBytes: { type: [integer, 'null'] }
+        observedContentType: { type: [string, 'null'] }
+        observedAt: { type: [string, 'null'], format: date-time }
+    ExternalEvidenceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ExternalEvidenceView' } }
+    ExternalEvidenceUploadGrantResponse:
+      type: object
+      required: [evidenceRef, uploadUrl, expiresAt, requiredHeaders]
+      properties:
+        evidenceRef: { type: string, pattern: '^eev-v1-[0-9a-f]{64}$' }
+        uploadUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+        requiredHeaders: { type: object, additionalProperties: { type: string } }
     ExternalReconstructionRevisionView:
       type: object
       required: [submissionRef, submission, state]
