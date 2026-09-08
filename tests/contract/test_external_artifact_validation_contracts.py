@@ -367,6 +367,9 @@ def _pair_decision(
             observed_crs_digest=_digest("b"),
             observed_vertical_reference_digest=_digest("c"),
         )
+    elif verdict is not DecisionVerdict.BLOCKED:
+        details["baseline_sanitized_display_receipt_digest"] = _digest("7")
+        details["current_sanitized_display_receipt_digest"] = _digest("8")
     return ExternalPairUseDecisionV1(
         decision_id="pair-decision-1",
         baseline_subject=baseline,
@@ -643,6 +646,64 @@ def test_volume_binds_ordered_pair_and_exact_zone() -> None:
         ExternalPairUseDecisionV1.model_validate(raw)
 
 
+@pytest.mark.parametrize(
+    "verdict", (DecisionVerdict.ELIGIBLE, DecisionVerdict.RESTRICTED)
+)
+def test_nonblocked_visual_pair_binds_two_named_display_receipts(
+    verdict: DecisionVerdict,
+) -> None:
+    """Pair binds receipt digests; Core receipt-provenance lookup is outside this contract."""
+    value = _pair_decision(use="VISUAL_COMPARISON", verdict=verdict)
+    wire = external_pair_use_decision_wire_dict(value)
+    assert wire["baselineSanitizedDisplayReceiptDigest"] == _digest("7")
+    assert wire["currentSanitizedDisplayReceiptDigest"] == _digest("8")
+    Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(wire)
+    round_trip = ExternalPairUseDecisionV1.model_validate(wire)
+    assert round_trip.baseline_sanitized_display_receipt_digest == _digest("7")
+    assert round_trip.current_sanitized_display_receipt_digest == _digest("8")
+
+    for field in (
+        "baselineSanitizedDisplayReceiptDigest",
+        "currentSanitizedDisplayReceiptDigest",
+    ):
+        missing = copy.deepcopy(wire)
+        missing[field] = None
+        missing.pop("decisionDigest")
+        with pytest.raises(ValidationError, match=field):
+            ExternalPairUseDecisionV1.model_validate(missing)
+
+    both_missing = copy.deepcopy(wire)
+    both_missing["baselineSanitizedDisplayReceiptDigest"] = None
+    both_missing["currentSanitizedDisplayReceiptDigest"] = None
+    both_missing.pop("decisionDigest")
+    with pytest.raises(ValidationError, match="baselineSanitizedDisplayReceiptDigest"):
+        ExternalPairUseDecisionV1.model_validate(both_missing)
+
+
+def test_blocked_visual_pair_allows_null_display_receipts() -> None:
+    """A blocker must not fabricate either display receipt before it exists."""
+    wire = external_pair_use_decision_wire_dict(
+        _pair_decision(use="VISUAL_COMPARISON", verdict=DecisionVerdict.BLOCKED)
+    )
+    assert wire["baselineSanitizedDisplayReceiptDigest"] is None
+    assert wire["currentSanitizedDisplayReceiptDigest"] is None
+    Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(wire)
+
+
+def test_volume_forbids_display_receipts_without_repurposing_quantitative_evidence() -> None:
+    """Volume preserves its evidence records; display receipts are a separate visual binding."""
+    volume = _pair_decision(use="RELATIVE_VOLUME", verdict=DecisionVerdict.RESTRICTED)
+    wire = external_pair_use_decision_wire_dict(volume)
+    assert wire["evidenceRecordDigests"] == [
+        _sealed_digest(_evidence_record().evidence_record_digest)
+    ]
+    wire["baselineSanitizedDisplayReceiptDigest"] = _digest("7")
+    wire["currentSanitizedDisplayReceiptDigest"] = _digest("8")
+    wire.pop("decisionDigest")
+    with pytest.raises(ValidationError, match="RELATIVE_VOLUME"):
+        ExternalPairUseDecisionV1.model_validate(wire)
+
+
 def test_blocked_decisions_allow_missing_prerequisites_but_nonblocked_bind_exact_inputs() -> None:
     """Fabricating missing policy/report/receipt/zone digests for blockers must fail this test."""
     single = external_use_decision_wire_dict(_single_decision())
@@ -682,8 +743,8 @@ def test_blocked_decisions_allow_missing_prerequisites_but_nonblocked_bind_exact
         ExternalPairUseDecisionV1.model_validate(pair)
 
 
-def test_decision_digest_rejects_tampering_and_pair_has_two_named_report_slots() -> None:
-    """Removing decision seals or replacing pair slots with a list must fail."""
+def test_decision_digest_rejects_tampering_and_pair_has_named_report_and_display_slots() -> None:
+    """Pair seals cover ordered report and visual-display receipt bindings."""
     decision = external_use_decision_wire_dict(_single_decision())
     decision["reasons"] = ["OTHER_REASON"]
     with pytest.raises(ValidationError, match="decisionDigest"):
@@ -695,6 +756,18 @@ def test_decision_digest_rejects_tampering_and_pair_has_two_named_report_slots()
     pair["inspectionReportDigests"] = [_digest("1"), _digest("2"), _digest("3")]
     with pytest.raises(ValidationError):
         ExternalPairUseDecisionV1.model_validate(pair)
+
+    visual = external_pair_use_decision_wire_dict(
+        _pair_decision(use="VISUAL_COMPARISON", verdict=DecisionVerdict.ELIGIBLE)
+    )
+    original_digest = visual["decisionDigest"]
+    visual["baselineSanitizedDisplayReceiptDigest"] = _digest("9")
+    with pytest.raises(ValidationError, match="decisionDigest"):
+        ExternalPairUseDecisionV1.model_validate(visual)
+
+    visual.pop("decisionDigest")
+    resealed = ExternalPairUseDecisionV1.model_validate(visual).sealed()
+    assert resealed.decision_digest != original_digest
 
 
 def test_display_artifact_never_serializes_object_key_or_url() -> None:
