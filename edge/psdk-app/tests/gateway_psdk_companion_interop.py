@@ -389,8 +389,8 @@ def _runtime(
         supported_freshness_policies={_FRESHNESS_POLICY_ID: _FRESHNESS_POLICY},
     )
     principal = Principal(
-        principal_id="edge-runtime-1",
-        kind=PrincipalKind.EDGE_DEVICE,
+        principal_id="edge-route-observer-1",
+        kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
         role=None,
         device_id="edge-1",
         organization_id="org-1",
@@ -414,7 +414,7 @@ def _producer(
             runtime_build_digest=_RUNTIME_BUILD_DIGEST,
             freshness_policy_id=_FRESHNESS_POLICY_ID,
             freshness_policy_digest=_FRESHNESS_POLICY_DIGEST,
-            producer_principal_id="edge-runtime-1",
+            producer_principal_id="edge-route-observer-1",
             freshness_ttl_s=1,
             minimum_refresh_margin_s=0.2,
         ),
@@ -746,6 +746,11 @@ def run(fixture: Path) -> None:
             second_same_process = producer.observe_once()
             if first["availability"] != "REPORTED_AVAILABLE":
                 raise RuntimeError(f"AVAILABLE did not cross the real Unix seam: {first}")
+            if (
+                first["producerPrincipalId"] != "edge-route-observer-1"
+                or first["producerPrincipalKind"] != "EDGE_ROUTE_OBSERVER"
+            ):
+                raise RuntimeError(f"observer principal did not cross the real Core seam: {first}")
             if _signal_id(first) == _signal_id(second_same_process):
                 raise RuntimeError("same-process ROUTE_STATUS_V1 signalId was reused")
             if first["observationId"] == second_same_process["observationId"]:
