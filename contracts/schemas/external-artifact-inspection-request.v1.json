@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-artifact-inspection-request.v1.json",
+  "title": "ExternalArtifactInspectionRequestV1",
+  "description": "Core-issued external artifact inspection intent. It is not a ProcessingJob or client-selected resource policy.",
+  "type": "object", "additionalProperties": false,
+  "required": ["contractVersion", "requestId", "subject", "inspectionPolicyId", "inspectionPolicyVersion", "inspectionPolicyDigest", "issuedAt", "idempotencyKey"],
+  "properties": {
+    "contractVersion": {"const": "external-artifact-inspection-request.v1"},
+    "requestId": {"$ref": "#/$defs/text"}, "subject": {"$ref": "#/$defs/subject"},
+    "inspectionPolicyId": {"$ref": "#/$defs/text"}, "inspectionPolicyVersion": {"type": "integer", "minimum": 1},
+    "inspectionPolicyDigest": {"$ref": "#/$defs/digest"}, "issuedAt": {"$ref": "#/$defs/utcDateTime"}, "idempotencyKey": {"$ref": "#/$defs/text"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "utcDateTime": {"type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$"},
+    "subject": {"type": "object", "additionalProperties": false, "required": ["organizationId", "siteId", "workOrderId", "submissionId", "revision", "submissionDigest", "manifestDigest"], "properties": {"organizationId": {"$ref": "#/$defs/text"}, "siteId": {"$ref": "#/$defs/text"}, "workOrderId": {"$ref": "#/$defs/text"}, "submissionId": {"$ref": "#/$defs/text"}, "revision": {"type": "integer", "minimum": 1}, "submissionDigest": {"$ref": "#/$defs/digest"}, "manifestDigest": {"$ref": "#/$defs/digest"}}}
+  }
+}
