@@ -50,6 +50,27 @@ observation loop만 허용한다. 예시의 feature flag와 evidence는 의도�
 이미지/runner/소프트웨어 관측 성공은 물리 HIL evidence, feature enablement, CAP-4
 activation 또는 배포 승인이 아니다.
 
+### EDGE_ROUTE_OBSERVER journal compatibility and rollback
+
+PSDK route observation은 `EDGE_ROUTE_OBSERVER`의 전용 token으로만 연다. 기본 예제는
+그 principal이나 token을 provisioning하지 않으며, 기존 Gateway/Edge producer가 쓰는
+observation journal record는 schema `1.0`을 유지한다. observer record만 schema `1.1`이다.
+활성화 전에 먼저 `1.0`과 observer `1.1`을 모두 replay할 수 있는 compatible Core reader를
+배포하고, immutable observation journal의 복구 가능한 backup을 확인한다. 그 다음에만
+새 observer principal/token digest와 owner-only token file을 명시적으로 provisioning하고
+Gateway observation 설정을 그 dedicated file로 바꾼다. `EDGE_DEVICE` 또는 Gateway token을
+observer fallback으로 사용하면 안 된다.
+
+첫 `1.1` observer record가 durable journal에 기록되면 reader floor는 `1.1`이다. 그 뒤에는
+old Core를 journal 위로 rollback/restore할 수 없다. backup은 disaster recovery용이며
+post-`1.1` journal을 truncate, delete, rename, rewrite할 권한을 주지 않는다.
+
+안전한 rollback은 observer publishing을 멈추고, observer 전용 startup configuration을
+제거하거나 token을 rotate한 뒤 Gateway를 restart하는 것이다. 별도 in-product revocation API를
+가정하지 않는다. compatible Core reader와 전체 immutable journal은 유지하며, observer
+principal/token을 없앤다고 legacy producer record를 삭제하거나 broad Edge token으로 바꾸지
+않는다.
+
 외부 VM profile은 `docs/ops/VM_DEPLOYMENT_READINESS.md`를 따른다. 현재 release gate는
 개발·합성 데이터까지이며, Cloud 사업자 적법성 승인과 실제 고객 데이터 배포는
 `docs/security/CLOUD_PROVIDER_DUE_DILIGENCE.md`가 열려 있는 동안 금지다.

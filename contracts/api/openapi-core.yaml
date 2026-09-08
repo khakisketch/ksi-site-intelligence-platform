@@ -174,7 +174,11 @@ info:
   # 1.34.0 — HIL-0 Gateway 전용 CAP-5 preflight. 인증된 Gateway의 조직/장비,
   # exact route/port/deployment 및 Mission scope를 Core가 대조한 뒤 기존 CAP-5
   # 3항 conjunction을 반환한다. 진단 catalog나 durable authority를 만들지 않는다.
-  version: 1.34.0
+  # 1.35.0 — PSDK EDGE_ROUTE_PORT health collector는 dedicated
+  # EDGE_ROUTE_OBSERVER credential 하나만 쓴다. observer의 runtime observation은
+  # 자기 deviceId·EDGE_ROUTE_PORT에 exact-scope되며, Gateway/Edge broad credential을
+  # 재사용하지 않는다. 관찰 writer activation은 Core-first provisioning으로만 연다.
+  version: 1.35.0
   description: >-
     구현된 계약과 계획된 계약을 구분한다(감사 #25·#35) — `x-status: planned`
     경로는 아직 구현되지 않은 설계 스케치이며, 표기 없는 경로는 실구현과
@@ -202,7 +206,10 @@ paths:
         role·permissions 를, GATEWAY_DEVICE는 deviceId·GATEWAY_CONNECTIVITY_WRITE·
         CAPABILITY_RUNTIME_OBSERVE를,
         EDGE_DEVICE 는 deviceId·EDGE_SYNC_INGEST·EDGE_MISSION_PULL·
-        EDGE_EVIDENCE_WRITE·CAPABILITY_RUNTIME_OBSERVE 고정 권한을 반환한다.
+        EDGE_EVIDENCE_WRITE·CAPABILITY_RUNTIME_OBSERVE를, EDGE_ROUTE_OBSERVER는
+        role 없이 deviceId·CAPABILITY_RUNTIME_OBSERVE 하나만 반환한다. 이 observer는
+        dedicated opaque credential로 자기 EDGE_ROUTE_PORT만 관측하며 Gateway/Edge의
+        broad credential을 대신하거나 다른 product route를 호출할 수 없다.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -295,10 +302,11 @@ paths:
     post:
       summary: Record one exact current runtime route-port observation
       description: >-
-        CAPABILITY_RUNTIME_OBSERVE 권한을 가진 authenticated Gateway/Edge device만
-        보고한다. organization/site/device/path/subjectPortId/deployment/policy는
-        Core-owned trusted configuration과 exact-match해야 한다. 이 관측은 evidence,
-        product approval 또는 durable activation을 만들거나 변경하지 않는다.
+        CAPABILITY_RUNTIME_OBSERVE 권한을 가진 authenticated device/observer만
+        보고한다. EDGE_ROUTE_OBSERVER 는 자신의 EDGE_ROUTE_PORT 하나만 보고할 수 있고,
+        organization/site/device/path/subjectPortId/deployment/policy는 Core-owned trusted
+        configuration과 exact-match해야 한다. 이 관측은 evidence, product approval 또는
+        durable activation을 만들거나 변경하지 않는다.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -5554,7 +5562,8 @@ components:
         freshnessPolicyDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
         producerPrincipalId:
           { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$' }
-        producerPrincipalKind: { enum: [GATEWAY_DEVICE, EDGE_DEVICE] }
+        producerPrincipalKind:
+          enum: [GATEWAY_DEVICE, EDGE_DEVICE, EDGE_ROUTE_OBSERVER]
         sourceObservationRef: { type: string, minLength: 1, maxLength: 500 }
     RuntimeObservationIngestResponse:
       type: object
@@ -6015,7 +6024,7 @@ components:
           description: Principal이 속한 고객 조직. 조회·변경 범위의 첫 번째 경계다.
           type: string
         kind: { type: string }
-        # Gateway/Edge 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
+        # Gateway/Edge/route observer 장비 principal 은 role 이 없고, 운영자 principal 은 deviceId 가 없다.
         role: { type: [string, 'null'] }
         deviceId: { type: [string, 'null'] }
         permissions: { type: array, items: { type: string } }
@@ -8390,8 +8399,10 @@ components:
         Bearer 인증(ADR-KSI-008 §2, ADR-KSI-024) — 사람 OPERATOR는 배포 mode에
         따라 OIDC JWT를 사용하며 signature, iss, aud, exp, nbf, kid, algorithm과
         KSI principal/organization/role claim을 검증한다. GATEWAY_DEVICE,
-        EDGE_DEVICE, PROCESSING_WORKER는 별도 opaque 장비 자격을 사용하고 서버는
-        sha256(token) digest → Principal 매핑만 보유하며 원문을 저장하지 않는다. 인증 실패는
+        EDGE_DEVICE, EDGE_ROUTE_OBSERVER, PROCESSING_WORKER는 별도 opaque 장비 자격을
+        사용하고 서버는 sha256(token) digest → Principal 매핑만 보유하며 원문을 저장하지
+        않는다. EDGE_ROUTE_OBSERVER는 explicit provisioning된 dedicated credential이며
+        CAPABILITY_RUNTIME_OBSERVE 하나와 자기 EDGE_ROUTE_PORT scope만 가진다. 인증 실패는
         사유(부재/형식오류/미지 토큰)를 가리지 않는 동일 401(WWW-Authenticate:
         Bearer) — detail 로 존재 여부 힌트를 주지 않는다. 공개 allowlist는
         /health·/capabilities 와 FastAPI 기본 문서 라우트(/openapi.json·

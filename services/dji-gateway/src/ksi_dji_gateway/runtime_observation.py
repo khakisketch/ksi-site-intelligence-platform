@@ -58,6 +58,8 @@ class PsdkMopObservationConfig:
         )
         if any(not value or value != value.strip() for value in identifiers):
             raise ValueError("PSDK observation scope 식별자는 exact non-empty여야 한다")
+        if _SIGNAL_ID.fullmatch(self.producer_principal_id) is None:
+            raise ValueError("PSDK observation producerPrincipalId는 path-safe identifier여야 한다")
         if self.organization_id == "legacy":
             raise ValueError("legacy organization은 runtime observation을 만들 수 없다")
         for digest in (
@@ -186,7 +188,7 @@ class PsdkMopRuntimeObservationProducer:
             "freshnessPolicyId": self._config.freshness_policy_id,
             "freshnessPolicyDigest": self._config.freshness_policy_digest,
             "producerPrincipalId": self._config.producer_principal_id,
-            "producerPrincipalKind": "EDGE_DEVICE",
+            "producerPrincipalKind": "EDGE_ROUTE_OBSERVER",
             "sourceObservationRef": source,
         }
 

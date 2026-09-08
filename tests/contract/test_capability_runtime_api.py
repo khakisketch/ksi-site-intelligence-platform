@@ -45,6 +45,7 @@ _EDGE_TOKEN = "cap5-edge-token"
 _VIEWER_TOKEN = "cap5-viewer-token"
 _OTHER_TOKEN = "cap5-other-token"
 _GATEWAY_TOKEN = "cap5-gateway-token"
+_EDGE_ROUTE_OBSERVER_TOKEN = "cap5-edge-route-observer-token"
 
 RuntimeOperation = Literal[
     "WAYLINE_DISPATCH", "EDGE_DISPATCH", "EDGE_UPLINK", "MEDIA_SYNC"
@@ -75,6 +76,16 @@ def _registry() -> AuthRegistry:
                     kind=PrincipalKind.GATEWAY_DEVICE,
                     role=None,
                     device_id="gateway-1",
+                    organization_id="org-1",
+                ),
+            ),
+            PrincipalTokenRecord(
+                token_sha256=_digest(_EDGE_ROUTE_OBSERVER_TOKEN),
+                principal=Principal(
+                    principal_id="route-observer-1",
+                    kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                    role=None,
+                    device_id="edge-1",
                     organization_id="org-1",
                 ),
             ),
@@ -139,6 +150,75 @@ def test_runtime_observation_ingress_is_authenticated_and_exact(tmp_path: Path) 
     )
     assert retried.status_code == 201
     assert retried.json()["disposition"] == "EXACT_RETRY"
+
+
+def test_edge_route_observer_ingress_has_exact_edge_subject_scope(tmp_path: Path) -> None:
+    _authority, _activation, config, _observations, projector = _runtime(
+        tmp_path, edge_route=True
+    )
+    client = TestClient(
+        create_app(auth_registry=_registry(), runtime_capability_projector=projector)
+    )
+    now = datetime.now(UTC)
+    observation = _observation(
+        config,
+        observed_at=now - timedelta(seconds=1),
+        expires_at=now - timedelta(seconds=1) + timedelta(minutes=5),
+    ).model_copy(
+        update={
+            "producer_principal_id": "route-observer-1",
+            "producer_principal_kind": PrincipalKind.EDGE_ROUTE_OBSERVER,
+        }
+    )
+
+    created = client.post(
+        "/v1/capability-runtime/observations",
+        headers=_headers(_EDGE_ROUTE_OBSERVER_TOKEN),
+        json=observation.model_dump(mode="json", by_alias=True),
+    )
+    assert created.status_code == 201
+
+    legacy_edge = observation.model_copy(
+        update={
+            "observation_id": "legacy-edge-observation",
+            "observed_at": now,
+            "expires_at": now + timedelta(minutes=5),
+            "producer_principal_id": "edge-runtime-1",
+            "producer_principal_kind": PrincipalKind.EDGE_DEVICE,
+        }
+    )
+    assert (
+        client.post(
+            "/v1/capability-runtime/observations",
+            headers=_headers(_EDGE_TOKEN),
+            json=legacy_edge.model_dump(mode="json", by_alias=True),
+        ).status_code
+        == 201
+    )
+
+    gateway_claim = observation.model_copy(
+        update={
+            "observation_id": "gateway-claim-observation",
+            "producer_principal_id": "gateway-runtime-1",
+            "producer_principal_kind": PrincipalKind.GATEWAY_DEVICE,
+        }
+    )
+    assert (
+        client.post(
+            "/v1/capability-runtime/observations",
+            headers=_headers(_GATEWAY_TOKEN),
+            json=gateway_claim.model_dump(mode="json", by_alias=True),
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/capability-runtime/observations",
+            headers=_headers(_VIEWER_TOKEN),
+            json=observation.model_dump(mode="json", by_alias=True),
+        ).status_code
+        == 403
+    )
 
 
 def test_scoped_runtime_view_never_becomes_http_authorization_token(tmp_path: Path) -> None:

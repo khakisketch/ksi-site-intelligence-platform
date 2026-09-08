@@ -577,6 +577,23 @@ def test_openapi_refs_resolve_to_defined_targets() -> None:
     assert not dangling, f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
 
 
+def test_runtime_observation_producer_kind_is_a_closed_least_privilege_enum(
+    tmp_path: Path,
+) -> None:
+    document = yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
+    assert document["info"]["version"] == "1.35.0"
+    documented_producer_kind = document["components"]["schemas"]["RuntimeRouteObservationV1"][
+        "properties"
+    ]["producerPrincipalKind"]
+    implemented_producer_kind = _implemented_spec(tmp_path)["components"]["schemas"][
+        "RuntimeRouteObservationV1"
+    ]["properties"]["producerPrincipalKind"]
+    expected = ["GATEWAY_DEVICE", "EDGE_DEVICE", "EDGE_ROUTE_OBSERVER"]
+
+    assert documented_producer_kind["enum"] == expected
+    assert implemented_producer_kind["enum"] == expected
+
+
 # ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────
 #
 # 위 검사들은 경로·메서드·security 존재만 본다. 그래서 Core 가
