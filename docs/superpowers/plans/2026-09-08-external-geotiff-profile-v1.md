@@ -127,8 +127,9 @@ The COG corpus specifically varies non-square/non-16-divisible/oversize tiles,
 missing image or mask overview levels, logical overview dimensions
 `ceil(previous / f)` for one `f` in 2 through 10, with strictly decreasing logical
 overview dimensions,
-directory/IFD order from base image (and mask) to largest overview to smallest
-overview, image payload block order smallest overview->larger overview->base with
+directory/IFD order from base image and base mask through all image overview
+IFDs (largest to smallest), then all mask overview IFDs (largest to smallest),
+image payload block order smallest overview->larger overview->base with
 within-level row-major offsets, and invalid final tile size.  It also varies
 `LAYOUT`, `BLOCK_LEADER`, `BLOCK_TRAILER`, `BLOCK_ORDER`, `KNOWN_INCOMPATIBLE_EDITION`,
 and mask interleave with declared leader/trailer facts.  CRS tests require offline

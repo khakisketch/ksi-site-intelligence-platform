@@ -206,9 +206,11 @@ overview has `width = ceil(previous_width / f)` and
 and is strictly smaller in both dimensions.  The final overview is no larger
 than one tile on either axis.  The logical chain remains strictly decreasing in logical
 overview dimensions.
-Physical directory/IFD order is base image (and its mask if present), then overview
-levels from largest to smallest, and each overview carries the corresponding mask if
-present.  All IFD/index data must precede imagery.  The IMAGE PAYLOAD BLOCK order is
+Physical directory/IFD order is the base image, its full-resolution mask if
+present, all image overview IFDs from largest to smallest, then all mask overview
+IFDs from largest to smallest. A corresponding mask is required at every image
+level when masked; image and mask overview IFDs are not alternated. All IFD/index
+data must precede imagery.  The IMAGE PAYLOAD BLOCK order is
 smallest overview to larger overview to base image, with offsets ascending row-major
 within each level; each mask block follows its corresponding image block and precedes
 the next image block.  It requires `LAYOUT=IFDS_BEFORE_DATA`,
