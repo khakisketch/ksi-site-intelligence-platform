@@ -57,6 +57,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_evidence import ExternalEvidenceStore
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
@@ -370,6 +371,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         observation_work_order_store=observation_work_order_store,
         external_reconstruction_store=ExternalReconstructionStore(
             DurableJournal(tmp_path / "external-reconstruction.jsonl")
+        ),
+        external_evidence_store=ExternalEvidenceStore(
+            DurableJournal(tmp_path / "external-evidence.jsonl")
         ),
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
@@ -688,9 +692,7 @@ def test_external_reconstruction_contract_uses_opaque_submission_refs() -> None:
     assert all(path in paths for path in revision_paths)
     assert not any("{submission_id}" in path for path in paths if path.startswith(base))
     for path in revision_paths:
-        operation = next(
-            item for name, item in paths[path].items() if name in _HTTP_METHODS
-        )
+        operation = next(item for name, item in paths[path].items() if name in _HTTP_METHODS)
         submission_ref = next(
             parameter
             for parameter in operation["parameters"]
@@ -706,6 +708,35 @@ def test_external_reconstruction_contract_uses_opaque_submission_refs() -> None:
         "type": "string",
         "pattern": "^ers-v1-[0-9a-f]{64}$",
     }
+
+
+def test_external_evidence_idempotency_header_constraints_match_runtime(tmp_path: Path) -> None:
+    base = (
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
+        "{submission_ref}/revisions/{revision}/evidence"
+    )
+    paths = (base, base + "/{evidence_ref}/upload-grant", base + "/{evidence_ref}/seal")
+    expected = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "pattern": ".*\\S.*",
+    }
+    doc = _doc()["paths"]
+    implementation = _implemented_spec(tmp_path)["paths"]
+    for path in paths:
+        doc_header = next(
+            parameter
+            for parameter in doc[path]["post"]["parameters"]
+            if parameter["in"] == "header" and parameter["name"] == "Idempotency-Key"
+        )
+        impl_header = next(
+            parameter
+            for parameter in implementation[path]["post"]["parameters"]
+            if parameter["in"] == "header" and parameter["name"] == "Idempotency-Key"
+        )
+        assert {key: doc_header["schema"][key] for key in expected} == expected
+        assert {key: impl_header["schema"][key] for key in expected} == expected
 
 
 def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:

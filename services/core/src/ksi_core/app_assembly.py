@@ -78,6 +78,7 @@ from ksi_core.events import EventStore
 from ksi_core.evidence import DigestBoundEvidenceStorage, ObjectStorageObservationPort
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
 from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
+from ksi_core.external_evidence import ExternalEvidenceStore
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
@@ -284,6 +285,11 @@ def assemble_app(
     external_reconstruction_store = (
         ExternalReconstructionStore(journal("external-reconstruction.jsonl"))
         if evidence_storage is not None
+        else None
+    )
+    external_evidence_store = (
+        ExternalEvidenceStore(journal("external-evidence.jsonl"))
+        if external_reconstruction_store is not None
         else None
     )
     # D5 policy starts deliberately empty: an ingress seal is retained, while
@@ -646,6 +652,7 @@ def assemble_app(
         site_store=site_store,
         observation_work_order_store=observation_work_order_store,
         external_reconstruction_store=external_reconstruction_store,
+        external_evidence_store=external_evidence_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -725,6 +732,7 @@ def assemble_app(
     app.state.external_validation_policy_registry = external_validation_policy_registry
     app.state.external_artifact_inspection_store = external_artifact_inspection_store
     app.state.external_display_artifact_store = external_display_artifact_store
+    app.state.external_evidence_store = external_evidence_store
 
     # 미들웨어는 마지막 등록이 가장 바깥이다(Starlette 관례) — CorrelationId 를
     # 가장 바깥에 두어 그 안의 HttpMetrics·라우팅·인증 전부의 로그가 같은
