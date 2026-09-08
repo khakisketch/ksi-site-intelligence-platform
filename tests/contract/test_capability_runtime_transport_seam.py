@@ -32,6 +32,7 @@ from ksi_dji_gateway import (
     EdgeDispatchRequest,
     GatewayJournal,
     GatewayTransport,
+    HttpCoreRuntimeObservationPublisher,
     HttpCoreRuntimeRoutePreflight,
     IntegrationPath,
     ProviderReceipt,
@@ -56,6 +57,64 @@ class _RecordingBridge:
             accepted_at=datetime.now(UTC).isoformat(),
             item_count=1,
         )
+
+
+def test_real_authenticated_core_observation_seam_uses_route_observer_token(
+    tmp_path: Path,
+) -> None:
+    _authority, _activation, runtime_config, _observations, projector = _runtime(
+        tmp_path, edge_route=True
+    )
+    token = "edge-route-observer-token"
+    auth = AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(token.encode()).hexdigest(),
+                principal=Principal(
+                    principal_id="route-observer-1",
+                    kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                    role=None,
+                    device_id="edge-1",
+                    organization_id="org-1",
+                ),
+            )
+        ]
+    )
+    app = create_app(auth_registry=auth, runtime_capability_projector=projector)
+    port = _free_port()
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="critical")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.started
+
+    token_file = tmp_path / "edge-route-observer-token"
+    token_file.write_text(token, encoding="utf-8")
+    token_file.chmod(0o600)
+    observation = _observation(runtime_config).model_copy(
+        update={
+            "producer_principal_id": "route-observer-1",
+            "producer_principal_kind": PrincipalKind.EDGE_ROUTE_OBSERVER,
+        }
+    )
+    try:
+        response = HttpCoreRuntimeObservationPublisher(
+            CoreRuntimeTransportConfig(
+                core_url=f"http://127.0.0.1:{port}",
+                token_file=token_file,
+                allow_loopback_http=True,
+            )
+        ).publish(observation.model_dump(mode="json", by_alias=True))
+        assert response["disposition"] == "RECORDED"
+        assert response["observation"]["producerPrincipalKind"] == "EDGE_ROUTE_OBSERVER"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+    assert not thread.is_alive()
 
 
 def _free_port() -> int:

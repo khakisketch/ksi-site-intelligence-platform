@@ -7,7 +7,7 @@
   "core": {
     "url": "https://core.example.invalid",
     "preflightTokenFile": "/run/secrets/ksi-gateway-preflight-token",
-    "observationTokenFile": "/run/secrets/ksi-edge-observation-token",
+    "observationTokenFile": "/run/secrets/ksi-edge-route-observer-token",
     "tlsCertificateSha256": "0000000000000000000000000000000000000000000000000000000000000000",
     "timeoutSeconds": 5,
     "allowLoopbackHttp": false
@@ -39,7 +39,7 @@
     "runtimeBuildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     "freshnessPolicyId": "replace-with-cap4-pinned-policy-id",
     "freshnessPolicyDigest": "sha256:6bcc0a41cf695816fe9e2dc50ac39c922119484aaaea1699050165da05d00865",
-    "producerPrincipalId": "replace-with-edge-observation-principal",
+    "producerPrincipalId": "replace-with-edge-route-observer-principal",
     "freshnessTtlSeconds": 10,
     "minimumRefreshMarginSeconds": 2,
     "pollIntervalSeconds": 2

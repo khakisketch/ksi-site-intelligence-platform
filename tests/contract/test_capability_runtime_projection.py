@@ -142,6 +142,32 @@ def _configuration(
     )
 
 
+def _edge_route_configuration(
+    config: TrustedRuntimeRouteConfigurationV1,
+) -> TrustedRuntimeRouteConfigurationV1:
+    configured_raw = config.configured_deployment.model_dump(mode="json", by_alias=True)
+    configured_raw.update(
+        {
+            "integrationPath": "PSDK_MANIFOLD",
+            "canonicalCapabilityId": "EDGE_UPLINK",
+        }
+    )
+    configured = ConfiguredDeploymentSnapshotV1.model_validate(configured_raw)
+    return TrustedRuntimeRouteConfigurationV1(
+        configured_deployment=configured,
+        configured_deployment_digest=configured.canonical_digest,
+        subject_kind=RuntimeRouteSubjectKind.EDGE_ROUTE_PORT,
+        subject_device_ids=("edge-1",),
+        subject_port_id="psdk.edge-uplink",
+        selected_transport="MOP",
+        allowed_transports=("MOP",),
+        feature_flag_enabled=True,
+        port_configuration_ready=True,
+        freshness_policy_id=FRESHNESS_POLICY_ID,
+        freshness_policy_digest=FRESHNESS_POLICY_DIGEST,
+    )
+
+
 def _observation(
     config: TrustedRuntimeRouteConfigurationV1,
     *,
@@ -192,6 +218,7 @@ def _runtime(
     flag: bool = True,
     ready: bool = True,
     policies: dict[str, RuntimeRouteFreshnessPolicyV1] | None = None,
+    edge_route: bool = False,
 ) -> tuple[
     CapabilityAuthorityStore,
     OperationalCapabilityActivationRecordV1,
@@ -202,6 +229,8 @@ def _runtime(
     authority = _open(tmp_path / "authority.jsonl")
     _, _, activation = _seed_activation(authority)
     config = _configuration(activation, flag=flag, ready=ready)
+    if edge_route:
+        config = _edge_route_configuration(config)
     observations = RuntimeRouteObservationStore(
         DurableJournal(tmp_path / "runtime-observations.jsonl")
     )
@@ -214,6 +243,118 @@ def _runtime(
         ),
     )
     return authority, activation, config, observations, projector
+
+
+def test_edge_route_observer_ingests_only_its_exact_edge_route_port(tmp_path: Path) -> None:
+    authority, _activation, config, observations, _projector = _runtime(tmp_path)
+    edge_config = _edge_route_configuration(config)
+    projector = RuntimeCapabilityProjector(
+        authority_store=authority,
+        configuration_registry=TrustedRuntimeRouteConfigurationRegistry((edge_config,)),
+        observation_store=observations,
+        supported_freshness_policies=RUNTIME_FRESHNESS_POLICIES,
+    )
+    observation = _observation(edge_config).model_copy(
+        update={
+            "producer_principal_id": "route-observer-1",
+            "producer_principal_kind": PrincipalKind.EDGE_ROUTE_OBSERVER,
+        }
+    )
+    observer = Principal(
+        principal_id="route-observer-1",
+        kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+        role=None,
+        device_id="edge-1",
+        organization_id="org-1",
+    )
+
+    result = projector.ingest_observation(
+        observation, principal=observer, received_at=ACTIVE_NOW
+    )
+    assert result.disposition is ObservationIngestDisposition.RECORDED
+    assert observations.current_for(edge_config.key) == observation
+    assert (
+        projector.ingest_observation(
+            observation, principal=observer, received_at=ACTIVE_NOW
+        ).disposition
+        is ObservationIngestDisposition.EXACT_RETRY
+    )
+
+    non_edge_subject = _observation(config).model_copy(
+        update={
+            "producer_principal_id": "route-observer-1",
+            "producer_principal_kind": PrincipalKind.EDGE_ROUTE_OBSERVER,
+        }
+    )
+    with pytest.raises(RuntimeCapabilityValidationError, match="only observe"):
+        projector.ingest_observation(
+            non_edge_subject, principal=observer, received_at=ACTIVE_NOW
+        )
+
+    for invalid_observation, invalid_principal, message in (
+        (
+            observation,
+            Principal(
+                principal_id="route-observer-1",
+                kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                role=None,
+                device_id="edge-1",
+                organization_id="org-other",
+            ),
+            "organization",
+        ),
+        (
+            observation,
+            Principal(
+                principal_id="route-observer-other",
+                kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                role=None,
+                device_id="edge-1",
+                organization_id="org-1",
+            ),
+            "principal",
+        ),
+        (
+            observation.model_copy(update={"producer_principal_kind": PrincipalKind.EDGE_DEVICE}),
+            observer,
+            "principal",
+        ),
+        (
+            observation,
+            Principal(
+                principal_id="route-observer-1",
+                kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                role=None,
+                device_id="edge-other",
+                organization_id="org-1",
+            ),
+            "device",
+        ),
+        (
+            observation.model_copy(update={"subject_port_id": "psdk.other-port"}),
+            observer,
+            "trusted configured",
+        ),
+        (
+            observation.model_copy(
+                update={"configured_deployment_digest": "sha256:" + "d" * 64}
+            ),
+            observer,
+            "trusted configured",
+        ),
+        (
+            observation.model_copy(
+                update={"freshness_policy_digest": "sha256:" + "e" * 64}
+            ),
+            observer,
+            "freshness policy",
+        ),
+    ):
+        with pytest.raises(RuntimeCapabilityValidationError, match=message):
+            projector.ingest_observation(
+                invalid_observation, principal=invalid_principal, received_at=ACTIVE_NOW
+            )
+    assert observations.record_count == 1
 
 
 def _project(
@@ -260,6 +401,75 @@ def test_observation_journal_tamper_fails_closed_on_recovery(
     path.write_text(json.dumps(raw, separators=(",", ":")) + "\n", encoding="utf-8")
     with pytest.raises(RuntimeObservationRecoveryError):
         RuntimeRouteObservationStore(DurableJournal(path))
+
+
+def _rehashed_observation_event(event: dict[str, object]) -> dict[str, object]:
+    content = {
+        "schemaVersion": event["schemaVersion"],
+        "kind": event["kind"],
+        "occurredAt": event["occurredAt"],
+        "payload": event["payload"],
+    }
+    return event | {
+        "payloadSha256": "sha256:" + hashlib.sha256(canonical_json_bytes(content)).hexdigest()
+    }
+
+
+def test_observation_journal_schema_is_bound_to_producer_kind_and_replays_mixed_history(
+    tmp_path: Path,
+) -> None:
+    _authority, _activation, legacy_config, _observations, _projector = _runtime(
+        tmp_path / "legacy-fixture"
+    )
+    observer_config = _edge_route_configuration(legacy_config)
+    legacy_observation = _observation(legacy_config, observation_id="legacy-observation")
+    observer_observation = _observation(
+        observer_config,
+        observation_id="observer-observation",
+    ).model_copy(
+        update={
+            "producer_principal_id": "route-observer-1",
+            "producer_principal_kind": PrincipalKind.EDGE_ROUTE_OBSERVER,
+        }
+    )
+    journal_path = tmp_path / "mixed-observations.jsonl"
+    store = RuntimeRouteObservationStore(DurableJournal(journal_path))
+    store.ingest(observer_observation, received_at=ACTIVE_NOW)
+    store.ingest(legacy_observation, received_at=ACTIVE_NOW + timedelta(seconds=1))
+    store.close()
+
+    observer_event, legacy_event = [
+        json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert observer_event["schemaVersion"] == "1.1"
+    assert legacy_event["schemaVersion"] == "1.0"
+
+    replayed = RuntimeRouteObservationStore(DurableJournal(journal_path))
+    assert replayed.current_for(observer_config.key) == observer_observation
+    assert replayed.current_for(legacy_config.key) == legacy_observation
+    replayed.close()
+
+    second_legacy = legacy_observation.model_copy(update={"observation_id": "legacy-ambiguous"})
+    ambiguity_path = tmp_path / "legacy-ambiguity.jsonl"
+    ambiguity_store = RuntimeRouteObservationStore(DurableJournal(ambiguity_path))
+    ambiguity_store.ingest(legacy_observation, received_at=ACTIVE_NOW)
+    with pytest.raises(RuntimeObservationConflict):
+        ambiguity_store.ingest(second_legacy, received_at=ACTIVE_NOW + timedelta(seconds=1))
+    ambiguity_store.close()
+    ambiguity_event = json.loads(ambiguity_path.read_text(encoding="utf-8").splitlines()[1])
+    assert ambiguity_event["schemaVersion"] == "1.0"
+
+    forged_events = {
+        "observer-in-1.0": _rehashed_observation_event(observer_event | {"schemaVersion": "1.0"}),
+        "legacy-in-1.1": _rehashed_observation_event(legacy_event | {"schemaVersion": "1.1"}),
+        "ambiguity-in-1.1": _rehashed_observation_event(ambiguity_event | {"schemaVersion": "1.1"}),
+        "unknown-1.2": _rehashed_observation_event(legacy_event | {"schemaVersion": "1.2"}),
+    }
+    for name, forged in forged_events.items():
+        forged_path = tmp_path / f"{name}.jsonl"
+        forged_path.write_text(json.dumps(forged, separators=(",", ":")) + "\n", encoding="utf-8")
+        with pytest.raises(RuntimeObservationRecoveryError):
+            RuntimeRouteObservationStore(DurableJournal(forged_path))
 
 
 def _invocation(

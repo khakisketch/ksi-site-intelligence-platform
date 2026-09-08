@@ -6,7 +6,7 @@
 보유한다(조립 시 digest 레코드 주입) — 서버 어디에도 토큰 원문이 남지 않는다.
 외부 Operations Console 사람은 OIDC JWT를, 장비·워커는 이 opaque registry를 사용한다.
 
-## Principal 4종 (2-enum 분리 관습)
+## Principal 5종 (2-enum 분리 관습)
 
 - ``OPERATOR``(사람): :class:`Role` 필수, ``device_id`` 는 가질 수 없다. 권한은
   모듈 상수 ``_ROLE_PERMISSIONS`` 표 하나로만 결정된다(엔드포인트 산재 금지).
@@ -15,6 +15,9 @@
 - ``EDGE_DEVICE``(장비): role 없음, ``device_id`` 필수. 권한은 항상 Edge 전용
   최소 집합(ingest·자기 mission pull·자기 evidence write)으로 고정 — role 표와
   무관하다(edge-sync 장착부에서 이 Principal 을 소비한다).
+- ``EDGE_ROUTE_OBSERVER``(route health collector): role 없음, ``device_id`` 필수.
+  권한은 ``{CAPABILITY_RUNTIME_OBSERVE}`` 하나이며, Core CAP-5 ingress가 자기
+  ``EDGE_ROUTE_PORT`` scope와 다시 exact-match한다.
 - ``PROCESSING_WORKER``(3D 재구성 워커): role 없음, ``device_id`` 도 없음. 권한은
   항상 ``{PROCESSING_WORK}`` 고정.
 
@@ -95,11 +98,12 @@ class Role(StrEnum):
 
 
 class PrincipalKind(StrEnum):
-    """Principal 종류 — 사람·gateway·Edge·처리 워커의 신원 모델은 서로 다르다."""
+    """Principal 종류 — 사람·gateway·Edge·route observer·처리 워커는 분리한다."""
 
     OPERATOR = "OPERATOR"
     GATEWAY_DEVICE = "GATEWAY_DEVICE"
     EDGE_DEVICE = "EDGE_DEVICE"
+    EDGE_ROUTE_OBSERVER = "EDGE_ROUTE_OBSERVER"
     PROCESSING_WORKER = "PROCESSING_WORKER"
 
 
@@ -160,10 +164,11 @@ class Permission(StrEnum):
     # RC Plus 2 / Dock gateway 전용. Edge ingest 권한과 분리해 Gateway 자격이
     # Manifold EventBundle·원본 미디어를 가장할 수 없게 한다(REQ-SEC-101).
     GATEWAY_CONNECTIVITY_WRITE = "GATEWAY_CONNECTIVITY_WRITE"
-    # CAP-5 exact route-port liveness report. Gateway와 Edge 장비에만 주며,
-    # evidence/approval/activation을 만들 권한은 전혀 포함하지 않는다. 실제
-    # organization/site/device/route/port 범위는 runtime ingress가 trusted Core
-    # configuration과 다시 exact-match한다(REQ-ACQ-103, INV-060).
+    # CAP-5 exact route-port liveness report. Existing Gateway/Edge producers와
+    # dedicated Edge route observer만 받으며, evidence/approval/activation을 만들
+    # 권한은 전혀 포함하지 않는다. 실제 organization/site/device/route/port 범위는
+    # runtime ingress가 trusted Core configuration과 다시 exact-match한다
+    # (REQ-ACQ-103, INV-060).
     CAPABILITY_RUNTIME_OBSERVE = "CAPABILITY_RUNTIME_OBSERVE"
     # Gateway 전용: 새 route invocation 직전 CAP-5 projection을 질의한다. 관찰
     # 쓰기와 분리해 observation producer credential이 실행 preflight까지 호출하는
@@ -203,7 +208,7 @@ class Permission(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Principal:
-    """인증 신원 — OPERATOR만 role, Gateway/Edge만 device_id를 가진다."""
+    """인증 신원 — OPERATOR만 role, device principal만 device_id를 가진다."""
 
     principal_id: str
     kind: PrincipalKind
@@ -274,6 +279,18 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
             f"({principal.principal_id!r}) — 이 신원으로 인증한 응답이 직렬화되지 않는다"
         ) from exc
 
+    # EDGE_ROUTE_OBSERVER의 principal_id는 CAP-5 observation payload의 exact
+    # producer identity이며, 새 dedicated credential을 provisioning하는 경계에서
+    # path-safe하게 고정한다. 기존 principal identifier 형식은 호환을 위해 바꾸지
+    # 않는다.
+    if principal.kind is PrincipalKind.EDGE_ROUTE_OBSERVER and not is_path_safe_identifier(
+        principal.principal_id
+    ):
+        raise AuthRegistryError(
+            f"{principal.principal_id}: EDGE_ROUTE_OBSERVER principal_id는 "
+            "경로-안전 문자만 허용한다"
+        )
+
     if principal.kind is PrincipalKind.OPERATOR:
         if principal.role is None:
             raise AuthRegistryError(f"{principal.principal_id}: OPERATOR 는 role 이 필수다")
@@ -281,7 +298,11 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
             raise AuthRegistryError(
                 f"{principal.principal_id}: OPERATOR 는 device_id 를 가질 수 없다"
             )
-    elif principal.kind in (PrincipalKind.GATEWAY_DEVICE, PrincipalKind.EDGE_DEVICE):
+    elif principal.kind in (
+        PrincipalKind.GATEWAY_DEVICE,
+        PrincipalKind.EDGE_DEVICE,
+        PrincipalKind.EDGE_ROUTE_OBSERVER,
+    ):
         if principal.role is not None:
             raise AuthRegistryError(
                 f"{principal.principal_id}: {principal.kind.value} 는 role 을 가질 수 없다"
@@ -409,6 +430,8 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 }
 
 # EDGE_DEVICE 는 role 표와 무관하게 항상 이 고정 집합이다(ADR-KSI-008 §2).
+# CAP-5 existing producer 호환은 유지한다. Gateway runner의 PSDK route collector는
+# 이 broad Edge credential을 재사용하지 않고 EDGE_ROUTE_OBSERVER를 쓴다.
 _EDGE_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
     {
         Permission.EDGE_SYNC_INGEST,
@@ -428,6 +451,10 @@ _GATEWAY_DEVICE_PERMISSIONS: frozenset[Permission] = frozenset(
     }
 )
 
+_EDGE_ROUTE_OBSERVER_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.CAPABILITY_RUNTIME_OBSERVE}
+)
+
 # PROCESSING_WORKER 도 고정 집합이다. 워커는 처리 작업만 만진다 — 현장·임무
 # 발급·사건 분류에 손댈 이유가 없고, 손댈 수 있으면 처리 파이프라인 하나가
 # 뚫렸을 때 blast radius 가 제품 전체가 된다.
@@ -440,6 +467,8 @@ def principal_permissions(principal: Principal) -> frozenset[Permission]:
         return _GATEWAY_DEVICE_PERMISSIONS
     if principal.kind is PrincipalKind.EDGE_DEVICE:
         return _EDGE_DEVICE_PERMISSIONS
+    if principal.kind is PrincipalKind.EDGE_ROUTE_OBSERVER:
+        return _EDGE_ROUTE_OBSERVER_PERMISSIONS
     if principal.kind is PrincipalKind.PROCESSING_WORKER:
         return _PROCESSING_WORKER_PERMISSIONS
     if principal.role is None:
@@ -459,7 +488,9 @@ _BEARER_SCHEME = HTTPBearer(
     bearerFormat="OIDC operator JWT 또는 opaque device credential",
     description=(
         "사람 OPERATOR는 배포 mode에 따라 OIDC JWT를 사용하고, "
-        "GATEWAY_DEVICE·EDGE_DEVICE·PROCESSING_WORKER는 별도 opaque 장비 자격을 사용한다."
+        "GATEWAY_DEVICE·EDGE_DEVICE·EDGE_ROUTE_OBSERVER·PROCESSING_WORKER는 "
+        "별도 opaque 장비 자격을 사용한다. EDGE_ROUTE_OBSERVER는 dedicated credential로 "
+        "CAPABILITY_RUNTIME_OBSERVE 하나와 자기 EDGE_ROUTE_PORT scope만 가진다."
     ),
 )
 
@@ -608,7 +639,11 @@ def build_auth_router() -> APIRouter:
     def whoami(
         principal: Principal = Depends(require_principal()),  # noqa: B008
     ) -> WhoAmIResponse:
-        """현재 Principal 신원·권한을 반환한다(인증만 요구, 인가 없음)."""
+        """현재 Principal 신원·권한을 반환한다(인증만 요구, 인가 없음).
+
+        EDGE_ROUTE_OBSERVER는 role 없이 dedicated credential의 singleton runtime
+        observation permission만 반환하며, 이 응답이 route scope 권한을 넓히지 않는다.
+        """
         return WhoAmIResponse(
             principal_id=principal.principal_id,
             organization_id=principal.organization_id,

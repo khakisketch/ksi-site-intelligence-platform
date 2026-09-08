@@ -591,6 +591,7 @@ def test_psdk_producer_requires_all_eight_three_fact_combinations(
     )
     assert observation["subjectPortId"] == "psdk-uplink"
     assert observation["integrationPath"] == "PSDK_MANIFOLD"
+    assert observation["producerPrincipalKind"] == "EDGE_ROUTE_OBSERVER"
     assert publisher.items == [observation]
 
 
@@ -626,7 +627,7 @@ def _runner_payload(
 ) -> dict[str, Any]:
     control = _secret(tmp_path / "control-token")
     preflight_token = _secret(tmp_path / "preflight-token", "gateway-preflight-token")
-    observation_token = _secret(tmp_path / "observation-token", "edge-observation-token")
+    observation_token = _secret(tmp_path / "observation-token", "edge-route-observer-token")
     return {
         "schemaVersion": "1.0",
         "listenHost": "127.0.0.1",
@@ -745,6 +746,16 @@ def test_runner_requires_exact_owner_only_explicit_psdk_configuration(tmp_path: 
     with pytest.raises(ValueError, match="canonical content"):
         load_runner_config(config_path)
 
+    invalid_observer_dir = tmp_path / "invalid-observer-principal-id"
+    invalid_observer_dir.mkdir()
+    raw = _runner_payload(invalid_observer_dir)
+    raw["observation"]["producerPrincipalId"] = "route/observer"
+    config_path = tmp_path / "invalid-observer-principal-id-gateway.json"
+    config_path.write_text(json.dumps(raw), encoding="utf-8")
+    config_path.chmod(0o600)
+    with pytest.raises(ValueError, match="producerPrincipalId.*path-safe"):
+        load_runner_config(config_path)
+
 
 def test_production_runner_observation_lifecycle_publishes_and_stops(
     tmp_path: Path,
@@ -794,7 +805,8 @@ def test_production_runner_observation_lifecycle_publishes_and_stops(
         assert config.observation_loop.attempt_count == 1
         assert observations[0]["availability"] == "REPORTED_AVAILABLE"
         assert observations[0]["subjectPortId"] == "psdk.edge_uplink"
-        assert authorizations == ["Bearer edge-observation-token"]
+        assert observations[0]["producerPrincipalKind"] == "EDGE_ROUTE_OBSERVER"
+        assert authorizations == ["Bearer edge-route-observer-token"]
     finally:
         if config.observation_loop.running:
             config.observation_loop.stop()

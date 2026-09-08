@@ -21,7 +21,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_domain.capability_contract import (
@@ -50,7 +50,8 @@ from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identifiers import is_path_safe_identifier
 
 RUNTIME_ROUTE_OBSERVATION_JOURNAL_NAME = "capability-runtime-observations.jsonl"
-RUNTIME_ROUTE_OBSERVATION_SCHEMA_VERSION = "1.0"
+RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION: Final[Literal["1.0"]] = "1.0"
+RUNTIME_ROUTE_OBSERVATION_OBSERVER_SCHEMA_VERSION: Final[Literal["1.1"]] = "1.1"
 
 _DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
 _PATH_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
@@ -336,7 +337,11 @@ class RuntimeRouteObservationV1(CamelModel):
     freshness_policy_id: Annotated[str, Field(pattern=_PATH_ID_PATTERN)]
     freshness_policy_digest: Annotated[str, Field(pattern=_DIGEST_PATTERN)]
     producer_principal_id: Annotated[str, Field(pattern=_PATH_ID_PATTERN)]
-    producer_principal_kind: PrincipalKind
+    producer_principal_kind: Literal[
+        PrincipalKind.GATEWAY_DEVICE,
+        PrincipalKind.EDGE_DEVICE,
+        PrincipalKind.EDGE_ROUTE_OBSERVER,
+    ]
     source_observation_ref: Annotated[str, Field(min_length=1, max_length=500)]
 
     @field_validator("observed_at", "expires_at")
@@ -399,7 +404,7 @@ class RuntimeRouteObservationV1(CamelModel):
 
 
 class RuntimeRouteObservationEventV1(CamelModel):
-    schema_version: str
+    schema_version: Literal["1.0", "1.1"]
     kind: str
     occurred_at: datetime
     payload: dict[str, Any]
@@ -566,7 +571,10 @@ class RuntimeRouteObservationStore:
             "conflictingObservationDigest": observation.canonical_digest,
         }
         raw = self._event(
-            kind=self._AMBIGUITY_KIND, occurred_at=occurred_at, payload=payload
+            schema_version=RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION,
+            kind=self._AMBIGUITY_KIND,
+            occurred_at=occurred_at,
+            payload=payload,
         )
         try:
             self._journal.append(raw)
@@ -595,7 +603,10 @@ class RuntimeRouteObservationStore:
                     "payload": event.payload,
                 }
             )
-            if event.schema_version != RUNTIME_ROUTE_OBSERVATION_SCHEMA_VERSION:
+            if event.schema_version not in {
+                RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION,
+                RUNTIME_ROUTE_OBSERVATION_OBSERVER_SCHEMA_VERSION,
+            }:
                 raise RuntimeObservationRecoveryError(
                     f"unsupported observation schema: {event.schema_version}"
                 )
@@ -604,6 +615,10 @@ class RuntimeRouteObservationStore:
                     "runtime observation event payload digest mismatch"
                 )
             if event.kind == self._AMBIGUITY_KIND:
+                if event.schema_version != RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION:
+                    raise RuntimeObservationRecoveryError(
+                        "runtime ordering ambiguity must use legacy observation schema 1.0"
+                    )
                 try:
                     self._ambiguous_keys.add(_key_from_payload(event.payload["routeKey"]))
                 except (KeyError, TypeError, ValueError) as exc:
@@ -616,13 +631,15 @@ class RuntimeRouteObservationStore:
                     f"unsupported runtime observation event kind: {event.kind}"
                 )
             try:
-                observation = RuntimeRouteObservationV1.model_validate(
-                    event.payload["observation"]
-                )
+                observation = RuntimeRouteObservationV1.model_validate(event.payload["observation"])
             except (KeyError, ValidationError) as exc:
                 raise RuntimeObservationRecoveryError(
                     f"invalid runtime observation payload: {exc}"
                 ) from exc
+            if event.schema_version != self._schema_version_for_observation(observation):
+                raise RuntimeObservationRecoveryError(
+                    "observation schema version does not match producer principal kind"
+                )
             prior_id = self._by_id.get(observation.observation_id)
             if prior_id is not None:
                 if prior_id.canonical_digest != observation.canonical_digest:
@@ -641,17 +658,37 @@ class RuntimeRouteObservationStore:
         self, observation: RuntimeRouteObservationV1, *, occurred_at: datetime
     ) -> dict[str, Any]:
         return self._event(
+            schema_version=self._schema_version_for_observation(observation),
             kind=self._OBSERVED_KIND,
             occurred_at=occurred_at,
-            payload={
-                "observation": observation.model_dump(mode="json", by_alias=True)
-            },
+            payload={"observation": observation.model_dump(mode="json", by_alias=True)},
         )
 
     @staticmethod
-    def _event(*, kind: str, occurred_at: datetime, payload: dict[str, Any]) -> dict[str, Any]:
+    def _schema_version_for_observation(
+        observation: RuntimeRouteObservationV1,
+    ) -> Literal["1.0", "1.1"]:
+        if observation.producer_principal_kind in {
+            PrincipalKind.GATEWAY_DEVICE,
+            PrincipalKind.EDGE_DEVICE,
+        }:
+            return RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION
+        if observation.producer_principal_kind is PrincipalKind.EDGE_ROUTE_OBSERVER:
+            return RUNTIME_ROUTE_OBSERVATION_OBSERVER_SCHEMA_VERSION
+        raise RuntimeObservationRecoveryError(
+            "runtime observation producer principal kind has no journal schema"
+        )
+
+    @staticmethod
+    def _event(
+        *,
+        schema_version: Literal["1.0", "1.1"],
+        kind: str,
+        occurred_at: datetime,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         content = {
-            "schemaVersion": RUNTIME_ROUTE_OBSERVATION_SCHEMA_VERSION,
+            "schemaVersion": schema_version,
             "kind": kind,
             "occurredAt": iso_utc(occurred_at),
             "payload": payload,
@@ -1176,6 +1213,7 @@ class RuntimeCapabilityProjector:
         if principal.kind not in {
             PrincipalKind.GATEWAY_DEVICE,
             PrincipalKind.EDGE_DEVICE,
+            PrincipalKind.EDGE_ROUTE_OBSERVER,
         }:
             raise RuntimeCapabilityValidationError(
                 "runtime observation producer must be an authenticated device"
@@ -1183,6 +1221,13 @@ class RuntimeCapabilityProjector:
         if principal.device_id not in observation.subject_device_ids:
             raise RuntimeCapabilityValidationError(
                 "producer device is not part of the exact observation subject"
+            )
+        if principal.kind is PrincipalKind.EDGE_ROUTE_OBSERVER and (
+            observation.subject_kind is not RuntimeRouteSubjectKind.EDGE_ROUTE_PORT
+            or observation.subject_device_ids != (principal.device_id,)
+        ):
+            raise RuntimeCapabilityValidationError(
+                "edge route observer can only observe its exact edge route subject"
             )
         allowed_producers = {
             RuntimeRouteSubjectKind.GATEWAY_ROUTE_PORT: frozenset(
@@ -1192,7 +1237,7 @@ class RuntimeCapabilityProjector:
                 {PrincipalKind.GATEWAY_DEVICE}
             ),
             RuntimeRouteSubjectKind.EDGE_ROUTE_PORT: frozenset(
-                {PrincipalKind.EDGE_DEVICE}
+                {PrincipalKind.EDGE_DEVICE, PrincipalKind.EDGE_ROUTE_OBSERVER}
             ),
             RuntimeRouteSubjectKind.GATEWAY_EDGE_ROUTE_PORT: frozenset(
                 {PrincipalKind.GATEWAY_DEVICE, PrincipalKind.EDGE_DEVICE}
