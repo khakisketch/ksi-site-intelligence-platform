@@ -28,6 +28,7 @@ from ksi_event_contracts.external_artifact_validation import (
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from pyproj import CRS
+from rasterio._err import CPLE_BaseError, CPLE_UserInterruptError
 from rasterio.enums import ColorInterp
 from rasterio.errors import NotGeoreferencedWarning, RasterioError
 
@@ -101,7 +102,9 @@ def inspect_synthetic_sealed_geotiff(
         return _rejected(artifact_id, observed_sha256, "UNMASKED_NONFINITE_SAMPLE")
     except _UnsupportedRaster:
         return _rejected(artifact_id, observed_sha256, "UNSUPPORTED_RASTER")
-    except (OSError, RasterioError, ValueError):
+    except CPLE_UserInterruptError as exc:
+        raise SyntheticGeoTiffInspectionIncomplete("synthetic inspector interrupted") from exc
+    except (CPLE_BaseError, OSError, RasterioError, ValueError):
         return _rejected(artifact_id, observed_sha256, "MALFORMED_TIFF")
 
 

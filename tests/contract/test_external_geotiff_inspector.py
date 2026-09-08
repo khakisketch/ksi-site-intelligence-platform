@@ -20,6 +20,7 @@ from ksi_event_contracts.external_artifact_validation import (
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_processing_controller.external_tiff_structure import TiffDirectoryV1, TiffEntryV1
 from pyproj import CRS
+from rasterio._err import CPLE_AppDefinedError
 from rasterio.shutil import copy as raster_copy
 from rasterio.transform import from_origin
 
@@ -1071,6 +1072,63 @@ def test_raw_dual_affine_models_reject_before_rasterio_open(
     assert outcome.reason == "MALFORMED_TIFF"
 
 
+@pytest.mark.parametrize("pointer_kind", ["valid", "out_of_range", "cyclic"])
+def test_raw_subifd_routes_reject_before_rasterio_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pointer_kind: str
+) -> None:
+    """The closed one-image grammar never permits a SubIFD route, even if it resolves."""
+    raster_path = _write_raw_validation_rgb(tmp_path / f"subifd-{pointer_kind}.tif")
+    _append_classic_subifd(raster_path, pointer_kind)
+
+    outcome = _inspect_without_decoder(monkeypatch, raster_path, ProcessingArtifactKind.ORTHO)
+
+    assert outcome.outcome is ArtifactOutcome.REJECTED
+    assert outcome.reason == "MALFORMED_TIFF"
+
+
+def test_gdal_app_defined_error_during_colorinterp_becomes_artifact_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GDAL's non-Rasterio metadata exception cannot escape the per-artifact boundary."""
+    raster_path = _write_raw_validation_rgb(tmp_path / "colorinterp-cple.tif")
+    module = importlib.import_module("ksi_processing_controller.external_geotiff_inspector")
+    original_open = module.rasterio.open
+
+    class _ColorInterpFailure:
+        def __init__(self, dataset: rasterio.io.DatasetReader) -> None:
+            self._dataset = dataset
+
+        def __enter__(self) -> _ColorInterpFailure:
+            self._dataset.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self._dataset.__exit__(*args)
+
+        @property
+        def colorinterp(self) -> tuple[object, ...]:
+            raise CPLE_AppDefinedError(1, 1, "synthetic GDAL metadata failure")
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._dataset, name)
+
+    def open_with_colorinterp_failure(*args: object, **kwargs: object) -> _ColorInterpFailure:
+        return _ColorInterpFailure(original_open(*args, **kwargs))
+
+    monkeypatch.setattr(module.rasterio, "open", open_with_colorinterp_failure)
+
+    outcome = module.inspect_synthetic_sealed_geotiff(
+        raster_path,
+        artifact_id="ortho",
+        observed_sha256="sha256:" + sha256(raster_path.read_bytes()).hexdigest(),
+        artifact_kind=ProcessingArtifactKind.ORTHO,
+        envelope=_envelope(),
+    )
+
+    assert outcome.outcome is ArtifactOutcome.REJECTED
+    assert outcome.reason == "MALFORMED_TIFF"
+
+
 def test_raw_bits_per_sample_cardinality_rejects_before_rasterio_open(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1223,6 +1281,33 @@ def _append_classic_model_transformation(path: Path, matrix: tuple[float, ...]) 
     payload.extend(struct.pack("<HHII", 34264, 12, 16, value_offset))
     payload.extend(struct.pack("<I", next_offset))
     payload.extend(struct.pack("<16d", *matrix))
+    struct.pack_into("<I", payload, 4, appended_offset)
+    path.write_bytes(payload)
+
+
+def _append_classic_subifd(path: Path, pointer_kind: str) -> None:
+    """Add one raw tag-330 route without relying on a decoder to serialize it."""
+    payload = bytearray(path.read_bytes())
+    original_offset = struct.unpack_from("<I", payload, 4)[0]
+    entry_count = struct.unpack_from("<H", payload, original_offset)[0]
+    entries_start = original_offset + 2
+    next_offset = struct.unpack_from("<I", payload, entries_start + entry_count * 12)[0]
+    appended_offset = len(payload)
+    if appended_offset % 2:
+        payload.append(0)
+        appended_offset += 1
+    if pointer_kind == "valid":
+        target = original_offset
+    elif pointer_kind == "out_of_range":
+        target = len(payload) + 4_096
+    elif pointer_kind == "cyclic":
+        target = appended_offset
+    else:  # pragma: no cover - test parameter owns the closed mutation set.
+        raise AssertionError(f"unexpected SubIFD pointer case: {pointer_kind}")
+    payload.extend(struct.pack("<H", entry_count + 1))
+    payload.extend(payload[entries_start : entries_start + entry_count * 12])
+    payload.extend(struct.pack("<HHII", 330, 4, 1, target))
+    payload.extend(struct.pack("<I", next_offset))
     struct.pack_into("<I", payload, 4, appended_offset)
     path.write_bytes(payload)
 
