@@ -5361,6 +5361,90 @@ paths:
         '503': { description: Durable journal unavailable; Retry-After }
         '401': { description: Authentication failed }
         '403': { description: PROCESSING_WORK permission required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions:
+    post:
+      summary: Register a customer-owned external reconstruction declaration
+      description: >-
+        SITES_WRITE and human OPERATOR authority required. Registration records a sealed
+        customer declaration only: it creates no ProcessingJob, managed profile, source
+        authority, format validation, accuracy claim, or quantitative eligibility.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-reconstruction-submission.v1.json' }
+      responses:
+        '201': { description: REGISTERED or identical retry, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' } } } }
+        '404': { description: scoped WorkOrder not found }
+        '409': { description: conflicting revision }
+        '422': { description: unsealed or scope-mismatched declaration }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE or human authority required }
+    get:
+      summary: List scoped external reconstruction revisions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: scoped revisions, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionListView' } } } }
+        '404': { description: scoped WorkOrder not found }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}:
+    get:
+      summary: Read one scoped external reconstruction revision
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: declaration and optional observed manifest, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' } } } }
+        '404': { description: scoped resource not found }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/upload-grants:
+    post:
+      summary: Issue refreshed digest-bound direct-upload grants
+      description: >-
+        SITES_WRITE and human OPERATOR authority required. Grants are short-lived capabilities,
+        are never journaled, and do not revoke a previously issued URL.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: digest-bound grants, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionGrantResponse' } } } }
+        '404': { description: scoped resource not found }
+        '409': { description: sealed or superseded revision }
+        '503': { description: storage unavailable }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE or human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/seal:
+    post:
+      summary: Seal point-in-time observed external artifact bytes
+      description: >-
+        SITES_WRITE and human OPERATOR authority required. Server HEAD observations must match
+        declared key, digest, size, and content type. A seal proves only this observation, not
+        perpetual object immutability, semantic validation, provenance, or quantitative eligibility.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: sealed manifest or identical seal retry, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' } } } }
+        '404': { description: scoped resource not found }
+        '409': { description: superseded revision }
+        '422': { description: missing, untrusted, or mismatched object observation }
+        '503': { description: storage or journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE or human authority required }
 components:
   parameters:
     WorkerInstanceId:
@@ -5400,6 +5484,36 @@ components:
   # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
   # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
   schemas:
+    ExternalReconstructionRevisionView:
+      type: object
+      required: [submissionRef, submission, state]
+      properties:
+        submissionRef: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' }
+        submission: { type: object, additionalProperties: true }
+        state: { type: string, enum: [REGISTERED, SEALED] }
+        manifest: { type: [object, 'null'], additionalProperties: true }
+    ExternalReconstructionListView:
+      type: object
+      required: [submissions]
+      properties:
+        submissions:
+          type: array
+          items: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' }
+    ExternalReconstructionGrantView:
+      type: object
+      required: [artifactId, objectKey, uploadUrl, requiredHeaders]
+      properties:
+        artifactId: { type: string }
+        objectKey: { type: string }
+        uploadUrl: { type: string }
+        requiredHeaders: { type: object, additionalProperties: { type: string } }
+    ExternalReconstructionGrantResponse:
+      type: object
+      required: [grants]
+      properties:
+        grants:
+          type: array
+          items: { $ref: '#/components/schemas/ExternalReconstructionGrantView' }
     RuntimeRouteObservationV1:
       type: object
       additionalProperties: false

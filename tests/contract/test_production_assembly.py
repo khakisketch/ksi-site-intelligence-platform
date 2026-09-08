@@ -26,6 +26,7 @@ from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
+from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRODUCTION_SOURCE = (
@@ -627,7 +628,9 @@ def test_assemble_app_wires_every_create_app_store_parameter(
             PrincipalTokenRecord(
                 token_sha256=hashlib.sha256(b"x").hexdigest(),
                 principal=Principal(
-                    principal_id="op-1", kind=PrincipalKind.OPERATOR, role=Role.ADMIN,
+                    principal_id="op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
                     device_id=None,
                 ),
             )
@@ -635,6 +638,26 @@ def test_assemble_app_wires_every_create_app_store_parameter(
     )
 
     class _NullEvidenceStorage:
+        def presigned_put_bound_digest(
+            self,
+            object_key: str,
+            *,
+            content_type: str,
+            content_digest: str,
+            ttl: Any,
+        ) -> DigestBoundUploadCapability:
+            del ttl
+            return DigestBoundUploadCapability(
+                upload_url=f"https://storage.invalid/{object_key}",
+                required_headers={
+                    "Content-Type": content_type,
+                    "x-amz-checksum-sha256": content_digest,
+                },
+            )
+
+        def observe_object(self, object_key: str) -> ObjectStorageObservation:
+            return ObjectStorageObservation(object_key=object_key, exists=False)
+
         def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
             raise NotImplementedError
 
@@ -668,6 +691,15 @@ def test_assemble_app_wires_every_create_app_store_parameter(
 
     assert store_params, "create_app 시그니처에서 *_store 파라미터를 하나도 못 찾았다(테스트 결함)"
     assert paths, "assemble_app 이 어떤 /v1 경로도 장착하지 않았다"
+    external_base = (
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions"
+    )
+    assert {
+        external_base,
+        external_base + "/{submission_ref}/revisions/{revision}",
+        external_base + "/{submission_ref}/revisions/{revision}/upload-grants",
+        external_base + "/{submission_ref}/revisions/{revision}/seal",
+    } <= paths
 
     # 핵심 대조 — assemble_app 이 create_app 에 실제로 넘긴 kwargs 이름과 시그니처의
     # *_store 파라미터 이름 집합의 차집합. 여기가 비지 않으면 새 store 파라미터를
@@ -725,7 +757,9 @@ def test_ready_is_503_when_a_journal_is_sealed(
             PrincipalTokenRecord(
                 token_sha256=hashlib.sha256(b"y").hexdigest(),
                 principal=Principal(
-                    principal_id="op-2", kind=PrincipalKind.OPERATOR, role=Role.ADMIN,
+                    principal_id="op-2",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
                     device_id=None,
                 ),
             )
@@ -784,7 +818,9 @@ def test_ready_is_503_when_edge_sync_store_is_sealed(
             PrincipalTokenRecord(
                 token_sha256=hashlib.sha256(b"z").hexdigest(),
                 principal=Principal(
-                    principal_id="op-3", kind=PrincipalKind.OPERATOR, role=Role.ADMIN,
+                    principal_id="op-3",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
                     device_id=None,
                 ),
             )

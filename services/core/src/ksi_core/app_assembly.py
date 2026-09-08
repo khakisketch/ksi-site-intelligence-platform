@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -75,6 +75,11 @@ from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
+from ksi_core.evidence import DigestBoundEvidenceStorage, ObjectStorageObservationPort
+from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
+from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
+from ksi_core.external_reconstruction import ExternalReconstructionStore
+from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
 from ksi_core.mission_execution import MissionExecutionStore
@@ -138,8 +143,7 @@ def assemble_app(
     processing_profile_issuance_enabled: bool = True,
     landxml_ingress_enabled: bool = False,
     checkpoint_validation_registration_enabled: bool = False,
-    capability_freshness_policies: Mapping[str, RuntimeRouteFreshnessPolicyV1]
-    | None = None,
+    capability_freshness_policies: Mapping[str, RuntimeRouteFreshnessPolicyV1] | None = None,
     runtime_route_configurations: tuple[TrustedRuntimeRouteConfigurationV1, ...] = (),
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
     expose_docs: bool = True,
@@ -274,6 +278,66 @@ def assemble_app(
             for work_area_id in work_area_ids
         ),
     )
+    # ADR-KSI-036 byte ingress is a separate external declaration journal.  It
+    # is absent from storage-less dev assembly rather than exposing a route
+    # that can never issue a constrained PUT grant or verify an observation.
+    external_reconstruction_store = (
+        ExternalReconstructionStore(journal("external-reconstruction.jsonl"))
+        if evidence_storage is not None
+        else None
+    )
+    # D5 policy starts deliberately empty: an ingress seal is retained, while
+    # inspection remains visibly pending until an independently authorized
+    # policy exists. These stores add no worker API in this task.
+    external_validation_policy_registry = (
+        ExternalValidationPolicyRegistry(journal("external-validation-policy.jsonl"))
+        if external_reconstruction_store is not None
+        else None
+    )
+    external_display_artifact_store: ExternalDisplayArtifactStore | None = None
+    if (
+        external_validation_policy_registry is not None
+        and isinstance(evidence_storage, DigestBoundEvidenceStorage)
+        and isinstance(evidence_storage, ObjectStorageObservationPort)
+    ):
+        external_display_artifact_store = ExternalDisplayArtifactStore(
+            journal("external-sanitized-display-artifacts.jsonl"),
+            policy_registry=external_validation_policy_registry,
+            storage=cast(DigestBoundEvidenceStorage, evidence_storage),
+        )
+    external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None
+    if (
+        external_validation_policy_registry is not None
+        and external_display_artifact_store is not None
+        and external_reconstruction_store is not None
+    ):
+        external_artifact_inspection_store = ExternalArtifactInspectionStore(
+            journal("external-artifact-inspections.jsonl"),
+            policy_registry=external_validation_policy_registry,
+            external_reconstruction=external_reconstruction_store,
+            storage=evidence_storage,
+            display_store=external_display_artifact_store,
+        )
+    if external_reconstruction_store is not None and external_artifact_inspection_store is not None:
+        from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
+
+        def _issue_external_inspection_after_seal(revision: Any, now: datetime) -> None:
+            manifest = revision.manifest
+            if manifest is None:
+                return
+            subject = SealedExternalSubjectV1(
+                organization_id=revision.submission.organization_id,
+                site_id=revision.submission.site_id,
+                work_order_id=revision.work_order_id,
+                submission_id=revision.submission.submission_id,
+                revision=revision.submission.revision,
+                submission_digest=revision.submission.submission_digest,
+                manifest_digest=manifest.manifest_digest,
+            )
+            external_artifact_inspection_store.issue_after_seal(subject, now)
+
+        external_reconstruction_store.bind_seal_listener(_issue_external_inspection_after_seal)
+        external_artifact_inspection_store.reconcile_sealed(datetime.now(UTC))
     acquisition_connectivity_store = AcquisitionConnectivityStore(
         journal("acquisition-connectivity.jsonl"),
         site_exists=lambda site_id, organization_id: (
@@ -581,6 +645,7 @@ def assemble_app(
         oidc_verifier=oidc_verifier,
         site_store=site_store,
         observation_work_order_store=observation_work_order_store,
+        external_reconstruction_store=external_reconstruction_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -657,6 +722,9 @@ def assemble_app(
     app.state.capability_authority_store = capability_authority_store
     app.state.runtime_route_configuration_registry = runtime_configuration_registry
     app.state.runtime_route_observation_store = runtime_observation_store
+    app.state.external_validation_policy_registry = external_validation_policy_registry
+    app.state.external_artifact_inspection_store = external_artifact_inspection_store
+    app.state.external_display_artifact_store = external_display_artifact_store
 
     # 미들웨어는 마지막 등록이 가장 바깥이다(Starlette 관례) — CorrelationId 를
     # 가장 바깥에 두어 그 안의 HttpMetrics·라우팅·인증 전부의 로그가 같은

@@ -120,6 +120,18 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/observation-work-orders/{work_order_id}/approve"): _FIRED_DIRECTLY,
     (
         "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/upload-grants",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/seal",
+    ): _NO_BODY,
+    (
+        "POST",
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
     ): _FIRED_DIRECTLY,
     ("POST", "/v1/processing-jobs/{job_id}/artifacts"): _BASE,
@@ -167,6 +179,15 @@ class _StubStorage:
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         del ttl
         return f"https://stub.invalid/{object_key}"
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: Any
+    ) -> Any:
+        del content_type, content_digest, ttl
+        raise AssertionError(f"not exercised: {object_key}")
+
+    def observe_object(self, object_key: str) -> Any:
+        raise AssertionError(f"not exercised: {object_key}")
 
     def put_bytes(self, object_key: str, payload: bytes, *, content_type: str) -> None:
         del object_key, payload, content_type
