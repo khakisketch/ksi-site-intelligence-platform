@@ -350,7 +350,7 @@ def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> Tif
         if total_entries > envelope.max_tiff_entries:
             raise TiffResourceLimitError("global TIFF directory entry cap exceeded")
         _reject_ambiguous_raw_georeference(directory)
-        _reject_subifd_route(directory)
+        _reject_secondary_ifd_routes(directory)
         _reject_external_metadata(directory)
         directories.append(directory)
         next_offset = directory.next_offset
@@ -406,10 +406,16 @@ def _reject_external_metadata(directory: TiffDirectoryV1) -> None:
         raise TiffStructureError("TIFF metadata requests an external reference")
 
 
-def _reject_subifd_route(directory: TiffDirectoryV1) -> None:
+def _reject_secondary_ifd_routes(directory: TiffDirectoryV1) -> None:
     """The closed profile permits only the primary next-IFD chain we preflight."""
-    if 330 in directory.entries:  # SubIFDs
-        raise TiffStructureError("TIFF SubIFD directories are outside the accepted profile")
+    # Exif/GPS can be lazily decoded, but their directories still fall outside
+    # our aggregate allocation ledger. Unknown IFD-typed tags are pointers too.
+    pointer_tags = {330, 34665, 34853, 40965}  # SubIFDs, Exif, GPS, Interoperability
+    if any(
+        entry.tag in pointer_tags or entry.field_type in {13, 18}
+        for entry in directory.entries.values()
+    ):
+        raise TiffStructureError("secondary TIFF directories are outside the accepted profile")
 
 
 __all__ = [
