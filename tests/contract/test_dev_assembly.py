@@ -40,6 +40,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_evidence import ExternalEvidenceStore
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
@@ -267,6 +268,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "observation_work_order_store": observation_work_order_store,
         "external_reconstruction_store": ExternalReconstructionStore(
             DurableJournal(tmp_path / "external-reconstruction.jsonl")
+        ),
+        "external_evidence_store": ExternalEvidenceStore(
+            DurableJournal(tmp_path / "external-evidence.jsonl")
         ),
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,

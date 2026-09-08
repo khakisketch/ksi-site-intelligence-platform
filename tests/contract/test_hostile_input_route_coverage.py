@@ -132,6 +132,18 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ): _NO_BODY,
     (
         "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/upload-grant",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/seal",
+    ): _NO_BODY,
+    (
+        "POST",
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
     ): _FIRED_DIRECTLY,
     ("POST", "/v1/processing-jobs/{job_id}/artifacts"): _BASE,
