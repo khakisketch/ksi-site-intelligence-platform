@@ -52,3 +52,35 @@ acquisition/perception 입력, `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle m
 - 미검증 장비를 상용지원으로 표시
 
 전체 도메인 불변식(강제 지점 포함)의 정본은 `docs/product/DOMAIN_INVARIANTS.md`다.
+
+## 2026-09-06 terrain-aware planning route
+
+[ADR-KSI-035](architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md) is the
+approved design baseline for deterministic KSI planning and Pilot-default execution. Read its
+[design contract](design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md),
+[acceptance](acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md), and
+[successor roadmap](goals/TERRAIN_AWARE_PLANNING_ROADMAP.md) before planning related runtime
+work. The approval is not evidence of runtime support, DJI/Pilot compatibility, or field safety.
+
+## 2026-09-06 customer reconstruction direction
+
+[ADR-KSI-036](architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md) is the
+accepted first-release product direction: customers reconstruct on their own equipment and KSI
+registers, verifies, and analyzes exported artifacts. Its bounded Core registration and byte-seal
+API has local software evidence; see the [ingress verification audit](audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md).
+That evidence is not vendor/export compatibility, a license approval, deployment, or product
+release. ADR-KSI-030's managed NodeODM profile and historical results remain immutable managed/test
+scope; do not weaken INV-051/053/060 or infer quantitative eligibility from registration.
+
+Registration and list/detail responses return the server-issued opaque `submissionRef` for a
+revision. Clients use that returned `ers-v1-` plus 64-lowercase-hex reference on the three revision
+routes; they must not construct a route from the customer `submissionId`. The raw customer ID remains
+the declaration, journal, and object-key identity.
+
+The subsequent Human decision keeps originals on customer equipment; normal first-release
+registration does not require full raw upload. KSI holds submitted derived outputs and evidence.
+Ortho-only registration is allowed; missing DSM or other evidence restricts dependent claims,
+not every use. Read ADR-KSI-036 D4/D5 and the
+[active release implementation plan](superpowers/plans/2026-09-06-external-reconstruction-release.md).
+The earlier SD/PC/raw-upload description remains the existing managed/test implementation,
+not the approved customer-workstation first-release target.

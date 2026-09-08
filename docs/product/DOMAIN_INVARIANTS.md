@@ -69,11 +69,14 @@
   _강제: `mission_plans.build_mission_plan` 422 + `coverage.lawnmower_route`
   (ADR-KSI-011 D2)._
 
-- **INV-016** 최종 비행 산출물(`FlightArtifact`)은 검증된 원본 바이트, source,
-  revision, SHA-256 digest와 Mission Contract 결속을 함께 가진다. 같은 Mission Intent의
-  KMZ라도 바이트 또는 실행 의미가 바뀌면 기존 계약을 재사용하지 않으며, 새 revision의
-  검증·digest 결속·서명을 거쳐야 한다. Core가 경로 compiler를 독점할 필요는 없지만,
-  **어느 compiler가 만든 최종 산출물을 승인했는지**의 권위는 Core에 있다.
+- **INV-016** KSI-authorized 또는 자율 execution의 최종 비행 산출물(`FlightArtifact`)은
+  검증된 원본 바이트, source, revision, SHA-256 digest와 Mission Contract 결속을 함께
+  가진다. 같은 Mission Intent의 KMZ라도 그 profile에서 바이트 또는 실행 의미가 바뀌면
+  기존 계약을 재사용하지 않으며, 새 revision의 검증·digest 결속·서명을 거쳐야 한다.
+  Core가 경로 compiler를 독점할 필요는 없지만, **어느 compiler가 만든 최종 산출물을
+  승인했는지**의 권위는 Core에 있다. ADR-KSI-035 `PILOT_MANUAL_EXECUTION`의 미반환
+  편집은 prior KSI artifact로 오인하지 않는 별도 declared/unknown observation이며,
+  이 예외는 자율 profile의 rebind/activation gate를 약화하지 않는다.
   _강제: FlightArtifact ingest/generation validator + Mission Contract binding +
   contract/replay test. 현재 KSI_WPML의 짝 발급은 후보 경로이며, Pilot 2 export
   ingest와 revision binding은 ADR-KSI-028 범위의 구현 게이트다._
@@ -85,7 +88,11 @@
   reason code로 보인다.
   _강제: Core readiness projection의 evidence join·fail-closed reason-code 검사,
   ordering replay 및 Dashboard projection test (ADR-KSI-029). 구현 전에는 UI/API가
-  이 상태를 완료 사실처럼 표시하지 않는다._
+  이 상태를 완료 사실처럼 표시하지 않는다. 현재 강제는 global fail-closed projection이며,
+  ADR-KSI-035의 미래 additive `ClaimScopedAssessment`가 구현될 때까지 per-claim
+  eligibility를 이미 제공한다고 주장하지 않는다. 그 미래 assessment는 gap에 의존하는
+  claim만 막고, 독립 ingress/processing prerequisite를 충족한 raw registration 또는
+  reconstruction을 전역적으로 금지하지 않는다._
 
 - **INV-018** Observation Epoch에 들어가는 SourceMedia의 capture window는 WorkOrder
   cycle의 명시된 temporal policy를 만족해야 한다. 정책이 없거나 시간·무결성 증거가

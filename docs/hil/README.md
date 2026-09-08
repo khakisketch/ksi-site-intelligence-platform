@@ -15,6 +15,12 @@ Status: active HIL index. HIL evidence and device operations remain separately a
 See [ADR-KSI-033](../architecture/ADR-KSI-033-repository-normalization-and-media-boundaries.md) for
 the canonical current/target split.
 
+ADR-KSI-035's [Pilot planning acceptance](../acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md)
+adds a design-level evidence distinction for KSI planned artifact, Pilot final-plan observation,
+actual log and capture. It does not alter FIELD procedures: planned/imported/exported artifacts
+remain distinct from actual flight, and all terrain-aware Pilot/device assertions remain
+`NOT_VERIFIED` until a separately approved session supplies evidence.
+
 ## Active sequence
 
 | Document | Role | Maximum conclusion |

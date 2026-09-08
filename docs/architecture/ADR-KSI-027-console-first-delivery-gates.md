@@ -74,3 +74,10 @@ Phase는 기능 목록이 아니라 증거 등급이다. 앞 단계의 테스트
 Phase 1 Dashboard 변경은 기존 URL·Core 원장·Mission Contract를 바꾸지 않는다. 이전
 Dashboard 이미지로 복귀할 수 있으며, Copilot/briefing/Cloud adapter/Bridge/Dock은 각 feature
 flag로 독립 비활성화한다. 활성 Mission Contract는 단순 네트워크 손실로 취소하지 않는다.
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+The future Console may show an explicit laptop-only Pilot planning action and the difference among
+KSI original plan, Pilot final-plan declaration, actual flight evidence, and capture evidence.
+It must not make a file or declaration look like a device receipt, offer mobile operational writes,
+or use this design approval to show terrain-aware or DJI capability as supported.

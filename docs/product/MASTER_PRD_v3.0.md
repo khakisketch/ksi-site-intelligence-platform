@@ -307,6 +307,11 @@ DJI 경고보다 덜 보수적으로 행동하지 않는다.
 
 ## 5.1 기본 사용자 임무
 
+> **2026-09-06 ADR-KSI-035 scope:** initial mapping, repeat observation and partial
+> reobservation use a deterministic KSI planning proposal followed by Pilot import/review/optional
+> exception edit/final approval. This is a design baseline; it does not change the current wire
+> contract, enable terrain-aware runtime behavior, or prove DJI/Pilot/field support.
+
 ### 5.1.1 Unified Site Survey — 기본 임무
 
 사용자는 하나의 `현장 조사`를 만든다. 시스템은 현장 상태에 따라 내부 작업을 조합한다.
@@ -1123,6 +1128,15 @@ DJI Terra는 Windows/NVIDIA 기반 별도 재구성 소프트웨어로 사용할
 제출한 profile ID를 canonical snapshot/digest로 확장하며, provider/image/parameter를
 임의로 바꾼 요청과 profile이 없는 과거 결과의 새 정량 비교를 거부한다. 실행 image
 digest와 `/info`의 ODM version은 배포 검증에서 함께 대조한다.
+
+ADR-KSI-036은 이 managed runtime을 test/demo와 기존 결과의 역사적 scope로 유지하며,
+새 첫 출시의 기본 재구성을 고객 소유 장비의 외부 소프트웨어로 둔다. KSI는 제출된
+export artifact를 등록·검증·분석한다. 후속 Human 결정에 따라 원본은 고객 장비에 남고
+정상 경로는 전체 raw 업로드를 요구하지 않는다. 정사영상만 등록할 수 있으며 DSM·
+수직기준·품질 근거 부족은 의존 분석만 제한한다. 원본 미업로드 자체를 영구 정량 금지로
+해석하지 않는다. submission/observed manifest는 별도 additive 계약으로 구현하고,
+지원 형식·실제 export 호환성·외부 결과 정량 정책은 별도 검증·수용한다. 이 문단은
+기존 managed runtime 계약이나 과거 결과 의미를 바꾸지 않는다(ADR-KSI-036 D4/D5).
 
 토목 설계면 입력은 GeoTIFF 직접 등록, 기존 IFC→GeoTIFF, LandXML 1.0~1.2의 meter-unit
 TIN Surface다. LandXML 원본 bytes를 보존하고 선택 surface, parser version, 0.5m
@@ -2001,8 +2015,10 @@ ksi-site-intelligence-platform/
 - `REQ-MSN-101`: Mission Contract는 임무 전 한 번 승인한다.
 - `REQ-MSN-102`: 현장정책 승인 후 정기임무 자동실행을 지원한다.
 - `REQ-MSN-103`: 위험구역 100%, 필수자산 100%, 일반 접근영역 95%를 완료기준으로 한다.
-- `REQ-MSN-104`: Core는 검증된 최종 Flight Artifact의 source·revision·digest를
-  Mission Contract에 결속하며, 변경된 산출물은 재검증·재결속한다.
+- `REQ-MSN-104`: Core는 KSI-authorized/자율 execution에서 검증된 최종 Flight Artifact의
+  source·revision·digest를 Mission Contract에 결속하며, 변경된 산출물은 재검증·재결속한다.
+  ADR-KSI-035 Pilot-default profile의 미반환 편집은 이 결속을 주장하지 않는 별도
+  final-plan observation이며, 미래 자율 경로의 gate를 완화하지 않는다.
 - `REQ-EDGE-101`: 서버통신 단절 중 유효계약과 안전조건이 유지되면 임무를 계속한다.
 - `REQ-EDGE-102`: RC Link Lost는 DJI Flight Controller 정책을 따른다.
 - `REQ-SAFE-101`: 배터리 Reserve는 현장별 설정, 기본 30%다.
@@ -2015,7 +2031,10 @@ ksi-site-intelligence-platform/
 - `REQ-MODEL-101`: 장비지원은 Dataset부터 Production Supported까지 단계로 표시한다.
 - `REQ-PLAT-101`: 산업중립 공통플랫폼과 산업별 Solution Pack을 사용한다.
 - `REQ-WRK-101`: 반복 관측은 사용자에게 하나의 Observation Work Order로 보인다.
-- `REQ-ACQ-101`: 정상 경로에서 KMZ·사진 전달에 USB/SD가 필요하지 않다.
+- `REQ-ACQ-101`: 자동 KSI-managed original-media target 경로에서는 KMZ·사진 전달에
+  USB/SD가 필요하지 않다. ADR-KSI-035 Pilot-default의 download/import와 현행
+  SD/현장 PC/Web ingress는 별도 정상 planning/ingress profile이며 자동 media capability
+  또는 device support 주장이 아니다.
 - `REQ-ACQ-102`: Edge 재촬영은 서명된 Mission Contract와 Capture Policy 안에서만 가능하다.
 - `REQ-ACQ-103`: 벤더 문서상 지원과 exact hardware/path의 field verification은 독립
   evidence이며, field `VERIFIED` 전에는 capability를 production route로 활성화하지 않는다.
@@ -2037,4 +2056,6 @@ ksi-site-intelligence-platform/
 - `REQ-COP-102`: Copilot은 재관측 초안만 만들며 승인·임무 발급 권한을 갖지 않는다.
 - `REQ-SEC-101`: 모든 사람·장비·워커 접근과 데이터 반출은 조직·현장 범위로 제한한다.
 - `REQ-UX-101`: 일반 작업은 5단계 이내·화면별 기본 행동 하나이며, 1024px 미만에서는
-  조회·이벤트 트리아지·분석·Copilot만 제공하고 파일 수동 경로는 복구 전용이다.
+  조회·이벤트 트리아지·분석·Copilot만 제공한다. 파일 수동 경로는 원칙적으로 복구 전용이나,
+  ADR-KSI-035 Pilot-default의 KSI plan download/Pilot import와 현행 SD/현장 PC/Web
+  original ingress는 각각 명시적 정상 planning/ingress 행동으로 별도 표시한다.

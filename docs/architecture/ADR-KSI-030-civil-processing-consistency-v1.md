@@ -52,6 +52,12 @@ NodeODM은 AGPL-3.0이므로 ADR-KSI-012의 무수정 컨테이너 + REST 프로
 법무 검토를 별도 배포 게이트로 둔다. Pix4D, Metashape, `customer_workstation`은 미래
 adapter 경계로만 보존하고 v1 기본 UI에는 노출하지 않는다.
 
+ADR-KSI-036이 정한 새 첫 출시 방향에서는 이 KSI-managed runtime은 test/demo 및 기존
+immutable managed 결과의 역사적 scope이며 기본 경로가 아니다. 외부 결과의 raw-media
+lineage, submission/manifest/validation, 형식, 신뢰 근거 및 정량 비교 적합성은 후속
+상세 명세가 정한다. 이 scoped notice는 D1의 profile identity, 기존 ProcessingJob, OCI
+pin, license gate 또는 비교 fail-closed 계약을 변경하지 않는다.
+
 ### D2 — LandXML은 원본 보존형 설계면 ingress다
 
 `sourceFormat=geotiff|landxml`과 LandXML `surfaceSelector`를 설계면 등록 계약에

@@ -36,6 +36,17 @@ These files route work; they do not override product authority or contracts. Rou
 | Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
 | Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `.ksi/` | Current status; update `.ksi/` only through its helper |
 
+### Terrain-aware planning route (design-only)
+
+For terrain-aware observation planning, read
+`docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md`,
+`docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md`,
+`docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md`, and
+`docs/goals/TERRAIN_AWARE_PLANNING_ROADMAP.md` before selecting runtime work. They record an
+approved design baseline only; no terrain-aware runtime, Pilot/device compatibility, HIL, or field
+acceptance is implied. Preserve the future autonomous profile's signed/digest/device/activation
+requirements and do not treat the Pilot-manual exception as an implemented wire contract.
+
 ### Runtime placement test
 
 Place a module in `services/` only when it has an independently operated lifecycle: an HTTP listener,
