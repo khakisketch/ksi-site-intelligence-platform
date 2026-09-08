@@ -545,7 +545,7 @@ class SealedZoneReferenceV1(_FrozenExternalModel):
 
 
 class ExternalPairUseDecisionV1(_FrozenExternalModel):
-    """Core's immutable ordered pair decision; only volume carries an exact zone."""
+    """Core's immutable pair decision; Core resolves referenced receipt provenance separately."""
 
     contract_version: Literal["external-pair-use-decision.v1"] = "external-pair-use-decision.v1"
     decision_id: _BoundedText
@@ -557,6 +557,8 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
     policy_digest: Digest | None = None
     baseline_inspection_report_digest: Digest | None = None
     current_inspection_report_digest: Digest | None = None
+    baseline_sanitized_display_receipt_digest: Digest | None = None
+    current_sanitized_display_receipt_digest: Digest | None = None
     evidence_record_digests: tuple[Digest, ...] = Field(max_length=64)
     zone: SealedZoneReferenceV1 | None = None
     verdict: DecisionVerdict
@@ -594,6 +596,22 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
                 raise ValueError(
                     "non-BLOCKED decision requires currentInspectionReportDigest"
                 )
+        if self.use == "VISUAL_COMPARISON" and self.verdict is not DecisionVerdict.BLOCKED:
+            if self.baseline_sanitized_display_receipt_digest is None:
+                raise ValueError(
+                    "non-BLOCKED VISUAL_COMPARISON requires "
+                    "baselineSanitizedDisplayReceiptDigest"
+                )
+            if self.current_sanitized_display_receipt_digest is None:
+                raise ValueError(
+                    "non-BLOCKED VISUAL_COMPARISON requires "
+                    "currentSanitizedDisplayReceiptDigest"
+                )
+        if self.use == "RELATIVE_VOLUME" and (
+            self.baseline_sanitized_display_receipt_digest is not None
+            or self.current_sanitized_display_receipt_digest is not None
+        ):
+            raise ValueError("RELATIVE_VOLUME must not bind sanitized display receipts")
         if (
             self.use == "RELATIVE_VOLUME"
             and self.verdict is not DecisionVerdict.BLOCKED
