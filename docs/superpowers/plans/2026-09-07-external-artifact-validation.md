@@ -6,7 +6,7 @@
 
 **Architecture:** Immutable contract models and schemas bind exact sealed artifacts, evidence, policy snapshots, measurements, and decisions. Core owns scope, journals, queue/replay, leases/fences, policy selection, evidence validation, and decisions; processing-controller only streams exact server-authorized bytes and reports measurements/rejections. The existing external-reconstruction journal remains the registration/seal authority.
 
-**Tech Stack:** Python 3.12, Pydantic v2, JSON Schema Draft 2020-12, FastAPI, existing Core durable journals/evidence storage, `httpx`, `rasterio`, NumPy, and the locked `uv` workspace.
+**Tech Stack:** Python 3.12, Pydantic v2, JSON Schema Draft 2020-12, FastAPI, existing Core durable journals/evidence storage, `httpx`, `rasterio`, NumPy, and the locked `uv` workspace. These raster assets are permitted only inside the approved contained inspector/measurement route, never in an ordinary external-validation worker.
 
 **Spec:** `docs/superpowers/specs/2026-09-07-external-artifact-validation-design.md` (Human-approved D5 design only).
 
@@ -16,7 +16,7 @@
 - Invariants: INV-024 rejects absolute RMSE without independently validated checkpoints; INV-051 keeps external outputs derived-only; INV-053 blocks quantitative use until authority approves external readiness/compatibility; INV-060 scopes from Principal/server records and returns cross-org resources as 404.
 - Keep external validation separate from `ProcessingJob`, `ArtifactRef`, managed profile/source bundle, source-media authority, managed checkpoint records, and Analysis Readiness.
 - Contracts use strict UTC, closed enums, bounded collections, `extra="forbid"`, frozen models, and canonical SHA-256 digests excluding only their own digest field.
-- Worker receives only server-derived sealed keys/capabilities; it streams/hashes bytes in a private workspace; it follows no path/URL/sidecar/archive/CRS grid and logs no untrusted metadata.
+- Worker receives only server-derived sealed keys/capabilities; it streams/hashes bytes in a private workspace; it follows no path/URL/sidecar/archive/CRS grid and logs no untrusted metadata. Reuse checkpoint-validator semantics only for the approved CSV columns, nearest-pixel interpretation, and aggregate metrics; never reuse its download-then-`rasterio` execution path or allow an ordinary processing worker to read TIFF/DSM bytes.
 - Do not choose resource, retry, concurrency, byte/pixel, timing, uncertainty, RMSE, or compatibility values. An active policy must carry finite configured values and its exact digest; no default active policy exists.
 - No dashboard/planner, deployment, customer data, credential, device, HIL, field, commit, push, or release work. A future UI only presents fact class/restrictions and requests intent.
 
@@ -28,8 +28,8 @@
 | Owner module | Contracts: `packages/event-contracts`/`contracts/schemas`; authority: `services/core`; byte measurement: `services/processing-controller`. |
 | Acceptance criteria | Strict schema/model parity; scoped durable replay/fences; bounded GeoTIFF/COG measurements; evidence-specific lifecycle; immutable decisions; synthetic Core-worker E2E. |
 | Contracts affected | Additive schemas/models and `contracts/api/openapi-core.yaml`; existing external-reconstruction v1 stays unchanged. |
-| Reference assets | REUSE external reconstruction, Core lease/store/router, checkpoint validator, `core_client.py`, runner. `references/repos/**` is REFERENCE_ONLY. |
-| Adoption decisions | ADD separate policy/inspection/evidence/decision records and worker ports; REUSE opaque `submissionRef`, evidence-storage port, scope helpers, journal, and fence convention. |
+| Reference assets | REUSE external reconstruction, Core lease/store/router, checkpoint-validator CSV/nearest-pixel/aggregate semantics, `core_client.py`, runner. Do not reuse checkpoint-validator download or `rasterio` execution; `references/repos/**` is REFERENCE_ONLY. |
+| Adoption decisions | ADD separate policy/inspection/evidence/decision records and worker ports; REUSE opaque `submissionRef`, evidence-storage port, scope helpers, journal, fence convention, and approved checkpoint metric semantics only. |
 | Tests | Contract/schema/API/replay/hostile-input/runner/E2E tests listed below; synthetic fixtures only. |
 | HIL assumptions | None. Local tests do not establish vendor compatibility, capacity, storage interoperability, HIL, or field acceptance. |
 | License/data | Parser supply-chain, export/license, customer retention, and real data need separate approval. |
@@ -436,6 +436,8 @@ Expected: PASS; synthetic inspection only, not vendor/parser acceptance.
 - Consumes: the sealed revision's actual DSM entry, `DigestBoundEvidenceStorage`, a human declaration intent, selected policy, and a worker fence.
 - Produces: public human `declare/list/upload-grant/seal` views, private evidence-ledger operations, and worker `validate_external_evidence(candidate: PendingExternalEvidenceValidation, *, core: ExternalEvidenceCoreClient, http_client: httpx.Client, work_dir: Path) -> None`.
 
+**Sequencing:** Task 5A is the independent Core-only human ingress slice: `declare/list/upload-grant/seal` and its ledger/replay/API work may proceed now. Task 5B retains the complete validation lifecycle, worker interface, events, and tests specified below, but starts only after reviewed Tasks 4A and 4B and a distinct contained checkpoint-protocol technical packet. That packet binds exactly two capped, hash-bound inputs: the DSM as the sole read-only mount and the CSV through framed stdin into a private anonymous spool; it permits no second host bind, host path, URL, environment variable, or argument, returns aggregates only, and carries the existing scope/fence/digest/policy bindings. All TIFF/GDAL/DSM parsing remains inside the approved container route. The packet defines the fixed contained transport, not new CSV/nearest-pixel/aggregate metric semantics or a new approval of them. Until this dependency closes, Task 5B is `PARTIAL`; this sequencing does not remove its future interface, worker lane, tests, terminal transitions, or acceptance work.
+
 **Invariant enforcement:** INV-060 is enforced by principal-derived scope and 404 non-disclosure on every evidence ref lookup. INV-051 is enforced by a separate external evidence ledger, never `ProcessingJob`, `ArtifactRef`, source-media, or managed-checkpoint state. INV-024 is enforced because a human declaration has no RMSE/measurement/verdict field; INV-053 is enforced because declaration/seal produces no eligibility.
 
 **Public identity and scope:** on declaration Core mints a durable internal `evidenceId` and a replay-derivable, server-issued public `evidenceRef` matching `^eev-v1-[0-9a-f]{64}$`. The public ref is the only evidence path segment, just as the pre-existing external revision surface uses returned `submissionRef`; the raw/internal evidence ID is never a client-selected route identity. `evidenceRef` is derived from the persisted scoped stream identity with the same canonical opaque-reference convention used for `submissionRef`, not from a caller-supplied object key or a random response-only alias. Existing journals without evidence entries need no ref migration because no evidence route exists before this task.
@@ -521,7 +523,7 @@ Expected: FAIL at missing routes/store.
 grant = storage.presigned_put_bound_digest(evidence_key, content_type=declaration.content_type, content_digest=declaration.declared_digest, ttl=DEFAULT_UPLOAD_TTL)
 ```
 
-Use a distinct private evidence key/manifest and one-way link to the exact submission manifest+DSM digest; never reuse reconstruction-artifact grants. The public upload-grant response serializes the `DigestBoundUploadCapability` URL and required headers, never its key. Worker reads sealed evidence/DSM and writes fenced metrics; Core independently checks scope, target digests, policy, arithmetic, and result consistency. Claimed independence remains declared until a separate trust policy adjudicates it.
+Use a distinct private evidence key/manifest and one-way link to the exact submission manifest+DSM digest; never reuse reconstruction-artifact grants. The public upload-grant response serializes the `DigestBoundUploadCapability` URL and required headers, never its key. In Task 5B, only after its contained two-input protocol prerequisite, the worker reads sealed evidence/DSM inside the approved container route and writes fenced metrics; Core independently checks scope, target digests, policy, arithmetic, and result consistency. Claimed independence remains declared until a separate trust policy adjudicates it.
 
 - [ ] **Step 4: Test revocation and verify GREEN.**
 
@@ -655,6 +657,10 @@ def test_external_report_uses_its_own_fence() -> None:
 def test_existing_managed_runner_order_is_unchanged() -> None:
     assert inspect.getsource(run_pending_batch) == _managed_runner_source_before
 
+def test_core_rejects_declared_kind_with_measured_band_or_dtype_mismatch() -> None:
+    rejected = _submit_external_report(_declared_dsm(), _report(band_count=3, dtype="uint8"))
+    assert rejected.state == "REJECTED" and rejected.reason == "UNSUPPORTED_RASTER"
+
 def test_external_runner_reset_is_advisory_and_alternates_after_success() -> None:
     core = _external_pending(inspections=2, evidence=2)
     assert _new_external_runner().preferred_kind == "INSPECTION"
@@ -708,7 +714,7 @@ Reuse `(work_kind, resource_id)` and `_required_fence_headers`, never managed-jo
 | `GET /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions` | none → `ExternalUseDecisionListResponse` | `SITES_READ`; no fence | none |
 | `POST /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions` | `ExternalUseDecisionIntentRequest` → single/pair decision receipt | human `SITES_WRITE`; `Idempotency-Key`; no fence | `external-use-decision-requested`, `external-use-decision-recorded` |
 
-Every route identity is opaque; foreign/missing resources are 404; mutation idempotency is `(principalId, organizationId, operation, canonicalBody, idempotencyKey)`. `submission_ref`, `evidence_ref`, and `sanitized_display_ref` use their server-issued reference forms, never a raw customer or storage identity. `ExternalInspectionInputResponse.artifacts` carry manifest-entry ID, `sha256:<64 lowercase hex>`, positive size, content type, `downloadUrl`, and required download headers. Human evidence declaration accepts neither object key nor observed fields; its grant serializes `uploadUrl`, `expiresAt`, and `requiredHeaders` directly from `DigestBoundUploadCapability`; callers never construct keys or URLs. The display-download response serializes only its opaque ref, sealed receipt digest, Core-observed hash/size/type, expiration, and the exact short-lived GET capability URL/headers; public routes do not serialize `serverObjectKey`.
+Every route identity is opaque; foreign/missing resources are 404; mutation idempotency is `(principalId, organizationId, operation, canonicalBody, idempotencyKey)`. `submission_ref`, `evidence_ref`, and `sanitized_display_ref` use their server-issued reference forms, never a raw customer or storage identity. `ExternalInspectionInputResponse.artifacts` carry manifest-entry ID, `sha256:<64 lowercase hex>`, positive size, content type, `downloadUrl`, and required download headers. Core independently compares the sealed declared kind with the returned measured `bandCount` and `dtype` before retaining an inspection report; Task 5B repeats that comparison before `MEASURED` using only the retained exact-DSM inspection outcome resolved through its existing subject/target-DSM/policy bindings, never the aggregate evidence payload, while existing evidence payload/state/digest bindings remain unchanged and no report-digest field is added: ORTHO is only raw RGB/RGBA `uint8`, and DSM is only single-band `Float32`/`Float64`. Unknown or mismatched values fail closed through the existing `REJECTED`/`UNSUPPORTED_RASTER` path and discard measurements; no reason or schema is added. Human evidence declaration accepts neither object key nor observed fields; its grant serializes `uploadUrl`, `expiresAt`, and `requiredHeaders` directly from `DigestBoundUploadCapability`; callers never construct keys or URLs. The display-download response serializes only its opaque ref, sealed receipt digest, Core-observed hash/size/type, expiration, and the exact short-lived GET capability URL/headers; public routes do not serialize `serverObjectKey`.
 
 - [ ] **Step 4: Add route security/nonstarvation tests and verify GREEN.**
 
@@ -815,10 +821,10 @@ Expected: no whitespace errors; only task-owned changes; helper-reported goal ev
 
 ## Execution order and gates
 
-1. Task 4A/4B's reviewed parser/runtime boundary and its separately measured host enforcement prerequisite precede Tasks 5–8. Task 1A corrects the pair contract before Task 6 persists any decision or mounts any use-decision route; it requires its own independent review.
-2. One writer in the shared worktree executes Tasks 5→8 only after their prerequisites are accepted, with independent review after each idle writer diff. Reviewers do not edit.
+1. Task 5A's Core-only human `declare/list/upload-grant/seal` ingress may proceed independently. Reviewed Task 4A/4B parser/runtime boundary, its separately measured host-enforcement prerequisite, and the distinct contained two-input checkpoint-protocol technical packet precede Task 5B validation/measurement, Task 7's evidence-worker lane, and Task 8's positive evidence/`RELATIVE_VOLUME` E2E. Task 1A corrects the pair contract before Task 6 persists any decision or mounts any use-decision route; it requires its own independent review.
+2. One writer in the shared worktree may execute the independently ready Task 5A slice, then the original complete Tasks 5B→8 after their prerequisites are accepted, with independent review after each idle writer diff. Reviewers do not edit.
 3. Only after Tasks 1A–2 stabilize signatures may the Lead use disjoint worktrees for Core and worker work; each has a reviewer, followed by an integrated Core/worker/OpenAPI review and Lead’s narrowest integrated validation.
-4. Task 5 mounts scoped human evidence declaration/list/grant/seal before the worker-only validation lane. Task 6's display delivery is receipt-bound and read-only; it neither creates a decision nor exposes a storage key. Task 7 must expose each route in OpenAPI and production assembly only after the owning Core tests pass.
+4. Task 5A mounts scoped human evidence declaration/list/grant/seal before Task 5B's worker-only validation lane. Task 5B, including its original worker interface, terminal evidence lifecycle, and measurement tests, begins only after the contained two-input protocol packet is reviewed following Tasks 4A/4B. Task 6's display delivery is receipt-bound and read-only; it neither creates a decision nor exposes a storage key. Task 7 must expose each route in OpenAPI and production assembly only after the owning Core tests pass.
 5. External analysis remains outside managed `ProcessingJob` and `ArtifactRef` workflows at every task boundary. Do not adapt managed job routes, managed artifact download routes, source-media authority, profile identity, checkpoint storage, or `AnalysisReadiness` to make these tasks fit.
 6. Valid review findings return to the owning writer and repeat that task’s review. No commit, push, merge, publish, deploy, policy activation, credential change, customer-data access, or device/HIL operation without Human authorization.
 7. Release sequence is additive inspection/evidence persistence, gated DISPLAY, non-quantitative VISUAL_COMPARISON, and relative-volume eligibility after trust, compatibility, parser/security, resource/operations, data/license, deployment, and field evidence. Any external relative-volume request/result remains the separate future technical packet. HEIGHT remains pending its separate product definition. Synthetic all-blocked or happy-path mechanics do not complete the goal.
@@ -834,7 +840,7 @@ Expected: no whitespace errors; only task-owned changes; helper-reported goal ev
 | Production/data | Human-approved customer data, license/retention, export compatibility, deployment, remote CI, and release evidence. |
 | HIL/field | Not established by this work; only a separately scoped physical route could produce it. |
 
-Plan status: Human approved execution on 2026-09-07 and requested implementation by change set with independent review. This authorizes the scoped local implementation and verification, not production policy activation, release, deployment, customer data, or device actions. Accuracy thresholds, producer compatibility, and external-readiness authority remain their explicit separate gates.
+Plan status: Human approved execution on 2026-09-07 and requested implementation by change set with independent review. This authorizes the scoped local implementation and verification, not production policy activation, release, deployment, customer data, or device actions. Task 5A may proceed now; Task 5B and its downstream full evidence-worker/positive-eligibility acceptance remain `PARTIAL` until the reviewed Tasks 4A/4B and contained checkpoint-protocol dependency close. Accuracy thresholds, producer compatibility, and external-readiness authority remain their explicit separate gates.
 
 ### Local implementation checkpoint — 2026-09-07
 
