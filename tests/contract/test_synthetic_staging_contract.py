@@ -72,6 +72,16 @@ def test_synthetic_staging_resolves_with_loopback_only_host_ports(tmp_path: Path
         ("127.0.0.1", "10004"),
     }
     assert env_file.stat().st_mode & 0o777 == 0o600
+    for name in ("identity", "synthetic-copilot", "core", "dashboard"):
+        service = config["services"][name]
+        assert service["read_only"] is True
+        assert service["cap_drop"] == ["ALL"]
+        assert "no-new-privileges:true" in service["security_opt"]
+        assert "/tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777" in service["tmpfs"]
+    assert (
+        "/app/.next/cache:rw,noexec,nosuid,nodev,size=268435456,uid=10001,gid=10001,mode=0700"
+        in config["services"]["dashboard"]["tmpfs"]
+    )
 
 
 def test_staging_reuses_production_auth_storage_and_copilot_boundaries() -> None:

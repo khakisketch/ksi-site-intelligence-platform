@@ -100,6 +100,13 @@ Provider 연결이나 저장형 대화가 실패해도 기존 현장 결과·작
 production Dashboard/Core 경계를 합성 데이터에만 적용한다. 이 조합에는 worker,
 NodeODM, DJI Gateway, Manifold, 장비 key 또는 비행 행동이 없다.
 
+Identity, 합성 Copilot, Core, Dashboard는 non-root 이미지에 읽기 전용 root filesystem,
+`cap_drop: ALL`, `no-new-privileges`를 적용한다. 기존 named state volume과 읽기 전용
+secret mount는 유지한다. 임시 쓰기는 각 컨테이너의 64 MiB `/tmp`와 Dashboard의
+256 MiB `/app/.next/cache` tmpfs로 제한하며 모두 `noexec,nosuid,nodev`다. 캐시는
+재기동 때 사라지는 비권위 데이터다. 이 한도는 합성 staging 설정이며 고객 파일 처리
+용량이나 production 수용 증거가 아니다. MinIO와 초기화 작업의 권한 모델은 별도다.
+
 ```bash
 deploy/bin/phase2-staging.sh start
 deploy/bin/phase2-staging.sh status
