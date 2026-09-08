@@ -1,9 +1,15 @@
 # FIELD-0a 체크리스트 — 비행파일 수용성 + 카메라 실측
 
 > 목표 원장: `field-0a-kmz-acceptance` · 근거: ADR-KSI-020 §5
+> ADR-KSI-035 scope: a Pilot import/export observed here is evidence about that import/export only;
+> it does not establish terrain-aware planning, a final actual trajectory, capture completeness,
+> safety, or an autonomous execution path.
 >
 > **비행하지 않는다. 매니폴드도 필요 없다.** 기체·조종기 전원만 있으면 된다.
-> 이 세션이 FIELD-1(첫 실제 매핑 비행)의 **유일한 전제**다.
+> 이 세션은 기존 fixed-altitude/KMZ FIELD sequence에서 FIELD-1(첫 실제 매핑 비행)의
+> **유일한 기술 전제**다. ADR-KSI-035 terrain-aware Pilot-default workstream의 전제나
+> 비행 허가가 아니며, 어떤 비행도 별도의 operator·regulatory·device approvals 없이는
+> 승인되지 않는다.
 >
 > **PASS 증거는 `$HOME/.local/share/ksi-field-evidence`의 사용자 전용 로컬 저장소에
 > 둔다.** canonical root와 세션 디렉터리는 0700, 원본과 attestation은 0600이어야 한다.

@@ -4,7 +4,42 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-09-05"
+updated: "2026-09-06"
+
+terrain_aware_planning:
+  authority: >-
+    docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md,
+    docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md and
+    docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md
+  current_goal: terrain-aware-planning-design-baseline
+  current_goal_status: COMPLETED
+  design_baseline_evidence: docs/audit/TERRAIN_AWARE_PLANNING_DESIGN_BASELINE_REVIEW.md
+  design_status: APPROVED
+  software_status: NOT_IMPLEMENTED
+  physical_acceptance_status: NOT_VERIFIED
+  future_goals:
+    - id: terrain-aware-planning-software
+      status: PROPOSED
+    - id: terrain-aware-planning-field-acceptance
+      status: PROPOSED
+  scope: >-
+    KSI deterministic terrain-aware orthomapping proposal for initial, repeat and partial
+    observations; Pilot import/exception edit/final approval; distinct plan, final-plan,
+    actual-flight and capture evidence. This is a design baseline, not a runtime or field claim.
+  existing_track: >-
+    Existing goal aol-3-terrain-aware-planning remains a separate prior capability track and is
+    neither replaced nor closed by this scoped Pilot-default workstream.
+  implementation_gate: >-
+    Human-approved TerrainPlanningSourceAdoptionRecord and TerrainPlanningBenchmarkDecision with
+    exact source/version/terms/access/sample/CRS/vertical/nodata evidence and separately reviewed
+    metrics/thresholds/objectives, then contract review and additive runtime packets.
+  physical_gate: >-
+    Separately authorized propeller-off Pilot evidence followed by applicable HIL/field procedures;
+    no planned/imported/exported file alone proves actual flight, safety or capability support.
+  excludes: >-
+    Reactive control, DJI RTH replacement, customer reconstruction engines, CAD/BIM progress
+    redesign, automatic media transfer, unapproved data/license acceptance, device action and
+    autonomous execution activation.
 
 repository_normalization:
   authority: >-

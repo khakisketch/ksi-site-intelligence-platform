@@ -34,3 +34,10 @@
 - 계약은 additive/dual-reader로 배포하고 기존 Mission API와 수동 복구 도구를 제거하지 않는다.
 - DJI 기능은 실기 증거 전까지 `NOT_VERIFIED`; 실제 장비 Profile이 자동 전달·회수를
   모두 통과하지 못하면 zero-touch MVP를 완료로 주장하지 않는다.
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+The recovery-only statement for manual KMZ/file handling does not apply to the explicit
+Pilot-default KSI plan download/import/edit profile in ADR-KSI-035. That bounded planning flow is
+normal only for its profile; it neither promotes manual original-media transfer to zero-touch nor
+proves any Cloud/PSDK/MSDK capability, device support, or field acceptance.

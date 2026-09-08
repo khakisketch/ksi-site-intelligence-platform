@@ -57,6 +57,22 @@
   image, DSM·DTM, `pc-quality=medium`, dynamic-object masking OFF). profile을 고쳐
   과거 결과의 의미를 바꾸지 않으며, 새 엔진·전처리·마스킹은 새 profile과 별도
   적합성 검증을 거친다.
+- 2026-09-06 ADR-KSI-036: 새 첫 출시 기본은 고객이 자기 장비에서 재구성하고 KSI가
+  export artifact를 등록·검증·분석하는 방향이다. KSI-managed NodeODM는 test/demo
+  scope이며 기존 profile·ProcessingJob·결과는 immutable로 유지한다. 외부 import는
+  성공 ProcessingJob, 봉인 raw bundle, source authority 또는 기존 profile identity를
+  만들지 못한다. 등록≠검증≠정량 사용 가능이고, provenance/CRS/수직기준/품질/계보/
+  호환성 미상은 의존 claim을 fail-closed로 제한한다(INV-051/053/060). BIM 일괄 전제,
+  근거 없는 진척률, vendor 선택·보증·license 승인은 하지 않는다. 후속 Human 결정으로
+  원본은 고객 장비에 남고 전체 raw 업로드는 정상 경로의 필수가 아니다. KSI는 제출된
+  산출물과 provenance/품질 근거를 보관한다. 정사영상만의 등록을 허용하고 DSM 등의
+  부족은 의존하는 주장만 제한한다. 원본 미업로드만으로 정량 사용을 영구 금지하지
+  않는다. 형식·실제 export 호환성·검증 정책은 후속 명세/수용 대상이다. bounded Core
+  ingress API의 local software evidence는
+  [`audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md`](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md)에,
+  현재 goal 상태는 helper-managed [`.ksi/goals.json`](../../.ksi/goals.json)에 기록된다.
+  이는 semantic analysis, release/device/vendor/deployment acceptance를 뜻하지 않는다
+  (ADR-KSI-036 D4/D5).
 - 설계면: GeoTIFF 직접 등록과 IFC→GeoTIFF를 유지하고, meter-unit LandXML TIN Surface를
   원본 digest·selector·정규화 계보와 함께 받는다. DWG/DXF 직접 해석은 하지 않고
   LandXML 또는 GeoTIFF 내보내기를 안내한다.
@@ -67,7 +83,10 @@
 - 정상 전달: RC Plus 2/Pilot 2가 비행·인터넷 gateway, Manifold 3가 로컬 Edge다.
   사람의 KSI 업무는 Operations Console이 담당한다.
   RC 인터넷은 새 임무 발급 전 필수이고 Manifold SIM은 선택 Add-on이다. USB·SD·
-  수동 KMZ는 복구 전용이다(ADR-KSI-023).
+  수동 KMZ는 복구 전용이다(ADR-KSI-023). ADR-KSI-035 범위에서는 KSI planned artifact의
+  laptop download와 Pilot import/exception edit가 Pilot-default 정상 planning 경로이며,
+  현행 원본은 다음 SD/현장 PC/Web ingress를 따른다. 이는 자동 전달 또는 DJI capability
+  수용 주장이 아니다.
 - 원본 반출: `SD/저장매체 → 현장 PC → KSI 웹 업로드`가 현재 정상 제품 경로다.
   `ksi_psdk_app`의 source-media automatic offload는 기본 OFF이며, explicit Manifold/native
   activation/Core sync/private control directory/verified camera mount/measured byte bound가
@@ -83,7 +102,14 @@
 - 비행 산출물: Core는 Mission Intent와 검증된 최종 Flight Artifact의
   source·revision·digest·Mission Contract 결속을 소유한다. Core KMZ compiler는 현재
   candidate/fallback이며, Pilot 2 import/export FIELD 증거 전에는 제거하거나 자동 기본
-  경로로 바꾸지 않는다(ADR-KSI-028).
+  경로로 바꾸지 않는다(ADR-KSI-028). ADR-KSI-035의 기본값은 KSI candidate artifact를
+  Pilot planning의 제안으로 삼는 것이며, field evidence 전 `field-compatible default` 또는
+  actual execution으로 승격하지 않는다.
+- 2026-09-06 ADR-KSI-035 범위 정정: Pilot-default 관측에서는 KSI가 결정적
+  terrain-aware 후보를 만들고 Pilot이 import·예외 편집·최종 실행판단을 한다. Pilot은
+  편집본을 비행 전 KSI에 반환할 필요가 없고, 그 경우 KSI는 원안과 pilot 선언/actual log/
+  actual capture를 혼동하거나 미반환 편집을 KSI 승인 artifact로 표시하지 않는다. 미래 자율
+  execution의 signed/digest/device/activation gate는 이 예외로 약화하지 않는다.
 - 배치: 정책형 하이브리드(KSI Cloud 제어면 + 현장별 데이터 실행 위치)
 - Copilot: 외부 LLM 공급자 중립 adapter, 근거 조회·설명·재관측 초안 전용
 

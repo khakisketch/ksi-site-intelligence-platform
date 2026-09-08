@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/inspector-execution-manifest.v1.json",
+  "title": "InspectorExecutionManifestV1",
+  "description": "Frozen inspector execution profile. Signature authenticity and relational policy/report binding are model and verifier-port responsibilities.",
+  "$comment": "This Draft 2020-12 schema is structural only. Consumers must run parse_inspector_execution_manifest_wire after schema validation for grid ordering, canonical body/signature digest binding, and frozen-model semantic checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body", "signature"],
+  "properties": {
+    "body": {"$ref": "#/$defs/body"},
+    "signature": {"$ref": "#/$defs/signature"}
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "exclusiveMinimum": 0
+    },
+    "imageIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ociManifestDigest", "ociConfigDigest"],
+      "properties": {
+        "ociManifestDigest": {"$ref": "#/$defs/digest"},
+        "ociConfigDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "securityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "networkDisabled", "readOnlyRootFilesystem", "privileged",
+        "noNewPrivileges", "dropAllCapabilities", "credentialsInjected",
+        "remoteVsiDisabled", "pluginLoadingDisabled", "gdalPamEnabled",
+        "clearInheritedEnvironment"
+      ],
+      "properties": {
+        "networkDisabled": {"const": true},
+        "readOnlyRootFilesystem": {"const": true},
+        "privileged": {"const": false},
+        "noNewPrivileges": {"const": true},
+        "dropAllCapabilities": {"const": true},
+        "credentialsInjected": {"const": false},
+        "remoteVsiDisabled": {"const": true},
+        "pluginLoadingDisabled": {"const": true},
+        "gdalPamEnabled": {"const": false},
+        "clearInheritedEnvironment": {"const": true}
+      }
+    },
+    "hardCeilings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxInputBytes", "maxMemoryBytes", "maxTmpfsBytes", "maxPids",
+        "cpuPeriodMicros", "cpuQuotaMicros", "maxWallTimeMillis",
+        "maxLogBytes", "maxOutputBytes"
+      ],
+      "properties": {
+        "maxInputBytes": {"$ref": "#/$defs/positiveInteger"},
+        "maxMemoryBytes": {"$ref": "#/$defs/positiveInteger"},
+        "maxTmpfsBytes": {"$ref": "#/$defs/positiveInteger"},
+        "maxPids": {"$ref": "#/$defs/positiveInteger"},
+        "cpuPeriodMicros": {"$ref": "#/$defs/positiveInteger"},
+        "cpuQuotaMicros": {"$ref": "#/$defs/positiveInteger"},
+        "maxWallTimeMillis": {"$ref": "#/$defs/positiveInteger"},
+        "maxLogBytes": {"$ref": "#/$defs/positiveInteger"},
+        "maxOutputBytes": {"$ref": "#/$defs/positiveInteger"}
+      }
+    },
+    "environment": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {"const": ["GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR"]},
+        {"const": ["GDAL_DRIVER_PATH", "disable"]},
+        {"const": ["GDAL_PAM_ENABLED", "NO"]},
+        {"const": ["PROJ_NETWORK", "OFF"]},
+        {"const": ["PYTHONDONTWRITEBYTECODE", "1"]}
+      ],
+      "items": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion", "imageIdentity", "sourceTreeDigest",
+        "buildProvenanceDigest", "sbomDigest", "inspectorProtocolDigest",
+        "backendProfileDigest", "securityProfileDigest", "resourceEnvelopeDigest",
+        "backend", "runtimeUid", "runtimeGid", "supplementaryGroups",
+        "runtimeEnvironment", "allowedGridDigests", "securityProfile", "hardCeilings"
+      ],
+      "properties": {
+        "contractVersion": {"const": "inspector-execution-manifest.v1"},
+        "imageIdentity": {"$ref": "#/$defs/imageIdentity"},
+        "sourceTreeDigest": {"$ref": "#/$defs/digest"},
+        "buildProvenanceDigest": {"$ref": "#/$defs/digest"},
+        "sbomDigest": {"$ref": "#/$defs/digest"},
+        "inspectorProtocolDigest": {"$ref": "#/$defs/digest"},
+        "backendProfileDigest": {"$ref": "#/$defs/digest"},
+        "securityProfileDigest": {"$ref": "#/$defs/digest"},
+        "resourceEnvelopeDigest": {"$ref": "#/$defs/digest"},
+        "backend": {"const": "DEDICATED_ROOTLESS_DOCKER_V1"},
+        "runtimeUid": {"$ref": "#/$defs/positiveInteger"},
+        "runtimeGid": {"$ref": "#/$defs/positiveInteger"},
+        "supplementaryGroups": {"type": "array", "maxItems": 0},
+        "runtimeEnvironment": {"$ref": "#/$defs/environment"},
+        "allowedGridDigests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/digest"}
+        },
+        "securityProfile": {"$ref": "#/$defs/securityProfile"},
+        "hardCeilings": {"$ref": "#/$defs/hardCeilings"}
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "digest", "signature"],
+      "properties": {
+        "algorithm": {"const": "Ed25519"},
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+        },
+        "digest": {"$ref": "#/$defs/digest"},
+        "signature": {
+          "type": "string",
+          "minLength": 88,
+          "maxLength": 88,
+          "pattern": "^[A-Za-z0-9+/]{85}[AQgw]==$"
+        }
+      }
+    }
+  }
+}

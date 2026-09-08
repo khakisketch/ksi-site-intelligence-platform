@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
+    from ksi_core.external_reconstruction import ExternalReconstructionStore
     from ksi_core.flight_artifacts import FlightArtifactStore
     from ksi_core.mission_execution import MissionExecutionStore
     from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
@@ -108,6 +109,7 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
             ("design_surface_store",),
             ("flight_artifact_store",),
             ("checkpoint_validation_store",),
+            ("external_reconstruction_store",),
         ),
         "evidence_storage 는 소비자 저장소(event_store·source_media_store·"
         "design_surface_store·flight_artifact_store·checkpoint_validation_store 또는"
@@ -178,6 +180,13 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "observation_work_order_store",
         (("site_store",),),
         "observation_work_order_store 는 site_store 와 함께 주어져야 한다(INV-060)",
+    ),
+    (
+        "external_reconstruction_store",
+        (("site_store", "observation_work_order_store", "evidence_storage"),),
+        "external_reconstruction_store 는 site_store·observation_work_order_store·"
+        "evidence_storage 와 함께 주어져야 한다(INV-051/053/060) — 외부 결과는 "
+        "managed job·source authority와 분리된 scoped declaration으로만 존재한다",
     ),
     (
         "acquisition_connectivity_store",
@@ -420,6 +429,7 @@ def create_app(
     region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
+    external_reconstruction_store: ExternalReconstructionStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
     capture_quality_report_store: CaptureQualityReportStore | None = None,
@@ -658,6 +668,7 @@ def create_app(
         "report_export_store": report_export_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "external_reconstruction_store": external_reconstruction_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
@@ -685,6 +696,17 @@ def create_app(
             all(_provided[_dep] is not None for _dep in _group) for _group in _requirement_groups
         ):
             raise ValueError(_reason)
+
+    if external_reconstruction_store is not None:
+        from ksi_core.evidence import DigestBoundEvidenceStorage, ObjectStorageObservationPort
+
+        if not isinstance(evidence_storage, DigestBoundEvidenceStorage) or not isinstance(
+            evidence_storage, ObjectStorageObservationPort
+        ):
+            raise ValueError(
+                "external_reconstruction_store 는 digest-bound PUT와 trusted object observation "
+                "storage ports를 모두 요구한다"
+            )
 
     protected_surface = any(value is not None for value in _provided.values())
     if protected_surface and auth_registry is None:
@@ -737,6 +759,18 @@ def create_app(
             on_approved=(
                 _on_work_order_approved if acquisition_coordination_store is not None else None
             ),
+        )
+
+    if external_reconstruction_store is not None:
+        from ksi_core.external_reconstruction import mount_external_reconstruction
+
+        assert observation_work_order_store is not None  # noqa: S101 -- assembly requirement
+        assert evidence_storage is not None  # noqa: S101 -- assembly requirement
+        mount_external_reconstruction(
+            app,
+            external_reconstruction_store,
+            work_orders=observation_work_order_store,
+            storage=evidence_storage,
         )
 
     if acquisition_connectivity_store is not None:

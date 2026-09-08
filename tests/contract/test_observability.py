@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.metrics import PROCESSING_JOB_ADMISSIONS, record_processing_job_admission
 from ksi_core.observability import (
     REQUEST_ID_HEADER,
@@ -57,6 +59,14 @@ class _NullEvidenceStorage:
         raise NotImplementedError
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: timedelta
+    ) -> DigestBoundUploadCapability:
+        raise NotImplementedError
+
+    def observe_object(self, object_key: str) -> ObjectStorageObservation:
         raise NotImplementedError
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:

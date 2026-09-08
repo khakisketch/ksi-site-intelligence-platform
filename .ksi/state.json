@@ -127,6 +127,14 @@
       "at_sha": "c703012",
       "at_module_sha": null,
       "at": "2026-08-31T22:29:49+09:00"
+    },
+    "services/processing-controller/external-inspector": {
+      "status": "risk",
+      "note": "LOCAL TASKS 1/1b/2 PASS: 40 targeted and184 combined tests; exponent-overflow, upload cancellation, exact wire, deadlines and resource cleanup corrected and independently reviewed. Product parser/runtime and full CI completion remain in progress. Human approved commit/push/deployment/container execution on2026-09-08; no host/parser/release evidence inferred.",
+      "audit_ref": "docs/superpowers/plans/2026-09-07-external-inspector-docker-sandbox-amendment.md",
+      "at_sha": "542fe0a",
+      "at_module_sha": null,
+      "at": "2026-09-08T10:04:36+09:00"
     }
   }
 }

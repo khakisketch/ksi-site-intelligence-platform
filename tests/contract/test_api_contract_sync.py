@@ -57,6 +57,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
@@ -117,6 +118,14 @@ class _NullEvidenceStorage:
         raise NotImplementedError
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: Any
+    ) -> Any:
+        raise NotImplementedError
+
+    def observe_object(self, object_key: str) -> Any:
         raise NotImplementedError
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
@@ -267,9 +276,11 @@ def _max_assembly(tmp_path: Path) -> Any:
                 site_store.get_scoped(site_id, organization_id) is not None
             ),
             work_order_matches=lambda work_order_id, organization_id, site_id: (
-                (order := observation_work_order_store.get(
-                    work_order_id, organization_id=organization_id
-                ))
+                (
+                    order := observation_work_order_store.get(
+                        work_order_id, organization_id=organization_id
+                    )
+                )
                 is not None
                 and order.site_id == site_id
             ),
@@ -357,6 +368,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         work_area_store=work_area_store,
         observation_work_order_store=observation_work_order_store,
+        external_reconstruction_store=ExternalReconstructionStore(
+            DurableJournal(tmp_path / "external-reconstruction.jsonl")
+        ),
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -662,6 +676,38 @@ def test_documented_response_schemas_match_implementation_fields(tmp_path: Path)
     )
 
 
+def test_external_reconstruction_contract_uses_opaque_submission_refs() -> None:
+    """A raw customer submission ID is domain data, never a path address."""
+    paths = _doc()["paths"]
+    base = "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions"
+    revision_paths = (
+        base + "/{submission_ref}/revisions/{revision}",
+        base + "/{submission_ref}/revisions/{revision}/upload-grants",
+        base + "/{submission_ref}/revisions/{revision}/seal",
+    )
+    assert all(path in paths for path in revision_paths)
+    assert not any("{submission_id}" in path for path in paths if path.startswith(base))
+    for path in revision_paths:
+        operation = next(
+            item for name, item in paths[path].items() if name in _HTTP_METHODS
+        )
+        submission_ref = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["in"] == "path" and parameter["name"] == "submission_ref"
+        )
+        assert submission_ref["schema"] == {
+            "type": "string",
+            "pattern": "^ers-v1-[0-9a-f]{64}$",
+        }
+    view = _doc()["components"]["schemas"]["ExternalReconstructionRevisionView"]
+    assert "submissionRef" in view["required"]
+    assert view["properties"]["submissionRef"] == {
+        "type": "string",
+        "pattern": "^ers-v1-[0-9a-f]{64}$",
+    }
+
+
 def test_named_response_models_are_bound_in_doc(tmp_path: Path) -> None:
     """⑤ 바인딩 검사 — 실구현이 named 모델을 반환하는 operation 은 문서의 2xx
     응답 중 하나가 **같은 이름을 ``$ref``** 해야 한다.
@@ -726,9 +772,7 @@ def test_flight_artifact_candidate_contract_stays_unbound() -> None:
     paths = doc["paths"]
     ingest = paths["/v1/missions/{mission_id}/flight-artifacts/pilot-export"]["post"]
     assert {
-        code
-        for code in ingest["responses"]
-        if code in {"200", "201", "404", "422", "503"}
+        code for code in ingest["responses"] if code in {"200", "201", "404", "422", "503"}
     } == {"200", "201", "404", "422", "503"}
     for code in ("200", "201"):
         assert _ref_name(_json_schema(ingest["responses"][code])) == "FlightArtifactIngestResponse"
@@ -742,9 +786,7 @@ def test_flight_artifact_candidate_contract_stays_unbound() -> None:
     assert properties["envelopeCheck"]["enum"] == ["COMPATIBLE", "NOT_COMPARABLE"]
     assert "executable" not in set(candidate.get("required") or [])
 
-    download = paths[
-        "/v1/missions/{mission_id}/flight-artifacts/{candidate_id}/download"
-    ]["get"]
+    download = paths["/v1/missions/{mission_id}/flight-artifacts/{candidate_id}/download"]["get"]
     headers = download["responses"]["200"]["headers"]
     assert headers["X-KSI-FlightArtifact-Status"]["schema"]["const"] == (
         "VALIDATED_CANDIDATE_UNBOUND"

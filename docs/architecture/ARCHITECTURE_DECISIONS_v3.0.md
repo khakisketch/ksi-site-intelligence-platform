@@ -35,3 +35,9 @@ Critical/High/Medium SLO와 Candidate/High/Critical 전후 3/5/10초 Evidence �
 ## ADR-F009 — Reference repositories
 
 KSI Platform, KSI-Terra, KSI-Scout는 읽기 전용 Submodule이며 직접 Runtime Import를 금지한다.
+
+## ADR-F010 — Terrain-aware Pilot planning design
+
+ADR-KSI-035 records a design-only default: deterministic KSI planning proposal, Pilot import/edit/
+final approval, and separate original-plan/final-plan/actual-flight/capture evidence. It does not
+enable terrain-aware runtime behavior, device control, automatic media, or field support.

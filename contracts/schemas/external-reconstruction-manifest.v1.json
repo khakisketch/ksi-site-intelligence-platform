@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-reconstruction-manifest.v1.json",
+  "title": "ExternalReconstructionManifestV1",
+  "description": "Server-observed artifact byte identity only; it is not format validation, provenance verification, or quantitative eligibility.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "manifestId", "submissionId", "submissionRevision", "submissionDigest",
+    "organizationId", "siteId", "observationEpochId", "observedAt", "observedByService",
+    "entries", "manifestDigest"
+  ],
+  "properties": {
+    "contractVersion": { "const": "external-reconstruction-manifest.v1" },
+    "manifestId": { "$ref": "#/$defs/boundedText" },
+    "submissionId": { "$ref": "#/$defs/boundedText" },
+    "submissionRevision": { "type": "integer", "minimum": 1 },
+    "submissionDigest": { "$ref": "#/$defs/digest" },
+    "organizationId": { "$ref": "#/$defs/boundedText" },
+    "siteId": { "$ref": "#/$defs/boundedText" },
+    "observationEpochId": { "$ref": "#/$defs/boundedText" },
+    "observedAt": { "$ref": "#/$defs/dateTime" },
+    "observedByService": { "$ref": "#/$defs/boundedText" },
+    "entries": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/entry" } },
+    "manifestDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "boundedText": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "dateTime": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifactId", "kind", "objectKey", "observedSha256", "observedSizeBytes", "observedContentType"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/boundedText" },
+        "kind": { "enum": ["point_cloud", "camera_poses", "ortho", "dsm", "dtm", "mesh", "tiles_3d", "report"] },
+        "objectKey": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)*$" },
+        "observedSha256": { "$ref": "#/$defs/sha256" },
+        "observedSizeBytes": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "observedContentType": { "$ref": "#/$defs/boundedText" }
+      }
+    }
+  }
+}

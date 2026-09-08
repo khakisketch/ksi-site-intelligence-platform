@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "KSI-Site-Intelligence-Platform",
-  "updated_at": "2026-09-04T03:12:25+09:00",
+  "updated_at": "2026-09-07T15:18:15+09:00",
   "goals": [
     {
       "id": "phase-0",
@@ -2578,6 +2578,186 @@
       "verification_requested": "strict",
       "created_at": "2026-09-04T02:42:13+09:00",
       "updated_at": "2026-09-04T03:12:25+09:00"
+    },
+    {
+      "id": "terrain-aware-planning-design-baseline",
+      "title": "지형 인지 정사 관측계획 문서·설계 기준 반영",
+      "completion_criteria": [
+        "ADR035와 제품 정본·요구 추적이 승인 결정에 일치",
+        "Pilot 수동 실행과 미래 자율 실행 계약 분리",
+        "계획·최종계획·실제 로그·촬영 증거와 증거별 분석 제한 명시",
+        "후속 공급자·품질 정책 확정 절차와 작업 소유권·의존성 기록",
+        "독립 리뷰 및 로컬 문서 검증 통과, 코드·실기 수용 주장 없음"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "ADR035 authority/design/acceptance/roadmap/AI routes aligned. Task review PASS after two corrections; integration review PASS with no findings. Lead docs validator29files25Markdown PASS; regression152passed existing warning. See docs/audit/TERRAIN_AWARE_PLANNING_DESIGN_BASELINE_REVIEW.md. Runtime/schema/test unchanged; software and field goals proposed.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "Independent task and integration PASS; Lead local verification PASS. Documentation baseline only, no implementation, remote or physical acceptance.",
+        "at": "2026-09-06T18:42:51+09:00",
+        "reviewer": "/root/terrain_docs_integration",
+        "evidence_ref": "docs/audit/TERRAIN_AWARE_PLANNING_DESIGN_BASELINE_REVIEW.md"
+      },
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T18:18:39+09:00",
+      "updated_at": "2026-09-06T18:42:51+09:00"
+    },
+    {
+      "id": "terrain-aware-planning-software",
+      "title": "지형 인지 정사 계획·다운로드·사후 증거 소프트웨어 흐름",
+      "completion_criteria": [
+        "공급자·품질 정책·공통 계약 확정 후 구현",
+        "계획 엔진·데이터 어댑터·사후 증거·Console 통합 검증",
+        "실기 capability와 제품 현장 수용은 별도"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T18:18:39+09:00",
+      "updated_at": "2026-09-06T18:18:39+09:00"
+    },
+    {
+      "id": "terrain-aware-planning-field-acceptance",
+      "title": "M4D·Pilot 실제 계획 운용과 관측 품질 수용",
+      "completion_criteria": [
+        "정확한 M4D·RC·Pilot·펌웨어의 import·수정·실행 증거",
+        "계획·실제 비행·촬영 결과 연결 검증",
+        "Pilot 비교와 현장 관측 품질 검증",
+        "별도 장비·비행 승인 후 수행"
+      ],
+      "status": "proposed",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T18:18:39+09:00",
+      "updated_at": "2026-09-06T18:18:39+09:00"
+    },
+    {
+      "id": "pilot-default-external-reconstruction-release",
+      "title": "고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성",
+      "completion_criteria": [
+        "고객 원본 전체 업로드 없이 산출물 등록·검증·보관",
+        "증거별 열람·변화·상대 물량·근거형 공정관리·보고·LLM·재관측 연결",
+        "결정론적 비행계획과 Pilot 승인 실행 및 실제 관측 증거 분리",
+        "조직격리·무결성·보관/삭제/내보내기·회귀·실제 데이터 수용",
+        "별도 승인된 실기·CI·배포·Human 수용 증거 확인 전 출시 완료 금지"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": null,
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": null,
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T19:38:35+09:00",
+      "updated_at": "2026-09-06T19:38:35+09:00"
+    },
+    {
+      "id": "external-reconstruction-contract-v1",
+      "title": "외부 재구성 제출·관측 매니페스트 계약 검증",
+      "completion_criteria": [
+        "고객 원본 미업로드·정사영상 단독 등록 계약",
+        "선언과 관측 분리·봉인 무결성·정확한 범위/파일 결속",
+        "독립 리뷰 및 현재 작업트리 계약/회귀 검증",
+        "API·분석·배포·실기·출시 완료를 주장하지 않음"
+      ],
+      "status": "completed",
+      "attempt": 1,
+      "evidence": "Additive contract only: customer-local originals, ortho-only, producer/observed separation, exact immutable digest/scope/byte-metadata binding. Independent task and integration reviews PASS after corrections; Lead current-source 110 tests PASS, mypy2files/Ruff/diffcheck PASS. docs/audit/EXTERNAL_RECONSTRUCTION_CONTRACT_V1_VERIFICATION.md. No API/storage/semantic analysis/deployment/device/release acceptance.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "Independent task and integration PASS; Lead110tests plus static checks. Contract child only, parent release remains in_progress.",
+        "at": "2026-09-06T20:23:05+09:00",
+        "reviewer": "external_release_integration_review",
+        "evidence_ref": "docs/audit/EXTERNAL_RECONSTRUCTION_CONTRACT_V1_VERIFICATION.md"
+      },
+      "invalidation_reason": null,
+      "parent": "pilot-default-external-reconstruction-release",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "hardening",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T20:10:09+09:00",
+      "updated_at": "2026-09-06T20:23:05+09:00"
+    },
+    {
+      "id": "external-reconstruction-ingress-api-v1",
+      "title": "External reconstruction authenticated registration upload sealing and replay API",
+      "completion_criteria": [
+        "EXT-API-01 ortho-only and optional DSM registration without raw upload",
+        "EXT-API-02 authenticated tenant site cycle and actor scope",
+        "EXT-API-03 immutable contiguous idempotent revisions",
+        "EXT-API-04 digest-bound HTTP upload and server-observed sealing retry",
+        "EXT-API-05 durable restart strict replay",
+        "EXT-API-06 mounted production assembly and API conformance",
+        "EXT-API-07 independent review integrated local evidence and documentation"
+      ],
+      "status": "completed",
+      "attempt": 2,
+      "evidence": "EXT-API01–07 verified: mounted ortho/optionalDSM registration, authenticated org/site/cycle/actor, contiguous retries/revisions, digest-bound actual HTTP PUT/HEAD/seal, strict durable replay and tenant isolation; opaque returned submissionRef handles all accepted IDs. Worker339PASS, independent current verifier60PASS+Ruff/mypy11PASS, task/docs reviewsPASS, final independent integration81PASS and PASS verdict at .superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/final-integration-review.md. Lead current11file404PASS and post-review98PASS17.41s with1knownwarning; current audit docs/audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md. Main WIP3hashes unchanged; active HEAD542fe0a unchanged/indexempty. Local API only, no Git publication/deployment/customer/device/wholeMVP acceptance.",
+      "verdict": {
+        "verdict": "pass",
+        "note": "Independent bounded EXT-API01–07 integration PASS; Lead post-review98testsPASS and current404suitePASS, documentation/current evidence accepted. Broad release remains in_progress; no deployment or device acceptance.",
+        "at": "2026-09-06T22:54:56+09:00",
+        "reviewer": "external_release_integration_review",
+        "evidence_ref": ".superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/final-integration-review.md"
+      },
+      "invalidation_reason": null,
+      "parent": "pilot-default-external-reconstruction-release",
+      "blocked_by": null,
+      "ungated_attempts": 0,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-09-06T20:44:19+09:00",
+      "updated_at": "2026-09-06T22:54:56+09:00"
+    },
+    {
+      "id": "external-artifact-validation-v1",
+      "title": "외부 재구성 산출물 파일 검사와 용도별 사용 적합성 판정",
+      "completion_criteria": [
+        "EXT-VAL-01 actual sealed derived bytes format and spatial metadata inspection",
+        "EXT-VAL-02 customer declarations separated from measured facts",
+        "EXT-VAL-03 versioned Core per-use display comparison height volume decisions with evidence-bound positive and negative paths",
+        "EXT-VAL-04 explicit remediation without blanket raw-upload or DSM absence denial",
+        "EXT-VAL-05 bounded resources transient retry fencing tenant isolation and restart replay",
+        "EXT-VAL-06 mounted Core and processing-controller workflow without managed identity impersonation",
+        "EXT-VAL-07 reviewed detailed plan contracts tests independent and integrated verification",
+        "EXT-VAL-08 durable docs goal evidence and local versus release acceptance boundaries"
+      ],
+      "status": "in_progress",
+      "attempt": 1,
+      "evidence": "PARTIAL: Human-approved existing-image-only Docker diagnostic completed; both processes exit 0 with basic network-none/read-only/non-root/cgroup control observations; synthetic 16x16 GeoTIFF and COG roundtrip successful. Exact evidence in .superpowers/sdd/2026-09-07-external-artifact-validation/sandbox-diagnostic-results.json. Temporary containers removed. No bwrap in worker image; original backend not validated, Task4-8 incomplete. No production backend adoption, policy activation, remote CI, deployment or release acceptance.",
+      "verdict": null,
+      "invalidation_reason": null,
+      "parent": "pilot-default-external-reconstruction-release",
+      "blocked_by": null,
+      "ungated_attempts": 4,
+      "kind": "product",
+      "verification_requested": "strict",
+      "created_at": "2026-09-07T09:56:38+09:00",
+      "updated_at": "2026-09-07T15:18:15+09:00"
     }
   ],
   "risks": [

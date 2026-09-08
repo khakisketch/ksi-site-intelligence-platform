@@ -40,6 +40,7 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
@@ -111,6 +112,14 @@ class _NullEvidenceStorage:
         raise NotImplementedError
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: Any
+    ) -> Any:
+        raise NotImplementedError
+
+    def observe_object(self, object_key: str) -> Any:
         raise NotImplementedError
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
@@ -256,6 +265,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "design_surface_store": design_surface_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "external_reconstruction_store": ExternalReconstructionStore(
+            DurableJournal(tmp_path / "external-reconstruction.jsonl")
+        ),
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
@@ -352,9 +364,7 @@ def test_dev_assembly_mounts_every_v1_surface(tmp_path: Path) -> None:
     )
     try:
         dev_paths = {p for p in dev.app.openapi()["paths"] if p.startswith("/v1/")}
-        assert isinstance(
-            dev.app.state.capability_authority_store, CapabilityAuthorityStore
-        )
+        assert isinstance(dev.app.state.capability_authority_store, CapabilityAuthorityStore)
     finally:
         dev.close()
     missing = _max_assembly_paths(tmp_path / "max") - dev_paths
@@ -374,3 +384,72 @@ def test_dev_assembly_closes_every_journal_it_opened(tmp_path: Path) -> None:
     # 같은 디렉터리로 두 번째 조립이 되면 단일 writer 잠금이 전부 풀린 것이다.
     second = module.build_dev_app(dev_dir, segment_bytes=None, edge_sync_snapshot_every=None)
     second.close()
+
+
+def test_external_reconstruction_requires_complete_supported_assembly_and_is_absent_without_storage(
+    tmp_path: Path,
+) -> None:
+    """Mounting byte ingress without every scope/auth/storage dependency creates a false surface."""
+    kwargs = _max_assembly_kwargs(tmp_path / "max")
+    external_base = (
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions"
+    )
+    minimal = {
+        name: kwargs[name]
+        for name in (
+            "auth_registry",
+            "site_store",
+            "observation_work_order_store",
+            "evidence_storage",
+            "external_reconstruction_store",
+        )
+    }
+    for absent in (
+        "auth_registry",
+        "site_store",
+        "observation_work_order_store",
+        "evidence_storage",
+    ):
+        invalid = dict(minimal)
+        invalid[absent] = None
+        with pytest.raises(ValueError):
+            create_app(**invalid)
+
+    class UnsupportedStorage:
+        def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+            del object_key, content_type, ttl
+            raise NotImplementedError
+
+        def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+            del object_key, ttl
+            raise NotImplementedError
+
+        def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+            del object_key, data, content_type
+
+        def get_bytes(self, object_key: str) -> bytes:
+            del object_key
+            raise NotImplementedError
+
+        def delete(self, object_key: str) -> None:
+            del object_key
+
+    invalid = dict(minimal)
+    invalid["evidence_storage"] = UnsupportedStorage()
+    with pytest.raises(ValueError, match="digest-bound PUT"):
+        create_app(**invalid)
+    without_store = dict(minimal)
+    without_store["external_reconstruction_store"] = None
+    without_store["evidence_storage"] = None
+    assert external_base not in create_app(**without_store).openapi()["paths"]
+
+    module = _load_dev_module()
+    dev = module.build_dev_app(
+        tmp_path / "storage-less-dev",
+        segment_bytes=None,
+        edge_sync_snapshot_every=None,
+    )
+    try:
+        assert external_base not in dev.app.openapi()["paths"]
+    finally:
+        dev.close()

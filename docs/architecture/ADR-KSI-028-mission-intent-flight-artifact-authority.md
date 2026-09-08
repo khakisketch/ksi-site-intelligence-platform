@@ -120,3 +120,11 @@ ingest 재업로드는 모두 다음 과정을 거친다.
 - Rollback: 새 source ingest/selection flag만 닫고 KSI_WPML candidate와 Pilot 2
   수동 복구 경로는 남긴다. 단순 네트워크 손실 또는 route rollback으로 유효한
   활성 Mission Contract를 취소하지 않는다.
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+D4's revalidation/rebinding sequence remains mandatory when KSI authorizes/binds an executable
+final artifact and for all future autonomous execution. In ADR-KSI-035's Pilot manual profile,
+the Pilot may make an exception edit and fly without returning it preflight; that fact is an
+unbound final-plan observation, never a silent reuse of the prior KSI binding. Original planned
+artifact, returned export/declaration, actual flight log and capture evidence remain distinct.

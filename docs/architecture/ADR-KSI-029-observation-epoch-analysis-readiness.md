@@ -121,3 +121,12 @@ gap을 표시한다. `READY`가 아니면 "분석 불가"라는 모호한 경고
 - Rollback: readiness는 additive shadow projection으로 먼저 배포한다. projection/UI를
   독립 feature flag로 끌 수 있으며, 기존 WorkOrder·CoverageReport·Processing 원장은
   변경하거나 삭제하지 않는다.
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+The current `AnalysisReadiness` implementation remains its existing global fail-closed projection;
+this amendment does not claim it already evaluates every dependent claim separately. ADR-KSI-035
+requires a future additive `ClaimScopedAssessment`: missing Pilot final-plan or actual-flight
+evidence then blocks only claims that require those facts, while raw registration/reconstruction
+may proceed when their own ingress, integrity and processing prerequisites hold. INV-020/024/051/053
+eligibility remains independent, and no postflight assessment retroactively authorizes flight.

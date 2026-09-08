@@ -72,6 +72,16 @@ absorb the Site Intelligence safety-patrol Mission type, and this repository mus
 `safety/` product module merely because the two products overlap in construction-site observations.
 The canonical distinction remains Product Constitution §제품 정체성 and ADR-KSI-016 D2.
 
+## Terrain-aware planning routing (design-only)
+
+The approved terrain-aware Pilot-default design is routed by
+[`ADR-KSI-035`](docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md), its
+[design contract](docs/design/TERRAIN_AWARE_OBSERVATION_PLANNING_CONTRACT.md),
+[acceptance](docs/acceptance/TERRAIN_AWARE_PILOT_MVP_ACCEPTANCE.md), and
+[successor roadmap](docs/goals/TERRAIN_AWARE_PLANNING_ROADMAP.md). These documents define future
+ownership and evidence boundaries only; they do not create a runtime module, alter existing wire
+contracts, establish Pilot/device support, or change the `NOT_VERIFIED` HIL/field state.
+
 ## Authority and current/target separation
 
 | Concern | Canonical owner | Runtime? | Classification |

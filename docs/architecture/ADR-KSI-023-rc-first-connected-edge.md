@@ -149,3 +149,10 @@ HIL과 기존 Site profile migration이 끝난 뒤에만
   유지한다.
 - rollback은 새 발급 경로를 닫되 이미 활성화된 유효 Mission Contract를 네트워크
   상태만으로 취소하지 않는다.
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+ADR-KSI-035's Pilot-default artifact download/import is a normal planning profile, not evidence
+that any of D3's five capability routes works. Current original-media ingress and all automatic
+media routes retain their stated `NOT_VERIFIED`/OFF status. A Pilot edit that is not returned
+preflight cannot be represented as the signed/activated artifact of a future autonomous profile.

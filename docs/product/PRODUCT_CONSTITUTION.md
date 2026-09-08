@@ -81,6 +81,10 @@ Console Home은 다현장 포트폴리오의 입구다. KSI가 실제 원장에�
 근거형 질의 → 사람 승인 재관측**을 하나의 작업으로 닫는다. 계약 정산·측량급
 정확도는 독립 checkpoint 검증 없이는 주장하지 않는다. 수동 KMZ 편집, USB 복구와
 raw 파일 조작은 정상 사용자 흐름이 아니라 장애 복구와 검증을 위한 전문가 경로다.
+단, ADR-KSI-035의 KSI planned artifact download/Pilot import·예외 편집은 Pilot-default
+planning profile의 명시적 정상 행동이고, 현행 원본 ingress는 아래의 SD/현장 PC/Web
+정상 경로를 따른다. 이 범위 정정은 자동 media, device capability 또는 flight safety
+주장이 아니다.
 
 첫 토목 처리의 기본 경로는 현장 PC가 SD/저장매체의 원본을 KSI 웹에 올리고,
 고정된 `ksi-odm-civil-v1` profile로 재구성한 뒤, 검증된 설계면과 시점 간 상대
@@ -89,6 +93,18 @@ raw 파일 조작은 정상 사용자 흐름이 아니라 장애 복구와 검�
 비교를 막아 사유를 표시한다. LandXML TIN Surface와 GeoTIFF는 설계면 입력이고,
 IFC→GeoTIFF 변환도 유지한다. DWG/DXF 직접 해석, 엔진·버전 혼합 비교, 독립
 checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다(ADR-KSI-030).
+
+ADR-KSI-036의 새 첫 출시 방향에서는 고객이 자기 장비에서 외부 재구성 소프트웨어를
+운영하고 KSI는 export artifact를 등록·검증·분석한다. 등록은 검증이나 정량 사용 가능과
+동일하지 않으며, provenance/CRS/수직기준/품질/계보 또는 호환성이 미상이면 의존하는
+주장을 제한한다. KSI-managed NodeODM와 그 기존 결과는 immutable managed/test·demo
+범위로 유지한다. 외부 import가 ProcessingJob 성공, 봉인 raw bundle, source authority 또는
+기존 profile identity를 위장할 수 없다. 2026-09-06 후속 확정에 따라 원본 사진은 고객
+장비에 보관하며 정상 경로에서 전체 원본 업로드를 요구하지 않는다. KSI는 제출된
+산출물과 provenance/품질 근거를 보관한다. 정사영상만의 등록을 허용하고 DSM·수직기준
+등의 부족은 높이·물량처럼 의존하는 주장만 제한한다. 원본 미업로드 자체를 외부 결과의
+영구 정량 금지 사유로 삼지 않는다. 지원 형식·실제 export 호환성·검증 정책은 구현과
+별도 수용 증거가 필요하다(ADR-KSI-036 D4/D5).
 
 독립 checkpoint가 있으면 사용자는 좌표계·수직기준·재구성 입력과 분리된 근거를
 명시하고 원본 CSV를 봉인한다. KSI 처리 워커가 그 bytes와 대상 DSM bytes를 직접 읽어
@@ -138,6 +154,10 @@ KSI Site Intelligence Platform
 ```
 
 **Core는 무엇을 왜 관측할지 정하고, Acquisition은 지금 어떻게 관측할지 정한다.**
+ADR-KSI-035의 Pilot-default profile에서만, Core의 결정적 planner는 사전
+`how to observe` 후보(coverage·terrain/known-structure·transit intent)를 만든다. 이는
+현장/비행 중의 관측점·경로 판단, 실제 비행 실행, 회피 또는 RTH의 권한을 Core로 옮기지
+않으며, missing prior data를 안전 보증으로 바꾸지도 않는다.
 어느 방향에서 접근할지, 어떤 거리에서 볼지, 가림이 생겼을 때 어디로 옮길지,
 목표가 프레임에서 빠졌을 때 다시 잡을지는 현장에서 결정되어야 한다 — 그것을
 서버가 정하려 들면 통신 지연·단절 때문에 로봇 시스템이 성립하지 않는다(§제어

@@ -51,6 +51,7 @@ from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -74,6 +75,16 @@ class _ValidationEvidenceStorage:
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         del ttl
         return f"https://test.invalid/{object_key}"
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: Any
+    ) -> Any:
+        del object_key, content_type, content_digest, ttl
+        raise AssertionError("not exercised")
+
+    def observe_object(self, object_key: str) -> Any:
+        del object_key
+        raise AssertionError("not exercised")
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
         del object_key, data, content_type
@@ -174,14 +185,19 @@ def _client(tmp_path: Path) -> Iterator[TestClient]:
 def _work_order_client(tmp_path: Path) -> Iterator[TestClient]:
     journals = _JournalSet(tmp_path)
     site_store = SiteStore(journals.open("work-order-sites.jsonl"))
+    work_order_store = ObservationWorkOrderStore(
+        journals.open("observation-work-orders.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+    )
     app = create_app(
         auth_registry=_auth_registry(),
         site_store=site_store,
-        observation_work_order_store=ObservationWorkOrderStore(
-            journals.open("observation-work-orders.jsonl"),
-            site_exists=lambda site_id, organization_id: (
-                site_store.get_scoped(site_id, organization_id) is not None
-            ),
+        observation_work_order_store=work_order_store,
+        evidence_storage=_ValidationEvidenceStorage(),
+        external_reconstruction_store=ExternalReconstructionStore(
+            journals.open("external-reconstruction.jsonl")
         ),
     )
     with _managed_client(app, journals) as client:
@@ -198,9 +214,7 @@ def _acquisition_client(tmp_path: Path) -> Iterator[TestClient]:
         journals.open("acquisition-work-orders.jsonl"),
         site_exists=lambda _site_id, _organization_id: True,
     )
-    coordination_store = AcquisitionCoordinationStore(
-        journals.open("acquisition-runs.jsonl")
-    )
+    coordination_store = AcquisitionCoordinationStore(journals.open("acquisition-runs.jsonl"))
     evidence_storage = _ValidationEvidenceStorage()
     runtime_projector = RuntimeCapabilityProjector(
         authority_store=CapabilityAuthorityStore(
@@ -303,23 +317,23 @@ def test_hostile_json_body_never_renders_as_a_500(label: str, raw: str, tmp_path
     """장착된 표면에 쏴도 500 + text/plain 이 나오지 않는다."""
     with _client(tmp_path) as client:
         response = client.post(
-            "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
+            "/v1/sites",
+            content=raw.encode("utf-8", "surrogatepass"),
             headers={"Content-Type": "application/json"},
         )
     assert response.status_code != 500, f"{label}: {response.status_code} {response.text[:200]}"
 
 
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
-def test_hostile_json_body_error_is_machine_readable(
-    label: str, raw: str, tmp_path: Path
-) -> None:
+def test_hostile_json_body_error_is_machine_readable(label: str, raw: str, tmp_path: Path) -> None:
     """거부 응답이 **JSON 이어야** 워커가 '계약 위반'과 '서버 장애'를 가른다.
 
     404(라우트 미장착)면 본문 검증까지 가지 않으므로 이 단언의 대상이 아니다.
     """
     with _client(tmp_path) as client:
         response = client.post(
-            "/v1/sites", content=raw.encode("utf-8", "surrogatepass"),
+            "/v1/sites",
+            content=raw.encode("utf-8", "surrogatepass"),
             headers={"Content-Type": "application/json"},
         )
     assert response.status_code != 404, "라우트가 장착되지 않으면 이 게이트는 공허하다"
@@ -336,6 +350,7 @@ def test_hostile_json_body_error_is_machine_readable(
         "/v1/sites/site-1/observation-work-orders",
         "/v1/observation-work-orders/order-1/approve",
         "/v1/observation-work-orders/order-1/reobservation-drafts",
+        "/v1/observation-work-orders/order-1/external-reconstruction-submissions",
         "/v1/reobservation-drafts/draft-1/approve",
     ],
 )
@@ -640,8 +655,13 @@ def test_overflowing_progress_ratio_folds_into_a_typed_reason() -> None:
 
     def zone(cut: float) -> ZoneVolumeDelta:
         return ZoneVolumeDelta(
-            zone_id="z1", cut_m3=cut, fill_m3=0.0, net_m3=-cut, area_m2=1.0,
-            threshold_m=0.05, uncertainty_note="검증 전",
+            zone_id="z1",
+            cut_m3=cut,
+            fill_m3=0.0,
+            net_m3=-cut,
+            area_m2=1.0,
+            threshold_m=0.05,
+            uncertainty_note="검증 전",
         )
 
     def report(cut: float, when: str) -> Any:

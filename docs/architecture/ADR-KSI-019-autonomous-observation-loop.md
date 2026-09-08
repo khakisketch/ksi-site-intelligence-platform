@@ -204,3 +204,11 @@ AOL-1/2/3은 **관측 자율성 성숙도 축**이다. 혼동을 막기 위해 �
 - `00_SYSTEM_OVERVIEW.md`의 "현재 도달점"은 유효하다 — 본 ADR은 그 표의 PLANNER 행을
   단계·GAP 단위로 분해한 것이다.
 - MASTER_PRD는 FROZEN이므로 수정하지 않는다(개정은 ADR 계층 누적, ADR-KSI-018 관례).
+
+## 2026-09-06 ADR-KSI-035 scope amendment
+
+The anti-circularity rule remains: a first mapping plan cannot require the site's own DSM/point
+cloud/mesh. ADR-KSI-035 records a separate, approved design baseline for optional public/operator
+terrain evidence and deterministic Pilot-default planning. Its documentation and successor packets
+do not claim AOL-3 implementation or HIL evidence, and its later runtime work remains separately
+gated; the historical FIELD sequencing is not a prohibition on this design decision.
