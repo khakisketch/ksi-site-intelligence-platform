@@ -24,6 +24,7 @@ green≠작동: 처리 작업은 실제로 발급→lease→RUNNING→산출물 
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -44,7 +45,8 @@ from ksi_core.design_conformance_requests import (
 )
 from ksi_core.design_surfaces import DesignSurfaceStore
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.evidence import EvidenceStorageError
+from ksi_core.evidence import DigestBoundUploadCapability, EvidenceStorageError
+from ksi_core.leasing import LeaseMode
 from ksi_core.processing_jobs import ProcessingJobStatus
 from ksi_event_contracts.design_surface import (
     DesignSurfaceDeclared,
@@ -128,6 +130,20 @@ class FakeStorage:
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
         del content_type, ttl
         return f"https://storage.invalid/put/{object_key}"
+
+    def presigned_put_bound_digest(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        content_digest: str,
+        ttl: Any,
+    ) -> DigestBoundUploadCapability:
+        del content_type, ttl
+        return DigestBoundUploadCapability(
+            upload_url=f"https://storage.invalid/put/{object_key}",
+            required_headers={"X-Test-SHA256": content_digest},
+        )
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         del ttl
@@ -854,6 +870,155 @@ def test_replay_restores_request_lease_transition_and_verification(fixture: Fixt
     assert replayed.diff_raster.verified_at == _NOW + timedelta(minutes=2)
     assert replayed.design_surface_sha256 == _DESIGN_SHA
     assert replayed.policy == record.policy
+
+
+def test_fenced_renewal_survives_replay(fixture: Fixture) -> None:
+    record = fixture.created()
+    claimed = fixture.requests.acquire_lease(
+        record.request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    renewed = fixture.requests.acquire_lease(
+        record.request_id,
+        lease_fence=claimed.record.lease.fence,
+        lease_mode=LeaseMode.RENEW,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is DesignConformanceRequestVerdict.LEASE_RENEWED
+    assert renewed.record is not None and renewed.record.lease is not None
+    expected_expiry = renewed.record.lease.expires_at
+
+    restored = _reopen(fixture).get(record.request_id)
+    assert restored is not None and restored.lease is not None
+    assert restored.lease.fence == claimed.record.lease.fence
+    assert restored.lease.expires_at == expected_expiry
+
+
+def test_replay_rejects_renewal_that_changes_claim_principal(
+    fixture: Fixture,
+) -> None:
+    record = fixture.created()
+    claimed = fixture.requests.acquire_lease(
+        record.request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id="principal-a",
+        now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    renewed = fixture.requests.acquire_lease(
+        record.request_id,
+        lease_fence=claimed.record.lease.fence,
+        lease_mode=LeaseMode.RENEW,
+        authenticated_actor_id="principal-a",
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert renewed.verdict is DesignConformanceRequestVerdict.LEASE_RENEWED
+    fixture.close()
+    journal_path = fixture.tmp_path / "design-conformance-requests.jsonl"
+    records = [json.loads(line) for line in journal_path.read_text().splitlines()]
+    renewal = next(
+        item
+        for item in records
+        if item["kind"] == "design-conformance-request-leased"
+        and item["leaseMode"] == "RENEW"
+    )
+    renewal["authenticatedActorId"] = "principal-b"
+    journal_path.write_text("\n".join(json.dumps(item) for item in records) + "\n")
+
+    with pytest.raises(DesignConformanceRequestRecoveryError, match="principal"):
+        _reopen(fixture)
+
+
+def test_fenced_renewal_rejects_different_principal_and_replays_claim_actor(
+    fixture: Fixture,
+) -> None:
+    record = fixture.created()
+    claimed = fixture.requests.acquire_lease(
+        record.request_id, worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM, authenticated_actor_id="principal-a", now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    duplicate_claim = fixture.requests.acquire_lease(
+        record.request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id="principal-b",
+        now=_NOW + timedelta(seconds=30),
+    )
+    assert (
+        duplicate_claim.verdict
+        is DesignConformanceRequestVerdict.STALE_LEASE_ACQUISITION
+    )
+    denied = fixture.requests.acquire_lease(
+        record.request_id, lease_fence=claimed.record.lease.fence, lease_mode=LeaseMode.RENEW,
+        authenticated_actor_id="principal-b", now=_NOW + timedelta(minutes=1),
+    )
+    assert denied.verdict is DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER
+    hijacked = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-b",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert hijacked.verdict is DesignConformanceRequestVerdict.LEASE_HELD_BY_ANOTHER
+    accepted = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-a",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=2),
+    )
+    assert accepted.verdict is DesignConformanceRequestVerdict.TRANSITIONED
+    restored = _reopen(fixture).get(record.request_id)
+    assert restored is not None and restored.lease is not None
+    assert restored.lease.authenticated_actor_id == "principal-a"
+    assert restored.status is ProcessingJobStatus.RUNNING
+
+
+def test_replay_refuses_a_fenced_transition_without_its_fence(
+    fixture: Fixture,
+) -> None:
+    record = fixture.created()
+    claimed = fixture.requests.acquire_lease(
+        record.request_id,
+        worker_instance_id="11111111-1111-4111-8111-111111111111",
+        lease_acquisition_id="22222222-2222-4222-8222-222222222222",
+        lease_mode=LeaseMode.CLAIM,
+        authenticated_actor_id="principal-a",
+        now=_NOW,
+    )
+    assert claimed.record is not None and claimed.record.lease is not None
+    accepted = fixture.requests.transition(
+        record.request_id,
+        ProcessingJobStatus.RUNNING,
+        detail=None,
+        actor="principal-a",
+        lease_fence=claimed.record.lease.fence,
+        now=_NOW + timedelta(minutes=1),
+    )
+    assert accepted.verdict is DesignConformanceRequestVerdict.TRANSITIONED
+    fixture.close()
+    journal_path = fixture.tmp_path / "design-conformance-requests.jsonl"
+    tampered = []
+    for line in journal_path.read_text(encoding="utf-8").splitlines():
+        raw = json.loads(line)
+        if raw["kind"] == "design-conformance-request-transitioned":
+            raw.pop("leaseFence")
+        tampered.append(json.dumps(raw))
+    journal_path.write_text("\n".join(tampered) + "\n", encoding="utf-8")
+    with pytest.raises(DesignConformanceRequestRecoveryError, match="leaseFence"):
+        _reopen(fixture)
 
 
 def test_replay_refuses_a_request_that_the_live_gate_would_reject(fixture: Fixture) -> None:

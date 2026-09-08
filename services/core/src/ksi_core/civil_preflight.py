@@ -31,6 +31,8 @@ from ksi_event_contracts.processing_artifact import (
 from ksi_geo_spatial.crs import normalise_crs
 from ksi_geo_spatial.tin_surface import CANONICAL_TIN_NORMALIZATION_PROFILE
 
+from ksi_core.processing_jobs import authoritative_artifacts
+
 if TYPE_CHECKING:
     from ksi_core.processing_jobs import ProcessingJobRecord
 
@@ -41,6 +43,7 @@ class CivilPreflightReason(StrEnum):
     ANALYSIS_NOT_READY = "ANALYSIS_NOT_READY"
     PROCESSING_PROFILE_UNKNOWN = "PROCESSING_PROFILE_UNKNOWN"
     PROCESSING_PROFILE_MISMATCH = "PROCESSING_PROFILE_MISMATCH"
+    NO_COMMON_ARTIFACT_FAMILY = "NO_COMMON_ARTIFACT_FAMILY"
     SOURCE_LINEAGE_GAP = "SOURCE_LINEAGE_GAP"
     CRS_MISMATCH = "CRS_MISMATCH"
     VERTICAL_REFERENCE_MISMATCH = "VERTICAL_REFERENCE_MISMATCH"
@@ -67,9 +70,7 @@ class CivilPreflightResult:
         return cls(compatible=True)
 
     @classmethod
-    def blocked(
-        cls, reason: CivilPreflightReason, detail: str
-    ) -> CivilPreflightResult:
+    def blocked(cls, reason: CivilPreflightReason, detail: str) -> CivilPreflightResult:
         return cls(compatible=False, reason=reason, detail=detail)
 
 
@@ -89,9 +90,7 @@ def _enum_value(value: object) -> str | None:
 
 
 def _profile(job: ProcessingJobRecord) -> tuple[str, str] | None:
-    classification = _enum_value(
-        getattr(job, "processing_profile_classification", None)
-    )
+    classification = _enum_value(getattr(job, "processing_profile_classification", None))
     profile_id = getattr(job, "processing_profile_id", None)
     profile_digest = getattr(job, "processing_profile_digest", None)
     if (
@@ -105,9 +104,7 @@ def _profile(job: ProcessingJobRecord) -> tuple[str, str] | None:
     return profile_id, profile_digest
 
 
-def _lineage_is_complete(
-    job: ProcessingJobRecord, artifacts: Iterable[ProcessingArtifact]
-) -> bool:
+def _lineage_is_complete(job: ProcessingJobRecord, artifacts: Iterable[ProcessingArtifact]) -> bool:
     source_digest = getattr(job.input, "source_bundle_digest", None)
     if not isinstance(source_digest, str) or not source_digest.startswith("sha256:"):
         return False
@@ -116,10 +113,23 @@ def _lineage_is_complete(
     return all(artifact.lineage.source_digest == source_digest for artifact in artifacts)
 
 
-def _artifact(
-    job: ProcessingJobRecord, kind: ProcessingArtifactKind
-) -> ProcessingArtifact | None:
-    return next((item for item in job.artifacts if item.kind is kind), None)
+def _artifact(job: ProcessingJobRecord, kind: ProcessingArtifactKind) -> ProcessingArtifact | None:
+    return next((item for item in authoritative_artifacts(job) if item.kind is kind), None)
+
+
+def common_comparable_artifact_families(
+    baseline: ProcessingJobRecord,
+    current: ProcessingJobRecord,
+) -> frozenset[ProcessingArtifactKind]:
+    """Return quantitative families with authoritative artifacts in both epochs."""
+
+    comparable = {
+        ProcessingArtifactKind.POINT_CLOUD,
+        ProcessingArtifactKind.DSM,
+    }
+    baseline_kinds = {artifact.kind for artifact in authoritative_artifacts(baseline)}
+    current_kinds = {artifact.kind for artifact in authoritative_artifacts(current)}
+    return frozenset(comparable & baseline_kinds & current_kinds)
 
 
 def _same_crs(left: str | None, right: str | None) -> bool:
@@ -151,8 +161,7 @@ def preflight_single_epoch(
     if not ready:
         return CivilPreflightResult.blocked(
             CivilPreflightReason.ANALYSIS_NOT_READY,
-            readiness_detail
-            or f"임무 {job.mission_id!r} 의 Analysis Readiness가 READY가 아니다",
+            readiness_detail or f"임무 {job.mission_id!r} 의 Analysis Readiness가 READY가 아니다",
         )
 
     if _profile(job) is None:
@@ -162,7 +171,7 @@ def preflight_single_epoch(
             "LEGACY_UNMANAGED 결과는 조회할 수 있지만 새 정량 비교에는 쓸 수 없다",
         )
 
-    relevant = tuple(job.artifacts if artifacts is None else artifacts)
+    relevant = tuple(authoritative_artifacts(job) if artifacts is None else artifacts)
     if not relevant or not _lineage_is_complete(job, relevant):
         return CivilPreflightResult.blocked(
             CivilPreflightReason.SOURCE_LINEAGE_GAP,
@@ -180,9 +189,7 @@ def preflight_epoch_pair(
     """Require two epochs to share one reproducible quantitative basis."""
 
     for label, job in (("baseline", baseline), ("current", current)):
-        result = preflight_single_epoch(
-            job, analysis_readiness=analysis_readiness
-        )
+        result = preflight_single_epoch(job, analysis_readiness=analysis_readiness)
         if not result.compatible:
             detail = result.detail or "비교 가능성 근거가 없다"
             return CivilPreflightResult.blocked(
@@ -205,6 +212,12 @@ def preflight_epoch_pair(
             "두 epoch의 processingProfileDigest가 다르다. v1은 동일 digest만 자동 비교한다",
         )
 
+    if not common_comparable_artifact_families(baseline, current):
+        return CivilPreflightResult.blocked(
+            CivilPreflightReason.NO_COMMON_ARTIFACT_FAMILY,
+            "두 epoch에 공통으로 존재하는 point_cloud 또는 dsm 산출물 계열이 없다",
+        )
+
     for kind, label in (
         (ProcessingArtifactKind.POINT_CLOUD, "point_cloud"),
         (ProcessingArtifactKind.DSM, "dsm"),
@@ -222,10 +235,14 @@ def preflight_epoch_pair(
 
     baseline_dsm = _artifact(baseline, ProcessingArtifactKind.DSM)
     current_dsm = _artifact(current, ProcessingArtifactKind.DSM)
-    if baseline_dsm is not None and current_dsm is not None and (
-        baseline_dsm.vertical_reference is None
-        or current_dsm.vertical_reference is None
-        or baseline_dsm.vertical_reference != current_dsm.vertical_reference
+    if (
+        baseline_dsm is not None
+        and current_dsm is not None
+        and (
+            baseline_dsm.vertical_reference is None
+            or current_dsm.vertical_reference is None
+            or baseline_dsm.vertical_reference != current_dsm.vertical_reference
+        )
     ):
         return CivilPreflightResult.blocked(
             CivilPreflightReason.VERTICAL_REFERENCE_MISMATCH,
@@ -285,6 +302,7 @@ __all__ = [
     "CivilPreflightReason",
     "CivilPreflightResult",
     "DIRECT_GEOTIFF_NORMALIZATION_PROFILE",
+    "common_comparable_artifact_families",
     "design_normalization_anchor",
     "preflight_epoch_pair",
     "preflight_design_surface",

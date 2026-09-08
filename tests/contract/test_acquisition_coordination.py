@@ -29,6 +29,7 @@ from ksi_core.sites import SiteStore
 from ksi_domain.enums import MissionExecutionStatus
 from ksi_event_contracts.observation_work_order import ObservationWorkOrder
 from ksi_mission_contracts.models import SiteFrame
+from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
 _NOW = datetime(2026, 8, 21, 10, 0, tzinfo=UTC)
 _OPERATOR_TOKEN = "coordination-operator-token"  # noqa: S105
@@ -110,6 +111,7 @@ def _receipt(**overrides: object) -> GatewayOperationReceiptRequest:
 
 
 def _mission_record() -> MissionRecord:
+    plan_request = {"workOrderId": "obs-work-00000001"}
     return MissionRecord(
         mission_id="mission-1",
         site_id="site-1",
@@ -126,8 +128,8 @@ def _mission_record() -> MissionRecord:
         # its Mission lineage explicit so request-scoped Mission visibility
         # exercises the same multi-organization boundary as production.
         organization_id="org-1",
-        plan_request={"workOrderId": "obs-work-00000001"},
-        plan_request_digest="sha256:" + "c" * 64,
+        plan_request=plan_request,
+        plan_request_digest=sha256_digest(canonical_payload_bytes(plan_request)),
         assigned_device_id="manifold-1",
     )
 

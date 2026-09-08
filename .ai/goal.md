@@ -1,4 +1,79 @@
-# Current goal (2026-08-31, automatic source-media offload v1 software assembly)
+# Current goal (2026-09-05, audited R3 triplet locally present)
+
+The approved R3 service/package slice is now the final local triplet, with no product semantics changed:
+
+- `refactor(repo): move import-only processing libraries`
+- `docs(repo): record service-package migration lineage`
+- `test(repo): enforce service-package boundary`
+
+The three exact import-only libraries now have canonical `packages/` destinations; the migration manifest,
+ADR-KSI-034, and `REPOSITORY_STRUCTURE.md` are the current lineage/routing authority. `INV-003` and
+`INV-054` remain explicit enforcement gates. Snapshots `ca723d41` and `b23ee101` remain local-only
+recovery evidence; reviewed pre-R3 corrections remain immediately before the triplet.
+
+Next: run targeted and full local gates plus independent integration/evidence review; push a remote ref
+without force; create a Draft PR; wait for required CI; then mark Ready. This state makes no full-local or
+remote PASS claim.
+
+The source `main` WIP/index remains preserved. No merge, deployment, credential, device, physical HIL,
+or field action occurred. `HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY` and `PEER_TOPOLOGY=UNRESOLVED`;
+remote, deployment, and field evidence is not verified.
+---
+
+# Previous goal (2026-09-03, HIL-1R physical Route-1 readiness closure)
+
+Close the repository-owned software and evidence-readiness gaps for a later non-actuating
+`PSDK_MANIFOLD / EDGE_UPLINK` bench session without performing physical HIL or changing CAP-1 through
+CAP-5 authority. `INV-011/012/040/041/042/060` apply.
+
+The product boundary is explicit: Site Intelligence is driven by Mission-bound original photos,
+RTK/POS/metadata and derived spatial artifacts. PSDK Liveview remains local to Manifold acquisition
+quality/perception; Route-1 transports bounded EventBundle metadata and is not a central live-video or
+source-media ingress.
+
+Repository software is green: field-capable v2 raw evidence/capture, deterministic shutdown, exact
+Core freshness TTL, configured refresh margin, role-separated secrets, peer/lifecycle/hostile-input and
+non-actuating gates, CI host/sanitizer/ARM64 definitions, and canonical aarch64 companion/peer builds.
+Local evidence is `4673 passed / 24 skipped`, Ruff, Mypy `470` files, lock/diff/FIELD-0a checks, host
+CTest and ASan+UBSan `3/3`, and ARM64 ABI/MOP/non-actuating checks. This is
+`PASS_WITH_LIMITATIONS`: final DPK packaging still requires a DJI-issued `user_app_id`, and pinned DJI
+PSDK 3.16 evidence does not prove payload-to-payload MOP. Therefore `PEER_TOPOLOGY=UNRESOLVED`,
+`HIL_ROUTE_1=BLOCKED_HARDWARE_TOPOLOGY`, and external activation remains blocked. No hardware, DPK
+installation, feature flag, authority, commit, push or deployment action occurred.
+
+---
+
+# Previous goal (2026-09-01, civil pilot closure — read-only site readiness)
+
+Close the remaining repository-owned civil-pilot usability gap without creating a second comparison
+workflow or promoting local software evidence into field acceptance. `REQ-WRK-101`,
+`REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101` and `INV-017/018/020/024/040/050/053/060`
+apply.
+
+Completion conditions:
+
+- a site-scoped, organization-isolated read-only projection states whether a first epoch, second epoch,
+  compatible pair or verified design surface is missing, using the current Core compatibility gate rather
+  than a Dashboard approximation;
+- `PAIR_COMPATIBLE` remains only a candidate: a real comparison/design request must run preflight again
+  with its actual inputs, and the projection cannot select a design revision or mutate any record;
+- the existing Site Data surface presents the typed blocker, safe next action and explicit limits without
+  changing Home/Sites/Work/Items information architecture;
+- contract, assembly, API, replay, unit, four-viewport browser and full local regression evidence are
+  current, while the acceptance/phase/goal ledgers make the remaining Korean field gates explicit.
+
+This increment is complete in the local worktree: `GET /v1/sites/{siteId}/civil-readiness`, its Core
+projector, OpenAPI contract and additive Console card use the existing `preflight_epoch_pair` gate and
+fail closed when a dependency is unavailable. Current local evidence is Python `4238 passed / 24 skipped`,
+Ruff, Mypy `445` files, Dashboard `63` files / `578` tests plus lint/type/build, and Playwright
+`66 passed / 14` intentional external-staging skips. It does not change `PRODUCT_E2E_PARTIAL`,
+`FIELD_NOT_EVALUATED`, FIELD-0a `BLOCKED` or DJI/Manifold `NOT_VERIFIED`/OFF. Korean same-site original
+epochs, a verified LandXML/design/CRS/vertical chain, independent reference/checkpoint and HIL remain
+external acceptance gates. No commit, push, deployment, customer data or device action occurred.
+
+---
+
+# Previous goal (2026-08-31, automatic source-media offload v1 software assembly)
 
 Complete the safe repository implementation for future automatic source-media egress without turning a
 locally green build into a DJI capability claim. `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101` and

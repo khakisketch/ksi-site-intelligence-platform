@@ -73,6 +73,14 @@ extern "C" {
 #include "ksi/edge/media_offload.hpp"
 #endif
 
+#if KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED
+#include "runtime/psdk_route_companion.hpp"
+#endif
+
+#if KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED
+#include "runtime/psdk_mop_peer_receiver.hpp"
+#endif
+
 #ifndef KSI_EDGE_HAVE_CURL_TRANSPORT
 #define KSI_EDGE_HAVE_CURL_TRANSPORT 0
 #endif
@@ -103,6 +111,14 @@ constexpr double kRadiansPerDegree = 0.017453292519943295769;
 
 #ifndef KSI_PSDK_APP_CORE_SYNC_CONFIGURED
 #define KSI_PSDK_APP_CORE_SYNC_CONFIGURED 0
+#endif
+
+#ifndef KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED
+#define KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED 0
+#endif
+
+#ifndef KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED
+#define KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED 0
 #endif
 
 #ifndef KSI_PSDK_APP_PERCEPTION_CONFIGURED
@@ -2001,8 +2017,24 @@ int Run() {
 #if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
     bool camera_manager_initialized = false;
 #endif
+#if KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED
+    std::unique_ptr<ksi::psdk::PsdkRouteCompanion> route_companion;
+#endif
+#if KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED
+    std::unique_ptr<ksi::psdk::PsdkMopPeerReceiver> mop_peer_receiver;
+#endif
 
     const auto cleanup = [&] {
+#if KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED
+        if (mop_peer_receiver) {
+            mop_peer_receiver->Stop();
+        }
+#endif
+#if KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED
+        if (route_companion) {
+            route_companion->Stop();
+        }
+#endif
         runtime.CloseIngress();
         if (image_started) {
             (void)DjiLiveview_StopImageStream(DJI_LIVEVIEW_CAMERA_POSITION_NO_1,
@@ -2108,6 +2140,66 @@ int Run() {
         cleanup();
         return 1;
     }
+
+#if KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED
+    try {
+        route_companion = std::make_unique<ksi::psdk::PsdkRouteCompanion>(
+            ksi::psdk::PsdkRouteCompanionConfig{
+                KSI_PSDK_APP_EDGE_UPLINK_SOCKET_PATH,
+                KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID,
+                KSI_PSDK_APP_EDGE_UPLINK_SITE_ID,
+                KSI_PSDK_APP_EDGE_UPLINK_EDGE_DEVICE_ID,
+                KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID,
+                static_cast<std::uint16_t>(KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID),
+            });
+        std::string companion_error;
+        if (!route_companion->Start(true, &companion_error)) {
+            std::fprintf(stderr, "[ksi-edge-shadow] PSDK route companion failed closed: %s\n",
+                         companion_error.c_str());
+            cleanup();
+            return 1;
+        }
+    } catch (const std::exception& exception) {
+        std::fprintf(stderr, "[ksi-edge-shadow] PSDK route companion setup failed closed: %s\n",
+                     exception.what());
+        cleanup();
+        return 1;
+    }
+#endif
+
+#if KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED
+    try {
+        // HIL-1P is a separately provisioned PSDK client. Its CMake address is
+        // restricted to a remote payload/extension port, and the peer worker
+        // alone owns Connect/RecvData/reconnect; this app never binds or
+        // accepts its own server channel.
+        mop_peer_receiver = std::make_unique<ksi::psdk::PsdkMopPeerReceiver>(
+            ksi::psdk::PsdkMopPeerReceiverConfig{
+                KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID,
+                KSI_PSDK_APP_MOP_PEER_SITE_ID,
+                KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID,
+                KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID,
+                static_cast<ksi::psdk::MopPeerAddress>(KSI_PSDK_APP_MOP_PEER_ADDRESS),
+                static_cast<std::uint16_t>(KSI_PSDK_APP_MOP_PEER_CHANNEL_ID),
+                64U * 1024U,
+                128U,
+                100U,
+                nullptr,
+            });
+        std::string peer_error;
+        if (!mop_peer_receiver->Start(true, &peer_error)) {
+            std::fprintf(stderr, "[ksi-edge-shadow] PSDK MOP peer receiver failed closed: %s\n",
+                         peer_error.c_str());
+            cleanup();
+            return 1;
+        }
+    } catch (const std::exception& exception) {
+        std::fprintf(stderr, "[ksi-edge-shadow] PSDK MOP peer receiver setup failed closed: %s\n",
+                     exception.what());
+        cleanup();
+        return 1;
+    }
+#endif
 
 #if KSI_PSDK_APP_MEDIA_OFFLOAD_CONFIGURED
     // Camera Manager is initialized only for the explicitly provisioned media

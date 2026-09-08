@@ -188,6 +188,10 @@ export function civilBlockerGuidance(
       message: "두 회차의 고정 처리 프로필이 다릅니다.",
       nextAction: "동일한 KSI 표준 처리 프로필로 재구성한 회차만 비교하세요.",
     },
+    NO_COMMON_ARTIFACT_FAMILY: {
+      message: "두 회차에 공통으로 비교할 point cloud 또는 DSM 산출물이 없습니다.",
+      nextAction: "두 회차 모두 같은 산출물 계열이 생성된 처리 결과를 선택하세요.",
+    },
     SOURCE_LINEAGE_GAP: {
       message: "원본 번들과 산출물의 digest 계보가 완전하게 결속되지 않았습니다.",
       nextAction: "봉인·처리 완료 기록을 확인하고, 계보가 남는 새 처리 회차를 만드세요.",

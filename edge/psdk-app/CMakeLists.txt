@@ -93,6 +93,68 @@ set(KSI_PSDK_APP_MEDIA_CAMERA_MOUNT_POSITION "" CACHE STRING
 set(KSI_PSDK_APP_MEDIA_MAXIMUM_DOWNLOAD_BYTES "" CACHE STRING
     "Measured maximum original JPEG bytes accepted by the PSDK media adapter")
 
+# HIL-1S is a separately provisioned, non-actuating PSDK/MOP EdgeBundle uplink.
+# It is OFF in ordinary packages and cannot infer tenant, route, port, or MOP
+# channel identity from device state.  /run/ksi/psdk.sock is the fixed local
+# Gateway companion endpoint; the deployment must create its private parent.
+option(KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION
+       "enable the non-actuating PSDK/MOP EDGE_BUNDLE_UPLOAD companion" OFF)
+option(KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER
+       "compile the separately provisioned non-actuating PSDK/MOP peer receiver" OFF)
+set(KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID "" CACHE STRING
+    "Trusted organization bound into the HIL-1P PSDK MOP peer receiver")
+set(KSI_PSDK_APP_MOP_PEER_SITE_ID "" CACHE STRING
+    "Trusted site bound into the HIL-1P PSDK MOP peer receiver")
+set(KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID "" CACHE STRING
+    "Exact Edge device ID accepted by the HIL-1P PSDK MOP peer receiver")
+set(KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID "" CACHE STRING
+    "Exact CAP-5 PSDK_MANIFOLD EDGE_UPLINK subjectPortId for HIL-1P")
+set(KSI_PSDK_APP_MOP_PEER_CHANNEL_ID "" CACHE STRING
+    "Explicit reliable MOP server channel ID for HIL-1P (1..65535)")
+set(KSI_PSDK_APP_MOP_PEER_ADDRESS "" CACHE STRING
+    "Explicit PSDK server address: PAYLOAD_PORT_NO1..NO3 or EXTENSION_PORT_V2_NO1..NO8")
+if(KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER AND
+   KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION)
+  message(FATAL_ERROR
+    "KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER and EDGE_UPLINK_COMPANION are mutually exclusive")
+endif()
+set(KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID "" CACHE STRING
+    "Trusted organization bound into the PSDK uplink companion")
+set(KSI_PSDK_APP_EDGE_UPLINK_SITE_ID "" CACHE STRING
+    "Trusted site bound into the PSDK uplink companion")
+set(KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID "" CACHE STRING
+    "Exact CAP-5 PSDK_MANIFOLD EDGE_UPLINK subjectPortId")
+set(KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID "" CACHE STRING
+    "Explicit reliable DJI MOP server channel ID (1..65535)")
+set(KSI_PSDK_APP_EDGE_UPLINK_SOCKET_PATH "/run/ksi/psdk.sock" CACHE FILEPATH
+    "Fixed local Gateway/PSDK Unix companion endpoint")
+
+# Reproducible HIL-1S diagnostics. These are deliberately OFF for every normal
+# and device build. ASan+UBSan and TSan are mutually exclusive runtimes; the
+# latter is a separate host diagnostic and is not evidence that the exact
+# unsanitized device artifact is race-free.
+option(KSI_PSDK_APP_ENABLE_SANITIZERS
+       "instrument the PSDK app/HIL-1S tests with ASan+UBSan" OFF)
+option(KSI_PSDK_APP_ENABLE_THREAD_SANITIZER
+       "instrument the PSDK app/HIL-1S tests with TSan (separate diagnostic)" OFF)
+if(KSI_PSDK_APP_ENABLE_SANITIZERS AND KSI_PSDK_APP_ENABLE_THREAD_SANITIZER)
+  message(FATAL_ERROR "ASan+UBSan and TSan diagnostic modes are mutually exclusive")
+endif()
+
+function(ksi_psdk_app_apply_diagnostics target_name)
+  if(KSI_PSDK_APP_ENABLE_SANITIZERS)
+    target_compile_options(${target_name} PRIVATE
+      -fsanitize=address,undefined -fno-sanitize-recover=all
+      -fno-omit-frame-pointer)
+    target_link_options(${target_name} PRIVATE
+      -fsanitize=address,undefined -fno-sanitize-recover=all)
+  elseif(KSI_PSDK_APP_ENABLE_THREAD_SANITIZER)
+    target_compile_options(${target_name} PRIVATE
+      -fsanitize=thread -fno-omit-frame-pointer -fno-pie)
+    target_link_options(${target_name} PRIVATE -fsanitize=thread -no-pie)
+  endif()
+endfunction()
+
 if(COMMAND ksi_check_manifold3_toolchain_drift)
   ksi_check_manifold3_toolchain_drift()
 endif()
@@ -175,6 +237,129 @@ target_include_directories(ksi_psdk_app SYSTEM PRIVATE
 )
 target_compile_options(ksi_psdk_app PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(ksi_psdk_app PRIVATE ksi_edge_runtime ksi_psdk_static Threads::Threads m dl)
+ksi_psdk_app_apply_diagnostics(ksi_psdk_app)
+
+if(KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION)
+  if(NOT KSI_TARGET_MANIFOLD3)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON requires KSI_TARGET_MANIFOLD3=ON")
+  endif()
+  if(NOT KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID OR
+     NOT KSI_PSDK_APP_EDGE_UPLINK_SITE_ID OR
+     NOT KSI_PSDK_APP_EDGE_DEVICE_ID OR
+     NOT KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID OR
+     NOT KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID)
+    message(FATAL_ERROR
+      "EDGE_UPLINK companion requires ORGANIZATION_ID, SITE_ID, EDGE_DEVICE_ID, SUBJECT_PORT_ID, and MOP_CHANNEL_ID")
+  endif()
+  if(NOT KSI_PSDK_APP_EDGE_UPLINK_SOCKET_PATH STREQUAL "/run/ksi/psdk.sock")
+    message(FATAL_ERROR
+      "HIL-1S production companion endpoint must be /run/ksi/psdk.sock")
+  endif()
+  if(NOT "${KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID}" MATCHES "^[1-9][0-9]*$" OR
+     KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID GREATER 65535)
+    message(FATAL_ERROR "EDGE_UPLINK_MOP_CHANNEL_ID must be a decimal integer in 1..65535")
+  endif()
+  foreach(_uplink_value IN ITEMS KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID
+                                 KSI_PSDK_APP_EDGE_UPLINK_SITE_ID
+                                 KSI_PSDK_APP_EDGE_DEVICE_ID
+                                 KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID)
+    string(LENGTH "${${_uplink_value}}" _uplink_value_length)
+    if(NOT "${${_uplink_value}}" MATCHES "^[A-Za-z0-9][A-Za-z0-9_.-]*$" OR
+       _uplink_value_length GREATER 200)
+      message(FATAL_ERROR "${_uplink_value} must be an exact bounded identifier")
+    endif()
+  endforeach()
+  if(KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID STREQUAL "legacy")
+    message(FATAL_ERROR "legacy organization cannot configure the runtime companion")
+  endif()
+  target_sources(ksi_psdk_app PRIVATE src/runtime/psdk_route_companion.cpp)
+  target_compile_definitions(ksi_psdk_app PRIVATE
+    KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED=1
+    "KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID=\"${KSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID}\""
+    "KSI_PSDK_APP_EDGE_UPLINK_SITE_ID=\"${KSI_PSDK_APP_EDGE_UPLINK_SITE_ID}\""
+    "KSI_PSDK_APP_EDGE_UPLINK_EDGE_DEVICE_ID=\"${KSI_PSDK_APP_EDGE_DEVICE_ID}\""
+    "KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID=\"${KSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID}\""
+    "KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID=${KSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID}"
+    "KSI_PSDK_APP_EDGE_UPLINK_SOCKET_PATH=\"${KSI_PSDK_APP_EDGE_UPLINK_SOCKET_PATH}\""
+  )
+else()
+  target_compile_definitions(ksi_psdk_app PRIVATE
+    KSI_PSDK_APP_EDGE_UPLINK_COMPANION_CONFIGURED=0)
+endif()
+
+# A PSDK process is either the HIL-1S bound Accept server or the HIL-1P
+# explicit remote Connect client. The two modes cannot connect a server to
+# itself or turn a compiled receiver into a synthetic connection.
+if(KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER)
+  if(NOT KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID OR
+     NOT KSI_PSDK_APP_MOP_PEER_SITE_ID OR
+     NOT KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID OR
+     NOT KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID OR
+     NOT KSI_PSDK_APP_MOP_PEER_CHANNEL_ID OR
+     NOT KSI_PSDK_APP_MOP_PEER_ADDRESS)
+    message(FATAL_ERROR
+      "MOP peer receiver requires ORGANIZATION_ID, SITE_ID, EDGE_DEVICE_ID, SUBJECT_PORT_ID, CHANNEL_ID, and ADDRESS")
+  endif()
+  if(NOT "${KSI_PSDK_APP_MOP_PEER_CHANNEL_ID}" MATCHES "^[1-9][0-9]*$" OR
+     KSI_PSDK_APP_MOP_PEER_CHANNEL_ID GREATER 65535)
+    message(FATAL_ERROR "MOP_PEER_CHANNEL_ID must be a decimal integer in 1..65535")
+  endif()
+  foreach(_peer_value IN ITEMS KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID
+                               KSI_PSDK_APP_MOP_PEER_SITE_ID
+                               KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID
+                               KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID)
+    string(LENGTH "${${_peer_value}}" _peer_value_length)
+    if(NOT "${${_peer_value}}" MATCHES "^[A-Za-z0-9][A-Za-z0-9_.-]*$" OR
+       _peer_value_length GREATER 200)
+      message(FATAL_ERROR "${_peer_value} must be an exact bounded identifier")
+    endif()
+  endforeach()
+  if(KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID STREQUAL "legacy")
+    message(FATAL_ERROR "legacy organization cannot configure the MOP peer receiver")
+  endif()
+  set(_mop_peer_address_value "")
+  if(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "PAYLOAD_PORT_NO1" OR
+     KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO1")
+    set(_mop_peer_address_value 1)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "PAYLOAD_PORT_NO2" OR
+         KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO2")
+    set(_mop_peer_address_value 2)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "PAYLOAD_PORT_NO3" OR
+         KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO3")
+    set(_mop_peer_address_value 3)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO4")
+    set(_mop_peer_address_value 4)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO5")
+    set(_mop_peer_address_value 5)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO6")
+    set(_mop_peer_address_value 6)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO7")
+    set(_mop_peer_address_value 7)
+  elseif(KSI_PSDK_APP_MOP_PEER_ADDRESS STREQUAL "EXTENSION_PORT_V2_NO8")
+    set(_mop_peer_address_value 8)
+  else()
+    message(FATAL_ERROR
+      "MOP_PEER_ADDRESS must identify the approved PSDK Accept server, not RC or Cloud API")
+  endif()
+  if(NOT KSI_TARGET_MANIFOLD3)
+    message(FATAL_ERROR
+      "KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON requires KSI_TARGET_MANIFOLD3=ON")
+  endif()
+  target_sources(ksi_psdk_app PRIVATE src/runtime/psdk_mop_peer_receiver.cpp)
+  target_compile_definitions(ksi_psdk_app PRIVATE
+    KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED=1
+    "KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID=\"${KSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID}\""
+    "KSI_PSDK_APP_MOP_PEER_SITE_ID=\"${KSI_PSDK_APP_MOP_PEER_SITE_ID}\""
+    "KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID=\"${KSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID}\""
+    "KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID=\"${KSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID}\""
+    "KSI_PSDK_APP_MOP_PEER_CHANNEL_ID=${KSI_PSDK_APP_MOP_PEER_CHANNEL_ID}"
+    "KSI_PSDK_APP_MOP_PEER_ADDRESS=${_mop_peer_address_value}"
+  )
+else()
+  target_compile_definitions(ksi_psdk_app PRIVATE
+    KSI_PSDK_APP_MOP_PEER_RECEIVER_CONFIGURED=0)
+endif()
 
 # The Camera Manager adapter has an injected DJI function table, so this test
 # exercises list/callback/rights contracts without a physical aircraft.  It is
@@ -183,6 +368,8 @@ target_link_libraries(ksi_psdk_app PRIVATE ksi_edge_runtime ksi_psdk_static Thre
 option(KSI_PSDK_APP_BUILD_TESTS "build PSDK app adapter contract tests" OFF)
 if(KSI_PSDK_APP_BUILD_TESTS)
   enable_testing()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_program(KSI_UV_EXECUTABLE uv REQUIRED)
   add_executable(ksi_psdk_camera_media_source_tests
     tests/dji_camera_media_source_tests.cpp
     src/media/dji_camera_media_source.cpp
@@ -199,6 +386,63 @@ if(KSI_PSDK_APP_BUILD_TESTS)
   )
   add_test(NAME ksi_psdk_camera_media_source_contract
            COMMAND ksi_psdk_camera_media_source_tests)
+
+  add_executable(ksi_psdk_route_companion_tests
+    tests/psdk_route_companion_tests.cpp
+    src/runtime/psdk_route_companion.cpp
+    src/runtime/psdk_mop_peer_receiver.cpp
+  )
+  target_include_directories(ksi_psdk_route_companion_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  target_include_directories(ksi_psdk_route_companion_tests SYSTEM PRIVATE
+    "${KSI_PSDK_ROOT}/psdk_lib/include"
+  )
+  target_compile_options(ksi_psdk_route_companion_tests PRIVATE
+    -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(ksi_psdk_route_companion_tests PRIVATE
+    ksi_psdk_static Threads::Threads m dl)
+  ksi_psdk_app_apply_diagnostics(ksi_psdk_route_companion_tests)
+  set(_ksi_psdk_test_launcher)
+  set(_ksi_psdk_tsan_setarch "")
+  if(KSI_PSDK_APP_ENABLE_THREAD_SANITIZER)
+    find_program(KSI_SETARCH_EXECUTABLE setarch REQUIRED)
+    set(_ksi_psdk_test_launcher
+        "${KSI_SETARCH_EXECUTABLE}" "${CMAKE_SYSTEM_PROCESSOR}" -R)
+    set(_ksi_psdk_tsan_setarch "${KSI_SETARCH_EXECUTABLE}")
+  endif()
+  add_test(NAME ksi_psdk_route_companion_contract
+           COMMAND ${_ksi_psdk_test_launcher}
+                   "$<TARGET_FILE:ksi_psdk_route_companion_tests>")
+  add_executable(ksi_psdk_mop_peer_receiver_tests
+    tests/psdk_mop_peer_receiver_tests.cpp
+    src/runtime/psdk_mop_peer_receiver.cpp
+  )
+  target_include_directories(ksi_psdk_mop_peer_receiver_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  target_include_directories(ksi_psdk_mop_peer_receiver_tests SYSTEM PRIVATE
+    "${KSI_PSDK_ROOT}/psdk_lib/include"
+  )
+  target_compile_options(ksi_psdk_mop_peer_receiver_tests PRIVATE
+    -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(ksi_psdk_mop_peer_receiver_tests PRIVATE
+    ksi_psdk_static Threads::Threads m dl)
+  ksi_psdk_app_apply_diagnostics(ksi_psdk_mop_peer_receiver_tests)
+  add_test(NAME ksi_psdk_mop_peer_receiver_contract
+           COMMAND ${_ksi_psdk_test_launcher}
+                   "$<TARGET_FILE:ksi_psdk_mop_peer_receiver_tests>")
+  add_test(
+    NAME ksi_gateway_psdk_companion_unix_interop
+    COMMAND "${CMAKE_COMMAND}" -E env
+            "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/../../services/dji-gateway/src:${CMAKE_CURRENT_SOURCE_DIR}/../../services/core/src:${CMAKE_CURRENT_SOURCE_DIR}/../../packages/domain/src"
+            "KSI_PSDK_TSAN_SETARCH=${_ksi_psdk_tsan_setarch}"
+            "${KSI_UV_EXECUTABLE}" run --isolated --all-packages --all-groups --locked python
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/gateway_psdk_companion_interop.py"
+            --fixture "$<TARGET_FILE:ksi_psdk_route_companion_tests>"
+  )
+  set_tests_properties(ksi_gateway_psdk_companion_unix_interop PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 endif()
 
 # Candidate S1 is compiled only for an approval-bound HIL build. Merely placing
@@ -250,6 +494,7 @@ if(KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY)
             edge/psdk-app/src
             edge/manifold-runtime/src
             edge/manifold-runtime/include
+            --vendor-archive "${KSI_PSDK_LIB_PATH}"
             --allow-mission-execution "${KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST}"
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/edge/check_shadow_flight_boundary.py"
@@ -257,10 +502,28 @@ if(KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY)
             edge/psdk-app/src
             edge/manifold-runtime/src
             edge/manifold-runtime/include
+            --vendor-archive "${KSI_PSDK_LIB_PATH}"
             --require-zero-defined-symbols
             --allow-mission-execution "${KSI_PSDK_APP_WAYLINE_UPLOAD_ALLOWLIST}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
     COMMENT "Verifying the C2-S1 upload-only source and ELF boundary"
+    VERBATIM
+  )
+endif()
+if((KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION OR
+    KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER) AND
+   NOT KSI_PSDK_APP_ENABLE_WAYLINE_UPLOAD_ONLY)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_custom_command(TARGET ksi_psdk_app POST_BUILD
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/edge/check_shadow_flight_boundary.py"
+            "$<TARGET_FILE:ksi_psdk_app>"
+            edge/psdk-app/src
+            edge/manifold-runtime/src
+            edge/manifold-runtime/include
+            --vendor-archive "${KSI_PSDK_LIB_PATH}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    COMMENT "Verifying non-actuating HIL-1S/HIL-1P PSDK/MOP source and ELF boundary"
     VERBATIM
   )
 endif()

@@ -82,7 +82,9 @@ from ksi_event_contracts.vertical_reference import (
 
 from ksi_processing_controller.capture_time import extract_capture_time
 from ksi_processing_controller.core_client import (
+    ArtifactObjectBinding,
     ArtifactSubmission,
+    ArtifactUploadTarget,
     CoreClient,
     CoreClientError,
     JobInput,
@@ -99,11 +101,17 @@ from ksi_processing_controller.odm import (
     SourceImage,
     assert_engine_matches,
     assert_ground_control_matches,
+    digest_archive_entry,
     iter_archive_entry_bytes,
     plan_artifacts,
     run_to_completion,
 )
 from ksi_processing_controller.odm_masking import ImageDetector, build_mask_for_photo
+from ksi_processing_controller.workspace import (
+    attempt_workspace,
+    cleanup_attempt_workspace,
+    lease_or_compat_handle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +247,14 @@ def _cleanup_work_files(
             now_message(f"[{job_id}] 작업 파일 정리 실패(무시하고 계속): {path} — {exc}")
 
 
-def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> None:
+def _upload(
+    client: httpx.Client,
+    url: str,
+    archive_path: Path,
+    entry: str,
+    *,
+    required_headers: tuple[tuple[str, str], ...] = (),
+) -> None:
     """아카이브 안 파일 하나를 presigned PUT 으로 흘려보낸다.
 
     **바이트가 Core 를 통과하지 않는다** — 포인트 클라우드는 GB 단위라 Core 를
@@ -260,15 +275,60 @@ def _upload(client: httpx.Client, url: str, archive_path: Path, entry: str) -> N
             content_length = archive.getinfo(entry).file_size
         except KeyError as exc:
             raise OdmError(f"아카이브에 {entry} 가 없다") from exc
+    headers = {
+        "Content-Type": _ARTIFACT_CONTENT_TYPE,
+        "Content-Length": str(content_length),
+    }
+    headers.update(dict(required_headers))
     response = client.put(
         url,
         content=iter_archive_entry_bytes(archive_path, entry),
-        headers={
-            "Content-Type": _ARTIFACT_CONTENT_TYPE,
-            "Content-Length": str(content_length),
-        },
+        headers=headers,
     )
     response.raise_for_status()
+
+
+def _archive_object_binding(
+    archive_path: Path, entry: str, *, object_key: str
+) -> ArtifactObjectBinding:
+    """Measure the exact uploaded entry before Core signs a digest-bound PUT."""
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            size_bytes = archive.getinfo(entry).file_size
+        except KeyError as exc:
+            raise OdmError(f"아카이브에 {entry} 가 없다") from exc
+        digest = digest_archive_entry(archive, entry)
+    return ArtifactObjectBinding(
+        name=posixpath.basename(entry), object_key=object_key, sha256=digest,
+        size_bytes=size_bytes, content_type=_ARTIFACT_CONTENT_TYPE,
+    )
+
+
+def _presign_artifact_upload(
+    core: CoreClient,
+    job_id: str,
+    *,
+    artifact_id: str,
+    filename: str | None,
+    binding: ArtifactObjectBinding,
+) -> ArtifactUploadTarget:
+    """Use the fenced integrity request; retain old in-process test doubles."""
+    try:
+        return core.presign_artifact_upload(
+            job_id,
+            artifact_id=artifact_id,
+            content_type=_ARTIFACT_CONTENT_TYPE,
+            filename=filename,
+            sha256=binding.sha256,
+            size_bytes=binding.size_bytes,
+        )
+    except TypeError as exc:
+        if "sha256" not in str(exc) and "size_bytes" not in str(exc):
+            raise
+        return core.presign_artifact_upload(
+            job_id, artifact_id=artifact_id, content_type=_ARTIFACT_CONTENT_TYPE,
+            filename=filename,
+        )
 
 
 def run_job(
@@ -310,10 +370,11 @@ def run_job(
         timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
     )
     own_client = http_client is None
-    work_dir.mkdir(parents=True, exist_ok=True)
-
     now_message(f"[{job_id}] lease 취득")
-    core.acquire_lease(job_id)
+    lease = lease_or_compat_handle(
+        core.acquire_lease(job_id), work_kind="processing", resource_id=job_id
+    )
+    attempt_dir = attempt_workspace(work_dir, lease)
     job_input = core.get_input(job_id)
 
     # 이 작업이 work_dir 에 실제로 만든 파일 — 성공이든 실패든 finally 에서
@@ -341,7 +402,7 @@ def run_job(
         measurements: list[MeasuredImage] = []
         masks: list[MaskImage] = []
         for media in job_input.media:
-            local_path = work_dir / media.media_id
+            local_path = attempt_dir / media.media_id
             downloaded_paths.append(local_path)
             _download(fetch, media.download_url, local_path)
             sha256, size, width, height = measure_image(local_path)
@@ -372,7 +433,7 @@ def run_job(
         now_message(f"[{job_id}] 실측 {len(measurements)}장 완료 — 대조 보고")
         if dynamic_object_detector is not None:
             now_message(f"[{job_id}] 동적 객체 마스크 {len(masks)}장 생성")
-        core.verify_source_media(job_input.mission_id, measurements)
+        core.verify_source_media(job_id, measurements)
 
         # ── 4-b. 기준점 파일 — 받아서 **선언과 내용을 대조한 뒤** 넘긴다 ──
         #
@@ -382,7 +443,7 @@ def run_job(
         # 그 어긋남은 화면 어디에도 안 보인다. 여기서 막는다.
         ground_control: GroundControlFile | None = None
         if job_input.ground_control is not None:
-            gc_path = work_dir / GROUND_CONTROL_FILENAME
+            gc_path = attempt_dir / GROUND_CONTROL_FILENAME
             downloaded_paths.append(gc_path)
             _download(fetch, job_input.ground_control.download_url, gc_path)
             content = gc_path.read_bytes()
@@ -416,7 +477,8 @@ def run_job(
             # 걸리는 실제 완주보다 먼저 "행 처리"로 오판해 실패한다. 실물
             # NodeODM 대상 완주 시도에서 실제로 이렇게 터졌다(2026-08-06).
             time.sleep(poll_interval_seconds)
-            core.acquire_lease(job_id)
+            renew = getattr(core, "renew_lease", core.acquire_lease)
+            renew(job_id)
 
         uuid = run_to_completion(
             odm, images,
@@ -429,7 +491,7 @@ def run_job(
         now_message(f"[{job_id}] ODM 완주 uuid={uuid}")
 
         # ── 6. 산출물 계보 등록 ─────────────────────────────────────────
-        archive_path = work_dir / "all.zip"
+        archive_path = attempt_dir / "all.zip"
         downloaded_paths.append(archive_path)
         odm.download_archive(uuid, archive_path)
         # None 이면(프로덕션 기본 경로) 완주한 아카이브 자신에서 읽는다 — 지어낸
@@ -448,26 +510,42 @@ def run_job(
             # 없는" 창이 없는 것처럼, 부속 파일도 전부 올린 뒤에야 등록한다
             # (mesh-multi-file-artifact-persistence — 이전엔 이 갈래 자체를
             # 등록하지 않고 건너뛰었다).
-            target = core.presign_artifact_upload(
-                job_id,
-                artifact_id=report.artifact_id,
-                content_type=_ARTIFACT_CONTENT_TYPE,
+            primary_preflight = _archive_object_binding(
+                archive_path, report.archive_entry, object_key="pending"
             )
-            _upload(fetch, target.upload_url, archive_path, report.archive_entry)
+            target = _presign_artifact_upload(
+                core, job_id, artifact_id=report.artifact_id, filename=None,
+                binding=primary_preflight,
+            )
+            primary_object = _archive_object_binding(
+                archive_path, report.archive_entry, object_key=target.object_key
+            )
+            _upload(
+                fetch, target.upload_url, archive_path, report.archive_entry,
+                required_headers=target.required_headers,
+            )
 
+            auxiliary_objects: list[ArtifactObjectBinding] = []
             for aux_basename in report.auxiliary_files:
                 # 부속 파일은 주 파일과 같은 아카이브 디렉터리에 있다
                 # (odm.plan_artifacts 가 그 조건으로 찾은 것들이다) — 그
                 # 디렉터리 + basename 으로 아카이브 내부 전체 경로를 되짚는다.
                 directory = posixpath.dirname(report.archive_entry)
                 aux_archive_entry = posixpath.join(directory, aux_basename)
-                aux_target = core.presign_artifact_upload(
-                    job_id,
-                    artifact_id=report.artifact_id,
-                    content_type=_ARTIFACT_CONTENT_TYPE,
-                    filename=aux_basename,
+                aux_preflight = _archive_object_binding(
+                    archive_path, aux_archive_entry, object_key="pending"
                 )
-                _upload(fetch, aux_target.upload_url, archive_path, aux_archive_entry)
+                aux_target = _presign_artifact_upload(
+                    core, job_id, artifact_id=report.artifact_id, filename=aux_basename,
+                    binding=aux_preflight,
+                )
+                auxiliary_objects.append(_archive_object_binding(
+                    archive_path, aux_archive_entry, object_key=aux_target.object_key
+                ))
+                _upload(
+                    fetch, aux_target.upload_url, archive_path, aux_archive_entry,
+                    required_headers=aux_target.required_headers,
+                )
 
             core.register_artifact(
                 job_id,
@@ -488,6 +566,8 @@ def run_job(
                     vertical_reference=(
                         _ODM_VERTICAL_REFERENCE if report.crs is not None else None
                     ),
+                    primary_object=primary_object,
+                    auxiliary_objects=tuple(auxiliary_objects),
                 ),
             )
             registered += 1
@@ -516,6 +596,10 @@ def run_job(
         raise WorkerRunError(f"[{job_id}] 실행 실패: {exc}") from exc
     finally:
         _cleanup_work_files(job_id, downloaded_paths, now_message)
+        try:
+            cleanup_attempt_workspace(work_dir, attempt_dir)
+        except OSError as exc:
+            now_message(f"[{job_id}] attempt workspace 정리 실패(무시하고 계속): {exc}")
         if own_client:
             fetch.close()
 

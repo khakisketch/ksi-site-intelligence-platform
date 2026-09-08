@@ -791,6 +791,82 @@ export interface SiteWorkspaceView {
   nextAction: WorkspaceNextAction;
 }
 
+/** GET /v1/sites/{siteId}/civil-readiness — read-only civil workflow projection. */
+export const CIVIL_READINESS_STATUSES = [
+  "SYSTEM_UNAVAILABLE",
+  "FIRST_EPOCH_REQUIRED",
+  "SECOND_EPOCH_REQUIRED",
+  "PAIR_BLOCKED",
+  "PAIR_COMPATIBLE",
+] as const;
+export type CivilReadinessStatus = (typeof CIVIL_READINESS_STATUSES)[number];
+
+export const CIVIL_DESIGN_SURFACE_READINESS_STATUSES = [
+  "SYSTEM_UNAVAILABLE",
+  "NOT_REGISTERED",
+  "VERIFICATION_REQUIRED",
+  "VERIFIED_AVAILABLE",
+] as const;
+export type CivilDesignSurfaceReadinessStatus =
+  (typeof CIVIL_DESIGN_SURFACE_READINESS_STATUSES)[number];
+
+/** INV-053 codes returned by Core's shared quantitative preflight. */
+export const CIVIL_PREFLIGHT_REASONS = [
+  "ANALYSIS_NOT_READY",
+  "PROCESSING_PROFILE_UNKNOWN",
+  "PROCESSING_PROFILE_MISMATCH",
+  "NO_COMMON_ARTIFACT_FAMILY",
+  "SOURCE_LINEAGE_GAP",
+  "CRS_MISMATCH",
+  "VERTICAL_REFERENCE_MISMATCH",
+  "DESIGN_SURFACE_NOT_VERIFIED",
+  "DESIGN_NORMALIZATION_MISMATCH",
+] as const;
+export type CivilPreflightReason = (typeof CIVIL_PREFLIGHT_REASONS)[number];
+
+export type CivilReadinessReason =
+  | "SYSTEM_UNAVAILABLE"
+  | "FIRST_EPOCH_REQUIRED"
+  | "SECOND_EPOCH_REQUIRED"
+  | CivilPreflightReason;
+
+export interface CivilEpochPairReadinessView {
+  baselineJobId: string | null;
+  currentJobId: string | null;
+  compatible: boolean;
+  reason: CivilReadinessReason | null;
+  detail: string;
+}
+
+export interface CivilDesignSurfaceReadinessView {
+  status: CivilDesignSurfaceReadinessStatus;
+  totalSurfaceCount: number;
+  verifiedSurfaceCount: number;
+  detail: string;
+}
+
+export interface CivilReadinessNextAction {
+  label: string;
+  href: string | null;
+  reason: string;
+}
+
+/**
+ * This does not encode field acceptance, survey accuracy, a processing result,
+ * flight state, or device capability. `PAIR_COMPATIBLE` remains a candidate;
+ * the exact comparison/design request repeats Core's preflight.
+ */
+export interface CivilReadinessView {
+  schemaVersion: "1.0";
+  siteId: string;
+  status: CivilReadinessStatus;
+  succeededEpochCount: number;
+  pair: CivilEpochPairReadinessView;
+  designSurface: CivilDesignSurfaceReadinessView;
+  nextAction: CivilReadinessNextAction;
+  limitations: ["OPERATIONAL_RELATIVE_QUANTITY_ONLY", "FIELD_ACCEPTANCE_NOT_INCLUDED"];
+}
+
 export interface SiteBriefing {
   schemaVersion: "1.0";
   briefingId: string;

@@ -47,6 +47,7 @@ from ksi_processing_controller.core_client import (
     DesignSurfaceMeasurement,
 )
 from ksi_processing_controller.landxml import LandXmlError, normalise_landxml_to_geotiff
+from ksi_processing_controller.workspace import cleanup_attempt_workspace, unleased_workspace
 
 if TYPE_CHECKING:
     from rasterio.io import DatasetReader
@@ -233,8 +234,11 @@ def verify_design_surface(
     반환값은 ``VERIFIED``/``REJECTED``/``ALREADY_JUDGED`` 중 하나다 — 거부도
     이 함수에게는 정상 완주다(모듈 docstring §3).
     """
-    local_path = work_dir / f"{design_surface_id}.source"
-    canonical_path = work_dir / f"{design_surface_id}.canonical.tif"
+    attempt_dir = unleased_workspace(
+        work_dir, work_kind="design-surface-verification", resource_id=design_surface_id
+    )
+    local_path = attempt_dir / f"{design_surface_id}.source"
+    canonical_path = attempt_dir / f"{design_surface_id}.canonical.tif"
     try:
         download_design_surface(download_url, destination=local_path, http_client=http_client)
         if source_format == "landxml":
@@ -294,6 +298,7 @@ def verify_design_surface(
         # ``missing_ok=True`` 로 안전하다.
         local_path.unlink(missing_ok=True)
         canonical_path.unlink(missing_ok=True)
+        cleanup_attempt_workspace(work_dir, attempt_dir)
 
 
 __all__ = [

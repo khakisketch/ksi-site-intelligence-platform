@@ -1860,38 +1860,21 @@ def build_source_media_router(store: SourceMediaStore, storage: EvidenceStorage)
         response: Response,
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> SourceMediaVerifyResponse:
-        """워커가 실측값을 보고하고 **Core 가** 신고값과 대조한다.
+        """Deprecated unfenced worker surface.
 
-        권한이 ``PROCESSING_WORK`` 인 것이 이 표면의 핵심이다 — 사진을 올린
-        주체(``MISSIONS_ISSUE``)가 자기 신고값을 스스로 검증할 수 없다.
+        Worker Correctness TASK-1 moved processing verification to
+        ``POST /v1/processing-jobs/{jobId}/verify-input``.  This mission-only
+        route cannot prove a current lease generation, so it must not mutate
+        source authority after multi-worker fencing is enabled.
         """
-        result = store.verify(
-            mission_id,
-            [
-                SourceMediaMeasurement(
-                    media_id=m.media_id,
-                    sha256=m.sha256,
-                    size_bytes=m.bytes,
-                    width=m.width,
-                    height=m.height,
-                    capture_time=m.capture_time.to_domain(),
-                )
-                for m in request.measurements
-            ],
-            verified_by=principal.principal_id,
-            now=datetime.now(UTC),
-        )
-        response.status_code = _VERIFY_STATUS[result.verdict]
-        if result.verdict is SourceBundleVerifyVerdict.STORE_UNAVAILABLE:
-            response.headers["Retry-After"] = "30"
-        comparison = result.comparison
+        del mission_id, request, principal
+        response.status_code = 409
         return SourceMediaVerifyResponse(
-            verdict=result.verdict.value,
-            detail=result.detail,
-            bundle=_to_bundle_view(result.bundle) if result.bundle is not None else None,
-            mismatched=list(comparison.mismatched) if comparison else [],
-            missing=list(comparison.missing) if comparison else [],
-            unexpected=list(comparison.unexpected) if comparison else [],
+            verdict="LEASE_FENCE_REQUIRED",
+            detail=(
+                "unfenced mission verification is disabled; use the current "
+                "processing-job lease endpoint"
+            ),
         )
 
     @router.get("/{mission_id}/source-media", response_model=SourceMediaBundleView)

@@ -1,5 +1,76 @@
 # Current Handoff
 
+## 2026-09-05 — Audited R3 final triplet locally present; validation and delivery gates remain
+
+The final local triplet is `refactor(repo): move import-only processing libraries`,
+`docs(repo): record service-package migration lineage`, and
+`test(repo): enforce service-package boundary`. The exact three import-only libraries now have canonical
+`packages/` destinations; the migration manifest, ADR-KSI-034, and `REPOSITORY_STRUCTURE.md` route their
+current location while preserving historical `services/` lineage. Snapshots `ca723d41` and `b23ee101`
+remain local-only recovery evidence. The source main WIP and empty index remain preserved.
+
+Next operator sequence: run targeted and full local gates plus independent integration/evidence review;
+push one integration ref without force; create a Draft PR; wait for required remote CI; then convert to
+Ready. No full-local or remote PASS is claimed by this state update.
+
+No merge, deployment, credential, device, physical HIL, or field action occurred. `HIL_ROUTE_1` remains
+`BLOCKED_HARDWARE_TOPOLOGY`; `PEER_TOPOLOGY` remains `UNRESOLVED`; remote/deploy/field evidence is not
+verified. INV-003 and INV-054 remain enforced by later normalization/pin gates.
+---
+
+## 2026-09-03 — HIL-1R software is closed; physical Route-1 remains topology-blocked
+
+The implementation now matches the Site Intelligence architecture. Central servers do not ingest a
+continuous drone preview stream for the core product flow. PSDK Liveview stays on Manifold for local
+acquisition quality/perception; the HIL-1 Route-1 seam carries only bounded synthetic EventBundle
+metadata. Original photos, RTK/POS and mapping artifacts retain their separate Mission-bound
+upload/import and processing path.
+
+The repository now has a field-capable raw HIL schema/importer/verifier, deterministic shutdown,
+Core-owned exact TTL enforcement, explicit refresh margin, actual observation/preflight secret
+separation, peer lifecycle/idempotency and hostile-input regressions, and stronger camera/gimbal
+link-level non-actuating checks. CI definitions include host companion/peer/Unix interop, ASan+UBSan and
+canonical ARM64 companion/peer gates. Local validation passed `4673/24 skipped`, Ruff, Mypy `470`, lock,
+diff, pin, host sanitizer and aarch64 ABI/MOP/non-actuating checks.
+
+Do not schedule physical HIL yet. Pinned DJI PSDK 3.16 comments and samples identify MSDK/OSDK clients
+for the generic server and a DJI camera payload for the sole PSDK Connect sample; they do not prove the
+current two-PSDK payload hypothesis. A supported endpoint/channel/address must be documented or the
+exact hypothesis separately approved with both physical endpoints available. Final DPK packaging also
+needs a DJI-issued `user_app_id`. Until then Route-1 is `BLOCKED_HARDWARE_TOPOLOGY`, external activation
+is blocked, and no physical capability is verified. No device, DPK, flag, authority, commit, push or
+deployment action was taken.
+
+---
+
+## 2026-09-01 — Civil pilot readiness is locally green; field acceptance remains gated
+
+The civil workflow now has one additive, read-only site-level readiness answer rather than a parallel
+comparison path. `GET /v1/sites/{siteId}/civil-readiness` reads the organization-scoped Site, newest two
+`SUCCEEDED` ProcessingJobs and design-surface inventory. It calls the existing `preflight_epoch_pair`
+rule for a candidate pair, preserves its typed blocker and never chooses a design revision or writes a
+comparison, Mission Contract, dispatch, device or capability record. Each actual compare/design request
+still performs preflight with its submitted inputs.
+
+The existing Site Data tab renders the Core result, next action and a clear boundary: it is not field
+acceptance, survey accuracy, settlement quantity, flight or device status. Missing dependencies render
+an unavailable/no-action state. No global navigation, Console redesign, DJI route, DPK or device surface
+was added.
+
+Local verification: focused Core/API/assembly `46 passed`; full Python `4238 passed / 24 skipped`; Ruff;
+Mypy `445` source files; Dashboard `63` Vitest files / `578` tests, ESLint, TypeScript and production
+build; full Playwright `66 passed / 14` intentional external-staging skips. The new fail-closed card was
+checked at 390/768/1024/1440. The working tree is intentionally uncommitted at this handoff; no push,
+remote CI, deployment or release was performed.
+
+The next non-code gate is not “make the card green”: it is an owner-approved Korean same-site two-epoch
+package with exact original-image, LandXML/design, CRS/vertical and independent-reference/checkpoint
+lineage. FIELD-0a remains `BLOCKED`, and DJI/Manifold capabilities stay `NOT_VERIFIED`/OFF until separate
+propeller-off HIL evidence exists. No raw data, credential or physical device action is authorized by this
+increment.
+
+---
+
 ## 2026-08-31 — Automatic source-media offload v1 is software-assembled; M4D HIL remains required
 
 The host attribution boundary from `ae7448b` is now connected to a real bounded Camera Manager adapter

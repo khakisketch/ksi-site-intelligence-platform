@@ -16,8 +16,10 @@
 # - TLS 종단·역방향 프록시: 배포 환경(로드밸런서·Ingress)마다 달라 여기서 정하지 않는다.
 #   Core 는 평문 HTTP 로 8000 을 연다 — **공개망에 그대로 노출하지 않는다.**
 # - 대시보드(apps/dashboard): Next.js 앱은 별도 배포 경로다.
-# - DJI Gateway: 실제 HIL에서 선택된 adapter가 아직 없으므로 빈 컨테이너나 가짜
-#   runtime을 만들지 않는다. capability는 모두 NOT_VERIFIED 상태다.
+# - DJI Gateway: HIL-1P runner/route-state producer는 별도 provisioning 대상으로
+#   존재하지만 실제 PSDK/MOP 장치 evidence가 아직 없다. 따라서 이 기본 조합에는
+#   서비스를 추가하지 않고 빈 컨테이너나 가짜 AVAILABLE 상태도 만들지 않는다.
+#   capability는 모두 NOT_VERIFIED 상태다.
 # - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)와
 #   **호스트 디렉터리 `deploy/signing-keys/`**(서명키) 둘이다. 서명키는 명명 볼륨이
 #   아니다(아래 core 의 volumes 주석 참조). 자세한 것은 docs/ops/DEPLOYMENT.md §8.

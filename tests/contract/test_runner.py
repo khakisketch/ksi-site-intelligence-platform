@@ -158,9 +158,13 @@ class _PullableFakeCoreClient(FakeComparisonCoreClient):
         assert self.conformance is not None
         self.conformance.transition_design_conformance(request_id, target, detail=detail)
 
-    def presign_diff_raster_upload(self, request_id: str) -> DiffRasterUploadTarget:
+    def presign_diff_raster_upload(
+        self, request_id: str, *, digest: str, size_bytes: int
+    ) -> DiffRasterUploadTarget:
         assert self.conformance is not None
-        return self.conformance.presign_diff_raster_upload(request_id)
+        return self.conformance.presign_diff_raster_upload(
+            request_id, digest=digest, size_bytes=size_bytes
+        )
 
     def verify_diff_raster(self, request_id: str, *, digest: str, size_bytes: int) -> Any:
         assert self.conformance is not None

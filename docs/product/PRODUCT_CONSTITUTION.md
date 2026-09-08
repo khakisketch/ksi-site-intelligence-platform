@@ -1,6 +1,10 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-09-04 — Repository Normalization R0-R2에서 PSDK Liveview, bounded
+>   `EDGE_UPLINK`, 원본 `MEDIA_PULL`/`MEDIA_UPLOAD`를 서로 다른 경로로 고정했다.
+>   현재 정상 원본 ingress는 SD/저장매체→현장 PC→KSI 웹 업로드이며 중앙 지속
+>   영상 수신은 핵심 제품 경로가 아니다(ADR-KSI-033).
 > - 2026-08-30 — 판매 가능한 Civil Operations pilot의 실행 재현성과 자원 보호를
 >   위해 제품 소유 runtime image의 OCI digest pin, Core 소유 versioned processing
 >   resource policy와 발급 snapshot 결속을 확정했다. 이는 비용·정확도·외부 Cloud
@@ -75,8 +79,8 @@ Console Home은 다현장 포트폴리오의 입구다. KSI가 실제 원장에�
 
 첫 유료 제품은 **반복 관측 → 촬영 품질 보충 → 시점 간 변화·공정·상대 물량 →
 근거형 질의 → 사람 승인 재관측**을 하나의 작업으로 닫는다. 계약 정산·측량급
-정확도는 독립 checkpoint 검증 없이는 주장하지 않는다. USB·SD·KMZ 파일 조작은
-정상 사용자 흐름이 아니라 장애 복구와 검증을 위한 전문가 경로다.
+정확도는 독립 checkpoint 검증 없이는 주장하지 않는다. 수동 KMZ 편집, USB 복구와
+raw 파일 조작은 정상 사용자 흐름이 아니라 장애 복구와 검증을 위한 전문가 경로다.
 
 첫 토목 처리의 기본 경로는 현장 PC가 SD/저장매체의 원본을 KSI 웹에 올리고,
 고정된 `ksi-odm-civil-v1` profile로 재구성한 뒤, 검증된 설계면과 시점 간 상대
@@ -98,6 +102,18 @@ container image의 정확한 version과 OCI digest를 고정한다. 새 처리 �
 policy로 판정한 뒤에만 발급한다. 클라이언트가 상한이나 override를 제출하지 않으며,
 발급 당시 snapshot/digest를 journal에 결속한다. 이 admission은 처리 성공·비용 확정·
 현장 정확도 또는 고객 데이터 배포 승인이 아니다(ADR-KSI-032).
+
+## 데이터 경로 경계
+
+- PSDK Liveview는 Manifold의 로컬 acquisition/perception 입력이다. Core·Vercel·
+  Operations Console이 지속 영상을 중앙 수신하는 것은 핵심 제품 경로가 아니다.
+- `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata와 object reference를 전달한다.
+  Liveview frame, 원본 사진, RTK/POS stream 또는 공간 산출물 bytes를 운반하지 않는다.
+- 현재 정상 원본 ingress는 `SD/저장매체 → 현장 PC → KSI 웹 업로드`다.
+- 자동 원본 반출은 별도 `MEDIA_PULL`과 `MEDIA_UPLOAD` capability다. 정확한 adapter,
+  권한, 조직/Site/Mission 결속과 물리 HIL 전에는 목표 경로이며 ordinary DPK는 OFF다.
+- ingress adapter가 바뀌어도 SourceMedia 봉인, Observation Epoch temporal policy,
+  Processing, 비교와 원본/파생 계보는 바뀌지 않는다(ADR-KSI-033, INV-018/051/060).
 
 ## 두 축과 폐루프
 

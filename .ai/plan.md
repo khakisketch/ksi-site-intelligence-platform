@@ -1,4 +1,166 @@
-# Current implementation plan (2026-08-31, automatic source-media offload v1)
+# Current implementation plan (2026-09-05, final R3 triplet locally present)
+
+Requirement IDs: `WIP-STATE-META`, `WIP-AUDIT-META`, `WIP-REPO-R3`, `R3-STR-001`, `R3-DOC-001`,
+`R3-REACH-001`, `R3-LINEAGE-001`, `R3-WIP-001`, `REQ-OPS-101`; gates `INV-003` and `INV-054`.
+
+Owner module: repository governance and import-only processing packages. The final responsibility-pure R3
+triplet is present locally: `refactor(repo): move import-only processing libraries`,
+`docs(repo): record service-package migration lineage`, and
+`test(repo): enforce service-package boundary`. Contracts affected: repository migration/conformance only;
+no product semantics.
+Reference assets: `ca723d41`, `b23ee101`, `2cc35c2`, the copied WIP audit/plan, ADR-KSI-034 and manifest.
+
+Acceptance: snapshots remain local-only; R3 is the final three; the lineage commit owns final Phase
+Registry normalization truth. Targeted/full local gates and independent integration/evidence review precede
+a non-force remote push, Draft PR, required CI, and Ready transition. No full-local or remote PASS is
+recorded here.
+
+Execution:
+
+1. [completed] Preserve audited state evidence and reviewed pre-R3 corrections from the local snapshots.
+2. [completed] Apply R3 as the final move, lineage, and enforcement triplet; current authority is the
+   migration manifest, ADR-KSI-034, and `REPOSITORY_STRUCTURE.md`.
+3. [next] Run targeted and full local gates plus independent integration/evidence review; push without force, create
+   Draft PR, wait for required CI, and mark Ready only if it passes.
+
+No merge/deploy/credentials/device/physical HIL/field action is authorized. `HIL_ROUTE_1` remains
+`BLOCKED_HARDWARE_TOPOLOGY`, `PEER_TOPOLOGY` remains `UNRESOLVED`, and remote/deploy/field is unverified.
+---
+
+# Previous implementation plan (2026-09-03, HIL-1R physical Route-1 readiness closure)
+
+Requirement IDs:
+
+- HIL-1R goal sections 1-22; `INV-011/012/040/041/042/060`.
+
+Owner module:
+
+- Core owns freshness-policy registration and ingress/replay enforcement.
+- DJI Gateway owns observation lifecycle, role-separated runtime credentials and Unix transport.
+- `edge/psdk-app` owns the non-actuating Route-1 companion/peer software seam.
+- Offline HIL tooling owns raw capture/digest verification only, never CAP authority.
+
+Acceptance criteria:
+
+- Raw physical evidence can represent honest PASS/FAIL/INCONCLUSIVE and cannot fabricate PASS.
+- Shutdown cannot leave an authoritative non-daemon publisher or skip later cleanup.
+- CI exercises host, sanitizer and canonical ARM64 build/ABI/pin/symbol/non-actuating boundaries.
+- Product media flow and unresolved DJI peer topology remain explicit and fail closed.
+
+Contracts affected:
+
+- New `capability-runtime-hil-evidence-v2`; exact Core freshness policy; no CAP-1..CAP-5 redesign.
+
+Reference assets and adoption decisions:
+
+- Pinned DJI PSDK 3.16 headers/samples are evidence, not product authority. Retain local Liveview for
+  acquisition work; retain SD/storage-to-field-PC/web as the normal original-media route; use
+  `EDGE_UPLINK` for bounded metadata only.
+
+Files/tests:
+
+- HIL schema/tool/docs; Core/Gateway runtime policy and shutdown; PSDK companion/peer tests and gates;
+  CI workflow. Targeted HIL/CAP-5, Mission/Worker, full Python, Ruff, Mypy, lock/diff/pin, host CTest,
+  sanitizer and ARM64 validation.
+
+HIL/real-device, license/data and rollback:
+
+- No hardware or DPK action. No credentials/customer media are introduced. Revert the scoped HIL-1R
+  changes together; never loosen evidence, freshness, credential or non-actuating gates to obtain green.
+
+Execution:
+
+1. [완료] Implement and audit v2 evidence capture/verifier and honest failure representation.
+2. [완료] Close shutdown, freshness, refresh-margin and token-role gaps.
+3. [완료] Pin peer lifecycle/idempotency, hostile Unix and camera/gimbal link boundaries.
+4. [완료] Add/reproduce host, sanitizer and ARM64 CI/build gates.
+5. [완료] Document Site Intelligence media boundary and unresolved physical topology.
+6. [완료] Run targeted/full/static validation.
+7. [외부 게이트] Obtain authoritative peer topology and DJI-issued DPK identity before any separately
+   approved physical HIL session.
+
+---
+
+# Previous implementation plan (2026-09-01, civil pilot closure — read-only site readiness)
+
+Requirement IDs:
+
+- `REQ-WRK-101`, `REQ-INT-101/102/103/104`, `REQ-SEC-101`, `REQ-UX-101`.
+- `INV-017/018/020/024/040/050/053/060`.
+
+Owner module:
+
+- Core owns the processing/design-readiness projection and reuses its existing compatibility preflight.
+- Dashboard owns the additive, non-mutating Site Data presentation.
+- Processing Controller, field kit, Pilot 2 and Manifold do not acquire a new responsibility.
+
+Acceptance criteria:
+
+- Latest two succeeded epochs are evaluated only by `preflight_epoch_pair`; missing or incompatible inputs
+  preserve its typed reason code and safe next action.
+- The route is organization-scoped, indistinguishable for unknown/foreign sites, and unavailable stores
+  fail closed rather than reporting readiness.
+- A compatible result is explicitly a candidate; it cannot create a comparison, pick a design surface,
+  modify a Mission Contract, dispatch, device or physical capability.
+- Existing Console IA and visual system stay intact, with responsive/no-overflow evidence at four viewports.
+
+Contracts affected:
+
+- `CivilReadinessView`, epoch/design readiness and next-action schemas in Core/OpenAPI/Dashboard typed API.
+- No ProcessingJob, DesignSurface, Mission Contract, dispatch, DJI or PSDK write contract changes.
+
+Reference assets:
+
+- ADR-KSI-030/031, `CIVIL_PROCESSING_V1_ACCEPTANCE.md`, existing `preflight_epoch_pair` and comparison
+  request contracts. Reference repositories remain read-only.
+
+Adoption decisions:
+
+- ADOPT the existing canonical preflight as the sole quantitative compatibility rule.
+- ADOPT a read-only projection over newest succeeded epochs and design inventory.
+- RETAIN manual SD/PC/Web intake and existing comparison/design request flows.
+- DEFER Korean field data evaluation, HIL, automatic media egress and any flight/device capability claim.
+
+Files changed:
+
+- `services/core/src/ksi_core/civil_readiness.py`, app assembly/mounting and OpenAPI contract.
+- Existing Site page plus narrowly scoped Dashboard API/presentation/tests.
+- Civil acceptance, Phase Registry and durable goal/handoff records.
+
+Tests:
+
+- Core projection/API/assembly/tenant-isolation and existing full Python regression.
+- Dashboard presentation/unit/full suite/lint/type/build plus full Playwright and four-viewport readiness
+  path.
+
+HIL or real-device assumptions:
+
+- None. The status does not infer field acceptance, survey accuracy, flight, motor, camera/gimbal, Pilot 2
+  import, Manifold state or media transfer.
+
+License/data implications:
+
+- No dependency, raw imagery, LandXML, credential, serial, GPS or customer data is added to Git.
+
+Rollback:
+
+- Omit the optional projector from app assembly or revert the route/card together; retain all existing
+  immutable ProcessingJob, DesignSurface, comparison and report records. Never loosen preflight to make a
+  readiness card look green.
+
+Execution:
+
+1. [완료] Audit authority, current code/acceptance gap and existing ledger states.
+2. [완료] Add the Core read-only projection, fail-closed assembly and OpenAPI/API contract.
+3. [완료] Add the additive Site Data card and typed presentation without IA redesign.
+4. [완료] Run targeted and full Core/Dashboard/browser regression, then sync acceptance/phase/goal records.
+5. [외부 게이트] Obtain lawful Korean same-site two-epoch source data, verified design/CRS/vertical lineage
+   and independent reference/checkpoint before product or field acceptance; separately perform HIL only
+   under a fresh owner-approved propeller-off session.
+
+---
+
+# Previous implementation plan (2026-08-31, automatic source-media offload v1)
 
 Requirement IDs:
 - `REQ-ACQ-103`, `REQ-INT-101`, `REQ-SEC-101`.

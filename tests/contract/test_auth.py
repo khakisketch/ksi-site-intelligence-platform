@@ -148,8 +148,115 @@ def test_edge_device_forbids_role() -> None:
         )
 
 
+def test_edge_route_observer_is_a_roleless_path_safe_single_permission_principal() -> None:
+    observer = Principal(
+        principal_id="route-observer-1",
+        kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+        role=None,
+        device_id="edge-1",
+    )
+    AuthRegistry(
+        [PrincipalTokenRecord(token_sha256=_digest("route-observer"), principal=observer)]
+    )
+    assert principal_permissions(observer) == frozenset({Permission.CAPABILITY_RUNTIME_OBSERVE})
+
+    for role, device_id in ((Role.VIEWER, "edge-1"), (None, None), (None, "edge/1")):
+        with pytest.raises(AuthRegistryError):
+            AuthRegistry(
+                [
+                    PrincipalTokenRecord(
+                        token_sha256=_digest(f"route-observer-{role}-{device_id}"),
+                        principal=Principal(
+                            principal_id="route-observer-invalid",
+                            kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                            role=role,
+                            device_id=device_id,
+                        ),
+                    )
+                ]
+            )
+
+    with pytest.raises(AuthRegistryError, match="principal_id.*경로-안전"):
+        AuthRegistry(
+            [
+                PrincipalTokenRecord(
+                    token_sha256=_digest("route-observer-invalid-principal-id"),
+                    principal=Principal(
+                        principal_id="route/observer",
+                        kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+                        role=None,
+                        device_id="edge-1",
+                    ),
+                )
+            ]
+        )
+
+    # This new constraint is limited to the new observer principal.  Existing
+    # principal identifiers retain their provisioning compatibility.
+    AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=_digest("legacy-gateway-principal-id"),
+                principal=Principal(
+                    principal_id="gateway/legacy",
+                    kind=PrincipalKind.GATEWAY_DEVICE,
+                    role=None,
+                    device_id="gateway-1",
+                ),
+            )
+        ]
+    )
+
+
+def test_edge_route_observer_is_denied_unrelated_edge_gateway_human_and_worker_routes() -> None:
+    token = "route-observer-token"
+    observer = Principal(
+        principal_id="route-observer-1",
+        kind=PrincipalKind.EDGE_ROUTE_OBSERVER,
+        role=None,
+        device_id="edge-1",
+    )
+    app = FastAPI()
+    mount_auth(
+        app,
+        AuthRegistry(
+            [PrincipalTokenRecord(token_sha256=_digest(token), principal=observer)]
+        ),
+    )
+    gateway_permission = require_permission(Permission.GATEWAY_CONNECTIVITY_WRITE)
+
+    @app.get("/v1/edge-only")
+    def edge_only(
+        _: Principal = Depends(require_permission(Permission.EDGE_SYNC_INGEST)),  # noqa: B008
+    ) -> dict[str, bool]:
+        return {"allowed": True}
+
+    @app.get("/v1/gateway-only")
+    def gateway_only(
+        _: Principal = Depends(gateway_permission),  # noqa: B008
+    ) -> dict[str, bool]:
+        return {"allowed": True}
+
+    @app.get("/v1/human-only")
+    def human_only(
+        _: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
+    ) -> dict[str, bool]:
+        return {"allowed": True}
+
+    @app.get("/v1/worker-only")
+    def worker_only(
+        _: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> dict[str, bool]:
+        return {"allowed": True}
+
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+    for path in ("/v1/edge-only", "/v1/gateway-only", "/v1/human-only", "/v1/worker-only"):
+        assert client.get(path, headers=headers).status_code == 403
+
+
 @pytest.mark.parametrize(
-    "bad_digest",
+"bad_digest",
     [
         "A" * 64,  # 대문자 거부
         "z" * 64,  # hex 밖 문자
@@ -322,6 +429,8 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EVENTS_TRIAGE,
             Permission.SITES_AUTONOMY_APPROVE,
             Permission.EQUIPMENT_SUPPORT_APPROVE,
+            Permission.CAPABILITY_PRODUCT_APPROVE,
+            Permission.CAPABILITY_ACTIVATE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
@@ -372,6 +481,7 @@ def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_ta
             Permission.EDGE_EVIDENCE_WRITE,
             Permission.EDGE_SOURCE_MEDIA_WRITE,
             Permission.EDGE_MISSION_KMZ_READ,
+            Permission.CAPABILITY_RUNTIME_OBSERVE,
         }
     )
 
@@ -433,6 +543,7 @@ def test_every_write_permission_has_a_role_without_it(perm: Permission) -> None:
         Permission.EDGE_EVIDENCE_WRITE,
         Permission.EDGE_SOURCE_MEDIA_WRITE,
         Permission.EDGE_MISSION_KMZ_READ,
+        Permission.CAPABILITY_RUNTIME_OBSERVE,
     ),
 )
 def test_no_role_has_edge_only_permission(permission: Permission) -> None:
@@ -708,6 +819,7 @@ def test_whoami_edge_device() -> None:
         "role": None,
         "deviceId": "rig-42",
         "permissions": [
+            "CAPABILITY_RUNTIME_OBSERVE",
             "EDGE_EVIDENCE_WRITE",
             "EDGE_MISSION_KMZ_READ",
             "EDGE_MISSION_PULL",

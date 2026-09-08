@@ -75,6 +75,28 @@ def test_profile_digest_mismatch_is_a_typed_blocker(tmp_path: Path) -> None:
     assert result.reason is CivilPreflightReason.PROCESSING_PROFILE_MISMATCH
 
 
+def test_disjoint_epoch_artifact_families_are_a_typed_blocker(tmp_path: Path) -> None:
+    baseline, current = _pair(tmp_path)
+    baseline_point_cloud = next(
+        artifact
+        for artifact in baseline.artifacts
+        if artifact.kind is ProcessingArtifactKind.POINT_CLOUD
+    )
+    current_dsm = next(
+        artifact
+        for artifact in current.artifacts
+        if artifact.kind is ProcessingArtifactKind.DSM
+    )
+
+    result = preflight_epoch_pair(
+        replace(baseline, artifacts=(baseline_point_cloud,)),
+        replace(current, artifacts=(current_dsm,)),
+        analysis_readiness=_ready,
+    )
+
+    assert result.reason is CivilPreflightReason.NO_COMMON_ARTIFACT_FAMILY
+
+
 def test_source_lineage_gap_is_a_typed_blocker(tmp_path: Path) -> None:
     baseline, current = _pair(tmp_path)
     first = baseline.artifacts[0]

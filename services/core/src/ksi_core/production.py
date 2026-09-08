@@ -78,6 +78,10 @@ from ksi_core.auth import (
     Role,
     TokenStatus,
 )
+from ksi_core.capability.runtime_projection import (
+    RuntimeRouteFreshnessPolicyV1,
+    TrustedRuntimeRouteConfigurationV1,
+)
 from ksi_core.device_attestation import load_device_attestation_registry
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.observability import configure_structured_logging
@@ -481,6 +485,86 @@ def _optional_edge_runtime_profiles() -> tuple[dict[str, Any], ...]:
     return tuple(profiles)
 
 
+def _optional_capability_freshness_policies() -> dict[
+    str, RuntimeRouteFreshnessPolicyV1
+]:
+    """Read Core-owned CAP-5 validity windows and refresh-margin identities."""
+
+    raw = os.environ.get("KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON")
+    if raw is None:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON 이 유효한 JSON 이 아니다"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            "KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON 은 object 여야 한다"
+        )
+    policies: dict[str, RuntimeRouteFreshnessPolicyV1] = {}
+    for policy_id, raw_policy in payload.items():
+        if not isinstance(policy_id, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*", policy_id
+        ) is None:
+            raise RuntimeError(
+                "KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON 은 "
+                "path-safe policy ID key만 허용한다"
+            )
+        try:
+            policy = RuntimeRouteFreshnessPolicyV1.model_validate(raw_policy)
+        except Exception as exc:  # noqa: BLE001 -- environment config fails closed
+            raise RuntimeError(
+                "KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON policy가 exact "
+                "RuntimeRouteFreshnessPolicyV1이 아니다"
+            ) from exc
+        if policy.freshness_policy_id != policy_id:
+            raise RuntimeError(
+                "KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON key와 policy ID가 다르다"
+            )
+        policies[policy_id] = policy
+    return policies
+
+
+def _optional_runtime_route_configurations(
+    *, freshness_policies: dict[str, RuntimeRouteFreshnessPolicyV1]
+) -> tuple[TrustedRuntimeRouteConfigurationV1, ...]:
+    """Read operator/Core-controlled exact route/port deployment configuration."""
+
+    raw = os.environ.get("KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON")
+    if raw is None:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON 이 유효한 JSON 이 아니다"
+        ) from exc
+    if not isinstance(payload, list):
+        raise RuntimeError("KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON 은 배열이어야 한다")
+    configurations: list[TrustedRuntimeRouteConfigurationV1] = []
+    for index, item in enumerate(payload):
+        try:
+            configuration = TrustedRuntimeRouteConfigurationV1.model_validate(item)
+        except Exception as exc:  # noqa: BLE001 -- environment config fails closed
+            raise RuntimeError(
+                f"KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON[{index}]가 exact CAP-5 config가 아니다"
+            ) from exc
+        expected_policy = freshness_policies.get(configuration.freshness_policy_id)
+        if (
+            expected_policy is None
+            or expected_policy.freshness_policy_digest
+            != configuration.freshness_policy_digest
+        ):
+            raise RuntimeError(
+                f"KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON[{index}] freshness policy가 "
+                "Core registry와 exact-match하지 않는다"
+            )
+        configurations.append(configuration)
+    return tuple(configurations)
+
+
 def build_production_app() -> FastAPI:
     """환경변수만으로 프로덕션 Core 앱을 조립한다 — 실패는 전부 fail-closed.
 
@@ -529,6 +613,10 @@ def build_production_app() -> FastAPI:
     principal_records = _parse_principal_tokens(principal_tokens_raw)
     risk_policy_packs = _optional_risk_policy_packs()
     edge_runtime_profiles = _optional_edge_runtime_profiles()
+    capability_freshness_policies = _optional_capability_freshness_policies()
+    runtime_route_configurations = _optional_runtime_route_configurations(
+        freshness_policies=capability_freshness_policies
+    )
     device_attestation_registry = load_device_attestation_registry(
         device_attestation_keys_file
     )
@@ -580,6 +668,8 @@ def build_production_app() -> FastAPI:
             processing_profile_issuance_enabled=processing_profile_issuance_enabled,
             landxml_ingress_enabled=landxml_ingress_enabled,
             checkpoint_validation_registration_enabled=checkpoint_validation_registration_enabled,
+            capability_freshness_policies=capability_freshness_policies,
+            runtime_route_configurations=runtime_route_configurations,
             copilot_runtime_config=copilot_runtime_config,
             expose_docs=expose_docs,
         )

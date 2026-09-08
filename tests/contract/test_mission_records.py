@@ -1,7 +1,7 @@
 """Mission 발급 영속·목록/이력 조회 계약 (ADR-KSI-008 §1/§3, ADR-KSI-007 짝 무결성).
 
 수동 조립(``FastAPI()`` + ``mount_auth`` + ``mount_mission_issuance``/
-``mount_mission_plans``(``mission_store``/``site_lookup`` 주입)+
+``mount_mission_plans``(``mission_store``/``issuance_committer`` 주입)+
 ``mount_mission_records``)으로 발급→durable 기록→조회 왕복을 검증한다. 초점:
 ① 발급 응답과 조회 응답의 계약 dict 가 정확 일치(INV-011, 재계산·재서명 없음)
 ② 재기동 복구 ③ mission_id 중복이 기존 레코드를 덮지 않음(replay 로 증명)
@@ -15,12 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _site_lifecycle import advance_site_status
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -34,6 +34,7 @@ from ksi_core.auth import (
 )
 from ksi_core.coverage_reports import CoverageReportStore
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.mission_atomicity import MissionIssuanceCommitter
 from ksi_core.mission_issuance import mount_mission_issuance
 from ksi_core.mission_plans import mount_mission_plans
 from ksi_core.mission_records import (
@@ -42,12 +43,13 @@ from ksi_core.mission_records import (
     MissionSequenceRecoveryError,
     MissionStore,
     MissionStoreRecoveryError,
-    SiteLookupResult,
     mount_mission_records,
 )
+from ksi_core.sites import SiteStore
 from ksi_domain.enums import SiteStatus
 from ksi_event_contracts.coverage_report import CoverageReport
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
+from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
 _LAT0, _LON0 = 37.5000, 127.0000
@@ -65,38 +67,12 @@ _OTHER_ORGANIZATION_FIELD_OPERATOR_TOKEN = "other-organization-field-operator-to
 # 임무타입×현장상태 게이트(INV-052) 자체가 아니고, 이 파일 전체가 기본
 # missionType(AUTONOMOUS_PATROL)을 공유하므로 그 타입이 발급 가능한 상태를
 # 골랐다(게이트 반증은 `test_mission_site_status_gate.py` 가 별도로 맡는다).
-_REGISTERED_SITES: dict[str, SiteLookupResult] = {
-    "site-001": SiteLookupResult(
-        site_frame={
-            "crs": "EPSG:5186",
-            "verticalDatum": "KNGeoid2018",
-            "unit": "meter",
-            "transformVersion": "1.0.0",
-        },
-        status=SiteStatus.PATROL_READY,
-    )
+_SITE_FRAME = {
+    "crs": "EPSG:5186",
+    "verticalDatum": "KNGeoid2018",
+    "unit": "meter",
+    "transformVersion": "1.0.0",
 }
-
-
-class _MutableSiteLookup:
-    """``site_lookup`` 콜백이지만 status 를 나중에 바꿀 수 있다(독립 재검토 D1 재현용).
-
-    ``_REGISTERED_SITES`` 는 이 파일 전체가 공유하는 상태 고정 dict라, "발급 이후
-    site 상태가 전이된다"는 시나리오(멱등 재발급이 게이트보다 나중에 걸리던 버그)를
-    재현할 수 없었다 — 이 클래스가 그 재현을 가능하게 한다.
-    """
-
-    def __init__(self, site_frame: dict[str, str], status: SiteStatus) -> None:
-        self._site_frame = site_frame
-        self._status = status
-
-    def __call__(self, site_id: str, organization_id: str) -> SiteLookupResult | None:
-        if site_id != "site-001" or organization_id != "legacy":
-            return None
-        return SiteLookupResult(site_frame=self._site_frame, status=self._status)
-
-    def set_status(self, status: SiteStatus) -> None:
-        self._status = status
 
 
 def _digest(token: str) -> str:
@@ -239,17 +215,12 @@ def _build_app(
     *,
     private_key: Ed25519PrivateKey,
     mission_store: MissionStore,
-    site_lookup: Callable[[str, str], SiteLookupResult | None] | None = None,
+    site_store: SiteStore,
     coverage_report_store: CoverageReportStore | None = None,
 ) -> FastAPI:
-    resolved_lookup = (
-        site_lookup
-        if site_lookup is not None
-        else (
-            lambda site_id, organization_id: (
-                _REGISTERED_SITES.get(site_id) if organization_id == "legacy" else None
-            )
-        )
+    issuance_committer = MissionIssuanceCommitter(
+        site_store=site_store,
+        mission_store=mission_store,
     )
     app = FastAPI()
     mount_auth(app, _auth_registry())
@@ -258,14 +229,14 @@ def _build_app(
         private_key=private_key,
         key_id=_KEY_ID,
         mission_store=mission_store,
-        site_lookup=resolved_lookup,
+        issuance_committer=issuance_committer,
     )
     mount_mission_plans(
         app,
         private_key=private_key,
         key_id=_KEY_ID,
         mission_store=mission_store,
-        site_lookup=resolved_lookup,
+        issuance_committer=issuance_committer,
     )
     mount_mission_records(
         app, mission_store=mission_store, coverage_report_store=coverage_report_store
@@ -273,10 +244,35 @@ def _build_app(
     return app
 
 
-def _client(tmp_path: Path, **kwargs: Any) -> tuple[TestClient, MissionStore, DurableJournal]:
+def _site_store(tmp_path: Path, status: SiteStatus = SiteStatus.PATROL_READY) -> SiteStore:
+    store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    result = store.register(
+        "site-001",
+        "Site 001",
+        SiteFrame.model_validate(_SITE_FRAME),
+        actor="test-harness",
+        now=datetime.now(UTC),
+    )
+    assert result.verdict.value == "REGISTERED"
+    advance_site_status(store, "site-001", status)
+    return store
+
+
+def _client(
+    tmp_path: Path,
+    *,
+    site_store: SiteStore | None = None,
+    site_status: SiteStatus = SiteStatus.PATROL_READY,
+    **kwargs: Any,
+) -> tuple[TestClient, MissionStore, DurableJournal]:
     private_key = Ed25519PrivateKey.generate()
     journal, store = _open_store(tmp_path / "missions.jsonl")
-    app = _build_app(private_key=private_key, mission_store=store, **kwargs)
+    app = _build_app(
+        private_key=private_key,
+        mission_store=store,
+        site_store=site_store if site_store is not None else _site_store(tmp_path, site_status),
+        **kwargs,
+    )
     return TestClient(app), store, journal
 
 
@@ -632,9 +628,8 @@ def test_duplicate_mission_id_with_different_request_via_api_returns_409(
     journal.close()
 
 
-def test_duplicate_mission_id_via_contracts_endpoint_still_returns_409(tmp_path: Path) -> None:
-    """contract-only 발급은 멱등 재발급 대상이 아니다(KMZ 가 없어 유실 위험도 없다) —
-    동일 요청 재시도라도 여전히 409."""
+def test_duplicate_mission_id_via_contracts_endpoint_is_idempotent(tmp_path: Path) -> None:
+    """durable append 뒤 응답 유실 재시도는 contract-only도 저장본 200을 돌려준다."""
     client, _store, journal = _client(tmp_path)
 
     first = client.post(
@@ -649,8 +644,8 @@ def test_duplicate_mission_id_via_contracts_endpoint_still_returns_409(tmp_path:
         json=_contract_request(mission_id="mission-contract-dup"),
         headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
-    assert second.status_code == 409
-    assert second.json()["detail"] == "MISSION_ID_CONFLICT"
+    assert second.status_code == 200
+    assert second.json() == first.json()
 
     journal.close()
 
@@ -728,8 +723,8 @@ def test_idempotent_retry_survives_site_status_transition_away_from_gate_pair(
     사유(409 MISSION_TYPE_SITE_STATUS_MISMATCH)를 주면 안 된다(수정 전에는
     이 재시도가 409 였다 — precheck_issuance 가 게이트를 mission_id 충돌보다
     먼저 봤기 때문)."""
-    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
-    client, store, journal = _client(tmp_path, site_lookup=lookup)
+    site_store = _site_store(tmp_path, SiteStatus.UNMAPPED)
+    client, store, journal = _client(tmp_path, site_store=site_store)
     request_body = _d1_plan_request("mission-d1")
 
     first = client.post(
@@ -738,7 +733,7 @@ def test_idempotent_retry_survives_site_status_transition_away_from_gate_pair(
     assert first.status_code == 201, first.text
     first_body = first.json()
 
-    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+    advance_site_status(site_store, "site-001", SiteStatus.BASELINE_MAPPING)
 
     retry = client.post(
         "/v1/missions/plans", json=request_body, headers=_auth_header(_FIELD_OPERATOR_TOKEN)
@@ -762,8 +757,8 @@ def test_different_digest_retry_after_site_status_transition_still_conflicts(
     """[D1 보강] 위와 같은 전이 상황에서도 **다른** 요청(다른 digest)이 같은
     missionId 를 재사용하면 여전히 409 MISSION_ID_CONFLICT 다 — 멱등 재반환이
     '아무 재시도나 통과'로 퇴화하지 않는다."""
-    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
-    client, _store, journal = _client(tmp_path, site_lookup=lookup)
+    site_store = _site_store(tmp_path, SiteStatus.UNMAPPED)
+    client, _store, journal = _client(tmp_path, site_store=site_store)
     request_body = _d1_plan_request("mission-d1b")
 
     first = client.post(
@@ -771,7 +766,7 @@ def test_different_digest_retry_after_site_status_transition_still_conflicts(
     )
     assert first.status_code == 201, first.text
 
-    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+    advance_site_status(site_store, "site-001", SiteStatus.BASELINE_MAPPING)
 
     different_body = _d1_plan_request("mission-d1b", spacingM=21.0)
     retry = client.post(
@@ -783,15 +778,16 @@ def test_different_digest_retry_after_site_status_transition_still_conflicts(
     journal.close()
 
 
-def test_contract_only_retry_after_site_status_transition_reports_conflict_not_gate_mismatch(
+def test_contract_only_retry_after_site_status_transition_is_idempotent(
     tmp_path: Path,
 ) -> None:
-    """[D1 보강 — 계약 단독 발급] contract-only 발급은 멱등 재반환 대상이 아니므로
-    (``mission_issuance.py`` 에 그 경로가 없다) 재시도는 여전히 409지만, 그 사유가
-    이제는 정확하다 — 게이트가 먼저 걸려 "현재 상태에서 허용 안 됨"이라 말하지
-    않고, mission_id 가 이미 쓰였다는 사실(MISSION_ID_CONFLICT)을 말한다."""
-    lookup = _MutableSiteLookup(site_frame=_D1_SITE_FRAME, status=SiteStatus.UNMAPPED)
-    client, _store, journal = _client(tmp_path, site_lookup=lookup)
+    """[D1 계약 단독 대칭] 응답 유실 재시도는 저장된 계약을 200으로 돌려준다.
+
+    현재 Site 상태로 과거 발급을 재인가하지 않으며, 같은 request digest인 경우에만
+    idempotent replay로 판정한다.
+    """
+    site_store = _site_store(tmp_path, SiteStatus.UNMAPPED)
+    client, _store, journal = _client(tmp_path, site_store=site_store)
 
     first = client.post(
         "/v1/missions/contracts",
@@ -800,18 +796,15 @@ def test_contract_only_retry_after_site_status_transition_reports_conflict_not_g
     )
     assert first.status_code == 201, first.text
 
-    lookup.set_status(SiteStatus.BASELINE_MAPPING)
+    advance_site_status(site_store, "site-001", SiteStatus.BASELINE_MAPPING)
 
     retry = client.post(
         "/v1/missions/contracts",
         json=_contract_request(mission_id="mission-d1c", missionType="BASELINE_MAPPING"),
         headers=_auth_header(_FIELD_OPERATOR_TOKEN),
     )
-    assert retry.status_code == 409, retry.text
-    assert retry.json()["detail"] == "MISSION_ID_CONFLICT", (
-        "게이트가 먼저 걸리면 MISSION_TYPE_SITE_STATUS_MISMATCH 가 되어 이미 기록된 "
-        "임무에 사실과 다른 사유를 준다"
-    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json() == first.json()
 
     journal.close()
 
@@ -1146,7 +1139,12 @@ def test_issued_contract_survives_restart_and_matches_exactly(tmp_path: Path) ->
     journal_path = tmp_path / "missions.jsonl"
     private_key = Ed25519PrivateKey.generate()
     journal, store = _open_store(journal_path)
-    app = _build_app(private_key=private_key, mission_store=store)
+    site_store = _site_store(tmp_path)
+    app = _build_app(
+        private_key=private_key,
+        mission_store=store,
+        site_store=site_store,
+    )
     client = TestClient(app)
 
     issue = client.post(
@@ -1157,7 +1155,11 @@ def test_issued_contract_survives_restart_and_matches_exactly(tmp_path: Path) ->
     journal.close()
 
     reborn_journal, reborn_store = _open_store(journal_path)
-    reborn_app = _build_app(private_key=private_key, mission_store=reborn_store)
+    reborn_app = _build_app(
+        private_key=private_key,
+        mission_store=reborn_store,
+        site_store=site_store,
+    )
     reborn_client = TestClient(reborn_app)
 
     contract = reborn_client.get(
@@ -1305,6 +1307,7 @@ def test_coverage_completion_state_is_null_without_any_report(tmp_path: Path) ->
     app = _build_app(
         private_key=private_key,
         mission_store=mission_store,
+        site_store=_site_store(tmp_path),
         coverage_report_store=coverage_store,
     )
     client = TestClient(app)
@@ -1335,6 +1338,7 @@ def test_coverage_completion_state_reflects_latest_recorded_report(tmp_path: Pat
     app = _build_app(
         private_key=private_key,
         mission_store=mission_store,
+        site_store=_site_store(tmp_path),
         coverage_report_store=coverage_store,
     )
     client = TestClient(app)

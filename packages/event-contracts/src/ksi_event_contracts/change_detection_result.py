@@ -2,7 +2,7 @@
 
 ## 왜 계약 패키지에 사는가
 
-계산은 ``services/change-detection``(scipy cKDTree)이 하고, 수신·조회는
+계산은 ``packages/change-detection``(scipy cKDTree)이 하고, 수신·조회는
 ``services/core`` 가 한다. 계약이 계산 쪽에 있으면 Core 가 그 서비스에 의존해
 ``scipy`` 가 control plane 으로 딸려온다 — ``defect_candidate.py`` 를 여기로 옮긴
 것과 같은 이유다(그쪽 모듈 docstring 참고).
@@ -17,7 +17,7 @@
 
 ## 재방문 권고 규칙의 정본은 여기다
 
-``needs_change_candidate_revisit`` (services/change-detection)는 numpy 결과 객체를
+``needs_change_candidate_revisit`` (packages/change-detection)는 numpy 결과 객체를
 받는 편의 함수이고, **판정 규칙 자체**는 :meth:`ChangeDetectionResult.needs_revisit`
 이 소유한다. 규칙이 두 곳에 있으면 한쪽만 고쳐지는 순간 "계산한 값"과 "API 가
 노출한 값"이 갈라지고, 그 갈라짐은 화면에서 보이지 않는다 —

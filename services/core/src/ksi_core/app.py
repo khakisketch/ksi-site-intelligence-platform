@@ -6,9 +6,10 @@ Core는 지리공간·워크플로 control plane이다 — 비행 중 실시간 
 
 - **프레임별 비행제어 엔드포인트를 두지 않는다.** Core가 노출하는 것은 계약·정책·
   상태 조회이지 조종 명령이 아니다(INV-001, 00_READ_FIRST "구현 금지").
-- **Capability는 VERIFIED만 노출한다.** ``/capabilities``는
+- **Capability catalog는 VERIFIED만 노출한다.** ``/capabilities``는
   :meth:`~ksi_core.capability.registry.CapabilityRegistry.list_operational` 만
-  호출한다 — SPIKE_REQUIRED/BLOCKED가 운영 API로 새어나가지 않는다(INV-041).
+  호출하는 legacy compatibility projection이다. 조직/현장 scope가 없으므로
+  CAP-5 runtime 또는 Mission 실행 권한을 표현하지 않는다(INV-041).
 
 ## fail-closed 조립 (ADR-KSI-008 §3) — "인증 없는 보호 표면은 존재할 수 없다"
 
@@ -40,9 +41,11 @@ if TYPE_CHECKING:
 
     from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
     from ksi_core.auth import AuthRegistry, OidcVerifier
+    from ksi_core.capability.runtime_projection import RuntimeCapabilityProjector
     from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.checkpoint_validations import CheckpointValidationStore
+    from ksi_core.civil_readiness import CivilReadinessProjector
     from ksi_core.comparison_requests import ComparisonRequestStore
     from ksi_core.copilot import CopilotService
     from ksi_core.copilot_conversations import CopilotConversationService
@@ -216,6 +219,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "site_workspace_projector는 Site·WorkOrder 사실 원장과 함께 주어져야 한다",
     ),
     (
+        "civil_readiness_projector",
+        (("site_store", "processing_job_store", "design_surface_store"),),
+        "civil_readiness_projector는 Site·ProcessingJob·DesignSurface 원장과 함께 주어져야 한다"
+        "(REQ-INT-104, INV-053) — 읽기 모델이 임의의 비교 가능 상태를 만들면 안 된다",
+    ),
+    (
         "site_briefing_service",
         (("copilot_service", "site_workspace_projector"),),
         "site_briefing_service는 grounded Copilot과 SiteWorkspace projection이 필요하다",
@@ -372,6 +381,7 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
     ("mission_store", (), ""),
     ("mission_sequence_store", (), ""),
     ("equipment_support_store", (), ""),
+    ("runtime_capability_projector", (), ""),
 )
 
 
@@ -420,8 +430,10 @@ def create_app(
     copilot_conversation_service: CopilotConversationService | None = None,
     site_workspace_projector: SiteWorkspaceProjector | None = None,
     site_briefing_service: SiteBriefingService | None = None,
+    civil_readiness_projector: CivilReadinessProjector | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
+    runtime_capability_projector: RuntimeCapabilityProjector | None = None,
     device_attestation_registry: DeviceAttestationRegistry | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
@@ -484,6 +496,12 @@ def create_app(
             입력은 봉인된 번들에서, 반출 허용 여부는 현장에서 읽는다(INV-050).
             둘 중 하나라도 없으면 요청이 그 값들을 스스로 주장하는 구성이 되므로
             조립에서 거부한다.
+        civil_readiness_projector: 현장별 토목 준비도 읽기 모델. ``site_store``·
+            ``processing_job_store``·``design_surface_store`` 가 모두 있어야
+            장착된다. 이 모델은 기존 ``preflight_epoch_pair`` 결과와 설계면
+            inventory를 읽기만 하며, 실제 비교 요청은 각 입력으로 다시 preflight를
+            수행한다(INV-053). 현장 수용·측량 정확도·비행·장비 상태를 판정하지
+            않는다.
         checkpoint_validation_store: 독립 checkpoint CSV와 immutable DSM의 서버 측
             측정 원장. ``mission_store``·``processing_job_store``·``evidence_storage``가
             모두 필요하다(INV-024/053). 이를 통해 검증된 RMSE만 비교 불확실성에
@@ -571,13 +589,14 @@ def create_app(
 
     @app.get("/capabilities")
     def list_capabilities() -> dict[str, Any]:
-        """**운영 가능한(VERIFIED) capability만** 반환한다 (INV-041).
+        """Product catalog에서 승인된 VERIFIED compatibility 항목만 반환한다.
 
         SPIKE_REQUIRED/BLOCKED 항목은 이 응답에 절대 포함되지 않는다 — 미검증 기능이
-        운영 UI·Mission Contract 정책 선택지에 노출되는 것을 막는 게이트다. 감사용
-        전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
+        제품 catalog에 노출되는 것을 막는 게이트다. 다만 scope 없는 public 응답이므로
+        CurrentRuntimeReady, Mission permission 또는 OperationallyUsable을 뜻하지 않는다.
+        감사용 전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
         """
-        operational = capability_registry.list_operational()
+        catalog_visible = capability_registry.list_operational()
         # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK 버전은 배치 기체의
         # 취약점 표적화에 쓰이는 정보라 인증된 내부·감사 경로에서만 제공한다.
         return {
@@ -587,9 +606,9 @@ def create_app(
                     "title": record.title,
                     "state": record.state.value,
                 }
-                for record in operational
+                for record in catalog_visible
             ],
-            "count": len(operational),
+            "count": len(catalog_visible),
         }
 
     # ── fail-closed 결합 검증(장착 전에 전부 확인 — 절반 조립으로 기동하지 않는다) ──
@@ -646,6 +665,7 @@ def create_app(
         "copilot_conversation_service": copilot_conversation_service,
         "site_workspace_projector": site_workspace_projector,
         "site_briefing_service": site_briefing_service,
+        "civil_readiness_projector": civil_readiness_projector,
         "design_conformance_report_store": design_conformance_report_store,
         "region_extraction_request_store": region_extraction_request_store,
         "region_extraction_report_store": region_extraction_report_store,
@@ -655,6 +675,7 @@ def create_app(
         "mission_store": mission_store,
         "mission_sequence_store": mission_sequence_store,
         "equipment_support_store": equipment_support_store,
+        "runtime_capability_projector": runtime_capability_projector,
     }
 
     for _store_name, _requirement_groups, _reason in _ASSEMBLY_REQUIREMENTS:
@@ -686,6 +707,16 @@ def create_app(
             auth_registry,
             human_auth_mode=human_auth_mode,
             oidc_verifier=oidc_verifier,
+        )
+
+    if runtime_capability_projector is not None:
+        from ksi_core.capability.runtime_api import mount_runtime_capability
+
+        mount_runtime_capability(
+            app,
+            runtime_capability_projector,
+            mission_store=mission_store,
+            mission_execution_store=mission_execution_store,
         )
 
     if site_store is not None:
@@ -776,6 +807,11 @@ def create_app(
             briefing_service=site_briefing_service,
         )
 
+    if civil_readiness_projector is not None:
+        from ksi_core.civil_readiness import mount_civil_readiness
+
+        mount_civil_readiness(app, civil_readiness_projector)
+
     # 현장 상태 자동 전진(ADR-KSI-019 G1) — 재구성 신호·임무 배포·노후 스윕 세
     # 진입점이 같은 인스턴스를 공유한다. 두 저장소 중 하나라도 없으면 전진시킬
     # 대상이 없으므로 None 이고, 그때는 예전과 같이 아무것도 전진시키지 않는다
@@ -829,57 +865,35 @@ def create_app(
         assert mission_store is not None  # noqa: S101
         assert site_store is not None  # noqa: S101
 
+        from ksi_core.mission_atomicity import MissionIssuanceCommitter
         from ksi_core.mission_issuance import mount_mission_issuance
         from ksi_core.mission_plans import mount_mission_plans
-        from ksi_core.mission_records import SiteLookupResult
 
         _mission_store = mission_store
-        _site_store = site_store
-
-        def _site_lookup(site_id: str, organization_id: str) -> SiteLookupResult | None:
-            """등록된 site 의 canonical siteFrame + 현재 상태 — 미등록이면 None.
-
-            siteFrame 은 발급 요청과의 정확 일치 대조(SITE_FRAME_MISMATCH)에
-            쓰인다 — 등록 좌표계와 어긋난 계약·KMZ 짝 발급 차단(ADR-KSI-007).
-            status 는 임무타입×현장상태 게이트(INV-052, "먼저 매핑, 그 다음
-            사전지도 기반 자율")에 쓰인다 — 이 둘을 한 스냅샷으로 묶어 반환하는
-            이유는 SiteLookupResult docstring 참조.
-            """
-            # 발급 전 lookup도 조회 API와 같은 조직 경계를 가진다. 다른 조직의
-            # siteId를 넣어 서명·KMZ를 발급하는 우회는 UNKNOWN_SITE로 접는다(INV-060).
-            record = _site_store.get_scoped(site_id, organization_id)
-            if record is None:
-                return None
-            return SiteLookupResult(site_frame=dict(record.site_frame), status=record.status)
-
-        def _acquisition_readiness(
-            site_id: str, organization_id: str, now: Any
-        ) -> tuple[bool, str]:
-            if not acquisition_issue_gate_enabled or acquisition_connectivity_store is None:
-                return True, "acquisition issue gate feature flag disabled"
-            readiness = acquisition_connectivity_store.readiness(
-                site_id, organization_id=organization_id, now=now
-            )
-            detail = readiness.reasons[0] if readiness.reasons else readiness.status.value
-            return readiness.ready_for_mission_issue, detail
+        issuance_committer = MissionIssuanceCommitter(
+            site_store=site_store,
+            mission_store=_mission_store,
+            work_order_store=observation_work_order_store,
+            acquisition_store=acquisition_connectivity_store,
+            acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
+        )
 
         mount_mission_issuance(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_lookup=_site_lookup,
+            issuance_committer=issuance_committer,
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
-            acquisition_readiness=_acquisition_readiness,
         )
         mount_mission_plans(
             app,
             private_key=mission_signing_key,
             key_id=mission_signing_key_id,
             mission_store=_mission_store,
-            site_lookup=_site_lookup,
+            issuance_committer=issuance_committer,
             # 스토리지가 있으면 발급 KMZ 바이트를 보관한다 — 서버 안전상수 한 줄이
             # 바뀌면 그 이전 발급분 전량이 영구 409 가 되던 경로를 닫는다(risk
             # kmz-regeneration-determinism-timebomb). 없으면 재생성에만 의존한다.
@@ -887,7 +901,6 @@ def create_app(
             writer_version=mission_contract_writer_version,
             issuer_id=mission_contract_issuer_id,
             sequence_store=mission_sequence_store,
-            acquisition_readiness=_acquisition_readiness,
             observation_work_order_store=observation_work_order_store,
             acquisition_coordination_store=acquisition_coordination_store,
         )

@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/repository-cleanup-manifest.v1.json",
+  "title": "KSI Repository Cleanup Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "normalizationId",
+    "decisionDate",
+    "authority",
+    "baseline",
+    "scope",
+    "actions",
+    "documentStates",
+    "reachabilityAudit",
+    "verification"
+  ],
+  "properties": {
+    "$schema": {"type": "string", "minLength": 1},
+    "schemaVersion": {"const": "1.0"},
+    "normalizationId": {"const": "REPO-NORM-R0-R2"},
+    "decisionDate": {"type": "string", "format": "date"},
+    "authority": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capturedAt",
+        "head",
+        "branch",
+        "modifiedEntries",
+        "untrackedPorcelainEntries",
+        "untrackedLeafFiles",
+        "modifiedPathsSha256",
+        "untrackedPorcelainSha256",
+        "untrackedLeafPathsSha256",
+        "worktreeDiffSha256",
+        "ownership",
+        "scopeNote"
+      ],
+      "properties": {
+        "capturedAt": {"type": "string", "format": "date-time"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "branch": {"type": "string", "minLength": 1},
+        "modifiedEntries": {"type": "integer", "minimum": 0},
+        "untrackedPorcelainEntries": {"type": "integer", "minimum": 0},
+        "untrackedLeafFiles": {"type": "integer", "minimum": 0},
+        "modifiedPathsSha256": {"$ref": "#/$defs/sha256"},
+        "untrackedPorcelainSha256": {"$ref": "#/$defs/sha256"},
+        "untrackedLeafPathsSha256": {"$ref": "#/$defs/sha256"},
+        "worktreeDiffSha256": {"$ref": "#/$defs/sha256"},
+        "ownership": {"const": "PRE_EXISTING_USER_WIP"},
+        "scopeNote": {"type": "string", "minLength": 1}
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["included", "excluded"],
+      "properties": {
+        "included": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "excluded": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/action"}
+    },
+    "documentStates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "state", "replacement"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "state": {"enum": ["ACTIVE_AUTHORITY", "ACTIVE_STATE", "ACTIVE_ROUTING", "HISTORICAL", "SUPERSEDED", "EVIDENCE_ONLY"]},
+          "replacement": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "reachabilityAudit": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "paths", "dependencyEvidence", "buildEvidence", "ciEvidence", "before", "after", "decision"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "paths": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "dependencyEvidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "buildEvidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "ciEvidence": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "before": {"type": "string", "minLength": 1},
+          "after": {"type": "string", "minLength": 1},
+          "decision": {"const": "RETAIN_DEFER_TO_R3"}
+        }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "status", "claim"],
+        "properties": {
+          "command": {"type": "string", "minLength": 1},
+          "status": {"enum": ["PENDING", "PASS", "FAIL", "BLOCKED", "NOT_APPLICABLE"]},
+          "claim": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "destination", "sha256"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "destination": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {"classification": {"const": "RETAIN"}},
+            "required": ["classification"]
+          },
+          "then": {"required": ["sourcePresence"]}
+        }
+      ],
+      "required": ["id", "classification", "state", "owner", "sources", "destination", "rationale", "references", "replacement", "rollback", "artifacts"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "classification": {"enum": ["RETAIN", "CONSOLIDATE", "ARCHIVE", "REMOVE"]},
+        "state": {"enum": ["NO_MOVE_REQUIRED", "EXECUTED", "DEFERRED_R3"]},
+        "owner": {"type": "string", "minLength": 1},
+        "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "sourcePresence": {"enum": ["REQUIRED_REPOSITORY_PATHS", "OPTIONAL_LOCAL_PATHS"]},
+        "sourcePatterns": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "destination": {"type": ["string", "null"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "references": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "replacement": {"type": "string", "minLength": 1},
+        "rollback": {"type": "string", "minLength": 1},
+        "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}}
+      }
+    }
+  }
+}

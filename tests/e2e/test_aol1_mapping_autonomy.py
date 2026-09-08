@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -46,7 +47,12 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.evidence import EvidenceStorageError
+from ksi_core.evidence import (
+    DigestBoundUploadCapability,
+    EvidenceStorageError,
+    ObjectStorageObservation,
+)
+from ksi_core.processing_jobs import build_processing_artifact_object_key
 from ksi_geo_core.frames import WGS84_EQUATORIAL_RADIUS_M
 from ksi_processing_controller.capture_time import extract_capture_time
 from PIL import Image
@@ -77,18 +83,45 @@ class _MemoryStorage:
 
     def __init__(self) -> None:
         self._blobs: dict[str, bytes] = {}
+        self._observations: dict[str, ObjectStorageObservation] = {}
 
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
         del content_type, ttl
         return f"{_STORAGE_PREFIX}{object_key}{_STORAGE_SUFFIX}"
+
+    def presigned_put_bound_digest(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        content_digest: str,
+        ttl: Any,
+    ) -> DigestBoundUploadCapability:
+        del content_type, ttl
+        return DigestBoundUploadCapability(
+            upload_url=f"{_STORAGE_PREFIX}{object_key}{_STORAGE_SUFFIX}",
+            required_headers={"X-Test-SHA256": content_digest},
+        )
 
     def presigned_get(self, object_key: str, *, ttl: Any) -> str:
         del ttl
         return f"{_STORAGE_PREFIX}{object_key}?download=1"
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
-        del content_type
         self._blobs[object_key] = data
+        self._observations[object_key] = ObjectStorageObservation(
+            object_key=object_key,
+            exists=True,
+            sha256="sha256:" + hashlib.sha256(data).hexdigest(),
+            size_bytes=len(data),
+            content_type=content_type,
+        )
+
+    def observe_object(self, object_key: str) -> ObjectStorageObservation:
+        return self._observations.get(
+            object_key,
+            ObjectStorageObservation(object_key=object_key, exists=False),
+        )
 
     def get_bytes(self, object_key: str) -> bytes:
         blob = self._blobs.get(object_key)
@@ -98,6 +131,7 @@ class _MemoryStorage:
 
     def delete(self, object_key: str) -> None:
         self._blobs.pop(object_key, None)
+        self._observations.pop(object_key, None)
 
 
 def _digest(token: str) -> str:
@@ -437,17 +471,31 @@ def _run_worker(fixture: Aol1Fixture, job_id: str) -> None:
     것이 실제 워커 경로가 아니게 된다.
     """
     client = fixture.client
+    worker_instance_id = str(uuid4())
+    lease_acquisition_id = str(uuid4())
+    claim_headers = {
+        **fixture.as_worker(),
+        "X-KSI-Worker-Instance-Id": worker_instance_id,
+        "X-KSI-Lease-Acquisition-Id": lease_acquisition_id,
+        "X-KSI-Lease-Mode": "CLAIM",
+    }
 
     # lease 를 먼저 잡아야 입력을 볼 수 있다(상호배제 + 접근 범위 축소).
     lease = client.post(
         f"/v1/processing-jobs/{job_id}/lease",
-        json={"workerId": "worker-1", "ttlSeconds": 600},
-        headers=fixture.as_worker(),
+        headers=claim_headers,
     )
     assert lease.status_code == 201, lease.text
+    lease_generation = int(lease.headers["X-KSI-Lease-Generation"])
+    fence_headers = {
+        **fixture.as_worker(),
+        "X-KSI-Worker-Instance-Id": worker_instance_id,
+        "X-KSI-Lease-Acquisition-Id": lease_acquisition_id,
+        "X-KSI-Lease-Generation": str(lease_generation),
+    }
 
     job_input = client.get(
-        f"/v1/processing-jobs/{job_id}/input", headers=fixture.as_worker()
+        f"/v1/processing-jobs/{job_id}/input", headers=fence_headers
     )
     assert job_input.status_code == 200, job_input.text
     media = job_input.json()["input"]["media"]
@@ -481,9 +529,9 @@ def _run_worker(fixture: Aol1Fixture, job_id: str) -> None:
         )
 
     verified = client.post(
-        f"/v1/missions/{_MISSION_ID}/source-media/verify",
+        f"/v1/processing-jobs/{job_id}/verify-input",
         json={"measurements": measurements},
-        headers=fixture.as_worker(),
+        headers=fence_headers,
     )
     assert verified.status_code == 201, verified.text
     assert verified.json()["verdict"] == "VERIFIED", verified.text
@@ -491,30 +539,126 @@ def _run_worker(fixture: Aol1Fixture, job_id: str) -> None:
     running = client.post(
         f"/v1/processing-jobs/{job_id}/transitions",
         json={"targetStatus": "RUNNING"},
-        headers=fixture.as_worker(),
+        headers=fence_headers,
     )
     assert running.status_code == 200, running.text
 
-    artifact = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts",
-        json={
-            "artifactId": "pointcloud",
-            "kind": "point_cloud",
-            "authority": "source",
-            "digest": "sha256:" + hashlib.sha256(b"aol1-point-cloud").hexdigest(),
-            "format": "laz",
-            "crs": "EPSG:5186",
-        },
-        headers=fixture.as_worker(),
+    _publish_artifact(
+        fixture,
+        job_id,
+        fence_headers,
+        artifact_id="pointcloud",
+        kind="point_cloud",
+        authority="source",
+        derived_from=[],
+        artifact_bytes=b"aol1-point-cloud",
+        format_name="laz",
+        crs="EPSG:5186",
     )
-    assert artifact.status_code == 201, artifact.text
+    _publish_artifact(
+        fixture,
+        job_id,
+        fence_headers,
+        artifact_id="dsm",
+        kind="dsm",
+        authority="derived",
+        derived_from=["pointcloud"],
+        artifact_bytes=b"aol1-dsm",
+        format_name="geotiff",
+        crs="EPSG:5186",
+        gsd=0.05,
+    )
+    _publish_artifact(
+        fixture,
+        job_id,
+        fence_headers,
+        artifact_id="dtm",
+        kind="dtm",
+        authority="derived",
+        derived_from=["pointcloud"],
+        artifact_bytes=b"aol1-dtm",
+        format_name="geotiff",
+        crs="EPSG:5186",
+        gsd=0.05,
+    )
 
     succeeded = client.post(
         f"/v1/processing-jobs/{job_id}/transitions",
-        json={"targetStatus": "SUCCEEDED", "detail": "산출물 1건"},
-        headers=fixture.as_worker(),
+        json={"targetStatus": "SUCCEEDED", "detail": "프로파일 산출물 3건"},
+        headers=fence_headers,
     )
     assert succeeded.status_code == 200, succeeded.text
+
+
+def _publish_artifact(
+    fixture: Aol1Fixture,
+    job_id: str,
+    fence_headers: dict[str, str],
+    *,
+    artifact_id: str,
+    kind: str,
+    authority: str,
+    derived_from: list[str],
+    artifact_bytes: bytes,
+    format_name: str,
+    crs: str,
+    gsd: float | None = None,
+    vertical_reference: dict[str, str] | None = None,
+) -> None:
+    """Model the worker's durable grant, direct PUT, and registration sequence."""
+    artifact_digest = "sha256:" + hashlib.sha256(artifact_bytes).hexdigest()
+    lease_generation = int(fence_headers["X-KSI-Lease-Generation"])
+    artifact_key = build_processing_artifact_object_key(
+        site_id=_SITE_ID,
+        job_id=job_id,
+        artifact_id=artifact_id,
+        lease_generation=lease_generation,
+    )
+    binding = {
+        "objectKey": artifact_key,
+        "sha256": artifact_digest,
+        "sizeBytes": len(artifact_bytes),
+        "contentType": "application/octet-stream",
+    }
+    upload_request = {
+        "artifactId": artifact_id,
+        "sha256": artifact_digest,
+        "sizeBytes": len(artifact_bytes),
+        "contentType": "application/octet-stream",
+    }
+    upload = fixture.client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts/upload-url",
+        json=upload_request,
+        headers=fence_headers,
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["objectKey"] == artifact_key
+    assert upload.json()["requiredHeaders"]["X-Test-SHA256"] == artifact_digest
+    fixture.storage.put_bytes(
+        artifact_key, artifact_bytes, content_type="application/octet-stream"
+    )
+    payload: dict[str, Any] = {
+        "artifactId": artifact_id,
+        "kind": kind,
+        "authority": authority,
+        "derivedFrom": derived_from,
+        "digest": artifact_digest,
+        "format": format_name,
+        "crs": crs,
+        "auxiliaryFiles": [],
+        "primaryObject": binding,
+        "auxiliaryObjects": {},
+    }
+    if gsd is not None:
+        payload["gsd"] = gsd
+    if vertical_reference is not None:
+        payload["verticalReference"] = vertical_reference
+    artifact = fixture.client.post(
+        f"/v1/processing-jobs/{job_id}/artifacts",
+        json=payload,
+        headers=fence_headers,
+    )
+    assert artifact.status_code == 201, artifact.text
 
 
 def test_mapping_loop_completes_without_manual_site_transitions(aol1: Any) -> None:

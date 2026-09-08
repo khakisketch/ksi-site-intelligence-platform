@@ -16,7 +16,7 @@ REQ-DATA-101,Data,Retention,Customer override plus approved defaults,Retention p
 REQ-MODEL-101,Model,Support claims,Staged equipment support status,Only Production Supported shown as supported
 REQ-PLAT-101,Platform,Industry expansion,Common core plus solution packs,No construction-only dependency in core contracts
 REQ-WRK-101,Workflow,Observation work order,Repeated observation is one user-visible work order,Contract and replay tests preserve the full loop
-REQ-ACQ-101,Acquisition,Zero-touch transfer,Normal route and media flow requires no removable media,Real-device flow completes with zero file operations
+REQ-ACQ-101,Acquisition,Zero-touch transfer target,"Current v1 originals use SD/storage to field PC to KSI web; target automatic MEDIA_PULL/MEDIA_UPLOAD remains separately gated",Real-device target flow completes with zero file operations before target promotion
 REQ-ACQ-102,Acquisition,Bounded active capture,Edge recapture stays inside signed policy and mission envelope,HIL accepts allowed actions and rejects every exceeded bound
 REQ-ACQ-103,Acquisition,Capability evidence,"Vendor documentation and exact hardware/path field verification are independent; only field VERIFIED enables a production route","Capability registry/UI/HIL evidence tests keep documentation-only paths OFF"
 REQ-INT-101,Intelligence,Grounded relative metrics,Change progress and quantity include capture time lineage and uncertainty,End-to-end report exposes every required basis

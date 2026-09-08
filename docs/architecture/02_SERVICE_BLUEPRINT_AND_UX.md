@@ -1,5 +1,9 @@
 # Service Blueprint and UI/UX
 
+> **SUPERSEDED.** This is a historical UX seed, not current product or implementation authority.
+> Use `ADR-KSI-024/025/026`, `05_OPERATIONS_CONSOLE_PHASE_1_STANDARD.md`, and
+> [`../DOCUMENT_STATUS.md`](../DOCUMENT_STATUS.md).
+
 ## User-facing concept
 
 The default action is `새 현장 조사`, not separate low-level mapping/patrol switches.

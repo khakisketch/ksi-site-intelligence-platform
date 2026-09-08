@@ -8,7 +8,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from ksi_dji_gateway import (
@@ -27,8 +27,12 @@ from ksi_dji_gateway import (
     GatewayJournal,
     GatewayTransport,
     IntegrationPath,
+    OperationKind,
     ProviderReceipt,
+    RouteActivationAuthorization,
     RoutingContext,
+    RuntimeRoutePreflightDecision,
+    RuntimeRoutePreflightRequest,
     UnixJsonBridgeClient,
     build_candidate_ports,
 )
@@ -56,6 +60,40 @@ class _RecordingBridge:
         )
 
 
+class _RecordingRuntimePreflight:
+    def __init__(self, response: object, *, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.requests: list[RuntimeRoutePreflightRequest] = []
+
+    def evaluate(self, request: RuntimeRoutePreflightRequest) -> RuntimeRoutePreflightDecision:
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return cast(RuntimeRoutePreflightDecision, self.response)
+
+
+def _all_true_preflight_decision() -> RuntimeRoutePreflightDecision:
+    return RuntimeRoutePreflightDecision(
+        durable_authority_valid=True,
+        current_runtime_ready=True,
+        current_mission_policy_allows=True,
+        operationally_usable=True,
+    )
+
+
+def _edge_uplink_request(idempotency_key: str = "edge-uplink-1") -> EdgeUplinkRequest:
+    return EdgeUplinkRequest(
+        organization_id="org-a",
+        site_id="site-a",
+        mission_id="mission-a",
+        edge_device_id="edge-a",
+        bundle_object_ref="objects/bundles/edge-a.json",
+        bundle_sha256="b" * 64,
+        idempotency_key=idempotency_key,
+    )
+
+
 def _config(path: IntegrationPath) -> AdapterRuntimeConfig:
     transports = {
         IntegrationPath.DJI_CLOUD: GatewayTransport.RC_WIFI,
@@ -80,6 +118,63 @@ def _config(path: IntegrationPath) -> AdapterRuntimeConfig:
         edge_device_id="edge-a",
         endpoint=endpoint,
         tls_certificate_sha256=pin,
+    )
+
+
+def _cap5_edge_uplink_gateway(
+    tmp_path: Path,
+    *,
+    bridge: _RecordingBridge,
+    feature_enabled: bool,
+    runtime_preflight: _RecordingRuntimePreflight | None,
+    activation_authorizations: tuple[RouteActivationAuthorization, ...],
+) -> tuple[CapabilityGateway, GatewayJournal, CapabilityRouter]:
+    config = _config(IntegrationPath.MANIFOLD_DIRECT)
+    ports = build_candidate_ports(config, bridge)
+    router = CapabilityRouter(
+        routes=tuple(CapabilityRoute(port, index) for index, port in enumerate(ports)),
+        registry=CapabilityRegistry(
+            [
+                CapabilityEvidence(
+                    path=IntegrationPath.MANIFOLD_DIRECT,
+                    capability=Capability.EDGE_UPLINK,
+                    status=CapabilityStatus.VERIFIED,
+                    checked_at=_NOW,
+                    evidence_ref="hil/session/edge-uplink.json",
+                    hardware_model="M4D+M3+RC2",
+                    firmware_version="firmware-1",
+                )
+            ]
+        ),
+        feature_flags={Capability.EDGE_UPLINK: feature_enabled},
+    )
+    journal = GatewayJournal(tmp_path / "gateway.jsonl")
+    return (
+        CapabilityGateway(
+            router=router,
+            journal=journal,
+            context=RoutingContext(
+                organization_id="org-a",
+                site_id="site-a",
+                gateway_device_id="gateway-a",
+                edge_device_id="edge-a",
+                hardware_model="M4D+M3+RC2",
+                firmware_version="firmware-1",
+                allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
+                activation_authorizations=activation_authorizations,
+            ),
+            runtime_preflight=runtime_preflight,
+        ),
+        journal,
+        router,
+    )
+
+
+def _edge_uplink_activation() -> RouteActivationAuthorization:
+    return RouteActivationAuthorization(
+        canonical_capability=Capability.EDGE_UPLINK,
+        integration_path=IntegrationPath.MANIFOLD_DIRECT,
+        activation_authorization_id="activation-edge-uplink-direct-1",
     )
 
 
@@ -219,40 +314,15 @@ def test_router_rejects_unconfigured_port_even_with_evidence_and_flag() -> None:
         )
 
 
-def test_capability_gateway_routes_exact_evidence_and_replays_receipt(tmp_path: Path) -> None:
+def test_cap5_preflight_applies_only_to_new_port_invoke_and_replays_receipt(tmp_path: Path) -> None:
     bridge = _RecordingBridge()
-    config = _config(IntegrationPath.MANIFOLD_DIRECT)
-    ports = build_candidate_ports(config, bridge)
-    router = CapabilityRouter(
-        routes=tuple(CapabilityRoute(port, index) for index, port in enumerate(ports)),
-        registry=CapabilityRegistry(
-            [
-                CapabilityEvidence(
-                    path=IntegrationPath.MANIFOLD_DIRECT,
-                    capability=Capability.EDGE_UPLINK,
-                    status=CapabilityStatus.VERIFIED,
-                    checked_at=_NOW,
-                    evidence_ref="hil/session/edge-uplink.json",
-                    hardware_model="M4D+M3+RC2",
-                    firmware_version="firmware-1",
-                )
-            ]
-        ),
-        feature_flags={Capability.EDGE_UPLINK: True},
-    )
-    journal = GatewayJournal(tmp_path / "gateway.jsonl")
-    gateway = CapabilityGateway(
-        router=router,
-        journal=journal,
-        context=RoutingContext(
-            organization_id="org-a",
-            site_id="site-a",
-            gateway_device_id="gateway-a",
-            edge_device_id="edge-a",
-            hardware_model="M4D+M3+RC2",
-            firmware_version="firmware-1",
-            allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
-        ),
+    preflight = _RecordingRuntimePreflight(_all_true_preflight_decision())
+    gateway, journal, router = _cap5_edge_uplink_gateway(
+        tmp_path,
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=preflight,
+        activation_authorizations=(_edge_uplink_activation(),),
     )
     with pytest.raises(CapabilityUnavailableError, match="binding"):
         router.select(
@@ -265,15 +335,7 @@ def test_capability_gateway_routes_exact_evidence_and_replays_receipt(tmp_path: 
             firmware_version="firmware-1",
             allowed_transports=frozenset({GatewayTransport.MANIFOLD_CELLULAR}),
         )
-    request = EdgeUplinkRequest(
-        organization_id="org-a",
-        site_id="site-a",
-        mission_id="mission-a",
-        edge_device_id="edge-a",
-        bundle_object_ref="objects/bundles/edge-a.json",
-        bundle_sha256="b" * 64,
-        idempotency_key="edge-uplink-1",
-    )
+    request = _edge_uplink_request()
     with pytest.raises(CapabilityUnavailableError, match="scope"):
         gateway.upload_edge_bundle(replace(request, organization_id="org-b"))
     with pytest.raises(CapabilityUnavailableError, match="scope"):
@@ -287,6 +349,187 @@ def test_capability_gateway_routes_exact_evidence_and_replays_receipt(tmp_path: 
     assert first.journal_schema_version == "1.3"
     assert len(bridge.calls) == 1
     assert bridge.calls[0][0] is BridgeOperation.EDGE_BUNDLE_UPLOAD
+    assert len(preflight.requests) == 1
+    preflight_request = preflight.requests[0]
+    assert preflight_request.organization_id == "org-a"
+    assert preflight_request.site_id == "site-a"
+    assert preflight_request.gateway_device_id == "gateway-a"
+    assert preflight_request.edge_device_id == "edge-a"
+    assert preflight_request.canonical_capability is Capability.EDGE_UPLINK
+    assert preflight_request.integration_path is IntegrationPath.MANIFOLD_DIRECT
+    assert preflight_request.subject_port_id == "candidate-manifold_direct.edge_uplink"
+    assert preflight_request.transport is GatewayTransport.MANIFOLD_CELLULAR
+    assert preflight_request.hardware_model == "M4D+M3+RC2"
+    assert preflight_request.firmware_version == "firmware-1"
+    assert preflight_request.mission_id == "mission-a"
+    assert preflight_request.operation is OperationKind.EDGE_UPLINK
+    assert preflight_request.idempotency_key == "edge-uplink-1"
+    assert preflight_request.activation_authorization_id == "activation-edge-uplink-direct-1"
+    journal.close()
+
+
+def test_runtime_preflight_decision_rejects_nonconjunctive_operationally_usable() -> None:
+    with pytest.raises(ValueError, match="operationally_usable"):
+        RuntimeRoutePreflightDecision(
+            durable_authority_valid=True,
+            current_runtime_ready=False,
+            current_mission_policy_allows=True,
+            operationally_usable=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("feature_enabled", "decision"),
+    [
+        (False, _all_true_preflight_decision()),
+        (
+            True,
+            RuntimeRoutePreflightDecision(
+                durable_authority_valid=False,
+                current_runtime_ready=True,
+                current_mission_policy_allows=True,
+                operationally_usable=False,
+            ),
+        ),
+        (
+            True,
+            RuntimeRoutePreflightDecision(
+                durable_authority_valid=True,
+                current_runtime_ready=False,
+                current_mission_policy_allows=True,
+                operationally_usable=False,
+            ),
+        ),
+        (
+            True,
+            RuntimeRoutePreflightDecision(
+                durable_authority_valid=True,
+                current_runtime_ready=True,
+                current_mission_policy_allows=False,
+                operationally_usable=False,
+            ),
+        ),
+    ],
+    ids=(
+        "feature-flag-off",
+        "durable-authority-invalid",
+        "runtime-not-ready",
+        "mission-policy-deny",
+    ),
+)
+def test_cap5_requires_each_operational_prerequisite(
+    tmp_path: Path,
+    feature_enabled: bool,
+    decision: RuntimeRoutePreflightDecision,
+) -> None:
+    bridge = _RecordingBridge()
+    preflight = _RecordingRuntimePreflight(decision)
+    gateway, journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path,
+        bridge=bridge,
+        feature_enabled=feature_enabled,
+        runtime_preflight=preflight,
+        activation_authorizations=(_edge_uplink_activation(),),
+    )
+
+    with pytest.raises(CapabilityUnavailableError):
+        gateway.upload_edge_bundle(_edge_uplink_request())
+
+    assert bridge.calls == []
+    assert len(preflight.requests) == int(feature_enabled)
+    journal.close()
+
+
+def test_cap5_preflight_exception_fails_closed_before_bridge_invocation(
+    tmp_path: Path,
+) -> None:
+    bridge = _RecordingBridge()
+    preflight = _RecordingRuntimePreflight(
+        _all_true_preflight_decision(), error=RuntimeError("Core preflight unavailable")
+    )
+    gateway, journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path,
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=preflight,
+        activation_authorizations=(_edge_uplink_activation(),),
+    )
+
+    with pytest.raises(CapabilityUnavailableError, match="fail-closed"):
+        gateway.upload_edge_bundle(_edge_uplink_request())
+
+    assert len(preflight.requests) == 1
+    assert bridge.calls == []
+    journal.close()
+
+
+def test_cap5_truthy_untyped_preflight_response_fails_closed_before_bridge_invocation(
+    tmp_path: Path,
+) -> None:
+    bridge = _RecordingBridge()
+    preflight = _RecordingRuntimePreflight(True)
+    gateway, journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path,
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=preflight,
+        activation_authorizations=(_edge_uplink_activation(),),
+    )
+
+    with pytest.raises(CapabilityUnavailableError, match="typed decision"):
+        gateway.upload_edge_bundle(_edge_uplink_request())
+
+    assert len(preflight.requests) == 1
+    assert bridge.calls == []
+    journal.close()
+
+
+def test_cap5_new_route_invocation_fails_closed_without_preflight_or_activation(
+    tmp_path: Path,
+) -> None:
+    bridge = _RecordingBridge()
+    no_preflight, no_preflight_journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path / "no-preflight",
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=None,
+        activation_authorizations=(_edge_uplink_activation(),),
+    )
+    with pytest.raises(CapabilityUnavailableError, match="preflight"):
+        no_preflight.upload_edge_bundle(_edge_uplink_request("no-preflight"))
+    no_preflight_journal.close()
+
+    preflight = _RecordingRuntimePreflight(_all_true_preflight_decision())
+    no_activation, no_activation_journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path / "no-activation",
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=preflight,
+        activation_authorizations=(),
+    )
+    with pytest.raises(CapabilityUnavailableError, match="activation"):
+        no_activation.upload_edge_bundle(_edge_uplink_request("no-activation"))
+    assert bridge.calls == []
+    assert preflight.requests == []
+    no_activation_journal.close()
+
+
+def test_cap5_ambiguous_activation_mapping_fails_closed(tmp_path: Path) -> None:
+    bridge = _RecordingBridge()
+    preflight = _RecordingRuntimePreflight(_all_true_preflight_decision())
+    gateway, journal, _router = _cap5_edge_uplink_gateway(
+        tmp_path,
+        bridge=bridge,
+        feature_enabled=True,
+        runtime_preflight=preflight,
+        activation_authorizations=(_edge_uplink_activation(), _edge_uplink_activation()),
+    )
+
+    with pytest.raises(CapabilityUnavailableError, match="모호"):
+        gateway.upload_edge_bundle(_edge_uplink_request())
+
+    assert bridge.calls == []
+    assert preflight.requests == []
     journal.close()
 
 

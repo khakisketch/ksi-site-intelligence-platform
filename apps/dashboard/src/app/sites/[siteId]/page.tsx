@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
+import { CivilReadinessCard } from "@/components/site/CivilReadinessCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
@@ -24,6 +25,7 @@ import { listObservationWorkOrders } from "@/lib/core-api/observation-work-order
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getVolumeChanges } from "@/lib/core-api/phase34";
 import { formatNetVolumeM3 } from "@/lib/core-api/phase34-labels";
+import { getCivilReadiness } from "@/lib/core-api/civil-readiness";
 import { getSite } from "@/lib/core-api/sites";
 import { getLatestSiteBriefing, getSiteWorkspace } from "@/lib/core-api/site-workspace";
 import { copilotCitationHref } from "@/lib/copilot-citation";
@@ -343,6 +345,7 @@ export default async function SiteDetailPage({
     workspaceResult,
     briefingResult,
     workOrdersResult,
+    civilReadinessResult,
   ] = await Promise.allSettled([
     listMissions(site.siteId),
     listAllEvents({ siteId: site.siteId }),
@@ -354,6 +357,7 @@ export default async function SiteDetailPage({
     getSiteWorkspace(site.siteId),
     getLatestSiteBriefing(site.siteId),
     listObservationWorkOrders(site.siteId),
+    getCivilReadiness(site.siteId),
   ]);
   const missions = sectionOutcome(missionsResult);
   const events = sectionOutcome(
@@ -370,6 +374,7 @@ export default async function SiteDetailPage({
     workspaceOutcome.kind === "ok" ? workspaceOutcome.value : null;
   const briefingOutcome = optionalSectionOutcome(briefingResult);
   const workOrders = sectionOutcome(workOrdersResult);
+  const civilReadinessOutcome = sectionOutcome(civilReadinessResult);
 
   const epochs = jobsResult.status === "fulfilled" ? toSiteEpochs(jobsResult.value.jobs) : [];
   const selectedEpochId = resolveEpochId(epochs, rawEpoch);
@@ -476,6 +481,12 @@ export default async function SiteDetailPage({
                 </details>
               </SectionCard>
             </div>
+
+            <CivilReadinessCard
+              readiness={
+                civilReadinessOutcome.kind === "ok" ? civilReadinessOutcome.value : null
+              }
+            />
 
             <SectionCard
               title="구역별 순변화"

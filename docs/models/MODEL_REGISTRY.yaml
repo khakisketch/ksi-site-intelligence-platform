@@ -91,7 +91,7 @@ models:
       repository: spiderforest/MixerCSeg
       repository_commit: "7ad3fd6fd0e9bc60d1eb9c3b50292d876485dd1d"  # main 2026-03-09
       code_license: MIT
-      vendored_at: "services/defect-detection/src/ksi_defect_detection/_vendor/mixercseg"
+      vendored_at: "packages/defect-detection/src/ksi_defect_detection/_vendor/mixercseg"
       vendoring_note: >-
         전체 clone이 아니라 순수 추론에 필요한 파일만 추적 import로 확인해
         선별 벤더링(_vendor/mixercseg/NOTICE.md 참고). VMamba/models/kernels 의

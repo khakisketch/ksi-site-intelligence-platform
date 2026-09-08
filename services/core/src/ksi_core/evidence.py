@@ -80,6 +80,30 @@ class EvidenceStorageError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectStorageObservation:
+    """Bounded, metadata-only observation of one object.
+
+    This deliberately contains no body bytes.  ``sha256`` is ``None`` when
+    the backend cannot attest a trustworthy SHA-256; callers must fail closed.
+    """
+
+    object_key: str
+    exists: bool
+    size_bytes: int | None = None
+    sha256: str | None = None
+    content_type: str | None = None
+
+
+@runtime_checkable
+class ObjectStorageObservationPort(Protocol):
+    """HEAD/stat-only storage observation used before authoritative publication."""
+
+    def observe_object(self, object_key: str) -> ObjectStorageObservation:
+        """Return bounded metadata for ``object_key``; never read its body."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
 class DigestBoundUploadCapability:
     """스토리지가 digest를 강제하는 1회성 Edge 업로드 capability.
 
@@ -275,6 +299,8 @@ __all__ = [
     "EvidenceArtifact",
     "EvidenceStorage",
     "EvidenceStorageError",
+    "ObjectStorageObservation",
+    "ObjectStorageObservationPort",
     "EvidenceVerdict",
     "build_object_key",
     "expires_at",

@@ -1160,18 +1160,20 @@ def test_other_organization_cannot_read_view_or_verify_foreign_source_media(tmp_
         json={"measurements": [_measurement_payload("img-1.jpg")]},
         headers=other_worker_headers,
     )
-    assert foreign_verify.status_code == missing_verify.status_code == 404
+    assert foreign_verify.status_code == missing_verify.status_code == 409
     assert foreign_verify.json() == missing_verify.json()
 
-    # legacy organization worker는 여전히 정상 검증할 수 있다. foreign request가
-    # ContextVar나 durable bundle 상태를 누수시키지 않았음을 함께 검증한다.
-    verified = client.post(
+    # 이 mission-only 표면은 어느 조직에도 authority를 주지 않는다. 검증은 현재
+    # processing-job lease fence가 있는 /verify-input에서만 수행된다.
+    unfenced = client.post(
         f"/v1/missions/{_MISSION_ID}/source-media/verify",
         json={"measurements": [_measurement_payload("img-1.jpg")]},
         headers={"Authorization": f"Bearer {_WORKER_TOKEN}"},
     )
-    assert verified.status_code == 201
-    assert verified.json()["verdict"] == "VERIFIED"
+    assert unfenced.status_code == 409
+    assert unfenced.json()["verdict"] == "LEASE_FENCE_REQUIRED"
+    bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
+    assert bundle["verifiedAt"] is None
 
 
 def test_storage_failure_degrades_item_but_keeps_registration(tmp_path: Path) -> None:
@@ -1272,7 +1274,7 @@ def test_http_humans_cannot_verify_their_own_claims(tmp_path: Path, token: str) 
     assert response.status_code == 403
 
 
-def test_http_worker_verifies_and_bundle_reports_it(tmp_path: Path) -> None:
+def test_http_unfenced_worker_verification_is_disabled(tmp_path: Path) -> None:
     client = _client(tmp_path, storage=FakeStorage())
     _sealed_over_http(client)
 
@@ -1286,12 +1288,12 @@ def test_http_worker_verifies_and_bundle_reports_it(tmp_path: Path) -> None:
             ]
         },
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["verdict"] == "VERIFIED"
+    assert response.status_code == 409, response.text
+    assert response.json()["verdict"] == "LEASE_FENCE_REQUIRED"
 
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
-    assert bundle["verifiedAt"] is not None
+    assert bundle["verifiedAt"] is None
     assert bundle["lastMismatchAt"] is None
     assert bundle["captureWindow"] == {
         "status": "INCOMPLETE",
@@ -1300,8 +1302,8 @@ def test_http_worker_verifies_and_bundle_reports_it(tmp_path: Path) -> None:
     }
 
 
-def test_http_mismatch_is_422_and_shows_which_files(tmp_path: Path) -> None:
-    """불일치는 422 이고 **어떤 파일이** 어긋났는지 돌려준다 — 워커가 다시 볼 수 있게."""
+def test_http_unfenced_mismatch_cannot_write_a_mismatch_record(tmp_path: Path) -> None:
+    """Deprecated mission-only verify cannot mutate even with a mismatching payload."""
     client = _client(tmp_path, storage=FakeStorage())
     _sealed_over_http(client)
 
@@ -1315,16 +1317,15 @@ def test_http_mismatch_is_422_and_shows_which_files(tmp_path: Path) -> None:
             ]
         },
     )
-    assert response.status_code == 422
+    assert response.status_code == 409
     body = response.json()
-    assert body["verdict"] == "MISMATCH"
-    assert body["mismatched"] == ["img-2.jpg"]
+    assert body["verdict"] == "LEASE_FENCE_REQUIRED"
 
     client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
     bundle = client.get(f"/v1/missions/{_MISSION_ID}/source-media").json()
-    # "아직 아무도 안 읽었다"와 "재봤는데 어긋났다"를 화면이 구분할 수 있어야 한다.
+    # Fence 없는 요청은 durable mismatch evidence조차 남길 수 없다.
     assert bundle["verifiedAt"] is None
-    assert bundle["lastMismatchAt"] is not None
+    assert bundle["lastMismatchAt"] is None
 
 
 def test_http_verify_request_has_no_verdict_field(tmp_path: Path) -> None:

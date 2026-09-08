@@ -8,6 +8,12 @@
 # 무관한 대용량 트리는 제외)를 컨텍스트로 넣는 이유다.
 FROM python:3.12.14-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
 
+# Rasterio's bundled GDAL needs Expat when the production Core assembly imports
+# the shared design-surface profile. Keep this native runtime dependency explicit.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # uv 공식 배포 이미지에서 바이너리만 가져온다(astral-sh 권장 방식) — curl 설치
 # 스크립트는 빌드마다 네트워크 셸 스크립트를 실행해야 해서 이 방식보다 재현성이
 # 낮다.

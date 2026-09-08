@@ -33,6 +33,7 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import numpy as np
@@ -40,7 +41,6 @@ import rasterio
 from fastapi.testclient import TestClient
 from ksi_change_detection.diff_raster import sha256_of_file
 from ksi_core.design_surfaces import build_design_surface_object_key
-from ksi_core.processing_jobs import build_processing_artifact_object_key
 from ksi_processing_controller.capture_time import extract_capture_time
 from ksi_processing_controller.core_client import HttpCoreClient
 from ksi_processing_controller.design_conformance_worker import run_design_conformance_request
@@ -54,6 +54,7 @@ from test_aol1_mapping_autonomy import (  # noqa: E402 -- 같은 디렉터리 si
     _ingest_once,
     _mapping_plan_request,
     _photos,
+    _publish_artifact,
     _rect_aoi,
     _site_frame,
     aol1,
@@ -159,19 +160,34 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
 
     ``mission_id`` 를 인자로 받는 것이 유일한 차이다 — 그 워커 대역은 모듈 상수
     하나(첫 임무)에 고정돼 있어 두 번째(재관측) 임무에는 못 쓴다. ``with_dsm`` 은
-    설계 대비 잔량 계산에 쓸 DSM 산출물을 이 재구성이 함께 내는지 — 1세대만
-    ``True`` 다(2세대는 재관측 결과이지 새 설계 대비 기준이 아니다).
+    설계 대비 잔량 계산에 쓸 **실제 래스터** DSM을 이 재구성이 함께 내는지 뜻한다.
+    프로파일 완결을 위한 derived DSM은 항상 등록하고, 1세대만 ``True`` 다(2세대는
+    재관측 결과이지 새 설계 대비 기준이 아니다).
     """
     client = fixture.client
+    worker_instance_id = str(uuid4())
+    lease_acquisition_id = str(uuid4())
+    claim_headers = {
+        **fixture.as_worker(),
+        "X-KSI-Worker-Instance-Id": worker_instance_id,
+        "X-KSI-Lease-Acquisition-Id": lease_acquisition_id,
+        "X-KSI-Lease-Mode": "CLAIM",
+    }
 
     lease = client.post(
         f"/v1/processing-jobs/{job_id}/lease",
-        json={"workerId": "worker-1", "ttlSeconds": 600},
-        headers=fixture.as_worker(),
+        headers=claim_headers,
     )
     assert lease.status_code == 201, lease.text
+    lease_generation = int(lease.headers["X-KSI-Lease-Generation"])
+    fence_headers = {
+        **fixture.as_worker(),
+        "X-KSI-Worker-Instance-Id": worker_instance_id,
+        "X-KSI-Lease-Acquisition-Id": lease_acquisition_id,
+        "X-KSI-Lease-Generation": str(lease_generation),
+    }
 
-    job_input = client.get(f"/v1/processing-jobs/{job_id}/input", headers=fixture.as_worker())
+    job_input = client.get(f"/v1/processing-jobs/{job_id}/input", headers=fence_headers)
     assert job_input.status_code == 200, job_input.text
     media = job_input.json()["input"]["media"]
     assert media, "입력이 비어 있으면 이 시험은 공허하다"
@@ -204,9 +220,9 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
         )
 
     verified = client.post(
-        f"/v1/missions/{mission_id}/source-media/verify",
+        f"/v1/processing-jobs/{job_id}/verify-input",
         json={"measurements": measurements},
-        headers=fixture.as_worker(),
+        headers=fence_headers,
     )
     assert verified.status_code == 201, verified.text
     assert verified.json()["verdict"] == "VERIFIED", verified.text
@@ -214,45 +230,75 @@ def _run_worker(fixture: Aol1Fixture, job_id: str, mission_id: str, *, with_dsm:
     running = client.post(
         f"/v1/processing-jobs/{job_id}/transitions",
         json={"targetStatus": "RUNNING"},
-        headers=fixture.as_worker(),
+        headers=fence_headers,
     )
     assert running.status_code == 200, running.text
 
-    artifact = client.post(
-        f"/v1/processing-jobs/{job_id}/artifacts",
-        json={
-            "artifactId": "pointcloud",
-            "kind": "point_cloud",
-            "authority": "source",
-            "digest": "sha256:" + hashlib.sha256(f"aol2-point-cloud-{job_id}".encode()).hexdigest(),
-            "format": "laz",
-            "crs": _RASTER_CRS,
-        },
-        headers=fixture.as_worker(),
+    _publish_artifact(
+        fixture,
+        job_id,
+        fence_headers,
+        artifact_id="pointcloud",
+        kind="point_cloud",
+        authority="source",
+        derived_from=[],
+        artifact_bytes=f"aol2-point-cloud-{job_id}".encode(),
+        format_name="laz",
+        crs=_RASTER_CRS,
     )
-    assert artifact.status_code == 201, artifact.text
 
     if with_dsm:
-        dsm = client.post(
-            f"/v1/processing-jobs/{job_id}/artifacts",
-            json={
-                "artifactId": "dsm",
-                "kind": "dsm",
-                "authority": "source",
-                "digest": "sha256:" + hashlib.sha256(f"aol2-dsm-{job_id}".encode()).hexdigest(),
-                "format": "geotiff",
-                "crs": _RASTER_CRS,
-                "gsd": 0.05,
-                "verticalReference": _DSM_VERTICAL,
-            },
-            headers=fixture.as_worker(),
+        dsm_path = _write_raster(fixture.captures_root.parent / f"{job_id}-dsm.tif", _ramp())
+        dsm_bytes = dsm_path.read_bytes()
+        _publish_artifact(
+            fixture,
+            job_id,
+            fence_headers,
+            artifact_id="dsm",
+            kind="dsm",
+            authority="derived",
+            derived_from=["pointcloud"],
+            artifact_bytes=dsm_bytes,
+            format_name="geotiff",
+            crs=_RASTER_CRS,
+            gsd=0.05,
+            vertical_reference=_DSM_VERTICAL,
         )
-        assert dsm.status_code == 201, dsm.text
+    else:
+        _publish_artifact(
+            fixture,
+            job_id,
+            fence_headers,
+            artifact_id="dsm",
+            kind="dsm",
+            authority="derived",
+            derived_from=["pointcloud"],
+            artifact_bytes=f"aol2-dsm-{job_id}".encode(),
+            format_name="geotiff",
+            crs=_RASTER_CRS,
+            gsd=0.05,
+            vertical_reference=_DSM_VERTICAL,
+        )
+
+    _publish_artifact(
+        fixture,
+        job_id,
+        fence_headers,
+        artifact_id="dtm",
+        kind="dtm",
+        authority="derived",
+        derived_from=["pointcloud"],
+        artifact_bytes=f"aol2-dtm-{job_id}".encode(),
+        format_name="geotiff",
+        crs=_RASTER_CRS,
+        gsd=0.05,
+        vertical_reference=_DSM_VERTICAL,
+    )
 
     succeeded = client.post(
         f"/v1/processing-jobs/{job_id}/transitions",
         json={"targetStatus": "SUCCEEDED", "detail": "산출물 등록됨"},
-        headers=fixture.as_worker(),
+        headers=fence_headers,
     )
     assert succeeded.status_code == 200, succeeded.text
 
@@ -561,13 +607,7 @@ def test_reobservation_pair_completes_a_second_epoch_without_regressing_site_sta
     job_id = _run_first_epoch(fixture)
     _approve_autonomy(fixture)
 
-    current_path = _write_raster(tmp_path / "current.tif", _ramp())
     design_path = _write_raster(tmp_path / "design.tif", _flat())
-    fixture.storage.put_bytes(
-        build_processing_artifact_object_key(site_id=_SITE_ID, job_id=job_id, artifact_id="dsm"),
-        current_path.read_bytes(),
-        content_type="application/octet-stream",
-    )
 
     worker_http = TestClient(fixture.client.app)
     core_client = HttpCoreClient("http://core.test", token=_WORKER_TOKEN, client=worker_http)

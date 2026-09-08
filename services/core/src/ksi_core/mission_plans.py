@@ -58,7 +58,6 @@ import math
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -102,15 +101,16 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import JournalSealedError
 from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.mission_atomicity import MissionIssuanceCommitter, MissionIssuanceRejected
 from ksi_core.mission_issuance import MissionIssuanceRequest, issue_mission_contract
 from ksi_core.mission_records import (
     MISSION_NOT_FOUND_DETAIL,
+    IssuanceAuthorizationWitness,
+    IssuancePreconditionChangedError,
     MissionIssuanceSequenceStore,
     MissionRecord,
     MissionRecordVerdict,
     MissionStore,
-    SiteLookupResult,
-    precheck_issuance,
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
 )
@@ -663,12 +663,11 @@ def build_mission_plans_router(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str, str], SiteLookupResult | None],
+    issuance_committer: MissionIssuanceCommitter,
     kmz_storage: EvidenceStorage | None = None,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
-    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
 ) -> APIRouter:
@@ -784,16 +783,16 @@ def build_mission_plans_router(
         request_digest = _request_digest(plan_request_payload)
         request_now = datetime.now(UTC)
 
-        verdict = precheck_issuance(
-            mission_store=mission_store,
-            site_lookup=site_lookup,
+        precheck = issuance_committer.capture_site_authorization(
             organization_id=principal.organization_id,
             site_id=request.contract.site_id,
             mission_id=request.contract.mission_id,
             mission_type=request.contract.mission_type,
             requested_site_frame=contract_request_payload["siteFrame"],
+            request_digest=request_digest,
+            captured_at=request_now,
         )
-        if verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
+        if precheck is MissionRecordVerdict.MISSION_ID_CONFLICT:
             existing = mission_store.get(request.contract.mission_id)
             if (
                 existing is not None
@@ -850,8 +849,10 @@ def build_mission_plans_router(
                 _link_work_order(request, principal, order, now=request_now)
                 response.status_code = 200
                 return regenerated
-        if verdict is not None:
-            raise_for_mission_record_verdict(verdict)
+        if isinstance(precheck, MissionRecordVerdict):
+            raise_for_mission_record_verdict(precheck)
+        assert isinstance(precheck, IssuanceAuthorizationWitness)  # noqa: S101
+        witness = precheck
 
         # issued_at 을 한 번만 뽑아 계약 서명(validity.notBefore)과 레코드에 동일하게
         # 쓴다 — 둘이 별개 datetime.now() 호출이면 멱등 재발급(_regenerate_pair_artifact
@@ -863,15 +864,13 @@ def build_mission_plans_router(
             require_approved=True,
             now=issued_at,
         )
-        if acquisition_readiness is not None:
-            ready, detail = acquisition_readiness(
-                request.contract.site_id, principal.organization_id, issued_at
+        try:
+            witness = issuance_committer.attach_work_order(
+                witness, work_order_id=request.work_order_id
             )
-            if not ready:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"ACQUISITION_NOT_READY — {detail}",
-                )
+            witness = issuance_committer.attach_acquisition(witness, evaluated_at=issued_at)
+        except MissionIssuanceRejected as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         site_sequence: int | None = None
         if writer_version == "1.3":
             assert issuer_id is not None  # noqa: S101 -- 조립 시 검증
@@ -913,8 +912,46 @@ def build_mission_plans_router(
             plan_request=plan_request_payload,
             plan_request_digest=request_digest,
             assigned_device_id=request.contract.assigned_device_id,
+            issuance_schema_version="1.0",
+            issuance_request_digest=request_digest,
+            authorization_witness=witness,
         )
-        raise_for_mission_record_verdict(mission_store.record_issuance(record))
+        try:
+            commit_verdict = issuance_committer.commit(record, witness)
+        except IssuancePreconditionChangedError as exc:
+            existing = mission_store.get_scoped(
+                request.contract.mission_id,
+                organization_id=principal.organization_id,
+            )
+            if (
+                existing is not None
+                and existing.artifact_kind == "pair"
+                and existing.plan_request_digest == request_digest
+            ):
+                regenerated = _regenerate_pair_artifact(
+                    existing, private_key=private_key, key_id=key_id
+                )
+                _link_work_order(request, principal, order, now=issued_at)
+                response.status_code = 200
+                return regenerated
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if commit_verdict is MissionRecordVerdict.MISSION_ID_CONFLICT:
+            existing = mission_store.get_scoped(
+                request.contract.mission_id,
+                organization_id=principal.organization_id,
+            )
+            if (
+                existing is not None
+                and existing.artifact_kind == "pair"
+                and existing.plan_request_digest == request_digest
+            ):
+                regenerated = _regenerate_pair_artifact(
+                    existing, private_key=private_key, key_id=key_id
+                )
+                _link_work_order(request, principal, order, now=issued_at)
+                response.status_code = 200
+                return regenerated
+        raise_for_mission_record_verdict(commit_verdict)
         _persist_kmz(kmz_storage, record, result)
         _link_work_order(request, principal, order, now=issued_at)
         return result
@@ -1084,12 +1121,11 @@ def mount_mission_plans(
     private_key: Ed25519PrivateKey,
     key_id: str,
     mission_store: MissionStore,
-    site_lookup: Callable[[str, str], SiteLookupResult | None],
+    issuance_committer: MissionIssuanceCommitter,
     kmz_storage: EvidenceStorage | None = None,
     writer_version: Literal["1.2", "1.3"] = "1.2",
     issuer_id: str | None = None,
     sequence_store: MissionIssuanceSequenceStore | None = None,
-    acquisition_readiness: Callable[[str, str, datetime], tuple[bool, str]] | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
 ) -> None:
@@ -1111,12 +1147,11 @@ def mount_mission_plans(
             private_key=private_key,
             key_id=key_id,
             mission_store=mission_store,
-            site_lookup=site_lookup,
+            issuance_committer=issuance_committer,
             kmz_storage=kmz_storage,
             writer_version=writer_version,
             issuer_id=issuer_id,
             sequence_store=sequence_store,
-            acquisition_readiness=acquisition_readiness,
             observation_work_order_store=observation_work_order_store,
             acquisition_coordination_store=acquisition_coordination_store,
         )

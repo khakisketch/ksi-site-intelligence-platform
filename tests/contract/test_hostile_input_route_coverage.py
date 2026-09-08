@@ -60,6 +60,8 @@ _REGRESSION_POLYGON_DEPTH = "폴리곤 중첩 깊이 상한 회귀 있음"
 _REGRESSION_CRS_WHITELIST = "좌표계 화이트리스트 거부 회귀 있음"
 
 REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
+    ("POST", "/v1/capability-runtime/observations"): _FIRED_DIRECTLY,
+    ("POST", "/v1/capability-runtime/preflight"): _FIRED_DIRECTLY,
     (
         "POST",
         "/v1/checkpoint-validations/{validation_id}/observations",
@@ -128,6 +130,7 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/processing-jobs/{job_id}/artifacts/upload-url"): _BASE,
     ("POST", "/v1/processing-jobs/{job_id}/lease"): _NO_BODY,
     ("POST", "/v1/processing-jobs/{job_id}/transitions"): _BASE,
+    ("POST", "/v1/processing-jobs/{job_id}/verify-input"): _FIRED_DIRECTLY,
     ("POST", "/v1/region-extraction-requests/{request_id}/lease"): _NO_BODY,
     ("POST", "/v1/region-extraction-requests/{request_id}/transitions"): _BASE,
     ("POST", "/v1/reobservation-drafts/{draft_id}/approve"): _FIRED_DIRECTLY,

@@ -5,6 +5,9 @@ description = "DJI Integration Gateway — Cloud API/MQTT/미디어 연동 격�
 requires-python = ">=3.12,<3.13"
 dependencies = []
 
+[project.scripts]
+ksi-dji-gateway = "ksi_dji_gateway.runner:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

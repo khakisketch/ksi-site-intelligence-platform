@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.capability.authority_store import CapabilityAuthorityStore
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
@@ -351,6 +352,9 @@ def test_dev_assembly_mounts_every_v1_surface(tmp_path: Path) -> None:
     )
     try:
         dev_paths = {p for p in dev.app.openapi()["paths"] if p.startswith("/v1/")}
+        assert isinstance(
+            dev.app.state.capability_authority_store, CapabilityAuthorityStore
+        )
     finally:
         dev.close()
     missing = _max_assembly_paths(tmp_path / "max") - dev_paths

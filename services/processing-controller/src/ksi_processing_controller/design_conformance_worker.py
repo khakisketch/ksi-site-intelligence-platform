@@ -24,9 +24,9 @@
 ## 실패는 전부 ``FAILED`` 로 수렴한다 (comparison_worker 와 동일 원칙)
 
 어느 단계에서 예외가 나든 ``FAILED`` 전이를 시도하고 원래 예외를 다시 던진다.
-재시도는 안전하다: ``designConformanceId`` 가 requestId 에서 결정적으로 도출되고
-(Core 가 ``/input`` 으로 내려준다) 래스터 객체 키도 그로부터 결정적이라, 재시도는
-같은 자리를 덮어쓰고 같은 id 로 제출한다.
+재시도는 안전하다: ``designConformanceId`` 는 requestId에서 결정되고, Core는
+lease generation별 candidate 객체 키와 digest-bound PUT을 내려준다. 같은 attempt의
+exact retry만 같은 candidate를 쓰며 takeover된 generation은 다른 키를 쓴다.
 
 ## 이 모듈이 하지 않는 것
 
@@ -40,6 +40,7 @@ from __future__ import annotations
 import logging
 import shutil
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -58,6 +59,11 @@ from ksi_processing_controller.comparison_worker import LeaseHeartbeat
 from ksi_processing_controller.core_client import (
     CoreClientError,
     DesignConformanceCoreClient,
+)
+from ksi_processing_controller.workspace import (
+    attempt_workspace,
+    cleanup_attempt_workspace,
+    lease_or_compat_handle,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,12 +98,16 @@ class _DiffRasterPublisher:
         self._now_message = now_message
 
     def publish_diff_raster(self, path: Path, *, digest: str, size_bytes: int) -> datetime:
-        target = self._core.presign_diff_raster_upload(self._request_id)
+        target = self._core.presign_diff_raster_upload(
+            self._request_id, digest=digest, size_bytes=size_bytes
+        )
+        upload_headers = dict(target.required_headers)
+        upload_headers["Content-Type"] = target.content_type
         with path.open("rb") as handle:
             response = self._http.put(
                 target.upload_url,
                 content=handle,
-                headers={"Content-Type": target.content_type},
+                headers=upload_headers,
             )
         response.raise_for_status()
         # 여기까지는 **워커의 주장**이다. 다음 줄이 그것을 사실로 바꾼다 —
@@ -129,12 +139,23 @@ def run_design_conformance_request(
     fetch = http_client
     own_client = http_client is None
     now_message(f"[{request_id}] lease 취득")
-    core.acquire_design_conformance_lease(request_id)
+    lease = lease_or_compat_handle(
+        core.acquire_design_conformance_lease(request_id),
+        work_kind="design-conformance", resource_id=request_id,
+    )
     conformance_input = core.get_design_conformance_input(request_id)
 
     if conformance_input.status == "QUEUED":
         core.transition_design_conformance(request_id, "RUNNING")
         now_message(f"[{request_id}] RUNNING")
+
+    try:
+        attempt_dir = attempt_workspace(work_dir, lease)
+    except OSError as exc:
+        detail = str(exc)[:500]
+        with suppress(CoreClientError):
+            core.transition_design_conformance(request_id, "FAILED", detail=detail)
+        raise DesignConformanceWorkerRunError(f"[{request_id}] 실행 실패: {exc}") from exc
 
     heartbeat: LeaseHeartbeat | None = None
     heartbeat_started = False
@@ -145,7 +166,9 @@ def run_design_conformance_request(
                 timeout=httpx.Timeout(connect=10.0, read=120.0, write=600.0, pool=10.0)
             )
         heartbeat = LeaseHeartbeat(
-            lambda: core.acquire_design_conformance_lease(request_id),
+            lambda: getattr(
+                core, "renew_design_conformance_lease", core.acquire_design_conformance_lease
+            )(request_id),
             request_id,
             interval_seconds=heartbeat_interval_seconds,
             now_message=now_message,
@@ -155,7 +178,6 @@ def run_design_conformance_request(
         heartbeat_started = True
         # RUNNING 이후 작업 디렉터리 생성도 실행 실패 경계 안에 둔다. 디스크 오류가
         # try 밖에서 나면 요청이 FAILED로 수렴하지 못하고 영구 RUNNING에 남는다.
-        work_dir.mkdir(parents=True, exist_ok=True)
         # 격자 적재는 try 안이다 — 설정이 깨졌으면(경로는 있는데 파일이 없음)
         # ``load_geoid_grid`` 가 던지고, 그 실패도 FAILED 로 수렴해야 한다.
         # 미설정이면 None 이고, 그건 "정표고를 안 쓴다"는 정상 상태다. 계산 쪽이
@@ -186,7 +208,7 @@ def run_design_conformance_request(
             publish_diff_raster=_DiffRasterPublisher(
                 core, request_id, http_client=fetch, now_message=now_message
             ),
-            work_dir=work_dir,
+            work_dir=attempt_dir,
         )
         try:
             core.submit_design_conformance(conformance_input.mission_id, report)
@@ -240,6 +262,10 @@ def run_design_conformance_request(
             shutil.rmtree(raster_path.parent, ignore_errors=True)
         if own_client and fetch is not None:
             fetch.close()
+        try:
+            cleanup_attempt_workspace(work_dir, attempt_dir)
+        except OSError as exc:
+            now_message(f"[{request_id}] attempt workspace 정리 실패(무시하고 계속): {exc}")
 
 
 __all__ = ["DesignConformanceWorkerRunError", "run_design_conformance_request"]

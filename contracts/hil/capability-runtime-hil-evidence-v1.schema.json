@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/hil/capability-runtime-hil-evidence-v1.schema.json",
+  "title": "KSI HIL-0 capability runtime evidence v1",
+  "description": "Fail-closed HIL-0 route-family plan and non-approving evidence artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "capabilityAuthority",
+    "capture",
+    "routeRun",
+    "evidenceId",
+    "missionLatencyMeasurement",
+    "nonActuating",
+    "routeFamilyPlan",
+    "routeState",
+    "scenarioCaptures",
+    "scenarioPlan",
+    "schemaVersion"
+    ,"observationSequence"
+    ,"preflightDecisions"
+    ,"missionPolicyResult"
+    ,"providerInvocationResult"
+    ,"disconnectAt"
+    ,"reconnectAt"
+    ,"errors"
+    ,"artifactLogDigests"
+    ,"overallResult"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "capability-runtime-hil-evidence-v1"},
+    "artifactType": {"const": "HIL_0_CAPABILITY_RUNTIME_EVIDENCE"},
+    "evidenceId": {"type": "string", "minLength": 1},
+    "nonActuating": {"const": true},
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capturedAtUtc", "routeStateSignal"],
+      "properties": {
+        "capturedAtUtc": {"type": "string", "format": "date-time"},
+        "routeStateSignal": {"const": "ABSENT"}
+      }
+    },
+    "capabilityAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationalCapabilityActivation",
+        "productCapabilityApproval",
+        "routeEvidenceQualification"
+      ],
+      "properties": {
+        "routeEvidenceQualification": {"const": "NOT_QUALIFIED"},
+        "productCapabilityApproval": {"const": "NOT_APPROVED"},
+        "operationalCapabilityActivation": {"const": "NOT_ACTIVATED"}
+      }
+    },
+    "routeRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrationPath", "canonicalCapabilityId", "subjectPortId",
+        "physicalComponentIdentities", "softwareBuildDigest",
+        "firmwareBuildVersions", "configuredDeploymentDigest", "freshnessPolicy"
+      ],
+      "properties": {
+        "integrationPath": {"const": "PSDK_MANIFOLD"},
+        "canonicalCapabilityId": {"const": "EDGE_UPLINK"},
+        "subjectPortId": {"const": "UNCONFIRMED_EXTERNAL_SIGNAL_PORT"},
+        "physicalComponentIdentities": {"type": "array", "maxItems": 0},
+        "softwareBuildDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "firmwareBuildVersions": {"type": "array", "maxItems": 0},
+        "configuredDeploymentDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "freshnessPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "digest"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
+      }
+    },
+    "routeFamilyPlan": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"$ref": "#/$defs/routeFamily"}
+    },
+    "routeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blockerCode", "effect", "routeId", "status"],
+      "properties": {
+        "routeId": {"const": "HIL_ROUTE_1"},
+        "status": {"const": "BLOCKED_EXTERNAL"},
+        "blockerCode": {"const": "NO_GENUINE_ROUTE_STATE_SIGNAL"},
+        "effect": {"const": "NO_NEW_ROUTE_SELECTION"}
+      }
+    },
+    "scenarioPlan": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {"$ref": "#/$defs/scenarioPlan"}
+    },
+    "scenarioCaptures": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {"$ref": "#/$defs/scenarioCapture"}
+    },
+    "missionLatencyMeasurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captureStatus", "requirement"],
+      "properties": {
+        "requirement": {"const": "FIELD_REQUIRED"},
+        "captureStatus": {"const": "NOT_CAPTURED"}
+      }
+    },
+    "observationSequence": {"type": "array", "maxItems": 0},
+    "preflightDecisions": {"type": "array", "maxItems": 0},
+    "missionPolicyResult": {"const": "NOT_CAPTURED"},
+    "providerInvocationResult": {"const": "NOT_CAPTURED"},
+    "disconnectAt": {"type": "null"},
+    "reconnectAt": {"type": "null"},
+    "errors": {"const": ["NO_GENUINE_ROUTE_STATE_SIGNAL"]},
+    "artifactLogDigests": {"type": "array", "maxItems": 0},
+    "overallResult": {"const": "INCONCLUSIVE"}
+  },
+  "$defs": {
+    "routeFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "rank", "status"],
+      "properties": {
+        "rank": {"type": "integer", "minimum": 1, "maximum": 5},
+        "family": {
+          "enum": [
+            "PSDK_MOP_EDGE_UPLINK",
+            "MANIFOLD_DIRECT",
+            "DJI_CLOUD",
+            "DJI_DOCK",
+            "MSDK_FIELD"
+          ]
+        },
+        "status": {"enum": ["BLOCKED_EXTERNAL", "NOT_EXECUTED"]}
+      }
+    },
+    "scenarioPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fieldRequirement", "scenario", "safeEffect"],
+      "properties": {
+        "scenario": {"$ref": "#/$defs/scenario"},
+        "fieldRequirement": {"const": "FIELD_REQUIRED"},
+        "safeEffect": {"type": "string", "minLength": 1}
+      }
+    },
+    "scenarioCapture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceRefs", "scenario", "status"],
+      "properties": {
+        "scenario": {"$ref": "#/$defs/scenario"},
+        "status": {"const": "NOT_CAPTURED"},
+        "evidenceRefs": {"type": "array", "maxItems": 0}
+      }
+    },
+    "scenario": {
+      "enum": [
+        "AVAILABILITY",
+        "UNAVAILABILITY",
+        "RECONNECT",
+        "EXPIRY",
+        "WRONG_ROUTE",
+        "MISSION_DENY",
+        "FLAG_OFF",
+        "CORE_UNAVAILABLE",
+        "EDGE_BUNDLE_UPLOAD"
+      ]
+    }
+  }
+}

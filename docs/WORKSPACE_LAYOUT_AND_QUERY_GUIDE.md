@@ -1,52 +1,33 @@
 # Workspace Layout and Query Guide
 
-## 권장 실제 저장소 구조
+> Repository responsibility, runtime boundary, and canonical path are governed by
+> [`../REPOSITORY_STRUCTURE.md`](../REPOSITORY_STRUCTURE.md). This guide covers workspace search and
+> query mechanics only. Document authority/status is indexed by
+> [`DOCUMENT_STATUS.md`](DOCUMENT_STATUS.md).
 
-```text
-ksi-site-intelligence-platform/
-├─ AGENTS.md
-├─ CLAUDE.md
-├─ README.md
-├─ docs/
-│  ├─ 00_READ_FIRST.md
-│  ├─ product/
-│  ├─ architecture/
-│  ├─ acceptance/
-│  ├─ security/
-│  ├─ dji/
-│  └─ reference/
-├─ contracts/
-│  ├─ schemas/
-│  └─ api/
-├─ apps/
-│  └─ dashboard/
-├─ services/
-│  ├─ core/
-│  ├─ dji-gateway/
-│  └─ processing-controller/
-├─ edge/
-│  └─ manifold-runtime/
-├─ packages/
-│  ├─ domain/
-│  ├─ geo-core/
-│  ├─ event-contracts/
-│  ├─ mission-contracts/
-│  └─ test-vectors/
-├─ tests/
-│  ├─ contract/
-│  ├─ golden/
-│  ├─ replay/
-│  ├─ hil/
-│  └─ e2e/
-├─ references/
-│  ├─ REFERENCE_REPOS_LOCK.yaml
-│  └─ repos/
-│     ├─ ksi-platform/   # Git submodule, read-only
-│     ├─ ksi-terra/      # Git submodule, read-only
-│     └─ ksi-scout/      # Git submodule, read-only
-├─ scripts/
-└─ templates/
-```
+## 현행 책임 중심 진입점
+
+이 문서에는 디렉터리 트리를 복제하지 않는다. 복제된 트리는 실제 코드가 변할 때 조용히
+낡기 때문이다. 전체 현행 구조는 `REPOSITORY_STRUCTURE.md`를 사용한다. R0-R2 당시 이름
+문제와 제안은 `docs/audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`의 역사적
+증거이고, 실행된 service/package 이동은 `docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`
+이 옛 경로와 현재 경로를 연결한다.
+
+| 제품 책임 | 시작 경로 |
+|---|---|
+| KSI Operations Console | `apps/dashboard/README.md` |
+| KSI Site Intelligence Core / Gateway / Processing | `services/README.md` |
+| Manifold Edge / PSDK | `edge/README.md` |
+| 재사용 domain/contract/algorithm | `packages/README.md` |
+| wire/API/HIL schema | `contracts/` |
+| 문서 authority/status | `docs/00_READ_FIRST.md`, `docs/DOCUMENT_STATUS.md` |
+| 검증 계층 | `REPOSITORY_STRUCTURE.md`의 Verification ownership |
+| 참고 구현 | `references/README.md` |
+
+`services/`에는 독립적으로 시작·감시·배포하는 process만 둔다. 다른 KSI process가
+import하며 독립 lifecycle이 없는 계산·geometry·model adapter는 `packages/`에서 찾는다.
+경로 이름만으로 판단하지 말고 해당 README, `pyproject.toml`, 실제 entrypoint/consumer와
+owner test를 대조한다.
 
 ## 왜 Submodule인가
 

@@ -152,6 +152,18 @@ digest(`notAfter` 없음)를 **함께** 배포한다 — `docs/security/AUTH_TOK
 
 ## 5. 띄운다
 
+CAP-5 runtime capability는 기본적으로 fail-OFF다. 운영자가 승인된 배치에 대해
+`KSI_CORE_CAPABILITY_FRESHNESS_POLICIES_JSON`과
+`KSI_CORE_RUNTIME_ROUTE_CONFIGURATIONS_JSON`을 명시하고, CAP-4 activation에 고정된
+freshness policy ID+digest 및 configured deployment digest와 정확히 일치시켜야만 현재
+route 관측을 평가한다. 둘 중 하나라도 없거나 다르면 runtime-ready는 false이며 Core가
+최신/default policy나 장비 self-report로 보완하지 않는다. 이 설정은 신규 route 호출
+자격만 다루며 이미 발급된 signed Mission Contract를 관측 timeout으로 취소하지 않는다.
+Freshness registry의 각 값은 `RuntimeRouteFreshnessPolicyV1` 전문이며, Core는
+`expiresAt-observedAt`이 그 policy의 `observationTtlSeconds`와 정확히 같을 때만 ingest한다.
+Gateway도 같은 policy에 pin된 `minimumRefreshMarginSeconds`를 남기는 poll cadence만
+허용한다. ID→digest만 있는 구형 값이나 임의 기본 TTL은 허용하지 않는다.
+
 ```bash
 cd deploy
 cp .env.example .env

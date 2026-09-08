@@ -2,7 +2,7 @@
 
 ## 이 모듈이 채우는 자리
 
-``services/defect-detection`` 은 확률맵 → :class:`DefectCandidate` 변환까지 정확하게
+``packages/defect-detection`` 은 확률맵 → :class:`DefectCandidate` 변환까지 정확하게
 만들어놨지만 **그 결과를 아무도 볼 수 없었다** — 저장소도 엔드포인트도 없어서
 프로덕션 호출부가 0건이었다. 계약과 골든벡터가 아무리 정확해도, 부를 수 있는 표면이
 없으면 제품 기능이 아니라 라이브러리다. 이 모듈이 그 표면이다.

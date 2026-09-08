@@ -15,6 +15,12 @@
 > 상태 전이·복구 행동은 현장 노트북/컴퓨터에서 수행한다. 이 addendum은 아래의 과거
 > “모바일 임무 생성” 문구를 대체한다.
 
+> **2026-09-04 승인 addendum(ADR-KSI-033):** PSDK Liveview는 Manifold 로컬
+> acquisition/perception 입력, `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata,
+> 현재 정상 원본 ingress는 `SD/저장매체 → 현장 PC → KSI 웹 업로드`다. 자동 원본은
+> 별도 `MEDIA_PULL`/`MEDIA_UPLOAD` 목표 capability이며, 중앙 지속 영상 수신은 핵심 제품
+> 경로나 완료 전제가 아니다. 아래의 과거 live view/RC/direct-media 문구는 이 경계를 따른다.
+
 ---
 
 # Table of Contents
@@ -99,7 +105,8 @@ Next.js 기반 공통 프론트엔드다.
 - 2D·3D·BIM·정사영상·시계열 변화 조회
 - 검토·조치·재점검·보고서
 - 데이터 라벨 교정·모델 운영 상태 확인
-- 라이브뷰는 기본 화면이 아니라 예외·진단·수동개입 기능
+- 로컬 acquisition 상태는 필요 시 Pilot/Manifold 진단으로 인계하되 중앙 Liveview 수신을
+  Operations Console의 기본 기능이나 제품 전제로 두지 않음
 
 ### B. KSI Edge Autonomy
 
@@ -126,7 +133,8 @@ Manifold 3는 16GB LPDDR5, 256GB SSD, 최대 100 TOPS의 온보드 컴퓨팅과 
 중앙 플랫폼은 단일 거대 서버가 아니라 논리적으로 분리한다.
 
 1. **KSI Core Server**: 인증, 조직, 현장, 임무, 정책, 이벤트, PostGIS, 감사로그
-2. **DJI Integration Gateway**: DJI Cloud API, MQTT/HTTPS/WebSocket, Wayline, 미디어·상태 연동
+2. **DJI Integration Gateway**: 기능별 bounded metadata/Wayline route와 별도
+   `MEDIA_PULL`/`MEDIA_UPLOAD` adapter; 코드 존재만으로 지원을 주장하지 않음
 3. **KSI Processing**: 정사영상, 포인트클라우드, 3D Mesh/Tiles, 결함·변화·BIM 분석
 4. **Storage & Data Platform**: 원본, 이벤트 증거, 텔레메트리, 모델·데이터 계보
 5. **Model/Data Plane**: Dataset Builder, Model Registry, Evaluation, Shadow/Canary 배포
@@ -148,7 +156,7 @@ KSI Site Intelligence Platform
 ├─ KSI Site Intelligence                 # 고객 통합 제품
 ├─ KSI Edge Autonomy                     # Manifold Runtime
 ├─ KSI Spatial Intelligence              # 3D/4D World Model
-├─ KSI Safety & Event Intelligence       # Event/Evidence/Action
+├─ KSI Event & Evidence Intelligence      # Site Intelligence 관측 증거/업무
 ├─ KSI Spatial Processing Fabric         # Reconstruction/Change/Map Compiler
 ├─ KSI Data & ML Platform                # Dataset/Model Governance
 └─ Industry Solution Packs
@@ -571,9 +579,11 @@ Baseline 조사는 등록 완료 뒤 현장 작업공간에서 별도로 시작�
 - 귀환
 - 수동 인계
 - 임무 중단
-- 라이브뷰 열기
+- 로컬 acquisition 진단으로 인계(지원되고 별도 승인된 경우)
 
-라이브뷰는 자동 재생하지 않으며 스트림 장애가 임무를 중단시키지 않는다. 서버 연결이 끊겨도 Edge는 로컬 상태와 Mission Contract로 화면 없는 임무를 계속할 수 있다.
+Operations Console은 중앙 Liveview 수신을 임무 상태나 완료의 전제로 두지 않는다. 별도
+승인된 진단 연결이 없어도 Edge는 로컬 Liveview·상태와 유효 Mission Contract로 임무를
+계속할 수 있으며, 서버 또는 진단 화면 장애는 로컬 계약을 무효화하지 않는다.
 
 ## 7.6 이벤트 상세
 
@@ -1137,7 +1147,10 @@ CRS, point 범위 또는 nodata가 하나라도 맞지 않으면 부분 숫자 �
 
 사진 ingress의 v1 기본은 `SD/저장매체 → 현장 PC → KSI 웹 업로드`이고 대량 입력은
 기존 local uploader가 같은 profile을 사용한다. 향후 Pilot 2/Manifold 자동 반출은 이
-ingress adapter만 대체하며 이후 processing/comparison 계약을 바꾸지 않는다.
+ingress adapter만 대체하며 이후 processing/comparison 계약을 바꾸지 않는다. PSDK
+Liveview는 이 원본 ingress가 아니라 Manifold 로컬 acquisition/perception 입력이고,
+`EDGE_UPLINK`는 bounded metadata뿐이다. 자동 원본은 별도 `MEDIA_PULL`/`MEDIA_UPLOAD`
+capability와 물리 HIL 전에는 목표 경로다(ADR-KSI-033).
 
 ### 15.4.2 Civil Operations runtime과 처리 admission v1
 
@@ -1619,6 +1632,10 @@ PRODUCTION_SUPPORTED
 
 공식 저장소명은 **`ksi-site-intelligence-platform`**이다.
 
+아래 트리는 제품 runtime의 최소 논리 구조다. 실제 top-level/주요 모듈 owner,
+runtime 여부와 non-runtime canonical 위치는 루트 `REPOSITORY_STRUCTURE.md`가 소유한다.
+두 문서가 다르게 보이면 이 PRD는 제품 책임 경계를, 구조 정본은 현재 물리 경로를 말한다.
+
 ```text
 ksi-site-intelligence-platform/
 ├─ AGENTS.md
@@ -1632,12 +1649,19 @@ ksi-site-intelligence-platform/
 │  ├─ dji-gateway/
 │  └─ processing-controller/
 ├─ edge/
-│  └─ manifold-runtime/
+│  ├─ psdk-app/            # production native Edge entry
+│  ├─ manifold-runtime/    # native local intelligence/control-plane library
+│  └─ diagnostic/gated adapters
 ├─ packages/
 │  ├─ domain/
 │  ├─ geo-core/
+│  ├─ geo-spatial/
 │  ├─ event-contracts/
 │  ├─ mission-contracts/
+│  ├─ mission-planning/
+│  ├─ change-detection/
+│  ├─ bim-integration/
+│  ├─ defect-detection/
 │  └─ test-vectors/
 ├─ tests/
 │  ├─ contract/

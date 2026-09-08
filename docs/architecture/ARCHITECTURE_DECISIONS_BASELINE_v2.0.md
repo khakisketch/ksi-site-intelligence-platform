@@ -1,5 +1,10 @@
 # Architecture Decision Records
 
+> **SUPERSEDED.** This baseline is retained for history only. Current durable decisions are
+> [`../product/FINAL_DECISION_LEDGER_v1.0.md`](../product/FINAL_DECISION_LEDGER_v1.0.md),
+> `ARCHITECTURE_DECISIONS_v3.0.md`, and accepted `ADR-KSI-*` files. See
+> [`../DOCUMENT_STATUS.md`](../DOCUMENT_STATUS.md).
+
 ## ADR-001 Web-first dashboard
 Accepted. Keep Next.js as common UI and do not rebuild the product as separate native apps.
 

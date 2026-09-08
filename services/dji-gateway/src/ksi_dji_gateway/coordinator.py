@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from ksi_dji_gateway.domain.capabilities import Capability, GatewayTransport
+from ksi_dji_gateway.domain.capabilities import Capability, GatewayTransport, IntegrationPath
 from ksi_dji_gateway.domain.models import (
     EdgeDispatchRequest,
     EdgeUplinkRequest,
@@ -21,7 +21,26 @@ from ksi_dji_gateway.domain.validation import validate_identifiers
 from ksi_dji_gateway.errors import CapabilityUnavailableError, IdempotencyConflictError
 from ksi_dji_gateway.gateway import request_digest
 from ksi_dji_gateway.persistence.journal import GatewayJournal
-from ksi_dji_gateway.routing.capability_router import CapabilityRouter
+from ksi_dji_gateway.ports import RoutablePort
+from ksi_dji_gateway.routing.capability_router import (
+    CapabilityRouter,
+    RuntimeRoutePreflight,
+    RuntimeRoutePreflightDecision,
+    RuntimeRoutePreflightRequest,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RouteActivationAuthorization:
+    """Trusted exact capability/path binding to one CAP-4 authorization ID."""
+
+    canonical_capability: Capability
+    integration_path: IntegrationPath
+    activation_authorization_id: str
+
+    def __post_init__(self) -> None:
+        if not self.activation_authorization_id.strip():
+            raise ValueError("activation authorization ID는 비어 있을 수 없다")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +52,7 @@ class RoutingContext:
     hardware_model: str
     firmware_version: str
     allowed_transports: frozenset[GatewayTransport]
+    activation_authorizations: tuple[RouteActivationAuthorization, ...] = ()
 
     def __post_init__(self) -> None:
         validate_identifiers(
@@ -48,9 +68,34 @@ class RoutingContext:
         if not self.allowed_transports:
             raise ValueError("routing context에는 허용 transport가 하나 이상 필요하다")
 
+    def activation_authorization_id_for(
+        self, capability: Capability, integration_path: IntegrationPath
+    ) -> str:
+        """Return one trusted exact activation ID; missing or ambiguous is unusable."""
+
+        matches = tuple(
+            binding.activation_authorization_id
+            for binding in self.activation_authorizations
+            if (
+                binding.canonical_capability is capability
+                and binding.integration_path is integration_path
+            )
+        )
+        if len(matches) != 1:
+            raise CapabilityUnavailableError(
+                "exact capability/path activation authorization이 없거나 모호하다"
+            )
+        return matches[0]
+
 
 class CapabilityGateway:
-    """Invoke one narrow capability only after router evidence and feature-flag checks."""
+    """Invoke one narrow capability after router and CAP-5 runtime checks.
+
+    The preflight applies only to a *new* provider port invocation.  It never
+    cancels or changes an already-issued signed Mission Contract execution;
+    idempotent receipt replay returns before this boundary because it performs
+    no new device invocation.
+    """
 
     def __init__(
         self,
@@ -58,10 +103,12 @@ class CapabilityGateway:
         router: CapabilityRouter,
         journal: GatewayJournal,
         context: RoutingContext,
+        runtime_preflight: RuntimeRoutePreflight | None = None,
     ) -> None:
         self._router = router
         self._journal = journal
         self._context = context
+        self._runtime_preflight = runtime_preflight
         self._operation_lock = threading.Lock()
 
     def deliver_wayline(self, request: WaylineDispatchRequest) -> IntegrationReceipt:
@@ -134,6 +181,16 @@ class CapabilityGateway:
                 firmware_version=self._context.firmware_version,
                 allowed_transports=self._context.allowed_transports,
             )
+            activation_authorization_id = self._context.activation_authorization_id_for(
+                capability, port.integration_path
+            )
+            self._require_runtime_preflight(
+                capability=capability,
+                operation=operation,
+                request=request,
+                port=port,
+                activation_authorization_id=activation_authorization_id,
+            )
             invoke: Any = getattr(port, method_name, None)
             if not callable(invoke):
                 raise CapabilityUnavailableError(
@@ -160,6 +217,51 @@ class CapabilityGateway:
             self._journal.append(receipt)
             return receipt
 
+    def _require_runtime_preflight(
+        self,
+        *,
+        capability: Capability,
+        operation: OperationKind,
+        request: GatewayRequest,
+        port: RoutablePort,
+        activation_authorization_id: str,
+    ) -> None:
+        if self._runtime_preflight is None:
+            raise CapabilityUnavailableError("CAP-5 runtime preflight가 주입되지 않았다")
+        try:
+            decision = self._runtime_preflight.evaluate(
+                RuntimeRoutePreflightRequest(
+                    organization_id=self._context.organization_id,
+                    site_id=self._context.site_id,
+                    gateway_device_id=self._context.gateway_device_id,
+                    edge_device_id=self._context.edge_device_id,
+                    canonical_capability=capability,
+                    integration_path=port.integration_path,
+                    subject_port_id=port.port_id,
+                    transport=port.transport,
+                    hardware_model=self._context.hardware_model,
+                    firmware_version=self._context.firmware_version,
+                    mission_id=request.mission_id,
+                    operation=operation,
+                    idempotency_key=request.idempotency_key,
+                    activation_authorization_id=activation_authorization_id,
+                )
+            )
+        except CapabilityUnavailableError:
+            raise
+        except Exception as exc:
+            raise CapabilityUnavailableError(
+                "CAP-5 runtime preflight가 fail-closed로 거부됐다"
+            ) from exc
+        if not isinstance(decision, RuntimeRoutePreflightDecision):
+            raise CapabilityUnavailableError(
+                "CAP-5 runtime preflight가 typed decision을 반환하지 않았다"
+            )
+        if not decision.operationally_usable:
+            raise CapabilityUnavailableError(
+                "CAP-5 runtime preflight가 route invoke를 허용하지 않았다"
+            )
+
     def _require_bound_request(self, request: GatewayRequest) -> None:
         if (
             request.organization_id != self._context.organization_id
@@ -174,4 +276,4 @@ class CapabilityGateway:
             raise CapabilityUnavailableError("요청 scope가 routing context와 일치하지 않는다")
 
 
-__all__ = ["CapabilityGateway", "RoutingContext"]
+__all__ = ["CapabilityGateway", "RouteActivationAuthorization", "RoutingContext"]

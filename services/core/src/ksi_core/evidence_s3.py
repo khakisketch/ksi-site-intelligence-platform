@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from .evidence import (
     DigestBoundUploadCapability,
     EvidenceStorageError,
+    ObjectStorageObservation,
     sha256_digest_to_s3_checksum,
 )
 
@@ -186,6 +187,46 @@ class S3EvidenceStorage:
             raise EvidenceStorageError(
                 f"객체 읽기 실패({object_key}): {type(exc).__name__}"
             ) from exc
+
+    def observe_object(self, object_key: str) -> ObjectStorageObservation:
+        """Observe object metadata using S3 HEAD only; never fetch GB-scale bodies."""
+        try:
+            response = self._client.head_object(
+                Bucket=self._bucket, Key=object_key, ChecksumMode="ENABLED"
+            )
+        except Exception as exc:  # noqa: BLE001 -- provider-specific not-found hierarchy
+            name = type(exc).__name__
+            response_error = getattr(exc, "response", {})
+            error = response_error.get("Error", {}) if isinstance(response_error, dict) else {}
+            code = str(error.get("Code", "")) if isinstance(error, dict) else ""
+            if name in {"NoSuchKey", "NoSuchObject"} or code in {"404", "NoSuchKey", "NotFound"}:
+                return ObjectStorageObservation(object_key=object_key, exists=False)
+            raise EvidenceStorageError(
+                f"객체 metadata 관측 실패({object_key}): {name}"
+            ) from exc
+        checksum = response.get("ChecksumSHA256")
+        sha256 = None
+        if isinstance(checksum, str):
+            try:
+                import base64
+
+                decoded = base64.b64decode(checksum, validate=True)
+                if len(decoded) == 32:
+                    sha256 = "sha256:" + decoded.hex()
+            except (ValueError, TypeError):
+                pass
+        length = response.get("ContentLength")
+        return ObjectStorageObservation(
+            object_key=object_key,
+            exists=True,
+            size_bytes=int(length) if isinstance(length, int) else None,
+            sha256=sha256,
+            content_type=(
+                response.get("ContentType")
+                if isinstance(response.get("ContentType"), str)
+                else None
+            ),
+        )
 
     def delete(self, object_key: str) -> None:
         """객체 삭제 — 이미 없으면 성공으로 본다(S3 delete_object 는 멱등이다)."""

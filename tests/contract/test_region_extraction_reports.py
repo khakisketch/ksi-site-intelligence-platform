@@ -17,15 +17,18 @@ extraction_policy()`` 다**(policy-owned 기반안).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import mount_auth
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.leasing import LeaseFence
 from ksi_core.region_extraction_reports import (
     RegionExtractionRecoveryError,
     RegionExtractionStore,
@@ -307,15 +310,80 @@ def test_missing_history_is_404_not_an_empty_list(fixture: Fixture) -> None:
 def test_http_submit_and_list(fixture: Fixture) -> None:
     request = fixture.request()
     report = fixture.valid_report(request)
+    instance_id = str(uuid4())
+    acquisition_id = str(uuid4())
+    lease = fixture.request_fixture.requests.acquire_lease(
+        request.request_id,
+        worker_instance_id=instance_id,
+        lease_acquisition_id=acquisition_id,
+        now=datetime.now(UTC),
+    )
+    assert lease.record is not None and lease.record.lease is not None
     client = TestClient(fixture.app())
 
     submitted = client.post(
         f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction",
         json=report.model_dump(by_alias=True, mode="json"),
-        headers=_auth(_WORKER_TOKEN),
+        headers={
+            **_auth(_WORKER_TOKEN),
+            "X-KSI-Worker-Instance-Id": instance_id,
+            "X-KSI-Lease-Acquisition-Id": acquisition_id,
+            "X-KSI-Lease-Generation": str(lease.record.lease.lease_generation),
+        },
     )
     assert submitted.status_code == 201, submitted.json()
     assert submitted.json()["verdict"] == "RECORDED"
+
+
+def test_same_token_stale_generation_cannot_reserve_region_report(fixture: Fixture) -> None:
+    request = fixture.request()
+    report = fixture.valid_report(request)
+    now = datetime.now(UTC)
+    first = fixture.request_fixture.requests.acquire_lease(
+        request.request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        now=now - timedelta(minutes=16),
+    )
+    assert first.record is not None and first.record.lease is not None
+    first_fence = first.record.lease.fence
+    assert first_fence is not None
+    successor = fixture.request_fixture.requests.acquire_lease(
+        request.request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        now=now,
+    )
+    assert successor.record is not None and successor.record.lease is not None
+    successor_fence = successor.record.lease.fence
+    assert successor_fence is not None
+
+    client = TestClient(fixture.app())
+
+    def _fence_headers(fence: LeaseFence) -> dict[str, str]:
+        return {
+            **_auth(_WORKER_TOKEN),
+            "X-KSI-Worker-Instance-Id": fence.worker_instance_id,
+            "X-KSI-Lease-Acquisition-Id": fence.lease_acquisition_id,
+            "X-KSI-Lease-Generation": str(fence.lease_generation),
+        }
+
+    stale = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction",
+        json=report.model_dump(by_alias=True, mode="json"),
+        headers=_fence_headers(first_fence),
+    )
+    assert stale.status_code == 409
+    assert stale.json()["verdict"] in {
+        "LEASE_HELD_BY_ANOTHER",
+        "STALE_LEASE_ACQUISITION",
+        "STALE_LEASE_GENERATION",
+    }
+    accepted = client.post(
+        f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction",
+        json=report.model_dump(by_alias=True, mode="json"),
+        headers=_fence_headers(successor_fence),
+    )
+    assert accepted.status_code == 201
+    assert len(fixture.reports.list_for_mission(_CURRENT_MISSION_ID)) == 1
 
     listed = client.get(
         f"/v1/missions/{_CURRENT_MISSION_ID}/region-extraction", headers=_auth(_VIEWER_TOKEN)
@@ -524,6 +592,50 @@ def test_replay_restores_recorded_reports_and_skips_rejections(fixture: Fixture)
     replayed = _reopen(fixture)
     entries = replayed.list_for_mission(_CURRENT_MISSION_ID)
     assert [e.report.change_region_set_id for e in entries] == [request.change_region_set_id]
+
+
+def test_fenced_report_rejects_actor_drift_live_and_on_replay(fixture: Fixture) -> None:
+    request = fixture.request()
+    report = fixture.valid_report(request)
+    now = datetime.now(UTC)
+    lease = fixture.request_fixture.requests.acquire_lease(
+        request.request_id,
+        lease_fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+        authenticated_actor_id="principal-a",
+        now=now,
+    )
+    assert lease.record is not None and lease.record.lease is not None
+    fence = lease.record.lease.fence
+    assert fence is not None
+
+    denied = fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="principal-b",
+        lease_fence=fence,
+    )
+    assert denied.verdict is RegionExtractionVerdict.LEASE_HELD_BY_ANOTHER
+    assert fixture.reports.record(
+        _CURRENT_MISSION_ID,
+        report,
+        now=now,
+        reported_by="principal-a",
+        lease_fence=fence,
+    ).verdict is RegionExtractionVerdict.RECORDED
+
+    fixture.journal.close()
+    path = fixture.tmp_path / "region-extraction.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line]
+    rows[-1]["reportedBy"] = "principal-b"
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    with pytest.raises(RegionExtractionRecoveryError, match="lease history"):
+        RegionExtractionStore(
+            DurableJournal(path),
+            mission_store=fixture.request_fixture.report_fixture.base.missions,
+            request_store=fixture.request_fixture.requests,
+            design_conformance_report_store=fixture.request_fixture.report_fixture.reports,
+        )
 
 
 def test_replay_refuses_unknown_record_kinds(fixture: Fixture) -> None:

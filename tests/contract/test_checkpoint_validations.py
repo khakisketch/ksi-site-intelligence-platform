@@ -93,6 +93,17 @@ class _Jobs:
             ),
         )
 
+    def resolve_artifact(self, job_id: str, artifact_id: str) -> object | None:
+        pair = self.artifact_of(job_id, artifact_id)
+        if pair is None:
+            return None
+        record, artifact = pair
+        return SimpleNamespace(
+            record=record,
+            artifact=artifact,
+            object_key="sites/site-1/processing-jobs/job-1/artifacts/dsm-1",
+        )
+
 
 class _Missions:
     _record = SimpleNamespace(mission_id="mission-1", site_id="site-1", organization_id="org-1")

@@ -25,9 +25,16 @@ from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordi
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.capability.authority_store import CapabilityAuthorityStore
+from ksi_core.capability.runtime_projection import (
+    RuntimeCapabilityProjector,
+    RuntimeRouteObservationStore,
+    TrustedRuntimeRouteConfigurationRegistry,
+)
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
+from ksi_core.civil_readiness import CivilReadinessProjector
 from ksi_core.comparison_requests import ComparisonRequestStore
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.copilot_conversations import (
@@ -247,6 +254,12 @@ def _max_assembly(tmp_path: Path) -> Any:
         processing_job_store=processing_job_store,
         event_store=event_store,
     )
+    civil_readiness_projector = CivilReadinessProjector(
+        site_store=site_store,
+        processing_job_store=processing_job_store,
+        design_surface_store=design_surface_store,
+        analysis_readiness=None,
+    )
     conversation_service = CopilotConversationService(
         store=CopilotConversationStore(
             DurableJournal(tmp_path / "copilot-conversations.jsonl"),
@@ -286,6 +299,16 @@ def _max_assembly(tmp_path: Path) -> Any:
         processing_job_store=processing_job_store,
         request_store=design_conformance_request_store,
         storage=storage,
+    )
+    runtime_projector = RuntimeCapabilityProjector(
+        authority_store=CapabilityAuthorityStore(
+            DurableJournal(tmp_path / "capability-authority.jsonl")
+        ),
+        configuration_registry=TrustedRuntimeRouteConfigurationRegistry(),
+        observation_store=RuntimeRouteObservationStore(
+            DurableJournal(tmp_path / "capability-runtime-observations.jsonl")
+        ),
+        supported_freshness_policies={},
     )
     return create_app(
         evidence_storage=storage,
@@ -341,12 +364,14 @@ def _max_assembly(tmp_path: Path) -> Any:
         copilot_conversation_service=conversation_service,
         site_workspace_projector=site_workspace_projector,
         site_briefing_service=briefing_service,
+        civil_readiness_projector=civil_readiness_projector,
         equipment_state_store=EquipmentStateStore(
             DurableJournal(tmp_path / "equipment-states.jsonl"), site_store=site_store
         ),
         equipment_support_store=EquipmentSupportStore(
             DurableJournal(tmp_path / "equipment-support.jsonl")
         ),
+        runtime_capability_projector=runtime_projector,
         mission_signing_key=signing_key,
         mission_signing_key_id="contract-sync-test-key",
     )
@@ -536,6 +561,23 @@ def test_openapi_refs_resolve_to_defined_targets() -> None:
             dangling.append(f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)")
 
     assert not dangling, f"openapi-core.yaml 의 $ref 가 정의되지 않은 대상을 가리킨다: {dangling}"
+
+
+def test_runtime_observation_producer_kind_is_a_closed_least_privilege_enum(
+    tmp_path: Path,
+) -> None:
+    document = yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
+    assert document["info"]["version"] == "1.35.0"
+    documented_producer_kind = document["components"]["schemas"]["RuntimeRouteObservationV1"][
+        "properties"
+    ]["producerPrincipalKind"]
+    implemented_producer_kind = _implemented_spec(tmp_path)["components"]["schemas"][
+        "RuntimeRouteObservationV1"
+    ]["properties"]["producerPrincipalKind"]
+    expected = ["GATEWAY_DEVICE", "EDGE_DEVICE", "EDGE_ROUTE_OBSERVER"]
+
+    assert documented_producer_kind["enum"] == expected
+    assert implemented_producer_kind["enum"] == expected
 
 
 # ── ④·⑤ 응답 본문 대조 (risk api-contract-response-schema-void) ─────────────

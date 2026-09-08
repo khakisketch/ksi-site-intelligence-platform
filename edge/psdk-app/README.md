@@ -53,6 +53,94 @@ uv run python tools/edge/check_shadow_flight_boundary.py \
 따라서 이 디렉터리의 소프트웨어 빌드 성공은 **PSDK ingress 배선**만 뜻한다. Hardware
 verified나 production supported를 뜻하지 않는다.
 
+### HIL-1S PSDK/MOP Edge uplink companion
+
+`KSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON`은 한 개의 비작동
+`PSDK_MANIFOLD / EDGE_UPLINK` 경로만 추가한다. 실제 vendored PSDK 3.16의
+`DjiMopChannel_Init/Create/Bind/Accept/SendData/RecvData/Close/Destroy`를 사용하며,
+Waypoint·FlightController·motor·gimbal·camera·media API를 호출하지 않는다. 고정된
+로컬 endpoint는 `/run/ksi/psdk.sock`이고 배포자가 현재 DPK 사용자 소유의 private
+`/run/ksi` directory를 먼저 만들어야 한다.
+
+`ROUTE_STATUS_V1`의 AVAILABLE 조건은 정확히 다음 conjunction이다.
+
+```text
+DjiCore_ApplicationStart succeeded
+AND exact reliable MOP channel is currently accepted
+AND exact EDGE_BUNDLE_UPLOAD handler/listener is registered
+```
+
+process liveness, CMake configuration, 과거 연결은 AVAILABLE 근거가 아니다. MOP receive
+monitor가 peer close/error를 관찰하면 즉시 disconnected로 바꾸고 같은 bound channel에서
+다음 `Accept`를 기다린다. Unix request는 64 KiB의 단일 JSON+EOF frame이며 exact
+operation/field/scope/port/hash만 허용한다. `EDGE_BUNDLE_UPLOAD`은 검증된 EdgeBundle
+metadata frame을 MOP에 보내는 것 외에 어떤 device action도 수행하지 않는다.
+
+각 companion instance는 생성 시 Linux kernel에서 128-bit random incarnation ID를 얻어
+`psdk-route-<32hex>-<generation>-<sequence>` signal ID를 만든다. 안전한 entropy를
+얻지 못하면 listener 생성 전에 fail-closed하며 시간/0 기본값으로 대체하지 않는다.
+이 값은 Gateway observation 멱등성·추적 전용이고 어떤 capability/Mission/deployment
+권위에도 참여하지 않는다.
+
+```bash
+cmake -S edge/psdk-app -B build-manifold3-app \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-manifold3.cmake \
+  -DKSI_TARGET_MANIFOLD3=ON \
+  -DKSI_PSDK_APP_INFO_HEADER=/secure/dji_sdk_app_info.h \
+  -DKSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON \
+  -DKSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID=<trusted_org> \
+  -DKSI_PSDK_APP_EDGE_UPLINK_SITE_ID=<trusted_site> \
+  -DKSI_PSDK_APP_EDGE_DEVICE_ID=<exact_edge_device> \
+  -DKSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID=<approved_subject_port> \
+  -DKSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID=<approved_1_to_65535>
+cmake --build build-manifold3-app --target ksi_psdk_app -j
+```
+
+Host 진단 빌드는 `-DKSI_PSDK_APP_BUILD_TESTS=ON
+-DKSI_PSDK_APP_ENABLE_SANITIZERS=ON`으로 ASan+UBSan을 재현할 수 있다. TSan은
+`KSI_PSDK_APP_ENABLE_THREAD_SANITIZER=ON`의 상호배타적 별도 진단이다. 둘 다 기본
+OFF이며 sanitized host PASS는 unsanitized aarch64 device artifact의 실기 검증을
+대체하지 않는다. 정확한 명령은 `docs/hil/HIL_1S_PSDK_RUNTIME_COMPANION.md`에 있다.
+
+이 빌드와 host Unix interoperability test는 소프트웨어 준비 근거일 뿐이다. 실제 M4D,
+Manifold 3, peer MOP client, firmware identity, disconnect/reconnect raw log가 확보되기 전에는
+`VERIFIED_HIL`로 표시할 수 없다. 더구나 핀된 PSDK 3.16은 Manifold의 `Accept`
+server를 PSDK `Connect` client가 주소화할 수 있음을 문서화하지 않는다. 현재 route는
+`BLOCKED_HARDWARE_TOPOLOGY`이며 정확한 근거와 entry condition은
+`docs/hil/HIL_1R_PHYSICAL_READINESS.md`에 있다.
+
+### HIL-1P PSDK/MOP peer receiver
+
+`KSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON`은 HIL-1S `Accept` server와 상호배타적인
+별도 client mode다. 조직·Site·Edge·subject port·channel과 remote PSDK server address를
+모두 CMake로 명시해야 하며, address는 `PAYLOAD_PORT_NO1..NO3` 또는
+`EXTENSION_PORT_V2_NO1..NO8`만 허용한다. RC/Cloud target과 local self-connect는 허용하지
+않는다. `DjiCore_ApplicationStart` 뒤 worker가 `Connect`/`RecvData`를 소유하고 close/error
+뒤 재연결하며, shutdown은 `DjiCore_DeInit` 전에 `Close`로 receive를 해제하고 join한다.
+
+수신 frame은 existing `EDGE_BUNDLE_UPLOAD` metadata schema만 strict하게 검증한다. 이
+protocol에는 acknowledgement가 정의되어 있지 않으므로 `DjiMopChannel_SendData`를 호출하지
+않으며 payload는 실행·device action으로 dispatch되지 않는다.
+
+```bash
+cmake -S edge/psdk-app -B build-manifold3-peer \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-manifold3.cmake \
+  -DKSI_TARGET_MANIFOLD3=ON \
+  -DKSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON \
+  -DKSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID=<trusted_org> \
+  -DKSI_PSDK_APP_MOP_PEER_SITE_ID=<trusted_site> \
+  -DKSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID=<exact_edge_device> \
+  -DKSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID=<approved_subject_port> \
+  -DKSI_PSDK_APP_MOP_PEER_CHANNEL_ID=<approved_1_to_65535> \
+  -DKSI_PSDK_APP_MOP_PEER_ADDRESS=<approved_payload_or_extension_port>
+cmake --build build-manifold3-peer --target ksi_psdk_app -j
+```
+
+이 build는 client 쪽 DPK만 만든다. server companion build와 서로 다른 물리 PSDK
+endpoint에 별도로 배치해야 하며, 같은 binary에서 두 mode를 함께 켜면 CMake가 거부한다.
+이는 compile/lifecycle hypothesis일 뿐이다. 벤더가 문서화한 Manifold 대상 address가
+없으므로 두 PSDK endpoint를 준비했다는 사실만으로 물리 연결 가능성을 주장하지 않는다.
+
 ### Phase 3B WaypointV3 upload-only candidate
 
 `src/flight_execution/waypoint_v3_upload_only.cpp`는 기본 DPK에 링크되지 않는 S1

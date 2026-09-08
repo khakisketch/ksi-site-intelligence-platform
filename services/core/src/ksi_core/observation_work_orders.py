@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -288,6 +289,24 @@ class ObservationWorkOrderStore:
             if order is None or order.organization_id != organization_id:
                 return None
             return order
+
+    @contextmanager
+    def issuance_commit_guard(
+        self, work_order_id: str, *, organization_id: str
+    ) -> Iterator[ObservationWorkOrder | None]:
+        """Mission commit 동안 WorkOrder version/status/cycle 변경을 막는다.
+
+        Site guard 뒤, Acquisition guard 앞에서 획득하는 것이 유일한 허용 순서다.
+        반환 객체는 Pydantic immutable snapshot으로 취급하며 coordinator가 witness와
+        exact equality를 검사한다.
+        """
+
+        with self._lock:
+            order = self._orders.get(work_order_id)
+            if order is None or order.organization_id != organization_id:
+                yield None
+                return
+            yield order
 
     def list_for_site(self, site_id: str, *, organization_id: str) -> list[ObservationWorkOrder]:
         if not self._site_exists(site_id, organization_id):

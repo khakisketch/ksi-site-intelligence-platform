@@ -41,7 +41,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from ksi_event_contracts.change_region_report import ChangeRegion, ChangeRegionSetReport
 from ksi_event_contracts.region_extraction_policy import current_region_extraction_policy
 from ksi_mission_contracts.models import FlightEnvelope
@@ -71,6 +71,7 @@ from ksi_core.auth import (
     require_permission,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.leasing import LeaseFence
 from ksi_core.region_extraction_requests import RegionExtractionRequestRecord
 
 if TYPE_CHECKING:
@@ -112,6 +113,11 @@ class RegionExtractionVerdict(StrEnum):
     #: 리포트가 지금 이 순간의 ``current_region_extraction_policy()`` 와 다른
     #: 기준값으로 계산됐다(policy-owned — 모듈 docstring).
     EXTRACTION_POLICY_MISMATCH = "EXTRACTION_POLICY_MISMATCH"
+    LEASE_REQUIRED = "LEASE_REQUIRED"
+    LEASE_HELD_BY_ANOTHER = "LEASE_HELD_BY_ANOTHER"
+    STALE_LEASE_ACQUISITION = "STALE_LEASE_ACQUISITION"
+    STALE_LEASE_GENERATION = "STALE_LEASE_GENERATION"
+    INVALID_LEASE_FENCE = "INVALID_LEASE_FENCE"
     DUPLICATE_REPORT_ID = "DUPLICATE_REPORT_ID"
     STORE_UNAVAILABLE = "STORE_UNAVAILABLE"
 
@@ -126,6 +132,11 @@ _STATUS: dict[RegionExtractionVerdict, int] = {
     RegionExtractionVerdict.CRS_MISMATCH: 422,
     RegionExtractionVerdict.THRESHOLD_MISMATCH: 422,
     RegionExtractionVerdict.EXTRACTION_POLICY_MISMATCH: 422,
+    RegionExtractionVerdict.LEASE_REQUIRED: 409,
+    RegionExtractionVerdict.LEASE_HELD_BY_ANOTHER: 409,
+    RegionExtractionVerdict.STALE_LEASE_ACQUISITION: 409,
+    RegionExtractionVerdict.STALE_LEASE_GENERATION: 409,
+    RegionExtractionVerdict.INVALID_LEASE_FENCE: 422,
     RegionExtractionVerdict.DUPLICATE_REPORT_ID: 409,
     RegionExtractionVerdict.STORE_UNAVAILABLE: 503,
 }
@@ -146,6 +157,8 @@ class RecordedRegionExtraction:
     report: ChangeRegionSetReport
     reported_by: str | None
     recorded_at: datetime
+    request_id: str | None = None
+    accepted_lease_fence: LeaseFence | None = None
 
 
 class RegionExtractionStore:
@@ -199,9 +212,46 @@ class RegionExtractionStore:
                     f"재생: 기록될 수 없는 리포트({verdict.value}: {detail}) — "
                     f"missionId={mission_id} changeRegionSetId={report.change_region_set_id}"
                 )
+            request_id, fence = self._replay_authority(raw, report)
+            if fence is not None and not self._request_store.has_recorded_lease_fence(
+                report.change_region_set_id,
+                fence,
+                authenticated_actor_id=raw.get("reportedBy"),
+            ):
+                raise RegionExtractionRecoveryError(
+                    "재생: result authority가 durable request lease history에 없다"
+                )
             self._project(
-                mission_id, report, raw.get("reportedBy"), datetime.fromisoformat(raw["ts"])
+                mission_id,
+                report,
+                raw.get("reportedBy"),
+                datetime.fromisoformat(raw["ts"]),
+                request_id=request_id,
+                accepted_lease_fence=fence,
             )
+
+    @staticmethod
+    def _replay_authority(
+        raw: dict[str, Any], report: ChangeRegionSetReport
+    ) -> tuple[str | None, LeaseFence | None]:
+        if raw.get("authorityVersion") is None:
+            return None, None
+        if raw.get("authorityVersion") != 1 or raw.get("requestId") != report.change_region_set_id:
+            raise RegionExtractionRecoveryError("재생: malformed result authority")
+        fields = raw.get("acceptedLeaseFence")
+        if not isinstance(fields, dict):
+            raise RegionExtractionRecoveryError("재생: missing accepted lease fence")
+        try:
+            fence = LeaseFence(
+                str(fields["workerInstanceId"]),
+                str(fields["leaseAcquisitionId"]),
+                int(fields["leaseGeneration"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RegionExtractionRecoveryError("재생: malformed accepted lease fence") from exc
+        if not fence.is_well_formed():
+            raise RegionExtractionRecoveryError("재생: invalid accepted lease fence")
+        return report.change_region_set_id, fence
 
     def _project(
         self,
@@ -209,9 +259,16 @@ class RegionExtractionStore:
         report: ChangeRegionSetReport,
         reported_by: str | None,
         recorded_at: datetime,
+        *,
+        request_id: str | None = None,
+        accepted_lease_fence: LeaseFence | None = None,
     ) -> None:
         recorded = RecordedRegionExtraction(
-            report=report, reported_by=reported_by, recorded_at=recorded_at
+            report=report,
+            reported_by=reported_by,
+            recorded_at=recorded_at,
+            request_id=request_id,
+            accepted_lease_fence=accepted_lease_fence,
         )
         self._by_mission.setdefault(mission_id, []).append(recorded)
         self._ids_by_mission.setdefault(mission_id, {})[report.change_region_set_id] = report
@@ -289,6 +346,92 @@ class RegionExtractionStore:
         *,
         now: datetime,
         reported_by: str | None = None,
+        lease_fence: LeaseFence | None = None,
+    ) -> RegionExtractionRecordResult:
+        if lease_fence is None:
+            # Compatibility only for direct in-process legacy fixtures and
+            # old journal tooling.  The HTTP worker route below always
+            # requires a complete fence before it can reach this branch.
+            return self._record_legacy(mission_id, report, now=now, reported_by=reported_by)
+        request_id = report.change_region_set_id
+        # Lock ordering is fixed: request-store -> report-store.  Do not call
+        # request-store getters inside the report lock; use the yielded
+        # snapshot so a takeover cannot slip between lease check and append.
+        with self._request_store.result_commit_guard(
+            request_id, lease_fence=lease_fence, authenticated_actor_id=reported_by, now=now
+        ) as authorization:
+            if not authorization.authorized:
+                return self._lease_denial(authorization.verdict, authorization.detail)
+            request = authorization.record
+            assert request is not None  # noqa: S101 -- guard invariant
+            return self._record_authorized(
+                mission_id,
+                report,
+                request=request,
+                lease_fence=lease_fence,
+                now=now,
+                reported_by=reported_by,
+            )
+
+    def _record_legacy(
+        self,
+        mission_id: str,
+        report: ChangeRegionSetReport,
+        *,
+        now: datetime,
+        reported_by: str | None,
+    ) -> RegionExtractionRecordResult:
+        with self._lock:
+            if self._journal.sealed_reason is not None:
+                return RegionExtractionRecordResult(
+                    RegionExtractionVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
+                )
+            if self._mission_store.get(mission_id) is None:
+                return self._reject(
+                    mission_id, report, now, reported_by, RegionExtractionVerdict.UNKNOWN_MISSION,
+                    "발급된 적 없는 임무의 변화 영역 추출 리포트는 받지 않는다",
+                )
+            existing = self._ids_by_mission.get(mission_id, {}).get(report.change_region_set_id)
+            if existing is not None:
+                if existing == report:
+                    return RegionExtractionRecordResult(
+                        RegionExtractionVerdict.RECORDED,
+                        detail="이미 같은 내용으로 기록돼 있다(멱등 재전송)",
+                    )
+                return self._reject(
+                    mission_id, report, now, reported_by,
+                    RegionExtractionVerdict.DUPLICATE_REPORT_ID,
+                    f"changeRegionSetId={report.change_region_set_id!r} 는 이미 다른 "
+                    "내용으로 기록됐다",
+                )
+            verdict, detail = self._judge(report, mission_id)
+            if verdict is not RegionExtractionVerdict.RECORDED:
+                return self._reject(mission_id, report, now, reported_by, verdict, detail)
+            raw = {
+                "kind": "region-extraction-recorded",
+                "ts": iso_utc(now),
+                "missionId": mission_id,
+                "reportedBy": reported_by,
+                "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
+            }
+            try:
+                self._journal.append(raw)
+            except JournalSealedError:
+                return RegionExtractionRecordResult(
+                    RegionExtractionVerdict.STORE_UNAVAILABLE, detail=JOURNAL_APPEND_FAILED_DETAIL
+                )
+            self._project(mission_id, report, reported_by, now)
+            return RegionExtractionRecordResult(RegionExtractionVerdict.RECORDED)
+
+    def _record_authorized(
+        self,
+        mission_id: str,
+        report: ChangeRegionSetReport,
+        *,
+        request: RegionExtractionRequestRecord,
+        lease_fence: LeaseFence | None,
+        now: datetime,
+        reported_by: str | None,
     ) -> RegionExtractionRecordResult:
         with self._lock:
             if self._journal.sealed_reason is not None:
@@ -303,6 +446,11 @@ class RegionExtractionStore:
                     reported_by,
                     RegionExtractionVerdict.UNKNOWN_MISSION,
                     "발급된 적 없는 임무의 변화 영역 추출 리포트는 받지 않는다",
+                )
+            if request.mission_id != mission_id:
+                return RegionExtractionRecordResult(
+                    RegionExtractionVerdict.REQUEST_MISMATCH,
+                    "변화 영역 추출 요청의 missionId 가 결과 경로와 다르다",
                 )
             existing = self._ids_by_mission.get(mission_id, {}).get(report.change_region_set_id)
             if existing is not None:
@@ -320,14 +468,25 @@ class RegionExtractionStore:
                     f"changeRegionSetId={report.change_region_set_id!r} 는 이미 다른 내용으로 "
                     "기록됐다 — 같은 id 로 다른 결과를 덮어쓸 수 없다",
                 )
-            verdict, detail = self._judge(report, mission_id)
+            # ``_judge`` would call back into the request store while its lock
+            # is held.  The guard snapshot is the exact request observed at
+            # the authority boundary.
+            verdict, detail = self._judge_against_request(report, request)
             if verdict is not RegionExtractionVerdict.RECORDED:
-                return self._reject(mission_id, report, now, reported_by, verdict, detail)
+                return RegionExtractionRecordResult(verdict, detail=detail)
 
+            assert lease_fence is not None  # noqa: S101 -- guard only authorizes full fence
             record = {
                 "kind": "region-extraction-recorded",
+                "authorityVersion": 1,
                 "ts": iso_utc(now),
                 "missionId": mission_id,
+                "requestId": request.request_id,
+                "acceptedLeaseFence": {
+                    "workerInstanceId": lease_fence.worker_instance_id,
+                    "leaseAcquisitionId": lease_fence.lease_acquisition_id,
+                    "leaseGeneration": lease_fence.lease_generation,
+                },
                 "reportedBy": reported_by,
                 "report": report.model_dump(by_alias=True, mode="json", exclude_none=False),
             }
@@ -337,8 +496,30 @@ class RegionExtractionStore:
                 return RegionExtractionRecordResult(
                     RegionExtractionVerdict.STORE_UNAVAILABLE, detail=JOURNAL_APPEND_FAILED_DETAIL
                 )
-            self._project(mission_id, report, reported_by, now)
+            self._project(
+                mission_id,
+                report,
+                reported_by,
+                now,
+                request_id=request.request_id,
+                accepted_lease_fence=lease_fence,
+            )
             return RegionExtractionRecordResult(RegionExtractionVerdict.RECORDED)
+
+    @staticmethod
+    def _lease_denial(verdict: Any, detail: str | None) -> RegionExtractionRecordResult:
+        mapping = {
+            "UNKNOWN_REQUEST": RegionExtractionVerdict.UNKNOWN_REQUEST,
+            "LEASE_REQUIRED": RegionExtractionVerdict.LEASE_REQUIRED,
+            "LEASE_HELD_BY_ANOTHER": RegionExtractionVerdict.LEASE_HELD_BY_ANOTHER,
+            "STALE_LEASE_ACQUISITION": RegionExtractionVerdict.STALE_LEASE_ACQUISITION,
+            "STALE_LEASE_GENERATION": RegionExtractionVerdict.STALE_LEASE_GENERATION,
+            "INVALID_LEASE_FENCE": RegionExtractionVerdict.INVALID_LEASE_FENCE,
+            "STORE_UNAVAILABLE": RegionExtractionVerdict.STORE_UNAVAILABLE,
+        }
+        return RegionExtractionRecordResult(
+            mapping.get(str(verdict), RegionExtractionVerdict.LEASE_REQUIRED), detail
+        )
 
     def _reject(
         self,
@@ -538,12 +719,35 @@ def build_region_extraction_router(store: RegionExtractionStore) -> APIRouter:
         mission_id: str,
         report: ChangeRegionSetReport,
         response: Response,
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
         principal: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
     ) -> RegionExtractionResponse:
         """변화 영역 추출 리포트 접수 — **처리 워커만** 올린다."""
-        outcome = store.record(
-            mission_id, report, now=datetime.now(UTC), reported_by=principal.principal_id
-        )
+        try:
+            fence = (
+                LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+                if worker_instance_id is not None
+                and lease_acquisition_id is not None
+                and lease_generation is not None
+                else None
+            )
+        except ValueError:
+            fence = None
+        if fence is None:
+            outcome = RegionExtractionRecordResult(
+                RegionExtractionVerdict.INVALID_LEASE_FENCE,
+                "worker instance, acquisition id, generation 이 유효한 lease fence 가 아니다",
+            )
+        else:
+            outcome = store.record(
+                mission_id,
+                report,
+                now=datetime.now(UTC),
+                reported_by=principal.principal_id,
+                lease_fence=fence,
+            )
         response.status_code = _STATUS[outcome.verdict]
         if outcome.verdict is RegionExtractionVerdict.STORE_UNAVAILABLE:
             response.headers["Retry-After"] = "30"

@@ -20,7 +20,10 @@
   evaluation으로 격리한 결정(ADR-KSI-009 D8) · 2026-08-31 source-media automatic
   offload를 ordinary DPK의 기본 경로로 삼지 않고, explicit Manifold/activation/Core-sync/
   private-control/mount/byte-bound build와 one-shot operator approval로만 조립하며 HIL 전
-  capability는 `NOT_VERIFIED`로 유지하는 결정(ADR-KSI-013 D3/D5)
+  capability는 `NOT_VERIFIED`로 유지하는 결정(ADR-KSI-013 D3/D5) · 2026-09-04
+  PSDK Liveview=Manifold 로컬 입력, `EDGE_UPLINK`=bounded metadata, 현재 원본
+  ingress=SD/현장 PC/Web, 자동 media=별도 목표 capability로 분리하고 중앙 지속 영상
+  수신을 핵심 제품 경로에서 제외한 결정(ADR-KSI-033)
 
 ## 명칭·시장
 
@@ -72,6 +75,11 @@
   exact delta를 시도한다. 이는 HIL 전 `NOT_VERIFIED` capability이고 signed Mission Contract,
   Core RBAC, SD/PC/Web fallback 또는 어떤 flight/camera/gimbal command도 대체하지 않는다
   (ADR-KSI-013 D3/D5).
+- 경로 분리: PSDK Liveview는 Manifold 로컬 acquisition/perception 입력이고,
+  `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata와 object reference만 전달한다.
+  자동 원본은 별도 `MEDIA_PULL`→`MEDIA_UPLOAD` 목표 경로이며 물리 HIL 전에는
+  `NOT_VERIFIED`/OFF다. Core·Vercel·Operations Console의 중앙 지속 영상 수신은 첫 유료
+  폐루프나 공간·시간 판단의 전제가 아니다(ADR-KSI-033).
 - 비행 산출물: Core는 Mission Intent와 검증된 최종 Flight Artifact의
   source·revision·digest·Mission Contract 결속을 소유한다. Core KMZ compiler는 현재
   candidate/fallback이며, Pilot 2 import/export FIELD 증거 전에는 제거하거나 자동 기본

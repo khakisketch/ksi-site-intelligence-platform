@@ -66,6 +66,8 @@ AOI 를 현장 AOI 에 실제로 대조할지는 별도 제품 결정 대상이�
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -227,6 +229,20 @@ _FRAME_FIELD_ALIASES: dict[str, str] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class SiteIssuanceState:
+    """Mission 발급 OCC가 사용하는 잠금 일관 Site projection.
+
+    ``issuance_revision``은 등록을 1로 하고 상태 전이마다 증가한다. AOI나
+    model-age policy처럼 현재 Mission 발급 gate가 읽지 않는 변경은 이 revision을
+    올리지 않는다. 따라서 상태가 A→B→A로 되돌아와도 이전 witness는 재사용되지
+    않는다.
+    """
+
+    record: SiteRecord
+    issuance_revision: int
+
+
 class SiteStore:
     """Site 상태머신 영속·조회·전이. ``DurableJournal`` 위의 인메모리 projection.
 
@@ -238,6 +254,7 @@ class SiteStore:
     def __init__(self, journal: DurableJournal) -> None:
         self._journal = journal
         self._sites: dict[str, SiteRecord] = {}
+        self._issuance_revisions: dict[str, int] = {}
         self._lock = threading.Lock()
         try:
             self._replay(journal)
@@ -248,6 +265,12 @@ class SiteStore:
             # "다른 프로세스가 소유 중" 으로 오도한다.
             journal.close()
             raise
+
+    @property
+    def sealed_reason(self) -> str | None:
+        """Mission precheck/commit이 Site journal 장애를 fail-closed로 읽는 표면."""
+
+        return self._journal.sealed_reason
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -338,6 +361,7 @@ class SiteStore:
             ai_egress_allowed=ai_egress_allowed,
             organization_id=organization_id,
         )
+        self._issuance_revisions[site_id] = 1
 
     def _apply_transitioned(self, raw: dict[str, Any]) -> None:
         """전이 레코드를 projection 에 반영한다.
@@ -370,6 +394,10 @@ class SiteStore:
         self._sites[site_id] = replace(
             current, status=after, resume_target=resume_target, updated_at=ts
         )
+        current_revision = self._issuance_revisions.get(site_id)
+        if current_revision is None:
+            raise ValueError(f"재생: Site issuance revision이 없다: siteId={site_id}")
+        self._issuance_revisions[site_id] = current_revision + 1
 
     def _apply_aoi_set(self, raw: dict[str, Any]) -> None:
         """AOI 설정/교체 레코드를 projection 에 반영한다.
@@ -536,6 +564,40 @@ class SiteStore:
         if record is None or record.organization_id != organization_id:
             return None
         return record
+
+    def issuance_snapshot(
+        self, site_id: str, *, organization_id: str
+    ) -> SiteIssuanceState | None:
+        """현재 발급 인가 상태와 ABA-safe revision을 한 Site lock에서 읽는다."""
+
+        with self._lock:
+            record = self._sites.get(site_id)
+            if record is None or record.organization_id != organization_id:
+                return None
+            revision = self._issuance_revisions.get(site_id)
+            if revision is None:
+                raise RuntimeError("Site issuance revision projection이 없다")
+            return SiteIssuanceState(record=record, issuance_revision=revision)
+
+    @contextmanager
+    def issuance_commit_guard(
+        self, site_id: str, *, organization_id: str
+    ) -> Iterator[SiteIssuanceState | None]:
+        """Mission commit 동안 Site 전이를 직렬화하는 store-owned guard.
+
+        Coordinator는 이 context를 가장 먼저 획득하고 Mission append/fsync가
+        끝날 때까지 유지한다. raw ``_lock``은 router에 노출하지 않는다.
+        """
+
+        with self._lock:
+            record = self._sites.get(site_id)
+            if record is None or record.organization_id != organization_id:
+                yield None
+                return
+            revision = self._issuance_revisions.get(site_id)
+            if revision is None:
+                raise RuntimeError("Site issuance revision projection이 없다")
+            yield SiteIssuanceState(record=record, issuance_revision=revision)
 
     def list_scoped(self, organization_id: str) -> list[SiteRecord]:
         return [record for record in self.list() if record.organization_id == organization_id]
