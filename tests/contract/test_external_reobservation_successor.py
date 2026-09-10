@@ -3,10 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import EllipsisType
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -20,6 +23,7 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.mission_atomicity import MissionIssuanceCommitter, MissionIssuanceRejected
 from ksi_core.mission_records import IssuanceAuthorizationWitness, MissionStore
 from ksi_core.observation_work_orders import (
+    ExternalReobservationApprovalResult,
     ExternalReobservationExecutionDenied,
     ObservationWorkOrderStore,
     ObservationWorkOrderStoreRecoveryError,
@@ -39,7 +43,7 @@ from ksi_event_contracts.observation_work_order import (
 from ksi_mission_contracts.models import SiteFrame
 
 
-def test_work_order_store_exposes_external_reobservation_approval_boundary(tmp_path) -> None:
+def test_work_order_store_exposes_external_reobservation_approval_boundary(tmp_path: Path) -> None:
     """Deleting the dedicated approval boundary would reopen the generic path."""
 
     store = ObservationWorkOrderStore(
@@ -58,7 +62,7 @@ class _AuthorityPort:
         self,
         authority: ExternalReobservationProposalAuthorityV1,
         *,
-        live_authority: ExternalReobservationProposalAuthorityV1 | None | object = ...,
+        live_authority: ExternalReobservationProposalAuthorityV1 | None | EllipsisType = ...,
     ) -> None:
         self.authority = authority
         self.current_lock = threading.RLock()
@@ -86,7 +90,14 @@ class _AuthorityPort:
         return self.live_authority
 
     @contextmanager
-    def guard_current(self, *, organization_id, approval_input, actor, evaluated_at):
+    def guard_current(
+        self,
+        *,
+        organization_id: str,
+        approval_input: ExternalReobservationApprovalInputV1,
+        actor: str,
+        evaluated_at: datetime,
+    ) -> Iterator[ExternalReobservationProposalAuthorityV1 | None]:
         del actor, evaluated_at
         with self.current_lock:
             self.guard_held = True
@@ -95,7 +106,7 @@ class _AuthorityPort:
             finally:
                 self.guard_held = False
 
-    def revoke(self):
+    def revoke(self) -> None:
         with self.current_lock:
             self.live_authority = None
 
@@ -164,7 +175,7 @@ def _approval_input(
 
 
 def _store_with_source(
-    tmp_path,
+    tmp_path: Path,
 ) -> tuple[
     DurableJournal,
     ObservationWorkOrderStore,
@@ -196,7 +207,7 @@ def _approve(
     authority: ExternalReobservationProposalAuthorityV1,
     *,
     idempotency_key: str = "approve-1",
-):
+) -> ExternalReobservationApprovalResult:
     return store.approve_external_reobservation(
         _approval_input(authority),
         organization_id="org-1",
@@ -206,8 +217,16 @@ def _approve(
     )
 
 
+def _fixture_authority_port(store: ObservationWorkOrderStore) -> _AuthorityPort:
+    """Narrow the protocol field to the fixture double for guard-state assertions."""
+
+    port = store._external_reobservation_authority_port
+    assert isinstance(port, _AuthorityPort)
+    return port
+
+
 def test_external_reobservation_approval_creates_one_planning_only_successor_and_preserves_source(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Removing the atomic event or reopening execution must fail this approval path."""
 
@@ -252,9 +271,9 @@ def test_external_reobservation_approval_creates_one_planning_only_successor_and
     assert successor.status.value == "APPROVED"
     assert successor.approved_by == "approver-1"
     assert successor.approved_at == "2026-09-09T02:00:00+00:00"
-    assert source_before == store.get(source.work_order_id, organization_id="org-1").model_dump(
-        by_alias=True, mode="json"
-    )
+    restored_source = store.get(source.work_order_id, organization_id="org-1")
+    assert restored_source is not None
+    assert source_before == restored_source.model_dump(by_alias=True, mode="json")
     assert store.get(successor.work_order_id, organization_id="org-1") == successor
     assert [
         item.work_order_id for item in store.list_for_site("site-1", organization_id="org-1")
@@ -288,7 +307,7 @@ def test_external_reobservation_approval_creates_one_planning_only_successor_and
     }
 
 
-def test_external_reobservation_successor_uses_approved_target_work_areas(tmp_path) -> None:
+def test_external_reobservation_successor_uses_approved_target_work_areas(tmp_path: Path) -> None:
     """Requiring the source area list would discard the proposal's reviewed target selection."""
 
     authority = _authority(target_work_area_id="area-2")
@@ -311,11 +330,13 @@ def test_external_reobservation_successor_uses_approved_target_work_areas(tmp_pa
 
     successor = _approve(store, authority).successor_work_order
 
-    assert store.get(source.work_order_id, organization_id="org-1").work_area_ids == ["area-1"]
+    stored_source = store.get(source.work_order_id, organization_id="org-1")
+    assert stored_source is not None
+    assert stored_source.work_area_ids == ["area-1"]
     assert successor.work_area_ids == ["area-2"]
 
 
-def test_external_reobservation_wire_contracts_keep_execution_flags_closed(tmp_path) -> None:
+def test_external_reobservation_wire_contracts_keep_execution_flags_closed(tmp_path: Path) -> None:
     """A schema accepting executable flags would make a sealed planning binding unsafe."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -390,7 +411,9 @@ def test_external_reobservation_wire_contracts_keep_execution_flags_closed(tmp_p
         ),
     ],
 )
-def test_external_work_area_snapshot_rejects_invalid_canonical_geometry(polygon, crs) -> None:
+def test_external_work_area_snapshot_rejects_invalid_canonical_geometry(
+    polygon: dict[str, Any], crs: str
+) -> None:
     """External target snapshots use the same usable-geometry floor as WorkArea."""
 
     with pytest.raises(ValueError):
@@ -423,7 +446,7 @@ def test_external_work_area_snapshot_rejects_invalid_canonical_geometry(polygon,
     ],
 )
 def test_external_planning_binding_schema_rejects_enforceable_geometry_bounds(
-    tmp_path, mutation
+    tmp_path: Path, mutation: Callable[[dict[str, Any]], object]
 ) -> None:
     """The published wire schema rejects malformed bounded target geometry before Core parsing."""
 
@@ -442,7 +465,7 @@ def test_external_planning_binding_schema_rejects_enforceable_geometry_bounds(
         Draft202012Validator(schema).validate(wire)
 
 
-def test_external_planning_binding_model_rejects_open_target_ring(tmp_path) -> None:
+def test_external_planning_binding_model_rejects_open_target_ring(tmp_path: Path) -> None:
     """Ring closure is semantic and remains enforced by the canonical Pydantic validator."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -455,7 +478,7 @@ def test_external_planning_binding_model_rejects_open_target_ring(tmp_path) -> N
 
 
 def test_external_reobservation_binding_read_does_not_expose_mutable_store_snapshot(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Returning the stored nested polygon would let a read caller alter the sealed projection."""
 
@@ -474,7 +497,9 @@ def test_external_reobservation_binding_read_does_not_expose_mutable_store_snaps
     assert stored.target_work_areas[0].polygon["type"] == "Polygon"
 
 
-def test_external_reobservation_approval_result_does_not_expose_store_snapshot(tmp_path) -> None:
+def test_external_reobservation_approval_result_does_not_expose_store_snapshot(
+    tmp_path: Path,
+) -> None:
     """An idempotent result cannot hand out the stored nested target geometry."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -490,7 +515,7 @@ def test_external_reobservation_approval_result_does_not_expose_store_snapshot(t
 
 
 def test_external_reobservation_retry_and_concurrent_approval_create_one_successor(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Dropping either idempotency map would create duplicate orders under retry or racing tabs."""
 
@@ -529,7 +554,9 @@ def test_external_reobservation_retry_and_concurrent_approval_create_one_success
     )
 
 
-def test_external_reobservation_rejects_divergent_idempotency_or_proposal_retry(tmp_path) -> None:
+def test_external_reobservation_rejects_divergent_idempotency_or_proposal_retry(
+    tmp_path: Path,
+) -> None:
     """Allowing a changed digest through either retry key would sever receipt lineage."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -558,14 +585,16 @@ def test_external_reobservation_rejects_divergent_idempotency_or_proposal_retry(
         )
 
 
-def test_external_reobservation_journal_failure_leaves_no_successor(tmp_path, monkeypatch) -> None:
+def test_external_reobservation_journal_failure_leaves_no_successor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Applying the projection before durable append would leave a phantom successor on failure."""
 
     journal, store, authority = _store_with_source(tmp_path)
     source = store.get("obs-work-00000001", organization_id="org-1")
     assert source is not None
 
-    def fail_append(_record) -> None:
+    def fail_append(_record: Mapping[str, Any]) -> None:
         raise RuntimeError("journal write failed")
 
     monkeypatch.setattr(journal, "append", fail_append)
@@ -573,10 +602,12 @@ def test_external_reobservation_journal_failure_leaves_no_successor(tmp_path, mo
         _approve(store, authority)
     assert store.get("obs-work-00000001", organization_id="org-1") == source
     assert len(store.list_for_site("site-1", organization_id="org-1")) == 1
-    assert not store._external_reobservation_authority_port.guard_held
+    assert not _fixture_authority_port(store).guard_held
 
 
-def test_external_reobservation_replay_and_exact_retry_need_no_live_authority(tmp_path) -> None:
+def test_external_reobservation_replay_and_exact_retry_need_no_live_authority(
+    tmp_path: Path,
+) -> None:
     """Replay needs accepted history but is unaffected by later live revocation."""
 
     journal, store, authority = _store_with_source(tmp_path)
@@ -605,7 +636,7 @@ def test_external_reobservation_replay_and_exact_retry_need_no_live_authority(tm
     assert _approve(replayed, authority) == approved
 
 
-def test_external_reobservation_default_port_and_scope_mismatch_fail_closed(tmp_path) -> None:
+def test_external_reobservation_default_port_and_scope_mismatch_fail_closed(tmp_path: Path) -> None:
     """Missing authority or a different organization cannot be trusted from caller input."""
 
     authority = _authority()
@@ -638,7 +669,9 @@ def test_external_reobservation_default_port_and_scope_mismatch_fail_closed(tmp_
     assert len(store.list_for_site("site-1", organization_id="org-1")) == 1
 
 
-def test_external_reobservation_live_approval_requires_same_historical_acceptance(tmp_path) -> None:
+def test_external_reobservation_live_approval_requires_same_historical_acceptance(
+    tmp_path: Path,
+) -> None:
     """A current proposal view cannot append unless the independent history agrees exactly."""
 
     historical = _authority()
@@ -670,10 +703,10 @@ def test_external_reobservation_live_approval_requires_same_historical_acceptanc
             idempotency_key="approve-1",
         )
     assert len(store.list_for_site("site-1", organization_id="org-1")) == 1
-    assert not store._external_reobservation_authority_port.guard_held
+    assert not _fixture_authority_port(store).guard_held
 
 
-def test_external_reobservation_replay_rejects_rehashed_successor_tampering(tmp_path) -> None:
+def test_external_reobservation_replay_rejects_rehashed_successor_tampering(tmp_path: Path) -> None:
     """Rehashing binding and receipt content cannot change the deterministic proposal successor."""
 
     journal, store, authority = _store_with_source(tmp_path)
@@ -725,7 +758,7 @@ def test_external_reobservation_replay_rejects_rehashed_successor_tampering(tmp_
 
 
 def test_external_reobservation_replay_rejects_fully_rehashed_unaccepted_authority(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """A self-consistent WorkOrder event cannot manufacture accepted proposal history."""
 
@@ -827,7 +860,7 @@ def test_external_reobservation_replay_rejects_fully_rehashed_unaccepted_authori
         )
 
 
-def test_external_successor_execution_guard_rejects_cloned_order(tmp_path) -> None:
+def test_external_successor_execution_guard_rejects_cloned_order(tmp_path: Path) -> None:
     """Checking only object identity would let a cloned planning-only order reach execution."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -837,7 +870,7 @@ def test_external_successor_execution_guard_rejects_cloned_order(tmp_path) -> No
         store.assert_execution_allowed(successor.model_copy(deep=True))
 
 
-def test_external_successor_rejects_generic_approval_and_status_callbacks(tmp_path) -> None:
+def test_external_successor_rejects_generic_approval_and_status_callbacks(tmp_path: Path) -> None:
     """Generic WorkOrder paths cannot advance an external planning-only successor."""
 
     _journal, store, authority = _store_with_source(tmp_path)
@@ -866,7 +899,7 @@ def test_external_successor_rejects_generic_approval_and_status_callbacks(tmp_pa
     assert store.get(successor.work_order_id, organization_id="org-1") == successor
 
 
-def test_external_successor_cannot_create_or_link_acquisition_run(tmp_path) -> None:
+def test_external_successor_cannot_create_or_link_acquisition_run(tmp_path: Path) -> None:
     """Omitting the shared execution guard lets a later recovery create a real run."""
 
     _journal, work_orders, authority = _store_with_source(tmp_path)
@@ -896,7 +929,7 @@ def test_external_successor_cannot_create_or_link_acquisition_run(tmp_path) -> N
     assert coordination._journal.replay() == []  # noqa: SLF001 -- durable no-mutation assertion
 
 
-def test_external_successor_cannot_create_an_unguarded_acquisition_run(tmp_path) -> None:
+def test_external_successor_cannot_create_an_unguarded_acquisition_run(tmp_path: Path) -> None:
     """A direct assembly denies external WorkOrders without relying on injected guards."""
 
     _journal, work_orders, authority = _store_with_source(tmp_path)
@@ -917,7 +950,7 @@ def test_external_successor_cannot_create_an_unguarded_acquisition_run(tmp_path)
     assert run_journal.replay() == before == []
 
 
-def test_external_successor_cannot_link_mission_or_enter_mission_issuance(tmp_path) -> None:
+def test_external_successor_cannot_link_mission_or_enter_mission_issuance(tmp_path: Path) -> None:
     """Checking only route approval status would permit a planning-only successor Mission."""
 
     _journal, work_orders, authority = _store_with_source(tmp_path)
@@ -953,7 +986,7 @@ def test_external_successor_cannot_link_mission_or_enter_mission_issuance(tmp_pa
 
 
 def test_external_successor_mission_plan_route_returns_typed_conflict_without_mutation(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """A route-local bypass could issue a Mission after planning-only approval."""
 
@@ -1082,7 +1115,7 @@ def test_external_successor_mission_plan_route_returns_typed_conflict_without_mu
 
 
 @pytest.mark.parametrize("crs", ["epsg:4326", "EpSg:4326", " EPSG:4326 "])
-def test_binding_schema_enforces_lonlat_bounds_for_normalized_crs(tmp_path, crs) -> None:
+def test_binding_schema_enforces_lonlat_bounds_for_normalized_crs(tmp_path: Path, crs: str) -> None:
     _journal, store, authority = _store_with_source(tmp_path)
     wire = _approve(store, authority).planning_binding.model_dump(by_alias=True, mode="json")
     target = wire["targetWorkAreas"][0]
@@ -1101,14 +1134,27 @@ def test_binding_schema_enforces_lonlat_bounds_for_normalized_crs(tmp_path, crs)
     assert Draft202012Validator(schema).is_valid(wire)
 
 
-def test_approval_rejects_revocation_during_historical_resolution(tmp_path, monkeypatch):
+def test_approval_rejects_revocation_during_historical_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     journal, store, authority = _store_with_source(tmp_path)
-    port = store._external_reobservation_authority_port
+    port = _fixture_authority_port(store)
     original = port.resolve_historical
     before = (tmp_path / "work-orders.jsonl").read_bytes()
 
-    def revoke_during_history(**kwargs):
-        result = original(**kwargs)
+    def revoke_during_history(
+        *,
+        organization_id: str,
+        approval_input: ExternalReobservationApprovalInputV1,
+        actor: str,
+        approved_at: datetime,
+    ) -> ExternalReobservationProposalAuthorityV1 | None:
+        result = original(
+            organization_id=organization_id,
+            approval_input=approval_input,
+            actor=actor,
+            approved_at=approved_at,
+        )
         port.revoke()
         return result
 
@@ -1119,20 +1165,22 @@ def test_approval_rejects_revocation_during_historical_resolution(tmp_path, monk
     assert store.list_external_reobservation_bindings(organization_id="org-1") == []
 
 
-def test_approval_holds_current_guard_through_append_without_scope_callbacks(tmp_path, monkeypatch):
+def test_approval_holds_current_guard_through_append_without_scope_callbacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     journal, store, authority = _store_with_source(tmp_path)
-    port = store._external_reobservation_authority_port
+    port = _fixture_authority_port(store)
     original_append = journal.append
     attempted = threading.Event()
     revoked = threading.Event()
-    threads = []
+    threads: list[threading.Thread] = []
 
-    def revoke():
+    def revoke() -> None:
         attempted.set()
         port.revoke()
         revoked.set()
 
-    def append_under_guard(record):
+    def append_under_guard(record: Mapping[str, Any]) -> None:
         assert port.guard_held
         thread = threading.Thread(target=revoke)
         threads.append(thread)
@@ -1141,7 +1189,8 @@ def test_approval_holds_current_guard_through_append_without_scope_callbacks(tmp
         assert not revoked.is_set()
         original_append(record)
 
-    def forbidden_scope(**kwargs):
+    def forbidden_scope(*, organization_id: str, site_id: str, work_area_ids: list[str]) -> None:
+        del organization_id, site_id, work_area_ids
         raise AssertionError(
             "scope callbacks must be resolved inside authority guard, not order lock"
         )
@@ -1160,8 +1209,8 @@ def test_approval_holds_current_guard_through_append_without_scope_callbacks(tmp
 
 
 @pytest.mark.parametrize("component", ["bad-z", True, None, float("nan"), float("inf"), 10**400])
-def test_external_target_snapshot_rejects_invalid_later_coordinates(component):
-    polygon = {
+def test_external_target_snapshot_rejects_invalid_later_coordinates(component: object) -> None:
+    polygon: dict[str, Any] = {
         "type": "Polygon",
         "coordinates": [
             [[0, 0, component], [1, 0, component], [1, 1, component], [0, 0, component]]
@@ -1173,8 +1222,8 @@ def test_external_target_snapshot_rejects_invalid_later_coordinates(component):
         ).sealed()
 
 
-def test_external_target_preserves_valid_higher_coordinates():
-    polygon = {
+def test_external_target_preserves_valid_higher_coordinates() -> None:
+    polygon: dict[str, Any] = {
         "type": "Polygon",
         "coordinates": [[[0, 0, 2.5], [1, 0, 3.5], [1, 1, 4.5], [0, 0, 2.5]]],
     }

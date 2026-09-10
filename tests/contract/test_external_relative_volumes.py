@@ -45,6 +45,7 @@ from ksi_core.external_relative_volumes import (
 )
 from ksi_core.external_validation_policy import PolicySelection, PolicySelectionStatus
 from ksi_core.leasing import LeaseFence
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
     ExternalValidationPolicyV1,
@@ -284,8 +285,39 @@ def _client(
     authority: ExternalRelativeVolumeExecutionAuthority,
     *,
     launch_material_resolver: VolumeWorkerLaunchMaterialResolver | None = None,
-) -> TestClient:
-    store = _store(tmp_path, authority, launch_material_resolver=launch_material_resolver)
+) -> tuple[TestClient, str]:
+    work_orders = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "relative-volume-work-orders.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_id == "site-a" and organization_id == "org-a"
+        ),
+        work_areas_exist=lambda _site_id, _work_area_ids: True,
+    )
+    work_order = work_orders.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="Relative volume fixture",
+        work_area_ids=["work-area-a"],
+        schedule_id=None,
+        actor="operator-a",
+        now=_NOW,
+    )
+    current_binding = authority.current.model_copy(
+        update={
+            "subject": authority.current.subject.model_copy(
+                update={"work_order_id": work_order.work_order_id}
+            )
+        }
+    )
+    store = _store(
+        tmp_path,
+        replace(
+            authority,
+            current_work_order_id=work_order.work_order_id,
+            current=current_binding,
+        ),
+        launch_material_resolver=launch_material_resolver,
+    )
     app = FastAPI()
     mount_auth(
         app,
@@ -326,10 +358,13 @@ def _client(
 
     app.include_router(
         build_external_relative_volume_router(
-            store, input_capability_issuer=capabilities, clock=lambda: _NOW
+            store,
+            input_capability_issuer=capabilities,
+            work_orders=work_orders,
+            clock=lambda: _NOW,
         )
     )
-    return TestClient(app)
+    return TestClient(app), work_order.work_order_id
 
 
 def _headers(token: str, *, idempotency_key: str | None = None) -> dict[str, str]:
@@ -785,8 +820,8 @@ def test_router_derives_scope_and_keeps_private_worker_input_out_of_human_view(
     tmp_path: Path,
 ) -> None:
     authority = _authority()
-    client = _client(tmp_path, authority)
-    issue_path = "/v1/observation-work-orders/work-current/relative-volume-requests"
+    client, work_order_id = _client(tmp_path, authority)
+    issue_path = f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests"
 
     issued = client.post(
         issue_path,
@@ -836,7 +871,7 @@ def test_router_derives_scope_and_keeps_private_worker_input_out_of_human_view(
     assert worker_input.status_code == 422, worker_input.text
     assert worker_input.json()["verdict"] == ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
     after_lease = client.get(
-        f"/v1/observation-work-orders/work-current/relative-volume-requests/{request_ref}",
+        f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests/{request_ref}",
         headers=_headers(_OPERATOR_TOKEN),
     )
     assert after_lease.status_code == 200
@@ -1874,9 +1909,9 @@ def test_generation_zero_is_the_only_new_volume_claim_sentinel(
 def test_relative_volume_lease_route_returns_core_issued_fence_for_generation_zero(
     tmp_path: Path,
 ) -> None:
-    client = _client(tmp_path, _authority())
+    client, work_order_id = _client(tmp_path, _authority())
     issue = client.post(
-        "/v1/observation-work-orders/work-current/relative-volume-requests",
+        f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests",
         headers=_headers(_OPERATOR_TOKEN, idempotency_key="lease-route"),
         json={"decisionRef": "decision-a"},
     )
@@ -1919,6 +1954,7 @@ class _StaticVolumePolicyRegistry:
         self.policy = policy
         self.coordinator = coordinator
         self.locally_permitted_until: datetime | None = None
+        self.subjects: tuple[SealedExternalSubjectV1, ...] = ()
 
     def select_for_use(
         self, use: str, subjects: tuple[SealedExternalSubjectV1, ...]

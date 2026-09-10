@@ -1,7 +1,7 @@
 """Actual durable Core graph; only independent authority providers are synthetic."""
 
 from dataclasses import dataclass, fields
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ksi_core.durable_journal import DurableJournal
@@ -19,20 +19,24 @@ from ksi_core.external_reobservation_proposals import (
     verify_external_reobservation_organization_graph,
 )
 from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
-from ksi_core.external_result_reviews import ExternalResultReviewStore
+from ksi_core.external_result_reviews import ExternalResultReviewSourceV1, ExternalResultReviewStore
 from ksi_core.external_use_decisions import ExternalDecisionIntent, ExternalUseDecisionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
 from ksi_mission_contracts.models import SiteFrame
 from test_external_relative_volumes import _AuthorityPort, _fence, _payload
 from test_external_result_review_proposals import _NOW, _principal, _sealed_source
 from test_external_use_decisions import _SyntheticHistoryVerifier
 
-POLYGON = {"type": "Polygon", "coordinates": [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [0.0, 0.0]]]}
+POLYGON: dict[str, object] = {
+    "type": "Polygon",
+    "coordinates": [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [0.0, 0.0]]],
+}
 
 
-def seed_original(path: Path):
+def seed_original(path: Path) -> ExternalResultReviewSourceV1:
     sites = SiteStore(DurableJournal(path / "sites.jsonl"))
     sites.register(
         "site-a",
@@ -75,13 +79,18 @@ def seed_original(path: Path):
 
 
 class _History:
-    def __init__(self, authority):
+    def __init__(self, authority: ExternalRelativeVolumeExecutionAuthority) -> None:
         self.authority = authority
         self.revoked_at = _NOW + timedelta(seconds=20)
 
     def resolve_historical_for_use(
-        self, *, historical_authority_digest, decision_id, decision_digest, evaluated_at
-    ):
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        evaluated_at: datetime,
+    ) -> ExternalRelativeVolumeExecutionAuthority | None:
         a = self.authority
         return (
             a
@@ -101,18 +110,19 @@ class LoopGraph:
     volumes: ExternalRelativeVolumeStore
     decisions: ExternalUseDecisionStore
     history: _History
+    authority_port: _AuthorityPort
     journals: list[DurableJournal]
-    source: object
+    source: ExternalResultReviewSourceV1
 
-    def close(self):
+    def close(self) -> None:
         for journal in reversed(self.journals):
             journal.close()
 
 
-def build_graph(path: Path, source) -> LoopGraph:
-    journals = []
+def build_graph(path: Path, source: ExternalResultReviewSourceV1) -> LoopGraph:
+    journals: list[DurableJournal] = []
 
-    def journal(name):
+    def journal(name: str) -> DurableJournal:
         item = DurableJournal(path / name)
         journals.append(item)
         return item
@@ -183,10 +193,10 @@ def build_graph(path: Path, source) -> LoopGraph:
     verify_external_reobservation_organization_graph(
         organization_id="org-a", work_orders=orders, authority_port=proposal_authority
     )
-    return LoopGraph(service, volumes, decisions, history, journals, source)
+    return LoopGraph(service, volumes, decisions, history, port, journals, source)
 
 
-def record_measurement(graph: LoopGraph):
+def record_measurement(graph: LoopGraph) -> ExternalRelativeVolumeReportV1:
     source = graph.source
     graph.decisions.stage_evaluated(
         source.decision,
@@ -204,6 +214,7 @@ def record_measurement(graph: LoopGraph):
     )
     assert issued.record is not None
     request = issued.record.request
+    assert request.request_digest is not None
     fence = _fence()
     graph.volumes.claim(
         request.request_id, organization_id="org-a", principal_id="worker", fence=fence, now=_NOW
@@ -214,7 +225,8 @@ def record_measurement(graph: LoopGraph):
         principal_id="worker",
         fence=fence,
         observed=ExternalRelativeVolumeObservedReportInput(
-            payload=_payload(request.request_digest, graph.history.authority), computed_at=_NOW
+            payload=_payload(request.request_digest, graph.history.authority),
+            computed_at=_NOW,
         ),
         now=_NOW,
     )

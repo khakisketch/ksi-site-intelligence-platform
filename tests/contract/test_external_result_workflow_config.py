@@ -3,15 +3,21 @@
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Self, cast
 
 import pytest
+from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_quantitative_authority import (
     ExternalQuantitativeCatalogAuthorityRecord,
 )
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
+from ksi_core.external_result_workflow_config import ExternalQuantitativeWorkflowParticipants
+from ksi_core.external_validation_policy import PolicyAuthorityRecord
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeExecutionPolicyV1
 
@@ -20,7 +26,7 @@ def _digest(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 
 
-def test_catalog_authority_record_is_domain_sealed_and_time_bounded():
+def test_catalog_authority_record_is_domain_sealed_and_time_bounded() -> None:
     """Catalog bytes cannot self-approve outside the injected authority boundary."""
     now = datetime(2026, 9, 9, tzinfo=UTC)
     record = ExternalQuantitativeCatalogAuthorityRecord(
@@ -97,52 +103,57 @@ def _catalog_digest(body: dict[str, object]) -> str:
 class _CatalogAuthority:
     def __init__(self, record: ExternalQuantitativeCatalogAuthorityRecord) -> None:
         self._record = record
-        self._coordinator = None
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
 
-    def bind(self, coordinator):
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> Self:
         self._coordinator = coordinator
         return self
 
     @property
-    def coordinator(self):
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
         return self._coordinator
 
-    def resolve(self, authority_record_digest: str, now: datetime):
+    def resolve(
+        self, authority_record_digest: str, now: datetime
+    ) -> ExternalQuantitativeCatalogAuthorityRecord | None:
         del now
         return self._record if authority_record_digest == self._record.digest else None
 
-    def is_current(self, record, now: datetime):
+    def is_current(self, record: ExternalQuantitativeCatalogAuthorityRecord, now: datetime) -> bool:
         return record == self._record and record.is_active_at(now)
 
 
 class _UnavailablePolicyAuthority:
-    def resolve(self, authority_record_digest: str, now: datetime):
+    def resolve(
+        self, authority_record_digest: str, now: datetime
+    ) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
 
 
 class _UnavailableEvidenceContextAuthority:
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> None:
         self._coordinator = coordinator
 
     @property
-    def coordinator(self):
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
         return self._coordinator
 
-    def resolve_for_validation(self, **_kwargs):
+    def resolve_for_validation(self, **_kwargs: object) -> None:
         return None
 
-    def resolve_historical_for_validation(self, **_kwargs):
+    def resolve_historical_for_validation(self, **_kwargs: object) -> None:
         return None
 
-    def is_current(self, context):
+    def is_current(self, context: object) -> bool:
         del context
         return False
 
 
-def _participants(record: ExternalQuantitativeCatalogAuthorityRecord):
-    from ksi_core.external_result_workflow_config import ExternalQuantitativeWorkflowParticipants
-
+def _participants(
+    record: ExternalQuantitativeCatalogAuthorityRecord,
+) -> ExternalQuantitativeWorkflowParticipants:
     catalog_authority = _CatalogAuthority(record)
     return ExternalQuantitativeWorkflowParticipants(
         catalog_authority_port=catalog_authority,
@@ -160,7 +171,7 @@ def _participants(record: ExternalQuantitativeCatalogAuthorityRecord):
     )
 
 
-def _approved_files(tmp_path: Path) -> tuple[Path, object]:
+def _approved_files(tmp_path: Path) -> tuple[Path, ExternalQuantitativeWorkflowParticipants]:
     admission_body = _catalog_body()
     record = ExternalQuantitativeCatalogAuthorityRecord(
         organization_id="org-a",
@@ -191,7 +202,7 @@ def _approved_files(tmp_path: Path) -> tuple[Path, object]:
     return config_path, _participants(record)
 
 
-def test_loader_builds_workflow_only_from_an_exact_approved_catalog(tmp_path: Path):
+def test_loader_builds_workflow_only_from_an_exact_approved_catalog(tmp_path: Path) -> None:
     """The protected path selects a preapproved body; it cannot create authority."""
     from ksi_core.external_result_workflow_config import load_external_result_workflow_config
 
@@ -306,13 +317,15 @@ def test_protected_opener_rechecks_a_replaced_authority_journal(tmp_path: Path) 
         def close(self) -> None:
             return None
 
-    def replace_path(path: Path):
+    def replace_path(path: Path) -> _ReplacedJournal:
         path.unlink()
         path.symlink_to(replacement)
         return _ReplacedJournal()
 
     with pytest.raises(ExternalQuantitativeWorkflowConfigUnavailable) as raised:
-        _open_protected_authority_journal(replace_path, journal)
+        _open_protected_authority_journal(
+            cast(Callable[[Path], DurableJournal], replace_path), journal
+        )
     assert raised.value.code is ExternalQuantitativeWorkflowConfigBlockedCode.CONFIG_FILE
 
 
@@ -332,8 +345,8 @@ def test_protected_journal_rejects_foreign_owned_parent_metadata(
     journal.chmod(0o600)
     actual_lstat = os.lstat
 
-    def foreign_lstat(value, *args, **kwargs):
-        node = actual_lstat(value, *args, **kwargs)
+    def foreign_lstat(value: str | Path) -> os.stat_result:
+        node = actual_lstat(value)
         if Path(value) == parent:
             metadata = list(node)
             metadata[4] = os.geteuid() + 10_000
@@ -486,7 +499,7 @@ def test_catalog_authority_binds_only_the_strict_admission_body(tmp_path: Path) 
         "authorityRecordDigest"
     ]
 
-    authority_record = participants.catalog_authority_port._record
+    authority_record = cast(_CatalogAuthority, participants.catalog_authority_port)._record
     assert catalog_admission_body_digest(catalog) == authority_record.catalog_body_digest
     assert config_path.is_absolute()
 
@@ -501,7 +514,7 @@ def test_catalog_authority_binds_only_the_strict_admission_body(tmp_path: Path) 
     ),
 )
 def test_loader_rejects_omitted_or_mismatched_nested_catalog_authority_reference(
-    tmp_path: Path, mutation
+    tmp_path: Path, mutation: Callable[[dict[str, object]], object]
 ) -> None:
     """Only the serializer may omit its own reference; final catalog references stay exact."""
     from ksi_core.external_result_workflow_config import (
@@ -531,7 +544,9 @@ def test_loader_rejects_omitted_or_mismatched_nested_catalog_authority_reference
         lambda config: config.update(maximumZoneCellCount=1),
     ),
 )
-def test_config_cannot_supply_catalog_facts_or_thresholds(tmp_path: Path, mutation):
+def test_config_cannot_supply_catalog_facts_or_thresholds(
+    tmp_path: Path, mutation: Callable[[dict[str, object]], object]
+) -> None:
     """Organization, approval and numeric facts belong to the approved catalog, never config."""
     from ksi_core.external_result_workflow_config import (
         ExternalQuantitativeWorkflowConfigUnavailable,
@@ -561,7 +576,7 @@ def test_config_cannot_supply_catalog_facts_or_thresholds(tmp_path: Path, mutati
     ),
 )
 def test_loader_fails_closed_for_missing_mutable_or_malformed_config(
-    tmp_path: Path, prepare
+    tmp_path: Path, prepare: Callable[[Path, Path], object]
 ) -> None:
     """A private file path is an input boundary, never a permissive fallback."""
     from ksi_core.external_result_workflow_config import (

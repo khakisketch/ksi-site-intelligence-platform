@@ -5,34 +5,70 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from ksi_event_contracts.external_artifact_validation import (
+    ExternalArtifactInspectionReportV1,
+    ExternalValidationPolicyV1,
+)
+from ksi_event_contracts.external_display_artifact import (
+    SanitizedDisplayDeclarationV1,
+    SanitizedDisplayReceiptV1,
+)
+from ksi_event_contracts.inspector_execution_manifest import InspectorExecutionManifestV1
+from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_processing_controller.external_artifact_inspection_worker import (
     CurrentAuthorityLost,
+    ExternalArtifactInputV1,
+    ExternalInspectionCurrentInputV1,
     ExternalInspectionPhaseV1,
+    ExternalInspectorLaunchContextV1,
+    ExternalInspectorLaunchPort,
     InspectorOperationProfileDecision,
+    InspectorWorkerOperationProfilePort,
     WorkerAuthorityLimitsV1,
 )
+from ksi_processing_controller.external_display_publication import (
+    RetainedSanitizedCandidateOwnerPort,
+)
 from ksi_processing_controller.external_inspector_protocol import (
+    DeadlineBoundedByteReaderPort,
+    InspectorLaunchRequestV1,
     InspectorLaunchResultV1,
+    LocalLeaseFenceV1,
     ProtocolLimitsV1,
 )
+from ksi_processing_controller.external_measurement_client import ExternalMeasurementUdsClient
 from ksi_processing_controller.external_measurement_core_client import (
     MeasurementLeaseGrantV1,
+    MeasurementOperationV2,
     PendingMeasurementWorkV1,
 )
+from ksi_processing_controller.external_measurement_protocol import (
+    MeasurementInputV2,
+    MeasurementLaunchRequestV2,
+)
+from ksi_processing_controller.external_measurement_result import MeasurementResultV2
 from ksi_processing_controller.external_object_streams import (
     ExternalObjectCapabilityV1,
     ExternalObjectTransportPolicyV1,
     TrustedObjectEndpointV1,
 )
-from ksi_processing_controller.external_validation_core_client import ExternalValidationCoreClient
+from ksi_processing_controller.external_validation_core_client import (
+    ExternalDisplayUploadCapability,
+    ExternalValidationCoreClient,
+)
 from ksi_processing_controller.external_validation_lanes import (
+    InspectionCorePort,
     InspectionLaneDependencies,
     InspectionValidationLane,
+    MeasurementCorePort,
     MeasurementLaneDependencies,
     MeasurementValidationLane,
 )
@@ -51,11 +87,17 @@ from test_external_measurement_protocol import limits as measurement_limits
 from test_external_validation_core_client import _CoreTestClientTransport
 
 
+def _replace_private_seam(target: object, name: str, replacement: object) -> None:
+    """Install a test-only private seam without assigning through a typed method."""
+
+    object.__setattr__(target, name, replacement)
+
+
 class _InspectionQueue:
     def __init__(self) -> None:
         self.claims: list[tuple[str, str]] = []
 
-    def list_pending(self, *, deadline_monotonic: float, limit: int) -> tuple[object, ...]:
+    def list_pending(self, *, deadline_monotonic: float, limit: int = 50) -> tuple[object, ...]:
         assert deadline_monotonic == 10.0
         assert limit == 1
         return (SimpleNamespace(request_id="inspection-request"),)
@@ -76,16 +118,76 @@ class _InspectionQueue:
             fence=_fence().model_copy(update={"lease_acquisition_id": acquisition_id}),
         )
 
+    def current_input(
+        self, request_id: str, fence: LocalLeaseFenceV1, *, deadline_monotonic: float
+    ) -> ExternalInspectionCurrentInputV1 | None:
+        del request_id, fence, deadline_monotonic
+        return None
+
+    def heartbeat(
+        self, request_id: str, fence: LocalLeaseFenceV1, *, deadline_monotonic: float
+    ) -> bool:
+        del request_id, fence, deadline_monotonic
+        return False
+
+    def capability_for(
+        self, request_id: str, fence: LocalLeaseFenceV1, artifact: ExternalArtifactInputV1
+    ) -> object:
+        del request_id, fence, artifact
+        raise AssertionError("not exercised by this queue test")
+
+    def record_report(
+        self,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        report: ExternalArtifactInspectionReportV1,
+        *,
+        deadline_monotonic: float,
+    ) -> ExternalArtifactInspectionReportV1:
+        del request_id, fence, report, deadline_monotonic
+        raise AssertionError("not exercised by this queue test")
+
+    def record_incomplete_failure(
+        self, request_id: str, fence: LocalLeaseFenceV1, reason: str, *, deadline_monotonic: float
+    ) -> object:
+        del request_id, fence, reason, deadline_monotonic
+        return object()
+
+    def release(self, request_id: str, fence: LocalLeaseFenceV1) -> None:
+        del request_id, fence
+
+    def grant_display_upload(
+        self,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        declaration: SanitizedDisplayDeclarationV1,
+        *,
+        deadline_monotonic: float,
+    ) -> ExternalDisplayUploadCapability:
+        del request_id, fence, declaration, deadline_monotonic
+        raise AssertionError("not exercised by this queue test")
+
+    def seal_display_upload(
+        self,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        grant: ExternalDisplayUploadCapability,
+        *,
+        deadline_monotonic: float,
+    ) -> SanitizedDisplayReceiptV1:
+        del request_id, fence, grant, deadline_monotonic
+        raise AssertionError("not exercised by this queue test")
+
 
 def test_inspection_lane_polls_and_claims_exact_request_with_runner_acquisition() -> None:
     core = _InspectionQueue()
     lane = InspectionValidationLane(
-        core=core,
+        core=cast(InspectionCorePort, core),
         worker_instance_id=_fence().worker_instance_id,
         dependencies=InspectionLaneDependencies(
-            launcher=object(),
-            operation_profile=object(),
-            candidate_sink=object(),
+            launcher=cast(ExternalInspectorLaunchPort, object()),
+            operation_profile=cast(InspectorWorkerOperationProfilePort, object()),
+            candidate_sink=cast(RetainedSanitizedCandidateOwnerPort, object()),
             object_policy=ExternalObjectTransportPolicyV1(
                 endpoints=(
                     TrustedObjectEndpointV1(origin="http://127.0.0.1:1", addresses=("127.0.0.1",)),
@@ -120,14 +222,23 @@ class _MeasurementQueue:
     def __init__(self) -> None:
         self.claims: list[tuple[str, str, str]] = []
 
-    def list_pending(self, operation, *, deadline_monotonic: float, limit: int):
+    def list_pending(
+        self, operation: MeasurementOperationV2, *, deadline_monotonic: float, limit: int = 50
+    ) -> tuple[object, ...]:
         assert deadline_monotonic == 10.0
         assert limit == 1
         return (PendingMeasurementWorkV1(operation, "volume-request", datetime.now(UTC)),)
 
     def claim(
-        self, operation, request_id, *, worker_instance_id, acquisition_id, deadline_monotonic
-    ):
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        *,
+        worker_instance_id: str,
+        acquisition_id: str,
+        deadline_monotonic: float,
+    ) -> MeasurementLeaseGrantV1:
+        del worker_instance_id
         assert deadline_monotonic == 10.0
         self.claims.append((operation, request_id, acquisition_id))
         return MeasurementLeaseGrantV1(
@@ -143,11 +254,11 @@ def test_measurement_lane_polls_and_claims_only_its_exact_operation_and_acquisit
     lane = MeasurementValidationLane(
         lane=ExternalLane.RELATIVE_VOLUME,
         operation="RELATIVE_VOLUME",
-        core=core,
+        core=cast(MeasurementCorePort, core),
         worker_instance_id=_fence().worker_instance_id,
         dependencies=MeasurementLaneDependencies(
-            manifest=object(),
-            uds_client=object(),
+            manifest=_volume_launch_with_records()[0],
+            uds_client=cast(ExternalMeasurementUdsClient, object()),
             protocol_limits=ProtocolLimitsV1(
                 max_header_bytes=256,
                 max_chunk_bytes=64,
@@ -180,14 +291,45 @@ def test_measurement_lane_polls_and_claims_only_its_exact_operation_and_acquisit
 
 
 class _MeasurementExecutionCore:
-    def __init__(self, manifest, template, object_url: str) -> None:
+    def __init__(
+        self,
+        manifest: InspectorExecutionManifestV1,
+        template: MeasurementLaunchRequestV2,
+        object_url: str,
+    ) -> None:
         self._manifest = manifest
         self._template = template
         self._object_url = object_url
-        self.submitted: list[tuple[object, object]] = []
+        self.submitted: list[tuple[MeasurementLaunchRequestV2, MeasurementResultV2]] = []
         self.incomplete: list[str] = []
 
-    def current_input(self, operation, request_id, fence, *, attempt_nonce, deadline_monotonic):
+    def list_pending(
+        self, operation: MeasurementOperationV2, *, deadline_monotonic: float, limit: int = 50
+    ) -> tuple[object, ...]:
+        del operation, deadline_monotonic, limit
+        raise AssertionError("execution test does not poll")
+
+    def claim(
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        *,
+        worker_instance_id: str,
+        acquisition_id: str,
+        deadline_monotonic: float,
+    ) -> MeasurementLeaseGrantV1:
+        del operation, request_id, worker_instance_id, acquisition_id, deadline_monotonic
+        raise AssertionError("execution test does not claim")
+
+    def current_input(
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        *,
+        attempt_nonce: str,
+        deadline_monotonic: float,
+    ) -> MeasurementLaunchRequestV2 | None:
         assert operation == "RELATIVE_VOLUME"
         assert request_id == self._template.request_id
         assert deadline_monotonic > time.monotonic()
@@ -195,7 +337,14 @@ class _MeasurementExecutionCore:
             update={"fence": fence, "attempt_nonce": attempt_nonce, "canonical_input_digest": None}
         ).sealed()
 
-    def heartbeat(self, operation, request_id, fence, *, deadline_monotonic):
+    def heartbeat(
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        *,
+        deadline_monotonic: float,
+    ) -> MeasurementLeaseGrantV1:
         assert operation == "RELATIVE_VOLUME"
         return MeasurementLeaseGrantV1(
             operation=operation,
@@ -204,13 +353,28 @@ class _MeasurementExecutionCore:
             lease_expires_at=datetime.now(UTC),
         )
 
-    def capability_for(self, operation, request_id, fence, artifact):
+    def capability_for(
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        artifact: MeasurementInputV2,
+    ) -> ExternalObjectCapabilityV1:
         del operation, request_id, fence
         return ExternalObjectCapabilityV1(
             artifact=artifact, url=self._object_url, required_headers={}
         )
 
-    def submit_result(self, launch, result, *, manifest, limits, computed_at, deadline_monotonic):
+    def submit_result(
+        self,
+        launch: MeasurementLaunchRequestV2,
+        result: MeasurementResultV2,
+        *,
+        manifest: InspectorExecutionManifestV1,
+        limits: ProtocolLimitsV1,
+        computed_at: datetime,
+        deadline_monotonic: float,
+    ) -> None:
         assert manifest == self._manifest
         assert limits == measurement_limits()
         assert deadline_monotonic > time.monotonic()
@@ -218,20 +382,36 @@ class _MeasurementExecutionCore:
         self.submitted.append((launch, result))
 
     def record_incomplete_failure(
-        self, operation, request_id, fence, reason, *, deadline_monotonic
-    ):
+        self,
+        operation: MeasurementOperationV2,
+        request_id: str,
+        fence: LocalLeaseFenceV1,
+        reason: str,
+        *,
+        deadline_monotonic: float,
+    ) -> None:
         del operation, request_id, fence, deadline_monotonic
         self.incomplete.append(reason)
 
-    def release(self, operation, request_id, fence):
+    def release(
+        self, operation: MeasurementOperationV2, request_id: str, fence: LocalLeaseFenceV1
+    ) -> None:
         del operation, request_id, fence
 
 
 class _ResultUdsClient:
     def __init__(self) -> None:
-        self.calls: list[object] = []
+        self.calls: list[MeasurementLaunchRequestV2] = []
 
-    def execute(self, *, request, manifest, sources, deadline_monotonic, authority_is_current):
+    def execute(
+        self,
+        *,
+        request: MeasurementLaunchRequestV2,
+        manifest: InspectorExecutionManifestV1,
+        sources: tuple[DeadlineBoundedByteReaderPort, DeadlineBoundedByteReaderPort],
+        deadline_monotonic: float,
+        authority_is_current: Callable[[], bool],
+    ) -> MeasurementResultV2:
         assert authority_is_current() is True
         assert len(sources) == 2
         assert deadline_monotonic > time.monotonic()
@@ -272,11 +452,11 @@ def test_volume_lane_uses_two_exact_loopback_sources_then_submits_only_v2_observ
         lane = MeasurementValidationLane(
             lane=ExternalLane.RELATIVE_VOLUME,
             operation="RELATIVE_VOLUME",
-            core=core,
+            core=cast(MeasurementCorePort, core),
             worker_instance_id=_fence().worker_instance_id,
             dependencies=MeasurementLaneDependencies(
                 manifest=manifest,
-                uds_client=uds,
+                uds_client=cast(ExternalMeasurementUdsClient, uds),
                 protocol_limits=measurement_limits(),
                 heartbeat_interval_millis=10,
                 object_policy=ExternalObjectTransportPolicyV1(
@@ -343,11 +523,11 @@ def test_measurement_second_source_open_failure_closes_first_reader_and_records_
         lane = MeasurementValidationLane(
             lane=ExternalLane.RELATIVE_VOLUME,
             operation="RELATIVE_VOLUME",
-            core=core,
+            core=cast(MeasurementCorePort, core),
             worker_instance_id=_fence().worker_instance_id,
             dependencies=MeasurementLaneDependencies(
                 manifest=manifest,
-                uds_client=_ResultUdsClient(),
+                uds_client=cast(ExternalMeasurementUdsClient, _ResultUdsClient()),
                 protocol_limits=measurement_limits(),
                 heartbeat_interval_millis=10,
                 object_policy=ExternalObjectTransportPolicyV1(
@@ -383,16 +563,18 @@ def test_measurement_second_source_open_failure_closes_first_reader_and_records_
 def test_display_authority_loss_does_not_send_an_inspection_incomplete_terminal() -> None:
     core = _InspectionQueue()
     incomplete: list[str] = []
-    core.record_incomplete_failure = lambda request_id, fence, reason, **_kwargs: incomplete.append(
-        reason
+    _replace_private_seam(
+        core,
+        "record_incomplete_failure",
+        lambda request_id, fence, reason, **_kwargs: incomplete.append(reason),
     )
     lane = InspectionValidationLane(
-        core=core,
+        core=cast(InspectionCorePort, core),
         worker_instance_id=_fence().worker_instance_id,
         dependencies=InspectionLaneDependencies(
-            launcher=object(),
-            operation_profile=object(),
-            candidate_sink=object(),
+            launcher=cast(ExternalInspectorLaunchPort, object()),
+            operation_profile=cast(InspectorWorkerOperationProfilePort, object()),
+            candidate_sink=cast(RetainedSanitizedCandidateOwnerPort, object()),
             object_policy=ExternalObjectTransportPolicyV1(
                 endpoints=(TrustedObjectEndpointV1("http://127.0.0.1:1", ("127.0.0.1",)),),
                 max_header_bytes=256,
@@ -405,12 +587,16 @@ def test_display_authority_loss_does_not_send_an_inspection_incomplete_terminal(
         ),
     )
     lease = ExternalWorkLease(request_id="inspection-request", fence=_fence())
-    lane._current = lambda *_args: SimpleNamespace(phase=ExternalInspectionPhaseV1.DISPLAY)
+    _replace_private_seam(
+        lane,
+        "_current",
+        lambda *_args: SimpleNamespace(phase=ExternalInspectionPhaseV1.DISPLAY),
+    )
 
     def lose_authority(*_args: object) -> None:
         raise CurrentAuthorityLost("display authority changed")
 
-    lane._execute_display = lose_authority
+    _replace_private_seam(lane, "_execute_display", lose_authority)
 
     assert lane.execute(lease, deadline_monotonic=10.0, stop=Event()) is TurnOutcome.DEFERRED
     assert incomplete == []
@@ -423,7 +609,14 @@ def test_measurement_guard_rechecks_stop_after_heartbeat_callback() -> None:
     stop = Event()
 
     class _Core:
-        def heartbeat(self, operation, request_id, fence, *, deadline_monotonic):
+        def heartbeat(
+            self,
+            operation: MeasurementOperationV2,
+            request_id: str,
+            fence: LocalLeaseFenceV1,
+            *,
+            deadline_monotonic: float,
+        ) -> MeasurementLeaseGrantV1:
             assert operation == "RELATIVE_VOLUME"
             assert request_id == launch.request_id
             assert deadline_monotonic > time.monotonic()
@@ -438,11 +631,11 @@ def test_measurement_guard_rechecks_stop_after_heartbeat_callback() -> None:
     lane = MeasurementValidationLane(
         lane=ExternalLane.RELATIVE_VOLUME,
         operation="RELATIVE_VOLUME",
-        core=_Core(),
+        core=cast(MeasurementCorePort, _Core()),
         worker_instance_id=_fence().worker_instance_id,
         dependencies=MeasurementLaneDependencies(
             manifest=manifest,
-            uds_client=object(),
+            uds_client=cast(ExternalMeasurementUdsClient, object()),
             protocol_limits=measurement_limits(),
             heartbeat_interval_millis=10,
             object_policy=ExternalObjectTransportPolicyV1(
@@ -465,8 +658,17 @@ def test_measurement_guard_rechecks_stop_after_heartbeat_callback() -> None:
 
 
 class _CurrentInspectionLauncher:
-    def execute(self, *, request, source, **_kwargs):
-        del source
+    def execute(
+        self,
+        *,
+        request: InspectorLaunchRequestV1,
+        source: DeadlineBoundedByteReaderPort,
+        artifact_kind: ProcessingArtifactKind,
+        content_type: str,
+        deadline_monotonic: float,
+        authority_is_current: Callable[[], bool],
+    ) -> InspectorLaunchResultV1:
+        del artifact_kind, authority_is_current, content_type, deadline_monotonic, source
         outcome = inspection_report(
             request_id=request.request.request_id,
             policy=request.policy,
@@ -483,14 +685,14 @@ class _CurrentInspectionLauncher:
 
 
 def _display_lane_with_retained_candidate(
-    sink, *, object_origin: str = "http://127.0.0.1:1"
+    sink: RetainedSanitizedCandidateOwnerPort, *, object_origin: str = "http://127.0.0.1:1"
 ) -> InspectionValidationLane:
     return InspectionValidationLane(
-        core=object(),
+        core=cast(InspectionCorePort, object()),
         worker_instance_id=_fence().worker_instance_id,
         dependencies=InspectionLaneDependencies(
-            launcher=object(),
-            operation_profile=object(),
+            launcher=cast(ExternalInspectorLaunchPort, object()),
+            operation_profile=cast(InspectorWorkerOperationProfilePort, object()),
             candidate_sink=sink,
             object_policy=ExternalObjectTransportPolicyV1(
                 endpoints=(
@@ -508,7 +710,7 @@ def _display_lane_with_retained_candidate(
 
 
 def test_display_lane_aborts_the_actual_private_candidate_when_stop_follows_sanitize(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """The lane, rather than a later turn, owns a sealed candidate after SANITIZE."""
 
@@ -517,12 +719,14 @@ def test_display_lane_aborts_the_actual_private_candidate_when_stop_follows_sani
     lane = _display_lane_with_retained_candidate(sink)
 
     class _Worker:
-        def launch_artifact_context(self, *_args, **_kwargs):
+        def launch_artifact_context(
+            self, *_args: object, **_kwargs: object
+        ) -> ExternalInspectorLaunchContextV1:
             stop.set()
             return context
 
-    lane._worker_for = lambda *_args: _Worker()
-    lane._is_current = lambda *_args: not stop.is_set()
+    _replace_private_seam(lane, "_worker_for", lambda *_args: _Worker())
+    _replace_private_seam(lane, "_is_current", lambda *_args: not stop.is_set())
     lease = ExternalWorkLease(
         request_id=context.current.request.request_id,
         fence=context.launch_request.fence,
@@ -543,7 +747,7 @@ def test_display_lane_aborts_the_actual_private_candidate_when_stop_follows_sani
 
 
 def test_display_lane_retries_the_same_actual_private_candidate_after_grant_response_loss(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """A retryable grant response loss retries one retained O_TMPFILE candidate."""
 
@@ -557,12 +761,14 @@ def test_display_lane_retries_the_same_actual_private_candidate_after_grant_resp
         )
 
         class _Worker:
-            def launch_artifact_context(self, *_args, **_kwargs):
+            def launch_artifact_context(
+                self, *_args: object, **_kwargs: object
+            ) -> ExternalInspectorLaunchContextV1:
                 return context
 
-        lane._core = core
-        lane._worker_for = lambda *_args: _Worker()
-        lane._is_current = lambda *_args: True
+        _replace_private_seam(lane, "_core", cast(InspectionCorePort, core))
+        _replace_private_seam(lane, "_worker_for", lambda *_args: _Worker())
+        _replace_private_seam(lane, "_is_current", lambda *_args: True)
         lease = ExternalWorkLease(
             request_id=context.current.request.request_id,
             fence=context.launch_request.fence,
@@ -584,7 +790,7 @@ def test_display_lane_retries_the_same_actual_private_candidate_after_grant_resp
 
 
 def test_display_lane_accepts_the_authoritative_terminal_receipt_after_display_phase_ends(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """The sealed Core receipt, not a now-spent DISPLAY lease, completes publication."""
 
@@ -596,19 +802,23 @@ def test_display_lane_accepts_the_authoritative_terminal_receipt_after_display_p
         )
 
         class _Worker:
-            def launch_artifact_context(self, *_args, **_kwargs):
+            def launch_artifact_context(
+                self, *_args: object, **_kwargs: object
+            ) -> ExternalInspectorLaunchContextV1:
                 return context
 
-        lane._core = _DisplayPublicationCore(put_server.url)
-        lane._worker_for = lambda *_args: _Worker()
+        _replace_private_seam(
+            lane, "_core", cast(InspectionCorePort, _DisplayPublicationCore(put_server.url))
+        )
+        _replace_private_seam(lane, "_worker_for", lambda *_args: _Worker())
         current_checks = 0
 
-        def is_current(*_args) -> bool:
+        def is_current(*_args: object) -> bool:
             nonlocal current_checks
             current_checks += 1
             return current_checks == 1
 
-        lane._is_current = is_current
+        _replace_private_seam(lane, "_is_current", is_current)
         lease = ExternalWorkLease(
             request_id=context.current.request.request_id,
             fence=context.launch_request.fence,
@@ -630,7 +840,7 @@ def test_display_lane_accepts_the_authoritative_terminal_receipt_after_display_p
 
 
 def test_display_lane_aborts_the_actual_private_candidate_on_base_exception(
-    tmp_path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """KeyboardInterrupt preserves itself while the exact sealed candidate is retired."""
 
@@ -638,22 +848,24 @@ def test_display_lane_aborts_the_actual_private_candidate_on_base_exception(
     lane = _display_lane_with_retained_candidate(sink)
 
     class _Worker:
-        def launch_artifact_context(self, *_args, **_kwargs):
+        def launch_artifact_context(
+            self, *_args: object, **_kwargs: object
+        ) -> ExternalInspectorLaunchContextV1:
             return context
 
     class _InterruptedPublication:
-        def __init__(self, **_kwargs) -> None:
+        def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def publish(self, _context) -> None:
+        def publish(self, _context: ExternalInspectorLaunchContextV1) -> None:
             raise KeyboardInterrupt("synthetic interruption")
 
     monkeypatch.setattr(
         "ksi_processing_controller.external_validation_lanes.ExternalDisplayPublicationWorker",
         _InterruptedPublication,
     )
-    lane._worker_for = lambda *_args: _Worker()
-    lane._is_current = lambda *_args: True
+    _replace_private_seam(lane, "_worker_for", lambda *_args: _Worker())
+    _replace_private_seam(lane, "_is_current", lambda *_args: True)
     lease = ExternalWorkLease(
         request_id=context.current.request.request_id,
         fence=context.launch_request.fence,
@@ -674,7 +886,7 @@ def test_display_lane_aborts_the_actual_private_candidate_on_base_exception(
 
 
 class _AllowInspectionProfile:
-    def allows(self, **_kwargs):
+    def allows(self, **_kwargs: object) -> InspectorOperationProfileDecision:
         return InspectorOperationProfileDecision.ALLOW
 
 
@@ -683,10 +895,12 @@ class _LoopbackObjectCore:
         self._core = core
         self._object_url = object_url
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._core, name)
 
-    def capability_for(self, request_id, fence, artifact):
+    def capability_for(
+        self, request_id: str, fence: LocalLeaseFenceV1, artifact: ExternalArtifactInputV1
+    ) -> ExternalObjectCapabilityV1:
         self._core.capability_for(request_id, fence, artifact)
         return ExternalObjectCapabilityV1(
             artifact=artifact, url=self._object_url, required_headers={}
@@ -694,9 +908,10 @@ class _LoopbackObjectCore:
 
 
 def test_inspection_phase_records_complete_report_through_actual_core_and_loopback_object(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     app, _issued_request, policy, _storage, _submission_ref = _active_scoped_app(tmp_path)
+    assert isinstance(policy, ExternalValidationPolicyV1)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
@@ -731,7 +946,7 @@ def test_inspection_phase_records_complete_report_through_actual_core_and_loopba
                     dependencies=InspectionLaneDependencies(
                         launcher=_CurrentInspectionLauncher(),
                         operation_profile=_AllowInspectionProfile(),
-                        candidate_sink=object(),
+                        candidate_sink=cast(RetainedSanitizedCandidateOwnerPort, object()),
                         object_policy=ExternalObjectTransportPolicyV1(
                             endpoints=(
                                 TrustedObjectEndpointV1(

@@ -3,15 +3,18 @@
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from typing import NoReturn, cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
+    ExternalRelativeVolumeAuthorityPort,
 )
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
@@ -19,36 +22,46 @@ from ksi_core.external_result_workflow_assembly import (
     ExternalRelativeVolumeRuntimeAuthorities,
     ExternalResultWorkflowAssemblyConfig,
 )
+from ksi_core.external_use_decisions import ExternalUseDecisionStore
+from ksi_core.external_validation_policy import PolicyAuthorityRecord
+from ksi_core.work_areas import WorkAreaStore
 from test_api_contract_sync import _auth_registry, _NullEvidenceStorage
 
 
 class _UnavailablePolicyAuthority:
-    def resolve(self, authority_record_digest, now):
+    def resolve(self, authority_record_digest: str, now: object) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
 
 
 class _UnavailableEvidenceContextAuthority:
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> None:
         self._coordinator = coordinator
 
     @property
-    def coordinator(self):
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
         return self._coordinator
 
-    def resolve_for_validation(self, **_kwargs):
+    def resolve_for_validation(self, **_kwargs: object) -> None:
         return None
 
-    def resolve_historical_for_validation(self, **_kwargs):
+    def resolve_historical_for_validation(self, **_kwargs: object) -> None:
         return None
 
-    def is_current(self, context):
+    def is_current(self, context: object) -> bool:
         del context
         return False
 
 
-def _assemble(path, opened, trace, *, config=None, storage=True):
-    def journal(name):
+def _assemble(
+    path: Path,
+    opened: list[DurableJournal],
+    trace: list[str],
+    *,
+    config: ExternalResultWorkflowAssemblyConfig | None = None,
+    storage: bool = True,
+) -> FastAPI:
+    def journal(name: str) -> DurableJournal:
         trace.append(name)
         item = DurableJournal(path / name)
         opened.append(item)
@@ -67,13 +80,15 @@ def _assemble(path, opened, trace, *, config=None, storage=True):
     )
 
 
-def _config(trace, *, wrong_stage=None):
-    retained = {}
+def _config(
+    trace: list[str], *, wrong_stage: str | None = None
+) -> ExternalResultWorkflowAssemblyConfig:
+    retained: dict[str, ExternalRelativeVolumeAuthorityPort] = {}
 
-    def mapping(**context):
+    def mapping(**context: object) -> ExternalRelativeVolumeAuthorityPort:
         trace.append("mapping")
-        coordinator = context["coordinator"]
-        assert context["work_areas"].coordinator is coordinator
+        coordinator = cast(ExternalAuthorityCurrentnessCoordinator, context["coordinator"])
+        assert cast(WorkAreaStore, context["work_areas"]).coordinator is coordinator
         assert callable(context["open_authority_journal"])
         if wrong_stage == "mapping":
             coordinator = ExternalAuthorityCurrentnessCoordinator()
@@ -82,11 +97,12 @@ def _config(trace, *, wrong_stage=None):
         )
         return retained["mapping"]
 
-    def runtime(**context):
+    def runtime(**context: object) -> ExternalRelativeVolumeRuntimeAuthorities:
         trace.append("runtime")
         assert context["mapping"] is retained["mapping"]
-        assert context["decisions"].coordinator is context["coordinator"]
-        coordinator = context["coordinator"]
+        coordinator = cast(ExternalAuthorityCurrentnessCoordinator, context["coordinator"])
+        decisions = cast(ExternalUseDecisionStore, context["decisions"])
+        assert decisions.coordinator is coordinator
         if wrong_stage == "runtime":
             coordinator = ExternalAuthorityCurrentnessCoordinator()
         return ExternalRelativeVolumeRuntimeAuthorities(
@@ -96,7 +112,7 @@ def _config(trace, *, wrong_stage=None):
             historical_use=ClosedExternalRelativeVolumeUseHistory(),
         )
 
-    def issuer(*args, **kwargs):
+    def issuer(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("explicit denial fixture cannot issue byte capabilities")
 
     return ExternalResultWorkflowAssemblyConfig(
@@ -112,8 +128,9 @@ def _config(trace, *, wrong_stage=None):
     )
 
 
-def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_path: Path):
-    opened, trace = [], []
+def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_path: Path) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         app = _assemble(tmp_path, opened, trace, config=_config(trace))
         stages = [
@@ -157,8 +174,11 @@ def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_pat
 
 
 @pytest.mark.parametrize("stage", ["mapping", "runtime"])
-def test_common_assembly_rejects_wrong_coordinator_before_volume_replay(tmp_path: Path, stage):
-    opened, trace = [], []
+def test_common_assembly_rejects_wrong_coordinator_before_volume_replay(
+    tmp_path: Path, stage: str
+) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         with pytest.raises(ValueError, match="coordinator"):
             _assemble(tmp_path, opened, trace, config=_config(trace, wrong_stage=stage))
@@ -170,8 +190,9 @@ def test_common_assembly_rejects_wrong_coordinator_before_volume_replay(tmp_path
             item.close()
 
 
-def test_configured_workflow_requires_complete_external_storage_graph(tmp_path: Path):
-    opened, trace = [], []
+def test_configured_workflow_requires_complete_external_storage_graph(tmp_path: Path) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         with pytest.raises(ValueError, match="external result workflow"):
             _assemble(tmp_path, opened, trace, config=_config(trace), storage=False)
@@ -181,9 +202,10 @@ def test_configured_workflow_requires_complete_external_storage_graph(tmp_path: 
             item.close()
 
 
-def test_manual_workflow_without_upstream_authorities_remains_closed(tmp_path: Path):
+def test_manual_workflow_without_upstream_authorities_remains_closed(tmp_path: Path) -> None:
     """Manual/dev configs do not acquire an authority merely by enabling routes."""
-    opened, trace = [], []
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         app = _assemble(tmp_path, opened, trace, config=_config(trace))
         assert app.state.external_relative_volume_mapping_authority is not None
@@ -198,9 +220,10 @@ def test_manual_workflow_without_upstream_authorities_remains_closed(tmp_path: P
             item.close()
 
 
-def test_storage_only_assembly_exposes_no_mapping_authority(tmp_path: Path):
+def test_storage_only_assembly_exposes_no_mapping_authority(tmp_path: Path) -> None:
     """No result-workflow config means no mapping participant exists to administer."""
-    opened, trace = [], []
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         app = _assemble(tmp_path, opened, trace, config=None)
         assert app.state.external_relative_volume_mapping_authority is None
@@ -209,9 +232,10 @@ def test_storage_only_assembly_exposes_no_mapping_authority(tmp_path: Path):
             item.close()
 
 
-def test_context_authority_factory_must_bind_the_exact_assembly_coordinator(tmp_path: Path):
+def test_context_authority_factory_must_bind_the_exact_assembly_coordinator(tmp_path: Path) -> None:
     """A context authority for another graph must be rejected before any journal opens."""
-    opened, trace = [], []
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     config = replace(
         _config(trace),
         policy_authority_port=_UnavailablePolicyAuthority(),
@@ -228,13 +252,16 @@ def test_context_authority_factory_must_bind_the_exact_assembly_coordinator(tmp_
             item.close()
 
 
-def test_common_assembly_forwards_exact_upstream_authority_ports(tmp_path: Path):
+def test_common_assembly_forwards_exact_upstream_authority_ports(tmp_path: Path) -> None:
     """Configured workflow ports reach only their existing Core authority consumers."""
-    opened, trace = [], []
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     policy_authority = _UnavailablePolicyAuthority()
-    retained = {}
+    retained: dict[str, _UnavailableEvidenceContextAuthority] = {}
 
-    def build_context_authority(coordinator):
+    def build_context_authority(
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+    ) -> _UnavailableEvidenceContextAuthority:
         authority = _UnavailableEvidenceContextAuthority(coordinator)
         retained["context"] = authority
         return authority
@@ -255,7 +282,7 @@ def test_common_assembly_forwards_exact_upstream_authority_ports(tmp_path: Path)
             item.close()
 
 
-def test_loader_configured_authority_journal_is_owned_by_common_assembly(tmp_path: Path):
+def test_loader_configured_authority_journal_is_owned_by_common_assembly(tmp_path: Path) -> None:
     """The absolute authority journal is tracked, closed, and never opened by the loader."""
     from ksi_core.external_result_workflow_config import load_external_result_workflow_config
     from test_external_result_workflow_config import _approved_files
@@ -266,7 +293,8 @@ def test_loader_configured_authority_journal_is_owned_by_common_assembly(tmp_pat
         participants=participants,
         input_capability_issuer=lambda *_args, **_kwargs: None,
     )
-    opened, trace = [], []
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     app = _assemble(tmp_path, opened, trace, config=workflow)
     authority_path = tmp_path / "authority.jsonl"
     try:
@@ -281,8 +309,9 @@ def test_loader_configured_authority_journal_is_owned_by_common_assembly(tmp_pat
     reopened.close()
 
 
-def test_absent_config_leaves_workflow_journals_and_routes_absent(tmp_path: Path):
-    opened, trace = [], []
+def test_absent_config_leaves_workflow_journals_and_routes_absent(tmp_path: Path) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
     try:
         app = _assemble(tmp_path, opened, trace)
         assert "external-relative-volumes.jsonl" not in trace

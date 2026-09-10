@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from external_product_loop_fixture import build_graph, record_measurement, seed_original
+from external_product_loop_fixture import LoopGraph, build_graph, record_measurement, seed_original
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import AuthRegistry, mount_auth
@@ -13,7 +13,7 @@ from ksi_core.external_result_workflow_api import build_external_result_workflow
 from test_external_result_review_proposals import _NOW, _TOKEN, _token_record
 
 
-def _client(graph) -> TestClient:
+def _client(graph: LoopGraph) -> TestClient:
     app = FastAPI()
     mount_auth(app, AuthRegistry([_token_record()]))
     app.include_router(
@@ -68,7 +68,7 @@ def test_scoped_history_and_exact_detail_retain_unavailable_source_rows(tmp_path
                 == 404
             )
 
-            graph.volumes._authority_port.historical_authority = replace(  # noqa: SLF001
+            graph.authority_port.historical_authority = replace(
                 graph.history.authority, decision_id="historical-source-withdrawn"
             )
             unavailable = client.get(

@@ -978,6 +978,8 @@ def mount_external_reconstruction(
     ) -> ExternalReconstructionRevisionView:
         order = _require_work_order(work_orders, work_order_id, principal)
         _write_principal(principal)
+        capture_started_at = submission.input_declaration.capture_started_at
+        capture_ended_at = submission.input_declaration.capture_ended_at
         if (
             order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
             and work_orders.get_external_reobservation_binding(
@@ -985,8 +987,8 @@ def mount_external_reconstruction(
             )
             is None
             and (
-                submission.input_declaration.capture_started_at is None
-                or submission.input_declaration.capture_ended_at is None
+                capture_started_at is None
+                or capture_ended_at is None
             )
         ):
             raise HTTPException(
@@ -999,8 +1001,9 @@ def mount_external_reconstruction(
                 order.work_order_id, organization_id=principal.organization_id
             )
             is None
-            and submission.input_declaration.capture_started_at
-            >= submission.input_declaration.capture_ended_at
+            and capture_started_at is not None
+            and capture_ended_at is not None
+            and capture_started_at >= capture_ended_at
         ):
             raise HTTPException(
                 status_code=422,

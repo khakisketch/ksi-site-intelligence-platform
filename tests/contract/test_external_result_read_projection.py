@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from external_product_loop_fixture import build_graph, record_measurement, seed_original
+from external_product_loop_fixture import LoopGraph, build_graph, record_measurement, seed_original
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import AuthRegistry, mount_auth
@@ -16,15 +16,30 @@ from ksi_core.external_reconstruction import (
     ExternalReconstructionStore,
     mount_external_reconstruction,
 )
-from ksi_core.external_relative_volumes import ExternalRelativeVolumeVerdict
+from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeVerdict,
+    ResolvedRelativeVolumeReport,
+)
 from ksi_core.external_result_workflow_api import ExternalResultReadProjector
 from ksi_core.external_use_decisions import ExternalDecisionIntent
+from ksi_core.observation_work_orders import ExternalReobservationApprovalResult
 from ksi_core.site_workspace import SiteWorkspaceProjector, build_workspace_copilot_handlers
+from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
+from ksi_event_contracts.external_result_review import (
+    ExternalReobservationProposalV1,
+    ExternalResultReviewReceiptV1,
+)
 from test_external_relative_volumes import _fence
 from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _token_record
 
 
-def _review_and_approve(graph, report):
+def _review_and_approve(
+    graph: LoopGraph, report: ExternalRelativeVolumeReportV1
+) -> tuple[
+    ExternalResultReviewReceiptV1,
+    ExternalReobservationProposalV1,
+    ExternalReobservationApprovalResult,
+]:
     review = graph.service.reviews.review(
         organization_id="org-a",
         report_ref=report.report_id,
@@ -166,7 +181,7 @@ def test_external_result_projection_fails_closed_when_historical_source_is_unava
     graph = build_graph(tmp_path, seed_original(tmp_path))
     try:
         report = record_measurement(graph)
-        graph.volumes._authority_port.historical_authority = replace(  # noqa: SLF001 - fixture port
+        graph.authority_port.historical_authority = replace(
             graph.history.authority, decision_id="historical-source-withdrawn"
         )
         projector = ExternalResultReadProjector(
@@ -198,8 +213,8 @@ def test_external_result_projection_keeps_historically_resolved_report_after_liv
     graph = build_graph(tmp_path, seed_original(tmp_path))
     try:
         report = record_measurement(graph)
-        graph.volumes._authority_port.authority = replace(  # noqa: SLF001 - fixture port
-            graph.volumes._authority_port.authority,
+        graph.authority_port.authority = replace(
+            graph.authority_port.authority,
             valid_until=_NOW - timedelta(seconds=1),
         )
         projection = ExternalResultReadProjector(
@@ -231,7 +246,9 @@ def test_site_projection_does_not_fall_back_when_retained_latest_lacks_history(
             lambda _site_id, *, organization_id: (latest_ref, report.report_id),
         )
 
-        def resolve_with_retained_latest(ref: str, *, organization_id: str, now):
+        def resolve_with_retained_latest(
+            ref: str, *, organization_id: str, now: datetime
+        ) -> ResolvedRelativeVolumeReport | None:
             resolved_refs.append(ref)
             if ref == latest_ref:
                 return None
@@ -336,6 +353,7 @@ def test_workspace_copilot_handlers_expose_only_exact_external_report_citation(
 
         assert set(handlers) == {"site_snapshot", "latest_progress", "evidence_index"}
         assert latest.data["externalResult"]["state"] == "AVAILABLE"
+        assert report.report_digest is not None
         assert latest.citations[0].citation_id == (
             f"external-relative-volume-report:{report.report_id}:{report.report_digest.removeprefix('sha256:')}"
         )
