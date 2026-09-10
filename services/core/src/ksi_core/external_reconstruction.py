@@ -13,10 +13,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from ksi_domain.canonical_json import canonical_json_bytes
+from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
 from ksi_event_contracts.external_reconstruction import (
     ExternalReconstructionManifestEntryV1,
     ExternalReconstructionManifestV1,
@@ -24,6 +25,12 @@ from ksi_event_contracts.external_reconstruction import (
     external_reconstruction_manifest_wire_dict,
     external_reconstruction_submission_wire_dict,
 )
+from ksi_event_contracts.external_reobservation import ExternalPlanningOnlyWorkOrderBindingV1
+from ksi_event_contracts.observation_work_order import (
+    ObservationWorkOrder,
+    ObservationWorkOrderExecutionMode,
+)
+from pydantic import Field
 
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.api_base import CamelModel, iso_utc
@@ -36,7 +43,15 @@ from ksi_core.evidence import (
     EvidenceStorageError,
     ObjectStorageObservationPort,
 )
-from ksi_core.observation_work_orders import ObservationWorkOrder, ObservationWorkOrderStore
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_result_projection_models import (
+    ExternalResultProjectionState,
+    ExternalResultProjectionView,
+)
+from ksi_core.observation_work_orders import ObservationWorkOrderStore
+
+if TYPE_CHECKING:
+    from ksi_core.external_result_workflow_api import ExternalResultReadProjector
 
 _EVENT_VERSION = 1
 _NOT_FOUND = "EXTERNAL_RECONSTRUCTION_NOT_FOUND"
@@ -163,8 +178,14 @@ def _derived_epoch_id(*, organization_id: str, work_order_id: str, cycle_number:
 class ExternalReconstructionStore:
     """Journal-backed external declaration state machine with strict replay."""
 
-    def __init__(self, journal: DurableJournal) -> None:
+    def __init__(
+        self,
+        journal: DurableJournal,
+        *,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+    ) -> None:
         self._journal = journal
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._streams: dict[tuple[str, str], list[ExternalReconstructionRevision]] = {}
         self._submission_ids_by_ref: dict[tuple[str, str], str] = {}
         self._seal_listeners: list[
@@ -185,6 +206,10 @@ class ExternalReconstructionStore:
     @property
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
 
     def bind_seal_listener(
         self, listener: Callable[[ExternalReconstructionRevision, datetime], object]
@@ -207,6 +232,25 @@ class ExternalReconstructionStore:
                 for revision in stream
                 if revision.manifest is not None
             )
+
+    def resolve_sealed_subject(
+        self, subject: SealedExternalSubjectV1
+    ) -> ExternalReconstructionRevision | None:
+        """Core-only exact sealed-subject resolution for derived validation work."""
+        with self._lock:
+            revisions = self._streams.get((subject.work_order_id, subject.submission_id), ())
+            for revision in revisions:
+                submission, manifest = revision.submission, revision.manifest
+                if (
+                    submission.organization_id == subject.organization_id
+                    and submission.site_id == subject.site_id
+                    and submission.revision == subject.revision
+                    and submission.submission_digest == subject.submission_digest
+                    and manifest is not None
+                    and manifest.manifest_digest == subject.manifest_digest
+                ):
+                    return revision
+        return None
 
     def _require_exact_fields(self, raw: dict[str, Any], expected: set[str]) -> None:
         if set(raw) != expected:
@@ -441,7 +485,7 @@ class ExternalReconstructionStore:
             or submission.site_id != work_order.site_id
         ):
             return ExternalReconstructionResult(ExternalReconstructionVerdict.BAD_DECLARATION)
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             stream_key = (work_order.work_order_id, submission.submission_id)
             submission_ref = build_external_reconstruction_submission_ref(
                 organization_id=submission.organization_id,
@@ -539,12 +583,29 @@ class ExternalReconstructionStore:
                     ExternalReconstructionVerdict.STORAGE_UNAVAILABLE
                 )
             self._apply(raw)
-            return ExternalReconstructionResult(
-                ExternalReconstructionVerdict.REGISTERED,
-                self._record(
-                    work_order.work_order_id, submission.submission_id, submission.revision
-                ),
-            )
+        return ExternalReconstructionResult(
+            ExternalReconstructionVerdict.REGISTERED,
+            self._record(
+                work_order.work_order_id, submission.submission_id, submission.revision
+            ),
+        )
+
+    def is_registration_retry(
+        self, submission: ExternalReconstructionSubmissionV1, *, work_order: ObservationWorkOrder
+    ) -> bool:
+        """Retained exact registration retries are reads and remain available after close."""
+
+        record = self.get(
+            work_order.work_order_id,
+            submission.submission_id,
+            submission.revision,
+            organization_id=work_order.organization_id,
+            site_id=work_order.site_id,
+        )
+        return (
+            record is not None
+            and record.submission.submission_digest == submission.submission_digest
+        )
 
     @staticmethod
     def _stream_matches_trusted_scope(
@@ -627,7 +688,7 @@ class ExternalReconstructionStore:
         site_id: str,
         storage: DigestBoundEvidenceStorage,
     ) -> UploadGrantResult:
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             current = self._record(work_order_id, submission_id, revision)
             if not self._in_scope(current, organization_id=organization_id, site_id=site_id):
                 return UploadGrantResult(ExternalReconstructionVerdict.NOT_FOUND)
@@ -724,7 +785,7 @@ class ExternalReconstructionStore:
             return ExternalReconstructionResult(
                 ExternalReconstructionVerdict.STORAGE_UNAVAILABLE, snapshot
             )
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             current = self._record(work_order_id, submission_id, revision)
             if current is not snapshot:
                 if current is not None and current.manifest is not None:
@@ -782,6 +843,19 @@ class ExternalReconstructionStore:
                 # consumer failed. The ingress receipt itself remains factual.
                 continue
         return ExternalReconstructionResult(ExternalReconstructionVerdict.SEALED, sealed)
+
+
+class ExternalReconstructionContextView(CamelModel):
+    """Registration identity only; grants no acquisition or analysis authority."""
+
+    work_order_id: str = Field(min_length=1, max_length=255)
+    site_id: str = Field(min_length=1, max_length=255)
+    expected_epoch_id: str = Field(pattern=r"^obs-epoch-[0-9a-f]{24}$")
+    cycle_number: int = Field(ge=1)
+    work_order_version: int = Field(ge=1)
+    execution_mode: ObservationWorkOrderExecutionMode | None = None
+    external_planning_binding: ExternalPlanningOnlyWorkOrderBindingV1 | None = None
+    external_result: ExternalResultProjectionView
 
 
 class ExternalReconstructionRevisionView(CamelModel):
@@ -856,12 +930,45 @@ def mount_external_reconstruction(
     *,
     work_orders: ObservationWorkOrderStore,
     storage: Any,
+    external_results: ExternalResultReadProjector | None = None,
 ) -> None:
     """Mount the scoped external declaration surface after its dependencies are validated."""
     router = APIRouter(prefix="/v1/observation-work-orders", tags=["external-reconstruction"])
     read = require_permission(Permission.SITES_READ)
     write = require_permission(Permission.SITES_WRITE)
     base = "/{work_order_id}/external-reconstruction-submissions"
+
+    @router.get(
+        "/{work_order_id}/external-reconstruction-context",
+        response_model=ExternalReconstructionContextView,
+    )
+    def registration_context(
+        work_order_id: str,
+        principal: Principal = Depends(read),  # noqa: B008
+    ) -> ExternalReconstructionContextView:
+        # The same immutable WorkOrder snapshot supplies all fields. Never recover
+        # or create an AcquisitionRun merely to obtain the external upload epoch.
+        order = _require_work_order(work_orders, work_order_id, principal)
+        return ExternalReconstructionContextView(
+            work_order_id=order.work_order_id,
+            site_id=order.site_id,
+            expected_epoch_id=observation_epoch_id(order),
+            cycle_number=order.cycle_number,
+            work_order_version=order.version,
+            execution_mode=order.execution_mode,
+            external_planning_binding=work_orders.get_external_reobservation_binding(
+                order.work_order_id, organization_id=principal.organization_id
+            ),
+            external_result=(
+                external_results.for_work_order(
+                    order.work_order_id, organization_id=principal.organization_id
+                )
+                if external_results is not None
+                else ExternalResultProjectionView(
+                    state=ExternalResultProjectionState.NOT_CONFIGURED
+                )
+            ),
+        )
 
     @router.post(base, response_model=ExternalReconstructionRevisionView, status_code=201)
     def register(
@@ -871,12 +978,55 @@ def mount_external_reconstruction(
     ) -> ExternalReconstructionRevisionView:
         order = _require_work_order(work_orders, work_order_id, principal)
         _write_principal(principal)
-        result = store.register(
-            submission,
-            work_order=order,
-            registered_by=principal.principal_id,
-            now=datetime.now(UTC),
-        )
+        capture_started_at = submission.input_declaration.capture_started_at
+        capture_ended_at = submission.input_declaration.capture_ended_at
+        if (
+            order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            and work_orders.get_external_reobservation_binding(
+                order.work_order_id, organization_id=principal.organization_id
+            )
+            is None
+            and (
+                capture_started_at is None
+                or capture_ended_at is None
+            )
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="CAPTURE_INTERVAL_REQUIRED_FOR_EXTERNAL_INGRESS",
+            )
+        if (
+            order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            and work_orders.get_external_reobservation_binding(
+                order.work_order_id, organization_id=principal.organization_id
+            )
+            is None
+            and capture_started_at is not None
+            and capture_ended_at is not None
+            and capture_started_at >= capture_ended_at
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="CAPTURE_INTERVAL_MUST_BE_POSITIVE_FOR_EXTERNAL_INGRESS",
+            )
+        try:
+            with work_orders.guard_new_external_intent(
+                order.work_order_id,
+                organization_id=principal.organization_id,
+                is_durable_retry=lambda: store.is_registration_retry(
+                    submission, work_order=order
+                ),
+            ):
+                result = store.register(
+                    submission,
+                    work_order=order,
+                    registered_by=principal.principal_id,
+                    now=datetime.now(UTC),
+                )
+        except RuntimeError as exc:
+            if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
         _result_error(result)
         assert result.revision is not None
         return _view(result.revision)

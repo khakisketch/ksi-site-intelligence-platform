@@ -49,6 +49,10 @@ _NO_BODY = "본문 없음(경로 파라미터만) — 본문 검증 층에 닿�
 
 #: 적대적 입력을 **실제로 쏴 본** 라우트들의 근거.
 _FIRED_DIRECTLY = "횡단 게이트가 적대적 본문 6종을 이 라우트로 직접 쏜다"
+_FIRED_EXTERNAL_INSPECTION = (
+    "test_external_artifact_inspections_api.py 가 assembled Core worker lease 아래 "
+    "적대적 본문 6종을 직접 쏜다"
+)
 _REGRESSION_COORD_OVERFLOW = "좌표 오버플로 typed 거부 회귀 있음"
 _REGRESSION_SUBNORMAL_FOCAL = "초점거리 subnormal typed 거부 회귀 있음"
 _REGRESSION_PAYLOAD_DEPTH = "payload 중첩 깊이 상한 회귀 있음(F4)"
@@ -90,6 +94,46 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/events/{event_key}/transitions"): _BASE,
     ("POST", "/v1/gateway-sync/heartbeats"): _FIRED_DIRECTLY,
     ("POST", "/v1/gateway-sync/operation-receipts"): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/lease",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/heartbeat",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/report",
+    ): _FIRED_EXTERNAL_INSPECTION,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/incomplete-failure",
+    ): _FIRED_EXTERNAL_INSPECTION,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/display-artifacts/upload-grants",
+    ): _FIRED_EXTERNAL_INSPECTION,
+    (
+        "POST",
+        "/v1/internal/external-validation/inspections/{request_id}/display-artifacts/{display_id}/seal",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/internal/external-validation/evidence-validations/{validation_id}/lease",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/internal/external-validation/evidence-validations/{validation_id}/heartbeat",
+    ): _NO_BODY,
+    (
+        "POST",
+        "/v1/internal/external-validation/evidence-validations/{validation_id}/measurement",
+    ): _BASE,
+    (
+        "POST",
+        "/v1/internal/external-validation/evidence-validations/{validation_id}/incomplete-failure",
+    ): _BASE,
     ("POST", "/v1/missions/contracts"): _BASE,
     ("POST", "/v1/missions/plans"): _REGRESSION_SUBNORMAL_FOCAL,
     ("POST", "/v1/missions/{mission_id}/change-detection"): _BASE,
@@ -120,6 +164,16 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/observation-work-orders/{work_order_id}/approve"): _FIRED_DIRECTLY,
     (
         "POST",
+        "/v1/observation-work-orders/{work_order_id}/operations/assignment",
+    ): _FIRED_DIRECTLY,
+    ("POST", "/v1/observation-work-orders/{work_order_id}/operations/close"): _FIRED_DIRECTLY,
+    ("POST", "/v1/observation-work-orders/{work_order_id}/operations/reopen"): _FIRED_DIRECTLY,
+    (
+        "PUT",
+        "/v1/observation-work-orders/{work_order_id}/operations/due-date",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
         "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
     ): _FIRED_DIRECTLY,
     (
@@ -142,6 +196,14 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
         "POST",
         "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/seal",
     ): _NO_BODY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/single",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/pair",
+    ): _FIRED_DIRECTLY,
     (
         "POST",
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
@@ -172,6 +234,12 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/sites/{site_id}/transitions"): _BASE,
     ("POST", "/v1/sites/{site_id}/work-areas"): _REGRESSION_POLYGON_DEPTH,
     ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/archive"): _NO_BODY,
+    ("PUT", "/v1/organization-work-roster/{principal_id}"): _FIRED_DIRECTLY,
+    ("POST", "/v1/work-inbox/{notification_ref}/read"): _NO_BODY,
+    (
+        "POST",
+        "/v1/external-relative-volume-reports/{report_ref}/shares",
+    ): _FIRED_DIRECTLY,
 }
 
 _TOKEN = "hostile-coverage-admin"  # noqa: S105 -- 테스트 고정값

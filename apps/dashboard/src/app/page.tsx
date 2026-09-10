@@ -14,7 +14,10 @@ import {
   humanizeApiError,
   humanizeEventType,
 } from "@/lib/core-api/labels";
-import { listObservationWorkOrdersForOrganization } from "@/lib/core-api/observation-work-orders";
+import {
+  listObservationWorkOrderOperations,
+  listObservationWorkOrdersForOrganization,
+} from "@/lib/core-api/observation-work-orders";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { getHomeEventEvidencePreview, type HomeEvidencePreview } from "@/lib/home-evidence";
@@ -130,7 +133,7 @@ function attentionView(
 
   if (source.kind === "WORK_ORDER") {
     const workOrder = source.workOrder;
-    const presentation = presentWorkOrder(workOrder.status);
+    const presentation = presentWorkOrder(workOrder.status, workOrder.executionMode);
     return {
       key: source.key,
       siteName,
@@ -264,21 +267,29 @@ function recentSiteView(
 }
 
 export default async function HomePage() {
-  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult] = await Promise.all([
+  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult, operationsResult] = await Promise.all([
     settle(listSitesCached()),
     settle(listAllEventsCached()),
     settle(whoAmI()),
     settle(listObservationWorkOrdersForOrganization()),
+    settle(listObservationWorkOrderOperations()),
   ]);
 
   const sites = sitesResult.ok ? sitesResult.value : [];
   const events = eventsResult.ok ? eventsResult.value.events : [];
   const workOrders = workOrdersResult.ok ? workOrdersResult.value : [];
+  const operationsByWorkOrderId = new Map(
+    (operationsResult.ok ? operationsResult.value : []).map((operations) => [operations.workOrderId, operations]),
+  );
+  const hasExternalWorkOrders = workOrders.some(
+    (workOrder) => workOrder.executionMode === "EXTERNAL_RECONSTRUCTION",
+  );
+  const operationsUnavailable = hasExternalWorkOrders && !operationsResult.ok;
   const permissions = whoAmIResult.ok ? whoAmIResult.value.permissions : [];
   const canRegisterSite = permissions.includes("SITES_WRITE") && permissions.includes("MISSIONS_ISSUE");
 
   const allAttentionSources = selectHomeAttentionSources(
-    { events, workOrders, sites },
+    { events, workOrders, sites, operationsByWorkOrderId },
     Number.MAX_SAFE_INTEGER,
   );
   // 상단은 큰 이미지 중심의 운영 브리핑을 유지한다. 최초 설정만 남은 UNMAPPED
@@ -352,7 +363,7 @@ export default async function HomePage() {
     };
   });
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById, previews));
-  const portfolioComplete = sitesResult.ok && eventsResult.ok && workOrdersResult.ok;
+  const portfolioComplete = sitesResult.ok && eventsResult.ok && workOrdersResult.ok && !operationsUnavailable;
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
@@ -381,6 +392,14 @@ export default async function HomePage() {
       {sites.length > 0 && !portfolioComplete && (
         <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">
           일부 현장 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.
+        </p>
+      )}
+
+      {operationsUnavailable && (
+        <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">
+          {operationsResult.forbidden
+            ? "외부 작업의 담당·마감·업무 종료 상태를 볼 권한이 없습니다. 권한이 있는 계정에서 작업 운영을 확인하세요."
+            : "외부 작업의 담당·마감·업무 종료 상태를 불러오지 못했습니다. 해당 작업은 확인 필요나 진행 중으로 분류하지 않았습니다."}
         </p>
       )}
 

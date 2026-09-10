@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-relative-volume-report.v1.json",
+  "title": "External Relative Volume Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "reportId",
+    "requestId",
+    "requestDigest",
+    "payload",
+    "measurementPayloadDigest",
+    "workerInstanceId",
+    "leaseAcquisitionId",
+    "leaseGeneration",
+    "computedAt",
+    "reportedAt",
+    "reportDigest"
+  ],
+  "properties": {
+    "contractVersion": { "const": "external-relative-volume-report.v1" },
+    "reportId": { "$ref": "#/$defs/text" },
+    "requestId": { "$ref": "#/$defs/text" },
+    "requestDigest": { "$ref": "#/$defs/digest" },
+    "payload": { "$ref": "#/$defs/payload" },
+    "measurementPayloadDigest": { "$ref": "#/$defs/digest" },
+    "workerInstanceId": { "$ref": "#/$defs/uuid4" },
+    "leaseAcquisitionId": { "$ref": "#/$defs/uuid4" },
+    "leaseGeneration": { "type": "integer", "minimum": 1 },
+    "computedAt": { "$ref": "#/$defs/utcDateTime" },
+    "reportedAt": { "$ref": "#/$defs/utcDateTime" },
+    "reportDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "longText": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "uuid4": { "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "utcDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+      "$comment": "The pattern enforces UTC RFC3339 lexical form. Draft 2020-12 format is annotation unless a consumer enables a format assertion; canonical Pydantic contracts parse calendar semantics and UTC offset."
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zoneCellCount", "commonValidCellCount", "zoneAreaM2", "measuredAreaM2", "commonValidFraction", "cutM3", "fillM3", "netM3", "thresholdM", "uncertaintyM3", "uncertaintyNote"],
+      "properties": {
+        "zoneCellCount": { "type": "integer", "minimum": 1 },
+        "commonValidCellCount": { "type": "integer", "minimum": 1 },
+        "zoneAreaM2": { "type": "number", "exclusiveMinimum": 0, "maximum": 1e300 },
+        "measuredAreaM2": { "type": "number", "exclusiveMinimum": 0, "maximum": 1e300 },
+        "commonValidFraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "cutM3": { "type": "number", "minimum": 0, "maximum": 1e300 },
+        "fillM3": { "type": "number", "minimum": 0, "maximum": 1e300 },
+        "netM3": { "type": "number", "minimum": -1e300, "maximum": 1e300 },
+        "thresholdM": { "type": "number", "minimum": 0, "maximum": 1e300 },
+        "uncertaintyM3": { "type": ["number", "null"], "minimum": 0, "maximum": 1e300 },
+        "uncertaintyNote": { "$ref": "#/$defs/longText" }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factClass", "requestDigest", "decisionDigest", "baselineDsmDigest", "currentDsmDigest", "zoneSnapshotDigest", "executionPolicyDigest", "algorithmBuildDigest", "configDigest", "metrics"],
+      "properties": {
+        "factClass": { "const": "OBSERVED" },
+        "requestDigest": { "$ref": "#/$defs/digest" },
+        "decisionDigest": { "$ref": "#/$defs/digest" },
+        "baselineDsmDigest": { "$ref": "#/$defs/digest" },
+        "currentDsmDigest": { "$ref": "#/$defs/digest" },
+        "zoneSnapshotDigest": { "$ref": "#/$defs/digest" },
+        "executionPolicyDigest": { "$ref": "#/$defs/digest" },
+        "algorithmBuildDigest": { "$ref": "#/$defs/digest" },
+        "configDigest": { "$ref": "#/$defs/digest" },
+        "metrics": { "$ref": "#/$defs/metrics" }
+      }
+    }
+  }
+}

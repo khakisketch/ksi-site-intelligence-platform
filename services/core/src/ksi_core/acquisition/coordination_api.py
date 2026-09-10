@@ -23,7 +23,10 @@ from ksi_core.api_base import JOURNAL_SEALED_DETAIL
 from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
 from ksi_core.durable_journal import JournalSealedError
 from ksi_core.mission_records import MissionStore
-from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.observation_work_orders import (
+    ExternalReobservationExecutionDenied,
+    ObservationWorkOrderStore,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -39,6 +42,8 @@ def _coordination_error(exc: Exception) -> HTTPException:
     if isinstance(exc, LookupError):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, AcquisitionCoordinationConflictError):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ExternalReobservationExecutionDenied):
         return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=422, detail=str(exc))
 
@@ -81,7 +86,7 @@ def build_acquisition_coordination_router(
                     actor=principal.principal_id,
                     now=now,
                 )
-            except (JournalSealedError, ValueError) as exc:
+            except (ExternalReobservationExecutionDenied, JournalSealedError, ValueError) as exc:
                 raise _coordination_error(exc) from exc
         return projector.project(work_order, now=now)
 

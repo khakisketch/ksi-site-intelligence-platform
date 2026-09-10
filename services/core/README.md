@@ -20,6 +20,15 @@ MissionExecution·SourceMedia·ProcessingJob 원장이 계속 권위이며
 
 ## Customer-owned external reconstruction ingress
 
+`POST /v1/sites/{site_id}/observation-work-orders` defaults to a managed
+`MANAGED_ACQUISITION` WorkOrder. Supplying `EXTERNAL_RECONSTRUCTION` creates an
+already-approved customer artifact registration request with no schedule and no
+acquisition callback. The request requires `Idempotency-Key`; Core journals its
+hash and normalized request fingerprint, never the raw key. Retrying the same
+request returns the current WorkOrder without a second create event; reusing the
+key for another request is a conflict. Managed callers may also supply a key and
+receive the same retry protection.
+
 ADR-KSI-036's bounded ingress is available only when the shared assembly supplies the durable
 journal and supported evidence storage. Storage-less development assembly deliberately has no
 external-reconstruction routes: it cannot safely issue a digest-bound upload capability or make a
@@ -69,3 +78,61 @@ an unkeyed claim of tamper authentication.
 The wire contract is [`contracts/api/openapi-core.yaml`](../../contracts/api/openapi-core.yaml) and
 the submission/manifest schemas it references. Exact local evidence, test commands, and remaining
 gates are in the [external ingress verification audit](../../docs/audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md).
+
+## External artifact inspection and sanitized display
+
+When durable external reconstruction, policy, inspection, display, WorkOrder, and evidence-storage
+dependencies are assembled together, Core mounts a scoped worker plane at
+`/v1/internal/external-validation/inspections`. `PROCESSING_WORK` workers list and lease work, read
+lease-gated inspection input, renew/report/incomplete-failure attempts, and declare/seal one
+sanitized display derivative. Source download capabilities and required headers appear only in that
+lease-gated worker input; Core never journals those capabilities or exposes source object keys.
+
+`GET .../revisions/{revision}/inspection` requires `SITES_READ` and returns only occurred
+registration, seal, inspection, report, and display receipt facts. It does not issue or schedule
+inspection work, make a use/eligibility decision, or make an accuracy claim. The matching scoped
+`GET .../display-artifacts/{sanitized_display_ref}/download` creates a short-lived derivative
+capability only after rechecking the current exact report, receipt, and policy binding. Missing,
+foreign, stale, or revoked resources are a non-disclosing `404`; storage failure is `503` without a
+partial capability. These routes remain absent from a storage-less assembly.
+
+## External quantitative relative-volume authority (V1)
+
+The quantitative workflow is default-closed. It is assembled only when Core receives an explicit
+`ExternalResultWorkflowAssemblyConfig` built from an owner-protected, absolute configuration path,
+an approved catalog path, and an injected `ExternalQuantitativeCatalogAuthorityPort`. Configuration
+names paths only; it cannot select a subject, organization, WorkArea, actor, policy, numeric limit,
+or authority record.
+
+V1 accepts one ordered pair only when both DSMs have the exact
+`external-geotiff-profile.v1` grammar and inspector build, matching observed CRS and vertical
+reference digests, non-overlapping ordered capture intervals, independently validated checkpoint
+evidence, and one exact active WorkArea snapshot. The validation policy pre-authorizes a
+`compatibilityRuleDigest` for those facts. Core then records a separate full
+`mappingRecordDigest`, which also binds the exact validation-policy digest; decisions, execution
+snapshots, and historical use bind that full record digest. Cross-profile, managed-profile,
+cross-CRS, cross-vertical, missing-checkpoint, stale-WorkArea, absent-policy, or mismatched actor
+inputs remain unavailable.
+
+`compatibilityRuleDigest` is pre-inspection identity only: the fixed external profile/parser,
+equal observed CRS/vertical references, independent checkpoint evidence for each epoch, ordered
+non-overlapping capture intervals, and exact WorkArea matching. It contains no subject,
+inspection, observed value, capture value, WorkArea revision, evidence, policy, result, or
+authority digest. The later `mappingRecordDigest` retains every one of those exact bindings.
+
+For Core-only composition, a configured common assembly exposes the exact built mapping participant
+at `app.state.external_relative_volume_mapping_authority`; it is `None` when the workflow is not
+injected. This is not an HTTP authority surface, creates no second catalog, and cannot admit,
+activate, or issue work by itself.
+
+An injected catalog-authority record binds a strict admission-body digest. The only omitted
+self-references are the catalog envelope's authority digest and the matching contained execution
+policy authority digest; the resolved sealed digest must be reinserted identically before the
+catalog is used. The configured authority journal is opened by the common assembly and therefore
+shares its journal ownership, failure cleanup, and development-assembly close lifecycle.
+
+Rollback disables this explicit workflow injection and new volume issuance. It retains sealed
+submissions, inspections, checkpoint validations, use decisions, authority lifecycle events,
+requests, reports, reviews, and WorkOrders. Local tests do not establish customer export
+compatibility, authority provisioning, backup/restore, signed OCI/SBOM evidence, deployment,
+owner operation, HIL, or field acceptance.

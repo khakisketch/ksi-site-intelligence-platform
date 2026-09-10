@@ -13,10 +13,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+from uuid import UUID
 
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Response
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
+    ArtifactOutcome,
     ExternalArtifactInspectionReportV1,
     ExternalArtifactInspectionRequestV1,
     ExternalValidationPolicyV1,
@@ -24,11 +27,19 @@ from ksi_event_contracts.external_artifact_validation import (
     external_artifact_inspection_report_wire_dict,
     external_artifact_inspection_request_wire_dict,
 )
+from ksi_event_contracts.external_display_artifact import (
+    SanitizedDisplayDeclarationV1,
+    SanitizedDisplayReceiptV1,
+    sanitized_display_receipt_wire_dict,
+)
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
+from ksi_core.api_base import CamelModel
+from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import DEFAULT_VIEW_TTL, EvidenceStorage, EvidenceStorageError
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_reconstruction import ExternalReconstructionRevision
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
@@ -92,6 +103,174 @@ class PendingExternalInspection:
     request_id: str
     issued_at: datetime
     phase: InspectionPhase
+
+
+@dataclass(frozen=True, slots=True)
+class PublicInspectionSnapshot:
+    """Scoped, capability-free view of facts retained for one sealed revision."""
+
+    state: str
+    request: ExternalArtifactInspectionRequestV1 | None
+    phase: InspectionPhase | None
+    report: ExternalArtifactInspectionReportV1 | None
+
+
+class ExternalInspectionFailureRequest(CamelModel):
+    """Worker's bounded incomplete-attempt fact; parser output never enters Core."""
+
+    reason: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,127}$")
+    detail: str | None = None
+
+
+class ExternalInspectionLeaseFenceView(CamelModel):
+    worker_instance_id: UUID
+    lease_acquisition_id: UUID
+    lease_generation: int = Field(ge=1)
+
+
+class ExternalInspectionPendingItemView(CamelModel):
+    request_id: str
+    issued_at: datetime
+    phase: InspectionPhase
+
+
+class ExternalInspectionPendingListView(CamelModel):
+    items: list[ExternalInspectionPendingItemView]
+
+
+class ExternalInspectionLeaseView(CamelModel):
+    verdict: InspectionVerdict
+    request: ExternalArtifactInspectionRequestV1 | None
+    lease_expires_at: datetime | None
+    phase: InspectionPhase | None
+    fence: ExternalInspectionLeaseFenceView | None
+
+
+class ExternalArtifactInputView(CamelModel):
+    entry_id: str = Field(min_length=1, max_length=255)
+    kind: ProcessingArtifactKind
+    observed_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_size_bytes: int = Field(ge=1)
+    content_type: str = Field(min_length=1, max_length=255)
+    download_url: str | None
+    required_headers: dict[str, str]
+
+
+class ExternalInspectionInputView(CamelModel):
+    verdict: InspectionVerdict
+    request: ExternalArtifactInspectionRequestV1 | None
+    policy: ExternalValidationPolicyV1 | None
+    artifacts: list[ExternalArtifactInputView]
+    phase: InspectionPhase | None
+    next_action: Literal["INSPECT", "SANITIZE_DISPLAY"] | None
+    accepted_report: ExternalArtifactInspectionReportV1 | None
+
+
+class ExternalInspectionReportView(CamelModel):
+    verdict: InspectionVerdict
+    report: ExternalArtifactInspectionReportV1 | None
+    phase: InspectionPhase | None
+
+
+class ExternalDisplayArtifactGrantView(CamelModel):
+    verdict: Literal[
+        "QUEUED",
+        "DISPLAY_NOT_REQUIRED",
+        "LEASE_FENCE_REJECTED",
+        "POLICY_UNAVAILABLE",
+        "DECLARATION_RECORDED",
+        "DECLARATION_DIVERGENCE",
+        "OBSERVATION_MISSING",
+        "OBSERVATION_MISMATCH",
+        "SEALED",
+        "RETRY_EXHAUSTED",
+        "STORAGE_UNAVAILABLE",
+        "OUTPUT_LIMIT_EXCEEDED",
+    ]
+    phase: Literal["NOT_REQUIRED", "QUEUED", "RUNNING", "SEALED", "RETRY_EXHAUSTED"]
+    declaration: SanitizedDisplayDeclarationV1 | None
+    upload_url: str | None
+    required_headers: dict[str, str]
+
+
+class ExternalDisplayArtifactSealView(CamelModel):
+    verdict: Literal[
+        "QUEUED",
+        "DISPLAY_NOT_REQUIRED",
+        "LEASE_FENCE_REJECTED",
+        "POLICY_UNAVAILABLE",
+        "DECLARATION_RECORDED",
+        "DECLARATION_DIVERGENCE",
+        "OBSERVATION_MISSING",
+        "OBSERVATION_MISMATCH",
+        "SEALED",
+        "RETRY_EXHAUSTED",
+        "STORAGE_UNAVAILABLE",
+        "OUTPUT_LIMIT_EXCEEDED",
+    ]
+    phase: Literal["NOT_REQUIRED", "QUEUED", "RUNNING", "SEALED", "RETRY_EXHAUSTED"]
+    receipt: SanitizedDisplayReceiptV1
+
+
+class ExternalInspectionOutcomeView(CamelModel):
+    artifact_id: str = Field(min_length=1, max_length=255)
+    outcome: ArtifactOutcome
+    reason: str | None = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Z][A-Z0-9_]{0,127}$",
+    )
+
+
+class PublicInspectionDetailView(CamelModel):
+    state: Literal[
+        "INSPECTION_PENDING_SEAL",
+        "INSPECTION_PENDING_POLICY",
+        "INSPECTION_PENDING",
+        "INSPECTION_QUEUED",
+        "INSPECTION_RUNNING",
+        "INSPECTION_REPORTED",
+        "INSPECTION_FAILED_INCOMPLETE",
+    ]
+    request: ExternalArtifactInspectionRequestV1 | None
+    phase: InspectionPhase | None
+    outcome: list[ExternalInspectionOutcomeView] | None
+    report: ExternalArtifactInspectionReportV1 | None
+
+
+class PublicDisplayDetailView(CamelModel):
+    state: Literal[
+        "PENDING_INSPECTION",
+        "PENDING_POLICY",
+        "NOT_REQUIRED",
+        "QUEUED",
+        "RUNNING",
+        "SEALED",
+        "RETRY_EXHAUSTED",
+    ]
+    sanitized_display_ref: str | None = Field(
+        ..., pattern=r"^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$"
+    )
+    receipt_digest: str | None = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ExternalArtifactInspectionPublicView(CamelModel):
+    registration_state: Literal["REGISTERED", "SEALED"]
+    seal_state: Literal["UNSEALED", "SEALED"]
+    inspection: PublicInspectionDetailView
+    display: PublicDisplayDetailView
+
+
+class ExternalSanitizedDisplayDownloadView(CamelModel):
+    sanitized_display_ref: str = Field(pattern=r"^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$")
+    receipt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_derivative_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    observed_derivative_size_bytes: int = Field(ge=1)
+    observed_derivative_content_type: str = Field(min_length=1, max_length=255)
+    download_url: str = Field(min_length=1)
+    expires_at: datetime
+    required_headers: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +432,7 @@ class ExternalArtifactInspectionStore:
         storage: EvidenceStorage | None = None,
         display_store: Any | None = None,
         clock: Callable[[], datetime] | None = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
         self._journal = journal
         self._policy_registry = policy_registry
@@ -260,9 +440,18 @@ class ExternalArtifactInspectionStore:
         self._storage = storage
         self._display_store = display_store
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._records: dict[str, _InspectionRecord] = {}
         self._requests_by_natural_key: dict[tuple[object, ...], str] = {}
         self._lock = threading.RLock()
+        if coordinator is not None and policy_registry.coordinator is not self._coordinator:
+            raise ValueError("inspection policy registry must share currentness coordinator")
+        if (
+            coordinator is not None
+            and display_store is not None
+            and display_store.coordinator is not self._coordinator
+        ):
+            raise ValueError("inspection display store must share currentness coordinator")
         try:
             for raw in journal.replay():
                 self._apply(raw)
@@ -281,6 +470,10 @@ class ExternalArtifactInspectionStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
+
     def issue_after_seal(
         self, subject: SealedExternalSubjectV1, now: datetime
     ) -> InspectionIssueResult:
@@ -297,7 +490,16 @@ class ExternalArtifactInspectionStore:
         if policy.resource_envelope is None:
             return InspectionIssueResult(InspectionVerdict.INSPECTION_PENDING_POLICY)
         natural_key = self._natural_key(subject, policy.policy_digest)
-        with self._lock:
+        # Authority resolution above may call an injected port.  The final
+        # durable projection shares the use-evaluator coordinator so a guarded
+        # decision snapshot cannot race a newly issued inspection request.
+        with self._coordinator.mutation(), self._lock:
+            retained = self._policy_registry.resolve(policy.policy_digest)
+            if (
+                retained.status is not PolicySelectionStatus.ACTIVE
+                or retained.policy != policy
+            ):
+                return InspectionIssueResult(InspectionVerdict.INSPECTION_PENDING_POLICY)
             existing_id = self._requests_by_natural_key.get(natural_key)
             if existing_id is not None:
                 return InspectionIssueResult(
@@ -343,7 +545,9 @@ class ExternalArtifactInspectionStore:
         self._reconcile_display_after_replay()
         return count
 
-    def list_pending(self, limit: int) -> tuple[PendingExternalInspection, ...]:
+    def list_pending(
+        self, limit: int, *, organization_id: str | None = None
+    ) -> tuple[PendingExternalInspection, ...]:
         if type(limit) is not int or limit < 1:
             raise ValueError("limit must be a positive integer")
         now = self._clock()
@@ -352,6 +556,8 @@ class ExternalArtifactInspectionStore:
             records = tuple(self._records.values())
         candidates: list[PendingExternalInspection] = []
         for record in records:
+            if not self._in_organization(record, organization_id):
+                continue
             expired_or_queued = record.state == "QUEUED" or (
                 record.state == "RUNNING"
                 and record.lease is not None
@@ -378,21 +584,221 @@ class ExternalArtifactInspectionStore:
                 )
         return tuple(sorted(candidates, key=lambda item: (item.issued_at, item.request_id))[:limit])
 
-    def claim(self, request_id: str, fence: LeaseFence, now: datetime) -> InspectionLeaseResult:
+    def public_snapshot(self, subject: SealedExternalSubjectV1) -> PublicInspectionSnapshot:
+        """Return only retained inspection facts for one exact sealed subject.
+
+        This read never issues a request.  A missing current inspection policy is
+        deliberately distinguishable from a queued request so callers cannot
+        infer that reading the revision scheduled worker work.
+        """
+        selection = self._policy_registry.select_for_inspection(subject)
+        current_digest = selection.policy.policy_digest if selection.policy is not None else None
+        with self._lock:
+            candidates = tuple(
+                record
+                for record in self._records.values()
+                if record.request.subject == subject
+                and (
+                    current_digest is None
+                    or record.request.inspection_policy_digest == current_digest
+                )
+            )
+            record = candidates[-1] if candidates else None
+            if record is None:
+                return PublicInspectionSnapshot(
+                    (
+                        InspectionVerdict.INSPECTION_PENDING_POLICY.value
+                        if selection.status is PolicySelectionStatus.INSPECTION_PENDING_POLICY
+                        else "INSPECTION_PENDING"
+                    ),
+                    None,
+                    None,
+                    None,
+                )
+            if record.report is not None:
+                return PublicInspectionSnapshot(
+                    "INSPECTION_REPORTED",
+                    record.request,
+                    self._phase_for_record(record),
+                    record.report,
+                )
+            if record.terminal_reason is not None or record.state == "FAILED":
+                return PublicInspectionSnapshot(
+                    "INSPECTION_FAILED_INCOMPLETE",
+                    record.request,
+                    InspectionPhase.FAILED_INCOMPLETE,
+                    None,
+                )
+            return PublicInspectionSnapshot(
+                f"INSPECTION_{record.state}",
+                record.request,
+                InspectionPhase.INSPECTION,
+                None,
+            )
+
+    def historical_report(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        report_digest: str,
+        policy_digest: str,
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        """Resolve retained immutable report history without current selection."""
+        with self._lock:
+            for record in self._records.values():
+                report = record.report
+                if (
+                    report is not None
+                    and record.request.subject == subject
+                    and report.report_digest == report_digest
+                    and report.inspection_policy_digest == policy_digest
+                ):
+                    return report
+        return None
+
+    def historical_display_receipt(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        report_digest: str,
+        receipt_digest: str,
+        policy_digest: str,
+    ) -> SanitizedDisplayReceiptV1 | None:
+        """Resolve a receipt chain from retained report state, never current policy."""
+        if self._display_store is None:
+            return None
+        report = self.historical_report(
+            subject, report_digest=report_digest, policy_digest=policy_digest
+        )
+        if report is None:
+            return None
+        snapshot = self._display_store.public_snapshot(
+            report.request_id,
+            subject_digest=subject.canonical_digest(),
+            report_digest=report_digest,
+            policy_digest=policy_digest,
+        )
+        receipt = snapshot.receipt if snapshot is not None else None
+        return receipt if receipt is not None and receipt.receipt_digest == receipt_digest else None
+
+    @staticmethod
+    def _in_organization(record: _InspectionRecord, organization_id: str | None) -> bool:
+        return organization_id is None or record.request.subject.organization_id == organization_id
+
+    def belongs_to_organization(self, request_id: str, organization_id: str) -> bool:
+        """Non-disclosing ownership predicate for a worker's opaque request id."""
+        with self._lock:
+            record = self._records.get(request_id)
+            return record is not None and self._in_organization(record, organization_id)
+
+    def public_display_state(
+        self, subject: SealedExternalSubjectV1
+    ) -> tuple[str, Any | None]:
+        """Return receipt state for the current exact report/policy chain only."""
+        if self._display_store is None:
+            return "PENDING_INSPECTION", None
+        with self._lock:
+            records = tuple(
+                record
+                for record in self._records.values()
+                if record.request.subject == subject and record.report is not None
+            )
+            record = records[-1] if records else None
+            if record is None:
+                return "PENDING_INSPECTION", None
+        if not self._policy_is_current(record):
+            return "PENDING_POLICY", None
+        with self._lock:
+            record = self._records.get(record.request.request_id)
+            if record is None or record.report is None:
+                return "PENDING_INSPECTION", None
+            assert record.report is not None
+            request_id = record.request.request_id
+            subject_digest = record.report.subject_digest
+            report_digest = record.report.report_digest
+            policy_digest = record.report.inspection_policy_digest
+        snapshot = self._display_store.public_snapshot(
+            request_id,
+            subject_digest=subject_digest,
+            report_digest=report_digest,
+            policy_digest=policy_digest,
+        )
+        if snapshot is None:
+            return "PENDING_INSPECTION", None
+        return snapshot.state.value, snapshot.receipt
+
+    def public_display_download_binding(
+        self, subject: SealedExternalSubjectV1, sanitized_display_ref: str
+    ) -> Any | None:
+        """Resolve a current receipt binding; presigning happens separately without locks."""
+        if self._display_store is None:
+            return None
+        with self._lock:
+            records = tuple(
+                record
+                for record in self._records.values()
+                if record.request.subject == subject and record.report is not None
+            )
+            record = records[-1] if records else None
+            if record is None:
+                return None
+        if not self._policy_is_current(record):
+            return None
+        with self._lock:
+            record = self._records.get(record.request.request_id)
+            if record is None or record.report is None:
+                return None
+            assert record.report is not None
+            request_id = record.request.request_id
+            subject_digest = record.report.subject_digest
+            report_digest = record.report.report_digest
+            policy_digest = record.report.inspection_policy_digest
+        return self._display_store.public_download_binding(
+            request_id,
+            subject_digest=subject_digest,
+            report_digest=report_digest,
+            policy_digest=policy_digest,
+            sanitized_display_ref=sanitized_display_ref,
+        )
+
+    def presign_public_display_download(self, binding: Any) -> str | None:
+        if self._display_store is None:
+            return None
+        return self._display_store.presign_public_download(binding)
+
+    def claim(
+        self,
+        request_id: str,
+        fence: LeaseFence,
+        now: datetime,
+        *,
+        organization_id: str | None = None,
+    ) -> InspectionLeaseResult:
         _wire_time(now)
         if not fence.has_valid_ids() or fence.lease_generation < 0:
             return InspectionLeaseResult(InspectionVerdict.LEASE_FENCE_REJECTED)
         with self._lock:
+            preflight = self._records.get(request_id)
+            if preflight is None or not self._in_organization(preflight, organization_id):
+                return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
+        preflight_display = self._display_is_unfinished(request_id)
+        if not self._policy_is_current(preflight) or (
+            preflight.report is not None
+            and preflight_display
+            and not self._display_policy_is_current(preflight)
+        ):
+            return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, preflight.request)
+        with self._coordinator.mutation(), self._lock:
             record = self._records.get(request_id)
-            if record is None:
+            if record is None or not self._in_organization(record, organization_id):
                 return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
             display_unfinished = self._display_is_unfinished(request_id)
-            if not self._policy_is_current(record):
+            if not self._policy_is_locally_current(record):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
             if (
                 record.report is not None
                 and display_unfinished
-                and not self._display_policy_is_current(record)
+                and not self._display_policy_is_locally_current(record, now)
             ):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
             if (
@@ -475,18 +881,32 @@ class ExternalArtifactInspectionStore:
                 accepted_fence,
             )
 
-    def input_for(self, request_id: str, fence: LeaseFence) -> ExternalInspectionInputResponse:
+    def input_for(
+        self, request_id: str, fence: LeaseFence, *, organization_id: str | None = None
+    ) -> ExternalInspectionInputResponse:
         now = self._clock()
         _wire_time(now)
         with self._lock:
-            record = self._records.get(request_id)
-            if record is None:
+            preflight = self._records.get(request_id)
+            if preflight is None or not self._in_organization(preflight, organization_id):
                 return ExternalInspectionInputResponse(InspectionVerdict.NOT_FOUND)
-            if not self._policy_is_current(record):
+        if not self._policy_is_current(preflight) or (
+            preflight.report is not None and not self._display_policy_is_current(preflight)
+        ):
+            return ExternalInspectionInputResponse(
+                InspectionVerdict.POLICY_UNAVAILABLE, request=preflight.request
+            )
+        with self._coordinator.guarded_read(), self._lock:
+            record = self._records.get(request_id)
+            if record is None or not self._in_organization(record, organization_id):
+                return ExternalInspectionInputResponse(InspectionVerdict.NOT_FOUND)
+            if not self._policy_is_locally_current(record):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
-            if record.report is not None and not self._display_policy_is_current(record):
+            if record.report is not None and not self._display_policy_is_locally_current(
+                record, now
+            ):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
@@ -535,21 +955,23 @@ class ExternalArtifactInspectionStore:
                     {},
                 )
             )
-        with self._lock:
+        with self._coordinator.guarded_read(), self._lock:
             commit_now = self._clock()
             _wire_time(commit_now)
             record = self._records.get(request_id)
-            if record is None:
+            if record is None or not self._in_organization(record, organization_id):
                 return ExternalInspectionInputResponse(InspectionVerdict.NOT_FOUND)
             if record.request != request or record.report != accepted_report:
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.LEASE_FENCE_REJECTED, request=record.request
                 )
-            if not self._policy_is_current(record):
+            if not self._policy_is_locally_current(record):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
-            if record.report is not None and not self._display_policy_is_current(record):
+            if record.report is not None and not self._display_policy_is_locally_current(
+                record, commit_now
+            ):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
@@ -584,15 +1006,32 @@ class ExternalArtifactInspectionStore:
             accepted_report,
         )
 
-    def heartbeat(self, request_id: str, fence: LeaseFence, now: datetime) -> InspectionLeaseResult:
+    def heartbeat(
+        self,
+        request_id: str,
+        fence: LeaseFence,
+        now: datetime,
+        *,
+        organization_id: str | None = None,
+    ) -> InspectionLeaseResult:
         _wire_time(now)
         with self._lock:
-            record = self._records.get(request_id)
-            if record is None:
+            preflight = self._records.get(request_id)
+            if preflight is None or not self._in_organization(preflight, organization_id):
                 return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
-            if not self._policy_is_current(record):
+        if not self._policy_is_current(preflight) or (
+            preflight.report is not None and not self._display_policy_is_current(preflight)
+        ):
+            return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, preflight.request)
+        with self._coordinator.mutation(), self._lock:
+            record = self._records.get(request_id)
+            if record is None or not self._in_organization(record, organization_id):
+                return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
+            if not self._policy_is_locally_current(record):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
-            if record.report is not None and not self._display_policy_is_current(record):
+            if record.report is not None and not self._display_policy_is_locally_current(
+                record, now
+            ):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
             if not self.has_current_fence(request_id, fence, now):
                 return InspectionLeaseResult(InspectionVerdict.LEASE_FENCE_REJECTED, record.request)
@@ -628,17 +1067,27 @@ class ExternalArtifactInspectionStore:
         fence: LeaseFence,
         report: ExternalArtifactInspectionReportV1,
         now: datetime,
+        *,
+        organization_id: str | None = None,
     ) -> InspectionReportResult:
         _wire_time(now)
         sealed = report.sealed()
         with self._lock:
+            preflight = self._records.get(request_id)
+            if preflight is None or not self._in_organization(preflight, organization_id):
+                return InspectionReportResult(InspectionVerdict.NOT_FOUND)
+        if not self._policy_is_current(preflight) or (
+            preflight.report is not None and not self._display_policy_is_current(preflight)
+        ):
+            return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
+        with self._coordinator.mutation(), self._lock:
             record = self._records.get(request_id)
-            if record is None:
+            if record is None or not self._in_organization(record, organization_id):
                 return InspectionReportResult(InspectionVerdict.NOT_FOUND)
             if record.report is not None:
-                if not self._policy_is_current(record):
+                if not self._policy_is_locally_current(record):
                     return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
-                if not self._display_policy_is_current(record):
+                if not self._display_policy_is_locally_current(record, now):
                     return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
                 if not self.has_current_fence(request_id, fence, now):
                     return InspectionReportResult(InspectionVerdict.LEASE_FENCE_REJECTED)
@@ -649,7 +1098,7 @@ class ExternalArtifactInspectionStore:
                     record.report,
                     self._phase_for_record(record),
                 )
-            if not self._policy_is_current(record):
+            if not self._policy_is_locally_current(record):
                 return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
             if not self.has_current_fence(request_id, fence, now):
                 return InspectionReportResult(InspectionVerdict.LEASE_FENCE_REJECTED)
@@ -689,15 +1138,23 @@ class ExternalArtifactInspectionStore:
         fence: LeaseFence,
         failure: ExternalInspectionFailureV1,
         now: datetime,
+        *,
+        organization_id: str | None = None,
     ) -> InspectionReportResult:
         _wire_time(now)
         with self._lock:
+            preflight = self._records.get(request_id)
+            if preflight is None or not self._in_organization(preflight, organization_id):
+                return InspectionReportResult(InspectionVerdict.NOT_FOUND)
+        if not self._policy_is_current(preflight):
+            return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
+        with self._coordinator.mutation(), self._lock:
             record = self._records.get(request_id)
-            if record is None:
+            if record is None or not self._in_organization(record, organization_id):
                 return InspectionReportResult(InspectionVerdict.NOT_FOUND)
             if record.report is not None or record.state != "RUNNING":
                 return InspectionReportResult(InspectionVerdict.REPORT_BINDING_REJECTED)
-            if not self._policy_is_current(record):
+            if not self._policy_is_locally_current(record):
                 return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
             if not self.has_current_fence(request_id, fence, now):
                 return InspectionReportResult(InspectionVerdict.LEASE_FENCE_REJECTED)
@@ -770,7 +1227,30 @@ class ExternalArtifactInspectionStore:
         storage observation and signed capability creation stay outside both
         locks, so a takeover or revocation during I/O is checked at commit.
         """
+        # ``select_for_use`` may call the injected policy authority.  Resolve
+        # it before taking the shared coordinator, then compare only retained
+        # policy state in the nested inspection/display commit below.
         with self._lock:
+            record = self._records.get(request_id)
+            if (
+                record is None
+                or record.state != "REPORTED"
+                or record.report is None
+                or record.report.report_digest != report_digest
+                or record.lease is None
+                or record.lease.fence != fence
+            ):
+                return None
+            subject = record.request.subject
+            policy_digest = record.request.inspection_policy_digest
+        selected = self._policy_registry.select_for_use("DISPLAY", (subject,))
+        if (
+            selected.status is not PolicySelectionStatus.ACTIVE
+            or selected.policy is None
+            or selected.policy.policy_digest != policy_digest
+        ):
+            return None
+        with self._coordinator.mutation(), self._lock:
             commit_now = self._clock()
             _wire_time(commit_now)
             record = self._records.get(request_id)
@@ -784,14 +1264,13 @@ class ExternalArtifactInspectionStore:
             ):
                 return None
             policy = self._policy_for(record)
-            selected = self._policy_registry.select_for_use("DISPLAY", (record.request.subject,))
+            retained = self._policy_registry.resolve(record.request.inspection_policy_digest)
             if (
                 policy is None
                 or commit_now >= record.lease.expires_at
                 or commit_now >= self._deadline(record, policy)
-                or selected.status is not PolicySelectionStatus.ACTIVE
-                or selected.policy is None
-                or selected.policy.policy_digest != record.request.inspection_policy_digest
+                or retained.status is not PolicySelectionStatus.ACTIVE
+                or retained.policy != policy
             ):
                 return None
             return commit(commit_now, record.attempt_count, policy)
@@ -944,12 +1423,33 @@ class ExternalArtifactInspectionStore:
             and selected.policy.policy_digest == record.request.inspection_policy_digest
         )
 
+    def _policy_is_locally_current(self, record: _InspectionRecord) -> bool:
+        """Check retained lifecycle state without another authority-port read."""
+        resolved = self._policy_registry.resolve(record.request.inspection_policy_digest)
+        return (
+            resolved.status is PolicySelectionStatus.ACTIVE
+            and resolved.policy is not None
+            and resolved.policy.policy_digest == record.request.inspection_policy_digest
+        )
+
     def _display_policy_is_current(self, record: _InspectionRecord) -> bool:
         selected = self._policy_registry.select_for_use("DISPLAY", (record.request.subject,))
         return (
             selected.status is PolicySelectionStatus.ACTIVE
             and selected.policy is not None
             and selected.policy.policy_digest == record.request.inspection_policy_digest
+        )
+
+    def _display_policy_is_locally_current(
+        self, record: _InspectionRecord, now: datetime
+    ) -> bool:
+        return self._policy_is_locally_current(
+            record
+        ) and self._policy_registry.historical_use_permitted(
+            record.request.inspection_policy_digest,
+            use="DISPLAY",
+            subjects=(record.request.subject,),
+            at=now,
         )
 
     def _report_matches(
@@ -979,7 +1479,40 @@ class ExternalArtifactInspectionStore:
             (item.artifact_id, item.observed_sha256)
             for item in report.measurement_payload.artifact_bindings
         }
-        return bindings == report_bindings
+        return bindings == report_bindings and self._measured_rasters_match_declarations(
+            record, report
+        )
+
+    @staticmethod
+    def _measured_rasters_match_declarations(
+        record: _InspectionRecord, report: ExternalArtifactInspectionReportV1
+    ) -> bool:
+        """Keep only measured layouts compatible with their sealed declared raster kind.
+
+        An inspector may record the existing typed ``UNSUPPORTED_RASTER`` rejection for
+        a mismatched source. Core never upgrades or rewrites that worker outcome; this
+        guard only prevents retaining a conflicting ``MEASURED`` fact.
+        """
+        outcomes = {
+            item.artifact_id: item for item in report.measurement_payload.outcomes
+        }
+        for artifact in record.artifacts:
+            outcome = outcomes.get(artifact.entry_id)
+            if outcome is None or outcome.outcome is not ArtifactOutcome.MEASURED:
+                continue
+            measurements = outcome.measurements
+            if measurements is None:
+                return False
+            dtype = measurements.dtype.casefold()
+            if artifact.kind is ProcessingArtifactKind.ORTHO and (
+                measurements.band_count not in {3, 4} or dtype != "uint8"
+            ):
+                return False
+            if artifact.kind is ProcessingArtifactKind.DSM and (
+                measurements.band_count != 1 or dtype not in {"float32", "float64"}
+            ):
+                return False
+        return True
 
     def _requires_display(
         self,
@@ -1042,6 +1575,8 @@ class ExternalArtifactInspectionStore:
         }
 
     def _phase_for_record(self, record: _InspectionRecord) -> InspectionPhase:
+        if record.report is None:
+            return InspectionPhase.INSPECTION
         if record.report is not None and self._display_is_unfinished(record.request.request_id):
             return InspectionPhase.DISPLAY
         return InspectionPhase.COMPLETE
@@ -1370,6 +1905,437 @@ class ExternalArtifactInspectionStore:
             record.state = "FAILED"
 
 
+def mount_external_artifact_inspections(
+    app: FastAPI,
+    store: ExternalArtifactInspectionStore,
+    *,
+    reconstruction: Any,
+    work_orders: Any,
+    display_store: Any | None = None,
+) -> None:
+    """Mount private worker work and the scoped human inspection projection."""
+    router = APIRouter(prefix="/v1/internal/external-validation", tags=["external-validation"])
+    worker = require_permission(Permission.PROCESSING_WORK)
+    read = require_permission(Permission.SITES_READ)
+
+    def fence_from_headers(
+        worker_instance_id: str | None = Header(
+            default=None, alias="X-KSI-Worker-Instance-Id"
+        ),
+        lease_acquisition_id: str | None = Header(
+            default=None, alias="X-KSI-Lease-Acquisition-Id"
+        ),
+        lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
+    ) -> LeaseFence:
+        if (
+            worker_instance_id is None
+            or lease_acquisition_id is None
+            or lease_generation is None
+        ):
+            raise HTTPException(422, "LEASE_FENCE_REQUIRED")
+        try:
+            fence = LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
+        except ValueError as exc:
+            raise HTTPException(422, "LEASE_FENCE_INVALID") from exc
+        if not fence.has_valid_ids() or fence.lease_generation < 0:
+            raise HTTPException(422, "LEASE_FENCE_INVALID")
+        return fence
+
+    def request_wire(request: ExternalArtifactInspectionRequestV1 | None) -> dict[str, Any] | None:
+        return external_artifact_inspection_request_wire_dict(request) if request else None
+
+    def fence_wire(fence: LeaseFence | None) -> dict[str, object] | None:
+        if fence is None:
+            return None
+        return {
+            "workerInstanceId": fence.worker_instance_id,
+            "leaseAcquisitionId": fence.lease_acquisition_id,
+            "leaseGeneration": fence.lease_generation,
+        }
+
+    def lease_wire(result: InspectionLeaseResult) -> dict[str, object]:
+        return {
+            "verdict": result.verdict.value,
+            "request": request_wire(result.request),
+            "leaseExpiresAt": _wire_time(result.lease_expires_at)
+            if result.lease_expires_at is not None
+            else None,
+            "phase": result.phase.value if result.phase is not None else None,
+            "fence": fence_wire(result.fence),
+        }
+
+    def input_wire(result: ExternalInspectionInputResponse) -> dict[str, object]:
+        return {
+            "verdict": result.verdict.value,
+            "request": request_wire(result.request),
+            "policy": result.policy.model_dump(by_alias=True, mode="json")
+            if result.policy is not None
+            else None,
+            "artifacts": [
+                {
+                    "entryId": artifact.entry_id,
+                    "kind": artifact.kind.value,
+                    "observedSha256": artifact.observed_sha256,
+                    "observedSizeBytes": artifact.observed_size_bytes,
+                    "contentType": artifact.content_type,
+                    "downloadUrl": artifact.download_url,
+                    "requiredHeaders": artifact.required_headers,
+                }
+                for artifact in result.artifacts
+            ],
+            "phase": result.phase.value if result.phase is not None else None,
+            "nextAction": result.next_action,
+            "acceptedReport": external_artifact_inspection_report_wire_dict(result.accepted_report)
+            if result.accepted_report is not None
+            else None,
+        }
+
+    def report_wire(result: InspectionReportResult) -> dict[str, object]:
+        return {
+            "verdict": result.verdict.value,
+            "report": external_artifact_inspection_report_wire_dict(result.report)
+            if result.report is not None
+            else None,
+            "phase": result.phase.value if result.phase is not None else None,
+        }
+
+    def worker_error(verdict: InspectionVerdict) -> None:
+        status = {
+            InspectionVerdict.NOT_FOUND: 404,
+            InspectionVerdict.STORAGE_UNAVAILABLE: 503,
+            InspectionVerdict.LEASE_FENCE_REJECTED: 409,
+            InspectionVerdict.POLICY_UNAVAILABLE: 409,
+            InspectionVerdict.PAYLOAD_DIVERGENCE: 409,
+            InspectionVerdict.REPORT_BINDING_REJECTED: 422,
+            InspectionVerdict.DEADLINE_EXCEEDED: 409,
+            InspectionVerdict.RETRY_EXHAUSTED: 409,
+            InspectionVerdict.CONCURRENCY_LIMIT: 409,
+            InspectionVerdict.INSPECTION_FAILED_INCOMPLETE: 409,
+        }.get(verdict)
+        if status is not None:
+            raise HTTPException(status, verdict.value)
+
+    def set_lease_headers(response: Response, result: InspectionLeaseResult) -> None:
+        if result.fence is None:
+            return
+        response.headers["X-KSI-Worker-Instance-Id"] = result.fence.worker_instance_id
+        response.headers["X-KSI-Lease-Acquisition-Id"] = result.fence.lease_acquisition_id
+        response.headers["X-KSI-Lease-Generation"] = str(result.fence.lease_generation)
+
+    @router.get("/inspections", response_model=ExternalInspectionPendingListView)
+    def list_inspections(
+        limit: int = Query(default=50, ge=1, le=100),
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, list[dict[str, object]]]:
+        return {
+            "items": [
+                {
+                    "requestId": item.request_id,
+                    "issuedAt": _wire_time(item.issued_at),
+                    "phase": item.phase.value,
+                }
+                for item in store.list_pending(limit, organization_id=principal.organization_id)
+            ]
+        }
+
+    @router.post("/inspections/{request_id}/lease", response_model=ExternalInspectionLeaseView)
+    def lease_inspection(
+        request_id: str,
+        response: Response,
+        fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, object]:
+        result = store.claim(
+            request_id,
+            fence,
+            datetime.now(UTC),
+            organization_id=principal.organization_id,
+        )
+        worker_error(result.verdict)
+        set_lease_headers(response, result)
+        return lease_wire(result)
+
+    @router.get("/inspections/{request_id}/input", response_model=ExternalInspectionInputView)
+    def inspection_input(
+        request_id: str,
+        fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, object]:
+        result = store.input_for(
+            request_id, fence, organization_id=principal.organization_id
+        )
+        worker_error(result.verdict)
+        return input_wire(result)
+
+    @router.post(
+        "/inspections/{request_id}/heartbeat", response_model=ExternalInspectionLeaseView
+    )
+    def heartbeat_inspection(
+        request_id: str,
+        response: Response,
+        fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, object]:
+        result = store.heartbeat(
+            request_id,
+            fence,
+            datetime.now(UTC),
+            organization_id=principal.organization_id,
+        )
+        worker_error(result.verdict)
+        set_lease_headers(response, result)
+        return lease_wire(result)
+
+    @router.post("/inspections/{request_id}/report", response_model=ExternalInspectionReportView)
+    def report_inspection(
+        request_id: str,
+        report: ExternalArtifactInspectionReportV1,
+        fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, object]:
+        result = store.record_report(
+            request_id,
+            fence,
+            report,
+            datetime.now(UTC),
+            organization_id=principal.organization_id,
+        )
+        worker_error(result.verdict)
+        return report_wire(result)
+
+    @router.post(
+        "/inspections/{request_id}/incomplete-failure",
+        response_model=ExternalInspectionReportView,
+    )
+    def incomplete_inspection(
+        request_id: str,
+        failure: ExternalInspectionFailureRequest,
+        fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+        principal: Principal = Depends(worker),  # noqa: B008
+    ) -> dict[str, object]:
+        result = store.record_incomplete_failure(
+            request_id,
+            fence,
+            ExternalInspectionFailureV1(failure.reason),
+            datetime.now(UTC),
+            organization_id=principal.organization_id,
+        )
+        worker_error(result.verdict)
+        return report_wire(result)
+
+    if display_store is not None:
+
+        def display_error(result: Any) -> None:
+            status = {
+                "DISPLAY_NOT_REQUIRED": 404,
+                "LEASE_FENCE_REJECTED": 409,
+                "DECLARATION_DIVERGENCE": 422,
+                "OUTPUT_LIMIT_EXCEEDED": 422,
+                "OBSERVATION_MISSING": 422,
+                "OBSERVATION_MISMATCH": 422,
+                "STORAGE_UNAVAILABLE": 503,
+                "RETRY_EXHAUSTED": 409,
+                "POLICY_UNAVAILABLE": 409,
+            }.get(result.verdict.value)
+            if status is not None:
+                raise HTTPException(status, result.verdict.value)
+
+        def display_scope(request_id: str, principal: Principal) -> None:
+            if not store.belongs_to_organization(request_id, principal.organization_id):
+                raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+
+        @router.post(
+            "/inspections/{request_id}/display-artifacts/upload-grants",
+            response_model=ExternalDisplayArtifactGrantView,
+        )
+        def display_upload_grant(
+            request_id: str,
+            declaration: SanitizedDisplayDeclarationV1,
+            fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+            principal: Principal = Depends(worker),  # noqa: B008
+        ) -> dict[str, object]:
+            display_scope(request_id, principal)
+            result = display_store.grant(request_id, declaration, fence, now=datetime.now(UTC))
+            display_error(result)
+            return {
+                "verdict": result.verdict.value,
+                "phase": result.phase.value,
+                "declaration": result.declaration.model_dump(by_alias=True, mode="json")
+                if result.declaration is not None
+                else None,
+                "uploadUrl": result.grant.upload_url if result.grant is not None else None,
+                "requiredHeaders": (
+                    result.grant.required_headers if result.grant is not None else {}
+                ),
+            }
+
+        @router.post(
+            "/inspections/{request_id}/display-artifacts/{display_id}/seal",
+            response_model=ExternalDisplayArtifactSealView,
+        )
+        def seal_display(
+            request_id: str,
+            display_id: str,
+            fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
+            principal: Principal = Depends(worker),  # noqa: B008
+        ) -> dict[str, object]:
+            display_scope(request_id, principal)
+            if not display_store.matches_declared_display_id(request_id, display_id):
+                raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+            result = display_store.seal(request_id, fence, now=datetime.now(UTC))
+            display_error(result)
+            if result.receipt is None or result.receipt.display_id != display_id:
+                raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+            return {
+                "verdict": result.verdict.value,
+                "phase": result.phase.value,
+                "receipt": sanitized_display_receipt_wire_dict(result.receipt),
+            }
+
+    public = APIRouter(prefix="/v1/observation-work-orders", tags=["external-validation"])
+    public_base = (
+        "/{work_order_id}/external-reconstruction-submissions/{submission_ref}"
+        "/revisions/{revision}"
+    )
+
+    def revision_for(
+        work_order_id: str, submission_ref: str, revision: int, principal: Principal
+    ) -> ExternalReconstructionRevision:
+        order = work_orders.get(work_order_id, organization_id=principal.organization_id)
+        if order is None:
+            raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+        submission_id = reconstruction.resolve_submission_ref(
+            work_order_id,
+            submission_ref,
+            organization_id=principal.organization_id,
+            site_id=order.site_id,
+        )
+        record = (
+            reconstruction.get(
+                work_order_id,
+                submission_id,
+                revision,
+                organization_id=principal.organization_id,
+                site_id=order.site_id,
+            )
+            if submission_id is not None
+            else None
+        )
+        if record is None:
+            raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+        return record
+
+    @public.get(public_base + "/inspection", response_model=ExternalArtifactInspectionPublicView)
+    def inspection_view(
+        work_order_id: str,
+        submission_ref: str,
+        revision: int,
+        principal: Principal = Depends(read),  # noqa: B008
+    ) -> dict[str, object]:
+        record = revision_for(work_order_id, submission_ref, revision, principal)
+        subject = store._subject_from_revision(record)  # noqa: SLF001 -- exact sealed-store bridge
+        if subject is None:
+            return {
+                "registrationState": "REGISTERED",
+                "sealState": "UNSEALED",
+                "inspection": {
+                    "state": "INSPECTION_PENDING_SEAL",
+                    "request": None,
+                    "phase": None,
+                    "outcome": None,
+                    "report": None,
+                },
+                "display": {
+                    "state": "PENDING_INSPECTION",
+                    "sanitizedDisplayRef": None,
+                    "receiptDigest": None,
+                },
+            }
+        snapshot = store.public_snapshot(subject)
+        report = snapshot.report
+        display_state, display_receipt = store.public_display_state(subject)
+        return {
+            "registrationState": "SEALED",
+            "sealState": "SEALED",
+            "inspection": {
+                "state": snapshot.state,
+                "request": (
+                    external_artifact_inspection_request_wire_dict(snapshot.request)
+                    if snapshot.request is not None
+                    else None
+                ),
+                "phase": snapshot.phase.value if snapshot.phase is not None else None,
+                "outcome": (
+                    [
+                        {
+                            "artifactId": item.artifact_id,
+                            "outcome": item.outcome.value,
+                            "reason": item.reason,
+                        }
+                        for item in report.measurement_payload.outcomes
+                    ]
+                    if report is not None
+                    else None
+                ),
+                "report": (
+                    external_artifact_inspection_report_wire_dict(report)
+                    if report is not None
+                    else None
+                ),
+            },
+            "display": {
+                "state": display_state,
+                "sanitizedDisplayRef": (
+                    display_receipt.sanitized_display_ref if display_receipt is not None else None
+                ),
+                "receiptDigest": (
+                    display_receipt.receipt_digest if display_receipt is not None else None
+                ),
+            },
+        }
+
+    @public.get(
+        public_base + "/display-artifacts/{sanitized_display_ref}/download",
+        response_model=ExternalSanitizedDisplayDownloadView,
+    )
+    def download_display_artifact(
+        work_order_id: str,
+        submission_ref: str,
+        revision: int,
+        sanitized_display_ref: str,
+        principal: Principal = Depends(read),  # noqa: B008
+    ) -> dict[str, object]:
+        record = revision_for(work_order_id, submission_ref, revision, principal)
+        subject = store._subject_from_revision(record)  # noqa: SLF001 -- exact sealed-store bridge
+        if subject is None:
+            raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+        binding = store.public_display_download_binding(subject, sanitized_display_ref)
+        if binding is None:
+            raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+        issued_at = datetime.now(UTC)
+        download_url = store.presign_public_display_download(binding)
+        if download_url is None:
+            raise HTTPException(503, "EXTERNAL_DISPLAY_STORAGE_UNAVAILABLE")
+        current = store.public_display_download_binding(subject, sanitized_display_ref)
+        if current != binding:
+            raise HTTPException(404, "EXTERNAL_RECONSTRUCTION_NOT_FOUND")
+        return {
+            "sanitizedDisplayRef": binding.sanitized_display_ref,
+            "receiptDigest": binding.receipt_digest,
+            "observedDerivativeSha256": binding.observed_derivative_sha256,
+            "observedDerivativeSizeBytes": binding.observed_derivative_size_bytes,
+            "observedDerivativeContentType": binding.observed_derivative_content_type,
+            "downloadUrl": download_url,
+            "expiresAt": _wire_time(issued_at + DEFAULT_VIEW_TTL),
+            "requiredHeaders": {},
+        }
+
+    app.state.external_artifact_inspection_store = store
+    app.state.external_display_artifact_store = display_store
+    app.include_router(router)
+    app.include_router(public)
+
+
 __all__ = [
     "ExternalArtifactInputV1",
     "ExternalArtifactInspectionRecoveryError",
@@ -1382,4 +2348,5 @@ __all__ = [
     "InspectionReportResult",
     "InspectionVerdict",
     "PendingExternalInspection",
+    "mount_external_artifact_inspections",
 ]

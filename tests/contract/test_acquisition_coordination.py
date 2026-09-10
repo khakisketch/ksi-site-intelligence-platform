@@ -19,6 +19,7 @@ from ksi_core.acquisition import (
     AcquisitionRunStage,
     GatewayOperationReceiptRequest,
 )
+from ksi_core.acquisition.coordination import AcquisitionExternalReconstructionDenied
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
 from ksi_core.durable_journal import DurableJournal
@@ -47,7 +48,9 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def _order(*, status: str = "APPROVED", cycle: int = 1) -> ObservationWorkOrder:
+def _order(
+    *, status: str = "APPROVED", cycle: int = 1, execution_mode: str | None = None
+) -> ObservationWorkOrder:
     return ObservationWorkOrder.model_validate(
         {
             "schemaVersion": "1.0",
@@ -70,6 +73,7 @@ def _order(*, status: str = "APPROVED", cycle: int = 1) -> ObservationWorkOrder:
             "createdBy": "operator-1",
             "approvedAt": _NOW.isoformat(),
             "approvedBy": "operator-1",
+            "executionMode": execution_mode,
         }
     )
 
@@ -187,6 +191,25 @@ def test_run_receipt_idempotency_transport_fallback_and_replay(tmp_path: Path) -
         item.receipt_id
         for item in replayed.receipts_for_mission("mission-1", organization_id="org-1")
     ] == ["receipt-1", "receipt-2"]
+
+
+def test_direct_acquisition_assembly_rejects_initial_external_work_order(tmp_path: Path) -> None:
+    coordination = AcquisitionCoordinationStore(DurableJournal(tmp_path / "runs.jsonl"))
+    external = _order(execution_mode="EXTERNAL_RECONSTRUCTION")
+
+    with pytest.raises(
+        AcquisitionExternalReconstructionDenied, match="EXTERNAL_RECONSTRUCTION_ONLY"
+    ):
+        coordination.ensure_run(external, actor="operator-1", now=_NOW)
+    with pytest.raises(
+        AcquisitionExternalReconstructionDenied, match="EXTERNAL_RECONSTRUCTION_ONLY"
+    ):
+        coordination.link_mission(external, "mission-1", actor="operator-1", now=_NOW)
+
+    assert (
+        coordination.get_run(external.work_order_id, organization_id="org-1", cycle_number=1)
+        is None
+    )
 
 
 def test_stale_connectivity_does_not_regress_activated_contract(tmp_path: Path) -> None:

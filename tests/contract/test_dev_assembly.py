@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import inspect
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,12 +41,39 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
 from ksi_core.external_evidence import ExternalEvidenceStore
+from ksi_core.external_evidence_validations import (
+    CoreEvidenceValidationInputCapabilities,
+    ExternalEvidenceValidationStore,
+)
 from ksi_core.external_reconstruction import ExternalReconstructionStore
+from ksi_core.external_relative_volume_authorities import (
+    DefaultClosedExternalRelativeVolumeAuthorityPort,
+)
+from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
+from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeQueuePolicy,
+    ExternalRelativeVolumeStore,
+)
+from ksi_core.external_reobservation_proposals import (
+    CoreExternalReobservationProposalAuthorityPort,
+    ExternalReobservationProposalService,
+    ExternalReobservationProposalStore,
+)
+from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
+from ksi_core.external_result_reviews import ExternalResultReviewStore
+from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_core.external_use_decisions import ExternalUseDecisionStore
+from ksi_core.external_use_evaluator import ExternalUseEvaluator
+from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -54,6 +82,8 @@ from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_core.work_inbox import WorkInboxStore
+from test_external_workflow_common_assembly import _config as _closed_external_result_workflow
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -147,6 +177,7 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     없으면 이 함수 자체가 손으로 유지되는 복제본이라, 새 store 를 추가하면서 여기를
     안 고치면 아래 경로 대조가 조용히 통과한다(F1 의 실패 양식이 그대로 재발).
     """
+    external_authority_currentness = ExternalAuthorityCurrentnessCoordinator()
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
     signing_key = Ed25519PrivateKey.generate()
     signing_key_id = "dev-assembly-test-key"
@@ -161,7 +192,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         private_key=signing_key,
         key_id=signing_key_id,
     )
-    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store = SiteStore(
+        DurableJournal(tmp_path / "sites.jsonl"), coordinator=external_authority_currentness
+    )
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
     )
@@ -183,13 +216,79 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     # (리포트 수신 시 차분 래스터 바이트를 직접 재해싱한다).
     work_area_store = WorkAreaStore(
         DurableJournal(tmp_path / "work-areas.jsonl"),
+        coordinator=external_authority_currentness,
         site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    external_use_decision_store = ExternalUseDecisionStore(
+        DurableJournal(tmp_path / "external-use-decisions.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_relative_volume_store = ExternalRelativeVolumeStore(
+        DurableJournal(tmp_path / "external-relative-volumes.jsonl"),
+        authority_port=DefaultClosedExternalRelativeVolumeAuthorityPort(
+            currentness_coordinator=external_authority_currentness
+        ),
+        currentness_coordinator=external_authority_currentness,
+        queue_policy=ExternalRelativeVolumeQueuePolicy(
+            lease_ttl=timedelta(seconds=5),
+            deadline_after_issue=timedelta(seconds=30),
+            max_attempts=1,
+            max_active_requests_per_organization=2,
+        ),
+    )
+    reviews = ExternalResultReviewStore(
+        DurableJournal(tmp_path / "external-result-reviews.jsonl"),
+        source_port=CoreExternalResultReviewSourceAdapter(
+            volume_store=external_relative_volume_store,
+            decisions=external_use_decision_store,
+            historical_use_authority=ClosedExternalRelativeVolumeUseHistory(),
+            coordinator=external_authority_currentness,
+        ),
+        coordinator=external_authority_currentness,
+    )
+    proposals = ExternalReobservationProposalStore(
+        DurableJournal(tmp_path / "external-reobservation-proposals.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    proposal_authority = CoreExternalReobservationProposalAuthorityPort(
+        reviews=reviews,
+        proposals=proposals,
+        sites=site_store,
+        work_areas=work_area_store,
+        coordinator=external_authority_currentness,
+    )
+    organization_work_roster_store = OrganizationWorkRosterStore(
+        DurableJournal(tmp_path / "organization-work-roster.jsonl"),
+        coordinator=external_authority_currentness,
     )
     observation_work_order_store = ObservationWorkOrderStore(
         DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+        external_reobservation_authority_port=proposal_authority,
+        operations_coordinator=external_authority_currentness,
+        assignment_member_is_active=organization_work_roster_store.is_assignable_member,
         site_exists=lambda site_id, organization_id: (
             site_store.get_scoped(site_id, organization_id) is not None
         ),
+    )
+    external_result_workflow_service = ExternalReobservationProposalService(
+        reviews=reviews,
+        proposals=proposals,
+        sites=site_store,
+        work_areas=work_area_store,
+        work_orders=observation_work_order_store,
+        authority_port=proposal_authority,
+        coordinator=external_authority_currentness,
+    )
+    external_result_read_projector = ExternalResultReadProjector(
+        volumes=external_relative_volume_store,
+        workflow=external_result_workflow_service,
+    )
+    work_inbox_store = WorkInboxStore(
+        DurableJournal(tmp_path / "work-inbox.jsonl"),
+        work_orders=observation_work_order_store,
+        roster=organization_work_roster_store,
+        report_resolver=external_relative_volume_store,
+        coordinator=external_authority_currentness,
     )
     acquisition_connectivity_store = AcquisitionConnectivityStore(
         DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
@@ -235,6 +334,54 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     coverage_report_store = CoverageReportStore(
         DurableJournal(tmp_path / "coverage.jsonl"), mission_store=mission_store
     )
+    external_reconstruction_store = ExternalReconstructionStore(
+        DurableJournal(tmp_path / "external-reconstruction.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_validation_policy_registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "external-validation-policy.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_display_artifact_store = ExternalDisplayArtifactStore(
+        DurableJournal(tmp_path / "external-display-artifacts.jsonl"),
+        policy_registry=external_validation_policy_registry,
+        storage=storage,
+        coordinator=external_authority_currentness,
+    )
+    external_artifact_inspection_store = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "external-artifact-inspections.jsonl"),
+        policy_registry=external_validation_policy_registry,
+        external_reconstruction=external_reconstruction_store,
+        storage=storage,
+        display_store=external_display_artifact_store,
+        coordinator=external_authority_currentness,
+    )
+    external_evidence_store = ExternalEvidenceStore(
+        DurableJournal(tmp_path / "external-evidence.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_evidence_validation_store = ExternalEvidenceValidationStore(
+        DurableJournal(tmp_path / "external-evidence-validations.jsonl"),
+        evidence=external_evidence_store,
+        policy_registry=external_validation_policy_registry,
+        input_capabilities=CoreEvidenceValidationInputCapabilities(
+            reconstruction=external_reconstruction_store,
+            storage=storage,
+        ),
+        coordinator=external_authority_currentness,
+    )
+    external_use_evaluator = ExternalUseEvaluator(
+        decisions=external_use_decision_store,
+        reconstruction=external_reconstruction_store,
+        inspections=external_artifact_inspection_store,
+        policy_registry=external_validation_policy_registry,
+        evidence_validations=external_evidence_validation_store,
+        coordinator=external_authority_currentness,
+    )
+
+    def closed_volume_capabilities(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("closed contract fixture must never issue a byte capability")
+
     return {
         "evidence_storage": storage,
         "auth_registry": AuthRegistry(
@@ -266,12 +413,18 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "design_surface_store": design_surface_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
-        "external_reconstruction_store": ExternalReconstructionStore(
-            DurableJournal(tmp_path / "external-reconstruction.jsonl")
-        ),
-        "external_evidence_store": ExternalEvidenceStore(
-            DurableJournal(tmp_path / "external-evidence.jsonl")
-        ),
+        "organization_work_roster_store": organization_work_roster_store,
+        "work_inbox_store": work_inbox_store,
+        "external_reconstruction_store": external_reconstruction_store,
+        "external_evidence_store": external_evidence_store,
+        "external_evidence_validation_store": external_evidence_validation_store,
+        "external_use_evaluator": external_use_evaluator,
+        "external_relative_volume_store": external_relative_volume_store,
+        "external_result_workflow_service": external_result_workflow_service,
+        "external_result_read_projector": external_result_read_projector,
+        "external_volume_input_capability_issuer": closed_volume_capabilities,
+        "external_display_artifact_store": external_display_artifact_store,
+        "external_artifact_inspection_store": external_artifact_inspection_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
@@ -365,10 +518,29 @@ def test_dev_assembly_mounts_every_v1_surface(tmp_path: Path) -> None:
         edge_sync_snapshot_every=None,
         s3_endpoint="http://127.0.0.1:9000",
         s3_bucket="dev-evidence",
+        external_result_workflow=_closed_external_result_workflow([]),
     )
     try:
         dev_paths = {p for p in dev.app.openapi()["paths"] if p.startswith("/v1/")}
         assert isinstance(dev.app.state.capability_authority_store, CapabilityAuthorityStore)
+        coordinator = dev.app.state.external_authority_currentness
+        assert dev.app.state.site_store.coordinator is coordinator
+        assert dev.app.state.work_area_store.coordinator is coordinator
+        assert dev.app.state.external_reconstruction_store.coordinator is coordinator
+        assert dev.app.state.external_evidence_store.coordinator is coordinator
+        assert dev.app.state.external_validation_policy_registry.coordinator is coordinator
+        assert dev.app.state.external_display_artifact_store.coordinator is coordinator
+        assert dev.app.state.external_artifact_inspection_store.coordinator is coordinator
+        assert dev.app.state.external_evidence_validation_store.coordinator is coordinator
+        assert dev.app.state.external_use_decision_store.coordinator is coordinator
+        assert (
+            dev.app.state.external_result_workflow_service.work_orders
+            is dev.app.state.observation_work_order_store
+        )
+        assert dev.app.state.external_result_read_projector.uses_exact_graph(
+            volumes=dev.app.state.external_relative_volume_store,
+            workflow=dev.app.state.external_result_workflow_service,
+        )
     finally:
         dev.close()
     missing = _max_assembly_paths(tmp_path / "max") - dev_paths
@@ -376,6 +548,32 @@ def test_dev_assembly_mounts_every_v1_surface(tmp_path: Path) -> None:
         f"dev 조립(scripts/run_core_dev.py)이 장착하지 않는 /v1 경로: {sorted(missing)} "
         "— create_app 배선만으로는 서버에서 도달할 수 없다"
     )
+
+
+def test_dev_assembly_without_external_workflow_keeps_workflow_routes_and_journals_absent(
+    tmp_path: Path,
+) -> None:
+    """Dev defaults fail closed until an explicit authority configuration is injected."""
+    module = _load_dev_module()
+    data_dir = tmp_path / "dev"
+    dev = module.build_dev_app(
+        data_dir,
+        segment_bytes=None,
+        edge_sync_snapshot_every=None,
+        s3_endpoint="http://127.0.0.1:9000",
+        s3_bucket="dev-evidence",
+    )
+    try:
+        paths = dev.app.openapi()["paths"]
+        assert "/v1/external-relative-volume-reports/{report_ref}" not in paths
+        assert "/v1/external-reobservation-proposals" not in paths
+        assert not hasattr(dev.app.state, "external_result_workflow_service")
+        assert not hasattr(dev.app.state, "external_result_read_projector")
+        assert not (data_dir / "external-relative-volumes.jsonl").exists()
+        assert not (data_dir / "external-result-reviews.jsonl").exists()
+        assert not (data_dir / "external-reobservation-proposals.jsonl").exists()
+    finally:
+        dev.close()
 
 
 def test_dev_assembly_closes_every_journal_it_opened(tmp_path: Path) -> None:

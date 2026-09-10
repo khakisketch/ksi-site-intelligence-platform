@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrder,
+    ObservationWorkOrderExecutionMode,
     ObservationWorkOrderStatus,
 )
 from ksi_mission_contracts.models import SiteFrame
@@ -119,9 +121,7 @@ def test_api_is_organization_scoped_and_approval_is_optimistic(tmp_path: Path) -
         == 404
     )
     assert (
-        client.get(
-            "/v1/sites/site-a/observation-schedules", headers=_headers(_TOKEN_B)
-        ).status_code
+        client.get("/v1/sites/site-a/observation-schedules", headers=_headers(_TOKEN_B)).status_code
         == 404
     )
     assert (
@@ -194,9 +194,7 @@ def test_global_work_queue_scopes_before_filtering(tmp_path: Path) -> None:
         "/v1/observation-work-orders?status=AWAITING_APPROVAL",
         headers=_headers(_TOKEN_A),
     )
-    assert [item["name"] for item in awaiting_approval.json()["workOrders"]] == [
-        "승인 대기 작업"
-    ]
+    assert [item["name"] for item in awaiting_approval.json()["workOrders"]] == ["승인 대기 작업"]
 
     in_progress = client.get(
         "/v1/observation-work-orders?actionGroup=IN_PROGRESS",
@@ -421,3 +419,189 @@ def test_expired_reobservation_draft_cannot_change_safe_state(tmp_path: Path) ->
     assert current is not None
     assert current.status is ObservationWorkOrderStatus.REOBSERVATION_PENDING
     journal.close()
+
+
+def test_initial_external_work_order_is_approved_once_and_replays_lost_response(
+    tmp_path: Path,
+) -> None:
+    client, store = _api(tmp_path)
+    headers = {**_headers(_TOKEN_A), "Idempotency-Key": "external-create-1"}
+    payload = {
+        "name": "외부 정사영상 비교",
+        "workAreaIds": ["wa-site-a-0001"],
+        "scheduleId": None,
+        "executionMode": "EXTERNAL_RECONSTRUCTION",
+    }
+
+    created = client.post("/v1/sites/site-a/observation-work-orders", headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["executionMode"] == "EXTERNAL_RECONSTRUCTION"
+    assert body["status"] == "APPROVED"
+    assert body["createdBy"] == body["approvedBy"] == "operator-a"
+    assert body["createdAt"] == body["approvedAt"]
+
+    retried = client.post("/v1/sites/site-a/observation-work-orders", headers=headers, json=payload)
+    assert retried.status_code == 201, retried.text
+    assert retried.json() == body
+    assert len(store.list_for_site("site-a", organization_id="org-a")) == 1
+
+    changed_body = client.post(
+        "/v1/sites/site-a/observation-work-orders",
+        headers=headers,
+        json={**payload, "name": "다른 요청 본문"},
+    )
+    assert changed_body.status_code == 409
+
+    assert (
+        client.post(
+            "/v1/sites/site-a/observation-work-orders",
+            headers=_headers(_TOKEN_A),
+            json=payload,
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/sites/site-a/observation-work-orders",
+            headers={**_headers(_TOKEN_A), "Idempotency-Key": "external-create-2"},
+            json={**payload, "scheduleId": "obs-schedule-00000001"},
+        ).status_code
+        == 422
+    )
+
+
+def test_managed_create_optional_idempotency_is_ordered_and_never_retains_raw_key(
+    tmp_path: Path,
+) -> None:
+    active = True
+    journal = DurableJournal(tmp_path / "managed-create-idempotency.jsonl")
+    store = ObservationWorkOrderStore(
+        journal,
+        site_exists=lambda _site, _org: True,
+        work_areas_exist=lambda _site, _areas: active,
+    )
+    key = "managed-retry-key"
+    created = store.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="현장 관측",
+        work_area_ids=["wa-site-a-0002", "wa-site-a-0001"],
+        schedule_id=None,
+        idempotency_key=key,
+        actor="operator-a",
+        now=_NOW,
+    )
+    active = False
+    replayed = store.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="현장 관측",
+        work_area_ids=["wa-site-a-0002", "wa-site-a-0001"],
+        schedule_id=None,
+        idempotency_key=key,
+        actor="operator-a",
+        now=_NOW,
+    )
+    assert replayed == created
+    with pytest.raises(RuntimeError, match="EXTERNAL_CREATE_IDEMPOTENCY_CONFLICT"):
+        store.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name="현장 관측",
+            work_area_ids=["wa-site-a-0001", "wa-site-a-0002"],
+            schedule_id=None,
+            idempotency_key=key,
+            actor="operator-a",
+            now=_NOW,
+        )
+    records = journal.replay()
+    assert len(records) == 1
+    assert records[0]["createIdempotency"].keys() == {"keyHash", "fingerprint"}
+    assert key not in json.dumps(records, ensure_ascii=False)
+    journal.close()
+
+
+def test_initial_external_work_order_replay_keeps_execution_guard_and_legacy_is_nullable(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "external-work-order.jsonl"
+    store = ObservationWorkOrderStore(DurableJournal(path), site_exists=lambda _site, _org: True)
+    external = store.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="외부 산출물 등록",
+        work_area_ids=["wa-site-a-0001"],
+        schedule_id=None,
+        execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
+        idempotency_key="external-replay-1",
+        actor="operator-a",
+        now=_NOW,
+    )
+    assert external.status is ObservationWorkOrderStatus.APPROVED
+    for action in (
+        lambda: store.approve(
+            external.work_order_id,
+            organization_id="org-a",
+            expected_version=external.version,
+            actor="operator-a",
+            now=_NOW,
+        ),
+        lambda: store.link_mission(
+            external.work_order_id,
+            organization_id="org-a",
+            cycle_number=1,
+            mission_id="mission-1",
+            mission_site_id="site-a",
+            actor="operator-a",
+            now=_NOW,
+            require_approved=True,
+        ),
+        lambda: store.record_status(
+            external.work_order_id,
+            organization_id="org-a",
+            status=ObservationWorkOrderStatus.DISPATCHED,
+            status_reason=None,
+            mission_ids=None,
+            processing_job_ids=None,
+            report_refs=None,
+            actor="adapter",
+            now=_NOW,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="EXTERNAL_RECONSTRUCTION_ONLY"):
+            action()
+
+    store._journal.close()  # noqa: SLF001 -- restart/replay contract
+    replayed = ObservationWorkOrderStore(DurableJournal(path), site_exists=lambda _site, _org: True)
+    restored = replayed.get(external.work_order_id, organization_id="org-a")
+    assert restored is not None
+    assert restored.execution_mode is not None
+    assert restored.execution_mode.value == "EXTERNAL_RECONSTRUCTION"
+    replayed._journal.close()  # noqa: SLF001 -- fixture closes its durable handle
+
+    legacy = ObservationWorkOrder.model_validate(
+        {
+            "schemaVersion": "1.0",
+            "workOrderId": "legacy-work-order",
+            "organizationId": "org-a",
+            "siteId": "site-a",
+            "purpose": "PROGRESS_QUANTITY",
+            "name": "기존 작업",
+            "workAreaIds": ["wa-site-a-0001"],
+            "scheduleId": None,
+            "cycleNumber": 1,
+            "status": "AWAITING_APPROVAL",
+            "statusReason": None,
+            "missionIds": [],
+            "processingJobIds": [],
+            "reportRefs": [],
+            "version": 1,
+            "createdAt": _NOW.isoformat(),
+            "updatedAt": _NOW.isoformat(),
+            "createdBy": "operator-a",
+            "approvedAt": None,
+            "approvedBy": None,
+        }
+    )
+    assert legacy.execution_mode is None

@@ -31,6 +31,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -43,6 +45,7 @@ from pydantic import Field, ValidationError
 from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
@@ -112,7 +115,13 @@ class WorkAreaStore:
     한 임계구역으로 묶는다(``SiteStore`` 관습 대칭).
     """
 
-    def __init__(self, journal: DurableJournal, *, site_exists: Any = None) -> None:
+    def __init__(
+        self,
+        journal: DurableJournal,
+        *,
+        site_exists: Any = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+    ) -> None:
         """``site_exists`` 는 ``site_id -> bool`` 콜러블(보통 ``SiteStore.get`` 래퍼).
 
         ``None`` 이면 현장 존재 검사를 하지 않는다 — 조립 표(``_ASSEMBLY_REQUIREMENTS``)가
@@ -120,6 +129,7 @@ class WorkAreaStore:
         테스트가 site 저장소 없이 이 저장소만 세울 수 있게 열어 둔다.
         """
         self._journal = journal
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._areas: dict[str, WorkArea] = {}
         self._by_site: dict[str, list[str]] = {}
         self._site_exists = site_exists
@@ -157,8 +167,7 @@ class WorkAreaStore:
             previous = self._areas.get(area.supersedes)
             if previous is None:
                 raise ValueError(
-                    f"supersedes 대상이 없다: {area.supersedes!r} "
-                    f"(workAreaId={area.work_area_id})"
+                    f"supersedes 대상이 없다: {area.supersedes!r} (workAreaId={area.work_area_id})"
                 )
             if previous.site_id != area.site_id:
                 raise ValueError(
@@ -186,14 +195,16 @@ class WorkAreaStore:
         current = self._areas.get(work_area_id)
         if current is None:
             raise ValueError(f"보관 레코드의 대상이 없다: workAreaId={work_area_id}")
-        self._areas[work_area_id] = current.model_copy(
-            update={"status": WorkAreaStatus.ARCHIVED}
-        )
+        self._areas[work_area_id] = current.model_copy(update={"status": WorkAreaStatus.ARCHIVED})
 
     # ── 조회 ────────────────────────────────────────────────────────────
     @property
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
 
     def site_is_visible(self, site_id: str) -> bool:
         """요청 문맥에서 부모 현장이 보이는지 확인한다(INV-060).
@@ -205,6 +216,19 @@ class WorkAreaStore:
 
         return self._site_exists is None or bool(self._site_exists(site_id))
 
+    @contextmanager
+    def _mutation_for_site(self, site_id: str) -> Iterator[bool]:
+        """Hold the shared coordinator while resolving Site before WorkArea.
+
+        The injected Site lookup may acquire its own lock.  Resolving it before
+        this store's lock avoids a Site/WorkArea inversion while the coordinator
+        prevents a participating Site mutation from interleaving before append.
+        """
+        with self._coordinator.mutation():
+            visible = self.site_is_visible(site_id)
+            with self._lock:
+                yield visible
+
     def get(self, work_area_id: str) -> WorkArea | None:
         with self._lock:
             area = self._areas.get(work_area_id)
@@ -212,9 +236,58 @@ class WorkAreaStore:
             return None
         return area
 
-    def list_for_site(
-        self, site_id: str, *, include_archived: bool = False
-    ) -> list[WorkArea]:
+    def historical_active(
+        self,
+        work_area_id: str,
+        *,
+        site_id: str,
+        at: datetime,
+    ) -> WorkArea | None:
+        """Replay actual timestamped WorkArea events and return an ACTIVE snapshot.
+
+        This is intentionally separate from ``get``: a currently archived or
+        replacement WorkArea cannot be silently treated as active at proposal
+        creation time, and the current projection cannot prove historical
+        geometry/CRS.  Journal records are re-applied with the normal strict
+        replay validators before the snapshot is returned.
+        """
+
+        if at.tzinfo is None or at.utcoffset() != UTC.utcoffset(at):
+            raise ValueError("at must be UTC-aware")
+        snapshot = object.__new__(type(self))
+        snapshot._areas = {}
+        snapshot._by_site = {}
+        for raw in self._journal.replay():
+            if type(raw) is not dict:
+                raise WorkAreaStoreRecoveryError(
+                    "historical WorkArea journal event is not an object"
+                )
+            try:
+                raw_at = raw["ts"]
+                if type(raw_at) is not str:
+                    raise ValueError("timestamp is not a string")
+                event_at = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+                if event_at.tzinfo is None or event_at.utcoffset() != UTC.utcoffset(event_at):
+                    raise ValueError("timestamp is not UTC-aware")
+                if event_at > at:
+                    continue
+                kind = raw["kind"]
+                if kind == "work-area-registered":
+                    snapshot._apply_registered(raw)
+                elif kind == "work-area-archived":
+                    snapshot._apply_archived(raw)
+                else:
+                    raise ValueError(f"알 수 없는 kind: {kind!r}")
+            except (KeyError, TypeError, ValueError, ValidationError) as exc:
+                raise WorkAreaStoreRecoveryError(
+                    f"historical WorkArea replay failed for retained target: {exc}"
+                ) from exc
+        area = snapshot._areas.get(work_area_id)
+        if area is None or area.site_id != site_id or area.status is not WorkAreaStatus.ACTIVE:
+            return None
+        return area
+
+    def list_for_site(self, site_id: str, *, include_archived: bool = False) -> list[WorkArea]:
         """등록 순서대로. 기본은 ACTIVE 만 — 화면의 '고를 수 있는 것' 목록이다."""
         if not self.site_is_visible(site_id):
             return []
@@ -247,8 +320,7 @@ class WorkAreaStore:
         crs_values: set[str] = set()
         with self._lock:
             areas = [
-                (work_area_id, self._areas.get(work_area_id))
-                for work_area_id in work_area_ids
+                (work_area_id, self._areas.get(work_area_id)) for work_area_id in work_area_ids
             ]
         for work_area_id, area in areas:
             if area is None or not self.site_is_visible(area.site_id):
@@ -303,15 +375,15 @@ class WorkAreaStore:
                 WorkAreaVerdict.INVALID_WORK_AREA,
                 detail=f"siteId 가 경로 안전 식별자가 아니다: {site_id!r}",
             )
-        if self._site_exists is not None and not self._site_exists(site_id):
-            return WorkAreaResult(
-                WorkAreaVerdict.UNKNOWN_SITE,
-                detail=(
-                    f"등록된 적 없는 현장이다: {site_id!r} — 작업구역은 '어느 현장의 "
-                    "어디인가'로만 의미를 갖는다"
-                ),
-            )
-        with self._lock:
+        with self._mutation_for_site(site_id) as site_visible:
+            if not site_visible:
+                return WorkAreaResult(
+                    WorkAreaVerdict.UNKNOWN_SITE,
+                    detail=(
+                        f"등록된 적 없는 현장이다: {site_id!r} — 작업구역은 '어느 현장의 "
+                        "어디인가'로만 의미를 갖는다"
+                    ),
+                )
             if self._journal.sealed_reason is not None:
                 return WorkAreaResult(
                     WorkAreaVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
@@ -372,9 +444,7 @@ class WorkAreaStore:
                     created_at=iso_utc(now),
                 )
             except ValidationError as exc:
-                return WorkAreaResult(
-                    WorkAreaVerdict.INVALID_WORK_AREA, detail=_first_error(exc)
-                )
+                return WorkAreaResult(WorkAreaVerdict.INVALID_WORK_AREA, detail=_first_error(exc))
             raw: dict[str, Any] = {
                 "kind": "work-area-registered",
                 "ts": iso_utc(now),
@@ -397,12 +467,12 @@ class WorkAreaStore:
     ) -> WorkAreaResult:
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
-        if not self.site_is_visible(site_id):
-            return WorkAreaResult(
-                WorkAreaVerdict.UNKNOWN_WORK_AREA,
-                detail=f"현장 {site_id!r} 에 작업구역 {work_area_id!r} 이 없다",
-            )
-        with self._lock:
+        with self._mutation_for_site(site_id) as site_visible:
+            if not site_visible:
+                return WorkAreaResult(
+                    WorkAreaVerdict.UNKNOWN_WORK_AREA,
+                    detail=f"현장 {site_id!r} 에 작업구역 {work_area_id!r} 이 없다",
+                )
             if self._journal.sealed_reason is not None:
                 return WorkAreaResult(
                     WorkAreaVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
@@ -433,9 +503,7 @@ class WorkAreaStore:
                     WorkAreaVerdict.STORE_UNAVAILABLE, detail=JOURNAL_SEALED_DETAIL
                 )
             self._apply_archived(raw)
-            return WorkAreaResult(
-                WorkAreaVerdict.ARCHIVED, work_area=self._areas[work_area_id]
-            )
+            return WorkAreaResult(WorkAreaVerdict.ARCHIVED, work_area=self._areas[work_area_id])
 
 
 def _first_error(exc: ValidationError) -> str:

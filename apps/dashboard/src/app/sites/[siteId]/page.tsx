@@ -8,6 +8,7 @@ import { CivilReadinessCard } from "@/components/site/CivilReadinessCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge, StatusBadge } from "@/components/ui/StatusBadge";
+import { ExternalSiteResultSummary } from "@/components/external-results/ExternalSiteResultSummary";
 import { ZoneVolumeBars } from "@/components/site/ZoneVolumeBars";
 import { CoreApiError } from "@/lib/core-api/client";
 import { listSiteProcessingJobs } from "@/lib/core-api/comparison";
@@ -28,6 +29,7 @@ import { formatNetVolumeM3 } from "@/lib/core-api/phase34-labels";
 import { getCivilReadiness } from "@/lib/core-api/civil-readiness";
 import { getSite } from "@/lib/core-api/sites";
 import { getLatestSiteBriefing, getSiteWorkspace } from "@/lib/core-api/site-workspace";
+import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { copilotCitationHref } from "@/lib/copilot-citation";
 import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
 import { siteNextAction } from "@/lib/core-api/site-progress";
@@ -37,6 +39,7 @@ import type {
   SiteView,
   SiteWorkspaceView,
   VolumeChangeListView,
+  WorkArea,
 } from "@/lib/core-api/types";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import {
@@ -340,17 +343,20 @@ export default async function SiteDetailPage({
     eventsResult,
     canIssueMission,
     canTransitionSite,
+    canCreateWorkOrder,
     canApproveAutonomySite,
     jobsResult,
     workspaceResult,
     briefingResult,
     workOrdersResult,
     civilReadinessResult,
+    workAreasResult,
   ] = await Promise.allSettled([
     listMissions(site.siteId),
     listAllEvents({ siteId: site.siteId }),
     hasAllPermissions("MISSIONS_ISSUE"),
     hasAllPermissions("SITES_WRITE"),
+    hasAllPermissions("WORK_ORDERS_WRITE"),
     hasAllPermissions("SITES_AUTONOMY_APPROVE"),
     // 조사 기록(시점) — 같은 이유로 표면이 없으면 줄 자체가 비고, 그 사실을 머리가 말한다.
     listSiteProcessingJobs(site.siteId),
@@ -358,6 +364,7 @@ export default async function SiteDetailPage({
     getLatestSiteBriefing(site.siteId),
     listObservationWorkOrders(site.siteId),
     getCivilReadiness(site.siteId),
+    listWorkAreas(site.siteId),
   ]);
   const missions = sectionOutcome(missionsResult);
   const events = sectionOutcome(
@@ -367,6 +374,7 @@ export default async function SiteDetailPage({
   );
   const canStartSurvey = canIssueMission.status === "fulfilled" && canIssueMission.value;
   const canTransition = canTransitionSite.status === "fulfilled" && canTransitionSite.value;
+  const canCreateObservation = canCreateWorkOrder.status === "fulfilled" && canCreateWorkOrder.value;
   const canApproveAutonomy =
     canApproveAutonomySite.status === "fulfilled" && canApproveAutonomySite.value;
   const workspaceOutcome = sectionOutcome(workspaceResult);
@@ -375,6 +383,19 @@ export default async function SiteDetailPage({
   const briefingOutcome = optionalSectionOutcome(briefingResult);
   const workOrders = sectionOutcome(workOrdersResult);
   const civilReadinessOutcome = sectionOutcome(civilReadinessResult);
+  const workAreas: readonly WorkArea[] =
+    workAreasResult.status === "fulfilled" ? workAreasResult.value.workAreas : [];
+  const workAreaNameById = new Map(workAreas.map((area) => [area.workAreaId, area.name]));
+  const externalResultSummary = workspaceOutcome.kind === "ok" ? (
+    <ExternalSiteResultSummary
+      externalResult={workspaceOutcome.value.externalResult}
+      workAreaName={workspaceOutcome.value.externalResult.result
+        ? workAreaNameById.get(workspaceOutcome.value.externalResult.result.workAreaId) ?? null
+        : null}
+    />
+  ) : (
+    <SectionFallback what="외부 관측 결과" outcome={workspaceOutcome.kind} />
+  );
 
   const epochs = jobsResult.status === "fulfilled" ? toSiteEpochs(jobsResult.value.jobs) : [];
   const selectedEpochId = resolveEpochId(epochs, rawEpoch);
@@ -394,6 +415,14 @@ export default async function SiteDetailPage({
   const nextStep = siteNextAction(site.status);
   const spatialSummary = spatialModelSummary(site.spatialModel);
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
+  const externalObservationHistoryLink = (
+    <Link
+      href={`${sitePath}/observations`}
+      className="tap-target inline-flex items-center text-[12px] font-semibold text-accent-text hover:underline"
+    >
+      외부 관측 결과 이력
+    </Link>
+  );
 
   return (
     <div className="flex flex-col">
@@ -441,6 +470,8 @@ export default async function SiteDetailPage({
               )}
             </section>
             <SiteBriefingCard site={site} outcome={briefingOutcome} />
+            {externalResultSummary}
+            {externalObservationHistoryLink}
           </div>
         )}
 
@@ -488,6 +519,9 @@ export default async function SiteDetailPage({
               }
             />
 
+            {externalResultSummary}
+            {externalObservationHistoryLink}
+
             <SectionCard
               title="구역별 순변화"
               meta={
@@ -523,7 +557,7 @@ export default async function SiteDetailPage({
             <div className="grid gap-4 sm:grid-cols-2">
               <SectionCard
                 title="계획 대비 진척"
-                action={{ label: "열기", href: `${sitePath}/progress` }}
+                action={{ label: "진척 보기", href: `${sitePath}/progress` }}
               >
                 <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                   등록해 둔 작업구역 위에서 설계 기준면과 견줘, 구역마다 얼마나 남았는지를
@@ -532,7 +566,7 @@ export default async function SiteDetailPage({
               </SectionCard>
               <SectionCard
                 title="현장 보고서"
-                action={{ label: "열기", href: `${sitePath}/report` }}
+                action={{ label: "현장 보고서 보기", href: `${sitePath}/report` }}
               >
                 <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                   이 현장의 변화·물량·진척을 한 번에 내보냅니다.
@@ -547,7 +581,7 @@ export default async function SiteDetailPage({
             {/* 설계 기준면은 현장 자산이지 임무 산출물이 아니다 — 한 번 올려 검증되면
                 이후 모든 임무가 같은 기준으로 잔량을 낸다. 그래서 임무가 아니라 현장
                 화면에 자리를 둔다. */}
-            <SectionCard title="설계 기준면" action={{ label: "관리", href: `${sitePath}/design` }}>
+            <SectionCard title="설계 기준면" action={{ label: "설계 기준면 관리", href: `${sitePath}/design` }}>
               <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                 완성된 지형의 계획고를 올려두면, 이후 촬영한 현재 지형과 견줘 구역별로 얼마나
                 더 깎고 더 쌓아야 하는지 계산할 수 있습니다.
@@ -556,7 +590,7 @@ export default async function SiteDetailPage({
 
             {/* 작업구역도 설계 기준면과 같은 이유로 현장 화면에 산다 — 비교할 때마다
                 새로 그리지 않고 한 번 등록해두는 자산이라서다(M4-C). */}
-            <SectionCard title="작업구역" action={{ label: "관리", href: `${sitePath}/work-areas` }}>
+            <SectionCard title="작업구역" action={{ label: "작업구역 관리", href: `${sitePath}/work-areas` }}>
               <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                 이름을 붙여 등록해두면 이후 잔량·진척을 낼 때마다 지도에 새로 그리는 대신 이
                 구역을 고르기만 하면 됩니다 — 지난번과 이번이 같은 범위라야 계획 대비 진척을
@@ -568,7 +602,7 @@ export default async function SiteDetailPage({
                 "지금 몇 %인가"가 아니라 "어디를 다시 봐야 하나·다음엔 어디를 찍나"다. */}
             <SectionCard
               title="변화 영역 · 재확인 필요"
-              action={{ label: "보기", href: `${sitePath}/changes` }}
+              action={{ label: "변화 영역 보기", href: `${sitePath}/changes` }}
             >
               <p className="px-4 py-3 text-[12.5px] break-keep text-ink-2">
                 설계 대비 잔량이 크게 달라진 곳을 자동으로 찾아 지도에 보여줍니다. 영역을 골라
@@ -660,6 +694,7 @@ export default async function SiteDetailPage({
             <div className="grid items-start gap-4 xl:grid-cols-2">
             <SectionCard title="현장 작업" meta={workOrders.kind === "ok" ? `${workOrders.value.length}건` : undefined}>
               <div className="px-4 py-2">
+                {canCreateObservation && <Link href={`${sitePath}/observations/new`} className="btn mb-2 hidden w-fit lg:inline-flex">새 관측 시작</Link>}
                 {workOrders.kind !== "ok" ? (
                   <SectionFallback what="작업" outcome={workOrders.kind} />
                 ) : workOrders.value.length === 0 ? (
@@ -667,7 +702,7 @@ export default async function SiteDetailPage({
                 ) : (
                   <ul className="flex flex-col divide-y divide-line">
                     {workOrders.value.map((workOrder) => {
-                      const presentation = presentWorkOrder(workOrder.status);
+                      const presentation = presentWorkOrder(workOrder.status, workOrder.executionMode);
                       return (
                         <li key={workOrder.workOrderId}>
                           <Link
@@ -762,7 +797,10 @@ export default async function SiteDetailPage({
         )}
 
         {tab === "reports" && (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+          <div className="flex flex-col gap-4">
+            {externalResultSummary}
+            {externalObservationHistoryLink}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
             <SectionCard
               title="현장 보고서"
               action={{ label: "보고서 열기", href: `${sitePath}/report` }}
@@ -798,6 +836,7 @@ export default async function SiteDetailPage({
                 />
               </dl>
             </SectionCard>
+            </div>
           </div>
         )}
       </div>

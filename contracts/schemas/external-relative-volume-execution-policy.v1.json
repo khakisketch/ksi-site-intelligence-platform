@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-relative-volume-execution-policy.v1.json",
+  "title": "External Relative Volume Execution Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "policyId",
+    "version",
+    "algorithmBuildDigest",
+    "configDigest",
+    "thresholdM",
+    "minimumCommonValidFraction",
+    "uncertaintyMethod",
+    "resourceEnvelopeDigest",
+    "authorityRecordDigest",
+    "syntheticTestOnly",
+    "policyDigest"
+  ],
+  "properties": {
+    "contractVersion": { "const": "external-relative-volume-execution-policy.v1" },
+    "policyId": { "$ref": "#/$defs/text" },
+    "version": { "type": "integer", "minimum": 1 },
+    "algorithmBuildDigest": { "$ref": "#/$defs/digest" },
+    "configDigest": { "$ref": "#/$defs/digest" },
+    "thresholdM": { "type": "number", "minimum": 0, "maximum": 1e300 },
+    "minimumCommonValidFraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+    "uncertaintyMethod": { "const": "INDEPENDENT_EPOCH_RSS_AREA_BOUND_V1" },
+    "resourceEnvelopeDigest": { "$ref": "#/$defs/digest" },
+    "authorityRecordDigest": { "$ref": "#/$defs/digest" },
+    "syntheticTestOnly": { "type": "boolean" },
+    "policyDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 }
+  }
+}

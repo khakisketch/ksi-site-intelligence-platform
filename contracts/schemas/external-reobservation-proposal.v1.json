@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "ExternalWorkAreaSnapshotV1": {
+      "additionalProperties": false,
+      "description": "An immutable, owned WorkArea revision used as a reobservation target.",
+      "properties": {
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "revision": {
+          "const": 1,
+          "default": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "polygon": {
+          "additionalProperties": true,
+          "title": "Polygon",
+          "type": "object"
+        },
+        "crs": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Crs",
+          "type": "string"
+        },
+        "snapshotDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workAreaId",
+        "polygon",
+        "crs",
+        "snapshotDigest"
+      ],
+      "title": "ExternalWorkAreaSnapshotV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One human-authored, grounded planning proposal; approval remains separate.",
+  "properties": {
+    "contractVersion": {
+      "const": "external-reobservation-proposal.v1",
+      "default": "external-reobservation-proposal.v1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "proposalRef": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Proposalref",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "organizationId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Organizationid",
+      "type": "string"
+    },
+    "siteId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Siteid",
+      "type": "string"
+    },
+    "sourceWorkOrderId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Sourceworkorderid",
+      "type": "string"
+    },
+    "reviewRef": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Reviewref",
+      "type": "string"
+    },
+    "reviewDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Reviewdigest",
+      "type": "string"
+    },
+    "reportRef": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Reportref",
+      "type": "string"
+    },
+    "reportDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Reportdigest",
+      "type": "string"
+    },
+    "decisionDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Decisiondigest",
+      "type": "string"
+    },
+    "zoneDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Zonedigest",
+      "type": "string"
+    },
+    "evidenceDigests": {
+      "items": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Evidencedigests",
+      "type": "array"
+    },
+    "targetWorkAreas": {
+      "items": {
+        "$ref": "#/$defs/ExternalWorkAreaSnapshotV1"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Targetworkareas",
+      "type": "array"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "createdBy": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Createdby",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "proposalDigest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposaldigest"
+    }
+  },
+  "required": [
+    "proposalRef",
+    "version",
+    "organizationId",
+    "siteId",
+    "sourceWorkOrderId",
+    "reviewRef",
+    "reviewDigest",
+    "reportRef",
+    "reportDigest",
+    "decisionDigest",
+    "zoneDigest",
+    "evidenceDigests",
+    "targetWorkAreas",
+    "createdBy",
+    "createdAt"
+  ],
+  "title": "ExternalReobservationProposalV1",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-reobservation-proposal.v1.json"
+}

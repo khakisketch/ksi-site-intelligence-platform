@@ -472,10 +472,18 @@ paths:
         '404': { description: Site not found in the principal organization }
   /v1/sites/{site_id}/observation-work-orders:
     post:
-      summary: Create an observation work order draft
+      summary: Create an observation work order
+      description: >-
+        `executionMode` defaults to `MANAGED_ACQUISITION`. An
+        `EXTERNAL_RECONSTRUCTION` work order has no `scheduleId`, is created
+        approved for customer artifact registration, and never starts managed
+        acquisition. `Idempotency-Key` is optional for managed creation and
+        required for external creation. Core retains only its hash and the
+        normalized request fingerprint; a conflicting reuse returns 409.
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: site_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: false, schema: { type: string }, description: Required when executionMode is EXTERNAL_RECONSTRUCTION; never retained in raw form. }
       requestBody:
         required: true
         content:
@@ -499,6 +507,10 @@ paths:
                     schemaVersion: { const: '1.0', default: '1.0' }
                     maxCaptureSpanSeconds: { type: integer, minimum: 1, maximum: 86400 }
                   required: [maxCaptureSpanSeconds]
+                executionMode:
+                  type: string
+                  enum: [MANAGED_ACQUISITION, EXTERNAL_RECONSTRUCTION]
+                  default: MANAGED_ACQUISITION
       responses:
         '201':
           description: Created draft work order
@@ -554,6 +566,140 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied }
         '404': { description: Work order not found in the principal organization }
+  /v1/observation-work-orders/{work_order_id}/operations:
+    get:
+      summary: Get the separate administrative operations state for one external work order
+      description: >-
+        The operations projection never changes the sealed WorkOrder version,
+        observation cycle, acquisition, Mission, or measurement state. Historical
+        external successors with a retained planning binding return UNSPECIFIED
+        until an operator records an administrative change.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Organization-scoped administrative operations snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+        '401': { description: Authentication failed }
+        '403': { description: WORK_ORDERS_WRITE permission required }
+        '404': { description: External work order not found in the principal organization }
+        '409': { description: Managed work orders do not expose external operations }
+  /v1/observation-work-orders/{work_order_id}/operations/assignment:
+    post:
+      summary: Assign the authenticated operator to an external work order or clear assignment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' }, description: Retained only as a hash with a request fingerprint. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkOrderOperationsAssignmentRequest' }
+      responses:
+        '200':
+          description: Retained operations snapshot; same idempotent request returns this snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+        '401': { description: Authentication failed }
+        '403': { description: OPERATOR principal with WORK_ORDERS_WRITE required }
+        '404': { description: External work order not found in the principal organization }
+        '409': { description: Idempotency, operations revision, or state conflict }
+        '422': { description: Invalid request body or header }
+        '503': { description: Durable journal unavailable }
+  /v1/observation-work-orders/{work_order_id}/operations/due-date:
+    put:
+      summary: Set or clear an external work order administrative due date
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' }, description: Retained only as a hash with a request fingerprint. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkOrderOperationsDueDateRequest' }
+      responses:
+        '200':
+          description: Retained operations snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+        '401': { description: Authentication failed }
+        '403': { description: OPERATOR principal with WORK_ORDERS_WRITE required }
+        '404': { description: External work order not found in the principal organization }
+        '409': { description: Idempotency, operations revision, or state conflict }
+        '422': { description: Invalid request body or header }
+        '503': { description: Durable journal unavailable }
+  /v1/observation-work-orders/{work_order_id}/operations/close:
+    post:
+      summary: Administratively close an external work order
+      description: Closure removes active operational actions but never cancels or accepts in-flight measurement work.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' }, description: Retained only as a hash with a request fingerprint. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkOrderOperationsCloseRequest' }
+      responses:
+        '200':
+          description: Retained closed operations snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+        '401': { description: Authentication failed }
+        '403': { description: OPERATOR principal with WORK_ORDERS_WRITE required }
+        '404': { description: External work order not found in the principal organization }
+        '409': { description: Idempotency, operations revision, or state conflict }
+        '422': { description: Invalid request body or header }
+        '503': { description: Durable journal unavailable }
+  /v1/observation-work-orders/{work_order_id}/operations/reopen:
+    post:
+      summary: Reopen an administratively closed external work order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' }, description: Retained only as a hash with a request fingerprint. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkOrderOperationsReopenRequest' }
+      responses:
+        '200':
+          description: Retained reopened operations snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+        '401': { description: Authentication failed }
+        '403': { description: OPERATOR principal with WORK_ORDERS_WRITE required }
+        '404': { description: External work order not found in the principal organization }
+        '409': { description: Idempotency, operations revision, or state conflict }
+        '422': { description: Invalid request body or header }
+        '503': { description: Durable journal unavailable }
+  /v1/observation-work-order-operations:
+    get:
+      summary: List organization-scoped administrative operations without per-row fanout
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: siteId, schema: { type: [string, 'null'] } }
+        - { in: query, name: workflowStatus, schema: { enum: [UNSPECIFIED, OPEN, CLOSED, null] } }
+      responses:
+        '200':
+          description: One snapshot for every scoped WorkOrder, including historical UNSPECIFIED rows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderOperationsListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: WORK_ORDERS_WRITE permission required }
+        '404': { description: Requested Site not found in the principal organization }
   /v1/observation-work-orders/{work_order_id}/approve:
     post:
       summary: Approve a work order with optimistic version checking
@@ -5427,6 +5573,18 @@ paths:
         - { in: path, name: evidence_ref, required: true, schema: { type: string, pattern: '^eev-v1-[0-9a-f]{64}$' } }
         - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
       responses: { '200': { description: occurred evidence observation, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceView' } } } }, '404': { description: scoped evidence absent }, '409': { description: already sealed or idempotency conflict }, '422': { description: observation missing or mismatched } }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-context:
+    get:
+      summary: Read external upload epoch identity without acquisition execution
+      description: SITES_READ scoped pure read; does not create an AcquisitionRun or grant execution or analysis authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: current WorkOrder registration identity, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionContextView' } } } }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+        '404': { description: scoped WorkOrder not found }
   /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions:
     post:
       summary: Register a customer-owned external reconstruction declaration
@@ -5511,6 +5669,1090 @@ paths:
         '503': { description: storage or journal unavailable }
         '401': { description: authentication failed }
         '403': { description: SITES_WRITE or human authority required }
+  /v1/internal/external-validation/evidence-validations:
+    get:
+      summary: List pending scoped external-evidence validation work
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: pending validation work, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationPendingListView' } } } }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/evidence-validations/{validation_id}/lease:
+    post:
+      summary: Claim one scoped external-evidence validation lease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: fenced lease, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationLeaseView' } } } }
+        '404': { description: absent or foreign validation }
+        '409': { description: current policy or lease fence closed }
+        '503': { description: durable journal unavailable }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/evidence-validations/{validation_id}/input:
+    get:
+      summary: Read lease-gated exact CSV and DSM validation inputs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: exact worker-only bindings, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationInputView' } } } }
+        '404': { description: absent or foreign validation }
+        '409': { description: current policy or lease fence closed }
+        '503': { description: input capability unavailable }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/evidence-validations/{validation_id}/heartbeat:
+    post:
+      summary: Renew one external-evidence validation lease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: renewed fenced lease, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationLeaseView' } } } }
+        '404': { description: absent or foreign validation }
+        '409': { description: current policy or lease fence closed }
+        '503': { description: durable journal unavailable }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/evidence-validations/{validation_id}/measurement:
+    post:
+      summary: Submit fenced observed aggregate checkpoint metrics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceMeasurementPayloadV1' } } }
+      responses:
+        '200': { description: Core validated or rejected record, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationMeasurementView' } } } }
+        '404': { description: absent or foreign validation }
+        '409': { description: current policy, binding, or lease fence closed }
+        '503': { description: durable journal unavailable }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/evidence-validations/{validation_id}/incomplete-failure:
+    post:
+      summary: Record a fenced typed incomplete evidence-validation attempt
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: validation_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationFailureRequest' } } }
+      responses:
+        '200': { description: Core rejected record, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalEvidenceValidationMeasurementView' } } } }
+        '404': { description: absent or foreign validation }
+        '409': { description: lease fence closed }
+        '503': { description: durable journal unavailable }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections:
+    get:
+      summary: List pending scoped external-artifact inspection work
+      description: >-
+        PROCESSING_WORK only. This queue projection contains no source URLs or object keys.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: scoped pending inspection work, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionPendingListView' } } } }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/lease:
+    post:
+      summary: Claim one scoped external-artifact inspection lease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: current claimed lease and authoritative fence, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionLeaseView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or exhausted work }
+        '422': { description: malformed lease fence }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/input:
+    get:
+      summary: Read lease-gated exact inspection input and source capabilities
+      description: >-
+        PROCESSING_WORK only. The artifacts capability is lease- and organization-scoped;
+        public inspection views never contain `downloadUrl`, `requiredHeaders`, or object keys.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: exact lease-gated worker input, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionInputView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or exhausted work }
+        '422': { description: malformed lease fence }
+        '503': { description: source capability storage unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/heartbeat:
+    post:
+      summary: Renew one external-artifact inspection lease
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: renewed current lease, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionLeaseView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or exhausted work }
+        '422': { description: malformed lease fence }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/report:
+    post:
+      summary: Record one fenced external-artifact inspection report
+      description: >-
+        PROCESSING_WORK only. Core retains only bindings for the sealed declared artifacts and
+        measured ORTHO RGB/RGBA uint8 or DSM single-band Float32/Float64; unsupported source
+        layouts use the existing typed UNSUPPORTED_RASTER rejection outcome.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-artifact-inspection-report.v1.json' }
+      responses:
+        '200': { description: retained report or exact retry, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionReportView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, divergent retry, unavailable policy, or exhausted work }
+        '422': { description: invalid inspection report or retained-raster binding }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/incomplete-failure:
+    post:
+      summary: Record a typed fenced incomplete inspection attempt
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalInspectionFailureRequest' }
+      responses:
+        '200': { description: recorded typed incomplete attempt, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalInspectionReportView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or exhausted work }
+        '422': { description: malformed lease fence or failure reason }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/display-artifacts/upload-grants:
+    post:
+      summary: Issue a fenced worker upload capability for one sanitized display derivative
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-sanitized-display-artifact.v1.json' }
+      responses:
+        '200': { description: derivative declaration and private upload capability, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalDisplayArtifactGrantView' } } } }
+        '404': { description: request absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or display not pending }
+        '422': { description: declaration binding or output limit rejected }
+        '503': { description: storage unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/internal/external-validation/inspections/{request_id}/display-artifacts/{display_id}/seal:
+    post:
+      summary: Seal a fenced worker sanitized display derivative
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: request_id, required: true, schema: { type: string } }
+        - { in: path, name: display_id, required: true, schema: { type: string } }
+        - { in: header, name: X-KSI-Worker-Instance-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Acquisition-Id, required: true, schema: { type: string, format: uuid } }
+        - { in: header, name: X-KSI-Lease-Generation, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: sealed derivative receipt, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalDisplayArtifactSealView' } } } }
+        '404': { description: request/display absent or outside worker organization }
+        '409': { description: stale fence, unavailable policy, or display not pending }
+        '422': { description: observed derivative missing or mismatched }
+        '503': { description: storage unavailable }
+        '401': { description: authentication failed }
+        '403': { description: PROCESSING_WORK permission required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/inspection:
+    get:
+      summary: Read scoped occurred external inspection and display facts
+      description: >-
+        SITES_READ only. This projection cannot schedule work and exposes no worker capabilities,
+        source object keys, parser internals, use decision, or eligibility determination.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: scoped occurred inspection/display facts, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalArtifactInspectionPublicView' } } } }
+        '404': { description: revision absent or outside organization }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ permission required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/single:
+    post:
+      summary: Resolve and persist a scoped single-subject external use decision
+      description: >-
+        SITES_WRITE human selection only. Core resolves the sealed subject, current policy,
+        inspection report, and display receipt. Callers cannot submit a verdict, digest,
+        worker observation, storage capability, or numeric result.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                use: { type: string, enum: [DISPLAY, HEIGHT] }
+              required: [use]
+      responses:
+        '201': { description: immutable Core-resolved decision, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' } } } }
+        '404': { description: revision absent or outside organization }
+        '409': { description: idempotency conflict }
+        '422': { description: selection invalid }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/pair:
+    post:
+      summary: Resolve and persist an ordered scoped external pair-use decision
+      description: >-
+        SITES_WRITE human selection only. Core resolves both exact sealed revisions and every
+        current receipt/evidence dependency. Relative volume records eligibility only and no
+        numeric result.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                use: { type: string, enum: [VISUAL_COMPARISON, RELATIVE_VOLUME] }
+                baselineWorkOrderId: { type: string, minLength: 1, maxLength: 255 }
+                baselineSubmissionRef: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' }
+                baselineRevision: { type: integer, minimum: 1 }
+                zoneId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+              required: [use, baselineWorkOrderId, baselineSubmissionRef, baselineRevision]
+      responses:
+        '201': { description: immutable Core-resolved ordered decision, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' } } } }
+        '404': { description: either revision absent or outside organization }
+        '409': { description: idempotency conflict }
+        '422': { description: selection invalid }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/{decision_id}:
+    get:
+      summary: Read a scoped immutable external use decision
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: decision_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      responses:
+        '200': { description: scoped immutable decision, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' } } } }
+        '404': { description: revision or decision absent, foreign, or bound to another revision }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/display-artifacts/{sanitized_display_ref}/download:
+    get:
+      summary: Issue a short-lived scoped sanitized display download capability
+      description: >-
+        SITES_READ only. Core resolves the current exact receipt binding under lock, presigns
+        outside the lock, then re-resolves the same binding and current policy before returning.
+        Absent, foreign, revoked, or stale references are non-disclosing 404 responses.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: sanitized_display_ref, required: true, schema: { type: string, pattern: '^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$' } }
+      responses:
+        '200': { description: current scoped display capability, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalSanitizedDisplayDownloadView' } } } }
+        '404': { description: revision/display absent, foreign, revoked, or stale }
+        '503': { description: display storage unavailable; no partial capability returned }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ permission required }
+  /v1/observation-work-orders/{work_order_id}/relative-volume-requests:
+    post:
+      tags:
+      - external-relative-volumes
+      summary: Issue Relative Volume
+      operationId: issue_relative_volume_v1_observation_work_orders__work_order_id__relative_volume_requests_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeIssueInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - external-relative-volumes
+      summary: List Relative Volumes
+      operationId: list_relative_volumes_v1_observation_work_orders__work_order_id__relative_volume_requests_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/observation-work-orders/{work_order_id}/relative-volume-requests/{request_ref}:
+    get:
+      tags:
+      - external-relative-volumes
+      summary: Get Relative Volume
+      operationId: get_relative_volume_v1_observation_work_orders__work_order_id__relative_volume_requests__request_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeRequestView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes:
+    get:
+      tags:
+      - external-relative-volumes
+      summary: List Pending Relative Volumes
+      operationId: list_pending_relative_volumes_v1_internal_external_validation_relative_volumes_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumePendingResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes/{request_ref}/lease:
+    post:
+      tags:
+      - external-relative-volumes
+      summary: Lease Relative Volume
+      operationId: lease_relative_volume_v1_internal_external_validation_relative_volumes__request_ref__lease_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeLeaseInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes/{request_ref}/heartbeat:
+    post:
+      tags:
+      - external-relative-volumes
+      summary: Heartbeat Relative Volume
+      operationId: heartbeat_relative_volume_v1_internal_external_validation_relative_volumes__request_ref__heartbeat_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeHeartbeatInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes/{request_ref}/input:
+    get:
+      tags:
+      - external-relative-volumes
+      summary: Get Relative Volume Input
+      operationId: get_relative_volume_input_v1_internal_external_validation_relative_volumes__request_ref__input_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeWorkerInputResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes/{request_ref}/report:
+    post:
+      tags:
+      - external-relative-volumes
+      summary: Report Relative Volume
+      operationId: report_relative_volume_v1_internal_external_validation_relative_volumes__request_ref__report_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeWorkerReportInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/relative-volumes/{request_ref}/incomplete-failure:
+    post:
+      tags:
+      - external-relative-volumes
+      summary: Fail Relative Volume
+      operationId: fail_relative_volume_v1_internal_external_validation_relative_volumes__request_ref__incomplete_failure_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeWorkerFailureInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/external-relative-volume-reports/{report_ref}:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Report View
+      operationId: report_view_v1_external_relative_volume_reports__report_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: report_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalResultReportView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/external-relative-volume-reports:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Site Report History
+      operationId: site_report_history_v1_sites__site_id__external_relative_volume_reports_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema: { type: string, title: Site Id }
+      - name: after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: After
+      - name: limit
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 50, default: 20, title: Limit }
+      responses:
+        '200':
+          description: Bounded retained report history. Unavailable sources remain visible without numeric results.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalResultHistoryView' }
+        '404': { description: scoped Site or report cursor not found }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+  /v1/sites/{site_id}/observations/{report_ref}:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Exact Site Observation Report
+      operationId: site_report_view_v1_sites__site_id__observations__report_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema: { type: string, title: Site Id }
+      - name: report_ref
+        in: path
+        required: true
+        schema: { type: string, title: Report Ref }
+      responses:
+        '200':
+          description: Exact site-scoped retained report projection; no public sharing grant is created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalResultProjectionView' }
+        '404': { description: scoped Site or report not found }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+  /v1/external-relative-volume-reports/{report_ref}/reviews:
+    post:
+      tags:
+      - external-result-workflow
+      summary: Review Report
+      operationId: review_report_v1_external_relative_volume_reports__report_ref__reviews_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: report_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Ref
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/ExternalResultReviewIntent'
+              - type: 'null'
+              title: Request
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalResultReviewView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/external-result-reviews/{review_ref}:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Review View
+      operationId: review_view_v1_external_result_reviews__review_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: review_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Review Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalResultReviewView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/external-reobservation-proposals/{proposal_ref}:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Read Proposal
+      operationId: read_proposal_v1_external_reobservation_proposals__proposal_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: proposal_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Proposal Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalReobservationProposalView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/external-reobservation-proposals:
+    post:
+      tags:
+      - external-reobservation
+      summary: Create Proposal
+      operationId: create_proposal_v1_external_reobservation_proposals_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalReobservationProposalCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalReobservationProposalView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/external-reobservation-proposals/approve:
+    post:
+      tags:
+      - external-reobservation
+      summary: Approve Proposal
+      operationId: approve_proposal_v1_external_reobservation_proposals_approve_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalReobservationProposalApprovalRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalReobservationProposalView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/organization-work-roster:
+    get:
+      summary: List the bounded organization work roster
+      description: >-
+        Roster entries are durable work metadata only and do not authenticate a
+        principal or grant any permission. Normal readers receive ACTIVE entries;
+        includeInactive requires organization member administration permission.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: includeInactive, schema: { type: boolean, default: false } }
+        - { in: query, name: search, schema: { type: [string, 'null'], maxLength: 120 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        '200':
+          description: At most 100 scoped roster members; the creation cap prevents silent omission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationWorkRosterListResponse' }
+        '401': { description: Authentication failed }
+        '403': { description: SITES_READ required; inactive roster management is ADMIN only }
+        '422': { description: Invalid query }
+  /v1/organization-work-roster/{principal_id}:
+    put:
+      summary: Create or revise one organization work roster metadata entry
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: principal_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationWorkRosterUpsertRequest' }
+      responses:
+        '200':
+          description: Retained metadata snapshot; the subject receives no identity or permission grant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationWorkRosterMember' }
+        '401': { description: Authentication failed }
+        '403': { description: ADMIN organization member management required }
+        '409': { description: Idempotency, revision, or roster capacity conflict }
+        '422': { description: Invalid body or header }
+        '503': { description: Durable journal unavailable }
+  /v1/work-inbox:
+    get:
+      summary: List current recipient in-app work notices
+      description: >-
+        Notices are typed references only. Assignment facts are reconstructed
+        from the WorkOrder operations journal; report shares carry exact retained
+        report identity. No external delivery transport is activated.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: unreadOnly, schema: { type: boolean, default: false } }
+        - { in: query, name: after, schema: { type: [string, 'null'], maxLength: 255 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200':
+          description: Recipient-scoped page with explicit nextCursor when more notices exist.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkInboxPage' }
+        '401': { description: Authentication failed }
+        '403': { description: Human SITES_READ required }
+        '404': { description: Cursor is not in the current recipient inbox }
+        '422': { description: Invalid query }
+  /v1/work-inbox/{notification_ref}/read:
+    post:
+      summary: Monotonically mark one current recipient notification read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: notification_ref, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      responses:
+        '200':
+          description: Recipient-bound durable read receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkInboxReadReceipt' }
+        '401': { description: Authentication failed }
+        '403': { description: Human SITES_READ required }
+        '404': { description: Notification not found for current recipient }
+        '409': { description: Idempotency conflict }
+        '422': { description: Invalid path or header }
+        '503': { description: Durable journal unavailable }
+  /v1/external-relative-volume-reports/{report_ref}/shares:
+    post:
+      summary: Share one exact retained external report with an active organization roster recipient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: report_ref, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalReportShareIntent' }
+      responses:
+        '201':
+          description: Exact scoped share intent; it does not create a public link or grant resource authorization.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReportShare' }
+        '401': { description: Authentication failed }
+        '403': { description: Human WORK_ORDERS_WRITE required }
+        '404': { description: Scoped report or active recipient not found }
+        '409': { description: Idempotency conflict }
+        '422': { description: Invalid body or header }
+        '503': { description: Report source unavailable or durable journal unavailable }
 components:
   parameters:
     WorkerInstanceId:
@@ -5546,10 +6788,2035 @@ components:
   # 정의상 0 이 되지만 게이트도 같이 무의미해진다. 이 파일은 "사람이 승인한
   # 의도"고, 대조의 의미는 그 의도와 구현이 갈라졌는지를 묻는 데 있다.
   #
-  # 타입은 구현의 정밀도까지 복제하지 않는다(대조 대상은 필드 이름과 필수 여부다)
-  # — 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유
-  # 형태이고, 그 내부 구조의 정본은 contracts/schemas/*.json 이다.
+  # 자유 형태 payload(bundle·transitions·siteFrame)는 계약상으로도 자유 형태이고,
+  # 그 내부 구조의 정본은 contracts/schemas/*.json 이다. 다만 external inspection
+  # worker/public 응답은 sealed immutable DTO를 넘기므로 아래에서 중첩 enum·bounds·null
+  # shape까지 명시한다. test_api_contract_sync.py가 FastAPI 모델과 재귀 대조한다.
   schemas:
+    OrganizationWorkRoleHint:
+      type: string
+      enum: [ADMIN, FIELD_OPERATOR, VIEWER]
+    OrganizationWorkRosterStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    OrganizationWorkRosterMember:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, organizationId, principalId, displayName, roleHint, status, revision, updatedAt, updatedBy]
+      properties:
+        schemaVersion: { type: string, const: '1.0', default: '1.0' }
+        organizationId: { type: string, minLength: 1, maxLength: 255 }
+        principalId: { type: string, minLength: 1, maxLength: 255 }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        roleHint: { $ref: '#/components/schemas/OrganizationWorkRoleHint' }
+        status: { $ref: '#/components/schemas/OrganizationWorkRosterStatus' }
+        revision: { type: integer, minimum: 1 }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, minLength: 1, maxLength: 255 }
+    OrganizationWorkRosterListResponse:
+      type: object
+      additionalProperties: false
+      required: [members]
+      properties:
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/OrganizationWorkRosterMember' }
+    OrganizationWorkRosterUpsertRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, displayName, roleHint, status]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        roleHint: { $ref: '#/components/schemas/OrganizationWorkRoleHint' }
+        status: { $ref: '#/components/schemas/OrganizationWorkRosterStatus' }
+    WorkInboxNotificationKind:
+      type: string
+      enum: [WORK_ORDER_ASSIGNED, EXTERNAL_REPORT_SHARED]
+    WorkInboxTarget:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [WORK_ORDER, EXTERNAL_REPORT] }
+        workOrderId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        siteId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        reportRef: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+    WorkInboxItem:
+      type: object
+      additionalProperties: false
+      required: [notificationRef, kind, target, senderPrincipalId, createdAt, unread]
+      properties:
+        notificationRef: { type: string, minLength: 1, maxLength: 255 }
+        kind: { $ref: '#/components/schemas/WorkInboxNotificationKind' }
+        target: { $ref: '#/components/schemas/WorkInboxTarget' }
+        senderPrincipalId: { type: string, minLength: 1, maxLength: 255 }
+        createdAt: { type: string, format: date-time }
+        unread: { type: boolean }
+    WorkInboxPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkInboxItem' }
+        nextCursor: { type: [string, 'null'] }
+    WorkInboxReadReceipt:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, organizationId, recipientPrincipalId, notificationRef, readAt]
+      properties:
+        schemaVersion: { type: string, const: '1.0', default: '1.0' }
+        organizationId: { type: string, minLength: 1, maxLength: 255 }
+        recipientPrincipalId: { type: string, minLength: 1, maxLength: 255 }
+        notificationRef: { type: string, minLength: 1, maxLength: 255 }
+        readAt: { type: string, format: date-time }
+    ExternalReportShareIntent:
+      type: object
+      additionalProperties: false
+      required: [recipientPrincipalId]
+      properties:
+        recipientPrincipalId: { type: string, minLength: 1, maxLength: 255 }
+    ExternalReportShare:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, shareRef, organizationId, senderPrincipalId, recipientPrincipalId, siteId, reportRef, reportDigest, createdAt]
+      properties:
+        schemaVersion: { type: string, const: '1.0', default: '1.0' }
+        shareRef: { type: string, minLength: 1, maxLength: 255 }
+        organizationId: { type: string, minLength: 1, maxLength: 255 }
+        senderPrincipalId: { type: string, minLength: 1, maxLength: 255 }
+        recipientPrincipalId: { type: string, minLength: 1, maxLength: 255 }
+        siteId: { type: string, minLength: 1, maxLength: 255 }
+        reportRef: { type: string, minLength: 1, maxLength: 255 }
+        reportDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        createdAt: { type: string, format: date-time }
+    ExternalRelativeVolumeWorkerReportInput:
+      properties:
+        payload:
+          $ref: '#/components/schemas/ExternalRelativeVolumeMeasurementPayloadV1'
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+      additionalProperties: false
+      type: object
+      required:
+      - payload
+      - computedAt
+      title: ExternalRelativeVolumeWorkerReportInput
+    ExternalRelativeVolumeMeasurementPayloadV1:
+      properties:
+        factClass:
+          type: string
+          const: OBSERVED
+          title: Factclass
+          default: OBSERVED
+        requestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Requestdigest
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        baselineDsmDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselinedsmdigest
+        currentDsmDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentdsmdigest
+        zoneSnapshotDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Zonesnapshotdigest
+        executionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Executionpolicydigest
+        algorithmBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmbuilddigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        metrics:
+          $ref: '#/components/schemas/ExternalVolumeMetricsV1'
+      additionalProperties: false
+      type: object
+      required:
+      - requestDigest
+      - decisionDigest
+      - baselineDsmDigest
+      - currentDsmDigest
+      - zoneSnapshotDigest
+      - executionPolicyDigest
+      - algorithmBuildDigest
+      - configDigest
+      - metrics
+      title: ExternalRelativeVolumeMeasurementPayloadV1
+      description: Deterministic observed measurement content, excluding worker and fence
+        facts.
+    ExternalVolumeMetricsV1:
+      properties:
+        zoneCellCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Zonecellcount
+        commonValidCellCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Commonvalidcellcount
+        zoneAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Zoneaream2
+        measuredAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Measuredaream2
+        commonValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Commonvalidfraction
+        cutM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Cutm3
+        fillM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Fillm3
+        netM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: -1.0e+300
+          title: Netm3
+        thresholdM:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Thresholdm
+        uncertaintyM3:
+          anyOf:
+          - type: number
+            maximum: 1.0e+300
+            minimum: 0.0
+          - type: 'null'
+          title: Uncertaintym3
+        uncertaintyNote:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Uncertaintynote
+      additionalProperties: false
+      type: object
+      required:
+      - zoneCellCount
+      - commonValidCellCount
+      - zoneAreaM2
+      - measuredAreaM2
+      - commonValidFraction
+      - cutM3
+      - fillM3
+      - netM3
+      - thresholdM
+      - uncertaintyNote
+      title: ExternalVolumeMetricsV1
+      description: Auditable, finite full-zone coverage and volume arithmetic.
+    ExternalRelativeVolumeListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExternalRelativeVolumeRequestView'
+          type: array
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: ExternalRelativeVolumeListResponse
+    ExternalRelativeVolumeMutationResponse:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/ExternalRelativeVolumeVerdict'
+        request:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalRelativeVolumeRequestView'
+          - type: 'null'
+        fence:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalRelativeVolumeLeaseFenceView'
+          - type: 'null'
+        leaseExpiresAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Leaseexpiresat
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      title: ExternalRelativeVolumeMutationResponse
+    ExternalRelativeVolumeVerdict:
+      type: string
+      enum:
+      - ISSUED
+      - ALREADY_ISSUED
+      - IDEMPOTENCY_CONFLICT
+      - QUEUE_FULL
+      - AUTHORITY_UNAVAILABLE
+      - NOT_FOUND
+      - STORE_UNAVAILABLE
+      - REQUEST_NOT_ACTIVE
+      - DEADLINE_EXPIRED
+      - RETRY_EXHAUSTED
+      - LEASED
+      - LEASE_RENEWED
+      - LEASE_REQUIRED
+      - LEASE_HELD_BY_ANOTHER
+      - STALE_LEASE_ACQUISITION
+      - STALE_LEASE_GENERATION
+      - INVALID_LEASE_FENCE
+      - INPUT_READY
+      - REPORTED
+      - REPORT_CONFLICT
+      - INVALID_REPORT
+      - FAILED
+      title: ExternalRelativeVolumeVerdict
+    ExternalRelativeVolumeIssueInput:
+      properties:
+        decisionRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionref
+      additionalProperties: false
+      type: object
+      required:
+      - decisionRef
+      title: ExternalRelativeVolumeIssueInput
+    ExternalRelativeVolumeWorkerInputResponse:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/ExternalRelativeVolumeVerdict'
+        input:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalRelativeVolumeWorkerInputView'
+          - type: 'null'
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      title: ExternalRelativeVolumeWorkerInputResponse
+    ExternalRelativeVolumeWorkerInputView:
+      properties:
+        request:
+          additionalProperties: true
+          type: object
+          title: Request
+        executionPolicy:
+          additionalProperties: true
+          type: object
+          title: Executionpolicy
+        validationPolicy:
+          $ref: '#/components/schemas/ExternalValidationPolicyV1'
+        volumeEvidenceRecords:
+          prefixItems:
+          - $ref: '#/components/schemas/ExternalEvidenceRecordV1'
+          - $ref: '#/components/schemas/ExternalEvidenceRecordV1'
+          type: array
+          maxItems: 2
+          minItems: 2
+          title: Volumeevidencerecords
+        inputs:
+          prefixItems:
+          - $ref: '#/components/schemas/ExternalRelativeVolumeInputCapability'
+          - $ref: '#/components/schemas/ExternalRelativeVolumeInputCapability'
+          type: array
+          maxItems: 2
+          minItems: 2
+          title: Inputs
+      additionalProperties: false
+      type: object
+      required:
+      - request
+      - executionPolicy
+      - validationPolicy
+      - volumeEvidenceRecords
+      - inputs
+      title: ExternalRelativeVolumeWorkerInputView
+    ExternalRelativeVolumeInputCapability:
+      properties:
+        role:
+          type: string
+          title: Role
+        downloadUrl:
+          type: string
+          title: Downloadurl
+        requiredHeaders:
+          additionalProperties:
+            type: string
+          type: object
+          title: Requiredheaders
+        expiresAt:
+          type: string
+          format: date-time
+          title: Expiresat
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      - downloadUrl
+      - requiredHeaders
+      - expiresAt
+      title: ExternalRelativeVolumeInputCapability
+    ExternalRelativeVolumeHeartbeatInput:
+      properties:
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+      additionalProperties: false
+      type: object
+      required:
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      title: ExternalRelativeVolumeHeartbeatInput
+    ExternalRelativeVolumeRequestView:
+      properties:
+        requestRef:
+          type: string
+          title: Requestref
+        status:
+          $ref: '#/components/schemas/ExternalRelativeVolumeStatus'
+        currentWorkOrderId:
+          type: string
+          title: Currentworkorderid
+        decisionDigest:
+          type: string
+          title: Decisiondigest
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        deadlineAt:
+          type: string
+          format: date-time
+          title: Deadlineat
+        reportRef:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reportref
+        reportDigest:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reportdigest
+      additionalProperties: false
+      type: object
+      required:
+      - requestRef
+      - status
+      - currentWorkOrderId
+      - decisionDigest
+      - issuedAt
+      - deadlineAt
+      - reportRef
+      - reportDigest
+      title: ExternalRelativeVolumeRequestView
+    ExternalRelativeVolumeStatus:
+      type: string
+      enum:
+      - QUEUED
+      - RUNNING
+      - SUCCEEDED
+      - FAILED
+      title: ExternalRelativeVolumeStatus
+    ExternalRelativeVolumeWorkerFailureInput:
+      properties:
+        reason:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      title: ExternalRelativeVolumeWorkerFailureInput
+    ExternalRelativeVolumePendingResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExternalRelativeVolumePendingView'
+          type: array
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: ExternalRelativeVolumePendingResponse
+    ExternalRelativeVolumePendingView:
+      properties:
+        requestRef:
+          type: string
+          title: Requestref
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+      additionalProperties: false
+      type: object
+      required:
+      - requestRef
+      - issuedAt
+      title: ExternalRelativeVolumePendingView
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    ExternalRelativeVolumeLeaseInput:
+      properties:
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 0.0
+          title: Leasegeneration
+        mode:
+          $ref: '#/components/schemas/LeaseMode'
+          default: CLAIM
+      additionalProperties: false
+      type: object
+      required:
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      title: ExternalRelativeVolumeLeaseInput
+    LeaseMode:
+      type: string
+      enum:
+      - CLAIM
+      - RENEW
+      title: LeaseMode
+    ArtifactInspectionOutcomeV1:
+      properties:
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+        outcome:
+          $ref: '#/components/schemas/ArtifactOutcome'
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          - type: 'null'
+          title: Reason
+        measurements:
+          anyOf:
+          - $ref: '#/components/schemas/RasterMeasurementsV1'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - artifactId
+      - observedSha256
+      - outcome
+      title: ArtifactInspectionOutcomeV1
+    ArtifactOutcome:
+      type: string
+      enum:
+      - MEASURED
+      - NOT_APPLICABLE
+      - REJECTED
+      title: ArtifactOutcome
+    ExternalArtifactInputView:
+      properties:
+        entryId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Entryid
+        kind:
+          $ref: '#/components/schemas/ProcessingArtifactKind'
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+        observedSizeBytes:
+          type: integer
+          minimum: 1.0
+          title: Observedsizebytes
+        contentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Contenttype
+        downloadUrl:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Downloadurl
+        requiredHeaders:
+          additionalProperties:
+            type: string
+          type: object
+          title: Requiredheaders
+      additionalProperties: false
+      type: object
+      required:
+      - entryId
+      - kind
+      - observedSha256
+      - observedSizeBytes
+      - contentType
+      - downloadUrl
+      - requiredHeaders
+      title: ExternalArtifactInputView
+    ExternalArtifactInspectionPublicView:
+      properties:
+        registrationState:
+          type: string
+          enum:
+          - REGISTERED
+          - SEALED
+          title: Registrationstate
+        sealState:
+          type: string
+          enum:
+          - UNSEALED
+          - SEALED
+          title: Sealstate
+        inspection:
+          $ref: '#/components/schemas/PublicInspectionDetailView'
+        display:
+          $ref: '#/components/schemas/PublicDisplayDetailView'
+      additionalProperties: false
+      type: object
+      required:
+      - registrationState
+      - sealState
+      - inspection
+      - display
+      title: ExternalArtifactInspectionPublicView
+    ExternalArtifactInspectionReportV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-artifact-inspection-report.v1
+          title: Contractversion
+          default: external-artifact-inspection-report.v1
+        reportId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportid
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        subject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        subjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Subjectdigest
+        sealedManifestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sealedmanifestdigest
+        inspectionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionpolicydigest
+        inspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectorbuilddigest
+        measurementPayload:
+          $ref: '#/components/schemas/ExternalInspectionMeasurementPayloadV1'
+        measurementPayloadDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Measurementpayloaddigest
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+        reportedAt:
+          type: string
+          format: date-time
+          title: Reportedat
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reportId
+      - requestId
+      - subject
+      - subjectDigest
+      - sealedManifestDigest
+      - inspectionPolicyDigest
+      - inspectorBuildDigest
+      - measurementPayload
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      - reportedAt
+      title: ExternalArtifactInspectionReportV1
+      description: Fenced worker report; only its measurement payload is independently hashed.
+    ExternalArtifactInspectionRequestV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-artifact-inspection-request.v1
+          title: Contractversion
+          default: external-artifact-inspection-request.v1
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        subject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        inspectionPolicyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Inspectionpolicyid
+        inspectionPolicyVersion:
+          type: integer
+          minimum: 1.0
+          title: Inspectionpolicyversion
+        inspectionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionpolicydigest
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        idempotencyKey:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Idempotencykey
+      additionalProperties: false
+      type: object
+      required:
+      - requestId
+      - subject
+      - inspectionPolicyId
+      - inspectionPolicyVersion
+      - inspectionPolicyDigest
+      - issuedAt
+      - idempotencyKey
+      title: ExternalArtifactInspectionRequestV1
+      description: Core-issued inspection intent without a client resource envelope.
+    ExternalDisplayArtifactGrantView:
+      properties:
+        verdict:
+          type: string
+          enum:
+          - QUEUED
+          - DISPLAY_NOT_REQUIRED
+          - LEASE_FENCE_REJECTED
+          - POLICY_UNAVAILABLE
+          - DECLARATION_RECORDED
+          - DECLARATION_DIVERGENCE
+          - OBSERVATION_MISSING
+          - OBSERVATION_MISMATCH
+          - SEALED
+          - RETRY_EXHAUSTED
+          - STORAGE_UNAVAILABLE
+          - OUTPUT_LIMIT_EXCEEDED
+          title: Verdict
+        phase:
+          type: string
+          enum:
+          - NOT_REQUIRED
+          - QUEUED
+          - RUNNING
+          - SEALED
+          - RETRY_EXHAUSTED
+          title: Phase
+        declaration:
+          anyOf:
+          - $ref: '#/components/schemas/SanitizedDisplayDeclarationV1'
+          - type: 'null'
+        uploadUrl:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Uploadurl
+        requiredHeaders:
+          additionalProperties:
+            type: string
+          type: object
+          title: Requiredheaders
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      - phase
+      - declaration
+      - uploadUrl
+      - requiredHeaders
+      title: ExternalDisplayArtifactGrantView
+    ExternalDisplayArtifactSealView:
+      properties:
+        verdict:
+          type: string
+          enum:
+          - QUEUED
+          - DISPLAY_NOT_REQUIRED
+          - LEASE_FENCE_REJECTED
+          - POLICY_UNAVAILABLE
+          - DECLARATION_RECORDED
+          - DECLARATION_DIVERGENCE
+          - OBSERVATION_MISSING
+          - OBSERVATION_MISMATCH
+          - SEALED
+          - RETRY_EXHAUSTED
+          - STORAGE_UNAVAILABLE
+          - OUTPUT_LIMIT_EXCEEDED
+          title: Verdict
+        phase:
+          type: string
+          enum:
+          - NOT_REQUIRED
+          - QUEUED
+          - RUNNING
+          - SEALED
+          - RETRY_EXHAUSTED
+          title: Phase
+        receipt:
+          $ref: '#/components/schemas/SanitizedDisplayReceiptV1'
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      - phase
+      - receipt
+      title: ExternalDisplayArtifactSealView
+    ExternalInspectionFailureRequest:
+      properties:
+        reason:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Reason
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      title: ExternalInspectionFailureRequest
+      description: Worker's bounded incomplete-attempt fact; parser output never enters Core.
+    ExternalInspectionInputView:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/InspectionVerdict'
+        request:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionRequestV1'
+          - type: 'null'
+        policy:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalValidationPolicyV1'
+          - type: 'null'
+        artifacts:
+          items:
+            $ref: '#/components/schemas/ExternalArtifactInputView'
+          type: array
+          title: Artifacts
+        phase:
+          anyOf:
+          - $ref: '#/components/schemas/InspectionPhase'
+          - type: 'null'
+        nextAction:
+          anyOf:
+          - type: string
+            enum:
+            - INSPECT
+            - SANITIZE_DISPLAY
+          - type: 'null'
+          title: Nextaction
+        acceptedReport:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionReportV1'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      - request
+      - policy
+      - artifacts
+      - phase
+      - nextAction
+      - acceptedReport
+      title: ExternalInspectionInputView
+    ExternalInspectionLeaseFenceView:
+      properties:
+        workerInstanceId:
+          type: string
+          format: uuid
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          format: uuid
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+      additionalProperties: false
+      type: object
+      required:
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      title: ExternalInspectionLeaseFenceView
+    ExternalInspectionLeaseView:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/InspectionVerdict'
+        request:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionRequestV1'
+          - type: 'null'
+        leaseExpiresAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Leaseexpiresat
+        phase:
+          anyOf:
+          - $ref: '#/components/schemas/InspectionPhase'
+          - type: 'null'
+        fence:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalInspectionLeaseFenceView'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      - request
+      - leaseExpiresAt
+      - phase
+      - fence
+      title: ExternalInspectionLeaseView
+    ExternalInspectionMeasurementPayloadV1:
+      properties:
+        factClass:
+          type: string
+          const: OBSERVED
+          title: Factclass
+          default: OBSERVED
+        subjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Subjectdigest
+        sealedManifestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sealedmanifestdigest
+        inspectionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionpolicydigest
+        inspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectorbuilddigest
+        artifactBindings:
+          items:
+            $ref: '#/components/schemas/SealedArtifactBindingV1'
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Artifactbindings
+        outcomes:
+          items:
+            $ref: '#/components/schemas/ArtifactInspectionOutcomeV1'
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Outcomes
+      additionalProperties: false
+      type: object
+      required:
+      - subjectDigest
+      - sealedManifestDigest
+      - inspectionPolicyDigest
+      - inspectorBuildDigest
+      - artifactBindings
+      - outcomes
+      title: ExternalInspectionMeasurementPayloadV1
+      description: Canonical worker payload; envelope execution facts live on the report instead.
+    ExternalInspectionOutcomeView:
+      properties:
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        outcome:
+          $ref: '#/components/schemas/ArtifactOutcome'
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - artifactId
+      - outcome
+      - reason
+      title: ExternalInspectionOutcomeView
+    ExternalInspectionPendingItemView:
+      properties:
+        requestId:
+          type: string
+          title: Requestid
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        phase:
+          $ref: '#/components/schemas/InspectionPhase'
+      additionalProperties: false
+      type: object
+      required:
+      - requestId
+      - issuedAt
+      - phase
+      title: ExternalInspectionPendingItemView
+    ExternalInspectionPendingListView:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExternalInspectionPendingItemView'
+          type: array
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: ExternalInspectionPendingListView
+    ExternalInspectionReportView:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/InspectionVerdict'
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionReportV1'
+          - type: 'null'
+        phase:
+          anyOf:
+          - $ref: '#/components/schemas/InspectionPhase'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      - report
+      - phase
+      title: ExternalInspectionReportView
+    ExternalSanitizedDisplayDownloadView:
+      properties:
+        sanitizedDisplayRef:
+          type: string
+          pattern: ^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$
+          title: Sanitizeddisplayref
+        receiptDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Receiptdigest
+        observedDerivativeSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedderivativesha256
+        observedDerivativeSizeBytes:
+          type: integer
+          minimum: 1.0
+          title: Observedderivativesizebytes
+        observedDerivativeContentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observedderivativecontenttype
+        downloadUrl:
+          type: string
+          minLength: 1
+          title: Downloadurl
+        expiresAt:
+          type: string
+          format: date-time
+          title: Expiresat
+        requiredHeaders:
+          additionalProperties:
+            type: string
+          type: object
+          title: Requiredheaders
+      additionalProperties: false
+      type: object
+      required:
+      - sanitizedDisplayRef
+      - receiptDigest
+      - observedDerivativeSha256
+      - observedDerivativeSizeBytes
+      - observedDerivativeContentType
+      - downloadUrl
+      - expiresAt
+      - requiredHeaders
+      title: ExternalSanitizedDisplayDownloadView
+    EvidenceCoreVerdict:
+      type: string
+      enum: [VALIDATED, REJECTED]
+    EvidenceValidationVerdict:
+      type: string
+      enum: [ISSUED, IDEMPOTENT, EVIDENCE_NOT_SEALED, POLICY_UNAVAILABLE, CONTEXT_UNAVAILABLE, CONTEXT_BINDING_REJECTED, LEASED, LEASE_FENCE_REJECTED, NOT_FOUND, INPUT_UNAVAILABLE, VALIDATED, REJECTED, PAYLOAD_DIVERGENCE, STORAGE_UNAVAILABLE, RETRY_EXHAUSTED]
+    ExternalIndependenceAttestationV1:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion: { type: string }
+        attestationId: { type: string }
+        evidenceManifestDigest: { type: string }
+        subjectDigest: { type: string }
+        targetDsmObservedSha256: { type: string }
+        confirmedByActorId: { type: string }
+        confirmedAt: { type: string, format: date-time }
+        reconstructionExclusionBasis: { type: string }
+        syntheticTestOnly: { type: boolean }
+        attestationDigest: { type: [string, 'null'] }
+      required: [attestationId, evidenceManifestDigest, subjectDigest, targetDsmObservedSha256, confirmedByActorId, confirmedAt, reconstructionExclusionBasis, syntheticTestOnly]
+    ExternalEvidenceMeasurementContextV1:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion: { type: string }
+        contextId: { type: string }
+        subject: { $ref: '#/components/schemas/SealedExternalSubjectV1' }
+        evidenceManifestDigest: { type: string }
+        evidenceObservedSha256: { type: string }
+        evidenceObservedSizeBytes: { type: integer }
+        targetDsmArtifactId: { type: string }
+        targetDsmObservedSha256: { type: string }
+        policyDigest: { type: string }
+        measurementExecutionManifestDigest: { type: string }
+        ruleId: { type: string }
+        csvHorizontalCrs: { type: string }
+        csvVerticalReferenceDigest: { type: string }
+        minimumCheckpointCount: { type: integer }
+        maximumCheckpointCount: { type: integer }
+        maximumRmseM: { type: number }
+        maximumAbsMeanErrorM: { type: number }
+        maximumAbsErrorM: { type: number }
+        independentAttestation: { anyOf: [{ $ref: '#/components/schemas/ExternalIndependenceAttestationV1' }, { type: 'null' }] }
+        authorizedActorIds: { type: array, items: { type: string } }
+        activeFrom: { type: string, format: date-time }
+        activeUntil: { type: string, format: date-time }
+        syntheticTestOnly: { type: boolean }
+        contextDigest: { type: [string, 'null'] }
+      required: [contextId, subject, evidenceManifestDigest, evidenceObservedSha256, evidenceObservedSizeBytes, targetDsmArtifactId, targetDsmObservedSha256, policyDigest, measurementExecutionManifestDigest, ruleId, csvHorizontalCrs, csvVerticalReferenceDigest, minimumCheckpointCount, maximumCheckpointCount, maximumRmseM, maximumAbsMeanErrorM, maximumAbsErrorM, independentAttestation, authorizedActorIds, activeFrom, activeUntil, syntheticTestOnly]
+    ExternalEvidenceValidationRequestV1:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion: { type: string }
+        validationId: { type: string, minLength: 1, maxLength: 255 }
+        evidenceManifestDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        subjectDigest: { type: string }
+        targetDsmObservedSha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        policyId: { type: string }
+        policyVersion: { type: integer }
+        policyDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        issuedAt: { type: string, format: date-time }
+        idempotencyKey: { type: string }
+      required: [validationId, evidenceManifestDigest, subjectDigest, targetDsmObservedSha256, policyId, policyVersion, policyDigest, issuedAt, idempotencyKey]
+    ExternalEvidenceMeasurementPayloadV1:
+      type: object
+      additionalProperties: false
+      properties:
+        factClass: { type: string }
+        validationId: { type: string, minLength: 1, maxLength: 255 }
+        evidenceManifestDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        targetDsmObservedSha256: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        policyDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        measuredCheckpointCount: { type: integer, exclusiveMinimum: 0 }
+        meanErrorM: { type: number }
+        maeM: { type: number, minimum: 0 }
+        rmseM: { type: number, minimum: 0 }
+        maxAbsErrorM: { type: number, minimum: 0 }
+        measuredAt: { type: string, format: date-time }
+      required: [validationId, evidenceManifestDigest, targetDsmObservedSha256, policyDigest, measuredCheckpointCount, meanErrorM, maeM, rmseM, maxAbsErrorM, measuredAt]
+    ExternalEvidenceRecordV1:
+      type: object
+      additionalProperties: false
+      properties:
+        contractVersion: { type: string }
+        evidenceRecordId: { type: string }
+        validationId: { type: string }
+        subjectDigest: { type: string }
+        evidenceManifestDigest: { type: string }
+        targetDsmObservedSha256: { type: string }
+        policyDigest: { type: string }
+        measurementPayload: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceMeasurementPayloadV1' }, { type: 'null' }] }
+        coreVerdict: { $ref: '#/components/schemas/EvidenceCoreVerdict' }
+        coreReason: { type: [string, 'null'] }
+        coreRecordedAt: { type: string, format: date-time }
+        evidenceRecordDigest: { type: [string, 'null'] }
+      required: [evidenceRecordId, validationId, subjectDigest, evidenceManifestDigest, targetDsmObservedSha256, policyDigest, coreVerdict, coreRecordedAt]
+    ExternalEvidenceValidationFailureRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$' }
+      required: [reason]
+    ExternalUseDecisionResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        decision: { type: object, additionalProperties: true }
+      required: [decision]
+    ExternalEvidenceValidationPendingView:
+      type: object
+      additionalProperties: false
+      properties:
+        validationId: { type: string }
+        issuedAt: { type: string, format: date-time }
+      required: [validationId, issuedAt]
+    ExternalEvidenceValidationPendingListView:
+      type: object
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ExternalEvidenceValidationPendingView' } }
+      required: [items]
+    ExternalEvidenceValidationLeaseFenceView:
+      type: object
+      additionalProperties: false
+      properties:
+        workerInstanceId: { type: string }
+        leaseAcquisitionId: { type: string }
+        leaseGeneration: { type: integer }
+      required: [workerInstanceId, leaseAcquisitionId, leaseGeneration]
+    ExternalEvidenceValidationLeaseView:
+      type: object
+      additionalProperties: false
+      properties:
+        verdict: { $ref: '#/components/schemas/EvidenceValidationVerdict' }
+        request: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceValidationRequestV1' }, { type: 'null' }] }
+        fence: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceValidationLeaseFenceView' }, { type: 'null' }] }
+        leaseExpiresAt: { type: [string, 'null'] }
+      required: [verdict]
+    ExternalEvidenceValidationInputBindingView:
+      type: object
+      additionalProperties: false
+      properties:
+        role: { type: string }
+        artifactId: { type: string }
+        observedSizeBytes: { type: integer }
+        observedSha256: { type: string }
+        contentType: { type: string }
+        downloadUrl: { type: string }
+        requiredHeaders: { type: object, additionalProperties: { type: string } }
+      required: [role, artifactId, observedSha256, observedSizeBytes, contentType, downloadUrl, requiredHeaders]
+    ExternalEvidenceValidationInputView:
+      type: object
+      additionalProperties: false
+      properties:
+        verdict: { $ref: '#/components/schemas/EvidenceValidationVerdict' }
+        request: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceValidationRequestV1' }, { type: 'null' }] }
+        validationPolicy: { anyOf: [{ $ref: '#/components/schemas/ExternalValidationPolicyV1' }, { type: 'null' }] }
+        context: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceMeasurementContextV1' }, { type: 'null' }] }
+        bindings: { type: array, items: { $ref: '#/components/schemas/ExternalEvidenceValidationInputBindingView' } }
+      required: [verdict, bindings]
+    ExternalEvidenceValidationMeasurementView:
+      type: object
+      additionalProperties: false
+      properties:
+        verdict: { $ref: '#/components/schemas/EvidenceValidationVerdict' }
+        record: { anyOf: [{ $ref: '#/components/schemas/ExternalEvidenceRecordV1' }, { type: 'null' }] }
+      required: [verdict]
+    ExternalValidationPolicyV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-validation-policy.v1
+          title: Contractversion
+          default: external-validation-policy.v1
+        policyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Policyid
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        status:
+          $ref: '#/components/schemas/PolicyStatus'
+        parserBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Parserbuilddigest
+        grammarDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Grammardigest
+        resourceEnvelope:
+          anyOf:
+          - $ref: '#/components/schemas/ResourceEnvelopeV1'
+          - type: 'null'
+        resourceEnvelopeDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Resourceenvelopedigest
+        authorityRecordDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Authorityrecorddigest
+        inspectionRuleIds:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 64
+          title: Inspectionruleids
+        evidenceRuleIds:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 64
+          title: Evidenceruleids
+        compatibilityMappingDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          title: Compatibilitymappingdigests
+        syntheticTestOnly:
+          type: boolean
+          title: Synthetictestonly
+          default: false
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+      additionalProperties: false
+      type: object
+      required:
+      - policyId
+      - version
+      - status
+      - parserBuildDigest
+      - grammarDigest
+      - inspectionRuleIds
+      - evidenceRuleIds
+      - compatibilityMappingDigests
+      title: ExternalValidationPolicyV1
+      description: Policy snapshot, never evidence truth or a configurable verified escape.
+    InspectionPhase:
+      type: string
+      enum:
+      - INSPECTION
+      - DISPLAY
+      - COMPLETE
+      - FAILED_INCOMPLETE
+      title: InspectionPhase
+    InspectionVerdict:
+      type: string
+      enum:
+      - ISSUED
+      - IDEMPOTENT
+      - INSPECTION_PENDING_POLICY
+      - SUBJECT_NOT_SEALED
+      - LEASED
+      - LEASE_FENCE_REJECTED
+      - POLICY_UNAVAILABLE
+      - NOT_FOUND
+      - REPORTED
+      - PAYLOAD_DIVERGENCE
+      - REPORT_BINDING_REJECTED
+      - INSPECTION_FAILED_INCOMPLETE
+      - QUEUED
+      - STORAGE_UNAVAILABLE
+      - QUEUE_FULL
+      - CONCURRENCY_LIMIT
+      - DEADLINE_EXCEEDED
+      - RETRY_EXHAUSTED
+      title: InspectionVerdict
+    NodataRepresentation:
+      type: string
+      enum:
+      - NONE
+      - FINITE
+      - NAN
+      - MASK
+      title: NodataRepresentation
+      description: JSON-safe parser observation; NAN is a token, never a non-finite JSON value.
+    ObservedVerticalReferenceV1:
+      properties:
+        identifier:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Identifier
+        basis:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Basis
+      additionalProperties: false
+      type: object
+      required:
+      - identifier
+      - basis
+      title: ObservedVerticalReferenceV1
+      description: Parser-observed vertical identifier/basis, distinct from a user declaration.
+    PolicyStatus:
+      type: string
+      enum:
+      - DRAFT
+      - ACTIVE
+      - REVOKED
+      - SUPERSEDED
+      title: PolicyStatus
+    ProcessingArtifactKind:
+      type: string
+      enum:
+      - point_cloud
+      - camera_poses
+      - ortho
+      - dsm
+      - dtm
+      - mesh
+      - tiles_3d
+      - report
+      title: ProcessingArtifactKind
+      description: '산출물 종류. ADR-KSI-003 원칙상 POINT_CLOUD/CAMERA_POSES가 원본,
+
+        ORTHO/DSM/DTM/MESH/TILES_3D가 파생 서빙 계층, REPORT가 파생 분석 산출물이다 —
+
+        실제 계보는 이 값이 아니라 ``lineage.authority``가 밝힌다.'
+    PublicDisplayDetailView:
+      properties:
+        state:
+          type: string
+          enum:
+          - PENDING_INSPECTION
+          - PENDING_POLICY
+          - NOT_REQUIRED
+          - QUEUED
+          - RUNNING
+          - SEALED
+          - RETRY_EXHAUSTED
+          title: State
+        sanitizedDisplayRef:
+          anyOf:
+          - type: string
+            pattern: ^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$
+          - type: 'null'
+          title: Sanitizeddisplayref
+        receiptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Receiptdigest
+      additionalProperties: false
+      type: object
+      required:
+      - state
+      - sanitizedDisplayRef
+      - receiptDigest
+      title: PublicDisplayDetailView
+    PublicInspectionDetailView:
+      properties:
+        state:
+          type: string
+          enum:
+          - INSPECTION_PENDING_SEAL
+          - INSPECTION_PENDING_POLICY
+          - INSPECTION_PENDING
+          - INSPECTION_QUEUED
+          - INSPECTION_RUNNING
+          - INSPECTION_REPORTED
+          - INSPECTION_FAILED_INCOMPLETE
+          title: State
+        request:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionRequestV1'
+          - type: 'null'
+        phase:
+          anyOf:
+          - $ref: '#/components/schemas/InspectionPhase'
+          - type: 'null'
+        outcome:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ExternalInspectionOutcomeView'
+            type: array
+          - type: 'null'
+          title: Outcome
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalArtifactInspectionReportV1'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - state
+      - request
+      - phase
+      - outcome
+      - report
+      title: PublicInspectionDetailView
+    RasterMeasurementsV1:
+      properties:
+        observedCrsIdentifier:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Observedcrsidentifier
+        observedCrsWkt:
+          anyOf:
+          - type: string
+            maxLength: 4096
+            minLength: 1
+          - type: 'null'
+          title: Observedcrswkt
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        observedVerticalReference:
+          anyOf:
+          - $ref: '#/components/schemas/ObservedVerticalReferenceV1'
+          - type: 'null'
+        transform:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 6
+          minItems: 6
+          title: Transform
+        footprintWkt:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Footprintwkt
+        footprintDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Footprintdigest
+        width:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Width
+        height:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Height
+        bandCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Bandcount
+        dtype:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Dtype
+        layout:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Layout
+        nodataRepresentation:
+          $ref: '#/components/schemas/NodataRepresentation'
+        nodataValue:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Nodatavalue
+        validPixelCount:
+          type: integer
+          minimum: 0.0
+          title: Validpixelcount
+      additionalProperties: false
+      type: object
+      required:
+      - observedCrsIdentifier
+      - observedCrsDigest
+      - transform
+      - footprintWkt
+      - footprintDigest
+      - width
+      - height
+      - bandCount
+      - dtype
+      - layout
+      - nodataRepresentation
+      - validPixelCount
+      title: RasterMeasurementsV1
+      description: Worker-observed raster facts, never a compatibility or accuracy assertion.
+    ResourceEnvelopeV1:
+      properties:
+        maxInputBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxinputbytes
+        maxStreamedBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxstreamedbytes
+        maxTiffDirectories:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxtiffdirectories
+        maxTiffEntries:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxtiffentries
+        maxPixels:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxpixels
+        maxBands:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxbands
+        maxBlocks:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxblocks
+        maxDecompressedBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxdecompressedbytes
+        maxSampleBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxsamplebytes
+        maxGeometryVertices:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxgeometryvertices
+        maxCpuSeconds:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Maxcpuseconds
+        maxMemoryBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxmemorybytes
+        maxWorkspaceBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxworkspacebytes
+        maxOutputBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxoutputbytes
+        maxTenantConcurrency:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxtenantconcurrency
+        maxQueueDepth:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxqueuedepth
+        maxDeadlineSeconds:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Maxdeadlineseconds
+        leaseDurationSeconds:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Leasedurationseconds
+        maxRetryAttempts:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Maxretryattempts
+        resourceEnvelopeDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Resourceenvelopedigest
+      additionalProperties: false
+      type: object
+      required:
+      - maxInputBytes
+      - maxStreamedBytes
+      - maxTiffDirectories
+      - maxTiffEntries
+      - maxPixels
+      - maxBands
+      - maxBlocks
+      - maxDecompressedBytes
+      - maxSampleBytes
+      - maxGeometryVertices
+      - maxCpuSeconds
+      - maxMemoryBytes
+      - maxWorkspaceBytes
+      - maxOutputBytes
+      - maxTenantConcurrency
+      - maxQueueDepth
+      - maxDeadlineSeconds
+      - leaseDurationSeconds
+      - maxRetryAttempts
+      title: ResourceEnvelopeV1
+      description: Configured finite worker limits; values are policy data, never client input.
+    SanitizedDisplayDeclarationV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-sanitized-display-artifact.v1
+          title: Contractversion
+          default: external-sanitized-display-artifact.v1
+        recordType:
+          type: string
+          const: SANITIZED_DISPLAY_DECLARATION
+          title: Recordtype
+          default: SANITIZED_DISPLAY_DECLARATION
+        displayId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Displayid
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        sourceSubjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sourcesubjectdigest
+        sourceReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sourcereportdigest
+        policyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Policydigest
+        inspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectorbuilddigest
+        declaredDerivativeSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Declaredderivativesha256
+        declaredDerivativeSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Declaredderivativesizebytes
+        declaredDerivativeContentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Declaredderivativecontenttype
+        declarationDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Declarationdigest
+      additionalProperties: false
+      type: object
+      required:
+      - displayId
+      - requestId
+      - sourceSubjectDigest
+      - sourceReportDigest
+      - policyDigest
+      - inspectorBuildDigest
+      - declaredDerivativeSha256
+      - declaredDerivativeSizeBytes
+      - declaredDerivativeContentType
+      title: SanitizedDisplayDeclarationV1
+      description: Worker declaration of an opaque derivative; no object key or URL is journaled.
+    SanitizedDisplayReceiptV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-sanitized-display-artifact.v1
+          title: Contractversion
+          default: external-sanitized-display-artifact.v1
+        recordType:
+          type: string
+          const: SANITIZED_DISPLAY_RECEIPT
+          title: Recordtype
+          default: SANITIZED_DISPLAY_RECEIPT
+        displayId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Displayid
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        declarationDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Declarationdigest
+        sourceSubjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sourcesubjectdigest
+        sourceReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sourcereportdigest
+        policyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Policydigest
+        inspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectorbuilddigest
+        observedDerivativeSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedderivativesha256
+        observedDerivativeSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Observedderivativesizebytes
+        observedDerivativeContentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observedderivativecontenttype
+        sanitizedDisplayRef:
+          type: string
+          maxLength: 255
+          minLength: 8
+          pattern: ^sda-v1-[A-Za-z0-9][A-Za-z0-9_-]{0,247}$
+          title: Sanitizeddisplayref
+        sealedAt:
+          type: string
+          format: date-time
+          title: Sealedat
+        receiptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Receiptdigest
+      additionalProperties: false
+      type: object
+      required:
+      - displayId
+      - requestId
+      - declarationDigest
+      - sourceSubjectDigest
+      - sourceReportDigest
+      - policyDigest
+      - inspectorBuildDigest
+      - observedDerivativeSha256
+      - observedDerivativeSizeBytes
+      - observedDerivativeContentType
+      - sanitizedDisplayRef
+      - sealedAt
+      title: SanitizedDisplayReceiptV1
+      description: Core-observed derivative receipt with an opaque display reference only.
+    SealedArtifactBindingV1:
+      properties:
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+      additionalProperties: false
+      type: object
+      required:
+      - artifactId
+      - observedSha256
+      title: SealedArtifactBindingV1
+    SealedExternalSubjectV1:
+      properties:
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+        submissionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Submissionid
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        submissionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Submissiondigest
+        manifestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Manifestdigest
+      additionalProperties: false
+      type: object
+      required:
+      - organizationId
+      - siteId
+      - workOrderId
+      - submissionId
+      - revision
+      - submissionDigest
+      - manifestDigest
+      title: SealedExternalSubjectV1
+      description: Exact external revision identity; Core later proves it is in caller scope.
     ExternalEvidenceView:
       type: object
       required: [evidenceRef, state, targetDsmArtifactId, targetDsmObservedSha256, declaredContentDigest, declaredContentType, independenceBasis, declaredAt]
@@ -5566,6 +8833,19 @@ components:
         observedSizeBytes: { type: [integer, 'null'] }
         observedContentType: { type: [string, 'null'] }
         observedAt: { type: [string, 'null'], format: date-time }
+        measurementSummaries:
+          anyOf: [{ type: array, items: { $ref: '#/components/schemas/ExternalEvidenceMeasurementSummaryView' } }, { type: 'null' }]
+    ExternalEvidenceMeasurementSummaryView:
+      type: object
+      additionalProperties: false
+      required: [coreVerdict, measuredCheckpointCount, meanErrorM, maeM, rmseM, recordedAt]
+      properties:
+        coreVerdict: { $ref: '#/components/schemas/EvidenceCoreVerdict' }
+        measuredCheckpointCount: { type: integer, exclusiveMinimum: 0 }
+        meanErrorM: { type: number }
+        maeM: { type: number, minimum: 0 }
+        rmseM: { type: number, minimum: 0 }
+        recordedAt: { type: string, format: date-time }
     ExternalEvidenceListResponse:
       type: object
       required: [items]
@@ -5579,6 +8859,56 @@ components:
         uploadUrl: { type: string }
         expiresAt: { type: string, format: date-time }
         requiredHeaders: { type: object, additionalProperties: { type: string } }
+    ExternalReconstructionContextView:
+      additionalProperties: false
+      description: Registration identity only; grants no acquisition or analysis authority.
+      properties:
+        workOrderId:
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+          type: string
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        expectedEpochId:
+          pattern: ^obs-epoch-[0-9a-f]{24}$
+          title: Expectedepochid
+          type: string
+        cycleNumber:
+          minimum: 1
+          title: Cyclenumber
+          type: integer
+        workOrderVersion:
+          minimum: 1
+          title: Workorderversion
+          type: integer
+        executionMode:
+          anyOf:
+          - $ref: '#/components/schemas/ObservationWorkOrderExecutionMode'
+          - type: 'null'
+        externalPlanningBinding:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalPlanningOnlyWorkOrderBindingV1'
+          - type: 'null'
+          default: null
+        externalResult:
+          $ref: '#/components/schemas/ExternalResultProjectionView'
+      required:
+      - workOrderId
+      - siteId
+      - expectedEpochId
+      - cycleNumber
+      - workOrderVersion
+      - externalResult
+      title: ExternalReconstructionContextView
+      type: object
+    ObservationWorkOrderExecutionMode:
+      type: string
+      enum: [MANAGED_ACQUISITION, EXTERNAL_RECONSTRUCTION]
+      description: Durable execution boundary; nullable only for records written before this field existed.
     ExternalReconstructionRevisionView:
       type: object
       required: [submissionRef, submission, state]
@@ -6162,6 +9492,10 @@ components:
             schemaVersion: { const: '1.0', default: '1.0' }
             maxCaptureSpanSeconds: { type: integer, minimum: 1, maximum: 86400 }
           required: [maxCaptureSpanSeconds]
+        executionMode:
+          anyOf:
+          - $ref: '#/components/schemas/ObservationWorkOrderExecutionMode'
+          - type: 'null'
         cycleNumber: { type: integer }
         status: { type: string }
         statusReason: { type: [string, 'null'] }
@@ -6181,6 +9515,64 @@ components:
         workOrders:
           type: array
           items: { $ref: '#/components/schemas/ObservationWorkOrder' }
+    ObservationWorkOrderOperations:
+      description: >-
+        Administrative state for an external WorkOrder. It is a separate durable
+        projection and does not alter observation evidence, WorkOrder version, or cycle.
+      type: object
+      additionalProperties: false
+      required:
+        [organizationId, siteId, workOrderId, operationsRevision, workflowStatus]
+      properties:
+        schemaVersion: { const: '1.0' }
+        organizationId: { type: string, minLength: 1, maxLength: 255 }
+        siteId: { type: string, minLength: 1, maxLength: 255 }
+        workOrderId: { type: string, minLength: 1, maxLength: 255 }
+        operationsRevision: { type: integer, minimum: 0 }
+        workflowStatus: { type: string, enum: [UNSPECIFIED, OPEN, CLOSED] }
+        assigneePrincipalId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        dueAt: { type: [string, 'null'], format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time }
+        closedBy: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        closeNote: { type: [string, 'null'], maxLength: 500 }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        updatedBy: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+    WorkOrderOperationsListResponse:
+      type: object
+      additionalProperties: false
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          items: { $ref: '#/components/schemas/ObservationWorkOrderOperations' }
+    WorkOrderOperationsAssignmentRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedOperationsRevision, action]
+      properties:
+        expectedOperationsRevision: { type: integer, minimum: 0 }
+        action: { type: string, enum: [ASSIGN_TO_ME, ASSIGN_TO_MEMBER, CLEAR] }
+        assigneePrincipalId: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+    WorkOrderOperationsDueDateRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedOperationsRevision]
+      properties:
+        expectedOperationsRevision: { type: integer, minimum: 0 }
+        dueAt: { type: [string, 'null'], format: date-time }
+    WorkOrderOperationsCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedOperationsRevision]
+      properties:
+        expectedOperationsRevision: { type: integer, minimum: 0 }
+        note: { type: [string, 'null'], maxLength: 500 }
+    WorkOrderOperationsReopenRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedOperationsRevision]
+      properties:
+        expectedOperationsRevision: { type: integer, minimum: 0 }
     ReobservationDraft:
       type: object
       required:
@@ -6330,7 +9722,7 @@ components:
       type: object
       required:
         [siteId, siteName, siteStatus, latestObservationAt, reviewItemCount,
-         activeWorkOrderCount, latestWorkOrder, latestAnalysis, nextAction]
+         activeWorkOrderCount, latestWorkOrder, latestAnalysis, externalResult, nextAction]
       properties:
         schemaVersion: { type: string }
         siteId: { type: string }
@@ -6342,6 +9734,7 @@ components:
         latestWorkOrder:
           oneOf: [{ $ref: '#/components/schemas/WorkspaceWorkOrderSummary' }, { type: 'null' }]
         latestAnalysis: { $ref: '#/components/schemas/WorkspaceAnalysisSummary' }
+        externalResult: { $ref: '#/components/schemas/ExternalResultProjectionView' }
         nextAction: { $ref: '#/components/schemas/WorkspaceNextAction' }
     CivilEpochPairReadinessView:
       type: object
@@ -8477,6 +11870,1408 @@ components:
         sizeBytes: { type: integer }
         downloadUrl: { type: string }
         expiresAt: { type: string, format: date-time }
+    ExternalPlanningOnlyWorkOrderBindingV1:
+      additionalProperties: false
+      description: Separate successor binding that preserves the closed WorkOrder v1 wire.
+      properties:
+        contractVersion:
+          const: external-planning-only-work-order-binding.v1
+          default: external-planning-only-work-order-binding.v1
+          title: Contractversion
+          type: string
+        mode:
+          const: EXTERNAL_REOBSERVATION_PLANNING
+          default: EXTERNAL_REOBSERVATION_PLANNING
+          title: Mode
+          type: string
+        organizationId:
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+          type: string
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        sourceWorkOrderId:
+          maxLength: 255
+          minLength: 1
+          title: Sourceworkorderid
+          type: string
+        successorWorkOrderId:
+          maxLength: 255
+          minLength: 1
+          title: Successorworkorderid
+          type: string
+        approvalId:
+          maxLength: 255
+          minLength: 1
+          title: Approvalid
+          type: string
+        approvedBy:
+          maxLength: 255
+          minLength: 1
+          title: Approvedby
+          type: string
+        approvedAt:
+          format: date-time
+          title: Approvedat
+          type: string
+        proposalId:
+          maxLength: 255
+          minLength: 1
+          title: Proposalid
+          type: string
+        proposalVersion:
+          minimum: 1
+          title: Proposalversion
+          type: integer
+        proposalDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Proposaldigest
+          type: string
+        reportDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reportdigest
+          type: string
+        decisionDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+          type: string
+        zoneDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Zonedigest
+          type: string
+        evidenceDigests:
+          items:
+            pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          maxItems: 64
+          minItems: 1
+          title: Evidencedigests
+          type: array
+        targetWorkAreas:
+          items:
+            $ref: '#/components/schemas/ExternalWorkAreaSnapshotV1'
+          maxItems: 64
+          minItems: 1
+          title: Targetworkareas
+          type: array
+        temporalPolicy:
+          anyOf:
+          - $ref: '#/components/schemas/TemporalCoherencePolicy'
+          - type: 'null'
+          default: null
+        acquisitionRunAllowed:
+          const: false
+          default: false
+          title: Acquisitionrunallowed
+          type: boolean
+        missionIssuanceAllowed:
+          const: false
+          default: false
+          title: Missionissuanceallowed
+          type: boolean
+        bindingDigest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          default: null
+          title: Bindingdigest
+      required:
+      - organizationId
+      - siteId
+      - sourceWorkOrderId
+      - successorWorkOrderId
+      - approvalId
+      - approvedBy
+      - approvedAt
+      - proposalId
+      - proposalVersion
+      - proposalDigest
+      - reportDigest
+      - decisionDigest
+      - zoneDigest
+      - evidenceDigests
+      - targetWorkAreas
+      title: ExternalPlanningOnlyWorkOrderBindingV1
+      type: object
+    ExternalWorkAreaSnapshotV1:
+      additionalProperties: false
+      description: An immutable, owned WorkArea revision used as a reobservation target.
+      properties:
+        workAreaId:
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+          type: string
+        revision:
+          const: 1
+          default: 1
+          title: Revision
+          type: integer
+        polygon:
+          additionalProperties: true
+          title: Polygon
+          type: object
+        crs:
+          maxLength: 255
+          minLength: 1
+          title: Crs
+          type: string
+        snapshotDigest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          default: null
+          title: Snapshotdigest
+      required:
+      - workAreaId
+      - polygon
+      - crs
+      title: ExternalWorkAreaSnapshotV1
+      type: object
+    TemporalCoherencePolicy:
+      additionalProperties: false
+      description: '한 ObservationEpoch 안에서 허용할 촬영 시각 범위.
+
+
+        정책이 없는 과거 WorkOrder도 읽을 수 있게 이 타입 자체는 optional 필드로
+
+        붙인다. 다만 Analysis Readiness는 정책이 없으면 READY를 주장하지 않는다
+
+        (REQ-INT-103, INV-018).'
+      properties:
+        schemaVersion:
+          default: '1.0'
+          pattern: ^1\.0$
+          title: Schemaversion
+          type: string
+        maxCaptureSpanSeconds:
+          maximum: 86400
+          minimum: 1
+          title: Maxcapturespanseconds
+          type: integer
+      required:
+      - maxCaptureSpanSeconds
+      title: TemporalCoherencePolicy
+      type: object
+    DecisionVerdict:
+      type: string
+      enum:
+      - ELIGIBLE
+      - RESTRICTED
+      - BLOCKED
+      title: DecisionVerdict
+    ExternalPairUseDecisionV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-pair-use-decision.v1
+          title: Contractversion
+          default: external-pair-use-decision.v1
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        baselineSubject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        baselineSubjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselinesubjectdigest
+        currentSubject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        currentSubjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentsubjectdigest
+        use:
+          type: string
+          enum:
+          - VISUAL_COMPARISON
+          - RELATIVE_VOLUME
+          title: Use
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+        baselineInspectionReportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Baselineinspectionreportdigest
+        currentInspectionReportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Currentinspectionreportdigest
+        baselineSanitizedDisplayReceiptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Baselinesanitizeddisplayreceiptdigest
+        currentSanitizedDisplayReceiptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Currentsanitizeddisplayreceiptdigest
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          title: Evidencerecorddigests
+        zone:
+          anyOf:
+          - $ref: '#/components/schemas/SealedZoneReferenceV1'
+          - type: 'null'
+        compatibilityMappingDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Compatibilitymappingdigest
+        verdict:
+          $ref: '#/components/schemas/DecisionVerdict'
+        reasons:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          maxItems: 32
+          minItems: 1
+          title: Reasons
+        remediations:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          maxItems: 32
+          minItems: 1
+          title: Remediations
+        decidedAt:
+          type: string
+          format: date-time
+          title: Decidedat
+        decisionDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Decisiondigest
+      additionalProperties: false
+      type: object
+      required:
+      - decisionId
+      - baselineSubject
+      - baselineSubjectDigest
+      - currentSubject
+      - currentSubjectDigest
+      - use
+      - evidenceRecordDigests
+      - verdict
+      - reasons
+      - remediations
+      - decidedAt
+      title: ExternalPairUseDecisionV1
+      description: Core's immutable pair decision; Core resolves referenced receipt provenance
+        separately.
+    ExternalRelativeVolumeExecutionPolicyV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-execution-policy.v1
+          title: Contractversion
+          default: external-relative-volume-execution-policy.v1
+        policyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Policyid
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        algorithmBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmbuilddigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        thresholdM:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Thresholdm
+        minimumCommonValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Minimumcommonvalidfraction
+        uncertaintyMethod:
+          type: string
+          const: INDEPENDENT_EPOCH_RSS_AREA_BOUND_V1
+          title: Uncertaintymethod
+        resourceEnvelopeDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Resourceenvelopedigest
+        authorityRecordDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Authorityrecorddigest
+        syntheticTestOnly:
+          type: boolean
+          title: Synthetictestonly
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+      additionalProperties: false
+      type: object
+      required:
+      - policyId
+      - version
+      - algorithmBuildDigest
+      - configDigest
+      - thresholdM
+      - minimumCommonValidFraction
+      - uncertaintyMethod
+      - resourceEnvelopeDigest
+      - authorityRecordDigest
+      - syntheticTestOnly
+      title: ExternalRelativeVolumeExecutionPolicyV1
+      description: Versioned execution limits; authority is always supplied, never defaulted.
+    ExternalRelativeVolumeLeaseFenceView:
+      properties:
+        workerInstanceId:
+          type: string
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+      additionalProperties: false
+      type: object
+      required:
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      title: ExternalRelativeVolumeLeaseFenceView
+    ExternalRelativeVolumeReportV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-report.v1
+          title: Contractversion
+          default: external-relative-volume-report.v1
+        reportId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportid
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        requestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Requestdigest
+        payload:
+          $ref: '#/components/schemas/ExternalRelativeVolumeMeasurementPayloadV1'
+        measurementPayloadDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Measurementpayloaddigest
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+        reportedAt:
+          type: string
+          format: date-time
+          title: Reportedat
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reportId
+      - requestId
+      - requestDigest
+      - payload
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      - computedAt
+      - reportedAt
+      title: ExternalRelativeVolumeReportV1
+      description: Fenced worker report whose payload is independently canonicalized.
+    ExternalRelativeVolumeRequestV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-request.v1
+          title: Contractversion
+          default: external-relative-volume-request.v1
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        currentWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentworkorderid
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        baseline:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        current:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Evidencerecorddigests
+        validationPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Validationpolicydigest
+        executionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Executionpolicydigest
+        zoneSnapshot:
+          $ref: '#/components/schemas/ExternalVolumeZoneSnapshotV1'
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        idempotencyKey:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Idempotencykey
+        requestDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Requestdigest
+      additionalProperties: false
+      type: object
+      required:
+      - requestId
+      - currentWorkOrderId
+      - decisionId
+      - decisionDigest
+      - baseline
+      - current
+      - evidenceRecordDigests
+      - validationPolicyDigest
+      - executionPolicyDigest
+      - zoneSnapshot
+      - issuedAt
+      - idempotencyKey
+      title: ExternalRelativeVolumeRequestV1
+      description: Core-issued intent; this model only binds claims and does not declare
+        ELIGIBLE.
+    ExternalReobservationApprovalReceiptV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-reobservation-approval-receipt.v1
+          title: Contractversion
+          default: external-reobservation-approval-receipt.v1
+        approvalId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Approvalid
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        sourceWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Sourceworkorderid
+        successorWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Successorworkorderid
+        proposalId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Proposalid
+        proposalVersion:
+          type: integer
+          minimum: 1.0
+          title: Proposalversion
+        proposalDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Proposaldigest
+        approvalInputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Approvalinputdigest
+        bindingDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Bindingdigest
+        idempotencyKey:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Idempotencykey
+        approvedBy:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Approvedby
+        approvedAt:
+          type: string
+          format: date-time
+          title: Approvedat
+        receiptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Receiptdigest
+      additionalProperties: false
+      type: object
+      required:
+      - approvalId
+      - organizationId
+      - siteId
+      - sourceWorkOrderId
+      - successorWorkOrderId
+      - proposalId
+      - proposalVersion
+      - proposalDigest
+      - approvalInputDigest
+      - bindingDigest
+      - idempotencyKey
+      - approvedBy
+      - approvedAt
+      title: ExternalReobservationApprovalReceiptV1
+      description: Immutable human approval receipt for the exact external proposal snapshot.
+    ExternalReobservationProposalApprovalRequest:
+      properties:
+        proposalRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Proposalref
+        expectedVersion:
+          type: integer
+          minimum: 1.0
+          title: Expectedversion
+      additionalProperties: false
+      type: object
+      required:
+      - proposalRef
+      - expectedVersion
+      title: ExternalReobservationProposalApprovalRequest
+      description: 'The entire public approval body: no scope, digests, or source authority.'
+    ExternalReobservationProposalCreateRequest:
+      properties:
+        reportRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportref
+        targetWorkAreaIds:
+          items:
+            type: string
+          type: array
+          maxItems: 1
+          minItems: 1
+          title: Targetworkareaids
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 1000
+            minLength: 1
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - reportRef
+      - targetWorkAreaIds
+      title: ExternalReobservationProposalCreateRequest
+    ExternalReobservationProposalV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-reobservation-proposal.v1
+          title: Contractversion
+          default: external-reobservation-proposal.v1
+        proposalRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Proposalref
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        sourceWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Sourceworkorderid
+        reviewRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reviewref
+        reviewDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reviewdigest
+        reportRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportref
+        reportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reportdigest
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        zoneDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Zonedigest
+        evidenceDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Evidencedigests
+        targetWorkAreas:
+          items:
+            $ref: '#/components/schemas/ExternalWorkAreaSnapshotV1'
+          type: array
+          maxItems: 1
+          minItems: 1
+          title: Targetworkareas
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 1000
+            minLength: 1
+          - type: 'null'
+          title: Reason
+        createdBy:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Createdby
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        proposalDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Proposaldigest
+      additionalProperties: false
+      type: object
+      required:
+      - proposalRef
+      - version
+      - organizationId
+      - siteId
+      - sourceWorkOrderId
+      - reviewRef
+      - reviewDigest
+      - reportRef
+      - reportDigest
+      - decisionDigest
+      - zoneDigest
+      - evidenceDigests
+      - targetWorkAreas
+      - createdBy
+      - createdAt
+      title: ExternalReobservationProposalV1
+      description: One human-authored, grounded planning proposal; approval remains separate.
+    ExternalReobservationProposalView:
+      properties:
+        proposal:
+          $ref: '#/components/schemas/ExternalReobservationProposalV1'
+        approvalReceipt:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalReobservationApprovalReceiptV1'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - proposal
+      title: ExternalReobservationProposalView
+    ExternalResultExecutionPolicyView:
+      properties:
+        policyId: { type: string, title: Policyid }
+        version: { type: integer, title: Version }
+        policyDigest: { type: string, title: Policydigest }
+        algorithmBuildDigest: { type: string, title: Algorithmbuilddigest }
+        configDigest: { type: string, title: Configdigest }
+        uncertaintyMethod: { type: string, title: Uncertaintymethod }
+      additionalProperties: false
+      type: object
+      required: [policyId, version, policyDigest, algorithmBuildDigest, configDigest, uncertaintyMethod]
+      title: ExternalResultExecutionPolicyView
+    ExternalResultMetricsView:
+      properties:
+        zoneCellCount: { type: integer, title: Zonecellcount }
+        commonValidCellCount: { type: integer, title: Commonvalidcellcount }
+        zoneAreaM2: { type: number, title: Zoneaream2 }
+        measuredAreaM2: { type: number, title: Measuredaream2 }
+        commonValidFraction: { type: number, title: Commonvalidfraction }
+        cutM3: { type: number, title: Cutm3 }
+        fillM3: { type: number, title: Fillm3 }
+        netM3: { type: number, title: Netm3 }
+        thresholdM: { type: number, title: Thresholdm }
+        uncertaintyM3:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Uncertaintym3
+        uncertaintyNote: { type: string, title: Uncertaintynote }
+      additionalProperties: false
+      type: object
+      required:
+      - zoneCellCount
+      - commonValidCellCount
+      - zoneAreaM2
+      - measuredAreaM2
+      - commonValidFraction
+      - cutM3
+      - fillM3
+      - netM3
+      - thresholdM
+      - uncertaintyM3
+      - uncertaintyNote
+      title: ExternalResultMetricsView
+    ExternalResultProjectionState:
+      type: string
+      enum: [NOT_CONFIGURED, NO_RESULT, AVAILABLE, HISTORICAL_SOURCE_UNAVAILABLE]
+      title: ExternalResultProjectionState
+    ExternalResultProjectionView:
+      properties:
+        state: { $ref: '#/components/schemas/ExternalResultProjectionState' }
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalResultSummaryView'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required: [state]
+      title: ExternalResultProjectionView
+    ExternalResultHistoryItem:
+      properties:
+        reportRef: { type: string, title: Reportref }
+        state:
+          type: string
+          enum: [AVAILABLE, HISTORICAL_SOURCE_UNAVAILABLE]
+          title: State
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalResultSummaryView'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required: [reportRef, state]
+      title: ExternalResultHistoryItem
+    ExternalResultHistoryView:
+      properties:
+        items:
+          items: { $ref: '#/components/schemas/ExternalResultHistoryItem' }
+          type: array
+          title: Items
+        nextCursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nextcursor
+      additionalProperties: false
+      type: object
+      required: [items]
+      title: ExternalResultHistoryView
+    ExternalResultSummaryView:
+      properties:
+        kind: { type: string, title: Kind, default: EXTERNAL_RELATIVE_VOLUME }
+        reportRef: { type: string, title: Reportref }
+        reportDigest: { type: string, title: Reportdigest }
+        requestRef: { type: string, title: Requestref }
+        requestDigest: { type: string, title: Requestdigest }
+        sourceWorkOrderId: { type: string, title: Sourceworkorderid }
+        currentWorkOrderId: { type: string, title: Currentworkorderid }
+        baselineWorkOrderId: { type: string, title: Baselineworkorderid }
+        decisionId: { type: string, title: Decisionid }
+        decisionDigest: { type: string, title: Decisiondigest }
+        workAreaId: { type: string, title: Workareaid }
+        zoneDefinitionDigest: { type: string, title: Zonedefinitiondigest }
+        crs: { type: string, title: Crs }
+        observedCrsDigest: { type: string, title: Observedcrsdigest }
+        verticalReferenceDigest: { type: string, title: Verticalreferencedigest }
+        baselineCapturedFrom: { type: string, format: date-time, title: Baselinecapturedfrom }
+        baselineCapturedTo: { type: string, format: date-time, title: Baselinecapturedto }
+        currentCapturedFrom: { type: string, format: date-time, title: Currentcapturedfrom }
+        currentCapturedTo: { type: string, format: date-time, title: Currentcapturedto }
+        reportedAt: { type: string, format: date-time, title: Reportedat }
+        measurementStatus: { type: string, title: Measurementstatus }
+        measurementReason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Measurementreason
+        metrics:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalResultMetricsView'
+          - type: 'null'
+        executionPolicy: { $ref: '#/components/schemas/ExternalResultExecutionPolicyView' }
+        reviewRef:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reviewref
+        reviewDigest:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reviewdigest
+        reviewedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewedat
+        proposalCount: { type: integer, title: Proposalcount }
+        approvedProposalCount: { type: integer, title: Approvedproposalcount }
+      additionalProperties: false
+      type: object
+      required:
+      - reportRef
+      - reportDigest
+      - requestRef
+      - requestDigest
+      - sourceWorkOrderId
+      - currentWorkOrderId
+      - baselineWorkOrderId
+      - decisionId
+      - decisionDigest
+      - workAreaId
+      - zoneDefinitionDigest
+      - crs
+      - observedCrsDigest
+      - verticalReferenceDigest
+      - baselineCapturedFrom
+      - baselineCapturedTo
+      - currentCapturedFrom
+      - currentCapturedTo
+      - reportedAt
+      - measurementStatus
+      - measurementReason
+      - metrics
+      - executionPolicy
+      - reviewRef
+      - reviewDigest
+      - reviewedAt
+      - proposalCount
+      - approvedProposalCount
+      title: ExternalResultSummaryView
+    ExternalResultReportView:
+      properties:
+        request:
+          $ref: '#/components/schemas/ExternalRelativeVolumeRequestV1'
+        report:
+          $ref: '#/components/schemas/ExternalRelativeVolumeReportV1'
+        executionPolicy:
+          $ref: '#/components/schemas/ExternalRelativeVolumeExecutionPolicyV1'
+        review:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalResultReviewReceiptV1'
+          - type: 'null'
+        proposals:
+          items:
+            $ref: '#/components/schemas/ExternalReobservationProposalView'
+          type: array
+          title: Proposals
+      additionalProperties: false
+      type: object
+      required:
+      - request
+      - report
+      - executionPolicy
+      - proposals
+      title: ExternalResultReportView
+      description: Recorded provenance, never an assertion of present usage eligibility.
+    ExternalResultReviewAuthorityV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-result-review-authority.v1
+          title: Contractversion
+          default: external-result-review-authority.v1
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        currentWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentworkorderid
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        compatibilityMappingDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Compatibilitymappingdigest
+        baseline:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        current:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Evidencerecorddigests
+        validationPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Validationpolicydigest
+        zoneSnapshot:
+          $ref: '#/components/schemas/ExternalVolumeZoneSnapshotV1'
+        executionPolicy:
+          $ref: '#/components/schemas/ExternalRelativeVolumeExecutionPolicyV1'
+        authorizedActorIds:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Authorizedactorids
+        validFrom:
+          type: string
+          format: date-time
+          title: Validfrom
+        validUntil:
+          type: string
+          format: date-time
+          title: Validuntil
+        historicalAuthorityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Historicalauthoritydigest
+        baselineRmseM:
+          anyOf:
+          - type: number
+            maximum: 1.0e+300
+            minimum: 0.0
+          - type: 'null'
+          title: Baselinermsem
+        currentRmseM:
+          anyOf:
+          - type: number
+            maximum: 1.0e+300
+            minimum: 0.0
+          - type: 'null'
+          title: Currentrmsem
+        maximumZoneCellCount:
+          type: integer
+          maximum: 100000000.0
+          minimum: 1.0
+          title: Maximumzonecellcount
+        maximumZoneAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Maximumzoneaream2
+        syntheticTestOnly:
+          type: boolean
+          title: Synthetictestonly
+        authorityDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Authoritydigest
+      additionalProperties: false
+      type: object
+      required:
+      - organizationId
+      - siteId
+      - currentWorkOrderId
+      - decisionId
+      - decisionDigest
+      - compatibilityMappingDigest
+      - baseline
+      - current
+      - evidenceRecordDigests
+      - validationPolicyDigest
+      - zoneSnapshot
+      - executionPolicy
+      - authorizedActorIds
+      - validFrom
+      - validUntil
+      - historicalAuthorityDigest
+      - maximumZoneCellCount
+      - maximumZoneAreaM2
+      - syntheticTestOnly
+      title: ExternalResultReviewAuthorityV1
+      description: 'Exact server-resolved authority retained with one reviewed report.
+
+
+        The type is deliberately independent of the Core 4B implementation class.
+
+        A later adapter must construct it from actual Core history; callers never
+
+        submit this model through a public route.'
+    ExternalResultReviewIntent:
+      properties: {}
+      additionalProperties: false
+      type: object
+      title: ExternalResultReviewIntent
+      description: The path identifies the report; the caller supplies no authority facts.
+    ExternalResultReviewReceiptV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-result-review-receipt.v1
+          title: Contractversion
+          default: external-result-review-receipt.v1
+        reviewRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reviewref
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        sourceWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Sourceworkorderid
+        reportRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportref
+        request:
+          $ref: '#/components/schemas/ExternalRelativeVolumeRequestV1'
+        report:
+          $ref: '#/components/schemas/ExternalRelativeVolumeReportV1'
+        authority:
+          $ref: '#/components/schemas/ExternalResultReviewAuthorityV1'
+        decision:
+          $ref: '#/components/schemas/ExternalPairUseDecisionV1'
+        factualLimitations:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 3
+          minItems: 3
+          title: Factuallimitations
+        reviewedAt:
+          type: string
+          format: date-time
+          title: Reviewedat
+        reviewDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reviewdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reviewRef
+      - organizationId
+      - siteId
+      - sourceWorkOrderId
+      - reportRef
+      - request
+      - report
+      - authority
+      - decision
+      - factualLimitations
+      - reviewedAt
+      title: ExternalResultReviewReceiptV1
+      description: A durable exact review of a server-resolved external relative-volume
+        report.
+    ExternalResultReviewView:
+      properties:
+        review:
+          $ref: '#/components/schemas/ExternalResultReviewReceiptV1'
+      additionalProperties: false
+      type: object
+      required:
+      - review
+      title: ExternalResultReviewView
+    ExternalVolumeInputBindingV1:
+      properties:
+        subject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        inspectionReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionreportdigest
+        dsmArtifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Dsmartifactid
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+        observedSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Observedsizebytes
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        observedVerticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedverticalreferencedigest
+        capturedFrom:
+          type: string
+          format: date-time
+          title: Capturedfrom
+        capturedTo:
+          type: string
+          format: date-time
+          title: Capturedto
+      additionalProperties: false
+      type: object
+      required:
+      - subject
+      - inspectionReportDigest
+      - dsmArtifactId
+      - observedSha256
+      - observedSizeBytes
+      - observedCrsDigest
+      - observedVerticalReferenceDigest
+      - capturedFrom
+      - capturedTo
+      title: ExternalVolumeInputBindingV1
+      description: Observed DSM bytes and capture interval supplied later by Core evidence
+        resolution.
+    ExternalVolumeZoneSnapshotV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-volume-zone-snapshot.v1
+          title: Contractversion
+          default: external-volume-zone-snapshot.v1
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        revision:
+          type: integer
+          const: 1
+          title: Revision
+          default: 1
+        polygon:
+          additionalProperties: true
+          type: object
+          title: Polygon
+        crs:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Crs
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        analysisVerticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Analysisverticalreferencedigest
+        definitionDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Definitiondigest
+      additionalProperties: false
+      type: object
+      required:
+      - organizationId
+      - siteId
+      - workAreaId
+      - polygon
+      - crs
+      - observedCrsDigest
+      - analysisVerticalReferenceDigest
+      title: ExternalVolumeZoneSnapshotV1
+      description: Immutable copy of one WorkArea geometry without mutable WorkArea status
+        fields.
+    SealedZoneReferenceV1:
+      properties:
+        zoneId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Zoneid
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        definitionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Definitiondigest
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        observedVerticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedverticalreferencedigest
+      additionalProperties: false
+      type: object
+      required:
+      - zoneId
+      - revision
+      - definitionDigest
+      - observedCrsDigest
+      - observedVerticalReferenceDigest
+      title: SealedZoneReferenceV1
   securitySchemes:
     bearerAuth:
       type: http

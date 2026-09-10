@@ -9,10 +9,12 @@ from __future__ import annotations
 import hashlib
 import socket
 import threading
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import BinaryIO
+from pathlib import Path
+from typing import cast
 
 import pytest
 from ksi_event_contracts.external_artifact_validation import (
@@ -32,20 +34,31 @@ from ksi_event_contracts.external_artifact_validation import (
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_processing_controller.external_artifact_inspection_worker import (
     CurrentAuthorityLost,
+    ExternalArtifactByteSourcePort,
     ExternalArtifactInputV1,
     ExternalArtifactInspectionWorker,
     ExternalInspectionCurrentInputV1,
     ExternalInspectionNextActionV1,
     ExternalInspectionPhaseV1,
     ExternalInspectorUdsClient,
+    FileSystemSanitizedOutputSink,
+    InspectionAssemblyIncomplete,
+    InspectorUdsConnectorPort,
+    SanitizedOutputSinkPort,
     WorkerAuthorityLimitsV1,
+    _PrivateSanitizedOutputTransaction,
+    assemble_complete_measurement_payload,
 )
 from ksi_processing_controller.external_inspector_launcher import InspectorOperationProfileDecision
 from ksi_processing_controller.external_inspector_protocol import (
+    DeadlineBoundedByteReaderPort,
+    DeadlineBoundedBytesReader,
+    DeadlineBoundedDiscardingSink,
     InspectorLaunchRequestV1,
     InspectorLaunchResultV1,
     InspectorOperation,
     LocalLeaseFenceV1,
+    ProtocolDeadline,
     ProtocolLimitsV1,
     SealedByteBindingV1,
     read_bound_bytes,
@@ -63,6 +76,27 @@ def _digest(marker: str) -> str:
 
 def _bytes_digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+class _DeadlineBoundedTestSink:
+    """Synthetic private transaction with the same bounded-sink contract as production."""
+
+    def write_chunk(
+        self,
+        chunk: bytes,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> None:
+        del heartbeat_interval_millis
+        if wait_is_current is not None and not wait_is_current():
+            raise RuntimeError("authority lost")
+        deadline.remaining()
+        self.write(chunk, deadline_monotonic=deadline.expires_at)  # type: ignore[attr-defined]
+        if wait_is_current is not None and not wait_is_current():
+            raise RuntimeError("authority lost")
+        deadline.remaining()
 
 
 def _subject() -> SealedExternalSubjectV1:
@@ -171,7 +205,7 @@ def _accepted_report(
             footprint_digest=_digest("2"),
             width=2,
             height=2,
-            band_count=1,
+            band_count=3,
             dtype="uint8",
             layout="striped",
             nodata_representation=NodataRepresentation.NONE,
@@ -245,17 +279,22 @@ class _Authority:
         return self.heartbeats.pop(0) if self.heartbeats else False
 
 
-class _ByteSource:
+class _ByteSource(ExternalArtifactByteSourcePort):
     def __init__(self, payload: bytes) -> None:
         self.payload = payload
         self.calls: list[str] = []
 
     def open_bound_bytes(
-        self, artifact: ExternalArtifactInputV1, *, deadline_monotonic: float
-    ) -> BytesIO:
-        del deadline_monotonic
+        self,
+        artifact: ExternalArtifactInputV1,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool],
+        heartbeat_interval_millis: int,
+    ) -> DeadlineBoundedByteReaderPort:
+        del deadline, wait_is_current, heartbeat_interval_millis
         self.calls.append(artifact.entry_id)
-        return BytesIO(self.payload)
+        return DeadlineBoundedBytesReader(BytesIO(self.payload))
 
 
 class _Launcher:
@@ -263,12 +302,13 @@ class _Launcher:
         self.lose_authority_during_wait = lose_authority_during_wait
         self.requests: list[InspectorLaunchRequestV1] = []
         self.metadata: list[tuple[ProcessingArtifactKind, str]] = []
+        self.aborted_private_candidates: list[InspectorLaunchRequestV1] = []
 
     def execute(
         self,
         *,
         request: InspectorLaunchRequestV1,
-        source: BinaryIO,
+        source: DeadlineBoundedByteReaderPort,
         artifact_kind: ProcessingArtifactKind,
         content_type: str,
         deadline_monotonic: float,
@@ -300,6 +340,9 @@ class _Launcher:
             request.policy.parser_build_digest,
             outcome,
         )
+
+    def abort_private_candidate(self, request: InspectorLaunchRequestV1) -> None:
+        self.aborted_private_candidates.append(request)
 
 
 class _Profile:
@@ -365,6 +408,38 @@ def test_current_authority_and_heartbeat_are_required_before_opening_bytes() -> 
 
     assert source.calls == []
     assert launcher.requests == []
+
+
+def test_worker_rejects_a_legacy_source_factory_before_its_blocking_open_runs() -> None:
+    """A raw source factory cannot retain a worker while its synchronous open sleeps."""
+
+    class _LegacyBlockingSource:
+        def __init__(self) -> None:
+            self.open_calls = 0
+
+        def open_bound_bytes(self, *args: object, **kwargs: object) -> BytesIO:
+            del args, kwargs
+            self.open_calls += 1
+            time.sleep(0.150)
+            return BytesIO(b"sealed-ortho")
+
+    source = _LegacyBlockingSource()
+    started = time.monotonic()
+    with pytest.raises(TypeError, match="deadline-bounded source opening"):
+        ExternalArtifactInspectionWorker(
+            authority=_Authority(_input(), [True]),
+            byte_source=cast(ExternalArtifactByteSourcePort, source),
+            launcher=_Launcher(),
+            operation_profile=_Profile(),
+            limits=WorkerAuthorityLimitsV1(
+                heartbeat_interval_millis=50,
+                max_authority_wait_millis=500,
+            ),
+            attempt_nonce_factory=lambda: "attempt-nonce-1",
+        )
+
+    assert source.open_calls == 0
+    assert time.monotonic() - started < 0.100
 
 
 def test_current_input_rejects_nonactive_or_unsealed_policy_before_source_authority() -> None:
@@ -446,6 +521,114 @@ def test_sanitize_requires_display_phase_retained_measured_ortho_and_exact_bindi
     assert denied_source.calls == []
 
 
+def test_sanitize_launch_context_retains_the_original_terminal_deadline_and_guard() -> None:
+    """Display publication receives the exact completed launch without changing the old facade."""
+    policy = _policy()
+    request = _request(policy)
+    current = ExternalInspectionCurrentInputV1(
+        request=request,
+        policy=policy,
+        artifacts=(_artifact(),),
+        phase=ExternalInspectionPhaseV1.DISPLAY,
+        next_action=ExternalInspectionNextActionV1.SANITIZE_DISPLAY,
+        accepted_report=_accepted_report(request, policy),
+    )
+    source = _ByteSource(b"sealed-ortho")
+    launcher = _Launcher()
+    context = _worker(_Authority(current, [True, True]), source, launcher).launch_artifact_context(
+        request.request_id, _fence(), "ortho"
+    )
+
+    assert context.terminal.result == "COMPLETED"
+    assert context.terminal.outcome == "SANITIZED"
+    assert context.launch_request == launcher.requests[0]
+    assert context.current == current
+    assert context.artifact == current.artifacts[0]
+    assert context.deadline.expires_at == 100.5
+
+    terminal = _worker(
+        _Authority(current, [True, True]), _ByteSource(b"sealed-ortho"), _Launcher()
+    ).launch_artifact(request.request_id, _fence(), "ortho")
+    assert terminal == context.terminal
+
+
+def test_context_uses_callers_absolute_deadline_and_stop_aware_retained_guard() -> None:
+    """A lane cannot let an inner worker renew its turn or keep running after stop."""
+
+    current = _input()
+    stop = threading.Event()
+    observed: dict[str, object] = {}
+
+    class _StopAwareLauncher(_Launcher):
+        def execute(
+            self,
+            *,
+            request: InspectorLaunchRequestV1,
+            source: DeadlineBoundedByteReaderPort,
+            artifact_kind: ProcessingArtifactKind,
+            content_type: str,
+            deadline_monotonic: float,
+            authority_is_current: Callable[[], bool],
+        ) -> InspectorLaunchResultV1:
+            del request, source, artifact_kind, content_type
+            observed["deadline"] = deadline_monotonic
+            stop.set()
+            observed["guard_after_stop"] = authority_is_current()
+            raise CurrentAuthorityLost("synthetic stop during launch")
+
+    with pytest.raises(CurrentAuthorityLost, match="synthetic stop"):
+        _worker(
+            _Authority(current, [True] * 10), _ByteSource(b"sealed-ortho"), _StopAwareLauncher()
+        ).launch_artifact_context(
+            current.request.request_id,
+            _fence(),
+            "ortho",
+            deadline_monotonic=100.05,
+            authority_is_current=lambda: not stop.is_set(),
+        )
+
+    assert observed == {"deadline": 100.05, "guard_after_stop": False}
+
+
+def test_sanitize_rejects_a_retained_report_with_a_non_ortho_measurement_model() -> None:
+    """Server kind and stored measurement shape both gate a future derivative request."""
+    policy = _policy()
+    request = _request(policy)
+    report = _accepted_report(request, policy)
+    artifact = _artifact()
+    mismatched_outcome = ArtifactInspectionOutcomeV1(
+        artifact_id=artifact.entry_id,
+        observed_sha256=artifact.observed_sha256,
+        outcome=ArtifactOutcome.MEASURED,
+        measurements=_measurements(bands=1, dtype="float32"),
+    )
+    mismatched_payload = report.measurement_payload.model_copy(
+        update={"outcomes": (mismatched_outcome,)}
+    )
+    mismatched_report = report.model_copy(
+        update={
+            "measurement_payload": mismatched_payload,
+            "measurement_payload_digest": None,
+            "report_digest": None,
+        }
+    ).sealed()
+    current = ExternalInspectionCurrentInputV1(
+        request=request,
+        policy=policy,
+        artifacts=(artifact,),
+        phase=ExternalInspectionPhaseV1.DISPLAY,
+        next_action=ExternalInspectionNextActionV1.SANITIZE_DISPLAY,
+        accepted_report=mismatched_report,
+    )
+    source = _ByteSource(b"sealed-ortho")
+
+    with pytest.raises(CurrentAuthorityLost, match="measurement model"):
+        _worker(_Authority(current, [True]), source, _Launcher()).launch_artifact(
+            request.request_id, _fence(), artifact.entry_id
+        )
+    assert source.calls == []
+
+
 @pytest.mark.parametrize(
     "kind",
     [ProcessingArtifactKind.DTM, ProcessingArtifactKind.MESH, ProcessingArtifactKind.POINT_CLOUD],
@@ -478,6 +661,41 @@ def test_lost_heartbeat_during_launcher_wait_cancels_and_cannot_return_success()
     assert authority.heartbeat_calls == 2
 
 
+def test_worker_callback_rechecks_the_full_projection_not_only_the_live_fence() -> None:
+    """A renewed lease cannot retain a candidate for a changed report/policy projection."""
+
+    current = _input()
+    changed = _input(
+        phase=ExternalInspectionPhaseV1.DISPLAY,
+        next_action=ExternalInspectionNextActionV1.SANITIZE_DISPLAY,
+    )
+    source = _ByteSource(b"sealed-ortho")
+    authority = _Authority(current, [True, True])
+
+    class _ProjectionChangingLauncher(_Launcher):
+        def execute(
+            self,
+            *,
+            request: InspectorLaunchRequestV1,
+            source: DeadlineBoundedByteReaderPort,
+            artifact_kind: ProcessingArtifactKind,
+            content_type: str,
+            deadline_monotonic: float,
+            authority_is_current: Callable[[], bool],
+        ) -> InspectorLaunchResultV1:
+            del request, source, artifact_kind, content_type, deadline_monotonic
+            authority.current = changed
+            assert authority_is_current() is False
+            raise CurrentAuthorityLost("full authority projection changed")
+
+    with pytest.raises(CurrentAuthorityLost, match="projection changed"):
+        _worker(authority, source, _ProjectionChangingLauncher()).launch_artifact(
+            current.request.request_id, _fence(), "ortho"
+        )
+    assert authority.current_calls == 2  # initial projection and the callback recheck
+    assert authority.heartbeat_calls == 2
+
+
 def test_mime_is_not_a_profile_default_and_denial_happens_before_byte_source_open() -> None:
     """Synthetic image/tiff never becomes a production parser support claim by itself."""
     current = _input(artifact=_artifact(content_type="application/octet-stream"))
@@ -494,17 +712,38 @@ def test_mime_is_not_a_profile_default_and_denial_happens_before_byte_source_ope
     assert source.calls == []
 
 
-def test_uds_client_validates_sanitized_raw_bytes_and_eof_through_required_sink() -> None:
-    """The client forwards only result-bound raw bytes to an injected bounded sink."""
+def test_uds_client_seals_sanitized_raw_bytes_in_a_private_transaction() -> None:
+    """No result-bound byte becomes a handoff until its private transaction has finished."""
 
-    class _Sink:
+    class _Sink(_DeadlineBoundedTestSink):
         def __init__(self) -> None:
             self.chunks: list[bytes] = []
             self.deadlines: list[float] = []
+            self.finished: InspectorLaunchResultV1 | None = None
+            self.aborted = False
+
+        def begin(
+            self,
+            request: InspectorLaunchRequestV1,
+            *,
+            maximum_bytes: int,
+            deadline_monotonic: float,
+        ) -> _Sink:
+            assert request.sealed_byte_binding.artifact_id == "ortho"
+            assert maximum_bytes > 0
+            self.deadlines.append(deadline_monotonic)
+            return self
 
         def write(self, chunk: bytes, *, deadline_monotonic: float) -> None:
             self.chunks.append(chunk)
             self.deadlines.append(deadline_monotonic)
+
+        def finish(self, terminal: InspectorLaunchResultV1, *, deadline_monotonic: float) -> None:
+            self.finished = terminal
+            self.deadlines.append(deadline_monotonic)
+
+        def abort(self) -> None:
+            self.aborted = True
 
     policy = _policy()
     payload = b"sealed-ortho"
@@ -532,7 +771,7 @@ def test_uds_client_validates_sanitized_raw_bytes_and_eof_through_required_sink(
                 server_socket,
                 received.sealed_byte_binding,
                 _protocol_limits(),
-                lambda _: None,
+                DeadlineBoundedDiscardingSink(),
             )
             write_launch_result(
                 server_socket,
@@ -560,8 +799,20 @@ def test_uds_client_validates_sanitized_raw_bytes_and_eof_through_required_sink(
     thread = threading.Thread(target=serve)
     thread.start()
     sink = _Sink()
+    connector_calls: list[tuple[float, int]] = []
+
+    def connect(
+        deadline_monotonic: float,
+        *,
+        wait_is_current: Callable[[], bool],
+        heartbeat_interval_millis: int,
+    ) -> socket.socket:
+        connector_calls.append((deadline_monotonic, heartbeat_interval_millis))
+        assert wait_is_current() is True
+        return client_socket
+
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline: client_socket,
+        connect=connect,
         protocol_limits=_protocol_limits(),
         sanitized_output_sink=sink,
         heartbeat_interval_millis=10,
@@ -569,7 +820,7 @@ def test_uds_client_validates_sanitized_raw_bytes_and_eof_through_required_sink(
     try:
         terminal = client.execute(
             request=request,
-            source=BytesIO(payload),
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
             artifact_kind=ProcessingArtifactKind.ORTHO,
             content_type="application/octet-stream",
             deadline_monotonic=__import__("time").monotonic() + 0.5,
@@ -579,30 +830,645 @@ def test_uds_client_validates_sanitized_raw_bytes_and_eof_through_required_sink(
         thread.join(timeout=1)
     assert not errors
     assert not thread.is_alive()
+    assert connector_calls and connector_calls[0][1] == 10
     assert terminal.result == "COMPLETED"
     assert b"".join(sink.chunks) == output
     assert sink.deadlines
+    assert sink.finished == terminal
+    assert sink.aborted is False
+
+
+def test_uds_client_aborts_actual_private_otmpfile_candidate_on_keyboard_interrupt(
+    tmp_path: Path,
+) -> None:
+    """A BaseException after seal retires the exact anonymous candidate before it escapes."""
+
+    class _InterruptedTransaction:
+        def __init__(self, transaction: object) -> None:
+            self._transaction = transaction
+
+        def write_chunk(
+            self,
+            chunk: bytes,
+            *,
+            deadline: ProtocolDeadline,
+            wait_is_current: Callable[[], bool] | None,
+            heartbeat_interval_millis: int | None,
+        ) -> None:
+            self._transaction.write_chunk(  # type: ignore[attr-defined]
+                chunk,
+                deadline=deadline,
+                wait_is_current=wait_is_current,
+                heartbeat_interval_millis=heartbeat_interval_millis,
+            )
+
+        def finish(self, terminal: InspectorLaunchResultV1, *, deadline_monotonic: float) -> None:
+            self._transaction.finish(  # type: ignore[attr-defined]
+                terminal, deadline_monotonic=deadline_monotonic
+            )
+            raise KeyboardInterrupt("owned test interruption")
+
+        def abort(self) -> None:
+            self._transaction.abort()  # type: ignore[attr-defined]
+
+    class _InterruptedSink:
+        def __init__(self, root: Path) -> None:
+            self.actual = FileSystemSanitizedOutputSink(private_root=root)
+
+        def begin(
+            self,
+            request: InspectorLaunchRequestV1,
+            *,
+            maximum_bytes: int,
+            deadline_monotonic: float,
+        ) -> _InterruptedTransaction:
+            return _InterruptedTransaction(
+                self.actual.begin(
+                    request,
+                    maximum_bytes=maximum_bytes,
+                    deadline_monotonic=deadline_monotonic,
+                )
+            )
+
+    policy = _policy()
+    payload = b"sealed-ortho"
+    output = b"sanitized-output"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="interrupt-attempt",
+    )
+    client_socket, server_socket = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def serve() -> None:
+        try:
+            received = read_launch_request_header(server_socket, _protocol_limits())
+            read_bound_bytes(
+                server_socket,
+                received.sealed_byte_binding,
+                _protocol_limits(),
+                DeadlineBoundedDiscardingSink(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.accepted(received.attempt_nonce),
+                _protocol_limits(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.completed_sanitized(
+                    received.attempt_nonce,
+                    received.canonical_input_digest,
+                    received.policy.parser_build_digest,
+                    len(output),
+                    _bytes_digest(output),
+                ),
+                _protocol_limits(),
+            )
+            server_socket.sendall(output)
+            server_socket.shutdown(socket.SHUT_WR)
+        finally:
+            server_socket.close()
+
+    root = tmp_path / "private"
+    root.mkdir(mode=0o700)
+    thread = threading.Thread(target=serve)
+    thread.start()
+    sink = _InterruptedSink(root)
+    client = ExternalInspectorUdsClient(
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
+        protocol_limits=_protocol_limits(),
+        sanitized_output_sink=cast(SanitizedOutputSinkPort, sink),
+        heartbeat_interval_millis=10,
+    )
+    with pytest.raises(KeyboardInterrupt, match="owned test interruption"):
+        client.execute(
+            request=request,
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+            content_type="image/tiff",
+            deadline_monotonic=time.monotonic() + 0.5,
+            authority_is_current=lambda: True,
+        )
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    retry = sink.actual.begin(
+        request, maximum_bytes=1_024, deadline_monotonic=time.monotonic() + 0.5
+    )
+    retry.abort()
+    assert list(root.iterdir()) == []
+
+
+def test_uds_client_aborts_private_candidate_after_short_raw_stream() -> None:
+    """A declared header cannot retain a partial candidate when the raw body ends early."""
+
+    class _Sink(_DeadlineBoundedTestSink):
+        def __init__(self) -> None:
+            self.chunks: list[bytes] = []
+            self.finished = False
+            self.aborted = False
+
+        def begin(
+            self,
+            request: InspectorLaunchRequestV1,
+            *,
+            maximum_bytes: int,
+            deadline_monotonic: float,
+        ) -> _Sink:
+            del request, maximum_bytes, deadline_monotonic
+            return self
+
+        def write(self, chunk: bytes, *, deadline_monotonic: float) -> None:
+            del deadline_monotonic
+            self.chunks.append(chunk)
+
+        def finish(self, terminal: InspectorLaunchResultV1, *, deadline_monotonic: float) -> None:
+            del terminal, deadline_monotonic
+            self.finished = True
+
+        def abort(self) -> None:
+            self.aborted = True
+
+    policy = _policy()
+    payload = b"sealed-ortho"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="attempt-nonce-1",
+    )
+    client_socket, server_socket = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def serve() -> None:
+        try:
+            received = read_launch_request_header(server_socket, _protocol_limits())
+            read_bound_bytes(
+                server_socket,
+                received.sealed_byte_binding,
+                _protocol_limits(),
+                DeadlineBoundedDiscardingSink(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.accepted(received.attempt_nonce),
+                _protocol_limits(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.completed_sanitized(
+                    received.attempt_nonce,
+                    received.canonical_input_digest,
+                    received.policy.parser_build_digest,
+                    4,
+                    _bytes_digest(b"full"),
+                ),
+                _protocol_limits(),
+            )
+            server_socket.sendall(b"cut")
+            server_socket.shutdown(socket.SHUT_WR)
+        finally:
+            server_socket.close()
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    sink = _Sink()
+    client = ExternalInspectorUdsClient(
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
+        protocol_limits=_protocol_limits(),
+        sanitized_output_sink=sink,
+        heartbeat_interval_millis=10,
+    )
+    with pytest.raises(CurrentAuthorityLost, match="UDS launch failed closed"):
+        client.execute(
+            request=request,
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+            content_type="image/tiff",
+            deadline_monotonic=__import__("time").monotonic() + 0.5,
+            authority_is_current=lambda: True,
+        )
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert sink.chunks == [b"cut"]
+    assert sink.finished is False
+    assert sink.aborted is True
+
+
+def test_uds_client_aborts_private_candidate_when_fence_changes_after_private_seal() -> None:
+    """A fenced candidate cannot survive even a post-seal authority loss before return."""
+
+    class _Sink(_DeadlineBoundedTestSink):
+        def __init__(self) -> None:
+            self.aborted = False
+            self.finished = False
+            self.authority_current = True
+
+        def begin(
+            self,
+            request: InspectorLaunchRequestV1,
+            *,
+            maximum_bytes: int,
+            deadline_monotonic: float,
+        ) -> _Sink:
+            del request, maximum_bytes, deadline_monotonic
+            return self
+
+        def write(self, chunk: bytes, *, deadline_monotonic: float) -> None:
+            del chunk, deadline_monotonic
+
+        def finish(self, terminal: InspectorLaunchResultV1, *, deadline_monotonic: float) -> None:
+            del terminal, deadline_monotonic
+            self.finished = True
+            self.authority_current = False
+
+        def abort(self) -> None:
+            self.aborted = True
+
+    policy = _policy()
+    payload = b"sealed-ortho"
+    output = b"full"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="attempt-nonce-1",
+    )
+    client_socket, server_socket = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def serve() -> None:
+        try:
+            received = read_launch_request_header(server_socket, _protocol_limits())
+            read_bound_bytes(
+                server_socket,
+                received.sealed_byte_binding,
+                _protocol_limits(),
+                DeadlineBoundedDiscardingSink(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.accepted(received.attempt_nonce),
+                _protocol_limits(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.completed_sanitized(
+                    received.attempt_nonce,
+                    received.canonical_input_digest,
+                    received.policy.parser_build_digest,
+                    len(output),
+                    _bytes_digest(output),
+                ),
+                _protocol_limits(),
+            )
+            server_socket.sendall(output)
+            server_socket.shutdown(socket.SHUT_WR)
+        finally:
+            server_socket.close()
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    sink = _Sink()
+    client = ExternalInspectorUdsClient(
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
+        protocol_limits=_protocol_limits(),
+        sanitized_output_sink=sink,
+        heartbeat_interval_millis=10,
+    )
+    with pytest.raises(CurrentAuthorityLost, match="private candidate seal"):
+        client.execute(
+            request=request,
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+            content_type="image/tiff",
+            deadline_monotonic=__import__("time").monotonic() + 0.5,
+            authority_is_current=lambda: sink.authority_current,
+        )
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert sink.finished is True
+    assert sink.aborted is True
+
+
+def test_worker_retires_the_real_private_candidate_after_the_client_returns_stale_authority(
+    tmp_path: Path,
+) -> None:
+    """The worker owns the candidate through its final retained-authority check."""
+
+    policy = _policy()
+    request = _request(policy)
+    current = ExternalInspectionCurrentInputV1(
+        request=request,
+        policy=policy,
+        artifacts=(_artifact(),),
+        phase=ExternalInspectionPhaseV1.DISPLAY,
+        next_action=ExternalInspectionNextActionV1.SANITIZE_DISPLAY,
+        accepted_report=_accepted_report(request, policy),
+    )
+    authority = _Authority(current, [True] * 100)
+    private_root = tmp_path / "private"
+    private_root.mkdir(mode=0o700)
+    private_root.chmod(0o700)
+    sink = FileSystemSanitizedOutputSink(private_root=private_root)
+    client_socket, server_socket = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    output = b"x"
+
+    def serve() -> None:
+        try:
+            received = read_launch_request_header(server_socket, _protocol_limits())
+            read_bound_bytes(
+                server_socket,
+                received.sealed_byte_binding,
+                _protocol_limits(),
+                DeadlineBoundedDiscardingSink(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.accepted(received.attempt_nonce),
+                _protocol_limits(),
+            )
+            write_launch_result(
+                server_socket,
+                InspectorLaunchResultV1.completed_sanitized(
+                    received.attempt_nonce,
+                    received.canonical_input_digest,
+                    received.policy.parser_build_digest,
+                    len(output),
+                    _bytes_digest(output),
+                ),
+                _protocol_limits(),
+            )
+            server_socket.sendall(output)
+            server_socket.shutdown(socket.SHUT_WR)
+        finally:
+            server_socket.close()
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    client = ExternalInspectorUdsClient(
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
+        protocol_limits=_protocol_limits(),
+        sanitized_output_sink=sink,
+        heartbeat_interval_millis=10,
+    )
+
+    class _PostClientAuthorityLoss:
+        def execute(
+            self,
+            *,
+            request: InspectorLaunchRequestV1,
+            source: DeadlineBoundedByteReaderPort,
+            artifact_kind: ProcessingArtifactKind,
+            content_type: str,
+            deadline_monotonic: float,
+            authority_is_current: Callable[[], bool],
+        ) -> InspectorLaunchResultV1:
+            result = client.execute(
+                request=request,
+                source=source,
+                artifact_kind=artifact_kind,
+                content_type=content_type,
+                deadline_monotonic=deadline_monotonic,
+                authority_is_current=authority_is_current,
+            )
+            authority.current = None
+            return result
+
+        def abort_private_candidate(self, launch: InspectorLaunchRequestV1) -> None:
+            client.abort_private_candidate(launch)
+
+    worker = ExternalArtifactInspectionWorker(
+        authority=authority,
+        byte_source=_ByteSource(b"sealed-ortho"),
+        launcher=_PostClientAuthorityLoss(),
+        operation_profile=_Profile(),
+        limits=WorkerAuthorityLimitsV1(
+            heartbeat_interval_millis=50,
+            max_authority_wait_millis=1_000,
+        ),
+        attempt_nonce_factory=lambda: "attempt-nonce-1",
+    )
+
+    with pytest.raises(CurrentAuthorityLost, match="current authority input"):
+        worker.launch_artifact(request.request_id, _fence(), "ortho")
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert not sink._active
+    assert not sink._sealed
+    assert not sink._uncertain
+    assert list(private_root.iterdir()) == []
+
+
+def test_failed_private_candidate_abort_latches_cleanup_uncertainty(tmp_path: Path) -> None:
+    """A close uncertainty is retained and blocks admission without retrying its FD."""
+
+    class _FailingStaged:
+        def __init__(self) -> None:
+            self.abort_calls = 0
+
+        def abort(self) -> None:
+            self.abort_calls += 1
+            raise RuntimeError("synthetic descriptor close uncertainty")
+
+    policy = _policy()
+    payload = b"sealed-ortho"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="attempt-nonce-1",
+    )
+    root = tmp_path / "private"
+    root.mkdir(mode=0o700)
+    root.chmod(0o700)
+    sink = FileSystemSanitizedOutputSink(private_root=root)
+    staged = _FailingStaged()
+    key = (request.attempt_nonce, request.canonical_input_digest)
+    transaction = _PrivateSanitizedOutputTransaction(owner=sink, key=key, staged=staged)
+    sink._active[key] = transaction
+
+    with pytest.raises(RuntimeError, match="close uncertainty"):
+        transaction.abort()
+    assert key not in sink._active
+    assert sink._uncertain[key] is transaction
+    with pytest.raises(CurrentAuthorityLost, match="remains uncertain"):
+        transaction.abort()
+    assert staged.abort_calls == 1
+    with pytest.raises(CurrentAuthorityLost, match="uncertainty closes admission"):
+        sink.begin(request, maximum_bytes=1_024, deadline_monotonic=1.0)
+    with pytest.raises(CurrentAuthorityLost, match="uncertainty remains"):
+        sink.abort_all()
+    assert staged.abort_calls == 1
+
+
+def test_private_candidate_abort_is_exactly_once_when_two_cleanup_paths_race(
+    tmp_path: Path,
+) -> None:
+    """Concurrent cleanup cannot close a descriptor twice after its number may be reused."""
+
+    class _BlockingStaged:
+        def __init__(self) -> None:
+            self.abort_calls = 0
+            self.entered = threading.Event()
+            self.release = threading.Event()
+
+        def abort(self) -> None:
+            self.abort_calls += 1
+            self.entered.set()
+            assert self.release.wait(timeout=1)
+
+    policy = _policy()
+    payload = b"sealed-ortho"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="attempt-nonce-1",
+    )
+    root = tmp_path / "private"
+    root.mkdir(mode=0o700)
+    root.chmod(0o700)
+    sink = FileSystemSanitizedOutputSink(private_root=root)
+    staged = _BlockingStaged()
+    key = (request.attempt_nonce, request.canonical_input_digest)
+    transaction = _PrivateSanitizedOutputTransaction(owner=sink, key=key, staged=staged)
+    sink._active[key] = transaction
+    first = threading.Thread(target=transaction.abort)
+    second = threading.Thread(target=transaction.abort)
+    first.start()
+    assert staged.entered.wait(timeout=1)
+    second.start()
+    staged.release.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert staged.abort_calls == 1
+    assert not sink._active
+    assert not sink._sealed
+    assert not sink._uncertain
+
+
+def test_filesystem_transaction_sink_keeps_only_an_opaque_private_candidate(
+    tmp_path: Path,
+) -> None:
+    """Local O_TMPFILE behavior has no receipt or publication API."""
+    policy = _policy()
+    payload = b"sealed-ortho"
+    request = InspectorLaunchRequestV1.seal(
+        operation=InspectorOperation.SANITIZE,
+        request=_request(policy),
+        fence=_fence(),
+        subject=_subject(),
+        sealed_byte_binding=SealedByteBindingV1(
+            artifact_id="ortho",
+            observed_sha256=_bytes_digest(payload),
+            observed_size_bytes=len(payload),
+        ),
+        policy=policy,
+        attempt_nonce="attempt-nonce-1",
+    )
+    root = tmp_path / "private"
+    root.mkdir(mode=0o700)
+    root.chmod(0o700)
+    sink = FileSystemSanitizedOutputSink(private_root=root)
+    output = b"sanitized-output"
+    deadline_monotonic = time.monotonic() + 1.0
+    transaction = sink.begin(
+        request,
+        maximum_bytes=1_024,
+        deadline_monotonic=deadline_monotonic,
+    )
+    transaction.write(output, deadline_monotonic=deadline_monotonic)
+    transaction.finish(
+        InspectorLaunchResultV1.completed_sanitized(
+            request.attempt_nonce,
+            request.canonical_input_digest,
+            request.policy.parser_build_digest,
+            len(output),
+            _bytes_digest(output),
+        ),
+        deadline_monotonic=deadline_monotonic,
+    )
+
+    with pytest.raises(CurrentAuthorityLost, match="already exists"):
+        sink.begin(request, maximum_bytes=1_024, deadline_monotonic=deadline_monotonic)
+    assert list(root.iterdir()) == []
+    assert not any(
+        name in dir(FileSystemSanitizedOutputSink) for name in ("read", "receipt", "handoff")
+    )
+
+    sink.abort_attempt(request)
+    replacement = sink.begin(request, maximum_bytes=1_024, deadline_monotonic=deadline_monotonic)
+    replacement.abort()
 
 
 def test_uds_client_stops_a_chunked_upload_when_authority_is_lost() -> None:
     """Losing the fence between upload chunks must prevent later sealed bytes reaching the peer."""
 
-    class _Sink:
+    class _Sink(_DeadlineBoundedTestSink):
         def write(self, chunk: bytes, *, deadline_monotonic: float) -> None:
             del chunk, deadline_monotonic
 
-    class _SlowUploadSource(BytesIO):
+    class _SlowUploadSource:
         def __init__(self, payload: bytes) -> None:
-            super().__init__(payload)
+            self._source = BytesIO(payload)
             self.read_calls = 0
             self.authority_is_current = True
 
-        def read(self, size: int | None = -1) -> bytes:
-            chunk = super().read(-1 if size is None else size)
+        def read_chunk(
+            self,
+            maximum_bytes: int,
+            *,
+            deadline: ProtocolDeadline,
+            wait_is_current: Callable[[], bool] | None,
+            heartbeat_interval_millis: int | None,
+        ) -> bytes:
+            del deadline, wait_is_current, heartbeat_interval_millis
+            chunk = self._source.read(maximum_bytes)
             self.read_calls += 1
             if self.read_calls == 2:
                 self.authority_is_current = False
             return chunk
+
+        def close(self) -> None:
+            self._source.close()
 
     policy = _policy()
     payload = b"a" * 128
@@ -638,9 +1504,9 @@ def test_uds_client_stops_a_chunked_upload_when_authority_is_lost() -> None:
     thread.start()
     source = _SlowUploadSource(payload)
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
-        sanitized_output_sink=_Sink(),
+        sanitized_output_sink=cast(SanitizedOutputSinkPort, _Sink()),
         heartbeat_interval_millis=10,
     )
     with pytest.raises(CurrentAuthorityLost, match="UDS launch failed closed"):
@@ -715,16 +1581,21 @@ def test_worker_closes_a_late_returned_byte_source_before_launcher_invocation() 
         def __call__(self) -> float:
             return self.now
 
-    class _LateByteSource:
+    class _LateByteSource(ExternalArtifactByteSourcePort):
         def __init__(self, clock: _Clock) -> None:
             self._clock = clock
-            self.returned: BytesIO | None = None
+            self.returned: DeadlineBoundedBytesReader | None = None
 
         def open_bound_bytes(
-            self, artifact: ExternalArtifactInputV1, *, deadline_monotonic: float
-        ) -> BytesIO:
-            del artifact, deadline_monotonic
-            self.returned = BytesIO(b"sealed-ortho")
+            self,
+            artifact: ExternalArtifactInputV1,
+            *,
+            deadline: ProtocolDeadline,
+            wait_is_current: Callable[[], bool],
+            heartbeat_interval_millis: int,
+        ) -> DeadlineBoundedByteReaderPort:
+            del artifact, deadline, wait_is_current, heartbeat_interval_millis
+            self.returned = DeadlineBoundedBytesReader(BytesIO(b"sealed-ortho"))
             self._clock.now = 101.5
             return self.returned
 
@@ -749,5 +1620,155 @@ def test_worker_closes_a_late_returned_byte_source_before_launcher_invocation() 
         worker.launch_artifact(current.request.request_id, _fence(), "ortho")
 
     assert source.returned is not None
-    assert source.returned.closed is True
+    assert source.returned.is_closed is True
     assert launcher.requests == []
+
+
+def _measurements(*, bands: int, dtype: str) -> RasterMeasurementsV1:
+    return RasterMeasurementsV1(
+        observed_crs_identifier="EPSG:5186",
+        observed_crs_digest=_digest("1"),
+        transform=(1.0, 0.0, 0.0, 0.0, -1.0, 2.0),
+        footprint_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
+        footprint_digest=_digest("2"),
+        width=2,
+        height=2,
+        band_count=bands,
+        dtype=dtype,
+        layout="GEOTIFF_TILED_V1",
+        nodata_representation=NodataRepresentation.MASK,
+        valid_pixel_count=4,
+    )
+
+
+def test_worker_rejects_measurement_that_does_not_match_the_declared_artifact_kind() -> None:
+    """A raw-model classification cannot override the sealed Core artifact kind."""
+
+    class _MismatchedModelLauncher(_Launcher):
+        def execute(
+            self,
+            *,
+            request: InspectorLaunchRequestV1,
+            source: DeadlineBoundedByteReaderPort,
+            artifact_kind: ProcessingArtifactKind,
+            content_type: str,
+            deadline_monotonic: float,
+            authority_is_current: Callable[[], bool],
+        ) -> InspectorLaunchResultV1:
+            del source, artifact_kind, content_type, deadline_monotonic, authority_is_current
+            return InspectorLaunchResultV1.completed_inspection(
+                request.attempt_nonce,
+                request.canonical_input_digest,
+                request.policy.parser_build_digest,
+                ArtifactInspectionOutcomeV1(
+                    artifact_id=request.sealed_byte_binding.artifact_id,
+                    observed_sha256=request.sealed_byte_binding.observed_sha256,
+                    outcome=ArtifactOutcome.MEASURED,
+                    measurements=_measurements(bands=1, dtype="float32"),
+                ),
+            )
+
+    current = _input()
+    result = _worker(
+        _Authority(current, [True, True]),
+        _ByteSource(b"sealed-ortho"),
+        _MismatchedModelLauncher(),
+    ).launch_artifact(current.request.request_id, _fence(), "ortho")
+
+    assert isinstance(result.outcome, ArtifactInspectionOutcomeV1)
+    assert result.outcome.outcome is ArtifactOutcome.REJECTED
+    assert result.outcome.reason == "UNSUPPORTED_RASTER"
+    assert result.outcome.measurements is None
+
+
+def test_complete_assembly_keeps_examined_bad_dsm_and_measured_ortho() -> None:
+    """One optional artifact rejection cannot erase an independently measured ORTHO."""
+    ortho = _artifact()
+    dsm = ExternalArtifactInputV1(
+        entry_id="dsm",
+        kind=ProcessingArtifactKind.DSM,
+        observed_sha256=_bytes_digest(b"sealed-dsm"),
+        observed_size_bytes=len(b"sealed-dsm"),
+        content_type="image/tiff",
+    )
+    current = _input().model_copy(update={"artifacts": (ortho, dsm)})
+
+    def inspect(artifact: ExternalArtifactInputV1) -> ArtifactInspectionOutcomeV1:
+        if artifact.entry_id == "dsm":
+            return ArtifactInspectionOutcomeV1(
+                artifact_id=artifact.entry_id,
+                observed_sha256=artifact.observed_sha256,
+                outcome=ArtifactOutcome.REJECTED,
+                reason="UNMASKED_NONFINITE_SAMPLE",
+            )
+        return ArtifactInspectionOutcomeV1(
+            artifact_id=artifact.entry_id,
+            observed_sha256=artifact.observed_sha256,
+            outcome=ArtifactOutcome.MEASURED,
+            measurements=_measurements(bands=3, dtype="uint8"),
+        )
+
+    payload = assemble_complete_measurement_payload(
+        current=current,
+        fence=_fence(),
+        inspect_one=inspect,
+        authority_is_current=lambda fence: fence == _fence(),
+    )
+
+    assert [outcome.artifact_id for outcome in payload.outcomes] == ["dsm", "ortho"]
+    assert payload.outcomes[0].reason == "UNMASKED_NONFINITE_SAMPLE"
+    assert payload.outcomes[1].outcome is ArtifactOutcome.MEASURED
+
+
+def test_complete_assembly_discards_measurements_when_server_kind_differs() -> None:
+    """Entrypoint classification cannot silently override the sealed server artifact kind."""
+    current = _input()
+    artifact = current.artifacts[0]
+    payload = assemble_complete_measurement_payload(
+        current=current,
+        fence=_fence(),
+        inspect_one=lambda _artifact: ArtifactInspectionOutcomeV1(
+            artifact_id=artifact.entry_id,
+            observed_sha256=artifact.observed_sha256,
+            outcome=ArtifactOutcome.MEASURED,
+            measurements=_measurements(bands=1, dtype="float32"),
+        ),
+        authority_is_current=lambda _fence: True,
+    )
+
+    assert payload.outcomes[0].outcome is ArtifactOutcome.REJECTED
+    assert payload.outcomes[0].reason == "UNSUPPORTED_RASTER"
+    assert payload.outcomes[0].measurements is None
+
+
+def test_complete_assembly_returns_no_partial_payload_after_cancellation() -> None:
+    """Cancelling after one examination must not invent outcomes for the remaining input."""
+    ortho = _artifact()
+    dsm = ExternalArtifactInputV1(
+        entry_id="dsm",
+        kind=ProcessingArtifactKind.DSM,
+        observed_sha256=_bytes_digest(b"sealed-dsm"),
+        observed_size_bytes=len(b"sealed-dsm"),
+        content_type="image/tiff",
+    )
+    current = _input().model_copy(update={"artifacts": (ortho, dsm)})
+    examined: list[str] = []
+
+    def inspect(artifact: ExternalArtifactInputV1) -> ArtifactInspectionOutcomeV1:
+        examined.append(artifact.entry_id)
+        return ArtifactInspectionOutcomeV1(
+            artifact_id=artifact.entry_id,
+            observed_sha256=artifact.observed_sha256,
+            outcome=ArtifactOutcome.REJECTED,
+            reason="SYNTHETIC_REJECTED",
+        )
+
+    with pytest.raises(InspectionAssemblyIncomplete, match="cancelled"):
+        assemble_complete_measurement_payload(
+            current=current,
+            fence=_fence(),
+            inspect_one=inspect,
+            authority_is_current=lambda _fence: True,
+            is_cancelled=lambda: bool(examined),
+        )
+    assert examined == ["dsm"]

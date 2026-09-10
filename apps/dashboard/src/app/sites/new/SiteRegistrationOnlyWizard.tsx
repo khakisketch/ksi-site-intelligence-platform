@@ -49,6 +49,15 @@ const INITIAL_FORM: FormState = {
   aiEgressAllowed: false,
 };
 
+/**
+ * A generated identifier is a starting point, not a server-side identity.
+ * It is saved with the browser draft and may always be edited before posting.
+ */
+export function createGeneratedSiteId(now = Date.now()): string {
+  const randomSegment = globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+  return `site-${now.toString(36)}-${randomSegment}`;
+}
+
 function migrateRegistrationDraft(stored: unknown): FormState {
   if (!stored || typeof stored !== "object" || Array.isArray(stored)) return INITIAL_FORM;
   const candidate = stored as Partial<FormState>;
@@ -75,6 +84,8 @@ export function SiteRegistrationOnlyWizard() {
     migrateRegistrationDraft,
   );
   const [currentStep, setCurrentStep] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+  const initialSiteIdResolvedRef = useRef(false);
   // "이 실행에서 어떤 siteId 로 이미 POST 를 보냈나" — 409 를 재시도로 해석해도
   // 되는지의 유일한 근거. **siteId 로 스코프한다** — 그냥 boolean 이면 siteId 'A'
   // 로 실패한 뒤 사용자가 무관한 siteId 'B' 로 고쳐 재제출했을 때도 'B' 의 409 를
@@ -82,6 +93,21 @@ export function SiteRegistrationOnlyWizard() {
   const postAttemptedSiteIdRef = useRef<string | null>(null);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // useDraftState restores session storage in its own effect. Waiting one
+    // task turn keeps a restored custom ID intact before we fill an empty new
+    // draft, and the ref prevents re-generating after a person clears/edits it.
+    const timer = window.setTimeout(() => setDraftReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || initialSiteIdResolvedRef.current) return;
+    initialSiteIdResolvedRef.current = true;
+    if (form.siteId.trim()) return;
+    setForm({ ...form, siteId: createGeneratedSiteId() });
+  }, [draftReady, form, setForm]);
 
   function update(partial: Partial<FormState>) {
     setForm({ ...form, ...partial });
@@ -249,7 +275,7 @@ export function SiteRegistrationOnlyWizard() {
           </p>
           <Field
             label="현장 ID"
-            helpText="영숫자로 시작, -/_/. 만 허용, 공백·/ 금지"
+            helpText="자동으로 만들며, 필요하면 바꿀 수 있습니다. 영문·숫자로 시작하고 하이픈(-), 밑줄(_), 점(.)만 쓸 수 있습니다. 공백과 슬래시(/)는 쓸 수 없습니다."
             error={siteIdError}
             required
           >

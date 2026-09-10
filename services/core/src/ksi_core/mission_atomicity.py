@@ -38,6 +38,7 @@ from ksi_core.mission_records import (
     WorkOrderAuthorizationWitness,
     precheck_issuance,
 )
+from ksi_core.observation_work_orders import ExternalReobservationExecutionDenied
 from ksi_core.sites import SiteStore
 
 if TYPE_CHECKING:
@@ -138,6 +139,10 @@ class MissionIssuanceCommitter:
                 raise MissionIssuanceRejected(
                     422, "WORK_ORDER_SITE_MISMATCH — WorkOrder와 Mission의 Site가 다르다"
                 )
+            try:
+                store.assert_execution_allowed_under_guard(order)
+            except ExternalReobservationExecutionDenied as exc:
+                raise MissionIssuanceRejected(409, str(exc)) from exc
             if order.status is not ObservationWorkOrderStatus.APPROVED:
                 raise MissionIssuanceRejected(
                     409,
@@ -237,9 +242,18 @@ class MissionIssuanceCommitter:
                 )
                 if self.work_order_store.sealed_reason is not None:
                     return MissionRecordVerdict.STORE_UNAVAILABLE
+                if current_order is None:
+                    raise IssuancePreconditionChangedError(
+                        IssuanceConflictSubreason.WORK_ORDER_REVISION_CONFLICT
+                    )
+                try:
+                    self.work_order_store.assert_execution_allowed_under_guard(current_order)
+                except ExternalReobservationExecutionDenied as exc:
+                    raise IssuancePreconditionChangedError(
+                        IssuanceConflictSubreason.WORK_ORDER_REVISION_CONFLICT
+                    ) from exc
                 if (
-                    current_order is None
-                    or current_order.site_id != witness.site_id
+                    current_order.site_id != witness.site_id
                     or current_order.version != witness.work_order.version
                     or current_order.cycle_number != witness.work_order.cycle_number
                     or current_order.status.value != witness.work_order.status

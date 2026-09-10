@@ -13,10 +13,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
+    DecisionVerdict,
     ExternalPairUseDecisionV1,
     ExternalUseDecisionV1,
     SealedExternalSubjectV1,
@@ -27,6 +28,7 @@ from ksi_event_contracts.external_artifact_validation import (
 
 from ksi_core.auth import Principal, PrincipalKind
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 
 _EVENT_VERSION = 1
 _REQUESTED_KIND = "external-use-decision-requested"
@@ -35,6 +37,12 @@ _FINGERPRINT_DOMAIN = "ksi.external-use-decision-idempotency.v1"
 _SHA256_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 type DecisionCandidate = ExternalUseDecisionV1 | ExternalPairUseDecisionV1
+
+
+class ExternalUseDecisionHistoryVerifier(Protocol):
+    """Resolve every retained source chain before recovering ELIGIBLE history."""
+
+    def verify(self, candidate: DecisionCandidate) -> bool: ...
 
 
 class ExternalUseDecisionConflictError(ValueError):
@@ -59,6 +67,7 @@ class ExternalDecisionIntent:
     baseline_subject: SealedExternalSubjectV1 | None = None
     current_subject: SealedExternalSubjectV1 | None = None
     zone: SealedZoneReferenceV1 | None = None
+    requested_zone_id: str | None = None
 
     @classmethod
     def from_candidate(cls, candidate: DecisionCandidate) -> ExternalDecisionIntent:
@@ -69,6 +78,7 @@ class ExternalDecisionIntent:
             baseline_subject=candidate.baseline_subject,
             current_subject=candidate.current_subject,
             zone=candidate.zone,
+            requested_zone_id=candidate.zone.zone_id if candidate.zone is not None else None,
         )
 
     def payload(self) -> dict[str, object]:
@@ -78,6 +88,7 @@ class ExternalDecisionIntent:
                 or self.baseline_subject is not None
                 or self.current_subject is not None
                 or self.zone is not None
+                or self.requested_zone_id is not None
             ):
                 raise ValueError("single decision intent is invalid")
             return {
@@ -88,11 +99,24 @@ class ExternalDecisionIntent:
             raise ValueError("pair decision intent requires ordered subjects")
         if self.requested_use not in {"VISUAL_COMPARISON", "RELATIVE_VOLUME"}:
             raise ValueError("pair decision intent is invalid")
+        if self.requested_use == "VISUAL_COMPARISON" and (
+            self.zone is not None or self.requested_zone_id is not None
+        ):
+            raise ValueError("visual comparison intent cannot select a volume zone")
+        if self.requested_use == "RELATIVE_VOLUME" and (
+            self.requested_zone_id is None
+            or not self.requested_zone_id.strip()
+            or len(self.requested_zone_id) > 255
+        ):
+            raise ValueError("relative-volume intent requires a zone selection")
+        if self.zone is not None and self.requested_zone_id != self.zone.zone_id:
+            raise ValueError("sealed volume zone does not match selected zone")
         return {
             "requestedUse": self.requested_use,
             "baselineSubject": self.baseline_subject.canonical_payload(),
             "currentSubject": self.current_subject.canonical_payload(),
             "zone": self.zone.model_dump(by_alias=True, mode="json") if self.zone else None,
+            "requestedZoneId": self.requested_zone_id,
         }
 
 
@@ -104,13 +128,25 @@ def _intent_from_payload(raw: object) -> ExternalDecisionIntent:
             requested_use=raw["requestedUse"],
             subject=SealedExternalSubjectV1.model_validate(raw["subject"]),
         )
-    if set(raw) == {"requestedUse", "baselineSubject", "currentSubject", "zone"}:
+    if set(raw) == {
+        "requestedUse",
+        "baselineSubject",
+        "currentSubject",
+        "zone",
+        "requestedZoneId",
+    }:
         zone_raw = raw["zone"]
+        requested_zone_id = raw["requestedZoneId"]
+        if requested_zone_id is not None:
+            requested_zone_id = _require_text(
+                requested_zone_id, field="requested volume zone", maximum=255
+            )
         return ExternalDecisionIntent(
             requested_use=raw["requestedUse"],
             baseline_subject=SealedExternalSubjectV1.model_validate(raw["baselineSubject"]),
             current_subject=SealedExternalSubjectV1.model_validate(raw["currentSubject"]),
             zone=SealedZoneReferenceV1.model_validate(zone_raw) if zone_raw is not None else None,
+            requested_zone_id=requested_zone_id,
         )
     raise ValueError("intent fields are not exact")
 
@@ -230,6 +266,24 @@ def _scope_and_operation(candidate: DecisionCandidate) -> tuple[_Scope, str]:
     return _Scope(baseline.organization_id, baseline.site_id), "PAIR"
 
 
+def _scope_and_operation_for_intent(intent: ExternalDecisionIntent) -> tuple[_Scope, str]:
+    """Derive retry scope without accepting a caller-supplied candidate.
+
+    The evaluator uses this before allocating a timestamp or decision id.  A
+    same idempotency key is therefore a historic read when its immutable
+    request intent is unchanged, instead of producing a fresh candidate whose
+    timestamp would spuriously conflict with the earlier decision.
+    """
+    if intent.subject is not None:
+        return _Scope(intent.subject.organization_id, intent.subject.site_id), "SINGLE"
+    if intent.baseline_subject is None or intent.current_subject is None:
+        raise ValueError("pair decision intent requires ordered subjects")
+    baseline, current = intent.baseline_subject, intent.current_subject
+    if baseline.organization_id != current.organization_id or baseline.site_id != current.site_id:
+        raise ValueError("pair decision subjects must share organization and site")
+    return _Scope(baseline.organization_id, baseline.site_id), "PAIR"
+
+
 def _principal_binding(principal: Principal, scope: _Scope) -> _PrincipalBinding:
     principal_id = _require_text(principal.principal_id, field="principal id")
     organization_id = _require_text(principal.organization_id, field="principal organization")
@@ -273,6 +327,21 @@ def _fingerprint(
 
 def _validate_intent(candidate: DecisionCandidate, intent: ExternalDecisionIntent) -> None:
     expected = ExternalDecisionIntent.from_candidate(candidate)
+    if isinstance(candidate, ExternalPairUseDecisionV1) and candidate.use == "RELATIVE_VOLUME":
+        # A blocked candidate intentionally has no sealed zone: no trusted
+        # WorkArea authority was resolved.  Its requested opaque zone still
+        # belongs to the durable retry intent, so a different selection cannot
+        # reuse the idempotency key.  An eligible candidate additionally binds
+        # the selected id to the Core-resolved immutable zone snapshot.
+        if (
+            intent.requested_use != expected.requested_use
+            or intent.baseline_subject != expected.baseline_subject
+            or intent.current_subject != expected.current_subject
+            or intent.requested_zone_id is None
+            or (candidate.zone is not None and intent.requested_zone_id != candidate.zone.zone_id)
+        ):
+            raise ValueError("decision intent does not match evaluator candidate")
+        return
     if intent.payload() != expected.payload():
         raise ValueError("decision intent does not match evaluator candidate")
 
@@ -280,8 +349,16 @@ def _validate_intent(candidate: DecisionCandidate, intent: ExternalDecisionInten
 class ExternalUseDecisionStore:
     """Append-only persistence and replay for a future internal evaluator seam."""
 
-    def __init__(self, journal: DurableJournal) -> None:
+    def __init__(
+        self,
+        journal: DurableJournal,
+        *,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+        history_verifier: ExternalUseDecisionHistoryVerifier | None = None,
+    ) -> None:
         self._journal = journal
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
+        self._history_verifier = history_verifier
         self._pending: dict[str, _Pending] = {}
         self._recorded: dict[str, DecisionCandidate] = {}
         self._scopes: dict[str, _Scope] = {}
@@ -301,6 +378,52 @@ class ExternalUseDecisionStore:
     @property
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
+
+    def existing_for_intent(
+        self,
+        *,
+        intent: ExternalDecisionIntent,
+        principal: Principal,
+        idempotency_key: str,
+    ) -> DecisionCandidate | None:
+        """Return the already staged immutable decision for an exact retry.
+
+        This deliberately does not evaluate current policy or evidence.  A
+        retry only reads historic journal state; a downstream execution must
+        independently re-check current eligibility before doing new work.
+        """
+        scope, _ = _scope_and_operation_for_intent(intent)
+        key = _require_text(idempotency_key, field="idempotency key")
+        binding = _principal_binding(principal, scope)
+        namespace = _namespace(idempotency_key=key, principal=binding)
+        with self._coordinator.guarded_read(), self._lock:
+            existing = self._idempotency.get(namespace)
+            if existing is None:
+                return None
+            if existing.intent.payload() != intent.payload():
+                raise ExternalUseDecisionConflictError("idempotency key conflicts")
+            return existing.candidate
+
+    def evaluation_identity(
+        self,
+        *,
+        intent: ExternalDecisionIntent,
+        principal: Principal,
+        idempotency_key: str,
+    ) -> str:
+        """Return the opaque server namespace for one new evaluation request.
+
+        Callers must check :meth:`existing_for_intent` first.  The namespace
+        is a one-way principal-bound hash, so raw idempotency material never
+        enters a candidate or durable event.
+        """
+        scope, _ = _scope_and_operation_for_intent(intent)
+        key = _require_text(idempotency_key, field="idempotency key")
+        return _namespace(idempotency_key=key, principal=_principal_binding(principal, scope))
 
     def stage_evaluated(
         self,
@@ -338,7 +461,7 @@ class ExternalUseDecisionStore:
             fingerprint,
             candidate.decided_at,
         )
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             existing = self._idempotency.get(namespace)
             if existing is not None:
                 if existing.fingerprint != fingerprint:
@@ -361,7 +484,7 @@ class ExternalUseDecisionStore:
 
     def reconcile_pending(self) -> tuple[ExternalUseDecisionWrite, ...]:
         """Append records for staged candidates exactly as staged, with no evaluation."""
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             receipts: list[ExternalUseDecisionWrite] = []
             for decision_id, pending in tuple(self._pending.items()):
                 event = self._recorded_event(decision_id, pending)
@@ -381,6 +504,63 @@ class ExternalUseDecisionStore:
             if principal.organization_id != scope.organization_id or site_id != scope.site_id:
                 return None
             return candidate
+
+    def resolve_current_pair_for_issue(
+        self,
+        decision_id: str,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+    ) -> ExternalPairUseDecisionV1 | None:
+        """Return one recorded pair for a future numeric issue without a site hint.
+
+        This is a private Core join: the authenticated organization and exact
+        current WorkOrder scope the lookup before a quantitative authority
+        reads the decision's compatibility mapping digest.  Pending, single,
+        foreign, substituted, and wrong-WorkOrder candidates are all absent.
+        It creates no new authority and does not consult current policy.
+        """
+        with self._lock:
+            candidate = self._recorded.get(decision_id)
+            scope = self._scopes.get(decision_id)
+            if (
+                not isinstance(candidate, ExternalPairUseDecisionV1)
+                or scope is None
+                or scope.organization_id != principal.organization_id
+                or candidate.decision_id != decision_id
+                or candidate.current_subject.work_order_id != current_work_order_id
+                or candidate.decision_digest is None
+                or candidate.canonical_digest() != candidate.decision_digest
+            ):
+                return None
+            return candidate.model_copy(deep=True)
+
+    def resolve_historical_pair(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        decision_id: str,
+        decision_digest: str,
+    ) -> ExternalPairUseDecisionV1 | None:
+        """Read exact recorded provenance without granting current use permission.
+
+        Eligible records have already passed independent source-history checks
+        during staging/replay. This private join never manufactures a principal
+        or evaluates present policy, and cannot return a pending or single use.
+        """
+        with self._lock:
+            candidate = self._recorded.get(decision_id)
+            scope = self._scopes.get(decision_id)
+            if (
+                not isinstance(candidate, ExternalPairUseDecisionV1)
+                or scope != _Scope(organization_id, site_id)
+                or candidate.decision_id != decision_id
+                or candidate.decision_digest != decision_digest
+                or candidate.canonical_digest() != decision_digest
+            ):
+                return None
+            return candidate.model_copy(deep=True)
 
     def list_scoped(self, *, principal: Principal, site_id: str) -> tuple[DecisionCandidate, ...]:
         with self._lock:
@@ -481,6 +661,10 @@ class ExternalUseDecisionStore:
             raise ValueError("candidate operation binding is invalid")
         intent = _intent_from_payload(raw["intent"])
         _validate_intent(candidate, intent)
+        if candidate.verdict is DecisionVerdict.ELIGIBLE and (
+            self._history_verifier is None or not self._history_verifier.verify(candidate)
+        ):
+            raise ValueError("eligible decision source history is unavailable")
         if intent.payload() != raw["intent"]:
             raise ValueError("intent binding is invalid")
         principal_raw = _exact_mapping(
@@ -558,6 +742,7 @@ def _exact_mapping(raw: object, expected: set[str], context: str) -> dict[str, A
 
 __all__ = [
     "ExternalDecisionIntent",
+    "ExternalUseDecisionHistoryVerifier",
     "ExternalUseDecisionConflictError",
     "ExternalUseDecisionRecoveryError",
     "ExternalUseDecisionStore",

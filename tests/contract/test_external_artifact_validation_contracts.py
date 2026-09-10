@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactInspectionOutcomeV1,
     ArtifactOutcome,
@@ -24,6 +25,7 @@ from ksi_event_contracts.external_artifact_validation import (
     ExternalValidationPolicyV1,
     FactClass,
     NodataRepresentation,
+    ObservedVerticalReferenceV1,
     PolicyStatus,
     RasterMeasurementsV1,
     ResourceEnvelopeV1,
@@ -367,6 +369,8 @@ def _pair_decision(
             observed_crs_digest=_digest("b"),
             observed_vertical_reference_digest=_digest("c"),
         )
+        if verdict is not DecisionVerdict.BLOCKED:
+            details["compatibility_mapping_digest"] = _digest("9")
     elif verdict is not DecisionVerdict.BLOCKED:
         details["baseline_sanitized_display_receipt_digest"] = _digest("7")
         details["current_sanitized_display_receipt_digest"] = _digest("8")
@@ -644,6 +648,68 @@ def test_volume_binds_ordered_pair_and_exact_zone() -> None:
     raw.pop("zone")
     with pytest.raises(ValidationError, match="zone"):
         ExternalPairUseDecisionV1.model_validate(raw)
+
+
+def test_nonblocked_relative_volume_requires_an_exact_compatibility_mapping_digest() -> None:
+    """An eligible or restricted volume decision cannot invent mapping provenance later."""
+    value = _pair_decision(use="RELATIVE_VOLUME", verdict=DecisionVerdict.RESTRICTED)
+    raw = value.model_dump(by_alias=True, mode="json")
+    raw["compatibilityMappingDigest"] = None
+
+    with pytest.raises(ValidationError, match="compatibilityMappingDigest"):
+        ExternalPairUseDecisionV1.model_validate(raw)
+
+
+@pytest.mark.parametrize(
+    "use, verdict",
+    (
+        ("VISUAL_COMPARISON", DecisionVerdict.ELIGIBLE),
+        ("RELATIVE_VOLUME", DecisionVerdict.BLOCKED),
+    ),
+)
+def test_pair_decision_schema_forbids_a_mapping_digest_outside_nonblocked_volume(
+    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME"], verdict: DecisionVerdict
+) -> None:
+    """Schema-only producers cannot attach volume provenance to another use."""
+    raw = external_pair_use_decision_wire_dict(_pair_decision(use=use, verdict=verdict))
+    raw["compatibilityMappingDigest"] = _digest("9")
+
+    with pytest.raises(JsonSchemaValidationError, match="compatibilityMappingDigest"):
+        Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(raw)
+
+
+def test_pair_decision_schema_requires_mapping_digest_for_nonblocked_volume() -> None:
+    """Schema-only producers must carry exact mapping provenance before publication."""
+    raw = external_pair_use_decision_wire_dict(
+        _pair_decision(use="RELATIVE_VOLUME", verdict=DecisionVerdict.RESTRICTED)
+    )
+    raw.pop("compatibilityMappingDigest")
+
+    with pytest.raises(JsonSchemaValidationError, match="compatibilityMappingDigest"):
+        Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(raw)
+
+
+def test_observed_vertical_reference_has_an_exact_content_digest() -> None:
+    """The digest identifies parser-observed content; it makes no datum-truth assertion."""
+    reference = ObservedVerticalReferenceV1(identifier="EPSG:3855", basis="synthetic geoid")
+
+    assert reference.canonical_digest() == (
+        "sha256:5bd037257cbf81271cfe4ead2fb17f54da52edca591905b552c8e718cca93f33"
+    )
+
+
+def test_legacy_visual_pair_digest_replays_without_a_null_mapping_field() -> None:
+    """The optional volume field must not rehash visual decision history."""
+    visual = _pair_decision(use="VISUAL_COMPARISON", verdict=DecisionVerdict.ELIGIBLE).sealed()
+    legacy_wire = external_pair_use_decision_wire_dict(visual)
+    legacy_wire.pop("compatibilityMappingDigest")
+
+    Draft202012Validator(_schema("external-pair-use-decision.v1.json")).validate(legacy_wire)
+    replayed = ExternalPairUseDecisionV1.model_validate(legacy_wire)
+
+    assert replayed.decision_digest == (
+        "sha256:fec665336efa7a6362d40cec2370daf1862ad287ffcff735fcf2e5218da1f563"
+    )
 
 
 @pytest.mark.parametrize(

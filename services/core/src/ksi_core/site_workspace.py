@@ -29,6 +29,11 @@ from ksi_core.api_base import CamelModel
 from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.copilot import CopilotQueryRequest, CopilotService, ToolResult
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.external_result_projection_models import (
+    ExternalResultProjectionState,
+    ExternalResultProjectionView,
+)
+from ksi_core.observation_work_orders import WorkOrderWorkflowStatus
 from ksi_core.processing_jobs import (
     ProcessingJobRecord,
     ProcessingJobStore,
@@ -39,6 +44,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.events import EventStore
+    from ksi_core.external_result_workflow_api import ExternalResultReadProjector
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
     from ksi_core.sites import SiteRecord, SiteStore
 
@@ -90,6 +96,7 @@ class SiteWorkspaceView(CamelModel):
     active_work_order_count: int = Field(ge=0)
     latest_work_order: WorkspaceWorkOrderSummary | None
     latest_analysis: WorkspaceAnalysisSummary
+    external_result: ExternalResultProjectionView
     next_action: WorkspaceNextAction
 
 
@@ -113,17 +120,41 @@ class SiteWorkspaceProjector:
         work_order_store: ObservationWorkOrderStore,
         processing_job_store: ProcessingJobStore | None,
         event_store: EventStore | None,
+        external_results: ExternalResultReadProjector | None = None,
     ) -> None:
         self._sites = site_store
         self._work_orders = work_order_store
         self._processing_jobs = processing_job_store
         self._events = event_store
+        self._external_results = external_results
+
+    def uses_exact_participants(
+        self,
+        *,
+        site_store: SiteStore,
+        work_order_store: ObservationWorkOrderStore,
+        external_results: ExternalResultReadProjector | None,
+    ) -> bool:
+        """Whether this read-only projector is wired to the mounted participants."""
+        return (
+            self._sites is site_store
+            and self._work_orders is work_order_store
+            and self._external_results is external_results
+        )
 
     def project(self, site_id: str, *, organization_id: str) -> SiteWorkspaceView:
         site = self._sites.get_scoped(site_id, organization_id)
         if site is None:
             raise LookupError("현장을 찾을 수 없다")
         orders = self._work_orders.list_for_site(site_id, organization_id=organization_id)
+        operations = self._work_orders.list_operations(
+            organization_id=organization_id, site_id=site_id
+        )
+        closed_work_order_ids = frozenset(
+            operation.work_order_id
+            for operation in operations
+            if operation.workflow_status is WorkOrderWorkflowStatus.CLOSED
+        )
         latest_order = max(
             orders,
             key=lambda item: (item.updated_at, item.work_order_id),
@@ -162,7 +193,17 @@ class SiteWorkspaceProjector:
                 if len(page) < _EVENT_PAGE_SIZE:
                     break
                 offset += len(page)
-        active_count = sum(1 for item in orders if item.status in _ACTIVE_WORK_STATES)
+        active_count = sum(
+            1
+            for item in orders
+            if item.status in _ACTIVE_WORK_STATES
+            and item.work_order_id not in closed_work_order_ids
+        )
+        external_result = (
+            self._external_results.for_site(site_id, organization_id=organization_id)
+            if self._external_results is not None
+            else ExternalResultProjectionView(state=ExternalResultProjectionState.NOT_CONFIGURED)
+        )
         return SiteWorkspaceView(
             site_id=site.site_id,
             site_name=site.name,
@@ -172,7 +213,17 @@ class SiteWorkspaceProjector:
             active_work_order_count=active_count,
             latest_work_order=self._work_order_summary(latest_order),
             latest_analysis=self._analysis_summary(latest_job),
-            next_action=self._next_action(site, orders, review_count),
+            external_result=external_result,
+            next_action=self._next_action(site, orders, review_count, closed_work_order_ids),
+        )
+
+    def external_result_citation(
+        self, workspace: SiteWorkspaceView
+    ) -> CopilotCitation | None:
+        if self._external_results is None:
+            return None
+        return self._external_results.citation_for(
+            workspace.external_result, site_name=workspace.site_name
         )
 
     @staticmethod
@@ -214,11 +265,12 @@ class SiteWorkspaceProjector:
             source_watermark=job.input.source_bundle_digest,
         )
 
-    @staticmethod
     def _next_action(
+        self,
         site: SiteRecord,
         orders: list[ObservationWorkOrder],
         review_count: int,
+        closed_work_order_ids: frozenset[str],
     ) -> WorkspaceNextAction:
         encoded_site = quote(site.site_id, safe="")
         if review_count:
@@ -239,7 +291,14 @@ class SiteWorkspaceProjector:
             (ObservationWorkOrderStatus.REVIEW_READY, "REVIEW_RESULTS", "결과와 근거 검토"),
         )
         for status, kind, label in priority:
-            candidate = next((item for item in reversed(orders) if item.status is status), None)
+            candidate = next(
+                (
+                    item
+                    for item in reversed(orders)
+                    if item.status is status and item.work_order_id not in closed_work_order_ids
+                ),
+                None,
+            )
             if candidate is not None:
                 return WorkspaceNextAction(
                     kind=kind,
@@ -248,7 +307,12 @@ class SiteWorkspaceProjector:
                     reason=f"{candidate.name} 작업이 사용자의 판단을 기다립니다.",
                 )
         active = next(
-            (item for item in reversed(orders) if item.status in _ACTIVE_WORK_STATES),
+            (
+                item
+                for item in reversed(orders)
+                if item.status in _ACTIVE_WORK_STATES
+                and item.work_order_id not in closed_work_order_ids
+            ),
             None,
         )
         if active is not None:
@@ -304,9 +368,13 @@ def build_workspace_copilot_handlers(
                 "최신 검증 결과 없음" if workspace.latest_analysis.status == "UNAVAILABLE" else None
             ),
         )
+        citations = [citation]
+        external_citation = projector.external_result_citation(workspace)
+        if external_citation is not None:
+            citations.append(external_citation)
         return ToolResult(
             data=workspace.model_dump(by_alias=True, mode="json"),
-            citations=(citation,),
+            citations=tuple(citations),
         )
 
     def latest_progress(
@@ -317,9 +385,9 @@ def build_workspace_copilot_handlers(
     ) -> ToolResult:
         workspace = projector.project(site_id, organization_id=organization_id)
         analysis = workspace.latest_analysis
-        citations: tuple[CopilotCitation, ...] = ()
+        citations: list[CopilotCitation] = []
         if analysis.processing_job_id is not None:
-            citations = (
+            citations.append(
                 CopilotCitation(
                     citation_id=f"processing-job:{analysis.processing_job_id}",
                     object_type="PROCESSING_JOB",
@@ -335,11 +403,17 @@ def build_workspace_copilot_handlers(
                         if analysis.status != ProcessingJobStatus.SUCCEEDED.value
                         else None
                     ),
-                ),
+                )
             )
+        external_citation = projector.external_result_citation(workspace)
+        if external_citation is not None:
+            citations.append(external_citation)
         return ToolResult(
-            data=analysis.model_dump(by_alias=True, mode="json"),
-            citations=citations,
+            data={
+                **analysis.model_dump(by_alias=True, mode="json"),
+                "externalResult": workspace.external_result.model_dump(by_alias=True, mode="json"),
+            },
+            citations=tuple(citations),
         )
 
     def evidence_index(
@@ -379,6 +453,9 @@ def build_workspace_copilot_handlers(
                 captured_from=workspace.latest_analysis.captured_from,
                 captured_to=workspace.latest_analysis.captured_to,
             )
+        external_citation = projector.external_result_citation(workspace)
+        if external_citation is not None and workspace.external_result.result is not None:
+            allowed[workspace.external_result.result.report_ref] = external_citation
         requested = arguments.get("objectIds", [])
         selected = tuple(allowed[item] for item in requested if item in allowed)
         return ToolResult(

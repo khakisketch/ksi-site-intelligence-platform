@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from ksi_domain.enums import MissionExecutionStatus
 from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrder,
+    ObservationWorkOrderExecutionMode,
     ObservationWorkOrderStatus,
 )
 
@@ -41,6 +43,7 @@ from ksi_core.acquisition.models import (
 )
 from ksi_core.api_base import iso_utc
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.observation_work_orders import ExternalReconstructionExecutionDenied
 
 if TYPE_CHECKING:
     from ksi_core.acquisition.store import AcquisitionConnectivityStore
@@ -57,10 +60,19 @@ class AcquisitionCoordinationConflictError(ValueError):
     """An idempotency or one-run/one-mission invariant was violated."""
 
 
+class AcquisitionExternalReconstructionDenied(ExternalReconstructionExecutionDenied):
+    """A direct assembly cannot turn a customer upload WorkOrder into an AcquisitionRun."""
+
+
 class AcquisitionCoordinationStore:
     """Append-only run/receipt store keyed by organization, WorkOrder, and cycle."""
 
-    def __init__(self, journal: DurableJournal) -> None:
+    def __init__(
+        self,
+        journal: DurableJournal,
+        *,
+        work_order_execution_guard: Callable[[ObservationWorkOrder], None] | None = None,
+    ) -> None:
         self._journal = journal
         self._lock = threading.RLock()
         self._runs: dict[tuple[str, str, int], AcquisitionRunV1] = {}
@@ -70,6 +82,11 @@ class AcquisitionCoordinationStore:
         # Transport is deliberately excluded. A direct/RC fallback keeps the same
         # idempotency key and digest, while each observation has its own receiptId.
         self._idempotency: dict[tuple[str, str], tuple[str, AcquisitionCapability, str]] = {}
+        # Assembly injects WorkOrderStore.assert_execution_allowed. The optional
+        # seam preserves ordinary managed-only test assemblies until that shared
+        # store is supplied; an external successor can only be created through
+        # the separately closed WorkOrder authority port.
+        self._work_order_execution_guard = work_order_execution_guard
         try:
             self._replay(journal.replay())
         except BaseException:
@@ -156,6 +173,10 @@ class AcquisitionCoordinationStore:
     ) -> AcquisitionRunV1:
         if now.tzinfo is None:
             raise ValueError("now는 tz-aware여야 한다")
+        if work_order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION:
+            raise AcquisitionExternalReconstructionDenied("EXTERNAL_RECONSTRUCTION_ONLY")
+        if self._work_order_execution_guard is not None:
+            self._work_order_execution_guard(work_order)
         key = (
             work_order.organization_id,
             work_order.work_order_id,
@@ -202,6 +223,10 @@ class AcquisitionCoordinationStore:
     ) -> AcquisitionRunV1:
         if now.tzinfo is None:
             raise ValueError("now는 tz-aware여야 한다")
+        if work_order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION:
+            raise AcquisitionExternalReconstructionDenied("EXTERNAL_RECONSTRUCTION_ONLY")
+        if self._work_order_execution_guard is not None:
+            self._work_order_execution_guard(work_order)
         key = (
             work_order.organization_id,
             work_order.work_order_id,

@@ -1,0 +1,23 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocked = vi.hoisted(() => ({ session: vi.fn(), list: vi.fn(), declare: vi.fn(), grant: vi.fn(), seal: vi.fn(), single: vi.fn(), pair: vi.fn() }));
+vi.mock("@/lib/core-api/session", () => ({ getSessionToken: mocked.session }));
+vi.mock("@/lib/core-api/external-reconstruction", () => ({ listExternalEvidence: mocked.list, declareExternalEvidence: mocked.declare, grantExternalEvidenceUpload: mocked.grant, sealExternalEvidence: mocked.seal, requestExternalSingleUseDecision: mocked.single, requestExternalPairUseDecision: mocked.pair }));
+import { POST as declare } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence/route";
+import { POST as uploadGrant } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence/[evidenceRef]/upload-grant/route";
+import { POST as seal } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence/[evidenceRef]/seal/route";
+import { POST as pair } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/pair/route";
+
+const context = { params: Promise.resolve({ workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: "1" }) };
+const evidenceContext = (evidenceRef: string) => ({ params: Promise.resolve({ workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: "1", evidenceRef }) });
+const body = { targetDsmArtifactId: "dsm", declaredContentDigest: `sha256:${"b".repeat(64)}`, declaredContentType: "text/csv", independenceBasis: "separate survey" };
+function request(value: unknown, headers: Record<string, string> = {}) { return new Request("http://console.test/api", { method: "POST", headers: { host: "console.test", "content-type": "application/json", "idempotency-key": "key-1", ...headers }, body: JSON.stringify(value) }); }
+beforeEach(() => { vi.resetAllMocks(); mocked.session.mockResolvedValue("token"); mocked.declare.mockResolvedValue({ evidenceRef: "ev-1" }); mocked.grant.mockResolvedValue({ evidenceRef: `eev-v1-${"e".repeat(64)}`, uploadUrl: "https://upload.test/evidence", expiresAt: "2030-01-01T00:00:00Z", requiredHeaders: {} }); mocked.seal.mockResolvedValue({ evidenceRef: `eev-v1-${"e".repeat(64)}`, state: "SEALED_BYTE_OBSERVED" }); mocked.pair.mockResolvedValue({ decision: { verdict: "BLOCKED" } }); });
+describe("external evidence BFF", () => {
+  it("forwards only the declared CSV binding and stable idempotency key", async () => { expect((await declare(request(body) as never, context)).status).toBe(201); expect(mocked.declare).toHaveBeenCalledWith("work-1", `ers-v1-${"a".repeat(64)}`, 1, body, "key-1"); });
+  it("rejects client measurement, policy, geometry, and foreign fields before Core", async () => { for (const extra of [{ rmseM: 1 }, { policyDigest: "x" }, { geometry: [] }, { organizationId: "other" }]) expect((await declare(request({ ...body, ...extra }) as never, context)).status).toBe(400); expect(mocked.declare).not.toHaveBeenCalled(); });
+  it("rejects cross-site mutation before session lookup", async () => { expect((await declare(request(body, { origin: "https://evil.test" }) as never, context)).status).toBe(403); expect(mocked.session).not.toHaveBeenCalled(); });
+  it("allows pair intent only with Core-owned baseline identifiers", async () => { const value = { use: "VISUAL_COMPARISON", baselineWorkOrderId: "work-2", baselineSubmissionRef: `ers-v1-${"c".repeat(64)}`, baselineRevision: 2 }; expect((await pair(request(value) as never, context)).status).toBe(201); expect(mocked.pair).toHaveBeenCalled(); });
+  it("rejects Core DTO scalar boundary violations before forwarding", async () => { const value = { use: "RELATIVE_VOLUME", baselineWorkOrderId: "work-2", baselineSubmissionRef: `ers-v1-${"c".repeat(64)}`, baselineRevision: 2, zoneId: "" }; expect((await pair(request(value) as never, context)).status).toBe(400); expect((await declare(request({ ...body, independenceBasis: " ".repeat(1_001) }) as never, context)).status).toBe(400); });
+  it("rejects a generic evidence reference instead of forwarding it to Core", async () => { expect((await uploadGrant(request({}) as never, evidenceContext("evidence-1"))).status).toBe(404); expect((await seal(request({}) as never, evidenceContext("evidence-1"))).status).toBe(404); expect(mocked.grant).not.toHaveBeenCalled(); expect(mocked.seal).not.toHaveBeenCalled(); });
+});

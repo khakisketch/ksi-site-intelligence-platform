@@ -10,10 +10,14 @@ import {
   humanizeVerticalDatum,
 } from "@/lib/core-api/labels";
 import { getSite } from "@/lib/core-api/sites";
+import { getSiteWorkspace } from "@/lib/core-api/site-workspace";
+import { listWorkAreas } from "@/lib/core-api/workAreas";
+import { ExternalSiteResultSummary } from "@/components/external-results/ExternalSiteResultSummary";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DiffHeatmapOverlay } from "@/components/map/DiffHeatmapOverlay";
 import { OrthophotoOverlay } from "@/components/map/OrthophotoOverlay";
 import { CoverageReportSection } from "@/components/missions/CoverageReportSection";
+import { PrintReportButton } from "@/components/reports/PrintReportButton";
 import { ReportExportControls } from "@/components/reports/ReportExportControls";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatNetVolumeM3, formatVolumeM3 } from "@/lib/core-api/phase34-labels";
@@ -303,22 +307,51 @@ export default async function SiteReportPage({
   }
 
   const header = (
-    <div className="flex flex-col gap-1">
-      <Link
-        href={`/sites/${encodeURIComponent(site.siteId)}`}
-        className="print:hidden text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
-      >
-        ← {site.name}
-      </Link>
-      <h2 className="break-keep text-[19px] font-bold tracking-tight">
-        현장 보고서 — {site.name}
-      </h2>
-      <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
-        계획 대비 진척과(있으면) 설계 대비 남은 물량을 인쇄·저장할 수 있는 형태로
-        묶었습니다. 화면에 그려진 것과 같은 조회 결과를 그대로 옮긴 것이라 화면의
-        표·지도와 다른 숫자가 나올 수 없습니다.
-      </p>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-col gap-1">
+        <Link
+          href={`/sites/${encodeURIComponent(site.siteId)}`}
+          className="print:hidden text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
+        >
+          ← {site.name}
+        </Link>
+        <h2 className="break-keep text-[19px] font-bold tracking-tight">
+          현장 보고서 — {site.name}
+        </h2>
+        <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
+          외부 관측 비교 결과와 계획 대비 진척, 설계 대비 남은 물량을 인쇄·저장할 수 있는
+          형태로 묶었습니다. 각 섹션은 같은 조회 결과를 그대로 옮기며, 확인할 수 없는
+          값은 채우지 않습니다.
+        </p>
+      </div>
+      <PrintReportButton />
     </div>
+  );
+
+  // External result retention is independent of managed design/progress data.
+  // Load it before either managed early return so a missing design surface or a
+  // managed request failure cannot hide a separately retained comparison.
+  const externalWorkspace = await getSiteWorkspace(site.siteId).catch(() => null);
+  const externalResultWorkAreaId = externalWorkspace?.externalResult.state === "AVAILABLE"
+    ? externalWorkspace.externalResult.result?.workAreaId ?? null
+    : null;
+  const externalResultWorkAreas = externalResultWorkAreaId === null
+    ? null
+    : await listWorkAreas(site.siteId).catch(() => null);
+  const externalResultWorkAreaName = externalResultWorkAreas?.workAreas.find(
+    (area) => area.workAreaId === externalResultWorkAreaId,
+  )?.name ?? null;
+  const externalResultSection = externalWorkspace === null ? (
+    <ErrorState
+      message="외부 관측 결과를 불러오지 못했습니다."
+      detail="외부 결과가 없는 상태로 처리하지 않았습니다. 잠시 후 다시 확인하세요."
+      retryable
+    />
+  ) : (
+    <ExternalSiteResultSummary
+      externalResult={externalWorkspace.externalResult}
+      workAreaName={externalResultWorkAreaName}
+    />
   );
 
   if (!designSurfaceId) {
@@ -331,6 +364,7 @@ export default async function SiteReportPage({
     return (
       <div className="flex flex-col gap-5 p-4 sm:p-5">
         {header}
+        {externalResultSection}
         {surfaces === null ? (
           <ErrorState
             message="설계 기준면 목록을 불러오지 못했습니다."
@@ -360,6 +394,7 @@ export default async function SiteReportPage({
     return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         {header}
+        {externalResultSection}
         <ErrorState message={message} />
       </div>
     );
@@ -406,6 +441,7 @@ export default async function SiteReportPage({
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5">
       {header}
+      {externalResultSection}
 
       {data.progress === null ? (
         <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">

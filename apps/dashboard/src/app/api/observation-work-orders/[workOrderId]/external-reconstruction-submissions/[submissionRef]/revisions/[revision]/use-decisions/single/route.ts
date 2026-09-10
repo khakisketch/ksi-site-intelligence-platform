@@ -1,0 +1,7 @@
+import { NextRequest, NextResponse } from "next/server";
+import { CoreApiError } from "@/lib/core-api/client";
+import { requestExternalSingleUseDecision } from "@/lib/core-api/external-reconstruction";
+import { isCrossSiteMutation } from "@/lib/core-api/origin-guard";
+import { getSessionToken } from "@/lib/core-api/session";
+const ref=/^ers-v1-[0-9a-f]{64}$/;
+export async function POST(request:NextRequest,context:{params:Promise<{workOrderId:string;submissionRef:string;revision:string}>}) {if(isCrossSiteMutation(request))return NextResponse.json({code:"CROSS_SITE_REQUEST"},{status:403});await getSessionToken();const p=await context.params,r=Number(p.revision),k=request.headers.get("idempotency-key")?.trim(),b=await request.json().catch(()=>null);if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/.test(p.workOrderId)||!ref.test(p.submissionRef)||!Number.isSafeInteger(r)||r<1||String(r)!==p.revision)return NextResponse.json({code:"NOT_FOUND"},{status:404});if(!k||k.length>255||!b||typeof b!=="object"||Object.keys(b as object).length!==1||((b as {use?:unknown}).use!=="DISPLAY"&&(b as {use?:unknown}).use!=="HEIGHT"))return NextResponse.json({code:"INVALID_EXTERNAL_USE_INTENT"},{status:400});try{return NextResponse.json(await requestExternalSingleUseDecision(p.workOrderId,p.submissionRef,r,(b as {use:"DISPLAY"|"HEIGHT"}).use,k),{status:201});}catch(e){if(e instanceof CoreApiError)return NextResponse.json({code:e.code},{status:e.status});throw e;}}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-reobservation-approval-receipt.v1.json",
+  "title": "ExternalReobservationApprovalReceiptV1",
+  "description": "Immutable human approval receipt binding one external proposal input and one planning-only successor WorkOrder.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "approvalId", "organizationId", "siteId", "sourceWorkOrderId", "successorWorkOrderId", "proposalId", "proposalVersion", "proposalDigest", "approvalInputDigest", "bindingDigest", "idempotencyKey", "approvedBy", "approvedAt", "receiptDigest"],
+  "properties": {
+    "contractVersion": {"const": "external-reobservation-approval-receipt.v1"},
+    "approvalId": {"$ref": "#/$defs/text"},
+    "organizationId": {"$ref": "#/$defs/text"},
+    "siteId": {"$ref": "#/$defs/text"},
+    "sourceWorkOrderId": {"$ref": "#/$defs/text"},
+    "successorWorkOrderId": {"$ref": "#/$defs/text"},
+    "proposalId": {"$ref": "#/$defs/text"},
+    "proposalVersion": {"type": "integer", "minimum": 1},
+    "proposalDigest": {"$ref": "#/$defs/digest"},
+    "approvalInputDigest": {"$ref": "#/$defs/digest"},
+    "bindingDigest": {"$ref": "#/$defs/digest"},
+    "idempotencyKey": {"$ref": "#/$defs/text"},
+    "approvedBy": {"$ref": "#/$defs/text"},
+    "approvedAt": {"$ref": "#/$defs/utcDateTime"},
+    "receiptDigest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "utcDateTime": {"type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$"}
+  }
+}

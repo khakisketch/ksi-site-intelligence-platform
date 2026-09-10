@@ -431,6 +431,7 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EQUIPMENT_SUPPORT_APPROVE,
             Permission.CAPABILITY_PRODUCT_APPROVE,
             Permission.CAPABILITY_ACTIVATE,
+            Permission.ORGANIZATION_MEMBERS_MANAGE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
@@ -458,6 +459,7 @@ def test_field_operator_permissions() -> None:
     )
     assert Permission.SITES_AUTONOMY_APPROVE not in perms
     assert Permission.EQUIPMENT_SUPPORT_APPROVE not in perms
+    assert Permission.ORGANIZATION_MEMBERS_MANAGE not in perms
 
 
 def test_viewer_permissions() -> None:
@@ -470,6 +472,7 @@ def test_viewer_permissions() -> None:
             Permission.COPILOT_QUERY,
         }
     )
+    assert Permission.ORGANIZATION_MEMBERS_MANAGE not in perms
 
 
 def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_table() -> None:
@@ -484,6 +487,7 @@ def test_edge_device_permissions_are_the_fixed_minimum_set_regardless_of_role_ta
             Permission.CAPABILITY_RUNTIME_OBSERVE,
         }
     )
+    assert Permission.ORGANIZATION_MEMBERS_MANAGE not in perms
 
 
 # ── 구조 불변식(ADR-KSI-015) — 역할 이름과 무관해 다음 재편에도 살아남는다 ──────

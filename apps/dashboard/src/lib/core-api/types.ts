@@ -638,6 +638,10 @@ export type ObservationWorkOrderStatus =
   | "BLOCKED"
   | "CANCELLED";
 
+export type ObservationWorkOrderExecutionMode =
+  | "MANAGED_ACQUISITION"
+  | "EXTERNAL_RECONSTRUCTION";
+
 export interface TemporalCoherencePolicy {
   schemaVersion: "1.0";
   maxCaptureSpanSeconds: number;
@@ -653,6 +657,8 @@ export interface ObservationWorkOrderView {
   workAreaIds: string[];
   scheduleId: string | null;
   temporalPolicy?: TemporalCoherencePolicy | null;
+  /** Null is a journal record created before the execution boundary existed. */
+  executionMode: ObservationWorkOrderExecutionMode | null;
   cycleNumber: number;
   status: ObservationWorkOrderStatus;
   statusReason: string | null;
@@ -665,6 +671,25 @@ export interface ObservationWorkOrderView {
   createdBy: string;
   approvedAt: string | null;
   approvedBy: string | null;
+}
+
+/** Administrative operations are a separate Core projection, never a WorkOrder status edit. */
+export type ObservationWorkOrderWorkflowStatus = "UNSPECIFIED" | "OPEN" | "CLOSED";
+
+export interface ObservationWorkOrderOperationsView {
+  schemaVersion: "1.0";
+  organizationId: string;
+  siteId: string;
+  workOrderId: string;
+  operationsRevision: number;
+  workflowStatus: ObservationWorkOrderWorkflowStatus;
+  assigneePrincipalId: string | null;
+  dueAt: string | null;
+  closedAt: string | null;
+  closedBy: string | null;
+  closeNote: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
 }
 
 export interface ReobservationDraftView {
@@ -778,6 +803,72 @@ export interface WorkspaceAnalysisSummary {
   sourceWatermark: string | null;
 }
 
+export type ExternalResultProjectionState =
+  | "NOT_CONFIGURED"
+  | "NO_RESULT"
+  | "AVAILABLE"
+  | "HISTORICAL_SOURCE_UNAVAILABLE";
+
+export interface ExternalResultMetricsView {
+  zoneCellCount: number;
+  commonValidCellCount: number;
+  zoneAreaM2: number;
+  measuredAreaM2: number;
+  commonValidFraction: number;
+  cutM3: number;
+  fillM3: number;
+  netM3: number;
+  thresholdM: number;
+  uncertaintyM3: number | null;
+  uncertaintyNote: string;
+}
+
+export interface ExternalResultExecutionPolicyView {
+  policyId: string;
+  version: number;
+  policyDigest: string;
+  algorithmBuildDigest: string;
+  configDigest: string;
+  uncertaintyMethod: string;
+}
+
+export interface ExternalResultSummaryView {
+  kind?: string;
+  reportRef: string;
+  reportDigest: string;
+  requestRef: string;
+  requestDigest: string;
+  sourceWorkOrderId: string;
+  currentWorkOrderId: string;
+  baselineWorkOrderId: string;
+  decisionId: string;
+  decisionDigest: string;
+  workAreaId: string;
+  zoneDefinitionDigest: string;
+  crs: string;
+  observedCrsDigest: string;
+  verticalReferenceDigest: string;
+  baselineCapturedFrom: string;
+  baselineCapturedTo: string;
+  currentCapturedFrom: string;
+  currentCapturedTo: string;
+  reportedAt: string;
+  measurementStatus: string;
+  measurementReason: string | null;
+  metrics: ExternalResultMetricsView | null;
+  executionPolicy: ExternalResultExecutionPolicyView;
+  reviewRef: string | null;
+  reviewDigest: string | null;
+  reviewedAt: string | null;
+  proposalCount: number;
+  approvedProposalCount: number;
+}
+
+export interface ExternalResultProjectionView {
+  state: ExternalResultProjectionState;
+  result?: ExternalResultSummaryView | null;
+}
+
 export interface SiteWorkspaceView {
   schemaVersion: "1.0";
   siteId: string;
@@ -788,6 +879,7 @@ export interface SiteWorkspaceView {
   activeWorkOrderCount: number;
   latestWorkOrder: WorkspaceWorkOrderSummary | null;
   latestAnalysis: WorkspaceAnalysisSummary;
+  externalResult: ExternalResultProjectionView;
   nextAction: WorkspaceNextAction;
 }
 

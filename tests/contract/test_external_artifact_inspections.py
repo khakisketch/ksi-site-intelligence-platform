@@ -70,8 +70,11 @@ from support.external_artifact_inspection_fixtures import (
 class _FixtureIngress(SealedExternalReconstructionSnapshotPort):
     """A typed public ingress snapshot; no synthetic-only record shape leaks in."""
 
+    def __init__(self, *, include_dsm: bool = False) -> None:
+        self._include_dsm = include_dsm
+
     def sealed_revisions_snapshot(self) -> tuple[ExternalReconstructionRevision, ...]:
-        submission = sealed_submission()
+        submission = sealed_submission(include_dsm=self._include_dsm)
         return (
             ExternalReconstructionRevision(
                 work_order_id="work-order-1",
@@ -82,7 +85,7 @@ class _FixtureIngress(SealedExternalReconstructionSnapshotPort):
                 registered_at=NOW,
                 registered_by="operator-1",
                 bindings=(("ortho", "external-reconstruction/v1/synthetic-ortho"),),
-                manifest=sealed_manifest(),
+                manifest=sealed_manifest(include_dsm=self._include_dsm),
             ),
         )
 
@@ -275,6 +278,68 @@ def test_exact_report_retry_deduplicates_but_changed_payload_is_rejected(tmp_pat
         store.record_report(issued.request.request_id, fence, changed, now=NOW).verdict
         == "PAYLOAD_DIVERGENCE"
     )
+
+
+def test_report_with_non_rgb_ortho_measurements_is_not_retained(tmp_path: Path) -> None:
+    """Core rechecks retained measured shape; the worker cannot widen declared ORTHO."""
+    store, policy = _stores(tmp_path, active=True)
+    issued = store.issue_after_seal(subject(), now=NOW)
+    assert issued.request is not None
+    claimed = store.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
+    assert claimed.fence is not None
+    accepted = report(request_id=issued.request.request_id, policy=policy)
+    outcome = accepted.measurement_payload.outcomes[0]
+    assert outcome.measurements is not None
+    non_rgb = accepted.model_copy(
+        update={
+            "measurement_payload": accepted.measurement_payload.model_copy(
+                update={
+                    "outcomes": (
+                        outcome.model_copy(
+                            update={
+                                "measurements": outcome.measurements.model_copy(
+                                    update={"band_count": 1}
+                                )
+                            }
+                        ),
+                    )
+                }
+            ),
+            "measurement_payload_digest": None,
+            "report_digest": None,
+        },
+        deep=True,
+    ).sealed()
+
+    result = store.record_report(issued.request.request_id, claimed.fence, non_rgb, now=NOW)
+
+    assert result.verdict == "REPORT_BINDING_REJECTED"
+    assert store.input_for(issued.request.request_id, claimed.fence).accepted_report is None
+
+
+def test_rejected_dsm_does_not_block_a_displayable_rgb_ortho(tmp_path: Path) -> None:
+    """The typed unsupported DSM outcome is retained without suppressing ORTHO display work."""
+    sealed_subject = subject(include_dsm=True)
+    store, policy = _stores(
+        tmp_path,
+        active=True,
+        permitted_subject=sealed_subject,
+        ingress=_FixtureIngress(include_dsm=True),
+    )
+    issued = store.issue_after_seal(sealed_subject, now=NOW)
+    assert issued.request is not None
+    claimed = store.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
+    assert claimed.fence is not None
+
+    result = store.record_report(
+        issued.request.request_id,
+        claimed.fence,
+        report(request_id=issued.request.request_id, policy=policy, include_dsm=True),
+        now=NOW,
+    )
+
+    assert result.verdict == "REPORTED"
+    assert result.phase is InspectionPhase.DISPLAY
 
 
 def test_reported_inspection_cannot_append_an_incomplete_failure(tmp_path: Path) -> None:
@@ -1559,6 +1624,100 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
     assert revoke_display.seal(
         revoke_request.request_id, revoke_fence, now=NOW + timedelta(seconds=5)
     ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+
+
+def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Path) -> None:
+    """A receipt retry remains read-idempotent but never outlives its exact lease fence."""
+    policy, authority = _bound_policy()
+    current_time = [NOW]
+    registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "policy.jsonl"),
+        authority_port=authority,
+        clock=lambda: current_time[0],
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    inspection_path = tmp_path / "inspection.jsonl"
+    display_path = tmp_path / "display.jsonl"
+    storage = SyntheticStorage()
+    display = ExternalDisplayArtifactStore(
+        DurableJournal(display_path),
+        policy_registry=registry,
+        storage=storage,
+        clock=lambda: current_time[0],
+    )
+    queue = ExternalArtifactInspectionStore(
+        DurableJournal(inspection_path),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        display_store=display,
+        clock=lambda: current_time[0],
+    )
+    issued = queue.issue_after_seal(subject(), now=NOW)
+    assert issued.request is not None
+    claimed = queue.claim(
+        issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW
+    )
+    assert claimed.fence is not None
+    retained = report(request_id=issued.request.request_id, policy=policy)
+    assert queue.record_report(
+        issued.request.request_id, claimed.fence, retained, now=NOW
+    ).verdict == "REPORTED"
+    declaration = SanitizedDisplayDeclarationV1(
+        display_id="sealed-retry-display",
+        request_id=issued.request.request_id,
+        source_subject_digest=retained.subject_digest,
+        source_report_digest=_sealed_digest(retained.report_digest),
+        policy_digest=_sealed_digest(policy.policy_digest),
+        inspector_build_digest=policy.parser_build_digest,
+        declared_derivative_sha256=digest("9"),
+        declared_derivative_size_bytes=123,
+        declared_derivative_content_type="image/tiff",
+    )
+    assert display.grant(
+        issued.request.request_id, declaration, claimed.fence, now=NOW
+    ).grant is not None
+    assert storage.last_put_key is not None
+    storage.objects[storage.last_put_key] = SyntheticObservation(
+        storage.last_put_key, True, 123, digest("9"), "image/tiff"
+    )
+    assert display.seal(issued.request.request_id, claimed.fence, now=NOW).verdict is (
+        DisplayArtifactVerdict.SEALED
+    )
+    sealed_events = tuple(display._journal.replay())  # noqa: SLF001 - durable retry boundary.
+
+    stale_generation = LeaseFence(WORKER_A, ACQUISITION, 999)
+    assert display.seal(  # A forged/superseded generation cannot read a receipt as work success.
+        issued.request.request_id, stale_generation, now=NOW
+    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    current_time[0] = NOW + timedelta(seconds=5)
+    assert display.seal(  # The formerly exact fence expires after the receipt is sealed.
+        issued.request.request_id, claimed.fence, now=current_time[0]
+    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert tuple(display._journal.replay()) == sealed_events  # noqa: SLF001
+
+    queue._journal.close()  # noqa: SLF001 - process-boundary replay assertion.
+    display._journal.close()  # noqa: SLF001 - process-boundary replay assertion.
+    restarted_display = ExternalDisplayArtifactStore(
+        DurableJournal(display_path),
+        policy_registry=registry,
+        storage=storage,
+        clock=lambda: current_time[0],
+    )
+    restarted_queue = ExternalArtifactInspectionStore(
+        DurableJournal(inspection_path),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        display_store=restarted_display,
+        clock=lambda: current_time[0],
+    )
+    assert restarted_display.seal(
+        issued.request.request_id, stale_generation, now=current_time[0]
+    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert restarted_display.seal(
+        issued.request.request_id, claimed.fence, now=current_time[0]
+    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert tuple(restarted_display._journal.replay()) == sealed_events  # noqa: SLF001
+    assert restarted_queue.public_snapshot(subject()).phase is InspectionPhase.COMPLETE
 
 
 def test_actual_ingress_seal_exposes_snapshot_and_post_commit_callback(tmp_path: Path) -> None:

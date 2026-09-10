@@ -46,6 +46,13 @@ class ObservationWorkOrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class ObservationWorkOrderExecutionMode(StrEnum):
+    """Durable execution boundary; nullable only for records written before this field existed."""
+
+    MANAGED_ACQUISITION = "MANAGED_ACQUISITION"
+    EXTERNAL_RECONSTRUCTION = "EXTERNAL_RECONSTRUCTION"
+
+
 class ReobservationDraftStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -85,6 +92,7 @@ class ObservationWorkOrder(_CamelModel):
     work_area_ids: list[str] = Field(min_length=1, max_length=64)
     schedule_id: str | None = None
     temporal_policy: TemporalCoherencePolicy | None = None
+    execution_mode: ObservationWorkOrderExecutionMode | None = None
     cycle_number: int = Field(default=1, ge=1)
     status: ObservationWorkOrderStatus
     status_reason: str | None = Field(default=None, max_length=1000)
@@ -132,6 +140,7 @@ __all__ = [
     "ObservationSchedule",
     "ObservationScheduleStatus",
     "ObservationWorkOrder",
+    "ObservationWorkOrderExecutionMode",
     "ObservationWorkOrderStatus",
     "ReobservationDraft",
     "ReobservationDraftStatus",

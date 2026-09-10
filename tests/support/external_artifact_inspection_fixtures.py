@@ -43,9 +43,9 @@ def digest(marker: str) -> str:
     return f"sha256:{marker * 64}"
 
 
-def subject() -> SealedExternalSubjectV1:
-    submission = sealed_submission()
-    manifest = sealed_manifest()
+def subject(*, include_dsm: bool = False) -> SealedExternalSubjectV1:
+    submission = sealed_submission(include_dsm=include_dsm)
+    manifest = sealed_manifest(include_dsm=include_dsm)
     assert submission.submission_digest is not None
     assert manifest.manifest_digest is not None
     return SealedExternalSubjectV1(
@@ -109,37 +109,51 @@ def report(
     acquisition: str = ACQUISITION,
     generation: int = 1,
     marker: str = "c",
+    include_dsm: bool = False,
 ) -> ExternalArtifactInspectionReportV1:
-    sealed_subject = subject()
+    sealed_subject = subject(include_dsm=include_dsm)
     assert policy.policy_digest is not None
     binding = SealedArtifactBindingV1(artifact_id="ortho", observed_sha256=digest("c"))
+    bindings = [binding]
+    outcomes = [
+        ArtifactInspectionOutcomeV1(
+            artifact_id="ortho",
+            observed_sha256=binding.observed_sha256,
+            outcome=ArtifactOutcome.MEASURED,
+            measurements=RasterMeasurementsV1(
+                observed_crs_identifier="EPSG:5186",
+                observed_crs_digest=digest(marker),
+                transform=(1.0, 0.0, 0.0, 0.0, -1.0, 2.0),
+                footprint_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
+                footprint_digest=digest(marker),
+                width=2,
+                height=2,
+                band_count=3,
+                dtype="uint8",
+                layout="striped",
+                nodata_representation=NodataRepresentation.NONE,
+                valid_pixel_count=4,
+            ),
+        )
+    ]
+    if include_dsm:
+        dsm_binding = SealedArtifactBindingV1(artifact_id="dsm", observed_sha256=digest("d"))
+        bindings.append(dsm_binding)
+        outcomes.append(
+            ArtifactInspectionOutcomeV1(
+                artifact_id="dsm",
+                observed_sha256=dsm_binding.observed_sha256,
+                outcome=ArtifactOutcome.REJECTED,
+                reason="UNSUPPORTED_RASTER",
+            )
+        )
     payload = ExternalInspectionMeasurementPayloadV1(
         subject_digest=sealed_subject.canonical_digest(),
         sealed_manifest_digest=sealed_subject.manifest_digest,
         inspection_policy_digest=policy.policy_digest,
         inspector_build_digest=policy.parser_build_digest,
-        artifact_bindings=(binding,),
-        outcomes=(
-            ArtifactInspectionOutcomeV1(
-                artifact_id="ortho",
-                observed_sha256=binding.observed_sha256,
-                outcome=ArtifactOutcome.MEASURED,
-                measurements=RasterMeasurementsV1(
-                    observed_crs_identifier="EPSG:5186",
-                    observed_crs_digest=digest(marker),
-                    transform=(1.0, 0.0, 0.0, 0.0, -1.0, 2.0),
-                    footprint_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
-                    footprint_digest=digest(marker),
-                    width=2,
-                    height=2,
-                    band_count=1,
-                    dtype="uint8",
-                    layout="striped",
-                    nodata_representation=NodataRepresentation.NONE,
-                    valid_pixel_count=4,
-                ),
-            ),
-        ),
+        artifact_bindings=tuple(bindings),
+        outcomes=tuple(outcomes),
     )
     return ExternalArtifactInspectionReportV1(
         report_id=f"inspection-report-{marker}",
@@ -157,7 +171,30 @@ def report(
     ).sealed()
 
 
-def sealed_submission() -> ExternalReconstructionSubmissionV1:
+def sealed_submission(*, include_dsm: bool = False) -> ExternalReconstructionSubmissionV1:
+    artifacts = [
+        ExternalArtifactDeclarationV1(
+            artifact_id="ortho",
+            kind=ProcessingArtifactKind.ORTHO,
+            file_name="ortho.tif",
+            format="GeoTIFF",
+            content_type="application/octet-stream",
+            declared_sha256="c" * 64,
+            declared_size_bytes=12,
+        )
+    ]
+    if include_dsm:
+        artifacts.append(
+            ExternalArtifactDeclarationV1(
+                artifact_id="dsm",
+                kind=ProcessingArtifactKind.DSM,
+                file_name="dsm.tif",
+                format="GeoTIFF",
+                content_type="application/octet-stream",
+                declared_sha256="d" * 64,
+                declared_size_bytes=12,
+            )
+        )
     return ExternalReconstructionSubmissionV1(
         submission_id="submission-1",
         revision=1,
@@ -178,23 +215,34 @@ def sealed_submission() -> ExternalReconstructionSubmissionV1:
             raw_media_stored_by_ksi=False,
             original_retention_locus="customer_workstation",
         ),
-        artifacts=(
-            ExternalArtifactDeclarationV1(
-                artifact_id="ortho",
-                kind=ProcessingArtifactKind.ORTHO,
-                file_name="ortho.tif",
-                format="GeoTIFF",
-                content_type="application/octet-stream",
-                declared_sha256="c" * 64,
-                declared_size_bytes=12,
-            ),
-        ),
+        artifacts=tuple(artifacts),
     ).sealed()
 
 
-def sealed_manifest() -> ExternalReconstructionManifestV1:
-    submission = sealed_submission()
+def sealed_manifest(*, include_dsm: bool = False) -> ExternalReconstructionManifestV1:
+    submission = sealed_submission(include_dsm=include_dsm)
     object_key = "external-reconstruction/v1/synthetic-ortho"
+    entries = [
+        ExternalReconstructionManifestEntryV1(
+            artifact_id="ortho",
+            kind=ProcessingArtifactKind.ORTHO,
+            object_key=object_key,
+            observed_sha256="c" * 64,
+            observed_size_bytes=12,
+            observed_content_type="application/octet-stream",
+        )
+    ]
+    if include_dsm:
+        entries.append(
+            ExternalReconstructionManifestEntryV1(
+                artifact_id="dsm",
+                kind=ProcessingArtifactKind.DSM,
+                object_key="external-reconstruction/v1/synthetic-dsm",
+                observed_sha256="d" * 64,
+                observed_size_bytes=12,
+                observed_content_type="application/octet-stream",
+            )
+        )
     manifest = ExternalReconstructionManifestV1.from_submission(
         submission,
         manifest_id="manifest-1",
@@ -203,16 +251,7 @@ def sealed_manifest() -> ExternalReconstructionManifestV1:
         organization_id=submission.organization_id,
         site_id=submission.site_id,
         observation_epoch_id=submission.observation_epoch_id,
-        entries=(
-            ExternalReconstructionManifestEntryV1(
-                artifact_id="ortho",
-                kind=ProcessingArtifactKind.ORTHO,
-                object_key=object_key,
-                observed_sha256="c" * 64,
-                observed_size_bytes=12,
-                observed_content_type="application/octet-stream",
-            ),
-        ),
+        entries=tuple(entries),
     )
     return manifest
 

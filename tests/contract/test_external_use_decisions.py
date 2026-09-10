@@ -14,6 +14,7 @@ from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.external_use_decisions import (
     ExternalDecisionIntent,
     ExternalUseDecisionConflictError,
+    ExternalUseDecisionRecoveryError,
     ExternalUseDecisionStore,
     WriteStatus,
 )
@@ -69,7 +70,11 @@ def _single(
     ).sealed()
 
 
-def _pair(*, decision_id: str = "decision-pair") -> ExternalPairUseDecisionV1:
+def _pair(
+    *,
+    decision_id: str = "decision-pair",
+    use: Literal["VISUAL_COMPARISON", "RELATIVE_VOLUME"] = "VISUAL_COMPARISON",
+) -> ExternalPairUseDecisionV1:
     baseline, current = _subject(marker="a"), _subject(marker="b")
     return ExternalPairUseDecisionV1(
         decision_id=decision_id,
@@ -77,12 +82,35 @@ def _pair(*, decision_id: str = "decision-pair") -> ExternalPairUseDecisionV1:
         baseline_subject_digest=baseline.canonical_digest(),
         current_subject=current,
         current_subject_digest=current.canonical_digest(),
-        use="VISUAL_COMPARISON",
+        use=use,
         evidence_record_digests=(_digest("d"), _digest("e")),
         verdict=DecisionVerdict.BLOCKED,
         reasons=("POLICY_UNAVAILABLE",),
         remediations=("AUTHORIZE_POLICY",),
         decided_at=NOW,
+    ).sealed()
+
+
+class _SyntheticHistoryVerifier:
+    def verify(self, candidate: object) -> bool:
+        del candidate
+        return True
+
+
+def _eligible_single() -> ExternalUseDecisionV1:
+    candidate = _single(decision_id="decision-eligible")
+    return candidate.model_copy(
+        update={
+            "policy_digest": _digest("1"),
+            "inspection_report_digest": _digest("2"),
+            "evidence_record_digests": (),
+            "sanitized_display_receipt_digest": _digest("3"),
+            "verdict": DecisionVerdict.ELIGIBLE,
+            "reasons": ("DISPLAY_ELIGIBLE",),
+            "remediations": ("DISPLAY_RECEIPT_RETAINED",),
+            "decision_digest": None,
+        },
+        deep=True,
     ).sealed()
 
 
@@ -113,6 +141,55 @@ def test_stage_then_reconcile_persists_exact_sealed_single_candidate(tmp_path: P
     assert decision is not None and decision.decision_digest == _single().decision_digest
 
 
+def test_current_pair_for_issue_is_exactly_scoped_without_a_site_hint(tmp_path: Path) -> None:
+    """A numeric issue resolves the recorded pair before choosing its mapping."""
+    store = _store(tmp_path)
+    pair = _pair()
+    store.stage_evaluated(
+        pair,
+        intent=_intent(pair),
+        principal=_principal(),
+        idempotency_key="pair-for-issue",
+    )
+    store.reconcile_pending()
+
+    assert (
+        store.resolve_current_pair_for_issue(
+            "decision-pair", principal=_principal(), current_work_order_id="work-order-a"
+        )
+        == pair
+    )
+    assert (
+        store.resolve_current_pair_for_issue(
+            "decision-pair",
+            principal=_principal(organization_id="org-b"),
+            current_work_order_id="work-order-a",
+        )
+        is None
+    )
+    assert (
+        store.resolve_current_pair_for_issue(
+            "decision-pair", principal=_principal(), current_work_order_id="work-order-other"
+        )
+        is None
+    )
+
+    single = _single()
+    store.stage_evaluated(
+        single,
+        intent=_intent(single),
+        principal=_principal(),
+        idempotency_key="single-for-issue",
+    )
+    store.reconcile_pending()
+    assert (
+        store.resolve_current_pair_for_issue(
+            "decision-single", principal=_principal(), current_work_order_id="work-order-a"
+        )
+        is None
+    )
+
+
 def test_exact_retry_is_idempotent_but_changed_normalized_intent_or_use_conflicts(
     tmp_path: Path,
 ) -> None:
@@ -137,6 +214,89 @@ def test_exact_retry_is_idempotent_but_changed_normalized_intent_or_use_conflict
             principal=_principal(),
             idempotency_key="request-1",
         )
+
+
+def test_existing_intent_is_read_before_a_fresh_evaluator_timestamp_is_allocated(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    candidate = _single()
+    intent = _intent(candidate)
+    store.stage_evaluated(
+        candidate,
+        intent=intent,
+        principal=_principal(),
+        idempotency_key="request-1",
+    )
+
+    assert (
+        store.existing_for_intent(
+            intent=intent, principal=_principal(), idempotency_key="request-1"
+        )
+        == candidate
+    )
+    with pytest.raises(ExternalUseDecisionConflictError):
+        store.existing_for_intent(
+            intent=ExternalDecisionIntent(requested_use="HEIGHT", subject=_subject(marker="a")),
+            principal=_principal(),
+            idempotency_key="request-1",
+        )
+
+
+def test_blocked_relative_volume_retains_selected_zone_in_idempotency_intent(
+    tmp_path: Path,
+) -> None:
+    """A failed authority lookup must not turn all zone selections into one retry."""
+    store = _store(tmp_path)
+    candidate = _pair(use="RELATIVE_VOLUME")
+    selected = ExternalDecisionIntent(
+        requested_use="RELATIVE_VOLUME",
+        baseline_subject=candidate.baseline_subject,
+        current_subject=candidate.current_subject,
+        requested_zone_id="zone-a",
+    )
+    store.stage_evaluated(
+        candidate,
+        intent=selected,
+        principal=_principal(),
+        idempotency_key="volume-1",
+    )
+
+    assert (
+        store.existing_for_intent(
+            intent=selected, principal=_principal(), idempotency_key="volume-1"
+        )
+        == candidate
+    )
+    with pytest.raises(ExternalUseDecisionConflictError):
+        store.existing_for_intent(
+            intent=ExternalDecisionIntent(
+                requested_use="RELATIVE_VOLUME",
+                baseline_subject=candidate.baseline_subject,
+                current_subject=candidate.current_subject,
+                requested_zone_id="zone-b",
+            ),
+            principal=_principal(),
+            idempotency_key="volume-1",
+        )
+
+
+def test_recovery_refuses_eligible_history_without_source_resolver(tmp_path: Path) -> None:
+    path = tmp_path / "eligible-history.jsonl"
+    candidate = _eligible_single()
+    store = ExternalUseDecisionStore(
+        DurableJournal(path), history_verifier=_SyntheticHistoryVerifier()
+    )
+    store.stage_evaluated(
+        candidate,
+        intent=ExternalDecisionIntent.from_candidate(candidate),
+        principal=_principal(),
+        idempotency_key="eligible-1",
+    )
+    store._journal.close()  # noqa: SLF001 - reopen must fail closed.
+
+    with pytest.raises(ExternalUseDecisionRecoveryError, match="eligible decision source history"):
+        ExternalUseDecisionStore(DurableJournal(path))
 
 
 def test_independently_supplied_intent_must_match_the_sealed_candidate(tmp_path: Path) -> None:

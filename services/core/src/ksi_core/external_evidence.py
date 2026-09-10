@@ -12,15 +12,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
 from ksi_event_contracts.external_evidence import (
+    EvidenceCoreVerdict,
     EvidenceIndependence,
     ExternalEvidenceDeclarationV1,
     ExternalEvidenceManifestV1,
+    ExternalEvidenceRecordV1,
     external_evidence_declaration_wire_dict,
     external_evidence_manifest_wire_dict,
 )
@@ -35,6 +37,7 @@ from ksi_core.evidence import (
     EvidenceStorageError,
     ObjectStorageObservationPort,
 )
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_reconstruction import (
     ExternalReconstructionRevision,
     ExternalReconstructionStore,
@@ -155,6 +158,24 @@ class ExternalEvidenceView(CamelModel):
     observed_size_bytes: int | None = None
     observed_content_type: str | None = None
     observed_at: datetime | None = None
+    measurement_summaries: list[ExternalEvidenceMeasurementSummaryView] | None = None
+
+
+class ExternalEvidenceMeasurementSummaryView(CamelModel):
+    """Occurred aggregate only; raw checkpoint facts remain worker-private."""
+
+    core_verdict: EvidenceCoreVerdict
+    measured_checkpoint_count: int
+    mean_error_m: float
+    mae_m: float
+    rmse_m: float
+    recorded_at: datetime
+
+
+class ExternalEvidenceTerminalRecordProjectionPort(Protocol):
+    def terminal_records_for_evidence(
+        self, evidence_ref: str
+    ) -> tuple[ExternalEvidenceRecordV1, ...]: ...
 
 
 class ExternalEvidenceListResponse(CamelModel):
@@ -172,14 +193,20 @@ class ExternalEvidenceStore:
     """Append-only evidence ledger with durable idempotency bindings."""
 
     def __init__(
-        self, journal: DurableJournal, *, clock: Callable[[], datetime] | None = None
+        self,
+        journal: DurableJournal,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
         self._journal = journal
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._items: dict[str, EvidenceItem] = {}
         self._natural: dict[str, str] = {}
         self._idempotency: dict[str, tuple[str, str]] = {}
         self._pending: dict[str, _PendingBinding] = {}
+        self._seal_listeners: list[Callable[[EvidenceItem, datetime], object]] = []
         self._lock = threading.RLock()
         try:
             for raw in journal.replay():
@@ -187,6 +214,20 @@ class ExternalEvidenceStore:
         except BaseException as exc:
             journal.close()
             raise ExternalEvidenceRecoveryError(f"external evidence replay failed: {exc}") from exc
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
+
+    def bind_seal_listener(self, listener: Callable[[EvidenceItem, datetime], object]) -> None:
+        """Bind additive post-commit validation issuance without ingress authority."""
+        with self._lock:
+            self._seal_listeners.append(listener)
+
+    def sealed_items_snapshot(self) -> tuple[EvidenceItem, ...]:
+        """Return retained seals for restart reconciliation only."""
+        with self._lock:
+            return tuple(item for item in self._items.values() if item.manifest is not None)
 
     def _apply(self, raw: dict[str, Any]) -> None:
         if not isinstance(raw, dict) or raw.get("eventDigest") != _event_digest(raw):
@@ -578,7 +619,7 @@ class ExternalEvidenceStore:
         declaration = declaration.model_copy(update={"evidence_id": evidence_id}).sealed()
         _, _, evidence_ref, object_key = self._derived_declaration_ids(declaration)
         while True:
-            with self._lock:
+            with self._coordinator.mutation(), self._lock:
                 existing_ref = self._natural.get(natural)
                 target_ref = existing_ref or evidence_ref
                 state, pending = self._reserve_locked(binding, target_ref)
@@ -617,6 +658,35 @@ class ExternalEvidenceStore:
                 assert pending is not None
             pending.completed.wait()
 
+    def is_declaration_retry(
+        self,
+        intent: ExternalEvidenceDeclarationIntent,
+        *,
+        revision: ExternalReconstructionRevision,
+        principal: Principal,
+        key: str,
+    ) -> bool:
+        """Return whether a declaration is already durable for the exact human retry."""
+
+        subject_pair = self._subject(revision)
+        if subject_pair is None or intent.target_dsm_artifact_id != subject_pair[1].artifact_id:
+            return False
+        subject, _dsm = subject_pair
+        binding = self._binding(
+            principal,
+            "declare",
+            {
+                "workOrderId": subject.work_order_id,
+                "submissionId": subject.submission_id,
+                "revision": subject.revision,
+            },
+            intent.model_dump(by_alias=True, mode="json"),
+            key,
+        )
+        with self._lock:
+            existing = self._idempotency.get(binding["key"])
+        return existing is not None and existing[0] == binding["fingerprint"]
+
     def list(self, revision: ExternalReconstructionRevision) -> tuple[EvidenceItem, ...]:
         with self._lock:
             return tuple(
@@ -629,6 +699,17 @@ class ExternalEvidenceStore:
                     revision.submission.revision,
                 )
             )
+
+    def resolve_for_validation(self, evidence_ref: str) -> EvidenceItem | None:
+        """Return one sealed record to the Core-only validation lifecycle.
+
+        This is intentionally not a human-scoped read and exposes no object
+        capability.  Callers still need an authenticated worker route plus a
+        current lease before a byte binding can be issued.
+        """
+        with self._lock:
+            item = self._items.get(evidence_ref)
+            return item if item is not None and item.manifest is not None else None
 
     def _scoped(
         self, evidence_ref: str, revision: ExternalReconstructionRevision
@@ -829,11 +910,12 @@ class ExternalEvidenceStore:
             server_object_key=snapshot.object_key,
             observed_at=now,
         ).sealed()
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             item = self._scoped(evidence_ref, revision)
             if item is None:
                 self._release_locked(binding, pending)
                 return EvidenceResult(EvidenceVerdict.NOT_FOUND)
+            newly_sealed = item.manifest is None
             if item.manifest is not None:
                 raw = {
                     "kind": "external-evidence-idempotency-bound",
@@ -856,11 +938,36 @@ class ExternalEvidenceStore:
                 self._release_locked(binding, pending)
                 return EvidenceResult(EvidenceVerdict.STORAGE_UNAVAILABLE, item)
             self._release_locked(binding, pending)
-            return EvidenceResult(EvidenceVerdict.SEALED, self._items[evidence_ref])
+            sealed = self._items[evidence_ref]
+            listeners = tuple(self._seal_listeners) if newly_sealed else ()
+        for listener in listeners:
+            try:
+                listener(sealed, now)
+            except Exception:
+                # Derived issue work is recovered from the immutable seal on
+                # assembly restart; a listener cannot alter ingress history.
+                continue
+        return EvidenceResult(EvidenceVerdict.SEALED, sealed)
 
 
-def _view(item: EvidenceItem) -> ExternalEvidenceView:
+def _view(
+    item: EvidenceItem,
+    *,
+    terminal_records: tuple[ExternalEvidenceRecordV1, ...] = (),
+) -> ExternalEvidenceView:
     d, m = item.declaration, item.manifest
+    summaries = [
+        ExternalEvidenceMeasurementSummaryView(
+            core_verdict=record.core_verdict,
+            measured_checkpoint_count=record.measurement_payload.measured_checkpoint_count,
+            mean_error_m=record.measurement_payload.mean_error_m,
+            mae_m=record.measurement_payload.mae_m,
+            rmse_m=record.measurement_payload.rmse_m,
+            recorded_at=record.core_recorded_at,
+        )
+        for record in terminal_records
+        if record.measurement_payload is not None
+    ]
     if m is None:
         return ExternalEvidenceView(
             evidence_ref=item.evidence_ref,
@@ -871,6 +978,7 @@ def _view(item: EvidenceItem) -> ExternalEvidenceView:
             declared_content_type=d.declared_content_type,
             independence_basis=d.independence_basis,
             declared_at=d.declared_at,
+            measurement_summaries=summaries or None,
         )
     return ExternalEvidenceView(
         evidence_ref=item.evidence_ref,
@@ -885,6 +993,7 @@ def _view(item: EvidenceItem) -> ExternalEvidenceView:
         observed_size_bytes=m.observed_size_bytes,
         observed_content_type=m.observed_content_type,
         observed_at=m.observed_at,
+        measurement_summaries=summaries or None,
     )
 
 
@@ -895,6 +1004,7 @@ def mount_external_evidence(
     reconstruction: ExternalReconstructionStore,
     work_orders: ObservationWorkOrderStore,
     storage: Any,
+    terminal_records: ExternalEvidenceTerminalRecordProjectionPort | None = None,
 ) -> None:
     router = APIRouter(prefix="/v1/observation-work-orders", tags=["external-evidence"])
     read = require_permission(Permission.SITES_READ)
@@ -935,6 +1045,16 @@ def mount_external_evidence(
         if principal.kind is not PrincipalKind.OPERATOR:
             raise HTTPException(403, "HUMAN_AUTHORITY_REQUIRED")
 
+    def view(item: EvidenceItem) -> ExternalEvidenceView:
+        return _view(
+            item,
+            terminal_records=(
+                terminal_records.terminal_records_for_evidence(item.evidence_ref)
+                if terminal_records is not None
+                else ()
+            ),
+        )
+
     def error(result: EvidenceResult) -> None:
         status = {
             EvidenceVerdict.NOT_FOUND: 404,
@@ -970,16 +1090,32 @@ def mount_external_evidence(
         principal: Principal = Depends(write),  # noqa: B008
     ) -> ExternalEvidenceView:  # noqa: B008
         human(principal)
-        result = store.declare(
-            intent,
-            revision=revision_for(work_order_id, submission_ref, revision, principal),
-            principal=principal,
-            key=idempotency_key,
-            now=datetime.now(UTC),
-        )
+        resolved_revision = revision_for(work_order_id, submission_ref, revision, principal)
+        try:
+            with work_orders.guard_new_external_intent(
+                work_order_id,
+                organization_id=principal.organization_id,
+                is_durable_retry=lambda: store.is_declaration_retry(
+                    intent,
+                    revision=resolved_revision,
+                    principal=principal,
+                    key=idempotency_key,
+                ),
+            ):
+                result = store.declare(
+                    intent,
+                    revision=resolved_revision,
+                    principal=principal,
+                    key=idempotency_key,
+                    now=datetime.now(UTC),
+                )
+        except RuntimeError as exc:
+            if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
         error(result)
         assert result.item
-        return _view(result.item)
+        return view(result.item)
 
     @router.get(base, response_model=ExternalEvidenceListResponse, response_model_exclude_none=True)
     def list_evidence(
@@ -990,7 +1126,7 @@ def mount_external_evidence(
     ) -> ExternalEvidenceListResponse:  # noqa: B008
         return ExternalEvidenceListResponse(
             items=[
-                _view(item)
+                view(item)
                 for item in store.list(
                     revision_for(work_order_id, submission_ref, revision, principal)
                 )
@@ -1050,7 +1186,7 @@ def mount_external_evidence(
         )
         error(result)
         assert result.item
-        return _view(result.item)
+        return view(result.item)
 
     app.state.external_evidence_store = store
     app.include_router(router)

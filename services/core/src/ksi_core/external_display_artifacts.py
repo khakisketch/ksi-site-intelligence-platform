@@ -27,11 +27,13 @@ from pydantic import ValidationError
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     DEFAULT_UPLOAD_TTL,
+    DEFAULT_VIEW_TTL,
     DigestBoundEvidenceStorage,
     EvidenceStorageError,
     ObjectStorageObservationPort,
 )
 from ksi_core.external_artifact_inspections import ExternalInspectionFailureV1
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.leasing import LeaseFence
 
@@ -80,6 +82,26 @@ class DisplayArtifactResult:
     declaration: SanitizedDisplayDeclarationV1 | None = None
     receipt: SanitizedDisplayReceiptV1 | None = None
     grant: SanitizedDisplayGrant | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicDisplaySnapshot:
+    """Receipt facts that are safe to project after the parent scope is checked."""
+
+    state: DisplayPhase
+    receipt: SanitizedDisplayReceiptV1 | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicDisplayDownloadBinding:
+    """Exact receipt identity plus the private key needed only for presigning."""
+
+    sanitized_display_ref: str
+    receipt_digest: str
+    observed_derivative_sha256: str
+    observed_derivative_size_bytes: int
+    observed_derivative_content_type: str
+    object_key: str
 
 
 @dataclass(slots=True)
@@ -163,11 +185,15 @@ class ExternalDisplayArtifactStore:
         policy_registry: ExternalValidationPolicyRegistry,
         storage: DigestBoundEvidenceStorage | ObjectStorageObservationPort,
         clock: Callable[[], datetime] | None = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
         self._journal = journal
         self._policy_registry = policy_registry
         self._storage = storage
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
+        if coordinator is not None and policy_registry.coordinator is not self._coordinator:
+            raise ValueError("display policy registry must share currentness coordinator")
         self._records: dict[str, _Record] = {}
         self._mutation_guard: Callable[..., DisplayArtifactResult | None] | None = None
         self._lock = threading.RLock()
@@ -186,6 +212,10 @@ class ExternalDisplayArtifactStore:
     def sealed_reason(self) -> str | None:
         return self._journal.sealed_reason
 
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
+
     def bind_mutation_guard(self, guard: Callable[..., DisplayArtifactResult | None]) -> None:
         """Install the inspection-owned commit closure for durable display writes.
 
@@ -199,6 +229,79 @@ class ExternalDisplayArtifactStore:
         with self._lock:
             record = self._records.get(request_id)
             return record.phase if record is not None else DisplayPhase.NOT_REQUIRED
+
+    def matches_declared_display_id(self, request_id: str, display_id: str) -> bool:
+        """Check the sealed worker path ID before an HTTP route can mutate a receipt."""
+        with self._lock:
+            record = self._records.get(request_id)
+            return (
+                record is not None
+                and record.declaration is not None
+                and record.declaration.display_id == display_id
+            )
+
+    def public_snapshot(
+        self,
+        request_id: str,
+        *,
+        subject_digest: str,
+        report_digest: str,
+        policy_digest: str,
+    ) -> PublicDisplaySnapshot | None:
+        """Read a receipt state only when every immutable parent binding matches."""
+        with self._lock:
+            record = self._records.get(request_id)
+            if (
+                record is None
+                or record.subject.canonical_digest() != subject_digest
+                or record.report_digest != report_digest
+                or record.policy_digest != policy_digest
+            ):
+                return None
+            return PublicDisplaySnapshot(record.phase, record.receipt)
+
+    def public_download_binding(
+        self,
+        request_id: str,
+        *,
+        subject_digest: str,
+        report_digest: str,
+        policy_digest: str,
+        sanitized_display_ref: str,
+    ) -> PublicDisplayDownloadBinding | None:
+        """Resolve one opaque receipt to a private presign target under the store lock."""
+        if re.fullmatch(r"sda-v1-[0-9a-f]{64}", sanitized_display_ref) is None:
+            return None
+        snapshot = self.public_snapshot(
+            request_id,
+            subject_digest=subject_digest,
+            report_digest=report_digest,
+            policy_digest=policy_digest,
+        )
+        receipt = snapshot.receipt if snapshot is not None else None
+        if snapshot is None or snapshot.state is not DisplayPhase.SEALED or receipt is None:
+            return None
+        if receipt.sanitized_display_ref != sanitized_display_ref or receipt.receipt_digest is None:
+            return None
+        with self._lock:
+            record = self._records.get(request_id)
+            if record is None or record.declaration is None or record.receipt != receipt:
+                return None
+            return PublicDisplayDownloadBinding(
+                receipt.sanitized_display_ref,
+                receipt.receipt_digest,
+                receipt.observed_derivative_sha256,
+                receipt.observed_derivative_size_bytes,
+                receipt.observed_derivative_content_type,
+                self._object_key(record.declaration),
+            )
+
+    def presign_public_download(self, binding: PublicDisplayDownloadBinding) -> str | None:
+        """Create a short-lived capability without retaining it in a durable journal."""
+        try:
+            return cast(Any, self._storage).presigned_get(binding.object_key, ttl=DEFAULT_VIEW_TTL)
+        except (AttributeError, EvidenceStorageError):
+            return None
 
     def ensure_after_report(
         self,
@@ -219,7 +322,10 @@ class ExternalDisplayArtifactStore:
             raise ValueError("retry budget must be a positive policy value")
         if type(max_output_bytes) is not int or max_output_bytes < 1:
             raise ValueError("display output limit must be a positive policy value")
-        with self._lock:
+        # This is the one display mutation that is not entered through the
+        # inspection-owned lease callback.  It must therefore join the shared
+        # authority coordinator directly before its journal projection.
+        with self._coordinator.mutation(), self._lock:
             existing = self._records.get(report.request_id)
             if existing is not None:
                 if (
@@ -350,7 +456,19 @@ class ExternalDisplayArtifactStore:
         if record is None or record.declaration is None:
             return self._result(request_id, DisplayArtifactVerdict.DISPLAY_NOT_REQUIRED)
         if record.receipt is not None:
-            return self._result(request_id, DisplayArtifactVerdict.SEALED)
+            guarded = self._run_mutation_guard(
+                request_id,
+                fence,
+                record.report_digest,
+                lambda _commit_now, _attempt_count, _policy: self._result(
+                    request_id, DisplayArtifactVerdict.SEALED
+                ),
+            )
+            return (
+                guarded
+                if guarded is not None
+                else self._result(request_id, DisplayArtifactVerdict.LEASE_FENCE_REJECTED)
+            )
         declaration = record.declaration
         try:
             observed = cast(ObjectStorageObservationPort, self._storage).observe_object(

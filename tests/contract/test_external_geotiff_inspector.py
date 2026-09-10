@@ -281,6 +281,39 @@ def test_cog_trailer_mutation_downgrades_only_the_optional_cog_classification(
     assert outcome.measurements.layout == "GEOTIFF_TILED_V1"
 
 
+def test_cog_looking_metadata_cannot_promote_a_raw_strip_table(tmp_path: Path) -> None:
+    """A raw StripOffsets table remains striped even if a presentation tag claims COG."""
+    from ksi_processing_controller.external_geotiff_inspector import _classify_layout
+    from ksi_processing_controller.external_tiff_structure import parse_sealed_tiff_structure
+
+    striped = tmp_path / "striped.tif"
+    with rasterio.open(
+        striped,
+        "w",
+        driver="GTiff",
+        width=16,
+        height=16,
+        count=3,
+        dtype="uint8",
+        crs="EPSG:3857",
+        transform=from_origin(0.0, 16.0, 1.0, 1.0),
+        compress="DEFLATE",
+        interleave="pixel",
+    ) as dataset:
+        dataset.write(np.full((3, 16, 16), 7, dtype=np.uint8))
+    structure = parse_sealed_tiff_structure(striped, _envelope())
+    cog_looking = SimpleNamespace(
+        tags=lambda ns: {"LAYOUT": "COG"} if ns == "IMAGE_STRUCTURE" else {},
+        profile={"tiled": False},
+        block_shapes=((16, 16),),
+        overviews=lambda band: (),
+        width=16,
+        height=16,
+    )
+
+    assert _classify_layout(striped, cog_looking, structure) == "GEOTIFF_STRIPED_V1"
+
+
 def _inspect(path: Path, kind: ProcessingArtifactKind) -> ArtifactInspectionOutcomeV1:
     from ksi_processing_controller.external_geotiff_inspector import (
         inspect_synthetic_sealed_geotiff,

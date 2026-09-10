@@ -706,6 +706,31 @@ def test_fresh_seal_replay_key_is_durable_and_cross_operation_key_conflicts(tmp_
     reopened._journal.close()
 
 
+def test_new_evidence_seal_notifies_additive_lifecycle_once_after_commit(tmp_path: Path) -> None:
+    store, storage, revision, principal, ref = _direct_evidence_context(tmp_path)
+    item = store._items[ref]
+    storage.objects[item.object_key] = ObjectStorageObservation(
+        object_key=item.object_key,
+        exists=True,
+        size_bytes=len(b"existing checkpoint facts"),
+        sha256=item.declaration.declared_content_digest,
+        content_type=item.declaration.declared_content_type,
+    )
+    observed: list[str] = []
+    store.bind_seal_listener(lambda sealed, _now: observed.append(sealed.evidence_ref))
+
+    assert store.seal(
+        ref, revision=revision, principal=principal, key="seal-a", storage=storage, now=_NOW
+    ).verdict is EvidenceVerdict.SEALED
+    assert observed == [ref]
+    assert store.sealed_items_snapshot() == (store.resolve_for_validation(ref),)
+
+    assert store.seal(
+        ref, revision=revision, principal=principal, key="seal-b", storage=storage, now=_NOW
+    ).verdict is EvidenceVerdict.SEALED
+    assert observed == [ref]
+
+
 def test_replay_rejects_a_grant_event_after_a_seal(tmp_path: Path) -> None:
     store, storage, revision, principal, ref = _direct_evidence_context(tmp_path)
     item = store._items[ref]
