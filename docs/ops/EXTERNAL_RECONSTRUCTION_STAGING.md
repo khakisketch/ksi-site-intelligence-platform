@@ -22,8 +22,8 @@ file is re-hashed before any account, map, D-Bus, or Docker action.
 Before any activation, an owner must supply all of the following outside Git:
 
 1. A current-operator-owned private release-evidence record from an exact clean
-   source checkout. It must contain immutable Core/Dashboard references and
-   their locally inspected image IDs, a nonempty list of immutable external
+   source checkout. It must bind the two fixed local RC tags to their locally
+   inspected image IDs, include a nonempty list of immutable external
    runtime references and image IDs, and the path plus SHA256 of the actual
    SBOM and scanner artifacts. The lifecycle gate re-hashes the artifacts and
    re-inspects every named local image; a claimed digest alone is insufficient.

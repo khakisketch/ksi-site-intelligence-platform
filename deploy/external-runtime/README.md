@@ -98,7 +98,7 @@ existing Phase 2 stack.
 
 `verify` and `start` require an exact clean source checkout and a current-
 operator-owned private release-evidence record. The record must bind the
-source commit; immutable Core/Dashboard references and local Docker image IDs;
+source commit; the two fixed local RC tags and their exact Docker image IDs;
 each nonempty external runtime image reference and image ID; and the paths and
 SHA256 values of the actual SBOM and scanner artifacts. The lifecycle parser
 accepts only the reviewed `KEY=VALUE` environment keys and never sources the

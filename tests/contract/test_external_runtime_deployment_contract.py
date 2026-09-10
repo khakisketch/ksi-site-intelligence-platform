@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 import socket
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DEPLOY = _ROOT / "deploy"
@@ -75,11 +74,14 @@ def test_candidate_never_uses_ambient_docker_or_phase2_project_identity() -> Non
     assert ".externalRuntimeImages | length > 0" in stage
 
     assert "network_mode: host" not in compose
-    assert "KSI_EXTERNAL_RC_CORE_IMAGE" in compose
-    assert "KSI_EXTERNAL_RC_DASHBOARD_IMAGE" in compose
-    assert "ksi-external-rc-core:local" not in compose
-    assert "ksi-external-rc-dashboard:local" not in compose
-    assert '"127.0.0.1:${KSI_EXTERNAL_RC_IDENTITY_PORT:?set KSI_EXTERNAL_RC_IDENTITY_PORT}:8080"' in compose
+    assert "image: ksi-external-rc-core:local" in compose
+    assert "image: ksi-external-rc-dashboard:local" in compose
+    assert "verify_local_build_binding" in stage
+    identity_port = (
+        '"127.0.0.1:'
+        '${KSI_EXTERNAL_RC_IDENTITY_PORT:?set KSI_EXTERNAL_RC_IDENTITY_PORT}:8080"'
+    )
+    assert identity_port in compose
 
 
 def test_host_assets_keep_validator_and_launcher_privileges_separate() -> None:
@@ -177,7 +179,17 @@ verify_image_binding "$2" "$3"
     assert valid.returncode == 0, valid.stderr
 
     mismatch = subprocess.run(
-        ["bash", "-c", shell, "bash", str(stage), reference, "sha256:" + "c" * 64, canonical_digest, image_id],
+        [
+            "bash",
+            "-c",
+            shell,
+            "bash",
+            str(stage),
+            reference,
+            "sha256:" + "c" * 64,
+            canonical_digest,
+            image_id,
+        ],
         text=True,
         capture_output=True,
         check=False,

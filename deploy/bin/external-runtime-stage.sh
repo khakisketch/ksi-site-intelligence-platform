@@ -16,8 +16,6 @@ readonly required_keys=(
   KSI_EXTERNAL_RC_PROJECT_NAME
   KSI_EXTERNAL_RC_STATE_DIR
   KSI_EXTERNAL_RC_RELEASE_EVIDENCE
-  KSI_EXTERNAL_RC_CORE_IMAGE
-  KSI_EXTERNAL_RC_DASHBOARD_IMAGE
   KSI_EXTERNAL_RC_HOST
   KSI_EXTERNAL_RC_APP_PORT
   KSI_EXTERNAL_RC_IDENTITY_PORT
@@ -103,6 +101,14 @@ verify_image_binding() {
   grep -Fqx -- "$canonical_digest" <<<"$repo_digests"
 }
 
+verify_local_build_binding() {
+  local reference="$1" expected_id="$2" actual_id
+  [[ "$reference" == ksi-external-rc-core:local || "$reference" == ksi-external-rc-dashboard:local ]] || return 1
+  [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  actual_id="$(docker image inspect --format '{{.Id}}' "$reference")" || return 1
+  [[ "$actual_id" == "$expected_id" ]]
+}
+
 verify_artifact_binding() {
   local path="$1" expected="$2" actual
   [[ "$expected" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
@@ -127,11 +133,11 @@ require_release_evidence() {
   command -v jq >/dev/null || { echo "jq is required for release evidence" >&2; return 1; }
 
   source_commit="$(git -C "$repo_dir" rev-parse HEAD)"
-  jq -e --arg commit "$source_commit" --arg core "$KSI_EXTERNAL_RC_CORE_IMAGE" --arg dashboard "$KSI_EXTERNAL_RC_DASHBOARD_IMAGE" '
+  jq -e --arg commit "$source_commit" '
     .sourceCommit == $commit
-    and .images.core.reference == $core
+    and .images.core.reference == "ksi-external-rc-core:local"
     and (.images.core.imageId | test("^sha256:[0-9a-f]{64}$"))
-    and .images.dashboard.reference == $dashboard
+    and .images.dashboard.reference == "ksi-external-rc-dashboard:local"
     and (.images.dashboard.imageId | test("^sha256:[0-9a-f]{64}$"))
     and (.sbom.path | type == "string")
     and (.sbom.sha256 | test("^sha256:[0-9a-f]{64}$"))
@@ -148,10 +154,10 @@ require_release_evidence() {
   core_image_id="$(jq -r '.images.core.imageId' "$evidence")"
   dashboard_reference="$(jq -r '.images.dashboard.reference' "$evidence")"
   dashboard_image_id="$(jq -r '.images.dashboard.imageId' "$evidence")"
-  verify_image_binding "$core_reference" "$core_image_id" || {
+  verify_local_build_binding "$core_reference" "$core_image_id" || {
     echo "BLOCKED_RELEASE_EVIDENCE: Core image ID or digest differs from evidence" >&2; return 1;
   }
-  verify_image_binding "$dashboard_reference" "$dashboard_image_id" || {
+  verify_local_build_binding "$dashboard_reference" "$dashboard_image_id" || {
     echo "BLOCKED_RELEASE_EVIDENCE: Dashboard image ID or digest differs from evidence" >&2; return 1;
   }
 
@@ -223,12 +229,6 @@ main() {
     echo "candidate state directory must be absolute" >&2; return 1;
   }
   [[ "$KSI_EXTERNAL_RC_HOST" == *.ts.net ]] || { echo "candidate host must be Tailnet MagicDNS" >&2; return 1; }
-  immutable_reference "$KSI_EXTERNAL_RC_CORE_IMAGE" || {
-    echo "Core image must be an immutable registry reference" >&2; return 1;
-  }
-  immutable_reference "$KSI_EXTERNAL_RC_DASHBOARD_IMAGE" || {
-    echo "Dashboard image must be an immutable registry reference" >&2; return 1;
-  }
   case "$action" in
     prepare) prepare ;;
     status) status ;;

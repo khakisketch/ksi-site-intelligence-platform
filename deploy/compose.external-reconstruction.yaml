@@ -5,7 +5,10 @@
 name: ${KSI_EXTERNAL_RC_PROJECT_NAME:-ksi-external-rc}
 
 x-core-image: &core-image
-  image: ${KSI_EXTERNAL_RC_CORE_IMAGE:?set KSI_EXTERNAL_RC_CORE_IMAGE}
+  image: ksi-external-rc-core:local
+  build:
+    context: ..
+    dockerfile: Dockerfile
 
 x-app-hardening: &app-hardening
   read_only: true
@@ -141,7 +144,10 @@ services:
 
   dashboard:
     <<: *app-hardening
-    image: ${KSI_EXTERNAL_RC_DASHBOARD_IMAGE:?set KSI_EXTERNAL_RC_DASHBOARD_IMAGE}
+    image: ksi-external-rc-dashboard:local
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
     environment:
       CORE_API_BASE_URL: http://core:8000
       KSI_DASHBOARD_DEPLOYMENT_PROFILE: EXTERNAL_VM
