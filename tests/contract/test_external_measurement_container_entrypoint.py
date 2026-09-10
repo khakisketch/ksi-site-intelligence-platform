@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -68,7 +70,7 @@ def _digest_bytes(payload: bytes) -> str:
     return "sha256:" + sha256(payload).hexdigest()
 
 
-def _digest_canonical(value: object) -> str:
+def _digest_canonical(value: Mapping[str, Any]) -> str:
     return "sha256:" + sha256(canonical_json_bytes(value)).hexdigest()
 
 
@@ -382,6 +384,7 @@ def _checkpoint_request(
             "policy_digest": None,
         }
     ).sealed()
+    assert policy.policy_digest is not None
     subject = SealedExternalSubjectV1(
         organization_id="organization-1",
         site_id="site-1",
@@ -553,7 +556,7 @@ def test_direct_entrypoint_volume_preserves_masked_coverage_and_cut_fill_sign(
         "PRIMARY_MOUNT_VERIFIED",
         "COMPLETED",
     ]
-    metrics = frames[-1]["aggregate"]["metrics"]
+    metrics = cast(dict[str, Any], frames[-1]["aggregate"])["metrics"]
     assert metrics["cutM3"] == 1.0
     assert metrics["fillM3"] == 5.0
     assert metrics["netM3"] == 4.0
@@ -588,7 +591,7 @@ def test_direct_entrypoint_volume_binds_known_uncertainty_to_matching_epoch_rmse
         workspace=workspace,
     )
 
-    metrics = frames[-1]["aggregate"]["metrics"]
+    metrics = cast(dict[str, Any], frames[-1]["aggregate"])["metrics"]
     assert metrics["uncertaintyM3"] == 4.0 * np.hypot(1.0, 2.0)
     assert metrics["uncertaintyNote"] == (
         "Independent validated checkpoint RMSE was used for both epochs."
@@ -672,7 +675,7 @@ def test_manifest_memory_ceiling_blocks_raster_pixel_reads_before_decode(tmp_pat
     manifest, request = _volume_request(baseline=baseline, current=current)
     manifest, request = _with_manifest_memory_ceiling(manifest, request, max_memory_bytes=1)
     reads: list[int] = []
-    original = external_geotiff_inspector._scan_base_and_internal_mask
+    original: Callable[..., object] = external_geotiff_inspector._scan_base_and_internal_mask
 
     class _DatasetReadProbe:
         def __init__(self, dataset: rasterio.io.DatasetReader) -> None:
@@ -692,7 +695,7 @@ def test_manifest_memory_ceiling_blocks_raster_pixel_reads_before_decode(tmp_pat
             return value
 
     def _probe_scan(dataset: rasterio.io.DatasetReader, *args: object, **kwargs: object) -> object:
-        return original(_DatasetReadProbe(dataset), *args, **kwargs)
+        return original(cast(Any, _DatasetReadProbe(dataset)), *args, **kwargs)
 
     with patch.object(external_geotiff_inspector, "_scan_base_and_internal_mask", _probe_scan):
         frames = _run(

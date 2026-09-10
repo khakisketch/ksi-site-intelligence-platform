@@ -8,6 +8,7 @@ import hashlib
 import io
 import time
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_bounded_transport_round_trips_real_digest_signed_put_and_get(storage):  # noqa: F811
+def test_bounded_transport_round_trips_real_digest_signed_put_and_get(storage: Any) -> None:  # noqa: F811
     payload = b"II synthetic opaque external TIFF bytes " * 2048
     artifact = ExternalArtifactInputV1(
         entry_id="synthetic-ortho",

@@ -207,6 +207,7 @@ def _checkpoint_core_material() -> tuple[
         },
         deep=True,
     ).sealed()
+    assert policy.policy_digest is not None
     subject = volume.volume_request.current.subject
     target = volume.inputs[1]
     context = ExternalEvidenceMeasurementContextV1(
@@ -428,7 +429,8 @@ class _VolumeCoreLoopback:
 
     @property
     def base_url(self) -> str:
-        host, port = self._server.server_address
+        host = cast(str, self._server.server_address[0])
+        port = self._server.server_address[1]
         return f"http://{host}:{port}"
 
     def __enter__(self) -> _VolumeCoreLoopback:
@@ -446,9 +448,12 @@ def test_private_core_request_keeps_default_200_only_but_allows_explicit_mutatio
     with _core_client(httpx.MockTransport(lambda _: httpx.Response(201, json={}))) as core:
         with pytest.raises(ExternalCoreClientError):
             core._request("POST", "/private", deadline=time.monotonic() + 1)  # noqa: SLF001
-        assert core._request(  # noqa: SLF001
-            "POST", "/private", deadline=time.monotonic() + 1, accepted_statuses=(200, 201)
-        ) == {}
+        assert (
+            core._request(  # noqa: SLF001
+                "POST", "/private", deadline=time.monotonic() + 1, accepted_statuses=(200, 201)
+            )
+            == {}
+        )
 
 
 def test_volume_core_body_response_loss_retry_v2_launch_and_exact_observed_report() -> None:
@@ -486,9 +491,14 @@ def test_volume_core_body_response_loss_retry_v2_launch_and_exact_observed_repor
                 attempt_nonce=expected_launch.attempt_nonce,
                 deadline_monotonic=time.monotonic() + 1,
             )
-            assert launch == expected_launch.model_copy(
-                update={"fence": lease_grant.fence, "canonical_input_digest": None}
-            ).sealed()
+            assert (
+                launch
+                == expected_launch.model_copy(
+                    update={"fence": lease_grant.fence, "canonical_input_digest": None}
+                ).sealed()
+            )
+            assert launch is not None
+            assert launch.volume_request is not None
             assert "capability" not in launch.model_dump_json()
             capability = client.capability_for(
                 "RELATIVE_VOLUME", expected_launch.request_id, lease_grant.fence, launch.inputs[0]
@@ -818,9 +828,7 @@ def test_volume_terminal_response_requires_the_reported_request_identity() -> No
                 "currentWorkOrderId": expected.volume_request.current_work_order_id,
                 "decisionDigest": expected.volume_request.decision_digest,
                 "issuedAt": expected.volume_request.issued_at.isoformat().replace("+00:00", "Z"),
-                "deadlineAt": expected.volume_request.issued_at.isoformat().replace(
-                    "+00:00", "Z"
-                ),
+                "deadlineAt": expected.volume_request.issued_at.isoformat().replace("+00:00", "Z"),
                 "reportRef": "external-relative-volume-report-deadline-order",
                 "reportDigest": "sha256:" + "f" * 64,
             },
@@ -829,6 +837,7 @@ def test_volume_terminal_response_requires_the_reported_request_identity() -> No
             "detail": None,
         },
     ):
+
         def handler(request: httpx.Request, response: dict[str, Any] = terminal) -> httpx.Response:
             if request.method == "GET" and request.url.path.endswith("/input"):
                 return httpx.Response(200, json=_volume_input(expected))
@@ -915,9 +924,7 @@ def test_measurement_adapter_rejects_extra_substituted_and_nonfinite_core_bodies
         body = _volume_input(launch)
         mutate(body)
         shared = _core_client(
-            httpx.MockTransport(
-                lambda _request, payload=body: httpx.Response(200, json=payload)
-            )
+            httpx.MockTransport(lambda _request, payload=body: httpx.Response(200, json=payload))
         )
         client = ExternalMeasurementCoreClient(core_client=shared)
         try:
@@ -1305,13 +1312,17 @@ def test_actual_core_evidence_router_claim_input_v2_and_measurement_parity(
     registry, policy = evidence_contract._policy_registry(tmp_path)
     assert policy.resource_envelope_digest is not None
     manifest = _manifest_for_resource_envelope(policy.resource_envelope_digest)
-    context = evidence_contract._context(item, policy).model_copy(
-        update={
-            "measurement_execution_manifest_digest": manifest.canonical_body_digest(),
-            "context_digest": None,
-        },
-        deep=True,
-    ).sealed()
+    context = (
+        evidence_contract._context(item, policy)
+        .model_copy(
+            update={
+                "measurement_execution_manifest_digest": manifest.canonical_body_digest(),
+                "context_digest": None,
+            },
+            deep=True,
+        )
+        .sealed()
+    )
     store = ExternalEvidenceValidationStore(
         DurableJournal(tmp_path / "actual-evidence-router.jsonl"),
         evidence=evidence_contract._Evidence(item),
@@ -1407,7 +1418,9 @@ def test_actual_core_evidence_router_claim_input_v2_and_measurement_parity(
             deadline_monotonic=1.0,
         )
         records = store.terminal_records_for_evidence(item.evidence_ref)
-        assert len(records) == 1 and records[0].measurement_payload.validation_id == request_id
+        assert len(records) == 1
+        assert records[0].measurement_payload is not None
+        assert records[0].measurement_payload.validation_id == request_id
     finally:
         client.close()
         shared.close()

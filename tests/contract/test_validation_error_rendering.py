@@ -421,6 +421,37 @@ def test_external_use_hostile_bodies_are_machine_readable_422(
 
 
 @pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PUT", "/v1/organization-work-roster/member-1"),
+        ("POST", "/v1/observation-work-orders/order-1/operations/assignment"),
+        ("PUT", "/v1/observation-work-orders/order-1/operations/due-date"),
+        ("POST", "/v1/observation-work-orders/order-1/operations/close"),
+        ("POST", "/v1/observation-work-orders/order-1/operations/reopen"),
+        ("POST", "/v1/external-relative-volume-reports/report-1/shares"),
+    ],
+)
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_product_operations_hostile_bodies_are_machine_readable_422(
+    method: str, path: str, label: str, raw: str, tmp_path: Path
+) -> None:
+    """Roster, WorkOrder operations, and report-share bodies reject all hostile JSON forms."""
+    with _external_use_client(tmp_path) as client:
+        response = client.request(
+            method,
+            path,
+            content=raw.encode("utf-8", "surrogatepass"),
+            headers={
+                "Content-Type": "application/json",
+                "Idempotency-Key": "hostile-product-operation-1",
+            },
+        )
+    assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
+    assert response.headers["content-type"].startswith("application/json")
+    json.loads(response.text)
+
+
+@pytest.mark.parametrize(
     ("method", "path", "token"),
     [
         ("PUT", "/v1/sites/site-1/acquisition-profile", _ADMIN_TOKEN),

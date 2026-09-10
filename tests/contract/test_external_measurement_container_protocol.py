@@ -25,6 +25,8 @@ from test_external_measurement_protocol import measurement_manifest_request
 
 def test_prepare_is_closed_canonical_and_binds_both_ordered_inputs() -> None:
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
+    assert request.volume_execution_policy is not None
     limits = MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000)
 
     prepare = build_prepare_frame_v2(request=request, manifest=manifest)
@@ -46,9 +48,12 @@ def test_prepare_is_closed_canonical_and_binds_both_ordered_inputs() -> None:
         item.model_dump(by_alias=True, mode="json") for item in request.inputs
     ]
     validate_prepare_frame_v2(prepare, expected=prepare, limits=limits)
-    assert decode_measurement_container_frame(
-        encode_measurement_container_frame(prepare, limits=limits), limits=limits
-    ) == prepare
+    assert (
+        decode_measurement_container_frame(
+            encode_measurement_container_frame(prepare, limits=limits), limits=limits
+        )
+        == prepare
+    )
 
 
 def test_secondary_and_execute_frames_can_only_echo_the_prepared_tokens() -> None:
@@ -115,6 +120,8 @@ def test_prepare_rejects_every_missing_required_field_with_a_typed_error(field: 
 
 def test_terminal_validator_rejects_raw_fields_and_semantic_mismatches() -> None:
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
+    assert request.volume_execution_policy is not None
     limits = MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000)
     prepare = build_prepare_frame_v2(request=request, manifest=manifest)
     aggregate = {

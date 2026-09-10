@@ -8,10 +8,13 @@ import socket
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 from ksi_processing_controller.external_inspector_daemon import (
+    ExternalInspectorLauncher,
     InspectorDaemonUnavailable,
     SystemdActivatedListenerConfigV1,
     prove_activated_listener,
@@ -191,7 +194,7 @@ def test_directory_chain_closes_root_fd_when_initial_acl_read_fails(
     """A root ACL read failure cannot strand the just-opened chain descriptor."""
     from ksi_processing_controller import external_listener_acl
 
-    original_open = os.open
+    original_open: Callable[..., int] = os.open
     original_fstat = os.fstat
     opened: list[int] = []
 
@@ -229,7 +232,7 @@ def test_directory_chain_closes_child_fd_when_child_fstat_fails(
     """A child identity failure cannot strand either side of a chain handoff."""
     from ksi_processing_controller import external_listener_acl
 
-    original_open = os.open
+    original_open: Callable[..., int] = os.open
     original_fstat = os.fstat
     opened: list[int] = []
 
@@ -429,7 +432,7 @@ def test_inspector_daemon_reproves_queued_connection_and_closes_on_acl_drift(
         )
         daemon = ExternalInspectorSystemdDaemon(
             listener=receipt.listener,
-            launcher=Launcher(),
+            launcher=cast(ExternalInspectorLauncher, Launcher()),
             preaccepted=receipt.preaccepted,
             activated_listener=receipt,
             proof_timeout_millis=500,
@@ -481,7 +484,7 @@ def test_inspector_daemon_drift_closes_every_retained_startup_connection(tmp_pat
         assert len(receipt.preaccepted) == 2
         daemon = ExternalInspectorSystemdDaemon(
             listener=receipt.listener,
-            launcher=Launcher(),
+            launcher=cast(ExternalInspectorLauncher, Launcher()),
             preaccepted=receipt.preaccepted,
             activated_listener=receipt,
             proof_timeout_millis=500,

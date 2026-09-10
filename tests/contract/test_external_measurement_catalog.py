@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from ksi_event_contracts.inspector_execution_manifest import InspectorExecutionManifestV1
 from ksi_processing_controller.external_inspector_catalog import (
     FileInspectorCatalogConfigV1,
     FileInspectorManifestCatalog,
@@ -13,7 +14,9 @@ from ksi_processing_controller.external_inspector_catalog import (
 from test_external_inspector_container_entrypoint import _envelope, _manifest
 
 
-def catalog(tmp_path: Path):
+def catalog(
+    tmp_path: Path,
+) -> tuple[FileInspectorManifestCatalog, InspectorExecutionManifestV1, Path]:
     manifest = _manifest(_envelope())
     path = tmp_path / "manifest.json"
     path.write_text(manifest.model_dump_json(by_alias=True))
@@ -37,7 +40,7 @@ def catalog(tmp_path: Path):
     )
 
 
-def test_manifest_digest_lookup_preserves_resource_binding_and_v1_lookup(tmp_path):
+def test_manifest_digest_lookup_preserves_resource_binding_and_v1_lookup(tmp_path: Path) -> None:
     store, manifest, _ = catalog(tmp_path)
     envelope = manifest.body.resource_envelope_digest
     assert (
@@ -68,7 +71,7 @@ def test_manifest_digest_lookup_preserves_resource_binding_and_v1_lookup(tmp_pat
     )
 
 
-def test_manifest_lookup_reuses_pinned_operator_file_reader(tmp_path):
+def test_manifest_lookup_reuses_pinned_operator_file_reader(tmp_path: Path) -> None:
     store, manifest, path = catalog(tmp_path)
     assert store.startup_status().available
     replacement = tmp_path / "replacement"

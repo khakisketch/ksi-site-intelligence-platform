@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -21,7 +22,11 @@ from ksi_core.auth import (
     mount_auth,
 )
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.external_relative_volumes import build_external_relative_volume_router
+from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeInputCapabilityIssuer,
+    ExternalRelativeVolumeStore,
+    build_external_relative_volume_router,
+)
 from ksi_core.observation_work_orders import (
     ObservationWorkOrderStore,
     ObservationWorkOrderStoreRecoveryError,
@@ -149,8 +154,11 @@ def test_relative_volume_issue_hides_absent_and_foreign_work_orders(
     )
     app.include_router(
         build_external_relative_volume_router(
-            _NeverIssueRelativeVolumeStore(),
-            input_capability_issuer=None,
+            cast(ExternalRelativeVolumeStore, _NeverIssueRelativeVolumeStore()),
+            input_capability_issuer=cast(
+                ExternalRelativeVolumeInputCapabilityIssuer,
+                lambda *_args, **_kwargs: None,
+            ),
             work_orders=work_orders,
         )
     )
@@ -278,12 +286,9 @@ def test_external_operations_are_idempotent_and_do_not_mutate_sealed_work_order(
             site_id == "site-a" and organization_id == "org-a"
         ),
     )
-    assert (
-        restored.get_operations(work_order_id, organization_id="org-a").model_dump(  # type: ignore[union-attr]
-            by_alias=True, mode="json"
-        )
-        == reopened.json()
-    )
+    restored_operations = restored.get_operations(work_order_id, organization_id="org-a")
+    assert restored_operations is not None
+    assert restored_operations.model_dump(by_alias=True, mode="json") == reopened.json()
     restored._journal.close()  # noqa: SLF001 -- test owns replay journal
 
 
@@ -482,7 +487,7 @@ def test_closed_external_work_order_blocks_new_registration_but_keeps_exact_retr
     tmp_path: Path,
 ) -> None:
     client, _, _, _ = _reconstruction_client(tmp_path)
-    work_orders = client.app.state.external_reconstruction_test_work_orders
+    work_orders = cast(Any, client.app).state.external_reconstruction_test_work_orders
     external = work_orders.create_work_order(
         organization_id="org-a",
         site_id="site-a",

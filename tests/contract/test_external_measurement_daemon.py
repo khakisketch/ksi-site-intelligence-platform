@@ -10,6 +10,7 @@ import tempfile
 import time
 from collections import deque
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from test_external_measurement_operator_config import measurement_operator_config
@@ -144,14 +145,14 @@ def test_production_graph_uses_real_backend_empty_recovery_and_one_primary_accou
     try:
         daemon = build_production_measurement_daemon(
             config=config.production,
-            host_proof=_GraphHostProof(),
+            host_proof=cast(Any, _GraphHostProof()),
             activated_listener=ActivatedListenerReceipt(listener=listener, preaccepted=deque()),
             boundary_ports=MeasurementDaemonBoundaryPorts(
                 cgroups=ports.cgroups,
                 systemd_manager=ports.systemd_manager,
                 engine_client=ports.engine_client,
                 proc_cgroups=ports.proc_cgroups,
-                journal_factory=journals,
+                journal_factory=cast(Any, journals),
             ),
         )
         assert isinstance(daemon._launcher._backend, DockerMeasurementBackend)
@@ -215,14 +216,14 @@ def test_graph_baseexception_after_assembly_closes_owned_journal_and_listener(
     with pytest.raises(_GraphAssemblyInterrupted, match="graph construction interrupted"):
         build_production_measurement_daemon(
             config=config.production,
-            host_proof=_GraphHostProof(),
+            host_proof=cast(Any, _GraphHostProof()),
             activated_listener=ActivatedListenerReceipt(listener=listener, preaccepted=deque()),
             boundary_ports=MeasurementDaemonBoundaryPorts(
                 cgroups=ports.cgroups,
                 systemd_manager=ports.systemd_manager,
                 engine_client=ports.engine_client,
                 proc_cgroups=ports.proc_cgroups,
-                journal_factory=journals,
+                journal_factory=cast(Any, journals),
             ),
         )
 
@@ -260,7 +261,7 @@ def test_daemon_serves_retained_uds_connection_and_closes_once(tmp_path: Path) -
     )
     daemon = ExternalMeasurementSystemdDaemon(
         listener=receipt.listener,
-        launcher=Launcher(),
+        launcher=cast(Any, Launcher()),
         preaccepted=receipt.preaccepted,
         activated_listener=receipt,
         proof_timeout_millis=500,
@@ -321,7 +322,7 @@ def test_measurement_daemon_closes_queued_startup_connections_on_listener_drift(
         assert len(receipt.preaccepted) == 2
         daemon = ExternalMeasurementSystemdDaemon(
             listener=receipt.listener,
-            launcher=Launcher(),
+            launcher=cast(Any, Launcher()),
             preaccepted=receipt.preaccepted,
             activated_listener=receipt,
             proof_timeout_millis=500,
@@ -418,8 +419,8 @@ def test_bad_host_proof_prevents_artifact_listener_and_runtime_graph(
     with pytest.raises(MeasurementDaemonUnavailable):
         build_daemon_from_measurement_operator_config(
             config,
-            host_proof=host_proof,
-            daemon_builder=builder,
+            host_proof=cast(Any, host_proof),
+            daemon_builder=cast(Any, builder),
             environment={},
         )
     assert host_proof.calls == 1
@@ -472,8 +473,8 @@ def test_bad_catalog_or_oci_after_host_proof_does_not_open_listener_or_runtime_g
     with pytest.raises(MeasurementDaemonUnavailable):
         build_daemon_from_measurement_operator_config(
             config,
-            host_proof=host_proof,
-            daemon_builder=builder,
+            host_proof=cast(Any, host_proof),
+            daemon_builder=cast(Any, builder),
             environment={},
         )
     assert host_proof.calls == 1
@@ -498,12 +499,12 @@ def test_preflight_retains_real_activated_listener_until_graph_takes_ownership(
         measurement_operator_config(tmp_path, listener_path=listener_path)
     )
     host_proof = _HostProof()
-    received: list[dict[str, object]] = []
+    received: list[dict[str, Any]] = []
     sentinel = object()
 
     def builder(**kwargs: object) -> object:
         received.append(kwargs)
-        receipt = kwargs["activated_listener"]
+        receipt = cast(Any, kwargs["activated_listener"])
         assert receipt.listener.getsockname() == os.fspath(listener_path)
         receipt.close()
         return sentinel
@@ -517,8 +518,8 @@ def test_preflight_retains_real_activated_listener_until_graph_takes_ownership(
             os.dup2(listener.fileno(), 3)
             assembled = build_daemon_from_measurement_operator_config(
                 config,
-                host_proof=host_proof,
-                daemon_builder=builder,
+                host_proof=cast(Any, host_proof),
+                daemon_builder=cast(Any, builder),
                 environment={"LISTEN_PID": str(os.getpid()), "LISTEN_FDS": "1"},
             )
         finally:
@@ -555,7 +556,7 @@ def test_graph_failure_closes_owned_activated_listener_receipt(
     config = load_external_measurement_operator_config(
         measurement_operator_config(tmp_path, listener_path=listener_path)
     )
-    receipts: list[object] = []
+    receipts: list[Any] = []
 
     def builder(**kwargs: object) -> object:
         receipts.append(kwargs["activated_listener"])
@@ -571,8 +572,8 @@ def test_graph_failure_closes_owned_activated_listener_receipt(
             with pytest.raises(failure_type, match="graph construction failed"):
                 build_daemon_from_measurement_operator_config(
                     config,
-                    host_proof=_HostProof(),
-                    daemon_builder=builder,
+                    host_proof=cast(Any, _HostProof()),
+                    daemon_builder=cast(Any, builder),
                     environment={"LISTEN_PID": str(os.getpid()), "LISTEN_FDS": "1"},
                 )
         finally:

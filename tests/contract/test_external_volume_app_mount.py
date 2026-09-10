@@ -1,12 +1,18 @@
 """Assembled external-volume routes retain Core authentication and closed authority."""
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
-from test_api_contract_sync import _max_assembly
+from ksi_core.external_relative_volumes import ExternalRelativeVolumeInputCapabilityIssuer
+from test_api_contract_sync import (
+    _max_assembly,
+    _max_assembly_arguments,
+    _seed_max_assembly_site_and_work_order,
+)
 
 
 def test_assembled_volume_queue_requires_authentication(tmp_path: Path) -> None:
@@ -27,10 +33,12 @@ def test_human_cannot_claim_assembled_volume_worker_surface(tmp_path: Path) -> N
 
 
 def test_assembled_volume_issue_stays_closed_without_mapping_authority(tmp_path: Path) -> None:
-    app = _max_assembly(tmp_path)
+    arguments = _max_assembly_arguments(tmp_path)
+    work_order_id = _seed_max_assembly_site_and_work_order(arguments)
+    app = create_app(**arguments)
     with TestClient(app) as client:
         response = client.post(
-            "/v1/observation-work-orders/unavailable/relative-volume-requests",
+            f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests",
             json={"decisionRef": "unavailable"},
             headers={
                 "Authorization": "Bearer contract-sync-test-token",
@@ -44,7 +52,11 @@ def test_assembled_volume_issue_stays_closed_without_mapping_authority(tmp_path:
 
 def test_volume_capability_issuer_cannot_mount_without_store() -> None:
     with pytest.raises(ValueError, match="durable request store"):
-        create_app(external_volume_input_capability_issuer=lambda *_args, **_kwargs: ())
+        create_app(
+            external_volume_input_capability_issuer=cast(
+                ExternalRelativeVolumeInputCapabilityIssuer, lambda *_args, **_kwargs: None
+            )
+        )
 
 
 def test_volume_cannot_mount_with_a_different_currentness_coordinator(tmp_path: Path) -> None:

@@ -683,8 +683,13 @@ def test_selection_releases_registry_lock_while_authority_resolution_waits(tmp_p
         target=lambda: selected.append(registry.select_for_use("EVIDENCE", (_subject(),)).status),
         daemon=True,
     )
+
+    def read_retained() -> None:
+        registry.resolve(policy.policy_digest or "")
+        retained_read_done.set()
+
     retained_reader = threading.Thread(
-        target=lambda: (registry.resolve(policy.policy_digest or ""), retained_read_done.set()),
+        target=read_retained,
         daemon=True,
     )
     try:

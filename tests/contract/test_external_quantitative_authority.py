@@ -4,8 +4,9 @@ import hashlib
 import importlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.durable_journal import DurableJournal
@@ -22,6 +23,7 @@ from ksi_core.external_validation_policy import PolicySelectionStatus
 from ksi_core.work_areas import WorkAreaStatus
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactOutcome,
+    ExternalValidationPolicyV1,
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_relative_volume import (
@@ -118,7 +120,9 @@ def _template() -> ExternalQuantitativeExecutionTemplate:
     )
 
 
-def test_mapping_is_durable_before_decision_and_execution_is_durable_after_decision(tmp_path):
+def test_mapping_is_durable_before_decision_and_execution_is_durable_after_decision(
+    tmp_path: Path,
+) -> None:
     """Removing the post-decision snapshot must deny a fresh numeric request."""
     mapping = _mapping(site_id="site-b")
     coordinator = ExternalAuthorityCurrentnessCoordinator()
@@ -134,7 +138,10 @@ def test_mapping_is_durable_before_decision_and_execution_is_durable_after_decis
         baseline=mapping.baseline.subject,
         current=mapping.current.subject,
         zone_id="work-area-a",
-        policy=cast(object, SimpleNamespace(policy_digest=mapping.validation_policy_digest)),
+        policy=cast(
+            ExternalValidationPolicyV1,
+            SimpleNamespace(policy_digest=mapping.validation_policy_digest),
+        ),
         now=_NOW,
     )
     assert resolved is not None
@@ -215,7 +222,7 @@ def test_mapping_is_durable_before_decision_and_execution_is_durable_after_decis
     )
 
 
-def test_replay_preserves_pre_revocation_execution_without_recreating_it(tmp_path):
+def test_replay_preserves_pre_revocation_execution_without_recreating_it(tmp_path: Path) -> None:
     """Replacing historical replay with current state would erase a valid issue."""
     path = tmp_path / "quantitative-authority.jsonl"
     mapping = _mapping()
@@ -283,8 +290,8 @@ def test_replay_preserves_pre_revocation_execution_without_recreating_it(tmp_pat
 
 
 def test_execution_uses_its_exact_decision_mapping_when_another_mapping_shares_work_order(
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     """A WorkOrder-only mapping lookup could issue under another pair's authority."""
     first = _mapping()
     second = replace(
@@ -368,7 +375,7 @@ def test_execution_uses_its_exact_decision_mapping_when_another_mapping_shares_w
     )
 
 
-def test_mapping_is_not_usable_before_its_durable_activation(tmp_path):
+def test_mapping_is_not_usable_before_its_durable_activation(tmp_path: Path) -> None:
     """A pre-activation decision cannot borrow a record's wider validity interval."""
     mapping = _mapping()
     catalog = ExternalQuantitativeAuthorityCatalog(
@@ -383,14 +390,17 @@ def test_mapping_is_not_usable_before_its_durable_activation(tmp_path):
             baseline=mapping.baseline.subject,
             current=mapping.current.subject,
             zone_id="work-area-a",
-            policy=cast(object, SimpleNamespace(policy_digest=mapping.validation_policy_digest)),
+            policy=cast(
+                ExternalValidationPolicyV1,
+                SimpleNamespace(policy_digest=mapping.validation_policy_digest),
+            ),
             now=_NOW - timedelta(seconds=30),
         )
         is None
     )
 
 
-def test_execution_rejects_decision_created_after_activation_time(tmp_path) -> None:
+def test_execution_rejects_decision_created_after_activation_time(tmp_path: Path) -> None:
     """A future exact decision cannot backdate a numeric execution authority."""
     mapping = _mapping()
     catalog = ExternalQuantitativeAuthorityCatalog(
@@ -476,22 +486,22 @@ def test_catalog_authority_port_type_failure_closes_mapping_admission() -> None:
     """An invalid trust-port response cannot turn into a positive mapping authority."""
 
     class _InvalidCatalogAuthorityPort:
-        def resolve(self, _digest, _now):
+        def resolve(self, _digest: str, _now: datetime) -> object:
             return object()
 
     mapping = _mapping()
-    binding = ExternalQuantitativeCatalogAuthorityBinding(
-        authority_port=_InvalidCatalogAuthorityPort(),
+    catalog_binding = ExternalQuantitativeCatalogAuthorityBinding(
+        authority_port=cast(Any, _InvalidCatalogAuthorityPort()),
         catalog_body_digest=_digest("catalog"),
         organization_id="org-a",
         administration_actor_id="catalog-admin",
     )
 
-    assert not binding.permits(mapping, _NOW)
+    assert not catalog_binding.permits(mapping, _NOW)
 
 
 def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_record(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Production admission reads immutable observed witnesses and the policy's rule digest."""
 
@@ -566,33 +576,35 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
     class _Reconstruction:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
 
-        def __init__(self, revisions):
+        def __init__(self, revisions: dict[Any, Any]) -> None:
             self._revisions = revisions
 
-        def resolve_sealed_subject(self, subject):
+        def resolve_sealed_subject(self, subject: Any) -> Any:
             return self._revisions.get(subject)
 
     class _Inspections:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
 
-        def __init__(self, reports):
+        def __init__(self, reports: dict[Any, Any]) -> None:
             self._reports = reports
 
-        def historical_report(self, subject, *, report_digest, policy_digest):
+        def historical_report(self, subject: Any, *, report_digest: str, policy_digest: str) -> Any:
             return self._reports.get((subject, report_digest, policy_digest))
 
     class _PolicyRegistry:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
 
-        def __init__(self, policy):
+        def __init__(self, policy: Any) -> None:
             self._policy = policy
 
-        def select_for_use(self, use, subjects):
+        def select_for_use(self, use: str, subjects: tuple[Any, Any]) -> Any:
             assert use == "RELATIVE_VOLUME"
             assert subjects == (mapping.baseline.subject, mapping.current.subject)
             return SimpleNamespace(status=PolicySelectionStatus.ACTIVE, policy=self._policy)
 
-        def locally_current_use_permitted(self, digest, *, use, subjects, at):
+        def locally_current_use_permitted(
+            self, digest: str, *, use: str, subjects: tuple[Any, Any], at: datetime
+        ) -> bool:
             del at
             return (
                 digest == self._policy.policy_digest
@@ -600,7 +612,7 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
                 and subjects == (mapping.baseline.subject, mapping.current.subject)
             )
 
-        def resolve(self, digest):
+        def resolve(self, digest: str) -> Any:
             return SimpleNamespace(
                 status=(
                     PolicySelectionStatus.ACTIVE if digest == self._policy.policy_digest else None
@@ -611,35 +623,37 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
     class _EvidenceValidations:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
 
-        def __init__(self, records):
+        def __init__(self, records: dict[Any, Any]) -> None:
             self._records = records
 
-        def record_for_current_use(self, digest, *, subject, policy_digest):
+        def record_for_current_use(self, digest: str, *, subject: Any, policy_digest: str) -> Any:
             return self._records.get((digest, subject, policy_digest))
 
-        def record_for_locally_current_use(self, digest, *, subject, policy_digest):
+        def record_for_locally_current_use(
+            self, digest: str, *, subject: Any, policy_digest: str
+        ) -> Any:
             return self._records.get((digest, subject, policy_digest))
 
     class _WorkAreas:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
 
-        def get(self, work_area_id):
+        def get(self, work_area_id: str) -> Any:
             return area if work_area_id == mapping.zone_snapshot.work_area_id else None
 
     class _CatalogAuthorityPort:
-        def __init__(self, record):
+        def __init__(self, record: Any) -> None:
             self._record = record
 
-        def resolve(self, digest, now):
+        def resolve(self, digest: str, now: datetime) -> Any:
             del now
             return self._record if digest == self._record.digest else None
 
     class _CatalogCurrentness:
-        def __init__(self, coordinator, record):
+        def __init__(self, coordinator: Any, record: Any) -> None:
             self.coordinator = coordinator
             self._record = record
 
-        def is_current(self, record, now):
+        def is_current(self, record: Any, now: datetime) -> bool:
             return record == self._record and record.is_active_at(now)
 
     catalog_record = ExternalQuantitativeCatalogAuthorityRecord(
@@ -718,7 +732,7 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
         compatibility_mapping_digests=(mapping.compatibility_rule_digest,),
     )
     coordinator = ExternalAuthorityCurrentnessCoordinator()
-    binding = ExternalQuantitativeCatalogAuthorityBinding(
+    catalog_binding = ExternalQuantitativeCatalogAuthorityBinding(
         authority_port=_CatalogAuthorityPort(catalog_record),
         catalog_body_digest=catalog_record.catalog_body_digest,
         organization_id=mapping.organization_id,
@@ -734,12 +748,12 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
     ):
         witness.coordinator = coordinator
     participants = ExternalQuantitativeAuthorityParticipants(
-        reconstruction=reconstruction,
-        inspections=inspections,
-        policy_registry=policies,
-        evidence_validations=validations,
-        work_areas=areas,
-        catalog_authority=binding,
+        reconstruction=cast(Any, reconstruction),
+        inspections=cast(Any, inspections),
+        policy_registry=cast(Any, policies),
+        evidence_validations=cast(Any, validations),
+        work_areas=cast(Any, areas),
+        catalog_authority=catalog_binding,
     )
     catalog = ExternalQuantitativeAuthorityCatalog(
         DurableJournal(tmp_path / "quantitative-authority.jsonl"),

@@ -8,11 +8,12 @@ from ksi_processing_controller.external_inspector_protocol import (
     DeadlineBoundedMemorySink,
     ProtocolViolation,
 )
+from ksi_processing_controller.external_measurement_protocol import MeasurementLaunchRequestV2
 from ksi_processing_controller.external_measurement_transport import MeasurementRequestReceiverV2
 from test_external_measurement_transport import fixture_request, limits
 
 
-def wire(request, data):
+def wire(request: MeasurementLaunchRequestV2, data: tuple[bytes, bytes]) -> bytes:
     header = request.canonical_bytes()
     return struct.pack("!I", len(header)) + header + b"".join(data)
 
@@ -27,7 +28,7 @@ def wire(request, data):
         "secondary_twice",
     ],
 )
-def test_receiver_rejects_out_of_sequence_calls(wrong):
+def test_receiver_rejects_out_of_sequence_calls(wrong: str) -> None:
     request, data = fixture_request()
     client, server = socket.socketpair()
     try:
@@ -56,7 +57,7 @@ def test_receiver_rejects_out_of_sequence_calls(wrong):
         server.close()
 
 
-def test_receiver_reuses_original_absolute_deadline_after_staging_pause():
+def test_receiver_reuses_original_absolute_deadline_after_staging_pause() -> None:
     request, data = fixture_request()
     clock = [0.0]
     client, server = socket.socketpair()
@@ -84,7 +85,7 @@ def test_receiver_reuses_original_absolute_deadline_after_staging_pause():
 
 
 @pytest.mark.parametrize("trailing", [b"", b"x"])
-def test_receiver_acceptance_requires_secondary_and_terminal_eof(trailing):
+def test_receiver_acceptance_requires_secondary_and_terminal_eof(trailing: bytes) -> None:
     request, data = fixture_request()
     client, server = socket.socketpair()
     try:

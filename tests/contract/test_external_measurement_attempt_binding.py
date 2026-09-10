@@ -17,7 +17,7 @@ from ksi_processing_controller.external_measurement_attempts import (
 from test_external_measurement_protocol import measurement_manifest_request
 
 
-def binding():
+def binding() -> MeasurementAttemptBindingV2:
     manifest, request = measurement_manifest_request()
     return new_measurement_attempt_binding(
         request=request,

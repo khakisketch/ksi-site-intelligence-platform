@@ -10,17 +10,19 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import test_external_validation_core_client as core_contract
 from fastapi.testclient import TestClient
 from ksi_core.evidence import ObjectStorageObservation
+from ksi_event_contracts.external_artifact_validation import ExternalValidationPolicyV1
 from ksi_event_contracts.external_display_artifact import (
     SanitizedDisplayDeclarationV1,
     SanitizedDisplayReceiptV1,
 )
 from ksi_processing_controller.external_artifact_inspection_worker import (
+    ExternalArtifactInputV1,
     ExternalInspectionCurrentInputV1,
     ExternalInspectionNextActionV1,
     ExternalInspectionPhaseV1,
@@ -40,6 +42,7 @@ from ksi_processing_controller.external_inspector_protocol import (
     SealedByteBindingV1,
 )
 from ksi_processing_controller.external_object_streams import (
+    ExternalObjectCapabilityPort,
     ExternalObjectCapabilityV1,
     ExternalObjectHttpByteSource,
     ExternalObjectTransportPolicyV1,
@@ -148,9 +151,10 @@ class _BoundedLoopbackPut:
     ) -> BoundByteReceiptV1:
         # Each declaration is a fresh private capability.  The real HTTP PUT
         # implementation remains the code that consumes the opaque reader.
-        artifact = capability.artifact
-        url = capability.url
-        headers = capability.required_headers
+        owned_capability = cast(ExternalObjectCapabilityV1, capability)
+        artifact = owned_capability.artifact
+        url = owned_capability.url
+        headers = owned_capability.required_headers
         transport = ExternalObjectHttpByteSource(
             capabilities=(ExternalObjectCapabilityV1(artifact, url, headers),),
             policy=self._policy,
@@ -209,6 +213,7 @@ class _Core:
 
             raise ExternalCoreClientError("INVALID_CORE_RESPONSE")
         declaration = grant.declaration
+        assert declaration.declaration_digest is not None
         return SanitizedDisplayReceiptV1(
             display_id=declaration.display_id,
             request_id=declaration.request_id,
@@ -311,7 +316,9 @@ class _ObservedPrivateCandidatePut:
         assert wait_is_current()
         self.polls += 1
         assert bytes(observed) == self._expected
-        artifact = capability.artifact
+        artifact = cast(
+            ExternalArtifactInputV1, cast(ExternalObjectCapabilityPort, capability).artifact
+        )
         assert self._storage.last_put_key is not None
         self._storage.objects[self._storage.last_put_key] = ObjectStorageObservation(
             object_key=self._storage.last_put_key,
@@ -783,6 +790,7 @@ def test_base_exception_from_core_still_retires_the_private_candidate(tmp_path: 
 def test_actual_core_octet_stream_input_declares_a_fixed_tiff_derivative(tmp_path: Path) -> None:
     """Core's generic source MIME does not alter the sealed sanitized derivative MIME."""
     app, request_id, policy, _storage, _submission_ref = core_contract._active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
 
     with TestClient(app) as core, core_contract._assembled_client(core) as client:
         lease = client.claim(
@@ -820,6 +828,7 @@ def test_actual_core_returns_the_exact_receipt_after_display_becomes_terminal(
 ) -> None:
     """The sealed receipt, rather than the spent DISPLAY lease, adjudicates completion."""
     app, request_id, policy, storage, _submission_ref = core_contract._active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
     payload = b"actual-core-terminal-receipt"
 
     with TestClient(app) as core, core_contract._assembled_client(core) as client:
@@ -864,6 +873,7 @@ def test_actual_core_returns_the_exact_receipt_after_display_becomes_terminal(
 def test_actual_core_retries_a_lost_seal_response_with_the_same_declaration(tmp_path: Path) -> None:
     """One uncertain seal is adjudicated by Core's exact terminal receipt, not a new grant."""
     app, request_id, policy, storage, _submission_ref = core_contract._active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
     payload = b"actual-core-lost-seal-response"
 
     with TestClient(app) as core:
@@ -920,6 +930,7 @@ def test_actual_core_failed_poll_after_grant_blocks_put_and_retires_candidate(
 ) -> None:
     """A failed retained poll clears the declaration before private bytes move."""
     app, request_id, policy, _storage, _submission_ref = core_contract._active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
     payload = b"actual-core-failed-poll"
 
     class _GrantThenDropInput:

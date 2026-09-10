@@ -9,6 +9,8 @@ import os
 import socket
 import threading
 import time
+from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -35,7 +37,7 @@ def _digest(marker: str) -> str:
     return "sha256:" + marker * 64
 
 
-def _body(tmp_path) -> dict[str, object]:
+def _body(tmp_path: Path) -> dict[str, Any]:
     identity = {
         "socketPath": str(tmp_path / "inspector.sock"),
         "ownerUid": os.geteuid(),
@@ -109,12 +111,12 @@ def _body(tmp_path) -> dict[str, object]:
     }
 
 
-def _write_secure_json(path, body: object) -> None:
+def _write_secure_json(path: Path, body: object) -> None:
     path.write_text(json.dumps(body), encoding="utf-8")
     path.chmod(0o600)
 
 
-def test_strict_runner_config_requires_every_explicit_external_boundary(tmp_path) -> None:
+def test_strict_runner_config_requires_every_explicit_external_boundary(tmp_path: Path) -> None:
     path = tmp_path / "runner.json"
     _write_secure_json(path, _body(tmp_path))
 
@@ -132,7 +134,7 @@ def test_strict_runner_config_requires_every_explicit_external_boundary(tmp_path
     [(None, True), ("sha256:" + "e" * 64, False)],
 )
 def test_measurement_manifest_requires_exact_v2_profile_file_body_signature_and_revocation_proofs(
-    tmp_path, backend_profile_digest, accepted
+    tmp_path: Path, backend_profile_digest: str | None, accepted: bool
 ) -> None:
     from test_external_measurement_protocol import measurement_manifest_request
 
@@ -183,7 +185,7 @@ def test_measurement_manifest_requires_exact_v2_profile_file_body_signature_and_
 
 @pytest.mark.parametrize("mutation", ["unknown", "missing", "mode", "duplicate", "nonfinite"])
 def test_runner_config_rejects_unsafe_or_ambiguous_input_before_graph_assembly(
-    tmp_path, mutation
+    tmp_path: Path, mutation: str
 ) -> None:
     path = tmp_path / "runner.json"
     body = _body(tmp_path)
@@ -214,7 +216,9 @@ def test_runner_config_rejects_unsafe_or_ambiguous_input_before_graph_assembly(
     }
 
 
-def test_core_token_is_an_explicit_private_regular_file_and_never_a_config_value(tmp_path) -> None:
+def test_core_token_is_an_explicit_private_regular_file_and_never_a_config_value(
+    tmp_path: Path,
+) -> None:
     token = tmp_path / "core.token"
     token.write_text("private-worker-token\n", encoding="ascii")
     token.chmod(0o600)
@@ -227,7 +231,9 @@ def test_core_token_is_an_explicit_private_regular_file_and_never_a_config_value
     assert exc.value.code is ExternalValidationWorkerConfigBlockedCode.TOKEN_FILE
 
 
-def test_fixed_inspector_connector_accepts_only_the_preprovisioned_owned_uds_peer(tmp_path) -> None:
+def test_fixed_inspector_connector_accepts_only_the_preprovisioned_owned_uds_peer(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "inspector.sock"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(path))
@@ -265,7 +271,9 @@ def test_fixed_inspector_connector_accepts_only_the_preprovisioned_owned_uds_pee
     assert not thread.is_alive()
 
 
-def test_fixed_inspector_connector_stops_while_a_real_uds_backlog_is_saturated(tmp_path) -> None:
+def test_fixed_inspector_connector_stops_while_a_real_uds_backlog_is_saturated(
+    tmp_path: Path,
+) -> None:
     """A stopped runner cannot wait for the rest of its turn in connect()."""
 
     path = tmp_path / "inspector.sock"
@@ -312,7 +320,7 @@ def test_fixed_inspector_connector_stops_while_a_real_uds_backlog_is_saturated(t
 
 
 def test_pinned_inspection_profile_allows_permitted_source_mimes_but_rejects_wrong_build(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     path = tmp_path / "runner.json"
     _write_secure_json(path, _body(tmp_path))

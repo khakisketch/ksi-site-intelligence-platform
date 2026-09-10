@@ -16,6 +16,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrder,
+    ObservationWorkOrderExecutionMode,
     ObservationWorkOrderStatus,
 )
 from ksi_mission_contracts.models import SiteFrame
@@ -532,7 +533,7 @@ def test_initial_external_work_order_replay_keeps_execution_guard_and_legacy_is_
         name="외부 산출물 등록",
         work_area_ids=["wa-site-a-0001"],
         schedule_id=None,
-        execution_mode="EXTERNAL_RECONSTRUCTION",
+        execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
         idempotency_key="external-replay-1",
         actor="operator-a",
         now=_NOW,

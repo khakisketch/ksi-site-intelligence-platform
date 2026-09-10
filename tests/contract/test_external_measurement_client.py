@@ -2,9 +2,13 @@
 
 import os
 import socket
+from collections.abc import Callable
+from pathlib import Path
+from typing import cast
 
 import pytest
 from ksi_processing_controller.external_inspector_protocol import (
+    DeadlineBoundedByteReaderPort,
     ProtocolDeadline,
     ProtocolViolation,
 )
@@ -14,7 +18,7 @@ from ksi_processing_controller.external_measurement_client import (
 )
 
 
-def connector(path, uid=None):
+def connector(path: Path, uid: int | None = None) -> FixedMeasurementUdsConnector:
     return FixedMeasurementUdsConnector(
         MeasurementSocketIdentityV2(
             path=path,
@@ -29,7 +33,9 @@ def connector(path, uid=None):
 @pytest.mark.parametrize(
     "failure", [None, "peer", "mode", "cancel", "expired", "symlink", "truthy"]
 )
-def test_actual_uds_connector_requires_owned_socket_and_live_authority(tmp_path, failure):
+def test_actual_uds_connector_requires_owned_socket_and_live_authority(
+    tmp_path: Path, failure: str | None
+) -> None:
     path = tmp_path / "measurement.sock"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(path))
@@ -58,7 +64,10 @@ def test_actual_uds_connector_requires_owned_socket_and_live_authority(tmp_path,
             with pytest.raises((ProtocolViolation, TimeoutError)):
                 value.connect(
                     deadline=deadline,
-                    wait_is_current=lambda: "yes" if failure == "truthy" else failure != "cancel",
+                    wait_is_current=cast(
+                        Callable[[], bool],
+                        lambda: "yes" if failure == "truthy" else failure != "cancel",
+                    ),
                     heartbeat_interval_millis=10,
                 )
     finally:
@@ -66,7 +75,9 @@ def test_actual_uds_connector_requires_owned_socket_and_live_authority(tmp_path,
 
 
 @pytest.mark.parametrize("failure", [None, "trailing", "wrong_request", "missing_eof", "authority"])
-def test_client_owns_one_deadline_and_requires_bound_terminal_eof(tmp_path, failure):
+def test_client_owns_one_deadline_and_requires_bound_terminal_eof(
+    tmp_path: Path, failure: str | None
+) -> None:
     import hashlib
     import struct
     import threading
@@ -89,6 +100,7 @@ def test_client_owns_one_deadline_and_requires_bound_terminal_eof(tmp_path, fail
     from test_external_measurement_protocol import limits, measurement_manifest_request
 
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
     data = (b"baseline", b"current")
     inputs = tuple(
         item.model_copy(
@@ -133,9 +145,9 @@ def test_client_owns_one_deadline_and_requires_bound_terminal_eof(tmp_path, fail
     listener.listen(1)
     stop = threading.Event()
     cancel = threading.Event()
-    errors = []
+    errors: list[Exception] = []
 
-    def server():
+    def server() -> None:
         connection, _ = listener.accept()
         try:
             receiver = MeasurementRequestReceiverV2(
@@ -171,7 +183,10 @@ def test_client_owns_one_deadline_and_requires_bound_terminal_eof(tmp_path, fail
                 client.execute(
                     request=request,
                     manifest=manifest,
-                    sources=tuple(BytesIO(raw) for raw in data),
+                    sources=cast(
+                        tuple[DeadlineBoundedByteReaderPort, DeadlineBoundedByteReaderPort],
+                        tuple(BytesIO(raw) for raw in data),
+                    ),
                     deadline_monotonic=started + 0.3,
                     authority_is_current=lambda: not cancel.is_set(),
                 )
@@ -182,7 +197,10 @@ def test_client_owns_one_deadline_and_requires_bound_terminal_eof(tmp_path, fail
                 client.execute(
                     request=request,
                     manifest=manifest,
-                    sources=tuple(BytesIO(raw) for raw in data),
+                    sources=cast(
+                        tuple[DeadlineBoundedByteReaderPort, DeadlineBoundedByteReaderPort],
+                        tuple(BytesIO(raw) for raw in data),
+                    ),
                     deadline_monotonic=started + 0.15,
                     authority_is_current=lambda: not cancel.is_set(),
                 )

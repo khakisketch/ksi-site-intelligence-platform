@@ -73,6 +73,7 @@ from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -81,6 +82,7 @@ from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_core.work_inbox import WorkInboxStore
 from test_external_workflow_common_assembly import _config as _closed_external_result_workflow
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -255,9 +257,15 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         work_areas=work_area_store,
         coordinator=external_authority_currentness,
     )
+    organization_work_roster_store = OrganizationWorkRosterStore(
+        DurableJournal(tmp_path / "organization-work-roster.jsonl"),
+        coordinator=external_authority_currentness,
+    )
     observation_work_order_store = ObservationWorkOrderStore(
         DurableJournal(tmp_path / "observation-work-orders.jsonl"),
         external_reobservation_authority_port=proposal_authority,
+        operations_coordinator=external_authority_currentness,
+        assignment_member_is_active=organization_work_roster_store.is_assignable_member,
         site_exists=lambda site_id, organization_id: (
             site_store.get_scoped(site_id, organization_id) is not None
         ),
@@ -274,6 +282,13 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
     external_result_read_projector = ExternalResultReadProjector(
         volumes=external_relative_volume_store,
         workflow=external_result_workflow_service,
+    )
+    work_inbox_store = WorkInboxStore(
+        DurableJournal(tmp_path / "work-inbox.jsonl"),
+        work_orders=observation_work_order_store,
+        roster=organization_work_roster_store,
+        report_resolver=external_relative_volume_store,
+        coordinator=external_authority_currentness,
     )
     acquisition_connectivity_store = AcquisitionConnectivityStore(
         DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
@@ -398,6 +413,8 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "design_surface_store": design_surface_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "organization_work_roster_store": organization_work_roster_store,
+        "work_inbox_store": work_inbox_store,
         "external_reconstruction_store": external_reconstruction_store,
         "external_evidence_store": external_evidence_store,
         "external_evidence_validation_store": external_evidence_validation_store,

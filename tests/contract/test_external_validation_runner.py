@@ -1,6 +1,8 @@
 """Fair external-only queue scheduling and bounded acquisition retry."""
 
 import threading
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 from ksi_processing_controller.external_validation_runner import (
@@ -15,23 +17,27 @@ from test_external_artifact_inspection_worker import _fence
 
 
 class Lane:
-    def __init__(self, name, calls):
+    def __init__(self, name: ExternalLane, calls: list[tuple[ExternalLane, str]]) -> None:
         self.lane = name
         self.calls = calls
-        self.claim_ids = []
+        self.claim_ids: list[str] = []
         self.fail_claim_once = False
         self.fail_poll = False
         self.empty = False
         self.closed = 0
-        self.stop_on_claim = None
+        self.stop_on_claim: Callable[[], None] | None = None
 
-    def poll(self, *, deadline_monotonic):
+    def poll(self, *, deadline_monotonic: float) -> str | None:
+        del deadline_monotonic
         self.calls.append((self.lane, "poll"))
         if self.fail_poll:
             raise ExternalLaneUnavailable("poll unavailable")
         return None if self.empty else self.lane.value + "-request"
 
-    def claim(self, request_id, acquisition_id, *, deadline_monotonic):
+    def claim(
+        self, request_id: str, acquisition_id: str, *, deadline_monotonic: float
+    ) -> ExternalWorkLease:
+        del deadline_monotonic
         self.calls.append((self.lane, "claim"))
         self.claim_ids.append(acquisition_id)
         if self.fail_claim_once:
@@ -44,20 +50,26 @@ class Lane:
             fence=_fence().model_copy(update={"lease_acquisition_id": acquisition_id}),
         )
 
-    def execute(self, lease, *, deadline_monotonic, stop):
+    def execute(
+        self, lease: ExternalWorkLease, *, deadline_monotonic: float, stop: threading.Event
+    ) -> TurnOutcome:
+        del lease, deadline_monotonic
         assert not stop.is_set()
         self.calls.append((self.lane, "execute"))
         return TurnOutcome.COMPLETED
 
-    def release(self, lease):
+    def release(self, lease: ExternalWorkLease) -> None:
+        del lease
         self.calls.append((self.lane, "release"))
 
-    def close(self):
+    def close(self) -> None:
         self.closed += 1
 
 
-def fixture_runner(**kwargs):
-    calls = []
+def fixture_runner(
+    **kwargs: Any,
+) -> tuple[ExternalValidationRunner, tuple[Lane, ...], list[tuple[ExternalLane, str]]]:
+    calls: list[tuple[ExternalLane, str]] = []
     lanes = tuple(Lane(name, calls) for name in ExternalLane)
     runner = ExternalValidationRunner(
         lanes=lanes,
@@ -67,7 +79,7 @@ def fixture_runner(**kwargs):
     return runner, lanes, calls
 
 
-def test_hot_inspection_queue_cannot_starve_evidence_or_volume():
+def test_hot_inspection_queue_cannot_starve_evidence_or_volume() -> None:
     runner, lanes, calls = fixture_runner()
     try:
         assert [runner.run_once() for _ in range(6)] == [TurnOutcome.COMPLETED] * 6
@@ -77,7 +89,7 @@ def test_hot_inspection_queue_cannot_starve_evidence_or_volume():
     assert [lane.closed for lane in lanes] == [1, 1, 1]
 
 
-def test_uncertain_claim_retries_same_identity_without_blocking_other_lanes():
+def test_uncertain_claim_retries_same_identity_without_blocking_other_lanes() -> None:
     runner, lanes, calls = fixture_runner()
     lanes[0].fail_claim_once = True
     try:
@@ -92,7 +104,7 @@ def test_uncertain_claim_retries_same_identity_without_blocking_other_lanes():
         runner.close()
 
 
-def test_expired_uncertain_acquisition_is_not_reissued_with_a_new_identity():
+def test_expired_uncertain_acquisition_is_not_reissued_with_a_new_identity() -> None:
     clock = [10.0]
     runner, lanes, calls = fixture_runner(monotonic=lambda: clock[0])
     lanes[0].fail_claim_once = True
@@ -107,7 +119,7 @@ def test_expired_uncertain_acquisition_is_not_reissued_with_a_new_identity():
         runner.close()
 
 
-def test_stop_after_claim_releases_without_execution_and_closes_once():
+def test_stop_after_claim_releases_without_execution_and_closes_once() -> None:
     runner, lanes, calls = fixture_runner()
     lanes[0].stop_on_claim = runner.request_stop
     assert runner.run_once() is TurnOutcome.STOPPED
@@ -119,7 +131,7 @@ def test_stop_after_claim_releases_without_execution_and_closes_once():
     assert runner.run_once() is TurnOutcome.STOPPED
 
 
-def test_idle_wait_is_interruptible_and_duplicate_lanes_are_rejected():
+def test_idle_wait_is_interruptible_and_duplicate_lanes_are_rejected() -> None:
     runner, lanes, calls = fixture_runner()
     for lane in lanes:
         lane.empty = True
@@ -138,17 +150,20 @@ def test_idle_wait_is_interruptible_and_duplicate_lanes_are_rejected():
         )
 
 
-def test_close_during_active_execution_cancels_then_closes_every_lane_once():
+def test_close_during_active_execution_cancels_then_closes_every_lane_once() -> None:
     runner, lanes, calls = fixture_runner()
     entered = threading.Event()
-    results = []
+    results: list[TurnOutcome] = []
 
-    def execute(lease, *, deadline_monotonic, stop):
+    def execute(
+        lease: ExternalWorkLease, *, deadline_monotonic: float, stop: threading.Event
+    ) -> TurnOutcome:
+        del lease, deadline_monotonic
         entered.set()
         assert stop.wait(1)
         return TurnOutcome.STOPPED
 
-    lanes[0].execute = execute
+    cast(Any, lanes[0]).execute = execute
     thread = threading.Thread(target=lambda: results.append(runner.run_once()))
     thread.start()
     assert entered.wait(1)
@@ -160,17 +175,19 @@ def test_close_during_active_execution_cancels_then_closes_every_lane_once():
     assert [lane.closed for lane in lanes] == [1, 1, 1]
 
 
-def test_cleanup_failure_does_not_replace_primary_execution_failure():
+def test_cleanup_failure_does_not_replace_primary_execution_failure() -> None:
     runner, lanes, calls = fixture_runner()
 
-    def execute(*args, **kwargs):
+    def execute(*args: object, **kwargs: object) -> TurnOutcome:
+        del args, kwargs
         raise ValueError("primary execution failure")
 
-    def release(*args):
+    def release(*args: object) -> None:
+        del args
         raise RuntimeError("secondary cleanup failure")
 
-    lanes[0].execute = execute
-    lanes[0].release = release
+    cast(Any, lanes[0]).execute = execute
+    cast(Any, lanes[0]).release = release
     try:
         with pytest.raises(ValueError, match="primary execution failure"):
             runner.run_once()
@@ -178,13 +195,13 @@ def test_cleanup_failure_does_not_replace_primary_execution_failure():
         runner.close()
 
 
-def test_base_exception_during_one_lane_close_still_closes_every_owned_lane_once():
+def test_base_exception_during_one_lane_close_still_closes_every_owned_lane_once() -> None:
     runner, lanes, _calls = fixture_runner()
 
     def interrupt() -> None:
         raise KeyboardInterrupt
 
-    lanes[0].close = interrupt
+    cast(Any, lanes[0]).close = interrupt
 
     with pytest.raises(KeyboardInterrupt):
         runner.close()
@@ -211,12 +228,12 @@ class _RecordingStop:
         return True
 
 
-def test_forever_uses_explicit_bounded_failure_backoff_separately_from_idle_backoff():
+def test_forever_uses_explicit_bounded_failure_backoff_separately_from_idle_backoff() -> None:
     runner, lanes, _calls = fixture_runner()
     idle_stop = _RecordingStop()
     for lane in lanes:
         lane.empty = True
-    runner._stop = idle_stop
+    cast(Any, runner)._stop = idle_stop
     runner.run_forever()
     assert idle_stop.waits == [0.1]
 
@@ -224,6 +241,6 @@ def test_forever_uses_explicit_bounded_failure_backoff_separately_from_idle_back
     failure_stop = _RecordingStop()
     for lane in lanes:
         lane.fail_poll = True
-    runner._stop = failure_stop
+    cast(Any, runner)._stop = failure_stop
     runner.run_forever()
     assert failure_stop.waits == [0.2]

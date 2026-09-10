@@ -7,6 +7,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from ksi_processing_controller.external_inspector_attempts import AttemptBindingV1
@@ -88,6 +89,10 @@ def test_transient_slice_receipt_precedes_docker_create_and_binds_actual_baselin
         def stop_exact(self, *, unit_name: str) -> bool:
             del unit_name
             return True
+
+        def inspect_exact(self, *, unit_name: str) -> None:
+            del unit_name
+            return None
 
     manager = _Manager()
     controller = SystemdTransientSliceController(
@@ -334,6 +339,16 @@ def test_final_parent_proof_rejects_budget_overrun_and_unknown_child(tmp_path: P
             assert unit_name == binding.systemd_slice_name
             return unit
 
+        def start_transient_slice(
+            self, *, unit_name: str, mode: str, properties: tuple[tuple[str, object], ...]
+        ) -> SystemdTransientUnitV1:
+            del unit_name, mode, properties
+            raise AssertionError("final proof must not create a unit")
+
+        def stop_exact(self, *, unit_name: str) -> bool:
+            del unit_name
+            raise AssertionError("final proof must not stop a unit")
+
     from ksi_processing_controller.external_inspector_attempts import RuntimeParentReceiptV1
 
     controller = SystemdTransientSliceController(
@@ -392,28 +407,30 @@ def test_libsystemd_string_arguments_are_passed_as_char_p_not_pointer_to_pointer
             assert ctypes.string_at(value) == b"ksi-inspector.slice"
             return 0
 
-    manager = object.__new__(LibsystemdUserManager)
-    manager._library = _Library()  # type: ignore[attr-defined]
-    manager._append_string("message", "ksi-inspector.slice")  # type: ignore[arg-type]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._library = _Library()
+    manager._append_string("message", "ksi-inspector.slice")
 
 
 def test_libsystemd_session_bus_configures_client_mode_and_uint64_timeout() -> None:
     """The concrete session-bus constructor uses Hello/client mode with a declared ABI."""
-    manager = object.__new__(LibsystemdUserManager)
-    manager._library = ctypes.CDLL("libsystemd.so.0")  # type: ignore[attr-defined]
-    manager._configure_library()  # type: ignore[attr-defined]
-    assert manager._library.sd_bus_call.argtypes[2] is ctypes.c_uint64  # type: ignore[attr-defined]
-    assert manager._library.sd_bus_set_bus_client.argtypes == [ctypes.c_void_p, ctypes.c_int]  # type: ignore[attr-defined]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._library = ctypes.CDLL("libsystemd.so.0")
+    manager._configure_library()
+    assert manager._library.sd_bus_call.argtypes[2] is ctypes.c_uint64
+    assert manager._library.sd_bus_set_bus_client.argtypes == [ctypes.c_void_p, ctypes.c_int]
     bus = ctypes.c_void_p()
-    assert manager._library.sd_bus_new(ctypes.byref(bus)) >= 0  # type: ignore[attr-defined]
+    assert manager._library.sd_bus_new(ctypes.byref(bus)) >= 0
     try:
-        assert manager._library.sd_bus_set_bus_client(bus, 1) >= 0  # type: ignore[attr-defined]
-        assert manager._library.sd_bus_is_bus_client(bus) == 1  # type: ignore[attr-defined]
+        assert manager._library.sd_bus_set_bus_client(bus, 1) >= 0
+        assert manager._library.sd_bus_is_bus_client(bus) == 1
     finally:
-        manager._library.sd_bus_unref(bus)  # type: ignore[attr-defined]
+        manager._library.sd_bus_unref(bus)
 
 
-def test_libsystemd_constructor_selects_session_client_before_start(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_libsystemd_constructor_selects_session_client_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The configured SESSION_BUS route cannot silently retain libsystemd peer mode."""
 
     class _Call:
@@ -421,7 +438,7 @@ def test_libsystemd_constructor_selects_session_client_before_start(monkeypatch)
             self._name = name
             self._calls = calls
 
-        def __call__(self, *args: object) -> int:
+        def __call__(self, *args: Any) -> int:
             self._calls.append(self._name)
             if self._name == "sd_bus_new":
                 pointer = ctypes.cast(args[0], ctypes.POINTER(ctypes.c_void_p))
@@ -476,21 +493,21 @@ def test_libsystemd_correlates_buffered_job_removed_before_final_unit_lookup() -
             self.calls.append((job_path, unit_name, deadline_monotonic))
             return "done"
 
-    manager = object.__new__(LibsystemdUserManager)
-    manager._config = UserSystemdBusConfigV1(  # type: ignore[attr-defined]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._config = UserSystemdBusConfigV1(
         bus_kind="SESSION_BUS",
         socket_path=Path("/run/user/1000/bus"),
         expected_owner_uid=1000,
         expected_mode=0o600,
         timeout_micros=100_000,
     )
-    manager._job_state = lambda _path: (_ for _ in ()).throw(  # type: ignore[attr-defined]
+    manager._job_state = lambda _path: (_ for _ in ()).throw(
         AssertionError("Job.State is not terminal")
     )
     watch = _Watch()
 
     assert (
-        manager._wait_for_job_removed(  # type: ignore[attr-defined]
+        manager._wait_for_job_removed(
             watch=watch,
             job_path="/org/freedesktop/systemd1/job/17",
             unit_name="ksi-inspector-a0123456789abcdef.slice",
@@ -516,8 +533,8 @@ def test_libsystemd_rejects_failed_job_removed_result() -> None:
             del job_path, unit_name, deadline_monotonic
             return self._result
 
-    manager = object.__new__(LibsystemdUserManager)
-    manager._config = UserSystemdBusConfigV1(  # type: ignore[attr-defined]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._config = UserSystemdBusConfigV1(
         bus_kind="SESSION_BUS",
         socket_path=Path("/run/user/1000/bus"),
         expected_owner_uid=1000,
@@ -526,7 +543,7 @@ def test_libsystemd_rejects_failed_job_removed_result() -> None:
     )
     for result in ("failed", "canceled", "timeout"):
         with pytest.raises(SystemdRuntimeUnavailable, match="JobRemoved"):
-            manager._wait_for_job_removed(  # type: ignore[attr-defined]
+            manager._wait_for_job_removed(
                 watch=_Watch(result),
                 job_path="/org/freedesktop/systemd1/job/17",
                 unit_name="ksi-inspector-a0123456789abcdef.slice",
@@ -547,15 +564,15 @@ def test_job_removed_watch_ignores_other_units_before_its_exact_completion() -> 
             return 1
 
     target = "ksi-inspector-a0123456789abcdef.slice"
-    manager = object.__new__(LibsystemdUserManager)
-    manager._library = _Library()  # type: ignore[attr-defined]
-    manager._bus = ctypes.c_void_p()  # type: ignore[attr-defined]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._library = _Library()
+    manager._bus = ctypes.c_void_p()
     watch = _JobRemovedWatch(manager, target_unit_name=target)
 
     def signal(job: int, unit_name: str) -> None:
         values = iter([f"/org/freedesktop/systemd1/job/{job}", unit_name, "done"])
-        manager._read_basic = lambda *args: next(values)  # type: ignore[attr-defined]
-        watch._on_signal(job, None, None)
+        manager._read_basic = lambda *args: next(values)
+        cast(Any, watch)._on_signal(job, None, None)
 
     signal(16, "docker.service")
     signal(17, "other.scope")
@@ -586,13 +603,13 @@ def test_job_removed_watch_rejects_malformed_event_for_its_exact_unit() -> None:
             return 1
 
     target = "ksi-inspector-a0123456789abcdef.slice"
-    manager = object.__new__(LibsystemdUserManager)
-    manager._library = _Library()  # type: ignore[attr-defined]
-    manager._bus = ctypes.c_void_p()  # type: ignore[attr-defined]
+    manager = cast(Any, object.__new__(LibsystemdUserManager))
+    manager._library = _Library()
+    manager._bus = ctypes.c_void_p()
     watch = _JobRemovedWatch(manager, target_unit_name=target)
     values = iter(["/org/freedesktop/systemd1/job/19", target, "done"])
-    manager._read_basic = lambda *args: next(values)  # type: ignore[attr-defined]
-    watch._on_signal(18, None, None)
+    manager._read_basic = lambda *args: next(values)
+    cast(Any, watch)._on_signal(18, None, None)
 
     with pytest.raises(SystemdRuntimeUnavailable, match="binding differs"):
         watch.wait_for(
@@ -634,12 +651,12 @@ def test_created_unstarted_runtime_allows_only_empty_parent_at_durable_baseline(
             assert deadline_monotonic > 0
             return {"State": {"Running": False, "Status": "created", "Pid": 0}}
 
-    controller = object.__new__(SystemdTransientSliceController)
-    controller._matches_recorded_parent = lambda *args: True  # type: ignore[attr-defined]
-    controller._open_recorded_parent = lambda *args: _Parent()  # type: ignore[attr-defined]
-    controller._runtime_lifecycle = _Lifecycle()  # type: ignore[attr-defined]
-    controller._cleanup_timeout_seconds = 1.0  # type: ignore[attr-defined]
-    controller._config = SimpleNamespace(stable_final_samples=2)  # type: ignore[attr-defined]
+    controller = cast(Any, object.__new__(SystemdTransientSliceController))
+    controller._matches_recorded_parent = lambda *args: True
+    controller._open_recorded_parent = lambda *args: _Parent()
+    controller._runtime_lifecycle = _Lifecycle()
+    controller._cleanup_timeout_seconds = 1.0
+    controller._config = SimpleNamespace(stable_final_samples=2)
 
     from ksi_processing_controller.external_inspector_attempts import RuntimeParentReceiptV1
 
@@ -693,12 +710,12 @@ def test_running_runtime_without_its_exact_scope_is_not_quiesceable() -> None:
             assert deadline_monotonic > 0
             return {"State": {"Running": True, "Status": "running", "Pid": 41}}
 
-    controller = object.__new__(SystemdTransientSliceController)
-    controller._matches_recorded_parent = lambda *args: True  # type: ignore[attr-defined]
-    controller._open_recorded_parent = lambda *args: _Parent()  # type: ignore[attr-defined]
-    controller._runtime_lifecycle = _Lifecycle()  # type: ignore[attr-defined]
-    controller._proc_cgroups = _ProcCgroups()  # type: ignore[attr-defined]
-    controller._cleanup_timeout_seconds = 1.0  # type: ignore[attr-defined]
+    controller = cast(Any, object.__new__(SystemdTransientSliceController))
+    controller._matches_recorded_parent = lambda *args: True
+    controller._open_recorded_parent = lambda *args: _Parent()
+    controller._runtime_lifecycle = _Lifecycle()
+    controller._proc_cgroups = _ProcCgroups()
+    controller._cleanup_timeout_seconds = 1.0
 
     from ksi_processing_controller.external_inspector_attempts import RuntimeParentReceiptV1
 

@@ -164,6 +164,16 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/observation-work-orders/{work_order_id}/approve"): _FIRED_DIRECTLY,
     (
         "POST",
+        "/v1/observation-work-orders/{work_order_id}/operations/assignment",
+    ): _FIRED_DIRECTLY,
+    ("POST", "/v1/observation-work-orders/{work_order_id}/operations/close"): _FIRED_DIRECTLY,
+    ("POST", "/v1/observation-work-orders/{work_order_id}/operations/reopen"): _FIRED_DIRECTLY,
+    (
+        "PUT",
+        "/v1/observation-work-orders/{work_order_id}/operations/due-date",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
         "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
     ): _FIRED_DIRECTLY,
     (
@@ -224,6 +234,12 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/v1/sites/{site_id}/transitions"): _BASE,
     ("POST", "/v1/sites/{site_id}/work-areas"): _REGRESSION_POLYGON_DEPTH,
     ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/archive"): _NO_BODY,
+    ("PUT", "/v1/organization-work-roster/{principal_id}"): _FIRED_DIRECTLY,
+    ("POST", "/v1/work-inbox/{notification_ref}/read"): _NO_BODY,
+    (
+        "POST",
+        "/v1/external-relative-volume-reports/{report_ref}/shares",
+    ): _FIRED_DIRECTLY,
 }
 
 _TOKEN = "hostile-coverage-admin"  # noqa: S105 -- 테스트 고정값

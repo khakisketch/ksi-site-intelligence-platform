@@ -6,7 +6,7 @@ import base64
 import json
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import boto3
 import httpx
@@ -15,6 +15,7 @@ from botocore.config import Config
 from fastapi.testclient import TestClient
 from ksi_core.evidence import ObjectStorageObservation
 from ksi_core.evidence_s3 import S3EvidenceStorage
+from ksi_event_contracts.external_artifact_validation import ExternalValidationPolicyV1
 from ksi_event_contracts.external_display_artifact import (
     SanitizedDisplayDeclarationV1,
     SanitizedDisplayReceiptV1,
@@ -104,6 +105,7 @@ def _display_input_and_declaration() -> tuple[dict[str, Any], SanitizedDisplayDe
     policy = _policy()
     request = _request(policy).model_copy(update={"request_id": "inspection-1"})
     report = _accepted_report(request, policy)
+    assert report.report_digest is not None
     body = _input()
     body.update(
         request=request.model_dump(by_alias=True, mode="json"),
@@ -440,12 +442,15 @@ def test_display_grant_and_seal_bind_the_accepted_report_on_assembled_core(tmp_p
             acquisition_id=_fence().lease_acquisition_id,
             deadline_monotonic=1.0,
         )
-        accepted = inspection_report(request_id=request_id, policy=policy)
+        accepted = inspection_report(
+            request_id=request_id, policy=cast(ExternalValidationPolicyV1, policy)
+        )
         retained = client.record_report(request_id, lease.fence, accepted, deadline_monotonic=1.0)
         current = client.current_input(request_id, lease.fence, deadline_monotonic=1.0)
         assert current is not None
         assert current.phase.value == "DISPLAY"
         assert current.accepted_report == retained
+        assert retained.report_digest is not None
         declaration = SanitizedDisplayDeclarationV1(
             display_id="display-1",
             request_id=request_id,
@@ -717,7 +722,10 @@ def test_display_grant_and_seal_retry_exact_intent_after_lost_core_responses(tmp
                 acquisition_id=_fence().lease_acquisition_id,
                 deadline_monotonic=1.0,
             )
-            accepted = inspection_report(request_id=request_id, policy=policy)
+            accepted = inspection_report(
+                request_id=request_id, policy=cast(ExternalValidationPolicyV1, policy)
+            )
+            assert accepted.report_digest is not None
             client.record_report(request_id, lease.fence, accepted, deadline_monotonic=1.0)
             assert client.current_input(request_id, lease.fence, deadline_monotonic=1.0) is not None
             declaration = SanitizedDisplayDeclarationV1(

@@ -6,6 +6,7 @@ import hashlib
 import socket
 import time
 from io import BytesIO
+from typing import Any
 
 import pytest
 from ksi_processing_controller.external_inspector_protocol import (
@@ -14,7 +15,10 @@ from ksi_processing_controller.external_inspector_protocol import (
     ProtocolLimitsV1,
     ProtocolViolation,
 )
-from ksi_processing_controller.external_measurement_protocol import MeasurementInputV2
+from ksi_processing_controller.external_measurement_protocol import (
+    MeasurementInputV2,
+    MeasurementLaunchRequestV2,
+)
 from ksi_processing_controller.external_measurement_transport import (
     MeasurementRequestReceiverV2,
     _read_measurement_input,
@@ -23,8 +27,9 @@ from ksi_processing_controller.external_measurement_transport import (
 from test_external_measurement_protocol import launch_volume
 
 
-def fixture_request():
+def fixture_request() -> tuple[MeasurementLaunchRequestV2, tuple[bytes, bytes]]:
     request = launch_volume()
+    assert request.volume_request is not None
     data = (b"baseline opaque bytes", b"current opaque bytes")
     volume = request.volume_request
     bindings = tuple(
@@ -53,7 +58,7 @@ def fixture_request():
     ).sealed(), data
 
 
-def limits():
+def limits() -> ProtocolLimitsV1:
     return ProtocolLimitsV1(
         max_header_bytes=262144,
         max_chunk_bytes=4,
@@ -86,7 +91,7 @@ def test_two_opaque_inputs_exact_read(mutation: str) -> None:
         sinks = (DeadlineBoundedMemorySink(), DeadlineBoundedMemorySink())
         deadline = ProtocolDeadline(100, time.monotonic)
 
-        def receive():
+        def receive() -> tuple[Any, ...]:
             return tuple(
                 _read_measurement_input(
                     server,

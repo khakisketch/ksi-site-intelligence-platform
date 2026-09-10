@@ -1,6 +1,8 @@
 """Measurement admission resolves exact fixed catalog authority on every check."""
 
 import time
+from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_event_contracts.inspector_execution_manifest import SignatureVerificationVerdict
@@ -14,30 +16,30 @@ from test_external_measurement_protocol import limits, measurement_manifest_requ
 
 
 class Catalog:
-    def __init__(self, manifest):
+    def __init__(self, manifest: Any) -> None:
         self.manifest = manifest
         self.revoked = False
-        self.lookups = []
+        self.lookups: list[dict[str, Any]] = []
 
-    def startup_status(self):
+    def startup_status(self) -> CatalogStartupStatusV1:
         return CatalogStartupStatusV1(
             readable=True, trust_root_configured=True, catalog_identity_verified=True
         )
 
-    def resolve_manifest_exact(self, **selection):
+    def resolve_manifest_exact(self, **selection: Any) -> Any:
         self.lookups.append(selection)
         return self.manifest
 
-    def is_revoked(self, manifest):
+    def is_revoked(self, manifest: Any) -> bool:
         return self.revoked
 
 
 class Verifier:
-    def verify(self, payload, signature):
+    def verify(self, payload: bytes, signature: Any) -> SignatureVerificationVerdict:
         return SignatureVerificationVerdict.VALID
 
 
-def test_catalog_admission_resolves_manifest_identity_and_clamps_limits():
+def test_catalog_admission_resolves_manifest_identity_and_clamps_limits() -> None:
     manifest, request = measurement_manifest_request()
     catalog = Catalog(manifest)
     admitted = admit_measurement_request(
@@ -56,6 +58,7 @@ def test_catalog_admission_resolves_manifest_identity_and_clamps_limits():
     assert admitted.manifest == manifest
     hard = manifest.body.hard_ceilings
     envelope = request.validation_policy.resource_envelope
+    assert envelope is not None
     assert admitted.effective_limits.max_memory_bytes == min(
         hard.max_memory_bytes, envelope.max_memory_bytes
     )
@@ -79,7 +82,7 @@ def test_catalog_admission_resolves_manifest_identity_and_clamps_limits():
 
 
 @pytest.mark.parametrize("changed", ["unavailable", "wrong", "expired"])
-def test_catalog_failure_or_changed_authority_never_returns_admission(changed):
+def test_catalog_failure_or_changed_authority_never_returns_admission(changed: str) -> None:
     manifest, request = measurement_manifest_request()
     catalog = Catalog(manifest)
     if changed == "unavailable":
@@ -101,7 +104,9 @@ def test_catalog_failure_or_changed_authority_never_returns_admission(changed):
         )
 
 
-def test_real_fixed_catalog_and_ed25519_verifier_admit_only_signed_measurement(tmp_path):
+def test_real_fixed_catalog_and_ed25519_verifier_admit_only_signed_measurement(
+    tmp_path: Path,
+) -> None:
     import base64
     import hashlib
     import json

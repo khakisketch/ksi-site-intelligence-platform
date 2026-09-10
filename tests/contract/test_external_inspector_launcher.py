@@ -63,6 +63,7 @@ from ksi_processing_controller.external_inspector_launcher import (
     _AttemptRuntimeCleanupCoordinator,
 )
 from ksi_processing_controller.external_inspector_protocol import (
+    DeadlineBoundedByteReaderPort,
     DeadlineBoundedBytesReader,
     DeadlineBoundedDiscardingSink,
     DeadlineBoundedMemorySink,
@@ -2125,7 +2126,12 @@ def test_output_close_failure_latches_launcher_admission_after_cleaned_response(
             runtime_measurement=_runtime_measurement(),
         )
     )
-    launcher = _launcher(request, staging=staging, attempts=attempts, backend=backend)
+    launcher = _launcher(
+        request,
+        staging=cast(_Staging, staging),
+        attempts=attempts,
+        backend=backend,
+    )
     client, server = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         thread = threading.Thread(target=lambda: launcher.handle_connection(server))
@@ -2344,7 +2350,7 @@ def test_upload_rejects_an_unbounded_reader_before_it_can_outlive_the_deadline()
             write_launch_request(
                 client,
                 _request(_policy(), b"bound-input"),
-                source,  # type: ignore[arg-type] - deliberate legacy unbounded reader
+                cast(DeadlineBoundedByteReaderPort, source),
                 _limits(),
                 deadline=ProtocolDeadline(20, time.monotonic),
                 wait_is_current=lambda: True,
@@ -2677,7 +2683,7 @@ def test_monitor_and_fast_normal_completion_share_one_exact_cleanup_sequence() -
     request = _request(_policy(), b"bound-input")
     launcher = _launcher(request)
     admission = launcher.admit(request, ProcessingArtifactKind.ORTHO, "image/tiff")
-    attempt = launcher._new_attempt_binding(  # type: ignore[attr-defined]
+    attempt = launcher._new_attempt_binding(
         request,
         _manifest(),
         PrivateStagingRootV1(1, 2, 0o700, 1000, 1000),

@@ -2,6 +2,9 @@
 
 import os
 import socket
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from ksi_processing_controller.external_attempt_lifecycle import InspectorSandboxUnavailable
@@ -10,18 +13,20 @@ from test_external_measurement_protocol import limits
 
 
 class Recovery:
-    def __init__(self, fail=False):
+    def __init__(self, fail: bool = False) -> None:
         self.calls = 0
         self.fail = fail
 
-    def recover_startup(self):
+    def recover_startup(self) -> None:
         self.calls += 1
         if self.fail:
             raise RuntimeError("private recovery detail")
 
 
-def launcher(recovery, uid=None, **overrides):
-    args = dict(
+def launcher(
+    recovery: Any, uid: int | None = None, **overrides: Any
+) -> ExternalMeasurementLauncher:
+    args: dict[str, Any] = dict(
         required_worker_uid=os.getuid() if uid is None else uid,
         catalog=None,
         verifier=None,
@@ -40,14 +45,14 @@ def launcher(recovery, uid=None, **overrides):
     return ExternalMeasurementLauncher(**args)
 
 
-def test_failed_startup_recovery_never_constructs_admitting_launcher():
+def test_failed_startup_recovery_never_constructs_admitting_launcher() -> None:
     recovery = Recovery(True)
     with pytest.raises(InspectorSandboxUnavailable):
         launcher(recovery)
     assert recovery.calls == 1
 
 
-def test_wrong_peer_closes_before_reading_header_or_catalog():
+def test_wrong_peer_closes_before_reading_header_or_catalog() -> None:
     recovery = Recovery()
     value = launcher(recovery, uid=os.getuid() + 1)
     client, server = socket.socketpair()
@@ -60,7 +65,7 @@ def test_wrong_peer_closes_before_reading_header_or_catalog():
         server.close()
 
 
-def test_malformed_header_closes_without_runtime_effects():
+def test_malformed_header_closes_without_runtime_effects() -> None:
     value = launcher(Recovery())
     client, server = socket.socketpair()
     try:
@@ -101,8 +106,8 @@ def test_malformed_header_closes_without_runtime_effects():
     ],
 )
 def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_cleaned(
-    tmp_path, failure, real_staging, backend_kind
-):
+    tmp_path: Path, failure: str | None, real_staging: bool, backend_kind: str
+) -> None:
     import hashlib
     import struct
     from types import SimpleNamespace
@@ -131,6 +136,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
     primary = b"primary opaque sealed bytes"
     secondary = b"secondary opaque sealed bytes"
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
     inputs = tuple(
         value.model_copy(
             update={
@@ -173,42 +179,43 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
         )
 
         class TrackedStaging(_InputStaging):
-            def private_root_identity(self):
+            def private_root_identity(self) -> Any:
                 return concrete.private_root_identity()
 
-            def begin_registered(self, **kwargs):
+            def begin_registered(self, **kwargs: Any) -> Any:
                 mutable, receipt = concrete.begin_registered(**kwargs)
-                self.mutable.append(mutable)
+                cast(Any, self.mutable).append(mutable)
                 seal = mutable.seal_for_reader
 
-                def tracked_seal(**values):
+                def tracked_seal(**values: Any) -> Any:
                     sealed = seal(**values)
-                    self.sealed.append(sealed)
+                    cast(Any, self.sealed).append(sealed)
                     return sealed
 
-                mutable.seal_for_reader = tracked_seal
+                cast(Any, mutable).seal_for_reader = tracked_seal
                 return mutable, receipt
 
-            def finalize_registered_cleanup(self, **kwargs):
+            def finalize_registered_cleanup(self, **kwargs: Any) -> None:
                 concrete.finalize_registered_cleanup(**kwargs)
                 self.finalized.append((kwargs["plan"], kwargs["receipt"]))
 
         staging = TrackedStaging()
     accounting = _Accounting()
-    events = []
+    events: list[str] = []
     import threading
 
     class ConcurrentCatalog(Catalog):
         armed = False
-        monitor_callback = None
+        monitor_callback: Callable[[], bool] | None = None
 
-        def is_revoked(self, selected_manifest):
+        def is_revoked(self, selected_manifest: Any) -> bool:
             if threading.current_thread().name == "fixture-authority-monitor":
                 return True
             if self.armed:
                 self.armed = False
 
-                def observe_loss():
+                def observe_loss() -> None:
+                    assert self.monitor_callback is not None
                     assert self.monitor_callback() is True
                     events.append("monitor-cancelled")
 
@@ -221,7 +228,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
     catalog = ConcurrentCatalog(manifest)
 
     class Parent(_RuntimeParent):
-        def bind_before_create(self, *, binding, configuration):
+        def bind_before_create(self, *, binding: Any, configuration: Any) -> Any:
             assert journal.phase_of(binding.attempt_nonce).value == "RUNTIME_PARENT_CREATING"
             if failure == "parent":
                 raise RuntimeError("unknown parent create")
@@ -230,10 +237,17 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
             return parent_receipt(binding)
 
     class Sink:
-        def __init__(self):
+        def __init__(self) -> None:
             self.value = bytearray()
 
-        def write_chunk(self, chunk, *, deadline, wait_is_current, heartbeat_interval_millis):
+        def write_chunk(
+            self,
+            chunk: bytes,
+            *,
+            deadline: Any,
+            wait_is_current: Any,
+            heartbeat_interval_millis: int,
+        ) -> None:
             deadline.remaining()
             assert wait_is_current()
             if failure == "secondary":
@@ -242,7 +256,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
             events.append("secondary")
 
     class Backend:
-        def create(self, **kwargs):
+        def create(self, **kwargs: Any) -> Any:
             assert journal.phase_of(request.attempt_nonce).value == "CONTAINER_CREATING"
             assert len(staging.mutable) == 1
             if real_staging:
@@ -264,7 +278,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
                 catalog.revoked = True
             return SimpleNamespace(runtime_id="a" * 64)
 
-        def open_started(self, **kwargs):
+        def open_started(self, **kwargs: Any) -> Any:
             assert journal.phase_of(request.attempt_nonce).value == "CONTAINER_BOUND"
             if failure == "open":
                 raise RuntimeError("start failed")
@@ -274,7 +288,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
             class Active:
                 secondary_sink = Sink()
 
-                def complete(self, **ignored):
+                def complete(self, **ignored: Any) -> Any:
                     assert bytes(self.secondary_sink.value) == secondary
                     if failure == "complete":
                         raise RuntimeError("terminal failed")
@@ -299,7 +313,7 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
                         ),
                     )
 
-                def close(self):
+                def close(self) -> None:
                     events.append("close")
 
             return Active()
@@ -372,9 +386,10 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
         )
         if backend_kind == "docker_completed":
             assert decoded.status == "COMPLETED"
-            assert decoded.aggregate.metrics.cut_m3 == 1.0
-            assert decoded.aggregate.metrics.fill_m3 == 5.0
-            assert decoded.aggregate.metrics.net_m3 == 4.0
+            aggregate = cast(Any, decoded.aggregate)
+            assert aggregate.metrics.cut_m3 == 1.0
+            assert aggregate.metrics.fill_m3 == 5.0
+            assert aggregate.metrics.net_m3 == 4.0
             assert "execute" in events and "half-close" in events
         else:
             assert decoded.status == "FAILED" and decoded.aggregate is None
@@ -392,7 +407,16 @@ def test_full_v2_sequence_uses_one_host_allocation_and_publishes_after_durable_c
         journal.close()
 
 
-def _concrete_backend(request, manifest, journal, events, *, catalog, failure, completed):
+def _concrete_backend(
+    request: Any,
+    manifest: Any,
+    journal: Any,
+    events: list[str],
+    *,
+    catalog: Any,
+    failure: str | None,
+    completed: bool,
+) -> Any:
     """Real backend grammar, synthetic Engine/scope/counters; no container claim."""
     from collections import deque
 
@@ -460,11 +484,11 @@ def _concrete_backend(request, manifest, journal, events, *, catalog, failure, c
     frames = deque(encode_measurement_container_frame(frame, limits=caps) for frame in controls)
 
     class Session:
-        def __init__(self):
-            self.writes = []
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
             self.finished = False
 
-        def send_stdin(self, payload, *, deadline_monotonic):
+        def send_stdin(self, payload: bytes, *, deadline_monotonic: float) -> None:
             assert not self.finished
             self.writes.append(payload)
             if len(self.writes) > 2:
@@ -474,11 +498,11 @@ def _concrete_backend(request, manifest, journal, events, *, catalog, failure, c
             elif len(self.writes) == 3 and failure == "revoked_secondary":
                 catalog.revoked = True
 
-        def finish_stdin(self, *, deadline_monotonic):
+        def finish_stdin(self, *, deadline_monotonic: float) -> None:
             self.finished = True
             events.append("half-close")
 
-        def read_frame(self, **kwargs):
+        def read_frame(self, **kwargs: Any) -> tuple[int, bytes] | None:
             assert len(self.writes) >= 3
             assert decode_measurement_container_frame(self.writes[0], limits=caps) == prepare
             assert (
@@ -504,43 +528,43 @@ def _concrete_backend(request, manifest, journal, events, *, catalog, failure, c
             assert self.finished is completed
             return None
 
-        def close(self):
+        def close(self) -> None:
             events.append("close")
 
     session = Session()
 
     class Runtime:
-        def create_exact(self, **kwargs):
+        def create_exact(self, **kwargs: Any) -> str:
             assert journal.phase_of(request.attempt_nonce).value == "CONTAINER_CREATING"
             events.append("create")
             return "a" * 64
 
-        def attach_exact(self, runtime_id, *, deadline_monotonic):
+        def attach_exact(self, runtime_id: str, *, deadline_monotonic: float) -> Session:
             assert journal.phase_of(request.attempt_nonce).value == "CONTAINER_BOUND"
             return session
 
-        def start_after_container_bound(self, **kwargs):
+        def start_after_container_bound(self, **kwargs: Any) -> None:
             assert len(session.writes) == 2
             events.append("start")
 
-        def wait_exact(self, runtime_id, *, deadline_monotonic):
+        def wait_exact(self, runtime_id: str, *, deadline_monotonic: float) -> dict[str, int]:
             assert session.finished is completed
             return {"StatusCode": 0}
 
     class Scope:
-        def verify_exact(self, **kwargs):
+        def verify_exact(self, **kwargs: Any) -> None:
             assert events[-1] == "start"
             events.append("scope")
 
     class Measurements:
-        def start(self, **kwargs):
+        def start(self, **kwargs: Any) -> Any:
             assert events[-1] == "scope"
             events.append("cpu-monitor")
             catalog.monitor_callback = kwargs["is_cancelled"]
             configuration = kwargs["configuration"]
 
             class Active:
-                def finalized_measurement(self):
+                def finalized_measurement(self) -> FixedRuntimeMeasurementV1:
                     return FixedRuntimeMeasurementV1(
                         runtime_id="a" * 64,
                         counter_unit=configuration.cpu_counter_unit,
@@ -553,11 +577,14 @@ def _concrete_backend(request, manifest, journal, events, *, catalog, failure, c
                         kill_latency_seconds=None,
                     )
 
-                def close(self):
+                def close(self) -> None:
                     pass
 
             return Active()
 
     return DockerMeasurementBackend(
-        runtime=Runtime(), started_runtime=Scope(), measurements=Measurements(), frame_limits=caps
+        runtime=cast(Any, Runtime()),
+        started_runtime=Scope(),
+        measurements=Measurements(),
+        frame_limits=caps,
     )

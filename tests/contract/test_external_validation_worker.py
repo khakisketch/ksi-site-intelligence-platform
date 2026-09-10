@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from pathlib import Path
+from typing import Any
 
 import ksi_processing_controller.external_validation_worker as worker
 import pytest
@@ -23,6 +25,7 @@ from ksi_processing_controller.external_validation_worker import (
     main,
 )
 from ksi_processing_controller.external_validation_worker_config import (
+    ExternalValidationWorkerConfigV1,
     load_external_validation_worker_config,
 )
 from test_external_validation_worker_config import _body, _write_secure_json
@@ -32,7 +35,9 @@ def test_external_worker_cli_fails_closed_without_explicit_config_and_token() ->
     assert main([]) == 2
 
 
-def test_external_worker_cli_runs_one_trusted_graph_then_closes_it(tmp_path, monkeypatch) -> None:
+def test_external_worker_cli_runs_one_trusted_graph_then_closes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = _valid_config(tmp_path)
     token_path = tmp_path / "core.token"
     token_path.write_text("private-worker-token\n", encoding="ascii")
@@ -52,7 +57,7 @@ def test_external_worker_cli_runs_one_trusted_graph_then_closes_it(tmp_path, mon
         def close(self) -> None:
             calls.append("close")
 
-    def build(received, *, core_token: str) -> Graph:
+    def build(received: ExternalValidationWorkerConfigV1, *, core_token: str) -> Graph:
         assert received == config
         assert core_token == "private-worker-token"
         calls.append("build")
@@ -75,7 +80,7 @@ def test_external_worker_cli_runs_one_trusted_graph_then_closes_it(tmp_path, mon
 
 
 def test_external_worker_cli_returns_safe_error_when_normal_shutdown_cleanup_fails(
-    tmp_path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _valid_config(tmp_path)
     token_path = tmp_path / "core.token"
@@ -110,7 +115,7 @@ def test_external_worker_cli_returns_safe_error_when_normal_shutdown_cleanup_fai
     )
 
 
-def _valid_config(tmp_path):
+def _valid_config(tmp_path: Path) -> ExternalValidationWorkerConfigV1:
     from test_external_measurement_protocol import measurement_manifest_request
 
     unsigned, _launch = measurement_manifest_request()
@@ -147,7 +152,7 @@ def _valid_config(tmp_path):
 
 
 def test_graph_assembles_one_real_adapter_for_each_fixed_lane_after_manifest_preflight(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     graph = build_validation_worker_graph(
         _valid_config(tmp_path), core_token="private-worker-token"
@@ -162,25 +167,26 @@ def test_graph_assembles_one_real_adapter_for_each_fixed_lane_after_manifest_pre
 
 
 def test_graph_failure_closes_measurement_adapter_then_shared_core_on_base_exception(
-    monkeypatch, tmp_path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     closed: list[str] = []
 
     class ValidationCore:
-        def __init__(self, **_kwargs) -> None:
-            pass
+        def __init__(self, **_kwargs: Any) -> None:
+            del _kwargs
 
         def close(self) -> None:
             closed.append("validation")
 
     class MeasurementCore:
-        def __init__(self, **_kwargs) -> None:
-            pass
+        def __init__(self, **_kwargs: Any) -> None:
+            del _kwargs
 
         def close(self) -> None:
             closed.append("measurement")
 
-    def interrupt_assembly(**_kwargs):
+    def interrupt_assembly(**_kwargs: Any) -> None:
+        del _kwargs
         raise KeyboardInterrupt
 
     monkeypatch.setattr(worker, "load_pinned_measurement_manifest", lambda _settings: object())

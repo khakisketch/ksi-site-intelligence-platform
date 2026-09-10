@@ -13,6 +13,7 @@ import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -147,17 +148,17 @@ class _RetainedCatalogAuthority:
         self._retired: set[str] = set()
         self._coordinator = None
 
-    def bind(self, coordinator):
+    def bind(self, coordinator: Any) -> Any:
         if self._coordinator is not None:
             raise AssertionError("catalog authority must bind one assembled coordinator")
         self._coordinator = coordinator
         return self
 
     @property
-    def coordinator(self):
+    def coordinator(self) -> Any:
         return self._coordinator
 
-    def resolve(self, authority_record_digest: str, now: datetime):
+    def resolve(self, authority_record_digest: str, now: datetime) -> Any:
         record = self._records.get(authority_record_digest)
         return record if record is not None and record.is_active_at(now) else None
 
@@ -173,14 +174,15 @@ class _RetainedCatalogAuthority:
 
     def add(self, record: ExternalQuantitativeCatalogAuthorityRecord) -> None:
         assert record.digest is not None
-        self._mutate(
-            lambda: (
-                self._records.__setitem__(record.digest, record),
-                self._retired.discard(record.digest),
-            )
-        )
+        digest = record.digest
 
-    def _mutate(self, operation) -> None:
+        def add_record() -> None:
+            self._records[digest] = record
+            self._retired.discard(digest)
+
+        self._mutate(add_record)
+
+    def _mutate(self, operation: Any) -> None:
         if self._coordinator is None:
             operation()
             return
@@ -206,7 +208,7 @@ class _RetainedPolicyAuthority:
         assert record.digest is not None
         self._records[record.digest] = record
 
-    def resolve(self, authority_record_digest: str, now: datetime):
+    def resolve(self, authority_record_digest: str, now: datetime) -> Any:
         record = self._records.get(authority_record_digest)
         return record if record is not None and record.is_active_at(now) else None
 
@@ -219,14 +221,14 @@ class _RetainedEvidenceContextAuthority:
         self._coordinator = None
         self._records: dict[str, ExternalEvidenceMeasurementContextV1] = {}
 
-    def bind(self, coordinator):
+    def bind(self, coordinator: Any) -> Any:
         if self._coordinator is not None:
             raise AssertionError("context provider must bind one assembled coordinator")
         self._coordinator = coordinator
         return self
 
     @property
-    def coordinator(self):
+    def coordinator(self) -> Any:
         return self._coordinator
 
     def add(self, context: ExternalEvidenceMeasurementContextV1) -> None:
@@ -240,7 +242,7 @@ class _RetainedEvidenceContextAuthority:
     def revoke(self, context_digest: str) -> None:
         self._mutate(lambda: self._records.pop(context_digest, None))
 
-    def _mutate(self, operation) -> None:
+    def _mutate(self, operation: Any) -> None:
         if self._coordinator is None:
             operation()
             return
@@ -251,7 +253,7 @@ class _RetainedEvidenceContextAuthority:
     def _matches(
         context: ExternalEvidenceMeasurementContextV1,
         *,
-        subject,
+        subject: Any,
         evidence_manifest_digest: str,
         target_dsm_artifact_id: str,
         target_dsm_observed_sha256: str,
@@ -267,7 +269,7 @@ class _RetainedEvidenceContextAuthority:
             and context.policy_digest == policy_digest
         )
 
-    def resolve_for_validation(self, *, now: datetime, **binding):
+    def resolve_for_validation(self, *, now: datetime, **binding: Any) -> Any:
         matches = [
             context
             for context in self._records.values()
@@ -276,8 +278,8 @@ class _RetainedEvidenceContextAuthority:
         return matches[0] if len(matches) == 1 else None
 
     def resolve_historical_for_validation(
-        self, *, context_digest: str, issued_at: datetime, **binding
-    ):
+        self, *, context_digest: str, issued_at: datetime, **binding: Any
+    ) -> Any:
         context = self._records.get(context_digest)
         return (
             context
@@ -342,10 +344,10 @@ def _workflow(
     now: datetime,
     policy_authority: _RetainedPolicyAuthority,
     context_authority: _RetainedEvidenceContextAuthority,
-):
+) -> Any:
     """Load a protected real workflow config backed by retained authority records."""
     envelope = _envelope()
-    body = {
+    body: dict[str, Any] = {
         "organizationId": "org-a",
         "executionTemplates": [
             {
@@ -428,7 +430,9 @@ def _workflow(
     )
 
 
-def _assemble(path: Path, workflow, storage: _LocalObjectStorage):
+def _assemble(
+    path: Path, workflow: Any, storage: _LocalObjectStorage
+) -> tuple[Any, list[DurableJournal]]:
     opened: list[DurableJournal] = []
 
     def journal(name: str) -> DurableJournal:
@@ -450,7 +454,7 @@ def _assemble(path: Path, workflow, storage: _LocalObjectStorage):
     return app, opened
 
 
-def _submission(order, label: str, *, start: datetime, end: datetime):
+def _submission(order: Any, label: str, *, start: datetime, end: datetime) -> Any:
     ortho = b"ortho-" + label.encode()
     dsm = b"dsm-" + label.encode()
     submission = ExternalReconstructionSubmissionV1(
@@ -503,7 +507,15 @@ def _submission(order, label: str, *, start: datetime, end: datetime):
     return submission, {"ortho-" + label: ortho, "dsm-" + label: dsm}
 
 
-def _sealed_revision(app, order, label: str, *, start: datetime, end: datetime, storage):
+def _sealed_revision(
+    app: Any,
+    order: Any,
+    label: str,
+    *,
+    start: datetime,
+    end: datetime,
+    storage: Any,
+) -> Any:
     reconstruction = app.state.external_reconstruction_store
     submission, contents = _submission(order, label, start=start, end=end)
     registered = reconstruction.register(
@@ -550,7 +562,14 @@ def _sealed_revision(app, order, label: str, *, start: datetime, end: datetime, 
     return revision, subject
 
 
-def _admit_policy(app, *, subjects, envelope, authority: _RetainedPolicyAuthority, now):
+def _admit_policy(
+    app: Any,
+    *,
+    subjects: Any,
+    envelope: Any,
+    authority: _RetainedPolicyAuthority,
+    now: datetime,
+) -> Any:
     template = ExternalValidationPolicyV1(
         policy_id="external-geotiff-v1",
         version=1,
@@ -588,7 +607,15 @@ def _admit_policy(app, *, subjects, envelope, authority: _RetainedPolicyAuthorit
     return policy
 
 
-def _inspection_report(request, policy, subject, revision, fence, *, now: datetime):
+def _inspection_report(
+    request: Any,
+    policy: Any,
+    subject: Any,
+    revision: Any,
+    fence: LeaseFence,
+    *,
+    now: datetime,
+) -> Any:
     assert revision.manifest is not None and policy.policy_digest is not None
     vertical = _observed_vertical_reference()
     outcomes = []
@@ -645,7 +672,7 @@ def _inspection_report(request, policy, subject, revision, fence, *, now: dateti
     ).sealed()
 
 
-def _inspect(app, *, revision, subject, policy, now):
+def _inspect(app: Any, *, revision: Any, subject: Any, policy: Any, now: datetime) -> Any:
     inspections = app.state.external_artifact_inspection_store
     issued = inspections.issue_after_seal(subject, now=now)
     assert issued.request is not None and issued.verdict.value in {"ISSUED", "IDEMPOTENT"}
@@ -661,17 +688,17 @@ def _inspect(app, *, revision, subject, policy, now):
 
 
 def _validate_evidence(
-    app,
+    app: Any,
     *,
-    revision,
-    subject,
-    policy,
+    revision: Any,
+    subject: Any,
+    policy: Any,
     context_authority: _RetainedEvidenceContextAuthority,
     now: datetime,
     storage: _LocalObjectStorage,
     label: str = "validated",
     checkpoint_count: int = 3,
-):
+) -> Any:
     evidence_store = app.state.external_evidence_store
     dsm = next(
         entry for entry in revision.manifest.entries if entry.kind is ProcessingArtifactKind.DSM
@@ -791,15 +818,15 @@ def _validate_evidence(
 
 def _mapping(
     *,
-    subjects,
-    revisions,
-    reports,
-    evidence_records,
-    policy,
-    area,
-    now,
-    catalog_digest,
-):
+    subjects: Any,
+    revisions: Any,
+    reports: Any,
+    evidence_records: Any,
+    policy: Any,
+    area: Any,
+    now: datetime,
+    catalog_digest: str,
+) -> Any:
     bindings = []
     for subject, revision, report in zip(subjects, revisions, reports, strict=True):
         dsm = next(
@@ -1347,7 +1374,9 @@ def test_external_quantitative_real_participants_complete_authorized_cycle_acros
         )
         assert idempotent_approval == approval
         assert work_order_journal.read_bytes() == approval_prefix
-        with pytest.raises(ExternalReobservationExecutionDenied, match="PLANNING_ONLY"):
+        with pytest.raises(
+            ExternalReobservationExecutionDenied, match="EXTERNAL_RECONSTRUCTION_ONLY"
+        ):
             restarted.state.observation_work_order_store.assert_execution_allowed(
                 approval.successor_work_order
             )

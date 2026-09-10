@@ -1,6 +1,7 @@
 """Shared dev/production composition retains planning-only execution authority."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import ksi_core.app_assembly as assembly
 import pytest
@@ -11,16 +12,23 @@ from ksi_core.observation_work_orders import ExternalReobservationExecutionDenie
 from test_external_reobservation_successor import _approve, _store_with_source
 
 
-def test_shared_assembly_denies_actual_planning_only_successor_without_run(tmp_path, monkeypatch):
+def test_shared_assembly_denies_actual_planning_only_successor_without_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     order_journal, orders, authority = _store_with_source(tmp_path)
     successor = _approve(orders, authority).successor_work_order
     assert successor is not None
     # Supply an already verified authority-backed WorkOrder journal. All other
     # graph nodes and the acquisition constructor are the actual shared assembly.
     monkeypatch.setattr(assembly, "ObservationWorkOrderStore", lambda *args, **kwargs: orders)
+    monkeypatch.setattr(
+        assembly,
+        "ExternalAuthorityCurrentnessCoordinator",
+        lambda: orders.operations_coordinator,
+    )
     opened = [order_journal]
 
-    def journal(name):
+    def journal(name: str) -> DurableJournal:
         value = DurableJournal(tmp_path / name)
         opened.append(value)
         return value
@@ -40,7 +48,9 @@ def test_shared_assembly_denies_actual_planning_only_successor_without_run(tmp_p
         run_path = tmp_path / "acquisition-runs.jsonl"
         before = run_path.read_bytes() if run_path.exists() else b""
         orders_before = (tmp_path / "work-orders.jsonl").read_bytes()
-        with pytest.raises(ExternalReobservationExecutionDenied, match="PLANNING_ONLY"):
+        with pytest.raises(
+            ExternalReobservationExecutionDenied, match="EXTERNAL_RECONSTRUCTION_ONLY"
+        ):
             runs.ensure_run(successor, actor="fixture", now=datetime(2026, 9, 9, 3, tzinfo=UTC))
         assert (run_path.read_bytes() if run_path.exists() else b"") == before
         assert (tmp_path / "work-orders.jsonl").read_bytes() == orders_before

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -22,6 +24,7 @@ from ksi_processing_controller.external_inspector_attempts import (
     StagingAllocationReceiptV1,
     StagingFileIdentityV1,
 )
+from ksi_processing_controller.external_runtime_binding import ExactRuntimeBindingPort
 
 
 def _digest(marker: str) -> str:
@@ -88,7 +91,7 @@ def _receipt() -> StagingAllocationReceiptV1:
     )
 
 
-def _runtime_parent_receipt(binding: AttemptBindingV1) -> RuntimeParentReceiptV1:
+def _runtime_parent_receipt(binding: ExactRuntimeBindingPort) -> RuntimeParentReceiptV1:
     return RuntimeParentReceiptV1(
         unit_name=binding.systemd_slice_name,
         object_path="/org/freedesktop/systemd1/unit/ksi_2dinspector.slice",
@@ -106,24 +109,40 @@ def _runtime_parent_receipt(binding: AttemptBindingV1) -> RuntimeParentReceiptV1
 
 
 class _NoRuntimeParent:
-    def adopt_if_prebound(self, *, binding: AttemptBindingV1) -> None:
+    def adopt_if_prebound(self, *, binding: ExactRuntimeBindingPort) -> None:
         del binding
         return None
 
-    def stop_exact(self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1) -> bool:
+    def stop_exact(
+        self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1
+    ) -> bool:
         del binding, receipt
         return True
 
     def verify_before_quiesce(
-        self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+        self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1, runtime_id: str
     ) -> bool:
         del binding, receipt, runtime_id
         return True
 
     def verify_final_before_remove(
-        self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+        self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1, runtime_id: str
     ) -> bool:
         del binding, receipt, runtime_id
+        return True
+
+
+class _NoRuntimeRegistry:
+    def resolve_exact(self, binding: ExactRuntimeBindingPort) -> None:
+        del binding
+        return None
+
+    def quiesce_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+        del binding, runtime_id
+        return True
+
+    def remove_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+        del binding, runtime_id
         return True
 
 
@@ -225,8 +244,8 @@ def test_replay_rejects_reordered_or_digest_tampered_attempt_events(tmp_path: Pa
     ],
 )
 def test_replay_rejects_noncanonical_versions_times_and_closed_event_fields(
-    tmp_path: Path, mutation
-) -> None:  # type: ignore[no-untyped-def]
+    tmp_path: Path, mutation: Callable[[dict[str, Any]], object]
+) -> None:
     """A valid hash chain cannot smuggle a new version, field, or timestamp spelling."""
     journal_path = tmp_path / "attempts.jsonl"
     journal = InspectorAttemptJournal(journal_path, clock=lambda: datetime(2026, 9, 8, tzinfo=UTC))
@@ -298,15 +317,6 @@ def test_startup_recovery_closes_only_a_recorded_allocation(tmp_path: Path) -> N
             self.calls.append((plan, receipt))
             return "CLEANED"
 
-    class _RuntimeRegistry:
-        def resolve_exact(self, binding: AttemptBindingV1) -> None:
-            del binding
-            return None
-
-        def remove_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
-            del binding, runtime_id
-            return True
-
     journal = InspectorAttemptJournal(tmp_path / "attempts.jsonl")
     binding = _binding()
     journal.intend(binding)
@@ -315,7 +325,7 @@ def test_startup_recovery_closes_only_a_recorded_allocation(tmp_path: Path) -> N
     InspectorAttemptRecovery(
         journal=journal,
         staging=staging,
-        runtime_registry=_RuntimeRegistry(),
+        runtime_registry=_NoRuntimeRegistry(),
         runtime_parent=_NoRuntimeParent(),
     ).recover_startup()
 
@@ -336,15 +346,6 @@ def test_startup_recovery_records_uncertain_ownership_and_closes_admission(tmp_p
             del plan, receipt
             return "OWNERSHIP_UNCERTAIN"
 
-    class _RuntimeRegistry:
-        def resolve_exact(self, binding: AttemptBindingV1) -> None:
-            del binding
-            return None
-
-        def remove_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
-            del binding, runtime_id
-            return True
-
     journal = InspectorAttemptJournal(tmp_path / "attempts.jsonl")
     binding = _binding()
     journal.intend(binding)
@@ -353,7 +354,7 @@ def test_startup_recovery_records_uncertain_ownership_and_closes_admission(tmp_p
         InspectorAttemptRecovery(
             journal=journal,
             staging=_UncertainStaging(),
-            runtime_registry=_RuntimeRegistry(),
+            runtime_registry=_NoRuntimeRegistry(),
             runtime_parent=_NoRuntimeParent(),
         ).recover_startup()
 
@@ -377,19 +378,19 @@ def test_startup_recovery_removes_only_an_exact_runtime_resolved_from_input_boun
 
     class _RuntimeRegistry:
         def __init__(self) -> None:
-            self.bindings: list[AttemptBindingV1] = []
+            self.bindings: list[ExactRuntimeBindingPort] = []
             self.removed: list[str] = []
 
-        def resolve_exact(self, binding: AttemptBindingV1) -> str:
+        def resolve_exact(self, binding: ExactRuntimeBindingPort) -> str:
             self.bindings.append(binding)
             return "runtime-1"
 
-        def remove_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
+        def remove_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
             assert binding == _binding()
             self.removed.append(runtime_id)
             return True
 
-        def quiesce_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
+        def quiesce_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
             assert binding == _binding()
             assert runtime_id == "runtime-1"
             return True
@@ -436,18 +437,18 @@ def test_startup_recovery_adopts_only_input_bound_parent_before_runtime_lookup(
         def __init__(self, order: list[str]) -> None:
             self._order = order
 
-        def resolve_exact(self, binding: AttemptBindingV1) -> None:
+        def resolve_exact(self, binding: ExactRuntimeBindingPort) -> None:
             del binding
             self._order.append("resolve")
             return None
 
-        def remove_exact(self, **kwargs: object) -> bool:
-            del kwargs
+        def remove_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+            del binding, runtime_id
             self._order.append("remove")
             return True
 
-        def quiesce_exact(self, **kwargs: object) -> bool:
-            del kwargs
+        def quiesce_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+            del binding, runtime_id
             self._order.append("quiesce")
             return True
 
@@ -455,7 +456,9 @@ def test_startup_recovery_adopts_only_input_bound_parent_before_runtime_lookup(
         def __init__(self, order: list[str]) -> None:
             self._order = order
 
-        def adopt_if_prebound(self, *, binding: AttemptBindingV1) -> RuntimeParentReceiptV1 | None:
+        def adopt_if_prebound(
+            self, *, binding: ExactRuntimeBindingPort
+        ) -> RuntimeParentReceiptV1 | None:
             self._order.append("adopt")
             return RuntimeParentReceiptV1(
                 unit_name=binding.systemd_slice_name,
@@ -472,17 +475,33 @@ def test_startup_recovery_adopts_only_input_bound_parent_before_runtime_lookup(
                 cpu_budget_counter=100,
             )
 
-        def stop_exact(self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1) -> bool:
+        def stop_exact(
+            self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1
+        ) -> bool:
             assert receipt.unit_name == binding.systemd_slice_name
             self._order.append("stop")
             return True
 
         def verify_final_before_remove(
-            self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
         ) -> bool:
             assert receipt.unit_name == binding.systemd_slice_name
             assert runtime_id == ""
             self._order.append("final")
+            return True
+
+        def verify_before_quiesce(
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
+        ) -> bool:
+            del binding, receipt, runtime_id
             return True
 
     journal = InspectorAttemptJournal(tmp_path / "attempts.jsonl")
@@ -535,7 +554,7 @@ def test_startup_recovery_retains_unresolved_parent_create_intent(tmp_path: Path
         InspectorAttemptRecovery(
             journal=journal,
             staging=_Staging(),
-            runtime_registry=object(),  # type: ignore[arg-type]
+            runtime_registry=_NoRuntimeRegistry(),
             runtime_parent=_NoRuntimeParent(),
         ).recover_startup()
 
@@ -556,18 +575,18 @@ def test_startup_recovery_resolves_a_lost_create_id_after_cleanup_failed(
         def __init__(self, order: list[str]) -> None:
             self._order = order
 
-        def resolve_exact(self, binding: AttemptBindingV1) -> str:
+        def resolve_exact(self, binding: ExactRuntimeBindingPort) -> str:
             assert binding == _binding()
             self._order.append("resolve")
             return "runtime-1"
 
-        def quiesce_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
+        def quiesce_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
             assert binding == _binding()
             assert runtime_id == "runtime-1"
             self._order.append("quiesce")
             return True
 
-        def remove_exact(self, *, binding: AttemptBindingV1, runtime_id: str) -> bool:
+        def remove_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
             assert binding == _binding()
             assert runtime_id == "runtime-1"
             self._order.append("remove")
@@ -578,7 +597,11 @@ def test_startup_recovery_resolves_a_lost_create_id_after_cleanup_failed(
             self._order = order
 
         def verify_before_quiesce(
-            self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
         ) -> bool:
             assert binding == _binding()
             assert receipt == _runtime_parent_receipt(binding)
@@ -587,7 +610,11 @@ def test_startup_recovery_resolves_a_lost_create_id_after_cleanup_failed(
             return True
 
         def verify_final_before_remove(
-            self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1, runtime_id: str
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
         ) -> bool:
             assert binding == _binding()
             assert receipt == _runtime_parent_receipt(binding)
@@ -595,7 +622,9 @@ def test_startup_recovery_resolves_a_lost_create_id_after_cleanup_failed(
             self._order.append("final")
             return True
 
-        def stop_exact(self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1) -> bool:
+        def stop_exact(
+            self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1
+        ) -> bool:
             assert binding == _binding()
             assert receipt == _runtime_parent_receipt(binding)
             self._order.append("stop")
@@ -645,16 +674,16 @@ def test_restart_retains_parent_creation_origin_until_exact_receipt_is_recovered
             return "CLEANED"
 
     class _Registry:
-        def resolve_exact(self, binding: AttemptBindingV1) -> None:
+        def resolve_exact(self, binding: ExactRuntimeBindingPort) -> None:
             del binding
             return None
 
-        def quiesce_exact(self, **kwargs: object) -> bool:
-            del kwargs
+        def quiesce_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+            del binding, runtime_id
             return True
 
-        def remove_exact(self, **kwargs: object) -> bool:
-            del kwargs
+        def remove_exact(self, *, binding: ExactRuntimeBindingPort, runtime_id: str) -> bool:
+            del binding, runtime_id
             return True
 
     class _Parent:
@@ -662,24 +691,40 @@ def test_restart_retains_parent_creation_origin_until_exact_receipt_is_recovered
             self._calls = calls
             self._receipts = receipts
 
-        def adopt_if_prebound(self, *, binding: AttemptBindingV1) -> RuntimeParentReceiptV1 | None:
+        def adopt_if_prebound(
+            self, *, binding: ExactRuntimeBindingPort
+        ) -> RuntimeParentReceiptV1 | None:
             self._calls.append("adopt")
             receipt = self._receipts.pop(0)
             if receipt is not None:
                 assert receipt == _runtime_parent_receipt(binding)
             return receipt
 
-        def stop_exact(self, *, binding: AttemptBindingV1, receipt: RuntimeParentReceiptV1) -> bool:
+        def stop_exact(
+            self, *, binding: ExactRuntimeBindingPort, receipt: RuntimeParentReceiptV1
+        ) -> bool:
             assert receipt == _runtime_parent_receipt(binding)
             self._calls.append("stop")
             return True
 
-        def verify_before_quiesce(self, **kwargs: object) -> bool:
-            del kwargs
+        def verify_before_quiesce(
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
+        ) -> bool:
+            del binding, receipt, runtime_id
             return True
 
-        def verify_final_before_remove(self, **kwargs: object) -> bool:
-            del kwargs
+        def verify_final_before_remove(
+            self,
+            *,
+            binding: ExactRuntimeBindingPort,
+            receipt: RuntimeParentReceiptV1,
+            runtime_id: str,
+        ) -> bool:
+            del binding, receipt, runtime_id
             return True
 
     journal_path = tmp_path / "attempts.jsonl"

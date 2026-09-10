@@ -702,7 +702,18 @@ def test_evidence_admission_enforces_queue_and_tenant_lease_capacity(tmp_path: P
     )
 
 
-def _terminalized_validation(tmp_path: Path):
+def _terminalized_validation(
+    tmp_path: Path,
+) -> tuple[
+    Path,
+    EvidenceItem,
+    ExternalValidationPolicyRegistry,
+    _Evidence,
+    _ContextAuthority,
+    ExternalEvidenceValidationRequestV1,
+    ExternalEvidenceRecordV1,
+    list[dict[str, object]],
+]:
     item = _evidence()
     registry, policy = _policy_registry(tmp_path / "policy")
     evidence = _Evidence(item)

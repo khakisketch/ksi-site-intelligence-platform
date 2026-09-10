@@ -1,17 +1,21 @@
 """Sealing unrelated evidence never binds it to an epoch's uncertainty."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from ksi_event_contracts.external_evidence import (
+    EvidenceCoreVerdict,
     ExternalEvidenceMeasurementPayloadV1,
     ExternalEvidenceRecordV1,
 )
 from test_external_measurement_protocol import launch_volume
 
 
-def with_records(mutation=None):
+def with_records(mutation: str | None = None) -> Any:
     launch = launch_volume()
+    assert launch.volume_request is not None
+    assert launch.validation_policy.policy_digest is not None
     records = []
     for index, binding in enumerate(
         (launch.volume_request.baseline, launch.volume_request.current)
@@ -47,7 +51,7 @@ def with_records(mutation=None):
                 target_dsm_observed_sha256=dsm,
                 policy_digest=policy,
                 measurement_payload=payload,
-                core_verdict="VALIDATED",
+                core_verdict=EvidenceCoreVerdict.VALIDATED,
                 core_recorded_at=payload.measured_at,
             ).sealed()
         )
@@ -81,13 +85,13 @@ def with_records(mutation=None):
     ).sealed()
 
 
-def test_exact_ordered_records_bind_to_two_epochs():
+def test_exact_ordered_records_bind_to_two_epochs() -> None:
     assert len(with_records().volume_evidence_records) == 2
 
 
 @pytest.mark.parametrize(
     "mutation", ["subject", "dsm", "policy", "order", "duplicate", "cardinality"]
 )
-def test_self_consistent_unrelated_records_are_rejected(mutation):
+def test_self_consistent_unrelated_records_are_rejected(mutation: str) -> None:
     with pytest.raises(ValueError, match="evidence|record"):
         with_records(mutation)

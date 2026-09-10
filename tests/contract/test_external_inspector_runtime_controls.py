@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from hashlib import sha256
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from ksi_event_contracts.inspector_execution_manifest import (
@@ -19,6 +22,7 @@ from ksi_processing_controller.external_inspector_attempts import (
     PrivateStagingRootV1,
     StagingAllocationPlanV1,
 )
+from ksi_processing_controller.external_inspector_container_protocol import FixedRuntimeLimitsV1
 from ksi_processing_controller.external_inspector_file_io import FileIoSealReceiptV1
 from ksi_processing_controller.external_inspector_runtime import (
     AggregateCpuCounterV1,
@@ -34,8 +38,12 @@ from ksi_processing_controller.external_inspector_staging import (
     FileSystemInputStaging,
     InspectorBorrowedSourcePort,
     InspectorReadOnlyBindV1,
+    InspectorSealedInputPort,
     InspectorStagingUnavailable,
     MappedInspectorReaderV1,
+    NamedReaderAclPort,
+    ReaderMappingPort,
+    StagingAllocationReceiptV1,
 )
 
 
@@ -48,7 +56,7 @@ class _BorrowedSource(InspectorBorrowedSourcePort):
         del offset, maximum_bytes, deadline_monotonic
         return b""
 
-    def consume_fd(self, consumer, *, deadline_monotonic: float):  # type: ignore[no-untyped-def]
+    def consume_fd(self, consumer: Callable[[int], object], *, deadline_monotonic: float) -> object:
         del deadline_monotonic
         return consumer(42)
 
@@ -111,11 +119,7 @@ def _manifest() -> InspectorExecutionManifestV1:
     )
 
 
-def _runtime_limits():
-    from ksi_processing_controller.external_inspector_container_protocol import (
-        FixedRuntimeLimitsV1,
-    )
-
+def _runtime_limits() -> FixedRuntimeLimitsV1:
     return FixedRuntimeLimitsV1(
         max_memory_bytes=200,
         max_workspace_bytes=300,
@@ -129,7 +133,9 @@ def _runtime_limits():
     )
 
 
-def _read_only_bind(*, target_path: str = "/input/artifact.tif", read_only: bool = True):
+def _read_only_bind(
+    *, target_path: str = "/input/artifact.tif", read_only: bool = True
+) -> InspectorReadOnlyBindV1:
     return InspectorReadOnlyBindV1(
         source=_BorrowedSource(),
         target_path=target_path,
@@ -376,25 +382,27 @@ def test_fixed_runtime_control_records_one_baseline_monitor_kill_and_final_measu
     assert measurement.kill_latency_seconds == 0.125
 
 
-def test_registered_staging_allocation_uses_exact_marker_then_exact_cleanup(tmp_path) -> None:
+def test_registered_staging_allocation_uses_exact_marker_then_exact_cleanup(tmp_path: Path) -> None:
     """The journaled deterministic allocation has no random-name fallback or broad cleanup."""
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     assert isinstance(identity, PrivateStagingRootV1)
     plan = StagingAllocationPlanV1(
@@ -422,29 +430,31 @@ def test_registered_staging_allocation_uses_exact_marker_then_exact_cleanup(tmp_
     assert not (root / plan.staging_name).exists()
 
 
-def test_registered_sealed_abort_retains_a_substituted_artifact(tmp_path) -> None:
+def test_registered_sealed_abort_retains_a_substituted_artifact(tmp_path: Path) -> None:
     """Exact cleanup must fail closed instead of deleting a replacement under the recorded name."""
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def revoke_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def revoke_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     plan = StagingAllocationPlanV1(
         attempt_nonce="attempt-substitute-1",
@@ -481,28 +491,30 @@ def test_registered_sealed_abort_retains_a_substituted_artifact(tmp_path) -> Non
     assert (root / plan.committed_marker_name).exists()
 
 
-def test_registered_staging_recovery_removes_only_an_exact_committed_marker(tmp_path) -> None:
+def test_registered_staging_recovery_removes_only_an_exact_committed_marker(tmp_path: Path) -> None:
     """The committed-only crash window is recoverable only from the recorded marker bytes."""
     from ksi_processing_controller.external_inspector_staging import (
         RegisteredStagingRecoveryDispositionV1,
     )
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     plan = StagingAllocationPlanV1(
         attempt_nonce="attempt-recover-1",
@@ -534,7 +546,7 @@ def test_registered_staging_recovery_removes_only_an_exact_committed_marker(tmp_
     "crash_window", ["intended", "provisional", "both", "directory", "artifact"]
 )
 def test_registered_staging_recovery_cleans_each_recorded_prejournal_window(
-    tmp_path, crash_window: str
+    tmp_path: Path, crash_window: str
 ) -> None:
     """Every allocation syscall boundary has an exact recorded-name cleanup path."""
     from ksi_processing_controller.external_inspector_staging import (
@@ -542,21 +554,23 @@ def test_registered_staging_recovery_cleans_each_recorded_prejournal_window(
     )
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     plan = StagingAllocationPlanV1(
         attempt_nonce=f"attempt-window-{crash_window}",
@@ -597,28 +611,30 @@ def test_registered_staging_recovery_cleans_each_recorded_prejournal_window(
     assert not (root / plan.staging_name).exists()
 
 
-def test_registered_staging_recovery_retains_an_unexpected_child(tmp_path) -> None:
+def test_registered_staging_recovery_retains_an_unexpected_child(tmp_path: Path) -> None:
     """A pathname is never enough authority to delete an allocation with an unknown child."""
     from ksi_processing_controller.external_inspector_staging import (
         RegisteredStagingRecoveryDispositionV1,
     )
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     plan = StagingAllocationPlanV1(
         attempt_nonce="attempt-uncertain-1",
@@ -644,28 +660,30 @@ def test_registered_staging_recovery_retains_an_unexpected_child(tmp_path) -> No
     assert (root / plan.staging_name / "unexpected").exists()
 
 
-def test_registered_staging_recovery_retains_a_malformed_recorded_marker(tmp_path) -> None:
+def test_registered_staging_recovery_retains_a_malformed_recorded_marker(tmp_path: Path) -> None:
     """A corrupt marker is an ownership uncertainty, never equivalent to an absent allocation."""
     from ksi_processing_controller.external_inspector_staging import (
         RegisteredStagingRecoveryDispositionV1,
     )
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return MappedInspectorReaderV1(1, 1, 1, 1, "mapping")
 
     class _Acl:
-        def grant_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def grant_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
-        def verifies_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def verifies_exact(self, **kwargs: Any) -> bool:
             del kwargs
             return True
 
     root = tmp_path / "private"
-    staging = FileSystemInputStaging(private_root=root, reader_mapping=_Mapping(), acl=_Acl())
+    staging = FileSystemInputStaging(
+        private_root=root, reader_mapping=_Mapping(), acl=cast(NamedReaderAclPort, _Acl())
+    )
     identity = staging.private_root_identity()
     plan = StagingAllocationPlanV1(
         attempt_nonce="attempt-corrupt-1",
@@ -688,7 +706,7 @@ def test_registered_staging_recovery_retains_a_malformed_recorded_marker(tmp_pat
     assert marker.read_bytes() == b"corrupt"
 
 
-def test_private_output_spool_is_bounded_retained_and_exactly_retired(tmp_path) -> None:
+def test_private_output_spool_is_bounded_retained_and_exactly_retired(tmp_path: Path) -> None:
     """A sanitizer spool is a launcher-owned 0600 file, never a reader bind."""
     from ksi_processing_controller.external_inspector_staging import FileSystemOutputStaging
 
@@ -707,7 +725,9 @@ def test_private_output_spool_is_bounded_retained_and_exactly_retired(tmp_path) 
     assert list(root.iterdir()) == []
 
 
-def test_private_output_spool_is_unnamed_and_transfers_only_a_sealed_response_fd(tmp_path) -> None:
+def test_private_output_spool_is_unnamed_and_transfers_only_a_sealed_response_fd(
+    tmp_path: Path,
+) -> None:
     """No pathname is available for a sanitizer result or for crash recovery."""
     from ksi_processing_controller.external_inspector_staging import (
         FileSystemOutputStaging,
@@ -719,7 +739,8 @@ def test_private_output_spool_is_unnamed_and_transfers_only_a_sealed_response_fd
     spool = FileSystemOutputStaging(private_root=root).begin(
         maximum_bytes=5, deadline_monotonic=time.monotonic() + 1.0
     )
-    assert os.fstat(spool._descriptor).st_nlink == 0  # type: ignore[arg-type,attr-defined]
+    assert spool._descriptor is not None
+    assert os.fstat(spool._descriptor).st_nlink == 0
     assert list(root.iterdir()) == []
     spool.write(b"abc")
     spool.finish()
@@ -732,7 +753,7 @@ def test_private_output_spool_is_unnamed_and_transfers_only_a_sealed_response_fd
     assert list(root.iterdir()) == []
 
 
-def test_concrete_namespace_mapping_and_fd_acl_prove_only_the_exact_reader(tmp_path) -> None:
+def test_concrete_namespace_mapping_and_fd_acl_prove_only_the_exact_reader(tmp_path: Path) -> None:
     """The production adapters read explicit maps and grant no group/world fallback."""
     from ksi_processing_controller.external_inspector_access import (
         LibaclNamedReaderAcl,
@@ -789,7 +810,11 @@ def test_concrete_namespace_mapping_and_fd_acl_prove_only_the_exact_reader(tmp_p
         assert os.fstat(root_fd).st_mode & 0o777 == 0o710
         # The shared root remains usable only because libacl can prove the
         # single named traversal entry; a bare 0710 directory is rejected.
-        staging = FileSystemInputStaging(private_root=root, reader_mapping=None, acl=acl)
+        staging = FileSystemInputStaging(
+            private_root=root,
+            reader_mapping=cast(ReaderMappingPort, None),
+            acl=acl,
+        )
         assert staging.private_root_identity().mode == 0o700
         assert acl.grant_exact(
             source_fd=artifact_fd,
@@ -812,7 +837,7 @@ def test_concrete_namespace_mapping_and_fd_acl_prove_only_the_exact_reader(tmp_p
 
 
 def test_exact_reader_acl_leases_share_one_reader_until_last_abort_and_recovery(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """Concurrent sealed inputs share only one exact reader traversal ACL."""
     from ksi_processing_controller.external_inspector_access import LibaclNamedReaderAcl
@@ -823,7 +848,7 @@ def test_exact_reader_acl_leases_share_one_reader_until_last_abort_and_recovery(
     reader = MappedInspectorReaderV1(10_001, 10_002, 20_001, 20_002, "mapping")
 
     class _Mapping:
-        def resolve_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        def resolve_exact(self, **kwargs: Any) -> MappedInspectorReaderV1:
             del kwargs
             return reader
 
@@ -853,7 +878,9 @@ def test_exact_reader_acl_leases_share_one_reader_until_last_abort_and_recovery(
             committed_marker_name=f".attempt-{label}.committed",
         )
 
-    def seal_for(current_staging, plan: StagingAllocationPlanV1):  # type: ignore[no-untyped-def]
+    def seal_for(
+        current_staging: FileSystemInputStaging, plan: StagingAllocationPlanV1
+    ) -> tuple[InspectorSealedInputPort, StagingAllocationReceiptV1]:
         mutable, receipt = current_staging.begin_registered(
             plan=plan, maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0
         )
@@ -903,7 +930,7 @@ def test_exact_reader_acl_leases_share_one_reader_until_last_abort_and_recovery(
 
 
 def test_failed_second_leaf_acl_transition_keeps_the_first_shared_root_lease(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A partial second leaf grant may not revoke the first reader's root traversal ACL."""
     from ksi_processing_controller.external_inspector_access import (

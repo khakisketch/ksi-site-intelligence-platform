@@ -11,6 +11,7 @@ import base64
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -183,7 +184,7 @@ def _decode_output(
     second_size = int.from_bytes(raw[second_start : second_start + 4], "big")
     second_end = second_start + 4 + second_size
     second = decode_inner_frame(raw[second_start:second_end], limits=limits)
-    return first, second, raw[second_end:]
+    return cast(dict[str, object], first), cast(dict[str, object], second), raw[second_end:]
 
 
 def test_entrypoint_sanitize_is_closed_and_emits_only_the_verified_private_candidate(
@@ -300,6 +301,7 @@ def test_entrypoint_inspect_returns_a_typed_artifact_rejection_for_unsupported_r
 
     _, terminal, raw = _decode_output(stdout, limits)
     assert terminal["frame"] == "COMPLETED"
-    assert terminal["outcome"]["outcome"] == "REJECTED"
-    assert terminal["outcome"]["reason"] == "UNSUPPORTED_RASTER"
+    outcome = cast(dict[str, object], terminal["outcome"])
+    assert outcome["outcome"] == "REJECTED"
+    assert outcome["reason"] == "UNSUPPORTED_RASTER"
     assert raw == b""

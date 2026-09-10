@@ -3,16 +3,17 @@
 from datetime import timedelta
 from pathlib import Path
 
-from external_product_loop_fixture import build_graph, record_measurement, seed_original
+from external_product_loop_fixture import LoopGraph, build_graph, record_measurement, seed_original
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import AuthRegistry, mount_auth
 from ksi_core.external_reobservation_proposals import build_external_reobservation_proposal_router
 from ksi_core.external_result_workflow_api import build_external_result_workflow_router
+from ksi_event_contracts.observation_work_order import ObservationWorkOrder
 from test_external_result_review_proposals import _NOW, _TOKEN, _token_record
 
 
-def test_report_review_approval_and_restart_are_actual_durable_core(tmp_path: Path):
+def test_report_review_approval_and_restart_are_actual_durable_core(tmp_path: Path) -> None:
     source = seed_original(tmp_path)
     graph = build_graph(tmp_path, source)
     report = record_measurement(graph)
@@ -46,9 +47,11 @@ def test_report_review_approval_and_restart_are_actual_durable_core(tmp_path: Pa
     )
     assert created.status_code == 201, created.text
     proposal = created.json()["proposal"]
-    original_before = graph.service.work_orders.get(
+    original = graph.service.work_orders.get(
         source.authority.current_work_order_id, organization_id="org-a"
-    ).model_dump_json(by_alias=True)
+    )
+    assert original is not None
+    original_before = original.model_dump_json(by_alias=True)
     approved = client.post(
         "/v1/external-reobservation-proposals/approve",
         headers={**headers, "Idempotency-Key": "approval"},
@@ -66,9 +69,7 @@ def test_report_review_approval_and_restart_are_actual_durable_core(tmp_path: Pa
         and not binding.mission_issuance_allowed
     )
     assert (
-        graph.service.work_orders.get(
-            source.authority.current_work_order_id, organization_id="org-a"
-        ).model_dump_json(by_alias=True)
+        _work_order(graph, source.authority.current_work_order_id).model_dump_json(by_alias=True)
         == original_before
     )
     joined = client.get(path, headers=headers).json()
@@ -109,7 +110,7 @@ def test_report_review_approval_and_restart_are_actual_durable_core(tmp_path: Pa
     replay.close()
 
 
-def test_report_views_are_scoped_and_review_body_cannot_supply_authority(tmp_path: Path):
+def test_report_views_are_scoped_and_review_body_cannot_supply_authority(tmp_path: Path) -> None:
     import hashlib
 
     from ksi_core.auth import PrincipalTokenRecord
@@ -151,7 +152,7 @@ def test_report_views_are_scoped_and_review_body_cannot_supply_authority(tmp_pat
     graph.close()
 
 
-def test_startup_verifies_durable_owners_without_site_enumeration(tmp_path: Path):
+def test_startup_verifies_durable_owners_without_site_enumeration(tmp_path: Path) -> None:
     import pytest
     from ksi_core.external_reobservation_proposals import (
         ExternalReobservationProposalRecoveryError,
@@ -167,7 +168,9 @@ def test_startup_verifies_durable_owners_without_site_enumeration(tmp_path: Path
         verify_external_reobservation_graph(service=harness.service)
 
 
-def test_service_rejects_same_coordinator_but_different_durable_authority_graph(tmp_path: Path):
+def test_service_rejects_same_coordinator_but_different_durable_authority_graph(
+    tmp_path: Path,
+) -> None:
     from dataclasses import replace
 
     import pytest
@@ -191,7 +194,9 @@ def test_service_rejects_same_coordinator_but_different_durable_authority_graph(
         replace(harness.service, work_orders=other_orders)
 
 
-def test_result_router_rejects_different_volume_store_with_shared_coordinator(tmp_path: Path):
+def test_result_router_rejects_different_volume_store_with_shared_coordinator(
+    tmp_path: Path,
+) -> None:
     from datetime import timedelta
 
     import pytest
@@ -225,3 +230,9 @@ def test_result_router_rejects_different_volume_store_with_shared_coordinator(tm
     finally:
         journal.close()
         graph.close()
+
+
+def _work_order(graph: LoopGraph, work_order_id: str) -> ObservationWorkOrder:
+    order = graph.service.work_orders.get(work_order_id, organization_id="org-a")
+    assert order is not None
+    return order

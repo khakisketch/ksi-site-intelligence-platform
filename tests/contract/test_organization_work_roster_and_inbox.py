@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -97,7 +98,9 @@ def test_roster_replays_and_retries_before_later_revision_preconditions(tmp_path
     )
 
     assert retry == created
-    assert resumed.get_member("operator-b", organization_id="org-a").revision == 2
+    resumed_member = resumed.get_member("operator-b", organization_id="org-a")
+    assert resumed_member is not None
+    assert resumed_member.revision == 2
     with pytest.raises(RuntimeError, match="ROSTER_IDEMPOTENCY_CONFLICT"):
         resumed.put_member(
             organization_id="org-a",
@@ -263,7 +266,7 @@ def test_member_assignment_http_hides_unknown_and_foreign_targets(tmp_path: Path
     app.include_router(build_observation_work_order_router(work_orders))
     client = TestClient(app, raise_server_exceptions=False)
 
-    def post_assignment(target: str, key: str):
+    def post_assignment(target: str, key: str) -> Any:
         return client.post(
             f"/v1/observation-work-orders/{order.work_order_id}/operations/assignment",
             headers={"Authorization": "Bearer operator", "Idempotency-Key": key},
@@ -547,7 +550,10 @@ def test_member_assignment_is_a_recipient_only_inbox_notice(tmp_path: Path) -> N
 
 
 class _ExactReportResolver:
-    def resolve_historical_report_ref(self, report_ref, *, organization_id, now):
+    def resolve_historical_report_ref(
+        self, report_ref: str, *, organization_id: str, now: datetime | None = None
+    ) -> Any | None:
+        del now
         if (report_ref, organization_id) != ("report-a", "org-a"):
             return None
         return SimpleNamespace(
@@ -677,7 +683,10 @@ def test_work_inbox_cursor_resolves_before_unread_filter_after_cursor_was_read(
     )
 
     class MultiReportResolver:
-        def resolve_historical_report_ref(self, report_ref, *, organization_id, now):
+        def resolve_historical_report_ref(
+            self, report_ref: str, *, organization_id: str, now: datetime | None = None
+        ) -> Any | None:
+            del now
             if organization_id != "org-a" or report_ref not in {"report-a", "report-b"}:
                 return None
             return SimpleNamespace(

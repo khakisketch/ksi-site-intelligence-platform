@@ -1,5 +1,6 @@
 """V2 binds two opaque inputs without widening the existing V1 grammar."""
 
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -17,7 +18,7 @@ from test_external_relative_volume_contracts import _policy as _volume_policy
 from test_external_relative_volume_contracts import _request as _volume_request
 
 
-def launch_volume():
+def launch_volume() -> MeasurementLaunchRequestV2:
     envelope = _envelope()
     validation_policy = _policy(_manifest(envelope), envelope)
     execution = (
@@ -41,14 +42,19 @@ def launch_volume():
         )
         .sealed()
     )
-    inputs = tuple(
+    inputs = (
         MeasurementInputV2(
-            role=role,
-            artifact_id=binding.dsm_artifact_id,
-            observed_sha256=binding.observed_sha256,
-            observed_size_bytes=binding.observed_size_bytes,
-        )
-        for role, binding in (("BASELINE_DSM", volume.baseline), ("CURRENT_DSM", volume.current))
+            role="BASELINE_DSM",
+            artifact_id=volume.baseline.dsm_artifact_id,
+            observed_sha256=volume.baseline.observed_sha256,
+            observed_size_bytes=volume.baseline.observed_size_bytes,
+        ),
+        MeasurementInputV2(
+            role="CURRENT_DSM",
+            artifact_id=volume.current.dsm_artifact_id,
+            observed_sha256=volume.current.observed_sha256,
+            observed_size_bytes=volume.current.observed_size_bytes,
+        ),
     )
     return MeasurementLaunchRequestV2(
         operation="RELATIVE_VOLUME",
@@ -66,7 +72,7 @@ def launch_volume():
     ).sealed()
 
 
-def limits():
+def limits() -> ProtocolLimitsV1:
     return ProtocolLimitsV1(
         max_header_bytes=128 * 1024,
         max_chunk_bytes=1024,
@@ -76,8 +82,10 @@ def limits():
     )
 
 
-def test_v2_roundtrip_and_combined_input_bound():
+def test_v2_roundtrip_and_combined_input_bound() -> None:
     request = launch_volume()
+    assert request.volume_execution_policy is not None
+    assert request.volume_request is not None
     assert decode_measurement_header(request.canonical_bytes(), limits()) == request
     assert request.combined_input_bytes == 256
     with pytest.raises(ValueError):
@@ -97,7 +105,9 @@ def test_v2_roundtrip_and_combined_input_bound():
         lambda w: w.update(canonicalInputDigest=None),
     ],
 )
-def test_v2_rejects_downgrade_binding_and_extra_fields(mutation):
+def test_v2_rejects_downgrade_binding_and_extra_fields(
+    mutation: Any,
+) -> None:
     from ksi_domain.canonical_json import canonical_json_bytes
 
     wire = launch_volume().model_dump(by_alias=True, mode="json")
@@ -106,7 +116,7 @@ def test_v2_rejects_downgrade_binding_and_extra_fields(mutation):
         decode_measurement_header(canonical_json_bytes(wire), limits())
 
 
-def measurement_manifest_request():
+def measurement_manifest_request() -> tuple[Any, MeasurementLaunchRequestV2]:
     import base64
 
     from ksi_event_contracts.inspector_execution_manifest import (
@@ -120,6 +130,8 @@ def measurement_manifest_request():
     )
 
     request = launch_volume()
+    assert request.volume_execution_policy is not None
+    assert request.volume_request is not None
     body = _manifest(_envelope()).body.model_copy(
         update={
             "inspector_protocol_digest": compiled_measurement_protocol_digest_v2(),
@@ -159,14 +171,16 @@ def measurement_manifest_request():
 
 
 @pytest.mark.parametrize("revoked,valid", [(False, True), (True, True), (False, False)])
-def test_measurement_manifest_requires_signature_and_nonrevocation(revoked, valid):
+def test_measurement_manifest_requires_signature_and_nonrevocation(
+    revoked: bool, valid: bool
+) -> None:
     from ksi_event_contracts.inspector_execution_manifest import SignatureVerificationVerdict
     from ksi_processing_controller.external_measurement_admission import admit_measurement_manifest
 
     manifest, request = measurement_manifest_request()
 
     class Verifier:
-        def verify(self, payload, signature):
+        def verify(self, payload: bytes, signature: Any) -> Any:
             assert payload == manifest.canonical_body_bytes()
             return (
                 SignatureVerificationVerdict.VALID
@@ -187,12 +201,14 @@ def test_measurement_manifest_requires_signature_and_nonrevocation(revoked, vali
         assert request.validation_policy.parser_build_digest != request.execution_manifest_digest
 
 
-def test_measurement_rejects_v1_manifest_even_with_exact_new_build_selection():
+def test_measurement_rejects_v1_manifest_even_with_exact_new_build_selection() -> None:
     from ksi_event_contracts.inspector_execution_manifest import SignatureVerificationVerdict
     from ksi_processing_controller.external_measurement_admission import admit_measurement_manifest
 
     request = launch_volume()
     manifest = _manifest(_envelope())
+    assert request.volume_execution_policy is not None
+    assert request.volume_request is not None
     execution = request.volume_execution_policy.model_copy(
         update={
             "algorithm_build_digest": manifest.canonical_body_digest(),
@@ -214,7 +230,7 @@ def test_measurement_rejects_v1_manifest_even_with_exact_new_build_selection():
     ).sealed()
 
     class Verifier:
-        def verify(self, payload, signature):
+        def verify(self, payload: bytes, signature: Any) -> Any:
             return SignatureVerificationVerdict.VALID
 
     with pytest.raises(ValueError, match="manifest"):

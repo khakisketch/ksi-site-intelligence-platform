@@ -15,7 +15,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -157,7 +157,7 @@ class _InspectionAndDisplayObjectServer:
         self._thread.start()
         return self
 
-    def __exit__(self, kind, *_args: object) -> None:
+    def __exit__(self, kind: object, *_args: object) -> None:
         self._stop.set()
         self._listener.close()
         self._thread.join(timeout=2)
@@ -270,7 +270,7 @@ class _InspectorUdsServer:
         self._thread.start()
         return self
 
-    def __exit__(self, kind, *_args: object) -> None:
+    def __exit__(self, kind: object, *_args: object) -> None:
         self._stop.set()
         self._listener.close()
         self._thread.join(timeout=2)
@@ -370,14 +370,18 @@ class _ObjectBoundInspectionCore:
         self._core = core
         self._server = server
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._core, name)
 
-    def capability_for(self, request_id, fence, artifact):
+    def capability_for(
+        self, request_id: str, fence: Any, artifact: Any
+    ) -> ExternalObjectCapabilityV1:
         self._core.capability_for(request_id, fence, artifact)
         return ExternalObjectCapabilityV1(artifact, self._server.source_url, {})
 
-    def grant_display_upload(self, request_id, fence, declaration, *, deadline_monotonic):
+    def grant_display_upload(
+        self, request_id: str, fence: Any, declaration: Any, *, deadline_monotonic: float
+    ) -> ExternalDisplayUploadCapability:
         granted = self._core.grant_display_upload(
             request_id, fence, declaration, deadline_monotonic=deadline_monotonic
         )
@@ -393,16 +397,20 @@ class _FailSealAfterUploadCore(_ObjectBoundInspectionCore):
         self, core: ExternalValidationCoreClient, server: _InspectionAndDisplayObjectServer
     ) -> None:
         super().__init__(core, server)
-        self.declaration = None
+        self.declaration: Any | None = None
 
-    def grant_display_upload(self, request_id, fence, declaration, *, deadline_monotonic):
+    def grant_display_upload(
+        self, request_id: str, fence: Any, declaration: Any, *, deadline_monotonic: float
+    ) -> ExternalDisplayUploadCapability:
         grant = super().grant_display_upload(
             request_id, fence, declaration, deadline_monotonic=deadline_monotonic
         )
         self.declaration = grant.declaration
         return grant
 
-    def seal_display_upload(self, request_id, fence, grant, *, deadline_monotonic):
+    def seal_display_upload(
+        self, request_id: str, fence: Any, grant: Any, *, deadline_monotonic: float
+    ) -> None:
         del request_id, fence, grant, deadline_monotonic
         raise ExternalCoreClientError("DISPLAY_WORKER_STOPPED")
 
@@ -417,7 +425,9 @@ class _RecordingDisplayGrantCore(_ObjectBoundInspectionCore):
         self.declarations: list[object] = []
         self.attempted_declarations: list[object] = []
 
-    def grant_display_upload(self, request_id, fence, declaration, *, deadline_monotonic):
+    def grant_display_upload(
+        self, request_id: str, fence: Any, declaration: Any, *, deadline_monotonic: float
+    ) -> ExternalDisplayUploadCapability:
         self.attempted_declarations.append(declaration)
         grant = super().grant_display_upload(
             request_id, fence, declaration, deadline_monotonic=deadline_monotonic
@@ -445,7 +455,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
 
     derivative = b"sanitized-tiff"
 
-    def bound_policy():
+    def bound_policy() -> Any:
         return (
             policy_template()
             .model_copy(
@@ -458,7 +468,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
             .sealed()
         )
 
-    def bound_submission():
+    def bound_submission() -> Any:
         original = sealed_submission()
         return original.model_copy(
             update={
@@ -475,7 +485,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
             deep=True,
         ).sealed()
 
-    def bound_manifest():
+    def bound_manifest() -> ExternalReconstructionManifestV1:
         submission = bound_submission()
         return ExternalReconstructionManifestV1.from_submission(
             submission,
@@ -497,7 +507,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
             ),
         )
 
-    def bound_subject():
+    def bound_subject() -> Any:
         return inspection_subject().model_copy(
             update={
                 "submission_digest": bound_submission().submission_digest,
@@ -544,7 +554,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
             sink_root.mkdir(mode=0o700)
             sink = FileSystemSanitizedOutputSink(private_root=sink_root)
             inspection = InspectionValidationLane(
-                core=fixed_core,
+                core=cast(Any, fixed_core),
                 worker_instance_id=_fence().worker_instance_id,
                 dependencies=InspectionLaneDependencies(
                     launcher=ExternalInspectorUdsClient(
@@ -562,7 +572,7 @@ def test_runner_drives_actual_core_octet_source_through_real_uds_inspection_and_
                         heartbeat_interval_millis=10,
                     ),
                     operation_profile=PinnedInspectionProfileV1(
-                        parser_build_digest=policy.parser_build_digest,
+                        parser_build_digest=cast(Any, policy).parser_build_digest,
                         grammar_digest=external_geotiff_profile_digest_v1(),
                     ),
                     candidate_sink=sink,
@@ -625,8 +635,9 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
     source, derivative = b"reclaim-ortho-source", b"reclaim-display-derivative"
     changed_derivative = b"reclaim-changed-derivative"
 
-    def bound_policy():
+    def bound_policy() -> Any:
         original = policy_template()
+        assert original.resource_envelope is not None
         envelope = original.resource_envelope.model_copy(
             update={"max_deadline_seconds": 60.0, "resource_envelope_digest": None},
             deep=True,
@@ -641,7 +652,7 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
             deep=True,
         ).sealed()
 
-    def bound_submission():
+    def bound_submission() -> Any:
         original = sealed_submission()
         return original.model_copy(
             update={
@@ -658,7 +669,7 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
             deep=True,
         ).sealed()
 
-    def bound_manifest():
+    def bound_manifest() -> ExternalReconstructionManifestV1:
         submission = bound_submission()
         return ExternalReconstructionManifestV1.from_submission(
             submission,
@@ -680,7 +691,7 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
             ),
         )
 
-    def bound_subject():
+    def bound_subject() -> Any:
         return inspection_subject().model_copy(
             update={
                 "submission_digest": bound_submission().submission_digest,
@@ -704,7 +715,7 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
             max_wire_duration_millis=20_000,
         )
         return InspectionValidationLane(
-            core=core,
+            core=cast(Any, core),
             worker_instance_id=_fence().worker_instance_id,
             dependencies=InspectionLaneDependencies(
                 launcher=ExternalInspectorUdsClient(
@@ -722,7 +733,7 @@ def test_production_display_reclaim_uses_generation_two_lease_and_immutable_repo
                     heartbeat_interval_millis=10,
                 ),
                 operation_profile=PinnedInspectionProfileV1(
-                    parser_build_digest=policy.parser_build_digest,
+                    parser_build_digest=cast(Any, policy).parser_build_digest,
                     grammar_digest=external_geotiff_profile_digest_v1(),
                 ),
                 candidate_sink=sink,
@@ -917,7 +928,7 @@ class _FiniteObjectGetServer:
         self._thread.start()
         return self
 
-    def __exit__(self, kind, *_args: object) -> None:
+    def __exit__(self, kind: object, *_args: object) -> None:
         self._stop.set()
         self._listener.close()
         self._thread.join(timeout=2)
@@ -982,7 +993,7 @@ class _MeasurementUdsServer:
         self._thread.start()
         return self
 
-    def __exit__(self, kind, *_args: object) -> None:
+    def __exit__(self, kind: object, *_args: object) -> None:
         self._stop.set()
         self._listener.close()
         self._thread.join(timeout=2)
@@ -1208,8 +1219,8 @@ def _actual_measurement_core_apps(
             max_active_requests_per_organization=8,
         ),
         launch_material_resolver=VolumeWorkerLaunchMaterialResolver(
-            policy_registry=volume_registry,
-            evidence_validations=volume_evidence,
+            policy_registry=cast(Any, volume_registry),
+            evidence_validations=cast(Any, volume_evidence),
             currentness_coordinator=volume_port.currentness_coordinator,
         ),
         clock=lambda: datetime(2026, 9, 9, tzinfo=UTC),
@@ -1288,7 +1299,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
 
     source, derivative = b"runner-octet-source", b"runner-display-derivative"
 
-    def bound_policy():
+    def bound_policy() -> Any:
         return (
             policy_template()
             .model_copy(
@@ -1301,7 +1312,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
             .sealed()
         )
 
-    def bound_submission():
+    def bound_submission() -> Any:
         original = sealed_submission()
         return original.model_copy(
             update={
@@ -1318,7 +1329,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
             deep=True,
         ).sealed()
 
-    def bound_manifest():
+    def bound_manifest() -> ExternalReconstructionManifestV1:
         submission = bound_submission()
         return ExternalReconstructionManifestV1.from_submission(
             submission,
@@ -1340,7 +1351,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
             ),
         )
 
-    def bound_subject():
+    def bound_subject() -> Any:
         return inspection_subject().model_copy(
             update={
                 "submission_digest": bound_submission().submission_digest,
@@ -1460,7 +1471,9 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
                                                                 heartbeat_interval_millis=10,
                                                             ),
                                                             operation_profile=PinnedInspectionProfileV1(
-                                                                parser_build_digest=policy.parser_build_digest,
+                                                                parser_build_digest=cast(
+                                                                    Any, policy
+                                                                ).parser_build_digest,
                                                                 grammar_digest=external_geotiff_profile_digest_v1(),
                                                             ),
                                                             candidate_sink=sink,
@@ -1501,7 +1514,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
                                                         core=checkpoint_core,
                                                         worker_instance_id=_fence().worker_instance_id,
                                                         dependencies=MeasurementLaneDependencies(
-                                                            manifest=checkpoint_manifest,
+                                                            manifest=cast(Any, checkpoint_manifest),
                                                             uds_client=ExternalMeasurementUdsClient(
                                                                 connector=FixedMeasurementUdsConnector(
                                                                     MeasurementSocketIdentityV2(
@@ -1528,7 +1541,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
                                                         core=volume_core,
                                                         worker_instance_id=_fence().worker_instance_id,
                                                         dependencies=MeasurementLaneDependencies(
-                                                            manifest=volume_manifest,
+                                                            manifest=cast(Any, volume_manifest),
                                                             uds_client=ExternalMeasurementUdsClient(
                                                                 connector=FixedMeasurementUdsConnector(
                                                                     MeasurementSocketIdentityV2(

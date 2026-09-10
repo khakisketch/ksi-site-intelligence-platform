@@ -23,12 +23,16 @@ from test_external_reconstruction_api import _record, _Storage, _submission
 from test_external_reobservation_successor import _approve, _store_with_source
 
 
-def test_successor_list_context_and_external_registration_do_not_create_acquisition(tmp_path: Path):
+def test_successor_list_context_and_external_registration_do_not_create_acquisition(
+    tmp_path: Path,
+) -> None:
     _, orders, authority = _store_with_source(tmp_path)
     source = orders.get(authority.source_work_order_id, organization_id="org-1")
+    assert source is not None
     source_before = source.model_dump_json(by_alias=True)
     approval = _approve(orders, authority)
     successor = approval.successor_work_order
+    assert successor is not None
     order_journal_before = (tmp_path / "work-orders.jsonl").read_bytes()
     sites = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     sites.register(
@@ -75,18 +79,21 @@ def test_successor_list_context_and_external_registration_do_not_create_acquisit
     prefix = f"/v1/observation-work-orders/{successor.work_order_id}"
     denied = client.get(prefix + "/acquisition-progress", headers=headers)
     assert denied.status_code == 409, denied.text
-    assert "PLANNING_ONLY" in denied.text
+    assert "EXTERNAL_RECONSTRUCTION_ONLY" in denied.text
     context = client.get(prefix + "/external-reconstruction-context", headers=headers)
     assert context.status_code == 200, context.text
+    binding = orders.get_external_reobservation_binding(
+        successor.work_order_id, organization_id="org-1"
+    )
+    assert binding is not None
     assert context.json() == {
         "workOrderId": successor.work_order_id,
         "siteId": "site-1",
         "expectedEpochId": observation_epoch_id(successor),
         "cycleNumber": 1,
         "workOrderVersion": successor.version,
-        "externalPlanningBinding": orders.get_external_reobservation_binding(
-            successor.work_order_id, organization_id="org-1"
-        ).model_dump(mode="json", by_alias=True),
+        "executionMode": "EXTERNAL_RECONSTRUCTION",
+        "externalPlanningBinding": binding.model_dump(mode="json", by_alias=True),
         "externalResult": {"state": "NOT_CONFIGURED", "result": None},
     }
     assert context.json()["expectedEpochId"] != observation_epoch_id(source)
@@ -111,9 +118,8 @@ def test_successor_list_context_and_external_registration_do_not_create_acquisit
         prefix + "/external-reconstruction-submissions", headers=headers, json=submission
     )
     assert registered.status_code == 201, registered.text
-    assert (
-        orders.get(source.work_order_id, organization_id="org-1").model_dump_json(by_alias=True)
-        == source_before
-    )
+    unchanged_source = orders.get(source.work_order_id, organization_id="org-1")
+    assert unchanged_source is not None
+    assert unchanged_source.model_dump_json(by_alias=True) == source_before
     assert (tmp_path / "work-orders.jsonl").read_bytes() == order_journal_before
     assert (run_path.read_bytes() if run_path.exists() else b"") == run_before

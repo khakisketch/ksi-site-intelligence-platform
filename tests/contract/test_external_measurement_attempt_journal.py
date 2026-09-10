@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -13,7 +14,10 @@ from ksi_processing_controller.external_inspector_attempts import (
     AttemptPhaseV1,
     InspectorAttemptJournal,
 )
-from ksi_processing_controller.external_measurement_attempts import MeasurementAttemptJournalV2
+from ksi_processing_controller.external_measurement_attempts import (
+    MeasurementAttemptBindingV2,
+    MeasurementAttemptJournalV2,
+)
 from test_external_inspector_docker import _binding
 from test_external_measurement_attempt_binding import binding
 
@@ -62,17 +66,17 @@ def test_v2_journal_rejects_v1_records_and_binding(tmp_path: Path) -> None:
         MeasurementAttemptJournalV2(path)
     v2 = MeasurementAttemptJournalV2(tmp_path / "v2.jsonl")
     with pytest.raises((AttemptJournalError, ValueError, TypeError)):
-        v2.intend(_binding())
+        v2.intend(cast(MeasurementAttemptBindingV2, _binding()))
     v2.close()
 
 
-def primary_receipt(size: int = 0):
+def primary_receipt(size: int = 0) -> Any:
     from ksi_processing_controller.external_inspector_attempts import (
         StagingAllocationReceiptV1,
         StagingFileIdentityV1,
     )
 
-    def node(inode: int, mode: int, size: int = 0):
+    def node(inode: int, mode: int, size: int = 0) -> Any:
         return StagingFileIdentityV1(1, inode, mode, 1000, 1000, 1, size)
 
     return StagingAllocationReceiptV1(
@@ -80,7 +84,7 @@ def primary_receipt(size: int = 0):
     )
 
 
-def parent_receipt(value):
+def parent_receipt(value: MeasurementAttemptBindingV2) -> Any:
     from ksi_processing_controller.external_measurement_attempts import (
         MeasurementRuntimeParentReceiptV2,
     )
@@ -130,44 +134,44 @@ def test_v2_recovery_cleans_only_primary_and_exact_runtime_at_each_crash_phase(
         journal.container_creating(value.attempt_nonce)
     if phase_index >= 6:
         journal.container_bound(value.attempt_nonce, "runtime-v2")
-    events = []
+    events: list[str] = []
 
     class Staging:
-        def recover_registered(self, *, plan, receipt):
+        def recover_registered(self, *, plan: Any, receipt: Any) -> str:
             assert plan == value.staging
             assert receipt == (allocation if phase_index >= 1 else None)
             events.append("primary-cleaned")
             return "CLEANED"
 
     class Runtime:
-        def resolve_exact(self, supplied):
+        def resolve_exact(self, supplied: Any) -> str | None:
             assert supplied == value
             return "runtime-v2" if phase_index >= 5 else None
 
-        def quiesce_exact(self, *, binding, runtime_id):
+        def quiesce_exact(self, *, binding: Any, runtime_id: str) -> bool:
             assert binding == value and runtime_id == "runtime-v2"
             events.append("quiesced")
             return True
 
-        def remove_exact(self, *, binding, runtime_id):
+        def remove_exact(self, *, binding: Any, runtime_id: str) -> bool:
             assert binding == value and runtime_id == "runtime-v2"
             events.append("container-removed")
             return True
 
     class Parent:
-        def adopt_if_prebound(self, *, binding):
+        def adopt_if_prebound(self, *, binding: Any) -> Any:
             assert binding == value
             return parent if phase_index >= 3 else None
 
-        def stop_exact(self, *, binding, receipt):
+        def stop_exact(self, *, binding: Any, receipt: Any) -> bool:
             assert binding == value and receipt == parent
             events.append("parent-stopped")
             return True
 
-        def verify_before_quiesce(self, **kwargs):
+        def verify_before_quiesce(self, **kwargs: Any) -> bool:
             return True
 
-        def verify_final_before_remove(self, **kwargs):
+        def verify_final_before_remove(self, **kwargs: Any) -> bool:
             return True
 
     MeasurementAttemptRecoveryV2(

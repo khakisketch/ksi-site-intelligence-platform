@@ -6,6 +6,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import httpx
 import pytest
@@ -37,6 +38,7 @@ from ksi_core.external_validation_policy import (
     authorized_policy_body_digest,
 )
 from ksi_core.sites import SiteStore
+from ksi_event_contracts.external_artifact_validation import ExternalValidationPolicyV1
 from support.external_artifact_inspection_fixtures import (
     ACQUISITION,
     WORKER_A,
@@ -295,8 +297,8 @@ def test_internal_inspection_list_allows_only_processing_workers() -> None:
     mount_external_artifact_inspections(
         app,
         _EmptyInspectionStore(),  # type: ignore[arg-type]
-        reconstruction=object(),  # type: ignore[arg-type]
-        work_orders=object(),  # type: ignore[arg-type]
+        reconstruction=object(),
+        work_orders=object(),
     )
     client = TestClient(app)
 
@@ -478,6 +480,7 @@ def test_worker_body_routes_render_hostile_json_as_422(
 def test_public_download_uses_only_a_current_exact_sealed_display_receipt(tmp_path: Path) -> None:
     """Making a display receipt permanent or exposing its object key must fail this test."""
     app, request_id, policy, storage, submission_ref = _active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
     client = TestClient(app)
     headers = {
         "Authorization": "Bearer worker-token",
@@ -492,7 +495,7 @@ def test_public_download_uses_only_a_current_exact_sealed_display_receipt(tmp_pa
         == 200
     )
     fence_headers = {**headers, "X-KSI-Lease-Generation": "1"}
-    accepted = report(request_id=request_id, policy=policy)  # type: ignore[arg-type]
+    accepted = report(request_id=request_id, policy=policy)
     assert (
         client.post(
             f"/v1/internal/external-validation/inspections/{request_id}/report",
@@ -568,6 +571,7 @@ def test_public_download_uses_only_a_current_exact_sealed_display_receipt(tmp_pa
 def test_policy_revocation_during_display_presigning_returns_no_capability(tmp_path: Path) -> None:
     """Removing the post-presign current-policy recheck must make this test fail."""
     app, request_id, policy, storage, submission_ref = _active_scoped_app(tmp_path)
+    policy = cast(ExternalValidationPolicyV1, policy)
     client = TestClient(app)
     headers = {
         "Authorization": "Bearer worker-token",
@@ -582,7 +586,7 @@ def test_policy_revocation_during_display_presigning_returns_no_capability(tmp_p
         == 200
     )
     fence_headers = {**headers, "X-KSI-Lease-Generation": "1"}
-    accepted = report(request_id=request_id, policy=policy)  # type: ignore[arg-type]
+    accepted = report(request_id=request_id, policy=policy)
     assert (
         client.post(
             f"/v1/internal/external-validation/inspections/{request_id}/report",

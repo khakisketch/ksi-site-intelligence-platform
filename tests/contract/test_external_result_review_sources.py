@@ -3,31 +3,42 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
-from ksi_core.external_relative_volumes import ExternalRelativeVolumeObservedReportInput
+from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeExecutionAuthority,
+    ExternalRelativeVolumeObservedReportInput,
+    ExternalRelativeVolumeStore,
+)
 from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
 from ksi_core.external_use_decisions import ExternalDecisionIntent, ExternalUseDecisionStore
 from ksi_event_contracts.external_artifact_validation import (
     DecisionVerdict,
     ExternalPairUseDecisionV1,
 )
+from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
 from test_external_relative_volumes import _NOW, _authority, _fence, _payload, _principal, _store
 from test_external_use_decisions import _SyntheticHistoryVerifier
 
 
 class _UseHistory:
-    def __init__(self, authority):
+    def __init__(self, authority: ExternalRelativeVolumeExecutionAuthority) -> None:
         self.authority = authority
         self.revoked_at = _NOW + timedelta(seconds=20)
         self.times: list[datetime] = []
 
     def resolve_historical_for_use(
-        self, *, historical_authority_digest, decision_id, decision_digest, evaluated_at
-    ):
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        evaluated_at: datetime,
+    ) -> ExternalRelativeVolumeExecutionAuthority | None:
         self.times.append(evaluated_at)
         authority = self.authority
         if (
@@ -40,7 +51,15 @@ class _UseHistory:
         return authority
 
 
-def _graph(tmp_path: Path):
+def _graph(
+    tmp_path: Path,
+) -> tuple[
+    ExternalRelativeVolumeStore,
+    ExternalUseDecisionStore,
+    _UseHistory,
+    CoreExternalResultReviewSourceAdapter,
+    ExternalRelativeVolumeReportV1,
+]:
     authority = _authority()
     decision = ExternalPairUseDecisionV1(
         decision_id=authority.decision_id,
@@ -60,6 +79,7 @@ def _graph(tmp_path: Path):
         remediations=("NONE",),
         decided_at=_NOW,
     ).sealed()
+    assert decision.decision_digest is not None
     authority = replace(authority, decision_digest=decision.decision_digest)
     volumes = _store(tmp_path, authority)
     decisions = ExternalUseDecisionStore(
@@ -83,6 +103,7 @@ def _graph(tmp_path: Path):
     )
     assert issued.record is not None
     request = issued.record.request
+    assert request.request_digest is not None
     fence = _fence()
     volumes.claim(
         request.request_id, organization_id="org-a", principal_id="worker", fence=fence, now=_NOW
@@ -98,6 +119,7 @@ def _graph(tmp_path: Path):
         now=_NOW,
     )
     assert terminal.record is not None and terminal.record.report is not None
+    assert terminal.record.report.report_digest is not None
     history = _UseHistory(authority)
     adapter = CoreExternalResultReviewSourceAdapter(
         volume_store=volumes,
@@ -108,15 +130,26 @@ def _graph(tmp_path: Path):
     return volumes, decisions, history, adapter, terminal.record.report
 
 
-def test_historical_provenance_does_not_grant_permission_after_revocation(tmp_path: Path):
+def test_historical_provenance_does_not_grant_permission_after_revocation(tmp_path: Path) -> None:
     volumes, _, history, adapter, report = _graph(tmp_path)
-    args = dict(
-        organization_id="org-a", report_ref=report.report_id, report_digest=report.report_digest
+    assert report.report_digest is not None
+    args = ("org-a", report.report_id, report.report_digest)
+    assert adapter.resolve_historical(
+        organization_id=args[0],
+        report_ref=args[1],
+        report_digest=args[2],
+        evaluated_at=_NOW - timedelta(seconds=1),
+    ) is None
+    before = adapter.resolve_historical(
+        organization_id=args[0], report_ref=args[1], report_digest=args[2], evaluated_at=_NOW
     )
-    assert adapter.resolve_historical(**args, evaluated_at=_NOW - timedelta(seconds=1)) is None
-    before = adapter.resolve_historical(**args, evaluated_at=_NOW)
     assert before is not None and before.report == report
-    assert adapter.resolve_historical(**args, evaluated_at=history.revoked_at) is None
+    assert adapter.resolve_historical(
+        organization_id=args[0],
+        report_ref=args[1],
+        report_digest=args[2],
+        evaluated_at=history.revoked_at,
+    ) is None
     assert (
         volumes.resolve_historical_report_ref(
             report.report_id, organization_id="org-a", now=history.revoked_at
@@ -125,18 +158,26 @@ def test_historical_provenance_does_not_grant_permission_after_revocation(tmp_pa
     )
     assert history.times == [_NOW, history.revoked_at]
     assert (
-        adapter.resolve_historical(**{**args, "report_ref": report.request_id}, evaluated_at=_NOW)
+        adapter.resolve_historical(
+            organization_id="org-a",
+            report_ref=report.request_id,
+            report_digest=report.report_digest,
+            evaluated_at=_NOW,
+        )
         is None
     )
     assert (
         adapter.resolve_historical(
-            **{**args, "report_digest": "sha256:" + "0" * 64}, evaluated_at=_NOW
+            organization_id="org-a",
+            report_ref=report.report_id,
+            report_digest="sha256:" + "0" * 64,
+            evaluated_at=_NOW,
         )
         is None
     )
 
 
-def test_current_join_requires_exact_principal_and_local_guard(tmp_path: Path):
+def test_current_join_requires_exact_principal_and_local_guard(tmp_path: Path) -> None:
     volumes, _, history, adapter, report = _graph(tmp_path)
     principal = _principal()
     source = adapter.resolve_current(
@@ -161,7 +202,7 @@ def test_current_join_requires_exact_principal_and_local_guard(tmp_path: Path):
         )
         is None
     )
-    volumes._authority_port.authority = replace(history.authority, valid_until=_NOW)
+    cast(Any, volumes._authority_port).authority = replace(history.authority, valid_until=_NOW)
     with volumes.coordinator.mutation():
         assert not adapter.is_current(source, principal=principal, evaluated_at=_NOW)
     assert not adapter.is_current(
@@ -169,7 +210,7 @@ def test_current_join_requires_exact_principal_and_local_guard(tmp_path: Path):
     )
 
 
-def test_missing_use_history_stays_closed_and_coordinators_must_match(tmp_path: Path):
+def test_missing_use_history_stays_closed_and_coordinators_must_match(tmp_path: Path) -> None:
     volumes, decisions, _, _, report = _graph(tmp_path)
     adapter = CoreExternalResultReviewSourceAdapter(
         volume_store=volumes,
@@ -177,6 +218,7 @@ def test_missing_use_history_stays_closed_and_coordinators_must_match(tmp_path: 
         historical_use_authority=ClosedExternalRelativeVolumeUseHistory(),
         coordinator=volumes.coordinator,
     )
+    assert report.report_digest is not None
     assert (
         adapter.resolve_historical(
             organization_id="org-a",

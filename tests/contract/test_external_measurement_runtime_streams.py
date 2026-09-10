@@ -3,6 +3,7 @@
 import socket
 import struct
 import time
+from typing import cast
 
 import pytest
 from ksi_processing_controller.external_inspector_docker import (
@@ -17,7 +18,7 @@ from ksi_processing_controller.external_measurement_transport import Measurement
 from test_external_measurement_transport import limits
 
 
-def test_half_close_preserves_stdout_and_rejects_later_stdin():
+def test_half_close_preserves_stdout_and_rejects_later_stdin() -> None:
     client, engine = socket.socketpair()
     session = UnixSocketDockerMultiplexSession(client)
     deadline = time.monotonic() + 1
@@ -41,7 +42,7 @@ def test_half_close_preserves_stdout_and_rejects_later_stdin():
         engine.close()
 
 
-def test_expired_stdin_finish_does_not_half_close():
+def test_expired_stdin_finish_does_not_half_close() -> None:
     client, engine = socket.socketpair()
     session = UnixSocketDockerMultiplexSession(client)
     try:
@@ -54,7 +55,7 @@ def test_expired_stdin_finish_does_not_half_close():
         engine.close()
 
 
-def test_absolute_clamp_never_renews_original_budget():
+def test_absolute_clamp_never_renews_original_budget() -> None:
     clock = [0.0]
     deadline = ProtocolDeadline(100, lambda: clock[0])
     clock[0] = 0.03
@@ -68,14 +69,14 @@ def test_absolute_clamp_never_renews_original_budget():
 
 
 @pytest.mark.parametrize("invalid", [True, float("inf"), float("nan"), "0.1"])
-def test_absolute_clamp_rejects_invalid_expiry(invalid):
+def test_absolute_clamp_rejects_invalid_expiry(invalid: object) -> None:
     deadline = ProtocolDeadline(100, lambda: 0.0)
     with pytest.raises(ValueError):
-        deadline.cap_expires_at(invalid)
+        deadline.cap_expires_at(cast(float, invalid))
     assert deadline.expires_at == 0.1
 
 
-def test_receiver_cap_includes_elapsed_header_time():
+def test_receiver_cap_includes_elapsed_header_time() -> None:
     clock = [0.0]
     client, server = socket.socketpair()
     try:

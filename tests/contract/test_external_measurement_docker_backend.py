@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 from hashlib import sha256
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from ksi_processing_controller.external_inspector_attempts import PrivateStagingRootV1
@@ -320,7 +321,7 @@ def test_v2_backend_orders_two_input_grammar_half_close_and_host_proof() -> None
             return _ActiveMeasurement()
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=_Scope(),
         measurements=_Measurements(),
         frame_limits=frame_limits,
@@ -395,7 +396,7 @@ def test_v2_backend_rejects_nonintegral_cpu_seconds_before_attach() -> None:
             raise AssertionError("invalid CPU budget must fail before Docker attach")
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(),
         measurements=SimpleNamespace(),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -412,7 +413,7 @@ def test_v2_backend_rejects_nonintegral_cpu_seconds_before_attach() -> None:
             effective_limits=_effective_limits(configuration).model_copy(
                 update={"max_cpu_seconds": 0.9999999}
             ),
-            runtime_parent=SimpleNamespace(),
+            runtime_parent=cast(Any, SimpleNamespace()),
             monitor_termination=lambda _reason: 0.0,
             is_cancelled=lambda: False,
             deadline_monotonic=10.0,
@@ -469,7 +470,7 @@ def test_v2_backend_rejects_mismatched_attempt_or_owner_before_runtime_effect(
             return SimpleNamespace()
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(),
         measurements=SimpleNamespace(),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -495,7 +496,7 @@ def test_v2_backend_rejects_mismatched_attempt_or_owner_before_runtime_effect(
                 staged_input=SimpleNamespace(),
                 runtime_id="runtime-v2",
                 effective_limits=_effective_limits(configuration),
-                runtime_parent=SimpleNamespace(),
+                runtime_parent=cast(Any, SimpleNamespace()),
                 monitor_termination=lambda _reason: 0.0,
                 is_cancelled=lambda: False,
                 deadline_monotonic=10.0,
@@ -533,7 +534,7 @@ def test_v2_backend_rejects_oversigned_memory_before_runtime_effect(effect_path:
             return SimpleNamespace()
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(),
         measurements=SimpleNamespace(),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -559,7 +560,7 @@ def test_v2_backend_rejects_oversigned_memory_before_runtime_effect(effect_path:
                 staged_input=SimpleNamespace(),
                 runtime_id="runtime-v2",
                 effective_limits=_effective_limits(oversigned),
-                runtime_parent=SimpleNamespace(),
+                runtime_parent=cast(Any, SimpleNamespace()),
                 monitor_termination=lambda _reason: 0.0,
                 is_cancelled=lambda: False,
                 deadline_monotonic=10.0,
@@ -589,7 +590,7 @@ def test_v2_backend_rejects_an_expired_or_invalid_deadline_before_docker_create(
             raise AssertionError("expired deadline must fail before Docker create")
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(),
         measurements=SimpleNamespace(),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -650,7 +651,7 @@ def test_v2_backend_does_not_expose_a_completion_deadline_override() -> None:
             pass
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(verify_exact=lambda **_kwargs: None),
         measurements=SimpleNamespace(start=lambda **_kwargs: _Measurement()),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -664,7 +665,7 @@ def test_v2_backend_does_not_expose_a_completion_deadline_override() -> None:
         staged_input=SimpleNamespace(),
         runtime_id="runtime-v2",
         effective_limits=_effective_limits(configuration),
-        runtime_parent=SimpleNamespace(),
+        runtime_parent=cast(Any, SimpleNamespace()),
         monitor_termination=lambda _reason: 0.0,
         is_cancelled=lambda: False,
         deadline_monotonic=10.0,
@@ -719,7 +720,7 @@ def test_v2_backend_closes_local_handles_when_secondary_is_not_exact() -> None:
             closed.append("measurement")
 
     backend = DockerMeasurementBackend(
-        runtime=_Runtime(),
+        runtime=cast(Any, _Runtime()),
         started_runtime=SimpleNamespace(verify_exact=lambda **_kwargs: None),
         measurements=SimpleNamespace(start=lambda **_kwargs: _Measurement()),
         frame_limits=MeasurementContainerFrameLimitsV2(maximum_frame_bytes=128_000),
@@ -733,7 +734,7 @@ def test_v2_backend_closes_local_handles_when_secondary_is_not_exact() -> None:
         staged_input=SimpleNamespace(),
         runtime_id="runtime-v2",
         effective_limits=_effective_limits(configuration),
-        runtime_parent=SimpleNamespace(),
+        runtime_parent=cast(Any, SimpleNamespace()),
         monitor_termination=lambda _reason: 0.0,
         is_cancelled=lambda: False,
         deadline_monotonic=10.0,
@@ -879,7 +880,7 @@ def test_v2_backend_returns_only_a_validated_typed_failure_after_host_proof(
     active = DockerMeasurementActiveV2(
         session=session,  # type: ignore[arg-type]
         reader=_Reader(),  # type: ignore[arg-type]
-        measurement=_Measurement(),  # type: ignore[arg-type]
+        measurement=_Measurement(),
         secondary_sink=_SecondarySinkV2(
             session,  # type: ignore[arg-type]
             expected_size_bytes=len(secondary_bytes),
@@ -989,20 +990,20 @@ def test_v2_backend_finalizes_actual_preexecute_failure_transcript(
 
     session = _Session()
     sink = _SecondarySinkV2(
-        session,  # type: ignore[arg-type]
+        session,
         expected_size_bytes=len(secondary_bytes),
         expected_sha256="sha256:" + sha256(secondary_bytes).hexdigest(),
         deadline_monotonic=10.0,
         is_cancelled=lambda: False,
     )
     active = DockerMeasurementActiveV2(
-        session=session,  # type: ignore[arg-type]
+        session=session,
         reader=_AttachedMeasurementReaderV2(
-            session,  # type: ignore[arg-type]
+            session,
             frame_limits=limits,
             maximum_control_bytes=128_000,
         ),
-        measurement=_Measurement(),  # type: ignore[arg-type]
+        measurement=_Measurement(),
         secondary_sink=sink,
         prepare=prepare,
         request=request,

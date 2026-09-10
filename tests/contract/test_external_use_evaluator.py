@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
@@ -13,7 +14,7 @@ from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
-from ksi_core.external_use_evaluator import ExternalUseEvaluator
+from ksi_core.external_use_evaluator import ExternalUseEvaluator, _PairSnapshot
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicyAuthorityPort,
@@ -28,7 +29,7 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_display_artifact import SanitizedDisplayReceiptV1
-from support.external_artifact_inspection_fixtures import (  # type: ignore[import-not-found]
+from support.external_artifact_inspection_fixtures import (
     NOW,
     digest,
     policy_template,
@@ -94,6 +95,32 @@ class _Inspections:
     ) -> tuple[str, SanitizedDisplayReceiptV1 | None]:
         return ("SEALED", self._receipt) if value == self._subject else ("PENDING", None)
 
+    def historical_report(
+        self, value: SealedExternalSubjectV1, *, report_digest: str, policy_digest: str
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        del policy_digest
+        if value == self._subject and report_digest == self._report.report_digest:
+            return self._report
+        return None
+
+    def historical_display_receipt(
+        self,
+        value: SealedExternalSubjectV1,
+        *,
+        report_digest: str,
+        receipt_digest: str,
+        policy_digest: str,
+    ) -> SanitizedDisplayReceiptV1 | None:
+        del policy_digest
+        return (
+            self._receipt
+            if value == self._subject
+            and self._receipt is not None
+            and report_digest == self._report.report_digest
+            and receipt_digest == self._receipt.receipt_digest
+            else None
+        )
+
 
 class _Evidence:
     def __init__(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> None:
@@ -152,6 +179,35 @@ class _PairInspections:
     ) -> tuple[str, SanitizedDisplayReceiptV1 | None]:
         receipt = self._receipts.get(value)
         return ("SEALED", receipt) if receipt is not None else ("PENDING", None)
+
+    def historical_report(
+        self, value: SealedExternalSubjectV1, *, report_digest: str, policy_digest: str
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        del policy_digest
+        report_value = self._reports.get(value)
+        if report_value is not None and report_value.report_digest == report_digest:
+            return report_value
+        return None
+
+    def historical_display_receipt(
+        self,
+        value: SealedExternalSubjectV1,
+        *,
+        report_digest: str,
+        receipt_digest: str,
+        policy_digest: str,
+    ) -> SanitizedDisplayReceiptV1 | None:
+        del policy_digest
+        receipt = self._receipts.get(value)
+        report_value = self._reports.get(value)
+        return (
+            receipt
+            if receipt is not None
+            and report_value is not None
+            and report_value.report_digest == report_digest
+            and receipt.receipt_digest == receipt_digest
+            else None
+        )
 
 
 def _principal() -> Principal:
@@ -511,8 +567,8 @@ def test_execution_recheck_uses_retained_local_evidence_projection() -> None:
             )
 
     evaluator = object.__new__(ExternalUseEvaluator)
-    evaluator._evidence_validations = _EvidenceProjection()  # type: ignore[assignment]
-    evaluator._report_measures_dsm = lambda *args: True  # type: ignore[method-assign]
+    cast(Any, evaluator)._evidence_validations = _EvidenceProjection()
+    cast(Any, evaluator)._report_measures_dsm = lambda *args: True
     baseline = subject()
     current = baseline.model_copy(
         update={
@@ -537,10 +593,12 @@ def test_execution_recheck_uses_retained_local_evidence_projection() -> None:
         remediations=("SYNTHETIC",),
         decided_at=NOW,
     )
-    policy = SimpleNamespace(policy_digest=digest("c"))
+    policy = cast(ExternalValidationPolicyV1, SimpleNamespace(policy_digest=digest("c")))
     snapshot = SimpleNamespace(
         baseline=SimpleNamespace(inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("a")))),
         current=SimpleNamespace(inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("b")))),
     )
 
-    assert evaluator._candidate_evidence_remains_locally_current(candidate, policy, snapshot)
+    assert evaluator._candidate_evidence_remains_locally_current(
+        candidate, policy, cast(_PairSnapshot, snapshot)
+    )

@@ -15,15 +15,19 @@ import socket
 import subprocess
 import tempfile
 import threading
+from collections.abc import Callable, Generator
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from ksi_processing_controller.external_inspector_container_protocol import (
     FixedContainerConfigurationV1,
     FixedInputMountV1,
 )
+from ksi_processing_controller.external_inspector_daemon import ActivatedListenerReceipt
+from ksi_processing_controller.external_inspector_file_io import FileIoSealReceiptV1
 from ksi_processing_controller.external_inspector_host_proof import (
     HostProofBlockedCode,
     ProcfsHostProofObserver,
@@ -34,12 +38,18 @@ from ksi_processing_controller.external_inspector_host_proof import (
 
 
 class _BorrowedSource:
-    def read_at(self, *, offset: int, maximum_bytes: int) -> bytes:
-        del offset, maximum_bytes
+    def verify_readback(self, *, deadline_monotonic: float) -> FileIoSealReceiptV1:
+        del deadline_monotonic
+        raise AssertionError("host proof must not read the source capability")
+
+    def read_at(self, *, offset: int, maximum_bytes: int, deadline_monotonic: float) -> bytes:
+        del offset, maximum_bytes, deadline_monotonic
         return b""
 
-    def consume_fd(self, consumer: object) -> object:
-        del consumer
+    def consume_fd(
+        self, consumer: Callable[[int], object], *, deadline_monotonic: float
+    ) -> object:
+        del consumer, deadline_monotonic
         raise AssertionError("host proof must not consume the source capability")
 
 
@@ -182,7 +192,7 @@ _LIVE_LISTENERS: dict[Path, tuple[socket.socket, threading.Thread]] = {}
 
 
 @pytest.fixture(autouse=True)
-def _close_live_proof_listeners():
+def _close_live_proof_listeners() -> Generator[None, None, None]:
     yield
     for listener, thread in tuple(_LIVE_LISTENERS.values()):
         listener.close()
@@ -663,7 +673,7 @@ def test_strict_config_preflights_signed_artifacts_and_injected_assembly(tmp_pat
 
     def builder(**kwargs: object) -> object:
         received.append(kwargs)
-        kwargs["activated_listener"].close()
+        cast(ActivatedListenerReceipt, kwargs["activated_listener"]).close()
         return sentinel
 
     try:

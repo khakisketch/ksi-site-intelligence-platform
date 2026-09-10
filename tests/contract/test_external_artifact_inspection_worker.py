@@ -14,6 +14,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 import pytest
 from ksi_event_contracts.external_artifact_validation import (
@@ -42,6 +43,8 @@ from ksi_processing_controller.external_artifact_inspection_worker import (
     ExternalInspectorUdsClient,
     FileSystemSanitizedOutputSink,
     InspectionAssemblyIncomplete,
+    InspectorUdsConnectorPort,
+    SanitizedOutputSinkPort,
     WorkerAuthorityLimitsV1,
     _PrivateSanitizedOutputTransaction,
     assemble_complete_measurement_payload,
@@ -425,7 +428,7 @@ def test_worker_rejects_a_legacy_source_factory_before_its_blocking_open_runs() 
     with pytest.raises(TypeError, match="deadline-bounded source opening"):
         ExternalArtifactInspectionWorker(
             authority=_Authority(_input(), [True]),
-            byte_source=source,  # type: ignore[arg-type] - deliberate legacy source factory
+            byte_source=cast(ExternalArtifactByteSourcePort, source),
             launcher=_Launcher(),
             operation_profile=_Profile(),
             limits=WorkerAuthorityLimitsV1(
@@ -557,10 +560,20 @@ def test_context_uses_callers_absolute_deadline_and_stop_aware_retained_guard() 
     observed: dict[str, object] = {}
 
     class _StopAwareLauncher(_Launcher):
-        def execute(self, **kwargs):
-            observed["deadline"] = kwargs["deadline_monotonic"]
+        def execute(
+            self,
+            *,
+            request: InspectorLaunchRequestV1,
+            source: DeadlineBoundedByteReaderPort,
+            artifact_kind: ProcessingArtifactKind,
+            content_type: str,
+            deadline_monotonic: float,
+            authority_is_current: Callable[[], bool],
+        ) -> InspectorLaunchResultV1:
+            del request, source, artifact_kind, content_type
+            observed["deadline"] = deadline_monotonic
             stop.set()
-            observed["guard_after_stop"] = kwargs["authority_is_current"]()
+            observed["guard_after_stop"] = authority_is_current()
             raise CurrentAuthorityLost("synthetic stop during launch")
 
     with pytest.raises(CurrentAuthorityLost, match="synthetic stop"):
@@ -807,7 +820,7 @@ def test_uds_client_seals_sanitized_raw_bytes_in_a_private_transaction() -> None
     try:
         terminal = client.execute(
             request=request,
-            source=BytesIO(payload),
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
             artifact_kind=ProcessingArtifactKind.ORTHO,
             content_type="application/octet-stream",
             deadline_monotonic=__import__("time").monotonic() + 0.5,
@@ -931,15 +944,15 @@ def test_uds_client_aborts_actual_private_otmpfile_candidate_on_keyboard_interru
     thread.start()
     sink = _InterruptedSink(root)
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline, **_kwargs: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
-        sanitized_output_sink=sink,
+        sanitized_output_sink=cast(SanitizedOutputSinkPort, sink),
         heartbeat_interval_millis=10,
     )
     with pytest.raises(KeyboardInterrupt, match="owned test interruption"):
         client.execute(
             request=request,
-            source=BytesIO(payload),
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
             artifact_kind=ProcessingArtifactKind.ORTHO,
             content_type="image/tiff",
             deadline_monotonic=time.monotonic() + 0.5,
@@ -1035,7 +1048,7 @@ def test_uds_client_aborts_private_candidate_after_short_raw_stream() -> None:
     thread.start()
     sink = _Sink()
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline, **_kwargs: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
         sanitized_output_sink=sink,
         heartbeat_interval_millis=10,
@@ -1043,7 +1056,7 @@ def test_uds_client_aborts_private_candidate_after_short_raw_stream() -> None:
     with pytest.raises(CurrentAuthorityLost, match="UDS launch failed closed"):
         client.execute(
             request=request,
-            source=BytesIO(payload),
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
             artifact_kind=ProcessingArtifactKind.ORTHO,
             content_type="image/tiff",
             deadline_monotonic=__import__("time").monotonic() + 0.5,
@@ -1138,7 +1151,7 @@ def test_uds_client_aborts_private_candidate_when_fence_changes_after_private_se
     thread.start()
     sink = _Sink()
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline, **_kwargs: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
         sanitized_output_sink=sink,
         heartbeat_interval_millis=10,
@@ -1146,7 +1159,7 @@ def test_uds_client_aborts_private_candidate_when_fence_changes_after_private_se
     with pytest.raises(CurrentAuthorityLost, match="private candidate seal"):
         client.execute(
             request=request,
-            source=BytesIO(payload),
+            source=DeadlineBoundedBytesReader(BytesIO(payload)),
             artifact_kind=ProcessingArtifactKind.ORTHO,
             content_type="image/tiff",
             deadline_monotonic=__import__("time").monotonic() + 0.5,
@@ -1214,7 +1227,7 @@ def test_worker_retires_the_real_private_candidate_after_the_client_returns_stal
     thread = threading.Thread(target=serve)
     thread.start()
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline, **_kwargs: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
         sanitized_output_sink=sink,
         heartbeat_interval_millis=10,
@@ -1491,9 +1504,9 @@ def test_uds_client_stops_a_chunked_upload_when_authority_is_lost() -> None:
     thread.start()
     source = _SlowUploadSource(payload)
     client = ExternalInspectorUdsClient(
-        connect=lambda deadline, **_kwargs: client_socket,
+        connect=cast(InspectorUdsConnectorPort, lambda deadline_monotonic, **kwargs: client_socket),
         protocol_limits=_protocol_limits(),
-        sanitized_output_sink=_Sink(),
+        sanitized_output_sink=cast(SanitizedOutputSinkPort, _Sink()),
         heartbeat_interval_millis=10,
     )
     with pytest.raises(CurrentAuthorityLost, match="UDS launch failed closed"):

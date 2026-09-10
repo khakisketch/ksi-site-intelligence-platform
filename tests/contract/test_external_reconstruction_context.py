@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from ksi_core.acquisition import observation_epoch_id
@@ -50,7 +51,7 @@ def test_context_supplies_registration_epoch_without_mutating_work_order(tmp_pat
 
 def test_context_marks_initial_external_ingress_without_managed_authority(tmp_path: Path) -> None:
     client, _, _, _ = _client(tmp_path)
-    work_orders = client.app.state.external_reconstruction_test_work_orders
+    work_orders = cast(Any, client.app).state.external_reconstruction_test_work_orders
     external = work_orders.create_work_order(
         organization_id="org-a",
         site_id="site-a",
@@ -77,7 +78,7 @@ def test_initial_external_ingress_requires_an_explicit_ordered_capture_interval(
     tmp_path: Path,
 ) -> None:
     client, _, _, _ = _client(tmp_path)
-    work_orders = client.app.state.external_reconstruction_test_work_orders
+    work_orders = cast(Any, client.app).state.external_reconstruction_test_work_orders
     external = work_orders.create_work_order(
         organization_id="org-a",
         site_id="site-a",
@@ -123,7 +124,7 @@ def test_initial_external_ingress_requires_an_explicit_ordered_capture_interval(
 def test_legacy_equal_capture_submission_replays_after_recovery(tmp_path: Path) -> None:
     """A retained V1 declaration may have a zero-duration capture interval."""
     client, _, _, _ = _client(tmp_path)
-    work_orders = client.app.state.external_reconstruction_test_work_orders
+    work_orders = cast(Any, client.app).state.external_reconstruction_test_work_orders
     legacy_order = work_orders.create_work_order(
         organization_id="org-a",
         site_id="site-a",
@@ -155,13 +156,17 @@ def test_legacy_equal_capture_submission_replays_after_recovery(tmp_path: Path) 
     store._journal.close()
 
     reopened = ExternalReconstructionStore(DurableJournal(path))
-    assert reopened.get(
+    replayed = reopened.get(
         legacy_order.work_order_id,
         "legacy-equal-capture",
         1,
         organization_id="org-a",
         site_id="site-a",
-    ).submission.input_declaration.capture_started_at == datetime(2026, 9, 6, tzinfo=UTC)
+    )
+    assert replayed is not None
+    assert replayed.submission.input_declaration.capture_started_at == datetime(
+        2026, 9, 6, tzinfo=UTC
+    )
     reopened._journal.close()
 
 

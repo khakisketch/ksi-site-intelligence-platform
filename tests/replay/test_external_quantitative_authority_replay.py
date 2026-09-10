@@ -3,8 +3,9 @@
 import hashlib
 import json
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
@@ -31,7 +32,7 @@ from test_external_quantitative_authority import (  # noqa: E402
 )
 
 
-def _decision(mapping):
+def _decision(mapping: Any) -> Any:
     return {
         "decisionId": "decision-a",
         "decisionDigest": _digest("decision-a"),
@@ -48,7 +49,7 @@ def _decision(mapping):
     }
 
 
-def _eligible_decision(mapping, *, decided_at):
+def _eligible_decision(mapping: Any, *, decided_at: datetime) -> Any:
     return ExternalPairUseDecisionV1(
         decision_id="decision-a",
         baseline_subject=mapping.baseline.subject,
@@ -74,7 +75,7 @@ def _event_digest(event: dict[str, object]) -> str:
     return "sha256:" + hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
-def test_restart_rejects_execution_snapshot_without_its_durable_decision(tmp_path: Path):
+def test_restart_rejects_execution_snapshot_without_its_durable_decision(tmp_path: Path) -> None:
     """Dropping a decision journal must not let a retained execution snapshot replay."""
     path = tmp_path / "quantitative-authority.jsonl"
     mapping = _mapping()
@@ -104,10 +105,10 @@ def test_restart_rejects_execution_snapshot_without_its_durable_decision(tmp_pat
     )
 
     class _MissingDecisionStore:
-        def resolve_current_pair_for_issue(self, *_args, **_kwargs):
+        def resolve_current_pair_for_issue(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
-        def resolve_historical_pair(self, **_kwargs):
+        def resolve_historical_pair(self, **_kwargs: Any) -> None:
             return None
 
     with pytest.raises(ExternalQuantitativeAuthorityRecoveryError, match="decision"):
@@ -156,10 +157,10 @@ def test_restart_rejects_test_corrupted_activation_before_exact_decision(tmp_pat
     )
 
     class _DecisionStore:
-        def resolve_current_pair_for_issue(self, *_args, **_kwargs):
+        def resolve_current_pair_for_issue(self, *_args: Any, **_kwargs: Any) -> Any:
             return decision
 
-        def resolve_historical_pair(self, **_kwargs):
+        def resolve_historical_pair(self, **_kwargs: Any) -> Any:
             return decision
 
     with pytest.raises(ExternalQuantitativeAuthorityRecoveryError, match="decision"):

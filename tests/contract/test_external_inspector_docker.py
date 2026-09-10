@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from ksi_processing_controller.external_inspector_attempts import AttemptBindingV1
@@ -27,18 +27,26 @@ from ksi_processing_controller.external_inspector_docker import (
     DockerCgroupRuntimeMeasurement,
     DockerEngineClientV1,
     DockerExactRuntimeRegistry,
+    DockerMultiplexSessionPort,
     DockerRuntimeUnavailable,
     DockerStartedScopeVerifier,
     FileLocalOciPairResolver,
     FileOciPairResolverConfigV1,
     LocalOciImageProofV1,
+    RootlessDockerHostProofPort,
     RootlessDockerRuntimeAdapter,
     RootlessDockerSocketConfigV1,
     UnixSocketDockerEngineWire,
     UnixSocketDockerMultiplexSession,
 )
 from ksi_processing_controller.external_inspector_file_io import FileIoSealReceiptV1
+from ksi_processing_controller.external_inspector_launcher import InspectorEffectiveLimitsV1
 from ksi_processing_controller.external_inspector_runtime import CpuCounterUnitV1
+from ksi_processing_controller.external_inspector_staging import (
+    MappedInspectorReaderV1,
+    NamedReaderAclPort,
+    ReaderMappingPort,
+)
 
 
 def _digest(letter: str) -> str:
@@ -158,7 +166,7 @@ def test_concrete_unix_wire_accepts_fragmented_engine_204_and_chunked_json(tmp_p
     thread.start()
 
     class PeerVerifier:
-        def verify_connected(self, connection, *, deadline_monotonic):
+        def verify_connected(self, connection: socket.socket, *, deadline_monotonic: float) -> None:
             assert time.monotonic() < deadline_monotonic
             assert struct.unpack(
                 "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
@@ -258,13 +266,32 @@ def test_backend_stream_reader_reassembles_fragmented_and_coalesced_inner_frames
         def __init__(self, chunks: list[bytes]) -> None:
             self._chunks = chunks
 
-        def read_frame(self, **kwargs: object) -> tuple[int, bytes] | None:
-            del kwargs
+        def send_stdin(self, payload: bytes, *, deadline_monotonic: float) -> None:
+            del payload, deadline_monotonic
+
+        def finish_stdin(self, *, deadline_monotonic: float) -> None:
+            del deadline_monotonic
+
+        def read_frame(
+            self,
+            *,
+            maximum_stdout_bytes: int,
+            maximum_stderr_bytes: int,
+            deadline_monotonic: float,
+        ) -> tuple[int, bytes] | None:
+            del maximum_stdout_bytes, maximum_stderr_bytes, deadline_monotonic
             return (1, self._chunks.pop(0)) if self._chunks else None
 
-    fragmented = _AttachedProtocolReader(_Session([first[:2], first[2:]]), limits=limits)
+        def close(self) -> None:
+            return None
+
+    fragmented = _AttachedProtocolReader(
+        cast(DockerMultiplexSessionPort, _Session([first[:2], first[2:]])), limits=limits
+    )
     assert fragmented.read_control(deadline_monotonic=1.0) == {"frame": "MOUNT_VERIFIED"}
-    coalesced = _AttachedProtocolReader(_Session([first + second]), limits=limits)
+    coalesced = _AttachedProtocolReader(
+        cast(DockerMultiplexSessionPort, _Session([first + second])), limits=limits
+    )
     assert coalesced.read_control(deadline_monotonic=1.0) == {"frame": "MOUNT_VERIFIED"}
     assert coalesced.read_control(deadline_monotonic=1.0) == {"frame": "COMPLETED"}
 
@@ -278,7 +305,7 @@ def test_backend_terminal_is_closed_and_checks_sanitize_cap_before_streaming() -
     from test_external_inspector_launcher import _manifest
 
     manifest = _manifest()
-    prepare = {
+    prepare: dict[str, object] = {
         "attemptNonce": "attempt-1",
         "outerCanonicalInputDigest": _digest("a"),
         "prepareDigest": _digest("b"),
@@ -455,7 +482,7 @@ def test_sanitize_backend_requires_same_stream_eof_before_spool_seal(trailing_ki
             output_staging=spool,  # type: ignore[arg-type]
             request=request,
             sealed_input=object(),  # type: ignore[arg-type]
-            limits=SimpleNamespace(max_output_bytes=32),
+            limits=cast("InspectorEffectiveLimitsV1", SimpleNamespace(max_output_bytes=32)),
             configuration=_configuration(_UnreachableSource()),
             deadline_monotonic=10.0,
             is_cancelled=lambda: False,
@@ -634,7 +661,7 @@ def test_started_container_must_occupy_the_one_exact_scope_with_read_back_limits
     )
     try:
         DockerStartedScopeVerifier(
-            client=_Client(), cgroups=cgroups, proc_cgroups=_Proc()
+            client=cast(DockerEngineClientV1, _Client()), cgroups=cgroups, proc_cgroups=_Proc()
         ).verify_exact(
             runtime_id="runtime-a",
             runtime_parent=receipt,
@@ -690,7 +717,7 @@ def test_cgroup_measurement_uses_the_durable_parent_baseline_before_runtime_clea
     )
     try:
         measurement = DockerCgroupRuntimeMeasurement(
-            client=_Client(),
+            client=cast(DockerEngineClientV1, _Client()),
             cgroups=cgroups,
             config=DockerCgroupMeasurementConfigV1(
                 monitor_interval_millis=1,
@@ -774,7 +801,7 @@ def test_runtime_registry_recovers_only_the_durable_name_with_exact_recorded_lab
 
     client = _Client()
     registry = DockerExactRuntimeRegistry(
-        client=client,
+        client=cast(DockerEngineClientV1, client),
         recovery_timeout_millis=1_000,
         monotonic=lambda: 5.0,
     )
@@ -946,7 +973,7 @@ def test_docker_backend_attaches_then_gates_execute_on_scope_measurement_and_eof
             events.append("scope")
 
     class _Active:
-        def finalized_measurement(self):  # type: ignore[no-untyped-def]
+        def finalized_measurement(self) -> Any:
             events.append("final")
             return _runtime_measurement(runtime_id="runtime-a")
 
@@ -960,9 +987,9 @@ def test_docker_backend_attaches_then_gates_execute_on_scope_measurement_and_eof
             return _Active()
 
     result = DockerInspectorBackend(
-        runtime=_Runtime(),  # type: ignore[arg-type]
-        started_runtime=_Scope(),  # type: ignore[arg-type]
-        measurements=_Measurements(),  # type: ignore[arg-type]
+        runtime=cast(RootlessDockerRuntimeAdapter, _Runtime()),
+        started_runtime=_Scope(),
+        measurements=_Measurements(),
         frame_limits=limits,
         monotonic=lambda: 0.0,
     ).execute(
@@ -1099,7 +1126,9 @@ def test_runtime_adapter_builds_only_proc_launcher_fd_mounts_and_never_persists_
 
     configuration = _configuration(_Source(), payload_bytes, source_stat=os.fstat(artifact_fd))
     adapter = RootlessDockerRuntimeAdapter(
-        client=DockerEngineClientV1(_Wire({})), host_proof=_Proof(), images=_Images()
+        client=DockerEngineClientV1(_Wire({})),
+        host_proof=cast(RootlessDockerHostProofPort, _Proof()),
+        images=_Images(),
     )
 
     try:
@@ -1137,18 +1166,11 @@ def test_runtime_adapter_never_rereads_borrowed_bytes_in_the_parent_process(
     import ksi_processing_controller.external_inspector_docker as docker_module
     from ksi_processing_controller.external_inspector_staging import FileSystemInputStaging
 
-    class _Reader:
-        container_uid = 10_001
-        container_gid = 10_001
-        host_uid = os.geteuid()
-        host_gid = os.getegid()
-        mapping_witness = "parent-pread-stall-reader"
-
     class _Mapping:
-        def __init__(self, reader: _Reader) -> None:
+        def __init__(self, reader: MappedInspectorReaderV1) -> None:
             self._reader = reader
 
-        def resolve_exact(self, **kwargs: object) -> _Reader:
+        def resolve_exact(self, **kwargs: object) -> MappedInspectorReaderV1:
             del kwargs
             return self._reader
 
@@ -1193,9 +1215,17 @@ def test_runtime_adapter_never_rereads_borrowed_bytes_in_the_parent_process(
             )
 
     payload_bytes = b"actual-retained-bytes"
-    reader = _Reader()
+    reader = MappedInspectorReaderV1(
+        container_uid=10_001,
+        container_gid=10_001,
+        host_uid=os.geteuid(),
+        host_gid=os.getegid(),
+        mapping_witness="parent-pread-stall-reader",
+    )
     staging = FileSystemInputStaging(
-        private_root=tmp_path / "private", reader_mapping=_Mapping(reader), acl=_Acl()
+        private_root=tmp_path / "private",
+        reader_mapping=cast(ReaderMappingPort, _Mapping(reader)),
+        acl=cast(NamedReaderAclPort, _Acl()),
     )
     mutable = staging.begin(
         maximum_bytes=len(payload_bytes), deadline_monotonic=time.monotonic() + 1.0
@@ -1212,7 +1242,9 @@ def test_runtime_adapter_never_rereads_borrowed_bytes_in_the_parent_process(
     source_path = next((tmp_path / "private").glob("*/artifact"))
     configuration = _configuration(bind.source, payload_bytes, source_stat=source_path.stat())
     adapter = RootlessDockerRuntimeAdapter(
-        client=DockerEngineClientV1(_Wire({})), host_proof=_Proof(), images=_Images()
+        client=DockerEngineClientV1(_Wire({})),
+        host_proof=cast(RootlessDockerHostProofPort, _Proof()),
+        images=_Images(),
     )
     actual_pread = os.pread
     parent_pread_calls: list[tuple[int, int]] = []
@@ -1326,8 +1358,8 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_create(
     client = _Client()
     configuration = _configuration(source, payload_bytes, source_stat=os.fstat(artifact_fd))
     adapter = RootlessDockerRuntimeAdapter(
-        client=client,  # type: ignore[arg-type]
-        host_proof=_Proof(),
+        client=cast(DockerEngineClientV1, client),
+        host_proof=cast(RootlessDockerHostProofPort, _Proof()),
         images=_Images(),
     )
 
@@ -1487,8 +1519,8 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start() -> Non
     configuration = _configuration(source, payload_bytes)
     client = _Client(source, configuration)
     adapter = RootlessDockerRuntimeAdapter(
-        client=client,  # type: ignore[arg-type]
-        host_proof=_Proof(),
+        client=cast(DockerEngineClientV1, client),
+        host_proof=cast(RootlessDockerHostProofPort, _Proof()),
         images=_Images(),
     )
 
@@ -1524,7 +1556,9 @@ def test_runtime_adapter_rejects_an_unproven_oci_pair_before_constructing_a_crea
             )
 
     adapter = RootlessDockerRuntimeAdapter(
-        client=DockerEngineClientV1(_Wire({})), host_proof=_UnavailableProof(), images=_Images()
+        client=DockerEngineClientV1(_Wire({})),
+        host_proof=cast(RootlessDockerHostProofPort, _UnavailableProof()),
+        images=_Images(),
     )
     with pytest.raises(DockerRuntimeUnavailable, match="host proof"):
         adapter.create_payload(
@@ -1778,12 +1812,17 @@ def test_actual_cgroup_monitor_routes_every_termination_reason_to_launcher_callb
             return self.calls > 1
 
     calls: list[str] = []
-    monitor = object.__new__(DockerActiveCgroupMeasurement)
+    monitor = cast(Any, object.__new__(DockerActiveCgroupMeasurement))
     monitor._stop = _Stop()
     monitor._interval_seconds = 0.001
     monitor._deadline_monotonic = deadline
     monitor._is_cancelled = lambda: cancelled
-    monitor._monitor_termination = lambda observed: calls.append(observed) or 0.01
+
+    def monitor_termination(observed: str) -> float:
+        calls.append(observed)
+        return 0.01
+
+    monitor._monitor_termination = monitor_termination
     monitor._runtime_id = "runtime-a"
     monitor._kill_latency_seconds = None
     monitor._exceeded = False
@@ -1845,7 +1884,9 @@ def test_exact_registry_does_not_wait_on_a_known_created_unstarted_container() -
             raise AssertionError("unstarted runtime has no process to wait for")
 
     registry = DockerExactRuntimeRegistry(
-        client=_Client(), recovery_timeout_millis=1_000, monotonic=lambda: 5.0
+        client=cast(DockerEngineClientV1, _Client()),
+        recovery_timeout_millis=1_000,
+        monotonic=lambda: 5.0,
     )
 
     assert registry.quiesce_exact(
@@ -1865,7 +1906,9 @@ def test_actual_wire_checks_connected_peer_before_any_request_bytes(
         path.chmod(0o600)
 
         class RejectPeer:
-            def verify_connected(self, connection, *, deadline_monotonic):
+            def verify_connected(
+                self, connection: socket.socket, *, deadline_monotonic: float
+            ) -> None:
                 assert connection.getpeername() == str(path)
                 raise DockerRuntimeUnavailable("peer rejected")
 

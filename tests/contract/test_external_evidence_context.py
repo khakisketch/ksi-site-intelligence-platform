@@ -1,6 +1,7 @@
 """Trusted checkpoint context binds actual scope, thresholds and attestations."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from ksi_event_contracts.external_evidence_context import (
@@ -10,7 +11,7 @@ from ksi_event_contracts.external_evidence_context import (
 from support.external_artifact_inspection_fixtures import digest, subject
 
 
-def context_wire():
+def context_wire() -> dict[str, Any]:
     return dict(
         context_id="context-1",
         subject=subject(include_dsm=True),
@@ -37,7 +38,7 @@ def context_wire():
     )
 
 
-def test_context_without_attestation_cannot_claim_independence():
+def test_context_without_attestation_cannot_claim_independence() -> None:
     context = ExternalEvidenceMeasurementContextV1(**context_wire()).sealed()
     assert context.independent_attestation is None
     assert context.evidence_observed_sha256 == digest("e")
@@ -59,12 +60,12 @@ def test_context_without_attestation_cannot_claim_independence():
         {"context_digest": digest("f")},
     ],
 )
-def test_context_rejects_unbounded_or_unsealed_authority(changes):
+def test_context_rejects_unbounded_or_unsealed_authority(changes: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         ExternalEvidenceMeasurementContextV1(**(context_wire() | changes))
 
 
-def test_context_rejects_attestation_for_another_dsm():
+def test_context_rejects_attestation_for_another_dsm() -> None:
     wire = context_wire()
     attestation = ExternalIndependenceAttestationV1(
         attestation_id="attestation-1",

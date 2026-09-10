@@ -1,6 +1,7 @@
 """The public result is canonical, exact-request-bound and aggregate-only."""
 
 from copy import deepcopy
+from typing import Any
 
 import pytest
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -12,14 +13,17 @@ from ksi_processing_controller.external_measurement_container_protocol import (
     build_prepare_frame_v2,
 )
 from ksi_processing_controller.external_measurement_result import (
+    RelativeVolumeAggregateV2,
     build_measurement_result,
     decode_measurement_result,
 )
 from test_external_measurement_protocol import limits, measurement_manifest_request
 
 
-def result_fixture():
+def result_fixture() -> tuple[Any, Any, Any]:
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
+    assert request.volume_execution_policy is not None
     terminal = build_failed_frame_v2(
         prepare=build_prepare_frame_v2(request=request, manifest=manifest),
         reason="INSUFFICIENT_COMMON_VALID_COVERAGE",
@@ -30,7 +34,7 @@ def result_fixture():
     return manifest, request, result
 
 
-def test_failed_result_round_trip_has_no_metrics_or_raw_inner_fields():
+def test_failed_result_round_trip_has_no_metrics_or_raw_inner_fields() -> None:
     manifest, request, result = result_fixture()
     encoded = result.canonical_bytes(request=request, manifest=manifest, limits=limits())
     assert (
@@ -56,7 +60,7 @@ def test_failed_result_round_trip_has_no_metrics_or_raw_inner_fields():
         ("status", "COMPLETED"),
     ],
 )
-def test_result_rejects_substitution(field, value):
+def test_result_rejects_substitution(field: str, value: Any) -> None:
     manifest, request, result = result_fixture()
     body = result.model_dump(by_alias=True, mode="json")
     body[field] = value
@@ -69,7 +73,7 @@ def test_result_rejects_substitution(field, value):
         )
 
 
-def test_result_rejects_raw_extra_and_noncanonical_bytes():
+def test_result_rejects_raw_extra_and_noncanonical_bytes() -> None:
     manifest, request, result = result_fixture()
     body = result.model_dump(by_alias=True, mode="json")
     extra = deepcopy(body)
@@ -79,12 +83,14 @@ def test_result_rejects_raw_extra_and_noncanonical_bytes():
             decode_measurement_result(encoded, request=request, manifest=manifest, limits=limits())
 
 
-def test_completed_volume_roundtrip_revalidates_coverage_uncertainty_and_metrics():
+def test_completed_volume_roundtrip_revalidates_coverage_uncertainty_and_metrics() -> None:
     from ksi_processing_controller.external_measurement_container_protocol import (
         build_completed_frame_v2,
     )
 
     manifest, request = measurement_manifest_request()
+    assert request.volume_request is not None
+    assert request.volume_execution_policy is not None
     aggregate = {
         "metricType": "RELATIVE_VOLUME_AGGREGATE_V2",
         "zoneId": request.volume_request.zone_snapshot.work_area_id,
@@ -114,6 +120,7 @@ def test_completed_volume_roundtrip_revalidates_coverage_uncertainty_and_metrics
     decoded = decode_measurement_result(
         encoded, request=request, manifest=manifest, limits=limits()
     )
+    assert isinstance(decoded.aggregate, RelativeVolumeAggregateV2)
     assert decoded.aggregate.metrics.net_m3 == 4.0
     for field, value in (
         ("netM3", 9.0),
@@ -129,7 +136,7 @@ def test_completed_volume_roundtrip_revalidates_coverage_uncertainty_and_metrics
             )
 
 
-def test_result_respects_output_cap_even_when_header_cap_is_larger():
+def test_result_respects_output_cap_even_when_header_cap_is_larger() -> None:
     manifest, request, result = result_fixture()
     restricted = limits().model_copy(update={"max_output_bytes": 1})
     with pytest.raises(ProtocolViolation):

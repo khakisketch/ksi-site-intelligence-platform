@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -222,7 +223,7 @@ def test_v2_preflight_rejects_validly_signed_nonmeasurement_profile(
             rewritten.model_dump(by_alias=True, mode="json"), separators=(",", ":")
         ).encode(),
     )
-    payload = _payload(config_path)
+    payload: dict[str, Any] = _payload(config_path)
     payload["production"]["trustRoot"] = {
         "publicKeys": {
             "measurement-replacement": base64.b64encode(
