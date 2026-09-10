@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/schemas/external-runtime-host-binding.v1.json",
+  "title": "KSI External Runtime Host Binding v1",
+  "description": "Owner-only host observation that binds one canonical release-evidence v1 envelope and source commit to exact locally observed product Docker image IDs, immutable repository digests, and on-host SBOM/scanner artifact paths. Product-owned inspector and measurement build outputs are recorded separately from canonical externalRuntimeImages dependency pins. This record is not a signature, registry publication proof, vulnerability approval, deployment approval, or product authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "releaseEvidence", "source", "productImages", "runtimeProducts", "externalRuntimeImages"],
+  "properties": {
+    "schemaVersion": {"const": "external-runtime-host-binding.v1"},
+    "releaseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {"sha256": {"$ref": "#/$defs/digest"}}
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitCommitSha"],
+      "properties": {"gitCommitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}
+    },
+    "productImages": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/productImage"}
+    },
+    "runtimeProducts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/runtimeProduct"}
+    },
+    "externalRuntimeImages": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/externalRuntimeImage"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "repoDigest": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$"
+    },
+    "productReference": {
+      "type": "string",
+      "pattern": "^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$"
+    },
+    "externalReference": {
+      "type": "string",
+      "pattern": "^(?:(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}|opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2)$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "type"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "type": {"type": "string"}
+      }
+    },
+    "cycloneDxArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {"properties": {"type": {"const": "cyclonedx-json"}}}
+      ]
+    },
+    "scannerArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {"properties": {"type": {"const": "scanner-json"}}}
+      ]
+    },
+    "productImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "releaseReference", "dockerImageId", "repoDigests", "sbom", "scanner"],
+      "properties": {
+        "component": {"enum": ["core", "dashboard"]},
+        "releaseReference": {"$ref": "#/$defs/productReference"},
+        "dockerImageId": {"$ref": "#/$defs/digest"},
+        "repoDigests": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/repoDigest"}
+        },
+        "sbom": {"$ref": "#/$defs/cycloneDxArtifact"},
+        "scanner": {"$ref": "#/$defs/scannerArtifact"}
+      }
+    },
+    "runtimeProduct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "releaseReference", "dockerImageId", "repoDigests", "sbom", "scanner"],
+      "properties": {
+        "role": {"enum": ["inspector", "measurement"]},
+        "releaseReference": {"$ref": "#/$defs/productReference"},
+        "dockerImageId": {"$ref": "#/$defs/digest"},
+        "repoDigests": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/repoDigest"}
+        },
+        "sbom": {"$ref": "#/$defs/cycloneDxArtifact"},
+        "scanner": {"$ref": "#/$defs/scannerArtifact"}
+      }
+    },
+    "externalRuntimeImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseReference", "dockerImageId", "repoDigests"],
+      "properties": {
+        "releaseReference": {"$ref": "#/$defs/externalReference"},
+        "dockerImageId": {"$ref": "#/$defs/digest"},
+        "repoDigests": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/repoDigest"}
+        }
+      }
+    }
+  }
+}

@@ -96,13 +96,24 @@ private template. `status` reads the `ksi-external-rc` project. `stop` uses
 `docker compose stop`, preserving candidate volumes and never targeting the
 existing Phase 2 stack.
 
-`verify` and `start` require an exact clean source checkout and a current-
-operator-owned private release-evidence record. The record must bind the
-source commit; the two fixed local RC tags and their exact Docker image IDs;
-each nonempty external runtime image reference and image ID; and the paths and
-SHA256 values of the actual SBOM and scanner artifacts. The lifecycle parser
-accepts only the reviewed `KEY=VALUE` environment keys and never sources the
-file as shell code. Even with that evidence `verify` and `start` return
+`verify` and `start` require an exact clean source checkout, a canonical
+current-operator-owned private `release-evidence.v1` record, and a separate
+current-operator-owned private
+[`external-runtime-host-binding.v1`](../../contracts/schemas/external-runtime-host-binding.v1.json)
+record. The canonical record retains only its source, immutable product/runtime
+references, and product SBOM/scanner metadata. The host binding records the
+exact canonical-record hash, source commit, observed Docker image IDs and
+repository digests, and absolute artifact paths, hashes, byte counts, and
+types. It must contain Core and Dashboard observations, separate product-owned
+inspector and measurement runtime observations, and the exact separately
+verified canonical `externalRuntimeImages` dependency pins. Runtime SBOMs must
+be valid CycloneDX JSON; runtime scanner reports must be JSON objects with an
+explicit scanner name and schema version. Each observed repository-digest list
+must include the immutable release reference's canonical repository digest.
+`ksi-external-rc-*:local` remains a Docker lookup handle only; it is never a
+provenance field. The lifecycle parser accepts only the reviewed `KEY=VALUE`
+environment keys and never sources the file as shell code. Even with that
+evidence `verify` and `start` return
 `BLOCKED_QUANTITATIVE_AUTHORITY` until a real,
 independently controlled catalog, policy, evidence-currentness, and input
 capability authority can be assembled in Core. The Compose profile contains no
